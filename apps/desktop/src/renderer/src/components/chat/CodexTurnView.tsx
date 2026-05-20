@@ -5,7 +5,7 @@ import { cn } from '@superone/ui/lib/utils'
 import { CopyableMarkdown } from './CopyableMarkdown'
 import { renderCodexItem, CodexCommandBlock } from './codex-item-renderer'
 import { fileLinkComponents } from './chat-markdown-components'
-import { CodexCollabBlock, CodexForkMarker, isForkedSpawn, isSpawnReady } from './CodexCollabBlock'
+import { CodexCollabBlock, CodexForkMarker, isForkedSpawn, isForwardedToFork, isSpawnReady } from './CodexCollabBlock'
 import { CodexImageGalleryBlock } from './CodexImageGalleryBlock'
 import { useActiveSession, useChatStore } from '@/stores/chat'
 import { useMiniAppStore } from '@/stores/miniapp'
@@ -261,6 +261,11 @@ export function CodexTurnView({ message, isStreaming, isLastAssistant }: CodexTu
       } else {
         collabGroup.push(item)
       }
+    } else if (item.type === 'collab_tool_call' && item.tool === 'sendInput' && isForwardedToFork(item)) {
+      flushCmd()
+      flushCollab()
+      flushAppGroup()
+      segments.push({ kind: 'fork', item })
     } else if (item.type === 'collab_tool_call') {
       flushCmd()
       flushCollab()

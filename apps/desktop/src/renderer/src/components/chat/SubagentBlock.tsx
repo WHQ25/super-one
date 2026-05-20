@@ -5,7 +5,8 @@ import { cn } from '@superone/ui/lib/utils'
 import { ToolBlock } from './ToolBlock'
 import { getToolDisplay, getToolVerb, parseToolInput } from './tool-display'
 import { ToolIcon } from './ToolIcon'
-import { useActiveSession, useBashOutput, useChatStore, SUBAGENT_COLOR_POOL } from '@/stores/chat'
+import { useActiveSession, useBashOutput, useChatStore } from '@/stores/chat'
+import { getSubagentColorClasses, type SubagentColorClasses } from './subagent-colors'
 import { Streamdown } from 'streamdown'
 import type { ContentBlock } from '@superone/shared/agent-types'
 import { streamdownPlugins, streamdownRehypePlugins, streamdownControls, streamdownComponents, streamdownLinkSafety, formatTokens } from './chat-shared'
@@ -13,81 +14,6 @@ import { parseJsonlOutput, type JsonlEntry } from './subagent-utils'
 
 const ZERO_TOKENS = { input: 0, output: 0 }
 const SUBAGENT_OUTPUT_TAIL_LINES = 400
-
-interface SubagentColorClasses {
-  text: string
-  tagBg: string
-  tagText: string
-  activityBg: string
-  borderL: string
-}
-
-const SUBAGENT_COLOR_CLASSES: Record<string, SubagentColorClasses> = {
-  purple: {
-    text: 'text-purple-600 dark:text-purple-400',
-    tagBg: 'bg-purple-500/15 dark:bg-purple-900/40',
-    tagText: 'text-purple-700 dark:text-purple-300',
-    activityBg: 'bg-purple-500/10 dark:bg-purple-900/20',
-    borderL: 'border-purple-500/30',
-  },
-  blue: {
-    text: 'text-blue-600 dark:text-blue-400',
-    tagBg: 'bg-blue-500/15 dark:bg-blue-900/40',
-    tagText: 'text-blue-700 dark:text-blue-300',
-    activityBg: 'bg-blue-500/10 dark:bg-blue-900/20',
-    borderL: 'border-blue-500/30',
-  },
-  cyan: {
-    text: 'text-cyan-600 dark:text-cyan-400',
-    tagBg: 'bg-cyan-500/15 dark:bg-cyan-900/40',
-    tagText: 'text-cyan-700 dark:text-cyan-300',
-    activityBg: 'bg-cyan-500/10 dark:bg-cyan-900/20',
-    borderL: 'border-cyan-500/30',
-  },
-  teal: {
-    text: 'text-teal-600 dark:text-teal-400',
-    tagBg: 'bg-teal-500/15 dark:bg-teal-900/40',
-    tagText: 'text-teal-700 dark:text-teal-300',
-    activityBg: 'bg-teal-500/10 dark:bg-teal-900/20',
-    borderL: 'border-teal-500/30',
-  },
-  green: {
-    text: 'text-green-600 dark:text-green-400',
-    tagBg: 'bg-green-500/15 dark:bg-green-900/40',
-    tagText: 'text-green-700 dark:text-green-300',
-    activityBg: 'bg-green-500/10 dark:bg-green-900/20',
-    borderL: 'border-green-500/30',
-  },
-  amber: {
-    text: 'text-amber-600 dark:text-amber-400',
-    tagBg: 'bg-amber-500/15 dark:bg-amber-900/40',
-    tagText: 'text-amber-700 dark:text-amber-300',
-    activityBg: 'bg-amber-500/10 dark:bg-amber-900/20',
-    borderL: 'border-amber-500/30',
-  },
-  orange: {
-    text: 'text-orange-600 dark:text-orange-400',
-    tagBg: 'bg-orange-500/15 dark:bg-orange-900/40',
-    tagText: 'text-orange-700 dark:text-orange-300',
-    activityBg: 'bg-orange-500/10 dark:bg-orange-900/20',
-    borderL: 'border-orange-500/30',
-  },
-  rose: {
-    text: 'text-rose-600 dark:text-rose-400',
-    tagBg: 'bg-rose-500/15 dark:bg-rose-900/40',
-    tagText: 'text-rose-700 dark:text-rose-300',
-    activityBg: 'bg-rose-500/10 dark:bg-rose-900/20',
-    borderL: 'border-rose-500/30',
-  },
-}
-
-const DEFAULT_SUBAGENT_COLOR_CLASSES = SUBAGENT_COLOR_CLASSES.purple
-
-function getSubagentColorClasses(idx: number | undefined): SubagentColorClasses {
-  if (idx === undefined) return DEFAULT_SUBAGENT_COLOR_CLASSES
-  const name = SUBAGENT_COLOR_POOL[idx % SUBAGENT_COLOR_POOL.length]
-  return SUBAGENT_COLOR_CLASSES[name] ?? DEFAULT_SUBAGENT_COLOR_CLASSES
-}
 
 interface SubagentBlockProps {
   taskBlock: ContentBlock & { type: 'tool_use' }
@@ -295,14 +221,22 @@ export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming
     return count
   }, [childBlocks])
 
+  const isExpandable = !showSpawningPlaceholder
+  const isExpanded = expanded && isExpandable
+
   return (
     <div className="subagent-container my-1 overflow-hidden rounded border border-border/50 bg-muted/20">
       {/* Header: Bot icon + subagent_type + description */}
       <button
-        onClick={() => setExpanded((e) => !e)}
-        className="flex w-full items-center gap-2 px-2.5 py-2 text-xs transition-colors hover:bg-muted/40"
+        type="button"
+        aria-disabled={!isExpandable}
+        onClick={() => { if (isExpandable) setExpanded((e) => !e) }}
+        className={cn(
+          'flex w-full items-center gap-2 px-2.5 py-2 text-xs transition-colors',
+          isExpandable ? 'hover:bg-muted/40' : 'cursor-default',
+        )}
       >
-        <Bot className={cn('size-3.5 shrink-0', colors.text, isRunning && !expanded && 'animate-pulse')} />
+        <Bot className={cn('size-3.5 shrink-0', colors.text, isRunning && !isExpanded && 'animate-pulse')} />
         {taskInput.subagentType && (
           <span className={cn('shrink-0 rounded px-1 py-px text-[10px]', colors.tagBg, colors.tagText)}>
             {taskInput.subagentType}
@@ -314,12 +248,14 @@ export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming
         {showSpawningPlaceholder && (
           <span className="min-w-0 text-left text-muted-foreground">{t('chat.subagent.spawning')}</span>
         )}
-        <ChevronRight
-          className={cn('ml-auto size-3 shrink-0 text-muted-foreground transition-transform duration-200', expanded && 'rotate-90')}
-        />
+        {isExpandable && (
+          <ChevronRight
+            className={cn('ml-auto size-3 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded && 'rotate-90')}
+          />
+        )}
       </button>
 
-      {expanded && (
+      {isExpanded && (
         <div className="border-t border-border/30">
           {/* Input: prompt preview */}
           {taskInput.prompt && <PromptPreview prompt={taskInput.prompt} model={taskInput.model} />}
@@ -350,7 +286,7 @@ export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming
         </div>
       )}
 
-      {expanded && (isRunning || isComplete) && <div className="flex items-center gap-1.5 border-t border-border/30 px-2.5 py-1.5 text-[11px] text-muted-foreground">
+      {isExpanded && (isRunning || isComplete) && <div className="flex items-center gap-1.5 border-t border-border/30 px-2.5 py-1.5 text-[11px] text-muted-foreground">
         {isRunning ? (
           <>
             <span>{isAsync ? t('chat.subagent.runningInBackground') : t('chat.subagent.running')}</span>

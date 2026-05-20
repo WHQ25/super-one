@@ -105,7 +105,18 @@ vi.mock('../../codex/codex-session', () => ({
     steerFn: null,
     connectionHandle: null,
     connectionAuth: null,
+    notificationDispatcher: null,
+    forkListeners: new Map(),
+    forkCallbacks: null,
   }),
+  tearDownForkRuntime: (session: Record<string, unknown>) => {
+    session.connectionHandle = null
+    session.connectionAuth = null
+    session.threadId = null
+    session.threadReady = false
+    session.effectiveCwd = null
+    session.notificationDispatcher = null
+  },
   codexSessionNeedsRebuild: (
     existing: { threadId: string | null; model?: string; modelReasoningEffort?: unknown; permissionPreset?: string },
     requestedModel?: string,

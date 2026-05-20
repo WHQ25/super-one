@@ -24,6 +24,7 @@ import { recordCodexFromUsage } from '../../usage-stats-service'
 import type { CodexSession } from '../../codex/codex-session'
 import {
   createCodexSession,
+  tearDownForkRuntime,
 } from '../../codex/codex-session'
 import type { AppServerConnectionHandle, CodexProjectAuth } from '../../codex/app-server-connection'
 import {
@@ -144,6 +145,7 @@ export class CodexBackend implements SessionBackend {
   // turn-end force-complete of a pre-steer item) never leak into the
   // steered bubble.
   private itemOwner = new Map<string, string>()
+  private forkOwners = new Map<string, string>()
   private segments = new Map<string, { order: string[]; map: Map<string, CodexThreadItem> }>()
   private finalizedSegments = new Set<string>()
   private lastUsageSnapshot: CodexUsageInfo | null = null
@@ -202,6 +204,7 @@ export class CodexBackend implements SessionBackend {
     if (!session.connectionHandle) return false
     if (session.runningController) return false
     if (this.activeRun) return false
+    if (session.forkListeners && session.forkListeners.size > 0) return false
     if (this._lastActiveAt == null) return false
     if (Date.now() - this._lastActiveAt < timeoutMs) return false
     return true
@@ -336,10 +339,7 @@ export class CodexBackend implements SessionBackend {
     }
     warm.handle.onClosed((info) => {
       if (session.connectionHandle === warm.handle) {
-        session.connectionHandle = null
-        session.connectionAuth = null
-        session.threadId = null
-        session.threadReady = false
+        tearDownForkRuntime(session, 'app-server exited')
         log.info('[codex] app-server exited code=%s signal=%s', info.code, info.signal)
       }
     })
@@ -365,11 +365,7 @@ export class CodexBackend implements SessionBackend {
     const handle = session.connectionHandle
     const auth = session.connectionAuth
     if (!handle || !auth || !this.service.releaseAppServerConnection) return false
-    session.connectionHandle = null
-    session.connectionAuth = null
-    session.threadId = null
-    session.threadReady = false
-    session.effectiveCwd = null
+    tearDownForkRuntime(session, 'connection released to pool')
     this.service.releaseAppServerConnection(startOpts.projectPath, auth, handle, startOpts.apiProviderId ?? null)
     return true
   }
@@ -391,10 +387,7 @@ export class CodexBackend implements SessionBackend {
       try { session.runningController.abort() } catch { /* ignore */ }
     }
     const handle = session.connectionHandle
-    session.connectionHandle = null
-    session.connectionAuth = null
-    session.threadId = null
-    session.threadReady = false
+    tearDownForkRuntime(session, `connection discarded: ${reason}`)
     if (handle) {
       void handle.close().catch((err) => {
         log.warn('[CodexBackend] close connection during %s failed: %s', reason, err instanceof Error ? err.message : String(err))
@@ -802,17 +795,27 @@ export class CodexBackend implements SessionBackend {
         this.emit({ type: 'codex_thread_started', messageId, threadId })
       },
       onItemDelta: (phase, item) => {
-        const live = this.currentMessageId
-        if (!live) return
-        // An item belongs to whichever bubble was active when it first
-        // appeared. Late deltas for a pre-steer item (incl. the turn-end
-        // force-complete) stay on the original bubble instead of leaking
-        // into the steered one.
         let owner = this.itemOwner.get(item.id)
         if (!owner) {
+          const live = this.currentMessageId
+          if (!live) return
           owner = live
           this.itemOwner.set(item.id, owner)
         }
+        if (item.type === 'collab_tool_call' && item.tool === 'spawnAgent') {
+          for (const tid of item.receiverThreadIds) {
+            if (!this.forkOwners.has(tid)) this.forkOwners.set(tid, owner)
+          }
+        }
+        this.recordSegmentItem(owner, item)
+        this.emit({ type: 'codex_item_delta', messageId: owner, phase, item })
+      },
+      emitForkItem: (forkThreadId, phase, item) => {
+        const owner = this.itemOwner.get(item.id)
+          ?? this.forkOwners.get(forkThreadId)
+          ?? this.currentMessageId
+        if (!owner) return
+        this.itemOwner.set(item.id, owner)
         this.recordSegmentItem(owner, item)
         this.emit({ type: 'codex_item_delta', messageId: owner, phase, item })
       },

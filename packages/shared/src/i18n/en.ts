@@ -497,6 +497,39 @@ export type Messages = {
       output: string
       prompt: string
     }
+    codexCollab: {
+      defaultName: string
+      errored: string
+      failed: string
+      openFullView: string
+      backToMain: string
+      forked: string
+      turnCount_one: string
+      turnCount_other: string
+      noItems: string
+      noOutput: string
+      toolLabels: {
+        spawnAgent: string
+        sendInput: string
+        resumeAgent: string
+        wait: string
+        closeAgent: string
+      }
+      turnLabels: {
+        spawnAgent: string
+        sendInput: string
+        resumeAgent: string
+        wait: string
+        closeAgent: string
+      }
+      miniTool: {
+        bash: string
+        edit: string
+        webSearch: string
+        filesFallback_one: string
+        filesFallback_other: string
+      }
+    }
     codexCommands: {
       helpDesc: string
       resetDesc: string
@@ -1589,6 +1622,39 @@ export const en: Messages = {
       done: 'Done',
       output: 'Output',
       prompt: 'Prompt',
+    },
+    codexCollab: {
+      defaultName: 'Subagent',
+      errored: 'Errored',
+      failed: 'Failed',
+      openFullView: 'Open full view',
+      backToMain: 'Back to main',
+      forked: 'forked',
+      turnCount_one: '{{count}} turn',
+      turnCount_other: '{{count}} turns',
+      noItems: 'No items yet in this branch.',
+      noOutput: 'No agent output yet for this turn.',
+      toolLabels: {
+        spawnAgent: 'Task',
+        sendInput: 'Follow-up',
+        resumeAgent: 'Resume',
+        wait: 'Wait',
+        closeAgent: 'Close',
+      },
+      turnLabels: {
+        spawnAgent: 'Initial prompt',
+        sendInput: 'Follow-up',
+        resumeAgent: 'Resume',
+        wait: 'Wait',
+        closeAgent: 'Close',
+      },
+      miniTool: {
+        bash: 'Bash',
+        edit: 'Edit',
+        webSearch: 'Web search',
+        filesFallback_one: '{{count}} file',
+        filesFallback_other: '{{count}} files',
+      },
     },
     codexCommands: {
       helpDesc: 'Show available commands',

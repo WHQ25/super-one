@@ -18,12 +18,15 @@ import {
   type AppServerNotification,
   type CodexProjectAuth,
 } from './app-server-connection'
+import { createNotificationDispatcher, type NotificationInbox } from './codex-notification-dispatcher'
+import { startForkListener, cloneCollab } from './codex-fork-listener'
 import type {
   AppServerUserInputQuestion,
   CodexApprovalDecision,
   CodexSession,
   PendingCodexApprovalResponse,
 } from './codex-session'
+import { tearDownForkRuntime } from './codex-session'
 import type {
   AskUserQuestionRequest,
   CodexCollabAgentState,
@@ -55,6 +58,8 @@ import { SUPERONE_SYSTEM_PROMPT_APPEND } from '../agent/superone-system-prompt'
 const SUPERONE_MCP_TOOL_NAME_PATTERN = /run tool "([a-z0-9_]+)"/i
 const MCP_SUPERONE_TOOL_PREFIX = 'mcp__superone__'
 
+export const CHILD_THREAD_DISALLOWED_SUPERONE_TOOLS = new Set<string>(['session_rename'])
+
 export function extractSuperoneMiniAppToolName(message: string): string | null {
   const match = message.match(SUPERONE_MCP_TOOL_NAME_PATTERN)
   if (!match) return null
@@ -68,6 +73,7 @@ export function extractSuperoneMiniAppToolName(message: string): string | null {
 export interface CodexRunStreamCallbacks {
   onThreadStarted?: (threadId: string) => void
   onItemDelta?: (phase: 'started' | 'updated' | 'completed', item: CodexThreadItem) => void
+  emitForkItem?: (forkThreadId: string, phase: 'started' | 'updated' | 'completed', item: CodexThreadItem) => void
   onUsageDelta?: (usage: CodexUsageInfo) => void
   onPermissionRequest?: (request: PermissionRequest) => void
   onAskUserQuestion?: (request: AskUserQuestionRequest) => void
@@ -136,14 +142,14 @@ function readTextParts(value: unknown): string[] {
     .filter((entry): entry is string => entry !== null && entry.length > 0)
 }
 
-function readItemId(rec: Record<string, unknown>): string | null {
+export function readItemId(rec: Record<string, unknown>): string | null {
   return readString(rec.itemId)
     ?? readString(rec.item_id)
     ?? readString(rec.id)
     ?? readString(asRecord(rec.item)?.id)
 }
 
-function readNotificationThreadId(params: Record<string, unknown>): string | null {
+export function readNotificationThreadId(params: Record<string, unknown>): string | null {
   return readString(params.threadId)
     ?? readString(params.thread_id)
     ?? readString(asRecord(params.thread)?.id)
@@ -199,7 +205,7 @@ function normalizeCollabAgentStatus(value: unknown): CodexCollabAgentStatus | nu
   }
 }
 
-function readDeltaText(rec: Record<string, unknown>): string {
+export function readDeltaText(rec: Record<string, unknown>): string {
   return readString(rec.delta)
     ?? readString(rec.textDelta)
     ?? readString(rec.text_delta)
@@ -588,7 +594,7 @@ function upsertItem(order: string[], map: Map<string, CodexThreadItem>, item: Co
   map.set(item.id, item)
 }
 
-function mapUsageFromTokenUsage(raw: unknown): CodexUsageInfo | null {
+export function mapUsageFromTokenUsage(raw: unknown): CodexUsageInfo | null {
   const rec = asRecord(raw)
   if (!rec) return null
   const parseBreakdown = (value: unknown): { inputTokens: number; cachedInputTokens: number; outputTokens: number; reasoningOutputTokens: number } | null => {
@@ -893,12 +899,101 @@ export function rejectPendingApprovals(session: CodexSession, message: string): 
   session.pendingApprovals.clear()
 }
 
+export async function processServerRequest(
+  notification: AppServerNotification,
+  connection: AppServerConnection,
+  session: CodexSession,
+  callbacks: CodexRunStreamCallbacks | undefined,
+  abortSignal?: AbortSignal,
+): Promise<boolean> {
+  if (notification.requestIdRaw === undefined) return false
+
+  const parsedApprovalRequest = mapApprovalRequest(notification)
+  if (parsedApprovalRequest) {
+    const fallbackResponse: PendingCodexApprovalResponse =
+      parsedApprovalRequest.responseKind === 'user_input'
+        ? buildUserInputApprovalResponse(parsedApprovalRequest.questions, false)
+        : parsedApprovalRequest.responseKind === 'elicitation'
+          ? { action: 'decline', content: null, _meta: null }
+          : { decision: 'decline' }
+
+    const respondToServer = (req: typeof notification.requestIdRaw, resp: PendingCodexApprovalResponse): Promise<void> =>
+      connection.respond(req!, resp as unknown as Record<string, unknown>)
+
+    if (parsedApprovalRequest.responseKind === 'elicitation') {
+      const requestToolName = parsedApprovalRequest.request.toolName
+      if (
+        typeof requestToolName === 'string'
+        && requestToolName.startsWith(MCP_SUPERONE_TOOL_PREFIX)
+        && (isToolPreapproved(requestToolName) || isBuiltInSuperoneTool(requestToolName))
+      ) {
+        const bareName = requestToolName.slice(MCP_SUPERONE_TOOL_PREFIX.length)
+        const callerThreadId = readString(notification.params.threadId)
+          ?? readString(notification.params.thread_id)
+        const isChildThread = callerThreadId !== null
+          && session.threadId !== null
+          && callerThreadId !== session.threadId
+        if (isChildThread && CHILD_THREAD_DISALLOWED_SUPERONE_TOOLS.has(bareName)) {
+          if (process.env.NODE_ENV === 'development') {
+            trace('codex.collab', 'reject_child_thread_tool', {
+              tool: bareName,
+              callerThreadId,
+              mainThreadId: session.threadId,
+            })
+          }
+          await respondToServer(notification.requestIdRaw, { action: 'decline', content: null, _meta: null })
+          return true
+        }
+        await respondToServer(notification.requestIdRaw, { action: 'accept', content: null, _meta: null })
+        return true
+      }
+    }
+
+    if (abortSignal?.aborted) {
+      await respondToServer(notification.requestIdRaw, fallbackResponse)
+      return true
+    }
+    const canHandleRequest = parsedApprovalRequest.responseKind === 'user_input'
+      ? callbacks?.onAskUserQuestion
+      : callbacks?.onPermissionRequest
+    if (!canHandleRequest) {
+      await respondToServer(notification.requestIdRaw, fallbackResponse)
+      return true
+    }
+    try {
+      const responsePromise = new Promise<PendingCodexApprovalResponse>((resolve, reject) => {
+        session.pendingApprovals.set(parsedApprovalRequest.request.requestId, {
+          responseKind: parsedApprovalRequest.responseKind,
+          questions: parsedApprovalRequest.responseKind === 'user_input'
+            ? parsedApprovalRequest.questions
+            : undefined,
+          formFields: parsedApprovalRequest.responseKind === 'elicitation'
+            ? parsedApprovalRequest.formFields
+            : undefined,
+          resolve,
+          reject,
+        })
+      })
+      if (parsedApprovalRequest.responseKind === 'user_input') {
+        callbacks?.onAskUserQuestion?.(parsedApprovalRequest.request)
+      } else {
+        callbacks?.onPermissionRequest?.(parsedApprovalRequest.request)
+      }
+      const response = await responsePromise
+      await respondToServer(notification.requestIdRaw, response)
+      return true
+    } finally {
+      session.pendingApprovals.delete(parsedApprovalRequest.request.requestId)
+    }
+  }
+
+  await connection.respond(notification.requestIdRaw, {})
+  return true
+}
+
 export async function closeSessionConnection(session: CodexSession): Promise<void> {
   const handle = session.connectionHandle
-  session.connectionHandle = null
-  session.connectionAuth = null
-  session.threadId = null
-  session.threadReady = false
+  tearDownForkRuntime(session, 'connection closed')
   if (handle) {
     try { await handle.close() } catch (err) {
       log.warn('[codex] close connection error:', err instanceof Error ? err.message : String(err))
@@ -924,15 +1019,23 @@ export async function withSessionConnection<T>(
     const handle = await createAppServerConnection(auth, signal, undefined, undefined, session.apiProviderId)
     handle.onClosed((info) => {
       if (session.connectionHandle === handle) {
+        const dispatcher = session.notificationDispatcher
         session.connectionHandle = null
         session.connectionAuth = null
         session.threadId = null
         session.threadReady = false
+        session.notificationDispatcher = null
+        if (dispatcher) {
+          try { dispatcher.close('app-server exited') } catch {}
+        }
         log.info('[codex] app-server exited code=%s signal=%s', info.code, info.signal)
       }
     })
     session.connectionHandle = handle
     session.connectionAuth = { mode: auth.mode, apiKey: auth.apiKey }
+    session.notificationDispatcher = createNotificationDispatcher(handle.connection)
+  } else if (!session.notificationDispatcher) {
+    session.notificationDispatcher = createNotificationDispatcher(session.connectionHandle.connection)
   }
 
   const handle = session.connectionHandle
@@ -1199,6 +1302,8 @@ export async function streamTurnEvents(
 
   if (session.threadId) emitThreadStarted(session.threadId)
 
+  if (callbacks) session.forkCallbacks = callbacks
+
   const itemOrder: string[] = []
   const itemMap = new Map<string, CodexThreadItem>()
   let usage: CodexUsageInfo | null = null
@@ -1287,27 +1392,74 @@ export async function streamTurnEvents(
     subscribedChildThreads.add(threadId)
     childThreadToCollabId.set(threadId, collabId)
     childItemMaps.set(threadId, { order: [], map: new Map() })
-    try {
-      await connection.request('thread/resume', { threadId, persistExtendedHistory: false })
+    const [resumeResult, readResult] = await Promise.allSettled([
+      connection.request('thread/resume', { threadId, persistExtendedHistory: false }),
+      connection.request('thread/read', { threadId, includeTurns: false }),
+    ])
+    if (resumeResult.status === 'fulfilled') {
       log.info('[codex] Subscribed to child thread %s for collab %s', threadId, collabId)
-    } catch (err) {
-      log.info('[codex] thread/resume skipped for child %s (events still tracked): %s', threadId, err)
+    } else {
+      log.info('[codex] thread/resume skipped for child %s (events still tracked): %s', threadId, resumeResult.reason)
     }
-    try {
-      const readRes = asRecord(await connection.request('thread/read', { threadId, includeTurns: false }))
+    let forkedFromIdValue: string | null = null
+    if (readResult.status === 'fulfilled') {
+      const readRes = asRecord(readResult.value)
       const thread = asRecord(readRes?.thread)
       const nickname = readString(thread?.agentNickname ?? thread?.agent_nickname)
       const role = readString(thread?.agentRole ?? thread?.agent_role)
       const forkedFromId = readString(thread?.forkedFromId ?? thread?.forked_from_id)
+      forkedFromIdValue = forkedFromId
       if (process.env.NODE_ENV === 'development') {
         trace('codex.collab', 'read_child', { threadId, collabId, nickname, role, forkedFromId }, collabId)
       }
       applyAgentMeta(collabId, threadId, nickname, role, forkedFromId)
-    } catch (err) {
-      log.info('[codex] thread/read failed for child %s: %s', threadId, err)
+    } else {
+      log.info('[codex] thread/read failed for child %s: %s', threadId, readResult.reason)
     }
     if (process.env.NODE_ENV === 'development') {
       trace('codex.collab', 'subscribe_child', { threadId, collabId }, collabId)
+    }
+    if (forkedFromIdValue && session.notificationDispatcher && !session.forkListeners.has(threadId)) {
+      promoteChildThreadToForkListener(threadId, collabId)
+    }
+  }
+
+  const promoteChildThreadToForkListener = (threadId: string, collabId: string): void => {
+    const dispatcher = session.notificationDispatcher
+    if (!dispatcher) return
+    if (session.forkListeners.has(threadId)) return
+    const collab = itemMap.get(collabId)
+    if (!collab || collab.type !== 'collab_tool_call') return
+    const snapshotCollab = cloneCollab(collab)
+    snapshotCollab.childItems = {
+      ...(snapshotCollab.childItems ?? {}),
+      [threadId]: getChildItems(threadId),
+    }
+    subscribedChildThreads.delete(threadId)
+    childThreadToCollabId.delete(threadId)
+    childItemMaps.delete(threadId)
+    const inbox = dispatcher.registerForkInbox(threadId)
+    const persistentCallbacks = session.forkCallbacks ?? callbacks
+    if (!persistentCallbacks) {
+      log.warn('[codex] fork listener skipped: no callbacks for thread=%s collab=%s', threadId, collabId)
+      dispatcher.unregisterForkInbox(threadId)
+      return
+    }
+    const handle = startForkListener({
+      forkThreadId: threadId,
+      collab: snapshotCollab,
+      inbox,
+      connection,
+      session,
+      callbacks: persistentCallbacks,
+      onClose: () => {
+        dispatcher.unregisterForkInbox(threadId)
+        session.forkListeners.delete(threadId)
+      },
+    })
+    session.forkListeners.set(threadId, handle)
+    if (process.env.NODE_ENV === 'development') {
+      trace('codex.fork', 'started', { collabId, forkThreadId: threadId, nickname: snapshotCollab.agentsStates[threadId]?.nickname }, collabId)
     }
   }
 
@@ -1325,74 +1477,8 @@ export async function streamTurnEvents(
     childThreadToCollabId.delete(threadId)
   }
 
-  const handleServerRequest = async (notification: AppServerNotification): Promise<boolean> => {
-    if (notification.requestIdRaw === undefined) return false
-
-    const parsedApprovalRequest = mapApprovalRequest(notification)
-    if (parsedApprovalRequest) {
-      const fallbackResponse: PendingCodexApprovalResponse =
-        parsedApprovalRequest.responseKind === 'user_input'
-          ? buildUserInputApprovalResponse(parsedApprovalRequest.questions, false)
-          : parsedApprovalRequest.responseKind === 'elicitation'
-            ? { action: 'decline', content: null, _meta: null }
-            : { decision: 'decline' }
-
-      const respondToServer = (req: typeof notification.requestIdRaw, resp: PendingCodexApprovalResponse): Promise<void> =>
-        connection.respond(req!, resp as unknown as Record<string, unknown>)
-
-      if (parsedApprovalRequest.responseKind === 'elicitation') {
-        const requestToolName = parsedApprovalRequest.request.toolName
-        if (
-          typeof requestToolName === 'string'
-          && requestToolName.startsWith(MCP_SUPERONE_TOOL_PREFIX)
-          && (isToolPreapproved(requestToolName) || isBuiltInSuperoneTool(requestToolName))
-        ) {
-          await respondToServer(notification.requestIdRaw, { action: 'accept', content: null, _meta: null })
-          return true
-        }
-      }
-
-      if (controller.signal.aborted) {
-        await respondToServer(notification.requestIdRaw, fallbackResponse)
-        return true
-      }
-      const canHandleRequest = parsedApprovalRequest.responseKind === 'user_input'
-        ? callbacks?.onAskUserQuestion
-        : callbacks?.onPermissionRequest
-      if (!canHandleRequest) {
-        await respondToServer(notification.requestIdRaw, fallbackResponse)
-        return true
-      }
-      try {
-        const responsePromise = new Promise<PendingCodexApprovalResponse>((resolve, reject) => {
-          session.pendingApprovals.set(parsedApprovalRequest.request.requestId, {
-            responseKind: parsedApprovalRequest.responseKind,
-            questions: parsedApprovalRequest.responseKind === 'user_input'
-              ? parsedApprovalRequest.questions
-              : undefined,
-            formFields: parsedApprovalRequest.responseKind === 'elicitation'
-              ? parsedApprovalRequest.formFields
-              : undefined,
-            resolve,
-            reject,
-          })
-        })
-        if (parsedApprovalRequest.responseKind === 'user_input') {
-          callbacks?.onAskUserQuestion?.(parsedApprovalRequest.request)
-        } else {
-          callbacks?.onPermissionRequest?.(parsedApprovalRequest.request)
-        }
-        const response = await responsePromise
-        await respondToServer(notification.requestIdRaw, response)
-        return true
-      } finally {
-        session.pendingApprovals.delete(parsedApprovalRequest.request.requestId)
-      }
-    }
-
-    await connection.respond(notification.requestIdRaw, {})
-    return true
-  }
+  const handleServerRequest = (notification: AppServerNotification): Promise<boolean> =>
+    processServerRequest(notification, connection, session, callbacks, controller.signal)
 
   const isRelevantEvent = (params: Record<string, unknown>): boolean => {
     const notifThreadId = readNotificationThreadId(params)
@@ -1402,8 +1488,13 @@ export async function streamTurnEvents(
     return !turnId || turnId === activeTurnId
   }
 
+  const mainInbox: NotificationInbox | null = session.notificationDispatcher?.mainInbox ?? null
+  const nextNotification = mainInbox
+    ? () => mainInbox.next()
+    : () => connection.nextNotification()
+
   while (!turnCompleted) {
-    const notification = await connection.nextNotification()
+    const notification = await nextNotification()
     const { method, params } = notification
     if (process.env.NODE_ENV === 'development') {
       trace('codex.raw', method, {
@@ -1540,9 +1631,12 @@ export async function streamTurnEvents(
           const collab = itemMap.get(collabId)
           if (!collab || collab.type !== 'collab_tool_call') break
           const prev = collab.agentsStates[notifThreadId] ?? { status: 'pendingInit' as CodexCollabAgentStatus }
+          const nextInput = Math.max(0, usage.totalInputTokens - usage.totalCachedInputTokens)
+          const nextOutput = usage.totalOutputTokens
+          if (prev.tokens?.input === nextInput && prev.tokens?.output === nextOutput) break
           collab.agentsStates[notifThreadId] = {
             ...prev,
-            tokens: { input: usage.totalInputTokens, output: usage.totalOutputTokens },
+            tokens: { input: nextInput, output: nextOutput },
           }
           upsertItem(itemOrder, itemMap, collab)
           callbacks?.onItemDelta?.('updated', collab)
@@ -1596,9 +1690,20 @@ export async function streamTurnEvents(
               await subscribeChildThread(tid, mapped.id)
             }
           }
+          if (method === 'item/completed' && (mapped.tool === 'sendInput' || mapped.tool === 'wait' || mapped.tool === 'resumeAgent')) {
+            for (const tid of mapped.receiverThreadIds) {
+              const forkHandle = session.forkListeners.get(tid)
+              if (forkHandle && mapped.tool === 'sendInput') forkHandle.attachCollab(mapped)
+            }
+          }
           if (method === 'item/completed' && mapped.tool === 'closeAgent' && mapped.status === 'completed') {
             for (const tid of mapped.receiverThreadIds) {
               await unsubscribeChildThread(tid)
+              const forkHandle = session.forkListeners.get(tid)
+              if (forkHandle) {
+                forkHandle.stop('close_agent')
+                session.forkListeners.delete(tid)
+              }
             }
           }
         }

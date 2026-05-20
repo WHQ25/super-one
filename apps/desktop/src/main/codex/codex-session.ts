@@ -9,6 +9,9 @@ import {
   DEFAULT_CODEX_PERMISSION_PROFILE,
 } from '@superone/shared/agent-types'
 import type { AppServerConnectionHandle, CodexProjectAuth } from './app-server-connection'
+import type { NotificationDispatcher } from './codex-notification-dispatcher'
+import type { ForkListenerHandle } from './codex-fork-listener'
+import type { CodexRunStreamCallbacks } from './codex-turn'
 
 export interface AppServerUserInputQuestion {
   id: string
@@ -59,6 +62,9 @@ export interface CodexSession {
   connectionHandle: AppServerConnectionHandle | null
   connectionAuth: CodexProjectAuth | null
   apiProviderId: string | null
+  notificationDispatcher: NotificationDispatcher | null
+  forkListeners: Map<string, ForkListenerHandle>
+  forkCallbacks: CodexRunStreamCallbacks | null
 }
 
 function resolvePermissionPreset(preset?: CodexPermissionPreset): CodexPermissionPreset {
@@ -93,6 +99,28 @@ export function createCodexSession(
     connectionHandle: null,
     connectionAuth: null,
     apiProviderId: apiProviderId ?? null,
+    notificationDispatcher: null,
+    forkListeners: new Map(),
+    forkCallbacks: null,
+  }
+}
+
+export function tearDownForkRuntime(session: CodexSession, reason: string): void {
+  const dispatcher = session.notificationDispatcher
+  const forkListeners = Array.from(session.forkListeners.values())
+  session.forkListeners.clear()
+  session.forkCallbacks = null
+  session.connectionHandle = null
+  session.connectionAuth = null
+  session.threadId = null
+  session.threadReady = false
+  session.effectiveCwd = null
+  session.notificationDispatcher = null
+  for (const listener of forkListeners) {
+    try { listener.stop(reason) } catch { /* ignore */ }
+  }
+  if (dispatcher) {
+    try { dispatcher.close(reason) } catch { /* ignore */ }
   }
 }
 

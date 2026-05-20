@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest'
 
 vi.mock('../logger', () => ({
   default: {
@@ -69,15 +69,28 @@ function makeFakeHandle() {
 }
 
 describe('Codex session connection reuse', () => {
+  const activeSessions: Parameters<typeof closeSessionConnection>[0][] = []
+  const trackSession = <T extends Parameters<typeof closeSessionConnection>[0]>(s: T): T => {
+    activeSessions.push(s)
+    return s
+  }
+
   beforeEach(() => {
     createHandleMock.mockReset()
+  })
+
+  afterEach(async () => {
+    while (activeSessions.length > 0) {
+      const s = activeSessions.pop()
+      if (s) await closeSessionConnection(s).catch(() => {})
+    }
   })
 
   it('creates the app-server process once across multiple sequential runs on the same session', async () => {
     const handle = makeFakeHandle()
     createHandleMock.mockResolvedValue(handle)
 
-    const session = createCodexSession('/project', 'gpt-5.4', undefined, undefined, 'default')
+    const session = trackSession(createCodexSession('/project', 'gpt-5.4', undefined, undefined, 'default'))
     const auth = { mode: 'auto' as const }
 
     await runCodexTurn(session, auth, '/project', { prompt: 'first', model: 'gpt-5.4', permissionPreset: 'default' })
@@ -95,7 +108,7 @@ describe('Codex session connection reuse', () => {
     const handleB = makeFakeHandle()
     createHandleMock.mockResolvedValueOnce(handleA).mockResolvedValueOnce(handleB)
 
-    const session = createCodexSession('/project', 'gpt-5.4', undefined, undefined, 'default')
+    const session = trackSession(createCodexSession('/project', 'gpt-5.4', undefined, undefined, 'default'))
     const auth = { mode: 'auto' as const }
 
     await runCodexTurn(session, auth, '/project', { prompt: 'first', model: 'gpt-5.4', permissionPreset: 'default' })
@@ -112,7 +125,7 @@ describe('Codex session connection reuse', () => {
     createHandleMock.mockResolvedValue(handle)
 
     const service = new CodexExperimentService()
-    const session = createCodexSession('/project', 'gpt-5.4', undefined, undefined, 'default')
+    const session = trackSession(createCodexSession('/project', 'gpt-5.4', undefined, undefined, 'default'))
 
     const unsub = service.onAuthChanged('/project', () => {
       void closeSessionConnection(session)
@@ -134,7 +147,7 @@ describe('Codex session connection reuse', () => {
     const handleB = makeFakeHandle()
     createHandleMock.mockResolvedValueOnce(handleA).mockResolvedValueOnce(handleB)
 
-    const session = createCodexSession('/project', 'gpt-5.4', undefined, undefined, 'default')
+    const session = trackSession(createCodexSession('/project', 'gpt-5.4', undefined, undefined, 'default'))
     const auth = { mode: 'auto' as const }
     await runCodexTurn(session, auth, '/project', { prompt: 'first', model: 'gpt-5.4', permissionPreset: 'default' })
     handleA.__fireExit({ code: 1, signal: null, stderr: 'boom' })

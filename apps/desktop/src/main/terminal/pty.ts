@@ -27,15 +27,49 @@ function defaultShell(): string {
   return process.env.SHELL || '/bin/bash'
 }
 
+const DEFAULT_REGION_BY_LANG: Record<string, string> = {
+  zh: 'CN',
+  ja: 'JP',
+  ko: 'KR',
+  en: 'US',
+  fr: 'FR',
+  de: 'DE',
+  es: 'ES',
+  pt: 'BR',
+  ru: 'RU',
+  it: 'IT',
+}
+
+function getSystemUtf8Locale(): string {
+  let bcp47 = ''
+  try {
+    const electron = nodeRequire('electron') as typeof import('electron')
+    bcp47 = electron.app?.getLocale?.() ?? ''
+  } catch {
+    /* non-electron runtime (vitest) — keep bcp47 empty */
+  }
+  if (!bcp47) return 'en_US.UTF-8'
+  const [langRaw, regionRaw] = bcp47.split(/[-_]/)
+  const lang = langRaw.toLowerCase()
+  const region = (regionRaw ?? DEFAULT_REGION_BY_LANG[lang] ?? lang.toUpperCase()).toUpperCase()
+  return `${lang}_${region}.UTF-8`
+}
+
 export const nodePtySpawner: PtySpawner = {
   spawn(opts: PtySpawnOptions): PtyLike {
     const { spawn } = nodeRequire('node-pty') as typeof import('node-pty')
+    const baseEnv: Record<string, string> = { ...process.env, ...opts.env } as Record<string, string>
+    const env: Record<string, string> = { ...baseEnv, TERM: 'xterm-256color' }
+    if (process.platform !== 'win32') {
+      if (!env.LANG && !env.LC_ALL) env.LANG = getSystemUtf8Locale()
+      if (!env.LC_CTYPE) env.LC_CTYPE = 'UTF-8'
+    }
     const proc = spawn(opts.shell || defaultShell(), [], {
       name: 'xterm-256color',
       cols: opts.cols,
       rows: opts.rows,
       cwd: opts.cwd,
-      env: { ...process.env, ...opts.env, TERM: 'xterm-256color' } as Record<string, string>,
+      env,
     })
     return {
       write: (data) => proc.write(data),

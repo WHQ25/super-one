@@ -156,6 +156,12 @@ export class CodexBackend implements SessionBackend {
   private eventListeners = new Set<(e: AgentEvent) => void>()
   private providerSessionIdListeners = new Set<(id: string) => void>()
 
+  private _lastActiveAt: number | null = null
+  private _idleTimer: ReturnType<typeof setInterval> | null = null
+
+  static IDLE_TIMEOUT_MS = 60_000
+  static IDLE_CHECK_INTERVAL_MS = 30_000
+
   constructor(service?: CodexServiceDeps) {
     const resolved = service ?? (codexServiceFactory ? codexServiceFactory() : null)
     if (!resolved) {
@@ -185,6 +191,40 @@ export class CodexBackend implements SessionBackend {
       this.handleAuthChanged()
     })
     this.started = true
+    this._lastActiveAt = Date.now()
+    this.startIdleTimer()
+  }
+
+  isRuntimeIdle(timeoutMs: number): boolean {
+    if (!this.started || this.disposed) return false
+    const session = this.session
+    if (!session) return false
+    if (!session.connectionHandle) return false
+    if (session.runningController) return false
+    if (this.activeRun) return false
+    if (this._lastActiveAt == null) return false
+    if (Date.now() - this._lastActiveAt < timeoutMs) return false
+    return true
+  }
+
+  private startIdleTimer(): void {
+    this.stopIdleTimer()
+    this._idleTimer = setInterval(() => {
+      if (this.isRuntimeIdle(CodexBackend.IDLE_TIMEOUT_MS)) {
+        const released = this.releaseIdleConnectionToProjectPool()
+        if (released) {
+          this._lastActiveAt = null
+          trace('backend.lifecycle', 'runtime_released', { reason: 'idle', backend: 'codex' })
+        }
+      }
+    }, CodexBackend.IDLE_CHECK_INTERVAL_MS)
+  }
+
+  private stopIdleTimer(): void {
+    if (this._idleTimer) {
+      clearInterval(this._idleTimer)
+      this._idleTimer = null
+    }
   }
 
   prewarm(opts: BackendStartOptions): void {
@@ -400,6 +440,7 @@ export class CodexBackend implements SessionBackend {
 
   async send(request: SendMessageRequest): Promise<void> {
     this.assertStarted()
+    this._lastActiveAt = Date.now()
     const startOpts = this.startOpts
     if (!startOpts) throw new Error('CodexBackend missing startOpts')
 
@@ -563,6 +604,7 @@ export class CodexBackend implements SessionBackend {
 
   async interrupt(): Promise<void> {
     if (!this.started) return
+    this._lastActiveAt = Date.now()
     const session = this.session
     if (!session) return
     try {
@@ -574,6 +616,8 @@ export class CodexBackend implements SessionBackend {
 
   async close(): Promise<void> {
     if (this.disposed) return
+    this.stopIdleTimer()
+    this._lastActiveAt = null
     const session = this.session
     try {
       if (session && !this.releaseIdleConnectionToProjectPool()) resetCodexSession(session)
@@ -735,6 +779,7 @@ export class CodexBackend implements SessionBackend {
   }
 
   private emit(event: AgentEvent): void {
+    this._lastActiveAt = Date.now()
     for (const cb of this.eventListeners) {
       try { cb(event) } catch (err) { log.warn('[CodexBackend] event listener error:', err) }
     }

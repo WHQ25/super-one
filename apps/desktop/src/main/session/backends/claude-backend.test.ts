@@ -488,4 +488,166 @@ describe('ClaudeBackend', () => {
       expect(permissionHoisted.rejectAllPendingMock).toHaveBeenCalledWith(expect.any(Map), expect.any(Map), expect.any(Map), 'backend.rebuild')
     })
   })
+
+  describe('idle dispose', () => {
+    it('isRuntimeIdle returns false when backend not started', () => {
+      const backend = new ClaudeBackend()
+      expect(backend.isRuntimeIdle(60_000)).toBe(false)
+    })
+
+    it('isRuntimeIdle returns true after start when timeoutMs=0 with no pending state', async () => {
+      const backend = new ClaudeBackend()
+      await backend.start(makeStartOpts())
+      expect(backend.isRuntimeIdle(0)).toBe(true)
+    })
+
+    it('isRuntimeIdle returns false within timeout window even with no activity', async () => {
+      const backend = new ClaudeBackend()
+      await backend.start(makeStartOpts())
+      expect(backend.isRuntimeIdle(60_000)).toBe(false)
+    })
+
+    it('isRuntimeIdle returns false while a turn is in-flight', async () => {
+      const backend = new ClaudeBackend()
+      await backend.start(makeStartOpts())
+      void backend.send({ content: 'hi' })
+      await new Promise((r) => setTimeout(r, 0))
+      expect(backend.isRuntimeIdle(0)).toBe(false)
+    })
+
+    it('send() lazy-revives runtime after idle release', async () => {
+      const backend = new ClaudeBackend()
+      await backend.start(makeStartOpts())
+      expect(hoisted.captured.createSessionQueryMock).toHaveBeenCalledTimes(1)
+
+      hoisted.captured.iterationDone?.resolve()
+      await (backend as unknown as { releaseRuntime: (r: 'idle') => Promise<void> }).releaseRuntime('idle')
+
+      expect(backend.isRuntimeIdle(0)).toBe(false)
+
+      void backend.send({ content: 'hi again' })
+      await new Promise((r) => setTimeout(r, 0))
+
+      expect(hoisted.captured.createSessionQueryMock).toHaveBeenCalledTimes(2)
+    })
+
+    it('releaseRuntime preserves providerSessionId for resume', async () => {
+      const backend = new ClaudeBackend()
+      await backend.start(makeStartOpts())
+      hoisted.captured.onSessionId?.('sdk-sid-resume')
+      expect(backend.getCurrentProviderSessionId()).toBe('sdk-sid-resume')
+
+      hoisted.captured.iterationDone?.resolve()
+      await (backend as unknown as { releaseRuntime: (r: 'idle') => Promise<void> }).releaseRuntime('idle')
+
+      expect(backend.getCurrentProviderSessionId()).toBe('sdk-sid-resume')
+
+      void backend.send({ content: 'after release' })
+      await new Promise((r) => setTimeout(r, 0))
+
+      const [, opts] = hoisted.captured.createSessionQueryMock.mock.calls[1]!
+      expect((opts as { resume?: string }).resume).toBe('sdk-sid-resume')
+    })
+
+    it('isRuntimeIdle returns false when pendingPermissions has entries', async () => {
+      const backend = new ClaudeBackend()
+      await backend.start(makeStartOpts())
+      const pp = (backend as unknown as { pendingPermissions: Map<string, unknown> }).pendingPermissions
+      pp.set('req-1', {})
+      expect(backend.isRuntimeIdle(0)).toBe(false)
+    })
+
+    it('isRuntimeIdle returns false when pendingQuestions has entries', async () => {
+      const backend = new ClaudeBackend()
+      await backend.start(makeStartOpts())
+      const pq = (backend as unknown as { pendingQuestions: Map<string, unknown> }).pendingQuestions
+      pq.set('q-1', {})
+      expect(backend.isRuntimeIdle(0)).toBe(false)
+    })
+
+    it('isRuntimeIdle returns false when pendingPlanApprovals has entries', async () => {
+      const backend = new ClaudeBackend()
+      await backend.start(makeStartOpts())
+      const pa = (backend as unknown as { pendingPlanApprovals: Map<string, unknown> }).pendingPlanApprovals
+      pa.set('plan-1', {})
+      expect(backend.isRuntimeIdle(0)).toBe(false)
+    })
+
+    it('isRuntimeIdle returns false when pendingQueued is non-empty', async () => {
+      const backend = new ClaudeBackend()
+      await backend.start(makeStartOpts())
+      const pq = (backend as unknown as { pendingQueued: Array<unknown> }).pendingQueued
+      pq.push({ msg: {}, clientMessageId: 'cmid-1' })
+      expect(backend.isRuntimeIdle(0)).toBe(false)
+    })
+
+    it('releaseRuntime tags rejectAllPending with backend.idle', async () => {
+      const backend = new ClaudeBackend()
+      await backend.start(makeStartOpts())
+      hoisted.captured.iterationDone?.resolve()
+      permissionHoisted.rejectAllPendingMock.mockClear()
+
+      await (backend as unknown as { releaseRuntime: (r: 'idle') => Promise<void> }).releaseRuntime('idle')
+
+      expect(permissionHoisted.rejectAllPendingMock).toHaveBeenCalledWith(
+        expect.any(Map), expect.any(Map), expect.any(Map), 'backend.idle',
+      )
+    })
+  })
+
+  describe('idle timer (fake timers)', () => {
+    it('timer fires releaseRuntime after IDLE_TIMEOUT_MS + IDLE_CHECK_INTERVAL_MS elapse', async () => {
+      vi.useFakeTimers()
+      try {
+        const backend = new ClaudeBackend()
+        await backend.start(makeStartOpts())
+        expect((backend as unknown as { bridge: unknown }).bridge).not.toBeNull()
+
+        hoisted.captured.iterationDone?.resolve()
+
+        await vi.advanceTimersByTimeAsync(ClaudeBackend.IDLE_TIMEOUT_MS + ClaudeBackend.IDLE_CHECK_INTERVAL_MS + 100)
+
+        expect((backend as unknown as { bridge: unknown }).bridge).toBeNull()
+        expect((backend as unknown as { query: unknown }).query).toBeNull()
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('timer does not release while a turn is in-flight (turnResolves guard)', async () => {
+      vi.useFakeTimers()
+      try {
+        const backend = new ClaudeBackend()
+        await backend.start(makeStartOpts())
+
+        void backend.send({ content: 'hi' })
+        await Promise.resolve()
+
+        await vi.advanceTimersByTimeAsync(ClaudeBackend.IDLE_TIMEOUT_MS + ClaudeBackend.IDLE_CHECK_INTERVAL_MS + 100)
+
+        expect((backend as unknown as { bridge: unknown }).bridge).not.toBeNull()
+        expect((backend as unknown as { query: unknown }).query).not.toBeNull()
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('close() stops the idle timer so it no longer fires', async () => {
+      vi.useFakeTimers()
+      try {
+        const backend = new ClaudeBackend()
+        await backend.start(makeStartOpts())
+        hoisted.captured.iterationDone?.resolve()
+
+        await backend.close()
+        hoisted.captured.createSessionQueryMock.mockClear()
+
+        await vi.advanceTimersByTimeAsync(ClaudeBackend.IDLE_TIMEOUT_MS * 5)
+
+        expect(hoisted.captured.createSessionQueryMock).not.toHaveBeenCalled()
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+  })
 })

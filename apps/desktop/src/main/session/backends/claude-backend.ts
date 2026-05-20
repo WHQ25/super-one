@@ -64,6 +64,13 @@ export class ClaudeBackend implements SessionBackend {
 
   private warmupManager = new WarmupManager()
 
+  private _lastActiveAt: number | null = null
+  private _lastStartOpts: BackendStartOptions | null = null
+  private _idleTimer: ReturnType<typeof setInterval> | null = null
+
+  static IDLE_TIMEOUT_MS = 60_000
+  static IDLE_CHECK_INTERVAL_MS = 30_000
+
   private ensurePermissionHandles(): { canUseTool: CanUseTool; trackPlanFile: (filePath: string) => void } {
     if (!this.canUseToolHandle || !this.trackPlanFileHandle) {
       const handles = createCanUseTool(
@@ -117,6 +124,7 @@ export class ClaudeBackend implements SessionBackend {
 
   async start(opts: BackendStartOptions): Promise<void> {
     if (this.bridge) throw new Error('ClaudeBackend already started')
+    this._lastStartOpts = opts
     this.bridge = new MessageBridge()
     this.bridge.onConsumed = (tag) => {
       this.emit({ type: 'queued_message_consumed', clientMessageId: tag })
@@ -157,10 +165,32 @@ export class ClaudeBackend implements SessionBackend {
 
     this.query = handle.query
     this.iterationDone = handle.iterationDone
+    this._lastActiveAt = Date.now()
+    this.startIdleTimer()
+  }
+
+  private startIdleTimer(): void {
+    this.stopIdleTimer()
+    this._idleTimer = setInterval(() => {
+      if (this.isRuntimeIdle(ClaudeBackend.IDLE_TIMEOUT_MS)) {
+        void this.releaseRuntime('idle').catch((err) => {
+          log.debug('[ClaudeBackend] idle release error:', err)
+        })
+      }
+    }, ClaudeBackend.IDLE_CHECK_INTERVAL_MS)
+  }
+
+  private stopIdleTimer(): void {
+    if (this._idleTimer) {
+      clearInterval(this._idleTimer)
+      this._idleTimer = null
+    }
   }
 
   async send(request: SendMessageRequest): Promise<void> {
+    await this.ensureRuntime()
     if (!this.bridge || !this.query) throw new Error('ClaudeBackend not started')
+    this._lastActiveAt = Date.now()
 
     const isQueued = request.priority === 'next'
     if (isQueued) {
@@ -223,6 +253,7 @@ export class ClaudeBackend implements SessionBackend {
 
   async interrupt(): Promise<void> {
     this.interrupted = true
+    this._lastActiveAt = Date.now()
     this.pendingQueued = []
     rejectAllPending(this.pendingPermissions, this.pendingQuestions, this.pendingPlanApprovals, 'backend.interrupt')
     if (this.query) {
@@ -233,22 +264,40 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   async close(): Promise<void> {
-    for (const resolve of this.turnResolves.values()) resolve()
-    this.turnResolves.clear()
-    this.pendingQueued = []
-    rejectAllPending(this.pendingPermissions, this.pendingQuestions, this.pendingPlanApprovals, 'backend.close')
-    if (this.query) {
-      try { this.query.close() } catch { /* ignore */ }
-    }
-    if (this.bridge) this.bridge.close()
-    if (this.iterationDone) await this.iterationDone.catch(() => {})
-    this.bridge = null
-    this.query = null
-    this.iterationDone = null
+    await this.releaseRuntime('close')
     this.eventListeners.clear()
     this.providerSessionIdListeners.clear()
     this.permissionModeAppliedListeners.clear()
     this.warmupManager.dispose()
+  }
+
+  private async releaseRuntime(reason: 'idle' | 'rebuild' | 'close'): Promise<void> {
+    if (!this.bridge && !this.query) return
+    const bridge = this.bridge
+    const query = this.query
+    const iterationDone = this.iterationDone
+    this.bridge = null
+    this.query = null
+    this.iterationDone = null
+    this._lastActiveAt = null
+    this.stopIdleTimer()
+    for (const resolve of this.turnResolves.values()) resolve()
+    this.turnResolves.clear()
+    this.pendingQueued = []
+    rejectAllPending(this.pendingPermissions, this.pendingQuestions, this.pendingPlanApprovals, `backend.${reason}`)
+    if (query) {
+      try { query.close() } catch { /* ignore */ }
+    }
+    if (bridge) bridge.close()
+    if (iterationDone) await iterationDone.catch(() => {})
+    trace('backend.lifecycle', 'runtime_released', { reason })
+  }
+
+  private async ensureRuntime(): Promise<void> {
+    if (this.bridge && this.query) return
+    if (!this._lastStartOpts) throw new Error('ClaudeBackend not started')
+    const resumeId = this.providerSessionId ?? undefined
+    await this.start({ ...this._lastStartOpts, providerSessionId: resumeId })
   }
 
   prewarm(opts: BackendStartOptions): void {
@@ -265,18 +314,7 @@ export class ClaudeBackend implements SessionBackend {
       return
     }
     const resumeId = this.providerSessionId ?? undefined
-    for (const resolve of this.turnResolves.values()) resolve()
-    this.turnResolves.clear()
-    this.pendingQueued = []
-    rejectAllPending(this.pendingPermissions, this.pendingQuestions, this.pendingPlanApprovals, 'backend.rebuild')
-    if (this.query) {
-      try { this.query.close() } catch { /* ignore */ }
-    }
-    this.bridge.close()
-    if (this.iterationDone) await this.iterationDone.catch(() => {})
-    this.bridge = null
-    this.query = null
-    this.iterationDone = null
+    await this.releaseRuntime('rebuild')
     await this.start({ ...opts, providerSessionId: resumeId })
   }
 
@@ -433,7 +471,20 @@ export class ClaudeBackend implements SessionBackend {
     return this.providerSessionId
   }
 
+  isRuntimeIdle(timeoutMs: number): boolean {
+    if (!this.bridge || !this.query) return false
+    if (this._lastActiveAt == null) return false
+    if (Date.now() - this._lastActiveAt < timeoutMs) return false
+    if (this.pendingPermissions.size > 0) return false
+    if (this.pendingQuestions.size > 0) return false
+    if (this.pendingPlanApprovals.size > 0) return false
+    if (this.turnResolves.size > 0) return false
+    if (this.pendingQueued.length > 0) return false
+    return true
+  }
+
   private emit(event: AgentEvent): void {
+    this._lastActiveAt = Date.now()
     if (event.type === 'permission_request') {
       log.info('[ClaudeBackend.emit] permission_request listeners=%d requestId=%s', this.eventListeners.size, event.request.requestId)
     }

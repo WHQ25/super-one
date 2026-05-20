@@ -762,3 +762,116 @@ describe('CodexBackend event listeners', () => {
     expect(events).toHaveLength(0)
   })
 })
+
+describe('CodexBackend idle dispose', () => {
+  let service: ReturnType<typeof makeFakeService>
+  let backend: CodexBackend
+  let releaseAppServerSpy: ReturnType<typeof vi.fn>
+
+  beforeEach(() => {
+    service = makeFakeService()
+    releaseAppServerSpy = vi.fn()
+    service.releaseAppServerConnection = releaseAppServerSpy
+    backend = new CodexBackend(service)
+  })
+
+  function makeFakeHandle() {
+    return {
+      connection: {},
+      close: vi.fn(async () => {}),
+      getStderr: () => '',
+      onClosed: vi.fn(() => () => {}),
+    }
+  }
+
+  function getSession(): { connectionHandle: unknown; connectionAuth: unknown; runningController: AbortController | null } {
+    return (backend as unknown as { session: { connectionHandle: unknown; connectionAuth: unknown; runningController: AbortController | null } }).session
+  }
+
+  it('isRuntimeIdle returns false when not started', () => {
+    expect(backend.isRuntimeIdle(60_000)).toBe(false)
+  })
+
+  it('isRuntimeIdle returns false when session has no connection handle', async () => {
+    await backend.start(makeStartOpts())
+    expect(backend.isRuntimeIdle(0)).toBe(false)
+  })
+
+  it('isRuntimeIdle returns true when connection alive, no in-flight, and timeout elapsed', async () => {
+    await backend.start(makeStartOpts())
+    const session = getSession()
+    session.connectionHandle = makeFakeHandle()
+    session.connectionAuth = { mode: 'auto' }
+    expect(backend.isRuntimeIdle(0)).toBe(true)
+  })
+
+  it('isRuntimeIdle returns false within timeout window', async () => {
+    await backend.start(makeStartOpts())
+    const session = getSession()
+    session.connectionHandle = makeFakeHandle()
+    session.connectionAuth = { mode: 'auto' }
+    expect(backend.isRuntimeIdle(60_000)).toBe(false)
+  })
+
+  it('isRuntimeIdle returns false when runningController is set (in-flight turn)', async () => {
+    await backend.start(makeStartOpts())
+    const session = getSession()
+    session.connectionHandle = makeFakeHandle()
+    session.connectionAuth = { mode: 'auto' }
+    session.runningController = new AbortController()
+    expect(backend.isRuntimeIdle(0)).toBe(false)
+  })
+
+  it('timer fires release after timeout, returning handle to project pool', async () => {
+    vi.useFakeTimers()
+    try {
+      await backend.start(makeStartOpts())
+      const session = getSession()
+      session.connectionHandle = makeFakeHandle()
+      session.connectionAuth = { mode: 'auto' }
+
+      await vi.advanceTimersByTimeAsync(CodexBackend.IDLE_TIMEOUT_MS + CodexBackend.IDLE_CHECK_INTERVAL_MS + 100)
+
+      expect(releaseAppServerSpy).toHaveBeenCalled()
+      expect(session.connectionHandle).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('timer does not release while runningController is set', async () => {
+    vi.useFakeTimers()
+    try {
+      await backend.start(makeStartOpts())
+      const session = getSession()
+      session.connectionHandle = makeFakeHandle()
+      session.connectionAuth = { mode: 'auto' }
+      session.runningController = new AbortController()
+
+      await vi.advanceTimersByTimeAsync(CodexBackend.IDLE_TIMEOUT_MS + CodexBackend.IDLE_CHECK_INTERVAL_MS + 100)
+
+      expect(releaseAppServerSpy).not.toHaveBeenCalled()
+      expect(session.connectionHandle).not.toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('close() stops idle timer so it no longer fires', async () => {
+    vi.useFakeTimers()
+    try {
+      await backend.start(makeStartOpts())
+      const session = getSession()
+      session.connectionHandle = makeFakeHandle()
+      session.connectionAuth = { mode: 'auto' }
+
+      await backend.close()
+      releaseAppServerSpy.mockClear()
+
+      await vi.advanceTimersByTimeAsync(CodexBackend.IDLE_TIMEOUT_MS * 5)
+      expect(releaseAppServerSpy).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})

@@ -10,6 +10,7 @@ import 'katex/dist/katex.min.css'
 import { createStreamdownCodeComponent } from './CodeBlock'
 import { toMediaUrl, toLocalFileUrl } from '@/lib/path-utils'
 import { LinkSafetyModal } from './LinkSafetyModal'
+import { MarkdownImage } from './markdown-image'
 
 /** Shared code highlighter plugin instance — reused across all chat components. */
 export const codePlugin = createCodePlugin({ themes: ['github-dark', 'github-dark'] })
@@ -71,7 +72,7 @@ function MediaImage(props: ComponentProps<'img'>) {
     const { alt: _, ...rest } = props
     return MediaAudio(rest as ComponentProps<'audio'>)
   }
-  return createElement('img', { ...props, src: localFileToMediaUrl(props.src), style: MEDIA_STYLE })
+  return createElement(MarkdownImage, props)
 }
 
 /** Shared Streamdown code component. */

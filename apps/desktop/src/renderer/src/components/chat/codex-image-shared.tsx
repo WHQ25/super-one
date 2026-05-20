@@ -53,7 +53,7 @@ export function useImageDataUri(savedPath: string | undefined, isFailed: boolean
   return { dataUri, loadError }
 }
 
-function CodexImageMenuItems({ savedPath }: { savedPath: string }) {
+export function ImageMenuItems({ savedPath }: { savedPath: string }) {
   const { t } = useTranslation()
   const handleCopy = async () => {
     const res = await window.app.clipboardWriteImage(savedPath)
@@ -93,7 +93,12 @@ function buildImageDragPng(img: HTMLImageElement): { buffer: ArrayBuffer; scaleF
   if (!ctx) return null
   ctx.scale(dpr, dpr)
   ctx.drawImage(img, 0, 0, w, h)
-  const base64 = canvas.toDataURL('image/png').split(',')[1]
+  let base64: string | undefined
+  try {
+    base64 = canvas.toDataURL('image/png').split(',')[1]
+  } catch {
+    return null
+  }
   if (!base64) return null
   const binary = atob(base64)
   const bytes = new Uint8Array(binary.length)
@@ -109,7 +114,7 @@ interface InteractiveProps {
   children: React.ReactNode
 }
 
-export function CodexImageInteractive({ savedPath, onOpen, className, ariaLabel, children }: InteractiveProps) {
+export function ImageInteractive({ savedPath, onOpen, className, ariaLabel, children }: InteractiveProps) {
   const dragEndRef = useRef(0)
 
   const handleDragStart = (e: React.DragEvent) => {
@@ -147,7 +152,7 @@ export function CodexImageInteractive({ savedPath, onOpen, className, ariaLabel,
         </button>
       </ContextMenuTrigger>
       <ContextMenuContent>
-        <CodexImageMenuItems savedPath={savedPath} />
+        <ImageMenuItems savedPath={savedPath} />
       </ContextMenuContent>
     </ContextMenu>
   )
@@ -225,7 +230,7 @@ export function CodexImageViewer({ items, index, open, onOpenChange, onIndexChan
             <ContextMenu>
               <ContextMenuTrigger asChild>{imageArea}</ContextMenuTrigger>
               <ContextMenuContent>
-                <CodexImageMenuItems savedPath={item.savedPath} />
+                <ImageMenuItems savedPath={item.savedPath} />
               </ContextMenuContent>
             </ContextMenu>
           )

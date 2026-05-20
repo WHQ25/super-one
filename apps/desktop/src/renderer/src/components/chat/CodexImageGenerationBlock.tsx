@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { ImageIcon, Loader2, AlertCircle } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 import type { CodexImageGenerationItem } from '@superone/shared/agent-types'
-import { CodexImageInteractive, CodexImageViewer, useImageDataUri } from './codex-image-shared'
+import { ImageInteractive, CodexImageViewer, useImageDataUri } from './codex-image-shared'
 
 interface Props {
   item: CodexImageGenerationItem
@@ -54,7 +54,7 @@ export function CodexImageGenerationBlock({ item }: Props) {
 
   return (
     <>
-      <CodexImageInteractive
+      <ImageInteractive
         savedPath={savedPath!}
         onOpen={() => setViewerOpen(true)}
         ariaLabel={item.revisedPrompt ?? 'Generated image'}
@@ -68,7 +68,7 @@ export function CodexImageGenerationBlock({ item }: Props) {
           alt={item.revisedPrompt ?? 'Generated image'}
           className="block h-40 w-auto max-w-full object-contain"
         />
-      </CodexImageInteractive>
+      </ImageInteractive>
 
       <CodexImageViewer
         items={[item]}

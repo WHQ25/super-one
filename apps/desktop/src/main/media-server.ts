@@ -48,12 +48,18 @@ export function startMediaServer(): Promise<number> {
         return
       }
 
+      const cors = {
+        'Access-Control-Allow-Origin': '*',
+        'Cross-Origin-Resource-Policy': 'cross-origin',
+      }
+
       const range = req.headers.range
       if (range) {
         const parts = range.replace(/bytes=/, '').split('-')
         const start = parseInt(parts[0], 10)
         const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1
         res.writeHead(206, {
+          ...cors,
           'Content-Range': `bytes ${start}-${end}/${fileSize}`,
           'Accept-Ranges': 'bytes',
           'Content-Length': end - start + 1,
@@ -62,6 +68,7 @@ export function startMediaServer(): Promise<number> {
         createReadStream(resolved, { start, end }).pipe(res)
       } else {
         res.writeHead(200, {
+          ...cors,
           'Content-Length': fileSize,
           'Content-Type': mime,
           'Accept-Ranges': 'bytes',

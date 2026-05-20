@@ -1,7 +1,10 @@
 import { memo, useMemo, useState, useEffect, useCallback } from 'react'
 import { toast } from 'sonner'
 import { useTranslation } from 'react-i18next'
-import { Bot, CalendarClock, ChevronDown, ChevronRight, ChevronUp, CircleCheck, Copy, EyeOff, Folder, FolderOpen, FolderX, GitFork, History, Loader2, MessageSquare, Pencil, PictureInPicture2, Pin, Play, Smartphone, SquareActivity, SquarePen, Trash2 } from 'lucide-react'
+import { Bot, CalendarClock, ChevronDown, ChevronRight, ChevronUp, Copy, EyeOff, Folder, FolderOpen, FolderX, GitFork, History, Loader2, MessageSquare, Pencil, PictureInPicture2, Pin, Play, Smartphone, SquarePen, Trash2 } from 'lucide-react'
+import { ClaudeSessionIcon } from '@superone/ui/components/harness/ClaudeSessionIcon'
+import { CodexSessionIcon } from '@superone/ui/components/harness/CodexSessionIcon'
+import type { SessionIconProps } from '@superone/ui/components/harness/ClaudeSessionIcon'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@superone/ui/components/ui/tooltip'
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from '@superone/ui/components/ui/context-menu'
 import { useChatStore } from '@/stores/chat'
@@ -341,6 +344,21 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
                 const isRunning = sessionEntry?.status === 'streaming'
                 const isBackground = sessionEntry?.status === 'background'
                 const isUnseen = projectSession?.unseenCompletedSessions?.has(session.sessionId)
+                const isSessionActive = derived.isActive && derived.activeSid === session.sessionId
+                const harnessStatus: SessionIconProps['status'] = isRunning
+                  ? 'running'
+                  : isBackground
+                    ? 'background'
+                    : isUnseen
+                      ? 'unseen'
+                      : session.isAutomation
+                        ? 'automation'
+                        : 'default'
+                const HarnessIcon = session.provider === 'codex'
+                  ? CodexSessionIcon
+                  : session.provider === 'claude'
+                    ? ClaudeSessionIcon
+                    : null
                 const pendingReason = getPendingReason(sessionEntry?.pendingPermissions, sessionEntry?.pendingQuestion, sessionEntry?.pendingPlanApproval)
                 return (
                   <div key={session.sessionId}>
@@ -366,32 +384,36 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
                               <EyeOff className="size-3" />
                             </button>
                             <span className="pointer-events-none group-hover/session:opacity-0 transition-opacity">
-                              {isRunning
-                                ? <SessionStatusSpinner lastEventAt={sessionEntry?.lastEventAt ?? 0} />
-                                : isBackground
-                                  ? <SquareActivity className="size-3 animate-pulse text-sidebar-foreground/70" />
-                                  : isUnseen
-                                    ? <CircleCheck className="size-3 text-green-600 dark:text-green-400" />
-                                    : session.isAutomation
-                                      ? <CalendarClock className="size-3 text-sidebar-foreground/70" />
-                                      : session.isWorktree
-                                        ? <GitFork className="size-3 text-sidebar-foreground/70" />
-                                        : remoteSessionIds.includes(session.sessionId)
-                                          ? <Smartphone className="size-3 text-sidebar-foreground/70" />
-                                          : <MessageSquare className="size-3 text-sidebar-foreground/70" />
+                              {remoteSessionIds.includes(session.sessionId)
+                                ? <Smartphone className="size-3 text-sidebar-foreground/70" />
+                                : HarnessIcon && harnessStatus !== 'default'
+                                  ? <HarnessIcon status={harnessStatus} active={isSessionActive} />
+                                  : isRunning
+                                    ? <SessionStatusSpinner lastEventAt={sessionEntry?.lastEventAt ?? 0} />
+                                    : <MessageSquare className="size-3 text-sidebar-foreground/70" />
                               }
                             </span>
                           </div>
                           <SessionTitleAnimated sessionId={session.sessionId} fallback={session.title} className="text-[13px]" />
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              onPinSession(session.sessionId, !session.isPinned, folder.path)
-                            }}
-                            className="ml-auto box-content w-0 shrink-0 overflow-hidden rounded p-0.5 text-sidebar-foreground/70 opacity-0 transition-all hover:text-sidebar-accent-foreground group-hover/session:w-3 group-hover/session:opacity-100"
-                          >
-                            <Pin className="size-3" />
-                          </button>
+                          <div className="ml-auto flex shrink-0 items-center">
+                            {session.isWorktree && (
+                              <span
+                                title="Worktree"
+                                className="box-content w-0 overflow-hidden p-0.5 text-sidebar-foreground/70 opacity-0 transition-all group-hover/session:w-3 group-hover/session:opacity-100"
+                              >
+                                <GitFork className="size-3" />
+                              </span>
+                            )}
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                onPinSession(session.sessionId, !session.isPinned, folder.path)
+                              }}
+                              className="box-content w-0 overflow-hidden rounded p-0.5 text-sidebar-foreground/70 opacity-0 transition-all hover:text-sidebar-accent-foreground group-hover/session:w-3 group-hover/session:opacity-100"
+                            >
+                              <Pin className="size-3" />
+                            </button>
+                          </div>
                         </div>
                       </ContextMenuTrigger>
                       <ContextMenuContent className="w-48">

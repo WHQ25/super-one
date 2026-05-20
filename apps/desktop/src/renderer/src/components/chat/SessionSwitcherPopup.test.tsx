@@ -333,6 +333,7 @@ describe('SessionSwitcherView open delay', () => {
       isRemote: false,
       isAutomation: false,
       isWorktree: false,
+      provider: 'claude',
       pendingReason: null,
       ...overrides,
     }

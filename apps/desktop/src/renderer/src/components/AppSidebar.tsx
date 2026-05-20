@@ -1,5 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef, memo } from 'react'
 import { Plus, Settings, FolderClosed, ArrowDownUp, SquarePen, MessageSquare, Pin, Copy, Check, Smartphone, Wifi, Cloud, Monitor } from 'lucide-react'
+import { ClaudeSessionIcon, type SessionIconProps } from '@superone/ui/components/harness/ClaudeSessionIcon'
+import { CodexSessionIcon } from '@superone/ui/components/harness/CodexSessionIcon'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@superone/ui/components/ui/button'
 import { Checkbox } from '@superone/ui/components/ui/checkbox'
@@ -60,6 +62,7 @@ export const AppSidebar = memo(function AppSidebar() {
   const removeSessionFromMemory = useChatStore((s) => s.removeSessionFromMemory)
   const switchSession = useChatStore((s) => s.switchSession)
   const currentProject = useChatStore(useCallback((s) => currentFolder ? s.projectSessions[currentFolder] : undefined, [currentFolder]))
+  const projectSessions = useChatStore((s) => s.projectSessions)
 
   const [filesMounted, setExplorerMounted] = useState(sidebarTab === 'files')
   if (sidebarTab === 'files' && !filesMounted) setExplorerMounted(true)
@@ -416,27 +419,54 @@ export const AppSidebar = memo(function AppSidebar() {
       {pinnedSessions.length > 0 && sidebarTab === 'sessions' && (
         <div className="flex flex-col px-1.5 pb-1">
           <span className="px-1.5 py-1.5 text-xs font-medium text-sidebar-foreground/70">{t('sidebar.pinned')}</span>
-          {pinnedSessions.map((s) => (
-            <div
-              key={s.sessionId}
-              onClick={() => handleSwitchSession(s.folderPath, s.sessionId)}
-              className="group/pin flex cursor-pointer items-center justify-between overflow-hidden rounded-md px-2.5 py-1.5 transition-colors hover:bg-sidebar-accent"
-            >
-              <div className="flex min-w-0 flex-col gap-0.5">
-                <SessionTitleAnimated sessionId={s.sessionId} fallback={s.title} className="text-[13px]" />
-                <span className="min-w-0 truncate text-[11px] text-sidebar-foreground/50">{s.folderName}</span>
-              </div>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation()
-                  handlePinSession(s.sessionId, false, s.folderPath)
-                }}
-                className="box-content ml-1 w-0 shrink-0 overflow-hidden rounded p-0.5 text-sidebar-foreground/70 opacity-0 transition-all hover:text-sidebar-accent-foreground group-hover/pin:w-3 group-hover/pin:opacity-100"
+          {pinnedSessions.map((s) => {
+            const PinHarnessIcon = s.provider === 'codex'
+              ? CodexSessionIcon
+              : s.provider === 'claude'
+                ? ClaudeSessionIcon
+                : null
+            const pinIsActive = currentFolder === s.folderPath && currentActiveSid === s.sessionId
+            const pinProj = projectSessions[s.folderPath]
+            const pinEntry = pinProj?._sessions?.[s.sessionId]
+            const pinIsRunning = pinEntry?.status === 'streaming'
+            const pinIsBackground = pinEntry?.status === 'background'
+            const pinIsUnseen = pinProj?.unseenCompletedSessions?.has(s.sessionId)
+            const pinHarnessStatus: SessionIconProps['status'] = pinIsRunning
+              ? 'running'
+              : pinIsBackground
+                ? 'background'
+                : pinIsUnseen
+                  ? 'unseen'
+                  : s.isAutomation
+                    ? 'automation'
+                    : 'default'
+            return (
+              <div
+                key={s.sessionId}
+                onClick={() => handleSwitchSession(s.folderPath, s.sessionId)}
+                className="group/pin flex cursor-pointer items-center gap-2 overflow-hidden rounded-md px-2.5 py-1.5 transition-colors hover:bg-sidebar-accent"
               >
-                <Pin className="size-3" />
-              </button>
-            </div>
-          ))}
+                {PinHarnessIcon && (
+                  <span className="shrink-0">
+                    <PinHarnessIcon status={pinHarnessStatus} active={pinIsActive} size={22} />
+                  </span>
+                )}
+                <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                  <SessionTitleAnimated sessionId={s.sessionId} fallback={s.title} className="text-[13px]" />
+                  <span className="min-w-0 truncate text-[11px] text-sidebar-foreground/50">{s.folderName}</span>
+                </div>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    handlePinSession(s.sessionId, false, s.folderPath)
+                  }}
+                  className="box-content w-0 shrink-0 overflow-hidden rounded p-0.5 text-sidebar-foreground/70 opacity-0 transition-all hover:text-sidebar-accent-foreground group-hover/pin:w-3 group-hover/pin:opacity-100"
+                >
+                  <Pin className="size-3" />
+                </button>
+              </div>
+            )
+          })}
         </div>
       )}
 

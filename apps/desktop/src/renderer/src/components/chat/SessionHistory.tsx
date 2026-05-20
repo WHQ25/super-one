@@ -238,9 +238,14 @@ export function SessionHistory({ showBackButton = true, onClose }: SessionHistor
                         />
                       ) : (
                         <div className="flex items-center gap-1 overflow-hidden">
-                          {entry.isWorktree ? <GitFork className="size-3 shrink-0 text-muted-foreground/70" /> : <MessageSquare className="size-3 shrink-0 text-muted-foreground/70" />}
+                          <MessageSquare className="size-3 shrink-0 text-muted-foreground/70" />
                           <SessionTitleAnimated sessionId={entry.sessionId} fallback={entry.title} className="min-w-0 flex-1 text-sm font-medium text-foreground/80" />
                           <div className="flex w-0 items-center gap-0.5 overflow-hidden opacity-0 transition-all group-hover:w-auto group-hover:opacity-100">
+                            {entry.isWorktree && (
+                              <span title="Worktree" className="p-0.5 text-muted-foreground/70">
+                                <GitFork className="size-3" />
+                              </span>
+                            )}
                             <button
                               onClick={(e) => { e.stopPropagation(); entry.isHidden ? handleUnhide(entry.sessionId) : handleHide(entry.sessionId) }}
                               className="rounded p-0.5 text-muted-foreground/70 hover:text-foreground/80"

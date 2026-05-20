@@ -8,7 +8,6 @@ import {
   CalendarClock,
   ChevronDown,
   ChevronRight,
-  CircleCheck,
   EyeOff,
   Folder,
   FolderClosed,
@@ -28,7 +27,6 @@ import {
   Plus,
   Settings,
   Smartphone,
-  SquareActivity,
   SquarePen,
   SquareTerminal,
   Store,
@@ -37,6 +35,8 @@ import {
 import { Button } from "@superone/ui/components/ui/button"
 import { ScrollArea } from "@superone/ui/components/ui/scroll-area"
 import { Tabs, TabsList, TabsTrigger } from "@superone/ui/components/ui/tabs"
+import { ClaudeSessionIcon, type SessionIconProps } from "@superone/ui/components/harness/ClaudeSessionIcon"
+import { CodexSessionIcon } from "@superone/ui/components/harness/CodexSessionIcon"
 import { cn } from "@superone/ui/lib/utils"
 import { useMockT } from "./i18n"
 import { TerminalPanelMock } from "./terminal-panel-mock"
@@ -47,9 +47,10 @@ export type SessionStatus =
   | "running"
   | "background"
   | "unseen"
-  | "worktree"
   | "automation"
   | "remote"
+
+export type SessionProvider = "claude" | "codex"
 
 export interface MockSession {
   id: string
@@ -58,6 +59,8 @@ export interface MockSession {
   active?: boolean
   pendingReason?: string
   pinned?: boolean
+  provider?: SessionProvider
+  isWorktree?: boolean
 }
 
 export type AutomationStatus = "idle" | "running" | "error" | "disabled"
@@ -90,6 +93,10 @@ export interface MockPinnedSession {
   id: string
   title: string
   folderName: string
+  provider?: SessionProvider
+  status?: SessionStatus
+  isWorktree?: boolean
+  active?: boolean
 }
 
 export interface MockApp {
@@ -121,8 +128,8 @@ export interface DesktopShellProps {
 }
 
 const DEFAULT_PINNED: MockPinnedSession[] = [
-  { id: "p1", title: "Relay protocol redesign", folderName: "super-one" },
-  { id: "p2", title: "Hermès theme tokens", folderName: "marketing-site" },
+  { id: "p1", title: "Relay protocol redesign", folderName: "super-one", provider: "claude", status: "running" },
+  { id: "p2", title: "Hermès theme tokens", folderName: "marketing-site", provider: "codex", status: "unseen" },
 ]
 
 const DEFAULT_APPS: MockApp[] = [
@@ -158,12 +165,12 @@ const DEFAULT_PROJECTS: MockProject[] = [
     ],
     automationsExpanded: true,
     sessions: [
-      { id: "s1", title: "Refactor sidebar layout", active: true, status: "running" },
-      { id: "s2", title: "Fix relay reconnect bug", status: "unseen", pendingReason: "Allow Bash?" },
-      { id: "s3", title: "Polish miniapp permissions", status: "background" },
-      { id: "s4", title: "Worktree merge experiment", status: "worktree" },
-      { id: "s5", title: "Mobile pairing QR flow", status: "remote" },
-      { id: "s6", title: "Weekly changelog draft", status: "automation" },
+      { id: "s1", title: "Refactor sidebar layout", active: true, status: "running", provider: "claude" },
+      { id: "s2", title: "Fix relay reconnect bug", status: "unseen", pendingReason: "Allow Bash?", provider: "codex" },
+      { id: "s3", title: "Polish miniapp permissions", status: "background", provider: "claude" },
+      { id: "s4", title: "Worktree merge experiment", status: "idle", isWorktree: true, provider: "claude" },
+      { id: "s5", title: "Mobile pairing QR flow", status: "remote", provider: "codex" },
+      { id: "s6", title: "Weekly changelog draft", status: "automation", provider: "codex" },
     ],
     hasMore: true,
   },
@@ -175,8 +182,8 @@ const DEFAULT_PROJECTS: MockProject[] = [
       { id: "w2", name: "asset-optimizer", uptime: "3m 41s" },
     ],
     sessions: [
-      { id: "ms1", title: "Landing hero copy", status: "idle" },
-      { id: "ms2", title: "OG image generator", status: "background" },
+      { id: "ms1", title: "Landing hero copy", status: "idle", provider: "claude" },
+      { id: "ms2", title: "OG image generator", status: "background", provider: "codex" },
     ],
   },
   {
@@ -420,20 +427,34 @@ function Sidebar({
       {showPinned && (
         <div className="flex flex-col px-1.5 pb-1">
           <span className="px-1.5 py-1.5 text-xs font-medium text-sidebar-foreground/70">{t("sidebar.pinned")}</span>
-          {pinnedSessions.map((s) => (
-            <div
-              key={s.id}
-              className="group/pin flex cursor-pointer items-center justify-between overflow-hidden rounded-md px-2.5 py-1.5 transition-colors hover:bg-sidebar-accent"
-            >
-              <div className="flex min-w-0 flex-col gap-0.5">
-                <span className="min-w-0 truncate text-[13px]">{s.title}</span>
-                <span className="min-w-0 truncate text-[11px] text-sidebar-foreground/50">{s.folderName}</span>
+          {pinnedSessions.map((s) => {
+            const PinHarnessIcon = s.provider === "codex" ? CodexSessionIcon : s.provider === "claude" ? ClaudeSessionIcon : null
+            const pinHarnessStatus: SessionIconProps["status"] =
+              s.status === "running" ? "running"
+                : s.status === "background" ? "background"
+                : s.status === "unseen" ? "unseen"
+                : s.status === "automation" ? "automation"
+                : "default"
+            return (
+              <div
+                key={s.id}
+                className="group/pin flex cursor-pointer items-center gap-2 overflow-hidden rounded-md px-2.5 py-1.5 transition-colors hover:bg-sidebar-accent"
+              >
+                {PinHarnessIcon && (
+                  <span className="shrink-0">
+                    <PinHarnessIcon status={pinHarnessStatus} active={s.active} size={22} />
+                  </span>
+                )}
+                <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                  <span className="min-w-0 truncate text-[13px]">{s.title}</span>
+                  <span className="min-w-0 truncate text-[11px] text-sidebar-foreground/50">{s.folderName}</span>
+                </div>
+                <button className="box-content w-0 shrink-0 overflow-hidden rounded p-0.5 text-sidebar-foreground/70 opacity-0 transition-all hover:text-sidebar-accent-foreground group-hover/pin:w-3 group-hover/pin:opacity-100">
+                  <Pin className="size-3" />
+                </button>
               </div>
-              <button className="box-content ml-1 w-0 shrink-0 overflow-hidden rounded p-0.5 text-sidebar-foreground/70 opacity-0 transition-all hover:text-sidebar-accent-foreground group-hover/pin:w-3 group-hover/pin:opacity-100">
-                <Pin className="size-3" />
-              </button>
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
 
@@ -670,13 +691,20 @@ function SessionRow({ session }: { session: MockSession }) {
             <EyeOff className="size-3" />
           </span>
           <span className="pointer-events-none transition-opacity group-hover/session:opacity-0">
-            <SessionStatusIcon status={session.status} />
+            <SessionStatusIcon status={session.status} provider={session.provider} active={session.active} />
           </span>
         </div>
         <span className="min-w-0 truncate text-[13px]">{session.title}</span>
-        <button className="ml-auto box-content w-0 shrink-0 overflow-hidden rounded p-0.5 text-sidebar-foreground/70 opacity-0 transition-all hover:text-sidebar-accent-foreground group-hover/session:w-3 group-hover/session:opacity-100">
-          <Pin className="size-3" />
-        </button>
+        <div className="ml-auto flex shrink-0 items-center">
+          {session.isWorktree && (
+            <span title="Worktree" className="box-content w-0 overflow-hidden p-0.5 text-sidebar-foreground/70 opacity-0 transition-all group-hover/session:w-3 group-hover/session:opacity-100">
+              <GitFork className="size-3" />
+            </span>
+          )}
+          <button className="box-content w-0 shrink-0 overflow-hidden rounded p-0.5 text-sidebar-foreground/70 opacity-0 transition-all hover:text-sidebar-accent-foreground group-hover/session:w-3 group-hover/session:opacity-100">
+            <Pin className="size-3" />
+          </button>
+        </div>
       </div>
       {session.pendingReason && (
         <div className="ml-2.5 mr-1 mt-0.5 flex cursor-pointer items-center gap-1 rounded-md bg-green-500/15 px-2 py-1">
@@ -690,13 +718,19 @@ function SessionRow({ session }: { session: MockSession }) {
   )
 }
 
-function SessionStatusIcon({ status }: { status?: SessionStatus }) {
-  if (status === "running") return <Loader2 className="size-3 animate-spin text-sidebar-foreground/70" />
-  if (status === "background") return <SquareActivity className="size-3 animate-pulse text-sidebar-foreground/70" />
-  if (status === "unseen") return <CircleCheck className="size-3 text-green-600 dark:text-green-400" />
-  if (status === "automation") return <CalendarClock className="size-3 text-sidebar-foreground/70" />
-  if (status === "worktree") return <GitFork className="size-3 text-sidebar-foreground/70" />
+function SessionStatusIcon({ status, provider, active }: { status?: SessionStatus; provider?: SessionProvider; active?: boolean }) {
   if (status === "remote") return <Smartphone className="size-3 text-sidebar-foreground/70" />
+  const HarnessIcon = provider === "codex" ? CodexSessionIcon : provider === "claude" ? ClaudeSessionIcon : null
+  const harnessStatus: SessionIconProps["status"] =
+    status === "running" ? "running"
+      : status === "background" ? "background"
+      : status === "unseen" ? "unseen"
+      : status === "automation" ? "automation"
+      : "default"
+  if (HarnessIcon && harnessStatus !== "default") {
+    return <HarnessIcon status={harnessStatus} active={active} />
+  }
+  if (status === "running") return <Loader2 className="size-3 animate-spin text-sidebar-foreground/70" />
   return <MessageSquare className="size-3 text-sidebar-foreground/70" />
 }
 

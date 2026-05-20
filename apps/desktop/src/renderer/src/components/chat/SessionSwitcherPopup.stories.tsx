@@ -14,6 +14,7 @@ function row(overrides: Partial<SwitcherRow> & { sessionId: string; title: strin
     isRemote: false,
     isAutomation: false,
     isWorktree: false,
+    provider: 'claude',
     pendingReason: null,
     ...overrides,
   }
@@ -189,6 +190,7 @@ export const ScrolledList: Story = {
         status: i % 3 === 0 ? 'streaming' : i % 3 === 1 ? 'background' : 'idle',
         isCurrent: i === 0,
         isUnseen: i === 4,
+        provider: i % 2 === 0 ? 'claude' : 'codex',
         pendingReason: i === 9 ? 'Allow Write?' : null,
         lastEventAt: NOW - i * 1000,
       }),

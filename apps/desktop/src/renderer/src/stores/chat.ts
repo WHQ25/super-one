@@ -4818,6 +4818,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     let savedWorktreePath: string | undefined
     let savedProvider: string | null = null
     let savedApiProviderId: string | null = null
+    let savedTitle: string | null = null
     try {
       const saved = await window.app.loadSessionState(sessionId) as PersistedSessionState | null
       if (saved) {
@@ -4828,6 +4829,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         savedProvider = saved.provider
         savedWorktreePath = saved.worktreePath ?? undefined
         savedApiProviderId = saved.apiProviderId ?? null
+        savedTitle = saved.title ?? null
       }
     } catch (err) { console.warn('[chat] loadSessionState failed:', err) }
 
@@ -4857,6 +4859,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       sessionProvider: restoredProvider,
       lastAssistantMessageId: savedMessages.findLast((m) => m.role === 'assistant')?.id ?? null,
       apiProviderId: savedApiProviderId,
+      _title: savedTitle,
       _historyHydrated: true,
       permissionMode: defaultPermissionMode,
     }

@@ -2268,6 +2268,24 @@ describe('switchSession Case A permissionMode sync', () => {
     expect(after.sandboxInfo).toEqual({ enabled: false, autoAllowBash: false })
   })
 
+  it('scenario: restoring a renamed DB session populates _title so chat header matches sidebar', async () => {
+    setupProject('/test')
+    mockWindowApp.loadSessionState.mockResolvedValue({
+      messages: [{ id: 'u1', role: 'user' as const, content: [{ type: 'text', text: 'first user message that should not become the title' }], status: 'complete' as const, createdAt: '', providerId: 'claude' }],
+      totalCostUsd: 0,
+      contextTokens: 0,
+      gitBranch: null,
+      provider: 'claude',
+      title: 'Renamed in DB',
+    })
+    mockWindowApp.resumeSession.mockResolvedValue(undefined)
+
+    await useChatStore.getState().switchSession('renamed-sid')
+
+    const after = useChatStore.getState().projectSessions['/test']
+    expect(after._sessions['renamed-sid']._title).toBe('Renamed in DB')
+  })
+
   it('scenario: if main returns undefined (resume failed), store keeps pre-resume state', async () => {
     setupProject('/test')
     const proj = useChatStore.getState().projectSessions['/test']

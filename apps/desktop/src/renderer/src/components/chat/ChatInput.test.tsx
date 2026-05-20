@@ -80,6 +80,7 @@ const { chatActions, activeSessionState, editorState, useChatStore, mentionPopup
     text: '',
     onUpdate: null as null | ((payload: { editor: unknown }) => void),
     editor: null as unknown,
+    composing: false,
   }
 
   return { chatActions, activeSessionState, editorState, useChatStore, mentionPopup }
@@ -149,6 +150,9 @@ vi.mock('@tiptap/react', () => {
         dispatch: vi.fn(),
         hasFocus: vi.fn(() => false),
         dom: { classList: { toggle: vi.fn() } },
+        get composing() {
+          return editorState.composing
+        },
       },
     }
 
@@ -275,6 +279,7 @@ beforeEach(() => {
   editorState.text = ''
   editorState.onUpdate = null
   editorState.editor = null
+  editorState.composing = false
   activeSessionState.draftText = ''
   activeSessionState.attachments = []
   activeSessionState.mentions = []
@@ -348,6 +353,40 @@ describe('ChatInput @-mention no-match suppression', () => {
 
     typeInEditor('@zz')
     expect(screen.getByTestId('mention-popup')).toHaveAttribute('data-query', 'zz')
+  })
+
+  it('re-shows the popup when the user backspaces and retypes different characters past a prior no-match prefix', () => {
+    render(<ChatInput />)
+
+    typeInEditor('@claudesessoi')
+    expect(screen.getByTestId('mention-popup')).toHaveAttribute('data-query', 'claudesessoi')
+    mentionPopup.props!.onResultState!('claudesessoi', true)
+
+    typeInEditor('@claudesessoix')
+    expect(screen.queryByTestId('mention-popup')).toBeNull()
+
+    typeInEditor('@claudesessio')
+    expect(screen.getByTestId('mention-popup')).toHaveAttribute('data-query', 'claudesessio')
+  })
+
+  it('keeps the popup open during IME composition even when transient pinyin exceeds the prior no-match length', () => {
+    const { rerender } = render(<ChatInput />)
+
+    editorState.composing = true
+    typeInEditor('@chu')
+    rerender(<ChatInput />)
+    expect(screen.getByTestId('mention-popup')).toHaveAttribute('data-query', 'chu')
+
+    mentionPopup.props!.onResultState!('chu', true)
+
+    typeInEditor("@chu'su")
+    rerender(<ChatInput />)
+    expect(screen.getByTestId('mention-popup')).toHaveAttribute('data-query', "chu'su")
+
+    editorState.composing = false
+    typeInEditor('@出宿')
+    rerender(<ChatInput />)
+    expect(screen.getByTestId('mention-popup')).toHaveAttribute('data-query', '出宿')
   })
 
   it('tracks the no-match length per @ token so a later @ is not suppressed by an earlier one', () => {

@@ -122,7 +122,7 @@ export function ChatInput() {
     const addDirRef = useRef<AddDirPopupHandle>(null)
 
     const mentionInfoRef = useRef<{ atPos: number; query: string } | null>(null)
-    const mentionEmptyByAtRef = useRef<Map<number, number>>(new Map())
+    const mentionEmptyByAtRef = useRef<Map<number, string>>(new Map())
     const mentionActiveRef = useRef(mentionActive)
     mentionActiveRef.current = mentionActive
     const placeholderTextRef = useRef('')
@@ -411,12 +411,13 @@ export function ChatInput() {
     const handleMentionResultState = useCallback((q: string, isEmpty: boolean) => {
       const info = mentionInfoRef.current
       if (!info || !q) return
+      if (editorRef.current?.view.composing) return
       const map = mentionEmptyByAtRef.current
       const cur = map.get(info.atPos)
       if (isEmpty) {
-        if (cur === undefined || q.length < cur) map.set(info.atPos, q.length)
-      } else if (cur !== undefined && q.length >= cur) {
-        map.set(info.atPos, q.length + 1)
+        if (cur === undefined || q.length < cur.length) map.set(info.atPos, q)
+      } else if (cur !== undefined) {
+        map.delete(info.atPos)
       }
     }, [])
 
@@ -892,8 +893,13 @@ export function ChatInput() {
           const afterAt = textInParent.slice(lastAt + 1)
           if (!afterAt.includes(' ') && !afterAt.includes('\0')) {
             const atPos = $pos.start() + lastAt
-            const firstEmptyLen = mentionEmptyByAtRef.current.get(atPos)
-            if (firstEmptyLen !== undefined && afterAt.length >= firstEmptyLen) {
+            const isComposing = ed.view.composing
+            const firstEmptyQuery = mentionEmptyByAtRef.current.get(atPos)
+            if (firstEmptyQuery !== undefined && !afterAt.startsWith(firstEmptyQuery)) {
+              mentionEmptyByAtRef.current.delete(atPos)
+            }
+            const stillEmpty = mentionEmptyByAtRef.current.get(atPos)
+            if (!isComposing && stillEmpty !== undefined && afterAt.startsWith(stillEmpty)) {
               setMentionActive(false)
               mentionInfoRef.current = null
             } else {

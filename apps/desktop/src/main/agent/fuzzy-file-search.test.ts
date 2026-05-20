@@ -162,21 +162,21 @@ describe('collectFiles', () => {
     }
   })
 
-  it('does not let an early-sorting heavy subtree starve deep source files under the cap', () => {
+  it('respects .gitignore so a gitignored heavy subtree (e.g. Electron .dev-data) does not consume the maxFiles cap', () => {
     const starveRoot = mkdtempSync(join(tmpdir(), 's1-starve-'))
     try {
-      // ".heavy" sorts before "src" (dot-first) and is deeply nested + wide,
-      // exactly mirroring a gitignored .dev-data Electron userData dir.
-      const heavy = join(starveRoot, '.heavy', 'cache', 'shards')
+      const heavy = join(starveRoot, '.dev-data', 'Cache', 'Cache_Data')
       mkdirSync(heavy, { recursive: true })
       for (let i = 0; i < 200; i++) writeFileSync(join(heavy, `blob-${i}.bin`), 'x')
       const deep = join(starveRoot, 'src', 'main', 'agent')
       mkdirSync(deep, { recursive: true })
       writeFileSync(join(deep, 'target-xyzzy.ts'), '// findme\n')
+      writeFileSync(join(starveRoot, '.gitignore'), '.dev-data\n')
 
       const files = collectFiles([starveRoot], 10, 40)
-      const found = files.some((f) => f.path === join('src', 'main', 'agent', 'target-xyzzy.ts'))
+      const found = files.some((f) => f.path === 'src/main/agent/target-xyzzy.ts')
       expect(found).toBe(true)
+      expect(files.some((f) => f.path.startsWith('.dev-data'))).toBe(false)
     } finally {
       rmSync(starveRoot, { recursive: true, force: true })
     }

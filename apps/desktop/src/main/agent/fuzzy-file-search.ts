@@ -1,5 +1,8 @@
-import { readdirSync, statSync } from 'fs'
-import { join, relative, basename } from 'path'
+import { readFileSync, statSync } from 'fs'
+import { join } from 'path'
+import { fdir } from 'fdir'
+import ignore, { type Ignore } from 'ignore'
+import { Fzf, byLengthAsc, type FzfResultItem } from 'fzf'
 import type { FileSearchResult, MentionSearchItem } from '@superone/shared/agent-types'
 
 export const EXCLUDED_DIRS = new Set([
@@ -14,63 +17,19 @@ export interface FuzzyMatchResult {
   indices: number[]
 }
 
-function forwardMatchFrom(queryLower: string, pathLower: string, start: number): number[] {
-  const indices: number[] = []
-  let qi = 0
-  for (let pi = start; pi < pathLower.length && qi < queryLower.length; pi++) {
-    if (pathLower[pi] === queryLower[qi]) {
-      indices.push(pi)
-      qi++
-    }
-  }
-  return indices
-}
-
-function scoreIndices(indices: number[], query: string, filePath: string, nameStart: number): number {
-  let score = 0
-  for (let i = 0; i < indices.length; i++) {
-    const idx = indices[i]
-    if (i > 0 && indices[i] === indices[i - 1] + 1) score += 5
-    if (idx >= nameStart) score += 3
-    if (idx === 0 || filePath[idx - 1] === '/' || filePath[idx - 1] === '\\') score += 4
-    if (filePath[idx] === query[i]) score += 1
-  }
-  score -= filePath.length * 0.1
-  return score
-}
-
 export function fuzzyMatch(query: string, filePath: string): FuzzyMatchResult {
   if (!query) return { match: true, score: 0, indices: [] }
-
-  const queryLower = query.toLowerCase()
-  const pathLower = filePath.toLowerCase()
-
-  const fwd = forwardMatchFrom(queryLower, pathLower, 0)
-  if (fwd.length < queryLower.length) return { match: false, score: 0, indices: [] }
-
-  const name = basename(filePath)
-  const nameStart = filePath.length - name.length
-
-  let bestIndices = fwd
-  let bestScore = scoreIndices(fwd, query, filePath, nameStart)
-
-  const startPositions = new Set<number>()
-  startPositions.add(0)
-  for (let pi = 0; pi < pathLower.length; pi++) {
-    if (pathLower[pi] === queryLower[0]) startPositions.add(pi)
+  const fzf = new Fzf([filePath], { casing: 'case-insensitive' })
+  const r = fzf.find(query)
+  if (r.length === 0) return { match: false, score: 0, indices: [] }
+  const indices = [...r[0].positions].sort((a, b) => a - b)
+  const baseStart = Math.max(filePath.lastIndexOf('/'), filePath.lastIndexOf('\\')) + 1
+  let bonus = 0
+  if (indices.length > 0 && indices.every((i) => i >= baseStart)) bonus += 6
+  for (let k = 0; k < indices.length; k++) {
+    if (filePath[indices[k]] === query[k]) bonus += 1
   }
-  for (const start of startPositions) {
-    if (start === 0) continue
-    const candidate = forwardMatchFrom(queryLower, pathLower, start)
-    if (candidate.length < queryLower.length) continue
-    const s = scoreIndices(candidate, query, filePath, nameStart)
-    if (s > bestScore) {
-      bestScore = s
-      bestIndices = candidate
-    }
-  }
-
-  return { match: true, score: bestScore, indices: bestIndices }
+  return { match: true, score: r[0].score + bonus, indices }
 }
 
 interface CollectedFile {
@@ -79,73 +38,67 @@ interface CollectedFile {
   root: string
 }
 
+function loadIgnore(root: string): Ignore {
+  const ig = ignore()
+  for (const d of EXCLUDED_DIRS) ig.add(d)
+  try {
+    ig.add(readFileSync(join(root, '.gitignore'), 'utf8'))
+  } catch {
+    // no .gitignore — baseline EXCLUDED_DIRS still apply
+  }
+  return ig
+}
+
 export function collectFiles(
   roots: string[],
   maxDepth = 10,
   maxFiles = 50000
 ): CollectedFile[] {
   const result: CollectedFile[] = []
-  const seen = new Set<string>()
-
-  interface DirFrame {
-    dir: string
-    root: string
-    depth: number
-    entries: import('fs').Dirent[]
-    idx: number
-  }
-
-  function openDir(dir: string, root: string, depth: number): DirFrame | null {
-    if (depth > maxDepth) return null
-    try {
-      const entries = readdirSync(dir, { withFileTypes: true }) as import('fs').Dirent[]
-      return { dir, root, depth, entries, idx: 0 }
-    } catch {
-      return null
-    }
-  }
-
-  // Round-robin fair traversal: every still-open directory emits at most one
-  // entry per round. A huge early-sorting subtree (e.g. a gitignored .dev-data
-  // Electron userData dir) therefore can't drain the maxFiles cap before
-  // shallower sibling subtrees — DFS/FIFO-BFS would starve src/ here.
-  let active: DirFrame[] = []
   for (const root of roots) {
+    if (result.length >= maxFiles) break
     try {
       statSync(root)
     } catch {
       continue
     }
-    const frame = openDir(root, root, 0)
-    if (frame) active.push(frame)
-  }
-
-  while (active.length > 0 && result.length < maxFiles) {
-    const stillActive: DirFrame[] = []
-    const discovered: DirFrame[] = []
-    for (const frame of active) {
-      if (result.length >= maxFiles) break
-      // Advance past excluded/seen entries, emitting at most one this round.
-      while (frame.idx < frame.entries.length) {
-        const entry = frame.entries[frame.idx++]
-        if (EXCLUDED_DIRS.has(entry.name)) continue
-        const fullPath = join(frame.dir, entry.name)
-        if (seen.has(fullPath)) continue
-        seen.add(fullPath)
-        const isDirectory = entry.isDirectory()
-        result.push({ path: relative(frame.root, fullPath), isDirectory, root: frame.root })
-        if (isDirectory) {
-          const sub = openDir(fullPath, frame.root, frame.depth + 1)
-          if (sub) discovered.push(sub)
-        }
-        break
-      }
-      if (frame.idx < frame.entries.length) stillActive.push(frame)
+    const ig = loadIgnore(root)
+    const remaining = maxFiles - result.length
+    const rootPrefix = root.endsWith('/') ? root : root + '/'
+    const toRelative = (abs: string): string => {
+      if (abs === root) return ''
+      return abs.startsWith(rootPrefix) ? abs.slice(rootPrefix.length) : abs
     }
-    active = stillActive.concat(discovered)
+    const paths = new fdir()
+      .withRelativePaths()
+      .withDirs()
+      .withPathSeparator('/')
+      .withMaxDepth(maxDepth)
+      .withMaxFiles(remaining)
+      .exclude((_name, dirPath) => {
+        const rel = toRelative(dirPath).replace(/\/$/, '')
+        return rel.length > 0 && ig.ignores(rel)
+      })
+      .filter((path, isDir) => {
+        if (isDir) return true
+        return !ig.ignores(path)
+      })
+      .crawl(root)
+      .sync()
+    for (const p of paths) {
+      if (!p) continue
+      const isDir = p.endsWith('/')
+      const cleanPath = isDir ? p.slice(0, -1) : p
+      if (!cleanPath) continue
+      result.push({ path: cleanPath, isDirectory: isDir, root })
+      if (result.length >= maxFiles) break
+    }
   }
-
   return result
+}
+
+function indicesFromPositions(positions: Set<number>): number[] {
+  return [...positions].sort((a, b) => a - b)
 }
 
 export function searchFiles(
@@ -154,7 +107,6 @@ export function searchFiles(
   limit = 20
 ): FileSearchResult[] {
   const files = collectFiles(roots)
-
   const hasMultipleRoots = roots.length > 1
 
   if (!query) {
@@ -167,23 +119,20 @@ export function searchFiles(
     }))
   }
 
-  const matches: FileSearchResult[] = []
-  for (const file of files) {
-    const result = fuzzyMatch(query, file.path)
-    if (result.match) {
-      matches.push({
-        path: file.path,
-        isDirectory: file.isDirectory,
-        matchIndices: result.indices,
-        score: result.score,
-        rootPath: hasMultipleRoots ? file.root : undefined,
-      })
-    }
-  }
-
-  matches.sort((a, b) => b.score - a.score)
-
-  return matches.slice(0, limit)
+  const fzf = new Fzf(files, {
+    selector: (f) => f.path,
+    casing: 'case-insensitive',
+    tiebreakers: [byLengthAsc],
+    limit,
+  })
+  const matches = fzf.find(query) as FzfResultItem<CollectedFile>[]
+  return matches.map((m) => ({
+    path: m.item.path,
+    isDirectory: m.item.isDirectory,
+    matchIndices: indicesFromPositions(m.positions),
+    score: m.score,
+    rootPath: hasMultipleRoots ? m.item.root : undefined,
+  }))
 }
 
 export interface AgentEntry {
@@ -199,13 +148,22 @@ export function searchMentions(
   scopeDir?: string
 ): MentionSearchItem[] {
   const hasMultipleRoots = roots.length > 1
+  const files = collectFiles(roots)
+  const scoped = scopeDir
+    ? files.filter((f) => f.path.startsWith(scopeDir))
+    : files
 
   if (!query) {
     const items: MentionSearchItem[] = []
-    const files = collectFiles(roots)
-    for (const f of files.slice(0, limit)) {
-      if (scopeDir && !f.path.startsWith(scopeDir)) continue
-      items.push({ kind: 'file', path: f.path, isDirectory: f.isDirectory, matchIndices: [], score: 0, rootPath: hasMultipleRoots ? f.root : undefined })
+    for (const f of scoped.slice(0, limit)) {
+      items.push({
+        kind: 'file',
+        path: f.path,
+        isDirectory: f.isDirectory,
+        matchIndices: [],
+        score: 0,
+        rootPath: hasMultipleRoots ? f.root : undefined,
+      })
     }
     if (!scopeDir) {
       for (const a of agents) {
@@ -215,28 +173,45 @@ export function searchMentions(
     return items
   }
 
-  const results: MentionSearchItem[] = []
+  const prefixLen = scopeDir?.length ?? 0
+  const fileFzf = new Fzf(scoped, {
+    selector: (f) => (scopeDir ? f.path.slice(prefixLen) : f.path),
+    casing: 'case-insensitive',
+    tiebreakers: [byLengthAsc],
+    limit,
+  })
+  const fileMatches = fileFzf.find(query) as FzfResultItem<CollectedFile>[]
 
-  const files = collectFiles(roots)
-  for (const file of files) {
-    if (scopeDir && !file.path.startsWith(scopeDir)) continue
-    const matchTarget = scopeDir ? file.path.slice(scopeDir.length) : file.path
-    const m = fuzzyMatch(query, matchTarget)
-    if (m.match) {
-      const indices = scopeDir ? m.indices.map((i) => i + scopeDir.length) : m.indices
-      results.push({ kind: 'file', path: file.path, isDirectory: file.isDirectory, matchIndices: indices, score: m.score, rootPath: hasMultipleRoots ? file.root : undefined })
+  const fileItems: MentionSearchItem[] = fileMatches.map((m) => {
+    const local = indicesFromPositions(m.positions)
+    const indices = scopeDir ? local.map((i) => i + prefixLen) : local
+    return {
+      kind: 'file',
+      path: m.item.path,
+      isDirectory: m.item.isDirectory,
+      matchIndices: indices,
+      score: m.score,
+      rootPath: hasMultipleRoots ? m.item.root : undefined,
     }
+  })
+
+  let agentItems: MentionSearchItem[] = []
+  if (!scopeDir && agents.length > 0) {
+    const agentFzf = new Fzf(agents, {
+      selector: (a) => a.name,
+      casing: 'case-insensitive',
+    })
+    const matches = agentFzf.find(query) as FzfResultItem<AgentEntry>[]
+    agentItems = matches.map((m) => ({
+      kind: 'agent' as const,
+      name: m.item.name,
+      model: m.item.model,
+      matchIndices: indicesFromPositions(m.positions),
+      score: m.score,
+    }))
   }
 
-  if (!scopeDir) {
-    for (const agent of agents) {
-      const m = fuzzyMatch(query, agent.name)
-      if (m.match) {
-        results.push({ kind: 'agent', name: agent.name, model: agent.model, matchIndices: m.indices, score: m.score })
-      }
-    }
-  }
-
-  results.sort((a, b) => b.score - a.score)
-  return results.slice(0, limit)
+  const all = [...fileItems, ...agentItems]
+  all.sort((a, b) => b.score - a.score)
+  return all.slice(0, limit)
 }

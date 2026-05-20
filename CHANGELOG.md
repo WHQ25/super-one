@@ -4,6 +4,22 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.36.0-alpha] - 2026-05-20
+
+### Added
+
+- Codex: subagents (workers and forks) now render as a unified subagent card; the card surfaces an amber failure block when a collab call errors out (e.g. `notFound` on a resumed worker), and ForkedThreadView aggregates each agent's full history across collabs
+- Codex: dedicated per-thread dispatcher with notification backfill so fork events that arrive before the fork inbox is registered still route correctly; subagents and forks are now blocked from rewriting the main session title
+- Harness: brand-specific Claude/Codex session icons that animate per status (running, background, unseen, automation) across the sidebar, session switcher, and pinned list; worktree status moves to a hover-only chip next to Pin
+- Chat: markdown images now match the Codex gallery affordances — click to open a zoom/pan lightbox, right-click for copy / add to chat / reveal in folder, native file drag-out
+- Sessions: idle backend runtimes are released after 60s of inactivity (no in-flight turn, no queued message); Claude tears down its SDK subprocess, Codex returns its app-server connection to the project pool, and lazy re-spawn happens transparently on the next send
+
+### Fixed
+
+- Chat: session title now hydrates from the DB when restoring history (sidebar was correct, the in-chat header was falling back to the first user message)
+- Chat: @-mention search no longer dies mid-IME composition, no longer gets drained by Electron's `Cache_Data` directory (now honors per-root `.gitignore` via fdir + ignore + fzf, ~10× faster on this repo), and one-off typos no longer strand the picker for longer queries
+- Terminal: macOS apps launched from Finder now default `LANG` / `LC_CTYPE` from `app.getLocale()` so CJK pty output renders correctly instead of being mangled by the C locale
+
 ## [0.35.7-alpha] - 2026-05-19
 
 ### Added

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Bot, ChevronRight, Check, Loader2, Wrench, Terminal, FileEdit, Search, ArrowUp, ArrowDown, Maximize } from 'lucide-react'
+import { Bot, ChevronRight, Check, Loader2, Wrench, Terminal, FileEdit, Search, ArrowUp, ArrowDown, Maximize, TriangleAlert } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import { cn } from '@superone/ui/lib/utils'
 import { Streamdown } from 'streamdown'
@@ -372,27 +372,28 @@ export function CodexCollabBlock({ items, isStreaming }: { items: CodexCollabToo
   )
 }
 
-export function isForkedSpawn(item: CodexCollabToolCallItem): boolean {
-  if (item.tool !== 'spawnAgent') return false
-  return Object.values(item.agentsStates).some((s) => !!s.forkedFromId)
-}
-
-export function isForwardedToFork(item: CodexCollabToolCallItem): boolean {
-  if (item.tool !== 'spawnAgent' && item.tool !== 'sendInput') return false
-  return Object.values(item.agentsStates).some((s) => !!s.forkedFromId)
+export function isSubagentFollowUp(item: CodexCollabToolCallItem): boolean {
+  return item.tool === 'sendInput' && item.receiverThreadIds.length > 0
 }
 
 export function isSpawnReady(item: CodexCollabToolCallItem): boolean {
   return item.receiverThreadIds.length > 0
 }
 
-export function CodexForkMarker({ item }: { item: CodexCollabToolCallItem }) {
+function failureMessage(status: string | undefined, message: string | undefined, t: ReturnType<typeof useTranslation>['t']): string {
+  const trimmed = message?.trim()
+  if (trimmed) return trimmed
+  if (status === 'notFound') return t('chat.codexCollab.failureNotFound')
+  return t('chat.codexCollab.failureNoDetails')
+}
+
+export function CodexSubagentMarker({ item }: { item: CodexCollabToolCallItem }) {
   const { t } = useTranslation()
   const forkNav = useForkNavigation()
   const firstThreadId = item.receiverThreadIds[0] ?? Object.keys(item.agentsStates)[0]
   const state = firstThreadId ? item.agentsStates[firstThreadId] : undefined
   const name = state?.nickname ?? t('chat.codexCollab.defaultName')
-  const role = state?.role
+  const badge = state?.forkedFromId ? t('chat.codexCollab.forked') : state?.role
   const status = state?.status
   const isRunning = status === 'running' || status === 'pendingInit'
   const isErrored = status === 'errored' || item.status === 'failed'
@@ -424,6 +425,29 @@ export function CodexForkMarker({ item }: { item: CodexCollabToolCallItem }) {
     if (firstThreadId) forkNav.open({ collabId: item.id, threadId: firstThreadId })
   }
 
+  if (isErrored) {
+    const tool = t(`chat.codexCollab.toolLabels.${item.tool}`)
+    const summary = t('chat.codexCollab.failureSummary', {
+      tool,
+      message: failureMessage(status, state?.message, t),
+    })
+    return (
+      <div className="tool-node errored my-0.5 rounded bg-amber-500/10 transition-colors">
+        <div className="flex items-start gap-1.5 px-2 py-1.5 text-xs">
+          <TriangleAlert className="mt-0.5 size-3 shrink-0 text-amber-600 dark:text-amber-400" />
+          <span className="shrink-0 font-medium text-amber-600 dark:text-amber-400">{name}</span>
+          {badge && (
+            <span className={cn('mt-px shrink-0 rounded px-1 py-px text-[10px]', colors.tagBg, colors.tagText)}>
+              {badge}
+            </span>
+          )}
+          <span className="min-w-0 flex-1 break-words text-muted-foreground">{summary}</span>
+          <span className="mt-px shrink-0 rounded bg-amber-500/20 px-1 py-px text-[10px] text-amber-600 dark:text-amber-400">{t('chat.toolBlock.error')}</span>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <NestedToolContext.Provider value={{ defaultAutoExpand: false }}>
     <div className="subagent-container my-1 min-w-0 overflow-hidden rounded border border-border/50 bg-muted/20">
@@ -434,14 +458,11 @@ export function CodexForkMarker({ item }: { item: CodexCollabToolCallItem }) {
       >
         <Bot className={cn('mt-0.5 size-3.5 shrink-0', colors.text, isRunning && !expanded && 'animate-pulse')} />
         <span className="font-medium text-foreground">{name}</span>
-        {role && (
+        {badge && (
           <span className={cn('mt-px shrink-0 rounded px-1 py-px text-[10px]', colors.tagBg, colors.tagText)}>
-            {role}
+            {badge}
           </span>
         )}
-        <span className={cn('mt-px shrink-0 rounded px-1 py-px text-[10px]', colors.tagBg, colors.tagText)}>
-          {t('chat.codexCollab.forked')}
-        </span>
         {isErrored && (
           <span className="ml-1 inline-flex shrink-0 items-center gap-1 text-red-600 dark:text-red-400">
             <span className="size-2 rounded-full bg-red-600 dark:bg-red-400" />

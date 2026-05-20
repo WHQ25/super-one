@@ -928,6 +928,190 @@ describe('streamTurnEvents child-thread routing', () => {
       status: 'failed',
     })
   })
+
+  it('does not mark a resumed worker sub-agent as forked from its spawn source parent', async () => {
+    const session = { ...makeSession(), threadId: 'main-thread' }
+    const notifications: Array<{ method: string; params: Record<string, unknown> }> = [
+      {
+        method: 'item/completed',
+        params: {
+          thread_id: 'main-thread',
+          item: {
+            id: 'collab-send-1',
+            type: 'collabAgentToolCall',
+            tool: 'sendInput',
+            status: 'failed',
+            sender_thread_id: 'main-thread',
+            receiver_thread_ids: ['child-resume'],
+            agents_states: {
+              'child-resume': { status: 'notFound', message: null },
+            },
+            prompt: 'continue working',
+          },
+        },
+      },
+      {
+        method: 'item/completed',
+        params: {
+          thread_id: 'main-thread',
+          item: {
+            id: 'collab-resume-1',
+            type: 'collabAgentToolCall',
+            tool: 'resumeAgent',
+            status: 'completed',
+            sender_thread_id: 'main-thread',
+            receiver_thread_ids: ['child-resume'],
+            agents_states: {
+              'child-resume': { status: 'pendingInit', message: null },
+            },
+          },
+        },
+      },
+      {
+        method: 'item/completed',
+        params: {
+          thread_id: 'main-thread',
+          item: {
+            id: 'collab-send-2',
+            type: 'collabAgentToolCall',
+            tool: 'sendInput',
+            status: 'completed',
+            sender_thread_id: 'main-thread',
+            receiver_thread_ids: ['child-resume'],
+            agents_states: {
+              'child-resume': { status: 'pendingInit', message: null },
+            },
+            prompt: 'continue working',
+          },
+        },
+      },
+      {
+        method: 'turn/started',
+        params: { threadId: 'child-resume', turn: { id: 'child-turn-1' } },
+      },
+      {
+        method: 'item/completed',
+        params: {
+          threadId: 'child-resume',
+          item: {
+            id: 'child-cmd-1',
+            type: 'command_execution',
+            command: 'git status --short -- hello_world.py',
+            status: 'completed',
+          },
+        },
+      },
+      {
+        method: 'thread/tokenUsage/updated',
+        params: {
+          threadId: 'child-resume',
+          tokenUsage: {
+            last: {
+              inputTokens: 30_000,
+              cachedInputTokens: 1_000,
+              outputTokens: 362,
+              reasoningOutputTokens: 0,
+            },
+            total: {
+              inputTokens: 171_300,
+              cachedInputTokens: 0,
+              outputTokens: 3_900,
+              reasoningOutputTokens: 0,
+            },
+          },
+        },
+      },
+      {
+        method: 'turn/completed',
+        params: { threadId: 'child-resume', turn: { id: 'child-turn-1', status: 'completed' } },
+      },
+      {
+        method: 'turn/completed',
+        params: { turn: { status: 'completed' } },
+      },
+    ]
+    const requestCalls: Array<{ method: string; params: unknown }> = []
+    const mockConnection = {
+      request: vi.fn().mockImplementation(async (method: string, params: unknown) => {
+        requestCalls.push({ method, params })
+        if (method === 'thread/resume') return {}
+        if (method === 'thread/read') {
+          return {
+            thread: {
+              id: 'child-resume',
+              agentNickname: 'Euler',
+              agentRole: 'worker',
+              forkedFromId: null,
+              source: {
+                subAgent: {
+                  thread_spawn: {
+                    parent_thread_id: 'main-thread',
+                    depth: 1,
+                    agent_nickname: 'Euler',
+                    agent_role: 'worker',
+                  },
+                },
+              },
+            },
+          }
+        }
+        return {}
+      }),
+      respond: vi.fn().mockResolvedValue(undefined),
+      notify: vi.fn().mockResolvedValue(undefined),
+      nextNotification: vi.fn().mockImplementation(async () => {
+        const next = notifications.shift()
+        if (!next) throw new Error('no notification')
+        return next
+      }),
+    } as never
+
+    const result = await streamTurnEvents(
+      mockConnection,
+      session,
+      null,
+      new AbortController(),
+      { onItemDelta: vi.fn() },
+    )
+
+    expect(requestCalls).toContainEqual({
+      method: 'thread/read',
+      params: { threadId: 'child-resume', includeTurns: false },
+    })
+    const failedSendInput = result.items.find(
+      (it) => it.type === 'collab_tool_call' && it.id === 'collab-send-1',
+    )
+    if (failedSendInput?.type !== 'collab_tool_call') throw new Error('expected failed collab_tool_call')
+    expect(failedSendInput.childItems?.['child-resume']).toBeUndefined()
+    expect(failedSendInput.agentsStates['child-resume']?.tokens).toBeUndefined()
+
+    const lastSendInput = result.items.find(
+      (it) => it.type === 'collab_tool_call' && it.id === 'collab-send-2',
+    )
+    if (lastSendInput?.type !== 'collab_tool_call') throw new Error('expected collab_tool_call')
+    expect(lastSendInput).toMatchObject({
+      type: 'collab_tool_call',
+      tool: 'sendInput',
+      receiverThreadIds: ['child-resume'],
+      agentsStates: {
+        'child-resume': {
+          role: 'worker',
+        },
+      },
+      childItems: {
+        'child-resume': [
+          {
+            id: 'child-cmd-1',
+            type: 'command_execution',
+            command: 'git status --short -- hello_world.py',
+            status: 'completed',
+          },
+        ],
+      },
+    })
+    expect(lastSendInput.agentsStates['child-resume']?.forkedFromId).toBeUndefined()
+    expect(lastSendInput.agentsStates['child-resume']?.tokens).toEqual({ input: 29_000, output: 362 })
+  })
 })
 
 describe('streamTurnEvents superone preapprove short-circuit', () => {

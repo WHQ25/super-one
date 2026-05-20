@@ -626,6 +626,13 @@ export function mapUsageFromTokenUsage(raw: unknown): CodexUsageInfo | null {
   }
 }
 
+export function tokenSnapshotFromUsage(usage: CodexUsageInfo): { input: number; output: number } {
+  return {
+    input: Math.max(0, usage.lastInputTokens - usage.lastCachedInputTokens),
+    output: usage.lastOutputTokens,
+  }
+}
+
 export function deriveFinalResponse(items: CodexThreadItem[]): string {
   for (let i = items.length - 1; i >= 0; i--) {
     const item = items[i]
@@ -1313,6 +1320,7 @@ export async function streamTurnEvents(
   const subscribedChildThreads = new Set<string>()
   const childItemMaps = new Map<string, { order: string[]; map: Map<string, CodexThreadItem> }>()
   const childThreadToCollabId = new Map<string, string>()
+  const childThreadMeta = new Map<string, { forkedFromId?: string; nickname?: string; role?: string }>()
 
   const getChildItems = (threadId: string): CodexThreadItem[] => {
     const data = childItemMaps.get(threadId)
@@ -1330,6 +1338,11 @@ export async function streamTurnEvents(
     data.map.set(item.id, item)
   }
 
+  const bindChildThreadToCollab = (threadId: string, collabId: string): void => {
+    childThreadToCollabId.set(threadId, collabId)
+    childItemMaps.set(threadId, { order: [], map: new Map() })
+  }
+
   const applyAgentMeta = (
     callId: string | null,
     threadId: string | null,
@@ -1338,6 +1351,11 @@ export async function streamTurnEvents(
     forkedFromId: string | null = null,
   ): void => {
     if (!callId || !threadId || (!nickname && !role && !forkedFromId)) return
+    const cached = childThreadMeta.get(threadId) ?? {}
+    if (nickname) cached.nickname = nickname
+    if (role) cached.role = role
+    if (forkedFromId) cached.forkedFromId = forkedFromId
+    childThreadMeta.set(threadId, cached)
     const collab = itemMap.get(callId)
     if (!collab || collab.type !== 'collab_tool_call') return
     const prev = collab.agentsStates[threadId] ?? { status: 'pendingInit' as CodexCollabAgentStatus }
@@ -1349,6 +1367,21 @@ export async function streamTurnEvents(
     }
     upsertItem(itemOrder, itemMap, collab)
     callbacks?.onItemDelta?.('updated', collab)
+  }
+
+  const backFillAgentMetaFromCache = (item: CodexThreadItem): void => {
+    if (item.type !== 'collab_tool_call') return
+    for (const tid of Object.keys(item.agentsStates)) {
+      const meta = childThreadMeta.get(tid)
+      if (!meta) continue
+      const prev = item.agentsStates[tid]
+      item.agentsStates[tid] = {
+        ...prev,
+        ...(meta.nickname && !prev.nickname ? { nickname: meta.nickname } : {}),
+        ...(meta.role && !prev.role ? { role: meta.role } : {}),
+        ...(meta.forkedFromId && !prev.forkedFromId ? { forkedFromId: meta.forkedFromId } : {}),
+      }
+    }
   }
 
   const setChildAgentStatus = (callId: string, threadId: string, status: CodexCollabAgentStatus): void => {
@@ -1390,8 +1423,7 @@ export async function streamTurnEvents(
   const subscribeChildThread = async (threadId: string, collabId: string): Promise<void> => {
     if (subscribedChildThreads.has(threadId)) return
     subscribedChildThreads.add(threadId)
-    childThreadToCollabId.set(threadId, collabId)
-    childItemMaps.set(threadId, { order: [], map: new Map() })
+    bindChildThreadToCollab(threadId, collabId)
     const [resumeResult, readResult] = await Promise.allSettled([
       connection.request('thread/resume', { threadId, persistExtendedHistory: false }),
       connection.request('thread/read', { threadId, includeTurns: false }),
@@ -1483,6 +1515,7 @@ export async function streamTurnEvents(
   const isRelevantEvent = (params: Record<string, unknown>): boolean => {
     const notifThreadId = readNotificationThreadId(params)
     if (notifThreadId && subscribedChildThreads.has(notifThreadId)) return true
+    if (notifThreadId && session.threadId && notifThreadId !== session.threadId) return false
     if (!activeTurnId) return true
     const turnId = readNotificationTurnId(params)
     return !turnId || turnId === activeTurnId
@@ -1631,12 +1664,11 @@ export async function streamTurnEvents(
           const collab = itemMap.get(collabId)
           if (!collab || collab.type !== 'collab_tool_call') break
           const prev = collab.agentsStates[notifThreadId] ?? { status: 'pendingInit' as CodexCollabAgentStatus }
-          const nextInput = Math.max(0, usage.totalInputTokens - usage.totalCachedInputTokens)
-          const nextOutput = usage.totalOutputTokens
-          if (prev.tokens?.input === nextInput && prev.tokens?.output === nextOutput) break
+          const tokens = tokenSnapshotFromUsage(usage)
+          if (prev.tokens?.input === tokens.input && prev.tokens?.output === tokens.output) break
           collab.agentsStates[notifThreadId] = {
             ...prev,
-            tokens: { input: nextInput, output: nextOutput },
+            tokens,
           }
           upsertItem(itemOrder, itemMap, collab)
           callbacks?.onItemDelta?.('updated', collab)
@@ -1669,6 +1701,7 @@ export async function streamTurnEvents(
           mapped.generationMs = Date.now() - lastTurnItemCompletedAt
         }
 
+        if (mapped.type === 'collab_tool_call') backFillAgentMetaFromCache(mapped)
         upsertItem(itemOrder, itemMap, mapped)
         callbacks?.onItemDelta?.(method === 'item/started' ? 'started' : 'completed', mapped)
         if (method === 'item/completed') lastTurnItemCompletedAt = Date.now()
@@ -1690,8 +1723,13 @@ export async function streamTurnEvents(
               await subscribeChildThread(tid, mapped.id)
             }
           }
-          if (method === 'item/completed' && (mapped.tool === 'sendInput' || mapped.tool === 'wait' || mapped.tool === 'resumeAgent')) {
+          if (method === 'item/completed' && mapped.status === 'completed' && (mapped.tool === 'sendInput' || mapped.tool === 'wait' || mapped.tool === 'resumeAgent')) {
             for (const tid of mapped.receiverThreadIds) {
+              if (!session.forkListeners.has(tid) && !subscribedChildThreads.has(tid)) {
+                await subscribeChildThread(tid, mapped.id)
+              } else if (!session.forkListeners.has(tid) && mapped.tool === 'sendInput') {
+                bindChildThreadToCollab(tid, mapped.id)
+              }
               const forkHandle = session.forkListeners.get(tid)
               if (forkHandle && mapped.tool === 'sendInput') forkHandle.attachCollab(mapped)
             }

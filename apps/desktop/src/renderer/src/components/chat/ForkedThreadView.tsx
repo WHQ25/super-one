@@ -19,10 +19,12 @@ function collectForkTurns(messages: ChatMessage[], threadId: string): {
   turns: ForkTurn[]
   nickname?: string
   role?: string
+  forked: boolean
 } {
   const turns: ForkTurn[] = []
   let nickname: string | undefined
   let role: string | undefined
+  let forked = false
   const seen = new Set<string>()
   for (const msg of messages) {
     const codex = msg.metadata?.codex as { items?: CodexThreadItem[] } | undefined
@@ -34,6 +36,7 @@ function collectForkTurns(messages: ChatMessage[], threadId: string): {
       const st = item.agentsStates[threadId]
       if (!nickname && st?.nickname) nickname = st.nickname
       if (!role && st?.role) role = st.role
+      if (st?.forkedFromId) forked = true
       if (seen.has(item.id)) continue
       seen.add(item.id)
       turns.push({
@@ -44,7 +47,7 @@ function collectForkTurns(messages: ChatMessage[], threadId: string): {
       })
     }
   }
-  return { turns, nickname, role }
+  return { turns, nickname, role, forked }
 }
 
 export function ForkedThreadView({ fork }: { fork: ForkViewState }) {
@@ -53,11 +56,12 @@ export function ForkedThreadView({ fork }: { fork: ForkViewState }) {
   const messages = useActiveSession((s) => s.messages)
   const colorIdx = useActiveSession((s) => s.subagentColors[fork.threadId])
 
-  const { turns, nickname, role } = useMemo(
+  const { turns, nickname, role, forked } = useMemo(
     () => collectForkTurns(messages, fork.threadId),
     [messages, fork.threadId],
   )
   const name = nickname ?? t('chat.codexCollab.defaultName')
+  const badge = forked ? t('chat.codexCollab.forked') : role
   const colors = useMemo(() => getSubagentColorClasses(colorIdx), [colorIdx])
   const totalItems = useMemo(() => turns.reduce((sum, t) => sum + t.items.length, 0), [turns])
   const backLabel = t('chat.codexCollab.backToMain')
@@ -76,14 +80,11 @@ export function ForkedThreadView({ fork }: { fork: ForkViewState }) {
         </button>
         <Bot className={cn('size-3.5 shrink-0', colors.text)} />
         <span className="min-w-0 truncate font-medium text-foreground">{name}</span>
-        {role && (
+        {badge && (
           <span className={cn('shrink-0 rounded px-1 py-px text-[10px]', colors.tagBg, colors.tagText)}>
-            {role}
+            {badge}
           </span>
         )}
-        <span className={cn('shrink-0 rounded px-1 py-px text-[10px]', colors.tagBg, colors.tagText)}>
-          {t('chat.codexCollab.forked')}
-        </span>
         <span className="ml-auto inline-flex shrink-0 items-center text-[11px] text-muted-foreground tabular-nums">
           {t('chat.codexCollab.turnCount', { count: turns.length })}
         </span>

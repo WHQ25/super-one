@@ -5,7 +5,7 @@ import { cn } from '@superone/ui/lib/utils'
 import { CopyableMarkdown } from './CopyableMarkdown'
 import { renderCodexItem, CodexCommandBlock } from './codex-item-renderer'
 import { fileLinkComponents } from './chat-markdown-components'
-import { CodexCollabBlock, CodexForkMarker, isForkedSpawn, isForwardedToFork, isSpawnReady } from './CodexCollabBlock'
+import { CodexSubagentMarker, isSpawnReady, isSubagentFollowUp } from './CodexCollabBlock'
 import { CodexImageGalleryBlock } from './CodexImageGalleryBlock'
 import { useActiveSession, useChatStore } from '@/stores/chat'
 import { useMiniAppStore } from '@/stores/miniapp'
@@ -220,17 +220,14 @@ export function CodexTurnView({ message, isStreaming, isLastAssistant }: CodexTu
   type Segment =
     | { kind: 'item'; item: CodexThreadItem; index: number }
     | { kind: 'group'; items: CodexCommandExecutionItem[] }
-    | { kind: 'collab'; items: CodexCollabToolCallItem[] }
-    | { kind: 'fork'; item: CodexCollabToolCallItem }
+    | { kind: 'subagent'; item: CodexCollabToolCallItem }
     | { kind: 'app-tools'; appId: string; items: CodexMcpToolCallItem[] }
   const segments: Segment[] = []
   const imageItems: CodexImageGenerationItem[] = []
   let cmdGroup: CodexCommandExecutionItem[] = []
-  let collabGroup: CodexCollabToolCallItem[] = []
   let appGroup: CodexMcpToolCallItem[] = []
   let appGroupId: string | null = null
   const flushCmd = () => { if (cmdGroup.length > 0) { segments.push({ kind: 'group', items: cmdGroup }); cmdGroup = [] } }
-  const flushCollab = () => { if (collabGroup.length > 0) { segments.push({ kind: 'collab', items: collabGroup }); collabGroup = [] } }
   const flushAppGroup = () => {
     if (appGroup.length > 0 && appGroupId) { segments.push({ kind: 'app-tools', appId: appGroupId, items: appGroup }) }
     appGroup = []
@@ -245,7 +242,6 @@ export function CodexTurnView({ message, isStreaming, isLastAssistant }: CodexTu
     const appIdForItem = item.type === 'mcp_tool_call' ? groupableAppForMcpItem(item) : null
     if (appIdForItem) {
       flushCmd()
-      flushCollab()
       if (appGroupId !== appIdForItem) flushAppGroup()
       appGroupId = appIdForItem
       appGroup.push(item as CodexMcpToolCallItem)
@@ -255,45 +251,32 @@ export function CodexTurnView({ message, isStreaming, isLastAssistant }: CodexTu
       if (!isSpawnReady(item)) {
         continue
       }
-      if (isForkedSpawn(item)) {
-        flushCollab()
-        segments.push({ kind: 'fork', item })
-      } else {
-        collabGroup.push(item)
-      }
-    } else if (item.type === 'collab_tool_call' && item.tool === 'sendInput' && isForwardedToFork(item)) {
+      segments.push({ kind: 'subagent', item })
+    } else if (item.type === 'collab_tool_call' && isSubagentFollowUp(item)) {
       flushCmd()
-      flushCollab()
       flushAppGroup()
-      segments.push({ kind: 'fork', item })
+      segments.push({ kind: 'subagent', item })
     } else if (item.type === 'collab_tool_call') {
       flushCmd()
-      flushCollab()
       flushAppGroup()
       segments.push({ kind: 'item', item, index: i })
     } else if (isCollapsibleCommand(item)) {
-      flushCollab()
       flushAppGroup()
       cmdGroup.push(item)
     } else {
       flushCmd()
-      flushCollab()
       flushAppGroup()
       segments.push({ kind: 'item', item, index: i })
     }
   }
   flushCmd()
-  flushCollab()
   flushAppGroup()
 
   return (
     <div className="codex-turn min-w-0 w-full space-y-2">
       {segments.map((seg, segIdx) => {
-        if (seg.kind === 'collab') {
-          return <CodexCollabBlock key={`cb-${segIdx}`} items={seg.items} isStreaming={isStreaming} />
-        }
-        if (seg.kind === 'fork') {
-          return <CodexForkMarker key={`fk-${seg.item.id}`} item={seg.item} />
+        if (seg.kind === 'subagent') {
+          return <CodexSubagentMarker key={`sa-${seg.item.id}`} item={seg.item} />
         }
         if (seg.kind === 'group') {
           if (seg.items.length === 1) {

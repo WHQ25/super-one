@@ -572,6 +572,184 @@ describe('CodexTurnView', () => {
     expect(mockRejectCodexPlan).toHaveBeenCalledWith(undefined)
   })
 
+  it('renders a worker spawnAgent as a subagent card', () => {
+    setupActiveSession()
+    render(
+      <CodexTurnView
+        message={createMessage({
+          status: 'complete',
+          metadata: {
+            codex: {
+              threadId: 'main-thread',
+              usage: null,
+              items: [
+                {
+                  id: 'collab-spawn-1',
+                  type: 'collab_tool_call',
+                  tool: 'spawnAgent',
+                  status: 'completed',
+                  senderThreadId: 'main-thread',
+                  receiverThreadIds: ['worker-thread'],
+                  prompt: 'start',
+                  agentsStates: {
+                    'worker-thread': {
+                      status: 'completed',
+                      nickname: 'Euler',
+                      role: 'worker',
+                    },
+                  },
+                },
+              ],
+            },
+          },
+        })}
+        isStreaming={false}
+        isLastAssistant
+      />,
+    )
+
+    expect(screen.getByText('Euler')).toBeTruthy()
+    expect(screen.getByText('worker')).toBeTruthy()
+    expect(screen.queryByText('forked')).toBeNull()
+  })
+
+  it('renders a worker sendInput as a subagent card', () => {
+    setupActiveSession()
+    render(
+      <CodexTurnView
+        message={createMessage({
+          status: 'complete',
+          metadata: {
+            codex: {
+              threadId: 'main-thread',
+              usage: null,
+              items: [
+                {
+                  id: 'collab-send-1',
+                  type: 'collab_tool_call',
+                  tool: 'sendInput',
+                  status: 'completed',
+                  senderThreadId: 'main-thread',
+                  receiverThreadIds: ['worker-thread'],
+                  prompt: 'continue',
+                  agentsStates: {
+                    'worker-thread': {
+                      status: 'completed',
+                      nickname: 'Euler',
+                      role: 'worker',
+                    },
+                  },
+                  childItems: {
+                    'worker-thread': [
+                      {
+                        id: 'worker-msg-1',
+                        type: 'agent_message',
+                        text: 'done',
+                      },
+                    ],
+                  },
+                },
+              ],
+            },
+          },
+        })}
+        isStreaming={false}
+        isLastAssistant
+      />,
+    )
+
+    expect(screen.getByText('Euler')).toBeTruthy()
+    expect(screen.getByText('worker')).toBeTruthy()
+    expect(screen.queryByText('forked')).toBeNull()
+    expect(screen.queryByText('Follow-up → Euler')).toBeNull()
+  })
+
+  it('renders a forked sendInput with only the forked badge', () => {
+    setupActiveSession()
+    render(
+      <CodexTurnView
+        message={createMessage({
+          status: 'complete',
+          metadata: {
+            codex: {
+              threadId: 'main-thread',
+              usage: null,
+              items: [
+                {
+                  id: 'collab-send-1',
+                  type: 'collab_tool_call',
+                  tool: 'sendInput',
+                  status: 'completed',
+                  senderThreadId: 'main-thread',
+                  receiverThreadIds: ['fork-thread'],
+                  prompt: 'continue',
+                  agentsStates: {
+                    'fork-thread': {
+                      status: 'completed',
+                      nickname: 'Euler',
+                      role: 'worker',
+                      forkedFromId: 'main-thread',
+                    },
+                  },
+                },
+              ],
+            },
+          },
+        })}
+        isStreaming={false}
+        isLastAssistant
+      />,
+    )
+
+    expect(screen.getByText('Euler')).toBeTruthy()
+    expect(screen.getByText('forked')).toBeTruthy()
+    expect(screen.queryByText('worker')).toBeNull()
+    expect(screen.queryByText('Follow-up → Euler')).toBeNull()
+  })
+
+  it('renders a failed subagent as a non-expandable error row', () => {
+    setupActiveSession()
+    const { container } = render(
+      <CodexTurnView
+        message={createMessage({
+          status: 'complete',
+          metadata: {
+            codex: {
+              threadId: 'main-thread',
+              usage: null,
+              items: [
+                {
+                  id: 'collab-send-1',
+                  type: 'collab_tool_call',
+                  tool: 'sendInput',
+                  status: 'failed',
+                  senderThreadId: 'main-thread',
+                  receiverThreadIds: ['worker-thread'],
+                  prompt: 'continue',
+                  agentsStates: {
+                    'worker-thread': {
+                      status: 'notFound',
+                      nickname: 'Euler',
+                      role: 'worker',
+                    },
+                  },
+                },
+              ],
+            },
+          },
+        })}
+        isStreaming={false}
+        isLastAssistant
+      />,
+    )
+
+    expect(screen.getByText('Euler')).toBeTruthy()
+    expect(screen.getByText('worker')).toBeTruthy()
+    expect(screen.getByText('Follow-up failed: Subagent is not available. Resume it, then retry this follow-up.')).toBeTruthy()
+    expect(screen.getByText('Error')).toBeTruthy()
+    expect(container.querySelector('button')).toBeNull()
+  })
+
   it('collects every image of a turn into one gallery rendered after the turn content', () => {
     render(
       <CodexTurnView

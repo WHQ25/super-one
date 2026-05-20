@@ -504,6 +504,9 @@ export type Messages = {
       openFullView: string
       backToMain: string
       forked: string
+      failureSummary: string
+      failureNotFound: string
+      failureNoDetails: string
       turnCount_one: string
       turnCount_other: string
       noItems: string
@@ -1630,6 +1633,9 @@ export const en: Messages = {
       openFullView: 'Open full view',
       backToMain: 'Back to main',
       forked: 'forked',
+      failureSummary: '{{tool}} failed: {{message}}',
+      failureNotFound: 'Subagent is not available. Resume it, then retry this follow-up.',
+      failureNoDetails: 'No error details were returned.',
       turnCount_one: '{{count}} turn',
       turnCount_other: '{{count}} turns',
       noItems: 'No items yet in this branch.',

@@ -4,6 +4,20 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.36.1-alpha] - 2026-05-21
+
+### Added
+
+- Chat: subagents now have a dedicated full-screen view, and their text and thinking stream live as content deltas
+- Codex: generated images gain a "copy prompt" action in their right-click menu
+
+### Fixed
+
+- Sessions: rewind and settings changes now recover an idle-released backend runtime instead of failing
+- Remote: Codex collab tool calls are grouped into blocks so they render correctly on mobile
+- Agent: subagents are now blocked from renaming the main session
+- Mini-App: dragging an external file into a mini-app panel works again
+
 ## [0.36.0-alpha] - 2026-05-20
 
 ### Added

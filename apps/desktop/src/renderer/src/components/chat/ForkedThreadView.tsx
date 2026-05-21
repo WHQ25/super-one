@@ -90,30 +90,32 @@ export function ForkedThreadView({ fork }: { fork: ForkViewState }) {
         </span>
       </div>
 
-      <div className="chat-md flex-1 overflow-y-auto px-3 py-3">
-        {totalItems === 0 && turns.length === 0 ? (
-          <div className="text-xs text-muted-foreground">{t('chat.codexCollab.noItems')}</div>
-        ) : (
-          turns.map((turn, ti) => (
-            <div key={turn.collabId} className={cn(ti > 0 && 'mt-4 border-t border-border/30 pt-4')}>
-              {turn.prompt && (
-                <div className="mb-3">
-                  <div className="mb-1 flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                    <span>{t(`chat.codexCollab.turnLabels.${turn.tool}`)}</span>
+      <div className="flex-1 overflow-y-auto">
+        <div className="chat-md mx-auto w-full min-w-0 max-w-3xl px-3 py-3">
+          {totalItems === 0 && turns.length === 0 ? (
+            <div className="text-xs text-muted-foreground">{t('chat.codexCollab.noItems')}</div>
+          ) : (
+            turns.map((turn, ti) => (
+              <div key={turn.collabId} className={cn(ti > 0 && 'mt-4 border-t border-border/30 pt-4')}>
+                {turn.prompt && (
+                  <div className="mb-3">
+                    <div className="mb-1 flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                      <span>{t(`chat.codexCollab.turnLabels.${turn.tool}`)}</span>
+                    </div>
+                    <div className={cn('whitespace-pre-wrap rounded border-l-2 bg-muted/30 px-3 py-2 text-xs leading-relaxed text-foreground', colors.borderL)}>
+                      {turn.prompt}
+                    </div>
                   </div>
-                  <div className={cn('whitespace-pre-wrap rounded border-l-2 bg-muted/30 px-3 py-2 text-xs leading-relaxed text-foreground', colors.borderL)}>
-                    {turn.prompt}
-                  </div>
-                </div>
-              )}
-              {turn.items.length === 0 ? (
-                <div className="text-[11px] text-muted-foreground">{t('chat.codexCollab.noOutput')}</div>
-              ) : (
-                turn.items.map((item, i) => renderCodexItem(item, i, false, turn.items[i + 1]))
-              )}
-            </div>
-          ))
-        )}
+                )}
+                {turn.items.length === 0 ? (
+                  <div className="text-[11px] text-muted-foreground">{t('chat.codexCollab.noOutput')}</div>
+                ) : (
+                  turn.items.map((item, i) => renderCodexItem(item, i, false, turn.items[i + 1]))
+                )}
+              </div>
+            ))
+          )}
+        </div>
       </div>
     </div>
   )

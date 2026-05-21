@@ -191,56 +191,58 @@ export function SubagentFullView({ view }: { view: SubagentViewState }) {
         </span>
       </div>
 
-      <div className="chat-md flex-1 overflow-y-auto px-3 py-3">
-        {taskInput.prompt && (
-          <div className="mb-3">
-            <div className="mb-1 flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-              <span>{t('chat.subagent.prompt')}</span>
-              {taskInput.model && (
-                <span className="rounded bg-muted px-1 py-px text-[10px] normal-case">{taskInput.model}</span>
+      <div className="flex-1 overflow-y-auto">
+        <div className="chat-md mx-auto w-full min-w-0 max-w-3xl px-3 py-3">
+          {taskInput.prompt && (
+            <div className="mb-3">
+              <div className="mb-1 flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                <span>{t('chat.subagent.prompt')}</span>
+                {taskInput.model && (
+                  <span className="rounded bg-muted px-1 py-px text-[10px] normal-case">{taskInput.model}</span>
+                )}
+              </div>
+              <div className={cn('whitespace-pre-wrap rounded border-l-2 bg-muted/30 px-3 py-2 text-xs leading-relaxed text-foreground', colors.borderL)}>
+                {taskInput.prompt}
+              </div>
+            </div>
+          )}
+
+          {isAsync ? (
+            <div className="space-y-2">
+              {asyncEntries.map((entry, i) => renderAsyncEntry(entry, i, isRunning))}
+              {isRunning && progress?.description && (
+                <AsyncToolRow toolName={progress.lastToolName ?? ''} description={progress.description} isActive />
+              )}
+              {asyncEntries.length === 0 && !progress?.description && (
+                <div className="px-1 py-2 text-xs text-muted-foreground">
+                  {isRunning ? t('chat.subagent.running') : t('chat.subagent.noActivity', 'No activity recorded')}
+                </div>
               )}
             </div>
-            <div className={cn('whitespace-pre-wrap rounded border-l-2 bg-muted/30 px-3 py-2 text-xs leading-relaxed text-foreground', colors.borderL)}>
-              {taskInput.prompt}
+          ) : (
+            <div className="space-y-2">
+              {childBlocks.map((block, i) => renderFullViewBlock(block, i, isRunning, toolResultMap, toolErrorMaps))}
             </div>
-          </div>
-        )}
+          )}
 
-        {isAsync ? (
-          <div className="space-y-2">
-            {asyncEntries.map((entry, i) => renderAsyncEntry(entry, i, isRunning))}
-            {isRunning && progress?.description && (
-              <AsyncToolRow toolName={progress.lastToolName ?? ''} description={progress.description} isActive />
-            )}
-            {asyncEntries.length === 0 && !progress?.description && (
-              <div className="px-1 py-2 text-xs text-muted-foreground">
-                {isRunning ? t('chat.subagent.running') : t('chat.subagent.noActivity', 'No activity recorded')}
+          {outputText && !(isAsync && isRunning) && (
+            <div className="mt-4 border-t border-border/30 pt-3">
+              <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                {t('chat.subagent.output')}
               </div>
-            )}
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {childBlocks.map((block, i) => renderFullViewBlock(block, i, isRunning, toolResultMap, toolErrorMaps))}
-          </div>
-        )}
-
-        {outputText && !(isAsync && isRunning) && (
-          <div className="mt-4 border-t border-border/30 pt-3">
-            <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-              {t('chat.subagent.output')}
+              <Streamdown
+                className="chat-md text-xs"
+                plugins={streamdownPlugins}
+                rehypePlugins={streamdownRehypePlugins}
+                components={streamdownComponents}
+                controls={streamdownControls}
+                linkSafety={streamdownLinkSafety}
+              >
+                {outputText}
+              </Streamdown>
             </div>
-            <Streamdown
-              className="chat-md text-xs"
-              plugins={streamdownPlugins}
-              rehypePlugins={streamdownRehypePlugins}
-              components={streamdownComponents}
-              controls={streamdownControls}
-              linkSafety={streamdownLinkSafety}
-            >
-              {outputText}
-            </Streamdown>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   )

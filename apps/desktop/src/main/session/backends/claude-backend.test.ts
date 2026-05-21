@@ -16,6 +16,12 @@ const hoisted = vi.hoisted(() => {
     mockQueryInterrupt: ReturnType<typeof vi.fn>
     mockQueryClose: ReturnType<typeof vi.fn>
     mockQuerySetModel: ReturnType<typeof vi.fn>
+    mockQueryRewindFiles: ReturnType<typeof vi.fn>
+    mockQueryGetContextUsage: ReturnType<typeof vi.fn>
+    mockQueryMcpServerStatus: ReturnType<typeof vi.fn>
+    mockQueryReconnectMcpServer: ReturnType<typeof vi.fn>
+    mockQueryToggleMcpServer: ReturnType<typeof vi.fn>
+    mockQueryReloadPlugins: ReturnType<typeof vi.fn>
   }
   const captured: Captured = {
     emit: null,
@@ -31,6 +37,12 @@ const hoisted = vi.hoisted(() => {
     mockQueryInterrupt: vi.fn(async () => {}),
     mockQueryClose: vi.fn(),
     mockQuerySetModel: vi.fn(async () => {}),
+    mockQueryRewindFiles: vi.fn(async () => ({ canRewind: true, filesChanged: ['a.ts'], insertions: 1, deletions: 0 })),
+    mockQueryGetContextUsage: vi.fn(async () => ({ categories: [{ name: 'system', tokens: 5, color: '#fff' }], totalTokens: 5, maxTokens: 100, percentage: 5, model: 'claude' })),
+    mockQueryMcpServerStatus: vi.fn(async () => []),
+    mockQueryReconnectMcpServer: vi.fn(async () => {}),
+    mockQueryToggleMcpServer: vi.fn(async () => {}),
+    mockQueryReloadPlugins: vi.fn(async () => {}),
   }
   captured.createSessionQueryMock.mockImplementation(
     (bridge: unknown, _opts: unknown, emit: (e: AgentEvent) => void, _getMid: () => string, _getTs: () => number, _getInterrupted: () => boolean, onSessionId: (id: string) => void, onQueuedTurnStart: (id: string) => void, onStepBoundary: () => void) => {
@@ -47,6 +59,12 @@ const hoisted = vi.hoisted(() => {
           interrupt: captured.mockQueryInterrupt,
           close: captured.mockQueryClose,
           setModel: captured.mockQuerySetModel,
+          rewindFiles: captured.mockQueryRewindFiles,
+          getContextUsage: captured.mockQueryGetContextUsage,
+          mcpServerStatus: captured.mockQueryMcpServerStatus,
+          reconnectMcpServer: captured.mockQueryReconnectMcpServer,
+          toggleMcpServer: captured.mockQueryToggleMcpServer,
+          reloadPlugins: captured.mockQueryReloadPlugins,
         },
         iterationDone: promise,
       }
@@ -120,6 +138,12 @@ describe('ClaudeBackend', () => {
     hoisted.captured.mockQueryInterrupt.mockClear()
     hoisted.captured.mockQueryClose.mockClear()
     hoisted.captured.mockQuerySetModel.mockClear()
+    hoisted.captured.mockQueryRewindFiles.mockClear()
+    hoisted.captured.mockQueryGetContextUsage.mockClear()
+    hoisted.captured.mockQueryMcpServerStatus.mockClear()
+    hoisted.captured.mockQueryReconnectMcpServer.mockClear()
+    hoisted.captured.mockQueryToggleMcpServer.mockClear()
+    hoisted.captured.mockQueryReloadPlugins.mockClear()
     permissionHoisted.createCanUseToolMock.mockClear()
     permissionHoisted.createCanUseToolMock.mockImplementation(() => ({ canUseTool: vi.fn(), trackPlanFile: vi.fn() }))
     permissionHoisted.rejectAllPendingMock.mockClear()
@@ -592,6 +616,114 @@ describe('ClaudeBackend', () => {
       expect(permissionHoisted.rejectAllPendingMock).toHaveBeenCalledWith(
         expect.any(Map), expect.any(Map), expect.any(Map), 'backend.idle',
       )
+    })
+  })
+
+  describe('idle revival for bypass operations', () => {
+    async function startThenIdleRelease(): Promise<ClaudeBackend> {
+      const backend = new ClaudeBackend()
+      await backend.start(makeStartOpts())
+      hoisted.captured.iterationDone?.resolve()
+      await (backend as unknown as { releaseRuntime: (r: 'idle') => Promise<void> }).releaseRuntime('idle')
+      expect(hoisted.captured.createSessionQueryMock).toHaveBeenCalledTimes(1)
+      return backend
+    }
+
+    it('rewindFiles() revives the runtime after idle release instead of returning No active session', async () => {
+      const backend = await startThenIdleRelease()
+
+      const result = await backend.rewindFiles('msg-1')
+
+      expect(hoisted.captured.createSessionQueryMock).toHaveBeenCalledTimes(2)
+      expect(result.canRewind).toBe(true)
+      expect(result.error).toBeUndefined()
+      expect(hoisted.captured.mockQueryRewindFiles).toHaveBeenCalledWith('msg-1', undefined)
+    })
+
+    it('getContextUsage() revives the runtime after idle release instead of returning null', async () => {
+      const backend = await startThenIdleRelease()
+
+      const usage = await backend.getContextUsage()
+
+      expect(hoisted.captured.createSessionQueryMock).toHaveBeenCalledTimes(2)
+      expect(usage).not.toBeNull()
+      expect(usage?.totalTokens).toBe(5)
+    })
+
+    it('getMcpServerStatus() revives the runtime after idle release', async () => {
+      const backend = await startThenIdleRelease()
+
+      await backend.getMcpServerStatus()
+
+      expect(hoisted.captured.createSessionQueryMock).toHaveBeenCalledTimes(2)
+      expect(hoisted.captured.mockQueryMcpServerStatus).toHaveBeenCalledOnce()
+    })
+
+    it('reconnectMcp() revives the runtime after idle release instead of throwing No active session', async () => {
+      const backend = await startThenIdleRelease()
+
+      await expect(backend.reconnectMcp('server-a')).resolves.toBeUndefined()
+      expect(hoisted.captured.createSessionQueryMock).toHaveBeenCalledTimes(2)
+      expect(hoisted.captured.mockQueryReconnectMcpServer).toHaveBeenCalledWith('server-a')
+    })
+
+    it('toggleMcpServer() revives the runtime after idle release instead of throwing No active session', async () => {
+      const backend = await startThenIdleRelease()
+
+      await expect(backend.toggleMcpServer('server-a', false)).resolves.toBeUndefined()
+      expect(hoisted.captured.createSessionQueryMock).toHaveBeenCalledTimes(2)
+      expect(hoisted.captured.mockQueryToggleMcpServer).toHaveBeenCalledWith('server-a', false)
+    })
+
+    it('reloadPlugins() revives the runtime after idle release instead of returning false', async () => {
+      const backend = await startThenIdleRelease()
+
+      await expect(backend.reloadPlugins()).resolves.toBe(true)
+      expect(hoisted.captured.createSessionQueryMock).toHaveBeenCalledTimes(2)
+      expect(hoisted.captured.mockQueryReloadPlugins).toHaveBeenCalledOnce()
+    })
+  })
+
+  describe('setter write-through survives idle release', () => {
+    async function startThenIdleRelease(): Promise<ClaudeBackend> {
+      const backend = new ClaudeBackend()
+      await backend.start(makeStartOpts())
+      hoisted.captured.iterationDone?.resolve()
+      await (backend as unknown as { releaseRuntime: (r: 'idle') => Promise<void> }).releaseRuntime('idle')
+      return backend
+    }
+
+    it('setPermissionMode while idle-released applies the new mode to the revived runtime', async () => {
+      const backend = await startThenIdleRelease()
+
+      await backend.setPermissionMode('plan')
+      void backend.send({ content: 'hi' })
+      await new Promise((r) => setTimeout(r, 0))
+
+      const [, opts] = hoisted.captured.createSessionQueryMock.mock.calls[1]!
+      expect((opts as { permissionMode?: string }).permissionMode).toBe('plan')
+    })
+
+    it('setSandbox while idle-released applies the new sandbox to the revived runtime', async () => {
+      const backend = await startThenIdleRelease()
+
+      await backend.setSandbox({ enabled: true, autoAllowBash: false })
+      void backend.send({ content: 'hi' })
+      await new Promise((r) => setTimeout(r, 0))
+
+      const [, opts] = hoisted.captured.createSessionQueryMock.mock.calls[1]!
+      expect((opts as { sandboxInfo?: unknown }).sandboxInfo).toEqual({ enabled: true, autoAllowBash: false })
+    })
+
+    it('setModel while idle-released applies the new model to the revived runtime', async () => {
+      const backend = await startThenIdleRelease()
+
+      await backend.setModel('claude-opus-4-7')
+      void backend.send({ content: 'hi' })
+      await new Promise((r) => setTimeout(r, 0))
+
+      const [, opts] = hoisted.captured.createSessionQueryMock.mock.calls[1]!
+      expect((opts as { model?: string }).model).toBe('claude-opus-4-7')
     })
   })
 

@@ -68,7 +68,7 @@ export class ClaudeBackend implements SessionBackend {
   private _lastStartOpts: BackendStartOptions | null = null
   private _idleTimer: ReturnType<typeof setInterval> | null = null
 
-  static IDLE_TIMEOUT_MS = 60_000
+  static IDLE_TIMEOUT_MS = 300_000
   static IDLE_CHECK_INTERVAL_MS = 30_000
 
   private ensurePermissionHandles(): { canUseTool: CanUseTool; trackPlanFile: (filePath: string) => void } {
@@ -300,6 +300,16 @@ export class ClaudeBackend implements SessionBackend {
     await this.start({ ...this._lastStartOpts, providerSessionId: resumeId })
   }
 
+  private async ensureQuery(): Promise<Query | null> {
+    if (this.query) return this.query
+    try {
+      await this.ensureRuntime()
+    } catch (err) {
+      log.debug('[ClaudeBackend] ensureQuery revive failed:', err)
+    }
+    return this.query
+  }
+
   prewarm(opts: BackendStartOptions): void {
     try {
       this.warmupManager.prewarm(buildClaudeOptions(this.buildQueryOptions(opts)))
@@ -319,11 +329,13 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   async setModel(model: string): Promise<void> {
+    if (this._lastStartOpts) this._lastStartOpts.model = model
     if (!this.query) return
     await this.query.setModel(model)
   }
 
   async setPermissionMode(mode: PermissionMode): Promise<void> {
+    if (this._lastStartOpts) this._lastStartOpts.permissionMode = mode
     if (!this.query) {
       trace('permission.flow', 'backend_setMode_no_query', { mode })
       return
@@ -339,6 +351,7 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   async setSandbox(sandboxInfo: SandboxInfo): Promise<void> {
+    if (this._lastStartOpts) this._lastStartOpts.sandboxInfo = sandboxInfo
     if (!this.query) return
     const supported = getSandboxCapability().supportLevel !== 'unsupported'
     const sandbox = sandboxInfo.enabled && supported
@@ -364,9 +377,10 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   async getContextUsage(): Promise<ContextUsageInfo | null> {
-    if (!this.query) return null
+    const query = await this.ensureQuery()
+    if (!query) return null
     try {
-      const usage = await this.query.getContextUsage()
+      const usage = await query.getContextUsage()
       return {
         categories: usage.categories.map((c) => ({ name: c.name, tokens: c.tokens, color: c.color })),
         totalTokens: usage.totalTokens,
@@ -380,9 +394,10 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   async getMcpServerStatus(): Promise<McpServerInfo[]> {
-    if (!this.query) return []
+    const query = await this.ensureQuery()
+    if (!query) return []
     try {
-      const statuses = await this.query.mcpServerStatus()
+      const statuses = await query.mcpServerStatus()
       return statuses.map((s) => ({
         name: s.name,
         status: s.status,
@@ -400,9 +415,10 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   async rewindFiles(userMessageId: string, opts?: { dryRun?: boolean }): Promise<RewindFilesResult> {
-    if (!this.query) return { canRewind: false, error: 'No active session' }
+    const query = await this.ensureQuery()
+    if (!query) return { canRewind: false, error: 'No active session' }
     try {
-      const result = await this.query.rewindFiles(userMessageId, opts)
+      const result = await query.rewindFiles(userMessageId, opts)
       return {
         canRewind: result.canRewind,
         error: result.error,
@@ -416,19 +432,22 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   async reconnectMcp(serverName: string): Promise<void> {
-    if (!this.query) throw new Error('No active session')
-    await this.query.reconnectMcpServer(serverName)
+    const query = await this.ensureQuery()
+    if (!query) throw new Error('No active session')
+    await query.reconnectMcpServer(serverName)
   }
 
   async toggleMcpServer(serverName: string, enabled: boolean): Promise<void> {
-    if (!this.query) throw new Error('No active session')
-    await this.query.toggleMcpServer(serverName, enabled)
+    const query = await this.ensureQuery()
+    if (!query) throw new Error('No active session')
+    await query.toggleMcpServer(serverName, enabled)
   }
 
   async reloadPlugins(): Promise<boolean> {
-    if (!this.query) return false
+    const query = await this.ensureQuery()
+    if (!query) return false
     try {
-      await this.query.reloadPlugins()
+      await query.reloadPlugins()
       return true
     } catch {
       return false

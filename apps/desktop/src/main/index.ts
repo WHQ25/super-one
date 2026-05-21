@@ -325,6 +325,10 @@ function createWindow(): void {
     return { action: 'deny' }
   })
 
+  mainWindow.webContents.on('will-navigate', (e, url) => {
+    if (url !== mainWindow?.webContents.getURL()) e.preventDefault()
+  })
+
   mainWindow.webContents.on('before-input-event', (_e, input) => {
     if (input.control || input.meta) {
       if (input.key === '=' || input.key === '+' || input.key === '-' || input.key === '0') {

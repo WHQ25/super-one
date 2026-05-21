@@ -12,7 +12,7 @@ import { useFullscreen } from '@/hooks/useFullscreen'
 import { useResizeHandle } from '@/hooks/useResizeHandle'
 import { LAYOUT } from '@/lib/layout-constants'
 import { LayoutToggle } from '@/components/coding/LayoutToggle'
-import { setDockApi, openNewFileTab } from './activity-panel-api'
+import { setDockApi } from './activity-panel-api'
 import { activityPanelComponents } from './panels'
 import { activityTabComponents } from './ActivityTab'
 import { ActivityWatermark } from './ActivityWatermark'
@@ -75,31 +75,7 @@ export function ActivityPanel({ getMaxWidth, hidden }: ActivityPanelProps) {
       }
     })
 
-    const d2 = event.api.onUnhandledDragOverEvent((e) => {
-      const types = e.nativeEvent.dataTransfer?.types
-      if (types?.includes('Files')) e.accept()
-    })
-
-    const d3 = event.api.onDidDrop(async (e) => {
-      const files = e.nativeEvent.dataTransfer?.files
-      if (!files || files.length === 0) return
-      const filePath = window.app.getPathForFile(files[0])
-      if (!filePath) return
-      const st = await window.app.pathStat(filePath)
-      if (!st || st.isDirectory) return
-      const activePanel = e.group?.activePanel
-      const isSameFile = activePanel?.id === `file:${filePath}`
-      if (isSameFile) return
-      const posMap = { top: 'above', bottom: 'below', left: 'left', right: 'right', center: 'within' } as const
-      const dir = posMap[e.position as keyof typeof posMap] ?? 'within'
-      if (activePanel && dir !== 'within') {
-        openNewFileTab(filePath, { direction: dir as 'right' | 'below', referencePanel: activePanel.id })
-      } else {
-        openNewFileTab(filePath)
-      }
-    })
-
-    const d4 = event.api.onWillShowOverlay((e) => {
+    const d2 = event.api.onWillShowOverlay((e) => {
       const data = e.options.getData()
       if (!data) return
 
@@ -146,10 +122,10 @@ export function ActivityPanel({ getMaxWidth, hidden }: ActivityPanelProps) {
       container?.classList.toggle('single-group', event.api.groups.length <= 1)
     }
     updateSingleGroupClass()
-    const d5 = event.api.onDidAddGroup(updateSingleGroupClass)
-    const d6 = event.api.onDidRemoveGroup(updateSingleGroupClass)
+    const d3 = event.api.onDidAddGroup(updateSingleGroupClass)
+    const d4 = event.api.onDidRemoveGroup(updateSingleGroupClass)
 
-    return () => { d1.dispose(); d2.dispose(); d3.dispose(); d4.dispose(); d5.dispose(); d6.dispose() }
+    return () => { d1.dispose(); d2.dispose(); d3.dispose(); d4.dispose() }
   }, [])
 
   useEffect(() => {

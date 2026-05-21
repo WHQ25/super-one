@@ -36,7 +36,8 @@ function useGlobalDragging() {
       timerRef.current = null
       setDragging(false)
     }
-    const onDragOver = () => {
+    const onDragOver = (e: DragEvent) => {
+      if (e.dataTransfer?.types.includes('Files')) return
       setDragging(true)
       if (timerRef.current) clearTimeout(timerRef.current)
       timerRef.current = setTimeout(clear, 150)

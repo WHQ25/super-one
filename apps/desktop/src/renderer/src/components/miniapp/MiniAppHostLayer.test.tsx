@@ -213,3 +213,43 @@ describe('MiniAppHostLayer persistence', () => {
     expect(host.style.display).toBe('none')
   })
 })
+
+describe('MiniAppHostLayer drag handling', () => {
+  async function mountVisibleApp() {
+    const utils = render(<MiniAppHostLayer />)
+    const key = makeInstanceKey('app-a', 'proj-1')
+    await act(async () => {
+      await useMiniAppStore.getState().openAppInPanel(makeEntry('app-a'), '/proj')
+    })
+    act(() => {
+      useMiniAppStore.getState().updateSlot(
+        key,
+        'panel',
+        { left: 0, top: 44, width: 560, height: 800 } as DOMRectReadOnly,
+      )
+    })
+    const host = utils.container.querySelector(`[data-instance-key="${key}"]`) as HTMLElement
+    expect(host.style.pointerEvents).toBe('auto')
+    return host
+  }
+
+  function dispatchDragOver(types: string[]) {
+    act(() => {
+      const ev = new Event('dragover', { bubbles: true })
+      Object.defineProperty(ev, 'dataTransfer', { value: { types } })
+      window.dispatchEvent(ev)
+    })
+  }
+
+  it('keeps miniapp pointer-events interactive during a file drag so drops reach the webview', async () => {
+    const host = await mountVisibleApp()
+    dispatchDragOver(['Files'])
+    expect(host.style.pointerEvents).toBe('auto')
+  })
+
+  it('disables miniapp pointer-events during an internal tab drag so dockview receives it', async () => {
+    const host = await mountVisibleApp()
+    dispatchDragOver(['application/x-dockview'])
+    expect(host.style.pointerEvents).toBe('none')
+  })
+})

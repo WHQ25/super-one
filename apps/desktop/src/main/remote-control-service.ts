@@ -6,7 +6,7 @@ import WebSocket from 'ws'
 import { diffLines } from 'diff'
 import log from './logger'
 import { ProcessTitle } from './process-titles'
-import type { AgentEvent, RemoteCommand, ContentBlock, ChatMessage, CodexThreadItem, RemoteDeviceConfig, TodoToolItem, TerminalEvent } from '@superone/shared/agent-types'
+import type { AgentEvent, RemoteCommand, ContentBlock, ChatMessage, CodexThreadItem, CodexCollabToolCallItem, RemoteDeviceConfig, TodoToolItem, TerminalEvent } from '@superone/shared/agent-types'
 
 export type { RemoteDeviceConfig }
 import { trace } from './agent/event-trace'
@@ -393,8 +393,19 @@ function codexTodoListToBlock(item: Extract<CodexThreadItem, { type: 'todo_list'
 
 function convertCodexItemsToBlocks(items: CodexThreadItem[], projectPath?: string): ContentBlock[] {
   const blocks: ContentBlock[] = []
+  const collabGroups = new Map<string, CodexCollabToolCallItem[]>()
   for (const item of items) {
     switch (item.type) {
+      case 'collab_tool_call': {
+        const key = item.receiverThreadIds[0] ?? item.id
+        const arr = collabGroups.get(key) ?? []
+        arr.push(item)
+        if (arr.length === 1) {
+          collabGroups.set(key, arr)
+          blocks.push({ type: 'codex_collab', items: arr } as ContentBlock)
+        }
+        break
+      }
       case 'agent_message':
         blocks.push({ type: 'text', text: item.text } as ContentBlock)
         break

@@ -65,6 +65,7 @@ export type ContentBlock =
   | { type: 'todo_result'; toolUseId: string; summary: string; parentToolUseId?: string | null; todoToolName?: string; toolTodos?: TodoToolItem[] }
   | { type: 'codex_plan'; text: string; itemId: string }
   | { type: 'codex_image_generation'; itemId: string; status: string; savedPath?: string; revisedPrompt?: string; startedAt?: number; completedAt?: number }
+  | { type: 'codex_collab'; items: CodexCollabToolCallItem[]; parentToolUseId?: string | null }
   | { type: 'image'; name: string }
   | { type: 'document'; name: string }
 

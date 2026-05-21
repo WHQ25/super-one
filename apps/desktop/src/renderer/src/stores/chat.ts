@@ -13,7 +13,7 @@ import { perfEvent } from '@/lib/perf-trace'
 type Corner = 'br' | 'bl' | 'tr' | 'tl' | 'tm' | 'rm' | 'bm' | 'lm'
 export type ChatProvider = 'claude' | 'codex'
 export const DEFAULT_PROVIDER: ChatProvider = 'claude'
-const SESSIONS_PAGE_SIZE = 30
+export const SESSIONS_PAGE_SIZE = 30
 const CODEX_LAST_SELECTION_STORAGE_KEY = 'super-one.codex.last-selection.v1'
 const CODEX_APPROVE_PLAN_PROMPT = 'Plan approved, start implementation.'
 export const CODEX_REJECT_PLAN_PLACEHOLDER = 'Tell Codex what to do differently'
@@ -509,6 +509,7 @@ export interface ChatStore {
   fetchSessions: () => Promise<void>
   fetchSessionsPage: () => Promise<void>
   switchSession: (sessionId: string) => Promise<void>
+  switchToSession: (projectPath: string, sessionId: string) => Promise<void>
   renameSession: (sessionId: string, title: string) => Promise<void>
 
   // Mini-app context
@@ -4681,6 +4682,23 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         }
       }))
     } catch (err) { console.warn('[chat] fetchSessionsPage failed:', err) }
+  },
+
+  switchToSession: async (projectPath, sessionId) => {
+    const state = get()
+    if (projectPath === state.activeProject) {
+      const activeSid = state.projectSessions[projectPath]?._activeSessionId ?? null
+      if (sessionId === activeSid) return
+      await get().switchSession(sessionId)
+      return
+    }
+    // Cross-project hop goes through useAppStore.selectProject so the sidebar's
+    // currentFolder/currentProjectId update too, not just useChatStore.activeProject.
+    await useAppStore.getState().selectProject(projectPath)
+    const fresh = get()
+    if (fresh.projectSessions[projectPath]?._activeSessionId !== sessionId) {
+      await fresh.switchSession(sessionId)
+    }
   },
 
   renameSession: async (sessionId, title) => {

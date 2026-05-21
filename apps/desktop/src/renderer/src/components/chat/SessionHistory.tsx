@@ -1,6 +1,6 @@
 import { useRef, useState, useEffect, useCallback } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
-import { useChatStore, useActiveSession } from '@/stores/chat'
+import { useChatStore, SESSIONS_PAGE_SIZE } from '@/stores/chat'
 import { ScrollArea } from '@superone/ui/components/ui/scroll-area'
 import { Button } from '@superone/ui/components/ui/button'
 import { Checkbox } from '@superone/ui/components/ui/checkbox'
@@ -14,20 +14,20 @@ import type { SessionHistoryEntry } from '@superone/shared/agent-types'
 
 
 interface SessionHistoryProps {
+  folderPath: string
   showBackButton?: boolean
   onClose: () => void
 }
 
-export function SessionHistory({ showBackButton = true, onClose }: SessionHistoryProps) {
-  const sessions = useActiveSession((s) => s.sessions)
-  const sessionsHasMore = useActiveSession((s) => s.sessionsHasMore)
-  const switchSession = useChatStore((s) => s.switchSession)
-  const renameSession = useChatStore((s) => s.renameSession)
-  const fetchSessions = useChatStore((s) => s.fetchSessions)
-  const fetchSessionsPage = useChatStore((s) => s.fetchSessionsPage)
+export function SessionHistory({ folderPath, showBackButton = true, onClose }: SessionHistoryProps) {
+  const switchToSession = useChatStore((s) => s.switchToSession)
   const resetSession = useChatStore((s) => s.resetSession)
   const activeProject = useChatStore((s) => s.activeProject)
-  const currentSessionId = useActiveSession((s) => s._activeSessionId ?? s.session?.sessionId)
+  const currentSessionId = useChatStore((s) => s.projectSessions[folderPath]?._activeSessionId ?? null)
+
+  const [sessions, setSessions] = useState<SessionHistoryEntry[]>([])
+  const [sessionsHasMore, setSessionsHasMore] = useState(false)
+  const pageRef = useRef(0)
 
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null)
   const [editingTitle, setEditingTitle] = useState('')
@@ -38,6 +38,27 @@ export function SessionHistory({ showBackButton = true, onClose }: SessionHistor
   const [showDeleteAll, setShowDeleteAll] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
+
+  const fetchSessions = useCallback(async () => {
+    try {
+      const page = await window.app.listSessionsForFolderPage(folderPath, SESSIONS_PAGE_SIZE, 0)
+      setSessions(page)
+      setSessionsHasMore(page.length >= SESSIONS_PAGE_SIZE)
+      pageRef.current = 1
+    } catch (err) { console.warn('[history] fetchSessions failed:', err) }
+  }, [folderPath])
+
+  const fetchSessionsPage = useCallback(async () => {
+    const offset = pageRef.current * SESSIONS_PAGE_SIZE
+    try {
+      const page = await window.app.listSessionsForFolderPage(folderPath, SESSIONS_PAGE_SIZE, offset)
+      setSessions((prev) => [...prev, ...page])
+      setSessionsHasMore(page.length >= SESSIONS_PAGE_SIZE)
+      pageRef.current += 1
+    } catch (err) { console.warn('[history] fetchSessionsPage failed:', err) }
+  }, [folderPath])
+
+  useEffect(() => { void fetchSessions() }, [fetchSessions])
 
   useEffect(() => {
     if (!showBackButton) return
@@ -57,8 +78,7 @@ export function SessionHistory({ showBackButton = true, onClose }: SessionHistor
 
   const handleResume = (entry: SessionHistoryEntry) => {
     if (editingSessionId) return
-    if (entry.sessionId === currentSessionId) return
-    switchSession(entry.sessionId)
+    void switchToSession(folderPath, entry.sessionId)
   }
 
   const startEditing = (entry: SessionHistoryEntry, e: React.MouseEvent) => {
@@ -67,13 +87,16 @@ export function SessionHistory({ showBackButton = true, onClose }: SessionHistor
     setEditingTitle(entry.title)
   }
 
-  const confirmRename = () => {
+  const confirmRename = async () => {
     if (!editingSessionId) return
     const trimmed = editingTitle.trim()
-    if (trimmed) {
-      renameSession(editingSessionId, trimmed)
-    }
+    const sessionId = editingSessionId
     setEditingSessionId(null)
+    if (!trimmed) return
+    await window.app.renameSession(sessionId, trimmed)
+    setSessions((prev) => prev.map((entry) =>
+      entry.sessionId === sessionId ? { ...entry, title: trimmed } : entry
+    ))
   }
 
   const handleHide = async (sessionId: string) => {
@@ -89,7 +112,7 @@ export function SessionHistory({ showBackButton = true, onClose }: SessionHistor
   const executeDelete = async (target: SessionHistoryEntry) => {
     await window.app.deleteSession(target.sessionId)
     fetchSessions()
-    if (currentSessionId === target.sessionId) resetSession()
+    if (folderPath === activeProject && currentSessionId === target.sessionId) resetSession()
   }
 
   const handleDelete = async () => {
@@ -104,12 +127,11 @@ export function SessionHistory({ showBackButton = true, onClose }: SessionHistor
   const deleteAllCount = sessions.filter((s) => !s.isPinned).length
 
   const handleDeleteAll = useCallback(async () => {
-    if (!activeProject) return
-    const deleted = await window.app.deleteSessionsOlderThan(activeProject, new Date(Date.now() + 86400000).toISOString())
+    const deleted = await window.app.deleteSessionsOlderThan(folderPath, new Date(Date.now() + 86400000).toISOString())
     fetchSessions()
-    if (currentSessionId && deleted.includes(currentSessionId)) resetSession()
+    if (folderPath === activeProject && currentSessionId && deleted.includes(currentSessionId)) resetSession()
     setShowDeleteAll(false)
-  }, [activeProject, currentSessionId, fetchSessions, resetSession])
+  }, [folderPath, activeProject, currentSessionId, fetchSessions, resetSession])
 
   const deleteTargetCli = getDeleteSessionRecovery(deleteTarget?.provider ?? 'claude', deleteTarget?.sessionId ?? '')
 
@@ -292,7 +314,7 @@ export function SessionHistory({ showBackButton = true, onClose }: SessionHistor
                 <span className="font-medium text-foreground">{deleteTarget?.title}</span> will be removed from SuperOne. You can still access it via {deleteTargetCli.cliName}:
                 <div className="mt-2 flex min-w-0 flex-col gap-1">
                   {([
-                    ['cd', `cd ${activeProject}`],
+                    ['cd', `cd ${folderPath}`],
                     ['resume', deleteTargetCli.resumeCommand],
                   ] as const).map(([key, cmd]) => (
                     <code

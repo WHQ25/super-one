@@ -360,11 +360,8 @@ export const AppSidebar = memo(function AppSidebar() {
   }, [executeDeleteSession])
 
   const handleOpenHistory = useCallback((folderPath: string) => {
-    selectProject(folderPath).then(() => {
-      useChatStore.getState().fetchSessions()
-      openHistoryTab()
-    })
-  }, [selectProject])
+    openHistoryTab(folderPath)
+  }, [])
 
   const handleNewSession = useCallback((folderPath: string) => {
     selectProject(folderPath).then(() => resetSession())

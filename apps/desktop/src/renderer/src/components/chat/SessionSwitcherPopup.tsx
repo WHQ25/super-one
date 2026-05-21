@@ -4,7 +4,6 @@ import { Bot, Loader2, MessageSquare, Smartphone } from 'lucide-react'
 import { ClaudeSessionIcon, type SessionIconProps } from '@superone/ui/components/harness/ClaudeSessionIcon'
 import { CodexSessionIcon } from '@superone/ui/components/harness/CodexSessionIcon'
 import { useChatStore, type PerSessionState, type ProjectState } from '@/stores/chat'
-import { useAppStore } from '@/stores/app'
 import { useCtrlTabSwitcher } from '@/hooks/useCtrlTabSwitcher'
 import { getPendingReason, getSessionTitle, isLiveSession } from '@/components/sidebar/session-state-utils'
 import { useStallLevel, getStallColor } from '@/lib/stall-utils'
@@ -198,27 +197,9 @@ export function SessionSwitcherPopup({ scopeRef }: SessionSwitcherPopupProps) {
   }, [])
 
   const onCommit = useCallback((targetIndex: number) => {
-    const order = frozenOrderRef.current
-    const target = order ? order[targetIndex] : undefined
+    const target = frozenOrderRef.current?.[targetIndex]
     if (!target) return
-    const state = useChatStore.getState()
-    const isSameProject = target.projectPath === state.activeProject
-    const activeSid = state.activeProject ? state.projectSessions[state.activeProject]?._activeSessionId ?? null : null
-    if (isSameProject && target.sessionId === activeSid) return
-    if (isSameProject) {
-      void state.switchSession(target.sessionId)
-      return
-    }
-    void (async () => {
-      // Cross-project hop must go through useAppStore.selectProject so the sidebar's
-      // currentFolder/currentProjectId update too, not just useChatStore.activeProject.
-      await useAppStore.getState().selectProject(target.projectPath)
-      const fresh = useChatStore.getState()
-      const freshActive = fresh.projectSessions[target.projectPath]?._activeSessionId ?? null
-      if (freshActive !== target.sessionId) {
-        await fresh.switchSession(target.sessionId)
-      }
-    })()
+    void useChatStore.getState().switchToSession(target.projectPath, target.sessionId)
   }, [])
 
   const { isOpen, selectedIndex } = useCtrlTabSwitcher({

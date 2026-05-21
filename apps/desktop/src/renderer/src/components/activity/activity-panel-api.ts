@@ -117,12 +117,13 @@ export function openNewFileTab(filePath: string, options?: { direction?: 'within
   })
 }
 
-export function openHistoryTab() {
+export function openHistoryTab(folderPath: string) {
   ensureVisible()
   execOrDefer(() => {
     if (!dockApi) return
     const existing = dockApi.panels.find((p) => p.id === 'session-history')
     if (existing) {
+      existing.api.updateParameters({ folderPath })
       existing.api.setActive()
       return
     }
@@ -131,6 +132,7 @@ export function openHistoryTab() {
       component: 'session-history',
       tabComponent: 'session-history-tab',
       title: 'History',
+      params: { folderPath },
     })
   })
 }

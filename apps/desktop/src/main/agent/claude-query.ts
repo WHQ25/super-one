@@ -43,6 +43,7 @@ export function buildClaudeOptions(opts: SessionQueryOptions): Options {
     thinking: { type: 'adaptive', display: 'summarized' },
     promptSuggestions: true,
     includePartialMessages: true,
+    forwardSubagentText: true,
     permissionMode: opts.permissionMode,
     allowDangerouslySkipPermissions: opts.permissionMode === 'bypassPermissions',
     canUseTool: opts.canUseTool,
@@ -606,7 +607,19 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
           const content = msg.message?.content
           if (Array.isArray(content)) {
             for (const block of content) {
-              if (block.type === 'tool_use') {
+              if (block.type === 'text' && assistantParent && typeof block.text === 'string' && block.text) {
+                emit({
+                  type: 'content_delta',
+                  messageId,
+                  delta: { type: 'text', text: block.text, parentToolUseId: assistantParent },
+                })
+              } else if (block.type === 'thinking' && assistantParent && typeof block.thinking === 'string' && block.thinking) {
+                emit({
+                  type: 'content_delta',
+                  messageId,
+                  delta: { type: 'thinking', thinking: block.thinking, parentToolUseId: assistantParent },
+                })
+              } else if (block.type === 'tool_use') {
                 toolIdToName.set(block.id ?? '', block.name ?? 'unknown')
 
                 if (block.name === 'Bash') {

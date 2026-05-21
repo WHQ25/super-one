@@ -6,7 +6,7 @@ import { homedir, hostname } from 'os'
 import { resolveRealPath, isPathWithinAllowed, sanitizeGitRef, getReadableAssetRoots } from './path-security'
 import { spawn } from 'child_process'
 import { gitRun } from './git-run'
-import { activateWorktree, getCheckedOutBranches, getWorktreeInfo, gitErrorMessage } from './git/worktree-ops'
+import { activateWorktree, getCheckedOutBranches, getHandoffPreview, getWorktreeInfo, gitErrorMessage, handoffToLocal } from './git/worktree-ops'
 import { is } from '@electron-toolkit/utils'
 import log from './logger'
 import { startMediaServer, getMediaServerPort } from './media-server'
@@ -1010,6 +1010,19 @@ function registerIpcHandlers(): void {
     } catch (err) {
       return { ok: false as const, error: gitErrorMessage(err) }
     }
+  })
+
+  ipcMain.handle(AgentIpcChannels.GIT_HANDOFF_TO_LOCAL, async (_event, worktreePath: string) => {
+    try {
+      return await handoffToLocal(worktreePath)
+    } catch (err) {
+      log.warn('[handoff] unexpected failure:', err)
+      return { ok: false as const, reason: 'error' as const, error: gitErrorMessage(err) }
+    }
+  })
+
+  ipcMain.handle(AgentIpcChannels.GIT_HANDOFF_PREVIEW, async (_event, worktreePath: string) => {
+    return getHandoffPreview(worktreePath)
   })
 
   const EXT_LANG: Record<string, string> = {

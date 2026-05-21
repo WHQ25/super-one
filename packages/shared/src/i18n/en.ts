@@ -432,6 +432,19 @@ export type Messages = {
       triggerCreateBranch: string
       triggerActiveBranch: string
       triggerActiveDetached: string
+      forkHeading: string
+      forkInfo: string
+      forkIncludesChanges: string
+      forkButton: string
+      handoffHeading: string
+      handoffInfo: string
+      handoffButton: string
+      handoffSuccess: string
+      handoffErrorNoChanges: string
+      handoffErrorLocalDirty: string
+      handoffErrorConflict: string
+      handoffErrorNotWorktree: string
+      handoffErrorGeneric: string
     }
     git: {
       init: string
@@ -1582,6 +1595,19 @@ export const en: Messages = {
       triggerCreateBranch: 'Create worktree branch <branch></branch> {{name}}',
       triggerActiveBranch: 'Worktree <branch></branch> {{name}}',
       triggerActiveDetached: 'Worktree <commit></commit>{{hash}}',
+      forkHeading: 'Fork to new worktree',
+      forkInfo: 'Fork this conversation into an independent session running in a new worktree.',
+      forkIncludesChanges: 'Includes local changes',
+      forkButton: 'Fork session',
+      handoffHeading: 'Hand off changes to Local',
+      handoffInfo: "Copy this worktree's changes into the local folder.",
+      handoffButton: 'Hand off',
+      handoffSuccess: 'Changes handed off to Local',
+      handoffErrorNoChanges: 'Nothing to hand off',
+      handoffErrorLocalDirty: 'The local folder has uncommitted changes — commit or stash them first',
+      handoffErrorConflict: 'Changes conflict with the local folder — nothing was handed off',
+      handoffErrorNotWorktree: 'Not running in a worktree',
+      handoffErrorGeneric: 'Handoff failed',
     },
     git: {
       init: 'Init Git',

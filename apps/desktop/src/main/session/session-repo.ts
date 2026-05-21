@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { getDb } from '../database'
 import { getProjectId } from '../recent-folders'
 import { recordSessionStarted, recordMessageCounts, type HarnessKind } from '../usage-stats-service'
@@ -353,6 +354,68 @@ export function saveSessionStateBySid(input: SaveSessionStateInput): void {
       recordMessageCounts(harness, createdAt, { assistantMessages: n })
     }
   }
+}
+
+export interface ForkSessionRecordInput {
+  sourceId: string
+  newId: string
+  providerSessionId: string
+  worktreePath: string
+  /** Branch of the forked worktree, or null when it is checked out detached. */
+  gitBranch: string | null
+  title: string
+}
+
+/**
+ * Copy a session's row + messages into a new session id (fork-to-worktree).
+ *
+ * - Messages get fresh ids — `chat_messages.id` is a global PK, so reusing the
+ *   source ids would re-parent the source's rows on the next upsert.
+ * - Every copied row (session + messages) is pre-stamped `usage_counted_at` so
+ *   the fork never re-inflates usage stats with already-counted history.
+ * - `checkpoint_id` / `resume_point_id` are dropped — a forked SDK session
+ *   starts without file-history snapshots.
+ */
+export function forkSessionRecord(input: ForkSessionRecordInput): void {
+  const db = getDb()
+  const source = getSessionRecord(input.sourceId)
+  if (!source) throw new Error(`Source session not found: ${input.sourceId}`)
+  const now = new Date().toISOString()
+  const legacyProvider = source.providerId.startsWith('codex') ? 'codex' : 'claude'
+
+  const srcMsgs = db.prepare(`
+    SELECT role, status, content_json, created_at, provider_id, metadata_json
+    FROM chat_messages WHERE session_id = ? ORDER BY sort_order ASC
+  `).all(input.sourceId) as Array<Pick<MessageRow, 'role' | 'status' | 'content_json' | 'created_at' | 'provider_id' | 'metadata_json'>>
+
+  const lastUserAt = [...srcMsgs].reverse().find((m) => m.role === 'user')?.created_at ?? now
+
+  const insSession = db.prepare(`
+    INSERT INTO sessions (
+      id, project_id, provider_id, provider, provider_session_id, title,
+      created_at, last_user_message_at, total_cost_usd, context_tokens,
+      is_worktree, git_branch, worktree_path, api_provider_id, usage_counted_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 1, ?, ?, ?, ?)
+  `)
+  const insMsg = db.prepare(`
+    INSERT INTO chat_messages (id, session_id, sort_order, role, status, content_json, created_at, provider_id, metadata_json, usage_counted_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `)
+
+  db.transaction(() => {
+    insSession.run(
+      input.newId, source.projectId, source.providerId, legacyProvider,
+      input.providerSessionId, input.title, now, lastUserAt, source.contextTokens,
+      input.gitBranch, input.worktreePath, source.apiProviderId, now,
+    )
+    srcMsgs.forEach((m, i) => {
+      insMsg.run(
+        randomUUID(), input.newId, i, m.role,
+        m.status === 'streaming' ? 'interrupted' : m.status,
+        m.content_json, m.created_at, m.provider_id, m.metadata_json, now,
+      )
+    })
+  })()
 }
 
 export interface LoadedSessionState {

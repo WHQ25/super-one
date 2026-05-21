@@ -5,8 +5,12 @@ import { Popover, PopoverContent, PopoverTrigger } from '@superone/ui/components
 import { useActiveSession } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 import type { GitDirtyStatus, WorktreeEntry, WorktreeInfo, WorktreeMode } from '@superone/shared/agent-types'
+import { WorktreeHandoffSection } from './WorktreeHandoffSection'
+import { WorktreeForkSection } from './WorktreeForkSection'
+import { DiffStat } from './DiffStat'
 
-const fmt = (n: number) => n.toLocaleString()
+const sameDirty = (a: GitDirtyStatus | undefined, b: GitDirtyStatus | undefined): boolean =>
+  a?.files === b?.files && a?.insertions === b?.insertions && a?.deletions === b?.deletions
 
 interface WorkDirIndicatorProps {
   compact?: boolean
@@ -29,6 +33,7 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
   const messageCount = useActiveSession((s) => s.messages.length)
   const isOldSession = sdkSession !== null || messageCount > 0
   const activeBaseBranch = useActiveSession((s) => s._worktreeBaseBranch)
+  const activeSessionId = useActiveSession((s) => s._activeSessionId)
 
   const [worktreeInfo, setWorktreeInfo] = useState<WorktreeInfo | null>(null)
   const [popoverOpen, setPopoverOpen] = useState(false)
@@ -39,6 +44,10 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
   const [checkedOutBranches, setCheckedOutBranches] = useState<Set<string>>(new Set())
   const [activeDirty, setActiveDirty] = useState<GitDirtyStatus | undefined>()
 
+  const activePath = wtState?.activePath ?? null
+
+  // A freshly forked worktree must land in `entries` for `activeEntry` to
+  // resolve and render the detached icon — so activePath is a dependency.
   useEffect(() => {
     if (!currentFolder) { setWorktreeInfo(null); return }
     if (isGitRepo === false) { setWorktreeInfo(null); return }
@@ -47,16 +56,14 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
       if (!cancelled) setWorktreeInfo(info)
     })
     return () => { cancelled = true }
-  }, [currentFolder, isGitRepo])
-
-  const activePath = wtState?.activePath ?? null
+  }, [currentFolder, isGitRepo, activePath])
 
   useEffect(() => {
     if (!activePath) { setActiveDirty(undefined); return }
     let cancelled = false
     const fetch = () => {
       window.app.getGitInfo(activePath).then((info) => {
-        if (!cancelled) setActiveDirty(info?.dirty)
+        if (!cancelled) setActiveDirty((prev) => (sameDirty(prev, info?.dirty) ? prev : info?.dirty))
       }).catch(() => {})
     }
     fetch()
@@ -325,35 +332,49 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
             {dirtyDot}
           </button>
         </PopoverTrigger>
-        <PopoverContent className="w-72 p-1" align="start">
-          <div className="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs">
-            {activeIsDetached ? (
+        <PopoverContent className="w-80 p-0" align="start">
+          <div className="flex items-center gap-2 px-3 py-2 text-xs">
+            {!isActive ? (
+              <Monitor className="size-3 shrink-0 text-muted-foreground" />
+            ) : activeIsDetached ? (
               <GitCommit className="size-3 shrink-0 text-muted-foreground" />
             ) : (
               <GitBranch className="size-3 shrink-0 text-muted-foreground" />
             )}
             <div className="flex min-w-0 flex-1 flex-col">
               <span className="truncate">
-                {activeIsDetached
-                  ? activeShortHead
-                  : (activeEntry?.branch ?? activeBaseBranch ?? '')}
+                {!isActive
+                  ? t('tooltips.local')
+                  : activeIsDetached
+                    ? activeShortHead
+                    : (activeEntry?.branch ?? activeBaseBranch ?? '')}
               </span>
               {activeDirty && (
                 <span className="text-[10px] text-muted-foreground">
                   {activeDirty.files > 0 ? (
-                    <>
-                      uncommitted: {fmt(activeDirty.files)} {activeDirty.files === 1 ? 'file' : 'files'}
-                      {activeDirty.insertions > 0 && <span className="ml-1 text-green-500">+{fmt(activeDirty.insertions)}</span>}
-                      {activeDirty.deletions > 0 && <span className="ml-1 text-red-500">-{fmt(activeDirty.deletions)}</span>}
-                    </>
+                    <>uncommitted: <DiffStat stat={activeDirty} /></>
                   ) : (
                     'clean'
                   )}
                 </span>
               )}
             </div>
-            <Check className="size-3 shrink-0 text-foreground" />
           </div>
+
+          {isActive && activePath && (
+            <WorktreeHandoffSection
+              worktreePath={activePath}
+              onDone={() => setPopoverOpen(false)}
+            />
+          )}
+
+          {!isActive && activeSessionId && currentFolder && (
+            <WorktreeForkSection
+              sessionId={activeSessionId}
+              cwd={currentFolder}
+              onForked={() => setPopoverOpen(false)}
+            />
+          )}
         </PopoverContent>
       </Popover>
     )
@@ -534,9 +555,7 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
                   </div>
                   <span>{t('chat.worktree.carryLocalChanges')}</span>
                   <span className="ml-auto text-[10px] text-muted-foreground">
-                    {t('chat.worktree.filesCount', { count: mainDirty.files })}
-                    {mainDirty.insertions > 0 && <span className="ml-1 text-green-500">+{fmt(mainDirty.insertions)}</span>}
-                    {mainDirty.deletions > 0 && <span className="ml-1 text-red-500">-{fmt(mainDirty.deletions)}</span>}
+                    <DiffStat stat={mainDirty} />
                   </span>
                 </button>
               )}

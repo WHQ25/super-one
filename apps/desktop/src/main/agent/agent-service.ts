@@ -55,7 +55,8 @@ import { cacheRemoteImage } from '../image-cache'
 import { backupMcpServers, listLibrary, deleteLibraryEntry, getLibraryEntry } from '../mcp-library-service'
 import { uninstallMcpbBundle } from '../mcpb/mcpb-installer'
 import { getAllProviders, createProvider, updateProvider, deleteProvider, activateProvider, deactivateAllProviders } from '../database'
-import type { CreateProviderRequest, UpdateProviderRequest, HookSavePayload } from '@superone/shared/agent-types'
+import type { CreateProviderRequest, UpdateProviderRequest, HookSavePayload, SessionForkRequest } from '@superone/shared/agent-types'
+import { forkSessionToWorktree } from '../session/session-fork'
 
 export class AgentService {
   private mainWindow: BrowserWindow | null = null
@@ -2162,6 +2163,14 @@ export class AgentService {
       return deleted
     })
 
+    ipcMain.handle(AgentIpcChannels.SESSIONS_FORK, async (_event, request: SessionForkRequest) => {
+      const result = await forkSessionToWorktree(request)
+      if (result.ok) {
+        this.mainWindow && !this.mainWindow.isDestroyed() && this.mainWindow.webContents.send(AgentIpcChannels.SESSIONS_CHANGED)
+      }
+      return result
+    })
+
     ipcMain.handle(AgentIpcChannels.SESSIONS_PIN, (_event, sessionId: string, pinned: boolean) => {
       dbPinSession(sessionId, pinned)
     })
@@ -2284,6 +2293,7 @@ export class AgentService {
     ipcMain.removeHandler(AgentIpcChannels.SESSIONS_LOAD_STATE)
     ipcMain.removeHandler(AgentIpcChannels.SESSIONS_DELETE)
     ipcMain.removeHandler(AgentIpcChannels.SESSIONS_DELETE_OLDER)
+    ipcMain.removeHandler(AgentIpcChannels.SESSIONS_FORK)
     ipcMain.removeHandler(AgentIpcChannels.SESSIONS_PIN)
     ipcMain.removeHandler(AgentIpcChannels.SESSIONS_HIDE)
     ipcMain.removeHandler(AgentIpcChannels.SESSIONS_LIST_PINNED)

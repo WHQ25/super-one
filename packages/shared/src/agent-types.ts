@@ -690,6 +690,20 @@ export interface WorktreeActivateRequest {
   carryLocalChanges?: boolean
 }
 
+export type WorktreeHandoffResult =
+  | { ok: true }
+  | { ok: false; reason: 'not-worktree' | 'no-changes' | 'local-dirty' | 'conflict' | 'error'; error?: string }
+
+/** Fork a session's conversation into a brand-new worktree running an independent session. */
+export interface SessionForkRequest {
+  /** SuperOne session id of the source session to fork. */
+  sessionId: string
+}
+
+export type SessionForkResult =
+  | { ok: true; sessionId: string; worktreePath: string }
+  | { ok: false; error: string }
+
 // --- Main → Renderer push events ---
 
 export type AgentEventBase =
@@ -1591,6 +1605,8 @@ export const AgentIpcChannels = {
   GIT_ACTIVATE_WORKTREE: 'app:git-activate-worktree',
   GIT_SWITCH_WORKTREE: 'app:git-switch-worktree',
   GIT_CHECKED_OUT_BRANCHES: 'app:git-checked-out-branches',
+  GIT_HANDOFF_TO_LOCAL: 'app:git-handoff-to-local',
+  GIT_HANDOFF_PREVIEW: 'app:git-handoff-preview',
   GIT_STATUS_FILES: 'app:git-status-files',
   GIT_LOG: 'app:git-log',
   GIT_FILE_TREE: 'app:git-file-tree',
@@ -1643,6 +1659,7 @@ export const AgentIpcChannels = {
   SESSIONS_LOAD_MESSAGES: 'sessions:load-messages',
   SESSIONS_RENAME: 'sessions:rename',
   SESSIONS_CREATE: 'sessions:create',
+  SESSIONS_FORK: 'sessions:fork',
   SESSIONS_SAVE_STATE: 'sessions:save-state',
   SESSIONS_LOAD_STATE: 'sessions:load-state',
   SESSIONS_DELETE: 'sessions:delete',

@@ -55,9 +55,10 @@ export function createCanUseTool(
       suggestions?: PermissionUpdate[]
       toolUseID: string
       signal: AbortSignal
+      agentID?: string
     }
   ) => {
-    trace('permission.flow', 'canUseTool_enter', { toolName, toolUseId: context.toolUseID })
+    trace('permission.flow', 'canUseTool_enter', { toolName, toolUseId: context.toolUseID, agentId: context.agentID })
     // Track Write/Edit to plan files (also tracked from event stream for auto-allowed calls)
     if (
       (toolName === 'Write' || toolName === 'Edit') &&
@@ -66,6 +67,14 @@ export function createCanUseTool(
       trackPlanFile(input.file_path)
     }
 
+    if (toolName === 'mcp__superone__session_rename' && context.agentID) {
+      trace('permission.flow', 'session_rename_blocked_subagent', { agentId: context.agentID, toolUseId: context.toolUseID })
+      return {
+        behavior: 'deny' as const,
+        message: 'Denied: session_rename can only be called from the main thread. You are running inside a subagent (Task/Agent worker) and must not rename the user-facing session title. Only the top-level agent owns the title — do not retry this call.',
+        toolUseID: context.toolUseID,
+      }
+    }
 
     if (isBuiltInSuperoneTool(toolName)) {
       return { behavior: 'allow' as const, updatedInput: input, toolUseID: context.toolUseID }

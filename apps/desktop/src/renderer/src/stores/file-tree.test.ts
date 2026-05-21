@@ -143,6 +143,48 @@ describe('deleteFile', () => {
   })
 })
 
+describe('revealPath', () => {
+  const dir = (path: string): FileTreeEntry => ({
+    name: path.split('/').pop()!,
+    path,
+    isDirectory: true,
+    gitIndex: null,
+    gitWorktree: null,
+  })
+  const file = (path: string): FileTreeEntry => ({
+    name: path.split('/').pop()!,
+    path,
+    isDirectory: false,
+    gitIndex: null,
+    gitWorktree: null,
+  })
+
+  it('expands every ancestor directory and marks the target as revealed', async () => {
+    listDirMock.mockImplementation(async (_folder, rel) => {
+      if (rel === '') return [dir('src')]
+      if (rel === 'src') return [dir('src/components')]
+      if (rel === 'src/components') return [dir('src/components/sidebar')]
+      if (rel === 'src/components/sidebar') return [file('src/components/sidebar/FileTree.tsx')]
+      return []
+    })
+    await useFileTreeStore.getState().fetchTree('/proj')
+    await useFileTreeStore.getState().revealPath('/proj', 'src/components/sidebar')
+
+    const { expandedDirs, revealedPath, _visibleList } = useFileTreeStore.getState()
+    expect([...expandedDirs].sort()).toEqual(['src', 'src/components', 'src/components/sidebar'])
+    expect(revealedPath).toBe('src/components/sidebar')
+    const paths = _visibleList.map((v) => v.path)
+    expect(paths).toContain('src/components/sidebar')
+    expect(paths).toContain('src/components/sidebar/FileTree.tsx')
+  })
+
+  it('clearRevealed resets the revealed marker', () => {
+    useFileTreeStore.setState({ revealedPath: 'src' })
+    useFileTreeStore.getState().clearRevealed()
+    expect(useFileTreeStore.getState().revealedPath).toBeNull()
+  })
+})
+
 describe('renameFile', () => {
   it('should clear renamingPath and refresh on success', async () => {
     listDirMock.mockResolvedValue(makeEntries(['a.ts']))

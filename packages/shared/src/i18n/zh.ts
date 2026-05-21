@@ -29,6 +29,10 @@ export const zh: Messages = {
     },
     empty: '还没有项目',
     noFiles: '没有文件',
+    search: {
+      placeholder: '搜索文件...',
+      noResults: '没有匹配的文件',
+    },
     settings: '设置',
     remote: {
       connected: '已连接',

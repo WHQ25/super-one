@@ -27,6 +27,10 @@ export type Messages = {
     }
     empty: string
     noFiles: string
+    search: {
+      placeholder: string
+      noResults: string
+    }
     settings: string
     remote: {
       connected: string
@@ -1161,6 +1165,10 @@ export const en: Messages = {
     },
     empty: 'No projects yet',
     noFiles: 'No files',
+    search: {
+      placeholder: 'Search files...',
+      noResults: 'No matching files',
+    },
     settings: 'Settings',
     remote: {
       connected: 'Connected',

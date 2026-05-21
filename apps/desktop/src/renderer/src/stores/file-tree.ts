@@ -28,6 +28,7 @@ interface FileTreeState {
   loading: boolean
   renamingPath: string | null
   dragOverPath: string | null
+  revealedPath: string | null
   _visibleList: VisibleItem[]
   _visibleVersion: number
   _currentRoot: string | null
@@ -43,6 +44,8 @@ interface FileTreeState {
   moveFilesIn: (projectPath: string, destDirPath: string, absolutePaths: string[]) => Promise<FileOpResult>
   deleteFile: (projectPath: string, relPath: string) => Promise<FileOpResult>
   renameFile: (projectPath: string, oldPath: string, newName: string) => Promise<FileOpResult>
+  revealPath: (projectPath: string, path: string) => Promise<void>
+  clearRevealed: () => void
 }
 
 function entriesToNodes(
@@ -158,6 +161,36 @@ function recomputeAndSet(
   set({ ...extra, _visibleList, _visibleVersion: s._visibleVersion + 1 })
 }
 
+async function ensureExpanded(
+  get: () => FileTreeState,
+  set: (partial: Partial<FileTreeState>) => void,
+  projectPath: string,
+  path: string,
+): Promise<void> {
+  const { expandedDirs, nodes } = get()
+  const node = nodes.get(path)
+  if (!node || !node.entry.isDirectory) return
+
+  const next = new Set(expandedDirs)
+  next.add(path)
+  if (node.isLoaded) {
+    if (!expandedDirs.has(path)) recomputeAndSet(get, set, { expandedDirs: next })
+    return
+  }
+
+  recomputeAndSet(get, set, { expandedDirs: next })
+  try {
+    const children = await window.app.listDir(projectPath, path)
+    const cur = get().nodes
+    mergeEntries(cur, path, (cur.get(path)?.depth ?? 0) + 1, children)
+    recomputeAndSet(get, set)
+  } catch {
+    const cur = get().nodes
+    mergeEntries(cur, path, (cur.get(path)?.depth ?? 0) + 1, [])
+    recomputeAndSet(get, set)
+  }
+}
+
 export const useFileTreeStore = create<FileTreeState>((set, get) => ({
   nodes: new Map(),
   expandedDirs: new Set(),
@@ -165,6 +198,7 @@ export const useFileTreeStore = create<FileTreeState>((set, get) => ({
   loading: false,
   renamingPath: null,
   dragOverPath: null,
+  revealedPath: null,
   _visibleList: [],
   _visibleVersion: 0,
   _currentRoot: null,
@@ -261,6 +295,7 @@ export const useFileTreeStore = create<FileTreeState>((set, get) => ({
       loading: false,
       renamingPath: null,
       dragOverPath: null,
+      revealedPath: null,
       _visibleList: [],
       _visibleVersion: get()._visibleVersion + 1,
       _currentRoot: null,
@@ -302,4 +337,17 @@ export const useFileTreeStore = create<FileTreeState>((set, get) => ({
     }
     return result
   },
+
+  revealPath: async (projectPath, path) => {
+    const clean = path.replace(/\/+$/, '')
+    if (!clean) return
+    let prefix = ''
+    for (const seg of clean.split('/')) {
+      prefix = prefix ? `${prefix}/${seg}` : seg
+      await ensureExpanded(get, set, projectPath, prefix)
+    }
+    set({ revealedPath: clean })
+  },
+
+  clearRevealed: () => set({ revealedPath: null }),
 }))

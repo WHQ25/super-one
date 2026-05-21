@@ -1,10 +1,12 @@
 import { useEffect, useCallback, useRef, useState, useMemo, type DragEvent, type RefObject } from 'react'
 import { useTranslation } from 'react-i18next'
+import { Search } from 'lucide-react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { useAppStore } from '@/stores/app'
 import { useFileTreeStore, type VisibleItem } from '@/stores/file-tree'
 import { useSourceControlStore } from '@/stores/source-control'
 import { TreeRow, autoExpandedDirs } from './TreeRow'
+import { FileTreeSearch } from './FileTreeSearch'
 import { getDropAction, shouldCollapseAutoExpanded, computeDropOverlay, isWithinFolder, internalDragSource } from './drag-drop-utils'
 import { Kbd } from '@superone/ui/components/ui/kbd'
 import {
@@ -81,6 +83,8 @@ export function FileTree() {
   const setDragOverPath = useFileTreeStore((s) => s.setDragOverPath)
   const dragOverPath = useFileTreeStore((s) => s.dragOverPath)
   const deleteFile = useFileTreeStore((s) => s.deleteFile)
+  const revealedPath = useFileTreeStore((s) => s.revealedPath)
+  const clearRevealed = useFileTreeStore((s) => s.clearRevealed)
   const selectedFile = useSourceControlStore((s) => s.selectedFile)
   const folderName = currentFolder?.split('/').pop() ?? 'Project'
 
@@ -89,6 +93,7 @@ export function FileTree() {
   const [externalDragOver, setExternalDragOver] = useState(false)
   const [altKeyHeld, setAltKeyHeld] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null)
+  const [searching, setSearching] = useState(false)
   const autoScroll = useAutoScroll(scrollRef)
 
   const virtualizer = useVirtualizer({
@@ -130,6 +135,18 @@ export function FileTree() {
       document.removeEventListener('dragend', reset)
     }
   }, [setDragOverPath, autoScroll])
+
+  useEffect(() => {
+    setSearching(false)
+  }, [fileRoot])
+
+  useEffect(() => {
+    if (!revealedPath) return
+    const index = visibleList.findIndex((v) => v.path === revealedPath)
+    if (index >= 0) virtualizer.scrollToIndex(index, { align: 'center' })
+    const timer = setTimeout(clearRevealed, 2000)
+    return () => clearTimeout(timer)
+  }, [revealedPath])
 
   const dropOverlay = useMemo(
     () => computeDropOverlay(dragOverPath, visibleList.map((v) => v.path), 28),
@@ -210,10 +227,25 @@ export function FileTree() {
 
   const isEmpty = visibleList.length === 0 && !loading
 
+  if (searching && fileRoot) {
+    return <FileTreeSearch projectRoot={fileRoot} onClose={() => setSearching(false)} />
+  }
+
   return (
     <div className="flex h-full flex-col">
-      <div className="px-3 py-1.5">
-        <span className="text-md font-medium text-sidebar-foreground/70">{folderName}</span>
+      <div className="flex items-center gap-1 px-3 py-1.5">
+        <span className="min-w-0 flex-1 truncate text-md font-medium text-sidebar-foreground/70">
+          {folderName}
+        </span>
+        {fileRoot && (
+          <button
+            onClick={() => setSearching(true)}
+            title={t('sidebar.search.placeholder')}
+            className="shrink-0 rounded p-0.5 text-sidebar-foreground/50 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
+          >
+            <Search className="size-3.5" />
+          </button>
+        )}
       </div>
 
       <div
@@ -255,6 +287,7 @@ export function FileTree() {
                       currentFolder={fileRoot!}
                       isSelected={selectedFile === item.path}
                       isRenaming={renamingPath === item.path}
+                      isRevealed={revealedPath === item.path}
                       onDeleteRequest={handleDeleteRequest}
                     />
                   </div>

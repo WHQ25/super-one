@@ -107,12 +107,14 @@ export const TreeRow = memo(function TreeRow({
   currentFolder,
   isSelected,
   isRenaming,
+  isRevealed,
   onDeleteRequest,
 }: {
   item: VisibleItem
   currentFolder: string
   isSelected: boolean
   isRenaming: boolean
+  isRevealed: boolean
   onDeleteRequest: (item: VisibleItem) => void
 }) {
   const { t } = useTranslation()
@@ -282,6 +284,7 @@ export const TreeRow = memo(function TreeRow({
         'flex w-full items-center gap-1 py-[3px] pr-2 text-left text-[15px] transition-colors hover:bg-sidebar-accent',
         !item.isDirectory && isSelected && 'bg-sidebar-accent',
         isDropTarget && 'bg-sidebar-accent',
+        isRevealed && 'bg-sidebar-accent ring-1 ring-inset ring-primary/40',
       )}
       style={{ paddingLeft: `${item.depth * 8 + 8}px` }}
     >
@@ -353,5 +356,6 @@ export const TreeRow = memo(function TreeRow({
   prev.item.hasChildren === next.item.hasChildren &&
   prev.isSelected === next.isSelected &&
   prev.isRenaming === next.isRenaming &&
+  prev.isRevealed === next.isRevealed &&
   prev.currentFolder === next.currentFolder
 )

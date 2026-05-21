@@ -402,9 +402,11 @@ export const zh: Messages = {
     },
     codexImage: {
       copyImage: '复制图片',
+      copyPrompt: '复制提示词',
       openFolder: '打开文件夹',
       addToChat: '添加到对话',
       copied: '图片已复制到剪贴板',
+      promptCopied: '提示词已复制到剪贴板',
       copyFailed: '复制失败：{{error}}',
     },
     worktree: {

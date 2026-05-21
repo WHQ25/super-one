@@ -388,9 +388,11 @@ export type Messages = {
     }
     codexImage: {
       copyImage: string
+      copyPrompt: string
       openFolder: string
       addToChat: string
       copied: string
+      promptCopied: string
       copyFailed: string
     }
     worktree: {
@@ -1517,9 +1519,11 @@ export const en: Messages = {
     },
     codexImage: {
       copyImage: 'Copy Image',
+      copyPrompt: 'Copy Prompt',
       openFolder: 'Open Folder',
       addToChat: 'Add to Chat',
       copied: 'Image copied to clipboard',
+      promptCopied: 'Prompt copied to clipboard',
       copyFailed: 'Copy failed: {{error}}',
     },
     worktree: {

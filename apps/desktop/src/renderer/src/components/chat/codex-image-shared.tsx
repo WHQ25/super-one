@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Download, Loader2, X, Info, ChevronLeft, ChevronRight, Copy, FolderOpen, MessageSquarePlus } from 'lucide-react'
+import { Download, Loader2, X, Info, ChevronLeft, ChevronRight, Copy, FolderOpen, MessageSquarePlus, ClipboardCopy } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@superone/ui/components/ui/button'
 import {
@@ -53,12 +53,21 @@ export function useImageDataUri(savedPath: string | undefined, isFailed: boolean
   return { dataUri, loadError }
 }
 
-export function ImageMenuItems({ savedPath }: { savedPath: string }) {
+export function ImageMenuItems({ savedPath, prompt }: { savedPath: string; prompt?: string }) {
   const { t } = useTranslation()
   const handleCopy = async () => {
     const res = await window.app.clipboardWriteImage(savedPath)
     if (res.ok) toast.success(t('chat.codexImage.copied'))
     else toast.error(t('chat.codexImage.copyFailed', { error: res.error }))
+  }
+  const handleCopyPrompt = async () => {
+    if (!prompt) return
+    try {
+      await navigator.clipboard.writeText(prompt)
+      toast.success(t('chat.codexImage.promptCopied'))
+    } catch (error) {
+      toast.error(t('chat.codexImage.copyFailed', { error: String(error) }))
+    }
   }
 
   return (
@@ -67,6 +76,12 @@ export function ImageMenuItems({ savedPath }: { savedPath: string }) {
         <Copy className="mr-2 size-3.5" />
         {t('chat.codexImage.copyImage')}
       </ContextMenuItem>
+      {prompt && (
+        <ContextMenuItem onClick={handleCopyPrompt}>
+          <ClipboardCopy className="mr-2 size-3.5" />
+          {t('chat.codexImage.copyPrompt')}
+        </ContextMenuItem>
+      )}
       <ContextMenuItem onClick={() => chatInputAPI.addImageFromPath?.(savedPath)}>
         <MessageSquarePlus className="mr-2 size-3.5" />
         {t('chat.codexImage.addToChat')}
@@ -111,10 +126,11 @@ interface InteractiveProps {
   onOpen: () => void
   className: string
   ariaLabel: string
+  prompt?: string
   children: React.ReactNode
 }
 
-export function ImageInteractive({ savedPath, onOpen, className, ariaLabel, children }: InteractiveProps) {
+export function ImageInteractive({ savedPath, onOpen, className, ariaLabel, prompt, children }: InteractiveProps) {
   const dragEndRef = useRef(0)
 
   const handleDragStart = (e: React.DragEvent) => {
@@ -152,7 +168,7 @@ export function ImageInteractive({ savedPath, onOpen, className, ariaLabel, chil
         </button>
       </ContextMenuTrigger>
       <ContextMenuContent>
-        <ImageMenuItems savedPath={savedPath} />
+        <ImageMenuItems savedPath={savedPath} prompt={prompt} />
       </ContextMenuContent>
     </ContextMenu>
   )
@@ -230,7 +246,7 @@ export function CodexImageViewer({ items, index, open, onOpenChange, onIndexChan
             <ContextMenu>
               <ContextMenuTrigger asChild>{imageArea}</ContextMenuTrigger>
               <ContextMenuContent>
-                <ImageMenuItems savedPath={item.savedPath} />
+                <ImageMenuItems savedPath={item.savedPath} prompt={item.revisedPrompt} />
               </ContextMenuContent>
             </ContextMenu>
           )

@@ -33,6 +33,7 @@ function GalleryThumb({ item, onOpen }: { item: CodexImageGenerationItem; onOpen
       savedPath={savedPath!}
       onOpen={onOpen}
       ariaLabel={item.revisedPrompt ?? 'Generated image'}
+      prompt={item.revisedPrompt}
       className={cn(TILE, 'cursor-pointer bg-muted/30 transition-shadow hover:shadow-sm')}
     >
       <img

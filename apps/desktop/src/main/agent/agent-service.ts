@@ -50,7 +50,8 @@ import { listSkills, readSkillContent, readSkillFile, installSkill, deleteSkill,
 import { readAppSettings, saveAppSettings } from '../app-settings-service'
 import { listCodexMcpConfigs } from '../codex-config-service'
 import { discoverAllAgents, discoverProjectCommands, readAgentFile } from './discover-resources'
-import { listPlugins, readPluginContent, readPluginFile, deletePlugin, listMarketplacePlugins, installPlugin, updatePlugin, updateMarketplace, addMarketplace, removeMarketplace, readMarketplacePluginContent, readMarketplacePluginFile } from '../plugins-service'
+import { listPlugins, readPluginContent, readPluginFile, deletePlugin, listMarketplacePlugins, installPlugin, updatePlugin, updateMarketplace, addMarketplace, removeMarketplace, readMarketplacePluginContent, readMarketplacePluginFile, getGithubStars } from '../plugins-service'
+import { cacheRemoteImage } from '../image-cache'
 import { backupMcpServers, listLibrary, deleteLibraryEntry, getLibraryEntry } from '../mcp-library-service'
 import { uninstallMcpbBundle } from '../mcpb/mcpb-installer'
 import { getAllProviders, createProvider, updateProvider, deleteProvider, activateProvider, deactivateAllProviders } from '../database'
@@ -1752,6 +1753,14 @@ export class AgentService {
       await updateMarketplace(name)
     })
 
+    ipcMain.handle(AgentIpcChannels.PLUGINS_GITHUB_STARS, async (_event, repoSlug: string) => {
+      return getGithubStars(repoSlug)
+    })
+
+    ipcMain.handle(AgentIpcChannels.CACHE_IMAGE, async (_event, url: string) => {
+      return cacheRemoteImage(url)
+    })
+
     ipcMain.handle(AgentIpcChannels.PLUGINS_ADD_MARKETPLACE, async (_event, source: string, scope: ResourceScope, projectPath: string) => {
       await addMarketplace(source, scope, projectPath)
     })
@@ -2230,6 +2239,8 @@ export class AgentService {
     ipcMain.removeHandler(AgentIpcChannels.PLUGINS_INSTALL)
     ipcMain.removeHandler(AgentIpcChannels.PLUGINS_UPDATE)
     ipcMain.removeHandler(AgentIpcChannels.PLUGINS_UPDATE_MARKETPLACE)
+    ipcMain.removeHandler(AgentIpcChannels.PLUGINS_GITHUB_STARS)
+    ipcMain.removeHandler(AgentIpcChannels.CACHE_IMAGE)
     ipcMain.removeHandler(AgentIpcChannels.SKILLS_LIST)
     ipcMain.removeHandler(AgentIpcChannels.SKILLS_READ)
     ipcMain.removeHandler(AgentIpcChannels.SKILLS_READ_FILE)

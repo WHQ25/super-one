@@ -15,6 +15,7 @@ import {
   Webhook,
   Server,
   Github,
+  Star,
   HardDrive,
   ArrowUpCircle,
   RefreshCw,
@@ -197,9 +198,53 @@ function isMarkdown(filePath: string): boolean {
   return /\.md$/i.test(filePath)
 }
 
+// --- Persistent image cache (disk-backed in main, served as data URLs) ---
+
+const cachedImageMap = new Map<string, string | null>()
+
+function isRemoteUrl(url: string): boolean {
+  return /^https?:/i.test(url)
+}
+
+function useCachedAssets(urls: string[]): string[] {
+  const [version, setVersion] = useState(0)
+  useEffect(() => {
+    const pending = urls.filter((u) => isRemoteUrl(u) && !cachedImageMap.has(u))
+    if (pending.length === 0) return
+    let cancelled = false
+    Promise.all(
+      pending.map(async (u) => {
+        try {
+          cachedImageMap.set(u, await window.app.cacheRemoteImage(u))
+        } catch {
+          cachedImageMap.set(u, null)
+        }
+      })
+    ).then(() => {
+      if (!cancelled) setVersion((n) => n + 1)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [urls])
+  return useMemo(
+    () =>
+      urls
+        .map((u) => {
+          if (!isRemoteUrl(u)) return u
+          const cached = cachedImageMap.get(u)
+          if (cached === undefined) return null
+          return cached ?? u
+        })
+        .filter((u): u is string => u !== null),
+    [urls, version]
+  )
+}
+
 function PluginAvatar({ name, iconPath, logoPath, className }: { name: string; iconPath?: string; logoPath?: string; className?: string }) {
   const [failedSrcs, setFailedSrcs] = useState<string[]>([])
-  const candidates = useMemo(() => resolveAssetUrls([logoPath, iconPath]), [iconPath, logoPath])
+  const rawCandidates = useMemo(() => resolveAssetUrls([logoPath, iconPath]), [iconPath, logoPath])
+  const candidates = useCachedAssets(rawCandidates)
   const src = candidates.find((candidate) => !failedSrcs.includes(candidate))
 
   useEffect(() => {
@@ -1302,11 +1347,12 @@ function MarketplaceListCard({ mp, onClick }: { mp: MarketplaceSummary; onClick:
           <ScopeBadge scope={mp.scope} />
         </div>
         {mp.source && (
-          <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground truncate">
+          <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
             {isGithubSource(mp.source)
-              ? <><Github className="size-3 shrink-0" />{mp.source}</>
-              : <><HardDrive className="size-3 shrink-0" />{mp.source}</>
-            }
+              ? <Github className="size-3 shrink-0" />
+              : <HardDrive className="size-3 shrink-0" />}
+            <span className="truncate">{mp.source}</span>
+            {isGithubSource(mp.source) && <GithubStars source={mp.source} className="shrink-0" />}
           </p>
         )}
         <p className="mt-0.5 text-xs text-muted-foreground">
@@ -1324,6 +1370,57 @@ function MarketplaceListCard({ mp, onClick }: { mp: MarketplaceSummary; onClick:
 
 function isGithubSource(source?: string): boolean {
   return !!source && source.includes('/') && !source.startsWith('/')
+}
+
+// --- GitHub star count ---
+
+const githubStarsCache = new Map<string, number | null>()
+
+function githubRepoSlug(source: string): string {
+  return source.split('/').slice(0, 2).join('/')
+}
+
+function formatStarCount(n: number): string {
+  if (n < 1000) return String(n)
+  const k = n / 1000
+  return `${k >= 10 ? Math.round(k) : k.toFixed(1)}k`
+}
+
+function useGithubStars(source: string | undefined): number | null {
+  const slug = source && isGithubSource(source) ? githubRepoSlug(source) : null
+  const [stars, setStars] = useState<number | null>(() => (slug ? githubStarsCache.get(slug) ?? null : null))
+  useEffect(() => {
+    if (!slug) return
+    if (githubStarsCache.has(slug)) {
+      setStars(githubStarsCache.get(slug) ?? null)
+      return
+    }
+    let cancelled = false
+    window.app
+      .getGithubStars(slug)
+      .then((count) => {
+        githubStarsCache.set(slug, count)
+        if (!cancelled) setStars(count)
+      })
+      .catch(() => {
+        githubStarsCache.set(slug, null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [slug])
+  return stars
+}
+
+function GithubStars({ source, className }: { source: string; className?: string }) {
+  const stars = useGithubStars(source)
+  if (stars == null) return null
+  return (
+    <span className={cn('inline-flex items-center gap-0.5 text-muted-foreground', className)}>
+      <Star className="size-3 shrink-0" />
+      {formatStarCount(stars)}
+    </span>
+  )
 }
 
 function SourceLink({ source, size = 'sm' }: { source: string; size?: 'sm' | 'md' }) {
@@ -1459,6 +1556,9 @@ function MarketplaceDetailView({
         </div>
         <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1">
           {summary.source && <SourceLink source={summary.source} size="md" />}
+          {summary.source && isGithubSource(summary.source) && (
+            <GithubStars source={summary.source} className="text-sm" />
+          )}
           <span className="text-sm text-muted-foreground">
             {summary.pluginCount} plugin{summary.pluginCount !== 1 ? 's' : ''}
             {summary.installedCount > 0 && ` · ${summary.installedCount} installed`}

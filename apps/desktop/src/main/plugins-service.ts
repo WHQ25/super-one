@@ -596,6 +596,33 @@ export function updateMarketplace(marketplaceName: string): Promise<void> {
   })
 }
 
+/** Fetch a GitHub repo's star count. Prefers the user's `gh` CLI (authenticated, works for private repos); falls back to the unauthenticated REST API. Returns null on any failure. */
+export async function getGithubStars(repoSlug: string): Promise<number | null> {
+  const slug = repoSlug.split('/').slice(0, 2).join('/')
+  if (slug.split('/').length !== 2 || !slug.split('/').every(Boolean)) return null
+
+  const viaGh = await new Promise<number | null>((resolve) => {
+    execFile('gh', ['api', `repos/${slug}`, '--jq', '.stargazers_count'], { timeout: 10000 }, (error, stdout) => {
+      if (error) { resolve(null); return }
+      const n = Number(stdout.trim())
+      resolve(Number.isFinite(n) ? n : null)
+    })
+  })
+  if (viaGh != null) return viaGh
+
+  try {
+    const res = await fetch(`https://api.github.com/repos/${slug}`, {
+      headers: { Accept: 'application/vnd.github+json' },
+      signal: AbortSignal.timeout(10000),
+    })
+    if (!res.ok) return null
+    const data = (await res.json()) as { stargazers_count?: number }
+    return typeof data.stargazers_count === 'number' ? data.stargazers_count : null
+  } catch {
+    return null
+  }
+}
+
 export function installPlugin(pluginKey: string, scope: ResourceScope, cwd: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const args = ['plugin', 'install', pluginKey, '--scope', scope]

@@ -87,6 +87,8 @@ interface AppAPI {
   installPlugin(projectPath: string, key: string, scope: ResourceScope): Promise<void>
   updatePlugins(projectPath: string, updates: Array<{ key: string; scope: ResourceScope }>): Promise<void>
   updateMarketplace(name: string): Promise<void>
+  getGithubStars(repoSlug: string): Promise<number | null>
+  cacheRemoteImage(url: string): Promise<string | null>
   addMarketplace(source: string, scope: ResourceScope, projectPath: string): Promise<void>
   removeMarketplace(name: string, scope: MarketplaceScope, projectPath: string): Promise<void>
   readMarketplacePlugin(marketplace: string, name: string): Promise<MarketplacePluginDetail | null>

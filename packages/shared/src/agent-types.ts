@@ -1454,6 +1454,7 @@ export const AgentIpcChannels = {
   GET_PROJECT_ID: 'app:get-project-id',
   OPEN_FOLDER: 'app:open-folder',
   OPEN_TMP_FOLDER: 'app:open-tmp-folder',
+  CACHE_IMAGE: 'app:cache-image',
   CLOSE_PROJECT: 'app:close-project',
   SETUP_CHECK_CLAUDE: 'app:setup-check-claude',
   SETUP_INSTALL_CLAUDE: 'app:setup-install-claude',
@@ -1516,6 +1517,7 @@ export const AgentIpcChannels = {
   PLUGINS_REMOVE_MARKETPLACE: 'plugins:remove-marketplace',
   PLUGINS_READ_MARKETPLACE: 'plugins:read-marketplace',
   PLUGINS_READ_MARKETPLACE_FILE: 'plugins:read-marketplace-file',
+  PLUGINS_GITHUB_STARS: 'plugins:github-stars',
 
   // Skills
   SKILLS_LIST: 'skills:list',

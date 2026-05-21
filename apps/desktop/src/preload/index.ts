@@ -387,6 +387,12 @@ const appAPI = {
   updateMarketplace: (name: string) =>
     ipcRenderer.invoke(AgentIpcChannels.PLUGINS_UPDATE_MARKETPLACE, name),
 
+  getGithubStars: (repoSlug: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.PLUGINS_GITHUB_STARS, repoSlug),
+
+  cacheRemoteImage: (url: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.CACHE_IMAGE, url),
+
   addMarketplace: (source: string, scope: string, projectPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.PLUGINS_ADD_MARKETPLACE, source, scope, projectPath),
   removeMarketplace: (name: string, scope: string, projectPath: string) =>

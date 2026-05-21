@@ -76,6 +76,7 @@ interface SettingsState {
 
   // Plugins
   plugins: PluginInfo[]
+  pluginsLoading: boolean
   pluginDetail: PluginDetail | null
   pluginFileContent: string | null
   pluginFilePath: string | null
@@ -83,6 +84,7 @@ interface SettingsState {
   marketplacePluginDetail: MarketplacePluginDetail | null
   marketplacePluginFileContent: string | null
   marketplacePluginFilePath: string | null
+  reloadPlugins: () => Promise<void>
   fetchPlugins: () => Promise<void>
   readPlugin: (key: string) => Promise<void>
   readPluginFile: (pluginKey: string, relativePath: string) => Promise<void>
@@ -136,6 +138,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   mcpbInstalled: [],
   providers: [],
   plugins: [],
+  pluginsLoading: false,
   pluginDetail: null,
   pluginFileContent: null,
   pluginFilePath: null,
@@ -340,6 +343,17 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
   revealMcpb: async (name) => {
     await window.app.revealMcpb(name)
+  },
+
+  reloadPlugins: async () => {
+    set({ pluginsLoading: true, plugins: [], marketplacePlugins: [] })
+    try {
+      await Promise.all([get().fetchPlugins(), get().fetchMarketplacePlugins()])
+    } catch {
+      void 0
+    } finally {
+      set({ pluginsLoading: false })
+    }
   },
 
   fetchPlugins: async () => {

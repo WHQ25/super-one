@@ -1740,6 +1740,16 @@ function AddMarketplaceDialog({
 
 type PluginsTab = 'marketplace' | 'installed'
 
+function PluginsLoadingState() {
+  const { t } = useTranslation()
+  return (
+    <div className="flex items-center justify-center gap-2 rounded-lg border border-dashed border-border p-8">
+      <RefreshCw className="size-4 animate-spin text-muted-foreground" />
+      <span className="text-sm text-muted-foreground">{t('resources.plugins.loading')}</span>
+    </div>
+  )
+}
+
 export function PluginsPage() {
   const { t } = useTranslation()
   const currentFolder = useAppStore((s) => s.currentFolder)
@@ -1747,6 +1757,8 @@ export function PluginsPage() {
   const {
     plugins,
     marketplacePlugins,
+    pluginsLoading,
+    reloadPlugins,
     fetchPlugins,
     fetchMarketplacePlugins,
     installPlugin,
@@ -1765,9 +1777,8 @@ export function PluginsPage() {
     clearPluginDetail()
     clearMarketplacePluginDetail()
     setSelectedMarketplace(null)
-    fetchPlugins()
-    fetchMarketplacePlugins()
-  }, [currentFolder, settingsProvider, clearPluginDetail, clearMarketplacePluginDetail, fetchPlugins, fetchMarketplacePlugins])
+    reloadPlugins()
+  }, [currentFolder, settingsProvider, clearPluginDetail, clearMarketplacePluginDetail, reloadPlugins])
 
   // Derive marketplace summaries from plugins data
   const marketplaceSummaries = useMemo(() => {
@@ -1905,7 +1916,9 @@ export function PluginsPage() {
       {/* Marketplace tab */}
       {tab === 'marketplace' && (
         <div>
-          {marketplaceSummaries.length === 0 ? (
+          {pluginsLoading ? (
+            <PluginsLoadingState />
+          ) : marketplaceSummaries.length === 0 ? (
             <div className="rounded-lg border border-dashed border-border p-8 text-center">
               <p className="text-sm text-muted-foreground">{t('resources.plugins.emptyMarketplace')}</p>
               <p className="mt-1 text-xs text-muted-foreground">
@@ -1942,7 +1955,9 @@ export function PluginsPage() {
       {/* Installed tab */}
       {tab === 'installed' && (
         <div>
-          {plugins.length === 0 ? (
+          {pluginsLoading ? (
+            <PluginsLoadingState />
+          ) : plugins.length === 0 ? (
             <div className="rounded-lg border border-dashed border-border p-8 text-center">
               <p className="text-sm text-muted-foreground">{t('resources.plugins.emptyInstalled')}</p>
               <p className="mt-1 text-xs text-muted-foreground">

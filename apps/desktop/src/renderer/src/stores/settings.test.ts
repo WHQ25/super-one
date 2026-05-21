@@ -339,6 +339,47 @@ describe('installPlugin', () => {
   })
 })
 
+describe('reloadPlugins', () => {
+  it('clears stale plugins and raises the loading flag before the fetch resolves', async () => {
+    resetStore({
+      plugins: [{ key: 'stale' }] as never,
+      marketplacePlugins: [{ marketplace: 'stale' }] as never,
+      pluginsLoading: false,
+    })
+
+    const promise = store.getState().reloadPlugins()
+    expect(store.getState().pluginsLoading).toBe(true)
+    expect(store.getState().plugins).toEqual([])
+    expect(store.getState().marketplacePlugins).toEqual([])
+
+    await promise
+    expect(store.getState().pluginsLoading).toBe(false)
+    expect(mockWindowApp.listPlugins).toHaveBeenCalled()
+    expect(mockWindowApp.listMarketplacePlugins).toHaveBeenCalled()
+  })
+
+  it('uses Codex fetch paths and clears the loading flag when provider is codex', async () => {
+    vi.mocked(useAppStore.getState).mockReturnValue({
+      currentFolder: '/project',
+      settingsProvider: 'codex',
+    } as ReturnType<typeof useAppStore.getState>)
+
+    await store.getState().reloadPlugins()
+
+    expect(mockWindowApp.codexListPlugins).toHaveBeenCalled()
+    expect(mockWindowApp.codexListMarketplacePlugins).toHaveBeenCalled()
+    expect(store.getState().pluginsLoading).toBe(false)
+  })
+
+  it('clears the loading flag even when a fetch rejects', async () => {
+    mockWindowApp.listPlugins.mockRejectedValueOnce(new Error('boom'))
+
+    await store.getState().reloadPlugins()
+
+    expect(store.getState().pluginsLoading).toBe(false)
+  })
+})
+
 describe('deleteMcpLibraryEntry', () => {
   it('should refresh library after deletion', async () => {
     await store.getState().deleteMcpLibraryEntry('entry')

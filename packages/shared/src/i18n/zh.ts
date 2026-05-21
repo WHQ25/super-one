@@ -816,6 +816,7 @@ export const zh: Messages = {
       updateAll: '全部更新',
       updating: '更新中...',
       update: '更新',
+      loading: '正在加载插件…',
       searchPlaceholder: '搜索插件...',
       searchNoMatch: '没有插件匹配你的搜索',
       marketplaceEmpty: '该插件市场没有插件',

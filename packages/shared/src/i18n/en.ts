@@ -802,6 +802,7 @@ export type Messages = {
       updateAll: string
       updating: string
       update: string
+      loading: string
       searchPlaceholder: string
       searchNoMatch: string
       marketplaceEmpty: string
@@ -1941,6 +1942,7 @@ export const en: Messages = {
       updateAll: 'Update All',
       updating: 'Updating...',
       update: 'Update',
+      loading: 'Loading plugins…',
       searchPlaceholder: 'Search plugins...',
       searchNoMatch: 'No plugins match your search',
       marketplaceEmpty: 'No plugins in this marketplace',

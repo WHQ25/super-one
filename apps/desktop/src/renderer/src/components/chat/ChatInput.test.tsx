@@ -403,3 +403,43 @@ describe('ChatInput @-mention no-match suppression', () => {
     expect(screen.getByTestId('mention-popup')).toHaveAttribute('data-query', 'bbb')
   })
 })
+
+describe('ChatInput slash command grouping', () => {
+  it('splits the slash popup into Commands and Skills sections with commands listed first', () => {
+    activeSessionState.slashCommands = [
+      { name: 'release', description: 'Release the app', argumentHint: '', isSkill: true },
+      { name: 'clear', description: 'Clear conversation', argumentHint: '', isSkill: false },
+      { name: 'tdd', description: 'Run the TDD workflow', argumentHint: '', isSkill: true },
+      { name: 'compact', description: 'Compact the context', argumentHint: '', isSkill: false },
+    ]
+
+    const { rerender } = render(<ChatInput />)
+    typeInEditor('/')
+    rerender(<ChatInput />)
+
+    expect(screen.getByText('Commands')).toBeInTheDocument()
+    expect(screen.getByText('Skills')).toBeInTheDocument()
+
+    const order = screen
+      .getAllByRole('button')
+      .map((b) => b.querySelector('.text-blue-600')?.textContent)
+      .filter((name): name is string => typeof name === 'string' && name.startsWith('/'))
+
+    expect(order.slice(0, 2).sort()).toEqual(['/clear', '/compact'])
+    expect(order.slice(2, 4).sort()).toEqual(['/release', '/tdd'])
+  })
+
+  it('drops the per-row skill badge now that skills have their own section', () => {
+    activeSessionState.slashCommands = [
+      { name: 'clear', description: 'Clear conversation', argumentHint: '', isSkill: false },
+      { name: 'release', description: 'Release the app', argumentHint: '', isSkill: true },
+    ]
+
+    const { rerender } = render(<ChatInput />)
+    typeInEditor('/')
+    rerender(<ChatInput />)
+
+    expect(screen.getByText('Commands')).toBeInTheDocument()
+    expect(screen.queryByText('skill')).toBeNull()
+  })
+})

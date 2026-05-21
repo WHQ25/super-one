@@ -7,7 +7,9 @@ import { HighlightedText } from '@superone/ui/components/ui/HighlightedText'
 import { useChatStore, useActiveSession, type MentionKind } from '@/stores/chat'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
+import { useTranslation } from 'react-i18next'
 import type { ListDirEntry, MentionSearchItem } from '@superone/shared/agent-types'
+import { groupItems, PopupSectionHeader } from './popup-groups'
 
 export interface MentionPopupHandle {
   confirmTab: () => void
@@ -69,8 +71,17 @@ function getSelectPath(item: FlatItem): string {
   return ''
 }
 
+const MENTION_GROUP_ORDER = ['agent', 'miniapp', 'file'] as const
+
+function mentionGroupKey(item: FlatItem): string {
+  if (item.kind === 'agent') return 'agent'
+  if (item.kind === 'miniapp') return 'miniapp'
+  return 'file'
+}
+
 export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
   function MentionPopup({ query, selectedIndex, onSelect, onSetSelectedIndex, onResultState, showAgents = true }, ref) {
+    const { t } = useTranslation()
     const activeProject = useChatStore((s) => s.activeProject)
     const agents = useActiveSession((s) => s.agents)
     const additionalDirs = useActiveSession((s) => s.additionalDirs)
@@ -165,10 +176,16 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
       return items
     }, [isBrowseMode, browseDir, query, searchResults, dirEntries, agentEntries, scopeDir, matchedMiniApps])
 
+    const mentionGroups = useMemo(
+      () => groupItems(flatItems, mentionGroupKey, MENTION_GROUP_ORDER),
+      [flatItems]
+    )
+    const orderedItems = useMemo(() => mentionGroups.flatMap((g) => g.items), [mentionGroups])
+
     useEffect(() => {
       if (!searchCompleted) return
-      onResultState?.(query, flatItems.length === 0)
-    }, [searchCompleted, flatItems.length, query, onResultState])
+      onResultState?.(query, orderedItems.length === 0)
+    }, [searchCompleted, orderedItems.length, query, onResultState])
 
     const handleItemClick = useCallback(
       (item: FlatItem, action: 'navigate' | 'select') => {
@@ -184,10 +201,10 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
     )
 
     const getSelectedItem = useCallback(() => {
-      if (flatItems.length === 0) return null
-      const idx = Math.max(0, Math.min(selectedIndex, flatItems.length - 1))
-      return flatItems[idx]
-    }, [flatItems, selectedIndex])
+      if (orderedItems.length === 0) return null
+      const idx = Math.max(0, Math.min(selectedIndex, orderedItems.length - 1))
+      return orderedItems[idx]
+    }, [orderedItems, selectedIndex])
 
     useImperativeHandle(
       ref,
@@ -202,16 +219,108 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
           if (!item) return
           handleItemClick(item, 'select')
         },
-        getItemCount: () => flatItems.length,
+        getItemCount: () => orderedItems.length,
       }),
-      [getSelectedItem, handleItemClick, flatItems.length]
+      [getSelectedItem, handleItemClick, orderedItems.length]
     )
 
     const activeScopeDir = isBrowseMode ? browseDir : scopeDir
     const breadcrumbs = activeScopeDir ? activeScopeDir.split('/').filter(Boolean) : []
     const projectName = activeProject?.split('/').pop() || ''
 
-    if (searchCompleted && flatItems.length === 0) return null
+    const groupLabel = (key: string): string => {
+      if (key === 'agent') return t('chat.mentionPopup.groupAgents')
+      if (key === 'miniapp') return t('chat.mentionPopup.groupMiniApps')
+      return t('chat.mentionPopup.groupFiles')
+    }
+
+    const setItemRef = (i: number) => (el: HTMLButtonElement | null) => {
+      if (el) itemRefs.current.set(i, el)
+      else itemRefs.current.delete(i)
+    }
+
+    const renderItem = (item: FlatItem, i: number) => {
+      const rowClass = cn(
+        'flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs transition-colors',
+        i === selectedIndex ? 'bg-muted text-foreground' : 'text-foreground hover:bg-muted/50'
+      )
+      if (item.kind === 'miniapp') {
+        return (
+          <button
+            key={`m-${item.appId}`}
+            ref={setItemRef(i)}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => onSelect(item.appId, 'select', 'miniapp', item.displayName)}
+            onMouseEnter={() => onSetSelectedIndex(i)}
+            className={rowClass}
+          >
+            <MiniAppIcon appId={item.appId} className="size-3.5 shrink-0" />
+            <span className="shrink-0 font-medium">
+              <HighlightedPath path={item.displayName} indices={item.matchIndices} />
+            </span>
+          </button>
+        )
+      }
+      if (item.kind === 'agent') {
+        return (
+          <button
+            key={`a-${item.name}`}
+            ref={setItemRef(i)}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => onSelect(item.name, 'select')}
+            onMouseEnter={() => onSetSelectedIndex(i)}
+            className={cn(rowClass, 'gap-1.5')}
+          >
+            <Bot className="size-3.5 shrink-0 text-purple-600 dark:text-purple-400" />
+            <span className="shrink-0 font-medium text-purple-600 dark:text-purple-400">
+              <HighlightedPath path={item.name} indices={item.matchIndices} />
+            </span>
+            <span className="shrink-0 rounded bg-muted/60 px-1 py-px text-[10px] text-muted-foreground">
+              {item.model || 'inherit'}
+            </span>
+          </button>
+        )
+      }
+      if (item.kind === 'file') {
+        const fileName = item.displayPath.split('/').pop() || item.displayPath
+        return (
+          <button
+            key={`s-${item.path}`}
+            ref={setItemRef(i)}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => handleItemClick(item, item.isDirectory ? 'navigate' : 'select')}
+            onMouseEnter={() => onSetSelectedIndex(i)}
+            className={rowClass}
+          >
+            {item.isDirectory ? (
+              <Folder className="size-3.5 shrink-0 text-blue-500" />
+            ) : (
+              <FileIcon name={fileName} size={14} />
+            )}
+            <HighlightedPath path={item.displayPath} indices={item.matchIndices} />
+          </button>
+        )
+      }
+      return (
+        <button
+          key={`f-${item.prefix}${item.entry.name}`}
+          ref={setItemRef(i)}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => handleItemClick(item, item.entry.isDirectory ? 'navigate' : 'select')}
+          onMouseEnter={() => onSetSelectedIndex(i)}
+          className={rowClass}
+        >
+          {item.entry.isDirectory ? (
+            <Folder className="size-3.5 shrink-0 text-blue-500" />
+          ) : (
+            <FileIcon name={item.entry.name} size={14} />
+          )}
+          <span className="truncate">{item.entry.name}</span>
+        </button>
+      )
+    }
+
+    if (searchCompleted && orderedItems.length === 0) return null
 
     return (
       <div className="absolute bottom-full left-0 right-0 z-10 mb-1 max-h-72 overflow-hidden rounded-xl border border-border bg-card flex flex-col">
@@ -240,120 +349,12 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
             </div>
           )}
 
-          {flatItems.map((item, i) => {
-            if (item.kind === 'miniapp') {
-              return (
-                <button
-                  key={`m-${item.appId}`}
-                  ref={(el) => {
-                    if (el) itemRefs.current.set(i, el)
-                    else itemRefs.current.delete(i)
-                  }}
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => onSelect(item.appId, 'select', 'miniapp', item.displayName)}
-                  onMouseEnter={() => onSetSelectedIndex(i)}
-                  className={cn(
-                    'flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs transition-colors',
-                    i === selectedIndex
-                      ? 'bg-muted text-foreground'
-                      : 'text-foreground hover:bg-muted/50'
-                  )}
-                >
-                  <MiniAppIcon appId={item.appId} className="size-3.5 shrink-0" />
-                  <span className="shrink-0 font-medium">
-                    <HighlightedPath path={item.displayName} indices={item.matchIndices} />
-                  </span>
-                  <span className="shrink-0 rounded bg-muted/60 px-1 py-px text-[10px] text-muted-foreground">
-                    mini-app
-                  </span>
-                </button>
-              )
-            }
-
-            if (item.kind === 'agent') {
-              return (
-                <button
-                  key={`a-${item.name}`}
-                  ref={(el) => {
-                    if (el) itemRefs.current.set(i, el)
-                    else itemRefs.current.delete(i)
-                  }}
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => onSelect(item.name, 'select')}
-                  onMouseEnter={() => onSetSelectedIndex(i)}
-                  className={cn(
-                    'flex w-full items-center gap-1.5 rounded px-2 py-1.5 text-left text-xs transition-colors',
-                    i === selectedIndex
-                      ? 'bg-muted text-foreground'
-                      : 'text-foreground hover:bg-muted/50'
-                  )}
-                >
-                  <Bot className="size-3.5 shrink-0 text-purple-600 dark:text-purple-400" />
-                  <span className="shrink-0 font-medium text-purple-600 dark:text-purple-400">
-                    <HighlightedPath path={item.name} indices={item.matchIndices} />
-                  </span>
-                  <span className="shrink-0 rounded bg-muted/60 px-1 py-px text-[10px] text-muted-foreground">
-                    {item.model || 'inherit'}
-                  </span>
-                </button>
-              )
-            }
-
-            if (item.kind === 'file') {
-              const fileName = item.displayPath.split('/').pop() || item.displayPath
-              return (
-                <button
-                  key={`s-${item.path}`}
-                  ref={(el) => {
-                    if (el) itemRefs.current.set(i, el)
-                    else itemRefs.current.delete(i)
-                  }}
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => handleItemClick(item, item.isDirectory ? 'navigate' : 'select')}
-                  onMouseEnter={() => onSetSelectedIndex(i)}
-                  className={cn(
-                    'flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs transition-colors',
-                    i === selectedIndex
-                      ? 'bg-muted text-foreground'
-                      : 'text-foreground hover:bg-muted/50'
-                  )}
-                >
-                  {item.isDirectory ? (
-                    <Folder className="size-3.5 shrink-0 text-blue-500" />
-                  ) : (
-                    <FileIcon name={fileName} size={14} />
-                  )}
-                  <HighlightedPath path={item.displayPath} indices={item.matchIndices} />
-                </button>
-              )
-            }
-
-            return (
-              <button
-                key={`f-${item.prefix}${item.entry.name}`}
-                ref={(el) => {
-                  if (el) itemRefs.current.set(i, el)
-                  else itemRefs.current.delete(i)
-                }}
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => handleItemClick(item, item.entry.isDirectory ? 'navigate' : 'select')}
-                onMouseEnter={() => onSetSelectedIndex(i)}
-                className={cn(
-                  'flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs transition-colors',
-                  i === selectedIndex
-                    ? 'bg-muted text-foreground'
-                    : 'text-foreground hover:bg-muted/50'
-                )}
-              >
-                {item.entry.isDirectory ? (
-                  <Folder className="size-3.5 shrink-0 text-blue-500" />
-                ) : (
-                  <FileIcon name={item.entry.name} size={14} />
-                )}
-                <span className="truncate">{item.entry.name}</span>
-              </button>
-            )
-          })}
+          {mentionGroups.map((group) => (
+            <div key={group.key}>
+              <PopupSectionHeader label={groupLabel(group.key)} count={group.items.length} />
+              {group.items.map((item, j) => renderItem(item, group.startIndex + j))}
+            </div>
+          ))}
         </div>
 
         <div className="border-t border-border px-2 py-1 text-[10px] text-muted-foreground shrink-0">

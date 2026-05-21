@@ -100,8 +100,8 @@ function FileLink(props: React.AnchorHTMLAttributes<HTMLAnchorElement>) {
   if (href && projectPath) {
     const { filePath, lineNumber } = parseFileLinkTarget(href)
     if (filePath.startsWith(projectPath + '/')) {
-      const text = typeof children === 'string' ? children : (filePath.split('/').pop() || '')
-      return <InlineFileChip name={text} filePath={filePath} lineNumber={lineNumber} />
+      const name = filePath.split('/').pop() || ''
+      return <InlineFileChip name={name} filePath={filePath} lineNumber={lineNumber} />
     }
   }
   return <a href={rawHref} {...rest}>{children}</a>

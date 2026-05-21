@@ -35,11 +35,18 @@ import { McpSlashPopup } from './McpSlashPopup'
 import { ReviewPanel } from './ReviewPanel'
 import { SlashCommandContent } from './SlashCommandContent'
 import { StopButton } from './StopButton'
+import { groupItems, PopupSectionHeader } from './popup-groups'
 
 export const chatInputAPI: {
   insertMention: ((kind: MentionKind, value: string, displayName: string) => void) | null
   addImageFromPath: ((absPath: string) => void) | null
 } = { insertMention: null, addImageFromPath: null }
+
+const SLASH_GROUP_ORDER = ['command', 'skill'] as const
+
+function orderCommandsBySkill<T extends { isSkill: boolean }>(commands: T[]): T[] {
+  return [...commands.filter((c) => !c.isSkill), ...commands.filter((c) => c.isSkill)]
+}
 
 export function ChatInput() {
     const { t } = useTranslation()
@@ -182,33 +189,42 @@ export function ChatInput() {
       if (activeProviderForResources === 'codex') {
         if (!text.startsWith('/')) return []
         const query = text.slice(1).toLowerCase()
-        return activeSlashCommands
-          .map((cmd) => {
-            const r = fuzzyMatch(query, cmd.name)
-            return { ...cmd, matchIndices: r.indices, score: r.score, matched: r.match }
-          })
-          .filter((cmd) => cmd.matched)
-          .sort((a, b) => b.score - a.score)
+        return orderCommandsBySkill(
+          activeSlashCommands
+            .map((cmd) => {
+              const r = fuzzyMatch(query, cmd.name)
+              return { ...cmd, matchIndices: r.indices, score: r.score, matched: r.match }
+            })
+            .filter((cmd) => cmd.matched)
+            .sort((a, b) => b.score - a.score)
+        )
       }
       if (!text.startsWith('/')) return []
       if (/^\/add-dir(\s|$)/.test(text)) return []
       if (text.includes(' ')) return []
       const query = text.slice(1).toLowerCase()
-      return activeSlashCommands
-        .filter((cmd) => !HIDDEN_COMMANDS.has(cmd.name))
-        .map((cmd) => {
-          const nameResult = fuzzyMatch(query, cmd.name)
-          const descResult = cmd.description ? fuzzyMatch(query, cmd.description) : null
-          const bestScore = descResult && descResult.match && descResult.score > nameResult.score
-            ? descResult.score : nameResult.score
-          const matched = nameResult.match || (descResult?.match ?? false)
-          return { ...cmd, matchIndices: nameResult.indices, score: bestScore, matched }
-        })
-        .filter((cmd) => cmd.matched)
-        .sort((a, b) => b.score - a.score)
+      return orderCommandsBySkill(
+        activeSlashCommands
+          .filter((cmd) => !HIDDEN_COMMANDS.has(cmd.name))
+          .map((cmd) => {
+            const nameResult = fuzzyMatch(query, cmd.name)
+            const descResult = cmd.description ? fuzzyMatch(query, cmd.description) : null
+            const bestScore = descResult && descResult.match && descResult.score > nameResult.score
+              ? descResult.score : nameResult.score
+            const matched = nameResult.match || (descResult?.match ?? false)
+            return { ...cmd, matchIndices: nameResult.indices, score: bestScore, matched }
+          })
+          .filter((cmd) => cmd.matched)
+          .sort((a, b) => b.score - a.score)
+      )
     }, [activeProviderForResources, text, activeSlashCommands])
     matchingCommandsRef.current = matchingCommands
     slashDismissedRef.current = slashDismissed
+
+    const slashGroups = useMemo(
+      () => groupItems(matchingCommands, (c) => (c.isSkill ? 'skill' : 'command'), SLASH_GROUP_ORDER),
+      [matchingCommands]
+    )
 
     const editorRef = useRef<ReturnType<typeof useEditor>>(null)
 
@@ -1024,40 +1040,46 @@ export function ChatInput() {
         {matchingCommands.length > 0 && !slashDismissed && (
           <div className="absolute bottom-full left-0 right-0 z-10 mb-1 flex max-h-64 flex-col overflow-hidden rounded-xl border border-border bg-card p-1.5">
             <div className="min-h-0 flex-1 overflow-y-auto">
-              {matchingCommands.map((cmd, i) => (
-                <button
-                  key={cmd.name}
-                  ref={(el) => {
-                    if (el) slashItemRefs.current.set(i, el)
-                    else slashItemRefs.current.delete(i)
-                  }}
-                  onMouseDown={(e) => {
-                    e.preventDefault()
-                    selectSlashCommand(cmd.name)
-                  }}
-                  className={`flex w-full flex-col gap-0.5 rounded px-2 py-1.5 text-left text-xs transition-colors ${
-                    i === slashIndex
-                      ? 'bg-muted text-foreground'
-                      : 'text-foreground hover:bg-muted/50'
-                  }`}
-                >
-                  <span className="flex min-w-0 items-center gap-1.5 font-medium">
-                    <span className="text-blue-600 dark:text-blue-400"><HighlightedText text={`/${cmd.name}`} indices={[0, ...cmd.matchIndices.map(i => i + 1)]} highlightClassName="text-orange-600 dark:text-orange-400 font-medium" /></span>
-                    {cmd.argumentHint && (
-                      <span className="truncate text-muted-foreground font-normal">{cmd.argumentHint}</span>
-                    )}
-                    {cmd.isSkill && (
-                      <span className="rounded bg-emerald-100 px-1 py-px text-[10px] font-normal text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-400">
-                        {t('chat.slashCommand.skillBadge')}
-                      </span>
-                    )}
-                  </span>
-                  {cmd.description && (
-                    <span className={cn('text-muted-foreground leading-snug', cmd.isSkill && 'line-clamp-2')}>
-                      {cmd.description}
-                    </span>
-                  )}
-                </button>
+              {slashGroups.map((group) => (
+                <div key={group.key}>
+                  <PopupSectionHeader
+                    label={t(group.key === 'skill' ? 'chat.slashCommand.groupSkills' : 'chat.slashCommand.groupCommands')}
+                    count={group.items.length}
+                  />
+                  {group.items.map((cmd, j) => {
+                    const i = group.startIndex + j
+                    return (
+                      <button
+                        key={cmd.name}
+                        ref={(el) => {
+                          if (el) slashItemRefs.current.set(i, el)
+                          else slashItemRefs.current.delete(i)
+                        }}
+                        onMouseDown={(e) => {
+                          e.preventDefault()
+                          selectSlashCommand(cmd.name)
+                        }}
+                        className={`flex w-full flex-col gap-0.5 rounded px-2 py-1.5 text-left text-xs transition-colors ${
+                          i === slashIndex
+                            ? 'bg-muted text-foreground'
+                            : 'text-foreground hover:bg-muted/50'
+                        }`}
+                      >
+                        <span className="flex min-w-0 items-center gap-1.5 font-medium">
+                          <span className="text-blue-600 dark:text-blue-400"><HighlightedText text={`/${cmd.name}`} indices={[0, ...cmd.matchIndices.map((idx) => idx + 1)]} highlightClassName="text-orange-600 dark:text-orange-400 font-medium" /></span>
+                          {cmd.argumentHint && (
+                            <span className="truncate text-muted-foreground font-normal">{cmd.argumentHint}</span>
+                          )}
+                        </span>
+                        {cmd.description && (
+                          <span className={cn('text-muted-foreground leading-snug', cmd.isSkill && 'line-clamp-2')}>
+                            {cmd.description}
+                          </span>
+                        )}
+                      </button>
+                    )
+                  })}
+                </div>
               ))}
             </div>
           </div>

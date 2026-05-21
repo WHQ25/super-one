@@ -582,7 +582,13 @@ export const zh: Messages = {
       noActiveSession: '发送一条消息以加载实时 MCP 状态',
     },
     slashCommand: {
-      skillBadge: '技能',
+      groupCommands: '命令',
+      groupSkills: '技能',
+    },
+    mentionPopup: {
+      groupAgents: '智能体',
+      groupMiniApps: '小程序',
+      groupFiles: '文件',
     },
     linkSafety: {
       openExternal: '打开外部链接？',

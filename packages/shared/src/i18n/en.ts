@@ -568,7 +568,13 @@ export type Messages = {
       noActiveSession: string
     }
     slashCommand: {
-      skillBadge: string
+      groupCommands: string
+      groupSkills: string
+    }
+    mentionPopup: {
+      groupAgents: string
+      groupMiniApps: string
+      groupFiles: string
     }
     linkSafety: {
       openExternal: string
@@ -1708,7 +1714,13 @@ export const en: Messages = {
       noActiveSession: 'Start a turn to load live MCP status',
     },
     slashCommand: {
-      skillBadge: 'skill',
+      groupCommands: 'Commands',
+      groupSkills: 'Skills',
+    },
+    mentionPopup: {
+      groupAgents: 'Agents',
+      groupMiniApps: 'Mini apps',
+      groupFiles: 'Files',
     },
     linkSafety: {
       openExternal: 'Open external link?',

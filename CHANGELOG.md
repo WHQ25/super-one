@@ -4,6 +4,32 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.37.0-alpha] - 2026-05-22
+
+### Added
+
+- Worktree: hand off uncommitted changes to a local checkout, and fork a session into a dedicated worktree
+- Sidebar: fuzzy file search with tree-structured results
+- Skills: built-in and plugin skills now carry a type badge; skill cards hide their toggle when collapsed and show a disabled badge
+- Plugins: marketplace listings now show GitHub stars and cache their logos
+- Chat: mention and slash-command popup entries are grouped into sections
+
+### Fixed
+
+- Chat: the history panel no longer hijacks the active session
+- Chat: agents no longer flood chat with duplicate media embeds
+- Chat: streaming subagent deltas keep their parent tool-use ID when merged
+- Chat: subagent full-screen view is constrained to the chat content width
+- Plugins: switching harness now shows a loading state and clears stale data
+
+### Changed
+
+- Desktop: updated app icon
+
+### Tests
+
+- Desktop: inline `@lobehub` / `@emoji-mart` dependencies for vitest
+
 ## [0.36.1-alpha] - 2026-05-21
 
 ### Added

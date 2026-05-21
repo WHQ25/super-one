@@ -15,6 +15,11 @@ export default defineConfig({
     environment: 'node',
     environmentMatchGlobs: [['**/*.test.tsx', 'jsdom']],
     setupFiles: ['./vitest.setup.ts'],
+    server: {
+      deps: {
+        inline: [/@lobehub\//, /@emoji-mart\//],
+      },
+    },
     include: [
       'src/**/*.{test,spec}.?(c|m)[jt]s?(x)',
       '../../packages/shared/src/**/*.{test,spec}.?(c|m)[jt]s?(x)',

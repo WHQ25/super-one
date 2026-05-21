@@ -4451,6 +4451,87 @@ describe('handleAgentEvent supplemental', () => {
       expect(thinkingBlock).toBeDefined()
       expect((thinkingBlock as { thinking: string }).thinking).toBe('Let me think...')
     })
+
+    it('keeps parentToolUseId when merging consecutive subagent thinking deltas', () => {
+      setupProject('/test')
+
+      useChatStore.getState().handleAgentEvent(makeEvent({
+        type: 'message_start',
+        message: { id: 'msg-sa-t', role: 'assistant', content: [], status: 'streaming', createdAt: '', providerId: 'claude' } as never,
+      }))
+
+      useChatStore.getState().handleAgentEvent(makeEvent({
+        type: 'content_delta',
+        messageId: 'msg-sa-t',
+        delta: { type: 'thinking', thinking: 'Sub ', parentToolUseId: 'task-1' },
+      }))
+      useChatStore.getState().handleAgentEvent(makeEvent({
+        type: 'content_delta',
+        messageId: 'msg-sa-t',
+        delta: { type: 'thinking', thinking: 'thought', parentToolUseId: 'task-1' },
+      }))
+
+      const session = getActiveDraftSession('/test')!
+      const msg = session.messages.find((m) => m.id === 'msg-sa-t')
+      const thinkingBlock = msg?.content.find((b) => b.type === 'thinking')
+      expect((thinkingBlock as { thinking: string }).thinking).toBe('Sub thought')
+      expect((thinkingBlock as { parentToolUseId?: string }).parentToolUseId).toBe('task-1')
+    })
+
+    it('keeps parentToolUseId when merging consecutive subagent text deltas', () => {
+      setupProject('/test')
+
+      useChatStore.getState().handleAgentEvent(makeEvent({
+        type: 'message_start',
+        message: { id: 'msg-sa-x', role: 'assistant', content: [], status: 'streaming', createdAt: '', providerId: 'claude' } as never,
+      }))
+
+      useChatStore.getState().handleAgentEvent(makeEvent({
+        type: 'content_delta',
+        messageId: 'msg-sa-x',
+        delta: { type: 'text', text: 'Sub ', parentToolUseId: 'task-1' },
+      }))
+      useChatStore.getState().handleAgentEvent(makeEvent({
+        type: 'content_delta',
+        messageId: 'msg-sa-x',
+        delta: { type: 'text', text: 'reply', parentToolUseId: 'task-1' },
+      }))
+
+      const session = getActiveDraftSession('/test')!
+      const msg = session.messages.find((m) => m.id === 'msg-sa-x')
+      const textBlock = msg?.content.find((b) => b.type === 'text')
+      expect((textBlock as { text: string }).text).toBe('Sub reply')
+      expect((textBlock as { parentToolUseId?: string }).parentToolUseId).toBe('task-1')
+    })
+
+    it('does not merge a subagent text delta into a preceding main-agent text block', () => {
+      setupProject('/test')
+
+      useChatStore.getState().handleAgentEvent(makeEvent({
+        type: 'message_start',
+        message: { id: 'msg-mix', role: 'assistant', content: [], status: 'streaming', createdAt: '', providerId: 'claude' } as never,
+      }))
+
+      useChatStore.getState().handleAgentEvent(makeEvent({
+        type: 'content_delta',
+        messageId: 'msg-mix',
+        delta: { type: 'text', text: 'Main answer' },
+      }))
+      useChatStore.getState().handleAgentEvent(makeEvent({
+        type: 'content_delta',
+        messageId: 'msg-mix',
+        delta: { type: 'text', text: 'Subagent words', parentToolUseId: 'task-1' },
+      }))
+
+      const session = getActiveDraftSession('/test')!
+      const msg = session.messages.find((m) => m.id === 'msg-mix')
+      const textBlocks = msg?.content.filter((b) => b.type === 'text') ?? []
+      expect(textBlocks).toHaveLength(2)
+      expect((textBlocks[0] as { text: string }).text).toBe('Main answer')
+      expect((textBlocks[0] as { parentToolUseId?: string }).parentToolUseId).toBeUndefined()
+      expect((textBlocks[1] as { text: string }).text).toBe('Subagent words')
+      expect((textBlocks[1] as { parentToolUseId?: string }).parentToolUseId).toBe('task-1')
+    })
   })
 
   describe('tool_input_delta accumulation for streaming diff tools', () => {

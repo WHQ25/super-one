@@ -5038,17 +5038,23 @@ export function mergeMessagesByMaxSeq(snap: ChatMessage[], existing: ChatMessage
   return result
 }
 
+function sameParent(a: ContentBlock, b: ContentBlock): boolean {
+  const ap = 'parentToolUseId' in a ? a.parentToolUseId ?? null : null
+  const bp = 'parentToolUseId' in b ? b.parentToolUseId ?? null : null
+  return ap === bp
+}
+
 export function applyDelta(content: ContentBlock[], delta: ContentBlock): ContentBlock[] {
   if (delta.type === 'text') {
     const last = content[content.length - 1]
-    if (last?.type === 'text') {
-      return [...content.slice(0, -1), { type: 'text', text: last.text + delta.text }]
+    if (last?.type === 'text' && sameParent(last, delta)) {
+      return [...content.slice(0, -1), { ...last, text: last.text + delta.text }]
     }
   }
   if (delta.type === 'thinking') {
     const last = content[content.length - 1]
-    if (last?.type === 'thinking') {
-      return [...content.slice(0, -1), { type: 'thinking', thinking: last.thinking + delta.thinking }]
+    if (last?.type === 'thinking' && sameParent(last, delta)) {
+      return [...content.slice(0, -1), { ...last, thinking: last.thinking + delta.thinking }]
     }
   }
   if (delta.type === 'tool_use') {

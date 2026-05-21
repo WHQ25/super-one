@@ -614,6 +614,7 @@ export type Messages = {
       sourceToggle: string
       hideFromAgent: string
       showToAgent: string
+      disabled: string
     }
     providers: {
       title: string
@@ -1749,6 +1750,7 @@ export const en: Messages = {
       sourceToggle: 'Source',
       hideFromAgent: 'Hide from agent',
       showToAgent: 'Show to agent',
+      disabled: 'Disabled',
     },
     providers: {
       title: 'Providers',

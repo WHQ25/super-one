@@ -628,6 +628,7 @@ export const zh: Messages = {
       sourceToggle: '源代码',
       hideFromAgent: '对代理隐藏',
       showToAgent: '对代理显示',
+      disabled: '已禁用',
     },
     providers: {
       title: '服务商',

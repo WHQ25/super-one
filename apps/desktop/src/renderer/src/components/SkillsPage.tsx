@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next'
 import { FileIcon } from '@superone/ui/components/ui/FileIcon'
 import { Button } from '@superone/ui/components/ui/button'
 import { Switch } from '@superone/ui/components/ui/switch'
+import { Badge } from '@superone/ui/components/ui/badge'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@superone/ui/components/ui/dialog'
 import { ProjectSelector } from '@/components/coding/ProjectSelector'
 import { useAppStore } from '@/stores/app'
@@ -200,28 +201,35 @@ function SkillCard({ skill, layoutId, readOnly }: { skill: SkillInfo; layoutId: 
       >
         <div className="flex items-center gap-2">
           <Puzzle className="size-4 shrink-0 text-muted-foreground" />
-          <span className="text-sm font-medium">{skill.displayName}</span>
-          <div className="ml-auto flex items-center gap-2">
-            {canToggle && (
-              <Switch
-                checked={!isHidden}
-                onClick={(e) => e.stopPropagation()}
-                onCheckedChange={(checked) => { void toggleSkill(skill.name, !checked) }}
-                title={isHidden ? t('resources.skills.showToAgent') : t('resources.skills.hideFromAgent')}
-              />
-            )}
-            {canDelete && isExpanded && (
-              <button
-                type="button"
-                onClick={handleDeleteClick}
-                disabled={deleting}
-                className="rounded p-0.5 text-muted-foreground transition-colors hover:text-destructive disabled:opacity-50"
-                title={deleting ? t('resources.skills.deleting') : t('resources.skills.deleteTooltip')}
-              >
-                <Trash2 className="size-3.5" />
-              </button>
-            )}
-          </div>
+          <span className="truncate text-sm font-medium">{skill.displayName}</span>
+          {isHidden && !isExpanded && (
+            <Badge variant="secondary" className="shrink-0 px-1.5 py-0 text-[10px] font-normal">
+              {t('resources.skills.disabled')}
+            </Badge>
+          )}
+          {isExpanded && (
+            <div className="ml-auto flex items-center gap-2">
+              {canToggle && (
+                <Switch
+                  checked={!isHidden}
+                  onClick={(e) => e.stopPropagation()}
+                  onCheckedChange={(checked) => { void toggleSkill(skill.name, !checked) }}
+                  title={isHidden ? t('resources.skills.showToAgent') : t('resources.skills.hideFromAgent')}
+                />
+              )}
+              {canDelete && (
+                <button
+                  type="button"
+                  onClick={handleDeleteClick}
+                  disabled={deleting}
+                  className="rounded p-0.5 text-muted-foreground transition-colors hover:text-destructive disabled:opacity-50"
+                  title={deleting ? t('resources.skills.deleting') : t('resources.skills.deleteTooltip')}
+                >
+                  <Trash2 className="size-3.5" />
+                </button>
+              )}
+            </div>
+          )}
         </div>
         {skill.description && (
           <p className="line-clamp-3 text-xs leading-relaxed text-muted-foreground">{skill.description}</p>

@@ -1529,7 +1529,7 @@ function MarketplaceDetailView({
             <ScopeBadge scope={summary.scope} />
           </div>
           <div className="flex items-center gap-2">
-            <ProjectSelector mode="switch" />
+            <ProjectSelector />
             {canUpdateMarketplace && (
               <Button
                 size="sm"
@@ -1882,7 +1882,7 @@ export function PluginsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <ProjectSelector mode="switch" />
+          <ProjectSelector />
           {tab === 'marketplace' && canManageMarketplaces && (
             <Button size="sm" variant="outline" onClick={() => setAddDialogOpen(true)}>
               <Plus className="size-3.5" />

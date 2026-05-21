@@ -51,7 +51,7 @@ const SESSIONS_FETCH_LIMIT = MAX_DISPLAY_SESSIONS + 1
 
 export const AppSidebar = memo(function AppSidebar() {
   const { t } = useTranslation()
-  const { navigateTo, selectAndOpenFolder, openFolder, removeRecentFolder, setSidebarTab } = useAppStore(useShallow((s) => ({ navigateTo: s.navigateTo, selectAndOpenFolder: s.selectAndOpenFolder, openFolder: s.openFolder, removeRecentFolder: s.removeRecentFolder, setSidebarTab: s.setSidebarTab })))
+  const { navigateTo, selectProject, removeRecentFolder, setSidebarTab } = useAppStore(useShallow((s) => ({ navigateTo: s.navigateTo, selectProject: s.selectProject, removeRecentFolder: s.removeRecentFolder, setSidebarTab: s.setSidebarTab })))
   const sidebarTab = useAppStore((s) => s.sidebarTab)
   const currentFolder = useAppStore((s) => s.currentFolder)
   const recentFolders = useAppStore((s) => s.recentFolders)
@@ -235,9 +235,9 @@ export const AppSidebar = memo(function AppSidebar() {
     if (!folderSessionsRef.current[folderPath]) {
       void loadFolderSessions(folderPath, 'switch')
     }
-    await openFolder(folderPath)
+    await selectProject(folderPath)
     await switchSession(sessionId)
-  }, [openFolder, switchSession, currentFolder, loadFolderSessions])
+  }, [selectProject, switchSession, currentFolder, loadFolderSessions])
 
   const handlePinSession = useCallback(async (sessionId: string, pinned: boolean, folderPath: string) => {
     await window.app.pinSession(sessionId, pinned)
@@ -360,15 +360,15 @@ export const AppSidebar = memo(function AppSidebar() {
   }, [executeDeleteSession])
 
   const handleOpenHistory = useCallback((folderPath: string) => {
-    openFolder(folderPath).then(() => {
+    selectProject(folderPath).then(() => {
       useChatStore.getState().fetchSessions()
       openHistoryTab()
     })
-  }, [openFolder])
+  }, [selectProject])
 
   const handleNewSession = useCallback((folderPath: string) => {
-    openFolder(folderPath).then(() => resetSession())
-  }, [openFolder, resetSession])
+    selectProject(folderPath).then(() => resetSession())
+  }, [selectProject, resetSession])
 
   useSidebarRenderTrace({
     sidebarTab,
@@ -484,7 +484,7 @@ export const AppSidebar = memo(function AppSidebar() {
           <Button
             size="icon-xs"
             variant="ghost"
-            onClick={() => selectAndOpenFolder()}
+            onClick={() => selectProject()}
             className="shrink-0 cursor-pointer text-sidebar-foreground/70 hover:text-sidebar-accent-foreground"
           >
             <Plus className="size-3.5" />

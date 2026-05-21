@@ -467,7 +467,7 @@ describe('SessionSwitcherPopup commit routing', () => {
     )
   }
 
-  it('routes a cross-project commit through useAppStore.switchToProject so sidebar selection stays in sync', async () => {
+  it('routes a cross-project commit through useAppStore.selectProject so sidebar selection stays in sync', async () => {
     const projectA: ProjectState = {
       ...createDefaultProjectState(),
       _activeSessionId: 'a1',
@@ -485,11 +485,11 @@ describe('SessionSwitcherPopup commit routing', () => {
       _previousFocusedSession: { projectPath: '/b', sessionId: 'b1' },
     })
 
-    const switchToProjectMock = vi.fn().mockResolvedValue(undefined)
+    const selectProjectMock = vi.fn().mockResolvedValue(undefined)
     const switchSessionMock = vi.fn().mockResolvedValue(undefined)
-    const switchProjectMock = vi.fn().mockResolvedValue(undefined)
-    useAppStore.setState({ switchToProject: switchToProjectMock })
-    useChatStore.setState({ switchSession: switchSessionMock, switchProject: switchProjectMock })
+    const focusProjectMock = vi.fn().mockResolvedValue(undefined)
+    useAppStore.setState({ selectProject: selectProjectMock })
+    useChatStore.setState({ switchSession: switchSessionMock, focusProject: focusProjectMock })
 
     render(<Harness />)
 
@@ -503,9 +503,9 @@ describe('SessionSwitcherPopup commit routing', () => {
     })
     await act(async () => { await Promise.resolve() })
 
-    expect(switchToProjectMock).toHaveBeenCalledWith('/b')
-    // Cross-project path must NOT call useChatStore.switchProject directly — that would skip sidebar sync.
-    expect(switchProjectMock).not.toHaveBeenCalled()
+    expect(selectProjectMock).toHaveBeenCalledWith('/b')
+    // Cross-project path must NOT call useChatStore.focusProject directly — that would skip sidebar sync.
+    expect(focusProjectMock).not.toHaveBeenCalled()
   })
 
   it('routes a same-project commit through useChatStore.switchSession only (no project hop)', async () => {
@@ -524,9 +524,9 @@ describe('SessionSwitcherPopup commit routing', () => {
       _previousFocusedSession: { projectPath: '/p', sessionId: 's2' },
     })
 
-    const switchToProjectMock = vi.fn().mockResolvedValue(undefined)
+    const selectProjectMock = vi.fn().mockResolvedValue(undefined)
     const switchSessionMock = vi.fn().mockResolvedValue(undefined)
-    useAppStore.setState({ switchToProject: switchToProjectMock })
+    useAppStore.setState({ selectProject: selectProjectMock })
     useChatStore.setState({ switchSession: switchSessionMock })
 
     render(<Harness />)
@@ -542,6 +542,6 @@ describe('SessionSwitcherPopup commit routing', () => {
     await act(async () => { await Promise.resolve() })
 
     expect(switchSessionMock).toHaveBeenCalledWith('s2')
-    expect(switchToProjectMock).not.toHaveBeenCalled()
+    expect(selectProjectMock).not.toHaveBeenCalled()
   })
 })

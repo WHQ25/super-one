@@ -98,9 +98,9 @@ interface AppState {
   setSidebarWidth: (width: number) => void
 
   fetchRecentFolders: () => Promise<void>
-  selectAndOpenFolder: () => Promise<void>
-  selectAndSwitchFolder: () => Promise<void>
-  openFolder: (folderPath: string) => Promise<void>
+  // Unified project-switch entry. Omit folderPath to prompt a system folder picker.
+  // Aligns app-level currentFolder with chat-level activeProject.
+  selectProject: (folderPath?: string) => Promise<void>
   openTmpFolder: () => Promise<void>
   removeRecentFolder: (folderPath: string) => Promise<void>
   startInstall: () => Promise<void>
@@ -113,9 +113,6 @@ interface AppState {
   handleUpdateEvent: (event: UpdateEvent) => void
   installUpdate: () => void
   dismissUpdate: () => void
-
-  // Multi-session: switch to a project that already has an agent
-  switchToProject: (folderPath: string) => void
 
   // Remote control
   remoteConfig: RemoteDeviceConfig | null
@@ -149,16 +146,14 @@ function prefetchFileTree(folderPath: string): void {
   void useFileTreeStore.getState().fetchTree(folderPath)
 }
 
-async function openFolderDirect(folderPath: string, set: (partial: Partial<AppState>) => void): Promise<boolean> {
+async function applyProjectSelection(folderPath: string, set: (partial: Partial<AppState>) => void): Promise<boolean> {
   const ok = await window.app.openFolder(folderPath)
   if (!ok) return false
-  const projectId = await window.app.getProjectId(folderPath)
-  set({ currentFolder: folderPath, currentProjectId: projectId })
-  prefetchFileTree(folderPath)
   useAppStore.getState().fetchRecentFolders()
   const { useChatStore } = await import('./chat')
   useChatStore.getState().ensureSession(folderPath)
-  await useChatStore.getState().switchProject(folderPath)
+  // currentFolder / currentProjectId mirror chat.activeProject — see subscription at file end.
+  await useChatStore.getState().focusProject(folderPath)
   if (useAppStore.getState().view === 'startup') set({ view: 'main' })
   return true
 }
@@ -205,7 +200,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (mode === 'coding' && !get().currentFolder) {
       const folders = get().recentFolders
       if (folders.length > 0) {
-        await openFolderDirect(folders[0].path, set)
+        await applyProjectSelection(folders[0].path, set)
       } else {
         get().openTmpFolder()
       }
@@ -223,38 +218,18 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ recentFolders: folders })
   },
 
-  selectAndOpenFolder: async () => {
-    const folderPath = await window.app.selectFolder()
-    if (!folderPath) return
-    await openFolderDirect(folderPath, set)
-  },
-
-  selectAndSwitchFolder: async () => {
-    const folderPath = await window.app.selectFolder()
-    if (!folderPath) return
-    const ok = await window.app.addRecentFolder(folderPath)
-    if (!ok) return
-    const projectId = await window.app.getProjectId(folderPath)
-    set({ currentFolder: folderPath, currentProjectId: projectId })
-    prefetchFileTree(folderPath)
-    await useAppStore.getState().fetchRecentFolders()
-    const { useChatStore } = await import('./chat')
-    useChatStore.getState().ensureSession(folderPath)
-    await useChatStore.getState().switchProject(folderPath)
-  },
-
-  openFolder: async (folderPath: string) => {
-    await openFolderDirect(folderPath, set)
+  selectProject: async (folderPath?: string) => {
+    const path = folderPath ?? await window.app.selectFolder()
+    if (!path) return
+    await applyProjectSelection(path, set)
   },
 
   openTmpFolder: async () => {
     const tmpPath = await window.app.openTmpFolder()
-    const projectId = await window.app.getProjectId(tmpPath)
-    set({ currentFolder: tmpPath, currentProjectId: projectId, tmpFolder: tmpPath })
-    prefetchFileTree(tmpPath)
+    set({ tmpFolder: tmpPath })
     const { useChatStore } = await import('./chat')
     useChatStore.getState().ensureSession(tmpPath)
-    await useChatStore.getState().switchProject(tmpPath)
+    await useChatStore.getState().focusProject(tmpPath)
   },
 
   handleUpdateEvent: (event: UpdateEvent) => {
@@ -291,15 +266,6 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ updateStatus: 'idle' })
   },
 
-  switchToProject: async (folderPath: string) => {
-    const projectId = await window.app.getProjectId(folderPath)
-    set({ currentFolder: folderPath, currentProjectId: projectId })
-    prefetchFileTree(folderPath)
-    const { useChatStore } = await import('./chat')
-    useChatStore.getState().ensureSession(folderPath)
-    await useChatStore.getState().switchProject(folderPath)
-  },
-
   removeRecentFolder: async (folderPath: string) => {
     const wasActive = get().currentFolder === folderPath
     // Dispose agent and clean up DB (cascade deletes sessions + messages)
@@ -309,24 +275,20 @@ export const useAppStore = create<AppState>((set, get) => ({
     // Clean up in-memory worktree state
     set((s) => {
       const { [folderPath]: _, ..._worktrees } = s._worktrees
-      return {
-        recentFolders: updated,
-        _worktrees,
-        ...(wasActive ? { currentFolder: null, currentProjectId: null } : {}),
-      }
+      return { recentFolders: updated, _worktrees }
     })
-    // Clean up chat store in-memory session state
+    // Clean up chat store in-memory session state; clearing activeProject mirrors to currentFolder.
     const { useChatStore } = await import('./chat')
     useChatStore.setState((s) => {
       const { [folderPath]: _, ...projectSessions } = s.projectSessions
       return {
         projectSessions,
-        ...(s.activeProject === folderPath ? { activeProject: null } : {}),
+        ...(wasActive ? { activeProject: null } : {}),
       }
     })
     if (wasActive) {
       if (updated.length > 0) {
-        await openFolderDirect(updated[0].path, set)
+        await applyProjectSelection(updated[0].path, set)
       } else {
         set({ view: 'startup' })
       }
@@ -385,7 +347,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (get().layoutMode === 'coding' && !get().currentFolder) {
       let opened = false
       for (const folder of folders) {
-        if (await openFolderDirect(folder.path, set)) {
+        if (await applyProjectSelection(folder.path, set)) {
           opened = true
           break
         }
@@ -682,3 +644,39 @@ useAppStore.subscribe((state) => {
   _prevFolder = state.currentFolder
   useSourceControlStore.getState().reset()
 })
+
+// currentFolder / currentProjectId mirror chat.activeProject — chat is the single source of
+// truth for "which project". activeProject's only writers are focusProject + removeRecentFolder.
+// Wired once at app boot (App.tsx / MiniWindowApp) via startProjectMirror — not at module load,
+// to avoid a store-init circular-import race.
+interface ChatStoreMirror {
+  getState: () => { activeProject: string | null }
+  subscribe: (listener: () => void) => () => void
+}
+
+let _projectMirrorStarted = false
+
+export function startProjectMirror(chatStore: ChatStoreMirror): void {
+  if (_projectMirrorStarted) return
+  _projectMirrorStarted = true
+  let prevActiveProject = chatStore.getState().activeProject
+  chatStore.subscribe(() => {
+    const projectPath = chatStore.getState().activeProject
+    if (projectPath === prevActiveProject) return
+    prevActiveProject = projectPath
+    useAppStore.setState({ currentFolder: projectPath })
+    if (!projectPath) {
+      useAppStore.setState({ currentProjectId: null })
+      return
+    }
+    prefetchFileTree(projectPath)
+    void Promise.resolve()
+      .then(() => window.app.getProjectId(projectPath))
+      .then((projectId) => {
+        if (chatStore.getState().activeProject === projectPath) {
+          useAppStore.setState({ currentProjectId: projectId })
+        }
+      })
+      .catch(() => {})
+  })
+}

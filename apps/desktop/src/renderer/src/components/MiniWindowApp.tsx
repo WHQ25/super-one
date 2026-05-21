@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Pin, PinOff } from 'lucide-react'
 import { useChatStore, useActiveSession, extractSessionTitle } from '@/stores/chat'
-import { useAppStore } from '@/stores/app'
+import { useAppStore, startProjectMirror } from '@/stores/app'
 import { ChatContent } from '@/components/chat/ChatContent'
 import { useChatScroll } from '@/hooks/useChatScroll'
 import { useAgentEvents } from '@/hooks/useAgentEvents'
@@ -29,7 +29,7 @@ export function MiniWindowApp({ projectPath, sessionId, initialTitle }: MiniWind
   useHarnessTheme()
   useAgentEvents()
 
-  const switchProject = useChatStore((s) => s.switchProject)
+  const focusProject = useChatStore((s) => s.focusProject)
   const switchSession = useChatStore((s) => s.switchSession)
   const sessionFallback = useActiveSession((s) => s._title ?? extractSessionTitle(s.messages))
   const activeSessionId = useActiveSession((s) => s._activeSessionId ?? s.session?.sessionId)
@@ -38,7 +38,8 @@ export function MiniWindowApp({ projectPath, sessionId, initialTitle }: MiniWind
   const isMac = window.app.platform === 'darwin'
 
   useEffect(() => {
-    useAppStore.setState({ currentFolder: projectPath, view: 'main' })
+    startProjectMirror(useChatStore)
+    useAppStore.setState({ view: 'main' })
     useAppStore.getState().loadRemoteConfig()
     useAppStore.getState().loadBrandHues()
 
@@ -59,7 +60,7 @@ export function MiniWindowApp({ projectPath, sessionId, initialTitle }: MiniWind
         await useChatStore.getState().syncLiveSnapshots()
         if (cancelled) return
 
-        await switchProject(projectPath)
+        await focusProject(projectPath)
         if (cancelled) return
         if (useChatStore.getState().projectSessions[projectPath]?._activeSessionId !== sessionId) {
           await switchSession(sessionId)
@@ -69,7 +70,7 @@ export function MiniWindowApp({ projectPath, sessionId, initialTitle }: MiniWind
       }
     })()
     return () => { cancelled = true }
-  }, [projectPath, sessionId, switchProject, switchSession])
+  }, [projectPath, sessionId, focusProject, switchSession])
 
   const scrollViewportRef = useRef<HTMLDivElement>(null)
   const { showScrollButton, scrollToBottom } = useChatScroll({ scrollViewportRef })

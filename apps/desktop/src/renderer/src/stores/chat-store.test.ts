@@ -1601,20 +1601,20 @@ describe('lazy session creation on early events', () => {
   })
 })
 
-describe('switchProject tracks global previous session', () => {
+describe('focusProject tracks global previous session', () => {
   it('writes _previousFocusedSession with (currentProject, activeSessionId) when leaving a project', async () => {
     setupProject('/proj-a')
     const sidA = getActiveDraftId('/proj-a')!
     useChatStore.getState().ensureSession('/proj-b')
 
-    await useChatStore.getState().switchProject('/proj-b')
+    await useChatStore.getState().focusProject('/proj-b')
 
     expect(useChatStore.getState()._previousFocusedSession).toEqual({ projectPath: '/proj-a', sessionId: sidA })
   })
 
   it('does not write _previousFocusedSession when target === currentProject', async () => {
     setupProject('/proj-first')
-    await useChatStore.getState().switchProject('/proj-first')
+    await useChatStore.getState().focusProject('/proj-first')
     expect(useChatStore.getState()._previousFocusedSession).toBeNull()
   })
 
@@ -1634,14 +1634,14 @@ describe('switchProject tracks global previous session', () => {
     useChatStore.getState().ensureSession('/proj-b')
     mockWindowApp.loadSessionState.mockResolvedValue(null)
 
-    await useChatStore.getState().switchProject('/proj-b')
+    await useChatStore.getState().focusProject('/proj-b')
 
     const sessionA = useChatStore.getState().projectSessions['/proj-a']._sessions[sidA]
     expect(sessionA).toBeDefined()
   })
 })
 
-describe('switchProject restores parked session', () => {
+describe('focusProject restores parked session', () => {
   it.skip('calls resumeSession when switching back to a project with active session', async () => {
     setupProject('/proj-a')
     useChatStore.getState().handleAgentEvent(makeEvent({
@@ -1667,10 +1667,10 @@ describe('switchProject restores parked session', () => {
 
     setupProject('/proj-b')
 
-    await useChatStore.getState().switchProject('/proj-b')
+    await useChatStore.getState().focusProject('/proj-b')
     mockWindowApp.resumeSession.mockClear()
 
-    await useChatStore.getState().switchProject('/proj-a')
+    await useChatStore.getState().focusProject('/proj-a')
     expect(mockWindowApp.resumeSession).toHaveBeenCalledWith('/proj-a', 'sid-a', '/proj-a')
   })
 
@@ -1678,10 +1678,10 @@ describe('switchProject restores parked session', () => {
     setupProject('/proj-c')
     setupProject('/proj-d')
 
-    await useChatStore.getState().switchProject('/proj-d')
+    await useChatStore.getState().focusProject('/proj-d')
     mockWindowApp.resumeSession.mockClear()
 
-    await useChatStore.getState().switchProject('/proj-c')
+    await useChatStore.getState().focusProject('/proj-c')
     expect(mockWindowApp.resumeSession).not.toHaveBeenCalled()
   })
 })

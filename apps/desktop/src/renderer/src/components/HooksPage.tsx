@@ -104,7 +104,7 @@ export function HooksPage() {
           <p className="text-sm text-muted-foreground">{t('resources.hooks.subtitle')}</p>
         </div>
         <div className="flex items-center gap-2">
-          <ProjectSelector mode="switch" />
+          <ProjectSelector />
           <Button size="sm" onClick={handleAdd}>
             <Plus className="size-4" />
             {t('resources.hooks.add')}

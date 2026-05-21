@@ -130,7 +130,7 @@ export function AgentsPage() {
           <h2 className="text-lg font-semibold">{t('resources.agents.title')}</h2>
           <p className="text-sm text-muted-foreground">{t('resources.agents.subtitle')}</p>
         </div>
-        <ProjectSelector mode="switch" />
+        <ProjectSelector />
       </div>
 
       {agents.length === 0 ? (

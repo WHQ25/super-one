@@ -28,7 +28,7 @@ import { useStandaloneToolCallRouter } from '@/hooks/useStandaloneToolCallRouter
 import { GitAutoRefresh } from '@/hooks/useGitAutoRefresh'
 import { useTheme } from '@/hooks/useTheme'
 import { useHarnessTheme } from '@/hooks/useHarnessTheme'
-import { useAppStore } from '@/stores/app'
+import { useAppStore, startProjectMirror } from '@/stores/app'
 import { useActivityPanelStore } from '@/stores/activity-panel'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { useActivityViewStateStore } from '@/stores/activity-view-state'
@@ -68,6 +68,7 @@ function App(): React.JSX.Element {
   const initialTransition = useRef(true)
 
   useEffect(() => {
+    startProjectMirror(useChatStore)
     useAppStore.getState().loadRemoteConfig()
     useAppStore.getState().loadBrandHues()
     useSettingsStore.getState().loadDisabledSkills().catch((err) =>

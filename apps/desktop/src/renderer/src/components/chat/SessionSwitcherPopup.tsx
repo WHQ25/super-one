@@ -210,9 +210,9 @@ export function SessionSwitcherPopup({ scopeRef }: SessionSwitcherPopupProps) {
       return
     }
     void (async () => {
-      // Cross-project hop must go through useAppStore.switchToProject so the sidebar's
+      // Cross-project hop must go through useAppStore.selectProject so the sidebar's
       // currentFolder/currentProjectId update too, not just useChatStore.activeProject.
-      await useAppStore.getState().switchToProject(target.projectPath)
+      await useAppStore.getState().selectProject(target.projectPath)
       const fresh = useChatStore.getState()
       const freshActive = fresh.projectSessions[target.projectPath]?._activeSessionId ?? null
       if (freshActive !== target.sessionId) {

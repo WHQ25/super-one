@@ -12,8 +12,7 @@ const appState = {
   recentFolders: [{ name: 'project-a', path: '/project-a', addedAt: '2026-03-02T00:00:00.000Z' }],
   setShowSidebar: vi.fn(),
   navigateTo: vi.fn(),
-  selectAndOpenFolder: vi.fn(),
-  openFolder: vi.fn(async () => {}),
+  selectProject: vi.fn(async () => {}),
   removeRecentFolder: vi.fn(async () => {}),
   setSidebarTab: vi.fn((tab: 'sessions' | 'files') => { appState.sidebarTab = tab }),
 }

@@ -423,7 +423,8 @@ export interface ChatStore {
   syncLiveSnapshots: () => Promise<void>
 
   // Project switching
-  switchProject: (projectPath: string) => Promise<void>
+  // Focuses an already-known project: switches chat to it and activates its current _activeSessionId.
+  focusProject: (projectPath: string) => Promise<void>
   ensureSession: (projectPath: string) => void
 
   // Message actions (operate on activeProject)
@@ -3135,7 +3136,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     }
   },
 
-  switchProject: async (projectPath: string) => {
+  focusProject: async (projectPath: string) => {
     const currentProject = get().activeProject
     perfEvent('project_switch', { from: currentProject, to: projectPath })
     if (currentProject && currentProject !== projectPath) {

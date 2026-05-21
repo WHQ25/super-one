@@ -13,28 +13,25 @@ import {
 interface ProjectSelectorProps {
   /** Compact mode for status bar usage */
   compact?: boolean
-  /** open: switch and initialize agent; switch: only switch settings context */
-  mode?: 'open' | 'switch'
   /** Dropdown menu alignment */
   align?: 'start' | 'center' | 'end'
+  /** Fires after a project is opened; lets the caller start a fresh session */
+  onOpened?: () => void
 }
 
-export function ProjectSelector({ compact, mode = 'open', align = 'start' }: ProjectSelectorProps) {
+export function ProjectSelector({ compact, align = 'start', onOpened }: ProjectSelectorProps) {
   const { t } = useTranslation()
   const currentFolder = useAppStore((s) => s.currentFolder)
   const recentFolders = useAppStore((s) => s.recentFolders)
-  const openFolder = useAppStore((s) => s.openFolder)
-  const switchToProject = useAppStore((s) => s.switchToProject)
-  const selectAndOpenFolder = useAppStore((s) => s.selectAndOpenFolder)
-  const selectAndSwitchFolder = useAppStore((s) => s.selectAndSwitchFolder)
+  const selectProject = useAppStore((s) => s.selectProject)
 
   const projectName = currentFolder?.split('/').pop() ?? 'No Project'
-  const handleAddProject = mode === 'switch' ? selectAndSwitchFolder : selectAndOpenFolder
+  const handleSelect = (path?: string) => { void selectProject(path).then(() => onOpened?.()) }
 
   if (recentFolders.length === 0) {
     return compact ? (
       <button
-        onClick={() => void handleAddProject()}
+        onClick={() => handleSelect()}
         className="flex items-center gap-1 truncate rounded px-1 py-0.5 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
       >
         <Plus className="size-3 shrink-0" />
@@ -42,7 +39,7 @@ export function ProjectSelector({ compact, mode = 'open', align = 'start' }: Pro
       </button>
     ) : (
       <button
-        onClick={() => void handleAddProject()}
+        onClick={() => handleSelect()}
         className="flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm text-foreground transition-colors hover:bg-accent"
       >
         <Plus className="size-4 shrink-0 text-muted-foreground" />
@@ -74,13 +71,7 @@ export function ProjectSelector({ compact, mode = 'open', align = 'start' }: Pro
           {recentFolders.filter((f) => !f.missing).map((folder) => (
             <DropdownMenuItem
               key={folder.path}
-              onClick={() => {
-                if (mode === 'switch') {
-                  switchToProject(folder.path)
-                } else {
-                  void openFolder(folder.path)
-                }
-              }}
+              onClick={() => handleSelect(folder.path)}
               className="flex items-center justify-between focus-visible:shadow-none"
             >
               <div className="flex items-center gap-2 truncate">
@@ -93,15 +84,9 @@ export function ProjectSelector({ compact, mode = 'open', align = 'start' }: Pro
             </DropdownMenuItem>
           ))}
         </div>
-        {recentFolders.length > 0 && <DropdownMenuSeparator />}
+        <DropdownMenuSeparator />
         <DropdownMenuItem
-          onClick={() => {
-            if (mode === 'switch') {
-              void selectAndSwitchFolder()
-            } else {
-              void selectAndOpenFolder()
-            }
-          }}
+          onClick={() => handleSelect()}
           className="gap-2 focus-visible:shadow-none"
         >
           <Plus className="size-4 shrink-0" />

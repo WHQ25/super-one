@@ -234,12 +234,13 @@ function ActiveProviderHint() {
 export function ChatSuggestions() {
   const { t } = useTranslation()
   const layoutMode = useAppStore((s) => s.layoutMode)
-  const selectAndOpenFolder = useAppStore((s) => s.selectAndOpenFolder)
-  const openFolder = useAppStore((s) => s.openFolder)
+  const selectProject = useAppStore((s) => s.selectProject)
   const recentFolders = useAppStore((s) => s.recentFolders)
   const hasRealProject = useHasRealProject()
 
   const [addOpen, setAddOpen] = useState(false)
+
+  const resetSession = useChatStore((s) => s.resetSession)
 
   const isCoding = layoutMode === 'coding'
 
@@ -259,7 +260,7 @@ export function ChatSuggestions() {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="center" className="max-h-80 w-64 overflow-y-auto">
               {recentFolders.map((folder) => (
-                <DropdownMenuItem key={folder.path} onClick={() => openFolder(folder.path)} className="gap-2">
+                <DropdownMenuItem key={folder.path} onClick={() => selectProject(folder.path)} className="gap-2">
                   <span className="truncate">{folder.name}</span>
                   <span className="ml-auto truncate text-xs text-muted-foreground">
                     {homePath(folder.path)}
@@ -267,7 +268,7 @@ export function ChatSuggestions() {
                 </DropdownMenuItem>
               ))}
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => selectAndOpenFolder()} className="gap-2">
+              <DropdownMenuItem onClick={() => selectProject()} className="gap-2">
                 <Plus className="size-4 shrink-0" />
                 <span>{t('chat.suggestions.addProject')}</span>
               </DropdownMenuItem>
@@ -275,7 +276,7 @@ export function ChatSuggestions() {
           </DropdownMenu>
         ) : (
           <button
-            onClick={() => selectAndOpenFolder()}
+            onClick={() => selectProject()}
             className="rounded-lg px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-accent"
           >
             {t('chat.suggestions.addProject')}
@@ -288,7 +289,7 @@ export function ChatSuggestions() {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-4 px-4" style={{ animation: 'fade-in 400ms ease-out' }}>
       <ProviderSelector />
-      {isCoding && <ProjectSelector align="center" />}
+      {isCoding && <ProjectSelector align="center" onOpened={() => void resetSession()} />}
     </div>
   )
 }

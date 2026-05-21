@@ -5,7 +5,7 @@ import { useAppStore } from '@/stores/app'
 
 export function StartupPage(): React.JSX.Element {
   const { t } = useTranslation()
-  const selectAndOpenFolder = useAppStore((s) => s.selectAndOpenFolder)
+  const selectProject = useAppStore((s) => s.selectProject)
 
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-8">
@@ -14,7 +14,7 @@ export function StartupPage(): React.JSX.Element {
         <p className="mt-2 text-muted-foreground">{t('shell.startup.tagline')}</p>
       </div>
 
-      <Button size="lg" onClick={selectAndOpenFolder}>
+      <Button size="lg" onClick={() => selectProject()}>
         <FolderOpen className="size-5" />
         {t('shell.startup.openProject')}
       </Button>

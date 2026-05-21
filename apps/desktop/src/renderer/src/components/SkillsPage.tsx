@@ -416,7 +416,7 @@ export function SkillsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <ProjectSelector mode="switch" />
+          <ProjectSelector />
           {!isCodex && (
             <Button size="sm" onClick={handleInstall}>
               <FolderOpen className="size-4" />

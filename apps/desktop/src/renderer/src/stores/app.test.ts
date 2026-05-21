@@ -45,6 +45,8 @@ const mockSetHarnessResources = vi.fn()
 
 vi.mock('./chat', () => {
   const state = { projectSessions: {} as Record<string, unknown>, activeProject: null as string | null }
+  const listeners = new Set<(s: typeof state) => void>()
+  const notify = (): void => { for (const listener of [...listeners]) listener(state) }
   const resetSessionForWorktreeSwitch = vi.fn()
   return {
     useChatStore: Object.assign(
@@ -54,11 +56,20 @@ vi.mock('./chat', () => {
           setHarnessResources: mockSetHarnessResources,
           initializeHarness: mockInitializeHarness,
           ensureSession: vi.fn(),
-          switchProject: vi.fn(),
+          focusProject: vi.fn(async (projectPath: string) => {
+            state.activeProject = projectPath
+            notify()
+          }),
           resetSessionForWorktreeSwitch,
+          activeProject: state.activeProject,
         }),
         setState: (fn: (s: typeof state) => Partial<typeof state>) => {
           Object.assign(state, fn(state))
+          notify()
+        },
+        subscribe: (listener: (s: typeof state) => void) => {
+          listeners.add(listener)
+          return () => { listeners.delete(listener) }
         },
       },
     ),
@@ -88,7 +99,9 @@ vi.stubGlobal('window', {
   },
 })
 
-const { useAppStore } = await import('./app')
+const { useAppStore, startProjectMirror } = await import('./app')
+const { useChatStore } = await import('./chat')
+startProjectMirror(useChatStore)
 
 function resetStore(overrides: Record<string, unknown> = {}) {
   useAppStore.setState({
@@ -104,6 +117,7 @@ function resetStore(overrides: Record<string, unknown> = {}) {
 beforeEach(() => {
   vi.clearAllMocks()
   resetStore()
+  useChatStore.setState(() => ({ activeProject: null, projectSessions: {} }))
 })
 
 describe('removeRecentFolder', () => {
@@ -115,9 +129,9 @@ describe('removeRecentFolder', () => {
 
     resetStore({
       view: 'main',
-      currentFolder: '/active',
       recentFolders: [{ name: 'active', path: '/active' }, ...remaining],
     })
+    await useChatStore.getState().focusProject('/active')
 
     await useAppStore.getState().removeRecentFolder('/active')
 
@@ -130,9 +144,9 @@ describe('removeRecentFolder', () => {
 
     resetStore({
       view: 'main',
-      currentFolder: '/only',
       recentFolders: [{ name: 'only', path: '/only' }],
     })
+    await useChatStore.getState().focusProject('/only')
 
     await useAppStore.getState().removeRecentFolder('/only')
 
@@ -146,9 +160,9 @@ describe('removeRecentFolder', () => {
 
     resetStore({
       view: 'main',
-      currentFolder: '/active',
       recentFolders: [{ name: 'active', path: '/active' }, { name: 'other', path: '/other' }],
     })
+    await useChatStore.getState().focusProject('/active')
 
     await useAppStore.getState().removeRecentFolder('/other')
 
@@ -191,7 +205,7 @@ describe('continueToMain', () => {
   })
 })
 
-describe('openFolderDirect (via selectAndOpenFolder)', () => {
+describe('selectProject', () => {
   it('should navigate from startup to main when opening a project', async () => {
     mockWindowApp.selectFolder.mockResolvedValue('/new')
     mockWindowApp.openFolder.mockResolvedValue(true)
@@ -199,7 +213,7 @@ describe('openFolderDirect (via selectAndOpenFolder)', () => {
 
     resetStore({ view: 'startup' })
 
-    await useAppStore.getState().selectAndOpenFolder()
+    await useAppStore.getState().selectProject()
 
     expect(useAppStore.getState().view).toBe('main')
     expect(useAppStore.getState().currentFolder).toBe('/new')

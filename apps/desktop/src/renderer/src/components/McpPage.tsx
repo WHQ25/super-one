@@ -539,7 +539,7 @@ export function McpPage() {
           <p className="text-sm text-muted-foreground">{t('resources.mcp.subtitle')}</p>
         </div>
         <div className="flex gap-2">
-          <ProjectSelector mode="switch" />
+          <ProjectSelector />
           <Button variant="outline" onClick={handleRefresh} disabled={refreshing}>
             <RefreshCw className={cn('size-4', refreshing && 'animate-spin')} />
             {t('resources.mcp.refresh')}

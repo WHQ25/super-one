@@ -327,7 +327,7 @@ export function AppsSettingsPage() {
             <Library className="size-4" />
             {t('resources.devAppLibrary.toggleButton')}
           </Button>
-          <ProjectSelector mode="switch" />
+          <ProjectSelector />
         </div>
       </div>
 

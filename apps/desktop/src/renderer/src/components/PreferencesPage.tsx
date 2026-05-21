@@ -237,7 +237,7 @@ function ClaudePreferencesPage() {
           <h2 className="text-lg font-semibold">{t('settings.preferences.title')}</h2>
           <p className="text-sm text-muted-foreground">{t('settings.preferences.claudeSubtitle')}</p>
         </div>
-        <ProjectSelector mode="switch" />
+        <ProjectSelector />
       </div>
 
       <div className="space-y-4">
@@ -564,7 +564,7 @@ function CodexPreferencesPage() {
           <h2 className="text-lg font-semibold">{t('settings.preferences.title')}</h2>
           <p className="text-sm text-muted-foreground">{t('settings.preferences.codexSubtitle')}</p>
         </div>
-        <ProjectSelector mode="switch" />
+        <ProjectSelector />
       </div>
 
       <div className="space-y-4">

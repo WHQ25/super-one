@@ -629,6 +629,9 @@ export const zh: Messages = {
       hideFromAgent: '对代理隐藏',
       showToAgent: '对代理显示',
       disabled: '已禁用',
+      builtin: '内置',
+      plugin: '插件',
+      readonly: '只读',
     },
     providers: {
       title: '服务商',

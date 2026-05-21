@@ -127,6 +127,13 @@ function isMarkdown(filePath: string): boolean {
   return /\.md$/i.test(filePath)
 }
 
+function getSkillKind(skill: SkillInfo, readOnly?: boolean): 'builtin' | 'plugin' | 'readonly' | null {
+  if (skill.builtin) return 'builtin'
+  if (skill.name.includes(':')) return 'plugin'
+  if (readOnly) return 'readonly'
+  return null
+}
+
 function SkillCard({ skill, layoutId, readOnly }: { skill: SkillInfo; layoutId: string; readOnly?: boolean }) {
   const { t } = useTranslation()
   const { skillDetail, skillFileContent, skillFilePath, readSkill, readSkillFile, readCodexSkill, readCodexSkillFile, clearSkillDetail, deleteSkill, disabledSkills, toggleSkill } = useSettingsStore()
@@ -139,6 +146,7 @@ function SkillCard({ skill, layoutId, readOnly }: { skill: SkillInfo; layoutId: 
   const [deleting, setDeleting] = useState(false)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const canDelete = !readOnly && !skill.name.includes(':') && !skill.builtin
+  const skillKind = getSkillKind(skill, readOnly)
   const isHidden = !isCodex && disabledSkills.includes(skill.name)
   const canToggle = !isCodex
 
@@ -205,6 +213,11 @@ function SkillCard({ skill, layoutId, readOnly }: { skill: SkillInfo; layoutId: 
           {isHidden && !isExpanded && (
             <Badge variant="secondary" className="shrink-0 px-1.5 py-0 text-[10px] font-normal">
               {t('resources.skills.disabled')}
+            </Badge>
+          )}
+          {isExpanded && skillKind && (
+            <Badge variant="outline" className="shrink-0 px-1.5 py-0 text-[10px] font-normal">
+              {t(`resources.skills.${skillKind}`)}
             </Badge>
           )}
           {isExpanded && (

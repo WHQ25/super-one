@@ -615,6 +615,9 @@ export type Messages = {
       hideFromAgent: string
       showToAgent: string
       disabled: string
+      builtin: string
+      plugin: string
+      readonly: string
     }
     providers: {
       title: string
@@ -1751,6 +1754,9 @@ export const en: Messages = {
       hideFromAgent: 'Hide from agent',
       showToAgent: 'Show to agent',
       disabled: 'Disabled',
+      builtin: 'Built-in',
+      plugin: 'Plugin',
+      readonly: 'Read-only',
     },
     providers: {
       title: 'Providers',

@@ -498,6 +498,10 @@ export type Messages = {
       done: string
       output: string
       prompt: string
+      title: string
+      notFound: string
+      openFullView: string
+      noActivity: string
     }
     codexCollab: {
       defaultName: string
@@ -1629,6 +1633,10 @@ export const en: Messages = {
       done: 'Done',
       output: 'Output',
       prompt: 'Prompt',
+      title: 'Subagent',
+      notFound: 'Subagent not found',
+      openFullView: 'Open full view',
+      noActivity: 'No activity recorded',
     },
     codexCollab: {
       defaultName: 'Subagent',

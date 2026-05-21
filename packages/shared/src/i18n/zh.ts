@@ -512,6 +512,10 @@ export const zh: Messages = {
       done: '完成',
       output: '输出',
       prompt: '提示词',
+      title: '子代理',
+      notFound: '未找到子代理',
+      openFullView: '打开全屏视图',
+      noActivity: '暂无活动记录',
     },
     codexCollab: {
       defaultName: '子代理',

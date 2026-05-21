@@ -16,6 +16,8 @@ import { PlanFullscreenContext } from './codex-item-renderer'
 import { CodexPlanFullscreenView } from './CodexPlanFullscreenView'
 import { ForkNavigationContext, type ForkViewState } from './fork-navigation-context'
 import { ForkedThreadView } from './ForkedThreadView'
+import { SubagentNavigationContext, type SubagentViewState } from './subagent-navigation-context'
+import { SubagentFullView } from './SubagentFullView'
 import { SelectionContextMenuZone } from './SelectionContextMenu'
 import type { CodexPlanApprovalState } from '@superone/shared/agent-types'
 import { cn } from '@superone/ui/lib/utils'
@@ -158,11 +160,21 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
     close: () => setFork(null),
   }), [fork])
 
+  const [subagentView, setSubagentView] = useState<SubagentViewState | null>(null)
+  const subagentNav = useMemo(() => ({
+    current: subagentView,
+    open: (state: SubagentViewState) => setSubagentView(state),
+    close: () => setSubagentView(null),
+  }), [subagentView])
+
   return (
+    <SubagentNavigationContext.Provider value={subagentNav}>
     <ForkNavigationContext.Provider value={forkNav}>
     <PlanFullscreenContext.Provider value={planFullscreenCtx}>
     <div ref={containerRef} className={cn('relative flex min-h-0 min-w-0 flex-col bg-card', zoom <= 1 && 'w-full flex-1')} style={zoom > 1 ? { transform: `scale(${zoom})`, transformOrigin: 'top left', width: `${100 / zoom}%`, height: `${100 / zoom}%` } : zoom < 1 ? { zoom } : undefined}>
-      {fork ? (
+      {subagentView ? (
+        <SubagentFullView view={subagentView} />
+      ) : fork ? (
         <ForkedThreadView fork={fork} />
       ) : fullscreenPlan ? (
         <CodexPlanFullscreenView
@@ -290,5 +302,6 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
     </div>
     </PlanFullscreenContext.Provider>
     </ForkNavigationContext.Provider>
+    </SubagentNavigationContext.Provider>
   )
 }

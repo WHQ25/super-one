@@ -1,19 +1,20 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Bot, ChevronRight, Check, Wrench, ArrowUp, ArrowDown, MessageSquare, Sparkles } from 'lucide-react'
+import { Bot, ChevronRight, Check, Wrench, ArrowUp, ArrowDown, Maximize } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 import { ToolBlock } from './ToolBlock'
-import { getToolDisplay, getToolVerb, parseToolInput } from './tool-display'
-import { ToolIcon } from './ToolIcon'
-import { useActiveSession, useBashOutput, useChatStore } from '@/stores/chat'
-import { getSubagentColorClasses, type SubagentColorClasses } from './subagent-colors'
+import { useActiveSession, useChatStore } from '@/stores/chat'
+import { getSubagentColorClasses } from './subagent-colors'
+import { NestedToolContext } from './nested-tool-context'
+import { useSubagentNavigation } from './subagent-navigation-context'
 import { Streamdown } from 'streamdown'
 import type { ContentBlock } from '@superone/shared/agent-types'
 import { streamdownPlugins, streamdownRehypePlugins, streamdownControls, streamdownComponents, streamdownLinkSafety, formatTokens } from './chat-shared'
-import { parseJsonlOutput, type JsonlEntry } from './subagent-utils'
+import { parseTaskInput, buildToolResultMap, buildToolErrorMaps, computeSubagentElapsed, type ToolErrorMaps } from './subagent-utils'
+import { useSubagentJsonl } from './use-subagent-jsonl'
+import { AgentActivity, SubagentScrollArea } from './subagent-activity'
 
 const ZERO_TOKENS = { input: 0, output: 0 }
-const SUBAGENT_OUTPUT_TAIL_LINES = 400
 
 interface SubagentBlockProps {
   taskBlock: ContentBlock & { type: 'tool_use' }
@@ -21,19 +22,6 @@ interface SubagentBlockProps {
   resultBlock?: ContentBlock
   isStreaming: boolean
   defaultExpanded?: boolean
-}
-
-/** Parse Task tool input to extract display info. */
-function parseTaskInput(input: string) {
-  const params = parseToolInput(input, 'Task')
-  return {
-    name: String(params.name ?? ''),
-    description: String(params.description ?? ''),
-    subagentType: String(params.subagent_type ?? ''),
-    prompt: String(params.prompt ?? ''),
-    model: params.model ? String(params.model) : undefined,
-    runInBackground: params.run_in_background === true,
-  }
 }
 
 /** Format elapsed seconds to a readable string. */
@@ -64,22 +52,12 @@ function SubagentTokens({ input, output }: { input: number; output: number }) {
   )
 }
 
-/** Build a toolUseId → summary map for correlating tool_result with tool_use. */
-function buildToolResultMap(blocks: ContentBlock[]) {
-  const map = new Map<string, string>()
-  for (const block of blocks) {
-    if (block.type === 'tool_result' && block.summary) map.set(block.toolUseId, block.summary)
-  }
-  return map
-}
-
 export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming, defaultExpanded }: SubagentBlockProps) {
   const { t } = useTranslation()
   const tokens = useActiveSession((s) => s.subagentTokens[taskBlock.toolUseId] ?? ZERO_TOKENS)
   const progress = useActiveSession((s) => s.taskProgress[taskBlock.toolUseId])
   const colorIdx = useActiveSession((s) => s.subagentColors[taskBlock.toolUseId])
   const colors = useMemo(() => getSubagentColorClasses(colorIdx), [colorIdx])
-  const bashOutput = useBashOutput(taskBlock.toolUseId)
   const taskInput = useMemo(() => parseTaskInput(taskBlock.input), [taskBlock.input])
   const showSpawningPlaceholder = !taskInput.subagentType && !taskInput.description
   const isAsync = taskInput.runInBackground
@@ -90,21 +68,14 @@ export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming
     ? !progress?.completed && !taskBlock.taskResultText
     : !resultBlock && isStreaming
   const hasTokens = tokens.input > 0 || tokens.output > 0
-  const [expanded, setExpanded] = useState(defaultExpanded ?? (isAsync ? false : !isComplete))
+  const [expanded, setExpanded] = useState(defaultExpanded ?? false)
+  const nav = useSubagentNavigation()
 
   useEffect(() => {
     useChatStore.getState().assignSubagentColor(taskBlock.toolUseId)
   }, [taskBlock.toolUseId])
 
-  useEffect(() => {
-    if (isAsync && defaultExpanded === undefined) setExpanded(false)
-  }, [isAsync])
-
-  const baselineElapsed = taskBlock.elapsedSeconds
-    ? Math.round(taskBlock.elapsedSeconds)
-    : taskBlock.startedAt
-      ? Math.floor((Date.now() - taskBlock.startedAt) / 1000)
-      : 0
+  const baselineElapsed = computeSubagentElapsed(taskBlock, progress, isRunning)
   const startTimeRef = useRef<number>(Date.now() - baselineElapsed * 1000)
   const [elapsed, setElapsed] = useState(baselineElapsed)
 
@@ -129,88 +100,18 @@ export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming
   }, [isComplete])
 
   const toolResultMap = useMemo(() => buildToolResultMap(childBlocks), [childBlocks])
+  const toolErrorMaps = useMemo(() => buildToolErrorMaps(childBlocks), [childBlocks])
   const rawResultText = resultBlock?.type === 'tool_result' ? resultBlock.summary : undefined
   const asyncOutputPath = useMemo(() => rawResultText?.match(/output_file:\s*(\S+)/)?.[1], [rawResultText])
   const outputFile = asyncOutputPath ?? progress?.outputFile
-  const [jsonlEntries, setJsonlEntries] = useState<JsonlEntry[]>([])
-  const [jsonlResultText, setJsonlResultText] = useState<string>()
-  const watchedContent = bashOutput && bashOutput.outputPath === outputFile ? bashOutput.content : ''
 
-  useEffect(() => {
-    setJsonlEntries([])
-    setJsonlResultText(undefined)
-  }, [outputFile])
-
-  useEffect(() => {
-    if (!outputFile) {
-      window.app.trace?.('subagent.output', 'no_output_file', { asyncOutputPath, progressFile: progress?.outputFile, resultSummary: rawResultText?.slice(0, 200) }, taskBlock.toolUseId)
-      return
-    }
-    if (!expanded) return
-    useChatStore.setState((s) => ({
-      _bashOutputs: {
-        ...s._bashOutputs,
-        [taskBlock.toolUseId]: {
-          content: s._bashOutputs[taskBlock.toolUseId]?.outputPath === outputFile ? s._bashOutputs[taskBlock.toolUseId]?.content ?? '' : '',
-          finished: s._bashOutputs[taskBlock.toolUseId]?.outputPath === outputFile ? s._bashOutputs[taskBlock.toolUseId]?.finished ?? false : false,
-          outputPath: outputFile,
-        },
-      },
-    }))
-    window.app.trace?.('subagent.output', 'start_watching', { outputFile, isRunning }, taskBlock.toolUseId)
-    window.app.watchBashOutput(taskBlock.toolUseId, outputFile, SUBAGENT_OUTPUT_TAIL_LINES).catch((err) => {
-      window.app.trace?.('subagent.output', 'watch_error', { outputFile, error: String(err) }, taskBlock.toolUseId)
-    })
-    return () => { window.app.unwatchBashOutput(taskBlock.toolUseId).catch(() => {}) }
-  }, [expanded, isRunning, outputFile, taskBlock.toolUseId])
-
-  useEffect(() => {
-    if (!expanded || !outputFile || !watchedContent) return
-    window.app.trace?.('subagent.output', 'read_result', { outputFile, rawLen: watchedContent.length, first100: watchedContent.slice(0, 100) }, taskBlock.toolUseId)
-    const parsed = parseJsonlOutput(watchedContent)
-    window.app.trace?.('subagent.output', 'parsed', { entries: parsed.entries.length, hasResultText: !!parsed.resultText }, taskBlock.toolUseId)
-    if (parsed.entries.length > 0 || parsed.resultText) {
-      setJsonlEntries(parsed.entries)
-      setJsonlResultText(parsed.resultText)
-      if (parsed.resultText && parsed.resultText !== taskBlock.taskResultText) {
-        useChatStore.setState((s) => {
-          const project = s.projectSessions[s.activeProject ?? '']
-          if (!project) return s
-          const sid = project._activeSessionId
-          if (!sid) return s
-          const session = project._sessions[sid]
-          if (!session) return s
-          return {
-            projectSessions: {
-              ...s.projectSessions,
-              [s.activeProject!]: {
-                ...project,
-                _sessions: {
-                  ...project._sessions,
-                  [sid]: {
-                    ...session,
-                    messages: session.messages.map((msg) => ({
-                      ...msg,
-                      content: msg.content.map((block) =>
-                        block.type === 'tool_use' && block.toolUseId === taskBlock.toolUseId
-                          ? { ...block, taskResultText: parsed.resultText }
-                          : block,
-                      ),
-                    })),
-                  },
-                },
-              },
-            },
-          }
-        })
-      }
-    }
-  }, [expanded, outputFile, taskBlock.toolUseId, watchedContent])
-
-  useEffect(() => {
-    if (!expanded || isRunning || bashOutput?.outputPath !== outputFile || bashOutput?.finished !== true) return
-    window.app.unwatchBashOutput(taskBlock.toolUseId).catch(() => {})
-  }, [bashOutput?.finished, bashOutput?.outputPath, expanded, isRunning, outputFile, taskBlock.toolUseId])
+  const { entries: jsonlEntries, resultText: jsonlResultText } = useSubagentJsonl({
+    toolUseId: taskBlock.toolUseId,
+    taskResultText: taskBlock.taskResultText,
+    outputFile,
+    enabled: expanded,
+    isRunning,
+  })
 
   const resultText = isAsync
     ? (jsonlResultText ?? taskBlock.taskResultText)
@@ -223,6 +124,34 @@ export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming
 
   const isExpandable = !showSpawningPlaceholder
   const isExpanded = expanded && isExpandable
+
+  const statsContent = isAsync && progress ? (
+    <>
+      {progress.toolUses > 0 && (
+        <span className="inline-flex items-center gap-0.5">
+          <Wrench className="size-3" />
+          {progress.toolUses}
+        </span>
+      )}
+      {progress.totalTokens > 0 && (
+        <>
+          {progress.toolUses > 0 && <span>·</span>}
+          <span className="tabular-nums">{formatTokens(progress.totalTokens)}</span>
+        </>
+      )}
+    </>
+  ) : (
+    <>
+      {toolCallCount > 0 && (
+        <span className="inline-flex items-center gap-0.5">
+          <Wrench className="size-3" />
+          {toolCallCount}
+        </span>
+      )}
+      {hasTokens && toolCallCount > 0 && <span>·</span>}
+      <SubagentTokens input={tokens.input} output={tokens.output} />
+    </>
+  )
 
   return (
     <div className="subagent-container my-1 overflow-hidden rounded border border-border/50 bg-muted/20">
@@ -237,11 +166,24 @@ export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming
         )}
       >
         <Bot className={cn('size-3.5 shrink-0', colors.text, isRunning && !isExpanded && 'animate-pulse')} />
-        {taskInput.subagentType && (
+        {taskInput.name && taskInput.teamName ? (
+          <span className={cn('shrink-0 rounded px-1 py-px text-[10px] font-medium', colors.tagBg, colors.tagText)}>
+            {taskInput.name}@{taskInput.teamName}
+          </span>
+        ) : taskInput.name ? (
+          <>
+            <span className={cn('shrink-0 rounded px-1 py-px text-[10px] font-medium', colors.tagBg, colors.tagText)}>
+              {taskInput.name}
+            </span>
+            {taskInput.subagentType && taskInput.subagentType !== taskInput.name && (
+              <span className="shrink-0 text-[10px] text-muted-foreground">{taskInput.subagentType}</span>
+            )}
+          </>
+        ) : taskInput.subagentType ? (
           <span className={cn('shrink-0 rounded px-1 py-px text-[10px]', colors.tagBg, colors.tagText)}>
             {taskInput.subagentType}
           </span>
-        )}
+        ) : null}
         {taskInput.description && (
           <span className="min-w-0 truncate text-left text-muted-foreground">{taskInput.description}</span>
         )}
@@ -249,9 +191,24 @@ export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming
           <span className="min-w-0 text-left text-muted-foreground">{t('chat.subagent.spawning')}</span>
         )}
         {isExpandable && (
-          <ChevronRight
-            className={cn('ml-auto size-3 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded && 'rotate-90')}
-          />
+          <span className="ml-auto flex shrink-0 items-center gap-1.5 text-[11px] text-muted-foreground">
+            {!isExpanded && statsContent}
+            {isExpanded && (
+              <span
+                role="button"
+                tabIndex={0}
+                onClick={(e) => { e.stopPropagation(); nav.open({ toolUseId: taskBlock.toolUseId }) }}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); nav.open({ toolUseId: taskBlock.toolUseId }) } }}
+                className="inline-flex items-center rounded p-0.5 hover:bg-muted hover:text-foreground"
+                title={t('chat.subagent.openFullView', 'Open full view')}
+              >
+                <Maximize className="size-3" />
+              </span>
+            )}
+            <ChevronRight
+              className={cn('size-3 shrink-0 transition-transform duration-200', isExpanded && 'rotate-90')}
+            />
+          </span>
         )}
       </button>
 
@@ -272,13 +229,15 @@ export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming
             />
           )}
 
-          {/* Sub tool calls — no grouping, scrollable with auto-scroll */}
+          {/* Sub tool calls — no grouping, scrollable with auto-scroll, tools default collapsed */}
           {childBlocks.length > 0 && (
-            <SubagentScrollArea isStreaming={isStreaming} borderClass={colors.borderL}>
-              {childBlocks.map((block, i) =>
-                renderChildBlock(block, i, isStreaming, toolResultMap)
-              )}
-            </SubagentScrollArea>
+            <NestedToolContext.Provider value={{ defaultAutoExpand: false }}>
+              <SubagentScrollArea borderClass={colors.borderL}>
+                {childBlocks.map((block, i) =>
+                  renderChildBlock(block, i, isStreaming, toolResultMap, toolErrorMaps)
+                )}
+              </SubagentScrollArea>
+            </NestedToolContext.Provider>
           )}
 
           {/* Output — collapsible with line limit */}
@@ -298,122 +257,8 @@ export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming
             <span>{t('chat.subagent.done')}{elapsed > 0 ? ` ${formatElapsed(elapsed)}` : ''}</span>
           </>
         )}
-        <span className="ml-auto flex items-center gap-1.5">
-          {isAsync && progress ? (
-            <>
-              {progress.toolUses > 0 && (
-                <span className="inline-flex items-center gap-0.5">
-                  <Wrench className="size-3" />
-                  {progress.toolUses}
-                </span>
-              )}
-              {progress.totalTokens > 0 && (
-                <>
-                  {progress.toolUses > 0 && <span>·</span>}
-                  <span className="tabular-nums">{formatTokens(progress.totalTokens)}</span>
-                </>
-              )}
-            </>
-          ) : (
-            <>
-              {toolCallCount > 0 && (
-                <span className="inline-flex items-center gap-0.5">
-                  <Wrench className="size-3" />
-                  {toolCallCount}
-                </span>
-              )}
-              {hasTokens && toolCallCount > 0 && <span>·</span>}
-              <SubagentTokens input={tokens.input} output={tokens.output} />
-            </>
-          )}
-        </span>
+        <span className="ml-auto flex items-center gap-1.5">{statsContent}</span>
       </div>}
-    </div>
-  )
-}
-
-function AgentActivity({ entries, fallbackTools, activeTool, isRunning, summary, colors }: {
-  entries: JsonlEntry[]
-  fallbackTools?: Array<{ toolName: string; description: string }>
-  activeTool?: { toolName: string; description: string }
-  isRunning: boolean
-  summary?: string
-  colors: SubagentColorClasses
-}) {
-  const latestActivity = useMemo(
-    () => entries.findLast((e) => e.type === 'activity') as { type: 'activity'; text: string } | undefined,
-    [entries],
-  )
-  const tools = useMemo(
-    () => entries.filter((e): e is JsonlEntry & { type: 'tool' } => e.type === 'tool'),
-    [entries],
-  )
-  return (
-    <div className="border-t border-border/30">
-      {summary && (
-        <div className="mx-2.5 mt-1.5 mb-1.5 flex items-start gap-1.5 rounded-md bg-blue-500/10 px-2.5 py-1.5 text-xs leading-relaxed text-foreground dark:bg-blue-900/20">
-          <Sparkles className="mt-0.5 size-3 shrink-0 text-blue-600 dark:text-blue-400" />
-          <span className="whitespace-pre-wrap">{summary}</span>
-        </div>
-      )}
-      {isRunning && latestActivity && (
-        <div className={cn('mx-2.5 mt-1.5 mb-1.5 flex items-start gap-1.5 rounded-md px-2.5 py-1.5 text-xs leading-relaxed text-foreground', colors.activityBg)}>
-          <MessageSquare className={cn('mt-0.5 size-3 shrink-0 animate-pulse', colors.text)} />
-          <span className="whitespace-pre-wrap">{latestActivity.text.trim()}</span>
-        </div>
-      )}
-      <SubagentScrollArea isStreaming={isRunning} borderClass={colors.borderL}>
-        {(tools.length > 0 ? tools : fallbackTools ?? []).map((entry, i) => (
-          <AsyncToolRow key={i} toolName={entry.toolName} description={entry.description} isActive={false} />
-        ))}
-        {activeTool && (
-          <AsyncToolRow toolName={activeTool.toolName} description={activeTool.description} isActive />
-        )}
-      </SubagentScrollArea>
-    </div>
-  )
-}
-
-function AsyncToolRow({ toolName, description, isActive }: { toolName: string; description: string; isActive: boolean }) {
-  const icon = getToolDisplay(toolName, {}).icon
-  return (
-    <div className="tool-node my-0.5 flex items-center gap-1.5 rounded bg-muted/50 px-2 py-1.5 text-xs">
-      <ToolIcon icon={icon} className="size-3 shrink-0 text-muted-foreground" />
-      <span className="shrink-0 font-medium text-foreground">
-        {isActive ? <>{getToolVerb(toolName)}&hellip;</> : toolName}
-      </span>
-      {description && <span className="min-w-0 truncate text-muted-foreground">{description}</span>}
-    </div>
-  )
-}
-
-/** Scrollable container that auto-scrolls to bottom on new content, unless user scrolled up. */
-function SubagentScrollArea({ children, isStreaming, borderClass }: { children: React.ReactNode; isStreaming: boolean; borderClass: string }) {
-  const scrollRef = useRef<HTMLDivElement>(null)
-  const isNearBottomRef = useRef(true)
-
-  useEffect(() => {
-    const el = scrollRef.current
-    if (!el) return
-    const handleScroll = (): void => {
-      isNearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 30
-    }
-    el.addEventListener('scroll', handleScroll, { passive: true })
-    return () => el.removeEventListener('scroll', handleScroll)
-  }, [])
-
-  useEffect(() => {
-    const el = scrollRef.current
-    if (!el || !isNearBottomRef.current) return
-    el.scrollTop = el.scrollHeight
-  })
-
-  return (
-    <div
-      ref={scrollRef}
-      className={cn('max-h-[100px] overflow-y-auto border-l-2 ml-3 pl-2.5 py-1', borderClass)}
-    >
-      {children}
     </div>
   )
 }
@@ -480,23 +325,9 @@ function renderChildBlock(
   index: number,
   isStreaming: boolean,
   toolResultMap: Map<string, string>,
+  errorMaps: ToolErrorMaps,
 ) {
   switch (block.type) {
-    case 'text':
-      return (
-        <Streamdown
-          key={index}
-          className="chat-md text-xs px-1"
-          plugins={streamdownPlugins}
-          rehypePlugins={streamdownRehypePlugins}
-          components={streamdownComponents}
-          controls={streamdownControls}
-          linkSafety={streamdownLinkSafety}
-          isAnimating={isStreaming}
-        >
-          {block.text}
-        </Streamdown>
-      )
     case 'tool_use':
       return (
         <ToolBlock
@@ -507,6 +338,8 @@ function renderChildBlock(
           status={!isStreaming && block.status === 'streaming' ? undefined : block.status}
           elapsedSeconds={block.elapsedSeconds}
           result={toolResultMap.get(block.toolUseId)}
+          isError={errorMaps.errorIds.has(block.toolUseId)}
+          isTimedOut={errorMaps.timedOutIds.has(block.toolUseId)}
         />
       )
     case 'tool_result':

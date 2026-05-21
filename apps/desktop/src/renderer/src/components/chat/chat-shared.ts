@@ -42,7 +42,6 @@ function localFileToMediaUrl(src: string | undefined): string | undefined {
 
 const VIDEO_EXTS = new Set(['.mp4', '.m4v', '.webm', '.ogg', '.mov'])
 const AUDIO_EXTS = new Set(['.mp3', '.wav', '.flac', '.aac', '.m4a', '.opus', '.weba'])
-const IMAGE_EXTS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.bmp', '.ico', '.avif'])
 
 const MEDIA_STYLE = { maxHeight: '20rem', maxWidth: '100%', width: 'auto', height: 'auto', borderRadius: '8px', display: 'block' } as const
 
@@ -103,9 +102,7 @@ export const streamdownRehypePlugins: PluggableList = Object.values({
   sanitize: [rehypeSanitize, localFileSanitizeSchema],
 }) as PluggableList
 
-const MEDIA_EXTS = new Set([...VIDEO_EXTS, ...AUDIO_EXTS, ...IMAGE_EXTS])
 const MD_IMAGE_RE = /!\[([^\]]*)\]\((?!https?:\/\/|data:|local-file:\/\/)([^)\s]+)([^)]*)\)/g
-const MD_LINK_RE = /(?<!!)\[([^\]]*)\]\((?!https?:\/\/|data:|local-file:\/\/)([^)\s]+)([^)]*)\)/g
 
 function resolveLocalSrc(src: string, projectPath: string): string {
   const cleanSrc = src.replace(/^\.\//, '')
@@ -115,11 +112,6 @@ function resolveLocalSrc(src: string, projectPath: string): string {
 }
 
 export function resolveMarkdownMedia(text: string, projectPath: string): string {
-  text = text.replace(MD_LINK_RE, (match, alt, src, rest) => {
-    const ext = src.slice(src.lastIndexOf('.')).toLowerCase()
-    if (!MEDIA_EXTS.has(ext)) return match
-    return `![${alt}](${resolveLocalSrc(src, projectPath)}${rest})`
-  })
   return text.replace(MD_IMAGE_RE, (_, alt, src, rest) => {
     return `![${alt}](${resolveLocalSrc(src, projectPath)}${rest})`
   })

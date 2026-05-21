@@ -1,3 +1,5 @@
+import { describe, it, expect, vi } from 'vitest'
+
 vi.mock('@/lib/path-utils', () => ({
   toMediaUrl: (p: string) => `media://${p}`,
   toLocalFileUrl: (p: string) => `local-file://${p}`,
@@ -17,6 +19,7 @@ vi.mock('@streamdown/math', () => ({ createMathPlugin: () => ({ rehypePlugin: [{
 vi.mock('katex/dist/katex.min.css', () => ({}))
 vi.mock('./CodeBlock', () => ({ createStreamdownCodeComponent: () => ({}) }))
 vi.mock('./LinkSafetyModal', () => ({ LinkSafetyModal: () => null }))
+vi.mock('./markdown-image', () => ({ MarkdownImage: () => null }))
 
 import { resolveMarkdownMedia, formatTokens } from './chat-shared'
 
@@ -121,11 +124,9 @@ describe('resolveMarkdownMedia', () => {
     expect(resolveMarkdownMedia(input, project)).toBe(input)
   })
 
-  it('should convert media link syntax to image syntax', () => {
+  it('should not modify media markdown links', () => {
     const input = '[photo](./photo.png)'
-    expect(resolveMarkdownMedia(input, project)).toBe(
-      '![photo](local-file:///Users/foo/project/photo.png)',
-    )
+    expect(resolveMarkdownMedia(input, project)).toBe(input)
   })
 
   it('should handle mixed content with multiple images', () => {

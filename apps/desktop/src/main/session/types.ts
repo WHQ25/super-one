@@ -16,11 +16,23 @@ import type { HarnessId, LiveSessionSnapshot, SessionSnapshot, SessionStatus } f
 
 export type { HarnessId, LiveSessionSnapshot, SessionSnapshot, SessionStatus }
 
+export interface ForkSource {
+  providerSessionId: string
+  projectPath: string
+}
+
+export interface ForkContext {
+  /** Source transcript, oldest-first — `forkFromMessageId` is resolved against this order. */
+  messages: ChatMessage[]
+  forkFromMessageId?: string
+}
+
 export interface Harness {
   readonly id: HarnessId
   readonly name: string
   readonly configSchema: unknown
   createBackend(): SessionBackend
+  forkTranscript(source: ForkSource, targetCwd: string, ctx: ForkContext): Promise<string>
 }
 
 export interface SessionProvider {

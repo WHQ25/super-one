@@ -2,10 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import type { ChatMessage } from '@superone/shared/agent-types'
 import type { SessionRecord } from './session-repo'
 
-const { getSessionRecordMock, forkSessionRecordMock, sdkForkSessionMock, withAppServerRequestMock } = vi.hoisted(() => ({
+const { getSessionRecordMock, loadSessionStateBySidMock, forkSessionRecordMock, sdkForkSessionMock, withAppServerRequestMock } = vi.hoisted(() => ({
   getSessionRecordMock: vi.fn(),
+  loadSessionStateBySidMock: vi.fn(),
   forkSessionRecordMock: vi.fn(),
   sdkForkSessionMock: vi.fn(),
   withAppServerRequestMock: vi.fn(),
@@ -20,8 +22,13 @@ vi.mock('../codex/codex-experiment-service', () => ({
 }))
 vi.mock('./session-repo', () => ({
   getSessionRecord: getSessionRecordMock,
+  loadSessionStateBySid: loadSessionStateBySidMock,
   forkSessionRecord: forkSessionRecordMock,
 }))
+// Stub the backend classes so the real harness registry loads without pulling
+// in the heavy Electron-laden backend modules — fork never instantiates them.
+vi.mock('./backends/claude-backend', () => ({ ClaudeBackend: class {} }))
+vi.mock('./backends/codex-backend', () => ({ CodexBackend: class {} }))
 
 import { forkSession } from './session-fork'
 
@@ -39,6 +46,15 @@ function makeRecord(over: Partial<SessionRecord>): SessionRecord {
   }
 }
 
+function msg(id: string, role: 'user' | 'assistant', over: Partial<ChatMessage> = {}): ChatMessage {
+  return { id, role, status: 'complete', content: [], createdAt: '', providerId: 'p', ...over }
+}
+
+function setupSource(record: SessionRecord, messages: ChatMessage[]) {
+  getSessionRecordMock.mockReturnValue(record)
+  loadSessionStateBySidMock.mockReturnValue({ record, messages })
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
   tmpRoot = mkdtempSync(join(tmpdir(), 'fork-test-'))
@@ -53,45 +69,52 @@ afterEach(() => {
   rmSync(tmpRoot, { recursive: true, force: true })
 })
 
-describe('forkSession truncation', () => {
-  it('passes upToMessageId to the Claude SDK forkSession', async () => {
-    getSessionRecordMock.mockReturnValue(makeRecord({ providerId: 'claude-base', providerSessionId: 'claude-src' }))
-    sdkForkSessionMock.mockImplementation(async () => {
-      const dir = join(configDir, 'projects', 'src-slug')
-      mkdirSync(dir, { recursive: true })
-      writeFileSync(join(dir, 'claude-forked.jsonl'), '{}')
-      return { sessionId: 'claude-forked' }
-    })
+function stubClaudeSdkFork() {
+  sdkForkSessionMock.mockImplementation(async () => {
+    const dir = join(configDir, 'projects', 'src-slug')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'claude-forked.jsonl'), '{}')
+    return { sessionId: 'claude-forked' }
+  })
+}
 
-    const result = await forkSession({ sessionId: 's-src', mode: 'local', upToMessageId: 'asst-uuid-9' })
+describe('forkSession harness dispatch', () => {
+  it('forks a Claude session, resolving upToMessageId from the selected turn anchor', async () => {
+    setupSource(makeRecord({ harnessId: 'claude', providerSessionId: 'claude-src' }), [
+      msg('u1', 'user'),
+      msg('a1', 'assistant', { metadata: { forkAnchorId: 'anchor-a1' } }),
+      msg('u2', 'user'),
+      msg('a2', 'assistant', { metadata: { forkAnchorId: 'anchor-a2' } }),
+    ])
+    stubClaudeSdkFork()
+
+    const result = await forkSession({ sessionId: 's-src', mode: 'local', forkFromMessageId: 'a1' })
 
     expect(result.ok).toBe(true)
-    expect(sdkForkSessionMock).toHaveBeenCalledWith('claude-src', { upToMessageId: 'asst-uuid-9' })
+    expect(sdkForkSessionMock).toHaveBeenCalledWith('claude-src', { upToMessageId: 'anchor-a1' })
     expect(forkSessionRecordMock).toHaveBeenCalledWith(
       expect.objectContaining({ providerSessionId: 'claude-forked' }),
     )
   })
 
-  it('full-copies a Claude session when upToMessageId is omitted', async () => {
-    getSessionRecordMock.mockReturnValue(makeRecord({ providerId: 'claude-base', providerSessionId: 'claude-src' }))
-    sdkForkSessionMock.mockImplementation(async () => {
-      const dir = join(configDir, 'projects', 'src-slug')
-      mkdirSync(dir, { recursive: true })
-      writeFileSync(join(dir, 'claude-forked.jsonl'), '{}')
-      return { sessionId: 'claude-forked' }
-    })
+  it('full-copies a Claude session without loading the transcript when no fork message is given', async () => {
+    setupSource(makeRecord({ harnessId: 'claude', providerSessionId: 'claude-src' }), [])
+    stubClaudeSdkFork()
 
     await forkSession({ sessionId: 's-src', mode: 'local' })
 
     expect(sdkForkSessionMock).toHaveBeenCalledWith('claude-src', undefined)
+    expect(loadSessionStateBySidMock).not.toHaveBeenCalled()
   })
 
-  it('forks a Codex session via thread/fork then rolls back trailing turns', async () => {
-    getSessionRecordMock.mockReturnValue(makeRecord({
-      providerId: 'codex-base', harnessId: 'codex', providerSessionId: 'thread-src',
-    }))
+  it('forks a Codex session, rolling back the turns after the selected message', async () => {
+    setupSource(makeRecord({ harnessId: 'codex', providerId: 'codex-base', providerSessionId: 'thread-src' }), [
+      msg('u1', 'user'), msg('a1', 'assistant'),
+      msg('u2', 'user'), msg('a2', 'assistant'),
+      msg('u3', 'user'), msg('a3', 'assistant'),
+    ])
     const calls: Array<[string, unknown]> = []
-    withAppServerRequestMock.mockImplementation(async (_projectPath: string, fn: (r: unknown) => Promise<unknown>) => {
+    withAppServerRequestMock.mockImplementation(async (_p: string, fn: (r: unknown) => Promise<unknown>) => {
       const request = vi.fn(async (method: string, params: unknown) => {
         calls.push([method, params])
         return method === 'thread/fork' ? { thread: { id: 'thread-forked' } } : {}
@@ -99,24 +122,19 @@ describe('forkSession truncation', () => {
       return fn(request)
     })
 
-    const result = await forkSession({ sessionId: 's-src', mode: 'local', dropTrailingTurns: 2 })
+    const result = await forkSession({ sessionId: 's-src', mode: 'local', forkFromMessageId: 'a1' })
 
     expect(result.ok).toBe(true)
     expect(calls).toEqual([
       ['thread/fork', { threadId: 'thread-src' }],
       ['thread/rollback', { threadId: 'thread-forked', numTurns: 2 }],
     ])
-    expect(forkSessionRecordMock).toHaveBeenCalledWith(
-      expect.objectContaining({ providerSessionId: 'thread-forked' }),
-    )
   })
 
-  it('skips thread/rollback when no trailing turns are dropped', async () => {
-    getSessionRecordMock.mockReturnValue(makeRecord({
-      providerId: 'codex-base', harnessId: 'codex', providerSessionId: 'thread-src',
-    }))
+  it('full-copies a Codex session without loading the transcript when no fork message is given', async () => {
+    setupSource(makeRecord({ harnessId: 'codex', providerId: 'codex-base', providerSessionId: 'thread-src' }), [])
     const methods: string[] = []
-    withAppServerRequestMock.mockImplementation(async (_projectPath: string, fn: (r: unknown) => Promise<unknown>) => {
+    withAppServerRequestMock.mockImplementation(async (_p: string, fn: (r: unknown) => Promise<unknown>) => {
       const request = vi.fn(async (method: string) => {
         methods.push(method)
         return method === 'thread/fork' ? { thread: { id: 'thread-forked' } } : {}
@@ -127,5 +145,6 @@ describe('forkSession truncation', () => {
     await forkSession({ sessionId: 's-src', mode: 'local' })
 
     expect(methods).toEqual(['thread/fork'])
+    expect(loadSessionStateBySidMock).not.toHaveBeenCalled()
   })
 })

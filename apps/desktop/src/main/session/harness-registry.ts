@@ -1,6 +1,8 @@
 import { z } from 'zod'
 import { ClaudeBackend } from './backends/claude-backend'
 import { CodexBackend } from './backends/codex-backend'
+import { forkClaudeTranscript } from './backends/claude-fork'
+import { forkCodexThread } from './backends/codex-fork'
 import type { Harness, HarnessId } from './types'
 
 const claudeConfigSchema = z.object({
@@ -26,6 +28,7 @@ const claudeHarness: Harness = {
   name: 'Claude (Anthropic)',
   configSchema: claudeConfigSchema,
   createBackend: () => new ClaudeBackend(),
+  forkTranscript: forkClaudeTranscript,
 }
 
 const codexHarness: Harness = {
@@ -33,6 +36,7 @@ const codexHarness: Harness = {
   name: 'Codex (OpenAI)',
   configSchema: codexConfigSchema,
   createBackend: () => new CodexBackend(),
+  forkTranscript: forkCodexThread,
 }
 
 const registry = new Map<HarnessId, Harness>([

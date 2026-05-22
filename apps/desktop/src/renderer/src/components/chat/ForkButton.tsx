@@ -20,9 +20,8 @@ interface ForkButtonProps {
 
 /**
  * Fork the conversation up to and including this assistant turn into a new
- * independent session. The truncation anchor is harness-specific: Claude slices
- * by the SDK message UUID (`metadata.forkAnchorId`); Codex counts how many
- * turns follow this message and rolls them back from the forked thread.
+ * independent session. The request only carries the message id — the source
+ * harness resolves it to a transcript truncation point in the main process.
  */
 export function ForkButton({ message, className }: ForkButtonProps) {
   const { t } = useTranslation()
@@ -32,22 +31,13 @@ export function ForkButton({ message, className }: ForkButtonProps) {
     if (busy) return
     const state = useChatStore.getState()
     const projectPath = state.activeProject
-    const project = projectPath ? state.projectSessions[projectPath] : null
-    const sessionId = project?._activeSessionId
-    if (!project || !sessionId) return
-
-    const messages = project._sessions[sessionId]?.messages ?? []
-    const isCodex = !!message.metadata?.codex
-    const index = messages.findIndex((m) => m.id === message.id)
-    const dropTrailingTurns = isCodex && index >= 0
-      ? messages.slice(index + 1).filter((m) => m.role === 'assistant').length
-      : undefined
-    const upToMessageId = isCodex ? undefined : message.metadata?.forkAnchorId
+    const sessionId = projectPath ? state.projectSessions[projectPath]?._activeSessionId : null
+    if (!sessionId) return
 
     setBusy(true)
     const toastId = toast.loading(t('sidebar.contextMenu.forkingToast'))
     try {
-      const result = await window.app.forkSession({ sessionId, mode, upToMessageId, dropTrailingTurns })
+      const result = await window.app.forkSession({ sessionId, mode, forkFromMessageId: message.id })
       if (result.ok) {
         await useChatStore.getState().switchSession(result.sessionId)
         toast.success(

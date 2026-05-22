@@ -709,15 +709,11 @@ export interface SessionForkRequest {
   /** Fork target. Defaults to `worktree`. */
   mode?: SessionForkMode
   /**
-   * Claude: SDK assistant message UUID to slice the transcript up to
-   * (inclusive). Omit for a full copy.
+   * Fork the conversation up to and including this message (a `ChatMessage.id`).
+   * Omit for a full copy. The source harness resolves it to a transcript
+   * truncation point.
    */
-  upToMessageId?: string
-  /**
-   * Codex: number of trailing turns to roll back from the forked thread.
-   * Omit or 0 for a full copy.
-   */
-  dropTrailingTurns?: number
+  forkFromMessageId?: string
 }
 
 export type SessionForkResult =

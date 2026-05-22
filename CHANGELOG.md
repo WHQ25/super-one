@@ -4,6 +4,17 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.37.2-alpha] - 2026-05-22
+
+### Added
+
+- Session: fork a session from any earlier message, branching the conversation at that point
+
+### Changed
+
+- Desktop: redesigned app icon with a baseplate and stacked logo
+- UI: removed the focus ring on context and dropdown menus
+
 ## [0.37.1-alpha] - 2026-05-22
 
 ### Added

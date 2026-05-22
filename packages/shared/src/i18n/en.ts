@@ -1132,6 +1132,7 @@ export type Messages = {
     newSession: string
     folderNotFound: string
     rewind: string
+    fork: string
     collapsePermission: string
     worktree: string
     local: string
@@ -2302,6 +2303,7 @@ export const en: Messages = {
     newSession: 'New Session',
     folderNotFound: 'Folder not found: {{path}}',
     rewind: 'Rewind',
+    fork: 'Fork from here',
     collapsePermission: 'Collapse permission request (<kbd>space</kbd> to toggle)',
     worktree: 'Worktree',
     local: 'Local',

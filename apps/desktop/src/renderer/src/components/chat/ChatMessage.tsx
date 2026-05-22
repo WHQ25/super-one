@@ -23,6 +23,7 @@ import {
   resolveMarkdownMedia,
 } from './chat-shared'
 import { RewindButton } from './RewindButton'
+import { ForkButton } from './ForkButton'
 import { useStallLevel, getStallColor } from '@/lib/stall-utils'
 import { tryCopy } from '@/lib/clipboard'
 import { CopyableMarkdown } from './CopyableMarkdown'
@@ -816,6 +817,7 @@ function DurationFooter({ message, copyText, parentIsStreaming }: { message: Cha
   }
 
   const showCopy = !isStreaming && !!copyText
+  const showFork = !isStreaming && message.status !== 'error'
   const terminalReason = message.metadata?.terminalReason
   const showTerminalReason = !isStreaming && !!terminalReason && terminalReason !== 'completed' && message.status !== 'interrupted'
   if (!showDuration && !hasTokens && !showCopy && !showTerminalReason) return null
@@ -828,7 +830,7 @@ function DurationFooter({ message, copyText, parentIsStreaming }: { message: Cha
   const stallColor = isStreaming ? getStallColor(stallLevel) : 'text-muted-foreground'
 
   return (
-    <div className={cn('mt-2 flex items-center gap-1.5 text-[11px] transition-colors duration-500', stallColor)}>
+    <div className={cn('group/footer mt-2 flex items-center gap-1.5 text-[11px] transition-colors duration-500', stallColor)}>
       {showCopy && (
         <button
           onClick={handleCopy}
@@ -862,6 +864,12 @@ function DurationFooter({ message, copyText, parentIsStreaming }: { message: Cha
           <AlertTriangle className="size-3 text-amber-600 dark:text-amber-400" />
           <span className="text-amber-600 dark:text-amber-400">{formatTerminalReason(terminalReason!)}</span>
         </>
+      )}
+      {showFork && (
+        <ForkButton
+          message={message}
+          className="hidden group-hover/footer:block data-[state=open]:block"
+        />
       )}
     </div>
   )

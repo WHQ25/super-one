@@ -797,6 +797,7 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
           const result = msg as any
           log.debug(`[iterateMessages] result subtype=${result.subtype} session_id=${result.session_id ?? '(none)'}`)
           const metadata = buildResultMetadata(result, getCurrentStartTime(), timing.pausedMs, lastAssistantUsage)
+          if (lastTopLevelAssistantUuid) metadata.forkAnchorId = lastTopLevelAssistantUuid
 
           try {
             if (metadata.modelUsage && Object.keys(metadata.modelUsage).length > 0) {

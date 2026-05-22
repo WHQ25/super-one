@@ -316,6 +316,8 @@ export interface MessageMetadata {
   errorSubtype?: string
   structuredOutput?: unknown
   isError?: boolean
+  /** SDK assistant message UUID of this turn — anchor for forking at this message. */
+  forkAnchorId?: string
 }
 
 // --- Todo items (derived from TaskCreate/TaskUpdate tool calls) ---
@@ -706,6 +708,16 @@ export interface SessionForkRequest {
   sessionId: string
   /** Fork target. Defaults to `worktree`. */
   mode?: SessionForkMode
+  /**
+   * Claude: SDK assistant message UUID to slice the transcript up to
+   * (inclusive). Omit for a full copy.
+   */
+  upToMessageId?: string
+  /**
+   * Codex: number of trailing turns to roll back from the forked thread.
+   * Omit or 0 for a full copy.
+   */
+  dropTrailingTurns?: number
 }
 
 export type SessionForkResult =

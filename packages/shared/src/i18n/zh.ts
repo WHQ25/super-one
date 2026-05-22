@@ -1146,6 +1146,7 @@ export const zh: Messages = {
     newSession: '新建会话',
     folderNotFound: '文件夹未找到：{{path}}',
     rewind: '回溯',
+    fork: '从此处 Fork',
     collapsePermission: '折叠权限请求（按 <kbd>space</kbd> 切换）',
     worktree: 'Worktree',
     local: '本地',

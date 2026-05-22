@@ -10,6 +10,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 - Session: fork a session from any earlier message, branching the conversation at that point
 
+### Fixed
+
+- Codex: the MCP stdio bridge now shuts down when its parent Codex process exits, fixing an orphaned process that leaked ~125MB per Codex session restart
+
 ### Changed
 
 - Desktop: redesigned app icon with a baseplate and stacked logo

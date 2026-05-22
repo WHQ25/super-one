@@ -11,6 +11,7 @@ import {
 } from '@superone/ui/components/ui/dropdown-menu'
 import { initAnalytics, shutdownAnalytics } from '@/lib/analytics'
 import { applyCrispText } from '@/lib/font-smoothing'
+import { processAppIcon } from '@/lib/app-icon-image'
 import { changeLocale } from '@/i18n'
 import type { Locale } from '@superone/shared/agent-types'
 
@@ -18,6 +19,9 @@ export function AppSettingsPage() {
   const { t, i18n } = useTranslation()
   const [analyticsEnabled, setAnalyticsEnabled] = useState(false)
   const [crispText, setCrispText] = useState(true)
+  const [customAppIconPath, setCustomAppIconPath] = useState<string | null>(null)
+  const [iconDataUri, setIconDataUri] = useState<string | null>(null)
+  const [iconBusy, setIconBusy] = useState(false)
   const [loading, setLoading] = useState(true)
   const [savingLocale, setSavingLocale] = useState(false)
   const isMac = window.app.platform === 'darwin'
@@ -28,10 +32,55 @@ export function AppSettingsPage() {
       if (!mounted) return
       setAnalyticsEnabled(settings.analyticsEnabled)
       setCrispText(settings.crispText)
+      setCustomAppIconPath(settings.customAppIconPath)
       setLoading(false)
     })
     return () => { mounted = false }
   }, [])
+
+  useEffect(() => {
+    if (!customAppIconPath) {
+      setIconDataUri(null)
+      return
+    }
+    let mounted = true
+    window.app.readFileAsDataUri(customAppIconPath).then((result) => {
+      if (mounted) setIconDataUri(result.ok ? result.dataUri : null)
+    })
+    return () => { mounted = false }
+  }, [customAppIconPath])
+
+  async function handlePickIcon() {
+    if (iconBusy) return
+    setIconBusy(true)
+    try {
+      const filePath = await window.app.pickAppIconFile()
+      if (!filePath) return
+      const read = await window.app.readFileAsDataUri(filePath)
+      if (!read.ok) {
+        toast.error(read.error)
+        return
+      }
+      const processed = await processAppIcon(read.dataUri, isMac)
+      const result = await window.app.setAppIcon(processed)
+      setCustomAppIconPath(result.customAppIconPath)
+      toast.success(t('settings.general.appIcon.updated'))
+    } finally {
+      setIconBusy(false)
+    }
+  }
+
+  async function handleResetIcon() {
+    if (iconBusy) return
+    setIconBusy(true)
+    try {
+      const result = await window.app.resetAppIcon()
+      setCustomAppIconPath(result.customAppIconPath)
+      toast.success(t('settings.general.appIcon.resetDone'))
+    } finally {
+      setIconBusy(false)
+    }
+  }
 
   async function handleCrispTextToggle(enabled: boolean) {
     applyCrispText(enabled)
@@ -121,6 +170,37 @@ export function AppSettingsPage() {
                 disabled={loading}
               />
             </div>
+          )}
+          {import.meta.env.DEV && (
+          <div className="flex items-center justify-between gap-4 border-t border-border p-4">
+            <div className="min-w-0">
+              <p className="text-sm font-medium">{t('settings.general.appIcon.label')}</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {t('settings.general.appIcon.description')}
+              </p>
+            </div>
+            <div className="flex shrink-0 items-center gap-3">
+              {iconDataUri && (
+                <img src={iconDataUri} alt="" className="size-10 object-contain" />
+              )}
+              {customAppIconPath && (
+                <button
+                  onClick={handleResetIcon}
+                  disabled={loading || iconBusy}
+                  className="text-xs text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {t('settings.general.appIcon.reset')}
+                </button>
+              )}
+              <button
+                onClick={handlePickIcon}
+                disabled={loading || iconBusy}
+                className="rounded-md border border-border bg-background px-3 py-1.5 text-sm transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {t('settings.general.appIcon.choose')}
+              </button>
+            </div>
+          </div>
           )}
         </div>
 

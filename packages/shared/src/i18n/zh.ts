@@ -178,6 +178,14 @@ export const zh: Messages = {
         chinese: '中文',
         updated: '语言已更新',
       },
+      appIcon: {
+        label: '应用图标',
+        description: '为 Dock 和任务栏使用自定义图标。Launchpad 中显示的图标会在重启后更新。',
+        choose: '选择…',
+        reset: '恢复默认',
+        updated: '应用图标已更新',
+        resetDone: '应用图标已恢复默认',
+      },
     },
     preferences: {
       title: '偏好设置',

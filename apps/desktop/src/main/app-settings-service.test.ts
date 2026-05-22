@@ -50,6 +50,7 @@ describe('app-settings-service', () => {
     locale: '',
     updateChannel: null,
     miniAppOrder: {},
+    customAppIconPath: null,
     agentPreference: {
       claude: defaultClaude,
       codex: defaultCodex,
@@ -84,6 +85,7 @@ describe('app-settings-service', () => {
         locale: '',
         updateChannel: null,
         miniAppOrder: {},
+        customAppIconPath: null,
         agentPreference: {
           claude: {
             defaultModel: 'claude-sonnet-4-6',
@@ -149,6 +151,7 @@ describe('app-settings-service', () => {
         locale: '',
         updateChannel: null,
         miniAppOrder: {},
+        customAppIconPath: null,
         agentPreference: {
           claude: defaultClaude,
           codex: {
@@ -307,6 +310,31 @@ describe('app-settings-service', () => {
       mocks.readFileSync.mockReturnValue(JSON.stringify({ updateChannel: 'alpha' }))
       const result = saveAppSettings({ updateChannel: null })
       expect(result.updateChannel).toBeNull()
+    })
+
+    it('persists customAppIconPath round-trip', () => {
+      mocks.readFileSync.mockImplementation(fileNotFound)
+      saveAppSettings({ customAppIconPath: '/mock-user-data/custom-app-icon.png' })
+      const written = mocks.writeFileSync.mock.calls[0][1] as string
+      mocks.readFileSync.mockReturnValue(written)
+      expect(readAppSettings().customAppIconPath).toBe('/mock-user-data/custom-app-icon.png')
+    })
+
+    it('resets customAppIconPath back to null when patch passes null', () => {
+      mocks.readFileSync.mockReturnValue(JSON.stringify({ customAppIconPath: '/some/icon.png' }))
+      const result = saveAppSettings({ customAppIconPath: null })
+      expect(result.customAppIconPath).toBeNull()
+    })
+
+    it('falls back to null when stored customAppIconPath is not a string', () => {
+      mocks.readFileSync.mockReturnValue(JSON.stringify({ customAppIconPath: 123 }))
+      expect(readAppSettings().customAppIconPath).toBeNull()
+    })
+
+    it('preserves customAppIconPath when an unrelated patch is saved', () => {
+      mocks.readFileSync.mockReturnValue(JSON.stringify({ customAppIconPath: '/some/icon.png' }))
+      const result = saveAppSettings({ analyticsEnabled: false })
+      expect(result.customAppIconPath).toBe('/some/icon.png')
     })
   })
 })

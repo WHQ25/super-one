@@ -1697,6 +1697,9 @@ export const AgentIpcChannels = {
   APP_SETTINGS_CHANGED: 'app:settings-changed',
   APP_SYSTEM_LOCALE: 'app:system-locale',
   APP_LOCALE_CHANGED: 'app:locale-changed',
+  APP_ICON_PICK_FILE: 'app:icon-pick-file',
+  APP_ICON_SET: 'app:icon-set',
+  APP_ICON_RESET: 'app:icon-reset',
 
   // Usage statistics
   USAGE_QUERY: 'app:usage:query',
@@ -1985,6 +1988,7 @@ export interface AppSettings {
   locale: Locale | ''
   updateChannel: UpdateChannel | null
   miniAppOrder: Record<string, string[]>
+  customAppIconPath: string | null
   agentPreference: {
     claude: {
       defaultModel: string
@@ -2010,6 +2014,7 @@ export interface AppSettingsPatch {
   locale?: Locale | ''
   updateChannel?: UpdateChannel | null
   miniAppOrder?: Record<string, string[]>
+  customAppIconPath?: string | null
   agentPreference?: {
     claude?: Partial<AppSettings['agentPreference']['claude']>
     codex?: Partial<AppSettings['agentPreference']['codex']>

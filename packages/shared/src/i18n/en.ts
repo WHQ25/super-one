@@ -164,6 +164,14 @@ export type Messages = {
         chinese: string
         updated: string
       }
+      appIcon: {
+        label: string
+        description: string
+        choose: string
+        reset: string
+        updated: string
+        resetDone: string
+      }
     }
     preferences: {
       title: string
@@ -1334,6 +1342,14 @@ export const en: Messages = {
         english: 'English',
         chinese: '中文',
         updated: 'Language updated',
+      },
+      appIcon: {
+        label: 'App Icon',
+        description: 'Use a custom icon for the Dock and taskbar. The icon shown in Launchpad updates after a restart.',
+        choose: 'Choose…',
+        reset: 'Reset to default',
+        updated: 'App icon updated',
+        resetDone: 'App icon reset to default',
       },
     },
     preferences: {

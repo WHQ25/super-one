@@ -7,6 +7,10 @@ files:
   - out/**/*
   - "!node_modules/@img/sharp-*"
 
+extraResources:
+  - from: build/icon.png
+    to: icon.png
+
 afterPack: "./build/afterPack.cjs"
 
 asarUnpack:

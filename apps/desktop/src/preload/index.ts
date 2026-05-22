@@ -663,6 +663,12 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.APP_SETTINGS_GET),
   saveAppSettings: (patch: Record<string, unknown>) =>
     ipcRenderer.invoke(AgentIpcChannels.APP_SETTINGS_SAVE, patch),
+  pickAppIconFile: () =>
+    ipcRenderer.invoke(AgentIpcChannels.APP_ICON_PICK_FILE),
+  setAppIcon: (pngDataUri: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.APP_ICON_SET, pngDataUri),
+  resetAppIcon: () =>
+    ipcRenderer.invoke(AgentIpcChannels.APP_ICON_RESET),
   onAppSettingsChange: (callback: (settings: unknown) => void) => {
     const handler = (_e: Electron.IpcRendererEvent, settings: unknown): void => {
       callback(settings)

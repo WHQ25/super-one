@@ -79,7 +79,8 @@ import { readProjectPreferences, saveProjectPreferences } from './claude-prefere
 import { readAppSettings, saveAppSettings } from './app-settings-service'
 import { getSandboxCapability, probeSandboxDependencies } from './sandbox-platform'
 import { ProcessTitle, WindowRole, roleArg } from './process-titles'
-import { applyLocale, getSystemLocale, getCurrentLocale, initMainI18n } from './i18n'
+import { applyLocale, getSystemLocale, getCurrentLocale, initMainI18n, t } from './i18n'
+import { applyAppIcon, clearStoredCustomIcons, getAppIcon, storeCustomIcon } from './app-icon'
 import type { RemoteCommand, PairedDevice, CreateAutomationRequest, RemoteDeviceConfig, UpdateAutomationRequest, ChatMessageContext, ContentBlock, WorktreeActivateRequest } from '@superone/shared/agent-types'
 import { buildRemoteActiveProvider, providerSupportsHarness } from '@superone/shared/provider-utils'
 import type { RemoteControlCallbacks } from './remote-control-service'
@@ -311,6 +312,7 @@ function createWindow(): void {
     minHeight: 700,
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 16, y: 16 },
+    icon: getAppIcon() ?? undefined,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: true,
@@ -402,6 +404,7 @@ function createSessionWindow(projectPath: string, sessionId: string, title?: str
     title: title ?? 'Session',
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 12, y: 12 },
+    icon: getAppIcon() ?? undefined,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: true,
@@ -1658,6 +1661,37 @@ function registerIpcHandlers(): void {
   })
   ipcMain.handle(AgentIpcChannels.APP_SYSTEM_LOCALE, () => getSystemLocale())
 
+  if (is.dev) {
+  ipcMain.handle(AgentIpcChannels.APP_ICON_PICK_FILE, async () => {
+    const result = await dialog.showOpenDialog(getMainWindow(), {
+      title: t('settings.general.appIcon.label'),
+      properties: ['openFile'],
+      filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg'] }],
+    })
+    if (result.canceled || result.filePaths.length === 0) return null
+    return result.filePaths[0]
+  })
+
+  ipcMain.handle(AgentIpcChannels.APP_ICON_SET, (_e, pngDataUri: string) => {
+    const match = /^data:image\/png;base64,(.+)$/.exec(pngDataUri ?? '')
+    if (!match) throw new Error('App icon must be a PNG data URI')
+    const buffer = Buffer.from(match[1], 'base64')
+    const storedPath = storeCustomIcon(buffer)
+    const settings = saveAppSettings({ customAppIconPath: storedPath })
+    applyAppIcon(storedPath, allWindows)
+    safeSend(AgentIpcChannels.APP_SETTINGS_CHANGED, settings)
+    return settings
+  })
+
+  ipcMain.handle(AgentIpcChannels.APP_ICON_RESET, () => {
+    clearStoredCustomIcons()
+    const settings = saveAppSettings({ customAppIconPath: null })
+    applyAppIcon(null, allWindows)
+    safeSend(AgentIpcChannels.APP_SETTINGS_CHANGED, settings)
+    return settings
+  })
+  }
+
   ipcMain.handle(AgentIpcChannels.SET_FAST_MODE, (_e, enabled: boolean) => {
     const settingsPath = join(homedir(), '.claude', 'settings.json')
     let data: Record<string, unknown> = {}
@@ -2314,6 +2348,7 @@ app.whenReady().then(async () => {
   })
 
   createWindow()
+  applyAppIcon(readAppSettings().customAppIconPath, allWindows)
   initUpdater(mainWindow!, readAppSettings().updateChannel)
 
   let devUpdateToggle = false

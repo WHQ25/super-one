@@ -204,6 +204,9 @@ interface AppAPI {
   setFastMode(enabled: boolean): Promise<void>
   getAppSettings(): Promise<AppSettings>
   saveAppSettings(patch: AppSettingsPatch): Promise<AppSettings>
+  pickAppIconFile(): Promise<string | null>
+  setAppIcon(pngDataUri: string): Promise<AppSettings>
+  resetAppIcon(): Promise<AppSettings>
   onAppSettingsChange(callback: (settings: AppSettings) => void): () => void
   getSystemLocale(): Promise<string>
   onLocaleChanged(callback: (locale: Locale) => void): () => void

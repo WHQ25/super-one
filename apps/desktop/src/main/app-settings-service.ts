@@ -15,6 +15,7 @@ const defaults: AppSettings = {
   locale: '',
   updateChannel: null,
   miniAppOrder: {},
+  customAppIconPath: null,
   agentPreference: {
     claude: {
       defaultModel: '',
@@ -141,6 +142,7 @@ export function readAppSettings(): AppSettings {
       locale: data.locale === '' || isLocale(data.locale) ? data.locale : defaults.locale,
       updateChannel: data.updateChannel === null || isUpdateChannel(data.updateChannel) ? data.updateChannel : defaults.updateChannel,
       miniAppOrder: readMiniAppOrder(data.miniAppOrder),
+      customAppIconPath: typeof data.customAppIconPath === 'string' ? data.customAppIconPath : defaults.customAppIconPath,
       agentPreference: {
         claude: readClaudePreference(data),
         codex: readCodexPreference(data),
@@ -153,6 +155,7 @@ export function readAppSettings(): AppSettings {
       locale: defaults.locale,
       updateChannel: defaults.updateChannel,
       miniAppOrder: {},
+      customAppIconPath: defaults.customAppIconPath,
       agentPreference: {
         claude: { ...defaults.agentPreference.claude },
         codex: { ...defaults.agentPreference.codex },
@@ -171,6 +174,7 @@ export function saveAppSettings(patch: AppSettingsPatch): AppSettings {
     miniAppOrder: patch.miniAppOrder
       ? { ...current.miniAppOrder, ...patch.miniAppOrder }
       : current.miniAppOrder,
+    customAppIconPath: patch.customAppIconPath === undefined ? current.customAppIconPath : patch.customAppIconPath,
     agentPreference: {
       claude: {
         ...current.agentPreference.claude,

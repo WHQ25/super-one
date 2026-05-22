@@ -4,6 +4,17 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.37.1-alpha] - 2026-05-22
+
+### Added
+
+- Session: fork a session into a local checkout, with both worktree and local fork options surfaced in the context menu
+
+### Changed
+
+- Sidebar: session history is now a dedicated in-sidebar panel
+- Desktop: updated app icon
+
 ## [0.37.0-alpha] - 2026-05-22
 
 ### Added

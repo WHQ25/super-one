@@ -4,6 +4,12 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.37.3-alpha] - 2026-05-23
+
+### Fixed
+
+- Desktop: rebuilt the app icon with a rounded baseplate and corrected grid alignment
+
 ## [0.37.2-alpha] - 2026-05-22
 
 ### Added

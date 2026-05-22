@@ -8,6 +8,7 @@ import {
   SUPERONE_MCP_IPC_TOKEN_ENV,
   SUPERONE_MCP_SESSION_ID_ENV,
 } from './superone-mcp-stdio-env'
+import { wireBridgeShutdown } from './superone-mcp-stdio-shutdown'
 import type { SuperoneMcpToolDescriptor } from './superone-mcp-types'
 
 type RequestId = number
@@ -219,13 +220,12 @@ async function main(): Promise<void> {
     })
   }
 
-  ipc.onClose = () => {
-    process.exit(0)
-  }
-
   await refreshTools(false)
-  await server.connect(new StdioServerTransport())
+  const transport = new StdioServerTransport()
+  await server.connect(transport)
   connected = true
+
+  wireBridgeShutdown({ stdin: process.stdin, transport, ipc, exit: () => process.exit(0) })
 }
 
 main().catch((err) => {

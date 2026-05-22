@@ -27,4 +27,9 @@
   textarea:focus-visible {
     box-shadow: none;
   }
+
+  [data-slot^="context-menu"]:not([data-slot="context-menu-trigger"]):focus-visible,
+  [data-slot^="dropdown-menu"]:not([data-slot="dropdown-menu-trigger"]):focus-visible {
+    box-shadow: none;
+  }
 }

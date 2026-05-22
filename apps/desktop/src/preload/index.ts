@@ -793,7 +793,7 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.GIT_HANDOFF_TO_LOCAL, worktreePath) as Promise<WorktreeHandoffResult>,
   getHandoffPreview: (worktreePath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.GIT_HANDOFF_PREVIEW, worktreePath) as Promise<GitDirtyStatus | null>,
-  forkSessionToWorktree: (request: SessionForkRequest) =>
+  forkSession: (request: SessionForkRequest) =>
     ipcRenderer.invoke(AgentIpcChannels.SESSIONS_FORK, request) as Promise<SessionForkResult>,
   getGitStatusFiles: (folderPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.GIT_STATUS_FILES, folderPath),

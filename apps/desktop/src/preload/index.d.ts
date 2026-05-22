@@ -260,7 +260,7 @@ interface AppAPI {
   switchToExistingWorktree(folderPath: string, wtPath: string, gitBranch: string | null): Promise<{ ok: true } | { ok: false; error: string }>
   handoffToLocal(worktreePath: string): Promise<WorktreeHandoffResult>
   getHandoffPreview(worktreePath: string): Promise<GitDirtyStatus | null>
-  forkSessionToWorktree(request: SessionForkRequest): Promise<SessionForkResult>
+  forkSession(request: SessionForkRequest): Promise<SessionForkResult>
   getGitStatusFiles(folderPath: string): Promise<GitStatusFile[]>
   getGitLog(folderPath: string, query?: string): Promise<GitLogEntry[]>
   getGitDiffFile(folderPath: string, filePath: string, staged: boolean): Promise<GitFileDiff>

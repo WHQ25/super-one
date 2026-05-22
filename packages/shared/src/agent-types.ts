@@ -694,14 +694,22 @@ export type WorktreeHandoffResult =
   | { ok: true }
   | { ok: false; reason: 'not-worktree' | 'no-changes' | 'local-dirty' | 'conflict' | 'error'; error?: string }
 
-/** Fork a session's conversation into a brand-new worktree running an independent session. */
+/**
+ * Fork target. `worktree` branches into a fresh detached git worktree;
+ * `local` branches in place, sharing the source session's working directory.
+ */
+export type SessionForkMode = 'worktree' | 'local'
+
+/** Fork a session's conversation into a new independent session. */
 export interface SessionForkRequest {
   /** SuperOne session id of the source session to fork. */
   sessionId: string
+  /** Fork target. Defaults to `worktree`. */
+  mode?: SessionForkMode
 }
 
 export type SessionForkResult =
-  | { ok: true; sessionId: string; worktreePath: string }
+  | { ok: true; sessionId: string; worktreePath?: string }
   | { ok: false; error: string }
 
 // --- Main → Renderer push events ---

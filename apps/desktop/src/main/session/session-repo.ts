@@ -360,14 +360,15 @@ export interface ForkSessionRecordInput {
   sourceId: string
   newId: string
   providerSessionId: string
-  worktreePath: string
-  /** Branch of the forked worktree, or null when it is checked out detached. */
+  /** Worktree directory of the fork, or null for a local fork in the main repo. */
+  worktreePath: string | null
+  /** Branch of the forked worktree, or null when detached / a local fork. */
   gitBranch: string | null
   title: string
 }
 
 /**
- * Copy a session's row + messages into a new session id (fork-to-worktree).
+ * Copy a session's row + messages into a new session id (session fork).
  *
  * - Messages get fresh ids — `chat_messages.id` is a global PK, so reusing the
  *   source ids would re-parent the source's rows on the next upsert.
@@ -395,7 +396,7 @@ export function forkSessionRecord(input: ForkSessionRecordInput): void {
       id, project_id, provider_id, provider, provider_session_id, title,
       created_at, last_user_message_at, total_cost_usd, context_tokens,
       is_worktree, git_branch, worktree_path, api_provider_id, usage_counted_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 1, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)
   `)
   const insMsg = db.prepare(`
     INSERT INTO chat_messages (id, session_id, sort_order, role, status, content_json, created_at, provider_id, metadata_json, usage_counted_at)
@@ -406,7 +407,7 @@ export function forkSessionRecord(input: ForkSessionRecordInput): void {
     insSession.run(
       input.newId, source.projectId, source.providerId, legacyProvider,
       input.providerSessionId, input.title, now, lastUserAt, source.contextTokens,
-      input.gitBranch, input.worktreePath, source.apiProviderId, now,
+      input.worktreePath ? 1 : 0, input.gitBranch, input.worktreePath, source.apiProviderId, now,
     )
     srcMsgs.forEach((m, i) => {
       insMsg.run(

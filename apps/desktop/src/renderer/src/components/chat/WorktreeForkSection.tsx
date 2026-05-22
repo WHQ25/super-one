@@ -37,7 +37,7 @@ export function WorktreeForkSection({ sessionId, cwd, onForked }: WorktreeForkSe
     if (busy) return
     setBusy(true)
     setError(null)
-    const result = await window.app.forkSessionToWorktree({ sessionId })
+    const result = await window.app.forkSession({ sessionId, mode: 'worktree' })
     if (result.ok) {
       await useChatStore.getState().switchSession(result.sessionId)
       onForked()

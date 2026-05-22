@@ -18,6 +18,7 @@ import {
   deleteSessionRecord,
   saveSessionStateBySid,
   loadSessionStateBySid,
+  forkSessionRecord,
 } from './session-repo'
 
 interface SessionRow {
@@ -71,6 +72,20 @@ function makeFakeDb() {
               provider_session_id: null,
               total_cost_usd: 0, context_tokens: 0,
               is_worktree: 0, git_branch: null, worktree_path: null,
+              is_pinned: 0, is_hidden: 0,
+            })
+          },
+        }
+      }
+      if (/^INSERT INTO sessions \( id, project_id, provider_id, provider, provider_session_id/.test(sql)) {
+        return {
+          run: (id: string, projectId: string, providerId: string, provider: string, providerSessionId: string, title: string | null, createdAt: string, lastUserMsg: string, contextTokens: number, isWorktree: number, gitBranch: string | null, worktreePath: string | null) => {
+            sessionsRows.set(id, {
+              id, project_id: projectId, provider_id: providerId, provider,
+              provider_session_id: providerSessionId, title,
+              created_at: createdAt, last_user_message_at: lastUserMsg,
+              total_cost_usd: 0, context_tokens: contextTokens ?? 0,
+              is_worktree: isWorktree, git_branch: gitBranch, worktree_path: worktreePath,
               is_pinned: 0, is_hidden: 0,
             })
           },
@@ -395,6 +410,30 @@ describe('session-repo', () => {
       expect(loaded!.record.isWorktree).toBe(false)
       expect(loaded!.record.worktreePath).toBeNull()
       expect(loaded!.record.gitBranch).toBeNull()
+    })
+  })
+
+  describe('forkSessionRecord', () => {
+    it('marks a worktree fork is_worktree=1 and records the worktree path', () => {
+      insertSessionRecord({ id: 'src-wt', projectPath: '/tmp/proj', providerId: 'claude-base' })
+      forkSessionRecord({
+        sourceId: 'src-wt', newId: 'fork-wt', providerSessionId: 'sdk-wt',
+        worktreePath: '/tmp/proj/.worktrees/abc', gitBranch: null, title: 'Demo (fork)',
+      })
+      const row = fake.sessionsRows.get('fork-wt')
+      expect(row?.is_worktree).toBe(1)
+      expect(row?.worktree_path).toBe('/tmp/proj/.worktrees/abc')
+    })
+
+    it('marks a local fork is_worktree=0 with no worktree path', () => {
+      insertSessionRecord({ id: 'src-local', projectPath: '/tmp/proj', providerId: 'claude-base' })
+      forkSessionRecord({
+        sourceId: 'src-local', newId: 'fork-local', providerSessionId: 'sdk-local',
+        worktreePath: null, gitBranch: null, title: 'Demo (fork)',
+      })
+      const row = fake.sessionsRows.get('fork-local')
+      expect(row?.is_worktree).toBe(0)
+      expect(row?.worktree_path).toBeNull()
     })
   })
 })

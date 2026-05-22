@@ -8,6 +8,7 @@ import {
   Copy,
   EyeOff,
   FolderOpen,
+  GitFork,
   History,
   Link,
   MessageSquarePlus,
@@ -169,6 +170,9 @@ export const SESSION_ROW_CONTEXT_MENU: ContextMenuEntry[] = [
   { kind: "item", icon: <Copy className={SIZE} />, label: "Copy Session ID", labelKey: "sidebar.contextMenu.copySessionId" },
   { kind: "item", icon: <Copy className={SIZE} />, label: "Copy Working Directory", labelKey: "sidebar.contextMenu.copyWorkingDirectory" },
   { kind: "item", icon: <FolderOpen className={SIZE} />, label: "Open Folder", labelKey: "sidebar.contextMenu.openFolder" },
+  { kind: "separator" },
+  { kind: "item", icon: <GitFork className={SIZE} />, label: "Fork to New Worktree", labelKey: "sidebar.contextMenu.forkToWorktree" },
+  { kind: "item", icon: <GitFork className={SIZE} />, label: "Fork to Local", labelKey: "sidebar.contextMenu.forkToLocal" },
   { kind: "separator" },
   { kind: "item", icon: <Trash2 className={SIZE} />, label: "Delete", labelKey: "sidebar.contextMenu.delete", variant: "destructive" },
 ]

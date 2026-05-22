@@ -78,6 +78,11 @@ export type Messages = {
       copyWorkingDirectory: string
       openFolder: string
       openInMiniWindow: string
+      forkToWorktree: string
+      forkToLocal: string
+      forkingToast: string
+      forkedToast: string
+      forkedLocalToast: string
       sessionIdCopiedToast: string
       sessionIdNotReadyToast: string
       workingDirCopiedToast: string
@@ -1229,6 +1234,11 @@ export const en: Messages = {
       copyWorkingDirectory: 'Copy Working Directory',
       openFolder: 'Open Folder',
       openInMiniWindow: 'Open in Mini Window',
+      forkToWorktree: 'Fork to New Worktree',
+      forkToLocal: 'Fork to Local',
+      forkingToast: 'Forking session…',
+      forkedToast: 'Forked to a new worktree',
+      forkedLocalToast: 'Forked in the current folder',
       sessionIdCopiedToast: 'Session ID Copied',
       sessionIdNotReadyToast: 'Session ID not ready — copied internal id',
       workingDirCopiedToast: 'Working Directory Copied',

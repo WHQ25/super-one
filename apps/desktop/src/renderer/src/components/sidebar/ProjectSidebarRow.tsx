@@ -13,7 +13,7 @@ import { MiniAppWorkerGroup } from './MiniAppWorkerGroup'
 import { cn } from '@superone/ui/lib/utils'
 import { homePath } from '@/lib/path-utils'
 import { useStallLevel, getStallColor } from '@/lib/stall-utils'
-import type { Automation, RecentFolder, SessionHistoryEntry } from '@superone/shared/agent-types'
+import type { Automation, RecentFolder, SessionForkMode, SessionHistoryEntry } from '@superone/shared/agent-types'
 import { getPendingReason, getSessionTitle, isLiveSession } from './session-state-utils'
 import { SessionTitleAnimated } from './AnimatedSessionTitle'
 import { AutomationDialog } from '../AutomationDialog'
@@ -173,6 +173,24 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
     setEditingAutomation(automation)
     setAutomationDialogOpen(true)
   }, [])
+
+  const handleForkSession = useCallback(async (sessionId: string, mode: SessionForkMode) => {
+    const toastId = toast.loading(t('sidebar.contextMenu.forkingToast'))
+    try {
+      const result = await window.app.forkSession({ sessionId, mode })
+      if (result.ok) {
+        onSwitchSession(folder.path, result.sessionId)
+        toast.success(
+          t(mode === 'local' ? 'sidebar.contextMenu.forkedLocalToast' : 'sidebar.contextMenu.forkedToast'),
+          { id: toastId },
+        )
+      } else {
+        toast.error(result.error, { id: toastId })
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err), { id: toastId })
+    }
+  }, [t, onSwitchSession, folder.path])
 
   return (
     <div>
@@ -478,6 +496,25 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
                           {t('sidebar.contextMenu.openFolder')}
                         </ContextMenuItem>
                         <ContextMenuSeparator />
+                        {!session.isWorktree && (
+                          <>
+                            <ContextMenuItem
+                              onClick={() => handleForkSession(session.sessionId, 'worktree')}
+                              className="text-xs"
+                            >
+                              <GitFork className="size-3.5" />
+                              {t('sidebar.contextMenu.forkToWorktree')}
+                            </ContextMenuItem>
+                            <ContextMenuItem
+                              onClick={() => handleForkSession(session.sessionId, 'local')}
+                              className="text-xs"
+                            >
+                              <GitFork className="size-3.5" />
+                              {t('sidebar.contextMenu.forkToLocal')}
+                            </ContextMenuItem>
+                            <ContextMenuSeparator />
+                          </>
+                        )}
                         <ContextMenuItem
                           variant="destructive"
                           onClick={() => onDeleteSession({

@@ -56,7 +56,7 @@ import { backupMcpServers, listLibrary, deleteLibraryEntry, getLibraryEntry } fr
 import { uninstallMcpbBundle } from '../mcpb/mcpb-installer'
 import { getAllProviders, createProvider, updateProvider, deleteProvider, activateProvider, deactivateAllProviders } from '../database'
 import type { CreateProviderRequest, UpdateProviderRequest, HookSavePayload, SessionForkRequest } from '@superone/shared/agent-types'
-import { forkSessionToWorktree } from '../session/session-fork'
+import { forkSession } from '../session/session-fork'
 
 export class AgentService {
   private mainWindow: BrowserWindow | null = null
@@ -2164,7 +2164,7 @@ export class AgentService {
     })
 
     ipcMain.handle(AgentIpcChannels.SESSIONS_FORK, async (_event, request: SessionForkRequest) => {
-      const result = await forkSessionToWorktree(request)
+      const result = await forkSession(request)
       if (result.ok) {
         this.mainWindow && !this.mainWindow.isDestroyed() && this.mainWindow.webContents.send(AgentIpcChannels.SESSIONS_CHANGED)
       }

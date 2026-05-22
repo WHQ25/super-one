@@ -2144,6 +2144,7 @@ export class AgentService {
       } else {
         dbRenameSession(sessionId, title, 'user')
       }
+      this.emitSessionsChanged()
     })
 
     ipcMain.handle(AgentIpcChannels.SESSIONS_LOAD_STATE, (_event, sessionId: string) => {
@@ -2152,13 +2153,13 @@ export class AgentService {
 
     ipcMain.handle(AgentIpcChannels.SESSIONS_DELETE, (_event, sessionId: string) => {
       dbDeleteSession(sessionId)
-      this.mainWindow && !this.mainWindow.isDestroyed() && this.mainWindow.webContents.send(AgentIpcChannels.SESSIONS_CHANGED)
+      this.emitSessionsChanged()
     })
 
     ipcMain.handle(AgentIpcChannels.SESSIONS_DELETE_OLDER, (_event, folderPath: string, cutoffDate: string) => {
       const deleted = dbDeleteSessionsOlderThan(folderPath, cutoffDate)
       if (deleted.length > 0) {
-        this.mainWindow && !this.mainWindow.isDestroyed() && this.mainWindow.webContents.send(AgentIpcChannels.SESSIONS_CHANGED)
+        this.emitSessionsChanged()
       }
       return deleted
     })
@@ -2166,22 +2167,30 @@ export class AgentService {
     ipcMain.handle(AgentIpcChannels.SESSIONS_FORK, async (_event, request: SessionForkRequest) => {
       const result = await forkSession(request)
       if (result.ok) {
-        this.mainWindow && !this.mainWindow.isDestroyed() && this.mainWindow.webContents.send(AgentIpcChannels.SESSIONS_CHANGED)
+        this.emitSessionsChanged()
       }
       return result
     })
 
     ipcMain.handle(AgentIpcChannels.SESSIONS_PIN, (_event, sessionId: string, pinned: boolean) => {
       dbPinSession(sessionId, pinned)
+      this.emitSessionsChanged()
     })
 
     ipcMain.handle(AgentIpcChannels.SESSIONS_HIDE, (_event, sessionId: string, hidden: boolean) => {
       dbHideSession(sessionId, hidden)
+      this.emitSessionsChanged()
     })
 
     ipcMain.handle(AgentIpcChannels.SESSIONS_LIST_PINNED, () => {
       return listPinnedSessions()
     })
+  }
+
+  private emitSessionsChanged(): void {
+    if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+      this.mainWindow.webContents.send(AgentIpcChannels.SESSIONS_CHANGED)
+    }
   }
 
   async switchCwd(projectPath: string, newCwd: string, gitBranch?: string | null): Promise<void> {

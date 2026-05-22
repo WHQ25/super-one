@@ -70,10 +70,12 @@ export type Messages = {
       noSessions: string
       showMore: string
       showLess: string
+      searchSessions: string
       rename: string
       pin: string
       unpin: string
       hide: string
+      unhide: string
       copySessionId: string
       copyWorkingDirectory: string
       openFolder: string
@@ -1226,10 +1228,12 @@ export const en: Messages = {
       noSessions: 'No sessions',
       showMore: 'Show more',
       showLess: 'Show less',
+      searchSessions: 'Search sessions…',
       rename: 'Rename',
       pin: 'Pin',
       unpin: 'Unpin',
       hide: 'Hide',
+      unhide: 'Unhide',
       copySessionId: 'Copy Session ID',
       copyWorkingDirectory: 'Copy Working Directory',
       openFolder: 'Open Folder',

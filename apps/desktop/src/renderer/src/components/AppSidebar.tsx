@@ -21,7 +21,7 @@ import {
   DialogTitle,
 } from '@superone/ui/components/ui/dialog'
 import { useChatStore } from '@/stores/chat'
-import { useAppStore, useHasRealProject, type SidebarTab } from '@/stores/app'
+import { useAppStore, type SidebarTab } from '@/stores/app'
 import { useShallow } from 'zustand/react/shallow'
 import { useFullscreen } from '@/hooks/useFullscreen'
 import { useRemoteStatus } from '@/hooks/useRemoteStatus'
@@ -34,7 +34,6 @@ import { SessionTitleAnimated } from '@/components/sidebar/AnimatedSessionTitle'
 import { traceSidebar, useSidebarRenderTrace } from '@/components/sidebar/sidebar-trace'
 import type { RecentFolder, SessionHistoryEntry, PinnedSessionEntry } from '@superone/shared/agent-types'
 import { getDeleteSessionRecovery, shouldSkipDeleteConfirm, setSkipDeleteConfirm } from './session-delete-helpers'
-import { openHistoryTab } from '@/components/activity/activity-panel-api'
 import { LayoutToggle } from '@/components/coding/LayoutToggle'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { AppDrawer } from '@/components/sidebar/AppDrawer'
@@ -46,7 +45,7 @@ const isMac = window.app.platform === 'darwin'
 
 type SortMode = 'recent' | 'added'
 
-const MAX_DISPLAY_SESSIONS = 10
+const MAX_DISPLAY_SESSIONS = 12
 const SESSIONS_FETCH_LIMIT = MAX_DISPLAY_SESSIONS + 1
 
 export const AppSidebar = memo(function AppSidebar() {
@@ -57,7 +56,6 @@ export const AppSidebar = memo(function AppSidebar() {
   const recentFolders = useAppStore((s) => s.recentFolders)
   const isFullscreen = useFullscreen()
   const isMac = window.app.platform === 'darwin'
-  const hasRealProject = useHasRealProject()
   const resetSession = useChatStore((s) => s.resetSession)
   const removeSessionFromMemory = useChatStore((s) => s.removeSessionFromMemory)
   const switchSession = useChatStore((s) => s.switchSession)
@@ -359,10 +357,6 @@ export const AppSidebar = memo(function AppSidebar() {
     }
   }, [executeDeleteSession])
 
-  const handleOpenHistory = useCallback((folderPath: string) => {
-    openHistoryTab(folderPath)
-  }, [])
-
   const handleNewSession = useCallback((folderPath: string) => {
     selectProject(folderPath).then(() => resetSession())
   }, [selectProject, resetSession])
@@ -518,8 +512,6 @@ export const AppSidebar = memo(function AppSidebar() {
                   <ProjectSidebarRow
                     key={folder.path}
                     folder={folder}
-                    currentFolder={currentFolder}
-                    hasRealProject={hasRealProject}
                     isExpanded={expandedFolders.has(folder.path)}
                     sessions={folderSessions[folder.path] ?? []}
                     maxSessions={MAX_DISPLAY_SESSIONS}
@@ -530,7 +522,6 @@ export const AppSidebar = memo(function AppSidebar() {
                     onRemoveProject={handleRemoveProject}
                     onRenameSession={handleRequestRenameSession}
                     onDeleteSession={handleRequestDeleteSession}
-                    onOpenHistory={handleOpenHistory}
                     onNewSession={handleNewSession}
                   />
                 )

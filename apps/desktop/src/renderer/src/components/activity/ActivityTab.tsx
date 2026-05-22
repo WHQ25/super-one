@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { IDockviewPanelHeaderProps } from 'dockview-core'
-import { Bug, Maximize, MessageSquare, RotateCw, X } from 'lucide-react'
+import { Bug, Maximize, RotateCw, X } from 'lucide-react'
 import { motion } from 'motion/react'
 import { cn } from '@superone/ui/lib/utils'
 import { FileIcon } from '@superone/ui/components/ui/FileIcon'
@@ -133,21 +133,7 @@ export function MiniAppTab(props: IDockviewPanelHeaderProps<{ instanceKey: strin
   )
 }
 
-export function SessionHistoryTab(props: IDockviewPanelHeaderProps) {
-  const active = useIsActive(props.api)
-
-  return (
-    <div className={tabChipClass(active)}>
-      <HoverCloseSlot onClose={() => props.api.close()}>
-        <MessageSquare className="size-3.5 shrink-0" />
-      </HoverCloseSlot>
-      <span className="truncate text-xs">{props.api.title}</span>
-    </div>
-  )
-}
-
 export const activityTabComponents: Record<string, React.FunctionComponent<IDockviewPanelHeaderProps>> = {
   'file-preview-tab': FilePreviewTab as React.FunctionComponent<IDockviewPanelHeaderProps>,
   'miniapp-tab': MiniAppTab as React.FunctionComponent<IDockviewPanelHeaderProps>,
-  'session-history-tab': SessionHistoryTab,
 }

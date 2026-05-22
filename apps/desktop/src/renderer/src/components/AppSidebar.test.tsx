@@ -256,7 +256,7 @@ describe('AppSidebar interactions', () => {
     render(<AppSidebar />)
 
     await waitFor(() => {
-      expect(mockWindowApp.listSessionsForFolderPage).toHaveBeenCalledWith('/project-a', 11, 0)
+      expect(mockWindowApp.listSessionsForFolderPage).toHaveBeenCalledWith('/project-a', 13, 0)
     })
     expect(screen.queryByText('New session')).toBeNull()
   })

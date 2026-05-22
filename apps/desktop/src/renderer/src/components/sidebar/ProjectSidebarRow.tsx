@@ -1,10 +1,6 @@
-import { memo, useMemo, useState, useEffect, useCallback } from 'react'
-import { toast } from 'sonner'
+import { memo, useMemo, useState, useEffect, useCallback, useRef, useLayoutEffect } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Bot, CalendarClock, ChevronDown, ChevronRight, ChevronUp, Copy, EyeOff, Folder, FolderOpen, FolderX, GitFork, History, Loader2, MessageSquare, Pencil, PictureInPicture2, Pin, Play, Smartphone, SquarePen, Trash2 } from 'lucide-react'
-import { ClaudeSessionIcon } from '@superone/ui/components/harness/ClaudeSessionIcon'
-import { CodexSessionIcon } from '@superone/ui/components/harness/CodexSessionIcon'
-import type { SessionIconProps } from '@superone/ui/components/harness/ClaudeSessionIcon'
+import { CalendarClock, ChevronDown, ChevronRight, ChevronUp, Folder, FolderOpen, FolderX, History, Pencil, Play, SquarePen, Trash2 } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@superone/ui/components/ui/tooltip'
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from '@superone/ui/components/ui/context-menu'
 import { useChatStore } from '@/stores/chat'
@@ -12,41 +8,56 @@ import { useMiniAppStore } from '@/stores/miniapp'
 import { MiniAppWorkerGroup } from './MiniAppWorkerGroup'
 import { cn } from '@superone/ui/lib/utils'
 import { homePath } from '@/lib/path-utils'
-import { useStallLevel, getStallColor } from '@/lib/stall-utils'
-import type { Automation, RecentFolder, SessionForkMode, SessionHistoryEntry } from '@superone/shared/agent-types'
-import { getPendingReason, getSessionTitle, isLiveSession } from './session-state-utils'
-import { SessionTitleAnimated } from './AnimatedSessionTitle'
+import type { Automation, RecentFolder, SessionHistoryEntry } from '@superone/shared/agent-types'
+import { getSessionTitle, isLiveSession } from './session-state-utils'
 import { AutomationDialog } from '../AutomationDialog'
+import { SessionRow, type SessionRowCallbacks } from './SessionRow'
+import { ProjectHistoryList } from './ProjectHistoryList'
 
-function SessionStatusSpinner({ lastEventAt }: { lastEventAt: number }) {
-  const level = useStallLevel(true, lastEventAt)
-  return <Loader2 className={cn('size-3 animate-spin', getStallColor(level, 'text-sidebar-foreground/70'))} />
+function MorphHeight({ children, morphKey }: { children: React.ReactNode; morphKey: unknown }) {
+  const outerRef = useRef<HTMLDivElement>(null)
+  const innerRef = useRef<HTMLDivElement>(null)
+  const prevKeyRef = useRef(morphKey)
+  const pendingFromRef = useRef<number | null>(null)
+  const animationRef = useRef<Animation | null>(null)
+
+  if (prevKeyRef.current !== morphKey) {
+    prevKeyRef.current = morphKey
+    pendingFromRef.current = innerRef.current?.offsetHeight ?? null
+  }
+
+  useLayoutEffect(() => {
+    const from = pendingFromRef.current
+    pendingFromRef.current = null
+    if (from == null || !outerRef.current || !innerRef.current) return
+    const to = innerRef.current.offsetHeight
+    if (from === to || typeof outerRef.current.animate !== 'function') return
+    animationRef.current?.cancel()
+    animationRef.current = outerRef.current.animate(
+      [{ height: `${from}px` }, { height: `${to}px` }],
+      { duration: 160, easing: 'cubic-bezier(0.4, 0, 0.2, 1)' },
+    )
+  })
+
+  return (
+    <div ref={outerRef} style={{ overflow: 'hidden' }}>
+      <div ref={innerRef}>{children}</div>
+    </div>
+  )
 }
 
-const EMPTY_REMOTE_SESSION_IDS: string[] = []
-
-interface ProjectSidebarRowProps {
+interface ProjectSidebarRowProps extends SessionRowCallbacks {
   folder: RecentFolder
-  currentFolder: string | null
-  hasRealProject: boolean
   isExpanded: boolean
   sessions: SessionHistoryEntry[]
   maxSessions: number
   onToggleExpand: (folderPath: string) => void
-  onSwitchSession: (folderPath: string, sessionId: string) => void
-  onPinSession: (sessionId: string, pinned: boolean, folderPath: string) => void
-  onHideSession: (sessionId: string, hidden: boolean, folderPath: string) => void
   onRemoveProject: (folder: RecentFolder) => void
-  onRenameSession: (target: { sessionId: string; title: string; folderPath: string }) => void
-  onDeleteSession: (target: { sessionId: string; title: string; folderPath: string; provider: 'claude' | 'codex' }) => void
-  onOpenHistory: (folderPath: string) => void
   onNewSession: (folderPath: string) => void
 }
 
 export const ProjectSidebarRow = memo(function ProjectSidebarRow({
   folder,
-  currentFolder,
-  hasRealProject,
   isExpanded,
   sessions: allSessions,
   maxSessions,
@@ -57,22 +68,25 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
   onRemoveProject,
   onRenameSession,
   onDeleteSession,
-  onOpenHistory,
   onNewSession,
 }: ProjectSidebarRowProps) {
   const { t } = useTranslation()
   const projectSession = useChatStore((s) => s.projectSessions[folder.path])
-  const remoteSessionIds = useChatStore((s) => s.remoteSessions[folder.path] ?? EMPTY_REMOTE_SESSION_IDS)
 
-  const INITIAL_EXPAND_LEVEL = 5
+  const INITIAL_EXPAND_LEVEL = 6
   const [expandLevel, setExpandLevel] = useState<number>(INITIAL_EXPAND_LEVEL)
+  const [historyMode, setHistoryMode] = useState(false)
 
   useEffect(() => {
     if (!isExpanded) setExpandLevel(INITIAL_EXPAND_LEVEL)
   }, [isExpanded])
 
+  const openHistory = useCallback(() => {
+    setHistoryMode(true)
+    if (!isExpanded) onToggleExpand(folder.path)
+  }, [isExpanded, onToggleExpand, folder.path])
+
   const derived = useMemo(() => {
-    const isActive = hasRealProject && folder.path === currentFolder
     const dbVisibleSessions = allSessions.filter((session) => !session.isHidden)
     const dbSessionById = new Map(allSessions.map((session) => [session.sessionId, session]))
     let sessions = dbVisibleSessions
@@ -112,16 +126,14 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
 
     const displayLimit = Math.min(expandLevel, maxSessions)
     return {
-      isActive,
       displayPath: homePath(folder.path),
       sessionsToShow: isExpanded ? sessions.slice(0, displayLimit) : liveSessions,
       showSessions: isExpanded || liveSessions.length > 0,
-      activeSid: projectSession?._activeSessionId ?? null,
       totalCount: sessions.length,
       hasMoreThanInitial: sessions.length > expandLevel,
       hasOverflow: sessions.length > maxSessions,
     }
-  }, [allSessions, currentFolder, folder.path, hasRealProject, isExpanded, maxSessions, projectSession, expandLevel])
+  }, [allSessions, folder.path, isExpanded, maxSessions, projectSession, expandLevel])
 
   const allWorkers = useMiniAppStore((s) => s.workers)
   const projectWorkers = useMemo(
@@ -174,30 +186,16 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
     setAutomationDialogOpen(true)
   }, [])
 
-  const handleForkSession = useCallback(async (sessionId: string, mode: SessionForkMode) => {
-    const toastId = toast.loading(t('sidebar.contextMenu.forkingToast'))
-    try {
-      const result = await window.app.forkSession({ sessionId, mode })
-      if (result.ok) {
-        onSwitchSession(folder.path, result.sessionId)
-        toast.success(
-          t(mode === 'local' ? 'sidebar.contextMenu.forkedLocalToast' : 'sidebar.contextMenu.forkedToast'),
-          { id: toastId },
-        )
-      } else {
-        toast.error(result.error, { id: toastId })
-      }
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : String(err), { id: toastId })
-    }
-  }, [t, onSwitchSession, folder.path])
-
   return (
     <div>
       <ContextMenu>
         <ContextMenuTrigger asChild>
           <div
-            onClick={() => !folder.missing && onToggleExpand(folder.path)}
+            onClick={() => {
+              if (folder.missing) return
+              if (historyMode) setHistoryMode(false)
+              onToggleExpand(folder.path)
+            }}
             className={cn(
               'group flex h-9 items-center overflow-hidden rounded-md px-2.5 transition-colors',
               folder.missing ? 'cursor-default opacity-60' : 'cursor-pointer hover:bg-sidebar-accent'
@@ -263,7 +261,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
           {!folder.missing && (
             <>
               <ContextMenuItem
-                onClick={() => onOpenHistory(folder.path)}
+                onClick={openHistory}
                 className="text-xs"
               >
                 <History className="size-3.5" />
@@ -351,197 +349,35 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
         />
       )}
 
-      {derived.showSessions && (
-        <div className="overflow-hidden">
+      <MorphHeight morphKey={historyMode}>
+        {historyMode ? (
+          <ProjectHistoryList
+            folderPath={folder.path}
+            initialSessions={allSessions}
+            onClose={() => setHistoryMode(false)}
+            onSwitchSession={onSwitchSession}
+            onPinSession={onPinSession}
+            onHideSession={onHideSession}
+            onRenameSession={onRenameSession}
+            onDeleteSession={onDeleteSession}
+          />
+        ) : derived.showSessions ? (
           <div className="flex flex-col py-0.5 pl-2.5">
             {derived.sessionsToShow.length === 0 ? (
               <div className="px-2.5 py-1.5 text-[11px] text-sidebar-foreground/70">{t('sidebar.contextMenu.noSessions')}</div>
             ) : (
-              derived.sessionsToShow.map((session) => {
-                const sessionEntry = projectSession?._sessions?.[session.sessionId]
-                const isRunning = sessionEntry?.status === 'streaming'
-                const isBackground = sessionEntry?.status === 'background'
-                const isUnseen = projectSession?.unseenCompletedSessions?.has(session.sessionId)
-                const isSessionActive = derived.isActive && derived.activeSid === session.sessionId
-                const harnessStatus: SessionIconProps['status'] = isRunning
-                  ? 'running'
-                  : isBackground
-                    ? 'background'
-                    : isUnseen
-                      ? 'unseen'
-                      : session.isAutomation
-                        ? 'automation'
-                        : 'default'
-                const HarnessIcon = session.provider === 'codex'
-                  ? CodexSessionIcon
-                  : session.provider === 'claude'
-                    ? ClaudeSessionIcon
-                    : null
-                const pendingReason = getPendingReason(sessionEntry?.pendingPermissions, sessionEntry?.pendingQuestion, sessionEntry?.pendingPlanApproval)
-                return (
-                  <div key={session.sessionId}>
-                    <ContextMenu>
-                      <ContextMenuTrigger asChild>
-                        <div
-                          onClick={() => onSwitchSession(folder.path, session.sessionId)}
-                          className={cn(
-                            'group/session flex cursor-pointer items-center gap-2 overflow-hidden rounded-md px-2.5 py-1.5 transition-colors',
-                            derived.isActive && derived.activeSid === session.sessionId
-                              ? 'bg-sidebar-accent'
-                              : 'hover:bg-sidebar-accent'
-                          )}
-                        >
-                          <div className="relative flex shrink-0 items-center justify-center size-3">
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                onHideSession(session.sessionId, true, folder.path)
-                              }}
-                              className="absolute inset-0 flex items-center justify-center rounded text-sidebar-foreground/70 opacity-0 transition-opacity hover:text-sidebar-accent-foreground group-hover/session:opacity-100"
-                            >
-                              <EyeOff className="size-3" />
-                            </button>
-                            <span className="pointer-events-none group-hover/session:opacity-0 transition-opacity">
-                              {remoteSessionIds.includes(session.sessionId)
-                                ? <Smartphone className="size-3 text-sidebar-foreground/70" />
-                                : HarnessIcon && harnessStatus !== 'default'
-                                  ? <HarnessIcon status={harnessStatus} active={isSessionActive} />
-                                  : isRunning
-                                    ? <SessionStatusSpinner lastEventAt={sessionEntry?.lastEventAt ?? 0} />
-                                    : <MessageSquare className="size-3 text-sidebar-foreground/70" />
-                              }
-                            </span>
-                          </div>
-                          <SessionTitleAnimated sessionId={session.sessionId} fallback={session.title} className="text-[13px]" />
-                          <div className="ml-auto flex shrink-0 items-center">
-                            {session.isWorktree && (
-                              <span
-                                title="Worktree"
-                                className="box-content w-0 overflow-hidden p-0.5 text-sidebar-foreground/70 opacity-0 transition-all group-hover/session:w-3 group-hover/session:opacity-100"
-                              >
-                                <GitFork className="size-3" />
-                              </span>
-                            )}
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                onPinSession(session.sessionId, !session.isPinned, folder.path)
-                              }}
-                              className="box-content w-0 overflow-hidden rounded p-0.5 text-sidebar-foreground/70 opacity-0 transition-all hover:text-sidebar-accent-foreground group-hover/session:w-3 group-hover/session:opacity-100"
-                            >
-                              <Pin className="size-3" />
-                            </button>
-                          </div>
-                        </div>
-                      </ContextMenuTrigger>
-                      <ContextMenuContent className="w-48">
-                        <ContextMenuItem
-                          onClick={() => onRenameSession({ sessionId: session.sessionId, title: session.title, folderPath: folder.path })}
-                          className="text-xs"
-                        >
-                          <Pencil className="size-3.5" />
-                          {t('sidebar.contextMenu.rename')}
-                        </ContextMenuItem>
-                        <ContextMenuItem
-                          onClick={() => onPinSession(session.sessionId, !session.isPinned, folder.path)}
-                          className="text-xs"
-                        >
-                          <Pin className="size-3.5" />
-                          {session.isPinned ? t('sidebar.contextMenu.unpin') : t('sidebar.contextMenu.pin')}
-                        </ContextMenuItem>
-                        <ContextMenuItem
-                          onClick={() => onHideSession(session.sessionId, true, folder.path)}
-                          className="text-xs"
-                        >
-                          <EyeOff className="size-3.5" />
-                          {t('sidebar.contextMenu.hide')}
-                        </ContextMenuItem>
-                        <ContextMenuSeparator />
-                        <ContextMenuItem
-                          onClick={() => window.app.openSessionWindow(folder.path, session.sessionId, session.title)}
-                          className="text-xs"
-                        >
-                          <PictureInPicture2 className="size-3.5" />
-                          {t('sidebar.contextMenu.openInMiniWindow')}
-                        </ContextMenuItem>
-                        <ContextMenuSeparator />
-                        <ContextMenuItem
-                          onClick={() => {
-                            const providerLabel = session.provider === 'codex' ? 'Codex' : 'Claude Code'
-                            if (session.providerSessionId) {
-                              navigator.clipboard.writeText(session.providerSessionId)
-                              toast.success(`${providerLabel} ${t('sidebar.contextMenu.sessionIdCopiedToast')}`)
-                            } else {
-                              navigator.clipboard.writeText(session.sessionId)
-                              toast.success(`${providerLabel} ${t('sidebar.contextMenu.sessionIdNotReadyToast')}`)
-                            }
-                          }}
-                          className="text-xs"
-                        >
-                          <Copy className="size-3.5" />
-                          {t('sidebar.contextMenu.copySessionId')}
-                        </ContextMenuItem>
-                        <ContextMenuItem
-                          onClick={() => { const dir = session.worktreePath ?? folder.path; navigator.clipboard.writeText(dir); toast.success(t('sidebar.contextMenu.workingDirCopiedToast')) }}
-                          className="text-xs"
-                        >
-                          <Copy className="size-3.5" />
-                          {t('sidebar.contextMenu.copyWorkingDirectory')}
-                        </ContextMenuItem>
-                        <ContextMenuItem
-                          onClick={() => window.app.showInFolder(session.worktreePath ?? folder.path, '')}
-                          className="text-xs"
-                        >
-                          <FolderOpen className="size-3.5" />
-                          {t('sidebar.contextMenu.openFolder')}
-                        </ContextMenuItem>
-                        <ContextMenuSeparator />
-                        {!session.isWorktree && (
-                          <>
-                            <ContextMenuItem
-                              onClick={() => handleForkSession(session.sessionId, 'worktree')}
-                              className="text-xs"
-                            >
-                              <GitFork className="size-3.5" />
-                              {t('sidebar.contextMenu.forkToWorktree')}
-                            </ContextMenuItem>
-                            <ContextMenuItem
-                              onClick={() => handleForkSession(session.sessionId, 'local')}
-                              className="text-xs"
-                            >
-                              <GitFork className="size-3.5" />
-                              {t('sidebar.contextMenu.forkToLocal')}
-                            </ContextMenuItem>
-                            <ContextMenuSeparator />
-                          </>
-                        )}
-                        <ContextMenuItem
-                          variant="destructive"
-                          onClick={() => onDeleteSession({
-                            sessionId: session.sessionId,
-                            title: session.title,
-                            folderPath: folder.path,
-                            provider: (session.provider ?? 'claude') as 'claude' | 'codex',
-                          })}
-                          className="text-xs"
-                        >
-                          <Trash2 className="size-3.5" />
-                          {t('sidebar.contextMenu.delete')}
-                        </ContextMenuItem>
-                      </ContextMenuContent>
-                    </ContextMenu>
-                    {pendingReason && (
-                      <div
-                        onClick={() => onSwitchSession(folder.path, session.sessionId)}
-                        className="ml-2.5 mr-1 mt-0.5 flex cursor-pointer items-center gap-1 rounded-md bg-green-500/15 px-2 py-1"
-                      >
-                        <Bot className="size-3 shrink-0 text-green-600 dark:text-green-400" />
-                        <span className="min-w-0 truncate text-[11px] text-green-600 dark:text-green-400">{pendingReason}</span>
-                      </div>
-                    )}
-                  </div>
-                )
-              })
+              derived.sessionsToShow.map((session) => (
+                <SessionRow
+                  key={session.sessionId}
+                  session={session}
+                  folderPath={folder.path}
+                  onSwitchSession={onSwitchSession}
+                  onPinSession={onPinSession}
+                  onHideSession={onHideSession}
+                  onRenameSession={onRenameSession}
+                  onDeleteSession={onDeleteSession}
+                />
+              ))
             )}
             {isExpanded && expandLevel < maxSessions && derived.hasMoreThanInitial && (
               <button
@@ -566,7 +402,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <button
-                          onClick={() => onOpenHistory(folder.path)}
+                          onClick={openHistory}
                           className="flex h-7 items-center justify-center rounded-md px-1.5 text-sidebar-foreground/50 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground/70"
                         >
                           <History className="size-3.5 shrink-0" />
@@ -581,8 +417,8 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
               </div>
             )}
           </div>
-        </div>
-      )}
+        ) : null}
+      </MorphHeight>
 
       <AutomationDialog
         open={automationDialogOpen}

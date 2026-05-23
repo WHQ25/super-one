@@ -612,6 +612,16 @@ export function useHasRealProject(): boolean {
   return currentFolder !== null && currentFolder !== tmpFolder
 }
 
+export function selectEffectiveProjectRoot(s: AppState): string | null {
+  const cf = s.currentFolder
+  if (!cf) return null
+  return s._worktrees[cf]?.activePath ?? cf
+}
+
+export function useEffectiveProjectRoot(): string | null {
+  return useAppStore(selectEffectiveProjectRoot)
+}
+
 
 
 // Reset file panel and source-control store when project changes

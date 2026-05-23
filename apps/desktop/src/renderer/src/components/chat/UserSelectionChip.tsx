@@ -5,7 +5,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@superone/ui/components
 import { FileIcon } from '@superone/ui/components/ui/FileIcon'
 import { DiffView, inferLanguage, useHighlightedTokens, type DiffLine } from '@/lib/diff-utils'
 import { getHighlightCache } from '@/lib/highlight-cache'
-import { useAppStore } from '@/stores/app'
+import { useEffectiveProjectRoot } from '@/stores/app'
 import { parseFilePrefix, parseDiffBody, expandLineRanges, type ParsedFilePrefix } from '@/lib/file-quote-prefix'
 import { mergeQuoteTokens } from '@/lib/quote-tokens'
 import { cn } from '@superone/ui/lib/utils'
@@ -52,26 +52,26 @@ interface CodeBodyProps {
   isDiff: boolean
 }
 
-function useFullFileContent(filePath: string, currentFolder: string | null): string | null {
+function useFullFileContent(filePath: string, fileRoot: string | null): string | null {
   const [content, setContent] = useState<string | null>(null)
   useEffect(() => {
-    if (!currentFolder || !filePath) return
-    const relPath = filePath.startsWith(currentFolder + '/')
-      ? filePath.slice(currentFolder.length + 1)
+    if (!fileRoot || !filePath) return
+    const relPath = filePath.startsWith(fileRoot + '/')
+      ? filePath.slice(fileRoot.length + 1)
       : null
     if (!relPath) return
     let cancelled = false
-    window.app.readProjectFile?.(currentFolder, relPath).then((r) => {
+    window.app.readProjectFile?.(fileRoot, relPath).then((r) => {
       if (!cancelled && r?.content != null) setContent(r.content)
     }).catch(() => {})
     return () => { cancelled = true }
-  }, [filePath, currentFolder])
+  }, [filePath, fileRoot])
   return content
 }
 
 function CodeBody({ body, filePath, lineNums, isDiff }: CodeBodyProps) {
-  const currentFolder = useAppStore((s) => s.currentFolder)
-  const cache = useMemo(() => getHighlightCache(currentFolder), [currentFolder])
+  const fileRoot = useEffectiveProjectRoot()
+  const cache = useMemo(() => getHighlightCache(fileRoot), [fileRoot])
   const language = useMemo(() => inferLanguage(filePath), [filePath])
 
   const diffLines = useMemo(() => isDiff ? parseDiffBody(body) : null, [isDiff, body])
@@ -84,7 +84,7 @@ function CodeBody({ body, filePath, lineNums, isDiff }: CodeBodyProps) {
     [diffLines],
   )
 
-  const fullContent = useFullFileContent(filePath, currentFolder)
+  const fullContent = useFullFileContent(filePath, fileRoot)
   const fullTokens = useHighlightedTokens(fullContent ?? '', language, { cache })
   const snippetTokens = useHighlightedTokens(
     hasRemoved || !fullTokens ? codeOnly : '',

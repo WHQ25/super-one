@@ -227,6 +227,8 @@ vi.mock('@/stores/app', () => ({
       getState: () => ({ layoutMode: 'coding' as const }),
     },
   ),
+  useEffectiveProjectRoot: () => null,
+  selectEffectiveProjectRoot: () => null,
 }))
 
 vi.mock('./ContextUsage', () => ({

@@ -5,6 +5,7 @@ import { cn } from '@superone/ui/lib/utils'
 import { Kbd } from '@superone/ui/components/ui/kbd'
 import { HighlightedText } from '@superone/ui/components/ui/HighlightedText'
 import { useChatStore, useActiveSession, type MentionKind } from '@/stores/chat'
+import { useEffectiveProjectRoot } from '@/stores/app'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
 import { useTranslation } from 'react-i18next'
@@ -83,6 +84,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
   function MentionPopup({ query, selectedIndex, onSelect, onSetSelectedIndex, onResultState, showAgents = true }, ref) {
     const { t } = useTranslation()
     const activeProject = useChatStore((s) => s.activeProject)
+    const fileRoot = useEffectiveProjectRoot()
     const agents = useActiveSession((s) => s.agents)
     const additionalDirs = useActiveSession((s) => s.additionalDirs)
     const [dirEntries, setDirEntries] = useState<ListDirEntry[]>([])
@@ -107,22 +109,22 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
 
       if (isBrowseMode) {
         setSearchResults([])
-        if (!activeProject) { setSearchCompleted(true); return }
-        window.agent.listDirectory(activeProject, query)
+        if (!fileRoot) { setSearchCompleted(true); return }
+        window.agent.listDirectory(fileRoot, query)
           .then((entries) => { setDirEntries(entries); setSearchCompleted(true) })
           .catch(() => { setDirEntries([]); setSearchCompleted(true) })
         return
       }
 
       debounceRef.current = setTimeout(() => {
-        if (!activeProject) { setSearchCompleted(true); return }
+        if (!fileRoot) { setSearchCompleted(true); return }
         const searchQuery = scopeDir ? query.slice(scopeDir.length) : query
-        window.agent.searchMentions(activeProject, searchQuery, agentEntries, additionalDirs, scopeDir)
+        window.agent.searchMentions(fileRoot, searchQuery, agentEntries, additionalDirs, scopeDir)
           .then((results) => { setSearchResults(results); setSearchCompleted(true) })
           .catch(() => { setSearchResults([]); setSearchCompleted(true) })
       }, 150)
       return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
-    }, [query, activeProject, additionalDirs, agentEntries, isBrowseMode, scopeDir])
+    }, [query, fileRoot, additionalDirs, agentEntries, isBrowseMode, scopeDir])
 
     useEffect(() => {
       if (selectedIndex >= 0) {

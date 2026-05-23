@@ -2,7 +2,7 @@ import { useEffect, useCallback, useRef, useState, useMemo, type DragEvent, type
 import { useTranslation } from 'react-i18next'
 import { Search } from 'lucide-react'
 import { useVirtualizer } from '@tanstack/react-virtual'
-import { useAppStore } from '@/stores/app'
+import { useAppStore, useEffectiveProjectRoot } from '@/stores/app'
 import { useFileTreeStore, type VisibleItem } from '@/stores/file-tree'
 import { useSourceControlStore } from '@/stores/source-control'
 import { TreeRow, autoExpandedDirs } from './TreeRow'
@@ -71,8 +71,7 @@ interface DeleteTarget {
 export function FileTree() {
   const { t } = useTranslation()
   const currentFolder = useAppStore((s) => s.currentFolder)
-  const wtActivePath = useAppStore((s) => currentFolder ? s._worktrees[currentFolder]?.activePath : null)
-  const fileRoot = wtActivePath ?? currentFolder
+  const fileRoot = useEffectiveProjectRoot()
   const loading = useFileTreeStore((s) => s.loading)
   const visibleList = useFileTreeStore((s) => s._visibleList)
   const fetchTree = useFileTreeStore((s) => s.fetchTree)
@@ -105,7 +104,7 @@ export function FileTree() {
   })
 
   useEffect(() => {
-    window.app.trace?.('agent.store', 'FileTree:fetchTree', { currentFolder, wtActivePath, fileRoot })
+    window.app.trace?.('agent.store', 'FileTree:fetchTree', { currentFolder, fileRoot })
     if (fileRoot) fetchTree(fileRoot)
   }, [fileRoot, fetchTree])
 

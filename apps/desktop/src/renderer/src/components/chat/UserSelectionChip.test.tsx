@@ -6,8 +6,7 @@ import { UserSelectionChip } from './UserSelectionChip'
 
 let mockCurrentFolder: string | null = null
 vi.mock('@/stores/app', () => ({
-  useAppStore: (selector: (state: { currentFolder: string | null }) => unknown) =>
-    selector({ currentFolder: mockCurrentFolder }),
+  useEffectiveProjectRoot: () => mockCurrentFolder,
 }))
 
 vi.mock('react-i18next', () => ({

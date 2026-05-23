@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { cn } from '@superone/ui/lib/utils'
 import { CLAUDE_INTERCEPTED_COMMAND_NAMES, CODEX_REJECT_PLAN_PLACEHOLDER, runClaudeInterceptedCommand, selectActiveCodexSkills, selectCodexPrompts, useChatStore, useActiveSession, useIsRemoteLocked } from '@/stores/chat'
+import { useEffectiveProjectRoot } from '@/stores/app'
 import { Button } from '@superone/ui/components/ui/button'
 import { ArrowUp, Paperclip, X } from 'lucide-react'
 import type { MentionKind } from '@/stores/chat'
@@ -51,6 +52,7 @@ function orderCommandsBySkill<T extends { isSkill: boolean }>(commands: T[]): T[
 export function ChatInput() {
     const { t } = useTranslation()
     const activeProject = useChatStore((s) => s.activeProject)
+    const fileRoot = useEffectiveProjectRoot()
     const {
       setText, sendMessage, editQueuedMessage,
       interrupt, addAttachment, removeAttachment, clearAttachments,
@@ -658,11 +660,11 @@ export function ChatInput() {
 
     const insertFileMention = useCallback(
       (rawPath: string) => {
-        const mentionValue = toMentionPath(rawPath, activeProject)
+        const mentionValue = toMentionPath(rawPath, fileRoot)
         const displayName = mentionValue.split('/').filter(Boolean).pop() || mentionValue
         insertMention('file', mentionValue, displayName)
       },
-      [activeProject, insertMention]
+      [fileRoot, insertMention]
     )
 
     const processSelectedFiles = useCallback(
@@ -759,7 +761,7 @@ export function ChatInput() {
             if (!absPath) continue
             const stat = await window.app.pathStat(absPath)
             const isDir = stat?.isDirectory ?? false
-            const mentionValue = toMentionPath(isDir ? absPath + '/' : absPath, activeProject)
+            const mentionValue = toMentionPath(isDir ? absPath + '/' : absPath, fileRoot)
             const displayName = mentionValue.split('/').filter(Boolean).pop() || mentionValue
             insertMention(isDir ? 'directory' : 'file', mentionValue, displayName)
           }
@@ -767,7 +769,7 @@ export function ChatInput() {
         }
         processSelectedFiles(files)
       },
-      [processSelectedFiles, insertMention, activeProject]
+      [processSelectedFiles, insertMention, fileRoot]
     )
 
     const shouldShowCodexRejectHint = isCodexPlanMode && codexPlanRejectHintActive && text.trim().length === 0

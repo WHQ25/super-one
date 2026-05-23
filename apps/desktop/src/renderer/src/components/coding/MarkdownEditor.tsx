@@ -6,7 +6,7 @@ import { CodeBlockLowlight } from '@tiptap/extension-code-block-lowlight'
 import { encodeHtmlEntities } from '@tiptap/core'
 import { common, createLowlight } from 'lowlight'
 import type { Root } from 'hast'
-import { useAppStore } from '@/stores/app'
+import { useEffectiveProjectRoot } from '@/stores/app'
 import './markdown-editor.css'
 
 export const FRONTMATTER_RE = /^---[ \t]*\n([\s\S]*?)\n---[ \t]*\n([\s\S]*)$/
@@ -51,7 +51,7 @@ interface MarkdownEditorProps {
 }
 
 export function MarkdownEditor({ content, filePath, onDirtyChange, onContentChange }: MarkdownEditorProps) {
-  const currentFolder = useAppStore((s) => s.currentFolder)
+  const fileRoot = useEffectiveProjectRoot()
   const [isDirty, setIsDirty] = useState(false)
   const contentRef = useRef(content)
   const savingRef = useRef(false)
@@ -63,17 +63,17 @@ export function MarkdownEditor({ content, filePath, onDirtyChange, onContentChan
   }, [filePath])
 
   const save = useCallback(async (text: string) => {
-    if (!currentFolder) return
+    if (!fileRoot) return
     const path = filePathRef.current
     if (text === contentRef.current) return
     savingRef.current = true
-    const result = await window.app.saveFile(currentFolder, path, text)
+    const result = await window.app.saveFile(fileRoot, path, text)
     if (result.ok) {
       contentRef.current = text
       setIsDirty(false)
     }
     savingRef.current = false
-  }, [currentFolder])
+  }, [fileRoot])
 
   const editor = useEditor({
     extensions: [

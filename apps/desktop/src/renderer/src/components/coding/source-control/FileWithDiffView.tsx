@@ -3,7 +3,7 @@ import { DiffView, buildFullFileWithDiff, reconstructOldContent, useHighlightedT
 import { CodeMinimap } from '@/components/coding/CodeMinimap'
 import { useSourceControlStore } from '@/stores/source-control'
 import { getHighlightCache } from '@/lib/highlight-cache'
-import { useAppStore } from '@/stores/app'
+import { useEffectiveProjectRoot } from '@/stores/app'
 
 interface FileWithDiffViewProps {
   filePath: string
@@ -29,8 +29,8 @@ function FileWithDiffContent({ filePath, content, diff }: { filePath: string; co
   const language = inferLanguage(filePath)
   const lines = useMemo(() => buildFullFileWithDiff(content, diff), [content, diff])
   const oldContent = useMemo(() => reconstructOldContent(content, diff), [content, diff])
-  const currentFolder = useAppStore((s) => s.currentFolder)
-  const cache = useMemo(() => getHighlightCache(currentFolder), [currentFolder])
+  const fileRoot = useEffectiveProjectRoot()
+  const cache = useMemo(() => getHighlightCache(fileRoot), [fileRoot])
   const newTokens = useHighlightedTokens(content, language, { cache })
   const oldTokens = useHighlightedTokens(oldContent, language, { cache })
 

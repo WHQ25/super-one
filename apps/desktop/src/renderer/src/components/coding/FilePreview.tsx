@@ -4,7 +4,7 @@ import { FileX2, ChevronRight } from 'lucide-react'
 import { defaultRehypePlugins } from 'streamdown'
 import { FileIcon } from '@superone/ui/components/ui/FileIcon'
 import { Tabs, TabsList, TabsTrigger } from '@superone/ui/components/ui/tabs'
-import { useAppStore } from '@/stores/app'
+import { useEffectiveProjectRoot } from '@/stores/app'
 import { toLocalFileUrl, toMediaUrl } from '@/lib/path-utils'
 import { MarkdownView } from '@/components/MarkdownPreview'
 import { PdfPreview } from '@/components/chat/PdfPreview'
@@ -30,17 +30,17 @@ function getFileExt(fileName: string): string {
 type TabKey = 'changes' | 'file' | 'preview'
 
 function useOwnFileData(filePath: string | undefined) {
-  const currentFolder = useAppStore((s) => s.currentFolder)
+  const fileRoot = useEffectiveProjectRoot()
   const [diff, setDiff] = useState<GitFileDiff | null>(null)
   const [content, setContent] = useState<GitFileContent | null>(null)
   const [tab, setTab] = useState<TabKey>('file')
 
   useEffect(() => {
-    if (!filePath || !currentFolder) return
+    if (!filePath || !fileRoot) return
     let cancelled = false
     Promise.all([
-      window.app.getGitDiffFile(currentFolder, filePath, false),
-      window.app.readProjectFile(currentFolder, filePath),
+      window.app.getGitDiffFile(fileRoot, filePath, false),
+      window.app.readProjectFile(fileRoot, filePath),
     ]).then(([d, c]) => {
       if (cancelled) return
       setDiff(d)
@@ -54,7 +54,7 @@ function useOwnFileData(filePath: string | undefined) {
       if (!cancelled) { setDiff(null); setContent(null) }
     })
     return () => { cancelled = true }
-  }, [filePath, currentFolder])
+  }, [filePath, fileRoot])
 
   return { diff, content, tab, setTab }
 }
@@ -65,7 +65,7 @@ interface FilePreviewProps {
 
 export function FilePreview({ filePath }: FilePreviewProps) {
   const { t } = useTranslation()
-  const currentFolder = useAppStore((s) => s.currentFolder)
+  const fileRoot = useEffectiveProjectRoot()
   const [isDirty, setIsDirty] = useState(false)
   const [liveContent, setLiveContent] = useState<string | null>(null)
   const liveContentRef = useRef<string | null>(null)
@@ -84,13 +84,13 @@ export function FilePreview({ filePath }: FilePreviewProps) {
   const hasDiff = !!fileDiff?.diff
   const isBinaryPreview = isBinImg || isPdfFile || isVideoFile || isAudioFile
   const isUnpreviewable = fileContent?.language === 'binary' || fileContent?.language === 'too-large'
-  const fullFilePath = selectedFile.startsWith('/') ? selectedFile : `${currentFolder}/${selectedFile}`
+  const fullFilePath = selectedFile.startsWith('/') ? selectedFile : `${fileRoot}/${selectedFile}`
 
   const resolvedContent = useMemo(() => {
     const raw = (isMd ? liveContent : null) ?? fileContent?.content ?? ''
-    if (!currentFolder || !selectedFile) return raw
+    if (!fileRoot || !selectedFile) return raw
     const dir = selectedFile.includes('/') ? selectedFile.substring(0, selectedFile.lastIndexOf('/')) : ''
-    const baseDir = currentFolder + (dir ? '/' + dir : '')
+    const baseDir = fileRoot + (dir ? '/' + dir : '')
     return raw.replace(
       /!\[([^\]]*)\]\((?!https?:\/\/|data:|local-file:\/\/)([^)\s]+)([^)]*)\)/g,
       (_, alt, src, rest) => {
@@ -101,7 +101,7 @@ export function FilePreview({ filePath }: FilePreviewProps) {
         return `![${alt}](${resolved}${rest})`
       },
     )
-  }, [currentFolder, selectedFile, fileContent?.content, liveContent, isMd])
+  }, [fileRoot, selectedFile, fileContent?.content, liveContent, isMd])
 
   const previewRehypePlugins = useMemo(() => [defaultRehypePlugins.raw], [])
 

@@ -3,7 +3,8 @@ import { Folder, FolderPlus, X } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 import { Kbd } from '@superone/ui/components/ui/kbd'
 import { HighlightedText } from '@superone/ui/components/ui/HighlightedText'
-import { useChatStore, useActiveSession } from '@/stores/chat'
+import { useActiveSession } from '@/stores/chat'
+import { useEffectiveProjectRoot } from '@/stores/app'
 import { fuzzyMatch } from '@/lib/fuzzy-match'
 import type { ListDirEntry } from '@superone/shared/agent-types'
 
@@ -86,7 +87,7 @@ function joinPath(parent: string, name: string, isDir: boolean): string {
 
 export const AddDirPopup = forwardRef<AddDirPopupHandle, AddDirPopupProps>(
   function AddDirPopup({ argsText, selectedIndex, onSetSelectedIndex, onScopeFill, onPathNavigate, onPathCommit, onAddViaPicker, onRemoveDir }, ref) {
-    const activeProject = useChatStore((s) => s.activeProject)
+    const fileRoot = useEffectiveProjectRoot()
     const additionalDirs = useActiveSession((s) => s.additionalDirs)
     const projectSharedDirs = useActiveSession((s) => s.projectSharedDirs)
     const projectLocalDirs = useActiveSession((s) => s.projectLocalDirs)
@@ -107,9 +108,9 @@ export const AddDirPopup = forwardRef<AddDirPopupHandle, AddDirPopupProps>(
       if (debounceRef.current) clearTimeout(debounceRef.current)
       const parent = phase.parent
       debounceRef.current = setTimeout(() => {
-        if (!activeProject) return
+        if (!fileRoot) return
         window.agent
-          .listDirectoryForAddDir(activeProject, parent)
+          .listDirectoryForAddDir(fileRoot, parent)
           .then((res) => {
             setEntries(res.entries)
             setAbsolutePath(res.absolutePath)
@@ -120,7 +121,7 @@ export const AddDirPopup = forwardRef<AddDirPopupHandle, AddDirPopupProps>(
           })
       }, 100)
       return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
-    }, [phase, activeProject])
+    }, [phase, fileRoot])
 
     useEffect(() => {
       if (selectedIndex >= 0) {

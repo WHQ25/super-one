@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { useAppStore } from '@/stores/app'
+import { useAppStore, useEffectiveProjectRoot, selectEffectiveProjectRoot } from '@/stores/app'
 import { useActivityPanelStore } from '@/stores/activity-panel'
 import { useActiveSession } from '@/stores/chat'
 import { useSourceControlStore } from '@/stores/source-control'
@@ -15,9 +15,7 @@ export function GitAutoRefresh() {
   const status = useActiveSession((s) => s.status)
   const showPanel = useActivityPanelStore((s) => s.showPanel)
   const sidebarTab = useAppStore((s) => s.sidebarTab)
-  const currentFolder = useAppStore((s) => s.currentFolder)
-  const wtActivePath = useAppStore((s) => currentFolder ? s._worktrees[currentFolder]?.activePath : null)
-  const fileRoot = wtActivePath ?? currentFolder
+  const fileRoot = useEffectiveProjectRoot()
   const prevStatusRef = useRef(status)
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined)
 
@@ -69,8 +67,7 @@ export function GitAutoRefresh() {
     const scheduleRefresh = () => {
       clearTimeout(debounceRef.current)
       debounceRef.current = setTimeout(() => {
-        const { currentFolder: cf, _worktrees: wts } = useAppStore.getState()
-        const root = cf ? (wts[cf]?.activePath ?? cf) : null
+        const root = selectEffectiveProjectRoot(useAppStore.getState())
         if (!root) return
         const ap = useActivityPanelStore.getState()
         const ft = ap.showPanel && hasFileTab()

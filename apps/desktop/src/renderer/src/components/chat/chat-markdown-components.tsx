@@ -11,7 +11,7 @@ import {
 import { openFileTab } from '@/components/activity/activity-panel-api'
 import { chatInputAPI } from '@/components/chat/ChatInput'
 import { toMentionPath } from '@/components/chat/chat-input-utils'
-import { useChatStore } from '@/stores/chat'
+import { useAppStore, selectEffectiveProjectRoot } from '@/stores/app'
 import { useSourceControlStore } from '@/stores/source-control'
 import { clickReleasedOnSelection, parseFileLinkTarget } from '@/lib/file-link'
 import { buildDragImagePng, preloadDragIcons, loadIconFromSvgElement } from '@/components/sidebar/drag-image-builder'
@@ -47,20 +47,20 @@ export function InlineFileChip({ name, filePath, lineNumber }: { name: string; f
     if (Date.now() - dragEndRef.current < 200) return
     if (clickReleasedOnSelection(e.currentTarget)) return
     e.stopPropagation()
-    const projectPath = useChatStore.getState().activeProject
-    if (!projectPath) return
-    const relative = relativeTo(projectPath)
-    useSourceControlStore.getState().selectFile(projectPath, relative, lineNumber)
+    const projectRoot = selectEffectiveProjectRoot(useAppStore.getState())
+    if (!projectRoot) return
+    const relative = relativeTo(projectRoot)
+    useSourceControlStore.getState().selectFile(projectRoot, relative, lineNumber)
     openFileTab(relative)
   }
   const handleOpenFolder = (): void => {
-    const projectPath = useChatStore.getState().activeProject
-    if (!projectPath) return
-    window.app.showInFolder(projectPath, relativeTo(projectPath))
+    const projectRoot = selectEffectiveProjectRoot(useAppStore.getState())
+    if (!projectRoot) return
+    window.app.showInFolder(projectRoot, relativeTo(projectRoot))
   }
   const handleAddToChat = (): void => {
-    const projectPath = useChatStore.getState().activeProject
-    chatInputAPI.insertMention?.('file', toMentionPath(filePath, projectPath), name)
+    const projectRoot = selectEffectiveProjectRoot(useAppStore.getState())
+    chatInputAPI.insertMention?.('file', toMentionPath(filePath, projectRoot), name)
   }
   return (
     <ContextMenu>
@@ -95,11 +95,11 @@ export function InlineFileChip({ name, filePath, lineNumber }: { name: string; f
 
 function FileLink(props: React.AnchorHTMLAttributes<HTMLAnchorElement>) {
   const { href: rawHref, children, ...rest } = props
-  const projectPath = useChatStore.getState().activeProject
+  const projectRoot = selectEffectiveProjectRoot(useAppStore.getState())
   const href = rawHref ? decodeURIComponent(rawHref) : rawHref
-  if (href && projectPath) {
+  if (href && projectRoot) {
     const { filePath, lineNumber } = parseFileLinkTarget(href)
-    if (filePath.startsWith(projectPath + '/')) {
+    if (filePath.startsWith(projectRoot + '/')) {
       const name = filePath.split('/').pop() || ''
       return <InlineFileChip name={name} filePath={filePath} lineNumber={lineNumber} />
     }

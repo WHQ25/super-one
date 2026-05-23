@@ -8,7 +8,7 @@ import {
   type DiffLine,
 } from '@/lib/diff-utils'
 import { getHighlightCache } from '@/lib/highlight-cache'
-import { useAppStore } from '@/stores/app'
+import { useEffectiveProjectRoot } from '@/stores/app'
 
 interface FileDiffViewProps {
   filePath: string
@@ -35,8 +35,8 @@ function DiffContent({ filePath, diff, content }: { filePath: string; diff: stri
     return raw.map((line) => ({ ...line, sourceIdx: line.lineNum - 1 }))
   }, [diff])
   const oldContent = useMemo(() => reconstructOldContent(content, diff), [content, diff])
-  const currentFolder = useAppStore((s) => s.currentFolder)
-  const cache = useMemo(() => getHighlightCache(currentFolder), [currentFolder])
+  const fileRoot = useEffectiveProjectRoot()
+  const cache = useMemo(() => getHighlightCache(fileRoot), [fileRoot])
   const newTokens = useHighlightedTokens(content, language, { cache })
   const oldTokens = useHighlightedTokens(oldContent, language, { cache })
 

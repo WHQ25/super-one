@@ -7,13 +7,13 @@ import { createCodePlugin } from '@streamdown/code'
 import { createStreamdownCodeComponent } from './CodeBlock'
 import { PenLine, Check, X, FastForward, Zap, Circle, CheckCircle2 } from 'lucide-react'
 import { Kbd } from '@superone/ui/components/ui/kbd'
-import { streamdownLinkSafety, streamdownRehypePlugins, mathPlugin } from './chat-shared'
+import { streamdownLinkSafety, streamdownRehypePlugins } from './chat-shared'
 import { checkAutoModeEligibility } from '@/lib/auto-mode-eligibility'
 import { useRestoreChatInputFocus } from '@/hooks/useRestoreChatInputFocus'
 import type { PermissionMode } from '@superone/shared/agent-types'
 
 const codePlugin = createCodePlugin({ themes: ['github-dark', 'github-dark'] })
-const streamdownPlugins = { code: codePlugin, math: mathPlugin }
+const streamdownPlugins = { code: codePlugin }
 const streamdownControls = { table: false }
 const streamdownComponents = { code: createStreamdownCodeComponent(codePlugin) }
 

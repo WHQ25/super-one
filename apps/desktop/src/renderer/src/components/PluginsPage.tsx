@@ -30,7 +30,7 @@ import { motion, AnimatePresence } from 'motion/react'
 import { useTranslation } from 'react-i18next'
 import { Streamdown } from 'streamdown'
 import { createCodePlugin } from '@streamdown/code'
-import { streamdownLinkSafety, mathPlugin } from '@/components/chat/chat-shared'
+import { streamdownLinkSafety } from '@/components/chat/chat-shared'
 import { createStreamdownCodeComponent } from '@/components/chat/CodeBlock'
 import { Button } from '@superone/ui/components/ui/button'
 import { Input } from '@superone/ui/components/ui/input'
@@ -54,7 +54,7 @@ import type {
 import { cn } from '@superone/ui/lib/utils'
 
 const codePlugin = createCodePlugin({ themes: ['github-dark', 'github-dark'] })
-const streamdownPlugins = { code: codePlugin, math: mathPlugin }
+const streamdownPlugins = { code: codePlugin }
 const streamdownComponents = { code: createStreamdownCodeComponent(codePlugin) }
 
 // --- Shared file viewing utilities (same pattern as SkillsPage) ---

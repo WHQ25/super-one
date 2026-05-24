@@ -1,8 +1,9 @@
-import { useState, useCallback, useRef, useEffect, isValidElement, type RefObject } from 'react'
+import { useState, useCallback, useRef, useEffect, isValidElement, lazy, Suspense, type RefObject } from 'react'
 import { Check, Copy } from 'lucide-react'
 import type { CodeHighlighterPlugin } from '@streamdown/code'
-import { MermaidBlock } from './MermaidBlock'
 import { tryCopy } from '@/lib/clipboard'
+
+const MermaidBlock = lazy(() => import('./MermaidBlock').then((m) => ({ default: m.MermaidBlock })))
 
 export function InlineCode({ children, className, ...props }: React.ComponentProps<'code'>) {
   return (
@@ -174,7 +175,11 @@ export function createStreamdownCodeComponent(codePlugin: CodeHighlighterPlugin,
       const isComplete = !streamingCtx
         || !streamingCtx.isStreamingRef.current
         || (startLine !== undefined && endLine !== undefined && (endLine - startLine) > codeLineCount)
-      return <MermaidBlock code={code} isComplete={isComplete} codePlugin={codePlugin} />
+      return (
+        <Suspense fallback={<pre className="my-1.5 overflow-x-auto rounded-md bg-muted px-3 py-2 text-xs opacity-60">{code}</pre>}>
+          <MermaidBlock code={code} isComplete={isComplete} codePlugin={codePlugin} />
+        </Suspense>
+      )
     }
     return <HighlightedCodeBlock code={code} language={language} codePlugin={codePlugin} />
   }

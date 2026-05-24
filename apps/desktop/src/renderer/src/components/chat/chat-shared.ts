@@ -5,8 +5,6 @@ import type { PluggableList } from 'unified'
 import { defaultSchema } from 'hast-util-sanitize'
 import rehypeSanitize from 'rehype-sanitize'
 import { createCodePlugin } from '@streamdown/code'
-import { createMathPlugin } from '@streamdown/math'
-import 'katex/dist/katex.min.css'
 import { createStreamdownCodeComponent } from './CodeBlock'
 import { toMediaUrl, toLocalFileUrl } from '@/lib/path-utils'
 import { LinkSafetyModal } from './LinkSafetyModal'
@@ -16,11 +14,34 @@ import { MarkdownImage } from './markdown-image'
 export const codePlugin = createCodePlugin({ themes: ['github-dark', 'github-dark'] })
 export const codePluginLight = createCodePlugin({ themes: ['github-light', 'github-light'] })
 
-export const mathPlugin = createMathPlugin({ singleDollarTextMath: false })
-;(mathPlugin.rehypePlugin as [unknown, Record<string, unknown>])[1].strict = false
+type MathPlugin = { remarkPlugin?: unknown; rehypePlugin: [unknown, Record<string, unknown>] }
+let mathPluginInstance: MathPlugin | null = null
+let mathPluginPromise: Promise<MathPlugin> | null = null
 
-/** Shared Streamdown plugins config. */
-export const streamdownPlugins = { code: codePlugin, math: mathPlugin }
+/** Lazy-load @streamdown/math + katex CSS only when math content is detected. */
+export function loadMathPlugin(): Promise<MathPlugin> {
+  if (mathPluginInstance) return Promise.resolve(mathPluginInstance)
+  if (!mathPluginPromise) {
+    mathPluginPromise = Promise.all([
+      import('@streamdown/math'),
+      import('katex/dist/katex.min.css'),
+    ]).then(([mod]) => {
+      const plugin = mod.createMathPlugin({ singleDollarTextMath: false }) as MathPlugin
+      plugin.rehypePlugin[1].strict = false
+      mathPluginInstance = plugin
+      return plugin
+    })
+  }
+  return mathPluginPromise
+}
+
+/** Synchronous accessor — returns null until loadMathPlugin() resolves. */
+export function getMathPluginSync(): MathPlugin | null {
+  return mathPluginInstance
+}
+
+/** Shared Streamdown plugins config (math omitted; injected per-render when needed). */
+export const streamdownPlugins = { code: codePlugin }
 
 /** Shared Streamdown controls config. */
 export const streamdownControls = { table: false }

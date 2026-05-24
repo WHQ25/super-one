@@ -1,4 +1,5 @@
 import { useRef, useState, useEffect, useLayoutEffect, useMemo, useCallback } from 'react'
+import { useVirtualizer } from '@tanstack/react-virtual'
 import { useChatStore, useActiveSession, useIsRemoteLocked } from '@/stores/chat'
 import { useShallow } from 'zustand/react/shallow'
 import { ScrollArea } from '@superone/ui/components/ui/scroll-area'
@@ -92,29 +93,15 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
       : 0
   const visibleMessages = visibleStart > 0 ? messages.slice(visibleStart) : messages
 
-  const INITIAL_RENDER_COUNT = 12
-  const LOAD_MORE_COUNT = 4
-  const [renderCount, setRenderCount] = useState(INITIAL_RENDER_COUNT)
-  const sentinelRef = useRef<HTMLDivElement>(null)
-  useEffect(() => { setRenderCount(INITIAL_RENDER_COUNT) }, [historySessionId])
-  const hasMore = renderCount < visibleMessages.length
-  const renderedMessages = hasMore ? visibleMessages.slice(-renderCount) : visibleMessages
-
-  useEffect(() => {
-    const sentinel = sentinelRef.current
-    const viewport = scrollViewportRef.current
-    if (!sentinel || !viewport || !hasMore) return
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          setRenderCount((c) => Math.min(c + LOAD_MORE_COUNT, visibleMessages.length))
-        }
-      },
-      { root: viewport, rootMargin: '800px 0px 0px 0px' },
-    )
-    observer.observe(sentinel)
-    return () => observer.disconnect()
-  }, [hasMore, visibleMessages.length, scrollViewportRef])
+  const virtualizer = useVirtualizer({
+    count: visibleMessages.length,
+    getScrollElement: () => scrollViewportRef.current,
+    estimateSize: () => 200,
+    overscan: 6,
+    getItemKey: (index) => visibleMessages[index]?.id ?? index,
+  })
+  const virtualItems = virtualizer.getVirtualItems()
+  const totalSize = virtualizer.getTotalSize()
 
   const computeAutoZoom = useCallback((w: number) => w >= 672 ? 1.15 : w >= 512 ? 1.1 : 1, [])
   const [autoZoom, setAutoZoom] = useState(1)
@@ -199,32 +186,43 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
             ) : (
               <ScrollArea key={historySessionId ?? 'default'} className="chat-scroll-area h-full min-w-0 animate-[fade-in_150ms_ease-out]" viewportRef={scrollViewportRef}>
                 <SelectionContextMenuZone className="mx-auto flex w-full min-w-0 max-w-3xl flex-col gap-1 p-3 @lg:gap-1.5 @lg:p-3.5 @2xl:gap-1.5 @2xl:p-4">
-                  {hasMore && <div ref={sentinelRef} className="h-px" style={{ overflowAnchor: 'none' }} />}
-                  {renderedMessages.map((msg) => {
-                    const compactInfo = parseCompactMarker(msg)
-                    if (compactInfo) {
-                      const origIdx = messages.indexOf(msg)
-                      const rank = compactIndices.length - 1 - compactIndices.indexOf(origIdx)
-                      const isExpanded = rank < expandLevel
-                      return (
-                        <CompactIndicator
-                          key={msg.id}
-                          trigger={compactInfo.trigger}
-                          preTokens={compactInfo.preTokens}
-                          expanded={isExpanded}
-                          onToggle={() => {
-                            prevScrollHeightRef.current = scrollViewportRef.current?.scrollHeight ?? 0
-                            setExpandLevel(isExpanded ? rank : rank + 1)
-                          }}
-                        />
+                  <div style={{ height: totalSize, position: 'relative', width: '100%' }}>
+                    {virtualItems.map((item) => {
+                      const msg = visibleMessages[item.index]
+                      if (!msg) return null
+                      const compactInfo = parseCompactMarker(msg)
+                      const inner = compactInfo ? (() => {
+                        const origIdx = messages.indexOf(msg)
+                        const rank = compactIndices.length - 1 - compactIndices.indexOf(origIdx)
+                        const isExpanded = rank < expandLevel
+                        return (
+                          <CompactIndicator
+                            trigger={compactInfo.trigger}
+                            preTokens={compactInfo.preTokens}
+                            expanded={isExpanded}
+                            onToggle={() => {
+                              prevScrollHeightRef.current = scrollViewportRef.current?.scrollHeight ?? 0
+                              setExpandLevel(isExpanded ? rank : rank + 1)
+                            }}
+                          />
+                        )
+                      })() : (
+                        <div className="chat-message-wrapper">
+                          <ChatMessage message={msg} sessionStatus={sessionStatus} isLastAssistant={msg.id === lastAssistantMessageId} />
+                        </div>
                       )
-                    }
-                    return (
-                      <div key={msg.id} className="chat-message-wrapper">
-                        <ChatMessage message={msg} sessionStatus={sessionStatus} isLastAssistant={msg.id === lastAssistantMessageId} />
-                      </div>
-                    )
-                  })}
+                      return (
+                        <div
+                          key={item.key}
+                          data-index={item.index}
+                          ref={virtualizer.measureElement}
+                          style={{ position: 'absolute', top: 0, left: 0, width: '100%', transform: `translateY(${item.start}px)`, paddingBottom: 6 }}
+                        >
+                          {inner}
+                        </div>
+                      )
+                    })}
+                  </div>
                   {queuedMessages.map((msg) => (
                     <div key={msg.id} className="group/queued chat-message-wrapper opacity-50">
                       <ChatMessage message={msg} sessionStatus={sessionStatus} isLastAssistant={false} hideUserActions />

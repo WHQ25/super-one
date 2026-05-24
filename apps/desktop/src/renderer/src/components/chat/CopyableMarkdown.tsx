@@ -1,6 +1,52 @@
-import { useState, useRef, useMemo, useCallback } from 'react'
+import { useState, useRef, useMemo, useCallback, useEffect, memo } from 'react'
 import { Streamdown } from 'streamdown'
 import { Check, Copy } from 'lucide-react'
+import { loadMathPlugin, getMathPluginSync } from './chat-shared'
+
+const MATH_TRIGGER_RE = /\$\$|\\\(|\\\[|\\begin\{/
+
+type MathPluginShape = ReturnType<typeof getMathPluginSync>
+
+function useMathPluginForText(text: string): MathPluginShape {
+  const needsMath = MATH_TRIGGER_RE.test(text)
+  const [plugin, setPlugin] = useState<MathPluginShape>(() => getMathPluginSync())
+  useEffect(() => {
+    if (!needsMath || plugin) return
+    let cancelled = false
+    void loadMathPlugin().then((p) => { if (!cancelled) setPlugin(p) })
+    return () => { cancelled = true }
+  }, [needsMath, plugin])
+  return needsMath ? plugin : null
+}
+
+function useThrottledStreamingText(text: string, isStreaming: boolean): string {
+  const [throttled, setThrottled] = useState(text)
+  const pendingRafRef = useRef<number | null>(null)
+  const latestTextRef = useRef(text)
+  latestTextRef.current = text
+
+  useEffect(() => {
+    if (!isStreaming) {
+      if (pendingRafRef.current != null) {
+        cancelAnimationFrame(pendingRafRef.current)
+        pendingRafRef.current = null
+      }
+      setThrottled(text)
+      return
+    }
+    if (pendingRafRef.current != null) return
+    pendingRafRef.current = requestAnimationFrame(() => {
+      pendingRafRef.current = null
+      setThrottled(latestTextRef.current)
+    })
+  }, [text, isStreaming])
+
+  useEffect(() => () => {
+    if (pendingRafRef.current != null) cancelAnimationFrame(pendingRafRef.current)
+  }, [])
+
+  return throttled
+}
 import {
   codePlugin,
   streamdownPlugins,
@@ -141,7 +187,7 @@ export function splitByInsightBlocks(text: string): TextSegment[] {
   return segments
 }
 
-function InsightBlock({ title, content, isStreaming, components }: { title: string; content: string; isStreaming: boolean; components?: Record<string, React.ComponentType<never>> }) {
+const InsightBlock = memo(function InsightBlock({ title, content, isStreaming, components }: { title: string; content: string; isStreaming: boolean; components?: Record<string, React.ComponentType<never>> }) {
   const [copied, setCopied] = useState(false)
   const normalized = useMemo(() => normalizeCodeFences(content), [content])
   const textRef = useRef(normalized)
@@ -157,6 +203,11 @@ function InsightBlock({ title, content, isStreaming, components }: { title: stri
       ? { ...streamdownComponents, ...components, code: codeComponent }
       : { ...streamdownComponents, code: codeComponent },
     [components, codeComponent],
+  )
+  const mathPlugin = useMathPluginForText(normalized)
+  const plugins = useMemo(
+    () => mathPlugin ? { ...streamdownPlugins, math: mathPlugin } : streamdownPlugins,
+    [mathPlugin],
   )
   const handleCopy = useCallback(async () => {
     if (!(await tryCopy(content))) return
@@ -180,7 +231,7 @@ function InsightBlock({ title, content, isStreaming, components }: { title: stri
       </div>
       <Streamdown
         className="chat-md"
-        plugins={streamdownPlugins}
+        plugins={plugins}
         rehypePlugins={streamdownRehypePlugins}
         components={merged}
         controls={streamdownControls}
@@ -191,9 +242,9 @@ function InsightBlock({ title, content, isStreaming, components }: { title: stri
       </Streamdown>
     </div>
   )
-}
+})
 
-function MarkdownRenderer({ text, isStreaming, components }: { text: string; isStreaming: boolean; components?: Record<string, React.ComponentType<never>> }) {
+const MarkdownRenderer = memo(function MarkdownRenderer({ text, isStreaming, components }: { text: string; isStreaming: boolean; components?: Record<string, React.ComponentType<never>> }) {
   const normalized = useMemo(() => normalizeCodeFences(text), [text])
   const textRef = useRef(normalized)
   textRef.current = normalized
@@ -209,11 +260,16 @@ function MarkdownRenderer({ text, isStreaming, components }: { text: string; isS
       : { ...streamdownComponents, code: streamingCodeComponent },
     [components, streamingCodeComponent],
   )
+  const mathPlugin = useMathPluginForText(normalized)
+  const plugins = useMemo(
+    () => mathPlugin ? { ...streamdownPlugins, math: mathPlugin } : streamdownPlugins,
+    [mathPlugin],
+  )
 
   return (
     <Streamdown
       className="chat-md"
-      plugins={streamdownPlugins}
+      plugins={plugins}
       rehypePlugins={streamdownRehypePlugins}
       components={merged}
       controls={streamdownControls}
@@ -223,14 +279,15 @@ function MarkdownRenderer({ text, isStreaming, components }: { text: string; isS
       {normalized}
     </Streamdown>
   )
-}
+})
 
-export function CopyableMarkdown({ text, isStreaming, components }: { text: string; isStreaming: boolean; components?: Record<string, React.ComponentType<never>> }) {
-  const segments = useMemo(() => splitByInsightBlocks(text), [text])
+export const CopyableMarkdown = memo(function CopyableMarkdown({ text, isStreaming, components }: { text: string; isStreaming: boolean; components?: Record<string, React.ComponentType<never>> }) {
+  const renderText = useThrottledStreamingText(text, isStreaming)
+  const segments = useMemo(() => splitByInsightBlocks(renderText), [renderText])
   const hasInsight = segments.some((s) => s.type === 'insight')
 
   if (!hasInsight) {
-    return <MarkdownRenderer text={text} isStreaming={isStreaming} components={components} />
+    return <MarkdownRenderer text={renderText} isStreaming={isStreaming} components={components} />
   }
 
   return (
@@ -246,4 +303,4 @@ export function CopyableMarkdown({ text, isStreaming, components }: { text: stri
       })}
     </>
   )
-}
+})

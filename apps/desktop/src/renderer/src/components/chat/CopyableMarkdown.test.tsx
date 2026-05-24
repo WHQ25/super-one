@@ -21,11 +21,13 @@ vi.mock('streamdown', () => ({
 
 vi.mock('./chat-shared', () => ({
   codePlugin: {},
-  streamdownPlugins: [],
+  streamdownPlugins: {},
   streamdownRehypePlugins: [],
   streamdownControls: {},
   streamdownComponents: {},
   streamdownLinkSafety: undefined,
+  loadMathPlugin: () => Promise.resolve(null),
+  getMathPluginSync: () => null,
 }))
 
 vi.mock('./CodeBlock', () => ({

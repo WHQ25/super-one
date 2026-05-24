@@ -5,6 +5,10 @@ export default defineConfig({
   server: {
     host: true,
   },
+  esbuild: {
+    jsx: 'automatic',
+    jsxImportSource: 'react',
+  },
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src/renderer/src', import.meta.url)),

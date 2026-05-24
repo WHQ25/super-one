@@ -428,3 +428,5 @@ function installSuperoneMediaProbe(transport) {
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = { createSuperoneApi, startSuperoneResize, installSuperoneMediaProbe }
 }
+
+export { createSuperoneApi, startSuperoneResize, installSuperoneMediaProbe }

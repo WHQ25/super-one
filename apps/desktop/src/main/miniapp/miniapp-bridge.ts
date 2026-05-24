@@ -1,8 +1,10 @@
 // @ts-expect-error — ?raw import returns string
 import runtimeSrc from '@superone/shared/miniapp-api-runtime.js?raw'
 
+const inlineSafeRuntimeSrc = (runtimeSrc as string).replace(/^\s*export\s*\{[^}]*\}\s*;?\s*$/gm, '')
+
 function generateTransportBlock(appId: string): string {
-  return `${runtimeSrc}
+  return `${inlineSafeRuntimeSrc}
 
   var pending = new Map();
   var reqId = 0;

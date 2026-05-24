@@ -25,6 +25,37 @@ import type {
 
 export const APP_SERVER_RESPONSE_TIMEOUT_MS = 15_000
 
+export const APP_SERVER_BACKPRESSURE_CODE = -32001
+export const APP_SERVER_BACKPRESSURE_MAX_ATTEMPTS = 3
+export const APP_SERVER_BACKPRESSURE_BASE_DELAY_MS = 100
+
+export const APP_SERVER_IDEMPOTENT_METHODS = new Set<string>([
+  'model/list',
+  'permissionProfile/list',
+  'experimentalFeature/list',
+  'thread/list',
+  'thread/read',
+  'thread/loaded/list',
+  'skills/list',
+  'hooks/list',
+  'plugin/list',
+  'plugin/installed',
+  'plugin/read',
+  'mcpServerStatus/list',
+  'config/read',
+])
+
+export const APP_SERVER_OPT_OUT_NOTIFICATIONS: readonly string[] = []
+
+export class JsonRpcError extends Error {
+  readonly code: number
+  constructor(code: number, message: string) {
+    super(message)
+    this.name = 'JsonRpcError'
+    this.code = code
+  }
+}
+
 const moduleRequire = createRequire(import.meta.url)
 let cachedCodexCliScriptPath: string | null = null
 
@@ -105,10 +136,23 @@ export function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: st
   })
 }
 
-export function extractJsonRpcErrorMessage(raw: unknown): string {
+export function extractJsonRpcError(raw: unknown): JsonRpcError {
   const rec = asRecord(raw)
-  if (!rec) return 'Unknown app-server error'
-  return readString(rec.message) ?? 'Unknown app-server error'
+  const code = typeof rec?.code === 'number' ? rec.code : 0
+  const message = readString(rec?.message) ?? 'Unknown app-server error'
+  return new JsonRpcError(code, message)
+}
+
+export function extractJsonRpcErrorMessage(raw: unknown): string {
+  return extractJsonRpcError(raw).message
+}
+
+function jitter(maxMs: number): number {
+  return Math.floor(Math.random() * maxMs)
+}
+
+function isBackpressureError(err: unknown): boolean {
+  return err instanceof JsonRpcError && err.code === APP_SERVER_BACKPRESSURE_CODE
 }
 
 export function normalizeApiKey(value?: string): string | undefined {
@@ -494,7 +538,7 @@ export async function createAppServerConnection(
         responseWaiters.delete(key)
         clearTimeout(waiter.timer)
         if ('error' in msg && msg.error) {
-          waiter.reject(new Error(extractJsonRpcErrorMessage(msg.error)))
+          waiter.reject(extractJsonRpcError(msg.error))
         } else {
           waiter.resolve(asRecord(msg.result) ?? {})
         }
@@ -519,20 +563,39 @@ export async function createAppServerConnection(
 
   const isDev = process.env.NODE_ENV === 'development'
 
+  const sendOnce = async (method: string, params?: Record<string, unknown>): Promise<Record<string, unknown>> => {
+    const requestId = nextRequestId
+    nextRequestId += 1
+    if (isDev) trace('codex.appserver.request', method, { requestId, params }, String(requestId))
+    await sendMessage(compactRecord({ id: requestId, method, params }))
+    try {
+      const result = await waitForResponse(requestId, method)
+      if (isDev) trace('codex.appserver.response', method, { requestId, ok: true, result }, String(requestId))
+      return result
+    } catch (err) {
+      if (isDev) trace('codex.appserver.response', method, { requestId, ok: false, error: (err as Error).message }, String(requestId))
+      throw err
+    }
+  }
+
   const connection: AppServerConnection = {
     request: async (method, params) => {
-      const requestId = nextRequestId
-      nextRequestId += 1
-      if (isDev) trace('codex.appserver.request', method, { requestId, params }, String(requestId))
-      await sendMessage(compactRecord({ id: requestId, method, params }))
-      try {
-        const result = await waitForResponse(requestId, method)
-        if (isDev) trace('codex.appserver.response', method, { requestId, ok: true, result }, String(requestId))
-        return result
-      } catch (err) {
-        if (isDev) trace('codex.appserver.response', method, { requestId, ok: false, error: (err as Error).message }, String(requestId))
-        throw err
+      if (!APP_SERVER_IDEMPOTENT_METHODS.has(method)) {
+        return sendOnce(method, params)
       }
+      let lastError: unknown
+      for (let attempt = 0; attempt < APP_SERVER_BACKPRESSURE_MAX_ATTEMPTS; attempt += 1) {
+        try {
+          return await sendOnce(method, params)
+        } catch (err) {
+          lastError = err
+          if (!isBackpressureError(err) || attempt === APP_SERVER_BACKPRESSURE_MAX_ATTEMPTS - 1) throw err
+          const delay = APP_SERVER_BACKPRESSURE_BASE_DELAY_MS * 3 ** attempt + jitter(50)
+          if (isDev) trace('codex.appserver.retry', method, { attempt: attempt + 1, delay }, undefined)
+          await new Promise<void>((resolve) => setTimeout(resolve, delay))
+        }
+      }
+      throw lastError instanceof Error ? lastError : new Error(String(lastError))
     },
 
     respond: async (requestId, result) => {
@@ -599,16 +662,26 @@ export async function createAppServerConnection(
   }
 
   try {
-    await connection.request('initialize', {
+    const initResult = await connection.request('initialize', {
       clientInfo: {
         name: 'super-one',
         title: 'Super One',
         version: '0.1.0',
       },
-      capabilities: {
+      capabilities: compactRecord({
         experimentalApi: true,
-      },
+        optOutNotificationMethods: APP_SERVER_OPT_OUT_NOTIFICATIONS.length > 0
+          ? [...APP_SERVER_OPT_OUT_NOTIFICATIONS]
+          : undefined,
+      }),
     })
+    log.info(
+      '[codex] app-server initialized userAgent=%s codexHome=%s platform=%s/%s',
+      readString(initResult.userAgent) ?? 'unknown',
+      readString(initResult.codexHome) ?? 'unknown',
+      readString(initResult.platformFamily) ?? 'unknown',
+      readString(initResult.platformOs) ?? 'unknown',
+    )
     await connection.notify('initialized')
   } catch (error) {
     const stderr = stderrChunks.join('').trim()

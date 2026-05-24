@@ -319,6 +319,46 @@ describe('buildCodexProviderCliOverrides', () => {
 
     await handle.close()
   })
+
+  it('retries idempotent reads on JSON-RPC -32001 backpressure and resolves with the eventual success', async () => {
+    const child = createFakeChild()
+    spawnMock.mockReturnValueOnce(child)
+
+    const handlePromise = createAppServerConnection({ mode: 'apiKey' })
+    await nextTick()
+    writeLineToChild(child, { id: 1, result: {} })
+    const handle = await handlePromise
+
+    const listPromise = handle.connection.request('permissionProfile/list')
+    await nextTick()
+    writeLineToChild(child, { id: 2, error: { code: -32001, message: 'Server overloaded; retry later.' } })
+
+    await nextTick()
+    await new Promise((r) => setTimeout(r, 250))
+
+    writeLineToChild(child, { id: 3, result: { data: [{ id: ':workspace', description: null }] } })
+    await expect(listPromise).resolves.toEqual({ data: [{ id: ':workspace', description: null }] })
+
+    await handle.close()
+  })
+
+  it('does not retry non-idempotent methods on -32001 and surfaces the error immediately', async () => {
+    const child = createFakeChild()
+    spawnMock.mockReturnValueOnce(child)
+
+    const handlePromise = createAppServerConnection({ mode: 'apiKey' })
+    await nextTick()
+    writeLineToChild(child, { id: 1, result: {} })
+    const handle = await handlePromise
+
+    const turnPromise = handle.connection.request('turn/start', { threadId: 't1', input: [] })
+    await nextTick()
+    writeLineToChild(child, { id: 2, error: { code: -32001, message: 'Server overloaded; retry later.' } })
+
+    await expect(turnPromise).rejects.toThrow(/Server overloaded/)
+
+    await handle.close()
+  })
 })
 
 describe('resolvePermissionProfile', () => {

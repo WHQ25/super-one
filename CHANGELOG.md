@@ -4,6 +4,33 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.38.0-alpha] - 2026-05-24
+
+### Added
+
+- Codex: Marketplace add/remove/upgrade buttons for Codex extensions
+- Codex: `/goal` slash command opens the thread goal dialog
+- Codex: read-only Hooks panel in Settings
+- Codex: `:read-only` permission preset
+- Codex: backpressure retry, version logging, and notification opt-out
+- Codex: slash commands refresh automatically when skills change
+
+### Fixed
+
+- Session: tightened the Claude idle release window and added lifecycle logs
+- Session: forked sessions now truncate SQLite messages at the fork point
+- Worktree: file IO is routed through the effective project root
+- Agent: SDK assistant typed errors are now surfaced via `message_error`
+
+### Changed
+
+- Codex: upgraded `@openai/codex` to 0.133.0
+
+### Performance
+
+- Codex: spawn the native binary directly, skipping the Node bridge
+- Renderer: cut chat-panel CPU/memory with rAF-batched streamdown, a virtualized list, and lazy mermaid/katex
+
 ## [0.37.3-alpha] - 2026-05-23
 
 ### Fixed

@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { useAppStore } from '@/stores/app'
 import { useSettingsStore } from '@/stores/settings'
 import { HookEditorDialog } from './HookEditorDialog'
+import { CodexHooksPanel } from './CodexHooksPanel'
 import { cn } from '@superone/ui/lib/utils'
 import type { HookConfig, HookEntry, HookEntryType, HookEventName, HookScope } from '@superone/shared/agent-types'
 
@@ -50,6 +51,14 @@ function compareEvents(a: HookEventName, b: HookEventName): number {
 }
 
 export function HooksPage() {
+  const settingsProvider = useAppStore((s) => s.settingsProvider)
+  if (settingsProvider === 'codex') {
+    return <CodexHooksPanel />
+  }
+  return <ClaudeHooksPage />
+}
+
+function ClaudeHooksPage() {
   const { t } = useTranslation()
   const currentFolder = useAppStore((s) => s.currentFolder)
   const { hooks, fetchHooks, saveHook, deleteHook } = useSettingsStore()

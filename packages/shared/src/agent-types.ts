@@ -1286,6 +1286,46 @@ export interface CodexAuthStatus {
   isRunning: boolean
 }
 
+export type CodexHookEventName =
+  | 'preToolUse'
+  | 'postToolUse'
+  | 'permissionRequest'
+  | 'preCompact'
+  | 'postCompact'
+  | 'sessionStart'
+  | 'userPromptSubmit'
+  | 'stop'
+
+export type CodexHookHandlerType = 'command' | 'prompt' | 'agent'
+
+export type CodexHookSource = 'user' | 'project' | 'managed' | 'plugin' | 'unknown'
+
+export type CodexHookTrustStatus = 'trusted' | 'untrusted' | 'unknown'
+
+export interface CodexHookInfo {
+  key: string
+  eventName: CodexHookEventName
+  handlerType: CodexHookHandlerType
+  matcher: string | null
+  command: string | null
+  timeoutSec: number
+  statusMessage: string | null
+  sourcePath: string
+  source: CodexHookSource
+  pluginId: string | null
+  displayOrder: number
+  enabled: boolean
+  isManaged: boolean
+  trustStatus: CodexHookTrustStatus
+}
+
+export interface CodexHookGroup {
+  cwd: string
+  hooks: CodexHookInfo[]
+  warnings: string[]
+  errors: string[]
+}
+
 export interface CodexSetAuthRequest {
   mode: CodexAuthMode
   apiKey?: string
@@ -1571,6 +1611,9 @@ export const AgentIpcChannels = {
   CODEX_SKILLS_READ: 'codex:skills-read',
   CODEX_SKILLS_READ_FILE: 'codex:skills-read-file',
   CODEX_SKILLS_DELETE: 'codex:skills-delete',
+
+  // Codex hooks (read-only)
+  CODEX_HOOKS_LIST: 'codex:hooks-list',
 
   // Codex plugins
   CODEX_PLUGINS_LIST: 'codex:plugins-list',

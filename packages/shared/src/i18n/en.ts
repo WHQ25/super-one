@@ -971,6 +971,20 @@ export type Messages = {
         toolInputJson: string
       }
     }
+    codexHooks: {
+      title: string
+      subtitle: string
+      readOnlyNote: string
+      empty: string
+      emptyHint: string
+      source: {
+        user: string
+        project: string
+        managed: string
+        plugin: string
+        unknown: string
+      }
+    }
     schedule: {
       label: string
       simple: string
@@ -2150,6 +2164,20 @@ export const en: Messages = {
         invalidTimeout: 'Timeout must be a positive number',
         headersJson: 'Headers must be a valid JSON object',
         toolInputJson: 'Tool input must be a valid JSON object',
+      },
+    },
+    codexHooks: {
+      title: 'Codex Hooks',
+      subtitle: 'Hooks discovered by the Codex app-server for this project. Edit them by changing your Codex config or installed plugins.',
+      readOnlyNote: 'Read-only view. To add or change Codex hooks, edit ~/.codex/ or the source plugin directly.',
+      empty: 'No Codex hooks discovered',
+      emptyHint: 'Hooks come from Codex config (~/.codex/config.toml) or installed plugins',
+      source: {
+        user: 'User',
+        project: 'Project',
+        managed: 'Managed',
+        plugin: 'Plugin',
+        unknown: 'Unknown',
       },
     },
     schedule: {

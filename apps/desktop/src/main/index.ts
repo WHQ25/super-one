@@ -69,6 +69,7 @@ import { backfillFromHistory, getBackfillStatus, queryCounts, queryUsage } from 
 import { discoverUserSkills, discoverUserCommands, discoverUserAgents, discoverCodexUserPrompts } from './agent/discover-resources'
 import { CodexExperimentService } from './codex/codex-experiment-service'
 import { CodexPluginsService } from './codex/codex-plugins-service'
+import { CodexHooksService } from './codex/codex-hooks-service'
 import { deleteCodexMcpConfig, saveCodexMcpConfig, toggleCodexMcpConfig } from './codex-config-service'
 import { setCodexServiceFactory } from './session/backends/codex-backend'
 import { AutomationService } from './automation-service'
@@ -132,6 +133,7 @@ if (is.dev) {
 const agentService = new AgentService()
 const codexService = new CodexExperimentService()
 const codexPluginsService = new CodexPluginsService(codexService)
+const codexHooksService = new CodexHooksService(codexService)
 setCodexServiceFactory(() => codexService)
 const automationService = new AutomationService()
 function resolveApiProviderForSession(harnessId: SessionProvider['harnessId'], apiProviderId: string | null) {
@@ -680,6 +682,10 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(AgentIpcChannels.CODEX_SET_AUTH, (_event, projectPath: string, request: CodexSetAuthRequest) => {
     return codexService.setAuth(projectPath, request)
+  })
+
+  ipcMain.handle(AgentIpcChannels.CODEX_HOOKS_LIST, (_event, projectPath: string) => {
+    return codexHooksService.list(projectPath)
   })
 
   ipcMain.handle(AgentIpcChannels.CODEX_PLUGINS_LIST, (_event, projectPath: string) => {

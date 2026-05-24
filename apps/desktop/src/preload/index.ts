@@ -432,6 +432,10 @@ const appAPI = {
   codexDeleteSkill: (projectPath: string, name: string, scope: string) =>
     ipcRenderer.invoke(AgentIpcChannels.CODEX_SKILLS_DELETE, projectPath, name, scope),
 
+  // Codex Hooks (read-only)
+  codexListHooks: (projectPath: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.CODEX_HOOKS_LIST, projectPath),
+
   // Codex Plugins
   codexListPlugins: (projectPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.CODEX_PLUGINS_LIST, projectPath),

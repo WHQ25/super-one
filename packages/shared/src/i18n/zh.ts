@@ -985,6 +985,20 @@ export const zh: Messages = {
         toolInputJson: '工具输入必须是合法的 JSON 对象',
       },
     },
+    codexHooks: {
+      title: 'Codex Hooks',
+      subtitle: 'Codex app-server 为当前项目发现的钩子列表。如需修改，请直接编辑 Codex 配置或对应插件。',
+      readOnlyNote: '只读视图。新增或修改 Codex hooks 请直接编辑 ~/.codex/ 或对应插件。',
+      empty: '未发现 Codex hooks',
+      emptyHint: '钩子来自 Codex 配置 (~/.codex/config.toml) 或已安装的插件',
+      source: {
+        user: '用户',
+        project: '项目',
+        managed: '托管',
+        plugin: '插件',
+        unknown: '未知',
+      },
+    },
     schedule: {
       label: '调度',
       simple: '简单',

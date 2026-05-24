@@ -34,7 +34,7 @@ const providerTabs = [
   { id: 'preferences' as const, labelKey: 'settings.layout.tabs.preferences', icon: Palette },
 ]
 
-const codexTabs = new Set<string>(['providers', 'skills', 'mcp', 'plugins', 'preferences'])
+const codexTabs = new Set<string>(['providers', 'skills', 'mcp', 'hooks', 'plugins', 'preferences'])
 
 const providers: { id: SettingsProvider; labelKey: string }[] = [
   { id: 'claude', labelKey: 'settings.layout.providers.claude' },

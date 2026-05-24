@@ -68,7 +68,7 @@ export class ClaudeBackend implements SessionBackend {
   private _lastStartOpts: BackendStartOptions | null = null
   private _idleTimer: ReturnType<typeof setInterval> | null = null
 
-  static IDLE_TIMEOUT_MS = 300_000
+  static IDLE_TIMEOUT_MS = 180_000
   static IDLE_CHECK_INTERVAL_MS = 30_000
 
   private ensurePermissionHandles(): { canUseTool: CanUseTool; trackPlanFile: (filePath: string) => void } {
@@ -171,8 +171,10 @@ export class ClaudeBackend implements SessionBackend {
 
   private startIdleTimer(): void {
     this.stopIdleTimer()
+    log.info('[ClaudeBackend.idle-diag] timer start sid=%s timeoutMs=%d intervalMs=%d', this._lastStartOpts?.sessionId, ClaudeBackend.IDLE_TIMEOUT_MS, ClaudeBackend.IDLE_CHECK_INTERVAL_MS)
     this._idleTimer = setInterval(() => {
       if (this.isRuntimeIdle(ClaudeBackend.IDLE_TIMEOUT_MS)) {
+        log.info('[ClaudeBackend.idle-diag] eligible sid=%s elapsedMs=%d', this._lastStartOpts?.sessionId, this._lastActiveAt ? Date.now() - this._lastActiveAt : -1)
         void this.releaseRuntime('idle').catch((err) => {
           log.debug('[ClaudeBackend] idle release error:', err)
         })
@@ -273,6 +275,10 @@ export class ClaudeBackend implements SessionBackend {
 
   private async releaseRuntime(reason: 'idle' | 'rebuild' | 'close'): Promise<void> {
     if (!this.bridge && !this.query) return
+    const sid = this._lastStartOpts?.sessionId
+    const acAbortedBefore = this._lastStartOpts?.abortController?.signal.aborted ?? null
+    log.info('[ClaudeBackend.idle-diag] releaseRuntime begin sid=%s reason=%s abortSignalBefore=%s', sid, reason, acAbortedBefore)
+    const t0 = Date.now()
     const bridge = this.bridge
     const query = this.query
     const iterationDone = this.iterationDone
@@ -286,10 +292,24 @@ export class ClaudeBackend implements SessionBackend {
     this.pendingQueued = []
     rejectAllPending(this.pendingPermissions, this.pendingQuestions, this.pendingPlanApprovals, `backend.${reason}`)
     if (query) {
+      const t1 = Date.now()
       try { query.close() } catch { /* ignore */ }
+      log.info('[ClaudeBackend.idle-diag] query.close done sid=%s tookMs=%d', sid, Date.now() - t1)
     }
-    if (bridge) bridge.close()
-    if (iterationDone) await iterationDone.catch(() => {})
+    if (bridge) {
+      const t2 = Date.now()
+      bridge.close()
+      log.info('[ClaudeBackend.idle-diag] bridge.close done sid=%s tookMs=%d', sid, Date.now() - t2)
+    }
+    if (iterationDone) {
+      const t3 = Date.now()
+      const outcome = await Promise.race([
+        iterationDone.then(() => 'resolved' as const).catch(() => 'rejected' as const),
+        new Promise<'timeout-5s'>((resolve) => setTimeout(() => resolve('timeout-5s'), 5000)),
+      ])
+      log.info('[ClaudeBackend.idle-diag] iterationDone sid=%s outcome=%s tookMs=%d', sid, outcome, Date.now() - t3)
+    }
+    log.info('[ClaudeBackend.idle-diag] releaseRuntime end sid=%s totalMs=%d', sid, Date.now() - t0)
     trace('backend.lifecycle', 'runtime_released', { reason })
   }
 

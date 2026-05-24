@@ -1326,6 +1326,29 @@ export interface CodexHookGroup {
   errors: string[]
 }
 
+export interface CodexMarketplaceAddRequest {
+  source: string
+  refName?: string
+  sparsePaths?: string[]
+}
+
+export interface CodexMarketplaceAddResult {
+  marketplaceName: string
+  installedRoot: string
+  alreadyAdded: boolean
+}
+
+export interface CodexMarketplaceUpgradeError {
+  marketplaceName: string
+  message: string
+}
+
+export interface CodexMarketplaceUpgradeResult {
+  selectedMarketplaces: string[]
+  upgradedRoots: string[]
+  errors: CodexMarketplaceUpgradeError[]
+}
+
 export type CodexGoalStatus = 'active' | 'paused' | 'blocked' | 'usageLimited' | 'budgetLimited' | 'complete'
 
 export interface CodexGoal {
@@ -1632,6 +1655,11 @@ export const AgentIpcChannels = {
   CODEX_GOAL_GET: 'codex:goal-get',
   CODEX_GOAL_SET: 'codex:goal-set',
   CODEX_GOAL_CLEAR: 'codex:goal-clear',
+
+  // Codex marketplace
+  CODEX_MARKETPLACE_ADD: 'codex:marketplace-add',
+  CODEX_MARKETPLACE_REMOVE: 'codex:marketplace-remove',
+  CODEX_MARKETPLACE_UPGRADE: 'codex:marketplace-upgrade',
 
   // Codex plugins
   CODEX_PLUGINS_LIST: 'codex:plugins-list',

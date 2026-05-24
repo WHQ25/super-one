@@ -444,6 +444,14 @@ const appAPI = {
   codexClearGoal: (projectPath: string, threadId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.CODEX_GOAL_CLEAR, projectPath, threadId),
 
+  // Codex Marketplace
+  codexMarketplaceAdd: (projectPath: string, request: { source: string; refName?: string; sparsePaths?: string[] }) =>
+    ipcRenderer.invoke(AgentIpcChannels.CODEX_MARKETPLACE_ADD, projectPath, request),
+  codexMarketplaceRemove: (projectPath: string, marketplaceName: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.CODEX_MARKETPLACE_REMOVE, projectPath, marketplaceName),
+  codexMarketplaceUpgrade: (projectPath: string, marketplaceName?: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.CODEX_MARKETPLACE_UPGRADE, projectPath, marketplaceName),
+
   // Codex Plugins
   codexListPlugins: (projectPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.CODEX_PLUGINS_LIST, projectPath),

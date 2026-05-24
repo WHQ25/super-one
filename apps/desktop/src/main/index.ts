@@ -71,6 +71,7 @@ import { CodexExperimentService } from './codex/codex-experiment-service'
 import { CodexPluginsService } from './codex/codex-plugins-service'
 import { CodexHooksService } from './codex/codex-hooks-service'
 import { CodexGoalService } from './codex/codex-goal-service'
+import { CodexMarketplaceService } from './codex/codex-marketplace-service'
 import { deleteCodexMcpConfig, saveCodexMcpConfig, toggleCodexMcpConfig } from './codex-config-service'
 import { setCodexServiceFactory } from './session/backends/codex-backend'
 import { AutomationService } from './automation-service'
@@ -136,6 +137,7 @@ const codexService = new CodexExperimentService()
 const codexPluginsService = new CodexPluginsService(codexService)
 const codexHooksService = new CodexHooksService(codexService)
 const codexGoalService = new CodexGoalService(codexService)
+const codexMarketplaceService = new CodexMarketplaceService(codexService)
 setCodexServiceFactory(() => codexService)
 const automationService = new AutomationService()
 function resolveApiProviderForSession(harnessId: SessionProvider['harnessId'], apiProviderId: string | null) {
@@ -700,6 +702,18 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(AgentIpcChannels.CODEX_GOAL_CLEAR, (_event, projectPath: string, threadId: string) => {
     return codexGoalService.clear(projectPath, threadId)
+  })
+
+  ipcMain.handle(AgentIpcChannels.CODEX_MARKETPLACE_ADD, (_event, projectPath: string, request: import('@superone/shared/agent-types').CodexMarketplaceAddRequest) => {
+    return codexMarketplaceService.add(projectPath, request)
+  })
+
+  ipcMain.handle(AgentIpcChannels.CODEX_MARKETPLACE_REMOVE, (_event, projectPath: string, marketplaceName: string) => {
+    return codexMarketplaceService.remove(projectPath, marketplaceName)
+  })
+
+  ipcMain.handle(AgentIpcChannels.CODEX_MARKETPLACE_UPGRADE, (_event, projectPath: string, marketplaceName?: string) => {
+    return codexMarketplaceService.upgrade(projectPath, marketplaceName)
   })
 
   ipcMain.handle(AgentIpcChannels.CODEX_PLUGINS_LIST, (_event, projectPath: string) => {

@@ -363,6 +363,12 @@ describe('buildCodexProviderCliOverrides', () => {
 
 describe('resolvePermissionProfile', () => {
   it('keeps Codex permission profiles aligned with app-server enforcement fields', () => {
+    expect(resolvePermissionProfile('read-only')).toEqual({
+      permissionPreset: 'read-only',
+      approvalPolicy: 'on-request',
+      sandboxMode: 'read-only',
+      networkAccessEnabled: false,
+    })
     expect(resolvePermissionProfile('default')).toEqual({
       permissionPreset: 'default',
       approvalPolicy: 'on-request',

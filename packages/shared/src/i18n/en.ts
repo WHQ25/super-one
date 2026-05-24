@@ -1015,8 +1015,10 @@ export type Messages = {
       select: string
       defaultValue: string
       fullAccess: string
+      readOnly: string
       defaultDesc: string
       fullAccessDesc: string
+      readOnlyDesc: string
       model: string
       effort: string
       permission: string
@@ -2194,8 +2196,10 @@ export const en: Messages = {
       select: 'Select',
       defaultValue: 'Default',
       fullAccess: 'Full Access',
+      readOnly: 'Read-Only',
       defaultDesc: 'Codex automatically runs commands in a sandbox',
       fullAccessDesc: 'Codex has full access over your computer (elevated risk)',
+      readOnlyDesc: 'Codex can only read files; no edits or commands',
       model: 'Model',
       effort: 'Effort',
       permission: 'Permission',

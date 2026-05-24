@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ShieldCheck, ShieldOff, AlertTriangle, Check, ChevronDown } from 'lucide-react'
+import { Eye, ShieldCheck, ShieldOff, AlertTriangle, Check, ChevronDown } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@superone/ui/components/ui/popover'
 import { useActiveSession, useChatStore } from '@/stores/chat'
 import { DEFAULT_CODEX_PERMISSION_PRESET, type CodexPermissionPreset } from '@superone/shared/agent-types'
@@ -9,53 +9,62 @@ interface CodexPermissionSelectorProps {
   compact?: boolean
 }
 
+interface PresetOption {
+  id: CodexPermissionPreset
+  label: string
+  description: string
+  icon: React.ReactNode
+  triggerIcon: React.ReactNode
+  toneClass: string
+  triggerToneClass: string
+}
+
 export function CodexPermissionSelector({ compact = false }: CodexPermissionSelectorProps) {
   const { t } = useTranslation()
-  const options: Array<{
-    id: CodexPermissionPreset
-    label: string
-    description: string
-    icon: React.ReactNode
-    toneClass: string
-  }> = [
+  const options: PresetOption[] = [
+    {
+      id: 'read-only',
+      label: t('resources.automation.readOnly'),
+      description: t('resources.automation.readOnlyDesc'),
+      icon: <Eye className="size-3.5" />,
+      triggerIcon: <Eye className="size-3" />,
+      toneClass: 'text-foreground',
+      triggerToneClass: 'text-muted-foreground hover:bg-muted',
+    },
     {
       id: 'default',
       label: t('resources.automation.defaultValue'),
       description: t('resources.automation.defaultDesc'),
       icon: <ShieldCheck className="size-3.5" />,
+      triggerIcon: <ShieldCheck className="size-3" />,
       toneClass: 'text-foreground',
+      triggerToneClass: 'text-muted-foreground hover:bg-muted',
     },
     {
       id: 'full-access',
       label: t('resources.automation.fullAccess'),
       description: t('resources.automation.fullAccessDesc'),
       icon: <AlertTriangle className="size-3.5" />,
+      triggerIcon: <ShieldOff className="size-3" />,
       toneClass: 'text-destructive',
+      triggerToneClass: 'text-destructive hover:bg-destructive/10',
     },
   ]
   const [open, setOpen] = useState(false)
   const selectedPreset = useActiveSession((s) => s.selectedCodexPermissionPreset)
   const setSelectedPreset = useChatStore((s) => s.setSelectedCodexPermissionPreset)
   const preset: CodexPermissionPreset = selectedPreset || DEFAULT_CODEX_PERMISSION_PRESET
-  const presetLabel = preset === 'full-access' ? t('resources.automation.fullAccess') : t('resources.automation.defaultValue')
-
-  const modeIcon = preset === 'full-access'
-    ? <ShieldOff className="size-3" />
-    : <ShieldCheck className="size-3" />
+  const activeOption = options.find((o) => o.id === preset) ?? options[1]
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button
-          className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] transition-colors ${
-            preset === 'full-access'
-              ? 'text-destructive hover:bg-destructive/10'
-              : 'text-muted-foreground hover:bg-muted'
-          }`}
-          title={presetLabel}
+          className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] transition-colors ${activeOption.triggerToneClass}`}
+          title={activeOption.label}
         >
-          {modeIcon}
-          {!compact && <span>{presetLabel}</span>}
+          {activeOption.triggerIcon}
+          {!compact && <span>{activeOption.label}</span>}
           {!compact && <ChevronDown className={`size-3 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />}
         </button>
       </PopoverTrigger>

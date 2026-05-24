@@ -1243,7 +1243,7 @@ export interface StartupData {
 export type CodexAuthMode = 'auto' | 'chatgpt' | 'apiKey'
 export type CodexApprovalMode = 'never' | 'on-request' | 'on-failure' | 'untrusted'
 export type CodexSandboxMode = 'read-only' | 'workspace-write' | 'danger-full-access'
-export type CodexPermissionPreset = 'default' | 'full-access'
+export type CodexPermissionPreset = 'read-only' | 'default' | 'full-access'
 
 export interface CodexPermissionProfile {
   approvalPolicy: CodexApprovalMode
@@ -1252,18 +1252,27 @@ export interface CodexPermissionProfile {
 }
 
 export const CODEX_PERMISSION_PRESETS: Record<CodexPermissionPreset, CodexPermissionProfile> = {
-  // Matches Codex CLI "Default" preset (approval-presets id: auto).
+  'read-only': {
+    approvalPolicy: 'on-request',
+    sandboxMode: 'read-only',
+    networkAccessEnabled: false,
+  },
   default: {
     approvalPolicy: 'on-request',
     sandboxMode: 'workspace-write',
     networkAccessEnabled: false,
   },
-  // Matches Codex CLI "Full Access" preset (approval-presets id: full-access).
   'full-access': {
     approvalPolicy: 'never',
     sandboxMode: 'danger-full-access',
     networkAccessEnabled: true,
   },
+}
+
+export const CODEX_PERMISSION_PROFILE_IDS: Record<CodexPermissionPreset, string> = {
+  'read-only': ':read-only',
+  default: ':workspace',
+  'full-access': ':danger-full-access',
 }
 export const DEFAULT_CODEX_PERMISSION_PRESET: CodexPermissionPreset = 'default'
 export const DEFAULT_CODEX_PERMISSION_PROFILE: CodexPermissionProfile =

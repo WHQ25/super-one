@@ -4,6 +4,21 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.38.1-alpha] - 2026-05-24
+
+### Fixed
+
+- Startup crash `createLucideIcon is not a function` introduced in 0.38.0-alpha. Pinned vite to ~7.3 (Rollup 4 backend) to bypass a rolldown 1.0.0-rc.17 chunk ordering bug that hoisted lucide icon declarations before the factory function definition.
+- Mini-app preload module resolution under strict ESM: `miniapp-api-runtime.js` now exports as a proper ES module (kept CJS fallback for `?raw` inlining).
+
+### CI
+
+- Added `bun run check-deps-lock` to all three build workflows; rejects `vite >= 8` and `rolldown` from `bun.lock` to prevent re-introducing the rolldown regression.
+
+### Tests
+
+- Vitest now explicitly uses `esbuild.jsx: 'automatic'` (vite 7 default is classic, which broke `.test.tsx` with `React is not defined`).
+
 ## [0.38.0-alpha] - 2026-05-24
 
 ### Added

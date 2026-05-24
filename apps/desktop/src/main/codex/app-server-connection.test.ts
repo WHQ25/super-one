@@ -154,6 +154,25 @@ describe('createAppServerConnection', () => {
     expect(spawnMock).not.toHaveBeenCalled()
   })
 
+  it('spawns the bundled native binary directly (no Node bridge) and prepends codex-path to PATH', async () => {
+    const child = createFakeChild()
+    spawnMock.mockReturnValueOnce(child)
+
+    const handlePromise = createAppServerConnection({ mode: 'apiKey' })
+    await nextTick()
+    writeLineToChild(child, { id: 1, result: {} })
+    const handle = await handlePromise
+
+    const exe = spawnMock.mock.calls[0][0] as string
+    const opts = spawnMock.mock.calls[0][2] as { env: NodeJS.ProcessEnv }
+    expect(exe).toMatch(/\/vendor\/[a-z0-9_-]+(?:-[a-z0-9_-]+)+\/bin\/codex(?:\.exe)?$/)
+    expect(exe).not.toMatch(/\.js$/)
+    expect(opts.env.PATH ?? '').toContain('/vendor/')
+    expect(opts.env.PATH ?? '').toContain('/codex-path')
+
+    await handle.close()
+  })
+
   it('injects cli overrides as -c args before the app-server subcommand', async () => {
     const child = createFakeChild()
     spawnMock.mockReturnValueOnce(child)

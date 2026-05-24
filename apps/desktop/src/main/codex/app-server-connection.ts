@@ -3,7 +3,6 @@ import { createRequire } from 'module'
 import { createInterface } from 'readline'
 import log from '../logger'
 import { trace } from '../agent/event-trace'
-import { getNodeRuntime } from '../agent/resolve-cli'
 import { SUPERONE_SYSTEM_PROMPT_APPEND } from '../agent/superone-system-prompt'
 import { getActiveProviderRaw, getProviderByIdRaw } from '../database'
 import { ProcessTitle } from '../process-titles'
@@ -212,6 +211,58 @@ export function resolveCodexCliScriptPath(): string {
   return cachedCodexCliScriptPath
 }
 
+const CODEX_TARGET_TRIPLE_BY_PLATFORM: Record<string, string | undefined> = {
+  'darwin-arm64': 'aarch64-apple-darwin',
+  'darwin-x64': 'x86_64-apple-darwin',
+  'linux-arm64': 'aarch64-unknown-linux-musl',
+  'linux-x64': 'x86_64-unknown-linux-musl',
+  'win32-arm64': 'aarch64-pc-windows-msvc',
+  'win32-x64': 'x86_64-pc-windows-msvc',
+}
+
+export function resolveCodexTargetTriple(
+  platform: NodeJS.Platform = process.platform,
+  arch: string = process.arch,
+): string | null {
+  return CODEX_TARGET_TRIPLE_BY_PLATFORM[`${platform}-${arch}`] ?? null
+}
+
+export interface CodexNativeBinary {
+  binaryPath: string
+  pathDir: string
+}
+
+const cachedCodexNativeBinary = new Map<string, CodexNativeBinary>()
+
+export function resolveCodexNativeBinary(packageName: string): CodexNativeBinary | null {
+  const cached = cachedCodexNativeBinary.get(packageName)
+  if (cached) return cached
+  const target = resolveCodexTargetTriple()
+  if (!target) return null
+  let pkgJsonPath: string
+  try {
+    pkgJsonPath = moduleRequire.resolve(`${packageName}/package.json`)
+  } catch {
+    return null
+  }
+  const unpacked = pkgJsonPath.replace(/app\.asar([\\/])/, 'app.asar.unpacked$1')
+  const pkgRoot = unpacked.slice(0, unpacked.lastIndexOf('/package.json'))
+  const binaryName = process.platform === 'win32' ? 'codex.exe' : 'codex'
+  const resolved: CodexNativeBinary = {
+    binaryPath: `${pkgRoot}/vendor/${target}/bin/${binaryName}`,
+    pathDir: `${pkgRoot}/vendor/${target}/codex-path`,
+  }
+  log.info('[codex] Resolved native binary:', resolved.binaryPath)
+  cachedCodexNativeBinary.set(packageName, resolved)
+  return resolved
+}
+
+function prependPath(env: NodeJS.ProcessEnv, dir: string): NodeJS.ProcessEnv {
+  const sep = process.platform === 'win32' ? ';' : ':'
+  const existing = env.PATH ?? process.env.PATH ?? ''
+  return { ...env, PATH: existing ? `${dir}${sep}${existing}` : dir }
+}
+
 export const SUPERONE_CODEX_PROVIDER_ID = 'superone_custom'
 
 export interface CodexProviderOverride {
@@ -372,44 +423,39 @@ export async function createAppServerConnection(
     throw new Error('Codex run interrupted')
   }
 
-  const codexScript = resolveCodexCliScriptPath()
-  const env = envOverride ?? buildAppServerEnv(auth, apiProviderId)
+  const baseEnv = envOverride ?? buildAppServerEnv(auth, apiProviderId)
   const overrideArgs = cliOverrides ?? buildCodexProviderCliOverrides(getCodexProviderOverrideFor(apiProviderId))
   const expectedPackage = resolveCodexPlatformPackage()
   const hasBundledPackage = expectedPackage ? hasCodexPlatformPackage(expectedPackage) : false
-  const systemCodexCli = !hasBundledPackage ? findSystemCodexCli() : null
+  const bundledBinary = hasBundledPackage && expectedPackage ? resolveCodexNativeBinary(expectedPackage) : null
+  const systemCodexCli = !bundledBinary ? findSystemCodexCli() : null
   log.info(
-    '[codex] app-server launch platform=%s arch=%s mode=%s script=%s expectedPackage=%s bundledPackage=%s systemCodex=%s',
+    '[codex] app-server launch platform=%s arch=%s mode=%s expectedPackage=%s bundledBinary=%s systemCodex=%s',
     process.platform,
     process.arch,
     auth.mode,
-    codexScript,
     expectedPackage ?? 'unknown',
-    hasBundledPackage,
+    bundledBinary?.binaryPath ?? 'none',
     systemCodexCli ?? 'none',
   )
 
-  if (!hasBundledPackage && !systemCodexCli) {
+  if (!bundledBinary && !systemCodexCli) {
     const hint = process.platform === 'darwin'
       ? 'Rebuild dependencies with: bun install --frozen-lockfile --os=darwin --cpu=*'
       : 'Rebuild dependencies for the current target architecture'
     throw new Error(`Missing Codex runtime package (${expectedPackage ?? 'unknown'}). ${hint}`)
   }
 
-  const child: ChildProcess = systemCodexCli
-    ? spawn(systemCodexCli, [...overrideArgs, 'app-server', '--listen', 'stdio://'], {
-        env,
-        stdio: ['pipe', 'pipe', 'pipe'],
-        shell: process.platform === 'win32',
-        windowsHide: true,
-        argv0: ProcessTitle.Codex,
-      })
-    : spawn(getNodeRuntime().executable ?? process.execPath, [codexScript, ...overrideArgs, 'app-server', '--listen', 'stdio://'], {
-        env,
-        stdio: ['pipe', 'pipe', 'pipe'],
-        windowsHide: true,
-        argv0: ProcessTitle.Codex,
-      })
+  const spawnArgs = [...overrideArgs, 'app-server', '--listen', 'stdio://']
+  const spawnExe = bundledBinary?.binaryPath ?? systemCodexCli!
+  const env = bundledBinary ? prependPath(baseEnv, bundledBinary.pathDir) : baseEnv
+  const child: ChildProcess = spawn(spawnExe, spawnArgs, {
+    env,
+    stdio: ['pipe', 'pipe', 'pipe'],
+    shell: process.platform === 'win32' && !!systemCodexCli,
+    windowsHide: true,
+    argv0: ProcessTitle.Codex,
+  })
 
   const stdout = child.stdout
   const stdin = child.stdin

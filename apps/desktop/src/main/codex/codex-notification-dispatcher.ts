@@ -1,5 +1,28 @@
 import type { AppServerConnection, AppServerNotification } from './app-server-connection'
 import { trace } from '../agent/event-trace'
+import log from '../logger'
+
+const OBSERVED_THREAD_NOTIFICATIONS = new Set([
+  'thread/status/changed',
+  'thread/settings/updated',
+])
+
+function summarizeThreadNotification(notif: AppServerNotification): string {
+  const params = notif.params
+  const threadId = readString(params.threadId) ?? readString(params.thread_id) ?? 'unknown'
+  if (notif.method === 'thread/status/changed') {
+    const status = asRecord(params.status)
+    const type = readString(status?.type) ?? 'unknown'
+    const flags = Array.isArray(status?.activeFlags) ? status.activeFlags.length : 0
+    return `thread=${threadId} status=${type}${type === 'active' ? ` activeFlags=${flags}` : ''}`
+  }
+  if (notif.method === 'thread/settings/updated') {
+    const settings = asRecord(params.threadSettings)
+    const keys = settings ? Object.keys(settings).join(',') : ''
+    return `thread=${threadId} settings=[${keys}]`
+  }
+  return `thread=${threadId}`
+}
 
 function readString(value: unknown): string | null {
   return typeof value === 'string' && value.length > 0 ? value : null
@@ -154,6 +177,9 @@ export function createNotificationDispatcher(connection: AppServerConnection): N
         return
       }
       if (dispatcherClosed) return
+      if (OBSERVED_THREAD_NOTIFICATIONS.has(notif.method)) {
+        log.info('[codex] %s %s', notif.method, summarizeThreadNotification(notif))
+      }
       const threadId = extractThreadId(notif.params)
       const forkState = threadId ? forkStates.get(threadId) : undefined
       if (process.env.NODE_ENV === 'development' && (notif.method === 'mcpServer/elicitation/request' || notif.method.startsWith('applyExecApproval') || notif.method.startsWith('applyPatchApproval'))) {

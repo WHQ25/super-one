@@ -1,5 +1,19 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createNotificationDispatcher } from './codex-notification-dispatcher'
+
+vi.mock('../logger', () => ({
+  default: {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+  },
+}))
+
+vi.mock('../agent/event-trace', () => ({
+  trace: vi.fn(),
+}))
+
+const { createNotificationDispatcher } = await import('./codex-notification-dispatcher')
 import type { AppServerConnection, AppServerNotification } from './app-server-connection'
 
 function makeQueueConnection(notifications: AppServerNotification[]): { connection: AppServerConnection; release: () => void } {
@@ -120,6 +134,25 @@ describe('NotificationDispatcher', () => {
     const dispatcher = createNotificationDispatcher(connection)
     const result = await dispatcher.mainInbox.poll(10)
     expect(result).toBeNull()
+    dispatcher.close()
+  })
+
+  it('logs thread/status/changed and thread/settings/updated for observation while still routing them to inboxes', async () => {
+    const log = (await import('../logger')).default
+    const infoSpy = vi.mocked(log.info)
+    infoSpy.mockClear()
+
+    const { connection } = makeQueueConnection([
+      { method: 'thread/status/changed', params: { threadId: 'obs-1', status: { type: 'active', activeFlags: ['x', 'y'] } } },
+      { method: 'thread/settings/updated', params: { threadId: 'obs-1', threadSettings: { model: 'gpt-5', effort: 'high' } } },
+    ])
+    const dispatcher = createNotificationDispatcher(connection)
+    await dispatcher.mainInbox.next()
+    await dispatcher.mainInbox.next()
+
+    const messages = infoSpy.mock.calls.map((args) => args.map(String).join(' '))
+    expect(messages.some((m) => m.includes('thread/status/changed') && m.includes('status=active') && m.includes('activeFlags=2'))).toBe(true)
+    expect(messages.some((m) => m.includes('thread/settings/updated') && m.includes('model') && m.includes('effort'))).toBe(true)
     dispatcher.close()
   })
 })

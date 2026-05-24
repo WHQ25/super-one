@@ -188,6 +188,7 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
   let lastTopLevelAssistantUuid = ''
   // Last replay user message UUID — SDK creates file-history snapshots for replay UUIDs only
   let lastReplayCheckpointId = ''
+  let lastAssistantTypedError: string | undefined
   // Per-step dedup: track processed step IDs (SDK message IDs) and latest step tokens
   const processedStepIds = new Set<string>()
   let messageInputTokens = 0
@@ -528,11 +529,10 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
           // Capture per-API-call usage for context window tracking
           if (msg.message?.usage) lastAssistantUsage = msg.message.usage
 
-          // Forward assistant-level errors (auth_failed, billing_error, rate_limit, etc.)
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const assistantError = (msg as any).error
           if (assistantError) {
-            emit({ type: 'assistant_error', messageId, error: assistantError })
+            lastAssistantTypedError = String(assistantError)
           }
 
           if (!assistantParent) {
@@ -821,9 +821,11 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
           } else if (result.subtype === 'success') {
             emit({ type: 'message_complete', messageId, metadata })
           } else {
-            const errorMsg = result.errors?.join('; ') ?? 'Unknown error'
-            emit({ type: 'message_error', messageId, error: errorMsg })
+            const rawError = result.errors?.join('; ') ?? 'Unknown error'
+            const decorated = decorateMessageErrorText(rawError, lastAssistantTypedError, metadata.apiErrorStatus)
+            emit({ type: 'message_error', messageId, error: decorated })
           }
+          lastAssistantTypedError = undefined
 
           resultSeen = true
           turnActive = false
@@ -884,6 +886,14 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
   }
 }
 
+function decorateMessageErrorText(rawError: string, typedCode: string | undefined, apiStatus: number | null | undefined): string {
+  if (typedCode === 'model_not_found') {
+    const suffix = apiStatus ? ` (HTTP ${apiStatus})` : ''
+    return `Model not available for this provider${suffix}: ${rawError}`
+  }
+  return rawError
+}
+
 /** Extract rich metadata from an SDK result message. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function buildResultMetadata(result: any, startTime: number, pausedMs: number, lastAssistantUsage?: any): MessageMetadata {
@@ -899,6 +909,7 @@ function buildResultMetadata(result: any, startTime: number, pausedMs: number, l
     errorSubtype: result.subtype !== 'success' ? result.subtype : undefined,
     structuredOutput: result.structured_output,
     isError: result.is_error || undefined,
+    apiErrorStatus: result.api_error_status ?? undefined,
   }
 
   if (result.permission_denials?.length > 0) {

@@ -1563,7 +1563,6 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
     case 'hook_complete':
     case 'hook_progress':
     case 'auth_status':
-    case 'assistant_error':
     case 'files_persisted':
     case 'elicitation_complete':
     case 'stream_message_start':

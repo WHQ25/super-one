@@ -387,6 +387,106 @@ describe('createSessionQuery', () => {
     expect(events).toContainEqual({ type: 'status_change', status: 'idle' })
   })
 
+  it('decorates message_error with provider-aware hint when assistant carries model_not_found and result has api_error_status', async () => {
+    state.messages = [
+      {
+        type: 'assistant',
+        message: { id: 'step-bad-model', content: [] },
+        error: 'model_not_found',
+      },
+      {
+        type: 'result',
+        subtype: 'error',
+        errors: ['model claude-x is unknown'],
+        api_error_status: 404,
+      },
+    ]
+
+    const events: Array<Record<string, unknown>> = []
+    const handle = createSessionQuery(
+      { consumedTags: [], drainConsumedTag: () => undefined } as unknown as MessageBridge,
+      { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
+      (event) => events.push(event as unknown as Record<string, unknown>),
+      () => 'msg-model-404',
+      () => Date.now() - 50,
+      () => false,
+    )
+    await handle.iterationDone
+
+    const messageError = events.find((e) => e.type === 'message_error') as Record<string, unknown> | undefined
+    expect(messageError?.error).toBe('Model not available for this provider (HTTP 404): model claude-x is unknown')
+
+    const messageInterrupted = events.find((e) => e.type === 'message_interrupted')
+    expect(messageInterrupted).toBeUndefined()
+  })
+
+  it('leaves message_error verbatim when assistant typed error is unrelated (e.g. rate_limit) so result text is preserved', async () => {
+    state.messages = [
+      {
+        type: 'assistant',
+        message: { id: 'step-rl', content: [] },
+        error: 'rate_limit',
+      },
+      {
+        type: 'result',
+        subtype: 'error',
+        errors: ['429 too many requests'],
+        api_error_status: 429,
+      },
+    ]
+
+    const events: Array<Record<string, unknown>> = []
+    const handle = createSessionQuery(
+      { consumedTags: [], drainConsumedTag: () => undefined } as unknown as MessageBridge,
+      { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
+      (event) => events.push(event as unknown as Record<string, unknown>),
+      () => 'msg-rate-limit',
+      () => Date.now() - 50,
+      () => false,
+    )
+    await handle.iterationDone
+
+    const messageError = events.find((e) => e.type === 'message_error') as Record<string, unknown> | undefined
+    expect(messageError?.error).toBe('429 too many requests')
+  })
+
+  it('clears assistant typed error between turns so a later clean turn does not inherit a stale hint', async () => {
+    state.messages = [
+      {
+        type: 'assistant',
+        message: { id: 'step-1', content: [] },
+        error: 'model_not_found',
+      },
+      { type: 'result', subtype: 'error', errors: ['unknown model'], api_error_status: 404 },
+      { type: 'assistant', message: { id: 'step-2', content: [] } },
+      { type: 'result', subtype: 'error', errors: ['transient blip'] },
+    ]
+
+    let currentId = 'turn-A'
+    const events: Array<Record<string, unknown>> = []
+    const handle = createSessionQuery(
+      { consumedTags: [], drainConsumedTag: () => undefined } as unknown as MessageBridge,
+      { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
+      (event) => {
+        events.push(event as unknown as Record<string, unknown>)
+        if ((event as { type: string }).type === 'message_error' && currentId === 'turn-A') {
+          currentId = 'turn-B'
+        }
+      },
+      () => currentId,
+      () => Date.now() - 50,
+      () => false,
+      undefined,
+      (id: string) => { currentId = id },
+    )
+    await handle.iterationDone
+
+    const errors = events.filter((e) => e.type === 'message_error') as Array<Record<string, unknown>>
+    expect(errors).toHaveLength(2)
+    expect(errors[0].error).toBe('Model not available for this provider (HTTP 404): unknown model')
+    expect(errors[1].error).toBe('transient blip')
+  })
+
   it('emits message_interrupted and idle when result arrives after interruption (clears active tasks)', async () => {
     state.messages = [
       { type: 'system', subtype: 'task_started', task_id: 'bg-1', tool_use_id: 't1', description: 'bg' },

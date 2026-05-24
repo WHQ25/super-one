@@ -316,6 +316,7 @@ export interface MessageMetadata {
   errorSubtype?: string
   structuredOutput?: unknown
   isError?: boolean
+  apiErrorStatus?: number | null
   /** SDK assistant message UUID of this turn — anchor for forking at this message. */
   forkAnchorId?: string
 }
@@ -757,7 +758,6 @@ export type AgentEventBase =
   | { type: 'additional_dirs_changed'; additionalDirectories: string[]; additionalDirsScoped: { user: string[]; projectShared: string[]; projectLocal: string[] }; sessionAdditionalDirs: string[] }
   | { type: 'prompt_suggestion'; suggestion: string }
   | { type: 'rate_limit'; status: 'allowed' | 'allowed_warning' | 'rejected'; resetsAt?: number; rateLimitType?: string; utilization?: number; overageStatus?: string; overageResetsAt?: number; overageDisabledReason?: string; isUsingOverage?: boolean; surpassedThreshold?: number }
-  | { type: 'assistant_error'; messageId: string; error: string }
   | { type: 'hook_progress'; hook: HookEvent }
   | { type: 'files_persisted'; files: Array<{ filename: string; fileId: string }>; failed: Array<{ filename: string; error: string }>; processedAt: string }
   | { type: 'elicitation_complete'; mcpServerName: string; elicitationId: string }

@@ -1651,6 +1651,9 @@ export const AgentIpcChannels = {
   // Codex hooks (read-only)
   CODEX_HOOKS_LIST: 'codex:hooks-list',
 
+  // Codex skills change notification (push to renderer)
+  CODEX_SKILLS_CHANGED: 'codex:skills-changed',
+
   // Codex goal
   CODEX_GOAL_GET: 'codex:goal-get',
   CODEX_GOAL_SET: 'codex:goal-set',

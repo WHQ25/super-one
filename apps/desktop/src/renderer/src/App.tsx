@@ -68,6 +68,13 @@ function App(): React.JSX.Element {
   const initialTransition = useRef(true)
 
   useEffect(() => {
+    const unsub = window.app.onCodexSkillsChanged?.((event) => {
+      void useChatStore.getState().refreshCodexSkills(event.projectPath)
+    })
+    return () => { unsub?.() }
+  }, [])
+
+  useEffect(() => {
     startProjectMirror(useChatStore)
     useAppStore.getState().loadRemoteConfig()
     useAppStore.getState().loadBrandHues()

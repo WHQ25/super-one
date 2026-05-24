@@ -101,7 +101,14 @@ export interface NotificationDispatcher {
   close(reason?: string): void
 }
 
-export function createNotificationDispatcher(connection: AppServerConnection): NotificationDispatcher {
+export interface NotificationDispatcherOptions {
+  onSkillsChanged?: () => void
+}
+
+export function createNotificationDispatcher(
+  connection: AppServerConnection,
+  options: NotificationDispatcherOptions = {},
+): NotificationDispatcher {
   const mainState: InboxState = { queue: [], waiters: [], closed: false }
   const forkStates = new Map<string, InboxState>()
   let dispatcherClosed = false
@@ -179,6 +186,11 @@ export function createNotificationDispatcher(connection: AppServerConnection): N
       if (dispatcherClosed) return
       if (OBSERVED_THREAD_NOTIFICATIONS.has(notif.method)) {
         log.info('[codex] %s %s', notif.method, summarizeThreadNotification(notif))
+      }
+      if (notif.method === 'skills/changed' && options.onSkillsChanged) {
+        try { options.onSkillsChanged() } catch (err) {
+          log.warn('[codex] onSkillsChanged callback threw:', err)
+        }
       }
       const threadId = extractThreadId(notif.params)
       const forkState = threadId ? forkStates.get(threadId) : undefined

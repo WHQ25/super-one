@@ -72,6 +72,7 @@ import { CodexPluginsService } from './codex/codex-plugins-service'
 import { CodexHooksService } from './codex/codex-hooks-service'
 import { CodexGoalService } from './codex/codex-goal-service'
 import { CodexMarketplaceService } from './codex/codex-marketplace-service'
+import { setCodexSkillsWatcherWindow } from './codex/codex-skills-watcher'
 import { deleteCodexMcpConfig, saveCodexMcpConfig, toggleCodexMcpConfig } from './codex-config-service'
 import { setCodexServiceFactory } from './session/backends/codex-backend'
 import { AutomationService } from './automation-service'
@@ -359,6 +360,7 @@ function createWindow(): void {
 
   // Update agentService's window reference for event forwarding
   agentService.setMainWindow(mainWindow)
+  setCodexSkillsWatcherWindow(mainWindow)
   initWorkerHost(() => mainWindow)
   agentService.setBroadcastFn((event) => safeSend(AgentIpcChannels.EVENT, event))
   agentService.setSessionManager(sessionManager)

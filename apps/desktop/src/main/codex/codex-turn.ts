@@ -19,6 +19,7 @@ import {
   type CodexProjectAuth,
 } from './app-server-connection'
 import { createNotificationDispatcher, type NotificationInbox } from './codex-notification-dispatcher'
+import { notifyCodexSkillsChanged } from './codex-skills-watcher'
 import { startForkListener, cloneCollab } from './codex-fork-listener'
 import type {
   AppServerUserInputQuestion,
@@ -1040,9 +1041,14 @@ export async function withSessionConnection<T>(
     })
     session.connectionHandle = handle
     session.connectionAuth = { mode: auth.mode, apiKey: auth.apiKey }
-    session.notificationDispatcher = createNotificationDispatcher(handle.connection)
+    const dispatcherOptions = {
+      onSkillsChanged: () => notifyCodexSkillsChanged(session.projectPath),
+    }
+    session.notificationDispatcher = createNotificationDispatcher(handle.connection, dispatcherOptions)
   } else if (!session.notificationDispatcher) {
-    session.notificationDispatcher = createNotificationDispatcher(session.connectionHandle.connection)
+    session.notificationDispatcher = createNotificationDispatcher(session.connectionHandle.connection, {
+      onSkillsChanged: () => notifyCodexSkillsChanged(session.projectPath),
+    })
   }
 
   const handle = session.connectionHandle

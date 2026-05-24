@@ -137,6 +137,31 @@ describe('NotificationDispatcher', () => {
     dispatcher.close()
   })
 
+  it('invokes onSkillsChanged when skills/changed arrives and continues routing the notification', async () => {
+    const { connection } = makeQueueConnection([
+      { method: 'skills/changed', params: {} },
+    ])
+    const onSkillsChanged = vi.fn()
+    const dispatcher = createNotificationDispatcher(connection, { onSkillsChanged })
+
+    // Notification still flows into mainInbox so other consumers can observe it.
+    const notif = await dispatcher.mainInbox.next()
+    expect(notif.method).toBe('skills/changed')
+    expect(onSkillsChanged).toHaveBeenCalledTimes(1)
+
+    dispatcher.close()
+  })
+
+  it('does not crash when onSkillsChanged option is omitted', async () => {
+    const { connection } = makeQueueConnection([
+      { method: 'skills/changed', params: {} },
+    ])
+    const dispatcher = createNotificationDispatcher(connection)
+    const notif = await dispatcher.mainInbox.next()
+    expect(notif.method).toBe('skills/changed')
+    dispatcher.close()
+  })
+
   it('logs thread/status/changed and thread/settings/updated for observation while still routing them to inboxes', async () => {
     const log = (await import('../logger')).default
     const infoSpy = vi.mocked(log.info)

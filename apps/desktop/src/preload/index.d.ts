@@ -202,6 +202,7 @@ interface AppAPI {
   stopFileWatch(): Promise<void>
   onFileChangeEvent(callback: (event: { folderPath: string }) => void): () => void
   onGitHeadChange(callback: (event: { folderPath: string }) => void): () => void
+  onCodexSkillsChanged(callback: (event: { projectPath: string }) => void): () => void
   onSessionChanged(callback: () => void): () => void
 
   // Bash output watcher

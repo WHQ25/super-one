@@ -645,6 +645,15 @@ const appAPI = {
       ipcRenderer.removeListener(AgentIpcChannels.GIT_HEAD_CHANGE, handler)
     }
   },
+  onCodexSkillsChanged: (callback: (event: { projectPath: string }) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, event: { projectPath: string }): void => {
+      callback(event)
+    }
+    ipcRenderer.on(AgentIpcChannels.CODEX_SKILLS_CHANGED, handler)
+    return () => {
+      ipcRenderer.removeListener(AgentIpcChannels.CODEX_SKILLS_CHANGED, handler)
+    }
+  },
   onSessionChanged: (callback: () => void) => {
     const handler = (): void => { callback() }
     ipcRenderer.on(AgentIpcChannels.SESSIONS_CHANGED, handler)

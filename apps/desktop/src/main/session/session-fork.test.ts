@@ -93,7 +93,7 @@ describe('forkSession harness dispatch', () => {
     expect(result.ok).toBe(true)
     expect(sdkForkSessionMock).toHaveBeenCalledWith('claude-src', { upToMessageId: 'anchor-a1' })
     expect(forkSessionRecordMock).toHaveBeenCalledWith(
-      expect.objectContaining({ providerSessionId: 'claude-forked' }),
+      expect.objectContaining({ providerSessionId: 'claude-forked', forkFromMessageId: 'a1' }),
     )
   })
 
@@ -129,6 +129,9 @@ describe('forkSession harness dispatch', () => {
       ['thread/fork', { threadId: 'thread-src' }],
       ['thread/rollback', { threadId: 'thread-forked', numTurns: 2 }],
     ])
+    expect(forkSessionRecordMock).toHaveBeenCalledWith(
+      expect.objectContaining({ providerSessionId: 'thread-forked', forkFromMessageId: 'a1' }),
+    )
   })
 
   it('full-copies a Codex session without loading the transcript when no fork message is given', async () => {

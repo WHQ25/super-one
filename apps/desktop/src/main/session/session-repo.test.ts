@@ -435,5 +435,77 @@ describe('session-repo', () => {
       expect(row?.is_worktree).toBe(0)
       expect(row?.worktree_path).toBeNull()
     })
+
+    function seedSourceWithMessages(sid: string, messages: ChatMessage[]) {
+      saveSessionStateBySid({
+        sid, projectPath: '/tmp/proj', providerId: 'claude-base',
+        messages, totalCostUsd: 0, contextTokens: 0,
+      })
+    }
+
+    function chatMsg(id: string, role: 'user' | 'assistant', text: string): ChatMessage {
+      return {
+        id, role, status: 'complete',
+        content: [{ type: 'text', text }],
+        createdAt: '2026-04-18T00:00:00Z', providerId: 'claude',
+      }
+    }
+
+    it('full-copies source messages when no fork point is given', () => {
+      seedSourceWithMessages('src-full', [
+        chatMsg('u1', 'user', 'one'),
+        chatMsg('a1', 'assistant', 'reply 1'),
+        chatMsg('u2', 'user', 'two'),
+        chatMsg('a2', 'assistant', 'reply 2'),
+      ])
+
+      forkSessionRecord({
+        sourceId: 'src-full', newId: 'fork-full', providerSessionId: 'sdk-full',
+        worktreePath: null, gitBranch: null, title: 'Demo (fork)',
+      })
+
+      const forked = loadSessionStateBySid('fork-full')
+      expect(forked).not.toBeNull()
+      expect(forked!.messages.map((m) => m.role)).toEqual(['user', 'assistant', 'user', 'assistant'])
+    })
+
+    it('truncates copied messages up to and including the fork point', () => {
+      seedSourceWithMessages('src-cut', [
+        chatMsg('u1', 'user', 'one'),
+        chatMsg('a1', 'assistant', 'reply 1'),
+        chatMsg('u2', 'user', 'two'),
+        chatMsg('a2', 'assistant', 'reply 2'),
+        chatMsg('u3', 'user', 'three'),
+        chatMsg('a3', 'assistant', 'reply 3'),
+      ])
+
+      forkSessionRecord({
+        sourceId: 'src-cut', newId: 'fork-cut', providerSessionId: 'sdk-cut',
+        worktreePath: null, gitBranch: null, title: 'Demo (fork)',
+        forkFromMessageId: 'a1',
+      })
+
+      const forked = loadSessionStateBySid('fork-cut')
+      expect(forked).not.toBeNull()
+      expect(forked!.messages.map((m) => m.role)).toEqual(['user', 'assistant'])
+      const last = forked!.messages[1]
+      expect(last.content[0]).toMatchObject({ type: 'text', text: 'reply 1' })
+    })
+
+    it('falls back to a full copy when forkFromMessageId is not found in the source', () => {
+      seedSourceWithMessages('src-miss', [
+        chatMsg('u1', 'user', 'one'),
+        chatMsg('a1', 'assistant', 'reply 1'),
+      ])
+
+      forkSessionRecord({
+        sourceId: 'src-miss', newId: 'fork-miss', providerSessionId: 'sdk-miss',
+        worktreePath: null, gitBranch: null, title: 'Demo (fork)',
+        forkFromMessageId: 'does-not-exist',
+      })
+
+      const forked = loadSessionStateBySid('fork-miss')
+      expect(forked!.messages).toHaveLength(2)
+    })
   })
 })

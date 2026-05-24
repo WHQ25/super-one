@@ -50,6 +50,7 @@ async function persistFork(
       worktreePath,
       gitBranch,
       title: forkTitle(record.title),
+      forkFromMessageId: ctx.forkFromMessageId,
     })
   } catch (err) {
     await rollback()

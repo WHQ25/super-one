@@ -365,6 +365,13 @@ export interface ForkSessionRecordInput {
   /** Branch of the forked worktree, or null when detached / a local fork. */
   gitBranch: string | null
   title: string
+  /**
+   * Truncate copied messages so the fork keeps everything up to AND including
+   * this source-message id (matches the harness-level truncation of the
+   * thread/jsonl). Omit for a full copy. If the id isn't found, falls back to a
+   * full copy so SQLite never disagrees with the underlying transcript.
+   */
+  forkFromMessageId?: string
 }
 
 /**
@@ -384,10 +391,15 @@ export function forkSessionRecord(input: ForkSessionRecordInput): void {
   const now = new Date().toISOString()
   const legacyProvider = source.providerId.startsWith('codex') ? 'codex' : 'claude'
 
-  const srcMsgs = db.prepare(`
-    SELECT role, status, content_json, created_at, provider_id, metadata_json
+  const allSrcMsgs = db.prepare(`
+    SELECT id, role, status, content_json, created_at, provider_id, metadata_json
     FROM chat_messages WHERE session_id = ? ORDER BY sort_order ASC
-  `).all(input.sourceId) as Array<Pick<MessageRow, 'role' | 'status' | 'content_json' | 'created_at' | 'provider_id' | 'metadata_json'>>
+  `).all(input.sourceId) as Array<Pick<MessageRow, 'id' | 'role' | 'status' | 'content_json' | 'created_at' | 'provider_id' | 'metadata_json'>>
+
+  const cutIdx = input.forkFromMessageId
+    ? allSrcMsgs.findIndex((m) => m.id === input.forkFromMessageId)
+    : -1
+  const srcMsgs = cutIdx >= 0 ? allSrcMsgs.slice(0, cutIdx + 1) : allSrcMsgs
 
   const lastUserAt = [...srcMsgs].reverse().find((m) => m.role === 'user')?.created_at ?? now
 

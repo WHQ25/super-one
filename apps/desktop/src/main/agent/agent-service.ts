@@ -46,7 +46,8 @@ import { listMcpConfigs, saveMcpConfig, deleteMcpConfig, toggleMcpConfig } from 
 import { listHooks, saveHook, deleteHook } from '../hooks-config-service'
 import { checkMcpServers, readMcpMetaCache } from '../mcp-probe-service'
 import { authorizeHttpMcpServer } from '../mcp-oauth'
-import { listSkills, readSkillContent, readSkillFile, installSkill, deleteSkill, listCodexSkills, readCodexSkillContent, readCodexSkillFile, deleteCodexSkill } from '../skills-service'
+import { listSkills, readSkillContent, readSkillFile, installSkill, deleteSkill, readCodexSkillContent, readCodexSkillFile, deleteCodexSkill } from '../skills-service'
+import { getSharedCodexSkillsService } from '../codex/codex-skills-rpc-singleton'
 import { readAppSettings, saveAppSettings } from '../app-settings-service'
 import { listCodexMcpConfigs } from '../codex-config-service'
 import { discoverAllAgents, discoverProjectCommands, readAgentFile } from './discover-resources'
@@ -1022,7 +1023,7 @@ export class AgentService {
               homedir: homedir(),
             })
           } else {
-            const skills = listCodexSkills(command.projectPath)
+            const skills = await getSharedCodexSkillsService().list(command.projectPath)
             await respond?.(command.requestId, {
               skills: skills.map((s) => ({ name: s.name, description: s.description ?? '', argumentHint: s.argumentHint ?? '' })),
             })
@@ -1812,7 +1813,7 @@ export class AgentService {
     // --- Codex Skills (read-only) ---
 
     ipcMain.handle(AgentIpcChannels.CODEX_SKILLS_LIST, (_event, projectPath: string) => {
-      return listCodexSkills(projectPath)
+      return getSharedCodexSkillsService().list(projectPath)
     })
 
     ipcMain.handle(AgentIpcChannels.CODEX_SKILLS_READ, (_event, projectPath: string, name: string) => {

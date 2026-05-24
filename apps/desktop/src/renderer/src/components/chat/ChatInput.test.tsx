@@ -218,6 +218,7 @@ vi.mock('@/stores/chat', () => ({
   useIsRemoteLocked: () => false,
   selectCodexPrompts: () => [],
   selectActiveCodexSkills: () => [],
+  getLatestCodexThreadId: () => undefined,
 }))
 
 vi.mock('@/stores/app', () => ({

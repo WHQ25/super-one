@@ -2,7 +2,7 @@ import { useRef, useState, useCallback, useMemo, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { cn } from '@superone/ui/lib/utils'
-import { CLAUDE_INTERCEPTED_COMMAND_NAMES, CODEX_REJECT_PLAN_PLACEHOLDER, runClaudeInterceptedCommand, selectActiveCodexSkills, selectCodexPrompts, useChatStore, useActiveSession, useIsRemoteLocked } from '@/stores/chat'
+import { CLAUDE_INTERCEPTED_COMMAND_NAMES, CODEX_REJECT_PLAN_PLACEHOLDER, getLatestCodexThreadId, runClaudeInterceptedCommand, selectActiveCodexSkills, selectCodexPrompts, useChatStore, useActiveSession, useIsRemoteLocked } from '@/stores/chat'
 import { useEffectiveProjectRoot } from '@/stores/app'
 import { Button } from '@superone/ui/components/ui/button'
 import { ArrowUp, Paperclip, X } from 'lucide-react'
@@ -37,6 +37,7 @@ import { ReviewPanel } from './ReviewPanel'
 import { SlashCommandContent } from './SlashCommandContent'
 import { StopButton } from './StopButton'
 import { groupItems, PopupSectionHeader } from './popup-groups'
+import { CodexGoalDialog } from './CodexGoalDialog'
 
 export const chatInputAPI: {
   insertMention: ((kind: MentionKind, value: string, displayName: string) => void) | null
@@ -168,6 +169,8 @@ export function ChatInput() {
 
     const codexPrompts = useChatStore(selectCodexPrompts)
     const codexSkills = useChatStore(selectActiveCodexSkills)
+    const codexThreadId = useActiveSession((s) => getLatestCodexThreadId(s.messages))
+    const [goalDialogState, setGoalDialogState] = useState<{ open: boolean; prefill: string }>({ open: false, prefill: '' })
 
     const codexSlashCommands = useMemo<SlashCommandInfo[]>(() => ([
       { name: 'help', description: t('chat.codexCommands.helpDesc'), argumentHint: '', isSkill: false },
@@ -180,6 +183,7 @@ export function ChatInput() {
       { name: 'compact', description: t('chat.codexCommands.compactDesc'), argumentHint: '', isSkill: false },
       { name: 'plan', description: t('chat.codexCommands.planDesc'), argumentHint: '', isSkill: false },
       { name: 'provider', description: t('chat.codexCommands.providerDesc'), argumentHint: '', isSkill: false },
+      { name: 'goal', description: t('chat.codexCommands.goalDesc'), argumentHint: t('chat.codexCommands.goalArg'), isSkill: false },
       ...codexPrompts,
       ...codexSkills.map((s): SlashCommandInfo => ({ name: s.name, description: s.description, argumentHint: '', isSkill: true })),
     ]), [t, codexPrompts, codexSkills])
@@ -482,10 +486,20 @@ export function ChatInput() {
 
     const handleSend = useCallback(() => {
       if (!canSend) return
+      if (activeProviderForResources === 'codex') {
+        const trimmed = text.trim()
+        const goalMatch = /^\/goal(?:\s+([\s\S]*))?$/i.exec(trimmed)
+        if (goalMatch) {
+          const prefill = goalMatch[1]?.trim() ?? ''
+          serializeAndClear()
+          setGoalDialogState({ open: true, prefill })
+          return
+        }
+      }
       const { segments, mentions: editorMentions } = serializeAndClear()
       const fullText = segments.map((s) => s.text).join('\n')
       sendMessage(fullText, segments, editorMentions)
-    }, [canSend, sendMessage, serializeAndClear])
+    }, [activeProviderForResources, canSend, sendMessage, serializeAndClear, text])
 
     const handleKeyDownCore = useCallback(
       (e: KeyboardEvent | React.KeyboardEvent): boolean => {
@@ -1200,6 +1214,15 @@ export function ChatInput() {
           <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center rounded-[inherit] border-2 border-dashed border-blue-500 bg-blue-500/10">
             <span className="text-xs font-medium text-blue-600 dark:text-blue-400">{t('chat.dropToAttach')}</span>
           </div>
+        )}
+        {activeProject && (
+          <CodexGoalDialog
+            open={goalDialogState.open}
+            onOpenChange={(open) => setGoalDialogState((s) => ({ ...s, open }))}
+            projectPath={activeProject}
+            threadId={codexThreadId ?? null}
+            prefill={goalDialogState.prefill}
+          />
         )}
       </div>
     )

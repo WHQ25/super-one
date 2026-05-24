@@ -404,6 +404,15 @@ export type Messages = {
       followUp: string
       modelFallback: string
       permissionPreset: string
+      goal: {
+        title: string
+        description: string
+        noThread: string
+        placeholder: string
+        save: string
+        clear: string
+        status: string
+      }
     }
     codexImage: {
       copyImage: string
@@ -583,6 +592,8 @@ export type Messages = {
       compactDesc: string
       planDesc: string
       providerDesc: string
+      goalDesc: string
+      goalArg: string
     }
     providerPopup: {
       title: string
@@ -1599,6 +1610,15 @@ export const en: Messages = {
       followUp: 'Follow-up',
       modelFallback: 'Codex model',
       permissionPreset: 'Permission Preset',
+      goal: {
+        title: 'Codex Goal',
+        description: 'Anchor what this Codex thread is trying to achieve. The model uses it to keep turns on track.',
+        noThread: 'Start a Codex session first (send a message), then come back to set a goal.',
+        placeholder: 'e.g. Refactor the auth middleware to use JWT and ship behind the legacy flag',
+        save: 'Save goal',
+        clear: 'Clear goal',
+        status: 'Status: {{status}}',
+      },
     },
     codexImage: {
       copyImage: 'Copy Image',
@@ -1778,6 +1798,8 @@ export const en: Messages = {
       compactDesc: 'Compact thread context',
       planDesc: 'Enter plan mode',
       providerDesc: 'Choose API provider for this session',
+      goalDesc: 'Set or clear the goal for this Codex thread',
+      goalArg: '[objective]',
     },
     providerPopup: {
       title: 'Choose a provider for this session',

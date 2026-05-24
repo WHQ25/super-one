@@ -436,6 +436,14 @@ const appAPI = {
   codexListHooks: (projectPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.CODEX_HOOKS_LIST, projectPath),
 
+  // Codex Goal
+  codexGetGoal: (projectPath: string, threadId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.CODEX_GOAL_GET, projectPath, threadId),
+  codexSetGoal: (projectPath: string, threadId: string, objective: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.CODEX_GOAL_SET, projectPath, threadId, objective),
+  codexClearGoal: (projectPath: string, threadId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.CODEX_GOAL_CLEAR, projectPath, threadId),
+
   // Codex Plugins
   codexListPlugins: (projectPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.CODEX_PLUGINS_LIST, projectPath),

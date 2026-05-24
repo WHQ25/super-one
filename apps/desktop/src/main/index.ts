@@ -70,6 +70,7 @@ import { discoverUserSkills, discoverUserCommands, discoverUserAgents, discoverC
 import { CodexExperimentService } from './codex/codex-experiment-service'
 import { CodexPluginsService } from './codex/codex-plugins-service'
 import { CodexHooksService } from './codex/codex-hooks-service'
+import { CodexGoalService } from './codex/codex-goal-service'
 import { deleteCodexMcpConfig, saveCodexMcpConfig, toggleCodexMcpConfig } from './codex-config-service'
 import { setCodexServiceFactory } from './session/backends/codex-backend'
 import { AutomationService } from './automation-service'
@@ -134,6 +135,7 @@ const agentService = new AgentService()
 const codexService = new CodexExperimentService()
 const codexPluginsService = new CodexPluginsService(codexService)
 const codexHooksService = new CodexHooksService(codexService)
+const codexGoalService = new CodexGoalService(codexService)
 setCodexServiceFactory(() => codexService)
 const automationService = new AutomationService()
 function resolveApiProviderForSession(harnessId: SessionProvider['harnessId'], apiProviderId: string | null) {
@@ -686,6 +688,18 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(AgentIpcChannels.CODEX_HOOKS_LIST, (_event, projectPath: string) => {
     return codexHooksService.list(projectPath)
+  })
+
+  ipcMain.handle(AgentIpcChannels.CODEX_GOAL_GET, (_event, projectPath: string, threadId: string) => {
+    return codexGoalService.get(projectPath, threadId)
+  })
+
+  ipcMain.handle(AgentIpcChannels.CODEX_GOAL_SET, (_event, projectPath: string, threadId: string, objective: string) => {
+    return codexGoalService.set(projectPath, threadId, objective)
+  })
+
+  ipcMain.handle(AgentIpcChannels.CODEX_GOAL_CLEAR, (_event, projectPath: string, threadId: string) => {
+    return codexGoalService.clear(projectPath, threadId)
   })
 
   ipcMain.handle(AgentIpcChannels.CODEX_PLUGINS_LIST, (_event, projectPath: string) => {

@@ -418,6 +418,15 @@ export const zh: Messages = {
       followUp: '追问',
       modelFallback: 'Codex 模型',
       permissionPreset: '权限预设',
+      goal: {
+        title: 'Codex 目标',
+        description: '为当前 Codex 线程锚定要达成的目标，模型会在每轮对话中参考它。',
+        noThread: '请先发送一条消息开启 Codex 会话，再回来设置目标。',
+        placeholder: '例如：把认证中间件重构为 JWT，并通过 legacy flag 发布',
+        save: '保存目标',
+        clear: '清除目标',
+        status: '状态：{{status}}',
+      },
     },
     codexImage: {
       copyImage: '复制图片',
@@ -597,6 +606,8 @@ export const zh: Messages = {
       compactDesc: '压缩线程上下文',
       planDesc: '进入计划模式',
       providerDesc: '为本会话选择 API 服务商',
+      goalDesc: '为当前 Codex 线程设置或清除目标',
+      goalArg: '[目标描述]',
     },
     providerPopup: {
       title: '为本会话选择服务商',

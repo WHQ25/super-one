@@ -1326,6 +1326,19 @@ export interface CodexHookGroup {
   errors: string[]
 }
 
+export type CodexGoalStatus = 'active' | 'paused' | 'blocked' | 'usageLimited' | 'budgetLimited' | 'complete'
+
+export interface CodexGoal {
+  threadId: string
+  objective: string
+  status: CodexGoalStatus
+  tokenBudget: number | null
+  tokensUsed: number
+  timeUsedSeconds: number
+  createdAt: number
+  updatedAt: number
+}
+
 export interface CodexSetAuthRequest {
   mode: CodexAuthMode
   apiKey?: string
@@ -1614,6 +1627,11 @@ export const AgentIpcChannels = {
 
   // Codex hooks (read-only)
   CODEX_HOOKS_LIST: 'codex:hooks-list',
+
+  // Codex goal
+  CODEX_GOAL_GET: 'codex:goal-get',
+  CODEX_GOAL_SET: 'codex:goal-set',
+  CODEX_GOAL_CLEAR: 'codex:goal-clear',
 
   // Codex plugins
   CODEX_PLUGINS_LIST: 'codex:plugins-list',

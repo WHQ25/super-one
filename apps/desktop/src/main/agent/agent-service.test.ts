@@ -73,10 +73,16 @@ vi.mock('../skills-service', () => ({
   readSkillFile: vi.fn(),
   installSkill: vi.fn(),
   deleteSkill: vi.fn(),
-  listCodexSkills: vi.fn(() => []),
   readCodexSkillContent: vi.fn(),
   readCodexSkillFile: vi.fn(),
   deleteCodexSkill: vi.fn(),
+}))
+
+vi.mock('../codex/codex-skills-rpc-singleton', () => ({
+  getSharedCodexSkillsService: () => ({
+    list: vi.fn(async () => []),
+    setEnabled: vi.fn(async () => {}),
+  }),
 }))
 
 vi.mock('../codex-config-service', () => ({

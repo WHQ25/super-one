@@ -249,10 +249,10 @@ export function readSkillFile(cwd: string, skillName: string, relativePath: stri
 }
 
 // --- Codex wrappers ---
-
-export function listCodexSkills(cwd: string): SkillInfo[] {
-  return listSkillsFromDirs(getCodexSkillDirs(cwd))
-}
+// `listCodexSkills` removed: Codex skill listing now goes through the
+// skills/list RPC (CodexSkillsRpcService). `readCodexSkillContent`,
+// `readCodexSkillFile`, and `deleteCodexSkill` still scan local fs because
+// the RPC only returns metadata + path, not file contents.
 
 export function readCodexSkillContent(cwd: string, name: string): SkillDetail | null {
   return readSkillContentFromDirs(getCodexSkillDirs(cwd), name)

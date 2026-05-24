@@ -1766,12 +1766,13 @@ export function PluginsPage() {
     clearMarketplacePluginDetail,
     addMarketplace,
     removeMarketplace,
+    upgradeCodexMarketplace,
   } = useSettingsStore()
   const [tab, setTab] = useState<PluginsTab>('marketplace')
   const [selectedMarketplace, setSelectedMarketplace] = useState<string | null>(null)
   const [addDialogOpen, setAddDialogOpen] = useState(false)
   const isCodex = settingsProvider === 'codex'
-  const canManageMarketplaces = !isCodex
+  const canManageMarketplaces = true
 
   useEffect(() => {
     clearPluginDetail()
@@ -1855,15 +1856,19 @@ export function PluginsPage() {
             onBack={() => setSelectedMarketplace(null)}
             onInstall={handleInstall}
             onUpdateMarketplace={async () => {
-              await window.app.updateMarketplace(selectedMarketplace!)
+              if (isCodex) {
+                await upgradeCodexMarketplace(selectedMarketplace!)
+              } else {
+                await window.app.updateMarketplace(selectedMarketplace!)
+              }
               await fetchMarketplacePlugins()
             }}
-            onRemoveMarketplace={canManageMarketplaces && summary.scope && summary.scope !== 'official' ? async () => {
-              await removeMarketplace(selectedMarketplace!, summary.scope!)
+            onRemoveMarketplace={canManageMarketplaces && (isCodex || (summary.scope && summary.scope !== 'official')) ? async () => {
+              await removeMarketplace(selectedMarketplace!, summary.scope ?? 'user')
               setSelectedMarketplace(null)
             } : undefined}
-            canUpdateMarketplace={!isCodex}
-            canRemoveMarketplace={canManageMarketplaces && summary.scope !== 'official'}
+            canUpdateMarketplace={true}
+            canRemoveMarketplace={canManageMarketplaces && (isCodex || summary.scope !== 'official')}
             allowProjectInstall={!isCodex}
             canExplore={!isCodex}
           />

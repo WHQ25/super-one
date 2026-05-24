@@ -97,6 +97,7 @@ interface SettingsState {
   clearMarketplacePluginDetail: () => void
   addMarketplace: (source: string, scope: ResourceScope) => Promise<void>
   removeMarketplace: (name: string, scope: MarketplaceScope) => Promise<void>
+  upgradeCodexMarketplace: (name?: string) => Promise<void>
 
   // Hooks
   hooks: HookConfig[]
@@ -446,14 +447,29 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
   addMarketplace: async (source, scope) => {
     const pp = getProjectPath()
-    await window.app.addMarketplace(source, scope, pp)
+    if (useAppStore.getState().settingsProvider === 'codex') {
+      await window.app.codexMarketplaceAdd(pp, { source })
+    } else {
+      await window.app.addMarketplace(source, scope, pp)
+    }
     await get().fetchMarketplacePlugins()
     await get().fetchPlugins()
   },
 
   removeMarketplace: async (name, scope) => {
     const pp = getProjectPath()
-    await window.app.removeMarketplace(name, scope, pp)
+    if (useAppStore.getState().settingsProvider === 'codex') {
+      await window.app.codexMarketplaceRemove(pp, name)
+    } else {
+      await window.app.removeMarketplace(name, scope, pp)
+    }
+    await get().fetchMarketplacePlugins()
+    await get().fetchPlugins()
+  },
+
+  upgradeCodexMarketplace: async (name) => {
+    const pp = getProjectPath()
+    await window.app.codexMarketplaceUpgrade(pp, name)
     await get().fetchMarketplacePlugins()
     await get().fetchPlugins()
   },

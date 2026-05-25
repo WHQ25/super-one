@@ -165,6 +165,67 @@ describe('WarmupManager prewarm/consume', () => {
   })
 })
 
+describe('WarmupManager subprocess cleanup (abortController ownership)', () => {
+  beforeEach(() => {
+    startupMock.mockReset()
+  })
+
+  it('injects an abortController into startup options when caller does not provide one', async () => {
+    startupMock.mockResolvedValue(fakeWarm())
+    const m = new WarmupManager()
+    m.prewarm(baseOpts())
+    await new Promise((r) => setTimeout(r, 0))
+    const passed = startupMock.mock.calls[0][0].options
+    expect(passed.abortController).toBeInstanceOf(AbortController)
+    expect(passed.abortController.signal.aborted).toBe(false)
+  })
+
+  it('preserves a caller-supplied abortController instead of overwriting it', async () => {
+    startupMock.mockResolvedValue(fakeWarm())
+    const m = new WarmupManager()
+    const callerAc = new AbortController()
+    m.prewarm(baseOpts({ abortController: callerAc } as Partial<Options>))
+    await new Promise((r) => setTimeout(r, 0))
+    expect(startupMock.mock.calls[0][0].options.abortController).toBe(callerAc)
+  })
+
+  it('aborts the slot controller on dispose so spawn() SIGTERMs the warm subprocess', async () => {
+    startupMock.mockResolvedValue(fakeWarm())
+    const m = new WarmupManager()
+    m.prewarm(baseOpts())
+    await new Promise((r) => setTimeout(r, 0))
+    const ac: AbortController = startupMock.mock.calls[0][0].options.abortController
+    expect(ac.signal.aborted).toBe(false)
+    m.dispose()
+    expect(ac.signal.aborted).toBe(true)
+  })
+
+  it('aborts the old slot controller when key_changed forces a re-warm', async () => {
+    startupMock.mockResolvedValueOnce(fakeWarm()).mockResolvedValueOnce(fakeWarm())
+    const m = new WarmupManager()
+    m.prewarm(baseOpts({ effort: 'low' as Options['effort'] }))
+    await new Promise((r) => setTimeout(r, 0))
+    const acA: AbortController = startupMock.mock.calls[0][0].options.abortController
+    m.prewarm(baseOpts({ effort: 'high' as Options['effort'] }))
+    await new Promise((r) => setTimeout(r, 0))
+    expect(acA.signal.aborted).toBe(true)
+  })
+
+  it('aborts the controller of a superseded inflight startup', async () => {
+    let resolveA: (w: WarmQuery) => void = () => {}
+    startupMock
+      .mockImplementationOnce(() => new Promise<WarmQuery>((r) => { resolveA = r }))
+      .mockResolvedValueOnce(fakeWarm())
+    const m = new WarmupManager()
+    m.prewarm(baseOpts({ effort: 'low' as Options['effort'] }))
+    const acA: AbortController = startupMock.mock.calls[0][0].options.abortController
+    m.prewarm(baseOpts({ effort: 'high' as Options['effort'] }))
+    resolveA(fakeWarm())
+    await new Promise((r) => setTimeout(r, 0))
+    expect(acA.signal.aborted).toBe(true)
+  })
+})
+
 describe('per-backend isolation', () => {
   it('a slot prewarmed by one manager cannot be consumed by another, preventing canUseTool bleed across backends', async () => {
     const warm = fakeWarm()

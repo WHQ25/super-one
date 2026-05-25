@@ -4,6 +4,16 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.38.2-alpha] - 2026-05-25
+
+### Fixed
+
+- Warmed-but-discarded Claude subprocesses (SDK 0.3.150) no longer leak. The SDK's `WarmQuery.close()` only ends stdin, but the binary doesn't honor stdin EOF during the warm/init phase, so every discarded warm slot (`stale` / `key_changed` / `dispose`) was orphaning a child process — observed in packaged 0.38.1-alpha as 6 concurrent SDK children for one session, alive for hours. `WarmupManager` now owns the spawn's `AbortController` and calls `abort()` in every discard path, which turns into a SIGTERM via `spawn({ signal })`. The consume path (warm slot → real `Query`) is unchanged.
+
+### Tests
+
+- New `warmup-manager.test.ts` locks down the SIGTERM-on-discard contract — five cases cover both the `startup()` injection and the dispose / key_changed / resolved-but-superseded cleanup races. Mutation-tested: removing either `abort()` turns three of five red.
+
 ## [0.38.1-alpha] - 2026-05-24
 
 ### Fixed

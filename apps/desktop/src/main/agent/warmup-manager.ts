@@ -50,6 +50,7 @@ interface WarmupSlot {
   key: string
   warm: WarmQuery
   createdAt: number
+  abortController: AbortController
 }
 
 const STALE_TTL_MS = 5 * 60 * 1000
@@ -98,16 +99,19 @@ export class WarmupManager {
     }
 
     this.inflightKey = key
+    const abortController = options.abortController ?? new AbortController()
+    const startupOptions = options.abortController ? options : { ...options, abortController }
     log.info('[warmup] startup() begin key=%s', shortKey(key))
     const t0 = Date.now()
-    startup({ options }).then((warm) => {
+    startup({ options: startupOptions }).then((warm) => {
       const dur = Date.now() - t0
       if (this.disposed || this.inflightKey !== key) {
         log.info('[warmup] startup() resolved but superseded (durMs=%d)', dur)
-        warm.close()
+        try { warm.close() } catch { /* ignore */ }
+        try { abortController.abort() } catch { /* ignore */ }
         return
       }
-      this.slot = { key, warm, createdAt: Date.now() }
+      this.slot = { key, warm, createdAt: Date.now(), abortController }
       this.inflightKey = null
       log.info('[warmup] startup() ready durMs=%d key=%s', dur, shortKey(key))
       trace('warmup', 'ready', { key, durMs: dur })
@@ -159,6 +163,7 @@ export class WarmupManager {
     if (!this.slot) return
     log.info('[warmup] discard slot reason=%s key=%s', reason, shortKey(this.slot.key))
     try { this.slot.warm.close() } catch { /* ignore */ }
+    try { this.slot.abortController.abort() } catch { /* ignore */ }
     this.slot = null
   }
 

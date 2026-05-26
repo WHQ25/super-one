@@ -7,7 +7,7 @@ import {
   _truncateAtCheckpoint,
   getActivePerSession,
   getProject,
-  triggerPrewarm,
+  schedulePrewarmKeepalive,
   updateActivePerSession,
   updatePerSession,
 } from '../index'
@@ -103,13 +103,12 @@ export const createSessionSlice: StateCreator<ChatStore, [], [], SessionSlice> =
   setDraftText: (text) => {
     const { activeProject } = get()
     if (!activeProject) return
-    const prevText = getActivePerSession(get(), activeProject).draftText
     set((s) => updateActivePerSession(s, () => ({
       draftText: text,
       ...(text.length > 0 ? { codexPlanRejectHintActive: false } : {}),
     })))
-    if (prevText.length === 0 && text.length > 0) {
-      triggerPrewarm(get(), activeProject)
+    if (text.length > 0) {
+      schedulePrewarmKeepalive(get(), activeProject)
     }
   },
 

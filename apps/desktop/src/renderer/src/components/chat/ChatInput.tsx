@@ -37,6 +37,7 @@ import { ReviewPanel } from './ReviewPanel'
 import { SlashCommandContent } from './SlashCommandContent'
 import { StopButton } from './StopButton'
 import { groupItems, PopupSectionHeader } from './popup-groups'
+import { computeMatchingSlashCommands } from './chat-input/computeMatchingSlashCommands'
 import { CodexGoalDialog } from './CodexGoalDialog'
 
 export const chatInputAPI: {
@@ -190,40 +191,10 @@ export function ChatInput() {
 
     const activeSlashCommands = activeProviderForResources === 'codex' ? codexSlashCommands : slashCommands
 
-    const HIDDEN_COMMANDS = new Set(['keybindings-help', 'debug'])
-    const matchingCommands = useMemo(() => {
-      if (activeProviderForResources === 'codex') {
-        if (!text.startsWith('/')) return []
-        const query = text.slice(1).toLowerCase()
-        return orderCommandsBySkill(
-          activeSlashCommands
-            .map((cmd) => {
-              const r = fuzzyMatch(query, cmd.name)
-              return { ...cmd, matchIndices: r.indices, score: r.score, matched: r.match }
-            })
-            .filter((cmd) => cmd.matched)
-            .sort((a, b) => b.score - a.score)
-        )
-      }
-      if (!text.startsWith('/')) return []
-      if (/^\/add-dir(\s|$)/.test(text)) return []
-      if (text.includes(' ')) return []
-      const query = text.slice(1).toLowerCase()
-      return orderCommandsBySkill(
-        activeSlashCommands
-          .filter((cmd) => !HIDDEN_COMMANDS.has(cmd.name))
-          .map((cmd) => {
-            const nameResult = fuzzyMatch(query, cmd.name)
-            const descResult = cmd.description ? fuzzyMatch(query, cmd.description) : null
-            const bestScore = descResult && descResult.match && descResult.score > nameResult.score
-              ? descResult.score : nameResult.score
-            const matched = nameResult.match || (descResult?.match ?? false)
-            return { ...cmd, matchIndices: nameResult.indices, score: bestScore, matched }
-          })
-          .filter((cmd) => cmd.matched)
-          .sort((a, b) => b.score - a.score)
-      )
-    }, [activeProviderForResources, text, activeSlashCommands])
+    const matchingCommands = useMemo(
+      () => computeMatchingSlashCommands(text, activeSlashCommands, activeProviderForResources),
+      [activeProviderForResources, text, activeSlashCommands],
+    )
     matchingCommandsRef.current = matchingCommands
     slashDismissedRef.current = slashDismissed
 

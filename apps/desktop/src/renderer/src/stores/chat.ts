@@ -21,6 +21,10 @@ import {
   extractSessionTitle,
   mergeMessagesByMaxSeq,
 } from './chat-store/helpers/event-helpers'
+import {
+  inferProviderFromHarnessId,
+  resolveProvider,
+} from './chat-store/helpers/provider-routing'
 import { checkAutoModeEligibility } from '@/lib/auto-mode-eligibility'
 import { PERMISSION_MODES } from '@/components/chat/PermissionModeList'
 import { extractPartialToolInput } from '@/components/chat/tool-display'
@@ -335,7 +339,7 @@ function applySessionAgentDefaults(
   project: ProjectState,
   claudeModels: ModelOption[],
 ): Partial<PerSessionState> {
-  const provider = session.sessionProvider ?? session.preferredProvider
+  const provider = resolveProvider(session)
   if (provider === 'codex') {
     const sel = resolveSessionCodexSelection(
       project.codexModels,
@@ -575,7 +579,7 @@ function triggerPrewarm(state: ChatStore, projectPath?: string | null): void {
   const key = projectPath ?? state.activeProject
   if (!key) return
   const session = getActivePerSession(state, key)
-  const provider = session.sessionProvider ?? session.preferredProvider
+  const provider = resolveProvider(session)
   if (typeof window.agent?.prewarm !== 'function') return
   const dirs = mergeProjectAndSessionDirs(getProject(state, key), session)
   const project = getProject(state, key)
@@ -1989,7 +1993,7 @@ function getCodexPlanActionContext(
   if (!codexSessionId) return null
 
   const session = getActivePerSession(get(), activeProject)
-  const provider = session.sessionProvider ?? session.preferredProvider
+  const provider = resolveProvider(session)
   if (provider !== 'codex' || session.selectedCodexCollaborationMode !== 'plan' || session.status !== 'idle' || project.hasPendingInteraction) {
     return null
   }
@@ -2511,11 +2515,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     if (event.type === 'remote_session_start') {
       const projectPath = event.remoteProjectPath
       const sessionId = event.remoteSessionId
-      const remoteProvider: ChatProvider | null = event.harnessId === 'codex'
-        ? 'codex'
-        : event.harnessId === 'claude'
-          ? 'claude'
-          : null
+      const remoteProvider = inferProviderFromHarnessId(event.harnessId)
       set((s) => {
         const project = s.projectSessions[projectPath] ?? createDefaultProjectState()
         const existingSession = project._sessions[sessionId]
@@ -2926,7 +2926,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         const prevProject = nextProjects[entry.projectPath] ?? createDefaultProjectState()
         const prevSession = prevProject._sessions[entry.sid] ?? createDefaultPerSessionState()
         const mergedMessages = mergeMessagesByMaxSeq(entry.snapshot.messages as ChatMessage[], prevSession.messages)
-        const provider: ChatProvider = entry.snapshot.harnessId === 'codex' ? 'codex' : 'claude'
+        const provider: ChatProvider = inferProviderFromHarnessId(entry.snapshot.harnessId) ?? 'claude'
         const inferredStatus: AgentStatus = entry.isStreaming ? 'streaming' : prevSession.status === 'error' ? 'error' : 'idle'
         const mergedSession: PerSessionState = {
           ...prevSession,
@@ -4343,7 +4343,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
   togglePlanModeShortcut: () => {
     const session = getActivePerSession(get())
-    const provider = session.sessionProvider ?? session.preferredProvider
+    const provider = resolveProvider(session)
     if (provider === 'codex') {
       const next: CodexCollaborationMode = session.selectedCodexCollaborationMode === 'plan' ? 'default' : 'plan'
       get().setSelectedCodexCollaborationMode(next)

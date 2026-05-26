@@ -1,7 +1,7 @@
 import type { CanUseTool, Query, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import { MessageBridge } from '../../agent/message-bridge'
 import { buildClaudeOptions, createSessionQuery, buildUserMessage, type SessionQueryOptions } from '../../agent/claude-query'
-import { WarmupManager } from '../../agent/warmup-manager'
+import { getGlobalWarmupManager, WarmupManager } from '../../agent/warmup-manager'
 import {
   createCanUseTool,
   rejectAllPending,
@@ -63,11 +63,12 @@ export class ClaudeBackend implements SessionBackend {
   private canUseToolHandle: CanUseTool | null = null
   private trackPlanFileHandle: ((filePath: string) => void) | null = null
 
-  private warmupManager = new WarmupManager()
+  private get warmupManager() { return getGlobalWarmupManager() }
 
   private _lastActiveAt: number | null = null
   private _lastStartOpts: BackendStartOptions | null = null
   private _idleTimer: ReturnType<typeof setInterval> | null = null
+  private _activeRuntimeKey: string | null = null
 
   static IDLE_TIMEOUT_MS = 180_000
   static IDLE_CHECK_INTERVAL_MS = 30_000
@@ -167,6 +168,7 @@ export class ClaudeBackend implements SessionBackend {
     this.query = handle.query
     this.iterationDone = handle.iterationDone
     this.spawnAbortController = handle.spawnAbortController
+    this._activeRuntimeKey = WarmupManager.keyOf(buildClaudeOptions(queryOptions))
     this._lastActiveAt = Date.now()
     this.startIdleTimer()
   }
@@ -272,7 +274,6 @@ export class ClaudeBackend implements SessionBackend {
     this.eventListeners.clear()
     this.providerSessionIdListeners.clear()
     this.permissionModeAppliedListeners.clear()
-    this.warmupManager.dispose()
   }
 
   private async releaseRuntime(reason: 'idle' | 'rebuild' | 'close'): Promise<void> {
@@ -289,6 +290,7 @@ export class ClaudeBackend implements SessionBackend {
     this.query = null
     this.iterationDone = null
     this.spawnAbortController = null
+    this._activeRuntimeKey = null
     this._lastActiveAt = null
     this.stopIdleTimer()
     for (const resolve of this.turnResolves.values()) resolve()
@@ -342,7 +344,9 @@ export class ClaudeBackend implements SessionBackend {
 
   prewarm(opts: BackendStartOptions): void {
     try {
-      this.warmupManager.prewarm(buildClaudeOptions(this.buildQueryOptions(opts)))
+      const options = buildClaudeOptions(this.buildQueryOptions(opts))
+      if (this.query && this._activeRuntimeKey === WarmupManager.keyOf(options)) return
+      this.warmupManager.prewarm(options)
     } catch (err) {
       log.debug('[ClaudeBackend] prewarm failed:', err)
     }

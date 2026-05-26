@@ -337,24 +337,20 @@ describe('ensureSession', () => {
     }
   })
 
-  it('triggers prewarm when a new project session is created', () => {
+  it('does NOT prewarm when a new project session is created (prewarm only fires on typing)', () => {
     mockWindowAgent.prewarm.mockClear()
     useChatStore.getState().ensureSession('/prewarm-new')
-    expect(mockWindowAgent.prewarm).toHaveBeenCalledTimes(1)
-    expect(mockWindowAgent.prewarm).toHaveBeenCalledWith(
-      '/prewarm-new',
-      expect.objectContaining({ sessionId: expect.any(String) }),
-    )
+    expect(mockWindowAgent.prewarm).not.toHaveBeenCalled()
   })
 
-  it('does NOT trigger prewarm when project already exists', () => {
+  it('does NOT prewarm when project already exists', () => {
     useChatStore.getState().ensureSession('/prewarm-existing')
     mockWindowAgent.prewarm.mockClear()
     useChatStore.getState().ensureSession('/prewarm-existing')
     expect(mockWindowAgent.prewarm).not.toHaveBeenCalled()
   })
 
-  it('triggers Codex prewarm with provider and Codex model when switching an empty draft to Codex', () => {
+  it('does NOT prewarm when switching an empty draft to Codex (no typing yet)', () => {
     setCodex({ models: [{ id: 'gpt-5.4', name: 'GPT-5.4', supportedReasoningEfforts: [{ value: 'high', description: 'high' }] } as never] })
     setupProject('/prewarm-codex')
     const beforeSid = useChatStore.getState().projectSessions['/prewarm-codex']._activeSessionId
@@ -366,14 +362,7 @@ describe('ensureSession', () => {
     const afterSid = project._activeSessionId
     expect(afterSid).not.toBe(beforeSid)
     expect(project._sessions[afterSid!].sessionProvider).toBe('codex')
-    expect(mockWindowAgent.prewarm).toHaveBeenCalledWith(
-      '/prewarm-codex',
-      expect.objectContaining({
-        provider: 'codex',
-        model: 'gpt-5.4',
-        sessionId: afterSid,
-      }),
-    )
+    expect(mockWindowAgent.prewarm).not.toHaveBeenCalled()
   })
 })
 
@@ -1197,7 +1186,7 @@ describe('resetSession', () => {
     expect(after.sandboxInfo).toEqual({ enabled: false, autoAllowBash: true })
   })
 
-  it('triggers prewarm after reset so the new draft session warms up in the background', async () => {
+  it('does NOT prewarm after reset (new draft has no typed text, prewarm waits for user input)', async () => {
     mockWindowAgent.resetSession.mockReset()
     mockWindowAgent.resetSession.mockResolvedValue({
       permissionMode: 'default' as const,
@@ -1210,10 +1199,7 @@ describe('resetSession', () => {
 
     await useChatStore.getState().resetSession()
 
-    expect(mockWindowAgent.prewarm).toHaveBeenCalledWith(
-      '/prewarm-reset',
-      expect.objectContaining({ sessionId: expect.any(String) }),
-    )
+    expect(mockWindowAgent.prewarm).not.toHaveBeenCalled()
   })
 
   it('passes newDraftSessionId to resetSession for idle non-streaming sessions', async () => {
@@ -2066,8 +2052,8 @@ describe('switchSession Case A (in _sessions)', () => {
   })
 })
 
-describe('switchSession prewarms unconditionally (harness-agnostic)', () => {
-  it('prewarms a Claude session restored from DB (Case B), not only Codex', async () => {
+describe('switchSession does NOT prewarm (regression: prewarm only on typing)', () => {
+  it('does NOT prewarm a Claude session restored from DB (Case B) — every old session click would otherwise leak a warmup process', async () => {
     setupProject('/test')
     useChatStore.setState({
       harnessResources: { claude: { models: [{ id: 'claude-sonnet-4-6', name: 'Sonnet', supportedEffortLevels: ['low', 'medium', 'high'] }] as never[], account: {}, slashCommands: [], skills: [], commands: [], agents: [], outputStyles: [] }, codex: null },
@@ -2080,7 +2066,7 @@ describe('switchSession prewarms unconditionally (harness-agnostic)', () => {
 
     await useChatStore.getState().switchSession('claude-db')
 
-    expect(mockWindowAgent.prewarm).toHaveBeenCalledWith('/test', expect.objectContaining({ provider: 'claude' }))
+    expect(mockWindowAgent.prewarm).not.toHaveBeenCalled()
   })
 })
 

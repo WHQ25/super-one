@@ -552,6 +552,19 @@ function mergeProjectAndSessionDirs(project: ProjectState, session: PerSessionSt
   ])]
 }
 
+const PREWARM_KEEPALIVE_INTERVAL_MS = 30_000
+const _prewarmLastSentByKey = new Map<string, number>()
+
+function schedulePrewarmKeepalive(state: ChatStore, projectPath?: string | null): void {
+  const key = projectPath ?? state.activeProject
+  if (!key) return
+  const now = Date.now()
+  const last = _prewarmLastSentByKey.get(key) ?? 0
+  if (now - last < PREWARM_KEEPALIVE_INTERVAL_MS) return
+  _prewarmLastSentByKey.set(key, now)
+  triggerPrewarm(state, key)
+}
+
 function triggerPrewarm(state: ChatStore, projectPath?: string | null): void {
   const key = projectPath ?? state.activeProject
   if (!key) return
@@ -3239,7 +3252,6 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         },
       }
     })
-    if (created) triggerPrewarm(get(), projectPath)
   },
 
   sendMessage: async (content: string, segments?: Array<{ text: string; isPaste: boolean }>, explicitMentions?: Mention[]) => {
@@ -3804,7 +3816,6 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       }
     })
     useActivityViewStateStore.getState().seedFromCurrent(draftId)
-    triggerPrewarm(get(), projectPath)
     void inheritMiniAppToolsForNewSession(projectPath, previousSid)
   },
 
@@ -3914,7 +3925,6 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       })
     }
 
-    triggerPrewarm(get(), activeProject)
     void inheritMiniAppToolsForNewSession(activeProject, currentSid)
   },
 
@@ -3995,13 +4005,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   setDraftText: (text) => {
     const { activeProject } = get()
     if (!activeProject) return
-    const prevText = getActivePerSession(get(), activeProject).draftText
     set((s) => updateActivePerSession(s,() => ({
       draftText: text,
       ...(text.length > 0 ? { codexPlanRejectHintActive: false } : {}),
     })))
-    if (prevText.length === 0 && text.length > 0) {
-      triggerPrewarm(get(), activeProject)
+    if (text.length > 0) {
+      schedulePrewarmKeepalive(get(), activeProject)
     }
   },
 
@@ -4239,7 +4248,6 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const session = getActivePerSession(get())
     if (session.sessionProvider && session.messages.length > 0) return
     if (session.sessionProvider === provider || (provider === 'claude' && !session.sessionProvider && session.preferredProvider === 'claude')) {
-      triggerPrewarm(get(), activeProject)
       return
     }
     const proj0 = getProject(get(), activeProject)
@@ -4298,7 +4306,6 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       }
     }
     void get().initializeHarness(provider)
-    triggerPrewarm(get(), activeProject)
   },
 
 
@@ -4824,7 +4831,6 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       } catch (err) {
         console.warn('[chat] resumeSession failed:', err)
       }
-      triggerPrewarm(get(), activeProject)
       return
     }
 
@@ -4916,7 +4922,6 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     } catch (err) {
       console.warn('[chat] resumeSession failed:', err)
     }
-    triggerPrewarm(get(), activeProject)
   },
 
   addDir: (path, scope) => {

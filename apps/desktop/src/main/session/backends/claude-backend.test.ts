@@ -85,13 +85,24 @@ vi.mock('../../agent/claude-query', () => ({
   })),
 }))
 
-vi.mock('../../agent/warmup-manager', () => ({
-  WarmupManager: class {
+vi.mock('../../agent/warmup-manager', () => {
+  const SharedWarmupManager = Object.assign(class {
     prewarm = hoisted.captured.warmupPrewarm
     consume = () => null
     dispose = hoisted.captured.warmupDispose
-  },
-}))
+  }, {
+    keyOf: (opts: { __built?: { model?: string; effort?: string; permissionMode?: string; resume?: string } } & { model?: string; effort?: string; permissionMode?: string; resume?: string }) => {
+      const o = opts?.__built ?? opts
+      return JSON.stringify({ m: o?.model ?? '', e: o?.effort ?? '', p: o?.permissionMode ?? '', r: o?.resume ?? '' })
+    },
+  })
+  const singleton = new SharedWarmupManager()
+  return {
+    WarmupManager: SharedWarmupManager,
+    getGlobalWarmupManager: () => singleton,
+    disposeGlobalWarmupManager: () => singleton.dispose(),
+  }
+})
 
 vi.mock('../../logger', () => ({
   default: { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() },
@@ -406,11 +417,19 @@ describe('ClaudeBackend', () => {
       expect(builtOpts.env?.ANTHROPIC_API_KEY).toBe('sk-test')
     })
 
-    it('still forwards prewarm after backend has started (for rebuild-ahead scenarios)', async () => {
+    it('skips prewarm when active runtime already matches the requested key (no wasted warmup process)', async () => {
       const backend = new ClaudeBackend()
       await backend.start(makeStartOpts())
       hoisted.captured.warmupPrewarm.mockClear()
       backend.prewarm(makeStartOpts())
+      expect(hoisted.captured.warmupPrewarm).not.toHaveBeenCalled()
+    })
+
+    it('still forwards prewarm when key changes after start (rebuild-ahead: e.g. model/effort change)', async () => {
+      const backend = new ClaudeBackend()
+      await backend.start(makeStartOpts())
+      hoisted.captured.warmupPrewarm.mockClear()
+      backend.prewarm({ ...makeStartOpts(), model: 'claude-opus' })
       expect(hoisted.captured.warmupPrewarm).toHaveBeenCalledOnce()
     })
 
@@ -421,12 +440,13 @@ describe('ClaudeBackend', () => {
       expect((opts as { warmupManager?: unknown }).warmupManager).toBeDefined()
     })
 
-    it('close() disposes its own warmupManager so a stale warm slot cannot be consumed by the next backend', async () => {
+    it('close() does NOT dispose the global warmupManager (would clobber other sessions sharing it)', async () => {
       const backend = new ClaudeBackend()
       await backend.start(makeStartOpts())
       hoisted.captured.iterationDone?.resolve()
+      hoisted.captured.warmupDispose.mockClear()
       await backend.close()
-      expect(hoisted.captured.warmupDispose).toHaveBeenCalled()
+      expect(hoisted.captured.warmupDispose).not.toHaveBeenCalled()
     })
 
     it('prewarm() passes a real canUseTool into buildClaudeOptions (not undefined)', () => {

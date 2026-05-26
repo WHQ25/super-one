@@ -51,14 +51,24 @@ interface WarmupSlot {
   warm: WarmQuery
   createdAt: number
   abortController: AbortController
+  idleTimer: ReturnType<typeof setTimeout> | null
 }
 
-const STALE_TTL_MS = 5 * 60 * 1000
+const STALE_TTL_MS = 3 * 60 * 1000
 
 export class WarmupManager {
   private slot: WarmupSlot | null = null
   private inflightKey: string | null = null
   private disposed = false
+
+  private startSlotIdleTimer(slot: WarmupSlot): void {
+    slot.idleTimer = setTimeout(() => {
+      if (this.slot === slot) {
+        log.info('[warmup] idle timer fired, discarding slot key=%s ageMs=%d', shortKey(slot.key), Date.now() - slot.createdAt)
+        this.discardSlot('idle_timeout')
+      }
+    }, STALE_TTL_MS)
+  }
 
   static keyOf(opts: Options): string {
     const envEntries = opts.env
@@ -86,7 +96,11 @@ export class WarmupManager {
 
     if (this.slot && this.slot.key === key) {
       const age = Date.now() - this.slot.createdAt
-      if (age < STALE_TTL_MS) return
+      if (age < STALE_TTL_MS) {
+        if (this.slot.idleTimer) clearTimeout(this.slot.idleTimer)
+        this.startSlotIdleTimer(this.slot)
+        return
+      }
       log.info('[warmup] discarding stale slot (age=%dms) and re-warming', age)
       this.discardSlot('stale')
     }
@@ -111,7 +125,9 @@ export class WarmupManager {
         try { abortController.abort() } catch { /* ignore */ }
         return
       }
-      this.slot = { key, warm, createdAt: Date.now(), abortController }
+      const slot: WarmupSlot = { key, warm, createdAt: Date.now(), abortController, idleTimer: null }
+      this.startSlotIdleTimer(slot)
+      this.slot = slot
       this.inflightKey = null
       log.info('[warmup] startup() ready durMs=%d key=%s', dur, shortKey(key))
       trace('warmup', 'ready', { key, durMs: dur })
@@ -152,7 +168,8 @@ export class WarmupManager {
       this.discardSlot('stale_on_consume')
       return null
     }
-    const { warm, abortController } = this.slot
+    const { warm, abortController, idleTimer } = this.slot
+    if (idleTimer) clearTimeout(idleTimer)
     log.info('[warmup] HIT — consumed slot ageMs=%d key=%s', age, shortKey(key))
     trace('warmup', 'hit', { key, ageMs: age })
     this.slot = null
@@ -162,6 +179,7 @@ export class WarmupManager {
   private discardSlot(reason: string): void {
     if (!this.slot) return
     log.info('[warmup] discard slot reason=%s key=%s', reason, shortKey(this.slot.key))
+    if (this.slot.idleTimer) clearTimeout(this.slot.idleTimer)
     try { this.slot.warm.close() } catch { /* ignore */ }
     try { this.slot.abortController.abort() } catch { /* ignore */ }
     this.slot = null
@@ -171,6 +189,20 @@ export class WarmupManager {
     this.disposed = true
     this.discardSlot('dispose')
     this.inflightKey = null
+  }
+}
+
+let _globalWarmupManager: WarmupManager | null = null
+
+export function getGlobalWarmupManager(): WarmupManager {
+  if (!_globalWarmupManager) _globalWarmupManager = new WarmupManager()
+  return _globalWarmupManager
+}
+
+export function disposeGlobalWarmupManager(): void {
+  if (_globalWarmupManager) {
+    _globalWarmupManager.dispose()
+    _globalWarmupManager = null
   }
 }
 

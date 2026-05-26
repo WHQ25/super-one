@@ -25,6 +25,7 @@ import { initSuperoneMcpServer, registerAppTools, unregisterAppTools, unregister
 import { startSuperoneMcpStdioBridge, stopSuperoneMcpStdioBridge } from './mcp/superone-mcp-stdio-ipc'
 import { query } from '@anthropic-ai/claude-agent-sdk'
 import { resolveSdkClaudeBinary } from './agent/claude-binary'
+import { disposeGlobalWarmupManager } from './agent/warmup-manager'
 import { resolveProbeCwd } from './agent/probe-cwd'
 import { fixPath } from './agent/resolve-cli'
 import { AgentService } from './agent/agent-service'
@@ -2477,6 +2478,7 @@ function performQuit(): void {
   ]).catch(() => {})
   Promise.allSettled([remoteStop, agentService.dispose()]).finally(() => {
     codexService.dispose()
+    disposeGlobalWarmupManager()
     closeAllDbConnections()
     closeDb()
     closeTraceDb()

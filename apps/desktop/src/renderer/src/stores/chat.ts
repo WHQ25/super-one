@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { useAppStore } from './app'
 import { useActivityViewStateStore } from './activity-view-state'
-import { buildSlashCommands, extractModeFromSuggestions, findCheckpointTarget } from './chat-helpers'
+import { buildSlashCommands, extractModeFromSuggestions, findCheckpointTarget } from './chat-store/helpers/chat-helpers'
 import {
   accumulateCodexFooterTokens,
   type CodexCommand,

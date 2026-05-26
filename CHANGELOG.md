@@ -4,6 +4,16 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.38.3-alpha] - 2026-05-26
+
+### Fixed
+
+- Orphaned Claude subprocesses on the warmup-hit and cold-start paths — completes the 0.38.2-alpha fix, which only covered the warmup-discarded slot. After a warm slot was consumed (or when a cold start ran without any warmup), the spawn's `AbortController` was either orphaned at `consume()` time or never aborted at all; `releaseRuntime`'s `query.close()` (stdin EOF) was the only kill signal, and a binary that ignored stdin EOF lingered forever. Spawn-time `AbortController` ownership is now plumbed through `WarmupManager.consume → createSessionQuery → ClaudeBackend`, and `releaseRuntime` aborts it after the `iterationDone` 5s race so a stuck binary always receives SIGTERM. `ensureRuntime` now also injects a fresh `AbortController` on respawn instead of reusing the just-aborted one (which would have SIGTERM'd every revived subprocess at birth).
+
+### Tests
+
+- Four new regression tests in `claude-backend.test.ts` assert SIGTERM-on-release independently for: close, idle release, warmup-hit consume, and ensureRuntime fresh-AC contract. The tests are designed to remain green only if all four fix sites are in place — removing any one turns at least one test red.
+
 ## [0.38.2-alpha] - 2026-05-25
 
 ### Fixed

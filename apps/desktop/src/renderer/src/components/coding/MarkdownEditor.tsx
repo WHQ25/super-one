@@ -1,45 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useEditor, EditorContent } from '@tiptap/react'
-import { Document } from '@tiptap/extension-document'
-import { Text } from '@tiptap/extension-text'
+import StarterKit from '@tiptap/starter-kit'
 import { CodeBlockLowlight } from '@tiptap/extension-code-block-lowlight'
-import { encodeHtmlEntities } from '@tiptap/core'
+import { TableKit } from '@tiptap/extension-table'
+import { Placeholder } from '@tiptap/extension-placeholder'
 import { common, createLowlight } from 'lowlight'
-import type { Root } from 'hast'
 import { useEffectiveProjectRoot } from '@/stores/app'
+import { docToMarkdown, markdownToDoc } from './markdown-codec'
+import { MermaidNode } from './extensions/mermaid-node'
+import { InlineMath, DisplayMath } from './extensions/math-node'
 import './markdown-editor.css'
 
-export const FRONTMATTER_RE = /^---[ \t]*\n([\s\S]*?)\n---[ \t]*\n([\s\S]*)$/
-
-const baseLowlight = createLowlight(common)
-
-export function highlightMarkdownWithFrontmatter(
-  base: typeof baseLowlight,
-  value: string,
-  options?: Record<string, unknown>,
-): Root {
-  const m = value.match(FRONTMATTER_RE)
-  if (!m) return base.highlight('markdown', value, options) as Root
-  const openFence = { type: 'element' as const, tagName: 'span', properties: { className: ['hljs-meta'] }, children: [{ type: 'text' as const, value: '---\n' }] }
-  const yamlTree = base.highlight('yaml', m[1], options) as Root
-  const closeFence = { type: 'element' as const, tagName: 'span', properties: { className: ['hljs-meta'] }, children: [{ type: 'text' as const, value: '\n---\n' }] }
-  const mdTree = base.highlight('markdown', m[2], options) as Root
-  return { type: 'root', children: [openFence, ...yamlTree.children, closeFence, ...mdTree.children], data: { language: 'markdown', relevance: 10 } } satisfies Root
-}
-
-const lowlight = new Proxy(baseLowlight, {
-  get(target, prop, receiver) {
-    if (prop === 'highlight') {
-      return (lang: string, value: string, options?: Record<string, unknown>) => {
-        if (lang === 'markdown') return highlightMarkdownWithFrontmatter(target, value, options)
-        return target.highlight(lang, value, options)
-      }
-    }
-    return Reflect.get(target, prop, receiver)
-  },
-})
-
-const CustomDocument = Document.extend({ content: 'codeBlock' })
+const lowlight = createLowlight(common)
 
 const AUTOSAVE_DELAY = 1000
 
@@ -55,6 +27,7 @@ export function MarkdownEditor({ content, filePath, onDirtyChange, onContentChan
   const [isDirty, setIsDirty] = useState(false)
   const contentRef = useRef(content)
   const savingRef = useRef(false)
+  const loadingRef = useRef(false)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const filePathRef = useRef(filePath)
 
@@ -77,13 +50,18 @@ export function MarkdownEditor({ content, filePath, onDirtyChange, onContentChan
 
   const editor = useEditor({
     extensions: [
-      CustomDocument,
-      Text,
-      CodeBlockLowlight.configure({ lowlight, defaultLanguage: 'markdown' }),
+      StarterKit.configure({ codeBlock: false }),
+      CodeBlockLowlight.configure({ lowlight, defaultLanguage: 'plaintext' }),
+      TableKit,
+      MermaidNode,
+      InlineMath,
+      DisplayMath,
+      Placeholder.configure({ placeholder: 'Start writing…' }),
     ],
-    content: toCodeBlockHtml(content),
+    content: '',
     onUpdate: ({ editor: ed }) => {
-      const text = ed.getText()
+      if (loadingRef.current) return
+      const text = docToMarkdown(ed as never)
       const dirty = text !== contentRef.current
       setIsDirty(dirty)
       onContentChange(text)
@@ -95,18 +73,25 @@ export function MarkdownEditor({ content, filePath, onDirtyChange, onContentChan
   })
 
   useEffect(() => {
-    onDirtyChange(isDirty)
-  }, [isDirty, onDirtyChange])
-
-  useEffect(() => {
     if (!editor || savingRef.current) return
     if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null }
     contentRef.current = content
-    if (editor.getText() !== content) {
-      editor.commands.setContent(toCodeBlockHtml(content))
+    let cancelled = false
+    loadingRef.current = true
+    markdownToDoc(content).then((doc) => {
+      if (cancelled || !editor) return
+      editor.commands.setContent(doc)
       setIsDirty(false)
-    }
+      loadingRef.current = false
+    }).catch(() => {
+      loadingRef.current = false
+    })
+    return () => { cancelled = true }
   }, [content, editor])
+
+  useEffect(() => {
+    onDirtyChange(isDirty)
+  }, [isDirty, onDirtyChange])
 
   useEffect(() => {
     return () => { if (timerRef.current) clearTimeout(timerRef.current) }
@@ -115,11 +100,7 @@ export function MarkdownEditor({ content, filePath, onDirtyChange, onContentChan
   return (
     <EditorContent
       editor={editor}
-      className="markdown-editor size-full overflow-auto font-mono text-sm [&_.tiptap]:size-full [&_.tiptap]:p-4 [&_.tiptap]:outline-none [&_.tiptap_pre]:size-full [&_.tiptap_pre]:bg-transparent [&_.tiptap_code]:bg-transparent"
+      className="markdown-editor size-full overflow-auto text-sm [&_.tiptap]:size-full [&_.tiptap]:p-6 [&_.tiptap]:outline-none"
     />
   )
-}
-
-function toCodeBlockHtml(text: string): string {
-  return `<pre><code class="language-markdown">${encodeHtmlEntities(text)}</code></pre>`
 }

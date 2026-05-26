@@ -1,3 +1,215 @@
+.markdown-editor .tiptap {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif;
+  line-height: 1.6;
+  cursor: text;
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+.markdown-editor .tiptap > :first-child { margin-top: 0; }
+.markdown-editor .tiptap > :last-child { margin-bottom: 0; }
+.markdown-editor .tiptap p { margin: 0.5rem 0; min-height: 1.5em; }
+.markdown-editor .tiptap h1,
+.markdown-editor .tiptap h2,
+.markdown-editor .tiptap h3,
+.markdown-editor .tiptap h4,
+.markdown-editor .tiptap h5,
+.markdown-editor .tiptap h6 {
+  font-weight: 600;
+  line-height: 1.3;
+  margin-top: 1.5em;
+  margin-bottom: 0.5em;
+}
+.markdown-editor .tiptap h1 { font-size: 1.875rem; font-weight: 700; }
+.markdown-editor .tiptap h2 { font-size: 1.5rem; font-weight: 700; }
+.markdown-editor .tiptap h3 { font-size: 1.25rem; }
+.markdown-editor .tiptap h4 { font-size: 1.125rem; }
+.markdown-editor .tiptap h5 { font-size: 1rem; }
+.markdown-editor .tiptap h6 { font-size: 0.875rem; }
+.markdown-editor .tiptap ul,
+.markdown-editor .tiptap ol { padding-left: 1.5rem; margin: 0.75rem 0; }
+.markdown-editor .tiptap ul { list-style-type: disc; }
+.markdown-editor .tiptap ol { list-style-type: decimal; }
+.markdown-editor .tiptap li { margin: 0.25rem 0; }
+.markdown-editor .tiptap li p { margin: 0.25rem 0; }
+.markdown-editor .tiptap blockquote {
+  border-left: 3px solid var(--border);
+  color: var(--muted-foreground);
+  margin: 1rem 0;
+  padding-left: 1rem;
+  font-style: italic;
+}
+.markdown-editor .tiptap code:not(pre code) {
+  background: var(--muted);
+  border-radius: 3px;
+  font-family: ui-monospace, 'JetBrainsMono', Menlo, monospace;
+  font-size: 0.9em;
+  padding: 0.15em 0.35em;
+}
+.markdown-editor .tiptap pre {
+  background: var(--muted);
+  border-radius: 6px;
+  font-family: ui-monospace, 'JetBrainsMono', Menlo, monospace;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  margin: 1rem 0;
+  overflow-x: auto;
+  padding: 1rem;
+}
+.markdown-editor .tiptap pre code { background: transparent; padding: 0; font-size: inherit; }
+.markdown-editor .tiptap hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 1.5rem 0;
+}
+.markdown-editor .tiptap a {
+  color: var(--primary);
+  text-decoration: underline;
+}
+.markdown-editor .tiptap table {
+  border-collapse: collapse;
+  margin: 1rem 0;
+  width: 100%;
+  table-layout: fixed;
+}
+.markdown-editor .tiptap th,
+.markdown-editor .tiptap td {
+  border: 1px solid var(--border);
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+  vertical-align: top;
+}
+.markdown-editor .tiptap th { background: var(--muted); font-weight: 600; }
+.markdown-editor .tiptap p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: var(--muted-foreground);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
+
+.markdown-editor .tiptap .mermaid-node { margin: 1.5rem 0; }
+.markdown-editor .tiptap .mermaid-node.selected .mermaid-container:has(.mermaid-preview) {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px color-mix(in oklch, var(--primary) 25%, transparent);
+}
+.markdown-editor .tiptap .mermaid-container {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  transition: all 0.2s ease;
+}
+.markdown-editor .tiptap .mermaid-container:hover {
+  border-color: var(--ring);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+.markdown-editor .tiptap .mermaid-editor {
+  position: relative;
+  background: #272822;
+  border-radius: 6px;
+  overflow: hidden;
+}
+.markdown-editor .tiptap .mermaid-editor-wrapper { position: relative; min-height: 80px; }
+.markdown-editor .tiptap .mermaid-highlight {
+  position: absolute; inset: 0; margin: 0; padding: 1rem;
+  font-family: ui-monospace, 'JetBrainsMono', Menlo, monospace;
+  font-size: 0.85rem; line-height: 1.5;
+  white-space: pre-wrap; word-wrap: break-word;
+  color: #f8f8f2; pointer-events: none; overflow: hidden;
+}
+.markdown-editor .tiptap .mermaid-highlight .hljs-keyword,
+.markdown-editor .tiptap .mermaid-highlight .hljs-selector-tag,
+.markdown-editor .tiptap .mermaid-highlight .hljs-built_in { color: #f92672; }
+.markdown-editor .tiptap .mermaid-highlight .hljs-string,
+.markdown-editor .tiptap .mermaid-highlight .hljs-section { color: #e6db74; }
+.markdown-editor .tiptap .mermaid-highlight .hljs-title,
+.markdown-editor .tiptap .mermaid-highlight .hljs-function { color: #a6e22e; }
+.markdown-editor .tiptap .mermaid-highlight .hljs-number,
+.markdown-editor .tiptap .mermaid-highlight .hljs-literal { color: #ae81ff; }
+.markdown-editor .tiptap .mermaid-highlight .hljs-variable,
+.markdown-editor .tiptap .mermaid-highlight .hljs-template-variable,
+.markdown-editor .tiptap .mermaid-highlight .hljs-attr { color: #fd971f; }
+.markdown-editor .tiptap .mermaid-highlight .hljs-comment { color: #75715e; font-style: italic; }
+.markdown-editor .tiptap .mermaid-highlight .hljs-punctuation,
+.markdown-editor .tiptap .mermaid-highlight .hljs-operator { color: #f92672; }
+.markdown-editor .tiptap .mermaid-highlight .hljs-type,
+.markdown-editor .tiptap .mermaid-highlight .hljs-class { color: #66d9ef; font-style: italic; }
+.markdown-editor .tiptap .mermaid-textarea {
+  position: relative; width: 100%; min-height: 80px; padding: 1rem;
+  font-family: ui-monospace, 'JetBrainsMono', Menlo, monospace;
+  font-size: 0.85rem; line-height: 1.5;
+  border: none; background: transparent; color: transparent;
+  caret-color: #fff; resize: none; outline: none; overflow: hidden;
+  white-space: pre-wrap; word-wrap: break-word;
+}
+.markdown-editor .tiptap .mermaid-preview {
+  position: relative;
+  padding: 1.5rem;
+  background: var(--card);
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+.markdown-editor .tiptap .mermaid-preview:hover { background: var(--muted); }
+.markdown-editor .tiptap .mermaid-svg { display: flex; justify-content: center; align-items: center; }
+.markdown-editor .tiptap .mermaid-svg svg { max-width: 100%; max-height: 50vh; height: auto; }
+.markdown-editor .tiptap .mermaid-loading {
+  padding: 3rem; text-align: center; color: var(--muted-foreground);
+  font-size: 0.9rem; font-style: italic;
+}
+.markdown-editor .tiptap .mermaid-error {
+  padding: 1rem;
+  background: color-mix(in oklch, red 8%, var(--card));
+  border-left: 4px solid #e53e3e;
+}
+.markdown-editor .tiptap .mermaid-error strong { color: #e53e3e; display: block; margin-bottom: 0.5rem; }
+.markdown-editor .tiptap .mermaid-error pre {
+  background: var(--card); color: #e53e3e; padding: 0.75rem; margin: 0.5rem 0;
+  border-radius: 4px; font-size: 0.8rem;
+  white-space: pre-wrap; word-wrap: break-word;
+}
+.markdown-editor .tiptap .mermaid-hint {
+  position: absolute; bottom: 0; right: 0; padding: 0.5rem 0.75rem;
+  font-size: 0.7rem; color: rgba(236, 236, 236, 0.5); pointer-events: none;
+}
+.markdown-editor .tiptap .mermaid-hover-tooltip {
+  position: absolute; top: 0.5rem; right: 0.5rem;
+  background: rgba(0, 0, 0, 0.7); color: white;
+  padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.75rem;
+  pointer-events: none; z-index: 10;
+}
+
+.markdown-editor .tiptap .math-node.math-inline { display: inline-block; vertical-align: middle; }
+.markdown-editor .tiptap .math-node.math-display { display: block; margin: 1rem 0; text-align: center; }
+.markdown-editor .tiptap .math-node.selected .math-rendered { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: 2px; }
+.markdown-editor .tiptap .math-rendered { cursor: pointer; }
+.markdown-editor .tiptap .math-error {
+  display: inline-block;
+  color: #e53e3e;
+  background: color-mix(in oklch, red 8%, var(--card));
+  padding: 0.1em 0.4em;
+  border-radius: 3px;
+  font-family: ui-monospace, 'JetBrainsMono', Menlo, monospace;
+  font-size: 0.85em;
+}
+.markdown-editor .tiptap .math-editor {
+  display: inline-block;
+  width: auto;
+  min-width: 6rem;
+  padding: 0.2em 0.4em;
+  font-family: ui-monospace, 'JetBrainsMono', Menlo, monospace;
+  font-size: 0.9em;
+  color: var(--foreground);
+  background: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  resize: none;
+  outline: none;
+  vertical-align: middle;
+}
+.markdown-editor .tiptap .math-node.math-display .math-editor {
+  display: block;
+  width: 100%;
+}
+
 .markdown-editor .hljs {
   color: #24292e;
   background: transparent;

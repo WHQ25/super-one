@@ -1,12 +1,10 @@
-import { useCallback, useMemo, useRef, useState, useEffect } from 'react'
+import { useCallback, useRef, useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { FileX2, ChevronRight } from 'lucide-react'
-import { defaultRehypePlugins } from 'streamdown'
 import { FileIcon } from '@superone/ui/components/ui/FileIcon'
 import { Tabs, TabsList, TabsTrigger } from '@superone/ui/components/ui/tabs'
 import { useEffectiveProjectRoot } from '@/stores/app'
 import { toLocalFileUrl, toMediaUrl } from '@/lib/path-utils'
-import { MarkdownView } from '@/components/MarkdownPreview'
 import { PdfPreview } from '@/components/chat/PdfPreview'
 import type { GitFileDiff, GitFileContent } from '@superone/shared/agent-types'
 import { FileDiffView } from './source-control/FileDiffView'
@@ -27,13 +25,13 @@ function getFileExt(fileName: string): string {
   return fileName.split('.').pop()?.toLowerCase() ?? ''
 }
 
-type TabKey = 'changes' | 'file' | 'preview'
+type TabKey = 'changes' | 'editor' | 'preview'
 
 function useOwnFileData(filePath: string | undefined) {
   const fileRoot = useEffectiveProjectRoot()
   const [diff, setDiff] = useState<GitFileDiff | null>(null)
   const [content, setContent] = useState<GitFileContent | null>(null)
-  const [tab, setTab] = useState<TabKey>('file')
+  const [tab, setTab] = useState<TabKey>('editor')
 
   useEffect(() => {
     if (!filePath || !fileRoot) return
@@ -49,7 +47,8 @@ function useOwnFileData(filePath: string | undefined) {
       const isSvg = c.language === 'svg'
       const ext = filePath.split('.').pop()?.toLowerCase() ?? ''
       const isHtml = HTML_EXTS.has(ext)
-      setTab(isBin ? 'preview' : d.diff ? 'changes' : (isSvg || isHtml) ? 'preview' : 'file')
+      const isMd = MARKDOWN_EXTS.has(ext)
+      setTab(isBin || isSvg || isHtml ? 'preview' : d.diff ? 'changes' : isMd ? 'editor' : 'editor')
     }).catch(() => {
       if (!cancelled) { setDiff(null); setContent(null) }
     })
@@ -67,7 +66,6 @@ export function FilePreview({ filePath }: FilePreviewProps) {
   const { t } = useTranslation()
   const fileRoot = useEffectiveProjectRoot()
   const [isDirty, setIsDirty] = useState(false)
-  const [liveContent, setLiveContent] = useState<string | null>(null)
   const liveContentRef = useRef<string | null>(null)
   const { diff: fileDiff, content: fileContent, tab: activeTab, setTab: setActiveTab } = useOwnFileData(filePath)
   const selectedFile = filePath
@@ -86,40 +84,18 @@ export function FilePreview({ filePath }: FilePreviewProps) {
   const isUnpreviewable = fileContent?.language === 'binary' || fileContent?.language === 'too-large'
   const fullFilePath = selectedFile.startsWith('/') ? selectedFile : `${fileRoot}/${selectedFile}`
 
-  const resolvedContent = useMemo(() => {
-    const raw = (isMd ? liveContent : null) ?? fileContent?.content ?? ''
-    if (!fileRoot || !selectedFile) return raw
-    const dir = selectedFile.includes('/') ? selectedFile.substring(0, selectedFile.lastIndexOf('/')) : ''
-    const baseDir = fileRoot + (dir ? '/' + dir : '')
-    return raw.replace(
-      /!\[([^\]]*)\]\((?!https?:\/\/|data:|local-file:\/\/)([^)\s]+)([^)]*)\)/g,
-      (_, alt, src, rest) => {
-        const cleanSrc = src.replace(/^\.\//, '')
-        const resolved = src.startsWith('/')
-          ? toLocalFileUrl(src)
-          : toLocalFileUrl(`${baseDir}/${cleanSrc}`)
-        return `![${alt}](${resolved}${rest})`
-      },
-    )
-  }, [fileRoot, selectedFile, fileContent?.content, liveContent, isMd])
-
-  const previewRehypePlugins = useMemo(() => [defaultRehypePlugins.raw], [])
-
-  const tabs = useMemo(() => {
+  const tabs = (() => {
     if (isUnpreviewable) return []
     if (isBinaryPreview) return [{ key: 'preview' as TabKey, label: 'Preview' }]
-    const t: { key: TabKey; label: string }[] = []
-    if (hasDiff) t.push({ key: 'changes', label: 'Changes' })
-    t.push({ key: 'file', label: 'File' })
-    if (isMd || isSvgFile || isHtml) t.push({ key: 'preview', label: 'Preview' })
-    return t
-  }, [hasDiff, isMd, isBinaryPreview, isSvgFile, isHtml, isUnpreviewable])
+    const items: { key: TabKey; label: string }[] = []
+    if (hasDiff) items.push({ key: 'changes', label: 'Changes' })
+    if (isSvgFile || isHtml) items.push({ key: 'preview', label: 'Preview' })
+    items.push({ key: 'editor', label: 'Editor' })
+    return items
+  })()
 
-  const effectiveTab = tabs.find((t) => t.key === activeTab) ? activeTab : tabs[0]?.key ?? 'file'
+  const effectiveTab = tabs.find((t) => t.key === activeTab) ? activeTab : tabs[0]?.key ?? 'editor'
   const handleTabChange = useCallback((v: string) => {
-    if (v !== 'file' && liveContentRef.current !== null) {
-      setLiveContent(liveContentRef.current)
-    }
     setActiveTab(v as TabKey)
   }, [setActiveTab])
 
@@ -194,7 +170,7 @@ export function FilePreview({ filePath }: FilePreviewProps) {
               <FileSelectionContextMenuZone
                 filePath={fullFilePath}
                 fileContent={fileContent?.content ?? null}
-                className={effectiveTab === 'file' ? 'size-full' : 'hidden'}
+                className={effectiveTab === 'editor' ? 'size-full' : 'hidden'}
               >
                 <MarkdownEditor content={fileContent?.content ?? ''} filePath={selectedFile} onDirtyChange={handleDirtyChange} onContentChange={handleContentChange} />
               </FileSelectionContextMenuZone>
@@ -217,13 +193,9 @@ export function FilePreview({ filePath }: FilePreviewProps) {
               </div>
             ) : effectiveTab === 'preview' && isSvgFile ? (
               <ImagePreview src={toLocalFileUrl(fullFilePath)} alt={fileName} />
-            ) : effectiveTab === 'preview' && isMd ? (
-              <FileSelectionContextMenuZone filePath={fullFilePath} fileContent={fileContent?.content ?? null} className="size-full">
-                <MarkdownView content={resolvedContent} rehypePlugins={previewRehypePlugins} />
-              </FileSelectionContextMenuZone>
             ) : effectiveTab === 'preview' && isHtml ? (
               <HtmlPreview src={toLocalFileUrl(fullFilePath)} />
-            ) : !isMd ? (
+            ) : effectiveTab === 'editor' && !isMd ? (
               <FileSelectionContextMenuZone filePath={fullFilePath} fileContent={fileContent?.content ?? null} className="size-full">
                 <FileWithDiffView filePath={selectedFile} content={fileContent?.content ?? ''} diff={fileDiff?.diff ?? ''} />
               </FileSelectionContextMenuZone>

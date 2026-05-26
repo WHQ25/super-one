@@ -36,5 +36,9 @@
     "typecheck:web": "bun --filter @superone/desktop typecheck:web",
     "storybook": "bun --filter @superone/desktop storybook",
     "build-storybook": "bun --filter @superone/desktop build-storybook"
+  },
+  "dependencies": {
+    "lowlight-mermaid": "^0.0.0",
+    "remark-math": "^6.0.0"
   }
 }

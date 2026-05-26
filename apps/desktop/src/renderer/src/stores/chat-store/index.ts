@@ -94,14 +94,14 @@ export { createDefaultPerSessionState, createDefaultProjectState, createSessionI
 const streamingToolInputRaw = new Map<string, string>()
 const streamingPreviewLastUpdate = new Map<string, number>()
 
-function markMessageEventApplied(messages: ChatMessage[], messageId: string, event: AgentEvent): ChatMessage[] | null {
+export function markMessageEventApplied(messages: ChatMessage[], messageId: string, event: AgentEvent): ChatMessage[] | null {
   if (event.seq === undefined) return null
   return messages.map((msg) => (
     msg.id === messageId ? { ...msg, ...applySeqToMessage(event) } : msg
   ))
 }
 
-function persistStreamingToolInput(messages: ChatMessage[], messageId: string, toolUseId: string, input: string | undefined): ChatMessage[] {
+export function persistStreamingToolInput(messages: ChatMessage[], messageId: string, toolUseId: string, input: string | undefined): ChatMessage[] {
   if (input === undefined) return messages
   return messages.map((msg) => {
     if (msg.id !== messageId) return msg
@@ -320,14 +320,14 @@ function getCodexTraceTextLength(item: CodexThreadItem): number | undefined {
   }
 }
 
-function summarizeCodexTraceItem(item: CodexThreadItem): { id: string; type: CodexThreadItem['type']; textLen?: number } {
+export function summarizeCodexTraceItem(item: CodexThreadItem): { id: string; type: CodexThreadItem['type']; textLen?: number } {
   const textLen = getCodexTraceTextLength(item)
   return textLen === undefined
     ? { id: item.id, type: item.type }
     : { id: item.id, type: item.type, textLen }
 }
 
-function getCodexTraceItems(message: ChatMessage | undefined | null): {
+export function getCodexTraceItems(message: ChatMessage | undefined | null): {
   length: number
   tail: Array<{ id: string; type: CodexThreadItem['type']; textLen?: number }>
 } {
@@ -338,11 +338,11 @@ function getCodexTraceItems(message: ChatMessage | undefined | null): {
   }
 }
 
-function getCodexContextTokens(usage: CodexUsageInfo): number {
+export function getCodexContextTokens(usage: CodexUsageInfo): number {
   return usage.lastInputTokens
 }
 
-function getCodexCompletionEventMeta(metadata: ChatMessage['metadata'] | undefined): {
+export function getCodexCompletionEventMeta(metadata: ChatMessage['metadata'] | undefined): {
   finalResponse?: string
   durationMs?: number
   threadId: string | null
@@ -374,7 +374,7 @@ function _patchAgentBlock(messages: ChatMessage[], tid: string, patch: Record<st
   }))
 }
 
-function applyEventToSession(session: PerSessionState, event: AgentEvent): Partial<PerSessionState> {
+export function applyEventToSession(session: PerSessionState, event: AgentEvent): Partial<PerSessionState> {
   switch (event.type) {
     case 'queued_message_consumed': {
       const idx = session.queuedMessages.findIndex((m) => m.id === event.clientMessageId)
@@ -1210,7 +1210,7 @@ function _mergePersistedSessionState(session: PerSessionState, saved: PersistedS
   }
 }
 
-async function _ensureSessionHydrated(sessionId: string, session: PerSessionState): Promise<PerSessionState | null> {
+export async function _ensureSessionHydrated(sessionId: string, session: PerSessionState): Promise<PerSessionState | null> {
   if (session._historyHydrated) return session
   try {
     const saved = await window.app.loadSessionState(sessionId) as PersistedSessionState | null
@@ -1224,7 +1224,7 @@ async function _ensureSessionHydrated(sessionId: string, session: PerSessionStat
 
 type ChatStoreSetter = (updater: (state: ChatStore) => Partial<ChatStore>) => void
 
-function _hydrateSessionState(
+export function _hydrateSessionState(
   set: ChatStoreSetter,
   projectPath: string,
   sessionId: string,
@@ -1463,7 +1463,7 @@ function _buildQuestionAnswerItem(
   }
 }
 
-function _computeHasPendingInteraction(project: ProjectState): boolean {
+export function _computeHasPendingInteraction(project: ProjectState): boolean {
   return Object.values(project._sessions).some(
     (s) => s.pendingPermissions.length > 0 || !!s.pendingQuestion || !!s.pendingPlanApproval,
   )
@@ -1473,7 +1473,7 @@ function _isBusyStatus(status: PerSessionState['status']): boolean {
   return status === 'streaming' || status === 'background'
 }
 
-function _isLiveSession(session: PerSessionState | undefined): boolean {
+export function _isLiveSession(session: PerSessionState | undefined): boolean {
   return !!session && (
     _isBusyStatus(session.status)
     || session.pendingPermissions.length > 0
@@ -1932,19 +1932,19 @@ async function runCodexCommand(
 
 // --- Store implementation ---
 
-function isRemoteSession(state: ChatStore, projectPath: string, sessionId: string | null | undefined): boolean {
+export function isRemoteSession(state: ChatStore, projectPath: string, sessionId: string | null | undefined): boolean {
   if (!sessionId) return false
   const ids = state.remoteSessions[projectPath]
   return !!ids && ids.includes(sessionId)
 }
 
-function addRemoteSession(map: Record<string, string[]>, projectPath: string, sessionId: string): Record<string, string[]> {
+export function addRemoteSession(map: Record<string, string[]>, projectPath: string, sessionId: string): Record<string, string[]> {
   const existing = map[projectPath] ?? []
   if (existing.includes(sessionId)) return map
   return { ...map, [projectPath]: [...existing, sessionId] }
 }
 
-function removeRemoteSession(map: Record<string, string[]>, projectPath: string, sessionId: string): Record<string, string[]> {
+export function removeRemoteSession(map: Record<string, string[]>, projectPath: string, sessionId: string): Record<string, string[]> {
   const existing = map[projectPath]
   if (!existing || !existing.includes(sessionId)) return map
   const next = existing.filter((id) => id !== sessionId)
@@ -2043,398 +2043,7 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
     })
   },
 
-  handleAgentEvent: (event: AgentEvent) => {
-    if (event.type === 'remote_session_start') {
-      const projectPath = event.remoteProjectPath
-      const sessionId = event.remoteSessionId
-      const remoteProvider = inferProviderFromHarnessId(event.harnessId)
-      set((s) => {
-        const project = s.projectSessions[projectPath] ?? createDefaultProjectState()
-        const existingSession = project._sessions[sessionId]
-        const baseSession = existingSession ?? {
-          ...createDefaultPerSessionState(),
-          _historyHydrated: !event.isSubscribe,
-        }
-        const nextSession = remoteProvider && !baseSession.sessionProvider
-          ? { ...baseSession, sessionProvider: remoteProvider, preferredProvider: remoteProvider }
-          : baseSession
-        return {
-          remoteSessions: event.isSubscribe
-            ? addRemoteSession(s.remoteSessions, projectPath, sessionId)
-            : s.remoteSessions,
-          projectSessions: {
-            ...s.projectSessions,
-            [projectPath]: {
-              ...project,
-              _sessions: { ...project._sessions, [sessionId]: nextSession },
-            },
-          },
-        }
-      })
-      if (event.isSubscribe) {
-        _hydrateSessionState(set, projectPath, sessionId)
-      }
-      return
-    }
-    if (event.type === 'provider_changed') {
-      if (event.harnessId === 'codex') {
-        void get().refreshCodexModels(true)
-      }
-      return
-    }
-    if (event.type === 'remote_session_end') {
-      if (!event.isSubscribe) return
-      set((s) => ({
-        remoteSessions: removeRemoteSession(s.remoteSessions, event.remoteProjectPath, event.remoteSessionId),
-      }))
-      return
-    }
-
-    if (event.type === 'session_title_changed') {
-      const { sessionId, title, projectPath: targetProjectPath } = event
-      set((s) => {
-        const next: Partial<ChatStore> = {
-          agentTitles: { ...s.agentTitles, [sessionId]: title },
-        }
-        if (!targetProjectPath) return next
-        const project = s.projectSessions[targetProjectPath]
-        if (!project) return next
-        let sessionsChanged = false
-        const sessions = project.sessions.map((entry) => {
-          if (entry.sessionId === sessionId && entry.title !== title) {
-            sessionsChanged = true
-            return { ...entry, title }
-          }
-          return entry
-        })
-        const perSession = project._sessions[sessionId]
-        const perSessionChanged = !!perSession && perSession._title !== title
-        if (!sessionsChanged && !perSessionChanged) return next
-        return {
-          ...next,
-          projectSessions: {
-            ...s.projectSessions,
-            [targetProjectPath]: {
-              ...project,
-              ...(sessionsChanged ? { sessions } : {}),
-              ...(perSessionChanged
-                ? { _sessions: { ...project._sessions, [sessionId]: { ...perSession, _title: title } } }
-                : {}),
-            },
-          },
-        }
-      })
-      return
-    }
-
-    const projectPath = event.projectPath
-    const eventSessionId = event.sessionId
-    if (!projectPath) return
-    if (event.type === 'agent_setting_change' && event.patch?.sandboxInfo) {
-      const next = event.patch.sandboxInfo
-      set((s) => updateProjectState(s, projectPath, () => ({ sandboxInfo: next })))
-    }
-    let hydrateSessionId: string | null = null
-
-    set((s) => {
-      let project = s.projectSessions[projectPath] ?? createDefaultProjectState()
-
-      let matchType: 'exact' | 'lazy_session' | 'fallback_active'
-      let targetSid: string | null
-
-      if (eventSessionId && project._sessions[eventSessionId]) {
-        targetSid = eventSessionId
-        matchType = 'exact'
-      } else if (eventSessionId) {
-        project = {
-          ...project,
-          _sessions: {
-            ...project._sessions,
-            [eventSessionId]: {
-              ...createDefaultPerSessionState(),
-              _historyHydrated: false,
-            },
-          },
-        }
-        hydrateSessionId = eventSessionId
-        targetSid = eventSessionId
-        matchType = 'lazy_session'
-      } else if (project._activeSessionId) {
-        targetSid = project._activeSessionId
-        matchType = 'fallback_active'
-      } else {
-        window.app.trace?.('session.route.dropped', event.type, {
-          reason: 'no_route',
-          eventSessionId,
-          activeSid: project._activeSessionId,
-          knownSids: Object.keys(project._sessions),
-        })
-        return {}
-      }
-
-      window.app.trace?.('session.route', event.type, {
-        matchType,
-        targetSid,
-        eventSessionId,
-        activeSid: project._activeSessionId,
-        knownSids: Object.keys(project._sessions),
-      })
-
-      if (event.type === 'permission_request') {
-        window.app.trace?.('permission.flow', 'renderer_route', {
-          matchType,
-          targetSid,
-          eventSessionId,
-          activeSid: project._activeSessionId,
-          isTargetActive: targetSid === project._activeSessionId,
-          toolName: event.request.toolName,
-        }, event.request.requestId)
-        if (targetSid !== project._activeSessionId) {
-          console.warn('[permission-drift] permission_request landed on non-active session', {
-            requestId: event.request.requestId,
-            toolName: event.request.toolName,
-            eventSessionId,
-            targetSid,
-            activeSid: project._activeSessionId,
-            matchType,
-            knownSids: Object.keys(project._sessions),
-          })
-        }
-      }
-
-      if (matchType === 'lazy_session') {
-        console.warn('[session-drift] lazy_session created from incoming event', {
-          eventType: event.type,
-          eventSessionId,
-          activeSid: project._activeSessionId,
-          knownSids: Object.keys(project._sessions).filter((k) => k !== eventSessionId),
-        })
-      }
-
-      if (!project._sessions[targetSid]) {
-        return {}
-      }
-
-      const targetSession = project._sessions[targetSid]
-      const delta = applyEventToSession(targetSession, event)
-      const updatedSession = { ...targetSession, ...delta }
-
-      if (import.meta.env.DEV) {
-        const codexItemTrace = event.type === 'codex_item_delta'
-          ? {
-              codexPhase: event.phase,
-              codexItemId: event.item.id,
-              codexItemType: event.item.type,
-              codexTextLength: event.item.type === 'reasoning' || event.item.type === 'plan' || event.item.type === 'agent_message' || event.item.type === 'review'
-                ? event.item.text.length
-                : undefined,
-              codexTextPreview: event.item.type === 'reasoning' || event.item.type === 'plan' || event.item.type === 'agent_message' || event.item.type === 'review'
-                ? event.item.text.slice(0, 160)
-                : undefined,
-              ...(event.item.type === 'collab_tool_call' ? {
-                collabTool: event.item.tool,
-                collabStatus: event.item.status,
-                agentIds: Object.keys(event.item.agentsStates),
-                agentStatuses: Object.fromEntries(Object.entries(event.item.agentsStates).map(([k, v]) => [k, v.status])),
-                childThreadCount: event.item.childItems ? Object.keys(event.item.childItems).length : 0,
-                childItemCounts: event.item.childItems
-                  ? Object.fromEntries(Object.entries(event.item.childItems).map(([k, v]) => [k, v.length]))
-                  : undefined,
-              } : {}),
-            }
-          : {}
-        window.app.trace?.('agent.store', event.type, {
-          targetSid,
-          eventSessionId,
-          deltaKeys: Object.keys(delta),
-          ...('status' in delta ? { status: delta.status } : {}),
-          ...(event.type === 'message_start' ? { role: event.message.role, messageId: event.message.id } : {}),
-          ...('taskProgress' in delta ? { taskProgressKeys: Object.keys(delta.taskProgress ?? {}) } : {}),
-          ...codexItemTrace,
-        }, (event as any).messageId)
-        if (event.type === 'message_usage' && event.codexUsage) {
-          const stepTokens = getCodexUsageStepTokens(event.codexUsage)
-          const footerTokens = accumulateCodexFooterTokens(targetSession.streamingTokens, event.codexUsage, targetSession.codexTurnLastUsage)
-          window.app.trace?.('codex.usage.computed', event.type, {
-            raw: {
-              total: {
-                inputTokens: event.codexUsage.totalInputTokens,
-                cachedInputTokens: event.codexUsage.totalCachedInputTokens,
-                outputTokens: event.codexUsage.totalOutputTokens,
-              },
-              last: {
-                inputTokens: event.codexUsage.lastInputTokens,
-                cachedInputTokens: event.codexUsage.lastCachedInputTokens,
-                outputTokens: event.codexUsage.lastOutputTokens,
-              },
-              reasoningOutputTokens: event.codexUsage.reasoningOutputTokens,
-              contextWindow: event.codexUsage.contextWindow,
-            },
-            computedStepTokens: stepTokens,
-            computedContextTokens: getCodexContextTokens(event.codexUsage),
-            computedTurnDeltaTokens: footerTokens,
-            displayFooterInput: footerTokens.input,
-            displayFooterOutput: footerTokens.output,
-          }, event.messageId)
-        }
-        if (updatedSession.sessionProvider === 'codex' && (event.type === 'codex_item_delta' || event.type === 'message_complete')) {
-          const beforeMessage = targetSession.messages.find((msg) => msg.id === event.messageId)
-          const afterMessage = updatedSession.messages.find((msg) => msg.id === event.messageId)
-          const prevItems = getCodexTraceItems(beforeMessage)
-          const nextItems = getCodexTraceItems(afterMessage)
-          const completionItems = event.type === 'message_complete'
-            ? getCodexCompletionEventMeta(event.metadata)?.items ?? []
-            : []
-          window.app.trace?.('codex.live', event.type, {
-            targetSid,
-            eventSessionId,
-            activeSid: project._activeSessionId,
-            messageId: event.messageId,
-            lastAssistantMessageIdBefore: targetSession.lastAssistantMessageId,
-            lastAssistantMessageIdAfter: updatedSession.lastAssistantMessageId,
-            activeCodexMessageIdBefore: targetSession.activeCodexMessageId,
-            activeCodexMessageIdAfter: updatedSession.activeCodexMessageId,
-            prevItemsLength: prevItems.length,
-            nextItemsLength: nextItems.length,
-            prevItemsTail: prevItems.tail,
-            nextItemsTail: nextItems.tail,
-            ...(event.type === 'codex_item_delta'
-              ? {
-                  phase: event.phase,
-                  incomingItem: summarizeCodexTraceItem(event.item),
-                }
-              : {
-                  completionItemsLength: completionItems.length,
-                  completionItemsTail: completionItems.slice(-3).map(summarizeCodexTraceItem),
-                  finalResponseLength: getCodexCompletionEventMeta(event.metadata)?.finalResponse?.length ?? 0,
-                }),
-          }, event.messageId)
-        }
-      }
-
-      const updatedSessions = { ...project._sessions, [targetSid]: updatedSession }
-      const updatedProject = { ...project, _sessions: updatedSessions }
-
-      // Handle init_ready: update project-level fields
-      if (event.type === 'init_ready') {
-        updatedSession.cwd = event.cwd
-        updatedProject.homedir = event.homedir
-        updatedProject.sandboxInfo = event.sandboxInfo
-        updatedProject._projectSkills = event.skills
-        updatedProject._projectCommands = event.projectCommands
-        updatedProject.userAdditionalDirs = event.additionalDirsScoped.user
-        updatedProject.projectSharedDirs = event.additionalDirsScoped.projectShared
-        updatedProject.projectLocalDirs = event.additionalDirsScoped.projectLocal
-        updatedProject.projectAdditionalDirs = Array.from(new Set([
-          ...event.additionalDirsScoped.projectShared,
-          ...event.additionalDirsScoped.projectLocal,
-        ]))
-        const claudeRes = s.harnessResources.claude
-        updatedProject.slashCommands = buildSlashCommands(
-          claudeRes?.slashCommands ?? [], claudeRes?.skills ?? [], claudeRes?.commands ?? [],
-          event.skills, event.projectCommands,
-          new Set(s.disabledSkills),
-        )
-        updatedProject.agents = [...(claudeRes?.agents ?? []), ...event.projectAgents]
-
-        const globalModels = claudeRes?.models ?? []
-        if (!updatedSession.selectedModel && globalModels[0]) {
-          updatedSession.selectedModel = globalModels[0].id
-          const effort = getDefaultEffortForModel(globalModels[0])
-          if (effort) updatedSession.selectedEffort = effort
-          updatedProject._sessions = { ...updatedProject._sessions, [targetSid]: updatedSession }
-        }
-      }
-
-      // Incremental save on tool_result / final save on complete/interrupted/error
-      const effectiveSid = targetSid
-      if (effectiveSid) {
-        if (
-          updatedSession.sessionProvider === 'codex'
-          && (
-          (event.type === 'session_init' && event.session) ||
-          (event.type === 'content_delta' && event.delta.type === 'tool_result') ||
-          event.type === 'message_complete' || event.type === 'message_interrupted' || event.type === 'message_error'
-          )
-        ) {
-          const snapshot = updatedSession
-          setTimeout(() => _ensureSessionHydrated(effectiveSid, snapshot), 0)
-        }
-      }
-
-      // Non-active session went idle → save, mark unseen, and evict from _sessions after save completes
-      if (event.type === 'status_change' && event.status === 'idle' && targetSid !== updatedProject._activeSessionId) {
-        if (!_isLiveSession(updatedSession)) {
-          const isRemoteSubscribed = isRemoteSession(s, projectPath, targetSid)
-          if (!isRemoteSubscribed && effectiveSid) {
-            updatedProject.unseenCompletedSessions = new Set([...updatedProject.unseenCompletedSessions, effectiveSid])
-            if (updatedSession.sessionProvider === 'codex') {
-              const snapshot = updatedSession
-              const evictSid = targetSid
-              const evictProjectPath = projectPath
-              setTimeout(() => {
-                _ensureSessionHydrated(effectiveSid, snapshot).then(() => {
-                  set((s) => {
-                    const proj = s.projectSessions[evictProjectPath]
-                    if (!proj?._sessions[evictSid]) return {}
-                    if (proj._activeSessionId === evictSid) return {}
-                    if (_isLiveSession(proj._sessions[evictSid])) return {}
-                    const { [evictSid]: _, ...rest } = proj._sessions
-                    return { projectSessions: { ...s.projectSessions, [evictProjectPath]: { ...proj, _sessions: rest } } }
-                  })
-                })
-              }, 0)
-            } else {
-              const { [targetSid]: _, ...restSessions } = updatedProject._sessions
-              updatedProject._sessions = restSessions
-            }
-          } else if (!isRemoteSubscribed) {
-            const { [targetSid]: _, ...restSessions } = updatedProject._sessions
-            updatedProject._sessions = restSessions
-          }
-        }
-      }
-
-      const isBackground = projectPath !== s.activeProject
-
-      // Active session went idle in a background project → mark as unseen
-      if (event.type === 'status_change' && event.status === 'idle' && targetSid === updatedProject._activeSessionId && isBackground && effectiveSid) {
-        updatedProject.unseenCompletedSessions = new Set([...updatedProject.unseenCompletedSessions, effectiveSid])
-      }
-
-      // Background activity indicators
-      if (isBackground) {
-        updatedProject.hasUnseenActivity = true
-      }
-      updatedProject.hasPendingInteraction = _computeHasPendingInteraction(updatedProject)
-
-      let bashOutputUpdate: Partial<ChatStore> | undefined
-      if (event.type === 'content_delta' && event.delta.type === 'tool_result' && event.delta.outputPath) {
-        const tid = event.delta.toolUseId
-        const op = event.delta.outputPath
-        bashOutputUpdate = {
-          _bashOutputs: { ...s._bashOutputs, [tid]: { content: s._bashOutputs[tid]?.content ?? '', finished: false, outputPath: op } },
-        }
-        setTimeout(() => window.app.watchBashOutput(tid, op), 0)
-      }
-
-      return {
-        ...bashOutputUpdate,
-        projectSessions: {
-          ...s.projectSessions,
-          [projectPath]: updatedProject,
-        },
-      }
-    })
-    if (hydrateSessionId) {
-      _hydrateSessionState(set, projectPath, hydrateSessionId)
-    }
-    if (event.type === 'worktree_missing' && projectPath === get().activeProject) {
-      useAppStore.getState().setActiveWorktree(projectPath, null)
-    }
-  },
-
-  // syncLiveSnapshots now provided by createEventSlice
+  // handleAgentEvent + syncLiveSnapshots now provided by createEventSlice
 
   focusProject: async (projectPath: string) => {
     const currentProject = get().activeProject

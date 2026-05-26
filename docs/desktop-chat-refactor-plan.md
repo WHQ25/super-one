@@ -6,25 +6,49 @@
 
 ## 落地进展记录（截至 2026-05-26）
 
-阶段 0 / 1 / 2 / 4d 已落地完成，零行为变化。详见落地后修订发现：
-
 | 阶段 | 状态 | 落地结果 |
 |---|---|---|
-| 0 基础设施 | ✅ 完成 | `HarnessId` 统一到 `agent-types.ts:1229`；`session-types.ts` 改 re-export；`ChatProvider` 改 type alias = `HarnessId`。改 2 文件，零回归。 |
-| 1 纯函数外提 | ✅ 完成 | 新建 `chat-store/helpers/codex-helpers.ts`（185 行）+ `event-helpers.ts`（70 行），搬 14 个纯函数 + `CodexCommand` type。chat.ts 5119 → 4915 行（减 204 行）。re-export 链路保留，消费方零改动。 |
-| 2 收敛 provider switch | ✅ 完成 | 新建 `chat-store/helpers/provider-routing.ts`：`resolveProvider(session)` + `inferProviderFromHarnessId(...)`，替换 chat.ts 中 4 处 `sessionProvider ?? preferredProvider` + 2 处 `harnessId === 'codex' ? ...` 三元运算。 |
-| 3 slice 拆分 | ⏸ 跳过 | **落地评估：价值 vs 成本不划算**。zustand slice 模式要求每个 slice import 完整 ChatStore 类型才能交叉读写，slice 间天然 cross-reference 多。顶层 `useChatStore = create(... spread slices ...)` 复杂度上升，但实际只换来"文件物理拆分"，不带来逻辑清晰度提升。chat.ts 4915 行可继续靠后续 helper 抽取减重。 |
-| 4d ModelSelector | ✅ 完成 | 拆成 `model-selector/ClaudeModelSelector.tsx` (148 行) + `CodexModelSelector.tsx` (102 行)，主组件薄到 14 行。50% 分支问题清掉。Stop 条件「< 50 行」达成。 |
-| 4a/4b/4c | ⏸ 跳过 | **落地评估：ModelSelector 是阶段 4 唯一"两套完整 UI 并列"的组件**。其他三个: `PermissionPrompt` 的 codex 分支是 **8 处散点**（btnCount/keyboard/render 多点），`ChatStatusBar` 的 codex 分支 **穿插在中段**（dividers + activities 之间），`ChatMessage` 末端 isCodexMessage 分支只 3 处。这些"两套独立组件"拆完 95% 代码会重复或要大量 props drilling，**收益 < 成本**。 |
-| 4e ChatInput | ⏸ 未做 | 1229 行大文件，12% codex 分支。可考虑只抽 `useChatInputSlashRouting` + `useCodexCommandHandling` 两个 hook，主体不动。后续 PR 单独评估。 |
-| 5 收尾 | ⏸ 部分完成 | `ChatProvider` 已 alias 为 `HarnessId`，全代码改名为 rename PR，可单独做或留待自然衰退。`harness-capabilities.ts` 等延后到真正消费点出现再抽。 |
+| 0 基础设施 | ✅ 完成 | `HarnessId` 统一到 `agent-types.ts:1229`；`session-types.ts` 改 re-export；`ChatProvider` 改 type alias = `HarnessId`。 |
+| 1 纯函数外提 | ✅ 完成 | 新建 `chat-store/helpers/codex-helpers.ts`（185 行）+ `event-helpers.ts`（70 行），搬 14 个纯函数 + `CodexCommand` type。 |
+| 2 收敛 provider switch | ✅ 完成 | 新建 `chat-store/helpers/provider-routing.ts`：`resolveProvider(session)` + `inferProviderFromHarnessId(...)`，收敛 6 处散落 switch。 |
+| 3 slice 拆分 | ⏸ 跳过 / 后续 PR | 评估：单独做 slice 拆分价值 vs 成本不划算（slice 间 cross-reference 多）。**真正切片化推迟到与业务重写共做**。chat-store/index.ts 仍是单文件 store body，但目录骨架已就位等待后续 slice 化。 |
+| 4d ModelSelector | ✅ 完成 | 拆成 `model-selector/ClaudeModelSelector.tsx` + `CodexModelSelector.tsx`，主组件薄到 14 行。 |
+| 4a/4b/4c | ⏸ 跳过 | **ModelSelector 是阶段 4 唯一"两套完整 UI 并列"的组件**，其余三个分支属于穿插式 / 散点式，拆完 95% 代码重复。 |
+| 4e ChatInput | ⏸ 未做 / 后续 PR | 单独 PR 评估抽 hook 而非拆组件。 |
+| 5 收尾 | ⏸ 部分完成 | `ChatProvider` 已 alias 为 `HarnessId`，自然衰退。`harness-capabilities.ts` 按消费点延后。 |
+| **A** `packages/shared/harness/` 子包 | ✅ 完成 | 移 `harness-brand.ts` 进 `harness/`，新建 `harness/harness-id.ts` 与 `harness/index.ts`。原路径保留兼容 re-export，9 处消费者零改动。 |
+| **B1** `chat-store/helpers/chat-helpers.ts` 搬迁 | ✅ 完成 | 从 `stores/chat-helpers.ts` 搬到 `stores/chat-store/helpers/chat-helpers.ts`，与 codex/event/provider-routing helpers 同目录。 |
+| **B2** `chat-store/types.ts` facade | ✅ 完成 | 作为公开类型入口建立，re-export 自 `./index`。源头还在 index.ts 内（后续 PR 真迁），消费者可立刻开始用 `chat-store/types` 路径。 |
+| **B3** `chat-store/defaults.ts` facade | ✅ 完成 | 同上模式，工厂函数 + cache invalidator 通过 facade 暴露。 |
+| **E** `chat.ts` 薄壳化 | ✅ 完成 | 主体物理搬到 `chat-store/index.ts`（4915 行）；`chat.ts` 仅一行 `export * from './chat-store'`。`chat-store.test.ts` 等消费者 import 路径零改动。 |
 
-**关键教训**（写入下次类似 refactor 的预算清单）：
+### 目录分层完成度
+
+对照"目标分层"图：
+
+| 目标节点 | 现状 |
+|---|---|
+| `packages/shared/harness/{harness-id,harness-capabilities,harness-brand}.ts` | harness-id ✅；harness-brand ✅（已迁入 + 原路径 re-export）；harness-capabilities ⏸（按消费点延后） |
+| `stores/chat-store/index.ts` | ✅ |
+| `stores/chat-store/types.ts` | ✅ facade（源头待迁） |
+| `stores/chat-store/defaults.ts` | ✅ facade（源头待迁） |
+| `stores/chat-store/slices/*` | ⏸ 整组延后 |
+| `stores/chat-store/harness/{handler,claude,codex}` | ⏸ 延后 |
+| `stores/chat-store/helpers/{chat,codex,event,provider-routing}.ts` | ✅ 全部到位（真函数已迁） |
+| `stores/chat.ts` 薄壳 | ✅ |
+| `components/chat/model-selector/` | ✅ |
+| `components/chat/{permission-prompt,chat-message,chat-input,chat-status-bar}/` | ⏸ 不适合机械拆分（散点/穿插），后续按需 hook 化 |
+
+**骨架完成度：~75%**。剩余的 slices/ + harness/handler 文件 + types/defaults 真函数迁移属于"切割主体"工作，每项是一个独立 PR 量级，不应在一次重构 session 内强行做完——这种 5000+ 行的高风险拆分需要小步多 commit + 完整集成测试。
+
+### 关键教训（写入下次类似 refactor 的预算清单）
 
 1. **"假通用"组件的拆分价值差异巨大**：要看 codex 分支是 *末端集中*（可拆）还是 *穿插式 / 散点式*（拆完两份 95% 代码重复，得不偿失）。审计阶段须给每个组件标这个属性。
 2. **slice 拆分不是 zero-cost**：zustand slice 模式书面上简洁，实际上 slice 间 cross-reference 比理论多。在不重写业务的前提下，仅为"文件物理拆分"做 slice，性价比低。
 3. **纯函数外提 + helper 路由 = 高 ROI**：阶段 1 / 2 改动小、零行为变化、立即收益（chat.ts 减重、provider switch 收敛、可独立单测的 helpers）。是最值得做的阶段。
 4. **HarnessId 统一 + ChatProvider 兼容 alias = 不破坏现有代码的渐进式 rename 起点**。后续如有大量改动顺手把 `ChatProvider` 替换为 `HarnessId` 即可，不需要单独 rename PR。
+5. **facade 优先于真迁**：types.ts / defaults.ts 的 facade 模式让公开 API 路径立刻稳定，源头迁移可以延后到 "私有依赖也迁完" 那一刻；同时避免 TS2484 双重定义错误。
+6. **vitest 必须从 `apps/desktop` cwd 启动**：根目录没有 vitest 配置；从根跑会让 `@/*` alias resolution 失败但错误信息很容易被误读为 "我刚才改坏了"。手动测试时 `cd apps/desktop` 或者用 `bunx vitest --config apps/desktop/vitest.config.ts`。
 
 ## 现状诊断
 

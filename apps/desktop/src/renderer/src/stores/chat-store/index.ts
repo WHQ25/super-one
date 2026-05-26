@@ -1970,52 +1970,16 @@ const harnessHandlers: HarnessHandlerMap = {
   },
 }
 
-export const useChatStore = create<ChatStore>((set, get) => ({
+import { createToolSlice } from './slices/tool-slice'
+
+export const useChatStore = create<ChatStore>((set, get, store) => ({
+  ...createToolSlice(set, get, store),
+
   projectSessions: {},
   activeProject: null,
   remoteSessions: {},
   _previousFocusedSession: null,
   agentTitles: {},
-  _bashOutputs: {},
-  toolRenderers: {},
-
-  openToolIntercept: (state) =>
-    set((s) => ({ toolRenderers: { ...s.toolRenderers, [state.callId]: state } })),
-
-  submitToolIntercept: (callId, userInput) => {
-    const current = get().toolRenderers[callId]
-    if (!current || current.status !== 'awaiting') return
-    set((s) => {
-      const next = { ...s.toolRenderers }
-      delete next[callId]
-      return { toolRenderers: next }
-    })
-    window.app.submitToolIntercept?.(callId, userInput)
-  },
-
-  cancelToolIntercept: (callId, reason) => {
-    const current = get().toolRenderers[callId]
-    if (!current || current.status !== 'awaiting') return
-    set((s) => {
-      const next = { ...s.toolRenderers }
-      delete next[callId]
-      return { toolRenderers: next }
-    })
-    window.app.cancelToolIntercept?.(callId, reason)
-  },
-
-  clearToolIntercepts: (callIds: string[]) => set((s) => {
-    if (callIds.length === 0) return s
-    const next = { ...s.toolRenderers }
-    for (const id of callIds) delete next[id]
-    return { toolRenderers: next }
-  }),
-
-  _pendingStandaloneCalls: {},
-
-  mapStandaloneCall: (toolUseId, payload) => set((s) => ({
-    _pendingStandaloneCalls: { ...s._pendingStandaloneCalls, [toolUseId]: payload },
-  })),
 
   isOpen: false,
   corner: 'br',

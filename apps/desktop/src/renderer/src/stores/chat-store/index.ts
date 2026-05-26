@@ -265,7 +265,7 @@ export function updateProjectState(
   }
 }
 
-function updatePerSession(
+export function updatePerSession(
   state: ChatStore,
   projectPath: string,
   sessionId: string,
@@ -1431,7 +1431,7 @@ async function _syncAndResumeSession(projectPath: string, sessionId: string, set
   })
 }
 
-function _truncateAtCheckpoint(
+export function _truncateAtCheckpoint(
   set: (fn: (s: ChatStore) => Partial<ChatStore>) => void,
   _get: () => ChatStore,
   projectPath: string,
@@ -1973,11 +1973,13 @@ const harnessHandlers: HarnessHandlerMap = {
 import { createToolSlice } from './slices/tool-slice'
 import { createClaudeSlice } from './slices/claude-slice'
 import { createCodexSlice } from './slices/codex-slice'
+import { createSessionSlice } from './slices/session-slice'
 
 export const useChatStore = create<ChatStore>((set, get, store) => ({
   ...createToolSlice(set, get, store),
   ...createClaudeSlice(set, get, store),
   ...createCodexSlice(set, get, store),
+  ...createSessionSlice(set, get, store),
 
   projectSessions: {},
   activeProject: null,
@@ -3124,20 +3126,7 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
     })), _bashOutputs: remainingOutputs }))
   },
 
-  removeSessionFromMemory: (projectPath: string, sessionId: string) => {
-    set((s) => {
-      const proj = getProject(s, projectPath)
-      if (!proj._sessions[sessionId]) return s
-      const { [sessionId]: _, ...rest } = proj._sessions
-      return {
-        projectSessions: {
-          ...s.projectSessions,
-          [projectPath]: { ...proj, _sessions: rest },
-        },
-      }
-    })
-    useActivityViewStateStore.getState().clearForSession(sessionId)
-  },
+  // removeSessionFromMemory now provided by createSessionSlice
 
   resetSessionForWorktreeSwitch: (projectPath: string, opts?: { wtPath?: string; gitBranch?: string | null }) => {
     const previousSid = get().projectSessions[projectPath]?._activeSessionId ?? null
@@ -3279,114 +3268,9 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
     void inheritMiniAppToolsForNewSession(activeProject, currentSid)
   },
 
-  rewindFiles: async (userMessageId: string) => {
-    const { activeProject } = get()
-    if (!activeProject) throw new Error('No active project')
-    const result = await window.agent.rewindFiles(activeProject, userMessageId)
-    if (result.canRewind !== false) {
-      // Mark the user message as rewound
-      set((s) => updateActivePerSession(s,(sess) => ({
-        messages: sess.messages.map((m) =>
-          m.checkpointId === userMessageId ? { ...m, rewound: 'code' as const } : m
-        ),
-      })))
-    }
-    return result
-  },
-
-  rewindCodeAndChat: async (userMessageId: string) => {
-    const { activeProject } = get()
-    if (!activeProject) throw new Error('No active project')
-    const result = await window.agent.rewindCodeAndChat(activeProject, userMessageId)
-    if (result.canRewind !== false) {
-      _truncateAtCheckpoint(set, get, activeProject, userMessageId)
-    }
-    return result
-  },
-
-  rewindConversation: async (userMessageId: string) => {
-    const { activeProject } = get()
-    if (!activeProject) throw new Error('No active project')
-    const result = await window.agent.rewindConversation(activeProject)
-    if (result.canRewind !== false) {
-      _truncateAtCheckpoint(set, get, activeProject, userMessageId)
-    }
-    return result
-  },
-
-  previewRewind: async (checkpointId: string) => {
-    const { activeProject } = get()
-    if (!activeProject) throw new Error('No active project')
-    return window.agent.previewRewind(activeProject, checkpointId)
-  },
-
-  editQueuedMessage: async (messageId) => {
-    const { activeProject } = get()
-    if (!activeProject) return
-    const session = getActivePerSession(get())
-    const msg = session.queuedMessages.find((m) => m.id === messageId)
-    if (!msg) return
-    // The CLI has no consumer-facing cancel: once the message is consumed
-    // into its command queue it WILL be answered. dequeueMessage returns
-    // false in that case — leave it queued (the imminent
-    // queued_message_consumed event moves it to the transcript) and do NOT
-    // pull it into the input, which would double-send.
-    const removed = await window.agent.dequeueMessage(activeProject, messageId)
-    if (!removed) return
-    const text = msg.content.find((b) => b.type === 'text')
-    const attachments = msg.attachments ?? []
-    set((s) => updateActivePerSession(s, (sess) => ({
-      queuedMessages: sess.queuedMessages.filter((m) => m.id !== messageId),
-      draftText: text && 'text' in text ? text.text : '',
-      attachments,
-      codexPlanRejectHintActive: false,
-    })))
-  },
-
-  deleteQueuedMessage: async (messageId) => {
-    const { activeProject } = get()
-    if (!activeProject) return
-    const removed = await window.agent.dequeueMessage(activeProject, messageId)
-    if (!removed) return
-    set((s) => updateActivePerSession(s, (sess) => ({
-      queuedMessages: sess.queuedMessages.filter((m) => m.id !== messageId),
-    })))
-  },
-
-  setDraftText: (text) => {
-    const { activeProject } = get()
-    if (!activeProject) return
-    const prevText = getActivePerSession(get(), activeProject).draftText
-    set((s) => updateActivePerSession(s,() => ({
-      draftText: text,
-      ...(text.length > 0 ? { codexPlanRejectHintActive: false } : {}),
-    })))
-    if (prevText.length === 0 && text.length > 0) {
-      triggerPrewarm(get(), activeProject)
-    }
-  },
-
-  assignSubagentColor: (toolUseId) => {
-    set((s) => updateActivePerSession(s, (sess) => {
-      if (sess.subagentColors[toolUseId] !== undefined) return {}
-      const free = sess._subagentColorsFree.length > 0 ? sess._subagentColorsFree : freshSubagentColorPool()
-      const pickIdx = Math.floor(Math.random() * free.length)
-      const color = free[pickIdx]
-      const newFree = [...free.slice(0, pickIdx), ...free.slice(pickIdx + 1)]
-      return {
-        subagentColors: { ...sess.subagentColors, [toolUseId]: color },
-        _subagentColorsFree: newFree,
-      }
-    }))
-  },
-
-  setDetailedUsage: (projectPath, sessionId, usage) => {
-    set((s) => {
-      const project = s.projectSessions[projectPath]
-      if (!project?._sessions[sessionId]) return {}
-      return updatePerSession(s, projectPath, sessionId, () => ({ detailedUsage: usage }))
-    })
-  },
+  // rewindFiles / rewindCodeAndChat / rewindConversation / previewRewind
+  // editQueuedMessage / deleteQueuedMessage / setDraftText / assignSubagentColor /
+  // setDetailedUsage now provided by createSessionSlice
 
   // setSelectedModel / setSelectedEffort / setFastMode now provided by createClaudeSlice
   // setSelectedCodexModel / setSelectedCodexReasoningEffort / setSelectedCodexPermissionPreset /

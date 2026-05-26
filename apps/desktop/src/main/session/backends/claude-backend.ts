@@ -43,6 +43,7 @@ export class ClaudeBackend implements SessionBackend {
   private bridge: MessageBridge | null = null
   private query: Query | null = null
   private iterationDone: Promise<void> | null = null
+  private spawnAbortController: AbortController | null = null
 
   private currentMessageId = ''
   private currentStartTime = 0
@@ -165,6 +166,7 @@ export class ClaudeBackend implements SessionBackend {
 
     this.query = handle.query
     this.iterationDone = handle.iterationDone
+    this.spawnAbortController = handle.spawnAbortController
     this._lastActiveAt = Date.now()
     this.startIdleTimer()
   }
@@ -282,9 +284,11 @@ export class ClaudeBackend implements SessionBackend {
     const bridge = this.bridge
     const query = this.query
     const iterationDone = this.iterationDone
+    const spawnAbortController = this.spawnAbortController
     this.bridge = null
     this.query = null
     this.iterationDone = null
+    this.spawnAbortController = null
     this._lastActiveAt = null
     this.stopIdleTimer()
     for (const resolve of this.turnResolves.values()) resolve()
@@ -301,13 +305,19 @@ export class ClaudeBackend implements SessionBackend {
       bridge.close()
       log.info('[ClaudeBackend.idle-diag] bridge.close done sid=%s tookMs=%d', sid, Date.now() - t2)
     }
+    let iterationOutcome: 'resolved' | 'rejected' | 'timeout-5s' | 'skipped' = 'skipped'
     if (iterationDone) {
       const t3 = Date.now()
-      const outcome = await Promise.race([
+      iterationOutcome = await Promise.race([
         iterationDone.then(() => 'resolved' as const).catch(() => 'rejected' as const),
         new Promise<'timeout-5s'>((resolve) => setTimeout(() => resolve('timeout-5s'), 5000)),
       ])
-      log.info('[ClaudeBackend.idle-diag] iterationDone sid=%s outcome=%s tookMs=%d', sid, outcome, Date.now() - t3)
+      log.info('[ClaudeBackend.idle-diag] iterationDone sid=%s outcome=%s tookMs=%d', sid, iterationOutcome, Date.now() - t3)
+    }
+    if (spawnAbortController) {
+      const wasAborted = spawnAbortController.signal.aborted
+      try { spawnAbortController.abort() } catch { /* ignore */ }
+      log.info('[ClaudeBackend.idle-diag] spawn SIGTERM sid=%s alreadyAborted=%s iterationOutcome=%s', sid, wasAborted, iterationOutcome)
     }
     log.info('[ClaudeBackend.idle-diag] releaseRuntime end sid=%s totalMs=%d', sid, Date.now() - t0)
     trace('backend.lifecycle', 'runtime_released', { reason })
@@ -317,7 +327,7 @@ export class ClaudeBackend implements SessionBackend {
     if (this.bridge && this.query) return
     if (!this._lastStartOpts) throw new Error('ClaudeBackend not started')
     const resumeId = this.providerSessionId ?? undefined
-    await this.start({ ...this._lastStartOpts, providerSessionId: resumeId })
+    await this.start({ ...this._lastStartOpts, abortController: new AbortController(), providerSessionId: resumeId })
   }
 
   private async ensureQuery(): Promise<Query | null> {

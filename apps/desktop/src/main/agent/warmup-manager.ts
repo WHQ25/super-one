@@ -139,7 +139,7 @@ export class WarmupManager {
     })
   }
 
-  consume(options: Options): WarmQuery | null {
+  consume(options: Options): { warm: WarmQuery; abortController: AbortController } | null {
     if (this.disposed) return null
     const key = WarmupManager.keyOf(options)
     if (!this.slot || this.slot.key !== key) {
@@ -152,11 +152,11 @@ export class WarmupManager {
       this.discardSlot('stale_on_consume')
       return null
     }
-    const warm = this.slot.warm
+    const { warm, abortController } = this.slot
     log.info('[warmup] HIT — consumed slot ageMs=%d key=%s', age, shortKey(key))
     trace('warmup', 'hit', { key, ageMs: age })
     this.slot = null
-    return warm
+    return { warm, abortController }
   }
 
   private discardSlot(reason: string): void {

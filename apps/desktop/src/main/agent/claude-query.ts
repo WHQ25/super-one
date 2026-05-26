@@ -79,6 +79,7 @@ export function buildClaudeOptions(opts: SessionQueryOptions): Options {
 export interface SessionQueryHandle {
   query: Query
   iterationDone: Promise<void>
+  spawnAbortController: AbortController
 }
 
 export function createSessionQuery(
@@ -110,11 +111,15 @@ export function createSessionQuery(
   const sdkOptions = buildClaudeOptions({ ...options, canUseTool: timedCanUseTool })
 
   let q: Query
+  let spawnAbortController: AbortController
   const warm = options.warmupManager?.consume(sdkOptions)
   if (warm) {
     log.info('[claude-query] using prewarmed subprocess')
-    q = warm.query(bridge)
+    q = warm.warm.query(bridge)
+    spawnAbortController = warm.abortController
   } else {
+    spawnAbortController = sdkOptions.abortController ?? new AbortController()
+    if (!sdkOptions.abortController) sdkOptions.abortController = spawnAbortController
     q = query({ prompt: bridge, options: sdkOptions })
   }
 
@@ -131,7 +136,7 @@ export function createSessionQuery(
     timing,
   })
 
-  return { query: q, iterationDone }
+  return { query: q, iterationDone, spawnAbortController }
 }
 
 export function buildUserMessage(request: SendMessageRequest, sessionId: string): SDKUserMessage {

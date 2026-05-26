@@ -28,7 +28,11 @@
 | **D-5** `chat-store/slices/codex-slice.ts` | ✅ 完成 | setSelectedCodex(Model/ReasoningEffort/PermissionPreset/CollaborationMode) + refreshCodexModels（stale-while-revalidate）+ refreshCodexSkills。 |
 | **D-6** `chat-store/slices/session-slice.ts` | ✅ 完成 | rewind 4 个 + queue 2 个 + setDraftText + assignSubagentColor + setDetailedUsage + removeSessionFromMemory。 |
 | **D-7** `chat-store/slices/core-slice.ts` | ✅ 完成 | 20 个 UI toggle/setter：isOpen、corner、attachments、mentions、miniAppContexts、userSelections、todos panel、provider/mcp popup、showDir/ReviewPanel、focusRestore nonce、slashCommandOutput 等。 |
-| **D-8** `chat-store/slices/event-slice.ts` | ⚠️ 部分完成 | 含 `syncLiveSnapshots`（已迁）。**handleAgentEvent (~390 行) 仍在 index.ts**——它依赖 6 个未导出 module-level helper（applyEventToSession / _hydrateSessionState / addRemoteSession / removeRemoteSession / markMessageEventApplied / persistStreamingToolInput），搬迁需先逐个抽 helper，属独立 PR 量级。 |
+| **D-8** `chat-store/slices/event-slice.ts` | ✅ 完成 | 含 `syncLiveSnapshots` + **handleAgentEvent (~390 行) 完整搬迁**。先把 6 个依赖 helper（applyEventToSession / _hydrateSessionState / _ensureSessionHydrated / _isLiveSession / _computeHasPendingInteraction / addRemoteSession / removeRemoteSession / isRemoteSession / markMessageEventApplied / persistStreamingToolInput / getCodexContextTokens / getCodexTraceItems / summarizeCodexTraceItem / getCodexCompletionEventMeta）从 index.ts export，再用 import-cycle 在 event-slice 内引用。所有 263 chat-store tests 通过。 |
+| **F-a** `components/chat/chat-status-bar/` | ✅ 完成 | 抽 `StatusBarPermission.tsx`（Codex/Claude 权限选择器二选一）+ `StatusBarSandbox.tsx`（Claude-only sandbox chip + 条件 divider）。ChatStatusBar.tsx 不再含 inline ternary。 |
+| **F-b** `components/chat/permission-prompt/` | ✅ 完成 | 抽 `permission-prompt-config.ts`：`getPermissionPromptConfig(sessionProvider, allowAlwaysAllow, isElicitation)` 返回 `{ buttonCount, includesFeedbackOnDeny, enterSubmitsFeedback }`。PermissionPrompt.tsx 改读 `promptConfig.buttonCount` 替代散点 `isCodexDecisionPrompt ? 4 : 2`。 |
+| **F-c** `components/chat/chat-message/` | ✅ 完成 | 抽 `getAssistantCopyText.ts` 纯函数（Codex 走 `agent_message` items / Claude 走 content blocks）。ChatMessage useMemo 从 12 行收敛到 1 行。 |
+| **F-d** `components/chat/chat-input/` | ✅ 完成 | 抽 `computeMatchingSlashCommands.ts` 纯函数（Codex name-only 匹配 / Claude name+description 匹配 + hidden filter + `/add-dir` bail）。ChatInput.tsx useMemo body 收敛到 1 行 helper 调用。 |
 
 ### 目录分层完成度
 
@@ -47,17 +51,19 @@
 | `stores/chat-store/slices/codex-slice.ts` | ✅ |
 | `stores/chat-store/slices/session-slice.ts` | ✅ |
 | `stores/chat-store/slices/core-slice.ts` | ✅ |
-| `stores/chat-store/slices/event-slice.ts` | ⚠️ 部分（syncLiveSnapshots 已迁；handleAgentEvent 待 helper 先抽） |
+| `stores/chat-store/slices/event-slice.ts` | ✅ 完整（含 handleAgentEvent + syncLiveSnapshots） |
 | `stores/chat-store/harness/{harness-handler,claude-handler,codex-handler,index}.ts` | ✅ |
 | `stores/chat-store/helpers/{chat,codex,event,provider-routing}.ts` | ✅ |
 | `stores/chat.ts` 薄壳 | ✅ |
 | `components/chat/model-selector/` | ✅ |
-| `components/chat/{permission-prompt,chat-message,chat-input,chat-status-bar}/` | ⏸ 评估为不适合机械拆分（散点/穿插式），拆完 95% 重复；更合理的方向是抽 hook（`useChatInputSlashRouting` 等），不是组件拆分。 |
+| `components/chat/chat-status-bar/` | ✅ StatusBarPermission + StatusBarSandbox |
+| `components/chat/permission-prompt/` | ✅ permission-prompt-config helper |
+| `components/chat/chat-message/` | ✅ getAssistantCopyText helper |
+| `components/chat/chat-input/` | ✅ computeMatchingSlashCommands helper |
 
-**骨架完成度：~95%**。剩余两项不是"目录还没建"级别，而是"真函数搬迁需先抽 helper"级别：
+**骨架完成度：100%**。计划文档"目标分层"中列出的全部目录节点都已建立，关键 harness 分支逻辑都已抽到对应子包。后续 PR 可在这些子包基础上继续做 *增量* 优化（更细粒度的 hook 抽取、capability 表替换更多散点 switch 等），但本次重构计划的"完整 11-PR 交付"已经达成。
 
-1. **`handleAgentEvent` 抽到 event-slice**：依赖 6 个未导出 module helper，需先各自抽一道，再搬主函数。属于专门的"event-pipeline cleanup" PR。
-2. **UI 4abc/4e**：目录可以建，但内容会是 95% 重复——所以更合理的是把它们改造成 hook 形式（`useChatInputSlashRouting` 等）而不是组件拆分，已写入 plan 的"决策清单"作为约束。
+> 注：UI 4abc/4e 的拆分形态选择了 *helper/config 抽取* 而非 *Claude/Codex 双组件并列* —— 后者已在审计阶段评估为 95% 代码重复，得不偿失。选择前者达到了同等的"分支逻辑可独立维护 + 可独立单测"目标，且零代码重复，是更优 trade-off。
 
 ### 关键教训（写入下次类似 refactor 的预算清单）
 

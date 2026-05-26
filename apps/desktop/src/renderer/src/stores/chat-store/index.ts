@@ -1974,12 +1974,14 @@ import { createToolSlice } from './slices/tool-slice'
 import { createClaudeSlice } from './slices/claude-slice'
 import { createCodexSlice } from './slices/codex-slice'
 import { createSessionSlice } from './slices/session-slice'
+import { createCoreSlice } from './slices/core-slice'
 
 export const useChatStore = create<ChatStore>((set, get, store) => ({
   ...createToolSlice(set, get, store),
   ...createClaudeSlice(set, get, store),
   ...createCodexSlice(set, get, store),
   ...createSessionSlice(set, get, store),
+  ...createCoreSlice(set, get, store),
 
   projectSessions: {},
   activeProject: null,
@@ -3083,15 +3085,7 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
     }
   },
 
-  toggleOpen: () => set((s) => ({ isOpen: !s.isOpen })),
-
-  requestChatInputFocusRestore: () => {
-    set((s) => updateActivePerSession(s, (sess) => ({
-      chatInputRestoreFocusNonce: sess.chatInputRestoreFocusNonce + 1,
-    })))
-  },
-
-  setCorner: (corner) => set({ corner }),
+  // toggleOpen / requestChatInputFocusRestore / setCorner now provided by createCoreSlice
 
   clearMessages: () => {
     const { activeProject, _bashOutputs } = get()
@@ -3345,27 +3339,7 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
   },
 
 
-  addAttachment: (attachment) => {
-    const { activeProject } = get()
-    if (!activeProject) return
-    set((s) => updateActivePerSession(s,(sess) => ({
-      attachments: [...sess.attachments, attachment],
-    })))
-  },
-
-  removeAttachment: (index) => {
-    const { activeProject } = get()
-    if (!activeProject) return
-    set((s) => updateActivePerSession(s,(sess) => ({
-      attachments: sess.attachments.filter((_, i) => i !== index),
-    })))
-  },
-
-  clearAttachments: () => {
-    const { activeProject } = get()
-    if (!activeProject) return
-    set((s) => updateActivePerSession(s,() => ({ attachments: [] })))
-  },
+  // addAttachment / removeAttachment / clearAttachments now provided by createCoreSlice
 
   respondToPermission: async (requestId, allow, alwaysAllow, reason, selectedSuggestions, decision, formAnswers) => {
     const { activeProject } = get()
@@ -3561,27 +3535,7 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
   },
 
 
-  dismissSlashCommandOutput: () => {
-    const { activeProject } = get()
-    if (!activeProject) return
-    set((s) => updateActivePerSession(s,() => ({ slashCommandOutput: null })))
-  },
-
-  openProviderPopup: () => {
-    const { activeProject } = get()
-    if (!activeProject) return
-    set((s) => updateActivePerSession(s, () => ({
-      slashCommandOutput: { command: 'provider', content: '' },
-    })))
-  },
-
-  openMcpPopup: () => {
-    const { activeProject } = get()
-    if (!activeProject) return
-    set((s) => updateActivePerSession(s, () => ({
-      slashCommandOutput: { command: 'mcp', content: '' },
-    })))
-  },
+  // dismissSlashCommandOutput / openProviderPopup / openMcpPopup now provided by createCoreSlice
 
   setSessionApiProviderId: async (apiProviderId) => {
     const { activeProject } = get()
@@ -3605,93 +3559,9 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
     }
   },
 
-  toggleTodos: () => {
-    const { activeProject } = get()
-    if (!activeProject) return
-    set((s) => updateActivePerSession(s,(sess) => {
-      const willShow = !sess.showTodos
-      return { showTodos: willShow, _todosUserDismissed: willShow ? false : true }
-    }))
-  },
-
-
-  addMention: (mention) => {
-    const { activeProject } = get()
-    if (!activeProject) return
-    set((s) => updateActivePerSession(s,(sess) => {
-      if (sess.mentions.some((m) => m.value === mention.value)) return {}
-      return { mentions: [...sess.mentions, mention] }
-    }))
-  },
-
-  removeMention: (value) => {
-    const { activeProject } = get()
-    if (!activeProject) return
-    set((s) => updateActivePerSession(s,(sess) => ({
-      mentions: sess.mentions.filter((m) => m.value !== value),
-    })))
-  },
-
-  setMiniAppContext: (appId, data) => {
-    if (!get().activeProject) return
-    set((s) => updateActivePerSession(s, (sess) => ({
-      miniAppContexts: {
-        ...sess.miniAppContexts,
-        [appId]: {
-          appId,
-          appName: data.appName,
-          summary: data.summary,
-          content: data.content,
-          mode: data.mode,
-          color: data.color,
-          checked: data.mode === 'inject',
-        },
-      },
-    })))
-  },
-
-  clearMiniAppContext: (appId) => {
-    if (!get().activeProject) return
-    set((s) => updateActivePerSession(s, (sess) => {
-      const { [appId]: _, ...rest } = sess.miniAppContexts
-      return { miniAppContexts: rest }
-    }))
-  },
-
-  toggleMiniAppContext: (appId) => {
-    if (!get().activeProject) return
-    set((s) => updateActivePerSession(s, (sess) => {
-      const slot = sess.miniAppContexts[appId]
-      if (!slot) return {}
-      return {
-        miniAppContexts: {
-          ...sess.miniAppContexts,
-          [appId]: { ...slot, checked: !slot.checked },
-        },
-      }
-    }))
-  },
-
-  addUserSelection: (text) => {
-    if (!get().activeProject) return
-    const trimmed = text.trim()
-    if (!trimmed) return
-    set((s) => updateActivePerSession(s, (sess) => ({
-      userSelections: [...sess.userSelections, trimmed],
-    })))
-  },
-
-  removeUserSelectionAt: (index) => {
-    if (!get().activeProject) return
-    set((s) => updateActivePerSession(s, (sess) => ({
-      userSelections: sess.userSelections.filter((_, i) => i !== index),
-    })))
-  },
-
-  clearUserSelections: () => {
-    if (!get().activeProject) return
-    set((s) => updateActivePerSession(s, () => ({ userSelections: [] })))
-  },
+  // toggleTodos / addMention / removeMention / setMiniAppContext / clearMiniAppContext /
+  // toggleMiniAppContext / addUserSelection / removeUserSelectionAt / clearUserSelections
+  // now provided by createCoreSlice
 
   fetchSessions: async () => {
     const { activeProject } = get()
@@ -4016,17 +3886,7 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
     }
   },
 
-  setShowDirManager: (show) => {
-    const { activeProject } = get()
-    if (!activeProject) return
-    set((s) => updateProjectState(s, activeProject, () => ({ showDirManager: show })))
-  },
-
-  setShowReviewPanel: (show) => {
-    const { activeProject } = get()
-    if (!activeProject) return
-    set((s) => updateProjectState(s, activeProject, () => ({ showReviewPanel: show })))
-  },
+  // setShowDirManager / setShowReviewPanel now provided by createCoreSlice
 
   startCodexReview: (target) => {
     const { activeProject } = get()

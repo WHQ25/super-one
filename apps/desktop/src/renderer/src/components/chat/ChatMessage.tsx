@@ -18,6 +18,7 @@ import { PasteChipPreview } from './PasteChipPreview'
 import { PASTE_CHIP_LINE_THRESHOLD, PASTE_CHIP_CHAR_THRESHOLD } from './paste-chip-node'
 import { useActiveSession, useChatStore } from '@/stores/chat'
 import { useShallow } from 'zustand/react/shallow'
+import { getAssistantCopyText } from './chat-message/getAssistantCopyText'
 import {
   formatTokens,
   resolveMarkdownMedia,
@@ -567,21 +568,10 @@ export const ChatMessage = memo(function ChatMessage({ message, sessionStatus, i
   const isUser = message.role === 'user'
   const isStreaming = message.status === 'streaming' && sessionStatus === 'streaming' && isLastAssistant
   const isCodexMessage = !isUser && message.providerId === 'codex'
-  const assistantCopyText = useMemo(() => {
-    if (isUser) return undefined
-    if (isCodexMessage) {
-      const codexText = message.metadata?.codex?.items
-        ?.filter((item) => item.type === 'agent_message')
-        .map((item) => item.text)
-        .join('\n\n')
-        .trim()
-      if (codexText) return codexText
-    }
-    return message.content
-      .filter((b) => b.type === 'text')
-      .map((b) => (b.type === 'text' ? b.text : ''))
-      .join('\n')
-  }, [isCodexMessage, isUser, message.content, message.metadata?.codex?.items])
+  const assistantCopyText = useMemo(
+    () => getAssistantCopyText(message),
+    [message],
+  )
 
   const apps = useMiniAppStore((s) => s.apps)
   const grouped = useMemo(

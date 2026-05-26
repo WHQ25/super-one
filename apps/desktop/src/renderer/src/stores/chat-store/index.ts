@@ -182,13 +182,13 @@ function applySessionAgentDefaults(
 
 // --- Helper: get or create session state for a project ---
 
-function getProject(state: ChatStore, projectPath?: string | null): ProjectState {
+export function getProject(state: ChatStore, projectPath?: string | null): ProjectState {
   const key = projectPath ?? state.activeProject
   if (!key) return createDefaultProjectState()
   return state.projectSessions[key] ?? createDefaultProjectState()
 }
 
-function getActivePerSession(state: ChatStore, projectPath?: string | null): PerSessionState {
+export function getActivePerSession(state: ChatStore, projectPath?: string | null): PerSessionState {
   const proj = getProject(state, projectPath)
   if (!proj._activeSessionId) return createDefaultPerSessionState()
   return proj._sessions[proj._activeSessionId] ?? createDefaultPerSessionState()
@@ -202,7 +202,7 @@ function mergeProjectAndSessionDirs(project: ProjectState, session: PerSessionSt
   ])]
 }
 
-function triggerPrewarm(state: ChatStore, projectPath?: string | null): void {
+export function triggerPrewarm(state: ChatStore, projectPath?: string | null): void {
   const key = projectPath ?? state.activeProject
   if (!key) return
   const session = getActivePerSession(state, key)
@@ -250,7 +250,7 @@ async function inheritMiniAppToolsForNewSession(
   }
 }
 
-function updateProjectState(
+export function updateProjectState(
   state: ChatStore,
   projectPath: string,
   updater: (p: ProjectState) => Partial<ProjectState>,
@@ -288,7 +288,7 @@ function updatePerSession(
   }
 }
 
-function updateActivePerSession(
+export function updateActivePerSession(
   state: ChatStore,
   updater: (s: PerSessionState) => Partial<PerSessionState>,
 ): Partial<ChatStore> {
@@ -1160,7 +1160,7 @@ function applyEventToSession(session: PerSessionState, event: AgentEvent): Parti
 const CODEX_LOCAL_SESSION_PREFIX = 'codex_local_'
 
 /** Resolve the effective sessionId for saving from a project state. */
-function _getEffectiveSessionId(project: ProjectState): string | null {
+export function _getEffectiveSessionId(project: ProjectState): string | null {
   return resolveActiveSessionId(project)
 }
 
@@ -1547,7 +1547,7 @@ function resolveDefaultCodexSelection(models: ModelOption[]): { modelId: string;
   )
 }
 
-function resolveSessionCodexSelection(
+export function resolveSessionCodexSelection(
   models: ModelOption[],
   selectedCodexModel: string,
   selectedCodexReasoningEffort?: CodexReasoningEffort,
@@ -1573,7 +1573,7 @@ function readLastCodexSelection(): { modelId: string; reasoningEffort?: CodexRea
   }
 }
 
-function saveLastCodexSelection(modelId: string, reasoningEffort?: CodexReasoningEffort): void {
+export function saveLastCodexSelection(modelId: string, reasoningEffort?: CodexReasoningEffort): void {
   try {
     globalThis.localStorage?.setItem(
       CODEX_LAST_SELECTION_STORAGE_KEY,
@@ -1971,9 +1971,13 @@ const harnessHandlers: HarnessHandlerMap = {
 }
 
 import { createToolSlice } from './slices/tool-slice'
+import { createClaudeSlice } from './slices/claude-slice'
+import { createCodexSlice } from './slices/codex-slice'
 
 export const useChatStore = create<ChatStore>((set, get, store) => ({
   ...createToolSlice(set, get, store),
+  ...createClaudeSlice(set, get, store),
+  ...createCodexSlice(set, get, store),
 
   projectSessions: {},
   activeProject: null,
@@ -3384,211 +3388,9 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
     })
   },
 
-  setSelectedModel: (model) => {
-    const state = get()
-    const { activeProject } = state
-    const claude = state.harnessResources.claude
-    const availableModels = claude?.models ?? []
-    const account = claude?.account ?? {}
-    if (!activeProject) return
-    const modelInfo = availableModels.find((m) => m.id === model)
-    const defaultEffort = getDefaultEffortForModel(modelInfo)
-    const session = getActivePerSession(get(), activeProject)
-    const shouldDowngrade =
-      session.permissionMode === 'auto' &&
-      !checkAutoModeEligibility({
-        subscriptionType: account?.subscriptionType,
-        apiProvider: account?.apiProvider,
-        modelSupportsAutoMode: modelInfo?.supportsAutoMode,
-      }).ok
-    const patch: Partial<PerSessionState> = {
-      selectedModel: model,
-      selectedEffort: defaultEffort,
-      modelUserChosen: true,
-      effortUserChosen: false,
-      contextWindow: null,
-    }
-    if (shouldDowngrade) patch.permissionMode = 'default'
-    set((s) => updateActivePerSession(s, () => patch))
-    if (shouldDowngrade) void window.agent.setPermissionMode(activeProject, 'default')
-    void window.agent.setSessionSettings(activeProject, { model, effort: defaultEffort ?? null })
-    if (getActivePerSession(get(), activeProject).draftText.length > 0) {
-      triggerPrewarm(get(), activeProject)
-    }
-  },
-
-  setSelectedEffort: (effort) => {
-    const { activeProject } = get()
-    if (!activeProject) return
-    set((s) => updateActivePerSession(s,() => ({ selectedEffort: effort, effortUserChosen: true })))
-    void window.agent.setSessionSettings(activeProject, { effort: effort ?? null })
-    if (getActivePerSession(get(), activeProject).draftText.length > 0) {
-      triggerPrewarm(get(), activeProject)
-    }
-  },
-
-  setFastMode: (enabled) => {
-    void window.app.setFastMode(enabled)
-  },
-
-  setSelectedCodexModel: (model) => {
-    const { activeProject } = get()
-    if (!activeProject) return
-    const proj = getProject(get(), activeProject)
-    const selectedModel = proj.codexModels.find((entry) => entry.id === model)
-    const selectedEffort = resolveCodexReasoningEffort(selectedModel)
-    saveLastCodexSelection(model, selectedEffort)
-    set((s) => updateActivePerSession(s, () => ({
-      selectedCodexModel: model,
-      selectedCodexReasoningEffort: selectedEffort,
-      codexModelUserChosen: true,
-      codexReasoningEffortUserChosen: false,
-    })))
-    const sid = _getEffectiveSessionId(getProject(get(), activeProject))
-    if (sid) {
-      void window.agent.broadcastSessionSetting(sid, {
-        selectedCodexModel: model,
-        selectedCodexReasoningEffort: selectedEffort ?? null,
-      })
-    }
-  },
-
-  setSelectedCodexReasoningEffort: (effort) => {
-    const { activeProject } = get()
-    if (!activeProject) return
-    const proj = getProject(get(), activeProject)
-    const sess = getActivePerSession(get())
-    const selectedModel = proj.codexModels.find((entry) => entry.id === sess.selectedCodexModel)
-    const selectedEffort = resolveCodexReasoningEffort(selectedModel, effort)
-    saveLastCodexSelection(sess.selectedCodexModel, selectedEffort)
-    set((s) => updateActivePerSession(s, () => ({
-      selectedCodexReasoningEffort: selectedEffort,
-      codexReasoningEffortUserChosen: true,
-    })))
-    const sid = _getEffectiveSessionId(getProject(get(), activeProject))
-    if (sid) {
-      void window.agent.broadcastSessionSetting(sid, {
-        selectedCodexReasoningEffort: selectedEffort ?? null,
-      })
-    }
-  },
-
-  setSelectedCodexPermissionPreset: (preset) => {
-    const { activeProject } = get()
-    if (!activeProject) return
-    set((s) => updateActivePerSession(s,() => ({
-      selectedCodexPermissionPreset: preset,
-    })))
-    const sid = _getEffectiveSessionId(getProject(get(), activeProject))
-    if (sid) {
-      void window.agent.broadcastSessionSetting(sid, { selectedCodexPermissionPreset: preset })
-    }
-  },
-
-  setSelectedCodexCollaborationMode: (mode) => {
-    const { activeProject } = get()
-    if (!activeProject) return
-    const project = getProject(get(), activeProject)
-    const sessionId = _getEffectiveSessionId(project)
-    set((s) => updateActivePerSession(s, () => ({
-      selectedCodexCollaborationMode: mode,
-      codexPlanRejectHintActive: false,
-    })))
-    if (sessionId) {
-      window.app.codexCollaborationModeChange(activeProject, sessionId, mode)
-      void window.agent.broadcastSessionSetting(sessionId, { selectedCodexCollaborationMode: mode })
-    }
-  },
-
-  refreshCodexModels: async (force = false) => {
-    const { activeProject } = get()
-    if (!activeProject) return
-
-    const project0 = getProject(get(), activeProject)
-    const activeSid0 = project0._activeSessionId
-    const apiProviderId = activeSid0
-      ? (project0._sessions[activeSid0]?.apiProviderId ?? null)
-      : null
-
-    const applyModels = (models: typeof project0.codexModels, clearLoading: boolean) => {
-      set((s) => {
-        const proj = getProject(s, activeProject)
-        const activeSid = proj._activeSessionId
-        const sess = activeSid ? (proj._sessions[activeSid] ?? createDefaultPerSessionState()) : createDefaultPerSessionState()
-        const selected = resolveSessionCodexSelection(
-          models,
-          sess.selectedCodexModel,
-          sess.selectedCodexReasoningEffort,
-        )
-        const updatedSessions = activeSid
-          ? {
-              ...proj._sessions,
-              [activeSid]: {
-                ...sess,
-                selectedCodexModel: selected.modelId,
-                selectedCodexReasoningEffort: selected.reasoningEffort,
-              },
-            }
-          : proj._sessions
-        return {
-          projectSessions: {
-            ...s.projectSessions,
-            [activeProject]: {
-              ...proj,
-              codexModels: models,
-              ...(clearLoading ? { codexModelsLoading: false } : {}),
-              _sessions: updatedSessions,
-            },
-          },
-          harnessResources: { ...s.harnessResources, codex: { models, prompts: s.harnessResources.codex?.prompts ?? [] } },
-        }
-      })
-    }
-
-    const revalidate = async () => {
-      try {
-        const fresh = await window.app.codexListModels(activeProject, apiProviderId, true)
-        applyModels(fresh, true)
-      } catch (error) {
-        console.warn('[refreshCodexModels] revalidate failed:', error)
-        set((s) => updateProjectState(s, activeProject, () => ({ codexModelsLoading: false })))
-      }
-    }
-
-    if (force) {
-      set((s) => updateProjectState(s, activeProject, () => ({ codexModelsLoading: true })))
-      await revalidate()
-      return
-    }
-
-    if (project0.codexModelsLoading) return
-
-    set((s) => updateProjectState(s, activeProject, () => ({ codexModelsLoading: true })))
-    try {
-      // stale-while-revalidate: serve the per-provider cache (main side) fast …
-      const cached = await window.app.codexListModels(activeProject, apiProviderId, false)
-      applyModels(cached, false)
-    } catch (error) {
-      console.warn('[refreshCodexModels] Failed:', error)
-    }
-    // … then refresh in the background and update the cache.
-    void revalidate()
-  },
-
-  refreshCodexSkills: async (projectPath) => {
-    const target = projectPath ?? get().activeProject
-    if (!target) return
-    const current = get().projectSessions[target]
-    if (current?._codexSkillsLoading) return
-    set((s) => updateProjectState(s, target, () => ({ _codexSkillsLoading: true })))
-    try {
-      const skills = await window.app.codexListSkills(target)
-      set((s) => updateProjectState(s, target, () => ({ _codexSkills: skills, _codexSkillsLoading: false })))
-    } catch (error) {
-      console.warn('[refreshCodexSkills] Failed:', error)
-      set((s) => updateProjectState(s, target, () => ({ _codexSkillsLoading: false })))
-    }
-  },
+  // setSelectedModel / setSelectedEffort / setFastMode now provided by createClaudeSlice
+  // setSelectedCodexModel / setSelectedCodexReasoningEffort / setSelectedCodexPermissionPreset /
+  // setSelectedCodexCollaborationMode / refreshCodexModels / refreshCodexSkills now provided by createCodexSlice
 
   setPreferredProvider: (provider) => {
     const { activeProject } = get()

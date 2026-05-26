@@ -1955,76 +1955,18 @@ function removeRemoteSession(map: Record<string, string[]>, projectPath: string,
   return { ...map, [projectPath]: next }
 }
 
-interface HarnessHandler<H extends HarnessId> {
-  connect: () => Promise<HarnessResourcesMap[H]>
-  apply: (state: ChatStore, resources: HarnessResourcesMap[H]) => Partial<ChatStore>
-}
+import type { HarnessHandler, HarnessHandlerMap } from './harness/harness-handler'
+import { applyClaudeResources } from './harness/claude-handler'
+import { applyCodexResources } from './harness/codex-handler'
 
-function applyClaudeResources(s: ChatStore, r: ClaudeResources): Partial<ChatStore> {
-  const disabledSet = new Set(s.disabledSkills)
-  const updates: Partial<ChatStore> = {
-    harnessResources: { ...s.harnessResources, claude: r },
-  }
-  const projects = { ...s.projectSessions }
-  let changed = false
-  for (const [path, project] of Object.entries(projects)) {
-    if (!project._activeSessionId) continue
-    const patched = { ...project }
-    patched.slashCommands = buildSlashCommands(
-      r.slashCommands, r.skills, r.commands,
-      patched._projectSkills, patched._projectCommands, disabledSet,
-    )
-    const activeSid = patched._activeSessionId
-    if (activeSid && patched._sessions[activeSid]) {
-      const sess = patched._sessions[activeSid]
-      if (!sess.selectedModel && r.models.length > 0) {
-        const updated = { ...sess }
-        applyDefaultModel(updated, r.models)
-        patched._sessions = { ...patched._sessions, [activeSid]: updated }
-      }
-    }
-    projects[path] = patched
-    changed = true
-  }
-  if (changed) updates.projectSessions = projects
-  return updates
-}
-
-function applyCodexResources(s: ChatStore, r: CodexResources): Partial<ChatStore> {
-  const updates: Partial<ChatStore> = {
-    harnessResources: { ...s.harnessResources, codex: r },
-  }
-  if (r.models.length === 0) return updates
-  const projects = { ...s.projectSessions }
-  let changed = false
-  for (const [path, project] of Object.entries(projects)) {
-    const patched = { ...project, codexModels: r.models }
-    const activeSid = patched._activeSessionId
-    if (activeSid && patched._sessions[activeSid]) {
-      const sess = patched._sessions[activeSid]
-      if (!sess.selectedCodexModel || !sess.selectedCodexReasoningEffort) {
-        const selected = resolveSessionCodexSelection(r.models, sess.selectedCodexModel, sess.selectedCodexReasoningEffort)
-        if (selected.modelId !== sess.selectedCodexModel || selected.reasoningEffort !== sess.selectedCodexReasoningEffort) {
-          const updated = { ...sess, selectedCodexModel: selected.modelId, selectedCodexReasoningEffort: selected.reasoningEffort }
-          patched._sessions = { ...patched._sessions, [activeSid]: updated }
-        }
-      }
-    }
-    projects[path] = patched
-    changed = true
-  }
-  if (changed) updates.projectSessions = projects
-  return updates
-}
-
-const harnessHandlers: { [H in HarnessId]: HarnessHandler<H> } = {
+const harnessHandlers: HarnessHandlerMap = {
   claude: {
     connect: () => window.app.connectClaude(),
-    apply: applyClaudeResources,
+    apply: (s, r) => applyClaudeResources(s, r, applyDefaultModel),
   },
   codex: {
     connect: () => window.app.connectCodex(),
-    apply: applyCodexResources,
+    apply: (s, r) => applyCodexResources(s, r, resolveSessionCodexSelection),
   },
 }
 

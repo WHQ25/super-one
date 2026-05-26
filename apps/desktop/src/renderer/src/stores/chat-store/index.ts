@@ -89,11 +89,8 @@ export async function runClaudeInterceptedCommand(name: string): Promise<void> {
 const STREAMING_INPUT_TOOLS = new Set(['Edit', 'Write', 'FileChange', 'NotebookEdit'])
 const STREAMING_PREVIEW_THROTTLE_MS = 100
 
-import { SUBAGENT_COLOR_POOL } from './types'
-const SUBAGENT_COLOR_POOL_SIZE = SUBAGENT_COLOR_POOL.length
-function freshSubagentColorPool(): number[] {
-  return Array.from({ length: SUBAGENT_COLOR_POOL_SIZE }, (_, i) => i)
-}
+import { createDefaultPerSessionState, createDefaultProjectState, createSessionId, freshSubagentColorPool, getDefaultEffortForModel } from './defaults'
+export { createDefaultPerSessionState, createDefaultProjectState, createSessionId, getDefaultEffortForModel } from './defaults'
 const streamingToolInputRaw = new Map<string, string>()
 const streamingPreviewLastUpdate = new Map<string, number>()
 
@@ -119,96 +116,8 @@ function persistStreamingToolInput(messages: ChatMessage[], messageId: string, t
   })
 }
 
-// --- Per-project session state (unified per-session architecture) ---
-
-/**
- * Generate a fresh session id. Shared with the main process 1:1 as
- * `Session.id`; no draft/promotion dance — the id assigned here is the
- * stable identity used in DB, IPC, and the main-process SessionManager.
- */
-export function createSessionId(): string {
-  return crypto.randomUUID()
-}
-
 // PerSessionState / ProjectState / ActiveSessionView are now defined in ./types
-
-export function createDefaultPerSessionState(): PerSessionState {
-  return {
-    cwd: '',
-    _title: null,
-    messages: [],
-    status: 'idle',
-    awaitingAssistantReply: false,
-    session: null,
-    sessionProvider: null,
-    totalCostUsd: 0,
-    contextTokens: 0,
-    contextWindow: null,
-    detailedUsage: null,
-    subagentTokens: {},
-    subagentColors: {},
-    _subagentColorsFree: freshSubagentColorPool(),
-    taskProgress: {},
-    streamingTokens: { input: 0, output: 0 },
-    codexUsageSnapshot: null,
-    codexTurnLastUsage: null,
-    selectedModel: '',
-    selectedEffort: undefined,
-    modelUserChosen: false,
-    effortUserChosen: false,
-    selectedCodexModel: '',
-    selectedCodexReasoningEffort: undefined,
-    codexModelUserChosen: false,
-    codexReasoningEffortUserChosen: false,
-    selectedCodexPermissionPreset: 'default',
-    selectedCodexCollaborationMode: 'default',
-    codexPlanRejectHintActive: false,
-    chatInputFocusNonce: 0,
-    chatInputRestoreFocusNonce: 0,
-    preferredProvider: 'claude',
-    draftText: '',
-    promptSuggestion: null,
-    attachments: [],
-    mentions: [],
-    pendingPermissions: [],
-    permissionMode: 'default',
-    pendingQuestion: null,
-    pendingPlanApproval: null,
-    planApprovalOutcome: null,
-    slashCommandOutput: null,
-    _streamingToolInputPreviews: {},
-    _pendingSlashCommand: '',
-    _pendingCompactUserId: '',
-    todos: {},
-    showTodos: false,
-    _todosUserDismissed: false,
-    _nextTodoId: 1,
-    isCompacting: false,
-    rateLimitInfo: null,
-    _worktreeBaseBranch: null,
-    _worktreePath: null,
-    _worktreeRemoved: false,
-    additionalDirs: [],
-    additionalDirsDirty: false,
-    apiRetry: null,
-    lastEventAt: 0,
-    queuedMessages: [],
-    activeCodexMessageId: null,
-    lastAssistantMessageId: null,
-    miniAppContexts: {},
-    userSelections: [],
-    _historyHydrated: true,
-    apiProviderId: null,
-  }
-}
-
-export function getDefaultEffortForModel(model?: ModelOption): EffortLevel | undefined {
-  const levels = model?.supportedEffortLevels
-  if (!levels?.length) return undefined
-  if (levels.includes('xhigh')) return 'xhigh'
-  if (levels.includes('medium')) return 'medium'
-  return levels[0]
-}
+// createSessionId / createDefaultPerSessionState / getDefaultEffortForModel moved to ./defaults
 
 function resolveDefaultClaudeModel(models: ModelOption[]): ModelOption | undefined {
   const preferredId = _cachedDefaultClaudeSelection?.modelId
@@ -266,35 +175,7 @@ function applySessionAgentDefaults(
   return {}
 }
 
-export function createDefaultProjectState(): ProjectState {
-  return {
-    _activeSessionId: null,
-    _previousSessionId: null,
-    _sessions: {},
-    slashCommands: [],
-    _projectSkills: [],
-    _projectCommands: [],
-    agents: [],
-    homedir: '',
-    sandboxInfo: { enabled: false, autoAllowBash: false },
-    sessions: [],
-    sessionsPage: 0,
-    sessionsHasMore: true,
-    hasUnseenActivity: false,
-    hasPendingInteraction: false,
-    unseenCompletedSessions: new Set(),
-    codexModels: [],
-    codexModelsLoading: false,
-    _codexSkills: [],
-    _codexSkillsLoading: false,
-    projectAdditionalDirs: [],
-    userAdditionalDirs: [],
-    projectSharedDirs: [],
-    projectLocalDirs: [],
-    showDirManager: false,
-    showReviewPanel: false,
-  }
-}
+// createDefaultProjectState moved to ./defaults
 
 // --- Store interface ---
 // ToolRendererState / ChatStore are now defined in ./types

@@ -13,6 +13,7 @@ import { EditDiff, WriteDiff } from './ToolBlock'
 import { modes as permissionModes } from './PermissionModeSelector'
 import { useRestoreChatInputFocus } from '@/hooks/useRestoreChatInputFocus'
 import { ElicitationForm, isElicitationFormValid } from './ElicitationForm'
+import { getPermissionPromptConfig } from './permission-prompt/permission-prompt-config'
 
 interface MiniAppToolInfo {
   appId: string
@@ -124,7 +125,8 @@ export function PermissionPrompt() {
   const elicitationForm = pendingPermission?.elicitationForm ?? []
   const supportsAlwaysPersist = pendingPermission?.supportsAlwaysPersist ?? false
   useRestoreChatInputFocus(!!requestId)
-  const isCodexDecisionPrompt = sessionProvider === 'codex' && allowAlwaysAllow && !isElicitation
+  const promptConfig = getPermissionPromptConfig(sessionProvider, allowAlwaysAllow, isElicitation)
+  const isCodexDecisionPrompt = promptConfig.buttonCount === 4
   const isEditTool = toolName === 'Write' || toolName === 'Edit' || toolName === 'NotebookEdit'
   const suggestionsCount = pendingPermission?.suggestions?.length ?? 0
   const [formValues, setFormValues] = useState<Record<string, unknown>>({})
@@ -162,7 +164,7 @@ export function PermissionPrompt() {
     }
   }, [requestId, isCollapsed])
 
-  const btnCount = isCodexDecisionPrompt ? 4 : 2
+  const btnCount = promptConfig.buttonCount
 
   const handleDeny = useCallback(() => {
     if (!requestId) return

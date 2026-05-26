@@ -4,6 +4,22 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.38.4-alpha] - 2026-05-27
+
+### Fixed
+
+- Claude subprocesses accumulating one-per-old-session-click. Two compounding bugs: (1) `WarmupManager` was instantiated per `ClaudeBackend`, so each session held its own warmup slot with no cross-session GC — `idleTimer` only watched the active runtime, never the warmup slot, and the only release path was `backend.close()` which switching sessions doesn't trigger. (2) `chat.ts` fired `triggerPrewarm` from seven non-typing call sites (Case A/B `switchSession`, `ensureSession`, `resetSession`, `setPreferredProvider`, etc.), so every history-session click spawned a new warm process that nothing would ever consume. `WarmupManager` is now a module-level singleton (one prewarm slot per harness, disposed at `before-quit`), `chat.ts` keeps only the three legitimate triggers (`setDraftText` non-empty + model/effort change while drafting), and `ClaudeBackend.prewarm` compares the requested key against `_activeRuntimeKey` to skip prewarms that would just duplicate the running session's config while still forwarding key-change prewarms for rebuild-ahead.
+
+### Changed
+
+- Prewarm now keep-alives during long typing. `setDraftText` schedules a 30s-throttled ping while the draft is non-empty, and `WarmupManager.prewarm` resets the slot's idle timer on same-key hits. `STALE_TTL_MS` tightened from 5min to 3min — combined with the keep-alive, a slot only dies if the user stops typing for 3 minutes, instead of dying mid-thought.
+- `CodexBackend.warmHandlePromise` now carries a 5-minute idle timer as belt-and-suspenders against the same class of leak. The fix above eliminates the upstream trigger (off-typing prewarm calls), but Codex's `warmHandlePromise` was structurally vulnerable to the same pattern, so the timer hardens it against future regressions.
+
+### Tests
+
+- `claude-backend.test.ts` adds two scenario tests for the `_activeRuntimeKey` short-circuit: "skips prewarm when active runtime already matches the requested key" and "still forwards prewarm when key changes after start (rebuild-ahead)". The two together pin down that we cut waste without breaking model/effort change paths.
+- Inverted four `chat-store.test.ts` assertions that previously expected `prewarm` to fire on `ensureSession` / `setPreferredProvider → codex` / `resetSession` / Case B `switchSession`; the new assertions encode "prewarm only on typing" as a regression boundary.
+
 ## [0.38.3-alpha] - 2026-05-26
 
 ### Fixed

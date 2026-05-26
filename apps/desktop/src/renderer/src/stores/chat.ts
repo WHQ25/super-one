@@ -11,7 +11,7 @@ import { stripMiniAppMarkup } from '@superone/shared/miniapp-prompt-tags'
 import { perfEvent } from '@/lib/perf-trace'
 
 type Corner = 'br' | 'bl' | 'tr' | 'tl' | 'tm' | 'rm' | 'bm' | 'lm'
-export type ChatProvider = 'claude' | 'codex'
+export type ChatProvider = HarnessId
 export const DEFAULT_PROVIDER: ChatProvider = 'claude'
 export const SESSIONS_PAGE_SIZE = 30
 const CODEX_LAST_SELECTION_STORAGE_KEY = 'super-one.codex.last-selection.v1'

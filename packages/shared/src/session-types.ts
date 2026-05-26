@@ -1,6 +1,6 @@
-import type { AgentEvent, ChatMessage, PermissionMode, SandboxInfo } from './agent-types'
+import type { AgentEvent, ChatMessage, HarnessId, PermissionMode, SandboxInfo } from './agent-types'
 
-export type HarnessId = 'claude' | 'codex'
+export type { HarnessId }
 
 export type SessionStatus =
   | 'idle'

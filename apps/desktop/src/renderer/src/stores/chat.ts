@@ -2,6 +2,25 @@ import { create } from 'zustand'
 import { useAppStore } from './app'
 import { useActivityViewStateStore } from './activity-view-state'
 import { buildSlashCommands, extractModeFromSuggestions, findCheckpointTarget } from './chat-helpers'
+import {
+  accumulateCodexFooterTokens,
+  type CodexCommand,
+  findLatestCodexUsage,
+  formatCodexAuthStatus,
+  getCodexUsageStepTokens,
+  getLatestCodexThreadId,
+  hasValidCodexUsageSnapshot,
+  parseCodexCommand,
+  removeCodexItem,
+  resolveCodexModelSelection,
+  resolveCodexReasoningEffort,
+  upsertCodexItem,
+} from './chat-store/helpers/codex-helpers'
+import {
+  applyDelta,
+  extractSessionTitle,
+  mergeMessagesByMaxSeq,
+} from './chat-store/helpers/event-helpers'
 import { checkAutoModeEligibility } from '@/lib/auto-mode-eligibility'
 import { PERMISSION_MODES } from '@/components/chat/PermissionModeList'
 import { extractPartialToolInput } from '@/components/chat/tool-display'
@@ -654,18 +673,6 @@ function resolveActiveSessionId(project: ProjectState): string | null {
   return project._activeSessionId ?? null
 }
 
-export function upsertCodexItem(items: CodexThreadItem[], next: CodexThreadItem): CodexThreadItem[] {
-  const idx = items.findIndex((item) => item.id === next.id)
-  if (idx === -1) return [...items, next]
-  const cloned = [...items]
-  cloned[idx] = next
-  return cloned
-}
-
-export function removeCodexItem(items: CodexThreadItem[], itemId: string): CodexThreadItem[] {
-  return items.filter((item) => item.id !== itemId)
-}
-
 function pruneTransientCodexItems(items: CodexThreadItem[]): CodexThreadItem[] {
   return items
 }
@@ -702,61 +709,6 @@ function getCodexTraceItems(message: ChatMessage | undefined | null): {
 
 function getCodexContextTokens(usage: CodexUsageInfo): number {
   return usage.lastInputTokens
-}
-
-function getCodexUsageStepTokens(usage: CodexUsageInfo): { input: number; output: number } {
-  return {
-    input: Math.max(0, usage.lastInputTokens - usage.lastCachedInputTokens),
-    output: usage.lastOutputTokens,
-  }
-}
-
-function hasValidCodexUsageSnapshot(usage: CodexUsageInfo | null): usage is CodexUsageInfo {
-  return Boolean(
-    usage
-      && Number.isFinite(usage.totalInputTokens)
-      && Number.isFinite(usage.totalCachedInputTokens)
-      && Number.isFinite(usage.totalOutputTokens)
-      && Number.isFinite(usage.lastInputTokens)
-      && Number.isFinite(usage.lastCachedInputTokens)
-      && Number.isFinite(usage.lastOutputTokens)
-  )
-}
-
-function isSameCodexUsageSnapshot(a: CodexUsageInfo | null, b: CodexUsageInfo | null): boolean {
-  return Boolean(
-    hasValidCodexUsageSnapshot(a)
-      && hasValidCodexUsageSnapshot(b)
-      && a.totalInputTokens === b.totalInputTokens
-      && a.totalCachedInputTokens === b.totalCachedInputTokens
-      && a.totalOutputTokens === b.totalOutputTokens
-      && a.lastInputTokens === b.lastInputTokens
-      && a.lastCachedInputTokens === b.lastCachedInputTokens
-      && a.lastOutputTokens === b.lastOutputTokens
-  )
-}
-
-export function accumulateCodexFooterTokens(
-  current: { input: number; output: number },
-  usage: CodexUsageInfo,
-  previous: CodexUsageInfo | null,
-): { input: number; output: number } {
-  if (!hasValidCodexUsageSnapshot(usage) || isSameCodexUsageSnapshot(usage, previous)) {
-    return current
-  }
-  const step = getCodexUsageStepTokens(usage)
-  return {
-    input: current.input + step.input,
-    output: current.output + step.output,
-  }
-}
-
-export function findLatestCodexUsage(messages: ChatMessage[]): CodexUsageInfo | null {
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const usage = messages[i].metadata?.codex?.usage
-    if (hasValidCodexUsageSnapshot(usage as CodexUsageInfo | null)) return usage as CodexUsageInfo
-  }
-  return null
 }
 
 function getCodexCompletionEventMeta(metadata: ChatMessage['metadata'] | undefined): {
@@ -1587,15 +1539,6 @@ function _createLocalCodexSessionId(): string {
   return `${CODEX_LOCAL_SESSION_PREFIX}${ts}_${rand}`
 }
 
-export function extractSessionTitle(messages: ChatMessage[]): string | null {
-  const firstUserMsg = messages.find((m) => m.role === 'user')
-  const text = firstUserMsg?.content
-    .filter((b) => b.type === 'text')
-    .map((b) => (b as { text: string }).text)
-    .join(' ') ?? ''
-  return stripMiniAppMarkup(text).slice(0, 100) || null
-}
-
 function _getWorktreeBranch(_projectPath: string, session: PerSessionState): string | undefined {
   return session._worktreeBaseBranch ?? undefined
 }
@@ -1942,59 +1885,12 @@ async function _ensureClaudeSessionReadyForSend(get: () => ChatStore, projectPat
 
 // --- Helpers ---
 
-export type CodexCommand =
-  | { kind: 'help' }
-  | { kind: 'reset' }
-  | { kind: 'auth-status' }
-  | { kind: 'auth-set'; mode: CodexAuthMode; apiKey?: string }
-  | { kind: 'run'; prompt: string }
-  | { kind: 'review'; target: CodexReviewTarget }
-  | { kind: 'compact' }
-  | { kind: 'plan' }
-
 type ChatStoreSet = (
   partial: Partial<ChatStore> | ((state: ChatStore) => Partial<ChatStore>),
   replace?: false,
 ) => void
 
 type CodexRunnableCommand = Extract<CodexCommand, { kind: 'run' | 'review' | 'compact' }>
-
-export function parseCodexCommand(input: string): CodexCommand | null {
-  if (!input.startsWith('/')) return null
-
-  const body = input.slice(1).trim()
-  if (!body) return null
-
-  if (body === 'help') return { kind: 'help' }
-  if (body === 'reset') return { kind: 'reset' }
-  if (body === 'compact') return { kind: 'compact' }
-  if (body === 'plan') return { kind: 'plan' }
-
-  if (body === 'review' || body.startsWith('review ')) {
-    const reviewBody = body.slice('review'.length).trim()
-    if (reviewBody.startsWith('branch')) return { kind: 'review', target: { type: 'baseBranch' } }
-    if (reviewBody.startsWith('commit')) {
-      const sha = reviewBody.slice('commit'.length).trim()
-      if (!sha) return { kind: 'help' }
-      return { kind: 'review', target: { type: 'commit', sha } }
-    }
-    return { kind: 'review', target: { type: 'uncommittedChanges' } }
-  }
-
-  if (body === 'auth' || body.startsWith('auth ')) {
-    const authBody = body.slice('auth'.length).trim()
-    if (!authBody) return { kind: 'auth-status' }
-    if (authBody === 'auto') return { kind: 'auth-set', mode: 'auto' }
-    if (authBody === 'chatgpt') return { kind: 'auth-set', mode: 'chatgpt' }
-    if (authBody.startsWith('apikey')) {
-      const apiKey = authBody.slice('apikey'.length).trim()
-      return { kind: 'auth-set', mode: 'apiKey', apiKey: apiKey || undefined }
-    }
-    return { kind: 'help' }
-  }
-
-  return null
-}
 
 function isRunnableCodexCommand(command: CodexCommand): command is CodexRunnableCommand {
   return command.kind === 'run' || command.kind === 'review' || command.kind === 'compact'
@@ -2019,67 +1915,6 @@ function getCodexHelpText(): string {
     '- Type a message directly to send it as a prompt',
     '- During a running turn, new messages are sent as steered input (no need to wait)',
   ].join('\n')
-}
-
-export function formatCodexAuthStatus(status: CodexAuthStatus): string {
-  return [
-    'Codex authentication status:',
-    `- configured mode: ${status.mode}`,
-    `- resolved mode: ${status.resolvedMode}`,
-    `- env CODEX_API_KEY: ${status.hasEnvApiKey ? 'set' : 'not set'}`,
-    `- session API key: ${status.hasSessionApiKey ? 'set' : 'not set'}`,
-    `- runtime state: ${status.isRunning ? 'running' : 'idle'}`,
-  ].join('\n')
-}
-
-export function getLatestCodexThreadId(messages: ChatMessage[]): string | undefined {
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const msg = messages[i]
-    if (msg.providerId !== 'codex' || msg.role !== 'assistant') continue
-    const tid = msg.metadata?.codex?.threadId
-    if (tid) return tid
-  }
-  return undefined
-}
-
-export function resolveCodexReasoningEffort(
-  model: ModelOption | undefined,
-  preferred?: CodexReasoningEffort,
-): CodexReasoningEffort | undefined {
-  const options = model?.supportedReasoningEfforts ?? []
-  if (options.length === 0) return undefined
-  const supported = new Set(options.map((entry) => entry.value))
-  if (preferred && supported.has(preferred)) return preferred
-  if (model?.defaultReasoningEffort && supported.has(model.defaultReasoningEffort)) {
-    return model.defaultReasoningEffort
-  }
-  return options[options.length - 1]?.value
-}
-
-export function resolveCodexModelSelection(
-  models: ModelOption[],
-  selectedCodexModel: string,
-  selectedCodexReasoningEffort?: CodexReasoningEffort,
-): { modelId: string; reasoningEffort?: CodexReasoningEffort } {
-  const current = selectedCodexModel.length > 0 ? models.find((m) => m.id === selectedCodexModel) : undefined
-  if (current) {
-    return {
-      modelId: current.id,
-      reasoningEffort: resolveCodexReasoningEffort(current, selectedCodexReasoningEffort),
-    }
-  }
-
-  const preferred = models.find((m) => m.isDefault)
-    ?? models[0]
-
-  if (!preferred) {
-    return { modelId: '', reasoningEffort: undefined }
-  }
-
-  return {
-    modelId: preferred.id,
-    reasoningEffort: resolveCodexReasoningEffort(preferred, selectedCodexReasoningEffort),
-  }
 }
 
 function resolveDefaultCodexSelection(models: ModelOption[]): { modelId: string; reasoningEffort?: CodexReasoningEffort } {
@@ -5037,64 +4872,6 @@ export function useBashOutput(toolUseId: string): { content: string; finished: b
 }
 
 /** Apply a content delta to the content array, merging consecutive text blocks and deduplicating tool_use. */
-export function mergeMessagesByMaxSeq(snap: ChatMessage[], existing: ChatMessage[]): ChatMessage[] {
-  const existingById = new Map(existing.map((m) => [m.id, m]))
-  const result: ChatMessage[] = []
-  const seen = new Set<string>()
-  for (const sm of snap) {
-    const em = existingById.get(sm.id)
-    if (!em) {
-      result.push(sm)
-    } else {
-      result.push(compareMessageSeq(em, sm) > 0 ? em : sm)
-    }
-    seen.add(sm.id)
-  }
-  for (const em of existing) {
-    if (!seen.has(em.id)) result.push(em)
-  }
-  return result
-}
-
-function sameParent(a: ContentBlock, b: ContentBlock): boolean {
-  const ap = 'parentToolUseId' in a ? a.parentToolUseId ?? null : null
-  const bp = 'parentToolUseId' in b ? b.parentToolUseId ?? null : null
-  return ap === bp
-}
-
-export function applyDelta(content: ContentBlock[], delta: ContentBlock): ContentBlock[] {
-  if (delta.type === 'text') {
-    const last = content[content.length - 1]
-    if (last?.type === 'text' && sameParent(last, delta)) {
-      return [...content.slice(0, -1), { ...last, text: last.text + delta.text }]
-    }
-  }
-  if (delta.type === 'thinking') {
-    const last = content[content.length - 1]
-    if (last?.type === 'thinking' && sameParent(last, delta)) {
-      return [...content.slice(0, -1), { ...last, thinking: last.thinking + delta.thinking }]
-    }
-  }
-  if (delta.type === 'tool_use') {
-    const idx = content.findIndex((b) => b.type === 'tool_use' && b.toolUseId === delta.toolUseId)
-    if (idx !== -1) {
-      const existing = content[idx]
-      const preserved = existing.type === 'tool_use'
-        ? { startedAt: existing.startedAt, elapsedSeconds: existing.elapsedSeconds, ...(!delta.status && existing.status ? { status: existing.status } : {}) }
-        : {}
-      return content.map((b, i) => (i === idx ? { ...preserved, ...delta } : b))
-    }
-    return [...content, { ...delta, startedAt: Date.now() }]
-  }
-  if (delta.type === 'tool_result') {
-    const updated = content.map((b) =>
-      b.type === 'tool_use' && b.toolUseId === delta.toolUseId ? { ...b, status: 'complete' as const } : b,
-    )
-    return [...updated, delta]
-  }
-  return [...content, delta]
-}
-
 const EMPTY_ACCOUNT: AccountInfo = {}
 const EMPTY_MODELS: ModelOption[] = []
 const EMPTY_SLASH_COMMANDS: SlashCommandInfo[] = []
@@ -5117,3 +4894,22 @@ export const selectClaudeSkills = (s: ChatStore): SlashCommandInfo[] => s.harnes
 export const selectClaudeCommands = (s: ChatStore): SlashCommandInfo[] => s.harnessResources.claude?.commands ?? EMPTY_SLASH_COMMANDS
 export const selectClaudeAgents = (s: ChatStore): AgentInfo[] => s.harnessResources.claude?.agents ?? EMPTY_AGENTS
 export const selectClaudeOutputStyles = (s: ChatStore): string[] => s.harnessResources.claude?.outputStyles ?? EMPTY_OUTPUT_STYLES
+
+export {
+  type CodexCommand,
+  accumulateCodexFooterTokens,
+  findLatestCodexUsage,
+  formatCodexAuthStatus,
+  getLatestCodexThreadId,
+  parseCodexCommand,
+  removeCodexItem,
+  resolveCodexModelSelection,
+  resolveCodexReasoningEffort,
+  upsertCodexItem,
+} from './chat-store/helpers/codex-helpers'
+
+export {
+  applyDelta,
+  extractSessionTitle,
+  mergeMessagesByMaxSeq,
+} from './chat-store/helpers/event-helpers'

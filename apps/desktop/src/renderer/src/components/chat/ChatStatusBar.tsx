@@ -24,9 +24,8 @@ import {
 import { Button } from '@superone/ui/components/ui/button'
 import { useActiveSession, useChatStore } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
-import { PermissionModeSelector } from './PermissionModeSelector'
-import { SandboxModeSelector } from './SandboxModeSelector'
-import { CodexPermissionSelector } from './CodexPermissionSelector'
+import { StatusBarPermission } from './chat-status-bar/StatusBarPermission'
+import { StatusBarSandbox } from './chat-status-bar/StatusBarSandbox'
 import { WorkDirIndicator } from './WorkDirIndicator'
 import { parseToolInput } from './tool-display'
 import { ToolBlock } from './ToolBlock'
@@ -498,11 +497,7 @@ export function ChatStatusBar() {
 
         <div className="h-3 w-px bg-border" />
 
-        {activeProvider === 'codex' ? (
-          <CodexPermissionSelector compact={compactIndicators} />
-        ) : (
-          <PermissionModeSelector compact={compactIndicators} />
-        )}
+        <StatusBarPermission activeProvider={activeProvider} compactIndicators={compactIndicators} />
 
         <div className="flex-1" />
 
@@ -533,12 +528,11 @@ export function ChatStatusBar() {
           </>
         )}
 
-        {activeProvider !== 'codex' && (
-          <>
-            {(bashActivities.length > 0 || agentActivities.length > 0) && <div className="h-3 w-px bg-border" />}
-            <SandboxModeSelector compact={compactIndicators} />
-          </>
-        )}
+        <StatusBarSandbox
+          activeProvider={activeProvider}
+          compactIndicators={compactIndicators}
+          showDivider={bashActivities.length > 0 || agentActivities.length > 0}
+        />
       </div>
 
       <Dialog open={!!failedCheckout} onOpenChange={(open) => { if (!open) setFailedCheckout(null) }}>

@@ -1975,6 +1975,7 @@ import { createClaudeSlice } from './slices/claude-slice'
 import { createCodexSlice } from './slices/codex-slice'
 import { createSessionSlice } from './slices/session-slice'
 import { createCoreSlice } from './slices/core-slice'
+import { createEventSlice } from './slices/event-slice'
 
 export const useChatStore = create<ChatStore>((set, get, store) => ({
   ...createToolSlice(set, get, store),
@@ -1982,6 +1983,7 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
   ...createCodexSlice(set, get, store),
   ...createSessionSlice(set, get, store),
   ...createCoreSlice(set, get, store),
+  ...createEventSlice(set, get, store),
 
   projectSessions: {},
   activeProject: null,
@@ -2432,74 +2434,7 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
     }
   },
 
-  syncLiveSnapshots: async () => {
-    const getSnap = window.agent.getLiveSnapshots
-    if (!getSnap) return
-    let entries
-    try {
-      entries = await getSnap()
-    } catch (err) {
-      console.warn('[chat] getLiveSnapshots failed:', err)
-      return
-    }
-    if (!entries || entries.length === 0) return
-
-    const activeByProject = new Map<string, string>()
-    for (const entry of entries) {
-      if (entry.isActive) activeByProject.set(entry.projectPath, entry.sid)
-    }
-
-    set((s) => {
-      const nextProjects = { ...s.projectSessions }
-      const touchedProjects = new Map<string, string>()
-      for (const entry of entries) {
-        const prevProject = nextProjects[entry.projectPath] ?? createDefaultProjectState()
-        const prevSession = prevProject._sessions[entry.sid] ?? createDefaultPerSessionState()
-        const mergedMessages = mergeMessagesByMaxSeq(entry.snapshot.messages as ChatMessage[], prevSession.messages)
-        const provider: ChatProvider = inferProviderFromHarnessId(entry.snapshot.harnessId) ?? 'claude'
-        const inferredStatus: AgentStatus = entry.isStreaming ? 'streaming' : prevSession.status === 'error' ? 'error' : 'idle'
-        const mergedSession: PerSessionState = {
-          ...prevSession,
-          cwd: entry.snapshot.cwd,
-          messages: mergedMessages,
-          totalCostUsd: Math.max(prevSession.totalCostUsd, entry.snapshot.totalCostUsd),
-          contextTokens: Math.max(prevSession.contextTokens, entry.snapshot.contextTokens),
-          status: inferredStatus,
-          awaitingAssistantReply: entry.isStreaming && !entry.snapshot.currentMessageId
-            ? prevSession.awaitingAssistantReply
-            : false,
-          sessionProvider: provider,
-          preferredProvider: provider,
-          permissionMode: entry.permissionMode,
-          lastAssistantMessageId: entry.snapshot.currentMessageId ?? prevSession.lastAssistantMessageId,
-          _worktreePath: entry.snapshot.worktreePath ?? prevSession._worktreePath,
-          _worktreeBaseBranch: entry.snapshot.gitBranch ?? prevSession._worktreeBaseBranch,
-          _worktreeRemoved: entry.snapshot.worktreeMissing,
-          apiProviderId: entry.snapshot.apiProviderId ?? prevSession.apiProviderId ?? null,
-          _historyHydrated: true,
-        }
-        const nextSessions = { ...prevProject._sessions, [entry.sid]: mergedSession }
-        touchedProjects.set(entry.projectPath, entry.sid)
-        const nextActiveSid = activeByProject.get(entry.projectPath) ?? prevProject._activeSessionId ?? entry.sid
-        nextProjects[entry.projectPath] = {
-          ...prevProject,
-          _sessions: nextSessions,
-          _activeSessionId: nextActiveSid,
-          sandboxInfo: entry.sandboxInfo,
-        }
-      }
-      return { projectSessions: nextProjects }
-    })
-
-    for (const entry of entries) {
-      for (const ev of entry.replayEvents) {
-        try { get().handleAgentEvent(ev as AgentEvent) } catch (err) { console.warn('[chat] replay event error:', err) }
-      }
-      for (const ev of entry.pendingInteractions) {
-        try { get().handleAgentEvent(ev as AgentEvent) } catch (err) { console.warn('[chat] pending interaction error:', err) }
-      }
-    }
-  },
+  // syncLiveSnapshots now provided by createEventSlice
 
   focusProject: async (projectPath: string) => {
     const currentProject = get().activeProject

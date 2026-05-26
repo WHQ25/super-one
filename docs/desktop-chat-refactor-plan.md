@@ -16,11 +16,19 @@
 | 4a/4b/4c | ⏸ 跳过 | **ModelSelector 是阶段 4 唯一"两套完整 UI 并列"的组件**，其余三个分支属于穿插式 / 散点式，拆完 95% 代码重复。 |
 | 4e ChatInput | ⏸ 未做 / 后续 PR | 单独 PR 评估抽 hook 而非拆组件。 |
 | 5 收尾 | ⏸ 部分完成 | `ChatProvider` 已 alias 为 `HarnessId`，自然衰退。`harness-capabilities.ts` 按消费点延后。 |
-| **A** `packages/shared/harness/` 子包 | ✅ 完成 | 移 `harness-brand.ts` 进 `harness/`，新建 `harness/harness-id.ts` 与 `harness/index.ts`。原路径保留兼容 re-export，9 处消费者零改动。 |
+| **A** `packages/shared/harness/` 子包 | ✅ 完成 | 移 `harness-brand.ts` 进 `harness/`，新建 `harness/harness-id.ts`、`harness/harness-capabilities.ts` 与 `harness/index.ts`。原路径保留兼容 re-export，9 处消费者零改动。 |
 | **B1** `chat-store/helpers/chat-helpers.ts` 搬迁 | ✅ 完成 | 从 `stores/chat-helpers.ts` 搬到 `stores/chat-store/helpers/chat-helpers.ts`，与 codex/event/provider-routing helpers 同目录。 |
-| **B2** `chat-store/types.ts` facade | ✅ 完成 | 作为公开类型入口建立，re-export 自 `./index`。源头还在 index.ts 内（后续 PR 真迁），消费者可立刻开始用 `chat-store/types` 路径。 |
-| **B3** `chat-store/defaults.ts` facade | ✅ 完成 | 同上模式，工厂函数 + cache invalidator 通过 facade 暴露。 |
-| **E** `chat.ts` 薄壳化 | ✅ 完成 | 主体物理搬到 `chat-store/index.ts`（4915 行）；`chat.ts` 仅一行 `export * from './chat-store'`。`chat-store.test.ts` 等消费者 import 路径零改动。 |
+| **B2** `chat-store/types.ts` 真迁 | ✅ 完成 | PerSessionState/ProjectState/ActiveSessionView/ChatStore/ToolRendererState/PersistedSessionState/Mention/MiniAppContextSlot/SubagentColor/Corner/ChatProvider/SUBAGENT_COLOR_POOL 全部物理迁到 types.ts；index.ts 改为 import + re-export。 |
+| **B3** `chat-store/defaults.ts` 真迁 | ✅ 完成 | createSessionId / createDefaultPerSessionState / createDefaultProjectState / getDefaultEffortForModel / freshSubagentColorPool 物理迁到 defaults.ts；cache-dependent invalidators 仍 re-export from index.ts（私有 cache 状态留在 index.ts）。 |
+| **E** `chat.ts` 薄壳化 | ✅ 完成 | 主体物理搬到 `chat-store/index.ts`；`chat.ts` 仅一行 `export * from './chat-store'`。`chat-store.test.ts` 等消费者 import 路径零改动。 |
+| **D-1** `chat-store/harness/` handler 文件 | ✅ 完成 | HarnessHandler 接口 + applyClaudeResources + applyCodexResources 拆到 harness/{harness-handler,claude-handler,codex-handler}.ts；handler dict 用 closure 注入 cache-helpers。 |
+| **D-2** harness-capabilities.ts | ✅ 完成 | 静态能力表（supportsMcp/Plan/Todos/Subagents/Compact/StreamingToolInput + displayName），消费点逐步从 `provider === 'codex'` 散点 switch 迁过来。 |
+| **D-3** `chat-store/slices/tool-slice.ts` | ✅ 完成 | toolRenderers / _pendingStandaloneCalls / _bashOutputs state + 5 个 tool-intercept action。 |
+| **D-4** `chat-store/slices/claude-slice.ts` | ✅ 完成 | setSelectedModel / setSelectedEffort / setFastMode（含 permission-mode auto-downgrade 副作用）。 |
+| **D-5** `chat-store/slices/codex-slice.ts` | ✅ 完成 | setSelectedCodex(Model/ReasoningEffort/PermissionPreset/CollaborationMode) + refreshCodexModels（stale-while-revalidate）+ refreshCodexSkills。 |
+| **D-6** `chat-store/slices/session-slice.ts` | ✅ 完成 | rewind 4 个 + queue 2 个 + setDraftText + assignSubagentColor + setDetailedUsage + removeSessionFromMemory。 |
+| **D-7** `chat-store/slices/core-slice.ts` | ✅ 完成 | 20 个 UI toggle/setter：isOpen、corner、attachments、mentions、miniAppContexts、userSelections、todos panel、provider/mcp popup、showDir/ReviewPanel、focusRestore nonce、slashCommandOutput 等。 |
+| **D-8** `chat-store/slices/event-slice.ts` | ⚠️ 部分完成 | 含 `syncLiveSnapshots`（已迁）。**handleAgentEvent (~390 行) 仍在 index.ts**——它依赖 6 个未导出 module-level helper（applyEventToSession / _hydrateSessionState / addRemoteSession / removeRemoteSession / markMessageEventApplied / persistStreamingToolInput），搬迁需先逐个抽 helper，属独立 PR 量级。 |
 
 ### 目录分层完成度
 
@@ -28,18 +36,28 @@
 
 | 目标节点 | 现状 |
 |---|---|
-| `packages/shared/harness/{harness-id,harness-capabilities,harness-brand}.ts` | harness-id ✅；harness-brand ✅（已迁入 + 原路径 re-export）；harness-capabilities ⏸（按消费点延后） |
-| `stores/chat-store/index.ts` | ✅ |
-| `stores/chat-store/types.ts` | ✅ facade（源头待迁） |
-| `stores/chat-store/defaults.ts` | ✅ facade（源头待迁） |
-| `stores/chat-store/slices/*` | ⏸ 整组延后 |
-| `stores/chat-store/harness/{handler,claude,codex}` | ⏸ 延后 |
-| `stores/chat-store/helpers/{chat,codex,event,provider-routing}.ts` | ✅ 全部到位（真函数已迁） |
+| `packages/shared/harness/harness-id.ts` | ✅ canonical re-export |
+| `packages/shared/harness/harness-capabilities.ts` | ✅ 静态能力表 |
+| `packages/shared/harness/harness-brand.ts` | ✅（已迁入 + 原路径 re-export） |
+| `stores/chat-store/index.ts` | ✅ store body |
+| `stores/chat-store/types.ts` | ✅ 真源头（所有 interface/type 物理在此） |
+| `stores/chat-store/defaults.ts` | ✅ 真源头（cache-free 工厂函数物理在此） |
+| `stores/chat-store/slices/tool-slice.ts` | ✅ |
+| `stores/chat-store/slices/claude-slice.ts` | ✅ |
+| `stores/chat-store/slices/codex-slice.ts` | ✅ |
+| `stores/chat-store/slices/session-slice.ts` | ✅ |
+| `stores/chat-store/slices/core-slice.ts` | ✅ |
+| `stores/chat-store/slices/event-slice.ts` | ⚠️ 部分（syncLiveSnapshots 已迁；handleAgentEvent 待 helper 先抽） |
+| `stores/chat-store/harness/{harness-handler,claude-handler,codex-handler,index}.ts` | ✅ |
+| `stores/chat-store/helpers/{chat,codex,event,provider-routing}.ts` | ✅ |
 | `stores/chat.ts` 薄壳 | ✅ |
 | `components/chat/model-selector/` | ✅ |
-| `components/chat/{permission-prompt,chat-message,chat-input,chat-status-bar}/` | ⏸ 不适合机械拆分（散点/穿插），后续按需 hook 化 |
+| `components/chat/{permission-prompt,chat-message,chat-input,chat-status-bar}/` | ⏸ 评估为不适合机械拆分（散点/穿插式），拆完 95% 重复；更合理的方向是抽 hook（`useChatInputSlashRouting` 等），不是组件拆分。 |
 
-**骨架完成度：~75%**。剩余的 slices/ + harness/handler 文件 + types/defaults 真函数迁移属于"切割主体"工作，每项是一个独立 PR 量级，不应在一次重构 session 内强行做完——这种 5000+ 行的高风险拆分需要小步多 commit + 完整集成测试。
+**骨架完成度：~95%**。剩余两项不是"目录还没建"级别，而是"真函数搬迁需先抽 helper"级别：
+
+1. **`handleAgentEvent` 抽到 event-slice**：依赖 6 个未导出 module helper，需先各自抽一道，再搬主函数。属于专门的"event-pipeline cleanup" PR。
+2. **UI 4abc/4e**：目录可以建，但内容会是 95% 重复——所以更合理的是把它们改造成 hook 形式（`useChatInputSlashRouting` 等）而不是组件拆分，已写入 plan 的"决策清单"作为约束。
 
 ### 关键教训（写入下次类似 refactor 的预算清单）
 

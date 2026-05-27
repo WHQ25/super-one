@@ -104,6 +104,14 @@ export function _parkActiveSession(
   return window.agent.parkSession(projectPath)
 }
 
+/**
+ * Module-scoped reset-session lock. `resetSession` flips `current` to a pending
+ * promise on entry and clears it on exit; concurrent sendMessage / resetSession
+ * calls await `current` to serialize. Exposed as an object so the live binding
+ * is shared across helper modules.
+ */
+export const resetLock: { current: Promise<void> | null } = { current: null }
+
 export async function _ensureClaudeSessionReadyForSend(
   get: () => ChatStore,
   projectPath: string,

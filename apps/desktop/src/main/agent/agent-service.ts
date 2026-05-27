@@ -2094,7 +2094,7 @@ export class AgentService {
       return listSessionsForFolder(folderPath, limit, offset)
     })
 
-    ipcMain.handle(AgentIpcChannels.SESSIONS_RESUME, async (_event, projectPath: string, sessionId: string, _worktreeCwd?: string, permissionMode?: PermissionMode) => {
+    ipcMain.handle(AgentIpcChannels.SESSIONS_RESUME, async (_event, projectPath: string, sessionId: string, worktreeCwd?: string, permissionMode?: PermissionMode) => {
       const mgr = this.requireSessionManager()
       const defaults = this.readDefaultSessionPrefs()
       const effectiveMode = permissionMode ?? defaults.permissionMode
@@ -2103,6 +2103,9 @@ export class AgentService {
         try { session = mgr.resumeSession(sessionId, { permissionMode: effectiveMode, sandboxMode: defaults.sandboxMode }) } catch { return }
       } else if (permissionMode) {
         await session.setPermissionMode(permissionMode)
+      }
+      if (worktreeCwd && session.cwd !== worktreeCwd) {
+        await session.switchCwd(worktreeCwd)
       }
       try { mgr.setActiveSession(projectPath, sessionId) } catch { /* session from another project, skip */ }
       return {

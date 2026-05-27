@@ -353,6 +353,33 @@ describe('AgentService prewarm', () => {
   })
 })
 
+describe('AgentService SESSIONS_RESUME (cwd sync)', () => {
+  it('switches the existing session cwd to the worktree cwd when the renderer resumes with a worktreePath that differs from the live session cwd', async () => {
+    const service = new AgentService()
+    const switchCwd = vi.fn().mockResolvedValue(undefined)
+    const existing = makeMockSession({
+      id: 'sid-existing',
+      cwd: '/repo/main',
+      snapshot: { harnessId: 'claude', messages: [] },
+      isStreaming: vi.fn(() => false),
+      switchCwd,
+      setPermissionMode: vi.fn().mockResolvedValue(undefined),
+      getCurrentPermissionMode: vi.fn(() => 'default' as const),
+      getCurrentSandboxInfo: vi.fn(() => ({ enabled: true, autoAllowBash: false })),
+    })
+    ;(service as { sessionManager: unknown }).sessionManager = {
+      getSession: vi.fn(() => existing),
+      setActiveSession: vi.fn(),
+    }
+    service.setup()
+    const handler = getRegisteredIpcHandler(AgentIpcChannels.SESSIONS_RESUME)!
+
+    await handler(null, '/repo/main', 'sid-existing', '/repo/main/.worktrees/feat-x')
+
+    expect(switchCwd).toHaveBeenCalledWith('/repo/main/.worktrees/feat-x')
+  })
+})
+
 describe('AgentService.resumeSession', () => {
   it.skip('recreates the active agent when resuming a local session from a worktree cwd', async () => {
     const service = new AgentService()

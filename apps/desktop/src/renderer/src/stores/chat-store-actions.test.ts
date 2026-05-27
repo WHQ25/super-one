@@ -50,6 +50,8 @@ const mockWindowAgent = {
   setPermissionMode: vi.fn().mockResolvedValue(undefined),
   setSessionSettings: vi.fn().mockResolvedValue(undefined),
   setSessionApiProvider: vi.fn().mockResolvedValue(undefined),
+  addProjectAdditionalDir: vi.fn().mockResolvedValue(undefined),
+  removeProjectAdditionalDir: vi.fn().mockResolvedValue(undefined),
   setSandboxMode: vi.fn().mockResolvedValue({ enabled: true, autoAllowBash: false }),
   sendMessage: vi.fn().mockResolvedValue(undefined),
   interrupt: vi.fn().mockResolvedValue(true),
@@ -70,6 +72,8 @@ const mockWindowApp = {
   unwatchBashOutput: vi.fn(),
   loadSessionState: vi.fn().mockResolvedValue(null),
   resumeSession: vi.fn().mockResolvedValue(null),
+  listSessionsForFolderPage: vi.fn().mockResolvedValue([]),
+  renameSession: vi.fn().mockResolvedValue(undefined),
   codexGetAuthStatus: vi.fn().mockResolvedValue({
     mode: 'apiKey', resolvedMode: 'apiKey', hasEnvApiKey: false, hasSessionApiKey: false, isRunning: false,
   }),
@@ -556,6 +560,178 @@ describe('sendMessage: Claude IPC path', () => {
     mockWindowAgent.sendMessage.mockRejectedValueOnce(new Error('disk full'))
     await expect(useChatStore.getState().sendMessage('boom')).rejects.toThrow('disk full')
     expect(activeSession().awaitingAssistantReply).toBe(false)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DB / nav store actions in chat-store/index.ts (fetchSessions / switchToSession / addDir / startCodexReview)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('fetchSessions / fetchSessionsPage', () => {
+  it('writes the first page into project.sessions + sets hasMore based on page-full', async () => {
+    setupProject()
+    const entries = Array.from({ length: 30 }, (_, i) => ({ sessionId: `s${i}`, title: `t${i}`, providerId: 'claude' }))
+    mockWindowApp.listSessionsForFolderPage.mockResolvedValueOnce(entries)
+    await useChatStore.getState().fetchSessions()
+    const proj = activeProjectState()
+    expect(proj.sessions.length).toBe(30)
+    expect(proj.sessionsPage).toBe(1)
+    expect(proj.sessionsHasMore).toBe(true)
+  })
+
+  it("clears hasMore when a short page returns < SESSIONS_PAGE_SIZE", async () => {
+    setupProject()
+    mockWindowApp.listSessionsForFolderPage.mockResolvedValueOnce([{ sessionId: 's1', title: 't1', providerId: 'claude' }])
+    await useChatStore.getState().fetchSessions()
+    expect(activeProjectState().sessionsHasMore).toBe(false)
+  })
+
+  it('survives an IPC error without throwing', async () => {
+    setupProject()
+    mockWindowApp.listSessionsForFolderPage.mockRejectedValueOnce(new Error('db locked'))
+    await expect(useChatStore.getState().fetchSessions()).resolves.toBeUndefined()
+  })
+
+  it('fetchSessionsPage appends the next page when more is available', async () => {
+    setupProject()
+    useChatStore.setState((s) => ({
+      projectSessions: {
+        ...s.projectSessions,
+        [PATH]: {
+          ...s.projectSessions[PATH],
+          sessions: [{ sessionId: 's0', title: 't', providerId: 'claude' } as never],
+          sessionsPage: 1,
+          sessionsHasMore: true,
+        },
+      },
+    }))
+    mockWindowApp.listSessionsForFolderPage.mockResolvedValueOnce([{ sessionId: 's1', title: 't1', providerId: 'claude' }])
+    await useChatStore.getState().fetchSessionsPage()
+    const proj = activeProjectState()
+    expect(proj.sessions.map((s) => s.sessionId)).toEqual(['s0', 's1'])
+    expect(proj.sessionsPage).toBe(2)
+  })
+
+  it('fetchSessionsPage is a no-op when sessionsHasMore is false', async () => {
+    setupProject()
+    useChatStore.setState((s) => ({
+      projectSessions: {
+        ...s.projectSessions,
+        [PATH]: { ...s.projectSessions[PATH], sessionsHasMore: false },
+      },
+    }))
+    await useChatStore.getState().fetchSessionsPage()
+    expect(mockWindowApp.listSessionsForFolderPage).not.toHaveBeenCalled()
+  })
+})
+
+describe('renameSession', () => {
+  it('forwards to window.app.renameSession + patches the local sessions list', async () => {
+    setupProject()
+    useChatStore.setState((s) => ({
+      projectSessions: {
+        ...s.projectSessions,
+        [PATH]: {
+          ...s.projectSessions[PATH],
+          sessions: [
+            { sessionId: 's1', title: 'old', providerId: 'claude' } as never,
+            { sessionId: 's2', title: 'other', providerId: 'claude' } as never,
+          ],
+        },
+      },
+    }))
+    await useChatStore.getState().renameSession('s1', 'new title')
+    expect(mockWindowApp.renameSession).toHaveBeenCalledWith('s1', 'new title')
+    const proj = activeProjectState()
+    expect(proj.sessions[0].title).toBe('new title')
+    expect(proj.sessions[1].title).toBe('other')
+  })
+
+  it('is a no-op when no project is active', async () => {
+    await useChatStore.getState().renameSession('s1', 'x')
+    expect(mockWindowApp.renameSession).not.toHaveBeenCalled()
+  })
+})
+
+describe('addDir / removeDir', () => {
+  it("addDir scope='session' appends to session.additionalDirs and sets dirty flag", () => {
+    setupProject()
+    useChatStore.getState().addDir('/extra-dir', 'session')
+    expect(activeSession().additionalDirs).toContain('/extra-dir')
+    expect(activeSession().additionalDirsDirty).toBe(true)
+  })
+
+  it("addDir scope='session' dedupes by exact path", () => {
+    setupProject()
+    patchSession({ additionalDirs: ['/already'] })
+    useChatStore.getState().addDir('/already', 'session')
+    expect(activeSession().additionalDirs).toEqual(['/already'])
+  })
+
+  it("addDir scope='project' calls addProjectAdditionalDir IPC and writes projectLocalDirs", () => {
+    setupProject()
+    useChatStore.getState().addDir('/proj-shared', 'project')
+    expect(mockWindowAgent.addProjectAdditionalDir).toHaveBeenCalledWith(PATH, '/proj-shared')
+    expect(activeProjectState().projectLocalDirs).toContain('/proj-shared')
+  })
+
+  it("removeDir scope='session' filters out the path", () => {
+    setupProject()
+    patchSession({ additionalDirs: ['/a', '/b'] })
+    useChatStore.getState().removeDir('/a', 'session')
+    expect(activeSession().additionalDirs).toEqual(['/b'])
+  })
+
+  it("removeDir scope='project' calls removeProjectAdditionalDir IPC", () => {
+    setupProject()
+    useChatStore.setState((s) => ({
+      projectSessions: {
+        ...s.projectSessions,
+        [PATH]: { ...s.projectSessions[PATH], projectLocalDirs: ['/p'] },
+      },
+    }))
+    useChatStore.getState().removeDir('/p', 'project')
+    expect(mockWindowAgent.removeProjectAdditionalDir).toHaveBeenCalledWith(PATH, '/p')
+    expect(activeProjectState().projectLocalDirs).toEqual([])
+  })
+
+  it('removeDir / addDir are no-ops when no active project', () => {
+    useChatStore.getState().addDir('/x', 'session')
+    useChatStore.getState().removeDir('/x', 'session')
+    expect(mockWindowAgent.addProjectAdditionalDir).not.toHaveBeenCalled()
+  })
+})
+
+describe('startCodexReview', () => {
+  it("uncommittedChanges target translates to '/review' sendMessage", async () => {
+    setupProject()
+    patchSession({ sessionProvider: 'codex' })
+    useChatStore.getState().startCodexReview({ type: 'uncommittedChanges' })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(mockWindowApp.codexReview).toHaveBeenCalled()
+    // showReviewPanel must close
+    expect(activeProjectState().showReviewPanel).toBe(false)
+  })
+
+  it("baseBranch target translates to '/review branch'", async () => {
+    setupProject()
+    patchSession({ sessionProvider: 'codex' })
+    useChatStore.getState().startCodexReview({ type: 'baseBranch' })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(mockWindowApp.codexReview).toHaveBeenCalled()
+  })
+
+  it("commit target translates to '/review commit <sha>'", async () => {
+    setupProject()
+    patchSession({ sessionProvider: 'codex' })
+    useChatStore.getState().startCodexReview({ type: 'commit', sha: 'abcd1234' })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(mockWindowApp.codexReview).toHaveBeenCalled()
+  })
+
+  it('is a no-op when no project is active', () => {
+    useChatStore.getState().startCodexReview({ type: 'uncommittedChanges' })
+    expect(mockWindowApp.codexReview).not.toHaveBeenCalled()
   })
 })
 

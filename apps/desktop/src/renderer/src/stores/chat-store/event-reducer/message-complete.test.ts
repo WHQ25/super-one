@@ -26,6 +26,7 @@ function codexUsage(overrides: Partial<CodexUsageInfo> = {}): CodexUsageInfo {
     lastInputTokens: 0,
     lastCachedInputTokens: 0,
     lastOutputTokens: 0,
+    reasoningOutputTokens: 0,
     contextWindow: 0,
     ...overrides,
   }

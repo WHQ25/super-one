@@ -1,0 +1,410 @@
+/** @vitest-environment jsdom */
+
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import type { AgentEvent, ChatMessage } from '@superone/shared/agent-types'
+
+const mockLocalStorage = {
+  getItem: vi.fn().mockReturnValue(null),
+  setItem: vi.fn(),
+  removeItem: vi.fn(),
+  clear: vi.fn(),
+}
+
+vi.mock('../../app', () => ({
+  useAppStore: {
+    getState: () => ({
+      getWorktreeState: () => ({}),
+      setActiveWorktree: vi.fn(),
+      clearWorktree: vi.fn().mockResolvedValue(undefined),
+    }),
+  },
+}))
+
+const mockGetLiveSnapshots = vi.fn()
+const mockTrace = vi.fn()
+
+const mockWindowAgent = {
+  getLiveSnapshots: mockGetLiveSnapshots,
+  parkSession: vi.fn().mockResolvedValue(undefined),
+  activateSession: vi.fn().mockResolvedValue(undefined),
+  sendMessage: vi.fn().mockResolvedValue(undefined),
+  prewarm: vi.fn().mockResolvedValue(undefined),
+  watchBashOutput: vi.fn(),
+}
+
+const mockWindowApp = {
+  trace: mockTrace,
+  saveSessionState: vi.fn().mockResolvedValue(undefined),
+  loadSessionState: vi.fn().mockResolvedValue(null),
+  listSessionsForFolder: vi.fn().mockResolvedValue([]),
+  readProjectAdditionalDirs: vi.fn().mockResolvedValue([]),
+  codexListModels: vi.fn().mockResolvedValue([]),
+  watchBashOutput: vi.fn(),
+  getAppSettings: vi.fn().mockResolvedValue({
+    analyticsEnabled: true,
+    agentPreference: {
+      claude: { defaultModel: '', defaultEffort: '', defaultPermissionMode: '', defaultSandboxMode: '' },
+      codex: { defaultModel: '', defaultReasoningEffort: '' },
+    },
+  }),
+}
+
+const eventTarget = new EventTarget()
+vi.stubGlobal('window', {
+  agent: mockWindowAgent,
+  app: mockWindowApp,
+  localStorage: mockLocalStorage,
+  dispatchEvent: (e: Event) => eventTarget.dispatchEvent(e),
+  addEventListener: (t: string, h: EventListenerOrEventListenerObject) => eventTarget.addEventListener(t, h),
+  removeEventListener: (t: string, h: EventListenerOrEventListenerObject) => eventTarget.removeEventListener(t, h),
+})
+vi.stubGlobal('localStorage', mockLocalStorage)
+
+const { useChatStore, createDefaultPerSessionState, createDefaultProjectState } = await import('../../chat')
+
+function makeMessage(id: string, role: 'user' | 'assistant'): ChatMessage {
+  return {
+    id,
+    role,
+    status: role === 'assistant' ? 'streaming' : 'complete',
+    content: [],
+    createdAt: '',
+    providerId: 'claude',
+  }
+}
+
+function resetStore() {
+  useChatStore.setState({
+    projectSessions: {},
+    activeProject: null,
+    remoteSessions: {},
+    _previousFocusedSession: null,
+    agentTitles: {},
+    _bashOutputs: {},
+  })
+}
+
+beforeEach(() => {
+  resetStore()
+  mockGetLiveSnapshots.mockReset()
+  mockTrace.mockReset()
+  vi.clearAllMocks()
+})
+
+describe('remote_session_start', () => {
+  it('subscribe=true seeds remoteSessions, creates session with _historyHydrated=false, and infers provider from harnessId', () => {
+    useChatStore.getState().handleAgentEvent({
+      type: 'remote_session_start',
+      remoteProjectPath: '/p',
+      remoteSessionId: 'sess-A',
+      isSubscribe: true,
+      harnessId: 'codex',
+    } as AgentEvent)
+
+    const state = useChatStore.getState()
+    expect(state.remoteSessions['/p']).toEqual(['sess-A'])
+    const session = state.projectSessions['/p']._sessions['sess-A']
+    expect(session).toBeDefined()
+    expect(session._historyHydrated).toBe(false)
+    expect(session.sessionProvider).toBe('codex')
+    expect(session.preferredProvider).toBe('codex')
+  })
+
+  it('subscribe=false does NOT add to remoteSessions but still creates the session entry', () => {
+    useChatStore.getState().handleAgentEvent({
+      type: 'remote_session_start',
+      remoteProjectPath: '/p',
+      remoteSessionId: 'sess-B',
+      isSubscribe: false,
+      harnessId: 'claude',
+    } as AgentEvent)
+
+    const state = useChatStore.getState()
+    expect(state.remoteSessions['/p']).toBeUndefined()
+    const session = state.projectSessions['/p']._sessions['sess-B']
+    expect(session).toBeDefined()
+    expect(session._historyHydrated).toBe(true)
+    expect(session.sessionProvider).toBe('claude')
+  })
+})
+
+describe('remote_session_end', () => {
+  it('subscribe=true removes the entry from remoteSessions', () => {
+    useChatStore.getState().handleAgentEvent({
+      type: 'remote_session_start',
+      remoteProjectPath: '/p',
+      remoteSessionId: 'sess-A',
+      isSubscribe: true,
+    } as AgentEvent)
+    expect(useChatStore.getState().remoteSessions['/p']).toEqual(['sess-A'])
+
+    useChatStore.getState().handleAgentEvent({
+      type: 'remote_session_end',
+      remoteProjectPath: '/p',
+      remoteSessionId: 'sess-A',
+      isSubscribe: true,
+    } as AgentEvent)
+
+    expect(useChatStore.getState().remoteSessions['/p']).toBeUndefined()
+  })
+
+  it('subscribe=false is a noop and leaves remoteSessions unchanged', () => {
+    useChatStore.getState().handleAgentEvent({
+      type: 'remote_session_start',
+      remoteProjectPath: '/p',
+      remoteSessionId: 'sess-A',
+      isSubscribe: true,
+    } as AgentEvent)
+    const before = useChatStore.getState().remoteSessions
+
+    useChatStore.getState().handleAgentEvent({
+      type: 'remote_session_end',
+      remoteProjectPath: '/p',
+      remoteSessionId: 'sess-A',
+    } as AgentEvent)
+
+    expect(useChatStore.getState().remoteSessions).toBe(before)
+  })
+})
+
+describe('provider_changed', () => {
+  it('triggers refreshCodexModels(true) when harnessId=codex', () => {
+    const refreshSpy = vi.fn().mockResolvedValue(undefined)
+    useChatStore.setState({ refreshCodexModels: refreshSpy } as never)
+
+    useChatStore.getState().handleAgentEvent({
+      type: 'provider_changed',
+      harnessId: 'codex',
+    } as AgentEvent)
+
+    expect(refreshSpy).toHaveBeenCalledTimes(1)
+    expect(refreshSpy).toHaveBeenCalledWith(true)
+  })
+
+  it('does NOT trigger refreshCodexModels for non-codex harness', () => {
+    const refreshSpy = vi.fn().mockResolvedValue(undefined)
+    useChatStore.setState({ refreshCodexModels: refreshSpy } as never)
+
+    useChatStore.getState().handleAgentEvent({
+      type: 'provider_changed',
+      harnessId: 'claude',
+    } as AgentEvent)
+
+    expect(refreshSpy).not.toHaveBeenCalled()
+  })
+})
+
+describe('session_title_changed', () => {
+  it('updates agentTitles, projectSessions[].sessions[].title, and _sessions[].._title together', () => {
+    const proj = createDefaultProjectState()
+    proj._activeSessionId = 'sid-1'
+    proj._sessions = { 'sid-1': { ...createDefaultPerSessionState(), _title: null } }
+    proj.sessions = [
+      { sessionId: 'sid-1', title: 'old title' } as never,
+      { sessionId: 'sid-2', title: 'untouched' } as never,
+    ]
+    useChatStore.setState({ projectSessions: { '/p': proj } })
+
+    useChatStore.getState().handleAgentEvent({
+      type: 'session_title_changed',
+      sessionId: 'sid-1',
+      title: 'new title',
+      projectPath: '/p',
+    } as AgentEvent)
+
+    const state = useChatStore.getState()
+    expect(state.agentTitles['sid-1']).toBe('new title')
+    const after = state.projectSessions['/p']
+    expect(after.sessions[0].title).toBe('new title')
+    expect(after.sessions[1].title).toBe('untouched')
+    expect(after._sessions['sid-1']._title).toBe('new title')
+  })
+
+  it('writes agentTitles even when projectPath is omitted (global title only)', () => {
+    useChatStore.getState().handleAgentEvent({
+      type: 'session_title_changed',
+      sessionId: 'sid-x',
+      title: 'just-the-title',
+    } as AgentEvent)
+
+    expect(useChatStore.getState().agentTitles['sid-x']).toBe('just-the-title')
+  })
+})
+
+describe('per-session routing edge cases', () => {
+  it('lazy_session creates a new session entry when sessionId is not in _sessions and logs [session-drift]', () => {
+    const proj = createDefaultProjectState()
+    proj._activeSessionId = 'sid-A'
+    proj._sessions = { 'sid-A': createDefaultPerSessionState() }
+    useChatStore.setState({ projectSessions: { '/p': proj }, activeProject: '/p' })
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    useChatStore.getState().handleAgentEvent({
+      type: 'status_change',
+      projectPath: '/p',
+      sessionId: 'sid-B',
+      status: 'streaming',
+    } as AgentEvent)
+
+    const after = useChatStore.getState().projectSessions['/p']
+    expect(after._sessions['sid-B']).toBeDefined()
+    expect(after._sessions['sid-B']._historyHydrated).toBe(false)
+    expect(warnSpy).toHaveBeenCalledWith(
+      '[session-drift] lazy_session created from incoming event',
+      expect.objectContaining({ eventType: 'status_change', eventSessionId: 'sid-B', activeSid: 'sid-A' }),
+    )
+    warnSpy.mockRestore()
+  })
+
+  it('drops events that have no eventSessionId AND no _activeSessionId, and traces session.route.dropped', () => {
+    const proj = createDefaultProjectState()
+    proj._activeSessionId = null
+    useChatStore.setState({ projectSessions: { '/p': proj }, activeProject: '/p' })
+
+    const before = useChatStore.getState().projectSessions
+
+    useChatStore.getState().handleAgentEvent({
+      type: 'status_change',
+      projectPath: '/p',
+      status: 'streaming',
+    } as AgentEvent)
+
+    expect(useChatStore.getState().projectSessions).toBe(before)
+    expect(mockTrace).toHaveBeenCalledWith(
+      'session.route.dropped',
+      'status_change',
+      expect.objectContaining({ reason: 'no_route', activeSid: null }),
+    )
+  })
+})
+
+describe('syncLiveSnapshots', () => {
+  it('swallows getLiveSnapshots errors and leaves state untouched', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    mockGetLiveSnapshots.mockRejectedValueOnce(new Error('boom'))
+    const before = useChatStore.getState().projectSessions
+
+    await expect(useChatStore.getState().syncLiveSnapshots()).resolves.toBeUndefined()
+
+    expect(useChatStore.getState().projectSessions).toBe(before)
+    expect(warnSpy).toHaveBeenCalledWith('[chat] getLiveSnapshots failed:', expect.any(Error))
+    warnSpy.mockRestore()
+  })
+
+  it('returns early without mutating projectSessions when entries is empty', async () => {
+    mockGetLiveSnapshots.mockResolvedValueOnce([])
+    const before = useChatStore.getState().projectSessions
+
+    await useChatStore.getState().syncLiveSnapshots()
+
+    expect(useChatStore.getState().projectSessions).toBe(before)
+  })
+
+  it('merges live snapshot with prevSession using Math.max for totalCostUsd and contextTokens', async () => {
+    const proj = createDefaultProjectState()
+    const seedSession = {
+      ...createDefaultPerSessionState(),
+      totalCostUsd: 5,
+      contextTokens: 999,
+    }
+    proj._activeSessionId = 'sid-1'
+    proj._sessions = { 'sid-1': seedSession }
+    useChatStore.setState({ projectSessions: { '/p': proj } })
+
+    mockGetLiveSnapshots.mockResolvedValueOnce([
+      {
+        sid: 'sid-1',
+        projectPath: '/p',
+        isActive: true,
+        isStreaming: false,
+        permissionMode: 'default',
+        sandboxInfo: { enabled: true, autoAllowBash: false },
+        snapshot: {
+          id: 'sid-1',
+          projectPath: '/p',
+          cwd: '/p',
+          providerId: 'claude',
+          harnessId: 'claude',
+          status: 'idle',
+          providerSessionId: null,
+          currentMessageId: null,
+          createdAt: 0,
+          lastUserMessageAt: null,
+          messages: [],
+          totalCostUsd: 3,
+          contextTokens: 50,
+          title: null,
+          isWorktree: false,
+          worktreePath: null,
+          gitBranch: null,
+          worktreeMissing: false,
+          apiProviderId: null,
+        },
+        pendingInteractions: [],
+        replayEvents: [],
+      },
+    ])
+
+    await useChatStore.getState().syncLiveSnapshots()
+
+    const merged = useChatStore.getState().projectSessions['/p']._sessions['sid-1']
+    expect(merged.totalCostUsd).toBe(5)
+    expect(merged.contextTokens).toBe(999)
+  })
+
+  it('replayEvents handler errors are logged with [chat] replay event error: and processing continues', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    const goodReplay = makeMessage('m1', 'assistant')
+    void goodReplay
+
+    mockGetLiveSnapshots.mockResolvedValueOnce([
+      {
+        sid: 'sid-1',
+        projectPath: '/p',
+        isActive: true,
+        isStreaming: false,
+        permissionMode: 'default',
+        sandboxInfo: { enabled: true, autoAllowBash: false },
+        snapshot: {
+          id: 'sid-1',
+          projectPath: '/p',
+          cwd: '/p',
+          providerId: 'claude',
+          harnessId: 'claude',
+          status: 'idle',
+          providerSessionId: null,
+          currentMessageId: null,
+          createdAt: 0,
+          lastUserMessageAt: null,
+          messages: [],
+          totalCostUsd: 0,
+          contextTokens: 0,
+          title: null,
+          isWorktree: false,
+          worktreePath: null,
+          gitBranch: null,
+          worktreeMissing: false,
+          apiProviderId: null,
+        },
+        pendingInteractions: [],
+        replayEvents: [
+          { type: 'message_start', projectPath: '/p', sessionId: 'sid-1' } as AgentEvent,
+          {
+            type: 'message_start',
+            projectPath: '/p',
+            sessionId: 'sid-1',
+            message: makeMessage('m2', 'assistant') as never,
+          } as AgentEvent,
+        ],
+      },
+    ])
+
+    await expect(useChatStore.getState().syncLiveSnapshots()).resolves.toBeUndefined()
+
+    expect(warnSpy.mock.calls.some((c) => c[0] === '[chat] replay event error:')).toBe(true)
+    const after = useChatStore.getState().projectSessions['/p']._sessions['sid-1']
+    expect(after.messages.some((m) => m.id === 'm2')).toBe(true)
+    warnSpy.mockRestore()
+  })
+})

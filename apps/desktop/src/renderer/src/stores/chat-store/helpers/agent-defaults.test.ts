@@ -89,7 +89,7 @@ const codexHigh: ModelOption = {
   name: 'GPT-5 High',
   description: '',
   isDefault: true,
-  supportedReasoningEfforts: [{ value: 'high', label: 'High' }, { value: 'medium', label: 'Med' }],
+  supportedReasoningEfforts: [{ value: 'high', description: 'High' }, { value: 'medium', description: 'Med' }],
   defaultReasoningEffort: 'high',
 }
 

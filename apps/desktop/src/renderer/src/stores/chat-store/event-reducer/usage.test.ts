@@ -22,6 +22,7 @@ function makeUsage(overrides: Partial<CodexUsageInfo> = {}): CodexUsageInfo {
     lastInputTokens: 30,
     lastCachedInputTokens: 5,
     lastOutputTokens: 20,
+    reasoningOutputTokens: 0,
     contextWindow: 200_000,
     ...overrides,
   }

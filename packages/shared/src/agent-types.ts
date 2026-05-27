@@ -847,6 +847,7 @@ export interface AgentPrewarmHint {
   additionalDirs?: string[]
   sessionId?: string
   provider?: 'claude' | 'codex'
+  worktreePath?: string
 }
 
 // --- Model selection ---

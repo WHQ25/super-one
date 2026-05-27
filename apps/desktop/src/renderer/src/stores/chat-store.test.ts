@@ -364,6 +364,19 @@ describe('ensureSession', () => {
     expect(project._sessions[afterSid!].sessionProvider).toBe('codex')
     expect(mockWindowAgent.prewarm).not.toHaveBeenCalled()
   })
+
+  it('passes session._worktreePath as hint.worktreePath when prewarming an attached worktree', () => {
+    setupProject('/prewarm-wt-attach')
+    patchDraftSession('/prewarm-wt-attach', { _worktreePath: '/prewarm-wt-attach/.worktrees/feat-x' })
+    mockWindowAgent.prewarm.mockClear()
+
+    useChatStore.getState().setDraftText('hi')
+
+    expect(mockWindowAgent.prewarm).toHaveBeenCalledWith(
+      '/prewarm-wt-attach',
+      expect.objectContaining({ worktreePath: '/prewarm-wt-attach/.worktrees/feat-x' }),
+    )
+  })
 })
 
 describe('no data loss on session switch', () => {
@@ -645,85 +658,9 @@ describe('concurrent streaming sessions', () => {
     expect(after._sessions['b'].status).toBe('idle')
   })
 
-  it.skip('routes session_init to live draft when switched away before first reply', () => {
-    setupProject('/test')
-    const proj = useChatStore.getState().projectSessions['/test']
-    const draftId = getActiveDraftId('/test')!
+  // Removed (date 2026-05-27): asserted that session_init re-keys the active draft to the real session id; that draft re-key behavior exists in neither main nor refactor. Tracked as follow-up issue if/when feature is implemented.
 
-    useChatStore.setState({
-      projectSessions: {
-        '/test': {
-          ...proj,
-          _activeSessionId: draftId,
-          _sessions: {
-            old: createDefaultPerSessionState(),
-            [draftId]: {
-              ...createDefaultPerSessionState(),
-              messages: [{ id: 'u1', role: 'user' as const, content: [{ type: 'text', text: 'hello' }], status: 'complete' as const, createdAt: '', providerId: 'local' }],
-              awaitingAssistantReply: true,
-            },
-          },
-        },
-      },
-    })
-
-    useChatStore.getState().handleAgentEvent(makeEvent({
-      type: 'session_init',
-      sessionId: 'real-new',
-      session: { sessionId: 'real-new' } as never,
-    }))
-
-    const after = useChatStore.getState().projectSessions['/test']
-    expect(after._sessions[draftId]).toBeUndefined()
-    expect(after._sessions['real-new']).toBeDefined()
-    expect(after._sessions['real-new'].awaitingAssistantReply).toBe(true)
-    expect(after._sessions['old']).toBeDefined()
-  })
-
-  it.skip('creates a real session entry for a saved session_init instead of falling back to DRAFT', async () => {
-    mockWindowApp.loadSessionState.mockResolvedValue({
-      messages: [makeMessage('old-msg', 'assistant')],
-      totalCostUsd: 1,
-      contextTokens: 2,
-      isWorktree: false,
-      gitBranch: null,
-      worktreePath: null,
-      provider: 'claude',
-    })
-
-    useChatStore.setState({
-      projectSessions: {
-        '/test': {
-          ...createDefaultProjectState(),
-          sessions: [
-            {
-              sessionId: 'old-session',
-              title: 'Old Session',
-              lastActiveAt: '2026-03-23T00:00:00.000Z',
-              messageCount: 1,
-            },
-          ],
-        },
-      },
-      activeProject: '/test',
-    })
-
-    useChatStore.getState().handleAgentEvent(makeEvent({
-      type: 'session_init',
-      sessionId: 'old-session',
-      session: { sessionId: 'old-session' } as never,
-    }))
-
-    await Promise.resolve()
-    await Promise.resolve()
-
-    const after = useChatStore.getState().projectSessions['/test']
-    expect(after._activeSessionId).toBeNull()
-    const hasDraft = Object.keys(after._sessions).some((k) => isDraftSession(k))
-    expect(hasDraft).toBe(false)
-    expect(after._sessions['old-session']).toBeDefined()
-    expect(after._sessions['old-session'].messages.map((message) => message.id)).toEqual(['old-msg'])
-  })
+  // Removed (date 2026-05-27): asserted that a saved-session session_init lazily creates a hydrated entry without touching the draft; that lazy create + draft eviction behavior exists in neither main nor refactor. Tracked as follow-up issue if/when feature is implemented.
 
   it('routes follow-up events for an unloaded saved session to its real session id', () => {
     setupProject('/test')
@@ -1220,74 +1157,9 @@ describe('resetSession', () => {
     expect(mockWindowAgent.resetSession).toHaveBeenCalledWith(oldSid, after._activeSessionId)
   })
 
-  it.skip('parks streaming DRAFT session instead of killing it', async () => {
-    const agentConfig = {
-      permissionMode: 'default' as const,
-      sandboxInfo: { enabled: false, autoAllowBash: false },
-    }
-    mockWindowAgent.parkSession.mockResolvedValueOnce(agentConfig)
+  // Removed (date 2026-05-27): asserted that resetSession with a streaming DRAFT calls window.agent.parkDraftSession and preserves the old draft entry; parkDraftSession does not exist in production code (resetSessionImpl uses window.agent.parkSession). Tracked as follow-up issue if/when feature is implemented.
 
-    setupProject('/test')
-    const proj = useChatStore.getState().projectSessions['/test']
-    const oldDraftId = getActiveDraftId('/test')!
-
-    useChatStore.setState({
-      projectSessions: {
-        '/test': {
-          ...proj,
-          _activeSessionId: oldDraftId,
-          _sessions: {
-            [oldDraftId]: {
-              ...createDefaultPerSessionState(),
-              status: 'streaming' as const,
-              messages: [makeMessage('u1', 'user'), makeMessage('a1', 'assistant')],
-            },
-          },
-        },
-      },
-    })
-
-    await useChatStore.getState().resetSession()
-
-    expect(mockWindowAgent.parkDraftSession).toHaveBeenCalledWith('/test', oldDraftId, expect.stringMatching(/^__draft_/))
-    expect(mockWindowAgent.resetSession).not.toHaveBeenCalled()
-    const after = useChatStore.getState().projectSessions['/test']
-    expect(isDraftSession(after._activeSessionId)).toBe(true)
-    expect(after._activeSessionId).not.toBe(oldDraftId)
-    expect(getActiveDraftSession('/test')!.messages).toHaveLength(0)
-    expect(after._sessions[oldDraftId]).toBeDefined()
-    expect(after._sessions[oldDraftId].messages).toHaveLength(2)
-  })
-
-  it.skip('parks session when awaitingAssistantReply but not yet streaming', async () => {
-    mockWindowAgent.parkSession.mockResolvedValueOnce(undefined)
-
-    setupProject('/test')
-    const proj = useChatStore.getState().projectSessions['/test']
-    const oldDraftId = getActiveDraftId('/test')!
-
-    useChatStore.setState({
-      projectSessions: {
-        '/test': {
-          ...proj,
-          _activeSessionId: oldDraftId,
-          _sessions: {
-            [oldDraftId]: {
-              ...createDefaultPerSessionState(),
-              status: 'idle' as const,
-              awaitingAssistantReply: true,
-              messages: [makeMessage('u1', 'user')],
-            },
-          },
-        },
-      },
-    })
-
-    await useChatStore.getState().resetSession()
-
-    expect(mockWindowAgent.parkDraftSession).toHaveBeenCalledWith('/test', oldDraftId, expect.stringMatching(/^__draft_/))
-    expect(mockWindowAgent.resetSession).not.toHaveBeenCalled()
-  })
+  // Removed (date 2026-05-27): asserted that resetSession with awaitingAssistantReply calls window.agent.parkDraftSession; parkDraftSession does not exist in production code. Tracked as follow-up issue if/when feature is implemented.
 
   it('applies agentConfig from parkSession for non-draft streaming session', async () => {
     const agentConfig = {
@@ -1526,48 +1398,9 @@ describe('init_ready updates session fields', () => {
 })
 
 describe('lazy session creation on early events', () => {
-  it.skip('creates draft session on init_ready when project has no sessions', () => {
-    useChatStore.setState({
-      projectSessions: { '/early': { ...createDefaultProjectState(), _activeSessionId: null, _sessions: {} } },
-      activeProject: '/early',
-    })
+  // Removed (date 2026-05-27): asserted init_ready auto-creates a draft session in an empty project; the event-slice drops events when both eventSessionId and _activeSessionId are absent (no auto-create). Exists in neither main nor refactor. Tracked as follow-up issue if/when feature is implemented.
 
-    useChatStore.getState().handleAgentEvent({
-      type: 'init_ready',
-      projectPath: '/early',
-      sessionId: undefined,
-      cwd: '/home/user',
-      homedir: '/home/user',
-      sandboxInfo: { enabled: false, autoAllowBash: true },
-      skills: [],
-      projectCommands: [],
-      projectAgents: [],
-    } as never)
-
-    const proj = useChatStore.getState().projectSessions['/early']
-    expect(isDraftSession(proj._activeSessionId)).toBe(true)
-    expect(getActiveDraftSession('/early')).toBeDefined()
-    expect(getActiveDraftSession('/early')!.cwd).toBe('/home/user')
-  })
-
-  it.skip('creates real session on session_init when project has no sessions', () => {
-    useChatStore.setState({
-      projectSessions: { '/early2': { ...createDefaultProjectState(), _activeSessionId: null, _sessions: {} } },
-      activeProject: '/early2',
-    })
-
-    useChatStore.getState().handleAgentEvent(makeEvent({
-      type: 'session_init',
-      projectPath: '/early2',
-      session: { sessionId: 'real-sid' } as never,
-    }))
-
-    const proj = useChatStore.getState().projectSessions['/early2']
-    expect(proj._activeSessionId).toBe('real-sid')
-    expect(proj._sessions['real-sid']).toBeDefined()
-    const hasDraft = Object.keys(proj._sessions).some((k) => isDraftSession(k))
-    expect(hasDraft).toBe(false)
-  })
+  // Removed (date 2026-05-27): asserted session_init (without event.sessionId) auto-creates a real session entry in an empty project; without eventSessionId the route is dropped (no lazy_session creation). Exists in neither main nor refactor. Tracked as follow-up issue if/when feature is implemented.
 
   it('still drops non-init events when no session exists', () => {
     useChatStore.setState({
@@ -1627,50 +1460,9 @@ describe('focusProject tracks global previous session', () => {
   })
 })
 
-describe('focusProject restores parked session', () => {
-  it.skip('calls resumeSession when switching back to a project with active session', async () => {
-    setupProject('/proj-a')
-    useChatStore.getState().handleAgentEvent(makeEvent({
-      type: 'session_init',
-      projectPath: '/proj-a',
-      session: { sessionId: 'sid-a' } as never,
-    }))
-    useChatStore.setState((s) => {
-      const proj = s.projectSessions['/proj-a']
-      return {
-        projectSessions: {
-          ...s.projectSessions,
-          '/proj-a': {
-            ...proj,
-            _sessions: {
-              ...proj._sessions,
-              'sid-a': { ...proj._sessions['sid-a'], status: 'streaming' as const },
-            },
-          },
-        },
-      }
-    })
-
-    setupProject('/proj-b')
-
-    await useChatStore.getState().focusProject('/proj-b')
-    mockWindowApp.resumeSession.mockClear()
-
-    await useChatStore.getState().focusProject('/proj-a')
-    expect(mockWindowApp.resumeSession).toHaveBeenCalledWith('/proj-a', 'sid-a', '/proj-a')
-  })
-
-  it.skip('does NOT call resumeSession for DRAFT session', async () => {
-    setupProject('/proj-c')
-    setupProject('/proj-d')
-
-    await useChatStore.getState().focusProject('/proj-d')
-    mockWindowApp.resumeSession.mockClear()
-
-    await useChatStore.getState().focusProject('/proj-c')
-    expect(mockWindowApp.resumeSession).not.toHaveBeenCalled()
-  })
-})
+// Removed describe 'focusProject restores parked session' (date 2026-05-27):
+// both tests asserted draft re-key + draft-aware resume gating; neither behavior
+// exists in main or refactor. Tracked as follow-up issue if/when feature is implemented.
 
 describe('setHarnessResources(claude) rebuilds slashCommands', () => {
   it('rebuilds slashCommands for initialized project even with empty skills/commands', () => {
@@ -3615,72 +3407,10 @@ describe('task_started event', () => {
   })
 })
 
-describe('worktree session save isolation', () => {
-  it.skip('keeps each worktree session isolated in renderer state on re-key', () => {
-    setupProject('/test')
-
-    useChatStore.setState((s) => {
-      const project = s.projectSessions['/test']
-      return {
-        projectSessions: {
-          ...s.projectSessions,
-          '/test': {
-            ...project,
-            _activeSessionId: draftOf(project),
-            _sessions: {
-              [draftOf(project)]: {
-                ...createDefaultPerSessionState(),
-                messages: [{ id: 'm1', role: 'user', content: [{ type: 'text', text: 'hello' }], status: 'complete', createdAt: '' }] as never[],
-                _worktreeBaseBranch: 'feature-a',
-                _worktreePath: '/worktrees/project/wt-A',
-              },
-            },
-          },
-        },
-      }
-    })
-
-    useChatStore.getState().handleAgentEvent(makeEvent({
-      type: 'session_init',
-      session: { sessionId: 'wt-session-A' } as never,
-    }))
-
-    let project = useChatStore.getState().projectSessions['/test']
-    expect(project._sessions['wt-session-A']._worktreePath).toBe('/worktrees/project/wt-A')
-
-    const draftB = createDraftSessionId()
-    useChatStore.setState((s) => {
-      const project = s.projectSessions['/test']
-      return {
-        projectSessions: {
-          ...s.projectSessions,
-          '/test': {
-            ...project,
-            _activeSessionId: draftB,
-            _sessions: {
-              ...project._sessions,
-              [draftB]: {
-                ...createDefaultPerSessionState(),
-                messages: [{ id: 'm2', role: 'user', content: [{ type: 'text', text: 'world' }], status: 'complete', createdAt: '' }] as never[],
-                _worktreeBaseBranch: 'feature-b',
-                _worktreePath: '/worktrees/project/wt-B',
-              },
-            },
-          },
-        },
-      }
-    })
-
-    useChatStore.getState().handleAgentEvent(makeEvent({
-      type: 'session_init',
-      session: { sessionId: 'wt-session-B' } as never,
-    }))
-
-    project = useChatStore.getState().projectSessions['/test']
-    expect(project._sessions['wt-session-B']._worktreePath).toBe('/worktrees/project/wt-B')
-    expect(mockWindowApp.createSession).not.toHaveBeenCalled()
-  })
-})
+// Removed describe 'worktree session save isolation' (date 2026-05-27):
+// asserted session_init re-keys the draft to a real id while preserving worktree
+// fields; session_init does not re-key in production. Tracked as follow-up
+// issue if/when feature is implemented.
 
 describe('switchSession Case B codex usage restore', () => {
   it('restores codex context window from saved message metadata', async () => {
@@ -5512,44 +5242,7 @@ describe('interaction response routing', () => {
 })
 
 describe('cross-session event routing race conditions', () => {
-  it.skip('does not route events with stale draftSessionId to the active session (fallback_active)', () => {
-    setupProject('/test')
-    const proj = useChatStore.getState().projectSessions['/test']
-    const originalDraftId = proj._activeSessionId!
-
-    useChatStore.getState().handleAgentEvent(makeEvent({
-      type: 'session_init',
-      session: { sessionId: 'real-A' } as never,
-    }))
-
-    const afterRekey = useChatStore.getState().projectSessions['/test']
-    expect(afterRekey._activeSessionId).toBe('real-A')
-    expect(afterRekey._sessions[originalDraftId]).toBeUndefined()
-
-    const newDraftId = createDraftSessionId()
-    useChatStore.setState({
-      projectSessions: {
-        '/test': {
-          ...afterRekey,
-          _activeSessionId: newDraftId,
-          _sessions: {
-            ...afterRekey._sessions,
-            [newDraftId]: createDefaultPerSessionState(),
-          },
-        },
-      },
-    })
-
-    useChatStore.getState().handleAgentEvent(makeEvent({
-      type: 'message_start',
-      draftSessionId: originalDraftId,
-      message: makeMessage('leaked-msg', 'assistant'),
-    } as never))
-
-    const final = useChatStore.getState().projectSessions['/test']
-    const activeSession = final._sessions[newDraftId]
-    expect(activeSession.messages).toHaveLength(0)
-  })
+  // Removed (date 2026-05-27): asserted session_init re-keys draft -> 'real-A' so a later stale draftSessionId routes nowhere; session_init does not re-key in production and the route layer does not consult draftSessionId. Exists in neither main nor refactor. Tracked as follow-up issue if/when feature is implemented.
 
   it('does not route content_delta with stale draftSessionId to the active session', () => {
     setupProject('/test')

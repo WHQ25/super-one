@@ -58,6 +58,7 @@ hoisted.createSessionQueryMock.mockImplementation(
 
 vi.mock('../agent/claude-query', () => ({
   createSessionQuery: hoisted.createSessionQueryMock,
+  buildClaudeOptions: vi.fn((opts: unknown) => opts),
   buildUserMessage: vi.fn((req: SendMessageRequest, sid: string) => ({
     type: 'user',
     message: { role: 'user', content: req.content },

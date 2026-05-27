@@ -110,7 +110,8 @@ describe('WarmupManager prewarm/consume', () => {
     m.prewarm(baseOpts())
     await new Promise((r) => setTimeout(r, 0))
     const result = m.consume(baseOpts())
-    expect(result).toBe(warm)
+    expect(result?.warm).toBe(warm)
+    expect(result?.abortController).toBeInstanceOf(AbortController)
     expect(m.consume(baseOpts())).toBeNull()
   })
 
@@ -135,7 +136,7 @@ describe('WarmupManager prewarm/consume', () => {
     m.prewarm(baseOpts({ effort: 'high' as Options['effort'] }))
     await new Promise((r) => setTimeout(r, 0))
     expect(warmA._closed).toBe(true)
-    expect(m.consume(baseOpts({ effort: 'high' as Options['effort'] }))).toBe(warmB)
+    expect(m.consume(baseOpts({ effort: 'high' as Options['effort'] }))?.warm).toBe(warmB)
   })
 
   it('closes warm produced by superseded inflight startup', async () => {
@@ -235,6 +236,6 @@ describe('per-backend isolation', () => {
     a.prewarm(baseOpts({ cwd: '/iso-test' }))
     await new Promise((r) => setTimeout(r, 0))
     expect(b.consume(baseOpts({ cwd: '/iso-test' }))).toBeNull()
-    expect(a.consume(baseOpts({ cwd: '/iso-test' }))).toBe(warm)
+    expect(a.consume(baseOpts({ cwd: '/iso-test' }))?.warm).toBe(warm)
   })
 })

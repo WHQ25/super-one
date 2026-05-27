@@ -45,7 +45,7 @@ const hoisted = vi.hoisted(() => {
     mockQueryReloadPlugins: vi.fn(async () => {}),
   }
   captured.createSessionQueryMock.mockImplementation(
-    (bridge: unknown, _opts: unknown, emit: (e: AgentEvent) => void, _getMid: () => string, _getTs: () => number, _getInterrupted: () => boolean, onSessionId: (id: string) => void, onQueuedTurnStart: (id: string) => void, onStepBoundary: () => void) => {
+    (bridge: unknown, opts: unknown, emit: (e: AgentEvent) => void, _getMid: () => string, _getTs: () => number, _getInterrupted: () => boolean, onSessionId: (id: string) => void, onQueuedTurnStart: (id: string) => void, onStepBoundary: () => void) => {
       captured.emit = emit
       captured.onSessionId = onSessionId
       captured.onQueuedTurnStart = onQueuedTurnStart
@@ -67,6 +67,7 @@ const hoisted = vi.hoisted(() => {
           reloadPlugins: captured.mockQueryReloadPlugins,
         },
         iterationDone: promise,
+        spawnAbortController: (opts as { abortController?: AbortController }).abortController ?? new AbortController(),
       }
     }
   )
@@ -84,13 +85,24 @@ vi.mock('../../agent/claude-query', () => ({
   })),
 }))
 
-vi.mock('../../agent/warmup-manager', () => ({
-  WarmupManager: class {
+vi.mock('../../agent/warmup-manager', () => {
+  const SharedWarmupManager = Object.assign(class {
     prewarm = hoisted.captured.warmupPrewarm
     consume = () => null
     dispose = hoisted.captured.warmupDispose
-  },
-}))
+  }, {
+    keyOf: (opts: { __built?: { model?: string; effort?: string; permissionMode?: string; resume?: string } } & { model?: string; effort?: string; permissionMode?: string; resume?: string }) => {
+      const o = opts?.__built ?? opts
+      return JSON.stringify({ m: o?.model ?? '', e: o?.effort ?? '', p: o?.permissionMode ?? '', r: o?.resume ?? '' })
+    },
+  })
+  const singleton = new SharedWarmupManager()
+  return {
+    WarmupManager: SharedWarmupManager,
+    getGlobalWarmupManager: () => singleton,
+    disposeGlobalWarmupManager: () => singleton.dispose(),
+  }
+})
 
 vi.mock('../../logger', () => ({
   default: { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() },
@@ -405,11 +417,19 @@ describe('ClaudeBackend', () => {
       expect(builtOpts.env?.ANTHROPIC_API_KEY).toBe('sk-test')
     })
 
-    it('still forwards prewarm after backend has started (for rebuild-ahead scenarios)', async () => {
+    it('skips prewarm when active runtime already matches the requested key (no wasted warmup process)', async () => {
       const backend = new ClaudeBackend()
       await backend.start(makeStartOpts())
       hoisted.captured.warmupPrewarm.mockClear()
       backend.prewarm(makeStartOpts())
+      expect(hoisted.captured.warmupPrewarm).not.toHaveBeenCalled()
+    })
+
+    it('still forwards prewarm when key changes after start (rebuild-ahead: e.g. model/effort change)', async () => {
+      const backend = new ClaudeBackend()
+      await backend.start(makeStartOpts())
+      hoisted.captured.warmupPrewarm.mockClear()
+      backend.prewarm({ ...makeStartOpts(), model: 'claude-opus' })
       expect(hoisted.captured.warmupPrewarm).toHaveBeenCalledOnce()
     })
 
@@ -420,12 +440,13 @@ describe('ClaudeBackend', () => {
       expect((opts as { warmupManager?: unknown }).warmupManager).toBeDefined()
     })
 
-    it('close() disposes its own warmupManager so a stale warm slot cannot be consumed by the next backend', async () => {
+    it('close() does NOT dispose the global warmupManager (would clobber other sessions sharing it)', async () => {
       const backend = new ClaudeBackend()
       await backend.start(makeStartOpts())
       hoisted.captured.iterationDone?.resolve()
+      hoisted.captured.warmupDispose.mockClear()
       await backend.close()
-      expect(hoisted.captured.warmupDispose).toHaveBeenCalled()
+      expect(hoisted.captured.warmupDispose).not.toHaveBeenCalled()
     })
 
     it('prewarm() passes a real canUseTool into buildClaudeOptions (not undefined)', () => {
@@ -780,6 +801,83 @@ describe('ClaudeBackend', () => {
       } finally {
         vi.useRealTimers()
       }
+    })
+  })
+
+  describe('subprocess cleanup on release (SIGTERM via spawn-AbortController)', () => {
+    it('aborts the spawn-time AbortController on close so spawn({ signal }) delivers SIGTERM — cold-start path', async () => {
+      const backend = new ClaudeBackend()
+      const opts = makeStartOpts()
+      await backend.start(opts)
+      expect(opts.abortController.signal.aborted).toBe(false)
+      hoisted.captured.iterationDone?.resolve()
+      await backend.close()
+      expect(opts.abortController.signal.aborted).toBe(true)
+    })
+
+    it('aborts the spawn-time AbortController on idle release too (not only close)', async () => {
+      const backend = new ClaudeBackend()
+      const opts = makeStartOpts()
+      await backend.start(opts)
+      hoisted.captured.iterationDone?.resolve()
+      await (backend as unknown as { releaseRuntime: (r: 'idle') => Promise<void> }).releaseRuntime('idle')
+      expect(opts.abortController.signal.aborted).toBe(true)
+    })
+
+    it('aborts the WARMUP-time AbortController (not opts.abortController) when consume returned a slot', async () => {
+      const warmupAC = new AbortController()
+      hoisted.captured.createSessionQueryMock.mockImplementationOnce(
+        (bridge: unknown, _opts: unknown, emit: (e: AgentEvent) => void, _gMid: () => string, _gTs: () => number, _gI: () => boolean, onSid: (id: string) => void, onQTS: (id: string) => void, onSB: () => void) => {
+          hoisted.captured.emit = emit
+          hoisted.captured.onSessionId = onSid
+          hoisted.captured.onQueuedTurnStart = onQTS
+          hoisted.captured.onStepBoundary = onSB
+          hoisted.captured.bridge = bridge
+          let resolveIter: () => void = () => {}
+          const promise = new Promise<void>((r) => { resolveIter = r })
+          hoisted.captured.iterationDone = { resolve: resolveIter, promise }
+          return {
+            query: {
+              interrupt: hoisted.captured.mockQueryInterrupt,
+              close: hoisted.captured.mockQueryClose,
+              setModel: hoisted.captured.mockQuerySetModel,
+              rewindFiles: hoisted.captured.mockQueryRewindFiles,
+              getContextUsage: hoisted.captured.mockQueryGetContextUsage,
+              mcpServerStatus: hoisted.captured.mockQueryMcpServerStatus,
+              reconnectMcpServer: hoisted.captured.mockQueryReconnectMcpServer,
+              toggleMcpServer: hoisted.captured.mockQueryToggleMcpServer,
+              reloadPlugins: hoisted.captured.mockQueryReloadPlugins,
+            },
+            iterationDone: promise,
+            spawnAbortController: warmupAC,
+          }
+        }
+      )
+      const backend = new ClaudeBackend()
+      await backend.start(makeStartOpts())
+      hoisted.captured.iterationDone?.resolve()
+      await backend.close()
+      expect(warmupAC.signal.aborted).toBe(true)
+    })
+
+    it('uses a fresh AbortController when ensureRuntime respawns after release (no reuse of aborted AC)', async () => {
+      const backend = new ClaudeBackend()
+      const opts = makeStartOpts()
+      await backend.start(opts)
+      hoisted.captured.iterationDone?.resolve()
+      await (backend as unknown as { releaseRuntime: (r: 'idle') => Promise<void> }).releaseRuntime('idle')
+
+      opts.abortController.abort()
+
+      hoisted.captured.createSessionQueryMock.mockClear()
+      void backend.send({ content: 'after release' })
+      await new Promise((r) => setTimeout(r, 0))
+
+      expect(hoisted.captured.createSessionQueryMock).toHaveBeenCalledOnce()
+      const [, secondOpts] = hoisted.captured.createSessionQueryMock.mock.calls[0]!
+      const respawnAC = (secondOpts as { abortController?: AbortController }).abortController
+      expect(respawnAC).toBeInstanceOf(AbortController)
+      expect(respawnAC?.signal.aborted).toBe(false)
     })
   })
 })

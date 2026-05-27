@@ -154,6 +154,8 @@ export class CodexBackend implements SessionBackend {
   private authChangedUnsub: (() => void) | null = null
 
   private warmHandlePromise: Promise<WarmCodexHandle | null> | null = null
+  private warmIdleTimer: ReturnType<typeof setTimeout> | null = null
+  static WARM_IDLE_TIMEOUT_MS = 5 * 60 * 1000
 
   private eventListeners = new Set<(e: AgentEvent) => void>()
   private providerSessionIdListeners = new Set<(id: string) => void>()
@@ -242,6 +244,33 @@ export class CodexBackend implements SessionBackend {
       return null
     })
     this.warmHandlePromise = promise
+    void promise.then((warm) => {
+      if (!warm) return
+      if (this.warmHandlePromise !== promise) return
+      this.warmIdleTimer = setTimeout(() => {
+        if (this.warmHandlePromise !== promise) return
+        log.info('[CodexBackend] warm handle idle timeout, discarding')
+        void this.discardWarmHandle('idle_timeout')
+      }, CodexBackend.WARM_IDLE_TIMEOUT_MS)
+    })
+  }
+
+  private clearWarmIdleTimer(): void {
+    if (this.warmIdleTimer) {
+      clearTimeout(this.warmIdleTimer)
+      this.warmIdleTimer = null
+    }
+  }
+
+  private async discardWarmHandle(_reason: string): Promise<void> {
+    const promise = this.warmHandlePromise
+    if (!promise) return
+    this.warmHandlePromise = null
+    this.clearWarmIdleTimer()
+    try {
+      const warm = await promise
+      if (warm) await warm.handle.close()
+    } catch { /* ignore */ }
   }
 
   private resolveWarmSessionOptions(opts: BackendStartOptions): {
@@ -318,6 +347,7 @@ export class CodexBackend implements SessionBackend {
     const currentAuth = this.service.getProjectAuth(startOpts.projectPath)
     let warm: WarmCodexHandle | null = null
     if (this.warmHandlePromise) {
+      this.clearWarmIdleTimer()
       warm = await this.warmHandlePromise.catch(() => null)
     } else if (this.service.takeAppServerConnection) {
       const handle = await this.service.takeAppServerConnection(startOpts.projectPath, currentAuth, startOpts.apiProviderId ?? null).catch(() => null)
@@ -618,6 +648,7 @@ export class CodexBackend implements SessionBackend {
     if (this.warmHandlePromise) {
       const warmPromise = this.warmHandlePromise
       this.warmHandlePromise = null
+      this.clearWarmIdleTimer()
       try {
         const warm = await warmPromise
         if (warm) await warm.handle.close()

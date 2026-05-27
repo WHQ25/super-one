@@ -4,6 +4,30 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.38.5-alpha] - 2026-05-27
+
+### Fixed
+
+- Message list virtualization reverted. The IntersectionObserver-based virtualization shipped in an earlier alpha caused intermittent scroll-jumps and message-not-rendering on long transcripts; the simpler INITIAL_RENDER_COUNT + incremental-show approach is restored.
+- Session working directory now syncs on `SESSIONS_RESUME` IPC. Resuming a session whose worktree had been switched on disk would land the new agent runtime at the wrong `cwd`; the resume path now calls `session.switchCwd()` whenever the recorded `worktreeCwd` differs from the runtime's current cwd.
+- Prewarm now uses `worktreePath` as the prewarm cwd (matching the send path). Previously the warmup hint omitted `worktreePath`, so a Claude subprocess prewarmed at the project root could not be reused when the actual send happened from a worktree subdirectory — every send paid the full cold-start cost. The prewarm hint now mirrors the send-message hint, and `WarmupManager`'s key includes the worktreePath so cache hits actually fire.
+
+### Added
+
+- `@superone/shared` exposes a `harness-capabilities` table (`supportsMcp` / `supportsTodos` / `supportsSubagents` / ...) so renderer feature gates can branch on harness capability declaratively instead of `if (provider === 'codex')` scattered across files.
+
+### Changed
+
+- Chat store split: the 5125-line `apps/desktop/src/renderer/src/stores/chat.ts` is now a one-line re-export of `chat-store/`. Internals are reorganized into `helpers/`, `slices/` (claude / codex / core / event / session / tool), `event-reducer/` (one file per event-type group), `harness/` (per-harness side effects), `codex/` (runCodexCommand body), plus `types.ts` / `defaults.ts` / `selectors.ts`. No user-visible behavior change — all 58 event-reducer case branches are preserved, all hotfixes from main are ported through.
+- `ModelSelector` split into per-harness components and provider resolution centralized into a single routing helper. Permission-prompt config, slash-command matching, assistant-copy text, and `ChatStatusBar` harness branches each live in dedicated subpackages.
+- `packages/shared/src/harness/` grouping: `HarnessId`, `harness-brand`, `harness-capabilities` all under `harness/` instead of scattered at the package root.
+
+### Tests
+
+- New sibling unit tests for the four largest previously-untested chat-store files: `helpers/send-message.test.ts` (12 tests covering worktree activation, IPC failure rollback, queued-send priority, miniapp authorize), `helpers/session-lifecycle.test.ts` (10 tests covering resetSession idempotency, worktree-switch reset, setPreferredProvider, clearMessages bash-output isolation, disconnectRemoteSession), `slices/event-slice.test.ts` (14 tests covering `remote_session_*`, `provider_changed`, lazy_session creation, syncLiveSnapshots merge + error path), and `helpers/interaction.test.ts` (8 tests covering respondToPermission / answerQuestion / dismissQuestion / respondToPlanApproval).
+- Plus per-reducer sibling tests across `event-reducer/` (content / lifecycle / message-complete / permission / slash / tool / usage / codex), `slices/tool-slice`, `selectors`, and helper modules (`agent-defaults` / `chat-helpers` / `lifecycle` / `persistence` / `store-helpers`) for the refactor split.
+- chat-store typecheck is clean (0 errors); full chat-store suite is 524/524 passing.
+
 ## [0.38.4-alpha] - 2026-05-27
 
 ### Fixed

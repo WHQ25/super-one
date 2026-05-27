@@ -63,7 +63,6 @@ export { SUBAGENT_COLOR_POOL } from './types'
 export const DEFAULT_PROVIDER: ChatProvider = 'claude'
 export const SESSIONS_PAGE_SIZE = 30
 const CODEX_LAST_SELECTION_STORAGE_KEY = 'super-one.codex.last-selection.v1'
-const CODEX_APPROVE_PLAN_PROMPT = 'Plan approved, start implementation.'
 export const CODEX_REJECT_PLAN_PLACEHOLDER = 'Tell Codex what to do differently'
 
 export const CLAUDE_INTERCEPTED_COMMANDS: Record<string, () => Promise<void>> = {
@@ -272,7 +271,29 @@ import {
 
 export { runCodexCommand } from './codex/runner'
 import { runCodexCommand } from './codex/runner'
+import { approveCodexPlanImpl, rejectCodexPlanImpl } from './codex/plan-actions'
 import { sendMessageImpl } from './helpers/send-message'
+import {
+  clearMessagesImpl,
+  disconnectRemoteSessionImpl,
+  ensureSessionImpl,
+  focusProjectImpl,
+  interruptImpl,
+  resetSessionForWorktreeSwitchImpl,
+  resetSessionImpl,
+  setPreferredProviderImpl,
+} from './helpers/session-lifecycle'
+import {
+  answerQuestionImpl,
+  cyclePermissionModeImpl,
+  dismissQuestionImpl,
+  respondToPermissionImpl,
+  respondToPlanApprovalImpl,
+  setPermissionModeImpl,
+  setSandboxModeImpl,
+  setSessionApiProviderIdImpl,
+  togglePlanModeShortcutImpl,
+} from './helpers/interaction'
 import { resetLock } from './helpers/lifecycle'
 
 // --- Store implementation ---
@@ -390,423 +411,25 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
 
   // handleAgentEvent + syncLiveSnapshots now provided by createEventSlice
 
-  focusProject: async (projectPath: string) => {
-    const currentProject = get().activeProject
-    perfEvent('project_switch', { from: currentProject, to: projectPath })
-    if (currentProject && currentProject !== projectPath) {
-      const project = get().projectSessions[currentProject]
-      if (project) {
-        const outgoingSid = project._activeSessionId
-        const activeSession = outgoingSid ? project._sessions[outgoingSid] : null
-        const isRemote = isRemoteSession(get(), currentProject, outgoingSid)
-        if ((activeSession && (_isBusyStatus(activeSession.status) || activeSession.awaitingAssistantReply)) && !isRemote) {
-          await _parkActiveSession(currentProject, outgoingSid)
-        }
-        if (outgoingSid) {
-          // B1: hold the outgoing session in _sessions so Ctrl+Tab can bounce back to it even when
-          // it's an idle history session that hasn't been opened in this run yet. Stub now, hydrate async.
-          if (!project._sessions[outgoingSid]) {
-            set((s) => {
-              const proj = s.projectSessions[currentProject]
-              if (!proj || proj._sessions[outgoingSid]) return {}
-              const stub = createDefaultPerSessionState()
-              stub.cwd = currentProject
-              return {
-                projectSessions: {
-                  ...s.projectSessions,
-                  [currentProject]: { ...proj, _sessions: { ...proj._sessions, [outgoingSid]: stub } },
-                },
-              }
-            })
-            _hydrateSessionState(set, currentProject, outgoingSid)
-          } else if (!project._sessions[outgoingSid]._historyHydrated) {
-            _hydrateSessionState(set, currentProject, outgoingSid)
-          }
-          set({ _previousFocusedSession: { projectPath: currentProject, sessionId: outgoingSid } })
-        }
-      }
-    }
-    const targetProject = get().projectSessions[projectPath]
-    const targetSid = targetProject?._activeSessionId
-    const targetSession = targetSid ? targetProject?._sessions[targetSid] : undefined
-    set((s) => {
-      const project = s.projectSessions[projectPath]
-      const updates: Partial<ChatStore> = { activeProject: projectPath }
-      if (project) {
-        let { unseenCompletedSessions } = project
-        const nextSession = targetSid ? project._sessions[targetSid] : undefined
-        const nextSessions = targetSid && nextSession
-          ? {
-              ...project._sessions,
-              [targetSid]: { ...nextSession, cwd: _getSessionCwd(projectPath, nextSession) },
-            }
-          : project._sessions
-        if (project._activeSessionId && unseenCompletedSessions.has(project._activeSessionId)) {
-          unseenCompletedSessions = new Set(unseenCompletedSessions)
-          unseenCompletedSessions.delete(project._activeSessionId)
-        }
-        updates.projectSessions = {
-          ...s.projectSessions,
-          [projectPath]: { ...project, _sessions: nextSessions, hasUnseenActivity: false, unseenCompletedSessions },
-        }
-      }
-      return updates
-    })
-    if (targetSid) {
-      const targetSession = targetProject?._sessions[targetSid]
-      try {
-        await window.app.resumeSession(projectPath, targetSid, _getSessionCwd(projectPath, targetSession))
-      } catch (err) { console.warn('[chat] resumeSession failed:', err) }
-    }
-    const switchedProject = get().projectSessions[projectPath]
-    const switchedSid = switchedProject?._activeSessionId
-    const switchedSession = switchedSid ? switchedProject?._sessions[switchedSid] : undefined
-    const isCodexActive = (switchedSession?.sessionProvider ?? switchedSession?.preferredProvider) === 'codex'
-    if (isCodexActive && switchedProject && switchedProject._codexSkills.length === 0 && !switchedProject._codexSkillsLoading) {
-      void get().refreshCodexSkills(projectPath)
-    }
-  },
+  focusProject: async (projectPath) => focusProjectImpl(set, get, projectPath),
 
-  ensureSession: (projectPath: string) => {
-    let created = false
-    set((s) => {
-      if (s.projectSessions[projectPath]) return {}
-      const project = createDefaultProjectState()
-      project.agents = s.harnessResources.claude?.agents ?? []
-      project.codexModels = s.harnessResources.codex?.models ?? []
-      if (defaultPrefsCache.sandboxMode) project.sandboxInfo = sandboxModeToInfo(defaultPrefsCache.sandboxMode)
-      const draftId = createSessionId()
-      project._activeSessionId = draftId
-      const newSession = createDefaultPerSessionState()
-      newSession.cwd = projectPath
-      if (defaultPrefsCache.permissionMode) newSession.permissionMode = defaultPrefsCache.permissionMode
-      applyDefaultModel(newSession, s.harnessResources.claude?.models ?? [])
-      const codexSelection = resolveDefaultCodexSelection(project.codexModels)
-      newSession.selectedCodexModel = codexSelection.modelId
-      newSession.selectedCodexReasoningEffort = codexSelection.reasoningEffort
-      project._sessions = { [draftId]: newSession }
-      created = true
-      return {
-        projectSessions: {
-          ...s.projectSessions,
-          [projectPath]: project,
-        },
-      }
-    })
-  },
+  ensureSession: (projectPath) => ensureSessionImpl(set, projectPath),
 
   sendMessage: async (content, segments, explicitMentions) => sendMessageImpl(set, get, content, segments, explicitMentions),
 
-  approveCodexPlan: async () => {
-    const { activeProject } = get()
-    if (!activeProject) return
-    if (isRemoteSession(get(), activeProject, get().projectSessions[activeProject]?._activeSessionId)) return
+  approveCodexPlan: async () => approveCodexPlanImpl(set, get),
 
-    const context = getCodexPlanActionContext(get, activeProject)
-    if (!context) return
+  rejectCodexPlan: async (feedback) => rejectCodexPlanImpl(set, get, feedback),
 
-    const userMessageId = `user_${Date.now()}`
-    const userMessage = createLocalTextUserMessage(userMessageId, CODEX_APPROVE_PLAN_PROMPT)
+  disconnectRemoteSession: () => disconnectRemoteSessionImpl(set, get),
 
-    set((s) => ({
-      ...updateActivePerSession(s, (sess) => {
-        const approvedSession = updateCodexPlanApproval(sess, context.assistantMessageId, { status: 'approved' })
-        return {
-          ...approvedSession,
-          selectedCodexCollaborationMode: 'default',
-          codexPlanRejectHintActive: false,
-          additionalDirsDirty: false,
-          messages: [...(approvedSession.messages ?? sess.messages), userMessage],
-        }
-      }),
-      isOpen: true,
-    }))
+  interrupt: async () => interruptImpl(set, get),
 
-    window.app.codexPlanApproval(activeProject, context.codexSessionId, context.assistantMessageId, 'approved')
-    window.app.codexCollaborationModeChange(activeProject, context.codexSessionId, 'default')
+  clearMessages: () => clearMessagesImpl(set, get),
 
-    await runCodexCommand(set, get, {
-      activeProject,
-      codexSessionId: context.codexSessionId,
-      session: context.session,
-      codexCommand: { kind: 'run', prompt: CODEX_APPROVE_PLAN_PROMPT },
-      finalContent: CODEX_APPROVE_PLAN_PROMPT,
-      userMessageId,
-      attachments: [],
-      selectedCodexPermissionPreset: context.session.selectedCodexPermissionPreset,
-      collaborationMode: 'default',
-      resolvedCodexModel: context.resolvedCodexModel,
-      resolvedCodexReasoningEffort: context.resolvedCodexReasoningEffort,
-    })
-  },
+  resetSessionForWorktreeSwitch: (projectPath, opts) => resetSessionForWorktreeSwitchImpl(set, get, projectPath, opts),
 
-  rejectCodexPlan: async (feedback) => {
-    const { activeProject } = get()
-    if (!activeProject) return
-    if (isRemoteSession(get(), activeProject, get().projectSessions[activeProject]?._activeSessionId)) return
-
-    const context = getCodexPlanActionContext(get, activeProject)
-    if (!context) return
-
-    const trimmedFeedback = feedback?.trim()
-    if (!trimmedFeedback) {
-      set((s) => ({
-        ...updateActivePerSession(s, (sess) => ({
-          ...updateCodexPlanApproval(sess, context.assistantMessageId, { status: 'rejected' }),
-          codexPlanRejectHintActive: true,
-          chatInputFocusNonce: sess.chatInputFocusNonce + 1,
-        })),
-        isOpen: true,
-      }))
-      window.app.codexPlanApproval(activeProject, context.codexSessionId, context.assistantMessageId, 'rejected')
-      return
-    }
-
-    const userMessageId = `user_${Date.now()}`
-    const userMessage = createLocalTextUserMessage(userMessageId, trimmedFeedback)
-
-    set((s) => ({
-      ...updateActivePerSession(s, (sess) => {
-        const rejectedSession = updateCodexPlanApproval(
-          sess,
-          context.assistantMessageId,
-          { status: 'rejected', feedback: trimmedFeedback },
-        )
-        return {
-          ...rejectedSession,
-          codexPlanRejectHintActive: false,
-          additionalDirsDirty: false,
-          messages: [...(rejectedSession.messages ?? sess.messages), userMessage],
-        }
-      }),
-      isOpen: true,
-    }))
-
-    window.app.codexPlanApproval(activeProject, context.codexSessionId, context.assistantMessageId, 'rejected', trimmedFeedback)
-
-    await runCodexCommand(set, get, {
-      activeProject,
-      codexSessionId: context.codexSessionId,
-      session: context.session,
-      codexCommand: { kind: 'run', prompt: trimmedFeedback },
-      finalContent: trimmedFeedback,
-      userMessageId,
-      attachments: [],
-      selectedCodexPermissionPreset: context.session.selectedCodexPermissionPreset,
-      collaborationMode: 'plan',
-      resolvedCodexModel: context.resolvedCodexModel,
-      resolvedCodexReasoningEffort: context.resolvedCodexReasoningEffort,
-    })
-  },
-
-  disconnectRemoteSession: () => {
-    const state = get()
-    const projectPath = state.activeProject
-    const sid = projectPath ? state.projectSessions[projectPath]?._activeSessionId ?? undefined : undefined
-    void window.agent.disconnectRemoteSession(sid)
-    if (sid && projectPath) {
-      set((s) => ({ remoteSessions: removeRemoteSession(s.remoteSessions, projectPath, sid) }))
-    } else {
-      set({ remoteSessions: {} })
-    }
-  },
-
-  interrupt: async () => {
-    const { activeProject } = get()
-    if (!activeProject) return
-    const project = getProject(get(), activeProject)
-    const sid = _getEffectiveSessionId(project)
-    set((s) => updateActivePerSession(s, () => ({ awaitingAssistantReply: false })))
-    let interrupted = false
-    try {
-      interrupted = sid ? await window.agent.interrupt(sid) : false
-    } catch {
-      interrupted = false
-    }
-    if (!interrupted) {
-      set((s) => updateActivePerSession(s, () => ({
-        status: 'idle',
-        pendingPermissions: [],
-        pendingQuestion: null,
-        pendingPlanApproval: null,
-      })))
-    }
-  },
-
-  // toggleOpen / requestChatInputFocusRestore / setCorner now provided by createCoreSlice
-
-  clearMessages: () => {
-    const { activeProject, _bashOutputs } = get()
-    if (!activeProject) return
-    const session = getActivePerSession(get())
-    const sessionToolUseIds = new Set<string>()
-    if (session) {
-      for (const msg of session.messages) {
-        for (const b of msg.content) {
-          if (b.type === 'tool_use') sessionToolUseIds.add(b.toolUseId)
-        }
-      }
-    }
-    for (const id of sessionToolUseIds) {
-      if (_bashOutputs[id]) window.app.unwatchBashOutput(id)
-    }
-    const remainingOutputs: typeof _bashOutputs = {}
-    for (const [id, val] of Object.entries(_bashOutputs)) {
-      if (!sessionToolUseIds.has(id)) remainingOutputs[id] = val
-    }
-    set((s) => ({ ...updateActivePerSession(s,() => ({
-      messages: [], session: null, totalCostUsd: 0, contextTokens: 0,
-      sessionProvider: null, slashCommandOutput: null,
-      pendingPermissions: [], pendingQuestion: null, pendingPlanApproval: null,
-      planApprovalOutcome: null, mentions: [], subagentTokens: {},
-      subagentColors: {}, _subagentColorsFree: freshSubagentColorPool(),
-      todos: {}, _nextTodoId: 1, showTodos: false, _todosUserDismissed: false,
-      awaitingAssistantReply: false,
-      codexPlanRejectHintActive: false,
-      chatInputFocusNonce: 0,
-      queuedMessages: [],
-    })), _bashOutputs: remainingOutputs }))
-  },
-
-  // removeSessionFromMemory now provided by createSessionSlice
-
-  resetSessionForWorktreeSwitch: (projectPath: string, opts?: { wtPath?: string; gitBranch?: string | null }) => {
-    const previousSid = get().projectSessions[projectPath]?._activeSessionId ?? null
-    const draftId = createSessionId()
-    set((s) => {
-      const proj = getProject(s, projectPath)
-      const newSession = createDefaultPerSessionState()
-      newSession.cwd = opts?.wtPath ?? projectPath
-      newSession._worktreePath = opts?.wtPath ?? null
-      newSession._worktreeBaseBranch = opts?.gitBranch ?? null
-      if (defaultPrefsCache.permissionMode) newSession.permissionMode = defaultPrefsCache.permissionMode
-      applyDefaultModel(newSession, s.harnessResources.claude?.models ?? [])
-      const codexSelection = resolveDefaultCodexSelection(proj.codexModels)
-      newSession.selectedCodexModel = codexSelection.modelId
-      newSession.selectedCodexReasoningEffort = codexSelection.reasoningEffort
-      return {
-        projectSessions: {
-          ...s.projectSessions,
-          [projectPath]: {
-            ...proj,
-            _activeSessionId: draftId,
-            _sessions: { ...proj._sessions, [draftId]: newSession },
-          },
-        },
-      }
-    })
-    useActivityViewStateStore.getState().seedFromCurrent(draftId)
-    void inheritMiniAppToolsForNewSession(projectPath, previousSid)
-  },
-
-  resetSession: async () => {
-    const { activeProject } = get()
-    if (!activeProject) return
-    const project = getProject(get())
-    const activeSession = getActivePerSession(get())
-    const currentSid = resolveActiveSessionId(project)
-    const nextProvider = activeSession.sessionProvider ?? activeSession.preferredProvider
-
-    // Idempotent: a pristine current session (no messages, idle, not remote, no worktree)
-    // is already "a fresh session". Creating another one just stacks empty drafts in
-    // _sessions, which later surface as duplicate "New session" rows in Ctrl+Tab
-    // (current + previous both pinned, both falling back to the same title).
-    if (
-      activeSession.messages.length === 0 &&
-      !_isLiveSession(activeSession) &&
-      !activeSession._worktreePath &&
-      !isRemoteSession(get(), activeProject, currentSid)
-    ) {
-      window.app.trace?.('session.lifecycle', 'resetSession:skip-pristine', { activeProject, currentSid })
-      return
-    }
-
-    const newSessionId = nextProvider === 'codex' ? _createLocalCodexSessionId() : createSessionId()
-    window.app.trace?.('session.lifecycle', 'resetSession', {
-      activeProject,
-      oldSid: currentSid,
-      newSessionId,
-      oldStatus: activeSession.status,
-      oldAwaitingReply: activeSession.awaitingAssistantReply,
-      oldProvider: activeSession.sessionProvider,
-      knownSids: Object.keys(project._sessions),
-    })
-
-    set((s) => {
-      const proj = getProject(s, activeProject)
-      const newSession = createDefaultPerSessionState()
-      newSession.cwd = activeProject
-      newSession.preferredProvider = nextProvider
-      newSession.sessionProvider = nextProvider
-      applyDefaultModel(newSession, s.harnessResources.claude?.models ?? [])
-      const codexSelection = resolveDefaultCodexSelection(proj.codexModels)
-      newSession.selectedCodexModel = codexSelection.modelId
-      newSession.selectedCodexReasoningEffort = codexSelection.reasoningEffort
-      return {
-        projectSessions: {
-          ...s.projectSessions,
-          [activeProject]: {
-            ...proj,
-            _activeSessionId: newSessionId,
-            _sessions: {
-              ...proj._sessions,
-              [newSessionId]: newSession,
-            },
-          },
-        },
-      }
-    })
-    useActivityViewStateStore.getState().seedFromCurrent(newSessionId)
-
-    let unlock!: () => void
-    resetLock.current = new Promise<void>((r) => { unlock = r })
-
-    let agentConfig: { permissionMode: PermissionMode; sandboxInfo: SandboxInfo } | undefined
-    try {
-      if (activeSession.sessionProvider === 'codex') {
-        if (activeSession.status !== 'streaming' && currentSid) {
-          await window.agent.resetSession(currentSid).catch(() => {})
-        }
-      } else if (
-        isRemoteSession(get(), activeProject, currentSid) ||
-        _isBusyStatus(activeSession.status) ||
-        activeSession.awaitingAssistantReply
-      ) {
-        agentConfig = await _parkActiveSession(activeProject, project._activeSessionId, newSessionId)
-      } else if (currentSid) {
-        agentConfig = (await window.agent.resetSession(currentSid, newSessionId)) ?? undefined
-      }
-
-      await useAppStore.getState().clearWorktree(activeProject)
-    } finally {
-      resetLock.current = null
-      unlock()
-    }
-
-    if (agentConfig) {
-      set((s) => {
-        const proj = s.projectSessions[activeProject]
-        if (!proj) return {}
-        const sess = proj._sessions[newSessionId]
-        if (!sess) return {}
-        return {
-          projectSessions: {
-            ...s.projectSessions,
-            [activeProject]: {
-              ...proj,
-              sandboxInfo: agentConfig!.sandboxInfo,
-              _sessions: {
-                ...proj._sessions,
-                [newSessionId]: { ...sess, permissionMode: agentConfig!.permissionMode },
-              },
-            },
-          },
-        }
-      })
-    }
-
-    void inheritMiniAppToolsForNewSession(activeProject, currentSid)
-  },
+  resetSession: async () => resetSessionImpl(set, get),
 
   // rewindFiles / rewindCodeAndChat / rewindConversation / previewRewind
   // editQueuedMessage / deleteQueuedMessage / setDraftText / assignSubagentColor /
@@ -816,292 +439,24 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
   // setSelectedCodexModel / setSelectedCodexReasoningEffort / setSelectedCodexPermissionPreset /
   // setSelectedCodexCollaborationMode / refreshCodexModels / refreshCodexSkills now provided by createCodexSlice
 
-  setPreferredProvider: (provider) => {
-    const { activeProject } = get()
-    if (!activeProject) return
-    const session = getActivePerSession(get())
-    if (session.sessionProvider && session.messages.length > 0) return
-    if (session.sessionProvider === provider || (provider === 'claude' && !session.sessionProvider && session.preferredProvider === 'claude')) {
-      return
-    }
-    const proj0 = getProject(get(), activeProject)
-    const currentSid0 = proj0._activeSessionId
-    const currentSess0 = currentSid0 ? proj0._sessions[currentSid0] : null
-    const willReplaceSid = !!currentSess0 && currentSess0.messages.length === 0
-    const nextSid = willReplaceSid
-      ? (provider === 'codex' ? _createLocalCodexSessionId() : createSessionId())
-      : null
-    set((s) => {
-      const proj = getProject(s, activeProject)
-      const currentSid = proj._activeSessionId
-      const currentSess = currentSid ? proj._sessions[currentSid] : null
-      if (currentSess && nextSid) {
-        const nextSessions = { ...proj._sessions }
-        if (currentSid) delete nextSessions[currentSid]
-        nextSessions[nextSid] = {
-          ...currentSess,
-          preferredProvider: provider,
-          sessionProvider: provider,
-          slashCommandOutput: null,
-        }
-        return {
-          projectSessions: {
-            ...s.projectSessions,
-            [activeProject]: {
-              ...proj,
-              _activeSessionId: nextSid,
-              _sessions: nextSessions,
-            },
-          },
-        }
-      }
-      return updateActivePerSession(s, () => ({ preferredProvider: provider, sessionProvider: provider, slashCommandOutput: null }))
-    })
-    if (nextSid) useActivityViewStateStore.getState().seedFromCurrent(nextSid)
-    if (provider === 'codex') {
-      const project = getProject(get(), activeProject)
-      const session = getActivePerSession(get())
-      const selected = resolveSessionCodexSelection(
-        project.codexModels,
-        session.selectedCodexModel,
-        session.selectedCodexReasoningEffort,
-      )
-      if (
-        selected.modelId !== session.selectedCodexModel
-        || selected.reasoningEffort !== session.selectedCodexReasoningEffort
-      ) {
-        set((s) => updateActivePerSession(s, () => ({
-          selectedCodexModel: selected.modelId,
-          selectedCodexReasoningEffort: selected.reasoningEffort,
-        })))
-      }
-      if (project._codexSkills.length === 0 && !project._codexSkillsLoading) {
-        void get().refreshCodexSkills(activeProject)
-      }
-    }
-    void get().initializeHarness(provider)
-  },
-
+  setPreferredProvider: (provider) => setPreferredProviderImpl(set, get, provider),
 
   // addAttachment / removeAttachment / clearAttachments now provided by createCoreSlice
 
-  respondToPermission: async (requestId, allow, alwaysAllow, reason, selectedSuggestions, decision, formAnswers) => {
-    const { activeProject } = get()
-    if (!activeProject) return false
-    const session = getActivePerSession(get(), activeProject)
-    const respondedRequest = session.pendingPermissions.find((p) => p.requestId === requestId)
-    if (!respondedRequest) {
-      window.app.trace?.('permission.flow', 'click_miss', { reason: 'not_in_active_session_pending', activeProject }, requestId)
-      return false
-    }
-    const activeSid = getProject(get(), activeProject)._activeSessionId ?? undefined
-    window.app.trace?.('permission.flow', 'user_click', { allow, activeSid, provider: session.sessionProvider }, requestId)
-    let handled = false
-    try {
-      const targetSid = _getEffectiveSessionId(getProject(get(), activeProject)) ?? activeSid
-      if (targetSid) handled = await window.agent.respondToPermission(targetSid, requestId, allow, alwaysAllow, reason, selectedSuggestions, decision, formAnswers)
-    } catch (err) {
-      console.warn('[chat] respondToPermission failed:', err)
-      return false
-    }
-    if (!handled) {
-      window.app.trace?.('permission.flow', 'ack_miss', { activeProject, activeSid, provider: session.sessionProvider }, requestId)
-      return false
-    }
-    set((s) => {
-      const perSessionUpdate = updateActivePerSession(s, (sess) => {
-        const updates: Partial<PerSessionState> = {
-          pendingPermissions: sess.pendingPermissions.filter((p) => p.requestId !== requestId),
-        }
-        if (allow && selectedSuggestions) {
-          const mode = extractModeFromSuggestions(respondedRequest?.suggestions, selectedSuggestions)
-          if (mode) updates.permissionMode = mode as PermissionMode
-        }
-        return updates
-      })
-      const proj = (perSessionUpdate.projectSessions ?? s.projectSessions)[activeProject]
-      if (proj) {
-        return {
-          projectSessions: {
-            ...(perSessionUpdate.projectSessions ?? s.projectSessions),
-            [activeProject]: { ...proj, hasPendingInteraction: _computeHasPendingInteraction(proj) },
-          },
-        }
-      }
-      return perSessionUpdate
-    })
-    return true
-  },
-
-  setPermissionMode: async (mode) => {
-    const { activeProject } = get()
-    if (!activeProject) return
-    await window.agent.setPermissionMode(activeProject, mode)
-    set((s) => updateActivePerSession(s, () => ({ permissionMode: mode })))
-  },
-
-  answerQuestion: (requestId, answers, annotations) => {
-    const { activeProject } = get()
-    if (!activeProject) return
-    const session = getActivePerSession(get(), activeProject)
-    const activeSid = getProject(get(), activeProject)._activeSessionId ?? undefined
-    const targetSid = _getEffectiveSessionId(getProject(get(), activeProject)) ?? activeSid
-    if (targetSid) void window.agent.answerQuestion(targetSid, requestId, answers, annotations)
-    const codexQaItem = session.sessionProvider === 'codex' && session.pendingQuestion
-      ? _buildQuestionAnswerItem(session.pendingQuestion.questions, answers)
-      : null
-    set((s) => {
-      const perSessionUpdate = updateActivePerSession(s, (prev) => {
-        if (!codexQaItem) return { pendingQuestion: null }
-        const lastMsg = prev.messages[prev.messages.length - 1]
-        if (!lastMsg?.metadata?.codex) return { pendingQuestion: null }
-        const prevCodex = lastMsg.metadata.codex
-        return {
-          pendingQuestion: null,
-          messages: prev.messages.map((msg, i) =>
-            i !== prev.messages.length - 1 ? msg : {
-              ...msg,
-              metadata: { ...msg.metadata, codex: { ...prevCodex, items: [...prevCodex.items, codexQaItem] } },
-            },
-          ),
-        }
-      })
-      const proj = (perSessionUpdate.projectSessions ?? s.projectSessions)[activeProject]
-      if (proj) {
-        return {
-          projectSessions: {
-            ...(perSessionUpdate.projectSessions ?? s.projectSessions),
-            [activeProject]: { ...proj, hasPendingInteraction: _computeHasPendingInteraction(proj) },
-          },
-        }
-      }
-      return perSessionUpdate
-    })
-  },
-
-  dismissQuestion: (requestId) => {
-    const { activeProject } = get()
-    if (!activeProject) return
-    const activeSid = getProject(get(), activeProject)._activeSessionId ?? undefined
-    const targetSid = _getEffectiveSessionId(getProject(get(), activeProject)) ?? activeSid
-    if (targetSid) void window.agent.dismissQuestion(targetSid, requestId)
-    set((s) => {
-      const perSessionUpdate = updateActivePerSession(s, () => ({ pendingQuestion: null }))
-      const proj = (perSessionUpdate.projectSessions ?? s.projectSessions)[activeProject]
-      if (proj) {
-        return {
-          projectSessions: {
-            ...(perSessionUpdate.projectSessions ?? s.projectSessions),
-            [activeProject]: { ...proj, hasPendingInteraction: _computeHasPendingInteraction(proj) },
-          },
-        }
-      }
-      return perSessionUpdate
-    })
-  },
-
-  respondToPlanApproval: (requestId, approved, feedback, postApprovalMode) => {
-    const { activeProject } = get()
-    if (!activeProject) return
-    const activeSid = getProject(get(), activeProject)._activeSessionId ?? undefined
-    const targetSid = _getEffectiveSessionId(getProject(get(), activeProject)) ?? activeSid
-    if (targetSid) window.agent.respondToPlanApproval(targetSid, requestId, approved, feedback)
-    if (approved) {
-      const nextMode: PermissionMode = postApprovalMode ?? 'default'
-      void window.agent.setPermissionMode(activeProject, nextMode)
-    }
-    set((s) => {
-      const perSessionUpdate = updateActivePerSession(s, () => ({
-        pendingPlanApproval: null,
-        planApprovalOutcome: { approved, feedback },
-        ...(approved && { permissionMode: (postApprovalMode ?? 'default') as PermissionMode }),
-      }))
-      const proj = (perSessionUpdate.projectSessions ?? s.projectSessions)[activeProject]
-      if (proj) {
-        return {
-          projectSessions: {
-            ...(perSessionUpdate.projectSessions ?? s.projectSessions),
-            [activeProject]: { ...proj, hasPendingInteraction: _computeHasPendingInteraction(proj) },
-          },
-        }
-      }
-      return perSessionUpdate
-    })
-  },
-
-  setSandboxMode: async (mode) => {
-    const { activeProject } = get()
-    if (!activeProject) return
-    if (mode !== 'off') {
-      const capability = useAppStore.getState().sandboxCapability
-      if (capability?.supportLevel === 'unsupported') return
-      if (capability?.supportLevel === 'conditional') {
-        const probe = await useAppStore.getState().probeSandbox()
-        if (!probe.ok) return
-      }
-    }
-    const updated = await window.agent.setSandboxMode(activeProject, mode)
-    set((s) => updateProjectState(s, activeProject, () => ({ sandboxInfo: updated })))
-  },
-
-  cyclePermissionMode: () => {
-    const session = getActivePerSession(get())
-    const claude = get().harnessResources.claude
-    const account = claude?.account ?? {}
-    const availableModels = claude?.models ?? []
-    const modelInfo = availableModels.find((m) => m.id === session.selectedModel)
-    const startIdx = PERMISSION_MODES.indexOf(session.permissionMode)
-    const anchor = startIdx === -1 ? 0 : startIdx
-    for (let step = 1; step <= PERMISSION_MODES.length; step++) {
-      const candidate = PERMISSION_MODES[(anchor + step) % PERMISSION_MODES.length]
-      if (candidate === 'auto') {
-        const elig = checkAutoModeEligibility({
-          subscriptionType: account?.subscriptionType,
-          apiProvider: account?.apiProvider,
-          modelSupportsAutoMode: modelInfo?.supportsAutoMode,
-        })
-        if (!elig.ok) continue
-      }
-      get().setPermissionMode(candidate)
-      return
-    }
-  },
-
-  togglePlanModeShortcut: () => {
-    const session = getActivePerSession(get())
-    const provider = resolveProvider(session)
-    if (provider === 'codex') {
-      const next: CodexCollaborationMode = session.selectedCodexCollaborationMode === 'plan' ? 'default' : 'plan'
-      get().setSelectedCodexCollaborationMode(next)
-      return
-    }
-    get().cyclePermissionMode()
-  },
-
+  respondToPermission: async (requestId, allow, alwaysAllow, reason, selectedSuggestions, decision, formAnswers) =>
+    respondToPermissionImpl(set, get, requestId, allow, alwaysAllow, reason, selectedSuggestions, decision, formAnswers),
+  setPermissionMode: async (mode) => setPermissionModeImpl(set, get, mode),
+  answerQuestion: (requestId, answers, annotations) => answerQuestionImpl(set, get, requestId, answers, annotations),
+  dismissQuestion: (requestId) => dismissQuestionImpl(set, get, requestId),
+  respondToPlanApproval: (requestId, approved, feedback, postApprovalMode) =>
+    respondToPlanApprovalImpl(set, get, requestId, approved, feedback, postApprovalMode),
+  setSandboxMode: async (mode) => setSandboxModeImpl(set, get, mode),
+  cyclePermissionMode: () => cyclePermissionModeImpl(get),
+  togglePlanModeShortcut: () => togglePlanModeShortcutImpl(get),
 
   // dismissSlashCommandOutput / openProviderPopup / openMcpPopup now provided by createCoreSlice
 
-  setSessionApiProviderId: async (apiProviderId) => {
-    const { activeProject } = get()
-    if (!activeProject) return
-    const project = getProject(get(), activeProject)
-    const sessionId = project._activeSessionId
-    if (!sessionId) return
-    set((s) => updateActivePerSession(s, () => ({
-      apiProviderId,
-      slashCommandOutput: null,
-    })))
-    const sess = project._sessions[sessionId]
-    const isCodex = (sess?.sessionProvider ?? sess?.preferredProvider ?? 'claude') === 'codex'
-    try {
-      await window.agent.setSessionApiProvider(sessionId, apiProviderId)
-    } catch (err) {
-      console.warn('[chat] setSessionApiProvider failed:', err)
-    }
-    if (isCodex) {
-      void get().refreshCodexModels(false)
-    }
-  },
+  setSessionApiProviderId: async (apiProviderId) => setSessionApiProviderIdImpl(set, get, apiProviderId),
 
   // toggleTodos / addMention / removeMention / setMiniAppContext / clearMiniAppContext /
   // toggleMiniAppContext / addUserSelection / removeUserSelectionAt / clearUserSelections

@@ -1,0 +1,84 @@
+import type { AgentEvent } from '@superone/shared/agent-types'
+import type { PerSessionState } from '../types'
+
+type PermissionEvent = Extract<AgentEvent, {
+  type:
+    | 'permission_request'
+    | 'permission_mode_change'
+    | 'agent_setting_change'
+    | 'interaction_resolved'
+}>
+
+export function reducePermission(session: PerSessionState, event: PermissionEvent): Partial<PerSessionState> {
+  switch (event.type) {
+    case 'permission_request':
+      if (session.pendingPermissions.some((p) => p.requestId === event.request.requestId)) return {}
+      return { pendingPermissions: [...session.pendingPermissions, event.request] }
+
+    case 'permission_mode_change':
+      return { permissionMode: event.mode }
+
+    case 'agent_setting_change': {
+      const patch: Partial<PerSessionState> = {}
+      const eventPatch = event.patch ?? {}
+      const merged = {
+        selectedModel: eventPatch.selectedModel ?? event.selectedModel,
+        selectedEffort: eventPatch.selectedEffort ?? event.selectedEffort,
+        selectedCodexModel: eventPatch.selectedCodexModel,
+        selectedCodexReasoningEffort: eventPatch.selectedCodexReasoningEffort,
+        selectedCodexPermissionPreset: eventPatch.selectedCodexPermissionPreset,
+        selectedCodexCollaborationMode: eventPatch.selectedCodexCollaborationMode,
+        permissionMode: eventPatch.permissionMode,
+        apiProviderId: eventPatch.apiProviderId,
+      }
+      if (merged.selectedModel !== undefined) {
+        patch.selectedModel = merged.selectedModel ?? ''
+        patch.modelUserChosen = true
+      }
+      if (merged.selectedEffort !== undefined) {
+        patch.selectedEffort = merged.selectedEffort ?? undefined
+        patch.effortUserChosen = true
+      }
+      if (merged.selectedCodexModel !== undefined) {
+        patch.selectedCodexModel = merged.selectedCodexModel ?? ''
+        patch.codexModelUserChosen = true
+      }
+      if (merged.selectedCodexReasoningEffort !== undefined) {
+        patch.selectedCodexReasoningEffort = merged.selectedCodexReasoningEffort ?? undefined
+        patch.codexReasoningEffortUserChosen = true
+      }
+      if (merged.selectedCodexPermissionPreset != null) {
+        patch.selectedCodexPermissionPreset = merged.selectedCodexPermissionPreset
+      }
+      if (merged.selectedCodexCollaborationMode != null) {
+        patch.selectedCodexCollaborationMode = merged.selectedCodexCollaborationMode
+        patch.codexPlanRejectHintActive = false
+      }
+      if (merged.permissionMode !== undefined) {
+        patch.permissionMode = merged.permissionMode
+      }
+      if (merged.apiProviderId !== undefined) {
+        patch.apiProviderId = merged.apiProviderId ?? null
+      }
+      return patch
+    }
+
+    case 'interaction_resolved':
+      switch (event.interactionType) {
+        case 'permission':
+          return { pendingPermissions: session.pendingPermissions.filter((p) => p.requestId !== event.requestId) }
+        case 'question':
+          if (session.pendingQuestion?.requestId === event.requestId) return { pendingQuestion: null }
+          return {}
+        case 'plan_approval':
+          if (session.pendingPlanApproval?.requestId === event.requestId) {
+            return {
+              pendingPlanApproval: null,
+              planApprovalOutcome: { approved: !!event.approved, ...(event.feedback ? { feedback: event.feedback } : {}) },
+            }
+          }
+          return {}
+      }
+      return {}
+  }
+}

@@ -1,0 +1,118 @@
+import type { CodexAgentMessageItem, PermissionMode, SandboxInfo, UserQuestion } from '@superone/shared/agent-types'
+import type { ChatStore, PerSessionState, ProjectState } from '../types'
+import { _getSessionCwd } from './persistence'
+import { resolveActiveSessionId, updateActivePerSession } from './store-helpers'
+
+export type ChatStoreSet = (
+  partial: Partial<ChatStore> | ((state: ChatStore) => Partial<ChatStore>),
+  replace?: false,
+) => void
+
+export async function _syncAndResumeSession(
+  projectPath: string,
+  sessionId: string,
+  set: ChatStoreSet,
+  cwd: string,
+): Promise<void> {
+  const result = await window.app.resumeSession(projectPath, sessionId, cwd)
+  if (!result) return
+  set((s) => {
+    const proj = s.projectSessions[projectPath]
+    if (!proj) return {}
+    const sess = proj._sessions[sessionId]
+    if (!sess) return {}
+    return {
+      projectSessions: {
+        ...s.projectSessions,
+        [projectPath]: {
+          ...proj,
+          sandboxInfo: result.sandboxInfo,
+          _sessions: {
+            ...proj._sessions,
+            [sessionId]: { ...sess, permissionMode: result.permissionMode },
+          },
+        },
+      },
+    }
+  })
+}
+
+export function _truncateAtCheckpoint(
+  set: (fn: (s: ChatStore) => Partial<ChatStore>) => void,
+  _get: () => ChatStore,
+  projectPath: string,
+  checkpointId: string,
+): void {
+  set((s) => updateActivePerSession(s, (sess) => {
+    const idx = sess.messages.findIndex((m) => m.checkpointId === checkpointId)
+    const truncated = idx >= 0 ? sess.messages.slice(0, idx) : sess.messages
+    return { messages: truncated, session: null, totalCostUsd: 0, contextTokens: 0 }
+  }))
+  window.agent.truncateAtCheckpoint(projectPath, checkpointId).catch((err) => {
+    console.warn('[chat] truncateAtCheckpoint failed:', err)
+  })
+}
+
+export function _buildQuestionAnswerItem(
+  questions: UserQuestion[],
+  answers: Record<string, string>,
+): CodexAgentMessageItem {
+  const lines = questions.map((q) => {
+    const key = q.question
+    const answer = answers[key]?.trim()
+    return `**${q.question}**\n${answer || '_(dismissed)_'}`
+  })
+  return {
+    id: `qa-${Date.now()}`,
+    type: 'agent_message',
+    text: lines.join('\n\n'),
+  }
+}
+
+export function _computeHasPendingInteraction(project: ProjectState): boolean {
+  return Object.values(project._sessions).some(
+    (s) => s.pendingPermissions.length > 0 || !!s.pendingQuestion || !!s.pendingPlanApproval,
+  )
+}
+
+export function _isBusyStatus(status: PerSessionState['status']): boolean {
+  return status === 'streaming' || status === 'background'
+}
+
+export function _isLiveSession(session: PerSessionState | undefined): boolean {
+  return !!session && (
+    _isBusyStatus(session.status)
+    || session.pendingPermissions.length > 0
+    || !!session.pendingQuestion
+    || !!session.pendingPlanApproval
+    || !!session.awaitingAssistantReply
+  )
+}
+
+export function _needsForegroundActivation(session: PerSessionState): boolean {
+  return _isBusyStatus(session.status)
+    || session.pendingPermissions.length > 0
+    || !!session.pendingQuestion
+    || !!session.pendingPlanApproval
+}
+
+export function _parkActiveSession(
+  projectPath: string,
+  _activeSessionId: string | null,
+  _newSessionId?: string,
+): Promise<{ permissionMode: PermissionMode; sandboxInfo: SandboxInfo }> {
+  return window.agent.parkSession(projectPath)
+}
+
+export async function _ensureClaudeSessionReadyForSend(
+  get: () => ChatStore,
+  projectPath: string,
+): Promise<void> {
+  const project = get().projectSessions[projectPath]
+  if (!project) return
+  const sessionId = resolveActiveSessionId(project)
+  if (!sessionId) return
+  const session = project._sessions[sessionId]
+  if (!session || session.sessionProvider === 'codex') return
+  await window.app.resumeSession(projectPath, sessionId, _getSessionCwd(projectPath, session))
+}

@@ -119,260 +119,84 @@ export function persistStreamingToolInput(messages: ChatMessage[], messageId: st
 // PerSessionState / ProjectState / ActiveSessionView are now defined in ./types
 // createSessionId / createDefaultPerSessionState / getDefaultEffortForModel moved to ./defaults
 
-function resolveDefaultClaudeModel(models: ModelOption[]): ModelOption | undefined {
-  const preferredId = _cachedDefaultClaudeSelection?.modelId
-  if (preferredId) {
-    const match = models.find((m) => m.id === preferredId)
-    if (match) return match
-  }
-  return models[0]
-}
+export {
+  _computeClaudeDefaultPatch,
+  _computeCodexDefaultPatch,
+  _reapplyAgentDefaultsToSessions,
+  applyDefaultModel,
+  applySessionAgentDefaults,
+  resolveDefaultClaudeEffort,
+  resolveDefaultClaudeModel,
+} from './helpers/agent-defaults'
 
-function resolveDefaultClaudeEffort(model: ModelOption | undefined): EffortLevel | undefined {
-  const preferredEffort = _cachedDefaultClaudeSelection?.effort
-  const supported = model?.supportedEffortLevels
-  if (preferredEffort && supported?.includes(preferredEffort)) {
-    return preferredEffort
-  }
-  return getDefaultEffortForModel(model)
-}
-
-function applyDefaultModel(session: PerSessionState, models: ModelOption[]): void {
-  const defaultModel = resolveDefaultClaudeModel(models)
-  if (defaultModel) {
-    session.selectedModel = defaultModel.id
-    const effort = resolveDefaultClaudeEffort(defaultModel)
-    if (effort) session.selectedEffort = effort
-  }
-}
-
-/**
- * The ONLY place switchSession dispatches on harness identity. Resolves the
- * model/effort defaults for a session based on the session's own declared
- * provider (data it already carries), never on an out-of-band identity check.
- * Returns a patch so it composes with both updatePerSession and a freshly
- * built restored session.
- */
-function applySessionAgentDefaults(
-  session: PerSessionState,
-  project: ProjectState,
-  claudeModels: ModelOption[],
-): Partial<PerSessionState> {
-  const provider = resolveProvider(session)
-  if (provider === 'codex') {
-    const sel = resolveSessionCodexSelection(
-      project.codexModels,
-      session.selectedCodexModel,
-      session.selectedCodexReasoningEffort,
-    )
-    return { selectedCodexModel: sel.modelId, selectedCodexReasoningEffort: sel.reasoningEffort }
-  }
-  if (!session.selectedModel) {
-    const draft = { ...session }
-    applyDefaultModel(draft, claudeModels)
-    return { selectedModel: draft.selectedModel, selectedEffort: draft.selectedEffort }
-  }
-  return {}
-}
+import {
+  _reapplyAgentDefaultsToSessions,
+  applyDefaultModel,
+  applySessionAgentDefaults,
+} from './helpers/agent-defaults'
 
 // createDefaultProjectState moved to ./defaults
 
 // --- Store interface ---
 // ToolRendererState / ChatStore are now defined in ./types
 
-// --- Helper: get or create session state for a project ---
+export {
+  getProject,
+  getActivePerSession,
+  mergeProjectAndSessionDirs,
+  triggerPrewarm,
+  schedulePrewarmKeepalive,
+  inheritMiniAppToolsForNewSession,
+  updateProjectState,
+  updatePerSession,
+  updateActivePerSession,
+  resolveActiveSessionId,
+} from './helpers/store-helpers'
 
-export function getProject(state: ChatStore, projectPath?: string | null): ProjectState {
-  const key = projectPath ?? state.activeProject
-  if (!key) return createDefaultProjectState()
-  return state.projectSessions[key] ?? createDefaultProjectState()
-}
+import {
+  getProject,
+  getActivePerSession,
+  mergeProjectAndSessionDirs,
+  triggerPrewarm,
+  schedulePrewarmKeepalive,
+  inheritMiniAppToolsForNewSession,
+  updateProjectState,
+  updatePerSession,
+  updateActivePerSession,
+  resolveActiveSessionId,
+} from './helpers/store-helpers'
 
-export function getActivePerSession(state: ChatStore, projectPath?: string | null): PerSessionState {
-  const proj = getProject(state, projectPath)
-  if (!proj._activeSessionId) return createDefaultPerSessionState()
-  return proj._sessions[proj._activeSessionId] ?? createDefaultPerSessionState()
-}
+export {
+  createLocalTextUserMessage,
+  getCodexCompletionEventMeta,
+  getCodexContextTokens,
+  getCodexHelpText,
+  getCodexPlanActionContext,
+  getCodexTraceItems,
+  isRunnableCodexCommand,
+  pruneTransientCodexItems,
+  readLastCodexSelection,
+  resolveDefaultCodexSelection,
+  resolveSessionCodexSelection,
+  saveLastCodexSelection,
+  summarizeCodexTraceItem,
+  updateCodexPlanApproval,
+  type CodexRunnableCommand,
+} from './helpers/codex-helpers'
 
-function mergeProjectAndSessionDirs(project: ProjectState, session: PerSessionState): string[] {
-  return [...new Set([
-    ...project.userAdditionalDirs,
-    ...project.projectAdditionalDirs,
-    ...session.additionalDirs,
-  ])]
-}
-
-export function triggerPrewarm(state: ChatStore, projectPath?: string | null): void {
-  const key = projectPath ?? state.activeProject
-  if (!key) return
-  const session = getActivePerSession(state, key)
-  const provider = resolveProvider(session)
-  if (typeof window.agent?.prewarm !== 'function') return
-  const dirs = mergeProjectAndSessionDirs(getProject(state, key), session)
-  const project = getProject(state, key)
-  const hint: AgentPrewarmHint = {
-    provider,
-    model: provider === 'codex' ? session.selectedCodexModel || undefined : session.selectedModel || undefined,
-    effort: provider === 'claude' ? session.selectedEffort : undefined,
-    additionalDirs: dirs.length > 0 ? dirs : undefined,
-    sessionId: project._activeSessionId ?? undefined,
-  }
-  void window.agent.prewarm(key, hint).catch(() => {})
-}
-
-const PREWARM_KEEPALIVE_INTERVAL_MS = 30_000
-const _prewarmLastSentByKey = new Map<string, number>()
-
-export function schedulePrewarmKeepalive(state: ChatStore, projectPath?: string | null): void {
-  const key = projectPath ?? state.activeProject
-  if (!key) return
-  const now = Date.now()
-  const last = _prewarmLastSentByKey.get(key) ?? 0
-  if (now - last < PREWARM_KEEPALIVE_INTERVAL_MS) return
-  _prewarmLastSentByKey.set(key, now)
-  triggerPrewarm(state, key)
-}
-
-async function inheritMiniAppToolsForNewSession(
-  projectPath: string,
-  previousSid: string | null | undefined,
-): Promise<void> {
-  if (typeof window === 'undefined' || !window.miniapp?.authorize) return
-  if (!previousSid) return
-  const { useMiniAppStore } = await import('../miniapp')
-  const newSid = useChatStore.getState().projectSessions[projectPath]?._activeSessionId
-  if (!newSid || newSid === previousSid) return
-  const inherited = Object.values(useMiniAppStore.getState().openApps)
-    .filter((a) => a.projectDir === projectPath && a.holderSessions.has(previousSid))
-  if (inherited.length === 0) return
-  const appIds = inherited.map((a) => a.entry.id)
-  window.app.trace?.('miniapp.session', 'inherit-tools', { projectPath, previousSid, newSid, appIds })
-  try {
-    await window.miniapp.authorize(appIds, projectPath, newSid)
-    useMiniAppStore.setState((s) => {
-      const nextOpen = { ...s.openApps }
-      for (const [key, val] of Object.entries(s.openApps)) {
-        if (val.projectDir === projectPath && appIds.includes(val.entry.id)) {
-          nextOpen[key] = { ...val, holderSessions: new Set([...val.holderSessions, newSid]) }
-        }
-      }
-      return { openApps: nextOpen }
-    })
-  } catch (err) {
-    console.error('[inheritMiniAppToolsForNewSession] authorize failed:', err)
-  }
-}
-
-export function updateProjectState(
-  state: ChatStore,
-  projectPath: string,
-  updater: (p: ProjectState) => Partial<ProjectState>,
-): Partial<ChatStore> {
-  const project = state.projectSessions[projectPath] ?? createDefaultProjectState()
-  const updates = updater(project)
-  return {
-    projectSessions: {
-      ...state.projectSessions,
-      [projectPath]: { ...project, ...updates },
-    },
-  }
-}
-
-export function updatePerSession(
-  state: ChatStore,
-  projectPath: string,
-  sessionId: string,
-  updater: (s: PerSessionState) => Partial<PerSessionState>,
-): Partial<ChatStore> {
-  const project = state.projectSessions[projectPath] ?? createDefaultProjectState()
-  const session = project._sessions[sessionId] ?? createDefaultPerSessionState()
-  const updates = updater(session)
-  return {
-    projectSessions: {
-      ...state.projectSessions,
-      [projectPath]: {
-        ...project,
-        _sessions: {
-          ...project._sessions,
-          [sessionId]: { ...session, ...updates },
-        },
-      },
-    },
-  }
-}
-
-export function updateActivePerSession(
-  state: ChatStore,
-  updater: (s: PerSessionState) => Partial<PerSessionState>,
-): Partial<ChatStore> {
-  const key = state.activeProject
-  if (!key) return {}
-  const project = state.projectSessions[key] ?? createDefaultProjectState()
-  const sid = project._activeSessionId
-  if (!sid) return {}
-  return updatePerSession(state, key, sid, updater)
-}
-
-function resolveActiveSessionId(project: ProjectState): string | null {
-  return project._activeSessionId ?? null
-}
-
-function pruneTransientCodexItems(items: CodexThreadItem[]): CodexThreadItem[] {
-  return items
-}
-
-function getCodexTraceTextLength(item: CodexThreadItem): number | undefined {
-  switch (item.type) {
-    case 'agent_message':
-    case 'reasoning':
-    case 'plan':
-    case 'review':
-      return item.text.length
-    default:
-      return undefined
-  }
-}
-
-export function summarizeCodexTraceItem(item: CodexThreadItem): { id: string; type: CodexThreadItem['type']; textLen?: number } {
-  const textLen = getCodexTraceTextLength(item)
-  return textLen === undefined
-    ? { id: item.id, type: item.type }
-    : { id: item.id, type: item.type, textLen }
-}
-
-export function getCodexTraceItems(message: ChatMessage | undefined | null): {
-  length: number
-  tail: Array<{ id: string; type: CodexThreadItem['type']; textLen?: number }>
-} {
-  const items = message?.metadata?.codex?.items ?? []
-  return {
-    length: items.length,
-    tail: items.slice(-3).map(summarizeCodexTraceItem),
-  }
-}
-
-export function getCodexContextTokens(usage: CodexUsageInfo): number {
-  return usage.lastInputTokens
-}
-
-export function getCodexCompletionEventMeta(metadata: ChatMessage['metadata'] | undefined): {
-  finalResponse?: string
-  durationMs?: number
-  threadId: string | null
-  usage: CodexUsageInfo | null
-  items: CodexThreadItem[]
-} | null {
-  const rawCodex = metadata?.codex
-  if (!rawCodex || typeof rawCodex !== 'object') return null
-  const codex = rawCodex as unknown as Record<string, unknown>
-  return {
-    finalResponse: typeof codex.finalResponse === 'string' ? codex.finalResponse : undefined,
-    durationMs: typeof codex.durationMs === 'number' && Number.isFinite(codex.durationMs) ? codex.durationMs : undefined,
-    threadId: typeof codex.threadId === 'string' || codex.threadId === null ? codex.threadId : null,
-    usage: hasValidCodexUsageSnapshot(codex.usage as CodexUsageInfo | null) ? codex.usage as CodexUsageInfo : null,
-    items: Array.isArray(codex.items) ? codex.items as CodexThreadItem[] : [],
-  }
-}
+import {
+  createLocalTextUserMessage,
+  getCodexCompletionEventMeta,
+  getCodexContextTokens,
+  getCodexHelpText,
+  getCodexPlanActionContext,
+  isRunnableCodexCommand,
+  pruneTransientCodexItems,
+  resolveDefaultCodexSelection,
+  resolveSessionCodexSelection,
+  updateCodexPlanApproval,
+  type CodexRunnableCommand,
+} from './helpers/codex-helpers'
 
 // --- Apply agent event to a session (pure function) ---
 
@@ -1168,177 +992,40 @@ export function applyEventToSession(session: PerSessionState, event: AgentEvent)
   return {}
 }
 
-// --- Auto-save helper ---
+export {
+  _getEffectiveSessionId,
+  _createLocalCodexSessionId,
+  _getWorktreeBranch,
+  _getSessionCwd,
+  _mergePersistedMessages,
+  _mergePersistedSessionState,
+  _ensureSessionHydrated,
+  _hydrateSessionState,
+} from './helpers/persistence'
 
-const CODEX_LOCAL_SESSION_PREFIX = 'codex_local_'
+import {
+  _createLocalCodexSessionId,
+  _ensureSessionHydrated,
+  _getEffectiveSessionId,
+  _getSessionCwd,
+  _hydrateSessionState,
+} from './helpers/persistence'
 
-/** Resolve the effective sessionId for saving from a project state. */
-export function _getEffectiveSessionId(project: ProjectState): string | null {
-  return resolveActiveSessionId(project)
-}
+export {
+  _clearDefaultPrefsCache,
+  _getDefaultPermissionMode,
+  _loadDefaultSessionPrefs,
+  defaultPrefsCache,
+  sandboxModeToInfo,
+} from './helpers/prefs-cache'
 
-function _createLocalCodexSessionId(): string {
-  const ts = Date.now().toString(36)
-  const rand = Math.random().toString(36).slice(2, 10)
-  return `${CODEX_LOCAL_SESSION_PREFIX}${ts}_${rand}`
-}
-
-function _getWorktreeBranch(_projectPath: string, session: PerSessionState): string | undefined {
-  return session._worktreeBaseBranch ?? undefined
-}
-
-function _getSessionCwd(projectPath: string, session: Pick<PerSessionState, '_worktreePath' | '_worktreeRemoved'> | null | undefined): string {
-  return session?._worktreePath && !session._worktreeRemoved ? session._worktreePath : projectPath
-}
-
-// PersistedSessionState moved to ./types
-function _mergePersistedMessages(savedMessages: ChatMessage[], runtimeMessages: ChatMessage[]): ChatMessage[] {
-  const runtimeById = new Map(runtimeMessages.map((message) => [message.id, message]))
-  const merged = savedMessages.map((message) => runtimeById.get(message.id) ?? message)
-  const seen = new Set(merged.map((message) => message.id))
-  for (const message of runtimeMessages) {
-    if (seen.has(message.id)) continue
-    merged.push(message)
-    seen.add(message.id)
-  }
-  return merged
-}
-
-function _mergePersistedSessionState(session: PerSessionState, saved: PersistedSessionState): PerSessionState {
-  const mergedMessages = _mergePersistedMessages(saved.messages, session.messages)
-  const persistedProvider = saved.provider
-  return {
-    ...session,
-    _title: session._title ?? saved.title ?? null,
-    messages: mergedMessages,
-    totalCostUsd: Math.max(session.totalCostUsd, saved.totalCostUsd),
-    contextTokens: Math.max(session.contextTokens, saved.contextTokens),
-    sessionProvider: session.sessionProvider ?? persistedProvider,
-    preferredProvider: session.sessionProvider ? session.preferredProvider : persistedProvider,
-    _worktreeBaseBranch: session._worktreeBaseBranch ?? saved.gitBranch,
-    _worktreePath: session._worktreePath ?? saved.worktreePath,
-    lastAssistantMessageId: mergedMessages.findLast((message) => message.role === 'assistant')?.id ?? session.lastAssistantMessageId,
-    apiProviderId: session.apiProviderId ?? saved.apiProviderId ?? null,
-    _historyHydrated: true,
-  }
-}
-
-export async function _ensureSessionHydrated(sessionId: string, session: PerSessionState): Promise<PerSessionState | null> {
-  if (session._historyHydrated) return session
-  try {
-    const saved = await window.app.loadSessionState(sessionId) as PersistedSessionState | null
-    if (!saved) return { ...session, _historyHydrated: true }
-    return _mergePersistedSessionState(session, saved)
-  } catch (err) {
-    console.warn('[ensureSessionHydrated] failed:', err)
-    return null
-  }
-}
-
-type ChatStoreSetter = (updater: (state: ChatStore) => Partial<ChatStore>) => void
-
-export function _hydrateSessionState(
-  set: ChatStoreSetter,
-  projectPath: string,
-  sessionId: string,
-): void {
-  window.app.loadSessionState(sessionId)
-    .then((saved) => {
-      set((state) => {
-        const project = state.projectSessions[projectPath]
-        const session = project?._sessions[sessionId]
-        if (!project || !session || session._historyHydrated) return {}
-        const hydrated = saved
-          ? _mergePersistedSessionState(session, saved as PersistedSessionState)
-          : { ...session, _historyHydrated: true }
-        return {
-          projectSessions: {
-            ...state.projectSessions,
-            [projectPath]: {
-              ...project,
-              _sessions: { ...project._sessions, [sessionId]: hydrated },
-            },
-          },
-        }
-      })
-    })
-    .catch((err) => console.warn('[sessionHydrate] failed:', err))
-}
-
-let _cachedDefaultPermissionMode: PermissionMode | null = null
-let _cachedDefaultSandboxMode: SandboxMode | null = null
-let _cachedDefaultClaudeSelection: { modelId: string; effort?: EffortLevel } | null = null
-let _cachedDefaultCodexSelection: { modelId: string; reasoningEffort?: CodexReasoningEffort } | null = null
-
-function toCodexReasoningEffort(value: unknown): CodexReasoningEffort | undefined {
-  switch (value) {
-    case 'minimal':
-    case 'low':
-    case 'medium':
-    case 'high':
-    case 'xhigh':
-      return value
-    default:
-      return undefined
-  }
-}
-
-function toEffortLevel(value: unknown): EffortLevel | undefined {
-  switch (value) {
-    case 'low':
-    case 'medium':
-    case 'high':
-    case 'xhigh':
-    case 'max':
-      return value
-    default:
-      return undefined
-  }
-}
-
-function resolveDefaultSandboxMode(stored: SandboxMode | null): SandboxMode | null {
-  const capability = useAppStore.getState().sandboxCapability
-  if (capability?.supportLevel === 'unsupported') return 'off'
-  if (stored) return stored
-  return capability?.defaultMode ?? null
-}
-
-async function _loadDefaultSessionPrefs(): Promise<void> {
-  try {
-    const appSettings = await window.app.getAppSettings()
-    const claude = appSettings.agentPreference?.claude
-    _cachedDefaultPermissionMode = (claude?.defaultPermissionMode as PermissionMode) || 'default'
-    _cachedDefaultSandboxMode = resolveDefaultSandboxMode((claude?.defaultSandboxMode as SandboxMode) || null)
-    _cachedDefaultClaudeSelection = {
-      modelId: typeof claude?.defaultModel === 'string' ? claude.defaultModel : '',
-      effort: toEffortLevel(claude?.defaultEffort),
-    }
-    _cachedDefaultCodexSelection = {
-      modelId: typeof appSettings.agentPreference?.codex?.defaultModel === 'string' ? appSettings.agentPreference.codex.defaultModel : '',
-      reasoningEffort: toCodexReasoningEffort(appSettings.agentPreference?.codex?.defaultReasoningEffort),
-    }
-  } catch {
-    _cachedDefaultPermissionMode = 'default'
-    _cachedDefaultSandboxMode = null
-    _cachedDefaultClaudeSelection = { modelId: '', effort: undefined }
-    _cachedDefaultCodexSelection = { modelId: '', reasoningEffort: undefined }
-  }
-}
-async function _getDefaultPermissionMode(): Promise<PermissionMode> {
-  if (_cachedDefaultPermissionMode === null) await _loadDefaultSessionPrefs()
-  return _cachedDefaultPermissionMode ?? 'default'
-}
-function sandboxModeToInfo(mode: SandboxMode): SandboxInfo {
-  return { enabled: mode !== 'off', autoAllowBash: mode === 'auto' }
-}
-_loadDefaultSessionPrefs()
-
-function _clearDefaultPrefsCache(): void {
-  _cachedDefaultPermissionMode = null
-  _cachedDefaultSandboxMode = null
-  _cachedDefaultClaudeSelection = null
-  _cachedDefaultCodexSelection = null
-}
+import {
+  _clearDefaultPrefsCache,
+  _getDefaultPermissionMode,
+  _loadDefaultSessionPrefs,
+  defaultPrefsCache,
+  sandboxModeToInfo,
+} from './helpers/prefs-cache'
 
 export function invalidateDefaultPermissionModeCache(): void {
   _clearDefaultPrefsCache()
@@ -1355,325 +1042,35 @@ export function invalidateDefaultCodexPreferencesCache(): void {
   void _loadDefaultSessionPrefs().then(() => _reapplyAgentDefaultsToSessions('codex'))
 }
 
-function _reapplyAgentDefaultsToSessions(kind: 'claude' | 'codex'): void {
-  const state = useChatStore.getState()
-  const availableModels = state.harnessResources.claude?.models ?? []
-  const nextProjects: Record<string, ProjectState> = { ...state.projectSessions }
-  let changed = false
-  for (const [projectPath, project] of Object.entries(state.projectSessions)) {
-    const codexModels = project.codexModels
-    let projectChanged = false
-    const nextSessions: Record<string, PerSessionState> = { ...project._sessions }
-    for (const [sid, sess] of Object.entries(project._sessions)) {
-      if (kind === 'claude') {
-        const patch = _computeClaudeDefaultPatch(sess, availableModels)
-        if (patch) {
-          nextSessions[sid] = { ...sess, ...patch }
-          projectChanged = true
-        }
-      } else {
-        const patch = _computeCodexDefaultPatch(sess, codexModels)
-        if (patch) {
-          nextSessions[sid] = { ...sess, ...patch }
-          projectChanged = true
-        }
-      }
-    }
-    if (projectChanged) {
-      nextProjects[projectPath] = { ...project, _sessions: nextSessions }
-      changed = true
-    }
-  }
-  if (changed) useChatStore.setState({ projectSessions: nextProjects })
-}
+export {
+  _buildQuestionAnswerItem,
+  _computeHasPendingInteraction,
+  _ensureClaudeSessionReadyForSend,
+  _isBusyStatus,
+  _isLiveSession,
+  _needsForegroundActivation,
+  _parkActiveSession,
+  _syncAndResumeSession,
+  _truncateAtCheckpoint,
+  type ChatStoreSet,
+} from './helpers/lifecycle'
 
-function _computeClaudeDefaultPatch(sess: PerSessionState, models: ModelOption[]): Partial<PerSessionState> | null {
-  if (sess.modelUserChosen && sess.effortUserChosen) return null
-  if (models.length === 0) return null
-  const patch: Partial<PerSessionState> = {}
-  if (!sess.modelUserChosen) {
-    const nextModel = resolveDefaultClaudeModel(models)
-    if (nextModel && nextModel.id !== sess.selectedModel) patch.selectedModel = nextModel.id
-    if (!sess.effortUserChosen) {
-      const nextEffort = resolveDefaultClaudeEffort(nextModel)
-      if (nextEffort !== sess.selectedEffort) patch.selectedEffort = nextEffort
-    }
-  } else if (!sess.effortUserChosen) {
-    const activeModel = models.find((m) => m.id === sess.selectedModel)
-    const nextEffort = resolveDefaultClaudeEffort(activeModel)
-    if (nextEffort !== sess.selectedEffort) patch.selectedEffort = nextEffort
-  }
-  return Object.keys(patch).length === 0 ? null : patch
-}
-
-function _computeCodexDefaultPatch(sess: PerSessionState, models: ModelOption[]): Partial<PerSessionState> | null {
-  if (sess.codexModelUserChosen && sess.codexReasoningEffortUserChosen) return null
-  if (models.length === 0) return null
-  const selected = resolveDefaultCodexSelection(models)
-  const patch: Partial<PerSessionState> = {}
-  if (!sess.codexModelUserChosen && selected.modelId && selected.modelId !== sess.selectedCodexModel) {
-    patch.selectedCodexModel = selected.modelId
-  }
-  if (!sess.codexReasoningEffortUserChosen && selected.reasoningEffort !== sess.selectedCodexReasoningEffort) {
-    patch.selectedCodexReasoningEffort = selected.reasoningEffort
-  }
-  return Object.keys(patch).length === 0 ? null : patch
-}
-
-async function _syncAndResumeSession(projectPath: string, sessionId: string, set: ChatStoreSet, cwd: string): Promise<void> {
-  const result = await window.app.resumeSession(projectPath, sessionId, cwd)
-  if (!result) return
-  set((s) => {
-    const proj = s.projectSessions[projectPath]
-    if (!proj) return {}
-    const sess = proj._sessions[sessionId]
-    if (!sess) return {}
-    return {
-      projectSessions: {
-        ...s.projectSessions,
-        [projectPath]: {
-          ...proj,
-          sandboxInfo: result.sandboxInfo,
-          _sessions: {
-            ...proj._sessions,
-            [sessionId]: { ...sess, permissionMode: result.permissionMode },
-          },
-        },
-      },
-    }
-  })
-}
-
-export function _truncateAtCheckpoint(
-  set: (fn: (s: ChatStore) => Partial<ChatStore>) => void,
-  _get: () => ChatStore,
-  projectPath: string,
-  checkpointId: string,
-): void {
-  set((s) => updateActivePerSession(s, (sess) => {
-    const idx = sess.messages.findIndex((m) => m.checkpointId === checkpointId)
-    const truncated = idx >= 0 ? sess.messages.slice(0, idx) : sess.messages
-    return { messages: truncated, session: null, totalCostUsd: 0, contextTokens: 0 }
-  }))
-  window.agent.truncateAtCheckpoint(projectPath, checkpointId).catch((err) => {
-    console.warn('[chat] truncateAtCheckpoint failed:', err)
-  })
-}
-
-function _buildQuestionAnswerItem(
-  questions: UserQuestion[],
-  answers: Record<string, string>,
-): CodexAgentMessageItem {
-  const lines = questions.map((q) => {
-    const key = q.question
-    const answer = answers[key]?.trim()
-    return `**${q.question}**\n${answer || '_(dismissed)_'}`
-  })
-  return {
-    id: `qa-${Date.now()}`,
-    type: 'agent_message',
-    text: lines.join('\n\n'),
-  }
-}
-
-export function _computeHasPendingInteraction(project: ProjectState): boolean {
-  return Object.values(project._sessions).some(
-    (s) => s.pendingPermissions.length > 0 || !!s.pendingQuestion || !!s.pendingPlanApproval,
-  )
-}
-
-function _isBusyStatus(status: PerSessionState['status']): boolean {
-  return status === 'streaming' || status === 'background'
-}
-
-export function _isLiveSession(session: PerSessionState | undefined): boolean {
-  return !!session && (
-    _isBusyStatus(session.status)
-    || session.pendingPermissions.length > 0
-    || !!session.pendingQuestion
-    || !!session.pendingPlanApproval
-    || !!session.awaitingAssistantReply
-  )
-}
-
-function _needsForegroundActivation(session: PerSessionState): boolean {
-  return _isBusyStatus(session.status) || session.pendingPermissions.length > 0 || !!session.pendingQuestion || !!session.pendingPlanApproval
-}
+import {
+  _buildQuestionAnswerItem,
+  _computeHasPendingInteraction,
+  _ensureClaudeSessionReadyForSend,
+  _isBusyStatus,
+  _isLiveSession,
+  _needsForegroundActivation,
+  _parkActiveSession,
+  _syncAndResumeSession,
+  _truncateAtCheckpoint,
+  type ChatStoreSet,
+} from './helpers/lifecycle'
 
 let _resetSessionLock: Promise<void> | null = null
 
-function _parkActiveSession(projectPath: string, _activeSessionId: string | null, _newSessionId?: string) {
-  return window.agent.parkSession(projectPath)
-}
-
-async function _ensureClaudeSessionReadyForSend(get: () => ChatStore, projectPath: string): Promise<void> {
-  const project = get().projectSessions[projectPath]
-  if (!project) return
-  const sessionId = resolveActiveSessionId(project)
-  if (!sessionId) return
-  const session = project._sessions[sessionId]
-  if (!session || session.sessionProvider === 'codex') return
-  await window.app.resumeSession(projectPath, sessionId, _getSessionCwd(projectPath, session))
-}
-
 // --- Helpers ---
-
-type ChatStoreSet = (
-  partial: Partial<ChatStore> | ((state: ChatStore) => Partial<ChatStore>),
-  replace?: false,
-) => void
-
-type CodexRunnableCommand = Extract<CodexCommand, { kind: 'run' | 'review' | 'compact' }>
-
-function isRunnableCodexCommand(command: CodexCommand): command is CodexRunnableCommand {
-  return command.kind === 'run' || command.kind === 'review' || command.kind === 'compact'
-}
-
-function getCodexHelpText(): string {
-  return [
-    'Codex commands:',
-    '',
-    '/reset — reset thread',
-    '/auth — show auth status',
-    '/auth auto — prefer API key, fallback to ChatGPT login',
-    '/auth chatgpt — force ChatGPT login mode',
-    '/auth apikey <KEY> — force API key mode',
-    '/review — review uncommitted changes',
-    '/review branch — review diff against base branch',
-    '/review commit <sha> — review a specific commit',
-    '/compact — compact thread context',
-    '/plan — enter plan mode',
-    '',
-    'Notes:',
-    '- Type a message directly to send it as a prompt',
-    '- During a running turn, new messages are sent as steered input (no need to wait)',
-  ].join('\n')
-}
-
-function resolveDefaultCodexSelection(models: ModelOption[]): { modelId: string; reasoningEffort?: CodexReasoningEffort } {
-  const remembered = readLastCodexSelection()
-  const defaults = _cachedDefaultCodexSelection ?? { modelId: '', reasoningEffort: undefined }
-  return resolveCodexModelSelection(
-    models,
-    defaults.modelId || remembered.modelId,
-    defaults.reasoningEffort ?? remembered.reasoningEffort,
-  )
-}
-
-export function resolveSessionCodexSelection(
-  models: ModelOption[],
-  selectedCodexModel: string,
-  selectedCodexReasoningEffort?: CodexReasoningEffort,
-): { modelId: string; reasoningEffort?: CodexReasoningEffort } {
-  if (selectedCodexModel || selectedCodexReasoningEffort) {
-    return resolveCodexModelSelection(models, selectedCodexModel, selectedCodexReasoningEffort)
-  }
-  return resolveDefaultCodexSelection(models)
-}
-
-function readLastCodexSelection(): { modelId: string; reasoningEffort?: CodexReasoningEffort } {
-  try {
-    const raw = globalThis.localStorage?.getItem(CODEX_LAST_SELECTION_STORAGE_KEY)
-    if (!raw) return { modelId: '', reasoningEffort: undefined }
-    const parsed = JSON.parse(raw) as { modelId?: unknown; reasoningEffort?: unknown }
-    if (typeof parsed.modelId !== 'string') return { modelId: '', reasoningEffort: undefined }
-    const effort = typeof parsed.reasoningEffort === 'string'
-      ? parsed.reasoningEffort as CodexReasoningEffort
-      : undefined
-    return { modelId: parsed.modelId, reasoningEffort: effort }
-  } catch {
-    return { modelId: '', reasoningEffort: undefined }
-  }
-}
-
-export function saveLastCodexSelection(modelId: string, reasoningEffort?: CodexReasoningEffort): void {
-  try {
-    globalThis.localStorage?.setItem(
-      CODEX_LAST_SELECTION_STORAGE_KEY,
-      JSON.stringify({ modelId, reasoningEffort }),
-    )
-  } catch {}
-}
-
-function createLocalTextUserMessage(id: string, text: string): ChatMessage {
-  return {
-    id,
-    role: 'user',
-    status: 'complete',
-    content: [{ type: 'text', text }],
-    createdAt: new Date().toISOString(),
-    providerId: 'local',
-  }
-}
-
-function getCodexPlanActionContext(
-  get: () => ChatStore,
-  activeProject: string,
-): {
-  project: ProjectState
-  session: PerSessionState
-  assistantMessageId: string
-  codexSessionId: string
-  resolvedCodexModel?: string
-  resolvedCodexReasoningEffort?: CodexReasoningEffort
-} | null {
-  const project = getProject(get(), activeProject)
-  const codexSessionId = _getEffectiveSessionId(project)
-  if (!codexSessionId) return null
-
-  const session = getActivePerSession(get(), activeProject)
-  const provider = resolveProvider(session)
-  if (provider !== 'codex' || session.selectedCodexCollaborationMode !== 'plan' || session.status !== 'idle' || project.hasPendingInteraction) {
-    return null
-  }
-
-  const lastAssistantId = session.lastAssistantMessageId
-  if (!lastAssistantId) return null
-  const lastAssistantMessage = lastAssistantId
-    ? session.messages.find((message) => message.id === lastAssistantId)
-    : null
-  const hasPlan = !!lastAssistantMessage?.metadata?.codex?.items.some((item) => item.type === 'plan')
-  if (!hasPlan) return null
-
-  const resolvedCodexSelection = resolveSessionCodexSelection(
-    project.codexModels,
-    session.selectedCodexModel,
-    session.selectedCodexReasoningEffort,
-  )
-
-  return {
-    project,
-    session,
-    assistantMessageId: lastAssistantId,
-    codexSessionId,
-    resolvedCodexModel: resolvedCodexSelection.modelId || undefined,
-    resolvedCodexReasoningEffort: resolvedCodexSelection.reasoningEffort,
-  }
-}
-
-function updateCodexPlanApproval(
-  session: PerSessionState,
-  assistantMessageId: string,
-  planApproval: CodexPlanApprovalState,
-): Partial<PerSessionState> {
-  return {
-    messages: session.messages.map((message) => {
-      if (message.id !== assistantMessageId || message.role !== 'assistant' || !message.metadata?.codex) {
-        return message
-      }
-      return {
-        ...message,
-        metadata: {
-          ...message.metadata,
-          codex: {
-            ...message.metadata.codex,
-            planApproval,
-          },
-        },
-      }
-    }),
-  }
-}
 
 async function runCodexCommand(
   set: ChatStoreSet,
@@ -2142,12 +1539,12 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
       const project = createDefaultProjectState()
       project.agents = s.harnessResources.claude?.agents ?? []
       project.codexModels = s.harnessResources.codex?.models ?? []
-      if (_cachedDefaultSandboxMode) project.sandboxInfo = sandboxModeToInfo(_cachedDefaultSandboxMode)
+      if (defaultPrefsCache.sandboxMode) project.sandboxInfo = sandboxModeToInfo(defaultPrefsCache.sandboxMode)
       const draftId = createSessionId()
       project._activeSessionId = draftId
       const newSession = createDefaultPerSessionState()
       newSession.cwd = projectPath
-      if (_cachedDefaultPermissionMode) newSession.permissionMode = _cachedDefaultPermissionMode
+      if (defaultPrefsCache.permissionMode) newSession.permissionMode = defaultPrefsCache.permissionMode
       applyDefaultModel(newSession, s.harnessResources.claude?.models ?? [])
       const codexSelection = resolveDefaultCodexSelection(project.codexModels)
       newSession.selectedCodexModel = codexSelection.modelId
@@ -2687,7 +2084,7 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
       newSession.cwd = opts?.wtPath ?? projectPath
       newSession._worktreePath = opts?.wtPath ?? null
       newSession._worktreeBaseBranch = opts?.gitBranch ?? null
-      if (_cachedDefaultPermissionMode) newSession.permissionMode = _cachedDefaultPermissionMode
+      if (defaultPrefsCache.permissionMode) newSession.permissionMode = defaultPrefsCache.permissionMode
       applyDefaultModel(newSession, s.harnessResources.claude?.models ?? [])
       const codexSelection = resolveDefaultCodexSelection(proj.codexModels)
       newSession.selectedCodexModel = codexSelection.modelId
@@ -3450,68 +2847,23 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
   },
 }))
 
-// --- Selector hook: read from the active project's session state ---
-
-const DEFAULT_PER_SESSION = createDefaultPerSessionState()
-const DEFAULT_PROJECT = createDefaultProjectState()
-const DEFAULT_VIEW: ActiveSessionView = { ...DEFAULT_PER_SESSION, ...DEFAULT_PROJECT }
-
-let _cachedProject: ProjectState | null = null
-let _cachedSession: PerSessionState | null = null
-let _cachedView: ActiveSessionView | null = null
-
-export function useActiveSession<T>(selector: (s: ActiveSessionView) => T): T {
-  return useChatStore((store) => {
-    const project = store.activeProject
-      ? store.projectSessions[store.activeProject]
-      : null
-    const p = project ?? DEFAULT_PROJECT
-    const session = (p._activeSessionId ? p._sessions[p._activeSessionId] : null) ?? DEFAULT_PER_SESSION
-    if (!project) return selector(DEFAULT_VIEW)
-    if (p !== _cachedProject || session !== _cachedSession) {
-      _cachedProject = p
-      _cachedSession = session
-      _cachedView = { ...session, ...p }
-    }
-    return selector(_cachedView!)
-  })
-}
-
-export function useIsRemoteLocked(): boolean {
-  return useChatStore((store) => {
-    if (!store.activeProject) return false
-    const project = store.projectSessions[store.activeProject]
-    return isRemoteSession(store, store.activeProject, project?._activeSessionId)
-  })
-}
-
-export function useBashOutput(toolUseId: string): { content: string; finished: boolean; outputPath?: string } | undefined {
-  return useChatStore((s) => s._bashOutputs[toolUseId])
-}
-
-/** Apply a content delta to the content array, merging consecutive text blocks and deduplicating tool_use. */
-const EMPTY_ACCOUNT: AccountInfo = {}
-const EMPTY_MODELS: ModelOption[] = []
-const EMPTY_SLASH_COMMANDS: SlashCommandInfo[] = []
-const EMPTY_AGENTS: AgentInfo[] = []
-const EMPTY_OUTPUT_STYLES: string[] = []
-const EMPTY_SKILL_INFOS: SkillInfo[] = []
-
-export const selectClaudeResources = (s: ChatStore): ClaudeResources | null => s.harnessResources.claude
-export const selectCodexResources = (s: ChatStore): CodexResources | null => s.harnessResources.codex
-export const selectClaudeModels = (s: ChatStore): ModelOption[] => s.harnessResources.claude?.models ?? EMPTY_MODELS
-export const selectCodexModels = (s: ChatStore): ModelOption[] => s.harnessResources.codex?.models ?? EMPTY_MODELS
-export const selectCodexPrompts = (s: ChatStore): SlashCommandInfo[] => s.harnessResources.codex?.prompts ?? EMPTY_SLASH_COMMANDS
-export const selectActiveCodexSkills = (s: ChatStore): SkillInfo[] => {
-  if (!s.activeProject) return EMPTY_SKILL_INFOS
-  return s.projectSessions[s.activeProject]?._codexSkills ?? EMPTY_SKILL_INFOS
-}
-export const selectClaudeAccount = (s: ChatStore): AccountInfo => s.harnessResources.claude?.account ?? EMPTY_ACCOUNT
-export const selectClaudeSlashCommands = (s: ChatStore): SlashCommandInfo[] => s.harnessResources.claude?.slashCommands ?? EMPTY_SLASH_COMMANDS
-export const selectClaudeSkills = (s: ChatStore): SlashCommandInfo[] => s.harnessResources.claude?.skills ?? EMPTY_SLASH_COMMANDS
-export const selectClaudeCommands = (s: ChatStore): SlashCommandInfo[] => s.harnessResources.claude?.commands ?? EMPTY_SLASH_COMMANDS
-export const selectClaudeAgents = (s: ChatStore): AgentInfo[] => s.harnessResources.claude?.agents ?? EMPTY_AGENTS
-export const selectClaudeOutputStyles = (s: ChatStore): string[] => s.harnessResources.claude?.outputStyles ?? EMPTY_OUTPUT_STYLES
+export {
+  useActiveSession,
+  useIsRemoteLocked,
+  useBashOutput,
+  selectClaudeResources,
+  selectCodexResources,
+  selectClaudeModels,
+  selectCodexModels,
+  selectCodexPrompts,
+  selectActiveCodexSkills,
+  selectClaudeAccount,
+  selectClaudeSlashCommands,
+  selectClaudeSkills,
+  selectClaudeCommands,
+  selectClaudeAgents,
+  selectClaudeOutputStyles,
+} from './selectors'
 
 export {
   type CodexCommand,

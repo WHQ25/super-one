@@ -2,12 +2,18 @@ import type {
   ChatMessage,
   CodexAuthMode,
   CodexAuthStatus,
+  CodexPlanApprovalState,
   CodexReasoningEffort,
   CodexReviewTarget,
   CodexThreadItem,
   CodexUsageInfo,
   ModelOption,
 } from '@superone/shared/agent-types'
+import type { ChatStore, PerSessionState, ProjectState } from '../types'
+import { _getEffectiveSessionId } from './persistence'
+import { defaultPrefsCache } from './prefs-cache'
+import { resolveProvider } from './provider-routing'
+import { getActivePerSession, getProject } from './store-helpers'
 
 export type CodexCommand =
   | { kind: 'help' }
@@ -181,5 +187,224 @@ export function resolveCodexModelSelection(
   return {
     modelId: preferred.id,
     reasoningEffort: resolveCodexReasoningEffort(preferred, selectedCodexReasoningEffort),
+  }
+}
+
+// --- Codex thread-item trace helpers ---
+
+export function pruneTransientCodexItems(items: CodexThreadItem[]): CodexThreadItem[] {
+  return items
+}
+
+function getCodexTraceTextLength(item: CodexThreadItem): number | undefined {
+  switch (item.type) {
+    case 'agent_message':
+    case 'reasoning':
+    case 'plan':
+    case 'review':
+      return item.text.length
+    default:
+      return undefined
+  }
+}
+
+export function summarizeCodexTraceItem(item: CodexThreadItem): { id: string; type: CodexThreadItem['type']; textLen?: number } {
+  const textLen = getCodexTraceTextLength(item)
+  return textLen === undefined
+    ? { id: item.id, type: item.type }
+    : { id: item.id, type: item.type, textLen }
+}
+
+export function getCodexTraceItems(message: ChatMessage | undefined | null): {
+  length: number
+  tail: Array<{ id: string; type: CodexThreadItem['type']; textLen?: number }>
+} {
+  const items = message?.metadata?.codex?.items ?? []
+  return {
+    length: items.length,
+    tail: items.slice(-3).map(summarizeCodexTraceItem),
+  }
+}
+
+export function getCodexContextTokens(usage: CodexUsageInfo): number {
+  return usage.lastInputTokens
+}
+
+export function getCodexCompletionEventMeta(metadata: ChatMessage['metadata'] | undefined): {
+  finalResponse?: string
+  durationMs?: number
+  threadId: string | null
+  usage: CodexUsageInfo | null
+  items: CodexThreadItem[]
+} | null {
+  const rawCodex = metadata?.codex
+  if (!rawCodex || typeof rawCodex !== 'object') return null
+  const codex = rawCodex as unknown as Record<string, unknown>
+  return {
+    finalResponse: typeof codex.finalResponse === 'string' ? codex.finalResponse : undefined,
+    durationMs: typeof codex.durationMs === 'number' && Number.isFinite(codex.durationMs) ? codex.durationMs : undefined,
+    threadId: typeof codex.threadId === 'string' || codex.threadId === null ? codex.threadId : null,
+    usage: hasValidCodexUsageSnapshot(codex.usage as CodexUsageInfo | null) ? codex.usage as CodexUsageInfo : null,
+    items: Array.isArray(codex.items) ? codex.items as CodexThreadItem[] : [],
+  }
+}
+
+// --- Codex command helpers ---
+
+export type CodexRunnableCommand = Extract<CodexCommand, { kind: 'run' | 'review' | 'compact' }>
+
+export function isRunnableCodexCommand(command: CodexCommand): command is CodexRunnableCommand {
+  return command.kind === 'run' || command.kind === 'review' || command.kind === 'compact'
+}
+
+export function getCodexHelpText(): string {
+  return [
+    'Codex commands:',
+    '',
+    '/reset — reset thread',
+    '/auth — show auth status',
+    '/auth auto — prefer API key, fallback to ChatGPT login',
+    '/auth chatgpt — force ChatGPT login mode',
+    '/auth apikey <KEY> — force API key mode',
+    '/review — review uncommitted changes',
+    '/review branch — review diff against base branch',
+    '/review commit <sha> — review a specific commit',
+    '/compact — compact thread context',
+    '/plan — enter plan mode',
+    '',
+    'Notes:',
+    '- Type a message directly to send it as a prompt',
+    '- During a running turn, new messages are sent as steered input (no need to wait)',
+  ].join('\n')
+}
+
+// --- Codex default / persisted selection ---
+
+const CODEX_LAST_SELECTION_STORAGE_KEY = 'super-one.codex.last-selection.v1'
+
+export function readLastCodexSelection(): { modelId: string; reasoningEffort?: CodexReasoningEffort } {
+  try {
+    const raw = globalThis.localStorage?.getItem(CODEX_LAST_SELECTION_STORAGE_KEY)
+    if (!raw) return { modelId: '', reasoningEffort: undefined }
+    const parsed = JSON.parse(raw) as { modelId?: unknown; reasoningEffort?: unknown }
+    if (typeof parsed.modelId !== 'string') return { modelId: '', reasoningEffort: undefined }
+    const effort = typeof parsed.reasoningEffort === 'string'
+      ? parsed.reasoningEffort as CodexReasoningEffort
+      : undefined
+    return { modelId: parsed.modelId, reasoningEffort: effort }
+  } catch {
+    return { modelId: '', reasoningEffort: undefined }
+  }
+}
+
+export function saveLastCodexSelection(modelId: string, reasoningEffort?: CodexReasoningEffort): void {
+  try {
+    globalThis.localStorage?.setItem(
+      CODEX_LAST_SELECTION_STORAGE_KEY,
+      JSON.stringify({ modelId, reasoningEffort }),
+    )
+  } catch {}
+}
+
+export function resolveDefaultCodexSelection(models: ModelOption[]): { modelId: string; reasoningEffort?: CodexReasoningEffort } {
+  const remembered = readLastCodexSelection()
+  const defaults = defaultPrefsCache.codexSelection ?? { modelId: '', reasoningEffort: undefined }
+  return resolveCodexModelSelection(
+    models,
+    defaults.modelId || remembered.modelId,
+    defaults.reasoningEffort ?? remembered.reasoningEffort,
+  )
+}
+
+export function resolveSessionCodexSelection(
+  models: ModelOption[],
+  selectedCodexModel: string,
+  selectedCodexReasoningEffort?: CodexReasoningEffort,
+): { modelId: string; reasoningEffort?: CodexReasoningEffort } {
+  if (selectedCodexModel || selectedCodexReasoningEffort) {
+    return resolveCodexModelSelection(models, selectedCodexModel, selectedCodexReasoningEffort)
+  }
+  return resolveDefaultCodexSelection(models)
+}
+
+// --- Codex plan-mode action helpers ---
+
+export function createLocalTextUserMessage(id: string, text: string): ChatMessage {
+  return {
+    id,
+    role: 'user',
+    status: 'complete',
+    content: [{ type: 'text', text }],
+    createdAt: new Date().toISOString(),
+    providerId: 'local',
+  }
+}
+
+export function getCodexPlanActionContext(
+  get: () => ChatStore,
+  activeProject: string,
+): {
+  project: ProjectState
+  session: PerSessionState
+  assistantMessageId: string
+  codexSessionId: string
+  resolvedCodexModel?: string
+  resolvedCodexReasoningEffort?: CodexReasoningEffort
+} | null {
+  const project = getProject(get(), activeProject)
+  const codexSessionId = _getEffectiveSessionId(project)
+  if (!codexSessionId) return null
+
+  const session = getActivePerSession(get(), activeProject)
+  const provider = resolveProvider(session)
+  if (provider !== 'codex' || session.selectedCodexCollaborationMode !== 'plan' || session.status !== 'idle' || project.hasPendingInteraction) {
+    return null
+  }
+
+  const lastAssistantId = session.lastAssistantMessageId
+  if (!lastAssistantId) return null
+  const lastAssistantMessage = lastAssistantId
+    ? session.messages.find((message) => message.id === lastAssistantId)
+    : null
+  const hasPlan = !!lastAssistantMessage?.metadata?.codex?.items.some((item) => item.type === 'plan')
+  if (!hasPlan) return null
+
+  const resolvedCodexSelection = resolveSessionCodexSelection(
+    project.codexModels,
+    session.selectedCodexModel,
+    session.selectedCodexReasoningEffort,
+  )
+
+  return {
+    project,
+    session,
+    assistantMessageId: lastAssistantId,
+    codexSessionId,
+    resolvedCodexModel: resolvedCodexSelection.modelId || undefined,
+    resolvedCodexReasoningEffort: resolvedCodexSelection.reasoningEffort,
+  }
+}
+
+export function updateCodexPlanApproval(
+  session: PerSessionState,
+  assistantMessageId: string,
+  planApproval: CodexPlanApprovalState,
+): Partial<PerSessionState> {
+  return {
+    messages: session.messages.map((message) => {
+      if (message.id !== assistantMessageId || message.role !== 'assistant' || !message.metadata?.codex) {
+        return message
+      }
+      return {
+        ...message,
+        metadata: {
+          ...message.metadata,
+          codex: {
+            ...message.metadata.codex,
+            planApproval,
+          },
+        },
+      }
+    }),
   }
 }

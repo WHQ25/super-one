@@ -6,7 +6,6 @@ import { freshSubagentColorPool } from '../defaults'
 import {
   _truncateAtCheckpoint,
   getActivePerSession,
-  getProject,
   schedulePrewarmKeepalive,
   updateActivePerSession,
   updatePerSession,
@@ -135,16 +134,15 @@ export const createSessionSlice: StateCreator<ChatStore, [], [], SessionSlice> =
   },
 
   removeSessionFromMemory: (projectPath: string, sessionId: string) => {
-    set((s) => {
-      const proj = getProject(s, projectPath)
-      if (!proj._sessions[sessionId]) return s
-      const { [sessionId]: _, ...rest } = proj._sessions
-      return {
-        projectSessions: {
-          ...s.projectSessions,
-          [projectPath]: { ...proj, _sessions: rest },
-        },
-      }
+    const state = get()
+    const proj = state.projectSessions[projectPath]
+    if (!proj?._sessions[sessionId]) return
+    const { [sessionId]: _, ...rest } = proj._sessions
+    set({
+      projectSessions: {
+        ...state.projectSessions,
+        [projectPath]: { ...proj, _sessions: rest },
+      },
     })
     useActivityViewStateStore.getState().clearForSession(sessionId)
   },

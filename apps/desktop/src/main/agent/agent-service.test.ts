@@ -308,6 +308,49 @@ describe('AgentService prewarm', () => {
     }))
     expect(claudeSession.prewarm).not.toHaveBeenCalled()
   })
+
+  it('uses hint.worktreePath as cwd when attaching an existing worktree to a not-yet-instantiated session', async () => {
+    const service = new AgentService()
+    const otherActive = makeMockSession({
+      id: 'sid-other',
+      cwd: '/repo/main',
+      snapshot: { harnessId: 'claude', messages: [] },
+      isStreaming: vi.fn(() => false),
+      prewarm: vi.fn(),
+    })
+    const newSession = makeMockSession({
+      id: 'sid-new',
+      cwd: '/repo/feat',
+      snapshot: { harnessId: 'claude', messages: [] },
+      isStreaming: vi.fn(() => false),
+      prewarm: vi.fn(),
+    })
+    const createSession = vi.fn(() => newSession)
+    ;(service as { sessionManager: unknown }).sessionManager = {
+      getActiveSession: vi.fn(() => otherActive),
+      getSession: vi.fn(() => undefined),
+      setActiveSession: vi.fn(),
+      disposeSession: vi.fn().mockResolvedValue(undefined),
+      createSession,
+    }
+    service.setup()
+    const handler = getRegisteredIpcHandler(AgentIpcChannels.PREWARM)!
+
+    await handler(null, '/repo/main', {
+      provider: 'claude',
+      sessionId: 'sid-new',
+      worktreePath: '/repo/feat',
+    })
+
+    expect(createSession).toHaveBeenCalledWith(expect.objectContaining({
+      projectPath: '/repo/main',
+      providerId: 'claude-base',
+      id: 'sid-new',
+      cwd: '/repo/feat',
+    }))
+    expect(newSession.prewarm).toHaveBeenCalled()
+    expect(otherActive.prewarm).not.toHaveBeenCalled()
+  })
 })
 
 describe('AgentService.resumeSession', () => {

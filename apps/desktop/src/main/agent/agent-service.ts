@@ -1396,7 +1396,7 @@ export class AgentService {
     const providerId = hint?.provider === 'codex' ? 'codex-base' : 'claude-base'
     const harnessId = hint?.provider === 'codex' ? 'codex' : 'claude'
     const activeCwd = mgr.getActiveSession(projectPath)?.cwd
-    const cwd = activeCwd
+    const cwd = hint?.worktreePath ?? activeCwd
     const { permissionMode, sandboxMode } = this.readDefaultSessionPrefs()
     const createOpts = {
       projectPath,

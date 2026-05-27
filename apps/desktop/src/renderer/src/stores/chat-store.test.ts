@@ -364,6 +364,19 @@ describe('ensureSession', () => {
     expect(project._sessions[afterSid!].sessionProvider).toBe('codex')
     expect(mockWindowAgent.prewarm).not.toHaveBeenCalled()
   })
+
+  it('passes session._worktreePath as hint.worktreePath when prewarming an attached worktree', () => {
+    setupProject('/prewarm-wt-attach')
+    patchDraftSession('/prewarm-wt-attach', { _worktreePath: '/prewarm-wt-attach/.worktrees/feat-x' })
+    mockWindowAgent.prewarm.mockClear()
+
+    useChatStore.getState().setDraftText('hi')
+
+    expect(mockWindowAgent.prewarm).toHaveBeenCalledWith(
+      '/prewarm-wt-attach',
+      expect.objectContaining({ worktreePath: '/prewarm-wt-attach/.worktrees/feat-x' }),
+    )
+  })
 })
 
 describe('no data loss on session switch', () => {

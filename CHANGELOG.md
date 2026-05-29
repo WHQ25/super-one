@@ -4,6 +4,18 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.38.6-alpha] - 2026-05-29
+
+### Added
+- Sonnet 4.6 is now eligible for Auto Mode on Max accounts.
+
+### Changed
+- Default Claude effort now resolves to `high` instead of `xhigh`, matching Opus 4.8's new baseline. Sessions where you explicitly picked an effort are preserved; sessions you never touched migrate from `xhigh` down to `high` on next load.
+- The ULTRATHINK Easter egg on the effort toggle moved from `high` to `xhigh` — the rainbow badge only appears when you actively bump above the default now.
+
+### Fixed
+- Long-running stdio MCP servers no longer get restarted on every reconcile pass (pulled in from upstream Claude Agent SDK 0.3.154).
+
 ## [0.38.5-alpha] - 2026-05-27
 
 ### Fixed

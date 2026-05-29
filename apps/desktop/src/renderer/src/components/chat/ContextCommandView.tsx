@@ -10,9 +10,6 @@ import {
 } from './chat-shared'
 import { createStreamdownCodeComponent } from './CodeBlock'
 
-const staticCodeComponent = createStreamdownCodeComponent(codePlugin)
-const mdComponents = { ...streamdownComponents, code: staticCodeComponent }
-
 interface CategoryData {
   name: string
   tokens: number
@@ -119,6 +116,7 @@ function PieChart({ categories }: { categories: CategoryData[] }) {
 
 export function ContextCommandView({ content }: { content: string }) {
   const data = useMemo(() => parseContextOutput(content), [content])
+  const mdComponents = useMemo(() => ({ ...streamdownComponents, code: createStreamdownCodeComponent(codePlugin) }), [])
 
   if (!data) {
     return (

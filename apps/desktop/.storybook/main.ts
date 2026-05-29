@@ -30,6 +30,7 @@ const config: StorybookConfig = {
       ...(cfg.resolve.alias ?? {}),
       '@': resolve(here, '../src/renderer/src'),
     }
+    cfg.esbuild = { ...(cfg.esbuild || {}), jsx: 'automatic', jsxImportSource: 'react' }
     cfg.plugins = [...(cfg.plugins ?? []), tailwindcss()]
     return cfg
   },

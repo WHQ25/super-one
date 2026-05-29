@@ -1,5 +1,12 @@
 type AnyFn = (...args: unknown[]) => unknown
 
+const overrides: Record<string, Record<string, AnyFn>> = {}
+
+/** Register a per-story mock for `window.<ns>.<key>()`. Call from a story decorator. */
+export function mockIpc(ns: string, key: string, fn: AnyFn): void {
+  ;(overrides[ns] ??= {})[key] = fn
+}
+
 const warn = (ns: string, key: string) => {
   return (...args: unknown[]) => {
     console.warn(`[storybook] window.${ns}.${key}() called without mock`, args)
@@ -15,6 +22,7 @@ const proxyFor = (ns: string): Record<string, AnyFn> => {
     {
       get(_target, prop: string) {
         if (prop === 'then') return undefined
+        if (overrides[ns]?.[prop]) return overrides[ns][prop]
         if (prop.startsWith('on')) {
           return (..._args: unknown[]) => offNoop
         }

@@ -41,12 +41,12 @@ const InlineMathSchema = Node.create({
       },
     }
   },
-  parseHTML() { return [{ tag: 'span[data-math-inline]' }] },
-  renderHTML({ HTMLAttributes }) { return ['span', { ...HTMLAttributes, 'data-math-inline': '' }] },
+  parseHTML() { return [{ tag: 'span[data-type="inline-math"]' }] },
+  renderHTML({ HTMLAttributes }) { return ['span', { ...HTMLAttributes, 'data-type': 'inline-math' }] },
 })
 
-const DisplayMathSchema = Node.create({
-  name: 'displayMath',
+const BlockMathSchema = Node.create({
+  name: 'blockMath',
   group: 'block',
   atom: true,
   addAttributes() {
@@ -58,8 +58,8 @@ const DisplayMathSchema = Node.create({
       },
     }
   },
-  parseHTML() { return [{ tag: 'div[data-math-display]' }] },
-  renderHTML({ HTMLAttributes }) { return ['div', { ...HTMLAttributes, 'data-math-display': '' }] },
+  parseHTML() { return [{ tag: 'div[data-type="block-math"]' }] },
+  renderHTML({ HTMLAttributes }) { return ['div', { ...HTMLAttributes, 'data-type': 'block-math' }] },
 })
 
 const codecExtensions = [
@@ -67,7 +67,7 @@ const codecExtensions = [
   CodeBlockLowlight.configure({ lowlight: codecLowlight, defaultLanguage: 'plaintext' }),
   TableKit,
   InlineMathSchema,
-  DisplayMathSchema,
+  BlockMathSchema,
 ]
 
 async function markdownToHtml(markdown: string): Promise<string> {
@@ -81,7 +81,7 @@ async function markdownToHtml(markdown: string): Promise<string> {
           return {
             type: 'element',
             tagName: 'span',
-            properties: { 'data-math-inline': '', 'data-latex': node.value },
+            properties: { 'data-type': 'inline-math', 'data-latex': node.value },
             children: [{ type: 'text', value: node.value }],
           }
         },
@@ -89,7 +89,7 @@ async function markdownToHtml(markdown: string): Promise<string> {
           return {
             type: 'element',
             tagName: 'div',
-            properties: { 'data-math-display': '', 'data-latex': node.value },
+            properties: { 'data-type': 'block-math', 'data-latex': node.value },
             children: [{ type: 'text', value: node.value }],
           }
         },
@@ -216,7 +216,7 @@ function processBlock(node: ProseMirrorNode, lines: string[]): void {
       lines.push('')
       return
     }
-    case 'displayMath': {
+    case 'blockMath': {
       const latex = (node.attrs.latex as string) || ''
       lines.push('$$')
       latex.split('\n').forEach((l) => lines.push(l))

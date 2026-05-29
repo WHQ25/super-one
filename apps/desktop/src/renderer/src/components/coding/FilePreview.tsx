@@ -25,7 +25,7 @@ function getFileExt(fileName: string): string {
   return fileName.split('.').pop()?.toLowerCase() ?? ''
 }
 
-type TabKey = 'changes' | 'editor' | 'preview'
+type TabKey = 'changes' | 'editor' | 'preview' | 'file'
 
 function useOwnFileData(filePath: string | undefined) {
   const fileRoot = useEffectiveProjectRoot()
@@ -91,6 +91,7 @@ export function FilePreview({ filePath }: FilePreviewProps) {
     if (hasDiff) items.push({ key: 'changes', label: 'Changes' })
     if (isSvgFile || isHtml) items.push({ key: 'preview', label: 'Preview' })
     items.push({ key: 'editor', label: 'Editor' })
+    if (isMd) items.push({ key: 'file', label: 'File' })
     return items
   })()
 
@@ -195,7 +196,7 @@ export function FilePreview({ filePath }: FilePreviewProps) {
               <ImagePreview src={toLocalFileUrl(fullFilePath)} alt={fileName} />
             ) : effectiveTab === 'preview' && isHtml ? (
               <HtmlPreview src={toLocalFileUrl(fullFilePath)} />
-            ) : effectiveTab === 'editor' && !isMd ? (
+            ) : (effectiveTab === 'file' && isMd) || (effectiveTab === 'editor' && !isMd) ? (
               <FileSelectionContextMenuZone filePath={fullFilePath} fileContent={fileContent?.content ?? null} className="size-full">
                 <FileWithDiffView filePath={selectedFile} content={fileContent?.content ?? ''} diff={fileDiff?.diff ?? ''} />
               </FileSelectionContextMenuZone>

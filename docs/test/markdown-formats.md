@@ -38,7 +38,7 @@ A second paragraph follows, separated by a blank line. Mixed languages should re
 - An [https://example.com](https://example.com) auto-link
 - A footnote-style reference link: [docs](https://docs.claude.com)
 
-Escapes: `\*literal asterisks\*`, `\_literal underscores\_`, `\``literal backtick```.
+Escapes: `\*literal asterisks\*`, `\_literal underscores\_`, ```literal backtick```.
 
 ## Lists
 
@@ -56,9 +56,9 @@ Escapes: `\*literal asterisks\*`, `\_literal underscores\_`, `\``literal backtic
 
 1. Step one
 2. Step two
-  1. Sub-step a
-  2. Sub-step b
-3. Step three
+3. Sub-step a
+4. Sub-step b
+5. Step three
 
 ### Task list (GFM)
 
@@ -70,8 +70,7 @@ Escapes: `\*literal asterisks\*`, `\_literal underscores\_`, `\``literal backtic
 
 ### List item with multiple paragraphs
 
-1. First step. This is the headline of the step.
-  A follow-up paragraph for the same list item, separated by a blank line. It should stay visually grouped with step 1.
+1. First step. This is the headline of the step. A follow-up paragraph for the same list item, separated by a blank line. It should stay visually grouped with step 1.
 2. Second step.
 
 ## Blockquotes
@@ -94,6 +93,7 @@ Escapes: `\*literal asterisks\*`, `\_literal underscores\_`, `\``literal backtic
 > ```ts
 > const inside = "code inside quote"
 >
+>
 > ```
 
 ## Code blocks
@@ -104,6 +104,7 @@ A code block with no language:
 plain text without highlighting
 multiple lines preserved verbatim
   indentation kept
+
 
 ```
 
@@ -119,6 +120,7 @@ export function roundTrip(md: string): Promise<string> {
   return encode(md).then(decode)
 }
 
+
 ```
 
 Python:
@@ -131,6 +133,7 @@ def fibonacci(n: int) -> list[int]:
         a, b = b, a + b
     return out
 
+
 ```
 
 Shell:
@@ -139,6 +142,7 @@ Shell:
 #!/usr/bin/env bash
 set -euo pipefail
 echo "hello, $(whoami)"
+
 
 ```
 
@@ -152,6 +156,7 @@ JSON:
   "tags": ["electron", "wysiwyg"]
 }
 
+
 ```
 
 YAML:
@@ -163,6 +168,7 @@ env:
   - NAME=desktop
   - REGION=us-west
 
+
 ```
 
 Diff:
@@ -170,6 +176,7 @@ Diff:
 ```diff
 - old line
 + new line
+
 
 ```
 
@@ -183,7 +190,7 @@ Below the rule.
 
 ## Tables (GFM)
 
-| Feature | Supported | Notes |
+| Feature | Supported | Notes\| |
 | --- | --- | --- |
 | Headings | ✅ | h1–h6 |
 | Lists | ✅ | bullet / ordered / task |
@@ -295,8 +302,6 @@ Double-click a diagram to edit its Mermaid syntax; hover and click the maximize 
 ### Local media (chat only)
 
 The chat renderer rewrites `local-file://` URLs to `MediaImage` / `MediaVideo` / `MediaAudio`. The file editor shows the raw markdown for now:
-
-
 
 ---
 

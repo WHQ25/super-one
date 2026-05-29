@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
-import { CodeBlockLowlight } from '@tiptap/extension-code-block-lowlight'
 import { TableKit } from '@tiptap/extension-table'
 import { Placeholder } from '@tiptap/extension-placeholder'
 import { common, createLowlight } from 'lowlight'
 import { useEffectiveProjectRoot } from '@/stores/app'
 import { docToMarkdown, markdownToDoc } from './markdown-codec'
+import { CodeBlock } from './extensions/code-block-view'
 import { MermaidNode } from './extensions/mermaid-node'
-import { InlineMath, DisplayMath } from './extensions/math-node'
+import { createMathExtensions, type MathEditTarget } from './extensions/math'
+import { MathEditDialog } from './extensions/MathEditDialog'
 import './markdown-editor.css'
 
 const lowlight = createLowlight(common)
@@ -30,6 +31,7 @@ export function MarkdownEditor({ content, filePath, onDirtyChange, onContentChan
   const loadingRef = useRef(false)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const filePathRef = useRef(filePath)
+  const [mathEdit, setMathEdit] = useState<MathEditTarget | null>(null)
 
   useEffect(() => {
     filePathRef.current = filePath
@@ -51,11 +53,10 @@ export function MarkdownEditor({ content, filePath, onDirtyChange, onContentChan
   const editor = useEditor({
     extensions: [
       StarterKit.configure({ codeBlock: false }),
-      CodeBlockLowlight.configure({ lowlight, defaultLanguage: 'plaintext' }),
+      CodeBlock.configure({ lowlight, defaultLanguage: 'plaintext' }),
       TableKit,
       MermaidNode,
-      InlineMath,
-      DisplayMath,
+      ...createMathExtensions({ onEdit: setMathEdit }),
       Placeholder.configure({ placeholder: 'Start writing…' }),
     ],
     content: '',
@@ -98,9 +99,12 @@ export function MarkdownEditor({ content, filePath, onDirtyChange, onContentChan
   }, [])
 
   return (
-    <EditorContent
-      editor={editor}
-      className="markdown-editor size-full overflow-auto text-sm [&_.tiptap]:size-full [&_.tiptap]:p-6 [&_.tiptap]:outline-none"
-    />
+    <>
+      <EditorContent
+        editor={editor}
+        className="markdown-editor size-full overflow-auto text-sm [&_.tiptap]:size-full [&_.tiptap]:p-6 [&_.tiptap]:outline-none"
+      />
+      <MathEditDialog editor={editor} target={mathEdit} onClose={() => setMathEdit(null)} />
+    </>
   )
 }

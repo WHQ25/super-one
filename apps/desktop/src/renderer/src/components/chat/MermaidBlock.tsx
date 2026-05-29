@@ -31,7 +31,7 @@ export function computeLayout(
   return { overflow: true, overflowW: containerW * OVERFLOW_RENDER_RATIO }
 }
 
-function MermaidPreview({ svg, isThemeSwitching }: {
+export function MermaidPreview({ svg, isThemeSwitching }: {
   svg: string
   isThemeSwitching: boolean
 }) {

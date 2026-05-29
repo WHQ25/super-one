@@ -13,14 +13,14 @@ const lowlight = createLowlight(common)
 const InlineMathStub = Node.create({
   name: 'inlineMath', group: 'inline', inline: true, atom: true,
   addAttributes() { return { latex: { default: '', parseHTML: (el: HTMLElement) => el.getAttribute('data-latex') ?? el.textContent ?? '' } } },
-  parseHTML() { return [{ tag: 'span[data-math-inline]' }] },
-  renderHTML({ HTMLAttributes }) { return ['span', { ...HTMLAttributes, 'data-math-inline': '' }] },
+  parseHTML() { return [{ tag: 'span[data-type="inline-math"]' }] },
+  renderHTML({ HTMLAttributes }) { return ['span', { ...HTMLAttributes, 'data-type': 'inline-math' }] },
 })
-const DisplayMathStub = Node.create({
-  name: 'displayMath', group: 'block', atom: true,
+const BlockMathStub = Node.create({
+  name: 'blockMath', group: 'block', atom: true,
   addAttributes() { return { latex: { default: '', parseHTML: (el: HTMLElement) => el.getAttribute('data-latex') ?? el.textContent ?? '' } } },
-  parseHTML() { return [{ tag: 'div[data-math-display]' }] },
-  renderHTML({ HTMLAttributes }) { return ['div', { ...HTMLAttributes, 'data-math-display': '' }] },
+  parseHTML() { return [{ tag: 'div[data-type="block-math"]' }] },
+  renderHTML({ HTMLAttributes }) { return ['div', { ...HTMLAttributes, 'data-type': 'block-math' }] },
 })
 const MermaidStub = Node.create({
   name: 'mermaid', group: 'block', atom: true,
@@ -34,7 +34,7 @@ const extensions = [
   CodeBlockLowlight.configure({ lowlight, defaultLanguage: 'plaintext' }),
   TableKit,
   InlineMathStub,
-  DisplayMathStub,
+  BlockMathStub,
   MermaidStub,
 ]
 
@@ -249,11 +249,11 @@ describe('mermaid / math node serialization', () => {
     expect(out).toContain('```')
   })
 
-  it('serializes a displayMath node back to $$...$$ block', () => {
+  it('serializes a blockMath node back to $$...$$ block', () => {
     const doc = {
       type: 'doc',
       content: [
-        { type: 'displayMath', attrs: { latex: 'E = mc^2' } },
+        { type: 'blockMath', attrs: { latex: 'E = mc^2' } },
       ],
     }
     const editor = new Editor({ extensions, content: doc })

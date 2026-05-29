@@ -4,6 +4,17 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.39.0-alpha] - 2026-05-29
+
+### Added
+- Workflow tool calls now render as a live, progressive block with a zoomable topology DAG. Sub-workflows and fan-out branches expand inline, and compact progress plus the final result stream in directly from the SDK.
+
+### Fixed
+- The session switcher title now stays in sync when an agent renames its session.
+
+### Changed
+- Refreshed stale default model IDs in the provider presets.
+
 ## [0.38.7-alpha] - 2026-05-29
 
 ### Fixed

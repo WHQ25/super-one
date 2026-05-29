@@ -5,6 +5,8 @@ import { TableKit } from '@tiptap/extension-table'
 import { Placeholder } from '@tiptap/extension-placeholder'
 import { common, createLowlight } from 'lowlight'
 import { useEffectiveProjectRoot } from '@/stores/app'
+import { LinkSafetyModal } from '@/components/chat/LinkSafetyModal'
+import { requestOpenExternalLink } from '@/lib/external-link'
 import { docToMarkdown, markdownToDoc } from './markdown-codec'
 import { CodeBlock } from './extensions/code-block-view'
 import { MermaidNode } from './extensions/mermaid-node'
@@ -32,6 +34,7 @@ export function MarkdownEditor({ content, filePath, onDirtyChange, onContentChan
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const filePathRef = useRef(filePath)
   const [mathEdit, setMathEdit] = useState<MathEditTarget | null>(null)
+  const [linkHref, setLinkHref] = useState<string | null>(null)
 
   useEffect(() => {
     filePathRef.current = filePath
@@ -52,13 +55,27 @@ export function MarkdownEditor({ content, filePath, onDirtyChange, onContentChan
 
   const editor = useEditor({
     extensions: [
-      StarterKit.configure({ codeBlock: false }),
+      StarterKit.configure({ codeBlock: false, link: { openOnClick: false } }),
       CodeBlock.configure({ lowlight, defaultLanguage: 'plaintext' }),
       TableKit,
       MermaidNode,
       ...createMathExtensions({ onEdit: setMathEdit }),
       Placeholder.configure({ placeholder: 'Start writing…' }),
     ],
+    editorProps: {
+      handleDOMEvents: {
+        click: (_view, event) => {
+          const anchor = (event.target as HTMLElement | null)?.closest('a')
+          const href = anchor?.getAttribute('href')
+          if (href) {
+            event.preventDefault()
+            setLinkHref(href)
+            return true
+          }
+          return false
+        },
+      },
+    },
     content: '',
     onUpdate: ({ editor: ed }) => {
       if (loadingRef.current) return
@@ -105,6 +122,12 @@ export function MarkdownEditor({ content, filePath, onDirtyChange, onContentChan
         className="markdown-editor size-full overflow-auto text-sm [&_.tiptap]:size-full [&_.tiptap]:p-6 [&_.tiptap]:outline-none"
       />
       <MathEditDialog editor={editor} target={mathEdit} onClose={() => setMathEdit(null)} />
+      <LinkSafetyModal
+        url={linkHref ?? ''}
+        isOpen={linkHref !== null}
+        onClose={() => setLinkHref(null)}
+        onConfirm={() => { if (linkHref) requestOpenExternalLink(linkHref) }}
+      />
     </>
   )
 }

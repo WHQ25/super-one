@@ -1,5 +1,6 @@
 import { execFileSync, spawn, type ChildProcess } from 'child_process'
 import { createRequire } from 'module'
+import { dirname, join } from 'path'
 import { createInterface } from 'readline'
 import log from '../logger'
 import { trace } from '../agent/event-trace'
@@ -246,11 +247,11 @@ export function resolveCodexNativeBinary(packageName: string): CodexNativeBinary
     return null
   }
   const unpacked = pkgJsonPath.replace(/app\.asar([\\/])/, 'app.asar.unpacked$1')
-  const pkgRoot = unpacked.slice(0, unpacked.lastIndexOf('/package.json'))
+  const pkgRoot = dirname(unpacked)
   const binaryName = process.platform === 'win32' ? 'codex.exe' : 'codex'
   const resolved: CodexNativeBinary = {
-    binaryPath: `${pkgRoot}/vendor/${target}/bin/${binaryName}`,
-    pathDir: `${pkgRoot}/vendor/${target}/codex-path`,
+    binaryPath: join(pkgRoot, 'vendor', target, 'bin', binaryName),
+    pathDir: join(pkgRoot, 'vendor', target, 'codex-path'),
   }
   log.info('[codex] Resolved native binary:', resolved.binaryPath)
   cachedCodexNativeBinary.set(packageName, resolved)
@@ -544,6 +545,14 @@ export async function createAppServerConnection(
     if (waiter) waiter(notif)
     else notificationQueue.push(notif)
   }
+
+  child.on('error', (err) => {
+    const spawnError = err instanceof Error ? err : new Error(String(err))
+    stderrChunks.push(`spawn error: ${spawnError.message}`)
+    log.error('[codex] app-server spawn error:', spawnError.message)
+    readerError = spawnError
+    rejectAllWaiters(spawnError)
+  })
 
   void (async () => {
     try {

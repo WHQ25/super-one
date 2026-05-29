@@ -126,8 +126,8 @@ export function ClaudeModelSelector({ onCloseAutoFocus }: Props) {
         effortLevels && effortLevels.length > 0 && (
           <Popover open={effortOpen} onOpenChange={setEffortOpen}>
             <PopoverTrigger asChild>
-              <button className={`flex items-center gap-0.5 rounded-lg px-2 py-1 text-xs transition-colors hover:bg-muted hover:text-foreground ${selectedEffort === 'high' || selectedEffort === 'max' ? '' : 'text-muted-foreground'}`}>
-                {selectedEffort === 'max' ? <FireText>MAX</FireText> : <span className={`max-w-[100px] truncate ${selectedEffort === 'high' ? 'rainbow-text font-normal' : ''}`}>{selectedEffort === 'high' ? 'ULTRATHINK' : (currentEffortLabel ?? 'Effort')}</span>}
+              <button className={`flex items-center gap-0.5 rounded-lg px-2 py-1 text-xs transition-colors hover:bg-muted hover:text-foreground ${selectedEffort === 'xhigh' || selectedEffort === 'max' ? '' : 'text-muted-foreground'}`}>
+                {selectedEffort === 'max' ? <FireText>MAX</FireText> : <span className={`max-w-[100px] truncate ${selectedEffort === 'xhigh' ? 'rainbow-text font-normal' : ''}`}>{selectedEffort === 'xhigh' ? 'ULTRATHINK' : (currentEffortLabel ?? 'Effort')}</span>}
                 <ChevronDown className={`size-3 transition-transform duration-200 ${effortOpen ? 'rotate-180' : ''}`} />
               </button>
             </PopoverTrigger>

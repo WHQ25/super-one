@@ -115,7 +115,7 @@ describe('mapModelInfo', () => {
     const mapped = mapModelInfo({
       value: 'default',
       displayName: 'Default (recommended)',
-      description: 'Opus 4.7 with 1M context · Most capable for complex work',
+      description: 'Opus 4.8 with 1M context · Most capable for complex work',
       supportsEffort: true,
       supportedEffortLevels: ['low', 'medium', 'high', 'xhigh', 'max'],
       supportsAdaptiveThinking: true,

@@ -739,12 +739,12 @@ describe('ClaudeBackend', () => {
     it('setModel while idle-released applies the new model to the revived runtime', async () => {
       const backend = await startThenIdleRelease()
 
-      await backend.setModel('claude-opus-4-7')
+      await backend.setModel('claude-opus-4-8')
       void backend.send({ content: 'hi' })
       await new Promise((r) => setTimeout(r, 0))
 
       const [, opts] = hoisted.captured.createSessionQueryMock.mock.calls[1]!
-      expect((opts as { model?: string }).model).toBe('claude-opus-4-7')
+      expect((opts as { model?: string }).model).toBe('claude-opus-4-8')
     })
   })
 

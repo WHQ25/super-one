@@ -120,7 +120,7 @@ export function createDefaultProjectState(): ProjectState {
 export function getDefaultEffortForModel(model?: ModelOption): EffortLevel | undefined {
   const levels = model?.supportedEffortLevels
   if (!levels?.length) return undefined
-  if (levels.includes('xhigh')) return 'xhigh'
+  if (levels.includes('high')) return 'high'
   if (levels.includes('medium')) return 'medium'
   return levels[0]
 }

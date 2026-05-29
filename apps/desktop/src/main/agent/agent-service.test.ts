@@ -1792,7 +1792,7 @@ describe('AgentService.handleRemoteCommand', () => {
       locale: '',
       agentPreference: {
         claude: {
-          defaultModel: 'claude-opus-4-7',
+          defaultModel: 'claude-opus-4-8',
           defaultEffort: 'high',
           defaultPermissionMode: 'acceptEdits',
           defaultSandboxMode: '',
@@ -1801,7 +1801,7 @@ describe('AgentService.handleRemoteCommand', () => {
       },
     })
     vi.mocked(claudeModels.fetchModels).mockResolvedValue([
-      { id: 'claude-opus-4-7', name: 'Opus 4.7' },
+      { id: 'claude-opus-4-8', name: 'Opus 4.8' },
       { id: 'claude-sonnet-4-5', name: 'Sonnet 4.5' },
     ] as never)
 
@@ -1815,7 +1815,7 @@ describe('AgentService.handleRemoteCommand', () => {
     expect(respond).toHaveBeenCalledTimes(1)
     const [, payload] = respond.mock.calls[0] as [string, Record<string, unknown>]
     expect(payload.defaults).toEqual({
-      model: 'claude-opus-4-7',
+      model: 'claude-opus-4-8',
       effort: 'high',
       permissionMode: 'acceptEdits',
     })

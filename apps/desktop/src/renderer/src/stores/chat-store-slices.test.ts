@@ -296,8 +296,8 @@ describe('core-slice: project-level panels', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const opus: ModelOption = {
-  id: 'opus-4-7',
-  name: 'Opus 4.7',
+  id: 'opus-4-8',
+  name: 'Opus 4.8',
   description: '',
   supportsEffort: true,
   supportedEffortLevels: ['low', 'medium', 'high'],
@@ -317,15 +317,15 @@ describe('claude-slice: setSelectedModel', () => {
     setupProject()
     setClaudeResources({ models: [opus, sonnet], account: { subscriptionType: 'Claude Max' } as AccountInfo })
 
-    useChatStore.getState().setSelectedModel('opus-4-7')
+    useChatStore.getState().setSelectedModel('opus-4-8')
 
     const sess = activeSession()
-    expect(sess.selectedModel).toBe('opus-4-7')
-    expect(sess.selectedEffort).toBe('medium')
+    expect(sess.selectedModel).toBe('opus-4-8')
+    expect(sess.selectedEffort).toBe('high')
     expect(sess.modelUserChosen).toBe(true)
     expect(sess.effortUserChosen).toBe(false)
     expect(sess.contextWindow).toBeNull()
-    expect(mockWindowAgent.setSessionSettings).toHaveBeenCalledWith(PATH, { model: 'opus-4-7', effort: 'medium' })
+    expect(mockWindowAgent.setSessionSettings).toHaveBeenCalledWith(PATH, { model: 'opus-4-8', effort: 'high' })
     expect(mockWindowAgent.setPermissionMode).not.toHaveBeenCalled()
     expect(mockWindowAgent.prewarm).not.toHaveBeenCalled()
   })
@@ -346,7 +346,7 @@ describe('claude-slice: setSelectedModel', () => {
     setClaudeResources({ models: [opus, sonnet], account: { subscriptionType: 'Claude Max' } as AccountInfo })
     patchSession({ permissionMode: 'auto' })
 
-    useChatStore.getState().setSelectedModel('opus-4-7')
+    useChatStore.getState().setSelectedModel('opus-4-8')
     expect(activeSession().permissionMode).toBe('auto')
     expect(mockWindowAgent.setPermissionMode).not.toHaveBeenCalled()
   })
@@ -356,14 +356,14 @@ describe('claude-slice: setSelectedModel', () => {
     setClaudeResources({ models: [opus], account: { subscriptionType: 'Claude Max' } as AccountInfo })
     patchSession({ draftText: 'hello' })
 
-    useChatStore.getState().setSelectedModel('opus-4-7')
+    useChatStore.getState().setSelectedModel('opus-4-8')
     expect(mockWindowAgent.prewarm).toHaveBeenCalledTimes(1)
     expect(mockWindowAgent.prewarm.mock.calls[0]?.[0]).toBe(PATH)
   })
 
   it('is a no-op when no project is active', () => {
     setClaudeResources({ models: [opus] })
-    useChatStore.getState().setSelectedModel('opus-4-7')
+    useChatStore.getState().setSelectedModel('opus-4-8')
     expect(mockWindowAgent.setSessionSettings).not.toHaveBeenCalled()
   })
 })

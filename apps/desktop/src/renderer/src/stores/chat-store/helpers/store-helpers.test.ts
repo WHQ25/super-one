@@ -133,7 +133,7 @@ describe('triggerPrewarm', () => {
 
   it('dispatches window.agent.prewarm with provider/model/effort hint from the active session', () => {
     const proj = createDefaultProjectState()
-    const sess = { ...createDefaultPerSessionState(), selectedModel: 'opus-4-7', selectedEffort: 'high' as const }
+    const sess = { ...createDefaultPerSessionState(), selectedModel: 'opus-4-8', selectedEffort: 'high' as const }
     proj._activeSessionId = 'sid-1'
     proj._sessions = { 'sid-1': sess }
     useChatStore.setState({ projectSessions: { '/p1': proj }, activeProject: '/p1' })
@@ -142,7 +142,7 @@ describe('triggerPrewarm', () => {
     expect(mockPrewarm).toHaveBeenCalledTimes(1)
     const [path, hint] = mockPrewarm.mock.calls[0]
     expect(path).toBe('/p1')
-    expect(hint).toMatchObject({ provider: 'claude', model: 'opus-4-7', effort: 'high' })
+    expect(hint).toMatchObject({ provider: 'claude', model: 'opus-4-8', effort: 'high' })
   })
 
   it('passes codex hint shape for codex sessions', () => {

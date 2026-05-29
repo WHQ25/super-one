@@ -144,12 +144,12 @@ describe('session-provider-repo', () => {
       const p = createSessionProvider({
         harnessId: 'claude',
         name: 'my claude',
-        config: { apiKey: 'sk-xxx', model: 'claude-opus-4-7' },
+        config: { apiKey: 'sk-xxx', model: 'claude-opus-4-8' },
       })
       expect(p.isBase).toBe(false)
       expect(p.harnessId).toBe('claude')
       expect(p.name).toBe('my claude')
-      expect(p.config).toMatchObject({ apiKey: 'sk-xxx', model: 'claude-opus-4-7' })
+      expect(p.config).toMatchObject({ apiKey: 'sk-xxx', model: 'claude-opus-4-8' })
     })
 
     it('rejects invalid config (Zod validation)', () => {

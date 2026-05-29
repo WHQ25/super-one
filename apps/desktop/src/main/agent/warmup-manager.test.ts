@@ -51,7 +51,7 @@ describe('WarmupManager.keyOf', () => {
 
   it('ignores model field (model is runtime-switchable via setModel)', () => {
     const k0 = WarmupManager.keyOf(baseOpts({ model: 'claude-sonnet-4-6' }))
-    const k1 = WarmupManager.keyOf(baseOpts({ model: 'claude-opus-4-7' }))
+    const k1 = WarmupManager.keyOf(baseOpts({ model: 'claude-opus-4-8' }))
     expect(k0).toBe(k1)
   })
 

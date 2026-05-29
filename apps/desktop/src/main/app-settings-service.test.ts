@@ -200,7 +200,7 @@ describe('app-settings-service', () => {
         analyticsEnabled: true,
         agentPreference: {
           claude: {
-            defaultModel: 'claude-opus-4-7',
+            defaultModel: 'claude-opus-4-8',
             defaultEffort: 'max',
             defaultPermissionMode: 'default',
             defaultSandboxMode: 'on',
@@ -214,7 +214,7 @@ describe('app-settings-service', () => {
           codex: { defaultModel: 'gpt-5.4' },
         },
       })
-      expect(result.agentPreference.claude.defaultModel).toBe('claude-opus-4-7')
+      expect(result.agentPreference.claude.defaultModel).toBe('claude-opus-4-8')
       expect(result.agentPreference.codex.defaultModel).toBe('gpt-5.4')
     })
 

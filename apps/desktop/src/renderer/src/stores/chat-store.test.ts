@@ -1492,7 +1492,7 @@ describe('applyDefaultModel via ensureSession', () => {
     useChatStore.getState().ensureSession('/model-test')
     const session = getActiveDraftSession('/model-test')!
     expect(session.selectedModel).toBe('claude-sonnet-4-6')
-    expect(session.selectedEffort).toBe('medium')
+    expect(session.selectedEffort).toBe('high')
   })
 
   it('does not set effort when model has no supportedEffortLevels', () => {
@@ -1506,17 +1506,17 @@ describe('applyDefaultModel via ensureSession', () => {
     expect(session.selectedEffort).toBeUndefined()
   })
 
-  it('defaults to xhigh when model supports xhigh (e.g. Opus 4.7)', () => {
+  it('defaults to high when model supports high (e.g. Opus 4.8)', () => {
     setClaude({
       models: [
-        { id: 'claude-opus-4-7', name: 'Opus 4.7', supportedEffortLevels: ['low', 'medium', 'high', 'xhigh'] },
+        { id: 'claude-opus-4-8', name: 'Opus 4.8', supportedEffortLevels: ['low', 'medium', 'high', 'xhigh'] },
       ] as never[],
     })
 
     useChatStore.getState().ensureSession('/opus-47')
     const session = getActiveDraftSession('/opus-47')!
-    expect(session.selectedModel).toBe('claude-opus-4-7')
-    expect(session.selectedEffort).toBe('xhigh')
+    expect(session.selectedModel).toBe('claude-opus-4-8')
+    expect(session.selectedEffort).toBe('high')
   })
 
   it('leaves default model when no models available', () => {
@@ -1529,12 +1529,12 @@ describe('applyDefaultModel via ensureSession', () => {
 })
 
 describe('getDefaultEffortForModel', () => {
-  it('returns xhigh when model supports xhigh', () => {
-    expect(getDefaultEffortForModel({ id: 'claude-opus-4-7', name: 'Opus 4.7', description: '', supportedEffortLevels: ['low', 'medium', 'high', 'xhigh'] })).toBe('xhigh')
+  it('returns high when model supports high', () => {
+    expect(getDefaultEffortForModel({ id: 'claude-opus-4-8', name: 'Opus 4.8', description: '', supportedEffortLevels: ['low', 'medium', 'high', 'xhigh'] })).toBe('high')
   })
 
-  it('returns medium when model supports medium but not xhigh', () => {
-    expect(getDefaultEffortForModel({ id: 'claude-sonnet-4-6', name: 'Sonnet', description: '', supportedEffortLevels: ['low', 'medium', 'high'] })).toBe('medium')
+  it('returns medium when model supports medium but not high', () => {
+    expect(getDefaultEffortForModel({ id: 'claude-sonnet-4-6', name: 'Sonnet', description: '', supportedEffortLevels: ['low', 'medium'] })).toBe('medium')
   })
 
   it('returns undefined when model has no effort levels', () => {
@@ -1542,8 +1542,8 @@ describe('getDefaultEffortForModel', () => {
     expect(getDefaultEffortForModel(undefined)).toBeUndefined()
   })
 
-  it('falls back to first level when neither xhigh nor medium is present', () => {
-    expect(getDefaultEffortForModel({ id: 'weird-model', name: 'Weird', description: '', supportedEffortLevels: ['low', 'high'] })).toBe('low')
+  it('falls back to first level when neither high nor medium is present', () => {
+    expect(getDefaultEffortForModel({ id: 'weird-model', name: 'Weird', description: '', supportedEffortLevels: ['low'] })).toBe('low')
   })
 })
 
@@ -1758,7 +1758,7 @@ describe('switchSession Case A (in _sessions)', () => {
     expect(after._activeSessionId).toBe('ses-b')
     expect(mockWindowApp.resumeSession).toHaveBeenCalledWith('/test', 'ses-b', '/test')
     expect(after._sessions['ses-b'].selectedModel).toBe('claude-sonnet-4-6')
-    expect(after._sessions['ses-b'].selectedEffort).toBe('medium')
+    expect(after._sessions['ses-b'].selectedEffort).toBe('high')
   })
 
   it('realigns project cwd when switching from worktree session to local session', async () => {
@@ -1887,7 +1887,7 @@ describe('switchSession Case B (from DB)', () => {
     expect(after._sessions['db-session'].contextTokens).toBe(1000)
     expect(after._sessions['db-session'].sessionProvider).toBe('claude')
     expect(after._sessions['db-session'].selectedModel).toBe('claude-sonnet-4-6')
-    expect(after._sessions['db-session'].selectedEffort).toBe('medium')
+    expect(after._sessions['db-session'].selectedEffort).toBe('high')
     expect(mockWindowApp.resumeSession).toHaveBeenCalledWith('/test', 'db-session', '/test')
   })
 
@@ -4500,10 +4500,10 @@ describe('cyclePermissionMode', () => {
     setClaude({
       account: { subscriptionType: 'max', apiProvider: 'firstParty' },
       models: [
-        { id: 'claude-opus-4-7', name: 'Opus 4.7', description: '', supportsAutoMode: true },
+        { id: 'claude-opus-4-8', name: 'Opus 4.8', description: '', supportsAutoMode: true },
       ] as never[],
     })
-    patchDraftSession('/test', { selectedModel: 'claude-opus-4-7' })
+    patchDraftSession('/test', { selectedModel: 'claude-opus-4-8' })
 
     await useChatStore.getState().cyclePermissionMode()
     expect(getActiveDraftSession('/test')!.permissionMode).toBe('plan')
@@ -4525,11 +4525,11 @@ describe('setSelectedModel auto-mode downgrade', () => {
     setClaude({
       account: { subscriptionType: 'max', apiProvider: 'firstParty' },
       models: [
-        { id: 'claude-opus-4-7', name: 'Opus 4.7', description: '', supportsAutoMode: true },
+        { id: 'claude-opus-4-8', name: 'Opus 4.8', description: '', supportsAutoMode: true },
         { id: 'claude-haiku-4-5', name: 'Haiku 4.5', description: '' },
       ] as never[],
     })
-    patchDraftSession('/test', { selectedModel: 'claude-opus-4-7', permissionMode: 'auto' })
+    patchDraftSession('/test', { selectedModel: 'claude-opus-4-8', permissionMode: 'auto' })
 
     expect(getActiveDraftSession('/test')!.permissionMode).toBe('auto')
 
@@ -4544,11 +4544,11 @@ describe('setSelectedModel auto-mode downgrade', () => {
     setClaude({
       account: { subscriptionType: 'team', apiProvider: 'firstParty' },
       models: [
-        { id: 'claude-opus-4-7', name: 'Opus 4.7', description: '', supportsAutoMode: true },
+        { id: 'claude-opus-4-8', name: 'Opus 4.8', description: '', supportsAutoMode: true },
         { id: 'claude-sonnet-4-6', name: 'Sonnet 4.6', description: '', supportsAutoMode: true },
       ] as never[],
     })
-    patchDraftSession('/test', { selectedModel: 'claude-opus-4-7', permissionMode: 'auto' })
+    patchDraftSession('/test', { selectedModel: 'claude-opus-4-8', permissionMode: 'auto' })
 
     useChatStore.getState().setSelectedModel('claude-sonnet-4-6')
 
@@ -4581,10 +4581,10 @@ describe('agent_setting_change patch broadcast', () => {
       type: 'agent_setting_change',
       projectPath: '/test',
       sessionId: 'sess-1',
-      patch: { selectedModel: 'claude-opus-4-7', selectedEffort: 'high' },
+      patch: { selectedModel: 'claude-opus-4-8', selectedEffort: 'high' },
     } as never)
     const sess = useChatStore.getState().projectSessions['/test']._sessions['sess-1']
-    expect(sess.selectedModel).toBe('claude-opus-4-7')
+    expect(sess.selectedModel).toBe('claude-opus-4-8')
     expect(sess.selectedEffort).toBe('high')
     expect(sess.modelUserChosen).toBe(true)
     expect(sess.effortUserChosen).toBe(true)

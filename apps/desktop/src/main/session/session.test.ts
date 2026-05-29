@@ -259,13 +259,13 @@ describe('Session state machine', () => {
   })
 
   it('prewarm forwards to backend with session cwd, permissionMode, and model', () => {
-    ;({ session, backend } = makeSession({ model: 'claude-opus-4-7', permissionMode: 'acceptEdits' }))
+    ;({ session, backend } = makeSession({ model: 'claude-opus-4-8', permissionMode: 'acceptEdits' }))
     session.prewarm()
     expect(backend.prewarmCalls).toHaveLength(1)
     expect(backend.prewarmCalls[0]).toMatchObject({
       cwd: '/tmp/proj',
       permissionMode: 'acceptEdits',
-      model: 'claude-opus-4-7',
+      model: 'claude-opus-4-8',
     })
   })
 
@@ -283,13 +283,13 @@ describe('Session state machine', () => {
     const p = session.send({
       content: 'hi',
       effort: 'xhigh',
-      model: 'claude-opus-4-7',
+      model: 'claude-opus-4-8',
       additionalDirs: ['/extra/dir'],
     })
     await new Promise((r) => setTimeout(r, 0))
     expect(backend.startOpts).toMatchObject({
       effort: 'xhigh',
-      model: 'claude-opus-4-7',
+      model: 'claude-opus-4-8',
       additionalDirectories: ['/extra/dir'],
     })
     backend.resolveSend?.()
@@ -788,7 +788,7 @@ describe('Session - passes provider config into backend.start', () => {
   it('includes cwd, config, permissionMode, resumedProviderSessionId', async () => {
     const { session, backend } = makeSession({
       cwd: '/tmp/worktree',
-      providerConfig: { apiKey: 'sk-abc', model: 'claude-opus-4-7' },
+      providerConfig: { apiKey: 'sk-abc', model: 'claude-opus-4-8' },
       permissionMode: 'acceptEdits',
       resumedProviderSessionId: 'prior-thread',
     })
@@ -796,7 +796,7 @@ describe('Session - passes provider config into backend.start', () => {
     await new Promise((r) => setTimeout(r, 0))
     expect(backend.startOpts).toMatchObject({
       cwd: '/tmp/worktree',
-      config: { apiKey: 'sk-abc', model: 'claude-opus-4-7' },
+      config: { apiKey: 'sk-abc', model: 'claude-opus-4-8' },
       permissionMode: 'acceptEdits',
       providerSessionId: 'prior-thread',
     })
@@ -1700,13 +1700,13 @@ describe('Session ownership', () => {
     const { session } = makeSession()
     const events: import('@superone/shared/agent-types').AgentEvent[] = []
     session.on((e) => events.push(e))
-    session.setSelectedSettings({ model: 'claude-opus-4-7', effort: 'high' })
+    session.setSelectedSettings({ model: 'claude-opus-4-8', effort: 'high' })
     const settingEvent = events.find((e) => e.type === 'agent_setting_change')
     expect(settingEvent).toBeDefined()
     if (settingEvent && settingEvent.type === 'agent_setting_change') {
-      expect(settingEvent.selectedModel).toBe('claude-opus-4-7')
+      expect(settingEvent.selectedModel).toBe('claude-opus-4-8')
       expect(settingEvent.selectedEffort).toBe('high')
-      expect(settingEvent.patch?.selectedModel).toBe('claude-opus-4-7')
+      expect(settingEvent.patch?.selectedModel).toBe('claude-opus-4-8')
       expect(settingEvent.patch?.selectedEffort).toBe('high')
     }
   })

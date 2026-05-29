@@ -66,8 +66,8 @@ const {
 const { createDefaultPerSessionState, createDefaultProjectState } = await import('../defaults')
 
 const opus: ModelOption = {
-  id: 'opus-4-7',
-  name: 'Opus 4.7',
+  id: 'opus-4-8',
+  name: 'Opus 4.8',
   description: '',
   supportedEffortLevels: ['low', 'medium', 'high', 'xhigh'],
   supportsAutoMode: true,
@@ -116,11 +116,11 @@ describe('resolveDefaultClaudeModel', () => {
 
   it('falls through to models[0] when the preferred id is not in the list', () => {
     defaultPrefsCache.claudeSelection = { modelId: 'ghost' }
-    expect(resolveDefaultClaudeModel([opus, sonnet])?.id).toBe('opus-4-7')
+    expect(resolveDefaultClaudeModel([opus, sonnet])?.id).toBe('opus-4-8')
   })
 
   it('returns models[0] when no claudeSelection is cached', () => {
-    expect(resolveDefaultClaudeModel([opus, sonnet])?.id).toBe('opus-4-7')
+    expect(resolveDefaultClaudeModel([opus, sonnet])?.id).toBe('opus-4-8')
   })
 
   it('returns undefined for an empty model list', () => {
@@ -130,7 +130,7 @@ describe('resolveDefaultClaudeModel', () => {
 
 describe('resolveDefaultClaudeEffort', () => {
   it('returns the cached preferred effort when the model supports it', () => {
-    defaultPrefsCache.claudeSelection = { modelId: 'opus-4-7', effort: 'high' }
+    defaultPrefsCache.claudeSelection = { modelId: 'opus-4-8', effort: 'high' }
     expect(resolveDefaultClaudeEffort(opus)).toBe('high')
   })
 
@@ -153,8 +153,8 @@ describe('applyDefaultModel', () => {
   it('mutates the session with the resolved model id + effort', () => {
     const session = createDefaultPerSessionState()
     applyDefaultModel(session, [opus, sonnet])
-    expect(session.selectedModel).toBe('opus-4-7')
-    expect(session.selectedEffort).toBe('xhigh') // opus prefers xhigh (highest supported)
+    expect(session.selectedModel).toBe('opus-4-8')
+    expect(session.selectedEffort).toBe('high') // opus prefers high (default effort)
   })
 
   it('only writes selectedEffort when the model exposes one', () => {
@@ -193,14 +193,14 @@ describe('applySessionAgentDefaults', () => {
     session.selectedModel = ''
     const project = createDefaultProjectState()
     const patch = applySessionAgentDefaults(session, project, [opus])
-    expect(patch.selectedModel).toBe('opus-4-7')
-    expect(patch.selectedEffort).toBe('xhigh')
+    expect(patch.selectedModel).toBe('opus-4-8')
+    expect(patch.selectedEffort).toBe('high')
   })
 
   it('returns {} when the Claude session already has a selectedModel', () => {
     const session = createDefaultPerSessionState()
     session.sessionProvider = 'claude'
-    session.selectedModel = 'opus-4-7'
+    session.selectedModel = 'opus-4-8'
     const project = createDefaultProjectState()
     expect(applySessionAgentDefaults(session, project, [opus])).toEqual({})
   })
@@ -224,15 +224,15 @@ describe('_computeClaudeDefaultPatch', () => {
     session.selectedModel = ''
     session.selectedEffort = undefined
     const patch = _computeClaudeDefaultPatch(session, [opus])
-    expect(patch).toEqual({ selectedModel: 'opus-4-7', selectedEffort: 'xhigh' })
+    expect(patch).toEqual({ selectedModel: 'opus-4-8', selectedEffort: 'high' })
   })
 
   it('skips selectedModel field when the resolved model matches current', () => {
     const session = createDefaultPerSessionState()
-    session.selectedModel = 'opus-4-7'
+    session.selectedModel = 'opus-4-8'
     session.selectedEffort = undefined
     const patch = _computeClaudeDefaultPatch(session, [opus])
-    expect(patch).toEqual({ selectedEffort: 'xhigh' })
+    expect(patch).toEqual({ selectedEffort: 'high' })
   })
 
   it('only proposes effort when model is user-chosen but effort is not', () => {
@@ -247,8 +247,8 @@ describe('_computeClaudeDefaultPatch', () => {
 
   it('returns null when nothing actually changes', () => {
     const session = createDefaultPerSessionState()
-    session.selectedModel = 'opus-4-7'
-    session.selectedEffort = 'xhigh'
+    session.selectedModel = 'opus-4-8'
+    session.selectedEffort = 'high'
     expect(_computeClaudeDefaultPatch(session, [opus])).toBeNull()
   })
 })
@@ -321,16 +321,16 @@ describe('_reapplyAgentDefaultsToSessions', () => {
   it("applies Claude defaults across every project's session when kind='claude'", () => {
     setClaude({ models: [opus] })
     seedProject('/p1', { selectedModel: '', selectedEffort: undefined })
-    seedProject('/p2', { selectedModel: 'opus-4-7', selectedEffort: 'low' })
+    seedProject('/p2', { selectedModel: 'opus-4-8', selectedEffort: 'low' })
 
     _reapplyAgentDefaultsToSessions('claude')
 
     const p1 = useChatStore.getState().projectSessions['/p1']
     const p2 = useChatStore.getState().projectSessions['/p2']
-    expect(p1._sessions['sid-1'].selectedModel).toBe('opus-4-7')
-    expect(p1._sessions['sid-1'].selectedEffort).toBe('xhigh')
-    expect(p2._sessions['sid-1'].selectedModel).toBe('opus-4-7')
-    expect(p2._sessions['sid-1'].selectedEffort).toBe('xhigh')
+    expect(p1._sessions['sid-1'].selectedModel).toBe('opus-4-8')
+    expect(p1._sessions['sid-1'].selectedEffort).toBe('high')
+    expect(p2._sessions['sid-1'].selectedModel).toBe('opus-4-8')
+    expect(p2._sessions['sid-1'].selectedEffort).toBe('high')
   })
 
   it("applies Codex defaults when kind='codex'", () => {
@@ -345,7 +345,7 @@ describe('_reapplyAgentDefaultsToSessions', () => {
 
   it('leaves projectSessions reference unchanged when nothing needs an update', () => {
     setClaude({ models: [opus] })
-    seedProject('/p1', { selectedModel: 'opus-4-7', selectedEffort: 'xhigh', modelUserChosen: true, effortUserChosen: true })
+    seedProject('/p1', { selectedModel: 'opus-4-8', selectedEffort: 'xhigh', modelUserChosen: true, effortUserChosen: true })
     const before = useChatStore.getState().projectSessions
 
     _reapplyAgentDefaultsToSessions('claude')
@@ -354,7 +354,7 @@ describe('_reapplyAgentDefaultsToSessions', () => {
 
   it('only mutates the projects whose sessions actually changed', () => {
     setClaude({ models: [opus] })
-    seedProject('/p-untouched', { selectedModel: 'opus-4-7', selectedEffort: 'xhigh', modelUserChosen: true, effortUserChosen: true })
+    seedProject('/p-untouched', { selectedModel: 'opus-4-8', selectedEffort: 'xhigh', modelUserChosen: true, effortUserChosen: true })
     seedProject('/p-changes', { selectedModel: '', selectedEffort: undefined })
     const untouchedBefore = useChatStore.getState().projectSessions['/p-untouched']
 
@@ -362,6 +362,6 @@ describe('_reapplyAgentDefaultsToSessions', () => {
 
     const after = useChatStore.getState().projectSessions
     expect(after['/p-untouched']).toBe(untouchedBefore)
-    expect(after['/p-changes']._sessions['sid-1'].selectedModel).toBe('opus-4-7')
+    expect(after['/p-changes']._sessions['sid-1'].selectedModel).toBe('opus-4-8')
   })
 })

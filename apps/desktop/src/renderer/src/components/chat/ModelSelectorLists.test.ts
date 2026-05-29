@@ -3,7 +3,7 @@ import { resolveClaudeEntries } from './ModelSelectorLists'
 import type { ModelOption, ProviderModelEnv } from '@superone/shared/agent-types'
 
 const claudeModels: ModelOption[] = [
-  { id: 'claude-opus-4-7', name: 'Opus 4.7', description: 'Top tier' },
+  { id: 'claude-opus-4-8', name: 'Opus 4.8', description: 'Top tier' },
   { id: 'claude-sonnet-4-5', name: 'Sonnet 4.5', description: 'Balanced' },
   { id: 'claude-haiku-4-5', name: 'Haiku 4.5', description: 'Fast' },
 ]
@@ -14,7 +14,7 @@ describe('resolveClaudeEntries', () => {
     expect(entries).toHaveLength(3)
     expect(entries[0]).toMatchObject({
       model: claudeModels[0],
-      displayName: 'Opus 4.7',
+      displayName: 'Opus 4.8',
       description: 'Top tier',
     })
     expect(entries[1].displayName).toBe('Sonnet 4.5')
@@ -36,7 +36,7 @@ describe('resolveClaudeEntries', () => {
       opus: { id: 'glm-4.6-air' },
     }
     const entries = resolveClaudeEntries(claudeModels, env)
-    const opus = entries.find((e) => e.model.id === 'claude-opus-4-7')
+    const opus = entries.find((e) => e.model.id === 'claude-opus-4-8')
     expect(opus?.displayName).toBe('glm-4.6-air')
     expect(opus?.description).toBeUndefined()
   })
@@ -46,8 +46,8 @@ describe('resolveClaudeEntries', () => {
       sonnet: { id: 'glm-4.6', name: 'GLM 4.6' },
     }
     const entries = resolveClaudeEntries(claudeModels, env)
-    const opus = entries.find((e) => e.model.id === 'claude-opus-4-7')
-    expect(opus?.displayName).toBe('Opus 4.7')
+    const opus = entries.find((e) => e.model.id === 'claude-opus-4-8')
+    expect(opus?.displayName).toBe('Opus 4.8')
     expect(opus?.description).toBeUndefined()
   })
 

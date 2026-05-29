@@ -45,9 +45,9 @@ describe('reducePermission: agent_setting_change', () => {
   it('writes selectedModel + modelUserChosen and clears effortUserChosen iff selectedEffort given', () => {
     const patch = reducePermission(createDefaultPerSessionState(), {
       type: 'agent_setting_change',
-      patch: { selectedModel: 'opus-4-7', selectedEffort: 'high' },
+      patch: { selectedModel: 'opus-4-8', selectedEffort: 'high' },
     } as never)
-    expect(patch.selectedModel).toBe('opus-4-7')
+    expect(patch.selectedModel).toBe('opus-4-8')
     expect(patch.modelUserChosen).toBe(true)
     expect(patch.selectedEffort).toBe('high')
     expect(patch.effortUserChosen).toBe(true)

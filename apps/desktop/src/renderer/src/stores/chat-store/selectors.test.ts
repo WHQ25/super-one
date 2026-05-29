@@ -123,7 +123,7 @@ describe('useActiveSession', () => {
             ...s.projectSessions[PATH],
             _sessions: {
               ...s.projectSessions[PATH]._sessions,
-              [sid]: { ...s.projectSessions[PATH]._sessions[sid], selectedModel: 'opus-4-7', draftText: 'hi' },
+              [sid]: { ...s.projectSessions[PATH]._sessions[sid], selectedModel: 'opus-4-8', draftText: 'hi' },
             },
             showDirManager: true,
           },
@@ -138,7 +138,7 @@ describe('useActiveSession', () => {
 
     expect(cwd).toBe(PATH)
     expect(draftText).toBe('hi')
-    expect(selectedModel).toBe('opus-4-7')
+    expect(selectedModel).toBe('opus-4-8')
     expect(showDirManager).toBe(true)
   })
 
@@ -230,7 +230,7 @@ describe('Claude resource selectors', () => {
 
   it('return the live claude resources once loaded', () => {
     setClaude({
-      models: [{ id: 'opus-4-7', name: 'Opus', description: '' }],
+      models: [{ id: 'opus-4-8', name: 'Opus', description: '' }],
       account: { subscriptionType: 'Claude Max' } as AccountInfo,
       slashCommands: [{ name: 'reset' } as never],
       skills: [{ name: 's1' } as never],
@@ -239,7 +239,7 @@ describe('Claude resource selectors', () => {
       outputStyles: ['styleA'],
     })
     const state = useChatStore.getState()
-    expect(selectClaudeModels(state).map((m) => m.id)).toEqual(['opus-4-7'])
+    expect(selectClaudeModels(state).map((m) => m.id)).toEqual(['opus-4-8'])
     expect(selectClaudeAccount(state).subscriptionType).toBe('Claude Max')
     expect(selectClaudeSlashCommands(state)[0]?.name).toBe('reset')
     expect(selectClaudeSkills(state)[0]?.name).toBe('s1')

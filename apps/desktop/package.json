@@ -54,6 +54,7 @@
     "@tiptap/extension-mathematics": "^3.23.6",
     "@tiptap/extension-table": "^3.23.6",
     "@tiptap/html": "^3.23.6",
+    "@tiptap/suggestion": "^3.23.6",
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/addon-search": "^0.16.0",
     "@xterm/addon-serialize": "^0.13.0",

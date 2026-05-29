@@ -27,11 +27,12 @@ function getFileExt(fileName: string): string {
 
 type TabKey = 'changes' | 'editor' | 'preview' | 'file'
 
-function useOwnFileData(filePath: string | undefined) {
+function useOwnFileData(filePath: string | undefined, refreshKey: number) {
   const fileRoot = useEffectiveProjectRoot()
   const [diff, setDiff] = useState<GitFileDiff | null>(null)
   const [content, setContent] = useState<GitFileContent | null>(null)
   const [tab, setTab] = useState<TabKey>('editor')
+  const pickedTabForPathRef = useRef<string | null>(null)
 
   useEffect(() => {
     if (!filePath || !fileRoot) return
@@ -43,6 +44,8 @@ function useOwnFileData(filePath: string | undefined) {
       if (cancelled) return
       setDiff(d)
       setContent(c)
+      if (pickedTabForPathRef.current === filePath) return
+      pickedTabForPathRef.current = filePath
       const isBin = c.language === 'image' || c.language === 'pdf' || c.language === 'video' || c.language === 'audio'
       const isSvg = c.language === 'svg'
       const ext = filePath.split('.').pop()?.toLowerCase() ?? ''
@@ -50,10 +53,10 @@ function useOwnFileData(filePath: string | undefined) {
       const isMd = MARKDOWN_EXTS.has(ext)
       setTab(isBin || isSvg || isHtml ? 'preview' : d.diff ? 'changes' : isMd ? 'editor' : 'editor')
     }).catch(() => {
-      if (!cancelled) { setDiff(null); setContent(null) }
+      if (!cancelled && pickedTabForPathRef.current !== filePath) { setDiff(null); setContent(null) }
     })
     return () => { cancelled = true }
-  }, [filePath, fileRoot])
+  }, [filePath, fileRoot, refreshKey])
 
   return { diff, content, tab, setTab }
 }
@@ -66,8 +69,9 @@ export function FilePreview({ filePath }: FilePreviewProps) {
   const { t } = useTranslation()
   const fileRoot = useEffectiveProjectRoot()
   const [isDirty, setIsDirty] = useState(false)
+  const [refreshKey, setRefreshKey] = useState(0)
   const liveContentRef = useRef<string | null>(null)
-  const { diff: fileDiff, content: fileContent, tab: activeTab, setTab: setActiveTab } = useOwnFileData(filePath)
+  const { diff: fileDiff, content: fileContent, tab: activeTab, setTab: setActiveTab } = useOwnFileData(filePath, refreshKey)
   const selectedFile = filePath
 
   const fileName = selectedFile?.split('/').pop() ?? ''
@@ -102,6 +106,7 @@ export function FilePreview({ filePath }: FilePreviewProps) {
 
   const handleDirtyChange = useCallback((dirty: boolean) => setIsDirty(dirty), [])
   const handleContentChange = useCallback((text: string) => { liveContentRef.current = text }, [])
+  const handleSaved = useCallback(() => setRefreshKey((k) => k + 1), [])
 
   const rootRef = useRef<HTMLDivElement>(null)
   const [zoom, setZoom] = useState(1)
@@ -173,7 +178,7 @@ export function FilePreview({ filePath }: FilePreviewProps) {
                 fileContent={fileContent?.content ?? null}
                 className={effectiveTab === 'editor' ? 'size-full' : 'hidden'}
               >
-                <MarkdownEditor content={fileContent?.content ?? ''} filePath={selectedFile} onDirtyChange={handleDirtyChange} onContentChange={handleContentChange} />
+                <MarkdownEditor content={fileContent?.content ?? ''} filePath={selectedFile} onDirtyChange={handleDirtyChange} onContentChange={handleContentChange} onSaved={handleSaved} />
               </FileSelectionContextMenuZone>
             )}
             {effectiveTab === 'changes' && hasDiff ? (

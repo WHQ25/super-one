@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useEditor, EditorContent } from '@tiptap/react'
+import { TextSelection } from '@tiptap/pm/state'
 import StarterKit from '@tiptap/starter-kit'
 import { TableKit } from '@tiptap/extension-table'
 import { Placeholder } from '@tiptap/extension-placeholder'
@@ -10,6 +11,8 @@ import { requestOpenExternalLink } from '@/lib/external-link'
 import { docToMarkdown, markdownToDoc } from './markdown-codec'
 import { CodeBlock } from './extensions/code-block-view'
 import { MermaidNode } from './extensions/mermaid-node'
+import { SlashCommand } from './extensions/slash-command'
+import { TableContextMenu, type TableMenuPos } from './extensions/TableContextMenu'
 import { createMathExtensions, type MathEditTarget } from './extensions/math'
 import { MathEditDialog } from './extensions/MathEditDialog'
 import './markdown-editor.css'
@@ -23,18 +26,21 @@ interface MarkdownEditorProps {
   filePath: string
   onDirtyChange: (dirty: boolean) => void
   onContentChange: (text: string) => void
+  onSaved?: (text: string) => void
 }
 
-export function MarkdownEditor({ content, filePath, onDirtyChange, onContentChange }: MarkdownEditorProps) {
+export function MarkdownEditor({ content, filePath, onDirtyChange, onContentChange, onSaved }: MarkdownEditorProps) {
   const fileRoot = useEffectiveProjectRoot()
   const [isDirty, setIsDirty] = useState(false)
   const contentRef = useRef(content)
+  const loadedRef = useRef<string | null>(null)
   const savingRef = useRef(false)
   const loadingRef = useRef(false)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const filePathRef = useRef(filePath)
   const [mathEdit, setMathEdit] = useState<MathEditTarget | null>(null)
   const [linkHref, setLinkHref] = useState<string | null>(null)
+  const [tableMenu, setTableMenu] = useState<TableMenuPos | null>(null)
 
   useEffect(() => {
     filePathRef.current = filePath
@@ -48,10 +54,12 @@ export function MarkdownEditor({ content, filePath, onDirtyChange, onContentChan
     const result = await window.app.saveFile(fileRoot, path, text)
     if (result.ok) {
       contentRef.current = text
+      loadedRef.current = text
       setIsDirty(false)
+      onSaved?.(text)
     }
     savingRef.current = false
-  }, [fileRoot])
+  }, [fileRoot, onSaved])
 
   const editor = useEditor({
     extensions: [
@@ -60,6 +68,7 @@ export function MarkdownEditor({ content, filePath, onDirtyChange, onContentChan
       TableKit,
       MermaidNode,
       ...createMathExtensions({ onEdit: setMathEdit }),
+      SlashCommand,
       Placeholder.configure({ placeholder: 'Start writing…' }),
     ],
     editorProps: {
@@ -73,6 +82,21 @@ export function MarkdownEditor({ content, filePath, onDirtyChange, onContentChan
             return true
           }
           return false
+        },
+        contextmenu: (view, event) => {
+          const posInfo = view.posAtCoords({ left: event.clientX, top: event.clientY })
+          if (!posInfo) return false
+          const $pos = view.state.doc.resolve(posInfo.pos)
+          let inTable = false
+          for (let d = $pos.depth; d > 0; d--) {
+            if ($pos.node(d).type.name === 'table') { inTable = true; break }
+          }
+          if (!inTable) return false
+          event.preventDefault()
+          event.stopPropagation()
+          view.dispatch(view.state.tr.setSelection(TextSelection.near($pos)))
+          setTableMenu({ x: event.clientX, y: event.clientY })
+          return true
         },
       },
     },
@@ -92,6 +116,7 @@ export function MarkdownEditor({ content, filePath, onDirtyChange, onContentChan
 
   useEffect(() => {
     if (!editor || savingRef.current) return
+    if (content === loadedRef.current) return
     if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null }
     contentRef.current = content
     let cancelled = false
@@ -99,6 +124,7 @@ export function MarkdownEditor({ content, filePath, onDirtyChange, onContentChan
     markdownToDoc(content).then((doc) => {
       if (cancelled || !editor) return
       editor.commands.setContent(doc)
+      loadedRef.current = content
       setIsDirty(false)
       loadingRef.current = false
     }).catch(() => {
@@ -121,6 +147,9 @@ export function MarkdownEditor({ content, filePath, onDirtyChange, onContentChan
         editor={editor}
         className="markdown-editor size-full overflow-auto text-sm [&_.tiptap]:size-full [&_.tiptap]:p-6 [&_.tiptap]:outline-none"
       />
+      {editor && tableMenu && (
+        <TableContextMenu editor={editor} pos={tableMenu} onClose={() => setTableMenu(null)} />
+      )}
       <MathEditDialog editor={editor} target={mathEdit} onClose={() => setMathEdit(null)} />
       <LinkSafetyModal
         url={linkHref ?? ''}

@@ -89,9 +89,11 @@ describe('checkAutoModeEligibility', () => {
   })
 
   it('rejects Max + model without supportsAutoMode (SDK already filtered)', () => {
-    // Verified 2026-04-17: on a Max account SDK returns supportsAutoMode:true
-    // only for Opus 4.7; Sonnet 4.6 has no supportsAutoMode field. So the
-    // "Max + Sonnet 4.6 must be rejected" rule is enforced via modelSupportsAutoMode.
+    // Verified 2026-05-29 against SDK 0.3.154: on a Max account SDK now sets
+    // supportsAutoMode on both Opus 4.8 and Sonnet 4.6. The rule we enforce
+    // here is the inverse: any model that arrives without supportsAutoMode
+    // (e.g. Haiku, or a future model not yet on the Auto Mode allowlist) is
+    // rejected via modelSupportsAutoMode regardless of plan.
     expect(
       checkAutoModeEligibility({
         subscriptionType: 'Claude Max',

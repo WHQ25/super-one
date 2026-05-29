@@ -37,11 +37,12 @@ export function normalizePlan(input: string | undefined): PlanKind | undefined {
 
 /**
  * The SDK already filters `ModelInfo.supportsAutoMode` by the authenticated
- * account's plan (verified 2026-04-17: Max account sees supportsAutoMode only
- * on Opus 4.7, not Sonnet 4.6). So we do NOT duplicate the plan × model matrix
- * on the client — we trust `modelSupportsAutoMode` as the authoritative signal
- * and only surface higher-level gates (provider, unauthenticated, Pro plan,
- * admin kill switch) to produce differentiated error messages.
+ * account's plan (verified 2026-05-29 against SDK 0.3.154: on a Max account
+ * supportsAutoMode is now set on both Opus 4.8 and Sonnet 4.6; earlier Claude
+ * Code releases only flagged Opus). So we do NOT duplicate the plan × model
+ * matrix on the client — we trust `modelSupportsAutoMode` as the authoritative
+ * signal and only surface higher-level gates (provider, unauthenticated, Pro
+ * plan, admin kill switch) to produce differentiated error messages.
  */
 export function checkAutoModeEligibility(ctx: AutoModeCtx): AutoModeEligibility {
   if (ctx.apiProvider && ctx.apiProvider !== 'firstParty') {

@@ -7,7 +7,7 @@
     },
     "apps/desktop": {
       "name": "@superone/desktop",
-      "version": "0.38.6-alpha",
+      "version": "0.38.7-alpha",
       "dependencies": {
         "@anthropic-ai/claude-agent-sdk": "0.3.156",
         "@anthropic-ai/sdk": "^0.93.0",
@@ -33,6 +33,7 @@
         "@xterm/addon-webgl": "^0.19.0",
         "@xterm/headless": "^5.5.0",
         "@xterm/xterm": "^5.5.0",
+        "acorn": "^8.16.0",
         "archiver": "^7.0.1",
         "better-sqlite3": "^12.6.2",
         "bufferutil": "^4.1.0",

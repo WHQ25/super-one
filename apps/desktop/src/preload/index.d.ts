@@ -183,6 +183,7 @@ interface AppAPI {
   renameFile(folderPath: string, relPath: string, newName: string): Promise<FileOpResult>
   saveFile(folderPath: string, filePath: string, content: string): Promise<FileOpResult>
   readFileAsDataUri(absPath: string): Promise<{ ok: true; dataUri: string } | { ok: false; error: string }>
+  listWorkflowAgents(transcriptDir: string): Promise<Array<{ agentId: string; jsonlPath: string; label: string; toolCount: number; resultText?: string }>>
   saveFileAs(
     sourcePath: string,
     defaultName: string,

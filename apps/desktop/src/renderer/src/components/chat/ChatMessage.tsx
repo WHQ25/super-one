@@ -9,6 +9,7 @@ import { parseToolInput, parseMcpToolName } from './tool-display'
 import { useMiniAppStore } from '@/stores/miniapp'
 import type { MiniAppEntry } from '@superone/shared/miniapp-types'
 import { SubagentBlock } from './SubagentBlock'
+import { WorkflowBlock } from './WorkflowBlock'
 import { CodexTurnView } from './CodexTurnView'
 import { AttachmentBar } from './AttachmentBar'
 import { UserSelectionChip } from './UserSelectionChip'
@@ -53,6 +54,7 @@ type RenderSegment =
   | { kind: 'tools'; blocks: ContentBlock[]; startIndex: number }
   | { kind: 'app-tools'; appId: string; blocks: ContentBlock[]; startIndex: number }
   | { kind: 'subagent'; taskBlock: ContentBlock & { type: 'tool_use' }; childBlocks: ContentBlock[]; resultBlock?: ContentBlock; startIndex: number }
+  | { kind: 'workflow'; toolBlock: ContentBlock & { type: 'tool_use' }; resultBlock?: ContentBlock; startIndex: number }
 
 interface GroupResult {
   segments: RenderSegment[]
@@ -114,6 +116,8 @@ function groupContent(content: ContentBlock[], apps: MiniAppEntry[]): GroupResul
 
   // Active subagent collectors: taskToolUseId → segment reference
   const activeSubagents = new Map<string, RenderSegment & { kind: 'subagent' }>()
+  // Active workflow collectors: workflow toolUseId → segment reference
+  const activeWorkflows = new Map<string, RenderSegment & { kind: 'workflow' }>()
 
   const flush = () => {
     if (group.length === 0) return
@@ -157,6 +161,27 @@ function groupContent(content: ContentBlock[], apps: MiniAppEntry[]): GroupResul
       }
       segments.push(seg)
       activeSubagents.set(block.toolUseId, seg)
+      continue
+    }
+
+    // Workflow tool_result closes its workflow segment
+    if (block.type === 'tool_result' && activeWorkflows.has(block.toolUseId)) {
+      activeWorkflows.get(block.toolUseId)!.resultBlock = block
+      activeWorkflows.delete(block.toolUseId)
+      continue
+    }
+
+    // Start a new workflow segment for Workflow tool_use
+    if (block.type === 'tool_use' && block.toolName === 'Workflow') {
+      flush()
+      flushAppGroup()
+      const seg: RenderSegment & { kind: 'workflow' } = {
+        kind: 'workflow',
+        toolBlock: block,
+        startIndex: i,
+      }
+      segments.push(seg)
+      activeWorkflows.set(block.toolUseId, seg)
       continue
     }
 
@@ -621,6 +646,16 @@ export const ChatMessage = memo(function ChatMessage({ message, sessionStatus, i
                     key={`sa-${seg.startIndex}`}
                     taskBlock={seg.taskBlock}
                     childBlocks={seg.childBlocks}
+                    resultBlock={seg.resultBlock}
+                    isStreaming={isStreaming}
+                  />
+                )
+              }
+              if (seg.kind === 'workflow') {
+                return (
+                  <WorkflowBlock
+                    key={`wf-${seg.startIndex}`}
+                    toolBlock={seg.toolBlock}
                     resultBlock={seg.resultBlock}
                     isStreaming={isStreaming}
                   />

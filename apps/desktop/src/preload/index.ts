@@ -602,6 +602,8 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.SAVE_FILE, folderPath, filePath, content),
   readFileAsDataUri: (absPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.READ_FILE_AS_DATA_URI, absPath),
+  listWorkflowAgents: (transcriptDir: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.LIST_WORKFLOW_AGENTS, transcriptDir),
   saveFileAs: (sourcePath: string, defaultName: string) =>
     ipcRenderer.invoke(AgentIpcChannels.SAVE_FILE_AS, sourcePath, defaultName),
   showInFolder: (folderPath: string, relPath: string) =>

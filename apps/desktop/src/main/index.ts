@@ -62,6 +62,7 @@ import { initUpdater, installUpdate, checkForUpdates, simulateUpdate, simulateNo
 import { startWatching, stopWatching } from './file-watcher'
 import { notifyWidgetReady, clearAllGates } from './generative-ui/widget-gate'
 import { setBashOutputWindow, watchBashOutput, unwatchBashOutput, unwatchAll as unwatchAllBashOutputs, readBashOutputTail, getWatchedFilePath } from './bash-output-watcher'
+import { listWorkflowAgents } from './workflow-transcripts'
 import { parseGitStatusOutput, parseGitStatusFiles, type GitStatusPair } from './git-status-utils'
 import { mapModelInfo } from './agent/claude-models'
 import { getRecentFolders, addRecentFolder, removeRecentFolder, getProjectId, getProjectPathById } from './recent-folders'
@@ -1530,6 +1531,11 @@ function registerIpcHandlers(): void {
     } catch (err) {
       return { ok: false, error: (err as Error).message }
     }
+  })
+
+  ipcMain.handle(AgentIpcChannels.LIST_WORKFLOW_AGENTS, async (_event, transcriptDir: string) => {
+    if (typeof transcriptDir !== 'string' || !isAbsolute(transcriptDir)) return []
+    return listWorkflowAgents(transcriptDir)
   })
 
   ipcMain.handle(AgentIpcChannels.SAVE_FILE_AS, async (_event, sourcePath: string, defaultName: string) => {

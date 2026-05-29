@@ -1852,6 +1852,9 @@ export const AgentIpcChannels = {
   BASH_OUTPUT_READ_MORE: 'app:bash-output-read-more',
   BASH_OUTPUT_READ_FILE: 'app:bash-output-read-file',
 
+  // Workflow subagent transcripts
+  LIST_WORKFLOW_AGENTS: 'app:list-workflow-agents',
+
   // Remote control
   REMOTE_COMMAND: 'remote:command',
   REMOTE_CLIENT_REGISTERED: 'remote:client-registered',

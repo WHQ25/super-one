@@ -4,6 +4,14 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.38.7-alpha] - 2026-05-29
+
+### Fixed
+- Codex app-server failed to launch on Windows with `write EPIPE`. The bundled `codex.exe` path was derived by slicing on a hardcoded `/`, which broke on Windows' backslash separators and produced an invalid binary path. Path resolution now uses platform-aware `node:path`, and genuine spawn failures surface the real error instead of a misleading EPIPE.
+
+### Changed
+- Bumped the Claude Agent SDK to 0.3.156 (parity with Claude Code v2.1.156).
+
 ## [0.38.6-alpha] - 2026-05-29
 
 ### Added

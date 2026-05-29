@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { cn } from '@superone/ui/lib/utils'
 import { useChatStore } from '@/stores/chat'
+import { resolveSessionTitle } from './session-state-utils'
 
 const OUT_MS = 220
 const CHAR_STAGGER_MS = 55
@@ -14,7 +15,7 @@ export function useSessionTitleByAgent(
   fallback: string | null | undefined,
 ): string {
   const agentTitle = useChatStore((s) => (sessionId ? s.agentTitles[sessionId] : undefined))
-  return agentTitle ?? fallback ?? ''
+  return resolveSessionTitle(agentTitle, undefined, fallback, '')
 }
 
 interface SessionTitleAnimatedProps {

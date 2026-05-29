@@ -34,14 +34,16 @@ interface CollectArgs {
   active: string | null
   previous?: { projectPath: string; sessionId: string } | null
   remote?: Record<string, ReadonlyArray<string>>
+  agentTitles?: Record<string, string>
 }
 
-function collect({ projects, active, previous = null, remote = {} }: CollectArgs) {
+function collect({ projects, active, previous = null, remote = {}, agentTitles = {} }: CollectArgs) {
   return collectAllActiveRows({
     projectSessions: projects,
     remoteSessions: remote,
     activeProject: active,
     previousFocusedSession: previous,
+    agentTitles,
   })
 }
 
@@ -286,6 +288,42 @@ describe('collectAllActiveRows', () => {
 
     const previous = rows.find((r) => r.isPrevious)!
     expect(previous).toMatchObject({ projectPath: '/b', sessionId: 'b-stub' })
+  })
+
+  it('prefers an agent-set title over the first-message-derived title (session_rename regression)', () => {
+    const project = makeProject({
+      active: 's1',
+      sessions: {
+        s1: {
+          ...liveBackground,
+          messages: [{ id: 'm1', role: 'user', content: [{ type: 'text', text: 'first user message' }] }] as PerSessionState['messages'],
+        },
+      },
+    })
+
+    const rows = collect({
+      projects: { '/p': project },
+      active: '/p',
+      agentTitles: { s1: 'Agent Renamed Title' },
+    })
+
+    expect(rows[0].title).toBe('Agent Renamed Title')
+  })
+
+  it('falls back to the first-message title when no agent title exists', () => {
+    const project = makeProject({
+      active: 's1',
+      sessions: {
+        s1: {
+          ...liveBackground,
+          messages: [{ id: 'm1', role: 'user', content: [{ type: 'text', text: 'first user message' }] }] as PerSessionState['messages'],
+        },
+      },
+    })
+
+    const rows = collect({ projects: { '/p': project }, active: '/p' })
+
+    expect(rows[0].title).toBe('first user message')
   })
 
   it('marks isCurrent only on the active project’s active session, not on same-id sessions in other projects', () => {

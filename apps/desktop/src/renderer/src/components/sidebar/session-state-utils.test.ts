@@ -1,5 +1,5 @@
 import type { AskUserQuestionRequest, ChatMessage, PermissionRequest, PlanApprovalRequest } from '@superone/shared/agent-types'
-import { getPendingReason, isLiveSession, getSessionTitle } from './session-state-utils'
+import { getPendingReason, isLiveSession, getSessionTitle, resolveSessionTitle, DEFAULT_SESSION_TITLE } from './session-state-utils'
 
 describe('getPendingReason', () => {
   it('should return permission reason when permissions are pending', () => {
@@ -216,5 +216,37 @@ describe('getSessionTitle', () => {
       },
     ]
     expect(getSessionTitle(messages)).toBe('Hello World')
+  })
+})
+
+describe('resolveSessionTitle', () => {
+  const userMessage = (text: string): ChatMessage => ({
+    id: '1',
+    role: 'user',
+    status: 'complete',
+    content: [{ type: 'text', text }],
+    createdAt: new Date().toISOString(),
+    providerId: 'claude',
+  })
+
+  it('prefers the agent title over message- and db-derived titles', () => {
+    expect(resolveSessionTitle('Renamed', [userMessage('first message')], 'db title')).toBe('Renamed')
+  })
+
+  it('falls back to the first-message title when no agent title exists', () => {
+    expect(resolveSessionTitle(undefined, [userMessage('first message')], 'db title')).toBe('first message')
+  })
+
+  it('falls back to the db title when no agent or message title exists', () => {
+    expect(resolveSessionTitle(undefined, [], 'db title')).toBe('db title')
+  })
+
+  it('falls back to the default terminal when nothing else is available', () => {
+    expect(resolveSessionTitle(undefined, undefined, undefined)).toBe(DEFAULT_SESSION_TITLE)
+  })
+
+  it('honors a custom terminal sentinel (mini-window layering)', () => {
+    expect(resolveSessionTitle(undefined, undefined, undefined, '')).toBe('')
+    expect(resolveSessionTitle(undefined, undefined, 'db title', '')).toBe('db title')
   })
 })

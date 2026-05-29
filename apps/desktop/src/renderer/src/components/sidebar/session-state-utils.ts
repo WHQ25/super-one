@@ -45,3 +45,23 @@ export function getSessionTitle(messages: ChatMessage[] | undefined): string | n
   }
   return null
 }
+
+export const DEFAULT_SESSION_TITLE = 'New session'
+
+/**
+ * Canonical session-title precedence, shared by every surface that renders a
+ * session title (sidebar rows, Ctrl+Tab switcher, mini window):
+ * an explicit agent/user rename wins, then the first-user-message derivation,
+ * then the persisted DB title, then `terminal`.
+ *
+ * `terminal` defaults to {@link DEFAULT_SESSION_TITLE}; pass `''` when the caller
+ * layers its own further fallback on top (e.g. the mini-window title bar).
+ */
+export function resolveSessionTitle(
+  agentTitle: string | null | undefined,
+  messages: ChatMessage[] | undefined,
+  dbTitle: string | null | undefined,
+  terminal: string = DEFAULT_SESSION_TITLE,
+): string {
+  return agentTitle ?? getSessionTitle(messages) ?? dbTitle ?? terminal
+}

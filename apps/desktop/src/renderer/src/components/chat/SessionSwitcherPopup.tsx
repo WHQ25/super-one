@@ -5,7 +5,7 @@ import { ClaudeSessionIcon, type SessionIconProps } from '@superone/ui/component
 import { CodexSessionIcon } from '@superone/ui/components/harness/CodexSessionIcon'
 import { useChatStore, type PerSessionState, type ProjectState } from '@/stores/chat'
 import { useCtrlTabSwitcher } from '@/hooks/useCtrlTabSwitcher'
-import { getPendingReason, getSessionTitle, isLiveSession } from '@/components/sidebar/session-state-utils'
+import { getPendingReason, isLiveSession, resolveSessionTitle } from '@/components/sidebar/session-state-utils'
 import { useStallLevel, getStallColor } from '@/lib/stall-utils'
 import { Kbd } from '@superone/ui/components/ui/kbd'
 import { cn } from '@superone/ui/lib/utils'
@@ -48,6 +48,7 @@ export interface CollectActiveRowsInput {
   remoteSessions: Record<string, ReadonlyArray<string>>
   activeProject: string | null
   previousFocusedSession: { projectPath: string; sessionId: string } | null
+  agentTitles?: Record<string, string>
 }
 
 const EMPTY_ROWS: ActiveRow[] = []
@@ -61,11 +62,12 @@ interface BuildRowArgs {
   isCurrent: boolean
   isPrevious: boolean
   isUnseen: boolean
+  agentTitle: string | undefined
 }
 
-function buildRow({ projectPath, sid, data, dbById, remoteSet, isCurrent, isPrevious, isUnseen }: BuildRowArgs): ActiveRow {
+function buildRow({ projectPath, sid, data, dbById, remoteSet, isCurrent, isPrevious, isUnseen, agentTitle }: BuildRowArgs): ActiveRow {
   const dbEntry = dbById.get(sid)
-  const title = getSessionTitle(data.messages) ?? dbEntry?.title ?? 'New session'
+  const title = resolveSessionTitle(agentTitle, data.messages, dbEntry?.title)
   return {
     projectPath,
     sessionId: sid,
@@ -80,7 +82,7 @@ function buildRow({ projectPath, sid, data, dbById, remoteSet, isCurrent, isPrev
 }
 
 export function collectAllActiveRows(input: CollectActiveRowsInput): ActiveRow[] {
-  const { projectSessions, remoteSessions, activeProject, previousFocusedSession } = input
+  const { projectSessions, remoteSessions, activeProject, previousFocusedSession, agentTitles = {} } = input
   const activeProjectState = activeProject ? projectSessions[activeProject] : undefined
   const activeSid = activeProjectState?._activeSessionId ?? null
   const prevKey = previousFocusedSession
@@ -102,7 +104,7 @@ export function collectAllActiveRows(input: CollectActiveRowsInput): ActiveRow[]
         if (!isLiveSession(data, isUnseen)) continue
         if (data.messages.length === 0 && !data._historyHydrated) continue
       }
-      rows.push(buildRow({ projectPath, sid, data, dbById, remoteSet, isCurrent, isPrevious, isUnseen }))
+      rows.push(buildRow({ projectPath, sid, data, dbById, remoteSet, isCurrent, isPrevious, isUnseen, agentTitle: agentTitles[sid] }))
     }
   }
 
@@ -123,6 +125,7 @@ export function collectAllActiveRows(input: CollectActiveRowsInput): ActiveRow[]
         isCurrent: false,
         isPrevious: true,
         isUnseen,
+        agentTitle: agentTitles[prevKey.sessionId],
       }))
     }
   }
@@ -180,6 +183,7 @@ function collectFromState(state: ReturnType<typeof useChatStore.getState>): Acti
     remoteSessions: state.remoteSessions,
     activeProject: state.activeProject,
     previousFocusedSession: state._previousFocusedSession,
+    agentTitles: state.agentTitles,
   })
 }
 
@@ -217,9 +221,10 @@ export function SessionSwitcherPopup({ scopeRef }: SessionSwitcherPopupProps) {
   const remoteSessions = useChatStore((s) => s.remoteSessions)
   const activeProject = useChatStore((s) => s.activeProject)
   const previousFocusedSession = useChatStore((s) => s._previousFocusedSession)
+  const agentTitles = useChatStore((s) => s.agentTitles)
   const internalRows = useMemo<ActiveRow[]>(() => {
     if (!isOpen) return EMPTY_ROWS
-    const fresh = collectAllActiveRows({ projectSessions, remoteSessions, activeProject, previousFocusedSession })
+    const fresh = collectAllActiveRows({ projectSessions, remoteSessions, activeProject, previousFocusedSession, agentTitles })
     const order = frozenOrderRef.current
     if (!order) return fresh
     const byKey = new Map(fresh.map((r) => [rowKey(r), r]))
@@ -229,7 +234,7 @@ export function SessionSwitcherPopup({ scopeRef }: SessionSwitcherPopupProps) {
       if (row) ordered.push(row)
     }
     return ordered
-  }, [isOpen, projectSessions, remoteSessions, activeProject, previousFocusedSession])
+  }, [isOpen, projectSessions, remoteSessions, activeProject, previousFocusedSession, agentTitles])
   const viewRows = useMemo<SwitcherRow[]>(() => internalRows.map(toSwitcherRow), [internalRows])
 
   return <SessionSwitcherView rows={viewRows} selectedIndex={selectedIndex} isOpen={isOpen} />

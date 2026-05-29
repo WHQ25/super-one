@@ -9,7 +9,7 @@ import { MiniAppWorkerGroup } from './MiniAppWorkerGroup'
 import { cn } from '@superone/ui/lib/utils'
 import { homePath } from '@/lib/path-utils'
 import type { Automation, RecentFolder, SessionHistoryEntry } from '@superone/shared/agent-types'
-import { getSessionTitle, isLiveSession } from './session-state-utils'
+import { DEFAULT_SESSION_TITLE, getSessionTitle, isLiveSession } from './session-state-utils'
 import { AutomationDialog } from '../AutomationDialog'
 import { SessionRow, type SessionRowCallbacks } from './SessionRow'
 import { ProjectHistoryList } from './ProjectHistoryList'
@@ -104,7 +104,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
         if (!title && !data._historyHydrated) continue
         live.push({
           sessionId: sid,
-          title: title ?? 'New session',
+          title: title ?? DEFAULT_SESSION_TITLE,
           lastActiveAt: new Date().toISOString(),
           provider: data.sessionProvider ?? undefined,
           providerSessionId: data.session?.sessionId || undefined,

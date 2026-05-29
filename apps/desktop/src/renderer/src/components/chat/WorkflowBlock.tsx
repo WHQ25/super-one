@@ -1,12 +1,14 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Workflow, ChevronRight, Check, Maximize, Loader2, Wrench, Layers, Bot } from 'lucide-react'
+import { Workflow, ChevronRight, Check, Maximize, Loader2, Wrench, Bot } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 import type { ContentBlock } from '@superone/shared/agent-types'
-import { useActiveSession } from '@/stores/chat'
+import { useActiveSession, useChatStore } from '@/stores/chat'
 import { formatTokens } from './chat-shared'
+import { getSubagentColorClasses } from './subagent-colors'
 import { parseWorkflowInput, parseWorkflowLaunch, extractWorkflowScript } from './workflow-utils'
 import { useWorkflowAgents } from './use-workflow-agents'
+import { useWorkflowOutput } from './use-workflow-output'
 import { useWorkflowNavigation } from './workflow-navigation-context'
 
 interface WorkflowBlockProps {
@@ -33,6 +35,11 @@ function currentPhaseTitle(description?: string): string | undefined {
 export function WorkflowBlock({ toolBlock, resultBlock, isStreaming, defaultExpanded }: WorkflowBlockProps) {
   const { t } = useTranslation()
   const progress = useActiveSession((s) => s.taskProgress[toolBlock.toolUseId])
+  const colorIdx = useActiveSession((s) => s.subagentColors[toolBlock.toolUseId])
+  const colors = useMemo(() => getSubagentColorClasses(colorIdx), [colorIdx])
+  useEffect(() => {
+    useChatStore.getState().assignSubagentColor(toolBlock.toolUseId)
+  }, [toolBlock.toolUseId])
   const meta = useMemo(() => parseWorkflowInput(toolBlock.input), [toolBlock.input])
   const script = useMemo(() => extractWorkflowScript(toolBlock.input), [toolBlock.input])
   const launch = useMemo(
@@ -47,7 +54,12 @@ export function WorkflowBlock({ toolBlock, resultBlock, isStreaming, defaultExpa
   const isSpawning = !launched && !isComplete && !meta.name
 
   const [expanded, setExpanded] = useState(defaultExpanded ?? false)
-  const agents = useWorkflowAgents(launch.transcriptDir, expanded, isComplete)
+  const agents = useWorkflowAgents(launch.transcriptDir, true, isComplete)
+  const output = useWorkflowOutput(progress?.outputFile, expanded)
+  const resultText = useMemo(() => {
+    if (!output || output.result === undefined) return undefined
+    return typeof output.result === 'string' ? output.result : JSON.stringify(output.result, null, 2)
+  }, [output])
 
   const elapsed = progress?.durationMs ? Math.round(progress.durationMs / 1000) : 0
   const totalTokens = progress?.totalTokens ?? 0
@@ -55,24 +67,15 @@ export function WorkflowBlock({ toolBlock, resultBlock, isStreaming, defaultExpa
 
   const stats = (
     <>
-      {meta.phases.length > 0 && (
-        <span className="inline-flex items-center gap-0.5">
-          <Layers className="size-3" />
-          {meta.phases.length}
-        </span>
-      )}
       {agents.length > 0 && (
-        <>
-          {meta.phases.length > 0 && <span>·</span>}
-          <span className="inline-flex items-center gap-0.5">
-            <Bot className="size-3" />
-            {agents.length}
-          </span>
-        </>
+        <span className="inline-flex items-center gap-0.5">
+          <Bot className="size-3" />
+          {agents.length}
+        </span>
       )}
       {totalTokens > 0 && (
         <>
-          <span>·</span>
+          {agents.length > 0 && <span>·</span>}
           <span className="tabular-nums">{formatTokens(totalTokens)}</span>
         </>
       )}
@@ -86,9 +89,9 @@ export function WorkflowBlock({ toolBlock, resultBlock, isStreaming, defaultExpa
         onClick={() => setExpanded((e) => !e)}
         className="flex w-full items-center gap-2 px-2.5 py-2 text-xs transition-colors hover:bg-muted/40"
       >
-        <Workflow className={cn('size-3.5 shrink-0 text-primary', isRunning && !expanded && 'animate-pulse')} />
-        <span className="shrink-0 rounded bg-primary/10 px-1 py-px text-[10px] font-medium text-primary">
-          {meta.name || t('chat.workflow.title', 'Workflow')}
+        <Workflow className={cn('size-3.5 shrink-0', colors.text, isRunning && !expanded && 'animate-pulse')} />
+        <span className={cn('shrink-0 rounded px-1 py-px text-[10px] font-medium', colors.tagBg, colors.tagText)}>
+          {meta.name ? `Workflow: ${meta.name}` : t('chat.workflow.title', 'Workflow')}
         </span>
         {meta.description && (
           <span className="min-w-0 truncate text-left text-muted-foreground">{meta.description}</span>
@@ -144,7 +147,7 @@ export function WorkflowBlock({ toolBlock, resultBlock, isStreaming, defaultExpa
               <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
                 {t('chat.workflow.agents', 'Agents')} ({agents.length})
               </div>
-              <div className="space-y-0.5">
+              <div className="max-h-32 space-y-0.5 overflow-y-auto">
                 {agents.map((agent) => (
                   <button
                     key={agent.agentId}
@@ -154,15 +157,40 @@ export function WorkflowBlock({ toolBlock, resultBlock, isStreaming, defaultExpa
                   >
                     <Bot className="size-3 shrink-0 text-muted-foreground" />
                     <span className="min-w-0 truncate text-foreground">{agent.label}</span>
-                    {agent.toolCount > 0 && (
-                      <span className="ml-auto inline-flex shrink-0 items-center gap-0.5 text-muted-foreground">
-                        <Wrench className="size-2.5" />
-                        {agent.toolCount}
-                      </span>
-                    )}
+                    <span className="ml-auto flex shrink-0 items-center gap-1.5 text-muted-foreground">
+                      {agent.toolCount > 0 && (
+                        <span className="inline-flex items-center gap-0.5">
+                          <Wrench className="size-2.5" />
+                          {agent.toolCount}
+                        </span>
+                      )}
+                      {agent.tokens != null && agent.tokens > 0 && (
+                        <span className="tabular-nums">{formatTokens(agent.tokens)}</span>
+                      )}
+                    </span>
                   </button>
                 ))}
               </div>
+            </div>
+          )}
+
+          {output && output.logs.length > 0 && (
+            <div className="border-t border-border/30 px-3 py-1.5">
+              <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                {t('chat.workflow.log', 'Log')}
+              </div>
+              <div className="max-h-32 space-y-0.5 overflow-y-auto font-mono text-[11px] leading-relaxed text-muted-foreground">
+                {output.logs.map((line, i) => <div key={i} className="whitespace-pre-wrap break-words">{line}</div>)}
+              </div>
+            </div>
+          )}
+
+          {resultText && (
+            <div className="border-t border-border/30 px-3 py-1.5">
+              <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                {t('chat.workflow.output', 'Output')}
+              </div>
+              <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded bg-muted/40 px-2 py-1.5 font-mono text-[11px] leading-relaxed text-foreground">{resultText}</pre>
             </div>
           )}
 

@@ -29,6 +29,7 @@ const FAKE_AGENTS: WorkflowAgentInfo[] = [
     agentId: 'a1f00d',
     jsonlPath: '/tmp/demo/subagents/workflows/wf_demo/agent-a1f00d.jsonl',
     label: '用一句中文友好地打个招呼，不超过15字。',
+    prompt: '用一句中文友好地打个招呼，不超过15字。保持简洁、亲切。',
     toolCount: 0,
     resultText: '你好呀，很高兴见到你！👋',
   },

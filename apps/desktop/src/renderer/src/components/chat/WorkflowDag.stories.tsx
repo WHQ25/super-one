@@ -45,7 +45,6 @@ export const RuntimeExpanded: Story = {
       { label: 'color:绿色', status: 'done', toolCount: 1 },
       { label: 'color:蓝色', status: 'running', toolCount: 2 },
     ]),
-    selectedLabel: 'color:绿色',
   },
 }
 

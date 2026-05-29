@@ -4,7 +4,9 @@ export interface WorkflowAgentInfo {
   agentId: string
   jsonlPath: string
   label: string
+  prompt?: string
   toolCount: number
+  tokens?: number
   resultText?: string
 }
 

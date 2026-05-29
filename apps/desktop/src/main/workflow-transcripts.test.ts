@@ -15,7 +15,8 @@ describe('listWorkflowAgents', () => {
     dir = await mkdtemp(join(tmpdir(), 'wf-transcripts-'))
     await writeFile(join(dir, 'agent-aaa111.jsonl'), jsonl([
       { type: 'user', message: { role: 'user', content: '你负责颜色 红色，返回它的十六进制。\n（第二行被忽略）' } },
-      { type: 'assistant', message: { content: [{ type: 'tool_use', name: 'WebSearch' }, { type: 'text', text: '红色是 #FF0000' }] } },
+      { type: 'assistant', message: { content: [{ type: 'tool_use', name: 'WebSearch' }], usage: { input_tokens: 500, output_tokens: 30 } } },
+      { type: 'assistant', message: { content: [{ type: 'text', text: '红色是 #FF0000' }], usage: { input_tokens: 1000, output_tokens: 20 } } },
     ]))
     await writeFile(join(dir, 'agent-aaa111.meta.json'), JSON.stringify({ agentType: 'workflow-subagent' }))
     await writeFile(join(dir, 'agent-bbb222.jsonl'), jsonl([
@@ -32,7 +33,9 @@ describe('listWorkflowAgents', () => {
     expect(agents.map((a) => a.agentId)).toEqual(['aaa111', 'bbb222'])
     const red = agents[0]
     expect(red.label).toBe('你负责颜色 红色，返回它的十六进制。')
+    expect(red.prompt).toBe('你负责颜色 红色，返回它的十六进制。\n（第二行被忽略）')
     expect(red.toolCount).toBe(1)
+    expect(red.tokens).toBe(1050)
     expect(red.resultText).toBe('红色是 #FF0000')
     expect(red.jsonlPath).toBe(join(dir, 'agent-aaa111.jsonl'))
   })

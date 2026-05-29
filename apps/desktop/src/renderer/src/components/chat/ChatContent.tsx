@@ -6,7 +6,7 @@ import { ArrowDown, GitFork, PenLine, Smartphone, Trash2 } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import { ChatInput } from './ChatInput'
 import { ChatStatusBar } from './ChatStatusBar'
-import { ChatMessage, CompactingIndicator, CompactIndicator, RateLimitIndicator, ApiRetryIndicator, parseCompactMarker } from './ChatMessage'
+import { ChatMessage, CompactingIndicator, CompactIndicator, CompactErrorIndicator, RateLimitIndicator, ApiRetryIndicator, parseCompactMarker } from './ChatMessage'
 import { ChatSuggestions } from './ChatSuggestions'
 import { PermissionPrompt } from './PermissionPrompt'
 import { AskUserQuestionPrompt } from './AskUserQuestionPrompt'
@@ -32,12 +32,13 @@ interface ChatContentProps {
 
 export function ChatContent({ scrollViewportRef, showScrollButton = false, scrollToBottom }: ChatContentProps) {
   const {
-    messages, isCompacting, rateLimitInfo, apiRetry, pendingPlanApproval,
+    messages, isCompacting, compactError, rateLimitInfo, apiRetry, pendingPlanApproval,
     historySessionId, historyHydrated, worktreeRemoved,
     sessionStatus, lastAssistantMessageId, queuedMessages, awaitingAssistantReply,
   } = useActiveSession(useShallow((s) => ({
     messages: s.messages,
     isCompacting: s.isCompacting,
+    compactError: s.compactError,
     rateLimitInfo: s.rateLimitInfo,
     apiRetry: s.apiRetry,
     pendingPlanApproval: s.pendingPlanApproval,
@@ -49,10 +50,11 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
     queuedMessages: s.queuedMessages,
     awaitingAssistantReply: s.awaitingAssistantReply,
   })))
-  const { editQueuedMessage, deleteQueuedMessage, disconnectRemoteSession } = useChatStore(useShallow((s) => ({
+  const { editQueuedMessage, deleteQueuedMessage, disconnectRemoteSession, dismissCompactError } = useChatStore(useShallow((s) => ({
     editQueuedMessage: s.editQueuedMessage,
     deleteQueuedMessage: s.deleteQueuedMessage,
     disconnectRemoteSession: s.disconnectRemoteSession,
+    dismissCompactError: s.dismissCompactError,
   })))
   const isRemoteLocked = useIsRemoteLocked()
   const [fullscreenPlan, setFullscreenPlan] = useState<{
@@ -223,6 +225,8 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
                           key={msg.id}
                           trigger={compactInfo.trigger}
                           preTokens={compactInfo.preTokens}
+                          postTokens={compactInfo.postTokens}
+                          durationMs={compactInfo.durationMs}
                           expanded={isExpanded}
                           onToggle={() => {
                             prevScrollHeightRef.current = scrollViewportRef.current?.scrollHeight ?? 0
@@ -253,6 +257,7 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
                     </div>
                   ))}
                   {isCompacting && <CompactingIndicator />}
+                  {!isCompacting && compactError && <CompactErrorIndicator error={compactError} onDismiss={dismissCompactError} />}
                   {apiRetry && <ApiRetryIndicator info={apiRetry} />}
                   {showRateLimitIndicator && rateLimitInfo && (
                     <RateLimitIndicator

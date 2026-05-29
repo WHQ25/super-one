@@ -13,6 +13,7 @@ export interface CoreSlice {
   setCorner: (corner: ChatStore['corner']) => void
   requestChatInputFocusRestore: () => void
   dismissSlashCommandOutput: () => void
+  dismissCompactError: () => void
   openProviderPopup: () => void
   openMcpPopup: () => void
   toggleTodos: () => void
@@ -45,6 +46,12 @@ export const createCoreSlice: StateCreator<ChatStore, [], [], CoreSlice> = (set,
     const { activeProject } = get()
     if (!activeProject) return
     set((s) => updateActivePerSession(s, () => ({ slashCommandOutput: null })))
+  },
+
+  dismissCompactError: () => {
+    const { activeProject } = get()
+    if (!activeProject) return
+    set((s) => updateActivePerSession(s, () => ({ compactError: null })))
   },
 
   openProviderPopup: () => {

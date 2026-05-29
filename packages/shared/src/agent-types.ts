@@ -742,8 +742,8 @@ export type AgentEventBase =
   | { type: 'plan_approval'; request: PlanApprovalRequest }
   | { type: 'hook_started'; hook: HookEvent }
   | { type: 'hook_complete'; hook: HookEvent }
-  | { type: 'compact_boundary'; trigger: 'manual' | 'auto'; preTokens: number }
-  | { type: 'status_indicator'; indicator: 'compacting' | null; permissionMode?: PermissionMode }
+  | { type: 'compact_boundary'; trigger: 'manual' | 'auto'; preTokens: number; postTokens?: number; durationMs?: number }
+  | { type: 'status_indicator'; indicator: 'compacting' | null; permissionMode?: PermissionMode; compactResult?: 'success' | 'failed'; compactError?: string }
   | { type: 'task_started'; taskId: string; toolUseId?: string; description: string; taskType?: string }
   | { type: 'task_progress'; taskId: string; toolUseId?: string; description: string; lastToolName?: string; summary?: string; usage: { totalTokens: number; toolUses: number; durationMs: number }; activityText?: string; toolEntries?: Array<{ toolName: string; description: string }> }
   | { type: 'task_notification'; taskId: string; toolUseId?: string; taskStatus: 'completed' | 'failed' | 'stopped'; outputFile: string; summary?: string; usage?: { totalTokens: number; toolUses: number; durationMs: number }; resultText?: string; toolEntries?: Array<{ toolName: string; description: string }> }

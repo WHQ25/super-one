@@ -449,13 +449,18 @@ function MessageContextChips({ contexts }: { contexts: ChatMessageContext[] }) {
   )
 }
 
-export function parseCompactMarker(message: ChatMessageType): { trigger: string; preTokens: number } | null {
+export function parseCompactMarker(message: ChatMessageType): { trigger: string; preTokens: number; postTokens?: number; durationMs?: number } | null {
   if (message.providerId !== 'system') return null
   const firstBlock = message.content[0]
   if (!firstBlock || firstBlock.type !== 'text') return null
-  const match = firstBlock.text.match(/^__compact__:(manual|auto):(\d+)$/)
+  const match = firstBlock.text.match(/^__compact__:(manual|auto):(\d+)(?::(\d*):(\d*))?$/)
   if (!match) return null
-  return { trigger: match[1], preTokens: parseInt(match[2], 10) }
+  return {
+    trigger: match[1],
+    preTokens: parseInt(match[2], 10),
+    postTokens: match[3] ? parseInt(match[3], 10) : undefined,
+    durationMs: match[4] ? parseInt(match[4], 10) : undefined,
+  }
 }
 
 /** Format token count for compact display. */
@@ -465,14 +470,25 @@ function formatCompactTokens(tokens: number): string {
   return String(tokens)
 }
 
+/** Format a millisecond duration as "98s" / "1m 38s". */
+function formatCompactDuration(ms: number): string {
+  const totalSec = Math.round(ms / 1000)
+  if (totalSec < 60) return `${totalSec}s`
+  return `${Math.floor(totalSec / 60)}m ${totalSec % 60}s`
+}
+
 export function CompactIndicator({
   trigger,
   preTokens,
+  postTokens,
+  durationMs,
   expanded,
   onToggle,
 }: {
   trigger: string
   preTokens: number
+  postTokens?: number
+  durationMs?: number
   expanded?: boolean
   onToggle?: () => void
 }) {
@@ -481,7 +497,15 @@ export function CompactIndicator({
       <Minimize2 className="size-3 shrink-0 text-violet-600 dark:text-violet-400" />
       <span className="font-medium text-violet-600 dark:text-violet-400">Conversation compacted</span>
       <span className="text-violet-600/60 dark:text-violet-400/60">{trigger === 'auto' ? 'auto' : 'manual'}</span>
-      {preTokens > 0 && <span className="text-violet-600/60 dark:text-violet-400/60">· {formatCompactTokens(preTokens)} tokens</span>}
+      {preTokens > 0 && (
+        <span className="text-violet-600/60 dark:text-violet-400/60">
+          · {formatCompactTokens(preTokens)}
+          {postTokens !== undefined ? ` → ${formatCompactTokens(postTokens)}` : ''} tokens
+        </span>
+      )}
+      {durationMs !== undefined && durationMs > 0 && (
+        <span className="text-violet-600/60 dark:text-violet-400/60">· {formatCompactDuration(durationMs)}</span>
+      )}
       {onToggle && (
         <button onClick={onToggle} className="ml-auto flex items-center gap-0.5 text-violet-600/60 dark:text-violet-400/60 transition-colors hover:text-violet-600 dark:hover:text-violet-400">
           {expanded ? <ChevronRight className="size-3 -rotate-90" /> : <ChevronRight className="size-3 rotate-90" />}
@@ -493,10 +517,36 @@ export function CompactIndicator({
 }
 
 export function CompactingIndicator() {
+  const [elapsed, setElapsed] = useState(0)
+  const startRef = useRef(Date.now())
+
+  useEffect(() => {
+    startRef.current = Date.now()
+    setElapsed(0)
+    const id = setInterval(() => setElapsed(Math.floor((Date.now() - startRef.current) / 1000)), 1000)
+    return () => clearInterval(id)
+  }, [])
+
   return (
     <div className="my-0.5 flex items-center gap-1.5 rounded bg-amber-500/10 px-2 py-1.5 text-xs">
       <Loader2 className="size-3 shrink-0 animate-spin text-amber-600 dark:text-amber-400" />
       <span className="font-medium text-amber-600 dark:text-amber-400">Compacting conversation…</span>
+      {elapsed > 0 && <span className="text-amber-600/60 dark:text-amber-400/60">{elapsed}s</span>}
+    </div>
+  )
+}
+
+export function CompactErrorIndicator({ error, onDismiss }: { error: string; onDismiss?: () => void }) {
+  return (
+    <div className="my-0.5 flex items-center gap-1.5 rounded bg-red-500/10 px-2 py-1.5 text-xs">
+      <AlertTriangle className="size-3 shrink-0 text-red-600 dark:text-red-400" />
+      <span className="font-medium text-red-600 dark:text-red-400">Compaction failed</span>
+      <span className="truncate text-red-600/60 dark:text-red-400/60">{error}</span>
+      {onDismiss && (
+        <button onClick={onDismiss} className="ml-auto shrink-0 text-red-600/60 dark:text-red-400/60 transition-colors hover:text-red-600 dark:hover:text-red-400">
+          <X className="size-3" />
+        </button>
+      )}
     </div>
   )
 }

@@ -33,12 +33,13 @@ export function reduceSlash(session: PerSessionState, event: SlashEvent): Partia
         id: `compact_${Date.now()}`,
         role: 'assistant' as const,
         status: 'complete' as const,
-        content: [{ type: 'text' as const, text: `__compact__:${event.trigger}:${event.preTokens}` }],
+        content: [{ type: 'text' as const, text: `__compact__:${event.trigger}:${event.preTokens}:${event.postTokens ?? ''}:${event.durationMs ?? ''}` }],
         createdAt: new Date().toISOString(),
         providerId: 'system',
       })
       return {
         isCompacting: false,
+        compactError: null,
         messages: msgs,
         _pendingCompactUserId: '',
         ...(compactUserId ? { _pendingSlashCommand: '' } : {}),

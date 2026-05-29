@@ -103,6 +103,7 @@ export interface PerSessionState {
   _todosUserDismissed: boolean
   _nextTodoId: number
   isCompacting: boolean
+  compactError: string | null
   rateLimitInfo: { status: 'allowed_warning' | 'rejected'; resetsAt?: number; rateLimitType?: string; utilization?: number } | null
   _worktreeBaseBranch: string | null
   _worktreePath: string | null
@@ -270,6 +271,7 @@ export interface ChatStore {
   respondToPlanApproval: (requestId: string, approved: boolean, feedback?: string, postApprovalMode?: PermissionMode) => void
 
   dismissSlashCommandOutput: () => void
+  dismissCompactError: () => void
 
   toggleTodos: () => void
 

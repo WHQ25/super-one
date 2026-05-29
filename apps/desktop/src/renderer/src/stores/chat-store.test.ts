@@ -3923,7 +3923,7 @@ describe('compact_boundary user-message cleanup', () => {
     expect(after.messages.find((m: { id: string }) => m.id === 'compact-user')).toBeUndefined()
     expect(after._pendingCompactUserId).toBe('')
     expect(after.messages.at(-1)!.providerId).toBe('system')
-    expect(after.messages.at(-1)!.content[0]).toMatchObject({ type: 'text', text: '__compact__:manual:1234' })
+    expect(after.messages.at(-1)!.content[0]).toMatchObject({ type: 'text', text: '__compact__:manual:1234::' })
   })
 
   it('inserts pill before last user when compactUserId is not tracked (auto compact)', () => {

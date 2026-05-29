@@ -35,8 +35,18 @@ export function reduceUsage(session: PerSessionState, event: UsageEvent): Partia
       return { lastEventAt: Date.now(), streamingTokens: { input: event.inputTokens, output: event.outputTokens }, messages: messagesWithSeq }
     }
 
-    case 'status_indicator':
-      return { isCompacting: event.indicator === 'compacting' }
+    case 'status_indicator': {
+      if (event.indicator === 'compacting') return { isCompacting: true, compactError: null }
+      if (event.compactResult === 'failed') {
+        return {
+          isCompacting: false,
+          compactError: event.compactError || 'Compaction failed',
+          _pendingCompactUserId: '',
+          _pendingSlashCommand: '',
+        }
+      }
+      return { isCompacting: false }
+    }
 
     case 'rate_limit':
       return {

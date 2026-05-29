@@ -69,6 +69,7 @@ export function createDefaultPerSessionState(): PerSessionState {
     _todosUserDismissed: false,
     _nextTodoId: 1,
     isCompacting: false,
+    compactError: null,
     rateLimitInfo: null,
     _worktreeBaseBranch: null,
     _worktreePath: null,

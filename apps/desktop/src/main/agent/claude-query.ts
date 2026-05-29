@@ -416,12 +416,16 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
               type: 'compact_boundary',
               trigger: sys.compact_metadata?.trigger ?? 'auto',
               preTokens: sys.compact_metadata?.pre_tokens ?? 0,
+              postTokens: sys.compact_metadata?.post_tokens,
+              durationMs: sys.compact_metadata?.duration_ms,
             })
           } else if (sys.subtype === 'status') {
             emit({
               type: 'status_indicator',
-              indicator: sys.status ?? null,
+              indicator: sys.status === 'compacting' ? 'compacting' : null,
               permissionMode: sys.permissionMode,
+              compactResult: sys.compact_result,
+              compactError: sys.compact_error,
             })
           } else if (sys.subtype === 'session_state_changed') {
             const state = sys.state as 'idle' | 'running' | 'requires_action' | undefined

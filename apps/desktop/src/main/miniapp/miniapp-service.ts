@@ -646,6 +646,7 @@ export function generateCSP(manifest: MiniAppManifest): string {
     `connect-src ${connectSrc}`,
     `font-src 'self' ${domains.join(' ')}`.trim(),
     `media-src 'self' superone-app: blob:`,
+    `frame-src ${["'self'", ...domains].join(' ')}`,
   ].join('; ')
 }
 

@@ -43,7 +43,8 @@ vi.mock('./dev-registry', () => ({
   touchLastSeen: vi.fn(),
 }))
 
-import { discoverProjectApps, detectStandaloneApp, createMiniApp, getProjectAppsDir, setAllowedDirectories, clearAllowedDirectories, handleFsRequest, resolveAppEntry, setAllowedMedia, isMediaAllowed, clearAllowedMedia, getAllowedMedia, appIdFromUrl } from './miniapp-service'
+import { discoverProjectApps, detectStandaloneApp, createMiniApp, getProjectAppsDir, setAllowedDirectories, clearAllowedDirectories, handleFsRequest, resolveAppEntry, setAllowedMedia, isMediaAllowed, clearAllowedMedia, getAllowedMedia, appIdFromUrl, generateCSP } from './miniapp-service'
+import type { MiniAppManifest } from '@superone/shared/miniapp-types'
 
 function mockManifest(appId: string, name: string) {
   return { appId, name, tools: [] }
@@ -706,5 +707,59 @@ describe('appIdFromUrl', () => {
 
   it('extracts appId from the no-project fallback host', () => {
     expect(appIdFromUrl('superone-app://hello.00000000-0000-0000-0000-000000000000/index.html')).toBe('hello')
+  })
+})
+
+describe('generateCSP', () => {
+  const manifest = (network?: Array<{ domain: string; reason: string }>): MiniAppManifest =>
+    ({ appId: 'x', name: 'X', permissions: network ? { network } : undefined }) as MiniAppManifest
+
+  const parse = (csp: string): Record<string, string[]> =>
+    Object.fromEntries(
+      csp
+        .split(';')
+        .map((p) => p.trim())
+        .filter(Boolean)
+        .map((p) => {
+          const [name, ...vals] = p.split(/\s+/)
+          return [name, vals]
+        }),
+    )
+
+  it("keeps default-src 'none' as the fallback", () => {
+    expect(parse(generateCSP(manifest()))['default-src']).toEqual(["'none'"])
+  })
+
+  it("always emits a frame-src directive (so framing never falls back to default-src 'none')", () => {
+    const csp = generateCSP(manifest())
+    expect(csp).toContain('frame-src')
+    expect(parse(csp)['frame-src']).toEqual(["'self'"])
+  })
+
+  it('allows framing declared network domains, prefixing bare domains with https://', () => {
+    const frameSrc = parse(generateCSP(manifest([{ domain: 'embed.diagrams.net', reason: 'r' }])))['frame-src']
+    expect(frameSrc).toEqual(["'self'", 'https://embed.diagrams.net'])
+  })
+
+  it('preserves an explicit scheme in a declared domain', () => {
+    const frameSrc = parse(generateCSP(manifest([{ domain: 'http://localhost:3000', reason: 'r' }])))['frame-src']
+    expect(frameSrc).toEqual(["'self'", 'http://localhost:3000'])
+  })
+
+  it('includes every declared domain in frame-src', () => {
+    const frameSrc = parse(
+      generateCSP(manifest([
+        { domain: 'a.example.com', reason: 'r' },
+        { domain: 'b.example.com', reason: 'r' },
+      ])),
+    )['frame-src']
+    expect(frameSrc).toEqual(["'self'", 'https://a.example.com', 'https://b.example.com'])
+  })
+
+  it('keeps frame-src domains consistent with script-src and connect-src', () => {
+    const csp = parse(generateCSP(manifest([{ domain: 'embed.diagrams.net', reason: 'r' }])))
+    expect(csp['frame-src']).toContain('https://embed.diagrams.net')
+    expect(csp['script-src']).toContain('https://embed.diagrams.net')
+    expect(csp['connect-src']).toContain('https://embed.diagrams.net')
   })
 })

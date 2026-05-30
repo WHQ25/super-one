@@ -31,7 +31,7 @@ function useOwnFileData(filePath: string | undefined, refreshKey: number) {
   const fileRoot = useEffectiveProjectRoot()
   const [diff, setDiff] = useState<GitFileDiff | null>(null)
   const [content, setContent] = useState<GitFileContent | null>(null)
-  const [tab, setTab] = useState<TabKey>('editor')
+  const [tab, setTab] = useState<TabKey>('file')
   const pickedTabForPathRef = useRef<string | null>(null)
 
   useEffect(() => {
@@ -51,7 +51,7 @@ function useOwnFileData(filePath: string | undefined, refreshKey: number) {
       const ext = filePath.split('.').pop()?.toLowerCase() ?? ''
       const isHtml = HTML_EXTS.has(ext)
       const isMd = MARKDOWN_EXTS.has(ext)
-      setTab(isBin || isSvg || isHtml ? 'preview' : d.diff ? 'changes' : isMd ? 'editor' : 'editor')
+      setTab(isBin || isSvg || isHtml ? 'preview' : d.diff ? 'changes' : isMd ? 'editor' : 'file')
     }).catch(() => {
       if (!cancelled && pickedTabForPathRef.current !== filePath) { setDiff(null); setContent(null) }
     })
@@ -94,12 +94,12 @@ export function FilePreview({ filePath }: FilePreviewProps) {
     const items: { key: TabKey; label: string }[] = []
     if (hasDiff) items.push({ key: 'changes', label: 'Changes' })
     if (isSvgFile || isHtml) items.push({ key: 'preview', label: 'Preview' })
-    items.push({ key: 'editor', label: 'Editor' })
-    if (isMd) items.push({ key: 'file', label: 'File' })
+    if (isMd) items.push({ key: 'editor', label: 'Editor' })
+    items.push({ key: 'file', label: 'File' })
     return items
   })()
 
-  const effectiveTab = tabs.find((t) => t.key === activeTab) ? activeTab : tabs[0]?.key ?? 'editor'
+  const effectiveTab = tabs.find((t) => t.key === activeTab) ? activeTab : tabs[0]?.key ?? 'file'
   const handleTabChange = useCallback((v: string) => {
     setActiveTab(v as TabKey)
   }, [setActiveTab])
@@ -201,7 +201,7 @@ export function FilePreview({ filePath }: FilePreviewProps) {
               <ImagePreview src={toLocalFileUrl(fullFilePath)} alt={fileName} />
             ) : effectiveTab === 'preview' && isHtml ? (
               <HtmlPreview src={toLocalFileUrl(fullFilePath)} />
-            ) : (effectiveTab === 'file' && isMd) || (effectiveTab === 'editor' && !isMd) ? (
+            ) : effectiveTab === 'file' ? (
               <FileSelectionContextMenuZone filePath={fullFilePath} fileContent={fileContent?.content ?? null} className="size-full">
                 <FileWithDiffView filePath={selectedFile} content={fileContent?.content ?? ''} diff={fileDiff?.diff ?? ''} />
               </FileSelectionContextMenuZone>

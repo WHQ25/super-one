@@ -9,6 +9,7 @@ import { useSubagentNavigation, type SubagentViewState } from './subagent-naviga
 import { getSubagentColorClasses, type SubagentColorClasses } from './subagent-colors'
 import { ToolBlock } from './ToolBlock'
 import { AsyncToolRow } from './subagent-activity'
+import { StructuredOutputView } from './StructuredOutputView'
 import {
   parseTaskInput,
   buildToolResultMap,
@@ -279,6 +280,9 @@ function ViewShell({ colors, title, onClose, children }: {
 function renderAsyncEntry(entry: JsonlEntry, index: number, isStreaming: boolean) {
   if (entry.type === 'tool') {
     return <AsyncToolRow key={index} toolName={entry.toolName} description={entry.description} isActive={false} />
+  }
+  if (entry.type === 'structured') {
+    return <StructuredOutputView key={index} data={entry.data} />
   }
   return (
     <Streamdown

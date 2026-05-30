@@ -4,6 +4,9 @@ import { parseToolInput } from './tool-display'
 export type JsonlEntry =
   | { type: 'tool'; toolName: string; description: string }
   | { type: 'activity'; text: string }
+  | { type: 'structured'; data: unknown }
+
+const STRUCTURED_OUTPUT_TOOL = 'StructuredOutput'
 
 function summarizeToolInput(toolName: string, input: Record<string, unknown>): string {
   if (input.file_path) return String(input.file_path)
@@ -30,7 +33,9 @@ export function parseJsonlOutput(raw: string): { entries: JsonlEntry[]; resultTe
     }
     if (record.type !== 'assistant' || !record.message?.content) continue
     for (const block of record.message.content) {
-      if (block.type === 'tool_use' && block.name) {
+      if (block.type === 'tool_use' && block.name === STRUCTURED_OUTPUT_TOOL) {
+        entries.push({ type: 'structured', data: block.input ?? {} })
+      } else if (block.type === 'tool_use' && block.name) {
         entries.push({ type: 'tool', toolName: block.name, description: summarizeToolInput(block.name, block.input ?? {}) })
       } else if (block.type === 'text' && block.text) {
         lastTextIndex = entries.length

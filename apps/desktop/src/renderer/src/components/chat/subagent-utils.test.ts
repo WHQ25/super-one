@@ -22,6 +22,17 @@ describe('parseJsonlOutput', () => {
     expect(resultText).toBe('done')
   })
 
+  it('parses a StructuredOutput tool_use into a structured entry carrying its input', () => {
+    const raw = [
+      line([{ type: 'tool_use', name: 'Read', input: { file_path: '/a.ts' } }]),
+      line([{ type: 'tool_use', name: 'StructuredOutput', input: { verdict: 'CONFIRMED', evidence: 'line 42' } }]),
+    ].join('\n')
+
+    const { entries } = parseJsonlOutput(raw)
+    expect(entries[0]).toEqual({ type: 'tool', toolName: 'Read', description: '/a.ts' })
+    expect(entries[1]).toEqual({ type: 'structured', data: { verdict: 'CONFIRMED', evidence: 'line 42' } })
+  })
+
   it('keeps last text entry in entries (not spliced out)', () => {
     const raw = [
       line([{ type: 'text', text: 'first' }]),

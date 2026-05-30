@@ -12,6 +12,7 @@ export interface ReplayAgentRecord {
 export interface ReplayResult {
   dag: Dag
   nodeAgentIds: Map<string, string>
+  output?: unknown
 }
 
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor as new (
@@ -206,8 +207,9 @@ export async function replayWorkflowDag(
     return fn(agent, parallel, pipeline, phase, log, workflow, undefined, budget, ...SHADOWED.map(() => undefined))
   }
 
+  let output: unknown
   try {
-    await runScript(script)
+    output = await runScript(script)
   } catch {
     // Best-effort: a syntax error or a mid-flow throw still yields the nodes collected so far.
   }
@@ -216,5 +218,5 @@ export async function replayWorkflowDag(
   let maxCol = 0
   for (const n of nodes) maxCol = Math.max(maxCol, n.col)
   const phases = declaredPhases.filter((p) => !subworkflowPhases.has(p))
-  return { dag: { nodes, edges, cols: maxCol + 1, phases }, nodeAgentIds }
+  return { dag: { nodes, edges, cols: maxCol + 1, phases }, nodeAgentIds, output }
 }

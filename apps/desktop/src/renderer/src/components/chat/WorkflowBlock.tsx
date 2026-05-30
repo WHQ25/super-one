@@ -10,6 +10,7 @@ import { parseWorkflowInput, parseWorkflowLaunch, extractWorkflowScript } from '
 import { useWorkflowAgents } from './use-workflow-agents'
 import { useWorkflowOutput } from './use-workflow-output'
 import { useWorkflowNavigation } from './workflow-navigation-context'
+import { StructuredOutputView } from './StructuredOutputView'
 
 interface WorkflowBlockProps {
   toolBlock: ContentBlock & { type: 'tool_use' }
@@ -32,6 +33,65 @@ function currentPhaseTitle(description?: string): string | undefined {
   return idx > 0 ? description.slice(0, idx).trim() : undefined
 }
 
+function LogOutputPanel({ logs, resultText }: { logs: string[]; resultText?: string }) {
+  const { t } = useTranslation()
+  const hasLog = logs.length > 0
+  const hasOutput = !!resultText
+  const [open, setOpen] = useState(false)
+  const [tab, setTab] = useState<'output' | 'log'>('output')
+  if (!hasLog && !hasOutput) return null
+  const active: 'output' | 'log' = tab === 'log' && hasLog ? 'log' : hasOutput ? 'output' : 'log'
+  const title = hasLog && hasOutput
+    ? t('chat.workflow.logOutput', 'Log / Output')
+    : hasOutput
+      ? t('chat.workflow.output', 'Output')
+      : t('chat.workflow.log', 'Log')
+
+  return (
+    <div className="border-t border-border/30">
+      <div className="flex items-center gap-2 px-3 py-1.5">
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <ChevronRight className={cn('size-3 transition-transform', open && 'rotate-90')} />
+          {title}
+        </button>
+        {open && hasLog && hasOutput && (
+          <div className="ml-auto flex items-center gap-0.5 rounded bg-muted/60 p-0.5">
+            <button
+              type="button"
+              onClick={() => setTab('output')}
+              className={cn('rounded px-1.5 py-0.5 text-[10px]', active === 'output' ? 'bg-background text-foreground' : 'text-muted-foreground hover:text-foreground')}
+            >
+              {t('chat.workflow.output', 'Output')}
+            </button>
+            <button
+              type="button"
+              onClick={() => setTab('log')}
+              className={cn('rounded px-1.5 py-0.5 text-[10px]', active === 'log' ? 'bg-background text-foreground' : 'text-muted-foreground hover:text-foreground')}
+            >
+              {t('chat.workflow.log', 'Log')}
+            </button>
+          </div>
+        )}
+      </div>
+      {open && (
+        <div className="px-3 pb-1.5">
+          {active === 'output' && resultText ? (
+            <StructuredOutputView data={resultText} fill />
+          ) : hasLog ? (
+            <div className="max-h-32 space-y-0.5 overflow-y-auto font-mono text-[11px] leading-relaxed text-muted-foreground">
+              {logs.map((line, i) => <div key={i} className="whitespace-pre-wrap break-words">{line}</div>)}
+            </div>
+          ) : null}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function WorkflowBlock({ toolBlock, resultBlock, isStreaming, defaultExpanded }: WorkflowBlockProps) {
   const { t } = useTranslation()
   const progress = useActiveSession((s) => s.taskProgress[toolBlock.toolUseId])
@@ -49,20 +109,24 @@ export function WorkflowBlock({ toolBlock, resultBlock, isStreaming, defaultExpa
   const nav = useWorkflowNavigation()
 
   const launched = !!launch.transcriptDir
-  const isComplete = progress?.completed === true
+  // taskProgress is in-memory only: a reloaded/historical workflow has no progress entry,
+  // so treat "launched but no live progress" as complete instead of running forever.
+  const isComplete = launched && (progress ? progress.completed === true : true)
   const isRunning = launched ? !isComplete : isStreaming
   const isSpawning = !launched && !isComplete && !meta.name
 
   const [expanded, setExpanded] = useState(defaultExpanded ?? false)
   const agents = useWorkflowAgents(launch.transcriptDir, true, isComplete)
-  const output = useWorkflowOutput(progress?.outputFile, expanded)
+  const outputFile = progress?.outputFile ?? (resultBlock?.type === 'tool_result' ? resultBlock.outputPath : undefined)
+  const output = useWorkflowOutput(outputFile, expanded)
   const resultText = useMemo(() => {
     if (!output || output.result === undefined) return undefined
     return typeof output.result === 'string' ? output.result : JSON.stringify(output.result, null, 2)
   }, [output])
 
   const elapsed = progress?.durationMs ? Math.round(progress.durationMs / 1000) : 0
-  const totalTokens = progress?.totalTokens ?? 0
+  const agentsTokens = useMemo(() => agents.reduce((sum, a) => sum + (a.tokens ?? 0), 0), [agents])
+  const totalTokens = progress?.totalTokens || agentsTokens
   const activePhase = isRunning ? currentPhaseTitle(progress?.description) : undefined
 
   const stats = (
@@ -165,7 +229,10 @@ export function WorkflowBlock({ toolBlock, resultBlock, isStreaming, defaultExpa
                         </span>
                       )}
                       {agent.tokens != null && agent.tokens > 0 && (
-                        <span className="tabular-nums">{formatTokens(agent.tokens)}</span>
+                        <>
+                          {agent.toolCount > 0 && <span>·</span>}
+                          <span className="tabular-nums">{formatTokens(agent.tokens)}</span>
+                        </>
                       )}
                     </span>
                   </button>
@@ -174,25 +241,7 @@ export function WorkflowBlock({ toolBlock, resultBlock, isStreaming, defaultExpa
             </div>
           )}
 
-          {output && output.logs.length > 0 && (
-            <div className="border-t border-border/30 px-3 py-1.5">
-              <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                {t('chat.workflow.log', 'Log')}
-              </div>
-              <div className="max-h-32 space-y-0.5 overflow-y-auto font-mono text-[11px] leading-relaxed text-muted-foreground">
-                {output.logs.map((line, i) => <div key={i} className="whitespace-pre-wrap break-words">{line}</div>)}
-              </div>
-            </div>
-          )}
-
-          {resultText && (
-            <div className="border-t border-border/30 px-3 py-1.5">
-              <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                {t('chat.workflow.output', 'Output')}
-              </div>
-              <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded bg-muted/40 px-2 py-1.5 font-mono text-[11px] leading-relaxed text-foreground">{resultText}</pre>
-            </div>
-          )}
+          <LogOutputPanel logs={output?.logs ?? []} resultText={resultText} />
 
           <div className="flex items-center gap-1.5 border-t border-border/30 px-2.5 py-1.5 text-[11px] text-muted-foreground">
             {isRunning ? (

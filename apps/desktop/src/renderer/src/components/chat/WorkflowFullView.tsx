@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ArrowLeft, Workflow, Network, Code, Bot, Wrench } from 'lucide-react'
+import { ArrowLeft, Workflow, Network, Code, Bot, Wrench, List, ChevronRight } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 import { Streamdown } from 'streamdown'
 import { useWorkflowNavigation, type WorkflowViewState } from './workflow-navigation-context'
@@ -15,6 +15,7 @@ import { buildDag, agentPhaseByPrompt, assignAgentsToNodes, type DagNode } from 
 import { WorkflowDagCanvas } from './WorkflowDagCanvas'
 import { useSubagentJsonl } from './use-subagent-jsonl'
 import { AsyncToolRow } from './subagent-activity'
+import { StructuredOutputView } from './StructuredOutputView'
 import type { JsonlEntry } from './subagent-utils'
 import {
   streamdownPlugins,
@@ -84,6 +85,9 @@ function renderEntry(entry: JsonlEntry, index: number) {
   if (entry.type === 'tool') {
     return <AsyncToolRow key={index} toolName={entry.toolName} description={entry.description} isActive={false} />
   }
+  if (entry.type === 'structured') {
+    return <StructuredOutputView key={index} data={entry.data} />
+  }
   return (
     <Streamdown
       key={index}
@@ -112,9 +116,34 @@ function TranscriptHeader({ agent, colors }: { agent: WorkflowAgentInfo; colors:
           </span>
         )}
         {agent.tokens != null && agent.tokens > 0 && (
-          <span className="tabular-nums">{formatTokens(agent.tokens)}</span>
+          <>
+            {agent.toolCount > 0 && <span>·</span>}
+            <span className="tabular-nums">{formatTokens(agent.tokens)}</span>
+          </>
         )}
       </span>
+    </div>
+  )
+}
+
+function WorkflowOutputFooter({ output }: { output: unknown }) {
+  const { t } = useTranslation()
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="shrink-0 border-t border-border/40 bg-muted/20">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center gap-1.5 px-3 py-1.5 text-left text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+      >
+        <ChevronRight className={cn('size-3 transition-transform', open && 'rotate-90')} />
+        {t('chat.workflow.output', 'Output')}
+      </button>
+      {open && (
+        <div className="max-h-72 overflow-y-auto px-3 pb-2">
+          <StructuredOutputView data={output} fill />
+        </div>
+      )}
     </div>
   )
 }
@@ -174,9 +203,25 @@ export function WorkflowFullView({ view }: { view: WorkflowViewState }) {
   const colorIdx = useActiveSession((s) => s.subagentColors[view.toolUseId])
   const colors = useMemo(() => getSubagentColorClasses(colorIdx), [colorIdx])
 
-  const [tab, setTab] = useState<'graph' | 'script'>('graph')
-  const activeTab: 'graph' | 'script' | null =
-    tab === 'script' && view.script ? 'script' : dag ? 'graph' : view.script ? 'script' : null
+  const [tab, setTab] = useState<'graph' | 'script' | 'list'>('graph')
+  const [listAgentId, setListAgentId] = useState<string | null>(null)
+  const canList = agents.length > 0
+  const activeTab: 'graph' | 'script' | 'list' | null =
+    tab === 'list' && canList
+      ? 'list'
+      : tab === 'script' && view.script
+        ? 'script'
+        : dag
+          ? 'graph'
+          : view.script
+            ? 'script'
+            : canList
+              ? 'list'
+              : null
+  const listSelected = useMemo(
+    () => agents.find((a) => a.agentId === listAgentId) ?? agents[0],
+    [agents, listAgentId],
+  )
 
   const [containerWidth, setContainerWidth] = useState(0)
   const isLarge = containerWidth >= 640
@@ -208,7 +253,7 @@ export function WorkflowFullView({ view }: { view: WorkflowViewState }) {
         </button>
         <Workflow className={cn('size-3.5 shrink-0', colors.text)} />
         <span className="min-w-0 truncate font-medium text-foreground">{view.name || t('chat.workflow.title', 'Workflow')}</span>
-        {(dag || view.script) && (
+        {(dag || view.script || canList) && (
           <div className="ml-auto flex shrink-0 items-center gap-0.5 rounded bg-muted/60 p-0.5">
             {dag && (
               <button
@@ -217,6 +262,15 @@ export function WorkflowFullView({ view }: { view: WorkflowViewState }) {
                 className={cn('inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] transition-colors', activeTab === 'graph' ? 'bg-background text-foreground' : 'text-muted-foreground hover:text-foreground')}
               >
                 <Network className="size-3" />{t('chat.workflow.graph', 'Graph')}
+              </button>
+            )}
+            {canList && (
+              <button
+                type="button"
+                onClick={() => setTab('list')}
+                className={cn('inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] transition-colors', activeTab === 'list' ? 'bg-background text-foreground' : 'text-muted-foreground hover:text-foreground')}
+              >
+                <List className="size-3" />{t('chat.workflow.list', 'List')}
               </button>
             )}
             {view.script && (
@@ -233,7 +287,45 @@ export function WorkflowFullView({ view }: { view: WorkflowViewState }) {
       </div>
 
       <div className="min-h-0 flex-1">
-        {activeTab === 'script' && view.script ? (
+        {activeTab === 'list' ? (
+          <div className="flex h-full min-w-0">
+            <div className="w-56 shrink-0 overflow-y-auto border-r border-border/40 py-1">
+              {agents.map((a) => (
+                <button
+                  key={a.agentId}
+                  type="button"
+                  onClick={() => setListAgentId(a.agentId)}
+                  className={cn(
+                    'flex w-full items-center gap-1.5 px-2.5 py-1.5 text-left text-xs transition-colors',
+                    listSelected?.agentId === a.agentId ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-muted/50',
+                  )}
+                >
+                  <Bot className={cn('size-3 shrink-0', colors.text)} />
+                  <span className="min-w-0 truncate">{a.label}</span>
+                  {a.tokens != null && a.tokens > 0 && (
+                    <span className="ml-auto shrink-0 tabular-nums text-[10px] text-muted-foreground">{formatTokens(a.tokens)}</span>
+                  )}
+                </button>
+              ))}
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              {listSelected ? (
+                <div className="chat-md mx-auto w-full min-w-0 max-w-3xl px-4 py-3">
+                  <AgentTranscript
+                    key={listSelected.agentId}
+                    agent={listSelected}
+                    colors={colors}
+                    phase={graph ? agentPhaseByPrompt(graph, listSelected.prompt) : undefined}
+                  />
+                </div>
+              ) : (
+                <div className="flex h-full items-center justify-center px-3 text-xs text-muted-foreground">
+                  {t('chat.workflow.selectAgent', 'Select an agent')}
+                </div>
+              )}
+            </div>
+          </div>
+        ) : activeTab === 'script' && view.script ? (
           <div className="h-full overflow-auto bg-muted/10 px-3 py-3 text-xs">
             {childScripts.length === 0 ? (
               <HighlightedCodeBlock code={view.script} language="javascript" codePlugin={codePlugin} />
@@ -283,6 +375,8 @@ export function WorkflowFullView({ view }: { view: WorkflowViewState }) {
           </div>
         )}
       </div>
+
+      {replay?.output != null && <WorkflowOutputFooter output={replay.output} />}
     </div>
   )
 }

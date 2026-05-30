@@ -15,7 +15,7 @@ import { buildDag, agentPhaseByPrompt, assignAgentsToNodes, type DagNode } from 
 import { WorkflowDagCanvas } from './WorkflowDagCanvas'
 import { useSubagentJsonl } from './use-subagent-jsonl'
 import { AsyncToolRow } from './subagent-activity'
-import { StructuredOutputView } from './StructuredOutputView'
+import { StructuredOutputView, StructuredOutputBlock } from './StructuredOutputView'
 import type { JsonlEntry } from './subagent-utils'
 import {
   streamdownPlugins,
@@ -60,22 +60,17 @@ function AgentTranscript({ agent, colors, phase }: { agent: WorkflowAgentInfo; c
         </div>
       )}
       {entries.map((entry, i) => renderEntry(entry, i))}
-      {finalText && (
-        <div className="mt-3 border-t border-border/30 pt-3">
-          <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-            {t('chat.subagent.output')}
-          </div>
-          <Streamdown
-            className="chat-md text-xs"
-            plugins={streamdownPlugins}
-            rehypePlugins={streamdownRehypePlugins}
-            components={streamdownComponents}
-            controls={streamdownControls}
-            linkSafety={streamdownLinkSafety}
-          >
-            {finalText}
-          </Streamdown>
-        </div>
+      {entries.length === 0 && finalText && (
+        <Streamdown
+          className="chat-md text-xs"
+          plugins={streamdownPlugins}
+          rehypePlugins={streamdownRehypePlugins}
+          components={streamdownComponents}
+          controls={streamdownControls}
+          linkSafety={streamdownLinkSafety}
+        >
+          {finalText}
+        </Streamdown>
       )}
     </div>
   )
@@ -86,7 +81,7 @@ function renderEntry(entry: JsonlEntry, index: number) {
     return <AsyncToolRow key={index} toolName={entry.toolName} description={entry.description} isActive={false} />
   }
   if (entry.type === 'structured') {
-    return <StructuredOutputView key={index} data={entry.data} />
+    return <StructuredOutputBlock key={index} data={entry.data} />
   }
   return (
     <Streamdown
@@ -222,6 +217,29 @@ export function WorkflowFullView({ view }: { view: WorkflowViewState }) {
     () => agents.find((a) => a.agentId === listAgentId) ?? agents[0],
     [agents, listAgentId],
   )
+  const agentGroups = useMemo(() => {
+    const byPhase = new Map<string | undefined, WorkflowAgentInfo[]>()
+    for (const a of agents) {
+      const phase = graph ? agentPhaseByPrompt(graph, a.prompt) : undefined
+      const bucket = byPhase.get(phase)
+      if (bucket) bucket.push(a)
+      else byPhase.set(phase, [a])
+    }
+    const groups: Array<{ phase?: string; agents: WorkflowAgentInfo[] }> = []
+    for (const phase of graph?.phases ?? []) {
+      const bucket = byPhase.get(phase)
+      if (bucket) {
+        groups.push({ phase, agents: bucket })
+        byPhase.delete(phase)
+      }
+    }
+    for (const [phase, bucket] of byPhase) {
+      if (phase !== undefined) groups.push({ phase, agents: bucket })
+    }
+    const noPhase = byPhase.get(undefined)
+    if (noPhase) groups.push({ phase: undefined, agents: noPhase })
+    return groups
+  }, [agents, graph])
 
   const [containerWidth, setContainerWidth] = useState(0)
   const isLarge = containerWidth >= 640
@@ -290,22 +308,31 @@ export function WorkflowFullView({ view }: { view: WorkflowViewState }) {
         {activeTab === 'list' ? (
           <div className="flex h-full min-w-0">
             <div className="w-56 shrink-0 overflow-y-auto border-r border-border/40 py-1">
-              {agents.map((a) => (
-                <button
-                  key={a.agentId}
-                  type="button"
-                  onClick={() => setListAgentId(a.agentId)}
-                  className={cn(
-                    'flex w-full items-center gap-1.5 px-2.5 py-1.5 text-left text-xs transition-colors',
-                    listSelected?.agentId === a.agentId ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-muted/50',
+              {agentGroups.map((group, gi) => (
+                <div key={group.phase ?? `__nophase_${gi}`} className="mb-1 last:mb-0">
+                  {group.phase && (
+                    <div className="px-2.5 pb-0.5 pt-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                      {group.phase}
+                    </div>
                   )}
-                >
-                  <Bot className={cn('size-3 shrink-0', colors.text)} />
-                  <span className="min-w-0 truncate">{a.label}</span>
-                  {a.tokens != null && a.tokens > 0 && (
-                    <span className="ml-auto shrink-0 tabular-nums text-[10px] text-muted-foreground">{formatTokens(a.tokens)}</span>
-                  )}
-                </button>
+                  {group.agents.map((a) => (
+                    <button
+                      key={a.agentId}
+                      type="button"
+                      onClick={() => setListAgentId(a.agentId)}
+                      className={cn(
+                        'flex w-full items-center gap-1.5 px-2.5 py-1.5 text-left text-xs transition-colors',
+                        listSelected?.agentId === a.agentId ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-muted/50',
+                      )}
+                    >
+                      <Bot className={cn('size-3 shrink-0', colors.text)} />
+                      <span className="min-w-0 truncate">{a.label}</span>
+                      {a.tokens != null && a.tokens > 0 && (
+                        <span className="ml-auto shrink-0 tabular-nums text-[10px] text-muted-foreground">{formatTokens(a.tokens)}</span>
+                      )}
+                    </button>
+                  ))}
+                </div>
               ))}
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto">

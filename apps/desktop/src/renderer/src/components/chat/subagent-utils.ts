@@ -6,7 +6,7 @@ export type JsonlEntry =
   | { type: 'activity'; text: string }
   | { type: 'structured'; data: unknown }
 
-const STRUCTURED_OUTPUT_TOOL = 'StructuredOutput'
+export const STRUCTURED_OUTPUT_TOOL = 'StructuredOutput'
 
 function summarizeToolInput(toolName: string, input: Record<string, unknown>): string {
   if (input.file_path) return String(input.file_path)

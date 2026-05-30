@@ -294,7 +294,7 @@ Follow **Test-Driven Development** with an **integration-first** philosophy — 
 ### Setup
 
 - **Framework**: Vitest with globals enabled
-- **Environment**: `node` by default, `jsdom` for `.test.tsx` files (auto-matched)
+- **Environment**: `node` by default. Component tests opt into `jsdom` with a `/** @vitest-environment jsdom */` docblock on the file's first line (required — vitest 4 removed `environmentMatchGlobs`, so it is not auto-matched by extension)
 - **Setup file**: `apps/desktop/vitest.setup.ts` (imports `@testing-library/jest-dom/vitest`, polyfills ResizeObserver, sets up mocked `window.app`/`window.agent` proxies)
 - **Cross-workspace include**: `apps/desktop/vitest.config.ts` adds `../../packages/{shared,ui}/src/**/*.{test,spec}.*` so shared/ui tests run in the same suite
 - **Directory layout**:

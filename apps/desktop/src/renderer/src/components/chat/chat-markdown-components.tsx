@@ -1,7 +1,6 @@
 import { useRef } from 'react'
 import { AtSign, FolderOpen } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { FileIcon } from '@superone/ui/components/ui/FileIcon'
 import {
   ContextMenu,
   ContextMenuContent,
@@ -11,38 +10,16 @@ import {
 import { openFileTab } from '@/components/activity/activity-panel-api'
 import { chatInputAPI } from '@/components/chat/ChatInput'
 import { toMentionPath } from '@/components/chat/chat-input-utils'
+import { DraggableFileIcon } from '@/components/chat/DraggableFileIcon'
 import { useAppStore, selectEffectiveProjectRoot } from '@/stores/app'
 import { useSourceControlStore } from '@/stores/source-control'
 import { clickReleasedOnSelection, parseFileLinkTarget } from '@/lib/file-link'
-import { buildDragImagePng, preloadDragIcons, loadIconFromSvgElement } from '@/components/sidebar/drag-image-builder'
-
-preloadDragIcons()
 
 export function InlineFileChip({ name, filePath, lineNumber }: { name: string; filePath: string; lineNumber?: number }) {
   const { t } = useTranslation()
   const dragEndRef = useRef(0)
-  const dragIconRef = useRef<HTMLImageElement | null>(null)
   const relativeTo = (projectPath: string): string =>
     filePath.startsWith(projectPath + '/') ? filePath.slice(projectPath.length + 1) : filePath
-  const handleMouseDown = (e: React.MouseEvent): void => {
-    if (e.button !== 0) return
-    const svg = e.currentTarget.querySelector('svg')
-    if (svg) dragIconRef.current = loadIconFromSvgElement(svg)
-  }
-  const handleDragStart = (e: React.DragEvent): void => {
-    e.preventDefault()
-    e.stopPropagation()
-    const dragImage = buildDragImagePng(name, false, dragIconRef.current)
-    if (dragImage) window.app.startDrag([filePath], { png: dragImage.buffer, scaleFactor: dragImage.scaleFactor })
-    else window.app.startDrag([filePath])
-    const cleanup = (): void => {
-      dragEndRef.current = Date.now()
-      document.removeEventListener('mouseup', cleanup)
-      document.removeEventListener('dragend', cleanup)
-    }
-    document.addEventListener('mouseup', cleanup)
-    document.addEventListener('dragend', cleanup)
-  }
   const handleClick = (e: React.MouseEvent): void => {
     if (Date.now() - dragEndRef.current < 200) return
     if (clickReleasedOnSelection(e.currentTarget)) return
@@ -67,14 +44,11 @@ export function InlineFileChip({ name, filePath, lineNumber }: { name: string; f
       <ContextMenuTrigger asChild>
         <span
           role="button"
-          draggable
-          onMouseDown={handleMouseDown}
-          onDragStart={handleDragStart}
           onClick={handleClick}
           title={filePath}
           className="inline-flex cursor-pointer items-center gap-0.5 rounded bg-muted px-1 text-[0.9em] text-foreground whitespace-nowrap align-baseline translate-y-[1px] hover:bg-muted/80 transition-colors"
         >
-          <FileIcon name={name} size={12} />
+          <DraggableFileIcon name={name} filePath={filePath} dragEndRef={dragEndRef} />
           <span>{name}</span>
           {lineNumber != null && <span className="text-muted-foreground text-[0.85em]">#L{lineNumber}</span>}
         </span>

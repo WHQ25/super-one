@@ -10,7 +10,7 @@ import { openFileTab } from '@/components/activity/activity-panel-api'
 import { useSettingsStore } from '@/stores/settings'
 import { useSourceControlStore } from '@/stores/source-control'
 import { ToolIcon } from './ToolIcon'
-import { FileIcon } from '@superone/ui/components/ui/FileIcon'
+import { DraggableFileIcon } from './DraggableFileIcon'
 import { HighlightedCodeBlock } from './CodeBlock'
 import { getToolDisplay, getToolVerb, parseToolInput, parseMcpToolName, formatReadMeta, type ToolIcon as ToolIconType } from './tool-display'
 import { codePlugin } from './chat-shared'
@@ -663,8 +663,10 @@ export function FileChip({ name, title, filePath, lineNumber, className }: { nam
   const parsed = filePath ? parseFileLinkTarget(filePath) : null
   const targetPath = parsed?.filePath
   const targetLineNumber = lineNumber ?? parsed?.lineNumber
+  const dragEndRef = useRef(0)
 
   const handleClick = (e: React.MouseEvent): void => {
+    if (Date.now() - dragEndRef.current < 200) return
     if (clickReleasedOnSelection(e.currentTarget)) return
     e.stopPropagation()
     if (!targetPath) return
@@ -681,7 +683,7 @@ export function FileChip({ name, title, filePath, lineNumber, className }: { nam
       title={title}
       className="inline-flex min-w-0 cursor-pointer items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-foreground hover:bg-muted/80 transition-colors"
     >
-      <FileIcon name={name} size={12} className="shrink-0" />
+      <DraggableFileIcon name={name} filePath={targetPath} dragEndRef={dragEndRef} className="shrink-0" />
       <span className={cn('truncate', className)}>{name}</span>
       {targetLineNumber != null && <span className="text-muted-foreground text-[10px]">#L{targetLineNumber}</span>}
     </span>

@@ -1,5 +1,33 @@
 import { readdir, readFile } from 'node:fs/promises'
+import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
+
+export interface WorkflowAgentSummary {
+  label: string
+  toolCount: number
+  tokens?: number
+}
+
+export function listWorkflowAgentsSync(transcriptDir: string): WorkflowAgentSummary[] {
+  let files: string[]
+  try {
+    files = readdirSync(transcriptDir)
+  } catch {
+    return []
+  }
+  const jsonls = files.filter((f) => f.startsWith('agent-') && f.endsWith('.jsonl')).sort()
+  const out: WorkflowAgentSummary[] = []
+  for (const file of jsonls) {
+    const agentId = file.replace(/^agent-/, '').replace(/\.jsonl$/, '')
+    try {
+      const s = summarizeAgentJsonl(readFileSync(join(transcriptDir, file), 'utf8'), agentId)
+      out.push({ label: s.label, toolCount: s.toolCount, tokens: s.tokens })
+    } catch {
+      out.push({ label: agentId, toolCount: 0 })
+    }
+  }
+  return out
+}
 
 export interface WorkflowAgentInfo {
   agentId: string

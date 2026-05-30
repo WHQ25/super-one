@@ -11,6 +11,7 @@ import type { AgentEvent, RemoteCommand, ContentBlock, ChatMessage, CodexThreadI
 export type { RemoteDeviceConfig }
 import { trace } from './agent/event-trace'
 import { readOutputFile } from './agent/claude-session-runtime'
+import { listWorkflowAgentsSync } from './workflow-transcripts'
 import { initHighlighter, highlightCodeSync, highlightCodeByLang, parseAnsiTokens, type DiffTokenLine } from './remote-highlighter'
 import {
   bytesToHex,
@@ -49,7 +50,66 @@ const TOOL_TYPE_MAP: Record<string, string> = {
   NotebookEdit: 'notebook_edit', FileChange: 'file_change',
   Bash: 'bash', Grep: 'grep', Glob: 'glob',
   WebSearch: 'web_search', WebFetch: 'web_fetch',
-  Agent: 'agent', Skill: 'skill',
+  Agent: 'agent', Skill: 'skill', Workflow: 'workflow',
+}
+
+interface WorkflowPhase {
+  title: string
+  detail?: string
+}
+
+function workflowQuotedValue(src: string, key: string): string | undefined {
+  const m = src.match(new RegExp(`${key}\\s*:\\s*(['"\`])([\\s\\S]*?)\\1`))
+  return m ? m[2] : undefined
+}
+
+function workflowPhasesFrom(metaSrc: string): WorkflowPhase[] {
+  const keyIdx = metaSrc.indexOf('phases')
+  if (keyIdx < 0) return []
+  const start = metaSrc.indexOf('[', keyIdx)
+  if (start < 0) return []
+  let depth = 0
+  let end = -1
+  for (let i = start; i < metaSrc.length; i++) {
+    const c = metaSrc[i]
+    if (c === '[') depth++
+    else if (c === ']') {
+      depth--
+      if (depth === 0) { end = i; break }
+    }
+  }
+  if (end < 0) return []
+  const arr = metaSrc.slice(start + 1, end)
+  const phases: WorkflowPhase[] = []
+  const objRe = /\{([\s\S]*?)\}/g
+  let m: RegExpExecArray | null
+  while ((m = objRe.exec(arr))) {
+    const title = workflowQuotedValue(m[1], 'title')
+    if (title) phases.push({ title, detail: workflowQuotedValue(m[1], 'detail') })
+  }
+  return phases
+}
+
+export function parseWorkflowMeta(script: string): { name: string; description: string; phases: WorkflowPhase[] } {
+  const metaIdx = script.indexOf('meta')
+  const metaSrc = metaIdx >= 0 ? script.slice(metaIdx) : script
+  return {
+    name: workflowQuotedValue(metaSrc, 'name') ?? '',
+    description: workflowQuotedValue(metaSrc, 'description') ?? '',
+    phases: workflowPhasesFrom(metaSrc),
+  }
+}
+
+export function parseWorkflowTranscriptDir(summary?: string): string | undefined {
+  if (!summary) return undefined
+  const trimmed = summary.trim()
+  if (trimmed.startsWith('{')) {
+    try {
+      const o = JSON.parse(trimmed) as Record<string, unknown>
+      if (o && typeof o.transcriptDir === 'string') return o.transcriptDir
+    } catch { /* fall through */ }
+  }
+  return summary.match(/Transcript dir:\s*(\S+)/)?.[1]
 }
 
 function optStr(v: unknown): string | undefined {
@@ -140,7 +200,7 @@ export function stripProjectPath(value: string, projectPath?: string): string {
   return value.includes(prefix) ? value.replaceAll(prefix, '') : value
 }
 
-export function computeToolMeta(block: ContentBlock & { type: 'tool_use' }, projectPath?: string): { toolSummary?: string; toolFilePath?: string; toolLineDelta?: { added: number; removed: number }; toolDiff?: string; toolDiffTokens?: { added?: DiffTokenLine[]; removed?: DiffTokenLine[] }; toolTodos?: TodoToolItem[]; subagentType?: string; toolPrompt?: string; runInBackground?: boolean } {
+export function computeToolMeta(block: ContentBlock & { type: 'tool_use' }, projectPath?: string): { toolSummary?: string; toolFilePath?: string; toolLineDelta?: { added: number; removed: number }; toolDiff?: string; toolDiffTokens?: { added?: DiffTokenLine[]; removed?: DiffTokenLine[] }; toolTodos?: TodoToolItem[]; subagentType?: string; toolPrompt?: string; runInBackground?: boolean; workflowName?: string; workflowDescription?: string; workflowPhases?: WorkflowPhase[] } {
   try {
     const p = JSON.parse(block.input)
     if (!p || typeof p !== 'object') return {}
@@ -254,6 +314,11 @@ export function computeToolMeta(block: ContentBlock & { type: 'tool_use' }, proj
       case 'Task':
         summary = String(p.description ?? p.name ?? '')
         return { toolSummary: summary, subagentType: p.subagent_type ? String(p.subagent_type) : undefined, toolPrompt: p.prompt ? String(p.prompt) : undefined, runInBackground: p.run_in_background === true ? true : undefined }
+      case 'Workflow': {
+        const wfMeta = parseWorkflowMeta(typeof p.script === 'string' ? p.script : '')
+        const wfName = wfMeta.name || (typeof p.name === 'string' ? p.name : '')
+        return { toolSummary: wfMeta.description, workflowName: wfName || undefined, workflowDescription: wfMeta.description || undefined, workflowPhases: wfMeta.phases.length > 0 ? wfMeta.phases : undefined }
+      }
       case 'AskUserQuestion': {
         const questions = Array.isArray(p.questions) ? p.questions : []
         summary = `${questions.length} question${questions.length !== 1 ? 's' : ''}`
@@ -302,7 +367,7 @@ function stripContentBlock(block: ContentBlock, bashCmds?: Map<string, string>, 
     const meta = computeToolMeta(block, projectPath)
     const mappedType = TOOL_TYPE_MAP[block.toolName] ?? 'tool_use'
     const keepInput = block.toolName.endsWith('__widget_show')
-    return { ...block, type: mappedType, input: keepInput ? block.input : '', toolSummary: block.toolSummary ?? meta.toolSummary, toolFilePath: block.toolFilePath ?? meta.toolFilePath, toolLineDelta: block.toolLineDelta ?? meta.toolLineDelta, toolDiff: block.toolDiff ?? meta.toolDiff, toolDiffTokens: block.toolDiffTokens ?? meta.toolDiffTokens, toolTodos: block.toolTodos ?? meta.toolTodos, subagentType: meta.subagentType, toolPrompt: meta.toolPrompt, runInBackground: meta.runInBackground } as ContentBlock
+    return { ...block, type: mappedType, input: keepInput ? block.input : '', toolSummary: block.toolSummary ?? meta.toolSummary, toolFilePath: block.toolFilePath ?? meta.toolFilePath, toolLineDelta: block.toolLineDelta ?? meta.toolLineDelta, toolDiff: block.toolDiff ?? meta.toolDiff, toolDiffTokens: block.toolDiffTokens ?? meta.toolDiffTokens, toolTodos: block.toolTodos ?? meta.toolTodos, subagentType: meta.subagentType, toolPrompt: meta.toolPrompt, runInBackground: meta.runInBackground, workflowName: meta.workflowName, workflowDescription: meta.workflowDescription, workflowPhases: meta.workflowPhases } as ContentBlock
   }
   if (block.type === 'tool_result') {
     if (bashCmds?.has(block.toolUseId)) {
@@ -599,6 +664,8 @@ export class RemoteControlService {
   private widgetToolIds = new Set<string>()
   private agentToolIds = new Set<string>()
   private agentOutputFiles = new Map<string, string>()
+  private workflowToolIds = new Set<string>()
+  private workflowTranscriptDirs = new Map<string, string>()
   private pendingText: { messageId: string; text: string; parentToolUseId: string | null; targets?: string[] } | null = null
   private pendingTextFlushedLen = 0
   private pendingThinking: { messageId: string; text: string; parentToolUseId: string | null; targets?: string[] } | null = null
@@ -1138,6 +1205,8 @@ export class RemoteControlService {
       this.widgetToolIds.clear()
       this.agentToolIds.clear()
       this.agentOutputFiles.clear()
+      this.workflowToolIds.clear()
+      this.workflowTranscriptDirs.clear()
       this.drainPending(true)
     }
 
@@ -1199,6 +1268,9 @@ export class RemoteControlService {
       if (event.delta.type === 'tool_use' && event.delta.toolName === 'Agent') {
         this.agentToolIds.add(event.delta.toolUseId)
       }
+      if (event.delta.type === 'tool_use' && event.delta.toolName === 'Workflow') {
+        this.workflowToolIds.add(event.delta.toolUseId)
+      }
       if (event.delta.type === 'tool_use' && TODO_TOOLS.has(event.delta.toolName)) {
         this.todoToolInputs.set(event.delta.toolUseId, { toolName: event.delta.toolName, input: event.delta.input })
         return
@@ -1219,6 +1291,10 @@ export class RemoteControlService {
         const outputMatch = event.delta.summary?.match(/output_file:\s*(\S+)/)
         if (outputMatch) this.agentOutputFiles.set(event.delta.toolUseId, outputMatch[1])
         stripped = { ...event, delta: event.delta }
+      } else if (event.delta.type === 'tool_result' && this.workflowToolIds.has(event.delta.toolUseId)) {
+        const dir = parseWorkflowTranscriptDir(event.delta.summary)
+        if (dir) this.workflowTranscriptDirs.set(event.delta.toolUseId, dir)
+        stripped = stripEventForRemote(event, event.projectPath)
       } else {
         stripped = stripEventForRemote(event, event.projectPath)
       }
@@ -1234,6 +1310,13 @@ export class RemoteControlService {
       if (outputFile) {
         const { resultText: activityText, toolEntries } = readOutputFile(outputFile, event.projectPath)
         enriched = { ...event, ...(activityText ? { activityText } : {}), ...(toolEntries.length > 0 ? { toolEntries } : {}) }
+      }
+    }
+    if ((enriched.type === 'task_progress' || enriched.type === 'task_notification') && enriched.toolUseId && this.workflowToolIds.has(enriched.toolUseId)) {
+      const dir = this.workflowTranscriptDirs.get(enriched.toolUseId)
+      if (dir) {
+        const workflowAgents = listWorkflowAgentsSync(dir)
+        if (workflowAgents.length > 0) enriched = { ...enriched, workflowAgents }
       }
     }
     if ((enriched.type === 'task_progress' || enriched.type === 'task_started') && enriched.description && event.projectPath) {

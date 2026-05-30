@@ -12,7 +12,7 @@ export interface ImageAttachment {
 
 // --- Content blocks ---
 
-type RemoteToolType = 'read' | 'edit' | 'write' | 'notebook_edit' | 'file_change' | 'bash' | 'grep' | 'glob' | 'web_search' | 'web_fetch' | 'agent' | 'skill'
+type RemoteToolType = 'read' | 'edit' | 'write' | 'notebook_edit' | 'file_change' | 'bash' | 'grep' | 'glob' | 'web_search' | 'web_fetch' | 'agent' | 'skill' | 'workflow'
 
 type DiffTokenLine = [string, string | null][]
 
@@ -45,6 +45,12 @@ interface AgentTaskData {
   taskResultText?: string
 }
 
+interface WorkflowData {
+  workflowName?: string
+  workflowDescription?: string
+  workflowPhases?: Array<{ title: string; detail?: string }>
+}
+
 interface ToolUseBase {
   toolName: string
   toolUseId: string
@@ -58,8 +64,8 @@ interface ToolUseBase {
 export type ContentBlock =
   | { type: 'text'; text: string; parentToolUseId?: string | null; codeBlockTokens?: Array<{ language: string; tokens: DiffTokenLine[] | null }>; isPaste?: boolean }
   | { type: 'thinking'; thinking: string; parentToolUseId?: string | null }
-  | { type: 'tool_use' } & ToolUseBase & ToolMeta & AgentTaskData
-  | { type: RemoteToolType } & ToolUseBase & ToolMeta & AgentTaskData
+  | { type: 'tool_use' } & ToolUseBase & ToolMeta & AgentTaskData & WorkflowData
+  | { type: RemoteToolType } & ToolUseBase & ToolMeta & AgentTaskData & WorkflowData
   | { type: 'tool_result'; toolUseId: string; summary: string; outputPath?: string; isTimedOut?: boolean; isError?: boolean; parentToolUseId?: string | null; outputTokens?: DiffTokenLine[]; todoToolName?: string; toolTodos?: TodoToolItem[] }
   | { type: 'bash_result'; toolUseId: string; summary: string; parentToolUseId?: string | null; outputTokens?: DiffTokenLine[] }
   | { type: 'todo_result'; toolUseId: string; summary: string; parentToolUseId?: string | null; todoToolName?: string; toolTodos?: TodoToolItem[] }
@@ -745,8 +751,8 @@ export type AgentEventBase =
   | { type: 'compact_boundary'; trigger: 'manual' | 'auto'; preTokens: number; postTokens?: number; durationMs?: number }
   | { type: 'status_indicator'; indicator: 'compacting' | null; permissionMode?: PermissionMode; compactResult?: 'success' | 'failed'; compactError?: string }
   | { type: 'task_started'; taskId: string; toolUseId?: string; description: string; taskType?: string }
-  | { type: 'task_progress'; taskId: string; toolUseId?: string; description: string; lastToolName?: string; summary?: string; usage: { totalTokens: number; toolUses: number; durationMs: number }; activityText?: string; toolEntries?: Array<{ toolName: string; description: string }> }
-  | { type: 'task_notification'; taskId: string; toolUseId?: string; taskStatus: 'completed' | 'failed' | 'stopped'; outputFile: string; summary?: string; usage?: { totalTokens: number; toolUses: number; durationMs: number }; resultText?: string; toolEntries?: Array<{ toolName: string; description: string }> }
+  | { type: 'task_progress'; taskId: string; toolUseId?: string; description: string; lastToolName?: string; summary?: string; usage: { totalTokens: number; toolUses: number; durationMs: number }; activityText?: string; toolEntries?: Array<{ toolName: string; description: string }>; workflowAgents?: Array<{ label: string; toolCount: number; tokens?: number }> }
+  | { type: 'task_notification'; taskId: string; toolUseId?: string; taskStatus: 'completed' | 'failed' | 'stopped'; outputFile: string; summary?: string; usage?: { totalTokens: number; toolUses: number; durationMs: number }; resultText?: string; toolEntries?: Array<{ toolName: string; description: string }>; workflowAgents?: Array<{ label: string; toolCount: number; tokens?: number }> }
   | { type: 'auth_status'; isAuthenticating: boolean; output: string[]; error?: string }
   | { type: 'slash_command_output'; messageId: string; content: string }
   | { type: 'subagent_usage'; messageId: string; parentToolUseId: string; inputTokens: number; outputTokens: number }

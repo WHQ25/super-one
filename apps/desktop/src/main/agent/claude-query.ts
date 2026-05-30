@@ -602,7 +602,7 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
           }
 
           const isSyntheticMsg = msg.message?.model === '<synthetic>'
-          if (isSyntheticMsg && Array.isArray(msg.message?.content)) {
+          if (isSyntheticMsg && !assistantError && Array.isArray(msg.message?.content)) {
             const text = msg.message.content
               .filter((b: any) => b.type === 'text')
               .map((b: any) => b.text ?? '')

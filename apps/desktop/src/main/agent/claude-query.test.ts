@@ -387,6 +387,36 @@ describe('createSessionQuery', () => {
     expect(events).toContainEqual({ type: 'status_change', status: 'idle' })
   })
 
+  it('does not emit slash_command_output for a synthetic API-error assistant message so the real reply is preserved', async () => {
+    state.messages = [
+      {
+        type: 'assistant',
+        message: {
+          id: 'step-api-err',
+          model: '<synthetic>',
+          content: [{ type: 'text', text: 'API Error: 500 server overloaded' }],
+        },
+        error: 'server_error',
+      },
+      { type: 'result', subtype: 'error', errors: ['API Error: 500 server overloaded'] },
+    ]
+
+    const events: Array<Record<string, unknown>> = []
+    const handle = createSessionQuery(
+      { consumedTags: [], drainConsumedTag: () => undefined } as unknown as MessageBridge,
+      { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
+      (event) => events.push(event as unknown as Record<string, unknown>),
+      () => 'msg-api-err',
+      () => Date.now() - 50,
+      () => false,
+    )
+    await handle.iterationDone
+
+    expect(events.some((e) => e.type === 'slash_command_output')).toBe(false)
+    const messageError = events.find((e) => e.type === 'message_error') as Record<string, unknown> | undefined
+    expect(messageError?.error).toBe('API Error: 500 server overloaded')
+  })
+
   it('decorates message_error with provider-aware hint when assistant carries model_not_found and result has api_error_status', async () => {
     state.messages = [
       {

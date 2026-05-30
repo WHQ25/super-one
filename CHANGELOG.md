@@ -10,12 +10,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - WYSIWYG Markdown editor mode with live Mermaid diagram and math (KaTeX) rendering, including code/Mermaid block headers and a file tab
 - Markdown editor slash command to insert tables via a grid picker, with a row/column context menu
 - Markdown editor links now route through the link-safety confirmation modal before opening
-- Workflow DAG view reconstructs and replays recorded runs, and renders workflow output plus subagent structured output
+- Workflow DAG view reconstructs and replays recorded runs, renders workflow output, groups the agent list by phase, and shows each subagent's StructuredOutput as a tool block
 
 ### Fixed
 - Keyboard focus stays on the Workflow DAG canvas
 - Workflow node transcript card is now centered
 - Thinking/text runs stay merged across interleaved subagent blocks
+- Removed the duplicated output section in workflow subagent transcripts
 
 ### Changed
 - Upgraded Claude Agent SDK to 0.3.158

@@ -48,6 +48,16 @@ export function WorkflowDagCanvas({
   const dragStart = useRef<Point>({ x: 0, y: 0 })
   const draggedRef = useRef(false)
   const containerRef = useRef<HTMLDivElement>(null)
+  const prevSelectedRef = useRef(selectedNodeId)
+
+  useEffect(() => {
+    containerRef.current?.focus()
+  }, [])
+
+  useEffect(() => {
+    if (prevSelectedRef.current && !selectedNodeId) containerRef.current?.focus()
+    prevSelectedRef.current = selectedNodeId
+  }, [selectedNodeId])
 
   const effectiveScale = baseScaleRef.current * zoom
   const tx = content.width > 0 ? (containerSize.width - content.width * effectiveScale) / 2 + pan.x : 0

@@ -4,6 +4,22 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.40.0-alpha] - 2026-05-30
+
+### Added
+- WYSIWYG Markdown editor mode with live Mermaid diagram and math (KaTeX) rendering, including code/Mermaid block headers and a file tab
+- Markdown editor slash command to insert tables via a grid picker, with a row/column context menu
+- Markdown editor links now route through the link-safety confirmation modal before opening
+- Workflow DAG view reconstructs and replays recorded runs, and renders workflow output plus subagent structured output
+
+### Fixed
+- Keyboard focus stays on the Workflow DAG canvas
+- Workflow node transcript card is now centered
+- Thinking/text runs stay merged across interleaved subagent blocks
+
+### Changed
+- Upgraded Claude Agent SDK to 0.3.158
+
 ## [0.39.0-alpha] - 2026-05-29
 
 ### Added

@@ -28,6 +28,11 @@ function truncate(text: string, max = 18): string {
   return text.length > max ? text.slice(0, max - 1) + '…' : text
 }
 
+function curve(x1: number, y1: number, x2: number, y2: number): string {
+  const mx = (x1 + x2) / 2
+  return `M${x1} ${y1} C${mx} ${y1} ${mx} ${y2} ${x2} ${y2}`
+}
+
 export function WorkflowDag({ dag, selectedNodeId, onSelect, stats, bare }: WorkflowDagProps) {
   const layout = useMemo(() => layoutDag(dag), [dag])
 
@@ -39,44 +44,66 @@ export function WorkflowDag({ dag, selectedNodeId, onSelect, stats, bare }: Work
           </marker>
         </defs>
 
-        {layout.groups.map((g) => (
-          <g key={`grp-${g.name}`}>
+        {layout.subworkflows.map((s) => (
+          <g key={`sw-${s.name}`}>
             <rect
-              x={g.x}
-              y={g.y}
-              width={g.w}
-              height={g.h}
-              rx={8}
+              x={s.x}
+              y={s.y}
+              width={s.w}
+              height={s.h}
+              rx={12}
               fill="var(--muted-foreground)"
-              fillOpacity={0.04}
-              stroke={GROUP_STROKE.workflow}
-              strokeOpacity={0.6}
+              fillOpacity={0.03}
+              stroke="var(--muted-foreground)"
+              strokeOpacity={0.35}
               strokeWidth={1}
-              strokeDasharray="5 4"
+              strokeDasharray="6 4"
             />
-            <text x={g.x + 7} y={g.y - 4} fontSize={10} fontWeight={600} fill={GROUP_STROKE.workflow}>
-              ▸ {truncate(g.name, 28)}
+            <text x={s.x + 12} y={s.y + 15} fontSize={11} fontWeight={700} fill="var(--muted-foreground)">
+              ▸ {truncate(s.name, 30)}
             </text>
           </g>
         ))}
 
-        {dag.edges.map((e, i) => {
-          const a = layout.pos.get(e.from)
-          const b = layout.pos.get(e.to)
-          if (!a || !b) return null
-          const x1 = a.x + NODE_W
-          const x2 = b.x
-          const mx = (x1 + x2) / 2
+        {layout.clusters.slice(0, -1).map((c, i) => {
+          const next = layout.clusters[i + 1]
           return (
             <path
-              key={i}
-              d={`M${x1} ${a.cy} C${mx} ${a.cy} ${mx} ${b.cy} ${x2} ${b.cy}`}
+              key={`conn-${c.key}`}
+              d={curve(c.x + c.w, c.cy, next.x, next.cy)}
               fill="none"
               stroke="var(--muted-foreground)"
-              strokeOpacity={0.45}
-              strokeWidth={1}
+              strokeOpacity={0.5}
+              strokeWidth={1.5}
+              strokeDasharray="6 5"
               markerEnd="url(#wf-arrow)"
             />
+          )
+        })}
+
+        {layout.clusters.map((c) => {
+          const empty = c.count === 0
+          return (
+            <g key={`cl-${c.key}`}>
+              <rect
+                x={c.x}
+                y={c.y}
+                width={c.w}
+                height={c.h}
+                rx={10}
+                fill="var(--muted-foreground)"
+                fillOpacity={empty ? 0.015 : 0.035}
+                stroke="var(--muted-foreground)"
+                strokeOpacity={empty ? 0.2 : 0.25}
+                strokeWidth={1}
+                strokeDasharray={empty ? '5 4' : undefined}
+              />
+              {c.label && (
+                <text x={c.x + 12} y={c.y + 16} fontSize={11} fontWeight={600} fill="var(--muted-foreground)" fillOpacity={empty ? 0.6 : 1}>
+                  {truncate(c.label, 26)}{c.count !== 1 ? ` · ${c.count}` : ''}
+                </text>
+              )}
+            </g>
           )
         })}
 

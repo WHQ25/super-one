@@ -125,6 +125,31 @@ describe('parseWorkflowGraph — orchestration primitives', () => {
     expect(block.agents.map((a) => a.label)).toEqual(['review', 'verify'])
   })
 
+  it('unwraps a parallel(...) buried under .filter().flatMap() method chains', () => {
+    const g = parseWorkflowGraph(`
+      const ANGLES = ['a', 'b']
+      phase('Find')
+      const found = (await parallel(ANGLES.map((x) => () => agent('do ' + x, { label: \`find:\${x}\` }))))
+        .filter(Boolean)
+        .flatMap((r) => r.findings || [])
+    `)
+    const block = g.blocks[0]
+    expect(block.kind).toBe('parallel')
+    if (block.kind !== 'parallel') return
+    expect(block.phase).toBe('Find')
+    expect(block.dynamic).toBe(true)
+    expect(block.items).toEqual(['a', 'b'])
+    expect(block.agents[0].label).toBe('find:${x}')
+  })
+
+  it('does not mistake a plain arr.map().join() chain for an orchestration block', () => {
+    const g = parseWorkflowGraph(`
+      const verified = []
+      const list = verified.map((c) => c.summary).join('\\n')
+    `)
+    expect(g.blocks).toEqual([])
+  })
+
   it('keeps multiple serial agents as ordered agent blocks', () => {
     const g = parseWorkflowGraph(`
       const a = await agent('first', { label: 'one' })

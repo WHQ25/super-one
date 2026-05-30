@@ -1,7 +1,9 @@
-import type { WorkflowGraph, WorkflowBlock, WorkflowAgentSpec } from './workflow-graph'
+import type { WorkflowGraph, WorkflowBlock, WorkflowAgentSpec, FanoutItem } from './workflow-graph'
 
 export interface DagRuntimeAgent {
   label: string
+  prompt?: string
+  agentId?: string
   status?: 'done' | 'running' | 'failed'
   toolCount?: number
 }
@@ -10,60 +12,142 @@ export type DagGroup = 'serial' | 'parallel' | 'pipeline' | 'workflow'
 
 export const NODE_W = 200
 export const NODE_H = 86
-const COL_GAP = 48
-const ROW_GAP = 18
 const PAD = 18
-const GROUP_PAD = 8
-const GROUP_LABEL_H = 18
+const CLUSTER_PAD = 14
+const CLUSTER_LABEL_H = 24
+const CLUSTER_GAP = 80
+const GRID_GAP = 14
+const SUB_PAD = 12
+const SUB_LABEL_H = 20
+const SUB_SEP = '\u001f'
 
 export const DAG_NODE_SIZE = { w: NODE_W, h: NODE_H }
 
 export interface DagNodeStats { toolCount?: number; tokens?: number }
 
 export interface DagPoint { x: number; y: number; cx: number; cy: number }
+export interface DagCluster {
+  key: string
+  label?: string
+  subworkflow?: string
+  count: number
+  x: number
+  y: number
+  w: number
+  h: number
+  cy: number
+}
+
+export interface DagSubworkflowBox {
+  name: string
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
 export interface DagLayout {
   width: number
   height: number
   pos: Map<string, DagPoint>
-  groups: { name: string; x: number; y: number; w: number; h: number }[]
+  clusters: DagCluster[]
+  subworkflows: DagSubworkflowBox[]
+}
+
+function clusterKey(n: DagNode): string {
+  const inner = n.phase ? `p:${n.phase}` : `c:${n.col}`
+  return n.subworkflow ? `w:${n.subworkflow}${SUB_SEP}${inner}` : inner
+}
+
+function parseClusterKey(key: string): { subworkflow?: string; phase?: string } {
+  if (key.startsWith('w:')) {
+    const sep = key.indexOf(SUB_SEP)
+    const inner = key.slice(sep + 1)
+    return { subworkflow: key.slice(2, sep), phase: inner.startsWith('p:') ? inner.slice(2) : undefined }
+  }
+  if (key.startsWith('p:')) return { phase: key.slice(2) }
+  return {}
 }
 
 export function layoutDag(dag: Dag): DagLayout {
-  const hasGroups = dag.nodes.some((n) => n.subworkflow)
-  const topMargin = hasGroups ? GROUP_LABEL_H : 0
-  const maxRows = dag.nodes.reduce((m, n) => Math.max(m, n.rows), 1)
-  const contentH = maxRows * NODE_H + (maxRows - 1) * ROW_GAP
-  const height = contentH + PAD * 2 + topMargin
-  const width = PAD * 2 + Math.max(1, dag.cols) * NODE_W + Math.max(0, dag.cols - 1) * COL_GAP
-  const bandCenter = PAD + topMargin + contentH / 2
-  const pos = new Map<string, DagPoint>()
+  const order: string[] = []
+  const byKey = new Map<string, DagNode[]>()
+  const minCol = new Map<string, number>()
   for (const n of dag.nodes) {
-    const groupH = n.rows * NODE_H + (n.rows - 1) * ROW_GAP
-    const x = PAD + n.col * (NODE_W + COL_GAP)
-    const y = bandCenter - groupH / 2 + n.row * (NODE_H + ROW_GAP)
-    pos.set(n.id, { x, y, cx: x + NODE_W / 2, cy: y + NODE_H / 2 })
+    const key = clusterKey(n)
+    let arr = byKey.get(key)
+    if (!arr) {
+      arr = []
+      byKey.set(key, arr)
+      order.push(key)
+      minCol.set(key, n.col)
+    }
+    arr.push(n)
+    minCol.set(key, Math.min(minCol.get(key)!, n.col))
   }
-  const groupOrder: string[] = []
-  const bounds = new Map<string, { minX: number; minY: number; maxX: number; maxY: number }>()
-  for (const n of dag.nodes) {
-    if (!n.subworkflow) continue
-    const p = pos.get(n.id)!
-    if (!bounds.has(n.subworkflow)) {
-      groupOrder.push(n.subworkflow)
-      bounds.set(n.subworkflow, { minX: p.x, minY: p.y, maxX: p.x + NODE_W, maxY: p.y + NODE_H })
-    } else {
-      const b = bounds.get(n.subworkflow)!
-      b.minX = Math.min(b.minX, p.x)
-      b.minY = Math.min(b.minY, p.y)
-      b.maxX = Math.max(b.maxX, p.x + NODE_W)
-      b.maxY = Math.max(b.maxY, p.y + NODE_H)
+  // Declared phases (every phase() call, even if it spawned no agents) keep a slot so
+  // a phase that ran empty still appears as a placeholder cluster, in declared order.
+  const declaredKeys = (dag.phases ?? []).map((p) => `p:${p}`)
+  const declaredIndex = new Map(declaredKeys.map((k, i) => [k, i] as const))
+  const finalOrder = [...new Set([...declaredKeys, ...order])].sort((a, b) => {
+    const ia = declaredIndex.has(a) ? declaredIndex.get(a)! : declaredKeys.length + (minCol.get(a) ?? 0)
+    const ib = declaredIndex.has(b) ? declaredIndex.get(b)! : declaredKeys.length + (minCol.get(b) ?? 0)
+    return ia - ib
+  })
+
+  const dims = finalOrder.map((key) => {
+    const nodes = [...(byKey.get(key) ?? [])].sort((a, b) => a.col - b.col || a.row - b.row)
+    const n = nodes.length
+    const gridCols = Math.max(1, Math.ceil(Math.sqrt(n)))
+    const gridRows = Math.ceil(n / gridCols)
+    const w = CLUSTER_PAD * 2 + gridCols * NODE_W + Math.max(0, gridCols - 1) * GRID_GAP
+    const h = CLUSTER_LABEL_H + CLUSTER_PAD * 2 + gridRows * NODE_H + Math.max(0, gridRows - 1) * GRID_GAP
+    return { key, nodes, gridCols, w, h, ...parseClusterKey(key) }
+  })
+
+  const hasSub = dims.some((d) => d.subworkflow)
+  const subTop = hasSub ? SUB_LABEL_H + SUB_PAD : 0
+  const maxH = dims.reduce((m, d) => Math.max(m, d.h), CLUSTER_LABEL_H + CLUSTER_PAD * 2 + NODE_H)
+  const bandCenter = PAD + subTop + maxH / 2
+  const pos = new Map<string, DagPoint>()
+  const clusters: DagCluster[] = []
+  let x = PAD
+  for (const d of dims) {
+    const top = bandCenter - d.h / 2
+    d.nodes.forEach((node, k) => {
+      const gx = k % d.gridCols
+      const gy = Math.floor(k / d.gridCols)
+      const nx = x + CLUSTER_PAD + gx * (NODE_W + GRID_GAP)
+      const ny = top + CLUSTER_LABEL_H + CLUSTER_PAD + gy * (NODE_H + GRID_GAP)
+      pos.set(node.id, { x: nx, y: ny, cx: nx + NODE_W / 2, cy: ny + NODE_H / 2 })
+    })
+    clusters.push({ key: d.key, label: d.phase, subworkflow: d.subworkflow, count: d.nodes.length, x, y: top, w: d.w, h: d.h, cy: top + d.h / 2 })
+    x += d.w + CLUSTER_GAP
+  }
+
+  const subBounds = new Map<string, { minX: number; minY: number; maxX: number; maxY: number }>()
+  for (const c of clusters) {
+    if (!c.subworkflow) continue
+    const b = subBounds.get(c.subworkflow)
+    if (!b) subBounds.set(c.subworkflow, { minX: c.x, minY: c.y, maxX: c.x + c.w, maxY: c.y + c.h })
+    else {
+      b.minX = Math.min(b.minX, c.x)
+      b.minY = Math.min(b.minY, c.y)
+      b.maxX = Math.max(b.maxX, c.x + c.w)
+      b.maxY = Math.max(b.maxY, c.y + c.h)
     }
   }
-  const groups = groupOrder.map((name) => {
-    const b = bounds.get(name)!
-    return { name, x: b.minX - GROUP_PAD, y: b.minY - GROUP_PAD, w: b.maxX - b.minX + GROUP_PAD * 2, h: b.maxY - b.minY + GROUP_PAD * 2 }
-  })
-  return { width, height, pos, groups }
+  const subworkflows: DagSubworkflowBox[] = [...subBounds.entries()].map(([name, b]) => ({
+    name,
+    x: b.minX - SUB_PAD,
+    y: b.minY - SUB_PAD - SUB_LABEL_H,
+    w: b.maxX - b.minX + SUB_PAD * 2,
+    h: b.maxY - b.minY + SUB_PAD * 2 + SUB_LABEL_H,
+  }))
+
+  const width = clusters.length > 0 ? x - CLUSTER_GAP + PAD : PAD * 2 + NODE_W
+  const height = bandCenter + maxH / 2 + subTop + PAD
+  return { width, height, pos, clusters, subworkflows }
 }
 
 export function measureDag(dag: Dag): { width: number; height: number } {
@@ -96,6 +180,7 @@ export interface Dag {
   nodes: DagNode[]
   edges: DagEdge[]
   cols: number
+  phases?: string[]
 }
 
 function escapeRe(s: string): string {
@@ -117,6 +202,45 @@ function templateToRegex(tpl: string): RegExp {
     }
   }
   return new RegExp('^' + re + '$')
+}
+
+function templateToCapturingRegex(tpl: string): { re: RegExp; groups: number } {
+  let re = ''
+  let groups = 0
+  let i = 0
+  while (i < tpl.length) {
+    if (tpl.startsWith('${', i)) {
+      const end = tpl.indexOf('}', i)
+      if (end === -1) { re += escapeRe(tpl.slice(i)); break }
+      re += '([\\s\\S]+?)'
+      groups++
+      i = end + 1
+    } else {
+      re += escapeRe(tpl[i])
+      i++
+    }
+  }
+  return { re: new RegExp('^' + re + '$'), groups }
+}
+
+function pickLabelGroup(caps: string[][], groups: number): number {
+  let best = -1
+  let bestLen = Infinity
+  for (let g = 0; g < groups; g++) {
+    const vals = caps.map((c) => c[g] ?? '')
+    const varies = vals.some((v) => v !== vals[0])
+    const maxLen = vals.reduce((m, v) => Math.max(m, v.length), 0)
+    const rank = (varies ? 0 : 1e6) + maxLen
+    if (rank < bestLen) { bestLen = rank; best = g }
+  }
+  return best
+}
+
+function deriveInstanceLabel(value: string | undefined): string | undefined {
+  if (!value) return undefined
+  const first = value.split('\n').find((l) => l.trim().length > 0)?.trim()
+  if (!first) return undefined
+  return first.length > 40 ? first.slice(0, 39) + '…' : first
 }
 
 interface Instance {
@@ -155,52 +279,134 @@ export function assignAgentsToNodes(
   return map
 }
 
-function substituteTemplate(tpl: string, params: string[], values: (string | number)[]): string {
-  let out = tpl
-  params.forEach((p, idx) => {
-    if (values[idx] === undefined) return
-    out = out.split('${' + p + '}').join(String(values[idx]))
+function substituteTemplate(tpl: string, params: string[], values: (FanoutItem | number)[]): string {
+  const scope: Record<string, unknown> = {}
+  params.forEach((p, idx) => { scope[p] = values[idx] })
+  return tpl.replace(/\$\{([^}]+)\}/g, (whole, expr) => {
+    const path = String(expr).trim().split('.')
+    if (!(path[0] in scope)) return whole
+    let cur: unknown = scope[path[0]]
+    for (let i = 1; i < path.length && cur != null; i++) {
+      cur = typeof cur === 'object' ? (cur as Record<string, unknown>)[path[i]] : undefined
+    }
+    return cur === undefined || cur === null ? whole : String(cur)
   })
-  return out
 }
 
 function expandParallel(
-  block: { agents: WorkflowAgentSpec[]; dynamic: boolean; items?: string[]; mapParams?: string[] },
+  block: { agents: WorkflowAgentSpec[]; dynamic: boolean; items?: FanoutItem[]; mapParams?: string[] },
   runtime: DagRuntimeAgent[] | undefined,
+  consumed: Set<number>,
 ): Instance[] {
   const { agents, dynamic, items, mapParams } = block
-  if (!runtime || runtime.length === 0) {
-    if (items && items.length > 0 && agents.length > 0) {
-      const out: Instance[] = []
-      for (const spec of agents) {
-        items.forEach((item, idx) => {
-          out.push({
-            label: substituteTemplate(spec.label ?? 'agent', mapParams ?? [], [item, idx]),
-            prompt: spec.prompt ? substituteTemplate(spec.prompt, mapParams ?? [], [item, idx]) : undefined,
-          })
-        })
-      }
-      return out
+  const hasRuntime = !!runtime && runtime.length > 0
+
+  if (items && items.length > 0 && agents.length > 0) {
+    const out: Instance[] = []
+    for (const spec of agents) {
+      items.forEach((item, idx) => {
+        const label = substituteTemplate(spec.label ?? 'agent', mapParams ?? [], [item, idx])
+        const prompt = spec.prompt ? substituteTemplate(spec.prompt, mapParams ?? [], [item, idx]) : undefined
+        const rt = hasRuntime ? takeOneRuntime(runtime!, consumed, prompt, label) : undefined
+        out.push({ label, prompt, status: rt?.status, toolCount: rt?.toolCount })
+      })
     }
+    return out
+  }
+
+  if (!runtime || runtime.length === 0) {
     return agents.map((a) => ({ label: a.label ?? 'agent', prompt: a.prompt }))
   }
   const out: Instance[] = []
   for (const spec of agents) {
-    const label = spec.label ?? 'agent'
-    if (dynamic && label.includes('${')) {
-      const re = templateToRegex(label)
-      const matched = runtime.filter((r) => re.test(r.label))
+    const labelTpl = spec.label
+    const promptTpl = spec.prompt
+    if (dynamic && labelTpl && labelTpl.includes('${')) {
+      const re = templateToRegex(labelTpl)
+      const matched = takeMatching(runtime, consumed, (r) => re.test(r.label))
       if (matched.length > 0) {
-        for (const m of matched) out.push({ label: m.label, prompt: spec.prompt, status: m.status, toolCount: m.toolCount })
+        for (const m of matched) out.push({ label: m.label, prompt: m.prompt ?? promptTpl, status: m.status, toolCount: m.toolCount })
       } else {
-        out.push({ label, prompt: spec.prompt })
+        out.push({ label: labelTpl, prompt: promptTpl })
+      }
+    } else if (dynamic && promptTpl && promptTpl.includes('${')) {
+      const { re, groups } = templateToCapturingRegex(promptTpl)
+      const hits: { agent: DagRuntimeAgent; index: number; caps: string[] }[] = []
+      runtime.forEach((r, index) => {
+        if (consumed.has(index) || r.prompt === undefined) return
+        const m = re.exec(r.prompt)
+        if (m) hits.push({ agent: r, index, caps: m.slice(1) })
+      })
+      if (hits.length > 0) {
+        const labelIdx = pickLabelGroup(hits.map((h) => h.caps), groups)
+        for (const h of hits) {
+          consumed.add(h.index)
+          const derived = labelIdx >= 0 ? deriveInstanceLabel(h.caps[labelIdx]) : undefined
+          out.push({ label: derived ?? labelTpl ?? 'agent', prompt: h.agent.prompt, status: h.agent.status, toolCount: h.agent.toolCount })
+        }
+      } else {
+        out.push({ label: labelTpl ?? 'agent', prompt: promptTpl })
       }
     } else {
-      const exact = runtime.find((r) => r.label === label)
-      out.push({ label, prompt: spec.prompt, status: exact?.status, toolCount: exact?.toolCount })
+      const label = labelTpl ?? 'agent'
+      const idx = runtime.findIndex((r, i) => !consumed.has(i) && r.label === label)
+      const exact = idx >= 0 ? runtime[idx] : undefined
+      if (idx >= 0) consumed.add(idx)
+      out.push({ label, prompt: promptTpl, status: exact?.status, toolCount: exact?.toolCount })
     }
   }
   return out
+}
+
+function takeMatching(
+  runtime: DagRuntimeAgent[],
+  consumed: Set<number>,
+  pred: (r: DagRuntimeAgent) => boolean,
+): DagRuntimeAgent[] {
+  const out: DagRuntimeAgent[] = []
+  runtime.forEach((r, i) => {
+    if (consumed.has(i) || !pred(r)) return
+    consumed.add(i)
+    out.push(r)
+  })
+  return out
+}
+
+function takeOneRuntime(
+  runtime: DagRuntimeAgent[],
+  consumed: Set<number>,
+  prompt: string | undefined,
+  label: string,
+): DagRuntimeAgent | undefined {
+  let idx = -1
+  if (prompt !== undefined) {
+    idx = runtime.findIndex((r, i) => !consumed.has(i) && r.prompt === prompt)
+    if (idx < 0 && prompt.includes('${')) {
+      const re = templateToCapturingRegex(prompt).re
+      idx = runtime.findIndex((r, i) => !consumed.has(i) && r.prompt !== undefined && re.test(r.prompt))
+    }
+  }
+  if (idx < 0) idx = runtime.findIndex((r, i) => !consumed.has(i) && r.label === label)
+  if (idx < 0) return undefined
+  consumed.add(idx)
+  return runtime[idx]
+}
+
+function matchAgentRuntime(
+  spec: WorkflowAgentSpec,
+  runtime: DagRuntimeAgent[],
+  consumed: Set<number>,
+): DagRuntimeAgent | undefined {
+  let idx = spec.label ? runtime.findIndex((r, i) => !consumed.has(i) && r.label === spec.label) : -1
+  if (idx < 0 && spec.prompt) {
+    const re = spec.prompt.includes('${') ? templateToCapturingRegex(spec.prompt).re : undefined
+    idx = runtime.findIndex((r, i) =>
+      !consumed.has(i) && r.prompt !== undefined && (re ? re.test(r.prompt) : r.prompt === spec.prompt),
+    )
+  }
+  if (idx < 0) return undefined
+  consumed.add(idx)
+  return runtime[idx]
 }
 
 function collectPromptCandidates(graph: WorkflowGraph, out: { tpl: string; phase?: string }[]): void {
@@ -229,6 +435,7 @@ export function buildDag(graph: WorkflowGraph, runtime?: DagRuntimeAgent[]): Dag
   const nodes: DagNode[] = []
   const edges: DagEdge[] = []
   const hasRuntime = !!runtime && runtime.length > 0
+  const consumed = new Set<number>()
   let col = 0
   let prevExit: string[] = []
 
@@ -248,7 +455,7 @@ export function buildDag(graph: WorkflowGraph, runtime?: DagRuntimeAgent[]): Dag
   const processBlock = (block: WorkflowBlock, subworkflow?: string): void => {
     if (block.kind === 'agent') {
       const id = `n${col}`
-      const rt = hasRuntime ? runtime!.find((r) => r.label === block.agent.label) : undefined
+      const rt = hasRuntime ? matchAgentRuntime(block.agent, runtime!, consumed) : undefined
       nodes.push({ id, label: block.agent.label ?? 'agent', prompt: block.agent.prompt, phase: block.phase, group: 'serial', col, row: 0, rows: 1, status: rt?.status, toolCount: rt?.toolCount, subworkflow })
       connect([id]); prevExit = [id]; col++
     } else if (block.kind === 'workflow') {
@@ -260,8 +467,8 @@ export function buildDag(graph: WorkflowGraph, runtime?: DagRuntimeAgent[]): Dag
       nodes.push({ id, label: block.name ?? 'workflow', phase: block.phase, group: 'workflow', col, row: 0, rows: 1, subworkflow })
       connect([id]); prevExit = [id]; col++
     } else if (block.kind === 'parallel') {
-      const instances = expandParallel(block, runtime)
-      const staticExpanded = !hasRuntime && !!block.items && block.items.length > 0
+      const instances = expandParallel(block, runtime, consumed)
+      const staticExpanded = !!block.items && block.items.length > 0
       const ids = instances.map((_, i) => `n${col}-${i}`)
       instances.forEach((inst, i) => {
         nodes.push({ id: ids[i], label: inst.label, prompt: inst.prompt, phase: block.phase, group: 'parallel', col, row: i, rows: instances.length, dynamic: block.dynamic && !hasRuntime && !staticExpanded, status: inst.status, toolCount: inst.toolCount, subworkflow })
@@ -307,5 +514,5 @@ export function buildDag(graph: WorkflowGraph, runtime?: DagRuntimeAgent[]): Dag
 
   for (const block of graph.blocks) processBlock(block)
 
-  return { nodes, edges, cols: col }
+  return { nodes, edges, cols: col, phases: graph.phases }
 }

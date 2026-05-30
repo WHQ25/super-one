@@ -8,6 +8,7 @@ export interface WorkflowAgentInfo {
   toolCount: number
   tokens?: number
   resultText?: string
+  result?: unknown
 }
 
 export function useWorkflowAgents(transcriptDir: string | undefined, enabled: boolean, refreshKey?: unknown): WorkflowAgentInfo[] {

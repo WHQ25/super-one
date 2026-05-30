@@ -7,10 +7,12 @@ export interface WorkflowAgentSpec {
   model?: string
 }
 
+export type FanoutItem = string | Record<string, string>
+
 export type WorkflowBlock =
   | { kind: 'agent'; phase?: string; agent: WorkflowAgentSpec }
-  | { kind: 'parallel'; phase?: string; dynamic: boolean; agents: WorkflowAgentSpec[]; items?: string[]; mapParams?: string[] }
-  | { kind: 'pipeline'; phase?: string; dynamic: boolean; stages: number; agents: WorkflowAgentSpec[]; items?: string[]; stageItemParams?: (string | undefined)[] }
+  | { kind: 'parallel'; phase?: string; dynamic: boolean; agents: WorkflowAgentSpec[]; items?: FanoutItem[]; mapParams?: string[] }
+  | { kind: 'pipeline'; phase?: string; dynamic: boolean; stages: number; agents: WorkflowAgentSpec[]; items?: FanoutItem[]; stageItemParams?: (string | undefined)[] }
   | { kind: 'workflow'; phase?: string; name?: string; scriptPath?: string; child?: WorkflowGraph }
 
 export interface WorkflowGraph {
@@ -55,6 +57,21 @@ function templateOrString(node: Node | undefined, src: string): string | undefin
   return undefined
 }
 
+function exprToTemplate(node: Node | undefined, src: string): string | undefined {
+  const direct = templateOrString(node, src)
+  if (direct !== undefined) return direct
+  if (!node || typeof node.start !== 'number' || typeof node.end !== 'number') return undefined
+  return '${' + src.slice(node.start, node.end) + '}'
+}
+
+function resolveConstsInTemplate(tpl: string | undefined, consts: Map<string, string>): string | undefined {
+  if (tpl === undefined) return undefined
+  return tpl.replace(/\$\{([^}]+)\}/g, (whole, expr) => {
+    const val = consts.get(expr.trim())
+    return val !== undefined ? val : whole
+  })
+}
+
 function getProp(obj: Node | undefined, name: string): Node | undefined {
   if (!obj || obj.type !== 'ObjectExpression') return undefined
   for (const p of obj.properties) {
@@ -65,21 +82,21 @@ function getProp(obj: Node | undefined, name: string): Node | undefined {
   return undefined
 }
 
-function agentSpec(call: Node, src: string): WorkflowAgentSpec {
+function agentSpec(call: Node, src: string, consts: Map<string, string>): WorkflowAgentSpec {
   const opts = call.arguments[1]
   return {
-    label: templateOrString(getProp(opts, 'label'), src),
-    prompt: templateOrString(call.arguments[0], src),
+    label: resolveConstsInTemplate(exprToTemplate(getProp(opts, 'label'), src), consts),
+    prompt: resolveConstsInTemplate(exprToTemplate(call.arguments[0], src), consts),
     agentType: stringLiteral(getProp(opts, 'agentType')),
     model: stringLiteral(getProp(opts, 'model')),
   }
 }
 
-function findAgentSpecs(node: Node, src: string): WorkflowAgentSpec[] {
+function findAgentSpecs(node: Node, src: string, consts: Map<string, string>): WorkflowAgentSpec[] {
   const specs: WorkflowAgentSpec[] = []
   walk(node, (n) => {
     if (n.type === 'CallExpression' && n.callee.type === 'Identifier' && n.callee.name === 'agent') {
-      specs.push(agentSpec(n, src))
+      specs.push(agentSpec(n, src, consts))
     }
   })
   return specs
@@ -88,7 +105,10 @@ function findAgentSpecs(node: Node, src: string): WorkflowAgentSpec[] {
 function unwrapCall(node: Node | undefined): Node | null {
   if (!node) return null
   if (node.type === 'AwaitExpression') return unwrapCall(node.argument)
-  if (node.type === 'CallExpression') return node
+  if (node.type === 'CallExpression') {
+    if (node.callee.type === 'Identifier') return node
+    if (node.callee.type === 'MemberExpression') return unwrapCall(node.callee.object)
+  }
   return null
 }
 
@@ -106,12 +126,19 @@ function isMapCall(node: Node | undefined): boolean {
 
 function collectStringConsts(stmts: Node[]): Map<string, string> {
   const consts = new Map<string, string>()
+  const pending: { name: string; init: Node }[] = []
   for (const stmt of stmts) {
     if (stmt.type !== 'VariableDeclaration') continue
     for (const d of stmt.declarations) {
-      if (d.id?.type === 'Identifier' && d.init?.type === 'Literal' && typeof d.init.value === 'string') {
-        consts.set(d.id.name, d.init.value)
-      }
+      if (d.id?.type !== 'Identifier' || !d.init) continue
+      if (d.init.type === 'Literal' && typeof d.init.value === 'string') consts.set(d.id.name, d.init.value)
+      else if (d.init.type === 'TemplateLiteral' || d.init.type === 'Identifier') pending.push({ name: d.id.name, init: d.init })
+    }
+  }
+  for (let pass = 0; pass < 3 && pending.length > 0; pass++) {
+    for (let i = pending.length - 1; i >= 0; i--) {
+      const v = resolveStringExpr(pending[i].init, consts)
+      if (v !== undefined) { consts.set(pending[i].name, v); pending.splice(i, 1) }
     }
   }
   return consts
@@ -141,22 +168,40 @@ function deriveWorkflowName(scriptPath: string): string {
   return base.replace(/\.js$/, '').replace(/-wf_[a-z0-9-]+$/i, '')
 }
 
-function arrayStringValues(node: Node): string[] | undefined {
-  const vals: string[] = []
+function objectStringRecord(node: Node): Record<string, string> | undefined {
+  const rec: Record<string, string> = {}
+  for (const p of node.properties) {
+    if (p.type !== 'Property') continue
+    const key = p.key.type === 'Identifier' ? p.key.name : p.key.type === 'Literal' ? String(p.key.value) : undefined
+    if (key === undefined) continue
+    if (p.value.type === 'Literal' && (typeof p.value.value === 'string' || typeof p.value.value === 'number' || typeof p.value.value === 'boolean')) {
+      rec[key] = String(p.value.value)
+    }
+  }
+  return rec
+}
+
+function arrayValues(node: Node): FanoutItem[] | undefined {
+  const vals: FanoutItem[] = []
   for (const el of node.elements) {
-    if (el && el.type === 'Literal' && typeof el.value === 'string') vals.push(el.value)
-    else return undefined
+    if (!el) return undefined
+    if (el.type === 'Literal' && typeof el.value === 'string') vals.push(el.value)
+    else if (el.type === 'ObjectExpression') {
+      const rec = objectStringRecord(el)
+      if (!rec) return undefined
+      vals.push(rec)
+    } else return undefined
   }
   return vals
 }
 
-function collectStringArrayConsts(stmts: Node[]): Map<string, string[]> {
-  const arrays = new Map<string, string[]>()
+function collectArrayConsts(stmts: Node[]): Map<string, FanoutItem[]> {
+  const arrays = new Map<string, FanoutItem[]>()
   for (const stmt of stmts) {
     if (stmt.type !== 'VariableDeclaration') continue
     for (const d of stmt.declarations) {
       if (d.id?.type === 'Identifier' && d.init?.type === 'ArrayExpression') {
-        const vals = arrayStringValues(d.init)
+        const vals = arrayValues(d.init)
         if (vals) arrays.set(d.id.name, vals)
       }
     }
@@ -164,16 +209,16 @@ function collectStringArrayConsts(stmts: Node[]): Map<string, string[]> {
   return arrays
 }
 
-function resolveStringArray(node: Node | undefined, arrays: Map<string, string[]>): string[] | undefined {
+function resolveArray(node: Node | undefined, arrays: Map<string, FanoutItem[]>): FanoutItem[] | undefined {
   if (!node) return undefined
-  if (node.type === 'ArrayExpression') return arrayStringValues(node)
+  if (node.type === 'ArrayExpression') return arrayValues(node)
   if (node.type === 'Identifier') return arrays.get(node.name)
   return undefined
 }
 
-function mapFanout(mapCall: Node, arrays: Map<string, string[]>): { items?: string[]; mapParams?: string[] } {
+function mapFanout(mapCall: Node, arrays: Map<string, FanoutItem[]>): { items?: FanoutItem[]; mapParams?: string[] } {
   if (mapCall.type !== 'CallExpression' || mapCall.callee.type !== 'MemberExpression') return {}
-  const items = resolveStringArray(mapCall.callee.object, arrays)
+  const items = resolveArray(mapCall.callee.object, arrays)
   const cb = mapCall.arguments[0]
   const mapParams = cb && (cb.type === 'ArrowFunctionExpression' || cb.type === 'FunctionExpression')
     ? cb.params.filter((p: Node) => p.type === 'Identifier').map((p: Node) => p.name as string)
@@ -201,7 +246,7 @@ export function parseWorkflowGraph(script: string): WorkflowGraph {
   }
 
   const consts = collectStringConsts(stmts)
-  const arrayConsts = collectStringArrayConsts(stmts)
+  const arrayConsts = collectArrayConsts(stmts)
   let currentPhase: string | undefined
   for (const stmt of stmts) {
     const call = statementCall(stmt)
@@ -217,7 +262,7 @@ export function parseWorkflowGraph(script: string): WorkflowGraph {
       const arg0 = call.arguments[0]
       const dynamic = isMapCall(arg0)
       const fanout = dynamic && arg0 ? mapFanout(arg0, arrayConsts) : {}
-      blocks.push({ kind: 'parallel', phase: currentPhase, dynamic, agents: findAgentSpecs(call, wrapped), items: fanout.items, mapParams: fanout.mapParams })
+      blocks.push({ kind: 'parallel', phase: currentPhase, dynamic, agents: findAgentSpecs(call, wrapped, consts), items: fanout.items, mapParams: fanout.mapParams })
     } else if (name === 'pipeline') {
       const stageCallbacks = call.arguments.slice(1)
       blocks.push({
@@ -225,12 +270,12 @@ export function parseWorkflowGraph(script: string): WorkflowGraph {
         phase: currentPhase,
         dynamic: call.arguments[0]?.type !== 'ArrayExpression',
         stages: Math.max(0, call.arguments.length - 1),
-        agents: findAgentSpecs(call, wrapped),
-        items: resolveStringArray(call.arguments[0], arrayConsts),
+        agents: findAgentSpecs(call, wrapped, consts),
+        items: resolveArray(call.arguments[0], arrayConsts),
         stageItemParams: stageCallbacks.map((cb: Node, idx: number) => stageItemParam(cb, idx)),
       })
     } else if (name === 'agent') {
-      blocks.push({ kind: 'agent', phase: currentPhase, agent: agentSpec(call, wrapped) })
+      blocks.push({ kind: 'agent', phase: currentPhase, agent: agentSpec(call, wrapped, consts) })
     } else if (name === 'workflow') {
       const arg0 = call.arguments[0]
       let scriptPath: string | undefined

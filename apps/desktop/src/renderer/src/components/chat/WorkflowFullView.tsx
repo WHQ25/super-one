@@ -9,6 +9,8 @@ import { getSubagentColorClasses, type SubagentColorClasses } from './subagent-c
 import { HighlightedCodeBlock } from './CodeBlock'
 import { useWorkflowAgents, type WorkflowAgentInfo } from './use-workflow-agents'
 import { useResolvedWorkflowGraph } from './use-workflow-graph'
+import { useWorkflowReplay } from './use-workflow-replay'
+import type { ReplayAgentRecord } from './workflow-replay'
 import { buildDag, agentPhaseByPrompt, assignAgentsToNodes, type DagNode } from './workflow-dag'
 import { WorkflowDagCanvas } from './WorkflowDagCanvas'
 import { useSubagentJsonl } from './use-subagent-jsonl'
@@ -136,11 +138,23 @@ export function WorkflowFullView({ view }: { view: WorkflowViewState }) {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
 
   const { graph, childScripts } = useResolvedWorkflowGraph(view.script)
-  const dag = useMemo(() => (graph && graph.blocks.length > 0 ? buildDag(graph) : null), [graph])
+  const records = useMemo<ReplayAgentRecord[]>(
+    () => agents.map((a) => ({ agentId: a.agentId, prompt: a.prompt, label: a.label, result: a.result, toolCount: a.toolCount })),
+    [agents],
+  )
+  const childWorkflowMap = useMemo(
+    () => new Map(childScripts.map((cs) => [cs.scriptPath, { source: cs.source, name: cs.name }])),
+    [childScripts],
+  )
+  const replay = useWorkflowReplay(view.script, records, childWorkflowMap)
+  const dag = useMemo(
+    () => (replay ? replay.dag : graph && graph.blocks.length > 0 ? buildDag(graph) : null),
+    [replay, graph],
+  )
 
   const nodeToAgent = useMemo(
-    () => (dag ? assignAgentsToNodes(dag.nodes, agents) : new Map<string, string>()),
-    [dag, agents],
+    () => (replay ? replay.nodeAgentIds : dag ? assignAgentsToNodes(dag.nodes, agents) : new Map<string, string>()),
+    [replay, dag, agents],
   )
   const selected = useMemo(() => {
     const agentId = selectedNodeId ? nodeToAgent.get(selectedNodeId) : undefined

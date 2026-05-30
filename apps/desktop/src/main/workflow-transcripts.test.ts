@@ -22,6 +22,10 @@ describe('listWorkflowAgents', () => {
     await writeFile(join(dir, 'agent-bbb222.jsonl'), jsonl([
       { type: 'user', message: { role: 'user', content: '打个招呼' } },
     ]))
+    await writeFile(join(dir, 'journal.jsonl'), jsonl([
+      { type: 'started', key: 'v2:abc', agentId: 'aaa111' },
+      { type: 'result', key: 'v2:abc', agentId: 'aaa111', result: { hex: '#FF0000' } },
+    ]))
   })
 
   afterAll(async () => {
@@ -44,6 +48,12 @@ describe('listWorkflowAgents', () => {
     const agents = await listWorkflowAgents(dir)
     expect(agents).toHaveLength(2)
     expect(agents[1].toolCount).toBe(0)
+  })
+
+  it('attaches the structured result from journal.jsonl by agentId', async () => {
+    const agents = await listWorkflowAgents(dir)
+    expect(agents[0].result).toEqual({ hex: '#FF0000' })
+    expect(agents[1].result).toBeUndefined()
   })
 
   it('returns empty array for a missing directory', async () => {

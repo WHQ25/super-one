@@ -9,6 +9,7 @@ export interface WorkflowAgentInfo {
   toolCount: number
   tokens?: number
   resultText?: string
+  result?: unknown
 }
 
 interface JsonlRecord {
@@ -97,6 +98,29 @@ export async function readWorkflowScript(filePath: string): Promise<string | nul
   }
 }
 
+async function readJournalResults(transcriptDir: string): Promise<Map<string, unknown>> {
+  const results = new Map<string, unknown>()
+  let raw: string
+  try {
+    raw = await readFile(join(transcriptDir, 'journal.jsonl'), 'utf8')
+  } catch {
+    return results
+  }
+  for (const line of raw.split('\n')) {
+    const trimmed = line.trim()
+    if (!trimmed) continue
+    try {
+      const rec = JSON.parse(trimmed) as { type?: string; agentId?: string; result?: unknown }
+      if (rec.type === 'result' && typeof rec.agentId === 'string' && rec.result !== undefined) {
+        results.set(rec.agentId, rec.result)
+      }
+    } catch {
+      continue
+    }
+  }
+  return results
+}
+
 export async function listWorkflowAgents(transcriptDir: string): Promise<WorkflowAgentInfo[]> {
   let files: string[]
   try {
@@ -104,6 +128,7 @@ export async function listWorkflowAgents(transcriptDir: string): Promise<Workflo
   } catch {
     return []
   }
+  const journalResults = await readJournalResults(transcriptDir)
   const jsonls = files.filter((f) => f.startsWith('agent-') && f.endsWith('.jsonl')).sort()
   const out: WorkflowAgentInfo[] = []
   for (const file of jsonls) {
@@ -115,7 +140,7 @@ export async function listWorkflowAgents(transcriptDir: string): Promise<Workflo
     } catch {
       // unreadable agent transcript — fall back to id-only row
     }
-    out.push({ agentId, jsonlPath, ...summary })
+    out.push({ agentId, jsonlPath, ...summary, result: journalResults.get(agentId) })
   }
   return out
 }

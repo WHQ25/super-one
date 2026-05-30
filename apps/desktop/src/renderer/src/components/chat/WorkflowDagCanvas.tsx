@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { X } from 'lucide-react'
 import { Kbd } from '@superone/ui/components/ui/kbd'
 import { WorkflowDag } from './WorkflowDag'
-import { layoutDag, DAG_NODE_SIZE, type Dag, type DagNode, type DagNodeStats } from './workflow-dag'
+import { layoutDag, type Dag, type DagNode, type DagNodeStats } from './workflow-dag'
 
 const ZOOM_MIN = 0.3
 const ZOOM_MAX = 3
@@ -218,9 +218,7 @@ export function WorkflowDagCanvas({
   }, [onSelectNode])
 
   const selectedPos = selectedNodeId ? layout.pos.get(selectedNodeId) : undefined
-  const card = selectedPos && overlayContent
-    ? cardPlacement(selectedPos, tx, ty, effectiveScale, containerSize)
-    : null
+  const card = selectedPos && overlayContent ? cardPlacement(containerSize) : null
 
   return (
     <div className="relative h-full w-full overflow-hidden bg-muted/10">
@@ -286,21 +284,11 @@ export function WorkflowDagCanvas({
   )
 }
 
-function cardPlacement(
-  pos: { x: number; y: number },
-  tx: number,
-  ty: number,
-  scale: number,
-  container: Size,
-): { left: number; top: number } {
-  const nodeLeft = tx + pos.x * scale
-  const nodeTop = ty + pos.y * scale
-  const nodeRight = nodeLeft + DAG_NODE_SIZE.w * scale
-  const gap = 12
-  let left = nodeRight + gap
-  if (left + CARD_W > container.width - 8) left = nodeLeft - gap - CARD_W
-  left = Math.max(8, Math.min(left, container.width - CARD_W - 8))
-  const top = Math.max(8, Math.min(nodeTop, container.height - 120))
+function cardPlacement(container: Size): { left: number; top: number } {
+  // Float the transcript near the middle of the viewport rather than pinning it to
+  // the clicked node, so it reads as a focused panel and never lands at a screen edge.
+  const left = Math.max(8, (container.width - CARD_W) / 2)
+  const top = Math.max(8, Math.round(container.height * 0.12))
   return { left, top }
 }
 

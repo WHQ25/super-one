@@ -49,6 +49,7 @@ interface WorkflowData {
   workflowName?: string
   workflowDescription?: string
   workflowPhases?: Array<{ title: string; detail?: string }>
+  workflowAgents?: Array<{ label: string; toolCount: number; tokens?: number }>
 }
 
 interface ToolUseBase {

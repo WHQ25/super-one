@@ -565,6 +565,8 @@ export function stripMessagesForRemote(messages: ChatMessage[], projectPath?: st
     const todoInputs = new Map<string, { toolName: string; input: string }>()
     const widgetIds = new Set<string>()
     const agentIds = new Set<string>()
+    const workflowIds = new Set<string>()
+    const resultSummaries = new Map<string, string>()
     for (const block of msg.content) {
       if (block.type === 'tool_use' && block.toolName === 'Bash') {
         try { const p = JSON.parse(block.input); bashCmds.set(block.toolUseId, String(p.command ?? '')) } catch {}
@@ -578,6 +580,19 @@ export function stripMessagesForRemote(messages: ChatMessage[], projectPath?: st
       if (block.type === 'tool_use' && block.toolName === 'Agent') {
         agentIds.add(block.toolUseId)
       }
+      if (block.type === 'tool_use' && block.toolName === 'Workflow') {
+        workflowIds.add(block.toolUseId)
+      }
+      if (block.type === 'tool_result') {
+        resultSummaries.set(block.toolUseId, block.summary)
+      }
+    }
+    const workflowAgentsById = new Map<string, ReturnType<typeof listWorkflowAgentsSync>>()
+    for (const id of workflowIds) {
+      const dir = parseWorkflowTranscriptDir(resultSummaries.get(id))
+      if (!dir) continue
+      const agents = listWorkflowAgentsSync(dir)
+      if (agents.length > 0) workflowAgentsById.set(id, agents)
     }
     return {
       ...msg,
@@ -599,7 +614,12 @@ export function stripMessagesForRemote(messages: ChatMessage[], projectPath?: st
                 : stripContentBlock({ ...b, text: seg.text } as ContentBlock, bashCmds, agentIds, projectPath),
             )
           }
-          return stripContentBlock(b, bashCmds, agentIds, projectPath)
+          const stripped = stripContentBlock(b, bashCmds, agentIds, projectPath)
+          if (b.type === 'tool_use' && b.toolName === 'Workflow') {
+            const agents = workflowAgentsById.get(b.toolUseId)
+            if (agents) return { ...stripped, workflowAgents: agents } as ContentBlock
+          }
+          return stripped
         }),
       metadata: msg.metadata ? (() => { const { codex: _c, ...rest } = msg.metadata!; return { ...rest, ...(_c?.planApproval ? { codexPlanApproval: _c.planApproval } : {}) } })() : undefined,
     }

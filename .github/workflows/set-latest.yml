@@ -63,6 +63,29 @@ jobs:
           echo "--- fixed-link plan ---"
           cat fixed-copies.json
 
+      - name: Ensure release binaries are on R2 (backfill from GitHub if missing)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+        run: |
+          set -euo pipefail
+          ENDPOINT="https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com"
+          VERSION="${{ inputs.release_tag }}"; VERSION="${VERSION#v}"
+          if [ -n "$(aws s3 ls "s3://super-one-releases/v${VERSION}/" --endpoint-url "$ENDPOINT" 2>/dev/null)" ]; then
+            echo "v${VERSION}/ already on R2 — no backfill needed"
+            exit 0
+          fi
+          echo "v${VERSION}/ missing on R2 — backfilling binaries from the GitHub Release"
+          mkdir -p binstage
+          gh release download "${{ inputs.release_tag }}" -D binstage \
+            -p '*.dmg' -p '*.zip' -p '*.exe' -p '*.AppImage' -p '*.blockmap'
+          echo "--- downloaded ---"; ls -la binstage/
+          aws s3 cp binstage/ "s3://super-one-releases/v${VERSION}/" --recursive \
+            --endpoint-url "$ENDPOINT" --no-progress
+          echo "Backfilled v${VERSION}/ to R2"
+
       - name: Publish channel manifests + fixed download links to R2
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}

@@ -7,16 +7,17 @@ arguments: "[alpha|beta|public] [major|feature|patch]"
 
 # Release Skill
 
-Automate the SuperOne release pipeline. The pipeline has four **independently retryable** phases — build, relay deploy, promote, publish — orchestrated via GitHub Actions workflow_dispatch:
+Automate the SuperOne release pipeline. The pipeline has five **independently retryable** phases — build, relay deploy, promote, publish, set-latest — orchestrated via GitHub Actions workflow_dispatch:
 
 - `build-mac.yml` / `build-win.yml` / `build-linux.yml` — each builds one platform, uploads artifacts to Actions storage (30-day retention). No release side effects.
 - `deploy-relay.yml` — runs `bunx wrangler deploy` against `apps/relay/` to push the Cloudflare Worker (relay) to production. Authenticated by the repo `CLOUDFLARE_API_TOKEN` secret, so this **must** run inside Actions, never from a local terminal (the local shell typically lacks the token, and skill permissions block credential-discovery anyway). Independent of the build/promote chain — triggered in parallel with builds at Step 3.
-- `promote.yml` — downloads artifacts, **dual-publishes** them: (a) creates a **draft** GitHub Release with flat asset layout (legacy auto-update path; legacy alpha clients embed `UPDATER_TOKEN` and pull from there); (b) restructures into `v${VERSION}/` subdirectory and `aws s3 sync`s to Cloudflare R2 bucket `super-one-releases` served at `https://dl.super-one.dev` (current auto-update source for post-switch clients + first-download URL).
+- `promote.yml` — **archive only**. Downloads artifacts and (a) uploads them **flat** (binaries + channel ymls) to a **draft** GitHub Release (bridge-mode legacy path — legacy alpha clients embed `UPDATER_TOKEN` and pull from there — **and** the manifest source for set-latest); (b) moves the binaries into a `v${VERSION}/` subdir and `aws s3 sync`s **only the binaries** to Cloudflare R2 bucket `super-one-releases` served at `https://dl.super-one.dev`. It writes **no** root channel yml — a promoted version is archived but not yet anyone's latest (that's `set-latest`).
 - Final `gh release edit --draft=false --prerelease` — flips the draft to published; GitHub then materializes the tag on `target_commitish`.
+- `set-latest.yml` — **manual, decoupled from promote**. Sets a given release as a channel's latest: re-points the channel pointer yml(s) on R2 **with cascade** (setting `stable` also updates `beta`+`alpha`; `beta` also `alpha`; `alpha` only `alpha`, so alpha users still receive beta/stable builds) and refreshes the permanent `https://dl.super-one.dev/{alpha,beta,stable}/latest/<installer>` download links. It reads the version's manifest from its **GitHub Release** (so any historical version works without a rebuild), and `force=true` overrides the semver guard to **roll a channel back** to an older version.
 
 Tags are created by GitHub at publish time, never pushed from local. A failing build or bad artifact can be re-run without burning a version number or force-pushing a tag.
 
-**Channel** is auto-derived by electron-builder from the version string: `-alpha.N` → channel `alpha` (yml files `alpha-mac.yml` / `alpha.yml` / `alpha-linux.yml`); `-beta.N` → `beta`; `-rc.N` → `rc`; otherwise → `latest`. Each channel's "current pointer" yml is overwritten on each release; binaries under `v${VERSION}/` are append-only.
+**Channel** is auto-derived by electron-builder from the version string: `-alpha.N` → channel `alpha` (yml files `alpha-mac.yml` / `alpha.yml` / `alpha-linux.yml`); `-beta.N` → `beta`; `-rc.N` → `rc`; otherwise → `latest`. Each channel's "current pointer" yml at the R2 root is written by **`set-latest`** (not promote), with cascade; binaries under `v${VERSION}/` are append-only (and set-latest backfills them from the GitHub Release if R2 has dropped them).
 
 ## Arguments
 
@@ -120,17 +121,17 @@ gh workflow run promote.yml --ref main \
 - `target_sha` is the commit the tag will point to when published. Default: current `origin/main`.
 - All three `*_run_id` are optional individually, but at least one is required. Partial promotes are supported for iterative recovery.
 
-Promote downloads each platform's artifact, then either creates a new draft release (with `--draft --prerelease`, tag name set) or uploads to an existing one with `--clobber`. Idempotent — safe to re-run.
+Promote is **archive-only**. It downloads each platform's artifact, uploads them **flat** (binaries + channel ymls) to the draft GitHub Release (creating it with `--draft --prerelease`, or `--clobber`ing an existing one), then moves the binaries into a `v<version>/` subdir and `aws s3 sync`s **only the binaries** to R2 — the channel ymls are dropped (`rm staging/*.yml`). Idempotent — safe to re-run. **Promote does not make the version "latest" for anyone** — no root channel yml is written and no fixed links are created; that is Step 8 (set-latest).
 
-### Step 6: Monitor promote + verify draft + verify R2 sync
+### Step 6: Monitor promote + verify draft + verify R2 binaries
 
 1. Poll `gh run view <promote-run-id>` until complete.
-2. **GitHub Release assertion**: `gh release view v<new-version> --json isDraft,isPrerelease,assets -q '.isDraft, .isPrerelease, (.assets | length), (.assets[].name)'` — expect `isDraft=true`, `isPrerelease=true` (alpha/beta/rc), and the channel-prefixed yml files in the asset list. Channel is derived from the new version: `<channel>-mac.yml` / `<channel>.yml` / `<channel>-linux.yml` where channel is `alpha` / `beta` / `rc` / `latest`. Full mac+win+linux is typically ~14 assets: 4 dmg/zip + 4 blockmap + 1 exe + 1 exe blockmap + 1 AppImage + 3 channel yml.
-3. **R2 sync assertion**: confirm the R2 bucket also has the artifacts:
+2. **GitHub Release assertion**: `gh release view v<new-version> --json isDraft,isPrerelease,assets -q '.isDraft, .isPrerelease, (.assets | length), (.assets[].name)'` — expect `isDraft=true`, `isPrerelease=true` (alpha/beta/rc), and the channel-prefixed yml files in the asset list (the GitHub Release keeps the **flat** ymls — both for bridge-mode legacy clients and as the manifest source for set-latest). Channel is derived from the new version: `<channel>-mac.yml` / `<channel>.yml` / `<channel>-linux.yml` where channel is `alpha` / `beta` / `rc` / `latest`. Full mac+win+linux is typically ~14 assets: 4 dmg/zip + 4 blockmap + 1 exe + 1 exe blockmap + 1 AppImage + 3 channel yml.
+3. **R2 binaries assertion**: confirm the binaries landed under `v<version>/` (HEAD, don't download the body):
    ```bash
-   curl -fsSL "https://dl.super-one.dev/<channel>-mac.yml" | head -20
+   curl -sI "https://dl.super-one.dev/v<new-version>/SuperOne-<new-version>.dmg" | head -1   # expect HTTP/.. 200
    ```
-   Expect `version: <new-version>`, and each `path:` / `files[].url:` field prefixed with `v<new-version>/`. The `Restructure staging for R2` step in promote.yml uses `yq` to rewrite these fields; verifying the prefix confirms that step ran. If the yml is 404 or version doesn't match, R2 sync failed — see Recovery Patterns.
+   **Do NOT** expect `<channel>-mac.yml` at the R2 root to reflect this version yet — promote no longer writes it; that happens in Step 8 (set-latest).
 4. If both assertions pass, proceed to publish without prompting. If they fail, stop and surface the mismatch.
 
 ### Step 7: Publish
@@ -148,7 +149,30 @@ For `public` (future, version like `1.0.0` without semver prerelease suffix): om
 
 Publishing materializes the tag on `target_commitish` (the SHA supplied to promote). Run `git fetch origin --tags` afterwards so the local repo has the new tag.
 
-### Step 8: Report
+### Step 8: Set channel latest + fixed download links (set-latest)
+
+After publish, run `set-latest.yml` to establish this version as the channel's latest **with cascade** and to (re)generate the permanent `{channel}/latest/` download links. This is also the **rollback** tool.
+
+```bash
+gh workflow run set-latest.yml --ref main \
+  -f release_tag=v<new-version> \
+  -f channel=<alpha|beta|stable>
+```
+
+- `channel` is the **user-facing** channel name (`stable` maps to the `latest-*.yml` track on R2). Cascade is automatic — `stable` updates `latest`+`beta`+`alpha`, `beta` updates `beta`+`alpha`, `alpha` only `alpha`. A semver guard skips any channel whose live version is already newer (so an older stable never downgrades alpha users).
+- Manifest source is the version's **GitHub Release** (`gh release download <tag>`), so the release must exist (it does — promote created it). If the version's binaries are **not** on R2 under `v<version>/` (e.g. rolling back to an old or pruned version — R2 is not guaranteed to retain every version forever), set-latest **backfills** them from the GitHub Release to R2 before re-pointing the channel. So rollback works for any historical version that still has a GitHub Release, even if R2 dropped its binaries.
+- Monitor: `gh run view <id> --json status,conclusion`. Then verify the fixed links resolve — use **HEAD**, never download the full body:
+  ```bash
+  curl -sI https://dl.super-one.dev/<channel>/latest/SuperOne.dmg | head -1   # expect HTTP/.. 200
+  ```
+  (Windows installer name contains a space → URL-encode: `SuperOne%20Setup.exe`.)
+- **Rollback**: to re-point a channel at an older version, override the semver guard with `force=true`:
+  ```bash
+  gh workflow run set-latest.yml --ref main \
+    -f release_tag=v<older-version> -f channel=alpha -f force=true
+  ```
+
+### Step 9: Report
 
 Show the user the final release URL and the tag SHA. Mention `git fetch origin --tags` so their local is in sync.
 
@@ -161,9 +185,11 @@ Show the user the final release URL and the tag SHA. Mention `git fetch origin -
 | Promote workflow fails mid-upload (GitHub side) | Re-trigger promote with the same tag — `--clobber` replaces any partial assets |
 | Promote workflow fails on R2 sync step | The GitHub Release upload happens before the R2 sync step in promote.yml, so the GitHub side can be intact while R2 is empty. Re-trigger promote with the same tag — `aws s3 sync` is idempotent (same key = update); the GitHub upload step uses `--clobber` |
 | Promote fails with `getaddrinfo ENOTFOUND sts.<region>.amazonaws.com` | Do **NOT** use `aws-actions/configure-aws-credentials@v4` for R2 — its default STS credential validation tries to call AWS STS, which doesn't apply to Cloudflare R2 (region `auto` produces `sts.auto.amazonaws.com` NXDOMAIN). promote.yml injects R2 creds as `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_DEFAULT_REGION` env vars directly on the sync step, no action wrapper. If you see this error, someone re-introduced the action — remove it |
-| R2 yml has stale paths (no `v${VERSION}/` prefix) | The `Restructure staging for R2` step in promote.yml didn't run or yq failed. Check the promote run log for the `Rewriting paths in ...` lines. Re-trigger promote |
+| R2 channel yml has stale paths (no `v${VERSION}/` prefix) | The prefix is applied by `prefixVersionPaths` (`scripts/lib/channels.ts`) inside **set-latest**, not promote — promote no longer touches root ymls. If the live `<channel>-mac.yml` lacks the `v<version>/` prefix, re-run `set-latest` for that tag/channel |
 | Draft release has wrong tag or SHA | `gh release delete v<new-version> --cleanup-tag --yes`, then re-run promote |
-| Already published and later found broken | Leave the broken release as-is (alpha users get it and can report), ship a new patch version; don't rewrite history |
+| `set-latest` fails with `GetObjectTagging not implemented` | Cloudflare R2 does not implement object tagging, which `aws s3 cp` calls during an s3→s3 server-side copy. The fixed-link copy step passes `--copy-props none` to skip tag/metadata propagation. If you hit this, someone removed that flag — restore it. (The earlier `aws s3 cp out/ --recursive` for the ymls is a local→s3 upload and is unaffected) |
+| `set-latest` staged nothing (semver guard held) | The target version is older than the channel's live version, so the guard skipped it (workflow logs `hold <yml>: live X is newer`). Intended — to **roll back** to that older version, re-run with `force=true` |
+| Already published and later found broken | Either ship a new patch version, or **roll the channel back** with `set-latest force=true` pointed at the last-good tag (re-points the channel yml + fixed links to the good version without rewriting history) |
 
 ## Invariants
 
@@ -172,6 +198,7 @@ Show the user the final release URL and the tag SHA. Mention `git fetch origin -
 - Alpha/beta/rc releases are always marked `isPrerelease=true` in GitHub for UI classification consistency. (R2 + GenericProvider auto-update no longer depends on this flag — it's driven by the channel-suffixed yml filename.)
 - `bun.lock` is never modified by the release flow.
 - **Dual-publish is permanent**: `promote.yml` always uploads to both GitHub Release (flat layout) and R2 (`v${VERSION}/` subdirectory). GitHub Release is the legacy path for clients built before the R2 switch, R2 is the source of truth for current/future clients. **Never** delete the GitHub Release upload step.
+- **`set-latest` is decoupled from `promote`** and is never auto-invoked by it — running set-latest is a separate, explicit step. promote archives the build; set-latest makes a version a channel's latest (cascade) + refreshes the fixed `{channel}/latest/` download links + is the rollback path (`force=true`). Channel logic (cascade, semver compare, path prefix, version-less naming) lives in `scripts/lib/channels.ts` — **CI-only, kept out of the app bundle**; `@superone/shared/update-channels` exposes only the app-facing surface (`UPDATE_CHANNELS` / `UPDATE_CHANNEL_TO_YML` / `channelFromVersion`). set-latest reads each version's manifest from its **GitHub Release**, and **backfills the binaries to R2 from that Release if `v<version>/` is missing** (R2 is not guaranteed to keep every version), so it works for any historical version without a rebuild.
 - **Never rotate `UPDATER_TOKEN`** the GitHub PAT secret. Legacy alpha clients embed it in their ASAR for `PrivateGitHubProvider` auth; rotating the token bricks their auto-update path. The secret is no longer consumed by any build workflow but **must** remain valid in GitHub Secrets indefinitely.
 - **Relay deploys go through `deploy-relay.yml`, never local terminal.** The `CLOUDFLARE_API_TOKEN` lives only in GitHub repo secrets. Local `bun run deploy:relay` will fail in non-interactive shells, and skill permissions deliberately block credential discovery from shell rc files. Always dispatch the workflow.
 - **Relay deploy is conditional on actual diff.** Only dispatch `deploy-relay.yml` when `git diff v<previous>..HEAD -- apps/relay/` is non-empty. No-op deploys just clutter Cloudflare's Version History with duplicate Version IDs and obscure the real protocol-changing deploys you'd want to roll back to.

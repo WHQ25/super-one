@@ -113,14 +113,14 @@ jobs:
           echo "Assets:"
           gh release view "${{ inputs.release_tag }}" --json assets -q '.assets[].name'
 
-      - name: Restructure staging for R2 (binaries → version subdir, rewrite yml paths)
+      - name: Restructure staging for R2 (binaries → version subdir; drop channel ymls)
         env:
           RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
           set -euo pipefail
           PREFIX="${RELEASE_TAG#v}"
           PREFIX="v${PREFIX}"
-          echo "Restructuring under prefix: ${PREFIX}/"
+          echo "Archiving binaries under prefix: ${PREFIX}/"
 
           mkdir -p "staging/${PREFIX}"
           shopt -s nullglob
@@ -128,19 +128,15 @@ jobs:
             mv "$f" "staging/${PREFIX}/"
           done
 
-          for yml in staging/*.yml; do
-            [ -f "$yml" ] || continue
-            echo "Rewriting paths in $(basename "$yml")"
-            PREFIX="$PREFIX" yq -i '.files[].url |= strenv(PREFIX) + "/" + .' "$yml"
-            PREFIX="$PREFIX" yq -i '.path |= strenv(PREFIX) + "/" + .' "$yml"
-          done
+          # Channel ymls stay only on the GitHub Release (flat); they are NOT
+          # written to R2 here. Making a version the channel's "latest" on R2 is
+          # the job of the separate `set-latest` workflow.
+          rm -f staging/*.yml
 
-          echo "--- Final layout ---"
+          echo "--- Final R2 layout (binaries only) ---"
           find staging -type f | sort
-          echo "--- yml content ---"
-          for yml in staging/*.yml; do echo "=== $yml ==="; cat "$yml"; done
 
-      - name: Sync release artifacts to R2
+      - name: Sync release binaries to R2
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
@@ -149,7 +145,7 @@ jobs:
           aws s3 sync staging/ s3://super-one-releases/ \
             --endpoint-url "https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com" \
             --no-progress
-          echo "Synced to https://dl.super-one.dev/"
+          echo "Archived to https://dl.super-one.dev/ (run set-latest to publish a channel)"
 
       - name: Delete consumed CI artifacts
         env:

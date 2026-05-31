@@ -1244,6 +1244,7 @@ export interface StartupData {
     codex: CodexResources | null
   }
   sandboxCapability: SandboxCapability
+  appVersion: string
 }
 
 // --- Codex experimental integration ---
@@ -1908,6 +1909,7 @@ export const AgentIpcChannels = {
   MINIAPP_DB_REQUEST: 'miniapp:db-request',
   MINIAPP_KV_REQUEST: 'miniapp:kv-request',
   MINIAPP_PEER_EMIT: 'miniapp:peer-emit',
+  MINIAPP_START_DRAG: 'miniapp:start-drag',
   MINIAPP_IFRAME_READY: 'miniapp:iframe-ready',
   MINIAPP_GET_PRELOAD_PATH: 'miniapp:get-preload-path',
   MINIAPP_DETECT_DEV: 'miniapp:detect-dev',

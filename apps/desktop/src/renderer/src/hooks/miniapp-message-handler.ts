@@ -39,6 +39,14 @@ export function handleMiniAppMessage(
         .then((result) => { send({ type: 'miniapp-fs-response', id: data.id, result }) })
         .catch((err: unknown) => { send({ type: 'miniapp-fs-response', id: data.id, error: (err as Error).message }) })
       return true
+    case 'miniapp-ui-start-drag':
+      if (Array.isArray(data.paths)) {
+        const iconOpts = data.iconPng
+          ? { png: data.iconPng as ArrayBuffer, scaleFactor: (data.scaleFactor as number) ?? 1 }
+          : undefined
+        window.miniapp.startDrag(projectDir, appId, data.paths as string[], iconOpts)
+      }
+      return true
     case 'miniapp-git-request':
       window.miniapp
         .gitRequest(projectDir, appId, data.op as string, data.args as Record<string, unknown>)

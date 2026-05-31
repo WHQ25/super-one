@@ -125,6 +125,7 @@ export interface SuperoneApi {
     toast(message: string, type?: 'success' | 'error' | 'warning' | 'info'): void
     showTooltip(anchorRect: { x: number; y: number; width: number; height: number }, text: string, side?: 'top' | 'bottom' | 'left' | 'right'): void
     hideTooltip(): void
+    startDrag(paths: string | string[], opts?: { iconPng?: ArrayBuffer; scaleFactor?: number }): void
     showContextMenu(position: { x: number; y: number }, items: Array<{ id: string; label: string; icon?: string; disabled?: boolean; variant?: string; separator?: boolean; group?: string }>): Promise<string | null>
     showPopover(options: {
       template: string

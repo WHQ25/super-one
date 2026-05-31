@@ -235,3 +235,83 @@ button.onclick = function() {
 </body>
 </html>
 ```
+
+## ui.startDrag
+
+Start a **native OS drag** of one or more files out of the mini-app — e.g. drag an
+image into Finder, an email, or another desktop app.
+
+```js
+superone.ui.startDrag(paths, opts?)
+```
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `paths` | `string \| string[]` | File path(s) **relative to a granted fs scope** (the same paths you use with `superone.fs`). Paths outside your scopes, or missing files, are rejected by the host. |
+| `opts.iconPng` | `ArrayBuffer` | Optional custom drag image (PNG bytes). When set, it overrides the default. |
+| `opts.scaleFactor` | `number` | Pixel density of `iconPng` (e.g. `2` for retina). Default `1`. |
+
+Call it inside the element's `dragstart` handler, and `preventDefault()` so the
+browser's own drag image doesn't take over:
+
+```jsx
+<img
+  src={url}
+  draggable
+  onDragStart={(e) => {
+    e.preventDefault()
+    superone.ui.startDrag('images/cover.png')   // path within your fs scope
+  }}
+/>
+```
+
+### Default drag image
+
+You normally **don't** pass an icon — the host picks a sensible one:
+
+- **Image files** (`.png`, `.jpg`, `.webp`, …) → a small, faded thumbnail rendered from the file.
+- **Other files** → an "icon + filename" pill.
+
+Pass `opts.iconPng` only when you want a custom look.
+
+### ⚠️ Caveat: dropping on the source element fires a click
+
+This is standard browser behaviour, not specific to SuperOne: if the user starts a
+drag on a clickable element and drops it **back onto itself** (or barely moves), the
+element's `onClick` still fires after the drag ends. A draggable image inside a
+clickable card will therefore "open" the card on a no-op drag.
+
+There is no automatic fix — guard the click with a short timestamp window set when
+the drag ends (this is what SuperOne's own file tree does).
+
+**Important:** because you call `preventDefault()` and hand off to the native
+`startDrag`, the element's HTML5 `dragend` / `onDragEnd` may **not fire**. Set the
+timestamp from a one-shot **document** `mouseup` / `dragend` listener attached inside
+`dragstart` — `mouseup` always fires, and attaching it only on drag start means
+ordinary clicks (which never start a drag) are unaffected:
+
+```jsx
+const lastDragEnd = useRef(0)
+
+<button onClick={() => {
+  if (Date.now() - lastDragEnd.current < 200) return  // ignore the click from a just-ended drag
+  openCard()
+}}>
+  <img
+    draggable
+    onDragStart={(e) => {
+      e.preventDefault()
+      superone.ui.startDrag(path)
+      const done = () => {
+        lastDragEnd.current = Date.now()
+        document.removeEventListener('mouseup', done)
+        document.removeEventListener('dragend', done)
+      }
+      document.addEventListener('mouseup', done)
+      document.addEventListener('dragend', done)
+    }}
+  />
+</button>
+```
+
+Keep the window small (≈150–250 ms) so real clicks soon after a drag still register.

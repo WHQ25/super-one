@@ -349,6 +349,7 @@ interface MiniAppAPI {
   unauthorize(appIds: string[], projectDir: string, sessionId: string): Promise<void>
   toolResult(callId: string, result: unknown, error?: string): Promise<void>
   fsRequest(projectDir: string, appId: string, op: string, args: Record<string, unknown>): Promise<unknown>
+  startDrag(projectDir: string, appId: string, paths: string[], iconOpts?: { png: ArrayBuffer; scaleFactor?: number }): void
   gitRequest(projectDir: string, appId: string, op: string, args: Record<string, unknown>): Promise<unknown>
   dbRequest(appId: string, op: string, args: Record<string, unknown>): Promise<unknown>
   kvRequest(appId: string, op: string, args: Record<string, unknown>): Promise<unknown>

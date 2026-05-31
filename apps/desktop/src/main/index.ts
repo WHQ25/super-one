@@ -1490,6 +1490,67 @@ function registerIpcHandlers(): void {
     }
   })
 
+  ipcMain.on(
+    AgentIpcChannels.MINIAPP_START_DRAG,
+    async (
+      event,
+      projectDir: string,
+      appId: string,
+      relPaths: string[],
+      iconOpts?: { png: ArrayBuffer; scaleFactor?: number },
+    ) => {
+      if (!Array.isArray(relPaths) || relPaths.length === 0) return
+      try {
+        const dirs = getAllowedDirs(projectDir, appId)
+        if (!dirs || dirs.length === 0) {
+          log.warn('[miniapp start-drag] no allowed dirs for appId=%s', appId)
+          return
+        }
+        const { existsSync } = await import('node:fs')
+        const files: string[] = []
+        for (const rel of relPaths) {
+          if (typeof rel !== 'string') continue
+          const { resolved } = resolveSafePathMulti(dirs, rel)
+          if (existsSync(resolved)) files.push(resolved)
+          else log.warn('[miniapp start-drag] file not found: %s', resolved)
+        }
+        if (files.length === 0) return
+        const { nativeImage } = await import('electron')
+        let icon: Electron.NativeImage
+        if (iconOpts?.png) {
+          // Caller-supplied icon (e.g. the runtime's filename pill).
+          icon = nativeImage.createFromBuffer(Buffer.from(iconOpts.png), {
+            scaleFactor: iconOpts.scaleFactor ?? 1,
+          })
+        } else if (/\.(png|jpe?g|gif|webp|bmp|avif|ico|tiff?)$/i.test(files[0])) {
+          // Image file: build a small, faded thumbnail from the file itself.
+          const full = nativeImage.createFromPath(files[0])
+          if (full.isEmpty()) {
+            icon = await app.getFileIcon(files[0], { size: 'small' })
+          } else {
+            const { width, height } = full.getSize()
+            const scale = Math.min(1, 120 / Math.max(width, height))
+            const small =
+              scale < 1 ? full.resize({ width: Math.round(width * scale), height: Math.round(height * scale) }) : full
+            try {
+              const size = small.getSize()
+              const bmp = small.toBitmap()
+              for (let i = 3; i < bmp.length; i += 4) bmp[i] = Math.round(bmp[i] * 0.65)
+              icon = nativeImage.createFromBitmap(bmp, { width: size.width, height: size.height, scaleFactor: 1 })
+            } catch {
+              icon = small
+            }
+          }
+        } else {
+          icon = await app.getFileIcon(files[0], { size: 'small' })
+        }
+        event.sender.startDrag({ files, file: files[0], icon })
+      } catch (err) {
+        log.warn('[miniapp start-drag] failed:', err)
+      }
+    },
+  )
+
   ipcMain.handle(AgentIpcChannels.PATH_STAT, async (_event, p: string): Promise<{ isFile: boolean; isDirectory: boolean } | null> => {
     try {
       const s = await stat(p)
@@ -1890,7 +1951,7 @@ function registerIpcHandlers(): void {
       codex ? `${codex.models?.length ?? 0} models` : 'null',
       sandboxCapability.supportLevel,
     )
-    return { cached: { claude, codex }, sandboxCapability }
+    return { cached: { claude, codex }, sandboxCapability, appVersion: app.getVersion() }
   })
 
   ipcMain.handle(AgentIpcChannels.SANDBOX_PROBE, async () => {

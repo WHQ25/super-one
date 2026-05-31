@@ -1041,6 +1041,13 @@ const miniappAPI = {
   fsRequest: (projectDir: string, appId: string, op: string, args: Record<string, unknown>) =>
     ipcRenderer.invoke(AgentIpcChannels.MINIAPP_FS_REQUEST, projectDir, appId, op, args),
 
+  startDrag: (
+    projectDir: string,
+    appId: string,
+    paths: string[],
+    iconOpts?: { png: ArrayBuffer; scaleFactor?: number },
+  ) => ipcRenderer.send(AgentIpcChannels.MINIAPP_START_DRAG, projectDir, appId, paths, iconOpts),
+
   gitRequest: (projectDir: string, appId: string, op: string, args: Record<string, unknown>) =>
     ipcRenderer.invoke(AgentIpcChannels.MINIAPP_GIT_REQUEST, projectDir, appId, op, args),
 

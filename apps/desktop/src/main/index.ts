@@ -87,6 +87,7 @@ import { getSandboxCapability, probeSandboxDependencies } from './sandbox-platfo
 import { ProcessTitle, WindowRole, roleArg } from './process-titles'
 import { applyLocale, getSystemLocale, getCurrentLocale, initMainI18n, t } from './i18n'
 import { applyAppIcon, clearStoredCustomIcons, getAppIcon, storeCustomIcon } from './app-icon'
+import { planStartDrag } from './start-drag'
 import type { RemoteCommand, PairedDevice, CreateAutomationRequest, RemoteDeviceConfig, UpdateAutomationRequest, ChatMessageContext, ContentBlock, WorktreeActivateRequest } from '@superone/shared/agent-types'
 import { buildRemoteActiveProvider, providerSupportsHarness } from '@superone/shared/provider-utils'
 import type { RemoteControlCallbacks } from './remote-control-service'
@@ -1473,18 +1474,28 @@ function registerIpcHandlers(): void {
     }
   })
 
+  const startDragWithIcon = (event: Electron.IpcMainEvent, files: string[], icon: Electron.NativeImage): void => {
+    if (icon.isEmpty()) {
+      log.warn('[start-drag] skipped: empty drag icon for %s', files[0])
+      return
+    }
+    event.sender.startDrag({ files, file: files[0], icon })
+  }
+
   ipcMain.on(AgentIpcChannels.START_DRAG, async (event, paths: string[], iconOpts?: { png: ArrayBuffer; scaleFactor?: number }) => {
-    if (!Array.isArray(paths) || paths.length === 0) return
     try {
-      let icon: Electron.NativeImage
-      if (iconOpts?.png) {
-        const { nativeImage } = await import('electron')
-        const buf = Buffer.from(iconOpts.png)
-        icon = nativeImage.createFromBuffer(buf, { scaleFactor: iconOpts.scaleFactor ?? 1 })
-      } else {
-        icon = await app.getFileIcon(paths[0], { size: 'small' })
+      const { existsSync } = await import('node:fs')
+      const { nativeImage } = await import('electron')
+      const plan = await planStartDrag(paths, iconOpts, {
+        exists: existsSync,
+        createFromBuffer: (buf, opts) => nativeImage.createFromBuffer(buf, opts),
+        getFileIcon: (filePath) => app.getFileIcon(filePath, { size: 'small' }),
+      })
+      if (!plan) {
+        log.warn('[start-drag] skipped: no draggable files/icon for %o', paths)
+        return
       }
-      event.sender.startDrag({ files: paths, file: paths[0], icon })
+      event.sender.startDrag({ files: plan.files, file: plan.files[0], icon: plan.icon })
     } catch (err) {
       log.warn('[start-drag] failed:', err)
     }
@@ -1544,7 +1555,7 @@ function registerIpcHandlers(): void {
         } else {
           icon = await app.getFileIcon(files[0], { size: 'small' })
         }
-        event.sender.startDrag({ files, file: files[0], icon })
+        startDragWithIcon(event, files, icon)
       } catch (err) {
         log.warn('[miniapp start-drag] failed:', err)
       }

@@ -191,7 +191,8 @@ export function registerMiniAppProtocolHandlers(proto: Protocol): void {
       const dirs = getAllowedDirs(projectDir, appId)
       if (!dirs?.length) return new Response('No allowed directories', { status: 403 })
 
-      const { resolved, access: dirAccess } = resolveSafePathMulti(dirs, relativePath)
+      const op = request.method === 'PUT' ? 'write' : 'read'
+      const { resolved } = resolveSafePathMulti(dirs, relativePath, op)
 
       if (request.method === 'GET') {
         const data = await readFile(resolved)
@@ -203,7 +204,6 @@ export function registerMiniAppProtocolHandlers(proto: Protocol): void {
       }
 
       if (request.method === 'PUT') {
-        if (dirAccess === 'read') return new Response('Write access denied', { status: 403 })
         await mkdir(dirname(resolved), { recursive: true })
         const ct = request.headers.get('content-type') || ''
         if (ct.startsWith('text/') || ct.includes('json')) {
@@ -220,7 +220,7 @@ export function registerMiniAppProtocolHandlers(proto: Protocol): void {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       log.error('[superone-fs] failed:', err)
-      if (msg.includes('Access denied') || msg.includes('not within allowed')) {
+      if (msg.includes('denied') || msg.includes('not within allowed')) {
         return new Response(msg, { status: 403 })
       }
       return new Response(msg, { status: 500 })

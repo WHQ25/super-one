@@ -20,6 +20,7 @@ const userAppsDir = () => join(app.getPath('home'), '.superone', 'apps')
 export interface AllowedDir {
   path: string
   access: MiniAppFsAccess
+  root?: string
 }
 
 function appKey(projectDir: string, appId: string): string {
@@ -97,19 +98,63 @@ function clearWatchersForApp(projectDir: string, appId: string): void {
   }
 }
 
-export function resolveSafePathMulti(dirs: AllowedDir[], relativePath: string): { resolved: string; access: MiniAppFsAccess } {
-  const superoneSeg = `${sep}.superone${sep}`
-  for (const dir of dirs) {
+const superoneSeg = `${sep}.superone${sep}`
+
+function isWithin(base: string, target: string): boolean {
+  const normalizedBase = base.endsWith(sep) ? base : base + sep
+  return target === base || target.startsWith(normalizedBase)
+}
+
+function guardSuperone(resolved: string, dirPath: string): void {
+  if (resolved.includes(superoneSeg) && !dirPath.includes(superoneSeg)) {
+    throw new Error('Access denied: .superone is a protected directory')
+  }
+}
+
+export function resolveSafePathMulti(
+  dirs: AllowedDir[],
+  relativePath: string,
+  op: 'read' | 'write' = 'read',
+): { resolved: string; access: MiniAppFsAccess } {
+  // Single scope keeps acting as the base for relative paths (legacy shortcut):
+  // a lone `asset` rw scope resolves `images/x` to `<asset>/images/x`.
+  if (dirs.length === 1) {
+    const dir = dirs[0]
     const resolved = resolve(dir.path, relativePath)
-    const normalizedBase = dir.path.endsWith(sep) ? dir.path : dir.path + sep
-    if (resolved.startsWith(normalizedBase) || resolved === dir.path) {
-      if (resolved.includes(superoneSeg) && !dir.path.includes(superoneSeg)) {
-        throw new Error('Access denied: .superone is a protected directory')
-      }
-      return { resolved, access: dir.access }
+    if (!isWithin(dir.path, resolved)) {
+      throw new Error(`Path not within allowed directories: ${relativePath}`)
+    }
+    guardSuperone(resolved, dir.path)
+    if (op === 'write' && dir.access === 'read') {
+      throw new Error(`Write access denied: ${relativePath} (read-only permission)`)
+    }
+    return { resolved, access: dir.access }
+  }
+
+  // Multi scope: resolve the path ONCE per declared root (project scopes share the
+  // project root), then select among the scopes that contain that single absolute
+  // path by specificity (longest dir.path); for writes prefer a readwrite scope.
+  const roots = [...new Set(dirs.map((d) => d.root ?? d.path))]
+  const matches: { resolved: string; dir: AllowedDir }[] = []
+  for (const root of roots) {
+    const resolved = resolve(root, relativePath)
+    if (!isWithin(root, resolved)) continue
+    for (const dir of dirs) {
+      if (isWithin(dir.path, resolved)) matches.push({ resolved, dir })
     }
   }
-  throw new Error(`Path not within allowed directories: ${relativePath}`)
+  if (matches.length === 0) {
+    throw new Error(`Path not within allowed directories: ${relativePath}`)
+  }
+  matches.sort((a, b) => b.dir.path.length - a.dir.path.length)
+  const chosen = op === 'write'
+    ? (matches.find((m) => m.dir.access === 'readwrite') ?? matches[0])
+    : matches[0]
+  guardSuperone(chosen.resolved, chosen.dir.path)
+  if (op === 'write' && chosen.dir.access !== 'readwrite') {
+    throw new Error(`Write access denied: ${relativePath} (read-only permission)`)
+  }
+  return { resolved: chosen.resolved, access: chosen.dir.access }
 }
 
 type GitHeadChangeCallback = (event: { projectDir: string; appId: string }) => void
@@ -670,13 +715,8 @@ export async function handleFsRequest(
   const dirs = allowedDirs.get(appKey(projectDir, appId))
   if (!dirs?.length) throw new Error(`No allowed directories for app: ${appId}`)
 
-  const safe = (p: string) => {
-    const result = resolveSafePathMulti(dirs, p)
-    if (WRITE_OPS.has(op) && result.access === 'read') {
-      throw new Error(`Write access denied: ${p} (read-only permission)`)
-    }
-    return result.resolved
-  }
+  const safe = (p: string) =>
+    resolveSafePathMulti(dirs, p, WRITE_OPS.has(op) ? 'write' : 'read').resolved
 
   switch (op) {
     case 'readFile': {

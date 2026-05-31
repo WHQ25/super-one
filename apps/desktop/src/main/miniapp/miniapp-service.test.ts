@@ -588,6 +588,85 @@ describe('.superone directory protection', () => {
   })
 })
 
+describe('fs permission resolver with overlapping (parent + child) scopes', () => {
+  const PROJ = '/projects/aigc'
+  const overlapping = [
+    { path: PROJ, access: 'read' as const, root: PROJ },
+    { path: `${PROJ}/asset`, access: 'readwrite' as const, root: PROJ },
+  ]
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockWriteFile.mockResolvedValue(undefined)
+    mockMkdir.mockResolvedValue(undefined)
+    clearAllowedDirectories(PROJ, 'aigc')
+  })
+
+  for (const order of ['parent-first', 'child-first'] as const) {
+    describe(`declared ${order}`, () => {
+      beforeEach(() => {
+        const dirs = order === 'parent-first' ? overlapping : [...overlapping].reverse()
+        setAllowedDirectories(PROJ, 'aigc', dirs)
+      })
+
+      it('writes asset/images/x into the readwrite asset scope', async () => {
+        await handleFsRequest(PROJ, 'aigc', 'writeFile', { path: 'asset/images/abc.jpg', content: 'x' })
+        expect(mockWriteFile.mock.calls.at(-1)![0]).toBe(`${PROJ}/asset/images/abc.jpg`)
+      })
+
+      it('reads asset/images/x from the same single interpretation', async () => {
+        mockReadFile.mockResolvedValue('img')
+        await handleFsRequest(PROJ, 'aigc', 'readFile', { path: 'asset/images/abc.jpg' })
+        expect(mockReadFile.mock.calls.at(-1)![0]).toBe(`${PROJ}/asset/images/abc.jpg`)
+      })
+
+      it('reads a file covered only by the read scope', async () => {
+        mockReadFile.mockResolvedValue('# readme')
+        const result = await handleFsRequest(PROJ, 'aigc', 'readFile', { path: 'README.md' })
+        expect(result).toBe('# readme')
+        expect(mockReadFile.mock.calls.at(-1)![0]).toBe(`${PROJ}/README.md`)
+      })
+
+      it('denies writing a file covered only by the read scope', async () => {
+        await expect(
+          handleFsRequest(PROJ, 'aigc', 'writeFile', { path: 'README.md', content: 'x' }),
+        ).rejects.toThrow(/read-only permission/)
+        expect(mockWriteFile).not.toHaveBeenCalled()
+      })
+    })
+  }
+
+  it('still blocks .superone traversal under overlapping scopes', async () => {
+    setAllowedDirectories(PROJ, 'aigc', overlapping)
+    await expect(
+      handleFsRequest(PROJ, 'aigc', 'readFile', { path: '.superone/apps/other/manifest.json' }),
+    ).rejects.toThrow('.superone is a protected directory')
+  })
+
+  it('throws for a ../ escape outside all scopes', async () => {
+    setAllowedDirectories(PROJ, 'aigc', overlapping)
+    await expect(
+      handleFsRequest(PROJ, 'aigc', 'readFile', { path: '../secret.txt' }),
+    ).rejects.toThrow(/not within allowed directories/)
+  })
+})
+
+describe('fs permission resolver with a single (legacy) scope', () => {
+  const PROJ = '/projects/notes'
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockWriteFile.mockResolvedValue(undefined)
+    mockMkdir.mockResolvedValue(undefined)
+    clearAllowedDirectories(PROJ, 'notes')
+  })
+
+  it('treats the lone scope as the base for relative paths', async () => {
+    setAllowedDirectories(PROJ, 'notes', [{ path: `${PROJ}/asset`, access: 'readwrite', root: PROJ }])
+    await handleFsRequest(PROJ, 'notes', 'writeFile', { path: 'images/abc.jpg', content: 'x' })
+    expect(mockWriteFile.mock.calls.at(-1)![0]).toBe(`${PROJ}/asset/images/abc.jpg`)
+  })
+})
+
 describe('fs permissions cross-project isolation', () => {
   beforeEach(() => {
     vi.clearAllMocks()

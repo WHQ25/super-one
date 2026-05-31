@@ -461,9 +461,9 @@ function setAppFsPermissions(appId: string, manifest: { permissions?: { fs?: Arr
   if (fsEntries.length === 0) return
   const dirs = fsEntries.flatMap((entry) => {
     switch (entry.scope) {
-      case 'project': return [{ path: join(projectDir, entry.path!), access: entry.access as 'read' | 'readwrite' } as const]
-      case 'user': return [{ path: join(homedir(), entry.path!), access: entry.access as 'read' | 'readwrite' } as const]
-      case 'app': return [{ path: join(installDir, 'data'), access: 'readwrite' as const }]
+      case 'project': return [{ path: join(projectDir, entry.path!), access: entry.access as 'read' | 'readwrite', root: projectDir } as const]
+      case 'user': return [{ path: join(homedir(), entry.path!), access: entry.access as 'read' | 'readwrite', root: homedir() } as const]
+      case 'app': { const dataDir = join(installDir, 'data'); return [{ path: dataDir, access: 'readwrite' as const, root: dataDir }] }
       default: return []
     }
   })

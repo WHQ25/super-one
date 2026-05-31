@@ -4,6 +4,19 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.40.1-alpha] - 2026-05-31
+
+### Added
+
+- Mobile remote control now receives workflow metadata and the running agent list, with workflow agents attached to their history messages.
+- File chips can be dragged by their icon while the filename text stays selectable.
+
+### Fixed
+
+- Non-markdown files now show a "File" tab label instead of "Editor".
+- Synthetic API-error messages are no longer misinterpreted as slash command output.
+- Mini-app iframes emit an explicit `frame-src` in their CSP, preventing them from falling back to `default-src 'none'`.
+
 ## [0.40.0-alpha] - 2026-05-30
 
 ### Added

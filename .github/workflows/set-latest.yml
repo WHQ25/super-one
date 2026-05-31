@@ -1,0 +1,87 @@
+name: Set Latest
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release tag to set as latest (e.g. v0.40.1-alpha)'
+        required: true
+      channel:
+        description: 'Set this version as the latest of which channel (cascades to less-stable channels)'
+        required: true
+        type: choice
+        options:
+          - alpha
+          - beta
+          - stable
+        default: alpha
+      force:
+        description: 'Force — allow rolling a channel back to an older version (override the semver guard)'
+        required: false
+        type: boolean
+        default: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  set-latest:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile --ignore-scripts
+
+      - name: Download channel manifests from the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p manifests
+          gh release download "${{ inputs.release_tag }}" -D manifests -p '*.yml'
+          echo "--- downloaded manifests ---"
+          ls -la manifests/
+
+      - name: Compute cascade manifests + fixed-link plan
+        run: |
+          set -euo pipefail
+          bun scripts/set-latest.ts \
+            "${{ inputs.release_tag }}" \
+            "${{ inputs.channel }}" \
+            "${{ inputs.force }}" \
+            manifests \
+            https://dl.super-one.dev \
+            out \
+            fixed-copies.json
+          echo "--- staged channel manifests ---"
+          ls -la out/ 2>/dev/null || echo "(none staged — semver guard held; rerun with force=true to override)"
+          echo "--- fixed-link plan ---"
+          cat fixed-copies.json
+
+      - name: Publish channel manifests + fixed download links to R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+        run: |
+          set -euo pipefail
+          ENDPOINT="https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com"
+          if [ -z "$(ls -A out 2>/dev/null)" ]; then
+            echo "::warning::No manifests staged — nothing published (semver guard held; rerun with force=true to override)"
+            exit 0
+          fi
+          aws s3 cp out/ s3://super-one-releases/ --recursive \
+            --endpoint-url "$ENDPOINT" --no-progress
+          jq -c '.[]' fixed-copies.json | while read -r row; do
+            src=$(echo "$row" | jq -r .src)
+            dst=$(echo "$row" | jq -r .dst)
+            echo "cp ${src} -> ${dst}"
+            aws s3 cp "s3://super-one-releases/${src}" "s3://super-one-releases/${dst}" \
+              --endpoint-url "$ENDPOINT" --cache-control "public, max-age=300" --no-progress
+          done
+          echo "Set ${{ inputs.release_tag }} as latest of ${{ inputs.channel }} (cascade)."

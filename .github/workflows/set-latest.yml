@@ -82,6 +82,7 @@ jobs:
             dst=$(echo "$row" | jq -r .dst)
             echo "cp ${src} -> ${dst}"
             aws s3 cp "s3://super-one-releases/${src}" "s3://super-one-releases/${dst}" \
-              --endpoint-url "$ENDPOINT" --cache-control "public, max-age=300" --no-progress
+              --endpoint-url "$ENDPOINT" --cache-control "public, max-age=300" \
+              --copy-props none --no-progress
           done
           echo "Set ${{ inputs.release_tag }} as latest of ${{ inputs.channel }} (cascade)."

@@ -4,6 +4,21 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.40.2-alpha] - 2026-05-31
+
+### Added
+
+- Update Channel setting — groundwork for per-channel auto-updates. A channel preference now appears in Settings (alpha only for now; beta/stable open up once those tracks are published). Switching to a more-stable channel allows a one-time downgrade onto that track.
+- Mini-app `ui.startDrag` API — mini-apps can start a native file drag-out, so generated files can be dragged into Finder or other apps.
+
+### Fixed
+
+- Chat compaction indicator metadata now wraps into pills on narrow chat widths instead of overflowing.
+
+### CI
+
+- Release pipeline reworked into two decoupled steps: `promote` is now archive-only, and a separate manual `set-latest` publishes a version to a channel — with cascade to less-stable channels, permanent per-channel download links, and one-command rollback.
+
 ## [0.40.1-alpha] - 2026-05-31
 
 ### Added

@@ -492,26 +492,31 @@ export function CompactIndicator({
   expanded?: boolean
   onToggle?: () => void
 }) {
+  const pillClass = 'inline-flex items-center whitespace-nowrap rounded bg-violet-500/15 px-1.5 py-px text-[11px] text-violet-600/80 dark:text-violet-400/80'
   return (
-    <div className="my-0.5 flex items-center gap-1.5 rounded bg-violet-500/10 px-2 py-1.5 text-xs">
-      <Minimize2 className="size-3 shrink-0 text-violet-600 dark:text-violet-400" />
-      <span className="font-medium text-violet-600 dark:text-violet-400">Conversation compacted</span>
-      <span className="text-violet-600/60 dark:text-violet-400/60">{trigger === 'auto' ? 'auto' : 'manual'}</span>
-      {preTokens > 0 && (
-        <span className="text-violet-600/60 dark:text-violet-400/60">
-          · {formatCompactTokens(preTokens)}
-          {postTokens !== undefined ? ` → ${formatCompactTokens(postTokens)}` : ''} tokens
-        </span>
-      )}
-      {durationMs !== undefined && durationMs > 0 && (
-        <span className="text-violet-600/60 dark:text-violet-400/60">· {formatCompactDuration(durationMs)}</span>
-      )}
-      {onToggle && (
-        <button onClick={onToggle} className="ml-auto flex items-center gap-0.5 text-violet-600/60 dark:text-violet-400/60 transition-colors hover:text-violet-600 dark:hover:text-violet-400">
-          {expanded ? <ChevronRight className="size-3 -rotate-90" /> : <ChevronRight className="size-3 rotate-90" />}
-          <span>{expanded ? 'Hide history' : 'Show history'}</span>
-        </button>
-      )}
+    <div className="my-0.5 flex flex-col gap-1 rounded bg-violet-500/10 px-2 py-1.5 text-xs">
+      <div className="flex items-center gap-1.5">
+        <Minimize2 className="size-3 shrink-0 text-violet-600 dark:text-violet-400" />
+        <span className="min-w-0 truncate font-medium text-violet-600 dark:text-violet-400">Conversation compacted</span>
+        {onToggle && (
+          <button onClick={onToggle} className="ml-auto flex shrink-0 items-center gap-0.5 text-violet-600/60 dark:text-violet-400/60 transition-colors hover:text-violet-600 dark:hover:text-violet-400">
+            {expanded ? <ChevronRight className="size-3 -rotate-90" /> : <ChevronRight className="size-3 rotate-90" />}
+            <span>{expanded ? 'Hide history' : 'Show history'}</span>
+          </button>
+        )}
+      </div>
+      <div className="flex flex-wrap items-center gap-1 pl-[18px]">
+        <span className={pillClass}>{trigger === 'auto' ? 'auto' : 'manual'}</span>
+        {preTokens > 0 && (
+          <span className={pillClass}>
+            {formatCompactTokens(preTokens)}
+            {postTokens !== undefined ? ` → ${formatCompactTokens(postTokens)}` : ''}
+          </span>
+        )}
+        {durationMs !== undefined && durationMs > 0 && (
+          <span className={pillClass}>{formatCompactDuration(durationMs)}</span>
+        )}
+      </div>
     </div>
   )
 }

@@ -13,7 +13,9 @@ import { initAnalytics, shutdownAnalytics } from '@/lib/analytics'
 import { applyCrispText } from '@/lib/font-smoothing'
 import { processAppIcon } from '@/lib/app-icon-image'
 import { changeLocale } from '@/i18n'
-import type { Locale } from '@superone/shared/agent-types'
+import { useAppStore } from '@/stores/app'
+import type { Locale, UpdateChannel } from '@superone/shared/agent-types'
+import { AVAILABLE_UPDATE_CHANNELS, channelFromVersion } from '@superone/shared/update-channels'
 
 export function AppSettingsPage() {
   const { t, i18n } = useTranslation()
@@ -24,6 +26,9 @@ export function AppSettingsPage() {
   const [iconBusy, setIconBusy] = useState(false)
   const [loading, setLoading] = useState(true)
   const [savingLocale, setSavingLocale] = useState(false)
+  const [updateChannel, setUpdateChannel] = useState<UpdateChannel | null>(null)
+  const [savingChannel, setSavingChannel] = useState(false)
+  const appVersion = useAppStore((s) => s.appVersion)
   const isMac = window.app.platform === 'darwin'
 
   useEffect(() => {
@@ -33,6 +38,7 @@ export function AppSettingsPage() {
       setAnalyticsEnabled(settings.analyticsEnabled)
       setCrispText(settings.crispText)
       setCustomAppIconPath(settings.customAppIconPath)
+      setUpdateChannel(settings.updateChannel)
       setLoading(false)
     })
     return () => { mounted = false }
@@ -97,6 +103,20 @@ export function AppSettingsPage() {
       shutdownAnalytics()
     }
     toast.success(t(result.analyticsEnabled ? 'settings.general.analytics.enabled' : 'settings.general.analytics.disabled'))
+  }
+
+  const effectiveChannel: UpdateChannel = updateChannel ?? channelFromVersion(appVersion)
+
+  async function handleChannelSelect(channel: UpdateChannel) {
+    if (savingChannel || effectiveChannel === channel) return
+    setSavingChannel(true)
+    try {
+      const result = await window.app.saveAppSettings({ updateChannel: channel })
+      setUpdateChannel(result.updateChannel)
+      toast.success(t('settings.general.updateChannel.updated'))
+    } finally {
+      setSavingChannel(false)
+    }
   }
 
   async function handleLocaleSelect(locale: Locale) {
@@ -202,6 +222,48 @@ export function AppSettingsPage() {
             </div>
           </div>
           )}
+        </div>
+
+        <div className="rounded-lg border border-border">
+          <div className="border-b border-border px-4 py-2">
+            <p className="text-xs font-medium text-muted-foreground">{t('settings.general.updates')}</p>
+          </div>
+          <div className="flex items-center justify-between gap-4 p-4">
+            <div className="min-w-0">
+              <p className="text-sm font-medium">{t('settings.general.updateChannel.label')}</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {t('settings.general.updateChannel.description')}
+              </p>
+            </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  disabled={loading || savingChannel}
+                  className="flex min-w-32 items-center justify-between gap-2 rounded-md border border-border bg-background px-3 py-1.5 text-sm transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <span className="truncate">{t(`settings.general.updateChannel.${effectiveChannel}`)}</span>
+                  <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-64">
+                {AVAILABLE_UPDATE_CHANNELS.map((channel) => (
+                  <DropdownMenuItem
+                    key={channel}
+                    onClick={() => handleChannelSelect(channel)}
+                    className="flex items-start justify-between gap-2"
+                  >
+                    <div className="min-w-0">
+                      <p className="text-sm">{t(`settings.general.updateChannel.${channel}`)}</p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        {t(`settings.general.updateChannel.${channel}Description`)}
+                      </p>
+                    </div>
+                    {effectiveChannel === channel && <Check className="mt-0.5 size-4 shrink-0 text-muted-foreground" />}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
 
         <div className="rounded-lg border border-border">

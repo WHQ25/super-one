@@ -160,6 +160,7 @@ export const zh: Messages = {
       subtitle: '配置 SuperOne 应用行为',
       privacy: '隐私',
       appearance: '外观',
+      updates: '更新',
       analytics: {
         label: '使用情况分析',
         description: '发送匿名使用数据以帮助改进 SuperOne。不会收集任何个人数据或对话内容。',
@@ -185,6 +186,17 @@ export const zh: Messages = {
         reset: '恢复默认',
         updated: '应用图标已更新',
         resetDone: '应用图标已恢复默认',
+      },
+      updateChannel: {
+        label: '更新通道',
+        description: '选择从哪条发布线接收自动更新。切换到更稳定的通道时,应用可能回退到该通道的最新版本。',
+        stable: '正式版',
+        beta: '测试版',
+        alpha: '内测版',
+        stableDescription: '仅正式发布版本。',
+        betaDescription: '测试版及正式版。',
+        alphaDescription: '最早的构建 —— 内测版、测试版与正式版。',
+        updated: '更新通道已切换',
       },
     },
     preferences: {

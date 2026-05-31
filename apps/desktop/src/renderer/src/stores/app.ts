@@ -76,6 +76,9 @@ interface AppState {
   installStatus: InstallStatus
   installOutput: string
 
+  // App
+  appVersion: string
+
   // Sandbox
   sandboxCapability: SandboxCapability | null
   sandboxProbe: SandboxProbeResult | null
@@ -179,6 +182,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   updateProgress: 0,
   installStatus: 'idle',
   installOutput: '',
+  appVersion: '',
   sandboxCapability: null,
   sandboxProbe: null,
   probeSandbox: async (force?: boolean) => {
@@ -322,7 +326,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       window.app.getStartupData(),
       window.app.getRecentFolders(),
     ])
-    set({ recentFolders: folders, sandboxCapability: startupData.sandboxCapability ?? null })
+    set({ recentFolders: folders, sandboxCapability: startupData.sandboxCapability ?? null, appVersion: startupData.appVersion })
     console.info(
       '[continueToMain] cached: claude=%s codex=%s sandbox=%s',
       startupData.cached.claude ? `${startupData.cached.claude.models?.length ?? 0} models` : 'null',

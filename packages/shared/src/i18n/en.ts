@@ -146,6 +146,7 @@ export type Messages = {
       subtitle: string
       privacy: string
       appearance: string
+      updates: string
       analytics: {
         label: string
         description: string
@@ -171,6 +172,17 @@ export type Messages = {
         reset: string
         updated: string
         resetDone: string
+      }
+      updateChannel: {
+        label: string
+        description: string
+        stable: string
+        beta: string
+        alpha: string
+        stableDescription: string
+        betaDescription: string
+        alphaDescription: string
+        updated: string
       }
     }
     preferences: {
@@ -1352,6 +1364,7 @@ export const en: Messages = {
       subtitle: 'Configure SuperOne application behavior',
       privacy: 'Privacy',
       appearance: 'Appearance',
+      updates: 'Updates',
       analytics: {
         label: 'Usage Analytics',
         description: 'Send anonymous usage data to help improve SuperOne. No personal data or conversation content is collected.',
@@ -1377,6 +1390,17 @@ export const en: Messages = {
         reset: 'Reset to default',
         updated: 'App icon updated',
         resetDone: 'App icon reset to default',
+      },
+      updateChannel: {
+        label: 'Update Channel',
+        description: 'Choose which release track receives auto-updates. Switching to a more stable channel may roll the app back to that channel’s latest build.',
+        stable: 'Stable',
+        beta: 'Beta',
+        alpha: 'Alpha',
+        stableDescription: 'Production releases only.',
+        betaDescription: 'Beta plus stable releases.',
+        alphaDescription: 'Earliest builds — alpha, beta, and stable.',
+        updated: 'Update channel changed',
       },
     },
     preferences: {

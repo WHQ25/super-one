@@ -4,12 +4,7 @@ const { autoUpdater } = pkg
 import { is } from '@electron-toolkit/utils'
 import log from './logger'
 import { AgentIpcChannels, type UpdateChannel, type UpdateEvent } from '@superone/shared/agent-types'
-
-const CHANNEL_MAP: Record<UpdateChannel, string> = {
-  stable: 'latest',
-  beta: 'beta',
-  alpha: 'alpha',
-}
+import { UPDATE_CHANNEL_TO_YML } from '@superone/shared/update-channels'
 
 let win: BrowserWindow | null = null
 let checkInterval: ReturnType<typeof setInterval> | null = null
@@ -64,9 +59,10 @@ export function initUpdater(mainWindow: BrowserWindow, channelPref?: UpdateChann
   autoUpdater.logger = log
   autoUpdater.autoDownload = true
   autoUpdater.autoInstallOnAppQuit = true
+  autoUpdater.allowDowngrade = false
   if (testUpdater) autoUpdater.forceDevUpdateConfig = true
   if (channelPref) {
-    autoUpdater.channel = CHANNEL_MAP[channelPref]
+    autoUpdater.channel = UPDATE_CHANNEL_TO_YML[channelPref]
     log.info(`[updater] channel pref applied: ${channelPref} → ${autoUpdater.channel}`)
   }
   autoUpdater.on('checking-for-update', () => {
@@ -118,12 +114,18 @@ export function checkForUpdates(): void {
 export function setUpdateChannel(channel: UpdateChannel | null): void {
   if (is.dev && process.env.TEST_UPDATER !== '1') return
   if (channel) {
-    autoUpdater.channel = CHANNEL_MAP[channel]
+    autoUpdater.channel = UPDATE_CHANNEL_TO_YML[channel]
     log.info(`[updater] channel changed to ${channel} → ${autoUpdater.channel}`)
   }
-  autoUpdater.checkForUpdates().catch((err) => {
-    log.warn('[updater] post-channel-change check failed:', err.message)
-  })
+  autoUpdater.allowDowngrade = true
+  autoUpdater
+    .checkForUpdates()
+    .catch((err) => {
+      log.warn('[updater] post-channel-change check failed:', err.message)
+    })
+    .finally(() => {
+      autoUpdater.allowDowngrade = false
+    })
 }
 
 export function simulateUpdate(): void {

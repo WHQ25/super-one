@@ -40,6 +40,7 @@ describe('getCodexSuperoneMcpConfig', () => {
         [SUPERONE_MCP_IPC_TOKEN_ENV]: 'token-1',
         [SUPERONE_MCP_SESSION_ID_ENV]: 'session-1',
       },
+      startup_timeout_sec: 60,
     })
   })
 })

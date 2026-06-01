@@ -21,7 +21,10 @@ export interface CodexSuperoneMcpConfig {
   command: string
   args: string[]
   env: Record<string, string>
+  startup_timeout_sec: number
 }
+
+const SUPERONE_MCP_STARTUP_TIMEOUT_SEC = 60
 
 let bridgeRuntime: SuperoneMcpBridgeRuntime | null = null
 
@@ -46,5 +49,6 @@ export function getCodexSuperoneMcpConfig(sessionId: string): CodexSuperoneMcpCo
     command,
     args: [bridgeRuntime.bridgeScriptPath],
     env,
+    startup_timeout_sec: SUPERONE_MCP_STARTUP_TIMEOUT_SEC,
   }
 }

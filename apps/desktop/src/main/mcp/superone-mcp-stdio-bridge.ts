@@ -3,12 +3,14 @@ import { McpServer, type RegisteredTool } from '@modelcontextprotocol/sdk/server
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { registerWidgetTools } from '../generative-ui/mcp-server'
 import { jsonSchemaToZodShape } from './json-schema-zod'
+import { BUILT_IN_SUPERONE_TOOL_DEFS } from './superone-mcp-builtin-defs'
 import {
   SUPERONE_MCP_IPC_ENDPOINT_ENV,
   SUPERONE_MCP_IPC_TOKEN_ENV,
   SUPERONE_MCP_SESSION_ID_ENV,
 } from './superone-mcp-stdio-env'
 import { wireBridgeShutdown } from './superone-mcp-stdio-shutdown'
+import { startBridgeRuntime } from './superone-mcp-stdio-startup'
 import type { SuperoneMcpToolDescriptor } from './superone-mcp-types'
 
 type RequestId = number
@@ -164,8 +166,6 @@ async function main(): Promise<void> {
     sessionId,
   )
 
-  await ipc.connect()
-
   const server = new McpServer({ name: 'superone', version: '1.0.0' })
   registerWidgetTools(server, { skipWidgetGate: true })
 
@@ -220,10 +220,24 @@ async function main(): Promise<void> {
     })
   }
 
-  await refreshTools(false)
+  // Synchronous floor: register the static built-in tool defs before the stdio
+  // transport connects. Codex snapshots `tools/list` once at startup and never
+  // re-lists on `tools/list_changed`, so the snapshot must never be empty — even
+  // if the IPC channel to the main process is briefly unavailable. App tools are
+  // layered on top once IPC connects (refreshTools dedupes by signature).
+  for (const def of BUILT_IN_SUPERONE_TOOL_DEFS) registerTool(def)
+
   const transport = new StdioServerTransport()
-  await server.connect(transport)
-  connected = true
+  await startBridgeRuntime({
+    connect: () => ipc.connect(),
+    loadTools: () => refreshTools(false),
+    connectStdio: async () => {
+      await server.connect(transport)
+      connected = true
+    },
+    sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+    log: (message) => console.error(`[superone-mcp-stdio-bridge] ${message}`),
+  })
 
   wireBridgeShutdown({ stdin: process.stdin, transport, ipc, exit: () => process.exit(0) })
 }

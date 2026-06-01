@@ -1284,6 +1284,9 @@ async function drainPrewarmNotifications(
       if (!name) continue
       if (status === 'starting') pendingMcpServers.add(name)
       else pendingMcpServers.delete(name)
+      if (status === 'failed' || status === 'cancelled') {
+        log.warn('[codex] MCP server "%s" startup %s: %s', name, status, readString(params.error) ?? 'no detail')
+      }
     }
   }
 }

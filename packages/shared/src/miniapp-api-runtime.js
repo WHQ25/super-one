@@ -241,6 +241,9 @@ function createSuperoneApi(transport, version, opts) {
       deleteFile(path) {
         return transport.request('miniapp-fs-request', 'miniapp-fs-response', { op: 'deleteFile', args: { path } })
       },
+      trashFile(path) {
+        return transport.request('miniapp-fs-request', 'miniapp-fs-response', { op: 'trashFile', args: { path } })
+      },
       rename(from, to) {
         return transport.request('miniapp-fs-request', 'miniapp-fs-response', { op: 'rename', args: { from, to } })
       },

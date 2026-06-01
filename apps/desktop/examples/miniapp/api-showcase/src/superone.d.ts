@@ -185,6 +185,7 @@ interface SuperOne {
     readDir(path?: string): Promise<SuperOneFsEntry[]>
     writeFile(path: string, content: string | ArrayBuffer | Uint8Array, opts?: { append?: boolean }): Promise<void>
     deleteFile(path: string): Promise<void>
+    trashFile(path: string): Promise<void>
     rename(from: string, to: string): Promise<void>
     stat(path: string): Promise<SuperOneFsStat>
     mkdir(path: string): Promise<void>

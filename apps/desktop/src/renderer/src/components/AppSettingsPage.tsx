@@ -10,8 +10,6 @@ import {
   DropdownMenuTrigger,
 } from '@superone/ui/components/ui/dropdown-menu'
 import { initAnalytics, shutdownAnalytics } from '@/lib/analytics'
-import { applyCrispText } from '@/lib/font-smoothing'
-import { processAppIcon } from '@/lib/app-icon-image'
 import { changeLocale } from '@/i18n'
 import { useAppStore } from '@/stores/app'
 import type { Locale, UpdateChannel } from '@superone/shared/agent-types'
@@ -20,79 +18,38 @@ import { AVAILABLE_UPDATE_CHANNELS, channelFromVersion } from '@superone/shared/
 export function AppSettingsPage() {
   const { t, i18n } = useTranslation()
   const [analyticsEnabled, setAnalyticsEnabled] = useState(false)
-  const [crispText, setCrispText] = useState(true)
-  const [customAppIconPath, setCustomAppIconPath] = useState<string | null>(null)
-  const [iconDataUri, setIconDataUri] = useState<string | null>(null)
-  const [iconBusy, setIconBusy] = useState(false)
   const [loading, setLoading] = useState(true)
   const [savingLocale, setSavingLocale] = useState(false)
   const [updateChannel, setUpdateChannel] = useState<UpdateChannel | null>(null)
   const [savingChannel, setSavingChannel] = useState(false)
   const appVersion = useAppStore((s) => s.appVersion)
-  const isMac = window.app.platform === 'darwin'
+
+  const currentLocale: Locale = i18n.language === 'zh' ? 'zh' : 'en'
+  const languageLabel = currentLocale === 'zh'
+    ? t('settings.general.language.chinese')
+    : t('settings.general.language.english')
+
+  async function handleLocaleSelect(locale: Locale) {
+    if (savingLocale || i18n.language === locale) return
+    setSavingLocale(true)
+    try {
+      await changeLocale(locale)
+      toast.success(i18n.t('settings.general.language.updated', { lng: locale }))
+    } finally {
+      setSavingLocale(false)
+    }
+  }
 
   useEffect(() => {
     let mounted = true
     window.app.getAppSettings().then((settings) => {
       if (!mounted) return
       setAnalyticsEnabled(settings.analyticsEnabled)
-      setCrispText(settings.crispText)
-      setCustomAppIconPath(settings.customAppIconPath)
       setUpdateChannel(settings.updateChannel)
       setLoading(false)
     })
     return () => { mounted = false }
   }, [])
-
-  useEffect(() => {
-    if (!customAppIconPath) {
-      setIconDataUri(null)
-      return
-    }
-    let mounted = true
-    window.app.readFileAsDataUri(customAppIconPath).then((result) => {
-      if (mounted) setIconDataUri(result.ok ? result.dataUri : null)
-    })
-    return () => { mounted = false }
-  }, [customAppIconPath])
-
-  async function handlePickIcon() {
-    if (iconBusy) return
-    setIconBusy(true)
-    try {
-      const filePath = await window.app.pickAppIconFile()
-      if (!filePath) return
-      const read = await window.app.readFileAsDataUri(filePath)
-      if (!read.ok) {
-        toast.error(read.error)
-        return
-      }
-      const processed = await processAppIcon(read.dataUri, isMac)
-      const result = await window.app.setAppIcon(processed)
-      setCustomAppIconPath(result.customAppIconPath)
-      toast.success(t('settings.general.appIcon.updated'))
-    } finally {
-      setIconBusy(false)
-    }
-  }
-
-  async function handleResetIcon() {
-    if (iconBusy) return
-    setIconBusy(true)
-    try {
-      const result = await window.app.resetAppIcon()
-      setCustomAppIconPath(result.customAppIconPath)
-      toast.success(t('settings.general.appIcon.resetDone'))
-    } finally {
-      setIconBusy(false)
-    }
-  }
-
-  async function handleCrispTextToggle(enabled: boolean) {
-    applyCrispText(enabled)
-    const result = await window.app.saveAppSettings({ crispText: enabled })
-    setCrispText(result.crispText)
-  }
 
   async function handleAnalyticsToggle(enabled: boolean) {
     const result = await window.app.saveAppSettings({ analyticsEnabled: enabled })
@@ -119,22 +76,6 @@ export function AppSettingsPage() {
     }
   }
 
-  async function handleLocaleSelect(locale: Locale) {
-    if (savingLocale || i18n.language === locale) return
-    setSavingLocale(true)
-    try {
-      await changeLocale(locale)
-      toast.success(i18n.t('settings.general.language.updated', { lng: locale }))
-    } finally {
-      setSavingLocale(false)
-    }
-  }
-
-  const currentLocale: Locale = i18n.language === 'zh' ? 'zh' : 'en'
-  const languageLabel = currentLocale === 'zh'
-    ? t('settings.general.language.chinese')
-    : t('settings.general.language.english')
-
   return (
     <div className="mx-auto max-w-4xl">
       <div className="mb-6">
@@ -145,7 +86,7 @@ export function AppSettingsPage() {
       <div className="space-y-4">
         <div className="rounded-lg border border-border">
           <div className="border-b border-border px-4 py-2">
-            <p className="text-xs font-medium text-muted-foreground">{t('settings.general.appearance')}</p>
+            <p className="text-xs font-medium text-muted-foreground">{t('settings.general.languageRegion')}</p>
           </div>
           <div className="flex items-center justify-between gap-4 p-4">
             <div className="min-w-0">
@@ -157,7 +98,7 @@ export function AppSettingsPage() {
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button
-                  disabled={loading || savingLocale}
+                  disabled={savingLocale}
                   className="flex min-w-32 items-center justify-between gap-2 rounded-md border border-border bg-background px-3 py-1.5 text-sm transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <span className="truncate">{languageLabel}</span>
@@ -176,52 +117,6 @@ export function AppSettingsPage() {
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
-          {isMac && (
-            <div className="flex items-center justify-between gap-4 border-t border-border p-4">
-              <div className="min-w-0">
-                <p className="text-sm font-medium">{t('settings.general.crispText.label')}</p>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  {t('settings.general.crispText.description')}
-                </p>
-              </div>
-              <Switch
-                checked={crispText}
-                onCheckedChange={handleCrispTextToggle}
-                disabled={loading}
-              />
-            </div>
-          )}
-          {import.meta.env.DEV && (
-          <div className="flex items-center justify-between gap-4 border-t border-border p-4">
-            <div className="min-w-0">
-              <p className="text-sm font-medium">{t('settings.general.appIcon.label')}</p>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                {t('settings.general.appIcon.description')}
-              </p>
-            </div>
-            <div className="flex shrink-0 items-center gap-3">
-              {iconDataUri && (
-                <img src={iconDataUri} alt="" className="size-10 object-contain" />
-              )}
-              {customAppIconPath && (
-                <button
-                  onClick={handleResetIcon}
-                  disabled={loading || iconBusy}
-                  className="text-xs text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {t('settings.general.appIcon.reset')}
-                </button>
-              )}
-              <button
-                onClick={handlePickIcon}
-                disabled={loading || iconBusy}
-                className="rounded-md border border-border bg-background px-3 py-1.5 text-sm transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {t('settings.general.appIcon.choose')}
-              </button>
-            </div>
-          </div>
-          )}
         </div>
 
         <div className="rounded-lg border border-border">

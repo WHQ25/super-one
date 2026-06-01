@@ -2103,6 +2103,11 @@ export interface AppSettings {
   crispText: boolean
   locale: Locale | ''
   updateChannel: UpdateChannel | null
+  terminalLightPalette: string | null
+  terminalDarkPalette: string | null
+  terminalFontSize: number
+  terminalFontFamily: string | null
+  uiFontFamily: string | null
   miniAppOrder: Record<string, string[]>
   customAppIconPath: string | null
   agentPreference: {
@@ -2129,6 +2134,11 @@ export interface AppSettingsPatch {
   crispText?: boolean
   locale?: Locale | ''
   updateChannel?: UpdateChannel | null
+  terminalLightPalette?: string | null
+  terminalDarkPalette?: string | null
+  terminalFontSize?: number
+  terminalFontFamily?: string | null
+  uiFontFamily?: string | null
   miniAppOrder?: Record<string, string[]>
   customAppIconPath?: string | null
   agentPreference?: {

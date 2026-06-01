@@ -22,7 +22,7 @@ export type { RemoteDeviceConfig }
 type AppView = 'loading' | 'startup' | 'setup' | 'main' | 'settings'
 type InstallStatus = 'idle' | 'installing' | 'success' | 'error'
 type UpdateStatus = 'idle' | 'checking' | 'preparing' | 'downloading' | 'ready' | 'up-to-date' | 'error'
-export type SettingsTab = 'providers' | 'agents' | 'skills' | 'mcp' | 'plugins' | 'hooks' | 'apps' | 'preferences' | 'remote' | 'usage' | 'automations' | 'app-settings'
+export type SettingsTab = 'providers' | 'agents' | 'skills' | 'mcp' | 'plugins' | 'hooks' | 'apps' | 'preferences' | 'remote' | 'usage' | 'automations' | 'app-settings' | 'appearance'
 
 const PROVIDER_SETTINGS_TABS: SettingsTab[] = ['providers', 'agents', 'skills', 'mcp', 'hooks', 'plugins', 'preferences']
 const FIRST_SETTINGS_SECTION: SettingsTab = 'providers'
@@ -126,6 +126,17 @@ interface AppState {
   brandHues: Record<HarnessId, number | null>
   loadBrandHues: () => Promise<void>
   setBrandHue: (harness: HarnessId, hue: number | null) => Promise<void>
+
+  // Terminal display settings
+  terminalLightPalette: string | null
+  terminalDarkPalette: string | null
+  terminalFontSize: number
+  terminalFontFamily: string | null
+  uiFontFamily: string | null
+  setTerminalPalette: (scheme: 'light' | 'dark', id: string | null) => Promise<void>
+  setTerminalFontSize: (size: number) => Promise<void>
+  setTerminalFontFamily: (family: string | null) => Promise<void>
+  setUiFontFamily: (family: string | null) => Promise<void>
 
   // Per-token LCH overrides (per-harness, light mode only)
   tokenOverrides: Record<HarnessId, TokenOverrides>
@@ -533,6 +544,11 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   brandHues: { claude: null, codex: null },
   tokenOverrides: { claude: {}, codex: {} },
+  terminalLightPalette: null,
+  terminalDarkPalette: null,
+  terminalFontSize: 14,
+  terminalFontFamily: null,
+  uiFontFamily: null,
 
   loadBrandHues: async () => {
     try {
@@ -546,10 +562,44 @@ export const useAppStore = create<AppState>((set, get) => ({
           claude: settings.agentPreference.claude.tokenOverrides ?? {},
           codex: settings.agentPreference.codex.tokenOverrides ?? {},
         },
+        terminalLightPalette: settings.terminalLightPalette,
+        terminalDarkPalette: settings.terminalDarkPalette,
+        terminalFontSize: settings.terminalFontSize,
+        terminalFontFamily: settings.terminalFontFamily,
+        uiFontFamily: settings.uiFontFamily,
       })
     } catch (err) {
       console.error('[brand-hue] loadBrandHues failed:', err)
     }
+  },
+
+  setTerminalFontFamily: async (family) => {
+    set({ terminalFontFamily: family })
+    void window.app
+      .saveAppSettings({ terminalFontFamily: family })
+      .catch((err) => console.error('[terminal-font] persist failed:', err))
+  },
+
+  setUiFontFamily: async (family) => {
+    set({ uiFontFamily: family })
+    void window.app
+      .saveAppSettings({ uiFontFamily: family })
+      .catch((err) => console.error('[ui-font] persist failed:', err))
+  },
+
+  setTerminalPalette: async (scheme, id) => {
+    set(scheme === 'dark' ? { terminalDarkPalette: id } : { terminalLightPalette: id })
+    const patch = scheme === 'dark' ? { terminalDarkPalette: id } : { terminalLightPalette: id }
+    void window.app
+      .saveAppSettings(patch)
+      .catch((err) => console.error('[terminal-palette] persist failed:', err))
+  },
+
+  setTerminalFontSize: async (size) => {
+    set({ terminalFontSize: size })
+    void window.app
+      .saveAppSettings({ terminalFontSize: size })
+      .catch((err) => console.error('[terminal-font] persist failed:', err))
   },
 
   setBrandHue: async (harness, hue) => {
@@ -646,6 +696,11 @@ if (typeof window !== 'undefined') {
         claude: claude.tokenOverrides ?? {},
         codex: codex.tokenOverrides ?? {},
       },
+      terminalLightPalette: settings.terminalLightPalette,
+      terminalDarkPalette: settings.terminalDarkPalette,
+      terminalFontSize: settings.terminalFontSize,
+      terminalFontFamily: settings.terminalFontFamily,
+      uiFontFamily: settings.uiFontFamily,
     })
   })
 }

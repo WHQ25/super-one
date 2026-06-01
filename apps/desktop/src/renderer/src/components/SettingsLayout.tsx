@@ -1,4 +1,4 @@
-import { ArrowLeft, BarChart3, Blocks, Bot, Globe, LayoutGrid, Palette, Puzzle, Server, Settings, Smartphone, Webhook } from 'lucide-react'
+import { ArrowLeft, BarChart3, Blocks, Bot, Globe, LayoutGrid, Paintbrush, Palette, Puzzle, Server, Settings, Smartphone, Webhook } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@superone/ui/components/ui/button'
 import { useAppStore } from '@/stores/app'
@@ -13,12 +13,14 @@ import { RemotePage } from './RemotePage'
 import { UsagePage } from './UsagePage'
 import { AppsSettingsPage } from './AppsSettingsPage'
 import { AppSettingsPage } from './AppSettingsPage'
+import { AppearancePage } from './AppearancePage'
 import { Tabs, TabsList, TabsTrigger } from '@superone/ui/components/ui/tabs'
 import { cn } from '@superone/ui/lib/utils'
 import type { SettingsProvider } from '@superone/shared/agent-types'
 
 const globalTabs = [
   { id: 'app-settings' as const, labelKey: 'settings.layout.tabs.general', icon: Settings },
+  { id: 'appearance' as const, labelKey: 'settings.layout.tabs.appearance', icon: Paintbrush },
   { id: 'apps' as const, labelKey: 'settings.layout.tabs.apps', icon: LayoutGrid },
   { id: 'remote' as const, labelKey: 'settings.layout.tabs.remote', icon: Smartphone },
   { id: 'usage' as const, labelKey: 'settings.layout.tabs.usage', icon: BarChart3 },
@@ -125,6 +127,7 @@ export function SettingsLayout() {
         {settingsTab === 'hooks' && <HooksPage />}
         {settingsTab === 'plugins' && <PluginsPage />}
         {settingsTab === 'app-settings' && <AppSettingsPage />}
+        {settingsTab === 'appearance' && <AppearancePage />}
         {settingsTab === 'apps' && <AppsSettingsPage />}
         {settingsTab === 'preferences' && <PreferencesPage />}
         {settingsTab === 'remote' && <RemotePage />}

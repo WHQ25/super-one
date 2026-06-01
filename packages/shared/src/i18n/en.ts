@@ -125,6 +125,7 @@ export type Messages = {
     layout: {
       tabs: {
         general: string
+        appearance: string
         apps: string
         remote: string
         usage: string
@@ -141,12 +142,38 @@ export type Messages = {
         codex: string
       }
     }
+    appearance: {
+      title: string
+      subtitle: string
+      interface: string
+    }
     general: {
       title: string
       subtitle: string
       privacy: string
       appearance: string
       updates: string
+      languageRegion: string
+      terminal: string
+      terminalTheme: {
+        light: string
+        dark: string
+      }
+      terminalFontSize: {
+        label: string
+        description: string
+      }
+      terminalFont: {
+        label: string
+        description: string
+      }
+      uiFont: {
+        label: string
+        description: string
+      }
+      font: {
+        systemDefault: string
+      }
       analytics: {
         label: string
         description: string
@@ -1343,6 +1370,7 @@ export const en: Messages = {
     layout: {
       tabs: {
         general: 'General',
+        appearance: 'Appearance',
         apps: 'Mini Apps',
         remote: 'Remote Control',
         usage: 'Usage Stats',
@@ -1359,12 +1387,38 @@ export const en: Messages = {
         codex: 'Codex',
       },
     },
+    appearance: {
+      title: 'Appearance',
+      subtitle: 'Customize the look and feel of SuperOne',
+      interface: 'Interface',
+    },
     general: {
       title: 'General',
       subtitle: 'Configure SuperOne application behavior',
       privacy: 'Privacy',
       appearance: 'Appearance',
       updates: 'Updates',
+      languageRegion: 'Language & Region',
+      terminal: 'Terminal',
+      terminalTheme: {
+        light: 'Light Color Scheme',
+        dark: 'Dark Color Scheme',
+      },
+      terminalFontSize: {
+        label: 'Font Size',
+        description: 'Font size for the integrated terminal.',
+      },
+      terminalFont: {
+        label: 'Terminal Font',
+        description: 'Monospace font for the integrated terminal, from fonts installed on your system.',
+      },
+      uiFont: {
+        label: 'Interface Font',
+        description: 'Font for the app interface, from fonts installed on your system.',
+      },
+      font: {
+        systemDefault: 'System default',
+      },
       analytics: {
         label: 'Usage Analytics',
         description: 'Send anonymous usage data to help improve SuperOne. No personal data or conversation content is collected.',

@@ -139,6 +139,7 @@ export const zh: Messages = {
     layout: {
       tabs: {
         general: '通用',
+        appearance: '外观',
         apps: '小程序',
         remote: '远程控制',
         usage: '用量统计',
@@ -155,12 +156,38 @@ export const zh: Messages = {
         codex: 'Codex',
       },
     },
+    appearance: {
+      title: '外观',
+      subtitle: '自定义 SuperOne 的外观与样式',
+      interface: '界面',
+    },
     general: {
       title: '通用',
       subtitle: '配置 SuperOne 应用行为',
       privacy: '隐私',
       appearance: '外观',
       updates: '更新',
+      languageRegion: '语言与区域',
+      terminal: '终端',
+      terminalTheme: {
+        light: '浅色配色方案',
+        dark: '深色配色方案',
+      },
+      terminalFontSize: {
+        label: '字体大小',
+        description: '集成终端的字体大小。',
+      },
+      terminalFont: {
+        label: '终端字体',
+        description: '集成终端的等宽字体,来自你系统中已安装的字体。',
+      },
+      uiFont: {
+        label: '界面字体',
+        description: '应用界面字体,来自你系统中已安装的字体。',
+      },
+      font: {
+        systemDefault: '系统默认',
+      },
       analytics: {
         label: '使用情况分析',
         description: '发送匿名使用数据以帮助改进 SuperOne。不会收集任何个人数据或对话内容。',

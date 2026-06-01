@@ -14,6 +14,11 @@ const defaults: AppSettings = {
   crispText: true,
   locale: '',
   updateChannel: null,
+  terminalLightPalette: null,
+  terminalDarkPalette: null,
+  terminalFontSize: 14,
+  terminalFontFamily: null,
+  uiFontFamily: null,
   miniAppOrder: {},
   customAppIconPath: null,
   agentPreference: {
@@ -60,6 +65,11 @@ function isSandboxMode(value: unknown): value is SandboxMode {
 
 function isUpdateChannel(value: unknown): value is UpdateChannel {
   return value === 'alpha' || value === 'beta' || value === 'stable'
+}
+
+function readTerminalFontSize(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return defaults.terminalFontSize
+  return Math.min(22, Math.max(12, Math.round(value)))
 }
 
 function readMiniAppOrder(value: unknown): Record<string, string[]> {
@@ -141,6 +151,11 @@ export function readAppSettings(): AppSettings {
       crispText: typeof data.crispText === 'boolean' ? data.crispText : defaults.crispText,
       locale: data.locale === '' || isLocale(data.locale) ? data.locale : defaults.locale,
       updateChannel: data.updateChannel === null || isUpdateChannel(data.updateChannel) ? data.updateChannel : defaults.updateChannel,
+      terminalLightPalette: typeof data.terminalLightPalette === 'string' ? data.terminalLightPalette : defaults.terminalLightPalette,
+      terminalDarkPalette: typeof data.terminalDarkPalette === 'string' ? data.terminalDarkPalette : defaults.terminalDarkPalette,
+      terminalFontSize: readTerminalFontSize(data.terminalFontSize),
+      terminalFontFamily: typeof data.terminalFontFamily === 'string' ? data.terminalFontFamily : defaults.terminalFontFamily,
+      uiFontFamily: typeof data.uiFontFamily === 'string' ? data.uiFontFamily : defaults.uiFontFamily,
       miniAppOrder: readMiniAppOrder(data.miniAppOrder),
       customAppIconPath: typeof data.customAppIconPath === 'string' ? data.customAppIconPath : defaults.customAppIconPath,
       agentPreference: {
@@ -154,6 +169,11 @@ export function readAppSettings(): AppSettings {
       crispText: defaults.crispText,
       locale: defaults.locale,
       updateChannel: defaults.updateChannel,
+      terminalLightPalette: defaults.terminalLightPalette,
+      terminalDarkPalette: defaults.terminalDarkPalette,
+      terminalFontSize: defaults.terminalFontSize,
+      terminalFontFamily: defaults.terminalFontFamily,
+      uiFontFamily: defaults.uiFontFamily,
       miniAppOrder: {},
       customAppIconPath: defaults.customAppIconPath,
       agentPreference: {
@@ -171,6 +191,11 @@ export function saveAppSettings(patch: AppSettingsPatch): AppSettings {
     crispText: patch.crispText ?? current.crispText,
     locale: patch.locale ?? current.locale,
     updateChannel: patch.updateChannel === undefined ? current.updateChannel : patch.updateChannel,
+    terminalLightPalette: patch.terminalLightPalette === undefined ? current.terminalLightPalette : patch.terminalLightPalette,
+    terminalDarkPalette: patch.terminalDarkPalette === undefined ? current.terminalDarkPalette : patch.terminalDarkPalette,
+    terminalFontSize: patch.terminalFontSize === undefined ? current.terminalFontSize : readTerminalFontSize(patch.terminalFontSize),
+    terminalFontFamily: patch.terminalFontFamily === undefined ? current.terminalFontFamily : patch.terminalFontFamily,
+    uiFontFamily: patch.uiFontFamily === undefined ? current.uiFontFamily : patch.uiFontFamily,
     miniAppOrder: patch.miniAppOrder
       ? { ...current.miniAppOrder, ...patch.miniAppOrder }
       : current.miniAppOrder,

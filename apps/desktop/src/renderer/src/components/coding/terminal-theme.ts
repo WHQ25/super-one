@@ -1,23 +1,10 @@
 import type { ITheme } from '@xterm/xterm'
-
-const LIGHT_ANSI: Partial<ITheme> = {
-  black: '#33312e',
-  red: '#c0392b',
-  green: '#1e7a3e',
-  yellow: '#9a6a00',
-  blue: '#2a6fb0',
-  magenta: '#9b59b6',
-  cyan: '#1b8a8a',
-  white: '#6b6760',
-  brightBlack: '#8a857c',
-  brightRed: '#e74c3c',
-  brightGreen: '#27ae60',
-  brightYellow: '#c98a00',
-  brightBlue: '#3b8fd6',
-  brightMagenta: '#bd76d6',
-  brightCyan: '#2bb3b3',
-  brightWhite: '#3a3833',
-}
+import {
+  type AnsiColors,
+  type TerminalScheme,
+  clampTerminalFontSize,
+  getTerminalPalette,
+} from './terminal-palettes'
 
 let probe: HTMLSpanElement | null = null
 let ctx: CanvasRenderingContext2D | null = null
@@ -63,18 +50,39 @@ function mix(fg: string, bg: string, a: number): string {
   return `rgb(${c[0]}, ${c[1]}, ${c[2]})`
 }
 
-export function getTerminalTheme(): ITheme {
-  const isDark = document.documentElement.classList.contains('dark')
+export function buildTerminalTheme(ansi: AnsiColors): ITheme {
   const primary = resolve('var(--primary)')
   const card = resolve('var(--card)')
-  const base: ITheme = {
+  return {
     background: card,
     foreground: resolve('var(--card-foreground)'),
     cursor: primary,
     cursorAccent: card,
     selectionBackground: mix(primary, card, 0.3),
+    ...ansi,
   }
-  return isDark ? base : { ...base, ...LIGHT_ANSI }
+}
+
+function activeScheme(): TerminalScheme {
+  return document.documentElement.classList.contains('dark') ? 'dark' : 'light'
+}
+
+export function getTerminalTheme(): ITheme {
+  const scheme = activeScheme()
+  const root = document.documentElement
+  const id = scheme === 'dark' ? root.dataset.terminalPaletteDark : root.dataset.terminalPaletteLight
+  return buildTerminalTheme(getTerminalPalette(id, scheme).ansi)
+}
+
+export function getTerminalFontSize(): number {
+  return clampTerminalFontSize(Number(document.documentElement.dataset.terminalFontSize))
+}
+
+const DEFAULT_TERMINAL_FONT_FAMILY = 'Monaco, ui-monospace, SFMono-Regular, Menlo, monospace'
+
+export function getTerminalFontFamily(): string {
+  const family = document.documentElement.dataset.terminalFontFamily
+  return family ? `"${family}", ${DEFAULT_TERMINAL_FONT_FAMILY}` : DEFAULT_TERMINAL_FONT_FAMILY
 }
 
 export function onTerminalThemeChange(cb: () => void): () => void {
@@ -85,7 +93,15 @@ export function onTerminalThemeChange(cb: () => void): () => void {
   })
   observer.observe(document.documentElement, {
     attributes: true,
-    attributeFilter: ['class', 'style', 'data-harness'],
+    attributeFilter: [
+      'class',
+      'style',
+      'data-harness',
+      'data-terminal-palette-light',
+      'data-terminal-palette-dark',
+      'data-terminal-font-size',
+      'data-terminal-font-family',
+    ],
   })
   return () => {
     cancelAnimationFrame(raf)

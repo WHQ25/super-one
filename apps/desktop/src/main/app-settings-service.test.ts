@@ -49,6 +49,11 @@ describe('app-settings-service', () => {
     crispText: true,
     locale: '',
     updateChannel: null,
+    terminalLightPalette: null,
+    terminalDarkPalette: null,
+    terminalFontSize: 14,
+    terminalFontFamily: null,
+    uiFontFamily: null,
     miniAppOrder: {},
     customAppIconPath: null,
     agentPreference: {
@@ -84,6 +89,11 @@ describe('app-settings-service', () => {
         crispText: true,
         locale: '',
         updateChannel: null,
+        terminalLightPalette: null,
+        terminalDarkPalette: null,
+        terminalFontSize: 14,
+        terminalFontFamily: null,
+        uiFontFamily: null,
         miniAppOrder: {},
         customAppIconPath: null,
         agentPreference: {
@@ -150,6 +160,11 @@ describe('app-settings-service', () => {
         crispText: true,
         locale: '',
         updateChannel: null,
+        terminalLightPalette: null,
+        terminalDarkPalette: null,
+        terminalFontSize: 14,
+        terminalFontFamily: null,
+        uiFontFamily: null,
         miniAppOrder: {},
         customAppIconPath: null,
         agentPreference: {
@@ -310,6 +325,66 @@ describe('app-settings-service', () => {
       mocks.readFileSync.mockReturnValue(JSON.stringify({ updateChannel: 'alpha' }))
       const result = saveAppSettings({ updateChannel: null })
       expect(result.updateChannel).toBeNull()
+    })
+
+    it('persists light and dark terminal palettes independently', () => {
+      mocks.readFileSync.mockImplementation(fileNotFound)
+      saveAppSettings({ terminalLightPalette: 'tokyo-day', terminalDarkPalette: 'dracula' })
+      const written = mocks.writeFileSync.mock.calls[0][1] as string
+      mocks.readFileSync.mockReturnValue(written)
+      const reloaded = readAppSettings()
+      expect(reloaded.terminalLightPalette).toBe('tokyo-day')
+      expect(reloaded.terminalDarkPalette).toBe('dracula')
+    })
+
+    it('resets a terminal palette back to null when patch passes null', () => {
+      mocks.readFileSync.mockReturnValue(JSON.stringify({ terminalDarkPalette: 'one-dark' }))
+      const result = saveAppSettings({ terminalDarkPalette: null })
+      expect(result.terminalDarkPalette).toBeNull()
+    })
+
+    it('falls back to null when a stored terminal palette is not a string', () => {
+      mocks.readFileSync.mockReturnValue(JSON.stringify({ terminalDarkPalette: 42 }))
+      expect(readAppSettings().terminalDarkPalette).toBeNull()
+    })
+
+    it('persists terminalFontSize round-trip and clamps out-of-range values', () => {
+      mocks.readFileSync.mockImplementation(fileNotFound)
+      saveAppSettings({ terminalFontSize: 16 })
+      let written = mocks.writeFileSync.mock.calls[0][1] as string
+      mocks.readFileSync.mockReturnValue(written)
+      expect(readAppSettings().terminalFontSize).toBe(16)
+
+      mocks.writeFileSync.mockClear()
+      saveAppSettings({ terminalFontSize: 200 })
+      written = mocks.writeFileSync.mock.calls[0][1] as string
+      mocks.readFileSync.mockReturnValue(written)
+      expect(readAppSettings().terminalFontSize).toBe(22)
+    })
+
+    it('falls back to default 14 when stored terminalFontSize is invalid', () => {
+      mocks.readFileSync.mockReturnValue(JSON.stringify({ terminalFontSize: 'large' }))
+      expect(readAppSettings().terminalFontSize).toBe(14)
+    })
+
+    it('persists terminal and UI font families independently', () => {
+      mocks.readFileSync.mockImplementation(fileNotFound)
+      saveAppSettings({ terminalFontFamily: 'Maple Mono', uiFontFamily: 'MiSans' })
+      const written = mocks.writeFileSync.mock.calls[0][1] as string
+      mocks.readFileSync.mockReturnValue(written)
+      const reloaded = readAppSettings()
+      expect(reloaded.terminalFontFamily).toBe('Maple Mono')
+      expect(reloaded.uiFontFamily).toBe('MiSans')
+    })
+
+    it('resets a font family to null when patch passes null', () => {
+      mocks.readFileSync.mockReturnValue(JSON.stringify({ uiFontFamily: 'MiSans' }))
+      expect(saveAppSettings({ uiFontFamily: null }).uiFontFamily).toBeNull()
+    })
+
+    it('falls back to null when a stored font family is not a string', () => {
+      mocks.readFileSync.mockReturnValue(JSON.stringify({ terminalFontFamily: 123 }))
+      expect(readAppSettings().terminalFontFamily).toBeNull()
     })
 
     it('persists customAppIconPath round-trip', () => {

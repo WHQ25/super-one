@@ -12,7 +12,7 @@ import { SortableContext, horizontalListSortingStrategy, useSortable } from '@dn
 import { CSS } from '@dnd-kit/utilities'
 import { requestOpenExternalLink } from '@/lib/external-link'
 import { setCloseActiveTerminal, setCreateTerminal } from './terminal-panel-api'
-import { getTerminalTheme, onTerminalThemeChange } from './terminal-theme'
+import { getTerminalFontFamily, getTerminalFontSize, getTerminalTheme, onTerminalThemeChange } from './terminal-theme'
 import { disposeTermInstance } from './term-instance'
 import type { TerminalEvent, TerminalListItem } from '@superone/shared/agent-types'
 import { useAppStore } from '@/stores/app'
@@ -132,8 +132,8 @@ export function TerminalPanel() {
       let inst = instances.get(terminalId)
       if (inst) return inst
       const xterm = new XTerm({
-        fontSize: 14,
-        fontFamily: 'Monaco, ui-monospace, SFMono-Regular, Menlo, monospace',
+        fontSize: getTerminalFontSize(),
+        fontFamily: getTerminalFontFamily(),
         cursorBlink: true,
         allowProposedApi: true,
         theme: themeRef.current,
@@ -176,10 +176,20 @@ export function TerminalPanel() {
   useEffect(() => {
     return onTerminalThemeChange(() => {
       const theme = getTerminalTheme()
+      const fontSize = getTerminalFontSize()
+      const fontFamily = getTerminalFontFamily()
       themeRef.current = theme
-      for (const inst of instances.values()) {
+      for (const [terminalId, inst] of instances.entries()) {
         inst.xterm.options.theme = theme
+        const metricsChanged =
+          inst.xterm.options.fontSize !== fontSize || inst.xterm.options.fontFamily !== fontFamily
+        if (inst.xterm.options.fontSize !== fontSize) inst.xterm.options.fontSize = fontSize
+        if (inst.xterm.options.fontFamily !== fontFamily) inst.xterm.options.fontFamily = fontFamily
         inst.xterm.clearTextureAtlas()
+        if (metricsChanged && inst.xterm.element?.isConnected) {
+          inst.fit.fit()
+          void window.terminal.resize(terminalId, inst.xterm.cols, inst.xterm.rows)
+        }
       }
     })
   }, [instances])

@@ -373,8 +373,8 @@ For **any new host→panel push event**: forward it in **both** `useMiniAppBridg
 **Adding a new mini-app bridge API:**
 
 1. `packages/shared/src/miniapp-api-runtime.js` — Add the method to `createSuperoneApi()`. Use `transport.send()` for fire-and-forget, `transport.request()` for request-response.
-2. `packages/shared/src/miniapp-api-runtime.d.ts` — Add TypeScript signature to `SuperoneApi` interface.
-3. `apps/desktop/src/main/miniapp/miniapp-templates.ts` — Update `generateSuperoneDts()` to include the new API in the React template's type declarations.
+2. `packages/shared/src/miniapp-author-api.d.ts` — **single source of truth for author-facing types.** Add the signature to the `SuperOne` interface (use the `SuperOne*` named helper types). Both `miniapp-api-runtime.d.ts` (re-exports it as `SuperoneApi` for the runtime/preload) and the generated `src/superone.d.ts` derive from this one file — never hand-edit a second copy.
+3. ~~Update `generateSuperoneDts()`~~ — **no longer manual.** `miniapp-templates.ts` reads `miniapp-author-api.d.ts` via `?raw`, strips `export`, and wraps it in `declare global { Window { superone } }`. Editing step 2 is enough; the React-template `superone.d.ts` updates automatically. The `miniapp-templates.test.ts` `covers ui API` assertions guard against silent drift.
 4. `packages/shared/src/miniapp-types.ts` — If a new message type is added, append it to `MiniAppBridgeMessageType`.
 5. If the API needs host-side handling: add a case in `apps/desktop/src/renderer/src/hooks/miniapp-message-handler.ts` (shared by both the iframe and webview host paths).
 6. If the API needs main process handling: add a handler in `apps/desktop/src/main/miniapp/miniapp-service.ts` or `apps/desktop/src/main/index.ts`.

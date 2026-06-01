@@ -194,6 +194,7 @@ describe('generateSuperoneDts', () => {
     expect(dts).toContain('toast(message: string')
     expect(dts).toContain('showTooltip(anchorRect:')
     expect(dts).toContain('hideTooltip(): void')
+    expect(dts).toContain('startDrag(paths: string | string[]')
     expect(dts).toContain('showContextMenu(position:')
   })
 

@@ -28,7 +28,7 @@ Mini-apps are sandboxed by default with no filesystem or network access. Add per
 ### Access Levels
 
 - `"read"` — `readFile`, `readDir`, `exists`, `glob`, `stat`, `watch`
-- `"readwrite"` — all read operations + `writeFile`, `deleteFile`, `rename`, `mkdir`
+- `"readwrite"` — all read operations + `writeFile`, `deleteFile`, `trashFile`, `rename`, `mkdir`
 
 Each entry requires a `reason` field — shown to the user during installation.
 
@@ -72,6 +72,17 @@ CDN libraries (Chart.js, D3, Three.js, Alpine.js, etc.) work great in vanilla ap
 ```json
 { "domain": "cdn.jsdelivr.net", "reason": "Load Chart.js" }
 ```
+
+### Calling APIs that don't return CORS headers
+
+`permissions.network` only controls the CSP — it decides whether a request is **allowed to leave**. The browser still enforces **CORS** on the response: if the target server doesn't return an `Access-Control-Allow-Origin` header, the browser blocks your JS from reading the response even though the request succeeded. Declaring the domain does **not** override this.
+
+Two things are SuperOne-specific and worth knowing when you configure a server's CORS:
+
+- **The `Origin` your request carries** is `superone-app://<appId>.<projectId>` when the app declares `permissions.storage` (or `permissions.media`), and the literal string `null` otherwise (an opaque sandbox origin — see Storage below). For non-credentialed requests (Bearer token in `Authorization`, no cookies) a backend returning `Access-Control-Allow-Origin: *` works in both cases.
+- **APIs designed for server-to-server use don't return CORS headers** — e.g. Google Vertex AI (`*-aiplatform.googleapis.com`), OAuth token endpoints (`oauth2.googleapis.com/token`), and most of `googleapis.com`. These cannot be called directly from a mini-app, and that is intentional: they authenticate with credentials (service-account private keys) that must **never** ship inside a sandboxed front-end. (APIs that do return CORS headers, like the Gemini Developer API `generativelanguage.googleapis.com`, work directly — just declare the domain.)
+
+**Pattern for server-to-server APIs:** run your own backend, call the third-party API server-side (where there is no CORS and your credentials stay safe), return a CORS-enabled response to the mini-app, and declare `permissions.network` for **your own** domain. Do not attempt to embed cloud-provider credentials in the app to call these APIs directly.
 
 ## Storage (`permissions.storage`)
 

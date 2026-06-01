@@ -192,6 +192,8 @@ export type MiniAppGitOp = 'info' | 'branches' | 'log' | 'status' | 'diff' | 'sh
 
 export type MiniAppDbOp = 'query' | 'exec' | 'batch' | 'pragma'
 
+export type MiniAppDbScope = 'user' | 'project'
+
 export interface MiniAppDbStatement {
   sql: string
   params?: unknown[] | Record<string, unknown>

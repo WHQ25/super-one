@@ -666,6 +666,10 @@ export function getAppBasePath(appId: string): string {
   return join(userAppsDir(), appId)
 }
 
+export function getUserAppDir(appId: string): string {
+  return join(userAppsDir(), appId)
+}
+
 export function getAppInstallDir(appId: string): string {
   const cached = appPathCache.get(appId)
   if (cached) return cached.installDir

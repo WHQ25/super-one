@@ -48,6 +48,20 @@ export interface ToolStandaloneApi {
 
 export type ToolRendererApi = ToolInterceptApi | ToolResultApi | ToolStandaloneApi
 
+export interface SuperoneDbApi {
+  query<T = Record<string, unknown>>(sql: string, params?: unknown[] | Record<string, unknown>): Promise<T[]>
+  exec(sql: string, params?: unknown[] | Record<string, unknown>): Promise<{ changes: number; lastInsertRowid: number }>
+  batch(statements: Array<{ sql: string; params?: unknown[] | Record<string, unknown> }>): Promise<Array<{ changes: number; lastInsertRowid: number }>>
+  pragma<T = unknown>(name: string, value?: string | number): Promise<T>
+}
+
+export interface SuperoneKvApi {
+  get<T = unknown>(key: string): Promise<T | undefined>
+  set(key: string, value: unknown): Promise<void>
+  delete(key: string): Promise<void>
+  list(prefix?: string): Promise<string[]>
+}
+
 export interface SuperoneApi {
   version: string
   tools: {
@@ -55,18 +69,17 @@ export interface SuperoneApi {
     /** Internal handler registry — exposed so the standalone bridge can dispatch by callId. Not for author code. */
     _handlers: Map<string, (args: Record<string, unknown>) => unknown | Promise<unknown>>
   }
-  db: {
-    query<T = Record<string, unknown>>(sql: string, params?: unknown[] | Record<string, unknown>): Promise<T[]>
-    exec(sql: string, params?: unknown[] | Record<string, unknown>): Promise<{ changes: number; lastInsertRowid: number }>
-    batch(statements: Array<{ sql: string; params?: unknown[] | Record<string, unknown> }>): Promise<Array<{ changes: number; lastInsertRowid: number }>>
-    pragma<T = unknown>(name: string, value?: string | number): Promise<T>
-  }
-  kv: {
-    get<T = unknown>(key: string): Promise<T | undefined>
-    set(key: string, value: unknown): Promise<void>
-    delete(key: string): Promise<void>
-    list(prefix?: string): Promise<string[]>
-  }
+  /**
+   * Project-scoped SQLite DB (default). Lives at `<repoRoot>/.superone/apps/<appId>/data/main.db`;
+   * worktrees of the same repo share it. Throws if no project is open. Use `db.user` for a
+   * machine-wide DB shared across all projects.
+   */
+  db: SuperoneDbApi & { project: SuperoneDbApi; user: SuperoneDbApi }
+  /**
+   * Project-scoped key-value store (default), backed by the same per-repo DB as `db`.
+   * Throws if no project is open. Use `kv.user` for a machine-wide store.
+   */
+  kv: SuperoneKvApi & { project: SuperoneKvApi; user: SuperoneKvApi }
   peer: {
     on(event: string, callback: (payload: unknown) => void): () => void
     emit(event: string, payload?: unknown): void

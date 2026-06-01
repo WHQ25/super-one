@@ -93,7 +93,9 @@ function Notes() {
   return <ul>{rows.map((r) => <li key={r.id}>{r.content}</li>)}</ul>
 }`
 
-const vanilla = `// Per-app private SQLite — no permission declaration needed
+const vanilla = `// Per-app private SQLite — no permission declaration needed.
+// superone.db = project scope (default, shared across the repo's worktrees).
+// superone.db.user = machine-wide, shared across every project.
 await superone.db.exec(\`
   CREATE TABLE IF NOT EXISTS notes (
     id INTEGER PRIMARY KEY,
@@ -121,7 +123,7 @@ export const dbSection: SectionDef = {
   title: 'SQLite DB',
   api: 'superone.db',
   blurb:
-    "Each app gets a private SQLite file (no permission needed). query / exec / batch / pragma. db.transaction(fn) isn't available — use batch().",
+    "Private SQLite, no permission needed. Two scopes: superone.db (project, default — shared across the repo's worktrees) and superone.db.user (machine-wide). query / exec / batch / pragma. db.transaction(fn) isn't available — use batch().",
   Demo,
   react,
   vanilla,

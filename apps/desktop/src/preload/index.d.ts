@@ -351,8 +351,8 @@ interface MiniAppAPI {
   fsRequest(projectDir: string, appId: string, op: string, args: Record<string, unknown>): Promise<unknown>
   startDrag(projectDir: string, appId: string, paths: string[], iconOpts?: { png: ArrayBuffer; scaleFactor?: number }): void
   gitRequest(projectDir: string, appId: string, op: string, args: Record<string, unknown>): Promise<unknown>
-  dbRequest(appId: string, op: string, args: Record<string, unknown>): Promise<unknown>
-  kvRequest(appId: string, op: string, args: Record<string, unknown>): Promise<unknown>
+  dbRequest(projectDir: string | null, scope: string, appId: string, op: string, args: Record<string, unknown>): Promise<unknown>
+  kvRequest(projectDir: string | null, scope: string, appId: string, op: string, args: Record<string, unknown>): Promise<unknown>
   onGitHeadChangeEvent(callback: (event: { projectDir: string; appId: string }) => void): () => void
   onLazyOpenRequest(callback: (event: { appId: string; projectDir: string; sessionId: string }) => void): () => void
   onPeerEvent(callback: (event: { sessionId: string; appId: string; event: string; payload: unknown }) => void): () => void

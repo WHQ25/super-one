@@ -1051,11 +1051,11 @@ const miniappAPI = {
   gitRequest: (projectDir: string, appId: string, op: string, args: Record<string, unknown>) =>
     ipcRenderer.invoke(AgentIpcChannels.MINIAPP_GIT_REQUEST, projectDir, appId, op, args),
 
-  dbRequest: (appId: string, op: string, args: Record<string, unknown>) =>
-    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_DB_REQUEST, appId, op, args),
+  dbRequest: (projectDir: string | null, scope: string, appId: string, op: string, args: Record<string, unknown>) =>
+    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_DB_REQUEST, projectDir, scope, appId, op, args),
 
-  kvRequest: (appId: string, op: string, args: Record<string, unknown>) =>
-    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_KV_REQUEST, appId, op, args),
+  kvRequest: (projectDir: string | null, scope: string, appId: string, op: string, args: Record<string, unknown>) =>
+    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_KV_REQUEST, projectDir, scope, appId, op, args),
 
   onGitHeadChangeEvent: (callback: (event: { projectDir: string; appId: string }) => void) => {
     const handler = (_e: Electron.IpcRendererEvent, event: { projectDir: string; appId: string }) => callback(event)

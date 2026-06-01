@@ -6,8 +6,8 @@ interface WorkerHostBridge {
   toolResult: (callId: string, result: unknown, error?: string) => Promise<unknown>
   fsRequest: (projectDir: string, appId: string, op: string, args: Record<string, unknown>) => Promise<unknown>
   gitRequest: (projectDir: string, appId: string, op: string, args: Record<string, unknown>) => Promise<unknown>
-  dbRequest: (appId: string, op: string, args: Record<string, unknown>) => Promise<unknown>
-  kvRequest: (appId: string, op: string, args: Record<string, unknown>) => Promise<unknown>
+  dbRequest: (projectDir: string | null, scope: string, appId: string, op: string, args: Record<string, unknown>) => Promise<unknown>
+  kvRequest: (projectDir: string | null, scope: string, appId: string, op: string, args: Record<string, unknown>) => Promise<unknown>
   fsWatch: (projectDir: string, appId: string, path: string) => Promise<number>
   fsUnwatch: (watchId: number) => Promise<unknown>
   peerEmit: (appId: string, event: string, payload: unknown) => void
@@ -83,12 +83,12 @@ window.addEventListener('message', (e) => {
         .catch((err: Error) => reply('miniapp-git-response', id, { error: err.message }))
       return
     case 'miniapp-db-request':
-      wh.dbRequest(appId, data.op as string, args)
+      wh.dbRequest(projectDir, data.scope as string, appId, data.op as string, args)
         .then((result) => reply('miniapp-db-response', id, { result }))
         .catch((err: Error) => reply('miniapp-db-response', id, { error: err.message }))
       return
     case 'miniapp-kv-request':
-      wh.kvRequest(appId, data.op as string, args)
+      wh.kvRequest(projectDir, data.scope as string, appId, data.op as string, args)
         .then((result) => reply('miniapp-kv-response', id, { result }))
         .catch((err: Error) => reply('miniapp-kv-response', id, { error: err.message }))
       return

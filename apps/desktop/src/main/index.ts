@@ -2252,12 +2252,12 @@ function registerIpcHandlers(): void {
     mainWindow?.webContents.send(AgentIpcChannels.MINIAPP_GIT_HEAD_CHANGE, event)
   })
 
-  ipcMain.handle(AgentIpcChannels.MINIAPP_DB_REQUEST, async (_e, appId: string, op: string, args: Record<string, unknown>) => {
-    return handleDbRequest(appId, op as any, args)
+  ipcMain.handle(AgentIpcChannels.MINIAPP_DB_REQUEST, async (_e, projectDir: string | null, scope: string, appId: string, op: string, args: Record<string, unknown>) => {
+    return handleDbRequest(projectDir, scope as 'user' | 'project', appId, op as any, args)
   })
 
-  ipcMain.handle(AgentIpcChannels.MINIAPP_KV_REQUEST, async (_e, appId: string, op: string, args: KvRequestArgs) => {
-    return handleKvRequest(appId, op as KvOp, args ?? {})
+  ipcMain.handle(AgentIpcChannels.MINIAPP_KV_REQUEST, async (_e, projectDir: string | null, scope: string, appId: string, op: string, args: KvRequestArgs) => {
+    return handleKvRequest(projectDir, scope as 'user' | 'project', appId, op as KvOp, args ?? {})
   })
 
   ipcMain.handle(AgentIpcChannels.MINIAPP_IFRAME_READY, (_e, appId: string, projectDir: string) => {

@@ -360,23 +360,36 @@ interface SuperOneSelfApi {
   keepAlive(label: string): { release(): void }
 }
 
+interface SuperOneDb {
+  query<T = Record<string, unknown>>(sql: string, params?: unknown[] | Record<string, unknown>): Promise<T[]>
+  exec(sql: string, params?: unknown[] | Record<string, unknown>): Promise<{ changes: number; lastInsertRowid: number }>
+  batch(statements: Array<{ sql: string; params?: unknown[] | Record<string, unknown> }>): Promise<Array<{ changes: number; lastInsertRowid: number }>>
+  pragma<T = unknown>(name: string, value?: string | number): Promise<T>
+}
+
+interface SuperOneKv {
+  get<T = unknown>(key: string): Promise<T | undefined>
+  set(key: string, value: unknown): Promise<void>
+  delete(key: string): Promise<void>
+  list(prefix?: string): Promise<string[]>
+}
+
 interface SuperOne {
   readonly version: string
   tools: {
     handle(name: string, callback: (args: Record<string, unknown>) => unknown | Promise<unknown>): void
   }
-  db: {
-    query<T = Record<string, unknown>>(sql: string, params?: unknown[] | Record<string, unknown>): Promise<T[]>
-    exec(sql: string, params?: unknown[] | Record<string, unknown>): Promise<{ changes: number; lastInsertRowid: number }>
-    batch(statements: Array<{ sql: string; params?: unknown[] | Record<string, unknown> }>): Promise<Array<{ changes: number; lastInsertRowid: number }>>
-    pragma<T = unknown>(name: string, value?: string | number): Promise<T>
-  }
-  kv: {
-    get<T = unknown>(key: string): Promise<T | undefined>
-    set(key: string, value: unknown): Promise<void>
-    delete(key: string): Promise<void>
-    list(prefix?: string): Promise<string[]>
-  }
+  /**
+   * Project-scoped SQLite DB (default), stored under the repo root and shared across
+   * all worktrees of that repo. Throws if no project is open.
+   * Use superone.db.user for a machine-wide DB shared across all projects.
+   */
+  db: SuperOneDb & { project: SuperOneDb; user: SuperOneDb }
+  /**
+   * Project-scoped key-value store (default), shared across worktrees of the repo.
+   * Throws if no project is open. Use superone.kv.user for a machine-wide store.
+   */
+  kv: SuperOneKv & { project: SuperOneKv; user: SuperOneKv }
   peer: {
     on(event: string, callback: (payload: unknown) => void): () => void
     emit(event: string, payload?: unknown): void

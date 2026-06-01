@@ -1,7 +1,8 @@
 import type { Database as DatabaseType } from 'better-sqlite3'
+import type { MiniAppDbScope } from '@superone/shared/miniapp-types'
 import { getDbForApp } from './miniapp-db'
 
-const ensuredApps = new Set<string>()
+let ensuredDbs = new WeakSet<DatabaseType>()
 
 function ensureTable(db: DatabaseType): void {
   db.exec(`
@@ -13,17 +14,17 @@ function ensureTable(db: DatabaseType): void {
   `)
 }
 
-function ensureForApp(appId: string): DatabaseType {
-  const db = getDbForApp(appId)
-  if (!ensuredApps.has(appId)) {
+async function ensureForApp(scope: MiniAppDbScope, projectDir: string | null | undefined, appId: string): Promise<DatabaseType> {
+  const db = await getDbForApp(scope, projectDir, appId)
+  if (!ensuredDbs.has(db)) {
     ensureTable(db)
-    ensuredApps.add(appId)
+    ensuredDbs.add(db)
   }
   return db
 }
 
-export function kvGet(appId: string, key: string): unknown | undefined {
-  const db = ensureForApp(appId)
+export async function kvGet(scope: MiniAppDbScope, projectDir: string | null | undefined, appId: string, key: string): Promise<unknown | undefined> {
+  const db = await ensureForApp(scope, projectDir, appId)
   const row = db.prepare('SELECT v FROM __miniapp_kv WHERE k = ?').get(key) as { v: string } | undefined
   if (!row) return undefined
   try {
@@ -33,8 +34,8 @@ export function kvGet(appId: string, key: string): unknown | undefined {
   }
 }
 
-export function kvSet(appId: string, key: string, value: unknown): void {
-  const db = ensureForApp(appId)
+export async function kvSet(scope: MiniAppDbScope, projectDir: string | null | undefined, appId: string, key: string, value: unknown): Promise<void> {
+  const db = await ensureForApp(scope, projectDir, appId)
   const serialized = JSON.stringify(value)
   db.prepare(`
     INSERT INTO __miniapp_kv (k, v, updated_at) VALUES (?, ?, ?)
@@ -42,13 +43,13 @@ export function kvSet(appId: string, key: string, value: unknown): void {
   `).run(key, serialized, Date.now())
 }
 
-export function kvDelete(appId: string, key: string): void {
-  const db = ensureForApp(appId)
+export async function kvDelete(scope: MiniAppDbScope, projectDir: string | null | undefined, appId: string, key: string): Promise<void> {
+  const db = await ensureForApp(scope, projectDir, appId)
   db.prepare('DELETE FROM __miniapp_kv WHERE k = ?').run(key)
 }
 
-export function kvList(appId: string, prefix?: string): string[] {
-  const db = ensureForApp(appId)
+export async function kvList(scope: MiniAppDbScope, projectDir: string | null | undefined, appId: string, prefix?: string): Promise<string[]> {
+  const db = await ensureForApp(scope, projectDir, appId)
   const rows = prefix
     ? db.prepare('SELECT k FROM __miniapp_kv WHERE k LIKE ? ORDER BY k').all(prefix + '%')
     : db.prepare('SELECT k FROM __miniapp_kv ORDER BY k').all()
@@ -63,29 +64,35 @@ export interface KvRequestArgs {
   prefix?: string
 }
 
-export function handleKvRequest(appId: string, op: KvOp, args: KvRequestArgs): unknown {
+export async function handleKvRequest(
+  projectDir: string | null | undefined,
+  scope: MiniAppDbScope,
+  appId: string,
+  op: KvOp,
+  args: KvRequestArgs,
+): Promise<unknown> {
   switch (op) {
     case 'get': {
       if (typeof args.key !== 'string') throw new Error('kv.get: key required')
-      return kvGet(appId, args.key)
+      return kvGet(scope, projectDir, appId, args.key)
     }
     case 'set': {
       if (typeof args.key !== 'string') throw new Error('kv.set: key required')
-      kvSet(appId, args.key, args.value)
+      await kvSet(scope, projectDir, appId, args.key, args.value)
       return undefined
     }
     case 'delete': {
       if (typeof args.key !== 'string') throw new Error('kv.delete: key required')
-      kvDelete(appId, args.key)
+      await kvDelete(scope, projectDir, appId, args.key)
       return undefined
     }
     case 'list':
-      return kvList(appId, typeof args.prefix === 'string' ? args.prefix : undefined)
+      return kvList(scope, projectDir, appId, typeof args.prefix === 'string' ? args.prefix : undefined)
     default:
       throw new Error(`Unknown kv op: ${op}`)
   }
 }
 
 export function _resetEnsuredForTests(): void {
-  ensuredApps.clear()
+  ensuredDbs = new WeakSet<DatabaseType>()
 }

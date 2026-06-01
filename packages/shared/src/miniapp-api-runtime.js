@@ -160,6 +160,44 @@ function createSuperoneApi(transport, version, opts) {
     }
   }
 
+  function makeDb(scope, extra) {
+    const api = {
+      query(sql, params) {
+        return transport.request('miniapp-db-request', 'miniapp-db-response', { op: 'query', scope: scope, args: { sql, params } })
+      },
+      exec(sql, params) {
+        return transport.request('miniapp-db-request', 'miniapp-db-response', { op: 'exec', scope: scope, args: { sql, params } })
+      },
+      batch(statements) {
+        return transport.request('miniapp-db-request', 'miniapp-db-response', { op: 'batch', scope: scope, args: { statements } })
+      },
+      pragma(name, value) {
+        return transport.request('miniapp-db-request', 'miniapp-db-response', { op: 'pragma', scope: scope, args: { name, value } })
+      },
+    }
+    if (extra) for (const k in extra) api[k] = extra[k]
+    return api
+  }
+
+  function makeKv(scope, extra) {
+    const api = {
+      get(key) {
+        return transport.request('miniapp-kv-request', 'miniapp-kv-response', { op: 'get', scope: scope, args: { key } })
+      },
+      set(key, value) {
+        return transport.request('miniapp-kv-request', 'miniapp-kv-response', { op: 'set', scope: scope, args: { key, value } })
+      },
+      delete(key) {
+        return transport.request('miniapp-kv-request', 'miniapp-kv-response', { op: 'delete', scope: scope, args: { key } })
+      },
+      list(prefix) {
+        return transport.request('miniapp-kv-request', 'miniapp-kv-response', { op: 'list', scope: scope, args: { prefix } })
+      },
+    }
+    if (extra) for (const k in extra) api[k] = extra[k]
+    return api
+  }
+
   return {
     version: version || '0.0.0',
     tools: {
@@ -168,34 +206,8 @@ function createSuperoneApi(transport, version, opts) {
       // by reading the same handler registry that .handle() populates.
       _handlers: toolHandlers,
     },
-    db: {
-      query(sql, params) {
-        return transport.request('miniapp-db-request', 'miniapp-db-response', { op: 'query', args: { sql, params } })
-      },
-      exec(sql, params) {
-        return transport.request('miniapp-db-request', 'miniapp-db-response', { op: 'exec', args: { sql, params } })
-      },
-      batch(statements) {
-        return transport.request('miniapp-db-request', 'miniapp-db-response', { op: 'batch', args: { statements } })
-      },
-      pragma(name, value) {
-        return transport.request('miniapp-db-request', 'miniapp-db-response', { op: 'pragma', args: { name, value } })
-      },
-    },
-    kv: {
-      get(key) {
-        return transport.request('miniapp-kv-request', 'miniapp-kv-response', { op: 'get', args: { key } })
-      },
-      set(key, value) {
-        return transport.request('miniapp-kv-request', 'miniapp-kv-response', { op: 'set', args: { key, value } })
-      },
-      delete(key) {
-        return transport.request('miniapp-kv-request', 'miniapp-kv-response', { op: 'delete', args: { key } })
-      },
-      list(prefix) {
-        return transport.request('miniapp-kv-request', 'miniapp-kv-response', { op: 'list', args: { prefix } })
-      },
-    },
+    db: makeDb('project', { project: makeDb('project'), user: makeDb('user') }),
+    kv: makeKv('project', { project: makeKv('project'), user: makeKv('user') }),
     peer: {
       on(event, callback) {
         if (typeof event !== 'string' || typeof callback !== 'function') return () => {}

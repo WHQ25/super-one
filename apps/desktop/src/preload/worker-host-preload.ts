@@ -27,10 +27,10 @@ const api = {
     ipcRenderer.invoke(CH.FS_REQUEST, projectDir, appId, op, args),
   gitRequest: (projectDir: string, appId: string, op: string, args: Record<string, unknown>) =>
     ipcRenderer.invoke(CH.GIT_REQUEST, projectDir, appId, op, args),
-  dbRequest: (appId: string, op: string, args: Record<string, unknown>) =>
-    ipcRenderer.invoke(CH.DB_REQUEST, appId, op, args),
-  kvRequest: (appId: string, op: string, args: Record<string, unknown>) =>
-    ipcRenderer.invoke(CH.KV_REQUEST, appId, op, args),
+  dbRequest: (projectDir: string | null, scope: string, appId: string, op: string, args: Record<string, unknown>) =>
+    ipcRenderer.invoke(CH.DB_REQUEST, projectDir, scope, appId, op, args),
+  kvRequest: (projectDir: string | null, scope: string, appId: string, op: string, args: Record<string, unknown>) =>
+    ipcRenderer.invoke(CH.KV_REQUEST, projectDir, scope, appId, op, args),
   fsWatch: (projectDir: string, appId: string, path: string) =>
     ipcRenderer.invoke(CH.FS_WATCH, projectDir, appId, path) as Promise<number>,
   fsUnwatch: (watchId: number) =>

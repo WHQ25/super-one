@@ -2,10 +2,17 @@ import { mkdirSync } from 'fs'
 import { dirname, join } from 'path'
 import Database from 'better-sqlite3'
 import type { Database as DatabaseType, RunResult, Statement } from 'better-sqlite3'
-import type { MiniAppDbOp, MiniAppDbStatement, MiniAppDbRunResult } from '@superone/shared/miniapp-types'
-import { getAppInstallDir } from './miniapp-service'
+import type { MiniAppDbOp, MiniAppDbStatement, MiniAppDbRunResult, MiniAppDbScope } from '@superone/shared/miniapp-types'
+import { getUserAppDir } from './miniapp-service'
+import { resolveMainWorktreeDir } from '../git/worktree-ops'
 
-const dbConnections = new Map<string, DatabaseType>()
+interface DbConnection {
+  db: DatabaseType
+  appId: string
+}
+
+const dbConnections = new Map<string, DbConnection>()
+const projectRootCache = new Map<string, string>()
 
 const FORBIDDEN_SQL = /\b(ATTACH|DETACH|LOAD_EXTENSION)\b/i
 
@@ -27,11 +34,46 @@ const PRAGMA_WHITELIST = new Set([
   'page_size',
 ])
 
-export function getDbForApp(appId: string): DatabaseType {
-  const cached = dbConnections.get(appId)
-  if (cached && cached.open) return cached
+async function resolveProjectRoot(projectDir: string): Promise<string> {
+  const cached = projectRootCache.get(projectDir)
+  if (cached) return cached
+  let root: string
+  try {
+    root = await resolveMainWorktreeDir(projectDir)
+  } catch {
+    root = projectDir
+  }
+  projectRootCache.set(projectDir, root)
+  return root
+}
 
-  const dbPath = join(getAppInstallDir(appId), 'data', 'main.db')
+async function resolveDbPath(
+  scope: MiniAppDbScope,
+  projectDir: string | null | undefined,
+  appId: string,
+): Promise<string> {
+  if (scope === 'user') {
+    return join(getUserAppDir(appId), 'data', 'main.db')
+  }
+  if (scope === 'project') {
+    if (!projectDir) {
+      throw new Error('project-scope db requires an open project')
+    }
+    const root = await resolveProjectRoot(projectDir)
+    return join(root, '.superone', 'apps', appId, 'data', 'main.db')
+  }
+  throw new Error(`Unknown db scope: ${scope}`)
+}
+
+export async function getDbForApp(
+  scope: MiniAppDbScope,
+  projectDir: string | null | undefined,
+  appId: string,
+): Promise<DatabaseType> {
+  const dbPath = await resolveDbPath(scope, projectDir, appId)
+
+  const cached = dbConnections.get(dbPath)
+  if (cached && cached.db.open) return cached.db
 
   try {
     mkdirSync(dirname(dbPath), { recursive: true })
@@ -44,22 +86,24 @@ export function getDbForApp(appId: string): DatabaseType {
   db.pragma('trusted_schema = OFF')
   db.pragma('foreign_keys = ON')
 
-  dbConnections.set(appId, db)
+  dbConnections.set(dbPath, { db, appId })
   return db
 }
 
 export function closeDbForApp(appId: string): void {
-  const db = dbConnections.get(appId)
-  if (!db) return
-  try { db.close() } catch { /* empty */ }
-  dbConnections.delete(appId)
+  for (const [path, conn] of dbConnections) {
+    if (conn.appId !== appId) continue
+    try { conn.db.close() } catch { /* empty */ }
+    dbConnections.delete(path)
+  }
 }
 
 export function closeAllDbConnections(): void {
-  for (const db of dbConnections.values()) {
-    try { db.close() } catch { /* empty */ }
+  for (const conn of dbConnections.values()) {
+    try { conn.db.close() } catch { /* empty */ }
   }
   dbConnections.clear()
+  projectRootCache.clear()
 }
 
 function sanitizeSql(sql: string): void {
@@ -119,11 +163,13 @@ function buildPragmaExpression(name: string, value: unknown): string {
 }
 
 export async function handleDbRequest(
+  projectDir: string | null | undefined,
+  scope: MiniAppDbScope,
   appId: string,
   op: MiniAppDbOp,
   args: Record<string, unknown>,
 ): Promise<unknown> {
-  const db = getDbForApp(appId)
+  const db = await getDbForApp(scope, projectDir, appId)
 
   switch (op) {
     case 'query': {

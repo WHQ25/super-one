@@ -1,8 +1,26 @@
 # superone.db — Local SQLite Database
 
-Each mini-app gets its own SQLite database file managed by the host. Use this for **app state, user preferences, local caches, and offline data**. The DB file lives at `<install-slot>/data/main.db` and survives rebuilds and pack/install cycles. Uninstalling the app deletes the DB.
+Each mini-app gets private SQLite databases managed by the host. Use this for **app state, user preferences, local caches, and offline data**. No `permissions` declaration is required, and two mini-apps cannot read each other's databases. The DB location is **decoupled from where the app is installed** — it only depends on the scope you pick.
 
-No `permissions` declaration is required — `superone.db` always points at the app's own private DB. Two mini-apps cannot read each other's databases.
+## Two scopes — pick per call
+
+| Accessor | Scope | File | Use for |
+|---|---|---|---|
+| `superone.db` / `superone.db.project` | **Project** (default) | `<repoRoot>/.superone/apps/<appId>/data/main.db` | Data tied to the current project/repo |
+| `superone.db.user` | **User** (machine-wide) | `~/.superone/apps/<appId>/data/main.db` | Data shared across every project (cross-project linkage) |
+
+```js
+// Project-scoped (default) — per-repo data
+await superone.db.exec('INSERT INTO tasks (title) VALUES (?)', ['ship it'])
+
+// User-scoped — same DB no matter which project is open
+await superone.db.user.exec('INSERT INTO recents (path) VALUES (?)', [p])
+```
+
+- **Default is project scope.** Bare `superone.db.*` === `superone.db.project.*`.
+- **Project scope follows the git repo, not the folder.** All git worktrees of the same repo resolve to the repo root, so a worktree sees the **same** project DB as the main checkout.
+- **Project scope throws when no project is open.** If the app might run without a project, use `superone.db.user` (always available) or guard the call.
+- `superone.kv` mirrors this exactly: `kv` / `kv.project` (default, per-repo) and `kv.user` (machine-wide).
 
 ## When to use local DB vs remote DB
 
@@ -223,10 +241,11 @@ try {
 | SuperOne quit and restart | ✅ |
 | Mini-app rebuild (dev mode) | ✅ |
 | `.s1app` upgrade install (drag-drop newer version) | ✅ |
-| Mini-app uninstall | ❌ deleted |
-| User manually deletes `<install-slot>/data/` | ❌ deleted |
+| Mini-app uninstall (user-scope DB) | ❌ deleted |
+| Switching to a worktree of the same repo | ✅ same project DB |
+| Opening a different project | project DB switches; user DB unchanged |
 
-The `data/` directory is preserved across upgrade installs by design — the user's notes/state shouldn't disappear when an app updates.
+The DB lives outside the app's installed assets, so reinstalling or upgrading the app never touches your data. A project-scope DB persists in the repo's `.superone/apps/<appId>/data/` (add it to `.gitignore` — it is local runtime data, not source).
 
 ## Concurrency model
 
@@ -251,7 +270,7 @@ These are unavailable for **structural** reasons (cross-process IPC limits), not
 | `Statement.iterate()` (cursor) | Would need a stateful cursor session protocol — not built. **Use `LIMIT/OFFSET` pagination.** |
 | `db.loadExtension()` | Loads native code — defeats sandbox. |
 | `ATTACH DATABASE` / `DETACH DATABASE` | Could read another app's DB. |
-| Custom DB file path | Host always picks the path. |
+| Custom DB file path | Host picks the path; you only choose the scope (`db` vs `db.user`). |
 
 If you need any of these, the right answer is a remote DB — local SQLite is the wrong tool.
 
@@ -377,11 +396,11 @@ await superone.db.exec("DELETE FROM sqlite_sequence WHERE name IN ('notes', 'tag
 
 ## Inspecting the DB during development
 
-The DB file is a real SQLite file at:
+Each scope is a real SQLite file:
 
 ```
-~/.superone/apps/<appId>/data/main.db                          # user-scope app
-<projectDir>/.superone/apps/<appId>/data/main.db               # project-scope dev app
+~/.superone/apps/<appId>/data/main.db              # superone.db.user
+<repoRoot>/.superone/apps/<appId>/data/main.db     # superone.db (project, shared across worktrees)
 ```
 
 Open it from a terminal:
@@ -418,4 +437,10 @@ interface SuperOneDb {
   batch(statements: SuperOneDbStatement[]): Promise<SuperOneDbRunResult[]>
   pragma<T = unknown>(name: string, value?: string | number): Promise<T>
 }
+
+// `superone.db` is the project-scoped instance, with explicit accessors:
+//   superone.db          → project (default)
+//   superone.db.project  → project (explicit)
+//   superone.db.user     → machine-wide
+type SuperOneDbApi = SuperOneDb & { project: SuperOneDb; user: SuperOneDb }
 ```

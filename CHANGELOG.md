@@ -4,6 +4,16 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.40.3-alpha] - 2026-06-01
+
+### Added
+
+- Mini-app database and key-value storage are now dual-scoped and decoupled from install location — data is resolved by path specificity, so a mini-app's persisted state survives reinstalls and relocations.
+
+### Fixed
+
+- Prevent a native crash when dragging a file chip.
+
 ## [0.40.2-alpha] - 2026-05-31
 
 ### Added

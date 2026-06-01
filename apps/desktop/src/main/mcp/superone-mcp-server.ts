@@ -84,6 +84,29 @@ export function setToolSyncCallbacks(callbacks: ToolSyncCallbacks | null): void 
   toolSync = callbacks
 }
 
+const toolsChangedListeners = new Set<(sessionId: string) => void>()
+
+/**
+ * Subscribe to per-session tool-set changes. Used by the Codex path to trigger a
+ * `config/mcpServer/reload` so the agent picks up dynamically added/removed app
+ * tools (Codex snapshots tools once per thread and ignores `tools/list_changed`).
+ */
+export function addToolsChangedListener(listener: (sessionId: string) => void): () => void {
+  toolsChangedListeners.add(listener)
+  return () => { toolsChangedListeners.delete(listener) }
+}
+
+function emitToolsChanged(sessionId: string): void {
+  toolSync?.toolsChanged(sessionId)
+  for (const listener of toolsChangedListeners) {
+    try {
+      listener(sessionId)
+    } catch (err) {
+      log.warn('[superone-mcp] toolsChanged listener error: %s', err instanceof Error ? err.message : String(err))
+    }
+  }
+}
+
 export function initSuperoneMcpServer(windowGetter: () => BrowserWindow | null): void {
   getMainWindow = windowGetter
 }
@@ -255,7 +278,7 @@ export function registerAppTools(
     sessionId, projectDir, appId, toolSlug, tools.length)
   appToolDefs.set(key, { sessionId, projectDir, appId, toolSlug, tools })
 
-  toolSync?.toolsChanged(sessionId)
+  emitToolsChanged(sessionId)
 
   const states = sessionServers.get(sessionId)
   if (!states || states.size === 0) {
@@ -341,7 +364,7 @@ export function unregisterAppTools(sessionId: string, appId: string): void {
     }
   }
 
-  toolSync?.toolsChanged(sessionId)
+  emitToolsChanged(sessionId)
 }
 
 /**

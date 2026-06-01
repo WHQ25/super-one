@@ -68,6 +68,7 @@ class FakeBackend implements SessionBackend {
   async rewindFiles() { return { canRewind: false } }
   async reconnectMcp(): Promise<void> {}
   async toggleMcpServer(): Promise<void> {}
+  async reloadMcpServers(): Promise<void> {}
   async reloadPlugins() { return false }
   onEvent(h: (e: AgentEvent) => void) { this.eventListeners.add(h); return () => { this.eventListeners.delete(h) } }
   onProviderSessionId(h: (id: string) => void) { this.providerSessionIdListeners.add(h); return () => { this.providerSessionIdListeners.delete(h) } }

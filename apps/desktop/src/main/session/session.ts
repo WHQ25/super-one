@@ -594,6 +594,11 @@ export class Session implements SessionContract {
     return this.backend.reconnectMcp(serverName)
   }
 
+  async reloadMcpServers(): Promise<void> {
+    if (!this.backendStarted) return
+    return this.backend.reloadMcpServers()
+  }
+
   async toggleMcpServer(serverName: string, enabled: boolean): Promise<void> {
     this.assertStarted()
     return this.backend.toggleMcpServer(serverName, enabled)

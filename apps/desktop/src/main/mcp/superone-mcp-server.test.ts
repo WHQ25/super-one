@@ -69,6 +69,7 @@ import {
   submitToolIntercept,
   cancelToolIntercept,
   setToolSyncCallbacks,
+  addToolsChangedListener,
   clearSessionPendingCalls,
   executeAppTool,
 } from './superone-mcp-server'
@@ -127,6 +128,23 @@ describe('registerAppTools / unregisterAppTools', () => {
 
     expect(mockRemove).toHaveBeenCalled()
     expect(mockSendToolListChanged).toHaveBeenCalled()
+  })
+
+  it('notifies tools-changed listeners on register and unregister (drives Codex MCP reload)', () => {
+    const listener = vi.fn()
+    const unsubscribe = addToolsChangedListener(listener)
+
+    registerAppTools(PROJ_A, PROJ_A, 'test-app', 'myapp', makeTools('do_thing'))
+    expect(listener).toHaveBeenCalledWith(PROJ_A)
+
+    listener.mockClear()
+    unregisterAppTools(PROJ_A, 'test-app')
+    expect(listener).toHaveBeenCalledWith(PROJ_A)
+
+    listener.mockClear()
+    unsubscribe()
+    registerAppTools(PROJ_A, PROJ_A, 'test-app', 'myapp', makeTools('do_thing'))
+    expect(listener).not.toHaveBeenCalled()
   })
 
   it('skips duplicate tool registration', () => {

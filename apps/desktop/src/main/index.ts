@@ -21,7 +21,7 @@ import { initWorkerHost, startWorker, stopWorker, stopWorkersByAppId, workerStat
 import { buildMiniAppHost } from '@superone/shared/miniapp-host'
 import { previewApp, confirmInstall, cancelInstall, uninstallApp, packApp, getInstallMeta, getPreapproved, getPreapprovedByPath, setPreapproved, setPreapprovedByPath } from './miniapp/miniapp-packager'
 import { previewMcpbBundle, installMcpbBundle, uninstallMcpbBundle, listInstalledMcpb, revealMcpbBundle } from './mcpb/mcpb-installer'
-import { initSuperoneMcpServer, registerAppTools, unregisterAppTools, unregisterAppAcrossSessions, resolveToolCall, rejectToolCall, notifyAppReady as notifyMiniAppReady, loadPreapprovedTools, updatePreapprovedTools, registerAppTemplates, unregisterAppTemplates, submitToolIntercept, cancelToolIntercept, clearSessionPendingCalls as clearSessionPendingMiniAppCalls, disposeSuperoneMcpServer, setSessionHostProvider, clearAppReadyGate, isAppStillAuthorizedInProject } from './mcp/superone-mcp-server'
+import { initSuperoneMcpServer, registerAppTools, unregisterAppTools, unregisterAppAcrossSessions, resolveToolCall, rejectToolCall, notifyAppReady as notifyMiniAppReady, loadPreapprovedTools, updatePreapprovedTools, registerAppTemplates, unregisterAppTemplates, submitToolIntercept, cancelToolIntercept, clearSessionPendingCalls as clearSessionPendingMiniAppCalls, disposeSuperoneMcpServer, setSessionHostProvider, clearAppReadyGate, isAppStillAuthorizedInProject, addToolsChangedListener } from './mcp/superone-mcp-server'
 import { startSuperoneMcpStdioBridge, stopSuperoneMcpStdioBridge } from './mcp/superone-mcp-stdio-ipc'
 import { query } from '@anthropic-ai/claude-agent-sdk'
 import { resolveSdkClaudeBinary } from './agent/claude-binary'
@@ -2060,6 +2060,23 @@ function registerIpcHandlers(): void {
 
   initSuperoneMcpServer(() => mainWindow)
   setSessionHostProvider(() => sessionManager)
+
+  // When a session's app-tool set changes (mini-app opened/closed/@-mentioned),
+  // ask its backend to refresh MCP servers. Codex snapshots tools once per thread
+  // and ignores `tools/list_changed`, so it needs an explicit reload to pick up
+  // the new tools on the next turn; Claude no-ops. Debounced per session to
+  // coalesce bursts (e.g. an app registering several tools at once).
+  const mcpReloadTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  addToolsChangedListener((sessionId) => {
+    const existing = mcpReloadTimers.get(sessionId)
+    if (existing) clearTimeout(existing)
+    mcpReloadTimers.set(sessionId, setTimeout(() => {
+      mcpReloadTimers.delete(sessionId)
+      sessionManager.getSession(sessionId)?.reloadMcpServers().catch((err) =>
+        log.debug('[mcp-reload] reloadMcpServers failed for %s: %s', sessionId, err instanceof Error ? err.message : String(err)),
+      )
+    }, 300))
+  })
   setPeerBroadcaster((sessionId, appId, event, payload) => {
     const hasWin = !!(mainWindow && !mainWindow.isDestroyed())
     trace('miniapp.peer', 'broadcast', { sessionId, appId, event, payload, hasMainWindow: hasWin })

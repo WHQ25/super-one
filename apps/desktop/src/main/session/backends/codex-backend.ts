@@ -126,6 +126,35 @@ export function setCodexServiceFactory(factory: (() => CodexServiceDeps) | null)
   codexServiceFactory = factory
 }
 
+function mapCodexMcpServerStatus(raw: unknown): McpServerInfo | null {
+  if (!raw || typeof raw !== 'object') return null
+  const entry = raw as { name?: unknown; serverInfo?: unknown; tools?: unknown; authStatus?: unknown }
+  const name = typeof entry.name === 'string' ? entry.name : ''
+  if (!name) return null
+  const connected = entry.serverInfo != null
+  const status: McpServerInfo['status'] = connected
+    ? 'connected'
+    : entry.authStatus === 'notLoggedIn' || entry.authStatus === 'oAuth'
+      ? 'needs-auth'
+      : 'failed'
+  const toolsMap = entry.tools && typeof entry.tools === 'object'
+    ? Object.values(entry.tools as Record<string, { name?: unknown; description?: unknown }>)
+    : []
+  const tools = toolsMap
+    .filter((t): t is { name?: unknown; description?: unknown } => t != null && typeof t === 'object')
+    .map((t) => ({
+      name: typeof t.name === 'string' ? t.name : '',
+      ...(typeof t.description === 'string' ? { description: t.description } : {}),
+    }))
+    .filter((t) => t.name)
+  return {
+    name,
+    status,
+    toolCount: tools.length,
+    ...(tools.length > 0 ? { tools } : {}),
+  }
+}
+
 export class CodexBackend implements SessionBackend {
   readonly kind: HarnessId = 'codex'
 
@@ -749,11 +778,34 @@ export class CodexBackend implements SessionBackend {
   }
 
   async getMcpServerStatus(): Promise<McpServerInfo[]> {
-    return []
+    const session = this.session
+    const handle = session?.connectionHandle
+    if (!session || !handle) return []
+    try {
+      const result = await handle.connection.request('mcpServerStatus/list', {
+        threadId: session.threadId ?? undefined,
+        detail: 'full',
+      })
+      const data = Array.isArray(result.data) ? result.data : []
+      return data.map((raw) => mapCodexMcpServerStatus(raw)).filter((s): s is McpServerInfo => s !== null)
+    } catch (err) {
+      log.debug('[CodexBackend] getMcpServerStatus failed: %s', err instanceof Error ? err.message : String(err))
+      return []
+    }
   }
 
   async rewindFiles(_userMessageId: string, _opts?: { dryRun?: boolean }): Promise<RewindFilesResult> {
     return { canRewind: false, error: 'rewindFiles not supported by Codex' }
+  }
+
+  async reloadMcpServers(): Promise<void> {
+    const handle = this.session?.connectionHandle
+    if (!handle) return
+    try {
+      await handle.connection.request('config/mcpServer/reload')
+    } catch (err) {
+      log.debug('[CodexBackend] reloadMcpServers failed: %s', err instanceof Error ? err.message : String(err))
+    }
   }
 
   async reconnectMcp(_serverName: string): Promise<void> {

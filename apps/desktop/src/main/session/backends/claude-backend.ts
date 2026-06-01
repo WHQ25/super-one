@@ -465,6 +465,12 @@ export class ClaudeBackend implements SessionBackend {
     }
   }
 
+  async reloadMcpServers(): Promise<void> {
+    // No-op: the in-process SDK MCP server reflects the current tool set on every
+    // turn, so dynamically added/removed superone app tools are picked up without
+    // an explicit refresh (unlike Codex, which snapshots tools once per thread).
+  }
+
   async reconnectMcp(serverName: string): Promise<void> {
     const query = await this.ensureQuery()
     if (!query) throw new Error('No active session')

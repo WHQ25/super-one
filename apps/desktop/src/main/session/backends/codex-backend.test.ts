@@ -736,7 +736,79 @@ describe('CodexBackend unsupported operations degrade gracefully', () => {
     expect(result.canRewind).toBe(false)
   })
 
-  it('getMcpServerStatus returns empty', async () => {
+  it('getMcpServerStatus returns empty without an active app-server connection', async () => {
+    expect(await backend.getMcpServerStatus()).toEqual([])
+  })
+
+  it('getMcpServerStatus maps codex mcpServerStatus/list into shared McpServerInfo', async () => {
+    const request = vi.fn(async () => ({
+      data: [
+        {
+          name: 'superone',
+          serverInfo: { name: 'superone', version: '1.0.0' },
+          tools: {
+            widget_show: { name: 'widget_show', description: 'Render a widget' },
+            session_rename: { name: 'session_rename' },
+          },
+          authStatus: 'unsupported',
+        },
+        {
+          name: 'github',
+          serverInfo: null,
+          tools: {},
+          authStatus: 'notLoggedIn',
+        },
+        {
+          name: 'linear',
+          serverInfo: null,
+          tools: {},
+          authStatus: 'oAuth',
+        },
+        {
+          name: 'broken',
+          serverInfo: null,
+          tools: {},
+          authStatus: 'unsupported',
+        },
+      ],
+    }))
+    const session = (backend as unknown as { session: { connectionHandle: unknown; threadId: string | null } }).session
+    session.connectionHandle = { connection: { request }, close: vi.fn(), getStderr: () => '', onClosed: vi.fn(() => () => {}) }
+    session.threadId = 'th-9'
+
+    const status = await backend.getMcpServerStatus()
+
+    expect(request).toHaveBeenCalledWith('mcpServerStatus/list', { threadId: 'th-9', detail: 'full' })
+    expect(status).toEqual([
+      { name: 'superone', status: 'connected', toolCount: 2, tools: [
+        { name: 'widget_show', description: 'Render a widget' },
+        { name: 'session_rename' },
+      ] },
+      { name: 'github', status: 'needs-auth', toolCount: 0 },
+      { name: 'linear', status: 'needs-auth', toolCount: 0 },
+      { name: 'broken', status: 'failed', toolCount: 0 },
+    ])
+  })
+
+  it('reloadMcpServers sends config/mcpServer/reload on the app-server connection', async () => {
+    const request = vi.fn(async () => ({}))
+    const session = (backend as unknown as { session: { connectionHandle: unknown } }).session
+    session.connectionHandle = { connection: { request }, close: vi.fn(), getStderr: () => '', onClosed: vi.fn(() => () => {}) }
+
+    await backend.reloadMcpServers()
+
+    expect(request).toHaveBeenCalledWith('config/mcpServer/reload')
+  })
+
+  it('reloadMcpServers is a no-op without an active connection', async () => {
+    await expect(backend.reloadMcpServers()).resolves.toBeUndefined()
+  })
+
+  it('getMcpServerStatus returns empty when the request rejects', async () => {
+    const request = vi.fn(async () => { throw new Error('mcp-registry busy') })
+    const session = (backend as unknown as { session: { connectionHandle: unknown } }).session
+    session.connectionHandle = { connection: { request }, close: vi.fn(), getStderr: () => '', onClosed: vi.fn(() => () => {}) }
+
     expect(await backend.getMcpServerStatus()).toEqual([])
   })
 

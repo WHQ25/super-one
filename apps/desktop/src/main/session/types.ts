@@ -205,6 +205,7 @@ export interface SessionBackend {
   rewindFiles(userMessageId: string, opts?: { dryRun?: boolean }): Promise<RewindFilesResult>
   reconnectMcp(serverName: string): Promise<void>
   toggleMcpServer(serverName: string, enabled: boolean): Promise<void>
+  reloadMcpServers(): Promise<void>
   reloadPlugins(): Promise<boolean>
   dequeueMessage(clientMessageId: string): boolean
   getPendingInteractions(): AgentEvent[]
@@ -261,6 +262,7 @@ export interface Session {
   rewindFiles(userMessageId: string, opts?: { dryRun?: boolean }): Promise<RewindFilesResult>
   reconnectMcp(serverName: string): Promise<void>
   toggleMcpServer(serverName: string, enabled: boolean): Promise<void>
+  reloadMcpServers(): Promise<void>
   reloadPlugins(): Promise<boolean>
   prewarm(hint?: PrewarmHint): void
   dequeueMessage(clientMessageId: string): boolean

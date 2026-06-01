@@ -16,8 +16,16 @@ function Demo() {
     await window.superone.fs.writeFile(path, stamp)
     const back = await window.superone.fs.readFile(path)
     const stat = await window.superone.fs.stat(path)
-    setOut(`writeFile(${path})\nreadFile → "${back}"\nstat → ${stat.size} bytes`)
+    setOut(`writeFile(${path})  → project root\nreadFile → "${back}"\nstat → ${stat.size} bytes`)
     window.superone.ui.toast('File round-trip complete', 'success')
+  }
+  const appData = async () => {
+    const path = '@app/showcase-state.json'
+    const state = { lastOpened: new Date().toISOString() }
+    await window.superone.fs.writeFile(path, JSON.stringify(state))
+    const back = await window.superone.fs.readFile(path)
+    setOut(`writeFile(${path})  → app data dir\nreadFile → ${back}`)
+    window.superone.ui.toast('App-data round-trip complete', 'success')
   }
 
   return (
@@ -25,6 +33,7 @@ function Demo() {
       <Row>
         <Btn onClick={list}>readDir('.')</Btn>
         <Btn onClick={roundTrip}>write → read → stat</Btn>
+        <Btn onClick={appData}>@app data round-trip</Btn>
       </Row>
       <Out>{out}</Out>
     </div>
@@ -63,9 +72,13 @@ const entries = await superone.fs.readDir('.')
 document.getElementById('list').textContent =
   entries.map((e) => e.name).join(', ')
 
-await superone.fs.writeFile('note.txt', 'hello')
+await superone.fs.writeFile('note.txt', 'hello')      // bare path → project root
 const text = await superone.fs.readFile('note.txt')   // "hello"
 const buf = await superone.fs.readFile('logo.png', { binary: true })
+
+// Address a non-project scope explicitly with an @scope/ prefix
+await superone.fs.writeFile('@app/state.json', '{}')  // → app data dir
+await superone.fs.readFile('@user/.config/app/prefs')  // → home root
 
 // Watch for changes (recursive); unwatch on close
 const id = await superone.fs.watch('src', (ev) => {

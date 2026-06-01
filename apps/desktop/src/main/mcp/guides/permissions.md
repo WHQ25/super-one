@@ -34,6 +34,8 @@ Each entry requires a `reason` field — shown to the user during installation.
 
 An app can declare multiple entries to access several directories. If no `fs` is declared, the app has no filesystem access.
 
+When you declare scopes across more than one root (e.g. `project` + `app`), a **bare** path always means the **project** root. Reach the other scopes with an `@<scope>/` prefix — `@app/state.json`, `@user/.config/my-app/x`. See the `api-fs` topic → "Path Scopes".
+
 Once declared, use the `api-fs` bridge API to read/write files.
 
 ## Network (`permissions.network`)

@@ -17,10 +17,13 @@ const DEV_LINK_FILE = '.s1-dev.json'
 
 const userAppsDir = () => join(app.getPath('home'), '.superone', 'apps')
 
+export type FsScopeKind = 'project' | 'user' | 'app'
+
 export interface AllowedDir {
   path: string
   access: MiniAppFsAccess
   root?: string
+  scope?: FsScopeKind
 }
 
 function appKey(projectDir: string, appId: string): string {
@@ -111,16 +114,36 @@ function guardSuperone(resolved: string, dirPath: string): void {
   }
 }
 
+const SCOPE_PREFIX = /^@(project|user|app)\//
+
+// Bare paths default to the project scope group; if no project scope exists, fall back
+// to the sole declared root. Multiple distinct non-project roots are ambiguous for a
+// bare path — a relative path means a different real file under each root, and choosing
+// by path-length would silently redirect writes. Require explicit `@scope/` addressing.
+function defaultGroup(dirs: AllowedDir[], relativePath: string): AllowedDir[] {
+  const project = dirs.filter((d) => d.scope === 'project')
+  if (project.length) return project
+  const roots = new Set(dirs.map((d) => d.root ?? d.path))
+  if (roots.size === 1) return dirs
+  throw new Error(`Ambiguous path '${relativePath}': declare a scope prefix (@app/…, @user/…) — bare paths require a project scope`)
+}
+
 export function resolveSafePathMulti(
   dirs: AllowedDir[],
   relativePath: string,
   op: 'read' | 'write' = 'read',
 ): { resolved: string; access: MiniAppFsAccess } {
-  // Single scope keeps acting as the base for relative paths (legacy shortcut):
+  // Explicit scope addressing (`@app/…`, `@user/…`, `@project/…`) makes a relative path
+  // unambiguous across roots. The remainder resolves against that scope group's root.
+  const prefix = SCOPE_PREFIX.exec(relativePath)
+  const targetScope = prefix ? (prefix[1] as FsScopeKind) : null
+  const rest = prefix ? relativePath.slice(prefix[0].length) : relativePath
+
+  // Single scope keeps acting as the base for bare relative paths (legacy shortcut):
   // a lone `asset` rw scope resolves `images/x` to `<asset>/images/x`.
-  if (dirs.length === 1) {
+  if (!targetScope && dirs.length === 1) {
     const dir = dirs[0]
-    const resolved = resolve(dir.path, relativePath)
+    const resolved = resolve(dir.path, rest)
     if (!isWithin(dir.path, resolved)) {
       throw new Error(`Path not within allowed directories: ${relativePath}`)
     }
@@ -131,30 +154,34 @@ export function resolveSafePathMulti(
     return { resolved, access: dir.access }
   }
 
-  // Multi scope: resolve the path ONCE per declared root (project scopes share the
-  // project root), then select among the scopes that contain that single absolute
-  // path by specificity (longest dir.path); for writes prefer a readwrite scope.
-  const roots = [...new Set(dirs.map((d) => d.root ?? d.path))]
-  const matches: { resolved: string; dir: AllowedDir }[] = []
-  for (const root of roots) {
-    const resolved = resolve(root, relativePath)
-    if (!isWithin(root, resolved)) continue
-    for (const dir of dirs) {
-      if (isWithin(dir.path, resolved)) matches.push({ resolved, dir })
-    }
+  // Pick the candidate scope group: an explicit prefix selects scopes of that kind,
+  // otherwise the bare-path default group. Scopes within a group share ONE root, so
+  // the longest-`path` specificity rule only ever disambiguates same-root subdirs.
+  const group = targetScope
+    ? dirs.filter((d) => d.scope === targetScope)
+    : defaultGroup(dirs, relativePath)
+  if (group.length === 0) {
+    throw new Error(`No '@${targetScope}' directory declared: ${relativePath}`)
   }
+
+  const root = group[0].root ?? group[0].path
+  const resolved = resolve(root, rest)
+  if (!isWithin(root, resolved)) {
+    throw new Error(`Path not within allowed directories: ${relativePath}`)
+  }
+  const matches = group.filter((d) => isWithin(d.path, resolved))
   if (matches.length === 0) {
     throw new Error(`Path not within allowed directories: ${relativePath}`)
   }
-  matches.sort((a, b) => b.dir.path.length - a.dir.path.length)
+  matches.sort((a, b) => b.path.length - a.path.length)
   const chosen = op === 'write'
-    ? (matches.find((m) => m.dir.access === 'readwrite') ?? matches[0])
+    ? (matches.find((d) => d.access === 'readwrite') ?? matches[0])
     : matches[0]
-  guardSuperone(chosen.resolved, chosen.dir.path)
-  if (op === 'write' && chosen.dir.access !== 'readwrite') {
+  guardSuperone(resolved, chosen.path)
+  if (op === 'write' && chosen.access !== 'readwrite') {
     throw new Error(`Write access denied: ${relativePath} (read-only permission)`)
   }
-  return { resolved: chosen.resolved, access: chosen.dir.access }
+  return { resolved, access: chosen.access }
 }
 
 type GitHeadChangeCallback = (event: { projectDir: string; appId: string }) => void
@@ -708,7 +735,7 @@ export function validatePath(basePath: string, requestedPath: string): string | 
   return resolved
 }
 
-const WRITE_OPS: Set<MiniAppFsOp> = new Set(['writeFile', 'deleteFile', 'rename', 'mkdir'])
+const WRITE_OPS: Set<MiniAppFsOp> = new Set(['writeFile', 'deleteFile', 'trashFile', 'rename', 'mkdir'])
 
 export async function handleFsRequest(
   projectDir: string,
@@ -767,6 +794,10 @@ export async function handleFsRequest(
     }
     case 'deleteFile': {
       await rm(safe(args.path as string))
+      return undefined
+    }
+    case 'trashFile': {
+      await shell.trashItem(safe(args.path as string))
       return undefined
     }
     case 'rename': {

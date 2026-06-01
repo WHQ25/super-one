@@ -10,7 +10,7 @@ import { activateWorktree, getCheckedOutBranches, getHandoffPreview, getWorktree
 import { is } from '@electron-toolkit/utils'
 import log from './logger'
 import { startMediaServer, getMediaServerPort } from './media-server'
-import { getAppBasePath, cacheAppEntry, getAppInstallDir, generateCSP, readManifest, validatePath, discoverApps, setAllowedDirectories, clearAllowedDirectories, handleFsRequest, handleGitRequest, discoverProjectApps, startWatch, stopWatch, onFsWatchEvent, onGitHeadChangeEvent, getAllowedDirs, resolveSafePathMulti, setAllowedMedia, clearAllowedMedia, isMediaAllowed, appIdFromUrl, listDevRegistryView, registerDevMiniApp, unregisterDevMiniApp, installDevPointer, removeDevPointer, setDevPointerEnabled } from './miniapp/miniapp-service'
+import { getAppBasePath, cacheAppEntry, getAppInstallDir, generateCSP, readManifest, validatePath, discoverApps, setAllowedDirectories, clearAllowedDirectories, handleFsRequest, handleGitRequest, discoverProjectApps, startWatch, stopWatch, onFsWatchEvent, onGitHeadChangeEvent, getAllowedDirs, resolveSafePathMulti, setAllowedMedia, clearAllowedMedia, isMediaAllowed, appIdFromUrl, listDevRegistryView, registerDevMiniApp, unregisterDevMiniApp, installDevPointer, removeDevPointer, setDevPointerEnabled, type AllowedDir } from './miniapp/miniapp-service'
 import * as devRegistry from './miniapp/dev-registry'
 import { handleDbRequest, closeAllDbConnections } from './miniapp/miniapp-db'
 import { handleKvRequest, type KvOp, type KvRequestArgs } from './miniapp/miniapp-kv'
@@ -459,11 +459,11 @@ function createSessionWindow(projectPath: string, sessionId: string, title?: str
 function setAppFsPermissions(appId: string, manifest: { permissions?: { fs?: Array<{ scope: string; path?: string; access?: string; reason: string }> } }, projectDir: string, installDir: string): void {
   const fsEntries = manifest.permissions?.fs ?? []
   if (fsEntries.length === 0) return
-  const dirs = fsEntries.flatMap((entry) => {
+  const dirs = fsEntries.flatMap((entry): AllowedDir[] => {
     switch (entry.scope) {
-      case 'project': return [{ path: join(projectDir, entry.path!), access: entry.access as 'read' | 'readwrite', root: projectDir } as const]
-      case 'user': return [{ path: join(homedir(), entry.path!), access: entry.access as 'read' | 'readwrite', root: homedir() } as const]
-      case 'app': { const dataDir = join(installDir, 'data'); return [{ path: dataDir, access: 'readwrite' as const, root: dataDir }] }
+      case 'project': return [{ path: join(projectDir, entry.path!), access: entry.access as 'read' | 'readwrite', root: projectDir, scope: 'project' }]
+      case 'user': return [{ path: join(homedir(), entry.path!), access: entry.access as 'read' | 'readwrite', root: homedir(), scope: 'user' }]
+      case 'app': { const dataDir = join(installDir, 'data'); return [{ path: dataDir, access: 'readwrite', root: dataDir, scope: 'app' }] }
       default: return []
     }
   })

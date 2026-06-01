@@ -667,6 +667,106 @@ describe('fs permission resolver with a single (legacy) scope', () => {
   })
 })
 
+describe('fs permission resolver across multiple roots (project + app + user)', () => {
+  const PROJ = '/projects/aigc'
+  // Dev-install data dir is *longer* than the project dir, so the old length tiebreak
+  // would wrongly favour it for bare paths — this is the latent bug under guard.
+  const DATA = `${PROJ}/.superone/apps/aigc/data`
+  const USER = '/mock-home/.config/aigc'
+  const dirs = [
+    { path: PROJ, access: 'read' as const, root: PROJ, scope: 'project' as const },
+    { path: `${PROJ}/asset`, access: 'readwrite' as const, root: PROJ, scope: 'project' as const },
+    { path: DATA, access: 'readwrite' as const, root: DATA, scope: 'app' as const },
+    { path: USER, access: 'readwrite' as const, root: '/mock-home', scope: 'user' as const },
+  ]
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockWriteFile.mockResolvedValue(undefined)
+    mockMkdir.mockResolvedValue(undefined)
+    clearAllowedDirectories(PROJ, 'aigc')
+    setAllowedDirectories(PROJ, 'aigc', dirs)
+  })
+
+  it('routes a bare write to the project root, not the longer app-data root', async () => {
+    await handleFsRequest(PROJ, 'aigc', 'writeFile', { path: 'asset/images/x.png', content: 'x' })
+    expect(mockWriteFile.mock.calls.at(-1)![0]).toBe(`${PROJ}/asset/images/x.png`)
+  })
+
+  it('routes a bare read to the project root, not the app-data root', async () => {
+    mockReadFile.mockResolvedValue('img')
+    await handleFsRequest(PROJ, 'aigc', 'readFile', { path: 'asset/images/x.png' })
+    expect(mockReadFile.mock.calls.at(-1)![0]).toBe(`${PROJ}/asset/images/x.png`)
+  })
+
+  it('denies a bare write to a project read-only path instead of leaking into app data', async () => {
+    await expect(
+      handleFsRequest(PROJ, 'aigc', 'writeFile', { path: 'README.md', content: 'x' }),
+    ).rejects.toThrow(/read-only permission/)
+    expect(mockWriteFile).not.toHaveBeenCalled()
+  })
+
+  it('routes an explicit @app/ path to the app data dir', async () => {
+    await handleFsRequest(PROJ, 'aigc', 'writeFile', { path: '@app/state.json', content: 'x' })
+    expect(mockWriteFile.mock.calls.at(-1)![0]).toBe(`${DATA}/state.json`)
+  })
+
+  it('routes an explicit @project/ path to the project root', async () => {
+    await handleFsRequest(PROJ, 'aigc', 'writeFile', { path: '@project/asset/y.png', content: 'x' })
+    expect(mockWriteFile.mock.calls.at(-1)![0]).toBe(`${PROJ}/asset/y.png`)
+  })
+
+  it('routes an explicit @user/ path to the user (home) root', async () => {
+    await handleFsRequest(PROJ, 'aigc', 'writeFile', { path: '@user/.config/aigc/prefs.json', content: 'x' })
+    expect(mockWriteFile.mock.calls.at(-1)![0]).toBe(`${USER}/prefs.json`)
+  })
+
+  it('rejects an explicit @app/ path that escapes the app data dir', async () => {
+    await expect(
+      handleFsRequest(PROJ, 'aigc', 'writeFile', { path: '@app/../escape.json', content: 'x' }),
+    ).rejects.toThrow(/not within allowed directories/)
+  })
+
+  it('rejects an @app/ prefix when no app scope is declared', async () => {
+    clearAllowedDirectories(PROJ, 'aigc')
+    setAllowedDirectories(PROJ, 'aigc', [{ path: PROJ, access: 'readwrite', root: PROJ, scope: 'project' }])
+    await expect(
+      handleFsRequest(PROJ, 'aigc', 'writeFile', { path: '@app/state.json', content: 'x' }),
+    ).rejects.toThrow(/@app/)
+  })
+})
+
+describe('fs permission resolver with multiple non-project roots', () => {
+  const PROJ = '/projects/noproj'
+  const DATA = `${PROJ}/.superone/apps/noproj/data`
+  const USER = '/mock-home/.config/noproj'
+  const dirs = [
+    { path: DATA, access: 'readwrite' as const, root: DATA, scope: 'app' as const },
+    { path: USER, access: 'readwrite' as const, root: '/mock-home', scope: 'user' as const },
+  ]
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockWriteFile.mockResolvedValue(undefined)
+    mockMkdir.mockResolvedValue(undefined)
+    clearAllowedDirectories(PROJ, 'noproj')
+    setAllowedDirectories(PROJ, 'noproj', dirs)
+  })
+
+  it('rejects a bare path as ambiguous across distinct roots', async () => {
+    await expect(
+      handleFsRequest(PROJ, 'noproj', 'writeFile', { path: 'state.json', content: 'x' }),
+    ).rejects.toThrow(/scope prefix|ambiguous/i)
+  })
+
+  it('still resolves explicit @app/ and @user/ paths', async () => {
+    await handleFsRequest(PROJ, 'noproj', 'writeFile', { path: '@app/state.json', content: 'x' })
+    expect(mockWriteFile.mock.calls.at(-1)![0]).toBe(`${DATA}/state.json`)
+    await handleFsRequest(PROJ, 'noproj', 'writeFile', { path: '@user/.config/noproj/p.json', content: 'x' })
+    expect(mockWriteFile.mock.calls.at(-1)![0]).toBe(`${USER}/p.json`)
+  })
+})
+
 describe('fs permissions cross-project isolation', () => {
   beforeEach(() => {
     vi.clearAllMocks()

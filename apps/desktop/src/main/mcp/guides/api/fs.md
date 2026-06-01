@@ -2,6 +2,22 @@
 
 Requires at least one entry in `permissions.fs` (see `permissions` topic). All paths are relative to the declared directories.
 
+## Path Scopes
+
+A **bare** relative path resolves against the **project root** (your `scope: "project"` directories). To reach a non-project scope, prefix the path with `@<scope>/`:
+
+```js
+await superone.fs.writeFile('output.md', 'hi')             // → <projectDir>/output.md
+await superone.fs.writeFile('@app/state.json', '{}')       // → app data dir
+await superone.fs.readFile('@user/.config/my-app/prefs')   // → ~/.config/my-app/prefs
+```
+
+- `@project/…` — explicit form of a bare path (project root).
+- `@app/…` — the app's data directory (`scope: "app"`).
+- `@user/…` — resolves under the home directory (`~`); write the full sub-path, e.g. `@user/.config/my-app/x`.
+
+A bare path is only unambiguous when a `project` scope is declared (or all your scopes share one root). If you declare scopes spanning different roots without a project scope, bare paths are rejected — use an explicit `@<scope>/` prefix.
+
 ## Reading
 
 ```js
@@ -30,10 +46,13 @@ Parent directories are created automatically if they don't exist.
 Requires `access: "readwrite"` on the directory.
 
 ```js
-await superone.fs.deleteFile('temp.txt')
+await superone.fs.deleteFile('temp.txt')                          // permanent removal
+await superone.fs.trashFile('temp.txt')                           // move to OS trash (recoverable)
 await superone.fs.rename('old.txt', 'new.txt')
 await superone.fs.mkdir('output/images')                          // recursive
 ```
+
+Prefer `trashFile` for user data: it moves the entry to the system trash so the user can restore it. Use `deleteFile` only for throwaway temp files where permanent removal is intended.
 
 ## File Watching
 
@@ -95,6 +114,7 @@ interface SuperOneFs {
   glob(pattern: string): Promise<string[]>
   stat(path: string): Promise<SuperOneFsStat>
   deleteFile(path: string): Promise<void>
+  trashFile(path: string): Promise<void>
   rename(from: string, to: string): Promise<void>
   mkdir(path: string): Promise<void>
   watch(path: string, callback: (event: SuperOneFsWatchEvent) => void): Promise<number>

@@ -4,6 +4,19 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.41.0-alpha] - 2026-06-01
+
+### Added
+
+- Terminal color schemes — choose from Ghostty-based light/dark ANSI palettes (Monokai Remastered, Catppuccin, Tokyo Night, Dracula+, Nord, Gruvbox, and more) with a live preview. Defaults: Monokai Remastered (dark), Catppuccin Latte (light).
+- New Appearance settings page grouping Interface and Terminal controls, separated out from General (Language stays in General).
+- Font selection — pick the UI font and terminal font (with monospace filtering) plus terminal font size, using the system's installed fonts.
+
+### Fixed
+
+- Mini-app upgrades now take effect without an app restart — protocol responses are served with `no-store`, so reopening a panel always loads the latest version instead of a cached copy.
+- Mini-app author type definitions (`superone.d.ts`) are now generated from a single source of truth, fixing drift that left out `ui.startDrag` and the standalone tool renderer phase.
+
 ## [0.40.3-alpha] - 2026-06-01
 
 ### Added

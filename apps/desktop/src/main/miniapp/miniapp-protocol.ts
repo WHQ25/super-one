@@ -157,12 +157,12 @@ export function registerMiniAppProtocolHandlers(proto: Protocol): void {
         const manifest = await readManifest(basePath)
         const csp = manifest ? generateCSP(manifest) : "default-src 'none'"
         return new Response(injected, {
-          headers: { 'Content-Type': 'text/html; charset=utf-8', 'Content-Security-Policy': csp },
+          headers: { 'Content-Type': 'text/html; charset=utf-8', 'Content-Security-Policy': csp, 'Cache-Control': 'no-store' },
         })
       }
 
       return new Response(data, {
-        headers: { 'Content-Type': contentType, 'Content-Length': String(data.byteLength) },
+        headers: { 'Content-Type': contentType, 'Content-Length': String(data.byteLength), 'Cache-Control': 'no-store' },
       })
     } catch (err) {
       log.error('[superone-app] failed:', err)
@@ -199,7 +199,7 @@ export function registerMiniAppProtocolHandlers(proto: Protocol): void {
         const ext = resolved.split('.').pop()?.toLowerCase() ?? ''
         const contentType = MINIAPP_MIME[ext] ?? 'application/octet-stream'
         return new Response(data, {
-          headers: { 'Content-Type': contentType, 'Content-Length': String(data.byteLength) },
+          headers: { 'Content-Type': contentType, 'Content-Length': String(data.byteLength), 'Cache-Control': 'no-store' },
         })
       }
 

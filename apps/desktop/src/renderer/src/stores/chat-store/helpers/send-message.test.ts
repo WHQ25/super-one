@@ -30,9 +30,12 @@ vi.mock('@/stores/app', () => ({
 vi.mock('@/stores/activity-view-state', () => ({
   useActivityViewStateStore: { getState: () => ({ seedFromCurrent: vi.fn() }) },
 }))
+const mockMiniApps: Array<{ id: string; manifest: Record<string, unknown> }> = []
 vi.mock('@/stores/miniapp', () => ({
-  useMiniAppStore: { getState: () => ({ apps: [], openApps: {} }), setState: vi.fn() },
+  useMiniAppStore: { getState: () => ({ apps: mockMiniApps, openApps: {} }), setState: vi.fn() },
 }))
+const mockRunCodexCommand = vi.fn().mockResolvedValue(undefined)
+vi.mock('../codex/runner', () => ({ runCodexCommand: mockRunCodexCommand }))
 
 const mockActivateWorktree = vi.fn().mockResolvedValue({ ok: true, path: '/wt/feature-x' })
 const mockSendMessage = vi.fn().mockResolvedValue(undefined)
@@ -100,6 +103,8 @@ beforeEach(() => {
   mockMiniAppAuthorize.mockReset().mockResolvedValue(undefined)
   mockResumeSession.mockReset().mockResolvedValue(null)
   mockCodexGetAuthStatus.mockReset().mockResolvedValue({ mode: 'auto', signedIn: false })
+  mockRunCodexCommand.mockReset().mockResolvedValue(undefined)
+  mockMiniApps.length = 0
   vi.spyOn(console, 'error').mockImplementation(() => {})
 })
 
@@ -249,6 +254,51 @@ describe('sendMessageImpl: queued send (streaming)', () => {
     expect(sess.awaitingAssistantReply).toBe(true)
     expect(sess.queuedMessages).toHaveLength(1)
     expect(sess.messages).toHaveLength(0)
+  })
+})
+
+describe('sendMessageImpl: miniapp tool reminder', () => {
+  const excalidrawApp = {
+    id: 'excalidraw',
+    manifest: {
+      name: 'Excalidraw',
+      toolSlug: 'excalidraw',
+      tools: [
+        { name: 'read_scene', description: 'Read the current canvas state' },
+        { name: 'clear_canvas', description: 'Clear all elements from the canvas' },
+      ],
+    },
+  }
+
+  it('enumerates each tool by exact full name for codex so it discovers them without tool search', async () => {
+    mockMiniApps.push(excalidrawApp)
+    seedProject('/proj', 'sid-1', {
+      preferredProvider: 'codex',
+      sessionProvider: 'codex',
+      mentions: [{ kind: 'miniapp', value: 'excalidraw', displayName: 'Excalidraw' }],
+    })
+
+    await useChatStore.getState().sendMessage('@Excalidraw redraw it')
+
+    const { finalContent } = mockRunCodexCommand.mock.calls[0][2]
+    expect(finalContent).toContain('mcp__superone.excalidraw__read_scene')
+    expect(finalContent).toContain('mcp__superone.excalidraw__clear_canvas')
+    expect(finalContent).not.toContain('mcp__superone__excalidraw__')
+    expect(finalContent).not.toContain('Read the current canvas state')
+    expect(finalContent).not.toContain('tools start with')
+  })
+
+  it('keeps the prefix-hint reminder unchanged for claude', async () => {
+    mockMiniApps.push(excalidrawApp)
+    seedProject('/proj', 'sid-1', {
+      mentions: [{ kind: 'miniapp', value: 'excalidraw', displayName: 'Excalidraw' }],
+    })
+
+    await useChatStore.getState().sendMessage('@Excalidraw redraw it')
+
+    const content = mockSendMessage.mock.calls[0][1].content as string
+    expect(content).toContain('tools start with "mcp__superone__excalidraw__"')
+    expect(content).not.toContain('mcp__superone__excalidraw__read_scene')
   })
 })
 

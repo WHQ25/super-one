@@ -137,6 +137,8 @@ export async function sendMessageImpl(
       .join('\n')
     quoteSuffix = `\n\n<quote>\n${inner}\n</quote>`
   }
+  const requestedProvider: ChatProvider = preferredProvider === 'codex' ? 'codex' : 'claude'
+  const effectiveProvider: ChatProvider = session.sessionProvider ?? requestedProvider
   let miniAppReminderSuffix = ''
   const miniAppMentions = mentions.filter((m) => m.kind === 'miniapp')
   if (miniAppMentions.length > 0) {
@@ -150,14 +152,22 @@ export async function sendMessageImpl(
       const manifest = app?.manifest
       const name = manifest?.name ?? m.displayName
       const toolSlug = manifest?.toolSlug ?? m.value
-      lines.push(`- "${name}": tools start with "mcp__superone__${toolSlug}__"`)
+      const tools = manifest?.tools ?? []
+      // Claude's SDK exposes MCP tools flatly as `mcp__superone__<slug>__<tool>`, so a
+      // prefix hint suffices. Codex namespaces them as `mcp__superone.<slug>__<tool>` (dot
+      // after the server) and enumerates them unreliably, so list each exact name in that
+      // form (descriptions left for the agent's own tool discovery).
+      if (effectiveProvider === 'codex' && tools.length > 0) {
+        const toolNames = tools.map((t) => `mcp__superone.${toolSlug}__${t.name}`).join(', ')
+        lines.push(`- "${name}": ${toolNames}`)
+      } else {
+        lines.push(`- "${name}": tools start with "mcp__superone__${toolSlug}__"`)
+      }
     }
     miniAppReminderSuffix = `\n\n<superone-miniapp-reminder>\n${lines.join('\n')}\n</superone-miniapp-reminder>`
   }
   const finalContent = rawContent + contextSuffix + quoteSuffix + miniAppReminderSuffix
   const codexCommand = parseCodexCommand(rawContent)
-  const requestedProvider: ChatProvider = preferredProvider === 'codex' ? 'codex' : 'claude'
-  const effectiveProvider: ChatProvider = session.sessionProvider ?? requestedProvider
   const resolvedCodexCommand: CodexCommand | null = effectiveProvider === 'codex'
     ? (codexCommand ?? { kind: 'run', prompt: finalContent })
     : null

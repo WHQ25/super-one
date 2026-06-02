@@ -19,30 +19,39 @@ function useMathPluginForText(text: string): MathPluginShape {
   return needsMath ? plugin : null
 }
 
+const STREAMING_THROTTLE_MS = 33
+
 function useThrottledStreamingText(text: string, isStreaming: boolean): string {
   const [throttled, setThrottled] = useState(text)
-  const pendingRafRef = useRef<number | null>(null)
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lastCommitRef = useRef(0)
   const latestTextRef = useRef(text)
   latestTextRef.current = text
 
   useEffect(() => {
     if (!isStreaming) {
-      if (pendingRafRef.current != null) {
-        cancelAnimationFrame(pendingRafRef.current)
-        pendingRafRef.current = null
+      if (timerRef.current != null) {
+        clearTimeout(timerRef.current)
+        timerRef.current = null
       }
       setThrottled(text)
       return
     }
-    if (pendingRafRef.current != null) return
-    pendingRafRef.current = requestAnimationFrame(() => {
-      pendingRafRef.current = null
+    const elapsed = performance.now() - lastCommitRef.current
+    if (elapsed >= STREAMING_THROTTLE_MS) {
+      lastCommitRef.current = performance.now()
       setThrottled(latestTextRef.current)
-    })
+    } else if (timerRef.current == null) {
+      timerRef.current = setTimeout(() => {
+        timerRef.current = null
+        lastCommitRef.current = performance.now()
+        setThrottled(latestTextRef.current)
+      }, STREAMING_THROTTLE_MS - elapsed)
+    }
   }, [text, isStreaming])
 
   useEffect(() => () => {
-    if (pendingRafRef.current != null) cancelAnimationFrame(pendingRafRef.current)
+    if (timerRef.current != null) clearTimeout(timerRef.current)
   }, [])
 
   return throttled

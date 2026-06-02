@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi, afterEach } from 'vitest'
+import { act, cleanup, render } from '@testing-library/react'
 import { CopyableMarkdown, splitByCodeFences, normalizeCodeFences, splitByInsightBlocks } from './CopyableMarkdown'
 
 vi.mock('streamdown', () => ({
@@ -36,6 +37,33 @@ vi.mock('./CodeBlock', () => ({
 
 Object.assign(navigator, {
   clipboard: { writeText: vi.fn().mockResolvedValue(undefined) },
+})
+
+describe('streaming text rendering', () => {
+  afterEach(() => {
+    cleanup()
+    vi.useRealTimers()
+  })
+
+  it('commits incremental text updates to the DOM while streaming', () => {
+    vi.useFakeTimers()
+    const { container, rerender } = render(<CopyableMarkdown text="" isStreaming />)
+
+    for (const next of ['你好', '你好，世', '你好，世界']) {
+      rerender(<CopyableMarkdown text={next} isStreaming />)
+    }
+    act(() => { vi.advanceTimersByTime(50) })
+
+    expect(container.textContent).toContain('你好，世界')
+  })
+
+  it('shows the final text immediately once streaming ends', () => {
+    vi.useFakeTimers()
+    const { container, rerender } = render(<CopyableMarkdown text="partial" isStreaming />)
+    rerender(<CopyableMarkdown text="partial answer complete" isStreaming={false} />)
+
+    expect(container.textContent).toContain('partial answer complete')
+  })
 })
 
 describe('splitByCodeFences', () => {

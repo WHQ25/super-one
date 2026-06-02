@@ -495,18 +495,10 @@ export function CompactIndicator({
 }) {
   const pillClass = 'inline-flex items-center whitespace-nowrap rounded bg-violet-500/15 px-1.5 py-px text-[11px] text-violet-600/80 dark:text-violet-400/80'
   return (
-    <div className="my-0.5 flex flex-col gap-1 rounded bg-violet-500/10 px-2 py-1.5 text-xs">
-      <div className="flex items-center gap-1.5">
-        <Minimize2 className="size-3 shrink-0 text-violet-600 dark:text-violet-400" />
-        <span className="min-w-0 truncate font-medium text-violet-600 dark:text-violet-400">Conversation compacted</span>
-        {onToggle && (
-          <button onClick={onToggle} className="ml-auto flex shrink-0 items-center gap-0.5 text-violet-600/60 dark:text-violet-400/60 transition-colors hover:text-violet-600 dark:hover:text-violet-400">
-            {expanded ? <ChevronRight className="size-3 -rotate-90" /> : <ChevronRight className="size-3 rotate-90" />}
-            <span>{expanded ? 'Hide history' : 'Show history'}</span>
-          </button>
-        )}
-      </div>
-      <div className="flex flex-wrap items-center gap-1 pl-[18px]">
+    <div className="my-0.5 flex items-start gap-1.5 rounded bg-violet-500/10 px-2 py-1.5 text-xs">
+      <Minimize2 className="mt-0.5 size-3 shrink-0 text-violet-600 dark:text-violet-400" />
+      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-1">
+        <span className="font-medium text-violet-600 dark:text-violet-400">Conversation compacted</span>
         <span className={pillClass}>{trigger === 'auto' ? 'auto' : 'manual'}</span>
         {preTokens > 0 && (
           <span className={pillClass}>
@@ -518,6 +510,12 @@ export function CompactIndicator({
           <span className={pillClass}>{formatCompactDuration(durationMs)}</span>
         )}
       </div>
+      {onToggle && (
+        <button onClick={onToggle} className="flex shrink-0 items-center gap-0.5 text-violet-600/60 dark:text-violet-400/60 transition-colors hover:text-violet-600 dark:hover:text-violet-400">
+          {expanded ? <ChevronRight className="size-3 -rotate-90" /> : <ChevronRight className="size-3 rotate-90" />}
+          <span>{expanded ? 'Hide history' : 'Show history'}</span>
+        </button>
+      )}
     </div>
   )
 }

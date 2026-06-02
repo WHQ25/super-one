@@ -4,6 +4,25 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.41.1-alpha] - 2026-06-02
+
+### Added
+
+- Codex now surfaces MCP server startup status in the duration footer, and refreshes available tools when mini-apps change.
+- Mini-app fs API exposes `trashFile` for author scripts.
+
+### Fixed
+
+- Chat: compact badges now sit inline after the title, wrapping to a new line only when the row is narrow.
+- Chat: assistant text streams reliably under heavy render load.
+- Codex: mini-app tools load on @-mention even when the panel is closed, and the @-mention reminder now enumerates mini-app MCP tool names.
+- Codex: the SuperOne MCP stdio bridge is hardened against transient IPC failures.
+- Mini-app: multi-root fs paths are disambiguated via explicit `@scope` prefixes.
+
+### Changed
+
+- Upgrade Codex to 0.136.0 and claude-agent-sdk to 0.3.159.
+
 ## [0.41.0-alpha] - 2026-06-01
 
 ### Added

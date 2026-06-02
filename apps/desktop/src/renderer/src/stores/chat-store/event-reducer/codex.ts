@@ -3,10 +3,24 @@ import { applySeqToMessage, isReplayedEventForMessage } from '@superone/shared/e
 import { upsertCodexItem } from '../helpers/codex-helpers'
 import type { PerSessionState } from '../types'
 
-type CodexEvent = Extract<AgentEvent, { type: 'codex_thread_started' | 'codex_item_delta' }>
+type CodexEvent = Extract<AgentEvent, { type: 'codex_thread_started' | 'codex_item_delta' | 'codex_mcp_startup' }>
 
 export function reduceCodex(session: PerSessionState, event: CodexEvent): Partial<PerSessionState> {
   switch (event.type) {
+    case 'codex_mcp_startup': {
+      return {
+        lastEventAt: Date.now(),
+        messages: session.messages.map((msg) => {
+          if (msg.id !== event.messageId) return msg
+          const prevCodex = msg.metadata?.codex ?? { threadId: null, usage: null, items: [] }
+          return {
+            ...msg,
+            metadata: { ...msg.metadata, codex: { ...prevCodex, mcpStartup: event.servers } },
+          }
+        }),
+      }
+    }
+
     case 'codex_thread_started': {
       const target = session.messages.find((m) => m.id === event.messageId)
       if (target && isReplayedEventForMessage(event, target)) {

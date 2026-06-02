@@ -446,6 +446,7 @@ export const zh: Messages = {
       statusRunning: '执行中',
       statusReading: '读取中',
       statusSearching: '搜索中',
+      startingMcpServers: '正在启动 MCP 服务器 {{ready}}/{{total}}',
       runningInline: '运行中…',
       waitingFor: '等待 {{name}}...',
       waitingForWithElapsed: '等待 {{name}} {{elapsed}}s...',

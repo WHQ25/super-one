@@ -291,12 +291,18 @@ export type CodexThreadItem =
   | CodexCollabToolCallItem
   | CodexImageGenerationItem
 
+export interface CodexMcpServerStartup {
+  name: string
+  status: 'starting' | 'ready' | 'failed' | 'cancelled'
+}
+
 export interface CodexTurnInfo {
   threadId: string | null
   usage: CodexUsageInfo | null
   items: CodexThreadItem[]
   planApproval?: CodexPlanApprovalState
   model?: string
+  mcpStartup?: CodexMcpServerStartup[]
 }
 
 export interface PermissionDenialInfo {
@@ -760,6 +766,7 @@ export type AgentEventBase =
   | { type: 'message_usage'; messageId: string; inputTokens: number; outputTokens: number; codexUsage?: CodexUsageInfo }
   | { type: 'codex_thread_started'; messageId: string; threadId: string }
   | { type: 'codex_item_delta'; messageId: string; phase: 'started' | 'updated' | 'completed'; item: CodexThreadItem }
+  | { type: 'codex_mcp_startup'; messageId: string; servers: CodexMcpServerStartup[] }
   | { type: 'checkpoint_captured'; messageId: string; checkpointId: string; resumePointId: string }
   | { type: 'init_ready'; skills: SlashCommandInfo[]; projectCommands: SlashCommandInfo[]; projectAgents: AgentInfo[]; additionalDirectories: string[]; additionalDirsScoped: { user: string[]; projectShared: string[]; projectLocal: string[] }; cwd: string; homedir: string; sandboxInfo: SandboxInfo; permissionMode: PermissionMode; selectedModel?: string | null; selectedEffort?: EffortLevel | null; activeProvider?: RemoteActiveProvider | null }
   | { type: 'additional_dirs_changed'; additionalDirectories: string[]; additionalDirsScoped: { user: string[]; projectShared: string[]; projectLocal: string[] }; sessionAdditionalDirs: string[] }

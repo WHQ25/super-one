@@ -529,6 +529,7 @@ describe('CodexBackend send()', () => {
     cb.onThreadStarted!('thread-99')
     cb.onItemDelta!('started', { type: 'agent_message', id: 'it-1', text: 'hello' } as CodexThreadItem)
     cb.onUsageDelta!({ lastInputTokens: 10, lastOutputTokens: 20, contextWindow: 0 } as CodexUsageInfo)
+    cb.onMcpServerStatus!([{ name: 'superone', status: 'ready' }, { name: 'linear', status: 'starting' }])
     cb.onPermissionRequest!({ requestId: 'req-1', tool_name: 'bash', tool_input: {} } as unknown as PermissionRequest)
     cb.onAskUserQuestion!({ requestId: 'q-1', header: '', questions: [] } as unknown as AskUserQuestionRequest)
 
@@ -541,6 +542,8 @@ describe('CodexBackend send()', () => {
     expect(bodyTypes).toContain('message_usage')
     expect(bodyTypes).toContain('permission_request')
     expect(bodyTypes).toContain('ask_user_question')
+    const startupEvt = events.find((e) => e.type === 'codex_mcp_startup') as Extract<AgentEvent, { type: 'codex_mcp_startup' }> | undefined
+    expect(startupEvt?.servers).toEqual([{ name: 'superone', status: 'ready' }, { name: 'linear', status: 'starting' }])
     expect(backend.getCurrentProviderSessionId()).toBe('thread-99')
   })
 

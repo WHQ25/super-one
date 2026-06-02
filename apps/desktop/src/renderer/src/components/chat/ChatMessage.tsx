@@ -1,5 +1,6 @@
 import type { ChatMessage as ChatMessageType, ContentBlock, AgentStatus } from '@superone/shared/agent-types'
 import { useState, useEffect, useRef, useMemo, useCallback, memo } from 'react'
+import { useTranslation } from 'react-i18next'
 import { cn } from '@superone/ui/lib/utils'
 import { Loader2, ImageIcon, OctagonX, Folder, ChevronRight, Clock, Minimize2, ArrowUp, ArrowDown, Copy, Check, AlertTriangle, X } from 'lucide-react'
 import { ToolBlock } from './ToolBlock'
@@ -823,6 +824,7 @@ const ZERO_TOKENS = { input: 0, output: 0 }
 const STATIC_FOOTER = { isCompacting: false, pendingApproval: false, streamingTokens: ZERO_TOKENS }
 
 function DurationFooter({ message, copyText, parentIsStreaming }: { message: ChatMessageType; copyText?: string; parentIsStreaming: boolean }) {
+  const { t } = useTranslation()
   const { isCompacting, pendingApproval, streamingTokens: rawStreamingTokens } = useActiveSession(useShallow((s) => {
     if (!parentIsStreaming) return STATIC_FOOTER
     return {
@@ -900,7 +902,11 @@ function DurationFooter({ message, copyText, parentIsStreaming }: { message: Cha
   const showFork = !isStreaming && message.status !== 'error'
   const terminalReason = message.metadata?.terminalReason
   const showTerminalReason = !isStreaming && !!terminalReason && terminalReason !== 'completed' && message.status !== 'interrupted'
-  if (!showDuration && !hasTokens && !showCopy && !showTerminalReason) return null
+  const mcpStartup = message.metadata?.codex?.mcpStartup
+  const hasCodexItems = (message.metadata?.codex?.items?.length ?? 0) > 0
+  const showMcpStartup = isStreaming && !!mcpStartup && mcpStartup.length > 0 && !hasCodexItems
+  const mcpReadyCount = showMcpStartup ? mcpStartup.filter((s) => s.status === 'ready').length : 0
+  if (!showDuration && !hasTokens && !showCopy && !showTerminalReason && !showMcpStartup) return null
 
   const seconds = durationMs ? Math.round(durationMs / 1000) : 0
   const display = seconds < 60
@@ -929,6 +935,13 @@ function DurationFooter({ message, copyText, parentIsStreaming }: { message: Cha
             : <Clock className="size-3" />
           }
           <span>{display}</span>
+        </>
+      )}
+      {showMcpStartup && (
+        <>
+          {!showDuration && <Loader2 className="size-3 animate-spin" />}
+          {showDuration && <span>·</span>}
+          <span>{t('chat.codex.startingMcpServers', { ready: mcpReadyCount, total: mcpStartup.length })}</span>
         </>
       )}
       {hasTokens && (

@@ -910,6 +910,11 @@ export class CodexBackend implements SessionBackend {
         this.recordSegmentItem(owner, item)
         this.emit({ type: 'codex_item_delta', messageId: owner, phase, item })
       },
+      onMcpServerStatus: (servers) => {
+        const messageId = this.currentMessageId
+        if (!messageId) return
+        this.emit({ type: 'codex_mcp_startup', messageId, servers })
+      },
       onUsageDelta: (usage) => {
         this.lastUsageSnapshot = usage
         const messageId = this.currentMessageId

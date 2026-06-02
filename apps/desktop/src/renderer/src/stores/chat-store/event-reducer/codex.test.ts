@@ -149,3 +149,37 @@ describe('reduceCodex: codex_item_delta', () => {
     expect(patch.lastEventAt).toBeGreaterThan(0)
   })
 })
+
+describe('reduceCodex: codex_mcp_startup', () => {
+  it('writes the MCP server startup snapshot onto the target message, creating codex metadata if absent', () => {
+    const session = createDefaultPerSessionState()
+    session.messages = [makeMessage('m1')]
+
+    const patch = reduceCodex(session, {
+      type: 'codex_mcp_startup',
+      messageId: 'm1',
+      servers: [{ name: 'superone', status: 'ready' }, { name: 'linear', status: 'starting' }],
+    })
+
+    expect(patch.messages?.[0].metadata?.codex?.mcpStartup).toEqual([
+      { name: 'superone', status: 'ready' },
+      { name: 'linear', status: 'starting' },
+    ])
+    expect(patch.lastEventAt).toBeGreaterThan(0)
+  })
+
+  it('preserves prior codex.items while updating the startup snapshot', () => {
+    const session = createDefaultPerSessionState()
+    const prevItems: CodexThreadItem[] = [{ id: 'i1', type: 'agent_message', text: 'hi' }]
+    session.messages = [makeMessage('m1', { items: prevItems })]
+
+    const patch = reduceCodex(session, {
+      type: 'codex_mcp_startup',
+      messageId: 'm1',
+      servers: [{ name: 'superone', status: 'starting' }],
+    })
+
+    expect(patch.messages?.[0].metadata?.codex?.items).toBe(prevItems)
+    expect(patch.messages?.[0].metadata?.codex?.mcpStartup).toEqual([{ name: 'superone', status: 'starting' }])
+  })
+})

@@ -37,6 +37,7 @@ import type {
   CodexCommandExecutionStatus,
   CodexCompactRequest,
   CodexMcpToolCallStatus,
+  CodexMcpServerStartup,
   CodexPatchApplyStatus,
   CodexPatchChangeKind,
   CodexReasoningEffort,
@@ -78,6 +79,7 @@ export interface CodexRunStreamCallbacks {
   onUsageDelta?: (usage: CodexUsageInfo) => void
   onPermissionRequest?: (request: PermissionRequest) => void
   onAskUserQuestion?: (request: AskUserQuestionRequest) => void
+  onMcpServerStatus?: (servers: CodexMcpServerStartup[]) => void
 }
 
 export type ParsedApprovalRequest =
@@ -1364,6 +1366,7 @@ export async function streamTurnEvents(
 
   const itemOrder: string[] = []
   const itemMap = new Map<string, CodexThreadItem>()
+  const mcpServerStatus = new Map<string, CodexMcpServerStartup['status']>()
   let usage: CodexUsageInfo | null = null
   let turnCompleted = false
   let lastTurnItemCompletedAt = Date.now()
@@ -1920,6 +1923,16 @@ export async function streamTurnEvents(
           usage = nextUsage
           callbacks?.onUsageDelta?.(nextUsage)
         }
+        break
+      }
+
+      case 'mcpServer/startupStatus/updated': {
+        const name = readString(params.name)
+        if (!name) break
+        const raw = readString(params.status)
+        const status: CodexMcpServerStartup['status'] = raw === 'ready' || raw === 'failed' || raw === 'cancelled' ? raw : 'starting'
+        mcpServerStatus.set(name, status)
+        callbacks?.onMcpServerStatus?.([...mcpServerStatus].map(([n, s]) => ({ name: n, status: s })))
         break
       }
 

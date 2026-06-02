@@ -645,6 +645,7 @@ export const zh: Messages = {
       compactDesc: '压缩线程上下文',
       planDesc: '进入计划模式',
       providerDesc: '为本会话选择 API 服务商',
+      mcpDesc: '查看本会话的 MCP 服务器',
       goalDesc: '为当前 Codex 线程设置或清除目标',
       goalArg: '[目标描述]',
     },
@@ -662,6 +663,8 @@ export const zh: Messages = {
       manageInSettings: '在设置中管理',
       refresh: '刷新',
       noActiveSession: '发送一条消息以加载实时 MCP 状态',
+      errorBadge: '错误',
+      authBadge: '待认证',
     },
     slashCommand: {
       groupCommands: '命令',

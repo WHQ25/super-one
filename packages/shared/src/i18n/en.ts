@@ -631,6 +631,7 @@ export type Messages = {
       compactDesc: string
       planDesc: string
       providerDesc: string
+      mcpDesc: string
       goalDesc: string
       goalArg: string
     }
@@ -648,6 +649,8 @@ export type Messages = {
       manageInSettings: string
       refresh: string
       noActiveSession: string
+      errorBadge: string
+      authBadge: string
     }
     slashCommand: {
       groupCommands: string
@@ -1876,6 +1879,7 @@ export const en: Messages = {
       compactDesc: 'Compact thread context',
       planDesc: 'Enter plan mode',
       providerDesc: 'Choose API provider for this session',
+      mcpDesc: 'View MCP servers in this session',
       goalDesc: 'Set or clear the goal for this Codex thread',
       goalArg: '[objective]',
     },
@@ -1893,6 +1897,8 @@ export const en: Messages = {
       manageInSettings: 'Manage in Settings',
       refresh: 'Refresh',
       noActiveSession: 'Start a turn to load live MCP status',
+      errorBadge: 'error',
+      authBadge: 'auth',
     },
     slashCommand: {
       groupCommands: 'Commands',

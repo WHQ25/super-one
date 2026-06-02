@@ -8,6 +8,7 @@ const mockStat = vi.fn()
 const mockRename = vi.fn()
 const mockRmdir = vi.fn()
 const mockRm = vi.fn()
+const mockGlob = vi.fn()
 
 vi.mock('fs/promises', () => ({
   readdir: (...args: unknown[]) => mockReaddir(...args),
@@ -18,7 +19,7 @@ vi.mock('fs/promises', () => ({
   rename: (...args: unknown[]) => mockRename(...args),
   rmdir: (...args: unknown[]) => mockRmdir(...args),
   rm: (...args: unknown[]) => mockRm(...args),
-  glob: vi.fn(),
+  glob: (...args: unknown[]) => mockGlob(...args),
   watch: vi.fn(),
 }))
 vi.mock('fs', () => ({ watch: vi.fn() }))
@@ -48,6 +49,10 @@ import type { MiniAppManifest } from '@superone/shared/miniapp-types'
 
 function mockManifest(appId: string, name: string) {
   return { appId, name, tools: [] }
+}
+
+async function* asyncIter(...items: string[]) {
+  for (const i of items) yield i
 }
 
 const MOCK_TS = 1700000000000
@@ -734,6 +739,22 @@ describe('fs permission resolver across multiple roots (project + app + user)', 
       handleFsRequest(PROJ, 'aigc', 'writeFile', { path: '@app/state.json', content: 'x' }),
     ).rejects.toThrow(/@app/)
   })
+
+  it('globs only the project group for a bare pattern, not app-data or user roots', async () => {
+    mockGlob.mockImplementation(() => asyncIter('x.json'))
+    await handleFsRequest(PROJ, 'aigc', 'glob', { pattern: '**/*.json' })
+    const cwds = mockGlob.mock.calls.map((c) => (c[1] as { cwd: string }).cwd)
+    expect(cwds).toEqual([PROJ, `${PROJ}/asset`])
+    expect(cwds).not.toContain(DATA)
+    expect(cwds).not.toContain(USER)
+  })
+
+  it('globs the app data dir for an explicit @app/ pattern', async () => {
+    mockGlob.mockImplementation(() => asyncIter('state.json'))
+    await handleFsRequest(PROJ, 'aigc', 'glob', { pattern: '@app/*.json' })
+    const cwds = mockGlob.mock.calls.map((c) => (c[1] as { cwd: string }).cwd)
+    expect(cwds).toEqual([DATA])
+  })
 })
 
 describe('fs permission resolver with multiple non-project roots', () => {
@@ -764,6 +785,14 @@ describe('fs permission resolver with multiple non-project roots', () => {
     expect(mockWriteFile.mock.calls.at(-1)![0]).toBe(`${DATA}/state.json`)
     await handleFsRequest(PROJ, 'noproj', 'writeFile', { path: '@user/.config/noproj/p.json', content: 'x' })
     expect(mockWriteFile.mock.calls.at(-1)![0]).toBe(`${USER}/p.json`)
+  })
+
+  it('rejects a bare glob pattern as ambiguous across distinct roots', async () => {
+    mockGlob.mockImplementation(() => asyncIter())
+    await expect(
+      handleFsRequest(PROJ, 'noproj', 'glob', { pattern: '**/*.json' }),
+    ).rejects.toThrow(/scope prefix|ambiguous/i)
+    expect(mockGlob).not.toHaveBeenCalled()
   })
 })
 

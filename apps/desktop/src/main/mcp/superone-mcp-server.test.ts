@@ -470,6 +470,31 @@ describe('stdio SuperOne MCP tool surface', () => {
     const result = await pending
     expect(result.content[0].text).toContain('"ok":true')
   })
+
+  it('lazy-opens the panel for a codex tool call when the app is @-mentioned but not open', async () => {
+    // Regression: the codex bridge path (executeSuperoneMcpTool) used to call
+    // executeAppTool directly, so waitForAppReady blocked forever when the panel
+    // was never opened. It must trigger lazy-open like the Claude SDK path.
+    registerAppTools(PROJ_A, PROJ_A, 'lazy-codex-app', 'lz', makeTools('do_thing'))
+    // NOTE: deliberately NO notifyAppReady — the panel is not open.
+
+    const pending = executeSuperoneMcpTool(PROJ_A, 'lz__do_thing', { x: 'hi' })
+    await new Promise((r) => setTimeout(r, 10))
+
+    const lazyOpen = sentMessages.find((m) => m.channel === AgentIpcChannels.MINIAPP_LAZY_OPEN_REQUEST)
+    expect(lazyOpen).toBeTruthy()
+    expect((lazyOpen!.args[0] as { appId: string }).appId).toBe('lazy-codex-app')
+
+    // Renderer opens the panel → gate resolves → the tool call dispatches.
+    notifyAppReady(PROJ_A, 'lazy-codex-app')
+    await new Promise((r) => setTimeout(r, 10))
+    const callReq = sentMessages.find((m) => m.channel === AgentIpcChannels.MINIAPP_TOOL_CALL)!.args[0] as MiniAppToolCallRequest
+    resolveToolCall(callReq.callId, { ok: true })
+    const result = await pending
+    expect(result.content[0].text).toContain('"ok":true')
+
+    unregisterAppTools(PROJ_A, 'lazy-codex-app')
+  })
 })
 
 describe('clearSessionPendingCalls — cross-project isolation', () => {

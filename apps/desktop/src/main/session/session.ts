@@ -405,6 +405,15 @@ export class Session implements SessionContract {
         this._needsRebuild = false
       } else {
         await this.ensureStarted()
+        // Codex snapshots its MCP tool set when the thread starts — including at prewarm,
+        // before a first-turn @-mention can register app tools. The just-adopted prewarmed
+        // thread is then stale, so rebuild to re-establish the connection on a fresh snapshot.
+        // Claude's in-process MCP server reflects the live tool set, so it needs no rebuild.
+        if (needsRebuild && this.harnessId === 'codex') {
+          log.info('[Session] rebuilding codex backend post-start to pick up tools registered before first send sid=%s', this.id)
+          await this.backend.rebuild(this.buildBackendStartOpts())
+        }
+        this._needsRebuild = false
       }
       this._status = 'streaming'
       try {
@@ -596,6 +605,10 @@ export class Session implements SessionContract {
 
   async reloadMcpServers(): Promise<void> {
     if (!this.backendStarted) return
+    // A pending rebuild already discards the connection and re-snapshots tools on the
+    // next send, so an explicit reload now is redundant — and for codex it is a heavy
+    // process-wide MCP reconnect. Let the rebuild carry the tool change instead.
+    if (this._needsRebuild) return
     return this.backend.reloadMcpServers()
   }
 

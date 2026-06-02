@@ -5,7 +5,7 @@ import {
   executeBuiltInSuperoneTool,
 } from './superone-mcp-builtins'
 import {
-  executeAppTool,
+  dispatchAppToolCall,
   getAppToolDefs,
   getSessionHost,
   notifyDevAppReady,
@@ -48,7 +48,14 @@ export async function executeSuperoneMcpTool(
     const toolDef = entry.tools.find((t) => t.name === appToolName)
     if (!toolDef) continue
     try {
-      const result = await executeAppTool(sessionId, entry.appId, appToolName, args)
+      const result = await dispatchAppToolCall(
+        sessionId,
+        entry.projectDir,
+        entry.appId,
+        appToolName,
+        toolDef.standalone === true,
+        args,
+      )
       return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] }
     } catch (err) {
       return { content: [{ type: 'text' as const, text: `[Error] ${err instanceof Error ? err.message : String(err)}` }] }

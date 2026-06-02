@@ -322,6 +322,28 @@ export async function sendMessageImpl(
     window.dispatchEvent(new CustomEvent('miniapp-context-consumed', { detail: { appIds: consumedAppIds } }))
   }
 
+  if (resetLock.current) await resetLock.current
+
+  // Re-read the active session id from the live store. A first-turn codex switch above
+  // assigns a fresh _activeSessionId via set(), which the `project` snapshot captured at
+  // the top of this function does NOT reflect — using that stale (null) value here
+  // silently skipped mini-app tool authorization on the very first codex @-mention.
+  const resolvedSessionId = getProject(get(), activeProject)._activeSessionId ?? undefined
+
+  // Authorize @-mentioned mini-app tools for this session BEFORE dispatching the turn.
+  // Codex dispatches via runCodexCommand and returns below, so authorizing after that
+  // block would never run for codex (this is why codex never loaded @-mentioned tools).
+  const miniAppAuthorizations = mentions
+    .filter((m) => m.kind === 'miniapp')
+    .map((m) => m.value)
+  if (miniAppAuthorizations.length > 0 && resolvedSessionId) {
+    try {
+      await window.miniapp.authorize(miniAppAuthorizations, activeProject, resolvedSessionId)
+    } catch (err) {
+      console.error('[sendMessage] miniapp authorize failed:', err)
+    }
+  }
+
   if (resolvedCodexCommand) {
     if (!isRunnableCodexCommand(resolvedCodexCommand) || !codexSessionId) return
     await runCodexCommand(set, get, {
@@ -343,22 +365,6 @@ export async function sendMessageImpl(
     return
   }
 
-  if (resetLock.current) await resetLock.current
-
-  const miniAppAuthorizations = mentions
-    .filter((m) => m.kind === 'miniapp')
-    .map((m) => m.value)
-  if (miniAppAuthorizations.length > 0) {
-    const targetSid = project._activeSessionId
-    if (targetSid) {
-      try {
-        await window.miniapp.authorize(miniAppAuthorizations, activeProject, targetSid)
-      } catch (err) {
-        console.error('[sendMessage] miniapp authorize failed:', err)
-      }
-    }
-  }
-
   await _ensureClaudeSessionReadyForSend(get, activeProject)
 
   const mergedDirs = mergeProjectAndSessionDirs(project, session)
@@ -371,7 +377,7 @@ export async function sendMessageImpl(
       images: attachments.length > 0 ? attachments : undefined,
       additionalDirs: mergedDirs.length > 0 ? mergedDirs : undefined,
       clientMessageId: userMessageId,
-      sessionId: project._activeSessionId ?? undefined,
+      sessionId: resolvedSessionId,
       gitBranch: session._worktreeBaseBranch ?? undefined,
       worktreePath: session._worktreePath ?? undefined,
       userMessageContent: userContent,

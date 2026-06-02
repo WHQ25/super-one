@@ -9,6 +9,7 @@ import { readScopedAdditionalDirs } from '../agent/project-additional-dirs'
 import { harnessRegistry } from './harness-registry'
 import { getSessionProvider } from './session-provider-repo'
 import { ProjectResourceCache } from './project-resource-cache'
+import { cancelMcpReload } from '../mcp/mcp-reload-scheduler'
 import { Session } from './session'
 import type {
   LiveSessionSnapshot,
@@ -381,6 +382,9 @@ export class SessionManagerImpl implements SessionManagerContract {
     } catch (err) {
       log.warn('[SessionManager] miniapp tool cleanup failed:', err)
     }
+    // unregisterSessionAllApps above emits tools-changed, which re-arms the debounced
+    // MCP reload for this (now-disposed) session — cancel it last so it never fires.
+    cancelMcpReload(sessionId)
   }
 
   on(sessionId: string, handler: (e: AgentEvent) => void): () => void {

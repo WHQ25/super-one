@@ -184,6 +184,7 @@ export function ChatInput() {
       { name: 'compact', description: t('chat.codexCommands.compactDesc'), argumentHint: '', isSkill: false },
       { name: 'plan', description: t('chat.codexCommands.planDesc'), argumentHint: '', isSkill: false },
       { name: 'provider', description: t('chat.codexCommands.providerDesc'), argumentHint: '', isSkill: false },
+      { name: 'mcp', description: t('chat.codexCommands.mcpDesc'), argumentHint: '', isSkill: false },
       { name: 'goal', description: t('chat.codexCommands.goalDesc'), argumentHint: t('chat.codexCommands.goalArg'), isSkill: false },
       ...codexPrompts,
       ...codexSkills.map((s): SlashCommandInfo => ({ name: s.name, description: s.description, argumentHint: '', isSkill: true })),

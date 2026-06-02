@@ -3,6 +3,7 @@ import {
   SUPERONE_MCP_IPC_ENDPOINT_ENV,
   SUPERONE_MCP_IPC_TOKEN_ENV,
   SUPERONE_MCP_SESSION_ID_ENV,
+  SUPERONE_MCP_STARTUP_TIMEOUT_SEC,
 } from './superone-mcp-stdio-env'
 
 export {
@@ -23,8 +24,6 @@ export interface CodexSuperoneMcpConfig {
   env: Record<string, string>
   startup_timeout_sec: number
 }
-
-const SUPERONE_MCP_STARTUP_TIMEOUT_SEC = 60
 
 let bridgeRuntime: SuperoneMcpBridgeRuntime | null = null
 

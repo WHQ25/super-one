@@ -265,4 +265,28 @@ describe('sendMessageImpl: miniapp authorize', () => {
     expect(mockSendMessage).toHaveBeenCalledTimes(1)
     expect(console.error).toHaveBeenCalledWith(expect.stringContaining('miniapp authorize failed'), expect.any(Error))
   })
+
+  it('authorizes against the freshly-created codex session id on the first codex turn (not the stale captured id)', async () => {
+    // Fresh codex-preferred session that is not yet a codex session: the first send creates a
+    // new local codex _activeSessionId via set(). Regression: authorize used the stale `project`
+    // snapshot (still 'sid-1'/null), so it targeted the wrong session — or was skipped entirely.
+    seedProject('/proj', 'sid-1', {
+      preferredProvider: 'codex',
+      sessionProvider: undefined,
+      mentions: [{ kind: 'miniapp', value: 'excalidraw', displayName: 'Excalidraw' }],
+    })
+
+    await useChatStore.getState().sendMessage('@Excalidraw draw a cube')
+
+    expect(mockMiniAppAuthorize).toHaveBeenCalledTimes(1)
+    const [appIds, proj, sid] = mockMiniAppAuthorize.mock.calls[0]
+    expect(appIds).toEqual(['excalidraw'])
+    expect(proj).toBe('/proj')
+    // The new codex session id, not the stale captured one (and not skipped entirely).
+    expect(sid).not.toBe('sid-1')
+    expect(typeof sid).toBe('string')
+    expect(sid).toBeTruthy()
+    // The authorized id matches the session the first codex turn actually runs on.
+    expect(useChatStore.getState().projectSessions['/proj']._activeSessionId).toBe(sid)
+  })
 })

@@ -239,22 +239,7 @@ function registerToolsOnState(
       { description: describeTool(t), inputSchema: zodShape },
       async (args: Record<string, unknown>) => {
         try {
-          let result: unknown
-          if (isStandalone) {
-            trace('miniapp.standalone', 'tool-dispatch', { appId, toolName: t.name, sessionId })
-            result = await executeStandaloneTool(sessionId, appId, t.name, args)
-            trace('miniapp.standalone', 'tool-execute-done', { appId, toolName: t.name })
-          } else {
-            const panelReady = isPanelReady(projectDir, appId)
-            trace('miniapp.lazyopen', 'tool-dispatch', { appId, toolName: t.name, panelReady })
-            if (!panelReady) {
-              log.info('[superone-mcp] panel not open for %s, triggering lazy-open', appId)
-              await requestLazyOpenPanel(projectDir, appId, sessionId)
-            }
-            trace('miniapp.lazyopen', 'tool-execute-start', { appId, toolName: t.name })
-            result = await executeAppTool(sessionId, appId, t.name, args)
-            trace('miniapp.lazyopen', 'tool-execute-done', { appId, toolName: t.name })
-          }
+          const result = await dispatchAppToolCall(sessionId, projectDir, appId, t.name, isStandalone, args)
           return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] }
         } catch (err) {
           return { content: [{ type: 'text' as const, text: `[Error] ${err instanceof Error ? err.message : String(err)}` }] }
@@ -697,6 +682,40 @@ export async function executeAppTool(
   }
 
   return sendToolCall(callId, sessionId, projectDir, appId, toolName, finalInput)
+}
+
+/**
+ * Single entry point for executing a mini-app tool, shared by the in-process SDK
+ * server (Claude) and the stdio-bridge IPC path (Codex). Standalone tools run
+ * headless; panel-backed tools lazy-open the panel FIRST (the agent never opened
+ * it — e.g. an @-mention) so `executeAppTool` does not block forever on a panel
+ * that nothing else will bring up. Keeping the lazy-open here (not in the SDK tool
+ * closure) is what makes the Codex path behave identically to Claude's.
+ */
+export async function dispatchAppToolCall(
+  sessionId: string,
+  projectDir: string,
+  appId: string,
+  toolName: string,
+  isStandalone: boolean,
+  args: Record<string, unknown>,
+): Promise<unknown> {
+  if (isStandalone) {
+    trace('miniapp.standalone', 'tool-dispatch', { appId, toolName, sessionId })
+    const result = await executeStandaloneTool(sessionId, appId, toolName, args)
+    trace('miniapp.standalone', 'tool-execute-done', { appId, toolName })
+    return result
+  }
+  const panelReady = isPanelReady(projectDir, appId)
+  trace('miniapp.lazyopen', 'tool-dispatch', { appId, toolName, panelReady })
+  if (!panelReady) {
+    log.info('[superone-mcp] panel not open for %s, triggering lazy-open', appId)
+    await requestLazyOpenPanel(projectDir, appId, sessionId)
+  }
+  trace('miniapp.lazyopen', 'tool-execute-start', { appId, toolName })
+  const result = await executeAppTool(sessionId, appId, toolName, args)
+  trace('miniapp.lazyopen', 'tool-execute-done', { appId, toolName })
+  return result
 }
 
 export function getAppToolDefs(): Map<string, AppToolEntry> {

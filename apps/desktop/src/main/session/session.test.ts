@@ -201,6 +201,62 @@ describe('Session state machine', () => {
     expect(backend.interruptCalls).toBe(0)
   })
 
+  it('reloadMcpServers forwards to the backend once started with no pending rebuild', async () => {
+    const spy = vi.spyOn(backend, 'reloadMcpServers')
+    const p = session.send({ content: 'x' })
+    await new Promise((r) => setTimeout(r, 0))
+    backend.resolveSend?.()
+    await p
+
+    await session.reloadMcpServers()
+    expect(spy).toHaveBeenCalledTimes(1)
+  })
+
+  it('reloadMcpServers skips the backend when a rebuild is already pending', async () => {
+    const spy = vi.spyOn(backend, 'reloadMcpServers')
+    const p = session.send({ content: 'x' })
+    await new Promise((r) => setTimeout(r, 0))
+    backend.resolveSend?.()
+    await p
+
+    session.markNeedsRebuild()
+    await session.reloadMcpServers()
+    expect(spy).not.toHaveBeenCalled()
+  })
+
+  it('reloadMcpServers is a no-op before the backend starts', async () => {
+    const spy = vi.spyOn(backend, 'reloadMcpServers')
+    await session.reloadMcpServers()
+    expect(spy).not.toHaveBeenCalled()
+  })
+
+  it('rebuilds a fresh codex backend after start when a rebuild is pending (tools registered before first send)', async () => {
+    const { session: codexSession, backend: codexBackend } = makeSession({ harnessId: 'codex' })
+    codexSession.markNeedsRebuild()
+
+    const p = codexSession.send({ content: 'use @app' })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(codexBackend.started).toBe(true)
+    // Adopted prewarmed thread is stale → rebuild to re-snapshot tools on a fresh connection.
+    expect(codexBackend.rebuildCalls).toHaveLength(1)
+
+    codexBackend.resolveSend?.()
+    await p
+  })
+
+  it('does not rebuild a fresh claude backend after start (in-process MCP reflects tools live)', async () => {
+    const { session: claudeSession, backend: claudeBackend } = makeSession({ harnessId: 'claude' })
+    claudeSession.markNeedsRebuild()
+
+    const p = claudeSession.send({ content: 'use @app' })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(claudeBackend.started).toBe(true)
+    expect(claudeBackend.rebuildCalls).toHaveLength(0)
+
+    claudeBackend.resolveSend?.()
+    await p
+  })
+
   it('dispose() transitions to disposed and closes backend', async () => {
     const sendPromise = session.send({ content: 'x' })
     await new Promise((r) => setTimeout(r, 0))

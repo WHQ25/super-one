@@ -56,7 +56,7 @@ import { cacheRemoteImage } from '../image-cache'
 import { backupMcpServers, listLibrary, deleteLibraryEntry, getLibraryEntry } from '../mcp-library-service'
 import { uninstallMcpbBundle } from '../mcpb/mcpb-installer'
 import { getAllProviders, createProvider, updateProvider, deleteProvider, activateProvider, deactivateAllProviders } from '../database'
-import type { CreateProviderRequest, UpdateProviderRequest, HookSavePayload, SessionForkRequest } from '@superone/shared/agent-types'
+import type { CreateProviderRequest, UpdateProviderRequest, HookSavePayload, SessionForkRequest, HarnessId } from '@superone/shared/agent-types'
 import { forkSession } from '../session/session-fork'
 
 export class AgentService {
@@ -1869,16 +1869,22 @@ export class AgentService {
       try { await this.sessionManager?.getActiveSession(projectPath)?.toggleMcpServer(name, !disabled) } catch (err) { log.debug('[agent] MCP toggle skipped:', err) }
     })
 
-    ipcMain.handle(AgentIpcChannels.MCP_CHECK_SERVERS, async (_event, projectPath: string) => {
-      const configs = listMcpConfigs(projectPath)
+    ipcMain.handle(AgentIpcChannels.MCP_CHECK_SERVERS, async (_event, projectPath: string, harness?: HarnessId) => {
+      // Source the configs for the requesting harness so a Codex session probes
+      // codex config.toml (not Claude's MCP config) and vice-versa. Falls back to the
+      // active session's harness, then Claude (the settings page passes no harness).
+      const resolvedHarness = harness ?? this.sessionManager?.getActiveSession(projectPath)?.snapshot.harnessId ?? 'claude'
+      const configs = resolvedHarness === 'codex' ? listCodexMcpConfigs(projectPath) : listMcpConfigs(projectPath)
       const result = await checkMcpServers(configs)
-      try {
-        const sdkStatus = await this.sessionManager?.getActiveSession(projectPath)?.getMcpServerStatus() ?? []
-        const claudeaiServers = sdkStatus.filter((s) => s.scope === 'claudeai')
-        if (claudeaiServers.length > 0) {
-          result.status.push(...claudeaiServers)
-        }
-      } catch (err) { log.debug('[agent] claudeai MCP status fetch skipped:', err) }
+      if (resolvedHarness !== 'codex') {
+        try {
+          const sdkStatus = await this.sessionManager?.getActiveSession(projectPath)?.getMcpServerStatus() ?? []
+          const claudeaiServers = sdkStatus.filter((s) => s.scope === 'claudeai')
+          if (claudeaiServers.length > 0) {
+            result.status.push(...claudeaiServers)
+          }
+        } catch (err) { log.debug('[agent] claudeai MCP status fetch skipped:', err) }
+      }
       const connectedNames = new Set(result.status.filter((s) => s.status === 'connected').map((s) => s.name))
       const connectedMeta = Object.fromEntries(
         Object.entries(result.meta).filter(([name]) => connectedNames.has(name))

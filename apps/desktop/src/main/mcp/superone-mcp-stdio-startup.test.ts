@@ -75,6 +75,24 @@ describe('startBridgeRuntime', () => {
     expect(log).toHaveBeenCalledWith(expect.stringContaining('built-in tools only'))
   })
 
+  it('connects stdio at the deadline when tools/list hangs past the startup budget', async () => {
+    // Regression: the bridge tools/list request timeout (65s) exceeds codex's 60s
+    // startup_timeout_sec, so a hung load must not block the stdio handshake — the
+    // built-in floor must still be served before codex gives up.
+    const connect = vi.fn(async () => {})
+    const loadTools = vi.fn(() => new Promise<void>(() => {})) // never resolves
+    const connectStdio = vi.fn(async () => {})
+    const log = vi.fn()
+
+    const result = await startBridgeRuntime({
+      connect, loadTools, connectStdio, sleep: deferredSleep(), log, deadlineMs: 5,
+    })
+
+    expect(result.ipcReady).toBe(false)
+    expect(connectStdio).toHaveBeenCalledTimes(1)
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('deadline'))
+  })
+
   it('never swallows a fatal stdio transport failure', async () => {
     const connect = vi.fn(async () => {})
     const loadTools = vi.fn(async () => {})

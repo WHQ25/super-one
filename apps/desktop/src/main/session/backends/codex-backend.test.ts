@@ -740,10 +740,11 @@ describe('CodexBackend unsupported operations degrade gracefully', () => {
     expect(await backend.getMcpServerStatus()).toEqual([])
   })
 
-  it('getMcpServerStatus maps codex mcpServerStatus/list into shared McpServerInfo', async () => {
+  it('getMcpServerStatus maps codex mcpServerStatus/list into shared McpServerInfo with correct auth semantics', async () => {
     const request = vi.fn(async () => ({
       data: [
         {
+          // stdio server, up: serverInfo present, authStatus 'unsupported' (the normal stdio state)
           name: 'superone',
           serverInfo: { name: 'superone', version: '1.0.0' },
           tools: {
@@ -752,24 +753,16 @@ describe('CodexBackend unsupported operations degrade gracefully', () => {
           },
           authStatus: 'unsupported',
         },
-        {
-          name: 'github',
-          serverInfo: null,
-          tools: {},
-          authStatus: 'notLoggedIn',
-        },
-        {
-          name: 'linear',
-          serverInfo: null,
-          tools: {},
-          authStatus: 'oAuth',
-        },
-        {
-          name: 'broken',
-          serverInfo: null,
-          tools: {},
-          authStatus: 'unsupported',
-        },
+        // genuinely needs login → needs-auth
+        { name: 'github', serverInfo: null, tools: {}, authStatus: 'notLoggedIn' },
+        // 'oAuth' means LOGGED IN (has valid tokens), not needs-auth; not yet connected → failed
+        { name: 'linear', serverInfo: null, tools: {}, authStatus: 'oAuth' },
+        // authenticated via bearer token but not yet connected → failed (not needs-auth)
+        { name: 'sentry', serverInfo: null, tools: {}, authStatus: 'bearerToken' },
+        // stdio server not yet up (no serverInfo, no auth concept) → failed
+        { name: 'broken', serverInfo: null, tools: {}, authStatus: 'unsupported' },
+        // connected but server still reports it needs login → surface needs-auth over connected
+        { name: 'notion', serverInfo: { name: 'notion' }, tools: {}, authStatus: 'notLoggedIn' },
       ],
     }))
     const session = (backend as unknown as { session: { connectionHandle: unknown; threadId: string | null } }).session
@@ -784,20 +777,34 @@ describe('CodexBackend unsupported operations degrade gracefully', () => {
         { name: 'widget_show', description: 'Render a widget' },
         { name: 'session_rename' },
       ] },
-      { name: 'github', status: 'needs-auth', toolCount: 0 },
-      { name: 'linear', status: 'needs-auth', toolCount: 0 },
-      { name: 'broken', status: 'failed', toolCount: 0 },
+      { name: 'github', status: 'needs-auth', toolCount: 0, tools: [] },
+      { name: 'linear', status: 'failed', toolCount: 0, tools: [] },
+      { name: 'sentry', status: 'failed', toolCount: 0, tools: [] },
+      { name: 'broken', status: 'failed', toolCount: 0, tools: [] },
+      { name: 'notion', status: 'needs-auth', toolCount: 0, tools: [] },
     ])
   })
 
   it('reloadMcpServers sends config/mcpServer/reload on the app-server connection', async () => {
     const request = vi.fn(async () => ({}))
-    const session = (backend as unknown as { session: { connectionHandle: unknown } }).session
+    const session = (backend as unknown as { session: { connectionHandle: unknown; runningController: unknown } }).session
     session.connectionHandle = { connection: { request }, close: vi.fn(), getStderr: () => '', onClosed: vi.fn(() => () => {}) }
+    session.runningController = null
 
     await backend.reloadMcpServers()
 
     expect(request).toHaveBeenCalledWith('config/mcpServer/reload')
+  })
+
+  it('reloadMcpServers skips the global reload while a turn is running', async () => {
+    const request = vi.fn(async () => ({}))
+    const session = (backend as unknown as { session: { connectionHandle: unknown; runningController: unknown } }).session
+    session.connectionHandle = { connection: { request }, close: vi.fn(), getStderr: () => '', onClosed: vi.fn(() => () => {}) }
+    session.runningController = new AbortController()
+
+    await backend.reloadMcpServers()
+
+    expect(request).not.toHaveBeenCalled()
   })
 
   it('reloadMcpServers is a no-op without an active connection', async () => {

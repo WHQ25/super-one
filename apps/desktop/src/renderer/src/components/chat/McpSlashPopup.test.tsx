@@ -20,11 +20,13 @@ vi.mock('@/stores/chat', () => {
 vi.mock('@/stores/app', () => {
   const navigateTo = vi.fn()
   const setSettingsTab = vi.fn()
+  const setSettingsProvider = vi.fn()
   return {
-    useAppStore: (selector: (s: { navigateTo: typeof navigateTo; setSettingsTab: typeof setSettingsTab }) => unknown) =>
-      selector({ navigateTo, setSettingsTab }),
+    useAppStore: (selector: (s: { navigateTo: typeof navigateTo; setSettingsTab: typeof setSettingsTab; setSettingsProvider: typeof setSettingsProvider }) => unknown) =>
+      selector({ navigateTo, setSettingsTab, setSettingsProvider }),
     __navigateTo: navigateTo,
     __setSettingsTab: setSettingsTab,
+    __setSettingsProvider: setSettingsProvider,
   }
 })
 
@@ -35,6 +37,7 @@ import * as appMock from '@/stores/app'
 const setChat = (chatMock as unknown as { __setMockChatState: (n: Record<string, unknown>) => void }).__setMockChatState
 const navigateToMock = (appMock as unknown as { __navigateTo: ReturnType<typeof vi.fn> }).__navigateTo
 const setSettingsTabMock = (appMock as unknown as { __setSettingsTab: ReturnType<typeof vi.fn> }).__setSettingsTab
+const setSettingsProviderMock = (appMock as unknown as { __setSettingsProvider: ReturnType<typeof vi.fn> }).__setSettingsProvider
 
 function mockWindow(agentStatus: McpServerInfo[], probeStatus: McpServerInfo[]) {
   const w = window as unknown as Record<string, unknown>
@@ -51,6 +54,7 @@ describe('McpSlashPopup', () => {
     setChat({ activeProject: '/project', sessionProvider: null, preferredProvider: 'claude' })
     navigateToMock.mockClear()
     setSettingsTabMock.mockClear()
+    setSettingsProviderMock.mockClear()
   })
 
   it('renders live status when active session exposes MCP servers', async () => {
@@ -72,7 +76,26 @@ describe('McpSlashPopup', () => {
     expect(screen.getByText('broken')).toBeInTheDocument()
     expect(screen.getByText(/Live · Claude session/)).toBeInTheDocument()
     expect(screen.getByText('3 tools')).toBeInTheDocument()
-    expect(screen.getByText('spawn ENOENT')).toBeInTheDocument()
+    // The error renders as a compact badge after the name, not inline; the detail is collapsed.
+    expect(screen.getByText('error')).toBeInTheDocument()
+    expect(screen.queryByText('spawn ENOENT')).not.toBeInTheDocument()
+  })
+
+  it('renders the server name + error badge for a failed server and reveals the detail on expand', async () => {
+    const longError = 'Streamable HTTP error: Error POSTing to endpoint: {"error":"invalid_token","error_description":"Missing or invalid access token"}'
+    mockWindow([{ name: 'linear', status: 'failed', error: longError }], [])
+
+    render(<McpSlashPopup onClose={vi.fn()} />)
+
+    // Name stays visible; the long error is NOT rendered inline (it used to squeeze the name out).
+    const name = await screen.findByText('linear')
+    expect(name).toBeInTheDocument()
+    expect(screen.getByText('error')).toBeInTheDocument()
+    expect(screen.queryByText(longError)).not.toBeInTheDocument()
+
+    fireEvent.mouseDown(name.closest('button')!)
+
+    expect(await screen.findByText(longError)).toBeInTheDocument()
   })
 
   it('falls back to probe results when session has no MCP servers loaded', async () => {
@@ -123,9 +146,23 @@ describe('McpSlashPopup', () => {
     const settingsBtn = screen.getByTitle('Manage in Settings')
     fireEvent.click(settingsBtn)
 
+    expect(setSettingsProviderMock).toHaveBeenCalledWith('claude')
     expect(setSettingsTabMock).toHaveBeenCalledWith('mcp')
     expect(navigateToMock).toHaveBeenCalledWith('settings')
     expect(onClose).toHaveBeenCalled()
+  })
+
+  it('opens the codex MCP settings when the session is codex', async () => {
+    setChat({ sessionProvider: 'codex' })
+    mockWindow([], [])
+    render(<McpSlashPopup onClose={vi.fn()} />)
+
+    const settingsBtn = await screen.findByTitle('Manage in Settings')
+    fireEvent.click(settingsBtn)
+
+    expect(setSettingsProviderMock).toHaveBeenCalledWith('codex')
+    expect(setSettingsTabMock).toHaveBeenCalledWith('mcp')
+    expect(navigateToMock).toHaveBeenCalledWith('settings')
   })
 
   it('calls onClose when X button clicked', async () => {
@@ -146,5 +183,29 @@ describe('McpSlashPopup', () => {
     render(<McpSlashPopup onClose={vi.fn()} />)
 
     expect(await screen.findByText(/Live · Codex session/)).toBeInTheDocument()
+  })
+
+  it('probes the codex config (not claude) when a codex session has no live status', async () => {
+    setChat({ sessionProvider: 'codex' })
+    // No active codex connection → live empty → fall back to a probe scoped to codex,
+    // so the handler reads codex config.toml rather than Claude's MCP config.
+    mockWindow([], [{ name: 'codex-srv', status: 'connected', toolCount: 2 }])
+
+    render(<McpSlashPopup onClose={vi.fn()} />)
+
+    expect(await screen.findByText('codex-srv')).toBeInTheDocument()
+    expect((window as unknown as { app: { checkMcpServers: ReturnType<typeof vi.fn> } }).app.checkMcpServers)
+      .toHaveBeenCalledWith('/project', 'codex')
+  })
+
+  it('probes the claude config for a claude session', async () => {
+    setChat({ sessionProvider: 'claude' })
+    mockWindow([], [{ name: 'context7', status: 'connected', toolCount: 2 }])
+
+    render(<McpSlashPopup onClose={vi.fn()} />)
+
+    expect(await screen.findByText('context7')).toBeInTheDocument()
+    expect((window as unknown as { app: { checkMcpServers: ReturnType<typeof vi.fn> } }).app.checkMcpServers)
+      .toHaveBeenCalledWith('/project', 'claude')
   })
 })

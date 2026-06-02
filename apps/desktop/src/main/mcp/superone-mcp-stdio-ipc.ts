@@ -77,7 +77,9 @@ async function handleRequest(client: IpcClient, raw: unknown): Promise<void> {
       const sessionId = readString(params.sessionId)
       if (!sessionId) throw new Error('Missing sessionId')
       client.sessionId = sessionId
-      writeMessage(client.socket, { id, result: { tools: listSuperoneMcpTools(sessionId) } })
+      const tools = listSuperoneMcpTools(sessionId)
+      log.debug('[mcp-stdio-ipc] tools/list sid=%s → %d tools: %s', sessionId, tools.length, tools.map((t) => t.name).join(','))
+      writeMessage(client.socket, { id, result: { tools } })
       return
     }
 

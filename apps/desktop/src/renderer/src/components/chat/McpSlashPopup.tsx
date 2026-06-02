@@ -50,9 +50,9 @@ function statusLabel(server: McpServerInfo, t: (k: string, p?: Record<string, un
     case 'pending':
       return t('resources.mcp.statusConnecting')
     case 'needs-auth':
-      return server.error ?? t('resources.mcp.statusFailed')
+      return t('resources.mcp.statusFailed')
     case 'failed':
-      return server.error ?? t('resources.mcp.statusFailed')
+      return t('resources.mcp.statusFailed')
     case 'disabled':
       return t('resources.mcp.statusDisabled')
   }
@@ -64,6 +64,7 @@ export function McpSlashPopup({ onClose }: { onClose: () => void }) {
   const harness = useActiveSession((s) => s.sessionProvider ?? s.preferredProvider)
   const navigateTo = useAppStore((s) => s.navigateTo)
   const setSettingsTab = useAppStore((s) => s.setSettingsTab)
+  const setSettingsProvider = useAppStore((s) => s.setSettingsProvider)
 
   const [state, setState] = useState<State>({ mode: 'empty', servers: [], meta: {}, loading: true })
   const [bundles, setBundles] = useState<McpbInstalledEntry[]>([])
@@ -135,7 +136,10 @@ export function McpSlashPopup({ onClose }: { onClose: () => void }) {
         setState({ mode: 'live', servers: live, meta: mergedMeta, loading: false })
         return
       }
-      const probe = await window.app.checkMcpServers(activeProject)
+      // Not connected: probe the configured servers for THIS harness. Passing the
+      // harness is what keeps a Codex session from probing Claude's MCP config (and
+      // vice-versa) — the handler reads codex config.toml vs claude config accordingly.
+      const probe = await window.app.checkMcpServers(activeProject, harness)
       if (import.meta.env.DEV) {
         console.log('[McpPopup] probe status:', probe.status)
         console.log('[McpPopup] probe meta keys:', Object.keys(probe.meta ?? {}))
@@ -151,7 +155,7 @@ export function McpSlashPopup({ onClose }: { onClose: () => void }) {
       const message = err instanceof Error ? err.message : String(err)
       setState({ mode: 'empty', servers: [], meta: {}, loading: false, error: message })
     }
-  }, [activeProject])
+  }, [activeProject, harness])
 
   useEffect(() => { void load() }, [load])
 
@@ -186,9 +190,12 @@ export function McpSlashPopup({ onClose }: { onClose: () => void }) {
 
   const openMcpSettings = useCallback(() => {
     onClose()
+    // Open the MCP settings for THIS session's harness (codex vs claude). Set the
+    // provider first — it resets the active tab — then force the mcp tab.
+    setSettingsProvider(harness === 'codex' ? 'codex' : 'claude')
     setSettingsTab('mcp')
     navigateTo('settings')
-  }, [onClose, setSettingsTab, navigateTo])
+  }, [onClose, setSettingsProvider, setSettingsTab, navigateTo, harness])
 
   const banner = useMemo(() => {
     if (state.loading) return ''
@@ -264,11 +271,14 @@ export function McpSlashPopup({ onClose }: { onClose: () => void }) {
             const isExpanded = expanded.has(server.name)
             const tools = server.tools ?? []
             const probe = state.mode === 'probe'
+            const isError = server.status === 'failed' || server.status === 'needs-auth'
+            const hasErrorDetail = isError && !!server.error
+            const canExpand = tools.length > 0 || hasErrorDetail
             return (
               <div key={`${server.scope ?? 'local'}:${server.name}`} className="px-1">
                 <button
                   type="button"
-                  onMouseDown={(e) => { e.preventDefault(); toggleExpand(server.name) }}
+                  onMouseDown={(e) => { e.preventDefault(); if (canExpand) toggleExpand(server.name) }}
                   className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-muted/50"
                 >
                   <ServerIcon name={server.name} meta={state.meta[server.name]} bundle={bundlesByName[server.name]} />
@@ -277,6 +287,18 @@ export function McpSlashPopup({ onClose }: { onClose: () => void }) {
                     {server.scope && server.scope !== 'user' && server.scope !== 'project' && (
                       <span className="rounded bg-muted px-1 py-px text-[9px] uppercase text-muted-foreground">{server.scope}</span>
                     )}
+                    {isError && (
+                      <span
+                        className={cn(
+                          'shrink-0 rounded px-1 py-px text-[9px] font-medium uppercase',
+                          server.status === 'needs-auth'
+                            ? 'bg-yellow-500/15 text-yellow-600 dark:text-yellow-400'
+                            : 'bg-red-500/15 text-red-600 dark:text-red-400',
+                        )}
+                      >
+                        {server.status === 'needs-auth' ? t('chat.mcpPopup.authBadge') : t('chat.mcpPopup.errorBadge')}
+                      </span>
+                    )}
                   </div>
                   <span
                     className={cn(
@@ -284,15 +306,23 @@ export function McpSlashPopup({ onClose }: { onClose: () => void }) {
                       probe ? 'ring-1 ring-inset ring-border bg-transparent' : STATUS_DOT[server.status],
                     )}
                   />
-                  <span className="shrink-0 truncate text-xs text-muted-foreground">{statusLabel(server, t)}</span>
-                  {tools.length > 0
+                  {!isError && (
+                    <span className="shrink-0 truncate text-xs text-muted-foreground">{statusLabel(server, t)}</span>
+                  )}
+                  {canExpand
                     ? (isExpanded
                       ? <ChevronDown className="size-3 shrink-0 text-muted-foreground" />
                       : <ChevronRight className="size-3 shrink-0 text-muted-foreground" />)
                     : <span className="size-3 shrink-0" />}
                 </button>
-                {isExpanded && tools.length > 0 && (
-                  <div className="ml-9 mb-1 space-y-0.5 border-l border-border pl-2">
+                {isExpanded && canExpand && (
+                  // ml aligns the guide line with the icon center: button px-2 (8px) + size-7 icon half (14px) = 22px
+                  <div className="ml-[22px] mb-1 space-y-0.5 border-l border-border pl-2">
+                    {hasErrorDetail && (
+                      <p className="whitespace-pre-wrap break-words rounded px-2 py-1 font-mono text-[10px] text-red-600 dark:text-red-400">
+                        {server.error}
+                      </p>
+                    )}
                     {tools.map((tool) => (
                       <div key={tool.name} className="rounded px-2 py-1 hover:bg-muted/30">
                         <p className="font-mono text-[11px] text-foreground">{tool.name}</p>

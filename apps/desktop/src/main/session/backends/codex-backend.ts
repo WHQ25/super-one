@@ -131,28 +131,30 @@ function mapCodexMcpServerStatus(raw: unknown): McpServerInfo | null {
   const entry = raw as { name?: unknown; serverInfo?: unknown; tools?: unknown; authStatus?: unknown }
   const name = typeof entry.name === 'string' ? entry.name : ''
   if (!name) return null
-  const connected = entry.serverInfo != null
-  const status: McpServerInfo['status'] = connected
-    ? 'connected'
-    : entry.authStatus === 'notLoggedIn' || entry.authStatus === 'oAuth'
-      ? 'needs-auth'
+  // Codex authStatus: 'unsupported' (no auth concept — the normal state for plain
+  // stdio servers) | 'notLoggedIn' (OAuth supported but no token yet) | 'bearerToken'
+  // (authenticated) | 'oAuth' (logged in with valid tokens). Only 'notLoggedIn'
+  // genuinely needs the user to authenticate — surface it even when serverInfo is
+  // present, since serverInfo and authStatus are independent server-side lookups.
+  // Otherwise a populated serverInfo means the handshake completed (connected); a
+  // null one means the server isn't up (failed — the snapshot can't tell starting
+  // from failed, and 'oAuth'/'bearerToken'/'unsupported' here are NOT needs-auth).
+  const status: McpServerInfo['status'] = entry.authStatus === 'notLoggedIn'
+    ? 'needs-auth'
+    : entry.serverInfo != null
+      ? 'connected'
       : 'failed'
-  const toolsMap = entry.tools && typeof entry.tools === 'object'
+  const toolsRecord = entry.tools && typeof entry.tools === 'object'
     ? Object.values(entry.tools as Record<string, { name?: unknown; description?: unknown }>)
     : []
-  const tools = toolsMap
+  const tools = toolsRecord
     .filter((t): t is { name?: unknown; description?: unknown } => t != null && typeof t === 'object')
     .map((t) => ({
       name: typeof t.name === 'string' ? t.name : '',
       ...(typeof t.description === 'string' ? { description: t.description } : {}),
     }))
     .filter((t) => t.name)
-  return {
-    name,
-    status,
-    toolCount: tools.length,
-    ...(tools.length > 0 ? { tools } : {}),
-  }
+  return { name, status, toolCount: tools.length, tools }
 }
 
 export class CodexBackend implements SessionBackend {
@@ -799,8 +801,14 @@ export class CodexBackend implements SessionBackend {
   }
 
   async reloadMcpServers(): Promise<void> {
-    const handle = this.session?.connectionHandle
+    const session = this.session
+    const handle = session?.connectionHandle
     if (!handle) return
+    // codex `config/mcpServer/reload` is global (reconnects every MCP server
+    // process-wide, not thread-scoped), so firing it mid-turn can drop the server
+    // backing an in-flight tool call. New tools only affect the NEXT turn (which
+    // rebuilds and re-snapshots anyway), so skip the reload while a turn is running.
+    if (session?.runningController) return
     try {
       await handle.connection.request('config/mcpServer/reload')
     } catch (err) {

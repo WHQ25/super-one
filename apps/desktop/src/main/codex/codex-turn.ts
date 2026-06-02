@@ -1291,6 +1291,48 @@ async function drainPrewarmNotifications(
   }
 }
 
+/**
+ * Wait for a specific MCP server to finish starting (codex emits
+ * `mcpServer/startupStatus/updated` starting→ready after thread/start). Used before
+ * `turn/start` on a freshly-started thread so the turn's one-shot tool snapshot includes
+ * the server's tools — e.g. the superone bridge serving freshly @-mentioned mini-app
+ * tools. Unlike draining ALL servers (slow codex connectors can take ~10s), this returns
+ * as soon as the named server settles. Polls only the pre-turn notification window; the
+ * turn input has not been sent yet, so consuming these notifications is safe.
+ */
+export async function waitForCodexMcpServerReady(
+  connection: AppServerConnection,
+  session: CodexSession,
+  serverName: string,
+  deadlineMs = 6_000,
+): Promise<void> {
+  if (!connection.pollNotification) return
+  const deadline = Date.now() + deadlineMs
+  while (Date.now() < deadline) {
+    const notification = await connection.pollNotification(Math.max(1, Math.min(500, deadline - Date.now())))
+    if (!notification) continue
+    const { method, params } = notification
+    if (notification.requestIdRaw !== undefined) {
+      await respondToPrewarmRequest(connection, notification)
+      continue
+    }
+    if (method === 'thread/started') {
+      const startedThreadId = readString(asRecord(params.thread)?.id)
+      if (startedThreadId) { session.threadId = startedThreadId; session.threadReady = true }
+      continue
+    }
+    if (method === 'mcpServer/startupStatus/updated') {
+      if (readString(params.name) !== serverName) continue
+      const status = readString(params.status)
+      if (status === 'starting') continue
+      if (status === 'failed' || status === 'cancelled') {
+        log.warn('[codex] MCP server "%s" startup %s before turn: %s', serverName, status, readString(params.error) ?? 'no detail')
+      }
+      return
+    }
+  }
+}
+
 export async function prewarmCodexSession(
   handle: AppServerConnectionHandle,
   session: CodexSession,
@@ -1978,7 +2020,16 @@ export async function runCodexTurn(
     )
 
     const streamed = await withSessionConnection(session, auth, controller.signal, async (connection) => {
+      const wasThreadReady = session.threadReady
       const resolvedThreadId = await resolveThread(connection, session, projectPath, effectiveCwd, permissionProfile)
+
+      // A freshly-started thread connects its MCP servers asynchronously after thread/start.
+      // turn/start snapshots the available tools once, so wait for the superone bridge to
+      // finish starting first — otherwise the first turn after an @-mention (which registers
+      // mini-app tools then forces a rebuild→fresh thread) races the bridge and sees none.
+      if (!wasThreadReady) {
+        await waitForCodexMcpServerReady(connection, session, 'superone')
+      }
 
       const turnStartResult = await connection.request(
         'turn/start',

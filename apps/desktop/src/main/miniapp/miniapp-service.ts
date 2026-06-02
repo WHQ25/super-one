@@ -783,9 +783,22 @@ export async function handleFsRequest(
       }
     }
     case 'glob': {
-      const pattern = args.pattern as string
+      const patternRaw = args.pattern as string
+      // Scope the glob like read/write: a bare pattern matches the project (default)
+      // group; an `@scope/` prefix targets that scope. Without this, glob would scan
+      // every declared root (app-data inside .superone, user-home) and return a flat
+      // list of root-ambiguous paths, leaking app-private files into project globs.
+      const prefix = SCOPE_PREFIX.exec(patternRaw)
+      const targetScope = prefix ? (prefix[1] as FsScopeKind) : null
+      const pattern = prefix ? patternRaw.slice(prefix[0].length) : patternRaw
+      const group = targetScope
+        ? dirs.filter((d) => d.scope === targetScope)
+        : defaultGroup(dirs, patternRaw)
+      if (group.length === 0) {
+        throw new Error(`No '@${targetScope}' directory declared: ${patternRaw}`)
+      }
       const allFiles: string[] = []
-      for (const dir of dirs) {
+      for (const dir of group) {
         for await (const entry of glob(pattern, { cwd: dir.path })) {
           allFiles.push(entry)
         }

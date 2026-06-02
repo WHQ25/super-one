@@ -42,6 +42,7 @@ const {
   mapThreadItemFromAppServer,
   mapApprovalRequest,
   extractSuperoneMiniAppToolName,
+  waitForCodexMcpServerReady,
 } = await import('./codex-turn')
 const { getActiveProviderRaw, getProviderByIdRaw } = await import('../database')
 const { createCodexSession } = await import('./codex-session')
@@ -52,6 +53,51 @@ function makeSession(overrides: { threadId?: string | null; model?: string } = {
     ...createCodexSession('test-session', '/project', overrides.model, overrides.threadId ?? undefined, undefined, 'default'),
   }
 }
+
+describe('waitForCodexMcpServerReady', () => {
+  type Note = { requestIdRaw?: unknown; method: string; params: Record<string, unknown> }
+  function makeConn(queue: Array<Note | null>) {
+    let i = 0
+    return {
+      request: vi.fn(async () => ({})),
+      respond: vi.fn(async () => {}),
+      notify: vi.fn(async () => {}),
+      nextNotification: vi.fn(),
+      pollNotification: vi.fn(async () => (i < queue.length ? queue[i++] : null)),
+    } as never
+  }
+  const startup = (name: string, status: string) => ({ method: 'mcpServer/startupStatus/updated', params: { name, status } })
+
+  it('returns once the target server reaches a ready (non-starting) status', async () => {
+    const conn = makeConn([
+      startup('linear', 'starting'),
+      startup('superone', 'starting'),
+      startup('superone', 'ready'),
+      startup('codex_apps', 'starting'), // would come later; must not be needed
+    ])
+    await waitForCodexMcpServerReady(conn, makeSession() as never, 'superone', 1_000)
+    // Polled exactly up to the superone 'ready' notification (3 polls), not the 4th.
+    expect((conn as { pollNotification: { mock: { calls: unknown[] } } }).pollNotification.mock.calls.length).toBe(3)
+  })
+
+  it('returns when the target server fails to start (settled), without hanging', async () => {
+    const conn = makeConn([startup('superone', 'starting'), startup('superone', 'failed')])
+    await waitForCodexMcpServerReady(conn, makeSession() as never, 'superone', 1_000)
+    expect((conn as { pollNotification: { mock: { calls: unknown[] } } }).pollNotification.mock.calls.length).toBe(2)
+  })
+
+  it('gives up at the deadline if the server never reports (turn still proceeds)', async () => {
+    const conn = makeConn([]) // only nulls → no startup notification ever
+    const start = Date.now()
+    await waitForCodexMcpServerReady(conn, makeSession() as never, 'superone', 80)
+    expect(Date.now() - start).toBeGreaterThanOrEqual(75)
+  })
+
+  it('is a no-op when the connection cannot poll notifications', async () => {
+    const conn = { request: vi.fn(), respond: vi.fn(), notify: vi.fn(), nextNotification: vi.fn() } as never
+    await expect(waitForCodexMcpServerReady(conn, makeSession() as never, 'superone', 1_000)).resolves.toBeUndefined()
+  })
+})
 
 describe('resolveThread fallback', () => {
   const permissionProfile = {

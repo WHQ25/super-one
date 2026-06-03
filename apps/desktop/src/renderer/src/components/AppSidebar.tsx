@@ -59,8 +59,11 @@ export const AppSidebar = memo(function AppSidebar() {
   const resetSession = useChatStore((s) => s.resetSession)
   const removeSessionFromMemory = useChatStore((s) => s.removeSessionFromMemory)
   const switchSession = useChatStore((s) => s.switchSession)
-  const currentProject = useChatStore(useCallback((s) => currentFolder ? s.projectSessions[currentFolder] : undefined, [currentFolder]))
-  const projectSessions = useChatStore((s) => s.projectSessions)
+  const { currentActiveSid, currentStatus } = useChatStore(useShallow((s) => {
+    const proj = currentFolder ? s.projectSessions[currentFolder] : undefined
+    const sid = proj?._activeSessionId
+    return { currentActiveSid: sid, currentStatus: sid ? proj?._sessions?.[sid]?.status : undefined }
+  }))
 
   const [filesMounted, setExplorerMounted] = useState(sidebarTab === 'files')
   if (sidebarTab === 'files' && !filesMounted) setExplorerMounted(true)
@@ -208,10 +211,17 @@ export const AppSidebar = memo(function AppSidebar() {
   // Load pinned sessions on mount
   useEffect(() => { refreshPinned() }, [refreshPinned])
 
-  const currentActiveSid = currentProject?._activeSessionId
-  const currentActiveSession = currentActiveSid ? currentProject?._sessions?.[currentActiveSid] : undefined
-  const currentStatus = currentActiveSession?.status
   const currentSessionId = currentActiveSid
+  const pinnedStatuses = useChatStore(useShallow((s) => {
+    const map: Record<string, string> = {}
+    for (const p of pinnedSessions) {
+      const proj = s.projectSessions[p.folderPath]
+      const status = proj?._sessions?.[p.sessionId]?.status ?? ''
+      const unseen = proj?.unseenCompletedSessions?.has(p.sessionId) ? '1' : '0'
+      map[p.sessionId] = `${status}:${unseen}`
+    }
+    return map
+  }))
   useEffect(() => {
     if (!currentFolder) return
     void loadFolderSessions(currentFolder, 'current')
@@ -417,11 +427,10 @@ export const AppSidebar = memo(function AppSidebar() {
                 ? ClaudeSessionIcon
                 : null
             const pinIsActive = currentFolder === s.folderPath && currentActiveSid === s.sessionId
-            const pinProj = projectSessions[s.folderPath]
-            const pinEntry = pinProj?._sessions?.[s.sessionId]
-            const pinIsRunning = pinEntry?.status === 'streaming'
-            const pinIsBackground = pinEntry?.status === 'background'
-            const pinIsUnseen = pinProj?.unseenCompletedSessions?.has(s.sessionId)
+            const [pinStatus, pinUnseenFlag] = (pinnedStatuses[s.sessionId] ?? ':0').split(':')
+            const pinIsRunning = pinStatus === 'streaming'
+            const pinIsBackground = pinStatus === 'background'
+            const pinIsUnseen = pinUnseenFlag === '1'
             const pinHarnessStatus: SessionIconProps['status'] = pinIsRunning
               ? 'running'
               : pinIsBackground

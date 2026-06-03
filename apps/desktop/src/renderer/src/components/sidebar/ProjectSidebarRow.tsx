@@ -1,4 +1,5 @@
 import { memo, useMemo, useState, useEffect, useCallback, useRef, useLayoutEffect } from 'react'
+import { useShallow } from 'zustand/react/shallow'
 import { useTranslation } from 'react-i18next'
 import { CalendarClock, ChevronDown, ChevronRight, ChevronUp, Folder, FolderOpen, FolderX, History, Pencil, Play, SquarePen, Trash2 } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@superone/ui/components/ui/tooltip'
@@ -71,7 +72,31 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
   onNewSession,
 }: ProjectSidebarRowProps) {
   const { t } = useTranslation()
-  const projectSession = useChatStore((s) => s.projectSessions[folder.path])
+  const liveSessionSig = useChatStore(useShallow((s) => {
+    const proj = s.projectSessions[folder.path]
+    const sig: Record<string, string> = {}
+    if (proj?._sessions) {
+      for (const [sid, data] of Object.entries(proj._sessions)) {
+        if (data.messages.length === 0) continue
+        sig[sid] = [
+          data.status ?? '',
+          data.messages.length,
+          data._historyHydrated ? 1 : 0,
+          proj.unseenCompletedSessions.has(sid) ? 1 : 0,
+          (data.pendingPermissions?.length ?? 0) > 0 ? 1 : 0,
+          data.pendingQuestion ? 1 : 0,
+          data.pendingPlanApproval ? 1 : 0,
+          data.awaitingAssistantReply ? 1 : 0,
+          data.sessionProvider ?? '',
+          data.session?.sessionId ?? '',
+          data._worktreeBaseBranch ?? '',
+          data._worktreePath ?? '',
+          getSessionTitle(data.messages) ?? '',
+        ].join('\x01')
+      }
+    }
+    return sig
+  }))
 
   const INITIAL_EXPAND_LEVEL = 6
   const [expandLevel, setExpandLevel] = useState<number>(INITIAL_EXPAND_LEVEL)
@@ -87,6 +112,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
   }, [isExpanded, onToggleExpand, folder.path])
 
   const derived = useMemo(() => {
+    const projectSession = useChatStore.getState().projectSessions[folder.path]
     const dbVisibleSessions = allSessions.filter((session) => !session.isHidden)
     const dbSessionById = new Map(allSessions.map((session) => [session.sessionId, session]))
     let sessions = dbVisibleSessions
@@ -133,7 +159,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
       hasMoreThanInitial: sessions.length > expandLevel,
       hasOverflow: sessions.length > maxSessions,
     }
-  }, [allSessions, folder.path, isExpanded, maxSessions, projectSession, expandLevel])
+  }, [allSessions, folder.path, isExpanded, maxSessions, liveSessionSig, expandLevel])
 
   const allWorkers = useMiniAppStore((s) => s.workers)
   const projectWorkers = useMemo(

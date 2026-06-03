@@ -1,4 +1,5 @@
 import { memo, useCallback } from 'react'
+import { useShallow } from 'zustand/react/shallow'
 import { toast } from 'sonner'
 import { useTranslation } from 'react-i18next'
 import { Bot, Copy, Eye, EyeOff, FolderOpen, GitFork, Loader2, MessageSquare, Pencil, PictureInPicture2, Pin, Smartphone, Trash2 } from 'lucide-react'
@@ -53,15 +54,22 @@ export const SessionRow = memo(function SessionRow({
   const { t } = useTranslation()
   const currentFolder = useAppStore((s) => s.currentFolder)
   const hasRealProject = useHasRealProject()
-  const projectSession = useChatStore((s) => s.projectSessions[folderPath])
   const remoteSessionIds = useChatStore((s) => s.remoteSessions[folderPath] ?? EMPTY_REMOTE_SESSION_IDS)
+  const { activeSid, status, lastEventAt, isUnseen, pendingReason } = useChatStore(useShallow((s) => {
+    const proj = s.projectSessions[folderPath]
+    const entry = proj?._sessions?.[session.sessionId]
+    return {
+      activeSid: proj?._activeSessionId ?? null,
+      status: entry?.status,
+      lastEventAt: entry?.lastEventAt ?? 0,
+      isUnseen: proj?.unseenCompletedSessions?.has(session.sessionId) ?? false,
+      pendingReason: getPendingReason(entry?.pendingPermissions, entry?.pendingQuestion, entry?.pendingPlanApproval),
+    }
+  }))
 
   const isProjectActive = hasRealProject && folderPath === currentFolder
-  const activeSid = projectSession?._activeSessionId ?? null
-  const sessionEntry = projectSession?._sessions?.[session.sessionId]
-  const isRunning = sessionEntry?.status === 'streaming'
-  const isBackground = sessionEntry?.status === 'background'
-  const isUnseen = projectSession?.unseenCompletedSessions?.has(session.sessionId)
+  const isRunning = status === 'streaming'
+  const isBackground = status === 'background'
   const isSessionActive = isProjectActive && activeSid === session.sessionId
   const harnessStatus: SessionIconProps['status'] = isRunning
     ? 'running'
@@ -77,7 +85,6 @@ export const SessionRow = memo(function SessionRow({
     : session.provider === 'claude'
       ? ClaudeSessionIcon
       : null
-  const pendingReason = getPendingReason(sessionEntry?.pendingPermissions, sessionEntry?.pendingQuestion, sessionEntry?.pendingPlanApproval)
 
   const handleForkSession = useCallback(async (mode: SessionForkMode) => {
     const toastId = toast.loading(t('sidebar.contextMenu.forkingToast'))
@@ -125,7 +132,7 @@ export const SessionRow = memo(function SessionRow({
                   : HarnessIcon && harnessStatus !== 'default'
                     ? <HarnessIcon status={harnessStatus} active={isSessionActive} />
                     : isRunning
-                      ? <SessionStatusSpinner lastEventAt={sessionEntry?.lastEventAt ?? 0} />
+                      ? <SessionStatusSpinner lastEventAt={lastEventAt} />
                       : <MessageSquare className="size-3 text-sidebar-foreground/70" />
                 }
               </span>

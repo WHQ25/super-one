@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { carryUncommittedChanges, getHandoffPreview, handoffToLocal } from './worktree-ops'
+import { assignBranch, carryUncommittedChanges, getHandoffPreview, handoffToLocal } from './worktree-ops'
 
 function git(cwd: string, ...args: string[]): string {
   return execFileSync('git', args, { cwd, encoding: 'utf8' }).trim()
@@ -138,6 +138,69 @@ describe('handoffToLocal', () => {
     expect(readFileSync(join(repo, 'README.md'), 'utf8')).toBe('MAINEDIT\n')
     // worktree changes never lost
     expect(readFileSync(join(wt, 'README.md'), 'utf8')).toBe('WORKTREE\n')
+  })
+})
+
+describe('assignBranch', () => {
+  it('names a detached worktree as a new branch in place, preserving its commits', async () => {
+    const repo = makeRepo()
+    const wt = addDetachedWorktree(repo)
+    writeFileSync(join(wt, 'feature.txt'), 'committed feature\n')
+    git(wt, 'add', '.')
+    git(wt, 'commit', '-m', 'add feature')
+    const headBefore = git(wt, 'rev-parse', 'HEAD')
+
+    const result = await assignBranch(wt, 'feat/login')
+
+    expect(result).toEqual({ ok: true, branch: 'feat/login' })
+    // worktree is now on the branch, pointing at the same commit
+    expect(git(wt, 'symbolic-ref', '--short', 'HEAD')).toBe('feat/login')
+    expect(git(wt, 'rev-parse', 'HEAD')).toBe(headBefore)
+    expect(readFileSync(join(wt, 'feature.txt'), 'utf8')).toContain('committed feature')
+  })
+
+  it('keeps uncommitted changes when assigning a branch', async () => {
+    const repo = makeRepo()
+    const wt = addDetachedWorktree(repo)
+    writeFileSync(join(wt, 'wip.txt'), 'work in progress\n')
+
+    const result = await assignBranch(wt, 'feat/wip')
+
+    expect(result).toEqual({ ok: true, branch: 'feat/wip' })
+    expect(git(wt, 'symbolic-ref', '--short', 'HEAD')).toBe('feat/wip')
+    expect(readFileSync(join(wt, 'wip.txt'), 'utf8')).toContain('work in progress')
+  })
+
+  it('rejects an empty name', async () => {
+    const repo = makeRepo()
+    const wt = addDetachedWorktree(repo)
+
+    expect(await assignBranch(wt, '   ')).toEqual({ ok: false, reason: 'name-required' })
+  })
+
+  it('rejects a name that already exists as a branch', async () => {
+    const repo = makeRepo()
+    git(repo, 'branch', 'existing')
+    const wt = addDetachedWorktree(repo)
+
+    expect(await assignBranch(wt, 'existing')).toEqual({ ok: false, reason: 'exists' })
+    // worktree stays detached
+    expect(() => git(wt, 'symbolic-ref', 'HEAD')).toThrow()
+  })
+
+  it('rejects a name checked out in another worktree', async () => {
+    const repo = makeRepo()
+    addWorktree(repo, 'develop')
+    const wt = addDetachedWorktree(repo)
+
+    expect(await assignBranch(wt, 'develop')).toEqual({ ok: false, reason: 'checked-out' })
+  })
+
+  it('rejects when the worktree is already on a branch', async () => {
+    const repo = makeRepo()
+    const wt = addWorktree(repo, 'already')
+
+    expect(await assignBranch(wt, 'feat/new')).toEqual({ ok: false, reason: 'not-detached' })
   })
 })
 

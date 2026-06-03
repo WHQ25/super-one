@@ -509,6 +509,14 @@ export type Messages = {
       handoffErrorConflict: string
       handoffErrorNotWorktree: string
       handoffErrorGeneric: string
+      assignHeading: string
+      assignInfo: string
+      assignPlaceholder: string
+      assignButton: string
+      assignSuccess: string
+      assignErrorExists: string
+      assignErrorCheckedOut: string
+      assignErrorGeneric: string
     }
     git: {
       init: string
@@ -1760,6 +1768,14 @@ export const en: Messages = {
       handoffErrorConflict: 'Changes conflict with the local folder — nothing was handed off',
       handoffErrorNotWorktree: 'Not running in a worktree',
       handoffErrorGeneric: 'Handoff failed',
+      assignHeading: 'Assign to a branch',
+      assignInfo: "Name this detached worktree's commits as a branch — it stays here, ready to commit and push.",
+      assignPlaceholder: 'e.g. feat/login',
+      assignButton: 'Assign branch',
+      assignSuccess: 'Worktree assigned to {{name}}',
+      assignErrorExists: 'Branch {{name}} already exists',
+      assignErrorCheckedOut: 'Branch {{name}} is checked out in another worktree',
+      assignErrorGeneric: 'Could not assign branch',
     },
     git: {
       init: 'Init Git',

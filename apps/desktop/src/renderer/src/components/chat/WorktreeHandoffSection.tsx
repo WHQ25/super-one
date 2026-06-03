@@ -24,13 +24,17 @@ const HANDOFF_ERROR_KEY: Record<HandoffFailure['reason'], string> = {
 export function WorktreeHandoffSection({ worktreePath, onDone }: WorktreeHandoffSectionProps) {
   const { t } = useTranslation()
   const [stat, setStat] = useState<GitDirtyStatus | null>(null)
+  const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
     let cancelled = false
+    setLoading(true)
     window.app.getHandoffPreview(worktreePath).then((s) => {
-      if (!cancelled) setStat(s)
-    }).catch(() => {})
+      if (cancelled) return
+      setStat(s)
+      setLoading(false)
+    }).catch(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
   }, [worktreePath])
 
@@ -50,7 +54,7 @@ export function WorktreeHandoffSection({ worktreePath, onDone }: WorktreeHandoff
     }
   }
 
-  if (!stat || stat.files === 0) return null
+  const hasChanges = !!stat && stat.files > 0
 
   return (
     <div className="border-t p-3">
@@ -59,13 +63,15 @@ export function WorktreeHandoffSection({ worktreePath, onDone }: WorktreeHandoff
         {t('chat.worktree.handoffHeading')}
       </div>
       <p className="mb-2 text-[11px] text-muted-foreground">{t('chat.worktree.handoffInfo')}</p>
-      <p className="mb-2 text-[10px] text-muted-foreground">
-        <DiffStat stat={stat} />
-      </p>
+      {(loading || hasChanges) && (
+        <p className="mb-2 flex items-center gap-1.5 text-[10px] text-muted-foreground">
+          {loading ? <Loader2 className="size-3 animate-spin" /> : <DiffStat stat={stat!} />}
+        </p>
+      )}
       <button
         type="button"
         onClick={submit}
-        disabled={busy}
+        disabled={busy || loading || !hasChanges}
         className="flex w-full items-center justify-center gap-1.5 rounded-md border border-input px-2 py-1.5 text-xs hover:bg-accent disabled:opacity-50"
       >
         {busy && <Loader2 className="size-3 animate-spin" />}

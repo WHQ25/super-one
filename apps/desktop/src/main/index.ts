@@ -6,7 +6,7 @@ import { homedir, hostname } from 'os'
 import { resolveRealPath, isPathWithinAllowed, sanitizeGitRef, getReadableAssetRoots } from './path-security'
 import { spawn } from 'child_process'
 import { gitRun } from './git-run'
-import { activateWorktree, getCheckedOutBranches, getHandoffPreview, getWorktreeInfo, gitErrorMessage, handoffToLocal } from './git/worktree-ops'
+import { activateWorktree, assignBranch, getCheckedOutBranches, getHandoffPreview, getWorktreeInfo, gitErrorMessage, handoffToLocal } from './git/worktree-ops'
 import { is } from '@electron-toolkit/utils'
 import log from './logger'
 import { startMediaServer, getMediaServerPort } from './media-server'
@@ -1066,6 +1066,12 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(AgentIpcChannels.GIT_HANDOFF_PREVIEW, async (_event, worktreePath: string) => {
     return getHandoffPreview(worktreePath)
+  })
+
+  ipcMain.handle(AgentIpcChannels.GIT_ASSIGN_BRANCH, async (_event, folderPath: string, worktreePath: string, name: string) => {
+    const result = await assignBranch(worktreePath, name)
+    if (result.ok) await agentService.switchCwd(folderPath, worktreePath, result.branch)
+    return result
   })
 
   const EXT_LANG: Record<string, string> = {

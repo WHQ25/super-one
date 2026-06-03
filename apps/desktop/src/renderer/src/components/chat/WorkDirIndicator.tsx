@@ -6,6 +6,7 @@ import { useActiveSession } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 import type { GitDirtyStatus, WorktreeEntry, WorktreeInfo, WorktreeMode } from '@superone/shared/agent-types'
 import { WorktreeHandoffSection } from './WorktreeHandoffSection'
+import { WorktreeAssignBranchSection } from './WorktreeAssignBranchSection'
 import { WorktreeForkSection } from './WorktreeForkSection'
 import { DiffStat } from './DiffStat'
 
@@ -360,6 +361,17 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
               )}
             </div>
           </div>
+
+          {isActive && activePath && activeIsDetached && currentFolder && (
+            <WorktreeAssignBranchSection
+              folderPath={currentFolder}
+              worktreePath={activePath}
+              onAssigned={() => {
+                void window.app.getWorktreeInfo(currentFolder).then(setWorktreeInfo)
+                setPopoverOpen(false)
+              }}
+            />
+          )}
 
           {isActive && activePath && (
             <WorktreeHandoffSection

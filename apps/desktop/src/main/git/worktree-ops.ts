@@ -9,6 +9,7 @@ import type {
   WorktreeInfo,
   WorktreeEntry,
   WorktreeHandoffResult,
+  WorktreeAssignResult,
   GitDirtyStatus,
 } from '@superone/shared/agent-types'
 
@@ -268,4 +269,34 @@ export async function handoffToLocal(worktreePath: string): Promise<WorktreeHand
   // lands as one uniform unstaged diff for the user to review and commit.
   await gitRun(diff.localDir, ['reset', '--quiet']).catch(() => {})
   return { ok: true }
+}
+
+/**
+ * Promote a detached worktree into a named branch in place — `git switch -c`
+ * from the current commit. This is a pure ref operation: HEAD does not move and
+ * the working tree (including uncommitted changes) is untouched, so it is safe
+ * even on a dirty worktree. Existing names are refused — assign always creates a
+ * new branch, never re-points an existing one.
+ */
+export async function assignBranch(worktreePath: string, rawName: string): Promise<WorktreeAssignResult> {
+  const name = rawName.trim()
+  if (!name) return { ok: false, reason: 'name-required' }
+
+  const onBranch = await gitRun(worktreePath, ['symbolic-ref', '-q', 'HEAD']).then(() => true).catch(() => false)
+  if (onBranch) return { ok: false, reason: 'not-detached' }
+
+  try {
+    const safe = sanitizeGitRef(name)
+    if (await getCheckedOutBranches(worktreePath).then((bs) => bs.includes(safe))) {
+      return { ok: false, reason: 'checked-out' }
+    }
+    const exists = await gitRun(worktreePath, ['show-ref', '--verify', '--quiet', `refs/heads/${safe}`])
+      .then(() => true).catch(() => false)
+    if (exists) return { ok: false, reason: 'exists' }
+
+    await gitRun(worktreePath, ['switch', '-c', safe])
+    return { ok: true, branch: safe }
+  } catch (err) {
+    return { ok: false, reason: 'error', error: gitErrorMessage(err) }
+  }
 }

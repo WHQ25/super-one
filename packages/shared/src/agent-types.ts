@@ -710,6 +710,10 @@ export type WorktreeHandoffResult =
   | { ok: true }
   | { ok: false; reason: 'not-worktree' | 'no-changes' | 'local-dirty' | 'conflict' | 'error'; error?: string }
 
+export type WorktreeAssignResult =
+  | { ok: true; branch: string }
+  | { ok: false; reason: 'name-required' | 'not-detached' | 'exists' | 'checked-out' | 'error'; error?: string }
+
 /**
  * Fork target. `worktree` branches into a fresh detached git worktree;
  * `local` branches in place, sharing the source session's working directory.
@@ -1740,6 +1744,7 @@ export const AgentIpcChannels = {
   GIT_CHECKED_OUT_BRANCHES: 'app:git-checked-out-branches',
   GIT_HANDOFF_TO_LOCAL: 'app:git-handoff-to-local',
   GIT_HANDOFF_PREVIEW: 'app:git-handoff-preview',
+  GIT_ASSIGN_BRANCH: 'app:git-assign-branch',
   GIT_STATUS_FILES: 'app:git-status-files',
   GIT_LOG: 'app:git-log',
   GIT_FILE_TREE: 'app:git-file-tree',

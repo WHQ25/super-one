@@ -141,10 +141,11 @@ function CodexCommandGroup({ items, isStreaming }: { items: CodexCommandExecutio
   const hasRunning = items.some((item) => isStreaming && item.status === 'in_progress')
   const runningItem = hasRunning ? items.find((item) => item.status === 'in_progress') : null
   const [expanded, setExpanded] = useState(false)
-
-  useEffect(() => {
+  const [prevRunning, setPrevRunning] = useState(false)
+  if (hasRunning !== prevRunning) {
+    setPrevRunning(hasRunning)
     if (hasRunning) setExpanded(true)
-  }, [hasRunning])
+  }
 
   return (
     <div className="tool-group my-1 min-w-0">

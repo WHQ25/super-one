@@ -242,14 +242,12 @@ function useCachedAssets(urls: string[]): string[] {
 }
 
 function PluginAvatar({ name, iconPath, logoPath, className }: { name: string; iconPath?: string; logoPath?: string; className?: string }) {
-  const [failedSrcs, setFailedSrcs] = useState<string[]>([])
+  const [failed, setFailed] = useState<{ key: string; srcs: string[] }>({ key: '', srcs: [] })
   const rawCandidates = useMemo(() => resolveAssetUrls([logoPath, iconPath]), [iconPath, logoPath])
   const candidates = useCachedAssets(rawCandidates)
+  const candidateKey = candidates.join('\n')
+  const failedSrcs = failed.key === candidateKey ? failed.srcs : []
   const src = candidates.find((candidate) => !failedSrcs.includes(candidate))
-
-  useEffect(() => {
-    setFailedSrcs([])
-  }, [candidates])
 
   if (src) {
     return (
@@ -257,7 +255,10 @@ function PluginAvatar({ name, iconPath, logoPath, className }: { name: string; i
         <img
           src={src}
           alt={name}
-          onError={() => setFailedSrcs((current) => current.includes(src) ? current : [...current, src])}
+          onError={() => setFailed((current) => {
+            const base = current.key === candidateKey ? current.srcs : []
+            return base.includes(src) ? { key: candidateKey, srcs: base } : { key: candidateKey, srcs: [...base, src] }
+          })}
           className="size-full object-cover"
         />
       </div>
@@ -1639,20 +1640,29 @@ function AddMarketplaceDialog({
   onAdd: (source: string, scope: ResourceScope) => Promise<void>
   allowProjectScope: boolean
 }) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <AddMarketplaceBody onOpenChange={onOpenChange} onAdd={onAdd} allowProjectScope={allowProjectScope} />
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function AddMarketplaceBody({
+  onOpenChange,
+  onAdd,
+  allowProjectScope,
+}: {
+  onOpenChange: (open: boolean) => void
+  onAdd: (source: string, scope: ResourceScope) => Promise<void>
+  allowProjectScope: boolean
+}) {
   const { t } = useTranslation()
   const [source, setSource] = useState('')
   const [scope, setScope] = useState<ResourceScope>('user')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    if (open) {
-      setSource('')
-      setScope('user')
-      setError(null)
-      setSubmitting(false)
-    }
-  }, [open])
 
   const handleSubmit = async () => {
     const trimmed = source.trim()
@@ -1669,8 +1679,7 @@ function AddMarketplaceDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+    <>
         <DialogHeader>
           <DialogTitle>{t('resources.plugins.addMarketplaceTitle')}</DialogTitle>
           <DialogDescription>{t('resources.plugins.addMarketplaceDesc')}</DialogDescription>
@@ -1736,8 +1745,7 @@ function AddMarketplaceDialog({
             {submitting ? t('resources.plugins.adding') : t('resources.plugins.add')}
           </Button>
         </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    </>
   )
 }
 

@@ -65,7 +65,8 @@ export const MermaidView = ({ node, updateAttributes, selected, deleteNode, exte
 
   useEffect(() => {
     if (isEditing && textareaRef.current) {
-      setTimeout(() => { textareaRef.current?.focus(); adjustHeight() }, 0)
+      const id = setTimeout(() => { textareaRef.current?.focus(); adjustHeight() }, 0)
+      return () => clearTimeout(id)
     }
   }, [isEditing])
 

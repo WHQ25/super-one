@@ -126,11 +126,14 @@ export function MermaidFullscreen({ svg, open, onOpenChange }: MermaidFullscreen
     ? (containerSize.height - svgSize.height * effectiveScale) / 2 + pan.y
     : 0
 
-  useEffect(() => {
-    if (!open) return
-    setZoom(1)
-    setPan({ x: 0, y: 0 })
-  }, [open])
+  const [prevOpen, setPrevOpen] = useState(open)
+  if (open !== prevOpen) {
+    setPrevOpen(open)
+    if (open) {
+      setZoom(1)
+      setPan({ x: 0, y: 0 })
+    }
+  }
 
   const constrainPan = useCallback((newPan: Point) => {
     if (!svgSize.width || !containerSize.width) return newPan

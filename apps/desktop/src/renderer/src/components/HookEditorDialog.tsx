@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@superone/ui/components/ui/dialog'
 import { Button } from '@superone/ui/components/ui/button'
@@ -186,19 +186,25 @@ interface Props {
 }
 
 export function HookEditorDialog({ open, onOpenChange, initial, onSubmit }: Props) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+        <HookEditorBody key={initial?.id ?? 'new'} initial={initial} onOpenChange={onOpenChange} onSubmit={onSubmit} />
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function HookEditorBody({ initial, onOpenChange, onSubmit }: {
+  initial?: HookConfig
+  onOpenChange: (open: boolean) => void
+  onSubmit: (payload: HookSavePayload, replaceId?: string) => Promise<void>
+}) {
   const { t } = useTranslation()
   const [form, setForm] = useState<HookFormState>(() => initialState(initial))
   const [error, setError] = useState<string | null>(null)
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const [saving, setSaving] = useState(false)
-
-  useEffect(() => {
-    if (open) {
-      setForm(initialState(initial))
-      setError(null)
-      setAdvancedOpen(false)
-    }
-  }, [open, initial])
 
   const update = <K extends keyof HookFormState>(key: K, value: HookFormState[K]) => {
     setForm((s) => ({ ...s, [key]: value }))
@@ -222,8 +228,7 @@ export function HookEditorDialog({ open, onOpenChange, initial, onSubmit }: Prop
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+    <>
         <DialogHeader>
           <DialogTitle>
             {initial ? t('resources.hooks.editor.titleEdit') : t('resources.hooks.editor.titleNew')}
@@ -347,8 +352,7 @@ export function HookEditorDialog({ open, onOpenChange, initial, onSubmit }: Prop
             {saving ? t('common.saving') : t('common.save')}
           </Button>
         </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    </>
   )
 }
 

@@ -59,11 +59,9 @@ export function ReviewPanel() {
   }, [mode, activeProject])
 
   useEffect(() => {
-    if (mode === 'commit') {
-      setTimeout(() => searchInputRef.current?.focus(), 50)
-      return
-    }
-    setTimeout(() => panelRef.current?.focus(), 50)
+    const target = mode === 'commit' ? searchInputRef : panelRef
+    const id = setTimeout(() => target.current?.focus(), 50)
+    return () => clearTimeout(id)
   }, [mode])
 
   type ScoredCommit = GitLogEntry & { msgIndices: number[]; shaIndices: number[] }

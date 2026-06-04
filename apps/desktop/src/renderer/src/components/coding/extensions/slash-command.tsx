@@ -73,8 +73,11 @@ const SlashMenu = forwardRef<SlashMenuRef, SuggestionProps<SlashItem, SlashItem>
   const [index, setIndex] = useState(0)
   const [picker, setPicker] = useState<SlashItem | null>(null)
   const listRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => setIndex(0), [items])
+  const [prevItems, setPrevItems] = useState(items)
+  if (items !== prevItems) {
+    setPrevItems(items)
+    setIndex(0)
+  }
 
   useEffect(() => {
     listRef.current?.children[index]?.scrollIntoView({ block: 'nearest' })

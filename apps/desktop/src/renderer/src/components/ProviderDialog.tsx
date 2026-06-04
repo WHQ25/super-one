@@ -337,39 +337,59 @@ export function ProviderDialog({
   agentFilter?: AgentType
   autoSync?: boolean
 }) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <ProviderDialogBody
+          key={`${editProvider?.id ?? 'new'}-${agentFilter ?? 'claude'}`}
+          onOpenChange={onOpenChange}
+          editProvider={editProvider}
+          onSave={onSave}
+          onDelete={onDelete}
+          agentFilter={agentFilter}
+          autoSync={autoSync}
+        />
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function ProviderDialogBody({
+  onOpenChange,
+  editProvider,
+  onSave,
+  onDelete,
+  agentFilter,
+  autoSync,
+}: {
+  onOpenChange: (open: boolean) => void
+  editProvider: ApiProvider | null
+  onSave: (data: CreateProviderRequest | (UpdateProviderRequest & { id: string })) => void
+  onDelete?: (id: string) => void
+  agentFilter?: AgentType
+  autoSync?: boolean
+}) {
   const { t } = useTranslation()
   const entryAgent: AgentType = agentFilter ?? 'claude'
-  const [step, setStep] = useState<DialogStep>('select')
+  const [form, setForm] = useState<FormState>(() => {
+    if (editProvider) {
+      const configs = JSON.parse(editProvider.agent_configs || '{}')
+      return {
+        name: editProvider.name,
+        api_key: editProvider.api_key,
+        agentForms: { [entryAgent]: parseAgentForm(configs[entryAgent] as AgentProviderConfig | undefined) },
+      }
+    }
+    return { name: '', api_key: '', agentForms: {} }
+  })
+  const [step, setStep] = useState<DialogStep>(editProvider ? 'form' : 'select')
   const [selectedPreset, setSelectedPreset] = useState<QuickPreset | null>(null)
   const [templateVals, setTemplateVals] = useState<Record<string, string>>({})
-  const [form, setForm] = useState<FormState>({ name: '', api_key: '', agentForms: {} })
   const [showApiKey, setShowApiKey] = useState(false)
   const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle')
   const [testMessage, setTestMessage] = useState('')
   const [syncDialogOpen, setSyncDialogOpen] = useState(false)
   const [syncDiff, setSyncDiff] = useState<PresetSyncDiff | null>(null)
-
-  useEffect(() => {
-    if (!open) return
-    if (editProvider) {
-      const configs = JSON.parse(editProvider.agent_configs || '{}')
-      const agentForms: Record<string, AgentFormState> = {
-        [entryAgent]: parseAgentForm(configs[entryAgent] as AgentProviderConfig | undefined),
-      }
-      setForm({ name: editProvider.name, api_key: editProvider.api_key, agentForms })
-      setStep('form')
-      setSelectedPreset(null)
-      setShowApiKey(false)
-      setTestStatus('idle')
-      setTestMessage('')
-    } else {
-      setStep('select')
-      setSelectedPreset(null)
-      setShowApiKey(false)
-      setTestStatus('idle')
-      setTestMessage('')
-    }
-  }, [open, editProvider, entryAgent])
 
   const handlePresetSelect = (preset: QuickPreset) => {
     setSelectedPreset(preset)
@@ -498,11 +518,11 @@ export function ProviderDialog({
   }
 
   useEffect(() => {
-    if (open && autoSync && editProvider && initialSyncDiff?.hasChanges) {
+    if (autoSync && editProvider && initialSyncDiff?.hasChanges) {
       setSyncDiff(initialSyncDiff)
       setSyncDialogOpen(true)
     }
-  }, [open, autoSync, editProvider, initialSyncDiff])
+  }, [autoSync, editProvider, initialSyncDiff])
 
   const handleTest = async () => {
     setTestStatus('testing')
@@ -593,8 +613,7 @@ export function ProviderDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+    <>
         {step === 'select' ? (
           <>
             <DialogHeader>
@@ -771,13 +790,12 @@ export function ProviderDialog({
             </DialogFooter>
           </>
         )}
-      </DialogContent>
       <PresetSyncDialog
         open={syncDialogOpen}
         onOpenChange={setSyncDialogOpen}
         diff={syncDiff}
         onApply={handleApplySync}
       />
-    </Dialog>
+    </>
   )
 }

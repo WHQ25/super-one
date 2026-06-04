@@ -611,6 +611,10 @@ export const DiffView = forwardRef<HTMLDivElement, {
         fadeTimer.current = setTimeout(() => setFadingIdx(null), 1100)
       }, 5000)
     }
+    return () => {
+      clearTimeout(highlightTimer.current)
+      clearTimeout(fadeTimer.current)
+    }
   }, [scrollToLine])
 
   useLayoutEffect(() => {

@@ -92,6 +92,20 @@ export default defineConfig(({ mode }) => {
             ) {
               return 'react-vendor'
             }
+            if (id.includes('/node_modules/@xterm/')) return 'xterm'
+            if (id.includes('/node_modules/mermaid/')) return 'mermaid'
+            if (id.includes('/node_modules/d3-') || id.includes('/node_modules/victory-vendor/')) {
+              return 'd3'
+            }
+            if (id.includes('/node_modules/recharts/')) return 'recharts'
+            if (
+              id.includes('/node_modules/@tiptap/') ||
+              id.includes('/node_modules/prosemirror') ||
+              id.includes('/node_modules/lowlight/') ||
+              id.includes('/node_modules/highlight.js/')
+            ) {
+              return 'editor'
+            }
           }
         }
       }

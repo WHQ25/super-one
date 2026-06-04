@@ -1,8 +1,9 @@
-import { useRef, useEffect, useState, useCallback, memo } from 'react'
+import { useRef, useEffect, useState, useCallback, memo, lazy, Suspense } from 'react'
 import { useChatStore } from '@/stores/chat'
 import { ChatContent } from '@/components/chat/ChatContent'
 import { SessionSwitcherPopup } from '@/components/chat/SessionSwitcherPopup'
-import { TerminalPanel } from '@/components/coding/TerminalPanel'
+import { useAppStore } from '@/stores/app'
+import { useTerminalStore } from '@/stores/terminal'
 import { useChatScroll } from '@/hooks/useChatScroll'
 import { useChatKeyboardShortcuts } from '@/hooks/useChatKeyboardShortcuts'
 import { useTerminalPanel } from '@/hooks/useTerminalPanel'
@@ -11,6 +12,8 @@ import { getDockApi } from '@/components/activity/activity-panel-api'
 import { routeCloseTabShortcut } from '@/components/coding/close-tab-router'
 
 const MIN_TERM_HEIGHT = 120
+
+const TerminalPanel = lazy(() => import('@/components/coding/TerminalPanel').then((m) => ({ default: m.TerminalPanel })))
 
 export const CodingLayout = memo(function CodingLayout() {
   const scrollViewportRef = useRef<HTMLDivElement>(null)
@@ -21,6 +24,10 @@ export const CodingLayout = memo(function CodingLayout() {
 
   const { open: termOpen, toggle: toggleTerminal } = useTerminalPanel()
   const [termHeight, setTermHeight] = useState(300)
+  const currentFolder = useAppStore((s) => s.currentFolder)
+  const hasTerminals = useTerminalStore((s) => (currentFolder ? (s.byProject[currentFolder]?.tabs.length ?? 0) : 0) > 0)
+  const [termEverActive, setTermEverActive] = useState(false)
+  useEffect(() => { if (termOpen || hasTerminals) setTermEverActive(true) }, [termOpen, hasTerminals])
 
   useEffect(() => {
     const store = useChatStore.getState()
@@ -89,7 +96,11 @@ export const CodingLayout = memo(function CodingLayout() {
           <div className="pointer-events-none absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-linear-to-r from-transparent via-foreground to-transparent opacity-0 transition-opacity group-hover:opacity-40" />
         </div>
         <div className="min-h-0 flex-1">
-          <TerminalPanel />
+          {termEverActive && (
+            <Suspense fallback={null}>
+              <TerminalPanel />
+            </Suspense>
+          )}
         </div>
       </div>
 

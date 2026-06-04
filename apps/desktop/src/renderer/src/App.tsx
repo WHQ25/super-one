@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useRef, useState } from 'react'
+import { useEffect, useCallback, useRef, useState, lazy, Suspense } from 'react'
 import { Sun, Moon, X, Smartphone, Minimize2, SquareTerminal, RotateCw, Bug } from 'lucide-react'
 import { motion } from 'motion/react'
 import { toast } from 'sonner'
@@ -11,7 +11,6 @@ import { ActivityPanel } from '@/components/activity/ActivityPanel'
 import { AppSidebar } from '@/components/AppSidebar'
 import { StartupPage } from '@/components/StartupPage'
 import { SetupPage } from '@/components/SetupPage'
-import { SettingsLayout } from '@/components/SettingsLayout'
 import { UpdateNotification } from '@/components/UpdateNotification'
 import { ExternalLinkConfirm } from '@/components/ExternalLinkConfirm'
 import { MiniAppClipboardGuard } from '@/components/MiniAppClipboardGuard'
@@ -49,6 +48,8 @@ import { preloadFileHighlighter } from '@/lib/diff-utils'
 import { LAYOUT } from '@/lib/layout-constants'
 
 export { LAYOUT }
+
+const SettingsLayout = lazy(() => import('@/components/SettingsLayout').then((m) => ({ default: m.SettingsLayout })))
 
 function App(): React.JSX.Element {
   useAgentEvents()
@@ -91,7 +92,7 @@ function App(): React.JSX.Element {
         if (s.analyticsEnabled) initAnalytics()
       })
       .catch((err) => console.error('[analytics] failed to load app settings', err))
-    preloadFileHighlighter()
+    requestIdleCallback(() => preloadFileHighlighter())
   }, [])
 
   useEffect(() => {
@@ -327,7 +328,11 @@ function App(): React.JSX.Element {
           </div>
           {view === 'startup' && <StartupPage />}
           {view === 'setup' && <SetupPage />}
-          {view === 'settings' && <SettingsLayout />}
+          {view === 'settings' && (
+            <Suspense fallback={<div className="flex-1 bg-background" />}>
+              <SettingsLayout />
+            </Suspense>
+          )}
           <UpdateNotification />
         </div>
         <MiniAppHostLayer />

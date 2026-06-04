@@ -1,4 +1,5 @@
-import { ArrowLeft, BarChart3, Blocks, Bot, Globe, LayoutGrid, Paintbrush, Palette, Puzzle, Server, Settings, Smartphone, Webhook } from 'lucide-react'
+import { lazy, Suspense } from 'react'
+import { ArrowLeft, BarChart3, Blocks, Bot, Globe, LayoutGrid, Loader2, Paintbrush, Palette, Puzzle, Server, Settings, Smartphone, Webhook } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@superone/ui/components/ui/button'
 import { useAppStore } from '@/stores/app'
@@ -10,13 +11,14 @@ import { HooksPage } from './HooksPage'
 import { PreferencesPage } from './PreferencesPage'
 import { ProvidersPage } from './ProvidersPage'
 import { RemotePage } from './RemotePage'
-import { UsagePage } from './UsagePage'
 import { AppsSettingsPage } from './AppsSettingsPage'
 import { AppSettingsPage } from './AppSettingsPage'
 import { AppearancePage } from './AppearancePage'
 import { Tabs, TabsList, TabsTrigger } from '@superone/ui/components/ui/tabs'
 import { cn } from '@superone/ui/lib/utils'
 import type { SettingsProvider } from '@superone/shared/agent-types'
+
+const UsagePage = lazy(() => import('./UsagePage').then((m) => ({ default: m.UsagePage })))
 
 const globalTabs = [
   { id: 'app-settings' as const, labelKey: 'settings.layout.tabs.general', icon: Settings },
@@ -131,7 +133,11 @@ export function SettingsLayout() {
         {settingsTab === 'apps' && <AppsSettingsPage />}
         {settingsTab === 'preferences' && <PreferencesPage />}
         {settingsTab === 'remote' && <RemotePage />}
-        {settingsTab === 'usage' && <UsagePage />}
+        {settingsTab === 'usage' && (
+          <Suspense fallback={<div className="flex h-full items-center justify-center"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>}>
+            <UsagePage />
+          </Suspense>
+        )}
       </div>
     </div>
   )

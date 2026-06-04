@@ -4,6 +4,7 @@ import { defaultRehypePlugins } from 'streamdown'
 import type { PluggableList } from 'unified'
 import { defaultSchema } from 'hast-util-sanitize'
 import rehypeSanitize from 'rehype-sanitize'
+import { harden, BlockPolicy } from 'rehype-harden'
 import { createCodePlugin } from '@streamdown/code'
 import { createStreamdownCodeComponent } from './CodeBlock'
 import { toMediaUrl, toLocalFileUrl } from '@/lib/path-utils'
@@ -121,6 +122,14 @@ const localFileSanitizeSchema = {
 export const streamdownRehypePlugins: PluggableList = Object.values({
   ...defaultRehypePlugins,
   sanitize: [rehypeSanitize, localFileSanitizeSchema],
+  harden: [harden, {
+    allowedLinkPrefixes: ['*'],
+    allowedImagePrefixes: ['*'],
+    allowedProtocols: ['*'],
+    allowDataImages: true,
+    defaultOrigin: 'https://localhost',
+    linkBlockPolicy: BlockPolicy.textOnly,
+  }],
 }) as PluggableList
 
 const MD_IMAGE_RE = /!\[([^\]]*)\]\((?!https?:\/\/|data:|local-file:\/\/)([^)\s]+)([^)]*)\)/g

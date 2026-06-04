@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Bot, ChevronRight, Check, Wrench, ArrowUp, ArrowDown, Maximize } from 'lucide-react'
+import { Bot, ChevronRight, Check, Wrench, ArrowUp, ArrowDown, Maximize, TriangleAlert, CircleSlash } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 import { ToolBlock } from './ToolBlock'
 import { useActiveSession, useChatStore } from '@/stores/chat'
@@ -67,6 +67,11 @@ export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming
   const isRunning = isAsync
     ? !progress?.completed && !taskBlock.taskResultText
     : !resultBlock && isStreaming
+  const taskStatus = isAsync
+    ? progress?.status
+    : (resultBlock?.type === 'tool_result' && resultBlock.isError ? 'failed' as const : undefined)
+  const isFailed = isComplete && taskStatus === 'failed'
+  const isStopped = isComplete && !!taskStatus && taskStatus !== 'completed' && !isFailed
   const hasTokens = tokens.input > 0 || tokens.output > 0
   const [expanded, setExpanded] = useState(defaultExpanded ?? false)
   const nav = useSubagentNavigation()
@@ -165,7 +170,7 @@ export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming
           isExpandable ? 'hover:bg-muted/40' : 'cursor-default',
         )}
       >
-        <Bot className={cn('size-3.5 shrink-0', colors.text, isRunning && !isExpanded && 'animate-pulse')} />
+        <Bot className={cn('size-3.5 shrink-0', isFailed ? 'text-amber-600 dark:text-amber-400' : isStopped ? 'text-muted-foreground' : colors.text, isRunning && !isExpanded && 'animate-pulse')} />
         {taskInput.name && taskInput.teamName ? (
           <span className={cn('shrink-0 rounded px-1 py-px text-[10px] font-medium', colors.tagBg, colors.tagText)}>
             {taskInput.name}@{taskInput.teamName}
@@ -192,6 +197,16 @@ export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming
         )}
         {isExpandable && (
           <span className="ml-auto flex shrink-0 items-center gap-1.5 text-[11px] text-muted-foreground">
+            {!isExpanded && isFailed && (
+              <span className="inline-flex items-center gap-0.5 text-amber-600 dark:text-amber-400">
+                <TriangleAlert className="size-3" />{t('chat.subagent.failed')}
+              </span>
+            )}
+            {!isExpanded && isStopped && (
+              <span className="inline-flex items-center gap-0.5">
+                <CircleSlash className="size-3" />{t('chat.subagent.stopped')}
+              </span>
+            )}
             {!isExpanded && statsContent}
             {isExpanded && (
               <span
@@ -250,6 +265,16 @@ export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming
           <>
             <span>{isAsync ? t('chat.subagent.runningInBackground') : t('chat.subagent.running')}</span>
             {elapsed > 0 && <span className="tabular-nums">{formatElapsed(elapsed)}</span>}
+          </>
+        ) : isFailed ? (
+          <>
+            <TriangleAlert className="size-3 shrink-0 text-amber-600 dark:text-amber-400" />
+            <span className="text-amber-600 dark:text-amber-400">{t('chat.subagent.failed')}{elapsed > 0 ? ` ${formatElapsed(elapsed)}` : ''}</span>
+          </>
+        ) : isStopped ? (
+          <>
+            <CircleSlash className="size-3 shrink-0 text-muted-foreground" />
+            <span>{t('chat.subagent.stopped')}{elapsed > 0 ? ` ${formatElapsed(elapsed)}` : ''}</span>
           </>
         ) : (
           <>

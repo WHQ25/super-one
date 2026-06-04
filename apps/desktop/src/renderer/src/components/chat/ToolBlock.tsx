@@ -280,6 +280,7 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
         fallbackResult={isDenied ? undefined : (result ?? undefined)}
         isStreaming={isStreaming}
         isDenied={isDenied}
+        isError={isError}
         timeoutMs={timeout}
         isTimedOut={isTimedOut}
         resultOutputPath={resultOutputPath}
@@ -699,6 +700,7 @@ function BashTerminalView({
   fallbackResult,
   isStreaming,
   isDenied,
+  isError,
   timeoutMs,
   isTimedOut,
   resultOutputPath,
@@ -712,6 +714,7 @@ function BashTerminalView({
   fallbackResult?: string
   isStreaming: boolean
   isDenied?: boolean
+  isError?: boolean
   timeoutMs?: number
   isTimedOut?: boolean
   resultOutputPath?: string
@@ -730,6 +733,9 @@ function BashTerminalView({
   const hasResult = !!fallbackResult || isDenied
   const isRunning = (isStreaming && !hasResult && !isPendingPermission) || isLiveRunning
   const hasTaskState = !!taskProgress
+  const bgFailed = taskProgress?.status === 'failed'
+  const bgStopped = !!taskProgress?.status && taskProgress.status !== 'completed' && !bgFailed
+  const showError = (isError || bgFailed) && !isDenied
   const treatAsBackground = backgroundActivity || runInBackground
   const holdOpenForBackgroundTask = treatAsBackground
     ? (hasTaskState ? taskProgress.completed !== true : isRunning)
@@ -834,7 +840,7 @@ function BashTerminalView({
   return (
     <div className={cn(
       'tool-node my-0.5 rounded transition-colors cursor-pointer',
-      isDenied ? 'denied bg-red-500/10 hover:bg-red-500/20' : 'bg-muted/50 hover:bg-muted/70',
+      isDenied ? 'denied bg-red-500/10 hover:bg-red-500/20' : showError ? 'errored bg-amber-500/10 hover:bg-amber-500/20' : 'bg-muted/50 hover:bg-muted/70',
       expanded && 'overflow-hidden',
     )}>
       <div
@@ -843,10 +849,12 @@ function BashTerminalView({
       >
         {isDenied ? (
           <Ban className="size-3 shrink-0 text-red-600 dark:text-red-400" />
+        ) : showError ? (
+          <TriangleAlert className="size-3 shrink-0 text-amber-600 dark:text-amber-400" />
         ) : (
           <ToolIcon icon="terminal" className="size-3 shrink-0 text-muted-foreground" />
         )}
-        <span className={cn('font-medium', isDenied ? 'text-red-600 dark:text-red-400' : 'text-foreground', isRunning && !isDenied && 'animate-shimmer')}>
+        <span className={cn('font-medium', isDenied ? 'text-red-600 dark:text-red-400' : showError ? 'text-amber-600 dark:text-amber-400' : 'text-foreground', isRunning && !isDenied && 'animate-shimmer')}>
           {isRunning && !isDenied ? t('chat.toolBlock.running') : 'Bash'}
         </span>
         {isRunning && localElapsed >= 1 && <span className="text-muted-foreground tabular-nums">{localElapsed}s</span>}
@@ -856,6 +864,8 @@ function BashTerminalView({
         }
         {timeoutMs && <span className="rounded bg-muted px-1 py-px text-[10px] text-muted-foreground">{Math.round(timeoutMs / 1000)}s</span>}
         {isDenied && <span className="rounded bg-red-500/20 px-1 py-px text-[10px] text-red-600 dark:text-red-400">Denied</span>}
+        {showError && <span className="rounded bg-amber-500/20 px-1 py-px text-[10px] text-amber-600 dark:text-amber-400">{t('chat.toolBlock.error')}</span>}
+        {bgStopped && !showError && <span className="rounded bg-muted px-1 py-px text-[10px] text-muted-foreground">{t('chat.subagent.stopped')}</span>}
         {isTimedOut && <span className="rounded bg-red-500/20 px-1 py-px text-[10px] text-red-600 dark:text-red-400">{t('chat.toolBlock.timedOut')}</span>}
         <ChevronRight className={cn('ml-auto size-3 shrink-0 text-muted-foreground transition-transform duration-200', expanded && 'rotate-90')} />
       </div>
@@ -878,7 +888,7 @@ function BashTerminalView({
             {outputExpired && restoredContent === null ? (
               <div className="animate-shimmer text-[#6e7681]">{t('common.loading')}</div>
             ) : content ? (
-              <div className="text-[#8b949e]"><AnsiText text={content} /></div>
+              <div className={showError ? 'text-amber-300' : 'text-[#8b949e]'}><AnsiText text={showError ? extractToolError(content) : content} /></div>
             ) : isStreaming ? (
               <div className="text-[#8b949e]">
                 <span className="animate-shimmer">{t('chat.toolBlock.runningInline')}</span>{localElapsed >= 1 && <span className="text-[#6e7681]"> {localElapsed}s{timeoutMs && !isLive ? ` · timeout ${Math.round(timeoutMs / 1000)}s` : ''}</span>}

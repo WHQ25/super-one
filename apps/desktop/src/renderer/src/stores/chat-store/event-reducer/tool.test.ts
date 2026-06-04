@@ -202,4 +202,22 @@ describe('reduceTool: task_notification', () => {
       type: 'task_notification',
     } as never)).toEqual({})
   })
+
+  it('propagates the terminal taskStatus so a failed background task is distinguishable from a completed one', () => {
+    const session = createDefaultPerSessionState()
+    const patch = reduceTool(session, {
+      type: 'task_notification', toolUseId: 'task-1', taskStatus: 'failed', outputFile: '',
+    } as never)
+    expect(patch.taskProgress?.['task-1'].completed).toBe(true)
+    expect(patch.taskProgress?.['task-1'].status).toBe('failed')
+  })
+
+  it('does not let a later default-completed notification clobber an already-recorded failure', () => {
+    const session = createDefaultPerSessionState()
+    session.taskProgress = { 'task-1': { description: 'x', totalTokens: 0, toolUses: 0, durationMs: 0, toolHistory: [], completed: true, status: 'failed' } }
+    const patch = reduceTool(session, {
+      type: 'task_notification', toolUseId: 'task-1', taskStatus: 'completed', outputFile: '',
+    } as never)
+    expect(patch.taskProgress?.['task-1'].status).toBe('failed')
+  })
 })

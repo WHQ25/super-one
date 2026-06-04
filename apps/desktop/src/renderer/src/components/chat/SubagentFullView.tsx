@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ArrowLeft, Bot, ArrowUp, ArrowDown, Wrench, Check, Loader2 } from 'lucide-react'
+import { ArrowLeft, Bot, ArrowUp, ArrowDown, Wrench, Check, Loader2, TriangleAlert, CircleSlash } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 import { Streamdown } from 'streamdown'
 import type { ContentBlock, ChatMessage } from '@superone/shared/agent-types'
@@ -116,6 +116,11 @@ export function SubagentFullView({ view }: { view: SubagentViewState }) {
     : syncToolCount
   const hasTokens = tokens.input > 0 || tokens.output > 0
   const asyncTokens = progress?.totalTokens ?? 0
+  const taskStatus = isAsync
+    ? progress?.status
+    : (segment.resultBlock?.isError ? 'failed' as const : undefined)
+  const isFailed = !isRunning && taskStatus === 'failed'
+  const isStopped = !isRunning && !!taskStatus && taskStatus !== 'completed' && !isFailed
   const headerTitle = taskInput.description || taskInput.name || taskInput.subagentType || t('chat.subagent.title', 'Subagent')
   const outputText = isAsync
     ? (jsonlResultText ?? segment.taskBlock.taskResultText)
@@ -156,6 +161,10 @@ export function SubagentFullView({ view }: { view: SubagentViewState }) {
         <span className="ml-auto flex shrink-0 items-center gap-1.5 text-[11px] text-muted-foreground">
           {isRunning ? (
             <Loader2 className="size-3 animate-spin" />
+          ) : isFailed ? (
+            <TriangleAlert className="size-3 text-amber-600 dark:text-amber-400" />
+          ) : isStopped ? (
+            <CircleSlash className="size-3 text-muted-foreground" />
           ) : (
             <Check className="size-3 text-green-600 dark:text-green-400" />
           )}

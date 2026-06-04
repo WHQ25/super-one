@@ -577,6 +577,8 @@ export type Messages = {
       runningInBackground: string
       running: string
       done: string
+      failed: string
+      stopped: string
       output: string
       prompt: string
       title: string
@@ -1826,6 +1828,8 @@ export const en: Messages = {
       runningInBackground: 'Running in background',
       running: 'Running',
       done: 'Done',
+      failed: 'Failed',
+      stopped: 'Stopped',
       output: 'Output',
       prompt: 'Prompt',
       title: 'Subagent',

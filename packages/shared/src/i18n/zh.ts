@@ -591,6 +591,8 @@ export const zh: Messages = {
       runningInBackground: '后台运行中',
       running: '运行中',
       done: '完成',
+      failed: '失败',
+      stopped: '已停止',
       output: '输出',
       prompt: '提示词',
       title: '子代理',

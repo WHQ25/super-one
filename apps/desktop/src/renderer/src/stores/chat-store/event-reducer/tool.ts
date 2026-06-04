@@ -165,6 +165,10 @@ export function reduceTool(session: PerSessionState, event: ToolEvent): Partial<
         durationMs: event.usage.durationMs,
       } : {}
       const finalSummary = event.summary || prevProgress?.summary
+      const prevStatus = prevProgress?.status
+      const finalStatus = event.taskStatus === 'completed' && (prevStatus === 'failed' || prevStatus === 'stopped')
+        ? prevStatus
+        : event.taskStatus
       const finalUsage = event.usage ?? { totalTokens: prevProgress?.totalTokens ?? 0, toolUses: prevProgress?.toolUses ?? 0, durationMs: prevProgress?.durationMs ?? 0 }
       const finalToolHistory = prevProgress?.toolHistory ?? []
       const agentPatch = {
@@ -188,6 +192,7 @@ export function reduceTool(session: PerSessionState, event: ToolEvent): Partial<
             ...(prevProgress ?? { description: '', totalTokens: 0, toolUses: 0, durationMs: 0, toolHistory: [] }),
             ...usageUpdate,
             completed: true,
+            status: finalStatus,
             outputFile: file || prevProgress?.outputFile,
             summary: finalSummary,
           },

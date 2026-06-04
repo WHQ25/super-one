@@ -449,6 +449,16 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
             const patchStatus = sys.patch?.status as string | undefined
             if (sys.task_id && (patchStatus === 'completed' || patchStatus === 'failed' || patchStatus === 'killed')) {
               activeBackgroundTaskIds.delete(sys.task_id)
+              if ((patchStatus === 'failed' || patchStatus === 'killed') && sys.tool_use_id) {
+                emit({
+                  type: 'task_notification',
+                  taskId: sys.task_id,
+                  toolUseId: sys.tool_use_id,
+                  taskStatus: patchStatus === 'failed' ? 'failed' : 'stopped',
+                  outputFile: sys.patch?.output_file ?? '',
+                  summary: sys.patch?.summary,
+                })
+              }
               maybeEmitDeferredIdle()
             }
           } else if (sys.subtype === 'task_progress') {

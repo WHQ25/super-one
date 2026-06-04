@@ -1168,7 +1168,6 @@ export async function resolveThread(
         sandbox: permissionProfile.sandboxMode,
         config: threadConfig,
         experimentalRawEvents: false,
-        persistExtendedHistory: true,
       }),
     )
     trace('codex.thread', 'start_response', {
@@ -1191,7 +1190,6 @@ export async function resolveThread(
           approvalPolicy: permissionProfile.approvalPolicy,
           sandbox: permissionProfile.sandboxMode,
           config: threadConfig,
-          persistExtendedHistory: true,
         }),
       ).catch((err) => {
         const failedThreadId = session.threadId
@@ -1479,7 +1477,7 @@ export async function streamTurnEvents(
     subscribedChildThreads.add(threadId)
     bindChildThreadToCollab(threadId, collabId)
     const [resumeResult, readResult] = await Promise.allSettled([
-      connection.request('thread/resume', { threadId, persistExtendedHistory: false }),
+      connection.request('thread/resume', { threadId }),
       connection.request('thread/read', { threadId, includeTurns: false }),
     ])
     if (resumeResult.status === 'fulfilled') {

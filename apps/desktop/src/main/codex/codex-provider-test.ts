@@ -220,7 +220,6 @@ export async function testCodexProvider(
                 developer_instructions: 'Connectivity probe. Reply with a single word. Do not use any tools.',
                 model_providers: { [override.id]: override.info },
               },
-              persistExtendedHistory: false,
             }),
           ),
           signal,

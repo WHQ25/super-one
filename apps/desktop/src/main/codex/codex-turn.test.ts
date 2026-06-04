@@ -622,7 +622,6 @@ describe('streamTurnEvents child-thread routing', () => {
 
     expect((mockConnection as { request: ReturnType<typeof vi.fn> }).request).toHaveBeenCalledWith('thread/resume', {
       threadId: 'child-1',
-      persistExtendedHistory: false,
     })
     expect(result.items).toHaveLength(1)
     expect(result.items[0]).toMatchObject({
@@ -703,7 +702,6 @@ describe('streamTurnEvents child-thread routing', () => {
 
     expect((mockConnection as { request: ReturnType<typeof vi.fn> }).request).toHaveBeenCalledWith('thread/resume', {
       threadId: 'child-2',
-      persistExtendedHistory: false,
     })
     expect(result.items).toHaveLength(1)
     expect(result.items[0]).toMatchObject({
@@ -1386,7 +1384,6 @@ describe('runCodexTurn turn/start payload', () => {
     expect(request).toHaveBeenCalledWith('thread/start', expect.objectContaining({
       approvalPolicy: 'never',
       sandbox: 'danger-full-access',
-      persistExtendedHistory: true,
     }))
     expect(request).toHaveBeenCalledWith('turn/start', expect.objectContaining({
       threadId: 'thread-4',

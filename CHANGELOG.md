@@ -4,6 +4,32 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.41.2-alpha] - 2026-06-05
+
+### Added
+
+- Codex sidebar now shows ChatGPT subscription rate limits.
+- Worktree: assign a detached worktree to an existing branch.
+
+### Fixed
+
+- Code highlighting and Mermaid diagrams now render the moment a fence closes during streaming, instead of waiting for the full reply.
+- Failed bash and background tasks now surface an error state.
+- Unresolvable markdown links render as plain anchors instead of `[blocked]`.
+- Field-less synthetic API errors no longer leak into the slash-command popup.
+- Resolved React correctness bugs, including unconditional hook calls in ToolBlock and the usage heatmap.
+
+### Changed
+
+- Bump Claude Agent SDK to 0.3.162.
+- Bump Codex (`@openai/codex`) to 0.137.0.
+
+### Performance
+
+- Enabled React Compiler and lazy-loaded heavy panels, vendor chunks, PostHog, date-picker, workflow view, and image zoom — smaller startup bundle.
+- Narrowed sidebar chat-store subscriptions to avoid re-renders on draft text.
+- Removed React Compiler bail-outs across components.
+
 ## [0.41.1-alpha] - 2026-06-02
 
 ### Added

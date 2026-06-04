@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, lazy, Suspense } from 'react'
 import { CalendarClock, Check, ChevronDown, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@superone/ui/components/ui/button'
@@ -12,7 +12,7 @@ import {
   DialogTitle,
 } from '@superone/ui/components/ui/dialog'
 import { Popover, PopoverContent, PopoverTrigger } from '@superone/ui/components/ui/popover'
-import { SchedulePicker } from './SchedulePicker'
+const SchedulePicker = lazy(() => import('./SchedulePicker').then((m) => ({ default: m.SchedulePicker })))
 import { useChatStore, selectClaudeModels, selectCodexModels } from '@/stores/chat'
 import { modes as permissionModes } from '@/components/chat/PermissionModeSelector'
 import { sandboxModes } from '@/components/chat/SandboxModeSelector'
@@ -280,10 +280,12 @@ export function AutomationDialog({
             />
           </label>
 
-          <SchedulePicker
-            value={form.schedule}
-            onChange={(schedule) => setForm((f) => ({ ...f, schedule }))}
-          />
+          <Suspense fallback={null}>
+            <SchedulePicker
+              value={form.schedule}
+              onChange={(schedule) => setForm((f) => ({ ...f, schedule }))}
+            />
+          </Suspense>
 
           {editAutomation && (
             <div className="flex items-center justify-between rounded-md border border-border bg-muted/30 px-3 py-2">

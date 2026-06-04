@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect, useLayoutEffect, useMemo, useCallback } from 'react'
+import { useRef, useState, useEffect, useLayoutEffect, useMemo, useCallback, lazy, Suspense } from 'react'
 import { useChatStore, useActiveSession, useIsRemoteLocked } from '@/stores/chat'
 import { useShallow } from 'zustand/react/shallow'
 import { ScrollArea } from '@superone/ui/components/ui/scroll-area'
@@ -18,7 +18,7 @@ import { ForkNavigationContext, type ForkViewState } from './fork-navigation-con
 import { ForkedThreadView } from './ForkedThreadView'
 import { SubagentNavigationContext, type SubagentViewState } from './subagent-navigation-context'
 import { SubagentFullView } from './SubagentFullView'
-import { WorkflowFullView } from './WorkflowFullView'
+const WorkflowFullView = lazy(() => import('./WorkflowFullView').then((m) => ({ default: m.WorkflowFullView })))
 import { WorkflowNavigationContext, type WorkflowViewState } from './workflow-navigation-context'
 import { SelectionContextMenuZone } from './SelectionContextMenu'
 import type { CodexPlanApprovalState } from '@superone/shared/agent-types'
@@ -185,7 +185,9 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
     <PlanFullscreenContext.Provider value={planFullscreenCtx}>
     <div ref={containerRef} className={cn('relative flex min-h-0 min-w-0 flex-col bg-card', zoom <= 1 && 'w-full flex-1')} style={zoom > 1 ? { transform: `scale(${zoom})`, transformOrigin: 'top left', width: `${100 / zoom}%`, height: `${100 / zoom}%` } : zoom < 1 ? { zoom } : undefined}>
       {workflowView ? (
-        <WorkflowFullView view={workflowView} />
+        <Suspense fallback={null}>
+          <WorkflowFullView view={workflowView} />
+        </Suspense>
       ) : subagentView ? (
         <SubagentFullView view={subagentView} />
       ) : fork ? (

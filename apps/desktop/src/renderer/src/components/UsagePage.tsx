@@ -369,7 +369,10 @@ function parseLocalDay(s: string): Date {
   return new Date(y, m - 1, d)
 }
 
+type HeatmapCell = { x: number; y: number; level: number; date: string; value: number }
+
 function ContributionHeatmap({ dayTotals, t }: { dayTotals: Map<string, number>; t: (key: string) => string }) {
+  const [hover, setHover] = useState<HeatmapCell | null>(null)
   if (dayTotals.size === 0) return null
   const days = Array.from(dayTotals.keys()).sort()
   const earliest = parseLocalDay(days[0])
@@ -392,7 +395,7 @@ function ContributionHeatmap({ dayTotals, t }: { dayTotals: Map<string, number>;
 
   const thresholds = computeHeatmapThresholds(Array.from(dayTotals.values()))
 
-  const cells: Array<{ x: number; y: number; level: number; date: string; value: number }> = []
+  const cells: HeatmapCell[] = []
   const monthLabels: Array<{ x: number; label: string }> = []
   const monthAbbr = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
   let lastMonth = -1
@@ -426,8 +429,6 @@ function ContributionHeatmap({ dayTotals, t }: { dayTotals: Map<string, number>;
     { row: 3, label: 'Wed' },
     { row: 5, label: 'Fri' },
   ]
-
-  const [hover, setHover] = useState<typeof cells[number] | null>(null)
 
   return (
     <div className="relative w-full overflow-x-auto">

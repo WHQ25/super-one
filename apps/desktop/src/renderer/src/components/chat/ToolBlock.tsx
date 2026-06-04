@@ -255,6 +255,58 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
   const fileToolName = fileToolPath ? fileToolPath.split('/').pop() || '' : ''
   const miniApps = useMiniAppStore((s) => s.apps)
 
+  const isDenied = !!result && result.startsWith('[denied] ')
+  const cleanResult = isDenied ? result.slice('[denied] '.length) : result
+  const deniedFeedback = isDenied && cleanResult !== 'User denied permission' ? cleanResult! : ''
+  const feedbackRef = useRef<HTMLSpanElement>(null)
+  const [feedbackIsBlock, setFeedbackIsBlock] = useState(false)
+
+  useLayoutEffect(() => {
+    if (!deniedFeedback) { setFeedbackIsBlock(false); return }
+    const el = feedbackRef.current
+    if (!el) return
+    setFeedbackIsBlock(el.scrollWidth > el.clientWidth)
+  }, [deniedFeedback])
+
+  const lineDelta = useMemo(() => {
+    if (isDenied || isError) return null
+    if (isStreaming && toolName === 'Edit') {
+      if (!('new_string' in params)) return null
+      return computeStreamingEditDelta(String(params.old_string ?? ''), String(params.new_string ?? ''))
+    }
+    return computeLineDelta(toolName, params)
+  }, [toolName, params, isDenied, isError, isStreaming])
+  const hasStreamingDiffContent = DIFF_TOOLS.has(toolName) && isStreaming && (
+    toolName === 'Edit'
+      ? String(params.new_string ?? '').length > 0 || String(params.old_string ?? '').length > 0
+      : toolName === 'Write'
+        ? String(params.content ?? '').length > 0
+        : String(params.diff ?? '').length > 0
+  )
+  const hasCompleteDiff = DIFF_TOOLS.has(toolName) && !isStreaming && !isDenied && !isError && (
+    toolName === 'FileChange'
+      ? String(params.diff ?? '').length > 0
+      : Object.keys(params).length > 0
+  )
+  const hasDiff = hasCompleteDiff || hasStreamingDiffContent
+  const [expanded, setExpanded] = useState(false)
+  const gridRef = useRef<HTMLDivElement>(null)
+
+  useLayoutEffect(() => {
+    if (DIFF_TOOLS.has(toolName) && hasDiff && effectiveAutoExpand) {
+      setExpanded(true)
+      const grid = gridRef.current
+      if (grid && !isStreaming) {
+        grid.style.transition = 'none'
+        requestAnimationFrame(() => { grid.style.transition = '' })
+      }
+    }
+  }, [isStreaming, hasDiff, toolName, effectiveAutoExpand])
+
+  useLayoutEffect(() => {
+    if (isError) setExpanded(false)
+  }, [isError])
+
   // Debug mode (dev only): highest priority — show raw input/output for matching tools
   // Set RENDERER_VITE_DEBUG_TOOL_NAMES=TodoWrite,TaskCreate to enable
   const isDebug = DEBUG_TOOL_NAMES.length > 0 &&
@@ -265,7 +317,6 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
 
   if (toolName === 'TodoWrite' || toolName === 'TaskCreate' || toolName === 'TaskUpdate') return null
 
-  const isDenied = !!result && result.startsWith('[denied] ')
   const isQuestionDismissed = toolName === 'AskUserQuestion' && !!result && (isDenied || result.includes('dismissed'))
 
   if (toolName === 'Bash') {
@@ -302,59 +353,9 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
   if (toolName === 'ExitPlanMode') {
     return <ExitPlanModeBlock result={result} />
   }
-  const cleanResult = isDenied ? result.slice('[denied] '.length) : result
-  const deniedFeedback = isDenied && cleanResult !== 'User denied permission' ? cleanResult! : ''
-  const feedbackRef = useRef<HTMLSpanElement>(null)
-  const [feedbackIsBlock, setFeedbackIsBlock] = useState(false)
-
-  useLayoutEffect(() => {
-    if (!deniedFeedback) { setFeedbackIsBlock(false); return }
-    const el = feedbackRef.current
-    if (!el) return
-    setFeedbackIsBlock(el.scrollWidth > el.clientWidth)
-  }, [deniedFeedback])
-
-  const lineDelta = useMemo(() => {
-    if (isDenied || isError) return null
-    if (isStreaming && toolName === 'Edit') {
-      if (!('new_string' in params)) return null
-      return computeStreamingEditDelta(String(params.old_string ?? ''), String(params.new_string ?? ''))
-    }
-    return computeLineDelta(toolName, params)
-  }, [toolName, params, isDenied, isError, isStreaming])
-  const hasStreamingDiffContent = DIFF_TOOLS.has(toolName) && isStreaming && (
-    toolName === 'Edit'
-      ? String(params.new_string ?? '').length > 0 || String(params.old_string ?? '').length > 0
-      : toolName === 'Write'
-        ? String(params.content ?? '').length > 0
-        : String(params.diff ?? '').length > 0
-  )
-  const hasCompleteDiff = DIFF_TOOLS.has(toolName) && !isStreaming && !isDenied && !isError && (
-    toolName === 'FileChange'
-      ? String(params.diff ?? '').length > 0
-      : Object.keys(params).length > 0
-  )
-  const hasDiff = hasCompleteDiff || hasStreamingDiffContent
   const hasResult = !!cleanResult && !isStreaming && !isDenied && toolName !== 'Read' && toolName !== 'Skill' && toolName !== 'AskUserQuestion'
   const hasQA = toolName === 'AskUserQuestion' && !!cleanResult && !isStreaming && !isQuestionDismissed
   const expandable = hasDiff || hasResult || hasQA
-  const [expanded, setExpanded] = useState(false)
-  const gridRef = useRef<HTMLDivElement>(null)
-
-  useLayoutEffect(() => {
-    if (DIFF_TOOLS.has(toolName) && hasDiff && effectiveAutoExpand) {
-      setExpanded(true)
-      const grid = gridRef.current
-      if (grid && !isStreaming) {
-        grid.style.transition = 'none'
-        requestAnimationFrame(() => { grid.style.transition = '' })
-      }
-    }
-  }, [isStreaming, hasDiff, toolName, effectiveAutoExpand])
-
-  useLayoutEffect(() => {
-    if (isError) setExpanded(false)
-  }, [isError])
 
   // For unknown tools, show truncated raw input as fallback
   const summary = display.summary || (!isMcp && display.icon === 'wrench' && input.length > 0

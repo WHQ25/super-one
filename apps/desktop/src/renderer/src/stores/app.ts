@@ -14,7 +14,6 @@ import {
 import { useFileTreeStore } from './file-tree'
 import { useActivityPanelStore } from './activity-panel'
 import { useSourceControlStore } from './source-control'
-import { perfEvent } from '@/lib/perf-trace'
 import { disposeHighlightCache } from '@/lib/highlight-cache'
 
 export type { RemoteDeviceConfig }
@@ -378,7 +377,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   navigateTo: (view) => {
-    perfEvent('navigate', { from: get().view, to: view })
     set({ view })
   },
 

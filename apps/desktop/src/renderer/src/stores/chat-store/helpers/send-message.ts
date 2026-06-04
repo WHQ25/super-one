@@ -2,7 +2,6 @@ import type {
   ChatMessage,
   ContentBlock,
 } from '@superone/shared/agent-types'
-import { perfEvent } from '@/lib/perf-trace'
 import { runCodexCommand } from '../codex/runner'
 import { createDefaultPerSessionState, freshSubagentColorPool } from '../defaults'
 import {
@@ -50,7 +49,6 @@ export async function sendMessageImpl(
 ): Promise<void> {
   const { activeProject } = get()
   if (!activeProject) return
-  perfEvent('message_send', { project: activeProject, len: content.length })
   if (isRemoteSession(get(), activeProject, get().projectSessions[activeProject]?._activeSessionId)) return
 
   {

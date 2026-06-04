@@ -22,7 +22,6 @@ import { useResizeHandle } from '@/hooks/useResizeHandle'
 import { useAgentEvents } from '@/hooks/useAgentEvents'
 import { useRemoteControl } from '@/hooks/useRemoteControl'
 import { useFullscreen } from '@/hooks/useFullscreen'
-import { usePerfSampler } from '@/hooks/usePerfSampler'
 import { useReactScan } from '@/hooks/useReactScan'
 import { useStandaloneToolCallRouter } from '@/hooks/useStandaloneToolCallRouter'
 import { GitAutoRefresh } from '@/hooks/useGitAutoRefresh'
@@ -54,7 +53,6 @@ const SettingsLayout = lazy(() => import('@/components/SettingsLayout').then((m)
 function App(): React.JSX.Element {
   useAgentEvents()
   useRemoteControl()
-  usePerfSampler()
   useHarnessTheme()
   useStandaloneToolCallRouter()
   const devReactScan = useDevToolsStore((s) => s.reactScan)

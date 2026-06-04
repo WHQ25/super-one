@@ -1,5 +1,4 @@
 import type { PermissionMode, SandboxInfo } from '@superone/shared/agent-types'
-import { perfEvent } from '@/lib/perf-trace'
 import { useActivityViewStateStore } from '../../activity-view-state'
 import { useAppStore } from '../../app'
 import { applyDefaultModel } from './agent-defaults'
@@ -34,7 +33,6 @@ export async function focusProjectImpl(
   projectPath: string,
 ): Promise<void> {
   const currentProject = get().activeProject
-  perfEvent('project_switch', { from: currentProject, to: projectPath })
   if (currentProject && currentProject !== projectPath) {
     const project = get().projectSessions[currentProject]
     if (project) {

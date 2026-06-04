@@ -90,9 +90,8 @@ export function RemotePage() {
       setCodeInput('')
     } catch {
       setCodeError(t('resources.remote.codeError'))
-    } finally {
-      setConfirming(false)
     }
+    setConfirming(false)
   }
 
   async function handleCancelPairing() {

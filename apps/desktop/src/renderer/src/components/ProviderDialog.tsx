@@ -523,17 +523,13 @@ export function ProviderDialog({
             setTestMessage(t('resources.providerDialog.chatProbing'))
           }
         })
-        try {
-          result = await window.app.testCodexProvider({
-            api_key: form.api_key,
-            base_url: af.base_url || '',
-            extra_env: mergedExtra,
-            name: form.name,
-            provider_id: editProvider?.id,
-          })
-        } finally {
-          offProgress?.()
-        }
+        result = await window.app.testCodexProvider({
+          api_key: form.api_key,
+          base_url: af.base_url || '',
+          extra_env: mergedExtra,
+          name: form.name,
+          provider_id: editProvider?.id,
+        }).finally(() => { offProgress?.() })
       } else {
         result = await window.app.testProvider({
           api_key: form.api_key,

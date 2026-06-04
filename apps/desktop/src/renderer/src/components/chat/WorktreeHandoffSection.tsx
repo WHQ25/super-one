@@ -49,8 +49,10 @@ export function WorktreeHandoffSection({ worktreePath, onDone }: WorktreeHandoff
       } else {
         toast.error(t(HANDOFF_ERROR_KEY[result.reason]))
       }
-    } finally {
       setBusy(false)
+    } catch (e) {
+      setBusy(false)
+      throw e
     }
   }
 

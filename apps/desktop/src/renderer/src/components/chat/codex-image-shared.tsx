@@ -220,8 +220,10 @@ export function CodexImageViewer({ items, index, open, onOpenChange, onIndexChan
       const res = await window.app.saveFileAs(item.savedPath, buildImageFileName(item))
       if (res.ok) setDownloadStatus(`Saved to ${res.savedPath}`)
       else if (!res.canceled) setDownloadStatus(`Failed: ${res.error ?? 'unknown error'}`)
-    } finally {
       setDownloading(false)
+    } catch (e) {
+      setDownloading(false)
+      throw e
     }
   }
 

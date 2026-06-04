@@ -248,8 +248,10 @@ export function TerminalPanel() {
     try {
       const item = await window.terminal.create({ projectPath, sessionId: sessionId ?? undefined })
       addTab(projectPath, item)
-    } finally {
       creatingRef.current = false
+    } catch (e) {
+      creatingRef.current = false
+      throw e
     }
   }, [projectPath, sessionId, addTab])
 

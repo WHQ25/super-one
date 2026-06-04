@@ -158,8 +158,10 @@ function ClaudePreferencesPage() {
       setDefaultEffort(claude.defaultEffort)
       invalidateDefaultClaudePreferencesCache()
       toast.success(successMessage)
-    } finally {
       setSaving(false)
+    } catch (e) {
+      setSaving(false)
+      throw e
     }
   }
 
@@ -170,8 +172,10 @@ function ClaudePreferencesPage() {
       const result = await window.app.saveProjectPreferences(currentFolder, { outputStyle: style })
       setOutputStyle(result.outputStyle)
       toast.success(t('settings.preferences.outputStyle.updated'))
-    } finally {
       setSaving(false)
+    } catch (e) {
+      setSaving(false)
+      throw e
     }
   }
 
@@ -179,16 +183,20 @@ function ClaudePreferencesPage() {
     try {
       await saveClaudeDefaults({ defaultPermissionMode: mode }, t('settings.preferences.permissionMode.updated'))
       invalidateDefaultPermissionModeCache()
-    } finally {
       setPermOpen(false)
+    } catch (e) {
+      setPermOpen(false)
+      throw e
     }
   }
 
   async function handleSandboxModeSelect(mode: SandboxMode) {
     try {
       await saveClaudeDefaults({ defaultSandboxMode: mode }, t('settings.preferences.sandbox.updated'))
-    } finally {
       setSandboxOpen(false)
+    } catch (e) {
+      setSandboxOpen(false)
+      throw e
     }
   }
 
@@ -522,8 +530,10 @@ function CodexPreferencesPage() {
       setDefaultReasoningEffort(result.agentPreference.codex.defaultReasoningEffort)
       invalidateDefaultCodexPreferencesCache()
       toast.success(successMessage)
-    } finally {
       setSaving(false)
+    } catch (e) {
+      setSaving(false)
+      throw e
     }
   }
 

@@ -49,9 +49,8 @@ export function ForkButton({ message, className }: ForkButtonProps) {
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : String(err), { id: toastId })
-    } finally {
-      setBusy(false)
     }
+    setBusy(false)
   }
 
   return (

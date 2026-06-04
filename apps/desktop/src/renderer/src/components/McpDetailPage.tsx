@@ -83,9 +83,8 @@ export function McpDetailPage({ config, status, meta }: { config: McpServerConfi
       await checkMcpServers()
     } catch {
       // ignore — status will reflect the result
-    } finally {
-      setAuthorizing(false)
     }
+    setAuthorizing(false)
   }
 
   const inputClass = 'w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm outline-none focus:border-ring font-mono'

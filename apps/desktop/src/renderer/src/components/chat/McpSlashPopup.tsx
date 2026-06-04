@@ -174,8 +174,10 @@ export function McpSlashPopup({ onClose }: { onClose: () => void }) {
     setRefreshing(true)
     try {
       await load()
-    } finally {
       setRefreshing(false)
+    } catch (e) {
+      setRefreshing(false)
+      throw e
     }
   }, [load])
 

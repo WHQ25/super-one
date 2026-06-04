@@ -66,9 +66,8 @@ export function RewindButton({ checkpointId, rewound, className }: RewindButtonP
       setPreview(result)
     } catch {
       setPreview({ canRewind: false, error: t('chat.rewind.previewFailed') })
-    } finally {
-      setLoading(false)
     }
+    setLoading(false)
   }, [loading, previewRewind, checkpointId])
 
   const codeAlreadyRestored = rewound === 'code'
@@ -91,9 +90,12 @@ export function RewindButton({ checkpointId, rewound, className }: RewindButtonP
         await rewindFiles(checkpointId)
         toast.success(t('chat.rewind.toast.code'))
       }
-    } finally {
       setRewindingMode(null)
       setDialogOpen(false)
+    } catch (e) {
+      setRewindingMode(null)
+      setDialogOpen(false)
+      throw e
     }
   }
 

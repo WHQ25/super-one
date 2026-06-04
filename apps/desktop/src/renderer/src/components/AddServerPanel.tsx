@@ -454,9 +454,8 @@ export function AddServerPanel({ provider, cwd, onClose, onInstalled, onError }:
       onClose()
     } catch (err) {
       onError(err instanceof Error ? err.message : t('resources.mcp.bundle.cannotRead'))
-    } finally {
-      setInstalling(false)
     }
+    setInstalling(false)
   }
 
   const handleSubmit = async (e: React.FormEvent) => {

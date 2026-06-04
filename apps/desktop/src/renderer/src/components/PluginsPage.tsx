@@ -1172,8 +1172,10 @@ function PluginInstallCard({
     setInstalling(true)
     try {
       await onInstall(plugin.key, scope)
-    } finally {
       setInstalling(false)
+    } catch (e) {
+      setInstalling(false)
+      throw e
     }
   }
 
@@ -1484,8 +1486,10 @@ function MarketplaceDetailView({
     setUpdating(true)
     try {
       await onUpdateMarketplace()
-    } finally {
       setUpdating(false)
+    } catch (e) {
+      setUpdating(false)
+      throw e
     }
   }
 
@@ -1495,8 +1499,10 @@ function MarketplaceDetailView({
     try {
       await onRemoveMarketplace()
       setRemoveConfirmOpen(false)
-    } finally {
       setRemoving(false)
+    } catch (e) {
+      setRemoving(false)
+      throw e
     }
   }
 
@@ -1658,9 +1664,8 @@ function AddMarketplaceDialog({
       onOpenChange(false)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setSubmitting(false)
     }
+    setSubmitting(false)
   }
 
   return (
@@ -1839,8 +1844,10 @@ export function PluginsPage() {
       await window.app.updatePlugins(pp, updatablePlugins.map((p) => ({ key: p.key, scope: p.scope })))
       await fetchPlugins()
       await fetchMarketplacePlugins()
-    } finally {
       setUpdatingAll(false)
+    } catch (e) {
+      setUpdatingAll(false)
+      throw e
     }
   }
 

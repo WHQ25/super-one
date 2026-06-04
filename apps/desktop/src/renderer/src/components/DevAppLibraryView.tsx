@@ -35,8 +35,10 @@ export function DevAppLibraryView({ onClose }: DevAppLibraryViewProps) {
     try {
       const list = await window.miniapp.devRegistry.list()
       setEntries(list)
-    } finally {
       setLoading(false)
+    } catch (e) {
+      setLoading(false)
+      throw e
     }
   }, [])
 
@@ -124,9 +126,8 @@ export function DevAppLibraryView({ onClose }: DevAppLibraryViewProps) {
       toast.success(t('resources.devAppLibrary.removedCount', { count: selectedEntries.length }))
     } catch (err) {
       toast.error(err instanceof Error ? err.message : String(err))
-    } finally {
-      setRemoving(false)
     }
+    setRemoving(false)
   }
 
   return (

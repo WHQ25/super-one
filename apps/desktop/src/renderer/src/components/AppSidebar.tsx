@@ -149,6 +149,7 @@ export const AppSidebar = memo(function AppSidebar() {
           visibleCount,
           elapsedMs: Math.round((performance.now() - startedAt) * 100) / 100,
         }, folderPath)
+        inFlightFolderSessions.current.delete(folderPath)
         return sessions
       } catch (error) {
         traceSidebar('sessions_load:error', {
@@ -157,9 +158,8 @@ export const AppSidebar = memo(function AppSidebar() {
           error: error instanceof Error ? error.message : String(error),
           elapsedMs: Math.round((performance.now() - startedAt) * 100) / 100,
         }, folderPath)
-        return []
-      } finally {
         inFlightFolderSessions.current.delete(folderPath)
+        return []
       }
     })()
 

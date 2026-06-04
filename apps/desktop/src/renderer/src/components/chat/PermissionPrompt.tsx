@@ -412,8 +412,6 @@ export function PermissionPrompt() {
     ? (typeof input.host === 'string' ? input.host : t('chat.permission.networkAccess'))
     : (display.summary || '')
 
-  let btnIdx = 0
-
   return (
     <div className="mx-3 mb-2">
       {isCollapsed ? (
@@ -551,7 +549,7 @@ export function PermissionPrompt() {
                 {isCodexDecisionPrompt ? (
                   <div className="grid grid-cols-2 gap-2 @xl:grid-cols-4">
                     <Button
-                      ref={(el) => { btnRefs.current[btnIdx++] = el }}
+                      ref={(el) => { btnRefs.current[0] = el }}
                       size="sm"
                       className="h-7 cursor-pointer bg-green-700 px-3 text-xs text-white hover:bg-green-600 focus:ring-2 focus:ring-green-600 dark:focus:ring-green-400 focus:outline-none"
                       onClick={handleAllow}
@@ -560,7 +558,7 @@ export function PermissionPrompt() {
                       <Kbd variant="inline" className="ml-1 text-green-200/80">⏎</Kbd>
                     </Button>
                     <Button
-                      ref={(el) => { btnRefs.current[btnIdx++] = el }}
+                      ref={(el) => { btnRefs.current[1] = el }}
                       size="sm"
                       className="h-7 cursor-pointer bg-blue-600 px-3 text-[11px] text-white hover:bg-blue-500 focus:ring-2 focus:ring-blue-600 dark:focus:ring-blue-400 focus:outline-none"
                       onClick={handleAlwaysAllow}
@@ -569,7 +567,7 @@ export function PermissionPrompt() {
                       <Kbd variant="inline" className="ml-1 text-blue-200/80">⇧↵</Kbd>
                     </Button>
                     <Button
-                      ref={(el) => { btnRefs.current[btnIdx++] = el }}
+                      ref={(el) => { btnRefs.current[2] = el }}
                       size="sm"
                       className="h-7 cursor-pointer bg-red-700 px-3 text-xs text-white hover:bg-red-600 focus:ring-2 focus:ring-red-600 dark:focus:ring-red-400 focus:outline-none"
                       onClick={handleDeny}
@@ -578,7 +576,7 @@ export function PermissionPrompt() {
                       <Kbd variant="inline" className="ml-1 text-red-200/80">esc</Kbd>
                     </Button>
                     <Button
-                      ref={(el) => { btnRefs.current[btnIdx++] = el }}
+                      ref={(el) => { btnRefs.current[3] = el }}
                       size="sm"
                       className="h-7 cursor-pointer border border-border bg-background/70 px-3 text-xs text-muted-foreground hover:bg-accent hover:text-foreground focus:ring-2 focus:ring-slate-400 focus:outline-none"
                       onClick={handleCancel}
@@ -589,7 +587,7 @@ export function PermissionPrompt() {
                 ) : (
                   <div className="flex flex-wrap items-center gap-2">
                     <Button
-                      ref={(el) => { btnRefs.current[btnIdx++] = el }}
+                      ref={(el) => { btnRefs.current[0] = el }}
                       size="sm"
                       className="h-7 cursor-pointer bg-green-700 px-3 text-xs text-white hover:bg-green-600 focus:ring-2 focus:ring-green-600 dark:focus:ring-green-400 focus:outline-none"
                       onClick={handleAllow}
@@ -603,7 +601,7 @@ export function PermissionPrompt() {
                       )}
                     </Button>
                     <Button
-                      ref={(el) => { btnRefs.current[btnIdx++] = el }}
+                      ref={(el) => { btnRefs.current[1] = el }}
                       size="sm"
                       className="h-7 cursor-pointer bg-red-700 px-3 text-xs text-white hover:bg-red-600 focus:ring-2 focus:ring-red-600 dark:focus:ring-red-400 focus:outline-none"
                       onClick={handleDeny}

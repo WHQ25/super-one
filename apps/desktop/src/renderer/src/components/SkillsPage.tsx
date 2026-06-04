@@ -189,8 +189,10 @@ function SkillCard({ skill, layoutId, readOnly }: { skill: SkillInfo; layoutId: 
     try {
       await deleteSkill(skill.name, skill.scope)
       setDeleteConfirmOpen(false)
-    } finally {
       setDeleting(false)
+    } catch (e) {
+      setDeleting(false)
+      throw e
     }
   }
 

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Loader2, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
+import { loadPdfjs } from '@/lib/pdfjs'
 
 type PdfSource = { base64: string } | { url: string }
 
@@ -59,11 +60,7 @@ export function PdfPreview(props: PdfSource & { className?: string }) {
       if (!container) return
 
       try {
-        const pdfjs = await import('pdfjs-dist')
-        pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-          'pdfjs-dist/build/pdf.worker.min.mjs',
-          import.meta.url,
-        ).href
+        const pdfjs = await loadPdfjs()
 
         const source = 'base64' in props
           ? { data: Uint8Array.from(atob(props.base64), (c) => c.charCodeAt(0)) }

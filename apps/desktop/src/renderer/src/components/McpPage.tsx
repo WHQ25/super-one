@@ -80,8 +80,10 @@ function ServerCard({
     setReconnecting(true)
     try {
       await checkMcpServers()
-    } finally {
       setReconnecting(false)
+    } catch (e) {
+      setReconnecting(false)
+      throw e
     }
   }
 
@@ -187,8 +189,10 @@ function LibraryView({ onClose }: { onClose: () => void }) {
       }
       setSelected(new Set())
       setDeleteConfirmOpen(false)
-    } finally {
       setDeleting(false)
+    } catch (e) {
+      setDeleting(false)
+      throw e
     }
   }
 
@@ -495,8 +499,10 @@ export function McpPage() {
         await checkMcpServers()
       }
       await fetchMcpbInstalled()
-    } finally {
       setRefreshing(false)
+    } catch (e) {
+      setRefreshing(false)
+      throw e
     }
   }
 

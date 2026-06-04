@@ -873,15 +873,15 @@ export function ChatInput() {
         }
 
         const editorMentions: MentionNodeAttrs[] = []
-        let pasteChipCount = 0
+        const pasteChipNodes: unknown[] = []
         ed.state.doc.descendants((node) => {
           if (node.type.name === 'mention') {
             editorMentions.push(node.attrs as MentionNodeAttrs)
           } else if (node.type.name === 'pasteChip') {
-            pasteChipCount++
+            pasteChipNodes.push(node)
           }
         })
-        setHasPasteChips(pasteChipCount > 0)
+        setHasPasteChips(pasteChipNodes.length > 0)
         const editorValues = new Set(editorMentions.map((m) => m.value))
         for (const m of mentionsRef.current) {
           if (!editorValues.has(m.value)) {

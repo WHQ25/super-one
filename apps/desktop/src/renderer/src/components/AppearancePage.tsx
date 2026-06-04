@@ -101,8 +101,10 @@ export function AppearancePage() {
     try {
       setFonts(await listSystemFonts())
       setFontsLoaded(true)
-    } finally {
       setFontsLoading(false)
+    } catch (e) {
+      setFontsLoading(false)
+      throw e
     }
   }, [fontsLoaded, fontsLoading])
 
@@ -134,18 +136,21 @@ export function AppearancePage() {
     setIconBusy(true)
     try {
       const filePath = await window.app.pickAppIconFile()
-      if (!filePath) return
-      const read = await window.app.readFileAsDataUri(filePath)
-      if (!read.ok) {
-        toast.error(read.error)
-        return
+      if (filePath) {
+        const read = await window.app.readFileAsDataUri(filePath)
+        if (!read.ok) {
+          toast.error(read.error)
+        } else {
+          const processed = await processAppIcon(read.dataUri, isMac)
+          const result = await window.app.setAppIcon(processed)
+          setCustomAppIconPath(result.customAppIconPath)
+          toast.success(t('settings.general.appIcon.updated'))
+        }
       }
-      const processed = await processAppIcon(read.dataUri, isMac)
-      const result = await window.app.setAppIcon(processed)
-      setCustomAppIconPath(result.customAppIconPath)
-      toast.success(t('settings.general.appIcon.updated'))
-    } finally {
       setIconBusy(false)
+    } catch (e) {
+      setIconBusy(false)
+      throw e
     }
   }
 
@@ -156,8 +161,10 @@ export function AppearancePage() {
       const result = await window.app.resetAppIcon()
       setCustomAppIconPath(result.customAppIconPath)
       toast.success(t('settings.general.appIcon.resetDone'))
-    } finally {
       setIconBusy(false)
+    } catch (e) {
+      setIconBusy(false)
+      throw e
     }
   }
 

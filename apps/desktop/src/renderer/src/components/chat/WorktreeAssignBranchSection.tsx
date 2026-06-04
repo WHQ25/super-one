@@ -60,8 +60,10 @@ export function WorktreeAssignBranchSection({ folderPath, worktreePath, onAssign
       } else {
         toast.error(t(ASSIGN_ERROR_KEY[result.reason], { name: trimmed }))
       }
-    } finally {
       setBusy(false)
+    } catch (e) {
+      setBusy(false)
+      throw e
     }
   }
 

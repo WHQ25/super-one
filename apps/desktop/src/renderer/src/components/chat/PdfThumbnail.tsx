@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Loader2 } from 'lucide-react'
+import { loadPdfjs } from '@/lib/pdfjs'
 
 const THUMBNAIL_SIZE = 96
 
@@ -13,11 +14,7 @@ export function PdfThumbnail({ base64, className }: { base64: string; className?
 
     async function render() {
       try {
-        const pdfjs = await import('pdfjs-dist')
-        pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-          'pdfjs-dist/build/pdf.worker.min.mjs',
-          import.meta.url,
-        ).href
+        const pdfjs = await loadPdfjs()
 
         const data = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0))
         const pdf = await pdfjs.getDocument({ data }).promise

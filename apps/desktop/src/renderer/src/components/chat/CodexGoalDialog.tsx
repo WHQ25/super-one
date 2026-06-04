@@ -58,9 +58,8 @@ export function CodexGoalDialog({ open, onOpenChange, projectPath, threadId, pre
       onOpenChange(false)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setBusy(false)
     }
+    setBusy(false)
   }, [projectPath, threadId, objective, onOpenChange])
 
   const handleClear = useCallback(async () => {
@@ -74,9 +73,8 @@ export function CodexGoalDialog({ open, onOpenChange, projectPath, threadId, pre
       onOpenChange(false)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setBusy(false)
     }
+    setBusy(false)
   }, [projectPath, threadId, onOpenChange])
 
   const canSave = !!threadId && objective.trim().length > 0 && !busy

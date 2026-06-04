@@ -35,8 +35,10 @@ export function AppSettingsPage() {
     try {
       await changeLocale(locale)
       toast.success(i18n.t('settings.general.language.updated', { lng: locale }))
-    } finally {
       setSavingLocale(false)
+    } catch (e) {
+      setSavingLocale(false)
+      throw e
     }
   }
 
@@ -71,8 +73,10 @@ export function AppSettingsPage() {
       const result = await window.app.saveAppSettings({ updateChannel: channel })
       setUpdateChannel(result.updateChannel)
       toast.success(t('settings.general.updateChannel.updated'))
-    } finally {
       setSavingChannel(false)
+    } catch (e) {
+      setSavingChannel(false)
+      throw e
     }
   }
 

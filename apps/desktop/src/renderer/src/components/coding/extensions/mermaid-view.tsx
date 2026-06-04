@@ -23,6 +23,19 @@ function highlightMermaid(code: string): string {
   }
 }
 
+async function renderMermaidSvg(syntax: string, isDark: boolean): Promise<string> {
+  const mermaid = (await import('mermaid')).default
+  mermaid.initialize({
+    startOnLoad: false,
+    theme: isDark ? 'dark' : 'default',
+    securityLevel: 'loose',
+    suppressErrorRendering: true,
+  })
+  const id = `mermaid-edit-${Math.random().toString(36).slice(2, 11)}`
+  const { svg } = await mermaid.render(id, syntax)
+  return svg
+}
+
 export const MermaidView = ({ node, updateAttributes, selected, deleteNode, extension }: NodeViewProps) => {
   const { t } = useTranslation()
   const dictionary = (extension.options as MermaidOptions).dictionary
@@ -73,15 +86,7 @@ export const MermaidView = ({ node, updateAttributes, selected, deleteNode, exte
     let cancelled = false
     const render = async () => {
       try {
-        const mermaid = (await import('mermaid')).default
-        mermaid.initialize({
-          startOnLoad: false,
-          theme: isDark ? 'dark' : 'default',
-          securityLevel: 'loose',
-          suppressErrorRendering: true,
-        })
-        const id = `mermaid-edit-${Math.random().toString(36).slice(2, 11)}`
-        const { svg: rendered } = await mermaid.render(id, syntax)
+        const rendered = await renderMermaidSvg(syntax, isDark)
         if (!cancelled) {
           setSvg(rendered)
           setError('')
@@ -89,9 +94,8 @@ export const MermaidView = ({ node, updateAttributes, selected, deleteNode, exte
         }
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to render diagram')
-      } finally {
-        if (!cancelled) { setIsLoading(false); setIsThemeSwitching(false) }
       }
+      if (!cancelled) { setIsLoading(false); setIsThemeSwitching(false) }
     }
     render()
     return () => { cancelled = true }

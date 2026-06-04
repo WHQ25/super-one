@@ -19,6 +19,20 @@ function describeErr(e: unknown): string {
   return `${name}: ${err?.message || String(e)}${hint}`
 }
 
+async function playVideoWithRetry(v: HTMLVideoElement): Promise<void> {
+  try {
+    await v.play()
+  } catch (playErr) {
+    // AbortError = a newer load superseded this play(); benign, retry once.
+    if ((playErr as DOMException)?.name === 'AbortError') {
+      await new Promise((r) => setTimeout(r, 50))
+      await v.play().catch(() => {})
+    } else {
+      throw playErr
+    }
+  }
+}
+
 function Demo() {
   const [status, setStatus] = useState('Idle — uses standard navigator.mediaDevices.')
   const [recording, setRecording] = useState(false)
@@ -75,27 +89,18 @@ function Demo() {
         // autoplay policy reads — set the property before play().
         v.muted = true
         v.srcObject = stream
-        try {
-          await v.play()
-        } catch (playErr) {
-          // AbortError = a newer load superseded this play(); benign, retry once.
-          if ((playErr as DOMException)?.name === 'AbortError') {
-            await new Promise((r) => setTimeout(r, 50))
-            await v.play().catch(() => {})
-          } else {
-            throw playErr
-          }
-        }
+        await playVideoWithRetry(v)
       }
       setCamOn(true)
       const label = stream.getVideoTracks()[0]?.label || 'camera'
       setStatus(`Camera live (${label}) — stop tracks when done.`)
+      camStartingRef.current = false
+      setCamBusy(false)
     } catch (e) {
       camStreamRef.current?.getTracks().forEach((t) => t.stop())
       camStreamRef.current = null
       setCamOn(false)
       setStatus('Camera — ' + describeErr(e))
-    } finally {
       camStartingRef.current = false
       setCamBusy(false)
     }

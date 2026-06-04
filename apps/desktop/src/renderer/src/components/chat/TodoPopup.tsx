@@ -89,7 +89,8 @@ export function TodoPopup() {
   const inverseBlockers: Record<string, string[]> = {}
   for (const t of sessionTodoList) {
     for (const blockedId of t.blocks ?? []) {
-      ;(inverseBlockers[blockedId] ??= []).push(t.id)
+      if (!inverseBlockers[blockedId]) inverseBlockers[blockedId] = []
+      inverseBlockers[blockedId].push(t.id)
     }
   }
 

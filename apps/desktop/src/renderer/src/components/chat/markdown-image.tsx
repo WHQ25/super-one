@@ -47,8 +47,10 @@ function MarkdownImageLightbox({ src, alt, savedPath, open, onOpenChange }: Ligh
       const res = await window.app.saveFileAs(savedPath, basename(savedPath))
       if (res.ok) setDownloadStatus(`Saved to ${res.savedPath}`)
       else if (!res.canceled) setDownloadStatus(`Failed: ${res.error ?? 'unknown error'}`)
-    } finally {
       setDownloading(false)
+    } catch (e) {
+      setDownloading(false)
+      throw e
     }
   }
 

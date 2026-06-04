@@ -109,8 +109,10 @@ export function UsagePage() {
       setRows(main.rows)
       setCounts(countsResp)
       setBackfilling(status === 'pending')
-    } finally {
       setLoading(false)
+    } catch (e) {
+      setLoading(false)
+      throw e
     }
   }, [range, harnessFilter])
 

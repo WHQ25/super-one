@@ -62,9 +62,8 @@ export function CodexHooksPanel() {
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
       setGroups([])
-    } finally {
-      setLoading(false)
     }
+    setLoading(false)
   }, [currentFolder])
 
   useEffect(() => { void refresh() }, [refresh])

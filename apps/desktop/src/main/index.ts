@@ -690,6 +690,10 @@ function registerIpcHandlers(): void {
     return codexService.getAuthStatus(projectPath)
   })
 
+  ipcMain.handle(AgentIpcChannels.CODEX_GET_RATE_LIMITS, (_event, projectPath: string, apiProviderId?: string | null) => {
+    return codexService.getRateLimits(projectPath, apiProviderId ?? null)
+  })
+
   ipcMain.handle(AgentIpcChannels.CODEX_SET_AUTH, (_event, projectPath: string, request: CodexSetAuthRequest) => {
     return codexService.setAuth(projectPath, request)
   })

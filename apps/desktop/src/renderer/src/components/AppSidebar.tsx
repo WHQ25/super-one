@@ -38,6 +38,7 @@ import { LayoutToggle } from '@/components/coding/LayoutToggle'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { AppDrawer } from '@/components/sidebar/AppDrawer'
 import { BrandColorPopover } from '@/components/sidebar/BrandColorPopover'
+import { UsageStatusIcon } from '@/components/UsageStatusIcon'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@superone/ui/components/ui/tooltip'
 import { CommandShortcut } from '@superone/ui/components/ui/command'
 
@@ -557,6 +558,7 @@ export const AppSidebar = memo(function AppSidebar() {
         </TooltipProvider>
         <BrandColorPopover />
         <RemoteStatusIcon />
+        <UsageStatusIcon />
       </div>
 
       {/* Delete session confirmation dialog */}

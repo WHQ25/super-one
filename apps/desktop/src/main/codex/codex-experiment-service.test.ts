@@ -226,6 +226,83 @@ describe('CodexExperimentService auth state', () => {
     expect(createHandleMock).toHaveBeenCalledTimes(2)
   })
 
+  it('getRateLimits returns null for apiKey mode without spinning up a connection', async () => {
+    const service = new CodexExperimentService()
+    service.setAuth('/project', { mode: 'apiKey', apiKey: 'sk-test' })
+
+    const limits = await service.getRateLimits('/project')
+
+    expect(limits).toBeNull()
+    expect(createHandleMock).not.toHaveBeenCalled()
+  })
+
+  it('getRateLimits parses primary/secondary windows from account/rateLimits/read for a chatgpt account', async () => {
+    const handle = {
+      connection: {
+        request: vi.fn(async (method: string) => {
+          if (method === 'account/rateLimits/read') {
+            return {
+              rateLimits: {
+                primary: { usedPercent: 23, windowDurationMins: 300, resetsAt: 1_700_000_000 },
+                secondary: { usedPercent: 47, windowDurationMins: 10080, resetsAt: 1_700_500_000 },
+                planType: 'plus',
+              },
+            }
+          }
+          return {}
+        }),
+        respond: vi.fn(),
+        notify: vi.fn(),
+        nextNotification: vi.fn(),
+      },
+      close: vi.fn(async () => {}),
+      getStderr: () => '',
+      onClosed: vi.fn(() => () => {}),
+    }
+    createHandleMock.mockResolvedValue(handle)
+    const service = new CodexExperimentService()
+    service.setAuth('/project', { mode: 'chatgpt' })
+
+    const limits = await service.getRateLimits('/project')
+
+    expect(handle.connection.request).toHaveBeenCalledWith('account/rateLimits/read')
+    expect(limits).toEqual({
+      primary: { usedPercent: 23, windowDurationMins: 300, resetsAt: 1_700_000_000 },
+      secondary: { usedPercent: 47, windowDurationMins: 10080, resetsAt: 1_700_500_000 },
+      planType: 'plus',
+    })
+  })
+
+  it('getRateLimits returns null when a custom codex provider is active (not a ChatGPT subscription)', async () => {
+    vi.mocked(getActiveProviderRaw).mockReturnValue(codexProviderRow('p1', 'https://gateway.example.com/v1') as never)
+    const service = new CodexExperimentService()
+    service.setAuth('/project', { mode: 'chatgpt' })
+
+    const limits = await service.getRateLimits('/project')
+
+    expect(limits).toBeNull()
+    expect(createHandleMock).not.toHaveBeenCalled()
+  })
+
+  it('getRateLimits returns null when the snapshot has no usage windows', async () => {
+    const handle = {
+      connection: {
+        request: vi.fn(async () => ({ rateLimits: { primary: null, secondary: null, planType: 'plus' } })),
+        respond: vi.fn(),
+        notify: vi.fn(),
+        nextNotification: vi.fn(),
+      },
+      close: vi.fn(async () => {}),
+      getStderr: () => '',
+      onClosed: vi.fn(() => () => {}),
+    }
+    createHandleMock.mockResolvedValue(handle)
+    const service = new CodexExperimentService()
+    service.setAuth('/project', { mode: 'chatgpt' })
+
+    expect(await service.getRateLimits('/project')).toBeNull()
+  })
+
   it('allows a prewarmed project app-server to be claimed by a Codex backend', async () => {
     const handle = makeModelHandle()
     createHandleMock.mockResolvedValue(handle)

@@ -1306,6 +1306,18 @@ export interface CodexAuthStatus {
   isRunning: boolean
 }
 
+export interface CodexRateLimitWindow {
+  usedPercent: number
+  windowDurationMins: number | null
+  resetsAt: number | null
+}
+
+export interface CodexRateLimits {
+  primary: CodexRateLimitWindow | null
+  secondary: CodexRateLimitWindow | null
+  planType: string | null
+}
+
 export type CodexHookEventName =
   | 'preToolUse'
   | 'postToolUse'
@@ -1603,6 +1615,7 @@ export const AgentIpcChannels = {
   CODEX_COLLABORATION_MODE_CHANGE: 'codex:collaboration-mode-change',
   CODEX_GET_AUTH_STATUS: 'codex:get-auth-status',
   CODEX_SET_AUTH: 'codex:set-auth',
+  CODEX_GET_RATE_LIMITS: 'codex:get-rate-limits',
 
   // Agent channels
   SEND_MESSAGE: 'agent:send-message',

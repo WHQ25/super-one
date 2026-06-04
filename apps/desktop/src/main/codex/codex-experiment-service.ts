@@ -16,6 +16,8 @@ import {
 } from './app-server-connection'
 import type {
   CodexAuthStatus,
+  CodexRateLimits,
+  CodexRateLimitWindow,
   CodexReasoningEffort,
   CodexSetAuthRequest,
   ModelOption,
@@ -88,6 +90,36 @@ function parseAppServerModel(raw: unknown): CodexAppServerModel | null {
           .filter((entry): entry is ReasoningEffortOption => Boolean(entry))
       : [],
     defaultReasoningEffort: toReasoningEffort(rec.defaultReasoningEffort) ?? undefined,
+  }
+}
+
+function readFiniteNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
+function parseRateLimitWindow(raw: unknown): CodexRateLimitWindow | null {
+  if (!raw || typeof raw !== 'object') return null
+  const rec = raw as Record<string, unknown>
+  const usedPercent = readFiniteNumber(rec.usedPercent)
+  if (usedPercent === null) return null
+  return {
+    usedPercent,
+    windowDurationMins: readFiniteNumber(rec.windowDurationMins),
+    resetsAt: readFiniteNumber(rec.resetsAt),
+  }
+}
+
+function parseRateLimits(raw: Record<string, unknown>): CodexRateLimits | null {
+  const snapshot = raw.rateLimits && typeof raw.rateLimits === 'object'
+    ? (raw.rateLimits as Record<string, unknown>)
+    : raw
+  const primary = parseRateLimitWindow(snapshot.primary)
+  const secondary = parseRateLimitWindow(snapshot.secondary)
+  if (!primary && !secondary) return null
+  return {
+    primary,
+    secondary,
+    planType: readString(snapshot.planType),
   }
 }
 
@@ -378,6 +410,21 @@ export class CodexExperimentService {
   ): Promise<T> {
     const auth = this.getProjectAuth(projectPath)
     return this.withAppServerConnection(projectPath, auth, undefined, async (connection) => fn(connection.request))
+  }
+
+  async getRateLimits(projectPath: string, apiProviderId: string | null = null): Promise<CodexRateLimits | null> {
+    const auth = this.getProjectAuth(projectPath)
+    if (resolveMode(auth.mode, auth.apiKey) !== 'chatgpt') return null
+    if (getCodexProviderOverrideFor(apiProviderId)) return null
+    try {
+      return await this.withAppServerConnection(projectPath, auth, undefined, async (connection) => {
+        const result = await connection.request('account/rateLimits/read')
+        return parseRateLimits(result)
+      }, apiProviderId)
+    } catch (error) {
+      log.info('[codex] getRateLimits failed project=%s: %s', projectPath, error instanceof Error ? error.message : String(error))
+      return null
+    }
   }
 
   setAuth(projectPath: string, request: CodexSetAuthRequest): CodexAuthStatus {

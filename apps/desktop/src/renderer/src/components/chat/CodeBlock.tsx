@@ -1,6 +1,7 @@
-import { useState, useCallback, useRef, useEffect, isValidElement, lazy, Suspense, type RefObject } from 'react'
+import { useState, useCallback, useRef, useEffect, isValidElement, lazy, Suspense } from 'react'
 import { Check, Copy } from 'lucide-react'
 import type { CodeHighlighterPlugin } from '@streamdown/code'
+import { useIsCodeFenceIncomplete } from 'streamdown'
 import { tryCopy } from '@/lib/clipboard'
 
 const MermaidBlock = lazy(() => import('./MermaidBlock').then((m) => ({ default: m.MermaidBlock })))
@@ -16,17 +17,13 @@ export function InlineCode({ children, className, ...props }: React.ComponentPro
   )
 }
 
-export interface StreamingCtx {
-  textRef: RefObject<string>
-  isStreamingRef: RefObject<boolean>
-}
-
 // --- Highlighted code block ---
 
 interface HighlightedCodeBlockProps {
   code: string
   language: string
   codePlugin: CodeHighlighterPlugin
+  isComplete?: boolean
 }
 
 interface TokenLine {
@@ -38,7 +35,7 @@ interface TokenLine {
   }>
 }
 
-export function HighlightedCodeBlock({ code, language, codePlugin }: HighlightedCodeBlockProps) {
+export function HighlightedCodeBlock({ code, language, codePlugin, isComplete = true }: HighlightedCodeBlockProps) {
   const [copied, setCopied] = useState(false)
   const [lines, setLines] = useState<TokenLine[] | null>(null)
   const [colors, setColors] = useState<{ fg: string; bg: string }>({ fg: '#e1e4e8', bg: '#24292e' })
@@ -65,6 +62,10 @@ export function HighlightedCodeBlock({ code, language, codePlugin }: Highlighted
   }, [])
 
   useEffect(() => {
+    if (!isComplete) {
+      setLines(null)
+      return
+    }
     const themes = codePlugin.getThemes()
     const normalizedLanguage = normalizeLanguage(language)
     if (!codePlugin.supportsLanguage(normalizedLanguage as never)) {
@@ -79,7 +80,7 @@ export function HighlightedCodeBlock({ code, language, codePlugin }: Highlighted
     if (result) {
       applyHighlightResult(result)
     }
-  }, [code, language, codePlugin, applyHighlightResult, normalizeLanguage])
+  }, [code, language, codePlugin, applyHighlightResult, normalizeLanguage, isComplete])
 
   const handleCopy = useCallback(async () => {
     if (!(await tryCopy(code))) return
@@ -152,8 +153,9 @@ function extractCodeText(children: React.ReactNode): string {
   return ''
 }
 
-export function createStreamdownCodeComponent(codePlugin: CodeHighlighterPlugin, streamingCtx?: StreamingCtx) {
+export function createStreamdownCodeComponent(codePlugin: CodeHighlighterPlugin) {
   function StreamdownCode({ node, className, children, ...props }: StreamdownCodeProps) {
+    const isComplete = !useIsCodeFenceIncomplete()
     const startLine = node?.position?.start?.line
     const endLine = node?.position?.end?.line
     const isInlineByPosition = startLine !== undefined && endLine !== undefined && startLine === endLine
@@ -171,17 +173,13 @@ export function createStreamdownCodeComponent(codePlugin: CodeHighlighterPlugin,
 
     const language = className?.match(/language-([^\s]+)/)?.[1] ?? 'text'
     if (language === 'mermaid') {
-      const codeLineCount = code.split('\n').length
-      const isComplete = !streamingCtx
-        || !streamingCtx.isStreamingRef.current
-        || (startLine !== undefined && endLine !== undefined && (endLine - startLine) > codeLineCount)
       return (
         <Suspense fallback={<pre className="my-1.5 overflow-x-auto rounded-md bg-muted px-3 py-2 text-xs opacity-60">{code}</pre>}>
           <MermaidBlock code={code} isComplete={isComplete} codePlugin={codePlugin} />
         </Suspense>
       )
     }
-    return <HighlightedCodeBlock code={code} language={language} codePlugin={codePlugin} />
+    return <HighlightedCodeBlock code={code} language={language} codePlugin={codePlugin} isComplete={isComplete} />
   }
 
   return StreamdownCode

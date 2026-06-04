@@ -143,7 +143,7 @@ export function MermaidBlock({ code, isComplete, codePlugin }: MermaidBlockProps
   }, [code])
 
   if (!isComplete) {
-    return <HighlightedCodeBlock code={code} language="mermaid" codePlugin={codePlugin} />
+    return <HighlightedCodeBlock code={code} language="mermaid" codePlugin={codePlugin} isComplete={false} />
   }
 
   const toolbar = (

@@ -57,14 +57,12 @@ function useThrottledStreamingText(text: string, isStreaming: boolean): string {
   return throttled
 }
 import {
-  codePlugin,
   streamdownPlugins,
   streamdownControls,
   streamdownComponents,
   streamdownLinkSafety,
   streamdownRehypePlugins,
 } from './chat-shared'
-import { createStreamdownCodeComponent } from './CodeBlock'
 import { tryCopy } from '@/lib/clipboard'
 
 export function splitByCodeFences(text: string): { content: string; isCode: boolean }[] {
@@ -199,19 +197,11 @@ export function splitByInsightBlocks(text: string): TextSegment[] {
 const InsightBlock = memo(function InsightBlock({ title, content, isStreaming, components }: { title: string; content: string; isStreaming: boolean; components?: Record<string, React.ComponentType<never>> }) {
   const [copied, setCopied] = useState(false)
   const normalized = useMemo(() => normalizeCodeFences(content), [content])
-  const textRef = useRef(normalized)
-  textRef.current = normalized
-  const isStreamingRef = useRef(isStreaming)
-  isStreamingRef.current = isStreaming
-  const codeComponent = useMemo(
-    () => createStreamdownCodeComponent(codePlugin, { textRef, isStreamingRef }),
-    [isStreaming],
-  )
   const merged = useMemo(
     () => components
-      ? { ...streamdownComponents, ...components, code: codeComponent }
-      : { ...streamdownComponents, code: codeComponent },
-    [components, codeComponent],
+      ? { ...streamdownComponents, ...components, code: streamdownComponents.code }
+      : streamdownComponents,
+    [components],
   )
   const mathPlugin = useMathPluginForText(normalized)
   const plugins = useMemo(
@@ -255,19 +245,11 @@ const InsightBlock = memo(function InsightBlock({ title, content, isStreaming, c
 
 const MarkdownRenderer = memo(function MarkdownRenderer({ text, isStreaming, components }: { text: string; isStreaming: boolean; components?: Record<string, React.ComponentType<never>> }) {
   const normalized = useMemo(() => normalizeCodeFences(text), [text])
-  const textRef = useRef(normalized)
-  textRef.current = normalized
-  const isStreamingRef = useRef(isStreaming)
-  isStreamingRef.current = isStreaming
-  const streamingCodeComponent = useMemo(
-    () => createStreamdownCodeComponent(codePlugin, { textRef, isStreamingRef }),
-    [isStreaming],
-  )
   const merged = useMemo(
     () => components
-      ? { ...streamdownComponents, ...components, code: streamingCodeComponent }
-      : { ...streamdownComponents, code: streamingCodeComponent },
-    [components, streamingCodeComponent],
+      ? { ...streamdownComponents, ...components, code: streamdownComponents.code }
+      : streamdownComponents,
+    [components],
   )
   const mathPlugin = useMathPluginForText(normalized)
   const plugins = useMemo(

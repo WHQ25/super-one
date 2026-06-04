@@ -75,7 +75,7 @@ export default defineConfig(({ mode }) => {
         '@': resolve('src/renderer/src')
       }
     },
-    plugins: [react(), tailwindcss()],
+    plugins: [react({ babel: { plugins: [['babel-plugin-react-compiler', { target: '19' }]] } }), tailwindcss()],
     build: {
       rollupOptions: {
         input: {

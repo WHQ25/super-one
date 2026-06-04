@@ -24,11 +24,13 @@ import { useAgentEvents } from '@/hooks/useAgentEvents'
 import { useRemoteControl } from '@/hooks/useRemoteControl'
 import { useFullscreen } from '@/hooks/useFullscreen'
 import { usePerfSampler } from '@/hooks/usePerfSampler'
+import { useReactScan } from '@/hooks/useReactScan'
 import { useStandaloneToolCallRouter } from '@/hooks/useStandaloneToolCallRouter'
 import { GitAutoRefresh } from '@/hooks/useGitAutoRefresh'
 import { useTheme } from '@/hooks/useTheme'
 import { useHarnessTheme } from '@/hooks/useHarnessTheme'
 import { useAppStore, startProjectMirror } from '@/stores/app'
+import { useDevToolsStore } from '@/stores/dev-tools'
 import { useActivityPanelStore } from '@/stores/activity-panel'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { useActivityViewStateStore } from '@/stores/activity-view-state'
@@ -54,6 +56,8 @@ function App(): React.JSX.Element {
   usePerfSampler()
   useHarnessTheme()
   useStandaloneToolCallRouter()
+  const devReactScan = useDevToolsStore((s) => s.reactScan)
+  useReactScan(devReactScan)
   const theme = useTheme()
   const { t } = useTranslation()
   const { view, currentFolder, showSidebar, sidebarWidth, setSidebarWidth, layoutMode } = useAppStore(useShallow((s) => ({ view: s.view, currentFolder: s.currentFolder, showSidebar: s.showSidebar, sidebarWidth: s.sidebarWidth, setSidebarWidth: s.setSidebarWidth, layoutMode: s.layoutMode })))

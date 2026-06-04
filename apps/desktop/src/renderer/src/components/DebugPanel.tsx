@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Bug, X } from 'lucide-react'
 import { useMiniAppStore } from '@/stores/miniapp'
+import { useDevToolsStore } from '@/stores/dev-tools'
 import type { MiniAppPreviewResult } from '@superone/shared/miniapp-types'
 
 interface DebugTrigger {
@@ -144,6 +145,8 @@ const DEBUG_TRIGGERS: DebugTrigger[] = [
 
 export function DebugPanel() {
   const [expanded, setExpanded] = useState(false)
+  const reactScan = useDevToolsStore((s) => s.reactScan)
+  const toggleReactScan = useDevToolsStore((s) => s.toggleReactScan)
 
   const toggle = useCallback(() => setExpanded((v) => !v), [])
 
@@ -181,6 +184,9 @@ export function DebugPanel() {
           <X className="size-3.5 text-muted-foreground" />
         </button>
       </div>
+      <div className="flex flex-col gap-1 border-b p-2">
+        <ToggleRow label="React Scan" active={reactScan} onToggle={toggleReactScan} />
+      </div>
       <div className="flex flex-col gap-1 p-2">
         {DEBUG_TRIGGERS.map((trigger) => (
           <button
@@ -199,5 +205,19 @@ export function DebugPanel() {
         ⌘⇧D to toggle
       </div>
     </div>
+  )
+}
+
+function ToggleRow({ label, active, onToggle }: { label: string; active: boolean; onToggle: () => void }) {
+  return (
+    <button
+      onClick={onToggle}
+      className="flex items-center justify-between rounded-md border px-3 py-1.5 text-left transition-colors hover:bg-muted"
+    >
+      <span className="text-xs font-medium">{label}</span>
+      <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${active ? 'bg-green-500/20 text-green-600' : 'bg-muted text-muted-foreground'}`}>
+        {active ? 'ON' : 'OFF'}
+      </span>
+    </button>
   )
 }

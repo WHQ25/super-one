@@ -417,6 +417,63 @@ describe('createSessionQuery', () => {
     expect(messageError?.error).toBe('API Error: 500 server overloaded')
   })
 
+  it('keeps a field-less synthetic API-error out of the popup when the result fails', async () => {
+    state.messages = [
+      {
+        type: 'assistant',
+        message: {
+          id: 'step-fieldless-err',
+          model: '<synthetic>',
+          content: [{ type: 'text', text: 'API Error: 529 overloaded' }],
+        },
+      },
+      { type: 'result', subtype: 'error', errors: ['API Error: 529 overloaded'] },
+    ]
+
+    const events: Array<Record<string, unknown>> = []
+    const handle = createSessionQuery(
+      { consumedTags: [], drainConsumedTag: () => undefined } as unknown as MessageBridge,
+      { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
+      (event) => events.push(event as unknown as Record<string, unknown>),
+      () => 'msg-fieldless-err',
+      () => Date.now() - 50,
+      () => false,
+    )
+    await handle.iterationDone
+
+    expect(events.some((e) => e.type === 'slash_command_output')).toBe(false)
+    const messageError = events.find((e) => e.type === 'message_error') as Record<string, unknown> | undefined
+    expect(messageError?.error).toBe('API Error: 529 overloaded')
+  })
+
+  it('flushes synthetic slash command output to the popup on a successful result', async () => {
+    state.messages = [
+      {
+        type: 'assistant',
+        message: {
+          id: 'step-ctx',
+          model: '<synthetic>',
+          content: [{ type: 'text', text: 'Context: 42% used' }],
+        },
+      },
+      { type: 'result', subtype: 'success' },
+    ]
+
+    const events: Array<Record<string, unknown>> = []
+    const handle = createSessionQuery(
+      { consumedTags: [], drainConsumedTag: () => undefined } as unknown as MessageBridge,
+      { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
+      (event) => events.push(event as unknown as Record<string, unknown>),
+      () => 'msg-ctx',
+      () => Date.now() - 50,
+      () => false,
+    )
+    await handle.iterationDone
+
+    const slash = events.find((e) => e.type === 'slash_command_output') as Record<string, unknown> | undefined
+    expect(slash?.content).toBe('Context: 42% used')
+  })
+
   it('decorates message_error with provider-aware hint when assistant carries model_not_found and result has api_error_status', async () => {
     state.messages = [
       {

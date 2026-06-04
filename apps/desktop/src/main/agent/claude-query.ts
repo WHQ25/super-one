@@ -194,6 +194,7 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
   // Last replay user message UUID — SDK creates file-history snapshots for replay UUIDs only
   let lastReplayCheckpointId = ''
   let lastAssistantTypedError: string | undefined
+  let pendingSlashOutput = ''
   // Per-step dedup: track processed step IDs (SDK message IDs) and latest step tokens
   const processedStepIds = new Set<string>()
   let messageInputTokens = 0
@@ -308,6 +309,7 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
               const outputPath = isBash ? extractBashOutputPath(text) : undefined
               const isTimedOut = isBash ? extractBashKilled(userMsg.tool_use_result) : undefined
               const taskCreateTodo = extractTaskCreateTodo(toolName, userMsg.tool_use_result, text)
+              const isError = block.is_error || text.includes('<tool_use_error>')
               emit({
                 type: 'content_delta',
                 messageId,
@@ -317,7 +319,7 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
                   summary: text || '',
                   ...(outputPath ? { outputPath } : {}),
                   ...(isTimedOut ? { isTimedOut } : {}),
-                  ...(block.is_error ? { isError: true } : {}),
+                  ...(isError ? { isError: true } : {}),
                   ...(taskCreateTodo ?? {}),
                   parentToolUseId,
                 },
@@ -609,7 +611,7 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
               .join('')
               .trim()
             if (text) {
-              emit({ type: 'slash_command_output', messageId, content: text })
+              pendingSlashOutput = pendingSlashOutput ? `${pendingSlashOutput}\n${text}` : text
             }
           }
 
@@ -828,6 +830,9 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
             emit({ type: 'message_interrupted', messageId, metadata })
             activeBackgroundTaskIds.clear()
           } else if (result.subtype === 'success') {
+            if (pendingSlashOutput) {
+              emit({ type: 'slash_command_output', messageId, content: pendingSlashOutput })
+            }
             emit({ type: 'message_complete', messageId, metadata })
           } else {
             const rawError = result.errors?.join('; ') ?? 'Unknown error'
@@ -835,6 +840,7 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
             emit({ type: 'message_error', messageId, error: decorated })
           }
           lastAssistantTypedError = undefined
+          pendingSlashOutput = ''
 
           resultSeen = true
           turnActive = false

@@ -450,7 +450,7 @@ export const AppSidebar = memo(function AppSidebar() {
               >
                 {PinHarnessIcon && (
                   <span className="shrink-0">
-                    <PinHarnessIcon status={pinHarnessStatus} active={pinIsActive} size={22} />
+                    <PinHarnessIcon status={pinHarnessStatus} active={pinIsActive} size={22} renderLevel="compact" />
                   </span>
                 )}
                 <div className="flex min-w-0 flex-1 flex-col gap-0.5">

@@ -130,7 +130,7 @@ export const SessionRow = memo(function SessionRow({
                 {remoteSessionIds.includes(session.sessionId)
                   ? <Smartphone className="size-3 text-sidebar-foreground/70" />
                   : HarnessIcon && harnessStatus !== 'default'
-                    ? <HarnessIcon status={harnessStatus} active={isSessionActive} />
+                    ? <HarnessIcon status={harnessStatus} active={isSessionActive} renderLevel="compact" />
                     : isRunning
                       ? <SessionStatusSpinner lastEventAt={lastEventAt} />
                       : <MessageSquare className="size-3 text-sidebar-foreground/70" />

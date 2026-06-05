@@ -442,7 +442,7 @@ function Sidebar({
               >
                 {PinHarnessIcon && (
                   <span className="shrink-0">
-                    <PinHarnessIcon status={pinHarnessStatus} active={s.active} size={22} />
+                    <PinHarnessIcon status={pinHarnessStatus} active={s.active} size={22} renderLevel="compact" />
                   </span>
                 )}
                 <div className="flex min-w-0 flex-1 flex-col gap-0.5">
@@ -728,7 +728,7 @@ function SessionStatusIcon({ status, provider, active }: { status?: SessionStatu
       : status === "automation" ? "automation"
       : "default"
   if (HarnessIcon && harnessStatus !== "default") {
-    return <HarnessIcon status={harnessStatus} active={active} />
+    return <HarnessIcon status={harnessStatus} active={active} renderLevel="compact" />
   }
   if (status === "running") return <Loader2 className="size-3 animate-spin text-sidebar-foreground/70" />
   return <MessageSquare className="size-3 text-sidebar-foreground/70" />

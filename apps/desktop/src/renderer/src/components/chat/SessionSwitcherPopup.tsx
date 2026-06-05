@@ -382,7 +382,7 @@ function SessionStatusIcon({ status, lastEventAt, isUnseen, isAutomation, isRemo
       ? ClaudeSessionIcon
       : null
   if (HarnessIcon && harnessStatus !== 'default') {
-    return <HarnessIcon status={harnessStatus} />
+    return <HarnessIcon status={harnessStatus} renderLevel="compact" />
   }
   if (isRunning) {
     return <Loader2 className={cn('size-3 shrink-0 animate-spin', getStallColor(stallLevel, 'text-muted-foreground'))} />

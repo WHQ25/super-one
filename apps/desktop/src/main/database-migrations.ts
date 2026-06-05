@@ -471,8 +471,14 @@ function migrateGlobalResourceCacheToHarness(db: Database.Database): void {
     .get()
   if (!legacyExists) return
 
+  const hasCodexColumn = (
+    db.prepare('PRAGMA table_info(global_resource_cache)').all() as Array<{ name: string }>
+  ).some((c) => c.name === 'codex_models_json')
+
   const row = db
-    .prepare('SELECT models_json, codex_models_json, account_json, slash_commands_json FROM global_resource_cache WHERE id = 1')
+    .prepare(
+      `SELECT models_json, ${hasCodexColumn ? 'codex_models_json' : "'[]' AS codex_models_json"}, account_json, slash_commands_json FROM global_resource_cache WHERE id = 1`,
+    )
     .get() as
     | { models_json: string; codex_models_json: string; account_json: string; slash_commands_json: string }
     | undefined

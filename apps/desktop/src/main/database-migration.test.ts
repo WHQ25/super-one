@@ -177,6 +177,73 @@ describe('database migration', () => {
     expect(newSessionSchema).not.toMatch(/claude_session_id/)
   })
 
+  it('migrates a legacy resource cache that predates the codex_models_json column without reading it', async () => {
+    dbMock.prepare.mockImplementation((sql: string) => {
+      if (sql === "SELECT name FROM sqlite_master WHERE type='table' AND name='global_resource_cache'") {
+        return { get: () => ({ name: 'global_resource_cache' }) }
+      }
+      if (sql === 'PRAGMA table_info(global_resource_cache)') {
+        return {
+          all: () => [
+            { name: 'id' },
+            { name: 'models_json' },
+            { name: 'account_json' },
+            { name: 'slash_commands_json' },
+            { name: 'updated_at' },
+          ],
+        }
+      }
+      if (sql.includes('FROM global_resource_cache') && sql.startsWith('SELECT models_json')) {
+        return {
+          get: () => ({ models_json: '[]', codex_models_json: '[]', account_json: '{}', slash_commands_json: '[]' }),
+        }
+      }
+      return { all: () => [], get: () => undefined, run: vi.fn() }
+    })
+
+    const { getDb } = await import('./database')
+    expect(() => getDb()).not.toThrow()
+
+    const prepareSql = dbMock.prepare.mock.calls.map((call) => call[0] as string)
+    const cacheSelect = prepareSql.find((sql) => sql.includes('FROM global_resource_cache') && sql.startsWith('SELECT models_json'))
+    expect(cacheSelect).toBeDefined()
+    expect(cacheSelect).not.toMatch(/models_json,\s*codex_models_json/)
+    expect(cacheSelect).toMatch(/'\[\]' AS codex_models_json/)
+  })
+
+  it('reads codex_models_json directly when the legacy cache table has the column', async () => {
+    dbMock.prepare.mockImplementation((sql: string) => {
+      if (sql === "SELECT name FROM sqlite_master WHERE type='table' AND name='global_resource_cache'") {
+        return { get: () => ({ name: 'global_resource_cache' }) }
+      }
+      if (sql === 'PRAGMA table_info(global_resource_cache)') {
+        return {
+          all: () => [
+            { name: 'id' },
+            { name: 'models_json' },
+            { name: 'codex_models_json' },
+            { name: 'account_json' },
+            { name: 'slash_commands_json' },
+            { name: 'updated_at' },
+          ],
+        }
+      }
+      if (sql.includes('FROM global_resource_cache') && sql.startsWith('SELECT models_json')) {
+        return {
+          get: () => ({ models_json: '[]', codex_models_json: '[]', account_json: '{}', slash_commands_json: '[]' }),
+        }
+      }
+      return { all: () => [], get: () => undefined, run: vi.fn() }
+    })
+
+    const { getDb } = await import('./database')
+    getDb()
+
+    const prepareSql = dbMock.prepare.mock.calls.map((call) => call[0] as string)
+    const cacheSelect = prepareSql.find((sql) => sql.includes('FROM global_resource_cache') && sql.startsWith('SELECT models_json'))
+    expect(cacheSelect).toMatch(/models_json,\s*codex_models_json/)
+  })
+
   it('is idempotent when re-run against an already-migrated database (no claude_session_id column)', async () => {
     dbMock.prepare.mockImplementation((sql: string) => {
       if (sql === 'PRAGMA table_info(sessions)') {

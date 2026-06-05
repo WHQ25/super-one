@@ -121,3 +121,208 @@
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
 }
+
+@keyframes claude-session-float {
+  0%, 100% { transform: translate(0, 0); }
+  25% { transform: translate(2px, -2px); }
+  50% { transform: translate(0, 0); }
+  75% { transform: translate(-2px, -2px); }
+}
+
+@keyframes claude-session-blink {
+  0%, 90%, 100% { opacity: 1; }
+  95% { opacity: 0; }
+}
+
+@keyframes claude-session-leg-left {
+  0%, 100% { transform: scaleY(1); }
+  50% { transform: scaleY(1.2); }
+}
+
+@keyframes claude-session-leg-right {
+  0%, 100% { transform: scaleY(1); }
+  50% { transform: scaleY(0.8); }
+}
+
+@keyframes claude-session-bg-breath {
+  0%, 100% { opacity: 0.25; }
+  50% { opacity: 0.95; }
+}
+
+.claude-session-idle-motion {
+  display: inline-flex;
+  animation: claude-session-float 2.5s ease-in-out infinite;
+}
+
+.claude-session-bg-motion {
+  display: inline-flex;
+  animation: claude-session-float 2.5s ease-in-out infinite, claude-session-bg-breath 2.5s ease-in-out infinite;
+}
+
+.claude-session-idle-stage {
+  position: relative;
+  display: inline-block;
+  line-height: 0;
+}
+
+.claude-session-idle-eyes {
+  animation: claude-session-blink 5s ease-in-out infinite;
+}
+
+.claude-session-idle-leg {
+  position: absolute;
+  background: #E07B4A;
+  transform-origin: top center;
+}
+
+.claude-session-idle-leg-left {
+  animation: claude-session-leg-left 2.5s ease-in-out infinite;
+}
+
+.claude-session-idle-leg-right {
+  animation: claude-session-leg-right 2.5s ease-in-out infinite;
+}
+
+@keyframes claude-session-bob {
+  0%, 100% { transform: translate(0, 0); }
+  50% { transform: translate(0, -12%); }
+}
+
+@keyframes claude-session-jump {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); }
+  25% { transform: translate(-12%, -22%) rotate(-6deg); }
+  50% { transform: translate(0, 0) rotate(0deg); }
+  75% { transform: translate(12%, -22%) rotate(6deg); }
+}
+
+@keyframes claude-session-key {
+  0% { opacity: 0; }
+  50% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+.claude-session-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.claude-session-layer {
+  position: absolute;
+  inset: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.claude-session-bob-motion {
+  display: inline-flex;
+  will-change: transform;
+  animation: claude-session-bob 2.5s ease-in-out infinite;
+}
+
+.claude-session-jump {
+  will-change: transform;
+  transform-origin: 50% 50%;
+  animation: claude-session-jump 0.45s ease-in-out infinite;
+}
+
+.claude-session-key {
+  position: absolute;
+  will-change: opacity;
+  animation: claude-session-key 0.45s step-end infinite;
+}
+
+@keyframes codex-session-scale {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.04); }
+}
+
+@keyframes codex-session-run-scale {
+  0%, 100% { transform: scale(0.96); }
+  50% { transform: scale(1.12); }
+}
+
+@keyframes codex-session-rotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes codex-session-cursor {
+  0%, 48%, 100% { opacity: 1; }
+  50%, 98% { opacity: 0; }
+}
+
+@keyframes codex-session-veil {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 0.05; }
+}
+
+@keyframes codex-session-warm {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 1; }
+}
+
+@keyframes codex-session-spec {
+  0%, 100% { opacity: 0.65; }
+  50% { opacity: 1; }
+}
+
+.codex-session-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.codex-session-layer {
+  position: absolute;
+  inset: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.codex-session-motion {
+  display: inline-flex;
+}
+
+.codex-session-scale {
+  will-change: transform;
+  animation: codex-session-scale 2.5s ease-in-out infinite;
+}
+
+.codex-session-run-scale {
+  will-change: transform;
+  animation: codex-session-run-scale 1.25s ease-in-out infinite;
+}
+
+.codex-session-rotate {
+  will-change: transform;
+  animation: codex-session-rotate 2.5s linear infinite;
+}
+
+.codex-session-veil {
+  position: absolute;
+  inset: 0;
+  background: var(--sidebar, var(--background));
+  will-change: opacity;
+  animation: codex-session-veil 2.5s ease-in-out infinite;
+}
+
+.codex-session-warm {
+  animation: codex-session-warm 5s ease-in-out infinite;
+}
+
+.codex-session-spec {
+  animation: codex-session-spec 5s ease-in-out infinite;
+}
+
+.codex-session-cursor {
+  animation: codex-session-cursor 1.25s step-end infinite;
+}
+
+.codex-session-cursor-run {
+  animation: codex-session-cursor 0.5s step-end infinite;
+}

@@ -9,6 +9,7 @@ import { CodingLayout } from '@/components/coding/CodingLayout'
 import { CanvasPanel } from '@/components/canvas/CanvasPanel'
 import { ActivityPanel } from '@/components/activity/ActivityPanel'
 import { AppSidebar } from '@/components/AppSidebar'
+import { WindowsTitleBar } from '@/components/WindowsTitleBar'
 import { StartupPage } from '@/components/StartupPage'
 import { SetupPage } from '@/components/SetupPage'
 import { UpdateNotification } from '@/components/UpdateNotification'
@@ -311,6 +312,7 @@ function App(): React.JSX.Element {
     return (
       <>
         <div className="flex h-screen flex-col bg-background text-foreground" style={enterAnimation}>
+          <WindowsTitleBar />
           <div className="flex h-11 shrink-0 items-center justify-between px-3" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
             <div className="w-20" />
             <div />
@@ -341,7 +343,9 @@ function App(): React.JSX.Element {
   // Main view: sidebar + content
   return (
     <>
-    <div className="flex h-screen overflow-hidden bg-sidebar text-foreground" style={enterAnimation}>
+    <div className="flex h-screen flex-col overflow-hidden bg-sidebar text-foreground" style={enterAnimation}>
+      <WindowsTitleBar />
+      <div className="flex min-h-0 flex-1 overflow-hidden">
       <GitAutoRefresh />
       <>
       {/* Sidebar — hidden in canvas mode */}
@@ -441,6 +445,7 @@ function App(): React.JSX.Element {
       <ExternalLinkConfirm />
       <MiniAppClipboardGuard />
       {import.meta.env.DEV && <DebugPanel />}
+      </div>
     </div>
     <MiniAppHostLayer />
     </>

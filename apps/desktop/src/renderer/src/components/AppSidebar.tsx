@@ -382,17 +382,18 @@ export const AppSidebar = memo(function AppSidebar() {
 
   return (
     <div className="flex h-full w-full shrink-0 select-none flex-col bg-sidebar text-sidebar-foreground">
-      {/* Header — drag region with traffic lights spacer + toggle */}
-      <div
-        className={cn('flex h-11 shrink-0 items-center pt-[2px]', !isMac || isFullscreen ? 'pl-2' : 'pl-[18px]')}
-        style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
-      >
-        {isMac && !isFullscreen && <div className="w-[66px] shrink-0" />}
-        {isMac && <LayoutToggle />}
-      </div>
+      {isMac && (
+        <div
+          className={cn('flex h-11 shrink-0 items-center pt-[2px]', isFullscreen ? 'pl-2' : 'pl-[18px]')}
+          style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
+        >
+          {!isFullscreen && <div className="w-[66px] shrink-0" />}
+          <LayoutToggle />
+        </div>
+      )}
 
       {/* New session button */}
-      <div className="mx-2 mb-1 shrink-0">
+      <div className={cn('mx-2 mb-1 shrink-0', !isMac && 'pt-2')}>
         <Button
           variant="outline"
           size="sm"

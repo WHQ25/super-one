@@ -321,8 +321,9 @@ function createWindow(): void {
     height: 900,
     minWidth: 1080,
     minHeight: 700,
-    titleBarStyle: 'hiddenInset',
-    trafficLightPosition: { x: 16, y: 16 },
+    ...(process.platform === 'darwin'
+      ? { titleBarStyle: 'hiddenInset' as const, trafficLightPosition: { x: 16, y: 16 } }
+      : { titleBarStyle: 'hidden' as const, titleBarOverlay: { color: '#00000000', symbolColor: '#888888', height: 40 } }),
     icon: getAppIcon() ?? undefined,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -414,8 +415,9 @@ function createSessionWindow(projectPath: string, sessionId: string, title?: str
     minWidth: 380,
     minHeight: 480,
     title: title ?? 'Session',
-    titleBarStyle: 'hiddenInset',
-    trafficLightPosition: { x: 12, y: 12 },
+    ...(process.platform === 'darwin'
+      ? { titleBarStyle: 'hiddenInset' as const, trafficLightPosition: { x: 12, y: 12 } }
+      : { titleBarStyle: 'hidden' as const, titleBarOverlay: { color: '#00000000', symbolColor: '#888888', height: 36 } }),
     icon: getAppIcon() ?? undefined,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -2503,7 +2505,10 @@ app.whenReady().then(async () => {
 
   let devUpdateToggle = false
   function buildAppMenu(): void {
-    if (process.platform !== 'darwin') return
+    if (process.platform !== 'darwin') {
+      Menu.setApplicationMenu(null)
+      return
+    }
     const { label: updateLabel, enabled: updateEnabled } = getUpdateMenuState()
     const sendCloseTabShortcut = (): void => {
       mainWindow?.webContents.send(AgentIpcChannels.CLOSE_TAB_SHORTCUT)

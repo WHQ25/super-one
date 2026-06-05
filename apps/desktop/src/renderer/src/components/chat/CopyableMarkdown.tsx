@@ -133,7 +133,7 @@ export function normalizeCodeFences(text: string): string {
   }).join('\n')
 }
 
-const INSIGHT_HEADER_LINE = /^(?:#{1,6}\s+)?`?★\s+(.+?)\s+─{3,}`?\s*$/
+const INSIGHT_HEADER_LINE = /^(?:#{1,6}\s+)?`?★\s+(.+?)\s+─{1,}`?\s*$/
 const INSIGHT_FOOTER_LINE = /^`?─{3,}`?\s*$/
 const INSIGHT_INLINE_FOOTER_LINE = /^(?!`?─)(.+?\S)\s+`?─{3,}`?\s*$/
 const FENCE_LINE = /^`{3,}[\w-]*\s*$/

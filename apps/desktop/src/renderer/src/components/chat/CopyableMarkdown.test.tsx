@@ -181,6 +181,14 @@ describe('splitByInsightBlocks', () => {
     ])
   })
 
+  it('recognizes a header whose long title leaves only a single trailing dash', () => {
+    const text = '`★ 因为"SVG 硬件加速"有一堆没写在博客里的失效条件 ─`\nBody line\n─────────────────────────────`'
+    const segments = splitByInsightBlocks(text)
+    expect(segments).toEqual([
+      { type: 'insight', title: '因为"SVG 硬件加速"有一堆没写在博客里的失效条件', content: 'Body line' },
+    ])
+  })
+
   it('tolerates trailing whitespace on header and footer', () => {
     const text = '★ Title ─────────────   \nBody\n─────────────────────   '
     const segments = splitByInsightBlocks(text)

@@ -137,15 +137,18 @@ function generateCommandGroupSummary(items: CodexCommandExecutionItem[]): string
   return text.charAt(0).toUpperCase() + text.slice(1)
 }
 
-function CodexCommandGroup({ items, isStreaming }: { items: CodexCommandExecutionItem[]; isStreaming: boolean }) {
+function CodexCommandGroup({ items, isStreaming, sealed }: { items: CodexCommandExecutionItem[]; isStreaming: boolean; sealed: boolean }) {
   const hasRunning = items.some((item) => isStreaming && item.status === 'in_progress')
   const runningItem = hasRunning ? items.find((item) => item.status === 'in_progress') : null
-  const [expanded, setExpanded] = useState(false)
-  const [prevRunning, setPrevRunning] = useState(false)
-  if (hasRunning !== prevRunning) {
-    setPrevRunning(hasRunning)
-    if (hasRunning) setExpanded(true)
-  }
+  const [expanded, setExpanded] = useState(hasRunning && !sealed)
+
+  useEffect(() => {
+    if (sealed) {
+      setExpanded(false)
+    } else if (hasRunning) {
+      setExpanded(true)
+    }
+  }, [hasRunning, sealed])
 
   return (
     <div className="tool-group my-1 min-w-0">
@@ -283,7 +286,7 @@ export function CodexTurnView({ message, isStreaming, isLastAssistant }: CodexTu
           if (seg.items.length === 1) {
             return <CodexCommandBlock key={seg.items[0].id} item={seg.items[0]} isStreaming={isStreaming} />
           }
-          return <CodexCommandGroup key={`cg-${segIdx}`} items={seg.items} isStreaming={isStreaming} />
+          return <CodexCommandGroup key={`cg-${segIdx}`} items={seg.items} isStreaming={isStreaming} sealed={!isStreaming || segIdx < segments.length - 1} />
         }
         if (seg.kind === 'app-tools') {
           if (seg.items.length === 1) {

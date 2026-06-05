@@ -231,7 +231,7 @@ describe('CodexTurnView', () => {
     expect(screen.getByText(/cat src\/file\.ts/)).toBeTruthy()
   })
 
-  it('auto expands grouped streaming read and search blocks and keeps them open after completion', () => {
+  it('auto expands grouped streaming read and search blocks and collapses after completion', () => {
     const message = createMessage({
       metadata: {
         codex: {
@@ -305,6 +305,11 @@ describe('CodexTurnView', () => {
     )
 
     expect(screen.getByText('Read 1 file, searched 1 code')).toBeTruthy()
+    expect(screen.queryByText('hello in /test/src')).toBeNull()
+    expect(screen.queryByText('file.ts')).toBeNull()
+
+    fireEvent.click(screen.getByText('Read 1 file, searched 1 code'))
+
     expect(screen.getByText('hello in /test/src')).toBeTruthy()
     expect(screen.getByText('file.ts')).toBeTruthy()
   })

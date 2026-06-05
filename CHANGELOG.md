@@ -4,6 +4,27 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.41.3-alpha] - 2026-06-06
+
+### Added
+
+- Custom Windows title bar with native overlay window controls.
+
+### Fixed
+
+- New sessions created via worktree switch now inherit the current harness instead of resetting.
+- Codex tool groups now auto-collapse.
+- Insight headers with a single trailing dash are now recognized.
+- Guarded the `global_resource_cache` migration against a missing `codex_models_json` column.
+
+### Changed
+
+- Bump Claude Agent SDK to 0.3.165.
+
+### Performance
+
+- Composited harness session icon animations and reused canonical harness icons with a more compact sidebar render level.
+
 ## [0.41.2-alpha] - 2026-06-05
 
 ### Added

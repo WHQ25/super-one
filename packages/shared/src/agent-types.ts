@@ -1587,6 +1587,21 @@ export interface UpdateProviderRequest {
   sort_order?: number
 }
 
+export interface ProcessMetricLite {
+  pid: number
+  type: string
+  name?: string
+  serviceName?: string
+  cpu: { percentCPUUsage: number; idleWakeupsPerSecond: number }
+  memory: { workingSetSize: number; peakWorkingSetSize: number }
+}
+
+export interface AppMetricsSnapshot {
+  selfPid: number
+  logicalCpuCount: number
+  metrics: ProcessMetricLite[]
+}
+
 // --- IPC channel constants ---
 
 export const AgentIpcChannels = {
@@ -1594,6 +1609,7 @@ export const AgentIpcChannels = {
   CONNECT_CLAUDE: 'app:connect-claude',
   CONNECT_CODEX: 'app:connect-codex',
   GET_STARTUP_DATA: 'app:get-startup-data',
+  GET_APP_METRICS: 'app:get-app-metrics',
   SELECT_FOLDER: 'app:select-folder',
   GET_RECENT_FOLDERS: 'app:get-recent-folders',
   ADD_RECENT_FOLDER: 'app:add-recent-folder',

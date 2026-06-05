@@ -179,6 +179,9 @@ const appAPI = {
   getStartupData: () =>
     ipcRenderer.invoke(AgentIpcChannels.GET_STARTUP_DATA),
 
+  getAppMetrics: () =>
+    ipcRenderer.invoke(AgentIpcChannels.GET_APP_METRICS) as Promise<import('@superone/shared/agent-types').AppMetricsSnapshot>,
+
   probeSandbox: () =>
     ipcRenderer.invoke(AgentIpcChannels.SANDBOX_PROBE) as Promise<import('@superone/shared/agent-types').SandboxProbeResult>,
 

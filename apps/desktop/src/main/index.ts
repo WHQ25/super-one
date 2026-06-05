@@ -2,7 +2,7 @@ import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, net, powerMonitor
 import { join, dirname, basename, resolve, extname, relative, isAbsolute, sep } from 'path'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { readFile, writeFile, readdir, rename, cp, rm, access, stat, mkdir, open } from 'fs/promises'
-import { homedir, hostname } from 'os'
+import { cpus, homedir, hostname } from 'os'
 import { resolveRealPath, isPathWithinAllowed, sanitizeGitRef, getReadableAssetRoots } from './path-security'
 import { spawn } from 'child_process'
 import { gitRun } from './git-run'
@@ -456,6 +456,47 @@ function createSessionWindow(projectPath: string, sessionId: string, title?: str
   } else {
     win.loadFile(join(__dirname, '../renderer/index.html'), { search: query.slice(1) })
   }
+}
+
+let benchWindow: BrowserWindow | null = null
+
+function createBenchWindow(): void {
+  if (!is.dev) return
+  if (benchWindow && !benchWindow.isDestroyed()) {
+    if (benchWindow.isMinimized()) benchWindow.restore()
+    benchWindow.focus()
+    return
+  }
+  benchWindow = new BrowserWindow({
+    width: 1100,
+    height: 800,
+    title: 'Harness Anim Bench',
+    titleBarStyle: 'hiddenInset',
+    trafficLightPosition: { x: 12, y: 12 },
+    icon: getAppIcon() ?? undefined,
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      sandbox: true,
+      zoomFactor: 1,
+      backgroundThrottling: false,
+      additionalArguments: [roleArg(WindowRole.Mini)],
+    },
+  })
+  benchWindow.webContents.setWindowOpenHandler(({ url }) => {
+    shell.openExternal(url)
+    return { action: 'deny' }
+  })
+  allWindows.add(benchWindow)
+  benchWindow.on('closed', () => {
+    if (benchWindow) allWindows.delete(benchWindow)
+    benchWindow = null
+  })
+  if (process.env['ELECTRON_RENDERER_URL']) {
+    benchWindow.loadURL(`${process.env['ELECTRON_RENDERER_URL']}/bench.html`)
+  } else {
+    benchWindow.loadFile(join(__dirname, '../renderer/bench.html'))
+  }
+  benchWindow.webContents.openDevTools({ mode: 'detach' })
 }
 
 /** Register all IPC handlers once at app startup. */
@@ -2413,6 +2454,17 @@ app.whenReady().then(async () => {
     process.arch,
     log.transports.file.getFile().path,
   )
+
+  if (is.dev && process.env.SUPERONE_BENCH) {
+    ipcMain.handle(AgentIpcChannels.GET_APP_METRICS, (event) => ({
+      selfPid: event.sender.getOSProcessId(),
+      logicalCpuCount: Math.max(1, cpus().length),
+      metrics: app.getAppMetrics(),
+    }))
+    createBenchWindow()
+    return
+  }
+
   await initMainI18n()
 
   if (getBackfillStatus() !== 'done') {

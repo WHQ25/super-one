@@ -81,6 +81,7 @@ export default defineConfig(({ mode }) => {
         input: {
           index: resolve('src/renderer/index.html'),
           'worker-host': resolve('src/renderer/worker-host.html'),
+          bench: resolve('src/renderer/bench.html'),
         },
         output: {
           manualChunks(id) {

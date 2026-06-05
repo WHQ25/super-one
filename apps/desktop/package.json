@@ -12,6 +12,7 @@
   "scripts": {
     "postinstall": "electron-rebuild -f -w better-sqlite3,node-pty --module-dir ../.. && chmod +x ../../node_modules/@anthropic-ai/claude-agent-sdk-*/claude 2>/dev/null; chmod +x ../../node_modules/@openai/codex-*/codex* 2>/dev/null || true",
     "dev": "rm -f dev.log event-trace.db && sqlite3 ~/Library/Application\\ Support/super-one/superone.db 'DELETE FROM global_resource_cache' 2>/dev/null; electron-vite dev",
+    "bench": "SUPERONE_BENCH=1 electron-vite dev",
     "prepare:mac-optional-deps": "bun install --frozen-lockfile --os=darwin --cpu=x64 && bun install --frozen-lockfile --os=darwin --cpu=arm64",
     "prepare:win-optional-deps": "bun install --frozen-lockfile --os=win32 --cpu=x64 && bun install --frozen-lockfile --os=win32 --cpu=arm64",
     "prepare:linux-optional-deps": "bun install --frozen-lockfile --os=linux --cpu=x64 && bun install --frozen-lockfile --os=linux --cpu=arm64",

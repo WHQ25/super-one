@@ -208,12 +208,17 @@ export function resetSessionForWorktreeSwitchImpl(
   projectPath: string,
   opts?: { wtPath?: string; gitBranch?: string | null },
 ): void {
-  const previousSid = get().projectSessions[projectPath]?._activeSessionId ?? null
-  const draftId = createSessionId()
+  const prevProject = get().projectSessions[projectPath]
+  const previousSid = prevProject?._activeSessionId ?? null
+  const previousSession = previousSid ? prevProject?._sessions[previousSid] : undefined
+  const nextProvider = previousSession?.sessionProvider ?? previousSession?.preferredProvider ?? 'claude'
+  const draftId = nextProvider === 'codex' ? _createLocalCodexSessionId() : createSessionId()
   set((s) => {
     const proj = getProject(s, projectPath)
     const newSession = createDefaultPerSessionState()
     newSession.cwd = opts?.wtPath ?? projectPath
+    newSession.preferredProvider = nextProvider
+    newSession.sessionProvider = nextProvider
     newSession._worktreePath = opts?.wtPath ?? null
     newSession._worktreeBaseBranch = opts?.gitBranch ?? null
     if (defaultPrefsCache.permissionMode) newSession.permissionMode = defaultPrefsCache.permissionMode

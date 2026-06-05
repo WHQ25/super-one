@@ -226,6 +226,29 @@ describe('resetSessionForWorktreeSwitchImpl', () => {
     expect(activeSession()._worktreePath).toBe('/wt2')
     expect(activeSession()._worktreeBaseBranch).toBeNull()
   })
+
+  it('inherits the codex provider from the current session instead of defaulting to claude', () => {
+    setupProject()
+    patchSession({ sessionProvider: 'codex', preferredProvider: 'codex', messages: [userMsg('u1', 'codex')] })
+
+    useChatStore.getState().resetSessionForWorktreeSwitch(PATH, { wtPath: '/wt', gitBranch: 'feat' })
+
+    const sess = activeSession()
+    expect(sess.preferredProvider).toBe('codex')
+    expect(sess.sessionProvider).toBe('codex')
+    expect(activeProjectState()._activeSessionId?.startsWith('codex_local_')).toBe(true)
+  })
+
+  it('keeps claude for a claude-provider session', () => {
+    setupProject()
+    patchSession({ sessionProvider: 'claude', preferredProvider: 'claude', messages: [userMsg('u1', 'claude')] })
+
+    useChatStore.getState().resetSessionForWorktreeSwitch(PATH, { wtPath: '/wt', gitBranch: null })
+
+    const sess = activeSession()
+    expect(sess.preferredProvider).toBe('claude')
+    expect(activeProjectState()._activeSessionId?.startsWith('codex_local_')).toBe(false)
+  })
 })
 
 describe('setPreferredProviderImpl', () => {

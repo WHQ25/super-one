@@ -1,6 +1,6 @@
 import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, basename } from 'node:path'
 import { afterAll, beforeAll, describe, it, expect } from 'vitest'
 import { authorizeAndStat, FileBridgeError, inferMimeType, canonicalizeRoots } from './file-bridge'
 
@@ -74,6 +74,11 @@ describe('authorizeAndStat', () => {
     await expect(
       authorizeAndStat(outsidePath, { allowedRoots: [projectRoot] }),
     ).rejects.toMatchObject({ code: 'forbidden_path' })
+  })
+
+  it('allows a file outside roots when skipRootCheck is set', async () => {
+    const result = await authorizeAndStat(outsidePath, { allowedRoots: [projectRoot] }, { skipRootCheck: true })
+    expect(result.name).toBe(basename(outsidePath))
   })
 
   it('rejects symlink that escapes allowed roots', async () => {

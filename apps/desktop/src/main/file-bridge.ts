@@ -76,7 +76,7 @@ export function inferMimeType(realPath: string): string {
 export async function authorizeAndStat(
   inputPath: string,
   context: FileBridgeContext,
-  opts: { maxBytes?: number } = {},
+  opts: { maxBytes?: number; skipRootCheck?: boolean } = {},
 ): Promise<AuthorizedFile> {
   if (!inputPath || typeof inputPath !== 'string') {
     throw new FileBridgeError('forbidden_path', 'path is required')
@@ -96,9 +96,11 @@ export async function authorizeAndStat(
     throw new FileBridgeError('internal_error', `realpath failed: ${(err as Error).message}`)
   }
 
-  const roots = canonicalizeRoots(context.allowedRoots)
-  if (roots.length === 0 || !isPathWithinAllowed(realPath, roots)) {
-    throw new FileBridgeError('forbidden_path', 'path not within allowed roots')
+  if (!opts.skipRootCheck) {
+    const roots = canonicalizeRoots(context.allowedRoots)
+    if (roots.length === 0 || !isPathWithinAllowed(realPath, roots)) {
+      throw new FileBridgeError('forbidden_path', 'path not within allowed roots')
+    }
   }
   if (isDenied(realPath)) {
     throw new FileBridgeError('forbidden_path', 'path matches blacklist')

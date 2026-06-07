@@ -1211,24 +1211,6 @@ export class AgentService {
     }
   }
 
-  private getDesktopFileAllowedRoots(sessionId?: string): string[] {
-    const roots: string[] = []
-    if (sessionId) {
-      const session = this.sessionManager?.getSession(sessionId)
-      if (session) {
-        roots.push(session.cwd)
-        const extras = session.getAdditionalDirectoriesSnapshot()
-        if (extras.length) roots.push(...extras)
-      }
-    }
-    roots.push(join(homedir(), '.codex'))
-    roots.push(tmpdir())
-    try {
-      roots.push(app.getPath('userData'))
-    } catch { /* electron not initialized in tests */ }
-    return roots
-  }
-
   private async handleReadDesktopFile(
     command: Extract<RemoteCommand, { type: 'read_desktop_file' }>,
     respond?: RemoteResponder,
@@ -1237,8 +1219,7 @@ export class AgentService {
     if (!respond) return
     let authorized: AuthorizedFile
     try {
-      const allowedRoots = this.getDesktopFileAllowedRoots(command.sessionId)
-      authorized = await authorizeAndStat(command.path, { allowedRoots }, { maxBytes: command.maxBytes })
+      authorized = await authorizeAndStat(command.path, { allowedRoots: [] }, { maxBytes: command.maxBytes, skipRootCheck: true })
     } catch (err) {
       if (err instanceof FileBridgeError) {
         await respond(command.requestId, { ok: false, error: err.code, message: err.message })

@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Gauge } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@superone/ui/components/ui/tooltip'
 import { cn } from '@superone/ui/lib/utils'
 import { useActiveSession, useChatStore } from '@/stores/chat'
-import type { CodexRateLimits, CodexRateLimitWindow } from '@superone/shared/agent-types'
+import type { ClaudeExtraUsage, ClaudeRateLimits, CodexRateLimits, CodexRateLimitWindow } from '@superone/shared/agent-types'
 
 function formatWindowLabel(minutes: number | null): string {
   if (!minutes || minutes <= 0) return 'Usage'
@@ -37,16 +37,16 @@ function remainingColor(percent: number): string {
   return 'bg-green-500'
 }
 
-function WindowRow({ label, window }: { label: string; window: CodexRateLimitWindow }) {
-  const remaining = Math.max(0, Math.min(100, 100 - window.usedPercent))
-  const resetIn = formatResetIn(window.resetsAt)
+function WindowRow({ label, usedPercent, resetsAt }: { label: string; usedPercent: number; resetsAt: number | null }) {
+  const remaining = Math.max(0, Math.min(100, 100 - usedPercent))
+  const resetIn = formatResetIn(resetsAt)
   return (
     <div className="flex flex-col gap-1">
       <div className="flex items-center justify-between gap-3">
         <span className="opacity-70">{label}</span>
         <span className="flex items-center gap-1.5">
+          {resetIn && <span className="opacity-50">{resetIn} ·</span>}
           <span className="font-medium tabular-nums">{Math.round(remaining)}% left</span>
-          {resetIn && <span className="opacity-50">· {resetIn}</span>}
         </span>
       </div>
       <div className="h-1 w-full overflow-hidden rounded-full bg-border/60">
@@ -56,30 +56,19 @@ function WindowRow({ label, window }: { label: string; window: CodexRateLimitWin
   )
 }
 
-function CodexRateLimitIcon({ projectPath, apiProviderId, status }: { projectPath: string; apiProviderId: string | null; status: string }) {
-  const [limits, setLimits] = useState<CodexRateLimits | null>(null)
-  const prevStatusRef = useRef(status)
+function ExtraUsageRow({ extra }: { extra: ClaudeExtraUsage }) {
+  const value = extra.limitDollars != null
+    ? `$${extra.usedDollars.toFixed(2)} / $${extra.limitDollars.toFixed(2)}`
+    : `$${extra.usedDollars.toFixed(2)}`
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <span className="opacity-70">Extra usage</span>
+      <span className="font-medium tabular-nums">{value}</span>
+    </div>
+  )
+}
 
-  const fetchLimits = useCallback(() => {
-    window.app.codexGetRateLimits(projectPath, apiProviderId).then(setLimits).catch(() => {})
-  }, [projectPath, apiProviderId])
-
-  useEffect(() => {
-    setLimits(null)
-    fetchLimits()
-  }, [fetchLimits])
-
-  useEffect(() => {
-    const wasStreaming = prevStatusRef.current === 'streaming'
-    prevStatusRef.current = status
-    if (wasStreaming && status === 'idle') fetchLimits()
-  }, [status, fetchLimits])
-
-  if (!limits || (!limits.primary && !limits.secondary)) return null
-
-  const windows = [limits.primary, limits.secondary].filter((w): w is CodexRateLimitWindow => Boolean(w))
-  const maxPercent = Math.max(...windows.map((w) => w.usedPercent))
-
+function RateLimitGauge({ title, planType, maxPercent, children }: { title: string; planType: string | null; maxPercent: number; children: ReactNode }) {
   return (
     <TooltipProvider delayDuration={300}>
       <Tooltip>
@@ -92,15 +81,79 @@ function CodexRateLimitIcon({ projectPath, apiProviderId, status }: { projectPat
         <TooltipContent side="top">
           <div className="flex min-w-52 flex-col gap-2 text-xs">
             <div className="flex items-center justify-between gap-3">
-              <span className="font-medium">Codex Usage</span>
-              {limits.planType && <span className="opacity-50">{limits.planType}</span>}
+              <span className="font-medium">{title}</span>
+              {planType && <span className="opacity-50">{planType}</span>}
             </div>
-            {limits.primary && <WindowRow label={formatWindowLabel(limits.primary.windowDurationMins)} window={limits.primary} />}
-            {limits.secondary && <WindowRow label={formatWindowLabel(limits.secondary.windowDurationMins)} window={limits.secondary} />}
+            {children}
           </div>
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>
+  )
+}
+
+function useRefetchOnTurnEnd(status: string, fetchLimits: () => void) {
+  const prevStatusRef = useRef(status)
+  useEffect(() => {
+    fetchLimits()
+  }, [fetchLimits])
+  useEffect(() => {
+    const wasStreaming = prevStatusRef.current === 'streaming'
+    prevStatusRef.current = status
+    if (wasStreaming && status === 'idle') fetchLimits()
+  }, [status, fetchLimits])
+}
+
+function CodexRateLimitIcon({ projectPath, apiProviderId, status }: { projectPath: string; apiProviderId: string | null; status: string }) {
+  const [limits, setLimits] = useState<CodexRateLimits | null>(null)
+
+  const fetchLimits = useCallback(() => {
+    window.app.codexGetRateLimits(projectPath, apiProviderId).then(setLimits).catch(() => {})
+  }, [projectPath, apiProviderId])
+
+  useEffect(() => {
+    setLimits(null)
+  }, [projectPath, apiProviderId])
+
+  useRefetchOnTurnEnd(status, fetchLimits)
+
+  if (!limits || (!limits.primary && !limits.secondary)) return null
+
+  const windows = [limits.primary, limits.secondary].filter((w): w is CodexRateLimitWindow => Boolean(w))
+  const maxPercent = Math.max(...windows.map((w) => w.usedPercent))
+
+  return (
+    <RateLimitGauge title="Codex Usage" planType={limits.planType} maxPercent={maxPercent}>
+      {limits.primary && (
+        <WindowRow label={formatWindowLabel(limits.primary.windowDurationMins)} usedPercent={limits.primary.usedPercent} resetsAt={limits.primary.resetsAt} />
+      )}
+      {limits.secondary && (
+        <WindowRow label={formatWindowLabel(limits.secondary.windowDurationMins)} usedPercent={limits.secondary.usedPercent} resetsAt={limits.secondary.resetsAt} />
+      )}
+    </RateLimitGauge>
+  )
+}
+
+function ClaudeRateLimitIcon({ status }: { status: string }) {
+  const [limits, setLimits] = useState<ClaudeRateLimits | null>(null)
+
+  const fetchLimits = useCallback(() => {
+    window.app.claudeGetRateLimits().then(setLimits).catch(() => {})
+  }, [])
+
+  useRefetchOnTurnEnd(status, fetchLimits)
+
+  if (!limits || limits.windows.length === 0) return null
+
+  const maxPercent = Math.max(...limits.windows.map((w) => w.usedPercent))
+
+  return (
+    <RateLimitGauge title="Claude Usage" planType={limits.planType} maxPercent={maxPercent}>
+      {limits.windows.map((w) => (
+        <WindowRow key={w.label} label={w.label} usedPercent={w.usedPercent} resetsAt={w.resetsAt} />
+      ))}
+      {limits.extraUsage && <ExtraUsageRow extra={limits.extraUsage} />}
+    </RateLimitGauge>
   )
 }
 
@@ -110,9 +163,18 @@ export function UsageStatusIcon() {
   const preferredProvider = useActiveSession((s) => s.preferredProvider)
   const apiProviderId = useActiveSession((s) => s.apiProviderId)
   const status = useActiveSession((s) => s.status)
+  const claudeApiProvider = useChatStore((s) => s.harnessResources.claude?.account?.apiProvider)
   const activeProvider = sessionProvider ?? preferredProvider
 
-  if (!activeProject || activeProvider !== 'codex') return null
+  if (!activeProject) return null
 
-  return <CodexRateLimitIcon projectPath={activeProject} apiProviderId={apiProviderId ?? null} status={status} />
+  if (activeProvider === 'codex') {
+    return <CodexRateLimitIcon projectPath={activeProject} apiProviderId={apiProviderId ?? null} status={status} />
+  }
+
+  if (activeProvider === 'claude' && claudeApiProvider === 'firstParty' && !apiProviderId) {
+    return <ClaudeRateLimitIcon status={status} />
+  }
+
+  return null
 }

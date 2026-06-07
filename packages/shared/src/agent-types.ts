@@ -1318,6 +1318,23 @@ export interface CodexRateLimits {
   planType: string | null
 }
 
+export interface ClaudeRateLimitWindow {
+  label: string
+  usedPercent: number
+  resetsAt: number | null
+}
+
+export interface ClaudeExtraUsage {
+  usedDollars: number
+  limitDollars: number | null
+}
+
+export interface ClaudeRateLimits {
+  windows: ClaudeRateLimitWindow[]
+  extraUsage: ClaudeExtraUsage | null
+  planType: string | null
+}
+
 export type CodexHookEventName =
   | 'preToolUse'
   | 'postToolUse'
@@ -1632,6 +1649,9 @@ export const AgentIpcChannels = {
   CODEX_GET_AUTH_STATUS: 'codex:get-auth-status',
   CODEX_SET_AUTH: 'codex:set-auth',
   CODEX_GET_RATE_LIMITS: 'codex:get-rate-limits',
+
+  // Claude channels
+  CLAUDE_GET_RATE_LIMITS: 'claude:get-rate-limits',
 
   // Agent channels
   SEND_MESSAGE: 'agent:send-message',

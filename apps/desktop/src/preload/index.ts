@@ -338,6 +338,8 @@ const appAPI = {
   codexGetRateLimits: (projectPath: string, apiProviderId?: string | null) =>
     ipcRenderer.invoke(AgentIpcChannels.CODEX_GET_RATE_LIMITS, projectPath, apiProviderId),
 
+  claudeGetRateLimits: () => ipcRenderer.invoke(AgentIpcChannels.CLAUDE_GET_RATE_LIMITS),
+
   codexSetAuth: (
     projectPath: string,
     request: { mode: 'auto' | 'chatgpt' | 'apiKey'; apiKey?: string }

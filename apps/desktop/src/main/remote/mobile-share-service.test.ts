@@ -55,6 +55,8 @@ describe('MobileShareService', () => {
     const res = await new MobileShareService(deps).shareFile({ sessionId: 's1', path: 'note.txt' })
     expect(res.ok).toBe(true)
     expect(res.name).toBe('note.txt')
+    expect(res.path?.startsWith('/')).toBe(true)
+    expect(res.path?.endsWith('note.txt')).toBe(true)
     expect(sent).toHaveLength(1)
   })
 

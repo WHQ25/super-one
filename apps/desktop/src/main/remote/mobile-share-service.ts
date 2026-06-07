@@ -120,7 +120,7 @@ export class MobileShareService {
       mimeType: authorized.mimeType,
       deviceName,
       sentAt,
-      path: req.path,
+      path: authorized.realPath,
       transport,
       expiresAt,
     }

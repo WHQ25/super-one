@@ -1,6 +1,6 @@
 import { useState, type ComponentProps, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Expand, X } from 'lucide-react'
+import { Expand } from 'lucide-react'
 import { Kbd } from '@superone/ui/components/ui/kbd'
 import { FullscreenGlassDialog } from './FullscreenGlassDialog'
 
@@ -9,19 +9,11 @@ function TableFullscreen({ open, onOpenChange, children }: {
   onOpenChange: (open: boolean) => void
   children: ReactNode
 }) {
-  const { t } = useTranslation()
   return (
     <FullscreenGlassDialog open={open} onOpenChange={onOpenChange} title="Table">
       <div className="flex h-full flex-col">
-        <div className="flex items-center justify-end gap-2 px-4 py-2 text-[10px] text-muted-foreground/70">
+        <div className="flex items-center justify-end gap-1 px-4 py-2 text-[10px] text-muted-foreground/70">
           <Kbd>esc</Kbd> exit
-          <button
-            onClick={() => onOpenChange(false)}
-            className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            title={t('common.close')}
-          >
-            <X className="size-4" />
-          </button>
         </div>
         <div className="md-table-full flex-1 overflow-auto">
           <div className="flex min-h-full min-w-full items-center justify-center p-4 pt-0">

@@ -1,11 +1,11 @@
 import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback, memo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ChevronRight, PenLine, Check, X, Ban, TriangleAlert } from 'lucide-react'
+import { ChevronRight, PenLine, Check, X, Ban, TriangleAlert, Upload, Smartphone } from 'lucide-react'
 import { diffLines } from 'diff'
 import { cn } from '@superone/ui/lib/utils'
 import { inferLanguage, useHighlightedTokens, useIncrementalHighlightedLines, type DiffLine, DiffView, splitContentLines, buildUnifiedFileChangeDiffLines } from '@/lib/diff-utils'
 import { getHighlightCache } from '@/lib/highlight-cache'
-import { useChatStore, useActiveSession, useBashOutput } from '@/stores/chat'
+import { useChatStore, useActiveSession, useBashOutput, useShareProgress } from '@/stores/chat'
 import { openFileTab } from '@/components/activity/activity-panel-api'
 import { useSettingsStore } from '@/stores/settings'
 import { useSourceControlStore } from '@/stores/source-control'
@@ -408,6 +408,9 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
         </CompactToolRow>
       )
     }
+    if (mcpInfo.mcpToolName === 'mobile_share_file') {
+      return <MobileShareFileBlock params={params} result={!isStreaming ? (result ?? null) : null} isStreaming={isStreaming} />
+    }
     if (mcpInfo.mcpToolName === 'miniapp_dev_setup') {
       const appName = String(params.name ?? '')
       let parsedResult: Record<string, unknown> | null = null
@@ -689,6 +692,106 @@ export function FileChip({ name, title, filePath, lineNumber, className }: { nam
       <span className={cn('truncate', className)}>{name}</span>
       {targetLineNumber != null && <span className="text-muted-foreground text-[10px]">#L{targetLineNumber}</span>}
     </span>
+  )
+}
+
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(n < 10 * 1024 ? 1 : 0)} KB`
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`
+}
+
+interface MobileShareResult {
+  ok?: boolean
+  name?: string
+  size?: number
+  mimeType?: string
+  deviceName?: string
+  sentAt?: number
+  path?: string
+  transport?: 'inline' | 'relay'
+  expiresAt?: number
+}
+
+function MobileShareFileBlock({ params, result, isStreaming }: {
+  params: Record<string, unknown>
+  result: string | null
+  isStreaming: boolean
+}) {
+  const [expanded, setExpanded] = useState(false)
+  const path = String(params.path ?? '')
+  const fileName = path.split('/').pop() || path
+  const progress = useShareProgress(path)
+
+  let parsed: MobileShareResult | null = null
+  if (!isStreaming && result) {
+    try { parsed = JSON.parse(result) as MobileShareResult } catch { /* not JSON */ }
+  }
+  const done = !!parsed?.ok
+
+  const fileChip = <FileChip name={fileName} title={path} filePath={path} className="max-w-[180px]" />
+
+  const header = (
+    <div
+      className={cn('flex items-center gap-1.5 px-2 py-1.5 text-xs', done && 'cursor-pointer')}
+      onClick={done ? () => setExpanded((e) => !e) : undefined}
+    >
+      {done
+        ? <Smartphone className="size-3 shrink-0 text-muted-foreground" />
+        : <Upload className="size-3 shrink-0 text-primary" />}
+      <span className="shrink-0 text-foreground">{done ? 'Sent' : 'Sending'}</span>
+      {fileChip}
+      {done && parsed?.deviceName && (
+        <>
+          <span className="shrink-0 text-muted-foreground">to</span>
+          <span className="min-w-0 truncate text-foreground">{parsed.deviceName}</span>
+        </>
+      )}
+      {!done && progress && (
+        <span className="ml-auto shrink-0 tabular-nums text-primary">
+          {formatBytes(progress.loaded)} / {formatBytes(progress.total)}
+        </span>
+      )}
+      {done && (
+        <ChevronRight className={cn('ml-auto size-3 shrink-0 text-muted-foreground transition-transform duration-200', expanded && 'rotate-90')} />
+      )}
+    </div>
+  )
+
+  if (!done) {
+    return <div className="tool-node my-0.5 rounded bg-muted/50">{header}</div>
+  }
+
+  const sentAt = parsed?.sentAt ? new Date(parsed.sentAt) : null
+  const rows: Array<{ label: string; value: React.ReactNode }> = []
+  if (sentAt) rows.push({ label: 'Sent at', value: <span className="tabular-nums">{sentAt.toLocaleString()}</span> })
+  rows.push({ label: 'Path', value: <span className="font-mono text-[11px] text-primary break-all">{parsed?.path ?? path}</span> })
+  if (parsed?.size != null) rows.push({ label: 'Size', value: `${formatBytes(parsed.size)}${parsed.mimeType ? ` · ${parsed.mimeType}` : ''}` })
+  rows.push({
+    label: 'Delivery',
+    value: parsed?.transport === 'relay'
+      ? <span className="text-muted-foreground">Encrypted link{parsed.expiresAt ? ` · expires ${new Date(parsed.expiresAt).toLocaleTimeString()}` : ''}</span>
+      : <span className="text-muted-foreground">Delivered inline · encrypted</span>,
+  })
+
+  return (
+    <div className="tool-node my-0.5 rounded bg-muted/50">
+      {header}
+      <div className="grid transition-[grid-template-rows] duration-200 ease-out" style={{ gridTemplateRows: expanded ? '1fr' : '0fr' }}>
+        <div className="overflow-hidden">
+          <div className="border-t border-border/60 px-2 py-2">
+            <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-[11px]">
+              {rows.map((r) => (
+                <div key={r.label} className="contents">
+                  <span className="text-muted-foreground">{r.label}</span>
+                  <span className="min-w-0 text-foreground">{r.value}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   )
 }
 

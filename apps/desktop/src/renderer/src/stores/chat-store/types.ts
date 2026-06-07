@@ -183,6 +183,7 @@ export interface ChatStore {
   agentTitles: Record<string, string>
 
   _bashOutputs: Record<string, { content: string; finished: boolean; outputPath?: string }>
+  _shareProgress: Record<string, { loaded: number; total: number }>
 
   toolRenderers: Record<string, ToolRendererState>
   openToolIntercept: (state: ToolRendererState) => void

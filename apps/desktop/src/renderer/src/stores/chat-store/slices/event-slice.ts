@@ -130,6 +130,12 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
       return
     }
 
+    if (event.type === 'shared_file_progress') {
+      const { path, loaded, total } = event
+      set((s) => ({ _shareProgress: { ...s._shareProgress, [path]: { loaded, total } } }))
+      return
+    }
+
     const projectPath = event.projectPath
     const eventSessionId = event.sessionId
     if (!projectPath) return

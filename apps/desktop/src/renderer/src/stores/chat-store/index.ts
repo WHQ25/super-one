@@ -800,6 +800,7 @@ export {
   useActiveSession,
   useIsRemoteLocked,
   useBashOutput,
+  useShareProgress,
   selectClaudeResources,
   selectCodexResources,
   selectClaudeModels,

@@ -15,6 +15,7 @@ export interface ToolSlice {
   toolRenderers: Record<string, ToolRendererState>
   _pendingStandaloneCalls: Record<string, { callId: string; appId: string; projectDir: string; toolName: string; arguments: Record<string, unknown> }>
   _bashOutputs: Record<string, { content: string; finished: boolean; outputPath?: string }>
+  _shareProgress: Record<string, { loaded: number; total: number }>
 
   openToolIntercept: (state: ToolRendererState) => void
   submitToolIntercept: (callId: string, userInput: Record<string, unknown>) => void
@@ -31,6 +32,7 @@ export const createToolSlice: StateCreator<ChatStore, [], [], ToolSlice> = (set,
   toolRenderers: {},
   _pendingStandaloneCalls: {},
   _bashOutputs: {},
+  _shareProgress: {},
 
   openToolIntercept: (state) =>
     set((s) => ({ toolRenderers: { ...s.toolRenderers, [state.callId]: state } })),

@@ -49,6 +49,10 @@ export function useBashOutput(toolUseId: string): { content: string; finished: b
   return useChatStore((s) => s._bashOutputs[toolUseId])
 }
 
+export function useShareProgress(path: string): { loaded: number; total: number } | undefined {
+  return useChatStore((s) => s._shareProgress[path])
+}
+
 const EMPTY_ACCOUNT: AccountInfo = {}
 const EMPTY_MODELS: ModelOption[] = []
 const EMPTY_SLASH_COMMANDS: SlashCommandInfo[] = []

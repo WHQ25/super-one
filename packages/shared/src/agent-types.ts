@@ -2121,7 +2121,7 @@ export type RemoteCommand =
   | { type: 'add_project_additional_dir'; requestId: string; projectPath: string; dir: string }
   | { type: 'remove_project_additional_dir'; requestId: string; projectPath: string; dir: string }
   | { type: 'set_session_additional_dirs'; requestId: string; projectPath: string; sessionId: string; dirs: string[] }
-  | { type: 'read_desktop_file'; requestId: string; projectPath?: string; sessionId?: string; path: string; maxBytes?: number }
+  | { type: 'read_desktop_file'; requestId: string; projectPath?: string; sessionId?: string; path: string; maxBytes?: number; statOnly?: boolean }
   | { type: 'list_providers'; requestId: string }
   | { type: 'set_session_api_provider_id'; projectPath: string; sessionId: string; apiProviderId: string | null }
   | { type: 'terminal_create'; requestId: string; projectPath: string; sessionId?: string }

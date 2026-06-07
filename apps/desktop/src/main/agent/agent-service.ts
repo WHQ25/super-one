@@ -1248,6 +1248,18 @@ export class AgentService {
       return
     }
 
+    if (command.statOnly) {
+      await respond(command.requestId, {
+        ok: true,
+        statOnly: true,
+        mimeType: authorized.mimeType,
+        name: authorized.name,
+        size: authorized.size,
+        modifiedAt: authorized.modifiedAt,
+      })
+      return
+    }
+
     const transport = source?.transport ?? 'relay'
     const remote = this.remoteControlService
     if (!remote) {

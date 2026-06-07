@@ -149,8 +149,8 @@
 .github-md [data-streamdown="table"] {
   border-collapse: collapse;
   border-spacing: 0;
-  white-space: nowrap;
-  width: 100%;
+  width: max-content;
+  min-width: 100%;
 }
 
 .github-md [data-streamdown="table-header-cell"],
@@ -158,11 +158,20 @@
   border: 1px solid var(--border);
   padding: 6px 13px;
   text-align: left;
+  vertical-align: top;
+}
+
+.github-md [data-streamdown="table-cell"] {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  max-width: 24rem;
 }
 
 .github-md [data-streamdown="table-header-cell"] {
   font-weight: 600;
   background-color: var(--muted);
+  white-space: nowrap;
 }
 
 .github-md [data-streamdown="table-row"]:nth-child(2n) {

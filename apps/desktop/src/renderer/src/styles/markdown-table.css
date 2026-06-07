@@ -1,0 +1,34 @@
+/* =============================================
+   Fullscreen markdown table (portaled outside .chat-md / .github-md)
+   ============================================= */
+
+.md-table-full [data-streamdown="table"] {
+  border-collapse: collapse;
+  width: max-content;
+  background-color: var(--background);
+  font-size: 12px;
+}
+.md-table-full [data-streamdown="table-header-cell"],
+.md-table-full [data-streamdown="table-cell"] {
+  border: 1px solid var(--border);
+  padding: 6px 12px;
+  text-align: left;
+  vertical-align: top;
+}
+.md-table-full [data-streamdown="table-cell"] {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  max-width: 24rem;
+}
+.md-table-full [data-streamdown="table-header-cell"] {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  font-weight: 600;
+  background-color: var(--muted);
+  white-space: nowrap;
+}
+.md-table-full [data-streamdown="table-row"]:nth-child(2n) {
+  background-color: color-mix(in oklch, var(--muted), transparent 60%);
+}

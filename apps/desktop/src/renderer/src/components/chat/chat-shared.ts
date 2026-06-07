@@ -10,6 +10,7 @@ import { createStreamdownCodeComponent } from './CodeBlock'
 import { toMediaUrl, toLocalFileUrl } from '@/lib/path-utils'
 import { LinkSafetyModal } from './LinkSafetyModal'
 import { MarkdownImage } from './markdown-image'
+import { MarkdownTable } from './MarkdownTable'
 
 /** Shared code highlighter plugin instance — reused across all chat components. */
 export const codePlugin = createCodePlugin({ themes: ['github-dark', 'github-dark'] })
@@ -102,6 +103,7 @@ export const streamdownComponents = {
   img: MediaImage,
   video: MediaVideo,
   audio: MediaAudio,
+  table: MarkdownTable,
 } as unknown as Components
 
 const localFileSanitizeSchema = {

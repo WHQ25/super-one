@@ -1,11 +1,6 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
-import {
-  Dialog,
-  DialogContent,
-  DialogTitle,
-  DialogDescription,
-} from '@superone/ui/components/ui/dialog'
 import { Kbd } from '@superone/ui/components/ui/kbd'
+import { FullscreenGlassDialog } from './FullscreenGlassDialog'
 
 const MINIMAP_SIZE = { width: 180, height: 135 }
 const ZOOM_MIN = 0.5
@@ -309,15 +304,8 @@ export function MermaidFullscreen({ svg, open, onOpenChange }: MermaidFullscreen
   const showMinimap = svgSize.width > 0 && svgSize.height > 0
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        className="!max-w-[90vw] !max-h-[90vh] !w-[90vw] !h-[90vh] !p-0 gap-0 overflow-hidden"
-        showCloseButton={false}
-        onOpenAutoFocus={(e) => e.preventDefault()}
-      >
-        <span className="sr-only"><DialogTitle>Mermaid Fullscreen</DialogTitle></span>
-        <span className="sr-only"><DialogDescription>Fullscreen mermaid diagram viewer</DialogDescription></span>
-        <div className="relative h-full w-full bg-muted">
+    <FullscreenGlassDialog open={open} onOpenChange={onOpenChange} title="Mermaid Fullscreen">
+        <div className="relative h-full w-full">
           <div className="absolute right-3 top-3 z-20 flex items-center gap-1 text-[10px] text-muted-foreground/70">
             <span className="tabular-nums">{Math.round(zoom * 100)}%</span>
             <span className="mx-0.1">·</span>
@@ -369,7 +357,6 @@ export function MermaidFullscreen({ svg, open, onOpenChange }: MermaidFullscreen
             </>
           )}
         </div>
-      </DialogContent>
-    </Dialog>
+    </FullscreenGlassDialog>
   )
 }

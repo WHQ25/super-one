@@ -100,7 +100,7 @@
 }
 .chat-md [data-streamdown="table"] {
   border-collapse: collapse;
-  white-space: nowrap;
+  width: max-content;
   min-width: 100%;
   font-size: 12px;
 }
@@ -109,10 +109,18 @@
   border: 1px solid var(--border);
   padding: 6px 12px;
   text-align: left;
+  vertical-align: top;
+}
+.chat-md [data-streamdown="table-cell"] {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  max-width: 24rem;
 }
 .chat-md [data-streamdown="table-header-cell"] {
   font-weight: 600;
   background-color: var(--muted);
+  white-space: nowrap;
 }
 .chat-md [data-streamdown="table-row"]:nth-child(2n) {
   background-color: color-mix(in oklch, var(--muted), transparent 60%);

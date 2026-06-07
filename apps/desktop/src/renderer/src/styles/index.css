@@ -2,6 +2,7 @@
 @import "@superone/ui/styles/theme.css";
 @import "@superone/ui/styles/chat-md.css";
 @import "./github-md.css";
+@import "./markdown-table.css";
 @import "./dockview-theme.css";
 @source "../../../../../../node_modules/streamdown/dist/*.js";
 @source "../../../../../web/components/**/*.{ts,tsx}";

@@ -13,7 +13,37 @@ import {
   registerSuperoneTools,
   type SessionTitleHost,
 } from './superone-mcp-builtins'
+import {
+  MOBILE_SHARE_FILE_TOOL_NAME,
+  MOBILE_SHARE_FILE_DESCRIPTION,
+  MOBILE_SHARE_FILE_INPUT_SCHEMA,
+} from './superone-mcp-builtin-defs'
 import { registerWidgetTools } from '../generative-ui/mcp-server'
+
+export interface MobileShareToolResult {
+  ok: boolean
+  error?: string
+  name?: string
+  size?: number
+  mimeType?: string
+  deviceName?: string
+  sentAt?: number
+  path?: string
+  transport?: 'inline' | 'relay'
+  expiresAt?: number
+}
+
+export interface MobileShareToolDeps {
+  shareFile(req: { sessionId: string; path: string; caption?: string }): Promise<MobileShareToolResult>
+}
+
+let mobileShareDeps: MobileShareToolDeps | null = null
+
+export function setMobileShareToolDeps(deps: MobileShareToolDeps | null): void {
+  mobileShareDeps = deps
+}
+
+const mobileShareEnabled = new Set<string>()
 
 interface PendingCall {
   resolve: (result: unknown) => void
@@ -128,9 +158,10 @@ export function notifyDevAppReady(projectDir: string, appId: string): void {
   }
 }
 
-const BUILT_IN_QUALIFIED_NAMES = new Set(
-  BUILT_IN_SUPERONE_TOOL_NAMES.map((n) => `mcp__superone__${n}`),
-)
+const BUILT_IN_QUALIFIED_NAMES = new Set([
+  ...BUILT_IN_SUPERONE_TOOL_NAMES.map((n) => `mcp__superone__${n}`),
+  `mcp__superone__${MOBILE_SHARE_FILE_TOOL_NAME}`,
+])
 
 export function isBuiltInSuperoneTool(qualifiedName: string): boolean {
   return BUILT_IN_QUALIFIED_NAMES.has(qualifiedName)
@@ -157,6 +188,10 @@ export function createSuperoneMcpServer(sessionId: string): McpSdkServerConfigWi
     if (entry.sessionId === sessionId) {
       registerToolsOnState(state, entry.sessionId, entry.appId, entry.projectDir, entry.toolSlug, entry.tools)
     }
+  }
+
+  if (mobileShareEnabled.has(sessionId)) {
+    registerMobileShareToolOnState(state, sessionId)
   }
 
   const innerServer = (server as unknown as { server?: { onclose?: () => void } }).server
@@ -248,6 +283,59 @@ function registerToolsOnState(
     )
     state.registeredTools.set(namespacedName, registered)
     log.info('[superone-mcp] registered tool %s (standalone=%s) for sessionId=%s', namespacedName, isStandalone, sessionId)
+  }
+}
+
+function registerMobileShareToolOnState(state: ProjectServerState, sessionId: string): void {
+  if (state.registeredTools.has(MOBILE_SHARE_FILE_TOOL_NAME)) return
+  const zodShape = jsonSchemaToZodShape(MOBILE_SHARE_FILE_INPUT_SCHEMA)
+  const registered = state.server.registerTool(
+    MOBILE_SHARE_FILE_TOOL_NAME,
+    { description: MOBILE_SHARE_FILE_DESCRIPTION, inputSchema: zodShape },
+    async (args: Record<string, unknown>) => {
+      if (!mobileShareDeps) {
+        return { content: [{ type: 'text' as const, text: '[Error] Mobile sharing is unavailable.' }], isError: true }
+      }
+      const result = await mobileShareDeps.shareFile({
+        sessionId,
+        path: String(args.path ?? ''),
+        caption: args.caption != null ? String(args.caption) : undefined,
+      })
+      if (!result.ok) {
+        return { content: [{ type: 'text' as const, text: `[Error] ${result.error ?? 'Failed to share file.'}` }], isError: true }
+      }
+      return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] }
+    },
+  )
+  state.registeredTools.set(MOBILE_SHARE_FILE_TOOL_NAME, registered)
+}
+
+export function registerMobileShareTool(sessionId: string): void {
+  if (mobileShareEnabled.has(sessionId)) return
+  mobileShareEnabled.add(sessionId)
+  log.debug('[superone-mcp] enable mobile_share_file for sessionId=%s', sessionId)
+  emitToolsChanged(sessionId)
+  const states = sessionServers.get(sessionId)
+  if (!states) return
+  for (const state of states) {
+    registerMobileShareToolOnState(state, sessionId)
+    if (state.server.isConnected()) state.server.sendToolListChanged()
+  }
+}
+
+export function unregisterMobileShareTool(sessionId: string): void {
+  if (!mobileShareEnabled.delete(sessionId)) return
+  log.debug('[superone-mcp] disable mobile_share_file for sessionId=%s', sessionId)
+  emitToolsChanged(sessionId)
+  const states = sessionServers.get(sessionId)
+  if (!states) return
+  for (const state of states) {
+    const registered = state.registeredTools.get(MOBILE_SHARE_FILE_TOOL_NAME)
+    if (registered) {
+      try { registered.remove() } catch (err) { log.debug('[superone-mcp] mobile_share_file remove error: %s', err instanceof Error ? err.message : String(err)) }
+      state.registeredTools.delete(MOBILE_SHARE_FILE_TOOL_NAME)
+    }
+    if (state.server.isConnected()) state.server.sendToolListChanged()
   }
 }
 

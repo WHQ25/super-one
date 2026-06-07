@@ -21,7 +21,9 @@ import { initWorkerHost, startWorker, stopWorker, stopWorkersByAppId, workerStat
 import { buildMiniAppHost } from '@superone/shared/miniapp-host'
 import { previewApp, confirmInstall, cancelInstall, uninstallApp, packApp, getInstallMeta, getPreapproved, getPreapprovedByPath, setPreapproved, setPreapprovedByPath } from './miniapp/miniapp-packager'
 import { previewMcpbBundle, installMcpbBundle, uninstallMcpbBundle, listInstalledMcpb, revealMcpbBundle } from './mcpb/mcpb-installer'
-import { initSuperoneMcpServer, registerAppTools, unregisterAppTools, unregisterAppAcrossSessions, resolveToolCall, rejectToolCall, notifyAppReady as notifyMiniAppReady, loadPreapprovedTools, updatePreapprovedTools, registerAppTemplates, unregisterAppTemplates, submitToolIntercept, cancelToolIntercept, clearSessionPendingCalls as clearSessionPendingMiniAppCalls, disposeSuperoneMcpServer, setSessionHostProvider, clearAppReadyGate, isAppStillAuthorizedInProject, addToolsChangedListener } from './mcp/superone-mcp-server'
+import { initSuperoneMcpServer, registerAppTools, unregisterAppTools, unregisterAppAcrossSessions, resolveToolCall, rejectToolCall, notifyAppReady as notifyMiniAppReady, loadPreapprovedTools, updatePreapprovedTools, registerAppTemplates, unregisterAppTemplates, submitToolIntercept, cancelToolIntercept, clearSessionPendingCalls as clearSessionPendingMiniAppCalls, disposeSuperoneMcpServer, setSessionHostProvider, clearAppReadyGate, isAppStillAuthorizedInProject, addToolsChangedListener, setMobileShareToolDeps, registerMobileShareTool, unregisterMobileShareTool } from './mcp/superone-mcp-server'
+import { MobileShareService, type MobileShareTarget } from './remote/mobile-share-service'
+import { MobileShareToolCoordinator } from './remote/mobile-share-tool-coordinator'
 import { startSuperoneMcpStdioBridge, stopSuperoneMcpStdioBridge } from './mcp/superone-mcp-stdio-ipc'
 import { scheduleMcpReload } from './mcp/mcp-reload-scheduler'
 import { query } from '@anthropic-ai/claude-agent-sdk'
@@ -294,6 +296,34 @@ function safeSend(channel: string, ...args: unknown[]): void {
 new PresenceCoordinator(sessionManager, {
   broadcastToRenderer: (event) => safeSend(AgentIpcChannels.EVENT, event),
   sendToMobile: (event, targetDeviceIds) => remoteControlService.sendEventToMobile(event, targetDeviceIds),
+})
+
+const mobileShareService = new MobileShareService({
+  resolveTarget: (sessionId): MobileShareTarget | null => {
+    const session = sessionManager.getSession(sessionId)
+    if (!session) return null
+    const deviceId = session.owner.kind === 'remote'
+      ? session.owner.deviceId
+      : session.subscribers.values().next().value
+    if (!deviceId) return null
+    return {
+      deviceId,
+      projectPath: session.projectPath,
+      allowedRoots: [session.projectPath, ...session.getAdditionalDirectoriesSnapshot()],
+    }
+  },
+  resolveDeviceName: (deviceId) => remoteControlService.getOnlineDevices().get(deviceId)?.name ?? null,
+  uploadFileToRelay: (realPath, meta, sessionId, onProgress) =>
+    remoteControlService.uploadFileToRelay(realPath, meta, sessionId, onProgress),
+  sendAgentEvent: (event, targetDeviceIds) => remoteControlService.sendAgentEvent(event, targetDeviceIds),
+  emitToRenderer: (event) => safeSend(AgentIpcChannels.EVENT, event),
+  now: () => Date.now(),
+})
+setMobileShareToolDeps({ shareFile: (req) => mobileShareService.shareFile(req) })
+
+new MobileShareToolCoordinator(sessionManager, {
+  enable: registerMobileShareTool,
+  disable: unregisterMobileShareTool,
 })
 
 const terminalManager = new TerminalManager({

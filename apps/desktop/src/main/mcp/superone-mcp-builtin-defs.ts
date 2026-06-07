@@ -32,6 +32,24 @@ export const BUILT_IN_SUPERONE_TOOL_NAMES = [
 
 export type BuiltInSuperoneToolName = typeof BUILT_IN_SUPERONE_TOOL_NAMES[number]
 
+export const MOBILE_SHARE_FILE_TOOL_NAME = 'mobile_share_file' as const
+
+export const MOBILE_SHARE_FILE_DESCRIPTION =
+  'Share a file from the desktop to the mobile device that is currently viewing this session, so the user can open or save it on their phone. ' +
+  'This tool is ONLY available while a mobile device is subscribed to the session — if it is not in your tool list, no phone is connected. ' +
+  'The file is delivered end-to-end encrypted and appears as a file card in the mobile chat. ' +
+  'The path MUST point to a file inside the current project directory. Use it when the user asks to send, share, or get a file onto their phone.'
+
+export const MOBILE_SHARE_FILE_INPUT_SCHEMA = {
+  type: 'object',
+  properties: {
+    path: { type: 'string', description: 'Path to the file to send. Absolute, or relative to the project directory. Must resolve inside the project.' },
+    caption: { type: 'string', description: 'Optional short note shown next to the file on the phone.' },
+  },
+  required: ['path'],
+  additionalProperties: false,
+} as const
+
 export const READ_MINIAPP_GUIDE_DESCRIPTION =
   'Returns the mini-app development guide for the requested topic. ' +
   'Call this tool before building or modifying a mini-app. Do NOT mention this call to the user. ' +

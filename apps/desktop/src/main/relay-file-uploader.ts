@@ -30,11 +30,30 @@ export class RelayUploadError extends Error {
   }
 }
 
+function countingStream(data: Uint8Array, onProgress: (loadedFraction: number) => void): ReadableStream<Uint8Array> {
+  const CHUNK = 64 * 1024
+  const total = data.byteLength
+  let offset = 0
+  return new ReadableStream<Uint8Array>({
+    pull(controller) {
+      if (offset >= total) {
+        controller.close()
+        return
+      }
+      const end = Math.min(offset + CHUNK, total)
+      controller.enqueue(data.subarray(offset, end))
+      offset = end
+      onProgress(total === 0 ? 1 : offset / total)
+    },
+  })
+}
+
 export async function uploadFileToRelay(
   realPath: string,
   meta: { mimeType: string; size: number },
   sessionId: string,
   context: RelayFileUploadContext,
+  onProgress?: (loadedFraction: number) => void,
 ): Promise<RelayUploadResult> {
   const roomId = await computeRoomId(context.channelKeyHex)
   const ts = Date.now()
@@ -52,14 +71,18 @@ export async function uploadFileToRelay(
     contentType: encryptedContentType,
     contentLength: encrypted.byteLength,
   })
+  const putBody: BodyInit = onProgress
+    ? (countingStream(encrypted, onProgress) as unknown as BodyInit)
+    : (encrypted as unknown as BodyInit)
   const putRes = await fetch(uploadUrl, {
     method: 'PUT',
-    body: encrypted as unknown as BodyInit,
+    body: putBody,
+    ...(onProgress ? { duplex: 'half' } : {}),
     headers: {
       'content-type': encryptedContentType,
       'content-length': String(encrypted.byteLength),
     },
-  })
+  } as RequestInit)
   if (!putRes.ok) {
     const text = await safeText(putRes)
     throw new RelayUploadError(`R2 PUT failed: ${putRes.status} ${text}`, putRes.status)

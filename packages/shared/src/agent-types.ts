@@ -10,6 +10,23 @@ export interface ImageAttachment {
   name: string
 }
 
+export interface ShareFileEncryption {
+  version: number
+  format: string
+  key: string
+}
+
+export interface ShareFilePayload {
+  name: string
+  mimeType: string
+  size: number
+  caption?: string
+  inlineBase64?: string
+  downloadUrl?: string
+  expiresAt?: number
+  encryption?: ShareFileEncryption
+}
+
 // --- Content blocks ---
 
 type RemoteToolType = 'read' | 'edit' | 'write' | 'notebook_edit' | 'file_change' | 'bash' | 'grep' | 'glob' | 'web_search' | 'web_fetch' | 'agent' | 'skill' | 'workflow'
@@ -790,6 +807,8 @@ export type AgentEventBase =
   | { type: 'queued_message_consumed'; clientMessageId: string }
   | { type: 'worktree_missing'; worktreePath: string; fallbackCwd: string }
   | { type: 'session_title_changed'; sessionId: string; title: string; source: 'user' | 'agent' }
+  | { type: 'shared_file'; file: ShareFilePayload; sentAt: number }
+  | { type: 'shared_file_progress'; path: string; loaded: number; total: number }
 
 export type AgentEvent = AgentEventBase & { projectPath?: string; sessionId?: string; draftSessionId?: string; seq?: number; epoch?: number }
 

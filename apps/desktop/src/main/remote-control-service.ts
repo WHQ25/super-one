@@ -730,6 +730,7 @@ export class RemoteControlService {
     realPath: string,
     meta: { mimeType: string; size: number },
     sessionId: string,
+    onProgress?: (loadedFraction: number) => void,
   ): Promise<RelayUploadResult> {
     if (!this.keys || !this.relayUrl) {
       throw new Error('Relay not connected')
@@ -738,7 +739,7 @@ export class RemoteControlService {
       channelKeyHex: this.keys.channelKeyHex,
       relayHttpUrl: relayWsToHttp(this.relayUrl),
       aesKey: this.keys.aesKey,
-    })
+    }, onProgress)
   }
 
   private primaryTransport(info: ConnectedDevice): DeviceTransport {

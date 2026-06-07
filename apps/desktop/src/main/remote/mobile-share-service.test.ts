@@ -50,6 +50,14 @@ describe('MobileShareService', () => {
     expect(res.ok).toBe(false)
   })
 
+  it('resolves a project-relative path against the project root', async () => {
+    const { deps, sent } = makeDeps({ deviceId: 'dev-A', projectPath: dir, allowedRoots: [dir] })
+    const res = await new MobileShareService(deps).shareFile({ sessionId: 's1', path: 'note.txt' })
+    expect(res.ok).toBe(true)
+    expect(res.name).toBe('note.txt')
+    expect(sent).toHaveLength(1)
+  })
+
   it('inlines a small file and delivers a shared_file event to the owner', async () => {
     const { deps, sent, rendered } = makeDeps({ deviceId: 'dev-A', projectPath: dir, allowedRoots: [dir] })
     const res = await new MobileShareService(deps).shareFile({ sessionId: 's1', path: filePath, caption: 'fyi' })

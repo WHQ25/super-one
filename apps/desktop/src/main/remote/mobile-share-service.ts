@@ -1,4 +1,5 @@
 import { readFile } from 'fs/promises'
+import { isAbsolute, resolve } from 'path'
 import { randomUUID } from 'crypto'
 import type { AgentEvent, ShareFilePayload } from '@superone/shared/agent-types'
 import type { RelayUploadResult } from '../relay-file-uploader'
@@ -37,9 +38,10 @@ export class MobileShareService {
       return { ok: false, error: 'No mobile device is connected to this session.' }
     }
 
+    const absPath = isAbsolute(req.path) ? req.path : resolve(target.projectPath, req.path)
     let authorized: AuthorizedFile
     try {
-      authorized = await authorizeAndStat(req.path, { allowedRoots: target.allowedRoots })
+      authorized = await authorizeAndStat(absPath, { allowedRoots: target.allowedRoots })
     } catch (err) {
       if (err instanceof FileBridgeError) return { ok: false, error: err.message }
       return { ok: false, error: (err as Error).message }

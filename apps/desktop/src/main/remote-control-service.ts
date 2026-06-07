@@ -366,7 +366,7 @@ function stripContentBlock(block: ContentBlock, bashCmds?: Map<string, string>, 
   if (block.type === 'tool_use') {
     const meta = computeToolMeta(block, projectPath)
     const mappedType = TOOL_TYPE_MAP[block.toolName] ?? 'tool_use'
-    const keepInput = block.toolName.endsWith('__widget_show')
+    const keepInput = block.toolName.endsWith('__widget_show') || block.toolName.endsWith('__mobile_share_file')
     return { ...block, type: mappedType, input: keepInput ? block.input : '', toolSummary: block.toolSummary ?? meta.toolSummary, toolFilePath: block.toolFilePath ?? meta.toolFilePath, toolLineDelta: block.toolLineDelta ?? meta.toolLineDelta, toolDiff: block.toolDiff ?? meta.toolDiff, toolDiffTokens: block.toolDiffTokens ?? meta.toolDiffTokens, toolTodos: block.toolTodos ?? meta.toolTodos, subagentType: meta.subagentType, toolPrompt: meta.toolPrompt, runInBackground: meta.runInBackground, workflowName: meta.workflowName, workflowDescription: meta.workflowDescription, workflowPhases: meta.workflowPhases } as ContentBlock
   }
   if (block.type === 'tool_result') {
@@ -375,6 +375,9 @@ function stripContentBlock(block: ContentBlock, bashCmds?: Map<string, string>, 
       const raw = cmd ? `\x1b[32m$\x1b[0m ${cmd}\n${block.summary}` : block.summary
       const output = truncateBashOutput(raw)
       return { type: 'bash_result', toolUseId: block.toolUseId, summary: output, parentToolUseId: block.parentToolUseId, outputTokens: parseAnsiTokens(output) }
+    }
+    if (block.summary.startsWith('{"ok":true,"shareId":')) {
+      return block
     }
     if (!agentIds?.has(block.toolUseId) && block.summary.length > TOOL_RESULT_MAX_LEN) {
       return { ...block, summary: block.summary.slice(0, TOOL_RESULT_MAX_LEN) + '…' }

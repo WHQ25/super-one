@@ -728,6 +728,8 @@ function MobileShareFileBlock({ params, result, isStreaming }: {
     try { parsed = JSON.parse(result) as MobileShareResult } catch { /* not JSON */ }
   }
   const done = !!parsed?.ok
+  const failed = !isStreaming && !done
+  const errorText = failed ? (result ?? '').replace(/^\[Error\]\s*/, '').trim() : ''
 
   const fileChip = <FileChip name={fileName} title={path} filePath={path} className="max-w-[180px]" />
 
@@ -738,8 +740,10 @@ function MobileShareFileBlock({ params, result, isStreaming }: {
     >
       {done
         ? <Smartphone className="size-3 shrink-0 text-muted-foreground" />
-        : <Upload className="size-3 shrink-0 text-primary" />}
-      <span className="shrink-0 text-foreground">{done ? 'Sent' : 'Sending'}</span>
+        : failed
+          ? <Ban className="size-3 shrink-0 text-destructive" />
+          : <Upload className="size-3 shrink-0 text-primary" />}
+      <span className={cn('shrink-0', failed ? 'text-destructive' : 'text-foreground')}>{done ? 'Sent' : failed ? 'Failed to send' : 'Sending'}</span>
       {fileChip}
       {done && parsed?.deviceName && (
         <>
@@ -747,7 +751,10 @@ function MobileShareFileBlock({ params, result, isStreaming }: {
           <span className="min-w-0 truncate text-foreground">{parsed.deviceName}</span>
         </>
       )}
-      {!done && progress && (
+      {failed && errorText && (
+        <span className="min-w-0 truncate text-muted-foreground">{errorText}</span>
+      )}
+      {!done && !failed && progress && (
         <span className="ml-auto shrink-0 tabular-nums text-primary">
           {formatBytes(progress.loaded)} / {formatBytes(progress.total)}
         </span>

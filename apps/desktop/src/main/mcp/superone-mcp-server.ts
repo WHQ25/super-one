@@ -23,6 +23,7 @@ import { registerWidgetTools } from '../generative-ui/mcp-server'
 export interface MobileShareToolResult {
   ok: boolean
   error?: string
+  shareId?: string
   name?: string
   size?: number
   mimeType?: string

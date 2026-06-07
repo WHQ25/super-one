@@ -1,4 +1,5 @@
 import { readFile } from 'fs/promises'
+import { randomUUID } from 'crypto'
 import type { AgentEvent, ShareFilePayload } from '@superone/shared/agent-types'
 import type { RelayUploadResult } from '../relay-file-uploader'
 import { authorizeAndStat, FileBridgeError, type AuthorizedFile } from '../file-bridge'
@@ -97,9 +98,10 @@ export class MobileShareService {
     }
 
     const sentAt = this.deps.now()
+    const shareId = randomUUID()
     try {
       await this.deps.sendAgentEvent(
-        { type: 'shared_file', file: payload, sentAt, sessionId: req.sessionId, projectPath: target.projectPath },
+        { type: 'shared_file', shareId, file: payload, sentAt, sessionId: req.sessionId, projectPath: target.projectPath },
         [target.deviceId],
       )
     } catch (err) {
@@ -110,6 +112,7 @@ export class MobileShareService {
     const deviceName = this.deps.resolveDeviceName(target.deviceId) ?? 'mobile device'
     return {
       ok: true,
+      shareId,
       name: authorized.name,
       size: total,
       mimeType: authorized.mimeType,

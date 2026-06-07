@@ -807,7 +807,7 @@ export type AgentEventBase =
   | { type: 'queued_message_consumed'; clientMessageId: string }
   | { type: 'worktree_missing'; worktreePath: string; fallbackCwd: string }
   | { type: 'session_title_changed'; sessionId: string; title: string; source: 'user' | 'agent' }
-  | { type: 'shared_file'; file: ShareFilePayload; sentAt: number }
+  | { type: 'shared_file'; shareId: string; file: ShareFilePayload; sentAt: number }
   | { type: 'shared_file_progress'; path: string; loaded: number; total: number }
 
 export type AgentEvent = AgentEventBase & { projectPath?: string; sessionId?: string; draftSessionId?: string; seq?: number; epoch?: number }

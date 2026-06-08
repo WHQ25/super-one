@@ -4,6 +4,19 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.41.4-alpha] - 2026-06-08
+
+### Added
+
+- Share desktop files to mobile via the `mobile_share_file` MCP tool, rendered as a chat block with live upload progress.
+- Live usage display for the Claude provider.
+- Improved markdown table readability with a frosted fullscreen view.
+- `statOnly` mode for `read_desktop_file` to fetch metadata without reading contents.
+
+### Fixed
+
+- `read_desktop_file` no longer rejects paths outside the configured roots.
+
 ## [0.41.3-alpha] - 2026-06-06
 
 ### Added

@@ -25,7 +25,7 @@ export function ProjectSelector({ compact, align = 'start', onOpened }: ProjectS
   const recentFolders = useAppStore((s) => s.recentFolders)
   const selectProject = useAppStore((s) => s.selectProject)
 
-  const projectName = currentFolder?.split('/').pop() ?? 'No Project'
+  const projectName = currentFolder?.split(/[\\/]/).filter(Boolean).pop() ?? 'No Project'
   const handleSelect = (path?: string) => { void selectProject(path).then(() => onOpened?.()) }
 
   if (recentFolders.length === 0) {

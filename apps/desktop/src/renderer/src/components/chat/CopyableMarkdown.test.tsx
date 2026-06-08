@@ -269,5 +269,24 @@ describe('splitByInsightBlocks', () => {
       { type: 'text', content: '\nPost.' },
     ])
   })
+
+  it('splits off leading prose glued to the header on the same line', () => {
+    const text = '一条 15% 的线就被边框吃掉了。`★ Insight ─────────────────`\nBody line\n`─────────────────────────────`\nAfter'
+    const segments = splitByInsightBlocks(text)
+    expect(segments).toEqual([
+      { type: 'text', content: '一条 15% 的线就被边框吃掉了。' },
+      { type: 'insight', title: 'Insight', content: 'Body line' },
+      { type: 'text', content: 'After' },
+    ])
+  })
+
+  it('splits off leading prose when header has no wrapping backticks', () => {
+    const text = 'Preceding sentence. ★ Insight ─────────────────\nBody\n─────────────────────────────'
+    const segments = splitByInsightBlocks(text)
+    expect(segments).toEqual([
+      { type: 'text', content: 'Preceding sentence.' },
+      { type: 'insight', title: 'Insight', content: 'Body' },
+    ])
+  })
 })
 

@@ -1,4 +1,4 @@
-const INSIGHT_HEADER_RE = /^(?:#{1,6}\s+)?`?★\s+(.+?)\s+─{3,}`?\s*$/m
+const INSIGHT_HEADER_RE = /^(.*?)(?:#{1,6}\s+)?`?★\s+(.+?)\s+─{3,}`?\s*$/m
 const INSIGHT_FOOTER_RE = /^`?─{3,}`?\s*$/
 const INSIGHT_INLINE_FOOTER_RE = /^(?!`?─)(.+?\S)\s+`?─{3,}`?\s*$/
 
@@ -80,8 +80,10 @@ export function splitTextIntoBlocks(text: string, streaming = false): SplitResul
     const insightMatch = line.match(INSIGHT_HEADER_RE)
     if (insightMatch) {
       if (inTable) flushTable()
+      const leading = insightMatch[1].trimEnd()
+      if (leading) current.push(leading)
       flushCurrent()
-      insightTitle = insightMatch[1].trim()
+      insightTitle = insightMatch[2].trim()
       insightLines = []
       continue
     }

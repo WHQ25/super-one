@@ -133,7 +133,7 @@ export function normalizeCodeFences(text: string): string {
   }).join('\n')
 }
 
-const INSIGHT_HEADER_LINE = /^(?:#{1,6}\s+)?`?★\s+(.+?)\s+─{1,}`?\s*$/
+const INSIGHT_HEADER_LINE = /^(.*?)(?:#{1,6}\s+)?`?★\s+(.+?)\s+─{1,}`?\s*$/
 const INSIGHT_FOOTER_LINE = /^`?─{3,}`?\s*$/
 const INSIGHT_INLINE_FOOTER_LINE = /^(?!`?─)(.+?\S)\s+`?─{3,}`?\s*$/
 const FENCE_LINE = /^`{3,}[\w-]*\s*$/
@@ -160,6 +160,9 @@ export function splitByInsightBlocks(text: string): TextSegment[] {
       i++
       continue
     }
+    const leading = headerMatch[1].trimEnd()
+    const title = headerMatch[2].trim()
+    if (leading) textBuf.push(leading)
     let footerIdx = -1
     let inlineFooterContent: string | null = null
     for (let j = i + 1; j < lines.length; j++) {
@@ -169,12 +172,12 @@ export function splitByInsightBlocks(text: string): TextSegment[] {
     }
     if (footerIdx === -1) {
       flushText()
-      textBuf.push(`\`★ ${headerMatch[1].trim()} ${'─'.repeat(37)}\``)
+      textBuf.push(`\`★ ${title} ${'─'.repeat(37)}\``)
       for (let j = i + 1; j < lines.length; j++) textBuf.push(lines[j])
       i = lines.length
       break
     }
-    const prevIsFence = textBuf.length > 0 && FENCE_LINE.test(textBuf[textBuf.length - 1])
+    const prevIsFence = !leading && textBuf.length > 0 && FENCE_LINE.test(textBuf[textBuf.length - 1])
     const nextIsFence = inlineFooterContent === null
       && footerIdx + 1 < lines.length
       && FENCE_LINE.test(lines[footerIdx + 1])
@@ -185,7 +188,7 @@ export function splitByInsightBlocks(text: string): TextSegment[] {
     if (inlineFooterContent !== null) innerLines.push(inlineFooterContent)
     segments.push({
       type: 'insight',
-      title: headerMatch[1].trim(),
+      title,
       content: innerLines.join('\n'),
     })
     i = footerIdx + 1 + (stripFences ? 1 : 0)

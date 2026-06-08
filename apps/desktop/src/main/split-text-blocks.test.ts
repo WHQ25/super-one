@@ -91,6 +91,15 @@ describe('splitTextIntoBlocks', () => {
       expect(segments[1]).toEqual({ type: 'text', text: 'After' })
     })
 
+    it('should split off leading prose glued to the header on the same line', () => {
+      const text = '一条 15% 的线就被边框吃掉了。`★ Insight ─────────────────────────────`\nLine 1\nLine 2\n`─────────────────────────────────────────────────`\nAfter'
+      const { segments } = splitTextIntoBlocks(text, false)
+      expect(segments).toHaveLength(3)
+      expect(segments[0]).toEqual({ type: 'text', text: '一条 15% 的线就被边框吃掉了。' })
+      expect(segments[1]).toEqual({ type: 'insight', text: '', title: 'Insight', content: 'Line 1\nLine 2' })
+      expect(segments[2]).toEqual({ type: 'text', text: 'After' })
+    })
+
     it('should extract insight when header is wrapped in a markdown heading', () => {
       const text = 'Pre.\n\n## `★ Insight ─────────────────────────────────────`\n- **a**: x\n- **b**: y\n`─────────────────────────────────────────────────`\n\nPost.'
       const { segments } = splitTextIntoBlocks(text, false)

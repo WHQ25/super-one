@@ -167,7 +167,7 @@ function computeToolMeta(block: Record<string, unknown>) {
   } catch { return {} }
 }
 
-const INSIGHT_HEADER_RE = /^`★\s+(.+?)\s+─{3,}`$/m
+const INSIGHT_HEADER_RE = /^(.*?)`★\s+(.+?)\s+─{3,}`$/m
 const INSIGHT_FOOTER_RE = /^`─{3,}`$/
 
 function splitTextIntoBlocks(text: string): Array<{ type: string; text?: string; title?: string; content?: string }> {
@@ -234,8 +234,10 @@ function splitTextIntoBlocks(text: string): Array<{ type: string; text?: string;
     const insightMatch = line.match(INSIGHT_HEADER_RE)
     if (insightMatch) {
       if (inTable) flushTable()
+      const leading = insightMatch[1].trimEnd()
+      if (leading) current.push(leading)
       flushCurrent()
-      insightTitle = insightMatch[1].trim()
+      insightTitle = insightMatch[2].trim()
       insightLines = []
       continue
     }

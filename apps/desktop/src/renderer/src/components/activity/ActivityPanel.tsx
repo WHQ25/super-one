@@ -27,11 +27,11 @@ function ActivityPrefixActions() {
   const showSidebar = useAppStore((s) => s.showSidebar)
   const side = useActivityPanelStore((s) => s.side)
   const isFullscreen = useFullscreen()
-  const isLeftmost = !showSidebar && side === 'left'
   const isMac = window.app.platform === 'darwin'
-  const needsTrafficLightPadding = isMac && !isFullscreen && isLeftmost
+  const hostsLayoutToggle = side === 'left' && !(isMac && showSidebar)
+  const needsTrafficLightPadding = isMac && !isFullscreen && !showSidebar && side === 'left'
 
-  if (!isLeftmost) return null
+  if (!hostsLayoutToggle) return null
   return (
     <div className={cn('flex h-full items-center', needsTrafficLightPadding ? 'pl-2' : '')}>
       {needsTrafficLightPadding && <div className="h-full w-[66px] shrink-0" />}

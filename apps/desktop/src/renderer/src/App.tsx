@@ -347,11 +347,11 @@ function App(): React.JSX.Element {
     <>
     <div className="flex h-screen flex-col overflow-hidden bg-sidebar text-foreground" style={enterAnimation}>
       <WindowsTitleBar />
-      <div className="flex min-h-0 flex-1 overflow-hidden">
+      <div className="group/coding flex min-h-0 flex-1 overflow-hidden">
       <GitAutoRefresh />
       <>
       {/* Sidebar — hidden in canvas mode */}
-      <div className={cn('relative shrink-0', layoutMode !== 'coding' && 'hidden')}>
+      <div className={cn('relative flex shrink-0', layoutMode !== 'coding' && 'hidden')}>
       <motion.div
         ref={sidebarRef}
         layout="position"
@@ -365,10 +365,11 @@ function App(): React.JSX.Element {
       </motion.div>
         {showSidebar && (
           <div
+            data-resize-handle
             onMouseDown={onResizeStart}
-            className="group absolute inset-y-0 -right-[9px] z-30 w-2 cursor-col-resize"
+            className="group absolute inset-y-0 -right-1 z-30 w-2 cursor-col-resize"
           >
-            <div className={`pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-linear-to-b from-transparent via-foreground to-transparent transition-opacity ${sidebarResizing ? 'opacity-40' : 'opacity-0 group-hover:opacity-40'}`} />
+            <div className={`pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-linear-to-b from-transparent via-border to-transparent transition-opacity dark:via-foreground ${sidebarResizing ? 'opacity-100 dark:opacity-40' : 'opacity-0 group-hover:opacity-100 dark:group-hover:opacity-40'}`} />
           </div>
         )}
       </div>
@@ -377,7 +378,10 @@ function App(): React.JSX.Element {
       <div className={cn(
         'flex min-w-0 flex-1',
         layoutMode === 'coding' && !hasFloatingCard && 'overflow-hidden',
-        layoutMode === 'coding' && hasFloatingCard && 'm-[5px] overflow-hidden rounded-xl border border-border/50 bg-card shadow-[0_2px_12px_rgba(0,0,0,0.06)]'
+        layoutMode === 'coding' && hasFloatingCard && 'relative z-20 my-[5px] mr-[5px] overflow-hidden rounded-xl border border-border/50 bg-card transition-shadow duration-200',
+        layoutMode === 'coding' && hasFloatingCard && (sidebarResizing
+          ? 'border-border shadow-[0_10px_30px_rgba(0,0,0,0.16)]'
+          : 'shadow-[0_2px_12px_rgba(0,0,0,0.06)] group-has-[[data-resize-handle]:hover]/coding:border-border group-has-[[data-resize-handle]:hover]/coding:shadow-[0_10px_30px_rgba(0,0,0,0.16)]')
       )}>
         {/* Activity Panel — always mounted, hidden in canvas mode */}
         <ActivityPanel getMaxWidth={getActivityMaxWidth} hidden={layoutMode !== 'coding'} />

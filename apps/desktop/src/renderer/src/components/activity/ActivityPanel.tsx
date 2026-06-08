@@ -1,4 +1,4 @@
-import { useRef, useCallback, useEffect, useState } from 'react'
+import { useRef, useCallback, useEffect } from 'react'
 import { motion } from 'motion/react'
 import { DockviewReact } from 'dockview'
 import type { DockviewReadyEvent, DockviewApi } from 'dockview-core'
@@ -49,8 +49,7 @@ export function ActivityPanel({ getMaxWidth, hidden }: ActivityPanelProps) {
 
   const getWidth = useCallback(() => useActivityPanelStore.getState().panelWidth, [])
 
-  const [isResizing, setIsResizing] = useState(false)
-  const baseResizeStart = useResizeHandle({
+  const onResizeStart = useResizeHandle({
     getWidth,
     setWidth: setPanelWidth,
     minWidth: LAYOUT.MIN_AP,
@@ -58,12 +57,7 @@ export function ActivityPanel({ getMaxWidth, hidden }: ActivityPanelProps) {
     direction: side === 'right' ? 'rtl' : 'ltr',
     outerRef,
     innerRef,
-    onDragEnd: () => setIsResizing(false),
   })
-  const onResizeStart = useCallback((e: React.MouseEvent) => {
-    setIsResizing(true)
-    baseResizeStart(e)
-  }, [baseResizeStart])
 
   const onReady = useCallback((event: DockviewReadyEvent) => {
     apiRef.current = event.api
@@ -141,44 +135,39 @@ export function ActivityPanel({ getMaxWidth, hidden }: ActivityPanelProps) {
   }, [])
 
   return (
-    <motion.div
-      ref={outerRef}
-      data-activity-outer=""
-      layout="position"
-      transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
-      className={cn('relative shrink-0 overflow-hidden')}
-      style={{ width: visible ? panelWidth : 0, order: side === 'left' ? 0 : 2 }}
-    >
-      <div ref={innerRef} data-activity-inner="" className="flex h-full flex-col overflow-hidden" style={{ width: panelWidth }}>
-        <div className="min-h-0 flex-1">
-          <DockviewReact
-            className="dockview-theme-superone"
-            tabAnimation="smooth"
-            onReady={onReady}
-            components={activityPanelComponents}
-            tabComponents={activityTabComponents}
-            watermarkComponent={ActivityWatermark}
-            prefixHeaderActionsComponent={ActivityPrefixActions}
-          />
+    <>
+      <motion.div
+        ref={outerRef}
+        data-activity-outer=""
+        layout="position"
+        transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
+        className={cn('relative shrink-0 overflow-hidden')}
+        style={{ width: visible ? panelWidth : 0, order: side === 'left' ? 0 : 2 }}
+      >
+        <div ref={innerRef} data-activity-inner="" className="flex h-full flex-col overflow-hidden" style={{ width: panelWidth }}>
+          <div className="min-h-0 flex-1">
+            <DockviewReact
+              className="dockview-theme-superone"
+              tabAnimation="smooth"
+              onReady={onReady}
+              components={activityPanelComponents}
+              tabComponents={activityTabComponents}
+              watermarkComponent={ActivityWatermark}
+              prefixHeaderActionsComponent={ActivityPrefixActions}
+            />
+          </div>
         </div>
-      </div>
+      </motion.div>
 
       {visible && (
         <div
           onMouseDown={onResizeStart}
-          className={cn(
-            'group absolute inset-y-0 z-40 w-2 cursor-col-resize',
-            side === 'right' ? '-left-1' : '-right-1',
-          )}
+          className="group absolute inset-y-0 z-30 w-2 cursor-col-resize"
+          style={side === 'right' ? { right: panelWidth - 4 } : { left: panelWidth - 4 }}
         >
-          <div
-            className={cn(
-              'pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-linear-to-b from-transparent via-foreground to-transparent transition-opacity',
-              isResizing ? 'opacity-40' : 'opacity-0 group-hover:opacity-40',
-            )}
-          />
+          <div className="pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-linear-to-b from-transparent via-border to-transparent transition-opacity opacity-0 group-hover:opacity-100 dark:via-foreground dark:group-hover:opacity-40" />
         </div>
       )}
-    </motion.div>
+    </>
   )
 }

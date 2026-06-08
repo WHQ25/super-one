@@ -10,6 +10,7 @@ import { useSettingsStore } from '@/stores/settings'
 import { HookEditorDialog } from './HookEditorDialog'
 import { CodexHooksPanel } from './CodexHooksPanel'
 import { cn } from '@superone/ui/lib/utils'
+import { scopeBadgeClass } from '@/lib/scope-badge'
 import type { HookConfig, HookEntry, HookEntryType, HookEventName, HookScope } from '@superone/shared/agent-types'
 
 const PRIMARY_EVENTS: HookEventName[] = [
@@ -207,9 +208,9 @@ function HookRow({ cfg, onEdit, onDelete }: { cfg: HookConfig; onEdit: () => voi
     <div className="group flex items-center gap-3 px-3 py-2.5">
       <span className={cn(
         'shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium uppercase',
-        cfg.scope === 'user' && 'bg-blue-500/10 text-blue-600 dark:text-blue-400',
-        cfg.scope === 'project' && 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
-        cfg.scope === 'local' && 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
+        cfg.scope === 'user' && scopeBadgeClass('user'),
+        cfg.scope === 'project' && scopeBadgeClass('project'),
+        cfg.scope === 'local' && scopeBadgeClass('minor'),
       )}>
         {t(SCOPE_LABEL[cfg.scope])}
       </span>

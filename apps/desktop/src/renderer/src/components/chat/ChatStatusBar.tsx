@@ -326,7 +326,7 @@ export function ChatStatusBar() {
 
   return (
     <>
-      <div ref={barRef} className="relative flex items-center gap-2 whitespace-nowrap px-3 pb-1 pt-0.5 @lg:px-7 @lg:pb-3 @lg:pt-1 text-[11px] text-muted-foreground">
+      <div ref={barRef} className="relative flex items-center gap-2 whitespace-nowrap px-3 pb-1 pt-0.5 @lg:px-7 text-[11px] text-muted-foreground">
         <div className="pointer-events-none absolute bottom-full left-3 right-3 z-10 flex flex-col gap-1 pb-1">
           <AnimatePresence>
             {bashOpen && bashActivities.length > 0 && (

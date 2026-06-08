@@ -39,6 +39,7 @@ import { ProjectSelector } from '@/components/coding/ProjectSelector'
 import { useAppStore } from '@/stores/app'
 import { useSettingsStore } from '@/stores/settings'
 import { resolveAssetUrls } from '@/lib/path-utils'
+import { scopeBadgeClass } from '@/lib/scope-badge'
 import type {
   MarketplacePlugin,
   MarketplaceScope,
@@ -251,7 +252,7 @@ function PluginAvatar({ name, iconPath, logoPath, className }: { name: string; i
 
   if (src) {
     return (
-      <div className={cn('flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-white', className)}>
+      <div className={cn('flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-card', className)}>
         <img
           src={src}
           alt={name}
@@ -318,7 +319,7 @@ function PluginAppsList({ apps }: { apps: PluginAppSummary[] }) {
     <DetailGroup title={t('resources.plugins.detail.apps')}>
       <div className="flex flex-col gap-2">
         {apps.map((app) => (
-          <div key={app.id} className="rounded-md border border-border bg-background p-2">
+          <div key={app.id} className="rounded-md border border-border bg-card p-2">
             <div className="flex items-center gap-2">
               <span className="text-sm font-medium">{app.name}</span>
               {app.needsAuth && <MetaPill>{t('resources.plugins.detail.needsAuth')}</MetaPill>}
@@ -343,7 +344,7 @@ function PluginSkillsList({ skills }: { skills: PluginSkillSummary[] }) {
     <DetailGroup title={t('resources.plugins.detail.skills')}>
       <div className="flex flex-col gap-2">
         {skills.map((skill) => (
-          <div key={skill.path} className="rounded-md border border-border bg-background p-2">
+          <div key={skill.path} className="rounded-md border border-border bg-card p-2">
             <div className="flex items-center gap-2">
               <span className="text-sm font-medium">{skill.displayName || skill.name}</span>
               {!skill.enabled && <MetaPill>{t('resources.plugins.detail.disabled')}</MetaPill>}
@@ -368,7 +369,7 @@ function PluginScreenshots({ screenshots }: { screenshots: string[] }) {
             key={src}
             src={src}
             alt="plugin screenshot"
-            className="h-24 w-40 shrink-0 rounded-md border border-border bg-white object-cover"
+            className="h-24 w-40 shrink-0 rounded-md border border-border bg-card object-cover"
           />
         ))}
       </div>
@@ -458,7 +459,7 @@ function PluginDetailsPanel({
         <DetailGroup title={t('resources.plugins.detail.starterPrompts')}>
           <div className="flex flex-wrap gap-2">
             {prompts.map((prompt) => (
-              <span key={prompt} className="rounded-md border border-border bg-background px-2 py-1 text-xs text-muted-foreground">
+              <span key={prompt} className="rounded-md border border-border bg-card px-2 py-1 text-xs text-muted-foreground">
                 {prompt}
               </span>
             ))}
@@ -667,7 +668,7 @@ function PluginFileTreeNode({
           style={{ paddingLeft: 6 + depth * 12 }}
         >
           {open ? <ChevronDown className="size-3 shrink-0" /> : <ChevronRight className="size-3 shrink-0" />}
-          {open ? <FolderOpen className="size-3.5 shrink-0 text-blue-500" /> : <Folder className="size-3.5 shrink-0 text-blue-500" />}
+          {open ? <FolderOpen className="size-3.5 shrink-0 text-muted-foreground" /> : <Folder className="size-3.5 shrink-0 text-muted-foreground" />}
           <span className="truncate">{entry.name}</span>
         </button>
         {open && entry.children?.map((child) => (
@@ -1311,10 +1312,10 @@ function ScopeBadge({ scope }: { scope?: MarketplaceScope }) {
   const { t } = useTranslation()
   if (!scope) return null
   const styles: Record<MarketplaceScope, string> = {
-    official: 'bg-primary/10 text-primary',
-    user: 'bg-blue-500/10 text-blue-500',
-    project: 'bg-emerald-500/10 text-emerald-500',
-    local: 'bg-amber-500/10 text-amber-500',
+    official: scopeBadgeClass('brand'),
+    user: scopeBadgeClass('user'),
+    project: scopeBadgeClass('project'),
+    local: scopeBadgeClass('minor'),
   }
   return (
     <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium', styles[scope])}>

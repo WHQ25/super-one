@@ -112,9 +112,9 @@ export function InstallPermissionDialog({ onInstalled, onError }: Props) {
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             {isUpgrade ? (
-              <ArrowUpCircle className="size-5 text-orange-500" />
+              <ArrowUpCircle className="size-5 text-primary" />
             ) : (
-              <Package className="size-5 text-orange-500" />
+              <Package className="size-5 text-primary" />
             )}
             {isUpgrade ? 'Upgrade Mini App' : 'Install Mini App'}
           </DialogTitle>
@@ -133,13 +133,13 @@ export function InstallPermissionDialog({ onInstalled, onError }: Props) {
               <div className="mt-0.5 text-xs text-muted-foreground">{manifest.description}</div>
             )}
             {manifest.author?.url && (
-              <a href={manifest.author.url} target="_blank" rel="noopener noreferrer" className="mt-1 flex items-center gap-1.5 text-xs text-blue-500 hover:underline">
+              <a href={manifest.author.url} target="_blank" rel="noopener noreferrer" className="mt-1 flex items-center gap-1.5 text-xs text-primary hover:underline">
                 <Link className="size-3 shrink-0" />
                 <span className="truncate">{manifest.author.url}</span>
               </a>
             )}
             {isUpgrade && (
-              <div className="mt-1.5 text-xs text-orange-500">{existingVersion} → {manifest.version}</div>
+              <div className="mt-1.5 text-xs text-primary">{existingVersion} → {manifest.version}</div>
             )}
           </div>
 
@@ -298,7 +298,7 @@ function PermissionsSection({
                 <div className="flex items-center gap-1.5 text-sm">
                   <span className="font-medium">{label}</span>
                   <span className="text-muted-foreground">{detail}</span>
-                  <span className={cn('inline-flex h-4 shrink-0 items-center rounded px-1 text-[10px] leading-none', entry.access === 'read' ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400' : 'bg-orange-500/10 text-orange-600 dark:text-orange-400')}>{accessLabel}</span>
+                  <span className={cn('inline-flex h-4 shrink-0 items-center rounded px-1 text-[10px] leading-none', entry.access === 'read' ? 'bg-muted text-muted-foreground' : 'bg-orange-500/10 text-orange-600 dark:text-orange-400')}>{accessLabel}</span>
                 </div>
                 <div className="text-xs text-muted-foreground">{entry.reason}</div>
               </div>
@@ -348,7 +348,7 @@ function PermissionsSection({
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5 text-sm">
                   <span className="font-medium">Storage</span>
-                  <span className="inline-flex h-4 shrink-0 items-center rounded bg-purple-500/10 px-1 text-[10px] leading-none text-purple-600 dark:text-purple-400">Persistent</span>
+                  <span className="inline-flex h-4 shrink-0 items-center rounded bg-muted px-1 text-[10px] leading-none text-muted-foreground">Persistent</span>
                 </div>
                 <div className="text-xs text-muted-foreground">{storageEntry.reason}</div>
               </div>

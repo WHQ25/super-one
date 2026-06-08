@@ -18,7 +18,7 @@ function DefaultButton({ isActive, onClick, label }: { isActive: boolean; onClic
     <Button
       variant="outline"
       size="sm"
-      className={`h-7 shrink-0 text-xs ${isActive ? 'border-green-500/40 text-green-600 hover:bg-green-50 hover:text-green-600 dark:text-green-400 dark:hover:bg-green-950' : ''}`}
+      className={`h-7 shrink-0 text-xs ${isActive ? 'border-primary/40 text-primary hover:bg-primary/10' : ''}`}
       onClick={(e) => { e.stopPropagation(); if (!isActive) onClick() }}
     >
       {label && <span className="mr-1 text-[10px] text-muted-foreground">{label}</span>}

@@ -16,13 +16,13 @@ function HighlightText({ text, indices }: { text: string; indices: number[] }) {
   for (let i = 0; i < text.length; i++) {
     const isMatch = set.has(i)
     if (isMatch !== inHighlight) {
-      if (run) parts.push(inHighlight ? <mark key={i} className="bg-transparent text-orange-600 dark:text-orange-400 font-semibold">{run}</mark> : run)
+      if (run) parts.push(inHighlight ? <mark key={i} className="bg-transparent text-primary font-semibold">{run}</mark> : run)
       run = ''
       inHighlight = isMatch
     }
     run += text[i]
   }
-  if (run) parts.push(inHighlight ? <mark key="end" className="bg-transparent text-orange-600 dark:text-orange-400 font-semibold">{run}</mark> : run)
+  if (run) parts.push(inHighlight ? <mark key="end" className="bg-transparent text-primary font-semibold">{run}</mark> : run)
   return <>{parts}</>
 }
 
@@ -234,7 +234,7 @@ export function ReviewPanel() {
                       i === selectedCommitIndex ? 'bg-muted' : 'hover:bg-muted/50'
                     )}
                   >
-                    <code className="shrink-0 font-mono text-blue-600 dark:text-blue-400"><HighlightText text={commit.sha.slice(0, 7)} indices={commit.shaIndices.filter((i) => i < 7)} /></code>
+                    <code className="shrink-0 font-mono text-primary"><HighlightText text={commit.sha.slice(0, 7)} indices={commit.shaIndices.filter((i) => i < 7)} /></code>
                     <span className="min-w-0 truncate text-foreground"><HighlightText text={commit.message} indices={commit.msgIndices} /></span>
                   </button>
                 ))

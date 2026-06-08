@@ -5,6 +5,7 @@ import { Bot, ChevronDown, ChevronRight, ExternalLink, MessageSquare, ShieldChec
 import { ProjectSelector } from '@/components/coding/ProjectSelector'
 import { useAppStore } from '@/stores/app'
 import { cn } from '@superone/ui/lib/utils'
+import { scopeBadgeClass } from '@/lib/scope-badge'
 import type { CodexHookEventName, CodexHookGroup, CodexHookHandlerType, CodexHookInfo, CodexHookSource, CodexHookTrustStatus } from '@superone/shared/agent-types'
 
 const EVENT_ORDER: CodexHookEventName[] = [
@@ -102,7 +103,7 @@ export function CodexHooksPanel() {
         <ProjectSelector />
       </div>
 
-      <div className="mb-4 rounded-md border border-blue-500/30 bg-blue-500/5 px-3 py-2 text-xs text-muted-foreground">
+      <div className="mb-4 rounded-md border border-border bg-muted px-3 py-2 text-xs text-muted-foreground">
         {t('resources.codexHooks.readOnlyNote')}
       </div>
 
@@ -188,10 +189,10 @@ function CodexHookRow({ hook }: { hook: CodexHookInfo }) {
     <div className="flex items-start gap-3 px-3 py-2.5">
       <span className={cn(
         'shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium uppercase',
-        hook.source === 'user' && 'bg-blue-500/10 text-blue-600 dark:text-blue-400',
-        hook.source === 'project' && 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
-        hook.source === 'plugin' && 'bg-purple-500/10 text-purple-600 dark:text-purple-400',
-        hook.source === 'managed' && 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
+        hook.source === 'user' && scopeBadgeClass('user'),
+        hook.source === 'project' && scopeBadgeClass('project'),
+        hook.source === 'plugin' && scopeBadgeClass('minor'),
+        hook.source === 'managed' && scopeBadgeClass('minor'),
         hook.source === 'unknown' && 'bg-muted text-muted-foreground',
       )}>
         {sourceLabel}

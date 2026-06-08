@@ -1017,7 +1017,7 @@ export function ChatInput() {
       <div
         className={cn(
           'relative mx-3 mb-1 rounded-xl border border-border px-4 py-3',
-          isDragging && 'ring-2 ring-inset ring-blue-500/50'
+          isDragging && 'ring-2 ring-inset ring-primary/50'
         )}
         onDragEnter={handleDragEnter}
         onDragLeave={handleDragLeave}
@@ -1054,7 +1054,7 @@ export function ChatInput() {
                         }`}
                       >
                         <span className="flex min-w-0 items-center gap-1.5 font-medium">
-                          <span className="text-blue-600 dark:text-blue-400"><HighlightedText text={`/${cmd.name}`} indices={[0, ...cmd.matchIndices.map((idx) => idx + 1)]} highlightClassName="text-orange-600 dark:text-orange-400 font-medium" /></span>
+                          <span className="text-primary"><HighlightedText text={`/${cmd.name}`} indices={[0, ...cmd.matchIndices.map((idx) => idx + 1)]} highlightClassName="text-primary font-medium" /></span>
                           {cmd.argumentHint && (
                             <span className="truncate text-muted-foreground font-normal">{cmd.argumentHint}</span>
                           )}
@@ -1183,8 +1183,8 @@ export function ChatInput() {
         </div>
 
         {isDragging && (
-          <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center rounded-[inherit] border-2 border-dashed border-blue-500 bg-blue-500/10">
-            <span className="text-xs font-medium text-blue-600 dark:text-blue-400">{t('chat.dropToAttach')}</span>
+          <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center rounded-[inherit] border-2 border-dashed border-primary bg-primary/10">
+            <span className="text-xs font-medium text-primary">{t('chat.dropToAttach')}</span>
           </div>
         )}
         {activeProject && (

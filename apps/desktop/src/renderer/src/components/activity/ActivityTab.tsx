@@ -36,7 +36,7 @@ export function HoverCloseSlot({ children, onClose }: { children: React.ReactNod
 
 export function tabChipClass(active: boolean): string {
   return cn(
-    'flex items-center gap-1.5 rounded-lg px-2 py-1.5 transition-colors',
+    'flex items-center gap-1.5 rounded-lg px-1.5 py-1 transition-colors',
     active
       ? 'bg-muted text-foreground'
       : 'text-muted-foreground hover:text-foreground',

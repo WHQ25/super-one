@@ -25,7 +25,7 @@ function applyPreferWidth(preferWidth: number): void {
   if (typeof window === 'undefined') return
   const appState = useAppStore.getState()
   const sidebarReserved = appState.showSidebar ? appState.sidebarWidth : 0
-  const maxAp = window.innerWidth - sidebarReserved - LAYOUT.MIN_MAIN
+  const maxAp = window.innerWidth - sidebarReserved - LAYOUT.MIN_MAIN - LAYOUT.CARD_GUTTER
   if (maxAp < LAYOUT.MIN_AP) return
   const clamped = Math.max(LAYOUT.MIN_AP, Math.min(preferWidth, maxAp))
   useActivityPanelStore.getState().setPanelWidth(clamped)

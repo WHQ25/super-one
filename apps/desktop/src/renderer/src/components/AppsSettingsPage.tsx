@@ -44,7 +44,7 @@ function AppCard({ app, onClick }: { app: MiniAppEntry; onClick: () => void }) {
               {t('resources.devAppLibrary.orphanBadge')}
             </span>
           )}
-          {app.manifest.isDev && <span className="text-[10px] px-1 rounded bg-orange-500/10 text-orange-600 dark:text-orange-400">dev</span>}
+          {app.manifest.isDev && <span className="text-[10px] px-1 rounded bg-muted text-muted-foreground">dev</span>}
           {app.manifest.fullscreen && <span className="text-[10px] px-1 rounded bg-muted text-muted-foreground">fullscreen</span>}
         </div>
         <p className="text-xs text-muted-foreground truncate">
@@ -124,7 +124,7 @@ function AppDetailPage({ app, onBack }: { app: MiniAppEntry; onBack: () => void 
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <h2 className="text-xl font-semibold">{manifest.name}</h2>
-            {manifest.isDev && <span className="text-[10px] px-1.5 py-0.5 rounded bg-orange-500/10 text-orange-600 dark:text-orange-400 font-medium">dev</span>}
+            {manifest.isDev && <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground font-medium">dev</span>}
             {manifest.fullscreen && <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground font-medium">fullscreen</span>}
           </div>
           {manifest.description && (
@@ -135,7 +135,7 @@ function AppDetailPage({ app, onBack }: { app: MiniAppEntry; onBack: () => void 
             {manifest.author && <span>{t('resources.apps.authorBy', { name: manifest.author.name })}</span>}
           </div>
           {manifest.author?.url && (
-            <a href={manifest.author.url} target="_blank" rel="noopener noreferrer" className="mt-1 inline-flex items-center gap-1 text-xs text-blue-500 hover:underline">
+            <a href={manifest.author.url} target="_blank" rel="noopener noreferrer" className="mt-1 inline-flex items-center gap-1 text-xs text-primary hover:underline">
               <Link className="size-3 shrink-0" />
               <span className="truncate">{manifest.author.url}</span>
             </a>
@@ -198,7 +198,7 @@ function AppDetailPage({ app, onBack }: { app: MiniAppEntry; onBack: () => void 
                       <div className="flex items-center gap-1.5 text-sm">
                         <span className="font-medium">{label}</span>
                         <span className="text-muted-foreground">{detail}</span>
-                        <span className={cn('inline-flex h-4 shrink-0 items-center rounded px-1 text-[10px] leading-none', entry.access === 'read' ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400' : 'bg-orange-500/10 text-orange-600 dark:text-orange-400')}>{accessLabel}</span>
+                        <span className={cn('inline-flex h-4 shrink-0 items-center rounded px-1 text-[10px] leading-none', entry.access === 'read' ? 'bg-muted text-muted-foreground' : 'bg-orange-500/10 text-orange-600 dark:text-orange-400')}>{accessLabel}</span>
                       </div>
                       <div className="text-xs text-muted-foreground">{entry.reason}</div>
                     </div>
@@ -236,7 +236,7 @@ function AppDetailPage({ app, onBack }: { app: MiniAppEntry; onBack: () => void 
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5 text-sm">
                       <span className="font-medium">Storage</span>
-                      <span className="inline-flex h-4 shrink-0 items-center rounded bg-purple-500/10 px-1 text-[10px] leading-none text-purple-600 dark:text-purple-400">Persistent</span>
+                      <span className="inline-flex h-4 shrink-0 items-center rounded bg-muted px-1 text-[10px] leading-none text-muted-foreground">Persistent</span>
                     </div>
                     <div className="text-xs text-muted-foreground">{manifest.permissions.storage.reason}</div>
                   </div>

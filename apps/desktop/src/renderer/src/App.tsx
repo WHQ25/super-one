@@ -154,11 +154,12 @@ function App(): React.JSX.Element {
       ? LAYOUT.MIN_MAIN
         + (showSidebar ? LAYOUT.MIN_SIDEBAR : 0)
         + (showActivityPanel ? LAYOUT.MIN_AP : 0)
+        + (showSidebar || showActivityPanel ? LAYOUT.CARD_GUTTER : 0)
       : LAYOUT.MIN_MAIN + LAYOUT.MIN_SIDEBAR + LAYOUT.MIN_AP
     window.app.setMinWindowSize(min, 700)
   }, [view, layoutMode, showSidebar, showActivityPanel])
 
-  const { MIN_MAIN, MIN_SIDEBAR, MAX_SIDEBAR, MIN_AP } = LAYOUT
+  const { MIN_MAIN, MIN_SIDEBAR, MAX_SIDEBAR, MIN_AP, CARD_GUTTER } = LAYOUT
   const sidebarRef = useRef<HTMLDivElement>(null)
   const sidebarInnerRef = useRef<HTMLDivElement>(null)
 
@@ -175,7 +176,7 @@ function App(): React.JSX.Element {
     if (delta > 0) {
       newApW = Math.max(MIN_AP, currentApW - delta)
     } else {
-      const maxAp = window.innerWidth - newW - MIN_MAIN
+      const maxAp = window.innerWidth - newW - MIN_MAIN - CARD_GUTTER
       newApW = Math.min(maxAp, currentApW - delta)
     }
     return { width: newApW, outer, inner }
@@ -201,8 +202,8 @@ function App(): React.JSX.Element {
     getMaxWidth: () => {
       const ap = useActivityPanelStore.getState()
       const layoutMax = ap.showPanel
-        ? window.innerWidth - MIN_AP - MIN_MAIN
-        : window.innerWidth - MIN_MAIN
+        ? window.innerWidth - MIN_AP - MIN_MAIN - CARD_GUTTER
+        : window.innerWidth - MIN_MAIN - CARD_GUTTER
       return Math.min(MAX_SIDEBAR, layoutMax)
     },
     direction: 'ltr',
@@ -234,20 +235,20 @@ function App(): React.JSX.Element {
         prevSidebar = sb
 
         if (sidebarJustHidden && ap.showPanel) {
-          const maxAp = curWidth - MIN_MAIN
+          const maxAp = curWidth - MIN_MAIN - CARD_GUTTER
           ap.setPanelWidth(Math.min(maxAp, ap.panelWidth + sw))
         } else if (delta !== 0 && ap.showPanel) {
-          const maxAp = curWidth - (sb ? sw : 0) - MIN_MAIN
+          const maxAp = curWidth - (sb ? sw : 0) - MIN_MAIN - CARD_GUTTER
           ap.setPanelWidth(Math.max(MIN_AP, Math.min(ap.panelWidth + delta, maxAp)))
         }
 
         if (sb) {
-          const maxSw = Math.min(MAX_SIDEBAR, curWidth - (ap.showPanel ? ap.panelWidth : 0) - MIN_MAIN)
+          const maxSw = Math.min(MAX_SIDEBAR, curWidth - (ap.showPanel ? ap.panelWidth : 0) - MIN_MAIN - CARD_GUTTER)
           if (sw > maxSw) setSW(Math.max(MIN_SIDEBAR, maxSw))
         }
 
         const totalPanels = (sb ? Math.min(sw, MAX_SIDEBAR) : 0) + (ap.showPanel ? ap.panelWidth : 0)
-        let overflow = totalPanels + MIN_MAIN - curWidth
+        let overflow = totalPanels + MIN_MAIN + CARD_GUTTER - curWidth
         if (overflow <= 0) return
         if (ap.showPanel) {
           const shrink = Math.min(overflow, ap.panelWidth - MIN_AP)
@@ -263,7 +264,7 @@ function App(): React.JSX.Element {
     const unsubAP = useActivityPanelStore.subscribe((state, prev) => {
       if (state.showPanel && !prev.showPanel) {
         const { showSidebar: sb, sidebarWidth: sw } = useAppStore.getState()
-        const maxAp = window.innerWidth - (sb ? sw : 0) - MIN_MAIN
+        const maxAp = window.innerWidth - (sb ? sw : 0) - MIN_MAIN - CARD_GUTTER
         const clamped = Math.max(MIN_AP, Math.min(state.panelWidth, maxAp))
         if (clamped !== state.panelWidth) {
           useActivityPanelStore.getState().setPanelWidth(clamped)
@@ -285,10 +286,11 @@ function App(): React.JSX.Element {
 
 
   const hasLeftPanel = showSidebar || (showActivityPanel && activitySide === 'left')
+  const hasFloatingCard = showSidebar || showActivityPanel
 
   const getActivityMaxWidth = useCallback(() => {
     const sb = useAppStore.getState()
-    return window.innerWidth - (sb.showSidebar ? sb.sidebarWidth : 0) - MIN_MAIN
+    return window.innerWidth - (sb.showSidebar ? sb.sidebarWidth : 0) - MIN_MAIN - CARD_GUTTER
   }, [])
 
   const folderName = currentFolder?.split('/').pop() ?? null
@@ -349,43 +351,45 @@ function App(): React.JSX.Element {
       <GitAutoRefresh />
       <>
       {/* Sidebar — hidden in canvas mode */}
+      <div className={cn('relative shrink-0', layoutMode !== 'coding' && 'hidden')}>
       <motion.div
         ref={sidebarRef}
         layout="position"
         transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
-        className={cn('relative shrink-0 overflow-hidden', layoutMode !== 'coding' && 'hidden')}
+        className="relative shrink-0 overflow-hidden"
         style={{ width: showSidebar ? sidebarWidth : 0 }}
       >
         <div ref={sidebarInnerRef} className="h-full" style={{ width: sidebarWidth }}>
           <AppSidebar />
         </div>
+      </motion.div>
         {showSidebar && (
           <div
             onMouseDown={onResizeStart}
-            className="group absolute inset-y-0 -right-1 w-2 cursor-col-resize"
+            className="group absolute inset-y-0 -right-[9px] z-30 w-2 cursor-col-resize"
           >
             <div className={`pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-linear-to-b from-transparent via-foreground to-transparent transition-opacity ${sidebarResizing ? 'opacity-40' : 'opacity-0 group-hover:opacity-40'}`} />
           </div>
         )}
-      </motion.div>
+      </div>
 
       {/* Main area wrapper */}
       <div className={cn(
         'flex min-w-0 flex-1',
-        layoutMode === 'coding' && 'overflow-hidden',
-        layoutMode === 'coding' && hasLeftPanel && 'rounded-l-2xl bg-background/70'
+        layoutMode === 'coding' && !hasFloatingCard && 'overflow-hidden',
+        layoutMode === 'coding' && hasFloatingCard && 'm-[5px] overflow-hidden rounded-xl border border-border/50 bg-card shadow-[0_2px_12px_rgba(0,0,0,0.06)]'
       )}>
         {/* Activity Panel — always mounted, hidden in canvas mode */}
         <ActivityPanel getMaxWidth={getActivityMaxWidth} hidden={layoutMode !== 'coding'} />
 
         {/* Main area */}
-        <motion.div layout="position" transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }} className={cn('z-10 flex min-w-[400px] flex-1 flex-col', layoutMode === 'coding' && 'overflow-hidden', layoutMode === 'coding' && hasLeftPanel && 'rounded-l-2xl bg-background')} style={{ order: 1 }}>
+        <motion.div layout="position" transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }} className={cn('z-10 flex min-w-[400px] flex-1 flex-col', layoutMode === 'coding' && 'overflow-hidden', layoutMode === 'coding' && showActivityPanel && (activitySide === 'left' ? 'border-l border-border' : 'border-r border-border'))} style={{ order: 1 }}>
         {/* Main header — drag region */}
         <div
-          className={cn('flex h-11 shrink-0 items-center bg-card pt-[2px] transition-[padding-left] duration-300 ease-in-out', !isMac || (isFullscreen && !(layoutMode === 'coding' && hasLeftPanel)) ? 'pl-2' : 'pl-[18px]')}
+          className={cn('flex h-[34px] shrink-0 items-center bg-card transition-[padding-left] duration-300 ease-in-out', !isMac || (isFullscreen && !(layoutMode === 'coding' && hasLeftPanel)) ? 'pl-2' : 'pl-[18px]')}
           style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
         >
-          {isMac && <div className={cn('shrink-0 transition-[width] duration-300 ease-in-out', !isFullscreen && !(layoutMode === 'coding' && hasLeftPanel) ? 'w-[66px]' : 'w-0')} />}
+          {isMac && <div className={cn('shrink-0 transition-[width] duration-300 ease-in-out', isFullscreen || (layoutMode === 'coding' && hasLeftPanel) ? 'w-0' : layoutMode === 'coding' && hasFloatingCard ? 'w-[60px]' : 'w-[66px]')} />}
           {layoutMode === 'coding' && (!isMac || !showSidebar) && !(showActivityPanel && activitySide === 'left') && <LayoutToggle />}
           <HeaderTitle layoutMode={layoutMode} sessionId={sessionId} sessionFallback={sessionFallback} folderName={folderName} />
 

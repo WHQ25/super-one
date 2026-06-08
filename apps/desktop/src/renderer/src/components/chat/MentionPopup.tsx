@@ -273,8 +273,8 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
             onMouseEnter={() => onSetSelectedIndex(i)}
             className={cn(rowClass, 'gap-1.5')}
           >
-            <Bot className="size-3.5 shrink-0 text-purple-600 dark:text-purple-400" />
-            <span className="shrink-0 font-medium text-purple-600 dark:text-purple-400">
+            <Bot className="size-3.5 shrink-0 text-primary" />
+            <span className="shrink-0 font-medium text-primary">
               <HighlightedPath path={item.name} indices={item.matchIndices} />
             </span>
             <span className="shrink-0 rounded bg-muted/60 px-1 py-px text-[10px] text-muted-foreground">
@@ -295,7 +295,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
             className={rowClass}
           >
             {item.isDirectory ? (
-              <Folder className="size-3.5 shrink-0 text-blue-500" />
+              <Folder className="size-3.5 shrink-0 text-muted-foreground" />
             ) : (
               <FileIcon name={fileName} size={14} />
             )}
@@ -313,7 +313,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
           className={rowClass}
         >
           {item.entry.isDirectory ? (
-            <Folder className="size-3.5 shrink-0 text-blue-500" />
+            <Folder className="size-3.5 shrink-0 text-muted-foreground" />
           ) : (
             <FileIcon name={item.entry.name} size={14} />
           )}

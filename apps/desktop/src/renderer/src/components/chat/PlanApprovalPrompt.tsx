@@ -138,7 +138,7 @@ export function PlanApprovalPrompt() {
     <>
       <div ref={containerRef} className="@container flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2">
-          <PenLine className="size-4 text-blue-600 dark:text-blue-400" />
+          <PenLine className="size-4 text-primary" />
           <span className="text-sm font-medium text-foreground">{t('chat.plan.review')}</span>
           {fileName && (
             <span className="text-sm text-muted-foreground">{fileName}</span>
@@ -188,7 +188,7 @@ export function PlanApprovalPrompt() {
                 className={`h-7 cursor-pointer gap-1 px-3 text-xs text-white ${
                   isAutoTarget
                     ? 'bg-amber-600 hover:bg-amber-500'
-                    : 'bg-purple-600 hover:bg-purple-500'
+                    : 'bg-primary hover:bg-primary/90'
                 }`}
                 onClick={handleApprove}
               >
@@ -197,7 +197,7 @@ export function PlanApprovalPrompt() {
                 {!isFeedbackFocused && (
                   <Kbd
                     variant="inline"
-                    className={`ml-1 ${isAutoTarget ? 'text-amber-200/80' : 'text-purple-200/80'}`}
+                    className={`ml-1 ${isAutoTarget ? 'text-amber-200/80' : 'text-primary-foreground/80'}`}
                   >↵</Kbd>
                 )}
               </Button>
@@ -232,7 +232,7 @@ export function PlanApprovalPrompt() {
                 onFocus={() => setIsFeedbackFocused(true)}
                 onBlur={() => setIsFeedbackFocused(false)}
                 placeholder={t('chat.plan.feedbackPlaceholder')}
-                className="h-7 w-full rounded bg-muted px-2 pr-12 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="h-7 w-full rounded bg-muted px-2 pr-12 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
               />
               <Kbd className="pointer-events-none absolute right-2">{isFeedbackFocused ? '↵' : '⇥'}</Kbd>
             </div>
@@ -249,7 +249,7 @@ export function PlanApprovalPrompt() {
                 onFocus={() => setIsFeedbackFocused(true)}
                 onBlur={() => setIsFeedbackFocused(false)}
                 placeholder={t('chat.plan.feedbackPlaceholder')}
-                className="h-7 w-full rounded bg-muted px-2 pr-12 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="h-7 w-full rounded bg-muted px-2 pr-12 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
               />
               <Kbd className="pointer-events-none absolute right-2">{isFeedbackFocused ? '↵' : '⇥'}</Kbd>
             </div>
@@ -260,7 +260,7 @@ export function PlanApprovalPrompt() {
                   className={`h-7 flex-1 cursor-pointer gap-1 px-3 text-xs text-white ${
                     isAutoTarget
                       ? 'bg-amber-600 hover:bg-amber-500'
-                      : 'bg-purple-600 hover:bg-purple-500'
+                      : 'bg-primary hover:bg-primary/90'
                   }`}
                   onClick={handleApprove}
                 >
@@ -269,7 +269,7 @@ export function PlanApprovalPrompt() {
                   {!isFeedbackFocused && (
                     <Kbd
                       variant="inline"
-                      className={`ml-1 ${isAutoTarget ? 'text-amber-200/80' : 'text-purple-200/80'}`}
+                      className={`ml-1 ${isAutoTarget ? 'text-amber-200/80' : 'text-primary-foreground/80'}`}
                     >↵</Kbd>
                   )}
                 </Button>
@@ -307,18 +307,18 @@ export function PlanApprovalPrompt() {
               switchAfterApproval
                 ? isAutoTarget
                   ? 'border-amber-500/50 bg-amber-500/10 text-amber-600 hover:bg-amber-500/20 dark:text-amber-500'
-                  : 'border-purple-500/50 bg-purple-500/10 text-purple-500 hover:bg-purple-500/20'
+                  : 'border-primary/50 bg-primary/10 text-primary hover:bg-primary/20'
                 : 'border-border text-muted-foreground hover:bg-accent hover:text-accent-foreground'
             }`}
             onClick={() => setSwitchAfterApproval((prev) => !prev)}
           >
             {switchAfterApproval
-              ? <CheckCircle2 className={`size-3.5 shrink-0 ${isAutoTarget ? 'text-amber-600 dark:text-amber-400' : 'text-purple-600 dark:text-purple-400'}`} />
+              ? <CheckCircle2 className={`size-3.5 shrink-0 ${isAutoTarget ? 'text-amber-600 dark:text-amber-400' : 'text-primary'}`} />
               : <Circle className="size-3.5 shrink-0 text-muted-foreground/40" />
             }
             <span className="flex min-w-0 items-center gap-1">
               <span>{t('chat.plan.switchTo')}</span>
-              <span className={`inline-flex items-center gap-0.5 font-medium ${isAutoTarget ? 'text-amber-600 dark:text-amber-400' : 'text-purple-600 dark:text-purple-400'}`}>
+              <span className={`inline-flex items-center gap-0.5 font-medium ${isAutoTarget ? 'text-amber-600 dark:text-amber-400' : 'text-primary'}`}>
                 {isAutoTarget ? <Zap className="size-3" /> : <FastForward className="size-3" />}
                 {t(isAutoTarget ? 'chat.plan.auto' : 'chat.plan.acceptEdits')}
               </span>

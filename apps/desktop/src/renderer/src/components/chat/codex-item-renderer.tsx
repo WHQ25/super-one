@@ -99,17 +99,17 @@ export function CodexCommandBlock({ item, isStreaming }: { item: CodexCommandExe
         <ChevronRight className={cn('ml-auto size-3 shrink-0 text-muted-foreground transition-transform duration-200', expanded && 'rotate-90')} />
       </div>
       {expanded && (
-        <div className="bg-[#0d1117] font-mono text-[12px] leading-relaxed whitespace-pre-wrap">
+        <div className="bg-terminal-bg font-mono text-[12px] leading-relaxed whitespace-pre-wrap">
           {item.command && (
-            <div className="px-3 pt-2 text-[#e6edf3]">
-              <span className="text-[#7ee787]">$ </span>{item.command}
+            <div className="px-3 pt-2 text-terminal-fg">
+              <span className="text-terminal-prompt">$ </span>{item.command}
             </div>
           )}
           <div className="max-h-24 overflow-y-auto overflow-x-auto px-3 py-1.5">
             {output ? (
-              <div className="text-[#8b949e]"><AnsiText text={output} /></div>
+              <div className="text-terminal-muted"><AnsiText text={output} /></div>
             ) : isRunning ? (
-              <div className="text-[#8b949e]"><span className="animate-shimmer">{t('chat.codex.runningInline')}</span></div>
+              <div className="text-terminal-muted"><span className="animate-shimmer">{t('chat.codex.runningInline')}</span></div>
             ) : null}
           </div>
         </div>
@@ -163,7 +163,7 @@ function CollabSendInputBlock({ item }: { item: CodexCollabToolCallItem }) {
         <ChevronRight className={cn('ml-auto size-3 shrink-0 text-muted-foreground transition-transform duration-200', expanded && 'rotate-90')} />
       </div>
       {expanded && prompt && (
-        <div className="bg-[#0d1117] px-3 py-2 font-mono text-[12px] leading-relaxed whitespace-pre-wrap text-[#e6edf3] max-h-48 overflow-y-auto">
+        <div className="bg-terminal-bg px-3 py-2 font-mono text-[12px] leading-relaxed whitespace-pre-wrap text-terminal-fg max-h-48 overflow-y-auto">
           {prompt}
         </div>
       )}
@@ -272,7 +272,7 @@ function CodexPlanBlock({
       expanded && 'overflow-hidden',
     )}>
       <div className="flex items-center gap-1.5 px-2 py-2 text-xs" onClick={() => setExpanded((e) => !e)}>
-        <ClipboardList className="size-3.5 shrink-0 text-blue-600 dark:text-blue-400" />
+        <ClipboardList className="size-3.5 shrink-0 text-primary" />
         <span className="shrink-0 whitespace-nowrap font-medium text-foreground">{t('chat.plan.label')}</span>
         {planApproval && <PlanApprovalBadge planApproval={planApproval} />}
         {!expanded && <span className="min-w-0 truncate text-muted-foreground">{item.text.split('\n')[0]}</span>}
@@ -447,7 +447,7 @@ function CodexErrorBlock({ message }: { message: string }) {
 function CodexReviewBlock({ phase, text }: { phase: string; text?: string }) {
   const { t } = useTranslation()
   return phase === 'entered' ? (
-    <div className="my-1 flex items-center gap-2 rounded-md bg-blue-500/10 px-2.5 py-1.5 text-xs text-blue-700 dark:text-blue-300">
+    <div className="my-1 flex items-center gap-2 rounded-md bg-primary/10 px-2.5 py-1.5 text-xs text-primary">
       <ScanSearch className="size-3.5 shrink-0" />
       <span className="font-medium">{t('chat.codex.startReview')}{text ? ` — ${text}` : ''}</span>
     </div>

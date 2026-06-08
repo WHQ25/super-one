@@ -82,7 +82,7 @@ function OptionButtons({
             onClick={() => onSelect(q, opt.label)}
             className={`cursor-pointer rounded px-2 py-1 text-xs text-left whitespace-normal transition @[420px]:py-1.5 ${
               selected
-                ? 'bg-primary text-primary-foreground dark:bg-blue-600 dark:text-white'
+                ? 'bg-primary text-primary-foreground'
                 : 'bg-muted text-foreground hover:bg-accent'
             }`}
           >
@@ -108,7 +108,7 @@ function OptionDescription({
   const desc = q.options.find((o) => o.label === label)?.description
   if (!desc) return null
   return (
-    <div className="mt-2 border-l-2 border-primary bg-primary/10 px-2.5 py-1.5 text-xs leading-snug text-primary dark:border-blue-500 dark:bg-blue-500/15 dark:text-blue-400">
+    <div className="mt-2 border-l-2 border-primary bg-primary/10 px-2.5 py-1.5 text-xs leading-snug text-primary">
       {desc}
     </div>
   )
@@ -193,7 +193,7 @@ function PreviewQuestionPanel({
                 onChange={(e) => onNotes(q, e.target.value)}
                 onFocus={onNoteFocus}
                 onBlur={onNoteBlur}
-                className="w-full rounded bg-muted py-1 pl-[30px] pr-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary dark:focus:ring-blue-500"
+                className="w-full rounded bg-muted py-1 pl-[30px] pr-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
               />
             </div>
           )}
@@ -235,7 +235,7 @@ function SimpleQuestionPanel({
               onClick={() => onSelect(q, opt.label)}
               className={`cursor-pointer rounded px-2 py-1 text-xs text-left whitespace-normal transition ${
                 selected
-                  ? 'bg-primary text-primary-foreground dark:bg-blue-600 dark:text-white'
+                  ? 'bg-primary text-primary-foreground'
                   : 'bg-muted text-foreground hover:bg-accent'
               }`}
             >
@@ -255,7 +255,7 @@ function SimpleQuestionPanel({
           placeholder={t('chat.askUser.otherOption')}
           value={otherTexts[key] ?? ''}
           onChange={(e) => onOther(q, e.target.value)}
-          className="w-full rounded bg-muted py-1 pl-[30px] pr-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary dark:focus:ring-blue-500"
+          className="w-full rounded bg-muted py-1 pl-[30px] pr-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
         />
       </div>
       <OptionDescription q={q} selections={selections} />
@@ -476,7 +476,7 @@ export function AskUserQuestionPrompt() {
   )
 
   return (
-    <div className="@container mx-3 mb-2 rounded-lg border border-primary/40 bg-muted/60 p-3 dark:border-blue-600/40">
+    <div className="@container mx-3 mb-2 rounded-lg border border-primary/40 bg-muted/60 p-3">
       {!singleQuestion && (
         <div className="mb-3 flex gap-1 border-b border-border/50 pb-2">
           {questions.map((q, i) => (
@@ -485,7 +485,7 @@ export function AskUserQuestionPrompt() {
               onClick={() => setActiveTab(i)}
               className={`relative cursor-pointer rounded-md px-2.5 py-1 text-xs font-medium transition ${
                 activeTab === i
-                  ? 'bg-primary/15 text-primary dark:bg-blue-600/15 dark:text-blue-500'
+                  ? 'bg-primary/15 text-primary'
                   : 'text-muted-foreground hover:text-foreground'
               }`}
             >
@@ -502,7 +502,7 @@ export function AskUserQuestionPrompt() {
         <Button
           size="sm"
           disabled={!allAnswered}
-          className="h-7 cursor-pointer bg-primary px-4 text-xs text-primary-foreground hover:bg-primary/90 dark:bg-blue-600 dark:text-white dark:hover:bg-blue-500 disabled:opacity-50"
+          className="h-7 cursor-pointer bg-primary px-4 text-xs text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
           onClick={handleSubmit}
         >
           {t('chat.askUser.submit')}

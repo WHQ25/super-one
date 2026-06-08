@@ -12,9 +12,9 @@ function Kbd({
     <span
       className={cn(
         'text-[10px]',
-        variant === 'badge' && 'rounded bg-background/60 px-1 py-0.5 text-muted-foreground',
+        variant === 'badge' && 'rounded bg-muted px-1 py-0.5 text-muted-foreground',
         variant === 'square' &&
-          'inline-flex size-4 shrink-0 items-center justify-center rounded bg-background/60 text-muted-foreground',
+          'inline-flex size-4 shrink-0 items-center justify-center rounded bg-muted text-muted-foreground',
         className
       )}
       {...props}

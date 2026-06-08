@@ -364,7 +364,7 @@ function MentionInlineChip({ kind, value, displayName }: { kind: UserMentionKind
       className={cn(
         'inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-xs align-middle whitespace-nowrap',
         kind === 'agent'
-          ? 'border-purple-600/40 dark:border-purple-400/40 bg-purple-600/15 dark:bg-purple-400/15 text-purple-700 dark:text-purple-300'
+          ? 'border-primary/40 bg-primary/15 text-primary'
           : 'border-foreground/15 bg-foreground/10 text-foreground/90'
       )}
     >
@@ -372,7 +372,7 @@ function MentionInlineChip({ kind, value, displayName }: { kind: UserMentionKind
         <span className="font-medium">@{display}</span>
       ) : kind === 'directory' ? (
         <>
-          <Folder className="size-3.5 shrink-0 text-blue-600 dark:text-blue-400" />
+          <Folder className="size-3.5 shrink-0 text-primary" />
           <span>{display}</span>
         </>
       ) : kind === 'miniapp' ? (
@@ -493,12 +493,12 @@ export function CompactIndicator({
   expanded?: boolean
   onToggle?: () => void
 }) {
-  const pillClass = 'inline-flex items-center whitespace-nowrap rounded bg-violet-500/15 px-1.5 py-px text-[11px] text-violet-600/80 dark:text-violet-400/80'
+  const pillClass = 'inline-flex items-center whitespace-nowrap rounded bg-primary/15 px-1.5 py-px text-[11px] text-primary/80'
   return (
-    <div className="my-0.5 flex items-start gap-1.5 rounded bg-violet-500/10 px-2 py-1.5 text-xs">
-      <Minimize2 className="mt-0.5 size-3 shrink-0 text-violet-600 dark:text-violet-400" />
+    <div className="my-0.5 flex items-start gap-1.5 rounded bg-primary/10 px-2 py-1.5 text-xs">
+      <Minimize2 className="mt-0.5 size-3 shrink-0 text-primary" />
       <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-1">
-        <span className="font-medium text-violet-600 dark:text-violet-400">Conversation compacted</span>
+        <span className="font-medium text-primary">Conversation compacted</span>
         <span className={pillClass}>{trigger === 'auto' ? 'auto' : 'manual'}</span>
         {preTokens > 0 && (
           <span className={pillClass}>
@@ -511,7 +511,7 @@ export function CompactIndicator({
         )}
       </div>
       {onToggle && (
-        <button onClick={onToggle} className="flex shrink-0 items-center gap-0.5 text-violet-600/60 dark:text-violet-400/60 transition-colors hover:text-violet-600 dark:hover:text-violet-400">
+        <button onClick={onToggle} className="flex shrink-0 items-center gap-0.5 text-primary/60 transition-colors hover:text-primary">
           {expanded ? <ChevronRight className="size-3 -rotate-90" /> : <ChevronRight className="size-3 rotate-90" />}
           <span>{expanded ? 'Hide history' : 'Show history'}</span>
         </button>
@@ -796,7 +796,7 @@ function AnimatedToken({ value, direction }: { value: number; direction: 'up' | 
   if (value <= 0) return null
 
   const isUp = direction === 'up'
-  const flashColor = isUp ? 'text-blue-600 dark:text-blue-400' : 'text-emerald-400'
+  const flashColor = isUp ? 'text-primary' : 'text-emerald-400'
 
   return (
     <span className={cn('inline-flex items-center gap-0.5 tabular-nums transition-colors duration-500', flash && flashColor)}>

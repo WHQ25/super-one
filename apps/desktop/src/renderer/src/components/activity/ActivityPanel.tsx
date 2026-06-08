@@ -146,10 +146,10 @@ export function ActivityPanel({ getMaxWidth, hidden }: ActivityPanelProps) {
       data-activity-outer=""
       layout="position"
       transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
-      className={cn('relative shrink-0 overflow-hidden', side === 'right' ? 'bg-card' : 'bg-sidebar')}
+      className={cn('relative shrink-0 overflow-hidden')}
       style={{ width: visible ? panelWidth : 0, order: side === 'left' ? 0 : 2 }}
     >
-      <div ref={innerRef} data-activity-inner="" className="flex h-full flex-col rounded-l-2xl bg-background overflow-hidden" style={{ width: panelWidth }}>
+      <div ref={innerRef} data-activity-inner="" className="flex h-full flex-col overflow-hidden" style={{ width: panelWidth }}>
         <div className="min-h-0 flex-1">
           <DockviewReact
             className="dockview-theme-superone"

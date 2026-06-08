@@ -372,7 +372,7 @@ export function PermissionPrompt() {
                 <Button
                   size="sm"
                   disabled={!formValid}
-                  className="h-7 cursor-pointer bg-blue-600 px-3 text-[11px] text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50 focus:ring-2 focus:ring-blue-600 dark:focus:ring-blue-400 focus:outline-none"
+                  className="h-7 cursor-pointer bg-primary px-3 text-[11px] text-white hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50 focus:ring-2 focus:ring-ring focus:outline-none"
                   onClick={handleElicitationAlwaysAllow}
                 >
                   {t('chat.permission.alwaysAllow')}
@@ -387,7 +387,7 @@ export function PermissionPrompt() {
               </Button>
               <Button
                 size="sm"
-                className="h-7 cursor-pointer border border-border bg-background/70 px-3 text-xs text-muted-foreground hover:bg-accent hover:text-foreground focus:ring-2 focus:ring-slate-400 focus:outline-none"
+                className="h-7 cursor-pointer border border-border bg-background/70 px-3 text-xs text-muted-foreground hover:bg-accent hover:text-foreground focus:ring-2 focus:ring-ring focus:outline-none"
                 onClick={handleCancel}
               >
                 {t('common.cancel')}
@@ -560,11 +560,11 @@ export function PermissionPrompt() {
                     <Button
                       ref={(el) => { btnRefs.current[1] = el }}
                       size="sm"
-                      className="h-7 cursor-pointer bg-blue-600 px-3 text-[11px] text-white hover:bg-blue-500 focus:ring-2 focus:ring-blue-600 dark:focus:ring-blue-400 focus:outline-none"
+                      className="h-7 cursor-pointer bg-primary px-3 text-[11px] text-white hover:bg-primary/90 focus:ring-2 focus:ring-ring focus:outline-none"
                       onClick={handleAlwaysAllow}
                     >
                       {t('chat.permission.allowForSession')}
-                      <Kbd variant="inline" className="ml-1 text-blue-200/80">⇧↵</Kbd>
+                      <Kbd variant="inline" className="ml-1 text-primary-foreground/80">⇧↵</Kbd>
                     </Button>
                     <Button
                       ref={(el) => { btnRefs.current[2] = el }}
@@ -578,7 +578,7 @@ export function PermissionPrompt() {
                     <Button
                       ref={(el) => { btnRefs.current[3] = el }}
                       size="sm"
-                      className="h-7 cursor-pointer border border-border bg-background/70 px-3 text-xs text-muted-foreground hover:bg-accent hover:text-foreground focus:ring-2 focus:ring-slate-400 focus:outline-none"
+                      className="h-7 cursor-pointer border border-border bg-background/70 px-3 text-xs text-muted-foreground hover:bg-accent hover:text-foreground focus:ring-2 focus:ring-ring focus:outline-none"
                       onClick={handleCancel}
                     >
                       {t('common.cancel')}
@@ -619,7 +619,7 @@ export function PermissionPrompt() {
                         onFocus={() => setIsFeedbackFocused(true)}
                         onBlur={() => setIsFeedbackFocused(false)}
                         placeholder={t('chat.permission.denyReasonPlaceholder')}
-                        className="h-7 w-full rounded bg-muted px-2 pr-12 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        className="h-7 w-full rounded bg-muted px-2 pr-12 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
                       />
                       <Kbd className="pointer-events-none absolute right-2">{isFeedbackFocused ? '↵' : '⇥'}</Kbd>
                     </div>

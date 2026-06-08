@@ -344,9 +344,9 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
 
   if (toolName === 'EnterPlanMode') {
     return (
-      <div className="my-4 flex items-center gap-1.5 rounded bg-blue-500/10 px-2 py-1.5 text-sm">
-        <PenLine className="size-3 shrink-0 text-blue-600 dark:text-blue-400" />
-        <span className="font-medium text-blue-600 dark:text-blue-400">{t('chat.toolBlock.enteredPlanMode')}</span>
+      <div className="my-4 flex items-center gap-1.5 rounded bg-primary/10 px-2 py-1.5 text-sm">
+        <PenLine className="size-3 shrink-0 text-primary" />
+        <span className="font-medium text-primary">{t('chat.toolBlock.enteredPlanMode')}</span>
       </div>
     )
   }
@@ -985,10 +985,10 @@ function BashTerminalView({
           {t('chat.toolBlock.outputFileExpired', { path: resultOutputPath!.split('/').pop() })}
         </div>
       ) : (
-        <div className="bg-[#0d1117] font-mono text-[12px] leading-relaxed whitespace-pre-wrap">
+        <div className="bg-terminal-bg font-mono text-[12px] leading-relaxed whitespace-pre-wrap">
           {command && (
-            <div className="px-3 pt-2 text-[#e6edf3]">
-              <span className="text-[#7ee787]">$ </span>{command}
+            <div className="px-3 pt-2 text-terminal-fg">
+              <span className="text-terminal-prompt">$ </span>{command}
             </div>
           )}
           <div
@@ -997,12 +997,12 @@ function BashTerminalView({
           >
             {!isLive && hasMore && outputPath && <div ref={sentinelRef} className="h-px" />}
             {outputExpired && restoredContent === null ? (
-              <div className="animate-shimmer text-[#6e7681]">{t('common.loading')}</div>
+              <div className="animate-shimmer text-terminal-dim">{t('common.loading')}</div>
             ) : content ? (
-              <div className={showError ? 'text-amber-300' : 'text-[#8b949e]'}><AnsiText text={showError ? extractToolError(content) : content} /></div>
+              <div className={showError ? 'text-amber-300' : 'text-terminal-muted'}><AnsiText text={showError ? extractToolError(content) : content} /></div>
             ) : isStreaming ? (
-              <div className="text-[#8b949e]">
-                <span className="animate-shimmer">{t('chat.toolBlock.runningInline')}</span>{localElapsed >= 1 && <span className="text-[#6e7681]"> {localElapsed}s{timeoutMs && !isLive ? ` · timeout ${Math.round(timeoutMs / 1000)}s` : ''}</span>}
+              <div className="text-terminal-muted">
+                <span className="animate-shimmer">{t('chat.toolBlock.runningInline')}</span>{localElapsed >= 1 && <span className="text-terminal-dim"> {localElapsed}s{timeoutMs && !isLive ? ` · timeout ${Math.round(timeoutMs / 1000)}s` : ''}</span>}
               </div>
             ) : null}
           </div>

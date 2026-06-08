@@ -82,7 +82,7 @@ export function CodexPlanImplementFooter({ onApprove, onReject }: CodexPlanImple
             }
           }}
           placeholder="Reject feedback (optional, Enter to submit)"
-          className="h-7 w-full rounded bg-muted px-2 pr-12 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-blue-500"
+          className="h-7 w-full rounded bg-muted px-2 pr-12 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
         />
         <Kbd className="pointer-events-none absolute right-2">{isFeedbackFocused ? '↵' : '⇥'}</Kbd>
       </div>

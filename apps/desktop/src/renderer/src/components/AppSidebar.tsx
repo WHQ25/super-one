@@ -398,7 +398,7 @@ export const AppSidebar = memo(function AppSidebar() {
           variant="outline"
           size="sm"
           onClick={() => resetSession()}
-          className="mb-1 w-full justify-center gap-1.5 border-sidebar-border bg-sidebar text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground dark:border-border"
+          className="mb-1 w-full justify-center gap-1.5 border-sidebar-border bg-sidebar text-sidebar-foreground hover:bg-sidebar hover:border-sidebar-foreground/25 dark:border-border"
         >
           <SquarePen className="size-3.5" />
           {t('sidebar.newSession')}
@@ -406,11 +406,11 @@ export const AppSidebar = memo(function AppSidebar() {
       </div>
       <Tabs value={sidebarTab} onValueChange={(v) => setSidebarTab(v as SidebarTab)} className="mx-2 mb-1 shrink-0">
         <TabsList variant="sidebar">
-          <TabsTrigger value="sessions" className="py-1">
+          <TabsTrigger value="sessions" className="py-1.5">
             <MessageSquare className="size-3.5" />
             {t('sidebar.tabs.sessions')}
           </TabsTrigger>
-          <TabsTrigger value="files" className="py-1">
+          <TabsTrigger value="files" className="py-1.5">
             <FolderClosed className="size-3.5" />
             {t('sidebar.tabs.files')}
           </TabsTrigger>

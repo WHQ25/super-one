@@ -240,10 +240,10 @@ export function AppDrawer() {
       onDrop={handleFileDrop}
     >
       <InstallPermissionDialog onInstalled={handleInstalled} onError={handleInstallError} />
-      <div className="overflow-hidden rounded-lg border border-sidebar-border">
+      <div className="overflow-hidden rounded-lg border border-sidebar-border transition-colors hover:border-sidebar-foreground/25">
         <button
           onClick={() => setExpanded((v) => !v)}
-          className="flex min-h-[30px] w-full cursor-pointer items-center justify-between px-2.5 py-1 transition-colors hover:bg-sidebar-accent"
+          className="flex min-h-[30px] w-full cursor-pointer items-center justify-between px-2.5 py-1"
         >
           <div className="flex items-center gap-2">
             {expanded || totalApps === 0 ? (

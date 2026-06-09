@@ -24,7 +24,7 @@ const STATUS_COLOR: Record<GitFileStatus, string> = {
   C: 'text-cyan-700 dark:text-cyan-400',
   U: 'text-orange-700 dark:text-orange-400',
   '?': 'text-emerald-700 dark:text-emerald-400',
-  '!': 'text-sidebar-foreground/30',
+  '!': 'text-sidebar-foreground/50',
 }
 
 export function getStatusClass(

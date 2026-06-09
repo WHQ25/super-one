@@ -73,7 +73,7 @@ function TabsList({
         className={cn(
           "relative flex items-center rounded-md p-0.5",
           variant === "sidebar"
-            ? "border border-sidebar-border bg-sidebar-accent dark:bg-sidebar-accent/30"
+            ? "bg-secondary"
             : "border border-border bg-muted dark:bg-muted/50",
           className
         )}

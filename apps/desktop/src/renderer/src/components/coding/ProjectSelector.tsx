@@ -79,7 +79,7 @@ export function ProjectSelector({ compact, align = 'start', onOpened }: ProjectS
                 <span className="truncate">{folder.name}</span>
               </div>
               {folder.path === currentFolder && (
-                <Check className="size-4 shrink-0 text-muted-foreground" />
+                <Check className="size-4 shrink-0 text-primary" />
               )}
             </DropdownMenuItem>
           ))}

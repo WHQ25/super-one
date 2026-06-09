@@ -15,6 +15,7 @@ export interface PermissionModeDescriptor {
   icon: React.ReactNode
   color: string
   hoverBg: string
+  activeBg: string
 }
 
 export const modes: PermissionModeDescriptor[] = [
@@ -25,6 +26,7 @@ export const modes: PermissionModeDescriptor[] = [
     icon: <Shield className="size-3" />,
     color: 'text-muted-foreground',
     hoverBg: 'hover:bg-muted',
+    activeBg: 'bg-muted',
   },
   {
     id: 'plan',
@@ -33,6 +35,7 @@ export const modes: PermissionModeDescriptor[] = [
     icon: <PenLine className="size-3" />,
     color: 'text-blue-600 dark:text-blue-400',
     hoverBg: 'hover:bg-blue-500/10',
+    activeBg: 'bg-blue-500/15',
   },
   {
     id: 'auto',
@@ -41,6 +44,7 @@ export const modes: PermissionModeDescriptor[] = [
     icon: <Zap className="size-3" />,
     color: 'text-amber-600 dark:text-amber-400',
     hoverBg: 'hover:bg-amber-500/10',
+    activeBg: 'bg-amber-500/15',
   },
   {
     id: 'acceptEdits',
@@ -49,6 +53,7 @@ export const modes: PermissionModeDescriptor[] = [
     icon: <FastForward className="size-3" />,
     color: 'text-purple-600 dark:text-purple-400',
     hoverBg: 'hover:bg-purple-500/10',
+    activeBg: 'bg-purple-500/15',
   },
   {
     id: 'dontAsk',
@@ -57,6 +62,7 @@ export const modes: PermissionModeDescriptor[] = [
     icon: <Lock className="size-3" />,
     color: 'text-orange-600 dark:text-orange-400',
     hoverBg: 'hover:bg-orange-500/10',
+    activeBg: 'bg-orange-500/15',
   },
   {
     id: 'bypassPermissions',
@@ -65,6 +71,7 @@ export const modes: PermissionModeDescriptor[] = [
     icon: <ShieldOff className="size-3" />,
     color: 'text-destructive',
     hoverBg: 'hover:bg-destructive/10',
+    activeBg: 'bg-destructive/15',
   },
 ]
 
@@ -99,8 +106,8 @@ export function PermissionModeList({ activeMode, autoEligibility, onSelect }: Pe
               }}
               className={`w-full rounded px-2 py-1.5 text-left text-xs transition-colors ${
                 active
-                  ? 'bg-muted text-foreground'
-                  : 'text-foreground hover:bg-muted/50'
+                  ? `${mode.activeBg} text-foreground`
+                  : `text-foreground ${mode.hoverBg}`
               } ${isAutoBlocked ? 'cursor-not-allowed opacity-50 hover:bg-transparent' : ''}`}
             >
               <div className={`flex items-center gap-1.5 font-medium ${mode.color}`}>

@@ -6,7 +6,7 @@ import { useAppStore } from '@/stores/app'
 import { useState } from 'react'
 import type { SandboxMode } from '@superone/shared/agent-types'
 
-export const sandboxModes: { id: SandboxMode; label: string; triggerLabel: string; description: string; icon: React.ReactNode; color: string; hoverBg: string }[] = [
+export const sandboxModes: { id: SandboxMode; label: string; triggerLabel: string; description: string; icon: React.ReactNode; color: string; hoverBg: string; activeBg: string }[] = [
   {
     id: 'off',
     label: 'Sandbox Off',
@@ -15,6 +15,7 @@ export const sandboxModes: { id: SandboxMode; label: string; triggerLabel: strin
     icon: <PackageOpen className="size-3" />,
     color: 'text-muted-foreground',
     hoverBg: 'hover:bg-muted',
+    activeBg: 'bg-muted',
   },
   {
     id: 'on',
@@ -24,6 +25,7 @@ export const sandboxModes: { id: SandboxMode; label: string; triggerLabel: strin
     icon: <Box className="size-3" />,
     color: 'text-emerald-400',
     hoverBg: 'hover:bg-emerald-500/10',
+    activeBg: 'bg-emerald-500/15',
   },
   {
     id: 'auto',
@@ -33,6 +35,7 @@ export const sandboxModes: { id: SandboxMode; label: string; triggerLabel: strin
     icon: <Box className="size-3" />,
     color: 'text-amber-600 dark:text-amber-400',
     hoverBg: 'hover:bg-amber-500/10',
+    activeBg: 'bg-amber-500/15',
   },
 ]
 
@@ -114,8 +117,8 @@ export function SandboxModeSelector({ compact = false }: SandboxModeSelectorProp
               onClick={() => handleSelect(mode.id)}
               className={`w-full rounded px-2 py-1.5 text-left text-xs transition-colors ${
                 mode.id === currentMode
-                  ? 'bg-muted text-foreground'
-                  : 'text-foreground hover:bg-muted/50'
+                  ? `${mode.activeBg} text-foreground`
+                  : `text-foreground ${mode.hoverBg}`
               } ${isDisabled ? 'cursor-not-allowed opacity-50 hover:bg-transparent' : ''}`}
             >
               <div className={`flex items-center gap-1.5 font-medium ${mode.color}`}>

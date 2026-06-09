@@ -114,7 +114,7 @@ export function ProviderSlashPopup({ onClose }: { onClose: () => void }) {
               onMouseEnter={() => setSelectedIndex(idx)}
               onMouseDown={(e) => { e.preventDefault(); void setSessionApiProviderId(item.id) }}
               className={`flex w-full items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left transition-colors ${
-                isSelected ? 'bg-accent' : 'hover:bg-muted/50'
+                isSelected ? 'bg-primary/15' : 'hover:bg-muted/40'
               }`}
             >
               {item.provider ? (
@@ -139,7 +139,7 @@ export function ProviderSlashPopup({ onClose }: { onClose: () => void }) {
           onMouseEnter={() => setSelectedIndex(items.length)}
           onMouseDown={(e) => { e.preventDefault(); openProvidersSettings() }}
           className={`flex w-full items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left transition-colors ${
-            selectedIndex === items.length ? 'bg-accent' : 'hover:bg-muted/50'
+            selectedIndex === items.length ? 'bg-primary/15' : 'hover:bg-muted/40'
           }`}
         >
           <div className="flex items-center gap-2 text-sm text-muted-foreground">

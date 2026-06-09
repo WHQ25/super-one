@@ -57,7 +57,7 @@ export const SlashDecoration = Extension.create<SlashDecorationOptions, SlashDec
 
             decorations.push(
               Decoration.inline(startOffset, startOffset + cmdPart.length, {
-                style: 'color: #60a5fa',
+                style: 'color: var(--highlighted)',
               }),
             )
 

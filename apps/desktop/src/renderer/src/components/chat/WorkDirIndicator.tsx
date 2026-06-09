@@ -427,7 +427,7 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
             >
               <Monitor className="size-3 shrink-0 text-muted-foreground" />
               <span className="flex-1 truncate text-left">{t('tooltips.local')}</span>
-              {!isInWorktree && <Check className="size-3 shrink-0 text-foreground" />}
+              {!isInWorktree && <Check className="size-3 shrink-0 text-primary" />}
             </button>
 
             {filteredExisting.length > 0 && (
@@ -459,7 +459,7 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
                       <span className={`shrink-0 text-[10px] ${filesCount > 0 ? 'text-amber-500' : 'text-muted-foreground'}`}>
                         {filesCount > 0 ? t('chat.worktree.filesCount', { count: filesCount }) : t('chat.worktree.cleanLabel')}
                       </span>
-                      {isCurrent && <Check className="mt-0.5 size-3 shrink-0 text-foreground" />}
+                      {isCurrent && <Check className="mt-0.5 size-3 shrink-0 text-primary" />}
                     </button>
                   )
                 })}
@@ -487,7 +487,7 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
                         <span className="truncate">{b}</span>
                         {reason && <span className="truncate text-[10px] text-muted-foreground">{reason}</span>}
                       </div>
-                      {isSelected && <Check className="mt-0.5 size-3 shrink-0 text-foreground" />}
+                      {isSelected && <Check className="mt-0.5 size-3 shrink-0 text-primary" />}
                     </button>
                   )
                 })}

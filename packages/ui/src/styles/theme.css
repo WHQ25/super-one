@@ -16,7 +16,7 @@
   --secondary-foreground: oklch(var(--secondary-foreground-l, 0.22) var(--secondary-foreground-c, 0.012) var(--secondary-foreground-h, var(--brand-hue, 240)) / var(--secondary-foreground-a, 1));
   --muted: oklch(var(--muted-l, 0.93) var(--muted-c, 0) var(--muted-h, var(--brand-hue, 240)) / var(--muted-a, 1));
   --muted-foreground: oklch(var(--muted-foreground-l, 0.52) var(--muted-foreground-c, 0.025) var(--muted-foreground-h, var(--brand-hue, 240)) / var(--muted-foreground-a, 1));
-  --accent: oklch(var(--accent-l, 0.91) var(--accent-c, 0.045) var(--accent-h, var(--brand-hue, 240)) / var(--accent-a, 1));
+  --accent: oklch(var(--accent-l, 0.91) var(--accent-c, 0) var(--accent-h, var(--brand-hue, 240)) / var(--accent-a, 1));
   --accent-foreground: oklch(var(--accent-foreground-l, 0.22) var(--accent-foreground-c, 0.015) var(--accent-foreground-h, var(--brand-hue, 240)) / var(--accent-foreground-a, 1));
   --destructive: oklch(0.55 0.25 27);
   --destructive-foreground: oklch(0.99 0 0);
@@ -36,6 +36,7 @@
   --sidebar-accent-foreground: var(--accent-foreground);
   --sidebar-border: var(--border);
   --sidebar-ring: var(--ring);
+  --highlighted: var(--primary);
   --insight-border: oklch(0.55 0.18 280);
   --insight-bg: oklch(0.5 0.18 280 / 0.12);
   --insight-fg: oklch(0.42 0.22 280);
@@ -81,6 +82,7 @@
   --sidebar-accent-foreground: var(--accent-foreground);
   --sidebar-border: var(--border);
   --sidebar-ring: var(--ring);
+  --highlighted: oklch(0.72 0.14 250);
   --insight-border: oklch(0.65 0.15 280);
   --insight-bg: oklch(0.65 0.1 280 / 0.13);
   --insight-fg: oklch(0.7 0.15 280);
@@ -119,6 +121,7 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+  --color-highlighted: var(--highlighted);
   --color-insight-border: var(--insight-border);
   --color-insight-bg: var(--insight-bg);
   --color-insight-fg: var(--insight-fg);

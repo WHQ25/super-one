@@ -434,7 +434,7 @@ export function ChatStatusBar() {
                               </span>
                             )}
                           </div>
-                          <Check className="size-3 shrink-0 text-foreground" />
+                          <Check className="size-3 shrink-0 text-primary" />
                         </CommandItem>
                       </CommandGroup>
                     )}

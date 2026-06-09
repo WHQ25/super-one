@@ -112,7 +112,7 @@ export const SessionRow = memo(function SessionRow({
             onClick={() => onSwitchSession(folderPath, session.sessionId)}
             className={cn(
               'group/session flex cursor-pointer items-center gap-2 overflow-hidden rounded-md px-2.5 py-1.5 transition-colors',
-              isSessionActive ? 'bg-accent' : 'hover:bg-sidebar-accent',
+              isSessionActive ? 'bg-primary/15' : 'hover:bg-sidebar-accent',
               session.isHidden && 'opacity-50',
             )}
           >

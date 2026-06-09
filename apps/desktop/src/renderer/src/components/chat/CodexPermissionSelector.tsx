@@ -17,6 +17,8 @@ interface PresetOption {
   triggerIcon: React.ReactNode
   toneClass: string
   triggerToneClass: string
+  hoverBg: string
+  activeBg: string
 }
 
 export function CodexPermissionSelector({ compact = false }: CodexPermissionSelectorProps) {
@@ -30,6 +32,8 @@ export function CodexPermissionSelector({ compact = false }: CodexPermissionSele
       triggerIcon: <Eye className="size-3" />,
       toneClass: 'text-foreground',
       triggerToneClass: 'text-muted-foreground hover:bg-muted',
+      hoverBg: 'hover:bg-muted',
+      activeBg: 'bg-muted',
     },
     {
       id: 'default',
@@ -39,6 +43,8 @@ export function CodexPermissionSelector({ compact = false }: CodexPermissionSele
       triggerIcon: <ShieldCheck className="size-3" />,
       toneClass: 'text-foreground',
       triggerToneClass: 'text-muted-foreground hover:bg-muted',
+      hoverBg: 'hover:bg-muted',
+      activeBg: 'bg-muted',
     },
     {
       id: 'full-access',
@@ -48,6 +54,8 @@ export function CodexPermissionSelector({ compact = false }: CodexPermissionSele
       triggerIcon: <ShieldOff className="size-3" />,
       toneClass: 'text-destructive',
       triggerToneClass: 'text-destructive hover:bg-destructive/10',
+      hoverBg: 'hover:bg-destructive/10',
+      activeBg: 'bg-destructive/15',
     },
   ]
   const [open, setOpen] = useState(false)
@@ -80,8 +88,8 @@ export function CodexPermissionSelector({ compact = false }: CodexPermissionSele
               }}
               className={`w-full rounded px-2 py-1.5 text-left transition-colors ${
                 option.id === preset
-                  ? 'bg-muted text-foreground'
-                  : 'text-foreground hover:bg-muted/50'
+                  ? `${option.activeBg} text-foreground`
+                  : `text-foreground ${option.hoverBg}`
               }`}
             >
               <div className="flex items-start justify-between gap-2">

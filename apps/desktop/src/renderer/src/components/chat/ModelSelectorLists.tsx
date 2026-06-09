@@ -34,7 +34,7 @@ function ListHeader({ title, clearOption }: ListHeaderProps) {
             }`}
           >
             <span className="font-medium">{clearOption.label}</span>
-            {clearOption.isActive && <Check className="size-3.5 shrink-0" />}
+            {clearOption.isActive && <Check className="size-3.5 shrink-0 text-primary" />}
           </button>
           <div className="my-1 border-t border-border/60" />
         </>
@@ -115,7 +115,7 @@ export function ClaudeModelList({
                 <div className="mt-0.5 text-[10px] text-muted-foreground">{description}</div>
               )}
             </div>
-            {active && <Check className="mt-0.5 size-3.5 shrink-0" />}
+            {active && <Check className="mt-0.5 size-3.5 shrink-0 text-primary" />}
           </button>
         )
       })}
@@ -166,7 +166,7 @@ export function EffortList({
             }`}
           >
             <div className="font-medium">{labels[level]}</div>
-            {active && <Check className="size-3.5 shrink-0" />}
+            {active && <Check className="size-3.5 shrink-0 text-primary" />}
           </button>
         )
       })}
@@ -212,7 +212,7 @@ export function CodexModelList({
             }`}
           >
             <div className="font-medium">{formatCodexModelLabel(model.id || model.name)}</div>
-            {active && <Check className="size-3.5 shrink-0" />}
+            {active && <Check className="size-3.5 shrink-0 text-primary" />}
           </button>
         )
       })}
@@ -260,7 +260,7 @@ export function CodexReasoningEffortList({
             }`}
           >
             <div className="font-medium">{formatReasoningEffortLabel(option.value)}</div>
-            {active && <Check className="size-3.5 shrink-0" />}
+            {active && <Check className="size-3.5 shrink-0 text-primary" />}
           </button>
         )
       })}

@@ -244,7 +244,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
     const renderItem = (item: FlatItem, i: number) => {
       const rowClass = cn(
         'flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs transition-colors',
-        i === selectedIndex ? 'bg-muted text-foreground' : 'text-foreground hover:bg-muted/50'
+        i === selectedIndex ? 'bg-primary/15 text-foreground' : 'text-foreground hover:bg-muted/40'
       )
       if (item.kind === 'miniapp') {
         return (
@@ -273,8 +273,8 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
             onMouseEnter={() => onSetSelectedIndex(i)}
             className={cn(rowClass, 'gap-1.5')}
           >
-            <Bot className="size-3.5 shrink-0 text-primary" />
-            <span className="shrink-0 font-medium text-primary">
+            <Bot className="size-3.5 shrink-0 text-muted-foreground" />
+            <span className="shrink-0">
               <HighlightedPath path={item.name} indices={item.matchIndices} />
             </span>
             <span className="shrink-0 rounded bg-muted/60 px-1 py-px text-[10px] text-muted-foreground">

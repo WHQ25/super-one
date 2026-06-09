@@ -1049,12 +1049,12 @@ export function ChatInput() {
                         }}
                         className={`flex w-full flex-col gap-0.5 rounded px-2 py-1.5 text-left text-xs transition-colors ${
                           i === slashIndex
-                            ? 'bg-muted text-foreground'
-                            : 'text-foreground hover:bg-muted/50'
+                            ? 'bg-primary/15 text-foreground'
+                            : 'text-foreground hover:bg-muted/40'
                         }`}
                       >
                         <span className="flex min-w-0 items-center gap-1.5 font-medium">
-                          <span className="text-primary"><HighlightedText text={`/${cmd.name}`} indices={[0, ...cmd.matchIndices.map((idx) => idx + 1)]} highlightClassName="text-primary font-medium" /></span>
+                          <HighlightedText text={`/${cmd.name}`} indices={[0, ...cmd.matchIndices.map((idx) => idx + 1)]} highlightClassName="text-highlighted font-semibold" />
                           {cmd.argumentHint && (
                             <span className="truncate text-muted-foreground font-normal">{cmd.argumentHint}</span>
                           )}

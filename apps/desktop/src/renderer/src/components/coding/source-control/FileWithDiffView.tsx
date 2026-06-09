@@ -1,4 +1,4 @@
-import { useMemo, useRef } from 'react'
+import { useMemo, useRef, useState, useEffect } from 'react'
 import { DiffView, buildFullFileWithDiff, reconstructOldContent, useHighlightedTokens, inferLanguage } from '@/lib/diff-utils'
 import { CodeMinimap } from '@/components/coding/CodeMinimap'
 import { useSourceControlStore } from '@/stores/source-control'
@@ -34,10 +34,29 @@ function FileWithDiffContent({ filePath, content, diff }: { filePath: string; co
   const newTokens = useHighlightedTokens(content, language, { cache })
   const oldTokens = useHighlightedTokens(oldContent, language, { cache })
 
+  const [overflowsPage, setOverflowsPage] = useState(false)
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    let raf = 0
+    const measure = () => {
+      cancelAnimationFrame(raf)
+      raf = requestAnimationFrame(() => {
+        const node = scrollRef.current
+        if (node) setOverflowsPage(node.scrollHeight - node.clientHeight > 1)
+      })
+    }
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    if (el.firstElementChild) ro.observe(el.firstElementChild)
+    return () => { cancelAnimationFrame(raf); ro.disconnect() }
+  }, [lines])
+
   return (
     <div className="flex h-full">
       <DiffView ref={scrollRef} lines={lines} newTokens={newTokens} oldTokens={oldTokens} fontSize={14} maxHeight="max-h-full" className="min-h-full flex-1 bg-transparent text-sm [--diff-gutter-bg:var(--card)]" hideScrollbar scrollToLine={scrollToLine} />
-      <CodeMinimap lines={lines} tokens={newTokens} scrollRef={scrollRef} />
+      {overflowsPage && <CodeMinimap lines={lines} tokens={newTokens} scrollRef={scrollRef} />}
     </div>
   )
 }

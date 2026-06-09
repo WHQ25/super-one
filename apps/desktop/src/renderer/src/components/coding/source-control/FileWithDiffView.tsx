@@ -36,7 +36,7 @@ function FileWithDiffContent({ filePath, content, diff }: { filePath: string; co
 
   return (
     <div className="flex h-full">
-      <DiffView ref={scrollRef} lines={lines} newTokens={newTokens} oldTokens={oldTokens} fontSize={14} maxHeight="max-h-full" className="min-h-full flex-1 text-sm" hideScrollbar scrollToLine={scrollToLine} />
+      <DiffView ref={scrollRef} lines={lines} newTokens={newTokens} oldTokens={oldTokens} fontSize={14} maxHeight="max-h-full" className="min-h-full flex-1 bg-transparent text-sm [--diff-gutter-bg:var(--card)]" hideScrollbar scrollToLine={scrollToLine} />
       <CodeMinimap lines={lines} tokens={newTokens} scrollRef={scrollRef} />
     </div>
   )

@@ -48,5 +48,5 @@ function DiffContent({ filePath, diff, content }: { filePath: string; diff: stri
     )
   }
 
-  return <DiffView lines={lines} oldTokens={oldTokens} newTokens={newTokens} fontSize={14} maxHeight="max-h-full" className="min-h-full text-sm" />
+  return <DiffView lines={lines} oldTokens={oldTokens} newTokens={newTokens} fontSize={14} maxHeight="max-h-full" className="min-h-full bg-transparent text-sm [--diff-gutter-bg:var(--card)]" />
 }

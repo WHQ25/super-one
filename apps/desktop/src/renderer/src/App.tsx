@@ -286,7 +286,6 @@ function App(): React.JSX.Element {
 
 
   const hasLeftPanel = showSidebar || (showActivityPanel && activitySide === 'left')
-  const hasFloatingCard = showSidebar || showActivityPanel
 
   const getActivityMaxWidth = useCallback(() => {
     const sb = useAppStore.getState()
@@ -377,9 +376,9 @@ function App(): React.JSX.Element {
       {/* Main area wrapper */}
       <div className={cn(
         'flex min-w-0 flex-1',
-        layoutMode === 'coding' && !hasFloatingCard && 'overflow-hidden',
-        layoutMode === 'coding' && hasFloatingCard && 'relative z-20 my-[5px] mr-[5px] overflow-hidden rounded-xl border border-border/50 bg-card transition-shadow duration-200',
-        layoutMode === 'coding' && hasFloatingCard && (sidebarResizing
+        layoutMode === 'coding' && 'relative z-20 my-[5px] mr-[5px] overflow-hidden rounded-xl border border-border/50 bg-card transition-shadow duration-200',
+        layoutMode === 'coding' && !hasLeftPanel && 'ml-[5px]',
+        layoutMode === 'coding' && (sidebarResizing
           ? 'border-border shadow-[0_10px_30px_rgba(0,0,0,0.16)]'
           : 'shadow-[0_2px_12px_rgba(0,0,0,0.06)] group-has-[[data-resize-handle]:hover]/coding:border-border group-has-[[data-resize-handle]:hover]/coding:shadow-[0_10px_30px_rgba(0,0,0,0.16)]')
       )}>
@@ -393,7 +392,7 @@ function App(): React.JSX.Element {
           className={cn('flex h-[34px] shrink-0 items-center bg-card transition-[padding-left] duration-300 ease-in-out', !isMac || (isFullscreen && !(layoutMode === 'coding' && hasLeftPanel)) ? 'pl-2' : 'pl-[18px]')}
           style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
         >
-          {isMac && <div className={cn('shrink-0 transition-[width] duration-300 ease-in-out', isFullscreen || (layoutMode === 'coding' && hasLeftPanel) ? 'w-0' : layoutMode === 'coding' && hasFloatingCard ? 'w-[60px]' : 'w-[66px]')} />}
+          {isMac && <div className={cn('shrink-0 transition-[width] duration-300 ease-in-out', isFullscreen || (layoutMode === 'coding' && hasLeftPanel) ? 'w-0' : layoutMode === 'coding' ? 'w-[60px]' : 'w-[66px]')} />}
           {layoutMode === 'coding' && (!isMac || !showSidebar) && !(showActivityPanel && activitySide === 'left') && <LayoutToggle />}
           <HeaderTitle layoutMode={layoutMode} sessionId={sessionId} sessionFallback={sessionFallback} folderName={folderName} />
 

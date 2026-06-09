@@ -4,6 +4,26 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.41.5-alpha] - 2026-06-10
+
+### Added
+
+- New floating-card coding layout with refined spacing and a clearer resize-handle affordance.
+- File minimap now only appears when the file overflows a single page.
+
+### Changed
+
+- Refreshed design tokens: neutralized the accent color, added a highlighted token, and refined sidebar switcher/row colors.
+- Updated Claude Agent SDK to 0.3.170 (adds claude-fable-5 model support).
+
+### Fixed
+
+- Chat stays a floating card when the sidebar is collapsed.
+- File preview editor background now matches the card surface.
+- Insight block renders correctly when its header is glued to the leading prose.
+- Windows: project selector shows the project basename instead of the full path.
+- Windows: LayoutToggle appears in the activity panel header when the sidebar is visible.
+
 ## [0.41.4-alpha] - 2026-06-08
 
 ### Added

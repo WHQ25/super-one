@@ -4,7 +4,7 @@ import { dirname, join } from 'path'
 import { createInterface } from 'readline'
 import log from '../logger'
 import { trace } from '../agent/event-trace'
-import { SUPERONE_SYSTEM_PROMPT_APPEND } from '../agent/superone-system-prompt'
+import { CODEX_SYSTEM_PROMPT_APPEND } from '../agent/superone-system-prompt'
 import { getActiveProviderRaw, getProviderByIdRaw } from '../database'
 import { ProcessTitle } from '../process-titles'
 import {
@@ -408,7 +408,7 @@ export function buildCollaborationMode(
     settings: {
       model,
       reasoning_effort: reasoningEffort ?? null,
-      developer_instructions: SUPERONE_SYSTEM_PROMPT_APPEND,
+      developer_instructions: CODEX_SYSTEM_PROMPT_APPEND,
     },
   }
 }

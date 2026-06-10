@@ -46,7 +46,7 @@ const {
 } = await import('./codex-turn')
 const { getActiveProviderRaw, getProviderByIdRaw } = await import('../database')
 const { createCodexSession } = await import('./codex-session')
-const { SUPERONE_SYSTEM_PROMPT_APPEND } = await import('../agent/superone-system-prompt')
+const { CODEX_SYSTEM_PROMPT_APPEND } = await import('../agent/superone-system-prompt')
 
 function makeSession(overrides: { threadId?: string | null; model?: string } = {}) {
   return {
@@ -125,7 +125,7 @@ describe('resolveThread fallback', () => {
     expect((mockConnection as { request: ReturnType<typeof vi.fn> }).request.mock.calls[1][0]).toBe('thread/start')
     expect((mockConnection as { request: ReturnType<typeof vi.fn> }).request.mock.calls[0][1]).toEqual(expect.objectContaining({
       config: expect.objectContaining({
-        developer_instructions: SUPERONE_SYSTEM_PROMPT_APPEND,
+        developer_instructions: CODEX_SYSTEM_PROMPT_APPEND,
       }),
     }))
   })
@@ -144,7 +144,7 @@ describe('resolveThread fallback', () => {
     expect((mockConnection as { request: ReturnType<typeof vi.fn> }).request.mock.calls[0][0]).toBe('thread/resume')
     expect((mockConnection as { request: ReturnType<typeof vi.fn> }).request.mock.calls[0][1]).toEqual(expect.objectContaining({
       config: expect.objectContaining({
-        developer_instructions: SUPERONE_SYSTEM_PROMPT_APPEND,
+        developer_instructions: CODEX_SYSTEM_PROMPT_APPEND,
       }),
     }))
   })
@@ -163,7 +163,7 @@ describe('resolveThread fallback', () => {
     expect((mockConnection as { request: ReturnType<typeof vi.fn> }).request.mock.calls[0][0]).toBe('thread/start')
     expect((mockConnection as { request: ReturnType<typeof vi.fn> }).request.mock.calls[0][1]).toEqual(expect.objectContaining({
       config: expect.objectContaining({
-        developer_instructions: SUPERONE_SYSTEM_PROMPT_APPEND,
+        developer_instructions: CODEX_SYSTEM_PROMPT_APPEND,
       }),
     }))
   })
@@ -1362,7 +1362,7 @@ describe('runCodexTurn turn/start payload', () => {
         settings: {
           model: 'gpt-5.4',
           reasoning_effort: null,
-          developer_instructions: SUPERONE_SYSTEM_PROMPT_APPEND,
+          developer_instructions: CODEX_SYSTEM_PROMPT_APPEND,
         },
       },
     }))

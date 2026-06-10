@@ -55,7 +55,7 @@ import type {
 import { getCodexSuperoneMcpConfig } from '../mcp/superone-mcp-stdio-state'
 import { isToolPreapproved, isBuiltInSuperoneTool } from '../mcp/superone-mcp-server'
 import { BUILT_IN_SUPERONE_TOOL_NAMES } from '../mcp/superone-mcp-builtins'
-import { SUPERONE_SYSTEM_PROMPT_APPEND } from '../agent/superone-system-prompt'
+import { CODEX_SYSTEM_PROMPT_APPEND } from '../agent/superone-system-prompt'
 
 const SUPERONE_MCP_TOOL_NAME_PATTERN = /run tool "([a-z0-9_]+)"/i
 const MCP_SUPERONE_TOOL_PREFIX = 'mcp__superone__'
@@ -1092,7 +1092,7 @@ function buildThreadConfig(
   providerOverride: CodexProviderOverride | null,
 ): Record<string, unknown> | undefined {
   const config: Record<string, unknown> = {}
-  config.developer_instructions = SUPERONE_SYSTEM_PROMPT_APPEND
+  config.developer_instructions = CODEX_SYSTEM_PROMPT_APPEND
   if (permissionProfile.sandboxMode === 'workspace-write') {
     config.sandbox_workspace_write = {
       network_access: permissionProfile.networkAccessEnabled,

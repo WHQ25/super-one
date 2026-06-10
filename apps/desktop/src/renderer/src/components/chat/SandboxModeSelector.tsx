@@ -14,8 +14,8 @@ export const sandboxModes: { id: SandboxMode; label: string; triggerLabel: strin
     description: 'No execution isolation',
     icon: <PackageOpen className="size-3" />,
     color: 'text-muted-foreground',
-    hoverBg: 'hover:bg-muted',
-    activeBg: 'bg-muted',
+    hoverBg: 'hover:bg-accent',
+    activeBg: 'bg-accent',
   },
   {
     id: 'on',
@@ -23,7 +23,7 @@ export const sandboxModes: { id: SandboxMode; label: string; triggerLabel: strin
     triggerLabel: 'On',
     description: 'Commands run in sandboxed environment',
     icon: <Box className="size-3" />,
-    color: 'text-emerald-400',
+    color: 'text-emerald-500 dark:text-emerald-400',
     hoverBg: 'hover:bg-emerald-500/10',
     activeBg: 'bg-emerald-500/15',
   },
@@ -33,7 +33,7 @@ export const sandboxModes: { id: SandboxMode; label: string; triggerLabel: strin
     triggerLabel: 'Auto',
     description: 'Sandbox with auto-allow Bash',
     icon: <Box className="size-3" />,
-    color: 'text-amber-600 dark:text-amber-400',
+    color: 'text-amber-500 dark:text-amber-400',
     hoverBg: 'hover:bg-amber-500/10',
     activeBg: 'bg-amber-500/15',
   },
@@ -103,7 +103,7 @@ export function SandboxModeSelector({ compact = false }: SandboxModeSelectorProp
       <PopoverContent
         align="end"
         side="top"
-        className="w-56 border-border bg-card p-1"
+        className="w-56 border-border bg-popover p-1"
       >
         <div className="px-2 py-1.5 text-xs text-muted-foreground">{t('chat.sandboxModeTitle')}</div>
         {sandboxModes.map((mode) => {

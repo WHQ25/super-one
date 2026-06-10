@@ -102,7 +102,7 @@ export function ClaudeModelSelector({ onCloseAutoFocus }: Props) {
             <ChevronDown className={`size-3 transition-transform duration-200 ${modelOpen ? 'rotate-180' : ''}`} />
           </button>
         </PopoverTrigger>
-        <PopoverContent align="start" side="top" className="w-64 max-h-60 overflow-y-auto border-border bg-card p-1" onCloseAutoFocus={onCloseAutoFocus}>
+        <PopoverContent align="start" side="top" className="w-64 max-h-60 overflow-y-auto border-border bg-popover p-1" onCloseAutoFocus={onCloseAutoFocus}>
           <ClaudeModelList
             title={t('tooltips.selectModel')}
             models={availableModels}
@@ -131,7 +131,7 @@ export function ClaudeModelSelector({ onCloseAutoFocus }: Props) {
                 <ChevronDown className={`size-3 transition-transform duration-200 ${effortOpen ? 'rotate-180' : ''}`} />
               </button>
             </PopoverTrigger>
-            <PopoverContent align="start" side="top" className="w-48 border-border bg-card p-1" onCloseAutoFocus={onCloseAutoFocus}>
+            <PopoverContent align="start" side="top" className="w-48 border-border bg-popover p-1" onCloseAutoFocus={onCloseAutoFocus}>
               <EffortList
                 title={t('tooltips.thinkingEffort')}
                 levels={effortLevels}

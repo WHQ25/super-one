@@ -244,7 +244,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
     const renderItem = (item: FlatItem, i: number) => {
       const rowClass = cn(
         'flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs transition-colors',
-        i === selectedIndex ? 'bg-primary/15 text-foreground' : 'text-foreground hover:bg-muted/40'
+        i === selectedIndex ? 'bg-accent text-accent-foreground' : 'text-foreground hover:bg-accent/40'
       )
       if (item.kind === 'miniapp') {
         return (
@@ -325,7 +325,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
     if (searchCompleted && orderedItems.length === 0) return null
 
     return (
-      <div className="absolute bottom-full left-0 right-0 z-10 mb-1 max-h-72 overflow-hidden rounded-xl border border-border bg-card flex flex-col">
+      <div className="absolute bottom-full left-0 right-0 z-10 mb-1 max-h-72 overflow-hidden rounded-xl border border-border bg-popover flex flex-col">
         <div className="overflow-y-auto p-1 flex-1 min-h-0">
           {(breadcrumbs.length > 0 || (isBrowseMode && projectName)) && (
             <div className="flex items-center gap-0.5 px-2 py-1 text-[10px] text-muted-foreground">

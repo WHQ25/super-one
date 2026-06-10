@@ -32,8 +32,8 @@ export function CodexPermissionSelector({ compact = false }: CodexPermissionSele
       triggerIcon: <Eye className="size-3" />,
       toneClass: 'text-foreground',
       triggerToneClass: 'text-muted-foreground hover:bg-muted',
-      hoverBg: 'hover:bg-muted',
-      activeBg: 'bg-muted',
+      hoverBg: 'hover:bg-accent',
+      activeBg: 'bg-accent',
     },
     {
       id: 'default',
@@ -43,8 +43,8 @@ export function CodexPermissionSelector({ compact = false }: CodexPermissionSele
       triggerIcon: <ShieldCheck className="size-3" />,
       toneClass: 'text-foreground',
       triggerToneClass: 'text-muted-foreground hover:bg-muted',
-      hoverBg: 'hover:bg-muted',
-      activeBg: 'bg-muted',
+      hoverBg: 'hover:bg-accent',
+      activeBg: 'bg-accent',
     },
     {
       id: 'full-access',
@@ -76,7 +76,7 @@ export function CodexPermissionSelector({ compact = false }: CodexPermissionSele
           {!compact && <ChevronDown className={`size-3 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />}
         </button>
       </PopoverTrigger>
-      <PopoverContent align="start" side="top" className="w-72 border-border bg-card p-2">
+      <PopoverContent align="start" side="top" className="w-72 border-border bg-popover p-2">
         <div className="space-y-1 text-xs">
           <div className="px-2 py-1.5 text-muted-foreground">{t('chat.codex.permissionPreset')}</div>
           {options.map((option) => (

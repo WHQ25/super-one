@@ -44,7 +44,7 @@ export function PermissionModeSelector({ compact = false }: PermissionModeSelect
       <PopoverContent
         align="start"
         side="top"
-        className="w-52 border-border bg-card p-1"
+        className="w-52 border-border bg-popover p-1"
       >
         <PermissionModeList
           activeMode={permissionMode}

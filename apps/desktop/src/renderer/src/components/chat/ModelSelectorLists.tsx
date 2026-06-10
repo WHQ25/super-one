@@ -30,7 +30,7 @@ function ListHeader({ title, clearOption }: ListHeaderProps) {
           <button
             onClick={clearOption.onSelect}
             className={`flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-xs transition-colors ${
-              clearOption.isActive ? 'bg-muted text-foreground' : 'text-foreground hover:bg-muted/50'
+              clearOption.isActive ? 'bg-accent text-accent-foreground' : 'text-foreground hover:bg-accent/50'
             }`}
           >
             <span className="font-medium">{clearOption.label}</span>
@@ -106,7 +106,7 @@ export function ClaudeModelList({
             key={model.id}
             onClick={() => onSelect(model.id)}
             className={`flex w-full items-start justify-between gap-2 rounded px-2 py-1.5 text-left text-xs transition-colors ${
-              active ? 'bg-muted text-foreground' : 'text-foreground hover:bg-muted/50'
+              active ? 'bg-accent text-accent-foreground' : 'text-foreground hover:bg-accent/50'
             }`}
           >
             <div className="min-w-0 flex-1">
@@ -162,7 +162,7 @@ export function EffortList({
             key={level}
             onClick={() => onSelect(level)}
             className={`flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-xs transition-colors ${
-              active ? 'bg-muted text-foreground' : 'text-foreground hover:bg-muted/50'
+              active ? 'bg-accent text-accent-foreground' : 'text-foreground hover:bg-accent/50'
             }`}
           >
             <div className="font-medium">{labels[level]}</div>
@@ -208,7 +208,7 @@ export function CodexModelList({
             key={model.id}
             onClick={() => onSelect(model.id)}
             className={`flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-xs transition-colors ${
-              active ? 'bg-muted text-foreground' : 'text-foreground hover:bg-muted/50'
+              active ? 'bg-accent text-accent-foreground' : 'text-foreground hover:bg-accent/50'
             }`}
           >
             <div className="font-medium">{formatCodexModelLabel(model.id || model.name)}</div>
@@ -256,7 +256,7 @@ export function CodexReasoningEffortList({
             key={option.value}
             onClick={() => onSelect(option.value)}
             className={`flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-xs transition-colors ${
-              active ? 'bg-muted text-foreground' : 'text-foreground hover:bg-muted/50'
+              active ? 'bg-accent text-accent-foreground' : 'text-foreground hover:bg-accent/50'
             }`}
           >
             <div className="font-medium">{formatReasoningEffortLabel(option.value)}</div>

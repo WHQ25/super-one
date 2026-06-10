@@ -201,7 +201,7 @@ export const AddDirPopup = forwardRef<AddDirPopupHandle, AddDirPopupProps>(
     )
 
     return (
-      <div className="absolute bottom-full left-0 right-0 z-10 mb-1 max-h-72 overflow-hidden rounded-xl border border-border bg-card flex flex-col">
+      <div className="absolute bottom-full left-0 right-0 z-10 mb-1 max-h-72 overflow-hidden rounded-xl border border-border bg-popover flex flex-col">
         <div className="flex items-center justify-between px-3 py-1.5 border-b border-border shrink-0">
           <span className="text-[11px] font-medium text-muted-foreground">/add-dir</span>
           {phase.kind === 'path' && absolutePath && (
@@ -348,7 +348,7 @@ function DirGroup({ label, empty, onAdd, children }: { label: string; empty?: bo
 
 function DirRow({ dir, onRemove }: { dir: string; onRemove?: () => void }) {
   return (
-    <div className="group flex items-center justify-between gap-2 rounded py-0.5 text-xs hover:bg-muted/30">
+    <div className="group flex items-center justify-between gap-2 rounded py-0.5 text-xs hover:bg-accent/30">
       <div className="flex shrink-0 items-center gap-1 rounded-md border border-border bg-muted/40 px-1.5 py-0.5">
         <Folder className="size-3 shrink-0 text-blue-500" />
         <span className="font-medium text-foreground">{basename(dir)}</span>
@@ -412,7 +412,7 @@ function ScopeView({
           onMouseEnter={() => onHover(i)}
           className={cn(
             'flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs transition-colors',
-            i === selectedIndex ? 'bg-muted text-foreground' : 'text-foreground hover:bg-muted/50'
+            i === selectedIndex ? 'bg-accent text-accent-foreground' : 'text-foreground hover:bg-accent/50'
           )}
         >
           <span className="font-medium">
@@ -459,7 +459,7 @@ function PathView({
             onMouseEnter={() => onHover(i)}
             className={cn(
               'flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs transition-colors',
-              i === selectedIndex ? 'bg-muted text-foreground' : 'text-foreground hover:bg-muted/50'
+              i === selectedIndex ? 'bg-accent text-accent-foreground' : 'text-foreground hover:bg-accent/50'
             )}
           >
             <Folder className="size-3.5 shrink-0 text-blue-500" />

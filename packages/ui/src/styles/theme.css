@@ -70,10 +70,10 @@
   --muted-foreground: oklch(0.708 0 0);
   --accent: oklch(0.269 0 0);
   --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --destructive-foreground: oklch(0.985 0 0);
-  --success: oklch(0.7 0.15 155);
-  --success-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.55 0.25 27);
+  --destructive-foreground: oklch(0.99 0 0);
+  --success: oklch(0.6 0.15 150);
+  --success-foreground: oklch(0.99 0 0);
   --warning: oklch(0.76 0.14 72);
   --warning-foreground: oklch(0.985 0 0);
   --error: oklch(0.704 0.191 22.216);

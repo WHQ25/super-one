@@ -586,7 +586,7 @@ export const AppSidebar = memo(function AppSidebar() {
                     >
                       <span className="min-w-0 truncate">{cmd}</span>
                       {copiedCmd === key
-                        ? <Check className="size-3.5 shrink-0 text-green-500" />
+                        ? <Check className="size-3.5 shrink-0 text-success" />
                         : <Copy className="size-3.5 shrink-0 text-muted-foreground" />
                       }
                     </code>
@@ -695,7 +695,7 @@ function RemoteStatusIcon() {
             className="relative rounded-md p-1.5 text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
           >
             <Smartphone className="size-3.5" />
-            <span className={cn('absolute top-1 right-1 size-1.5 rounded-full', reachable ? 'bg-green-500' : 'bg-red-500')} />
+            <span className={cn('absolute top-1 right-1 size-1.5 rounded-full', reachable ? 'bg-success' : 'bg-error')} />
           </button>
         </TooltipTrigger>
         <TooltipContent side="top">
@@ -706,14 +706,14 @@ function RemoteStatusIcon() {
             </div>
             <div className="flex items-center gap-3">
               <span className="inline-flex items-center gap-1">
-                <Cloud className={cn('size-3', relayConnected ? 'text-green-500' : 'opacity-40')} />
-                <span className={cn(relayConnected ? 'text-green-500' : 'opacity-60')}>
+                <Cloud className={cn('size-3', relayConnected ? 'text-success' : 'opacity-40')} />
+                <span className={cn(relayConnected ? 'text-success' : 'opacity-60')}>
                   {relayConnected ? t('sidebar.remote.connected') : t('sidebar.remote.disconnected')}
                 </span>
               </span>
               <span className="inline-flex items-center gap-1">
-                <Wifi className={cn('size-3', lanActive ? 'text-green-500' : 'opacity-40')} />
-                <span className={cn(lanActive ? 'text-green-500' : 'opacity-60')}>
+                <Wifi className={cn('size-3', lanActive ? 'text-success' : 'opacity-40')} />
+                <span className={cn(lanActive ? 'text-success' : 'opacity-60')}>
                   {lanActive ? t('sidebar.remote.lanActive') : t('sidebar.remote.lanInactive')}
                 </span>
               </span>
@@ -723,7 +723,7 @@ function RemoteStatusIcon() {
                 {onlineDevices.map((d) => (
                   <div key={d.id} className="flex items-center justify-between gap-3">
                     <span>{d.name}</span>
-                    {d.transport === 'lan' ? <Wifi className="size-3 text-green-500" /> : <Cloud className="size-3 text-sky-500" />}
+                    {d.transport === 'lan' ? <Wifi className="size-3 text-success" /> : <Cloud className="size-3 text-sky-500" />}
                   </div>
                 ))}
               </div>

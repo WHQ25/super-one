@@ -71,7 +71,7 @@ export function SetupPage(): React.JSX.Element {
         )}
         {installStatus === 'success' && (
           <>
-            <div className="flex items-center justify-center gap-2 text-green-600 dark:text-green-400">
+            <div className="flex items-center justify-center gap-2 text-success">
               <CheckCircle className="size-5" />
               <h1 className="text-2xl font-bold">{t('shell.setup.success.title')}</h1>
             </div>
@@ -80,7 +80,7 @@ export function SetupPage(): React.JSX.Element {
         )}
         {installStatus === 'error' && (
           <>
-            <div className="flex items-center justify-center gap-2 text-red-600 dark:text-red-400">
+            <div className="flex items-center justify-center gap-2 text-error">
               <XCircle className="size-5" />
               <h1 className="text-2xl font-bold">{t('shell.setup.error.title')}</h1>
             </div>
@@ -113,9 +113,9 @@ export function SetupPage(): React.JSX.Element {
         <div className="w-full max-w-2xl overflow-hidden rounded-lg border border-zinc-700 bg-zinc-950 shadow-lg dark:border-zinc-600">
           <div className="flex items-center gap-2 border-b border-zinc-800 bg-zinc-900 px-4 py-2">
             <div className="flex gap-1.5">
-              <span className="size-3 rounded-full bg-red-500" />
-              <span className="size-3 rounded-full bg-yellow-500" />
-              <span className="size-3 rounded-full bg-green-500" />
+              <span className="size-3 rounded-full bg-error" />
+              <span className="size-3 rounded-full bg-warning" />
+              <span className="size-3 rounded-full bg-success" />
             </div>
             <div className="flex flex-1 items-center justify-center gap-1.5 text-xs text-zinc-400">
               <Terminal className="size-3" />

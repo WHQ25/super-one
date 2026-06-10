@@ -111,7 +111,7 @@ export function McpDetailPage({ config, status, meta }: { config: McpServerConfi
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
               <h2 className="text-lg font-semibold">{config.name}</h2>
-              <span className={cn('size-2 rounded-full', isConnected ? 'bg-green-500' : needsAuth ? 'bg-yellow-500' : 'bg-red-500')} />
+              <span className={cn('size-2 rounded-full', isConnected ? 'bg-success' : needsAuth ? 'bg-warning' : 'bg-error')} />
               {bundle && (
                 <Badge variant="outline" className="gap-1 text-[10px]">
                   <Package className="size-2.5" />
@@ -143,8 +143,8 @@ export function McpDetailPage({ config, status, meta }: { config: McpServerConfi
       <div className="space-y-6">
         {/* Auth banner */}
         {needsAuth && (
-          <div className="flex items-center gap-3 rounded-lg border border-yellow-500/30 bg-yellow-500/5 p-4">
-            <ShieldAlert className="size-5 shrink-0 text-yellow-500" />
+          <div className="flex items-center gap-3 rounded-lg border border-yellow-500/30 bg-warning/5 p-4">
+            <ShieldAlert className="size-5 shrink-0 text-warning" />
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium">{t('resources.mcp.detail.authTitle')}</p>
               <p className="mt-0.5 text-xs text-muted-foreground">

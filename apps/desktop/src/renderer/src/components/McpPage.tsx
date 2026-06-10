@@ -63,8 +63,8 @@ function ServerCard({
   const toolCount = status?.toolCount ?? 0
 
   const dotColor = isManaged
-    ? (config.disabled ? 'bg-red-500' : 'bg-green-500')
-    : (isConnected ? 'bg-green-500' : isPending ? 'bg-yellow-500' : 'bg-red-500')
+    ? (config.disabled ? 'bg-error' : 'bg-success')
+    : (isConnected ? 'bg-success' : isPending ? 'bg-warning' : 'bg-error')
   const statusText = config.disabled
     ? t('resources.mcp.statusDisabled')
     : isManaged
@@ -340,7 +340,7 @@ function ClaudeAiDetailPage({ server, onToggle }: { server: McpServerInfo; onTog
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
               <h2 className="text-lg font-semibold">{server.name}</h2>
-              <span className={cn('size-2 rounded-full', isConnected ? 'bg-green-500' : 'bg-red-500')} />
+              <span className={cn('size-2 rounded-full', isConnected ? 'bg-success' : 'bg-error')} />
             </div>
             <span className="text-xs text-muted-foreground">claude.ai</span>
           </div>
@@ -398,7 +398,7 @@ function ClaudeAiSection({ servers, loading, onToggle }: { servers: McpServerInf
           const isDisabled = server.status === 'disabled'
           const isConnected = server.status === 'connected'
           const isPending = server.status === 'pending'
-          const dotColor = isConnected ? 'bg-green-500' : isPending ? 'bg-yellow-500' : isDisabled ? 'bg-red-500' : 'bg-red-500'
+          const dotColor = isConnected ? 'bg-success' : isPending ? 'bg-warning' : isDisabled ? 'bg-error' : 'bg-error'
           const statusText = isDisabled ? t('resources.mcp.statusDisabled') : isPending ? t('resources.mcp.statusConnecting') : isConnected ? t('resources.mcp.toolsCount', { count: server.toolCount ?? 0 }) : server.error ?? t('resources.mcp.statusFailed')
           return (
             <div

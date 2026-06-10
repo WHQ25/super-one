@@ -36,10 +36,10 @@ interface State {
 }
 
 const STATUS_DOT: Record<McpServerInfo['status'], string> = {
-  connected: 'bg-green-500',
-  pending: 'bg-yellow-500',
-  'needs-auth': 'bg-yellow-500',
-  failed: 'bg-red-500',
+  connected: 'bg-success',
+  pending: 'bg-warning',
+  'needs-auth': 'bg-warning',
+  failed: 'bg-error',
   disabled: 'bg-muted-foreground/40',
 }
 
@@ -211,9 +211,9 @@ export function McpSlashPopup({ onClose }: { onClose: () => void }) {
   }, [state.mode, state.loading, state.error, harness, t])
 
   const bannerTone = state.error
-    ? 'text-red-600 dark:text-red-400'
+    ? 'text-error'
     : state.mode === 'live'
-    ? 'text-green-600 dark:text-green-400'
+    ? 'text-success'
     : 'text-muted-foreground'
 
   return (
@@ -294,8 +294,8 @@ export function McpSlashPopup({ onClose }: { onClose: () => void }) {
                         className={cn(
                           'shrink-0 rounded px-1 py-px text-[9px] font-medium uppercase',
                           server.status === 'needs-auth'
-                            ? 'bg-yellow-500/15 text-yellow-600 dark:text-yellow-400'
-                            : 'bg-red-500/15 text-red-600 dark:text-red-400',
+                            ? 'bg-warning/15 text-warning'
+                            : 'bg-error/15 text-error',
                         )}
                       >
                         {server.status === 'needs-auth' ? t('chat.mcpPopup.authBadge') : t('chat.mcpPopup.errorBadge')}
@@ -321,7 +321,7 @@ export function McpSlashPopup({ onClose }: { onClose: () => void }) {
                   // ml aligns the guide line with the icon center: button px-2 (8px) + size-7 icon half (14px) = 22px
                   <div className="ml-[22px] mb-1 space-y-0.5 border-l border-border pl-2">
                     {hasErrorDetail && (
-                      <p className="whitespace-pre-wrap break-words rounded px-2 py-1 font-mono text-[10px] text-red-600 dark:text-red-400">
+                      <p className="whitespace-pre-wrap break-words rounded px-2 py-1 font-mono text-[10px] text-error">
                         {server.error}
                       </p>
                     )}

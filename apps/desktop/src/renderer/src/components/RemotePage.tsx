@@ -144,7 +144,7 @@ export function RemotePage() {
             <Tooltip>
               <TooltipTrigger asChild>
                 <span className="inline-flex items-center">
-                  <Cloud className={cn('size-3.5', remoteStatus.relayConnected ? 'text-green-500' : 'text-muted-foreground/40')} />
+                  <Cloud className={cn('size-3.5', remoteStatus.relayConnected ? 'text-success' : 'text-muted-foreground/40')} />
                 </span>
               </TooltipTrigger>
               <TooltipContent>
@@ -154,7 +154,7 @@ export function RemotePage() {
             <Tooltip>
               <TooltipTrigger asChild>
                 <span className="inline-flex items-center">
-                  <Wifi className={cn('size-3.5', remoteStatus.lanActive ? 'text-green-500' : 'text-muted-foreground/40')} />
+                  <Wifi className={cn('size-3.5', remoteStatus.lanActive ? 'text-success' : 'text-muted-foreground/40')} />
                 </span>
               </TooltipTrigger>
               <TooltipContent>
@@ -259,7 +259,7 @@ export function RemotePage() {
             {pairedDevices.map((device) => (
               <li key={device.id} className="flex items-center justify-between text-sm">
                 <div className="flex items-center gap-2">
-                  <span className={cn('size-2 rounded-full', device.online ? 'bg-green-500' : 'bg-muted-foreground/40')} />
+                  <span className={cn('size-2 rounded-full', device.online ? 'bg-success' : 'bg-muted-foreground/40')} />
                   <span>{device.name}</span>
                   <span className="text-xs text-muted-foreground">
                     {device.online ? t('resources.remote.online') : device.lastSeenAt ? t('resources.remote.lastSeen', { date: new Date(device.lastSeenAt).toLocaleDateString() }) : t('resources.remote.neverConnected')}
@@ -311,7 +311,7 @@ export function RemotePage() {
             >
               {relayStatus === 'checking' ? t('resources.remote.checking') : t('resources.remote.test')}
             </Button>
-            {relayStatus === 'ok' && <span className="text-xs text-green-600">{t('resources.remote.relayConnected')}</span>}
+            {relayStatus === 'ok' && <span className="text-xs text-success">{t('resources.remote.relayConnected')}</span>}
             {relayStatus === 'error' && <span className="text-xs text-destructive">{t('resources.remote.relayUnreachable')}</span>}
           </div>
           <p className="text-xs text-muted-foreground">

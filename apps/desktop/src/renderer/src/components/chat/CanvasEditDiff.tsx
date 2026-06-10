@@ -447,7 +447,7 @@ export function CanvasEditDiff({ params }: CanvasEditDiffProps) {
   return (
     <div
       ref={containerRef}
-      className="rounded bg-background/70 text-[11px] font-mono leading-relaxed text-foreground overflow-hidden max-h-[300px]"
+      className="rounded bg-transparent text-[11px] font-mono leading-relaxed text-foreground overflow-hidden max-h-[300px]"
       style={{ contain: 'inline-size' }}
     >
       <canvas ref={canvasRef} className="block" />

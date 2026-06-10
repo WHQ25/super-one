@@ -173,8 +173,9 @@ export const WithSuggestions: Story = {
         input: { command: 'gh pr create --title "..."' },
         allowAlwaysAllow: false,
         suggestions: [
-          { kind: 'add_rule', label: 'Allow `gh pr *` going forward', detail: 'permissions.allow += Bash(gh pr:*)' },
-          { kind: 'set_mode', label: 'Switch to acceptEdits', detail: 'Bypass per-tool prompts for this session.' },
+          { type: 'addRules', rules: [{ toolName: 'Bash', ruleContent: 'gh pr:*' }], destination: 'session' },
+          { type: 'setMode', mode: 'acceptEdits' },
+          { type: 'setMode', mode: 'auto' },
         ],
         riskLevel: 'low',
       }} />

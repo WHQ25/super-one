@@ -3,7 +3,7 @@ import { Trans, useTranslation } from 'react-i18next'
 import { Button } from '@superone/ui/components/ui/button'
 import { Kbd } from '@superone/ui/components/ui/kbd'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@superone/ui/components/ui/tooltip'
-import { useChatStore, useActiveSession } from '@/stores/chat'
+import { useChatStore, useActiveSession, selectClaudeModels, selectClaudeAccount } from '@/stores/chat'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
 import { Circle, CheckCircle2, ChevronDown, ChevronUp, ShieldAlert, AlertTriangle } from 'lucide-react'
@@ -12,6 +12,7 @@ import { getToolDisplay, parseMcpToolName } from './tool-display'
 import { EditDiff, WriteDiff } from './ToolBlock'
 import { modes as permissionModes } from './PermissionModeSelector'
 import { useRestoreChatInputFocus } from '@/hooks/useRestoreChatInputFocus'
+import { eligibilityFromStore } from '@/lib/auto-mode-eligibility'
 import { ElicitationForm, isElicitationFormValid } from './ElicitationForm'
 import { getPermissionPromptConfig } from './permission-prompt/permission-prompt-config'
 
@@ -110,6 +111,9 @@ export function PermissionPrompt() {
   const setPermissionMode = useChatStore((s) => s.setPermissionMode)
   const cwd = useActiveSession((s) => s.cwd)
   const homedir = useActiveSession((s) => s.homedir)
+  const account = useChatStore(selectClaudeAccount)
+  const availableModels = useChatStore(selectClaudeModels)
+  const selectedModel = useActiveSession((s) => s.selectedModel)
   const [feedback, setFeedback] = useState('')
   const [focusedIdx, setFocusedIdx] = useState(0)
   const [selectedSuggestions, setSelectedSuggestions] = useState<Set<number>>(new Set())
@@ -128,6 +132,11 @@ export function PermissionPrompt() {
   const promptConfig = getPermissionPromptConfig(sessionProvider, allowAlwaysAllow, isElicitation)
   const isCodexDecisionPrompt = promptConfig.buttonCount === 4
   const isEditTool = toolName === 'Write' || toolName === 'Edit' || toolName === 'NotebookEdit'
+  const autoEligible = useMemo(
+    () => eligibilityFromStore(account, availableModels.find((m) => m.id === selectedModel)).ok,
+    [account, availableModels, selectedModel],
+  )
+  const fastMode = autoEligible ? 'auto' : 'acceptEdits'
   const suggestionsCount = pendingPermission?.suggestions?.length ?? 0
   const [formValues, setFormValues] = useState<Record<string, unknown>>({})
 
@@ -179,8 +188,8 @@ export function PermissionPrompt() {
   const handleAcceptEdit = useCallback(() => {
     if (!requestId) return
     respondToPermission(requestId, true)
-    setPermissionMode('acceptEdits')
-  }, [requestId, respondToPermission, setPermissionMode])
+    setPermissionMode(fastMode)
+  }, [requestId, respondToPermission, setPermissionMode, fastMode])
 
   const handleAlwaysAllow = useCallback(() => {
     if (!requestId) return
@@ -208,11 +217,24 @@ export function PermissionPrompt() {
       return
     }
     if (selectedSuggestions.size > 0) {
+      const sugg = pendingPermission?.suggestions
+      const upgradeIdx = autoEligible
+        ? [...selectedSuggestions].find((i) => {
+            const s = sugg?.[i]
+            return s?.type === 'setMode' && s.mode === 'acceptEdits'
+          })
+        : undefined
+      if (upgradeIdx !== undefined) {
+        const rest = [...selectedSuggestions].filter((i) => i !== upgradeIdx)
+        respondToPermission(requestId, true, undefined, undefined, rest.length ? rest : undefined)
+        setPermissionMode('auto')
+        return
+      }
       respondToPermission(requestId, true, undefined, undefined, [...selectedSuggestions])
     } else {
       respondToPermission(requestId, true)
     }
-  }, [requestId, respondToPermission, selectedSuggestions, isElicitation, formValues])
+  }, [requestId, respondToPermission, selectedSuggestions, isElicitation, formValues, autoEligible, pendingPermission, setPermissionMode])
 
   const handleElicitationAlwaysAllow = useCallback(() => {
     if (!requestId) return
@@ -338,7 +360,11 @@ export function PermissionPrompt() {
           </button>
         ) : (
           <div className="rounded-lg border border-border bg-card p-3">
-            <div className="mb-2 flex items-start justify-between gap-2">
+            <button
+              type="button"
+              onClick={() => setIsCollapsed(true)}
+              className="group mb-2 flex w-full cursor-pointer items-start justify-between gap-2 text-left"
+            >
               <div className="flex items-start gap-1.5">
                 <AlertTriangle className={`mt-0.5 size-3.5 shrink-0 ${riskColor}`} />
                 <div className="min-w-0">
@@ -348,14 +374,8 @@ export function PermissionPrompt() {
                   )}
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => setIsCollapsed(true)}
-                className="cursor-pointer text-muted-foreground hover:text-foreground"
-              >
-                <ChevronDown className="size-3.5" />
-              </button>
-            </div>
+              <ChevronDown className="size-3.5 shrink-0 text-muted-foreground group-hover:text-foreground" />
+            </button>
             {elicitationForm.length > 0 && (
               <ElicitationForm fields={elicitationForm} value={formValues} onChange={setFormValues} />
             )}
@@ -400,6 +420,9 @@ export function PermissionPrompt() {
   }
 
   const { input, decisionReason, blockedPath, suggestions } = pendingPermission
+  const displaySuggestions = autoEligible
+    ? suggestions?.map((s) => (s.type === 'setMode' && s.mode === 'acceptEdits' ? { ...s, mode: 'auto' } : s))
+    : suggestions
   const display = getToolDisplay(toolName ?? '', input, cwd, homedir)
   const isBash = toolName === 'Bash'
   const isSandboxNetwork = toolName === 'SandboxNetworkAccess'
@@ -451,55 +474,51 @@ export function PermissionPrompt() {
             <div className="rounded-lg border border-border bg-card p-3">
               {isSandboxNetwork ? (
                 <>
-                  <div className="mb-2 flex items-center justify-between text-xs">
-                    <div className="flex items-center gap-1.5">
-                      <ShieldAlert className="size-3.5 shrink-0 text-amber-500" />
-                      <span className="font-medium text-amber-500">{t('chat.permission.allowSandboxNetwork')}</span>
-                    </div>
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <button type="button" onClick={() => setIsCollapsed(true)} className="cursor-pointer text-muted-foreground hover:text-foreground">
-                            <ChevronDown className="size-3.5" />
-                          </button>
-                        </TooltipTrigger>
-                        <TooltipContent side="top"><Trans i18nKey="tooltips.collapsePermission" components={{ kbd: <Kbd variant="inline" /> }} /></TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                  </div>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button type="button" onClick={() => setIsCollapsed(true)} className="group mb-2 flex w-full cursor-pointer items-center justify-between gap-2 text-xs">
+                          <div className="flex items-center gap-1.5">
+                            <ShieldAlert className="size-3.5 shrink-0 text-amber-500" />
+                            <span className="font-medium text-amber-500">{t('chat.permission.allowSandboxNetwork')}</span>
+                          </div>
+                          <ChevronDown className="size-3.5 shrink-0 text-muted-foreground group-hover:text-foreground" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="top"><Trans i18nKey="tooltips.collapsePermission" components={{ kbd: <Kbd variant="inline" /> }} /></TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
                   {typeof input.host === 'string' && input.host && (
                     <p className="mb-2 font-mono text-xs text-muted-foreground">{input.host}</p>
                   )}
                 </>
               ) : (
                 <>
-                  <div className="mb-2 flex items-center justify-between text-xs">
-                    <div className="flex items-center gap-1.5">
-                      {miniAppInfo ? (
-                        <MiniAppIcon appId={miniAppInfo.appId} className="size-3.5 shrink-0" />
-                      ) : (
-                        <ToolIcon icon={display.icon} className="size-3.5 shrink-0 text-muted-foreground" />
-                      )}
-                      {miniAppInfo ? (
-                        <MiniAppToolLabel info={miniAppInfo} textSize="text-xs" />
-                      ) : (
-                        <span className="font-medium text-foreground">{toolName}</span>
-                      )}
-                      {isBash && typeof input.description === 'string' && input.description && (
-                        <span className="min-w-0 truncate text-muted-foreground">{input.description}</span>
-                      )}
-                    </div>
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <button type="button" onClick={() => setIsCollapsed(true)} className="cursor-pointer text-muted-foreground hover:text-foreground">
-                            <ChevronDown className="size-3.5" />
-                          </button>
-                        </TooltipTrigger>
-                        <TooltipContent side="top"><Trans i18nKey="tooltips.collapsePermission" components={{ kbd: <Kbd variant="inline" /> }} /></TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                  </div>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button type="button" onClick={() => setIsCollapsed(true)} className="group mb-2 flex w-full cursor-pointer items-center justify-between gap-2 text-xs">
+                          <div className="flex min-w-0 items-center gap-1.5">
+                            {miniAppInfo ? (
+                              <MiniAppIcon appId={miniAppInfo.appId} className="size-3.5 shrink-0" />
+                            ) : (
+                              <ToolIcon icon={display.icon} className="size-3.5 shrink-0 text-muted-foreground" />
+                            )}
+                            {miniAppInfo ? (
+                              <MiniAppToolLabel info={miniAppInfo} textSize="text-xs" />
+                            ) : (
+                              <span className="font-medium text-foreground">{toolName}</span>
+                            )}
+                            {isBash && typeof input.description === 'string' && input.description && (
+                              <span className="min-w-0 truncate text-muted-foreground">{input.description}</span>
+                            )}
+                          </div>
+                          <ChevronDown className="size-3.5 shrink-0 text-muted-foreground group-hover:text-foreground" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="top"><Trans i18nKey="tooltips.collapsePermission" components={{ kbd: <Kbd variant="inline" /> }} /></TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
                   {isBash && !!input.dangerouslyDisableSandbox && (
                     <div className="mb-2 flex items-start gap-1.5 rounded border border-amber-500/30 bg-amber-500/10 px-2 py-1.5">
                       <ShieldAlert className="mt-0.5 size-3.5 shrink-0 text-amber-500" />
@@ -516,7 +535,10 @@ export function PermissionPrompt() {
                 </p>
               )}
               {(toolName === 'Edit' || toolName === 'Write') && (
-                <div className="mb-2 max-h-64 overflow-y-auto rounded bg-muted/50 text-xs">
+                <div
+                  className="mb-2 max-h-64 overflow-y-auto rounded bg-muted/50 text-xs"
+                  style={{ '--diff-gutter-bg': 'color-mix(in oklch, var(--card), var(--muted) 50%)' } as React.CSSProperties}
+                >
                   {toolName === 'Edit' && <EditDiff params={input} />}
                   {toolName === 'Write' && <WriteDiff params={input} />}
                 </div>
@@ -627,21 +649,26 @@ export function PermissionPrompt() {
                 )}
                 {hasSuggestionRow && (
                   <div className="grid grid-cols-1 gap-1.5">
-                    {suggestions?.map((s, i) => {
+                    {displaySuggestions?.map((s, i) => {
                       const isSelected = selectedSuggestions.has(i)
+                      const mode = s.type === 'setMode' ? permissionModes.find((m) => m.id === s.mode) : undefined
                       return (
                         <button
                           key={i}
                           type="button"
                           className={`flex h-7 w-full cursor-pointer items-center gap-1.5 rounded border px-2.5 text-[11px] transition-colors ${
                             isSelected
-                              ? 'border-success/50 bg-success/10 text-success hover:bg-success/20'
-                              : 'border-border text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                              ? (mode
+                                  ? `border-transparent ${mode.activeBg} ${mode.color}`
+                                  : 'border-success/50 bg-success/10 text-success hover:bg-success/20')
+                              : (mode
+                                  ? `border-border text-muted-foreground ${mode.hoverBg}`
+                                  : 'border-border text-muted-foreground hover:bg-success/10 hover:text-success')
                           }`}
                           onClick={() => toggleSuggestion(i)}
                         >
                           {isSelected
-                            ? <CheckCircle2 className="size-3.5 shrink-0 text-success" />
+                            ? <CheckCircle2 className={`size-3.5 shrink-0 ${mode ? '' : 'text-success'}`} />
                             : <Circle className="size-3.5 shrink-0 text-muted-foreground/40" />
                           }
                           <span className="flex min-w-0 items-center gap-1 truncate"><SuggestionContent s={s} /></span>

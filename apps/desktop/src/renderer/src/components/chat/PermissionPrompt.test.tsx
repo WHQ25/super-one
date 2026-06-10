@@ -19,11 +19,14 @@ const activeSessionState = {
   sessionProvider: 'codex',
   cwd: '/repo',
   homedir: '/Users/test',
+  selectedModel: 'model-1',
 }
 
 vi.mock('@/stores/chat', () => ({
   useChatStore: (selector: (state: typeof chatState) => unknown) => selector(chatState),
   useActiveSession: (selector: (state: typeof activeSessionState) => unknown) => selector(activeSessionState),
+  selectClaudeModels: () => [],
+  selectClaudeAccount: () => ({}),
 }))
 
 vi.mock('@/components/ui/button', () => ({
@@ -59,16 +62,6 @@ vi.mock('@/components/miniapp/MiniAppIcon', () => ({
 vi.mock('./PermissionModeSelector', () => ({
   modes: [],
 }))
-
-vi.mock('lucide-react', () => ({
-  Bot: () => <span>bot</span>,
-  Circle: () => <span>circle</span>,
-  CheckCircle2: () => <span>check</span>,
-  ChevronDown: () => <span>chevron-down</span>,
-  ChevronUp: () => <span>chevron-up</span>,
-  ShieldAlert: () => <span>alert</span>,
-}))
-
 
 import { PermissionPrompt } from './PermissionPrompt'
 

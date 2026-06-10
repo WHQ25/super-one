@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { render, screen, act } from '@testing-library/react'
+import { render, screen, act, fireEvent } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactNode, ButtonHTMLAttributes } from 'react'
 import type { AgentEvent } from '@superone/shared/agent-types'
@@ -127,7 +127,11 @@ function seedProjectWithActiveSession(projectPath: string, activeSid: string) {
   })
 }
 
-function firePermissionRequest(sessionId: string | undefined, requestId = 'r1') {
+function firePermissionRequest(
+  sessionId: string | undefined,
+  requestId = 'r1',
+  suggestions?: Array<Record<string, unknown>>,
+) {
   const event: AgentEvent = {
     type: 'permission_request',
     projectPath: '/proj',
@@ -137,6 +141,7 @@ function firePermissionRequest(sessionId: string | undefined, requestId = 'r1') 
       toolName: 'Edit',
       input: { file_path: '/proj/foo.ts' },
       allowAlwaysAllow: false,
+      suggestions,
     },
   } as never
   act(() => {
@@ -144,8 +149,36 @@ function firePermissionRequest(sessionId: string | undefined, requestId = 'r1') 
   })
 }
 
+function enableAutoMode(sessionId: string) {
+  useChatStore.setState((s) => ({
+    harnessResources: {
+      ...s.harnessResources,
+      claude: {
+        models: [{ id: 'opus', supportsAutoMode: true }],
+        account: { subscriptionType: 'Claude Max', apiProvider: 'firstParty' },
+      },
+    } as never,
+  }))
+  useChatStore.setState((s) => {
+    const proj = s.projectSessions['/proj']
+    return {
+      projectSessions: {
+        ...s.projectSessions,
+        '/proj': {
+          ...proj,
+          _sessions: {
+            ...proj._sessions,
+            [sessionId]: { ...proj._sessions[sessionId], selectedModel: 'opus' },
+          },
+        },
+      },
+    }
+  })
+}
+
 beforeEach(() => {
   useChatStore.setState({ projectSessions: {}, activeProject: null, remoteSessions: {} })
+  useChatStore.setState((s) => ({ harnessResources: { ...s.harnessResources, claude: null } }))
   vi.clearAllMocks()
 })
 
@@ -198,6 +231,57 @@ describe('PermissionPrompt + real store integration', () => {
     rerender(<PermissionPrompt />)
 
     expect(container.textContent).toBe('')
+  })
+
+  it('collapses the prompt when the header (not just the chevron) is clicked', () => {
+    seedProjectWithActiveSession('/proj', 'alpha')
+    firePermissionRequest('alpha')
+
+    render(<PermissionPrompt />)
+    expect(screen.queryByText('write-diff')).toBeNull()
+    expect(screen.queryByText('edit-diff')).not.toBeNull()
+
+    fireEvent.click(screen.getByText('Edit'))
+
+    expect(screen.queryByText('edit-diff')).toBeNull()
+  })
+
+  it('upgrades an acceptEdits setMode suggestion to auto when the account supports auto mode', async () => {
+    seedProjectWithActiveSession('/proj', 'alpha')
+    enableAutoMode('alpha')
+    firePermissionRequest('alpha', 'r1', [{ type: 'setMode', mode: 'acceptEdits', destination: 'session' }])
+
+    render(<PermissionPrompt />)
+
+    const suggestionBtn = screen.getByText(/Switch to auto/).closest('button')!
+    fireEvent.click(suggestionBtn)
+    await act(async () => {
+      fireEvent.click(screen.getByText('Allow'))
+      await Promise.resolve()
+    })
+
+    expect(mockWindowAgent.respondToPermission).toHaveBeenCalledWith(
+      expect.any(String), 'r1', true, undefined, undefined, undefined, undefined, undefined,
+    )
+    expect(mockWindowAgent.setPermissionMode).toHaveBeenCalledWith('/proj', 'auto')
+  })
+
+  it('keeps forwarding the acceptEdits suggestion when auto mode is unavailable', async () => {
+    seedProjectWithActiveSession('/proj', 'alpha')
+    firePermissionRequest('alpha', 'r1', [{ type: 'setMode', mode: 'acceptEdits', destination: 'session' }])
+
+    render(<PermissionPrompt />)
+
+    fireEvent.click(screen.getByText(/Switch to acceptEdits/).closest('button')!)
+    await act(async () => {
+      fireEvent.click(screen.getByText('Allow'))
+      await Promise.resolve()
+    })
+
+    expect(mockWindowAgent.respondToPermission).toHaveBeenCalledWith(
+      expect.any(String), 'r1', true, undefined, undefined, [0], undefined, undefined,
+    )
+    expect(mockWindowAgent.setPermissionMode).not.toHaveBeenCalled()
   })
 
   it('leaves the active-session prompt intact when message_interrupted targets a different session', () => {

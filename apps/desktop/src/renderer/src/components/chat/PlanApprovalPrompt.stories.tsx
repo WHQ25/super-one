@@ -12,7 +12,9 @@ function StoryShell({ children, width = 720 }: { children: ReactNode; width?: nu
   )
 }
 
-function SeedPlanApproval({ request }: { request: PlanApprovalRequest | null }) {
+const AUTO_MODEL_ID = 'claude-opus-4-8'
+
+function SeedPlanApproval({ request, autoEligible }: { request: PlanApprovalRequest | null; autoEligible?: boolean }) {
   useEffect(() => {
     const apply = (): void => {
       useChatStore.setState((s) => {
@@ -24,14 +26,33 @@ function SeedPlanApproval({ request }: { request: PlanApprovalRequest | null }) 
         if (!sid) return s
         const session = project._sessions[sid]
         if (!session) return s
+        const existing = s.harnessResources.claude
         return {
+          ...(autoEligible ? {
+            harnessResources: {
+              ...s.harnessResources,
+              claude: {
+                models: [{ id: AUTO_MODEL_ID, name: 'Opus 4.8', description: '', supportsAutoMode: true }],
+                account: { subscriptionType: 'Claude Max' },
+                slashCommands: existing?.slashCommands ?? [],
+                skills: existing?.skills ?? [],
+                commands: existing?.commands ?? [],
+                agents: existing?.agents ?? [],
+                outputStyles: existing?.outputStyles ?? [],
+              },
+            },
+          } : {}),
           projectSessions: {
             ...s.projectSessions,
             [projectId]: {
               ...project,
               _sessions: {
                 ...project._sessions,
-                [sid]: { ...session, pendingPlanApproval: request },
+                [sid]: {
+                  ...session,
+                  pendingPlanApproval: request,
+                  ...(autoEligible ? { selectedModel: AUTO_MODEL_ID } : {}),
+                },
               },
             },
           },
@@ -41,7 +62,7 @@ function SeedPlanApproval({ request }: { request: PlanApprovalRequest | null }) 
     apply()
     const t = setTimeout(apply, 0)
     return () => clearTimeout(t)
-  }, [request])
+  }, [request, autoEligible])
   return null
 }
 
@@ -105,6 +126,20 @@ export const LongPlan: Story = {
         requestId: 'pa-long',
         planContent: LONG_PLAN,
         planFilePath: '/tmp/super-one-plans/per-session-ownership.md',
+        allowedPrompts: [],
+      }} />
+      <Story />
+    </>
+  )],
+}
+
+export const AutoModeAfterApproval: Story = {
+  decorators: [(Story) => (
+    <>
+      <SeedPlanApproval autoEligible request={{
+        requestId: 'pa-auto',
+        planContent: SHORT_PLAN,
+        planFilePath: '/tmp/super-one-plans/auto-plan.md',
         allowedPrompts: [],
       }} />
       <Story />

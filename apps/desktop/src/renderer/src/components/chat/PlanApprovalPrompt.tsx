@@ -188,7 +188,7 @@ export function PlanApprovalPrompt() {
                 className={`h-7 cursor-pointer gap-1 px-3 text-xs text-white ${
                   isAutoTarget
                     ? 'bg-amber-600 hover:bg-amber-500'
-                    : 'bg-primary hover:bg-primary/90'
+                    : 'bg-purple-600 hover:bg-purple-500'
                 }`}
                 onClick={handleApprove}
               >
@@ -197,7 +197,7 @@ export function PlanApprovalPrompt() {
                 {!isFeedbackFocused && (
                   <Kbd
                     variant="inline"
-                    className={`ml-1 ${isAutoTarget ? 'text-amber-200/80' : 'text-primary-foreground/80'}`}
+                    className={`ml-1 ${isAutoTarget ? 'text-amber-200/80' : 'text-purple-200/80'}`}
                   >↵</Kbd>
                 )}
               </Button>
@@ -260,7 +260,7 @@ export function PlanApprovalPrompt() {
                   className={`h-7 flex-1 cursor-pointer gap-1 px-3 text-xs text-white ${
                     isAutoTarget
                       ? 'bg-amber-600 hover:bg-amber-500'
-                      : 'bg-primary hover:bg-primary/90'
+                      : 'bg-purple-600 hover:bg-purple-500'
                   }`}
                   onClick={handleApprove}
                 >
@@ -269,7 +269,7 @@ export function PlanApprovalPrompt() {
                   {!isFeedbackFocused && (
                     <Kbd
                       variant="inline"
-                      className={`ml-1 ${isAutoTarget ? 'text-amber-200/80' : 'text-primary-foreground/80'}`}
+                      className={`ml-1 ${isAutoTarget ? 'text-amber-200/80' : 'text-purple-200/80'}`}
                     >↵</Kbd>
                   )}
                 </Button>
@@ -307,18 +307,20 @@ export function PlanApprovalPrompt() {
               switchAfterApproval
                 ? isAutoTarget
                   ? 'border-amber-500/50 bg-amber-500/10 text-amber-600 hover:bg-amber-500/20 dark:text-amber-500'
-                  : 'border-primary/50 bg-primary/10 text-primary hover:bg-primary/20'
-                : 'border-border text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                  : 'border-purple-500/50 bg-purple-500/10 text-purple-600 hover:bg-purple-500/20 dark:text-purple-400'
+                : isAutoTarget
+                  ? 'border-border text-muted-foreground hover:bg-amber-500/10'
+                  : 'border-border text-muted-foreground hover:bg-purple-500/10'
             }`}
             onClick={() => setSwitchAfterApproval((prev) => !prev)}
           >
             {switchAfterApproval
-              ? <CheckCircle2 className={`size-3.5 shrink-0 ${isAutoTarget ? 'text-amber-600 dark:text-amber-400' : 'text-primary'}`} />
+              ? <CheckCircle2 className={`size-3.5 shrink-0 ${isAutoTarget ? 'text-amber-600 dark:text-amber-400' : 'text-purple-600 dark:text-purple-400'}`} />
               : <Circle className="size-3.5 shrink-0 text-muted-foreground/40" />
             }
             <span className="flex min-w-0 items-center gap-1">
               <span>{t('chat.plan.switchTo')}</span>
-              <span className={`inline-flex items-center gap-0.5 font-medium ${isAutoTarget ? 'text-amber-600 dark:text-amber-400' : 'text-primary'}`}>
+              <span className={`inline-flex items-center gap-0.5 font-medium ${isAutoTarget ? 'text-amber-600 dark:text-amber-400' : 'text-purple-600 dark:text-purple-400'}`}>
                 {isAutoTarget ? <Zap className="size-3" /> : <FastForward className="size-3" />}
                 {t(isAutoTarget ? 'chat.plan.auto' : 'chat.plan.acceptEdits')}
               </span>

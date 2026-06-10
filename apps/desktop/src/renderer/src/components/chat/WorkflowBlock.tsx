@@ -251,7 +251,7 @@ export function WorkflowBlock({ toolBlock, resultBlock, isStreaming, defaultExpa
               </>
             ) : (
               <>
-                <Check className="size-3 shrink-0 text-green-600 dark:text-green-400" />
+                <Check className="size-3 shrink-0 text-success" />
                 <span>{t('chat.workflow.done', 'Workflow complete')}{elapsed > 0 ? ` · ${formatElapsed(elapsed)}` : ''}</span>
               </>
             )}

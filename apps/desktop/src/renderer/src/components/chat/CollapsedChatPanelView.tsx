@@ -32,7 +32,7 @@ export function CollapsedChatPanelView({
       onMouseDown={onMouseDown}
     >
       {isUnseen ? (
-        <Check className="size-5 shrink-0 text-green-600 dark:text-green-400" />
+        <Check className="size-5 shrink-0 text-success" />
       ) : (
         <Bot className={cn('size-5 shrink-0 text-foreground/80', isRunning && 'animate-pulse')} />
       )}

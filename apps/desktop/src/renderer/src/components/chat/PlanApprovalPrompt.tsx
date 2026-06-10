@@ -204,24 +204,24 @@ export function PlanApprovalPrompt() {
             ) : (
               <Button
                 size="sm"
-                className="h-7 cursor-pointer gap-1 bg-green-600 px-3 text-xs text-white hover:bg-green-500"
+                className="h-7 cursor-pointer gap-1 bg-success px-3 text-xs text-success-foreground hover:bg-success/90"
                 onClick={handleApprove}
               >
                 <Check className="size-3" />
                 {t('chat.plan.approve')}
                 {!isFeedbackFocused && (
-                  <Kbd variant="inline" className="ml-1 text-green-200/80">↵</Kbd>
+                  <Kbd variant="inline" className="ml-1 text-success-foreground/70">↵</Kbd>
                 )}
               </Button>
             )}
             <Button
               size="sm"
-              className="h-7 cursor-pointer gap-1 bg-red-700 px-3 text-xs text-white hover:bg-red-600"
+              className="h-7 cursor-pointer gap-1 bg-destructive px-3 text-xs text-destructive-foreground hover:bg-destructive/90"
               onClick={handleReject}
             >
               <X className="size-3" />
               {t('chat.plan.reject')}
-              <Kbd variant="inline" className="ml-1 text-red-200/80">{isFeedbackFocused ? '↵' : 'esc'}</Kbd>
+              <Kbd variant="inline" className="ml-1 text-destructive-foreground/70">{isFeedbackFocused ? '↵' : 'esc'}</Kbd>
             </Button>
             <div className="relative flex flex-1 items-center">
               <input
@@ -276,19 +276,19 @@ export function PlanApprovalPrompt() {
               ) : (
                 <Button
                   size="sm"
-                  className="h-7 flex-1 cursor-pointer gap-1 bg-green-600 px-3 text-xs text-white hover:bg-green-500"
+                  className="h-7 flex-1 cursor-pointer gap-1 bg-success px-3 text-xs text-success-foreground hover:bg-success/90"
                   onClick={handleApprove}
                 >
                   <Check className="size-3" />
                   {t('chat.plan.approve')}
                   {!isFeedbackFocused && (
-                    <Kbd variant="inline" className="ml-1 text-green-200/80">↵</Kbd>
+                    <Kbd variant="inline" className="ml-1 text-success-foreground/70">↵</Kbd>
                   )}
                 </Button>
               )}
               <Button
                 size="sm"
-                className="h-7 flex-1 cursor-pointer gap-1 bg-red-700 px-3 text-xs text-white hover:bg-red-600"
+                className="h-7 flex-1 cursor-pointer gap-1 bg-destructive px-3 text-xs text-destructive-foreground hover:bg-destructive/90"
                 onClick={handleReject}
               >
                 <X className="size-3" />

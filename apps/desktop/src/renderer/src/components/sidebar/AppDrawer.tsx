@@ -292,8 +292,8 @@ export function AppDrawer() {
                 {installStatus && (
                   <div className={cn(
                     'mx-2 mb-1 rounded-md px-2.5 py-1.5 text-xs',
-                    installStatus.type === 'success' && 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
-                    installStatus.type === 'error' && 'bg-red-500/10 text-red-600 dark:text-red-400',
+                    installStatus.type === 'success' && 'bg-success/10 text-success',
+                    installStatus.type === 'error' && 'bg-error/10 text-error',
                   )}>
                     {installStatus.message}
                   </div>

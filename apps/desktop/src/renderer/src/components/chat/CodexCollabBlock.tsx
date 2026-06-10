@@ -358,7 +358,7 @@ export function CodexCollabBlock({ items, isStreaming }: { items: CodexCollabToo
             </>
           ) : (
             <>
-              <Check className="size-3 shrink-0 text-green-600 dark:text-green-400" />
+              <Check className="size-3 shrink-0 text-success" />
               <span>{t('chat.subagent.done')}</span>
             </>
           )}
@@ -521,7 +521,7 @@ export function CodexSubagentMarker({ item }: { item: CodexCollabToolCallItem })
             </>
           ) : (
             <>
-              <Check className="size-3 shrink-0 text-green-600 dark:text-green-400" />
+              <Check className="size-3 shrink-0 text-success" />
               <span>{t('chat.subagent.done')}</span>
             </>
           )}

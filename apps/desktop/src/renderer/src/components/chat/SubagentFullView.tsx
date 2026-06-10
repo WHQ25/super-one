@@ -166,7 +166,7 @@ export function SubagentFullView({ view }: { view: SubagentViewState }) {
           ) : isStopped ? (
             <CircleSlash className="size-3 text-muted-foreground" />
           ) : (
-            <Check className="size-3 text-green-600 dark:text-green-400" />
+            <Check className="size-3 text-success" />
           )}
           {toolCount > 0 && (
             <span className="inline-flex items-center gap-0.5">

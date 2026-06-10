@@ -363,7 +363,7 @@ export function PermissionPrompt() {
               <Button
                 size="sm"
                 disabled={!formValid}
-                className="h-7 cursor-pointer bg-green-700 px-3 text-xs text-white hover:bg-green-600 disabled:cursor-not-allowed disabled:opacity-50 focus:ring-2 focus:ring-green-600 dark:focus:ring-green-400 focus:outline-none"
+                className="h-7 cursor-pointer bg-success px-3 text-xs text-success-foreground hover:bg-success/90 disabled:cursor-not-allowed disabled:opacity-50 focus:ring-2 focus:ring-success focus:outline-none"
                 onClick={handleAllow}
               >
                 {t('chat.permission.allow')}
@@ -380,7 +380,7 @@ export function PermissionPrompt() {
               )}
               <Button
                 size="sm"
-                className="h-7 cursor-pointer bg-red-700 px-3 text-xs text-white hover:bg-red-600 focus:ring-2 focus:ring-red-600 dark:focus:ring-red-400 focus:outline-none"
+                className="h-7 cursor-pointer bg-destructive px-3 text-xs text-destructive-foreground hover:bg-destructive/90 focus:ring-2 focus:ring-destructive focus:outline-none"
                 onClick={handleElicitationDecline}
               >
                 {t('chat.permission.decline')}
@@ -551,11 +551,11 @@ export function PermissionPrompt() {
                     <Button
                       ref={(el) => { btnRefs.current[0] = el }}
                       size="sm"
-                      className="h-7 cursor-pointer bg-green-700 px-3 text-xs text-white hover:bg-green-600 focus:ring-2 focus:ring-green-600 dark:focus:ring-green-400 focus:outline-none"
+                      className="h-7 cursor-pointer bg-success px-3 text-xs text-success-foreground hover:bg-success/90 focus:ring-2 focus:ring-success focus:outline-none"
                       onClick={handleAllow}
                     >
                       {t('chat.permission.allow')}
-                      <Kbd variant="inline" className="ml-1 text-green-200/80">⏎</Kbd>
+                      <Kbd variant="inline" className="ml-1 text-success-foreground/70">⏎</Kbd>
                     </Button>
                     <Button
                       ref={(el) => { btnRefs.current[1] = el }}
@@ -569,11 +569,11 @@ export function PermissionPrompt() {
                     <Button
                       ref={(el) => { btnRefs.current[2] = el }}
                       size="sm"
-                      className="h-7 cursor-pointer bg-red-700 px-3 text-xs text-white hover:bg-red-600 focus:ring-2 focus:ring-red-600 dark:focus:ring-red-400 focus:outline-none"
+                      className="h-7 cursor-pointer bg-destructive px-3 text-xs text-destructive-foreground hover:bg-destructive/90 focus:ring-2 focus:ring-destructive focus:outline-none"
                       onClick={handleDeny}
                     >
                       {t('chat.permission.decline')}
-                      <Kbd variant="inline" className="ml-1 text-red-200/80">esc</Kbd>
+                      <Kbd variant="inline" className="ml-1 text-destructive-foreground/70">esc</Kbd>
                     </Button>
                     <Button
                       ref={(el) => { btnRefs.current[3] = el }}
@@ -589,25 +589,25 @@ export function PermissionPrompt() {
                     <Button
                       ref={(el) => { btnRefs.current[0] = el }}
                       size="sm"
-                      className="h-7 cursor-pointer bg-green-700 px-3 text-xs text-white hover:bg-green-600 focus:ring-2 focus:ring-green-600 dark:focus:ring-green-400 focus:outline-none"
+                      className="h-7 cursor-pointer bg-success px-3 text-xs text-success-foreground hover:bg-success/90 focus:ring-2 focus:ring-success focus:outline-none"
                       onClick={handleAllow}
                     >
                       {t('chat.permission.allow')}
                       {selectedSuggestions.size > 0 && (
-                        <span className="ml-1 text-[10px] text-green-200/80">+{selectedSuggestions.size}</span>
+                        <span className="ml-1 text-[10px] text-success-foreground/70">+{selectedSuggestions.size}</span>
                       )}
                       {!isFeedbackFocused && (
-                        <Kbd variant="inline" className="ml-1 text-green-200/80">⏎</Kbd>
+                        <Kbd variant="inline" className="ml-1 text-success-foreground/70">⏎</Kbd>
                       )}
                     </Button>
                     <Button
                       ref={(el) => { btnRefs.current[1] = el }}
                       size="sm"
-                      className="h-7 cursor-pointer bg-red-700 px-3 text-xs text-white hover:bg-red-600 focus:ring-2 focus:ring-red-600 dark:focus:ring-red-400 focus:outline-none"
+                      className="h-7 cursor-pointer bg-destructive px-3 text-xs text-destructive-foreground hover:bg-destructive/90 focus:ring-2 focus:ring-destructive focus:outline-none"
                       onClick={handleDeny}
                     >
                       {t('chat.permission.deny')}
-                      <Kbd variant="inline" className="ml-1 text-red-200/80">{isFeedbackFocused ? '↵' : 'esc'}</Kbd>
+                      <Kbd variant="inline" className="ml-1 text-destructive-foreground/70">{isFeedbackFocused ? '↵' : 'esc'}</Kbd>
                     </Button>
                     <div className="relative flex min-w-0 basis-full items-center @lg:basis-0 @lg:flex-1">
                       <input
@@ -635,13 +635,13 @@ export function PermissionPrompt() {
                           type="button"
                           className={`flex h-7 w-full cursor-pointer items-center gap-1.5 rounded border px-2.5 text-[11px] transition-colors ${
                             isSelected
-                              ? 'border-green-500/50 bg-green-500/10 text-green-500 hover:bg-green-500/20'
+                              ? 'border-success/50 bg-success/10 text-success hover:bg-success/20'
                               : 'border-border text-muted-foreground hover:bg-accent hover:text-accent-foreground'
                           }`}
                           onClick={() => toggleSuggestion(i)}
                         >
                           {isSelected
-                            ? <CheckCircle2 className="size-3.5 shrink-0 text-green-600 dark:text-green-400" />
+                            ? <CheckCircle2 className="size-3.5 shrink-0 text-success" />
                             : <Circle className="size-3.5 shrink-0 text-muted-foreground/40" />
                           }
                           <span className="flex min-w-0 items-center gap-1 truncate"><SuggestionContent s={s} /></span>

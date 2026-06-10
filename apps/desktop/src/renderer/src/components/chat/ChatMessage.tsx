@@ -227,7 +227,7 @@ function CopyButton({ copied, onClick, className }: { copied: boolean; onClick: 
       className={cn('cursor-pointer rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover/copy:opacity-100', className ?? 'absolute right-0 top-0')}
     >
       {copied
-        ? <Check className="size-3 text-green-600 dark:text-green-400" />
+        ? <Check className="size-3 text-success" />
         : <Copy className="size-3" />
       }
     </button>
@@ -532,22 +532,22 @@ export function CompactingIndicator() {
   }, [])
 
   return (
-    <div className="my-0.5 flex items-center gap-1.5 rounded bg-amber-500/10 px-2 py-1.5 text-xs">
-      <Loader2 className="size-3 shrink-0 animate-spin text-amber-600 dark:text-amber-400" />
-      <span className="font-medium text-amber-600 dark:text-amber-400">Compacting conversation…</span>
-      {elapsed > 0 && <span className="text-amber-600/60 dark:text-amber-400/60">{elapsed}s</span>}
+    <div className="my-0.5 flex items-center gap-1.5 rounded bg-warning/10 px-2 py-1.5 text-xs">
+      <Loader2 className="size-3 shrink-0 animate-spin text-warning" />
+      <span className="font-medium text-warning">Compacting conversation…</span>
+      {elapsed > 0 && <span className="text-warning/60">{elapsed}s</span>}
     </div>
   )
 }
 
 export function CompactErrorIndicator({ error, onDismiss }: { error: string; onDismiss?: () => void }) {
   return (
-    <div className="my-0.5 flex items-center gap-1.5 rounded bg-red-500/10 px-2 py-1.5 text-xs">
-      <AlertTriangle className="size-3 shrink-0 text-red-600 dark:text-red-400" />
-      <span className="font-medium text-red-600 dark:text-red-400">Compaction failed</span>
-      <span className="truncate text-red-600/60 dark:text-red-400/60">{error}</span>
+    <div className="my-0.5 flex items-center gap-1.5 rounded bg-error/10 px-2 py-1.5 text-xs">
+      <AlertTriangle className="size-3 shrink-0 text-error" />
+      <span className="font-medium text-error">Compaction failed</span>
+      <span className="truncate text-error/60">{error}</span>
       {onDismiss && (
-        <button onClick={onDismiss} className="ml-auto shrink-0 text-red-600/60 dark:text-red-400/60 transition-colors hover:text-red-600 dark:hover:text-red-400">
+        <button onClick={onDismiss} className="ml-auto shrink-0 text-error/60 transition-colors hover:text-error">
           <X className="size-3" />
         </button>
       )}
@@ -574,9 +574,9 @@ export function ApiRetryIndicator({ info }: { info: { attempt: number; maxRetrie
   const secs = Math.ceil(remaining / 1000)
 
   return (
-    <div className="my-0.5 flex items-center gap-1.5 rounded bg-amber-500/10 px-2 py-1.5 text-xs">
-      <Loader2 className="size-3 shrink-0 animate-spin text-amber-600 dark:text-amber-400" />
-      <span className="font-medium text-amber-600 dark:text-amber-400">
+    <div className="my-0.5 flex items-center gap-1.5 rounded bg-warning/10 px-2 py-1.5 text-xs">
+      <Loader2 className="size-3 shrink-0 animate-spin text-warning" />
+      <span className="font-medium text-warning">
         Retrying API request ({info.attempt}/{info.maxRetries})… {secs > 0 && <>{secs}s</>}
       </span>
     </div>
@@ -611,20 +611,20 @@ export function RateLimitIndicator({
   return (
     <div className={cn(
       'my-0.5 flex items-center gap-1.5 rounded px-2 py-1.5 text-xs',
-      isRejected ? 'bg-red-500/10' : 'bg-amber-500/10',
+      isRejected ? 'bg-error/10' : 'bg-warning/10',
     )}>
       {isRejected
-        ? <OctagonX className="size-3 shrink-0 text-red-600 dark:text-red-400" />
-        : <AlertTriangle className="size-3 shrink-0 text-amber-600 dark:text-amber-400" />
+        ? <OctagonX className="size-3 shrink-0 text-error" />
+        : <AlertTriangle className="size-3 shrink-0 text-warning" />
       }
-      <span className={cn('font-medium', isRejected ? 'text-red-600 dark:text-red-400' : 'text-amber-600 dark:text-amber-400')}>
+      <span className={cn('font-medium', isRejected ? 'text-error' : 'text-warning')}>
         {isRejected ? 'Rate limited' : 'Approaching rate limit'}
       </span>
       {pct != null && !isRejected && (
-        <span className="text-amber-600/60 dark:text-amber-400/60">{pct}% used</span>
+        <span className="text-warning/60">{pct}% used</span>
       )}
       {resetLabel && (
-        <span className={isRejected ? 'text-red-600/60 dark:text-red-400/60' : 'text-amber-600/60 dark:text-amber-400/60'}>· resets at {resetLabel}</span>
+        <span className={isRejected ? 'text-error/60' : 'text-warning/60'}>· resets at {resetLabel}</span>
       )}
       {onDismiss && (
         <button
@@ -632,7 +632,7 @@ export function RateLimitIndicator({
           aria-label="Dismiss rate limit notice"
           className={cn(
             'ml-auto cursor-pointer rounded p-0.5 transition-colors',
-            isRejected ? 'text-red-600/60 dark:text-red-400/60 hover:text-red-600 dark:hover:text-red-400' : 'text-amber-600/60 dark:text-amber-400/60 hover:text-amber-600 dark:hover:text-amber-400',
+            isRejected ? 'text-error/60 hover:text-error' : 'text-warning/60 hover:text-warning',
           )}
         >
           <X className="size-3" />
@@ -672,7 +672,7 @@ export const ChatMessage = memo(function ChatMessage({ message, sessionStatus, i
           className={cn(
             'min-w-0 text-sm',
             isUser
-              ? 'max-w-full overflow-hidden rounded-xl bg-secondary px-3 py-2 text-secondary-foreground break-all'
+              ? 'max-w-full overflow-hidden rounded-xl bg-primary/40 px-3 py-2 text-foreground break-all dark:bg-primary/15'
               : 'assistant-reply w-full text-foreground'
           )}
         >
@@ -921,7 +921,7 @@ function DurationFooter({ message, copyText, parentIsStreaming }: { message: Cha
           className="cursor-pointer transition-colors hover:text-foreground"
         >
           {copied
-            ? <Check className="size-3 text-green-600 dark:text-green-400" />
+            ? <Check className="size-3 text-success" />
             : <Copy className="size-3" />
           }
         </button>
@@ -952,8 +952,8 @@ function DurationFooter({ message, copyText, parentIsStreaming }: { message: Cha
       {showTerminalReason && (
         <>
           {(showDuration || hasTokens) && <span>·</span>}
-          <AlertTriangle className="size-3 text-amber-600 dark:text-amber-400" />
-          <span className="text-amber-600 dark:text-amber-400">{formatTerminalReason(terminalReason!)}</span>
+          <AlertTriangle className="size-3 text-warning" />
+          <span className="text-warning">{formatTerminalReason(terminalReason!)}</span>
         </>
       )}
       {showFork && (

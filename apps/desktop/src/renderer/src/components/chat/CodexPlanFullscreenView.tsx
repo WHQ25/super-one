@@ -65,8 +65,8 @@ export function CodexPlanFullscreenView({
             className={cn(
               'inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium',
               planApproval.status === 'approved'
-                ? 'bg-green-500/10 text-green-600 dark:text-green-400'
-                : 'bg-red-500/10 text-red-600 dark:text-red-400',
+                ? 'bg-success/10 text-success'
+                : 'bg-error/10 text-error',
             )}
           >
             {planApproval.status === 'approved' ? t('chat.plan.approved') : t('chat.plan.rejected')}
@@ -74,7 +74,7 @@ export function CodexPlanFullscreenView({
         )}
         <div className="ml-auto flex items-center gap-1">
           <button onClick={handleCopy} className="cursor-pointer rounded p-1 text-muted-foreground transition-colors hover:text-foreground" title={t('tooltips.copyPlan')}>
-            {copied ? <Check className="size-3.5 text-green-600 dark:text-green-400" /> : <Copy className="size-3.5" />}
+            {copied ? <Check className="size-3.5 text-success" /> : <Copy className="size-3.5" />}
           </button>
           <button onClick={() => onClose('dismiss')} className="cursor-pointer rounded p-1 text-muted-foreground transition-colors hover:text-foreground" title={t('tooltips.close')}>
             <X className="size-3.5" />
@@ -87,18 +87,18 @@ export function CodexPlanFullscreenView({
       {planApproval && (
         <div className="border-t border-border px-4 py-2 text-xs">
           {planApproval.status === 'approved' ? (
-            <div className="flex items-center gap-1.5 text-green-600 dark:text-green-400">
+            <div className="flex items-center gap-1.5 text-success">
               <Check className="size-3 shrink-0" />
               <span className="font-medium">{t('chat.plan.planApproved')}</span>
             </div>
           ) : (
-            <div className="space-y-1 text-red-600 dark:text-red-400">
+            <div className="space-y-1 text-error">
               <div className="flex items-center gap-1.5">
                 <X className="size-3 shrink-0" />
                 <span className="font-medium">{t('chat.plan.planRejected')}</span>
               </div>
               {planApproval.feedback && (
-                <div className="text-red-600/75 dark:text-red-400/75">{planApproval.feedback}</div>
+                <div className="text-error/75">{planApproval.feedback}</div>
               )}
             </div>
           )}

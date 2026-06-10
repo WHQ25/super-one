@@ -85,7 +85,7 @@ export function TodoListPanel({
                   onClick={detail ? () => toggleRow(item.id) : undefined}
                 >
                   {item.status === 'completed' ? (
-                    <CheckCircle2 className="mt-0.5 size-3.5 shrink-0 text-green-500" />
+                    <CheckCircle2 className="mt-0.5 size-3.5 shrink-0 text-success" />
                   ) : item.status === 'in_progress' ? (
                     <CircleDashed className="mt-0.5 size-3.5 shrink-0 animate-spin text-primary [animation-duration:3s]" />
                   ) : (

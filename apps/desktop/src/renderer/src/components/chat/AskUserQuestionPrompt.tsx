@@ -476,7 +476,7 @@ export function AskUserQuestionPrompt() {
   )
 
   return (
-    <div className="@container mx-3 mb-2 rounded-lg border border-primary/40 bg-muted/60 p-3">
+    <div className="@container mx-3 mb-2 rounded-lg border border-primary/40 bg-card p-3">
       {!singleQuestion && (
         <div className="mb-3 flex gap-1 border-b border-border/50 pb-2">
           {questions.map((q, i) => (

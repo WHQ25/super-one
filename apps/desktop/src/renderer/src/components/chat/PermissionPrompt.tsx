@@ -330,14 +330,14 @@ export function PermissionPrompt() {
           <button
             type="button"
             onClick={() => setIsCollapsed(false)}
-            className="flex w-full cursor-pointer items-center gap-2 rounded-lg border border-border bg-muted/60 px-3 py-2 text-left transition-colors hover:bg-muted"
+            className="flex w-full cursor-pointer items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-left transition-colors hover:bg-accent"
           >
             <AlertTriangle className={`size-3.5 shrink-0 ${riskColor}`} />
             <span className="min-w-0 flex-1 truncate text-xs text-foreground">{message}</span>
             <ChevronUp className="size-3.5 shrink-0 text-muted-foreground" />
           </button>
         ) : (
-          <div className="rounded-lg border border-border bg-muted/60 p-3">
+          <div className="rounded-lg border border-border bg-card p-3">
             <div className="mb-2 flex items-start justify-between gap-2">
               <div className="flex items-start gap-1.5">
                 <AlertTriangle className={`mt-0.5 size-3.5 shrink-0 ${riskColor}`} />
@@ -418,7 +418,7 @@ export function PermissionPrompt() {
         <button
           type="button"
           onClick={() => setIsCollapsed(false)}
-          className="flex w-full cursor-pointer items-center gap-2 rounded-lg border border-border bg-muted/60 px-3 py-2 text-left transition-colors hover:bg-muted"
+          className="flex w-full cursor-pointer items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-left transition-colors hover:bg-accent"
         >
           {isSandboxNetwork ? (
             <ShieldAlert className="size-3.5 shrink-0 animate-pulse text-amber-500" />
@@ -448,7 +448,7 @@ export function PermissionPrompt() {
         </button>
       ) : (
         <div>
-            <div className="rounded-lg border border-border bg-muted/60 p-3">
+            <div className="rounded-lg border border-border bg-card p-3">
               {isSandboxNetwork ? (
                 <>
                   <div className="mb-2 flex items-center justify-between text-xs">

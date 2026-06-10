@@ -672,7 +672,7 @@ export const ChatMessage = memo(function ChatMessage({ message, sessionStatus, i
           className={cn(
             'min-w-0 text-sm',
             isUser
-              ? 'max-w-full overflow-hidden rounded-xl bg-primary/40 px-3 py-2 text-foreground break-all dark:bg-primary/15'
+              ? 'max-w-full overflow-hidden rounded-xl bg-muted/80 px-3 py-2 text-foreground break-all'
               : 'assistant-reply w-full text-foreground'
           )}
         >

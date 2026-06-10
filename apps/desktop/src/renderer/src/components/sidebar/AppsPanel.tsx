@@ -7,6 +7,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { cn } from '@superone/ui/lib/utils'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
 import { MarqueeText } from '@superone/ui/components/ui/marquee-text'
+import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { InstallPermissionDialog } from '@/components/miniapp/InstallPermissionDialog'
 
 const S1APP_EXT = '.s1app'
@@ -145,7 +146,7 @@ export function AppsPanel() {
                   onClick={() => {
                     openAppInPanel(app, currentFolder ?? '')
                   }}
-                  className="group/app flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-sidebar-accent"
+                  className="group/app flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-sidebar-accent/80"
                 >
                   <MiniAppIcon appId={app.id} className="size-7 shrink-0" />
                   <div className="flex min-w-0 flex-1 flex-col">
@@ -153,17 +154,19 @@ export function AppsPanel() {
                     {app.manifest.description && <MarqueeText className="text-[11px] text-sidebar-foreground/50">{app.manifest.description}</MarqueeText>}
                   </div>
                   {app.manifest.fullscreen && (
-                    <button
+                    <IconButton
+                      size="sm"
+                      variant="nested"
+                      className="ml-1 opacity-0 transition-all group-hover/app:opacity-100"
                       onClick={(e) => {
                         e.stopPropagation()
                         setLayoutMode('canvas')
                         requestOpenInCanvas(app.id)
                       }}
-                      className="ml-1 shrink-0 rounded p-1 text-sidebar-foreground/40 opacity-0 transition-opacity hover:bg-sidebar-accent-foreground/10 hover:text-sidebar-foreground/80 group-hover/app:opacity-100"
-                      title="Open in canvas"
+                      tooltip="Open in canvas"
                     >
-                      <Maximize className="size-3.5" />
-                    </button>
+                      <Maximize />
+                    </IconButton>
                   )}
                 </div>
               ))}

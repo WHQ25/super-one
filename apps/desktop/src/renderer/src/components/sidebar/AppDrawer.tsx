@@ -9,6 +9,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { cn } from '@superone/ui/lib/utils'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
 import { MarqueeText } from '@superone/ui/components/ui/marquee-text'
+import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { InstallPermissionDialog } from '@/components/miniapp/InstallPermissionDialog'
 import type { MiniAppEntry } from '@superone/shared/miniapp-types'
 import { NO_PROJECT_KEY } from '@superone/shared/miniapp-host'
@@ -48,7 +49,7 @@ function SortableAppRow({ app, index, onClick, onOpenFullscreen }: { app: MiniAp
       {...attributes}
       {...listeners}
       className={cn(
-        'group/sapp flex cursor-grab items-center gap-2.5 overflow-hidden rounded-md px-2 py-1.5 text-left transition-colors hover:bg-sidebar-accent active:cursor-grabbing',
+        'group/sapp flex cursor-grab items-center gap-2.5 overflow-hidden rounded-md px-2 py-1.5 text-left transition-colors hover:bg-sidebar-accent/80 active:cursor-grabbing',
         isDragging && 'z-10 opacity-80 shadow-sm',
       )}
       onClick={onClick}
@@ -67,17 +68,19 @@ function SortableAppRow({ app, index, onClick, onOpenFullscreen }: { app: MiniAp
         )}
       </div>
       {onOpenFullscreen && (
-        <button
+        <IconButton
+          size="sm"
+          variant="nested"
+          className="ml-1 opacity-0 transition-all group-hover/sapp:opacity-100"
           onClick={(e) => {
             e.stopPropagation()
             onOpenFullscreen()
           }}
           onPointerDown={(e) => e.stopPropagation()}
-          className="ml-1 shrink-0 rounded p-1 text-sidebar-foreground/40 opacity-0 transition-opacity hover:bg-sidebar-accent-foreground/10 hover:text-sidebar-foreground/80 group-hover/sapp:opacity-100"
-          title="Open in canvas"
+          tooltip="Open in canvas"
         >
-          <Maximize className="size-3.5" />
-        </button>
+          <Maximize />
+        </IconButton>
       )}
     </div>
   )
@@ -319,14 +322,14 @@ export function AppDrawer() {
 
                 <div className="flex gap-1 px-1 pb-1">
                   <button
-                    className="mt-0.5 flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-sidebar-foreground/40 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground/70"
+                    className="mt-0.5 flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-sidebar-foreground/40 transition-colors hover:bg-sidebar-accent/80 hover:text-sidebar-foreground/70"
                   >
                     <Store className="size-3" />
                     {t('sidebar.appDrawer.marketplace')}
                   </button>
                   <button
                     onClick={handleBuildApp}
-                    className="mt-0.5 flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-sidebar-foreground/40 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground/70"
+                    className="mt-0.5 flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-sidebar-foreground/40 transition-colors hover:bg-sidebar-accent/80 hover:text-sidebar-foreground/70"
                   >
                     <Plus className="size-3" />
                     {t('sidebar.appDrawer.buildYourOwn')}

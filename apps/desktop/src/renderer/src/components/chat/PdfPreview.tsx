@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Loader2, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
+import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { loadPdfjs } from '@/lib/pdfjs'
 
 type PdfSource = { base64: string } | { url: string }
@@ -126,16 +127,16 @@ export function PdfPreview(props: PdfSource & { className?: string }) {
     <div className={cn('relative flex flex-col overflow-hidden bg-muted/30', props.className ?? 'max-h-[80vh]')}>
       {!loading && pageCount > 0 && (
         <div className="flex shrink-0 items-center justify-center gap-1 border-b px-3 py-1.5">
-          <button onClick={zoomOut} className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground">
-            <ZoomOut className="size-3.5" />
-          </button>
+          <IconButton size="sm" onClick={zoomOut}>
+            <ZoomOut />
+          </IconButton>
           <span className="min-w-[3.5rem] text-center text-xs text-muted-foreground">{Math.round(zoom * 100)}%</span>
-          <button onClick={zoomIn} className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground">
-            <ZoomIn className="size-3.5" />
-          </button>
-          <button onClick={resetZoom} className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground">
-            <RotateCcw className="size-3.5" />
-          </button>
+          <IconButton size="sm" onClick={zoomIn}>
+            <ZoomIn />
+          </IconButton>
+          <IconButton size="sm" onClick={resetZoom}>
+            <RotateCcw />
+          </IconButton>
           <span className="ml-2 text-xs text-muted-foreground">{pageCount} pages</span>
         </div>
       )}

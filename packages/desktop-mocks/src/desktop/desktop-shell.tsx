@@ -410,7 +410,7 @@ function Sidebar({
       </div>
 
       <Tabs value={sidebarTab} className="mx-2 mb-1 shrink-0">
-        <TabsList variant="sidebar">
+        <TabsList>
           <TabsTrigger value="sessions" className="py-1">
             <MessageSquare className="size-3.5" />
             {t("sidebar.tabs.sessions")}

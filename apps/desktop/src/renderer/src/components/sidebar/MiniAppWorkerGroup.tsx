@@ -43,7 +43,7 @@ export const MiniAppWorkerGroup = memo(function MiniAppWorkerGroup({
     <div className="overflow-hidden pl-2.5">
       <button
         onClick={() => setExpanded((v) => !v)}
-        className="group/worker flex h-7 w-full items-center gap-1.5 rounded-md px-2.5 text-[11px] font-medium text-sidebar-foreground/50 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground/70"
+        className="group/worker flex h-7 w-full items-center gap-1.5 rounded-md px-2.5 text-[11px] font-medium text-sidebar-foreground/50 transition-colors hover:bg-sidebar-accent/80 hover:text-sidebar-foreground/70"
       >
         <ChevronRight className={cn(
           'hidden size-3.5 shrink-0 transition-transform duration-200 group-hover/worker:block',
@@ -60,7 +60,7 @@ export const MiniAppWorkerGroup = memo(function MiniAppWorkerGroup({
               <ContextMenuTrigger asChild>
                 <button
                   onClick={() => onOpen(worker.appId)}
-                  className="group/wrow flex items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-left text-xs transition-colors hover:bg-sidebar-accent"
+                  className="group/wrow flex items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-left text-xs transition-colors hover:bg-sidebar-accent/80"
                 >
                   <span className="flex min-w-0 items-center gap-2">
                     <MiniAppIcon appId={worker.appId} className="size-4 shrink-0" />

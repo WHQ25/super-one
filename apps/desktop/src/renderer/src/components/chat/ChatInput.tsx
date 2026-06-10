@@ -4,7 +4,7 @@ import { toast } from 'sonner'
 import { cn } from '@superone/ui/lib/utils'
 import { CLAUDE_INTERCEPTED_COMMAND_NAMES, CODEX_REJECT_PLAN_PLACEHOLDER, getLatestCodexThreadId, runClaudeInterceptedCommand, selectActiveCodexSkills, selectCodexPrompts, useChatStore, useActiveSession, useIsRemoteLocked } from '@/stores/chat'
 import { useEffectiveProjectRoot } from '@/stores/app'
-import { Button } from '@superone/ui/components/ui/button'
+import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { ArrowUp, Paperclip, X } from 'lucide-react'
 import type { MentionKind } from '@/stores/chat'
 import { ContextUsage } from './ContextUsage'
@@ -1153,14 +1153,9 @@ export function ChatInput() {
               onChange={handleFileSelect}
               className="hidden"
             />
-            <Button
-              size="icon-xs"
-              variant="ghost"
-              onClick={() => fileInputRef.current?.click()}
-              className="text-muted-foreground hover:text-foreground"
-            >
-              <Paperclip className="size-3.5" />
-            </Button>
+            <IconButton size="sm" onClick={() => fileInputRef.current?.click()}>
+              <Paperclip />
+            </IconButton>
 
             <ModelSelector onCloseAutoFocus={(e) => { e.preventDefault(); editor?.commands.focus() }} />
           </div>
@@ -1170,15 +1165,14 @@ export function ChatInput() {
             {isStreaming && (
               <StopButton onInterrupt={interrupt} />
             )}
-            <Button
-              size="icon-xs"
+            <IconButton
               variant="ghost"
               onClick={handleSend}
               disabled={!canSend}
-              className="size-7 rounded-full border border-border text-muted-foreground hover:text-foreground disabled:opacity-30"
+              className="size-7 rounded-full border border-border disabled:opacity-30"
             >
-              <ArrowUp className="size-3.5" />
-            </Button>
+              <ArrowUp />
+            </IconButton>
           </div>
         </div>
 

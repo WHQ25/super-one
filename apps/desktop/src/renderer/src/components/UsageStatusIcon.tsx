@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Gauge } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@superone/ui/components/ui/tooltip'
+import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { cn } from '@superone/ui/lib/utils'
 import { useActiveSession, useChatStore } from '@/stores/chat'
 import type { ClaudeExtraUsage, ClaudeRateLimits, CodexRateLimits, CodexRateLimitWindow } from '@superone/shared/agent-types'
@@ -73,10 +74,10 @@ function RateLimitGauge({ title, planType, maxPercent, children }: { title: stri
     <TooltipProvider delayDuration={300}>
       <Tooltip>
         <TooltipTrigger asChild>
-          <button className="relative rounded-md p-1.5 text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground">
-            <Gauge className="size-3.5" />
+          <IconButton size="sm" className="relative">
+            <Gauge />
             <span className={cn('absolute top-1 right-1 size-1.5 rounded-full', usedColor(maxPercent))} />
-          </button>
+          </IconButton>
         </TooltipTrigger>
         <TooltipContent side="top">
           <div className="flex min-w-52 flex-col gap-2 text-xs">

@@ -44,9 +44,9 @@ function ProviderSelector() {
       </AnimatePresence>
       <ActiveProviderHint />
       <Tabs value={preferredProvider} onValueChange={(v) => setPreferredProvider(v as ChatProvider)}>
-        <TabsList variant="sidebar" className="rounded-lg p-1">
-          <TabsTrigger value="claude" className="rounded-md px-3 py-1.5">Claude Code</TabsTrigger>
-          <TabsTrigger value="codex" className="rounded-md px-3 py-1.5">Codex</TabsTrigger>
+        <TabsList>
+          <TabsTrigger value="claude" className="px-3 py-2">Claude Code</TabsTrigger>
+          <TabsTrigger value="codex" className="px-3 py-2">Codex</TabsTrigger>
         </TabsList>
       </Tabs>
     </div>

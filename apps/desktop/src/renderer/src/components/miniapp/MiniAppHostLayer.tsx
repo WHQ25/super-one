@@ -133,8 +133,8 @@ function PersistentMiniAppContainer({ instanceKey, layoutMode, dragging }: { ins
         display: visible ? 'block' : 'none',
         pointerEvents: visible && !dragging ? 'auto' : 'none',
         overflow: 'hidden',
-        borderBottomLeftRadius: layoutMode === 'coding' && activitySide === 'left' ? 'var(--radius-xl)' : undefined,
-        borderBottomRightRadius: layoutMode === 'coding' && activitySide === 'right' ? 'var(--radius-xl)' : undefined,
+        borderBottomLeftRadius: (layoutMode === 'coding' && activitySide === 'left') || (layoutMode === 'canvas' && presentation === 'canvas') ? 'var(--radius-xl)' : undefined,
+        borderBottomRightRadius: (layoutMode === 'coding' && activitySide === 'right') || (layoutMode === 'canvas' && presentation === 'canvas') ? 'var(--radius-xl)' : undefined,
       }}
     >
       <MiniAppView instanceKey={instanceKey} appId={appId} className="h-full w-full" />

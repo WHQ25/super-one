@@ -1,6 +1,10 @@
 import { ClipboardList, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useActiveSession, useChatStore } from '@/stores/chat'
+import { modes } from './PermissionModeList'
+import { cn } from '@superone/ui/lib/utils'
+
+const planMode = modes.find((mode) => mode.id === 'plan')!
 
 export function CodexModeSelector() {
   const { t } = useTranslation()
@@ -11,13 +15,18 @@ export function CodexModeSelector() {
 
   return (
     <div className="group/plan-mode inline-flex items-center gap-0.5">
-      <div className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] text-primary">
+      <div className={cn('inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px]', planMode.color)}>
         <ClipboardList className="size-3.5" />
         <span>{t('chat.plan.label')}</span>
       </div>
       <button
         onClick={() => setSelectedMode('default')}
-        className="inline-flex items-center justify-center rounded-full size-4 bg-primary/15 text-primary opacity-0 transition-all hover:bg-primary/25 group-hover/plan-mode:opacity-100"
+        className={cn(
+          'inline-flex items-center justify-center rounded-full size-4 opacity-0 transition-all group-hover/plan-mode:opacity-100',
+          planMode.activeBg,
+          planMode.color,
+          planMode.hoverBg,
+        )}
         title={t('tooltips.exitPlanMode')}
       >
         <X className="size-3" />

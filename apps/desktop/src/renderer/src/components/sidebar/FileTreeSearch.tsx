@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { ChevronRight, Search, X } from 'lucide-react'
 import { FileIcon, FolderIcon } from '@superone/ui/components/ui/FileIcon'
 import { HighlightedText } from '@superone/ui/components/ui/HighlightedText'
+import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { cn } from '@superone/ui/lib/utils'
 import type { FileSearchResult } from '@superone/shared/agent-types'
 import { useFileTreeStore } from '@/stores/file-tree'
@@ -105,12 +106,9 @@ export function FileTreeSearch({
           placeholder={t('sidebar.search.placeholder')}
           className="min-w-0 flex-1 bg-transparent text-[15px] text-sidebar-foreground outline-none placeholder:text-sidebar-foreground/40"
         />
-        <button
-          onClick={onClose}
-          className="shrink-0 rounded p-0.5 text-sidebar-foreground/50 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
-        >
-          <X className="size-3.5" />
-        </button>
+        <IconButton size="sm" onClick={onClose}>
+          <X />
+        </IconButton>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto pb-2">

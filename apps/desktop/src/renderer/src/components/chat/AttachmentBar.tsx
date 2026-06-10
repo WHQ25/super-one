@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Button } from '@superone/ui/components/ui/button'
+import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { Dialog, DialogClose, DialogContent, DialogTitle } from '@superone/ui/components/ui/dialog'
 import { X } from 'lucide-react'
 import { PdfThumbnail } from './PdfThumbnail'
@@ -45,9 +45,9 @@ export function AttachmentBar({ attachments, onRemove }: AttachmentBarProps) {
           <div className="flex items-center justify-between border-b px-4 py-2.5">
             <DialogTitle className="truncate text-sm font-medium">{preview?.name}</DialogTitle>
             <DialogClose asChild>
-              <Button variant="ghost" size="icon-xs" className="shrink-0 text-muted-foreground hover:text-foreground">
-                <X className="size-3.5" />
-              </Button>
+              <IconButton size="sm">
+                <X />
+              </IconButton>
             </DialogClose>
           </div>
           {preview?.mimeType === 'application/pdf' ? (

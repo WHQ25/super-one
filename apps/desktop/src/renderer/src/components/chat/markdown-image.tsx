@@ -76,7 +76,7 @@ function MarkdownImageLightbox({ src, alt, savedPath, open, onOpenChange }: Ligh
           variant="ghost"
           size="icon-xs"
           style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-          className="absolute right-[60px] top-3 z-20 size-9 rounded-full border border-border/50 bg-background/80 text-muted-foreground shadow-sm backdrop-blur-sm hover:bg-accent hover:text-foreground"
+          className="absolute right-[60px] top-3 z-20 size-9 rounded-full border border-border/50 bg-background/80 text-muted-foreground shadow-sm backdrop-blur-sm hover:bg-muted hover:text-foreground"
           onClick={handleDownload}
           disabled={downloading}
           aria-label="Download image"
@@ -89,7 +89,7 @@ function MarkdownImageLightbox({ src, alt, savedPath, open, onOpenChange }: Ligh
             variant="ghost"
             size="icon-xs"
             style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-            className="absolute right-3 top-3 z-20 size-9 rounded-full border border-border/50 bg-background/80 text-muted-foreground shadow-sm backdrop-blur-sm hover:bg-accent hover:text-foreground"
+            className="absolute right-3 top-3 z-20 size-9 rounded-full border border-border/50 bg-background/80 text-muted-foreground shadow-sm backdrop-blur-sm hover:bg-muted hover:text-foreground"
             aria-label="Close"
           >
             <X className="size-4" />

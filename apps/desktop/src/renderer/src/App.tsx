@@ -67,6 +67,7 @@ function App(): React.JSX.Element {
   )
   const showActivityPanel = useActivityPanelStore((s) => s.showPanel)
   const activitySide = useActivityPanelStore((s) => s.side)
+  const fullscreenApp = useMiniAppStore((s) => s.fullscreenApp)
   const isFullscreen = useFullscreen()
   const isMac = window.app.platform === 'darwin'
   const initialTransition = useRef(true)
@@ -286,6 +287,7 @@ function App(): React.JSX.Element {
 
 
   const hasLeftPanel = showSidebar || (showActivityPanel && activitySide === 'left')
+  const canvasCard = layoutMode === 'canvas' && !!fullscreenApp
 
   const getActivityMaxWidth = useCallback(() => {
     const sb = useAppStore.getState()
@@ -380,7 +382,8 @@ function App(): React.JSX.Element {
         layoutMode === 'coding' && !hasLeftPanel && 'ml-[5px]',
         layoutMode === 'coding' && (sidebarResizing
           ? 'border-border shadow-[0_10px_30px_rgba(0,0,0,0.16)]'
-          : 'shadow-[0_2px_12px_rgba(0,0,0,0.06)] group-has-[[data-resize-handle]:hover]/coding:border-border group-has-[[data-resize-handle]:hover]/coding:shadow-[0_10px_30px_rgba(0,0,0,0.16)]')
+          : 'shadow-[0_2px_12px_rgba(0,0,0,0.06)] group-has-[[data-resize-handle]:hover]/coding:border-border group-has-[[data-resize-handle]:hover]/coding:shadow-[0_10px_30px_rgba(0,0,0,0.16)]'),
+        canvasCard && 'm-[5px] overflow-hidden rounded-xl border border-border/50 bg-card shadow-[0_2px_12px_rgba(0,0,0,0.06)]'
       )}>
         {/* Activity Panel — always mounted, hidden in canvas mode */}
         <ActivityPanel getMaxWidth={getActivityMaxWidth} hidden={layoutMode !== 'coding'} />

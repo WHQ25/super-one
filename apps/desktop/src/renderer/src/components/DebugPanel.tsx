@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Bug, X } from 'lucide-react'
+import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { useDevToolsStore } from '@/stores/dev-tools'
 import type { MiniAppPreviewResult } from '@superone/shared/miniapp-types'
@@ -180,9 +181,9 @@ export function DebugPanel() {
           <Bug className="size-3.5 text-orange-500" />
           Debug Panel
         </span>
-        <button onClick={toggle} className="rounded p-0.5 hover:bg-muted">
-          <X className="size-3.5 text-muted-foreground" />
-        </button>
+        <IconButton size="sm" onClick={toggle}>
+          <X />
+        </IconButton>
       </div>
       <div className="flex flex-col gap-1 border-b p-2">
         <ToggleRow label="React Scan" active={reactScan} onToggle={toggleReactScan} />

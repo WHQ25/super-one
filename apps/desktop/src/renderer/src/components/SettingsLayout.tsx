@@ -80,7 +80,7 @@ export function SettingsLayout() {
                 'flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors',
                 settingsTab === tab.id
                   ? 'bg-accent text-accent-foreground'
-                  : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                  : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
               )}
             >
               <tab.icon className="size-4" />
@@ -91,9 +91,9 @@ export function SettingsLayout() {
 
         <div className="border-t border-border pt-3 mb-3">
           <Tabs value={settingsProvider} onValueChange={(v) => setSettingsProvider(v as SettingsProvider)}>
-            <TabsList className="border-0 bg-muted">
+            <TabsList>
               {providers.map((p) => (
-                <TabsTrigger key={p.id} value={p.id} className="py-1">
+                <TabsTrigger key={p.id} value={p.id} className="py-2">
                   {t(p.labelKey)}
                 </TabsTrigger>
               ))}
@@ -110,7 +110,7 @@ export function SettingsLayout() {
                 'flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors',
                 settingsTab === tab.id
                   ? 'bg-accent text-accent-foreground'
-                  : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                  : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
               )}
             >
               <tab.icon className="size-4" />

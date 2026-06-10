@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { Search, X } from 'lucide-react'
+import { IconButton } from '@superone/ui/components/ui/icon-button'
 import type { SessionHistoryEntry } from '@superone/shared/agent-types'
 import { SessionRow, type SessionRowCallbacks } from './SessionRow'
 
@@ -135,12 +136,9 @@ export function ProjectHistoryList({
           placeholder={t('sidebar.contextMenu.searchSessions')}
           className="min-w-0 flex-1 bg-transparent text-[13px] text-sidebar-foreground outline-none placeholder:text-sidebar-foreground/40"
         />
-        <button
-          onClick={onClose}
-          className="shrink-0 rounded p-0.5 text-sidebar-foreground/50 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
-        >
-          <X className="size-3.5" />
-        </button>
+        <IconButton size="sm" onClick={onClose}>
+          <X />
+        </IconButton>
       </div>
       <div
         ref={scrollRef}

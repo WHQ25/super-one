@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { Button } from '@superone/ui/components/ui/button'
+import { IconButton } from '@superone/ui/components/ui/icon-button'
 const STOP_COLOR = '#E24B4A'
 
 const HOLD_DURATION = 600
@@ -73,13 +73,12 @@ export function StopButton({ onInterrupt }: StopButtonProps) {
   const circumference = 2 * Math.PI * r
 
   return (
-    <Button
-      size="icon-xs"
+    <IconButton
       variant="ghost"
       onClick={() => {
         if (!triggeredRef.current) onInterrupt()
       }}
-      className="relative size-7 rounded-full border border-border text-muted-foreground hover:text-foreground"
+      className="relative size-7 rounded-full border border-border"
     >
       {isHolding && (
         <svg
@@ -106,6 +105,6 @@ export function StopButton({ onInterrupt }: StopButtonProps) {
           <rect x="3" y="3" width="18" height="18" rx="2" fill={STOP_COLOR} opacity={progress} />
         )}
       </svg>
-    </Button>
+    </IconButton>
   )
 }

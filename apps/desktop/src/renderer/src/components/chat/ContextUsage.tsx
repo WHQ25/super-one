@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ChevronDown, ChevronUp } from 'lucide-react'
+import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { useChatStore, useActiveSession, selectClaudeModels } from '@/stores/chat'
 import { DEFAULT_CONTEXT_WINDOW } from '@superone/shared/agent-types'
 
@@ -106,7 +107,7 @@ export function ContextUsage() {
 
   return (
     <div className="relative flex items-center" ref={popoverRef}>
-      <button onClick={toggleOpen} className="flex items-center rounded-sm p-1 transition-colors hover:bg-muted">
+      <IconButton size="sm" onClick={toggleOpen} className="rounded-sm">
         <svg width="14" height="14" viewBox="0 0 14 14" className="shrink-0">
           <circle cx="7" cy="7" r={radius} fill="none" className="stroke-border" strokeWidth="2" />
           {pct > 0 && (
@@ -117,7 +118,7 @@ export function ContextUsage() {
             />
           )}
         </svg>
-      </button>
+      </IconButton>
 
       {open && (
         <div className="absolute bottom-full right-0 z-50 pb-2">

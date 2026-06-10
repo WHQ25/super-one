@@ -11,6 +11,7 @@ import { shortenPath } from './tool-display'
 import type { ToolIcon as ToolIconName } from './tool-display'
 import { ToolIcon } from './ToolIcon'
 import { cn } from '@superone/ui/lib/utils'
+import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { AnsiText } from '@/lib/ansi'
 import { FileChip } from './ToolBlock'
 import { CodexPlanImplementFooter } from './CodexPlanImplementFooter'
@@ -173,9 +174,9 @@ function CollabSendInputBlock({ item }: { item: CodexCollabToolCallItem }) {
 
 function PlanActionButton({ icon: Icon, onClick, title }: { icon: React.ElementType; onClick: (e: React.MouseEvent) => void; title: string }) {
   return (
-    <button onClick={onClick} title={title} className="rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground hover:bg-muted">
+    <IconButton size="xs" onClick={onClick} tooltip={title}>
       <Icon className="size-3" />
-    </button>
+    </IconButton>
   )
 }
 

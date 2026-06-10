@@ -4,6 +4,7 @@ import { ClaudeSessionIcon, type SessionIconProps } from '@superone/ui/component
 import { CodexSessionIcon } from '@superone/ui/components/harness/CodexSessionIcon'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@superone/ui/components/ui/button'
+import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { Checkbox } from '@superone/ui/components/ui/checkbox'
 import { ScrollArea } from '@superone/ui/components/ui/scroll-area'
 import {
@@ -404,13 +405,13 @@ export const AppSidebar = memo(function AppSidebar() {
           {t('sidebar.newSession')}
         </Button>
       </div>
-      <Tabs value={sidebarTab} onValueChange={(v) => setSidebarTab(v as SidebarTab)} className="mx-2 mb-1 shrink-0">
-        <TabsList variant="sidebar">
-          <TabsTrigger value="sessions" className="py-1.5">
+      <Tabs value={sidebarTab} onValueChange={(v) => setSidebarTab(v as SidebarTab)} className="mx-1.5 mb-1 shrink-0">
+        <TabsList>
+          <TabsTrigger value="sessions" className="py-2">
             <MessageSquare className="size-3.5" />
             {t('sidebar.tabs.sessions')}
           </TabsTrigger>
-          <TabsTrigger value="files" className="py-1.5">
+          <TabsTrigger value="files" className="py-2">
             <FolderClosed className="size-3.5" />
             {t('sidebar.tabs.files')}
           </TabsTrigger>
@@ -446,7 +447,7 @@ export const AppSidebar = memo(function AppSidebar() {
               <div
                 key={s.sessionId}
                 onClick={() => handleSwitchSession(s.folderPath, s.sessionId)}
-                className="group/pin flex cursor-pointer items-center gap-2 overflow-hidden rounded-md px-2.5 py-1.5 transition-colors hover:bg-sidebar-accent"
+                className="group/pin flex cursor-pointer items-center gap-2 overflow-hidden rounded-md px-2.5 py-1.5 transition-colors hover:bg-sidebar-accent/80"
               >
                 {PinHarnessIcon && (
                   <span className="shrink-0">
@@ -483,19 +484,14 @@ export const AppSidebar = memo(function AppSidebar() {
       <div className="flex items-center justify-between pl-4 pr-3 pt-1.5 pb-0.5">
         <span className="text-sm font-medium text-sidebar-foreground/40">{t('sidebar.projects')}</span>
         <div className="flex items-center gap-0.5">
-          <Button
-            size="icon-xs"
-            variant="ghost"
-            onClick={() => selectProject()}
-            className="shrink-0 cursor-pointer text-sidebar-foreground/70 hover:text-sidebar-accent-foreground"
-          >
-            <Plus className="size-3.5" />
-          </Button>
+          <IconButton size="sm" onClick={() => selectProject()}>
+            <Plus />
+          </IconButton>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button size="icon-xs" variant="ghost" className="shrink-0 cursor-pointer text-sidebar-foreground/70 hover:text-sidebar-accent-foreground">
+              <IconButton size="sm">
                 <ArrowDownUp className="size-3" />
-              </Button>
+              </IconButton>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-40">
               <DropdownMenuItem onClick={() => setSortMode('recent')} className="text-xs">
@@ -547,12 +543,9 @@ export const AppSidebar = memo(function AppSidebar() {
         <TooltipProvider delayDuration={300}>
           <Tooltip>
             <TooltipTrigger asChild>
-              <button
-                onClick={() => navigateTo('settings')}
-                className="rounded-md p-1.5 text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-              >
-                <Settings className="size-3.5" />
-              </button>
+              <IconButton size="sm" onClick={() => navigateTo('settings')}>
+                <Settings />
+              </IconButton>
             </TooltipTrigger>
             <TooltipContent side="top"><span>{t('sidebar.settings')}</span> <CommandShortcut>{isMac ? '⌘,' : 'Ctrl+,'}</CommandShortcut></TooltipContent>
           </Tooltip>
@@ -690,13 +683,14 @@ function RemoteStatusIcon() {
     <TooltipProvider delayDuration={300}>
       <Tooltip>
         <TooltipTrigger asChild>
-          <button
+          <IconButton
+            size="sm"
+            className="relative"
             onClick={() => { setSettingsTab('remote'); navigateTo('settings') }}
-            className="relative rounded-md p-1.5 text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
           >
-            <Smartphone className="size-3.5" />
+            <Smartphone />
             <span className={cn('absolute top-1 right-1 size-1.5 rounded-full', reachable ? 'bg-success' : 'bg-error')} />
-          </button>
+          </IconButton>
         </TooltipTrigger>
         <TooltipContent side="top">
           <div className="flex min-w-44 flex-col gap-1.5 text-xs">

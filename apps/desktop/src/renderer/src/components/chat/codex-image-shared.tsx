@@ -262,7 +262,7 @@ export function CodexImageViewer({ items, index, open, onOpenChange, onIndexChan
               disabled={!hasPrev}
               onClick={() => onIndexChange(index - 1)}
               style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-              className="absolute left-3 top-1/2 z-20 size-10 -translate-y-1/2 rounded-full border border-border/50 bg-background/80 text-muted-foreground shadow-sm backdrop-blur-sm hover:bg-accent hover:text-foreground disabled:opacity-30"
+              className="absolute left-3 top-1/2 z-20 size-10 -translate-y-1/2 rounded-full border border-border/50 bg-background/80 text-muted-foreground shadow-sm backdrop-blur-sm hover:bg-muted hover:text-foreground disabled:opacity-30"
               aria-label="Previous image"
             >
               <ChevronLeft className="size-5" />
@@ -273,7 +273,7 @@ export function CodexImageViewer({ items, index, open, onOpenChange, onIndexChan
               disabled={!hasNext}
               onClick={() => onIndexChange(index + 1)}
               style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-              className="absolute right-3 top-1/2 z-20 size-10 -translate-y-1/2 rounded-full border border-border/50 bg-background/80 text-muted-foreground shadow-sm backdrop-blur-sm hover:bg-accent hover:text-foreground disabled:opacity-30"
+              className="absolute right-3 top-1/2 z-20 size-10 -translate-y-1/2 rounded-full border border-border/50 bg-background/80 text-muted-foreground shadow-sm backdrop-blur-sm hover:bg-muted hover:text-foreground disabled:opacity-30"
               aria-label="Next image"
             >
               <ChevronRight className="size-5" />
@@ -288,7 +288,7 @@ export function CodexImageViewer({ items, index, open, onOpenChange, onIndexChan
           variant="ghost"
           size="icon-xs"
           style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-          className="absolute right-[108px] top-3 z-20 size-9 rounded-full border border-border/50 bg-background/80 text-muted-foreground shadow-sm backdrop-blur-sm hover:bg-accent hover:text-foreground"
+          className="absolute right-[108px] top-3 z-20 size-9 rounded-full border border-border/50 bg-background/80 text-muted-foreground shadow-sm backdrop-blur-sm hover:bg-muted hover:text-foreground"
           onClick={() => setInfoOpen((v) => !v)}
           aria-label="Image info"
           aria-expanded={infoOpen}
@@ -300,7 +300,7 @@ export function CodexImageViewer({ items, index, open, onOpenChange, onIndexChan
           variant="ghost"
           size="icon-xs"
           style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-          className="absolute right-[60px] top-3 z-20 size-9 rounded-full border border-border/50 bg-background/80 text-muted-foreground shadow-sm backdrop-blur-sm hover:bg-accent hover:text-foreground"
+          className="absolute right-[60px] top-3 z-20 size-9 rounded-full border border-border/50 bg-background/80 text-muted-foreground shadow-sm backdrop-blur-sm hover:bg-muted hover:text-foreground"
           onClick={handleDownload}
           disabled={downloading}
           aria-label="Download image"
@@ -313,7 +313,7 @@ export function CodexImageViewer({ items, index, open, onOpenChange, onIndexChan
             variant="ghost"
             size="icon-xs"
             style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-            className="absolute right-3 top-3 z-20 size-9 rounded-full border border-border/50 bg-background/80 text-muted-foreground shadow-sm backdrop-blur-sm hover:bg-accent hover:text-foreground"
+            className="absolute right-3 top-3 z-20 size-9 rounded-full border border-border/50 bg-background/80 text-muted-foreground shadow-sm backdrop-blur-sm hover:bg-muted hover:text-foreground"
             aria-label="Close"
           >
             <X className="size-4" />

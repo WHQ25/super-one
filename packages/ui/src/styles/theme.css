@@ -12,11 +12,11 @@
   --popover-foreground: oklch(var(--popover-foreground-l, 0.18) var(--popover-foreground-c, 0.012) var(--popover-foreground-h, var(--brand-hue, 240)) / var(--popover-foreground-a, 1));
   --primary: oklch(var(--primary-l, 0.65) var(--primary-c, 0.20) var(--primary-h, var(--brand-hue, 240)) / var(--primary-a, 1));
   --primary-foreground: oklch(1 0 0);
-  --secondary: oklch(var(--secondary-l, 0.93) var(--secondary-c, 0) var(--secondary-h, var(--brand-hue, 240)) / var(--secondary-a, 1));
+  --secondary: oklch(var(--secondary-l, 0.93) var(--secondary-c, 0.05) var(--secondary-h, calc(var(--brand-hue, 240) + 180)) / var(--secondary-a, 1));
   --secondary-foreground: oklch(var(--secondary-foreground-l, 0.22) var(--secondary-foreground-c, 0.012) var(--secondary-foreground-h, var(--brand-hue, 240)) / var(--secondary-foreground-a, 1));
   --muted: oklch(var(--muted-l, 0.93) var(--muted-c, 0) var(--muted-h, var(--brand-hue, 240)) / var(--muted-a, 1));
   --muted-foreground: oklch(var(--muted-foreground-l, 0.52) var(--muted-foreground-c, 0.025) var(--muted-foreground-h, var(--brand-hue, 240)) / var(--muted-foreground-a, 1));
-  --accent: oklch(var(--accent-l, 0.91) var(--accent-c, 0) var(--accent-h, var(--brand-hue, 240)) / var(--accent-a, 1));
+  --accent: oklch(var(--accent-l, 0.91) var(--accent-c, 0.08) var(--accent-h, var(--brand-hue, 240)) / var(--accent-a, 1));
   --accent-foreground: oklch(var(--accent-foreground-l, 0.22) var(--accent-foreground-c, 0.015) var(--accent-foreground-h, var(--brand-hue, 240)) / var(--accent-foreground-a, 1));
   --destructive: oklch(0.55 0.25 27);
   --destructive-foreground: oklch(0.99 0 0);
@@ -62,8 +62,8 @@
   --card-foreground: oklch(0.985 0 0);
   --popover: oklch(0.205 0 0);
   --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
+  --primary: oklch(0.55 0.17 255);
+  --primary-foreground: oklch(0.985 0 0);
   --secondary: oklch(0.269 0 0);
   --secondary-foreground: oklch(0.985 0 0);
   --muted: oklch(0.269 0 0);
@@ -90,7 +90,7 @@
   --sidebar-foreground: var(--foreground);
   --sidebar-primary: var(--primary);
   --sidebar-primary-foreground: var(--primary-foreground);
-  --sidebar-accent: oklch(from var(--accent) l c h / 0.5);
+  --sidebar-accent: oklch(0.26 0 0);
   --sidebar-accent-foreground: var(--accent-foreground);
   --sidebar-border: var(--border);
   --sidebar-ring: var(--ring);

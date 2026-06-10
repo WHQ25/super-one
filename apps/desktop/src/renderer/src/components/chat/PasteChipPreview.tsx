@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Button } from '@superone/ui/components/ui/button'
+import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { Dialog, DialogClose, DialogContent, DialogTitle } from '@superone/ui/components/ui/dialog'
 import { Check, Copy, Save, X } from 'lucide-react'
 
@@ -56,29 +56,23 @@ export function PasteChipPreview({ open, onOpenChange, text, onSave }: PasteChip
           </DialogTitle>
           <div className="flex items-center gap-1">
             {onSave && (
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                className="shrink-0 text-muted-foreground hover:text-foreground disabled:opacity-40"
+              <IconButton
+                size="sm"
+                className="disabled:opacity-40"
                 onClick={handleSave}
                 disabled={!dirty}
-                title={t('tooltips.save', { shortcut: '⌘/Ctrl+Enter' })}
+                tooltip={t('tooltips.save', { shortcut: '⌘/Ctrl+Enter' })}
               >
-                <Save className="size-3.5" />
-              </Button>
+                <Save />
+              </IconButton>
             )}
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              className="shrink-0 text-muted-foreground hover:text-foreground"
-              onClick={handleCopy}
-            >
-              {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
-            </Button>
+            <IconButton size="sm" onClick={handleCopy}>
+              {copied ? <Check /> : <Copy />}
+            </IconButton>
             <DialogClose asChild>
-              <Button variant="ghost" size="icon-xs" className="shrink-0 text-muted-foreground hover:text-foreground">
-                <X className="size-3.5" />
-              </Button>
+              <IconButton size="sm">
+                <X />
+              </IconButton>
             </DialogClose>
           </div>
         </div>

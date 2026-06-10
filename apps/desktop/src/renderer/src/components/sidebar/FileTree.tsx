@@ -18,6 +18,7 @@ import {
   DialogTitle,
 } from '@superone/ui/components/ui/dialog'
 import { Button } from '@superone/ui/components/ui/button'
+import { IconButton } from '@superone/ui/components/ui/icon-button'
 
 const EDGE_SCROLL_ZONE = 40
 const EDGE_SCROLL_SPEED = 8
@@ -237,13 +238,9 @@ export function FileTree() {
           {folderName}
         </span>
         {fileRoot && (
-          <button
-            onClick={() => setSearching(true)}
-            title={t('sidebar.search.placeholder')}
-            className="shrink-0 rounded p-0.5 text-sidebar-foreground/50 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
-          >
-            <Search className="size-3.5" />
-          </button>
+          <IconButton size="sm" onClick={() => setSearching(true)} tooltip={t('sidebar.search.placeholder')}>
+            <Search />
+          </IconButton>
         )}
       </div>
 

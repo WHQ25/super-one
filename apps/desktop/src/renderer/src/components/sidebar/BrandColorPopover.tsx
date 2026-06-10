@@ -3,6 +3,7 @@ import { ArrowLeft, Palette, RotateCcw, Settings2 } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@superone/ui/components/ui/popover'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@superone/ui/components/ui/tooltip'
 import { Button } from '@superone/ui/components/ui/button'
+import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { cn } from '@superone/ui/lib/utils'
 import {
   Select,
@@ -105,13 +106,9 @@ export function BrandColorPopover(): React.JSX.Element | null {
         <Tooltip>
           <TooltipTrigger asChild>
             <PopoverTrigger asChild>
-              <button
-                type="button"
-                className="rounded-md p-1.5 text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                aria-label={`Customize ${label} color`}
-              >
-                <Palette className="size-3.5" />
-              </button>
+              <IconButton size="sm" aria-label={`Customize ${label} color`}>
+                <Palette />
+              </IconButton>
             </PopoverTrigger>
           </TooltipTrigger>
           <TooltipContent side="top">

@@ -1175,7 +1175,7 @@ function buildDiffSourceLines(lines: DiffLine[]): { oldLines: string[]; newLines
 }
 
 
-const TOOL_DIFF_CLASS = 'bg-transparent [--diff-gutter-bg:var(--card)]'
+const TOOL_DIFF_CLASS = 'bg-transparent'
 
 /** Unified diff for Edit tool with actual file line numbers. */
 export function EditDiff({ params }: { params: Record<string, unknown> }) {

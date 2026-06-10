@@ -131,7 +131,13 @@
   margin: 0.3em 0;
 }
 
+.tool-node {
+  --diff-gutter-bg: color-mix(in oklch, var(--card), var(--muted) 20%);
+}
 
+.tool-node:hover {
+  --diff-gutter-bg: color-mix(in oklch, var(--card), var(--muted) 40%);
+}
 
 /* --- Activity panel: flat tool nodes --- */
 .activity-panel .tool-node,

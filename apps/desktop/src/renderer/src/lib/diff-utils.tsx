@@ -515,7 +515,7 @@ const DiffLineRow = memo(function DiffLineRow({ line, tokens, gw, size, start, i
       className={isHighlighted ? ROW_HIGHLIGHT : wasFading ? ROW_CLASS_FADE[line.kind] : ROW_CLASS[line.kind]}
       style={{ height: size, transform: `translateY(${start}px)` }}
     >
-      <span className="sticky left-0 z-10 inline-block select-none bg-[var(--diff-gutter-bg,var(--background))] text-right text-muted-foreground/50 pl-2 pr-1" style={{ width: `calc(${gw}ch + 0.75rem)` }}>
+      <span className="sticky -left-px z-10 inline-block select-none bg-[var(--diff-gutter-bg,var(--background))] text-right text-muted-foreground/50 pl-2 pr-1" style={{ width: `calc(${gw}ch + 0.75rem)` }}>
         {line.lineNum}
       </span>
       <span className={MARKER_CLASS[line.kind]}>{s.marker}</span>

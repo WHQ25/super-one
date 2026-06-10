@@ -5,16 +5,14 @@ import type { PluggableList } from 'unified'
 import { defaultSchema } from 'hast-util-sanitize'
 import rehypeSanitize from 'rehype-sanitize'
 import { harden, BlockPolicy } from 'rehype-harden'
-import { createCodePlugin } from '@streamdown/code'
 import { createStreamdownCodeComponent } from './CodeBlock'
+import { codePlugin, codePluginLight } from './code-plugins'
 import { toMediaUrl, toLocalFileUrl } from '@/lib/path-utils'
 import { LinkSafetyModal } from './LinkSafetyModal'
 import { MarkdownImage } from './markdown-image'
 import { MarkdownTable } from './MarkdownTable'
 
-/** Shared code highlighter plugin instance — reused across all chat components. */
-export const codePlugin = createCodePlugin({ themes: ['github-dark', 'github-dark'] })
-export const codePluginLight = createCodePlugin({ themes: ['github-light', 'github-light'] })
+export { codePlugin, codePluginLight }
 
 type MathPlugin = { remarkPlugin?: unknown; rehypePlugin: [unknown, Record<string, unknown>] }
 let mathPluginInstance: MathPlugin | null = null

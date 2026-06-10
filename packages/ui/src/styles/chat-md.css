@@ -158,9 +158,15 @@
 
   .tool-node,
   .tool-group {
-    margin-left: 0.5rem;
-    border-left: 2px solid var(--border);
+    margin-left: 5px;
+    border-left: 2px solid color-mix(in oklch, var(--border), transparent 40%);
     border-radius: 0;
+  }
+
+  .dark .tool-node,
+  .dark .tool-group,
+  .dark .thinking-content {
+    border-left-color: var(--border);
   }
 
   .tool-node.denied {
@@ -172,8 +178,8 @@
   }
 
   .thinking-content {
-    margin-left: 0.5rem;
-    border-left: 2px solid var(--border);
+    margin-left: 5px;
+    border-left: 2px solid color-mix(in oklch, var(--border), transparent 40%);
   }
 
   .subagent-container .tool-node {
@@ -197,13 +203,7 @@
     margin-top: 0;
   }
 
-  .tool-node,
-  .tool-group,
   .subagent-container {
-    margin-left: 0.75rem;
-  }
-
-  .thinking-content {
     margin-left: 0.75rem;
   }
 }

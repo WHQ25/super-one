@@ -3,6 +3,11 @@ import { Check, Copy } from 'lucide-react'
 import type { CodeHighlighterPlugin } from '@streamdown/code'
 import { useIsCodeFenceIncomplete } from 'streamdown'
 import { tryCopy } from '@/lib/clipboard'
+import { useIsDark } from '@/hooks/use-is-dark'
+import { codePluginLight } from './code-plugins'
+
+const DARK_FG = '#e1e4e8'
+const LIGHT_FG = '#24292e'
 
 const MermaidBlock = lazy(() => import('./MermaidBlock').then((m) => ({ default: m.MermaidBlock })))
 
@@ -36,13 +41,16 @@ interface TokenLine {
 }
 
 export function HighlightedCodeBlock({ code, language, codePlugin, isComplete = true }: HighlightedCodeBlockProps) {
+  const isDark = useIsDark()
+  const activePlugin = isDark ? codePlugin : codePluginLight
+  const fallbackFg = isDark ? DARK_FG : LIGHT_FG
   const [copied, setCopied] = useState(false)
   const [lines, setLines] = useState<TokenLine[] | null>(null)
-  const [colors, setColors] = useState<{ fg: string; bg: string }>({ fg: '#e1e4e8', bg: '#24292e' })
+  const [fg, setFg] = useState<string>(fallbackFg)
   const preRef = useRef<HTMLPreElement>(null)
 
   const applyHighlightResult = useCallback((res: { fg?: string; bg?: string; tokens: Array<Array<{ content: string; color?: string; bgColor?: string; htmlStyle?: Record<string, string> }>> }) => {
-    setColors({ fg: res.fg ?? '#e1e4e8', bg: res.bg ?? '#24292e' })
+    setFg(res.fg ?? fallbackFg)
     setLines(
       res.tokens.map((line) => ({
         tokens: line.map((t) => ({
@@ -53,7 +61,7 @@ export function HighlightedCodeBlock({ code, language, codePlugin, isComplete = 
         })),
       }))
     )
-  }, [])
+  }, [fallbackFg])
 
   const normalizeLanguage = useCallback((raw: string): string => {
     const value = raw.trim().toLowerCase()
@@ -64,23 +72,24 @@ export function HighlightedCodeBlock({ code, language, codePlugin, isComplete = 
   useEffect(() => {
     if (!isComplete) {
       setLines(null)
+      setFg(fallbackFg)
       return
     }
-    const themes = codePlugin.getThemes()
+    const themes = activePlugin.getThemes()
     const normalizedLanguage = normalizeLanguage(language)
-    if (!codePlugin.supportsLanguage(normalizedLanguage as never)) {
+    if (!activePlugin.supportsLanguage(normalizedLanguage as never)) {
       setLines(null)
       return
     }
 
-    const result = codePlugin.highlight(
+    const result = activePlugin.highlight(
       { code, language: normalizedLanguage as never, themes },
       (res) => applyHighlightResult(res)
     )
     if (result) {
       applyHighlightResult(result)
     }
-  }, [code, language, codePlugin, applyHighlightResult, normalizeLanguage, isComplete])
+  }, [code, language, activePlugin, applyHighlightResult, normalizeLanguage, isComplete, fallbackFg])
 
   const handleCopy = useCallback(async () => {
     if (!(await tryCopy(code))) return
@@ -89,8 +98,8 @@ export function HighlightedCodeBlock({ code, language, codePlugin, isComplete = 
   }, [code])
 
   return (
-    <div data-chat-codeblock className="my-1.5 overflow-hidden rounded-md" style={{ backgroundColor: colors.bg }}>
-      <div className="flex items-center justify-between px-3 py-1.5 text-[11px]" style={{ color: colors.fg }}>
+    <div data-chat-codeblock className="my-1.5 overflow-hidden rounded-md bg-muted/20">
+      <div className="flex items-center justify-between px-3 py-1.5 text-[11px] text-muted-foreground">
         <span className="opacity-50">{language}</span>
         <button
           onClick={handleCopy}
@@ -102,7 +111,7 @@ export function HighlightedCodeBlock({ code, language, codePlugin, isComplete = 
       <pre
         ref={preRef}
         className="overflow-x-auto px-3 pb-3 text-xs leading-relaxed"
-        style={{ color: colors.fg }}
+        style={{ color: fg }}
       >
         <code>
           {lines

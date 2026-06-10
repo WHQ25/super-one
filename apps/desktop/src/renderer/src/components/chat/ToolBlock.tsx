@@ -36,7 +36,7 @@ const SUPERONE_SERVER = 'superone'
 
 function CompactToolRow({ icon, children }: { icon: React.ReactNode; children: React.ReactNode }) {
   return (
-    <div className="tool-node my-0.5 rounded bg-muted/50">
+    <div className="tool-node my-0.5 rounded bg-muted/20">
       <div className="flex items-center gap-1.5 px-2 py-1.5 text-xs">
         {icon}
         {children}
@@ -73,7 +73,7 @@ function AppToolBlock({ icon, appName, toolText, summary, isStreaming, expandabl
     )
   }
   return (
-    <div className={cn('tool-node my-0.5 rounded bg-muted/50', 'cursor-pointer hover:bg-muted/70')}>
+    <div className={cn('tool-node my-0.5 rounded bg-muted/20', 'cursor-pointer hover:bg-muted/40')}>
       <div
         className="flex items-center gap-1.5 px-2 py-1.5 text-xs"
         onClick={() => setExpanded((e) => !e)}
@@ -119,7 +119,7 @@ function SetupMiniAppDevBlock({ appName, isStreaming, params, result }: {
   if (directory) rows.push({ key: 'directory', label: t('chat.toolBlock.setupFields.directory'), value: directory, mono: true })
   if (description) rows.push({ key: 'description', label: t('chat.toolBlock.setupFields.description'), value: description })
   return (
-    <div className={cn('tool-node my-0.5 rounded bg-muted/50', 'cursor-pointer hover:bg-muted/70')}>
+    <div className={cn('tool-node my-0.5 rounded bg-muted/20', 'cursor-pointer hover:bg-muted/40')}>
       <div
         className="flex items-center gap-1.5 px-2 py-1.5 text-xs"
         onClick={() => setExpanded((e) => !e)}
@@ -170,7 +170,7 @@ function AppResultRendererBlock({ appId, toolUseId, toolName, appName, toolReada
 }) {
   const [expanded, setExpanded] = useState(autoExpand)
   return (
-    <div className={cn('tool-node my-0.5 rounded bg-muted/50', 'cursor-pointer hover:bg-muted/70')}>
+    <div className={cn('tool-node my-0.5 rounded bg-muted/20', 'cursor-pointer hover:bg-muted/40')}>
       <div
         className="flex items-center gap-1.5 px-2 py-1.5 text-xs"
         onClick={() => setExpanded((e) => !e)}
@@ -452,7 +452,7 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
 
       if (toolInterceptState) {
         return (
-          <div className="tool-node my-0.5 rounded bg-muted/50 p-2">
+          <div className="tool-node my-0.5 rounded bg-muted/20 p-2">
             <div className="flex items-center gap-1.5 px-1 pb-1.5 text-xs text-muted-foreground">
               {canvasApp ? <MiniAppIcon appId={canvasApp.id} className="size-3.5 shrink-0" /> : <ToolIcon icon="plug" className="size-3 shrink-0" />}
               <span>{appName}</span>
@@ -543,9 +543,9 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
     <div
       className={cn(
         'tool-node my-0.5 rounded transition-colors',
-        isDenied ? 'denied bg-error/10' : isError ? 'errored bg-warning/10' : 'bg-muted/50',
+        isDenied ? 'denied bg-error/10' : isError ? 'errored bg-warning/10' : 'bg-muted/20',
         expandable && 'cursor-pointer',
-        expandable && (isDenied ? 'hover:bg-error/20' : isError ? 'hover:bg-warning/20' : 'hover:bg-muted/70')
+        expandable && (isDenied ? 'hover:bg-error/20' : isError ? 'hover:bg-warning/20' : 'hover:bg-muted/40')
       )}
     >
       <div
@@ -766,7 +766,7 @@ function MobileShareFileBlock({ params, result, isStreaming }: {
   )
 
   if (!done) {
-    return <div className="tool-node my-0.5 rounded bg-muted/50">{header}</div>
+    return <div className="tool-node my-0.5 rounded bg-muted/20">{header}</div>
   }
 
   const sentAt = parsed?.sentAt ? new Date(parsed.sentAt) : null
@@ -782,7 +782,7 @@ function MobileShareFileBlock({ params, result, isStreaming }: {
   })
 
   return (
-    <div className="tool-node my-0.5 rounded bg-muted/50">
+    <div className="tool-node my-0.5 rounded bg-muted/20">
       {header}
       <div className="grid transition-[grid-template-rows] duration-200 ease-out" style={{ gridTemplateRows: expanded ? '1fr' : '0fr' }}>
         <div className="overflow-hidden">
@@ -951,7 +951,7 @@ function BashTerminalView({
   return (
     <div className={cn(
       'tool-node my-0.5 rounded transition-colors cursor-pointer',
-      isDenied ? 'denied bg-error/10 hover:bg-error/20' : showError ? 'errored bg-warning/10 hover:bg-warning/20' : 'bg-muted/50 hover:bg-muted/70',
+      isDenied ? 'denied bg-error/10 hover:bg-error/20' : showError ? 'errored bg-warning/10 hover:bg-warning/20' : 'bg-muted/20 hover:bg-muted/40',
       expanded && 'overflow-hidden',
     )}>
       <div
@@ -1175,6 +1175,8 @@ function buildDiffSourceLines(lines: DiffLine[]): { oldLines: string[]; newLines
 }
 
 
+const TOOL_DIFF_CLASS = 'bg-transparent [--diff-gutter-bg:var(--card)]'
+
 /** Unified diff for Edit tool with actual file line numbers. */
 export function EditDiff({ params }: { params: Record<string, unknown> }) {
   const oldStr = String(params.old_string ?? '')
@@ -1211,7 +1213,7 @@ export function EditDiff({ params }: { params: Record<string, unknown> }) {
   )
 
   if (!oldStr && !newStr) return null
-  return <DiffView lines={lines} oldTokens={oldTokens} newTokens={newTokens} />
+  return <DiffView lines={lines} oldTokens={oldTokens} newTokens={newTokens} className={TOOL_DIFF_CLASS} />
 }
 
 /** Content preview for Write tool (all lines are additions). */
@@ -1238,7 +1240,7 @@ function WriteDiffStreaming({ params }: { params: Record<string, unknown> }) {
     return contentLines.map((text, i) => ({ kind: 'added' as const, lineNum: i + 1, text, sourceIdx: i }))
   }, [contentLines])
   if (lines.length === 0) return null
-  return <DiffView lines={lines} newTokens={tokens} autoScrollBottom />
+  return <DiffView lines={lines} newTokens={tokens} autoScrollBottom className={TOOL_DIFF_CLASS} />
 }
 
 function WriteDiffStatic({ params }: { params: Record<string, unknown> }) {
@@ -1254,7 +1256,7 @@ function WriteDiffStatic({ params }: { params: Record<string, unknown> }) {
     return contentLines.map((text, i) => ({ kind: 'added' as const, lineNum: i + 1, text, sourceIdx: i }))
   }, [contentLines])
   if (lines.length === 0) return null
-  return <DiffView lines={lines} newTokens={tokens} />
+  return <DiffView lines={lines} newTokens={tokens} className={TOOL_DIFF_CLASS} />
 }
 
 function FileChangeDiff({ params, isStreaming }: { params: Record<string, unknown>; isStreaming?: boolean }) {
@@ -1282,7 +1284,7 @@ function FileChangeDiffStreaming({ params }: { params: Record<string, unknown> }
   const oldTokens = useIncrementalHighlightedLines(committedOldLines, language)
   const newTokens = useIncrementalHighlightedLines(committedNewLines, language)
   if (!diff || lines.length === 0) return null
-  return <DiffView lines={lines} oldTokens={oldTokens} newTokens={newTokens} autoScrollBottom />
+  return <DiffView lines={lines} oldTokens={oldTokens} newTokens={newTokens} autoScrollBottom className={TOOL_DIFF_CLASS} />
 }
 
 function FileChangeDiffStatic({ params }: { params: Record<string, unknown> }) {
@@ -1297,7 +1299,7 @@ function FileChangeDiffStatic({ params }: { params: Record<string, unknown> }) {
   const oldTokens = useHighlightedTokens(oldLines.join('\n'), language, { cache })
   const newTokens = useHighlightedTokens(newLines.join('\n'), language, { cache })
   if (!diff || lines.length === 0) return null
-  return <DiffView lines={lines} oldTokens={oldTokens} newTokens={newTokens} />
+  return <DiffView lines={lines} oldTokens={oldTokens} newTokens={newTokens} className={TOOL_DIFF_CLASS} />
 }
 
 /** ExitPlanMode: shows pending / approved / rejected state.
@@ -1313,7 +1315,7 @@ function ExitPlanModeBlock({ result }: { result?: string }) {
 
   if (!outcome) {
     return (
-      <div className="my-4 flex items-center gap-1.5 rounded bg-muted/50 px-2 py-1.5 text-sm">
+      <div className="my-4 flex items-center gap-1.5 rounded bg-muted/20 px-2 py-1.5 text-sm">
         <PenLine className="size-3 shrink-0 text-muted-foreground" />
         <span className="font-medium text-muted-foreground">Review Plan</span>
       </div>
@@ -1362,7 +1364,7 @@ export function DebugToolBlock({
   const prettyInput = tryPrettifyJson(input) ?? input
 
   return (
-    <div className="my-0.5 rounded border border-amber-500/30 bg-muted/50">
+    <div className="my-0.5 rounded border border-amber-500/30 bg-muted/20">
       <div className="flex items-center gap-1.5 px-2 py-1.5 text-xs">
         <span className="size-3 shrink-0 text-center text-warning">&#9881;</span>
         <span className="font-medium text-warning">

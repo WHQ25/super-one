@@ -50,6 +50,7 @@ export function useHarnessTheme(): void {
   const terminalFontSize = useAppStore((s) => s.terminalFontSize)
   const terminalFontFamily = useAppStore((s) => s.terminalFontFamily)
   const uiFontFamily = useAppStore((s) => s.uiFontFamily)
+  const liquidGlass = useAppStore((s) => s.liquidGlass)
 
   const appliedRef = useRef<AppliedSnapshot>({ brandHue: null, overrides: {}, dark: false })
 
@@ -58,6 +59,7 @@ export function useHarnessTheme(): void {
     const overrides = harness === 'codex' ? codexOverrides : claudeOverrides
     const root = document.documentElement
     root.dataset.harness = harness
+    root.classList.toggle('liquid-glass', liquidGlass)
     if (terminalLightPalette) root.dataset.terminalPaletteLight = terminalLightPalette
     else delete root.dataset.terminalPaletteLight
     if (terminalDarkPalette) root.dataset.terminalPaletteDark = terminalDarkPalette
@@ -126,5 +128,5 @@ export function useHarnessTheme(): void {
     return () => {
       if (raf !== null) cancelAnimationFrame(raf)
     }
-  }, [harness, dark, claudeHue, codexHue, claudeOverrides, codexOverrides, terminalLightPalette, terminalDarkPalette, terminalFontSize, terminalFontFamily, uiFontFamily])
+  }, [harness, dark, claudeHue, codexHue, claudeOverrides, codexOverrides, terminalLightPalette, terminalDarkPalette, terminalFontSize, terminalFontFamily, uiFontFamily, liquidGlass])
 }

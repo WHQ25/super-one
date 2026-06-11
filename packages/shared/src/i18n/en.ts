@@ -184,6 +184,10 @@ export type Messages = {
         label: string
         description: string
       }
+      liquidGlass: {
+        label: string
+        description: string
+      }
       language: {
         label: string
         description: string
@@ -1442,6 +1446,10 @@ export const en: Messages = {
       crispText: {
         label: 'Crisp Text',
         description: 'Use grayscale font smoothing so text renders thinner and sharper. macOS only.',
+      },
+      liquidGlass: {
+        label: 'Liquid Glass',
+        description: 'Make window surfaces translucent to reveal the native macOS glass material behind them. macOS only.',
       },
       language: {
         label: 'Language',

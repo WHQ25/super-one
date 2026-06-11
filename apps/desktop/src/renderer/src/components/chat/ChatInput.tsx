@@ -1026,7 +1026,7 @@ export function ChatInput() {
       >
         {activeProviderForResources === 'claude' && <ChatInputDirsHint />}
         {matchingCommands.length > 0 && !slashDismissed && (
-          <div className="absolute bottom-full left-0 right-0 z-10 mb-1 flex max-h-64 flex-col overflow-hidden rounded-xl border border-border bg-card p-1.5">
+          <div className="absolute bottom-full left-0 right-0 z-10 mb-1 flex max-h-64 flex-col overflow-hidden rounded-xl border border-border bg-popover p-1.5">
             <div className="min-h-0 flex-1 overflow-y-auto">
               {slashGroups.map((group) => (
                 <div key={group.key}>
@@ -1074,19 +1074,19 @@ export function ChatInput() {
         )}
 
         {commandPopup && commandPopup.command === 'provider' && (
-          <div className="absolute bottom-full left-0 right-0 z-10 mb-1 overflow-hidden rounded-xl border border-border bg-card">
+          <div className="absolute bottom-full left-0 right-0 z-10 mb-1 overflow-hidden rounded-xl border border-border bg-popover">
             <ProviderSlashPopup onClose={dismissCommandPopup} />
           </div>
         )}
 
         {commandPopup && commandPopup.command === 'mcp' && (
-          <div className="absolute bottom-full left-0 right-0 z-10 mb-1 overflow-hidden rounded-xl border border-border bg-card">
+          <div className="absolute bottom-full left-0 right-0 z-10 mb-1 overflow-hidden rounded-xl border border-border bg-popover">
             <McpSlashPopup onClose={dismissCommandPopup} />
           </div>
         )}
 
         {commandPopup && commandPopup.command !== 'provider' && commandPopup.command !== 'mcp' && (
-          <div className="absolute bottom-full left-0 right-0 z-10 mb-1 flex max-h-96 flex-col overflow-hidden rounded-xl border border-border bg-card">
+          <div className="absolute bottom-full left-0 right-0 z-10 mb-1 flex max-h-96 flex-col overflow-hidden rounded-xl border border-border bg-popover">
             <div className="flex items-center justify-between px-3 py-1.5">
               <span className="text-[11px] font-medium text-muted-foreground">/{commandPopup.command}</span>
               <button

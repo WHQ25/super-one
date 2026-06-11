@@ -47,6 +47,11 @@
   --dv-floating-box-shadow: 0 4px 12px oklch(0 0 0 / 0.3);
 }
 
+.liquid-glass.dark .dockview-theme-superone {
+  --dv-group-view-background-color: transparent;
+  --dv-tabs-and-actions-container-background-color: transparent;
+}
+
 .dockview-theme-superone .dv-tab:focus-within::after,
 .dockview-theme-superone .dv-tab:focus::after {
   outline: none !important;

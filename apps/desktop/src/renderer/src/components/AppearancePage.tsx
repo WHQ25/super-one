@@ -88,6 +88,8 @@ export function AppearancePage() {
   const setTerminalFontSize = useAppStore((s) => s.setTerminalFontSize)
   const setTerminalFontFamily = useAppStore((s) => s.setTerminalFontFamily)
   const setUiFontFamily = useAppStore((s) => s.setUiFontFamily)
+  const liquidGlass = useAppStore((s) => s.liquidGlass)
+  const setLiquidGlass = useAppStore((s) => s.setLiquidGlass)
   const isMac = window.app.platform === 'darwin'
 
   const selectedPaletteId: Record<TerminalScheme, string> = {
@@ -215,6 +217,21 @@ export function AppearancePage() {
               <Switch
                 checked={crispText}
                 onCheckedChange={handleCrispTextToggle}
+                disabled={loading}
+              />
+            </div>
+          )}
+          {isMac && (
+            <div className="flex items-center justify-between gap-4 border-t border-border p-4">
+              <div className="min-w-0">
+                <p className="text-sm font-medium">{t('settings.general.liquidGlass.label')}</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  {t('settings.general.liquidGlass.description')}
+                </p>
+              </div>
+              <Switch
+                checked={liquidGlass}
+                onCheckedChange={setLiquidGlass}
                 disabled={loading}
               />
             </div>

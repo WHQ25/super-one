@@ -33,7 +33,7 @@ export function ChatInputDirsHint() {
   if (entries.length === 0) return null
   return (
     <TooltipProvider delayDuration={300}>
-      <div className="absolute bottom-full left-0 right-0 z-10 mb-1 flex items-center gap-1 overflow-x-auto rounded-xl border border-border bg-card p-1">
+      <div className="absolute bottom-full left-0 right-0 z-10 mb-1 flex items-center gap-1 overflow-x-auto rounded-xl border border-border p-1">
         <span className="ml-1 mr-0.5 shrink-0 text-[11px] text-muted-foreground/70">{t('chat.additionalDirs.label')}</span>
         {entries.map(({ dir, scope }) => (
           <Tooltip key={dir}>

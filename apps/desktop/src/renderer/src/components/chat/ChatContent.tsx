@@ -1,5 +1,6 @@
 import { useRef, useState, useEffect, useLayoutEffect, useMemo, useCallback, lazy, Suspense } from 'react'
 import { useChatStore, useActiveSession, useIsRemoteLocked } from '@/stores/chat'
+import { useAppStore } from '@/stores/app'
 import { useShallow } from 'zustand/react/shallow'
 import { ScrollArea } from '@superone/ui/components/ui/scroll-area'
 import { ArrowDown, GitFork, PenLine, Smartphone, Trash2 } from 'lucide-react'
@@ -50,6 +51,7 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
     queuedMessages: s.queuedMessages,
     awaitingAssistantReply: s.awaitingAssistantReply,
   })))
+  const liquidGlass = useAppStore((s) => s.liquidGlass)
   const { editQueuedMessage, deleteQueuedMessage, disconnectRemoteSession, dismissCompactError } = useChatStore(useShallow((s) => ({
     editQueuedMessage: s.editQueuedMessage,
     deleteQueuedMessage: s.deleteQueuedMessage,
@@ -183,7 +185,7 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
     <SubagentNavigationContext.Provider value={subagentNav}>
     <ForkNavigationContext.Provider value={forkNav}>
     <PlanFullscreenContext.Provider value={planFullscreenCtx}>
-    <div ref={containerRef} className={cn('relative flex min-h-0 min-w-0 flex-col bg-card', zoom <= 1 && 'w-full flex-1')} style={zoom > 1 ? { transform: `scale(${zoom})`, transformOrigin: 'top left', width: `${100 / zoom}%`, height: `${100 / zoom}%` } : zoom < 1 ? { zoom } : undefined}>
+    <div ref={containerRef} className={cn('relative flex min-h-0 min-w-0 flex-col', zoom <= 1 && 'w-full flex-1')} style={zoom > 1 ? { transform: `scale(${zoom})`, transformOrigin: 'top left', width: `${100 / zoom}%`, height: `${100 / zoom}%` } : zoom < 1 ? { zoom } : undefined}>
       {workflowView ? (
         <Suspense fallback={null}>
           <WorkflowFullView view={workflowView} />
@@ -272,7 +274,7 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
                 </SelectionContextMenuZone>
               </ScrollArea>
             )}
-            <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-6 bg-linear-to-t from-card to-transparent" />
+            {!liquidGlass && <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-6 bg-linear-to-t from-card to-transparent" />}
             <AnimatePresence>
               {showScrollButton && scrollToBottom && messages.length > 0 && (
                 <motion.button

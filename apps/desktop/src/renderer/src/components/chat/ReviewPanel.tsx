@@ -157,7 +157,7 @@ export function ReviewPanel() {
     <div
       ref={panelRef}
       tabIndex={-1}
-      className="absolute bottom-full left-0 right-0 z-10 mb-1 flex max-h-80 flex-col overflow-hidden rounded-xl border border-border bg-card outline-none"
+      className="absolute bottom-full left-0 right-0 z-10 mb-1 flex max-h-80 flex-col overflow-hidden rounded-xl border border-border bg-popover outline-none"
       onKeyDown={handleKeyDown}
     >
       <div className="flex items-center justify-between px-3 py-1.5">

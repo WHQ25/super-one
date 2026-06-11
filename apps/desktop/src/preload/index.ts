@@ -10,6 +10,12 @@ try {
   if (title) process.title = title
 } catch { /* process.title not writable in some sandboxed contexts */ }
 
+if (process.argv.includes('--superone-liquid-glass')) {
+  const stamp = (): void => document.documentElement.classList.add('liquid-glass')
+  if (document.documentElement) stamp()
+  else document.addEventListener('DOMContentLoaded', stamp, { once: true })
+}
+
 type UserMessageExtras = {
   contexts?: ChatMessageContext[]
   userSelections?: string[]

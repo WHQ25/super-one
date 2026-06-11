@@ -72,6 +72,16 @@ body {
   color: var(--foreground);
 }
 
+.liquid-glass.dark body {
+  background-color: transparent;
+}
+
+.liquid-glass.dark .sidebar-session-tabs > .bg-card {
+  background-color: color-mix(in oklab, var(--card) 45%, transparent);
+  border-color: color-mix(in oklab, var(--border) 50%, transparent);
+  box-shadow: none;
+}
+
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: transparent; border-radius: 3px; transition: background 0.3s; }

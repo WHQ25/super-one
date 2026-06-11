@@ -2188,6 +2188,7 @@ export interface AppSettings {
   terminalFontSize: number
   terminalFontFamily: string | null
   uiFontFamily: string | null
+  liquidGlass: boolean
   miniAppOrder: Record<string, string[]>
   customAppIconPath: string | null
   agentPreference: {
@@ -2219,6 +2220,7 @@ export interface AppSettingsPatch {
   terminalFontSize?: number
   terminalFontFamily?: string | null
   uiFontFamily?: string | null
+  liquidGlass?: boolean
   miniAppOrder?: Record<string, string[]>
   customAppIconPath?: string | null
   agentPreference?: {

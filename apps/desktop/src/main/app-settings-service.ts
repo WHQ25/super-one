@@ -19,6 +19,7 @@ const defaults: AppSettings = {
   terminalFontSize: 14,
   terminalFontFamily: null,
   uiFontFamily: null,
+  liquidGlass: false,
   miniAppOrder: {},
   customAppIconPath: null,
   agentPreference: {
@@ -156,6 +157,7 @@ export function readAppSettings(): AppSettings {
       terminalFontSize: readTerminalFontSize(data.terminalFontSize),
       terminalFontFamily: typeof data.terminalFontFamily === 'string' ? data.terminalFontFamily : defaults.terminalFontFamily,
       uiFontFamily: typeof data.uiFontFamily === 'string' ? data.uiFontFamily : defaults.uiFontFamily,
+      liquidGlass: typeof data.liquidGlass === 'boolean' ? data.liquidGlass : defaults.liquidGlass,
       miniAppOrder: readMiniAppOrder(data.miniAppOrder),
       customAppIconPath: typeof data.customAppIconPath === 'string' ? data.customAppIconPath : defaults.customAppIconPath,
       agentPreference: {
@@ -174,6 +176,7 @@ export function readAppSettings(): AppSettings {
       terminalFontSize: defaults.terminalFontSize,
       terminalFontFamily: defaults.terminalFontFamily,
       uiFontFamily: defaults.uiFontFamily,
+      liquidGlass: defaults.liquidGlass,
       miniAppOrder: {},
       customAppIconPath: defaults.customAppIconPath,
       agentPreference: {
@@ -196,6 +199,7 @@ export function saveAppSettings(patch: AppSettingsPatch): AppSettings {
     terminalFontSize: patch.terminalFontSize === undefined ? current.terminalFontSize : readTerminalFontSize(patch.terminalFontSize),
     terminalFontFamily: patch.terminalFontFamily === undefined ? current.terminalFontFamily : patch.terminalFontFamily,
     uiFontFamily: patch.uiFontFamily === undefined ? current.uiFontFamily : patch.uiFontFamily,
+    liquidGlass: patch.liquidGlass === undefined ? current.liquidGlass : patch.liquidGlass,
     miniAppOrder: patch.miniAppOrder
       ? { ...current.miniAppOrder, ...patch.miniAppOrder }
       : current.miniAppOrder,

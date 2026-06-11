@@ -100,6 +100,13 @@
   --insight-fg: oklch(0.7 0.15 280);
 }
 
+.liquid-glass.dark {
+  --card: oklch(0.205 0 0 / 0.72);
+  --sidebar: transparent;
+  --border: oklch(1 0 0 / 0.15);
+  --sidebar-border: oklch(1 0 0 / 0.1);
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);

@@ -72,7 +72,7 @@ function TabsList({
       <div className="pointer-events-none absolute inset-x-0.5 inset-y-1 rounded-md bg-muted dark:bg-muted/50" />
       {indicator && (
         <motion.div
-          className="absolute rounded-md border border-border bg-background shadow-sm"
+          className="absolute rounded-md border border-border bg-card shadow-sm"
           initial={false}
           animate={{
             left: indicator.left,

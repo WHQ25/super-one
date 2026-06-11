@@ -12,6 +12,12 @@ export const ProcessTitle = {
 
 export const SUPERONE_ROLE_ARG_PREFIX = '--superone-role='
 
+export const SUPERONE_GLASS_ARG = '--superone-liquid-glass'
+
+export function glassBootArgs(enabled: boolean): string[] {
+  return enabled ? [SUPERONE_GLASS_ARG] : []
+}
+
 export const WindowRole = {
   Main: 'main',
   Mini: 'mini',

@@ -88,7 +88,7 @@ import { RemoteControlService } from './remote-control-service'
 import { readProjectPreferences, saveProjectPreferences } from './claude-preferences-service'
 import { readAppSettings, saveAppSettings } from './app-settings-service'
 import { getSandboxCapability, probeSandboxDependencies } from './sandbox-platform'
-import { ProcessTitle, WindowRole, roleArg } from './process-titles'
+import { ProcessTitle, WindowRole, roleArg, glassBootArgs } from './process-titles'
 import { applyLocale, getSystemLocale, getCurrentLocale, initMainI18n, t } from './i18n'
 import { applyAppIcon, clearStoredCustomIcons, getAppIcon, storeCustomIcon } from './app-icon'
 import { planStartDrag } from './start-drag'
@@ -346,6 +346,25 @@ function resolveTerminalCwd(projectPath: string, sessionId?: string): string {
   return projectPath
 }
 
+function isGlassEnabled(): boolean {
+  return process.platform === 'darwin' && readAppSettings().liquidGlass
+}
+
+function glassWindowOptions(): Electron.BrowserWindowConstructorOptions {
+  if (!isGlassEnabled() || !currentDarkTheme) return {}
+  return { vibrancy: 'under-window', visualEffectState: 'active', backgroundColor: '#00000000' }
+}
+
+function applyLiquidGlass(): void {
+  if (process.platform !== 'darwin') return
+  const active = isGlassEnabled() && currentDarkTheme
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (win.isDestroyed()) continue
+    win.setVibrancy(active ? 'under-window' : null)
+    if (active) win.setBackgroundColor('#00000000')
+  }
+}
+
 function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1440,
@@ -353,7 +372,7 @@ function createWindow(): void {
     minWidth: 1080,
     minHeight: 700,
     ...(process.platform === 'darwin'
-      ? { titleBarStyle: 'hiddenInset' as const, trafficLightPosition: { x: 16, y: 16 } }
+      ? { titleBarStyle: 'hiddenInset' as const, trafficLightPosition: { x: 16, y: 16 }, ...glassWindowOptions() }
       : { titleBarStyle: 'hidden' as const, titleBarOverlay: { color: '#00000000', symbolColor: '#888888', height: 40 } }),
     icon: getAppIcon() ?? undefined,
     webPreferences: {
@@ -361,7 +380,7 @@ function createWindow(): void {
       sandbox: true,
       zoomFactor: 1,
       webviewTag: true,
-      additionalArguments: [roleArg(WindowRole.Main)],
+      additionalArguments: [roleArg(WindowRole.Main), ...glassBootArgs(isGlassEnabled())],
     }
   })
 
@@ -447,14 +466,14 @@ function createSessionWindow(projectPath: string, sessionId: string, title?: str
     minHeight: 480,
     title: title ?? 'Session',
     ...(process.platform === 'darwin'
-      ? { titleBarStyle: 'hiddenInset' as const, trafficLightPosition: { x: 12, y: 12 } }
+      ? { titleBarStyle: 'hiddenInset' as const, trafficLightPosition: { x: 12, y: 12 }, ...glassWindowOptions() }
       : { titleBarStyle: 'hidden' as const, titleBarOverlay: { color: '#00000000', symbolColor: '#888888', height: 36 } }),
     icon: getAppIcon() ?? undefined,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: true,
       zoomFactor: 1,
-      additionalArguments: [roleArg(WindowRole.Mini)],
+      additionalArguments: [roleArg(WindowRole.Mini), ...glassBootArgs(isGlassEnabled())],
     },
   })
 
@@ -1870,6 +1889,9 @@ function registerIpcHandlers(): void {
     if (patch?.updateChannel !== undefined) {
       setUpdateChannel(result.updateChannel)
     }
+    if (patch?.liquidGlass !== undefined) {
+      applyLiquidGlass()
+    }
     safeSend(AgentIpcChannels.APP_SETTINGS_CHANGED, result)
     return result
   })
@@ -2011,6 +2033,7 @@ function registerIpcHandlers(): void {
   ipcMain.handle(AgentIpcChannels.SET_THEME, (_e, dark: boolean): void => {
     if (currentDarkTheme === dark) return
     currentDarkTheme = dark
+    applyLiquidGlass()
     safeSend(AgentIpcChannels.THEME_CHANGED, dark)
   })
 

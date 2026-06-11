@@ -132,10 +132,12 @@ interface AppState {
   terminalFontSize: number
   terminalFontFamily: string | null
   uiFontFamily: string | null
+  liquidGlass: boolean
   setTerminalPalette: (scheme: 'light' | 'dark', id: string | null) => Promise<void>
   setTerminalFontSize: (size: number) => Promise<void>
   setTerminalFontFamily: (family: string | null) => Promise<void>
   setUiFontFamily: (family: string | null) => Promise<void>
+  setLiquidGlass: (enabled: boolean) => Promise<void>
 
   // Per-token LCH overrides (per-harness, light mode only)
   tokenOverrides: Record<HarnessId, TokenOverrides>
@@ -547,6 +549,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   terminalFontSize: 14,
   terminalFontFamily: null,
   uiFontFamily: null,
+  liquidGlass: false,
 
   loadBrandHues: async () => {
     try {
@@ -565,6 +568,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         terminalFontSize: settings.terminalFontSize,
         terminalFontFamily: settings.terminalFontFamily,
         uiFontFamily: settings.uiFontFamily,
+        liquidGlass: settings.liquidGlass,
       })
     } catch (err) {
       console.error('[brand-hue] loadBrandHues failed:', err)
@@ -583,6 +587,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     void window.app
       .saveAppSettings({ uiFontFamily: family })
       .catch((err) => console.error('[ui-font] persist failed:', err))
+  },
+
+  setLiquidGlass: async (enabled) => {
+    set({ liquidGlass: enabled })
+    void window.app
+      .saveAppSettings({ liquidGlass: enabled })
+      .catch((err) => console.error('[liquid-glass] persist failed:', err))
   },
 
   setTerminalPalette: async (scheme, id) => {
@@ -699,6 +710,7 @@ if (typeof window !== 'undefined') {
       terminalFontSize: settings.terminalFontSize,
       terminalFontFamily: settings.terminalFontFamily,
       uiFontFamily: settings.uiFontFamily,
+      liquidGlass: settings.liquidGlass,
     })
   })
 }

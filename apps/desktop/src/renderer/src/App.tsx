@@ -61,6 +61,7 @@ function App(): React.JSX.Element {
   const theme = useTheme()
   const { t } = useTranslation()
   const { view, currentFolder, showSidebar, sidebarWidth, setSidebarWidth, layoutMode } = useAppStore(useShallow((s) => ({ view: s.view, currentFolder: s.currentFolder, showSidebar: s.showSidebar, sidebarWidth: s.sidebarWidth, setSidebarWidth: s.setSidebarWidth, layoutMode: s.layoutMode })))
+  const liquidGlass = useAppStore((s) => s.liquidGlass)
   const { open: terminalOpen, toggle: toggleTerminal } = useTerminalPanel()
   const hasTerminals = useTerminalStore(
     (s) => (currentFolder ? (s.byProject[currentFolder]?.tabs.length ?? 0) : 0) > 0,
@@ -392,7 +393,7 @@ function App(): React.JSX.Element {
         <motion.div layout="position" transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }} className={cn('z-10 flex min-w-[400px] flex-1 flex-col', layoutMode === 'coding' && 'overflow-hidden', layoutMode === 'coding' && showActivityPanel && (activitySide === 'left' ? 'border-l border-border' : 'border-r border-border'))} style={{ order: 1 }}>
         {/* Main header — drag region */}
         <div
-          className={cn('flex h-[34px] shrink-0 items-center bg-card transition-[padding-left] duration-300 ease-in-out', !isMac || (isFullscreen && !(layoutMode === 'coding' && hasLeftPanel)) ? 'pl-2' : 'pl-[18px]')}
+          className={cn('flex h-[34px] shrink-0 items-center transition-[padding-left] duration-300 ease-in-out', !isMac || (isFullscreen && !(layoutMode === 'coding' && hasLeftPanel)) ? 'pl-2' : 'pl-[18px]')}
           style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
         >
           {isMac && <div className={cn('shrink-0 transition-[width] duration-300 ease-in-out', isFullscreen || (layoutMode === 'coding' && hasLeftPanel) ? 'w-0' : layoutMode === 'coding' ? 'w-[60px]' : 'w-[66px]')} />}
@@ -439,7 +440,7 @@ function App(): React.JSX.Element {
         {/* Content */}
         {layoutMode === 'coding' ? (
           <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-            <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-6 bg-linear-to-b from-card to-transparent" />
+            {!liquidGlass && <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-6 bg-linear-to-b from-card to-transparent" />}
             <CodingLayout />
           </div>
         ) : (

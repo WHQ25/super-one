@@ -198,6 +198,10 @@ export const zh: Messages = {
         label: '锐利文本',
         description: '使用灰度抗锯齿,让文字更纤细锐利。仅 macOS 生效。',
       },
+      liquidGlass: {
+        label: '液态玻璃',
+        description: '让窗口表面半透明,透出 macOS 原生玻璃材质。仅 macOS 生效。',
+      },
       language: {
         label: '语言',
         description: 'SuperOne 界面语言，切换后立即生效。',

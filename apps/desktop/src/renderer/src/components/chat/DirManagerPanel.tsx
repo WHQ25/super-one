@@ -76,7 +76,7 @@ export function DirManagerPanel({ isCoding }: DirManagerPanelProps) {
 
   return (
     <div className={cn(
-      'absolute bottom-full left-0 right-0 z-10 flex max-h-80 flex-col overflow-hidden border border-border bg-card',
+      'absolute bottom-full left-0 right-0 z-10 flex max-h-80 flex-col overflow-hidden border border-border bg-popover',
       isCoding ? 'mb-1 rounded-xl' : 'mb-0.5 rounded-t-lg'
     )}>
       <div className="flex items-center justify-between px-3 py-1.5">

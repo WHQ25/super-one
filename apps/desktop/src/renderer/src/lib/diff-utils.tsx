@@ -498,10 +498,30 @@ const ESTIMATED_LINE_HEIGHT = 20
 const DIFF_LINE_HEIGHT_RATIO = 1.625
 const DIFF_OVERSCAN = 8
 
-const DiffLineRow = memo(function DiffLineRow({ line, tokens, gw, size, start, isHighlighted, wasFading }: {
+function rowClassFor(line: DiffLine, isHighlighted: boolean, wasFading: boolean): string {
+  return isHighlighted ? ROW_HIGHLIGHT : wasFading ? ROW_CLASS_FADE[line.kind] : ROW_CLASS[line.kind]
+}
+
+const DiffGutterCell = memo(function DiffGutterCell({ line, size, start, isHighlighted, wasFading }: {
+  line: DiffLine
+  size: number
+  start: number
+  isHighlighted: boolean
+  wasFading: boolean
+}) {
+  return (
+    <div
+      className={rowClassFor(line, isHighlighted, wasFading)}
+      style={{ height: size, transform: `translateY(${start}px)` }}
+    >
+      <span className="inline-block w-full select-none pr-1.5 text-right text-muted-foreground/50">{line.lineNum}</span>
+    </div>
+  )
+})
+
+const DiffCodeCell = memo(function DiffCodeCell({ line, tokens, size, start, isHighlighted, wasFading }: {
   line: DiffLine
   tokens: HLToken[] | undefined
-  gw: number
   size: number
   start: number
   isHighlighted: boolean
@@ -512,12 +532,9 @@ const DiffLineRow = memo(function DiffLineRow({ line, tokens, gw, size, start, i
     <div
       data-line={line.lineNum}
       data-line-kind={line.kind}
-      className={isHighlighted ? ROW_HIGHLIGHT : wasFading ? ROW_CLASS_FADE[line.kind] : ROW_CLASS[line.kind]}
+      className={rowClassFor(line, isHighlighted, wasFading)}
       style={{ height: size, transform: `translateY(${start}px)` }}
     >
-      <span className="sticky -left-px z-10 inline-block select-none bg-[var(--diff-gutter-bg,var(--background))] text-right text-muted-foreground/50 pl-2 pr-1" style={{ width: `calc(${gw}ch + 0.75rem)` }}>
-        {line.lineNum}
-      </span>
       <span className={MARKER_CLASS[line.kind]}>{s.marker}</span>
       {tokens
         ? tokens.map((t, j) => <span key={j} style={t.style}>{t.content}</span>)
@@ -545,13 +562,12 @@ export const DiffView = forwardRef<HTMLDivElement, {
     const id = requestIdleCallback(() => {
       const font = fontSize ? `${fontSize}px ${MONO_FONT_FAMILY}` : getMonoFont()
       const charW = fontSize ? measureMaxLineWidth('0', font) : getMonoCharWidth()
-      const gutterPx = (gw + 2) * charW + 16
       let longest = ''
       for (let i = 0; i < lines.length; i++) {
         if (lines[i].text.length > longest.length) longest = lines[i].text
       }
       const textW = measureMaxLineWidth(longest, font)
-      setMinContentWidth(`${Math.ceil(textW + gutterPx)}px`)
+      setMinContentWidth(`${Math.ceil(textW + charW * 2 + 16)}px`)
     }, { timeout: 100 })
     return () => cancelIdleCallback(id)
   }, [lines, gw, fontSize])
@@ -626,36 +642,53 @@ export const DiffView = forwardRef<HTMLDivElement, {
 
   const outerClassName = useMemo(() =>
     cn(
-      'rounded bg-background/70 py-2 text-[11px] font-mono leading-relaxed text-foreground',
-      autoScrollBottom ? 'overflow-hidden' : 'overflow-auto',
+      'flex rounded bg-background/70 py-2 text-[11px] font-mono leading-relaxed text-foreground',
+      autoScrollBottom ? 'overflow-hidden' : 'overflow-x-hidden overflow-y-auto',
       maxHeight ?? 'max-h-[300px]',
       hideScrollbar && 'hide-scrollbar',
       className,
     ),
     [autoScrollBottom, maxHeight, hideScrollbar, className],
   )
+  const virtualItems = virtualizer.getVirtualItems()
+  const totalSize = virtualizer.getTotalSize()
 
   return (
     <div ref={scrollRef} className={outerClassName} style={{ contain: 'inline-size' }}>
-      <div className="relative min-w-full" style={{ height: virtualizer.getTotalSize(), minWidth: minContentWidth }}>
-        {virtualizer.getVirtualItems().map((vItem) => {
-          const line = lines[vItem.index]
-          const lineTokens = line.kind === 'removed'
-            ? oldTokens?.[line.sourceIdx]
-            : (newTokens ?? oldTokens)?.[line.sourceIdx]
-          return (
-            <DiffLineRow
+      <div className="flex" style={{ height: totalSize, minWidth: '100%' }}>
+        <div className="relative shrink-0" style={{ width: `calc(${gw}ch + 1.25rem)` }}>
+          {virtualItems.map((vItem) => (
+            <DiffGutterCell
               key={vItem.index}
-              line={line}
-              tokens={lineTokens}
-              gw={gw}
+              line={lines[vItem.index]}
               size={vItem.size}
               start={vItem.start}
               isHighlighted={vItem.index === highlightIdx}
               wasFading={vItem.index === fadingIdx}
             />
-          )
-        })}
+          ))}
+        </div>
+        <div className="relative min-w-0 flex-1 overflow-x-auto overflow-y-hidden">
+          <div className="relative" style={{ height: totalSize, minWidth: minContentWidth }}>
+            {virtualItems.map((vItem) => {
+              const line = lines[vItem.index]
+              const lineTokens = line.kind === 'removed'
+                ? oldTokens?.[line.sourceIdx]
+                : (newTokens ?? oldTokens)?.[line.sourceIdx]
+              return (
+                <DiffCodeCell
+                  key={vItem.index}
+                  line={line}
+                  tokens={lineTokens}
+                  size={vItem.size}
+                  start={vItem.start}
+                  isHighlighted={vItem.index === highlightIdx}
+                  wasFading={vItem.index === fadingIdx}
+                />
+              )
+            })}
+          </div>
+        </div>
       </div>
     </div>
   )

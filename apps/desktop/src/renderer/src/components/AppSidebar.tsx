@@ -399,14 +399,14 @@ export const AppSidebar = memo(function AppSidebar() {
           variant="outline"
           size="sm"
           onClick={() => resetSession()}
-          className="mb-1 w-full justify-center gap-1.5 border-sidebar-border bg-sidebar text-sidebar-foreground hover:bg-sidebar hover:border-sidebar-foreground/25 dark:border-border"
+          className="mb-1 w-full justify-center gap-1.5 border-sidebar-border bg-sidebar text-sidebar-foreground hover:bg-sidebar hover:border-sidebar-foreground/25"
         >
           <SquarePen className="size-3.5" />
           {t('sidebar.newSession')}
         </Button>
       </div>
       <Tabs value={sidebarTab} onValueChange={(v) => setSidebarTab(v as SidebarTab)} className="mx-1.5 mb-1 shrink-0">
-        <TabsList>
+        <TabsList className="sidebar-session-tabs">
           <TabsTrigger value="sessions" className="py-2">
             <MessageSquare className="size-3.5" />
             {t('sidebar.tabs.sessions')}

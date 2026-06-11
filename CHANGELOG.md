@@ -4,6 +4,14 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.41.7-alpha] - 2026-06-12
+
+### Fixed
+
+- Dark-mode tool card opacity corrected; zoom panel glass layers split for cleaner separation and tables get a wider zoom view.
+- Liquid Glass: terminal now blends with the panel surface, and dark-mode destructive color is toned down.
+- Horizontal scrollbar no longer covers the last line of a diff.
+
 ## [0.41.6-alpha] - 2026-06-11
 
 ### Added

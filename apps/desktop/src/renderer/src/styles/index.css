@@ -127,6 +127,26 @@ body {
   contain-intrinsic-size: auto;
 }
 
+/* Neutral tool-call cards read as bg-muted/20, which is nearly invisible over
+   the dark chat background. Deepen them in non-glass dark only — liquid glass
+   keeps the lighter translucency on purpose. Scoped to `.tool-node.bg-muted/20`
+   so state-colored variants (bg-error/10, bg-warning/10) are untouched. */
+.dark:not(.liquid-glass) .tool-node.bg-muted\/20 {
+  background-color: color-mix(in oklab, var(--muted) 45%, transparent);
+}
+.dark:not(.liquid-glass) .tool-node.bg-muted\/20.hover\:bg-muted\/40:hover {
+  background-color: color-mix(in oklab, var(--muted) 60%, transparent);
+}
+
+/* The mermaid/table zoom panel uses backdrop-blur for a frosted look. That's
+   clean in non-glass dark (it blurs the opaque app behind it) but dirty in
+   liquid glass, where the window is translucent so the blur smears the desktop/
+   vibrancy into blotches. In glass dark, drop to a solid opaque panel. */
+.liquid-glass.dark .fullscreen-glass-content {
+  background-color: oklch(0.205 0 0);
+  backdrop-filter: none;
+}
+
 /* Radix ScrollArea wraps children in `display: table; min-width: 100%`. That
    table layout sizes to children's max-content, so when the viewport shrinks
    the wrapper keeps its old (wider) size and content gets clipped horizontally

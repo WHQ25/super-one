@@ -5,6 +5,7 @@
 .md-table-full [data-streamdown="table"] {
   border-collapse: collapse;
   width: max-content;
+  min-width: 80%;
   background-color: var(--background);
   font-size: 12px;
 }

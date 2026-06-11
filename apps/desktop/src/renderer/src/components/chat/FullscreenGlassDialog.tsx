@@ -21,7 +21,7 @@ export function FullscreenGlassDialog({ open, onOpenChange, title, children }: {
         <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center">
           <DialogPrimitive.Content
             onOpenAutoFocus={(e) => e.preventDefault()}
-            className="pointer-events-auto h-[90vh] w-[90vw] overflow-hidden rounded-lg border bg-[oklch(0.8_0_0/0.6)] shadow-[0_0_0_100vmax_rgba(0,0,0,0.5)] outline-none backdrop-blur-md backdrop-saturate-150 duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 dark:bg-background/70"
+            className="fullscreen-glass-content pointer-events-auto h-[90vh] w-[90vw] overflow-hidden rounded-lg border bg-[oklch(0.8_0_0/0.6)] shadow-[0_0_0_100vmax_rgba(0,0,0,0.5)] outline-none backdrop-blur-md backdrop-saturate-150 duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 dark:bg-background/70"
           >
             <span className="sr-only"><DialogTitle>{title}</DialogTitle></span>
             <span className="sr-only"><DialogDescription>{title}</DialogDescription></span>

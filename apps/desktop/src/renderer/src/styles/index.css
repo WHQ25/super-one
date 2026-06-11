@@ -108,9 +108,23 @@ body {
 .hide-scrollbar::-webkit-scrollbar { display: none; }
 .hide-scrollbar { scrollbar-width: none; }
 
+/* xterm renders into a transparent canvas (allowTransparency) so the terminal
+   blends with its bg-card panel — incl. liquid-glass translucency. Override
+   xterm.css's hardcoded #000 on the host/viewport, else the transparent canvas
+   just reveals an opaque black layer behind it. */
+.xterm,
+.xterm .xterm-viewport {
+  background-color: transparent !important;
+}
+
 .chat-message-wrapper {
   content-visibility: auto;
   contain-intrinsic-size: auto 200px;
+}
+
+.liquid-glass.dark .chat-message-wrapper {
+  content-visibility: visible;
+  contain-intrinsic-size: auto;
 }
 
 /* Radix ScrollArea wraps children in `display: table; min-width: 100%`. That

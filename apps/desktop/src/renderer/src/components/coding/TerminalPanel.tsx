@@ -136,6 +136,7 @@ export function TerminalPanel() {
         fontFamily: getTerminalFontFamily(),
         cursorBlink: true,
         allowProposedApi: true,
+        allowTransparency: true,
         theme: themeRef.current,
       })
       const fit = new FitAddon()
@@ -180,6 +181,7 @@ export function TerminalPanel() {
       const fontFamily = getTerminalFontFamily()
       themeRef.current = theme
       for (const [terminalId, inst] of instances.entries()) {
+        if (!inst.xterm.options.allowTransparency) inst.xterm.options.allowTransparency = true
         inst.xterm.options.theme = theme
         const metricsChanged =
           inst.xterm.options.fontSize !== fontSize || inst.xterm.options.fontFamily !== fontFamily

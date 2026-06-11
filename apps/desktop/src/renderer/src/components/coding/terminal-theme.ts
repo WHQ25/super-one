@@ -54,7 +54,7 @@ export function buildTerminalTheme(ansi: AnsiColors): ITheme {
   const primary = resolve('var(--primary)')
   const card = resolve('var(--card)')
   return {
-    background: card,
+    background: 'rgba(0, 0, 0, 0)',
     foreground: resolve('var(--card-foreground)'),
     cursor: primary,
     cursorAccent: card,

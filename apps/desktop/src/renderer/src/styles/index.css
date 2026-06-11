@@ -59,6 +59,22 @@
   animation: fire-glow 0.8s ease-in-out infinite;
 }
 
+html:not(.dark) .rainbow-text {
+  background-image: linear-gradient(90deg, #d6336c, #e8590c, #9c6f00, #2f9e44, #0c8599, #1971c2, #6741d9, #ae3ec9, #d6336c);
+}
+
+.fire-text-ember {
+  color: #cf4a12;
+}
+
+.fire-text-fill {
+  background-image: radial-gradient(circle at 50% 45%, #ffc24d, #f08c00 32%, #e8590c 58%, #b23c0a);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+
 :root {
   --app-font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }

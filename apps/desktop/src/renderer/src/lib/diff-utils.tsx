@@ -497,6 +497,7 @@ const MARKER_CLASS: Record<DiffLine['kind'], string> = {
 const ESTIMATED_LINE_HEIGHT = 20
 const DIFF_LINE_HEIGHT_RATIO = 1.625
 const DIFF_OVERSCAN = 8
+const DIFF_SCROLLBAR_SIZE = 6
 
 function rowClassFor(line: DiffLine, isHighlighted: boolean, wasFading: boolean): string {
   return isHighlighted ? ROW_HIGHLIGHT : wasFading ? ROW_CLASS_FADE[line.kind] : ROW_CLASS[line.kind]
@@ -574,6 +575,8 @@ export const DiffView = forwardRef<HTMLDivElement, {
 
   const scrollRef = useRef<HTMLDivElement>(null)
   useImperativeHandle(ref, () => scrollRef.current!, [])
+  const codeColRef = useRef<HTMLDivElement>(null)
+  const [scrollbarGutter, setScrollbarGutter] = useState(0)
   const [estimatedLineHeight, setEstimatedLineHeight] = useState(ESTIMATED_LINE_HEIGHT)
 
   const updateLineHeight = useCallback(() => {
@@ -602,6 +605,16 @@ export const DiffView = forwardRef<HTMLDivElement, {
   useEffect(() => {
     virtualizer.measure()
   }, [virtualizer, estimatedLineHeight, lines.length])
+
+  useEffect(() => {
+    const el = codeColRef.current
+    if (!el) return
+    const check = (): void => setScrollbarGutter(el.scrollWidth > el.clientWidth ? DIFF_SCROLLBAR_SIZE : 0)
+    check()
+    const ro = new ResizeObserver(check)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [minContentWidth, lines.length])
 
   const [highlightIdx, setHighlightIdx] = useState<number | null>(null)
   const [fadingIdx, setFadingIdx] = useState<number | null>(null)
@@ -655,7 +668,7 @@ export const DiffView = forwardRef<HTMLDivElement, {
 
   return (
     <div ref={scrollRef} className={outerClassName} style={{ contain: 'inline-size' }}>
-      <div className="flex" style={{ height: totalSize, minWidth: '100%' }}>
+      <div className="flex" style={{ height: totalSize + scrollbarGutter, minWidth: '100%' }}>
         <div className="relative shrink-0" style={{ width: `calc(${gw}ch + 1.25rem)` }}>
           {virtualItems.map((vItem) => (
             <DiffGutterCell
@@ -668,7 +681,7 @@ export const DiffView = forwardRef<HTMLDivElement, {
             />
           ))}
         </div>
-        <div className="relative min-w-0 flex-1 overflow-x-auto overflow-y-hidden">
+        <div ref={codeColRef} className="relative min-w-0 flex-1 overflow-x-auto overflow-y-hidden">
           <div className="relative" style={{ height: totalSize, minWidth: minContentWidth }}>
             {virtualItems.map((vItem) => {
               const line = lines[vItem.index]

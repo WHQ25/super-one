@@ -4,6 +4,27 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.41.6-alpha] - 2026-06-11
+
+### Added
+
+- Liquid Glass theme mode with translucent dark surfaces.
+- Auto-mode permission suggestions with restyled permission prompt.
+- Codex: plan completion is now enforced via a system prompt append.
+
+### Changed
+
+- New success/warning/error semantic tokens; chat status and connection indicator colors converged onto them.
+- Compact icon buttons converged onto a shared IconButton primitive for consistent hover behavior.
+
+### Fixed
+
+- Reworked the effort-max flame easter egg for light mode: particles mirror the dark-mode structure with a light-adapted color ramp, and the text flickers with noise-driven firelight.
+- Dark-mode allow/deny button saturation now matches light mode.
+- Diff gutter merged with the tool card surface.
+- Code blocks adapt to the theme and share the unified muted surface.
+- Inline permission panels lifted to the card surface with improved contrast.
+
 ## [0.41.5-alpha] - 2026-06-10
 
 ### Added

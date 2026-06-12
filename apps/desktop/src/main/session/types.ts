@@ -121,6 +121,10 @@ export type BackendCommand =
       kind: 'claude.set_additional_dirs'
       dirs: string[]
     }
+  | {
+      kind: 'claude.stop_task'
+      taskId: string
+    }
 
 export type BackendEvent = AgentEvent
 
@@ -186,6 +190,7 @@ export interface SessionBackend {
   setSandbox(sandboxInfo: SandboxInfo): Promise<void>
   setAdditionalDirectories?(dirs: string[]): Promise<boolean>
   hasActiveBackgroundTasks?(): boolean
+  stopTask?(taskId: string): Promise<void>
   respondToPermission(
     requestId: string,
     allow: boolean,

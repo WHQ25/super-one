@@ -1677,6 +1677,7 @@ export const AgentIpcChannels = {
   DEQUEUE_MESSAGE: 'agent:dequeue-message',
   PREWARM: 'agent:prewarm',
   INTERRUPT: 'agent:interrupt',
+  STOP_TASK: 'agent:stop-task',
   EVENT: 'agent:event',
   PERMISSION_RESPONSE: 'agent:permission-response',
   SET_PERMISSION_MODE: 'agent:set-permission-mode',

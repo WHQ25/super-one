@@ -11,6 +11,7 @@ interface AgentAPI {
   dequeueMessage(projectPath: string, clientMessageId: string): Promise<boolean>
   prewarm(projectPath: string, hint?: AgentPrewarmHint): Promise<void>
   interrupt(sessionId: string): Promise<boolean>
+  stopTask(sessionId: string, taskId: string): Promise<boolean>
   respondToPermission(sessionId: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[], decision?: 'cancel', formAnswers?: Record<string, unknown>): Promise<boolean>
   setPermissionMode(projectPath: string, mode: PermissionMode): Promise<void>
   setSandboxMode(projectPath: string, mode: SandboxMode): Promise<SandboxInfo>

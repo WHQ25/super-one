@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import { GitBranch, GitBranchPlus, ChevronDown, Check, Circle, Plus, SquareTerminal, Bot } from 'lucide-react'
+import { GitBranch, GitBranchPlus, ChevronDown, Check, Circle, Plus, Square, SquareTerminal, Bot } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import { Popover, PopoverContent, PopoverTrigger } from '@superone/ui/components/ui/popover'
 import {
@@ -22,6 +22,7 @@ import {
   DialogTitle,
 } from '@superone/ui/components/ui/dialog'
 import { Button } from '@superone/ui/components/ui/button'
+import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { useActiveSession, useChatStore } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 import { StatusBarPermission } from './chat-status-bar/StatusBarPermission'
@@ -150,6 +151,7 @@ export function ChatStatusBar() {
   const messages = useActiveSession((s) => s.messages)
   const sessionStatus = useActiveSession((s) => s.status)
   const taskProgress = useActiveSession((s) => s.taskProgress)
+  const activeSessionId = useActiveSession((s) => s._activeSessionId)
   const sessionProvider = useActiveSession((s) => s.sessionProvider)
   const preferredProvider = useActiveSession((s) => s.preferredProvider)
   const activeProvider = sessionProvider ?? preferredProvider
@@ -311,6 +313,13 @@ export function ChatStatusBar() {
     () => collectBackgroundActivities(messages, taskProgress),
     [messages, taskProgress],
   )
+
+  const handleStopTask = useCallback((taskId: string) => {
+    if (!activeSessionId) return
+    void window.agent.stopTask(activeSessionId, taskId).catch((err) => {
+      toast.error(`Failed to stop task: ${err instanceof Error ? err.message : String(err)}`)
+    })
+  }, [activeSessionId])
   const bashLabel = bashActivities.length > 1 ? `${bashActivities.length} Bashes` : 'Bash'
   const agentLabel = agentActivities.length > 1 ? `${agentActivities.length} Agents` : 'Agent'
   const bashPanelTitle = `Background ${bashActivities.length > 1 ? 'Bashes' : 'Bash'}`
@@ -340,21 +349,36 @@ export function ChatStatusBar() {
               >
                 <div className="border-b border-border px-3 py-1.5 text-xs font-medium text-foreground">{bashPanelTitle}</div>
                 <div className="activity-panel max-h-[50vh] divide-y divide-border overflow-y-auto p-1.5">
-                  {bashActivities.map((item, i) => (
-                    <ToolBlock
-                      key={item.id}
-                      toolName="Bash"
-                      toolUseId={item.toolUse.toolUseId}
-                      input={item.toolUse.input}
-                      status={item.toolUse.status}
-                      elapsedSeconds={item.toolUse.elapsedSeconds}
-                      result={item.result?.summary}
-                      isTimedOut={item.result?.isTimedOut}
-                      resultOutputPath={item.result?.outputPath}
-                      autoExpand={i === 0}
-                      backgroundActivity
-                    />
-                  ))}
+                  {bashActivities.map((item, i) => {
+                    const taskId = taskProgress[item.id]?.taskId
+                    return (
+                      <div key={item.id} className="group/bgtask relative">
+                        <ToolBlock
+                          toolName="Bash"
+                          toolUseId={item.toolUse.toolUseId}
+                          input={item.toolUse.input}
+                          status={item.toolUse.status}
+                          elapsedSeconds={item.toolUse.elapsedSeconds}
+                          result={item.result?.summary}
+                          isTimedOut={item.result?.isTimedOut}
+                          resultOutputPath={item.result?.outputPath}
+                          autoExpand={i === 0}
+                          backgroundActivity
+                        />
+                        {taskId && (
+                          <IconButton
+                            size="xs"
+                            variant="destructive"
+                            tooltip="Stop task"
+                            className="absolute right-1.5 top-1.5 opacity-0 transition-opacity group-hover/bgtask:opacity-100"
+                            onClick={() => handleStopTask(taskId)}
+                          >
+                            <Square className="size-2.5 fill-current" />
+                          </IconButton>
+                        )}
+                      </div>
+                    )
+                  })}
                 </div>
               </motion.div>
             )}
@@ -369,16 +393,31 @@ export function ChatStatusBar() {
               >
                 <div className="border-b border-border px-3 py-1.5 text-xs font-medium text-foreground">{agentPanelTitle}</div>
                 <div className="activity-panel max-h-[50vh] divide-y divide-border overflow-y-auto p-1.5">
-                  {agentActivities.map((item, i) => (
-                    <SubagentBlock
-                      key={item.id}
-                      taskBlock={item.taskBlock}
-                      childBlocks={item.childBlocks}
-                      resultBlock={item.resultBlock}
-                      isStreaming={sessionStatus === 'streaming'}
-                      defaultExpanded={i === 0}
-                    />
-                  ))}
+                  {agentActivities.map((item, i) => {
+                    const taskId = taskProgress[item.id]?.taskId
+                    return (
+                      <div key={item.id} className="group/bgtask relative">
+                        <SubagentBlock
+                          taskBlock={item.taskBlock}
+                          childBlocks={item.childBlocks}
+                          resultBlock={item.resultBlock}
+                          isStreaming={sessionStatus === 'streaming'}
+                          defaultExpanded={i === 0}
+                        />
+                        {taskId && (
+                          <IconButton
+                            size="xs"
+                            variant="destructive"
+                            tooltip="Stop task"
+                            className="absolute right-1.5 top-1.5 opacity-0 transition-opacity group-hover/bgtask:opacity-100"
+                            onClick={() => handleStopTask(taskId)}
+                          >
+                            <Square className="size-2.5 fill-current" />
+                          </IconButton>
+                        )}
+                      </div>
+                    )
+                  })}
                 </div>
               </motion.div>
             )}

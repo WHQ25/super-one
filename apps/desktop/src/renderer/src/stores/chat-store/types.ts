@@ -67,7 +67,7 @@ export interface PerSessionState {
   subagentTokens: Record<string, { input: number; output: number }>
   subagentColors: Record<string, number>
   _subagentColorsFree: number[]
-  taskProgress: Record<string, { description: string; lastToolName?: string; summary?: string; totalTokens: number; toolUses: number; durationMs: number; completed?: boolean; status?: 'completed' | 'failed' | 'stopped'; outputFile?: string; toolHistory: Array<{ toolName: string; description: string }> }>
+  taskProgress: Record<string, { description: string; taskId?: string; lastToolName?: string; summary?: string; totalTokens: number; toolUses: number; durationMs: number; completed?: boolean; status?: 'completed' | 'failed' | 'stopped'; outputFile?: string; toolHistory: Array<{ toolName: string; description: string }> }>
   streamingTokens: { input: number; output: number }
   codexUsageSnapshot: CodexUsageInfo | null
   codexTurnLastUsage: CodexUsageInfo | null

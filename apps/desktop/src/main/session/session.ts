@@ -693,6 +693,11 @@ export class Session implements SessionContract {
         }
         return
       }
+      case 'claude.stop_task': {
+        if (this.harnessId !== 'claude') return
+        await this.backend.stopTask?.(cmd.taskId)
+        return
+      }
     }
   }
 

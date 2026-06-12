@@ -122,6 +122,14 @@ describe('reduceTool: task_started', () => {
     } as never)).toEqual({})
   })
 
+  it('stores taskId so the UI can stop the task manually', () => {
+    const session = createDefaultPerSessionState()
+    const patch = reduceTool(session, {
+      type: 'task_started', toolUseId: 'tu-1', taskId: 'bg-task-9', description: 'dev server',
+    } as never)
+    expect(patch.taskProgress?.['tu-1']).toMatchObject({ taskId: 'bg-task-9', description: 'dev server' })
+  })
+
   it('preserves completed=true if previously completed', () => {
     const session = createDefaultPerSessionState()
     session.taskProgress = { 'task-1': { description: 'old', totalTokens: 0, toolUses: 0, durationMs: 0, toolHistory: [], completed: true } }

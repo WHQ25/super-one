@@ -88,6 +88,10 @@ class FakeBackend implements SessionBackend {
   hasActiveBackgroundTasks(): boolean {
     return this.hasActiveBackgroundTasksResult
   }
+  stopTaskCalls: string[] = []
+  async stopTask(taskId: string): Promise<void> {
+    this.stopTaskCalls.push(taskId)
+  }
   respondToPermission(): boolean { return true }
   respondToQuestion(): void {}
   dismissQuestion(): void {}
@@ -499,6 +503,31 @@ describe('Session state machine', () => {
 
       expect(backend.rebuildCalls).toHaveLength(0)
       expect((session as unknown as { _needsRebuild: boolean })._needsRebuild).toBe(true)
+    })
+  })
+
+  describe('claude.stop_task command', () => {
+    it('forwards the taskId to backend.stopTask while streaming', async () => {
+      const pending = session.send({ content: 'hi', clientMessageId: 'u0' })
+      await new Promise((r) => setTimeout(r, 0))
+
+      await session.dispatchBackendCommand({ kind: 'claude.stop_task', taskId: 'bg-task-1' } as import('./types').BackendCommand)
+
+      expect(backend.stopTaskCalls).toEqual(['bg-task-1'])
+      backend.resolveSend?.()
+      await pending
+    })
+
+    it('is a no-op for non-claude sessions', async () => {
+      ;({ session, backend } = makeSession({ harnessId: 'codex' }))
+      const pending = session.send({ content: 'hi', clientMessageId: 'u0' })
+      await new Promise((r) => setTimeout(r, 0))
+
+      await session.dispatchBackendCommand({ kind: 'claude.stop_task', taskId: 'bg-task-1' } as import('./types').BackendCommand)
+
+      expect(backend.stopTaskCalls).toEqual([])
+      backend.resolveSend?.()
+      await pending
     })
   })
 

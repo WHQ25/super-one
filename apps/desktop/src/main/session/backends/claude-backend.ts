@@ -421,6 +421,11 @@ export class ClaudeBackend implements SessionBackend {
     return true
   }
 
+  async stopTask(taskId: string): Promise<void> {
+    if (!this.query) return
+    await this.query.stopTask(taskId)
+  }
+
   respondToPermission(requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[], _decision?: 'cancel', _formAnswers?: Record<string, unknown>): boolean {
     return respondToPermissionInternal(this.pendingPermissions, requestId, allow, alwaysAllow, reason, selectedSuggestions)
   }

@@ -118,6 +118,7 @@ export function reduceTool(session: PerSessionState, event: ToolEvent): Partial<
           [event.toolUseId]: {
             ...(prev ?? { description: '', totalTokens: 0, toolUses: 0, durationMs: 0, toolHistory: [] }),
             description: event.description,
+            taskId: event.taskId,
             completed: prev?.completed === true ? true : false,
           },
         },

@@ -1472,6 +1472,14 @@ export class AgentService {
       return session.interrupt()
     })
 
+    ipcMain.handle(AgentIpcChannels.STOP_TASK, async (_event, sessionId: string, taskId: string) => {
+      const session = this.sessionManager?.getSession(sessionId)
+      if (!session) return false
+      this.throwIfRemoteLocked(session.snapshot.projectPath)
+      await session.dispatchBackendCommand({ kind: 'claude.stop_task', taskId })
+      return true
+    })
+
     ipcMain.handle(AgentIpcChannels.PERMISSION_RESPONSE, (_event, sessionId: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[], decision?: 'cancel', formAnswers?: Record<string, unknown>) => {
       const session = this.sessionManager?.getSession(sessionId)
       if (!session) return false
@@ -2223,6 +2231,7 @@ export class AgentService {
     ipcMain.removeHandler(AgentIpcChannels.DEQUEUE_MESSAGE)
     ipcMain.removeHandler(AgentIpcChannels.PREWARM)
     ipcMain.removeHandler(AgentIpcChannels.INTERRUPT)
+    ipcMain.removeHandler(AgentIpcChannels.STOP_TASK)
     ipcMain.removeHandler(AgentIpcChannels.PERMISSION_RESPONSE)
     ipcMain.removeHandler(AgentIpcChannels.SET_PERMISSION_MODE)
     ipcMain.removeHandler(AgentIpcChannels.SET_SESSION_SETTINGS)

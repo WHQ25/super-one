@@ -807,6 +807,7 @@ export type AgentEventBase =
   | { type: 'codex_collaboration_mode_change'; mode: string }
   | { type: 'codex_plan_approval'; messageId: string; status: 'approved' | 'rejected'; feedback?: string }
   | { type: 'api_retry'; attempt: number; maxRetries: number; delayMs: number }
+  | { type: 'model_fallback'; trigger: string; fromModel?: string; toModel?: string }
   | { type: 'queued_message_consumed'; clientMessageId: string }
   | { type: 'worktree_missing'; worktreePath: string; fallbackCwd: string }
   | { type: 'session_title_changed'; sessionId: string; title: string; source: 'user' | 'agent' }

@@ -7,7 +7,7 @@ import { ArrowDown, GitFork, PenLine, Smartphone, Trash2 } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import { ChatInput } from './ChatInput'
 import { ChatStatusBar } from './ChatStatusBar'
-import { ChatMessage, CompactingIndicator, CompactIndicator, CompactErrorIndicator, RateLimitIndicator, ApiRetryIndicator, parseCompactMarker } from './ChatMessage'
+import { ChatMessage, CompactingIndicator, CompactIndicator, CompactErrorIndicator, RateLimitIndicator, ApiRetryIndicator, ModelFallbackIndicator, parseCompactMarker } from './ChatMessage'
 import { ChatSuggestions } from './ChatSuggestions'
 import { PermissionPrompt } from './PermissionPrompt'
 import { AskUserQuestionPrompt } from './AskUserQuestionPrompt'
@@ -33,7 +33,7 @@ interface ChatContentProps {
 
 export function ChatContent({ scrollViewportRef, showScrollButton = false, scrollToBottom }: ChatContentProps) {
   const {
-    messages, isCompacting, compactError, rateLimitInfo, apiRetry, pendingPlanApproval,
+    messages, isCompacting, compactError, rateLimitInfo, apiRetry, modelFallback, pendingPlanApproval,
     historySessionId, historyHydrated, worktreeRemoved,
     sessionStatus, lastAssistantMessageId, queuedMessages, awaitingAssistantReply,
   } = useActiveSession(useShallow((s) => ({
@@ -42,6 +42,7 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
     compactError: s.compactError,
     rateLimitInfo: s.rateLimitInfo,
     apiRetry: s.apiRetry,
+    modelFallback: s.modelFallback,
     pendingPlanApproval: s.pendingPlanApproval,
     historySessionId: s._activeSessionId,
     historyHydrated: s._historyHydrated,
@@ -263,6 +264,7 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
                   {isCompacting && <CompactingIndicator />}
                   {!isCompacting && compactError && <CompactErrorIndicator error={compactError} onDismiss={dismissCompactError} />}
                   {apiRetry && <ApiRetryIndicator info={apiRetry} />}
+                  {modelFallback && <ModelFallbackIndicator info={modelFallback} />}
                   {showRateLimitIndicator && rateLimitInfo && (
                     <RateLimitIndicator
                       info={rateLimitInfo}

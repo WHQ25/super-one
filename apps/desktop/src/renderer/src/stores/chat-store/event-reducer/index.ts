@@ -69,6 +69,7 @@ export function applyEventToSession(session: PerSessionState, event: AgentEvent)
     case 'status_indicator':
     case 'rate_limit':
     case 'api_retry':
+    case 'model_fallback':
       return reduceUsage(session, event)
 
     case 'hook_started':

@@ -77,6 +77,7 @@ export function createDefaultPerSessionState(): PerSessionState {
     additionalDirs: [],
     additionalDirsDirty: false,
     apiRetry: null,
+    modelFallback: null,
     lastEventAt: 0,
     queuedMessages: [],
     activeCodexMessageId: null,

@@ -4,7 +4,7 @@ import { accumulateCodexFooterTokens, getCodexContextTokens } from '../helpers/c
 import type { PerSessionState } from '../types'
 
 type UsageEvent = Extract<AgentEvent, {
-  type: 'message_usage' | 'status_indicator' | 'rate_limit' | 'api_retry'
+  type: 'message_usage' | 'status_indicator' | 'rate_limit' | 'api_retry' | 'model_fallback'
 }>
 
 export function reduceUsage(session: PerSessionState, event: UsageEvent): Partial<PerSessionState> {
@@ -57,5 +57,8 @@ export function reduceUsage(session: PerSessionState, event: UsageEvent): Partia
 
     case 'api_retry':
       return { apiRetry: { attempt: event.attempt, maxRetries: event.maxRetries, delayMs: event.delayMs } }
+
+    case 'model_fallback':
+      return { modelFallback: { trigger: event.trigger, fromModel: event.fromModel, toModel: event.toModel } }
   }
 }

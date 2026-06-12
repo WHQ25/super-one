@@ -536,6 +536,13 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
               maxRetries: sys.max_retries ?? 3,
               delayMs: sys.retry_delay_ms ?? 0,
             })
+          } else if (sys.subtype === 'model_fallback' || sys.subtype === 'model_refusal_fallback') {
+            emit({
+              type: 'model_fallback',
+              trigger: typeof sys.trigger === 'string' ? sys.trigger : 'unknown',
+              fromModel: sys.original_model ?? sys.from_model,
+              toModel: sys.fallback_model ?? sys.to_model,
+            })
           } else if (sys.subtype === 'local_command_output') {
             const text = typeof sys.content === 'string' ? sys.content : ''
             if (text) {

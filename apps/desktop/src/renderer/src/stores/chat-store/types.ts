@@ -111,6 +111,7 @@ export interface PerSessionState {
   additionalDirs: string[]
   additionalDirsDirty: boolean
   apiRetry: { attempt: number; maxRetries: number; delayMs: number } | null
+  modelFallback: { trigger: string; fromModel?: string; toModel?: string } | null
   lastEventAt: number
   queuedMessages: ChatMessage[]
   activeCodexMessageId: string | null

@@ -4,9 +4,32 @@ import { Button } from '@superone/ui/components/ui/button'
 import { useChatStore, useActiveSession } from '@/stores/chat'
 import { Kbd } from '@superone/ui/components/ui/kbd'
 import { Streamdown } from 'streamdown'
+import DOMPurify from 'dompurify'
 import { streamdownPlugins, streamdownRehypePlugins, streamdownControls, streamdownComponents, streamdownLinkSafety } from './chat-shared'
 import { useRestoreChatInputFocus } from '@/hooks/useRestoreChatInputFocus'
-import type { UserQuestion, QuestionAnnotations } from '@superone/shared/agent-types'
+import type { UserQuestion, QuestionAnnotations, QuestionPreviewFormat } from '@superone/shared/agent-types'
+
+function PreviewContent({ content, format }: { content: string; format: QuestionPreviewFormat }) {
+  const html = useMemo(
+    () => (format === 'html' ? DOMPurify.sanitize(content, { USE_PROFILES: { html: true } }) : ''),
+    [content, format],
+  )
+  if (format === 'html') {
+    return <div className="ask-html-preview" dangerouslySetInnerHTML={{ __html: html }} />
+  }
+  return (
+    <Streamdown
+      className="github-md"
+      plugins={streamdownPlugins}
+      rehypePlugins={streamdownRehypePlugins}
+      components={streamdownComponents}
+      controls={streamdownControls}
+      linkSafety={streamdownLinkSafety}
+    >
+      {content}
+    </Streamdown>
+  )
+}
 
 function questionKey(q: UserQuestion): string {
   return q.question
@@ -64,14 +87,16 @@ function OptionButtons({
   q,
   selections,
   onSelect,
+  horizontal = false,
 }: {
   q: UserQuestion
   selections: Record<string, string>
   onSelect: (q: UserQuestion, label: string) => void
+  horizontal?: boolean
 }) {
   const key = questionKey(q)
   return (
-    <div className="flex flex-wrap gap-1.5 @[420px]:flex-col">
+    <div className={horizontal ? 'flex flex-wrap gap-1.5' : 'flex flex-wrap gap-1.5 @[420px]:flex-col'}>
       {q.options.map((opt, i) => {
         const selected = q.multiSelect
           ? (selections[key] ?? '').split(', ').includes(opt.label)
@@ -116,6 +141,7 @@ function OptionDescription({
 
 function PreviewQuestionPanel({
   q,
+  previewFormat,
   selections,
   notesTexts,
   onSelect,
@@ -126,6 +152,7 @@ function PreviewQuestionPanel({
   notesInputRef,
 }: {
   q: UserQuestion
+  previewFormat: QuestionPreviewFormat
   selections: Record<string, string>
   notesTexts: Record<string, string>
   onSelect: (q: UserQuestion, label: string) => void
@@ -149,15 +176,17 @@ function PreviewQuestionPanel({
     return q.options.find((o) => o.label === sel)?.preview ?? null
   }, [q, selections, key])
 
+  const isHtml = previewFormat === 'html'
+
   return (
     <div>
       <p className="mb-2 text-xs font-medium text-foreground">{q.question}</p>
-      <div className="flex flex-col gap-3 @[420px]:flex-row">
-        <div className="shrink-0 @[420px]:max-w-[40%]">
-          <OptionButtons q={q} selections={selections} onSelect={onSelect} />
+      <div className={`flex flex-col gap-3 ${isHtml ? '' : '@[420px]:flex-row'}`}>
+        <div className={`shrink-0 ${isHtml ? '' : '@[420px]:max-w-[40%]'}`}>
+          <OptionButtons q={q} selections={selections} onSelect={onSelect} horizontal={isHtml} />
           <button
             onClick={onOtherFocus}
-            className="mt-1.5 w-full cursor-pointer rounded bg-muted px-2 py-1.5 text-left text-xs text-muted-foreground hover:bg-accent hover:text-foreground transition"
+            className={`mt-1.5 cursor-pointer rounded bg-muted px-2 py-1.5 text-left text-xs text-muted-foreground hover:bg-accent hover:text-foreground transition ${isHtml ? 'inline-block' : 'w-full'}`}
           >
             <Kbd variant="square" className="mr-1.5">{q.options.length + 1}</Kbd>
             {t('chat.askUser.otherOption')}
@@ -165,17 +194,8 @@ function PreviewQuestionPanel({
         </div>
         <div className="min-w-0 flex-1">
           {previewContent ? (
-            <div className="max-h-64 overflow-y-auto rounded-md border border-border/50 bg-muted/30 p-3 text-xs">
-              <Streamdown
-                className="github-md"
-                plugins={streamdownPlugins}
-                rehypePlugins={streamdownRehypePlugins}
-                components={streamdownComponents}
-                controls={streamdownControls}
-                linkSafety={streamdownLinkSafety}
-              >
-                {previewContent}
-              </Streamdown>
+            <div className={`overflow-y-auto rounded-md border border-border/50 text-xs ${isHtml ? 'max-h-[28rem] bg-transparent p-0' : 'max-h-64 bg-muted/30 p-3'}`}>
+              <PreviewContent content={previewContent} format={previewFormat} />
             </div>
           ) : (
             <div className="flex h-full items-center justify-center rounded-md border border-dashed border-border/30 p-3 text-xs text-muted-foreground">
@@ -452,6 +472,7 @@ export function AskUserQuestionPrompt() {
   const panelContent = isPreview ? (
     <PreviewQuestionPanel
       q={activeQuestion}
+      previewFormat={pendingQuestion.previewFormat ?? 'markdown'}
       selections={selections}
       notesTexts={notesTexts}
       onSelect={selectOption}

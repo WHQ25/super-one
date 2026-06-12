@@ -87,6 +87,7 @@ export class WarmupManager {
       resumeSessionAt: opts.resumeSessionAt ?? '',
       forkSession: opts.forkSession ?? false,
       sessionId: opts.sessionId ?? '',
+      previewFormat: opts.toolConfig?.askUserQuestion?.previewFormat ?? '',
     })
   }
 

@@ -23,7 +23,7 @@ import {
   EffortList,
 } from '@/components/chat/ModelSelectorLists'
 import { checkAutoModePlanEligibility } from '@/lib/auto-mode-eligibility'
-import type { CodexReasoningEffort, EffortLevel, ModelOption, PermissionMode, SandboxMode } from '@superone/shared/agent-types'
+import type { CodexReasoningEffort, EffortLevel, ModelOption, PermissionMode, QuestionPreviewFormat, SandboxMode } from '@superone/shared/agent-types'
 
 import type { SandboxProbeResult, SandboxSupportLevel } from '@superone/shared/agent-types'
 
@@ -107,6 +107,7 @@ function ClaudePreferencesPage() {
   const [defaultSandboxMode, setDefaultSandboxMode] = useState<SandboxMode | ''>('')
   const [defaultModel, setDefaultModel] = useState('')
   const [defaultEffort, setDefaultEffort] = useState<EffortLevel | ''>('')
+  const [askPreviewFormat, setAskPreviewFormat] = useState<QuestionPreviewFormat>('markdown')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [permOpen, setPermOpen] = useState(false)
@@ -128,6 +129,7 @@ function ClaudePreferencesPage() {
       setDefaultSandboxMode(claude.defaultSandboxMode)
       setDefaultModel(claude.defaultModel)
       setDefaultEffort(claude.defaultEffort)
+      setAskPreviewFormat(claude.askUserQuestionPreviewFormat)
     }).finally(() => { if (mounted) setLoading(false) })
     return () => { mounted = false }
   }, [currentFolder])
@@ -137,6 +139,7 @@ function ClaudePreferencesPage() {
     defaultSandboxMode?: SandboxMode | ''
     defaultModel?: string
     defaultEffort?: EffortLevel | ''
+    askUserQuestionPreviewFormat?: QuestionPreviewFormat
   }, successMessage: string) {
     if (saving) return
     setSaving(true)
@@ -148,6 +151,7 @@ function ClaudePreferencesPage() {
             defaultSandboxMode: patch.defaultSandboxMode ?? defaultSandboxMode,
             defaultModel: patch.defaultModel ?? defaultModel,
             defaultEffort: patch.defaultEffort ?? defaultEffort,
+            askUserQuestionPreviewFormat: patch.askUserQuestionPreviewFormat ?? askPreviewFormat,
           },
         },
       })
@@ -156,6 +160,7 @@ function ClaudePreferencesPage() {
       setDefaultSandboxMode(claude.defaultSandboxMode)
       setDefaultModel(claude.defaultModel)
       setDefaultEffort(claude.defaultEffort)
+      setAskPreviewFormat(claude.askUserQuestionPreviewFormat)
       invalidateDefaultClaudePreferencesCache()
       toast.success(successMessage)
       setSaving(false)
@@ -224,6 +229,13 @@ function ClaudePreferencesPage() {
       effort ? t('settings.preferences.effort.updated') : t('settings.preferences.effort.systemDefault'),
     )
     setEffortOpen(false)
+  }
+
+  async function handleAskPreviewFormatSelect(format: QuestionPreviewFormat) {
+    await saveClaudeDefaults(
+      { askUserQuestionPreviewFormat: format },
+      t('settings.preferences.askPreviewFormat.updated'),
+    )
   }
 
   const disabled = loading || saving
@@ -409,7 +421,7 @@ function ClaudePreferencesPage() {
             </Popover>
           </div>
 
-          <div className="flex items-center justify-between gap-4 p-4">
+          <div className="flex items-center justify-between gap-4 border-b border-border p-4">
             <div className="min-w-0">
               <p className="text-sm font-medium">{t('settings.preferences.effort.label')}</p>
               <p className="mt-0.5 text-xs text-muted-foreground">
@@ -450,6 +462,38 @@ function ClaudePreferencesPage() {
                 )}
               </PopoverContent>
             </Popover>
+          </div>
+
+          <div className="flex items-center justify-between gap-4 p-4">
+            <div className="min-w-0">
+              <p className="text-sm font-medium">{t('settings.preferences.askPreviewFormat.label')}</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {t('settings.preferences.askPreviewFormat.description')}
+              </p>
+            </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  disabled={disabled}
+                  className="flex items-center gap-2 rounded-md border border-border bg-background px-3 py-1.5 text-sm transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <span className="truncate">{t(`settings.preferences.askPreviewFormat.options.${askPreviewFormat}`)}</span>
+                  <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-44">
+                {(['markdown', 'html'] as const).map((format) => (
+                  <DropdownMenuItem
+                    key={format}
+                    onClick={() => void handleAskPreviewFormatSelect(format)}
+                    className="flex items-center justify-between"
+                  >
+                    <span>{t(`settings.preferences.askPreviewFormat.options.${format}`)}</span>
+                    {askPreviewFormat === format && <Check className="size-4 text-muted-foreground" />}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
       </div>

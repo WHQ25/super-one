@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { app } from 'electron'
-import type { AppSettings, AppSettingsPatch, EffortLevel, Locale, PermissionMode, SandboxMode, UpdateChannel } from '@superone/shared/agent-types'
+import type { AppSettings, AppSettingsPatch, EffortLevel, Locale, PermissionMode, QuestionPreviewFormat, SandboxMode, UpdateChannel } from '@superone/shared/agent-types'
 import { sanitizeOverrides } from '@superone/shared/harness-brand'
 
 export type { AppSettings, AppSettingsPatch }
@@ -31,6 +31,7 @@ const defaults: AppSettings = {
       brandHue: null,
       tokenOverrides: {},
       disabledSkills: [],
+      askUserQuestionPreviewFormat: 'markdown',
     },
     codex: {
       defaultModel: '',
@@ -62,6 +63,10 @@ function isPermissionMode(value: unknown): value is PermissionMode {
 
 function isSandboxMode(value: unknown): value is SandboxMode {
   return value === 'off' || value === 'on' || value === 'auto'
+}
+
+function isQuestionPreviewFormat(value: unknown): value is QuestionPreviewFormat {
+  return value === 'markdown' || value === 'html'
 }
 
 function isUpdateChannel(value: unknown): value is UpdateChannel {
@@ -112,6 +117,9 @@ function readClaudePreference(data: Record<string, unknown>): ClaudePref {
     disabledSkills: Array.isArray(claudePreference?.disabledSkills)
       ? claudePreference.disabledSkills.filter((x): x is string => typeof x === 'string')
       : defaults.agentPreference.claude.disabledSkills,
+    askUserQuestionPreviewFormat: isQuestionPreviewFormat(claudePreference?.askUserQuestionPreviewFormat)
+      ? claudePreference.askUserQuestionPreviewFormat
+      : defaults.agentPreference.claude.askUserQuestionPreviewFormat,
   }
 }
 

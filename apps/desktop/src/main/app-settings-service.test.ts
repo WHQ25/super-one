@@ -37,6 +37,7 @@ describe('app-settings-service', () => {
     brandHue: null,
     tokenOverrides: {},
     disabledSkills: [],
+    askUserQuestionPreviewFormat: 'markdown',
   }
   const defaultCodex = {
     defaultModel: '',
@@ -54,6 +55,7 @@ describe('app-settings-service', () => {
     terminalFontSize: 14,
     terminalFontFamily: null,
     uiFontFamily: null,
+    liquidGlass: false,
     miniAppOrder: {},
     customAppIconPath: null,
     agentPreference: {
@@ -94,6 +96,7 @@ describe('app-settings-service', () => {
         terminalFontSize: 14,
         terminalFontFamily: null,
         uiFontFamily: null,
+        liquidGlass: false,
         miniAppOrder: {},
         customAppIconPath: null,
         agentPreference: {
@@ -105,6 +108,7 @@ describe('app-settings-service', () => {
             brandHue: null,
             tokenOverrides: {},
             disabledSkills: [],
+            askUserQuestionPreviewFormat: 'markdown',
           },
           codex: {
             defaultModel: 'gpt-5.4',
@@ -165,6 +169,7 @@ describe('app-settings-service', () => {
         terminalFontSize: 14,
         terminalFontFamily: null,
         uiFontFamily: null,
+        liquidGlass: false,
         miniAppOrder: {},
         customAppIconPath: null,
         agentPreference: {

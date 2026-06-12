@@ -75,6 +75,12 @@ describe('WarmupManager.keyOf', () => {
     const b = WarmupManager.keyOf(baseOpts({ resume: 'sess-b' } as Partial<Options>))
     expect(a).not.toBe(b)
   })
+
+  it('differs when AskUserQuestion previewFormat (toolConfig) changes', () => {
+    const md = WarmupManager.keyOf(baseOpts({ toolConfig: { askUserQuestion: { previewFormat: 'markdown' } } } as Partial<Options>))
+    const html = WarmupManager.keyOf(baseOpts({ toolConfig: { askUserQuestion: { previewFormat: 'html' } } } as Partial<Options>))
+    expect(md).not.toBe(html)
+  })
 })
 
 describe('WarmupManager prewarm/consume — session isolation', () => {

@@ -292,6 +292,12 @@ export const zh: Messages = {
         updated: '默认推理强度已更新',
         systemDefault: '已改用系统默认推理强度',
       },
+      askPreviewFormat: {
+        label: '问题预览格式',
+        description: 'Claude 在"向用户提问"工具中为选项预览使用的格式。HTML 渲染富文本预览，Markdown 渲染纯文本。',
+        updated: '问题预览格式已更新',
+        options: { markdown: 'Markdown', html: 'HTML' },
+      },
     },
     usage: {
       title: '用量统计',

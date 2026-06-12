@@ -108,6 +108,25 @@ body {
 .hide-scrollbar::-webkit-scrollbar { display: none; }
 .hide-scrollbar { scrollbar-width: none; }
 
+/* AskUserQuestion HTML preview.
+   The model emits self-contained HTML fragments written for a white page
+   (fixed widths, hardcoded dark text, often no background). Render them on a
+   fixed light "paper" canvas — centered, theme-independent — so they stay
+   readable in both light and dark app themes instead of dark-on-dark. */
+.ask-html-preview {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 20px;
+  min-height: 100%;
+  background: #f1f5f9;
+  color: #1a202c;
+  color-scheme: light;
+}
+.ask-html-preview :is(img, video, canvas, svg, table) { max-width: 100%; height: auto; }
+.ask-html-preview table { border-collapse: collapse; }
+.ask-html-preview a { color: #2563eb; text-decoration: underline; }
+
 /* xterm renders into a transparent canvas (allowTransparency) so the terminal
    blends with its bg-card panel — incl. liquid-glass translucency. Override
    xterm.css's hardcoded #000 on the host/viewport, else the transparent canvas

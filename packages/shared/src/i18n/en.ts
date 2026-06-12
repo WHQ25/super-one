@@ -278,6 +278,12 @@ export type Messages = {
         updated: string
         systemDefault: string
       }
+      askPreviewFormat: {
+        label: string
+        description: string
+        updated: string
+        options: { markdown: string; html: string }
+      }
     }
     usage: {
       title: string
@@ -1540,6 +1546,12 @@ export const en: Messages = {
         description: 'Applied when the selected default model supports reasoning effort selection.',
         updated: 'Default reasoning effort updated',
         systemDefault: 'Using system default reasoning effort',
+      },
+      askPreviewFormat: {
+        label: 'Question Preview Format',
+        description: 'Format Claude uses for option previews in the "Ask user a question" tool. HTML renders rich previews; Markdown renders plain text.',
+        updated: 'Question preview format updated',
+        options: { markdown: 'Markdown', html: 'HTML' },
       },
     },
     usage: {

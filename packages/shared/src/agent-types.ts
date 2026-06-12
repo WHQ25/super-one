@@ -446,6 +446,8 @@ export interface UserQuestion {
   multiSelect: boolean
 }
 
+export type QuestionPreviewFormat = 'markdown' | 'html'
+
 export interface QuestionAnnotation {
   preview?: string
   notes?: string
@@ -456,6 +458,7 @@ export type QuestionAnnotations = Record<string, QuestionAnnotation>
 export interface AskUserQuestionRequest {
   requestId: string
   questions: UserQuestion[]
+  previewFormat?: QuestionPreviewFormat
 }
 
 // --- Plan approval ---
@@ -2201,6 +2204,7 @@ export interface AppSettings {
       brandHue: number | null
       tokenOverrides: TokenOverrides
       disabledSkills: string[]
+      askUserQuestionPreviewFormat: QuestionPreviewFormat
     }
     codex: {
       defaultModel: string

@@ -1,5 +1,5 @@
 import { query, type CanUseTool, type Options, type Query, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
-import type { AgentEvent, MessageMetadata, PermissionMode, SandboxInfo, SendMessageRequest } from '@superone/shared/agent-types'
+import type { AgentEvent, MessageMetadata, PermissionMode, QuestionPreviewFormat, SandboxInfo, SendMessageRequest } from '@superone/shared/agent-types'
 import type { MessageBridge } from './message-bridge'
 import log from '../logger'
 import { trace } from './event-trace'
@@ -32,6 +32,7 @@ export interface SessionQueryOptions {
   taskBudget?: number
   warmupManager?: WarmupManager
   enabledSkills?: string[]
+  askUserQuestionPreviewFormat?: QuestionPreviewFormat
 }
 
 export function buildClaudeOptions(opts: SessionQueryOptions): Options {
@@ -73,6 +74,9 @@ export function buildClaudeOptions(opts: SessionQueryOptions): Options {
     systemPrompt: { type: 'preset', preset: 'claude_code', append: SUPERONE_SYSTEM_PROMPT_APPEND },
     mcpServers: { 'superone': createSuperoneMcpServer(opts.superoneSessionId) },
     ...(opts.enabledSkills ? { skills: opts.enabledSkills } : {}),
+    ...(opts.askUserQuestionPreviewFormat
+      ? { toolConfig: { askUserQuestion: { previewFormat: opts.askUserQuestionPreviewFormat } } }
+      : {}),
   }
 }
 

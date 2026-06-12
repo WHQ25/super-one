@@ -11,7 +11,7 @@
     },
     "apps/desktop": {
       "name": "@superone/desktop",
-      "version": "0.41.4-alpha",
+      "version": "0.41.7-alpha",
       "dependencies": {
         "@anthropic-ai/claude-agent-sdk": "0.3.170",
         "@anthropic-ai/sdk": "^0.93.0",
@@ -50,6 +50,7 @@
         "date-fns": "^4.1.0",
         "dockview": "^5.2.0",
         "dockview-react": "^5.2.0",
+        "dompurify": "^3.4.2",
         "electron-log": "^5.4.3",
         "electron-updater": "^6.7.3",
         "fdir": "^6.5.0",

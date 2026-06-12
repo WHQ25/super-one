@@ -3,6 +3,7 @@ import { join } from 'path'
 import { homedir } from 'os'
 import log from '../logger'
 import { isToolPreapproved, isBuiltInSuperoneTool } from '../mcp/superone-mcp-server'
+import { readAppSettings } from '../app-settings-service'
 import type { PermissionUpdate } from '@anthropic-ai/claude-agent-sdk'
 import type { AgentEvent, PermissionMode, QuestionAnnotations } from '@superone/shared/agent-types'
 import { trace } from './event-trace'
@@ -181,9 +182,10 @@ async function handleAskUserQuestion(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const questions = (input.questions as any[]) ?? []
 
+  const previewFormat = readAppSettings().agentPreference.claude.askUserQuestionPreviewFormat
   const questionEvent: AgentEvent = {
     type: 'ask_user_question',
-    request: { requestId, questions },
+    request: { requestId, questions, previewFormat },
   }
   emit(questionEvent)
 

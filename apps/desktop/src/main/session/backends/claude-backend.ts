@@ -102,7 +102,8 @@ export class ClaudeBackend implements SessionBackend {
     if (config.apiKey) env.ANTHROPIC_API_KEY = config.apiKey
     if (config.baseUrl) env.ANTHROPIC_BASE_URL = config.baseUrl
     const { canUseTool, trackPlanFile } = this.ensurePermissionHandles()
-    const disabled = readAppSettings().agentPreference.claude.disabledSkills
+    const claudePref = readAppSettings().agentPreference.claude
+    const disabled = claudePref.disabledSkills
     let enabledSkills: string[] | undefined
     if (disabled.length > 0) {
       const all = listSkills(opts.cwd).map((s) => s.name)
@@ -123,6 +124,7 @@ export class ClaudeBackend implements SessionBackend {
       additionalDirectories: opts.additionalDirectories,
       env: Object.keys(env).length > 0 ? env : undefined,
       enabledSkills,
+      askUserQuestionPreviewFormat: claudePref.askUserQuestionPreviewFormat,
     }
   }
 

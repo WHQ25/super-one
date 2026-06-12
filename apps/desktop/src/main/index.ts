@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, net, powerMonitor, protocol, screen, session, shell, systemPreferences } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, net, powerMonitor, protocol, screen, session, shell, systemPreferences } from 'electron'
 import { join, dirname, basename, resolve, extname, relative, isAbsolute, sep } from 'path'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { readFile, writeFile, readdir, rename, cp, rm, access, stat, mkdir, open } from 'fs/promises'
@@ -361,8 +361,12 @@ function applyLiquidGlass(): void {
   for (const win of BrowserWindow.getAllWindows()) {
     if (win.isDestroyed()) continue
     win.setVibrancy(active ? 'under-window' : null)
-    if (active) win.setBackgroundColor('#00000000')
+    win.setBackgroundColor(active ? '#00000000' : currentDarkTheme ? '#1c1c1c' : '#ffffff')
   }
+}
+
+function syncNativeAppearance(): void {
+  nativeTheme.themeSource = currentDarkTheme ? 'dark' : 'light'
 }
 
 function createWindow(): void {
@@ -2033,6 +2037,7 @@ function registerIpcHandlers(): void {
   ipcMain.handle(AgentIpcChannels.SET_THEME, (_e, dark: boolean): void => {
     if (currentDarkTheme === dark) return
     currentDarkTheme = dark
+    syncNativeAppearance()
     applyLiquidGlass()
     safeSend(AgentIpcChannels.THEME_CHANGED, dark)
   })
@@ -2512,6 +2517,8 @@ app.whenReady().then(async () => {
     process.arch,
     log.transports.file.getFile().path,
   )
+
+  syncNativeAppearance()
 
   if (is.dev && process.env.SUPERONE_BENCH) {
     ipcMain.handle(AgentIpcChannels.GET_APP_METRICS, (event) => ({

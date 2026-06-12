@@ -16,6 +16,7 @@ import {
 } from './app-server-connection'
 import type {
   CodexAuthStatus,
+  CodexAccountUsage,
   CodexRateLimits,
   CodexRateLimitWindow,
   CodexReasoningEffort,
@@ -121,6 +122,31 @@ function parseRateLimits(raw: Record<string, unknown>): CodexRateLimits | null {
     secondary,
     planType: readString(snapshot.planType),
   }
+}
+
+function readNumericLike(value: unknown): number | null {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null
+  if (typeof value === 'bigint') return Number(value)
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : null
+  }
+  return null
+}
+
+function parseAccountUsage(raw: Record<string, unknown>): CodexAccountUsage | null {
+  const summary = raw.summary && typeof raw.summary === 'object'
+    ? (raw.summary as Record<string, unknown>)
+    : raw
+  const usage: CodexAccountUsage = {
+    lifetimeTokens: readNumericLike(summary.lifetimeTokens),
+    peakDailyTokens: readNumericLike(summary.peakDailyTokens),
+    longestRunningTurnSec: readNumericLike(summary.longestRunningTurnSec),
+    currentStreakDays: readNumericLike(summary.currentStreakDays),
+    longestStreakDays: readNumericLike(summary.longestStreakDays),
+  }
+  const hasAny = Object.values(usage).some((v) => v !== null)
+  return hasAny ? usage : null
 }
 
 function authsEqual(a: CodexProjectAuth, b: CodexProjectAuth): boolean {
@@ -423,6 +449,21 @@ export class CodexExperimentService {
       }, apiProviderId)
     } catch (error) {
       log.info('[codex] getRateLimits failed project=%s: %s', projectPath, error instanceof Error ? error.message : String(error))
+      return null
+    }
+  }
+
+  async getAccountUsage(projectPath: string, apiProviderId: string | null = null): Promise<CodexAccountUsage | null> {
+    const auth = this.getProjectAuth(projectPath)
+    if (resolveMode(auth.mode, auth.apiKey) !== 'chatgpt') return null
+    if (getCodexProviderOverrideFor(apiProviderId)) return null
+    try {
+      return await this.withAppServerConnection(projectPath, auth, undefined, async (connection) => {
+        const result = await connection.request('account/usage/read')
+        return parseAccountUsage(result)
+      }, apiProviderId)
+    } catch (error) {
+      log.info('[codex] getAccountUsage failed project=%s: %s', projectPath, error instanceof Error ? error.message : String(error))
       return null
     }
   }

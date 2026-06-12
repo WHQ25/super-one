@@ -146,6 +146,42 @@ describe('CodexExperimentService auth state', () => {
     expect(handle.close).toHaveBeenCalledTimes(1)
   })
 
+  it('preserves the model-advertised order of supportedReasoningEfforts', async () => {
+    const handle = {
+      connection: {
+        request: vi.fn(async (method: string) => {
+          if (method === 'model/list') {
+            return {
+              data: [{
+                id: 'gpt-test',
+                model: 'gpt-test',
+                displayName: 'GPT Test',
+                supportedReasoningEfforts: [
+                  { reasoningEffort: 'high', description: 'deepest' },
+                  { reasoningEffort: 'minimal', description: 'fastest' },
+                  { reasoningEffort: 'medium', description: 'balanced' },
+                ],
+              }],
+            }
+          }
+          return {}
+        }),
+        respond: vi.fn(),
+        notify: vi.fn(),
+        nextNotification: vi.fn(),
+      },
+      close: vi.fn(async () => {}),
+      getStderr: () => '',
+      onClosed: vi.fn(() => () => {}),
+    }
+    createHandleMock.mockResolvedValue(handle)
+    const service = new CodexExperimentService()
+
+    const models = await service.listModels('/project')
+
+    expect(models[0]?.supportedReasoningEfforts?.map((e) => e.value)).toEqual(['high', 'minimal', 'medium'])
+  })
+
   it('caches models per active codex provider and refetches with new -c overrides when the provider changes', async () => {
     const handleA = makeModelHandle()
     const handleB = makeModelHandle()
@@ -301,6 +337,85 @@ describe('CodexExperimentService auth state', () => {
     service.setAuth('/project', { mode: 'chatgpt' })
 
     expect(await service.getRateLimits('/project')).toBeNull()
+  })
+
+  it('getAccountUsage parses the token-activity summary from account/usage/read for a chatgpt account', async () => {
+    const handle = {
+      connection: {
+        request: vi.fn(async (method: string) => {
+          if (method === 'account/usage/read') {
+            return {
+              summary: {
+                lifetimeTokens: 1_250_000,
+                peakDailyTokens: 84_000,
+                longestRunningTurnSec: 612,
+                currentStreakDays: 5,
+                longestStreakDays: 12,
+              },
+              dailyUsageBuckets: [{ startDate: '2026-06-10', tokens: 40_000 }],
+            }
+          }
+          return {}
+        }),
+        respond: vi.fn(),
+        notify: vi.fn(),
+        nextNotification: vi.fn(),
+      },
+      close: vi.fn(async () => {}),
+      getStderr: () => '',
+      onClosed: vi.fn(() => () => {}),
+    }
+    createHandleMock.mockResolvedValue(handle)
+    const service = new CodexExperimentService()
+    service.setAuth('/project', { mode: 'chatgpt' })
+
+    const usage = await service.getAccountUsage('/project')
+
+    expect(handle.connection.request).toHaveBeenCalledWith('account/usage/read')
+    expect(usage).toEqual({
+      lifetimeTokens: 1_250_000,
+      peakDailyTokens: 84_000,
+      longestRunningTurnSec: 612,
+      currentStreakDays: 5,
+      longestStreakDays: 12,
+    })
+  })
+
+  it('getAccountUsage coerces stringified bigint token counts', async () => {
+    const handle = {
+      connection: {
+        request: vi.fn(async () => ({ summary: { lifetimeTokens: '9007199254740993', peakDailyTokens: null, longestRunningTurnSec: null, currentStreakDays: null, longestStreakDays: null } })),
+        respond: vi.fn(),
+        notify: vi.fn(),
+        nextNotification: vi.fn(),
+      },
+      close: vi.fn(async () => {}),
+      getStderr: () => '',
+      onClosed: vi.fn(() => () => {}),
+    }
+    createHandleMock.mockResolvedValue(handle)
+    const service = new CodexExperimentService()
+    service.setAuth('/project', { mode: 'chatgpt' })
+
+    const usage = await service.getAccountUsage('/project')
+    expect(usage?.lifetimeTokens).toBe(9007199254740993)
+  })
+
+  it('getAccountUsage returns null for apiKey accounts without opening a connection', async () => {
+    const service = new CodexExperimentService()
+    service.setAuth('/project', { mode: 'apiKey', apiKey: 'sk-test' })
+
+    expect(await service.getAccountUsage('/project')).toBeNull()
+    expect(createHandleMock).not.toHaveBeenCalled()
+  })
+
+  it('getAccountUsage returns null when a custom codex provider is active', async () => {
+    vi.mocked(getActiveProviderRaw).mockReturnValue(codexProviderRow('p1', 'https://gateway.example.com/v1') as never)
+    const service = new CodexExperimentService()
+    service.setAuth('/project', { mode: 'chatgpt' })
+
+    expect(await service.getAccountUsage('/project')).toBeNull()
+    expect(createHandleMock).not.toHaveBeenCalled()
   })
 
   it('allows a prewarmed project app-server to be claimed by a Codex backend', async () => {

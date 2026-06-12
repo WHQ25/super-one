@@ -4,7 +4,14 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@super
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { cn } from '@superone/ui/lib/utils'
 import { useActiveSession, useChatStore } from '@/stores/chat'
-import type { ClaudeExtraUsage, ClaudeRateLimits, CodexRateLimits, CodexRateLimitWindow } from '@superone/shared/agent-types'
+import type { ClaudeExtraUsage, ClaudeRateLimits, CodexAccountUsage, CodexRateLimits, CodexRateLimitWindow } from '@superone/shared/agent-types'
+
+function formatTokens(value: number): string {
+  if (value >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(1)}B`
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`
+  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`
+  return String(Math.round(value))
+}
 
 function formatWindowLabel(minutes: number | null): string {
   if (!minutes || minutes <= 0) return 'Usage'
@@ -69,6 +76,26 @@ function ExtraUsageRow({ extra }: { extra: ClaudeExtraUsage }) {
   )
 }
 
+function StatRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <span className="opacity-70">{label}</span>
+      <span className="font-medium tabular-nums">{value}</span>
+    </div>
+  )
+}
+
+function AccountUsageSection({ usage }: { usage: CodexAccountUsage }) {
+  const rows: ReactNode[] = []
+  if (usage.lifetimeTokens != null) rows.push(<StatRow key="lifetime" label="Lifetime tokens" value={formatTokens(usage.lifetimeTokens)} />)
+  if (usage.peakDailyTokens != null) rows.push(<StatRow key="peak" label="Peak daily" value={formatTokens(usage.peakDailyTokens)} />)
+  if (usage.currentStreakDays != null) rows.push(<StatRow key="streak" label="Streak" value={`${usage.currentStreakDays}d`} />)
+  if (rows.length === 0) return null
+  return (
+    <div className="flex flex-col gap-1 border-t border-border/60 pt-2">{rows}</div>
+  )
+}
+
 function RateLimitGauge({ title, planType, maxPercent, children }: { title: string; planType: string | null; maxPercent: number; children: ReactNode }) {
   return (
     <TooltipProvider delayDuration={300}>
@@ -107,13 +134,16 @@ function useRefetchOnTurnEnd(status: string, fetchLimits: () => void) {
 
 function CodexRateLimitIcon({ projectPath, apiProviderId, status }: { projectPath: string; apiProviderId: string | null; status: string }) {
   const [limits, setLimits] = useState<CodexRateLimits | null>(null)
+  const [usage, setUsage] = useState<CodexAccountUsage | null>(null)
 
   const fetchLimits = useCallback(() => {
     window.app.codexGetRateLimits(projectPath, apiProviderId).then(setLimits).catch(() => {})
+    window.app.codexGetAccountUsage(projectPath, apiProviderId).then(setUsage).catch(() => {})
   }, [projectPath, apiProviderId])
 
   useEffect(() => {
     setLimits(null)
+    setUsage(null)
   }, [projectPath, apiProviderId])
 
   useRefetchOnTurnEnd(status, fetchLimits)
@@ -131,6 +161,7 @@ function CodexRateLimitIcon({ projectPath, apiProviderId, status }: { projectPat
       {limits.secondary && (
         <WindowRow label={formatWindowLabel(limits.secondary.windowDurationMins)} usedPercent={limits.secondary.usedPercent} resetsAt={limits.secondary.resetsAt} />
       )}
+      {usage && <AccountUsageSection usage={usage} />}
     </RateLimitGauge>
   )
 }

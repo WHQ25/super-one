@@ -347,6 +347,9 @@ const appAPI = {
   codexGetRateLimits: (projectPath: string, apiProviderId?: string | null) =>
     ipcRenderer.invoke(AgentIpcChannels.CODEX_GET_RATE_LIMITS, projectPath, apiProviderId),
 
+  codexGetAccountUsage: (projectPath: string, apiProviderId?: string | null) =>
+    ipcRenderer.invoke(AgentIpcChannels.CODEX_GET_ACCOUNT_USAGE, projectPath, apiProviderId),
+
   claudeGetRateLimits: () => ipcRenderer.invoke(AgentIpcChannels.CLAUDE_GET_RATE_LIMITS),
 
   codexSetAuth: (

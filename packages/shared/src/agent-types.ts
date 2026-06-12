@@ -1341,6 +1341,14 @@ export interface CodexRateLimits {
   planType: string | null
 }
 
+export interface CodexAccountUsage {
+  lifetimeTokens: number | null
+  peakDailyTokens: number | null
+  longestRunningTurnSec: number | null
+  currentStreakDays: number | null
+  longestStreakDays: number | null
+}
+
 export interface ClaudeRateLimitWindow {
   label: string
   usedPercent: number
@@ -1672,6 +1680,7 @@ export const AgentIpcChannels = {
   CODEX_GET_AUTH_STATUS: 'codex:get-auth-status',
   CODEX_SET_AUTH: 'codex:set-auth',
   CODEX_GET_RATE_LIMITS: 'codex:get-rate-limits',
+  CODEX_GET_ACCOUNT_USAGE: 'codex:get-account-usage',
 
   // Claude channels
   CLAUDE_GET_RATE_LIMITS: 'claude:get-rate-limits',

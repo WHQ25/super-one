@@ -45,7 +45,7 @@ export function buildClaudeOptions(opts: SessionQueryOptions): Options {
     includePartialMessages: true,
     forwardSubagentText: true,
     permissionMode: opts.permissionMode,
-    allowDangerouslySkipPermissions: opts.permissionMode === 'bypassPermissions',
+    allowDangerouslySkipPermissions: true,
     canUseTool: opts.canUseTool,
     sandbox: opts.sandboxInfo?.enabled && getSandboxCapability().supportLevel !== 'unsupported'
       ? { enabled: true, autoAllowBashIfSandboxed: opts.sandboxInfo.autoAllowBash, failIfUnavailable: false }

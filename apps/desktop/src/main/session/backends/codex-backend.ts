@@ -702,8 +702,9 @@ export class CodexBackend implements SessionBackend {
     this.assertStarted()
   }
 
-  async setPermissionMode(_mode: PermissionMode): Promise<void> {
+  async setPermissionMode(mode: PermissionMode): Promise<void> {
     this.assertStarted()
+    if (this.startOpts) this.startOpts.permissionMode = mode
   }
 
   async setSandbox(): Promise<void> {}

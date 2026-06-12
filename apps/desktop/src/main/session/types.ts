@@ -184,6 +184,7 @@ export interface SessionBackend {
   setModel(model: string): Promise<void>
   setPermissionMode(mode: PermissionMode): Promise<void>
   setSandbox(sandboxInfo: SandboxInfo): Promise<void>
+  setAdditionalDirectories?(dirs: string[]): Promise<boolean>
   respondToPermission(
     requestId: string,
     allow: boolean,

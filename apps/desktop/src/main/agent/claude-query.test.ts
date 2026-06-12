@@ -49,21 +49,21 @@ beforeEach(() => {
 })
 
 describe('buildClaudeOptions permissionMode', () => {
-  it("passes permissionMode: 'auto' through to SDK options without enabling dangerous skip", () => {
+  it("passes permissionMode: 'auto' through to SDK options", () => {
     const options = buildClaudeOptions({
       projectPath: '/repo',
       cwd: '/repo',
       permissionMode: 'auto',
     })
     expect(options.permissionMode).toBe('auto')
-    expect(options.allowDangerouslySkipPermissions).toBe(false)
+    expect(options.allowDangerouslySkipPermissions).toBe(true)
   })
 
-  it("enables allowDangerouslySkipPermissions only for 'bypassPermissions'", () => {
+  it('always enables allowDangerouslySkipPermissions so bypass can be toggled in place via setPermissionMode', () => {
     expect(buildClaudeOptions({ projectPath: '/repo', cwd: '/repo', permissionMode: 'bypassPermissions' }).allowDangerouslySkipPermissions).toBe(true)
-    expect(buildClaudeOptions({ projectPath: '/repo', cwd: '/repo', permissionMode: 'default' }).allowDangerouslySkipPermissions).toBe(false)
-    expect(buildClaudeOptions({ projectPath: '/repo', cwd: '/repo', permissionMode: 'dontAsk' }).allowDangerouslySkipPermissions).toBe(false)
-    expect(buildClaudeOptions({ projectPath: '/repo', cwd: '/repo', permissionMode: 'plan' }).allowDangerouslySkipPermissions).toBe(false)
+    expect(buildClaudeOptions({ projectPath: '/repo', cwd: '/repo', permissionMode: 'default' }).allowDangerouslySkipPermissions).toBe(true)
+    expect(buildClaudeOptions({ projectPath: '/repo', cwd: '/repo', permissionMode: 'dontAsk' }).allowDangerouslySkipPermissions).toBe(true)
+    expect(buildClaudeOptions({ projectPath: '/repo', cwd: '/repo', permissionMode: 'plan' }).allowDangerouslySkipPermissions).toBe(true)
   })
 })
 
@@ -274,7 +274,7 @@ describe('createSessionQuery', () => {
     expect(state.queryMock).toHaveBeenCalledTimes(1)
     const queryInput = state.queryMock.mock.calls[0][0] as Record<string, unknown>
     expect((queryInput.options as Record<string, unknown>).cwd).toBe('/repo')
-    expect((queryInput.options as Record<string, unknown>).allowDangerouslySkipPermissions).toBe(false)
+    expect((queryInput.options as Record<string, unknown>).allowDangerouslySkipPermissions).toBe(true)
     expect((queryInput.options as Record<string, unknown>).settingSources).toEqual(['user', 'project', 'local'])
 
     expect(onSessionId).toHaveBeenCalledWith('sess-1')

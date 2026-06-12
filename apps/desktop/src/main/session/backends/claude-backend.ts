@@ -67,6 +67,7 @@ export class ClaudeBackend implements SessionBackend {
 
   private _lastActiveAt: number | null = null
   private _lastStartOpts: BackendStartOptions | null = null
+  private _spawnedAdditionalDirs: string[] = []
   private _idleTimer: ReturnType<typeof setInterval> | null = null
   private _activeRuntimeKey: string | null = null
 
@@ -127,6 +128,7 @@ export class ClaudeBackend implements SessionBackend {
   async start(opts: BackendStartOptions): Promise<void> {
     if (this.bridge) throw new Error('ClaudeBackend already started')
     this._lastStartOpts = opts
+    this._spawnedAdditionalDirs = [...(opts.additionalDirectories ?? [])]
     this.bridge = new MessageBridge()
     this.bridge.onConsumed = (tag) => {
       this.emit({ type: 'queued_message_consumed', clientMessageId: tag })
@@ -392,6 +394,14 @@ export class ClaudeBackend implements SessionBackend {
       ? { enabled: true, autoAllowBashIfSandboxed: sandboxInfo.autoAllowBash, failIfUnavailable: false }
       : { enabled: false }
     await this.query.applyFlagSettings({ sandbox })
+  }
+
+  async setAdditionalDirectories(dirs: string[]): Promise<boolean> {
+    if (this._lastStartOpts) this._lastStartOpts.additionalDirectories = [...dirs]
+    if (!this.query) return true
+    if (this._spawnedAdditionalDirs.some((d) => !dirs.includes(d))) return false
+    await this.query.applyFlagSettings({ permissions: { additionalDirectories: dirs } })
+    return true
   }
 
   respondToPermission(requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[], _decision?: 'cancel', _formAnswers?: Record<string, unknown>): boolean {

@@ -78,6 +78,12 @@ class FakeBackend implements SessionBackend {
   async setSandbox(info: import('@superone/shared/agent-types').SandboxInfo): Promise<void> {
     this.setSandboxCalls.push(info)
   }
+  setAdditionalDirectoriesCalls: string[][] = []
+  setAdditionalDirectoriesResult = true
+  async setAdditionalDirectories(dirs: string[]): Promise<boolean> {
+    this.setAdditionalDirectoriesCalls.push([...dirs])
+    return this.setAdditionalDirectoriesResult
+  }
   respondToPermission(): boolean { return true }
   respondToQuestion(): void {}
   dismissQuestion(): void {}
@@ -397,7 +403,7 @@ describe('Session state machine', () => {
     await p2
   })
 
-  it('send() with changed additionalDirs triggers backend.rebuild', async () => {
+  it('send() with changed additionalDirs applies them in place without rebuild', async () => {
     const p1 = session.send({ content: 'first', additionalDirs: ['/a'] })
     await new Promise((r) => setTimeout(r, 0))
     backend.resolveSend?.()
@@ -405,10 +411,77 @@ describe('Session state machine', () => {
 
     const p2 = session.send({ content: 'second', additionalDirs: ['/a', '/b'] })
     await new Promise((r) => setTimeout(r, 0))
-    expect(backend.rebuildCalls).toHaveLength(1)
-    expect(backend.rebuildCalls[0]).toMatchObject({ additionalDirectories: ['/a', '/b'] })
+    expect(backend.setAdditionalDirectoriesCalls).toEqual([['/a', '/b']])
+    expect(backend.rebuildCalls).toHaveLength(0)
     backend.resolveSend?.()
     await p2
+  })
+
+  it('send() with changed additionalDirs falls back to rebuild when backend cannot apply in place', async () => {
+    const p1 = session.send({ content: 'first', additionalDirs: ['/a'] })
+    await new Promise((r) => setTimeout(r, 0))
+    backend.resolveSend?.()
+    await p1
+
+    backend.setAdditionalDirectoriesResult = false
+    const p2 = session.send({ content: 'second', additionalDirs: ['/b'] })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(backend.rebuildCalls).toHaveLength(1)
+    expect(backend.rebuildCalls[0]).toMatchObject({ additionalDirectories: ['/b'] })
+    backend.resolveSend?.()
+    await p2
+  })
+
+  describe('claude.set_additional_dirs command', () => {
+    const cmd = (dirs: string[]) => ({ kind: 'claude.set_additional_dirs', dirs }) as import('./types').BackendCommand
+
+    it('applies dirs in place even while streaming, without deferring a rebuild', async () => {
+      const pending = session.send({ content: 'hi', clientMessageId: 'u0' })
+      await new Promise((r) => setTimeout(r, 0))
+      expect(session.snapshot.status).toBe('streaming')
+
+      await session.dispatchBackendCommand(cmd(['/x']))
+
+      expect(backend.setAdditionalDirectoriesCalls).toEqual([['/x']])
+      expect(backend.rebuildCalls).toHaveLength(0)
+      expect((session as unknown as { _needsRebuild: boolean })._needsRebuild).toBe(false)
+
+      backend.resolveSend?.()
+      await pending
+    })
+
+    it('defers rebuild to next send when in-place fails while streaming', async () => {
+      backend.setAdditionalDirectoriesResult = false
+      const pending = session.send({ content: 'hi', clientMessageId: 'u0' })
+      await new Promise((r) => setTimeout(r, 0))
+
+      await session.dispatchBackendCommand(cmd(['/x']))
+      expect(backend.rebuildCalls).toHaveLength(0)
+      expect((session as unknown as { _needsRebuild: boolean })._needsRebuild).toBe(true)
+
+      backend.resolveSend?.()
+      await pending
+
+      const p2 = session.send({ content: 'after', clientMessageId: 'u1' })
+      await new Promise((r) => setTimeout(r, 0))
+      expect(backend.rebuildCalls).toHaveLength(1)
+      expect(backend.rebuildCalls[0]).toMatchObject({ additionalDirectories: ['/x'] })
+      backend.resolveSend?.()
+      await p2
+    })
+
+    it('rebuilds immediately when in-place fails while idle', async () => {
+      const p1 = session.send({ content: 'boot', clientMessageId: 'u0' })
+      await new Promise((r) => setTimeout(r, 0))
+      backend.resolveSend?.()
+      await p1
+
+      backend.setAdditionalDirectoriesResult = false
+      await session.dispatchBackendCommand(cmd(['/x']))
+
+      expect(backend.rebuildCalls).toHaveLength(1)
+      expect(backend.rebuildCalls[0]).toMatchObject({ additionalDirectories: ['/x'] })
+    })
   })
 
   it('send() with unchanged effort/dirs does NOT trigger rebuild', async () => {
@@ -629,47 +702,41 @@ describe('Session state machine', () => {
       await p
     }
 
-    it('idle → bypass: rebuilds backend immediately, does not call backend.setPermissionMode', async () => {
+    it('idle → bypass: switches in place via backend.setPermissionMode, no rebuild', async () => {
       await bootAndIdle(session, backend)
-      expect(backend.rebuildCalls).toHaveLength(0)
 
       await session.setPermissionMode('bypassPermissions')
 
-      expect(backend.rebuildCalls).toHaveLength(1)
-      expect(backend.rebuildCalls[0].permissionMode).toBe('bypassPermissions')
-      expect(backend.setPermissionModeCalls).toHaveLength(0)
+      expect(backend.setPermissionModeCalls).toEqual(['bypassPermissions'])
+      expect(backend.rebuildCalls).toHaveLength(0)
     })
 
-    it('bypass → default: rebuilds backend immediately (symmetric case)', async () => {
+    it('bypass → default: switches in place (symmetric case)', async () => {
       ;({ session, backend } = makeSession({ permissionMode: 'bypassPermissions' }))
       await bootAndIdle(session, backend)
-      expect(backend.rebuildCalls).toHaveLength(0)
 
       await session.setPermissionMode('default')
 
-      expect(backend.rebuildCalls).toHaveLength(1)
-      expect(backend.rebuildCalls[0].permissionMode).toBe('default')
-      expect(backend.setPermissionModeCalls).toHaveLength(0)
+      expect(backend.setPermissionModeCalls).toEqual(['default'])
+      expect(backend.rebuildCalls).toHaveLength(0)
     })
 
-    it('streaming + bypass switch: defers rebuild to next send', async () => {
+    it('streaming + bypass switch: applies in place immediately, no deferred rebuild', async () => {
       const pending = session.send({ content: 'hi', clientMessageId: 'u0' })
       await new Promise((r) => setTimeout(r, 0))
       expect(session.snapshot.status).toBe('streaming')
 
       await session.setPermissionMode('bypassPermissions')
+      expect(backend.setPermissionModeCalls).toEqual(['bypassPermissions'])
       expect(backend.rebuildCalls).toHaveLength(0)
-      expect(backend.setPermissionModeCalls).toHaveLength(0)
-      expect((session as unknown as { _needsRebuild: boolean })._needsRebuild).toBe(true)
+      expect((session as unknown as { _needsRebuild: boolean })._needsRebuild).toBe(false)
 
       backend.resolveSend?.()
       await pending
 
       const p2 = session.send({ content: 'after', clientMessageId: 'u1' })
       await new Promise((r) => setTimeout(r, 0))
-      expect(backend.rebuildCalls).toHaveLength(1)
-      expect(backend.rebuildCalls[0].permissionMode).toBe('bypassPermissions')
-      expect((session as unknown as { _needsRebuild: boolean })._needsRebuild).toBe(false)
+      expect(backend.rebuildCalls).toHaveLength(0)
       backend.resolveSend?.()
       await p2
     })

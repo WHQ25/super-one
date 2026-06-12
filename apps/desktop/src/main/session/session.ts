@@ -399,7 +399,12 @@ export class Session implements SessionContract {
       this.appendUserMessage(request, providerOrigin)
       this.snapEffectiveApiProviderId()
       const needsRebuild = this._needsRebuild
-      if (this.backendStarted && (effortChanged || dirsChanged || needsRebuild)) {
+      let dirsNeedRebuild = dirsChanged
+      if (dirsChanged && this.backendStarted && !effortChanged && !needsRebuild) {
+        const applied = (await this.backend.setAdditionalDirectories?.(this.additionalDirectories)) ?? false
+        dirsNeedRebuild = !applied
+      }
+      if (this.backendStarted && (effortChanged || dirsNeedRebuild || needsRebuild)) {
         log.info('[Session] rebuilding backend sid=%s effortChanged=%s dirsChanged=%s needsRebuild=%s', this.id, effortChanged, dirsChanged, needsRebuild)
         await this.backend.rebuild(this.buildBackendStartOpts())
         this._needsRebuild = false
@@ -466,26 +471,14 @@ export class Session implements SessionContract {
       return
     }
 
-    const bypassCrossed = (prev === 'bypassPermissions') !== (mode === 'bypassPermissions')
-    if (!bypassCrossed) {
-      trace('permission.flow', 'session_setMode_fast_path', { sid: this.id, prev, next: mode })
-      try {
-        await this.backend.setPermissionMode(mode)
-        trace('permission.flow', 'session_setMode_fast_done', { sid: this.id, mode })
-      } catch (err) {
-        trace('permission.flow', 'session_setMode_fast_error', { sid: this.id, mode, err: (err as Error)?.message })
-        throw err
-      }
-      return
+    trace('permission.flow', 'session_setMode_fast_path', { sid: this.id, prev, next: mode })
+    try {
+      await this.backend.setPermissionMode(mode)
+      trace('permission.flow', 'session_setMode_fast_done', { sid: this.id, mode })
+    } catch (err) {
+      trace('permission.flow', 'session_setMode_fast_error', { sid: this.id, mode, err: (err as Error)?.message })
+      throw err
     }
-
-    if (this._status === 'streaming' || this._status === 'starting' || this._status === 'interrupting') {
-      this._needsRebuild = true
-      trace('permission.flow', 'session_setMode_defer_rebuild', { sid: this.id, mode, status: this._status })
-      return
-    }
-    trace('permission.flow', 'session_setMode_rebuild', { sid: this.id, mode })
-    await this.backend.rebuild(this.buildBackendStartOpts())
   }
 
   async setSandboxMode(mode: SandboxMode): Promise<SandboxInfo> {
@@ -689,7 +682,10 @@ export class Session implements SessionContract {
         if (this.harnessId !== 'claude') return
         if (sameStringArray(cmd.dirs, this.additionalDirectories)) return
         this.additionalDirectories = [...cmd.dirs]
-        if (this.backendStarted && !this.isStreaming()) {
+        if (!this.backendStarted) return
+        const applied = (await this.backend.setAdditionalDirectories?.(cmd.dirs)) ?? false
+        if (applied) return
+        if (!this.isStreaming()) {
           await this.backend.rebuild(this.buildBackendStartOpts())
           this._needsRebuild = false
         } else {

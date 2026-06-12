@@ -2243,7 +2243,7 @@ function registerIpcHandlers(): void {
     const toolSlug = manifest.toolSlug ?? appId
     registerAppTools(sessionId, projectDir, appId, toolSlug, manifest.tools ?? [])
     loadPreapprovedTools(appId, toolSlug, basePath)
-    if (manifest.tools?.length) agentService.markSessionNeedsRebuild(sessionId)
+    if (manifest.tools?.length) agentService.markSessionNeedsRebuild(sessionId, 'codex')
   })
 
   ipcMain.handle(AgentIpcChannels.MINIAPP_AUTHORIZE, async (_e, appIds: string[], projectDir: string, sessionId: string) => {
@@ -2273,7 +2273,7 @@ function registerIpcHandlers(): void {
         log.info('[MINIAPP_AUTHORIZE] manifest has no tools for appId=%s', appId)
       }
     }
-    if (registeredAny) agentService.markSessionNeedsRebuild(sessionId)
+    if (registeredAny) agentService.markSessionNeedsRebuild(sessionId, 'codex')
   })
 
   ipcMain.handle(AgentIpcChannels.MINIAPP_UNAUTHORIZE, async (_e, appIds: string[], _projectDir: string, sessionId: string) => {
@@ -2281,7 +2281,7 @@ function registerIpcHandlers(): void {
     for (const appId of appIds) {
       unregisterAppTools(sessionId, appId)
     }
-    agentService.markSessionNeedsRebuild(sessionId)
+    agentService.markSessionNeedsRebuild(sessionId, 'codex')
   })
 
   ipcMain.handle(AgentIpcChannels.MINIAPP_CLOSE, async (_e, appId: string, projectDir: string, sessionId: string) => {
@@ -2420,7 +2420,7 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(AgentIpcChannels.MINIAPP_UNINSTALL, async (_e, appId: string, installDir?: string) => {
     const affectedSessions = unregisterAppAcrossSessions(appId)
-    for (const sid of affectedSessions) agentService.markSessionNeedsRebuild(sid)
+    for (const sid of affectedSessions) agentService.markSessionNeedsRebuild(sid, 'codex')
     stopWorkersByAppId(appId)
     for (const [key] of miniAppSessionRefs) {
       if (key.endsWith(`::${appId}`)) miniAppSessionRefs.delete(key)

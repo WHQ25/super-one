@@ -4,6 +4,25 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.41.8-alpha] - 2026-06-12
+
+### Added
+
+- Codex: account token usage surfaced from app-server 0.139.
+- Model fallback indicator in chat so you can see when a request falls back to another model.
+- HTML preview format for AskUserQuestion prompts.
+- Stop button for background tasks in the status-bar panels.
+
+### Changed
+
+- Permission mode and additional directories now switch in place, without rebuilding the agent backend.
+- Bumped Claude Agent SDK to 0.3.175.
+
+### Fixed
+
+- Background tasks are now tracked so the idle reaper no longer silently kills them.
+- Native window appearance is pinned to the in-app theme, fixing the washed-out vibrancy haze on Liquid Glass when the system and app themes differ.
+
 ## [0.41.7-alpha] - 2026-06-12
 
 ### Fixed

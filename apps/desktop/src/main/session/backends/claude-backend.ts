@@ -1,6 +1,6 @@
 import type { CanUseTool, Query, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import { MessageBridge } from '../../agent/message-bridge'
-import { buildClaudeOptions, createSessionQuery, buildUserMessage, type SessionQueryOptions } from '../../agent/claude-query'
+import { buildClaudeOptions, createSessionQuery, buildUserMessage, type SessionQueryOptions, type BackgroundTaskInfo } from '../../agent/claude-query'
 import { getGlobalWarmupManager, WarmupManager } from '../../agent/warmup-manager'
 import {
   createCanUseTool,
@@ -68,6 +68,7 @@ export class ClaudeBackend implements SessionBackend {
   private _lastActiveAt: number | null = null
   private _lastStartOpts: BackendStartOptions | null = null
   private _spawnedAdditionalDirs: string[] = []
+  private activeBackgroundTasks: Map<string, BackgroundTaskInfo> | null = null
   private _idleTimer: ReturnType<typeof setInterval> | null = null
   private _activeRuntimeKey: string | null = null
 
@@ -170,6 +171,7 @@ export class ClaudeBackend implements SessionBackend {
     this.query = handle.query
     this.iterationDone = handle.iterationDone
     this.spawnAbortController = handle.spawnAbortController
+    this.activeBackgroundTasks = handle.activeBackgroundTasks ?? null
     this._activeRuntimeKey = WarmupManager.keyOf(buildClaudeOptions(queryOptions))
     this._lastActiveAt = Date.now()
     this.startIdleTimer()
@@ -280,6 +282,21 @@ export class ClaudeBackend implements SessionBackend {
 
   private async releaseRuntime(reason: 'idle' | 'rebuild' | 'close'): Promise<void> {
     if (!this.bridge && !this.query) return
+    const liveTasks = this.activeBackgroundTasks
+    this.activeBackgroundTasks = null
+    if (reason !== 'close' && liveTasks && liveTasks.size > 0) {
+      for (const [taskId, info] of liveTasks) {
+        this.emit({
+          type: 'task_notification',
+          taskId,
+          toolUseId: info.toolUseId,
+          taskStatus: 'stopped',
+          outputFile: '',
+          summary: `Background task terminated: agent process was ${reason === 'rebuild' ? 'restarted' : 'released'}`,
+        })
+      }
+      liveTasks.clear()
+    }
     const sid = this._lastStartOpts?.sessionId
     const acAbortedBefore = this._lastStartOpts?.abortController?.signal.aborted ?? null
     log.info('[ClaudeBackend.idle-diag] releaseRuntime begin sid=%s reason=%s abortSignalBefore=%s', sid, reason, acAbortedBefore)
@@ -549,7 +566,12 @@ export class ClaudeBackend implements SessionBackend {
     if (this.pendingPlanApprovals.size > 0) return false
     if (this.turnResolves.size > 0) return false
     if (this.pendingQueued.length > 0) return false
+    if (this.hasActiveBackgroundTasks()) return false
     return true
+  }
+
+  hasActiveBackgroundTasks(): boolean {
+    return (this.activeBackgroundTasks?.size ?? 0) > 0
   }
 
   private emit(event: AgentEvent): void {

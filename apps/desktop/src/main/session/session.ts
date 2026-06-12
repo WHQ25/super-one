@@ -685,7 +685,7 @@ export class Session implements SessionContract {
         if (!this.backendStarted) return
         const applied = (await this.backend.setAdditionalDirectories?.(cmd.dirs)) ?? false
         if (applied) return
-        if (!this.isStreaming()) {
+        if (!this.isStreaming() && !this.backend.hasActiveBackgroundTasks?.()) {
           await this.backend.rebuild(this.buildBackendStartOpts())
           this._needsRebuild = false
         } else {
@@ -859,7 +859,7 @@ export class Session implements SessionContract {
     this.emitInitReady()
     this.notifyStateChange()
     if (!this.backendStarted) return
-    if (this._status === 'streaming' || this._status === 'starting' || this._status === 'interrupting') {
+    if (this._status === 'streaming' || this._status === 'starting' || this._status === 'interrupting' || this.backend.hasActiveBackgroundTasks?.()) {
       this._needsRebuild = true
       return
     }

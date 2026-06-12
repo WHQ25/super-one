@@ -76,10 +76,16 @@ export function buildClaudeOptions(opts: SessionQueryOptions): Options {
   }
 }
 
+export interface BackgroundTaskInfo {
+  toolUseId?: string
+  description: string
+}
+
 export interface SessionQueryHandle {
   query: Query
   iterationDone: Promise<void>
   spawnAbortController: AbortController
+  activeBackgroundTasks: Map<string, BackgroundTaskInfo>
 }
 
 export function createSessionQuery(
@@ -123,6 +129,7 @@ export function createSessionQuery(
     q = query({ prompt: bridge, options: sdkOptions })
   }
 
+  const activeBackgroundTasks = new Map<string, BackgroundTaskInfo>()
   const iterationDone = iterateMessages(q, {
     emit,
     getCurrentMessageId,
@@ -134,9 +141,10 @@ export function createSessionQuery(
     onStepBoundary,
     bridge,
     timing,
+    activeBackgroundTasks,
   })
 
-  return { query: q, iterationDone, spawnAbortController }
+  return { query: q, iterationDone, spawnAbortController, activeBackgroundTasks }
 }
 
 export function buildUserMessage(request: SendMessageRequest, sessionId: string): SDKUserMessage {
@@ -177,6 +185,7 @@ export interface IterateMessagesOptions {
   onStepBoundary?: () => void
   bridge: MessageBridge
   timing: { pausedMs: number }
+  activeBackgroundTasks?: Map<string, BackgroundTaskInfo>
 }
 
 export async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<void> {
@@ -212,9 +221,9 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
   let resultSeen = false
   let turnUserEchoSeen = false
 
-  const activeBackgroundTaskIds = new Set<string>()
+  const activeBackgroundTasks = opts.activeBackgroundTasks ?? new Map<string, BackgroundTaskInfo>()
   const maybeEmitDeferredIdle = () => {
-    if (resultSeen && activeBackgroundTaskIds.size === 0 && turnMessageId === getCurrentMessageId()) {
+    if (resultSeen && activeBackgroundTasks.size === 0 && turnMessageId === getCurrentMessageId()) {
       emit({ type: 'status_change', status: 'idle' })
     }
   }
@@ -437,7 +446,7 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
               emit({ type: 'status_change', status: 'streaming' })
             }
           } else if (sys.subtype === 'task_started') {
-            if (sys.task_id) activeBackgroundTaskIds.add(sys.task_id)
+            if (sys.task_id) activeBackgroundTasks.set(sys.task_id, { toolUseId: sys.tool_use_id, description: sys.description ?? '' })
             emit({
               type: 'task_started',
               taskId: sys.task_id ?? '',
@@ -448,7 +457,7 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
           } else if (sys.subtype === 'task_updated') {
             const patchStatus = sys.patch?.status as string | undefined
             if (sys.task_id && (patchStatus === 'completed' || patchStatus === 'failed' || patchStatus === 'killed')) {
-              activeBackgroundTaskIds.delete(sys.task_id)
+              activeBackgroundTasks.delete(sys.task_id)
               if ((patchStatus === 'failed' || patchStatus === 'killed') && sys.tool_use_id) {
                 emit({
                   type: 'task_notification',
@@ -476,7 +485,7 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
               },
             })
           } else if (sys.subtype === 'task_notification') {
-            if (sys.task_id) activeBackgroundTaskIds.delete(sys.task_id)
+            if (sys.task_id) activeBackgroundTasks.delete(sys.task_id)
             emit({
               type: 'task_notification',
               taskId: sys.task_id ?? '',
@@ -838,7 +847,7 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
 
           if (getInterrupted()) {
             emit({ type: 'message_interrupted', messageId, metadata })
-            activeBackgroundTaskIds.clear()
+            activeBackgroundTasks.clear()
           } else if (result.subtype === 'success') {
             if (pendingSlashOutput) {
               emit({ type: 'slash_command_output', messageId, content: pendingSlashOutput })
@@ -858,7 +867,7 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
           if (messageId === getCurrentMessageId()) {
             emit({
               type: 'status_change',
-              status: activeBackgroundTaskIds.size === 0 ? 'idle' : 'background',
+              status: activeBackgroundTasks.size === 0 ? 'idle' : 'background',
             })
           }
           break

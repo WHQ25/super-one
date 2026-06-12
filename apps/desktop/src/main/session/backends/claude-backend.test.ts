@@ -9,6 +9,7 @@ const hoisted = vi.hoisted(() => {
     onStepBoundary: (() => void) | null
     bridge: unknown
     iterationDone: { resolve: () => void; promise: Promise<void> } | null
+    activeBackgroundTasks: Map<string, { toolUseId?: string; description: string }> | null
     createSessionQueryMock: ReturnType<typeof vi.fn>
     buildClaudeOptionsMock: ReturnType<typeof vi.fn>
     warmupPrewarm: ReturnType<typeof vi.fn>
@@ -30,6 +31,7 @@ const hoisted = vi.hoisted(() => {
     onStepBoundary: null,
     bridge: null,
     iterationDone: null,
+    activeBackgroundTasks: null,
     createSessionQueryMock: vi.fn(),
     buildClaudeOptionsMock: vi.fn((opts: unknown) => ({ __built: opts })),
     warmupPrewarm: vi.fn(),
@@ -54,7 +56,9 @@ const hoisted = vi.hoisted(() => {
       let resolveIter: () => void = () => {}
       const promise = new Promise<void>((resolve) => { resolveIter = resolve })
       captured.iterationDone = { resolve: resolveIter, promise }
+      captured.activeBackgroundTasks = new Map()
       return {
+        activeBackgroundTasks: captured.activeBackgroundTasks,
         query: {
           interrupt: captured.mockQueryInterrupt,
           close: captured.mockQueryClose,
@@ -592,6 +596,47 @@ describe('ClaudeBackend', () => {
 
       const [, opts] = hoisted.captured.createSessionQueryMock.mock.calls[1]!
       expect((opts as { resume?: string }).resume).toBe('sdk-sid-resume')
+    })
+
+    it('isRuntimeIdle returns false while background tasks are active, true again once they finish', async () => {
+      const backend = new ClaudeBackend()
+      await backend.start(makeStartOpts())
+      hoisted.captured.activeBackgroundTasks!.set('task-1', { toolUseId: 'tu-1', description: 'dev server' })
+      expect(backend.isRuntimeIdle(0)).toBe(false)
+
+      hoisted.captured.activeBackgroundTasks!.delete('task-1')
+      expect(backend.isRuntimeIdle(0)).toBe(true)
+    })
+
+    it('releaseRuntime(rebuild) emits a stopped task_notification for each live background task', async () => {
+      const backend = new ClaudeBackend()
+      await backend.start(makeStartOpts())
+      hoisted.captured.activeBackgroundTasks!.set('task-1', { toolUseId: 'tu-1', description: 'dev server' })
+      hoisted.captured.activeBackgroundTasks!.set('task-2', { toolUseId: 'tu-2', description: 'test watcher' })
+      const events: AgentEvent[] = []
+      backend.onEvent((e) => events.push(e))
+
+      hoisted.captured.iterationDone?.resolve()
+      await (backend as unknown as { releaseRuntime: (r: 'rebuild') => Promise<void> }).releaseRuntime('rebuild')
+
+      const notifications = events.filter((e) => e.type === 'task_notification')
+      expect(notifications).toHaveLength(2)
+      expect(notifications[0]).toMatchObject({ taskId: 'task-1', toolUseId: 'tu-1', taskStatus: 'stopped' })
+      expect(notifications[1]).toMatchObject({ taskId: 'task-2', toolUseId: 'tu-2', taskStatus: 'stopped' })
+      expect(backend.hasActiveBackgroundTasks()).toBe(false)
+    })
+
+    it('releaseRuntime(close) does not emit task notifications for live background tasks', async () => {
+      const backend = new ClaudeBackend()
+      await backend.start(makeStartOpts())
+      hoisted.captured.activeBackgroundTasks!.set('task-1', { toolUseId: 'tu-1', description: 'dev server' })
+      const events: AgentEvent[] = []
+      backend.onEvent((e) => events.push(e))
+
+      hoisted.captured.iterationDone?.resolve()
+      await (backend as unknown as { releaseRuntime: (r: 'close') => Promise<void> }).releaseRuntime('close')
+
+      expect(events.filter((e) => e.type === 'task_notification')).toHaveLength(0)
     })
 
     it('isRuntimeIdle returns false when pendingPermissions has entries', async () => {

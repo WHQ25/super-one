@@ -185,6 +185,7 @@ export interface SessionBackend {
   setPermissionMode(mode: PermissionMode): Promise<void>
   setSandbox(sandboxInfo: SandboxInfo): Promise<void>
   setAdditionalDirectories?(dirs: string[]): Promise<boolean>
+  hasActiveBackgroundTasks?(): boolean
   respondToPermission(
     requestId: string,
     allow: boolean,

@@ -84,6 +84,10 @@ class FakeBackend implements SessionBackend {
     this.setAdditionalDirectoriesCalls.push([...dirs])
     return this.setAdditionalDirectoriesResult
   }
+  hasActiveBackgroundTasksResult = false
+  hasActiveBackgroundTasks(): boolean {
+    return this.hasActiveBackgroundTasksResult
+  }
   respondToPermission(): boolean { return true }
   respondToQuestion(): void {}
   dismissQuestion(): void {}
@@ -481,6 +485,20 @@ describe('Session state machine', () => {
 
       expect(backend.rebuildCalls).toHaveLength(1)
       expect(backend.rebuildCalls[0]).toMatchObject({ additionalDirectories: ['/x'] })
+    })
+
+    it('defers rebuild when in-place fails while background tasks are running', async () => {
+      const p1 = session.send({ content: 'boot', clientMessageId: 'u0' })
+      await new Promise((r) => setTimeout(r, 0))
+      backend.resolveSend?.()
+      await p1
+
+      backend.setAdditionalDirectoriesResult = false
+      backend.hasActiveBackgroundTasksResult = true
+      await session.dispatchBackendCommand(cmd(['/x']))
+
+      expect(backend.rebuildCalls).toHaveLength(0)
+      expect((session as unknown as { _needsRebuild: boolean })._needsRebuild).toBe(true)
     })
   })
 
@@ -1314,6 +1332,27 @@ describe('Session persist hook', () => {
     backend.resolveSend?.()
     await pending
 
+    const p2 = session.send({ content: 'after', clientMessageId: 'u1' })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(backend.rebuildCalls).toHaveLength(1)
+    expect(backend.rebuildCalls[0].cwd).toBe('/tmp/proj/.worktrees/abc')
+    backend.resolveSend?.()
+    await p2
+  })
+
+  it('switchCwd defers rebuild while background tasks are running so they are not killed', async () => {
+    const { session, backend } = makeSession()
+    const p0 = session.send({ content: 'hi', clientMessageId: 'u0' })
+    await new Promise((r) => setTimeout(r, 0))
+    backend.resolveSend?.()
+    await p0
+
+    backend.hasActiveBackgroundTasksResult = true
+    await session.switchCwd('/tmp/proj/.worktrees/abc')
+    expect(backend.rebuildCalls).toHaveLength(0)
+    expect(session.cwd).toBe('/tmp/proj/.worktrees/abc')
+
+    backend.hasActiveBackgroundTasksResult = false
     const p2 = session.send({ content: 'after', clientMessageId: 'u1' })
     await new Promise((r) => setTimeout(r, 0))
     expect(backend.rebuildCalls).toHaveLength(1)

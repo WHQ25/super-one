@@ -1,7 +1,7 @@
 import type { HarnessId } from '../session-types'
 
 export const HARNESS_DEFAULT_BRAND_HUE: Record<HarnessId, number> = {
-  claude: 240,
+  claude: 40,
   codex: 240,
 }
 

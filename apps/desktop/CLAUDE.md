@@ -215,7 +215,7 @@ gh release edit v0.1.0-alpha.3 --draft=false --prerelease  # alpha/beta must use
 
 ### Per-Harness Brand Theming
 
-Light-mode brand hue is user-customizable per harness (Claude default 42° / Codex default 165°) via the palette icon in `AppSidebar.tsx`. The whole app's color temperature shifts with the slider.
+Light-mode brand hue is user-customizable per harness (Claude default 40° / Codex default 240°) via the palette icon in `AppSidebar.tsx`. The whole app's color temperature shifts with the slider.
 
 **Architecture**:
 

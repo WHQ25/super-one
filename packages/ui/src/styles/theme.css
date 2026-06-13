@@ -6,7 +6,7 @@
   --brand-hue: 240;
   --background: oklch(var(--background-l, 0.97) var(--background-c, 0) var(--background-h, var(--brand-hue, 240)) / var(--background-a, 1));
   --foreground: oklch(var(--foreground-l, 0.18) var(--foreground-c, 0.012) var(--foreground-h, var(--brand-hue, 240)) / var(--foreground-a, 1));
-  --card: oklch(var(--card-l, 0.99) var(--card-c, 0) var(--card-h, var(--brand-hue, 240)) / var(--card-a, 1));
+  --card: oklch(var(--card-l, 0.975) var(--card-c, 0) var(--card-h, var(--brand-hue, 240)) / var(--card-a, 1));
   --card-foreground: oklch(var(--card-foreground-l, 0.18) var(--card-foreground-c, 0.012) var(--card-foreground-h, var(--brand-hue, 240)) / var(--card-foreground-a, 1));
   --popover: oklch(var(--popover-l, 0.99) var(--popover-c, 0) var(--popover-h, var(--brand-hue, 240)) / var(--popover-a, 1));
   --popover-foreground: oklch(var(--popover-foreground-l, 0.18) var(--popover-foreground-c, 0.012) var(--popover-foreground-h, var(--brand-hue, 240)) / var(--popover-foreground-a, 1));

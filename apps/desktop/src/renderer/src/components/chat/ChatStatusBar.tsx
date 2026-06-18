@@ -345,7 +345,7 @@ export function ChatStatusBar() {
                 animate={{ height: 'auto', opacity: 1 }}
                 exit={{ height: 0, opacity: 0 }}
                 transition={{ duration: 0.15 }}
-                className="pointer-events-auto overflow-hidden rounded-lg border border-border bg-card shadow-md"
+                className="pointer-events-auto overflow-hidden rounded-lg border border-border bg-popover shadow-md"
               >
                 <div className="border-b border-border px-3 py-1.5 text-xs font-medium text-foreground">{bashPanelTitle}</div>
                 <div className="activity-panel max-h-[50vh] divide-y divide-border overflow-y-auto p-1.5">
@@ -389,7 +389,7 @@ export function ChatStatusBar() {
                 animate={{ height: 'auto', opacity: 1 }}
                 exit={{ height: 0, opacity: 0 }}
                 transition={{ duration: 0.15 }}
-                className="pointer-events-auto overflow-hidden rounded-lg border border-border bg-card shadow-md"
+                className="pointer-events-auto overflow-hidden rounded-lg border border-border bg-popover shadow-md"
               >
                 <div className="border-b border-border px-3 py-1.5 text-xs font-medium text-foreground">{agentPanelTitle}</div>
                 <div className="activity-panel max-h-[50vh] divide-y divide-border overflow-y-auto p-1.5">

@@ -2,6 +2,7 @@ import { Folder } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useActiveSession } from '@/stores/chat'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@superone/ui/components/ui/tooltip'
+import { cn } from '@superone/ui/lib/utils'
 import { shortenPath } from '@/lib/path-utils'
 
 type DirScope = 'user' | 'project' | 'session'
@@ -31,9 +32,15 @@ export function ChatInputDirsHint() {
   for (const d of sessionDirs) if (!seen.has(d)) { seen.add(d); entries.push({ dir: d, scope: 'session' }) }
 
   if (entries.length === 0) return null
+  const inFlow = messagesLen > 0
   return (
     <TooltipProvider delayDuration={300}>
-      <div className="absolute bottom-full left-0 right-0 z-10 mb-1 flex items-center gap-1 overflow-x-auto rounded-xl border border-border p-1">
+      <div
+        className={cn(
+          'z-10 mx-3 mb-1 flex items-center gap-1 overflow-x-auto rounded-xl border border-border p-1',
+          inFlow ? 'relative' : 'absolute inset-x-0 bottom-full'
+        )}
+      >
         <span className="ml-1 mr-0.5 shrink-0 text-[11px] text-muted-foreground/70">{t('chat.additionalDirs.label')}</span>
         {entries.map(({ dir, scope }) => (
           <Tooltip key={dir}>

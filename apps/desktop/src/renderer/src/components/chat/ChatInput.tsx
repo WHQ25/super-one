@@ -1014,17 +1014,18 @@ export function ChatInput() {
     }, [promptSuggestion, isStreaming, hasPendingInteraction])
 
     return (
-      <div
-        className={cn(
-          'relative mx-3 mb-1 rounded-xl border border-border px-4 py-3',
-          isDragging && 'ring-2 ring-inset ring-primary/50'
-        )}
-        onDragEnter={handleDragEnter}
-        onDragLeave={handleDragLeave}
-        onDragOver={handleDragOver}
-        onDrop={handleDrop}
-      >
+      <div className="relative">
         {activeProviderForResources === 'claude' && <ChatInputDirsHint />}
+        <div
+          className={cn(
+            'relative mx-3 mb-1 rounded-xl border border-border px-4 py-3',
+            isDragging && 'ring-2 ring-inset ring-primary/50'
+          )}
+          onDragEnter={handleDragEnter}
+          onDragLeave={handleDragLeave}
+          onDragOver={handleDragOver}
+          onDrop={handleDrop}
+        >
         {matchingCommands.length > 0 && !slashDismissed && (
           <div className="absolute bottom-full left-0 right-0 z-10 mb-1 flex max-h-64 flex-col overflow-hidden rounded-xl border border-border bg-popover p-1.5">
             <div className="min-h-0 flex-1 overflow-y-auto">
@@ -1190,6 +1191,7 @@ export function ChatInput() {
             prefill={goalDialogState.prefill}
           />
         )}
+        </div>
       </div>
     )
   }

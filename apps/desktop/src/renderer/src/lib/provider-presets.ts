@@ -55,11 +55,11 @@ export const PRESETS: QuickPreset[] = [
     agent_configs: {
       claude: {
         base_url: 'https://open.bigmodel.cn/api/anthropic',
-        extra_env: '{"API_TIMEOUT_MS":"3000000","CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC":"1","ANTHROPIC_AUTH_TOKEN":""}',
+        extra_env: '{"API_TIMEOUT_MS":"3000000","CLAUDE_CODE_AUTO_COMPACT_WINDOW":"1000000","CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC":"1","ANTHROPIC_AUTH_TOKEN":""}',
         model_env: {
-          default: { id: 'glm-5-turbo', name: 'GLM-5 Turbo' },
-          opus: { id: 'glm-5.1', name: 'GLM-5.1' },
-          sonnet: { id: 'glm-5-turbo', name: 'GLM-5 Turbo' },
+          default: { id: 'glm-5.2[1m]', name: 'GLM-5.2 (1M)' },
+          opus: { id: 'glm-5.2[1m]', name: 'GLM-5.2 (1M)' },
+          sonnet: { id: 'glm-5.2[1m]', name: 'GLM-5.2 (1M)' },
           haiku: { id: 'glm-4.5-air', name: 'GLM-4.5 Air' },
         },
       },
@@ -76,11 +76,11 @@ export const PRESETS: QuickPreset[] = [
     agent_configs: {
       claude: {
         base_url: 'https://api.z.ai/api/anthropic',
-        extra_env: '{"API_TIMEOUT_MS":"3000000","CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC":"1","ANTHROPIC_AUTH_TOKEN":""}',
+        extra_env: '{"API_TIMEOUT_MS":"3000000","CLAUDE_CODE_AUTO_COMPACT_WINDOW":"1000000","CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC":"1","ANTHROPIC_AUTH_TOKEN":""}',
         model_env: {
-          default: { id: 'glm-5-turbo', name: 'GLM-5 Turbo' },
-          opus: { id: 'glm-5.1', name: 'GLM-5.1' },
-          sonnet: { id: 'glm-5-turbo', name: 'GLM-5 Turbo' },
+          default: { id: 'glm-5.2[1m]', name: 'GLM-5.2 (1M)' },
+          opus: { id: 'glm-5.2[1m]', name: 'GLM-5.2 (1M)' },
+          sonnet: { id: 'glm-5.2[1m]', name: 'GLM-5.2 (1M)' },
           haiku: { id: 'glm-4.5-air', name: 'GLM-4.5 Air' },
         },
       },

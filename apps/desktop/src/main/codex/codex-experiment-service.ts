@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto'
 import log from '../logger'
 import {
   buildCodexProviderCliOverrides,
@@ -18,6 +19,7 @@ import type {
   CodexAuthStatus,
   CodexAccountUsage,
   CodexRateLimits,
+  CodexRateLimitResetOutcome,
   CodexRateLimitWindow,
   CodexReasoningEffort,
   CodexSetAuthRequest,
@@ -117,10 +119,25 @@ function parseRateLimits(raw: Record<string, unknown>): CodexRateLimits | null {
   const primary = parseRateLimitWindow(snapshot.primary)
   const secondary = parseRateLimitWindow(snapshot.secondary)
   if (!primary && !secondary) return null
+  const resetCreditsRaw = raw.rateLimitResetCredits
+  const resetCredits = resetCreditsRaw && typeof resetCreditsRaw === 'object'
+    ? readNumericLike((resetCreditsRaw as Record<string, unknown>).availableCount)
+    : null
   return {
     primary,
     secondary,
     planType: readString(snapshot.planType),
+    resetCredits,
+  }
+}
+
+function parseResetOutcome(raw: Record<string, unknown>): CodexRateLimitResetOutcome {
+  switch (readString(raw.outcome)) {
+    case 'reset': return 'reset'
+    case 'nothingToReset': return 'nothingToReset'
+    case 'noCredit': return 'noCredit'
+    case 'alreadyRedeemed': return 'alreadyRedeemed'
+    default: return 'unknown'
   }
 }
 
@@ -449,6 +466,21 @@ export class CodexExperimentService {
       }, apiProviderId)
     } catch (error) {
       log.info('[codex] getRateLimits failed project=%s: %s', projectPath, error instanceof Error ? error.message : String(error))
+      return null
+    }
+  }
+
+  async consumeRateLimitReset(projectPath: string, apiProviderId: string | null = null): Promise<CodexRateLimitResetOutcome | null> {
+    const auth = this.getProjectAuth(projectPath)
+    if (resolveMode(auth.mode, auth.apiKey) !== 'chatgpt') return null
+    if (getCodexProviderOverrideFor(apiProviderId)) return null
+    try {
+      return await this.withAppServerConnection(projectPath, auth, undefined, async (connection) => {
+        const result = await connection.request('account/rateLimitResetCredit/consume', { idempotencyKey: randomUUID() })
+        return parseResetOutcome(result)
+      }, apiProviderId)
+    } catch (error) {
+      log.info('[codex] consumeRateLimitReset failed project=%s: %s', projectPath, error instanceof Error ? error.message : String(error))
       return null
     }
   }

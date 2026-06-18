@@ -306,7 +306,41 @@ describe('CodexExperimentService auth state', () => {
       primary: { usedPercent: 23, windowDurationMins: 300, resetsAt: 1_700_000_000 },
       secondary: { usedPercent: 47, windowDurationMins: 10080, resetsAt: 1_700_500_000 },
       planType: 'plus',
+      resetCredits: null,
     })
+  })
+
+  it('getRateLimits surfaces rateLimitResetCredits.availableCount as resetCredits', async () => {
+    const handle = {
+      connection: {
+        request: vi.fn(async (method: string) => {
+          if (method === 'account/rateLimits/read') {
+            return {
+              rateLimits: {
+                primary: { usedPercent: 23, windowDurationMins: 300, resetsAt: 1_700_000_000 },
+                secondary: null,
+                planType: 'plus',
+              },
+              rateLimitResetCredits: { availableCount: 3 },
+            }
+          }
+          return {}
+        }),
+        respond: vi.fn(),
+        notify: vi.fn(),
+        nextNotification: vi.fn(),
+      },
+      close: vi.fn(async () => {}),
+      getStderr: () => '',
+      onClosed: vi.fn(() => () => {}),
+    }
+    createHandleMock.mockResolvedValue(handle)
+    const service = new CodexExperimentService()
+    service.setAuth('/project', { mode: 'chatgpt' })
+
+    const limits = await service.getRateLimits('/project')
+
+    expect(limits?.resetCredits).toBe(3)
   })
 
   it('getRateLimits returns null when a custom codex provider is active (not a ChatGPT subscription)', async () => {
@@ -337,6 +371,41 @@ describe('CodexExperimentService auth state', () => {
     service.setAuth('/project', { mode: 'chatgpt' })
 
     expect(await service.getRateLimits('/project')).toBeNull()
+  })
+
+  it('consumeRateLimitReset sends an idempotencyKey and parses the outcome for a chatgpt account', async () => {
+    const requestMock = vi.fn(async (method: string) =>
+      method === 'account/rateLimitResetCredit/consume' ? { outcome: 'reset' } : {},
+    )
+    const handle = {
+      connection: {
+        request: requestMock,
+        respond: vi.fn(),
+        notify: vi.fn(),
+        nextNotification: vi.fn(),
+      },
+      close: vi.fn(async () => {}),
+      getStderr: () => '',
+      onClosed: vi.fn(() => () => {}),
+    }
+    createHandleMock.mockResolvedValue(handle)
+    const service = new CodexExperimentService()
+    service.setAuth('/project', { mode: 'chatgpt' })
+
+    const outcome = await service.consumeRateLimitReset('/project')
+
+    expect(outcome).toBe('reset')
+    const [method, params] = requestMock.mock.calls[0]
+    expect(method).toBe('account/rateLimitResetCredit/consume')
+    expect(typeof (params as { idempotencyKey: string }).idempotencyKey).toBe('string')
+  })
+
+  it('consumeRateLimitReset returns null without calling the server when not a chatgpt account', async () => {
+    const service = new CodexExperimentService()
+    service.setAuth('/project', { mode: 'apiKey', apiKey: 'sk-test' })
+
+    expect(await service.consumeRateLimitReset('/project')).toBeNull()
+    expect(createHandleMock).not.toHaveBeenCalled()
   })
 
   it('getAccountUsage parses the token-activity summary from account/usage/read for a chatgpt account', async () => {

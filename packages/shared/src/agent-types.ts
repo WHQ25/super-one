@@ -1339,7 +1339,10 @@ export interface CodexRateLimits {
   primary: CodexRateLimitWindow | null
   secondary: CodexRateLimitWindow | null
   planType: string | null
+  resetCredits: number | null
 }
+
+export type CodexRateLimitResetOutcome = 'reset' | 'nothingToReset' | 'noCredit' | 'alreadyRedeemed' | 'unknown'
 
 export interface CodexAccountUsage {
   lifetimeTokens: number | null
@@ -1681,6 +1684,7 @@ export const AgentIpcChannels = {
   CODEX_SET_AUTH: 'codex:set-auth',
   CODEX_GET_RATE_LIMITS: 'codex:get-rate-limits',
   CODEX_GET_ACCOUNT_USAGE: 'codex:get-account-usage',
+  CODEX_CONSUME_RATE_LIMIT_RESET: 'codex:consume-rate-limit-reset',
 
   // Claude channels
   CLAUDE_GET_RATE_LIMITS: 'claude:get-rate-limits',

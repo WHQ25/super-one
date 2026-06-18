@@ -1,10 +1,20 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Gauge } from 'lucide-react'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@superone/ui/components/ui/tooltip'
+import { toast } from 'sonner'
+import { Popover, PopoverContent, PopoverTrigger } from '@superone/ui/components/ui/popover'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
+import { Button } from '@superone/ui/components/ui/button'
 import { cn } from '@superone/ui/lib/utils'
 import { useActiveSession, useChatStore } from '@/stores/chat'
-import type { ClaudeExtraUsage, ClaudeRateLimits, CodexAccountUsage, CodexRateLimits, CodexRateLimitWindow } from '@superone/shared/agent-types'
+import type { ClaudeExtraUsage, ClaudeRateLimits, CodexAccountUsage, CodexRateLimits, CodexRateLimitResetOutcome, CodexRateLimitWindow } from '@superone/shared/agent-types'
+
+const RESET_OUTCOME_TOAST: Record<CodexRateLimitResetOutcome, { kind: 'success' | 'info' | 'error'; message: string }> = {
+  reset: { kind: 'success', message: 'Rate limit reset' },
+  nothingToReset: { kind: 'info', message: 'No active rate limit to reset' },
+  noCredit: { kind: 'info', message: 'No reset credits available' },
+  alreadyRedeemed: { kind: 'info', message: 'This reset was already redeemed' },
+  unknown: { kind: 'error', message: 'Reset failed' },
+}
 
 function formatTokens(value: number): string {
   if (value >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(1)}B`
@@ -85,6 +95,36 @@ function StatRow({ label, value }: { label: string; value: string }) {
   )
 }
 
+function ResetCreditsRow({ count, projectPath, apiProviderId, onConsumed }: { count: number; projectPath: string; apiProviderId: string | null; onConsumed: () => void }) {
+  const [busy, setBusy] = useState(false)
+
+  const handleReset = useCallback(async () => {
+    setBusy(true)
+    try {
+      const outcome = await window.app.codexConsumeRateLimitReset(projectPath, apiProviderId)
+      const feedback = RESET_OUTCOME_TOAST[outcome ?? 'unknown']
+      toast[feedback.kind](feedback.message)
+      onConsumed()
+    } catch {
+      toast.error(RESET_OUTCOME_TOAST.unknown.message)
+    } finally {
+      setBusy(false)
+    }
+  }, [projectPath, apiProviderId, onConsumed])
+
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <span className="opacity-70">Reset credits</span>
+      <div className="flex items-center gap-2">
+        <span className="font-medium tabular-nums">{count}</span>
+        <Button size="sm" variant="outline" className="h-6 px-2 text-xs" disabled={busy} onClick={handleReset}>
+          {busy ? 'Resetting…' : 'Reset now'}
+        </Button>
+      </div>
+    </div>
+  )
+}
+
 function AccountUsageSection({ usage }: { usage: CodexAccountUsage }) {
   const rows: ReactNode[] = []
   if (usage.lifetimeTokens != null) rows.push(<StatRow key="lifetime" label="Lifetime tokens" value={formatTokens(usage.lifetimeTokens)} />)
@@ -98,25 +138,23 @@ function AccountUsageSection({ usage }: { usage: CodexAccountUsage }) {
 
 function RateLimitGauge({ title, planType, maxPercent, children }: { title: string; planType: string | null; maxPercent: number; children: ReactNode }) {
   return (
-    <TooltipProvider delayDuration={300}>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <IconButton size="sm" className="relative">
-            <Gauge />
-            <span className={cn('absolute top-1 right-1 size-1.5 rounded-full', usedColor(maxPercent))} />
-          </IconButton>
-        </TooltipTrigger>
-        <TooltipContent side="top">
-          <div className="flex min-w-52 flex-col gap-2 text-xs">
-            <div className="flex items-center justify-between gap-3">
-              <span className="font-medium">{title}</span>
-              {planType && <span className="opacity-50">{planType}</span>}
-            </div>
-            {children}
+    <Popover>
+      <PopoverTrigger asChild>
+        <IconButton size="sm" className="relative">
+          <Gauge />
+          <span className={cn('absolute top-1 right-1 size-1.5 rounded-full', usedColor(maxPercent))} />
+        </IconButton>
+      </PopoverTrigger>
+      <PopoverContent side="top" align="end" className="w-auto p-3">
+        <div className="flex min-w-52 flex-col gap-2 text-xs">
+          <div className="flex items-center justify-between gap-3">
+            <span className="font-medium">{title}</span>
+            {planType && <span className="opacity-50">{planType}</span>}
           </div>
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
+          {children}
+        </div>
+      </PopoverContent>
+    </Popover>
   )
 }
 
@@ -160,6 +198,9 @@ function CodexRateLimitIcon({ projectPath, apiProviderId, status }: { projectPat
       )}
       {limits.secondary && (
         <WindowRow label={formatWindowLabel(limits.secondary.windowDurationMins)} usedPercent={limits.secondary.usedPercent} resetsAt={limits.secondary.resetsAt} />
+      )}
+      {limits.resetCredits != null && limits.resetCredits > 0 && (
+        <ResetCreditsRow count={limits.resetCredits} projectPath={projectPath} apiProviderId={apiProviderId} onConsumed={fetchLimits} />
       )}
       {usage && <AccountUsageSection usage={usage} />}
     </RateLimitGauge>

@@ -4,6 +4,24 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.41.9-alpha] - 2026-06-19
+
+### Added
+
+- GLM presets updated to GLM-5.2 with 1M context.
+- Codex: rate-limit reset credits surfaced with a manual reset option.
+
+### Changed
+
+- Bumped Claude Agent SDK to 0.3.181.
+- Light theme card lightened (0.975) and Claude default hue set to 40.
+
+### Fixed
+
+- Codex footer token totals are preserved after a turn completes.
+- Same-named skills are now deleted by source path instead of a reconstructed path, so the correct skill is removed.
+- Directory hint now takes layout height when messages are present, fixing layout shift.
+
 ## [0.41.8-alpha] - 2026-06-12
 
 ### Added

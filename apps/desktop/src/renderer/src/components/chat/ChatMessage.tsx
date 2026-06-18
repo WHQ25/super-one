@@ -805,12 +805,18 @@ export const ChatMessage = memo(function ChatMessage({ message, sessionStatus, i
 })
 
 /** Token value with ↑ or ↓ arrow. Highlights while value is actively changing, fades after 1s of inactivity. */
-function AnimatedToken({ value, direction }: { value: number; direction: 'up' | 'down' }) {
+function AnimatedToken({ value, direction, active }: { value: number; direction: 'up' | 'down'; active: boolean }) {
   const [flash, setFlash] = useState(false)
   const timerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
   const prevRef = useRef(0)
 
   useEffect(() => {
+    if (!active) {
+      setFlash(false)
+      clearTimeout(timerRef.current)
+      prevRef.current = value
+      return () => clearTimeout(timerRef.current)
+    }
     if (value > prevRef.current && prevRef.current > 0) {
       setFlash(true)
       clearTimeout(timerRef.current)
@@ -818,18 +824,19 @@ function AnimatedToken({ value, direction }: { value: number; direction: 'up' | 
     }
     prevRef.current = value
     return () => clearTimeout(timerRef.current)
-  }, [value])
+  }, [active, value])
 
   if (value <= 0) return null
 
   const isUp = direction === 'up'
   const flashColor = isUp ? 'text-primary' : 'text-emerald-400'
+  const shouldFlash = active && flash
 
   return (
-    <span className={cn('inline-flex items-center gap-0.5 tabular-nums transition-colors duration-500', flash && flashColor)}>
+    <span className={cn('inline-flex items-center gap-0.5 tabular-nums transition-colors duration-500', shouldFlash && flashColor)}>
       {isUp
-        ? <ArrowUp className={cn('size-3 transition-transform duration-300', flash && 'scale-110')} />
-        : <ArrowDown className={cn('size-3 transition-transform duration-300', flash && 'scale-110')} />
+        ? <ArrowUp className={cn('size-3 transition-transform duration-300', shouldFlash && 'scale-110')} />
+        : <ArrowDown className={cn('size-3 transition-transform duration-300', shouldFlash && 'scale-110')} />
       }
       <span>{formatTokens(value)}</span>
     </span>
@@ -972,8 +979,8 @@ function DurationFooter({ message, copyText, parentIsStreaming }: { message: Cha
       {hasTokens && (
         <>
           {showDuration && <span>·</span>}
-          <AnimatedToken value={tokenInput} direction="up" />
-          <AnimatedToken value={tokenOutput} direction="down" />
+          <AnimatedToken value={tokenInput} direction="up" active={isStreaming} />
+          <AnimatedToken value={tokenOutput} direction="down" active={isStreaming} />
         </>
       )}
       {showTerminalReason && (

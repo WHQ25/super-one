@@ -929,8 +929,9 @@ export class Session implements SessionContract {
       ? ({ ...event, ...nextEventSeq() } as AgentEvent)
       : event
     this.applyReducer(sequenced)
+    const outbound = this.enrichOutboundEvent(sequenced)
     const existingProjectPath = (sequenced as { projectPath?: string }).projectPath
-    const tagged = { ...sequenced, sessionId: this.id, projectPath: existingProjectPath ?? this.projectPath } as AgentEvent
+    const tagged = { ...outbound, sessionId: this.id, projectPath: existingProjectPath ?? this.projectPath } as AgentEvent
     const traceMessageId = (event as Record<string, unknown>).messageId as string | undefined
       ?? this._currentMessageId
       ?? ''
@@ -950,6 +951,20 @@ export class Session implements SessionContract {
       this.notifyStateChange()
     }
     return tagged
+  }
+
+  private enrichOutboundEvent(event: AgentEvent): AgentEvent {
+    if (this.harnessId !== 'codex' || event.type !== 'message_complete') return event
+    const completedMessage = this._messages.find((message) => message.id === event.messageId)
+    const consumedTokens = completedMessage?.metadata?.consumedTokens
+    if (!consumedTokens) return event
+    return {
+      ...event,
+      metadata: {
+        ...event.metadata,
+        consumedTokens: event.metadata?.consumedTokens ?? consumedTokens,
+      },
+    }
   }
 
   private applyReducer(event: AgentEvent): void {

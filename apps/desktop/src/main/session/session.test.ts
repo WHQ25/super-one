@@ -1177,6 +1177,69 @@ describe('Session message accumulation', () => {
     expect(finished?.content).toEqual([{ type: 'text', text: 'all done' }])
   })
 
+  it('codex message_complete forwards consumedTokens computed by the main runtime', () => {
+    const { session, backend } = makeSession({ harnessId: 'codex' })
+    const captured: AgentEvent[] = []
+    session.on((e) => captured.push(e))
+    const firstUsage = {
+      totalInputTokens: 5628794,
+      totalCachedInputTokens: 4912768,
+      totalOutputTokens: 48132,
+      lastInputTokens: 67647,
+      lastCachedInputTokens: 0,
+      lastOutputTokens: 21554,
+      reasoningOutputTokens: 28942,
+      contextWindow: 258400,
+    }
+    const finalUsage = {
+      totalInputTokens: 5696441,
+      totalCachedInputTokens: 4980224,
+      totalOutputTokens: 49016,
+      lastInputTokens: 67647,
+      lastCachedInputTokens: 67456,
+      lastOutputTokens: 884,
+      reasoningOutputTokens: 29826,
+      contextWindow: 258400,
+    }
+
+    backend.emit({
+      type: 'message_start',
+      message: { id: 'codex_m2_tokens', role: 'assistant', status: 'streaming', content: [], createdAt: '', providerId: 'codex' },
+    })
+    backend.emit({
+      type: 'message_usage',
+      messageId: 'codex_m2_tokens',
+      inputTokens: firstUsage.lastInputTokens,
+      outputTokens: firstUsage.lastOutputTokens,
+      codexUsage: firstUsage,
+    })
+    backend.emit({
+      type: 'message_usage',
+      messageId: 'codex_m2_tokens',
+      inputTokens: finalUsage.lastInputTokens,
+      outputTokens: finalUsage.lastOutputTokens,
+      codexUsage: finalUsage,
+    })
+    backend.emit({
+      type: 'message_complete',
+      messageId: 'codex_m2_tokens',
+      metadata: {
+        codex: {
+          finalResponse: 'all done',
+          durationMs: 42,
+          items: [],
+          threadId: 'thread-42',
+          usage: finalUsage,
+        },
+      } as unknown as Record<string, unknown>,
+    })
+
+    const finished = session.snapshot.messages.find((m) => m.id === 'codex_m2_tokens')
+    expect(finished?.metadata?.consumedTokens).toEqual({ input: 67838, output: 22438 })
+    const completeEvent = captured.find((e) => e.type === 'message_complete') as Extract<AgentEvent, { type: 'message_complete' }> | undefined
+    expect(completeEvent?.metadata?.consumedTokens).toEqual({ input: 67838, output: 22438 })
+  })
+
   it('codex message_interrupted finalizes the assistant message with interrupted status', () => {
     const { session, backend } = makeSession({ harnessId: 'codex' })
     backend.emit({

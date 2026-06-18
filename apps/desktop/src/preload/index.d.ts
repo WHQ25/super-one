@@ -107,17 +107,17 @@ interface AppAPI {
 
   // Skills
   listSkills(projectPath: string): Promise<SkillInfo[]>
-  readSkill(projectPath: string, name: string): Promise<SkillDetail | null>
-  readSkillFile(projectPath: string, skillName: string, relativePath: string): Promise<string | null>
+  readSkill(projectPath: string, name: string, sourcePath?: string): Promise<SkillDetail | null>
+  readSkillFile(projectPath: string, skillName: string, relativePath: string, sourcePath?: string): Promise<string | null>
   installSkill(sourcePath: string): Promise<SkillInfo>
-  deleteSkill(projectPath: string, name: string, scope: ResourceScope): Promise<void>
+  deleteSkill(projectPath: string, sourcePath: string): Promise<void>
   toggleSkill(name: string, disabled: boolean): Promise<string[]>
 
   // Codex Skills
   codexListSkills(projectPath: string): Promise<SkillInfo[]>
-  codexReadSkill(projectPath: string, name: string): Promise<SkillDetail | null>
-  codexReadSkillFile(projectPath: string, skillName: string, relativePath: string): Promise<string | null>
-  codexDeleteSkill(projectPath: string, name: string, scope: ResourceScope): Promise<void>
+  codexReadSkill(projectPath: string, name: string, sourcePath?: string): Promise<SkillDetail | null>
+  codexReadSkillFile(projectPath: string, skillName: string, relativePath: string, sourcePath?: string): Promise<string | null>
+  codexDeleteSkill(projectPath: string, sourcePath: string): Promise<void>
 
   // Codex Hooks (read-only)
   codexListHooks(projectPath: string): Promise<CodexHookGroup[]>

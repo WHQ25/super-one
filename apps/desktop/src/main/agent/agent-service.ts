@@ -1786,20 +1786,20 @@ export class AgentService {
       return listSkills(projectPath)
     })
 
-    ipcMain.handle(AgentIpcChannels.SKILLS_READ, (_event, projectPath: string, name: string) => {
-      return readSkillContent(projectPath, name)
+    ipcMain.handle(AgentIpcChannels.SKILLS_READ, (_event, projectPath: string, name: string, sourcePath?: string) => {
+      return readSkillContent(projectPath, name, sourcePath)
     })
 
-    ipcMain.handle(AgentIpcChannels.SKILLS_READ_FILE, (_event, projectPath: string, skillName: string, relativePath: string) => {
-      return readSkillFile(projectPath, skillName, relativePath)
+    ipcMain.handle(AgentIpcChannels.SKILLS_READ_FILE, (_event, projectPath: string, skillName: string, relativePath: string, sourcePath?: string) => {
+      return readSkillFile(projectPath, skillName, relativePath, sourcePath)
     })
 
     ipcMain.handle(AgentIpcChannels.SKILLS_INSTALL, (_event, sourcePath: string) => {
       return installSkill(sourcePath)
     })
 
-    ipcMain.handle(AgentIpcChannels.SKILLS_DELETE, (_event, projectPath: string, name: string, scope: ResourceScope) => {
-      deleteSkill(name, scope, projectPath)
+    ipcMain.handle(AgentIpcChannels.SKILLS_DELETE, (_event, projectPath: string, sourcePath: string) => {
+      deleteSkill(sourcePath, projectPath)
     })
 
     ipcMain.handle(AgentIpcChannels.SKILLS_TOGGLE, (_event, name: string, disabled: boolean): string[] => {
@@ -1817,16 +1817,16 @@ export class AgentService {
       return getSharedCodexSkillsService().list(projectPath)
     })
 
-    ipcMain.handle(AgentIpcChannels.CODEX_SKILLS_READ, (_event, projectPath: string, name: string) => {
-      return readCodexSkillContent(projectPath, name)
+    ipcMain.handle(AgentIpcChannels.CODEX_SKILLS_READ, (_event, projectPath: string, name: string, sourcePath?: string) => {
+      return readCodexSkillContent(projectPath, name, sourcePath)
     })
 
-    ipcMain.handle(AgentIpcChannels.CODEX_SKILLS_READ_FILE, (_event, projectPath: string, skillName: string, relativePath: string) => {
-      return readCodexSkillFile(projectPath, skillName, relativePath)
+    ipcMain.handle(AgentIpcChannels.CODEX_SKILLS_READ_FILE, (_event, projectPath: string, skillName: string, relativePath: string, sourcePath?: string) => {
+      return readCodexSkillFile(projectPath, skillName, relativePath, sourcePath)
     })
 
-    ipcMain.handle(AgentIpcChannels.CODEX_SKILLS_DELETE, (_event, projectPath: string, name: string, scope: ResourceScope) => {
-      deleteCodexSkill(name, scope, projectPath)
+    ipcMain.handle(AgentIpcChannels.CODEX_SKILLS_DELETE, (_event, projectPath: string, sourcePath: string) => {
+      deleteCodexSkill(sourcePath, projectPath)
     })
 
     // --- Codex MCP config (read-only) ---

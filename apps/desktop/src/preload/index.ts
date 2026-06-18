@@ -434,26 +434,26 @@ const appAPI = {
   // Skills
   listSkills: (projectPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.SKILLS_LIST, projectPath),
-  readSkill: (projectPath: string, name: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.SKILLS_READ, projectPath, name),
-  readSkillFile: (projectPath: string, skillName: string, relativePath: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.SKILLS_READ_FILE, projectPath, skillName, relativePath),
+  readSkill: (projectPath: string, name: string, sourcePath?: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.SKILLS_READ, projectPath, name, sourcePath),
+  readSkillFile: (projectPath: string, skillName: string, relativePath: string, sourcePath?: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.SKILLS_READ_FILE, projectPath, skillName, relativePath, sourcePath),
   installSkill: (sourcePath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.SKILLS_INSTALL, sourcePath),
-  deleteSkill: (projectPath: string, name: string, scope: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.SKILLS_DELETE, projectPath, name, scope),
+  deleteSkill: (projectPath: string, sourcePath: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.SKILLS_DELETE, projectPath, sourcePath),
   toggleSkill: (name: string, disabled: boolean): Promise<string[]> =>
     ipcRenderer.invoke(AgentIpcChannels.SKILLS_TOGGLE, name, disabled),
 
   // Codex Skills
   codexListSkills: (projectPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.CODEX_SKILLS_LIST, projectPath),
-  codexReadSkill: (projectPath: string, name: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.CODEX_SKILLS_READ, projectPath, name),
-  codexReadSkillFile: (projectPath: string, skillName: string, relativePath: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.CODEX_SKILLS_READ_FILE, projectPath, skillName, relativePath),
-  codexDeleteSkill: (projectPath: string, name: string, scope: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.CODEX_SKILLS_DELETE, projectPath, name, scope),
+  codexReadSkill: (projectPath: string, name: string, sourcePath?: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.CODEX_SKILLS_READ, projectPath, name, sourcePath),
+  codexReadSkillFile: (projectPath: string, skillName: string, relativePath: string, sourcePath?: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.CODEX_SKILLS_READ_FILE, projectPath, skillName, relativePath, sourcePath),
+  codexDeleteSkill: (projectPath: string, sourcePath: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.CODEX_SKILLS_DELETE, projectPath, sourcePath),
 
   // Codex Hooks (read-only)
   codexListHooks: (projectPath: string) =>

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import type { ResourceScope, SkillInfo } from '@superone/shared/agent-types'
 
 vi.mock('./app', () => ({
   useAppStore: {
@@ -165,10 +166,13 @@ describe('toggleMcpConfig', () => {
 })
 
 describe('deleteSkill', () => {
-  it('should call normal delete path when provider is claude', async () => {
-    await store.getState().deleteSkill('my-skill', 'user')
+  const skillFixture = (sourcePath: string, scope: ResourceScope = 'user') =>
+    ({ name: 'my-skill', displayName: 'my-skill', scope, description: '', hasConfig: false, sourcePath }) as SkillInfo
 
-    expect(mockWindowApp.deleteSkill).toHaveBeenCalledWith('/project', 'my-skill', 'user')
+  it('should delete by sourcePath when provider is claude', async () => {
+    await store.getState().deleteSkill(skillFixture('/home/.claude/skills/my-skill'))
+
+    expect(mockWindowApp.deleteSkill).toHaveBeenCalledWith('/project', '/home/.claude/skills/my-skill')
     expect(mockWindowApp.codexDeleteSkill).not.toHaveBeenCalled()
   })
 
@@ -178,9 +182,9 @@ describe('deleteSkill', () => {
       settingsProvider: 'codex',
     } as ReturnType<typeof useAppStore.getState>)
 
-    await store.getState().deleteSkill('my-skill', 'user')
+    await store.getState().deleteSkill(skillFixture('/home/.codex/skills/my-skill'))
 
-    expect(mockWindowApp.codexDeleteSkill).toHaveBeenCalledWith('/project', 'my-skill', 'user')
+    expect(mockWindowApp.codexDeleteSkill).toHaveBeenCalledWith('/project', '/home/.codex/skills/my-skill')
     expect(mockWindowApp.deleteSkill).not.toHaveBeenCalled()
   })
 
@@ -188,7 +192,7 @@ describe('deleteSkill', () => {
     const refreshed = [{ name: 'remaining-skill' }]
     mockWindowApp.listSkills.mockResolvedValue(refreshed)
 
-    await store.getState().deleteSkill('my-skill', 'user')
+    await store.getState().deleteSkill(skillFixture('/home/.claude/skills/my-skill'))
 
     expect(mockWindowApp.listSkills).toHaveBeenCalledWith('/project')
     expect(store.getState().skills).toEqual(refreshed)
@@ -203,7 +207,7 @@ describe('deleteSkill', () => {
     const refreshed = [{ name: 'codex-skill' }]
     mockWindowApp.codexListSkills.mockResolvedValue(refreshed)
 
-    await store.getState().deleteSkill('my-skill', 'project')
+    await store.getState().deleteSkill(skillFixture('/project/.agents/skills/my-skill', 'project'))
 
     expect(mockWindowApp.codexListSkills).toHaveBeenCalledWith('/project')
     expect(store.getState().skills).toEqual(refreshed)
@@ -216,7 +220,7 @@ describe('deleteSkill', () => {
       skillFilePath: '/path',
     })
 
-    await store.getState().deleteSkill('my-skill', 'user')
+    await store.getState().deleteSkill(skillFixture('/home/.claude/skills/my-skill'))
 
     expect(store.getState().skillDetail).toBeNull()
     expect(store.getState().skillFileContent).toBeNull()

@@ -1,5 +1,5 @@
 import { existsSync } from 'fs'
-import { dirname, join } from 'path'
+import { dirname, join, resolve } from 'path'
 import type { ResourceScope, SkillInfo } from '@superone/shared/agent-types'
 import type { CodexExperimentService } from './codex-experiment-service'
 
@@ -47,6 +47,7 @@ function mapSkill(raw: unknown, fileExists: (path: string) => boolean): SkillInf
     description: readString(rec.description) ?? readString(rec.shortDescription) ?? readString(intf?.shortDescription) ?? '',
     argumentHint: '',
     hasConfig,
+    sourcePath: skillDir,
     ...(readOnly ? { builtin: true } : {}),
   }
 }
@@ -77,7 +78,10 @@ export class CodexSkillsRpcService {
         for (const raw of entrySkills) {
           const info = mapSkill(raw, this.fileExists)
           if (!info) continue
-          const key = `${info.scope}:${info.name}`
+          // mapSkill always sets sourcePath (it returns null when path is absent).
+          // Normalize via resolve() so path-form variants (trailing slash, ./ )
+          // collapse — matching listSkillsFromDirs' resolve(skillDir) dedup key.
+          const key = resolve(info.sourcePath!)
           if (seen.has(key)) continue
           seen.add(key)
           skills.push(info)

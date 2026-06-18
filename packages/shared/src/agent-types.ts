@@ -1149,6 +1149,7 @@ export interface SkillInfo {
   argumentHint?: string
   hasConfig: boolean
   builtin?: boolean
+  sourcePath: string
 }
 
 export interface SkillFileEntry {

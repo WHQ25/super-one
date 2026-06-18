@@ -25,18 +25,18 @@ interface SettingsState {
   skillFilePath: string | null
   disabledSkills: string[]
   fetchSkills: () => Promise<void>
-  readSkill: (name: string) => Promise<void>
-  readSkillFile: (skillName: string, relativePath: string) => Promise<void>
+  readSkill: (name: string, sourcePath?: string) => Promise<void>
+  readSkillFile: (skillName: string, relativePath: string, sourcePath?: string) => Promise<void>
   clearSkillDetail: () => void
   installSkill: (sourcePath: string) => Promise<void>
-  deleteSkill: (name: string, scope: ResourceScope) => Promise<void>
+  deleteSkill: (skill: SkillInfo) => Promise<void>
   loadDisabledSkills: () => Promise<void>
   toggleSkill: (name: string, disabled: boolean) => Promise<void>
 
   // Codex Skills (reuses skills/skillDetail/skillFileContent/skillFilePath state)
   fetchCodexSkills: () => Promise<void>
-  readCodexSkill: (name: string) => Promise<void>
-  readCodexSkillFile: (skillName: string, relativePath: string) => Promise<void>
+  readCodexSkill: (name: string, sourcePath?: string) => Promise<void>
+  readCodexSkillFile: (skillName: string, relativePath: string, sourcePath?: string) => Promise<void>
 
   // MCP
   mcpConfigs: McpServerConfig[]
@@ -155,15 +155,15 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     set({ skills })
   },
 
-  readSkill: async (name) => {
+  readSkill: async (name, sourcePath) => {
     const pp = getProjectPath()
-    const detail = await window.app.readSkill(pp, name)
+    const detail = await window.app.readSkill(pp, name, sourcePath)
     set({ skillDetail: detail })
   },
 
-  readSkillFile: async (skillName, relativePath) => {
+  readSkillFile: async (skillName, relativePath, sourcePath) => {
     const pp = getProjectPath()
-    const content = await window.app.readSkillFile(pp, skillName, relativePath)
+    const content = await window.app.readSkillFile(pp, skillName, relativePath, sourcePath)
     set({ skillFileContent: content, skillFilePath: relativePath })
   },
 
@@ -174,13 +174,13 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     await get().fetchSkills()
   },
 
-  deleteSkill: async (name, scope) => {
+  deleteSkill: async (skill) => {
     const pp = getProjectPath()
     const provider = useAppStore.getState().settingsProvider
     if (provider === 'codex') {
-      await window.app.codexDeleteSkill(pp, name, scope)
+      await window.app.codexDeleteSkill(pp, skill.sourcePath)
     } else {
-      await window.app.deleteSkill(pp, name, scope)
+      await window.app.deleteSkill(pp, skill.sourcePath)
     }
     set({ skillDetail: null, skillFileContent: null, skillFilePath: null })
     if (provider === 'codex') {
@@ -216,15 +216,15 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     set({ skills })
   },
 
-  readCodexSkill: async (name) => {
+  readCodexSkill: async (name, sourcePath) => {
     const pp = getProjectPath()
-    const detail = await window.app.codexReadSkill(pp, name)
+    const detail = await window.app.codexReadSkill(pp, name, sourcePath)
     set({ skillDetail: detail })
   },
 
-  readCodexSkillFile: async (skillName, relativePath) => {
+  readCodexSkillFile: async (skillName, relativePath, sourcePath) => {
     const pp = getProjectPath()
-    const content = await window.app.codexReadSkillFile(pp, skillName, relativePath)
+    const content = await window.app.codexReadSkillFile(pp, skillName, relativePath, sourcePath)
     set({ skillFileContent: content, skillFilePath: relativePath })
   },
 

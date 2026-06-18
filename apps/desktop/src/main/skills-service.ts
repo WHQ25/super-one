@@ -1,8 +1,9 @@
-import { join, resolve, basename } from 'path'
+import { join, resolve, basename, sep } from 'path'
 import log from './logger'
 import { homedir } from 'os'
 import { existsSync, readdirSync, readFileSync, statSync, cpSync, rmSync, type Dirent } from 'fs'
 import type { ResourceScope, SkillInfo, SkillDetail, SkillFileEntry } from '@superone/shared/agent-types'
+import { isPathWithinAllowed, isPathAtOrWithinAllowed } from './path-security'
 
 export interface SkillDir {
   dir: string
@@ -138,7 +139,7 @@ export function listSkillsFromDirs(dirs: SkillDir[]): SkillInfo[] {
       const skillDir = join(absDir, entry.name)
       if (existsSync(join(skillDir, 'SKILL.md'))) {
         const name = (namePrefix ?? '') + relPath
-        const key = `${scope}:${name}`
+        const key = resolve(skillDir)
         if (!seen.has(key)) {
           seen.add(key)
           const fm = parseFrontmatter(join(skillDir, 'SKILL.md'))
@@ -149,6 +150,7 @@ export function listSkillsFromDirs(dirs: SkillDir[]): SkillInfo[] {
             description: fm.description,
             argumentHint: fm.argumentHint,
             hasConfig: existsSync(join(skillDir, 'config.json')),
+            sourcePath: skillDir,
             ...(readOnly ? { builtin: true } : {}),
           })
         }
@@ -191,7 +193,7 @@ function scanDir(dirPath: string): SkillFileEntry[] {
   }
 }
 
-export function readSkillContentFromDirs(dirs: SkillDir[], name: string): SkillDetail | null {
+export function readSkillContentFromDirs(dirs: SkillDir[], name: string, sourcePath?: string): SkillDetail | null {
   for (const { dir, scope, namePrefix } of dirs) {
     // For plugin skills, strip the prefix to find the actual directory
     const dirName = namePrefix && name.startsWith(namePrefix) ? name.slice(namePrefix.length) : name
@@ -200,6 +202,8 @@ export function readSkillContentFromDirs(dirs: SkillDir[], name: string): SkillD
     if (!existsSync(skillMd)) continue
     const expectedName = (namePrefix ?? '') + dirName
     if (expectedName !== name) continue
+    // Disambiguate same-named skills living in different roots.
+    if (sourcePath && resolve(skillDir) !== resolve(sourcePath)) continue
     const fm = parseFrontmatter(skillMd)
     return {
       name,
@@ -207,23 +211,30 @@ export function readSkillContentFromDirs(dirs: SkillDir[], name: string): SkillD
       scope,
       description: fm.description,
       hasConfig: existsSync(join(skillDir, 'config.json')),
+      // Echo back the caller's sourcePath so the detail's identity matches the
+      // list item the renderer holds verbatim (the list value may be a non-byte-
+      // identical but resolve-equal form, e.g. Codex RPC paths).
+      sourcePath: sourcePath ?? skillDir,
       files: scanDir(skillDir),
     }
   }
   return null
 }
 
-export function readSkillFileFromDirs(dirs: SkillDir[], skillName: string, relativePath: string): string | null {
+export function readSkillFileFromDirs(dirs: SkillDir[], skillName: string, relativePath: string, sourcePath?: string): string | null {
   for (const { dir, namePrefix } of dirs) {
     const dirName = namePrefix && skillName.startsWith(namePrefix) ? skillName.slice(namePrefix.length) : skillName
     const skillDir = join(dir, dirName)
     if (!existsSync(join(skillDir, 'SKILL.md'))) continue
     const expectedName = (namePrefix ?? '') + dirName
     if (expectedName !== skillName) continue
+    if (sourcePath && resolve(skillDir) !== resolve(sourcePath)) continue
 
     const resolved = resolve(skillDir, relativePath)
-    // Prevent path traversal
-    if (!resolved.startsWith(skillDir)) return null
+    // Prevent path traversal — require the resolved path to be the skill dir
+    // itself or a descendant (the bare startsWith without a separator would let
+    // a sibling sharing the dir's name as a prefix escape).
+    if (resolved !== skillDir && !resolved.startsWith(skillDir + sep)) return null
     if (!existsSync(resolved) || statSync(resolved).isDirectory()) return null
     try {
       return readFileSync(resolved, 'utf-8')
@@ -240,12 +251,12 @@ export function listSkills(cwd: string): SkillInfo[] {
   return listSkillsFromDirs(getSkillDirs(cwd))
 }
 
-export function readSkillContent(cwd: string, name: string): SkillDetail | null {
-  return readSkillContentFromDirs(getSkillDirs(cwd), name)
+export function readSkillContent(cwd: string, name: string, sourcePath?: string): SkillDetail | null {
+  return readSkillContentFromDirs(getSkillDirs(cwd), name, sourcePath)
 }
 
-export function readSkillFile(cwd: string, skillName: string, relativePath: string): string | null {
-  return readSkillFileFromDirs(getSkillDirs(cwd), skillName, relativePath)
+export function readSkillFile(cwd: string, skillName: string, relativePath: string, sourcePath?: string): string | null {
+  return readSkillFileFromDirs(getSkillDirs(cwd), skillName, relativePath, sourcePath)
 }
 
 // --- Codex wrappers ---
@@ -254,12 +265,12 @@ export function readSkillFile(cwd: string, skillName: string, relativePath: stri
 // `readCodexSkillFile`, and `deleteCodexSkill` still scan local fs because
 // the RPC only returns metadata + path, not file contents.
 
-export function readCodexSkillContent(cwd: string, name: string): SkillDetail | null {
-  return readSkillContentFromDirs(getCodexSkillDirs(cwd), name)
+export function readCodexSkillContent(cwd: string, name: string, sourcePath?: string): SkillDetail | null {
+  return readSkillContentFromDirs(getCodexSkillDirs(cwd), name, sourcePath)
 }
 
-export function readCodexSkillFile(cwd: string, skillName: string, relativePath: string): string | null {
-  return readSkillFileFromDirs(getCodexSkillDirs(cwd), skillName, relativePath)
+export function readCodexSkillFile(cwd: string, skillName: string, relativePath: string, sourcePath?: string): string | null {
+  return readSkillFileFromDirs(getCodexSkillDirs(cwd), skillName, relativePath, sourcePath)
 }
 
 // --- Install / Delete (Claude Code only) ---
@@ -277,35 +288,37 @@ export function installSkill(sourcePath: string): SkillInfo {
     scope: 'user',
     description: fm.description,
     hasConfig: existsSync(join(dest, 'config.json')),
+    sourcePath: dest,
   }
 }
 
-// Refuse names that would escape the skills root or target a hidden tree.
-// `.system` is Codex's embedded built-in skill cache — never user-deletable;
-// any dot-prefixed or `..` segment is also unsafe (path traversal).
-function isUnsafeSkillName(name: string): boolean {
-  const segments = name.split(/[/\\]/)
-  return segments.some((seg) => seg === '' || seg === '.' || seg === '..' || seg.startsWith('.'))
-}
-
-function deleteSkillFromBaseDir(baseDirName: '.claude' | '.agents', name: string, scope: ResourceScope, cwd: string): void {
-  if (isUnsafeSkillName(name)) {
-    log.warn(`[skills] refusing to delete protected/unsafe skill: ${name}`)
+// Delete a skill by its exact on-disk directory (carried in SkillInfo.sourcePath).
+// Reconstructing the path from name+scope is wrong when a same-named skill lives
+// in a non-default root (e.g. Codex's ~/.codex/skills vs ~/.agents/skills) — the
+// guessed path doesn't exist and the rm silently no-ops. We instead delete the
+// real path, but only after validating it sits inside a writable, non-plugin,
+// non-builtin skills root for this provider. Containment uses the shared
+// path-security helpers (realpath + separator-aware) so symlinked homes resolve.
+function deleteSkillBySourcePath(sourcePath: string, dirs: SkillDir[]): void {
+  const target = resolve(sourcePath)
+  const writableRoots = dirs.filter((d) => !d.readOnly && !d.namePrefix).map((d) => d.dir)
+  const readOnlyRoots = dirs.filter((d) => d.readOnly).map((d) => d.dir)
+  const allowed = isPathWithinAllowed(target, writableRoots) && !isPathAtOrWithinAllowed(target, readOnlyRoots)
+  if (!allowed) {
+    log.warn(`[skills] refusing to delete skill outside a writable root: ${sourcePath}`)
     return
   }
-  const dir = scope === 'user'
-    ? join(homedir(), baseDirName, 'skills', name)
-    : join(cwd, baseDirName, 'skills', name)
-
-  if (existsSync(dir)) {
-    rmSync(dir, { recursive: true, force: true })
+  if (!existsSync(join(target, 'SKILL.md'))) {
+    log.warn(`[skills] refusing to delete: not a skill directory: ${sourcePath}`)
+    return
   }
+  rmSync(target, { recursive: true, force: true })
 }
 
-export function deleteSkill(name: string, scope: ResourceScope, cwd: string): void {
-  deleteSkillFromBaseDir('.claude', name, scope, cwd)
+export function deleteSkill(sourcePath: string, cwd: string): void {
+  deleteSkillBySourcePath(sourcePath, getSkillDirs(cwd))
 }
 
-export function deleteCodexSkill(name: string, scope: ResourceScope, cwd: string): void {
-  deleteSkillFromBaseDir('.agents', name, scope, cwd)
+export function deleteCodexSkill(sourcePath: string, cwd: string): void {
+  deleteSkillBySourcePath(sourcePath, getCodexSkillDirs(cwd))
 }

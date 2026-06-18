@@ -19,6 +19,13 @@ function buildPath(prefix: string, name: string): string {
   return prefix ? `${prefix}/${name}` : name
 }
 
+function sourceDirOf(sourcePath: string): string | null {
+  const trimmed = sourcePath.replace(/[/\\]+$/, '')
+  const idx = Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\'))
+  if (idx <= 0) return null
+  return trimmed.slice(0, idx)
+}
+
 function FileTreeNode({
   entry,
   depth,
@@ -139,7 +146,7 @@ function SkillCard({ skill, layoutId, readOnly }: { skill: SkillInfo; layoutId: 
   const { skillDetail, skillFileContent, skillFilePath, readSkill, readSkillFile, readCodexSkill, readCodexSkillFile, clearSkillDetail, deleteSkill, disabledSkills, toggleSkill } = useSettingsStore()
   const settingsProvider = useAppStore((s) => s.settingsProvider)
   const isCodex = settingsProvider === 'codex'
-  const isExpanded = skillDetail?.name === skill.name
+  const isExpanded = skillDetail?.sourcePath === skill.sourcePath
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [mdRawView, setMdRawView] = useState(false)
   const [contentReady, setContentReady] = useState(false)
@@ -165,17 +172,17 @@ function SkillCard({ skill, layoutId, readOnly }: { skill: SkillInfo; layoutId: 
     if (isExpanded) {
       clearSkillDetail()
     } else {
-      doReadSkill(skill.name).then(() => {
-        doReadSkillFile(skill.name, 'SKILL.md')
+      doReadSkill(skill.name, skill.sourcePath).then(() => {
+        doReadSkillFile(skill.name, 'SKILL.md', skill.sourcePath)
       })
     }
   }
 
   const handleFileSelect = useCallback(
     (skillName: string, relativePath: string) => {
-      doReadSkillFile(skillName, relativePath)
+      doReadSkillFile(skillName, relativePath, skill.sourcePath)
     },
-    [doReadSkillFile]
+    [doReadSkillFile, skill.sourcePath]
   )
 
   const handleDeleteClick = (event: React.MouseEvent) => {
@@ -187,7 +194,7 @@ function SkillCard({ skill, layoutId, readOnly }: { skill: SkillInfo; layoutId: 
   const handleDeleteConfirm = async () => {
     setDeleting(true)
     try {
-      await deleteSkill(skill.name, skill.scope)
+      await deleteSkill(skill)
       setDeleteConfirmOpen(false)
       setDeleting(false)
     } catch (e) {
@@ -248,6 +255,11 @@ function SkillCard({ skill, layoutId, readOnly }: { skill: SkillInfo; layoutId: 
         </div>
         {skill.description && (
           <p className="line-clamp-3 text-xs leading-relaxed text-muted-foreground">{skill.description}</p>
+        )}
+        {sourceDirOf(skill.sourcePath) && (
+          <p className="truncate text-[10px] text-muted-foreground/70" title={skill.sourcePath}>
+            {sourceDirOf(skill.sourcePath)}
+          </p>
         )}
       </div>
 
@@ -342,8 +354,10 @@ function SkillSection({ title, skills, readOnly }: { title: string; skills: Skil
   const skillDetail = useSettingsStore((s) => s.skillDetail)
   if (skills.length === 0) return null
 
-  const expandedIdx = skills.findIndex((s) => s.name === skillDetail?.name)
-  const cardKey = (s: SkillInfo) => `skill-${s.scope}:${s.name}`
+  const expandedIdx = skillDetail
+    ? skills.findIndex((s) => s.sourcePath === skillDetail.sourcePath)
+    : -1
+  const cardKey = (s: SkillInfo) => `skill-${s.scope}:${s.sourcePath}`
 
   const hasExpanded = expandedIdx !== -1
   const hasOrphan = hasExpanded && expandedIdx % 2 !== 0

@@ -17,7 +17,15 @@ export function resolveRealPath(inputPath: string): string {
 
 export function isPathWithinAllowed(filePath: string, allowedRoots: string[]): boolean {
   const real = normalizeSep(resolveRealPath(filePath))
-  return allowedRoots.some((root) => real.startsWith(normalizeSep(root) + sep))
+  return allowedRoots.some((root) => real.startsWith(normalizeSep(resolveRealPath(root)) + sep))
+}
+
+export function isPathAtOrWithinAllowed(filePath: string, allowedRoots: string[]): boolean {
+  const real = normalizeSep(resolveRealPath(filePath))
+  return allowedRoots.some((root) => {
+    const r = normalizeSep(resolveRealPath(root))
+    return real === r || real.startsWith(r + sep)
+  })
 }
 
 export function getReadableAssetRoots(

@@ -1,4 +1,4 @@
-import { join } from 'path'
+import { join, sep } from 'path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { existsSyncMock, readdirSyncMock, readFileSyncMock, statSyncMock, rmSyncMock } = vi.hoisted(() => ({
@@ -113,11 +113,12 @@ description: A test skill
         description: 'A test skill',
         argumentHint: '',
         hasConfig: false,
+        sourcePath: join('/home/testuser/.agents/skills', 'my-skill'),
       },
     ])
   })
 
-  it('deduplicates skills by scope:name key', () => {
+  it('lists same-named skills from different roots, distinguished by sourcePath', () => {
     const dir1 = '/dir1'
     const dir2 = '/dir2'
     const dirs: SkillDir[] = [
@@ -140,8 +141,31 @@ description: A test skill
     readFileSyncMock.mockReturnValue('---\nname: Same\ndescription: First\n---')
 
     const result = listSkillsFromDirs(dirs)
-    // Should only include once
-    expect(result).toHaveLength(1)
+    expect(result).toHaveLength(2)
+    expect(result.map((s) => s.sourcePath)).toEqual([
+      join(dir1, 'same-skill'),
+      join(dir2, 'same-skill'),
+    ])
+  })
+
+  it('still collapses a skill reachable from the exact same directory only once', () => {
+    const dir1 = '/dup'
+    const dirs: SkillDir[] = [
+      { dir: dir1, scope: 'user' },
+      { dir: dir1, scope: 'user' },
+    ]
+
+    existsSyncMock.mockImplementation((path: string) => {
+      if (path === dir1) return true
+      if (path === join(dir1, 'skill', 'SKILL.md')) return true
+      return false
+    })
+    readdirSyncMock.mockImplementation((path: string) =>
+      path === dir1 ? [{ name: 'skill', isDirectory: () => true, isSymbolicLink: () => false }] : []
+    )
+    readFileSyncMock.mockReturnValue('---\nname: S\ndescription: d\n---')
+
+    expect(listSkillsFromDirs(dirs)).toHaveLength(1)
   })
 
   it('discovers nested skills recursively (Codex-style BFS) using the relative path as name', () => {
@@ -171,6 +195,7 @@ description: A test skill
         description: 'Deep',
         argumentHint: '',
         hasConfig: false,
+        sourcePath: join('/codex/skills', 'category', 'nested-skill'),
       },
     ])
   })
@@ -225,6 +250,7 @@ description: A test skill
         description: 'Built-in',
         argumentHint: '',
         hasConfig: false,
+        sourcePath: join('/home/testuser/.codex/skills/.system', 'imagegen'),
         builtin: true,
       },
     ])
@@ -291,6 +317,43 @@ describe('readSkillContentFromDirs', () => {
     expect(result?.displayName).toBe('My Skill')
     expect(result?.hasConfig).toBe(true)
     expect(result?.files).toBeDefined()
+    expect(result?.sourcePath).toBe(join('/skills', 'my-skill'))
+  })
+
+  it('disambiguates same-named skills by sourcePath, returning the requested root', () => {
+    const dir1 = '/dir1'
+    const dir2 = '/dir2'
+    const dirs: SkillDir[] = [
+      { dir: dir1, scope: 'user' },
+      { dir: dir2, scope: 'user' },
+    ]
+
+    existsSyncMock.mockImplementation((path: string) =>
+      path === join(dir1, 'same', 'SKILL.md') || path === join(dir2, 'same', 'SKILL.md')
+    )
+    readdirSyncMock.mockReturnValue([])
+    readFileSyncMock.mockReturnValue('---\nname: Same\ndescription: d\n---')
+
+    const first = readSkillContentFromDirs(dirs, 'same')
+    expect(first?.sourcePath).toBe(join(dir1, 'same'))
+
+    const second = readSkillContentFromDirs(dirs, 'same', join(dir2, 'same'))
+    expect(second?.sourcePath).toBe(join(dir2, 'same'))
+  })
+
+  it('echoes the caller sourcePath verbatim when it resolve-matches, so the renderer identity holds', () => {
+    const dir = '/dir'
+    const dirs: SkillDir[] = [{ dir, scope: 'user' }]
+
+    existsSyncMock.mockImplementation((path: string) => path === join(dir, 'skill', 'SKILL.md'))
+    readdirSyncMock.mockReturnValue([])
+    readFileSyncMock.mockReturnValue('---\nname: S\ndescription: d\n---')
+
+    // Non-byte-identical but resolve-equal form (trailing slash) — mirrors a
+    // Codex RPC sourcePath that differs in spelling from the FS-derived skillDir.
+    const rpcForm = join(dir, 'skill') + sep
+    const result = readSkillContentFromDirs(dirs, 'skill', rpcForm)
+    expect(result?.sourcePath).toBe(rpcForm)
   })
 })
 
@@ -339,29 +402,54 @@ describe('readSkillFileFromDirs', () => {
 
 describe('deleteCodexSkill', () => {
   beforeEach(() => {
+    delete process.env.CODEX_HOME
     existsSyncMock.mockReset()
     rmSyncMock.mockReset()
   })
 
-  it('deletes a normal user skill', () => {
+  it('deletes a skill by its exact sourcePath, even outside the default root', () => {
     existsSyncMock.mockReturnValue(true)
-    deleteCodexSkill('my-skill', 'user', '/proj')
-    expect(rmSyncMock).toHaveBeenCalledWith(
-      join('/home/testuser', '.agents', 'skills', 'my-skill'),
-      { recursive: true, force: true }
-    )
+    const target = join('/home/testuser', '.codex', 'skills', 'my-skill')
+    deleteCodexSkill(target, '/proj')
+    expect(rmSyncMock).toHaveBeenCalledWith(target, { recursive: true, force: true })
   })
 
-  it('refuses to delete an embedded .system skill', () => {
+  it('deletes a project-scope skill under .agents', () => {
     existsSyncMock.mockReturnValue(true)
-    deleteCodexSkill('.system/imagegen', 'user', '/proj')
-    deleteCodexSkill('.system', 'user', '/proj')
+    const target = join('/proj', '.agents', 'skills', 'my-skill')
+    deleteCodexSkill(target, '/proj')
+    expect(rmSyncMock).toHaveBeenCalledWith(target, { recursive: true, force: true })
+  })
+
+  it('refuses to delete an embedded .system skill or the .system root', () => {
+    existsSyncMock.mockReturnValue(true)
+    deleteCodexSkill(join('/home/testuser', '.codex', 'skills', '.system', 'imagegen'), '/proj')
+    deleteCodexSkill(join('/home/testuser', '.codex', 'skills', '.system'), '/proj')
     expect(rmSyncMock).not.toHaveBeenCalled()
   })
 
-  it('refuses path-traversal skill names', () => {
+  it('refuses a path that escapes every writable root', () => {
     existsSyncMock.mockReturnValue(true)
-    deleteCodexSkill('../../etc/passwd', 'user', '/proj')
+    deleteCodexSkill(join('/home/testuser', '.agents', 'skills', '..', '..', '..', 'etc', 'passwd'), '/proj')
     expect(rmSyncMock).not.toHaveBeenCalled()
+  })
+
+  it('no-ops when the target has no SKILL.md', () => {
+    existsSyncMock.mockReturnValue(false)
+    deleteCodexSkill(join('/home/testuser', '.codex', 'skills', 'gone'), '/proj')
+    expect(rmSyncMock).not.toHaveBeenCalled()
+  })
+
+  it('refuses a writable-root path with no SKILL.md but deletes a sibling that has one', () => {
+    const noMd = join('/home/testuser', '.codex', 'skills', 'not-a-skill')
+    const realSkill = join('/home/testuser', '.codex', 'skills', 'real')
+    existsSyncMock.mockImplementation((p: string) => p === join(realSkill, 'SKILL.md'))
+
+    deleteCodexSkill(noMd, '/proj')
+    expect(rmSyncMock).not.toHaveBeenCalled()
+
+    deleteCodexSkill(realSkill, '/proj')
+    expect(rmSyncMock).toHaveBeenCalledWith(realSkill, { recursive: true, force: true })
+    expect(rmSyncMock).toHaveBeenCalledTimes(1)
   })
 })

@@ -52,7 +52,7 @@ export function reduceUsage(session: PerSessionState, event: UsageEvent): Partia
       return {
         rateLimitInfo: event.status === 'allowed'
           ? null
-          : { status: event.status, resetsAt: event.resetsAt, rateLimitType: event.rateLimitType, utilization: event.utilization },
+          : { status: event.status, resetsAt: event.resetsAt, rateLimitType: event.rateLimitType, utilization: event.utilization, errorCode: event.errorCode, canUserPurchaseCredits: event.canUserPurchaseCredits, hasChargeableSavedPaymentMethod: event.hasChargeableSavedPaymentMethod },
       }
 
     case 'api_retry':

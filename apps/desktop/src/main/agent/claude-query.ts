@@ -908,6 +908,9 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
               overageDisabledReason: rl.overageDisabledReason,
               isUsingOverage: rl.isUsingOverage,
               surpassedThreshold: rl.surpassedThreshold,
+              errorCode: rl.errorCode,
+              canUserPurchaseCredits: rl.canUserPurchaseCredits,
+              hasChargeableSavedPaymentMethod: rl.hasChargeableSavedPaymentMethod,
             })
           }
           break

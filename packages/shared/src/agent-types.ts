@@ -795,7 +795,7 @@ export type AgentEventBase =
   | { type: 'init_ready'; skills: SlashCommandInfo[]; projectCommands: SlashCommandInfo[]; projectAgents: AgentInfo[]; additionalDirectories: string[]; additionalDirsScoped: { user: string[]; projectShared: string[]; projectLocal: string[] }; cwd: string; homedir: string; sandboxInfo: SandboxInfo; permissionMode: PermissionMode; selectedModel?: string | null; selectedEffort?: EffortLevel | null; activeProvider?: RemoteActiveProvider | null }
   | { type: 'additional_dirs_changed'; additionalDirectories: string[]; additionalDirsScoped: { user: string[]; projectShared: string[]; projectLocal: string[] }; sessionAdditionalDirs: string[] }
   | { type: 'prompt_suggestion'; suggestion: string }
-  | { type: 'rate_limit'; status: 'allowed' | 'allowed_warning' | 'rejected'; resetsAt?: number; rateLimitType?: string; utilization?: number; overageStatus?: string; overageResetsAt?: number; overageDisabledReason?: string; isUsingOverage?: boolean; surpassedThreshold?: number }
+  | { type: 'rate_limit'; status: 'allowed' | 'allowed_warning' | 'rejected'; resetsAt?: number; rateLimitType?: string; utilization?: number; overageStatus?: string; overageResetsAt?: number; overageDisabledReason?: string; isUsingOverage?: boolean; surpassedThreshold?: number; errorCode?: 'credits_required'; canUserPurchaseCredits?: boolean; hasChargeableSavedPaymentMethod?: boolean }
   | { type: 'hook_progress'; hook: HookEvent }
   | { type: 'files_persisted'; files: Array<{ filename: string; fileId: string }>; failed: Array<{ filename: string; error: string }>; processedAt: string }
   | { type: 'elicitation_complete'; mcpServerName: string; elicitationId: string }

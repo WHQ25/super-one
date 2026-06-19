@@ -208,10 +208,6 @@
   .after-thinking .chat-md {
     margin-top: 0;
   }
-
-  .subagent-container {
-    margin-left: 0.75rem;
-  }
 }
 
 /* Codex turn text should align tighter (no large top offset). */

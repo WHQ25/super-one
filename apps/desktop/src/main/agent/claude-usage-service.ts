@@ -260,7 +260,7 @@ function buildPlanType(oauth: OAuthCreds): string | null {
   return tierMatch ? `${base} ${tierMatch[1]}x` : base
 }
 
-export async function getClaudeRateLimits(): Promise<ClaudeRateLimits | null> {
+export async function getClaudeRateLimits(force = false): Promise<ClaudeRateLimits | null> {
   try {
     const creds = loadCredentials()
     if (!creds?.oauth.accessToken?.trim() || !hasProfileScope(creds)) return null
@@ -270,7 +270,7 @@ export async function getClaudeRateLimits(): Promise<ClaudeRateLimits | null> {
 
     const wasRateLimited = rateLimitedUntilMs > 0
     rateLimitedUntilMs = 0
-    if (!wasRateLimited && cachedRateLimits && nowMs - lastUsageFetchMs < MIN_USAGE_FETCH_INTERVAL_MS) {
+    if (!force && !wasRateLimited && cachedRateLimits && nowMs - lastUsageFetchMs < MIN_USAGE_FETCH_INTERVAL_MS) {
       return cachedRateLimits
     }
 
@@ -303,7 +303,7 @@ export async function getClaudeRateLimits(): Promise<ClaudeRateLimits | null> {
 
     const data = tryParseJson<UsageResponse>(await resp.text())
     if (!data) return cachedRateLimits
-    cachedRateLimits = parseUsage(data, buildPlanType(creds.oauth))
+    cachedRateLimits = { ...parseUsage(data, buildPlanType(creds.oauth)), fetchedAt: nowMs }
     return cachedRateLimits
   } catch (e) {
     log.info('[claude-usage] getClaudeRateLimits failed: %s', String(e))

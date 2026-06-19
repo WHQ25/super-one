@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import { Gauge } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
+import type { TFunction } from 'i18next'
+import { Gauge, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 import { Popover, PopoverContent, PopoverTrigger } from '@superone/ui/components/ui/popover'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
@@ -8,12 +10,12 @@ import { cn } from '@superone/ui/lib/utils'
 import { useActiveSession, useChatStore } from '@/stores/chat'
 import type { ClaudeExtraUsage, ClaudeRateLimits, CodexAccountUsage, CodexRateLimits, CodexRateLimitResetOutcome, CodexRateLimitWindow } from '@superone/shared/agent-types'
 
-const RESET_OUTCOME_TOAST: Record<CodexRateLimitResetOutcome, { kind: 'success' | 'info' | 'error'; message: string }> = {
-  reset: { kind: 'success', message: 'Rate limit reset' },
-  nothingToReset: { kind: 'info', message: 'No active rate limit to reset' },
-  noCredit: { kind: 'info', message: 'No reset credits available' },
-  alreadyRedeemed: { kind: 'info', message: 'This reset was already redeemed' },
-  unknown: { kind: 'error', message: 'Reset failed' },
+const RESET_OUTCOME_TOAST: Record<CodexRateLimitResetOutcome, { kind: 'success' | 'info' | 'error'; key: string }> = {
+  reset: { kind: 'success', key: 'usageGauge.toast.reset' },
+  nothingToReset: { kind: 'info', key: 'usageGauge.toast.nothingToReset' },
+  noCredit: { kind: 'info', key: 'usageGauge.toast.noCredit' },
+  alreadyRedeemed: { kind: 'info', key: 'usageGauge.toast.alreadyRedeemed' },
+  unknown: { kind: 'error', key: 'usageGauge.toast.unknown' },
 }
 
 function formatTokens(value: number): string {
@@ -23,24 +25,35 @@ function formatTokens(value: number): string {
   return String(Math.round(value))
 }
 
-function formatWindowLabel(minutes: number | null): string {
-  if (!minutes || minutes <= 0) return 'Usage'
+function formatWindowLabel(minutes: number | null, t: TFunction): string {
+  if (!minutes || minutes <= 0) return t('usageGauge.windowFallback')
   if (minutes < 60) return `${minutes}m`
   if (minutes < 1440) return `${Math.round(minutes / 60)}h`
   return `${Math.round(minutes / 1440)}d`
 }
 
-function formatResetIn(resetsAtSeconds: number | null): string | null {
+function formatResetIn(resetsAtSeconds: number | null, t: TFunction): string | null {
   if (!resetsAtSeconds) return null
   const diffMs = resetsAtSeconds * 1000 - Date.now()
-  if (diffMs <= 0) return 'resets soon'
+  if (diffMs <= 0) return t('usageGauge.resetsSoon')
   const totalMin = Math.round(diffMs / 60_000)
   const days = Math.floor(totalMin / 1440)
   const hours = Math.floor((totalMin % 1440) / 60)
   const mins = totalMin % 60
-  if (days > 0) return `resets in ${days}d ${hours}h`
-  if (hours > 0) return `resets in ${hours}h ${mins}m`
-  return `resets in ${mins}m`
+  let time: string
+  if (days > 0) time = `${days}d ${hours}h`
+  else if (hours > 0) time = `${hours}h ${mins}m`
+  else time = `${mins}m`
+  return t('usageGauge.resetsIn', { time })
+}
+
+function formatUpdatedAgo(fetchedAt: number, now: number, t: TFunction): string {
+  const min = Math.floor(Math.max(0, now - fetchedAt) / 60_000)
+  if (min < 1) return t('usageGauge.updatedJustNow')
+  if (min < 60) return t('usageGauge.updatedMinutesAgo', { n: min })
+  const hr = Math.floor(min / 60)
+  if (hr < 24) return t('usageGauge.updatedHoursAgo', { n: hr })
+  return t('usageGauge.updatedDaysAgo', { n: Math.floor(hr / 24) })
 }
 
 function usedColor(percent: number): string {
@@ -56,15 +69,16 @@ function remainingColor(percent: number): string {
 }
 
 function WindowRow({ label, usedPercent, resetsAt }: { label: string; usedPercent: number; resetsAt: number | null }) {
+  const { t } = useTranslation()
   const remaining = Math.max(0, Math.min(100, 100 - usedPercent))
-  const resetIn = formatResetIn(resetsAt)
+  const resetIn = formatResetIn(resetsAt, t)
   return (
     <div className="flex flex-col gap-1">
       <div className="flex items-center justify-between gap-3">
         <span className="opacity-70">{label}</span>
         <span className="flex items-center gap-1.5">
           {resetIn && <span className="opacity-50">{resetIn} ·</span>}
-          <span className="font-medium tabular-nums">{Math.round(remaining)}% left</span>
+          <span className="font-medium tabular-nums">{t('usageGauge.percentLeft', { percent: Math.round(remaining) })}</span>
         </span>
       </div>
       <div className="h-1 w-full overflow-hidden rounded-full bg-border/60">
@@ -75,12 +89,13 @@ function WindowRow({ label, usedPercent, resetsAt }: { label: string; usedPercen
 }
 
 function ExtraUsageRow({ extra }: { extra: ClaudeExtraUsage }) {
+  const { t } = useTranslation()
   const value = extra.limitDollars != null
     ? `$${extra.usedDollars.toFixed(2)} / $${extra.limitDollars.toFixed(2)}`
     : `$${extra.usedDollars.toFixed(2)}`
   return (
     <div className="flex items-center justify-between gap-3">
-      <span className="opacity-70">Extra usage</span>
+      <span className="opacity-70">{t('usageGauge.extraUsage')}</span>
       <span className="font-medium tabular-nums">{value}</span>
     </div>
   )
@@ -96,6 +111,7 @@ function StatRow({ label, value }: { label: string; value: string }) {
 }
 
 function ResetCreditsRow({ count, projectPath, apiProviderId, onConsumed }: { count: number; projectPath: string; apiProviderId: string | null; onConsumed: () => void }) {
+  const { t } = useTranslation()
   const [busy, setBusy] = useState(false)
 
   const handleReset = useCallback(async () => {
@@ -103,22 +119,22 @@ function ResetCreditsRow({ count, projectPath, apiProviderId, onConsumed }: { co
     try {
       const outcome = await window.app.codexConsumeRateLimitReset(projectPath, apiProviderId)
       const feedback = RESET_OUTCOME_TOAST[outcome ?? 'unknown']
-      toast[feedback.kind](feedback.message)
+      toast[feedback.kind](t(feedback.key))
       onConsumed()
     } catch {
-      toast.error(RESET_OUTCOME_TOAST.unknown.message)
+      toast.error(t(RESET_OUTCOME_TOAST.unknown.key))
     } finally {
       setBusy(false)
     }
-  }, [projectPath, apiProviderId, onConsumed])
+  }, [projectPath, apiProviderId, onConsumed, t])
 
   return (
     <div className="flex items-center justify-between gap-3">
-      <span className="opacity-70">Reset credits</span>
+      <span className="opacity-70">{t('usageGauge.resetCredits')}</span>
       <div className="flex items-center gap-2">
         <span className="font-medium tabular-nums">{count}</span>
         <Button size="sm" variant="outline" className="h-6 px-2 text-xs" disabled={busy} onClick={handleReset}>
-          {busy ? 'Resetting…' : 'Reset now'}
+          {busy ? t('usageGauge.resetting') : t('usageGauge.resetNow')}
         </Button>
       </div>
     </div>
@@ -126,19 +142,31 @@ function ResetCreditsRow({ count, projectPath, apiProviderId, onConsumed }: { co
 }
 
 function AccountUsageSection({ usage }: { usage: CodexAccountUsage }) {
+  const { t } = useTranslation()
   const rows: ReactNode[] = []
-  if (usage.lifetimeTokens != null) rows.push(<StatRow key="lifetime" label="Lifetime tokens" value={formatTokens(usage.lifetimeTokens)} />)
-  if (usage.peakDailyTokens != null) rows.push(<StatRow key="peak" label="Peak daily" value={formatTokens(usage.peakDailyTokens)} />)
-  if (usage.currentStreakDays != null) rows.push(<StatRow key="streak" label="Streak" value={`${usage.currentStreakDays}d`} />)
+  if (usage.lifetimeTokens != null) rows.push(<StatRow key="lifetime" label={t('usageGauge.lifetimeTokens')} value={formatTokens(usage.lifetimeTokens)} />)
+  if (usage.peakDailyTokens != null) rows.push(<StatRow key="peak" label={t('usageGauge.peakDaily')} value={formatTokens(usage.peakDailyTokens)} />)
+  if (usage.currentStreakDays != null) rows.push(<StatRow key="streak" label={t('usageGauge.streak')} value={`${usage.currentStreakDays}d`} />)
   if (rows.length === 0) return null
   return (
     <div className="flex flex-col gap-1 border-t border-border/60 pt-2">{rows}</div>
   )
 }
 
-function RateLimitGauge({ title, planType, maxPercent, children }: { title: string; planType: string | null; maxPercent: number; children: ReactNode }) {
+function RateLimitGauge({ title, planType, maxPercent, onRefresh, refreshing, fetchedAt, children }: { title: string; planType: string | null; maxPercent: number; onRefresh?: () => void; refreshing?: boolean; fetchedAt?: number | null; children: ReactNode }) {
+  const { t } = useTranslation()
+  const [open, setOpen] = useState(false)
+  const [now, setNow] = useState(() => Date.now())
+
+  useEffect(() => {
+    if (!open || fetchedAt == null) return
+    setNow(Date.now())
+    const id = setInterval(() => setNow(Date.now()), 30_000)
+    return () => clearInterval(id)
+  }, [open, fetchedAt])
+
   return (
-    <Popover>
+    <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <IconButton size="sm" className="relative">
           <Gauge />
@@ -152,6 +180,18 @@ function RateLimitGauge({ title, planType, maxPercent, children }: { title: stri
             {planType && <span className="opacity-50">{planType}</span>}
           </div>
           {children}
+          {(onRefresh || refreshing || fetchedAt != null) && (
+            <div className="flex items-center justify-between gap-3 border-t border-border/60 pt-2">
+              <span className="text-[10px] tabular-nums opacity-50">
+                {refreshing ? t('usageGauge.updating') : fetchedAt != null ? formatUpdatedAgo(fetchedAt, now, t) : ''}
+              </span>
+              {onRefresh && (
+                <IconButton size="xs" variant="ghost" disabled={refreshing} onClick={onRefresh}>
+                  <RefreshCw className={cn(refreshing && 'animate-spin')} />
+                </IconButton>
+              )}
+            </div>
+          )}
         </div>
       </PopoverContent>
     </Popover>
@@ -171,6 +211,7 @@ function useRefetchOnTurnEnd(status: string, fetchLimits: () => void) {
 }
 
 function CodexRateLimitIcon({ projectPath, apiProviderId, status }: { projectPath: string; apiProviderId: string | null; status: string }) {
+  const { t } = useTranslation()
   const [limits, setLimits] = useState<CodexRateLimits | null>(null)
   const [usage, setUsage] = useState<CodexAccountUsage | null>(null)
 
@@ -192,12 +233,12 @@ function CodexRateLimitIcon({ projectPath, apiProviderId, status }: { projectPat
   const maxPercent = Math.max(...windows.map((w) => w.usedPercent))
 
   return (
-    <RateLimitGauge title="Codex Usage" planType={limits.planType} maxPercent={maxPercent}>
+    <RateLimitGauge title={t('usageGauge.codexTitle')} planType={limits.planType} maxPercent={maxPercent}>
       {limits.primary && (
-        <WindowRow label={formatWindowLabel(limits.primary.windowDurationMins)} usedPercent={limits.primary.usedPercent} resetsAt={limits.primary.resetsAt} />
+        <WindowRow label={formatWindowLabel(limits.primary.windowDurationMins, t)} usedPercent={limits.primary.usedPercent} resetsAt={limits.primary.resetsAt} />
       )}
       {limits.secondary && (
-        <WindowRow label={formatWindowLabel(limits.secondary.windowDurationMins)} usedPercent={limits.secondary.usedPercent} resetsAt={limits.secondary.resetsAt} />
+        <WindowRow label={formatWindowLabel(limits.secondary.windowDurationMins, t)} usedPercent={limits.secondary.usedPercent} resetsAt={limits.secondary.resetsAt} />
       )}
       {limits.resetCredits != null && limits.resetCredits > 0 && (
         <ResetCreditsRow count={limits.resetCredits} projectPath={projectPath} apiProviderId={apiProviderId} onConsumed={fetchLimits} />
@@ -208,10 +249,21 @@ function CodexRateLimitIcon({ projectPath, apiProviderId, status }: { projectPat
 }
 
 function ClaudeRateLimitIcon({ status }: { status: string }) {
+  const { t } = useTranslation()
   const [limits, setLimits] = useState<ClaudeRateLimits | null>(null)
+  const [refreshing, setRefreshing] = useState(false)
 
   const fetchLimits = useCallback(() => {
     window.app.claudeGetRateLimits().then(setLimits).catch(() => {})
+  }, [])
+
+  const refresh = useCallback(() => {
+    setRefreshing(true)
+    window.app
+      .claudeGetRateLimits(true)
+      .then(setLimits)
+      .catch(() => {})
+      .finally(() => setRefreshing(false))
   }, [])
 
   useRefetchOnTurnEnd(status, fetchLimits)
@@ -221,7 +273,7 @@ function ClaudeRateLimitIcon({ status }: { status: string }) {
   const maxPercent = Math.max(...limits.windows.map((w) => w.usedPercent))
 
   return (
-    <RateLimitGauge title="Claude Usage" planType={limits.planType} maxPercent={maxPercent}>
+    <RateLimitGauge title={t('usageGauge.claudeTitle')} planType={limits.planType} maxPercent={maxPercent} onRefresh={refresh} refreshing={refreshing} fetchedAt={limits.fetchedAt}>
       {limits.windows.map((w) => (
         <WindowRow key={w.label} label={w.label} usedPercent={w.usedPercent} resetsAt={w.resetsAt} />
       ))}

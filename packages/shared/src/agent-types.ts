@@ -1368,6 +1368,7 @@ export interface ClaudeRateLimits {
   windows: ClaudeRateLimitWindow[]
   extraUsage: ClaudeExtraUsage | null
   planType: string | null
+  fetchedAt?: number | null
 }
 
 export type CodexHookEventName =

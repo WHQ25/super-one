@@ -799,8 +799,8 @@ function registerIpcHandlers(): void {
     return codexService.consumeRateLimitReset(projectPath, apiProviderId ?? null)
   })
 
-  ipcMain.handle(AgentIpcChannels.CLAUDE_GET_RATE_LIMITS, () => {
-    return getClaudeRateLimits()
+  ipcMain.handle(AgentIpcChannels.CLAUDE_GET_RATE_LIMITS, (_event, force?: boolean) => {
+    return getClaudeRateLimits(force ?? false)
   })
 
   ipcMain.handle(AgentIpcChannels.CODEX_SET_AUTH, (_event, projectPath: string, request: CodexSetAuthRequest) => {

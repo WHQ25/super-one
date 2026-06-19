@@ -1253,6 +1253,33 @@ export type Messages = {
     fullscreen: string
     unsavedChanges: string
   }
+  usageGauge: {
+    claudeTitle: string
+    codexTitle: string
+    windowFallback: string
+    percentLeft: string
+    resetsSoon: string
+    resetsIn: string
+    extraUsage: string
+    resetCredits: string
+    resetNow: string
+    resetting: string
+    lifetimeTokens: string
+    peakDaily: string
+    streak: string
+    updating: string
+    updatedJustNow: string
+    updatedMinutesAgo: string
+    updatedHoursAgo: string
+    updatedDaysAgo: string
+    toast: {
+      reset: string
+      nothingToReset: string
+      noCredit: string
+      alreadyRedeemed: string
+      unknown: string
+    }
+  }
 }
 
 export const en: Messages = {
@@ -2521,5 +2548,32 @@ export const en: Messages = {
     close: 'Close',
     fullscreen: 'Fullscreen',
     unsavedChanges: 'Unsaved changes',
+  },
+  usageGauge: {
+    claudeTitle: 'Claude Usage',
+    codexTitle: 'Codex Usage',
+    windowFallback: 'Usage',
+    percentLeft: '{{percent}}% left',
+    resetsSoon: 'resets soon',
+    resetsIn: 'resets in {{time}}',
+    extraUsage: 'Extra usage',
+    resetCredits: 'Reset credits',
+    resetNow: 'Reset now',
+    resetting: 'Resetting…',
+    lifetimeTokens: 'Lifetime tokens',
+    peakDaily: 'Peak daily',
+    streak: 'Streak',
+    updating: 'Updating…',
+    updatedJustNow: 'Updated just now',
+    updatedMinutesAgo: 'Updated {{n}}m ago',
+    updatedHoursAgo: 'Updated {{n}}h ago',
+    updatedDaysAgo: 'Updated {{n}}d ago',
+    toast: {
+      reset: 'Rate limit reset',
+      nothingToReset: 'No active rate limit to reset',
+      noCredit: 'No reset credits available',
+      alreadyRedeemed: 'This reset was already redeemed',
+      unknown: 'Reset failed',
+    },
   },
 }

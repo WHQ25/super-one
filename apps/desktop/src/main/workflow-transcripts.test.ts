@@ -22,6 +22,9 @@ describe('listWorkflowAgents', () => {
     await writeFile(join(dir, 'agent-bbb222.jsonl'), jsonl([
       { type: 'user', message: { role: 'user', content: '打个招呼' } },
     ]))
+    await writeFile(join(dir, 'agent-ccc333.jsonl'), jsonl([
+      { type: 'user', message: { role: 'user', content: '\nRead the file and identify the key functions.\nFocus on pure functions.' } },
+    ]))
     await writeFile(join(dir, 'journal.jsonl'), jsonl([
       { type: 'started', key: 'v2:abc', agentId: 'aaa111' },
       { type: 'result', key: 'v2:abc', agentId: 'aaa111', result: { hex: '#FF0000' } },
@@ -32,9 +35,15 @@ describe('listWorkflowAgents', () => {
     await rm(dir, { recursive: true, force: true })
   })
 
+  it('derives label from the first non-empty prompt line when the prompt starts with a newline', async () => {
+    const agents = await listWorkflowAgents(dir)
+    const ccc = agents.find((a) => a.agentId === 'ccc333')!
+    expect(ccc.label).toBe('Read the file and identify the key functions.')
+  })
+
   it('lists agent transcripts with label from prompt, tool count, and result text', async () => {
     const agents = await listWorkflowAgents(dir)
-    expect(agents.map((a) => a.agentId)).toEqual(['aaa111', 'bbb222'])
+    expect(agents.map((a) => a.agentId)).toEqual(['aaa111', 'bbb222', 'ccc333'])
     const red = agents[0]
     expect(red.label).toBe('你负责颜色 红色，返回它的十六进制。')
     expect(red.prompt).toBe('你负责颜色 红色，返回它的十六进制。\n（第二行被忽略）')
@@ -46,7 +55,7 @@ describe('listWorkflowAgents', () => {
 
   it('ignores non-agent files and returns id-only fallback for promptless transcripts', async () => {
     const agents = await listWorkflowAgents(dir)
-    expect(agents).toHaveLength(2)
+    expect(agents).toHaveLength(3)
     expect(agents[1].toolCount).toBe(0)
   })
 

@@ -67,7 +67,7 @@ function summarizeAgentJsonl(raw: string, agentId: string): { label: string; pro
     }
     if (!foundPrompt && rec.type === 'user' && typeof rec.message?.content === 'string') {
       prompt = rec.message.content
-      label = prompt.split('\n')[0].slice(0, 80)
+      label = (prompt.split('\n').map((l) => l.trim()).find(Boolean) ?? agentId).slice(0, 80)
       foundPrompt = true
     }
     if (rec.type === 'assistant' && Array.isArray(rec.message?.content)) {

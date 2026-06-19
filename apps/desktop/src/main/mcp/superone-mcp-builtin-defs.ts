@@ -82,19 +82,9 @@ export const UPDATE_SUPERONE_TYPES_DESCRIPTION =
   'Update the superone.d.ts type definitions in an existing mini-app project to the latest version. Use this when the mini-app needs access to newly added SuperOne APIs.'
 
 export const RENAME_SESSION_DESCRIPTION =
-  'Rename the current chat session to a concise topic label so the user can find it later in the sidebar.\n\n' +
-  'Default title behavior: until you call this tool, the session title falls back to the first ~100 characters of the user\'s first message. ' +
-  'That fallback is often noisy (greetings, pasted code, long requests) — your job is to replace it with a clean 4-8 word topic summary.\n\n' +
-  'When to call:\n' +
-  '- As soon as the conversation topic is clear (typically after the user\'s first substantive request).\n' +
-  '- When the user approves a plan — that\'s a strong signal of the session\'s real direction; rename to reflect the approved scope.\n' +
-  '- Every ~10 user turns in long conversations: re-check whether the current title still matches what the conversation is actually about, and rename if it has drifted.\n' +
-  '- When the conversation shifts to a substantially different topic.\n\n' +
-  'Title rules:\n' +
-  '- 4-8 words, no surrounding quotes, no trailing punctuation.\n' +
-  '- Match the user\'s conversation language.\n' +
-  '- Prefer "verb + object" over abstract nouns (e.g. "Fix mobile session sync bug" beats "Mobile sync issue").\n\n' +
-  'If the tool returns an error containing "user_locked", the user has manually named this session — do NOT call session_rename again for this session.'
+  'Rename the current chat session to a concise topic label shown in the sidebar.\n\n' +
+  'Only the top-level agent talking directly to the user may call this. If you were launched as a Task/subagent worker, do NOT call it — you do not own the user-facing session title.\n\n' +
+  'If the tool returns an error containing "user_locked", the user has manually named this session — do not call session_rename again for this session.'
 
 export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
   {

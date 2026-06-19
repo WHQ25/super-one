@@ -1,4 +1,5 @@
 import type {
+  AgentEvent,
   CodexPermissionPreset,
   CodexReasoningEffort,
   ElicitationFormField,
@@ -40,6 +41,7 @@ export interface PendingCodexApproval {
   responseKind: 'decision' | 'user_input' | 'elicitation'
   questions?: AppServerUserInputQuestion[]
   formFields?: ElicitationFormField[]
+  event: AgentEvent
   resolve: (response: PendingCodexApprovalResponse) => void
   reject: (error: Error) => void
 }

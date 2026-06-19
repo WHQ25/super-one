@@ -29,6 +29,7 @@ import type {
 } from './codex-session'
 import { tearDownForkRuntime } from './codex-session'
 import type {
+  AgentEvent,
   AskUserQuestionRequest,
   CodexCollabAgentState,
   CodexCollabAgentStatus,
@@ -971,6 +972,9 @@ export async function processServerRequest(
       return true
     }
     try {
+      const pendingEvent: AgentEvent = parsedApprovalRequest.responseKind === 'user_input'
+        ? { type: 'ask_user_question', request: parsedApprovalRequest.request }
+        : { type: 'permission_request', request: parsedApprovalRequest.request }
       const responsePromise = new Promise<PendingCodexApprovalResponse>((resolve, reject) => {
         session.pendingApprovals.set(parsedApprovalRequest.request.requestId, {
           responseKind: parsedApprovalRequest.responseKind,
@@ -980,6 +984,7 @@ export async function processServerRequest(
           formFields: parsedApprovalRequest.responseKind === 'elicitation'
             ? parsedApprovalRequest.formFields
             : undefined,
+          event: pendingEvent,
           resolve,
           reject,
         })

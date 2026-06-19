@@ -834,7 +834,9 @@ export class CodexBackend implements SessionBackend {
   }
 
   getPendingInteractions(): AgentEvent[] {
-    return []
+    const session = this.session
+    if (!session) return []
+    return [...session.pendingApprovals.values()].map((p) => p.event)
   }
 
   onEvent(handler: (event: AgentEvent) => void): () => void {

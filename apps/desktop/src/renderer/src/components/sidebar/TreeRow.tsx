@@ -2,13 +2,8 @@ import { useCallback, useRef, useEffect, useState, memo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ChevronRight, Pencil, FolderOpen, Trash2, Copy, AtSign } from 'lucide-react'
 import { FileIcon, FolderIcon } from '@superone/ui/components/ui/FileIcon'
-import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuSeparator,
-  ContextMenuTrigger,
-} from '@superone/ui/components/ui/context-menu'
+import { AdaptiveContextMenu } from '@/components/AdaptiveContextMenu'
+import type { AdaptiveMenuEntry } from '@/lib/native-context-menu'
 import { cn } from '@superone/ui/lib/utils'
 import { chatInputAPI } from '@/components/chat/ChatInput'
 import { useFileTreeStore, type VisibleItem } from '@/stores/file-tree'
@@ -305,48 +300,26 @@ export const TreeRow = memo(function TreeRow({
     </button>
   )
 
+  const menuItems: AdaptiveMenuEntry[] = [
+    { kind: 'item', id: 'rename', label: t('sidebar.contextMenu.rename'), icon: Pencil, onSelect: () => setRenamingPath(item.path) },
+    { kind: 'item', id: 'addToChat', label: t('sidebar.contextMenu.addToChat'), icon: AtSign, onSelect: () => {
+      chatInputAPI.insertMention?.(
+        item.isDirectory ? 'directory' : 'file',
+        item.isDirectory ? `${item.path}/` : item.path,
+        item.name,
+      )
+    } },
+    { kind: 'item', id: 'copyPath', label: t('sidebar.contextMenu.copyPath'), icon: Copy, onSelect: () => navigator.clipboard.writeText(`${currentFolder}/${item.path}`) },
+    { kind: 'item', id: 'copyRelativePath', label: t('sidebar.contextMenu.copyRelativePath'), icon: Copy, onSelect: () => navigator.clipboard.writeText(item.path) },
+    { kind: 'item', id: 'openFolder', label: t('sidebar.contextMenu.openFolder'), icon: FolderOpen, onSelect: () => window.app.showInFolder(currentFolder, item.path) },
+    { kind: 'separator' },
+    { kind: 'item', id: 'delete', label: t('sidebar.contextMenu.delete'), icon: Trash2, destructive: true, onSelect: () => onDeleteRequest(item) },
+  ]
+
   return (
-    <ContextMenu>
-      <ContextMenuTrigger asChild>
-        {rowContent}
-      </ContextMenuTrigger>
-      <ContextMenuContent>
-        <ContextMenuItem onClick={() => setRenamingPath(item.path)}>
-          <Pencil className="mr-2 size-3.5" />
-          {t('sidebar.contextMenu.rename')}
-        </ContextMenuItem>
-        <ContextMenuItem onClick={() => {
-          chatInputAPI.insertMention?.(
-            item.isDirectory ? 'directory' : 'file',
-            item.isDirectory ? `${item.path}/` : item.path,
-            item.name,
-          )
-        }}>
-          <AtSign className="mr-2 size-3.5" />
-          {t('sidebar.contextMenu.addToChat')}
-        </ContextMenuItem>
-        <ContextMenuItem onClick={() => navigator.clipboard.writeText(`${currentFolder}/${item.path}`)}>
-          <Copy className="mr-2 size-3.5" />
-          {t('sidebar.contextMenu.copyPath')}
-        </ContextMenuItem>
-        <ContextMenuItem onClick={() => navigator.clipboard.writeText(item.path)}>
-          <Copy className="mr-2 size-3.5" />
-          {t('sidebar.contextMenu.copyRelativePath')}
-        </ContextMenuItem>
-        <ContextMenuItem onClick={() => window.app.showInFolder(currentFolder, item.path)}>
-          <FolderOpen className="mr-2 size-3.5" />
-          {t('sidebar.contextMenu.openFolder')}
-        </ContextMenuItem>
-        <ContextMenuSeparator />
-        <ContextMenuItem
-          className="text-destructive focus:text-destructive"
-          onClick={() => onDeleteRequest(item)}
-        >
-          <Trash2 className="mr-2 size-3.5" />
-          {t('sidebar.contextMenu.delete')}
-        </ContextMenuItem>
-      </ContextMenuContent>
-    </ContextMenu>
+    <AdaptiveContextMenu items={menuItems}>
+      {rowContent}
+    </AdaptiveContextMenu>
   )
 }, (prev, next) =>
   prev.item.path === next.item.path &&

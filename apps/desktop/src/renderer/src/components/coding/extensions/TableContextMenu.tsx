@@ -23,11 +23,11 @@ interface TableContextMenuProps {
   onClose: () => void
 }
 
-type MenuEntry =
+export type TableMenuEntry =
   | { type: 'separator' }
   | { type: 'item'; label: string; icon: LucideIcon; destructive?: boolean; run: (editor: Editor) => void }
 
-const ENTRIES: MenuEntry[] = [
+export const TABLE_MENU_ENTRIES: TableMenuEntry[] = [
   { type: 'item', label: 'Insert column left', icon: ArrowLeftToLine, run: (e) => e.chain().focus().addColumnBefore().run() },
   { type: 'item', label: 'Insert column right', icon: ArrowRightToLine, run: (e) => e.chain().focus().addColumnAfter().run() },
   { type: 'item', label: 'Delete column', icon: X, run: (e) => e.chain().focus().deleteColumn().run() },
@@ -69,7 +69,7 @@ export function TableContextMenu({ editor, pos, onClose }: TableContextMenuProps
       style={{ left, top }}
       onContextMenu={(e) => e.preventDefault()}
     >
-      {ENTRIES.map((entry, i) =>
+      {TABLE_MENU_ENTRIES.map((entry, i) =>
         entry.type === 'separator' ? (
           <div key={`sep-${i}`} className="my-1 h-px bg-border" />
         ) : (

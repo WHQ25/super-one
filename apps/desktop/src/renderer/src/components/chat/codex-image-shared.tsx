@@ -2,12 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { Download, Loader2, X, Info, ChevronLeft, ChevronRight, Copy, FolderOpen, MessageSquarePlus, ClipboardCopy } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@superone/ui/components/ui/button'
-import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuTrigger,
-} from '@superone/ui/components/ui/context-menu'
+import { AdaptiveContextMenu } from '@/components/AdaptiveContextMenu'
+import type { AdaptiveMenuEntry } from '@/lib/native-context-menu'
 import { Dialog, DialogClose, DialogContent, DialogTitle } from '@superone/ui/components/ui/dialog'
 import { toast } from 'sonner'
 import { ImagePreview } from '@/components/coding/ImagePreview'
@@ -53,7 +49,7 @@ export function useImageDataUri(savedPath: string | undefined, isFailed: boolean
   return { dataUri, loadError }
 }
 
-export function ImageMenuItems({ savedPath, prompt }: { savedPath: string; prompt?: string }) {
+export function useImageMenuItems({ savedPath, prompt }: { savedPath: string; prompt?: string }): AdaptiveMenuEntry[] {
   const { t } = useTranslation()
   const handleCopy = async () => {
     const res = await window.app.clipboardWriteImage(savedPath)
@@ -70,28 +66,14 @@ export function ImageMenuItems({ savedPath, prompt }: { savedPath: string; promp
     }
   }
 
-  return (
-    <>
-      <ContextMenuItem onClick={handleCopy}>
-        <Copy className="mr-2 size-3.5" />
-        {t('chat.codexImage.copyImage')}
-      </ContextMenuItem>
-      {prompt && (
-        <ContextMenuItem onClick={handleCopyPrompt}>
-          <ClipboardCopy className="mr-2 size-3.5" />
-          {t('chat.codexImage.copyPrompt')}
-        </ContextMenuItem>
-      )}
-      <ContextMenuItem onClick={() => chatInputAPI.addImageFromPath?.(savedPath)}>
-        <MessageSquarePlus className="mr-2 size-3.5" />
-        {t('chat.codexImage.addToChat')}
-      </ContextMenuItem>
-      <ContextMenuItem onClick={() => window.app.revealFile(savedPath)}>
-        <FolderOpen className="mr-2 size-3.5" />
-        {t('chat.codexImage.openFolder')}
-      </ContextMenuItem>
-    </>
-  )
+  return [
+    { kind: 'item', id: 'copy', label: t('chat.codexImage.copyImage'), icon: Copy, onSelect: () => { void handleCopy() } },
+    ...(prompt
+      ? ([{ kind: 'item', id: 'copyPrompt', label: t('chat.codexImage.copyPrompt'), icon: ClipboardCopy, onSelect: () => { void handleCopyPrompt() } }] as AdaptiveMenuEntry[])
+      : []),
+    { kind: 'item', id: 'addToChat', label: t('chat.codexImage.addToChat'), icon: MessageSquarePlus, onSelect: () => chatInputAPI.addImageFromPath?.(savedPath) },
+    { kind: 'item', id: 'openFolder', label: t('chat.codexImage.openFolder'), icon: FolderOpen, onSelect: () => window.app.revealFile(savedPath) },
+  ]
 }
 
 function buildImageDragPng(img: HTMLImageElement): { buffer: ArrayBuffer; scaleFactor: number } | null {
@@ -132,6 +114,7 @@ interface InteractiveProps {
 
 export function ImageInteractive({ savedPath, onOpen, className, ariaLabel, prompt, children }: InteractiveProps) {
   const dragEndRef = useRef(0)
+  const menuItems = useImageMenuItems({ savedPath, prompt })
 
   const handleDragStart = (e: React.DragEvent) => {
     e.preventDefault()
@@ -154,8 +137,7 @@ export function ImageInteractive({ savedPath, onOpen, className, ariaLabel, prom
   }
 
   return (
-    <ContextMenu>
-      <ContextMenuTrigger asChild>
+    <AdaptiveContextMenu items={menuItems}>
         <button
           type="button"
           draggable
@@ -166,11 +148,7 @@ export function ImageInteractive({ savedPath, onOpen, className, ariaLabel, prom
         >
           {children}
         </button>
-      </ContextMenuTrigger>
-      <ContextMenuContent>
-        <ImageMenuItems savedPath={savedPath} prompt={prompt} />
-      </ContextMenuContent>
-    </ContextMenu>
+    </AdaptiveContextMenu>
   )
 }
 
@@ -190,6 +168,7 @@ export function CodexImageViewer({ items, index, open, onOpenChange, onIndexChan
   const [dims, setDims] = useState<{ width: number; height: number } | null>(null)
   const [infoOpen, setInfoOpen] = useState(false)
 
+  const menuItems = useImageMenuItems({ savedPath: item?.savedPath ?? '', prompt: item?.revisedPrompt })
   const multi = items.length > 1
   const hasPrev = index > 0
   const hasNext = index < items.length - 1
@@ -245,12 +224,7 @@ export function CodexImageViewer({ items, index, open, onOpenChange, onIndexChan
           )
           if (!item.savedPath) return imageArea
           return (
-            <ContextMenu>
-              <ContextMenuTrigger asChild>{imageArea}</ContextMenuTrigger>
-              <ContextMenuContent>
-                <ImageMenuItems savedPath={item.savedPath} prompt={item.revisedPrompt} />
-              </ContextMenuContent>
-            </ContextMenu>
+            <AdaptiveContextMenu items={menuItems}>{imageArea}</AdaptiveContextMenu>
           )
         })()}
 

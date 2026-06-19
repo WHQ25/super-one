@@ -6,12 +6,13 @@ import { Bot, Copy, Eye, EyeOff, FolderOpen, GitFork, Loader2, MessageSquare, Pe
 import { ClaudeSessionIcon } from '@superone/ui/components/harness/ClaudeSessionIcon'
 import { CodexSessionIcon } from '@superone/ui/components/harness/CodexSessionIcon'
 import type { SessionIconProps } from '@superone/ui/components/harness/ClaudeSessionIcon'
-import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from '@superone/ui/components/ui/context-menu'
 import { cn } from '@superone/ui/lib/utils'
 import { useChatStore } from '@/stores/chat'
 import { useAppStore, useHasRealProject } from '@/stores/app'
 import { useStallLevel, getStallColor } from '@/lib/stall-utils'
 import type { SessionForkMode, SessionHistoryEntry } from '@superone/shared/agent-types'
+import { AdaptiveContextMenu } from '@/components/AdaptiveContextMenu'
+import type { AdaptiveMenuEntry } from '@/lib/native-context-menu'
 import { getPendingReason } from './session-state-utils'
 import { SessionTitleAnimated, useSessionTitleByAgent } from './AnimatedSessionTitle'
 
@@ -104,10 +105,42 @@ export const SessionRow = memo(function SessionRow({
     }
   }, [t, onSwitchSession, folderPath, session.sessionId])
 
-  return (
-    <div>
-      <ContextMenu>
-        <ContextMenuTrigger asChild>
+  const menuItems: AdaptiveMenuEntry[] = [
+    { kind: 'item', id: 'rename', label: t('sidebar.contextMenu.rename'), icon: Pencil, onSelect: () => onRenameSession({ sessionId: session.sessionId, title: session.title, folderPath }) },
+    { kind: 'item', id: 'pin', label: session.isPinned ? t('sidebar.contextMenu.unpin') : t('sidebar.contextMenu.pin'), icon: Pin, onSelect: () => onPinSession(session.sessionId, !session.isPinned, folderPath) },
+    { kind: 'item', id: 'hide', label: session.isHidden ? t('sidebar.contextMenu.unhide') : t('sidebar.contextMenu.hide'), icon: session.isHidden ? Eye : EyeOff, onSelect: () => onHideSession(session.sessionId, !session.isHidden, folderPath) },
+    { kind: 'separator' },
+    { kind: 'item', id: 'mini', label: t('sidebar.contextMenu.openInMiniWindow'), icon: PictureInPicture2, onSelect: () => window.app.openSessionWindow(folderPath, session.sessionId, session.title) },
+    { kind: 'separator' },
+    { kind: 'item', id: 'copyId', label: t('sidebar.contextMenu.copySessionId'), icon: Copy, onSelect: () => {
+      const providerLabel = session.provider === 'codex' ? 'Codex' : 'Claude Code'
+      if (session.providerSessionId) {
+        navigator.clipboard.writeText(session.providerSessionId)
+        toast.success(`${providerLabel} ${t('sidebar.contextMenu.sessionIdCopiedToast')}`)
+      } else {
+        navigator.clipboard.writeText(session.sessionId)
+        toast.success(`${providerLabel} ${t('sidebar.contextMenu.sessionIdNotReadyToast')}`)
+      }
+    } },
+    { kind: 'item', id: 'copyDir', label: t('sidebar.contextMenu.copyWorkingDirectory'), icon: Copy, onSelect: () => { const dir = session.worktreePath ?? folderPath; navigator.clipboard.writeText(dir); toast.success(t('sidebar.contextMenu.workingDirCopiedToast')) } },
+    { kind: 'item', id: 'openFolder', label: t('sidebar.contextMenu.openFolder'), icon: FolderOpen, onSelect: () => window.app.showInFolder(session.worktreePath ?? folderPath, '') },
+    { kind: 'separator' },
+    ...(!session.isWorktree
+      ? ([
+          { kind: 'item', id: 'forkWorktree', label: t('sidebar.contextMenu.forkToWorktree'), icon: GitFork, onSelect: () => handleForkSession('worktree') },
+          { kind: 'item', id: 'forkLocal', label: t('sidebar.contextMenu.forkToLocal'), icon: GitFork, onSelect: () => handleForkSession('local') },
+          { kind: 'separator' },
+        ] as AdaptiveMenuEntry[])
+      : []),
+    { kind: 'item', id: 'delete', label: t('sidebar.contextMenu.delete'), icon: Trash2, destructive: true, onSelect: () => onDeleteSession({
+      sessionId: session.sessionId,
+      title: session.title,
+      folderPath,
+      provider: (session.provider ?? 'claude') as 'claude' | 'codex',
+    }) },
+  ]
+
+  const rowInner = (
           <div
             onClick={() => onSwitchSession(folderPath, session.sessionId)}
             className={cn(
@@ -161,103 +194,13 @@ export const SessionRow = memo(function SessionRow({
               </button>
             </div>
           </div>
-        </ContextMenuTrigger>
-        <ContextMenuContent className="w-48">
-          <ContextMenuItem
-            onClick={() => onRenameSession({ sessionId: session.sessionId, title: session.title, folderPath })}
-            className="text-xs"
-          >
-            <Pencil className="size-3.5" />
-            {t('sidebar.contextMenu.rename')}
-          </ContextMenuItem>
-          <ContextMenuItem
-            onClick={() => onPinSession(session.sessionId, !session.isPinned, folderPath)}
-            className="text-xs"
-          >
-            <Pin className="size-3.5" />
-            {session.isPinned ? t('sidebar.contextMenu.unpin') : t('sidebar.contextMenu.pin')}
-          </ContextMenuItem>
-          <ContextMenuItem
-            onClick={() => onHideSession(session.sessionId, !session.isHidden, folderPath)}
-            className="text-xs"
-          >
-            {session.isHidden ? <Eye className="size-3.5" /> : <EyeOff className="size-3.5" />}
-            {session.isHidden ? t('sidebar.contextMenu.unhide') : t('sidebar.contextMenu.hide')}
-          </ContextMenuItem>
-          <ContextMenuSeparator />
-          <ContextMenuItem
-            onClick={() => window.app.openSessionWindow(folderPath, session.sessionId, session.title)}
-            className="text-xs"
-          >
-            <PictureInPicture2 className="size-3.5" />
-            {t('sidebar.contextMenu.openInMiniWindow')}
-          </ContextMenuItem>
-          <ContextMenuSeparator />
-          <ContextMenuItem
-            onClick={() => {
-              const providerLabel = session.provider === 'codex' ? 'Codex' : 'Claude Code'
-              if (session.providerSessionId) {
-                navigator.clipboard.writeText(session.providerSessionId)
-                toast.success(`${providerLabel} ${t('sidebar.contextMenu.sessionIdCopiedToast')}`)
-              } else {
-                navigator.clipboard.writeText(session.sessionId)
-                toast.success(`${providerLabel} ${t('sidebar.contextMenu.sessionIdNotReadyToast')}`)
-              }
-            }}
-            className="text-xs"
-          >
-            <Copy className="size-3.5" />
-            {t('sidebar.contextMenu.copySessionId')}
-          </ContextMenuItem>
-          <ContextMenuItem
-            onClick={() => { const dir = session.worktreePath ?? folderPath; navigator.clipboard.writeText(dir); toast.success(t('sidebar.contextMenu.workingDirCopiedToast')) }}
-            className="text-xs"
-          >
-            <Copy className="size-3.5" />
-            {t('sidebar.contextMenu.copyWorkingDirectory')}
-          </ContextMenuItem>
-          <ContextMenuItem
-            onClick={() => window.app.showInFolder(session.worktreePath ?? folderPath, '')}
-            className="text-xs"
-          >
-            <FolderOpen className="size-3.5" />
-            {t('sidebar.contextMenu.openFolder')}
-          </ContextMenuItem>
-          <ContextMenuSeparator />
-          {!session.isWorktree && (
-            <>
-              <ContextMenuItem
-                onClick={() => handleForkSession('worktree')}
-                className="text-xs"
-              >
-                <GitFork className="size-3.5" />
-                {t('sidebar.contextMenu.forkToWorktree')}
-              </ContextMenuItem>
-              <ContextMenuItem
-                onClick={() => handleForkSession('local')}
-                className="text-xs"
-              >
-                <GitFork className="size-3.5" />
-                {t('sidebar.contextMenu.forkToLocal')}
-              </ContextMenuItem>
-              <ContextMenuSeparator />
-            </>
-          )}
-          <ContextMenuItem
-            variant="destructive"
-            onClick={() => onDeleteSession({
-              sessionId: session.sessionId,
-              title: session.title,
-              folderPath,
-              provider: (session.provider ?? 'claude') as 'claude' | 'codex',
-            })}
-            className="text-xs"
-          >
-            <Trash2 className="size-3.5" />
-            {t('sidebar.contextMenu.delete')}
-          </ContextMenuItem>
-        </ContextMenuContent>
-      </ContextMenu>
+  )
+
+  return (
+    <div>
+      <AdaptiveContextMenu items={menuItems} contentClassName="w-48">
+        {rowInner}
+      </AdaptiveContextMenu>
       {pendingReason && (
         <div
           onClick={() => onSwitchSession(folderPath, session.sessionId)}

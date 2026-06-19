@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, net, powerMonitor, protocol, screen, session, shell, systemPreferences } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, nativeTheme, net, powerMonitor, protocol, screen, session, shell, systemPreferences } from 'electron'
 import { join, dirname, basename, resolve, extname, relative, isAbsolute, sep } from 'path'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { readFile, writeFile, readdir, rename, cp, rm, access, stat, mkdir, open } from 'fs/promises'
@@ -60,6 +60,7 @@ import {
   type FileTreeEntry,
   type GitFileStatus,
   type FileOpResult,
+  type NativeContextMenuItemSpec,
 } from '@superone/shared/agent-types'
 import { initUpdater, installUpdate, checkForUpdates, simulateUpdate, simulateNotAvailable, getUpdaterState, getUpdateMenuState, setOnMenuChange, disposeUpdater, setUpdateChannel } from './updater'
 import { startWatching, stopWatching } from './file-watcher'
@@ -1592,6 +1593,32 @@ function registerIpcHandlers(): void {
     } else {
       shell.showItemInFolder(absPath)
     }
+  })
+
+  ipcMain.handle(AgentIpcChannels.SHOW_CONTEXT_MENU, async (event, items: NativeContextMenuItemSpec[]) => {
+    const win = BrowserWindow.fromWebContents(event.sender) ?? undefined
+    return await new Promise<string | null>((resolve) => {
+      let chosen: string | null = null
+      const build = (specs: NativeContextMenuItemSpec[]): Electron.MenuItemConstructorOptions[] =>
+        specs.map((spec) => {
+          if (spec.type === 'separator') return { type: 'separator' }
+          const item: Electron.MenuItemConstructorOptions = {
+            label: spec.label,
+            enabled: spec.enabled !== false,
+          }
+          if (spec.iconDataUrl) {
+            const icon = nativeImage.createEmpty()
+            icon.addRepresentation({ scaleFactor: 2, dataURL: spec.iconDataUrl })
+            icon.setTemplateImage(true)
+            item.icon = icon
+          }
+          if (spec.submenu) item.submenu = build(spec.submenu)
+          else item.click = () => { chosen = spec.id ?? null }
+          return item
+        })
+      const menu = Menu.buildFromTemplate(build(items))
+      menu.popup({ window: win, callback: () => resolve(chosen) })
+    })
   })
 
   const startDragWithIcon = (event: Electron.IpcMainEvent, files: string[], icon: Electron.NativeImage): void => {

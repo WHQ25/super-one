@@ -1,15 +1,11 @@
 import { useState, type ComponentProps } from 'react'
 import { Download, Loader2, X } from 'lucide-react'
 import { Button } from '@superone/ui/components/ui/button'
-import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuTrigger,
-} from '@superone/ui/components/ui/context-menu'
+import { AdaptiveContextMenu } from '@/components/AdaptiveContextMenu'
 import { Dialog, DialogClose, DialogContent, DialogTitle } from '@superone/ui/components/ui/dialog'
 import { ImagePreview } from '@/components/coding/ImagePreview'
 import { toMediaUrl } from '@/lib/path-utils'
-import { ImageInteractive, ImageMenuItems } from './codex-image-shared'
+import { ImageInteractive, useImageMenuItems } from './codex-image-shared'
 
 const MEDIA_STYLE = { maxHeight: '20rem', maxWidth: '100%', width: 'auto', height: 'auto', borderRadius: '8px', display: 'block' } as const
 
@@ -38,6 +34,7 @@ interface LightboxProps {
 function MarkdownImageLightbox({ src, alt, savedPath, open, onOpenChange }: LightboxProps) {
   const [downloading, setDownloading] = useState(false)
   const [downloadStatus, setDownloadStatus] = useState<string | null>(null)
+  const menuItems = useImageMenuItems({ savedPath })
 
   const handleDownload = async () => {
     if (downloading) return
@@ -61,16 +58,11 @@ function MarkdownImageLightbox({ src, alt, savedPath, open, onOpenChange }: Ligh
         className="left-0 top-0 h-screen max-h-none w-screen max-w-none translate-x-0 translate-y-0 gap-0 overflow-hidden rounded-none border-0 bg-background/95 p-0 shadow-none sm:max-w-none"
       >
         <DialogTitle className="sr-only">{alt || 'Image'}</DialogTitle>
-        <ContextMenu>
-          <ContextMenuTrigger asChild>
+        <AdaptiveContextMenu items={menuItems}>
             <div className="absolute inset-0 px-[5vw] py-[5vh]">
               <ImagePreview src={src} alt={alt || 'Image'} />
             </div>
-          </ContextMenuTrigger>
-          <ContextMenuContent>
-            <ImageMenuItems savedPath={savedPath} />
-          </ContextMenuContent>
-        </ContextMenu>
+        </AdaptiveContextMenu>
 
         <Button
           variant="ghost"

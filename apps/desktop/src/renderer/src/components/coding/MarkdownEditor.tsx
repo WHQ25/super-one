@@ -5,14 +5,15 @@ import StarterKit from '@tiptap/starter-kit'
 import { TableKit } from '@tiptap/extension-table'
 import { Placeholder } from '@tiptap/extension-placeholder'
 import { common, createLowlight } from 'lowlight'
-import { useEffectiveProjectRoot } from '@/stores/app'
+import { useAppStore, useEffectiveProjectRoot } from '@/stores/app'
+import { showNativeContextMenu } from '@/lib/native-context-menu'
 import { LinkSafetyModal } from '@/components/chat/LinkSafetyModal'
 import { requestOpenExternalLink } from '@/lib/external-link'
 import { docToMarkdown, markdownToDoc } from './markdown-codec'
 import { CodeBlock } from './extensions/code-block-view'
 import { MermaidNode } from './extensions/mermaid-node'
 import { SlashCommand } from './extensions/slash-command'
-import { TableContextMenu, type TableMenuPos } from './extensions/TableContextMenu'
+import { TableContextMenu, TABLE_MENU_ENTRIES, type TableMenuPos } from './extensions/TableContextMenu'
 import { createMathExtensions, type MathEditTarget } from './extensions/math'
 import { MathEditDialog } from './extensions/MathEditDialog'
 import './markdown-editor.css'
@@ -41,6 +42,7 @@ export function MarkdownEditor({ content, filePath, onDirtyChange, onContentChan
   const [mathEdit, setMathEdit] = useState<MathEditTarget | null>(null)
   const [linkHref, setLinkHref] = useState<string | null>(null)
   const [tableMenu, setTableMenu] = useState<TableMenuPos | null>(null)
+  const editorRef = useRef<ReturnType<typeof useEditor>>(null)
 
   useEffect(() => {
     filePathRef.current = filePath
@@ -95,6 +97,19 @@ export function MarkdownEditor({ content, filePath, onDirtyChange, onContentChan
           event.preventDefault()
           event.stopPropagation()
           view.dispatch(view.state.tr.setSelection(TextSelection.near($pos)))
+          if (useAppStore.getState().liquidGlass) {
+            const ed = editorRef.current
+            if (ed) {
+              void showNativeContextMenu(
+                TABLE_MENU_ENTRIES.map((entry) =>
+                  entry.type === 'separator'
+                    ? { type: 'separator' }
+                    : { id: entry.label, label: entry.label, icon: entry.icon, onSelect: () => entry.run(ed) },
+                ),
+              )
+            }
+            return true
+          }
           setTableMenu({ x: event.clientX, y: event.clientY })
           return true
         },
@@ -113,6 +128,8 @@ export function MarkdownEditor({ content, filePath, onDirtyChange, onContentChan
       }
     },
   })
+
+  editorRef.current = editor
 
   useEffect(() => {
     if (!editor || savingRef.current) return

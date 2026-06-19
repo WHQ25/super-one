@@ -4,7 +4,8 @@ import { useTranslation } from 'react-i18next'
 import { CalendarClock, ChevronDown, ChevronRight, ChevronUp, Folder, FolderOpen, FolderX, History, Pencil, Play, SquarePen, Trash2 } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@superone/ui/components/ui/tooltip'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
-import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from '@superone/ui/components/ui/context-menu'
+import { AdaptiveContextMenu } from '@/components/AdaptiveContextMenu'
+import type { AdaptiveMenuEntry } from '@/lib/native-context-menu'
 import { useChatStore } from '@/stores/chat'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { MiniAppWorkerGroup } from './MiniAppWorkerGroup'
@@ -213,10 +214,19 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
     setAutomationDialogOpen(true)
   }, [])
 
+  const folderMenuItems: AdaptiveMenuEntry[] = [
+    ...(!folder.missing
+      ? ([
+          { kind: 'item', id: 'history', label: t('sidebar.contextMenu.sessionHistory'), icon: History, onSelect: openHistory },
+          { kind: 'separator' },
+        ] as AdaptiveMenuEntry[])
+      : []),
+    { kind: 'item', id: 'remove', label: t('sidebar.contextMenu.removeProject'), icon: Trash2, destructive: true, onSelect: () => onRemoveProject(folder) },
+  ]
+
   return (
     <div>
-      <ContextMenu>
-        <ContextMenuTrigger asChild>
+      <AdaptiveContextMenu items={folderMenuItems} contentClassName="w-48">
           <div
             onClick={() => {
               if (folder.missing) return
@@ -275,30 +285,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
               </div>
             )}
           </div>
-        </ContextMenuTrigger>
-        <ContextMenuContent className="w-48">
-          {!folder.missing && (
-            <>
-              <ContextMenuItem
-                onClick={openHistory}
-                className="text-xs"
-              >
-                <History className="size-3.5" />
-                {t('sidebar.contextMenu.sessionHistory')}
-              </ContextMenuItem>
-              <ContextMenuSeparator />
-            </>
-          )}
-          <ContextMenuItem
-            variant="destructive"
-            onClick={() => onRemoveProject(folder)}
-            className="text-xs"
-          >
-            <Trash2 className="size-3.5" />
-            {t('sidebar.contextMenu.removeProject')}
-          </ContextMenuItem>
-        </ContextMenuContent>
-      </ContextMenu>
+      </AdaptiveContextMenu>
 
       {isExpanded && projectAutomations.length > 0 && (
         <div className="overflow-hidden pl-2.5">
@@ -316,9 +303,15 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
           </button>
           {automationsExpanded && (
             <div className="flex flex-col py-0.5 pl-2">
-              {projectAutomations.map((automation) => (
-                <ContextMenu key={automation.id}>
-                  <ContextMenuTrigger asChild>
+              {projectAutomations.map((automation) => {
+                const automationMenuItems: AdaptiveMenuEntry[] = [
+                  { kind: 'item', id: 'run', label: t('sidebar.contextMenu.runNow'), icon: Play, onSelect: () => { window.app.runAutomationNow(automation.id).catch(() => {}) } },
+                  { kind: 'item', id: 'edit', label: t('sidebar.contextMenu.edit'), icon: Pencil, onSelect: () => openEditDialog(automation) },
+                  { kind: 'separator' },
+                  { kind: 'item', id: 'delete', label: t('sidebar.contextMenu.delete'), icon: Trash2, destructive: true, onSelect: () => { window.app.deleteAutomation(automation.id).then(refreshAutomations).catch(() => {}) } },
+                ]
+                return (
+                <AdaptiveContextMenu key={automation.id} items={automationMenuItems}>
                     <button
                       onClick={() => openEditDialog(automation)}
                       className="flex items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-left text-xs transition-colors hover:bg-sidebar-accent/80"
@@ -334,27 +327,9 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
                         automation.enabled ? 'bg-green-500' : 'bg-muted-foreground/30',
                       )} />
                     </button>
-                  </ContextMenuTrigger>
-                  <ContextMenuContent>
-                    <ContextMenuItem onClick={() => { window.app.runAutomationNow(automation.id).catch(() => {}) }}>
-                      <Play className="size-3.5" />
-                      {t('sidebar.contextMenu.runNow')}
-                    </ContextMenuItem>
-                    <ContextMenuItem onClick={() => openEditDialog(automation)}>
-                      <Pencil className="size-3.5" />
-                      {t('sidebar.contextMenu.edit')}
-                    </ContextMenuItem>
-                    <ContextMenuSeparator />
-                    <ContextMenuItem
-                      variant="destructive"
-                      onClick={() => { window.app.deleteAutomation(automation.id).then(refreshAutomations).catch(() => {}) }}
-                    >
-                      <Trash2 className="size-3.5" />
-                      {t('sidebar.contextMenu.delete')}
-                    </ContextMenuItem>
-                  </ContextMenuContent>
-                </ContextMenu>
-              ))}
+                </AdaptiveContextMenu>
+                )
+              })}
             </div>
           )}
         </div>

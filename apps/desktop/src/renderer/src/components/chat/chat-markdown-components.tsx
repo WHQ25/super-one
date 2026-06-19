@@ -1,12 +1,8 @@
 import { useRef } from 'react'
 import { AtSign, FolderOpen } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuTrigger,
-} from '@superone/ui/components/ui/context-menu'
+import { AdaptiveContextMenu } from '@/components/AdaptiveContextMenu'
+import type { AdaptiveMenuEntry } from '@/lib/native-context-menu'
 import { openFileTab } from '@/components/activity/activity-panel-api'
 import { chatInputAPI } from '@/components/chat/ChatInput'
 import { toMentionPath } from '@/components/chat/chat-input-utils'
@@ -39,9 +35,12 @@ export function InlineFileChip({ name, filePath, lineNumber }: { name: string; f
     const projectRoot = selectEffectiveProjectRoot(useAppStore.getState())
     chatInputAPI.insertMention?.('file', toMentionPath(filePath, projectRoot), name)
   }
+  const menuItems: AdaptiveMenuEntry[] = [
+    { kind: 'item', id: 'openFolder', label: t('sidebar.contextMenu.openFolder'), icon: FolderOpen, onSelect: handleOpenFolder },
+    { kind: 'item', id: 'addToChat', label: t('sidebar.contextMenu.addToChat'), icon: AtSign, onSelect: handleAddToChat },
+  ]
   return (
-    <ContextMenu>
-      <ContextMenuTrigger asChild>
+    <AdaptiveContextMenu items={menuItems}>
         <span
           role="button"
           onClick={handleClick}
@@ -52,18 +51,7 @@ export function InlineFileChip({ name, filePath, lineNumber }: { name: string; f
           <span>{name}</span>
           {lineNumber != null && <span className="text-muted-foreground text-[0.85em]">#L{lineNumber}</span>}
         </span>
-      </ContextMenuTrigger>
-      <ContextMenuContent>
-        <ContextMenuItem onClick={handleOpenFolder}>
-          <FolderOpen className="mr-2 size-3.5" />
-          {t('sidebar.contextMenu.openFolder')}
-        </ContextMenuItem>
-        <ContextMenuItem onClick={handleAddToChat}>
-          <AtSign className="mr-2 size-3.5" />
-          {t('sidebar.contextMenu.addToChat')}
-        </ContextMenuItem>
-      </ContextMenuContent>
-    </ContextMenu>
+    </AdaptiveContextMenu>
   )
 }
 

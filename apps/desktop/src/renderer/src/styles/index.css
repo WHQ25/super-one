@@ -166,6 +166,18 @@ body {
   backdrop-filter: none;
 }
 
+/* CSS backdrop-filter can't frost over native vibrancy (Electron limitation),
+   so popover / context-menu keep their original solid surface in dark glass —
+   the frosted look there is delivered via native vibrancy menus instead. The
+   bg-popover/85 + backdrop-blur set on the components still applies in the
+   other (opaque-window) modes, where CSS frost works. */
+.liquid-glass.dark [data-slot="popover-content"],
+.liquid-glass.dark [data-slot="context-menu-content"] {
+  background-color: var(--popover);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
 /* Radix ScrollArea wraps children in `display: table; min-width: 100%`. That
    table layout sizes to children's max-content, so when the viewport shrinks
    the wrapper keeps its old (wider) size and content gets clipped horizontally

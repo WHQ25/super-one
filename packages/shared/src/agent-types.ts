@@ -1843,6 +1843,7 @@ export const AgentIpcChannels = {
   FILE_DELETE: 'app:file-delete',
   FILE_RENAME: 'app:file-rename',
   FILE_SHOW_IN_FOLDER: 'app:file-show-in-folder',
+  SHOW_CONTEXT_MENU: 'app:show-context-menu',
   START_DRAG: 'app:start-drag',
   PATH_STAT: 'app:path-stat',
   MEDIA_SERVER_PORT: 'app:media-server-port',
@@ -2056,6 +2057,15 @@ export const AgentIpcChannels = {
   TERMINAL_RELEASE: 'terminal:release',
   TERMINAL_EVENT: 'terminal:event',
 } as const
+
+export interface NativeContextMenuItemSpec {
+  id?: string
+  label?: string
+  type?: 'normal' | 'separator' | 'submenu'
+  enabled?: boolean
+  iconDataUrl?: string
+  submenu?: NativeContextMenuItemSpec[]
+}
 
 export interface FileSearchResult {
   path: string

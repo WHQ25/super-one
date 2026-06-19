@@ -1,5 +1,9 @@
 import { useState } from 'react'
+import { Copy, MessageSquarePlus } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { useChatStore } from '@/stores/chat'
+import { useAppStore } from '@/stores/app'
+import { showNativeContextMenu } from '@/lib/native-context-menu'
 import { SelectionMenu } from '@/components/chat/SelectionContextMenu'
 import { compressLineRanges, formatFilePrefix, lineKindToMarker, type LineKind } from '@/lib/file-quote-prefix'
 
@@ -189,14 +193,23 @@ function sliceSelectedText(rows: { text: string }[], startCol: number, endCol: n
 }
 
 export function FileSelectionContextMenuZone({ filePath, fileContent, children, className }: FileSelectionContextMenuZoneProps) {
+  const { t } = useTranslation()
   const [menu, setMenu] = useState<MenuState | null>(null)
   const addUserSelection = useChatStore((s) => s.addUserSelection)
+  const liquidGlass = useAppStore((s) => s.liquidGlass)
 
   const handleContextMenu = (event: React.MouseEvent<HTMLDivElement>) => {
     event.preventDefault()
     const captured = captureFileSelection(filePath, window.getSelection(), fileContent)
     if (!captured) return
     if (!captured.copyText && !captured.quoteText) return
+    if (liquidGlass) {
+      void showNativeContextMenu([
+        { id: 'copy', label: t('chat.selectionMenu.copy'), icon: Copy, onSelect: () => navigator.clipboard.writeText(captured.copyText) },
+        { id: 'addToChat', label: t('chat.selectionMenu.addToChat'), icon: MessageSquarePlus, onSelect: () => addUserSelection(captured.quoteText) },
+      ])
+      return
+    }
     setMenu({ x: event.clientX, y: event.clientY, copyText: captured.copyText, quoteText: captured.quoteText })
   }
 

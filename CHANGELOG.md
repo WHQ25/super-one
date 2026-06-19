@@ -4,6 +4,16 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.41.10-alpha] - 2026-06-19
+
+### Fixed
+
+- Codex pending approval prompts now restore correctly after reconnecting
+- Subagent message blocks span the full reading width (removed stray left indent)
+- Background task panels use an opaque background in Liquid Glass mode for legibility
+- Workflow agent labels now derive from the first non-empty line of the prompt
+- Subagents no longer pick up `session_rename` guidance meant for the main agent
+
 ## [0.41.9-alpha] - 2026-06-19
 
 ### Added

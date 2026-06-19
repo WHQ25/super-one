@@ -4,6 +4,17 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.41.11-alpha] - 2026-06-19
+
+### Added
+
+- Context menus now render with native vibrancy in Liquid Glass mode
+- Claude rate-limit popover gained a manual refresh button and a last-updated timestamp
+
+### Fixed
+
+- Slash menu now matches commands by name only and ranks exact-match skills above weaker fuzzy matches, ordering groups by best score
+
 ## [0.41.10-alpha] - 2026-06-19
 
 ### Fixed

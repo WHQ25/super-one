@@ -19,10 +19,24 @@ describe('slash command match ranking', () => {
     expect(result.map((c) => c.name)).toEqual(['command', 'skill'])
   })
 
-  it('uses isSkill only as a tiebreaker among equally scored matches', () => {
-    const commands = [cmd('review', true), cmd('review', false)]
+  it('puts the whole best-scoring group ahead of the other group', () => {
+    const commands = [cmd('code-review', false), cmd('review', true), cmd('reviewer', true)]
     const result = computeMatchingSlashCommands('/review', commands, 'claude')
-    expect(result.map((c) => c.isSkill)).toEqual([false, true])
+    // skills hold the exact match, so the entire skill group is contiguous and first
+    expect(result.map((c) => c.isSkill)).toEqual([true, true, false])
+    expect(result[result.length - 1].name).toBe('code-review')
+  })
+
+  it('excludes items that match only on description, never on name', () => {
+    const commands = [cmd('deploy', false, 'review the pending changes'), cmd('review', true)]
+    const result = computeMatchingSlashCommands('/review', commands, 'claude')
+    expect(result.map((c) => c.name)).toEqual(['review'])
+  })
+
+  it('every returned item carries name match indices (visible highlight)', () => {
+    const commands = [cmd('deploy', false, 'review the pending changes'), cmd('review', true)]
+    const result = computeMatchingSlashCommands('/rev', commands, 'claude')
+    for (const c of result) expect(c.matchIndices.length).toBeGreaterThan(0)
   })
 
   it('applies the same ranking on the codex path', () => {

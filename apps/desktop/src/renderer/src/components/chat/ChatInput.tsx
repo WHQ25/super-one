@@ -45,11 +45,6 @@ export const chatInputAPI: {
   addImageFromPath: ((absPath: string) => void) | null
 } = { insertMention: null, addImageFromPath: null }
 
-const SLASH_GROUP_ORDER = ['command', 'skill'] as const
-
-function orderCommandsBySkill<T extends { isSkill: boolean }>(commands: T[]): T[] {
-  return [...commands.filter((c) => !c.isSkill), ...commands.filter((c) => c.isSkill)]
-}
 
 export function ChatInput() {
     const { t } = useTranslation()
@@ -199,10 +194,14 @@ export function ChatInput() {
     matchingCommandsRef.current = matchingCommands
     slashDismissedRef.current = slashDismissed
 
-    const slashGroups = useMemo(
-      () => groupItems(matchingCommands, (c) => (c.isSkill ? 'skill' : 'command'), SLASH_GROUP_ORDER),
-      [matchingCommands]
-    )
+    const slashGroups = useMemo(() => {
+      const order: string[] = []
+      for (const c of matchingCommands) {
+        const key = c.isSkill ? 'skill' : 'command'
+        if (!order.includes(key)) order.push(key)
+      }
+      return groupItems(matchingCommands, (c) => (c.isSkill ? 'skill' : 'command'), order)
+    }, [matchingCommands])
 
     const editorRef = useRef<ReturnType<typeof useEditor>>(null)
 

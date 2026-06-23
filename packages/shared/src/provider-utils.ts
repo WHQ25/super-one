@@ -35,6 +35,7 @@ export const PRESET_PROVIDER_KEY: Record<string, string> = {
 }
 
 export function resolveProviderKey(provider: ApiProvider): string | null {
+  if (provider.provider_type === 'custom') return null
   let configs: Record<string, AgentProviderConfig> = {}
   try {
     configs = JSON.parse(provider.agent_configs || '{}') as Record<string, AgentProviderConfig>

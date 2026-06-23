@@ -81,6 +81,11 @@ describe('resolveProviderKey', () => {
     expect(resolveProviderKey(makeProvider({ name: 'My Kimi Endpoint' }))).toBe('kimi')
   })
 
+  it('never guesses a brand for custom providers', () => {
+    expect(resolveProviderKey(makeProvider({ provider_type: 'custom', name: 'My DeepSeek Proxy' }))).toBeNull()
+    expect(resolveProviderKey(withClaudeConfig({ provider_type: 'custom', name: 'whatever' }, { base_url: 'https://api.deepseek.com/anthropic', model_env: '', extra_env: '', api_format: '' }))).toBeNull()
+  })
+
   it('returns null for dmxapi/packy and unknown providers', () => {
     expect(resolveProviderKey(withClaudeConfig({ name: 'My Proxy' }, { base_url: 'https://www.dmxapi.com', model_env: '', extra_env: '', api_format: '' }))).toBeNull()
     expect(resolveProviderKey(makeProvider({ name: 'PackyCode' }))).toBeNull()

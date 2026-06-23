@@ -70,6 +70,7 @@ import { listWorkflowAgents, readWorkflowOutput, readWorkflowScript } from './wo
 import { parseGitStatusOutput, parseGitStatusFiles, type GitStatusPair } from './git-status-utils'
 import { mapModelInfo } from './agent/claude-models'
 import { getClaudeRateLimits } from './agent/claude-usage-service'
+import { getProviderRateLimits } from './agent/provider-usage-service'
 import { getRecentFolders, addRecentFolder, removeRecentFolder, getProjectId, getProjectPathById } from './recent-folders'
 import { getDb, closeDb, getCachedHarnessResources, setCachedHarnessResources, upsertPairedDevice, listPairedDevices, deletePairedDevice, isPairedDevice, getActiveProviderRaw, getProviderByIdRaw } from './database'
 import { backfillFromHistory, getBackfillStatus, queryCounts, queryUsage } from './usage-stats-service'
@@ -802,6 +803,10 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(AgentIpcChannels.CLAUDE_GET_RATE_LIMITS, (_event, force?: boolean) => {
     return getClaudeRateLimits(force ?? false)
+  })
+
+  ipcMain.handle(AgentIpcChannels.PROVIDER_GET_RATE_LIMITS, (_event, apiProviderId: string, force?: boolean) => {
+    return getProviderRateLimits(apiProviderId, force ?? false)
   })
 
   ipcMain.handle(AgentIpcChannels.CODEX_SET_AUTH, (_event, projectPath: string, request: CodexSetAuthRequest) => {

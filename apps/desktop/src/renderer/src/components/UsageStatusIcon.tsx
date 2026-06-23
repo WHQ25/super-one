@@ -8,7 +8,9 @@ import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { Button } from '@superone/ui/components/ui/button'
 import { cn } from '@superone/ui/lib/utils'
 import { useActiveSession, useChatStore } from '@/stores/chat'
-import type { ClaudeExtraUsage, ClaudeRateLimits, CodexAccountUsage, CodexRateLimits, CodexRateLimitResetOutcome, CodexRateLimitWindow } from '@superone/shared/agent-types'
+import type { ClaudeExtraUsage, ClaudeRateLimits, CodexAccountUsage, CodexRateLimits, CodexRateLimitResetOutcome, CodexRateLimitWindow, ProviderRateLimits } from '@superone/shared/agent-types'
+
+const FORCE_REFRESH_ON_OPEN_STALE_MS = 5 * 60 * 1000
 
 const RESET_OUTCOME_TOAST: Record<CodexRateLimitResetOutcome, { kind: 'success' | 'info' | 'error'; key: string }> = {
   reset: { kind: 'success', key: 'usageGauge.toast.reset' },
@@ -153,7 +155,7 @@ function AccountUsageSection({ usage }: { usage: CodexAccountUsage }) {
   )
 }
 
-function RateLimitGauge({ title, planType, maxPercent, onRefresh, refreshing, fetchedAt, children }: { title: string; planType: string | null; maxPercent: number; onRefresh?: () => void; refreshing?: boolean; fetchedAt?: number | null; children: ReactNode }) {
+function RateLimitGauge({ title, planType, maxPercent, onOpen, onRefresh, refreshing, fetchedAt, children }: { title: string; planType: string | null; maxPercent: number; onOpen?: () => void; onRefresh?: () => void; refreshing?: boolean; fetchedAt?: number | null; children: ReactNode }) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const [now, setNow] = useState(() => Date.now())
@@ -165,8 +167,13 @@ function RateLimitGauge({ title, planType, maxPercent, onRefresh, refreshing, fe
     return () => clearInterval(id)
   }, [open, fetchedAt])
 
+  const handleOpenChange = useCallback((next: boolean) => {
+    setOpen(next)
+    if (next) onOpen?.()
+  }, [onOpen])
+
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>
         <IconButton size="sm" className="relative">
           <Gauge />
@@ -233,7 +240,7 @@ function CodexRateLimitIcon({ projectPath, apiProviderId, status }: { projectPat
   const maxPercent = Math.max(...windows.map((w) => w.usedPercent))
 
   return (
-    <RateLimitGauge title={t('usageGauge.codexTitle')} planType={limits.planType} maxPercent={maxPercent}>
+    <RateLimitGauge title={t('usageGauge.codexTitle')} planType={limits.planType} maxPercent={maxPercent} onOpen={fetchLimits}>
       {limits.primary && (
         <WindowRow label={formatWindowLabel(limits.primary.windowDurationMins, t)} usedPercent={limits.primary.usedPercent} resetsAt={limits.primary.resetsAt} />
       )}
@@ -266,6 +273,11 @@ function ClaudeRateLimitIcon({ status }: { status: string }) {
       .finally(() => setRefreshing(false))
   }, [])
 
+  const refreshIfStale = useCallback(() => {
+    const fetchedAt = limits?.fetchedAt
+    if (fetchedAt == null || Date.now() - fetchedAt > FORCE_REFRESH_ON_OPEN_STALE_MS) refresh()
+  }, [limits?.fetchedAt, refresh])
+
   useRefetchOnTurnEnd(status, fetchLimits)
 
   if (!limits || limits.windows.length === 0) return null
@@ -273,11 +285,52 @@ function ClaudeRateLimitIcon({ status }: { status: string }) {
   const maxPercent = Math.max(...limits.windows.map((w) => w.usedPercent))
 
   return (
-    <RateLimitGauge title={t('usageGauge.claudeTitle')} planType={limits.planType} maxPercent={maxPercent} onRefresh={refresh} refreshing={refreshing} fetchedAt={limits.fetchedAt}>
+    <RateLimitGauge title={t('usageGauge.claudeTitle')} planType={limits.planType} maxPercent={maxPercent} onOpen={refreshIfStale} onRefresh={refresh} refreshing={refreshing} fetchedAt={limits.fetchedAt}>
       {limits.windows.map((w) => (
         <WindowRow key={w.label} label={w.label} usedPercent={w.usedPercent} resetsAt={w.resetsAt} />
       ))}
       {limits.extraUsage && <ExtraUsageRow extra={limits.extraUsage} />}
+    </RateLimitGauge>
+  )
+}
+
+function ProviderRateLimitIcon({ apiProviderId, status }: { apiProviderId: string; status: string }) {
+  const [limits, setLimits] = useState<ProviderRateLimits | null>(null)
+  const [refreshing, setRefreshing] = useState(false)
+
+  const fetchLimits = useCallback(() => {
+    window.app.providerGetRateLimits(apiProviderId).then(setLimits).catch(() => {})
+  }, [apiProviderId])
+
+  const refresh = useCallback(() => {
+    setRefreshing(true)
+    window.app
+      .providerGetRateLimits(apiProviderId, true)
+      .then(setLimits)
+      .catch(() => {})
+      .finally(() => setRefreshing(false))
+  }, [apiProviderId])
+
+  const refreshIfStale = useCallback(() => {
+    const fetchedAt = limits?.fetchedAt
+    if (fetchedAt == null || Date.now() - fetchedAt > FORCE_REFRESH_ON_OPEN_STALE_MS) refresh()
+  }, [limits?.fetchedAt, refresh])
+
+  useEffect(() => {
+    setLimits(null)
+  }, [apiProviderId])
+
+  useRefetchOnTurnEnd(status, fetchLimits)
+
+  if (!limits || limits.windows.length === 0) return null
+
+  const maxPercent = Math.max(...limits.windows.map((w) => w.usedPercent))
+
+  return (
+    <RateLimitGauge title={limits.title} planType={limits.planType} maxPercent={maxPercent} onOpen={refreshIfStale} onRefresh={refresh} refreshing={refreshing} fetchedAt={limits.fetchedAt}>
+      {limits.windows.map((w) => (
+        <WindowRow key={w.label} label={w.label} usedPercent={w.usedPercent} resetsAt={w.resetsAt} />
+      ))}
     </RateLimitGauge>
   )
 }
@@ -299,6 +352,10 @@ export function UsageStatusIcon() {
 
   if (activeProvider === 'claude' && claudeApiProvider === 'firstParty' && !apiProviderId) {
     return <ClaudeRateLimitIcon status={status} />
+  }
+
+  if (activeProvider === 'claude' && apiProviderId) {
+    return <ProviderRateLimitIcon apiProviderId={apiProviderId} status={status} />
   }
 
   return null

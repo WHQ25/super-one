@@ -1371,6 +1371,10 @@ export interface ClaudeRateLimits {
   fetchedAt?: number | null
 }
 
+export interface ProviderRateLimits extends ClaudeRateLimits {
+  title: string
+}
+
 export type CodexHookEventName =
   | 'preToolUse'
   | 'postToolUse'
@@ -1690,6 +1694,9 @@ export const AgentIpcChannels = {
 
   // Claude channels
   CLAUDE_GET_RATE_LIMITS: 'claude:get-rate-limits',
+
+  // Third-party provider usage channels
+  PROVIDER_GET_RATE_LIMITS: 'provider:get-rate-limits',
 
   // Agent channels
   SEND_MESSAGE: 'agent:send-message',

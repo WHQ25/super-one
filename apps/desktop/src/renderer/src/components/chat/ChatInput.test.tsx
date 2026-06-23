@@ -425,7 +425,7 @@ describe('ChatInput slash command grouping', () => {
 
     const order = screen
       .getAllByRole('button')
-      .map((b) => b.querySelector('.text-blue-600')?.textContent)
+      .map((b) => b.querySelector('.font-medium')?.textContent)
       .filter((name): name is string => typeof name === 'string' && name.startsWith('/'))
 
     expect(order.slice(0, 2).sort()).toEqual(['/clear', '/compact'])

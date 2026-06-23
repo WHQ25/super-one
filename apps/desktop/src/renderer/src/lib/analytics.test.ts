@@ -23,7 +23,7 @@ describe('analytics', () => {
 
   it('initAnalytics calls posthog.init with correct config', async () => {
     const { initAnalytics } = await import('./analytics')
-    initAnalytics()
+    await initAnalytics()
     expect(posthogMock.init).toHaveBeenCalledWith(
       'test-key',
       expect.objectContaining({
@@ -37,14 +37,14 @@ describe('analytics', () => {
 
   it('initAnalytics is idempotent', async () => {
     const { initAnalytics } = await import('./analytics')
-    initAnalytics()
-    initAnalytics()
+    await initAnalytics()
+    await initAnalytics()
     expect(posthogMock.init).toHaveBeenCalledTimes(1)
   })
 
   it('shutdownAnalytics calls opt_out and reset', async () => {
     const { initAnalytics, shutdownAnalytics, isAnalyticsInitialized } = await import('./analytics')
-    initAnalytics()
+    await initAnalytics()
     shutdownAnalytics()
     expect(posthogMock.opt_out_capturing).toHaveBeenCalled()
     expect(posthogMock.reset).toHaveBeenCalled()

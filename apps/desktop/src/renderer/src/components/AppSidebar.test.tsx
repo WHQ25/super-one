@@ -25,6 +25,7 @@ const chatState = {
   projectSessions: {} as Record<string, unknown>,
   remoteSessions: {} as Record<string, string[]>,
   agentTitles: {} as Record<string, string>,
+  harnessResources: {} as Record<string, unknown>,
 }
 
 const mockWindowApp = {
@@ -65,6 +66,7 @@ vi.mock('@/stores/chat', () => ({
     (selector: (state: typeof chatState) => unknown) => selector(chatState),
     { getState: () => chatState },
   ),
+  useActiveSession: (selector: (s: Record<string, unknown>) => unknown) => selector({}),
   isDraftSession: (id: string | null) => id === '__draft__' || (!!id && id.startsWith('__draft_')),
   selectClaudeModels: () => [],
   selectCodexModels: () => [],
@@ -90,6 +92,17 @@ vi.mock('@/hooks/useTheme', () => ({
 
 vi.mock('@/components/sidebar/FileTree', () => ({
   FileTree: () => <div>FileTree</div>,
+}))
+
+vi.mock('@/components/AdaptiveContextMenu', () => ({
+  AdaptiveContextMenu: ({ items, children }: { items: Array<{ kind: string; id?: string; label?: string; onSelect?: () => void }>; children: ReactNode }) => (
+    <>
+      {children}
+      {items.filter((i) => i.kind === 'item').map((i) => (
+        <button key={i.id} onClick={i.onSelect}>{i.label}</button>
+      ))}
+    </>
+  ),
 }))
 
 vi.mock('@/components/sidebar/BrandColorPopover', () => ({
@@ -438,7 +451,7 @@ describe('AppSidebar interactions', () => {
     fireEvent.click(screen.getByText('project-a'))
     await screen.findByText('Old Session')
 
-    fireEvent.click(screen.getAllByText('Rename')[0] as HTMLButtonElement)
+    fireEvent.click(screen.getAllByText('Rename Session')[0] as HTMLButtonElement)
 
     const input = screen.getByDisplayValue('Old Session')
     fireEvent.change(input, { target: { value: '新标题' } })

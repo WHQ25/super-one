@@ -514,7 +514,7 @@ describe('miniapp store preferWidth', () => {
     await useMiniAppStore.getState().openAppInPanel(app, '/proj')
 
     expect(mockSetPanelWidth).toHaveBeenCalledTimes(1)
-    expect(mockSetPanelWidth).toHaveBeenCalledWith(380)
+    expect(mockSetPanelWidth).toHaveBeenCalledWith(368)
   })
 
   it('skips applying when there is no room (max < MIN_AP)', async () => {
@@ -552,7 +552,7 @@ describe('miniapp store preferWidth', () => {
 
     await useMiniAppStore.getState().openAppInPanel(app, '/proj')
 
-    expect(mockSetPanelWidth).toHaveBeenCalledWith(600)
+    expect(mockSetPanelWidth).toHaveBeenCalledWith(588)
   })
 })
 

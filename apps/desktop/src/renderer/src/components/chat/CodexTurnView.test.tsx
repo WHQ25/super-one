@@ -470,7 +470,7 @@ describe('CodexTurnView', () => {
     )
 
     fireEvent.click(screen.getByText('Plan'))
-    fireEvent.click(screen.getByTitle('Fullscreen'))
+    fireEvent.click(document.querySelector('.lucide-expand')!.closest('button')!)
 
     expect(open).toHaveBeenCalledTimes(1)
     expect(open.mock.calls[0]?.[0]).toBe('## My plan')

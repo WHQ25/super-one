@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef, useMemo, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Bot, ChevronRight, Check, Wrench, ArrowUp, ArrowDown, Maximize, TriangleAlert, CircleSlash } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
@@ -22,6 +22,7 @@ interface SubagentBlockProps {
   resultBlock?: ContentBlock
   isStreaming: boolean
   defaultExpanded?: boolean
+  trailingAction?: ReactNode
 }
 
 /** Format elapsed seconds to a readable string. */
@@ -52,7 +53,7 @@ function SubagentTokens({ input, output }: { input: number; output: number }) {
   )
 }
 
-export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming, defaultExpanded }: SubagentBlockProps) {
+export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming, defaultExpanded, trailingAction }: SubagentBlockProps) {
   const { t } = useTranslation()
   const tokens = useActiveSession((s) => s.subagentTokens[taskBlock.toolUseId] ?? ZERO_TOKENS)
   const progress = useActiveSession((s) => s.taskProgress[taskBlock.toolUseId])
@@ -220,6 +221,7 @@ export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming
                 <Maximize className="size-3" />
               </span>
             )}
+            {trailingAction}
             <ChevronRight
               className={cn('size-3 shrink-0 transition-transform duration-200', isExpanded && 'rotate-90')}
             />

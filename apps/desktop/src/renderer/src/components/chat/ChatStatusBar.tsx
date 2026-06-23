@@ -22,7 +22,6 @@ import {
   DialogTitle,
 } from '@superone/ui/components/ui/dialog'
 import { Button } from '@superone/ui/components/ui/button'
-import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { useActiveSession, useChatStore } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 import { StatusBarPermission } from './chat-status-bar/StatusBarPermission'
@@ -320,6 +319,18 @@ export function ChatStatusBar() {
       toast.error(`Failed to stop task: ${err instanceof Error ? err.message : String(err)}`)
     })
   }, [activeSessionId])
+  const renderStopButton = useCallback((taskId: string) => (
+    <span
+      role="button"
+      tabIndex={0}
+      title="Stop task"
+      onClick={(e) => { e.stopPropagation(); handleStopTask(taskId) }}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); handleStopTask(taskId) } }}
+      className="inline-flex items-center rounded p-0.5 text-destructive hover:bg-destructive/20"
+    >
+      <Square className="size-2.5 fill-current" />
+    </span>
+  ), [handleStopTask])
   const bashLabel = bashActivities.length > 1 ? `${bashActivities.length} Bashes` : 'Bash'
   const agentLabel = agentActivities.length > 1 ? `${agentActivities.length} Agents` : 'Agent'
   const bashPanelTitle = `Background ${bashActivities.length > 1 ? 'Bashes' : 'Bash'}`
@@ -352,7 +363,7 @@ export function ChatStatusBar() {
                   {bashActivities.map((item, i) => {
                     const taskId = taskProgress[item.id]?.taskId
                     return (
-                      <div key={item.id} className="group/bgtask relative">
+                      <div key={item.id}>
                         <ToolBlock
                           toolName="Bash"
                           toolUseId={item.toolUse.toolUseId}
@@ -364,18 +375,8 @@ export function ChatStatusBar() {
                           resultOutputPath={item.result?.outputPath}
                           autoExpand={i === 0}
                           backgroundActivity
+                          trailingAction={taskId ? renderStopButton(taskId) : undefined}
                         />
-                        {taskId && (
-                          <IconButton
-                            size="xs"
-                            variant="destructive"
-                            tooltip="Stop task"
-                            className="absolute right-1.5 top-1.5 opacity-0 transition-opacity group-hover/bgtask:opacity-100"
-                            onClick={() => handleStopTask(taskId)}
-                          >
-                            <Square className="size-2.5 fill-current" />
-                          </IconButton>
-                        )}
                       </div>
                     )
                   })}
@@ -396,25 +397,15 @@ export function ChatStatusBar() {
                   {agentActivities.map((item, i) => {
                     const taskId = taskProgress[item.id]?.taskId
                     return (
-                      <div key={item.id} className="group/bgtask relative">
+                      <div key={item.id}>
                         <SubagentBlock
                           taskBlock={item.taskBlock}
                           childBlocks={item.childBlocks}
                           resultBlock={item.resultBlock}
                           isStreaming={sessionStatus === 'streaming'}
                           defaultExpanded={i === 0}
+                          trailingAction={taskId ? renderStopButton(taskId) : undefined}
                         />
-                        {taskId && (
-                          <IconButton
-                            size="xs"
-                            variant="destructive"
-                            tooltip="Stop task"
-                            className="absolute right-1.5 top-1.5 opacity-0 transition-opacity group-hover/bgtask:opacity-100"
-                            onClick={() => handleStopTask(taskId)}
-                          >
-                            <Square className="size-2.5 fill-current" />
-                          </IconButton>
-                        )}
                       </div>
                     )
                   })}

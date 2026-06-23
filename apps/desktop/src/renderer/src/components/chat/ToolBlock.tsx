@@ -1,4 +1,4 @@
-import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback, memo } from 'react'
+import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback, memo, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ChevronRight, PenLine, Check, X, Ban, TriangleAlert, Upload, Smartphone } from 'lucide-react'
 import { diffLines } from 'diff'
@@ -221,6 +221,7 @@ interface ToolBlockProps {
   autoExpand?: boolean
   backgroundActivity?: boolean
   grouped?: boolean
+  trailingAction?: ReactNode
 }
 
 const DIFF_TOOLS = new Set(['Edit', 'Write', 'FileChange'])
@@ -228,7 +229,7 @@ const FILE_PATH_TOOLS = new Set(['Read', 'Edit', 'Write', 'NotebookEdit', 'FileC
 
 
 
-export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, status, elapsedSeconds, result, isTimedOut, isError, resultOutputPath, autoExpand, backgroundActivity = false, grouped = false }: ToolBlockProps) {
+export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, status, elapsedSeconds, result, isTimedOut, isError, resultOutputPath, autoExpand, backgroundActivity = false, grouped = false, trailingAction }: ToolBlockProps) {
   const { t } = useTranslation()
   const nestedDefaults = useNestedToolDefaults()
   const effectiveAutoExpand = autoExpand ?? nestedDefaults?.defaultAutoExpand ?? true
@@ -338,6 +339,7 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
         runInBackground={runInBackground}
         autoExpand={effectiveAutoExpand}
         backgroundActivity={backgroundActivity}
+        trailingAction={trailingAction}
       />
     )
   }
@@ -818,6 +820,7 @@ function BashTerminalView({
   runInBackground,
   autoExpand,
   backgroundActivity,
+  trailingAction,
 }: {
   toolUseId: string
   command: string
@@ -832,6 +835,7 @@ function BashTerminalView({
   runInBackground?: boolean
   autoExpand?: boolean
   backgroundActivity?: boolean
+  trailingAction?: ReactNode
 }) {
   const bashOutput = useBashOutput(toolUseId)
   const { t } = useTranslation()
@@ -978,7 +982,10 @@ function BashTerminalView({
         {showError && <span className="rounded bg-warning/20 px-1 py-px text-[10px] text-warning">{t('chat.toolBlock.error')}</span>}
         {bgStopped && !showError && <span className="rounded bg-muted px-1 py-px text-[10px] text-muted-foreground">{t('chat.subagent.stopped')}</span>}
         {isTimedOut && <span className="rounded bg-error/20 px-1 py-px text-[10px] text-error">{t('chat.toolBlock.timedOut')}</span>}
-        <ChevronRight className={cn('ml-auto size-3 shrink-0 text-muted-foreground transition-transform duration-200', expanded && 'rotate-90')} />
+        <div className="ml-auto flex shrink-0 items-center gap-1.5">
+          {trailingAction}
+          <ChevronRight className={cn('size-3 shrink-0 text-muted-foreground transition-transform duration-200', expanded && 'rotate-90')} />
+        </div>
       </div>
       {expanded && (fileExpired ? (
         <div className="px-3 py-1.5 text-xs text-muted-foreground/50 italic">

@@ -513,6 +513,33 @@ describe('createCanUseTool', () => {
     expect(perms.size).toBe(0)
   })
 
+  it('follows main-thread rules for a subagent tool request — emits permission_request, never auto-denies on agentID alone', async () => {
+    const { canUseTool } = createCanUseTool(perms, questions, plans, emit)
+
+    const promise = canUseTool('Bash', { command: 'ls' }, makeContext({ agentID: 'agent-task-7' }))
+
+    expect(events).toHaveLength(1)
+    expect(events[0].type).toBe('permission_request')
+    const [id] = [...perms.keys()]
+    respondToPermission(perms, id, true)
+    const result = await promise
+    expect(result.behavior).toBe('allow')
+  })
+
+  it('auto-approves a built-in superone tool from a subagent (same main-thread rule)', async () => {
+    const { canUseTool } = createCanUseTool(perms, questions, plans, emit)
+
+    const result = await canUseTool(
+      'mcp__superone__miniapp_dev_setup',
+      {},
+      makeContext({ agentID: 'agent-task-8' }),
+    )
+
+    expect(result.behavior).toBe('allow')
+    expect(events).toHaveLength(0)
+    expect(perms.size).toBe(0)
+  })
+
   it('should auto-track plan files from Write tool input', async () => {
     mockReadFileSync.mockReturnValue('# Auto-tracked')
     const { canUseTool } = createCanUseTool(perms, questions, plans, emit)

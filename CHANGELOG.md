@@ -4,6 +4,16 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.41.12-alpha] - 2026-06-24
+
+### Fixed
+
+- Custom providers no longer display an incorrect built-in brand icon
+
+### Changed
+
+- Updated the Claude Agent SDK to 0.3.186 and the Codex CLI to 0.142.0
+
 ## [0.41.11-alpha] - 2026-06-19
 
 ### Added

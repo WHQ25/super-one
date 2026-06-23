@@ -2111,7 +2111,7 @@ export class AgentService {
       } else if (permissionMode) {
         await session.setPermissionMode(permissionMode)
       }
-      if (worktreeCwd && session.cwd !== worktreeCwd) {
+      if (worktreeCwd && session.cwd !== worktreeCwd && existsSync(worktreeCwd)) {
         await session.switchCwd(worktreeCwd)
       }
       try { mgr.setActiveSession(projectPath, sessionId) } catch { /* session from another project, skip */ }

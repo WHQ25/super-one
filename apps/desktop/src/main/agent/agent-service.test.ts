@@ -170,6 +170,13 @@ vi.mock('fs/promises', () => ({
   mkdir: (...args: unknown[]) => mockMkdir(...args),
 }))
 
+const { mockExistsSync } = vi.hoisted(() => ({ mockExistsSync: vi.fn() }))
+vi.mock('fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('fs')>()
+  mockExistsSync.mockImplementation(actual.existsSync)
+  return { ...actual, existsSync: (...args: unknown[]) => mockExistsSync(...args) }
+})
+
 vi.mock('child_process', async (importOriginal) => {
   const actual = await importOriginal<typeof import('child_process')>()
   return { ...actual, execFileSync: vi.fn(actual.execFileSync) }
@@ -373,10 +380,37 @@ describe('AgentService SESSIONS_RESUME (cwd sync)', () => {
     }
     service.setup()
     const handler = getRegisteredIpcHandler(AgentIpcChannels.SESSIONS_RESUME)!
+    mockExistsSync.mockReturnValueOnce(true)
 
     await handler(null, '/repo/main', 'sid-existing', '/repo/main/.worktrees/feat-x')
 
     expect(switchCwd).toHaveBeenCalledWith('/repo/main/.worktrees/feat-x')
+  })
+
+  it('does NOT switch cwd to a worktree path that no longer exists — keeps the resolved fallback so the read-only signal survives', async () => {
+    const service = new AgentService()
+    const switchCwd = vi.fn().mockResolvedValue(undefined)
+    const resumed = makeMockSession({
+      id: 'sid-cold',
+      cwd: '/repo/main',
+      snapshot: { harnessId: 'claude', messages: [] },
+      isStreaming: vi.fn(() => false),
+      switchCwd,
+      getCurrentPermissionMode: vi.fn(() => 'default' as const),
+      getCurrentSandboxInfo: vi.fn(() => ({ enabled: true, autoAllowBash: false })),
+    })
+    ;(service as { sessionManager: unknown }).sessionManager = {
+      getSession: vi.fn(() => null),
+      resumeSession: vi.fn(() => resumed),
+      setActiveSession: vi.fn(),
+    }
+    service.setup()
+    const handler = getRegisteredIpcHandler(AgentIpcChannels.SESSIONS_RESUME)!
+    mockExistsSync.mockReturnValueOnce(false)
+
+    await handler(null, '/repo/main', 'sid-cold', '/repo/main/.worktrees/vanished')
+
+    expect(switchCwd).not.toHaveBeenCalled()
   })
 })
 

@@ -208,6 +208,7 @@ import {
   _ensureSessionHydrated,
   _getEffectiveSessionId,
   _getSessionCwd,
+  _getSessionWorktreePath,
   _hydrateSessionState,
 } from './helpers/persistence'
 
@@ -620,11 +621,7 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
         _worktreeBaseBranch: targetSession._worktreeBaseBranch,
         _worktreeRemoved: targetSession._worktreeRemoved,
       })
-      if (targetSession._worktreePath && !targetSession._worktreeRemoved) {
-        useAppStore.getState().setActiveWorktree(activeProject, targetSession._worktreePath)
-      } else if (!targetSession._worktreeBaseBranch || targetSession._worktreeRemoved) {
-        useAppStore.getState().setActiveWorktree(activeProject, null)
-      }
+      useAppStore.getState().setActiveWorktree(activeProject, _getSessionWorktreePath(targetSession))
 
       set((s) => updatePerSession(s, activeProject, sessionId, (sess) =>
         applySessionAgentDefaults(sess, getProject(s, activeProject), s.harnessResources.claude?.models ?? []),

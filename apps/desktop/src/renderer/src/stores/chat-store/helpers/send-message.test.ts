@@ -127,14 +127,14 @@ describe('sendMessageImpl: worktree activation', () => {
     expect(mockSetActiveWorktree).toHaveBeenCalledWith('/proj', '/wt/feature-x')
     const sess = getActiveSession('/proj')
     expect(sess.cwd).toBe('/wt/feature-x')
-    expect(sess._worktreeBaseBranch).toBe('feature-x')
+    expect(sess._gitBranch).toBe('feature-x')
     expect(sess._worktreePath).toBe('/wt/feature-x')
     expect(sess.totalCostUsd).toBe(0)
     expect(sess.contextTokens).toBe(0)
     expect(mockSendMessage).toHaveBeenCalled()
   })
 
-  it('records baseBranch as _worktreeBaseBranch when mode is not branch', async () => {
+  it('records baseBranch as _gitBranch when mode is not branch', async () => {
     seedProject('/proj', 'sid-1')
     mockWorktreeState.pendingBaseBranch = 'develop'
     mockWorktreeState.pendingMode = 'in-place' as never
@@ -143,7 +143,7 @@ describe('sendMessageImpl: worktree activation', () => {
     await useChatStore.getState().sendMessage('hi')
 
     const sess = getActiveSession('/proj')
-    expect(sess._worktreeBaseBranch).toBe('develop')
+    expect(sess._gitBranch).toBe('develop')
   })
 
   it('returns early without IPC when branch mode is missing a branch name', async () => {

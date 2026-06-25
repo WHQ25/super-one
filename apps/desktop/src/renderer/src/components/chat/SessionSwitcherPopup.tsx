@@ -161,7 +161,7 @@ function toSwitcherRow(row: ActiveRow): SwitcherRow {
     isUnseen: row.isUnseen,
     isRemote: row.isRemote,
     isAutomation: !!row.dbEntry?.isAutomation,
-    isWorktree: !!row.dbEntry?.isWorktree || !!row.liveSession._worktreeBaseBranch,
+    isWorktree: !!row.dbEntry?.isWorktree || !!row.liveSession._gitBranch,
     provider: row.dbEntry?.provider,
     pendingReason: getPendingReason(
       row.liveSession.pendingPermissions,

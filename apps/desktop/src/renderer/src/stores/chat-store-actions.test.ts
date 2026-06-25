@@ -329,7 +329,7 @@ describe('resetSessionForWorktreeSwitch', () => {
 
     expect(activeSession().cwd).toBe('/wt')
     expect(activeSession()._worktreePath).toBe('/wt')
-    expect(activeSession()._worktreeBaseBranch).toBe('feature')
+    expect(activeSession()._gitBranch).toBe('feature')
     expect(mockSeedFromCurrent).toHaveBeenCalledTimes(1)
   })
 })

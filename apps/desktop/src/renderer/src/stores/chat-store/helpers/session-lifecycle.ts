@@ -227,7 +227,7 @@ export function resetSessionForWorktreeSwitchImpl(
     newSession.preferredProvider = nextProvider
     newSession.sessionProvider = nextProvider
     newSession._worktreePath = opts?.wtPath ?? null
-    newSession._worktreeBaseBranch = opts?.gitBranch ?? null
+    newSession._gitBranch = opts?.gitBranch ?? null
     if (defaultPrefsCache.permissionMode) newSession.permissionMode = defaultPrefsCache.permissionMode
     applyDefaultModel(newSession, s.harnessResources.claude?.models ?? [])
     const codexSelection = resolveDefaultCodexSelection(proj.codexModels)

@@ -30,15 +30,15 @@ function seed(): void {
   const wtSession = createDefaultPerSessionState()
   wtSession.cwd = WORKTREE
   wtSession._worktreePath = WORKTREE
-  wtSession._worktreeBaseBranch = 'feature'
+  wtSession._gitBranch = 'feature'
 
   const plainSession = createDefaultPerSessionState()
   plainSession.cwd = PROJECT
   plainSession._worktreePath = null
   plainSession._worktreeRemoved = false
-  // `_worktreeBaseBranch` is misnamed — it carries the session's git branch, which
-  // every in-repo session has, worktree or not.
-  plainSession._worktreeBaseBranch = 'main'
+  // `_gitBranch` is present on every in-repo session, worktree or not — which is
+  // exactly why the old Case A clear logic that keyed off it was wrong.
+  plainSession._gitBranch = 'main'
 
   useChatStore.setState({
     activeProject: PROJECT,
@@ -65,7 +65,7 @@ describe('switchSession worktree root sync', () => {
     await useChatStore.getState().switchSession('plain')
 
     // The target has no worktree, so the file tree must drop back to the project root.
-    // The pre-fix `else if (!_worktreeBaseBranch || _worktreeRemoved)` never fires for an
+    // The pre-fix `else if (!_gitBranch || _worktreeRemoved)` never fires for an
     // in-repo session (it always has a branch), leaving activePath stuck on the worktree.
     expect(useAppStore.getState()._worktrees[PROJECT]?.activePath).toBe(null)
   })

@@ -478,7 +478,7 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
           permissionMode: entry.permissionMode,
           lastAssistantMessageId: entry.snapshot.currentMessageId ?? prevSession.lastAssistantMessageId,
           _worktreePath: entry.snapshot.worktreePath ?? prevSession._worktreePath,
-          _worktreeBaseBranch: entry.snapshot.gitBranch ?? prevSession._worktreeBaseBranch,
+          _gitBranch: entry.snapshot.gitBranch ?? prevSession._gitBranch,
           _worktreeRemoved: entry.snapshot.worktreeMissing,
           apiProviderId: entry.snapshot.apiProviderId ?? prevSession.apiProviderId ?? null,
           _historyHydrated: true,

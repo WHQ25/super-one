@@ -3621,7 +3621,7 @@ describe('switchSession Case A codex worktree', () => {
               sessionProvider: 'codex',
               preferredProvider: 'codex',
               _worktreePath: '/test/.worktrees/feat',
-              _worktreeBaseBranch: 'main',
+              _gitBranch: 'main',
             },
           },
         },
@@ -3654,7 +3654,7 @@ describe('switchSession Case A worktree existence check', () => {
               sessionProvider: 'claude',
               cwd: '/test/.worktrees/vanished',
               _worktreePath: '/test/.worktrees/vanished',
-              _worktreeBaseBranch: 'feature/gone',
+              _gitBranch: 'feature/gone',
               _worktreeRemoved: false,
             },
           },
@@ -3689,7 +3689,7 @@ describe('switchSession Case A worktree existence check', () => {
               ...createDefaultPerSessionState(),
               sessionProvider: 'claude',
               _worktreePath: '/test/.worktrees/alive',
-              _worktreeBaseBranch: 'feature/alive',
+              _gitBranch: 'feature/alive',
               _worktreeRemoved: false,
             },
           },
@@ -3722,7 +3722,7 @@ describe('switchSession Case A worktree existence check', () => {
               ...createDefaultPerSessionState(),
               sessionProvider: 'claude',
               _worktreePath: null,
-              _worktreeBaseBranch: null,
+              _gitBranch: null,
               _worktreeRemoved: false,
             },
           },
@@ -3756,7 +3756,7 @@ describe('worktree_missing event (main -> renderer signal)', () => {
               sessionProvider: 'claude',
               cwd: '/test/.worktrees/gone',
               _worktreePath: '/test/.worktrees/gone',
-              _worktreeBaseBranch: 'feature/x',
+              _gitBranch: 'feature/x',
               _worktreeRemoved: false,
             },
           },
@@ -3796,7 +3796,7 @@ describe('worktree_missing event (main -> renderer signal)', () => {
             [bgSid]: {
               ...createDefaultPerSessionState(),
               _worktreePath: '/background/.worktrees/gone',
-              _worktreeBaseBranch: 'feature/y',
+              _gitBranch: 'feature/y',
               _worktreeRemoved: false,
             },
           },
@@ -4025,7 +4025,7 @@ describe('createDefaultPerSessionState', () => {
     expect(state._nextTodoId).toBe(1)
     expect(state.isCompacting).toBe(false)
     expect(state.rateLimitInfo).toBeNull()
-    expect(state._worktreeBaseBranch).toBeNull()
+    expect(state._gitBranch).toBeNull()
     expect(state._worktreePath).toBeNull()
     expect(state._worktreeRemoved).toBe(false)
     expect(state.additionalDirs).toEqual([])

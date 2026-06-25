@@ -91,7 +91,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
           data.awaitingAssistantReply ? 1 : 0,
           data.sessionProvider ?? '',
           data.session?.sessionId ?? '',
-          data._worktreeBaseBranch ?? '',
+          data._gitBranch ?? '',
           data._worktreePath ?? '',
           getSessionTitle(data.messages) ?? '',
         ].join('\x01')
@@ -137,8 +137,8 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
           provider: data.sessionProvider ?? undefined,
           providerSessionId: data.session?.sessionId || undefined,
           messageCount: data.messages.length,
-          isWorktree: !!data._worktreeBaseBranch,
-          gitBranch: data._worktreeBaseBranch ?? undefined,
+          isWorktree: !!data._gitBranch,
+          gitBranch: data._gitBranch ?? undefined,
           worktreePath: data._worktreePath ?? undefined,
         })
       }

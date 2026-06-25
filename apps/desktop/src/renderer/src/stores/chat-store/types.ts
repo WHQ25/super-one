@@ -105,7 +105,7 @@ export interface PerSessionState {
   isCompacting: boolean
   compactError: string | null
   rateLimitInfo: { status: 'allowed_warning' | 'rejected'; resetsAt?: number; rateLimitType?: string; utilization?: number; errorCode?: 'credits_required'; canUserPurchaseCredits?: boolean; hasChargeableSavedPaymentMethod?: boolean } | null
-  _worktreeBaseBranch: string | null
+  _gitBranch: string | null
   _worktreePath: string | null
   _worktreeRemoved: boolean
   additionalDirs: string[]

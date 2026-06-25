@@ -212,7 +212,7 @@ describe('resetSessionForWorktreeSwitchImpl', () => {
     const sess = activeSession()
     expect(sess.cwd).toBe('/wt')
     expect(sess._worktreePath).toBe('/wt')
-    expect(sess._worktreeBaseBranch).toBe('feat')
+    expect(sess._gitBranch).toBe('feat')
     expect(mockSeedFromCurrent).toHaveBeenCalledTimes(1)
   })
 
@@ -224,7 +224,7 @@ describe('resetSessionForWorktreeSwitchImpl', () => {
 
     expect(activeSession().permissionMode).toBe('plan')
     expect(activeSession()._worktreePath).toBe('/wt2')
-    expect(activeSession()._worktreeBaseBranch).toBeNull()
+    expect(activeSession()._gitBranch).toBeNull()
   })
 
   it('inherits the codex provider from the current session instead of defaulting to claude', () => {

@@ -14,8 +14,8 @@ export function _createLocalCodexSessionId(): string {
   return `${CODEX_LOCAL_SESSION_PREFIX}${ts}_${rand}`
 }
 
-export function _getWorktreeBranch(_projectPath: string, session: PerSessionState): string | undefined {
-  return session._worktreeBaseBranch ?? undefined
+export function _getSessionGitBranch(session: PerSessionState): string | undefined {
+  return session._gitBranch ?? undefined
 }
 
 export function _getSessionWorktreePath(
@@ -54,7 +54,7 @@ export function _mergePersistedSessionState(session: PerSessionState, saved: Per
     contextTokens: Math.max(session.contextTokens, saved.contextTokens),
     sessionProvider: session.sessionProvider ?? persistedProvider,
     preferredProvider: session.sessionProvider ? session.preferredProvider : persistedProvider,
-    _worktreeBaseBranch: session._worktreeBaseBranch ?? saved.gitBranch,
+    _gitBranch: session._gitBranch ?? saved.gitBranch,
     _worktreePath: session._worktreePath ?? saved.worktreePath,
     lastAssistantMessageId: mergedMessages.findLast((message) => message.role === 'assistant')?.id ?? session.lastAssistantMessageId,
     apiProviderId: session.apiProviderId ?? saved.apiProviderId ?? null,

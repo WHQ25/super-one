@@ -443,7 +443,7 @@ function createEmptySession() {
     _nextTodoId: 1,
     isCompacting: false,
     rateLimitInfo: null,
-    _worktreeBaseBranch: null,
+    _gitBranch: null,
     _worktreePath: null,
     _worktreeRemoved: false,
     additionalDirs: [],

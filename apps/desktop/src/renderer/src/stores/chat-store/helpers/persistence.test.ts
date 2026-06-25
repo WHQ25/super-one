@@ -23,7 +23,7 @@ const {
   _ensureSessionHydrated,
   _getEffectiveSessionId,
   _getSessionCwd,
-  _getWorktreeBranch,
+  _getSessionGitBranch,
   _hydrateSessionState,
   _mergePersistedMessages,
   _mergePersistedSessionState,
@@ -52,10 +52,10 @@ describe('small pure helpers', () => {
     expect(a).not.toBe(b)
   })
 
-  it('_getWorktreeBranch returns the session base branch or undefined', () => {
-    const sess = { ...createDefaultPerSessionState(), _worktreeBaseBranch: 'main' }
-    expect(_getWorktreeBranch('/p', sess)).toBe('main')
-    expect(_getWorktreeBranch('/p', createDefaultPerSessionState())).toBeUndefined()
+  it('_getSessionGitBranch returns the session git branch or undefined', () => {
+    const sess = { ...createDefaultPerSessionState(), _gitBranch: 'main' }
+    expect(_getSessionGitBranch(sess)).toBe('main')
+    expect(_getSessionGitBranch(createDefaultPerSessionState())).toBeUndefined()
   })
 
   it('_getSessionCwd returns the worktree path when present and not removed, else projectPath', () => {

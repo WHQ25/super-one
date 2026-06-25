@@ -195,7 +195,7 @@ import {
 export {
   _getEffectiveSessionId,
   _createLocalCodexSessionId,
-  _getWorktreeBranch,
+  _getSessionGitBranch,
   _getSessionCwd,
   _mergePersistedMessages,
   _mergePersistedSessionState,
@@ -618,7 +618,7 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
       window.app.trace?.('agent.store', 'switchSession:A', {
         sessionId,
         _worktreePath: targetSession._worktreePath,
-        _worktreeBaseBranch: targetSession._worktreeBaseBranch,
+        _gitBranch: targetSession._gitBranch,
         _worktreeRemoved: targetSession._worktreeRemoved,
       })
       useAppStore.getState().setActiveWorktree(activeProject, _getSessionWorktreePath(targetSession))
@@ -639,7 +639,7 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
     let savedMessages: ChatMessage[] = []
     let savedCost = 0
     let savedTokens = 0
-    let savedWorktreeBranch: string | null = null
+    let savedGitBranch: string | null = null
     let savedWorktreePath: string | undefined
     let savedProvider: string | null = null
     let savedApiProviderId: string | null = null
@@ -650,7 +650,7 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
         savedMessages = saved.messages
         savedCost = saved.totalCostUsd
         savedTokens = saved.contextTokens
-        savedWorktreeBranch = saved.gitBranch
+        savedGitBranch = saved.gitBranch
         savedProvider = saved.provider
         savedWorktreePath = saved.worktreePath ?? undefined
         savedApiProviderId = saved.apiProviderId ?? null
@@ -678,7 +678,7 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
         ? restoredCodexUsage.contextWindow
         : null,
       codexUsageSnapshot: restoredCodexUsage,
-      _worktreeBaseBranch: savedWorktreeBranch,
+      _gitBranch: savedGitBranch,
       _worktreePath: savedWorktreePath ?? null,
       preferredProvider: restoredProvider,
       sessionProvider: restoredProvider,
@@ -710,7 +710,7 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
     window.app.trace?.('agent.store', 'switchSession:B', {
       sessionId,
       savedWorktreePath,
-      savedWorktreeBranch,
+      savedGitBranch,
     })
     if (savedWorktreePath) {
       useAppStore.getState().setActiveWorktree(activeProject, savedWorktreePath)

@@ -98,7 +98,7 @@ describe('collectBackgroundActivities', () => {
     it('returns true when app-store has an active worktree path, regardless of session state', () => {
       // Regression: WorkDirIndicator (which only looks at app-store) showed "Worktree web/ui-mock"
       // while ChatStatusBar's git branch indicator (feat/video-demos) was simultaneously visible
-      // because isInWorktree mistakenly required session._worktreeBaseBranch to also be set.
+      // because isInWorktree mistakenly required session._gitBranch to also be set.
       // Single source of truth: app-store's worktree state.
       const wt = { pendingBaseBranch: null, activePath: '/repo/.worktrees/web-ui-mock' }
       expect(computeIsInWorktree(wt)).toBe(true)

@@ -166,7 +166,7 @@ export function ChatStatusBar() {
   const [failedCheckout, setFailedCheckout] = useState<FailedCheckout | null>(null)
   const dirty = gitInfo?.dirty
 
-  const worktreeBaseBranch = useActiveSession((s) => s._worktreeBaseBranch)
+  const sessionGitBranch = useActiveSession((s) => s._gitBranch)
   const wtState = currentFolder ? worktrees[currentFolder] : undefined
   const isInWorktree = computeIsInWorktree(wtState)
 
@@ -242,7 +242,7 @@ export function ChatStatusBar() {
     dirty?.insertions,
     dirty?.deletions,
     activeProvider,
-    worktreeBaseBranch,
+    sessionGitBranch,
     wtState?.pendingBaseBranch,
     wtState?.activePath,
     isGitRepo,
@@ -416,7 +416,7 @@ export function ChatStatusBar() {
         </div>
         {currentFolder && <WorkDirIndicator compact={compactIndicators} isGitRepo={isGitRepo} />}
 
-        {gitInfo && !isInWorktree && !worktreeBaseBranch && (
+        {gitInfo && !isInWorktree && !sessionGitBranch && (
           <>
             <div className="h-3 w-px bg-border" />
             <Popover open={popoverOpen} onOpenChange={openPopover}>
@@ -510,7 +510,7 @@ export function ChatStatusBar() {
           </>
         )}
 
-        {isGitRepo === false && !isInWorktree && !worktreeBaseBranch && (
+        {isGitRepo === false && !isInWorktree && !sessionGitBranch && (
           <>
             <div className="h-3 w-px bg-border" />
             <button

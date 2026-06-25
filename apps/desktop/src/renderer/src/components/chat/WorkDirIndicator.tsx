@@ -33,7 +33,7 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
   const sdkSession = useActiveSession((s) => s.session)
   const messageCount = useActiveSession((s) => s.messages.length)
   const isOldSession = sdkSession !== null || messageCount > 0
-  const activeBaseBranch = useActiveSession((s) => s._worktreeBaseBranch)
+  const activeGitBranch = useActiveSession((s) => s._gitBranch)
   const activeSessionId = useActiveSession((s) => s._activeSessionId)
 
   const [worktreeInfo, setWorktreeInfo] = useState<WorktreeInfo | null>(null)
@@ -237,7 +237,7 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
   const titleText = (() => {
     if (isActive) {
       if (activeIsDetached) return `Worktree ${activeShortHead}`
-      return `Worktree ${activeEntry?.branch ?? activeBaseBranch ?? ''}`
+      return `Worktree ${activeEntry?.branch ?? activeGitBranch ?? ''}`
     }
     if (isPending) {
       if (pendingMode === 'detach') return `Create worktree from ${pendingBase}`
@@ -264,7 +264,7 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
       return (
         <Trans
           i18nKey="chat.worktree.triggerActiveBranch"
-          values={{ name: activeEntry?.branch ?? activeBaseBranch ?? '' }}
+          values={{ name: activeEntry?.branch ?? activeGitBranch ?? '' }}
           components={{ branch: inlineBranch }}
         />
       )
@@ -348,7 +348,7 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
                   ? t('tooltips.local')
                   : activeIsDetached
                     ? activeShortHead
-                    : (activeEntry?.branch ?? activeBaseBranch ?? '')}
+                    : (activeEntry?.branch ?? activeGitBranch ?? '')}
               </span>
               {activeDirty && (
                 <span className="text-[10px] text-muted-foreground">

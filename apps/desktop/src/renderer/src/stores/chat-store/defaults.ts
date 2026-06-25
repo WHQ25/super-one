@@ -71,7 +71,7 @@ export function createDefaultPerSessionState(): PerSessionState {
     isCompacting: false,
     compactError: null,
     rateLimitInfo: null,
-    _worktreeBaseBranch: null,
+    _gitBranch: null,
     _worktreePath: null,
     _worktreeRemoved: false,
     additionalDirs: [],

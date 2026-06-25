@@ -125,7 +125,7 @@ export async function runCodexCommand(
         steerAssistantId,
         userMessageId,
         finalContent,
-        session._worktreeBaseBranch ?? undefined,
+        session._gitBranch ?? undefined,
         session._worktreePath ?? undefined,
       )
     } catch (error) {
@@ -173,7 +173,7 @@ export async function runCodexCommand(
         codexCwd,
         userMessageId,
         finalContent,
-        session._worktreeBaseBranch ?? undefined,
+        session._gitBranch ?? undefined,
         session._worktreePath ?? undefined,
         userMessageExtras,
       )
@@ -188,7 +188,7 @@ export async function runCodexCommand(
         codexCwd,
         userMessageId,
         finalContent,
-        session._worktreeBaseBranch ?? undefined,
+        session._gitBranch ?? undefined,
         session._worktreePath ?? undefined,
         userMessageExtras,
       )
@@ -207,7 +207,7 @@ export async function runCodexCommand(
         codexCwd,
         userMessageId,
         finalContent,
-        session._worktreeBaseBranch ?? undefined,
+        session._gitBranch ?? undefined,
         session._worktreePath ?? undefined,
         userMessageExtras,
       )

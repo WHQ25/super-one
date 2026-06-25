@@ -13,6 +13,7 @@ import {
 import {
   _createLocalCodexSessionId,
   _getSessionCwd,
+  _getSessionWorktreePath,
   _hydrateSessionState,
 } from './persistence'
 import { defaultPrefsCache, sandboxModeToInfo } from './prefs-cache'
@@ -91,6 +92,12 @@ export async function focusProjectImpl(
     }
     return updates
   })
+  // Keep the renderer's worktree root in sync with the focused session. switchSession
+  // owns this for same-project hops, but a cross-project switchToSession can skip
+  // switchSession entirely (target is already the destination's active session), so
+  // focusProject must mirror activePath itself or the file tree shows the project root.
+  const focusedSession = targetSid ? get().projectSessions[projectPath]?._sessions[targetSid] : null
+  useAppStore.getState().setActiveWorktree(projectPath, _getSessionWorktreePath(focusedSession))
   if (targetSid) {
     const targetSession = targetProject?._sessions[targetSid]
     try {

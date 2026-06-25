@@ -18,11 +18,17 @@ export function _getWorktreeBranch(_projectPath: string, session: PerSessionStat
   return session._worktreeBaseBranch ?? undefined
 }
 
+export function _getSessionWorktreePath(
+  session: Pick<PerSessionState, '_worktreePath' | '_worktreeRemoved'> | null | undefined,
+): string | null {
+  return session?._worktreePath && !session._worktreeRemoved ? session._worktreePath : null
+}
+
 export function _getSessionCwd(
   projectPath: string,
   session: Pick<PerSessionState, '_worktreePath' | '_worktreeRemoved'> | null | undefined,
 ): string {
-  return session?._worktreePath && !session._worktreeRemoved ? session._worktreePath : projectPath
+  return _getSessionWorktreePath(session) ?? projectPath
 }
 
 export function _mergePersistedMessages(savedMessages: ChatMessage[], runtimeMessages: ChatMessage[]): ChatMessage[] {

@@ -14,9 +14,12 @@ import {
   parseTaskInput,
   buildToolResultMap,
   buildToolErrorMaps,
+  collectSubagentSubtree,
+  groupSubagentChildren,
   type ToolErrorMaps,
   type JsonlEntry,
 } from './subagent-utils'
+import { SubagentBlock } from './SubagentBlock'
 import { useSubagentJsonl } from './use-subagent-jsonl'
 import {
   streamdownPlugins,
@@ -47,16 +50,10 @@ function findSubagentSegment(messages: ChatMessage[], toolUseId: string): Subage
       }
     }
     if (!taskBlock) continue
-    const childBlocks: ContentBlock[] = []
+    const childBlocks = collectSubagentSubtree(msg.content, toolUseId)
     let resultBlock: (ContentBlock & { type: 'tool_result' }) | undefined
     for (const b of msg.content) {
-      if (b === taskBlock) continue
-      const parentId = 'parentToolUseId' in b ? b.parentToolUseId : null
-      if (parentId === toolUseId) {
-        childBlocks.push(b)
-      } else if (b.type === 'tool_result' && b.toolUseId === toolUseId) {
-        resultBlock = b
-      }
+      if (b.type === 'tool_result' && b.toolUseId === toolUseId) { resultBlock = b; break }
     }
     return { taskBlock, childBlocks, resultBlock }
   }
@@ -77,9 +74,10 @@ export function SubagentFullView({ view }: { view: SubagentViewState }) {
   const childBlocks = segment?.childBlocks ?? EMPTY_BLOCKS
   const toolResultMap = useMemo(() => buildToolResultMap(childBlocks), [childBlocks])
   const toolErrorMaps = useMemo(() => buildToolErrorMaps(childBlocks), [childBlocks])
+  const childItems = useMemo(() => groupSubagentChildren(childBlocks, view.toolUseId), [childBlocks, view.toolUseId])
   const syncToolCount = useMemo(
-    () => childBlocks.reduce((n, b) => (b.type === 'tool_use' ? n + 1 : n), 0),
-    [childBlocks],
+    () => childItems.reduce((n, item) => (item.kind === 'subagent' || item.block.type === 'tool_use' ? n + 1 : n), 0),
+    [childItems],
   )
 
   const isAsync = taskInput?.runInBackground ?? false
@@ -231,7 +229,19 @@ export function SubagentFullView({ view }: { view: SubagentViewState }) {
             </div>
           ) : (
             <div className="space-y-2">
-              {childBlocks.map((block, i) => renderFullViewBlock(block, i, isRunning, toolResultMap, toolErrorMaps))}
+              {childItems.map((item, i) =>
+                item.kind === 'subagent' ? (
+                  <SubagentBlock
+                    key={`sa-${item.segment.taskBlock.toolUseId}`}
+                    taskBlock={item.segment.taskBlock}
+                    childBlocks={item.segment.childBlocks}
+                    resultBlock={item.segment.resultBlock}
+                    isStreaming={isRunning}
+                  />
+                ) : (
+                  renderFullViewBlock(item.block, i, isRunning, toolResultMap, toolErrorMaps)
+                )
+              )}
             </div>
           )}
 

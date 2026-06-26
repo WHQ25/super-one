@@ -119,6 +119,20 @@ function groupContent(content: ContentBlock[], apps: MiniAppEntry[]): GroupResul
   const activeSubagents = new Map<string, RenderSegment & { kind: 'subagent' }>()
   // Active workflow collectors: workflow toolUseId → segment reference
   const activeWorkflows = new Map<string, RenderSegment & { kind: 'workflow' }>()
+  // Every Agent tool_use (any nesting depth) → its immediate parentToolUseId,
+  // used to walk a nested sub-agent's output back up to its top-level ancestor.
+  const agentToParent = new Map<string, string | null>()
+  const topAncestorSubagent = (parentId: string | null): string | null => {
+    let cur = parentId
+    const seen = new Set<string>()
+    while (cur && agentToParent.has(cur) && !seen.has(cur)) {
+      seen.add(cur)
+      const p = agentToParent.get(cur) ?? null
+      if (p == null) break
+      cur = p
+    }
+    return cur && activeSubagents.has(cur) ? cur : null
+  }
 
   const flush = () => {
     if (group.length === 0) return
@@ -136,11 +150,18 @@ function groupContent(content: ContentBlock[], apps: MiniAppEntry[]): GroupResul
   for (let i = 0; i < content.length; i++) {
     const block = content[i]
 
-    // Check if this block belongs to a subagent
-    const parentId = 'parentToolUseId' in block ? block.parentToolUseId : null
-    if (parentId && activeSubagents.has(parentId)) {
-      activeSubagents.get(parentId)!.childBlocks.push(block)
-      continue
+    // Route this block (and anything a nested sub-agent emitted, at any depth)
+    // into its top-level ancestor subagent's flat subtree. SubagentBlock then
+    // re-derives the nesting. Without this, deeper-than-one-level output leaks
+    // out as top-level blocks of the main agent.
+    const parentId = 'parentToolUseId' in block ? block.parentToolUseId ?? null : null
+    if (parentId) {
+      if (block.type === 'tool_use' && block.toolName === 'Agent') agentToParent.set(block.toolUseId, parentId)
+      const top = topAncestorSubagent(parentId)
+      if (top) {
+        activeSubagents.get(top)!.childBlocks.push(block)
+        continue
+      }
     }
 
     // Check if this is a Task tool_result (closes a subagent)
@@ -162,6 +183,7 @@ function groupContent(content: ContentBlock[], apps: MiniAppEntry[]): GroupResul
       }
       segments.push(seg)
       activeSubagents.set(block.toolUseId, seg)
+      agentToParent.set(block.toolUseId, null)
       continue
     }
 

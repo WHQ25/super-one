@@ -10,7 +10,7 @@ import { useSubagentNavigation } from './subagent-navigation-context'
 import { Streamdown } from 'streamdown'
 import type { ContentBlock } from '@superone/shared/agent-types'
 import { streamdownPlugins, streamdownRehypePlugins, streamdownControls, streamdownComponents, streamdownLinkSafety, formatTokens } from './chat-shared'
-import { parseTaskInput, buildToolResultMap, buildToolErrorMaps, computeSubagentElapsed, type ToolErrorMaps } from './subagent-utils'
+import { parseTaskInput, buildToolResultMap, buildToolErrorMaps, computeSubagentElapsed, groupSubagentChildren, type ToolErrorMaps } from './subagent-utils'
 import { useSubagentJsonl } from './use-subagent-jsonl'
 import { AgentActivity, SubagentScrollArea } from './subagent-activity'
 
@@ -107,6 +107,7 @@ export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming
 
   const toolResultMap = useMemo(() => buildToolResultMap(childBlocks), [childBlocks])
   const toolErrorMaps = useMemo(() => buildToolErrorMaps(childBlocks), [childBlocks])
+  const childItems = useMemo(() => groupSubagentChildren(childBlocks, taskBlock.toolUseId), [childBlocks, taskBlock.toolUseId])
   const rawResultText = resultBlock?.type === 'tool_result' ? resultBlock.summary : undefined
   const asyncOutputPath = useMemo(() => rawResultText?.match(/output_file:\s*(\S+)/)?.[1], [rawResultText])
   const outputFile = asyncOutputPath ?? progress?.outputFile
@@ -124,9 +125,11 @@ export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming
     : (jsonlResultText ?? (asyncOutputPath ? undefined : rawResultText) ?? taskBlock.taskResultText)
   const toolCallCount = useMemo(() => {
     let count = 0
-    for (const b of childBlocks) { if (b.type === 'tool_use') count++ }
+    for (const item of childItems) {
+      if (item.kind === 'subagent' || (item.kind === 'block' && item.block.type === 'tool_use')) count++
+    }
     return count
-  }, [childBlocks])
+  }, [childItems])
 
   const isExpandable = !showSpawningPlaceholder
   const isExpanded = expanded && isExpandable
@@ -246,12 +249,22 @@ export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming
             />
           )}
 
-          {/* Sub tool calls — no grouping, scrollable with auto-scroll, tools default collapsed */}
-          {childBlocks.length > 0 && (
+          {/* Sub tool calls + nested sub-agents — scrollable, tools default collapsed */}
+          {childItems.length > 0 && (
             <NestedToolContext.Provider value={{ defaultAutoExpand: false }}>
               <SubagentScrollArea borderClass={colors.borderL}>
-                {childBlocks.map((block, i) =>
-                  renderChildBlock(block, i, isStreaming, toolResultMap, toolErrorMaps)
+                {childItems.map((item, i) =>
+                  item.kind === 'subagent' ? (
+                    <SubagentBlock
+                      key={`sa-${item.segment.taskBlock.toolUseId}`}
+                      taskBlock={item.segment.taskBlock}
+                      childBlocks={item.segment.childBlocks}
+                      resultBlock={item.segment.resultBlock}
+                      isStreaming={isStreaming}
+                    />
+                  ) : (
+                    renderChildBlock(item.block, i, isStreaming, toolResultMap, toolErrorMaps)
+                  )
                 )}
               </SubagentScrollArea>
             </NestedToolContext.Provider>

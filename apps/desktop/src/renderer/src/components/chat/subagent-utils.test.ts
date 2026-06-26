@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ContentBlock } from '@superone/shared/agent-types'
-import { parseJsonlOutput, computeSubagentElapsed } from './subagent-utils'
+import { parseJsonlOutput, computeSubagentElapsed, groupSubagentChildren, collectSubagentSubtree, type SubagentChildItem } from './subagent-utils'
 
 function line(content: Array<{ type: string; name?: string; text?: string; input?: Record<string, unknown> }>): string {
   return JSON.stringify({ type: 'assistant', message: { content } })
@@ -74,6 +74,99 @@ describe('parseJsonlOutput', () => {
     const { entries, resultText } = parseJsonlOutput('')
     expect(entries).toEqual([])
     expect(resultText).toBeUndefined()
+  })
+})
+
+describe('groupSubagentChildren', () => {
+  const agent = (id: string, parent: string | null): ContentBlock =>
+    ({ type: 'tool_use', toolName: 'Agent', toolUseId: id, input: '{}', parentToolUseId: parent } as ContentBlock)
+  const tool = (id: string, parent: string | null): ContentBlock =>
+    ({ type: 'tool_use', toolName: 'Read', toolUseId: id, input: '{}', parentToolUseId: parent } as ContentBlock)
+  const text = (t: string, parent: string | null): ContentBlock =>
+    ({ type: 'text', text: t, parentToolUseId: parent } as ContentBlock)
+  const result = (id: string, parent: string | null): ContentBlock =>
+    ({ type: 'tool_result', toolUseId: id, summary: 'ok', parentToolUseId: parent } as ContentBlock)
+
+  const isSubagent = (i: SubagentChildItem): i is Extract<SubagentChildItem, { kind: 'subagent' }> => i.kind === 'subagent'
+
+  it('renders a single-level subagent’s direct blocks as plain blocks', () => {
+    const items = groupSubagentChildren([text('hi', 'A'), tool('r1', 'A')], 'A')
+    expect(items.map((i) => i.kind)).toEqual(['block', 'block'])
+  })
+
+  it('lifts a nested Agent call into its own segment instead of leaking its output to top level', () => {
+    // A spawned B; B emitted text + a tool. Without nesting support, B's text/tool
+    // (parentToolUseId === 'B') match no collector and leak as A's direct blocks.
+    const items = groupSubagentChildren(
+      [text('A reasoning', 'A'), agent('B', 'A'), text('B reasoning', 'B'), tool('rB', 'B'), result('B', 'A')],
+      'A',
+    )
+    expect(items).toHaveLength(2)
+    expect(items[0]).toEqual({ kind: 'block', block: text('A reasoning', 'A') })
+    const nested = items[1]
+    expect(isSubagent(nested) && nested.segment.taskBlock.toolUseId).toBe('B')
+    if (!isSubagent(nested)) throw new Error('expected nested subagent')
+    // B's own output is contained inside B's segment, never surfaced as A's blocks.
+    expect(nested.segment.childBlocks).toEqual([text('B reasoning', 'B'), tool('rB', 'B')])
+    expect(nested.segment.resultBlock).toEqual(result('B', 'A'))
+  })
+
+  it('contains a 3-level chain (A→B→C): C’s subtree stays inside B until B is re-grouped', () => {
+    const items = groupSubagentChildren(
+      [agent('B', 'A'), agent('C', 'B'), text('C reasoning', 'C'), tool('rC', 'C'), result('C', 'B'), result('B', 'A')],
+      'A',
+    )
+    expect(items).toHaveLength(1)
+    const b = items[0]
+    if (!isSubagent(b)) throw new Error('expected B segment')
+    // C and everything under it is held flat in B's childBlocks (no leak to A).
+    expect(b.segment.childBlocks).toEqual([agent('C', 'B'), text('C reasoning', 'C'), tool('rC', 'C'), result('C', 'B')])
+
+    // Recursing on B's childBlocks surfaces C as B's nested segment.
+    const inner = groupSubagentChildren(b.segment.childBlocks, 'B')
+    expect(inner).toHaveLength(1)
+    const c = inner[0]
+    if (!isSubagent(c)) throw new Error('expected C segment')
+    expect(c.segment.taskBlock.toolUseId).toBe('C')
+    expect(c.segment.childBlocks).toEqual([text('C reasoning', 'C'), tool('rC', 'C')])
+    expect(c.segment.resultBlock).toEqual(result('C', 'B'))
+  })
+
+  it('keeps two sibling nested agents separate', () => {
+    const items = groupSubagentChildren(
+      [agent('B', 'A'), text('b', 'B'), result('B', 'A'), agent('C', 'A'), text('c', 'C'), result('C', 'A')],
+      'A',
+    )
+    const subs = items.filter(isSubagent)
+    expect(subs.map((s) => s.segment.taskBlock.toolUseId)).toEqual(['B', 'C'])
+    expect(subs[0].segment.childBlocks).toEqual([text('b', 'B')])
+    expect(subs[1].segment.childBlocks).toEqual([text('c', 'C')])
+  })
+})
+
+describe('collectSubagentSubtree', () => {
+  const agent = (id: string, parent: string | null): ContentBlock =>
+    ({ type: 'tool_use', toolName: 'Agent', toolUseId: id, input: '{}', parentToolUseId: parent } as ContentBlock)
+  const tool = (id: string, parent: string | null): ContentBlock =>
+    ({ type: 'tool_use', toolName: 'Read', toolUseId: id, input: '{}', parentToolUseId: parent } as ContentBlock)
+  const result = (id: string, parent: string | null): ContentBlock =>
+    ({ type: 'tool_result', toolUseId: id, summary: 'ok', parentToolUseId: parent } as ContentBlock)
+
+  it('gathers the full subtree (all depths) and drops the root’s own task/result', () => {
+    const content: ContentBlock[] = [
+      { type: 'text', text: 'top', parentToolUseId: null } as ContentBlock,
+      agent('A', null), tool('rA', 'A'),
+      agent('B', 'A'), tool('rB', 'B'), result('B', 'A'),
+      result('A', null),
+    ]
+    const subtree = collectSubagentSubtree(content, 'A')
+    // Excludes the top-level text, A's own task block, and A's own result.
+    expect(subtree).toEqual([tool('rA', 'A'), agent('B', 'A'), tool('rB', 'B'), result('B', 'A')])
+  })
+
+  it('scopes to the requested nested root', () => {
+    const content: ContentBlock[] = [agent('A', null), agent('B', 'A'), tool('rB', 'B'), result('B', 'A')]
+    expect(collectSubagentSubtree(content, 'B')).toEqual([tool('rB', 'B')])
   })
 })
 

@@ -4,6 +4,26 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.41.13-alpha] - 2026-06-26
+
+### Added
+
+- The status-bar sub-agent panel now lists all running sub-agents, including nested ones
+- Provider presets are grouped by Coding Plan / API tier with brand icons and direct API-key links
+- GLM and MiniMax subscription usage now appears in the status bar
+
+### Fixed
+
+- Nested sub-agents now render recursively instead of leaking into the main agent's view
+- The selected option is now visually distinguished in the preview question panel
+- Worktree root now stays correct when switching sessions across projects
+- Session resume keeps the resolved working directory when the worktree path is gone
+- The background-task stop button is pinned to the left of the expand chevron
+
+### Tests
+
+- Realigned test suites with lazy analytics, card gutter, and sidebar context menu
+
 ## [0.41.12-alpha] - 2026-06-24
 
 ### Fixed

@@ -107,7 +107,7 @@ function OptionButtons({
             onClick={() => onSelect(q, opt.label)}
             className={`cursor-pointer rounded px-2 py-1 text-xs text-left whitespace-normal transition @[420px]:py-1.5 ${
               selected
-                ? 'bg-accent text-accent-foreground'
+                ? 'bg-primary text-primary-foreground'
                 : 'bg-muted text-foreground hover:bg-accent'
             }`}
           >

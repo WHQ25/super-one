@@ -30,6 +30,7 @@ import { WorkDirIndicator } from './WorkDirIndicator'
 import { parseToolInput } from './tool-display'
 import { ToolBlock } from './ToolBlock'
 import { SubagentBlock } from './SubagentBlock'
+import { collectSubagentSubtree } from './subagent-utils'
 import type { ContentBlock, GitInfo } from '@superone/shared/agent-types'
 
 interface WorktreeStateLike {
@@ -70,9 +71,9 @@ type TaskProgress = Record<string, { description: string; completed?: boolean; [
 export function collectBackgroundActivities(
   messages: Array<{ content: ContentBlock[] }>,
   taskProgress: TaskProgress,
+  isStreaming: boolean = false,
 ): { bashActivities: Extract<BackgroundActivityItem, { kind: 'bash' }>[]; agentActivities: Extract<BackgroundActivityItem, { kind: 'agent' }>[] } {
   const results = new Map<string, ContentBlock & { type: 'tool_result' }>()
-  const children = new Map<string, ContentBlock[]>()
   const bashActivities: Extract<BackgroundActivityItem, { kind: 'bash' }>[] = []
   const agentActivities: Extract<BackgroundActivityItem, { kind: 'agent' }>[] = []
 
@@ -80,12 +81,6 @@ export function collectBackgroundActivities(
     for (const block of message.content) {
       if (block.type === 'tool_result') {
         results.set(block.toolUseId, block)
-      }
-      const parentId = 'parentToolUseId' in block ? block.parentToolUseId : null
-      if (parentId) {
-        const next = children.get(parentId) ?? []
-        next.push(block)
-        children.set(parentId, next)
       }
     }
   }
@@ -118,14 +113,18 @@ export function collectBackgroundActivities(
 
       if (block.toolName === 'Agent') {
         const params = parseToolInput(block.input, block.toolName)
-        if (params.run_in_background !== true) continue
+        const isAsync = params.run_in_background === true
         const progress = taskProgress[block.toolUseId]
-        const hasTaskState = !!progress
-        const isRunning = hasTaskState ? progress.completed !== true : block.status === 'streaming'
-        if (!isRunning) continue
         const resultBlock = results.get(block.toolUseId)
-        const childBlocks = children.get(block.toolUseId) ?? []
-        const title = String(params.description ?? params.name ?? params.subagent_type ?? 'Async Agent').trim() || 'Async Agent'
+        // Async agents report completion via taskProgress; sync (foreground) agents
+        // — including nested ones — run until they get a tool_result, so they count
+        // as running for as long as the turn is still streaming.
+        const isRunning = isAsync
+          ? (progress ? progress.completed !== true : block.status === 'streaming')
+          : (!resultBlock && isStreaming)
+        if (!isRunning) continue
+        const childBlocks = collectSubagentSubtree(message.content, block.toolUseId)
+        const title = String(params.description ?? params.name ?? params.subagent_type ?? 'Agent').trim() || 'Agent'
         agentActivities.push({
           id: block.toolUseId,
           kind: 'agent',
@@ -309,8 +308,8 @@ export function ChatStatusBar() {
     && !branches.some((b) => b.toLowerCase() === normalizedTrimmed)
 
   const { bashActivities, agentActivities } = useMemo(
-    () => collectBackgroundActivities(messages, taskProgress),
-    [messages, taskProgress],
+    () => collectBackgroundActivities(messages, taskProgress, sessionStatus === 'streaming'),
+    [messages, taskProgress, sessionStatus],
   )
 
   const handleStopTask = useCallback((taskId: string) => {
@@ -334,7 +333,7 @@ export function ChatStatusBar() {
   const bashLabel = bashActivities.length > 1 ? `${bashActivities.length} Bashes` : 'Bash'
   const agentLabel = agentActivities.length > 1 ? `${agentActivities.length} Agents` : 'Agent'
   const bashPanelTitle = `Background ${bashActivities.length > 1 ? 'Bashes' : 'Bash'}`
-  const agentPanelTitle = `Background ${agentActivities.length > 1 ? 'Agents' : 'Agent'}`
+  const agentPanelTitle = `Running ${agentActivities.length > 1 ? 'Agents' : 'Agent'}`
 
   useEffect(() => {
     if (bashActivities.length === 0) setBashOpen(false)

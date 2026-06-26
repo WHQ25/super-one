@@ -124,24 +124,66 @@ describe('collectBackgroundActivities', () => {
   })
 
   describe('agent filtering', () => {
-    it('shows background agent while streaming', () => {
+    const nested = (id: string, parent: string | null, input: Record<string, unknown>, status: 'streaming' | 'complete' = 'streaming'): ContentBlock =>
+      ({ type: 'tool_use', toolName: 'Agent', toolUseId: id, input: JSON.stringify(input), status, parentToolUseId: parent } as ContentBlock)
+    const childResult = (id: string, parent: string | null): ContentBlock =>
+      ({ type: 'tool_result', toolUseId: id, summary: 'done', parentToolUseId: parent } as ContentBlock)
+
+    it('shows background (async) agent regardless of streaming', () => {
       const messages = [msg(toolUse('t1', 'Agent', { run_in_background: true, description: 'Research task' }))]
-      const { agentActivities } = collectBackgroundActivities(messages, {})
+      const { agentActivities } = collectBackgroundActivities(messages, {}, false)
       expect(agentActivities).toHaveLength(1)
       expect(agentActivities[0].title).toBe('Research task')
     })
 
-    it('hides foreground agent', () => {
+    it('shows a foreground (sync) agent while the turn is streaming', () => {
       const messages = [msg(toolUse('t1', 'Agent', { description: 'Inline agent' }))]
-      const { agentActivities } = collectBackgroundActivities(messages, {})
+      const { agentActivities } = collectBackgroundActivities(messages, {}, true)
+      expect(agentActivities).toHaveLength(1)
+      expect(agentActivities[0].title).toBe('Inline agent')
+    })
+
+    it('hides a foreground agent once the turn is no longer streaming', () => {
+      const messages = [msg(toolUse('t1', 'Agent', { description: 'Inline agent' }))]
+      const { agentActivities } = collectBackgroundActivities(messages, {}, false)
+      expect(agentActivities).toHaveLength(0)
+    })
+
+    it('hides a foreground agent that already produced a result, even while streaming', () => {
+      const messages = [msg(
+        toolUse('t1', 'Agent', { description: 'Inline agent' }, 'complete'),
+        toolResult('t1', { summary: 'done' }),
+      )]
+      const { agentActivities } = collectBackgroundActivities(messages, {}, true)
       expect(agentActivities).toHaveLength(0)
     })
 
     it('hides completed background agent', () => {
       const messages = [msg(toolUse('t1', 'Agent', { run_in_background: true }))]
       const progress = { t1: { description: 'done', completed: true } }
-      const { agentActivities } = collectBackgroundActivities(messages, progress)
+      const { agentActivities } = collectBackgroundActivities(messages, progress, true)
       expect(agentActivities).toHaveLength(0)
+    })
+
+    it('lists every running sub-agent (including nested) as its own flat row', () => {
+      const messages = [msg(
+        toolUse('A', 'Agent', { description: 'parent' }),
+        nested('B', 'A', { description: 'child' }),
+      )]
+      const { agentActivities } = collectBackgroundActivities(messages, {}, true)
+      expect(agentActivities.map((a) => a.id)).toEqual(['A', 'B'])
+      // The parent row carries its full subtree so it reads as a self-contained view.
+      expect(agentActivities[0].childBlocks).toContainEqual(nested('B', 'A', { description: 'child' }))
+    })
+
+    it('drops a nested sub-agent from the list once it finishes', () => {
+      const messages = [msg(
+        toolUse('A', 'Agent', { description: 'parent' }),
+        nested('B', 'A', { description: 'child' }, 'complete'),
+        childResult('B', 'A'),
+      )]
+      const { agentActivities } = collectBackgroundActivities(messages, {}, true)
+      expect(agentActivities.map((a) => a.id)).toEqual(['A'])
     })
   })
 })

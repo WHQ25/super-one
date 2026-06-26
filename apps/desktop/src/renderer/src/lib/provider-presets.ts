@@ -1,6 +1,7 @@
 import type { ProviderModelEnv } from '@superone/shared/agent-types'
 
 export type ProviderCategory = 'model_provider' | 'cloud_platform' | 'aggregator' | 'proxy_service' | 'custom'
+export type ProviderTier = 'coding_plan' | 'api'
 export type AgentType = 'claude' | 'codex'
 
 export interface TemplateValueConfig {
@@ -22,6 +23,8 @@ export interface QuickPreset {
   description: string
   provider_type: string
   category: ProviderCategory
+  tier: ProviderTier
+  apiKeyUrl?: string
   supported_agents: AgentType[]
   agent_configs: {
     claude?: AgentPresetConfig
@@ -32,25 +35,29 @@ export interface QuickPreset {
   endpointCandidates?: string[]
 }
 
+const XIAOMI_MODEL_ENV: ProviderModelEnv = {
+  default: { id: 'mimo-v2.5-pro', name: 'MiMo V2.5 Pro' },
+  opus: { id: 'mimo-v2.5-pro', name: 'MiMo V2.5 Pro' },
+  sonnet: { id: 'mimo-v2.5-pro', name: 'MiMo V2.5 Pro' },
+  haiku: { id: 'mimo-v2.5-pro', name: 'MiMo V2.5 Pro' },
+}
+
+const BAILIAN_MODEL_ENV: ProviderModelEnv = {
+  default: { id: 'qwen3.5-plus', name: 'Qwen 3.5 Plus' },
+  opus: { id: 'qwen3.5-plus', name: 'Qwen 3.5 Plus' },
+  sonnet: { id: 'qwen3.5-plus', name: 'Qwen 3.5 Plus' },
+  haiku: { id: 'qwen3-coder-next', name: 'Qwen 3 Coder Next' },
+}
+
 export const PRESETS: QuickPreset[] = [
-  {
-    key: 'anthropic-official',
-    name: 'Anthropic',
-    description: 'Direct access to Claude models via the official Anthropic API',
-    provider_type: 'anthropic',
-    category: 'model_provider',
-    supported_agents: ['claude'],
-    agent_configs: {
-      claude: { base_url: 'https://api.anthropic.com', extra_env: '{}' },
-    },
-    fields: ['api_key'],
-  },
   {
     key: 'glm-cn',
     name: 'GLM (CN)',
     description: '智谱 GLM 编程套餐 — 中国区，支持 Claude 协议兼容调用',
-    provider_type: 'custom',
+    provider_type: 'zhipu',
     category: 'model_provider',
+    tier: 'coding_plan',
+    apiKeyUrl: 'https://bigmodel.cn/usercenter/proj-mgmt/apikeys',
     supported_agents: ['claude'],
     agent_configs: {
       claude: {
@@ -70,8 +77,10 @@ export const PRESETS: QuickPreset[] = [
     key: 'glm-global',
     name: 'GLM (Global)',
     description: 'Zhipu GLM Code Plan — Global endpoint for international users',
-    provider_type: 'custom',
+    provider_type: 'zhipu',
     category: 'model_provider',
+    tier: 'coding_plan',
+    apiKeyUrl: 'https://z.ai/manage-apikey/apikey-list',
     supported_agents: ['claude'],
     agent_configs: {
       claude: {
@@ -91,8 +100,10 @@ export const PRESETS: QuickPreset[] = [
     key: 'kimi',
     name: 'Kimi',
     description: 'Kimi 编程套餐 — 月之暗面旗下代码智能助手',
-    provider_type: 'custom',
+    provider_type: 'kimi',
     category: 'model_provider',
+    tier: 'coding_plan',
+    apiKeyUrl: 'https://www.kimi.com/code/console',
     supported_agents: ['claude'],
     agent_configs: {
       claude: {
@@ -112,8 +123,10 @@ export const PRESETS: QuickPreset[] = [
     key: 'minimax-cn',
     name: 'MiniMax (CN)',
     description: 'MiniMax 编程套餐 — 中国区，海螺 AI 代码模型',
-    provider_type: 'custom',
+    provider_type: 'minimax',
     category: 'model_provider',
+    tier: 'coding_plan',
+    apiKeyUrl: 'https://platform.minimaxi.com/user-center/basic-information/interface-key',
     supported_agents: ['claude'],
     agent_configs: {
       claude: {
@@ -133,8 +146,10 @@ export const PRESETS: QuickPreset[] = [
     key: 'minimax-global',
     name: 'MiniMax (Global)',
     description: 'MiniMax Code Plan — Global endpoint for international users',
-    provider_type: 'custom',
+    provider_type: 'minimax',
     category: 'model_provider',
+    tier: 'coding_plan',
+    apiKeyUrl: 'https://platform.minimax.io/user-center/basic-information/interface-key',
     supported_agents: ['claude'],
     agent_configs: {
       claude: {
@@ -151,33 +166,13 @@ export const PRESETS: QuickPreset[] = [
     fields: ['api_key'],
   },
   {
-    key: 'deepseek',
-    name: 'DeepSeek',
-    description: 'DeepSeek — 深度求索，支持 Claude 协议兼容调用',
-    provider_type: 'custom',
-    category: 'model_provider',
-    supported_agents: ['claude'],
-    agent_configs: {
-      claude: {
-        base_url: 'https://api.deepseek.com/anthropic',
-        extra_env: '{"ANTHROPIC_AUTH_TOKEN":"","CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC":"1","CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK":"1","CLAUDE_CODE_EFFORT_LEVEL":"max"}',
-        model_env: {
-          default: { id: 'deepseek-v4-pro[1m]', name: 'DeepSeek V4 Pro 1M' },
-          opus: { id: 'deepseek-v4-pro[1m]', name: 'DeepSeek V4 Pro 1M' },
-          sonnet: { id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro' },
-          haiku: { id: 'deepseek-v4-flash', name: 'DeepSeek V4 Flash' },
-          subagent: { id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro' },
-        },
-      },
-    },
-    fields: ['api_key'],
-  },
-  {
     key: 'doubao-seed',
     name: 'DouBaoSeed',
-    description: '豆包 Seed — 字节跳动旗下 AI 编程模型',
-    provider_type: 'custom',
+    description: '豆包 Seed — 字节跳动旗下 AI 编程模型（火山方舟 Coding Plan）',
+    provider_type: 'doubao',
     category: 'model_provider',
+    tier: 'coding_plan',
+    apiKeyUrl: 'https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey',
     supported_agents: ['claude'],
     agent_configs: {
       claude: {
@@ -194,43 +189,60 @@ export const PRESETS: QuickPreset[] = [
     fields: ['api_key'],
   },
   {
-    key: 'xiaomi-mimo',
-    name: 'Xiaomi MiMo',
-    description: '小米 MiMo — 小米旗下 AI 编程模型',
-    provider_type: 'custom',
-    category: 'model_provider',
+    key: 'volcengine',
+    name: 'Volcengine Ark',
+    description: '火山引擎方舟 Coding Plan — 聚合豆包、GLM、DeepSeek、Kimi 等多模型',
+    provider_type: 'volcengine',
+    category: 'aggregator',
+    tier: 'coding_plan',
+    apiKeyUrl: 'https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey',
     supported_agents: ['claude'],
     agent_configs: {
       claude: {
-        base_url: 'https://api.xiaomimimo.com/anthropic',
-        extra_env: '{"ANTHROPIC_AUTH_TOKEN":""}',
+        base_url: 'https://ark.cn-beijing.volces.com/api/coding',
+        extra_env: '{"API_TIMEOUT_MS":"3000000","ANTHROPIC_AUTH_TOKEN":""}',
         model_env: {
-          default: { id: 'mimo-v2.5-pro', name: 'MiMo V2.5 Pro' },
-          opus: { id: 'mimo-v2.5-pro', name: 'MiMo V2.5 Pro' },
-          sonnet: { id: 'mimo-v2.5-pro', name: 'MiMo V2.5 Pro' },
-          haiku: { id: 'mimo-v2.5-pro', name: 'MiMo V2.5 Pro' },
+          default: { id: 'ark-code-latest', name: 'Ark Code Latest' },
+          opus: { id: 'ark-code-latest', name: 'Ark Code Latest' },
+          sonnet: { id: 'ark-code-latest', name: 'Ark Code Latest' },
+          haiku: { id: 'ark-code-latest', name: 'Ark Code Latest' },
         },
       },
     },
     fields: ['api_key'],
   },
   {
-    key: 'longcat',
-    name: 'Longcat',
-    description: 'Longcat — 长猫 AI 编程助手',
-    provider_type: 'custom',
+    key: 'xiaomi-token-plan',
+    name: 'Xiaomi MiMo (Token Plan)',
+    description: '小米 MiMo 编程套餐 — Token Plan 订阅，支持 Claude 协议',
+    provider_type: 'xiaomimimo',
     category: 'model_provider',
+    tier: 'coding_plan',
+    apiKeyUrl: 'https://platform.xiaomimimo.com/#/console/api-keys',
     supported_agents: ['claude'],
     agent_configs: {
       claude: {
-        base_url: 'https://api.longcat.chat/anthropic',
-        extra_env: '{"ANTHROPIC_AUTH_TOKEN":"","CLAUDE_CODE_MAX_OUTPUT_TOKENS":"6000","CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC":"1"}',
-        model_env: {
-          default: { id: 'LongCat-Flash-Chat', name: 'LongCat Flash Chat' },
-          opus: { id: 'LongCat-Flash-Chat', name: 'LongCat Flash Chat' },
-          sonnet: { id: 'LongCat-Flash-Chat', name: 'LongCat Flash Chat' },
-          haiku: { id: 'LongCat-Flash-Chat', name: 'LongCat Flash Chat' },
-        },
+        base_url: 'https://token-plan-cn.xiaomimimo.com/anthropic',
+        extra_env: '{"ANTHROPIC_AUTH_TOKEN":""}',
+        model_env: XIAOMI_MODEL_ENV,
+      },
+    },
+    fields: ['api_key'],
+  },
+  {
+    key: 'bailian',
+    name: 'Aliyun Bailian (Coding)',
+    description: '阿里云百炼 Coding Plan — 聚合通义千问、GLM、Kimi、MiniMax 等多模型',
+    provider_type: 'bailian',
+    category: 'aggregator',
+    tier: 'coding_plan',
+    apiKeyUrl: 'https://bailian.console.aliyun.com/?tab=model#/api-key',
+    supported_agents: ['claude'],
+    agent_configs: {
+      claude: {
+        base_url: 'https://coding.dashscope.aliyuncs.com/apps/anthropic',
+        extra_env: '{"ANTHROPIC_AUTH_TOKEN":""}',
+        model_env: BAILIAN_MODEL_ENV,
       },
     },
     fields: ['api_key'],
@@ -239,8 +251,10 @@ export const PRESETS: QuickPreset[] = [
     key: 'kat-coder',
     name: 'KAT-Coder',
     description: 'KAT-Coder — 快手旗下 AI 编程模型',
-    provider_type: 'custom',
+    provider_type: 'kwaikat',
     category: 'model_provider',
+    tier: 'coding_plan',
+    apiKeyUrl: 'https://console.streamlake.com/console/wanqing/api-key',
     supported_agents: ['claude'],
     agent_configs: {
       claude: {
@@ -260,11 +274,132 @@ export const PRESETS: QuickPreset[] = [
     },
   },
   {
+    key: 'longcat',
+    name: 'Longcat',
+    description: 'Longcat — 长猫 AI 编程助手',
+    provider_type: 'longcat',
+    category: 'model_provider',
+    tier: 'coding_plan',
+    apiKeyUrl: 'https://longcat.chat/platform/api_keys',
+    supported_agents: ['claude'],
+    agent_configs: {
+      claude: {
+        base_url: 'https://api.longcat.chat/anthropic',
+        extra_env: '{"ANTHROPIC_AUTH_TOKEN":"","CLAUDE_CODE_MAX_OUTPUT_TOKENS":"6000","CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC":"1"}',
+        model_env: {
+          default: { id: 'LongCat-Flash-Chat', name: 'LongCat Flash Chat' },
+          opus: { id: 'LongCat-Flash-Chat', name: 'LongCat Flash Chat' },
+          sonnet: { id: 'LongCat-Flash-Chat', name: 'LongCat Flash Chat' },
+          haiku: { id: 'LongCat-Flash-Chat', name: 'LongCat Flash Chat' },
+        },
+      },
+    },
+    fields: ['api_key'],
+  },
+  {
+    key: 'anthropic-official',
+    name: 'Anthropic',
+    description: 'Direct access to Claude models via the official Anthropic API',
+    provider_type: 'anthropic',
+    category: 'model_provider',
+    tier: 'api',
+    apiKeyUrl: 'https://console.anthropic.com/settings/keys',
+    supported_agents: ['claude'],
+    agent_configs: {
+      claude: { base_url: 'https://api.anthropic.com', extra_env: '{}' },
+    },
+    fields: ['api_key'],
+  },
+  {
+    key: 'deepseek',
+    name: 'DeepSeek',
+    description: 'DeepSeek — 深度求索，支持 Claude 协议兼容调用',
+    provider_type: 'deepseek',
+    category: 'model_provider',
+    tier: 'api',
+    apiKeyUrl: 'https://platform.deepseek.com/api_keys',
+    supported_agents: ['claude'],
+    agent_configs: {
+      claude: {
+        base_url: 'https://api.deepseek.com/anthropic',
+        extra_env: '{"ANTHROPIC_AUTH_TOKEN":"","CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC":"1","CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK":"1","CLAUDE_CODE_EFFORT_LEVEL":"max"}',
+        model_env: {
+          default: { id: 'deepseek-v4-pro[1m]', name: 'DeepSeek V4 Pro 1M' },
+          opus: { id: 'deepseek-v4-pro[1m]', name: 'DeepSeek V4 Pro 1M' },
+          sonnet: { id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro' },
+          haiku: { id: 'deepseek-v4-flash', name: 'DeepSeek V4 Flash' },
+          subagent: { id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro' },
+        },
+      },
+    },
+    fields: ['api_key'],
+  },
+  {
+    key: 'xiaomi-mimo',
+    name: 'Xiaomi MiMo (API)',
+    description: '小米 MiMo 标准 API — 按量计费，支持 Claude 协议',
+    provider_type: 'xiaomimimo',
+    category: 'model_provider',
+    tier: 'api',
+    apiKeyUrl: 'https://platform.xiaomimimo.com/#/console/api-keys',
+    supported_agents: ['claude'],
+    agent_configs: {
+      claude: {
+        base_url: 'https://api.xiaomimimo.com/anthropic',
+        extra_env: '{"ANTHROPIC_AUTH_TOKEN":""}',
+        model_env: XIAOMI_MODEL_ENV,
+      },
+    },
+    fields: ['api_key'],
+  },
+  {
+    key: 'bailian-api',
+    name: 'Aliyun Bailian (API)',
+    description: '阿里云百炼 标准 API — 按量计费，支持 Claude 协议',
+    provider_type: 'bailian',
+    category: 'aggregator',
+    tier: 'api',
+    apiKeyUrl: 'https://bailian.console.aliyun.com/?tab=model#/api-key',
+    supported_agents: ['claude'],
+    agent_configs: {
+      claude: {
+        base_url: 'https://dashscope.aliyuncs.com/apps/anthropic',
+        extra_env: '{"ANTHROPIC_AUTH_TOKEN":""}',
+        model_env: BAILIAN_MODEL_ENV,
+      },
+    },
+    fields: ['api_key'],
+  },
+  {
+    key: 'volcengine-api',
+    name: 'Volcengine Ark (API)',
+    description: '火山引擎方舟 标准 API — 按量计费，兼容 Anthropic 协议',
+    provider_type: 'volcengine',
+    category: 'aggregator',
+    tier: 'api',
+    apiKeyUrl: 'https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey',
+    supported_agents: ['claude'],
+    agent_configs: {
+      claude: {
+        base_url: 'https://ark.cn-beijing.volces.com/api/compatible',
+        extra_env: '{"API_TIMEOUT_MS":"3000000","ANTHROPIC_AUTH_TOKEN":""}',
+        model_env: {
+          default: { id: 'doubao-seed-2-0-code-preview-latest', name: 'Doubao Seed 2.0 Code' },
+          opus: { id: 'doubao-seed-2-0-code-preview-latest', name: 'Doubao Seed 2.0 Code' },
+          sonnet: { id: 'doubao-seed-2-0-code-preview-latest', name: 'Doubao Seed 2.0 Code' },
+          haiku: { id: 'doubao-seed-2-0-code-preview-latest', name: 'Doubao Seed 2.0 Code' },
+        },
+      },
+    },
+    fields: ['api_key'],
+  },
+  {
     key: 'bedrock',
     name: 'AWS Bedrock',
     description: 'Amazon Bedrock — run Claude on AWS infrastructure with IAM authentication',
     provider_type: 'bedrock',
     category: 'cloud_platform',
+    tier: 'api',
     supported_agents: ['claude'],
     agent_configs: {
       claude: {
@@ -285,6 +420,7 @@ export const PRESETS: QuickPreset[] = [
     description: 'Google Vertex AI — run Claude on GCP infrastructure with service account authentication',
     provider_type: 'vertex',
     category: 'cloud_platform',
+    tier: 'api',
     supported_agents: ['claude'],
     agent_configs: {
       claude: {
@@ -300,6 +436,8 @@ export const PRESETS: QuickPreset[] = [
     description: 'Unified API gateway — access Claude and 200+ models through a single key',
     provider_type: 'openrouter',
     category: 'aggregator',
+    tier: 'api',
+    apiKeyUrl: 'https://openrouter.ai/settings/keys',
     supported_agents: ['claude', 'codex'],
     agent_configs: {
       claude: {
@@ -315,53 +453,13 @@ export const PRESETS: QuickPreset[] = [
     fields: ['api_key'],
   },
   {
-    key: 'volcengine',
-    name: 'Volcengine Ark',
-    description: '火山引擎方舟平台 — 聚合豆包、GLM、DeepSeek、Kimi 等多模型',
-    provider_type: 'custom',
-    category: 'aggregator',
-    supported_agents: ['claude'],
-    agent_configs: {
-      claude: {
-        base_url: 'https://ark.cn-beijing.volces.com/api/coding',
-        extra_env: '{"API_TIMEOUT_MS":"3000000","ANTHROPIC_AUTH_TOKEN":""}',
-        model_env: {
-          default: { id: 'ark-code-latest', name: 'Ark Code Latest' },
-          opus: { id: 'ark-code-latest', name: 'Ark Code Latest' },
-          sonnet: { id: 'ark-code-latest', name: 'Ark Code Latest' },
-          haiku: { id: 'ark-code-latest', name: 'Ark Code Latest' },
-        },
-      },
-    },
-    fields: ['api_key'],
-  },
-  {
-    key: 'bailian',
-    name: 'Aliyun Bailian',
-    description: '阿里云百炼平台 — 聚合通义千问、GLM、Kimi、MiniMax 等多模型',
-    provider_type: 'custom',
-    category: 'aggregator',
-    supported_agents: ['claude'],
-    agent_configs: {
-      claude: {
-        base_url: 'https://coding.dashscope.aliyuncs.com/apps/anthropic',
-        extra_env: '{"ANTHROPIC_AUTH_TOKEN":""}',
-        model_env: {
-          default: { id: 'qwen3.5-plus', name: 'Qwen 3.5 Plus' },
-          opus: { id: 'qwen3.5-plus', name: 'Qwen 3.5 Plus' },
-          sonnet: { id: 'qwen3.5-plus', name: 'Qwen 3.5 Plus' },
-          haiku: { id: 'qwen3-coder-next', name: 'Qwen 3 Coder Next' },
-        },
-      },
-    },
-    fields: ['api_key'],
-  },
-  {
     key: 'modelscope',
     name: 'ModelScope',
     description: 'ModelScope 魔搭 — 阿里巴巴模型聚合平台',
-    provider_type: 'custom',
+    provider_type: 'modelscope',
     category: 'aggregator',
+    tier: 'api',
+    apiKeyUrl: 'https://modelscope.cn/my/myaccesstoken',
     supported_agents: ['claude'],
     agent_configs: {
       claude: {
@@ -381,8 +479,10 @@ export const PRESETS: QuickPreset[] = [
     key: 'siliconflow',
     name: 'SiliconFlow',
     description: 'SiliconFlow 硅基流动 — AI 模型聚合推理平台',
-    provider_type: 'custom',
+    provider_type: 'siliconcloud',
     category: 'aggregator',
+    tier: 'api',
+    apiKeyUrl: 'https://cloud.siliconflow.cn/account/ak',
     supported_agents: ['claude'],
     agent_configs: {
       claude: {
@@ -402,8 +502,10 @@ export const PRESETS: QuickPreset[] = [
     key: 'nvidia-nim',
     name: 'Nvidia NIM',
     description: 'Nvidia NIM — 通过 NVIDIA 推理微服务访问 AI 模型',
-    provider_type: 'custom',
+    provider_type: 'nvidia',
     category: 'aggregator',
+    tier: 'api',
+    apiKeyUrl: 'https://build.nvidia.com/settings/api-keys',
     supported_agents: ['claude'],
     agent_configs: {
       claude: {
@@ -426,6 +528,8 @@ export const PRESETS: QuickPreset[] = [
     description: 'DMXAPI — AI 模型聚合 API 服务',
     provider_type: 'custom',
     category: 'proxy_service',
+    tier: 'api',
+    apiKeyUrl: 'https://www.dmxapi.cn/token',
     supported_agents: ['claude', 'codex'],
     agent_configs: {
       claude: {
@@ -447,6 +551,8 @@ export const PRESETS: QuickPreset[] = [
     description: 'PackyCode — AI 编程 API 转发服务',
     provider_type: 'custom',
     category: 'proxy_service',
+    tier: 'api',
+    apiKeyUrl: 'https://www.packyapi.com',
     supported_agents: ['claude', 'codex'],
     agent_configs: {
       claude: {
@@ -468,6 +574,7 @@ export const PRESETS: QuickPreset[] = [
     description: 'LiteLLM proxy — route requests through a local or remote LiteLLM gateway',
     provider_type: 'custom',
     category: 'proxy_service',
+    tier: 'api',
     supported_agents: ['claude'],
     agent_configs: {
       claude: { base_url: 'http://localhost:4000', extra_env: '{}' },
@@ -480,6 +587,7 @@ export const PRESETS: QuickPreset[] = [
     description: 'Connect any API endpoint with custom base URL and credentials',
     provider_type: 'custom',
     category: 'custom',
+    tier: 'api',
     supported_agents: ['claude', 'codex'],
     agent_configs: {
       claude: { base_url: '', extra_env: '{}' },
@@ -506,6 +614,22 @@ export function getPresetsByCategory(presets: QuickPreset[]): Map<ProviderCatego
   for (const cat of CATEGORY_ORDER) {
     const items = presets.filter((p) => p.category === cat)
     if (items.length > 0) map.set(cat, items)
+  }
+  return map
+}
+
+export const TIER_LABELS: Record<ProviderTier, string> = {
+  coding_plan: 'Coding Plan',
+  api: 'API',
+}
+
+export const TIER_ORDER: ProviderTier[] = ['coding_plan', 'api']
+
+export function getPresetsByTier(presets: QuickPreset[]): Map<ProviderTier, QuickPreset[]> {
+  const map = new Map<ProviderTier, QuickPreset[]>()
+  for (const tier of TIER_ORDER) {
+    const items = presets.filter((p) => p.tier === tier)
+    if (items.length > 0) map.set(tier, items)
   }
   return map
 }

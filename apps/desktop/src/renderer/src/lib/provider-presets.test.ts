@@ -3,9 +3,11 @@ import {
   PRESETS,
   CATEGORY_ORDER,
   getPresetsByCategory,
+  TIER_ORDER,
+  getPresetsByTier,
   resolveTemplateValues,
 } from './provider-presets'
-import type { ProviderCategory } from './provider-presets'
+import type { ProviderCategory, ProviderTier } from './provider-presets'
 
 describe('resolveTemplateValues', () => {
   it('should replace template placeholders with values', () => {
@@ -51,6 +53,26 @@ describe('getPresetsByCategory', () => {
   })
 })
 
+describe('getPresetsByTier', () => {
+  it('should group presets into Coding Plan and API tiers', () => {
+    const grouped = getPresetsByTier(PRESETS)
+    expect(grouped.size).toBe(2)
+    for (const [tier, items] of grouped) {
+      expect(items.every((p) => p.tier === tier)).toBe(true)
+    }
+  })
+
+  it('should follow TIER_ORDER (coding_plan before api)', () => {
+    const grouped = getPresetsByTier(PRESETS)
+    const keys = [...grouped.keys()]
+    expect(keys).toEqual(TIER_ORDER.filter((t) => keys.includes(t)))
+  })
+
+  it('should omit tiers with no presets', () => {
+    expect(getPresetsByTier([]).size).toBe(0)
+  })
+})
+
 describe('PRESETS', () => {
   it('should all have unique keys', () => {
     const keys = PRESETS.map((p) => p.key)
@@ -60,6 +82,43 @@ describe('PRESETS', () => {
   it('should all have valid categories', () => {
     const validCategories: ProviderCategory[] = ['model_provider', 'cloud_platform', 'aggregator', 'proxy_service', 'custom']
     expect(PRESETS.every((p) => validCategories.includes(p.category))).toBe(true)
+  })
+
+  it('should all have a valid tier', () => {
+    const validTiers: ProviderTier[] = ['coding_plan', 'api']
+    expect(PRESETS.every((p) => validTiers.includes(p.tier))).toBe(true)
+  })
+
+  it('should expose Coding Plan and API variants for Xiaomi and Bailian', () => {
+    const xiaomiCoding = PRESETS.find((p) => p.key === 'xiaomi-token-plan')
+    const xiaomiApi = PRESETS.find((p) => p.key === 'xiaomi-mimo')
+    expect(xiaomiCoding?.tier).toBe('coding_plan')
+    expect(xiaomiApi?.tier).toBe('api')
+    expect(xiaomiCoding?.agent_configs.claude?.base_url).toContain('token-plan-cn.xiaomimimo.com')
+    expect(xiaomiApi?.agent_configs.claude?.base_url).toBe('https://api.xiaomimimo.com/anthropic')
+
+    const bailianCoding = PRESETS.find((p) => p.key === 'bailian')
+    const bailianApi = PRESETS.find((p) => p.key === 'bailian-api')
+    expect(bailianCoding?.tier).toBe('coding_plan')
+    expect(bailianApi?.tier).toBe('api')
+    expect(bailianCoding?.agent_configs.claude?.base_url).toBe('https://coding.dashscope.aliyuncs.com/apps/anthropic')
+    expect(bailianApi?.agent_configs.claude?.base_url).toBe('https://dashscope.aliyuncs.com/apps/anthropic')
+
+    const volcCoding = PRESETS.find((p) => p.key === 'volcengine')
+    const volcApi = PRESETS.find((p) => p.key === 'volcengine-api')
+    expect(volcCoding?.tier).toBe('coding_plan')
+    expect(volcApi?.tier).toBe('api')
+    expect(volcCoding?.agent_configs.claude?.base_url).toBe('https://ark.cn-beijing.volces.com/api/coding')
+    expect(volcApi?.agent_configs.claude?.base_url).toBe('https://ark.cn-beijing.volces.com/api/compatible')
+    expect(volcApi?.supported_agents).toEqual(['claude'])
+  })
+
+  it('should give every credential-based preset an apiKeyUrl (except self-hosted/cloud)', () => {
+    const exempt = new Set(['bedrock', 'vertex', 'litellm', 'custom-api'])
+    for (const preset of PRESETS) {
+      if (exempt.has(preset.key)) continue
+      expect(preset.apiKeyUrl, `${preset.key} missing apiKeyUrl`).toMatch(/^https:\/\//)
+    }
   })
 
   it('should have supported_agents matching agent_configs keys', () => {

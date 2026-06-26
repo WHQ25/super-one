@@ -767,6 +767,7 @@ export const zh: Messages = {
       name: '名称',
       namePlaceholder: '服务商名称',
       apiKey: 'API 密钥',
+      getApiKey: '获取 API 密钥',
       envShow: '显示环境变量',
       envHide: '隐藏环境变量',
       advancedShow: '显示高级选项',

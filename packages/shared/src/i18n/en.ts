@@ -753,6 +753,7 @@ export type Messages = {
       name: string
       namePlaceholder: string
       apiKey: string
+      getApiKey: string
       envShow: string
       envHide: string
       advancedShow: string
@@ -2049,6 +2050,7 @@ export const en: Messages = {
       name: 'Name',
       namePlaceholder: 'Provider name',
       apiKey: 'API Key',
+      getApiKey: 'Get API Key',
       envShow: 'Show environment variables',
       envHide: 'Hide environment variables',
       advancedShow: 'Show advanced options',

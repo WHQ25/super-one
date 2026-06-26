@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react'
-import { ChevronLeft, Eye, EyeOff, Loader2, Plus, RefreshCw, Trash2, X, Zap } from 'lucide-react'
+import { ChevronLeft, ExternalLink, Eye, EyeOff, Loader2, Plus, RefreshCw, Trash2, X, Zap } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@superone/ui/components/ui/button'
 import {
@@ -10,7 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@superone/ui/components/ui/dialog'
-import { PRESETS, getPresetsByCategory, resolveTemplateValues, CATEGORY_LABELS, type QuickPreset, type AgentType, type AgentPresetConfig } from '@/lib/provider-presets'
+import { PRESETS, getPresetsByTier, resolveTemplateValues, TIER_LABELS, type QuickPreset, type AgentType, type AgentPresetConfig } from '@/lib/provider-presets'
 import { parseEnvString, RESERVED_ENV_KEYS } from '@/lib/provider-env'
 import { resolvePresetKey, getPresetByKey } from '@/lib/preset-match'
 import { diffProviderAgainstPreset, type PresetSyncDiff } from '@/lib/preset-merge'
@@ -621,12 +621,12 @@ function ProviderDialogBody({
               <DialogDescription>{t('resources.providerDialog.addDescription')}</DialogDescription>
             </DialogHeader>
             <div className="max-h-80 space-y-3 overflow-y-auto py-2">
-              {Array.from(getPresetsByCategory(
+              {Array.from(getPresetsByTier(
                 agentFilter ? PRESETS.filter((p) => p.supported_agents.includes(agentFilter)) : PRESETS
-              )).map(([category, items]) => (
-                <div key={category}>
+              )).map(([tier, items]) => (
+                <div key={tier}>
                   <div className="px-3 pb-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                    {CATEGORY_LABELS[category]}
+                    {TIER_LABELS[tier]}
                   </div>
                   <div className="space-y-0.5">
                     {items.map((preset) => (
@@ -682,7 +682,19 @@ function ProviderDialogBody({
               )}
               {showFields.includes('api_key') && (
                 <label className="flex flex-col gap-1">
-                  <span className="text-xs font-medium text-muted-foreground">{t('resources.providerDialog.apiKey')}</span>
+                  <span className="flex items-center justify-between">
+                    <span className="text-xs font-medium text-muted-foreground">{t('resources.providerDialog.apiKey')}</span>
+                    {matchedPreset?.apiKeyUrl && (
+                      <button
+                        type="button"
+                        onClick={() => window.app.openExternalLink(matchedPreset.apiKeyUrl!)}
+                        className="flex items-center gap-1 text-xs text-primary opacity-80 transition-opacity hover:opacity-100"
+                      >
+                        <ExternalLink size={11} />
+                        {t('resources.providerDialog.getApiKey')}
+                      </button>
+                    )}
+                  </span>
                   <div className="relative">
                     <input
                       type={showApiKey ? 'text' : 'password'}

@@ -17,12 +17,15 @@ export const PRESET_PROVIDER_KEY: Record<string, string> = {
   'minimax-cn': 'minimax',
   'minimax-global': 'minimax',
   'volcengine': 'volcengine',
+  'volcengine-api': 'volcengine',
   'bailian': 'bailian',
+  'bailian-api': 'bailian',
   'bedrock': 'bedrock',
   'vertex': 'google',
   'deepseek': 'deepseek',
   'doubao-seed': 'doubao',
   'xiaomi-mimo': 'xiaomimimo',
+  'xiaomi-token-plan': 'xiaomimimo',
   'longcat': 'longcat',
   'kat-coder': 'kwaikat',
   'modelscope': 'modelscope',
@@ -34,8 +37,10 @@ export const PRESET_PROVIDER_KEY: Record<string, string> = {
   'custom-api': '',
 }
 
+const BRAND_PROVIDER_TYPES = new Set(Object.values(PRESET_PROVIDER_KEY).filter(Boolean))
+
 export function resolveProviderKey(provider: ApiProvider): string | null {
-  if (provider.provider_type === 'custom') return null
+  if (BRAND_PROVIDER_TYPES.has(provider.provider_type)) return provider.provider_type
   let configs: Record<string, AgentProviderConfig> = {}
   try {
     configs = JSON.parse(provider.agent_configs || '{}') as Record<string, AgentProviderConfig>

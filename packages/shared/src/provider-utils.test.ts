@@ -46,6 +46,15 @@ describe('PRESET_PROVIDER_KEY', () => {
     expect(PRESET_PROVIDER_KEY['codex-official']).toBe('openai')
   })
 
+  it('maps the coding/api split presets to the same brand', () => {
+    expect(PRESET_PROVIDER_KEY['xiaomi-token-plan']).toBe('xiaomimimo')
+    expect(PRESET_PROVIDER_KEY['xiaomi-mimo']).toBe('xiaomimimo')
+    expect(PRESET_PROVIDER_KEY['bailian-api']).toBe('bailian')
+    expect(PRESET_PROVIDER_KEY['bailian']).toBe('bailian')
+    expect(PRESET_PROVIDER_KEY['volcengine-api']).toBe('volcengine')
+    expect(PRESET_PROVIDER_KEY['volcengine']).toBe('volcengine')
+  })
+
   it('maps custom-style presets to empty string (no preset brand)', () => {
     expect(PRESET_PROVIDER_KEY['dmxapi']).toBe('')
     expect(PRESET_PROVIDER_KEY['packycode']).toBe('')
@@ -76,14 +85,20 @@ describe('resolveProviderKey', () => {
     expect(resolveProviderKey(makeProvider({ provider_type: 'vertex', name: 'Google Vertex' }))).toBe('google')
   })
 
+  it('trusts a brand provider_type even when URL/name give no hint', () => {
+    expect(resolveProviderKey(makeProvider({ provider_type: 'deepseek', name: 'anything' }))).toBe('deepseek')
+    expect(resolveProviderKey(makeProvider({ provider_type: 'zhipu', name: 'GLM whatever' }))).toBe('zhipu')
+    expect(resolveProviderKey(withClaudeConfig({ provider_type: 'kwaikat' }, { base_url: 'https://my-proxy.example.com', model_env: '', extra_env: '', api_format: '' }))).toBe('kwaikat')
+  })
+
   it('falls back to name when no URL is configured', () => {
     expect(resolveProviderKey(makeProvider({ name: 'My DeepSeek Proxy' }))).toBe('deepseek')
     expect(resolveProviderKey(makeProvider({ name: 'My Kimi Endpoint' }))).toBe('kimi')
   })
 
-  it('never guesses a brand for custom providers', () => {
-    expect(resolveProviderKey(makeProvider({ provider_type: 'custom', name: 'My DeepSeek Proxy' }))).toBeNull()
-    expect(resolveProviderKey(withClaudeConfig({ provider_type: 'custom', name: 'whatever' }, { base_url: 'https://api.deepseek.com/anthropic', model_env: '', extra_env: '', api_format: '' }))).toBeNull()
+  it('infers a brand for legacy custom providers via URL/name (covers pre-hardcode data)', () => {
+    expect(resolveProviderKey(makeProvider({ provider_type: 'custom', name: 'My DeepSeek Proxy' }))).toBe('deepseek')
+    expect(resolveProviderKey(withClaudeConfig({ provider_type: 'custom', name: 'whatever' }, { base_url: 'https://api.deepseek.com/anthropic', model_env: '', extra_env: '', api_format: '' }))).toBe('deepseek')
   })
 
   it('returns null for dmxapi/packy and unknown providers', () => {

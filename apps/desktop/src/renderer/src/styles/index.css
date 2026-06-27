@@ -98,6 +98,17 @@ body {
   box-shadow: none;
 }
 
+/* The canvas floating chat window hovers directly over the editor canvas, so
+   the global 0.72 card alpha lets the canvas content bleed through and hurts
+   readability. Inline message/tool cards stay light on purpose (they sit on an
+   already-opaque app), so deepen --card for this free-floating window only —
+   header, body and the top fade gradient all read var(--card), so one scoped
+   override re-thickens the whole panel. */
+.liquid-glass.dark .canvas-chat-panel {
+  --card: oklch(0.205 0 0 / 0.92);
+  border-color: color-mix(in oklab, var(--border) 60%, transparent);
+}
+
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: transparent; border-radius: 3px; transition: background 0.3s; }

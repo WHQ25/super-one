@@ -411,7 +411,7 @@ export const ChatPanel = memo(function ChatPanel() {
           if (isOpen) setExpansionComplete(true)
         }}
         className={cn(
-          '@container z-50 flex flex-col overflow-hidden border border-border shadow-2xl',
+          'canvas-chat-panel @container z-50 flex flex-col overflow-hidden border border-border shadow-2xl',
           isResizing && 'will-change-[width,height]',
         )}
       >

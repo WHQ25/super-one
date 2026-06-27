@@ -4,6 +4,7 @@ import { asRecord, readString, type AppServerConnection, type AppServerNotificat
 import type { NotificationInbox } from './codex-notification-dispatcher'
 import type { CodexSession } from './codex-session'
 import {
+  buildReasoningItem,
   mapThreadItemFromAppServer,
   mapUsageFromTokenUsage,
   processServerRequest,
@@ -202,7 +203,7 @@ export function startForkListener(opts: ForkListenerOptions): ForkListenerHandle
           method === 'item/reasoning/summaryPartAdded' || method === 'item/reasoning/summary_part_added'
             ? (prevText && !prevText.endsWith('\n\n') ? `${prevText}\n\n` : prevText)
             : `${prevText}${delta}`
-        upsertChild({ id: itemId, type: 'reasoning', text: nextText })
+        upsertChild(buildReasoningItem(itemId, nextText, prev))
         emitCollabUpdate('fork:reasoning/delta')
         return
       }

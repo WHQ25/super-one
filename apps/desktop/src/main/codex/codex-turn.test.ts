@@ -40,6 +40,7 @@ const {
   runCodexTurn,
   interruptCodex,
   mapThreadItemFromAppServer,
+  buildReasoningItem,
   mapApprovalRequest,
   extractSuperoneMiniAppToolName,
   waitForCodexMcpServerReady,
@@ -383,6 +384,22 @@ describe('mapApprovalRequest mcpServer/elicitation/request', () => {
       { name: 'mood', type: 'enum', label: 'Mood', required: true, enumOptions: ['happy', 'sad'] },
     ])
     expect(parsed.request.elicitationForm).toEqual(parsed.formFields)
+  })
+})
+
+describe('buildReasoningItem timing', () => {
+  it('stamps startedAt and endedAt on a fresh reasoning item', () => {
+    const item = buildReasoningItem('r1', 'thinking', undefined)
+    expect(item.startedAt).toBeTypeOf('number')
+    expect(item.endedAt).toBeTypeOf('number')
+    expect(item.endedAt).toBeGreaterThanOrEqual(item.startedAt!)
+  })
+
+  it('keeps the original startedAt and advances endedAt across updates', () => {
+    const prev = { id: 'r1', type: 'reasoning' as const, text: 'a', startedAt: 1000, endedAt: 2000 }
+    const next = buildReasoningItem('r1', 'a b', prev)
+    expect(next.startedAt).toBe(1000)
+    expect(next.endedAt).toBeGreaterThan(2000)
   })
 })
 

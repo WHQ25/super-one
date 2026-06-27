@@ -42,6 +42,7 @@ import type {
   CodexPatchApplyStatus,
   CodexPatchChangeKind,
   CodexReasoningEffort,
+  CodexReasoningItem,
   CodexReviewRequest,
   CodexRunRequest,
   CodexRunResult,
@@ -338,6 +339,16 @@ function mapMcpToolCallStatus(raw: unknown): CodexMcpToolCallStatus {
   }
 }
 
+// Reasoning duration lives on the item (main process is the single time source),
+// so it persists in message metadata and survives session switch / history reload.
+// startedAt is kept from the run's first reasoning item; endedAt advances with each
+// update, freezing at the last one ≈ reasoning end.
+export function buildReasoningItem(id: string, text: string, previous?: CodexThreadItem): CodexReasoningItem {
+  const now = Date.now()
+  const startedAt = previous?.type === 'reasoning' ? (previous.startedAt ?? now) : now
+  return { id, type: 'reasoning', text, startedAt, endedAt: now }
+}
+
 export function mapThreadItemFromAppServer(raw: unknown, previous?: CodexThreadItem): CodexThreadItem | null {
   const rec = asRecord(raw)
   if (!rec) return null
@@ -362,7 +373,7 @@ export function mapThreadItemFromAppServer(raw: unknown, previous?: CodexThreadI
         || summaryText
         || contentText
         || (previous?.type === 'reasoning' ? previous.text : '')
-      return { id, type: 'reasoning', text }
+      return buildReasoningItem(id, text, previous)
     }
 
     case 'command_execution':
@@ -510,11 +521,7 @@ export function mapThreadItemFromAppServer(raw: unknown, previous?: CodexThreadI
     case 'plan': {
       const text = readString(rec.text)
       if (!text) return null
-      return {
-        id,
-        type: 'reasoning',
-        text,
-      }
+      return buildReasoningItem(id, text, previous)
     }
 
     case 'enteredReviewMode': {
@@ -1682,7 +1689,7 @@ export async function streamTurnEvents(
           const nextText = (method === 'item/reasoning/summaryPartAdded' || method === 'item/reasoning/summary_part_added')
             ? (prevText && !prevText.endsWith('\n\n') ? `${prevText}\n\n` : prevText)
             : `${prevText}${delta}`
-          upsertChildItem(notifThreadId, { id: itemId, type: 'reasoning', text: nextText })
+          upsertChildItem(notifThreadId, buildReasoningItem(itemId, nextText, prev))
           emitCollabUpdate(collabId, `child:reasoning/delta`)
           break
         }
@@ -1843,11 +1850,7 @@ export async function streamTurnEvents(
         )
           ? (previousText && !previousText.endsWith('\n\n') ? `${previousText}\n\n` : previousText)
           : `${previousText}${delta}`
-        const updated: CodexThreadItem = {
-          id: itemId,
-          type: 'reasoning',
-          text: nextText,
-        }
+        const updated: CodexThreadItem = buildReasoningItem(itemId, nextText, previous)
         upsertItem(itemOrder, itemMap, updated)
         callbacks?.onItemDelta?.('updated', updated)
         break

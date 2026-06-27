@@ -174,6 +174,8 @@ export interface CodexReasoningItem {
   id: string
   type: 'reasoning'
   text: string
+  startedAt?: number
+  endedAt?: number
 }
 
 export interface CodexPlanItem {

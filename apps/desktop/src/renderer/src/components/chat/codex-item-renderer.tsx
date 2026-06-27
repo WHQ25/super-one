@@ -328,6 +328,8 @@ export function renderCodexItem(
         <ReasoningBlock
           key={`${item.id}-${index}`}
           text={item.text}
+          startedAt={item.startedAt}
+          endedAt={item.endedAt}
           blockDone={!isStreaming || !!nextItem}
           showContent={item.text.trim().length > 0}
         />

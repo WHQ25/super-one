@@ -288,5 +288,31 @@ describe('splitByInsightBlocks', () => {
       { type: 'insight', title: 'Insight', content: 'Body' },
     ])
   })
+
+  it('extracts a blockquoted insight block and strips the > prefix from every line', () => {
+    const text = 'Before\n> `★ Insight ─────────────────`\n> - point a\n> - point b\n> `─────────────────────────────`\nAfter'
+    const segments = splitByInsightBlocks(text)
+    expect(segments).toEqual([
+      { type: 'text', content: 'Before' },
+      { type: 'insight', title: 'Insight', content: '- point a\n- point b' },
+      { type: 'text', content: 'After' },
+    ])
+  })
+
+  it('extracts a blockquoted insight block without wrapping backticks', () => {
+    const text = '> ★ Insight ─────────────────\n> Body\n> ─────────────────────────────'
+    const segments = splitByInsightBlocks(text)
+    expect(segments).toEqual([
+      { type: 'insight', title: 'Insight', content: 'Body' },
+    ])
+  })
+
+  it('extracts an indented insight block and strips the indent', () => {
+    const text = '  `★ Insight ─────────────────`\n  Body\n  `─────────────────────────────`'
+    const segments = splitByInsightBlocks(text)
+    expect(segments).toEqual([
+      { type: 'insight', title: 'Insight', content: 'Body' },
+    ])
+  })
 })
 

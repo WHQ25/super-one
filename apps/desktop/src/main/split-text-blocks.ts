@@ -1,6 +1,17 @@
 const INSIGHT_HEADER_RE = /^(.*?)(?:#{1,6}\s+)?`?★\s+(.+?)\s+─{3,}`?\s*$/m
 const INSIGHT_FOOTER_RE = /^`?─{3,}`?\s*$/
 const INSIGHT_INLINE_FOOTER_RE = /^(?!`?─)(.+?\S)\s+`?─{3,}`?\s*$/
+const INSIGHT_BLOCK_PREFIX = /^[>\s]+$/
+
+function stripBlockPrefix(line: string, prefix: string): string {
+  if (!prefix) return line
+  if (line.startsWith(prefix)) return line.slice(prefix.length)
+  if (prefix.includes('>')) {
+    const m = line.match(/^\s*>\s?/)
+    if (m) return line.slice(m[0].length)
+  }
+  return line
+}
 
 export interface TextSegment { type: 'text' | 'insight'; text: string; title?: string; content?: string }
 export interface SplitResult { segments: TextSegment[]; remainder: string }
@@ -18,6 +29,7 @@ export function splitTextIntoBlocks(text: string, streaming = false): SplitResul
   let tableLines: string[] = []
   let insightTitle: string | null = null
   let insightLines: string[] = []
+  let insightPrefix = ''
 
   function flushCurrent() {
     const t = current.join('\n').trim()
@@ -35,19 +47,22 @@ export function splitTextIntoBlocks(text: string, streaming = false): SplitResul
 
   for (const line of lines) {
     if (insightTitle !== null) {
-      if (INSIGHT_FOOTER_RE.test(line)) {
+      const stripped = stripBlockPrefix(line, insightPrefix)
+      if (INSIGHT_FOOTER_RE.test(stripped)) {
         segments.push({ type: 'insight', text: '', title: insightTitle, content: insightLines.join('\n') })
         insightTitle = null
         insightLines = []
+        insightPrefix = ''
       } else {
-        const inlineMatch = line.match(INSIGHT_INLINE_FOOTER_RE)
+        const inlineMatch = stripped.match(INSIGHT_INLINE_FOOTER_RE)
         if (inlineMatch) {
           insightLines.push(inlineMatch[1])
           segments.push({ type: 'insight', text: '', title: insightTitle, content: insightLines.join('\n') })
           insightTitle = null
           insightLines = []
+          insightPrefix = ''
         } else {
-          insightLines.push(line)
+          insightLines.push(stripped)
         }
       }
       continue
@@ -80,7 +95,9 @@ export function splitTextIntoBlocks(text: string, streaming = false): SplitResul
     const insightMatch = line.match(INSIGHT_HEADER_RE)
     if (insightMatch) {
       if (inTable) flushTable()
-      const leading = insightMatch[1].trimEnd()
+      const rawLeading = insightMatch[1]
+      insightPrefix = INSIGHT_BLOCK_PREFIX.test(rawLeading) ? rawLeading : ''
+      const leading = insightPrefix ? '' : rawLeading.trimEnd()
       if (leading) current.push(leading)
       flushCurrent()
       insightTitle = insightMatch[2].trim()

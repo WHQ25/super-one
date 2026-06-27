@@ -100,6 +100,22 @@ describe('splitTextIntoBlocks', () => {
       expect(segments[2]).toEqual({ type: 'text', text: 'After' })
     })
 
+    it('should extract a blockquoted insight block and strip the > prefix', () => {
+      const text = 'Before\n> `★ Title ─────────────────────────────`\n> - point a\n> - point b\n> `─────────────────────────────────────────────────`\nAfter'
+      const { segments } = splitTextIntoBlocks(text, false)
+      expect(segments).toHaveLength(3)
+      expect(segments[0]).toEqual({ type: 'text', text: 'Before' })
+      expect(segments[1]).toEqual({ type: 'insight', text: '', title: 'Title', content: '- point a\n- point b' })
+      expect(segments[2]).toEqual({ type: 'text', text: 'After' })
+    })
+
+    it('should extract an indented insight block and strip the indent', () => {
+      const text = '  `★ Title ─────────────────────────────`\n  Body\n  `─────────────────────────────────────────────────`'
+      const { segments } = splitTextIntoBlocks(text, false)
+      expect(segments).toHaveLength(1)
+      expect(segments[0]).toEqual({ type: 'insight', text: '', title: 'Title', content: 'Body' })
+    })
+
     it('should extract insight when header is wrapped in a markdown heading', () => {
       const text = 'Pre.\n\n## `★ Insight ─────────────────────────────────────`\n- **a**: x\n- **b**: y\n`─────────────────────────────────────────────────`\n\nPost.'
       const { segments } = splitTextIntoBlocks(text, false)

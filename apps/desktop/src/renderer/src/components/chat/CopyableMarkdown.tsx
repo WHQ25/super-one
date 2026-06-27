@@ -137,6 +137,17 @@ const INSIGHT_HEADER_LINE = /^(.*?)(?:#{1,6}\s+)?`?★\s+(.+?)\s+─{1,}`?\s*$/
 const INSIGHT_FOOTER_LINE = /^`?─{3,}`?\s*$/
 const INSIGHT_INLINE_FOOTER_LINE = /^(?!`?─)(.+?\S)\s+`?─{3,}`?\s*$/
 const FENCE_LINE = /^`{3,}[\w-]*\s*$/
+const INSIGHT_BLOCK_PREFIX = /^[>\s]+$/
+
+function stripBlockPrefix(line: string, prefix: string): string {
+  if (!prefix) return line
+  if (line.startsWith(prefix)) return line.slice(prefix.length)
+  if (prefix.includes('>')) {
+    const m = line.match(/^\s*>\s?/)
+    if (m) return line.slice(m[0].length)
+  }
+  return line
+}
 
 type TextSegment = { type: 'text'; content: string } | { type: 'insight'; title: string; content: string }
 
@@ -160,14 +171,17 @@ export function splitByInsightBlocks(text: string): TextSegment[] {
       i++
       continue
     }
-    const leading = headerMatch[1].trimEnd()
+    const rawLeading = headerMatch[1]
+    const blockPrefix = INSIGHT_BLOCK_PREFIX.test(rawLeading) ? rawLeading : ''
+    const leading = blockPrefix ? '' : rawLeading.trimEnd()
     const title = headerMatch[2].trim()
     if (leading) textBuf.push(leading)
     let footerIdx = -1
     let inlineFooterContent: string | null = null
     for (let j = i + 1; j < lines.length; j++) {
-      if (INSIGHT_FOOTER_LINE.test(lines[j])) { footerIdx = j; inlineFooterContent = null; break }
-      const inlineMatch = lines[j].match(INSIGHT_INLINE_FOOTER_LINE)
+      const stripped = stripBlockPrefix(lines[j], blockPrefix)
+      if (INSIGHT_FOOTER_LINE.test(stripped)) { footerIdx = j; inlineFooterContent = null; break }
+      const inlineMatch = stripped.match(INSIGHT_INLINE_FOOTER_LINE)
       if (inlineMatch) { footerIdx = j; inlineFooterContent = inlineMatch[1]; break }
     }
     if (footerIdx === -1) {
@@ -184,7 +198,7 @@ export function splitByInsightBlocks(text: string): TextSegment[] {
     const stripFences = prevIsFence && nextIsFence
     if (stripFences) textBuf.pop()
     flushText()
-    const innerLines = lines.slice(i + 1, footerIdx)
+    const innerLines = lines.slice(i + 1, footerIdx).map((l) => stripBlockPrefix(l, blockPrefix))
     if (inlineFooterContent !== null) innerLines.push(inlineFooterContent)
     segments.push({
       type: 'insight',

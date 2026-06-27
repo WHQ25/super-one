@@ -1,5 +1,5 @@
 import { createElement, type ComponentProps } from 'react'
-import type { Components, LinkSafetyConfig } from 'streamdown'
+import type { Components, LinkSafetyConfig, MathPlugin } from 'streamdown'
 import { defaultRehypePlugins } from 'streamdown'
 import type { PluggableList } from 'unified'
 import { defaultSchema } from 'hast-util-sanitize'
@@ -14,7 +14,6 @@ import { MarkdownTable } from './MarkdownTable'
 
 export { codePlugin, codePluginLight }
 
-type MathPlugin = { remarkPlugin?: unknown; rehypePlugin: [unknown, Record<string, unknown>] }
 let mathPluginInstance: MathPlugin | null = null
 let mathPluginPromise: Promise<MathPlugin> | null = null
 
@@ -26,8 +25,8 @@ export function loadMathPlugin(): Promise<MathPlugin> {
       import('@streamdown/math'),
       import('katex/dist/katex.min.css'),
     ]).then(([mod]) => {
-      const plugin = mod.createMathPlugin({ singleDollarTextMath: false }) as MathPlugin
-      plugin.rehypePlugin[1].strict = false
+      const plugin = mod.createMathPlugin({ singleDollarTextMath: false })
+      ;(plugin.rehypePlugin as [unknown, Record<string, unknown>])[1].strict = false
       mathPluginInstance = plugin
       return plugin
     })

@@ -68,6 +68,21 @@ export async function signPresignedGetUrl(
   return { url: signed.url, expiresAt: Date.now() + ttl * 1000 }
 }
 
+export async function signPresignedDeleteUrl(
+  env: R2PresignEnv,
+  key: string,
+  opts: { ttlSeconds?: number } = {},
+): Promise<PresignedUrl> {
+  const ttl = opts.ttlSeconds ?? DEFAULT_TTL_SECONDS
+  const url = buildR2ObjectUrl(env, key)
+  url.searchParams.set('X-Amz-Expires', String(ttl))
+  const r2 = getR2Client(env)
+  const signed = await r2.sign(new Request(url, { method: 'DELETE' }), {
+    aws: { signQuery: true },
+  })
+  return { url: signed.url, expiresAt: Date.now() + ttl * 1000 }
+}
+
 export function isR2Configured(env: Partial<R2PresignEnv>): env is R2PresignEnv {
   return Boolean(env.R2_ACCOUNT_ID && env.R2_BUCKET_NAME && env.R2_ACCESS_KEY_ID && env.R2_SECRET_ACCESS_KEY)
 }

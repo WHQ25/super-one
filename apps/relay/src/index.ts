@@ -1,5 +1,5 @@
 import { computeHmacToken, computeRoomId, verifyTimestamp } from './auth'
-import { isR2Configured, signPresignedGetUrl, signPresignedPutUrl, type R2PresignEnv } from './r2-presign'
+import { isR2Configured, signPresignedDeleteUrl, signPresignedGetUrl, signPresignedPutUrl, type R2PresignEnv } from './r2-presign'
 
 export { RelaySession } from './relay-session'
 export { PairingSession } from './pairing-session'
@@ -19,6 +19,7 @@ export default {
     if (url.pathname === '/health') return new Response('ok')
     if (url.pathname === '/files/upload-url') return handleFileUploadUrl(request, env)
     if (url.pathname === '/files/download-url') return handleFileDownloadUrl(request, env)
+    if (url.pathname === '/files/delete-url') return handleFileDeleteUrl(request, env)
 
     return new Response('Not found', { status: 404 })
   },
@@ -149,6 +150,24 @@ async function handleFileDownloadUrl(request: Request, env: Env): Promise<Respon
   try {
     const presigned = await signPresignedGetUrl(env, keyCheck.key)
     return Response.json({ downloadUrl: presigned.url, expiresAt: presigned.expiresAt })
+  } catch (err) {
+    return new Response(`presign failed: ${(err as Error).message}`, { status: 500 })
+  }
+}
+
+async function handleFileDeleteUrl(request: Request, env: Env): Promise<Response> {
+  if (!isR2Configured(env)) {
+    return new Response('R2 not configured', { status: 503 })
+  }
+  const body = await readJsonBody(request)
+  if (!body) return new Response('Bad request', { status: 400 })
+  const auth = await authenticateFileRequest(body, ['desktop'])
+  if (!auth.ok) return new Response(auth.message, { status: auth.status })
+  const keyCheck = validateKeyForChannel(body.key, auth.roomId)
+  if (!keyCheck.ok) return new Response(keyCheck.message, { status: keyCheck.status })
+  try {
+    const presigned = await signPresignedDeleteUrl(env, keyCheck.key)
+    return Response.json({ deleteUrl: presigned.url, expiresAt: presigned.expiresAt })
   } catch (err) {
     return new Response(`presign failed: ${(err as Error).message}`, { status: 500 })
   }

@@ -2161,6 +2161,8 @@ export type RemoteCommand =
   | { type: 'remove_project_additional_dir'; requestId: string; projectPath: string; dir: string }
   | { type: 'set_session_additional_dirs'; requestId: string; projectPath: string; sessionId: string; dirs: string[] }
   | { type: 'read_desktop_file'; requestId: string; projectPath?: string; sessionId?: string; path: string; maxBytes?: number; statOnly?: boolean }
+  | { type: 'upload_file'; requestId: string; projectPath?: string; sessionId?: string; targetDir: string; name: string; mimeType: string; size: number; inlineBase64?: string }
+  | { type: 'upload_file_complete'; requestId: string }
   | { type: 'list_providers'; requestId: string }
   | { type: 'set_session_api_provider_id'; projectPath: string; sessionId: string; apiProviderId: string | null }
   | { type: 'terminal_create'; requestId: string; projectPath: string; sessionId?: string }
@@ -2187,6 +2189,22 @@ export interface ReadDesktopFileError {
   error: 'forbidden_path' | 'not_found' | 'too_large' | 'no_session' | 'no_transport' | 'upload_failed' | 'internal_error'
   message?: string
 }
+
+export type UploadFileError = {
+  ok: false
+  error: 'forbidden_path' | 'too_large' | 'no_session' | 'no_transport' | 'download_failed' | 'internal_error'
+  message?: string
+}
+
+export type UploadFileResponse =
+  | { ok: true; status: 'saved'; savedPath: string }
+  | { ok: true; status: 'need_lan_put'; uploadUrl: string; savedPath: string }
+  | { ok: true; status: 'need_r2_put'; uploadUrl: string; key: string; savedPath: string }
+  | UploadFileError
+
+export type UploadFileCompleteResponse =
+  | { ok: true; savedPath: string }
+  | UploadFileError
 
 export interface PairedDevice {
   id: string

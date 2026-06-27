@@ -67,6 +67,7 @@ export class AgentService {
   private codexGetAuthStatus?: (projectPath: string) => unknown
   private codexProviderChanged?: () => void
   private remoteControlService?: RemoteControlService
+  private mobileReceiveService?: import('../remote/mobile-receive-service').MobileReceiveService
   private deviceRegistry?: import('../remote/device-registry').DeviceRegistry
   private terminalManager?: import('../terminal/terminal-manager').TerminalManager
   private warmupManager = new WarmupManager()
@@ -85,6 +86,10 @@ export class AgentService {
 
   setRemoteControlService(svc: RemoteControlService): void {
     this.remoteControlService = svc
+  }
+
+  setMobileReceiveService(svc: import('../remote/mobile-receive-service').MobileReceiveService): void {
+    this.mobileReceiveService = svc
   }
 
   setDeviceRegistry(reg: import('../remote/device-registry').DeviceRegistry): void {
@@ -1188,6 +1193,37 @@ export class AgentService {
       }
       case 'read_desktop_file': {
         await this.handleReadDesktopFile(command, respond, source)
+        break
+      }
+      case 'upload_file': {
+        if (!respond) break
+        const svc = this.mobileReceiveService
+        if (!svc) {
+          await respond(command.requestId, { ok: false, error: 'no_transport', message: 'upload service unavailable' })
+          break
+        }
+        const res = await svc.handleUploadFile({
+          requestId: command.requestId,
+          sessionId: command.sessionId,
+          targetDir: command.targetDir,
+          name: command.name,
+          mimeType: command.mimeType,
+          size: command.size,
+          inlineBase64: command.inlineBase64,
+          transport: source?.transport ?? 'relay',
+        })
+        await respond(command.requestId, res)
+        break
+      }
+      case 'upload_file_complete': {
+        if (!respond) break
+        const svc = this.mobileReceiveService
+        if (!svc) {
+          await respond(command.requestId, { ok: false, error: 'no_transport', message: 'upload service unavailable' })
+          break
+        }
+        const res = await svc.handleUploadComplete({ requestId: command.requestId })
+        await respond(command.requestId, res)
         break
       }
       case 'list_providers': {

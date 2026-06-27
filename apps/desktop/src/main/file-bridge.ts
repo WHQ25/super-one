@@ -1,7 +1,7 @@
-import { promises as fs, statSync } from 'node:fs'
+import { promises as fs, statSync, existsSync } from 'node:fs'
 import { realpath } from 'node:fs/promises'
-import { basename, extname, isAbsolute, normalize, resolve } from 'node:path'
-import { isPathWithinAllowed, resolveRealPath } from './path-security'
+import { basename, dirname, extname, isAbsolute, join, normalize, resolve } from 'node:path'
+import { isPathAtOrWithinAllowed, isPathWithinAllowed, resolveRealPath } from './path-security'
 
 const FILE_BRIDGE_MIME: Record<string, string> = {
   '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif',
@@ -128,6 +128,69 @@ export async function authorizeAndStat(
     modifiedAt: Math.floor(stat.mtimeMs),
     name: basename(realPath),
   }
+}
+
+export interface AuthorizedWriteTarget {
+  realDir: string
+  savedPath: string
+  name: string
+}
+
+export async function authorizeWriteTarget(
+  targetDir: string,
+  fileName: string,
+  context: FileBridgeContext,
+): Promise<AuthorizedWriteTarget> {
+  if (!targetDir || typeof targetDir !== 'string' || !isAbsolute(targetDir)) {
+    throw new FileBridgeError('forbidden_path', 'targetDir must be an absolute path')
+  }
+  const safeName = basename((fileName ?? '').trim())
+  if (!safeName || safeName === '.' || safeName === '..') {
+    throw new FileBridgeError('forbidden_path', 'invalid file name')
+  }
+
+  let realDir: string
+  try {
+    realDir = await realpath(resolve(targetDir))
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      throw new FileBridgeError('forbidden_path', 'target dir does not exist')
+    }
+    throw new FileBridgeError('internal_error', `realpath failed: ${(err as Error).message}`)
+  }
+
+  let dirStat: import('node:fs').Stats
+  try {
+    dirStat = await fs.stat(realDir)
+  } catch {
+    throw new FileBridgeError('forbidden_path', 'target dir stat failed')
+  }
+  if (!dirStat.isDirectory()) {
+    throw new FileBridgeError('forbidden_path', 'target is not a directory')
+  }
+
+  const roots = canonicalizeRoots(context.allowedRoots)
+  if (roots.length === 0 || !isPathAtOrWithinAllowed(realDir, roots)) {
+    throw new FileBridgeError('forbidden_path', 'target dir not within allowed roots')
+  }
+  if (isDenied(join(realDir, safeName))) {
+    throw new FileBridgeError('forbidden_path', 'file name matches blacklist')
+  }
+
+  const savedPath = dedupeWritePath(join(realDir, safeName))
+  return { realDir, savedPath, name: basename(savedPath) }
+}
+
+function dedupeWritePath(target: string): string {
+  if (!existsSync(target)) return target
+  const dir = dirname(target)
+  const ext = extname(target)
+  const stem = basename(target, ext)
+  for (let i = 1; i < 10_000; i++) {
+    const candidate = join(dir, `${stem} (${i})${ext}`)
+    if (!existsSync(candidate)) return candidate
+  }
+  throw new FileBridgeError('internal_error', 'could not find a free filename')
 }
 
 export function statAuthorizedSync(realPath: string): { size: number; mimeType: string } | null {

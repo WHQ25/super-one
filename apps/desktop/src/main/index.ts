@@ -23,6 +23,7 @@ import { previewApp, confirmInstall, cancelInstall, uninstallApp, packApp, getIn
 import { previewMcpbBundle, installMcpbBundle, uninstallMcpbBundle, listInstalledMcpb, revealMcpbBundle } from './mcpb/mcpb-installer'
 import { initSuperoneMcpServer, registerAppTools, unregisterAppTools, unregisterAppAcrossSessions, resolveToolCall, rejectToolCall, notifyAppReady as notifyMiniAppReady, loadPreapprovedTools, updatePreapprovedTools, registerAppTemplates, unregisterAppTemplates, submitToolIntercept, cancelToolIntercept, clearSessionPendingCalls as clearSessionPendingMiniAppCalls, disposeSuperoneMcpServer, setSessionHostProvider, clearAppReadyGate, isAppStillAuthorizedInProject, addToolsChangedListener, setMobileShareToolDeps, registerMobileShareTool, unregisterMobileShareTool } from './mcp/superone-mcp-server'
 import { MobileShareService, type MobileShareTarget } from './remote/mobile-share-service'
+import { MobileReceiveService, type MobileReceiveTarget } from './remote/mobile-receive-service'
 import { MobileShareToolCoordinator } from './remote/mobile-share-tool-coordinator'
 import { startSuperoneMcpStdioBridge, stopSuperoneMcpStdioBridge } from './mcp/superone-mcp-stdio-ipc'
 import { scheduleMcpReload } from './mcp/mcp-reload-scheduler'
@@ -322,6 +323,30 @@ const mobileShareService = new MobileShareService({
   now: () => Date.now(),
 })
 setMobileShareToolDeps({ shareFile: (req) => mobileShareService.shareFile(req) })
+
+const mobileReceiveService = new MobileReceiveService({
+  resolveTarget: (sessionId): MobileReceiveTarget | null => {
+    if (!sessionId) return null
+    const session = sessionManager.getSession(sessionId)
+    if (!session) return null
+    const deviceId = session.owner.kind === 'remote'
+      ? session.owner.deviceId
+      : session.subscribers.values().next().value
+    if (!deviceId) return null
+    return {
+      deviceId,
+      projectPath: session.projectPath,
+      allowedRoots: [session.projectPath, ...session.getAdditionalDirectoriesSnapshot()],
+    }
+  },
+  signLanUploadUrl: (savedPath) => remoteControlService.signLanUploadUrl(savedPath, { ttlMs: 60_000 }),
+  computeRelayKey: (name) => remoteControlService.computeRelayUploadKey(name),
+  signRelayUploadUrl: (key) => remoteControlService.signRelayUploadUrl(key),
+  downloadAndDecryptRelayFile: (key) => remoteControlService.downloadAndDecryptRelayFile(key),
+  deleteRelayFile: (key) => remoteControlService.deleteRelayFile(key),
+  now: () => Date.now(),
+})
+agentService.setMobileReceiveService(mobileReceiveService)
 
 new MobileShareToolCoordinator(sessionManager, {
   enable: registerMobileShareTool,

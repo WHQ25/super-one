@@ -2,7 +2,8 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { AddressInfo } from 'node:net'
 import { networkInterfaces } from 'node:os'
 import { webcrypto } from 'node:crypto'
-import { createReadStream, statSync } from 'node:fs'
+import { createReadStream, createWriteStream, statSync } from 'node:fs'
+import { pipeline } from 'node:stream/promises'
 import { WebSocket, WebSocketServer } from 'ws'
 import log from './logger'
 import { trace } from './agent/event-trace'
@@ -62,6 +63,16 @@ export class LanServer {
 
     const httpServer = createServer((req, res) => {
       const path = (req.url ?? '/').split('?')[0]
+      if (req.method === 'PUT' && path.startsWith('/files/upload/')) {
+        this.handleFileUpload(req, res, path).catch((err) => {
+          log.error('[LanServer] file upload handler error:', err)
+          if (!res.headersSent) {
+            res.writeHead(500)
+            res.end('Internal server error')
+          }
+        })
+        return
+      }
       if (req.method === 'GET' && path.startsWith('/files/')) {
         this.handleFileRequest(req, res, path).catch((err) => {
           log.error('[LanServer] file request handler error:', err)
@@ -323,6 +334,11 @@ export class LanServer {
       res.end('Invalid or expired token')
       return
     }
+    if (payload.mode === 'write') {
+      res.writeHead(403)
+      res.end('Token not valid for download')
+      return
+    }
     let stat: ReturnType<typeof statSync>
     try {
       stat = statSync(payload.path)
@@ -384,6 +400,39 @@ export class LanServer {
       'Accept-Ranges': 'bytes',
     })
     createReadStream(payload.path).pipe(res)
+  }
+
+  private async handleFileUpload(req: IncomingMessage, res: ServerResponse, path: string): Promise<void> {
+    const signer = this.callbacks.getFileTokenSigner?.()
+    if (!signer) {
+      res.writeHead(503)
+      res.end('File bridge unavailable')
+      return
+    }
+    const token = decodeURIComponent(path.slice('/files/upload/'.length))
+    if (!token) {
+      res.writeHead(400)
+      res.end('Missing token')
+      return
+    }
+    const payload = await signer.verify(token)
+    if (!payload || payload.mode !== 'write') {
+      res.writeHead(403)
+      res.end('Invalid or expired token')
+      return
+    }
+    try {
+      await pipeline(req, createWriteStream(payload.path))
+    } catch (err) {
+      log.error('[LanServer] upload write failed:', err)
+      if (!res.headersSent) {
+        res.writeHead(500)
+        res.end('Write failed')
+      }
+      return
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ ok: true, savedPath: payload.path }))
   }
 
   private async sendResponse(ws: WebSocket, requestId: string, data: unknown): Promise<void> {

@@ -1,6 +1,6 @@
 import { webcrypto } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
-import { computeHmacToken, computeRoomId, encryptBytesChunked } from './remote-control-crypto'
+import { computeHmacToken, computeRoomId, decryptBytesChunked, encryptBytesChunked } from './remote-control-crypto'
 
 const encoder = new TextEncoder()
 
@@ -106,7 +106,7 @@ async function fetchUploadUrl(opts: {
   channelKeyHex: string
   key: string
   contentType: string
-  contentLength: number
+  contentLength?: number
 }): Promise<string> {
   const ts = Date.now().toString()
   const sig = await computeHmacToken(opts.channelKeyHex, 'desktop', ts)
@@ -119,7 +119,7 @@ async function fetchUploadUrl(opts: {
       ts, sig,
       key: opts.key,
       contentType: opts.contentType,
-      contentLength: opts.contentLength,
+      ...(typeof opts.contentLength === 'number' ? { contentLength: opts.contentLength } : {}),
     }),
   })
   if (!res.ok) {
@@ -163,6 +163,57 @@ async function sha256Hex(input: string): Promise<string> {
 
 async function safeText(res: Response): Promise<string> {
   try { return await res.text() } catch { return '' }
+}
+
+export async function computeRelayUploadKey(context: RelayFileUploadContext, name: string): Promise<string> {
+  const roomId = await computeRoomId(context.channelKeyHex)
+  const rand = webcrypto.getRandomValues(new Uint8Array(16))
+  const hash = Array.from(rand).map((b) => b.toString(16).padStart(2, '0')).join('')
+  void name
+  return `files/${roomId}/${hash}.bin`
+}
+
+export async function signRelayUploadUrl(context: RelayFileUploadContext, key: string): Promise<string> {
+  return fetchUploadUrl({
+    relayHttpUrl: context.relayHttpUrl,
+    channelKeyHex: context.channelKeyHex,
+    key,
+    contentType: 'application/octet-stream',
+  })
+}
+
+export async function downloadAndDecryptRelayFile(context: RelayFileUploadContext, key: string): Promise<Buffer> {
+  const { url } = await fetchDownloadUrl({
+    relayHttpUrl: context.relayHttpUrl,
+    channelKeyHex: context.channelKeyHex,
+    key,
+  })
+  const res = await fetch(url)
+  if (!res.ok) {
+    throw new RelayUploadError(`R2 GET failed: ${res.status} ${await safeText(res)}`, res.status)
+  }
+  const encrypted = new Uint8Array(await res.arrayBuffer())
+  const decrypted = await decryptBytesChunked(context.aesKey, encrypted, key, context.channelKeyHex)
+  return Buffer.from(decrypted)
+}
+
+export async function deleteRelayFile(context: RelayFileUploadContext, key: string): Promise<void> {
+  const ts = Date.now().toString()
+  const sig = await computeHmacToken(context.channelKeyHex, 'desktop', ts)
+  const res = await fetch(`${context.relayHttpUrl}/files/delete-url`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ channelKey: context.channelKeyHex, role: 'desktop', ts, sig, key }),
+  })
+  if (!res.ok) {
+    throw new RelayUploadError(`delete-url failed: ${res.status} ${await safeText(res)}`, res.status)
+  }
+  const json = (await res.json()) as { deleteUrl?: string }
+  if (!json.deleteUrl) throw new RelayUploadError('delete-url response missing deleteUrl')
+  const del = await fetch(json.deleteUrl, { method: 'DELETE' })
+  if (!del.ok && del.status !== 404) {
+    throw new RelayUploadError(`R2 DELETE failed: ${del.status} ${await safeText(del)}`, del.status)
+  }
 }
 
 export function relayWsToHttp(url: string): string {

@@ -5,14 +5,17 @@ const encoder = new TextEncoder()
 
 const TOKEN_TTL_MS = 60_000
 
+export type LanFileTokenMode = 'read' | 'write'
+
 export interface LanFileTokenPayload {
   path: string
   expiresAt: number
   nonce: string
+  mode: LanFileTokenMode
 }
 
 export interface LanFileTokenSigner {
-  sign: (path: string, opts?: { ttlMs?: number; now?: number }) => Promise<string>
+  sign: (path: string, opts?: { ttlMs?: number; now?: number; mode?: LanFileTokenMode }) => Promise<string>
   verify: (token: string, opts?: { now?: number }) => Promise<LanFileTokenPayload | null>
 }
 
@@ -50,13 +53,13 @@ export function createLanFileTokenSigner(hmacKey: webcrypto.CryptoKey): LanFileT
 async function signFileToken(
   hmacKey: webcrypto.CryptoKey,
   path: string,
-  opts: { ttlMs?: number; now?: number } = {},
+  opts: { ttlMs?: number; now?: number; mode?: LanFileTokenMode } = {},
 ): Promise<string> {
   const now = opts.now ?? Date.now()
   const expiresAt = now + (opts.ttlMs ?? TOKEN_TTL_MS)
   const nonceBytes = webcrypto.getRandomValues(new Uint8Array(8))
   const nonce = bytesToHex(nonceBytes)
-  const payload: LanFileTokenPayload = { path, expiresAt, nonce }
+  const payload: LanFileTokenPayload = { path, expiresAt, nonce, mode: opts.mode ?? 'read' }
   const encoded = encodePayloadJson(payload)
   const sig = await subtle.sign('HMAC', hmacKey, encoder.encode(encoded))
   const sigB64 = bytesToBase64Url(new Uint8Array(sig))
@@ -93,6 +96,7 @@ async function verifyFileToken(
   ) {
     return null
   }
+  payload.mode = payload.mode === 'write' ? 'write' : 'read'
   const now = opts.now ?? Date.now()
   if (payload.expiresAt < now) return null
   return payload

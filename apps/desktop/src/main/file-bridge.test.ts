@@ -2,7 +2,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync, realpathSyn
 import { tmpdir } from 'node:os'
 import { join, basename } from 'node:path'
 import { afterAll, beforeAll, describe, it, expect } from 'vitest'
-import { authorizeAndStat, FileBridgeError, inferMimeType, canonicalizeRoots } from './file-bridge'
+import { authorizeAndStat, authorizeWriteTarget, FileBridgeError, inferMimeType, canonicalizeRoots } from './file-bridge'
 
 let workspace: string
 let projectRoot: string
@@ -41,6 +41,44 @@ describe('inferMimeType', () => {
   })
   it('is case-insensitive on extension', () => {
     expect(inferMimeType('/x/y.PNG')).toBe('image/png')
+  })
+})
+
+describe('authorizeWriteTarget', () => {
+  it('resolves a savedPath inside the target dir for a fresh name', async () => {
+    const t = await authorizeWriteTarget(projectRoot, 'upload.txt', { allowedRoots: [projectRoot] })
+    expect(t.savedPath).toBe(join(realpathSync(projectRoot), 'upload.txt'))
+    expect(t.name).toBe('upload.txt')
+  })
+
+  it('dedupes the filename when a file already exists', async () => {
+    const t = await authorizeWriteTarget(projectRoot, 'image.png', { allowedRoots: [projectRoot] })
+    expect(basename(t.savedPath)).toBe('image (1).png')
+  })
+
+  it('rejects a target dir outside allowed roots', async () => {
+    await expect(authorizeWriteTarget(join(workspace, 'secret'), 'x.txt', { allowedRoots: [projectRoot] }))
+      .rejects.toBeInstanceOf(FileBridgeError)
+  })
+
+  it('strips path traversal from the file name so it cannot escape the dir', async () => {
+    const t = await authorizeWriteTarget(projectRoot, '../../evil.txt', { allowedRoots: [projectRoot] })
+    expect(t.savedPath).toBe(join(realpathSync(projectRoot), 'evil.txt'))
+  })
+
+  it('rejects blacklisted file names', async () => {
+    await expect(authorizeWriteTarget(projectRoot, '.env', { allowedRoots: [projectRoot] }))
+      .rejects.toBeInstanceOf(FileBridgeError)
+  })
+
+  it('rejects a non-existent target dir', async () => {
+    await expect(authorizeWriteTarget(join(projectRoot, 'nope'), 'x.txt', { allowedRoots: [projectRoot] }))
+      .rejects.toBeInstanceOf(FileBridgeError)
+  })
+
+  it('rejects an empty file name', async () => {
+    await expect(authorizeWriteTarget(projectRoot, '   ', { allowedRoots: [projectRoot] }))
+      .rejects.toBeInstanceOf(FileBridgeError)
   })
 })
 

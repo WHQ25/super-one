@@ -25,7 +25,7 @@ import {
 import { LanServer, listLanIpAddresses } from './lan-server'
 import { LanAdvertiser } from './lan-advertiser'
 import { createLanFileTokenSigner, deriveFileTokenKeyFromExtractable, type LanFileTokenSigner } from './lan-file-token'
-import { uploadFileToRelay, relayWsToHttp, type RelayUploadResult } from './relay-file-uploader'
+import { uploadFileToRelay, relayWsToHttp, computeRelayUploadKey, signRelayUploadUrl, downloadAndDecryptRelayFile, deleteRelayFile, type RelayUploadResult, type RelayFileUploadContext } from './relay-file-uploader'
 
 const PAIRING_TIMEOUT_MS = 3 * 60 * 1000
 const MAX_RECONNECT_DELAY_MS = 30_000
@@ -727,6 +727,41 @@ export class RemoteControlService {
     if (!port) return null
     const token = await this.fileTokenSigner.sign(realPath, opts)
     return `http://{lanHost}:${port}/files/${encodeURIComponent(token)}`
+  }
+
+  async signLanUploadUrl(savedPath: string, opts: { ttlMs?: number } = {}): Promise<string | null> {
+    if (!this.fileTokenSigner) return null
+    const port = this.lanServer?.getPort()
+    if (!port) return null
+    const token = await this.fileTokenSigner.sign(savedPath, { ...opts, mode: 'write' })
+    return `http://{lanHost}:${port}/files/upload/${encodeURIComponent(token)}`
+  }
+
+  private relayFileContext(): RelayFileUploadContext {
+    if (!this.keys || !this.relayUrl) {
+      throw new Error('Relay not connected')
+    }
+    return {
+      channelKeyHex: this.keys.channelKeyHex,
+      relayHttpUrl: relayWsToHttp(this.relayUrl),
+      aesKey: this.keys.aesKey,
+    }
+  }
+
+  async computeRelayUploadKey(name: string): Promise<string> {
+    return computeRelayUploadKey(this.relayFileContext(), name)
+  }
+
+  async signRelayUploadUrl(key: string): Promise<string> {
+    return signRelayUploadUrl(this.relayFileContext(), key)
+  }
+
+  async downloadAndDecryptRelayFile(key: string): Promise<Buffer> {
+    return downloadAndDecryptRelayFile(this.relayFileContext(), key)
+  }
+
+  async deleteRelayFile(key: string): Promise<void> {
+    return deleteRelayFile(this.relayFileContext(), key)
   }
 
   async uploadFileToRelay(

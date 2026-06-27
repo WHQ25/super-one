@@ -1,7 +1,7 @@
 vi.mock('./logger', () => ({ default: { info: vi.fn(), error: vi.fn(), warn: vi.fn() } }))
 vi.mock('./agent/event-trace', () => ({ trace: vi.fn() }))
 
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, realpathSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
@@ -149,5 +149,66 @@ describe('LanServer file route', () => {
     })
     expect(res.status).toBe(416)
     expect(res.headers.get('content-range')).toBe(`bytes */${pngBytes.length}`)
+  })
+
+  it('rejects a write-mode token on the GET download route', async () => {
+    const started = await startServer(() => signer)
+    server = started.server
+    const token = await signer.sign(pngPath, { mode: 'write' })
+    const res = await fetch(`http://127.0.0.1:${started.port}/files/${encodeURIComponent(token)}`)
+    expect(res.status).toBe(403)
+  })
+})
+
+describe('LanServer upload route', () => {
+  let server: LanServer | null = null
+
+  afterEach(async () => {
+    await server?.stop()
+    server = null
+  })
+
+  it('writes uploaded bytes to the write-token path and returns savedPath', async () => {
+    const started = await startServer(() => signer)
+    server = started.server
+    const dest = join(workspace, 'uploaded.bin')
+    const token = await signer.sign(dest, { mode: 'write' })
+    const payload = new Uint8Array(1500)
+    for (let i = 0; i < payload.length; i++) payload[i] = (i * 7) % 256
+    const res = await fetch(`http://127.0.0.1:${started.port}/files/upload/${encodeURIComponent(token)}`, {
+      method: 'PUT',
+      body: payload,
+    })
+    expect(res.status).toBe(200)
+    const json = (await res.json()) as { ok: boolean; savedPath: string }
+    expect(json.ok).toBe(true)
+    expect(json.savedPath).toBe(dest)
+    const written = readFileSync(dest)
+    expect(written.length).toBe(1500)
+    expect(written[0]).toBe(0)
+    expect(written[10]).toBe(70)
+  })
+
+  it('rejects a read-mode token on the upload route', async () => {
+    const started = await startServer(() => signer)
+    server = started.server
+    const dest = join(workspace, 'should-not-write.bin')
+    const token = await signer.sign(dest)
+    const res = await fetch(`http://127.0.0.1:${started.port}/files/upload/${encodeURIComponent(token)}`, {
+      method: 'PUT',
+      body: new Uint8Array(8),
+    })
+    expect(res.status).toBe(403)
+  })
+
+  it('returns 503 when no signer configured', async () => {
+    const started = await startServer(() => null)
+    server = started.server
+    const token = await signer.sign(join(workspace, 'x.bin'), { mode: 'write' })
+    const res = await fetch(`http://127.0.0.1:${started.port}/files/upload/${encodeURIComponent(token)}`, {
+      method: 'PUT',
+      body: new Uint8Array(8),
+    })
+    expect(res.status).toBe(503)
   })
 })

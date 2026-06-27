@@ -48,7 +48,7 @@
     "@lobehub/icons": "^5.0.1",
     "@lobehub/ui": "^5.3.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "@openai/codex": "0.142.0",
+    "@openai/codex": "0.142.3",
     "@streamdown/math": "^1.0.2",
     "@superone/shared": "workspace:*",
     "@superone/ui": "workspace:*",

@@ -22,6 +22,8 @@ import { SubagentFullView } from './SubagentFullView'
 const WorkflowFullView = lazy(() => import('./WorkflowFullView').then((m) => ({ default: m.WorkflowFullView })))
 import { WorkflowNavigationContext, type WorkflowViewState } from './workflow-navigation-context'
 import { SelectionContextMenuZone } from './SelectionContextMenu'
+import { ChatScrollIndicator } from './ChatScrollIndicator'
+import { extractTurnOutline } from './turn-outline'
 import type { CodexPlanApprovalState } from '@superone/shared/agent-types'
 import { cn } from '@superone/ui/lib/utils'
 
@@ -122,6 +124,38 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
     observer.observe(sentinel)
     return () => observer.disconnect()
   }, [hasMore, visibleMessages.length, scrollViewportRef])
+
+  const outline = useMemo(() => extractTurnOutline(visibleMessages), [visibleMessages])
+  const hasCollapsed = compactIndices.length > 0 && expandLevel < compactIndices.length
+  const expandPrevious = useCallback(() => {
+    prevScrollHeightRef.current = scrollViewportRef.current?.scrollHeight ?? 0
+    setExpandLevel((lvl) => Math.min(lvl + 1, compactIndices.length))
+  }, [compactIndices.length, scrollViewportRef])
+  const [jumpNonce, setJumpNonce] = useState(0)
+  const pendingScrollIdRef = useRef<string | null>(null)
+  const jumpToMessage = useCallback((id: string) => {
+    const targetIdx = messages.findIndex((m) => m.id === id)
+    if (targetIdx < 0) return
+    const needed = compactIndices.filter((ci) => ci > targetIdx).length
+    setExpandLevel((prev) => Math.max(prev, needed))
+    setRenderCount((prev) => Math.max(prev, messages.length - targetIdx + LOAD_MORE_COUNT))
+    pendingScrollIdRef.current = id
+    setJumpNonce((n) => n + 1)
+  }, [messages, compactIndices])
+
+  useEffect(() => {
+    const id = pendingScrollIdRef.current
+    if (!id) return
+    const viewport = scrollViewportRef.current
+    if (!viewport) return
+    const raf = requestAnimationFrame(() => {
+      const el = viewport.querySelector(`[data-message-id="${CSS.escape(id)}"]`)
+      if (!el) return
+      pendingScrollIdRef.current = null
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+    return () => cancelAnimationFrame(raf)
+  }, [jumpNonce, scrollViewportRef])
 
   const computeAutoZoom = useCallback((w: number) => w >= 672 ? 1.15 : w >= 512 ? 1.1 : 1, [])
   const [autoZoom, setAutoZoom] = useState(1)
@@ -241,7 +275,7 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
                       )
                     }
                     return (
-                      <div key={msg.id} className="chat-message-wrapper">
+                      <div key={msg.id} data-message-id={msg.id} className="chat-message-wrapper">
                         <ChatMessage message={msg} sessionStatus={sessionStatus} isLastAssistant={msg.id === lastAssistantMessageId} />
                       </div>
                     )
@@ -275,6 +309,9 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
                   )}
                 </SelectionContextMenuZone>
               </ScrollArea>
+            )}
+            {messages.length > 0 && (
+              <ChatScrollIndicator entries={outline} hasCollapsed={hasCollapsed} viewportRef={scrollViewportRef} onJump={jumpToMessage} onExpand={expandPrevious} />
             )}
             {!liquidGlass && <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-6 bg-linear-to-t from-card to-transparent" />}
             <AnimatePresence>

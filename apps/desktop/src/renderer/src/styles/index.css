@@ -201,6 +201,11 @@ body {
   max-width: 100% !important;
 }
 
+/* Hide the radix scrollbar in chat — the Turn ChatScrollIndicator takes over. */
+.chat-scroll-area [data-slot="scroll-area-scrollbar"] {
+  display: none;
+}
+
 /* --- TipTap editor --- */
 .tiptap p.is-editor-empty:first-child::before {
   content: attr(data-placeholder);

@@ -67,6 +67,32 @@ describe('buildClaudeOptions permissionMode', () => {
   })
 })
 
+describe('session_rename subagent guard (PreToolUse hook)', () => {
+  const getHook = () => {
+    const options = buildClaudeOptions({ projectPath: '/repo', cwd: '/repo', permissionMode: 'auto' })
+    const hook = options.hooks?.PreToolUse?.[0]?.hooks?.[0]
+    if (!hook) throw new Error('PreToolUse hook not wired')
+    return hook
+  }
+  const run = (input: Record<string, unknown>) =>
+    getHook()({ session_id: 's', transcript_path: '/t', cwd: '/repo', hook_event_name: 'PreToolUse', tool_input: {}, tool_use_id: 'toolu_1', ...input } as Parameters<ReturnType<typeof getHook>>[0], 'toolu_1', { signal: new AbortController().signal })
+
+  it('denies session_rename when the call originates from a subagent (agent_id present)', async () => {
+    const out = await run({ tool_name: 'mcp__superone__session_rename', agent_id: 'agent-task-1' })
+    expect((out as { hookSpecificOutput?: { permissionDecision?: string } }).hookSpecificOutput?.permissionDecision).toBe('deny')
+  })
+
+  it('allows session_rename from the main thread (no agent_id)', async () => {
+    const out = await run({ tool_name: 'mcp__superone__session_rename' })
+    expect((out as { hookSpecificOutput?: unknown }).hookSpecificOutput).toBeUndefined()
+  })
+
+  it('ignores other tools called from a subagent', async () => {
+    const out = await run({ tool_name: 'Bash', agent_id: 'agent-task-1' })
+    expect((out as { hookSpecificOutput?: unknown }).hookSpecificOutput).toBeUndefined()
+  })
+})
+
 describe('buildUserMessage', () => {
   it('builds plain text content when no images are provided', () => {
     const request: SendMessageRequest = {

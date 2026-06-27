@@ -1,4 +1,4 @@
-import { query, type CanUseTool, type Options, type Query, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
+import { query, type CanUseTool, type HookCallback, type Options, type Query, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import type { AgentEvent, MessageMetadata, PermissionMode, QuestionPreviewFormat, SandboxInfo, SendMessageRequest } from '@superone/shared/agent-types'
 import type { MessageBridge } from './message-bridge'
 import log from '../logger'
@@ -33,6 +33,24 @@ export interface SessionQueryOptions {
   warmupManager?: WarmupManager
   enabledSkills?: string[]
   askUserQuestionPreviewFormat?: QuestionPreviewFormat
+}
+
+export const denySubagentSessionRename: HookCallback = async (input) => {
+  if (
+    input.hook_event_name === 'PreToolUse' &&
+    input.tool_name === 'mcp__superone__session_rename' &&
+    input.agent_id
+  ) {
+    return {
+      hookSpecificOutput: {
+        hookEventName: 'PreToolUse',
+        permissionDecision: 'deny',
+        permissionDecisionReason:
+          'session_rename is main-thread only. You are running inside a subagent (Task/Agent worker) and must not rename the user-facing session title.',
+      },
+    }
+  }
+  return {}
 }
 
 export function buildClaudeOptions(opts: SessionQueryOptions): Options {
@@ -72,6 +90,7 @@ export function buildClaudeOptions(opts: SessionQueryOptions): Options {
       },
     }),
     systemPrompt: { type: 'preset', preset: 'claude_code', append: SUPERONE_SYSTEM_PROMPT_APPEND },
+    hooks: { PreToolUse: [{ hooks: [denySubagentSessionRename] }] },
     mcpServers: { 'superone': createSuperoneMcpServer(opts.superoneSessionId) },
     ...(opts.enabledSkills ? { skills: opts.enabledSkills } : {}),
     ...(opts.askUserQuestionPreviewFormat

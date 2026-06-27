@@ -54,6 +54,16 @@ export function parseMcpToolName(toolName: string): { serverName: string; mcpToo
   return { serverName: match[1], mcpToolName: match[2] }
 }
 
+/** Tools whose chat block is suppressed entirely (meta-operations the model runs
+ * mid-turn, not conversational content). Shared by ToolBlock (renders null) and
+ * groupContent (emits no segment, so surrounding thinking blocks stay adjacent). */
+const HIDDEN_TASK_TOOLS = new Set(['TodoWrite', 'TaskCreate', 'TaskUpdate'])
+export function isHiddenToolBlock(toolName: string): boolean {
+  if (HIDDEN_TASK_TOOLS.has(toolName)) return true
+  const mcp = parseMcpToolName(toolName)
+  return mcp?.serverName === 'superone' && mcp.mcpToolName === 'session_rename'
+}
+
 export function getToolDisplay(toolName: string, input: Record<string, unknown>, cwd?: string, homedir?: string): ToolDisplay {
   const sp = (p: string): string => shortenPath(p, cwd, homedir)
 

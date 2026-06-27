@@ -565,8 +565,6 @@ export type Messages = {
       readWidgetGuidelines: string
       readingMiniAppGuide: string
       readMiniAppGuide: string
-      renamingSession: string
-      renamedSession: string
       settingUpMiniApp: string
       setUpMiniApp: string
       setUpMiniAppFailed: string
@@ -1862,8 +1860,6 @@ export const en: Messages = {
       readWidgetGuidelines: 'Read widget guidelines',
       readingMiniAppGuide: 'Reading mini-app guide',
       readMiniAppGuide: 'Read mini-app guide',
-      renamingSession: 'Renaming session',
-      renamedSession: 'Session renamed',
       settingUpMiniApp: 'Setting up mini-app',
       setUpMiniApp: 'Set up mini-app',
       setUpMiniAppFailed: 'Mini-app setup failed',

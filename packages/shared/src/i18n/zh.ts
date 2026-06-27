@@ -579,8 +579,6 @@ export const zh: Messages = {
       readWidgetGuidelines: '已读取 Widget 指南',
       readingMiniAppGuide: '正在读取小程序指南',
       readMiniAppGuide: '已读取小程序指南',
-      renamingSession: '正在重命名',
-      renamedSession: '会话重命名',
       settingUpMiniApp: '正在初始化小程序',
       setUpMiniApp: '已初始化小程序',
       setUpMiniAppFailed: '小程序初始化失败',

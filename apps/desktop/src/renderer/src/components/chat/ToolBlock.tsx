@@ -12,7 +12,7 @@ import { useSourceControlStore } from '@/stores/source-control'
 import { ToolIcon } from './ToolIcon'
 import { DraggableFileIcon } from './DraggableFileIcon'
 import { HighlightedCodeBlock } from './CodeBlock'
-import { getToolDisplay, getToolVerb, parseToolInput, parseMcpToolName, formatReadMeta, type ToolIcon as ToolIconType } from './tool-display'
+import { getToolDisplay, getToolVerb, parseToolInput, parseMcpToolName, isHiddenToolBlock, formatReadMeta, type ToolIcon as ToolIconType } from './tool-display'
 import { codePlugin } from './chat-shared'
 import { useStallLevel, getStallColor } from '@/lib/stall-utils'
 import { AnsiText } from '@/lib/ansi'
@@ -316,7 +316,7 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
     return <DebugToolBlock toolName={toolName} input={input} result={result} status={status} elapsedSeconds={elapsedSeconds} />
   }
 
-  if (toolName === 'TodoWrite' || toolName === 'TaskCreate' || toolName === 'TaskUpdate') return null
+  if (isHiddenToolBlock(toolName)) return null
 
   const isQuestionDismissed = toolName === 'AskUserQuestion' && !!result && (isDenied || result.includes('dismissed'))
 
@@ -383,7 +383,6 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
   if (mcpInfo?.serverName === SUPERONE_SERVER) {
     const superoneToolDisplay: Record<string, { icon: ToolIconType; streaming: string; done: string; summaryField?: string }> = {
       miniapp_dev_read_guide: { icon: 'book-open', streaming: t('chat.toolBlock.readingMiniAppGuide'), done: t('chat.toolBlock.readMiniAppGuide'), summaryField: 'topic' },
-      session_rename: { icon: 'pencil', streaming: t('chat.toolBlock.renamingSession'), done: t('chat.toolBlock.renamedSession'), summaryField: 'title' },
     }
     if (mcpInfo.mcpToolName === 'miniapp_dev_pack') {
       const appDir = String(params.appDir ?? '')

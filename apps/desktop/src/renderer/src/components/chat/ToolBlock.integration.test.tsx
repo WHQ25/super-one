@@ -79,6 +79,7 @@ vi.mock('./tool-display', () => ({
   parseToolInput: (input: string) => JSON.parse(input),
   extractPartialToolInput: () => ({}),
   parseMcpToolName: () => null,
+  isHiddenToolBlock: (name: string) => ['TodoWrite', 'TaskCreate', 'TaskUpdate'].includes(name),
   formatReadMeta: () => '',
 }))
 

@@ -169,6 +169,41 @@ describe('removeRecentFolder', () => {
     expect(useAppStore.getState().currentFolder).toBe('/active')
     expect(useAppStore.getState().view).toBe('main')
   })
+
+  it('skips a stale folder and selects the next openable one when deleting the active project', async () => {
+    const remaining = [{ name: 'stale', path: '/stale' }, { name: 'good', path: '/good' }]
+    mockWindowApp.removeRecentFolder.mockResolvedValue(remaining)
+    mockWindowApp.getRecentFolders.mockResolvedValue(remaining)
+    mockWindowApp.openFolder.mockImplementation(async (p: string) => p !== '/stale')
+
+    resetStore({
+      view: 'main',
+      recentFolders: [{ name: 'active', path: '/active' }, ...remaining],
+    })
+    await useChatStore.getState().focusProject('/active')
+
+    await useAppStore.getState().removeRecentFolder('/active')
+
+    expect(useAppStore.getState().currentFolder).toBe('/good')
+    expect(useAppStore.getState().view).toBe('main')
+  })
+
+  it('drops to startup when every remaining folder fails to open', async () => {
+    const remaining = [{ name: 'stale', path: '/stale' }]
+    mockWindowApp.removeRecentFolder.mockResolvedValue(remaining)
+    mockWindowApp.openFolder.mockResolvedValue(false)
+
+    resetStore({
+      view: 'main',
+      recentFolders: [{ name: 'active', path: '/active' }, ...remaining],
+    })
+    await useChatStore.getState().focusProject('/active')
+
+    await useAppStore.getState().removeRecentFolder('/active')
+
+    expect(useAppStore.getState().currentFolder).toBeNull()
+    expect(useAppStore.getState().view).toBe('startup')
+  })
 })
 
 describe('continueToMain', () => {
@@ -239,6 +274,24 @@ describe('currentFolder subscription', () => {
     await vi.dynamicImportSettled()
 
     expect(mockSourceControlReset).not.toHaveBeenCalled()
+  })
+})
+
+describe('startProjectMirror initial sync', () => {
+  it('seeds currentFolder from activeProject that is already set when the mirror starts', async () => {
+    // subscribe() never replays the current value, so a mirror started after activeProject is
+    // already set (HMR store re-create, late wire-up) must sync it on start or currentFolder
+    // stays null — the status-bar indicators and ChatSuggestions then read as "no project".
+    vi.resetModules()
+    const freshChat = await import('./chat')
+    freshChat.useChatStore.setState(() => ({ activeProject: '/preset' }))
+
+    const freshApp = await import('./app')
+    expect(freshApp.useAppStore.getState().currentFolder).toBeNull()
+
+    freshApp.startProjectMirror(freshChat.useChatStore)
+
+    expect(freshApp.useAppStore.getState().currentFolder).toBe('/preset')
   })
 })
 

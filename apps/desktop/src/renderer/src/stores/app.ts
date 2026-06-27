@@ -303,11 +303,18 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
     })
     if (wasActive) {
-      if (updated.length > 0) {
-        await applyProjectSelection(updated[0].path, set)
-      } else {
-        set({ view: 'startup' })
+      // Try each remaining folder in turn — a stale entry (deleted/renamed dir) fails to open,
+      // so falling back to only updated[0] would leave activeProject null on a 'main' view and
+      // blank out the status bar. Mirror continueToMain's loop: select the first that opens,
+      // otherwise drop to startup.
+      let opened = false
+      for (const folder of updated) {
+        if (await applyProjectSelection(folder.path, set)) {
+          opened = true
+          break
+        }
       }
+      if (!opened) set({ view: 'startup' })
     }
   },
 
@@ -738,8 +745,11 @@ let _projectMirrorStarted = false
 export function startProjectMirror(chatStore: ChatStoreMirror): void {
   if (_projectMirrorStarted) return
   _projectMirrorStarted = true
-  let prevActiveProject = chatStore.getState().activeProject
-  chatStore.subscribe(() => {
+  // Seed with a value that can never equal activeProject so the first sync always runs —
+  // subscribe() never replays the current value, so if activeProject is already set when the
+  // mirror starts (HMR store re-create, late wire-up), currentFolder would stay stale otherwise.
+  let prevActiveProject: string | null | undefined = undefined
+  const sync = () => {
     const projectPath = chatStore.getState().activeProject
     if (projectPath === prevActiveProject) return
     prevActiveProject = projectPath
@@ -757,5 +767,7 @@ export function startProjectMirror(chatStore: ChatStoreMirror): void {
         }
       })
       .catch(() => {})
-  })
+  }
+  sync()
+  chatStore.subscribe(sync)
 }

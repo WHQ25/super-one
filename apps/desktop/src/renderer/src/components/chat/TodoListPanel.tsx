@@ -34,11 +34,13 @@ export function TodoListPanel({
   const activeRef = useRef<HTMLDivElement>(null)
   const [openRows, setOpenRows] = useState<Set<string>>(new Set())
 
+  const statusSignature = items.map((item) => `${item.id}:${item.status}`).join('|')
+
   useEffect(() => {
     if (expanded && activeRef.current) {
       activeRef.current.scrollIntoView({ block: 'center' })
     }
-  }, [expanded, items])
+  }, [expanded, statusSignature])
 
   if (items.length === 0) return null
 

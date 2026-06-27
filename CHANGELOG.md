@@ -4,6 +4,23 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.41.14-alpha] - 2026-06-27
+
+### Added
+
+- Replaced the conversation scrollbar with a turn-based scroll indicator for quicker navigation
+- Reasoning blocks now display and persist their thinking duration, with consecutive blocks merged into one (Codex now matches Claude)
+- The session-rename tool call is hidden from the conversation
+
+### Fixed
+
+- The current folder stays in sync so the status bar and suggestions render correctly
+- Deepened the canvas floating chat window opacity in dark glass mode
+
+### Changed
+
+- Updated the Claude Agent SDK to 0.3.195 and the Codex CLI to 0.142.3
+
 ## [0.41.13-alpha] - 2026-06-26
 
 ### Added

@@ -193,11 +193,32 @@ describe('ClaudeBackend', () => {
         config: { apiKey: 'sk-abc', baseUrl: 'https://proxy.example.com', extraEnv: { CUSTOM_VAR: 'x' } },
       })
       const [, opts] = hoisted.captured.createSessionQueryMock.mock.calls[0]!
-      expect((opts as { env?: Record<string, string> }).env).toMatchObject({
+      const env = (opts as { env?: Record<string, string | undefined> }).env
+      expect(env).toMatchObject({
         ANTHROPIC_API_KEY: 'sk-abc',
         ANTHROPIC_BASE_URL: 'https://proxy.example.com',
         CUSTOM_VAR: 'x',
       })
+      expect(env?.PATH).toBe(process.env.PATH)
+    })
+
+    it('inherits PATH so spawned bash can find git under a custom provider', async () => {
+      const backend = new ClaudeBackend()
+      await backend.start({
+        ...makeStartOpts(),
+        config: { baseUrl: 'https://proxy.example.com' },
+      })
+      const [, opts] = hoisted.captured.createSessionQueryMock.mock.calls[0]!
+      const env = (opts as { env?: Record<string, string | undefined> }).env
+      expect(env?.PATH).toBe(process.env.PATH)
+      expect(env?.ANTHROPIC_BASE_URL).toBe('https://proxy.example.com')
+    })
+
+    it('leaves env undefined when provider config carries no env keys (SDK inherits process.env)', async () => {
+      const backend = new ClaudeBackend()
+      await backend.start({ ...makeStartOpts(), config: {} })
+      const [, opts] = hoisted.captured.createSessionQueryMock.mock.calls[0]!
+      expect((opts as { env?: unknown }).env).toBeUndefined()
     })
   })
 

@@ -98,9 +98,9 @@ export class ClaudeBackend implements SessionBackend {
 
   private buildQueryOptions(opts: BackendStartOptions): SessionQueryOptions {
     const config = (opts.config ?? {}) as ClaudeConfig
-    const env: Record<string, string | undefined> = { ...(config.extraEnv ?? {}) }
-    if (config.apiKey) env.ANTHROPIC_API_KEY = config.apiKey
-    if (config.baseUrl) env.ANTHROPIC_BASE_URL = config.baseUrl
+    const custom: Record<string, string | undefined> = { ...(config.extraEnv ?? {}) }
+    if (config.apiKey) custom.ANTHROPIC_API_KEY = config.apiKey
+    if (config.baseUrl) custom.ANTHROPIC_BASE_URL = config.baseUrl
     const { canUseTool, trackPlanFile } = this.ensurePermissionHandles()
     const claudePref = readAppSettings().agentPreference.claude
     const disabled = claudePref.disabledSkills
@@ -122,7 +122,7 @@ export class ClaudeBackend implements SessionBackend {
       resume: opts.providerSessionId,
       abortController: opts.abortController,
       additionalDirectories: opts.additionalDirectories,
-      env: Object.keys(env).length > 0 ? env : undefined,
+      env: Object.keys(custom).length > 0 ? { ...process.env, ...custom } : undefined,
       enabledSkills,
       askUserQuestionPreviewFormat: claudePref.askUserQuestionPreviewFormat,
     }

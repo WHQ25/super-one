@@ -66,7 +66,9 @@ export function applyDelta(content: ContentBlock[], delta: ContentBlock): Conten
     const idx = lastMergeTargetIndex(content, delta)
     const target = idx === -1 ? undefined : content[idx]
     if (target?.type === 'thinking') {
-      return content.map((b, i) => (i === idx ? { ...target, thinking: target.thinking + delta.thinking } : b))
+      // startedAt/endedAt are stamped upstream in the main process (claude-query);
+      // carry them through — keep the run's original start, advance to the latest end.
+      return content.map((b, i) => (i === idx ? { ...target, thinking: target.thinking + delta.thinking, endedAt: delta.endedAt ?? target.endedAt } : b))
     }
   }
   if (delta.type === 'tool_use') {

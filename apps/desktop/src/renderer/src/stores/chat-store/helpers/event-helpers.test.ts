@@ -71,4 +71,17 @@ describe('applyDelta: thinking/text stream merging by parent', () => {
     expect(top).toHaveLength(1)
     expect((top[0] as { text: string }).text).toBe('Hello world')
   })
+
+  it('carries the run start and advances the end across merged thinking deltas', () => {
+    const stamped = (text: string, startedAt?: number, endedAt?: number): ContentBlock =>
+      ({ type: 'thinking', thinking: text, parentToolUseId: null, startedAt, endedAt }) as ContentBlock
+    let content: ContentBlock[] = []
+    content = applyDelta(content, stamped('', 1000, 1000))
+    content = applyDelta(content, stamped('reasoning', undefined, 4000))
+    content = applyDelta(content, stamped('…', undefined, 6000))
+    expect(content).toHaveLength(1)
+    const block = content[0] as { startedAt?: number; endedAt?: number }
+    expect(block.startedAt).toBe(1000)
+    expect(block.endedAt).toBe(6000)
+  })
 })

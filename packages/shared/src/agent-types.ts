@@ -81,7 +81,7 @@ interface ToolUseBase {
 
 export type ContentBlock =
   | { type: 'text'; text: string; parentToolUseId?: string | null; codeBlockTokens?: Array<{ language: string; tokens: DiffTokenLine[] | null }>; isPaste?: boolean }
-  | { type: 'thinking'; thinking: string; parentToolUseId?: string | null }
+  | { type: 'thinking'; thinking: string; parentToolUseId?: string | null; startedAt?: number; endedAt?: number }
   | { type: 'tool_use' } & ToolUseBase & ToolMeta & AgentTaskData & WorkflowData
   | { type: RemoteToolType } & ToolUseBase & ToolMeta & AgentTaskData & WorkflowData
   | { type: 'tool_result'; toolUseId: string; summary: string; outputPath?: string; isTimedOut?: boolean; isError?: boolean; parentToolUseId?: string | null; outputTokens?: DiffTokenLine[]; todoToolName?: string; toolTodos?: TodoToolItem[] }

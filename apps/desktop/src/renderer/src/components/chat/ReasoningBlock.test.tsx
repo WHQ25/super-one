@@ -51,4 +51,17 @@ describe('ReasoningBlock', () => {
     )
     expect(screen.queryByText('thinking text')).not.toBeInTheDocument()
   })
+
+  it('shows the persisted duration when a completed block mounts (e.g. after a session switch)', () => {
+    const started = Date.now() - 7000
+    render(
+      <ReasoningBlock text="done" blockDone={true} startedAt={started} endedAt={started + 5000} showContent={true} />,
+    )
+    expect(screen.getByText('Thought for 5s')).toBeInTheDocument()
+  })
+
+  it('falls back to no duration when timestamps are absent and it mounts done', () => {
+    render(<ReasoningBlock text="done" blockDone={true} showContent={true} />)
+    expect(screen.getByText('Thought')).toBeInTheDocument()
+  })
 })

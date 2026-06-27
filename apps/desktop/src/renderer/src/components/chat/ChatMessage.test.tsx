@@ -26,6 +26,17 @@ function createCodexMessage(overrides: Partial<ChatMessageType> = {}): ChatMessa
   }
 }
 
+function createClaudeMessage(content: ChatMessageType['content']): ChatMessageType {
+  return {
+    id: 'msg-1',
+    role: 'assistant',
+    status: 'complete',
+    content,
+    createdAt: new Date().toISOString(),
+    providerId: 'claude',
+  }
+}
+
 function setupSession(streamingTokens: { input: number; output: number }) {
   const project = createDefaultProjectState()
   const session = {
@@ -103,5 +114,38 @@ describe('ChatMessage token footer', () => {
 
     expect(screen.getByText('499.8k').parentElement).not.toHaveClass('text-primary')
     expect(screen.getByText('22.4k').parentElement).not.toHaveClass('text-emerald-400')
+  })
+})
+
+describe('ChatMessage reasoning grouping', () => {
+  it('merges two thinking blocks straddling a hidden tool into one reasoning card', () => {
+    const { container } = render(
+      <ChatMessage
+        message={createClaudeMessage([
+          { type: 'thinking', thinking: 'Let me rename the session.' },
+          { type: 'tool_use', toolName: 'mcp__superone__session_rename', toolUseId: 't1', input: '{}', status: 'complete' },
+          { type: 'tool_result', toolUseId: 't1', summary: 'renamed' },
+          { type: 'thinking', thinking: 'Acknowledge briefly.' },
+        ])}
+        sessionStatus="idle"
+        isLastAssistant
+      />,
+    )
+    expect(container.querySelectorAll('.thinking-node')).toHaveLength(1)
+  })
+
+  it('keeps thinking blocks separate when split by visible content', () => {
+    const { container } = render(
+      <ChatMessage
+        message={createClaudeMessage([
+          { type: 'thinking', thinking: 'First.' },
+          { type: 'text', text: 'Here is the answer.' },
+          { type: 'thinking', thinking: 'Second.' },
+        ])}
+        sessionStatus="idle"
+        isLastAssistant
+      />,
+    )
+    expect(container.querySelectorAll('.thinking-node')).toHaveLength(2)
   })
 })

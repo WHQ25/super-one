@@ -6,7 +6,7 @@ import { Loader2, ImageIcon, OctagonX, Folder, ChevronRight, Clock, Minimize2, A
 import { ToolBlock } from './ToolBlock'
 import { ToolGroup } from './ToolGroup'
 import { AppToolGroup } from './AppToolGroup'
-import { parseToolInput, parseMcpToolName } from './tool-display'
+import { parseToolInput, parseMcpToolName, isHiddenToolBlock } from './tool-display'
 import { useMiniAppStore } from '@/stores/miniapp'
 import type { MiniAppEntry } from '@superone/shared/miniapp-types'
 import { SubagentBlock } from './SubagentBlock'
@@ -52,6 +52,7 @@ const COLLAPSIBLE_TOOLS = new Set(['Read', 'Glob', 'Grep', 'WebSearch', 'WebFetc
 
 type RenderSegment =
   | { kind: 'block'; block: ContentBlock; index: number }
+  | { kind: 'thinking'; blocks: ContentBlock[]; startIndex: number }
   | { kind: 'tools'; blocks: ContentBlock[]; startIndex: number }
   | { kind: 'app-tools'; appId: string; blocks: ContentBlock[]; startIndex: number }
   | { kind: 'subagent'; taskBlock: ContentBlock & { type: 'tool_use' }; childBlocks: ContentBlock[]; resultBlock?: ContentBlock; startIndex: number }
@@ -232,6 +233,18 @@ function groupContent(content: ContentBlock[], apps: MiniAppEntry[]): GroupResul
       group.push(block)
     } else if (block.type === 'tool_result' && COLLAPSIBLE_TOOLS.has(toolNameMap.get(block.toolUseId) ?? '')) {
       group.push(block)
+    } else if (
+      (block.type === 'tool_use' && isHiddenToolBlock(block.toolName)) ||
+      (block.type === 'tool_result' && isHiddenToolBlock(toolNameMap.get(block.toolUseId) ?? ''))
+    ) {
+      // Hidden tools render nothing — emit no segment so two thinking blocks
+      // straddling one collapse into a single reasoning card instead of two.
+      flush()
+    } else if (block.type === 'thinking') {
+      flush()
+      const last = segments[segments.length - 1]
+      if (last?.kind === 'thinking') last.blocks.push(block)
+      else segments.push({ kind: 'thinking', blocks: [block], startIndex: i })
     } else {
       flush()
       segments.push({ kind: 'block', block, index: i })
@@ -331,6 +344,8 @@ function renderBlock(
         <ReasoningBlock
           key={index}
           text={block.thinking}
+          startedAt={block.startedAt}
+          endedAt={block.endedAt}
           blockDone={!isStreaming || !!nextBlockType}
           showContent={block.thinking.trim().length > 0}
           isFirst={prevBlockType === undefined}
@@ -780,11 +795,27 @@ export const ChatMessage = memo(function ChatMessage({ message, sessionStatus, i
                   />
                 )
               }
+              if (seg.kind === 'thinking') {
+                const text = seg.blocks.map((b) => b.type === 'thinking' ? b.thinking : '').join('\n\n')
+                const first = seg.blocks[0]
+                const last = seg.blocks[seg.blocks.length - 1]
+                return (
+                  <ReasoningBlock
+                    key={`th-${seg.startIndex}`}
+                    text={text}
+                    startedAt={first.type === 'thinking' ? first.startedAt : undefined}
+                    endedAt={last.type === 'thinking' ? last.endedAt : undefined}
+                    blockDone={!isStreaming || segIdx < segs.length - 1}
+                    showContent={text.trim().length > 0}
+                    isFirst={segIdx === 0}
+                  />
+                )
+              }
               if (seg.kind === 'block') {
                 const nextSeg = segs[segIdx + 1]
                 const prevSeg = segs[segIdx - 1]
-                const nextType = nextSeg?.kind === 'block' ? nextSeg.block.type : nextSeg?.kind === 'tools' ? nextSeg.blocks[0]?.type : nextSeg?.kind === 'subagent' ? 'tool_use' : undefined
-                const prevType = prevSeg?.kind === 'block' ? prevSeg.block.type : undefined
+                const nextType = nextSeg?.kind === 'block' ? nextSeg.block.type : nextSeg?.kind === 'thinking' ? 'thinking' : nextSeg?.kind === 'tools' ? nextSeg.blocks[0]?.type : nextSeg?.kind === 'subagent' ? 'tool_use' : undefined
+                const prevType = prevSeg?.kind === 'block' ? prevSeg.block.type : prevSeg?.kind === 'thinking' ? 'thinking' : undefined
                 return renderBlock(seg.block, seg.index, isStreaming, grouped!.toolResultMap, grouped!.timedOutToolIds, grouped!.errorToolIds, grouped!.outputPathMap, nextType, prevType, projectPath)
               }
               const toolUseCount = seg.blocks.filter((b) => b.type === 'tool_use').length

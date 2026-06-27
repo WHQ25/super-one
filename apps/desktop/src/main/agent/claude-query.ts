@@ -655,10 +655,11 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
                   delta: { type: 'text', text: block.text, parentToolUseId: assistantParent },
                 })
               } else if (block.type === 'thinking' && assistantParent && typeof block.thinking === 'string' && block.thinking) {
+                const now = Date.now()
                 emit({
                   type: 'content_delta',
                   messageId,
-                  delta: { type: 'thinking', thinking: block.thinking, parentToolUseId: assistantParent },
+                  delta: { type: 'thinking', thinking: block.thinking, parentToolUseId: assistantParent, startedAt: now, endedAt: now },
                 })
               } else if (block.type === 'tool_use') {
                 toolIdToName.set(block.id ?? '', block.name ?? 'unknown')
@@ -719,10 +720,11 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
               },
             })
           } else if (event.type === 'content_block_start' && event.content_block?.type === 'thinking') {
+            const now = Date.now()
             emit({
               type: 'content_delta',
               messageId,
-              delta: { type: 'thinking', thinking: '', parentToolUseId: streamParent },
+              delta: { type: 'thinking', thinking: '', parentToolUseId: streamParent, startedAt: now, endedAt: now },
             })
           } else if (event.type === 'content_block_delta') {
             if (event.delta?.type === 'text_delta' && event.delta.text) {
@@ -735,7 +737,7 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
               emit({
                 type: 'content_delta',
                 messageId,
-                delta: { type: 'thinking', thinking: event.delta.thinking, parentToolUseId: streamParent },
+                delta: { type: 'thinking', thinking: event.delta.thinking, parentToolUseId: streamParent, endedAt: Date.now() },
               })
             } else if (event.delta?.type === 'input_json_delta' && event.delta.partial_json) {
               const toolUseId = activeToolBlocks.get(event.index) ?? ''

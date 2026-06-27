@@ -4,6 +4,19 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.41.15-alpha] - 2026-06-28
+
+### Added
+
+- Mobile can now upload files to the desktop, choosing LAN or relay transport automatically with R2 cleanup after delivery
+- The scroll indicator shows a persistent compact tick with a hover preview
+
+### Fixed
+
+- Custom-provider agents inherit the full environment so their bash sessions keep PATH and can find git and other tools
+- Subagents can no longer rename the session
+- The todo panel no longer yanks back to the active task
+
 ## [0.41.14-alpha] - 2026-06-27
 
 ### Added

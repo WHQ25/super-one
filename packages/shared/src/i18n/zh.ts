@@ -437,6 +437,13 @@ export const zh: Messages = {
         code: '已恢复代码',
       },
     },
+    scrollIndicator: {
+      compactTitle: '上下文压缩点',
+      compactExpandedDesc: '这里之前的较早对话已展开，点击折叠。',
+      compactCollapsedDesc: '这里之前的较早对话已被压缩收起，点击展开。',
+      expandTooltip: '展开更早的对话',
+      collapseTooltip: '折叠更早的对话',
+    },
     pasteChip: {
       title_one: '已粘贴文本 · {{count}} 行',
       title_other: '已粘贴文本 · {{count}} 行',

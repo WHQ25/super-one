@@ -1,17 +1,20 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import { AnimatePresence, motion } from 'motion/react'
 import { cn } from '@superone/ui/lib/utils'
 import type { TurnOutlineEntry } from './turn-outline'
 
 interface ChatScrollIndicatorProps {
   entries: TurnOutlineEntry[]
-  hasCollapsed: boolean
+  hasCompact: boolean
+  compactExpanded: boolean
   viewportRef: React.RefObject<HTMLDivElement | null>
   onJump: (id: string) => void
-  onExpand: () => void
+  onToggleCompact: () => void
 }
 
 const TICK_MAX = 22
+const COMPACT_TICK = 12
 
 function splitTitle(text: string): { title: string; summary: string } {
   const nl = text.indexOf('\n')
@@ -19,10 +22,12 @@ function splitTitle(text: string): { title: string; summary: string } {
   return { title: text.slice(0, nl), summary: text.slice(nl + 1).trim() }
 }
 
-export function ChatScrollIndicator({ entries, hasCollapsed, viewportRef, onJump, onExpand }: ChatScrollIndicatorProps) {
+export function ChatScrollIndicator({ entries, hasCompact, compactExpanded, viewportRef, onJump, onToggleCompact }: ChatScrollIndicatorProps) {
   const [activeId, setActiveId] = useState<string | null>(null)
   const [hovered, setHovered] = useState<{ index: number; top: number } | null>(null)
+  const [compactHovered, setCompactHovered] = useState<{ top: number } | null>(null)
   const rafRef = useRef(0)
+  const { t } = useTranslation()
 
   const computeActive = useCallback(() => {
     const viewport = viewportRef.current
@@ -56,21 +61,27 @@ export function ChatScrollIndicator({ entries, hasCollapsed, viewportRef, onJump
     }
   }, [computeActive, viewportRef])
 
-  if (entries.length <= 1 && !hasCollapsed) return null
+  if (entries.length <= 1 && !hasCompact) return null
 
   const preview = hovered ? entries[hovered.index] : null
+  const compactBase = compactExpanded ? COMPACT_TICK : TICK_MIN
 
   return (
     <div className="absolute right-0 top-0 z-20 flex h-full w-7 flex-col items-end justify-center gap-0.5 pr-1">
-      {hasCollapsed && (
+      {hasCompact && (
         <button
           type="button"
-          title="加载更早的对话"
-          onClick={onExpand}
+          title={compactExpanded ? t('chat.scrollIndicator.collapseTooltip') : t('chat.scrollIndicator.expandTooltip')}
+          onClick={onToggleCompact}
+          onMouseEnter={(ev) => setCompactHovered({ top: ev.currentTarget.offsetTop + ev.currentTarget.offsetHeight / 2 })}
+          onMouseLeave={() => setCompactHovered(null)}
           style={{ width: TICK_MAX }}
-          className="group/compact flex cursor-pointer items-center justify-end py-0.5 outline-none"
+          className="flex cursor-pointer items-center justify-end py-0.5 outline-none"
         >
-          <span className="h-0.5 w-3 rounded-full bg-amber-500/80 transition-all duration-150 group-hover/compact:w-4" />
+          <span
+            style={{ width: compactHovered ? compactBase + 4 : compactBase }}
+            className="h-0.5 rounded-full bg-amber-500/80 transition-all duration-150"
+          />
         </button>
       )}
       {entries.map((entry, i) => {
@@ -119,6 +130,26 @@ export function ChatScrollIndicator({ entries, hasCollapsed, viewportRef, onJump
                 </>
               )
             })()}
+          </motion.div>
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
+        {compactHovered && (
+          <motion.div
+            initial={{ opacity: 0, x: 4 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 4 }}
+            transition={{ duration: 0.12 }}
+            style={{ top: compactHovered.top }}
+            className="pointer-events-none absolute right-9 w-64 -translate-y-1/2 rounded-lg border border-border bg-popover p-2.5 text-popover-foreground shadow-lg"
+          >
+            <p className="flex items-center gap-1.5 text-xs font-medium">
+              <span className="h-0.5 w-3 shrink-0 rounded-full bg-amber-500/80" />
+              {t('chat.scrollIndicator.compactTitle')}
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {compactExpanded ? t('chat.scrollIndicator.compactExpandedDesc') : t('chat.scrollIndicator.compactCollapsedDesc')}
+            </p>
           </motion.div>
         )}
       </AnimatePresence>

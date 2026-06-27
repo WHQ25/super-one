@@ -126,10 +126,11 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
   }, [hasMore, visibleMessages.length, scrollViewportRef])
 
   const outline = useMemo(() => extractTurnOutline(visibleMessages), [visibleMessages])
-  const hasCollapsed = compactIndices.length > 0 && expandLevel < compactIndices.length
-  const expandPrevious = useCallback(() => {
+  const hasCompact = compactIndices.length > 0
+  const compactExpanded = expandLevel >= compactIndices.length
+  const toggleCompact = useCallback(() => {
     prevScrollHeightRef.current = scrollViewportRef.current?.scrollHeight ?? 0
-    setExpandLevel((lvl) => Math.min(lvl + 1, compactIndices.length))
+    setExpandLevel((lvl) => (lvl >= compactIndices.length ? 0 : compactIndices.length))
   }, [compactIndices.length, scrollViewportRef])
   const [jumpNonce, setJumpNonce] = useState(0)
   const pendingScrollIdRef = useRef<string | null>(null)
@@ -311,7 +312,7 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
               </ScrollArea>
             )}
             {messages.length > 0 && (
-              <ChatScrollIndicator entries={outline} hasCollapsed={hasCollapsed} viewportRef={scrollViewportRef} onJump={jumpToMessage} onExpand={expandPrevious} />
+              <ChatScrollIndicator entries={outline} hasCompact={hasCompact} compactExpanded={compactExpanded} viewportRef={scrollViewportRef} onJump={jumpToMessage} onToggleCompact={toggleCompact} />
             )}
             {!liquidGlass && <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-6 bg-linear-to-t from-card to-transparent" />}
             <AnimatePresence>

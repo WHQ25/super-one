@@ -423,6 +423,13 @@ export type Messages = {
         code: string
       }
     }
+    scrollIndicator: {
+      compactTitle: string
+      compactExpandedDesc: string
+      compactCollapsedDesc: string
+      expandTooltip: string
+      collapseTooltip: string
+    }
     pasteChip: {
       title_one: string
       title_other: string
@@ -1717,6 +1724,13 @@ export const en: Messages = {
         conversation: 'Conversation restored',
         code: 'Code restored',
       },
+    },
+    scrollIndicator: {
+      compactTitle: 'Context compaction point',
+      compactExpandedDesc: 'Earlier conversation above is expanded. Click to collapse.',
+      compactCollapsedDesc: 'Earlier conversation above is compacted. Click to expand.',
+      expandTooltip: 'Expand earlier conversation',
+      collapseTooltip: 'Collapse earlier conversation',
     },
     pasteChip: {
       title_one: 'Pasted text · {{count}} line',

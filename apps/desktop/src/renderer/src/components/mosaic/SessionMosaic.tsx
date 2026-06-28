@@ -4,6 +4,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { cn } from '@superone/ui/lib/utils'
 import { SessionPane } from '@/components/chat/SessionPane'
+import { useChatStore, extractSessionTitle } from '@/stores/chat'
 import { SessionTitleAnimated } from '@/components/sidebar/AnimatedSessionTitle'
 import { useTheme } from '@/hooks/useTheme'
 import { useFullscreen } from '@/hooks/useFullscreen'
@@ -33,6 +34,11 @@ function openTileTerminal(tile: GridTile) {
 }
 
 function MosaicTile({ tile, focused, isTopLeft, isTopRight, reserveTrafficLights, showSidebar, themeDark, onToggleTheme }: MosaicTileProps) {
+  const titleFallback = useChatStore((s) => {
+    const sess = s.projectSessions[tile.projectPath]?._sessions[tile.sessionId]
+    if (!sess) return 'Session'
+    return sess._title || extractSessionTitle(sess.messages) || 'Session'
+  })
   return (
     <div
       onMouseDownCapture={() => { if (!focused) useMosaicStore.getState().setFocus(tile.id) }}
@@ -51,7 +57,7 @@ function MosaicTile({ tile, focused, isTopLeft, isTopRight, reserveTrafficLights
             </IconButton>
           </div>
         )}
-        <SessionTitleAnimated sessionId={tile.sessionId} fallback="Session" className="min-w-0 flex-1 text-xs text-muted-foreground" />
+        <SessionTitleAnimated sessionId={tile.sessionId} fallback={titleFallback} className="min-w-0 flex-1 text-xs text-muted-foreground" />
         <div className="flex shrink-0 items-center gap-0.5" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
           <IconButton size="xs" variant="nested" tooltip="Terminal" onClick={(e) => { e.stopPropagation(); openTileTerminal(tile) }}>
             <SquareTerminal className="size-3.5" />

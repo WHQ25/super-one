@@ -42,8 +42,8 @@ function MosaicTile({ tile, focused, isTopLeft, isTopRight, reserveTrafficLights
         focused ? 'border-primary ring-2 ring-primary/35' : 'border-border/50',
       )}
     >
-      <div className="flex h-8 shrink-0 items-center gap-1.5 px-2" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
-        {reserveTrafficLights && isTopLeft && <div className="w-[52px] shrink-0" />}
+      <div className={cn('flex h-8 shrink-0 items-center gap-1.5 pr-2', reserveTrafficLights && isTopLeft ? 'pl-[18px]' : 'pl-2')} style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
+        {reserveTrafficLights && isTopLeft && <div className="w-[60px] shrink-0" />}
         {isTopLeft && !showSidebar && (
           <div className="shrink-0" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
             <IconButton size="xs" variant="nested" tooltip="Toggle sidebar" onClick={(e) => { e.stopPropagation(); useAppStore.getState().setShowSidebar(true) }}>

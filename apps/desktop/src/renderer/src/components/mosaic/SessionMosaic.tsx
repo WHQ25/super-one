@@ -43,12 +43,19 @@ export function SessionMosaic() {
   useEffect(() => {
     const el = containerRef.current
     if (!el) return
+    let prevW = 0
+    let prevLeft = 0
     const ro = new ResizeObserver(() => {
-      const { width, height } = el.getBoundingClientRect()
+      const rect = el.getBoundingClientRect()
+      const { width, height } = rect
       const { cols, rows } = computeCapacity(width, height)
-      // Main area is anchored to the sidebar (left) and titlebar (top), so a
-      // shrink almost always comes from the right / bottom edge.
-      useMosaicStore.getState().applyCapacity(cols, rows, 'right', 'bottom')
+      // Top is anchored by the titlebar, so vertical shrink is always from the
+      // bottom. Horizontal shrink is from the right (window narrowing) unless the
+      // left edge moved inward (sidebar widening), which peels from the left.
+      const hEdge = width < prevW && rect.left > prevLeft + 0.5 ? 'left' : 'right'
+      prevW = width
+      prevLeft = rect.left
+      useMosaicStore.getState().applyCapacity(cols, rows, hEdge, 'bottom')
     })
     ro.observe(el)
     return () => ro.disconnect()

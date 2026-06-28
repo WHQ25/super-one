@@ -65,7 +65,7 @@ function App(): React.JSX.Element {
   const { t } = useTranslation()
   const { view, currentFolder, showSidebar, sidebarWidth, setSidebarWidth, layoutMode } = useAppStore(useShallow((s) => ({ view: s.view, currentFolder: s.currentFolder, showSidebar: s.showSidebar, sidebarWidth: s.sidebarWidth, setSidebarWidth: s.setSidebarWidth, layoutMode: s.layoutMode })))
   const liquidGlass = useAppStore((s) => s.liquidGlass)
-  const { open: terminalOpen, toggle: toggleTerminal } = useTerminalPanel()
+  const { open: terminalOpen, toggle: toggleTerminal, setOpen: setTerminalOpen } = useTerminalPanel()
   const hasTerminals = useTerminalStore(
     (s) => (currentFolder ? (s.byProject[currentFolder]?.tabs.length ?? 0) : 0) > 0,
   )
@@ -148,11 +148,41 @@ function App(): React.JSX.Element {
         e.preventDefault()
         const { view, navigateTo } = useAppStore.getState()
         navigateTo(view === 'settings' ? 'main' : 'settings')
+      } else if (e.key === 'j' && useMosaicStore.getState().mode === 'mosaic') {
+        // CodingLayout (which owns ⌘J in single mode) is unmounted while in
+        // mosaic, so handle it here — opening the terminal collapses to single.
+        e.preventDefault()
+        toggleTerminal()
       }
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [])
+  }, [toggleTerminal])
+
+  // Mosaic is chat-only. Start it clean: closing terminal/activity on entry so a
+  // pre-existing open panel doesn't immediately bounce us back out.
+  const prevMosaicModeRef = useRef(mosaicMode)
+  useEffect(() => {
+    if (prevMosaicModeRef.current !== 'mosaic' && mosaicMode === 'mosaic') {
+      setTerminalOpen(false)
+      useActivityPanelStore.getState().setShowPanel(false)
+    }
+    prevMosaicModeRef.current = mosaicMode
+  }, [mosaicMode, setTerminalOpen])
+
+  // Opening the terminal or activity panel while in mosaic collapses back to
+  // single mode, focused on the current tile (rising-edge only).
+  const prevTerminalOpenRef = useRef(terminalOpen)
+  const prevActivityShownRef = useRef(showActivityPanel)
+  useEffect(() => {
+    const terminalRose = !prevTerminalOpenRef.current && terminalOpen
+    const activityRose = !prevActivityShownRef.current && showActivityPanel
+    prevTerminalOpenRef.current = terminalOpen
+    prevActivityShownRef.current = showActivityPanel
+    if (mosaicMode === 'mosaic' && (terminalRose || activityRose)) {
+      useMosaicStore.getState().exitToSingle()
+    }
+  }, [mosaicMode, terminalOpen, showActivityPanel])
 
   useEffect(() => {
     const isCoding = view === 'main' && layoutMode === 'coding'
@@ -412,7 +442,7 @@ function App(): React.JSX.Element {
             <CanvasDevControls />
             <CanvasReturnToPanelButton />
             <CanvasCloseButton />
-            {layoutMode === 'coding' && mosaicMode !== 'mosaic' && (
+            {layoutMode === 'coding' && (
               <TooltipProvider delayDuration={300}>
                 <Tooltip>
                   <TooltipTrigger asChild>

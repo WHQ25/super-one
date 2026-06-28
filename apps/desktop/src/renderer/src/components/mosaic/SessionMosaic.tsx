@@ -44,10 +44,7 @@ function MosaicTile({ tile, focused, isTopLeft, isTopRight, reserveTrafficLights
     <div
       onMouseDownCapture={() => { if (!focused) useMosaicStore.getState().setFocus(tile.id) }}
       style={{ gridRow: tile.row + 1, gridColumn: tile.col + 1 }}
-      className={cn(
-        'flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border bg-card',
-        focused ? 'border-primary ring-2 ring-primary/35' : 'border-border/50',
-      )}
+      className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-border/50 bg-card"
     >
       <div className="flex h-8 shrink-0 items-center pl-[18px] pr-2" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
         {reserveTrafficLights && isTopLeft && <div className="w-[60px] shrink-0" />}
@@ -57,17 +54,17 @@ function MosaicTile({ tile, focused, isTopLeft, isTopRight, reserveTrafficLights
           <IconButton size="xs" variant="nested" tooltip="Terminal" onClick={(e) => { e.stopPropagation(); openTileTerminal(tile) }}>
             <SquareTerminal className="size-3.5" />
           </IconButton>
+          <IconButton size="xs" variant="nested" tooltip="Close" onClick={(e) => { e.stopPropagation(); useMosaicStore.getState().removeTile(tile.id) }}>
+            <X className="size-3.5" />
+          </IconButton>
           {isTopRight && (
             <IconButton size="xs" variant="nested" tooltip="Toggle theme" onClick={(e) => { e.stopPropagation(); onToggleTheme() }}>
               {themeDark ? <Sun className="size-3.5" /> : <Moon className="size-3.5" />}
             </IconButton>
           )}
-          <IconButton size="xs" variant="nested" tooltip="Close" onClick={(e) => { e.stopPropagation(); useMosaicStore.getState().removeTile(tile.id) }}>
-            <X className="size-3.5" />
-          </IconButton>
         </div>
       </div>
-      <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div className={cn('relative flex min-h-0 flex-1 flex-col overflow-hidden transition-opacity', !focused && 'opacity-60')}>
         <SessionPane scope={{ projectPath: tile.projectPath, sessionId: tile.sessionId }} readOnly={!focused} />
       </div>
     </div>

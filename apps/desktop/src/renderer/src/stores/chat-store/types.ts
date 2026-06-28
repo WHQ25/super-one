@@ -179,6 +179,7 @@ export interface ChatStore {
   projectSessions: Record<string, ProjectState>
   activeProject: string | null
   remoteSessions: Record<string, string[]>
+  mountedSessions: Record<string, string[]>
   _previousFocusedSession: { projectPath: string; sessionId: string } | null
 
   agentTitles: Record<string, string>
@@ -284,6 +285,8 @@ export interface ChatStore {
   fetchSessionsPage: () => Promise<void>
   switchSession: (sessionId: string) => Promise<void>
   switchToSession: (projectPath: string, sessionId: string) => Promise<void>
+  mountSession: (projectPath: string, sessionId: string) => Promise<void>
+  unmountSession: (projectPath: string, sessionId: string) => void
   renameSession: (sessionId: string, title: string) => Promise<void>
 
   setMiniAppContext: (appId: string, data: { appName: string; summary: string; content: string; mode: 'inject' | 'suggest'; color?: string }) => void

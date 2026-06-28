@@ -17,6 +17,7 @@ import {
   getCodexCompletionEventMeta,
   getCodexContextTokens,
   getCodexTraceItems,
+  isMountedSession,
   isRemoteSession,
   removeRemoteSession,
   summarizeCodexTraceItem,
@@ -371,8 +372,8 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
 
       if (event.type === 'status_change' && event.status === 'idle' && targetSid !== updatedProject._activeSessionId) {
         if (!_isLiveSession(updatedSession)) {
-          const isRemoteSubscribed = isRemoteSession(s, projectPath, targetSid)
-          if (!isRemoteSubscribed && effectiveSid) {
+          const isProtected = isRemoteSession(s, projectPath, targetSid) || isMountedSession(s, projectPath, targetSid)
+          if (!isProtected && effectiveSid) {
             updatedProject.unseenCompletedSessions = new Set([...updatedProject.unseenCompletedSessions, effectiveSid])
             if (updatedSession.sessionProvider === 'codex') {
               const snapshot = updatedSession
@@ -385,6 +386,7 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
                     if (!proj?._sessions[evictSid]) return {}
                     if (proj._activeSessionId === evictSid) return {}
                     if (_isLiveSession(proj._sessions[evictSid])) return {}
+                    if (isMountedSession(s2, evictProjectPath, evictSid)) return {}
                     const { [evictSid]: _, ...rest } = proj._sessions
                     return { projectSessions: { ...s2.projectSessions, [evictProjectPath]: { ...proj, _sessions: rest } } }
                   })
@@ -394,7 +396,7 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
               const { [targetSid]: _, ...restSessions } = updatedProject._sessions
               updatedProject._sessions = restSessions
             }
-          } else if (!isRemoteSubscribed) {
+          } else if (!isProtected) {
             const { [targetSid]: _, ...restSessions } = updatedProject._sessions
             updatedProject._sessions = restSessions
           }

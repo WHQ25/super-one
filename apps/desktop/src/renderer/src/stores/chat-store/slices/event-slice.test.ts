@@ -78,6 +78,7 @@ function resetStore() {
     projectSessions: {},
     activeProject: null,
     remoteSessions: {},
+    mountedSessions: {},
     _previousFocusedSession: null,
     agentTitles: {},
     _bashOutputs: {},
@@ -126,6 +127,49 @@ describe('remote_session_start', () => {
     expect(session).toBeDefined()
     expect(session._historyHydrated).toBe(true)
     expect(session.sessionProvider).toBe('claude')
+  })
+})
+
+describe('mounted session eviction protection', () => {
+  function seedTwoSessions() {
+    const proj = createDefaultProjectState()
+    proj._activeSessionId = 'sid-active'
+    proj._sessions = {
+      'sid-active': { ...createDefaultPerSessionState(), _historyHydrated: true },
+      'sid-mounted': { ...createDefaultPerSessionState(), _historyHydrated: true, status: 'streaming' },
+    }
+    useChatStore.setState({ projectSessions: { '/p': proj }, activeProject: '/p', mountedSessions: {} })
+  }
+
+  it('evicts a non-active session that goes idle when it is not mounted', () => {
+    seedTwoSessions()
+    useChatStore.getState().handleAgentEvent({ type: 'status_change', projectPath: '/p', sessionId: 'sid-mounted', status: 'idle' } as AgentEvent)
+    expect(useChatStore.getState().projectSessions['/p']._sessions['sid-mounted']).toBeUndefined()
+  })
+
+  it('keeps a non-active session that goes idle while it is mounted', () => {
+    seedTwoSessions()
+    useChatStore.setState({ mountedSessions: { '/p': ['sid-mounted'] } })
+    useChatStore.getState().handleAgentEvent({ type: 'status_change', projectPath: '/p', sessionId: 'sid-mounted', status: 'idle' } as AgentEvent)
+    const sess = useChatStore.getState().projectSessions['/p']._sessions['sid-mounted']
+    expect(sess).toBeDefined()
+    expect(sess.status).toBe('idle')
+  })
+
+  it('mountSession registers protection and ensures a session entry (even cross-project)', async () => {
+    await useChatStore.getState().mountSession('/q', 'sid-x')
+    const state = useChatStore.getState()
+    expect(state.mountedSessions['/q']).toEqual(['sid-x'])
+    expect(state.projectSessions['/q']._sessions['sid-x']).toBeDefined()
+  })
+
+  it('unmountSession removes protection so the session can be evicted again', () => {
+    seedTwoSessions()
+    useChatStore.setState({ mountedSessions: { '/p': ['sid-mounted'] } })
+    useChatStore.getState().unmountSession('/p', 'sid-mounted')
+    expect(useChatStore.getState().mountedSessions['/p']).toBeUndefined()
+    useChatStore.getState().handleAgentEvent({ type: 'status_change', projectPath: '/p', sessionId: 'sid-mounted', status: 'idle' } as AgentEvent)
+    expect(useChatStore.getState().projectSessions['/p']._sessions['sid-mounted']).toBeUndefined()
   })
 })
 

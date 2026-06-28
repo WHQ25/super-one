@@ -304,13 +304,19 @@ export function isRemoteSession(state: ChatStore, projectPath: string, sessionId
   return !!ids && ids.includes(sessionId)
 }
 
-export function addRemoteSession(map: Record<string, string[]>, projectPath: string, sessionId: string): Record<string, string[]> {
+export function isMountedSession(state: ChatStore, projectPath: string, sessionId: string | null | undefined): boolean {
+  if (!sessionId) return false
+  const ids = state.mountedSessions[projectPath]
+  return !!ids && ids.includes(sessionId)
+}
+
+function addSessionToRegistry(map: Record<string, string[]>, projectPath: string, sessionId: string): Record<string, string[]> {
   const existing = map[projectPath] ?? []
   if (existing.includes(sessionId)) return map
   return { ...map, [projectPath]: [...existing, sessionId] }
 }
 
-export function removeRemoteSession(map: Record<string, string[]>, projectPath: string, sessionId: string): Record<string, string[]> {
+function removeSessionFromRegistry(map: Record<string, string[]>, projectPath: string, sessionId: string): Record<string, string[]> {
   const existing = map[projectPath]
   if (!existing || !existing.includes(sessionId)) return map
   const next = existing.filter((id) => id !== sessionId)
@@ -320,6 +326,11 @@ export function removeRemoteSession(map: Record<string, string[]>, projectPath: 
   }
   return { ...map, [projectPath]: next }
 }
+
+export const addRemoteSession = addSessionToRegistry
+export const removeRemoteSession = removeSessionFromRegistry
+export const addMountedSession = addSessionToRegistry
+export const removeMountedSession = removeSessionFromRegistry
 
 import type { HarnessHandler, HarnessHandlerMap } from './harness/harness-handler'
 import { applyClaudeResources } from './harness/claude-handler'
@@ -354,6 +365,7 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
   projectSessions: {},
   activeProject: null,
   remoteSessions: {},
+  mountedSessions: {},
   _previousFocusedSession: null,
   agentTitles: {},
 
@@ -723,6 +735,33 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
     } catch (err) {
       console.warn('[chat] resumeSession failed:', err)
     }
+  },
+
+  mountSession: async (projectPath, sessionId) => {
+    set((s) => ({ mountedSessions: addMountedSession(s.mountedSessions, projectPath, sessionId) }))
+    if (!get().projectSessions[projectPath]?._sessions[sessionId]) {
+      set((s) => {
+        const proj = s.projectSessions[projectPath] ?? createDefaultProjectState()
+        if (proj._sessions[sessionId]) return {}
+        return {
+          projectSessions: {
+            ...s.projectSessions,
+            [projectPath]: {
+              ...proj,
+              _sessions: { ...proj._sessions, [sessionId]: { ...createDefaultPerSessionState(), _historyHydrated: false } },
+            },
+          },
+        }
+      })
+    }
+    const sess = get().projectSessions[projectPath]?._sessions[sessionId]
+    if (sess && !sess._historyHydrated) {
+      _hydrateSessionState(set, projectPath, sessionId)
+    }
+  },
+
+  unmountSession: (projectPath, sessionId) => {
+    set((s) => ({ mountedSessions: removeMountedSession(s.mountedSessions, projectPath, sessionId) }))
   },
 
   addDir: (path, scope) => {

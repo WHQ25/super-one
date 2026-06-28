@@ -46,7 +46,7 @@ function MosaicTile({ tile, focused, isTopLeft, isTopRight, reserveTrafficLights
       style={{ gridRow: tile.row + 1, gridColumn: tile.col + 1 }}
       className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-border/50 bg-card"
     >
-      <div className="flex h-8 shrink-0 items-center pl-[18px] pr-2" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
+      <div className="flex h-[34px] shrink-0 items-center pl-[18px] pr-2" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
         {reserveTrafficLights && isTopLeft && <div className="w-[60px] shrink-0" />}
         {isTopLeft && !showSidebar && <LayoutToggle />}
         <SessionTitleAnimated sessionId={tile.sessionId} fallback={titleFallback} className="min-w-0 flex-1 text-xs text-muted-foreground" />

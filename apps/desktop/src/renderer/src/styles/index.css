@@ -189,6 +189,12 @@ body {
   backdrop-filter: none;
 }
 
+/* The drag chip floats detached from window vibrancy, so the glass-mode
+   `--sidebar: transparent` would make it disappear. Force an opaque surface. */
+.liquid-glass.dark .session-drag-chip {
+  background-color: var(--popover);
+}
+
 /* Radix ScrollArea wraps children in `display: table; min-width: 100%`. That
    table layout sizes to children's max-content, so when the viewport shrinks
    the wrapper keeps its old (wider) size and content gets clipped horizontally

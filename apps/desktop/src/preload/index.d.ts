@@ -269,7 +269,11 @@ interface AppAPI {
   getFullscreen(): Promise<boolean>
   onFullscreenChanged(callback: (isFullscreen: boolean) => void): () => void
   setMinWindowSize(width: number, height: number): Promise<void>
-  openSessionWindow(projectPath: string, sessionId: string, title?: string): Promise<void>
+  openSessionWindow(projectPath: string, sessionId: string, title?: string, position?: { x: number; y: number }): Promise<void>
+  startDragPreview(title: string): Promise<void>
+  endDragPreview(): Promise<void>
+  onDragPreviewUpdate(callback: (data: { title: string; dark: boolean }) => void): () => void
+  onDragPreviewZone(callback: (zone: 'inside' | 'outside') => void): () => void
   setWindowAlwaysOnTop(value: boolean): Promise<boolean>
   getTheme(): Promise<boolean>
   setTheme(dark: boolean): Promise<void>

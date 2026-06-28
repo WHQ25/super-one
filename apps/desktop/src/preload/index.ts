@@ -823,8 +823,30 @@ const appAPI = {
   },
   setMinWindowSize: (width: number, height: number) =>
     ipcRenderer.invoke(AgentIpcChannels.SET_MIN_WINDOW_SIZE, width, height) as Promise<void>,
-  openSessionWindow: (projectPath: string, sessionId: string, title?: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.OPEN_SESSION_WINDOW, projectPath, sessionId, title) as Promise<void>,
+  openSessionWindow: (projectPath: string, sessionId: string, title?: string, position?: { x: number; y: number }) =>
+    ipcRenderer.invoke(AgentIpcChannels.OPEN_SESSION_WINDOW, projectPath, sessionId, title, position) as Promise<void>,
+  startDragPreview: (title: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.DRAG_PREVIEW_START, title) as Promise<void>,
+  endDragPreview: () =>
+    ipcRenderer.invoke(AgentIpcChannels.DRAG_PREVIEW_END) as Promise<void>,
+  onDragPreviewUpdate: (callback: (data: { title: string; dark: boolean }) => void) => {
+    const handler = (_ipcEvent: Electron.IpcRendererEvent, data: { title: string; dark: boolean }): void => {
+      callback(data)
+    }
+    ipcRenderer.on(AgentIpcChannels.DRAG_PREVIEW_UPDATE, handler)
+    return () => {
+      ipcRenderer.removeListener(AgentIpcChannels.DRAG_PREVIEW_UPDATE, handler)
+    }
+  },
+  onDragPreviewZone: (callback: (zone: 'inside' | 'outside') => void) => {
+    const handler = (_ipcEvent: Electron.IpcRendererEvent, zone: 'inside' | 'outside'): void => {
+      callback(zone)
+    }
+    ipcRenderer.on(AgentIpcChannels.DRAG_PREVIEW_ZONE, handler)
+    return () => {
+      ipcRenderer.removeListener(AgentIpcChannels.DRAG_PREVIEW_ZONE, handler)
+    }
+  },
   setWindowAlwaysOnTop: (value: boolean) =>
     ipcRenderer.invoke(AgentIpcChannels.SET_WINDOW_ALWAYS_ON_TOP, value) as Promise<boolean>,
   getTheme: () => ipcRenderer.invoke(AgentIpcChannels.GET_THEME) as Promise<boolean>,

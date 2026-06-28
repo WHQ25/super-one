@@ -14,6 +14,7 @@ import type { SessionForkMode, SessionHistoryEntry } from '@superone/shared/agen
 import { AdaptiveContextMenu } from '@/components/AdaptiveContextMenu'
 import { buildSessionMenuItems } from '@/lib/session-menu-items'
 import { getPendingReason } from './session-state-utils'
+import { useSessionDragOut } from './useSessionDragOut'
 import { SessionTitleAnimated, useSessionTitleByAgent } from './AnimatedSessionTitle'
 
 const EMPTY_REMOTE_SESSION_IDS: string[] = []
@@ -105,6 +106,12 @@ export const SessionRow = memo(function SessionRow({
     }
   }, [t, onSwitchSession, folderPath, session.sessionId])
 
+  const { rowRef, dragHandlers, dragPreview } = useSessionDragOut({
+    folderPath,
+    sessionId: session.sessionId,
+    title: session.title,
+  })
+
   const menuItems = buildSessionMenuItems(session, folderPath, t, {
     onRename: () => onRenameSession({ sessionId: session.sessionId, title: session.title, folderPath }),
     onPin: () => onPinSession(session.sessionId, !session.isPinned, folderPath),
@@ -120,6 +127,8 @@ export const SessionRow = memo(function SessionRow({
 
   const rowInner = (
           <div
+            ref={rowRef}
+            {...dragHandlers}
             onClick={() => onSwitchSession(folderPath, session.sessionId)}
             className={cn(
               'group/session flex cursor-pointer items-center gap-2 overflow-hidden rounded-md px-2.5 py-1.5 transition-colors',
@@ -176,6 +185,7 @@ export const SessionRow = memo(function SessionRow({
 
   return (
     <div>
+      {dragPreview}
       <AdaptiveContextMenu items={menuItems} contentClassName="w-48">
         {rowInner}
       </AdaptiveContextMenu>

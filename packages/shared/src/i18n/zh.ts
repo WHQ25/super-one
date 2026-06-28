@@ -82,6 +82,7 @@ export const zh: Messages = {
       copyWorkingDirectory: '复制工作目录',
       openFolder: '打开文件夹',
       openInMiniWindow: '在迷你窗口中打开',
+      dragToMiniWindow: '松开打开为小窗',
       forkToWorktree: 'Fork 到新 Worktree',
       forkToLocal: 'Fork 到本地',
       forkingToast: '正在 Fork 会话…',

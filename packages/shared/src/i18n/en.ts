@@ -80,6 +80,7 @@ export type Messages = {
       copyWorkingDirectory: string
       openFolder: string
       openInMiniWindow: string
+      dragToMiniWindow: string
       forkToWorktree: string
       forkToLocal: string
       forkingToast: string
@@ -1370,6 +1371,7 @@ export const en: Messages = {
       copyWorkingDirectory: 'Copy Working Directory',
       openFolder: 'Open Folder',
       openInMiniWindow: 'Open in Mini Window',
+      dragToMiniWindow: 'Release to open as mini window',
       forkToWorktree: 'Fork to New Worktree',
       forkToLocal: 'Fork to Local',
       forkingToast: 'Forking session…',

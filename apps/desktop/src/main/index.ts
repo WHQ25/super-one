@@ -459,6 +459,7 @@ function createWindow(): void {
   mainWindow.on('closed', () => {
     if (mainWindow) allWindows.delete(mainWindow)
     mainWindow = null
+    destroyDragPreviewWindow()
     unwatchAllBashOutputs()
   })
 
@@ -481,7 +482,7 @@ function createWindow(): void {
   }
 }
 
-function createSessionWindow(projectPath: string, sessionId: string, title?: string): void {
+function createSessionWindow(projectPath: string, sessionId: string, title?: string, position?: { x: number; y: number }): void {
   const key = sessionWindowKey(projectPath, sessionId)
   const existing = sessionWindows.get(key)
   if (existing && !existing.isDestroyed()) {
@@ -495,6 +496,7 @@ function createSessionWindow(projectPath: string, sessionId: string, title?: str
     height: 640,
     minWidth: 380,
     minHeight: 480,
+    ...(position ? { x: Math.round(position.x), y: Math.round(position.y) } : {}),
     title: title ?? 'Session',
     ...(process.platform === 'darwin'
       ? { titleBarStyle: 'hiddenInset' as const, trafficLightPosition: { x: 12, y: 12 }, ...glassWindowOptions() }
@@ -537,6 +539,97 @@ function createSessionWindow(projectPath: string, sessionId: string, title?: str
   } else {
     win.loadFile(join(__dirname, '../renderer/index.html'), { search: query.slice(1) })
   }
+}
+
+const DRAG_PREVIEW_WIDTH = 260
+let dragPreviewWindow: BrowserWindow | null = null
+let dragPreviewTimer: ReturnType<typeof setInterval> | null = null
+let dragPreviewActive = false
+let dragPreviewOutside = false
+
+function ensureDragPreviewWindow(): BrowserWindow {
+  if (dragPreviewWindow && !dragPreviewWindow.isDestroyed()) return dragPreviewWindow
+  const win = new BrowserWindow({
+    width: DRAG_PREVIEW_WIDTH,
+    height: 220,
+    show: false,
+    frame: false,
+    transparent: true,
+    hasShadow: false,
+    resizable: false,
+    movable: false,
+    minimizable: false,
+    maximizable: false,
+    skipTaskbar: true,
+    focusable: false,
+    alwaysOnTop: true,
+    fullscreenable: false,
+    type: process.platform === 'darwin' ? 'panel' : undefined,
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      sandbox: true,
+      zoomFactor: 1,
+      backgroundThrottling: false,
+      additionalArguments: [roleArg(WindowRole.Mini)],
+    },
+  })
+  win.setIgnoreMouseEvents(true)
+  const query = '?mode=dragpreview'
+  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
+    win.loadURL(`${process.env['ELECTRON_RENDERER_URL']}/${query}`)
+  } else {
+    win.loadFile(join(__dirname, '../renderer/index.html'), { search: query.slice(1) })
+  }
+  dragPreviewWindow = win
+  return win
+}
+
+function stopDragPreview(): void {
+  if (dragPreviewTimer) {
+    clearInterval(dragPreviewTimer)
+    dragPreviewTimer = null
+  }
+  dragPreviewActive = false
+  dragPreviewOutside = false
+  if (dragPreviewWindow && !dragPreviewWindow.isDestroyed()) dragPreviewWindow.hide()
+}
+
+function destroyDragPreviewWindow(): void {
+  stopDragPreview()
+  if (dragPreviewWindow && !dragPreviewWindow.isDestroyed()) dragPreviewWindow.destroy()
+  dragPreviewWindow = null
+}
+
+function startDragPreview(title: string): void {
+  if (dragPreviewTimer) clearInterval(dragPreviewTimer)
+  dragPreviewActive = true
+  dragPreviewOutside = false
+  const win = ensureDragPreviewWindow()
+  const send = (): void => {
+    if (!win.isDestroyed()) win.webContents.send(AgentIpcChannels.DRAG_PREVIEW_UPDATE, { title, dark: currentDarkTheme })
+  }
+  if (win.webContents.isLoading()) win.webContents.once('did-finish-load', send)
+  else send()
+  dragPreviewTimer = setInterval(() => {
+    if (!dragPreviewActive || !mainWindow || mainWindow.isDestroyed() || win.isDestroyed()) return
+    const point = screen.getCursorScreenPoint()
+    const b = mainWindow.getBounds()
+    const inside = point.x >= b.x && point.x <= b.x + b.width && point.y >= b.y && point.y <= b.y + b.height
+    if (inside) {
+      if (dragPreviewOutside) {
+        dragPreviewOutside = false
+        win.hide()
+        mainWindow.webContents.send(AgentIpcChannels.DRAG_PREVIEW_ZONE, 'inside')
+      }
+    } else {
+      win.setPosition(Math.round(point.x - DRAG_PREVIEW_WIDTH / 2), Math.round(point.y + 8))
+      if (!dragPreviewOutside) {
+        dragPreviewOutside = true
+        win.showInactive()
+        mainWindow.webContents.send(AgentIpcChannels.DRAG_PREVIEW_ZONE, 'outside')
+      }
+    }
+  }, 16)
 }
 
 let benchWindow: BrowserWindow | null = null
@@ -2085,9 +2178,17 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(AgentIpcChannels.GET_FULLSCREEN, () => getMainWindow().isFullScreen())
 
-  ipcMain.handle(AgentIpcChannels.OPEN_SESSION_WINDOW, (_e, projectPath: string, sessionId: string, title?: string) => {
+  ipcMain.handle(AgentIpcChannels.OPEN_SESSION_WINDOW, (_e, projectPath: string, sessionId: string, title?: string, position?: { x: number; y: number }) => {
     if (!projectPath || !sessionId) return
-    createSessionWindow(projectPath, sessionId, title)
+    createSessionWindow(projectPath, sessionId, title, position)
+  })
+
+  ipcMain.handle(AgentIpcChannels.DRAG_PREVIEW_START, (_e, title: string) => {
+    startDragPreview(title ?? '')
+  })
+
+  ipcMain.handle(AgentIpcChannels.DRAG_PREVIEW_END, () => {
+    stopDragPreview()
   })
 
   ipcMain.handle(AgentIpcChannels.SET_WINDOW_ALWAYS_ON_TOP, (_e, value: boolean): boolean => {

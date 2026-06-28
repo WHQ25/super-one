@@ -2,7 +2,7 @@ import { useRef, useState, useCallback, useMemo, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { cn } from '@superone/ui/lib/utils'
-import { CLAUDE_INTERCEPTED_COMMAND_NAMES, CODEX_REJECT_PLAN_PLACEHOLDER, getLatestCodexThreadId, runClaudeInterceptedCommand, selectActiveCodexSkills, selectCodexPrompts, useChatStore, useActiveSession, useIsRemoteLocked } from '@/stores/chat'
+import { CLAUDE_INTERCEPTED_COMMAND_NAMES, CODEX_REJECT_PLAN_PLACEHOLDER, getLatestCodexThreadId, runClaudeInterceptedCommand, selectActiveCodexSkills, selectCodexPrompts, useChatStore, useActiveSession, useIsRemoteLocked, useSessionScope } from '@/stores/chat'
 import { useEffectiveProjectRoot } from '@/stores/app'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { ArrowUp, Paperclip, X } from 'lucide-react'
@@ -110,6 +110,10 @@ export function ChatInput() {
       activeSessionId: s._activeSessionId,
     })))
     const commandPopup = useActiveSession((s) => s.slashCommandOutput)
+    // In mosaic mode every tile mounts its own ChatInput; only the tile whose
+    // session is the project's active one should grab keyboard focus.
+    const sessionScope = useSessionScope()
+    const isActivePane = !sessionScope || sessionScope.sessionId === activeSessionId
     const fileInputRef = useRef<HTMLInputElement>(null)
 
     const [slashIndex, setSlashIndex] = useState(-1)
@@ -940,30 +944,30 @@ export function ChatInput() {
       if (editor && text !== editor.getText()) {
         isProgrammaticSetRef.current = true
         editor.commands.setContent(text ? `<p>${text}</p>` : '')
-        editor.commands.focus('end')
+        if (isActivePane) editor.commands.focus('end')
       }
-    }, [text, editor, activeSessionId])
+    }, [text, editor, activeSessionId, isActivePane])
 
     useEffect(() => {
-      if (editor && !showReviewPanel) {
+      if (editor && !showReviewPanel && isActivePane) {
         editor.commands.focus('end')
       }
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [editor, showReviewPanel, activeSessionId])
+    }, [editor, showReviewPanel, activeSessionId, isActivePane])
 
     useEffect(() => {
       if (!chatInputFocusNonce) return
-      if (editor && !showReviewPanel) {
+      if (editor && !showReviewPanel && isActivePane) {
         editor.commands.focus('end')
       }
-    }, [chatInputFocusNonce, editor, showReviewPanel])
+    }, [chatInputFocusNonce, editor, showReviewPanel, isActivePane])
 
     useEffect(() => {
       if (!chatInputRestoreFocusNonce) return
-      if (editor && !showReviewPanel) {
+      if (editor && !showReviewPanel && isActivePane) {
         editor.commands.focus()
       }
-    }, [chatInputRestoreFocusNonce, editor, showReviewPanel])
+    }, [chatInputRestoreFocusNonce, editor, showReviewPanel, isActivePane])
 
     useEffect(() => {
       if (showReviewPanel && editor) {

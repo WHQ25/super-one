@@ -216,6 +216,7 @@ vi.mock('@/stores/chat', () => ({
   useChatStore,
   useActiveSession: (selector: (state: typeof activeSessionState) => unknown) => selector(activeSessionState),
   useIsRemoteLocked: () => false,
+  useSessionScope: () => null,
   selectCodexPrompts: () => [],
   selectActiveCodexSkills: () => [],
   getLatestCodexThreadId: () => undefined,

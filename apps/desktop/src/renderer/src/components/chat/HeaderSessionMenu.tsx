@@ -1,0 +1,119 @@
+import { useCallback, useState, type CSSProperties } from 'react'
+import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
+import { Ellipsis } from 'lucide-react'
+import { cn } from '@superone/ui/lib/utils'
+import { IconButton } from '@superone/ui/components/ui/icon-button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@superone/ui/components/ui/dropdown-menu'
+import type { SessionForkMode } from '@superone/shared/agent-types'
+import { useChatStore } from '@/stores/chat'
+import { useAppStore } from '@/stores/app'
+import { buildSessionMenuItems } from '@/lib/session-menu-items'
+import { showNativeContextMenu, toNativeMenu } from '@/lib/native-context-menu'
+import { RenameSessionDialog, type RenameSessionTarget } from '@/components/sidebar/RenameSessionDialog'
+
+const NO_DRAG: CSSProperties = { WebkitAppRegion: 'no-drag' } as CSSProperties
+
+export function HeaderSessionMenu({ sessionId, folderPath }: { sessionId: string; folderPath: string }) {
+  const { t } = useTranslation()
+  const liquidGlass = useAppStore((s) => s.liquidGlass)
+  const [open, setOpen] = useState(false)
+  const [renameTarget, setRenameTarget] = useState<RenameSessionTarget | null>(null)
+
+  const entry = useChatStore((s) => s.projectSessions[folderPath]?.sessions.find((e) => e.sessionId === sessionId))
+
+  const afterMutate = useCallback(async () => {
+    await useChatStore.getState().fetchSessions()
+    useAppStore.getState().bumpSessionListNonce()
+  }, [])
+
+  const handleFork = useCallback(async (mode: SessionForkMode) => {
+    const toastId = toast.loading(t('sidebar.contextMenu.forkingToast'))
+    try {
+      const result = await window.app.forkSession({ sessionId, mode })
+      if (result.ok) {
+        await useChatStore.getState().switchToSession(folderPath, result.sessionId)
+        await afterMutate()
+        toast.success(t(mode === 'local' ? 'sidebar.contextMenu.forkedLocalToast' : 'sidebar.contextMenu.forkedToast'), { id: toastId })
+      } else {
+        toast.error(result.error, { id: toastId })
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err), { id: toastId })
+    }
+  }, [sessionId, folderPath, t, afterMutate])
+
+  if (!entry) return null
+
+  const items = buildSessionMenuItems(entry, folderPath, t, {
+    onRename: () => setRenameTarget({ sessionId: entry.sessionId, title: entry.title, folderPath }),
+    onPin: async () => { await window.app.pinSession(entry.sessionId, !entry.isPinned); await afterMutate() },
+    onHide: async () => { await window.app.hideSession(entry.sessionId, !entry.isHidden); await afterMutate() },
+    onFork: handleFork,
+  })
+
+  const dialog = (
+    <RenameSessionDialog target={renameTarget} onClose={() => setRenameTarget(null)} onRenamed={() => void afterMutate()} />
+  )
+
+  if (liquidGlass) {
+    return (
+      <>
+        <IconButton
+          variant="nested"
+          size="xs"
+          aria-label="Session actions"
+          style={NO_DRAG}
+          className="shrink-0 opacity-0 transition-opacity group-hover/htitle:opacity-100"
+          onClick={() => void showNativeContextMenu(toNativeMenu(items))}
+        >
+          <Ellipsis />
+        </IconButton>
+        {dialog}
+      </>
+    )
+  }
+
+  return (
+    <>
+      <DropdownMenu open={open} onOpenChange={setOpen}>
+        <DropdownMenuTrigger asChild>
+          <IconButton
+            variant="nested"
+            size="xs"
+            aria-label="Session actions"
+            style={NO_DRAG}
+            className={cn('shrink-0 transition-opacity', open ? 'opacity-100' : 'opacity-0 group-hover/htitle:opacity-100')}
+          >
+            <Ellipsis />
+          </IconButton>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="w-48">
+          {items.map((item, i) =>
+            item.kind === 'separator' ? (
+              <DropdownMenuSeparator key={i} />
+            ) : (
+              <DropdownMenuItem
+                key={item.id}
+                variant={item.destructive ? 'destructive' : 'default'}
+                disabled={item.disabled}
+                onClick={item.onSelect}
+                className="text-xs"
+              >
+                {item.icon ? <item.icon className="size-3.5" /> : null}
+                {item.label}
+              </DropdownMenuItem>
+            ),
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
+      {dialog}
+    </>
+  )
+}

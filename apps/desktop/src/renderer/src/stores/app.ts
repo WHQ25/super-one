@@ -99,6 +99,11 @@ interface AppState {
   sidebarWidth: number
   setSidebarWidth: (width: number) => void
 
+  // Bumped whenever a session is mutated outside the sidebar (e.g. header menu pin/hide/rename)
+  // so the sidebar can reload its locally-held session list.
+  sessionListNonce: number
+  bumpSessionListNonce: () => void
+
   fetchRecentFolders: () => Promise<void>
   // Unified project-switch entry. Omit folderPath to prompt a system folder picker.
   // Aligns app-level currentFolder with chat-level activeProject.
@@ -226,6 +231,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   setSidebarTab: (tab) => set({ sidebarTab: tab }),
   showSidebar: true,
   setShowSidebar: (show) => set({ showSidebar: show }),
+  sessionListNonce: 0,
+  bumpSessionListNonce: () => set((s) => ({ sessionListNonce: s.sessionListNonce + 1 })),
   sidebarWidth: 320,
   setSidebarWidth: (width) => set({ sidebarWidth: width }),
 

@@ -37,6 +37,7 @@ import { useTerminalPanel } from '@/hooks/useTerminalPanel'
 import { useTerminalStore } from '@/stores/terminal'
 import { useActiveSession, extractSessionTitle, useChatStore } from '@/stores/chat'
 import { SessionTitleAnimated } from '@/components/sidebar/AnimatedSessionTitle'
+import { HeaderSessionMenu } from '@/components/chat/HeaderSessionMenu'
 import { useSettingsStore } from '@/stores/settings'
 import { useShallow } from 'zustand/react/shallow'
 import { cn } from '@superone/ui/lib/utils'
@@ -398,7 +399,7 @@ function App(): React.JSX.Element {
         >
           {isMac && <div className={cn('shrink-0 transition-[width] duration-300 ease-in-out', isFullscreen || (layoutMode === 'coding' && hasLeftPanel) ? 'w-0' : layoutMode === 'coding' ? 'w-[60px]' : 'w-[66px]')} />}
           {layoutMode === 'coding' && (!isMac || !showSidebar) && !(showActivityPanel && activitySide === 'left') && <LayoutToggle />}
-          <HeaderTitle layoutMode={layoutMode} sessionId={sessionId} sessionFallback={sessionFallback} folderName={folderName} />
+          <HeaderTitle layoutMode={layoutMode} sessionId={sessionId} sessionFallback={sessionFallback} folderName={folderName} folderPath={currentFolder} />
 
           <div className="flex-1" />
 
@@ -520,7 +521,7 @@ function CanvasReturnToPanelButton() {
   )
 }
 
-function HeaderTitle({ layoutMode, sessionId, sessionFallback, folderName }: { layoutMode: 'canvas' | 'coding'; sessionId: string; sessionFallback: string | null | undefined; folderName: string | null | undefined }) {
+function HeaderTitle({ layoutMode, sessionId, sessionFallback, folderName, folderPath }: { layoutMode: 'canvas' | 'coding'; sessionId: string; sessionFallback: string | null | undefined; folderName: string | null | undefined; folderPath: string | null }) {
   const fullscreenApp = useMiniAppStore((s) => s.fullscreenApp)
   if (layoutMode === 'canvas' && fullscreenApp) {
     return (
@@ -532,11 +533,17 @@ function HeaderTitle({ layoutMode, sessionId, sessionFallback, folderName }: { l
   }
   if (layoutMode === 'coding') {
     return (
-      <SessionTitleAnimated
-        sessionId={sessionId}
-        fallback={sessionFallback ?? 'New Session'}
-        className="max-w-[300px] text-xs text-muted-foreground"
-      />
+      <div
+        className="group/htitle flex min-w-0 items-center gap-1"
+        style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+      >
+        <SessionTitleAnimated
+          sessionId={sessionId}
+          fallback={sessionFallback ?? 'New Session'}
+          className="max-w-[300px] text-xs text-muted-foreground"
+        />
+        {sessionId && folderPath ? <HeaderSessionMenu sessionId={sessionId} folderPath={folderPath} /> : null}
+      </div>
     )
   }
   return (

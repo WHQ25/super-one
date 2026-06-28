@@ -31,6 +31,7 @@ import { cn } from '@superone/ui/lib/utils'
 import { Tabs, TabsList, TabsTrigger } from '@superone/ui/components/ui/tabs'
 import { FileTree } from '@/components/sidebar/FileTree'
 import { ProjectSidebarRow } from '@/components/sidebar/ProjectSidebarRow'
+import { RenameSessionDialog } from '@/components/sidebar/RenameSessionDialog'
 import { SessionTitleAnimated } from '@/components/sidebar/AnimatedSessionTitle'
 import { traceSidebar, useSidebarRenderTrace } from '@/components/sidebar/sidebar-trace'
 import type { RecentFolder, SessionHistoryEntry, PinnedSessionEntry } from '@superone/shared/agent-types'
@@ -100,7 +101,6 @@ export const AppSidebar = memo(function AppSidebar() {
   const [copiedCmd, setCopiedCmd] = useState<'cd' | 'resume' | null>(null)
   const [removeTarget, setRemoveTarget] = useState<{ name: string; path: string } | null>(null)
   const [renameTarget, setRenameTarget] = useState<{ sessionId: string; title: string; folderPath: string } | null>(null)
-  const [renameValue, setRenameValue] = useState('')
   const inFlightFolderSessions = useRef(new Map<string, Promise<SessionHistoryEntry[]>>())
   const expandedFoldersRef = useRef(expandedFolders)
   const folderSessionsRef = useRef(folderSessions)
@@ -236,6 +236,13 @@ export const AppSidebar = memo(function AppSidebar() {
       refreshPinned()
     })
   }, [currentFolder, refreshFolderSessions, refreshPinned])
+  const sessionListNonce = useAppStore((s) => s.sessionListNonce)
+  useEffect(() => {
+    if (!currentFolder || sessionListNonce === 0) return
+    refreshFolderSessions(currentFolder)
+    refreshPinned()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionListNonce])
 
   const handleSwitchSession = useCallback(async (folderPath: string, sessionId: string) => {
     const ps = useChatStore.getState().projectSessions[folderPath]
@@ -292,13 +299,6 @@ export const AppSidebar = memo(function AppSidebar() {
 
   const deleteTargetCli = getDeleteSessionRecovery(deleteTarget?.provider ?? 'claude', deleteTarget?.sessionId ?? '')
 
-  const handleRenameSession = useCallback(async () => {
-    if (!renameTarget || !renameValue.trim()) return
-    await window.app.renameSession(renameTarget.sessionId, renameValue.trim())
-    refreshFolderSessions(renameTarget.folderPath)
-    refreshPinned()
-    setRenameTarget(null)
-  }, [renameTarget, renameValue, refreshFolderSessions, refreshPinned])
 
   useEffect(() => {
     if (frozenRecentOrder === null && recentFolders.length > 0) {
@@ -358,7 +358,6 @@ export const AppSidebar = memo(function AppSidebar() {
 
   const handleRequestRenameSession = useCallback((target: { sessionId: string; title: string; folderPath: string }) => {
     setRenameTarget(target)
-    setRenameValue(target.title)
   }, [])
 
   const handleRequestDeleteSession = useCallback((target: { sessionId: string; title: string; folderPath: string; provider: 'claude' | 'codex' }) => {
@@ -620,31 +619,11 @@ export const AppSidebar = memo(function AppSidebar() {
         </DialogContent>
       </Dialog>
 
-      {/* Rename session dialog */}
-      <Dialog open={!!renameTarget} onOpenChange={(open) => { if (!open) setRenameTarget(null) }}>
-        <DialogContent showCloseButton={false} className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>{t('sidebar.renameSession.title')}</DialogTitle>
-          </DialogHeader>
-          <input
-            value={renameValue}
-            onChange={(e) => setRenameValue(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.nativeEvent.isComposing) return
-              if (e.key === 'Enter') {
-                e.preventDefault()
-                handleRenameSession()
-              }
-            }}
-            autoFocus
-            className="w-full rounded-md border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring"
-          />
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setRenameTarget(null)}>{t('common.cancel')}</Button>
-            <Button onClick={handleRenameSession} disabled={!renameValue.trim()}>{t('common.save')}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <RenameSessionDialog
+        target={renameTarget}
+        onClose={() => setRenameTarget(null)}
+        onRenamed={(target) => { refreshFolderSessions(target.folderPath); refreshPinned() }}
+      />
     </div>
   )
 })

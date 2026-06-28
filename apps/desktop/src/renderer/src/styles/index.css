@@ -279,14 +279,21 @@ body {
 
 /* --- AnimatedSessionTitle: out → in char shimmer --- */
 .animated-title-wrap {
+  user-select: none;
+}
+.animated-title-wrap[data-phase="out"],
+.animated-title-wrap[data-phase="in"] {
   perspective: 500px;
 }
 .animated-title-inner {
   display: block;
-  transform-style: preserve-3d;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.animated-title-wrap[data-phase="out"] .animated-title-inner,
+.animated-title-wrap[data-phase="in"] .animated-title-inner {
+  transform-style: preserve-3d;
 }
 .animated-title-wrap[data-phase="out"] .animated-title-inner {
   opacity: 0;
@@ -298,10 +305,10 @@ body {
   display: inline-block;
   white-space: pre;
   transform-origin: 50% 100%;
-  backface-visibility: hidden;
 }
 .animated-title-ch.is-flip {
   opacity: 0;
+  backface-visibility: hidden;
   animation: animated-title-flip .36s cubic-bezier(.2,0,.2,1) forwards;
 }
 @keyframes animated-title-flip {

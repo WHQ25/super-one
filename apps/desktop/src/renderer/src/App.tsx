@@ -425,7 +425,8 @@ function App(): React.JSX.Element {
 
         {/* Main area */}
         <motion.div layout="position" transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }} className={cn('z-10 flex min-w-[400px] flex-1 flex-col', layoutMode === 'coding' && 'overflow-hidden', layoutMode === 'coding' && showActivityPanel && (activitySide === 'left' ? 'border-l border-border' : 'border-r border-border'))} style={{ order: 1 }}>
-        {/* Main header — drag region */}
+        {/* Main header — drag region (hidden in mosaic; each tile carries its own) */}
+        {mosaicMode !== 'mosaic' && (
         <div
           className={cn('flex h-[34px] shrink-0 items-center transition-[padding-left] duration-300 ease-in-out', !isMac || (isFullscreen && !(layoutMode === 'coding' && hasLeftPanel)) ? 'pl-2' : 'pl-[18px]')}
           style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
@@ -470,6 +471,7 @@ function App(): React.JSX.Element {
             </button>
           </div>
         </div>
+        )}
 
         {/* Content */}
         {layoutMode === 'coding' ? (

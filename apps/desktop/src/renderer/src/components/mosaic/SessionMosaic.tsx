@@ -1,14 +1,37 @@
 import { useEffect, useRef } from 'react'
-import { X } from 'lucide-react'
+import { Moon, Sun, SquareTerminal, X } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { cn } from '@superone/ui/lib/utils'
 import { SessionPane } from '@/components/chat/SessionPane'
 import { SessionTitleAnimated } from '@/components/sidebar/AnimatedSessionTitle'
+import { useTheme } from '@/hooks/useTheme'
+import { useFullscreen } from '@/hooks/useFullscreen'
+import { useAppStore } from '@/stores/app'
+import { useTerminalStore } from '@/stores/terminal'
 import { useMosaicStore } from './mosaic-store'
 import { computeCapacity, type GridTile } from './mosaic-grid'
 
-function MosaicTile({ tile, focused }: { tile: GridTile; focused: boolean }) {
+const isMac = window.app.platform === 'darwin'
+
+interface MosaicTileProps {
+  tile: GridTile
+  focused: boolean
+  isTopLeft: boolean
+  isTopRight: boolean
+  reserveTrafficLights: boolean
+  themeDark: boolean
+  onToggleTheme: () => void
+}
+
+function openTileTerminal(tile: GridTile) {
+  const m = useMosaicStore.getState()
+  m.setFocus(tile.id)
+  m.exitToSingle()
+  useTerminalStore.getState().setOpen(tile.sessionId, true)
+}
+
+function MosaicTile({ tile, focused, isTopLeft, isTopRight, reserveTrafficLights, themeDark, onToggleTheme }: MosaicTileProps) {
   return (
     <div
       onMouseDownCapture={() => { if (!focused) useMosaicStore.getState().setFocus(tile.id) }}
@@ -18,16 +41,22 @@ function MosaicTile({ tile, focused }: { tile: GridTile; focused: boolean }) {
         focused ? 'border-primary ring-2 ring-primary/35' : 'border-border/50',
       )}
     >
-      <div className="flex h-8 shrink-0 items-center gap-2 px-2.5">
+      <div className="flex h-8 shrink-0 items-center gap-1.5 px-2" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
+        {reserveTrafficLights && isTopLeft && <div className="w-[52px] shrink-0" />}
         <SessionTitleAnimated sessionId={tile.sessionId} fallback="Session" className="min-w-0 flex-1 text-xs text-muted-foreground" />
-        <IconButton
-          size="xs"
-          variant="nested"
-          tooltip="Close"
-          onClick={(e) => { e.stopPropagation(); useMosaicStore.getState().removeTile(tile.id) }}
-        >
-          <X className="size-3.5" />
-        </IconButton>
+        <div className="flex shrink-0 items-center gap-0.5" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+          <IconButton size="xs" variant="nested" tooltip="Terminal" onClick={(e) => { e.stopPropagation(); openTileTerminal(tile) }}>
+            <SquareTerminal className="size-3.5" />
+          </IconButton>
+          {isTopRight && (
+            <IconButton size="xs" variant="nested" tooltip="Toggle theme" onClick={(e) => { e.stopPropagation(); onToggleTheme() }}>
+              {themeDark ? <Sun className="size-3.5" /> : <Moon className="size-3.5" />}
+            </IconButton>
+          )}
+          <IconButton size="xs" variant="nested" tooltip="Close" onClick={(e) => { e.stopPropagation(); useMosaicStore.getState().removeTile(tile.id) }}>
+            <X className="size-3.5" />
+          </IconButton>
+        </div>
       </div>
       <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
         <SessionPane scope={{ projectPath: tile.projectPath, sessionId: tile.sessionId }} readOnly={!focused} />
@@ -39,6 +68,10 @@ function MosaicTile({ tile, focused }: { tile: GridTile; focused: boolean }) {
 export function SessionMosaic() {
   const containerRef = useRef<HTMLDivElement>(null)
   const { tiles, focusedTileId } = useMosaicStore(useShallow((s) => ({ tiles: s.tiles, focusedTileId: s.focusedTileId })))
+  const theme = useTheme()
+  const showSidebar = useAppStore((s) => s.showSidebar)
+  const isFullscreen = useFullscreen()
+  const reserveTrafficLights = isMac && !showSidebar && !isFullscreen
 
   useEffect(() => {
     const el = containerRef.current
@@ -74,7 +107,16 @@ export function SessionMosaic() {
       }}
     >
       {tiles.map((tile) => (
-        <MosaicTile key={tile.id} tile={tile} focused={tile.id === focusedTileId} />
+        <MosaicTile
+          key={tile.id}
+          tile={tile}
+          focused={tile.id === focusedTileId}
+          isTopLeft={tile.row === 0 && tile.col === 0}
+          isTopRight={tile.row === 0 && tile.col === usedCols - 1}
+          reserveTrafficLights={reserveTrafficLights}
+          themeDark={theme.dark}
+          onToggleTheme={theme.toggle}
+        />
       ))}
     </div>
   )

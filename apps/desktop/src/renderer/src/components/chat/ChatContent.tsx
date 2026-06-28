@@ -31,9 +31,10 @@ interface ChatContentProps {
   scrollViewportRef: React.RefObject<HTMLDivElement | null>
   showScrollButton?: boolean
   scrollToBottom?: () => void
+  readOnly?: boolean
 }
 
-export function ChatContent({ scrollViewportRef, showScrollButton = false, scrollToBottom }: ChatContentProps) {
+export function ChatContent({ scrollViewportRef, showScrollButton = false, scrollToBottom, readOnly = false }: ChatContentProps) {
   const {
     messages, isCompacting, compactError, rateLimitInfo, apiRetry, modelFallback, pendingPlanApproval,
     historySessionId, historyHydrated, worktreeRemoved,
@@ -331,7 +332,7 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
             </AnimatePresence>
           </div>
           <div className="mx-auto w-full min-w-0 max-w-3xl">
-            {worktreeRemoved ? (
+            {readOnly ? null : worktreeRemoved ? (
               <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-0.5 px-4 py-3 text-sm text-muted-foreground">
                 <GitFork className="size-3.5 shrink-0" />
                 <span>Worktree has been removed.</span>

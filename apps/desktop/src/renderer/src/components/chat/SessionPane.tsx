@@ -7,27 +7,28 @@ import { cn } from '@superone/ui/lib/utils'
 interface SessionPaneProps {
   scope?: SessionScope
   className?: string
+  readOnly?: boolean
 }
 
-function SessionPaneBody({ className }: { className?: string }) {
+function SessionPaneBody({ className, readOnly }: { className?: string; readOnly?: boolean }) {
   const scrollViewportRef = useRef<HTMLDivElement>(null)
   const { showScrollButton, scrollToBottom } = useChatScroll({ scrollViewportRef })
   return (
     <div className={cn('@container flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden', className)}>
-      <ChatContent scrollViewportRef={scrollViewportRef} showScrollButton={showScrollButton} scrollToBottom={scrollToBottom} />
+      <ChatContent scrollViewportRef={scrollViewportRef} showScrollButton={showScrollButton} scrollToBottom={scrollToBottom} readOnly={readOnly} />
     </div>
   )
 }
 
-export function SessionPane({ scope, className }: SessionPaneProps) {
+export function SessionPane({ scope, className, readOnly }: SessionPaneProps) {
   const value = useMemo(
     () => (scope ? { projectPath: scope.projectPath, sessionId: scope.sessionId } : null),
     [scope?.projectPath, scope?.sessionId],
   )
-  if (!value) return <SessionPaneBody className={className} />
+  if (!value) return <SessionPaneBody className={className} readOnly={readOnly} />
   return (
     <SessionScopeProvider value={value}>
-      <SessionPaneBody className={className} />
+      <SessionPaneBody className={className} readOnly={readOnly} />
     </SessionScopeProvider>
   )
 }

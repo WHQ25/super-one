@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { Moon, Sun, SquareTerminal, X } from 'lucide-react'
+import { Moon, PanelLeft, Sun, SquareTerminal, X } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { cn } from '@superone/ui/lib/utils'
@@ -20,6 +20,7 @@ interface MosaicTileProps {
   isTopLeft: boolean
   isTopRight: boolean
   reserveTrafficLights: boolean
+  showSidebar: boolean
   themeDark: boolean
   onToggleTheme: () => void
 }
@@ -31,7 +32,7 @@ function openTileTerminal(tile: GridTile) {
   useTerminalStore.getState().setOpen(tile.sessionId, true)
 }
 
-function MosaicTile({ tile, focused, isTopLeft, isTopRight, reserveTrafficLights, themeDark, onToggleTheme }: MosaicTileProps) {
+function MosaicTile({ tile, focused, isTopLeft, isTopRight, reserveTrafficLights, showSidebar, themeDark, onToggleTheme }: MosaicTileProps) {
   return (
     <div
       onMouseDownCapture={() => { if (!focused) useMosaicStore.getState().setFocus(tile.id) }}
@@ -43,6 +44,13 @@ function MosaicTile({ tile, focused, isTopLeft, isTopRight, reserveTrafficLights
     >
       <div className="flex h-8 shrink-0 items-center gap-1.5 px-2" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
         {reserveTrafficLights && isTopLeft && <div className="w-[52px] shrink-0" />}
+        {isTopLeft && !showSidebar && (
+          <div className="shrink-0" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+            <IconButton size="xs" variant="nested" tooltip="Toggle sidebar" onClick={(e) => { e.stopPropagation(); useAppStore.getState().setShowSidebar(true) }}>
+              <PanelLeft className="size-3.5" />
+            </IconButton>
+          </div>
+        )}
         <SessionTitleAnimated sessionId={tile.sessionId} fallback="Session" className="min-w-0 flex-1 text-xs text-muted-foreground" />
         <div className="flex shrink-0 items-center gap-0.5" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
           <IconButton size="xs" variant="nested" tooltip="Terminal" onClick={(e) => { e.stopPropagation(); openTileTerminal(tile) }}>
@@ -100,7 +108,7 @@ export function SessionMosaic() {
   return (
     <div
       ref={containerRef}
-      className="grid min-h-0 min-w-0 flex-1 gap-[5px] overflow-hidden p-[5px]"
+      className="grid min-h-0 min-w-0 flex-1 gap-[5px] overflow-hidden"
       style={{
         gridTemplateColumns: `repeat(${usedCols}, minmax(0, 1fr))`,
         gridTemplateRows: `repeat(${usedRows}, minmax(0, 1fr))`,
@@ -114,6 +122,7 @@ export function SessionMosaic() {
           isTopLeft={tile.row === 0 && tile.col === 0}
           isTopRight={tile.row === 0 && tile.col === usedCols - 1}
           reserveTrafficLights={reserveTrafficLights}
+          showSidebar={showSidebar}
           themeDark={theme.dark}
           onToggleTheme={theme.toggle}
         />

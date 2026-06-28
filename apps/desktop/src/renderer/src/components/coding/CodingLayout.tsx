@@ -1,10 +1,9 @@
 import { useRef, useEffect, useState, useCallback, memo, lazy, Suspense } from 'react'
 import { useChatStore } from '@/stores/chat'
-import { ChatContent } from '@/components/chat/ChatContent'
+import { SessionPane } from '@/components/chat/SessionPane'
 import { SessionSwitcherPopup } from '@/components/chat/SessionSwitcherPopup'
 import { useAppStore } from '@/stores/app'
 import { useTerminalStore } from '@/stores/terminal'
-import { useChatScroll } from '@/hooks/useChatScroll'
 import { useChatKeyboardShortcuts } from '@/hooks/useChatKeyboardShortcuts'
 import { useTerminalPanel } from '@/hooks/useTerminalPanel'
 import { closeActiveTerminal, createNewTerminal } from '@/components/coding/terminal-panel-api'
@@ -16,10 +15,8 @@ const MIN_TERM_HEIGHT = 120
 const TerminalPanel = lazy(() => import('@/components/coding/TerminalPanel').then((m) => ({ default: m.TerminalPanel })))
 
 export const CodingLayout = memo(function CodingLayout() {
-  const scrollViewportRef = useRef<HTMLDivElement>(null)
   const chatScopeRef = useRef<HTMLDivElement>(null)
 
-  const { showScrollButton, scrollToBottom } = useChatScroll({ scrollViewportRef })
   useChatKeyboardShortcuts()
 
   const { open: termOpen, toggle: toggleTerminal } = useTerminalPanel()
@@ -81,9 +78,7 @@ export const CodingLayout = memo(function CodingLayout() {
 
   return (
     <div ref={chatScopeRef} className="flex min-w-0 flex-1 flex-col overflow-hidden">
-      <div className="@container flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-        <ChatContent scrollViewportRef={scrollViewportRef} showScrollButton={showScrollButton} scrollToBottom={scrollToBottom} />
-      </div>
+      <SessionPane />
 
       <div
         className={`relative flex shrink-0 flex-col border-t border-border bg-card ${termOpen ? '' : 'hidden'}`}

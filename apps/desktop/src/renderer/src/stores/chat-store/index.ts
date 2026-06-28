@@ -812,6 +812,8 @@ export {
   selectClaudeOutputStyles,
 } from './selectors'
 
+export { SessionScopeProvider, useSessionScope, type SessionScope } from './session-scope'
+
 export {
   type CodexCommand,
   accumulateCodexFooterTokens,

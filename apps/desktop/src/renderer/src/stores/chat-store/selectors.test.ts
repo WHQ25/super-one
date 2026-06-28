@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { createElement, type ReactNode } from 'react'
 import { act, renderHook } from '@testing-library/react'
 import type { AccountInfo, ClaudeResources } from '@superone/shared/agent-types'
 
@@ -69,6 +70,7 @@ const {
   selectCodexResources,
 } = await import('./selectors')
 const { createDefaultPerSessionState, createDefaultProjectState } = await import('./defaults')
+const { SessionScopeProvider } = await import('./session-scope')
 
 const PATH = '/test-project'
 
@@ -155,6 +157,26 @@ describe('useActiveSession', () => {
     renderHook(() => useActiveSession((view) => { refs.push(view); return view.cwd }))
     renderHook(() => useActiveSession((view) => { refs.push(view); return view.cwd }))
     expect(refs[0]).toBe(refs[1])
+  })
+
+  it('reads the scoped session over the active one when a SessionScopeProvider wraps the consumer', () => {
+    const proj = createDefaultProjectState()
+    const activeSess = createDefaultPerSessionState()
+    activeSess.draftText = 'active-draft'
+    const scopedSess = createDefaultPerSessionState()
+    scopedSess.draftText = 'scoped-draft'
+    proj._activeSessionId = 'sid-active'
+    proj._sessions = { 'sid-active': activeSess, 'sid-scoped': scopedSess }
+    useChatStore.setState({ projectSessions: { [PATH]: proj }, activeProject: PATH })
+
+    const wrapper = ({ children }: { children: ReactNode }) =>
+      createElement(SessionScopeProvider, { value: { projectPath: PATH, sessionId: 'sid-scoped' } }, children)
+
+    const scoped = renderHook(() => useActiveSession((view) => view.draftText), { wrapper }).result.current
+    const active = renderHook(() => useActiveSession((view) => view.draftText)).result.current
+
+    expect(scoped).toBe('scoped-draft')
+    expect(active).toBe('active-draft')
   })
 
   it('rebuilds the merged view when the per-session reference changes', () => {

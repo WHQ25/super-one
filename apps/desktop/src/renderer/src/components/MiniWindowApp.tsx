@@ -1,9 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Pin, PinOff } from 'lucide-react'
 import { useChatStore, useActiveSession, extractSessionTitle } from '@/stores/chat'
 import { useAppStore, startProjectMirror } from '@/stores/app'
-import { ChatContent } from '@/components/chat/ChatContent'
-import { useChatScroll } from '@/hooks/useChatScroll'
+import { SessionPane } from '@/components/chat/SessionPane'
 import { useAgentEvents } from '@/hooks/useAgentEvents'
 import { useTheme } from '@/hooks/useTheme'
 import { useHarnessTheme } from '@/hooks/useHarnessTheme'
@@ -73,9 +72,6 @@ export function MiniWindowApp({ projectPath, sessionId, initialTitle }: MiniWind
     return () => { cancelled = true }
   }, [projectPath, sessionId, focusProject, switchSession])
 
-  const scrollViewportRef = useRef<HTMLDivElement>(null)
-  const { showScrollButton, scrollToBottom } = useChatScroll({ scrollViewportRef })
-
   useEffect(() => {
     document.title = truncateForDock(displayTitle)
   }, [displayTitle])
@@ -133,11 +129,7 @@ export function MiniWindowApp({ projectPath, sessionId, initialTitle }: MiniWind
       <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
         <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-6 bg-linear-to-b from-card to-transparent" />
         {matchesTarget ? (
-          <ChatContent
-            scrollViewportRef={scrollViewportRef}
-            showScrollButton={showScrollButton}
-            scrollToBottom={scrollToBottom}
-          />
+          <SessionPane scope={{ projectPath, sessionId }} />
         ) : (
           <div className="flex flex-1 items-center justify-center text-xs text-muted-foreground/70">
             Loading session...

@@ -1,5 +1,6 @@
 import { useCallback, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { SESSION_DRAG_MIME } from '@/components/mosaic/mosaic-store'
 import { DragPreviewPill } from './SessionDragPreviewContent'
 
 interface UseSessionDragOutParams {
@@ -38,6 +39,7 @@ export function useSessionDragOut({ folderPath, sessionId, title }: UseSessionDr
 
   const onDragStart = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData(SESSION_DRAG_MIME, JSON.stringify({ folderPath, sessionId, title }))
     const ghost = document.createElement('div')
     ghost.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;pointer-events:none'
     document.body.appendChild(ghost)

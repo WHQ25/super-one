@@ -413,7 +413,7 @@ function App(): React.JSX.Element {
       {/* Main area wrapper */}
       <div className={cn(
         'flex min-w-0 flex-1',
-        layoutMode === 'coding' && mosaicMode === 'mosaic' && 'relative z-20 overflow-hidden',
+        layoutMode === 'coding' && mosaicMode === 'mosaic' && 'relative z-20 m-[5px] overflow-hidden',
         layoutMode === 'coding' && mosaicMode !== 'mosaic' && 'relative z-20 my-[5px] mr-[5px] overflow-hidden rounded-xl border border-border/50 bg-card transition-shadow duration-200',
         layoutMode === 'coding' && mosaicMode !== 'mosaic' && !hasLeftPanel && 'ml-[5px]',
         layoutMode === 'coding' && mosaicMode !== 'mosaic' && (sidebarResizing

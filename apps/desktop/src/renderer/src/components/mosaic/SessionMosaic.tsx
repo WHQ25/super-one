@@ -65,7 +65,7 @@ function MosaicTile({ tile, focused, isTopLeft, isTopRight, reserveTrafficLights
         </div>
       </div>
       <div className={cn('relative flex min-h-0 flex-1 flex-col overflow-hidden transition-opacity', !focused && 'opacity-60')}>
-        <SessionPane scope={{ projectPath: tile.projectPath, sessionId: tile.sessionId }} readOnly={!focused} />
+        <SessionPane scope={{ projectPath: tile.projectPath, sessionId: tile.sessionId }} />
       </div>
     </div>
   )

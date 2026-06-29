@@ -341,7 +341,8 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
               const outputPath = isBash ? extractBashOutputPath(text) : undefined
               const isTimedOut = isBash ? extractBashKilled(userMsg.tool_use_result) : undefined
               const taskCreateTodo = extractTaskCreateTodo(toolName, userMsg.tool_use_result, text)
-              const isError = block.is_error || text.includes('<tool_use_error>')
+              const rawIsError = block.is_error || text.includes('<tool_use_error>')
+              const isError = rawIsError && !(isBash && isBashCommandOutput(userMsg.tool_use_result))
               emit({
                 type: 'content_delta',
                 messageId,
@@ -839,10 +840,11 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
             const outputPath = isBash ? extractBashOutputPath(summaryText) : undefined
             const isTimedOut = isBash ? extractBashKilled(raw.tool_use_result) : undefined
             const taskCreateTodo = extractTaskCreateTodo(toolName, raw.tool_use_result, summaryText)
+            const isError = raw.is_error && !(isBash && isBashCommandOutput(raw.tool_use_result))
             emit({
               type: 'content_delta',
               messageId,
-              delta: { type: 'tool_result', toolUseId, summary: summaryText, ...(outputPath ? { outputPath } : {}), ...(isTimedOut ? { isTimedOut } : {}), ...(raw.is_error ? { isError: true } : {}), ...(taskCreateTodo ?? {}), parentToolUseId: raw.parent_tool_use_id ?? null },
+              delta: { type: 'tool_result', toolUseId, summary: summaryText, ...(outputPath ? { outputPath } : {}), ...(isTimedOut ? { isTimedOut } : {}), ...(isError ? { isError: true } : {}), ...(taskCreateTodo ?? {}), parentToolUseId: raw.parent_tool_use_id ?? null },
             })
           }
           break
@@ -1039,6 +1041,11 @@ function extractToolResultText(content: unknown): string {
 function extractBashKilled(toolUseResult?: unknown): boolean | undefined {
   const tur = toolUseResult as any
   return tur?.killed === true ? true : undefined
+}
+
+function isBashCommandOutput(toolUseResult?: unknown): boolean {
+  const tur = toolUseResult as any
+  return !!tur && typeof tur === 'object' && (typeof tur.stdout === 'string' || typeof tur.stderr === 'string')
 }
 
 /**

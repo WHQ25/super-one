@@ -1162,3 +1162,63 @@ describe('session_state_changed drives idle transition', () => {
     expect(statusTrail(events)).toEqual(['streaming'])
   })
 })
+
+describe('tool_result error classification', () => {
+  const runWith = async (messages: Array<Record<string, unknown>>) => {
+    state.messages = messages
+    const events: Array<Record<string, unknown>> = []
+    const handle = createSessionQuery(
+      { consumedTags: [], drainConsumedTag: () => undefined } as unknown as MessageBridge,
+      { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
+      (event) => events.push(event as unknown as Record<string, unknown>),
+      () => 'msg-tool-error',
+      () => Date.now() - 50,
+      () => false,
+    )
+    await handle.iterationDone
+    return events
+  }
+  const resultFor = (events: Array<Record<string, unknown>>, toolUseId: string) =>
+    events
+      .map((e) => e.delta as Record<string, unknown> | undefined)
+      .find((d) => d?.type === 'tool_result' && d.toolUseId === toolUseId)
+
+  it('does not flag isError for a Bash non-zero exit (command ran, structured output)', async () => {
+    const events = await runWith([
+      { type: 'assistant', message: { content: [{ type: 'tool_use', id: 'bash-fail', name: 'Bash', input: 'exit 1' }] } },
+      {
+        type: 'user',
+        message: { content: [{ type: 'tool_result', tool_use_id: 'bash-fail', content: 'boom', is_error: true }] },
+        tool_use_result: { stdout: '', stderr: 'boom', interrupted: false, isImage: false },
+      },
+      { type: 'result', subtype: 'success', usage: {} },
+    ])
+    expect(resultFor(events, 'bash-fail')?.isError).toBeUndefined()
+  })
+
+  it('keeps isError for a genuine Bash tool-layer failure (string "Error:" result)', async () => {
+    const events = await runWith([
+      { type: 'assistant', message: { content: [{ type: 'tool_use', id: 'bash-broken', name: 'Bash', input: '' }] } },
+      {
+        type: 'user',
+        message: { content: [{ type: 'tool_result', tool_use_id: 'bash-broken', content: 'Error: bad input', is_error: true }] },
+        tool_use_result: 'Error: bad input',
+      },
+      { type: 'result', subtype: 'success', usage: {} },
+    ])
+    expect(resultFor(events, 'bash-broken')?.isError).toBe(true)
+  })
+
+  it('leaves non-Bash tool errors flagged (Read token overflow)', async () => {
+    const events = await runWith([
+      { type: 'assistant', message: { content: [{ type: 'tool_use', id: 'read-1', name: 'Read', input: {} }] } },
+      {
+        type: 'user',
+        message: { content: [{ type: 'tool_result', tool_use_id: 'read-1', content: 'File content exceeds maximum allowed tokens', is_error: true }] },
+        tool_use_result: 'Error: File content exceeds maximum allowed tokens',
+      },
+      { type: 'result', subtype: 'success', usage: {} },
+    ])
+    expect(resultFor(events, 'read-1')?.isError).toBe(true)
+  })
+})

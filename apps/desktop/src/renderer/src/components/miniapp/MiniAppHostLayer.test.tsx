@@ -70,6 +70,7 @@ function makeEntry(id: string): MiniAppEntry {
 
 let useMiniAppStore: typeof import('@/stores/miniapp').useMiniAppStore
 let makeInstanceKey: typeof import('@/stores/miniapp').makeInstanceKey
+let useActivityPanelStore: typeof import('@/stores/activity-panel').useActivityPanelStore
 let MiniAppHostLayer: typeof import('./MiniAppHostLayer').MiniAppHostLayer
 
 beforeEach(async () => {
@@ -78,7 +79,9 @@ beforeEach(async () => {
   appStateRef.currentProjectId = 'proj-1'
   vi.resetModules()
   ;({ useMiniAppStore, makeInstanceKey } = await import('@/stores/miniapp'))
+  ;({ useActivityPanelStore } = await import('@/stores/activity-panel'))
   ;({ MiniAppHostLayer } = await import('./MiniAppHostLayer'))
+  act(() => useActivityPanelStore.getState().setShowPanel(true))
 })
 
 describe('MiniAppHostLayer persistence', () => {
@@ -180,6 +183,38 @@ describe('MiniAppHostLayer persistence', () => {
     expect(host).not.toBeNull()
     expect(host.style.display).toBe('none')
     appStateRef.layoutMode = 'coding'
+  })
+
+  it('parks panel-mode miniapps off-screen but keeps them sized while the activity panel is collapsed (mosaic keep-alive)', async () => {
+    const { container } = render(<MiniAppHostLayer />)
+    const key = makeInstanceKey('app-a', 'proj-1')
+
+    await act(async () => {
+      await useMiniAppStore.getState().openAppInPanel(makeEntry('app-a'), '/proj')
+    })
+    act(() => {
+      useMiniAppStore.getState().updateSlot(
+        key,
+        'panel',
+        { left: 120, top: 44, width: 560, height: 800 } as DOMRectReadOnly,
+      )
+    })
+
+    const host = container.querySelector(`[data-instance-key="${key}"]`) as HTMLElement
+    expect(host.style.display).toBe('block')
+    expect(host.style.left).toBe('120px')
+
+    act(() => useActivityPanelStore.getState().setShowPanel(false))
+    expect(host.style.display).toBe('block')
+    expect(host.style.left).toBe('-99999px')
+    expect(host.style.width).toBe('560px')
+    expect(host.style.height).toBe('800px')
+    expect(host.style.pointerEvents).toBe('none')
+
+    act(() => useActivityPanelStore.getState().setShowPanel(true))
+    expect(host.style.display).toBe('block')
+    expect(host.style.left).toBe('120px')
+    expect(host.style.pointerEvents).toBe('auto')
   })
 
   it('positions container by current slot rect and hides when no slot', async () => {

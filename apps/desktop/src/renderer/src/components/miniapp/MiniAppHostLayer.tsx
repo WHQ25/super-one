@@ -108,13 +108,16 @@ export function MiniAppHostLayer() {
 function PersistentMiniAppContainer({ instanceKey, layoutMode, dragging }: { instanceKey: string; layoutMode: 'canvas' | 'coding'; dragging: boolean }) {
   const slot = useMiniAppStore((s) => s.slots[instanceKey])
   const activitySide = useActivityPanelStore((s) => s.side)
+  const activityShown = useActivityPanelStore((s) => s.showPanel)
   const open = useMiniAppStore((s) => s.openApps[instanceKey])
   const appId = open?.entry.id
   const presentation = open?.presentation
   const presentationMatches =
     (layoutMode === 'canvas' && presentation === 'canvas') ||
     (layoutMode === 'coding' && presentation === 'panel')
-  const visible = presentationMatches && slot != null && slot.width > 0 && slot.height > 0
+  const mounted = presentationMatches && slot != null && slot.width > 0 && slot.height > 0
+  const hostShown = presentation !== 'panel' || activityShown
+  const visible = mounted && hostShown
 
   if (!appId) return null
 
@@ -126,11 +129,11 @@ function PersistentMiniAppContainer({ instanceKey, layoutMode, dragging }: { ins
       data-miniapp-presentation={presentation}
       style={{
         position: 'absolute',
-        left: slot?.left ?? 0,
+        left: visible ? (slot?.left ?? 0) : -99999,
         top: slot?.top ?? 0,
         width: slot?.width ?? 0,
         height: slot?.height ?? 0,
-        display: visible ? 'block' : 'none',
+        display: mounted ? 'block' : 'none',
         pointerEvents: visible && !dragging ? 'auto' : 'none',
         overflow: 'hidden',
         borderBottomLeftRadius: (layoutMode === 'coding' && activitySide === 'left') || (layoutMode === 'canvas' && presentation === 'canvas') ? 'var(--radius-xl)' : undefined,

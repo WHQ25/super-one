@@ -187,19 +187,14 @@ function App(): React.JSX.Element {
     }
   }, [mosaicMode, showActivityPanel, activeSessionId, terminalOpen, setTerminalOpen])
 
-  // Opening the terminal or activity panel while in mosaic collapses back to
-  // single mode, focused on the current tile (rising-edge only).
-  const prevTerminalOpenRef = useRef(terminalOpen)
   const prevActivityShownRef = useRef(showActivityPanel)
   useEffect(() => {
-    const terminalRose = !prevTerminalOpenRef.current && terminalOpen
     const activityRose = !prevActivityShownRef.current && showActivityPanel
-    prevTerminalOpenRef.current = terminalOpen
     prevActivityShownRef.current = showActivityPanel
-    if (mosaicMode === 'mosaic' && (terminalRose || activityRose)) {
-      useMosaicStore.getState().exitToSingle()
-    }
-  }, [mosaicMode, terminalOpen, showActivityPanel])
+    if (mosaicMode !== 'mosaic' || !activityRose) return
+    if (panelSnapshotRef.current) panelSnapshotRef.current.activityShown = true
+    useActivityPanelStore.getState().setShowPanel(false)
+  }, [mosaicMode, showActivityPanel])
 
   const mosaicMin = layoutMode === 'coding' && mosaicMode === 'mosaic' && mosaicRoot ? measureMin(mosaicRoot) : null
   const mosaicMinW = mosaicMin?.w ?? 0

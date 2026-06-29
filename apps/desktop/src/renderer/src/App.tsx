@@ -122,10 +122,14 @@ function App(): React.JSX.Element {
   useEffect(() => {
     const prev = prevSessionIdRef.current
     if (prev === activeSessionId) return
+    prevSessionIdRef.current = activeSessionId
+    // Mosaic force-hides the global panel; parking that hidden state would
+    // corrupt each tile's remembered panel/dock. Freeze per-session view state
+    // while mosaic owns the layout — entry parks the seed, exit restores the tile.
+    if (useMosaicStore.getState().mode === 'mosaic') return
     const view = useActivityViewStateStore.getState()
     if (prev) view.park(prev)
     if (activeSessionId) view.restore(activeSessionId)
-    prevSessionIdRef.current = activeSessionId
   }, [activeSessionId])
 
   useEffect(() => {
@@ -165,25 +169,31 @@ function App(): React.JSX.Element {
     return () => window.removeEventListener('keydown', handler)
   }, [toggleTerminal])
 
-  // Mosaic is chat-only. On entry we snapshot the activity/terminal panel state
-  // and close them so a hidden panel doesn't skew layout or bounce us back out;
-  // on exit we restore exactly what was open before.
-  const panelSnapshotRef = useRef<{ activityShown: boolean; sessionId: string | null; terminalOpen: boolean } | null>(null)
+  // Mosaic is chat-only. On entry we park the seed session's live panel/dock and
+  // close the global panel so a hidden panel doesn't skew layout or bounce us back
+  // out; on exit each maximized tile restores its own per-session view state.
+  const panelSnapshotRef = useRef<{ sessionId: string | null; terminalOpen: boolean } | null>(null)
   const prevMosaicModeRef = useRef(mosaicMode)
   useEffect(() => {
     const was = prevMosaicModeRef.current
     prevMosaicModeRef.current = mosaicMode
     if (was !== 'mosaic' && mosaicMode === 'mosaic') {
-      panelSnapshotRef.current = { activityShown: showActivityPanel, sessionId: activeSessionId, terminalOpen }
+      // Capture the entering session's real panel/dock before we hide it, so
+      // maximizing back to it restores correctly (mechanism-1 freezes after this).
+      if (activeSessionId) useActivityViewStateStore.getState().park(activeSessionId)
+      panelSnapshotRef.current = { sessionId: activeSessionId, terminalOpen }
       setTerminalOpen(false)
       useActivityPanelStore.getState().setShowPanel(false)
     } else if (was === 'mosaic' && mosaicMode !== 'mosaic') {
       const snap = panelSnapshotRef.current
       panelSnapshotRef.current = null
-      if (snap) {
-        useActivityPanelStore.getState().setShowPanel(snap.activityShown)
-        if (snap.sessionId) useTerminalStore.getState().setOpen(snap.sessionId, snap.terminalOpen)
-      }
+      // The maximized tile governs the activity panel: restore its own per-session
+      // state. (If the active session is still resolving, mechanism-1 re-applies it
+      // once it settles — this only covers exiting onto the already-active tile.)
+      if (activeSessionId) useActivityViewStateStore.getState().restore(activeSessionId)
+      // Terminal is per-session; re-open the seed session's terminal we force-closed
+      // on entry (a no-op in view unless that session is the maximized one).
+      if (snap?.sessionId) useTerminalStore.getState().setOpen(snap.sessionId, snap.terminalOpen)
     }
   }, [mosaicMode, showActivityPanel, activeSessionId, terminalOpen, setTerminalOpen])
 
@@ -192,7 +202,6 @@ function App(): React.JSX.Element {
     const activityRose = !prevActivityShownRef.current && showActivityPanel
     prevActivityShownRef.current = showActivityPanel
     if (mosaicMode !== 'mosaic' || !activityRose) return
-    if (panelSnapshotRef.current) panelSnapshotRef.current.activityShown = true
     useActivityPanelStore.getState().setShowPanel(false)
   }, [mosaicMode, showActivityPanel])
 

@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import type { AgentEvent, ChatMessage, ContentBlock, SendMessageRequest, SessionInfo } from '@superone/shared/agent-types'
 import { applySeqToMessage, isReplayedEventForMessage } from '@superone/shared/event-seq-utils'
 import { stripMiniAppMarkup } from '@superone/shared/miniapp-prompt-tags'
+import { applyContentDelta } from '@superone/shared/content-delta'
 
 export interface PersistedClaudeSessionState {
   messages: ChatMessage[]
@@ -33,45 +34,6 @@ export interface ClaudeSessionRuntime {
   gitBranch: string | null
   worktreePath: string | null
   taskProgress: Record<string, TaskProgressEntry>
-}
-
-function applyDelta(content: ContentBlock[], delta: ContentBlock): ContentBlock[] {
-  if (delta.type === 'text') {
-    const last = content[content.length - 1]
-    if (last?.type === 'text') {
-      return [...content.slice(0, -1), { type: 'text', text: last.text + delta.text }]
-    }
-  }
-  if (delta.type === 'thinking') {
-    const last = content[content.length - 1]
-    if (last?.type === 'thinking') {
-      return [...content.slice(0, -1), { ...last, thinking: last.thinking + delta.thinking, endedAt: delta.endedAt ?? last.endedAt }]
-    }
-  }
-  if (delta.type === 'tool_use') {
-    const idx = content.findIndex((block) => block.type === 'tool_use' && block.toolUseId === delta.toolUseId)
-    if (idx !== -1) {
-      const existing = content[idx]
-      const preserved = existing.type === 'tool_use'
-        ? {
-            startedAt: existing.startedAt,
-            elapsedSeconds: existing.elapsedSeconds,
-            ...(!delta.status && existing.status ? { status: existing.status } : {}),
-          }
-        : {}
-      return content.map((block, index) => (index === idx ? { ...preserved, ...delta } : block))
-    }
-    return [...content, { ...delta, startedAt: Date.now() }]
-  }
-  if (delta.type === 'tool_result') {
-    const updated = content.map((block) =>
-      block.type === 'tool_use' && block.toolUseId === delta.toolUseId
-        ? { ...block, status: 'complete' as const }
-        : block,
-    )
-    return [...updated, delta]
-  }
-  return [...content, delta]
 }
 
 function findCheckpointTarget(messages: ChatMessage[], assistantMessageId: string): number {
@@ -259,7 +221,7 @@ export function applyClaudeEventToRuntime(
           if (isReplayedEventForMessage(event, message)) return message
           return {
             ...message,
-            content: applyDelta(message.content, event.delta),
+            content: applyContentDelta(message.content, event.delta),
             ...applySeqToMessage(event),
           }
         }),

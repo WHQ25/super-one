@@ -248,6 +248,45 @@ describe('message_start is an idempotent upsert', () => {
   })
 })
 
+describe('content_delta never leaks subagent text/thinking into the main agent', () => {
+  function emptyAssistant(): ChatMessage {
+    return { id: 'msg-1', role: 'assistant', status: 'streaming', content: [], createdAt: '', providerId: 'claude' }
+  }
+  function delta(rt: ReturnType<typeof createClaudeRuntime>, d: Record<string, unknown>) {
+    return applyClaudeEventToRuntime(rt, { type: 'content_delta', messageId: 'msg-1', delta: d } as AgentEvent)
+  }
+
+  it('keeps a subagent text stream attributed and out of the top-level text block when streams interleave', () => {
+    let rt = createClaudeRuntime('/test', 'sess-1', { messages: [emptyAssistant()] })
+    // Top-level agent and a running sub-agent stream concurrently into one message.
+    rt = delta(rt, { type: 'text', text: 'Top ', parentToolUseId: null })
+    rt = delta(rt, { type: 'text', text: 'subagent reply', parentToolUseId: 'toolu_sub' })
+    rt = delta(rt, { type: 'text', text: 'level done', parentToolUseId: null })
+
+    const content = rt.messages.find((m) => m.id === 'msg-1')!.content
+    const top = content.filter((b) => b.type === 'text' && (b as { parentToolUseId?: string | null }).parentToolUseId === null)
+    const sub = content.filter((b) => b.type === 'text' && (b as { parentToolUseId?: string }).parentToolUseId === 'toolu_sub')
+    expect(top).toHaveLength(1)
+    expect((top[0] as { text: string }).text).toBe('Top level done')
+    expect(sub).toHaveLength(1)
+    expect((sub[0] as { text: string }).text).toBe('subagent reply')
+  })
+
+  it('does not fold a subagent thinking delta into the top-level agent thinking block', () => {
+    let rt = createClaudeRuntime('/test', 'sess-1', { messages: [emptyAssistant()] })
+    rt = delta(rt, { type: 'thinking', thinking: 'Top-level reasoning', parentToolUseId: null, startedAt: 1000, endedAt: 1000 })
+    rt = delta(rt, { type: 'thinking', thinking: 'Subagent reasoning', parentToolUseId: 'toolu_sub', startedAt: 1500, endedAt: 1500 })
+
+    const content = rt.messages.find((m) => m.id === 'msg-1')!.content
+    const top = content.filter((b) => b.type === 'thinking' && (b as { parentToolUseId?: string | null }).parentToolUseId === null)
+    const sub = content.filter((b) => b.type === 'thinking' && (b as { parentToolUseId?: string }).parentToolUseId === 'toolu_sub')
+    expect(top).toHaveLength(1)
+    expect((top[0] as { thinking: string }).thinking).toBe('Top-level reasoning')
+    expect(sub).toHaveLength(1)
+    expect((sub[0] as { thinking: string }).thinking).toBe('Subagent reasoning')
+  })
+})
+
 describe('extractResultText', () => {
   it('extracts last assistant text from JSONL', () => {
     const jsonl = [

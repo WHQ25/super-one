@@ -1,6 +1,6 @@
 import { useCallback, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { SESSION_DRAG_MIME } from '@/components/mosaic/mosaic-store'
+import { SESSION_DRAG_MIME, useMosaicStore } from '@/components/mosaic/mosaic-store'
 import { DragPreviewPill } from './SessionDragPreviewContent'
 
 interface UseSessionDragOutParams {
@@ -35,6 +35,7 @@ export function useSessionDragOut({ folderPath, sessionId, title }: UseSessionDr
     lastPosRef.current = null
     outsideRef.current = false
     setVisible(false)
+    useMosaicStore.getState().setDragging(false)
   }, [])
 
   const onDragStart = useCallback((e: React.DragEvent<HTMLDivElement>) => {
@@ -48,6 +49,7 @@ export function useSessionDragOut({ folderPath, sessionId, title }: UseSessionDr
     lastPosRef.current = { x: e.clientX, y: e.clientY }
     outsideRef.current = false
     setVisible(true)
+    useMosaicStore.getState().setDragging(true)
     unsubZoneRef.current = window.app.onDragPreviewZone((zone) => {
       outsideRef.current = zone === 'outside'
       setVisible(zone !== 'outside')

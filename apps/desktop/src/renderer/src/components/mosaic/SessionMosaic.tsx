@@ -1,6 +1,5 @@
-import { useEffect, useRef } from 'react'
+import { useRef, type RefObject } from 'react'
 import { Moon, Sun, SquareTerminal, X } from 'lucide-react'
-import { useShallow } from 'zustand/react/shallow'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { cn } from '@superone/ui/lib/utils'
 import { SessionPane } from '@/components/chat/SessionPane'
@@ -12,43 +11,47 @@ import { useFullscreen } from '@/hooks/useFullscreen'
 import { useAppStore } from '@/stores/app'
 import { useTerminalStore } from '@/stores/terminal'
 import { useMosaicStore } from './mosaic-store'
-import { computeCapacity, type GridTile } from './mosaic-grid'
+import { MosaicDivider } from './MosaicDivider'
+import { MosaicDropZone } from './MosaicDropZone'
+import { measureMin, topLeftLeafId, topRightLeafId, type MosaicLeaf, type MosaicNode, type MosaicPath } from './mosaic-tree'
 
 const isMac = window.app.platform === 'darwin'
 
-interface MosaicTileProps {
-  tile: GridTile
-  focused: boolean
-  isTopLeft: boolean
-  isTopRight: boolean
+interface RenderCtx {
+  topLeftId: string
+  topRightId: string
   reserveTrafficLights: boolean
   showSidebar: boolean
   themeDark: boolean
   onToggleTheme: () => void
+  containerRef: RefObject<HTMLDivElement | null>
 }
 
-function openTileTerminal(tile: GridTile) {
+function openTileTerminal(tile: MosaicLeaf) {
   const m = useMosaicStore.getState()
   m.setFocus(tile.id)
   m.exitToSingle()
   useTerminalStore.getState().setOpen(tile.sessionId, true)
 }
 
-function MosaicTile({ tile, focused, isTopLeft, isTopRight, reserveTrafficLights, showSidebar, themeDark, onToggleTheme }: MosaicTileProps) {
+function MosaicTile({ tile, ctx }: { tile: MosaicLeaf; ctx: RenderCtx }) {
+  const focused = useMosaicStore((s) => s.focusedTileId === tile.id)
+  const dragging = useMosaicStore((s) => s.draggingSession)
   const titleFallback = useChatStore((s) => {
     const sess = s.projectSessions[tile.projectPath]?._sessions[tile.sessionId]
     if (!sess) return 'Session'
     return sess._title || extractSessionTitle(sess.messages) || 'Session'
   })
+  const isTopLeft = tile.id === ctx.topLeftId
+  const isTopRight = tile.id === ctx.topRightId
   return (
     <div
       onMouseDownCapture={() => { if (!focused) useMosaicStore.getState().setFocus(tile.id) }}
-      style={{ gridRow: tile.row + 1, gridColumn: tile.col + 1 }}
-      className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-border/50 bg-card"
+      className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
     >
       <div className="flex h-[34px] shrink-0 items-center pl-[18px] pr-2" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
-        {reserveTrafficLights && isTopLeft && <div className="w-[60px] shrink-0" />}
-        {isTopLeft && !showSidebar && <LayoutToggle />}
+        {ctx.reserveTrafficLights && isTopLeft && <div className="w-[60px] shrink-0" />}
+        {isTopLeft && !ctx.showSidebar && <LayoutToggle />}
         <SessionTitleAnimated sessionId={tile.sessionId} fallback={titleFallback} className="min-w-0 flex-1 text-xs text-muted-foreground" />
         <div className="flex shrink-0 items-center gap-0.5 pl-1.5" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
           <IconButton size="xs" variant="nested" tooltip="Terminal" onClick={(e) => { e.stopPropagation(); openTileTerminal(tile) }}>
@@ -58,8 +61,8 @@ function MosaicTile({ tile, focused, isTopLeft, isTopRight, reserveTrafficLights
             <X className="size-3.5" />
           </IconButton>
           {isTopRight && (
-            <IconButton size="xs" variant="nested" tooltip="Toggle theme" onClick={(e) => { e.stopPropagation(); onToggleTheme() }}>
-              {themeDark ? <Sun className="size-3.5" /> : <Moon className="size-3.5" />}
+            <IconButton size="xs" variant="nested" tooltip="Toggle theme" onClick={(e) => { e.stopPropagation(); ctx.onToggleTheme() }}>
+              {ctx.themeDark ? <Sun className="size-3.5" /> : <Moon className="size-3.5" />}
             </IconButton>
           )}
         </div>
@@ -67,64 +70,59 @@ function MosaicTile({ tile, focused, isTopLeft, isTopRight, reserveTrafficLights
       <div className={cn('relative flex min-h-0 flex-1 flex-col overflow-hidden transition-opacity', !focused && 'opacity-75')}>
         <SessionPane scope={{ projectPath: tile.projectPath, sessionId: tile.sessionId }} />
       </div>
+      {dragging && (
+        <MosaicDropZone
+          tileId={tile.id}
+          containerRef={ctx.containerRef}
+          onDropSession={(fp, sid, edge) => useMosaicStore.getState().addTile(fp, sid, { tileId: tile.id, edge })}
+        />
+      )}
+    </div>
+  )
+}
+
+function MosaicNodeView({ node, path, ctx }: { node: MosaicNode; path: MosaicPath; ctx: RenderCtx }) {
+  if (node.type === 'leaf') return <MosaicTile tile={node} ctx={ctx} />
+  const horizontal = node.direction === 'row'
+  const firstMin = measureMin(node.first)
+  const secondMin = measureMin(node.second)
+  return (
+    <div className={cn('flex min-h-0 min-w-0 flex-1', !horizontal && 'flex-col')}>
+      <div className="flex min-h-0 min-w-0" style={{ flex: node.ratio }}>
+        <MosaicNodeView node={node.first} path={[...path, 'first']} ctx={ctx} />
+      </div>
+      <MosaicDivider
+        direction={node.direction}
+        path={path}
+        firstMin={horizontal ? firstMin.w : firstMin.h}
+        secondMin={horizontal ? secondMin.w : secondMin.h}
+      />
+      <div className="flex min-h-0 min-w-0" style={{ flex: 1 - node.ratio }}>
+        <MosaicNodeView node={node.second} path={[...path, 'second']} ctx={ctx} />
+      </div>
     </div>
   )
 }
 
 export function SessionMosaic() {
   const containerRef = useRef<HTMLDivElement>(null)
-  const { tiles, focusedTileId } = useMosaicStore(useShallow((s) => ({ tiles: s.tiles, focusedTileId: s.focusedTileId })))
+  const root = useMosaicStore((s) => s.root)
   const theme = useTheme()
   const showSidebar = useAppStore((s) => s.showSidebar)
   const isFullscreen = useFullscreen()
-  const reserveTrafficLights = isMac && !showSidebar && !isFullscreen
-
-  useEffect(() => {
-    const el = containerRef.current
-    if (!el) return
-    let prevW = 0
-    let prevLeft = 0
-    const ro = new ResizeObserver(() => {
-      const rect = el.getBoundingClientRect()
-      const { width, height } = rect
-      const { cols, rows } = computeCapacity(width, height)
-      // Top is anchored by the titlebar, so vertical shrink is always from the
-      // bottom. Horizontal shrink is from the right (window narrowing) unless the
-      // left edge moved inward (sidebar widening), which peels from the left.
-      const hEdge = width < prevW && rect.left > prevLeft + 0.5 ? 'left' : 'right'
-      prevW = width
-      prevLeft = rect.left
-      useMosaicStore.getState().applyCapacity(cols, rows, hEdge, 'bottom')
-    })
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [])
-
-  const usedCols = Math.max(1, ...tiles.map((t) => t.col + 1))
-  const usedRows = Math.max(1, ...tiles.map((t) => t.row + 1))
-
+  if (!root) return null
+  const ctx: RenderCtx = {
+    topLeftId: topLeftLeafId(root),
+    topRightId: topRightLeafId(root),
+    reserveTrafficLights: isMac && !showSidebar && !isFullscreen,
+    showSidebar,
+    themeDark: theme.dark,
+    onToggleTheme: theme.toggle,
+    containerRef,
+  }
   return (
-    <div
-      ref={containerRef}
-      className="grid min-h-0 min-w-0 flex-1 gap-[5px] overflow-hidden"
-      style={{
-        gridTemplateColumns: `repeat(${usedCols}, minmax(0, 1fr))`,
-        gridTemplateRows: `repeat(${usedRows}, minmax(0, 1fr))`,
-      }}
-    >
-      {tiles.map((tile) => (
-        <MosaicTile
-          key={tile.id}
-          tile={tile}
-          focused={tile.id === focusedTileId}
-          isTopLeft={tile.row === 0 && tile.col === 0}
-          isTopRight={tile.row === 0 && tile.col === usedCols - 1}
-          reserveTrafficLights={reserveTrafficLights}
-          showSidebar={showSidebar}
-          themeDark={theme.dark}
-          onToggleTheme={theme.toggle}
-        />
-      ))}
+    <div ref={containerRef} className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+      <MosaicNodeView node={root} path={[]} ctx={ctx} />
     </div>
   )
 }

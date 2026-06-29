@@ -9,7 +9,9 @@ import { CodingLayout } from '@/components/coding/CodingLayout'
 import { CanvasPanel } from '@/components/canvas/CanvasPanel'
 import { ActivityPanel } from '@/components/activity/ActivityPanel'
 import { SessionMosaic } from '@/components/mosaic/SessionMosaic'
-import { useMosaicStore, SESSION_DRAG_MIME } from '@/components/mosaic/mosaic-store'
+import { useMosaicStore } from '@/components/mosaic/mosaic-store'
+import { MosaicDropZone } from '@/components/mosaic/MosaicDropZone'
+import { MosaicDropPreview } from '@/components/mosaic/MosaicDropPreview'
 import { AppSidebar } from '@/components/AppSidebar'
 import { WindowsTitleBar } from '@/components/WindowsTitleBar'
 import { StartupPage } from '@/components/StartupPage'
@@ -72,6 +74,7 @@ function App(): React.JSX.Element {
   const showActivityPanel = useActivityPanelStore((s) => s.showPanel)
   const activitySide = useActivityPanelStore((s) => s.side)
   const mosaicMode = useMosaicStore((s) => s.mode)
+  const draggingSession = useMosaicStore((s) => s.draggingSession)
   const fullscreenApp = useMiniAppStore((s) => s.fullscreenApp)
   const isFullscreen = useFullscreen()
   const isMac = window.app.platform === 'darwin'
@@ -413,7 +416,7 @@ function App(): React.JSX.Element {
       {/* Main area wrapper */}
       <div className={cn(
         'flex min-w-0 flex-1',
-        layoutMode === 'coding' && mosaicMode === 'mosaic' && 'relative z-20 my-[5px] mr-[5px] overflow-hidden',
+        layoutMode === 'coding' && mosaicMode === 'mosaic' && 'relative z-20 my-[5px] mr-[5px] overflow-hidden rounded-xl border border-border/50 bg-card',
         layoutMode === 'coding' && mosaicMode === 'mosaic' && !hasLeftPanel && 'ml-[5px]',
         layoutMode === 'coding' && mosaicMode !== 'mosaic' && 'relative z-20 my-[5px] mr-[5px] overflow-hidden rounded-xl border border-border/50 bg-card transition-shadow duration-200',
         layoutMode === 'coding' && mosaicMode !== 'mosaic' && !hasLeftPanel && 'ml-[5px]',
@@ -426,7 +429,7 @@ function App(): React.JSX.Element {
         <ActivityPanel getMaxWidth={getActivityMaxWidth} hidden={layoutMode !== 'coding' || mosaicMode === 'mosaic'} />
 
         {/* Main area */}
-        <motion.div layout="position" transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }} className={cn('z-10 flex min-w-[400px] flex-1 flex-col', layoutMode === 'coding' && 'overflow-hidden', layoutMode === 'coding' && showActivityPanel && (activitySide === 'left' ? 'border-l border-border' : 'border-r border-border'))} style={{ order: 1 }}>
+        <motion.div layout="position" transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }} className={cn('relative z-10 flex min-w-[400px] flex-1 flex-col', layoutMode === 'coding' && 'overflow-hidden', layoutMode === 'coding' && showActivityPanel && (activitySide === 'left' ? 'border-l border-border' : 'border-r border-border'))} style={{ order: 1 }}>
         {/* Main header — drag region (hidden in mosaic; each tile carries its own) */}
         {mosaicMode !== 'mosaic' && (
         <div
@@ -477,24 +480,7 @@ function App(): React.JSX.Element {
 
         {/* Content */}
         {layoutMode === 'coding' ? (
-          <div
-            className="relative flex min-h-0 flex-1 flex-col overflow-hidden"
-            onDragOver={(e) => {
-              if (e.dataTransfer.types.includes(SESSION_DRAG_MIME)) {
-                e.preventDefault()
-                e.dataTransfer.dropEffect = 'move'
-              }
-            }}
-            onDrop={(e) => {
-              const raw = e.dataTransfer.getData(SESSION_DRAG_MIME)
-              if (!raw) return
-              e.preventDefault()
-              try {
-                const { folderPath, sessionId } = JSON.parse(raw)
-                if (folderPath && sessionId) useMosaicStore.getState().addTileFromDrag(folderPath, sessionId)
-              } catch { /* ignore malformed drag payload */ }
-            }}
-          >
+          <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
             {!liquidGlass && mosaicMode !== 'mosaic' && <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-6 bg-linear-to-b from-card to-transparent" />}
             {mosaicMode === 'mosaic' ? <SessionMosaic /> : <CodingLayout />}
           </div>
@@ -503,6 +489,10 @@ function App(): React.JSX.Element {
             <CanvasPanel />
           </div>
         )}
+        {layoutMode === 'coding' && draggingSession && mosaicMode !== 'mosaic' && (
+          <MosaicDropZone tileId={null} onDropSession={(fp, sid, edge) => useMosaicStore.getState().addTile(fp, sid, { edge })} />
+        )}
+        {layoutMode === 'coding' && draggingSession && <MosaicDropPreview />}
       </motion.div>
       </div>
       </>

@@ -121,4 +121,57 @@ describe('SubagentFullView', () => {
     expect(screen.getByText('Read')).toBeInTheDocument()
     expect(screen.getByText('Grep')).toBeInTheDocument()
   })
+
+  it('renders tool calls for a nested non-async subagent whose tools ran in its own session', () => {
+    // run_in_background:false, NO inline child blocks (tools executed in a separate
+    // session), activity only in task_progress. The full view must still surface them.
+    hoisted.sessionState.messages = [{
+      role: 'assistant',
+      content: [
+        { type: 'tool_use', toolUseId: 'parent-1', toolName: 'Agent', input: taskInput({ subagent_type: 'general-purpose', description: 'Deep research' }) },
+        { type: 'tool_use', toolUseId: 'nested-1', toolName: 'Agent', input: taskInput({ subagent_type: 'general-purpose', description: 'Search angle 1', run_in_background: false }), parentToolUseId: 'parent-1' },
+        { type: 'tool_result', toolUseId: 'nested-1', summary: 'found 5 stories', parentToolUseId: 'parent-1' },
+      ],
+    }]
+    hoisted.sessionState.taskProgress = {
+      'nested-1': {
+        description: '', totalTokens: 1200, toolUses: 2, durationMs: 5000, completed: true,
+        toolHistory: [
+          { toolName: 'ToolSearch', description: 'find search tool' },
+          { toolName: 'WebSearch', description: 'AI model releases June 2026' },
+        ],
+      },
+    }
+
+    render(<SubagentFullView view={{ toolUseId: 'nested-1' }} />)
+
+    expect(screen.getByText('WebSearch')).toBeInTheDocument()
+    expect(screen.getByText('ToolSearch')).toBeInTheDocument()
+  })
+
+  it('shows a nested agent\'s tool calls from the persisted block on history reload (empty live store)', () => {
+    // Live taskProgress is gone after reload; tool history persists on the block.
+    hoisted.sessionState.messages = [{
+      role: 'assistant',
+      content: [
+        { type: 'tool_use', toolUseId: 'parent-1', toolName: 'Agent', input: taskInput({ subagent_type: 'general-purpose', description: 'Deep research' }) },
+        {
+          type: 'tool_use', toolUseId: 'nested-1', toolName: 'Agent', parentToolUseId: 'parent-1',
+          input: taskInput({ subagent_type: 'general-purpose', description: 'Search angle 1', run_in_background: false }),
+          taskToolHistory: [
+            { toolName: 'ToolSearch', description: 'find search tool' },
+            { toolName: 'WebSearch', description: 'AI model releases June 2026' },
+          ],
+          taskUsage: { totalTokens: 1200, toolUses: 2, durationMs: 5000 },
+        },
+        { type: 'tool_result', toolUseId: 'nested-1', summary: 'found 5 stories', parentToolUseId: 'parent-1' },
+      ],
+    }]
+    hoisted.sessionState.taskProgress = {}
+
+    render(<SubagentFullView view={{ toolUseId: 'nested-1' }} />)
+
+    expect(screen.getByText('WebSearch')).toBeInTheDocument()
+    expect(screen.getByText('ToolSearch')).toBeInTheDocument()
+  })
 })

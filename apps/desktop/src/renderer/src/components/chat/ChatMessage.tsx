@@ -68,7 +68,7 @@ interface GroupResult {
 }
 
 /** Group consecutive collapsible tool blocks and subagent blocks; everything else stays individual. */
-function groupContent(content: ContentBlock[], apps: MiniAppEntry[]): GroupResult {
+export function groupContent(content: ContentBlock[], apps: MiniAppEntry[]): GroupResult {
   const toolNameMap = new Map<string, string>()
   const toolResultMap = new Map<string, string>()
   const timedOutToolIds = new Set<string>()
@@ -165,10 +165,13 @@ function groupContent(content: ContentBlock[], apps: MiniAppEntry[]): GroupResul
       }
     }
 
-    // Check if this is a Task tool_result (closes a subagent)
+    // Attach a subagent's own tool_result. Do NOT remove it from activeSubagents:
+    // a background (run_in_background) subagent returns its tool_result early
+    // ("started… output_file") and then streams its real children AFTER it, so the
+    // collector must stay open for the rest of the content, else every later child
+    // (text, tools, nested agents) fails topAncestorSubagent and leaks to top level.
     if (block.type === 'tool_result' && taskToolUseIds.has(block.toolUseId) && activeSubagents.has(block.toolUseId)) {
       activeSubagents.get(block.toolUseId)!.resultBlock = block
-      activeSubagents.delete(block.toolUseId)
       continue
     }
 

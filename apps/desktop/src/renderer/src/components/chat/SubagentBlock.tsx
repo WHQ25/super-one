@@ -130,22 +130,41 @@ export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming
     }
     return count
   }, [childItems])
+  // A sub-agent's tool activity arrives one of two ways: inline childBlocks
+  // (parentToolUseId === this agent) for ordinary nested calls, or via the
+  // task_progress / JSONL channel when the agent ran in its own session —
+  // background agents AND workflow-spawned parallel agents, which are NOT
+  // run_in_background yet still produce no inline blocks. Drive the activity
+  // surface off "are there inline children?": with inline children we render those
+  // (the structured source of truth); without, fall back to the progress/JSONL
+  // channel. Keying off isAsync instead would hide a nested non-async agent's
+  // tools (empty shell) and double-render a background agent that has both.
+  const usesProgressActivity = childItems.length === 0
+
+  // task_progress is live store state and is lost on history reload; the same
+  // history/usage is persisted onto the Agent block (taskToolHistory/taskUsage via
+  // _patchAgentBlock). Prefer live, fall back to persisted so a reloaded session
+  // still renders the activity instead of an empty shell.
+  const activityHistory = (progress?.toolHistory?.length ? progress.toolHistory : taskBlock.taskToolHistory) ?? []
+  const activityToolUses = progress?.toolUses ?? taskBlock.taskUsage?.toolUses ?? activityHistory.length
+  const activityTokens = progress?.totalTokens ?? taskBlock.taskUsage?.totalTokens ?? 0
+  const hasActivity = activityHistory.length > 0 || !!progress
 
   const isExpandable = !showSpawningPlaceholder
   const isExpanded = expanded && isExpandable
 
-  const statsContent = isAsync && progress ? (
+  const statsContent = usesProgressActivity && hasActivity ? (
     <>
-      {progress.toolUses > 0 && (
+      {activityToolUses > 0 && (
         <span className="inline-flex items-center gap-0.5">
           <Wrench className="size-3" />
-          {progress.toolUses}
+          {activityToolUses}
         </span>
       )}
-      {progress.totalTokens > 0 && (
+      {activityTokens > 0 && (
         <>
-          {progress.toolUses > 0 && <span>·</span>}
-          <span className="tabular-nums">{formatTokens(progress.totalTokens)}</span>
+          {activityToolUses > 0 && <span>·</span>}
+          <span className="tabular-nums">{formatTokens(activityTokens)}</span>
         </>
       )}
     </>
@@ -238,10 +257,10 @@ export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming
           {taskInput.prompt && <PromptPreview prompt={taskInput.prompt} model={taskInput.model} />}
 
           {/* Agent activity — JSONL entries (text + tool interleaved), with live fallback */}
-          {isAsync && (jsonlEntries.length > 0 || progress) && (
+          {usesProgressActivity && (jsonlEntries.length > 0 || hasActivity) && (
             <AgentActivity
               entries={jsonlEntries}
-              fallbackTools={jsonlEntries.length === 0 ? progress?.toolHistory : undefined}
+              fallbackTools={jsonlEntries.length === 0 ? activityHistory : undefined}
               activeTool={isRunning && progress?.description ? { toolName: progress.lastToolName ?? '', description: progress.description } : undefined}
               isRunning={isRunning}
               summary={undefined}

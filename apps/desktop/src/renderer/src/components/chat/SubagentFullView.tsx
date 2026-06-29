@@ -81,6 +81,13 @@ export function SubagentFullView({ view }: { view: SubagentViewState }) {
   )
 
   const isAsync = taskInput?.runInBackground ?? false
+  // Tool activity arrives either as inline childBlocks (ordinary nested calls) or
+  // via the task_progress/JSONL channel when the agent ran in its own session
+  // (background agents AND workflow-spawned parallel agents, which are NOT
+  // run_in_background yet have no inline blocks). Mirror SubagentBlock: with no
+  // inline children, surface the progress channel — else a nested non-async agent
+  // shows an empty body with its tools hidden in the full view.
+  const usesProgressActivity = childItems.length === 0
   const rawResultText = segment?.resultBlock?.summary
   const asyncOutputPath = useMemo(() => rawResultText?.match(/output_file:\s*(\S+)/)?.[1], [rawResultText])
   const outputFile = asyncOutputPath ?? progress?.outputFile
@@ -92,7 +99,7 @@ export function SubagentFullView({ view }: { view: SubagentViewState }) {
     toolUseId: view.toolUseId,
     taskResultText: segment?.taskBlock.taskResultText,
     outputFile,
-    enabled: isAsync,
+    enabled: usesProgressActivity,
     isRunning,
   })
 
@@ -106,14 +113,18 @@ export function SubagentFullView({ view }: { view: SubagentViewState }) {
     )
   }
 
+  // task_progress is live store state and is lost on history reload; the same
+  // history/usage is persisted onto the Agent block (taskToolHistory/taskUsage).
+  // Prefer live, fall back to persisted so a reloaded session still renders activity.
+  const activityHistory = (progress?.toolHistory?.length ? progress.toolHistory : segment.taskBlock.taskToolHistory) ?? []
   const asyncEntries: JsonlEntry[] = jsonlEntries.length > 0
     ? jsonlEntries
-    : (progress?.toolHistory ?? []).map((tool) => ({ type: 'tool' as const, toolName: tool.toolName, description: tool.description }))
-  const toolCount = isAsync
-    ? (progress?.toolUses ?? asyncEntries.reduce((n, e) => (e.type === 'tool' ? n + 1 : n), 0))
+    : activityHistory.map((tool) => ({ type: 'tool' as const, toolName: tool.toolName, description: tool.description }))
+  const toolCount = usesProgressActivity
+    ? (progress?.toolUses ?? segment.taskBlock.taskUsage?.toolUses ?? asyncEntries.reduce((n, e) => (e.type === 'tool' ? n + 1 : n), 0))
     : syncToolCount
   const hasTokens = tokens.input > 0 || tokens.output > 0
-  const asyncTokens = progress?.totalTokens ?? 0
+  const asyncTokens = progress?.totalTokens ?? segment.taskBlock.taskUsage?.totalTokens ?? 0
   const taskStatus = isAsync
     ? progress?.status
     : (segment.resultBlock?.isError ? 'failed' as const : undefined)
@@ -215,7 +226,7 @@ export function SubagentFullView({ view }: { view: SubagentViewState }) {
             </div>
           )}
 
-          {isAsync ? (
+          {usesProgressActivity ? (
             <div className="space-y-2">
               {asyncEntries.map((entry, i) => renderAsyncEntry(entry, i, isRunning))}
               {isRunning && progress?.description && (

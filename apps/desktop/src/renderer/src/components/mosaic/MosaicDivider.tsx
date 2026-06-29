@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { cn } from '@superone/ui/lib/utils'
+import { ResizeHandleLine } from '@/components/ResizeHandleLine'
 import { useMosaicStore } from './mosaic-store'
 import { clampRatioToMin, type MosaicPath } from './mosaic-tree'
 
@@ -39,7 +40,10 @@ export function MosaicDivider({ direction, path, firstMin, secondMin }: MosaicDi
   return (
     <>
       <div ref={ref} className={cn('group relative z-10 shrink-0', horizontal ? 'w-px' : 'h-px')}>
-        <div className={cn('absolute inset-0 transition-colors group-hover:bg-primary/60', dragging ? 'bg-primary' : 'bg-border')} />
+        {/* Always-on hairline that draws the card division */}
+        <div className="absolute inset-0 bg-border" />
+        {/* Hover/active emphasis — simple line highlight shared with the other in-card handles */}
+        <ResizeHandleLine orientation={horizontal ? 'vertical' : 'horizontal'} active={dragging} />
         <div
           onPointerDown={(e) => {
             const parent = ref.current?.parentElement

@@ -188,6 +188,7 @@ export interface DropPlan {
   allowed: boolean
   mode: 'half' | 'band'
   edge: DropEdge
+  targetTileId: string | null
   axis?: 'x' | 'y'
   index?: number
   count?: number
@@ -214,17 +215,17 @@ export function planDrop(
   const full: Rect = { x: 0, y: 0, w: container.width, h: container.height }
   if (!root || !targetId) {
     const extent = horizontal ? container.width : container.height
-    return { allowed: extent >= 2 * minTile + DIVIDER_SIZE, mode: 'half', edge, targetPath: [] }
+    return { allowed: extent >= 2 * minTile + DIVIDER_SIZE, mode: 'half', edge, targetTileId: targetId ?? null, targetPath: [] }
   }
   const targetPath = pathToLeaf(root, targetId)
-  if (!targetPath) return { allowed: false, mode: 'half', edge, targetPath: [] }
+  if (!targetPath) return { allowed: false, mode: 'half', edge, targetTileId: targetId, targetPath: [] }
   const dir: 'row' | 'column' = horizontal ? 'row' : 'column'
   const parent = targetPath.length ? nodeAtPath(root, targetPath.slice(0, -1)) : null
   const onSpine = parent !== null && parent.type === 'branch' && parent.direction === dir
   if (!onSpine) {
     const tRect = subtreeRect(root, targetPath, full)
     const extent = horizontal ? tRect.w : tRect.h
-    return { allowed: extent >= 2 * minTile + DIVIDER_SIZE, mode: 'half', edge, targetPath }
+    return { allowed: extent >= 2 * minTile + DIVIDER_SIZE, mode: 'half', edge, targetTileId: targetId, targetPath }
   }
   const topPath = maximalSpineTop(root, targetPath, dir)
   const segs = spineSegmentList(nodeAtPath(root, topPath), dir)
@@ -234,7 +235,7 @@ export function planDrop(
   const region = subtreeRect(root, topPath, full)
   const extent = horizontal ? region.w : region.h
   const allowed = extent >= count * minTile + (count - 1) * DIVIDER_SIZE
-  return { allowed, mode: 'band', edge, axis: horizontal ? 'x' : 'y', index, count, regionPath: topPath }
+  return { allowed, mode: 'band', edge, targetTileId: targetId, axis: horizontal ? 'x' : 'y', index, count, regionPath: topPath }
 }
 
 function pathToLeaf(node: MosaicNode, id: string): MosaicPath | null {
@@ -246,7 +247,7 @@ function pathToLeaf(node: MosaicNode, id: string): MosaicPath | null {
   return null
 }
 
-function nodeAtPath(node: MosaicNode, path: MosaicPath): MosaicNode {
+export function nodeAtPath(node: MosaicNode, path: MosaicPath): MosaicNode {
   let cur = node
   for (const p of path) {
     if (cur.type !== 'branch') break

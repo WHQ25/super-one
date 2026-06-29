@@ -12,6 +12,7 @@ import { SessionMosaic } from '@/components/mosaic/SessionMosaic'
 import { useMosaicStore } from '@/components/mosaic/mosaic-store'
 import { MosaicDropZone } from '@/components/mosaic/MosaicDropZone'
 import { MosaicDropPreview } from '@/components/mosaic/MosaicDropPreview'
+import { measureMin } from '@/components/mosaic/mosaic-tree'
 import { AppSidebar } from '@/components/AppSidebar'
 import { WindowsTitleBar } from '@/components/WindowsTitleBar'
 import { StartupPage } from '@/components/StartupPage'
@@ -74,6 +75,7 @@ function App(): React.JSX.Element {
   const showActivityPanel = useActivityPanelStore((s) => s.showPanel)
   const activitySide = useActivityPanelStore((s) => s.side)
   const mosaicMode = useMosaicStore((s) => s.mode)
+  const mosaicRoot = useMosaicStore((s) => s.root)
   const draggingSession = useMosaicStore((s) => s.draggingSession)
   const fullscreenApp = useMiniAppStore((s) => s.fullscreenApp)
   const isFullscreen = useFullscreen()
@@ -187,16 +189,26 @@ function App(): React.JSX.Element {
     }
   }, [mosaicMode, terminalOpen, showActivityPanel])
 
+  const mosaicMin = layoutMode === 'coding' && mosaicMode === 'mosaic' && mosaicRoot ? measureMin(mosaicRoot) : null
+  const mosaicMinW = mosaicMin?.w ?? 0
+  const mosaicMinH = mosaicMin?.h ?? 0
   useEffect(() => {
     const isCoding = view === 'main' && layoutMode === 'coding'
-    const min = isCoding
+    let minW = isCoding
       ? LAYOUT.MIN_MAIN
         + (showSidebar ? LAYOUT.MIN_SIDEBAR : 0)
         + (showActivityPanel ? LAYOUT.MIN_AP : 0)
         + (showSidebar || showActivityPanel ? LAYOUT.CARD_GUTTER : 0)
       : LAYOUT.MIN_MAIN + LAYOUT.MIN_SIDEBAR + LAYOUT.MIN_AP
-    window.app.setMinWindowSize(min, 700)
-  }, [view, layoutMode, showSidebar, showActivityPanel])
+    let minH = 700
+    // In mosaic mode the open tiles dictate the floor: the window can't shrink
+    // below what the current split layout needs (incl. sidebar + card margins).
+    if (mosaicMinW > 0) {
+      minW = Math.max(minW, mosaicMinW + (showSidebar ? LAYOUT.MIN_SIDEBAR : 0) + 10)
+      minH = Math.max(minH, mosaicMinH + 10)
+    }
+    window.app.setMinWindowSize(minW, minH)
+  }, [view, layoutMode, showSidebar, showActivityPanel, mosaicMinW, mosaicMinH])
 
   const { MIN_MAIN, MIN_SIDEBAR, MAX_SIDEBAR, MIN_AP, CARD_GUTTER } = LAYOUT
   const sidebarRef = useRef<HTMLDivElement>(null)

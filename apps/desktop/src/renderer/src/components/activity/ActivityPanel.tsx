@@ -12,6 +12,7 @@ import { useFullscreen } from '@/hooks/useFullscreen'
 import { useResizeHandle } from '@/hooks/useResizeHandle'
 import { LAYOUT } from '@/lib/layout-constants'
 import { LayoutToggle } from '@/components/coding/LayoutToggle'
+import { ResizeHandleLine } from '@/components/ResizeHandleLine'
 import { setDockApi } from './activity-panel-api'
 import { activityPanelComponents } from './panels'
 import { activityTabComponents } from './ActivityTab'
@@ -165,7 +166,7 @@ export function ActivityPanel({ getMaxWidth, hidden }: ActivityPanelProps) {
           className="group absolute inset-y-0 z-30 w-2 cursor-col-resize"
           style={side === 'right' ? { right: panelWidth - 4 } : { left: panelWidth - 4 }}
         >
-          <div className="pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-linear-to-b from-transparent via-border to-transparent transition-opacity opacity-0 group-hover:opacity-100 dark:via-foreground dark:group-hover:opacity-40" />
+          <ResizeHandleLine orientation="vertical" />
         </div>
       )}
     </>

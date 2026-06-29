@@ -757,6 +757,21 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
     const sess = get().projectSessions[projectPath]?._sessions[sessionId]
     if (sess && !sess._historyHydrated) {
       _hydrateSessionState(set, projectPath, sessionId)
+    } else if (sess && sess._title == null) {
+      // Sessions hydrated via the live-message path are marked _historyHydrated
+      // without ever loading the persisted title, so back-fill it from the DB
+      // here — otherwise a mosaic tile would fall back to the first message while
+      // the sidebar list shows the saved title.
+      void window.app.loadSessionState(sessionId).then((saved) => {
+        const title = (saved as PersistedSessionState | null)?.title ?? null
+        if (!title) return
+        set((s) => {
+          const proj = s.projectSessions[projectPath]
+          const cur = proj?._sessions[sessionId]
+          if (!proj || !cur || cur._title != null) return {}
+          return { projectSessions: { ...s.projectSessions, [projectPath]: { ...proj, _sessions: { ...proj._sessions, [sessionId]: { ...cur, _title: title } } } } }
+        })
+      }).catch((err) => console.warn('[mountSession] title back-fill failed:', err))
     }
   },
 

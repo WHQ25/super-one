@@ -9,6 +9,7 @@ import { useTerminalPanel } from '@/hooks/useTerminalPanel'
 import { closeActiveTerminal, createNewTerminal } from '@/components/coding/terminal-panel-api'
 import { getDockApi } from '@/components/activity/activity-panel-api'
 import { routeCloseTabShortcut } from '@/components/coding/close-tab-router'
+import { ResizeHandleLine } from '@/components/ResizeHandleLine'
 
 const MIN_TERM_HEIGHT = 120
 
@@ -88,7 +89,7 @@ export const CodingLayout = memo(function CodingLayout() {
           onPointerDown={startResize}
           className="group absolute inset-x-0 -top-1 z-10 h-2 cursor-row-resize"
         >
-          <div className="pointer-events-none absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-linear-to-r from-transparent via-foreground to-transparent opacity-0 transition-opacity group-hover:opacity-40" />
+          <ResizeHandleLine orientation="horizontal" />
         </div>
         <div className="min-h-0 flex-1">
           {termEverActive && (

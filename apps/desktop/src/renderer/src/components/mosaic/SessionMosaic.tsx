@@ -39,13 +39,13 @@ function MosaicTile({ tile, ctx }: { tile: MosaicLeaf; ctx: RenderCtx }) {
   const dragging = useMosaicStore((s) => s.draggingSession)
   const titleFallback = useChatStore((s) => {
     const sess = s.projectSessions[tile.projectPath]?._sessions[tile.sessionId]
-    if (!sess) return 'Session'
-    return sess._title || extractSessionTitle(sess.messages) || 'Session'
+    return (sess?._title ?? (sess ? extractSessionTitle(sess.messages) : null)) ?? 'New Session'
   })
   const isTopLeft = tile.id === ctx.topLeftId
   const isTopRight = tile.id === ctx.topRightId
   return (
     <div
+      data-tile-id={tile.id}
       onMouseDownCapture={() => { if (!focused) useMosaicStore.getState().setFocus(tile.id) }}
       className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
     >
@@ -88,7 +88,7 @@ function MosaicNodeView({ node, path, ctx }: { node: MosaicNode; path: MosaicPat
   const secondMin = measureMin(node.second)
   return (
     <div className={cn('flex min-h-0 min-w-0 flex-1', !horizontal && 'flex-col')}>
-      <div className="flex min-h-0 min-w-0" style={{ flex: node.ratio }}>
+      <div className="flex" style={{ flex: node.ratio, minWidth: firstMin.w, minHeight: firstMin.h }}>
         <MosaicNodeView node={node.first} path={[...path, 'first']} ctx={ctx} />
       </div>
       <MosaicDivider
@@ -97,7 +97,7 @@ function MosaicNodeView({ node, path, ctx }: { node: MosaicNode; path: MosaicPat
         firstMin={horizontal ? firstMin.w : firstMin.h}
         secondMin={horizontal ? secondMin.w : secondMin.h}
       />
-      <div className="flex min-h-0 min-w-0" style={{ flex: 1 - node.ratio }}>
+      <div className="flex" style={{ flex: 1 - node.ratio, minWidth: secondMin.w, minHeight: secondMin.h }}>
         <MosaicNodeView node={node.second} path={[...path, 'second']} ctx={ctx} />
       </div>
     </div>

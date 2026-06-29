@@ -12,7 +12,7 @@
 }
 
 :root .dockview-theme-superone {
-  --dv-active-sash-color: oklch(from var(--primary) l c h / 0.3);
+  --dv-active-sash-color: oklch(from var(--foreground) l c h / 0.3);
   --dv-drag-over-background-color: oklch(from var(--primary) l c h / 0.08);
   --dv-drag-over-border-color: oklch(from var(--primary) l c h / 0.3);
   --dv-paneview-active-outline-color: var(--primary);

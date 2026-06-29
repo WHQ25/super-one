@@ -51,7 +51,7 @@ import { CommandShortcut } from '@superone/ui/components/ui/command'
 import { initAnalytics } from '@/lib/analytics'
 import { applyCrispText } from '@/lib/font-smoothing'
 import { preloadFileHighlighter } from '@/lib/diff-utils'
-import { LAYOUT } from '@/lib/layout-constants'
+import { LAYOUT, maxSidebarWidth } from '@/lib/layout-constants'
 
 export { LAYOUT }
 
@@ -227,6 +227,12 @@ function App(): React.JSX.Element {
   }, [view, layoutMode, showSidebar, showActivityPanel, mosaicMinW, mosaicMinH])
 
   const { MIN_MAIN, MIN_SIDEBAR, MAX_SIDEBAR, MIN_AP, CARD_GUTTER } = LAYOUT
+  // In mosaic mode the main area can't shrink below what the current split needs,
+  // so the sidebar resize/clamp logic must reserve mosaicMinW (not just MIN_MAIN).
+  const mainMinW = Math.max(MIN_MAIN, mosaicMinW)
+  const mainMinWRef = useRef(mainMinW)
+  mainMinWRef.current = mainMinW
+  const clampPanelsRef = useRef<() => void>(() => {})
   const sidebarRef = useRef<HTMLDivElement>(null)
   const sidebarInnerRef = useRef<HTMLDivElement>(null)
 
@@ -268,10 +274,7 @@ function App(): React.JSX.Element {
     minWidth: MIN_SIDEBAR,
     getMaxWidth: () => {
       const ap = useActivityPanelStore.getState()
-      const layoutMax = ap.showPanel
-        ? window.innerWidth - MIN_AP - MIN_MAIN - CARD_GUTTER
-        : window.innerWidth - MIN_MAIN - CARD_GUTTER
-      return Math.min(MAX_SIDEBAR, layoutMax)
+      return maxSidebarWidth(window.innerWidth, mainMinWRef.current, ap.showPanel ? MIN_AP : 0)
     },
     direction: 'ltr',
     outerRef: sidebarRef,
@@ -301,21 +304,22 @@ function App(): React.JSX.Element {
         const sidebarJustHidden = prevSidebar && !sb
         prevSidebar = sb
 
+        const mainMin = mainMinWRef.current
         if (sidebarJustHidden && ap.showPanel) {
-          const maxAp = curWidth - MIN_MAIN - CARD_GUTTER
+          const maxAp = curWidth - mainMin - CARD_GUTTER
           ap.setPanelWidth(Math.min(maxAp, ap.panelWidth + sw))
         } else if (delta !== 0 && ap.showPanel) {
-          const maxAp = curWidth - (sb ? sw : 0) - MIN_MAIN - CARD_GUTTER
+          const maxAp = curWidth - (sb ? sw : 0) - mainMin - CARD_GUTTER
           ap.setPanelWidth(Math.max(MIN_AP, Math.min(ap.panelWidth + delta, maxAp)))
         }
 
         if (sb) {
-          const maxSw = Math.min(MAX_SIDEBAR, curWidth - (ap.showPanel ? ap.panelWidth : 0) - MIN_MAIN - CARD_GUTTER)
+          const maxSw = maxSidebarWidth(curWidth, mainMin, ap.showPanel ? ap.panelWidth : 0)
           if (sw > maxSw) setSW(Math.max(MIN_SIDEBAR, maxSw))
         }
 
         const totalPanels = (sb ? Math.min(sw, MAX_SIDEBAR) : 0) + (ap.showPanel ? ap.panelWidth : 0)
-        let overflow = totalPanels + MIN_MAIN + CARD_GUTTER - curWidth
+        let overflow = totalPanels + mainMin + CARD_GUTTER - curWidth
         if (overflow <= 0) return
         if (ap.showPanel) {
           const shrink = Math.min(overflow, ap.panelWidth - MIN_AP)
@@ -327,6 +331,7 @@ function App(): React.JSX.Element {
         }
       })
     }
+    clampPanelsRef.current = clampPanels
     window.addEventListener('resize', clampPanels)
     const unsubAP = useActivityPanelStore.subscribe((state, prev) => {
       if (state.showPanel && !prev.showPanel) {
@@ -350,6 +355,12 @@ function App(): React.JSX.Element {
       unsubApp()
     }
   }, [])
+
+  // When the mosaic's minimum width grows (a tile/column was added), re-clamp so an
+  // already-wide sidebar gives the tiles their floor back instead of clipping them.
+  useEffect(() => {
+    clampPanelsRef.current()
+  }, [mosaicMinW])
 
 
   const hasLeftPanel = showSidebar || (showActivityPanel && activitySide === 'left')

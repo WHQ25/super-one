@@ -300,6 +300,14 @@ export function removeLeaf(root: MosaicNode, id: string): MosaicNode | null {
   return { ...root, first, second }
 }
 
+export function replaceLeaf(root: MosaicNode, id: string, next: MosaicLeaf): MosaicNode {
+  if (root.type === 'leaf') return root.id === id ? next : root
+  const first = replaceLeaf(root.first, id, next)
+  const second = replaceLeaf(root.second, id, next)
+  if (first === root.first && second === root.second) return root
+  return { ...root, first, second }
+}
+
 export function setRatioAtPath(root: MosaicNode, path: MosaicPath, ratio: number): MosaicNode {
   const clamped = Math.min(MAX_RATIO, Math.max(MIN_RATIO, ratio))
   if (path.length === 0) {

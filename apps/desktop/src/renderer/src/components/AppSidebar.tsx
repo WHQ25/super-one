@@ -30,6 +30,7 @@ import { useRemoteStatus } from '@/hooks/useRemoteStatus'
 import { cn } from '@superone/ui/lib/utils'
 import { Tabs, TabsList, TabsTrigger } from '@superone/ui/components/ui/tabs'
 import { FileTree } from '@/components/sidebar/FileTree'
+import { useMosaicStore } from '@/components/mosaic/mosaic-store'
 import { ProjectSidebarRow } from '@/components/sidebar/ProjectSidebarRow'
 import { RenameSessionDialog } from '@/components/sidebar/RenameSessionDialog'
 import { SessionTitleAnimated } from '@/components/sidebar/AnimatedSessionTitle'
@@ -245,6 +246,7 @@ export const AppSidebar = memo(function AppSidebar() {
   }, [sessionListNonce])
 
   const handleSwitchSession = useCallback(async (folderPath: string, sessionId: string) => {
+    if (useMosaicStore.getState().focusOrReplaceFocused(folderPath, sessionId)) return
     const ps = useChatStore.getState().projectSessions[folderPath]
     const currentSid = ps?._activeSessionId
     if (folderPath === currentFolder && currentSid === sessionId) return

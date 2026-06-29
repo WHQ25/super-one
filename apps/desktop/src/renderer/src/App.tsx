@@ -165,16 +165,27 @@ function App(): React.JSX.Element {
     return () => window.removeEventListener('keydown', handler)
   }, [toggleTerminal])
 
-  // Mosaic is chat-only. Start it clean: closing terminal/activity on entry so a
-  // pre-existing open panel doesn't immediately bounce us back out.
+  // Mosaic is chat-only. On entry we snapshot the activity/terminal panel state
+  // and close them so a hidden panel doesn't skew layout or bounce us back out;
+  // on exit we restore exactly what was open before.
+  const panelSnapshotRef = useRef<{ activityShown: boolean; sessionId: string | null; terminalOpen: boolean } | null>(null)
   const prevMosaicModeRef = useRef(mosaicMode)
   useEffect(() => {
-    if (prevMosaicModeRef.current !== 'mosaic' && mosaicMode === 'mosaic') {
+    const was = prevMosaicModeRef.current
+    prevMosaicModeRef.current = mosaicMode
+    if (was !== 'mosaic' && mosaicMode === 'mosaic') {
+      panelSnapshotRef.current = { activityShown: showActivityPanel, sessionId: activeSessionId, terminalOpen }
       setTerminalOpen(false)
       useActivityPanelStore.getState().setShowPanel(false)
+    } else if (was === 'mosaic' && mosaicMode !== 'mosaic') {
+      const snap = panelSnapshotRef.current
+      panelSnapshotRef.current = null
+      if (snap) {
+        useActivityPanelStore.getState().setShowPanel(snap.activityShown)
+        if (snap.sessionId) useTerminalStore.getState().setOpen(snap.sessionId, snap.terminalOpen)
+      }
     }
-    prevMosaicModeRef.current = mosaicMode
-  }, [mosaicMode, setTerminalOpen])
+  }, [mosaicMode, showActivityPanel, activeSessionId, terminalOpen, setTerminalOpen])
 
   // Opening the terminal or activity panel while in mosaic collapses back to
   // single mode, focused on the current tile (rising-edge only).

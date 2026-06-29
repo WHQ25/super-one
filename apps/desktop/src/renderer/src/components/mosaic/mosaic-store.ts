@@ -3,6 +3,7 @@ import { useChatStore } from '@/stores/chat'
 import {
   addLeaf,
   removeLeafRebalanced,
+  replaceLeaf,
   setRatioAtPath,
   collectLeaves,
   leafCount,
@@ -48,6 +49,7 @@ interface MosaicState {
   setDropHint: (hint: DropPlan | null) => void
   exitToSingle: () => void
   restoreLayout: () => void
+  focusOrReplaceFocused: (projectPath: string, sessionId: string) => boolean
 }
 
 /**
@@ -167,11 +169,51 @@ export const useMosaicStore = create<MosaicState>((set, get) => ({
     const st = get()
     if (st.mode === 'mosaic' || !st.lastLayout) return
     const chat = useChatStore.getState()
-    const { root, focusedTileId } = st.lastLayout
+    const { focusedTileId } = st.lastLayout
+    // The single view occupied the slot of the tile focused on exit. Whatever
+    // session the user navigated to there owns that slot on the way back: if it
+    // is already in the layout we just focus it, otherwise it replaces the slot.
+    let root = st.lastLayout.root
+    let targetId = focusedTileId
+    const active = currentActiveSeed()
+    if (active) {
+      const activeId = mosaicTileId(active.projectPath, active.sessionId)
+      if (findLeaf(root, activeId)) {
+        targetId = activeId
+      } else {
+        const slotId = (focusedTileId && findLeaf(root, focusedTileId)?.id) || collectLeaves(root)[0]?.id
+        if (slotId) {
+          root = replaceLeaf(root, slotId, makeLeaf(activeId, active.projectPath, active.sessionId))
+          targetId = activeId
+        }
+      }
+    }
     const leaves = collectLeaves(root)
     for (const t of leaves) void chat.mountSession(t.projectPath, t.sessionId)
-    set({ mode: 'mosaic', root, focusedTileId, lastLayout: null })
-    const target = (focusedTileId && findLeaf(root, focusedTileId)) || leaves[0]
+    const target = (targetId && findLeaf(root, targetId)) || leaves[0]
+    set({ mode: 'mosaic', root, focusedTileId: target?.id ?? null, lastLayout: null })
     if (target) void chat.switchToSession(target.projectPath, target.sessionId)
+  },
+
+  focusOrReplaceFocused: (projectPath, sessionId) => {
+    const st = get()
+    if (st.mode !== 'mosaic' || !st.root) return false
+    const targetId = mosaicTileId(projectPath, sessionId)
+    // Target already lives in the mosaic — just move focus there.
+    if (findLeaf(st.root, targetId)) {
+      get().setFocus(targetId)
+      return true
+    }
+    // Otherwise swap the focused tile's session for the target, keeping the
+    // split-tree shape (ratios, siblings) intact.
+    const focusId = (st.focusedTileId && findLeaf(st.root, st.focusedTileId)?.id) || collectLeaves(st.root)[0]?.id
+    if (!focusId) return false
+    const chat = useChatStore.getState()
+    const previous = findLeaf(st.root, focusId)
+    void chat.mountSession(projectPath, sessionId)
+    set({ root: replaceLeaf(st.root, focusId, makeLeaf(targetId, projectPath, sessionId)), focusedTileId: targetId })
+    if (previous) chat.unmountSession(previous.projectPath, previous.sessionId)
+    void chat.switchToSession(projectPath, sessionId)
+    return true
   },
 }))

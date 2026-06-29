@@ -1,6 +1,18 @@
 @custom-variant dark (&:is(.dark *));
 
-:root {
+/*
+ * `.brand-scope` shares the light-mode, hue-derived token declarations with
+ * `:root` so a subtree wrapper that sets `--brand-hue` (and token overrides)
+ * inline forces re-resolution of every token at its own scope. Custom-property
+ * `var()` values are eagerly substituted where they are declared, so setting
+ * `--brand-hue` on a descendant does nothing unless the dependent tokens are
+ * re-declared in that scope — which this shared selector provides. Used by the
+ * mosaic so each pane renders its own session's harness hue. Dark mode is
+ * hue-agnostic (neutral chroma), so the pane wrapper omits `.brand-scope` in
+ * dark mode and inherits the neutral `.dark` palette instead.
+ */
+:root,
+.brand-scope {
   --radius: 0.625rem;
   /* Default brand hue — both harnesses */
   --brand-hue: 240;

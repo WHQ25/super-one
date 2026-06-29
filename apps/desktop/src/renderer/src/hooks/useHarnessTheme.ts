@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type RefObject } from 'react'
 import { useAppStore } from '@/stores/app'
 import { useActiveSession } from '@/stores/chat'
 import type { HarnessId } from '@superone/shared/session-types'
@@ -38,6 +38,85 @@ interface AppliedSnapshot {
   dark: boolean
 }
 
+const EMPTY_SNAPSHOT: AppliedSnapshot = { brandHue: null, overrides: {}, dark: false }
+
+function syncBrandProps(
+  el: HTMLElement,
+  hue: number | null,
+  overrides: TokenOverrides,
+  dark: boolean,
+  prev: AppliedSnapshot,
+): AppliedSnapshot {
+  if (dark) {
+    if (!prev.dark) {
+      el.style.removeProperty('--brand-hue')
+      for (const token of DESIGN_TOKENS) {
+        for (const ch of LCH_CHANNELS) {
+          el.style.removeProperty(`${token}-${ch}`)
+        }
+      }
+    }
+    return { brandHue: null, overrides: {}, dark: true }
+  }
+
+  const prevBrandHue = prev.dark ? null : prev.brandHue
+  const prevOv = prev.dark ? {} : prev.overrides
+
+  if (hue !== prevBrandHue) {
+    if (hue !== null) {
+      el.style.setProperty('--brand-hue', String(hue))
+    } else {
+      el.style.removeProperty('--brand-hue')
+    }
+  }
+
+  const allTokens = new Set([...Object.keys(prevOv), ...Object.keys(overrides)])
+  for (const tokenKey of allTokens) {
+    const cur = overrides[tokenKey as keyof TokenOverrides] as LCHPartial | undefined
+    const prv = prevOv[tokenKey as keyof TokenOverrides] as LCHPartial | undefined
+    for (const ch of LCH_CHANNELS) {
+      const newVal = cur?.[ch]
+      const oldVal = prv?.[ch]
+      if (newVal === oldVal) continue
+      if (newVal !== undefined) {
+        el.style.setProperty(`${tokenKey}-${ch}`, String(newVal))
+      } else {
+        el.style.removeProperty(`${tokenKey}-${ch}`)
+      }
+    }
+  }
+
+  return { brandHue: hue, overrides, dark: false }
+}
+
+export function usePaneHarnessTheme(ref: RefObject<HTMLElement | null>): void {
+  const dark = useDarkClass()
+  const harness = useActiveHarness()
+  const claudeHue = useAppStore((s) => s.brandHues.claude)
+  const codexHue = useAppStore((s) => s.brandHues.codex)
+  const claudeOverrides = useAppStore((s) => s.tokenOverrides.claude)
+  const codexOverrides = useAppStore((s) => s.tokenOverrides.codex)
+
+  const appliedRef = useRef<AppliedSnapshot>(EMPTY_SNAPSHOT)
+
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const rawHue = harness === 'codex' ? codexHue : claudeHue
+    const userHue = rawHue ?? HARNESS_DEFAULT_BRAND_HUE[harness]
+    const overrides = harness === 'codex' ? codexOverrides : claudeOverrides
+    el.dataset.harness = harness
+    el.classList.toggle('brand-scope', !dark)
+    let raf: number | null = requestAnimationFrame(() => {
+      raf = null
+      appliedRef.current = syncBrandProps(el, userHue, overrides, dark, appliedRef.current)
+    })
+    return () => {
+      if (raf !== null) cancelAnimationFrame(raf)
+    }
+  }, [ref, harness, dark, claudeHue, codexHue, claudeOverrides, codexOverrides])
+}
+
 export function useHarnessTheme(): void {
   const dark = useDarkClass()
   const harness = useActiveHarness()
@@ -52,7 +131,7 @@ export function useHarnessTheme(): void {
   const uiFontFamily = useAppStore((s) => s.uiFontFamily)
   const liquidGlass = useAppStore((s) => s.liquidGlass)
 
-  const appliedRef = useRef<AppliedSnapshot>({ brandHue: null, overrides: {}, dark: false })
+  const appliedRef = useRef<AppliedSnapshot>(EMPTY_SNAPSHOT)
 
   useEffect(() => {
     const userHue = harness === 'codex' ? codexHue : claudeHue
@@ -75,55 +154,7 @@ export function useHarnessTheme(): void {
 
     let raf: number | null = requestAnimationFrame(() => {
       raf = null
-      const prev = appliedRef.current
-
-      if (dark) {
-        if (!prev.dark) {
-          root.style.removeProperty('--brand-hue')
-          for (const token of DESIGN_TOKENS) {
-            for (const ch of LCH_CHANNELS) {
-              root.style.removeProperty(`${token}-${ch}`)
-            }
-          }
-        }
-        appliedRef.current = { brandHue: null, overrides: {}, dark: true }
-        return
-      }
-
-      if (prev.dark) {
-        appliedRef.current = { brandHue: null, overrides: {}, dark: false }
-      }
-
-      if (userHue !== prev.brandHue) {
-        if (userHue !== null) {
-          root.style.setProperty('--brand-hue', String(userHue))
-        } else {
-          root.style.removeProperty('--brand-hue')
-        }
-      }
-
-      const prevOv = appliedRef.current.overrides
-      const allTokens = new Set([
-        ...Object.keys(prevOv),
-        ...Object.keys(overrides),
-      ])
-
-      for (const tokenKey of allTokens) {
-        const cur = overrides[tokenKey as keyof TokenOverrides] as LCHPartial | undefined
-        const prv = prevOv[tokenKey as keyof TokenOverrides] as LCHPartial | undefined
-        for (const ch of LCH_CHANNELS) {
-          const newVal = cur?.[ch]
-          const oldVal = prv?.[ch]
-          if (newVal === oldVal) continue
-          if (newVal !== undefined) {
-            root.style.setProperty(`${tokenKey}-${ch}`, String(newVal))
-          } else {
-            root.style.removeProperty(`${tokenKey}-${ch}`)
-          }
-        }
-      }
-
-      appliedRef.current = { brandHue: userHue, overrides, dark: false }
+      appliedRef.current = syncBrandProps(root, userHue, overrides, dark, appliedRef.current)
     })
     return () => {
       if (raf !== null) cancelAnimationFrame(raf)

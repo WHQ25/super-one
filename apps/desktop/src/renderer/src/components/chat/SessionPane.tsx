@@ -1,7 +1,8 @@
-import { useMemo, useRef } from 'react'
+import { useMemo, useRef, type RefObject } from 'react'
 import { SessionScopeProvider, type SessionScope } from '@/stores/chat'
 import { ChatContent } from '@/components/chat/ChatContent'
 import { useChatScroll } from '@/hooks/useChatScroll'
+import { usePaneHarnessTheme } from '@/hooks/useHarnessTheme'
 import { cn } from '@superone/ui/lib/utils'
 
 interface SessionPaneProps {
@@ -9,14 +10,20 @@ interface SessionPaneProps {
   className?: string
 }
 
-function SessionPaneBody({ className }: { className?: string }) {
+function SessionPaneBody({ className, rootRef }: { className?: string; rootRef?: RefObject<HTMLDivElement | null> }) {
   const scrollViewportRef = useRef<HTMLDivElement>(null)
   const { showScrollButton, scrollToBottom } = useChatScroll({ scrollViewportRef })
   return (
-    <div className={cn('@container flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden', className)}>
+    <div ref={rootRef} className={cn('@container flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden', className)}>
       <ChatContent scrollViewportRef={scrollViewportRef} showScrollButton={showScrollButton} scrollToBottom={scrollToBottom} />
     </div>
   )
+}
+
+function ScopedSessionPaneBody({ className }: { className?: string }) {
+  const rootRef = useRef<HTMLDivElement>(null)
+  usePaneHarnessTheme(rootRef)
+  return <SessionPaneBody className={className} rootRef={rootRef} />
 }
 
 export function SessionPane({ scope, className }: SessionPaneProps) {
@@ -27,7 +34,7 @@ export function SessionPane({ scope, className }: SessionPaneProps) {
   if (!value) return <SessionPaneBody className={className} />
   return (
     <SessionScopeProvider value={value}>
-      <SessionPaneBody className={className} />
+      <ScopedSessionPaneBody className={className} />
     </SessionScopeProvider>
   )
 }

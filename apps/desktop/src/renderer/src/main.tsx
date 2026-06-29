@@ -17,6 +17,11 @@ const miniProject = params.get('project')
 const miniSession = params.get('session')
 const miniTitle = params.get('title')
 
+if (isDragPreview) {
+  document.documentElement.style.background = 'transparent'
+  document.body.style.background = 'transparent'
+}
+
 void initI18n().finally(() => {
   createRoot(document.getElementById('root')!).render(
     <StrictMode>

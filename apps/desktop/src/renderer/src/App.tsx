@@ -1,5 +1,5 @@
 import { useEffect, useCallback, useRef, useState, lazy, Suspense } from 'react'
-import { Sun, Moon, X, Smartphone, Minimize2, SquareTerminal, RotateCw, Bug } from 'lucide-react'
+import { Sun, Moon, X, Smartphone, Minimize2, SquareTerminal, RotateCw, Bug, LayoutGrid } from 'lucide-react'
 import { motion } from 'motion/react'
 import { toast } from 'sonner'
 import { useTranslation } from 'react-i18next'
@@ -76,6 +76,7 @@ function App(): React.JSX.Element {
   const activitySide = useActivityPanelStore((s) => s.side)
   const mosaicMode = useMosaicStore((s) => s.mode)
   const mosaicRoot = useMosaicStore((s) => s.root)
+  const canRestoreMosaic = useMosaicStore((s) => s.lastLayout !== null)
   const draggingSession = useMosaicStore((s) => s.draggingSession)
   const fullscreenApp = useMiniAppStore((s) => s.fullscreenApp)
   const isFullscreen = useFullscreen()
@@ -477,6 +478,21 @@ function App(): React.JSX.Element {
                     </button>
                   </TooltipTrigger>
                   <TooltipContent side="top"><span>Toggle terminal</span> <CommandShortcut>{isMac ? '⌘J' : 'Ctrl+J'}</CommandShortcut></TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
+            {layoutMode === 'coding' && canRestoreMosaic && (
+              <TooltipProvider delayDuration={300}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      onClick={() => useMosaicStore.getState().restoreLayout()}
+                      className="rounded-md p-1.5 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground"
+                    >
+                      <LayoutGrid className="size-3.5" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top"><span>{t('tooltips.sessionGrid')}</span></TooltipContent>
                 </Tooltip>
               </TooltipProvider>
             )}

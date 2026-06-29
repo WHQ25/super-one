@@ -36,6 +36,7 @@ interface MosaicState {
   mode: 'single' | 'mosaic'
   root: MosaicNode | null
   focusedTileId: string | null
+  lastLayout: { root: MosaicNode; focusedTileId: string | null } | null
   draggingSession: boolean
   draggedSession: { projectPath: string; sessionId: string } | null
   dropHint: DropPlan | null
@@ -46,6 +47,7 @@ interface MosaicState {
   setDragging: (dragging: boolean, session?: { projectPath: string; sessionId: string } | null) => void
   setDropHint: (hint: DropPlan | null) => void
   exitToSingle: () => void
+  restoreLayout: () => void
 }
 
 /**
@@ -68,6 +70,7 @@ export const useMosaicStore = create<MosaicState>((set, get) => ({
   mode: 'single',
   root: null,
   focusedTileId: null,
+  lastLayout: null,
   draggingSession: false,
   draggedSession: null,
   dropHint: null,
@@ -91,7 +94,7 @@ export const useMosaicStore = create<MosaicState>((set, get) => ({
       void chat.mountSession(projectPath, sessionId)
       void chat.mountSession(active.projectPath, active.sessionId)
       const activeLeaf = makeLeaf(activeId, active.projectPath, active.sessionId)
-      set({ mode: 'mosaic', root: addLeaf(activeLeaf, activeId, target?.edge ?? 'right', makeLeaf(id, projectPath, sessionId)), focusedTileId: id })
+      set({ mode: 'mosaic', root: addLeaf(activeLeaf, activeId, target?.edge ?? 'right', makeLeaf(id, projectPath, sessionId)), focusedTileId: id, lastLayout: null })
     } else {
       void chat.mountSession(projectPath, sessionId)
       const targetId = target?.tileId ?? st.focusedTileId ?? collectLeaves(st.root)[0]?.id
@@ -119,7 +122,7 @@ export const useMosaicStore = create<MosaicState>((set, get) => ({
     const next = removeLeafRebalanced(st.root, id)
     if (!next || leafCount(next) <= 1) {
       const last = next ? collectLeaves(next)[0] : null
-      set({ mode: 'single', root: null, focusedTileId: null })
+      set({ mode: 'single', root: null, focusedTileId: null, lastLayout: { root: st.root, focusedTileId: st.focusedTileId } })
       if (last) {
         chat.unmountSession(last.projectPath, last.sessionId)
         void chat.switchToSession(last.projectPath, last.sessionId)
@@ -156,7 +159,19 @@ export const useMosaicStore = create<MosaicState>((set, get) => ({
     const leaves = collectLeaves(st.root)
     for (const t of leaves) chat.unmountSession(t.projectPath, t.sessionId)
     const focused = st.focusedTileId ? findLeaf(st.root, st.focusedTileId) : null
-    set({ mode: 'single', root: null, focusedTileId: null })
+    set({ mode: 'single', root: null, focusedTileId: null, lastLayout: { root: st.root, focusedTileId: st.focusedTileId } })
     if (focused) void chat.switchToSession(focused.projectPath, focused.sessionId)
+  },
+
+  restoreLayout: () => {
+    const st = get()
+    if (st.mode === 'mosaic' || !st.lastLayout) return
+    const chat = useChatStore.getState()
+    const { root, focusedTileId } = st.lastLayout
+    const leaves = collectLeaves(root)
+    for (const t of leaves) void chat.mountSession(t.projectPath, t.sessionId)
+    set({ mode: 'mosaic', root, focusedTileId, lastLayout: null })
+    const target = (focusedTileId && findLeaf(root, focusedTileId)) || leaves[0]
+    if (target) void chat.switchToSession(target.projectPath, target.sessionId)
   },
 }))

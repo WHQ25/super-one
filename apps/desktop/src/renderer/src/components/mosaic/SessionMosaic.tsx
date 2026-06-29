@@ -1,5 +1,6 @@
 import { useRef, type RefObject } from 'react'
-import { Moon, Sun, SquareTerminal, X } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
+import { Maximize, Moon, Sun, X } from 'lucide-react'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { cn } from '@superone/ui/lib/utils'
 import { SessionPane } from '@/components/chat/SessionPane'
@@ -10,7 +11,6 @@ import { HeaderSessionMenu } from '@/components/chat/HeaderSessionMenu'
 import { useTheme } from '@/hooks/useTheme'
 import { useFullscreen } from '@/hooks/useFullscreen'
 import { useAppStore } from '@/stores/app'
-import { useTerminalStore } from '@/stores/terminal'
 import { useMosaicStore } from './mosaic-store'
 import { MosaicDivider } from './MosaicDivider'
 import { MosaicDropZone } from './MosaicDropZone'
@@ -28,14 +28,8 @@ interface RenderCtx {
   containerRef: RefObject<HTMLDivElement | null>
 }
 
-function openTileTerminal(tile: MosaicLeaf) {
-  const m = useMosaicStore.getState()
-  m.setFocus(tile.id)
-  m.exitToSingle()
-  useTerminalStore.getState().setOpen(tile.sessionId, true)
-}
-
 function MosaicTile({ tile, ctx }: { tile: MosaicLeaf; ctx: RenderCtx }) {
+  const { t } = useTranslation()
   const focused = useMosaicStore((s) => s.focusedTileId === tile.id)
   const dragging = useMosaicStore((s) => s.draggingSession)
   const titleFallback = useChatStore((s) => {
@@ -59,8 +53,8 @@ function MosaicTile({ tile, ctx }: { tile: MosaicLeaf; ctx: RenderCtx }) {
         </div>
         <div className="flex-1" />
         <div className="flex shrink-0 items-center gap-0.5 pl-1.5" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
-          <IconButton size="xs" variant="nested" tooltip="Terminal" onClick={(e) => { e.stopPropagation(); openTileTerminal(tile) }}>
-            <SquareTerminal className="size-3.5" />
+          <IconButton size="xs" variant="nested" tooltip={t('tooltips.maximize')} onClick={(e) => { e.stopPropagation(); const m = useMosaicStore.getState(); m.setFocus(tile.id); m.exitToSingle() }}>
+            <Maximize className="size-3.5" />
           </IconButton>
           <IconButton size="xs" variant="nested" tooltip="Close" onClick={(e) => { e.stopPropagation(); useMosaicStore.getState().removeTile(tile.id) }}>
             <X className="size-3.5" />

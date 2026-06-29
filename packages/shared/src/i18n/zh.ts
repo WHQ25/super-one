@@ -1273,6 +1273,8 @@ export const zh: Messages = {
     close: '关闭',
     fullscreen: '全屏',
     unsavedChanges: '未保存的修改',
+    maximize: '最大化',
+    sessionGrid: '会话网格',
   },
   usageGauge: {
     claudeTitle: 'Claude 用量',

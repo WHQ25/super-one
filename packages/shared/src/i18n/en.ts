@@ -1259,6 +1259,8 @@ export type Messages = {
     close: string
     fullscreen: string
     unsavedChanges: string
+    maximize: string
+    sessionGrid: string
   }
   usageGauge: {
     claudeTitle: string
@@ -2562,6 +2564,8 @@ export const en: Messages = {
     close: 'Close',
     fullscreen: 'Fullscreen',
     unsavedChanges: 'Unsaved changes',
+    maximize: 'Maximize',
+    sessionGrid: 'Session grid',
   },
   usageGauge: {
     claudeTitle: 'Claude Usage',

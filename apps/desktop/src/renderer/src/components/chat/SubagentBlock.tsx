@@ -62,14 +62,19 @@ export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming
   const taskInput = useMemo(() => parseTaskInput(taskBlock.input), [taskBlock.input])
   const showSpawningPlaceholder = !taskInput.subagentType && !taskInput.description
   const isAsync = taskInput.runInBackground
-  const isComplete = isAsync
-    ? !!progress?.completed || (!progress && !!taskBlock.taskResultText)
-    : !!resultBlock
-  const isRunning = isAsync
-    ? !progress?.completed && !taskBlock.taskResultText
-    : !resultBlock && isStreaming
-  const taskStatus = isAsync
-    ? progress?.status
+  // taskProgress is the authoritative running signal: every sub-agent (top-level,
+  // nested, background or foreground) reports task_started→task_notification. A
+  // background agent's early tool_result and an idle main turn must NOT read as
+  // complete while its task is still running. Agents without task tracking fall
+  // back to: async → no recorded result text; sync → has a tool_result.
+  const isComplete = progress
+    ? !!progress.completed
+    : (isAsync ? !!taskBlock.taskResultText : !!resultBlock)
+  const isRunning = progress
+    ? !progress.completed
+    : (isAsync ? !taskBlock.taskResultText : (!resultBlock && isStreaming))
+  const taskStatus = progress
+    ? progress.status
     : (resultBlock?.type === 'tool_result' && resultBlock.isError ? 'failed' as const : undefined)
   const isFailed = isComplete && taskStatus === 'failed'
   const isStopped = isComplete && !!taskStatus && taskStatus !== 'completed' && !isFailed

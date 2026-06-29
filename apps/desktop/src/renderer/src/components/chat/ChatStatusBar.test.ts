@@ -185,5 +185,36 @@ describe('collectBackgroundActivities', () => {
       const { agentActivities } = collectBackgroundActivities(messages, {}, true)
       expect(agentActivities.map((a) => a.id)).toEqual(['A'])
     })
+
+    it('shows a background agent tracked by taskProgress even after its tool_result arrives and the turn is idle', () => {
+      // Regression: a run_in_background agent returns its "started" tool_result
+      // immediately and the main turn goes idle; its input carries no
+      // run_in_background flag, so the only running signal is taskProgress.
+      const messages = [msg(
+        toolUse('A', 'Agent', { description: 'Background research' }, 'complete'),
+        toolResult('A', { summary: 'started' }),
+      )]
+      const progress = { A: { description: 'Background research', completed: false } }
+      const { agentActivities } = collectBackgroundActivities(messages, progress, false)
+      expect(agentActivities.map((a) => a.id)).toEqual(['A'])
+    })
+
+    it('shows nested sub-agents of a background agent while the main turn is idle', () => {
+      // Regression: the nested children of a background agent are still running
+      // (taskProgress not completed) even though sessionStatus !== 'streaming'.
+      const messages = [msg(
+        toolUse('A', 'Agent', { description: 'parent' }, 'complete'),
+        toolResult('A', { summary: 'started' }),
+        nested('B', 'A', { description: 'child 1' }),
+        nested('C', 'A', { description: 'child 2' }),
+      )]
+      const progress = {
+        A: { description: 'parent', completed: false },
+        B: { description: 'child 1', completed: false },
+        C: { description: 'child 2', completed: false },
+      }
+      const { agentActivities } = collectBackgroundActivities(messages, progress, false)
+      expect(agentActivities.map((a) => a.id)).toEqual(['A', 'B', 'C'])
+    })
   })
 })

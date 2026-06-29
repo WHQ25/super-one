@@ -116,12 +116,14 @@ export function collectBackgroundActivities(
         const isAsync = params.run_in_background === true
         const progress = taskProgress[block.toolUseId]
         const resultBlock = results.get(block.toolUseId)
-        // Async agents report completion via taskProgress; sync (foreground) agents
-        // — including nested ones — run until they get a tool_result, so they count
-        // as running for as long as the turn is still streaming.
-        const isRunning = isAsync
-          ? (progress ? progress.completed !== true : block.status === 'streaming')
-          : (!resultBlock && isStreaming)
+        // taskProgress is the authoritative running signal: every sub-agent (top-level,
+        // nested, background or foreground) emits task_started→task_notification, so a
+        // background agent stays "running" after its early tool_result and a nested
+        // agent stays "running" while the main turn is idle. Agents without task
+        // tracking fall back to: no result yet AND (async hint OR turn still streaming).
+        const isRunning = progress
+          ? progress.completed !== true
+          : (!resultBlock && (isAsync || isStreaming))
         if (!isRunning) continue
         const childBlocks = collectSubagentSubtree(message.content, block.toolUseId)
         const title = String(params.description ?? params.name ?? params.subagent_type ?? 'Agent').trim() || 'Agent'

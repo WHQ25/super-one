@@ -13,6 +13,7 @@ import { describe, it, expect } from 'vitest'
 import type { AgentEvent, ContentBlock } from '@superone/shared/agent-types'
 import { applyContentDelta } from '@superone/shared/content-delta'
 import { groupContent } from '../../renderer/src/components/chat/ChatMessage'
+import { collectBackgroundActivities } from '../../renderer/src/components/chat/ChatStatusBar'
 import rawFixture from '../fixtures/recordings/nested-subagent-render.emit.json'
 
 const events = rawFixture as unknown as AgentEvent[]
@@ -25,6 +26,35 @@ function rebuildMessages(): ContentBlock[][] {
     byMsg.set(ev.messageId, applyContentDelta(byMsg.get(ev.messageId) ?? [], ev.delta))
   }
   return [...byMsg.values()]
+}
+
+// Replay every event up to (and including) `stopIndex`, reconstructing the
+// status-bar inputs at that moment: per-message content, taskProgress, and
+// whether the main turn is streaming.
+function rebuildStatusBarStateAt(stopIndex: number): {
+  messages: { content: ContentBlock[] }[]
+  taskProgress: Record<string, { description: string; completed?: boolean }>
+  streaming: boolean
+} {
+  const byMsg = new Map<string, ContentBlock[]>()
+  const taskProgress: Record<string, { description: string; completed?: boolean }> = {}
+  let streaming = false
+  for (let i = 0; i <= stopIndex; i++) {
+    const e = events[i]
+    if (e.type === 'content_delta') {
+      const ev = e as unknown as { messageId: string; delta: ContentBlock }
+      byMsg.set(ev.messageId, applyContentDelta(byMsg.get(ev.messageId) ?? [], ev.delta))
+    } else if (e.type === 'status_change') {
+      streaming = (e as unknown as { status: string }).status === 'streaming'
+    } else if (e.type === 'task_started') {
+      const ev = e as unknown as { toolUseId: string; description: string }
+      if (ev.toolUseId) taskProgress[ev.toolUseId] = { description: ev.description, completed: false }
+    } else if (e.type === 'task_notification') {
+      const ev = e as unknown as { toolUseId: string }
+      if (ev.toolUseId && taskProgress[ev.toolUseId]) taskProgress[ev.toolUseId].completed = true
+    }
+  }
+  return { messages: [...byMsg.values()].map((content) => ({ content })), taskProgress, streaming }
 }
 
 function parentOf(b: ContentBlock): string | null {
@@ -62,5 +92,21 @@ describe('nested sub-agent grouping (recording: nested-subagent-render)', () => 
     expect(top!.childBlocks.length).toBeGreaterThan(5)
     const nestedAgents = top!.childBlocks.filter((b) => b.type === 'tool_use' && b.toolName === 'Agent')
     expect(nestedAgents.length).toBe(5)
+  })
+
+  it('surfaces the background agent and all running nested agents in the status-bar panel', () => {
+    // Find the first event after which all six sub-agents are tracked-and-running.
+    const peakIndex = events.findIndex((_, i) => {
+      const { taskProgress } = rebuildStatusBarStateAt(i)
+      return Object.values(taskProgress).filter((p) => !p.completed).length === 6
+    })
+    expect(peakIndex).toBeGreaterThan(-1)
+
+    const { messages, taskProgress, streaming } = rebuildStatusBarStateAt(peakIndex)
+    // The top-level agent runs in the background, so the main turn is idle here —
+    // the exact condition the old run_in_background/isStreaming heuristic missed.
+    expect(streaming).toBe(false)
+    const { agentActivities } = collectBackgroundActivities(messages, taskProgress as never, streaming)
+    expect(agentActivities.length).toBe(6)
   })
 })

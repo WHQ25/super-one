@@ -91,9 +91,9 @@ export function SubagentFullView({ view }: { view: SubagentViewState }) {
   const rawResultText = segment?.resultBlock?.summary
   const asyncOutputPath = useMemo(() => rawResultText?.match(/output_file:\s*(\S+)/)?.[1], [rawResultText])
   const outputFile = asyncOutputPath ?? progress?.outputFile
-  const isRunning = isAsync
-    ? !progress?.completed && !segment?.taskBlock.taskResultText
-    : !segment?.resultBlock
+  const isRunning = progress
+    ? !progress.completed
+    : (isAsync ? !segment?.taskBlock.taskResultText : !segment?.resultBlock)
 
   const { entries: jsonlEntries, resultText: jsonlResultText } = useSubagentJsonl({
     toolUseId: view.toolUseId,

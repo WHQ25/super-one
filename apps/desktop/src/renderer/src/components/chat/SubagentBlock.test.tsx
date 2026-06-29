@@ -104,6 +104,43 @@ describe('SubagentBlock activity surface', () => {
     expect(screen.getByText('ToolSearch')).toBeInTheDocument()
   })
 
+  it('renders as running when taskProgress is active, even though the tool_result arrived and the turn is idle', () => {
+    // A background agent returns its "started" tool_result immediately and the main
+    // turn goes idle; its input has no run_in_background flag. taskProgress is the
+    // authoritative running signal, so it must read as running, not done.
+    hoisted.sessionState.taskProgress = {
+      'toolu_bg': { description: 'researching', completed: false, totalTokens: 0, toolUses: 0, durationMs: 0, toolHistory: [] },
+    }
+    render(
+      <SubagentBlock
+        taskBlock={agentBlock('toolu_bg', false)}
+        childBlocks={[]}
+        resultBlock={{ type: 'tool_result', toolUseId: 'toolu_bg', summary: 'started' } as ContentBlock}
+        isStreaming={false}
+        defaultExpanded
+      />,
+    )
+    expect(screen.getByText('chat.subagent.running')).toBeInTheDocument()
+    expect(screen.queryByText('chat.subagent.done')).not.toBeInTheDocument()
+  })
+
+  it('renders as done once taskProgress is completed', () => {
+    hoisted.sessionState.taskProgress = {
+      'toolu_bg': { description: 'researching', completed: true, status: 'completed', totalTokens: 0, toolUses: 0, durationMs: 0, toolHistory: [] },
+    }
+    render(
+      <SubagentBlock
+        taskBlock={agentBlock('toolu_bg', false)}
+        childBlocks={[]}
+        resultBlock={{ type: 'tool_result', toolUseId: 'toolu_bg', summary: 'done' } as ContentBlock}
+        isStreaming={false}
+        defaultExpanded
+      />,
+    )
+    expect(screen.getByText('chat.subagent.done')).toBeInTheDocument()
+    expect(screen.queryByText('chat.subagent.running')).not.toBeInTheDocument()
+  })
+
   it('renders inline childBlocks (not the progress channel) when the agent has them — no regression', () => {
     // A parent agent that DID stream inline children. Even if a stale progress
     // entry exists, the structured inline blocks must win and the progress-only

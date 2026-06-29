@@ -523,7 +523,7 @@ function App(): React.JSX.Element {
             <CanvasPanel />
           </div>
         )}
-        {layoutMode === 'coding' && draggingSession && mosaicMode !== 'mosaic' && (
+        {layoutMode === 'coding' && draggingSession && mosaicMode !== 'mosaic' && !canRestoreMosaic && (
           <MosaicDropZone tileId={null} onDropSession={(fp, sid, edge) => useMosaicStore.getState().addTile(fp, sid, { edge })} />
         )}
         {layoutMode === 'coding' && draggingSession && <MosaicDropPreview />}

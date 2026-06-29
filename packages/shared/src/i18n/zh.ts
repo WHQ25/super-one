@@ -135,6 +135,9 @@ export const zh: Messages = {
       ready: 'v{{version}} 已就绪',
       restart: '重启',
     },
+    mosaic: {
+      noSpace: '空间不足',
+    },
   },
   settings: {
     layout: {
@@ -1275,6 +1278,7 @@ export const zh: Messages = {
     unsavedChanges: '未保存的修改',
     maximize: '最大化',
     sessionGrid: '会话网格',
+    toggleTheme: '切换主题',
   },
   usageGauge: {
     claudeTitle: 'Claude 用量',

@@ -121,6 +121,9 @@ export type Messages = {
       ready: string
       restart: string
     }
+    mosaic: {
+      noSpace: string
+    }
   }
   settings: {
     layout: {
@@ -1261,6 +1264,7 @@ export type Messages = {
     unsavedChanges: string
     maximize: string
     sessionGrid: string
+    toggleTheme: string
   }
   usageGauge: {
     claudeTitle: string
@@ -1425,6 +1429,9 @@ export const en: Messages = {
       downloadingWithProgress: 'Downloading {{version}}... {{progress}}%',
       ready: 'v{{version}} is ready',
       restart: 'Restart',
+    },
+    mosaic: {
+      noSpace: 'Not enough space',
     },
   },
   settings: {
@@ -2566,6 +2573,7 @@ export const en: Messages = {
     unsavedChanges: 'Unsaved changes',
     maximize: 'Maximize',
     sessionGrid: 'Session grid',
+    toggleTheme: 'Toggle theme',
   },
   usageGauge: {
     claudeTitle: 'Claude Usage',

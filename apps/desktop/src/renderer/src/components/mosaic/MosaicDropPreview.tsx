@@ -1,4 +1,5 @@
 import { useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import { cn } from '@superone/ui/lib/utils'
 import { useMosaicStore } from './mosaic-store'
 import { collectLeaves, nodeAtPath, subtreeRect, DIVIDER_SIZE, MIN_TILE_W, MIN_TILE_H, type DropEdge, type Rect } from './mosaic-tree'
@@ -18,6 +19,7 @@ function halfRect(edge: DropEdge, r: Rect): Rect {
 }
 
 export function MosaicDropPreview() {
+  const { t } = useTranslation()
   const ref = useRef<HTMLDivElement>(null)
   const hint = useMosaicStore((s) => s.dropHint)
   const root = useMosaicStore((s) => s.root)
@@ -49,7 +51,7 @@ export function MosaicDropPreview() {
       box = halfRect(hint.edge, target)
     }
     // Blocked: a min-sized block straddling the insertion seam (the target's
-    // edge on the drop side), so "空间不足" sits between the two tracks the new
+    // edge on the drop side), so the "no space" hint sits between the two tracks the new
     // one would split — not in the middle of the whole container.
     if (!hint.allowed) {
       const horizontal = hint.edge === 'left' || hint.edge === 'right'
@@ -77,7 +79,7 @@ export function MosaicDropPreview() {
       >
         {!hint.allowed && (
           <div className="absolute inset-0 flex items-center justify-center">
-            <span className="rounded-md bg-background/90 px-2 py-1 text-xs font-medium text-muted-foreground shadow-sm">空间不足</span>
+            <span className="rounded-md bg-background/90 px-2 py-1 text-xs font-medium text-muted-foreground shadow-sm">{t('shell.mosaic.noSpace')}</span>
           </div>
         )}
       </div>

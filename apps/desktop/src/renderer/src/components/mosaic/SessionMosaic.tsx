@@ -56,11 +56,11 @@ function MosaicTile({ tile, ctx }: { tile: MosaicLeaf; ctx: RenderCtx }) {
           <IconButton size="xs" variant="nested" tooltip={t('tooltips.maximize')} onClick={(e) => { e.stopPropagation(); const m = useMosaicStore.getState(); m.setFocus(tile.id); m.exitToSingle() }}>
             <Maximize className="size-3.5" />
           </IconButton>
-          <IconButton size="xs" variant="nested" tooltip="Close" onClick={(e) => { e.stopPropagation(); useMosaicStore.getState().removeTile(tile.id) }}>
+          <IconButton size="xs" variant="nested" tooltip={t('tooltips.close')} onClick={(e) => { e.stopPropagation(); useMosaicStore.getState().removeTile(tile.id) }}>
             <X className="size-3.5" />
           </IconButton>
           {isTopRight && (
-            <IconButton size="xs" variant="nested" tooltip="Toggle theme" onClick={(e) => { e.stopPropagation(); ctx.onToggleTheme() }}>
+            <IconButton size="xs" variant="nested" tooltip={t('tooltips.toggleTheme')} onClick={(e) => { e.stopPropagation(); ctx.onToggleTheme() }}>
               {ctx.themeDark ? <Sun className="size-3.5" /> : <Moon className="size-3.5" />}
             </IconButton>
           )}

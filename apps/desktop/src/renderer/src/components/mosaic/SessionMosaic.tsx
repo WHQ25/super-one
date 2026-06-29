@@ -6,6 +6,7 @@ import { SessionPane } from '@/components/chat/SessionPane'
 import { LayoutToggle } from '@/components/coding/LayoutToggle'
 import { useChatStore, extractSessionTitle } from '@/stores/chat'
 import { SessionTitleAnimated } from '@/components/sidebar/AnimatedSessionTitle'
+import { HeaderSessionMenu } from '@/components/chat/HeaderSessionMenu'
 import { useTheme } from '@/hooks/useTheme'
 import { useFullscreen } from '@/hooks/useFullscreen'
 import { useAppStore } from '@/stores/app'
@@ -52,7 +53,11 @@ function MosaicTile({ tile, ctx }: { tile: MosaicLeaf; ctx: RenderCtx }) {
       <div className="flex h-[34px] shrink-0 items-center pl-[18px] pr-2" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
         {ctx.reserveTrafficLights && isTopLeft && <div className="w-[60px] shrink-0" />}
         {isTopLeft && !ctx.showSidebar && <LayoutToggle />}
-        <SessionTitleAnimated sessionId={tile.sessionId} fallback={titleFallback} className="min-w-0 flex-1 text-xs text-muted-foreground" />
+        <div className="group/htitle flex min-w-0 items-center gap-1" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+          <SessionTitleAnimated sessionId={tile.sessionId} fallback={titleFallback} className="min-w-0 text-xs text-muted-foreground" />
+          <HeaderSessionMenu sessionId={tile.sessionId} folderPath={tile.projectPath} />
+        </div>
+        <div className="flex-1" />
         <div className="flex shrink-0 items-center gap-0.5 pl-1.5" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
           <IconButton size="xs" variant="nested" tooltip="Terminal" onClick={(e) => { e.stopPropagation(); openTileTerminal(tile) }}>
             <SquareTerminal className="size-3.5" />

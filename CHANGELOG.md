@@ -4,6 +4,22 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.42.0-alpha] - 2026-06-29
+
+### Added
+
+- Session mosaic: drag a session into the window to open a multi-pane grid, with a binary split-tree layout, directional drag-and-drop placement, resizable dividers, and per-tile chrome (title, actions menu, theme toggle). Toggle between single and grid modes from the session header; non-active panes stay live in the background, and the grid collapses back to single when a terminal or activity view opens
+- Each mosaic pane is colored with its own session's harness hue
+- Drag a session out of the window to open it in a standalone mini window
+- Session actions menu in the coding header title
+
+### Fixed
+
+- Sub-agent text and thinking no longer leak into the main conversation; nested and background sub-agent tool calls now render correctly, including async/nested running agents in the status-bar panel
+- A Bash command exiting non-zero is now shown as a command result instead of a tool error
+- Insight blocks wrapped in a blockquote or indentation now render correctly
+- Closing a mosaic pane down to the last session no longer leaves a stale restorable layout
+
 ## [0.41.15-alpha] - 2026-06-28
 
 ### Added

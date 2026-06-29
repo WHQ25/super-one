@@ -37,14 +37,31 @@ interface MosaicState {
   root: MosaicNode | null
   focusedTileId: string | null
   draggingSession: boolean
+  draggedSession: { projectPath: string; sessionId: string } | null
   dropHint: DropPlan | null
   addTile: (projectPath: string, sessionId: string, target?: DropTarget) => void
   removeTile: (id: string) => void
   setFocus: (id: string) => void
   setRatio: (path: MosaicPath, ratio: number) => void
-  setDragging: (dragging: boolean) => void
+  setDragging: (dragging: boolean, session?: { projectPath: string; sessionId: string } | null) => void
   setDropHint: (hint: DropPlan | null) => void
   exitToSingle: () => void
+}
+
+/**
+ * A drop changes nothing when the session is already a tile, or — in single mode
+ * — there is no *distinct* active session to split it against. A lone tile would
+ * masquerade as single mode while dropping the per-session header menu, so we
+ * refuse to create one (both here and as a drop-hint suppressor in the zone).
+ */
+export function dropWouldNoOp(projectPath: string, sessionId: string): boolean {
+  const st = useMosaicStore.getState()
+  if (st.root && findLeaf(st.root, mosaicTileId(projectPath, sessionId))) return true
+  if (st.mode !== 'mosaic' || !st.root) {
+    const active = currentActiveSeed()
+    return !active || (active.projectPath === projectPath && active.sessionId === sessionId)
+  }
+  return false
 }
 
 export const useMosaicStore = create<MosaicState>((set, get) => ({
@@ -52,34 +69,33 @@ export const useMosaicStore = create<MosaicState>((set, get) => ({
   root: null,
   focusedTileId: null,
   draggingSession: false,
+  draggedSession: null,
   dropHint: null,
 
   addTile: (projectPath, sessionId, target) => {
     const id = mosaicTileId(projectPath, sessionId)
     const st = get()
-    if (st.root && findLeaf(st.root, id)) {
-      get().setFocus(id)
-      return
-    }
     const chat = useChatStore.getState()
-    const newLeaf = makeLeaf(id, projectPath, sessionId)
-    const edge = target?.edge ?? 'right'
+    // Re-dropping a session that is already a tile is a pure no-op.
+    if (st.root && findLeaf(st.root, id)) return
 
-    if (st.mode === 'single' || !st.root) {
+    if (st.mode !== 'mosaic' || !st.root) {
       const active = currentActiveSeed()
-      void chat.mountSession(projectPath, sessionId)
-      if (active && !(active.projectPath === projectPath && active.sessionId === sessionId)) {
-        const activeId = mosaicTileId(active.projectPath, active.sessionId)
-        void chat.mountSession(active.projectPath, active.sessionId)
-        const activeLeaf = makeLeaf(activeId, active.projectPath, active.sessionId)
-        set({ mode: 'mosaic', root: addLeaf(activeLeaf, activeId, edge, newLeaf), focusedTileId: id })
-      } else {
-        set({ mode: 'mosaic', root: newLeaf, focusedTileId: id })
+      // No distinct active session to split against — open it in single mode
+      // rather than spawning a lone-tile mosaic.
+      if (!active || (active.projectPath === projectPath && active.sessionId === sessionId)) {
+        void chat.switchToSession(projectPath, sessionId)
+        return
       }
+      const activeId = mosaicTileId(active.projectPath, active.sessionId)
+      void chat.mountSession(projectPath, sessionId)
+      void chat.mountSession(active.projectPath, active.sessionId)
+      const activeLeaf = makeLeaf(activeId, active.projectPath, active.sessionId)
+      set({ mode: 'mosaic', root: addLeaf(activeLeaf, activeId, target?.edge ?? 'right', makeLeaf(id, projectPath, sessionId)), focusedTileId: id })
     } else {
       void chat.mountSession(projectPath, sessionId)
       const targetId = target?.tileId ?? st.focusedTileId ?? collectLeaves(st.root)[0]?.id
-      const root = targetId ? addLeaf(st.root, targetId, edge, newLeaf) : st.root
+      const root = targetId ? addLeaf(st.root, targetId, target?.edge ?? 'right', makeLeaf(id, projectPath, sessionId)) : st.root
       set({ root, focusedTileId: id })
     }
     void chat.switchToSession(projectPath, sessionId)
@@ -125,7 +141,11 @@ export const useMosaicStore = create<MosaicState>((set, get) => ({
     set({ root: setRatioAtPath(st.root, path, ratio) })
   },
 
-  setDragging: (dragging) => set({ draggingSession: dragging, dropHint: dragging ? get().dropHint : null }),
+  setDragging: (dragging, session) => set({
+    draggingSession: dragging,
+    draggedSession: dragging ? (session ?? null) : null,
+    dropHint: dragging ? get().dropHint : null,
+  }),
 
   setDropHint: (hint) => set({ dropHint: hint }),
 

@@ -49,7 +49,7 @@ export function useSessionDragOut({ folderPath, sessionId, title }: UseSessionDr
     lastPosRef.current = { x: e.clientX, y: e.clientY }
     outsideRef.current = false
     setVisible(true)
-    useMosaicStore.getState().setDragging(true)
+    useMosaicStore.getState().setDragging(true, { projectPath: folderPath, sessionId })
     unsubZoneRef.current = window.app.onDragPreviewZone((zone) => {
       outsideRef.current = zone === 'outside'
       setVisible(zone !== 'outside')

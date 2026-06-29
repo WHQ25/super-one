@@ -14,7 +14,7 @@ vi.mock('@/stores/chat', () => ({ useChatStore: { getState: () => chat } }))
 import { useMosaicStore, mosaicTileId } from './mosaic-store'
 import { collectLeaves, findLeaf } from './mosaic-tree'
 
-const resetStore = () => useMosaicStore.setState({ mode: 'single', root: null, focusedTileId: null, draggingSession: false })
+const resetStore = () => useMosaicStore.setState({ mode: 'single', root: null, focusedTileId: null, draggingSession: false, draggedSession: null })
 
 describe('mosaic-store addTile', () => {
   beforeEach(() => {
@@ -46,13 +46,23 @@ describe('mosaic-store addTile', () => {
     expect(findLeaf(root, mosaicTileId('/p', 's-third'))).toBeTruthy()
   })
 
-  it('refocuses instead of duplicating when the session is already open', () => {
+  it('does nothing when re-dropping a session already in the mosaic', () => {
     useMosaicStore.getState().addTile('/p', 's-new', { edge: 'right' })
-    const before = useMosaicStore.getState().root
+    const before = useMosaicStore.getState()
+    const beforeRoot = before.root
+    const beforeFocus = before.focusedTileId
     useMosaicStore.getState().addTile('/p', 's-active', { edge: 'top' })
     const st = useMosaicStore.getState()
-    expect(st.root).toBe(before)
-    expect(st.focusedTileId).toBe(mosaicTileId('/p', 's-active'))
+    expect(st.root).toBe(beforeRoot)
+    expect(st.focusedTileId).toBe(beforeFocus)
+  })
+
+  it('stays in single mode when the dropped session is the active one', () => {
+    useMosaicStore.getState().addTile('/p', 's-active', { edge: 'right' })
+    const st = useMosaicStore.getState()
+    expect(st.mode).toBe('single')
+    expect(st.root).toBeNull()
+    expect(chat.switchToSession).toHaveBeenCalledWith('/p', 's-active')
   })
 })
 

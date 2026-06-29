@@ -1,5 +1,6 @@
 import type { AgentEvent } from '@superone/shared/agent-types'
 import { applySeqToMessage, isReplayedEventForMessage } from '@superone/shared/event-seq-utils'
+import { resolveTaskToolUseId } from '@superone/shared/subagent-routing'
 import { extractPartialToolInput } from '@/components/chat/tool-display'
 import { markMessageEventApplied } from '../index'
 import type { PerSessionState } from '../types'
@@ -156,8 +157,10 @@ export function reduceTool(session: PerSessionState, event: ToolEvent): Partial<
     }
 
     case 'task_notification': {
-      if (!event.toolUseId) return {}
-      const tid = event.toolUseId
+      // A resume notification carries the waker's toolUseId; map it back to the
+      // original Agent block via the shared taskId so we close the right block.
+      const tid = resolveTaskToolUseId(session.taskProgress, event.toolUseId, event.taskId)
+      if (!tid) return {}
       const file = event.outputFile
       const prevProgress = session.taskProgress[tid]
       const usageUpdate = event.usage ? {

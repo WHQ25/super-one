@@ -1,5 +1,6 @@
 import type { AgentEvent, TodoItem } from '@superone/shared/agent-types'
 import { applySeqToMessage, isReplayedEventForMessage } from '@superone/shared/event-seq-utils'
+import { resolveDeltaHomeMessageId } from '@superone/shared/subagent-routing'
 import { applyDelta } from '../helpers/event-helpers'
 import { persistStreamingToolInput } from '../index'
 import type { PerSessionState } from '../types'
@@ -8,21 +9,41 @@ import { streamingPreviewLastUpdate, streamingToolInputRaw } from './shared'
 type ContentDeltaEvent = Extract<AgentEvent, { type: 'content_delta' }>
 
 export function reduceContentDelta(session: PerSessionState, event: ContentDeltaEvent): Partial<PerSessionState> {
-  const targetMsg = session.messages.find((m) => m.id === event.messageId)
-  if (targetMsg && isReplayedEventForMessage(event, targetMsg)) {
+  const sourceMsg = session.messages.find((m) => m.id === event.messageId)
+  if (sourceMsg && isReplayedEventForMessage(event, sourceMsg)) {
     return { lastEventAt: Date.now() }
   }
+  // A resumed sub-agent streams into a NEW message tagged with its original
+  // Agent toolUseId; re-home it under that Agent block's message so per-message
+  // grouping can reunite them (else it leaks into the main conversation). Seq
+  // tracking stays on the source message — it owns the stream's seq numbers.
+  const homeId = resolveDeltaHomeMessageId(session.messages, event.messageId, event.delta)
   let updatedMessages = session.messages.map((msg) => {
-    if (msg.id !== event.messageId) return msg
-    return {
-      ...msg,
-      content: applyDelta(msg.content, event.delta),
-      ...applySeqToMessage(event),
+    if (msg.id === homeId) {
+      return {
+        ...msg,
+        content: applyDelta(msg.content, event.delta),
+        ...(homeId === event.messageId ? applySeqToMessage(event) : {}),
+      }
     }
+    if (homeId !== event.messageId && msg.id === event.messageId) {
+      return { ...msg, ...applySeqToMessage(event) }
+    }
+    return msg
   })
 
   let extraUpdates: Partial<PerSessionState> = {}
   if (session.apiRetry) extraUpdates.apiRetry = null
+
+  // New content arriving for a sub-agent we already marked complete means it was
+  // resumed — re-open its running state so the activity panel surfaces it again.
+  const parentId = 'parentToolUseId' in event.delta ? event.delta.parentToolUseId : null
+  if (parentId && session.taskProgress[parentId]?.completed) {
+    extraUpdates.taskProgress = {
+      ...session.taskProgress,
+      [parentId]: { ...session.taskProgress[parentId], completed: false, status: undefined },
+    }
+  }
 
   if (event.delta.type === 'tool_use' && event.delta.toolUseId && event.delta.input) {
     streamingToolInputRaw.delete(event.delta.toolUseId)

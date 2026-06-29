@@ -42,6 +42,7 @@ describe('applyClaudeEventToRuntime task events', () => {
 
     expect(rt.taskProgress[TID]).toEqual({
       description: 'Explore exit plan mode UI',
+      taskId: 'a1aadbabbdc64b4a3',
       lastToolName: undefined,
       summary: undefined,
       totalTokens: 0,
@@ -487,5 +488,47 @@ describe('extractClaudeTitle', () => {
       userMessage('second one'),
     ]
     expect(extractClaudeTitle(messages)).toBe('first one')
+  })
+})
+
+describe('resuming a completed sub-agent via SendMessage (runtime)', () => {
+  const ORIG = 'tu-orig-agent'
+  const SENDMSG = 'tu-sendmessage'
+  const TASK = 'task-1'
+
+  function firstRun() {
+    let rt = makeRuntime([agentMessage(ORIG)])
+    rt = applyClaudeEventToRuntime(rt, { type: 'task_started', taskId: TASK, toolUseId: ORIG, description: 'analyze' } as AgentEvent)
+    rt = applyClaudeEventToRuntime(rt, { type: 'content_delta', messageId: 'msg-1', delta: { type: 'text', text: 'first run', parentToolUseId: ORIG } } as AgentEvent)
+    rt = applyClaudeEventToRuntime(rt, { type: 'task_notification', taskId: TASK, toolUseId: ORIG, taskStatus: 'completed', outputFile: '' } as AgentEvent)
+    return rt
+  }
+
+  it('stores taskId on the task entry for later resume correlation', () => {
+    const rt = firstRun()
+    expect(rt.taskProgress[ORIG].taskId).toBe(TASK)
+  })
+
+  it('re-homes resumed sub-agent content under the Agent block, not the new message', () => {
+    let rt = firstRun()
+    rt = applyClaudeEventToRuntime(rt, { type: 'message_start', message: { id: 'msg-2', role: 'assistant', status: 'streaming', content: [], createdAt: '', providerId: 'claude' } } as AgentEvent)
+    rt = applyClaudeEventToRuntime(rt, { type: 'content_delta', messageId: 'msg-2', delta: { type: 'text', text: 'main summary', parentToolUseId: null } } as AgentEvent)
+    rt = applyClaudeEventToRuntime(rt, { type: 'content_delta', messageId: 'msg-2', delta: { type: 'text', text: 'RESUMED-OUTPUT', parentToolUseId: ORIG } } as AgentEvent)
+
+    const msg1 = rt.messages.find((m) => m.id === 'msg-1')!
+    const msg2 = rt.messages.find((m) => m.id === 'msg-2')!
+    expect(msg1.content.some((b) => b.type === 'text' && b.text.includes('RESUMED-OUTPUT'))).toBe(true)
+    expect(msg2.content.some((b) => b.type === 'text' && b.text.includes('RESUMED-OUTPUT'))).toBe(false)
+  })
+
+  it('routes the resume notification (SendMessage toolUseId) back to the original Agent block', () => {
+    let rt = firstRun()
+    rt = applyClaudeEventToRuntime(rt, { type: 'task_progress', taskId: TASK, toolUseId: ORIG, description: 'resumed work', usage: { totalTokens: 50, toolUses: 2, durationMs: 10 } } as AgentEvent)
+    rt = applyClaudeEventToRuntime(rt, { type: 'task_notification', taskId: TASK, toolUseId: SENDMSG, taskStatus: 'completed', outputFile: '', usage: { totalTokens: 99, toolUses: 3, durationMs: 20 } } as AgentEvent)
+
+    expect(rt.taskProgress[SENDMSG]).toBeUndefined()
+    expect(rt.taskProgress[ORIG].totalTokens).toBe(99)
+    const block = getAgentBlock(rt, ORIG)
+    expect((block as { taskUsage?: { totalTokens: number } }).taskUsage?.totalTokens).toBe(99)
   })
 })

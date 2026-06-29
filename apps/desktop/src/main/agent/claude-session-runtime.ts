@@ -3,6 +3,7 @@ import type { AgentEvent, ChatMessage, ContentBlock, SendMessageRequest, Session
 import { applySeqToMessage, isReplayedEventForMessage } from '@superone/shared/event-seq-utils'
 import { stripMiniAppMarkup } from '@superone/shared/miniapp-prompt-tags'
 import { applyContentDelta } from '@superone/shared/content-delta'
+import { resolveDeltaHomeMessageId, resolveTaskToolUseId } from '@superone/shared/subagent-routing'
 
 export interface PersistedClaudeSessionState {
   messages: ChatMessage[]
@@ -16,6 +17,7 @@ export interface PersistedClaudeSessionState {
 
 export interface TaskProgressEntry {
   description: string
+  taskId?: string
   lastToolName?: string
   summary?: string
   totalTokens: number
@@ -213,19 +215,30 @@ export function applyClaudeEventToRuntime(
   switch (event.type) {
     case 'message_start':
       return { ...runtime, messages: upsertMessage(runtime.messages, event.message) }
-    case 'content_delta':
+    case 'content_delta': {
+      const sourceMsg = runtime.messages.find((m) => m.id === event.messageId)
+      if (sourceMsg && isReplayedEventForMessage(event, sourceMsg)) return runtime
+      // Re-home a resumed sub-agent's delta under its original Agent block's
+      // message so the persisted/mobile message tree stays correctly nested.
+      // Seq tracking stays on the source message that owns the stream.
+      const homeId = resolveDeltaHomeMessageId(runtime.messages, event.messageId, event.delta)
       return {
         ...runtime,
         messages: runtime.messages.map((message) => {
-          if (message.id !== event.messageId) return message
-          if (isReplayedEventForMessage(event, message)) return message
-          return {
-            ...message,
-            content: applyContentDelta(message.content, event.delta),
-            ...applySeqToMessage(event),
+          if (message.id === homeId) {
+            return {
+              ...message,
+              content: applyContentDelta(message.content, event.delta),
+              ...(homeId === event.messageId ? applySeqToMessage(event) : {}),
+            }
           }
+          if (homeId !== event.messageId && message.id === event.messageId) {
+            return { ...message, ...applySeqToMessage(event) }
+          }
+          return message
         }),
       }
+    }
     case 'message_complete': {
       const usage = event.metadata?.usage
       const contextTokens = usage
@@ -299,6 +312,7 @@ export function applyClaudeEventToRuntime(
           ...runtime.taskProgress,
           [tid]: {
             description: event.description ?? '',
+            taskId: event.taskId || prev?.taskId,
             lastToolName: prev?.lastToolName,
             summary: prev?.summary,
             totalTokens: prev?.totalTokens ?? 0,
@@ -330,6 +344,7 @@ export function applyClaudeEventToRuntime(
           ...runtime.taskProgress,
           [tid]: {
             description: event.description ?? prev?.description ?? '',
+            taskId: event.taskId || prev?.taskId,
             lastToolName: event.lastToolName,
             summary: progressSummary,
             totalTokens: usage.totalTokens,
@@ -341,8 +356,10 @@ export function applyClaudeEventToRuntime(
       }
     }
     case 'task_notification': {
-      if (!event.toolUseId) return runtime
-      const tid = event.toolUseId
+      // A resume notification carries the waker's toolUseId; map it back to the
+      // original Agent block via the shared taskId so the patch lands correctly.
+      const tid = resolveTaskToolUseId(runtime.taskProgress, event.toolUseId, event.taskId)
+      if (!tid) return runtime
       const prev = runtime.taskProgress[tid]
       const finalSummary = event.summary || prev?.summary
       const usage = event.usage ?? { totalTokens: prev?.totalTokens ?? 0, toolUses: prev?.toolUses ?? 0, durationMs: prev?.durationMs ?? 0 }

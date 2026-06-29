@@ -124,7 +124,7 @@ export const useMosaicStore = create<MosaicState>((set, get) => ({
     const next = removeLeafRebalanced(st.root, id)
     if (!next || leafCount(next) <= 1) {
       const last = next ? collectLeaves(next)[0] : null
-      set({ mode: 'single', root: null, focusedTileId: null, lastLayout: { root: st.root, focusedTileId: st.focusedTileId } })
+      set({ mode: 'single', root: null, focusedTileId: null, lastLayout: null })
       if (last) {
         chat.unmountSession(last.projectPath, last.sessionId)
         void chat.switchToSession(last.projectPath, last.sessionId)

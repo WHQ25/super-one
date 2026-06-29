@@ -91,6 +91,12 @@ describe('mosaic-store removeTile', () => {
     expect(st.mode).toBe('mosaic')
     expect(collectLeaves(st.root!).map((l) => l.sessionId).sort()).toEqual(['s-active', 's-b'])
   })
+
+  it('does not leave a restorable layout when closing collapses to the last session', () => {
+    useMosaicStore.getState().addTile('/p', 's-b', { edge: 'right' })
+    useMosaicStore.getState().removeTile(mosaicTileId('/p', 's-b'))
+    expect(useMosaicStore.getState().lastLayout).toBeNull()
+  })
 })
 
 describe('mosaic-store restoreLayout', () => {

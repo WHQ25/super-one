@@ -322,7 +322,7 @@ describe('ChatInput', () => {
     fireEvent.mouseDown(slashButton!)
 
     expect(chatActions.setShowReviewPanel).toHaveBeenCalledWith(true)
-    expect(chatActions.setDraftText).toHaveBeenCalledWith('')
+    expect(chatActions.setDraftText).toHaveBeenCalledWith('', undefined)
   })
 })
 

@@ -1,7 +1,7 @@
 import type { StateCreator } from 'zustand'
 import type { ImageAttachment } from '@superone/shared/agent-types'
-import type { ChatStore, Mention } from '../types'
-import { updateActivePerSession, updateProjectState } from '../index'
+import type { ChatStore, Mention, SessionWriteTarget } from '../types'
+import { commitPerSession, updateActivePerSession, updateProjectState } from '../index'
 
 /**
  * Common per-session UI/state setters that don't drive turn lifecycle.
@@ -12,22 +12,22 @@ export interface CoreSlice {
   toggleOpen: () => void
   setCorner: (corner: ChatStore['corner']) => void
   requestChatInputFocusRestore: () => void
-  dismissSlashCommandOutput: () => void
+  dismissSlashCommandOutput: (target?: SessionWriteTarget) => void
   dismissCompactError: () => void
   openProviderPopup: () => void
   openMcpPopup: () => void
   toggleTodos: () => void
-  addAttachment: (attachment: ImageAttachment) => void
-  removeAttachment: (index: number) => void
-  clearAttachments: () => void
-  addMention: (mention: Mention) => void
-  removeMention: (value: string) => void
-  setMiniAppContext: (appId: string, data: { appName: string; summary: string; content: string; mode: 'inject' | 'suggest'; color?: string }) => void
-  clearMiniAppContext: (appId: string) => void
-  toggleMiniAppContext: (appId: string) => void
-  addUserSelection: (text: string) => void
-  removeUserSelectionAt: (index: number) => void
-  clearUserSelections: () => void
+  addAttachment: (attachment: ImageAttachment, target?: SessionWriteTarget) => void
+  removeAttachment: (index: number, target?: SessionWriteTarget) => void
+  clearAttachments: (target?: SessionWriteTarget) => void
+  addMention: (mention: Mention, target?: SessionWriteTarget) => void
+  removeMention: (value: string, target?: SessionWriteTarget) => void
+  setMiniAppContext: (appId: string, data: { appName: string; summary: string; content: string; mode: 'inject' | 'suggest'; color?: string }, target?: SessionWriteTarget) => void
+  clearMiniAppContext: (appId: string, target?: SessionWriteTarget) => void
+  toggleMiniAppContext: (appId: string, target?: SessionWriteTarget) => void
+  addUserSelection: (text: string, target?: SessionWriteTarget) => void
+  removeUserSelectionAt: (index: number, target?: SessionWriteTarget) => void
+  clearUserSelections: (target?: SessionWriteTarget) => void
   setShowDirManager: (show: boolean) => void
   setShowReviewPanel: (show: boolean) => void
 }
@@ -42,10 +42,8 @@ export const createCoreSlice: StateCreator<ChatStore, [], [], CoreSlice> = (set,
     })))
   },
 
-  dismissSlashCommandOutput: () => {
-    const { activeProject } = get()
-    if (!activeProject) return
-    set((s) => updateActivePerSession(s, () => ({ slashCommandOutput: null })))
+  dismissSlashCommandOutput: (target) => {
+    set((s) => commitPerSession(s, target, () => ({ slashCommandOutput: null })))
   },
 
   dismissCompactError: () => {
@@ -79,48 +77,37 @@ export const createCoreSlice: StateCreator<ChatStore, [], [], CoreSlice> = (set,
     }))
   },
 
-  addAttachment: (attachment) => {
-    const { activeProject } = get()
-    if (!activeProject) return
-    set((s) => updateActivePerSession(s, (sess) => ({
+  addAttachment: (attachment, target) => {
+    set((s) => commitPerSession(s, target, (sess) => ({
       attachments: [...sess.attachments, attachment],
     })))
   },
 
-  removeAttachment: (index) => {
-    const { activeProject } = get()
-    if (!activeProject) return
-    set((s) => updateActivePerSession(s, (sess) => ({
+  removeAttachment: (index, target) => {
+    set((s) => commitPerSession(s, target, (sess) => ({
       attachments: sess.attachments.filter((_, i) => i !== index),
     })))
   },
 
-  clearAttachments: () => {
-    const { activeProject } = get()
-    if (!activeProject) return
-    set((s) => updateActivePerSession(s, () => ({ attachments: [] })))
+  clearAttachments: (target) => {
+    set((s) => commitPerSession(s, target, () => ({ attachments: [] })))
   },
 
-  addMention: (mention) => {
-    const { activeProject } = get()
-    if (!activeProject) return
-    set((s) => updateActivePerSession(s, (sess) => {
+  addMention: (mention, target) => {
+    set((s) => commitPerSession(s, target, (sess) => {
       if (sess.mentions.some((m) => m.value === mention.value)) return {}
       return { mentions: [...sess.mentions, mention] }
     }))
   },
 
-  removeMention: (value) => {
-    const { activeProject } = get()
-    if (!activeProject) return
-    set((s) => updateActivePerSession(s, (sess) => ({
+  removeMention: (value, target) => {
+    set((s) => commitPerSession(s, target, (sess) => ({
       mentions: sess.mentions.filter((m) => m.value !== value),
     })))
   },
 
-  setMiniAppContext: (appId, data) => {
-    if (!get().activeProject) return
-    set((s) => updateActivePerSession(s, (sess) => ({
+  setMiniAppContext: (appId, data, target) => {
+    set((s) => commitPerSession(s, target, (sess) => ({
       miniAppContexts: {
         ...sess.miniAppContexts,
         [appId]: {
@@ -136,17 +123,15 @@ export const createCoreSlice: StateCreator<ChatStore, [], [], CoreSlice> = (set,
     })))
   },
 
-  clearMiniAppContext: (appId) => {
-    if (!get().activeProject) return
-    set((s) => updateActivePerSession(s, (sess) => {
+  clearMiniAppContext: (appId, target) => {
+    set((s) => commitPerSession(s, target, (sess) => {
       const { [appId]: _, ...rest } = sess.miniAppContexts
       return { miniAppContexts: rest }
     }))
   },
 
-  toggleMiniAppContext: (appId) => {
-    if (!get().activeProject) return
-    set((s) => updateActivePerSession(s, (sess) => {
+  toggleMiniAppContext: (appId, target) => {
+    set((s) => commitPerSession(s, target, (sess) => {
       const slot = sess.miniAppContexts[appId]
       if (!slot) return {}
       return {
@@ -158,25 +143,22 @@ export const createCoreSlice: StateCreator<ChatStore, [], [], CoreSlice> = (set,
     }))
   },
 
-  addUserSelection: (text) => {
-    if (!get().activeProject) return
+  addUserSelection: (text, target) => {
     const trimmed = text.trim()
     if (!trimmed) return
-    set((s) => updateActivePerSession(s, (sess) => ({
+    set((s) => commitPerSession(s, target, (sess) => ({
       userSelections: [...sess.userSelections, trimmed],
     })))
   },
 
-  removeUserSelectionAt: (index) => {
-    if (!get().activeProject) return
-    set((s) => updateActivePerSession(s, (sess) => ({
+  removeUserSelectionAt: (index, target) => {
+    set((s) => commitPerSession(s, target, (sess) => ({
       userSelections: sess.userSelections.filter((_, i) => i !== index),
     })))
   },
 
-  clearUserSelections: () => {
-    if (!get().activeProject) return
-    set((s) => updateActivePerSession(s, () => ({ userSelections: [] })))
+  clearUserSelections: (target) => {
+    set((s) => commitPerSession(s, target, () => ({ userSelections: [] })))
   },
 
   setShowDirManager: (show) => {

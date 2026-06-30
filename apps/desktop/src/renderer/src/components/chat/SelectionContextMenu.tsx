@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { Copy, MessageSquarePlus } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { useChatStore } from '@/stores/chat'
+import { useChatStore, useSessionScope } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 import { showNativeContextMenu } from '@/lib/native-context-menu'
 
@@ -87,7 +87,9 @@ export function SelectionContextMenuZone({ children, className }: SelectionConte
   const { t } = useTranslation()
   const [menu, setMenu] = useState<MenuState | null>(null)
   const addUserSelection = useChatStore((s) => s.addUserSelection)
+  const sessionScope = useSessionScope()
   const liquidGlass = useAppStore((s) => s.liquidGlass)
+  const addToChat = (text: string) => addUserSelection(text, sessionScope ?? undefined)
 
   const handleContextMenu = (event: React.MouseEvent<HTMLDivElement>) => {
     event.preventDefault()
@@ -96,7 +98,7 @@ export function SelectionContextMenuZone({ children, className }: SelectionConte
     if (liquidGlass) {
       void showNativeContextMenu([
         { id: 'copy', label: t('chat.selectionMenu.copy'), icon: Copy, onSelect: () => navigator.clipboard.writeText(selText) },
-        { id: 'addToChat', label: t('chat.selectionMenu.addToChat'), icon: MessageSquarePlus, onSelect: () => addUserSelection(selText) },
+        { id: 'addToChat', label: t('chat.selectionMenu.addToChat'), icon: MessageSquarePlus, onSelect: () => addToChat(selText) },
       ])
       return
     }
@@ -110,7 +112,7 @@ export function SelectionContextMenuZone({ children, className }: SelectionConte
         <SelectionMenu
           pos={{ x: menu.x, y: menu.y }}
           onCopy={() => navigator.clipboard.writeText(menu.text)}
-          onAddToChat={() => addUserSelection(menu.text)}
+          onAddToChat={() => addToChat(menu.text)}
           onClose={() => setMenu(null)}
         />
       )}

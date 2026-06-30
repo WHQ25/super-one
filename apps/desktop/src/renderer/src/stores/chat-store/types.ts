@@ -35,6 +35,11 @@ import type {
 export type Corner = 'br' | 'bl' | 'tr' | 'tl' | 'tm' | 'rm' | 'bm' | 'lm'
 export type ChatProvider = HarnessId
 
+export interface SessionWriteTarget {
+  projectPath: string
+  sessionId: string
+}
+
 export type MentionKind = 'file' | 'directory' | 'agent' | 'miniapp'
 export interface Mention {
   kind: MentionKind
@@ -234,10 +239,10 @@ export interface ChatStore {
   rewindConversation: (userMessageId: string) => Promise<RewindFilesResult>
   previewRewind: (checkpointId: string) => Promise<RewindFilesResult>
 
-  editQueuedMessage: (messageId: string) => void
-  deleteQueuedMessage: (messageId: string) => void
+  editQueuedMessage: (messageId: string, target?: SessionWriteTarget) => void
+  deleteQueuedMessage: (messageId: string, target?: SessionWriteTarget) => void
 
-  setDraftText: (text: string) => void
+  setDraftText: (text: string, target?: SessionWriteTarget) => void
 
   assignSubagentColor: (toolUseId: string) => void
 
@@ -258,9 +263,9 @@ export interface ChatStore {
   openProviderPopup: () => void
   openMcpPopup: () => void
 
-  addAttachment: (attachment: ImageAttachment) => void
-  removeAttachment: (index: number) => void
-  clearAttachments: () => void
+  addAttachment: (attachment: ImageAttachment, target?: SessionWriteTarget) => void
+  removeAttachment: (index: number, target?: SessionWriteTarget) => void
+  clearAttachments: (target?: SessionWriteTarget) => void
 
   respondToPermission: (requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[], decision?: 'cancel', formAnswers?: Record<string, unknown>) => Promise<boolean>
   setPermissionMode: (mode: PermissionMode) => Promise<void>
@@ -273,13 +278,13 @@ export interface ChatStore {
 
   respondToPlanApproval: (requestId: string, approved: boolean, feedback?: string, postApprovalMode?: PermissionMode) => void
 
-  dismissSlashCommandOutput: () => void
+  dismissSlashCommandOutput: (target?: SessionWriteTarget) => void
   dismissCompactError: () => void
 
   toggleTodos: () => void
 
-  addMention: (mention: Mention) => void
-  removeMention: (value: string) => void
+  addMention: (mention: Mention, target?: SessionWriteTarget) => void
+  removeMention: (value: string, target?: SessionWriteTarget) => void
 
   fetchSessions: () => Promise<void>
   fetchSessionsPage: () => Promise<void>
@@ -289,16 +294,16 @@ export interface ChatStore {
   unmountSession: (projectPath: string, sessionId: string) => void
   renameSession: (sessionId: string, title: string) => Promise<void>
 
-  setMiniAppContext: (appId: string, data: { appName: string; summary: string; content: string; mode: 'inject' | 'suggest'; color?: string }) => void
-  clearMiniAppContext: (appId: string) => void
-  toggleMiniAppContext: (appId: string) => void
+  setMiniAppContext: (appId: string, data: { appName: string; summary: string; content: string; mode: 'inject' | 'suggest'; color?: string }, target?: SessionWriteTarget) => void
+  clearMiniAppContext: (appId: string, target?: SessionWriteTarget) => void
+  toggleMiniAppContext: (appId: string, target?: SessionWriteTarget) => void
 
-  addUserSelection: (text: string) => void
-  removeUserSelectionAt: (index: number) => void
-  clearUserSelections: () => void
+  addUserSelection: (text: string, target?: SessionWriteTarget) => void
+  removeUserSelectionAt: (index: number, target?: SessionWriteTarget) => void
+  clearUserSelections: (target?: SessionWriteTarget) => void
 
-  addDir: (path: string, scope: 'session' | 'project') => void
-  removeDir: (path: string, scope: 'session' | 'project') => void
+  addDir: (path: string, scope: 'session' | 'project', target?: SessionWriteTarget) => void
+  removeDir: (path: string, scope: 'session' | 'project', target?: SessionWriteTarget) => void
   setShowDirManager: (show: boolean) => void
   setShowReviewPanel: (show: boolean) => void
   startCodexReview: (target: CodexReviewTarget) => void

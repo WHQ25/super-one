@@ -8,6 +8,7 @@ const addUserSelection = vi.fn()
 vi.mock('@/stores/chat', () => ({
   useChatStore: (selector: (state: { addUserSelection: typeof addUserSelection }) => unknown) =>
     selector({ addUserSelection }),
+  useSessionScope: () => null,
 }))
 
 vi.mock('react-i18next', () => ({
@@ -92,7 +93,7 @@ describe('SelectionContextMenuZone', () => {
       screen.getByText('添加到聊天').click()
     })
 
-    expect(addUserSelection).toHaveBeenCalledWith('hello')
+    expect(addUserSelection).toHaveBeenCalledWith('hello', undefined)
   })
 
   it('"复制" writes selected text to clipboard and closes the menu', () => {

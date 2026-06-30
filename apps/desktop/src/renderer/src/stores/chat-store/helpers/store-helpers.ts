@@ -1,6 +1,6 @@
 import type { AgentPrewarmHint } from '@superone/shared/agent-types'
 import { createDefaultPerSessionState, createDefaultProjectState } from '../defaults'
-import type { ChatStore, PerSessionState, ProjectState } from '../types'
+import type { ChatStore, PerSessionState, ProjectState, SessionWriteTarget } from '../types'
 import { resolveProvider } from './provider-routing'
 
 export function getProject(state: ChatStore, projectPath?: string | null): ProjectState {
@@ -140,4 +140,19 @@ export function updateActivePerSession(
 
 export function resolveActiveSessionId(project: ProjectState): string | null {
   return project._activeSessionId ?? null
+}
+
+export function getScopedPerSession(state: ChatStore, target?: SessionWriteTarget): PerSessionState {
+  if (!target) return getActivePerSession(state)
+  const project = state.projectSessions[target.projectPath]
+  return project?._sessions[target.sessionId] ?? createDefaultPerSessionState()
+}
+
+export function commitPerSession(
+  state: ChatStore,
+  target: SessionWriteTarget | undefined,
+  updater: (s: PerSessionState) => Partial<PerSessionState>,
+): Partial<ChatStore> {
+  if (target) return updatePerSession(state, target.projectPath, target.sessionId, updater)
+  return updateActivePerSession(state, updater)
 }

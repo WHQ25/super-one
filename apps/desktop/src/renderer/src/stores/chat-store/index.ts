@@ -55,6 +55,7 @@ export type {
   PerSessionState,
   PersistedSessionState,
   ProjectState,
+  SessionWriteTarget,
   ToolRendererState,
   SubagentColor,
 } from './types'
@@ -137,6 +138,7 @@ import {
 export {
   getProject,
   getActivePerSession,
+  getScopedPerSession,
   mergeProjectAndSessionDirs,
   triggerPrewarm,
   schedulePrewarmKeepalive,
@@ -144,12 +146,14 @@ export {
   updateProjectState,
   updatePerSession,
   updateActivePerSession,
+  commitPerSession,
   resolveActiveSessionId,
 } from './helpers/store-helpers'
 
 import {
   getProject,
   getActivePerSession,
+  getScopedPerSession,
   mergeProjectAndSessionDirs,
   triggerPrewarm,
   schedulePrewarmKeepalive,
@@ -157,6 +161,7 @@ import {
   updateProjectState,
   updatePerSession,
   updateActivePerSession,
+  commitPerSession,
   resolveActiveSessionId,
 } from './helpers/store-helpers'
 
@@ -779,56 +784,56 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
     set((s) => ({ mountedSessions: removeMountedSession(s.mountedSessions, projectPath, sessionId) }))
   },
 
-  addDir: (path, scope) => {
-    const { activeProject } = get()
-    if (!activeProject) return
+  addDir: (path, scope, target) => {
+    const projectPath = target?.projectPath ?? get().activeProject
+    if (!projectPath) return
     if (scope === 'session') {
       set((s) => {
-        const sess = getActivePerSession(s)
-        const proj = getProject(s, activeProject)
+        const sess = getScopedPerSession(s, target)
+        const proj = getProject(s, projectPath)
         if (sess.additionalDirs.includes(path) || proj.projectAdditionalDirs.includes(path)) return {}
-        return updateActivePerSession(s, () => ({
+        return commitPerSession(s, target, () => ({
           additionalDirs: [...sess.additionalDirs, path],
           additionalDirsDirty: true,
         }))
       })
     } else {
       set((s) => {
-        const sess = getActivePerSession(s)
-        const proj = getProject(s, activeProject)
+        const sess = getScopedPerSession(s, target)
+        const proj = getProject(s, projectPath)
         if (sess.additionalDirs.includes(path) || proj.projectLocalDirs.includes(path)) return {}
-        window.agent.addProjectAdditionalDir(activeProject, path).catch(() => {})
+        window.agent.addProjectAdditionalDir(projectPath, path).catch(() => {})
         const nextLocal = [...proj.projectLocalDirs, path]
         const nextMerged = Array.from(new Set([...proj.projectSharedDirs, ...nextLocal]))
-        const merged = { ...s, ...updateProjectState(s, activeProject, () => ({
+        const merged = { ...s, ...updateProjectState(s, projectPath, () => ({
           projectLocalDirs: nextLocal,
           projectAdditionalDirs: nextMerged,
         })) } as ChatStore
-        return updateActivePerSession(merged, () => ({ additionalDirsDirty: true }))
+        return commitPerSession(merged, target, () => ({ additionalDirsDirty: true }))
       })
     }
   },
 
-  removeDir: (path, scope) => {
-    const { activeProject } = get()
-    if (!activeProject) return
+  removeDir: (path, scope, target) => {
+    const projectPath = target?.projectPath ?? get().activeProject
+    if (!projectPath) return
     if (scope === 'session') {
-      set((s) => updateActivePerSession(s, (sess) => ({
+      set((s) => commitPerSession(s, target, (sess) => ({
         additionalDirs: sess.additionalDirs.filter((d) => d !== path),
         additionalDirsDirty: true,
       })))
     } else {
       set((s) => {
-        const proj = getProject(s, activeProject)
+        const proj = getProject(s, projectPath)
         if (!proj.projectLocalDirs.includes(path)) return {}
-        window.agent.removeProjectAdditionalDir(activeProject, path).catch(() => {})
+        window.agent.removeProjectAdditionalDir(projectPath, path).catch(() => {})
         const nextLocal = proj.projectLocalDirs.filter((d) => d !== path)
         const nextMerged = Array.from(new Set([...proj.projectSharedDirs, ...nextLocal]))
-        const merged = { ...s, ...updateProjectState(s, activeProject, () => ({
+        const merged = { ...s, ...updateProjectState(s, projectPath, () => ({
           projectLocalDirs: nextLocal,
           projectAdditionalDirs: nextMerged,
         })) } as ChatStore
-        return updateActivePerSession(merged, () => ({ additionalDirsDirty: true }))
+        return commitPerSession(merged, target, () => ({ additionalDirsDirty: true }))
       })
     }
   },

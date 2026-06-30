@@ -1,11 +1,12 @@
 import type { StateCreator } from 'zustand'
 import type { ContextUsageInfo, RewindFilesResult } from '@superone/shared/agent-types'
 import { useActivityViewStateStore } from '../../activity-view-state'
-import type { ChatStore } from '../types'
+import type { ChatStore, SessionWriteTarget } from '../types'
 import { freshSubagentColorPool } from '../defaults'
 import {
   _truncateAtCheckpoint,
-  getActivePerSession,
+  commitPerSession,
+  getScopedPerSession,
   schedulePrewarmKeepalive,
   updateActivePerSession,
   updatePerSession,
@@ -22,9 +23,9 @@ export interface SessionSlice {
   rewindCodeAndChat: (userMessageId: string) => Promise<RewindFilesResult>
   rewindConversation: (userMessageId: string) => Promise<RewindFilesResult>
   previewRewind: (checkpointId: string) => Promise<RewindFilesResult>
-  editQueuedMessage: (messageId: string) => void
-  deleteQueuedMessage: (messageId: string) => void
-  setDraftText: (text: string) => void
+  editQueuedMessage: (messageId: string, target?: SessionWriteTarget) => void
+  deleteQueuedMessage: (messageId: string, target?: SessionWriteTarget) => void
+  setDraftText: (text: string, target?: SessionWriteTarget) => void
   assignSubagentColor: (toolUseId: string) => void
   setDetailedUsage: (projectPath: string, sessionId: string, usage: ContextUsageInfo | null) => void
   removeSessionFromMemory: (projectPath: string, sessionId: string) => void
@@ -71,17 +72,17 @@ export const createSessionSlice: StateCreator<ChatStore, [], [], SessionSlice> =
     return window.agent.previewRewind(activeProject, checkpointId)
   },
 
-  editQueuedMessage: async (messageId) => {
-    const { activeProject } = get()
-    if (!activeProject) return
-    const session = getActivePerSession(get())
+  editQueuedMessage: async (messageId, target) => {
+    const projectPath = target?.projectPath ?? get().activeProject
+    if (!projectPath) return
+    const session = getScopedPerSession(get(), target)
     const msg = session.queuedMessages.find((m) => m.id === messageId)
     if (!msg) return
-    const removed = await window.agent.dequeueMessage(activeProject, messageId)
+    const removed = await window.agent.dequeueMessage(projectPath, messageId)
     if (!removed) return
     const text = msg.content.find((b) => b.type === 'text')
     const attachments = msg.attachments ?? []
-    set((s) => updateActivePerSession(s, (sess) => ({
+    set((s) => commitPerSession(s, target, (sess) => ({
       queuedMessages: sess.queuedMessages.filter((m) => m.id !== messageId),
       draftText: text && 'text' in text ? text.text : '',
       attachments,
@@ -89,23 +90,29 @@ export const createSessionSlice: StateCreator<ChatStore, [], [], SessionSlice> =
     })))
   },
 
-  deleteQueuedMessage: async (messageId) => {
-    const { activeProject } = get()
-    if (!activeProject) return
-    const removed = await window.agent.dequeueMessage(activeProject, messageId)
+  deleteQueuedMessage: async (messageId, target) => {
+    const projectPath = target?.projectPath ?? get().activeProject
+    if (!projectPath) return
+    const removed = await window.agent.dequeueMessage(projectPath, messageId)
     if (!removed) return
-    set((s) => updateActivePerSession(s, (sess) => ({
+    set((s) => commitPerSession(s, target, (sess) => ({
       queuedMessages: sess.queuedMessages.filter((m) => m.id !== messageId),
     })))
   },
 
-  setDraftText: (text) => {
-    const { activeProject } = get()
-    if (!activeProject) return
-    set((s) => updateActivePerSession(s, () => ({
+  setDraftText: (text, target) => {
+    const updates = () => ({
       draftText: text,
       ...(text.length > 0 ? { codexPlanRejectHintActive: false } : {}),
-    })))
+    })
+    if (target) {
+      set((s) => updatePerSession(s, target.projectPath, target.sessionId, updates))
+      if (text.length > 0) schedulePrewarmKeepalive(get(), target.projectPath)
+      return
+    }
+    const { activeProject } = get()
+    if (!activeProject) return
+    set((s) => updateActivePerSession(s, updates))
     if (text.length > 0) {
       schedulePrewarmKeepalive(get(), activeProject)
     }

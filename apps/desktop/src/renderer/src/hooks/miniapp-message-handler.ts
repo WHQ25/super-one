@@ -1,4 +1,4 @@
-import { useChatStore } from '@/stores/chat'
+import { useChatStore, type SessionWriteTarget } from '@/stores/chat'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { useMiniAppMediaStore } from '@/stores/miniapp-media'
 import { requestOpenExternalLink } from '@/lib/external-link'
@@ -13,6 +13,20 @@ export interface MiniAppOverlayCallbacks {
   onPopoverShow?: (req: MiniAppPopoverShowRequest, send: (msg: unknown) => void) => void
   onPopoverMsg?: (data: unknown) => void
   onPopoverClose?: () => void
+}
+
+// A mini-app belongs to its holder session(s), not the project's active one —
+// route its chat writes there so a backgrounded app doesn't inject into the
+// session a user happens to be viewing in another mosaic pane.
+function miniAppSessionTarget(appId: string, projectDir: string): SessionWriteTarget | undefined {
+  if (!projectDir) return undefined
+  const open = Object.values(useMiniAppStore.getState().openApps)
+    .find((a) => a.entry.id === appId && a.projectDir === projectDir)
+  if (!open || open.holderSessions.size === 0) return undefined
+  const active = useChatStore.getState().projectSessions[projectDir]?._activeSessionId
+  if (active && open.holderSessions.has(active)) return { projectPath: projectDir, sessionId: active }
+  const first = open.holderSessions.values().next().value as string | undefined
+  return first ? { projectPath: projectDir, sessionId: first } : undefined
 }
 
 export function handleMiniAppMessage(
@@ -30,7 +44,7 @@ export function handleMiniAppMessage(
       return true
     case 'miniapp-sendPrompt':
       if (typeof data.text === 'string') {
-        useChatStore.getState().setDraftText(data.text)
+        useChatStore.getState().setDraftText(data.text, miniAppSessionTarget(appId, projectDir))
       }
       return true
     case 'miniapp-fs-request':
@@ -176,11 +190,11 @@ export function handleMiniAppMessage(
         content: data.content as string,
         mode: data.mode === 'suggest' ? 'suggest' : 'inject',
         color: data.color as string | undefined,
-      })
+      }, miniAppSessionTarget(appId, projectDir))
       return true
     }
     case 'miniapp-context-clear':
-      useChatStore.getState().clearMiniAppContext(appId)
+      useChatStore.getState().clearMiniAppContext(appId, miniAppSessionTarget(appId, projectDir))
       return true
     case 'miniapp-media-started': {
       const kinds = (data.kinds as string[] | undefined)?.filter((k): k is MiniAppMediaKind => k === 'microphone' || k === 'camera') ?? []

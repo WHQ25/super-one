@@ -50,15 +50,8 @@ export function ChatInput() {
     const { t } = useTranslation()
     const activeProject = useChatStore((s) => s.activeProject)
     const fileRoot = useEffectiveProjectRoot()
-    const {
-      setText, sendMessage, editQueuedMessage,
-      interrupt, addAttachment, removeAttachment, clearAttachments,
-      addMention, removeMention, dismissCommandPopup, setShowReviewPanel,
-      toggleMiniAppContext, clearMiniAppContext,
-      removeUserSelectionAt, clearUserSelections,
-      addDir, removeDir,
-    } = useChatStore(useShallow((s) => ({
-      setText: s.setDraftText,
+    const storeActions = useChatStore(useShallow((s) => ({
+      setDraftText: s.setDraftText,
       sendMessage: s.sendMessage,
       editQueuedMessage: s.editQueuedMessage,
       interrupt: s.interrupt,
@@ -76,6 +69,7 @@ export function ChatInput() {
       addDir: s.addDir,
       removeDir: s.removeDir,
     })))
+    const { sendMessage, interrupt, setShowReviewPanel } = storeActions
     const { text, status, attachments, mentions, permissionMode, hasPendingInteraction, queuedMessages, miniAppContexts, userSelections, userAdditionalDirs, projectAdditionalDirs, additionalDirs } =
       useActiveSession(useShallow((s) => ({
         text: s.draftText,
@@ -114,6 +108,32 @@ export function ChatInput() {
     // session is the project's active one should grab keyboard focus.
     const sessionScope = useSessionScope()
     const isActivePane = !sessionScope || sessionScope.sessionId === activeSessionId
+    // Every per-session write is routed to this pane's session, not the project's
+    // active one — otherwise a non-active pane's write (e.g. the editor's draft
+    // re-sync on remount) lands on whichever session happens to be active.
+    const {
+      setText, editQueuedMessage, addAttachment, removeAttachment, clearAttachments,
+      addMention, removeMention, dismissCommandPopup, toggleMiniAppContext,
+      clearMiniAppContext, removeUserSelectionAt, clearUserSelections, addDir, removeDir,
+    } = useMemo(() => {
+      const target = sessionScope ?? undefined
+      return {
+        setText: (value: string) => storeActions.setDraftText(value, target),
+        editQueuedMessage: (id: string) => storeActions.editQueuedMessage(id, target),
+        addAttachment: (a: Parameters<typeof storeActions.addAttachment>[0]) => storeActions.addAttachment(a, target),
+        removeAttachment: (i: number) => storeActions.removeAttachment(i, target),
+        clearAttachments: () => storeActions.clearAttachments(target),
+        addMention: (m: Parameters<typeof storeActions.addMention>[0]) => storeActions.addMention(m, target),
+        removeMention: (v: string) => storeActions.removeMention(v, target),
+        dismissCommandPopup: () => storeActions.dismissCommandPopup(target),
+        toggleMiniAppContext: (id: string) => storeActions.toggleMiniAppContext(id, target),
+        clearMiniAppContext: (id: string) => storeActions.clearMiniAppContext(id, target),
+        removeUserSelectionAt: (i: number) => storeActions.removeUserSelectionAt(i, target),
+        clearUserSelections: () => storeActions.clearUserSelections(target),
+        addDir: (p: string, scope: 'session' | 'project') => storeActions.addDir(p, scope, target),
+        removeDir: (p: string, scope: 'session' | 'project') => storeActions.removeDir(p, scope, target),
+      }
+    }, [storeActions, sessionScope])
     const fileInputRef = useRef<HTMLInputElement>(null)
 
     const [slashIndex, setSlashIndex] = useState(-1)

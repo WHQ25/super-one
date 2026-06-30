@@ -580,6 +580,120 @@ describe('session-slice: setDraftText', () => {
     useChatStore.getState().setDraftText('')
     expect(activeSession().codexPlanRejectHintActive).toBe(true)
   })
+
+  it('writes to the scoped target session, not the project-active one (mosaic pane isolation)', () => {
+    setupProject()
+    const proj = useChatStore.getState().projectSessions[PATH]
+    const sidA = proj._activeSessionId!
+    const sidB = 'session-b'
+    // Mimic mosaic→single→mosaic: session B is the project-active one while
+    // pane A (a non-active pane) re-syncs its own draft.
+    useChatStore.setState({
+      projectSessions: {
+        ...useChatStore.getState().projectSessions,
+        [PATH]: {
+          ...proj,
+          _activeSessionId: sidB,
+          _sessions: { ...proj._sessions, [sidB]: { ...proj._sessions[sidA], draftText: '' } },
+        },
+      },
+    })
+
+    useChatStore.getState().setDraftText('hello', { projectPath: PATH, sessionId: sidA })
+
+    const after = useChatStore.getState().projectSessions[PATH]
+    expect(after._sessions[sidA].draftText).toBe('hello')
+    expect(after._sessions[sidB].draftText).toBe('')
+  })
+})
+
+// A non-active mosaic pane writing per-session state must hit its own session,
+// never the project's active one. setupTwoSessions returns { active, other }
+// where `other` is the non-active pane mimicked by a mosaic tile.
+function setupTwoSessions() {
+  setupProject()
+  const proj = useChatStore.getState().projectSessions[PATH]
+  const active = proj._activeSessionId!
+  const other = 'session-other'
+  useChatStore.setState({
+    projectSessions: {
+      ...useChatStore.getState().projectSessions,
+      [PATH]: {
+        ...proj,
+        _sessions: { ...proj._sessions, [other]: { ...proj._sessions[active] } },
+      },
+    },
+  })
+  return { active, other }
+}
+
+function sessionOf(sid: string) {
+  return useChatStore.getState().projectSessions[PATH]._sessions[sid]
+}
+
+describe('per-session writers: scoped target isolation', () => {
+  it('addAttachment lands on the scoped pane, leaving the active session untouched', () => {
+    const { active, other } = setupTwoSessions()
+    const att = { mimeType: 'image/png', base64: 'aaaa', name: 'a.png' }
+    useChatStore.getState().addAttachment(att, { projectPath: PATH, sessionId: other })
+    expect(sessionOf(other).attachments.map((a) => a.name)).toEqual(['a.png'])
+    expect(sessionOf(active).attachments).toEqual([])
+  })
+
+  it('addMention / removeMention target the scoped pane only', () => {
+    const { active, other } = setupTwoSessions()
+    const target = { projectPath: PATH, sessionId: other }
+    useChatStore.getState().addMention({ kind: 'file', value: 'a.ts', displayName: 'a.ts' }, target)
+    expect(sessionOf(other).mentions.map((m) => m.value)).toEqual(['a.ts'])
+    expect(sessionOf(active).mentions).toEqual([])
+    useChatStore.getState().removeMention('a.ts', target)
+    expect(sessionOf(other).mentions).toEqual([])
+  })
+
+  it('toggleMiniAppContext flips the scoped pane only', () => {
+    const { active, other } = setupTwoSessions()
+    const slot = { appId: 'x', appName: 'X', summary: '', content: '', mode: 'inject' as const, checked: true }
+    useChatStore.setState((s) => ({
+      projectSessions: {
+        ...s.projectSessions,
+        [PATH]: {
+          ...s.projectSessions[PATH],
+          _sessions: {
+            ...s.projectSessions[PATH]._sessions,
+            [other]: { ...s.projectSessions[PATH]._sessions[other], miniAppContexts: { x: slot } },
+            [active]: { ...s.projectSessions[PATH]._sessions[active], miniAppContexts: { x: slot } },
+          },
+        },
+      },
+    }))
+    useChatStore.getState().toggleMiniAppContext('x', { projectPath: PATH, sessionId: other })
+    expect(sessionOf(other).miniAppContexts.x.checked).toBe(false)
+    expect(sessionOf(active).miniAppContexts.x.checked).toBe(true)
+  })
+
+  it('editQueuedMessage restores draft into the scoped pane, not the active one', async () => {
+    const { active, other } = setupTwoSessions()
+    useChatStore.setState((s) => ({
+      projectSessions: {
+        ...s.projectSessions,
+        [PATH]: {
+          ...s.projectSessions[PATH],
+          _sessions: {
+            ...s.projectSessions[PATH]._sessions,
+            [other]: {
+              ...s.projectSessions[PATH]._sessions[other],
+              queuedMessages: [{ id: 'q1', content: [{ type: 'text', text: 'queued' }], attachments: [] } as unknown as ChatMessage],
+              draftText: '',
+            },
+          },
+        },
+      },
+    }))
+    await useChatStore.getState().editQueuedMessage('q1', { projectPath: PATH, sessionId: other })
+    expect(sessionOf(other).draftText).toBe('queued')
+    expect(sessionOf(other).queuedMessages).toEqual([])
+    expect(sessionOf(active).draftText).toBe('')
+  })
 })
 
 describe('session-slice: assignSubagentColor', () => {

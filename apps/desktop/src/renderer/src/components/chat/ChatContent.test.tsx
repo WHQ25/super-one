@@ -49,6 +49,7 @@ vi.mock('@/stores/chat', () => ({
   ),
   useActiveSession: (selector: (s: FakeSessionState) => unknown) => selector(hoisted.sessionState),
   useIsRemoteLocked: () => hoisted.isRemoteLocked.value,
+  useSessionScope: () => null,
 }))
 
 vi.mock('zustand/react/shallow', () => ({

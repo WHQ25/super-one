@@ -4,6 +4,17 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.43.0-alpha] - 2026-06-30
+
+### Added
+
+- In-app browser in the activity panel
+- Annotate elements on a browser page — add comments, style tweaks, and a screenshot — and attach them to the chat input as removable chips that send as text plus image attachments
+
+### Fixed
+
+- Scope per-session draft writes to the owning pane session, preventing draft text from leaking across panes in split/mosaic layouts
+
 ## [0.42.1-alpha] - 2026-06-30
 
 ### Added

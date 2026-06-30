@@ -70,7 +70,7 @@ export function reduceContentDelta(session: PerSessionState, event: ContentDelta
     )
     if (toolBlock && toolBlock.type === 'tool_use') {
       const tn = toolBlock.toolName
-      if (tn === 'TodoWrite' || tn === 'TaskCreate' || tn === 'TaskUpdate') {
+      if (!resultDelta.isError && (tn === 'TodoWrite' || tn === 'TaskCreate' || tn === 'TaskUpdate')) {
         try {
           const input = JSON.parse(toolBlock.input)
           if (tn === 'TodoWrite' && Array.isArray(input.todos)) {

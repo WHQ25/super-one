@@ -120,6 +120,21 @@ describe('reduceContentDelta: TaskCreate tool result', () => {
     expect(patch.todos?.['task-abc']).toMatchObject({ subject: 'alpha' })
     expect(patch._nextTodoId).toBeUndefined()
   })
+
+  it('does not create a phantom todo when the TaskCreate call failed validation (isError)', () => {
+    const session = createDefaultPerSessionState()
+    session._nextTodoId = 1
+    session.messages = [makeAssistant('m1', [
+      { type: 'tool_use', toolUseId: 'tc-1', toolName: 'TaskCreate', input: '{"tasks":[{"content":"x"}]}' } as ContentBlock,
+    ])]
+    const patch = reduceContentDelta(session, {
+      type: 'content_delta', messageId: 'm1',
+      delta: { type: 'tool_result', toolUseId: 'tc-1', isError: true },
+    } as never)
+    expect(patch.todos).toBeUndefined()
+    expect(patch._nextTodoId).toBeUndefined()
+    expect(patch.showTodos).toBeUndefined()
+  })
 })
 
 describe('reduceContentDelta: TaskUpdate tool result', () => {

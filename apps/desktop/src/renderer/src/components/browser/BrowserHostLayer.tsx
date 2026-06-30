@@ -5,7 +5,8 @@ import { useBrowserStore } from '@/stores/browser'
 import { useAppStore } from '@/stores/app'
 import { useSashResizing } from '@/hooks/useSashResizing'
 import { useGlobalDragging } from '@/hooks/useGlobalDragging'
-import { registerBrowserWebview, browserExecJs } from './browser-host-api'
+import { registerBrowserWebview, browserExecJs, pushBrowserConsole, clearBrowserConsole } from './browser-host-api'
+import { useBrowserAutomationHost } from './browser-automation-runtime'
 import { buildSessionScript, handleAnnotationMessage } from './browser-annotate-flow'
 import { ANNOTATE_CANCEL_SCRIPT, ANNOTATE_MSG_PREFIX } from './browser-annotate-script'
 
@@ -15,6 +16,7 @@ export function BrowserHostLayer() {
   const sashResizing = useSashResizing()
   const globalDragging = useGlobalDragging()
   const resizing = sashResizing || globalDragging
+  useBrowserAutomationHost()
 
   return (
     <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 20 }}>
@@ -84,7 +86,11 @@ function PersistentBrowser({ browserId, layoutMode, resizing }: { browserId: str
     const onFavicon = (e: Electron.PageFaviconUpdatedEvent) => patch(browserId, { favicon: e.favicons[0] ?? null })
     const onNavigate = () => syncNav()
     const onFail = (e: Electron.DidFailLoadEvent) => { if (e.errorCode !== -3) patch(browserId, { loading: false }) }
+    const onConsole = (e: Electron.ConsoleMessageEvent) => pushBrowserConsole(browserId, e.level, e.message)
+    const onNavigateClearConsole = () => clearBrowserConsole(browserId)
 
+    wv.addEventListener('console-message', onConsole)
+    wv.addEventListener('did-start-navigation', onNavigateClearConsole)
     wv.addEventListener('did-start-loading', onStart)
     wv.addEventListener('did-stop-loading', onStop)
     wv.addEventListener('page-title-updated', onTitle)
@@ -94,6 +100,9 @@ function PersistentBrowser({ browserId, layoutMode, resizing }: { browserId: str
     wv.addEventListener('did-fail-load', onFail)
     return () => {
       unregister()
+      clearBrowserConsole(browserId)
+      wv.removeEventListener('console-message', onConsole)
+      wv.removeEventListener('did-start-navigation', onNavigateClearConsole)
       wv.removeEventListener('did-start-loading', onStart)
       wv.removeEventListener('did-stop-loading', onStop)
       wv.removeEventListener('page-title-updated', onTitle)

@@ -1230,6 +1230,19 @@ const miniappAPI = {
   },
 }
 
+const browserHostAPI = {
+  onAutomationCall: (
+    callback: (req: { callId: string; op: string; input: unknown }) => void,
+  ) => {
+    const handler = (_e: Electron.IpcRendererEvent, req: { callId: string; op: string; input: unknown }) =>
+      callback(req)
+    ipcRenderer.on(AgentIpcChannels.BROWSER_AUTOMATION_CALL, handler)
+    return () => ipcRenderer.removeListener(AgentIpcChannels.BROWSER_AUTOMATION_CALL, handler)
+  },
+  sendAutomationResult: (callId: string, ok: boolean, result?: unknown, error?: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.BROWSER_AUTOMATION_RESULT, callId, ok, result, error),
+}
+
 if (process.contextIsolated) {
   try {
     contextBridge.exposeInMainWorld('electron', electronAPI)
@@ -1237,6 +1250,7 @@ if (process.contextIsolated) {
     contextBridge.exposeInMainWorld('terminal', terminalAPI)
     contextBridge.exposeInMainWorld('app', appAPI)
     contextBridge.exposeInMainWorld('miniapp', miniappAPI)
+    contextBridge.exposeInMainWorld('browserHost', browserHostAPI)
   } catch (error) {
     console.error(error)
   }
@@ -1251,4 +1265,6 @@ if (process.contextIsolated) {
   window.app = appAPI
   // @ts-ignore
   window.miniapp = miniappAPI
+  // @ts-ignore
+  window.browserHost = browserHostAPI
 }

@@ -21,6 +21,7 @@ import { initWorkerHost, startWorker, stopWorker, stopWorkersByAppId, workerStat
 import { buildMiniAppHost } from '@superone/shared/miniapp-host'
 import { previewApp, confirmInstall, cancelInstall, uninstallApp, packApp, getInstallMeta, getPreapproved, getPreapprovedByPath, setPreapproved, setPreapprovedByPath } from './miniapp/miniapp-packager'
 import { previewMcpbBundle, installMcpbBundle, uninstallMcpbBundle, listInstalledMcpb, revealMcpbBundle } from './mcpb/mcpb-installer'
+import { initBrowserAutomation, resolveBrowserAutomation, rejectBrowserAutomation } from './browser/browser-automation-bridge'
 import { initSuperoneMcpServer, registerAppTools, unregisterAppTools, unregisterAppAcrossSessions, resolveToolCall, rejectToolCall, notifyAppReady as notifyMiniAppReady, loadPreapprovedTools, updatePreapprovedTools, registerAppTemplates, unregisterAppTemplates, submitToolIntercept, cancelToolIntercept, clearSessionPendingCalls as clearSessionPendingMiniAppCalls, disposeSuperoneMcpServer, setSessionHostProvider, clearAppReadyGate, isAppStillAuthorizedInProject, addToolsChangedListener, setMobileShareToolDeps, registerMobileShareTool, unregisterMobileShareTool } from './mcp/superone-mcp-server'
 import { MobileShareService, type MobileShareTarget } from './remote/mobile-share-service'
 import { MobileReceiveService, type MobileReceiveTarget } from './remote/mobile-receive-service'
@@ -2344,6 +2345,7 @@ function registerIpcHandlers(): void {
   })
 
   initSuperoneMcpServer(() => mainWindow)
+  initBrowserAutomation(() => mainWindow)
   setSessionHostProvider(() => sessionManager)
 
   // When a session's app-tool set changes (mini-app opened/closed/@-mentioned),
@@ -2516,6 +2518,14 @@ function registerIpcHandlers(): void {
       rejectToolCall(callId, error)
     } else {
       resolveToolCall(callId, result)
+    }
+  })
+
+  ipcMain.handle(AgentIpcChannels.BROWSER_AUTOMATION_RESULT, (_e, callId: string, ok: boolean, result: unknown, error?: string) => {
+    if (ok) {
+      resolveBrowserAutomation(callId, result)
+    } else {
+      rejectBrowserAutomation(callId, error ?? 'Browser automation failed')
     }
   })
 

@@ -28,6 +28,13 @@ export const BUILT_IN_SUPERONE_TOOL_NAMES = [
   'session_rename',
   'widget_read_guide',
   'widget_show',
+  'browser_snapshot',
+  'browser_query',
+  'browser_inspect',
+  'browser_screenshot',
+  'browser_click',
+  'browser_type',
+  'browser_navigate',
 ] as const
 
 export type BuiltInSuperoneToolName = typeof BUILT_IN_SUPERONE_TOOL_NAMES[number]

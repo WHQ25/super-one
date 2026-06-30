@@ -1,0 +1,68 @@
+import type { BrowserWindow } from 'electron'
+import { randomUUID } from 'crypto'
+import { AgentIpcChannels } from '@superone/shared/agent-types'
+import log from '../logger'
+
+export type BrowserAutomationOp =
+  | 'snapshot'
+  | 'query'
+  | 'inspect'
+  | 'screenshot'
+  | 'click'
+  | 'type'
+  | 'navigate'
+
+interface PendingCall {
+  resolve: (result: unknown) => void
+  reject: (error: Error) => void
+  timer: ReturnType<typeof setTimeout>
+}
+
+const BROWSER_CALL_TIMEOUT_MS = 30_000
+
+const pendingCalls = new Map<string, PendingCall>()
+
+let getMainWindow: (() => BrowserWindow | null) | null = null
+
+export function initBrowserAutomation(windowGetter: () => BrowserWindow | null): void {
+  getMainWindow = windowGetter
+}
+
+export function browserAutomationCall(op: BrowserAutomationOp, input: unknown): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    const win = getMainWindow?.()
+    if (!win || win.isDestroyed()) {
+      reject(new Error('No renderer window available for browser automation'))
+      return
+    }
+    const callId = randomUUID()
+    const timer = setTimeout(() => {
+      pendingCalls.delete(callId)
+      reject(new Error(`Browser automation '${op}' timed out after ${BROWSER_CALL_TIMEOUT_MS}ms`))
+    }, BROWSER_CALL_TIMEOUT_MS)
+    pendingCalls.set(callId, { resolve, reject, timer })
+    win.webContents.send(AgentIpcChannels.BROWSER_AUTOMATION_CALL, { callId, op, input })
+  })
+}
+
+export function resolveBrowserAutomation(callId: string, result: unknown): void {
+  const pending = pendingCalls.get(callId)
+  if (!pending) {
+    log.warn('[browser-automation] resolve miss callId=%s', callId)
+    return
+  }
+  clearTimeout(pending.timer)
+  pendingCalls.delete(callId)
+  pending.resolve(result)
+}
+
+export function rejectBrowserAutomation(callId: string, error: string): void {
+  const pending = pendingCalls.get(callId)
+  if (!pending) {
+    log.warn('[browser-automation] reject miss callId=%s', callId)
+    return
+  }
+  clearTimeout(pending.timer)
+  pendingCalls.delete(callId)
+  pending.reject(new Error(error))
+}

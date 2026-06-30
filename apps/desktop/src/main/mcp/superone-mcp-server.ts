@@ -19,6 +19,7 @@ import {
   MOBILE_SHARE_FILE_INPUT_SCHEMA,
 } from './superone-mcp-builtin-defs'
 import { registerWidgetTools } from '../generative-ui/mcp-server'
+import { registerBrowserTools } from './browser-mcp-tools'
 
 export interface MobileShareToolResult {
   ok: boolean
@@ -176,6 +177,7 @@ export function createSuperoneMcpServer(sessionId: string): McpSdkServerConfigWi
     sessionHost: getSessionHost(),
   })
   registerWidgetTools(server)
+  registerBrowserTools(server)
   const state: ProjectServerState = { server, registeredTools: new Map() }
 
   let set = sessionServers.get(sessionId)

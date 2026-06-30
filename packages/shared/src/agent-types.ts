@@ -2010,6 +2010,8 @@ export const AgentIpcChannels = {
   MINIAPP_LAZY_OPEN_REQUEST: 'miniapp:lazy-open-request',
   MINIAPP_TOOL_CALL: 'miniapp:tool-call',
   MINIAPP_TOOL_RESULT: 'miniapp:tool-result',
+  BROWSER_AUTOMATION_CALL: 'browser:automation-call',
+  BROWSER_AUTOMATION_RESULT: 'browser:automation-result',
   MINIAPP_TOOL_INTERCEPT_OPEN: 'miniapp:tool-intercept-open',
   MINIAPP_TOOL_INTERCEPT_SUBMIT: 'miniapp:tool-intercept-submit',
   MINIAPP_TOOL_INTERCEPT_CANCEL: 'miniapp:tool-intercept-cancel',

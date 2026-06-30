@@ -423,5 +423,13 @@ declare global {
     terminal: TerminalAPI
     app: AppAPI
     miniapp: MiniAppAPI
+    browserHost: BrowserHostAPI
   }
+}
+
+export interface BrowserHostAPI {
+  onAutomationCall(
+    callback: (req: { callId: string; op: string; input: unknown }) => void,
+  ): () => void
+  sendAutomationResult(callId: string, ok: boolean, result?: unknown, error?: string): void
 }

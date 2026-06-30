@@ -4,6 +4,17 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.43.1-alpha] - 2026-07-01
+
+### Fixed
+
+- Browser webview host layer now yields during dockview tab drag-to-split, so the split divider stays draggable
+- Restored the card's left margin when the sidebar is collapsed and the activity panel sits on the left
+
+### Changed
+
+- Upgraded Claude Agent SDK to 0.3.197 (tool-result delivery dedup fix in extended sessions; hook payload prompt_id; Claude Code v2.1.197 parity)
+
 ## [0.43.0-alpha] - 2026-06-30
 
 ### Added

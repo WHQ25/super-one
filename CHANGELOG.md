@@ -4,6 +4,27 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.42.1-alpha] - 2026-06-30
+
+### Added
+
+- Mini-apps can now defer their first tool call until they're fully ready, avoiding a race where the canvas wasn't yet mounted
+- The turn scroll-indicator becomes scrollable when its ticks overflow the available height
+
+### Fixed
+
+- A failed task tool call no longer creates a phantom todo entry
+- Resumed sub-agent streams now route back under their original Agent block instead of leaking into the main conversation
+- Mosaic tiles keep their minimum width when the sidebar is resized
+- Each mosaic tile's activity-panel state stays isolated when maximizing and restoring
+- Dropping a session into the chat area is correctly ignored after maximizing from a mosaic
+- Mini-app tools remain usable in a mosaic pane without forcing a collapse to single view
+- Drag previews paint with a transparent background on the first frame, removing a brief opaque flash
+
+### Changed
+
+- Localized previously hardcoded mosaic drop-preview and tile tooltip strings
+
 ## [0.42.0-alpha] - 2026-06-29
 
 ### Added

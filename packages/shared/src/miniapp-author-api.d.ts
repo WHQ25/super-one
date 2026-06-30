@@ -281,4 +281,19 @@ export interface SuperOne {
   self?: SuperOneSelfApi
   isDarkMode(): boolean
   onDarkModeChange(callback: (isDark: boolean) => void): () => void
+  /**
+   * Signal that the mini-app is fully initialized and ready to serve tool calls.
+   * Only needed after calling `deferReady()`. Idempotent — safe to call more than once.
+   * Call this once your tool handlers can actually run (e.g. after the canvas/editor
+   * API is mounted), not just when the DOM is parsed.
+   */
+  ready(): void
+  /**
+   * Opt out of automatic readiness. Call this **synchronously at startup** (before the
+   * DOM finishes parsing) to tell the host not to auto-signal ready on DOMContentLoaded.
+   * The host then withholds the first tool call until you call `ready()`. Use this for
+   * apps with async init (canvas, WASM, fonts, data fetch) so the first tool call doesn't
+   * race the mount. Simple apps that work as soon as the DOM is parsed need neither call.
+   */
+  deferReady(): void
 }

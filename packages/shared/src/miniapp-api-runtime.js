@@ -179,6 +179,14 @@ function createSuperoneApi(transport, version, opts) {
     return api
   }
 
+  let readyDeferred = false
+  let readySent = false
+  function emitReady() {
+    if (readySent) return
+    readySent = true
+    transport.send('miniapp-ready', {})
+  }
+
   function makeKv(scope, extra) {
     const api = {
       get(key) {
@@ -422,6 +430,9 @@ function createSuperoneApi(transport, version, opts) {
     })(),
     isDarkMode() { return document.documentElement.classList.contains('dark') },
     onDarkModeChange: makeSub(darkModeListeners),
+    ready() { emitReady() },
+    deferReady() { readyDeferred = true },
+    _autoReady() { if (!readyDeferred) emitReady() },
   }
 }
 
@@ -526,8 +537,20 @@ function installSuperoneMediaProbe(transport) {
   }
 }
 
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { createSuperoneApi, startSuperoneResize, installSuperoneMediaProbe }
+// eslint-disable-next-line no-unused-vars
+function startSuperoneReady(api) {
+  function fire() {
+    if (api && typeof api._autoReady === 'function') api._autoReady()
+  }
+  if (typeof document === 'undefined' || document.readyState === 'complete' || document.readyState === 'interactive') {
+    fire()
+  } else {
+    document.addEventListener('DOMContentLoaded', fire)
+  }
 }
 
-export { createSuperoneApi, startSuperoneResize, installSuperoneMediaProbe }
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { createSuperoneApi, startSuperoneResize, installSuperoneMediaProbe, startSuperoneReady }
+}
+
+export { createSuperoneApi, startSuperoneResize, installSuperoneMediaProbe, startSuperoneReady }

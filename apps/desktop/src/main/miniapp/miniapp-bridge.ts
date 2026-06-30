@@ -46,18 +46,11 @@ function generateTransportBlock(appId: string): string {
   });`
 }
 
-function generateReadyBlock(appId: string): string {
+function generateReadyBlock(): string {
   return `
   startSuperoneResize(transport);
   installSuperoneMediaProbe(transport);
-
-  if (document.readyState === 'complete' || document.readyState === 'interactive') {
-    parent.postMessage({ type: 'miniapp-ready', appId: '${appId}' }, '*');
-  } else {
-    document.addEventListener('DOMContentLoaded', function() {
-      parent.postMessage({ type: 'miniapp-ready', appId: '${appId}' }, '*');
-    });
-  }`
+  startSuperoneReady(window.superone);`
 }
 
 export function generatePopoverBridgeScript(appId: string, version: string, locale: string, initialData: unknown): string {
@@ -79,7 +72,7 @@ export function generatePopoverBridgeScript(appId: string, version: string, loca
   transport.on('miniapp-popover-msg', function(d) {
     popoverMsgListeners.forEach(function(cb) { cb(d.data); });
   });
-${generateReadyBlock(appId)}
+${generateReadyBlock()}
 })();
 </script>`
 }
@@ -90,7 +83,7 @@ export function generateBridgeScript(appId: string, version: string, locale: str
   ${generateTransportBlock(appId)}
 
   window.superone = createSuperoneApi(transport, ${JSON.stringify(version)}, { initialLocale: ${JSON.stringify(locale)} });
-${generateReadyBlock(appId)}
+${generateReadyBlock()}
 })();
 </script>`
 }
@@ -102,7 +95,7 @@ export function generateWorkerBridgeScript(appId: string, version: string, local
 
   window.superone = createSuperoneApi(transport, ${JSON.stringify(version)}, { initialLocale: ${JSON.stringify(locale)} });
   window.superone.self = createSuperoneSelf(transport);
-${generateReadyBlock(appId)}
+${generateReadyBlock()}
 })();
 </script>`
 }
@@ -116,7 +109,7 @@ function wrapToolBridgeScript(appId: string, version: string, locale: string, to
   delete window.superone.ui.showPopover;
 
   window.superone.tool = ${toolObjectBody};
-${generateReadyBlock(appId)}
+${generateReadyBlock()}
 })();
 </script>`
 }
@@ -240,7 +233,7 @@ export function generateStandaloneBridgeScript(
     fireResultEvent();
   });
 
-${generateReadyBlock(appId)}
+${generateReadyBlock()}
 })();
 </script>`
 }

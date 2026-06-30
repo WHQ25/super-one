@@ -68,6 +68,34 @@ The return value is JSON-serialized and sent back to the agent as the MCP tool r
 
 Each tool call has a **60-second timeout**. If the handler doesn't return within this window, the agent receives a timeout error. For long-running operations, return immediately with a status and update the UI asynchronously.
 
+### Readiness (apps with async initialization)
+
+When the agent calls a tool, SuperOne opens your app and **holds the first tool call until the app reports ready**, then dispatches. By default, "ready" fires automatically once the DOM is parsed (`DOMContentLoaded`). For most apps that's correct — the handler is registered synchronously and can run immediately.
+
+But if your tool handler depends on something that mounts **after** the DOM is parsed — a canvas/editor API ref, WASM, fonts, fetched data — the first call can arrive before that's in place and fail (e.g. "canvas not ready"). For those apps, take control of the ready signal:
+
+1. Call `superone.deferReady()` **synchronously at startup** (before the DOM finishes parsing). This tells the host *not* to auto-signal ready.
+2. Call `superone.ready()` once your handler can actually run.
+
+```js
+// main.tsx — runs synchronously at module load, before DOMContentLoaded
+superone.deferReady()
+```
+
+```jsx
+// App.tsx — signal ready only when the editor API is live
+<Excalidraw excalidrawAPI={(api) => {
+  editorRef.current = api
+  superone.ready()              // first tool call is released now
+}} />
+```
+
+**Rules:**
+- `deferReady()` must run synchronously at the top of your entry — if it runs after an `await` or dynamic `import()`, it may land after `DOMContentLoaded` and be ignored (the app auto-readies and the race returns).
+- `ready()` is idempotent; calling it more than once is safe.
+- If you `deferReady()` but never `ready()`, every tool call waits up to 30s then errors. During development the host logs a hint when an app stays not-ready past ~6s.
+- Simple apps that work as soon as the DOM is parsed need neither call.
+
 ## Display Customization
 
 Control how tool calls appear in the chat UI.

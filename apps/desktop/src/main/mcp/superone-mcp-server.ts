@@ -219,6 +219,7 @@ export function disposeSuperoneMcpServer(sessionId: string): void {
 }
 
 const LAZY_OPEN_TIMEOUT_MS = 30_000
+const LAZY_OPEN_WARN_MS = 6_000
 
 async function requestLazyOpenPanel(projectDir: string, appId: string, sessionId: string): Promise<void> {
   const win = getMainWindow?.()
@@ -228,6 +229,14 @@ async function requestLazyOpenPanel(projectDir: string, appId: string, sessionId
   }
   trace('miniapp.lazyopen', 'main-ipc-send', { appId, projectDir, sessionId })
   win.webContents.send(AgentIpcChannels.MINIAPP_LAZY_OPEN_REQUEST, { appId, projectDir, sessionId })
+  const warnTimer = setTimeout(() => {
+    log.warn(
+      "[superone-mcp] app '%s' not ready after %dms — if it calls superone.deferReady(), make sure it also calls superone.ready() once initialized",
+      appId,
+      LAZY_OPEN_WARN_MS,
+    )
+    trace('miniapp.lazyopen', 'main-ready-slow', { appId, projectDir, elapsedMs: LAZY_OPEN_WARN_MS })
+  }, LAZY_OPEN_WARN_MS)
   try {
     await Promise.race([
       waitForAppReady(projectDir, appId),
@@ -239,6 +248,8 @@ async function requestLazyOpenPanel(projectDir: string, appId: string, sessionId
   } catch (err) {
     trace('miniapp.lazyopen', 'main-timeout-or-error', { appId, projectDir, error: err instanceof Error ? err.message : String(err) })
     throw err
+  } finally {
+    clearTimeout(warnTimer)
   }
 }
 

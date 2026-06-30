@@ -146,6 +146,11 @@ describe('generateSuperoneDts', () => {
     expect(dts).toContain('handle(name: string')
   })
 
+  it('covers readiness API', () => {
+    expect(dts).toContain('ready(): void')
+    expect(dts).toContain('deferReady(): void')
+  })
+
 
   it('covers fs API', () => {
     expect(dts).toContain('readFile(path: string): Promise<string>')

@@ -4,7 +4,7 @@ declare const ResizeObserver: any
 declare const requestAnimationFrame: (cb: () => void) => number
 
 import { contextBridge, ipcRenderer } from 'electron'
-import { createSuperoneApi, startSuperoneResize, type MiniAppTransport } from '@superone/shared/miniapp-api-runtime'
+import { createSuperoneApi, startSuperoneResize, startSuperoneReady, type MiniAppTransport } from '@superone/shared/miniapp-api-runtime'
 import { parseMiniAppHost } from '@superone/shared/miniapp-host'
 
 try { process.title = 'SuperOne MiniApp Dev' } catch { /* process.title not writable in some sandboxed contexts */ }
@@ -107,4 +107,4 @@ contextBridge.exposeInMainWorld('__superoneIpcToHost', (type: string, data: Reco
   ipcRenderer.sendToHost(type, data)
 })
 startSuperoneResize(transport)
-ipcRenderer.sendToHost('miniapp-ready', {})
+startSuperoneReady(api)

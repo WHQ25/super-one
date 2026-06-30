@@ -24,3 +24,4 @@ export function createSuperoneApi(transport: MiniAppTransport, version: string, 
 export function createSuperoneSelf(transport: MiniAppTransport): SuperOneSelfApi
 export function startSuperoneResize(transport: MiniAppTransport): void
 export function installSuperoneMediaProbe(transport: MiniAppTransport): void
+export function startSuperoneReady(api: SuperOne): void

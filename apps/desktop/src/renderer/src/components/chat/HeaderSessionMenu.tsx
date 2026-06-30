@@ -1,6 +1,7 @@
 import { useCallback, useState, type CSSProperties } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import { useShallow } from 'zustand/react/shallow'
 import { Ellipsis } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
@@ -11,7 +12,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@superone/ui/components/ui/dropdown-menu'
-import type { SessionForkMode } from '@superone/shared/agent-types'
+import type { SessionForkMode, SessionHistoryEntry } from '@superone/shared/agent-types'
 import { useChatStore } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 import { buildSessionMenuItems } from '@/lib/session-menu-items'
@@ -26,7 +27,26 @@ export function HeaderSessionMenu({ sessionId, folderPath }: { sessionId: string
   const [open, setOpen] = useState(false)
   const [renameTarget, setRenameTarget] = useState<RenameSessionTarget | null>(null)
 
-  const entry = useChatStore((s) => s.projectSessions[folderPath]?.sessions.find((e) => e.sessionId === sessionId))
+  const entry = useChatStore(
+    useShallow((s): SessionHistoryEntry | null => {
+      const proj = s.projectSessions[folderPath]
+      if (!proj) return null
+      const persisted = proj.sessions.find((e) => e.sessionId === sessionId)
+      if (persisted) return persisted
+      const live = proj._sessions[sessionId]
+      if (!live || live.messages.length === 0) return null
+      return {
+        sessionId,
+        title: live._title ?? '',
+        lastActiveAt: '',
+        provider: live.sessionProvider ?? undefined,
+        worktreePath: live._worktreePath ?? undefined,
+        isWorktree: !!live._worktreePath,
+        gitBranch: live._gitBranch ?? undefined,
+        messageCount: 0,
+      }
+    }),
+  )
 
   const afterMutate = useCallback(async () => {
     await useChatStore.getState().fetchSessions()

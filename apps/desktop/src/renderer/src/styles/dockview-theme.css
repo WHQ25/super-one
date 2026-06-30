@@ -12,7 +12,7 @@
 }
 
 :root .dockview-theme-superone {
-  --dv-active-sash-color: oklch(from var(--foreground) l c h / 0.3);
+  --dv-active-sash-color: transparent;
   --dv-drag-over-background-color: oklch(from var(--primary) l c h / 0.08);
   --dv-drag-over-border-color: oklch(from var(--primary) l c h / 0.3);
   --dv-paneview-active-outline-color: var(--primary);
@@ -50,6 +50,31 @@
 .liquid-glass.dark .dockview-theme-superone {
   --dv-group-view-background-color: transparent;
   --dv-tabs-and-actions-container-background-color: transparent;
+}
+
+.dockview-theme-superone .dv-sash-container .dv-sash::after {
+  content: "";
+  position: absolute;
+  background-color: var(--foreground);
+  opacity: 0;
+  transition: opacity 0.15s ease-in-out;
+}
+
+.dockview-theme-superone .dv-horizontal > .dv-sash-container > .dv-sash::after {
+  inset: 0 auto 0 50%;
+  width: 1px;
+  transform: translateX(-50%);
+}
+
+.dockview-theme-superone .dv-vertical > .dv-sash-container > .dv-sash::after {
+  inset: 50% 0 auto 0;
+  height: 1px;
+  transform: translateY(-50%);
+}
+
+.dockview-theme-superone .dv-sash-container .dv-sash:not(.disabled):hover::after,
+.dockview-theme-superone .dv-sash-container .dv-sash:not(.disabled):active::after {
+  opacity: 0.3;
 }
 
 .dockview-theme-superone .dv-tab:focus-within::after,

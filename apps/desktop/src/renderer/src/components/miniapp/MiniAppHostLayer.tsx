@@ -1,10 +1,12 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { PanelLeft, PanelRight, PanelTop, PanelBottom, SquarePlus } from 'lucide-react'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { useAppStore } from '@/stores/app'
 import { useActivityDropStore, type DropPosition } from '@/stores/activity-drop'
 import { useActivityPanelStore } from '@/stores/activity-panel'
+import { useSashResizing } from '@/hooks/useSashResizing'
+import { useGlobalDragging } from '@/hooks/useGlobalDragging'
 import { useShallow } from 'zustand/react/shallow'
 import { MiniAppView } from './MiniAppView'
 
@@ -27,40 +29,12 @@ function DropGuide({ position }: { position: DropPosition }) {
   )
 }
 
-function useGlobalDragging() {
-  const [dragging, setDragging] = useState(false)
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  useEffect(() => {
-    const clear = () => {
-      if (timerRef.current) clearTimeout(timerRef.current)
-      timerRef.current = null
-      setDragging(false)
-    }
-    const onDragOver = (e: DragEvent) => {
-      if (e.dataTransfer?.types.includes('Files')) return
-      setDragging(true)
-      if (timerRef.current) clearTimeout(timerRef.current)
-      timerRef.current = setTimeout(clear, 150)
-    }
-    window.addEventListener('dragover', onDragOver, true)
-    window.addEventListener('drop', clear, true)
-    window.addEventListener('dragend', clear, true)
-    return () => {
-      window.removeEventListener('dragover', onDragOver, true)
-      window.removeEventListener('drop', clear, true)
-      window.removeEventListener('dragend', clear, true)
-      if (timerRef.current) clearTimeout(timerRef.current)
-    }
-  }, [])
-
-  return dragging
-}
-
 export function MiniAppHostLayer() {
   const openInstanceKeys = useMiniAppStore(useShallow((s) => Object.keys(s.openApps)))
   const layoutMode = useAppStore((s) => s.layoutMode)
-  const dragging = useGlobalDragging()
+  const globalDragging = useGlobalDragging()
+  const sashResizing = useSashResizing()
+  const dragging = globalDragging || sashResizing
   const indicator = useActivityDropStore((s) => s.indicator)
 
   useEffect(() => {

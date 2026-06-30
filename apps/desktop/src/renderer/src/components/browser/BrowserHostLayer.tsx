@@ -3,6 +3,8 @@ import { useTranslation } from 'react-i18next'
 import { useShallow } from 'zustand/react/shallow'
 import { useBrowserStore } from '@/stores/browser'
 import { useAppStore } from '@/stores/app'
+import { useSashResizing } from '@/hooks/useSashResizing'
+import { useGlobalDragging } from '@/hooks/useGlobalDragging'
 import { registerBrowserWebview, browserExecJs } from './browser-host-api'
 import { buildSessionScript, handleAnnotationMessage } from './browser-annotate-flow'
 import { ANNOTATE_CANCEL_SCRIPT, ANNOTATE_MSG_PREFIX } from './browser-annotate-script'
@@ -10,17 +12,20 @@ import { ANNOTATE_CANCEL_SCRIPT, ANNOTATE_MSG_PREFIX } from './browser-annotate-
 export function BrowserHostLayer() {
   const ids = useBrowserStore(useShallow((s) => Object.keys(s.tabs)))
   const layoutMode = useAppStore((s) => s.layoutMode)
+  const sashResizing = useSashResizing()
+  const globalDragging = useGlobalDragging()
+  const resizing = sashResizing || globalDragging
 
   return (
     <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 20 }}>
       {ids.map((id) => (
-        <PersistentBrowser key={id} browserId={id} layoutMode={layoutMode} />
+        <PersistentBrowser key={id} browserId={id} layoutMode={layoutMode} resizing={resizing} />
       ))}
     </div>
   )
 }
 
-function PersistentBrowser({ browserId, layoutMode }: { browserId: string; layoutMode: 'canvas' | 'coding' }) {
+function PersistentBrowser({ browserId, layoutMode, resizing }: { browserId: string; layoutMode: 'canvas' | 'coding'; resizing: boolean }) {
   const slot = useBrowserStore((s) => s.slots[browserId])
   const annotating = useBrowserStore((s) => s.annotatingId === browserId)
   const webviewRef = useRef<Electron.WebviewTag>(null)
@@ -116,7 +121,7 @@ function PersistentBrowser({ browserId, layoutMode }: { browserId: string; layou
         width: slot?.width ?? 0,
         height: slot?.height ?? 0,
         display: visible ? 'block' : 'none',
-        pointerEvents: visible ? 'auto' : 'none',
+        pointerEvents: visible && !resizing ? 'auto' : 'none',
         overflow: 'hidden',
       }}
     >

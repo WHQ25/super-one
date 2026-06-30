@@ -1,6 +1,7 @@
 import type { StateCreator } from 'zustand'
 import type { ImageAttachment } from '@superone/shared/agent-types'
 import type { ChatStore, Mention, SessionWriteTarget } from '../types'
+import type { BrowserAnnotation } from '../helpers/browser-annotation'
 import { commitPerSession, updateActivePerSession, updateProjectState } from '../index'
 
 /**
@@ -20,6 +21,10 @@ export interface CoreSlice {
   addAttachment: (attachment: ImageAttachment, target?: SessionWriteTarget) => void
   removeAttachment: (index: number, target?: SessionWriteTarget) => void
   clearAttachments: (target?: SessionWriteTarget) => void
+  addBrowserAnnotation: (annotation: BrowserAnnotation, target?: SessionWriteTarget) => void
+  updateBrowserAnnotation: (id: string, patch: Partial<Pick<BrowserAnnotation, 'comment' | 'styleChanges' | 'screenshot'>>, target?: SessionWriteTarget) => void
+  removeBrowserAnnotation: (id: string, target?: SessionWriteTarget) => void
+  clearBrowserAnnotations: (target?: SessionWriteTarget) => void
   addMention: (mention: Mention, target?: SessionWriteTarget) => void
   removeMention: (value: string, target?: SessionWriteTarget) => void
   setMiniAppContext: (appId: string, data: { appName: string; summary: string; content: string; mode: 'inject' | 'suggest'; color?: string }, target?: SessionWriteTarget) => void
@@ -91,6 +96,28 @@ export const createCoreSlice: StateCreator<ChatStore, [], [], CoreSlice> = (set,
 
   clearAttachments: (target) => {
     set((s) => commitPerSession(s, target, () => ({ attachments: [] })))
+  },
+
+  addBrowserAnnotation: (annotation, target) => {
+    set((s) => commitPerSession(s, target, (sess) => ({
+      browserAnnotations: [...sess.browserAnnotations, annotation],
+    })))
+  },
+
+  removeBrowserAnnotation: (id, target) => {
+    set((s) => commitPerSession(s, target, (sess) => ({
+      browserAnnotations: sess.browserAnnotations.filter((a) => a.id !== id),
+    })))
+  },
+
+  updateBrowserAnnotation: (id, patch, target) => {
+    set((s) => commitPerSession(s, target, (sess) => ({
+      browserAnnotations: sess.browserAnnotations.map((a) => (a.id === id ? { ...a, ...patch } : a)),
+    })))
+  },
+
+  clearBrowserAnnotations: (target) => {
+    set((s) => commitPerSession(s, target, () => ({ browserAnnotations: [] })))
   },
 
   addMention: (mention, target) => {

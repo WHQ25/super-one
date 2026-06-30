@@ -26,6 +26,9 @@ import { HighlightedText } from '@superone/ui/components/ui/HighlightedText'
 import { toMentionPath } from './chat-input-utils'
 import { internalDragSource } from '@/components/sidebar/drag-drop-utils'
 import { AttachmentBar } from './AttachmentBar'
+import { BrowserAnnotationChips } from '../browser/BrowserAnnotationChips'
+import { notifyAnnotationRemoved, notifyAnnotationsCleared } from '../browser/browser-annotate-flow'
+import { useBrowserStore } from '@/stores/browser'
 import { buildImageAttachment } from './image-compress'
 import { ChatInputDirsHint } from './ChatInputDirsHint'
 import { ContextBar } from './ContextBar'
@@ -58,6 +61,8 @@ export function ChatInput() {
       addAttachment: s.addAttachment,
       removeAttachment: s.removeAttachment,
       clearAttachments: s.clearAttachments,
+      removeBrowserAnnotation: s.removeBrowserAnnotation,
+      clearBrowserAnnotations: s.clearBrowserAnnotations,
       addMention: s.addMention,
       removeMention: s.removeMention,
       dismissCommandPopup: s.dismissSlashCommandOutput,
@@ -70,11 +75,12 @@ export function ChatInput() {
       removeDir: s.removeDir,
     })))
     const { sendMessage, interrupt, setShowReviewPanel } = storeActions
-    const { text, status, attachments, mentions, permissionMode, hasPendingInteraction, queuedMessages, miniAppContexts, userSelections, userAdditionalDirs, projectAdditionalDirs, additionalDirs } =
+    const { text, status, attachments, browserAnnotations, mentions, permissionMode, hasPendingInteraction, queuedMessages, miniAppContexts, userSelections, userAdditionalDirs, projectAdditionalDirs, additionalDirs } =
       useActiveSession(useShallow((s) => ({
         text: s.draftText,
         status: s.status,
         attachments: s.attachments,
+        browserAnnotations: s.browserAnnotations,
         mentions: s.mentions,
         permissionMode: s.permissionMode,
         hasPendingInteraction: s.hasPendingInteraction,
@@ -113,6 +119,8 @@ export function ChatInput() {
     // re-sync on remount) lands on whichever session happens to be active.
     const {
       setText, editQueuedMessage, addAttachment, removeAttachment, clearAttachments,
+      removeBrowserAnnotation,
+      clearBrowserAnnotations,
       addMention, removeMention, dismissCommandPopup, toggleMiniAppContext,
       clearMiniAppContext, removeUserSelectionAt, clearUserSelections, addDir, removeDir,
     } = useMemo(() => {
@@ -123,6 +131,16 @@ export function ChatInput() {
         addAttachment: (a: Parameters<typeof storeActions.addAttachment>[0]) => storeActions.addAttachment(a, target),
         removeAttachment: (i: number) => storeActions.removeAttachment(i, target),
         clearAttachments: () => storeActions.clearAttachments(target),
+        removeBrowserAnnotation: (id: string) => {
+          storeActions.removeBrowserAnnotation(id, target)
+          const bid = useBrowserStore.getState().annotatingId
+          if (bid) notifyAnnotationRemoved(bid, id)
+        },
+        clearBrowserAnnotations: () => {
+          storeActions.clearBrowserAnnotations(target)
+          const bid = useBrowserStore.getState().annotatingId
+          if (bid) notifyAnnotationsCleared(bid)
+        },
         addMention: (m: Parameters<typeof storeActions.addMention>[0]) => storeActions.addMention(m, target),
         removeMention: (v: string) => storeActions.removeMention(v, target),
         dismissCommandPopup: () => storeActions.dismissCommandPopup(target),
@@ -183,7 +201,7 @@ export function ChatInput() {
     const isStreaming = status === 'streaming'
     const activeProviderForResources = sessionProvider ?? preferredProvider
     const isCodexPlanMode = activeProviderForResources === 'codex' && selectedCodexCollaborationMode === 'plan'
-    const hasContent = text.trim().length > 0 || attachments.length > 0 || mentions.length > 0 || hasPasteChips
+    const hasContent = text.trim().length > 0 || attachments.length > 0 || browserAnnotations.length > 0 || mentions.length > 0 || hasPasteChips
     const canSend = hasContent && !isRemoteLocked
     const showAgentMentions = activeProviderForResources === 'claude'
 
@@ -1155,6 +1173,7 @@ export function ChatInput() {
         )}
 
         <AttachmentBar attachments={attachments} onRemove={removeAttachment} />
+        <BrowserAnnotationChips annotations={browserAnnotations} onRemove={removeBrowserAnnotation} onClear={clearBrowserAnnotations} />
 
         <ContextBar
           contexts={miniAppContexts}

@@ -31,6 +31,7 @@ import type {
   SlashCommandInfo,
   TodoItem,
 } from '@superone/shared/agent-types'
+import type { BrowserAnnotation } from './helpers/browser-annotation'
 
 export type Corner = 'br' | 'bl' | 'tr' | 'tl' | 'tm' | 'rm' | 'bm' | 'lm'
 export type ChatProvider = HarnessId
@@ -93,6 +94,7 @@ export interface PerSessionState {
   draftText: string
   promptSuggestion: string | null
   attachments: ImageAttachment[]
+  browserAnnotations: BrowserAnnotation[]
   mentions: Mention[]
   pendingPermissions: PermissionRequest[]
   permissionMode: PermissionMode
@@ -266,6 +268,10 @@ export interface ChatStore {
   addAttachment: (attachment: ImageAttachment, target?: SessionWriteTarget) => void
   removeAttachment: (index: number, target?: SessionWriteTarget) => void
   clearAttachments: (target?: SessionWriteTarget) => void
+  addBrowserAnnotation: (annotation: BrowserAnnotation, target?: SessionWriteTarget) => void
+  updateBrowserAnnotation: (id: string, patch: Partial<Pick<BrowserAnnotation, 'comment' | 'styleChanges' | 'screenshot'>>, target?: SessionWriteTarget) => void
+  removeBrowserAnnotation: (id: string, target?: SessionWriteTarget) => void
+  clearBrowserAnnotations: (target?: SessionWriteTarget) => void
 
   respondToPermission: (requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[], decision?: 'cancel', formAnswers?: Record<string, unknown>) => Promise<boolean>
   setPermissionMode: (mode: PermissionMode) => Promise<void>

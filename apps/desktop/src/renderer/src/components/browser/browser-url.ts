@@ -1,3 +1,7 @@
+export function isBlankUrl(url: string): boolean {
+  return !url || url === 'about:blank'
+}
+
 export function normalizeUrl(input: string): string {
   const trimmed = input.trim()
   if (!trimmed) return 'about:blank'

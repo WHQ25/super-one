@@ -26,3 +26,15 @@ export function browserReload(id: string): void {
 export function browserStop(id: string): void {
   registry.get(id)?.stop()
 }
+
+export async function browserCapture(id: string, rect?: Electron.Rectangle): Promise<Electron.NativeImage | null> {
+  const wv = registry.get(id)
+  if (!wv) return null
+  return rect ? wv.capturePage(rect) : wv.capturePage()
+}
+
+export async function browserExecJs(id: string, script: string): Promise<unknown> {
+  const wv = registry.get(id)
+  if (!wv) return null
+  return wv.executeJavaScript(script)
+}

@@ -54,6 +54,7 @@ export function createDefaultPerSessionState(): PerSessionState {
     draftText: '',
     promptSuggestion: null,
     attachments: [],
+    browserAnnotations: [],
     mentions: [],
     pendingPermissions: [],
     permissionMode: 'default',

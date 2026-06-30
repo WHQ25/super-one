@@ -2,6 +2,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { AgentEvent, ChatMessage, ClaudeResources, CodexResources } from '@superone/shared/agent-types'
+import type { BrowserAnnotation } from './chat'
 
 const mockSetActiveWorktree = vi.fn()
 const mockClearWorktree = vi.fn().mockResolvedValue(undefined)
@@ -6222,5 +6223,51 @@ describe('Task tools id mapping (SDK 0.3.142 TodoWrite→Task migration)', () =>
 
     session = getActiveDraftSession('/test')!
     expect(session.todos['task_b'].blockedBy).toEqual(['task_a', 'task_d'])
+  })
+})
+
+describe('browser annotation sync', () => {
+  function makeAnno(id: string, comment: string, styleChanges: BrowserAnnotation['styleChanges'] = []): BrowserAnnotation {
+    return { id, kind: 'element', selector: '#btn', comment, pageUrl: 'https://x', pageTitle: 'X', screenshot: null, styleChanges }
+  }
+
+  it('updateBrowserAnnotation patches only the matched annotation', () => {
+    setupProject('/anno')
+    const store = useChatStore.getState()
+    store.addBrowserAnnotation(makeAnno('a1', 'first', [{ property: 'color', previousValue: '#000', value: '#f00' }]))
+    store.addBrowserAnnotation(makeAnno('a2', 'second'))
+
+    store.updateBrowserAnnotation('a1', { comment: 'edited', screenshot: 'base64==', styleChanges: [{ property: 'color', previousValue: '#000', value: '#00f' }] })
+
+    const session = getActiveDraftSession('/anno')!
+    expect(session.browserAnnotations).toHaveLength(2)
+    const a1 = session.browserAnnotations.find((a) => a.id === 'a1')!
+    expect(a1.comment).toBe('edited')
+    expect(a1.screenshot).toBe('base64==')
+    expect(a1.styleChanges[0].value).toBe('#00f')
+    const a2 = session.browserAnnotations.find((a) => a.id === 'a2')!
+    expect(a2.comment).toBe('second')
+    expect(a2.screenshot).toBeNull()
+  })
+
+  it('updateBrowserAnnotation on unknown id is a no-op', () => {
+    setupProject('/anno')
+    const store = useChatStore.getState()
+    store.addBrowserAnnotation(makeAnno('a1', 'first'))
+    store.updateBrowserAnnotation('missing', { comment: 'x' })
+    const session = getActiveDraftSession('/anno')!
+    expect(session.browserAnnotations).toHaveLength(1)
+    expect(session.browserAnnotations[0].comment).toBe('first')
+  })
+
+  it('removeBrowserAnnotation deletes only the matched annotation', () => {
+    setupProject('/anno')
+    const store = useChatStore.getState()
+    store.addBrowserAnnotation(makeAnno('a1', 'first'))
+    store.addBrowserAnnotation(makeAnno('a2', 'second'))
+    store.removeBrowserAnnotation('a1')
+    const session = getActiveDraftSession('/anno')!
+    expect(session.browserAnnotations).toHaveLength(1)
+    expect(session.browserAnnotations[0].id).toBe('a2')
   })
 })

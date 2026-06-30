@@ -23,10 +23,13 @@ interface BrowserStore {
   tabs: Record<string, BrowserTabState>
   slots: Record<string, BrowserSlot>
   fullscreenId: string | null
+  annotatingId: string | null
   ensure: (id: string, url: string) => void
   patch: (id: string, partial: Partial<BrowserTabState>) => void
   remove: (id: string) => void
   setFullscreen: (id: string | null) => void
+  startAnnotate: (id: string) => void
+  stopAnnotate: () => void
   updateSlot: (id: string, mode: BrowserSlotMode, rect: DOMRectReadOnly) => void
   unregisterSlot: (id: string, mode: BrowserSlotMode) => void
 }
@@ -51,13 +54,20 @@ export const useBrowserStore = create<BrowserStore>((set) => ({
   tabs: {},
   slots: {},
   fullscreenId: null,
+  annotatingId: null,
   setFullscreen: (id) => set({ fullscreenId: id }),
+  startAnnotate: (id) => set({ annotatingId: id }),
+  stopAnnotate: () => set({ annotatingId: null }),
   ensure: (id, url) =>
     set((s) => (s.tabs[id] ? s : { tabs: { ...s.tabs, [id]: { ...DEFAULT_TAB, url } } })),
   patch: (id, partial) =>
     set((s) => (s.tabs[id] ? { tabs: { ...s.tabs, [id]: { ...s.tabs[id], ...partial } } } : s)),
   remove: (id) =>
-    set((s) => ({ tabs: withoutKey(s.tabs, id), slots: withoutKey(s.slots, id) })),
+    set((s) => ({
+      tabs: withoutKey(s.tabs, id),
+      slots: withoutKey(s.slots, id),
+      annotatingId: s.annotatingId === id ? null : s.annotatingId,
+    })),
   updateSlot: (id, mode, rect) =>
     set((s) => {
       const prev = s.slots[id]

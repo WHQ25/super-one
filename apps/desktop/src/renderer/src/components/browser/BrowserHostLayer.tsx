@@ -1,8 +1,11 @@
 import { useEffect, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useShallow } from 'zustand/react/shallow'
 import { useBrowserStore } from '@/stores/browser'
 import { useAppStore } from '@/stores/app'
-import { registerBrowserWebview } from './browser-host-api'
+import { registerBrowserWebview, browserExecJs } from './browser-host-api'
+import { buildSessionScript, handleAnnotationMessage } from './browser-annotate-flow'
+import { ANNOTATE_CANCEL_SCRIPT, ANNOTATE_MSG_PREFIX } from './browser-annotate-script'
 
 export function BrowserHostLayer() {
   const ids = useBrowserStore(useShallow((s) => Object.keys(s.tabs)))
@@ -19,8 +22,49 @@ export function BrowserHostLayer() {
 
 function PersistentBrowser({ browserId, layoutMode }: { browserId: string; layoutMode: 'canvas' | 'coding' }) {
   const slot = useBrowserStore((s) => s.slots[browserId])
+  const annotating = useBrowserStore((s) => s.annotatingId === browserId)
   const webviewRef = useRef<Electron.WebviewTag>(null)
   const initialSrcRef = useRef(useBrowserStore.getState().tabs[browserId]?.url || 'about:blank')
+  const { t } = useTranslation()
+
+  useEffect(() => {
+    if (!annotating) return
+    const wv = webviewRef.current
+    if (!wv) { useBrowserStore.getState().stopAnnotate(); return }
+    let done = false
+    const onConsole = (e: Electron.ConsoleMessageEvent) => {
+      if (!e.message.startsWith(ANNOTATE_MSG_PREFIX)) return
+      try {
+        void handleAnnotationMessage(browserId, JSON.parse(e.message.slice(ANNOTATE_MSG_PREFIX.length)))
+      } catch {
+        // malformed payload — ignore
+      }
+    }
+    wv.addEventListener('console-message', onConsole)
+    const script = buildSessionScript({
+      placeholder: t('chat.browser.annotatePlaceholder'),
+      confirm: t('chat.browser.annotateConfirm'),
+      cancel: t('chat.browser.annotateCancel'),
+      screenshot: t('chat.browser.annotateScreenshot'),
+      sColor: t('chat.browser.styleColor'),
+      sBg: t('chat.browser.styleBackground'),
+      sSize: t('chat.browser.styleSize'),
+      sWeight: t('chat.browser.styleWeight'),
+      sRadius: t('chat.browser.styleRadius'),
+      sPadding: t('chat.browser.stylePadding'),
+    })
+    void browserExecJs(browserId, script).catch(() => {}).finally(() => {
+      if (done) return
+      done = true
+      wv.removeEventListener('console-message', onConsole)
+      useBrowserStore.getState().stopAnnotate()
+    })
+    return () => {
+      done = true
+      wv.removeEventListener('console-message', onConsole)
+      void browserExecJs(browserId, ANNOTATE_CANCEL_SCRIPT)
+    }
+  }, [annotating, browserId, t])
 
   useEffect(() => {
     const wv = webviewRef.current

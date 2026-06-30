@@ -698,6 +698,28 @@ export type Messages = {
       openLink: string
       openInApp: string
     }
+    browser: {
+      addressPlaceholder: string
+      screenshotCopied: string
+      screenshotFailed: string
+      annotateEnter: string
+      annotateExit: string
+      annotating: string
+      annotateElement: string
+      annotateRegion: string
+      annotationCount_one: string
+      annotationCount_other: string
+      annotatePlaceholder: string
+      annotateConfirm: string
+      annotateCancel: string
+      annotateScreenshot: string
+      styleColor: string
+      styleBackground: string
+      styleSize: string
+      styleWeight: string
+      styleRadius: string
+      stylePadding: string
+    }
     reasoning: {
       thinking: string
       thinkingSeconds: string
@@ -2007,6 +2029,28 @@ export const en: Messages = {
       copied: 'Copied',
       openLink: 'Open in external browser',
       openInApp: 'Open in built-in browser',
+    },
+    browser: {
+      addressPlaceholder: 'Enter a URL',
+      screenshotCopied: 'Screenshot copied to clipboard',
+      screenshotFailed: 'Failed to capture screenshot',
+      annotateEnter: 'Annotate',
+      annotateExit: 'Exit annotate mode (Esc)',
+      annotating: 'Annotating',
+      annotateElement: 'Element',
+      annotateRegion: 'Region',
+      annotationCount_one: '{{count}} annotation',
+      annotationCount_other: '{{count}} annotations',
+      annotatePlaceholder: 'Add a note…',
+      annotateConfirm: 'Add',
+      annotateCancel: 'Cancel',
+      annotateScreenshot: 'Screenshot',
+      styleColor: 'Text color',
+      styleBackground: 'Background',
+      styleSize: 'Font size',
+      styleWeight: 'Font weight',
+      styleRadius: 'Radius',
+      stylePadding: 'Padding',
     },
     reasoning: {
       thinking: 'Thinking...',

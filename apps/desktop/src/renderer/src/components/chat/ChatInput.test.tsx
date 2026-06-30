@@ -11,6 +11,7 @@ const { chatActions, activeSessionState, editorState, useChatStore, mentionPopup
     draftText: '',
     status: 'idle' as const,
     attachments: [] as Array<{ mimeType: string; base64: string; name: string }>,
+    browserAnnotations: [] as Array<{ id: string }>,
     mentions: [] as Array<{ kind: 'file' | 'directory' | 'agent'; value: string; displayName: string }>,
     permissionMode: 'default' as const,
     hasPendingInteraction: false,

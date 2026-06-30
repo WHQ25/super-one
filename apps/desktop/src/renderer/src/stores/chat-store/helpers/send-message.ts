@@ -1,7 +1,9 @@
 import type {
   ChatMessage,
   ContentBlock,
+  ImageAttachment,
 } from '@superone/shared/agent-types'
+import { buildBrowserAnnotationText } from './browser-annotation'
 import { runCodexCommand } from '../codex/runner'
 import { createDefaultPerSessionState, freshSubagentColorPool } from '../defaults'
 import {
@@ -114,8 +116,15 @@ export async function sendMessageImpl(
     selectedCodexReasoningEffort,
     selectedCodexPermissionPreset,
     selectedCodexCollaborationMode,
-    attachments,
   } = session
+  const annotations = session.browserAnnotations ?? []
+  const annotationImages: ImageAttachment[] = annotations
+    .filter((a) => a.screenshot)
+    .map((a) => ({ mimeType: 'image/png', base64: a.screenshot as string, name: `annotation-${a.id}.png` }))
+  const attachments: ImageAttachment[] = [...session.attachments, ...annotationImages]
+  const annotationSuffix = annotations.length > 0
+    ? '\n\n' + annotations.map(buildBrowserAnnotationText).join('\n\n')
+    : ''
   const mentions: Mention[] = explicitMentions ?? session.mentions
 
   const rawContent = content.trim()
@@ -164,7 +173,7 @@ export async function sendMessageImpl(
     }
     miniAppReminderSuffix = `\n\n<superone-miniapp-reminder>\n${lines.join('\n')}\n</superone-miniapp-reminder>`
   }
-  const finalContent = rawContent + contextSuffix + quoteSuffix + miniAppReminderSuffix
+  const finalContent = rawContent + contextSuffix + quoteSuffix + miniAppReminderSuffix + annotationSuffix
   const codexCommand = parseCodexCommand(rawContent)
   const resolvedCodexCommand: CodexCommand | null = effectiveProvider === 'codex'
     ? (codexCommand ?? { kind: 'run', prompt: finalContent })
@@ -314,6 +323,7 @@ export async function sendMessageImpl(
       ...(!isQueuedSend ? { messages: [...sess.messages, userMessage] } : {}),
       ...(isQueuedSend ? { queuedMessages: [...sess.queuedMessages, userMessage] } : {}),
       attachments: [],
+      browserAnnotations: [],
       mentions: [],
       miniAppContexts: {},
       userSelections: [],

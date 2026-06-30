@@ -9,6 +9,7 @@ import { useAppStore, useEffectiveProjectRoot } from '@/stores/app'
 import { showNativeContextMenu } from '@/lib/native-context-menu'
 import { LinkSafetyModal } from '@/components/chat/LinkSafetyModal'
 import { requestOpenExternalLink } from '@/lib/external-link'
+import { openBrowserTab } from '@/components/activity/activity-panel-api'
 import { docToMarkdown, markdownToDoc } from './markdown-codec'
 import { CodeBlock } from './extensions/code-block-view'
 import { MermaidNode } from './extensions/mermaid-node'
@@ -173,6 +174,7 @@ export function MarkdownEditor({ content, filePath, onDirtyChange, onContentChan
         isOpen={linkHref !== null}
         onClose={() => setLinkHref(null)}
         onConfirm={() => { if (linkHref) requestOpenExternalLink(linkHref) }}
+        onOpenInApp={() => { if (linkHref) openBrowserTab(linkHref) }}
       />
     </>
   )

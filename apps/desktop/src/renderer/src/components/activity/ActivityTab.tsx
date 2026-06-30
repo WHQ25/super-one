@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react'
 import type { IDockviewPanelHeaderProps } from 'dockview-core'
-import { Bug, Maximize, RotateCw, X } from 'lucide-react'
+import { Bug, Globe, Maximize, RotateCw, X } from 'lucide-react'
 import { motion } from 'motion/react'
 import { cn } from '@superone/ui/lib/utils'
 import { FileIcon } from '@superone/ui/components/ui/FileIcon'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
 import { useMiniAppStore } from '@/stores/miniapp'
+import { useBrowserStore } from '@/stores/browser'
+import { closeBrowserTab, maximizeBrowserTab } from './activity-panel-api'
 
 function useIsActive(api: IDockviewPanelHeaderProps['api']) {
   const [active, setActive] = useState(api.isActive)
@@ -36,7 +38,7 @@ export function HoverCloseSlot({ children, onClose }: { children: React.ReactNod
 
 export function tabChipClass(active: boolean): string {
   return cn(
-    'flex items-center gap-1.5 rounded-lg px-1.5 py-1 transition-colors',
+    'flex max-w-[180px] items-center gap-1.5 rounded-lg px-1.5 py-1 transition-colors',
     active
       ? 'bg-muted text-foreground'
       : 'text-muted-foreground hover:text-foreground',
@@ -52,7 +54,7 @@ export function FilePreviewTab(props: IDockviewPanelHeaderProps<{ filePath: stri
       <HoverCloseSlot onClose={() => props.api.close()}>
         {fileName && <FileIcon name={fileName} size={14} className="shrink-0" />}
       </HoverCloseSlot>
-      <span className="truncate text-xs">{fileName || 'File'}</span>
+      <span className="min-w-0 truncate text-xs">{fileName || 'File'}</span>
     </div>
   )
 }
@@ -101,7 +103,7 @@ export function MiniAppTab(props: IDockviewPanelHeaderProps<{ instanceKey: strin
       <HoverCloseSlot onClose={() => { void closeApp(instanceKey) }}>
         <MiniAppIcon appId={appId} className="size-3.5 shrink-0" />
       </HoverCloseSlot>
-      <span className="truncate text-xs">{props.api.title}</span>
+      <span className="min-w-0 truncate text-xs">{props.api.title}</span>
       {isDev && devControls && (
         <>
           <TabActionButton
@@ -133,7 +135,33 @@ export function MiniAppTab(props: IDockviewPanelHeaderProps<{ instanceKey: strin
   )
 }
 
+export function BrowserTab(props: IDockviewPanelHeaderProps<{ browserId: string }>) {
+  const { browserId } = props.params
+  const active = useIsActive(props.api)
+  const state = useBrowserStore((s) => s.tabs[browserId])
+  const title = state?.title || 'New Tab'
+
+  return (
+    <div className={tabChipClass(active)}>
+      <HoverCloseSlot onClose={() => closeBrowserTab(browserId)}>
+        {state?.favicon
+          ? <img src={state.favicon} alt="" className="size-3.5 shrink-0 rounded-sm" />
+          : <Globe className="size-3.5 shrink-0" />}
+      </HoverCloseSlot>
+      <span className="min-w-0 truncate text-xs">{title}</span>
+      <TabActionButton
+        active={active}
+        onClick={(e) => { e.stopPropagation(); maximizeBrowserTab(browserId) }}
+        title="Open in fullscreen"
+      >
+        <Maximize className="size-3 shrink-0" />
+      </TabActionButton>
+    </div>
+  )
+}
+
 export const activityTabComponents: Record<string, React.FunctionComponent<IDockviewPanelHeaderProps>> = {
   'file-preview-tab': FilePreviewTab as React.FunctionComponent<IDockviewPanelHeaderProps>,
   'miniapp-tab': MiniAppTab as React.FunctionComponent<IDockviewPanelHeaderProps>,
+  'browser-tab': BrowserTab as React.FunctionComponent<IDockviewPanelHeaderProps>,
 }

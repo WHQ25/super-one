@@ -1,8 +1,9 @@
 import { useState, useCallback, useEffect } from 'react'
 import { LinkSafetyModal } from '@/components/chat/LinkSafetyModal'
 import { setExternalLinkHandler } from '@/lib/external-link'
+import { openBrowserTab } from '@/components/activity/activity-panel-api'
 
-export function ExternalLinkConfirm() {
+export function ExternalLinkConfirm({ enableInApp = true }: { enableInApp?: boolean } = {}) {
   const [pendingUrl, setPendingUrl] = useState<string | null>(null)
 
   useEffect(() => {
@@ -13,6 +14,9 @@ export function ExternalLinkConfirm() {
   const handleConfirm = useCallback(() => {
     if (pendingUrl) window.app.openExternalLink(pendingUrl)
   }, [pendingUrl])
+  const handleOpenInApp = useCallback(() => {
+    if (pendingUrl) openBrowserTab(pendingUrl)
+  }, [pendingUrl])
 
   if (!pendingUrl) return null
 
@@ -22,6 +26,7 @@ export function ExternalLinkConfirm() {
       isOpen
       onClose={handleClose}
       onConfirm={handleConfirm}
+      onOpenInApp={enableInApp ? handleOpenInApp : undefined}
     />
   )
 }

@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
-import { ExternalLink, Copy, Check, X } from 'lucide-react'
+import { ExternalLink, Copy, Check, X, Globe } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 
 interface LinkSafetyModalProps {
@@ -9,9 +9,10 @@ interface LinkSafetyModalProps {
   isOpen: boolean
   onClose: () => void
   onConfirm: () => void
+  onOpenInApp?: () => void
 }
 
-export function LinkSafetyModal({ url, isOpen, onClose, onConfirm }: LinkSafetyModalProps) {
+export function LinkSafetyModal({ url, isOpen, onClose, onConfirm, onOpenInApp }: LinkSafetyModalProps) {
   const { t } = useTranslation()
   const [copied, setCopied] = useState(false)
 
@@ -25,6 +26,11 @@ export function LinkSafetyModal({ url, isOpen, onClose, onConfirm }: LinkSafetyM
     onConfirm()
     onClose()
   }, [onConfirm, onClose])
+
+  const handleOpenInApp = useCallback(() => {
+    onOpenInApp?.()
+    onClose()
+  }, [onOpenInApp, onClose])
 
   useEffect(() => {
     if (!isOpen) return
@@ -61,9 +67,9 @@ export function LinkSafetyModal({ url, isOpen, onClose, onConfirm }: LinkSafetyM
           {url}
         </div>
 
-        <div className="flex gap-2">
+        <div className="flex flex-col gap-2">
           <button
-            className="flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-medium transition-colors hover:bg-muted"
+            className="flex cursor-pointer items-center justify-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-medium transition-colors hover:bg-muted"
             onClick={handleCopy}
             type="button"
           >
@@ -72,8 +78,18 @@ export function LinkSafetyModal({ url, isOpen, onClose, onConfirm }: LinkSafetyM
               : <><Copy className="size-3" /><span>{t('chat.linkSafety.copyLink')}</span></>
             }
           </button>
+          {onOpenInApp && (
+            <button
+              className="flex cursor-pointer items-center justify-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-medium transition-colors hover:bg-muted"
+              onClick={handleOpenInApp}
+              type="button"
+            >
+              <Globe className="size-3" />
+              <span>{t('chat.linkSafety.openInApp')}</span>
+            </button>
+          )}
           <button
-            className="flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+            className="flex cursor-pointer items-center justify-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-medium transition-colors hover:bg-muted"
             onClick={handleOpen}
             type="button"
           >

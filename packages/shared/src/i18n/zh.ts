@@ -706,10 +706,11 @@ export const zh: Messages = {
       groupFiles: '文件',
     },
     linkSafety: {
-      openExternal: '打开外部链接？',
+      openExternal: '打开链接',
       copyLink: '复制链接',
       copied: '已复制',
-      openLink: '打开链接',
+      openLink: '在外部浏览器打开',
+      openInApp: '在内置浏览器打开',
     },
     reasoning: {
       thinking: '思考中...',

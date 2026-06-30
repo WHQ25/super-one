@@ -1,11 +1,14 @@
 import { useEffect, memo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { MiniAppSlot } from '@/components/miniapp/MiniAppSlot'
+import { BrowserView } from '@/components/browser/BrowserView'
 import { useAppStore } from '@/stores/app'
 import { useMiniAppStore } from '@/stores/miniapp'
+import { useBrowserStore } from '@/stores/browser'
 
 export const CanvasPanel = memo(function CanvasPanel() {
   const { t } = useTranslation()
+  const fullscreenBrowserId = useBrowserStore((s) => s.fullscreenId)
   const apps = useMiniAppStore((s) => s.apps)
   const fullscreenApps = apps.filter((a) => a.manifest.fullscreen === true)
   const fetchApps = useMiniAppStore((s) => s.fetchApps)
@@ -25,6 +28,14 @@ export const CanvasPanel = memo(function CanvasPanel() {
     useMiniAppStore.getState().consumePendingOpen()
     openFullscreenApp(entry, currentFolder ?? '')
   }, [pendingOpenAppId, fullscreenApps, openFullscreenApp, currentFolder])
+
+  if (fullscreenBrowserId) {
+    return (
+      <div className="relative h-full">
+        <BrowserView browserId={fullscreenBrowserId} mode="canvas" />
+      </div>
+    )
+  }
 
   if (!openApp) {
     return (

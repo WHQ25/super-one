@@ -1,5 +1,5 @@
 import { useEffect, useCallback, useRef, useState, lazy, Suspense } from 'react'
-import { Sun, Moon, X, Smartphone, Minimize2, SquareTerminal, RotateCw, Bug, LayoutGrid } from 'lucide-react'
+import { Sun, Moon, X, Smartphone, Minimize2, SquareTerminal, RotateCw, Bug, LayoutGrid, Globe } from 'lucide-react'
 import { motion } from 'motion/react'
 import { toast } from 'sonner'
 import { useTranslation } from 'react-i18next'
@@ -8,6 +8,7 @@ import { ChatPanel } from '@/components/chat/ChatPanel'
 import { CodingLayout } from '@/components/coding/CodingLayout'
 import { CanvasPanel } from '@/components/canvas/CanvasPanel'
 import { ActivityPanel } from '@/components/activity/ActivityPanel'
+import { openBrowserTab, restoreBrowserToPanel, closeFullscreenBrowser } from '@/components/activity/activity-panel-api'
 import { SessionMosaic } from '@/components/mosaic/SessionMosaic'
 import { useMosaicStore } from '@/components/mosaic/mosaic-store'
 import { MosaicDropZone } from '@/components/mosaic/MosaicDropZone'
@@ -23,6 +24,7 @@ import { MiniAppClipboardGuard } from '@/components/MiniAppClipboardGuard'
 import { MiniAppMediaIndicator } from '@/components/miniapp/MiniAppMediaIndicator'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
 import { MiniAppHostLayer } from '@/components/miniapp/MiniAppHostLayer'
+import { BrowserHostLayer } from '@/components/browser/BrowserHostLayer'
 import { DebugPanel } from '@/components/DebugPanel'
 import { useResizeHandle } from '@/hooks/useResizeHandle'
 import { useAgentEvents } from '@/hooks/useAgentEvents'
@@ -37,6 +39,7 @@ import { useAppStore, startProjectMirror } from '@/stores/app'
 import { useDevToolsStore } from '@/stores/dev-tools'
 import { useActivityPanelStore } from '@/stores/activity-panel'
 import { useMiniAppStore } from '@/stores/miniapp'
+import { useBrowserStore } from '@/stores/browser'
 import { useActivityViewStateStore } from '@/stores/activity-view-state'
 import { useTerminalPanel } from '@/hooks/useTerminalPanel'
 import { useTerminalStore } from '@/stores/terminal'
@@ -79,6 +82,7 @@ function App(): React.JSX.Element {
   const canRestoreMosaic = useMosaicStore((s) => s.lastLayout !== null)
   const draggingSession = useMosaicStore((s) => s.draggingSession)
   const fullscreenApp = useMiniAppStore((s) => s.fullscreenApp)
+  const fullscreenBrowserId = useBrowserStore((s) => s.fullscreenId)
   const isFullscreen = useFullscreen()
   const isMac = window.app.platform === 'darwin'
   const initialTransition = useRef(true)
@@ -364,7 +368,7 @@ function App(): React.JSX.Element {
 
 
   const hasLeftPanel = showSidebar || (showActivityPanel && activitySide === 'left')
-  const canvasCard = layoutMode === 'canvas' && !!fullscreenApp
+  const canvasCard = layoutMode === 'canvas' && (!!fullscreenApp || !!fullscreenBrowserId)
 
   const getActivityMaxWidth = useCallback(() => {
     const sb = useAppStore.getState()
@@ -492,6 +496,21 @@ function App(): React.JSX.Element {
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <button
+                      onClick={() => openBrowserTab()}
+                      className="rounded-md p-1.5 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground"
+                    >
+                      <Globe className="size-3.5" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top"><span>New browser tab</span></TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
+            {layoutMode === 'coding' && (
+              <TooltipProvider delayDuration={300}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
                       onClick={toggleTerminal}
                       className={cn(
                         'rounded-md p-1.5 transition-colors hover:bg-muted hover:text-foreground',
@@ -558,6 +577,7 @@ function App(): React.JSX.Element {
       </div>
     </div>
     <MiniAppHostLayer />
+    <BrowserHostLayer />
     </>
   )
 }
@@ -565,8 +585,21 @@ function App(): React.JSX.Element {
 function CanvasCloseButton() {
   const layoutMode = useAppStore((s) => s.layoutMode)
   const fullscreenApp = useMiniAppStore((s) => s.fullscreenApp)
+  const fullscreenBrowserId = useBrowserStore((s) => s.fullscreenId)
   const closeFullscreenApp = useMiniAppStore((s) => s.closeFullscreenApp)
-  if (layoutMode !== 'canvas' || !fullscreenApp) return null
+  if (layoutMode !== 'canvas') return null
+  if (fullscreenBrowserId) {
+    return (
+      <button
+        onClick={() => closeFullscreenBrowser()}
+        className="rounded-md p-1.5 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground"
+        title="Close browser"
+      >
+        <X className="size-3.5" />
+      </button>
+    )
+  }
+  if (!fullscreenApp) return null
   return (
     <button
       onClick={() => closeFullscreenApp()}
@@ -606,8 +639,21 @@ function CanvasDevControls() {
 function CanvasReturnToPanelButton() {
   const layoutMode = useAppStore((s) => s.layoutMode)
   const fullscreenApp = useMiniAppStore((s) => s.fullscreenApp)
+  const fullscreenBrowserId = useBrowserStore((s) => s.fullscreenId)
   const moveAppToPanel = useMiniAppStore((s) => s.moveAppToPanel)
-  if (layoutMode !== 'canvas' || !fullscreenApp) return null
+  if (layoutMode !== 'canvas') return null
+  if (fullscreenBrowserId) {
+    return (
+      <button
+        onClick={() => restoreBrowserToPanel()}
+        className="rounded-md p-1.5 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground"
+        title="Return to panel"
+      >
+        <Minimize2 className="size-3.5" />
+      </button>
+    )
+  }
+  if (!fullscreenApp) return null
   return (
     <button
       onClick={() => moveAppToPanel(fullscreenApp.instanceKey)}
@@ -621,6 +667,17 @@ function CanvasReturnToPanelButton() {
 
 function HeaderTitle({ layoutMode, sessionId, sessionFallback, folderName, folderPath }: { layoutMode: 'canvas' | 'coding'; sessionId: string; sessionFallback: string | null | undefined; folderName: string | null | undefined; folderPath: string | null }) {
   const fullscreenApp = useMiniAppStore((s) => s.fullscreenApp)
+  const fullscreenBrowser = useBrowserStore((s) => (s.fullscreenId ? s.tabs[s.fullscreenId] : null))
+  if (layoutMode === 'canvas' && fullscreenBrowser) {
+    return (
+      <span className="flex max-w-[220px] items-center gap-1.5 text-xs text-muted-foreground">
+        {fullscreenBrowser.favicon
+          ? <img src={fullscreenBrowser.favicon} alt="" className="size-3.5 shrink-0 rounded-sm" />
+          : <Globe className="size-3.5 shrink-0" />}
+        <span className="truncate">{fullscreenBrowser.title || 'New Tab'}</span>
+      </span>
+    )
+  }
   if (layoutMode === 'canvas' && fullscreenApp) {
     return (
       <span className="flex max-w-[220px] items-center gap-1.5 text-xs text-muted-foreground">

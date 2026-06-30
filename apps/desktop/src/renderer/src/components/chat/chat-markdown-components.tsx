@@ -10,6 +10,7 @@ import { DraggableFileIcon } from '@/components/chat/DraggableFileIcon'
 import { useAppStore, selectEffectiveProjectRoot } from '@/stores/app'
 import { useSourceControlStore } from '@/stores/source-control'
 import { clickReleasedOnSelection, parseFileLinkTarget } from '@/lib/file-link'
+import { requestOpenExternalLink } from '@/lib/external-link'
 
 export function InlineFileChip({ name, filePath, lineNumber }: { name: string; filePath: string; lineNumber?: number }) {
   const { t } = useTranslation()
@@ -66,7 +67,19 @@ function FileLink(props: React.AnchorHTMLAttributes<HTMLAnchorElement>) {
       return <InlineFileChip name={name} filePath={filePath} lineNumber={lineNumber} />
     }
   }
-  return <a href={rawHref} {...rest}>{children}</a>
+  return (
+    <a
+      href={rawHref}
+      {...rest}
+      onClick={(e) => {
+        if (!rawHref) return
+        e.preventDefault()
+        requestOpenExternalLink(rawHref)
+      }}
+    >
+      {children}
+    </a>
+  )
 }
 
 export const fileLinkComponents = { a: FileLink }

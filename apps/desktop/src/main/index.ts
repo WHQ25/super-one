@@ -396,6 +396,7 @@ function syncNativeAppearance(): void {
   nativeTheme.themeSource = currentDarkTheme ? 'dark' : 'light'
 }
 
+
 function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1440,
@@ -782,6 +783,7 @@ function registerIpcHandlers(): void {
   ipcMain.handle(AgentIpcChannels.TERMINAL_KILL, (_e, terminalId: string) => {
     terminalManager.kill(terminalId)
   })
+
 
   // Setup agent IPC handlers (does NOT auto-initialize)
   agentService.setCodexListModels((projectPath) => codexService.listModels(projectPath))

@@ -11,6 +11,7 @@ import { toMediaUrl, toLocalFileUrl } from '@/lib/path-utils'
 import { LinkSafetyModal } from './LinkSafetyModal'
 import { MarkdownImage } from './markdown-image'
 import { MarkdownTable } from './MarkdownTable'
+import { openBrowserTab } from '@/components/activity/activity-panel-api'
 
 export { codePlugin, codePluginLight }
 
@@ -48,7 +49,7 @@ export const streamdownControls = { table: false }
 /** Custom link safety modal scoped properly for Electron. */
 export const streamdownLinkSafety: LinkSafetyConfig = {
   enabled: true,
-  renderModal: (props) => createElement(LinkSafetyModal, props),
+  renderModal: (props) => createElement(LinkSafetyModal, { ...props, onOpenInApp: () => openBrowserTab(props.url) }),
 }
 
 function localFileToMediaUrl(src: string | undefined): string | undefined {

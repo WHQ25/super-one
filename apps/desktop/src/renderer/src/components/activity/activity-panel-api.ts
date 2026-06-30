@@ -1,5 +1,8 @@
 import type { DockviewApi, AddPanelPositionOptions, SerializedDockview } from 'dockview-core'
 import { useActivityPanelStore } from '@/stores/activity-panel'
+import { useAppStore } from '@/stores/app'
+import { useBrowserStore } from '@/stores/browser'
+import { normalizeUrl } from '@/components/browser/browser-url'
 import { normalizeFileLinkTarget } from '@/lib/file-link'
 
 let dockApi: DockviewApi | null = null
@@ -142,4 +145,55 @@ export function closeMiniAppTab(instanceKey: string) {
   const panelId = `miniapp-${instanceKey}`
   const existing = dockApi.panels.find((p) => p.id === panelId)
   if (existing) existing.api.close()
+}
+
+export function openBrowserTab(url = 'about:blank', reuseId?: string) {
+  const app = useAppStore.getState()
+  if (app.layoutMode !== 'coding' && app.currentFolder) app.setLayoutMode('coding')
+  ensureVisible()
+  execOrDefer(() => {
+    if (!dockApi) return
+    const browserId = reuseId ?? `browser-${crypto.randomUUID()}`
+    useBrowserStore.getState().ensure(browserId, normalizeUrl(url))
+    const existing = dockApi.panels.find((p) => p.id === browserId)
+    if (existing) {
+      existing.api.setActive()
+      return
+    }
+    dockApi.addPanel({
+      id: browserId,
+      component: 'browser',
+      tabComponent: 'browser-tab',
+      title: 'New Tab',
+      params: { browserId, url },
+    })
+  })
+}
+
+export function closeBrowserTab(browserId: string) {
+  const existing = dockApi?.panels.find((p) => p.id === browserId)
+  existing?.api.close()
+  useBrowserStore.getState().remove(browserId)
+}
+
+export function maximizeBrowserTab(browserId: string) {
+  useBrowserStore.getState().setFullscreen(browserId)
+  dockApi?.panels.find((p) => p.id === browserId)?.api.close()
+  useAppStore.getState().setLayoutMode('canvas')
+}
+
+export function restoreBrowserToPanel() {
+  const store = useBrowserStore.getState()
+  const id = store.fullscreenId
+  store.setFullscreen(null)
+  if (id) openBrowserTab(store.tabs[id]?.url ?? 'about:blank', id)
+  else useAppStore.getState().setLayoutMode('coding')
+}
+
+export function closeFullscreenBrowser() {
+  const store = useBrowserStore.getState()
+  const id = store.fullscreenId
+  store.setFullscreen(null)
+  if (id) store.remove(id)
+  useAppStore.getState().setLayoutMode('coding')
 }

@@ -696,6 +696,7 @@ export type Messages = {
       copyLink: string
       copied: string
       openLink: string
+      openInApp: string
     }
     reasoning: {
       thinking: string
@@ -2001,10 +2002,11 @@ export const en: Messages = {
       groupFiles: 'Files',
     },
     linkSafety: {
-      openExternal: 'Open external link?',
+      openExternal: 'Open link',
       copyLink: 'Copy link',
       copied: 'Copied',
-      openLink: 'Open link',
+      openLink: 'Open in external browser',
+      openInApp: 'Open in built-in browser',
     },
     reasoning: {
       thinking: 'Thinking...',

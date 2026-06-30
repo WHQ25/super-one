@@ -178,6 +178,7 @@ const terminalAPI = {
   },
 }
 
+
 const appAPI = {
   connectClaude: () =>
     ipcRenderer.invoke(AgentIpcChannels.CONNECT_CLAUDE),

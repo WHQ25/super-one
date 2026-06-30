@@ -1,11 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Pin, PinOff } from 'lucide-react'
-import { useChatStore, useActiveSession, extractSessionTitle } from '@/stores/chat'
-import { useAppStore, startProjectMirror } from '@/stores/app'
+import { useActiveSession, extractSessionTitle } from '@/stores/chat'
 import { SessionPane } from '@/components/chat/SessionPane'
-import { useAgentEvents } from '@/hooks/useAgentEvents'
-import { useTheme } from '@/hooks/useTheme'
-import { useHarnessTheme } from '@/hooks/useHarnessTheme'
+import { useStandaloneSessionBoot } from '@/hooks/useStandaloneSessionBoot'
 import { ExternalLinkConfirm } from '@/components/ExternalLinkConfirm'
 import { SessionTitleAnimated, useSessionTitleByAgent } from '@/components/sidebar/AnimatedSessionTitle'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@superone/ui/components/ui/tooltip'
@@ -24,53 +21,14 @@ function truncateForDock(s: string): string {
 }
 
 export function MiniWindowApp({ projectPath, sessionId, initialTitle }: MiniWindowAppProps): React.JSX.Element {
-  useTheme()
-  useHarnessTheme()
-  useAgentEvents()
+  useStandaloneSessionBoot(projectPath, sessionId)
 
-  const focusProject = useChatStore((s) => s.focusProject)
-  const switchSession = useChatStore((s) => s.switchSession)
   const sessionFallback = useActiveSession((s) => s._title ?? extractSessionTitle(s.messages))
   const activeSessionId = useActiveSession((s) => s._activeSessionId ?? s.session?.sessionId)
   const liveTitle = useSessionTitleByAgent(activeSessionId, sessionFallback)
   const displayTitle = liveTitle || initialTitle || 'Session'
   const isMac = window.app.platform === 'darwin'
   const isWindows = window.app.platform === 'win32'
-
-  useEffect(() => {
-    startProjectMirror(useChatStore)
-    useAppStore.setState({ view: 'main' })
-    useAppStore.getState().loadRemoteConfig()
-    useAppStore.getState().loadBrandHues()
-
-    let cancelled = false
-    void (async () => {
-      try {
-        const startupData = await window.app.getStartupData()
-        if (cancelled) return
-        if (startupData.cached.claude) {
-          useChatStore.getState().setHarnessResources('claude', startupData.cached.claude)
-        }
-        if (startupData.cached.codex) {
-          useChatStore.getState().setHarnessResources('codex', startupData.cached.codex)
-        }
-        void useChatStore.getState().initializeHarness('claude')
-        void useChatStore.getState().initializeHarness('codex')
-
-        await useChatStore.getState().syncLiveSnapshots()
-        if (cancelled) return
-
-        await focusProject(projectPath)
-        if (cancelled) return
-        if (useChatStore.getState().projectSessions[projectPath]?._activeSessionId !== sessionId) {
-          await switchSession(sessionId)
-        }
-      } catch (err) {
-        console.warn('[mini-window] init failed', err)
-      }
-    })()
-    return () => { cancelled = true }
-  }, [projectPath, sessionId, focusProject, switchSession])
 
   useEffect(() => {
     document.title = truncateForDock(displayTitle)
@@ -136,7 +94,7 @@ export function MiniWindowApp({ projectPath, sessionId, initialTitle }: MiniWind
           </div>
         )}
       </div>
-      <ExternalLinkConfirm />
+      <ExternalLinkConfirm enableInApp={false} />
     </div>
   )
 }

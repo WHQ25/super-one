@@ -415,6 +415,7 @@ interface TerminalAPI {
   onTerminalEvent(callback: (event: TerminalEvent) => void): () => void
 }
 
+
 declare global {
   interface Window {
     electron: ElectronAPI

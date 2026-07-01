@@ -4,6 +4,19 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.43.4-alpha] - 2026-07-02
+
+### Added
+
+- Browser keyboard shortcuts for toggling annotate mode and opening a new tab
+- Browser now supports popup-based login (e.g. Google Sign-In) by handling it as a same-tab redirect
+
+### Fixed
+
+- Address bar placeholder now clarifies that you can type a search term or a URL
+- Long URLs no longer overlap the external-link icon on hover
+- Mosaic panes no longer all flash when switching focus between panes
+
 ## [0.43.3-alpha] - 2026-07-01
 
 ### Fixed

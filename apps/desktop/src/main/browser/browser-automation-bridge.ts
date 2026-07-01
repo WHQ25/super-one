@@ -11,6 +11,13 @@ export type BrowserAutomationOp =
   | 'click'
   | 'type'
   | 'navigate'
+  | 'wait_for'
+  | 'press'
+  | 'scroll'
+  | 'select'
+  | 'open'
+  | 'evaluate'
+  | 'tabs'
 
 interface PendingCall {
   resolve: (result: unknown) => void
@@ -28,7 +35,7 @@ export function initBrowserAutomation(windowGetter: () => BrowserWindow | null):
   getMainWindow = windowGetter
 }
 
-export function browserAutomationCall(op: BrowserAutomationOp, input: unknown): Promise<unknown> {
+export function browserAutomationCall(sessionId: string, op: BrowserAutomationOp, input: unknown): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const win = getMainWindow?.()
     if (!win || win.isDestroyed()) {
@@ -41,7 +48,7 @@ export function browserAutomationCall(op: BrowserAutomationOp, input: unknown): 
       reject(new Error(`Browser automation '${op}' timed out after ${BROWSER_CALL_TIMEOUT_MS}ms`))
     }, BROWSER_CALL_TIMEOUT_MS)
     pendingCalls.set(callId, { resolve, reject, timer })
-    win.webContents.send(AgentIpcChannels.BROWSER_AUTOMATION_CALL, { callId, op, input })
+    win.webContents.send(AgentIpcChannels.BROWSER_AUTOMATION_CALL, { callId, sessionId, op, input })
   })
 }
 

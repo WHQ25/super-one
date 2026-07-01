@@ -4,8 +4,13 @@ import {
   browserExecJs,
   browserCapture,
   browserNavigate,
+  browserGoBack,
+  browserGoForward,
+  browserReload,
+  isBrowserRegistered,
   readBrowserConsole,
 } from './browser-host-api'
+import { openBrowserTab } from '@/components/activity/activity-panel-api'
 
 const MAX_SCREENSHOT_WIDTH = 1280
 
@@ -14,19 +19,28 @@ interface BaseInput {
   console?: 'none' | 'error' | 'all'
   selector?: string
   readiness?: 'load' | 'none'
+  action?: 'back' | 'forward' | 'reload'
+  timeoutMs?: number
+  url?: string
+  expression?: string
 }
 
-function resolveBrowserId(tab?: string): string {
+function ownedTabIds(sessionId: string): string[] {
   const state = useBrowserStore.getState()
-  const ids = Object.keys(state.tabs)
+  return Object.keys(state.tabs).filter((id) => state.tabs[id].owner === sessionId)
+}
+
+function resolveBrowserId(tab: string | undefined, sessionId: string): string {
+  const state = useBrowserStore.getState()
+  const owned = ownedTabIds(sessionId)
   if (tab) {
-    if (!state.tabs[tab]) throw new Error(`Browser tab not found: ${tab}`)
+    if (!owned.includes(tab)) throw new Error(`Browser tab not found in this session: ${tab}`)
     return tab
   }
-  if (state.fullscreenId && state.tabs[state.fullscreenId]) return state.fullscreenId
-  if (ids.length === 1) return ids[0]
-  if (ids.length === 0) throw new Error('No browser is open. Open a browser tab first.')
-  throw new Error(`Multiple browser tabs are open; specify "tab". Open tabs: ${ids.join(', ')}`)
+  if (state.fullscreenId && owned.includes(state.fullscreenId)) return state.fullscreenId
+  if (owned.length === 1) return owned[0]
+  if (owned.length === 0) throw new Error('No browser is open in this session. Use browser_open first.')
+  throw new Error(`Multiple browser tabs are open; specify "tab". Open tabs: ${owned.join(', ')}`)
 }
 
 const HELPERS = `
@@ -245,6 +259,91 @@ function typeScript(input: { text: string; selector?: string; clear?: boolean })
   })()`
 }
 
+function waitCheckScript(input: { selector?: string; selectorGone?: string; text?: string; urlIncludes?: string }): string {
+  return `(() => {
+    ${HELPERS}
+    const sel = ${JSON.stringify(input.selector ?? null)};
+    const gone = ${JSON.stringify(input.selectorGone ?? null)};
+    const text = ${JSON.stringify(input.text ?? null)};
+    const url = ${JSON.stringify(input.urlIncludes ?? null)};
+    const selOk = sel ? (() => { const e = document.querySelector(sel); return !!(e && __sone.visible(e)); })() : true;
+    const goneOk = gone ? (() => { const e = document.querySelector(gone); return !e || !__sone.visible(e); })() : true;
+    const textOk = text ? ((document.body && document.body.innerText || '').includes(text)) : true;
+    const urlOk = url ? location.href.includes(url) : true;
+    return selOk && goneOk && textOk && urlOk;
+  })()`
+}
+
+function pressScript(input: { key: string; modifiers?: string[]; selector?: string }): string {
+  return `(() => {
+    ${HELPERS}
+    const sel = ${JSON.stringify(input.selector ?? null)};
+    const key = ${JSON.stringify(input.key)};
+    const mods = ${JSON.stringify(input.modifiers ?? [])};
+    const el = sel ? document.querySelector(sel) : (document.activeElement || document.body);
+    if (!el) return { ok: false, error: 'no key target' };
+    const init = {
+      key, bubbles: true, cancelable: true,
+      altKey: mods.includes('Alt'), ctrlKey: mods.includes('Control'),
+      metaKey: mods.includes('Meta'), shiftKey: mods.includes('Shift'),
+    };
+    el.dispatchEvent(new KeyboardEvent('keydown', init));
+    el.dispatchEvent(new KeyboardEvent('keypress', init));
+    el.dispatchEvent(new KeyboardEvent('keyup', init));
+    if (key === 'Enter' && !mods.length && el.closest) {
+      const form = el.closest('form');
+      if (form && form.requestSubmit) { try { form.requestSubmit(); } catch (e) {} }
+    }
+    return { ok: true, key };
+  })()`
+}
+
+function scrollScript(input: { deltaX?: number; deltaY?: number; selector?: string }): string {
+  return `(() => {
+    ${HELPERS}
+    const sel = ${JSON.stringify(input.selector ?? null)};
+    const dx = ${input.deltaX ?? 0}, dy = ${input.deltaY ?? 0};
+    if (sel) {
+      const el = document.querySelector(sel);
+      if (!el) return { ok: false, error: 'scroll container not found' };
+      el.scrollBy(dx, dy);
+      return { ok: true, scrollLeft: Math.round(el.scrollLeft), scrollTop: Math.round(el.scrollTop) };
+    }
+    window.scrollBy(dx, dy);
+    return { ok: true, scrollX: Math.round(window.scrollX), scrollY: Math.round(window.scrollY) };
+  })()`
+}
+
+function selectScript(input: { selector: string; value?: string; label?: string; index?: number; checked?: boolean }): string {
+  return `(() => {
+    ${HELPERS}
+    const el = document.querySelector(${JSON.stringify(input.selector)});
+    if (!el) return { ok: false, error: 'element not found' };
+    const value = ${JSON.stringify(input.value ?? null)};
+    const label = ${JSON.stringify(input.label ?? null)};
+    const index = ${JSON.stringify(input.index ?? null)};
+    const checked = ${JSON.stringify(input.checked ?? null)};
+    if (el.tagName === 'SELECT') {
+      let opt = null;
+      if (value != null) opt = Array.from(el.options).find((o) => o.value === value);
+      else if (label != null) { const l = label.toLowerCase(); opt = Array.from(el.options).find((o) => o.text.trim().toLowerCase() === l) || Array.from(el.options).find((o) => o.text.toLowerCase().includes(l)); }
+      else if (index != null) opt = el.options[index];
+      if (!opt) return { ok: false, error: 'option not found' };
+      el.value = opt.value;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+      return { ok: true, selected: { value: opt.value, label: opt.text.trim() } };
+    }
+    const ty = (el.getAttribute('type') || '').toLowerCase();
+    if (ty === 'checkbox' || ty === 'radio') {
+      const want = checked == null ? true : checked;
+      if (el.checked !== want) el.click();
+      return { ok: true, checked: el.checked };
+    }
+    return { ok: false, error: 'target is not a <select>, checkbox, or radio' };
+  })()`
+}
+
 function resolveNavigateUrl(input: { url?: string; port?: number; path?: string; protocol?: string }): string {
   if (input.url) {
     if (/^[a-z]+:\/\//i.test(input.url)) return input.url
@@ -281,9 +380,54 @@ function waitForLoadStop(id: string, timeoutMs = 15_000): Promise<void> {
   })
 }
 
-export async function runBrowserOp(op: string, rawInput: unknown): Promise<unknown> {
+async function waitForTabRegistered(id: string, timeoutMs = 8_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() <= deadline) {
+    if (isBrowserRegistered(id)) return
+    await new Promise((resolve) => setTimeout(resolve, 50))
+  }
+  throw new Error('Browser tab did not initialize in time')
+}
+
+async function waitForCondition(
+  id: string,
+  input: { selector?: string; selectorGone?: string; text?: string; urlIncludes?: string; timeoutMs?: number },
+): Promise<unknown> {
+  const timeoutMs = Math.min(input.timeoutMs ?? 15_000, 60_000)
+  const start = Date.now()
+  const deadline = start + timeoutMs
+  const script = waitCheckScript(input)
+  while (Date.now() <= deadline) {
+    const matched = (await browserExecJs(id, script)) as boolean
+    if (matched) return { ok: true, waitedMs: Date.now() - start }
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+  throw new Error(`wait_for timed out after ${timeoutMs}ms`)
+}
+
+export async function runBrowserOp(sessionId: string, op: string, rawInput: unknown): Promise<unknown> {
   const input = (rawInput ?? {}) as BaseInput
-  const id = resolveBrowserId(input.tab)
+  if (op === 'open') {
+    const url = input.url ?? 'about:blank'
+    const targetId = input.tab ?? `browser-${crypto.randomUUID()}`
+    openBrowserTab(url, targetId, sessionId)
+    await waitForTabRegistered(targetId)
+    if ((input.readiness ?? 'load') !== 'none') await waitForLoadStop(targetId)
+    const tab = useBrowserStore.getState().tabs[targetId]
+    return { ok: true, tab: targetId, url: tab?.url ?? url, title: tab?.title ?? '' }
+  }
+  if (op === 'tabs') {
+    const state = useBrowserStore.getState()
+    const tabs = ownedTabIds(sessionId).map((id) => ({
+      tab: id,
+      url: state.tabs[id].url,
+      title: state.tabs[id].title,
+      loading: state.tabs[id].loading,
+      fullscreen: state.fullscreenId === id,
+    }))
+    return { tabs, count: tabs.length }
+  }
+  const id = resolveBrowserId(input.tab, sessionId)
   switch (op) {
     case 'snapshot': {
       const page = (await browserExecJs(id, snapshotScript(input as Parameters<typeof snapshotScript>[0]))) as Record<string, unknown>
@@ -318,11 +462,31 @@ export async function runBrowserOp(op: string, rawInput: unknown): Promise<unkno
       return { mimeType: 'image/png' as const, data, width: size.width, height: size.height }
     }
     case 'navigate': {
-      const url = resolveNavigateUrl(input as Parameters<typeof resolveNavigateUrl>[0])
-      browserNavigate(id, url)
+      if (input.action) {
+        if (input.action === 'back') browserGoBack(id)
+        else if (input.action === 'forward') browserGoForward(id)
+        else browserReload(id)
+      } else {
+        browserNavigate(id, resolveNavigateUrl(input as Parameters<typeof resolveNavigateUrl>[0]))
+      }
       if ((input.readiness ?? 'load') !== 'none') await waitForLoadStop(id)
       const tab = useBrowserStore.getState().tabs[id]
-      return { ok: true, url: tab?.url ?? url, title: tab?.title ?? '', loading: tab?.loading ?? false }
+      return { ok: true, action: input.action ?? 'navigate', url: tab?.url ?? '', title: tab?.title ?? '', loading: tab?.loading ?? false }
+    }
+    case 'wait_for':
+      return waitForCondition(id, input as Parameters<typeof waitForCondition>[1])
+    case 'press':
+      return browserExecJs(id, pressScript(input as Parameters<typeof pressScript>[0]))
+    case 'scroll':
+      return browserExecJs(id, scrollScript(input as Parameters<typeof scrollScript>[0]))
+    case 'select':
+      return browserExecJs(id, selectScript(input as Parameters<typeof selectScript>[0]))
+    case 'evaluate': {
+      const expr = String(input.expression ?? '')
+      const value = await browserExecJs(id, `(async () => { return (${expr}); })()`)
+      const json = JSON.stringify(value ?? null)
+      if (json.length > 64_000) throw new Error('Evaluate result exceeds 64KB; narrow the expression')
+      return { value: value ?? null }
     }
     default:
       throw new Error(`Unknown browser automation op: ${op}`)
@@ -332,9 +496,9 @@ export async function runBrowserOp(op: string, rawInput: unknown): Promise<unkno
 export function useBrowserAutomationHost(): void {
   useEffect(() => {
     if (!window.browserHost) return
-    return window.browserHost.onAutomationCall(async ({ callId, op, input }) => {
+    return window.browserHost.onAutomationCall(async ({ callId, sessionId, op, input }) => {
       try {
-        const result = await runBrowserOp(op, input)
+        const result = await runBrowserOp(sessionId, op, input)
         window.browserHost!.sendAutomationResult(callId, true, result)
       } catch (err) {
         window.browserHost!.sendAutomationResult(callId, false, undefined, err instanceof Error ? err.message : String(err))

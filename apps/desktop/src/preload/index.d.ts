@@ -429,7 +429,7 @@ declare global {
 
 export interface BrowserHostAPI {
   onAutomationCall(
-    callback: (req: { callId: string; op: string; input: unknown }) => void,
+    callback: (req: { callId: string; sessionId: string; op: string; input: unknown }) => void,
   ): () => void
   sendAutomationResult(callId: string, ok: boolean, result?: unknown, error?: string): void
 }

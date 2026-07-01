@@ -1232,9 +1232,9 @@ const miniappAPI = {
 
 const browserHostAPI = {
   onAutomationCall: (
-    callback: (req: { callId: string; op: string; input: unknown }) => void,
+    callback: (req: { callId: string; sessionId: string; op: string; input: unknown }) => void,
   ) => {
-    const handler = (_e: Electron.IpcRendererEvent, req: { callId: string; op: string; input: unknown }) =>
+    const handler = (_e: Electron.IpcRendererEvent, req: { callId: string; sessionId: string; op: string; input: unknown }) =>
       callback(req)
     ipcRenderer.on(AgentIpcChannels.BROWSER_AUTOMATION_CALL, handler)
     return () => ipcRenderer.removeListener(AgentIpcChannels.BROWSER_AUTOMATION_CALL, handler)

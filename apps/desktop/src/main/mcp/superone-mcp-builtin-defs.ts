@@ -35,6 +35,13 @@ export const BUILT_IN_SUPERONE_TOOL_NAMES = [
   'browser_click',
   'browser_type',
   'browser_navigate',
+  'browser_wait_for',
+  'browser_press',
+  'browser_scroll',
+  'browser_select',
+  'browser_open',
+  'browser_evaluate',
+  'browser_tabs',
 ] as const
 
 export type BuiltInSuperoneToolName = typeof BUILT_IN_SUPERONE_TOOL_NAMES[number]

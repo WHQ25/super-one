@@ -45,6 +45,10 @@ export function registerBrowserWebview(id: string, el: Electron.WebviewTag | nul
   }
 }
 
+export function isBrowserRegistered(id: string): boolean {
+  return registry.has(id)
+}
+
 export function browserNavigate(id: string, url: string): void {
   registry.get(id)?.loadURL(url)
 }

@@ -26,6 +26,7 @@ vi.mock('@/components/activity/activity-panel-api', () => ({
   getDockSnapshot: mockGetDockSnapshot,
   isDockReady: mockIsDockReady,
   setOnDockReady: mockSetOnDockReady,
+  setCurrentSessionIdGetter: vi.fn(),
   closeGhostMiniAppPanels: mockCloseGhostMiniAppPanels,
 }))
 

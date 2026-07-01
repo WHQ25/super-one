@@ -177,7 +177,7 @@ export function createSuperoneMcpServer(sessionId: string): McpSdkServerConfigWi
     sessionHost: getSessionHost(),
   })
   registerWidgetTools(server)
-  registerBrowserTools(server)
+  registerBrowserTools(server, sessionId)
   const state: ProjectServerState = { server, registeredTools: new Map() }
 
   let set = sessionServers.get(sessionId)

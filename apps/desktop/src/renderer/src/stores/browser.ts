@@ -7,6 +7,7 @@ export interface BrowserTabState {
   loading: boolean
   canGoBack: boolean
   canGoForward: boolean
+  owner: string | null
 }
 
 export type BrowserSlotMode = 'panel' | 'canvas'
@@ -24,7 +25,7 @@ interface BrowserStore {
   slots: Record<string, BrowserSlot>
   fullscreenId: string | null
   annotatingId: string | null
-  ensure: (id: string, url: string) => void
+  ensure: (id: string, url: string, owner?: string | null) => void
   patch: (id: string, partial: Partial<BrowserTabState>) => void
   remove: (id: string) => void
   setFullscreen: (id: string | null) => void
@@ -41,6 +42,7 @@ const DEFAULT_TAB: BrowserTabState = {
   loading: false,
   canGoBack: false,
   canGoForward: false,
+  owner: null,
 }
 
 function withoutKey<T extends Record<string, unknown>>(obj: T, key: string): T {
@@ -58,8 +60,8 @@ export const useBrowserStore = create<BrowserStore>((set) => ({
   setFullscreen: (id) => set({ fullscreenId: id }),
   startAnnotate: (id) => set({ annotatingId: id }),
   stopAnnotate: () => set({ annotatingId: null }),
-  ensure: (id, url) =>
-    set((s) => (s.tabs[id] ? s : { tabs: { ...s.tabs, [id]: { ...DEFAULT_TAB, url } } })),
+  ensure: (id, url, owner = null) =>
+    set((s) => (s.tabs[id] ? s : { tabs: { ...s.tabs, [id]: { ...DEFAULT_TAB, url, owner } } })),
   patch: (id, partial) =>
     set((s) => (s.tabs[id] ? { tabs: { ...s.tabs, [id]: { ...s.tabs[id], ...partial } } } : s)),
   remove: (id) =>

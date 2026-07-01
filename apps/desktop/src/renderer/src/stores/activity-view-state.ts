@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import type { SerializedDockview } from 'dockview-core'
-import { applyDockSnapshot, closeGhostMiniAppPanels, getDockSnapshot, isDockReady, setOnDockReady } from '@/components/activity/activity-panel-api'
+import { applyDockSnapshot, closeGhostMiniAppPanels, getDockSnapshot, isDockReady, setCurrentSessionIdGetter, setOnDockReady } from '@/components/activity/activity-panel-api'
 import { useActivityPanelStore } from './activity-panel'
 import { useMiniAppStore } from './miniapp'
 
@@ -91,6 +91,8 @@ export const useActivityViewStateStore = create<ActivityViewStateStore>((set, ge
 setOnDockReady(() => {
   useActivityViewStateStore.getState().flushPending()
 })
+
+setCurrentSessionIdGetter(() => useActivityViewStateStore.getState()._currentSessionId)
 
 export function isInstanceReferencedInSavedSessions(instanceKey: string): boolean {
   const panelId = `miniapp-${instanceKey}`

@@ -10,6 +10,13 @@ export const BROWSER_TOOL_NAMES = [
   'browser_click',
   'browser_type',
   'browser_navigate',
+  'browser_wait_for',
+  'browser_press',
+  'browser_scroll',
+  'browser_select',
+  'browser_open',
+  'browser_evaluate',
+  'browser_tabs',
 ] as const
 
 interface ScreenshotResult {
@@ -38,9 +45,9 @@ function errorReply(err: unknown): ToolReply {
   }
 }
 
-async function dataTool(op: BrowserAutomationOp, input: unknown): Promise<ToolReply> {
+async function dataTool(sessionId: string, op: BrowserAutomationOp, input: unknown): Promise<ToolReply> {
   try {
-    return textReply(await browserAutomationCall(op, input))
+    return textReply(await browserAutomationCall(sessionId, op, input))
   } catch (err) {
     return errorReply(err)
   }
@@ -53,7 +60,7 @@ const tabField = {
     .describe('Browser view id. Omit to target the focused browser view (errors if multiple are open).'),
 }
 
-export function registerBrowserTools(server: McpServer): void {
+export function registerBrowserTools(server: McpServer, sessionId: string): void {
   server.registerTool(
     'browser_snapshot',
     {
@@ -70,7 +77,7 @@ export function registerBrowserTools(server: McpServer): void {
         console: z.enum(['none', 'error', 'all']).default('error').describe("Console entries to include. Default 'error'."),
       },
     },
-    (args) => dataTool('snapshot', args),
+    (args) => dataTool(sessionId, 'snapshot', args),
   )
 
   server.registerTool(
@@ -92,7 +99,7 @@ export function registerBrowserTools(server: McpServer): void {
           .describe('Extra per-match fields beyond the lean reference. Omit for the cheapest result.'),
       },
     },
-    (args) => dataTool('query', args),
+    (args) => dataTool(sessionId, 'query', args),
   )
 
   server.registerTool(
@@ -110,7 +117,7 @@ export function registerBrowserTools(server: McpServer): void {
         maxChars: z.number().int().min(0).max(20000).default(4000).describe('Truncate text/html to this many characters.'),
       },
     },
-    (args) => dataTool('inspect', args),
+    (args) => dataTool(sessionId, 'inspect', args),
   )
 
   server.registerTool(
@@ -125,7 +132,7 @@ export function registerBrowserTools(server: McpServer): void {
     },
     async (args) => {
       try {
-        const result = (await browserAutomationCall('screenshot', args)) as ScreenshotResult
+        const result = (await browserAutomationCall(sessionId, 'screenshot', args)) as ScreenshotResult
         return {
           content: [{ type: 'image' as const, data: result.data, mimeType: result.mimeType }],
         }
@@ -148,7 +155,7 @@ export function registerBrowserTools(server: McpServer): void {
         y: z.number().optional().describe('Viewport Y coordinate in CSS pixels. Must be paired with x.'),
       },
     },
-    (args) => dataTool('click', args),
+    (args) => dataTool(sessionId, 'click', args),
   )
 
   server.registerTool(
@@ -163,23 +170,141 @@ export function registerBrowserTools(server: McpServer): void {
         clear: z.boolean().default(false).describe('Clear the existing value before typing. Default false.'),
       },
     },
-    (args) => dataTool('type', args),
+    (args) => dataTool(sessionId, 'type', args),
   )
 
   server.registerTool(
     'browser_navigate',
     {
       description:
-        'Navigate the browser to a URL or a local dev-server port. Provide exactly one of url or port. Waits for the page to stop loading by default.',
+        'Change the page the browser shows. Provide exactly one of: url (a website), port (a local dev-server on localhost), or action (back/forward/reload to move through history). Waits for the page to stop loading by default.',
       inputSchema: {
         ...tabField,
         url: z.string().optional().describe("Website URL, e.g. https://example.com. A schemeless host like 'example.com' gets https; loopback gets http."),
         port: z.number().int().min(1).max(65535).optional().describe('Local dev-server port on localhost.'),
         path: z.string().optional().describe("Optional path/query for the port form, e.g. '/settings'."),
         protocol: z.enum(['http', 'https']).optional().describe("Protocol for the port form. Defaults to http."),
+        action: z.enum(['back', 'forward', 'reload']).optional().describe('Move through history instead of loading a URL.'),
         readiness: z.enum(['load', 'none']).default('load').describe("'load' waits for loading to stop (default); 'none' returns immediately."),
       },
     },
-    (args) => dataTool('navigate', args),
+    (args) => {
+      const modes = Number(args.url != null) + Number(args.port != null) + Number(args.action != null)
+      if (modes !== 1) {
+        return Promise.resolve(errorReply('Provide exactly one of url, port, or action.'))
+      }
+      return dataTool(sessionId, 'navigate', args)
+    },
+  )
+
+  server.registerTool(
+    'browser_wait_for',
+    {
+      description:
+        'Block until the page reaches a desired state, then return. Provide at least one condition; all are AND-combined: a css selector that must be visible, a selector that must be gone (e.g. a loading spinner), a visible-text substring, and/or a URL substring. Use after click/type/navigate when the page changes asynchronously. Defaults to 15s, max 60s.',
+      inputSchema: {
+        ...tabField,
+        selector: z.string().optional().describe('CSS selector that must be present and visible.'),
+        selectorGone: z.string().optional().describe('CSS selector that must be absent or hidden (e.g. a spinner that should disappear).'),
+        text: z.string().optional().describe('Substring that must appear in visible document text.'),
+        urlIncludes: z.string().optional().describe('Substring that must appear in the current URL.'),
+        timeoutMs: z.number().int().min(100).max(60000).default(15000).describe('Maximum wait in milliseconds. Default 15000, max 60000.'),
+      },
+    },
+    (args) => {
+      if (args.selector == null && args.selectorGone == null && args.text == null && args.urlIncludes == null) {
+        return Promise.resolve(errorReply('Provide at least one wait condition (selector, selectorGone, text, or urlIncludes).'))
+      }
+      return dataTool(sessionId, 'wait_for', args)
+    },
+  )
+
+  server.registerTool(
+    'browser_press',
+    {
+      description:
+        "Press one keyboard key, e.g. { key: 'Enter' }, { key: 'Escape' }, or { key: 'a', modifiers: ['Meta'] }. Targets the element at selector, or the focused element if omitted. Note: dispatches synthetic key events (handlers that listen for them fire); Enter additionally submits the enclosing form when no modifiers are held.",
+      inputSchema: {
+        ...tabField,
+        key: z.string().min(1).describe("Key name such as Enter, Escape, Tab, ArrowDown, Backspace, or a single character."),
+        modifiers: z.array(z.enum(['Alt', 'Control', 'Meta', 'Shift'])).optional().describe('Modifier keys held while pressing.'),
+        selector: z.string().optional().describe('CSS selector of the key target. Omit to target the focused element.'),
+      },
+    },
+    (args) => dataTool(sessionId, 'press', args),
+  )
+
+  server.registerTool(
+    'browser_scroll',
+    {
+      description:
+        'Scroll by CSS pixels. Positive deltaY scrolls down, positive deltaX scrolls right. Without a selector it scrolls the viewport; with one it scrolls that container. Provide at least one delta. Useful to trigger lazy-loading or reveal off-screen elements.',
+      inputSchema: {
+        ...tabField,
+        deltaX: z.number().optional().describe('Horizontal scroll in CSS pixels. Positive scrolls right.'),
+        deltaY: z.number().optional().describe('Vertical scroll in CSS pixels. Positive scrolls down.'),
+        selector: z.string().optional().describe('CSS selector of a scrollable container. Omit to scroll the viewport.'),
+      },
+    },
+    (args) => {
+      if (args.deltaX == null && args.deltaY == null) {
+        return Promise.resolve(errorReply('Provide deltaX or deltaY.'))
+      }
+      return dataTool(sessionId, 'scroll', args)
+    },
+  )
+
+  server.registerTool(
+    'browser_select',
+    {
+      description:
+        'Set the value of a <select> dropdown (by value, visible label, or index) or toggle a checkbox/radio (by checked). Provide the selector plus exactly one of value, label, index, or checked. Dispatches native change events.',
+      inputSchema: {
+        ...tabField,
+        selector: z.string().describe('CSS selector of the <select>, checkbox, or radio.'),
+        value: z.string().optional().describe('Option value to select (for <select>).'),
+        label: z.string().optional().describe('Visible option text to select (for <select>); exact match preferred, falls back to substring.'),
+        index: z.number().int().min(0).optional().describe('Zero-based option index (for <select>).'),
+        checked: z.boolean().optional().describe('Desired checked state (for checkbox/radio). Defaults to true.'),
+      },
+    },
+    (args) => dataTool(sessionId, 'select', args),
+  )
+
+  server.registerTool(
+    'browser_open',
+    {
+      description:
+        'Open a new browser tab (optionally at a URL) and return its tab id. Use this when no browser is open yet, or to start a fresh page. Pass the returned tab id as the "tab" argument to the other browser tools. Waits for the page to stop loading by default.',
+      inputSchema: {
+        url: z.string().optional().describe("Initial URL. A schemeless host like 'example.com' gets https; loopback gets http. Defaults to a blank tab."),
+        tab: z.string().optional().describe('Existing browser tab id to reuse/focus instead of creating a new one.'),
+        readiness: z.enum(['load', 'none']).default('load').describe("'load' waits for loading to stop (default); 'none' returns as soon as the tab exists."),
+      },
+    },
+    (args) => dataTool(sessionId, 'open', args),
+  )
+
+  server.registerTool(
+    'browser_evaluate',
+    {
+      description:
+        'Evaluate a JavaScript expression in the page and return its serializable result (up to 64KB). Prefer snapshot and the semantic action tools; use evaluate only for inspection or interactions those tools cannot express. The expression runs in the page and may mutate its state. A returned Promise is awaited.',
+      inputSchema: {
+        ...tabField,
+        expression: z.string().min(1).max(64000).describe('JavaScript expression, e.g. document.title or (() => ({ items: [...document.querySelectorAll("li")].map(li => li.textContent) }))().'),
+      },
+    },
+    (args) => dataTool(sessionId, 'evaluate', args),
+  )
+
+  server.registerTool(
+    'browser_tabs',
+    {
+      description:
+        'List the browser tabs available to this session, each with its tab id, url, title, and loading state. Use the returned tab id as the "tab" argument to target a specific tab. Only tabs belonging to this session are listed.',
+      inputSchema: {},
+    },
+    () => dataTool(sessionId, 'tabs', {}),
   )
 }

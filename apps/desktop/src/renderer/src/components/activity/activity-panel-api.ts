@@ -8,6 +8,11 @@ import { normalizeFileLinkTarget } from '@/lib/file-link'
 let dockApi: DockviewApi | null = null
 let pendingAction: (() => void) | null = null
 let onDockReadyCb: (() => void) | null = null
+let currentSessionIdGetter: (() => string | null) | null = null
+
+export function setCurrentSessionIdGetter(getter: (() => string | null) | null) {
+  currentSessionIdGetter = getter
+}
 
 export function setDockApi(api: DockviewApi | null) {
   dockApi = api
@@ -147,14 +152,15 @@ export function closeMiniAppTab(instanceKey: string) {
   if (existing) existing.api.close()
 }
 
-export function openBrowserTab(url = 'about:blank', reuseId?: string) {
+export function openBrowserTab(url = 'about:blank', reuseId?: string, owner?: string | null) {
   const app = useAppStore.getState()
   if (app.layoutMode !== 'coding' && app.currentFolder) app.setLayoutMode('coding')
   ensureVisible()
+  const resolvedOwner = owner !== undefined ? owner : (currentSessionIdGetter?.() ?? null)
   execOrDefer(() => {
     if (!dockApi) return
     const browserId = reuseId ?? `browser-${crypto.randomUUID()}`
-    useBrowserStore.getState().ensure(browserId, normalizeUrl(url))
+    useBrowserStore.getState().ensure(browserId, normalizeUrl(url), resolvedOwner)
     const existing = dockApi.panels.find((p) => p.id === browserId)
     if (existing) {
       existing.api.setActive()

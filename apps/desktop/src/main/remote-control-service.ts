@@ -658,6 +658,7 @@ export interface RemoteControlCallbacks {
   onPairingAlreadyPaired?: (info: { deviceName: string }) => void
   onRelayStatusChanged?: (connected: boolean) => void
   onLanStatusChanged?: (active: boolean) => void
+  onLanUploadProgress?: (info: { savedPath: string; receivedBytes: number; done: boolean; error?: string }) => void
   isPairedDevice?: (deviceId: string) => boolean
 }
 
@@ -756,8 +757,8 @@ export class RemoteControlService {
     return signRelayUploadUrl(this.relayFileContext(), key)
   }
 
-  async downloadAndDecryptRelayFile(key: string): Promise<Buffer> {
-    return downloadAndDecryptRelayFile(this.relayFileContext(), key)
+  async downloadAndDecryptRelayFile(key: string, onProgress?: (loadedFraction: number) => void): Promise<Buffer> {
+    return downloadAndDecryptRelayFile(this.relayFileContext(), key, onProgress)
   }
 
   async deleteRelayFile(key: string): Promise<void> {
@@ -881,6 +882,7 @@ export class RemoteControlService {
       onClientRegistered: ({ deviceName, deviceId }) => this.markDeviceOnline(deviceName, deviceId, 'lan'),
       onClientDisconnected: ({ deviceId }) => this.markDeviceOffline(deviceId, 'lan'),
       getFileTokenSigner: () => this.fileTokenSigner,
+      onUploadProgress: (info) => this.callbacks.onLanUploadProgress?.(info),
     })
     try {
       const { port } = await server.start()

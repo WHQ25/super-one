@@ -1016,6 +1016,15 @@ const appAPI = {
       ipcRenderer.removeListener(AgentIpcChannels.REMOTE_DEVICE_STATUS_CHANGED, handler)
     }
   },
+  onUploadProgress: (callback: (progress: import('@superone/shared/agent-types').MobileUploadProgress) => void) => {
+    const handler = (_ipcEvent: Electron.IpcRendererEvent, progress: import('@superone/shared/agent-types').MobileUploadProgress): void => {
+      callback(progress)
+    }
+    ipcRenderer.on(AgentIpcChannels.REMOTE_UPLOAD_PROGRESS, handler)
+    return () => {
+      ipcRenderer.removeListener(AgentIpcChannels.REMOTE_UPLOAD_PROGRESS, handler)
+    }
+  },
   startPairing: (): Promise<{ channelId: string; tempKeyHex: string; relayUrl: string }> =>
     ipcRenderer.invoke(AgentIpcChannels.REMOTE_START_PAIRING),
   confirmPairing: (code: string): Promise<void> =>

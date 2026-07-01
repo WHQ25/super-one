@@ -1987,6 +1987,7 @@ export const AgentIpcChannels = {
   REMOTE_LIST_PAIRED: 'remote:list-paired',
   REMOTE_REMOVE_PAIRED: 'remote:remove-paired',
   REMOTE_DEVICE_STATUS_CHANGED: 'remote:device-status-changed',
+  REMOTE_UPLOAD_PROGRESS: 'remote:upload-progress',
   REMOTE_START_PAIRING: 'remote:start-pairing',
   REMOTE_CONFIRM_PAIRING: 'remote:confirm-pairing',
   REMOTE_CANCEL_PAIRING: 'remote:cancel-pairing',
@@ -2229,6 +2230,20 @@ export interface RemoteDeviceStatus {
   name?: string
   transport?: 'lan' | 'relay'
   firstConnect?: boolean
+}
+
+export interface MobileUploadProgress {
+  requestId: string
+  deviceId: string
+  deviceName?: string
+  fileName: string
+  targetDir: string
+  savedPath?: string
+  size: number
+  receivedBytes: number
+  status: 'receiving' | 'completed' | 'failed'
+  transport: 'inline' | 'lan' | 'relay'
+  error?: string
 }
 
 export interface RemoteDeviceConfig {

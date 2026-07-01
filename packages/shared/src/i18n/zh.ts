@@ -46,6 +46,12 @@ export const zh: Messages = {
       deviceConnectedToast: '{{name}} 已连接',
       lanActive: '已就绪',
       lanInactive: '未就绪',
+      upload: {
+        receiving: '正在接收文件',
+        completed: '文件已接收',
+        failed: '传输失败',
+        route: '{{device}} → {{dir}}',
+      },
     },
     deleteSession: {
       title: '删除会话？',

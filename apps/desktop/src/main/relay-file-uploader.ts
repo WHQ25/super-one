@@ -182,7 +182,11 @@ export async function signRelayUploadUrl(context: RelayFileUploadContext, key: s
   })
 }
 
-export async function downloadAndDecryptRelayFile(context: RelayFileUploadContext, key: string): Promise<Buffer> {
+export async function downloadAndDecryptRelayFile(
+  context: RelayFileUploadContext,
+  key: string,
+  onProgress?: (loadedFraction: number) => void,
+): Promise<Buffer> {
   const { url } = await fetchDownloadUrl({
     relayHttpUrl: context.relayHttpUrl,
     channelKeyHex: context.channelKeyHex,
@@ -192,9 +196,36 @@ export async function downloadAndDecryptRelayFile(context: RelayFileUploadContex
   if (!res.ok) {
     throw new RelayUploadError(`R2 GET failed: ${res.status} ${await safeText(res)}`, res.status)
   }
-  const encrypted = new Uint8Array(await res.arrayBuffer())
+  const encrypted = onProgress && res.body
+    ? await readBodyWithProgress(res, onProgress)
+    : new Uint8Array(await res.arrayBuffer())
   const decrypted = await decryptBytesChunked(context.aesKey, encrypted, key, context.channelKeyHex)
   return Buffer.from(decrypted)
+}
+
+async function readBodyWithProgress(
+  res: Response,
+  onProgress: (loadedFraction: number) => void,
+): Promise<Uint8Array> {
+  const total = Number(res.headers.get('content-length')) || 0
+  const reader = res.body!.getReader()
+  const chunks: Uint8Array[] = []
+  let received = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    chunks.push(value)
+    received += value.length
+    onProgress(total > 0 ? received / total : 0)
+  }
+  const out = new Uint8Array(received)
+  let offset = 0
+  for (const chunk of chunks) {
+    out.set(chunk, offset)
+    offset += chunk.length
+  }
+  onProgress(1)
+  return out
 }
 
 export async function deleteRelayFile(context: RelayFileUploadContext, key: string): Promise<void> {

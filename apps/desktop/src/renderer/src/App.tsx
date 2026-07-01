@@ -35,6 +35,7 @@ import { useStandaloneToolCallRouter } from '@/hooks/useStandaloneToolCallRouter
 import { GitAutoRefresh } from '@/hooks/useGitAutoRefresh'
 import { useTheme } from '@/hooks/useTheme'
 import { useHarnessTheme } from '@/hooks/useHarnessTheme'
+import { useMobileUploadToasts } from '@/hooks/useMobileUploadToasts'
 import { useAppStore, startProjectMirror } from '@/stores/app'
 import { useDevToolsStore } from '@/stores/dev-tools'
 import { useActivityPanelStore } from '@/stores/activity-panel'
@@ -64,6 +65,7 @@ function App(): React.JSX.Element {
   useAgentEvents()
   useRemoteControl()
   useHarnessTheme()
+  useMobileUploadToasts()
   useStandaloneToolCallRouter()
   const devReactScan = useDevToolsStore((s) => s.reactScan)
   useReactScan(devReactScan)

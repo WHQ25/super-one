@@ -44,6 +44,12 @@ export type Messages = {
       deviceConnectedToast: string
       lanActive: string
       lanInactive: string
+      upload: {
+        receiving: string
+        completed: string
+        failed: string
+        route: string
+      }
     }
     deleteSession: {
       title: string
@@ -1400,6 +1406,12 @@ export const en: Messages = {
       deviceConnectedToast: '{{name}} connected',
       lanActive: 'Active',
       lanInactive: 'Inactive',
+      upload: {
+        receiving: 'Receiving file',
+        completed: 'File received',
+        failed: 'Transfer failed',
+        route: '{{device}} → {{dir}}',
+      },
     },
     deleteSession: {
       title: 'Delete Session?',

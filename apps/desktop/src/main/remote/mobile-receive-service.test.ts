@@ -27,6 +27,7 @@ function makeDeps(overrides: Partial<MobileReceiveServiceDeps> = {}): MobileRece
     signRelayUploadUrl: vi.fn(async () => 'https://r2.example/put?sig=1'),
     downloadAndDecryptRelayFile: vi.fn(async () => Buffer.from('decrypted-bytes')),
     deleteRelayFile: vi.fn(async () => {}),
+    emitProgress: vi.fn(),
     now: () => 1000,
     ...overrides,
   }
@@ -84,7 +85,7 @@ describe('MobileReceiveService', () => {
     if (res.ok) {
       expect(readFileSync(res.savedPath, 'utf8')).toBe('decrypted-bytes')
     }
-    expect(deps.downloadAndDecryptRelayFile).toHaveBeenCalledWith('files/room/deadbeef.bin')
+    expect(deps.downloadAndDecryptRelayFile).toHaveBeenCalledWith('files/room/deadbeef.bin', expect.any(Function))
     expect(deps.deleteRelayFile).toHaveBeenCalledWith('files/room/deadbeef.bin')
   })
 
@@ -106,6 +107,36 @@ describe('MobileReceiveService', () => {
     })
     expect(res.ok).toBe(false)
     if (!res.ok) expect(res.error).toBe('forbidden_path')
+  })
+
+  it('emits receiving then completed progress for inline uploads', async () => {
+    const emitProgress = vi.fn()
+    deps = makeDeps({ emitProgress })
+    service = new MobileReceiveService(deps)
+    await service.handleUploadFile({
+      requestId: 'p1', targetDir: projectRoot, name: 'note.txt', mimeType: 'text/plain', size: 5,
+      inlineBase64: Buffer.from('hello').toString('base64'),
+    })
+    expect(emitProgress).toHaveBeenNthCalledWith(1, expect.objectContaining({ requestId: 'p1', status: 'receiving', transport: 'inline' }))
+    expect(emitProgress).toHaveBeenNthCalledWith(2, expect.objectContaining({ requestId: 'p1', status: 'completed', receivedBytes: 5 }))
+  })
+
+  it('emits LAN progress keyed by savedPath from the lan-server callback', async () => {
+    const emitProgress = vi.fn()
+    deps = makeDeps({ emitProgress })
+    service = new MobileReceiveService(deps)
+    const res = await service.handleUploadFile({
+      requestId: 'p2', targetDir: projectRoot, name: 'big.bin', mimeType: 'application/octet-stream', size: 1000,
+      transport: 'lan',
+    })
+    expect(res.ok && res.status).toBe('need_lan_put')
+    const savedPath = res.ok && res.status === 'need_lan_put' ? res.savedPath : ''
+    service.handleLanUploadProgress({ savedPath, receivedBytes: 500, done: false })
+    service.handleLanUploadProgress({ savedPath, receivedBytes: 1000, done: true })
+    expect(emitProgress).toHaveBeenCalledWith(expect.objectContaining({ requestId: 'p2', status: 'receiving', receivedBytes: 500, transport: 'lan' }))
+    expect(emitProgress).toHaveBeenCalledWith(expect.objectContaining({ requestId: 'p2', status: 'completed', receivedBytes: 1000 }))
+    service.handleLanUploadProgress({ savedPath, receivedBytes: 1000, done: true })
+    expect(emitProgress).toHaveBeenCalledTimes(3)
   })
 
   it('rejects when no session target resolves', async () => {

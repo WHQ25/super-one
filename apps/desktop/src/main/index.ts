@@ -274,6 +274,7 @@ const remoteCallbacks: RemoteControlCallbacks = {
   onLanStatusChanged: (active) => {
     safeSend(AgentIpcChannels.REMOTE_LAN_STATUS, active)
   },
+  onLanUploadProgress: (info) => mobileReceiveService.handleLanUploadProgress(info),
   isPairedDevice: (deviceId) => isPairedDevice(deviceId),
 }
 declare const __CF_RELAY_URL__: string
@@ -337,6 +338,7 @@ const mobileReceiveService = new MobileReceiveService({
     if (!deviceId) return null
     return {
       deviceId,
+      deviceName: remoteControlService.getOnlineDevices().get(deviceId)?.name,
       projectPath: session.projectPath,
       allowedRoots: [session.projectPath, ...session.getAdditionalDirectoriesSnapshot()],
     }
@@ -344,8 +346,9 @@ const mobileReceiveService = new MobileReceiveService({
   signLanUploadUrl: (savedPath) => remoteControlService.signLanUploadUrl(savedPath, { ttlMs: 60_000 }),
   computeRelayKey: (name) => remoteControlService.computeRelayUploadKey(name),
   signRelayUploadUrl: (key) => remoteControlService.signRelayUploadUrl(key),
-  downloadAndDecryptRelayFile: (key) => remoteControlService.downloadAndDecryptRelayFile(key),
+  downloadAndDecryptRelayFile: (key, onProgress) => remoteControlService.downloadAndDecryptRelayFile(key, onProgress),
   deleteRelayFile: (key) => remoteControlService.deleteRelayFile(key),
+  emitProgress: (event) => safeSend(AgentIpcChannels.REMOTE_UPLOAD_PROGRESS, event),
   now: () => Date.now(),
 })
 agentService.setMobileReceiveService(mobileReceiveService)

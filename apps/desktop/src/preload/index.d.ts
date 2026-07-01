@@ -339,6 +339,7 @@ interface AppAPI {
   listPairedDevices(): Promise<import('@superone/shared/agent-types').PairedDevice[]>
   removePairedDevice(id: string): Promise<void>
   onDeviceStatusChanged(callback: (device: import('@superone/shared/agent-types').RemoteDeviceStatus) => void): () => void
+  onUploadProgress(callback: (progress: import('@superone/shared/agent-types').MobileUploadProgress) => void): () => void
   startPairing(): Promise<{ channelId: string; tempKeyHex: string; relayUrl: string }>
   confirmPairing(code: string): Promise<void>
   cancelPairing(): Promise<void>

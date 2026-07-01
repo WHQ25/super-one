@@ -4,6 +4,7 @@ import { networkInterfaces } from 'node:os'
 import { webcrypto } from 'node:crypto'
 import { createReadStream, createWriteStream, statSync } from 'node:fs'
 import { pipeline } from 'node:stream/promises'
+import { Transform } from 'node:stream'
 import { WebSocket, WebSocketServer } from 'ws'
 import log from './logger'
 import { trace } from './agent/event-trace'
@@ -40,6 +41,7 @@ export interface LanServerCallbacks {
   onClientRegistered?: (info: { deviceName: string; deviceId: string }) => void
   onClientDisconnected?: (info: { deviceId: string }) => void
   getFileTokenSigner?: () => LanFileTokenSigner | null
+  onUploadProgress?: (info: { savedPath: string; receivedBytes: number; done: boolean; error?: string }) => void
 }
 
 interface ClientState {
@@ -421,10 +423,29 @@ export class LanServer {
       res.end('Invalid or expired token')
       return
     }
+    const onProgress = this.callbacks.onUploadProgress
     try {
-      await pipeline(req, createWriteStream(payload.path))
+      if (onProgress) {
+        let received = 0
+        let lastReported = 0
+        const counter = new Transform({
+          transform(chunk: Buffer, _enc, cb) {
+            received += chunk.length
+            if (received - lastReported >= 65_536) {
+              lastReported = received
+              onProgress({ savedPath: payload.path, receivedBytes: received, done: false })
+            }
+            cb(null, chunk)
+          },
+        })
+        await pipeline(req, counter, createWriteStream(payload.path))
+        onProgress({ savedPath: payload.path, receivedBytes: received, done: true })
+      } else {
+        await pipeline(req, createWriteStream(payload.path))
+      }
     } catch (err) {
       log.error('[LanServer] upload write failed:', err)
+      onProgress?.({ savedPath: payload.path, receivedBytes: 0, done: true, error: (err as Error).message })
       if (!res.headersSent) {
         res.writeHead(500)
         res.end('Write failed')

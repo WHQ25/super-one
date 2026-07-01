@@ -35,7 +35,18 @@ const hoisted = vi.hoisted(() => {
     _historyHydrated: true,
     awaitingAssistantReply: false,
   }
-  return { sessionState, isRemoteLocked: { value: false } }
+  const scope: { value: { projectPath: string; sessionId: string } | null } = { value: null }
+  // Counts distinct scroll-area DOM nodes ever mounted. A key change forces React
+  // to unmount the old node and mount a new one, so a fresh node = a remount.
+  const seenScrollNodes = new WeakSet<object>()
+  const scrollMounts = { count: 0 }
+  const onScrollMount = (el: HTMLElement | null): void => {
+    if (el && !seenScrollNodes.has(el)) {
+      seenScrollNodes.add(el)
+      scrollMounts.count++
+    }
+  }
+  return { sessionState, isRemoteLocked: { value: false }, scope, scrollMounts, onScrollMount }
 })
 
 vi.mock('@/stores/chat', () => ({
@@ -49,7 +60,7 @@ vi.mock('@/stores/chat', () => ({
   ),
   useActiveSession: (selector: (s: FakeSessionState) => unknown) => selector(hoisted.sessionState),
   useIsRemoteLocked: () => hoisted.isRemoteLocked.value,
-  useSessionScope: () => null,
+  useSessionScope: () => hoisted.scope.value,
 }))
 
 vi.mock('zustand/react/shallow', () => ({
@@ -63,8 +74,15 @@ vi.mock('motion/react', () => ({
   }),
 }))
 
-vi.mock('@/components/ui/scroll-area', () => ({
-  ScrollArea: ({ children }: { children: React.ReactNode }) => <div data-testid="scroll-area">{children}</div>,
+vi.mock('@superone/ui/components/ui/scroll-area', () => ({
+  ScrollArea: ({ children, viewportRef }: { children: React.ReactNode; viewportRef?: React.RefObject<HTMLDivElement | null> }) => (
+    <div
+      data-testid="scroll-area"
+      ref={(el) => { hoisted.onScrollMount(el); if (viewportRef) viewportRef.current = el }}
+    >
+      {children}
+    </div>
+  ),
 }))
 
 vi.mock('./ChatInput', () => ({ ChatInput: () => <div data-testid="chat-input" /> }))
@@ -201,5 +219,53 @@ describe('ChatContent empty-state gate is harness-agnostic', () => {
 
     expect(screen.queryByTestId('chat-suggestions')).toBeNull()
     expect(screen.getByTestId('chat-message')).toBeInTheDocument()
+  })
+})
+
+describe('ChatContent scroll-area key follows the pane-displayed session (mosaic focus flash)', () => {
+  function baseState() {
+    hoisted.sessionState._worktreeRemoved = false
+    hoisted.sessionState.pendingPlanApproval = null
+    hoisted.sessionState.status = 'idle'
+    hoisted.sessionState.awaitingAssistantReply = false
+    hoisted.sessionState._historyHydrated = true
+    hoisted.sessionState.messages = [{ id: 'm1' }]
+    hoisted.sessionState.session = { sessionId: 'sid-1' }
+    hoisted.isRemoteLocked.value = false
+    hoisted.scrollMounts.count = 0
+  }
+
+  it('does NOT remount the scroll area when the project active session changes while the pane is scoped to a fixed session', () => {
+    baseState()
+    // Mosaic pane: content is pinned to sid-1 via scope, regardless of which session is project-active.
+    hoisted.scope.value = { projectPath: '/p', sessionId: 'sid-1' }
+    hoisted.sessionState._activeSessionId = 'sid-1'
+
+    const ref = createRef<HTMLDivElement>()
+    const { rerender } = render(<ChatContent scrollViewportRef={ref} />)
+    const mountsAfterFirst = hoisted.scrollMounts.count
+    expect(mountsAfterFirst).toBe(1)
+
+    // Focusing another pane flips the project-level _activeSessionId — this pane must stay put.
+    hoisted.sessionState._activeSessionId = 'sid-2'
+    rerender(<ChatContent scrollViewportRef={ref} />)
+
+    expect(hoisted.scrollMounts.count).toBe(mountsAfterFirst)
+  })
+
+  it('DOES remount the scroll area when the displayed session changes in unscoped (single) mode', () => {
+    baseState()
+    hoisted.scope.value = null
+    hoisted.sessionState._activeSessionId = 'sid-1'
+
+    const ref = createRef<HTMLDivElement>()
+    const { rerender } = render(<ChatContent scrollViewportRef={ref} />)
+    const mountsAfterFirst = hoisted.scrollMounts.count
+    expect(mountsAfterFirst).toBe(1)
+
+    hoisted.sessionState._activeSessionId = 'sid-2'
+    rerender(<ChatContent scrollViewportRef={ref} />)
+
+    expect(hoisted.scrollMounts.count).toBe(mountsAfterFirst + 1)
   })
 })

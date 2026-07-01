@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect, useLayoutEffect, useMemo, useCallback, lazy, Suspense } from 'react'
-import { useChatStore, useActiveSession, useIsRemoteLocked } from '@/stores/chat'
+import { useChatStore, useActiveSession, useIsRemoteLocked, useSessionScope } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 import { useShallow } from 'zustand/react/shallow'
 import { ScrollArea } from '@superone/ui/components/ui/scroll-area'
@@ -54,6 +54,8 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
     queuedMessages: s.queuedMessages,
     awaitingAssistantReply: s.awaitingAssistantReply,
   })))
+  const scope = useSessionScope()
+  const displayedSessionId = scope?.sessionId ?? historySessionId
   const liquidGlass = useAppStore((s) => s.liquidGlass)
   const { editQueuedMessage, deleteQueuedMessage, disconnectRemoteSession, dismissCompactError } = useChatStore(useShallow((s) => ({
     editQueuedMessage: s.editQueuedMessage,
@@ -105,7 +107,7 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
   const LOAD_MORE_COUNT = 4
   const [renderCount, setRenderCount] = useState(INITIAL_RENDER_COUNT)
   const sentinelRef = useRef<HTMLDivElement>(null)
-  useEffect(() => { setRenderCount(INITIAL_RENDER_COUNT) }, [historySessionId])
+  useEffect(() => { setRenderCount(INITIAL_RENDER_COUNT) }, [displayedSessionId])
   const hasMore = renderCount < visibleMessages.length
   const renderedMessages = hasMore ? visibleMessages.slice(-renderCount) : visibleMessages
 
@@ -251,7 +253,7 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
             {messages.length === 0 && historyHydrated && sessionStatus !== 'streaming' && sessionStatus !== 'background' && !awaitingAssistantReply ? (
               <ChatSuggestions />
             ) : (
-              <ScrollArea key={historySessionId ?? 'default'} className="chat-scroll-area h-full min-w-0 animate-[fade-in_150ms_ease-out]" viewportRef={scrollViewportRef}>
+              <ScrollArea key={displayedSessionId ?? 'default'} className="chat-scroll-area h-full min-w-0 animate-[fade-in_150ms_ease-out]" viewportRef={scrollViewportRef}>
                 <SelectionContextMenuZone className="mx-auto flex w-full min-w-0 max-w-3xl flex-col gap-1 p-3 @lg:gap-1.5 @lg:p-3.5 @2xl:gap-1.5 @2xl:p-4">
                   {hasMore && <div ref={sentinelRef} className="h-px" style={{ overflowAnchor: 'none' }} />}
                   {renderedMessages.map((msg) => {

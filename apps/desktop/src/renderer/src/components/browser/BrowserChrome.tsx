@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowLeft, ArrowRight, RotateCw, ExternalLink, Camera, SquareDashedMousePointer, MoreHorizontal } from 'lucide-react'
+import { ArrowLeft, ArrowRight, RotateCw, ExternalLink, Camera, SquareDashedMousePointer, MoreHorizontal, Code } from 'lucide-react'
 import { motion } from 'motion/react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { cn } from '@superone/ui/lib/utils'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@superone/ui/components/ui/tooltip'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@superone/ui/components/ui/dropdown-menu'
 import { useBrowserStore } from '@/stores/browser'
-import { browserCapture } from './browser-host-api'
+import { browserCapture, browserOpenDevTools } from './browser-host-api'
 import { isBlankUrl } from './browser-url'
 
 interface BrowserChromeProps {
@@ -81,7 +82,8 @@ export function BrowserChrome({ browserId, onNavigate, onBack, onForward, onRelo
           placeholder={t('chat.browser.addressPlaceholder')}
           className={cn(
             'h-6 w-full rounded-md bg-transparent px-1.5 text-xs text-foreground outline-none transition-all hover:bg-muted focus:bg-muted focus:ring-1 focus:ring-border/60',
-            editing ? 'text-left group-hover:pr-7' : 'text-center',
+            !isHome && url && 'group-hover:pr-7',
+            editing ? 'text-left' : 'text-center',
           )}
         />
         {!isHome && url && (
@@ -141,9 +143,19 @@ export function BrowserChrome({ browserId, onNavigate, onBack, onForward, onRelo
             </IconButton>
           </>
         ))}
-      <IconButton size="xs" variant="ghost" tooltip="More">
-        <MoreHorizontal className="size-3.5" />
-      </IconButton>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <IconButton size="xs" variant="ghost" tooltip="More">
+            <MoreHorizontal className="size-3.5" />
+          </IconButton>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onSelect={() => browserOpenDevTools(browserId)}>
+            <Code className="size-3.5" />
+            Open DevTools
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   )
 }

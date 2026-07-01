@@ -1,6 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import { browserAutomationCall, type BrowserAutomationOp } from '../browser/browser-automation-bridge'
+import { persistScreenshot } from '../agent/browser-screenshot-store'
 
 export const BROWSER_TOOL_NAMES = [
   'browser_snapshot',
@@ -60,6 +61,15 @@ const tabField = {
     .describe('Browser view id. Omit to target the focused browser view (errors if multiple are open).'),
 }
 
+const descriptionField = {
+  description: z
+    .string()
+    .optional()
+    .describe(
+      "A short, human-friendly explanation of what this action accomplishes, phrased for the end user watching (e.g. 'Fill in the login email', 'Submit the checkout form'). Shown in the UI in place of the raw selector. Write it in the conversation's language.",
+    ),
+}
+
 export function registerBrowserTools(server: McpServer, sessionId: string): void {
   server.registerTool(
     'browser_snapshot',
@@ -87,6 +97,7 @@ export function registerBrowserTools(server: McpServer, sessionId: string): void
         'Find elements on the page by structured criteria. Combine role, text, css selector, and attribute matchers. Returns matching elements with reusable selectors plus the total match count. Use this instead of snapshot when you already know what you are looking for.',
       inputSchema: {
         ...tabField,
+        ...descriptionField,
         role: z.string().optional().describe("Match ARIA role or tag name, e.g. 'button', 'textbox', 'link'."),
         text: z.string().optional().describe("Case-insensitive substring in the element's accessible name or text."),
         selector: z.string().optional().describe('CSS selector to match. Combine with role/text or use alone.'),
@@ -109,6 +120,7 @@ export function registerBrowserTools(server: McpServer, sessionId: string): void
         'Get detail on one element identified by a CSS selector (typically from a snapshot or query result). Choose which fields to return; "context" adds the ancestor chain, associated labels, and the enclosing form.',
       inputSchema: {
         ...tabField,
+        ...descriptionField,
         selector: z.string().describe('CSS selector of the element to inspect.'),
         fields: z
           .array(z.enum(['text', 'html', 'attributes', 'value', 'box', 'styles', 'context']))
@@ -124,18 +136,19 @@ export function registerBrowserTools(server: McpServer, sessionId: string): void
     'browser_screenshot',
     {
       description:
-        'Capture a PNG screenshot of the browser page, or of one element when a selector is given. Use only when text-based inspection is not enough — screenshots are expensive.',
+        'Capture a PNG screenshot of the browser page (or one element when a selector is given), save it to disk, and return its file path plus width/height. The image is NOT loaded into your context automatically — if you actually need to look at it, call Read on the returned path. Prefer the text tools (snapshot/query/inspect) first; use a screenshot when pixels matter or to leave a visual record for the user.',
       inputSchema: {
         ...tabField,
+        ...descriptionField,
         selector: z.string().optional().describe('CSS selector to screenshot just that element. Omit for the full viewport.'),
       },
     },
     async (args) => {
       try {
         const result = (await browserAutomationCall(sessionId, 'screenshot', args)) as ScreenshotResult
-        return {
-          content: [{ type: 'image' as const, data: result.data, mimeType: result.mimeType }],
-        }
+        const path = persistScreenshot(result.data, result.mimeType)
+        if (!path) return errorReply('Failed to save screenshot to disk.')
+        return textReply({ path, width: result.width, height: result.height })
       } catch (err) {
         return errorReply(err)
       }
@@ -149,6 +162,7 @@ export function registerBrowserTools(server: McpServer, sessionId: string): void
         'Click one element. Prefer selector with a CSS selector from snapshot/query. Alternatively pass text to click the first matching visible element, or x/y viewport coordinates. Provide exactly one targeting mode.',
       inputSchema: {
         ...tabField,
+        ...descriptionField,
         selector: z.string().optional().describe('CSS selector of the element to click.'),
         text: z.string().optional().describe('Click the first visible element whose accessible name or text contains this substring.'),
         x: z.number().optional().describe('Viewport X coordinate in CSS pixels. Must be paired with y.'),
@@ -165,6 +179,7 @@ export function registerBrowserTools(server: McpServer, sessionId: string): void
         'Type text into an input. Prefer selector with a CSS selector; if omitted, types into the currently focused element. Set clear=true to replace existing text. Dispatches native input/change events so framework-controlled inputs update.',
       inputSchema: {
         ...tabField,
+        ...descriptionField,
         text: z.string().describe('Literal text to insert.'),
         selector: z.string().optional().describe('CSS selector of the input. Omit to type into the focused element.'),
         clear: z.boolean().default(false).describe('Clear the existing value before typing. Default false.'),
@@ -180,6 +195,7 @@ export function registerBrowserTools(server: McpServer, sessionId: string): void
         'Change the page the browser shows. Provide exactly one of: url (a website), port (a local dev-server on localhost), or action (back/forward/reload to move through history). Waits for the page to stop loading by default.',
       inputSchema: {
         ...tabField,
+        ...descriptionField,
         url: z.string().optional().describe("Website URL, e.g. https://example.com. A schemeless host like 'example.com' gets https; loopback gets http."),
         port: z.number().int().min(1).max(65535).optional().describe('Local dev-server port on localhost.'),
         path: z.string().optional().describe("Optional path/query for the port form, e.g. '/settings'."),
@@ -204,6 +220,7 @@ export function registerBrowserTools(server: McpServer, sessionId: string): void
         'Block until the page reaches a desired state, then return. Provide at least one condition; all are AND-combined: a css selector that must be visible, a selector that must be gone (e.g. a loading spinner), a visible-text substring, and/or a URL substring. Use after click/type/navigate when the page changes asynchronously. Defaults to 15s, max 60s.',
       inputSchema: {
         ...tabField,
+        ...descriptionField,
         selector: z.string().optional().describe('CSS selector that must be present and visible.'),
         selectorGone: z.string().optional().describe('CSS selector that must be absent or hidden (e.g. a spinner that should disappear).'),
         text: z.string().optional().describe('Substring that must appear in visible document text.'),
@@ -226,6 +243,7 @@ export function registerBrowserTools(server: McpServer, sessionId: string): void
         "Press one keyboard key, e.g. { key: 'Enter' }, { key: 'Escape' }, or { key: 'a', modifiers: ['Meta'] }. Targets the element at selector, or the focused element if omitted. Note: dispatches synthetic key events (handlers that listen for them fire); Enter additionally submits the enclosing form when no modifiers are held.",
       inputSchema: {
         ...tabField,
+        ...descriptionField,
         key: z.string().min(1).describe("Key name such as Enter, Escape, Tab, ArrowDown, Backspace, or a single character."),
         modifiers: z.array(z.enum(['Alt', 'Control', 'Meta', 'Shift'])).optional().describe('Modifier keys held while pressing.'),
         selector: z.string().optional().describe('CSS selector of the key target. Omit to target the focused element.'),
@@ -241,6 +259,7 @@ export function registerBrowserTools(server: McpServer, sessionId: string): void
         'Scroll by CSS pixels. Positive deltaY scrolls down, positive deltaX scrolls right. Without a selector it scrolls the viewport; with one it scrolls that container. Provide at least one delta. Useful to trigger lazy-loading or reveal off-screen elements.',
       inputSchema: {
         ...tabField,
+        ...descriptionField,
         deltaX: z.number().optional().describe('Horizontal scroll in CSS pixels. Positive scrolls right.'),
         deltaY: z.number().optional().describe('Vertical scroll in CSS pixels. Positive scrolls down.'),
         selector: z.string().optional().describe('CSS selector of a scrollable container. Omit to scroll the viewport.'),
@@ -261,6 +280,7 @@ export function registerBrowserTools(server: McpServer, sessionId: string): void
         'Set the value of a <select> dropdown (by value, visible label, or index) or toggle a checkbox/radio (by checked). Provide the selector plus exactly one of value, label, index, or checked. Dispatches native change events.',
       inputSchema: {
         ...tabField,
+        ...descriptionField,
         selector: z.string().describe('CSS selector of the <select>, checkbox, or radio.'),
         value: z.string().optional().describe('Option value to select (for <select>).'),
         label: z.string().optional().describe('Visible option text to select (for <select>); exact match preferred, falls back to substring.'),
@@ -277,6 +297,7 @@ export function registerBrowserTools(server: McpServer, sessionId: string): void
       description:
         'Open a new browser tab (optionally at a URL) and return its tab id. Use this when no browser is open yet, or to start a fresh page. Pass the returned tab id as the "tab" argument to the other browser tools. Waits for the page to stop loading by default.',
       inputSchema: {
+        ...descriptionField,
         url: z.string().optional().describe("Initial URL. A schemeless host like 'example.com' gets https; loopback gets http. Defaults to a blank tab."),
         tab: z.string().optional().describe('Existing browser tab id to reuse/focus instead of creating a new one.'),
         readiness: z.enum(['load', 'none']).default('load').describe("'load' waits for loading to stop (default); 'none' returns as soon as the tab exists."),
@@ -292,6 +313,7 @@ export function registerBrowserTools(server: McpServer, sessionId: string): void
         'Evaluate a JavaScript expression in the page and return its serializable result (up to 64KB). Prefer snapshot and the semantic action tools; use evaluate only for inspection or interactions those tools cannot express. The expression runs in the page and may mutate its state. A returned Promise is awaited.',
       inputSchema: {
         ...tabField,
+        ...descriptionField,
         expression: z.string().min(1).max(64000).describe('JavaScript expression, e.g. document.title or (() => ({ items: [...document.querySelectorAll("li")].map(li => li.textContent) }))().'),
       },
     },

@@ -11,9 +11,10 @@ import { useSettingsStore } from '@/stores/settings'
 import { useSourceControlStore } from '@/stores/source-control'
 import { ToolIcon } from './ToolIcon'
 import { DraggableFileIcon } from './DraggableFileIcon'
-import { HighlightedCodeBlock } from './CodeBlock'
 import { getToolDisplay, getToolVerb, parseToolInput, parseMcpToolName, isHiddenToolBlock, formatReadMeta, type ToolIcon as ToolIconType } from './tool-display'
-import { codePlugin } from './chat-shared'
+import { PrettyJSONCodeBlock } from './tool-result-views'
+import { BrowserToolBlock } from './BrowserToolBlock'
+import { getBrowserOp } from './browser-tool-display'
 import { useStallLevel, getStallColor } from '@/lib/stall-utils'
 import { AnsiText } from '@/lib/ansi'
 import { countUnifiedDiffDelta, countPrefixedDiffDelta, computeLineDelta, computeStreamingEditDelta, tryPrettifyJson, parseQAPairs, extractToolError } from './tool-block-utils'
@@ -381,6 +382,21 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
   }
 
   if (mcpInfo?.serverName === SUPERONE_SERVER) {
+    const browserOp = getBrowserOp(mcpInfo.mcpToolName)
+    if (browserOp) {
+      return (
+        <BrowserToolBlock
+          op={browserOp}
+          params={params}
+          result={cleanResult}
+          isStreaming={isStreaming}
+          isError={isError}
+          isDenied={isDenied}
+          elapsedSeconds={elapsedSeconds}
+          stallLevel={stallLevel}
+        />
+      )
+    }
     const superoneToolDisplay: Record<string, { icon: ToolIconType; streaming: string; done: string; summaryField?: string }> = {
       miniapp_dev_read_guide: { icon: 'book-open', streaming: t('chat.toolBlock.readingMiniAppGuide'), done: t('chat.toolBlock.readMiniAppGuide'), summaryField: 'topic' },
     }
@@ -1039,35 +1055,6 @@ function ToolResult({ text }: { text: string }) {
         <button
           onClick={(e) => { e.stopPropagation(); setShowAll((s) => !s) }}
           className="mt-0.5 flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
-        >
-          <ChevronRight className={cn('size-3 shrink-0 transition-transform duration-200', showAll && 'rotate-90')} />
-          {showAll ? t('chat.toolBlock.collapse') : t('chat.toolBlock.moreLines', { count: hiddenCount })}
-        </button>
-      )}
-    </div>
-  )
-}
-
-/** Prettified JSON code block with syntax highlighting and truncation. */
-function PrettyJSONCodeBlock({ text }: { text: string }) {
-  const { t } = useTranslation()
-  const jsonResult = useMemo(() => tryPrettifyJson(text), [text])
-  const prettified = jsonResult ?? text
-  const language = jsonResult ? 'json' : 'text'
-  const lines = prettified.split('\n')
-  const previewLines = 20
-  const isLong = lines.length > previewLines
-  const [showAll, setShowAll] = useState(false)
-  const hiddenCount = lines.length - previewLines
-  const visibleText = showAll || !isLong ? prettified : lines.slice(0, previewLines).join('\n')
-
-  return (
-    <div className="-mx-2">
-      <HighlightedCodeBlock code={visibleText} language={language} codePlugin={codePlugin} />
-      {isLong && (
-        <button
-          onClick={(e) => { e.stopPropagation(); setShowAll((s) => !s) }}
-          className="mt-0.5 ml-2 flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
         >
           <ChevronRight className={cn('size-3 shrink-0 transition-transform duration-200', showAll && 'rotate-90')} />
           {showAll ? t('chat.toolBlock.collapse') : t('chat.toolBlock.moreLines', { count: hiddenCount })}

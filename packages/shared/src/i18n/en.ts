@@ -598,6 +598,31 @@ export type Messages = {
       collapse: string
       moreLines_one: string
       moreLines_other: string
+      browser: {
+        navigate: string
+        open: string
+        snapshot: string
+        query: string
+        inspect: string
+        screenshot: string
+        click: string
+        type: string
+        press: string
+        scroll: string
+        select: string
+        waitFor: string
+        evaluate: string
+        tabs: string
+        elements_one: string
+        elements_other: string
+        matches_one: string
+        matches_other: string
+        tabsCount_one: string
+        tabsCount_other: string
+        notFound: string
+        viewport: string
+        screenshotUnavailable: string
+      }
     }
     subagent: {
       spawning: string
@@ -1930,6 +1955,31 @@ export const en: Messages = {
       collapse: 'Collapse',
       moreLines_one: '{{count}} more line',
       moreLines_other: '{{count}} more lines',
+      browser: {
+        navigate: 'Navigate',
+        open: 'Open tab',
+        snapshot: 'Snapshot',
+        query: 'Query',
+        inspect: 'Inspect',
+        screenshot: 'Screenshot',
+        click: 'Click',
+        type: 'Type',
+        press: 'Press',
+        scroll: 'Scroll',
+        select: 'Select',
+        waitFor: 'Wait for',
+        evaluate: 'Evaluate',
+        tabs: 'Tabs',
+        elements_one: '{{count}} element',
+        elements_other: '{{count}} elements',
+        matches_one: '{{count}} match',
+        matches_other: '{{count}} matches',
+        tabsCount_one: '{{count}} tab',
+        tabsCount_other: '{{count}} tabs',
+        notFound: 'not found',
+        viewport: 'viewport',
+        screenshotUnavailable: 'Screenshot no longer available',
+      },
     },
     subagent: {
       spawning: 'Spawning subagent...',

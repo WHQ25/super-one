@@ -1,0 +1,104 @@
+import { describe, it, expect } from 'vitest'
+import { getBrowserOp, browserVerbKey, isReadBrowserOp, browserInputSummary, parseBrowserResult } from './browser-tool-display'
+
+describe('getBrowserOp', () => {
+  it('strips the browser_ prefix for known ops', () => {
+    expect(getBrowserOp('browser_click')).toBe('click')
+    expect(getBrowserOp('browser_wait_for')).toBe('wait_for')
+  })
+
+  it('returns null for non-browser superone tools and unknown ops', () => {
+    expect(getBrowserOp('widget_show')).toBeNull()
+    expect(getBrowserOp('miniapp_dev_setup')).toBeNull()
+    expect(getBrowserOp('browser_teleport')).toBeNull()
+  })
+})
+
+describe('browserVerbKey', () => {
+  it('camelCases wait_for and leaves others intact', () => {
+    expect(browserVerbKey('wait_for')).toBe('waitFor')
+    expect(browserVerbKey('snapshot')).toBe('snapshot')
+  })
+})
+
+describe('isReadBrowserOp', () => {
+  it('marks inspection ops as read-only and actions as not', () => {
+    expect(isReadBrowserOp('snapshot')).toBe(true)
+    expect(isReadBrowserOp('evaluate')).toBe(true)
+    expect(isReadBrowserOp('click')).toBe(false)
+    expect(isReadBrowserOp('navigate')).toBe(false)
+  })
+})
+
+describe('browserInputSummary', () => {
+  it('summarizes navigation by url, port, or history action', () => {
+    expect(browserInputSummary('navigate', { url: 'https://example.com/login' })).toBe('example.com/login')
+    expect(browserInputSummary('navigate', { port: 3000, path: '/settings' })).toBe('localhost:3000/settings')
+    expect(browserInputSummary('navigate', { action: 'back' })).toBe('back')
+  })
+
+  it('summarizes clicks by selector, text, or coordinates', () => {
+    expect(browserInputSummary('click', { selector: '#submit' })).toBe('#submit')
+    expect(browserInputSummary('click', { text: 'Log in' })).toBe('“Log in”')
+    expect(browserInputSummary('click', { x: 10, y: 20 })).toBe('(10, 20)')
+  })
+
+  it('shows the target and truncated text for typing', () => {
+    expect(browserInputSummary('type', { selector: '#email', text: 'hi@a.com' })).toBe('#email ← hi@a.com')
+  })
+
+  it('joins modifiers for key presses', () => {
+    expect(browserInputSummary('press', { key: 'a', modifiers: ['Meta'] })).toBe('Meta+a')
+    expect(browserInputSummary('press', { key: 'Enter' })).toBe('Enter')
+  })
+
+  it('joins query and wait_for conditions', () => {
+    expect(browserInputSummary('query', { role: 'button', text: 'Save' })).toBe('button · “Save”')
+    expect(browserInputSummary('wait_for', { selectorGone: '.spinner', urlIncludes: '/done' })).toBe('!.spinner · url:/done')
+  })
+
+  it('returns empty for tabs', () => {
+    expect(browserInputSummary('tabs', {})).toBe('')
+  })
+})
+
+describe('parseBrowserResult', () => {
+  it('reports error when the tool result is flagged as an error', () => {
+    const info = parseBrowserResult('click', '[Error] element not found', true)
+    expect(info.status).toBe('error')
+    expect(info.errorText).toBe('element not found')
+  })
+
+  it('reports error when ok is false', () => {
+    const info = parseBrowserResult('click', JSON.stringify({ ok: false, error: 'not visible' }), false)
+    expect(info.status).toBe('error')
+    expect(info.errorText).toBe('not visible')
+  })
+
+  it('marks action ops ok on success', () => {
+    expect(parseBrowserResult('click', JSON.stringify({ ok: true }), false).status).toBe('ok')
+    expect(parseBrowserResult('navigate', JSON.stringify({ url: 'https://x.com' }), false).status).toBe('ok')
+  })
+
+  it('counts elements, matches, and tabs for read ops', () => {
+    expect(parseBrowserResult('snapshot', JSON.stringify({ elements: [1, 2, 3] }), false).count).toEqual({ kind: 'elements', n: 3 })
+    expect(parseBrowserResult('query', JSON.stringify({ matches: [1], total: 7 }), false).count).toEqual({ kind: 'matches', n: 7 })
+    expect(parseBrowserResult('tabs', JSON.stringify([1, 2]), false).count).toEqual({ kind: 'tabs', n: 2 })
+  })
+
+  it('extracts the saved path for a screenshot and marks it ok', () => {
+    const info = parseBrowserResult('screenshot', JSON.stringify({ path: '/tmp/shot.png', width: 800, height: 600 }), false)
+    expect(info.status).toBe('ok')
+    expect(info.imagePath).toBe('/tmp/shot.png')
+  })
+
+  it('flags a missing element for inspect', () => {
+    expect(parseBrowserResult('inspect', JSON.stringify({ exists: false }), false).notFound).toBe(true)
+    expect(parseBrowserResult('inspect', JSON.stringify({ exists: true, tag: 'div' }), false).notFound).toBeUndefined()
+  })
+
+  it('stays neutral when the result is missing or unparseable', () => {
+    expect(parseBrowserResult('snapshot', undefined, false).status).toBe('neutral')
+    expect(parseBrowserResult('evaluate', 'not json', false).status).toBe('neutral')
+  })
+})

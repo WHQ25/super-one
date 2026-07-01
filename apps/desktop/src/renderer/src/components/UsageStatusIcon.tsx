@@ -8,7 +8,7 @@ import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { Button } from '@superone/ui/components/ui/button'
 import { cn } from '@superone/ui/lib/utils'
 import { useActiveSession, useChatStore } from '@/stores/chat'
-import type { ClaudeExtraUsage, ClaudeRateLimits, CodexAccountUsage, CodexRateLimits, CodexRateLimitResetOutcome, CodexRateLimitWindow, ProviderRateLimits } from '@superone/shared/agent-types'
+import type { ClaudeExtraUsage, ClaudeRateLimits, CodexAccountUsage, CodexRateLimits, CodexRateLimitResetOutcome, ProviderRateLimits } from '@superone/shared/agent-types'
 
 const FORCE_REFRESH_ON_OPEN_STALE_MS = 5 * 60 * 1000
 
@@ -58,10 +58,8 @@ function formatUpdatedAgo(fetchedAt: number, now: number, t: TFunction): string 
   return t('usageGauge.updatedDaysAgo', { n: Math.floor(hr / 24) })
 }
 
-function usedColor(percent: number): string {
-  if (percent >= 90) return 'bg-red-500'
-  if (percent >= 70) return 'bg-amber-500'
-  return 'bg-green-500'
+function remainingPercent(usedPercent: number): number {
+  return Math.round(Math.max(0, Math.min(100, 100 - usedPercent)))
 }
 
 function remainingColor(percent: number): string {
@@ -155,7 +153,7 @@ function AccountUsageSection({ usage }: { usage: CodexAccountUsage }) {
   )
 }
 
-function RateLimitGauge({ title, planType, maxPercent, onOpen, onRefresh, refreshing, fetchedAt, children }: { title: string; planType: string | null; maxPercent: number; onOpen?: () => void; onRefresh?: () => void; refreshing?: boolean; fetchedAt?: number | null; children: ReactNode }) {
+function RateLimitGauge({ title, planType, badgeRemaining, onOpen, onRefresh, refreshing, fetchedAt, children }: { title: string; planType: string | null; badgeRemaining: number | null; onOpen?: () => void; onRefresh?: () => void; refreshing?: boolean; fetchedAt?: number | null; children: ReactNode }) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const [now, setNow] = useState(() => Date.now())
@@ -175,9 +173,11 @@ function RateLimitGauge({ title, planType, maxPercent, onOpen, onRefresh, refres
   return (
     <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>
-        <IconButton size="sm" className="relative">
+        <IconButton size="sm" className={cn(badgeRemaining != null && 'h-6 w-auto gap-1 px-1.5')}>
           <Gauge />
-          <span className={cn('absolute top-1 right-1 size-1.5 rounded-full', usedColor(maxPercent))} />
+          {badgeRemaining != null && (
+            <span className="text-[11px] font-medium tabular-nums">{badgeRemaining}%</span>
+          )}
         </IconButton>
       </PopoverTrigger>
       <PopoverContent side="top" align="end" className="w-auto p-3">
@@ -236,11 +236,11 @@ function CodexRateLimitIcon({ projectPath, apiProviderId, status }: { projectPat
 
   if (!limits || (!limits.primary && !limits.secondary)) return null
 
-  const windows = [limits.primary, limits.secondary].filter((w): w is CodexRateLimitWindow => Boolean(w))
-  const maxPercent = Math.max(...windows.map((w) => w.usedPercent))
+  const badgeWindow = limits.primary ?? limits.secondary
+  const badgeRemaining = badgeWindow ? remainingPercent(badgeWindow.usedPercent) : null
 
   return (
-    <RateLimitGauge title={t('usageGauge.codexTitle')} planType={limits.planType} maxPercent={maxPercent} onOpen={fetchLimits}>
+    <RateLimitGauge title={t('usageGauge.codexTitle')} planType={limits.planType} badgeRemaining={badgeRemaining} onOpen={fetchLimits}>
       {limits.primary && (
         <WindowRow label={formatWindowLabel(limits.primary.windowDurationMins, t)} usedPercent={limits.primary.usedPercent} resetsAt={limits.primary.resetsAt} />
       )}
@@ -282,10 +282,11 @@ function ClaudeRateLimitIcon({ status }: { status: string }) {
 
   if (!limits || limits.windows.length === 0) return null
 
-  const maxPercent = Math.max(...limits.windows.map((w) => w.usedPercent))
+  const badgeWindow = limits.windows.find((w) => w.label === '5h') ?? limits.windows[0]
+  const badgeRemaining = badgeWindow ? remainingPercent(badgeWindow.usedPercent) : null
 
   return (
-    <RateLimitGauge title={t('usageGauge.claudeTitle')} planType={limits.planType} maxPercent={maxPercent} onOpen={refreshIfStale} onRefresh={refresh} refreshing={refreshing} fetchedAt={limits.fetchedAt}>
+    <RateLimitGauge title={t('usageGauge.claudeTitle')} planType={limits.planType} badgeRemaining={badgeRemaining} onOpen={refreshIfStale} onRefresh={refresh} refreshing={refreshing} fetchedAt={limits.fetchedAt}>
       {limits.windows.map((w) => (
         <WindowRow key={w.label} label={w.label} usedPercent={w.usedPercent} resetsAt={w.resetsAt} />
       ))}
@@ -324,10 +325,11 @@ function ProviderRateLimitIcon({ apiProviderId, status }: { apiProviderId: strin
 
   if (!limits || limits.windows.length === 0) return null
 
-  const maxPercent = Math.max(...limits.windows.map((w) => w.usedPercent))
+  const badgeWindow = limits.windows[0]
+  const badgeRemaining = badgeWindow ? remainingPercent(badgeWindow.usedPercent) : null
 
   return (
-    <RateLimitGauge title={limits.title} planType={limits.planType} maxPercent={maxPercent} onOpen={refreshIfStale} onRefresh={refresh} refreshing={refreshing} fetchedAt={limits.fetchedAt}>
+    <RateLimitGauge title={limits.title} planType={limits.planType} badgeRemaining={badgeRemaining} onOpen={refreshIfStale} onRefresh={refresh} refreshing={refreshing} fetchedAt={limits.fetchedAt}>
       {limits.windows.map((w) => (
         <WindowRow key={w.label} label={w.label} usedPercent={w.usedPercent} resetsAt={w.resetsAt} />
       ))}

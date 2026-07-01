@@ -69,6 +69,13 @@ export function browserStop(id: string): void {
   registry.get(id)?.stop()
 }
 
+export function browserOpenDevTools(id: string): void {
+  const wv = registry.get(id)
+  if (!wv) return
+  if (wv.isDevToolsOpened()) wv.closeDevTools()
+  else wv.openDevTools()
+}
+
 export async function browserCapture(id: string, rect?: Electron.Rectangle): Promise<Electron.NativeImage | null> {
   const wv = registry.get(id)
   if (!wv) return null

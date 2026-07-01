@@ -142,6 +142,7 @@ function PersistentBrowser({ browserId, layoutMode, resizing }: { browserId: str
         ref={webviewRef}
         src={initialSrcRef.current}
         partition="persist:browser"
+        {...({ allowpopups: 'true' } as Record<string, string>)}
         style={{ width: '100%', height: '100%' }}
       />
     </div>

@@ -10,6 +10,37 @@ let pendingAction: (() => void) | null = null
 let onDockReadyCb: (() => void) | null = null
 let currentSessionIdGetter: (() => string | null) | null = null
 
+// Panels opened while mosaic (chat-only) owns the layout live in the hidden dock,
+// but exiting mosaic restores each tile's parked snapshot and clobbers them. While
+// recording is on (App toggles it on mosaic entry) we remember the opens and replay
+// them after the exit-restore so they survive the return to single and show. A
+// getter-injection-free boolean keeps this module clear of store import cycles.
+let mosaicOpenedPanels: { id: string; replay: () => void }[] = []
+let mosaicRecording = false
+
+export function beginMosaicRecording() {
+  mosaicRecording = true
+  mosaicOpenedPanels = []
+}
+
+function recordMosaicOpen(id: string, replay: () => void) {
+  if (!mosaicRecording) return
+  if (mosaicOpenedPanels.some((p) => p.id === id)) return
+  mosaicOpenedPanels.push({ id, replay })
+}
+
+function removeMosaicOpen(id: string) {
+  if (!mosaicOpenedPanels.length) return
+  mosaicOpenedPanels = mosaicOpenedPanels.filter((p) => p.id !== id)
+}
+
+export function replayMosaicOpenedPanels() {
+  mosaicRecording = false
+  const panels = mosaicOpenedPanels
+  mosaicOpenedPanels = []
+  for (const p of panels) p.replay()
+}
+
 export function setCurrentSessionIdGetter(getter: (() => string | null) | null) {
   currentSessionIdGetter = getter
 }
@@ -127,6 +158,7 @@ export function openNewFileTab(filePath: string, options?: { direction?: 'within
 
 export function openMiniAppTab(instanceKey: string, appId: string, label: string) {
   ensureVisible()
+  recordMosaicOpen(`miniapp-${instanceKey}`, () => openMiniAppTab(instanceKey, appId, label))
   execOrDefer(() => {
     if (!dockApi) return
     const panelId = `miniapp-${instanceKey}`
@@ -146,8 +178,9 @@ export function openMiniAppTab(instanceKey: string, appId: string, label: string
 }
 
 export function closeMiniAppTab(instanceKey: string) {
-  if (!dockApi) return
   const panelId = `miniapp-${instanceKey}`
+  removeMosaicOpen(panelId)
+  if (!dockApi) return
   const existing = dockApi.panels.find((p) => p.id === panelId)
   if (existing) existing.api.close()
 }
@@ -157,9 +190,10 @@ export function openBrowserTab(url = 'about:blank', reuseId?: string, owner?: st
   if (app.layoutMode !== 'coding' && app.currentFolder) app.setLayoutMode('coding')
   ensureVisible()
   const resolvedOwner = owner !== undefined ? owner : (currentSessionIdGetter?.() ?? null)
+  const browserId = reuseId ?? `browser-${crypto.randomUUID()}`
+  recordMosaicOpen(browserId, () => openBrowserTab(url, browserId, resolvedOwner))
   execOrDefer(() => {
     if (!dockApi) return
-    const browserId = reuseId ?? `browser-${crypto.randomUUID()}`
     useBrowserStore.getState().ensure(browserId, normalizeUrl(url), resolvedOwner)
     const existing = dockApi.panels.find((p) => p.id === browserId)
     if (existing) {
@@ -177,6 +211,7 @@ export function openBrowserTab(url = 'about:blank', reuseId?: string, owner?: st
 }
 
 export function closeBrowserTab(browserId: string) {
+  removeMosaicOpen(browserId)
   const existing = dockApi?.panels.find((p) => p.id === browserId)
   existing?.api.close()
   useBrowserStore.getState().remove(browserId)

@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useShallow } from 'zustand/react/shallow'
 import { useBrowserStore } from '@/stores/browser'
 import { useAppStore } from '@/stores/app'
+import { useActivityPanelStore } from '@/stores/activity-panel'
 import { useSashResizing } from '@/hooks/useSashResizing'
 import { useGlobalDragging } from '@/hooks/useGlobalDragging'
 import { registerBrowserWebview, browserExecJs, pushBrowserConsole, clearBrowserConsole } from './browser-host-api'
@@ -29,6 +30,7 @@ export function BrowserHostLayer() {
 
 function PersistentBrowser({ browserId, layoutMode, resizing }: { browserId: string; layoutMode: 'canvas' | 'coding'; resizing: boolean }) {
   const slot = useBrowserStore((s) => s.slots[browserId])
+  const activityShown = useActivityPanelStore((s) => s.showPanel)
   const annotating = useBrowserStore((s) => s.annotatingId === browserId)
   const webviewRef = useRef<Electron.WebviewTag>(null)
   const initialSrcRef = useRef(useBrowserStore.getState().tabs[browserId]?.url || 'about:blank')
@@ -117,7 +119,9 @@ function PersistentBrowser({ browserId, layoutMode, resizing }: { browserId: str
     (slot.mode === 'panel' && layoutMode === 'coding') ||
     (slot.mode === 'canvas' && layoutMode === 'canvas')
   )
-  const visible = presentationMatches && slot != null && slot.width > 0 && slot.height > 0
+  const mounted = presentationMatches && slot != null && slot.width > 0 && slot.height > 0
+  const hostShown = slot?.mode !== 'panel' || activityShown
+  const visible = mounted && hostShown
 
   return (
     <div
@@ -129,7 +133,7 @@ function PersistentBrowser({ browserId, layoutMode, resizing }: { browserId: str
         top: slot?.top ?? 0,
         width: slot?.width ?? 0,
         height: slot?.height ?? 0,
-        display: visible ? 'block' : 'none',
+        display: mounted ? 'block' : 'none',
         pointerEvents: visible && !resizing ? 'auto' : 'none',
         overflow: 'hidden',
       }}

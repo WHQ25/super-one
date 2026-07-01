@@ -8,7 +8,7 @@ import { ChatPanel } from '@/components/chat/ChatPanel'
 import { CodingLayout } from '@/components/coding/CodingLayout'
 import { CanvasPanel } from '@/components/canvas/CanvasPanel'
 import { ActivityPanel } from '@/components/activity/ActivityPanel'
-import { openBrowserTab, restoreBrowserToPanel, closeFullscreenBrowser } from '@/components/activity/activity-panel-api'
+import { openBrowserTab, restoreBrowserToPanel, closeFullscreenBrowser, beginMosaicRecording, replayMosaicOpenedPanels } from '@/components/activity/activity-panel-api'
 import { SessionMosaic } from '@/components/mosaic/SessionMosaic'
 import { useMosaicStore } from '@/components/mosaic/mosaic-store'
 import { MosaicDropZone } from '@/components/mosaic/MosaicDropZone'
@@ -188,6 +188,7 @@ function App(): React.JSX.Element {
       panelSnapshotRef.current = { sessionId: activeSessionId, terminalOpen }
       setTerminalOpen(false)
       useActivityPanelStore.getState().setShowPanel(false)
+      beginMosaicRecording()
     } else if (was === 'mosaic' && mosaicMode !== 'mosaic') {
       const snap = panelSnapshotRef.current
       panelSnapshotRef.current = null
@@ -195,6 +196,9 @@ function App(): React.JSX.Element {
       // state. (If the active session is still resolving, mechanism-1 re-applies it
       // once it settles — this only covers exiting onto the already-active tile.)
       if (activeSessionId) useActivityViewStateStore.getState().restore(activeSessionId)
+      // Browsers/mini-apps opened while mosaic hid the dock were clobbered by the
+      // restore above; replay them so they survive the return to single and show.
+      replayMosaicOpenedPanels()
       // Terminal is per-session; re-open the seed session's terminal we force-closed
       // on entry (a no-op in view unless that session is the maximized one).
       if (snap?.sessionId) useTerminalStore.getState().setOpen(snap.sessionId, snap.terminalOpen)

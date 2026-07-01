@@ -4,6 +4,16 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.43.2-alpha] - 2026-07-01
+
+### Added
+
+- Browser automation through MCP tools — navigate, click, type, screenshot, and manage tabs, with per-session browser isolation and a custom in-chat UI for browser tool calls
+
+### Fixed
+
+- Header session menu now shows for established in-memory sessions
+
 ## [0.43.1-alpha] - 2026-07-01
 
 ### Fixed

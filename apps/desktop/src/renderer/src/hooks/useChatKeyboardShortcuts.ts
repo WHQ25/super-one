@@ -16,11 +16,12 @@ export function useChatKeyboardShortcuts() {
     return () => window.removeEventListener('keydown', handler)
   }, [togglePlanModeShortcut, pendingPlanApproval])
 
-  // Ctrl+T toggles todo list popup
+  // Ctrl+T (⌃T) toggles todo list popup. Kept Ctrl-only so Cmd+T (⌘T) stays
+  // reserved for opening a browser tab in the activity panel.
   const toggleTodos = useChatStore((s) => s.toggleTodos)
   useEffect(() => {
     const handler = (e: KeyboardEvent): void => {
-      if (e.key === 't' && (e.ctrlKey || e.metaKey)) {
+      if (e.key === 't' && e.ctrlKey && !e.metaKey && !e.altKey) {
         e.preventDefault()
         toggleTodos()
       }

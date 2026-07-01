@@ -1282,6 +1282,12 @@ export type Messages = {
     toggleSidebar: string
     moveChatLeft: string
     moveChatRight: string
+    toggleActivityPanel: string
+    toggleTerminal: string
+    newBrowserTab: string
+    closeBrowser: string
+    closeMiniApp: string
+    returnToPanel: string
     expandToPlainText: string
     save: string
     newAutomation: string
@@ -2639,6 +2645,12 @@ export const en: Messages = {
     toggleSidebar: 'Toggle Sidebar',
     moveChatLeft: 'Move Chat to Left',
     moveChatRight: 'Move Chat to Right',
+    toggleActivityPanel: 'Toggle Activity Panel',
+    toggleTerminal: 'Toggle Terminal',
+    newBrowserTab: 'New browser tab',
+    closeBrowser: 'Close browser',
+    closeMiniApp: 'Close mini-app',
+    returnToPanel: 'Return to panel',
     expandToPlainText: 'Expand to plain text',
     save: 'Save ({{shortcut}})',
     newAutomation: 'New Automation',

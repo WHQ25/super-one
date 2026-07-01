@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useCallback, useRef, useState, lazy, Suspense } from 'react'
-import { Sun, Moon, X, Smartphone, Minimize2, SquareTerminal, RotateCw, Bug, LayoutGrid, Globe } from 'lucide-react'
+import { Sun, Moon, X, Smartphone, Minimize2, SquareTerminal, RotateCw, Bug, LayoutGrid, Globe, PanelLeft, PanelRight } from 'lucide-react'
 import { motion } from 'motion/react'
 import { toast } from 'sonner'
 import { useTranslation } from 'react-i18next'
@@ -87,6 +87,15 @@ function App(): React.JSX.Element {
   const isMac = window.app.platform === 'darwin'
   const initialTransition = useRef(true)
 
+  // Collapse/expand the activity panel while keeping browsers & mini-apps mounted
+  // (showPanel just hides the host layers, same as mosaic mode). No-op in mosaic,
+  // which force-hides the panel and owns the layout itself.
+  const toggleActivityPanel = useCallback(() => {
+    if (useMosaicStore.getState().mode === 'mosaic') return
+    const ap = useActivityPanelStore.getState()
+    ap.setShowPanel(!ap.showPanel)
+  }, [])
+
   useEffect(() => {
     const unsub = window.app.onCodexSkillsChanged?.((event) => {
       void useChatStore.getState().refreshCodexSkills(event.projectPath)
@@ -155,7 +164,7 @@ function App(): React.JSX.Element {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (!e.metaKey) return
-      if (e.key === 'b') {
+      if (e.key === 'b' && !e.altKey) {
         e.preventDefault()
         useAppStore.getState().setShowSidebar(!useAppStore.getState().showSidebar)
       } else if (e.key === ',') {
@@ -181,6 +190,10 @@ function App(): React.JSX.Element {
       const mod = isMac ? e.metaKey : e.ctrlKey
       if (!mod || e.shiftKey || e.altKey || e.key.toLowerCase() !== 't') return
       if (useAppStore.getState().view !== 'main') return
+      // ⌘T opens a browser tab only when focus is inside the activity panel (its
+      // dockview or a browser/mini-app host) — never from the chat panel. Guest
+      // browser webviews take the IPC path below (keys don't bubble to the host).
+      if (!document.activeElement?.closest('[data-activity-inner],[data-browser-host],[data-miniapp-host]')) return
       e.preventDefault()
       openBrowserTab()
     }
@@ -191,6 +204,20 @@ function App(): React.JSX.Element {
       offIpc()
     }
   }, [isMac])
+
+  // ⌘⌥B (Cmd/Ctrl+Alt+B) collapses/expands the activity panel. Uses e.code since
+  // Option remaps e.key to a symbol on macOS.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const mod = isMac ? e.metaKey : e.ctrlKey
+      if (!mod || !e.altKey || e.code !== 'KeyB') return
+      if (useAppStore.getState().view !== 'main') return
+      e.preventDefault()
+      toggleActivityPanel()
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [isMac, toggleActivityPanel])
 
   // Mosaic is chat-only. On entry we park the seed session's live panel/dock and
   // close the global panel so a hidden panel doesn't skew layout or bounce us back
@@ -527,13 +554,16 @@ function App(): React.JSX.Element {
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <button
-                      onClick={() => openBrowserTab()}
-                      className="rounded-md p-1.5 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground"
+                      onClick={toggleActivityPanel}
+                      className={cn(
+                        'rounded-md p-1.5 transition-colors hover:bg-muted hover:text-foreground',
+                        showActivityPanel ? 'text-foreground' : 'text-muted-foreground/60',
+                      )}
                     >
-                      <Globe className="size-3.5" />
+                      {activitySide === 'left' ? <PanelRight className="size-3.5" /> : <PanelLeft className="size-3.5" />}
                     </button>
                   </TooltipTrigger>
-                  <TooltipContent side="top"><span>New browser tab</span> <CommandShortcut>{isMac ? '⌘T' : 'Ctrl+T'}</CommandShortcut></TooltipContent>
+                  <TooltipContent side="top"><span>{t('tooltips.toggleActivityPanel')}</span> <CommandShortcut>{isMac ? '⌘⌥B' : 'Ctrl+Alt+B'}</CommandShortcut></TooltipContent>
                 </Tooltip>
               </TooltipProvider>
             )}
@@ -553,7 +583,7 @@ function App(): React.JSX.Element {
                       />
                     </button>
                   </TooltipTrigger>
-                  <TooltipContent side="top"><span>Toggle terminal</span> <CommandShortcut>{isMac ? '⌘J' : 'Ctrl+J'}</CommandShortcut></TooltipContent>
+                  <TooltipContent side="top"><span>{t('tooltips.toggleTerminal')}</span> <CommandShortcut>{isMac ? '⌘J' : 'Ctrl+J'}</CommandShortcut></TooltipContent>
                 </Tooltip>
               </TooltipProvider>
             )}
@@ -643,13 +673,14 @@ function CanvasCloseButton() {
   const fullscreenApp = useMiniAppStore((s) => s.fullscreenApp)
   const fullscreenBrowserId = useBrowserStore((s) => s.fullscreenId)
   const closeFullscreenApp = useMiniAppStore((s) => s.closeFullscreenApp)
+  const { t } = useTranslation()
   if (layoutMode !== 'canvas') return null
   if (fullscreenBrowserId) {
     return (
       <button
         onClick={() => closeFullscreenBrowser()}
         className="rounded-md p-1.5 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground"
-        title="Close browser"
+        title={t('tooltips.closeBrowser')}
       >
         <X className="size-3.5" />
       </button>
@@ -660,7 +691,7 @@ function CanvasCloseButton() {
     <button
       onClick={() => closeFullscreenApp()}
       className="rounded-md p-1.5 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground"
-      title="Close mini-app"
+      title={t('tooltips.closeMiniApp')}
     >
       <X className="size-3.5" />
     </button>
@@ -671,20 +702,21 @@ function CanvasDevControls() {
   const layoutMode = useAppStore((s) => s.layoutMode)
   const fullscreenApp = useMiniAppStore((s) => s.fullscreenApp)
   const devControls = useMiniAppStore((s) => (fullscreenApp ? s.devControls[fullscreenApp.instanceKey] : undefined))
+  const { t } = useTranslation()
   if (layoutMode !== 'canvas' || !fullscreenApp || !devControls) return null
   return (
     <>
       <button
         onClick={() => devControls.reload()}
         className="rounded-md p-1.5 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground"
-        title="Reload"
+        title={t('tooltips.reload')}
       >
         <RotateCw className="size-3.5" />
       </button>
       <button
         onClick={() => devControls.openDevTools()}
         className="rounded-md p-1.5 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground"
-        title="Open devtools"
+        title={t('tooltips.openDevTools')}
       >
         <Bug className="size-3.5" />
       </button>
@@ -697,13 +729,14 @@ function CanvasReturnToPanelButton() {
   const fullscreenApp = useMiniAppStore((s) => s.fullscreenApp)
   const fullscreenBrowserId = useBrowserStore((s) => s.fullscreenId)
   const moveAppToPanel = useMiniAppStore((s) => s.moveAppToPanel)
+  const { t } = useTranslation()
   if (layoutMode !== 'canvas') return null
   if (fullscreenBrowserId) {
     return (
       <button
         onClick={() => restoreBrowserToPanel()}
         className="rounded-md p-1.5 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground"
-        title="Return to panel"
+        title={t('tooltips.returnToPanel')}
       >
         <Minimize2 className="size-3.5" />
       </button>
@@ -714,7 +747,7 @@ function CanvasReturnToPanelButton() {
     <button
       onClick={() => moveAppToPanel(fullscreenApp.instanceKey)}
       className="rounded-md p-1.5 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground"
-      title="Return to panel"
+      title={t('tooltips.returnToPanel')}
     >
       <Minimize2 className="size-3.5" />
     </button>

@@ -4,6 +4,13 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.43.3-alpha] - 2026-07-01
+
+### Fixed
+
+- Mosaic browser/mini-app host now stays visible across single↔mosaic transitions
+- Fixed the single→mosaic drop-zone measurement to use the full container
+
 ## [0.43.2-alpha] - 2026-07-01
 
 ### Added

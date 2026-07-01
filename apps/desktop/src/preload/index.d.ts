@@ -263,6 +263,10 @@ interface AppAPI {
 
   onCloseTabShortcut(callback: () => void): () => void
 
+  onBrowserAnnotateShortcut(callback: (webContentsId: number) => void): () => void
+
+  onBrowserNewTabShortcut(callback: () => void): () => void
+
   closeWindow(): void
 
   // Window state

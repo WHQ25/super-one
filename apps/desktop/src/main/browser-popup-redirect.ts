@@ -1,4 +1,5 @@
 import { app, session } from 'electron'
+import { AgentIpcChannels } from '@superone/shared/agent-types'
 
 const BROWSER_PARTITION = 'persist:browser'
 
@@ -17,6 +18,22 @@ export function registerBrowserPopupRedirect(): void {
         })
       }
       return { action: 'deny' }
+    })
+
+    // Keyboard events inside the guest webview never bubble to the host renderer,
+    // so the "enter annotate mode" shortcut (Cmd/Ctrl+.) must be intercepted here.
+    // Forward the guest's webContents id so the host can route it to the right tab.
+    contents.on('before-input-event', (event, input) => {
+      if (input.type !== 'keyDown') return
+      const mod = process.platform === 'darwin' ? input.meta : input.control
+      if (!mod || input.shift || input.alt) return
+      if (input.key === '.') {
+        event.preventDefault()
+        contents.hostWebContents?.send(AgentIpcChannels.BROWSER_ANNOTATE_SHORTCUT, contents.id)
+      } else if (input.key.toLowerCase() === 't') {
+        event.preventDefault()
+        contents.hostWebContents?.send(AgentIpcChannels.BROWSER_NEW_TAB_SHORTCUT)
+      }
     })
   })
 }

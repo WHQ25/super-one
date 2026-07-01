@@ -1857,6 +1857,8 @@ export const AgentIpcChannels = {
   PATH_STAT: 'app:path-stat',
   MEDIA_SERVER_PORT: 'app:media-server-port',
   CONTENT_ZOOM: 'app:content-zoom',
+  BROWSER_ANNOTATE_SHORTCUT: 'app:browser-annotate-shortcut',
+  BROWSER_NEW_TAB_SHORTCUT: 'app:browser-new-tab-shortcut',
   CLOSE_TAB_SHORTCUT: 'app:close-tab-shortcut',
   CLOSE_WINDOW: 'app:close-window',
   GET_FULLSCREEN: 'app:get-fullscreen',

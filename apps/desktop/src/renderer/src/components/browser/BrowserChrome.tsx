@@ -6,10 +6,13 @@ import { toast } from 'sonner'
 import { cn } from '@superone/ui/lib/utils'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@superone/ui/components/ui/tooltip'
+import { CommandShortcut } from '@superone/ui/components/ui/command'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@superone/ui/components/ui/dropdown-menu'
 import { useBrowserStore } from '@/stores/browser'
 import { browserCapture, browserOpenDevTools } from './browser-host-api'
 import { isBlankUrl } from './browser-url'
+
+const annotateShortcut = window.app.platform === 'darwin' ? '⌘.' : 'Ctrl+.'
 
 interface BrowserChromeProps {
   browserId: string
@@ -123,8 +126,8 @@ export function BrowserChrome({ browserId, onNavigate, onBack, onForward, onRelo
                   </motion.span>
                 </motion.button>
               </TooltipTrigger>
-              <TooltipContent side="top" sideOffset={6}>
-                {t('chat.browser.annotateExit')}
+              <TooltipContent side="top" sideOffset={6} className="inline-flex items-center gap-1.5">
+                {t('chat.browser.annotateExit')}<CommandShortcut>{annotateShortcut}</CommandShortcut>
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
@@ -136,7 +139,7 @@ export function BrowserChrome({ browserId, onNavigate, onBack, onForward, onRelo
             <IconButton
               size="xs"
               variant="ghost"
-              tooltip={t('chat.browser.annotateEnter')}
+              tooltip={<span className="inline-flex items-center gap-1.5">{t('chat.browser.annotateEnter')}<CommandShortcut>{annotateShortcut}</CommandShortcut></span>}
               onClick={() => startAnnotate(browserId)}
             >
               <SquareDashedMousePointer className="size-3.5" />

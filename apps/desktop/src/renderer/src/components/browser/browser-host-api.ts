@@ -49,6 +49,17 @@ export function isBrowserRegistered(id: string): boolean {
   return registry.has(id)
 }
 
+export function browserIdByWebContentsId(webContentsId: number): string | null {
+  for (const [id, el] of registry) {
+    try {
+      if (el.getWebContentsId() === webContentsId) return id
+    } catch {
+      // webview not yet attached — skip
+    }
+  }
+  return null
+}
+
 export function browserNavigate(id: string, url: string): void {
   registry.get(id)?.loadURL(url)
 }

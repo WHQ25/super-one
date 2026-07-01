@@ -173,6 +173,25 @@ function App(): React.JSX.Element {
     return () => window.removeEventListener('keydown', handler)
   }, [toggleTerminal])
 
+  // New browser tab (⌘T / Ctrl+T). The renderer keydown covers app focus; the
+  // IPC path fires when a browser <webview> has focus (guest keys never bubble
+  // to the host, so main forwards the shortcut — see browser-popup-redirect.ts).
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const mod = isMac ? e.metaKey : e.ctrlKey
+      if (!mod || e.shiftKey || e.altKey || e.key.toLowerCase() !== 't') return
+      if (useAppStore.getState().view !== 'main') return
+      e.preventDefault()
+      openBrowserTab()
+    }
+    window.addEventListener('keydown', handler)
+    const offIpc = window.app.onBrowserNewTabShortcut(() => openBrowserTab())
+    return () => {
+      window.removeEventListener('keydown', handler)
+      offIpc()
+    }
+  }, [isMac])
+
   // Mosaic is chat-only. On entry we park the seed session's live panel/dock and
   // close the global panel so a hidden panel doesn't skew layout or bounce us back
   // out; on exit each maximized tile restores its own per-session view state.
@@ -507,7 +526,7 @@ function App(): React.JSX.Element {
                       <Globe className="size-3.5" />
                     </button>
                   </TooltipTrigger>
-                  <TooltipContent side="top"><span>New browser tab</span></TooltipContent>
+                  <TooltipContent side="top"><span>New browser tab</span> <CommandShortcut>{isMac ? '⌘T' : 'Ctrl+T'}</CommandShortcut></TooltipContent>
                 </Tooltip>
               </TooltipProvider>
             )}

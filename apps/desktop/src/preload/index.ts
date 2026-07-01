@@ -808,6 +808,24 @@ const appAPI = {
     }
   },
 
+  onBrowserAnnotateShortcut: (callback: (webContentsId: number) => void) => {
+    const handler = (_ipcEvent: Electron.IpcRendererEvent, webContentsId: number): void => {
+      callback(webContentsId)
+    }
+    ipcRenderer.on(AgentIpcChannels.BROWSER_ANNOTATE_SHORTCUT, handler)
+    return () => {
+      ipcRenderer.removeListener(AgentIpcChannels.BROWSER_ANNOTATE_SHORTCUT, handler)
+    }
+  },
+
+  onBrowserNewTabShortcut: (callback: () => void) => {
+    const handler = (): void => callback()
+    ipcRenderer.on(AgentIpcChannels.BROWSER_NEW_TAB_SHORTCUT, handler)
+    return () => {
+      ipcRenderer.removeListener(AgentIpcChannels.BROWSER_NEW_TAB_SHORTCUT, handler)
+    }
+  },
+
   closeWindow: () => ipcRenderer.send(AgentIpcChannels.CLOSE_WINDOW),
 
   // Window state

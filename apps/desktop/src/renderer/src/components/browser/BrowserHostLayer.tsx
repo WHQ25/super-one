@@ -6,7 +6,7 @@ import { useAppStore } from '@/stores/app'
 import { useActivityPanelStore } from '@/stores/activity-panel'
 import { useSashResizing } from '@/hooks/useSashResizing'
 import { useGlobalDragging } from '@/hooks/useGlobalDragging'
-import { registerBrowserWebview, browserExecJs, pushBrowserConsole, clearBrowserConsole } from './browser-host-api'
+import { registerBrowserWebview, browserExecJs, pushBrowserConsole, clearBrowserConsole, browserIdByWebContentsId } from './browser-host-api'
 import { useBrowserAutomationHost } from './browser-automation-runtime'
 import { buildSessionScript, handleAnnotationMessage } from './browser-annotate-flow'
 import { ANNOTATE_CANCEL_SCRIPT, ANNOTATE_MSG_PREFIX } from './browser-annotate-script'
@@ -18,6 +18,16 @@ export function BrowserHostLayer() {
   const globalDragging = useGlobalDragging()
   const resizing = sashResizing || globalDragging
   useBrowserAutomationHost()
+
+  useEffect(() => {
+    return window.app.onBrowserAnnotateShortcut((webContentsId) => {
+      const id = browserIdByWebContentsId(webContentsId)
+      if (!id) return
+      const store = useBrowserStore.getState()
+      if (store.annotatingId === id) store.stopAnnotate()
+      else store.startAnnotate(id)
+    })
+  }, [])
 
   return (
     <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 20 }}>

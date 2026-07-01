@@ -35,6 +35,10 @@ vi.mock('./browser-annotate-script', () => ({
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (k: string) => k }) }))
 
 ;(globalThis as unknown as { window: typeof window }).window = globalThis as unknown as typeof window
+;(globalThis as unknown as { app: Record<string, unknown> }).app = new Proxy(
+  {},
+  { get: (_t, prop) => (prop === 'onBrowserAnnotateShortcut' ? () => () => {} : () => Promise.resolve()) },
+)
 
 let useBrowserStore: typeof import('@/stores/browser').useBrowserStore
 let useActivityPanelStore: typeof import('@/stores/activity-panel').useActivityPanelStore

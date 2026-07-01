@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useRef, useState, lazy, Suspense } from 'react'
+import { useEffect, useLayoutEffect, useCallback, useRef, useState, lazy, Suspense } from 'react'
 import { Sun, Moon, X, Smartphone, Minimize2, SquareTerminal, RotateCw, Bug, LayoutGrid, Globe } from 'lucide-react'
 import { motion } from 'motion/react'
 import { toast } from 'sonner'
@@ -239,6 +239,7 @@ function App(): React.JSX.Element {
   const clampPanelsRef = useRef<() => void>(() => {})
   const sidebarRef = useRef<HTMLDivElement>(null)
   const sidebarInnerRef = useRef<HTMLDivElement>(null)
+  const mainWrapperRef = useRef<HTMLDivElement>(null)
 
   const getLinkedPanel = useCallback((newW: number, prevW: number) => {
     const ap = useActivityPanelStore.getState()
@@ -457,7 +458,7 @@ function App(): React.JSX.Element {
       </div>
 
       {/* Main area wrapper */}
-      <div className={cn(
+      <div ref={mainWrapperRef} className={cn(
         'flex min-w-0 flex-1',
         layoutMode === 'coding' && mosaicMode === 'mosaic' && 'relative z-20 my-[5px] mr-[5px] overflow-hidden rounded-xl border border-border/50 bg-card',
         layoutMode === 'coding' && mosaicMode === 'mosaic' && !showSidebar && 'ml-[5px]',
@@ -562,10 +563,7 @@ function App(): React.JSX.Element {
             <CanvasPanel />
           </div>
         )}
-        {layoutMode === 'coding' && draggingSession && mosaicMode !== 'mosaic' && !canRestoreMosaic && (
-          <MosaicDropZone tileId={null} onDropSession={(fp, sid, edge) => useMosaicStore.getState().addTile(fp, sid, { edge })} />
-        )}
-        {layoutMode === 'coding' && draggingSession && <MosaicDropPreview />}
+        {layoutMode === 'coding' && draggingSession && mosaicMode === 'mosaic' && <MosaicDropPreview />}
       </motion.div>
       </div>
       </>
@@ -578,7 +576,35 @@ function App(): React.JSX.Element {
     </div>
     <MiniAppHostLayer />
     <BrowserHostLayer />
+    {layoutMode === 'coding' && draggingSession && mosaicMode !== 'mosaic' && (
+      <MosaicSingleDropOverlay wrapperRef={mainWrapperRef} canRestoreMosaic={canRestoreMosaic} />
+    )}
     </>
+  )
+}
+
+function MosaicSingleDropOverlay({ wrapperRef, canRestoreMosaic }: { wrapperRef: React.RefObject<HTMLDivElement | null>; canRestoreMosaic: boolean }) {
+  const [rect, setRect] = useState<{ left: number; top: number; width: number; height: number } | null>(null)
+  useLayoutEffect(() => {
+    const measure = () => {
+      const el = wrapperRef.current
+      if (el) {
+        const r = el.getBoundingClientRect()
+        setRect({ left: r.left, top: r.top, width: r.width, height: r.height })
+      }
+    }
+    measure()
+    window.addEventListener('resize', measure)
+    return () => window.removeEventListener('resize', measure)
+  }, [wrapperRef])
+  if (!rect) return null
+  return (
+    <div style={{ position: 'fixed', left: rect.left, top: rect.top, width: rect.width, height: rect.height, zIndex: 40 }}>
+      {!canRestoreMosaic && (
+        <MosaicDropZone tileId={null} onDropSession={(fp, sid, edge) => useMosaicStore.getState().addTile(fp, sid, { edge })} />
+      )}
+      <MosaicDropPreview />
+    </div>
   )
 }
 

@@ -264,6 +264,13 @@ function App(): React.JSX.Element {
   const sidebarInnerRef = useRef<HTMLDivElement>(null)
   const mainWrapperRef = useRef<HTMLDivElement>(null)
 
+  const nudgeDragRegions = useCallback(() => {
+    const el = mainWrapperRef.current
+    if (!el) return
+    el.style.setProperty('-webkit-app-region', 'no-drag')
+    requestAnimationFrame(() => el.style.removeProperty('-webkit-app-region'))
+  }, [])
+
   const getLinkedPanel = useCallback((newW: number, prevW: number) => {
     const ap = useActivityPanelStore.getState()
     if (!ap.showPanel || ap.side !== 'left') return null
@@ -496,7 +503,7 @@ function App(): React.JSX.Element {
         <ActivityPanel getMaxWidth={getActivityMaxWidth} hidden={layoutMode !== 'coding' || mosaicMode === 'mosaic'} />
 
         {/* Main area */}
-        <motion.div layout="position" transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }} className={cn('relative z-10 flex min-w-[400px] flex-1 flex-col', layoutMode === 'coding' && 'overflow-hidden', layoutMode === 'coding' && showActivityPanel && (activitySide === 'left' ? 'border-l border-border' : 'border-r border-border'))} style={{ order: 1 }}>
+        <motion.div layout="position" onLayoutAnimationComplete={nudgeDragRegions} transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }} className={cn('relative z-10 flex min-w-[400px] flex-1 flex-col', layoutMode === 'coding' && 'overflow-hidden', layoutMode === 'coding' && showActivityPanel && (activitySide === 'left' ? 'border-l border-border' : 'border-r border-border'))} style={{ order: 1 }}>
         {/* Main header — drag region (hidden in mosaic; each tile carries its own) */}
         {mosaicMode !== 'mosaic' && (
         <div

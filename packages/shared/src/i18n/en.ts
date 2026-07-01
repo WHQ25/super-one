@@ -2081,7 +2081,7 @@ export const en: Messages = {
       openInApp: 'Open in built-in browser',
     },
     browser: {
-      addressPlaceholder: 'Enter a URL',
+      addressPlaceholder: 'Search or enter a URL',
       screenshotCopied: 'Screenshot copied to clipboard',
       screenshotFailed: 'Failed to capture screenshot',
       annotateEnter: 'Annotate',

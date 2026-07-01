@@ -738,7 +738,7 @@ export const zh: Messages = {
       openInApp: '在内置浏览器打开',
     },
     browser: {
-      addressPlaceholder: '输入网址',
+      addressPlaceholder: '搜索或输入网址',
       screenshotCopied: '截图已复制到剪贴板',
       screenshotFailed: '截图失败',
       annotateEnter: '进入标注模式',

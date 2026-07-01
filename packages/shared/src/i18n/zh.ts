@@ -1,6 +1,12 @@
 import type { Messages } from './en'
 
 export const zh: Messages = {
+  activity: {
+    launcher: {
+      browser: '浏览器',
+      terminal: '终端',
+    },
+  },
   common: {
     cancel: '取消',
     confirm: '确认',
@@ -1298,7 +1304,6 @@ export const zh: Messages = {
     moveChatRight: '将对话移至右侧',
     toggleActivityPanel: '活动面板开关',
     toggleTerminal: '终端面板开关',
-    newBrowserTab: '新建浏览器标签',
     closeBrowser: '关闭浏览器',
     closeMiniApp: '关闭小程序',
     returnToPanel: '返回面板',

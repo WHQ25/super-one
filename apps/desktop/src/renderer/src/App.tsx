@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useCallback, useRef, useState, lazy, Suspense } from 'react'
-import { Sun, Moon, X, Smartphone, Minimize2, SquareTerminal, RotateCw, Bug, LayoutGrid, Globe, PanelLeft, PanelRight } from 'lucide-react'
+import { Sun, Moon, X, Smartphone, Minimize2, SquareTerminal, RotateCw, Bug, LayoutGrid, Globe, PanelLeft, PanelRight, PanelLeftDashed, PanelRightDashed } from 'lucide-react'
 import { motion } from 'motion/react'
 import { toast } from 'sonner'
 import { useTranslation } from 'react-i18next'
@@ -77,6 +77,7 @@ function App(): React.JSX.Element {
   )
   const showActivityPanel = useActivityPanelStore((s) => s.showPanel)
   const activitySide = useActivityPanelStore((s) => s.side)
+  const hasActivityPanels = useActivityPanelStore((s) => s.hasPanels)
   const mosaicMode = useMosaicStore((s) => s.mode)
   const mosaicRoot = useMosaicStore((s) => s.root)
   const canRestoreMosaic = useMosaicStore((s) => s.lastLayout !== null)
@@ -554,24 +555,6 @@ function App(): React.JSX.Element {
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <button
-                      onClick={toggleActivityPanel}
-                      className={cn(
-                        'rounded-md p-1.5 transition-colors hover:bg-muted hover:text-foreground',
-                        showActivityPanel ? 'text-foreground' : 'text-muted-foreground/60',
-                      )}
-                    >
-                      {activitySide === 'left' ? <PanelRight className="size-3.5" /> : <PanelLeft className="size-3.5" />}
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="top"><span>{t('tooltips.toggleActivityPanel')}</span> <CommandShortcut>{isMac ? '⌘⌥B' : 'Ctrl+Alt+B'}</CommandShortcut></TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            )}
-            {layoutMode === 'coding' && (
-              <TooltipProvider delayDuration={300}>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
                       onClick={toggleTerminal}
                       className={cn(
                         'rounded-md p-1.5 transition-colors hover:bg-muted hover:text-foreground',
@@ -587,6 +570,29 @@ function App(): React.JSX.Element {
                 </Tooltip>
               </TooltipProvider>
             )}
+            {layoutMode === 'coding' && (() => {
+              const ActivityIcon = activitySide === 'left'
+                ? (showActivityPanel ? PanelRightDashed : PanelRight)
+                : (showActivityPanel ? PanelLeftDashed : PanelLeft)
+              return (
+                <TooltipProvider delayDuration={300}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        onClick={toggleActivityPanel}
+                        className={cn(
+                          'rounded-md p-1.5 transition-colors hover:bg-muted hover:text-foreground',
+                          showActivityPanel ? 'text-foreground' : 'text-muted-foreground/60',
+                        )}
+                      >
+                        <ActivityIcon className={cn('size-3.5', !showActivityPanel && hasActivityPanels && 'animate-pulse')} />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top"><span>{t('tooltips.toggleActivityPanel')}</span> <CommandShortcut>{isMac ? '⌘⌥B' : 'Ctrl+Alt+B'}</CommandShortcut></TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )
+            })()}
             {layoutMode === 'coding' && canRestoreMosaic && (
               <TooltipProvider delayDuration={300}>
                 <Tooltip>

@@ -1,4 +1,10 @@
 export type Messages = {
+  activity: {
+    launcher: {
+      browser: string
+      terminal: string
+    }
+  }
   common: {
     cancel: string
     confirm: string
@@ -1284,7 +1290,6 @@ export type Messages = {
     moveChatRight: string
     toggleActivityPanel: string
     toggleTerminal: string
-    newBrowserTab: string
     closeBrowser: string
     closeMiniApp: string
     returnToPanel: string
@@ -1350,6 +1355,12 @@ export type Messages = {
 }
 
 export const en: Messages = {
+  activity: {
+    launcher: {
+      browser: 'Browser',
+      terminal: 'Terminal',
+    },
+  },
   common: {
     cancel: 'Cancel',
     confirm: 'Confirm',
@@ -2647,7 +2658,6 @@ export const en: Messages = {
     moveChatRight: 'Move Chat to Right',
     toggleActivityPanel: 'Toggle Activity Panel',
     toggleTerminal: 'Toggle Terminal',
-    newBrowserTab: 'New browser tab',
     closeBrowser: 'Close browser',
     closeMiniApp: 'Close mini-app',
     returnToPanel: 'Return to panel',

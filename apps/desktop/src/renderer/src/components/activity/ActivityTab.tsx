@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react'
 import type { IDockviewPanelHeaderProps } from 'dockview-core'
-import { Bug, Globe, Maximize, RotateCw, X } from 'lucide-react'
+import { Bug, Globe, Maximize, RotateCw, Terminal as TerminalIcon, X } from 'lucide-react'
 import { motion } from 'motion/react'
 import { cn } from '@superone/ui/lib/utils'
 import { FileIcon } from '@superone/ui/components/ui/FileIcon'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { useBrowserStore } from '@/stores/browser'
-import { closeBrowserTab, maximizeBrowserTab } from './activity-panel-api'
+import { closeActivityTerminalTab, closeBrowserTab, maximizeBrowserTab } from './activity-panel-api'
 
 function useIsActive(api: IDockviewPanelHeaderProps['api']) {
   const [active, setActive] = useState(api.isActive)
@@ -17,6 +17,16 @@ function useIsActive(api: IDockviewPanelHeaderProps['api']) {
     return () => d.dispose()
   }, [api])
   return active
+}
+
+function usePanelTitle(api: IDockviewPanelHeaderProps['api']) {
+  const [title, setTitle] = useState(api.title)
+  useEffect(() => {
+    setTitle(api.title)
+    const d = api.onDidTitleChange((e) => setTitle(e.title))
+    return () => d.dispose()
+  }, [api])
+  return title
 }
 
 export function HoverCloseSlot({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
@@ -160,8 +170,22 @@ export function BrowserTab(props: IDockviewPanelHeaderProps<{ browserId: string 
   )
 }
 
+export function TerminalTab(props: IDockviewPanelHeaderProps<{ terminalId: string }>) {
+  const active = useIsActive(props.api)
+  const title = usePanelTitle(props.api)
+  return (
+    <div className={tabChipClass(active)}>
+      <HoverCloseSlot onClose={() => closeActivityTerminalTab(props.params.terminalId)}>
+        <TerminalIcon className="size-3.5 shrink-0" />
+      </HoverCloseSlot>
+      <span className="min-w-0 truncate text-xs">{title || 'Terminal'}</span>
+    </div>
+  )
+}
+
 export const activityTabComponents: Record<string, React.FunctionComponent<IDockviewPanelHeaderProps>> = {
   'file-preview-tab': FilePreviewTab as React.FunctionComponent<IDockviewPanelHeaderProps>,
   'miniapp-tab': MiniAppTab as React.FunctionComponent<IDockviewPanelHeaderProps>,
   'browser-tab': BrowserTab as React.FunctionComponent<IDockviewPanelHeaderProps>,
+  'terminal-tab': TerminalTab as React.FunctionComponent<IDockviewPanelHeaderProps>,
 }

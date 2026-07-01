@@ -1,19 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Terminal as TerminalIcon, Plus, X, ArrowUp, ArrowDown, PanelBottomClose } from 'lucide-react'
-import { Terminal as XTerm } from '@xterm/xterm'
-import { FitAddon } from '@xterm/addon-fit'
-import { WebLinksAddon } from '@xterm/addon-web-links'
-import { Unicode11Addon } from '@xterm/addon-unicode11'
+import { Terminal as TerminalIcon, Plus, PanelBottomClose } from 'lucide-react'
 import { WebglAddon } from '@xterm/addon-webgl'
-import { SearchAddon } from '@xterm/addon-search'
-import '@xterm/xterm/css/xterm.css'
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
 import { SortableContext, horizontalListSortingStrategy, useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { requestOpenExternalLink } from '@/lib/external-link'
 import { setCloseActiveTerminal, setCreateTerminal } from './terminal-panel-api'
 import { getTerminalFontFamily, getTerminalFontSize, getTerminalTheme, onTerminalThemeChange } from './terminal-theme'
-import { disposeTermInstance } from './term-instance'
+import { applyTerminalEvent, createBaseXterm, disposeTermInstance, SEARCH_DECORATIONS } from './term-instance'
+import { TerminalFindBar } from './TerminalFindBar'
 import type { TerminalEvent, TerminalListItem } from '@superone/shared/agent-types'
 import { useAppStore } from '@/stores/app'
 import { useChatStore } from '@/stores/chat'
@@ -95,13 +89,6 @@ export function TerminalPanel() {
   const openFindRef = useRef<() => void>(() => {})
   const creatingRef = useRef(false)
 
-  const SEARCH_DECORATIONS = {
-    matchBackground: '#7a5c1f',
-    activeMatchBackground: '#d18616',
-    matchOverviewRuler: '#7a5c1f',
-    activeMatchColorOverviewRuler: '#d18616',
-  } as const
-
   const runSearch = useCallback(
     (query: string, dir: 'next' | 'prev', incremental = false) => {
       const search = (activeId ? instances.get(activeId) : null)?.search
@@ -131,26 +118,7 @@ export function TerminalPanel() {
     (terminalId: string) => {
       let inst = instances.get(terminalId)
       if (inst) return inst
-      const xterm = new XTerm({
-        fontSize: getTerminalFontSize(),
-        fontFamily: getTerminalFontFamily(),
-        cursorBlink: true,
-        allowProposedApi: true,
-        allowTransparency: true,
-        theme: themeRef.current,
-      })
-      const fit = new FitAddon()
-      xterm.loadAddon(fit)
-      xterm.loadAddon(
-        new WebLinksAddon((event, uri) => {
-          event.preventDefault()
-          requestOpenExternalLink(uri)
-        }),
-      )
-      xterm.loadAddon(new Unicode11Addon())
-      xterm.unicode.activeVersion = '11'
-      const search = new SearchAddon()
-      xterm.loadAddon(search)
+      const { xterm, fit, search } = createBaseXterm()
       search.onDidChangeResults((e) => setFindHits({ idx: e.resultIndex, count: e.resultCount }))
       xterm.attachCustomKeyEventHandler((e) => {
         if (e.type === 'keydown' && (e.metaKey || e.ctrlKey)) {
@@ -198,48 +166,10 @@ export function TerminalPanel() {
 
   useEffect(() => {
     const off = window.terminal.onTerminalEvent((event: TerminalEvent) => {
-      if (
-        event.type !== 'terminal_output' &&
-        event.type !== 'terminal_snapshot' &&
-        event.type !== 'terminal_snapshot_chunk' &&
-        event.type !== 'terminal_owner_changed' &&
-        event.type !== 'terminal_exited'
-      )
-        return
+      if (!event.terminalId) return
       const inst = instances.get(event.terminalId)
       if (!inst) return
-      if (event.type === 'terminal_output') {
-        if (event.toSeq <= inst.lastSeq) return
-        inst.xterm.write(event.data)
-        inst.lastSeq = event.toSeq
-      } else if (event.type === 'terminal_snapshot') {
-        inst.xterm.reset()
-        inst.xterm.write(event.ansi)
-        inst.lastSeq = event.snapshot.lastSeq
-        inst.writable = event.snapshot.writableByMe
-      } else if (event.type === 'terminal_snapshot_chunk') {
-        let acc = inst.chunks.get(event.snapshotId)
-        if (!acc) {
-          acc = { total: event.total, parts: new Map() }
-          inst.chunks.set(event.snapshotId, acc)
-        }
-        acc.parts.set(event.index, event.ansi)
-        if (event.snapshot) {
-          acc.lastSeq = event.snapshot.lastSeq
-          inst.writable = event.snapshot.writableByMe
-        }
-        if (acc.parts.size === acc.total) {
-          const ansi = Array.from({ length: acc.total }, (_, i) => acc!.parts.get(i) ?? '').join('')
-          inst.xterm.reset()
-          inst.xterm.write(ansi)
-          if (acc.lastSeq !== undefined) inst.lastSeq = acc.lastSeq
-          inst.chunks.delete(event.snapshotId)
-        }
-      } else if (event.type === 'terminal_owner_changed') {
-        inst.writable = event.writableByMe
-      } else if (event.type === 'terminal_exited') {
-        inst.xterm.write('\r\n\x1b[2m[process exited]\x1b[0m\r\n')
-      }
+      applyTerminalEvent(inst, event)
     })
     return off
   }, [instances])
@@ -382,55 +312,15 @@ export function TerminalPanel() {
             }}
           />
           {find !== null && (
-            <div className="absolute right-3 top-2 z-20 flex items-center gap-1 rounded-lg border border-border bg-popover px-1.5 py-1 shadow-md">
-              <input
-                ref={findInputRef}
-                autoFocus
-                value={find}
-                placeholder="Find"
-                spellCheck={false}
-                onChange={(e) => {
-                  setFind(e.target.value)
-                  runSearch(e.target.value, 'next', true)
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault()
-                    runSearch(find, e.shiftKey ? 'prev' : 'next')
-                  } else if (e.key === 'Escape') {
-                    e.preventDefault()
-                    closeFind()
-                  }
-                }}
-                className="w-44 bg-transparent text-xs text-foreground outline-none placeholder:text-muted-foreground"
-              />
-              <span className="min-w-10 text-right text-[11px] tabular-nums text-muted-foreground">
-                {findHits.count ? `${findHits.idx + 1}/${findHits.count}` : '0/0'}
-              </span>
-              <button
-                onClick={() => runSearch(find, 'prev')}
-                disabled={!findHits.count}
-                className="rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground disabled:opacity-40"
-                title="Previous (⇧↵)"
-              >
-                <ArrowUp className="size-3.5" />
-              </button>
-              <button
-                onClick={() => runSearch(find, 'next')}
-                disabled={!findHits.count}
-                className="rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground disabled:opacity-40"
-                title="Next (↵)"
-              >
-                <ArrowDown className="size-3.5" />
-              </button>
-              <button
-                onClick={closeFind}
-                className="rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-                title="Close (Esc)"
-              >
-                <X className="size-3.5" />
-              </button>
-            </div>
+            <TerminalFindBar
+              value={find}
+              onChange={(v) => { setFind(v); runSearch(v, 'next', true) }}
+              hits={findHits}
+              onNext={() => runSearch(find, 'next')}
+              onPrev={() => runSearch(find, 'prev')}
+              onClose={closeFind}
+              inputRef={findInputRef}
+            />
           )}
         </div>
       )}

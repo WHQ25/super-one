@@ -2,6 +2,7 @@ import type { IDockviewPanelProps } from 'dockview-core'
 import { FilePreview } from '@/components/coding/FilePreview'
 import { MiniAppSlot } from '@/components/miniapp/MiniAppSlot'
 import { BrowserView } from '@/components/browser/BrowserView'
+import { ActivityTerminalPanel } from './ActivityTerminalPanel'
 
 function FilePreviewPanel(props: IDockviewPanelProps<{ filePath: string }>) {
   return <FilePreview filePath={props.params.filePath} />
@@ -15,8 +16,13 @@ function BrowserPanel(props: IDockviewPanelProps<{ browserId: string; url: strin
   return <BrowserView browserId={props.params.browserId} mode="panel" />
 }
 
+function TerminalHostPanel(props: IDockviewPanelProps<{ terminalId: string }>) {
+  return <ActivityTerminalPanel terminalId={props.params.terminalId} api={props.api} />
+}
+
 export const activityPanelComponents: Record<string, React.FunctionComponent<IDockviewPanelProps>> = {
   'file-preview': FilePreviewPanel,
   'miniapp': MiniAppPanel as React.FunctionComponent<IDockviewPanelProps>,
   'browser': BrowserPanel as React.FunctionComponent<IDockviewPanelProps>,
+  'terminal': TerminalHostPanel as React.FunctionComponent<IDockviewPanelProps>,
 }

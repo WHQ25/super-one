@@ -1,4 +1,5 @@
 import { useRef, useCallback, useEffect } from 'react'
+import { Plus } from 'lucide-react'
 import { motion } from 'motion/react'
 import { DockviewReact } from 'dockview'
 import type { DockviewReadyEvent, DockviewApi } from 'dockview-core'
@@ -13,10 +14,12 @@ import { useResizeHandle } from '@/hooks/useResizeHandle'
 import { LAYOUT } from '@/lib/layout-constants'
 import { LayoutToggle } from '@/components/coding/LayoutToggle'
 import { ResizeHandleLine } from '@/components/ResizeHandleLine'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@superone/ui/components/ui/dropdown-menu'
 import { setDockApi } from './activity-panel-api'
+import { useActivityLaunchTypes } from './activity-launch-types'
 import { activityPanelComponents } from './panels'
 import { activityTabComponents } from './ActivityTab'
-import { ActivityWatermark } from './ActivityWatermark'
+import { ActivityLauncher } from './ActivityLauncher'
 import { cn } from '@superone/ui/lib/utils'
 
 interface ActivityPanelProps {
@@ -37,6 +40,32 @@ function ActivityPrefixActions() {
     <div className={cn('flex h-full items-center', needsTrafficLightPadding ? 'pl-2' : '')}>
       {needsTrafficLightPadding && <div className="h-full w-[66px] shrink-0" />}
       <LayoutToggle />
+    </div>
+  )
+}
+
+function ActivityRightActions() {
+  const types = useActivityLaunchTypes()
+  return (
+    <div className="flex h-full items-center px-1" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            className="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            title="New tab"
+          >
+            <Plus className="size-4" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          {types.map(({ id, icon: Icon, label, disabled, onOpen }) => (
+            <DropdownMenuItem key={id} disabled={disabled} onSelect={() => onOpen()}>
+              <Icon className="size-4" />
+              {label}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   )
 }
@@ -64,7 +93,12 @@ export function ActivityPanel({ getMaxWidth, hidden }: ActivityPanelProps) {
     apiRef.current = event.api
     setDockApi(event.api)
 
+    const syncHasPanels = () => useActivityPanelStore.getState().setHasPanels(event.api.panels.length > 0)
+    syncHasPanels()
+
+    const dAdd = event.api.onDidAddPanel(syncHasPanels)
     const d1 = event.api.onDidRemovePanel(() => {
+      syncHasPanels()
       if (event.api.panels.length === 0) {
         useActivityPanelStore.getState().setShowPanel(false)
       }
@@ -120,7 +154,7 @@ export function ActivityPanel({ getMaxWidth, hidden }: ActivityPanelProps) {
     const d3 = event.api.onDidAddGroup(updateSingleGroupClass)
     const d4 = event.api.onDidRemoveGroup(updateSingleGroupClass)
 
-    return () => { d1.dispose(); d2.dispose(); d3.dispose(); d4.dispose() }
+    return () => { dAdd.dispose(); d1.dispose(); d2.dispose(); d3.dispose(); d4.dispose() }
   }, [])
 
   useEffect(() => {
@@ -153,8 +187,9 @@ export function ActivityPanel({ getMaxWidth, hidden }: ActivityPanelProps) {
               onReady={onReady}
               components={activityPanelComponents}
               tabComponents={activityTabComponents}
-              watermarkComponent={ActivityWatermark}
+              watermarkComponent={ActivityLauncher}
               prefixHeaderActionsComponent={ActivityPrefixActions}
+              rightHeaderActionsComponent={ActivityRightActions}
             />
           </div>
         </div>

@@ -4,6 +4,7 @@ import { useAppStore } from '@/stores/app'
 import { useBrowserStore } from '@/stores/browser'
 import { normalizeUrl } from '@/components/browser/browser-url'
 import { normalizeFileLinkTarget } from '@/lib/file-link'
+import { disposeActivityTermInstance } from './activity-terminal'
 
 let dockApi: DockviewApi | null = null
 let pendingAction: (() => void) | null = null
@@ -196,11 +197,8 @@ export function openBrowserTab(url = 'about:blank', reuseId?: string, owner?: st
     if (!dockApi) return
     useBrowserStore.getState().ensure(browserId, normalizeUrl(url), resolvedOwner)
     const existing = dockApi.panels.find((p) => p.id === browserId)
-    if (existing) {
-      existing.api.setActive()
-      return
-    }
-    dockApi.addPanel({
+    if (existing) existing.api.setActive()
+    else dockApi.addPanel({
       id: browserId,
       component: 'browser',
       tabComponent: 'browser-tab',
@@ -208,6 +206,31 @@ export function openBrowserTab(url = 'about:blank', reuseId?: string, owner?: st
       params: { browserId, url },
     })
   })
+}
+
+export async function openTerminalTab(projectPath: string, sessionId?: string) {
+  ensureVisible()
+  const item = await window.terminal.create({ projectPath, sessionId })
+  const panelId = `terminal-${item.terminalId}`
+  execOrDefer(() => {
+    if (!dockApi) return
+    const existing = dockApi.panels.find((p) => p.id === panelId)
+    if (existing) existing.api.setActive()
+    else dockApi.addPanel({
+      id: panelId,
+      component: 'terminal',
+      tabComponent: 'terminal-tab',
+      title: item.title || 'Terminal',
+      params: { terminalId: item.terminalId },
+    })
+  })
+}
+
+export function closeActivityTerminalTab(terminalId: string) {
+  void window.terminal.kill(terminalId)
+  disposeActivityTermInstance(terminalId)
+  const existing = dockApi?.panels.find((p) => p.id === `terminal-${terminalId}`)
+  existing?.api.close()
 }
 
 export function closeBrowserTab(browserId: string) {

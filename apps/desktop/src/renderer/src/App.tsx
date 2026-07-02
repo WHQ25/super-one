@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useCallback, useRef, useState, lazy, Suspense } from 'react'
+import { flushSync } from 'react-dom'
 import { Sun, Moon, X, Smartphone, Minimize2, SquareTerminal, RotateCw, Bug, LayoutGrid, Globe, PanelLeft, PanelRight, PanelLeftDashed, PanelRightDashed } from 'lucide-react'
 import { motion } from 'motion/react'
 import { toast } from 'sonner'
@@ -355,49 +356,60 @@ function App(): React.JSX.Element {
 
   useEffect(() => {
     let raf = 0
+    let restoreTimer = 0
     let prevWidth = window.innerWidth
     let prevSidebar = useAppStore.getState().showSidebar
+    const clampBody = () => {
+      const { showSidebar: sb, sidebarWidth: sw, setSidebarWidth: setSW } = useAppStore.getState()
+      const ap = useActivityPanelStore.getState()
+      const curWidth = window.innerWidth
+      const delta = curWidth - prevWidth
+      prevWidth = curWidth
+
+      const sidebarJustHidden = prevSidebar && !sb
+      prevSidebar = sb
+
+      const mainMin = mainMinWRef.current
+      if (sidebarJustHidden && ap.showPanel) {
+        const maxAp = curWidth - mainMin - CARD_GUTTER
+        ap.setPanelWidth(Math.min(maxAp, ap.panelWidth + sw))
+      } else if (delta !== 0 && ap.showPanel) {
+        const maxAp = curWidth - (sb ? sw : 0) - mainMin - CARD_GUTTER
+        ap.setPanelWidth(Math.max(MIN_AP, Math.min(ap.panelWidth + delta, maxAp)))
+      }
+
+      if (sb) {
+        const maxSw = maxSidebarWidth(curWidth, mainMin, ap.showPanel ? ap.panelWidth : 0)
+        if (sw > maxSw) setSW(Math.max(MIN_SIDEBAR, maxSw))
+      }
+
+      const totalPanels = (sb ? Math.min(sw, MAX_SIDEBAR) : 0) + (ap.showPanel ? ap.panelWidth : 0)
+      let overflow = totalPanels + mainMin + CARD_GUTTER - curWidth
+      if (overflow <= 0) return
+      if (ap.showPanel) {
+        const shrink = Math.min(overflow, ap.panelWidth - MIN_AP)
+        if (shrink > 0) { ap.setPanelWidth(ap.panelWidth - shrink); overflow -= shrink }
+      }
+      if (overflow > 0 && sb) {
+        const shrink = Math.min(overflow, sw - MIN_SIDEBAR)
+        if (shrink > 0) setSW(sw - shrink)
+      }
+    }
     const clampPanels = () => {
       cancelAnimationFrame(raf)
-      raf = requestAnimationFrame(() => {
-        const { showSidebar: sb, sidebarWidth: sw, setSidebarWidth: setSW } = useAppStore.getState()
-        const ap = useActivityPanelStore.getState()
-        const curWidth = window.innerWidth
-        const delta = curWidth - prevWidth
-        prevWidth = curWidth
-
-        const sidebarJustHidden = prevSidebar && !sb
-        prevSidebar = sb
-
-        const mainMin = mainMinWRef.current
-        if (sidebarJustHidden && ap.showPanel) {
-          const maxAp = curWidth - mainMin - CARD_GUTTER
-          ap.setPanelWidth(Math.min(maxAp, ap.panelWidth + sw))
-        } else if (delta !== 0 && ap.showPanel) {
-          const maxAp = curWidth - (sb ? sw : 0) - mainMin - CARD_GUTTER
-          ap.setPanelWidth(Math.max(MIN_AP, Math.min(ap.panelWidth + delta, maxAp)))
-        }
-
-        if (sb) {
-          const maxSw = maxSidebarWidth(curWidth, mainMin, ap.showPanel ? ap.panelWidth : 0)
-          if (sw > maxSw) setSW(Math.max(MIN_SIDEBAR, maxSw))
-        }
-
-        const totalPanels = (sb ? Math.min(sw, MAX_SIDEBAR) : 0) + (ap.showPanel ? ap.panelWidth : 0)
-        let overflow = totalPanels + mainMin + CARD_GUTTER - curWidth
-        if (overflow <= 0) return
-        if (ap.showPanel) {
-          const shrink = Math.min(overflow, ap.panelWidth - MIN_AP)
-          if (shrink > 0) { ap.setPanelWidth(ap.panelWidth - shrink); overflow -= shrink }
-        }
-        if (overflow > 0 && sb) {
-          const shrink = Math.min(overflow, sw - MIN_SIDEBAR)
-          if (shrink > 0) setSW(sw - shrink)
-        }
-      })
+      raf = requestAnimationFrame(clampBody)
+    }
+    const onWindowResize = () => {
+      const outer = document.querySelector<HTMLElement>('[data-activity-outer]')
+      if (outer) {
+        outer.style.transition = 'none'
+        clearTimeout(restoreTimer)
+        restoreTimer = window.setTimeout(() => { outer.style.transition = '' }, 160)
+      }
+      flushSync(clampBody)
     }
     clampPanelsRef.current = clampPanels
-    window.addEventListener('resize', clampPanels)
+    window.addEventListener('resize', onWindowResize)
     const unsubAP = useActivityPanelStore.subscribe((state, prev) => {
       if (state.showPanel && !prev.showPanel) {
         const { showSidebar: sb, sidebarWidth: sw } = useAppStore.getState()
@@ -415,7 +427,8 @@ function App(): React.JSX.Element {
     })
     return () => {
       cancelAnimationFrame(raf)
-      window.removeEventListener('resize', clampPanels)
+      clearTimeout(restoreTimer)
+      window.removeEventListener('resize', onWindowResize)
       unsubAP()
       unsubApp()
     }

@@ -144,7 +144,7 @@ export const ChatPanel = memo(function ChatPanel() {
   const panelRef = useRef<HTMLDivElement>(null)
   const measureRef = useRef<HTMLSpanElement>(null)
 
-  const { showScrollButton, scrollToBottom } = useChatScroll({ scrollViewportRef })
+  const { showScrollButton, scrollToBottom, stopAutoScroll } = useChatScroll({ scrollViewportRef })
   useChatKeyboardShortcuts()
 
   // Panel dimensions
@@ -462,7 +462,7 @@ export const ChatPanel = memo(function ChatPanel() {
           transition={{ duration: 0.12 }}
         >
           <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-6 bg-linear-to-b from-card to-transparent" />
-          <ChatContent scrollViewportRef={scrollViewportRef} showScrollButton={showScrollButton} scrollToBottom={scrollToBottom} />
+          <ChatContent scrollViewportRef={scrollViewportRef} showScrollButton={showScrollButton} scrollToBottom={scrollToBottom} stopAutoScroll={stopAutoScroll} />
         </motion.div>
       </motion.div>
     </>

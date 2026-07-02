@@ -31,9 +31,10 @@ interface ChatContentProps {
   scrollViewportRef: React.RefObject<HTMLDivElement | null>
   showScrollButton?: boolean
   scrollToBottom?: () => void
+  stopAutoScroll?: () => void
 }
 
-export function ChatContent({ scrollViewportRef, showScrollButton = false, scrollToBottom }: ChatContentProps) {
+export function ChatContent({ scrollViewportRef, showScrollButton = false, scrollToBottom, stopAutoScroll }: ChatContentProps) {
   const {
     messages, isCompacting, compactError, rateLimitInfo, apiRetry, modelFallback, pendingPlanApproval,
     historySessionId, historyHydrated, worktreeRemoved,
@@ -139,12 +140,13 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
   const jumpToMessage = useCallback((id: string) => {
     const targetIdx = messages.findIndex((m) => m.id === id)
     if (targetIdx < 0) return
+    stopAutoScroll?.()
     const needed = compactIndices.filter((ci) => ci > targetIdx).length
     setExpandLevel((prev) => Math.max(prev, needed))
     setRenderCount((prev) => Math.max(prev, messages.length - targetIdx + LOAD_MORE_COUNT))
     pendingScrollIdRef.current = id
     setJumpNonce((n) => n + 1)
-  }, [messages, compactIndices])
+  }, [messages, compactIndices, stopAutoScroll])
 
   useEffect(() => {
     const id = pendingScrollIdRef.current

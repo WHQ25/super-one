@@ -8,7 +8,10 @@ interface UseChatScrollOptions {
 interface UseChatScrollReturn {
   showScrollButton: boolean
   scrollToBottom: () => void
+  stopAutoScroll: () => void
 }
+
+const RESUME_AT_BOTTOM_PX = 24
 
 export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseChatScrollReturn {
   const messages = useActiveSession((s) => s.messages)
@@ -20,7 +23,6 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
 
   const isNearBottomRef = useRef(true)
   const lastScrollTopRef = useRef(0)
-  const userScrollTimeRef = useRef(0)
   const [showScrollButton, setShowScrollButton] = useState(false)
 
   const sessionSwitchRef = useRef(false)
@@ -58,29 +60,26 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
   useEffect(() => {
     const el = scrollViewportRef.current
     if (!el) return
-    const markUserScroll = (): void => { userScrollTimeRef.current = Date.now() }
+    const handleWheel = (e: WheelEvent): void => {
+      if (e.deltaY < 0) isNearBottomRef.current = false
+    }
     const handleScroll = (): void => {
       const remaining = el.scrollHeight - el.scrollTop - el.clientHeight
-      const scrolledUp = el.scrollTop < lastScrollTopRef.current
+      const scrolledUp = el.scrollTop < lastScrollTopRef.current - 1
       lastScrollTopRef.current = el.scrollTop
 
-      const isUserScroll = Date.now() - userScrollTimeRef.current < 150
-      if (isUserScroll) {
-        if (scrolledUp && statusRef.current === 'streaming') {
-          isNearBottomRef.current = remaining < 200
-        } else {
-          isNearBottomRef.current = remaining < el.clientHeight / 2
-        }
+      if (scrolledUp) {
+        isNearBottomRef.current = false
+      } else if (remaining <= RESUME_AT_BOTTOM_PX) {
+        isNearBottomRef.current = true
       }
       setShowScrollButton(remaining > el.clientHeight)
     }
     el.addEventListener('scroll', handleScroll, { passive: true })
-    el.addEventListener('wheel', markUserScroll, { passive: true })
-    el.addEventListener('pointerdown', markUserScroll)
+    el.addEventListener('wheel', handleWheel, { passive: true })
     return () => {
       el.removeEventListener('scroll', handleScroll)
-      el.removeEventListener('wheel', markUserScroll)
-      el.removeEventListener('pointerdown', markUserScroll)
+      el.removeEventListener('wheel', handleWheel)
     }
   }, [sessionId, viewportMounted, scrollViewportRef])
 
@@ -135,5 +134,10 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
     }
   }, [scrollViewportRef])
 
-  return { showScrollButton, scrollToBottom }
+  const stopAutoScroll = useCallback(() => {
+    isNearBottomRef.current = false
+    setShowScrollButton(true)
+  }, [])
+
+  return { showScrollButton, scrollToBottom, stopAutoScroll }
 }

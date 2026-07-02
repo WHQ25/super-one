@@ -12,10 +12,10 @@ interface SessionPaneProps {
 
 function SessionPaneBody({ className, rootRef }: { className?: string; rootRef?: RefObject<HTMLDivElement | null> }) {
   const scrollViewportRef = useRef<HTMLDivElement>(null)
-  const { showScrollButton, scrollToBottom } = useChatScroll({ scrollViewportRef })
+  const { showScrollButton, scrollToBottom, stopAutoScroll } = useChatScroll({ scrollViewportRef })
   return (
     <div ref={rootRef} className={cn('@container flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden', className)}>
-      <ChatContent scrollViewportRef={scrollViewportRef} showScrollButton={showScrollButton} scrollToBottom={scrollToBottom} />
+      <ChatContent scrollViewportRef={scrollViewportRef} showScrollButton={showScrollButton} scrollToBottom={scrollToBottom} stopAutoScroll={stopAutoScroll} />
     </div>
   )
 }

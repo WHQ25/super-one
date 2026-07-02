@@ -176,7 +176,7 @@ export function ActivityPanel({ getMaxWidth, hidden }: ActivityPanelProps) {
         data-activity-outer=""
         layout="position"
         transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
-        className={cn('relative shrink-0 overflow-hidden')}
+        className={cn('relative shrink-0 overflow-hidden transition-[width] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]')}
         style={{ width: visible ? panelWidth : 0, order: side === 'left' ? 0 : 2 }}
       >
         <div ref={innerRef} data-activity-inner="" className="flex h-full flex-col overflow-hidden" style={{ width: panelWidth }}>

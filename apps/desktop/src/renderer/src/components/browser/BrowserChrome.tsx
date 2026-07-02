@@ -102,8 +102,7 @@ export function BrowserChrome({ browserId, onNavigate, onBack, onForward, onRelo
           </IconButton>
         )}
       </form>
-      {!isHome &&
-        (annotating ? (
+      {annotating ? (
           <TooltipProvider delayDuration={300}>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -133,19 +132,20 @@ export function BrowserChrome({ browserId, onNavigate, onBack, onForward, onRelo
           </TooltipProvider>
         ) : (
           <>
-            <IconButton size="xs" variant="ghost" tooltip="Screenshot" onClick={screenshot}>
+            <IconButton size="xs" variant="ghost" tooltip="Screenshot" disabled={isHome} onClick={screenshot}>
               <Camera className="size-3.5" />
             </IconButton>
             <IconButton
               size="xs"
               variant="ghost"
               tooltip={<span className="inline-flex items-center gap-1.5">{t('chat.browser.annotateEnter')}<CommandShortcut>{annotateShortcut}</CommandShortcut></span>}
+              disabled={isHome}
               onClick={() => startAnnotate(browserId)}
             >
               <SquareDashedMousePointer className="size-3.5" />
             </IconButton>
           </>
-        ))}
+        )}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <IconButton size="xs" variant="ghost" tooltip="More">

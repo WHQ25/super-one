@@ -82,7 +82,7 @@ export const CodingLayout = memo(function CodingLayout() {
       <SessionPane />
 
       <div
-        className={`relative flex shrink-0 flex-col border-t border-border bg-card ${termOpen ? '' : 'hidden'}`}
+        className={`coding-terminal-surface relative flex shrink-0 flex-col border-t border-border bg-card ${termOpen ? '' : 'hidden'}`}
         style={{ height: termHeight }}
       >
         <div

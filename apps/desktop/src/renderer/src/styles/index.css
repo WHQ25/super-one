@@ -147,6 +147,21 @@ body {
   background-color: transparent !important;
 }
 
+/* xterm.css hardcodes .composition-view to #000/#FFF, which flashes an opaque
+   black box while typing with an IME (e.g. Chinese). Reskin it to the terminal
+   surface so the pre-edit text blends with the panel. */
+.xterm .composition-view {
+  background-color: var(--card);
+  color: var(--card-foreground);
+}
+
+/* In liquid glass, drop the bottom terminal surface to fully transparent so it
+   shows native vibrancy directly (matching the activity-panel terminal) instead
+   of the 0.72-alpha card layer. */
+.liquid-glass.dark .coding-terminal-surface {
+  background-color: transparent;
+}
+
 .chat-message-wrapper {
   content-visibility: auto;
   contain-intrinsic-size: auto 200px;

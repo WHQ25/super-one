@@ -4,6 +4,19 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.43.7-alpha] - 2026-07-03
+
+### Added
+
+- Browser bookmarks with folders, plus history autocomplete in the address bar
+- browser_snapshot can now target a specific section and grep the console
+
+### Fixed
+
+- Activity panel absorbs window resizing without flashing the chat
+- Revealed compact ticks now render above the compaction marker
+- Activity panel collapse animates on both sides
+
 ## [0.43.6-alpha] - 2026-07-02
 
 ### Added

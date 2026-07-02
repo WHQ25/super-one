@@ -1,8 +1,9 @@
 import { useState, useCallback, useEffect } from 'react'
 import { createPortal } from 'react-dom'
-import { useTranslation } from 'react-i18next'
+import { useTranslation, Trans } from 'react-i18next'
 import { ExternalLink, Copy, Check, X, Globe } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
+import { Kbd } from '@superone/ui/components/ui/kbd'
 
 interface LinkSafetyModalProps {
   url: string
@@ -97,6 +98,15 @@ export function LinkSafetyModal({ url, isOpen, onClose, onConfirm, onOpenInApp }
             <span>{t('chat.linkSafety.openLink')}</span>
           </button>
         </div>
+
+        {onOpenInApp && (
+          <p className="text-center text-[11px] text-muted-foreground">
+            <Trans
+              i18nKey="chat.linkSafety.openInAppHint"
+              components={{ key: <Kbd>{window.app.platform === 'darwin' ? '⌘' : 'Ctrl'}</Kbd> }}
+            />
+          </p>
+        )}
       </div>
     </div>,
     document.body,

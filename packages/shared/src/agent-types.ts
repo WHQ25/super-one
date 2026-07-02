@@ -1677,6 +1677,7 @@ export const AgentIpcChannels = {
   OPEN_FOLDER: 'app:open-folder',
   OPEN_TMP_FOLDER: 'app:open-tmp-folder',
   CACHE_IMAGE: 'app:cache-image',
+  RESOLVE_FAVICON: 'app:resolve-favicon',
   CLOSE_PROJECT: 'app:close-project',
   SETUP_CHECK_CLAUDE: 'app:setup-check-claude',
   SETUP_INSTALL_CLAUDE: 'app:setup-install-claude',

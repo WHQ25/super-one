@@ -420,6 +420,9 @@ const appAPI = {
   cacheRemoteImage: (url: string) =>
     ipcRenderer.invoke(AgentIpcChannels.CACHE_IMAGE, url),
 
+  resolveFavicon: (url: string, isDark: boolean) =>
+    ipcRenderer.invoke(AgentIpcChannels.RESOLVE_FAVICON, url, isDark),
+
   addMarketplace: (source: string, scope: string, projectPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.PLUGINS_ADD_MARKETPLACE, source, scope, projectPath),
   removeMarketplace: (name: string, scope: string, projectPath: string) =>

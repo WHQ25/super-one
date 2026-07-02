@@ -11,23 +11,24 @@ function cacheDir(): string {
   return join(app.getPath('userData'), 'image-cache')
 }
 
-function detectImageMime(buf: Buffer): string | null {
+export function detectImageMime(buf: Buffer): string | null {
   if (buf.length < 4) return null
   if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) return 'image/png'
   if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return 'image/jpeg'
   if (buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46) return 'image/gif'
+  if (buf[0] === 0x00 && buf[1] === 0x00 && buf[2] === 0x01 && buf[3] === 0x00) return 'image/x-icon'
   if (buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46) return 'image/webp'
   const head = buf.subarray(0, 256).toString('utf8').trimStart()
   if (head.startsWith('<svg') || head.startsWith('<?xml')) return 'image/svg+xml'
   return null
 }
 
-function toDataUrl(buf: Buffer): string | null {
+export function toDataUrl(buf: Buffer): string | null {
   const mime = detectImageMime(buf)
   return mime ? `data:${mime};base64,${buf.toString('base64')}` : null
 }
 
-async function download(url: string): Promise<Buffer | null> {
+export async function download(url: string): Promise<Buffer | null> {
   try {
     const res = await fetch(url, { signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) })
     if (!res.ok) return null

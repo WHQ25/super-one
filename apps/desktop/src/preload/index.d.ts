@@ -97,6 +97,7 @@ interface AppAPI {
   updateMarketplace(name: string): Promise<void>
   getGithubStars(repoSlug: string): Promise<number | null>
   cacheRemoteImage(url: string): Promise<string | null>
+  resolveFavicon(url: string, isDark: boolean): Promise<string | null>
   addMarketplace(source: string, scope: ResourceScope, projectPath: string): Promise<void>
   removeMarketplace(name: string, scope: MarketplaceScope, projectPath: string): Promise<void>
   readMarketplacePlugin(marketplace: string, name: string): Promise<MarketplacePluginDetail | null>

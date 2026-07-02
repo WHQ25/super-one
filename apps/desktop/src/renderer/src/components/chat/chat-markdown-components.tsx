@@ -1,9 +1,12 @@
-import { useRef } from 'react'
-import { AtSign, FolderOpen } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useIsCodeFenceIncomplete } from 'streamdown'
+import { AtSign, FolderOpen, Globe } from 'lucide-react'
+import { cn } from '@superone/ui/lib/utils'
+import { useIsDark } from '@/hooks/use-is-dark'
 import { useTranslation } from 'react-i18next'
 import { AdaptiveContextMenu } from '@/components/AdaptiveContextMenu'
 import type { AdaptiveMenuEntry } from '@/lib/native-context-menu'
-import { openFileTab } from '@/components/activity/activity-panel-api'
+import { openFileTab, openBrowserTab } from '@/components/activity/activity-panel-api'
 import { chatInputAPI } from '@/components/chat/ChatInput'
 import { toMentionPath } from '@/components/chat/chat-input-utils'
 import { DraggableFileIcon } from '@/components/chat/DraggableFileIcon'
@@ -56,8 +59,115 @@ export function InlineFileChip({ name, filePath, lineNumber }: { name: string; f
   )
 }
 
+const faviconClass = 'mr-1 inline-block size-[0.9em] shrink-0 object-contain align-[-0.1em]'
+
+type FaviconAnalysis = { monochrome: boolean; transparent: boolean; luminance: number }
+type FaviconSource = 'globe' | { dataUrl: string; analysis: FaviconAnalysis | null }
+
+function analyzeFavicon(img: HTMLImageElement): FaviconAnalysis | null {
+  try {
+    const w = Math.min(img.naturalWidth || 32, 32)
+    const h = Math.min(img.naturalHeight || 32, 32)
+    if (!w || !h) return null
+    const canvas = document.createElement('canvas')
+    canvas.width = w
+    canvas.height = h
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return null
+    ctx.drawImage(img, 0, 0, w, h)
+    const { data } = ctx.getImageData(0, 0, w, h)
+    let opaque = 0
+    let colored = 0
+    let translucent = 0
+    let lumSum = 0
+    for (let i = 0; i < data.length; i += 4) {
+      if (data[i + 3] < 32) {
+        translucent++
+        continue
+      }
+      opaque++
+      const r = data[i]
+      const g = data[i + 1]
+      const b = data[i + 2]
+      if (Math.max(r, g, b) - Math.min(r, g, b) > 24) colored++
+      lumSum += (0.299 * r + 0.587 * g + 0.114 * b) / 255
+    }
+    if (!opaque) return null
+    const total = opaque + translucent
+    return { monochrome: colored / opaque < 0.02, transparent: translucent / total > 0.05, luminance: lumSum / opaque }
+  } catch {
+    return null
+  }
+}
+
+function contrastRatio(a: number, b: number): number {
+  return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
+}
+
+function needsContrastBoost(dataUrl: string, analysis: FaviconAnalysis | null, isDark: boolean): boolean {
+  if (!analysis || !analysis.monochrome || !analysis.transparent) return false
+  if (!/^data:image\/(svg\+xml|png)/.test(dataUrl)) return false
+  return contrastRatio(analysis.luminance, isDark ? 0.12 : 0.98) < 3
+}
+
+function LinkFavicon({ href }: { href: string }) {
+  const incomplete = useIsCodeFenceIncomplete()
+  const isDark = useIsDark()
+  const [source, setSource] = useState<FaviconSource>('globe')
+
+  const isHttp = useMemo(() => {
+    try {
+      const { protocol } = new URL(href)
+      return protocol === 'http:' || protocol === 'https:'
+    } catch {
+      return false
+    }
+  }, [href])
+
+  useEffect(() => {
+    if (!isHttp || incomplete) return
+    let cancelled = false
+    void window.app.resolveFavicon(href, isDark).then((dataUrl) => {
+      if (cancelled) return
+      if (!dataUrl) {
+        setSource('globe')
+        return
+      }
+      const img = new Image()
+      img.onload = () => { if (!cancelled) setSource({ dataUrl, analysis: analyzeFavicon(img) }) }
+      img.onerror = () => { if (!cancelled) setSource('globe') }
+      img.src = dataUrl
+    })
+    return () => { cancelled = true }
+  }, [href, isHttp, incomplete, isDark])
+
+  if (!isHttp) return null
+  if (source === 'globe') return <Globe className={`${faviconClass} text-muted-foreground`} />
+  const scheme = isDark ? 'dark' : 'light'
+  if (needsContrastBoost(source.dataUrl, source.analysis, isDark)) {
+    const mask = `url("${source.dataUrl}")`
+    return (
+      <span
+        aria-hidden
+        className={`${faviconClass} bg-foreground`}
+        style={{
+          maskImage: mask,
+          WebkitMaskImage: mask,
+          maskSize: 'contain',
+          WebkitMaskSize: 'contain',
+          maskRepeat: 'no-repeat',
+          WebkitMaskRepeat: 'no-repeat',
+          maskPosition: 'center',
+          WebkitMaskPosition: 'center',
+        }}
+      />
+    )
+  }
+  return <img key={scheme} src={source.dataUrl} alt="" className={faviconClass} style={{ colorScheme: scheme }} onError={() => setSource('globe')} />
+}
+
 function FileLink(props: React.AnchorHTMLAttributes<HTMLAnchorElement>) {
-  const { href: rawHref, children, ...rest } = props
+  const { href: rawHref, children, className, ...rest } = props
   const projectRoot = selectEffectiveProjectRoot(useAppStore.getState())
   const href = rawHref ? decodeURIComponent(rawHref) : rawHref
   if (href && projectRoot) {
@@ -70,13 +180,20 @@ function FileLink(props: React.AnchorHTMLAttributes<HTMLAnchorElement>) {
   return (
     <a
       href={rawHref}
+      className={cn(className, 'no-underline hover:underline hover:decoration-1 hover:underline-offset-2')}
       {...rest}
       onClick={(e) => {
         if (!rawHref) return
         e.preventDefault()
+        const openInApp = window.app.platform === 'darwin' ? e.metaKey : e.ctrlKey
+        if (openInApp) {
+          openBrowserTab(rawHref)
+          return
+        }
         requestOpenExternalLink(rawHref)
       }}
     >
+      {rawHref && <LinkFavicon href={rawHref} />}
       {children}
     </a>
   )

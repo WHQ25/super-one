@@ -748,6 +748,7 @@ export const zh: Messages = {
       copied: '已复制',
       openLink: '在外部浏览器打开',
       openInApp: '在内置浏览器打开',
+      openInAppHint: '提示：按住 <key/> 点击链接可直接在内置浏览器打开',
     },
     browser: {
       addressPlaceholder: '搜索或输入网址',

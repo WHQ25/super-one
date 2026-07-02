@@ -734,6 +734,7 @@ export type Messages = {
       copied: string
       openLink: string
       openInApp: string
+      openInAppHint: string
     }
     browser: {
       addressPlaceholder: string
@@ -2108,6 +2109,7 @@ export const en: Messages = {
       copied: 'Copied',
       openLink: 'Open in external browser',
       openInApp: 'Open in built-in browser',
+      openInAppHint: 'Tips: <key/>-click a link to open in the built-in browser',
     },
     browser: {
       addressPlaceholder: 'Search or enter a URL',

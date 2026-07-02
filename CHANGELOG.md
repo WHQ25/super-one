@@ -4,6 +4,23 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.43.6-alpha] - 2026-07-02
+
+### Added
+
+- Favicons now appear before markdown links in chat
+- Activity panel toggle is now positioned on the panel's own side
+
+### Fixed
+
+- Chat auto-scroll now detects intent by scroll direction, avoiding unwanted jumps back to the bottom
+- Browser screenshot and annotate icons stay visible when the address bar is empty
+- Removed black boxes behind dim/italic styled terminal text
+
+### Changed
+
+- The agent is now told it runs in the SuperOne GUI rather than a terminal
+
 ## [0.43.5-alpha] - 2026-07-02
 
 ### Added

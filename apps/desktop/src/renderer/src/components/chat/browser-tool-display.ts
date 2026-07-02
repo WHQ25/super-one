@@ -144,7 +144,7 @@ export function parseBrowserResult(op: BrowserOp, result: string | undefined, is
 
   switch (op) {
     case 'snapshot':
-      return { status: 'neutral', count: { kind: 'elements', n: arrLen(obj?.elements) } }
+      return { status: 'neutral' }
     case 'query': {
       const n = typeof obj?.total === 'number' ? obj.total : arrLen(obj?.matches)
       return { status: 'neutral', count: { kind: 'matches', n } }

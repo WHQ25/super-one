@@ -11,7 +11,7 @@
     },
     "apps/desktop": {
       "name": "@superone/desktop",
-      "version": "0.43.5-alpha",
+      "version": "0.43.6-alpha",
       "dependencies": {
         "@anthropic-ai/claude-agent-sdk": "0.3.198",
         "@anthropic-ai/sdk": "^0.93.0",
@@ -65,6 +65,7 @@
         "node-pty": "^1.0.0",
         "pdfjs-dist": "^5.4.624",
         "posthog-js": "^1.369.0",
+        "prettier": "^3.8.1",
         "qrcode.react": "^4.2.0",
         "react-day-picker": "^9.14.0",
         "react-i18next": "^17.0.4",

@@ -28,10 +28,42 @@ export function pushBrowserConsole(id: string, level: number | string, text: str
   if (buf.length > CONSOLE_CAP) buf.splice(0, buf.length - CONSOLE_CAP)
 }
 
-export function readBrowserConsole(id: string, mode: 'error' | 'all'): BrowserConsoleEntry[] {
+export interface ConsoleQuery {
+  level?: BrowserConsoleEntry['level'][]
+  grep?: string
+  regex?: boolean
+  ignoreCase?: boolean
+  invert?: boolean
+  max?: number
+}
+
+const DEFAULT_CONSOLE_LEVELS: BrowserConsoleEntry['level'][] = ['warning', 'error']
+
+function buildGrepMatcher(pattern: string, regex: boolean, ignoreCase: boolean): (text: string) => boolean {
+  if (regex) {
+    let re: RegExp
+    try {
+      re = new RegExp(pattern, ignoreCase ? 'i' : '')
+    } catch (err) {
+      throw new Error(`Invalid console grep regex: ${err instanceof Error ? err.message : String(err)}`)
+    }
+    return (text) => re.test(text)
+  }
+  const needle = ignoreCase ? pattern.toLowerCase() : pattern
+  return (text) => (ignoreCase ? text.toLowerCase() : text).includes(needle)
+}
+
+export function readBrowserConsole(id: string, query: ConsoleQuery = {}): BrowserConsoleEntry[] {
   const buf = consoleBuffers.get(id) ?? []
-  const filtered = mode === 'all' ? buf : buf.filter((e) => e.level === 'error' || e.level === 'warning')
-  return filtered.slice(-50)
+  const levels = new Set(query.level?.length ? query.level : DEFAULT_CONSOLE_LEVELS)
+  let list = buf.filter((e) => levels.has(e.level))
+  if (query.grep) {
+    const matches = buildGrepMatcher(query.grep, query.regex === true, query.ignoreCase !== false)
+    const invert = query.invert === true
+    list = list.filter((e) => matches(e.text) !== invert)
+  }
+  const max = query.max && query.max > 0 ? query.max : 50
+  return list.slice(-max)
 }
 
 export function clearBrowserConsole(id: string): void {

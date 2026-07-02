@@ -4,7 +4,7 @@ import { ChevronRight, Ban, TriangleAlert, ImageIcon } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 import { Dialog, DialogContent, DialogTitle } from '@superone/ui/components/ui/dialog'
 import { ToolIcon } from './ToolIcon'
-import { PrettyJSONCodeBlock } from './tool-result-views'
+import { PrettyJSONCodeBlock, BrowserEvaluateView } from './tool-result-views'
 import { ImageInteractive, useImageDataUri } from './codex-image-shared'
 import { ImagePreview } from '@/components/coding/ImagePreview'
 import { getStallColor, type StallLevel } from '@/lib/stall-utils'
@@ -106,7 +106,9 @@ export function BrowserToolBlock({ op, params, result, isStreaming, isError, isD
             <div className="px-2 pb-1.5">
               {expanded && (hasScreenshot
                 ? <BrowserScreenshotView path={info.imagePath!} />
-                : <PrettyJSONCodeBlock text={result!} />)}
+                : op === 'evaluate'
+                  ? <BrowserEvaluateView expression={typeof params.expression === 'string' ? params.expression : ''} result={result!} />
+                  : <PrettyJSONCodeBlock text={result!} />)}
             </div>
           </div>
         </div>

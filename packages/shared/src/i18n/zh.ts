@@ -648,6 +648,8 @@ export const zh: Messages = {
         notFound: '未找到',
         viewport: '可见窗口',
         screenshotUnavailable: '截图已不可用',
+        code: '代码',
+        result: '结果',
       },
     },
     subagent: {

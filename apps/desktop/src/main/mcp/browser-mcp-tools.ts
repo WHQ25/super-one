@@ -75,16 +75,33 @@ export function registerBrowserTools(server: McpServer, sessionId: string): void
     'browser_snapshot',
     {
       description:
-        'Inspect the current browser page before acting. Returns url/title/loading, the top interactive elements with reusable CSS selectors, the total element count, optional truncated text, and recent console entries. Call this first to orient; default is lean (no text, error-only console).',
+        "Inspect the current browser page. Pick which data sections to return via `include`: 'meta' (url/title/loading), 'elements' (top interactive elements + CSS selectors + total count), 'text' (truncated visible text), 'console' (recent console entries, filterable). Default include is ['meta','elements','console'] (lean, warning+error console only). Fetch just logs with include:['console'] — that skips the DOM scan entirely. Call this first to orient.",
       inputSchema: {
         ...tabField,
+        include: z
+          .array(z.enum(['meta', 'elements', 'text', 'console']))
+          .default(['meta', 'elements', 'console'])
+          .describe("Which data sections to return. Default ['meta','elements','console']."),
         filter: z
           .string()
           .optional()
-          .describe('Case-insensitive substring; only return interactive elements whose name or role contains it.'),
-        max: z.number().int().min(1).max(200).default(40).describe('Max interactive elements, ranked by viewport proximity. Default 40.'),
-        text: z.boolean().default(false).describe('Include truncated visible page text. Default false.'),
-        console: z.enum(['none', 'error', 'all']).default('error').describe("Console entries to include. Default 'error'."),
+          .describe("Elements section only: case-insensitive substring; only return interactive elements whose name or role contains it."),
+        max: z.number().int().min(1).max(200).default(40).describe('Elements section only: max interactive elements, ranked by viewport proximity. Default 40.'),
+        textMaxChars: z.number().int().min(0).max(20000).default(4000).describe('Text section only: truncate visible text to this many chars. Default 4000.'),
+        console: z
+          .object({
+            level: z
+              .array(z.enum(['log', 'info', 'warning', 'error']))
+              .optional()
+              .describe("Console levels to include. Default ['warning','error']. Pass all four for everything."),
+            grep: z.string().optional().describe('Only return console entries whose text matches this pattern (substring by default).'),
+            regex: z.boolean().default(false).describe('Treat grep as a JS regular expression instead of a substring. Default false.'),
+            ignoreCase: z.boolean().default(true).describe('Case-insensitive grep. Default true.'),
+            invert: z.boolean().default(false).describe('Keep only entries that do NOT match grep (like grep -v). Default false.'),
+            max: z.number().int().min(1).max(200).default(50).describe('Return the most recent N matching entries. Default 50.'),
+          })
+          .optional()
+          .describe("Console section filtering. Only consulted when `include` contains 'console'."),
       },
     },
     (args) => dataTool(sessionId, 'snapshot', args),

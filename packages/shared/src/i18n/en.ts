@@ -634,6 +634,8 @@ export type Messages = {
         notFound: string
         viewport: string
         screenshotUnavailable: string
+        code: string
+        result: string
       }
     }
     subagent: {
@@ -2009,6 +2011,8 @@ export const en: Messages = {
         notFound: 'not found',
         viewport: 'viewport',
         screenshotUnavailable: 'Screenshot no longer available',
+        code: 'Code',
+        result: 'Result',
       },
     },
     subagent: {

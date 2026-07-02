@@ -80,8 +80,8 @@ describe('parseBrowserResult', () => {
     expect(parseBrowserResult('navigate', JSON.stringify({ url: 'https://x.com' }), false).status).toBe('ok')
   })
 
-  it('counts elements, matches, and tabs for read ops', () => {
-    expect(parseBrowserResult('snapshot', JSON.stringify({ elements: [1, 2, 3] }), false).count).toEqual({ kind: 'elements', n: 3 })
+  it('counts matches and tabs for read ops but not snapshot', () => {
+    expect(parseBrowserResult('snapshot', JSON.stringify({ elements: [1, 2, 3] }), false).count).toBeUndefined()
     expect(parseBrowserResult('query', JSON.stringify({ matches: [1], total: 7 }), false).count).toEqual({ kind: 'matches', n: 7 })
     expect(parseBrowserResult('tabs', JSON.stringify([1, 2]), false).count).toEqual({ kind: 'tabs', n: 2 })
   })

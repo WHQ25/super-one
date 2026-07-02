@@ -9,6 +9,7 @@ import {
   browserReload,
   isBrowserRegistered,
   readBrowserConsole,
+  type ConsoleQuery,
 } from './browser-host-api'
 import { openBrowserTab } from '@/components/activity/activity-panel-api'
 
@@ -16,7 +17,11 @@ const MAX_SCREENSHOT_WIDTH = 1280
 
 interface BaseInput {
   tab?: string
-  console?: 'none' | 'error' | 'all'
+  include?: string[]
+  filter?: string
+  max?: number
+  textMaxChars?: number
+  console?: ConsoleQuery
   selector?: string
   readiness?: 'load' | 'none'
   action?: 'back' | 'forward' | 'reload'
@@ -123,10 +128,17 @@ const __sone = {
 
 const INTERACTIVE_SELECTOR = 'a[href],button,input,textarea,select,[role],[tabindex],[onclick]'
 
-function snapshotScript(input: { filter?: string; max?: number; text?: boolean }): string {
+function snapshotScript(input: { include: string[]; filter?: string; max?: number; textMaxChars?: number }): string {
+  const wantMeta = input.include.includes('meta')
+  const wantElements = input.include.includes('elements')
+  const wantText = input.include.includes('text')
   return `(() => {
     ${HELPERS}
-    const all = Array.from(document.querySelectorAll(${JSON.stringify(INTERACTIVE_SELECTOR)})).filter((el) => __sone.visible(el));
+    const out = {};
+    ${wantMeta ? `out.url = location.href; out.title = document.title; out.loading = document.readyState !== 'complete';` : ''}
+    ${
+      wantElements
+        ? `const all = Array.from(document.querySelectorAll(${JSON.stringify(INTERACTIVE_SELECTOR)})).filter((el) => __sone.visible(el));
     let list = all;
     const filter = ${JSON.stringify(input.filter ?? null)};
     if (filter) { const f = filter.toLowerCase(); list = list.filter((el) => (__sone.name(el) + ' ' + (__sone.role(el) || '')).toLowerCase().includes(f)); }
@@ -135,11 +147,11 @@ function snapshotScript(input: { filter?: string; max?: number; text?: boolean }
     const inVp = list.filter((el) => __sone.inViewport(el)).sort((a, b) => dist(a) - dist(b));
     const outVp = list.filter((el) => !__sone.inViewport(el));
     const ordered = inVp.concat(outVp).slice(0, ${input.max ?? 40});
-    const out = {
-      url: location.href, title: document.title, loading: document.readyState !== 'complete',
-      elements: ordered.map((el) => __sone.ref(el)), elementsTotal: all.length,
-    };
-    ${input.text ? `out.text = (document.body && document.body.innerText || '').slice(0, 4000);` : ''}
+    out.elements = ordered.map((el) => __sone.ref(el));
+    out.elementsTotal = all.length;`
+        : ''
+    }
+    ${wantText ? `out.text = (document.body && document.body.innerText || '').slice(0, ${input.textMaxChars ?? 4000});` : ''}
     return out;
   })()`
 }
@@ -430,9 +442,12 @@ export async function runBrowserOp(sessionId: string, op: string, rawInput: unkn
   const id = resolveBrowserId(input.tab, sessionId)
   switch (op) {
     case 'snapshot': {
-      const page = (await browserExecJs(id, snapshotScript(input as Parameters<typeof snapshotScript>[0]))) as Record<string, unknown>
-      const mode = (input.console as 'none' | 'error' | 'all' | undefined) ?? 'error'
-      if (mode !== 'none') page.console = readBrowserConsole(id, mode)
+      const include = input.include?.length ? input.include : ['meta', 'elements', 'console']
+      const needsPage = include.some((s) => s === 'meta' || s === 'elements' || s === 'text')
+      const page = needsPage
+        ? ((await browserExecJs(id, snapshotScript({ include, filter: input.filter, max: input.max, textMaxChars: input.textMaxChars }))) as Record<string, unknown>)
+        : {}
+      if (include.includes('console')) page.console = readBrowserConsole(id, input.console ?? {})
       return page
     }
     case 'query':

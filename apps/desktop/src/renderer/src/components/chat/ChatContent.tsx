@@ -130,6 +130,11 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
 
   const outline = useMemo(() => extractTurnOutline(visibleMessages), [visibleMessages])
   const hasCompact = compactIndices.length > 0
+  const recentTurnCount = useMemo(
+    () => (hasCompact ? extractTurnOutline(messages.slice(compactIndices[compactIndices.length - 1])).length : outline.length),
+    [messages, compactIndices, hasCompact, outline.length]
+  )
+  const compactSplit = Math.max(0, outline.length - recentTurnCount)
   const compactExpanded = expandLevel >= compactIndices.length
   const toggleCompact = useCallback(() => {
     prevScrollHeightRef.current = scrollViewportRef.current?.scrollHeight ?? 0
@@ -316,7 +321,7 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
               </ScrollArea>
             )}
             {messages.length > 0 && (
-              <ChatScrollIndicator entries={outline} hasCompact={hasCompact} compactExpanded={compactExpanded} viewportRef={scrollViewportRef} onJump={jumpToMessage} onToggleCompact={toggleCompact} />
+              <ChatScrollIndicator entries={outline} hasCompact={hasCompact} compactExpanded={compactExpanded} compactSplit={compactSplit} viewportRef={scrollViewportRef} onJump={jumpToMessage} onToggleCompact={toggleCompact} />
             )}
             {!liquidGlass && <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-6 bg-linear-to-t from-card to-transparent" />}
             <AnimatePresence>

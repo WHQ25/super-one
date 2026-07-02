@@ -8,6 +8,7 @@ interface ChatScrollIndicatorProps {
   entries: TurnOutlineEntry[]
   hasCompact: boolean
   compactExpanded: boolean
+  compactSplit: number
   viewportRef: React.RefObject<HTMLDivElement | null>
   onJump: (id: string) => void
   onToggleCompact: () => void
@@ -22,7 +23,7 @@ function splitTitle(text: string): { title: string; summary: string } {
   return { title: text.slice(0, nl), summary: text.slice(nl + 1).trim() }
 }
 
-export function ChatScrollIndicator({ entries, hasCompact, compactExpanded, viewportRef, onJump, onToggleCompact }: ChatScrollIndicatorProps) {
+export function ChatScrollIndicator({ entries, hasCompact, compactExpanded, compactSplit, viewportRef, onJump, onToggleCompact }: ChatScrollIndicatorProps) {
   const [activeId, setActiveId] = useState<string | null>(null)
   const [hovered, setHovered] = useState<{ index: number; top: number } | null>(null)
   const [compactHovered, setCompactHovered] = useState<{ top: number } | null>(null)
@@ -116,6 +117,7 @@ export function ChatScrollIndicator({ entries, hasCompact, compactExpanded, view
   const preview = hovered ? entries[hovered.index] : null
   const compactBase = compactExpanded ? COMPACT_TICK : TICK_MIN
   const overflowing = overflow.above || overflow.below
+  const splitAt = Math.min(compactSplit, entries.length)
 
   const centerTop = (el: HTMLElement): number => {
     const outer = outerRef.current
@@ -124,6 +126,53 @@ export function ChatScrollIndicator({ entries, hasCompact, compactExpanded, view
     const scale = outer.clientHeight > 0 ? outerRect.height / outer.clientHeight : 1
     const r = el.getBoundingClientRect()
     return (r.top - outerRect.top + r.height / 2) / scale
+  }
+
+  const renderCompactTick = (): React.ReactNode =>
+    hasCompact && (
+      <button
+        type="button"
+        title={compactExpanded ? t('chat.scrollIndicator.collapseTooltip') : t('chat.scrollIndicator.expandTooltip')}
+        onClick={onToggleCompact}
+        onMouseEnter={(ev) => setCompactHovered({ top: centerTop(ev.currentTarget) })}
+        onMouseLeave={() => setCompactHovered(null)}
+        style={{ width: TICK_MAX }}
+        className="flex shrink-0 cursor-pointer items-center justify-end py-0.5 outline-none"
+      >
+        <span
+          style={{ width: compactHovered ? compactBase + 4 : compactBase }}
+          className="h-0.5 rounded-full bg-amber-500/80 transition-all duration-150"
+        />
+      </button>
+    )
+
+  const renderTick = (entry: TurnOutlineEntry, i: number): React.ReactNode => {
+    const isActive = entry.id === activeId
+    const dist = hovered ? Math.abs(i - hovered.index) : null
+    const isHovered = dist === 0
+    return (
+      <button
+        key={entry.id}
+        type="button"
+        data-tick={entry.id}
+        onMouseEnter={(ev) => setHovered({ index: i, top: centerTop(ev.currentTarget) })}
+        onMouseLeave={() => setHovered((h) => (h?.index === i ? null : h))}
+        onClick={() => {
+          followSuppressedUntil.current = performance.now() + 1000
+          onJump(entry.id)
+        }}
+        style={{ width: TICK_MAX }}
+        className="flex shrink-0 cursor-pointer items-center justify-end py-0.5 outline-none"
+      >
+        <span
+          style={{ width: tickWidth(dist) }}
+          className={cn(
+            'h-0.5 rounded-full transition-all duration-150',
+            isActive ? 'bg-primary' : isHovered ? 'bg-foreground/80' : 'bg-foreground/15',
+          )}
+        />
+      </button>
+    )
   }
 
   return (
@@ -136,50 +185,9 @@ export function ChatScrollIndicator({ entries, hasCompact, compactExpanded, view
           overflowing ? 'justify-start' : 'justify-center',
         )}
       >
-        {hasCompact && (
-          <button
-            type="button"
-            title={compactExpanded ? t('chat.scrollIndicator.collapseTooltip') : t('chat.scrollIndicator.expandTooltip')}
-            onClick={onToggleCompact}
-            onMouseEnter={(ev) => setCompactHovered({ top: centerTop(ev.currentTarget) })}
-            onMouseLeave={() => setCompactHovered(null)}
-            style={{ width: TICK_MAX }}
-            className="flex shrink-0 cursor-pointer items-center justify-end py-0.5 outline-none"
-          >
-            <span
-              style={{ width: compactHovered ? compactBase + 4 : compactBase }}
-              className="h-0.5 rounded-full bg-amber-500/80 transition-all duration-150"
-            />
-          </button>
-        )}
-        {entries.map((entry, i) => {
-          const isActive = entry.id === activeId
-          const dist = hovered ? Math.abs(i - hovered.index) : null
-          const isHovered = dist === 0
-          return (
-            <button
-              key={entry.id}
-              type="button"
-              data-tick={entry.id}
-              onMouseEnter={(ev) => setHovered({ index: i, top: centerTop(ev.currentTarget) })}
-              onMouseLeave={() => setHovered((h) => (h?.index === i ? null : h))}
-              onClick={() => {
-                followSuppressedUntil.current = performance.now() + 1000
-                onJump(entry.id)
-              }}
-              style={{ width: TICK_MAX }}
-              className="flex shrink-0 cursor-pointer items-center justify-end py-0.5 outline-none"
-            >
-              <span
-                style={{ width: tickWidth(dist) }}
-                className={cn(
-                  'h-0.5 rounded-full transition-all duration-150',
-                  isActive ? 'bg-primary' : isHovered ? 'bg-foreground/80' : 'bg-foreground/15',
-                )}
-              />
-            </button>
-          )
-        })}
+        {entries.slice(0, splitAt).map((entry, i) => renderTick(entry, i))}
+        {renderCompactTick()}
+        {entries.slice(splitAt).map((entry, i) => renderTick(entry, splitAt + i))}
       </div>
       <div
         className={cn(

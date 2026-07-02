@@ -4,6 +4,22 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.43.5-alpha] - 2026-07-02
+
+### Added
+
+- Activity panel launcher with embedded terminals, plus a toggle to open it in single mode
+- Mobile file upload progress now surfaces as toasts on the desktop
+- Usage gauge now shows the remaining 5-hour percentage next to its icon
+
+### Fixed
+
+- Window drag region is restored after resizing the activity panel
+
+### Changed
+
+- Upgraded the Claude Agent SDK to 0.3.198
+
 ## [0.43.4-alpha] - 2026-07-02
 
 ### Added

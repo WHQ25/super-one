@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useRef } from 'react'
 import { useBrowserStore, type BrowserSlotMode } from '@/stores/browser'
 import { BrowserChrome } from './BrowserChrome'
-import { normalizeUrl } from './browser-url'
+import { BrowserNewTab } from './BrowserNewTab'
+import { normalizeUrl, isBlankUrl } from './browser-url'
 import { browserNavigate, browserGoBack, browserGoForward, browserReload, browserStop } from './browser-host-api'
 
 interface BrowserViewProps {
@@ -11,6 +12,7 @@ interface BrowserViewProps {
 
 export function BrowserView({ browserId, mode }: BrowserViewProps) {
   const contentRef = useRef<HTMLDivElement>(null)
+  const isHome = useBrowserStore((s) => isBlankUrl(s.tabs[browserId]?.url ?? ''))
 
   useLayoutEffect(() => {
     const el = contentRef.current
@@ -74,7 +76,9 @@ export function BrowserView({ browserId, mode }: BrowserViewProps) {
         onReload={reload}
         onStop={stop}
       />
-      <div ref={contentRef} className="min-h-0 flex-1" />
+      <div ref={contentRef} className="min-h-0 flex-1">
+        {isHome && <BrowserNewTab onOpen={navigate} />}
+      </div>
     </div>
   )
 }

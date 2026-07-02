@@ -759,6 +759,25 @@ export type Messages = {
       styleWeight: string
       styleRadius: string
       stylePadding: string
+      searchFor: string
+      bookmark: string
+      bookmarkEdit: string
+      bookmarkAdded: string
+      bookmarkName: string
+      bookmarkUrl: string
+      bookmarkNoFolder: string
+      bookmarkRemove: string
+      bookmarkDone: string
+      bookmarks: string
+      newFolder: string
+      newFolderName: string
+      renameFolder: string
+      folderNamePlaceholder: string
+      folderExists: string
+      removeFromFolder: string
+      noBookmarks: string
+      deleteFolder: string
+      emptyFolder: string
     }
     reasoning: {
       thinking: string
@@ -2136,6 +2155,25 @@ export const en: Messages = {
       styleWeight: 'Font weight',
       styleRadius: 'Radius',
       stylePadding: 'Padding',
+      searchFor: 'Search for "{{query}}"',
+      bookmark: 'Bookmark this page',
+      bookmarkEdit: 'Edit bookmark',
+      bookmarkAdded: 'Bookmark added',
+      bookmarkName: 'Name',
+      bookmarkUrl: 'URL',
+      bookmarkNoFolder: 'No folder',
+      bookmarkRemove: 'Remove',
+      bookmarkDone: 'Done',
+      bookmarks: 'Bookmarks',
+      newFolder: 'New folder',
+      newFolderName: 'New folder',
+      renameFolder: 'Rename folder',
+      folderNamePlaceholder: 'Folder name',
+      folderExists: 'A folder with this name already exists',
+      removeFromFolder: 'Remove from folder',
+      noBookmarks: 'No bookmarks yet',
+      deleteFolder: 'Delete folder',
+      emptyFolder: 'Empty',
     },
     reasoning: {
       thinking: 'Thinking...',

@@ -37,6 +37,15 @@ export function runDatabaseMigrations(db: Database.Database): void {
       FOREIGN KEY (claude_session_id) REFERENCES sessions(claude_session_id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS browser_history (
+      url TEXT PRIMARY KEY,
+      title TEXT NOT NULL DEFAULT '',
+      visit_count INTEGER NOT NULL DEFAULT 1,
+      last_visit INTEGER NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_browser_history_last_visit ON browser_history(last_visit DESC);
+
   `)
 
   db.exec('DROP INDEX IF EXISTS idx_chat_messages_session')

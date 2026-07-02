@@ -423,6 +423,9 @@ const appAPI = {
   resolveFavicon: (url: string, isDark: boolean) =>
     ipcRenderer.invoke(AgentIpcChannels.RESOLVE_FAVICON, url, isDark),
 
+  cacheFavicon: (pageUrl: string, faviconUrl: string, isDark: boolean) =>
+    ipcRenderer.invoke(AgentIpcChannels.CACHE_FAVICON, pageUrl, faviconUrl, isDark),
+
   addMarketplace: (source: string, scope: string, projectPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.PLUGINS_ADD_MARKETPLACE, source, scope, projectPath),
   removeMarketplace: (name: string, scope: string, projectPath: string) =>
@@ -730,6 +733,12 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.APP_SETTINGS_GET),
   saveAppSettings: (patch: Record<string, unknown>) =>
     ipcRenderer.invoke(AgentIpcChannels.APP_SETTINGS_SAVE, patch),
+  recordBrowserHistory: (url: string, title: string, titleOnly?: boolean) =>
+    ipcRenderer.invoke(AgentIpcChannels.BROWSER_HISTORY_RECORD, url, title, titleOnly),
+  suggestBrowserHistory: (query: string, limit?: number) =>
+    ipcRenderer.invoke(AgentIpcChannels.BROWSER_HISTORY_SUGGEST, query, limit),
+  deleteBrowserHistory: (url: string | null) =>
+    ipcRenderer.invoke(AgentIpcChannels.BROWSER_HISTORY_DELETE, url),
   pickAppIconFile: () =>
     ipcRenderer.invoke(AgentIpcChannels.APP_ICON_PICK_FILE),
   setAppIcon: (pngDataUri: string) =>

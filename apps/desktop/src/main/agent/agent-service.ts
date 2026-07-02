@@ -53,7 +53,7 @@ import { listCodexMcpConfigs } from '../codex-config-service'
 import { discoverAllAgents, discoverProjectCommands, readAgentFile } from './discover-resources'
 import { listPlugins, readPluginContent, readPluginFile, deletePlugin, listMarketplacePlugins, installPlugin, updatePlugin, updateMarketplace, addMarketplace, removeMarketplace, readMarketplacePluginContent, readMarketplacePluginFile, getGithubStars } from '../plugins-service'
 import { cacheRemoteImage } from '../image-cache'
-import { resolveFavicon } from '../favicon'
+import { resolveFavicon, cacheCapturedFavicon } from '../favicon'
 import { backupMcpServers, listLibrary, deleteLibraryEntry, getLibraryEntry } from '../mcp-library-service'
 import { uninstallMcpbBundle } from '../mcpb/mcpb-installer'
 import { getAllProviders, createProvider, updateProvider, deleteProvider, activateProvider, deactivateAllProviders } from '../database'
@@ -1803,6 +1803,10 @@ export class AgentService {
 
     ipcMain.handle(AgentIpcChannels.RESOLVE_FAVICON, async (_event, url: string, isDark: boolean) => {
       return resolveFavicon(url, isDark)
+    })
+
+    ipcMain.handle(AgentIpcChannels.CACHE_FAVICON, async (_event, pageUrl: string, faviconUrl: string, isDark: boolean) => {
+      await cacheCapturedFavicon(pageUrl, faviconUrl, isDark)
     })
 
     ipcMain.handle(AgentIpcChannels.PLUGINS_ADD_MARKETPLACE, async (_event, source: string, scope: ResourceScope, projectPath: string) => {

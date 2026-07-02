@@ -14,7 +14,7 @@ import { useResizeHandle } from '@/hooks/useResizeHandle'
 import { LAYOUT } from '@/lib/layout-constants'
 import { LayoutToggle } from '@/components/coding/LayoutToggle'
 import { ResizeHandleLine } from '@/components/ResizeHandleLine'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@superone/ui/components/ui/dropdown-menu'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuShortcut, DropdownMenuTrigger } from '@superone/ui/components/ui/dropdown-menu'
 import { setDockApi } from './activity-panel-api'
 import { useActivityLaunchTypes } from './activity-launch-types'
 import { activityPanelComponents } from './panels'
@@ -44,7 +44,7 @@ function ActivityPrefixActions() {
   )
 }
 
-function ActivityRightActions() {
+function ActivityNewTabAction() {
   const types = useActivityLaunchTypes()
   return (
     <div className="flex h-full items-center px-1" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
@@ -57,11 +57,12 @@ function ActivityRightActions() {
             <Plus className="size-4" />
           </button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          {types.map(({ id, icon: Icon, label, disabled, onOpen }) => (
+        <DropdownMenuContent align="start">
+          {types.map(({ id, icon: Icon, label, shortcut, disabled, onOpen }) => (
             <DropdownMenuItem key={id} disabled={disabled} onSelect={() => onOpen()}>
               <Icon className="size-4" />
               {label}
+              {shortcut && <DropdownMenuShortcut>{shortcut}</DropdownMenuShortcut>}
             </DropdownMenuItem>
           ))}
         </DropdownMenuContent>
@@ -189,7 +190,7 @@ export function ActivityPanel({ getMaxWidth, hidden }: ActivityPanelProps) {
               tabComponents={activityTabComponents}
               watermarkComponent={ActivityLauncher}
               prefixHeaderActionsComponent={ActivityPrefixActions}
-              rightHeaderActionsComponent={ActivityRightActions}
+              leftHeaderActionsComponent={ActivityNewTabAction}
             />
           </div>
         </div>

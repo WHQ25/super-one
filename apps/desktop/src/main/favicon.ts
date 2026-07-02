@@ -84,6 +84,33 @@ async function resolveAndDownload(pageUrl: string, origin: string, isDark: boole
   return null
 }
 
+function cacheFileFor(origin: string, isDark: boolean): string {
+  const cacheKey = createHash('sha256').update(`${origin}#${isDark ? 'dark' : 'light'}`).digest('hex')
+  return join(cacheDir(), cacheKey)
+}
+
+/**
+ * Primes the shared favicon cache from an icon the in-app browser captured live
+ * (webview `page-favicon-updated`). This links the browser to chat markdown links
+ * and bookmarks: they all read the same origin-keyed cache, so opening a page
+ * refreshes the icon everywhere and nothing re-resolves it from scratch.
+ */
+export async function cacheCapturedFavicon(pageUrl: string, faviconUrl: string, isDark: boolean): Promise<void> {
+  if (!/^https?:\/\//i.test(pageUrl) || !/^https?:\/\//i.test(faviconUrl)) return
+  let origin: string
+  try {
+    origin = new URL(pageUrl).origin
+  } catch {
+    return
+  }
+  try {
+    const buf = await download(faviconUrl)
+    if (buf) writeCache(cacheFileFor(origin, isDark), buf)
+  } catch (err) {
+    log.debug('[favicon] cache-from-capture failed:', err)
+  }
+}
+
 const refreshing = new Set<string>()
 
 async function refreshInBackground(pageUrl: string, origin: string, isDark: boolean, filePath: string): Promise<void> {
@@ -114,8 +141,7 @@ export async function resolveFavicon(pageUrl: string, isDark: boolean): Promise<
   } catch {
     return null
   }
-  const cacheKey = createHash('sha256').update(`${origin}#${isDark ? 'dark' : 'light'}`).digest('hex')
-  const filePath = join(cacheDir(), cacheKey)
+  const filePath = cacheFileFor(origin, isDark)
 
   if (existsSync(filePath)) {
     try {

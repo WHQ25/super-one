@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowLeft, ArrowRight, RotateCw, ExternalLink, Camera, SquareDashedMousePointer, MoreHorizontal, Code } from 'lucide-react'
+import { useCallback } from 'react'
+import { ArrowLeft, ArrowRight, RotateCw, Camera, SquareDashedMousePointer } from 'lucide-react'
 import { motion } from 'motion/react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -7,10 +7,11 @@ import { cn } from '@superone/ui/lib/utils'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@superone/ui/components/ui/tooltip'
 import { CommandShortcut } from '@superone/ui/components/ui/command'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@superone/ui/components/ui/dropdown-menu'
 import { useBrowserStore } from '@/stores/browser'
-import { browserCapture, browserOpenDevTools } from './browser-host-api'
+import { browserCapture } from './browser-host-api'
 import { isBlankUrl } from './browser-url'
+import { BrowserOmnibox } from './BrowserOmnibox'
+import { BrowserMoreMenu } from './BrowserMoreMenu'
 
 const annotateShortcut = window.app.platform === 'darwin' ? '⌘.' : 'Ctrl+.'
 
@@ -31,20 +32,7 @@ export function BrowserChrome({ browserId, onNavigate, onBack, onForward, onRelo
   const stopAnnotate = useBrowserStore((s) => s.stopAnnotate)
   const url = state?.url ?? ''
   const loading = state?.loading ?? false
-  const [draft, setDraft] = useState(url)
-  const [editing, setEditing] = useState(false)
-  const inputRef = useRef<HTMLInputElement>(null)
   const isHome = isBlankUrl(url)
-
-  useEffect(() => {
-    if (!editing) setDraft(isHome ? '' : url)
-  }, [url, editing, isHome])
-
-  const submit = (e: React.FormEvent) => {
-    e.preventDefault()
-    inputRef.current?.blur()
-    onNavigate(draft)
-  }
 
   const screenshot = useCallback(async () => {
     try {
@@ -74,34 +62,7 @@ export function BrowserChrome({ browserId, onNavigate, onBack, onForward, onRelo
       >
         <RotateCw className={cn('size-3', loading && 'animate-spin')} />
       </IconButton>
-      <form onSubmit={submit} className="group relative mx-1 min-w-0 flex-1">
-        <input
-          ref={inputRef}
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onFocus={(e) => { setEditing(true); e.target.select() }}
-          onBlur={() => setEditing(false)}
-          spellCheck={false}
-          placeholder={t('chat.browser.addressPlaceholder')}
-          className={cn(
-            'h-6 w-full rounded-md bg-transparent px-1.5 text-xs text-foreground outline-none transition-all hover:bg-muted focus:bg-muted focus:ring-1 focus:ring-border/60',
-            !isHome && url && 'group-hover:pr-7',
-            editing ? 'text-left' : 'text-center',
-          )}
-        />
-        {!isHome && url && (
-          <IconButton
-            type="button"
-            size="xs"
-            variant="ghost"
-            tooltip="Open in external browser"
-            onClick={() => window.app.openExternalLink(url)}
-            className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
-          >
-            <ExternalLink className="size-3.5" />
-          </IconButton>
-        )}
-      </form>
+      <BrowserOmnibox url={url} isHome={isHome} onNavigate={onNavigate} />
       {annotating ? (
           <TooltipProvider delayDuration={300}>
             <Tooltip>
@@ -146,19 +107,7 @@ export function BrowserChrome({ browserId, onNavigate, onBack, onForward, onRelo
             </IconButton>
           </>
         )}
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <IconButton size="xs" variant="ghost" tooltip="More">
-            <MoreHorizontal className="size-3.5" />
-          </IconButton>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          <DropdownMenuItem onSelect={() => browserOpenDevTools(browserId)}>
-            <Code className="size-3.5" />
-            Open DevTools
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      <BrowserMoreMenu browserId={browserId} isHome={isHome} />
     </div>
   )
 }

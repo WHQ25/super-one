@@ -92,6 +92,7 @@ import { trace, closeTraceDb } from './agent/event-trace'
 import { RemoteControlService } from './remote-control-service'
 import { readProjectPreferences, saveProjectPreferences } from './claude-preferences-service'
 import { readAppSettings, saveAppSettings } from './app-settings-service'
+import { recordBrowserHistory, suggestBrowserHistory, deleteBrowserHistory } from './browser-history-service'
 import { getSandboxCapability, probeSandboxDependencies } from './sandbox-platform'
 import { ProcessTitle, WindowRole, roleArg, glassBootArgs } from './process-titles'
 import { applyLocale, getSystemLocale, getCurrentLocale, initMainI18n, t } from './i18n'
@@ -2065,6 +2066,10 @@ function registerIpcHandlers(): void {
     return result
   })
   ipcMain.handle(AgentIpcChannels.APP_SYSTEM_LOCALE, () => getSystemLocale())
+
+  ipcMain.handle(AgentIpcChannels.BROWSER_HISTORY_RECORD, (_e, url: string, title: string, titleOnly?: boolean) => recordBrowserHistory(url, title, titleOnly))
+  ipcMain.handle(AgentIpcChannels.BROWSER_HISTORY_SUGGEST, (_e, query: string, limit?: number) => suggestBrowserHistory(query, limit))
+  ipcMain.handle(AgentIpcChannels.BROWSER_HISTORY_DELETE, (_e, url: string | null) => deleteBrowserHistory(url))
 
   if (is.dev) {
   ipcMain.handle(AgentIpcChannels.APP_ICON_PICK_FILE, async () => {

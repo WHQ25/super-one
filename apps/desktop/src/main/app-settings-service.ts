@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { app } from 'electron'
-import type { AppSettings, AppSettingsPatch, EffortLevel, Locale, PermissionMode, QuestionPreviewFormat, SandboxMode, UpdateChannel } from '@superone/shared/agent-types'
+import type { AppSettings, AppSettingsPatch, BrowserBookmark, BrowserBookmarkGroup, EffortLevel, Locale, PermissionMode, QuestionPreviewFormat, SandboxMode, UpdateChannel } from '@superone/shared/agent-types'
 import { sanitizeOverrides } from '@superone/shared/harness-brand'
 
 export type { AppSettings, AppSettingsPatch }
@@ -22,6 +22,8 @@ const defaults: AppSettings = {
   liquidGlass: false,
   miniAppOrder: {},
   customAppIconPath: null,
+  browserBookmarks: [],
+  browserBookmarkGroups: [],
   agentPreference: {
     claude: {
       defaultModel: '',
@@ -83,6 +85,41 @@ function readMiniAppOrder(value: unknown): Record<string, string[]> {
   const out: Record<string, string[]> = {}
   for (const [key, list] of Object.entries(value as Record<string, unknown>)) {
     if (Array.isArray(list)) out[key] = list.filter((x): x is string => typeof x === 'string')
+  }
+  return out
+}
+
+function readBookmarks(value: unknown): BrowserBookmark[] {
+  if (!Array.isArray(value)) return []
+  const out: BrowserBookmark[] = []
+  for (const item of value) {
+    if (!item || typeof item !== 'object') continue
+    const b = item as Record<string, unknown>
+    if (typeof b.id !== 'string' || typeof b.url !== 'string') continue
+    out.push({
+      id: b.id,
+      title: typeof b.title === 'string' ? b.title : '',
+      url: b.url,
+      favicon: typeof b.favicon === 'string' ? b.favicon : null,
+      groupId: typeof b.groupId === 'string' ? b.groupId : null,
+      createdAt: typeof b.createdAt === 'number' && Number.isFinite(b.createdAt) ? b.createdAt : 0,
+    })
+  }
+  return out
+}
+
+function readBookmarkGroups(value: unknown): BrowserBookmarkGroup[] {
+  if (!Array.isArray(value)) return []
+  const out: BrowserBookmarkGroup[] = []
+  for (const item of value) {
+    if (!item || typeof item !== 'object') continue
+    const g = item as Record<string, unknown>
+    if (typeof g.id !== 'string' || typeof g.name !== 'string') continue
+    out.push({
+      id: g.id,
+      name: g.name,
+      createdAt: typeof g.createdAt === 'number' && Number.isFinite(g.createdAt) ? g.createdAt : 0,
+    })
   }
   return out
 }
@@ -168,6 +205,8 @@ export function readAppSettings(): AppSettings {
       liquidGlass: typeof data.liquidGlass === 'boolean' ? data.liquidGlass : defaults.liquidGlass,
       miniAppOrder: readMiniAppOrder(data.miniAppOrder),
       customAppIconPath: typeof data.customAppIconPath === 'string' ? data.customAppIconPath : defaults.customAppIconPath,
+      browserBookmarks: readBookmarks(data.browserBookmarks),
+      browserBookmarkGroups: readBookmarkGroups(data.browserBookmarkGroups),
       agentPreference: {
         claude: readClaudePreference(data),
         codex: readCodexPreference(data),
@@ -187,6 +226,8 @@ export function readAppSettings(): AppSettings {
       liquidGlass: defaults.liquidGlass,
       miniAppOrder: {},
       customAppIconPath: defaults.customAppIconPath,
+      browserBookmarks: [],
+      browserBookmarkGroups: [],
       agentPreference: {
         claude: { ...defaults.agentPreference.claude },
         codex: { ...defaults.agentPreference.codex },
@@ -212,6 +253,8 @@ export function saveAppSettings(patch: AppSettingsPatch): AppSettings {
       ? { ...current.miniAppOrder, ...patch.miniAppOrder }
       : current.miniAppOrder,
     customAppIconPath: patch.customAppIconPath === undefined ? current.customAppIconPath : patch.customAppIconPath,
+    browserBookmarks: patch.browserBookmarks === undefined ? current.browserBookmarks : readBookmarks(patch.browserBookmarks),
+    browserBookmarkGroups: patch.browserBookmarkGroups === undefined ? current.browserBookmarkGroups : readBookmarkGroups(patch.browserBookmarkGroups),
     agentPreference: {
       claude: {
         ...current.agentPreference.claude,

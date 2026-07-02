@@ -1678,6 +1678,7 @@ export const AgentIpcChannels = {
   OPEN_TMP_FOLDER: 'app:open-tmp-folder',
   CACHE_IMAGE: 'app:cache-image',
   RESOLVE_FAVICON: 'app:resolve-favicon',
+  CACHE_FAVICON: 'app:cache-favicon',
   CLOSE_PROJECT: 'app:close-project',
   SETUP_CHECK_CLAUDE: 'app:setup-check-claude',
   SETUP_INSTALL_CLAUDE: 'app:setup-install-claude',
@@ -1922,6 +1923,9 @@ export const AgentIpcChannels = {
   APP_SETTINGS_GET: 'app:settings-get',
   APP_SETTINGS_SAVE: 'app:settings-save',
   APP_SETTINGS_CHANGED: 'app:settings-changed',
+  BROWSER_HISTORY_RECORD: 'app:browser-history-record',
+  BROWSER_HISTORY_SUGGEST: 'app:browser-history-suggest',
+  BROWSER_HISTORY_DELETE: 'app:browser-history-delete',
   APP_SYSTEM_LOCALE: 'app:system-locale',
   APP_LOCALE_CHANGED: 'app:locale-changed',
   APP_ICON_PICK_FILE: 'app:icon-pick-file',
@@ -2259,6 +2263,28 @@ export type Locale = 'en' | 'zh'
 
 export type UpdateChannel = 'alpha' | 'beta' | 'stable'
 
+export interface BrowserBookmark {
+  id: string
+  title: string
+  url: string
+  favicon: string | null
+  groupId: string | null
+  createdAt: number
+}
+
+export interface BrowserBookmarkGroup {
+  id: string
+  name: string
+  createdAt: number
+}
+
+export interface BrowserHistoryEntry {
+  url: string
+  title: string
+  visitCount: number
+  lastVisit: number
+}
+
 export interface AppSettings {
   analyticsEnabled: boolean
   crispText: boolean
@@ -2272,6 +2298,8 @@ export interface AppSettings {
   liquidGlass: boolean
   miniAppOrder: Record<string, string[]>
   customAppIconPath: string | null
+  browserBookmarks: BrowserBookmark[]
+  browserBookmarkGroups: BrowserBookmarkGroup[]
   agentPreference: {
     claude: {
       defaultModel: string
@@ -2305,6 +2333,8 @@ export interface AppSettingsPatch {
   liquidGlass?: boolean
   miniAppOrder?: Record<string, string[]>
   customAppIconPath?: string | null
+  browserBookmarks?: BrowserBookmark[]
+  browserBookmarkGroups?: BrowserBookmarkGroup[]
   agentPreference?: {
     claude?: Partial<AppSettings['agentPreference']['claude']>
     codex?: Partial<AppSettings['agentPreference']['codex']>

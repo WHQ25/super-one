@@ -58,6 +58,8 @@ describe('app-settings-service', () => {
     liquidGlass: false,
     miniAppOrder: {},
     customAppIconPath: null,
+    browserBookmarks: [],
+    browserBookmarkGroups: [],
     agentPreference: {
       claude: defaultClaude,
       codex: defaultCodex,
@@ -99,6 +101,8 @@ describe('app-settings-service', () => {
         liquidGlass: false,
         miniAppOrder: {},
         customAppIconPath: null,
+        browserBookmarks: [],
+        browserBookmarkGroups: [],
         agentPreference: {
           claude: {
             defaultModel: 'claude-sonnet-4-6',
@@ -172,6 +176,8 @@ describe('app-settings-service', () => {
         liquidGlass: false,
         miniAppOrder: {},
         customAppIconPath: null,
+        browserBookmarks: [],
+        browserBookmarkGroups: [],
         agentPreference: {
           claude: defaultClaude,
           codex: {

@@ -7,6 +7,7 @@ import { FileIcon } from '@superone/ui/components/ui/FileIcon'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { useBrowserStore } from '@/stores/browser'
+import { BrowserFavicon } from '@/components/browser/BrowserFavicon'
 import { closeActivityTerminalTab, closeBrowserTab, maximizeBrowserTab } from './activity-panel-api'
 
 function useIsActive(api: IDockviewPanelHeaderProps['api']) {
@@ -154,9 +155,13 @@ export function BrowserTab(props: IDockviewPanelHeaderProps<{ browserId: string 
   return (
     <div className={tabChipClass(active)}>
       <HoverCloseSlot onClose={() => closeBrowserTab(browserId)}>
-        {state?.favicon
-          ? <img src={state.favicon} alt="" className="size-3.5 shrink-0 rounded-sm" />
-          : <Globe className="size-3.5 shrink-0" />}
+        <BrowserFavicon
+          src={state?.favicon}
+          url={state?.url}
+          preferSrc
+          className="size-3.5 shrink-0"
+          fallback={<Globe className="size-3.5 shrink-0" />}
+        />
       </HoverCloseSlot>
       <span className="min-w-0 truncate text-xs">{title}</span>
       <TabActionButton

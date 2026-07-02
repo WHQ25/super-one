@@ -10,6 +10,7 @@ import { registerBrowserWebview, browserExecJs, pushBrowserConsole, clearBrowser
 import { useBrowserAutomationHost } from './browser-automation-runtime'
 import { buildSessionScript, handleAnnotationMessage } from './browser-annotate-flow'
 import { ANNOTATE_CANCEL_SCRIPT, ANNOTATE_MSG_PREFIX } from './browser-annotate-script'
+import { isBlankUrl, sameOrigin } from './browser-url'
 
 export function BrowserHostLayer() {
   const ids = useBrowserStore(useShallow((s) => Object.keys(s.tabs)))
@@ -42,7 +43,9 @@ function PersistentBrowser({ browserId, layoutMode, resizing }: { browserId: str
   const slot = useBrowserStore((s) => s.slots[browserId])
   const activityShown = useActivityPanelStore((s) => s.showPanel)
   const annotating = useBrowserStore((s) => s.annotatingId === browserId)
+  const home = useBrowserStore((s) => isBlankUrl(s.tabs[browserId]?.url ?? ''))
   const webviewRef = useRef<Electron.WebviewTag>(null)
+  const lastRecordedUrl = useRef<string | null>(null)
   const initialSrcRef = useRef(useBrowserStore.getState().tabs[browserId]?.url || 'about:blank')
   const { t } = useTranslation()
 
@@ -91,12 +94,37 @@ function PersistentBrowser({ browserId, layoutMode, resizing }: { browserId: str
     const unregister = registerBrowserWebview(browserId, wv)
     const patch = useBrowserStore.getState().patch
 
-    const syncNav = () => patch(browserId, { url: wv.getURL(), canGoBack: wv.canGoBack(), canGoForward: wv.canGoForward() })
+    const recordVisit = () => {
+      const u = wv.getURL()
+      if (u && u !== lastRecordedUrl.current) {
+        lastRecordedUrl.current = u
+        void window.app.recordBrowserHistory(u, wv.getTitle())
+      }
+    }
+    const syncNav = () => {
+      const url = wv.getURL()
+      const prev = useBrowserStore.getState().tabs[browserId]
+      // On a cross-origin nav (incl. back/forward) the old favicon/title no longer
+      // apply — clear them so the tab follows the address instead of showing a stale
+      // icon while the new page (or the origin cache) resolves.
+      const reset = isBlankUrl(url)
+        ? { favicon: null, title: '' }
+        : prev && !sameOrigin(prev.url, url)
+          ? { favicon: null }
+          : {}
+      patch(browserId, { url, canGoBack: wv.canGoBack(), canGoForward: wv.canGoForward(), ...reset })
+    }
     const onStart = () => patch(browserId, { loading: true })
-    const onStop = () => { patch(browserId, { loading: false }); syncNav() }
-    const onTitle = (e: Electron.PageTitleUpdatedEvent) => patch(browserId, { title: e.title })
-    const onFavicon = (e: Electron.PageFaviconUpdatedEvent) => patch(browserId, { favicon: e.favicons[0] ?? null })
-    const onNavigate = () => syncNav()
+    const onStop = () => { patch(browserId, { loading: false }); syncNav(); recordVisit() }
+    const onTitle = (e: Electron.PageTitleUpdatedEvent) => { patch(browserId, { title: e.title }); void window.app.recordBrowserHistory(wv.getURL(), e.title, true) }
+    const onFavicon = (e: Electron.PageFaviconUpdatedEvent) => {
+      const favicon = e.favicons[0] ?? null
+      patch(browserId, { favicon })
+      // Prime the shared origin-keyed favicon cache so chat markdown links and
+      // bookmarks reuse the exact icon just captured, without re-resolving.
+      if (favicon) void window.app.cacheFavicon(wv.getURL(), favicon, document.documentElement.classList.contains('dark'))
+    }
+    const onNavigate = () => { syncNav(); recordVisit() }
     const onFail = (e: Electron.DidFailLoadEvent) => { if (e.errorCode !== -3) patch(browserId, { loading: false }) }
     const onConsole = (e: Electron.ConsoleMessageEvent) => pushBrowserConsole(browserId, e.level, e.message)
     const onNavigateClearConsole = () => clearBrowserConsole(browserId)
@@ -131,7 +159,7 @@ function PersistentBrowser({ browserId, layoutMode, resizing }: { browserId: str
   )
   const mounted = presentationMatches && slot != null && slot.width > 0 && slot.height > 0
   const hostShown = slot?.mode !== 'panel' || activityShown
-  const visible = mounted && hostShown
+  const visible = mounted && hostShown && !home
 
   return (
     <div

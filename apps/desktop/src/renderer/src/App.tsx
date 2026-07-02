@@ -552,31 +552,31 @@ function App(): React.JSX.Element {
             <CanvasDevControls />
             <CanvasReturnToPanelButton />
             <CanvasCloseButton />
-            {layoutMode === 'coding' && (
-              <TooltipProvider delayDuration={300}>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      onClick={toggleTerminal}
-                      className={cn(
-                        'rounded-md p-1.5 transition-colors hover:bg-muted hover:text-foreground',
-                        terminalOpen ? 'text-foreground' : 'text-muted-foreground/60',
-                      )}
-                    >
-                      <SquareTerminal
-                        className={cn('size-3.5', !terminalOpen && hasTerminals && 'animate-pulse')}
-                      />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="top"><span>{t('tooltips.toggleTerminal')}</span> <CommandShortcut>{isMac ? '⌘J' : 'Ctrl+J'}</CommandShortcut></TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            )}
             {layoutMode === 'coding' && (() => {
+              const terminalButton = (
+                <TooltipProvider delayDuration={300}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        onClick={toggleTerminal}
+                        className={cn(
+                          'rounded-md p-1.5 transition-colors hover:bg-muted hover:text-foreground',
+                          terminalOpen ? 'text-foreground' : 'text-muted-foreground/60',
+                        )}
+                      >
+                        <SquareTerminal
+                          className={cn('size-3.5', !terminalOpen && hasTerminals && 'animate-pulse')}
+                        />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top"><span>{t('tooltips.toggleTerminal')}</span> <CommandShortcut>{isMac ? '⌘J' : 'Ctrl+J'}</CommandShortcut></TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )
               const ActivityIcon = activitySide === 'left'
                 ? (showActivityPanel ? PanelRightDashed : PanelRight)
                 : (showActivityPanel ? PanelLeftDashed : PanelLeft)
-              return (
+              const activityButton = (
                 <TooltipProvider delayDuration={300}>
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -594,6 +594,9 @@ function App(): React.JSX.Element {
                   </Tooltip>
                 </TooltipProvider>
               )
+              return activitySide === 'left'
+                ? <>{activityButton}{terminalButton}</>
+                : <>{terminalButton}{activityButton}</>
             })()}
             {layoutMode === 'coding' && canRestoreMosaic && (
               <TooltipProvider delayDuration={300}>

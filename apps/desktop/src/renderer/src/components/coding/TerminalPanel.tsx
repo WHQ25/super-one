@@ -88,6 +88,7 @@ export function TerminalPanel() {
   const findInputRef = useRef<HTMLInputElement>(null)
   const openFindRef = useRef<() => void>(() => {})
   const creatingRef = useRef(false)
+  const wasOpenRef = useRef(false)
 
   const runSearch = useCallback(
     (query: string, dir: 'next' | 'prev', incremental = false) => {
@@ -257,6 +258,15 @@ export function TerminalPanel() {
     inst.xterm.focus()
     return () => ro.disconnect()
   }, [activeId, projectPath, ensureInstance])
+
+  // The panel is hidden via CSS (not unmounted) when closed, so reopening it does not
+  // re-run the attach effect above. Focus the active terminal on every open→shown flip,
+  // guarding on the transition so an unrelated instances change can't steal focus.
+  useEffect(() => {
+    const justOpened = open && !wasOpenRef.current
+    wasOpenRef.current = open
+    if (justOpened && activeId) instances.get(activeId)?.xterm.focus()
+  }, [open, activeId, instances])
 
   return (
     <div className="flex h-full flex-col">

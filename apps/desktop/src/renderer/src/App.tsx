@@ -202,10 +202,14 @@ function App(): React.JSX.Element {
       const mod = isMac ? e.metaKey : e.ctrlKey
       if (!mod || e.shiftKey || e.altKey || e.key.toLowerCase() !== 't') return
       if (useAppStore.getState().view !== 'main') return
-      // ⌘T opens a browser tab only when focus is inside the activity panel (its
-      // dockview or a browser/mini-app host) — never from the chat panel. Guest
-      // browser webviews take the IPC path below (keys don't bubble to the host).
-      if (!document.activeElement?.closest('[data-activity-inner],[data-browser-host],[data-miniapp-host]')) return
+      // ⌘T opens a browser tab when focus is inside the activity panel (its dockview
+      // or a browser/mini-app host) — never from the chat panel. Guest browser webviews
+      // take the IPC path below (keys don't bubble to the host). The empty launcher has
+      // no tab to hold focus yet, so also honor ⌘T whenever it is showing (panel visible
+      // with no panels) — it advertises the shortcut regardless of where focus sits.
+      const { showPanel, hasPanels } = useActivityPanelStore.getState()
+      const inActivity = document.activeElement?.closest('[data-activity-inner],[data-browser-host],[data-miniapp-host]')
+      if (!inActivity && !(showPanel && !hasPanels)) return
       e.preventDefault()
       openBrowserTab()
     }

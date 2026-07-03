@@ -97,6 +97,11 @@ function App(): React.JSX.Element {
   const toggleActivityPanel = useCallback(() => {
     if (useMosaicStore.getState().mode === 'mosaic') return
     const ap = useActivityPanelStore.getState()
+    if (!ap.showPanel && !ap.userResized) {
+      const { showSidebar: sb, sidebarWidth: sw } = useAppStore.getState()
+      const maxAp = window.innerWidth - (sb ? sw : 0) - MIN_MAIN - CARD_GUTTER
+      if (maxAp >= MIN_AP) ap.setPanelWidth(Math.max(MIN_AP, maxAp))
+    }
     ap.setShowPanel(!ap.showPanel)
   }, [])
 
@@ -452,6 +457,10 @@ function App(): React.JSX.Element {
   const folderName = currentFolder?.split('/').pop() ?? null
   const sessionId = useActiveSession((s) => s._activeSessionId ?? s.session?.sessionId ?? '')
   const sessionFallback = useActiveSession((s) => s._title ?? extractSessionTitle(s.messages))
+
+  useEffect(() => {
+    useActivityPanelStore.getState().resetUserResized()
+  }, [sessionId])
 
   if (view === 'loading') {
     return (

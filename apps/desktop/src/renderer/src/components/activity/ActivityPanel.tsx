@@ -72,7 +72,7 @@ function ActivityNewTabAction() {
 }
 
 export function ActivityPanel({ getMaxWidth, hidden }: ActivityPanelProps) {
-  const { showPanel, side, panelWidth, setPanelWidth } = useActivityPanelStore()
+  const { showPanel, side, panelWidth, setPanelWidthByUser } = useActivityPanelStore()
   const visible = showPanel && !hidden
   const outerRef = useRef<HTMLDivElement>(null)
   const innerRef = useRef<HTMLDivElement>(null)
@@ -82,7 +82,7 @@ export function ActivityPanel({ getMaxWidth, hidden }: ActivityPanelProps) {
 
   const onResizeStart = useResizeHandle({
     getWidth,
-    setWidth: setPanelWidth,
+    setWidth: setPanelWidthByUser,
     minWidth: LAYOUT.MIN_AP,
     getMaxWidth,
     direction: side === 'right' ? 'rtl' : 'ltr',

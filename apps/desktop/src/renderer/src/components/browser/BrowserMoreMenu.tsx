@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { cn } from '@superone/ui/lib/utils'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { Button } from '@superone/ui/components/ui/button'
-import { Popover, PopoverAnchor, PopoverContent } from '@superone/ui/components/ui/popover'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@superone/ui/components/ui/dialog'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuShortcut, DropdownMenuTrigger } from '@superone/ui/components/ui/dropdown-menu'
 import { useBrowserStore } from '@/stores/browser'
 import { useBrowserBookmarksStore } from '@/stores/browser-bookmarks'
@@ -34,7 +34,7 @@ export function BrowserMoreMenu({ browserId, isHome }: { browserId: string; isHo
     editIdRef.current = existing
       ? existing.id
       : addBookmark({ url, title: tab?.title || url, favicon: tab?.favicon ?? null }).id
-    setTimeout(() => setEditOpen(true), 0)
+    setEditOpen(true)
   }
 
   const openEditorRef = useRef(openBookmarkEditor)
@@ -47,15 +47,13 @@ export function BrowserMoreMenu({ browserId, isHome }: { browserId: string; isHo
   }, [browserId])
 
   return (
-    <Popover open={editOpen} onOpenChange={setEditOpen}>
+    <>
       <DropdownMenu>
-        <PopoverAnchor asChild>
-          <DropdownMenuTrigger asChild>
-            <IconButton size="xs" variant="ghost" tooltip="More">
-              <MoreHorizontal className="size-3.5" />
-            </IconButton>
-          </DropdownMenuTrigger>
-        </PopoverAnchor>
+        <DropdownMenuTrigger asChild>
+          <IconButton size="xs" variant="ghost" tooltip="More">
+            <MoreHorizontal className="size-3.5" />
+          </IconButton>
+        </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
           <DropdownMenuItem disabled={isHome} onSelect={openBookmarkEditor}>
             <Star className={cn('size-3.5', isBookmarked && 'fill-primary text-primary')} />
@@ -68,40 +66,53 @@ export function BrowserMoreMenu({ browserId, isHome }: { browserId: string; isHo
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
-      {current && (
-        <PopoverContent align="end" className="w-72 p-3">
-          <p className="mb-2 text-xs font-medium">{t('chat.browser.bookmarkAdded')}</p>
-          <input
-            autoFocus
-            value={current.title}
-            onChange={(e) => updateBookmark(current.id, { title: e.target.value })}
-            placeholder={t('chat.browser.bookmarkName')}
-            className="mb-2 h-7 w-full rounded-md border border-border bg-transparent px-2 text-xs outline-none focus:ring-1 focus:ring-ring/50"
-          />
-          <input
-            value={current.url}
-            onChange={(e) => updateBookmark(current.id, { url: e.target.value })}
-            placeholder={t('chat.browser.bookmarkUrl')}
-            className="mb-2 h-7 w-full rounded-md border border-border bg-transparent px-2 text-xs outline-none focus:ring-1 focus:ring-ring/50"
-          />
-          <select
-            value={current.groupId ?? ''}
-            onChange={(e) => updateBookmark(current.id, { groupId: e.target.value || null })}
-            className="mb-3 h-7 w-full rounded-md border border-border bg-transparent px-1.5 text-xs outline-none focus:ring-1 focus:ring-ring/50"
-          >
-            <option value="">{t('chat.browser.bookmarkNoFolder')}</option>
-            {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
-          </select>
-          <div className="flex justify-between">
-            <Button variant="ghost" size="sm" className="h-7 text-xs text-destructive" onClick={() => { removeByUrl(current.url); setEditOpen(false) }}>
-              {t('chat.browser.bookmarkRemove')}
-            </Button>
-            <Button size="sm" className="h-7 text-xs" onClick={() => setEditOpen(false)}>
-              {t('chat.browser.bookmarkDone')}
-            </Button>
-          </div>
-        </PopoverContent>
-      )}
-    </Popover>
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        {current && (
+          <DialogContent className="sm:max-w-sm">
+            <DialogHeader>
+              <DialogTitle>{isBookmarked ? t('chat.browser.bookmarkEdit') : t('chat.browser.bookmarkAdded')}</DialogTitle>
+            </DialogHeader>
+            <div className="grid gap-3 py-2">
+              <label className="grid gap-1.5">
+                <span className="text-xs font-medium text-muted-foreground">{t('chat.browser.bookmarkName')}</span>
+                <input
+                  autoFocus
+                  value={current.title}
+                  onChange={(e) => updateBookmark(current.id, { title: e.target.value })}
+                  className="h-8 w-full rounded-md border border-border bg-transparent px-2 text-sm outline-none focus:ring-1 focus:ring-ring/50"
+                />
+              </label>
+              <label className="grid gap-1.5">
+                <span className="text-xs font-medium text-muted-foreground">{t('chat.browser.bookmarkUrl')}</span>
+                <input
+                  value={current.url}
+                  onChange={(e) => updateBookmark(current.id, { url: e.target.value })}
+                  className="h-8 w-full rounded-md border border-border bg-transparent px-2 text-sm outline-none focus:ring-1 focus:ring-ring/50"
+                />
+              </label>
+              <label className="grid gap-1.5">
+                <span className="text-xs font-medium text-muted-foreground">{t('chat.browser.bookmarks')}</span>
+                <select
+                  value={current.groupId ?? ''}
+                  onChange={(e) => updateBookmark(current.id, { groupId: e.target.value || null })}
+                  className="h-8 w-full rounded-md border border-border bg-transparent px-1.5 text-sm outline-none focus:ring-1 focus:ring-ring/50"
+                >
+                  <option value="">{t('chat.browser.bookmarkNoFolder')}</option>
+                  {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+                </select>
+              </label>
+            </div>
+            <div className="flex justify-between">
+              <Button variant="ghost" size="sm" className="text-destructive" onClick={() => { removeByUrl(current.url); setEditOpen(false) }}>
+                {t('chat.browser.bookmarkRemove')}
+              </Button>
+              <Button size="sm" onClick={() => setEditOpen(false)}>
+                {t('chat.browser.bookmarkDone')}
+              </Button>
+            </div>
+          </DialogContent>
+        )}
+      </Dialog>
+    </>
   )
 }

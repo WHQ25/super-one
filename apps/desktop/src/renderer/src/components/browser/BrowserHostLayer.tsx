@@ -177,6 +177,7 @@ function PersistentBrowser({ browserId, layoutMode, resizing }: { browserId: str
     <div
       data-browser-host=""
       data-browser-id={browserId}
+      data-browser-presentation={slot?.mode}
       style={{
         position: 'absolute',
         left: visible ? slot!.left : -99999,

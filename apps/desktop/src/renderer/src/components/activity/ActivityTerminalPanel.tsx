@@ -106,7 +106,7 @@ export function ActivityTerminalPanel({ terminalId, api }: Props) {
           openFindRef.current()
           return false
         }
-        if (e.key === 'w' && e.metaKey) return false
+        if (e.key === 'w' && (e.metaKey || e.ctrlKey)) return false
       }
       return true
     })

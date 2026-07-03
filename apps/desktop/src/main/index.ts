@@ -439,6 +439,13 @@ function createWindow(): void {
         mainWindow?.webContents.send(AgentIpcChannels.CONTENT_ZOOM, action)
         return
       }
+      // Windows/Linux have no application menu, so route the Close-Tab shortcut through
+      // host-focus key input here (macOS uses the global menu accelerator instead).
+      if (input.key.toLowerCase() === 'w' && input.type === 'keyDown' && process.platform !== 'darwin') {
+        _e.preventDefault()
+        mainWindow?.webContents.send(AgentIpcChannels.CLOSE_TAB_SHORTCUT)
+        return
+      }
     }
     if (!is.dev) {
       if ((input.control || input.meta) && input.key.toLowerCase() === 'r') {

@@ -14,7 +14,7 @@ describe('⌘W close-tab routing by focused region', () => {
     document.body.innerHTML = ''
   })
 
-  it('closes the terminal tab when focus is inside the xterm surface', () => {
+  it('closes the bottom terminal tab when focus is inside a bare xterm surface (outside the activity panel)', () => {
     document.body.innerHTML = `<div class="xterm"><textarea id="t"></textarea></div>`
     const el = document.getElementById('t')!
 
@@ -22,6 +22,35 @@ describe('⌘W close-tab routing by focused region', () => {
     expect(handlers.closeTerminal).toHaveBeenCalledOnce()
     expect(handlers.closeDock).not.toHaveBeenCalled()
     expect(handlers.closeWindow).not.toHaveBeenCalled()
+  })
+
+  it('closes the active dock tab when focus is inside a loaded browser webview overlay', () => {
+    // A loaded page moves focus into the <webview>, which is portaled into the fixed
+    // browser host layer (NOT inside [data-activity-outer]); only the panel-presentation
+    // marker links it back to its dock tab.
+    document.body.innerHTML = `
+      <div data-activity-outer=""></div>
+      <div style="position:fixed">
+        <div data-browser-host="" data-browser-presentation="panel"><webview id="wv"></webview></div>
+      </div>`
+    const wv = document.getElementById('wv')!
+
+    expect(routeCloseTabShortcut(wv, handlers)).toBe('dock')
+    expect(handlers.closeDock).toHaveBeenCalledOnce()
+    expect(handlers.closeTerminal).not.toHaveBeenCalled()
+    expect(handlers.closeWindow).not.toHaveBeenCalled()
+  })
+
+  it('closes the window when focus is inside a canvas (fullscreen) browser (no dock tab to close)', () => {
+    document.body.innerHTML = `
+      <div style="position:fixed">
+        <div data-browser-host="" data-browser-presentation="canvas"><webview id="wv"></webview></div>
+      </div>`
+    const wv = document.getElementById('wv')!
+
+    expect(routeCloseTabShortcut(wv, handlers)).toBe('window')
+    expect(handlers.closeWindow).toHaveBeenCalledOnce()
+    expect(handlers.closeDock).not.toHaveBeenCalled()
   })
 
   it('closes the active dockview panel when focus is inside a panel mini-app iframe (the reported regression)', () => {
@@ -68,12 +97,29 @@ describe('⌘W close-tab routing by focused region', () => {
     expect(handlers.closeWindow).toHaveBeenCalledOnce()
   })
 
-  it('prefers the terminal over the activity panel when an xterm is nested inside it', () => {
+  it('closes the active dock tab when focus fell back to <body> after a browser navigation but a dock tab is active', () => {
+    // Reproduces the reported bug: the just-loaded page has not grabbed focus and the
+    // old URL input unmounted, so activeElement is <body> — yet the browser tab is the
+    // active dock panel and must still close instead of quitting the window.
+    document.body.innerHTML = `<div data-activity-outer=""></div>`
+    expect(routeCloseTabShortcut(document.body, handlers, true)).toBe('dock')
+    expect(handlers.closeDock).toHaveBeenCalledOnce()
+    expect(handlers.closeWindow).not.toHaveBeenCalled()
+  })
+
+  it('closes the window on limbo focus only when no dock tab is active', () => {
+    document.body.innerHTML = `<div data-activity-outer=""></div>`
+    expect(routeCloseTabShortcut(document.body, handlers, false)).toBe('window')
+    expect(handlers.closeWindow).toHaveBeenCalledOnce()
+    expect(handlers.closeDock).not.toHaveBeenCalled()
+  })
+
+  it('closes the activity terminal dock tab (not the bottom terminal) when its xterm is nested inside the activity panel', () => {
     document.body.innerHTML = `<div data-activity-outer=""><div class="xterm"><span id="x"></span></div></div>`
     const x = document.getElementById('x')!
 
-    expect(routeCloseTabShortcut(x, handlers)).toBe('terminal')
-    expect(handlers.closeTerminal).toHaveBeenCalledOnce()
-    expect(handlers.closeDock).not.toHaveBeenCalled()
+    expect(routeCloseTabShortcut(x, handlers)).toBe('dock')
+    expect(handlers.closeDock).toHaveBeenCalledOnce()
+    expect(handlers.closeTerminal).not.toHaveBeenCalled()
   })
 })

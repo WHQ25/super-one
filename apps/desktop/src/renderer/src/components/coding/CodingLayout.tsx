@@ -7,13 +7,28 @@ import { useTerminalStore } from '@/stores/terminal'
 import { useChatKeyboardShortcuts } from '@/hooks/useChatKeyboardShortcuts'
 import { useTerminalPanel } from '@/hooks/useTerminalPanel'
 import { closeActiveTerminal, createNewTerminal } from '@/components/coding/terminal-panel-api'
-import { getDockApi } from '@/components/activity/activity-panel-api'
+import { getDockApi, closeBrowserTab, closeActivityTerminalTab } from '@/components/activity/activity-panel-api'
+import { useMiniAppStore } from '@/stores/miniapp'
 import { routeCloseTabShortcut } from '@/components/coding/close-tab-router'
 import { ResizeHandleLine } from '@/components/ResizeHandleLine'
 
 const MIN_TERM_HEIGHT = 120
 
 const TerminalPanel = lazy(() => import('@/components/coding/TerminalPanel').then((m) => ({ default: m.TerminalPanel })))
+
+// Closing the active dock tab is not a plain `api.close()`: browser/mini-app/terminal
+// tabs keep their real content (webview, iframe instance, PTY) in fixed host-layer
+// overlays or the main process, so a bare panel close would orphan them. Dispatch by
+// panel-id prefix to the same teardown each tab's ✕ button uses.
+function closeActiveDockTab(): void {
+  const panel = getDockApi()?.activePanel
+  if (!panel) return
+  const id = panel.id
+  if (id.startsWith('miniapp-')) void useMiniAppStore.getState().closeApp(id.slice('miniapp-'.length))
+  else if (id.startsWith('terminal-')) closeActivityTerminalTab(id.slice('terminal-'.length))
+  else if (id.startsWith('file:')) panel.api.close()
+  else closeBrowserTab(id)
+}
 
 export const CodingLayout = memo(function CodingLayout() {
   const chatScopeRef = useRef<HTMLDivElement>(null)
@@ -52,11 +67,15 @@ export const CodingLayout = memo(function CodingLayout() {
 
   useEffect(() => {
     return window.app.onCloseTabShortcut(() => {
-      routeCloseTabShortcut(document.activeElement, {
-        closeTerminal: closeActiveTerminal,
-        closeDock: () => getDockApi()?.activePanel?.api.close(),
-        closeWindow: () => window.app.closeWindow(),
-      })
+      routeCloseTabShortcut(
+        document.activeElement,
+        {
+          closeTerminal: closeActiveTerminal,
+          closeDock: closeActiveDockTab,
+          closeWindow: () => window.app.closeWindow(),
+        },
+        getDockApi()?.activePanel != null,
+      )
     })
   }, [])
 

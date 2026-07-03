@@ -62,6 +62,11 @@ export function registerBrowserPopupRedirect(): void {
       } else if (input.key.toLowerCase() === 't') {
         event.preventDefault()
         contents.hostWebContents?.send(AgentIpcChannels.BROWSER_NEW_TAB_SHORTCUT)
+      } else if (input.key.toLowerCase() === 'w' && process.platform !== 'darwin') {
+        // Guest webview keys never reach the host menu; on macOS the global menu
+        // accelerator already fires, so intercept ⌃W here only for Windows/Linux.
+        event.preventDefault()
+        contents.hostWebContents?.send(AgentIpcChannels.CLOSE_TAB_SHORTCUT)
       }
     })
   })

@@ -37,7 +37,7 @@ vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (k: string) => k }
 ;(globalThis as unknown as { window: typeof window }).window = globalThis as unknown as typeof window
 ;(globalThis as unknown as { app: Record<string, unknown> }).app = new Proxy(
   {},
-  { get: (_t, prop) => (prop === 'onBrowserAnnotateShortcut' ? () => () => {} : () => Promise.resolve()) },
+  { get: (_t, prop) => (prop === 'onBrowserAnnotateShortcut' || prop === 'onBrowserCertError' ? () => () => {} : () => Promise.resolve()) },
 )
 
 let useBrowserStore: typeof import('@/stores/browser').useBrowserStore
@@ -94,6 +94,25 @@ describe('BrowserHostLayer mosaic visibility', () => {
     const host = container.querySelector('[data-browser-id="browser-a"]') as HTMLElement
     expect(host).not.toBeNull()
     expect(host.style.display).toBe('none')
+  })
+
+  it('parks the webview off-screen when the tab has a certificate error so the interstitial shows', () => {
+    const { container } = render(<BrowserHostLayer />)
+    act(() => {
+      useBrowserStore.getState().ensure('browser-a', 'https://self-signed.example')
+      useBrowserStore.getState().updateSlot('browser-a', 'panel', RECT)
+    })
+
+    const host = container.querySelector('[data-browser-id="browser-a"]') as HTMLElement
+    expect(host.style.left).toBe('120px')
+
+    act(() => useBrowserStore.getState().patch('browser-a', { certError: { url: 'https://self-signed.example', error: 'ERR_CERT_AUTHORITY_INVALID' } }))
+    expect(host.style.display).toBe('block')
+    expect(host.style.left).toBe('-99999px')
+    expect(host.style.pointerEvents).toBe('none')
+
+    act(() => useBrowserStore.getState().patch('browser-a', { certError: null }))
+    expect(host.style.left).toBe('120px')
   })
 
   it('keeps a canvas-mode (fullscreen) browser visible regardless of activity panel state', () => {

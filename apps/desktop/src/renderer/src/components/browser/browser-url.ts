@@ -10,6 +10,22 @@ export function sameOrigin(a: string, b: string): boolean {
   }
 }
 
+export function hostOf(url: string): string | null {
+  try {
+    return new URL(url).host
+  } catch {
+    return null
+  }
+}
+
+export function isSecureScheme(url: string): boolean {
+  try {
+    return new URL(url).protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
 // Best-effort favicon derived from a page URL's origin, used as a fallback when
 // the captured `page-favicon-updated` favicon is missing or fails to load.
 export function faviconForUrl(url: string | null | undefined): string | null {

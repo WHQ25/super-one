@@ -30,6 +30,14 @@ export function BrowserHostLayer() {
     })
   }, [])
 
+  useEffect(() => {
+    return window.app.onBrowserCertError(({ webContentsId, url, error }) => {
+      const id = browserIdByWebContentsId(webContentsId)
+      if (!id) return
+      useBrowserStore.getState().patch(id, { certError: { url, error }, loading: false })
+    })
+  }, [])
+
   return (
     <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 20 }}>
       {ids.map((id) => (
@@ -44,6 +52,7 @@ function PersistentBrowser({ browserId, layoutMode, resizing }: { browserId: str
   const activityShown = useActivityPanelStore((s) => s.showPanel)
   const annotating = useBrowserStore((s) => s.annotatingId === browserId)
   const home = useBrowserStore((s) => isBlankUrl(s.tabs[browserId]?.url ?? ''))
+  const certErrored = useBrowserStore((s) => s.tabs[browserId]?.certError != null)
   const webviewRef = useRef<Electron.WebviewTag>(null)
   const lastRecordedUrl = useRef<string | null>(null)
   const initialSrcRef = useRef(useBrowserStore.getState().tabs[browserId]?.url || 'about:blank')
@@ -127,7 +136,10 @@ function PersistentBrowser({ browserId, layoutMode, resizing }: { browserId: str
     const onNavigate = () => { syncNav(); recordVisit() }
     const onFail = (e: Electron.DidFailLoadEvent) => { if (e.errorCode !== -3) patch(browserId, { loading: false }) }
     const onConsole = (e: Electron.ConsoleMessageEvent) => pushBrowserConsole(browserId, e.level, e.message)
-    const onNavigateClearConsole = () => clearBrowserConsole(browserId)
+    const onNavigateClearConsole = (e: Electron.DidStartNavigationEvent) => {
+      clearBrowserConsole(browserId)
+      if (e.isMainFrame && useBrowserStore.getState().tabs[browserId]?.certError) patch(browserId, { certError: null })
+    }
 
     wv.addEventListener('console-message', onConsole)
     wv.addEventListener('did-start-navigation', onNavigateClearConsole)
@@ -159,7 +171,7 @@ function PersistentBrowser({ browserId, layoutMode, resizing }: { browserId: str
   )
   const mounted = presentationMatches && slot != null && slot.width > 0 && slot.height > 0
   const hostShown = slot?.mode !== 'panel' || activityShown
-  const visible = mounted && hostShown && !home
+  const visible = mounted && hostShown && !home && !certErrored
 
   return (
     <div

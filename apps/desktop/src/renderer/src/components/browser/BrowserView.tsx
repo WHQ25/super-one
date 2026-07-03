@@ -2,7 +2,8 @@ import { useCallback, useEffect, useLayoutEffect, useRef } from 'react'
 import { useBrowserStore, type BrowserSlotMode } from '@/stores/browser'
 import { BrowserChrome } from './BrowserChrome'
 import { BrowserNewTab } from './BrowserNewTab'
-import { normalizeUrl, isBlankUrl } from './browser-url'
+import { BrowserCertWarning } from './BrowserCertWarning'
+import { normalizeUrl, isBlankUrl, hostOf } from './browser-url'
 import { browserNavigate, browserGoBack, browserGoForward, browserReload, browserStop } from './browser-host-api'
 
 interface BrowserViewProps {
@@ -13,6 +14,7 @@ interface BrowserViewProps {
 export function BrowserView({ browserId, mode }: BrowserViewProps) {
   const contentRef = useRef<HTMLDivElement>(null)
   const isHome = useBrowserStore((s) => isBlankUrl(s.tabs[browserId]?.url ?? ''))
+  const certError = useBrowserStore((s) => s.tabs[browserId]?.certError ?? null)
 
   useLayoutEffect(() => {
     const el = contentRef.current
@@ -66,6 +68,22 @@ export function BrowserView({ browserId, mode }: BrowserViewProps) {
   const reload = useCallback(() => browserReload(browserId), [browserId])
   const stop = useCallback(() => browserStop(browserId), [browserId])
 
+  const certBack = useCallback(() => {
+    const store = useBrowserStore.getState()
+    if (store.tabs[browserId]?.canGoBack) { browserGoBack(browserId); return }
+    browserNavigate(browserId, 'about:blank')
+    store.patch(browserId, { url: '', certError: null })
+  }, [browserId])
+  const certProceed = useCallback(async () => {
+    const store = useBrowserStore.getState()
+    const err = store.tabs[browserId]?.certError
+    if (!err) return
+    const host = hostOf(err.url)
+    if (host) store.markInsecure(host, err.error)
+    await window.app.browserCertProceed(err.url)
+    browserReload(browserId)
+  }, [browserId])
+
   return (
     <div className="flex h-full w-full flex-col bg-transparent">
       <BrowserChrome
@@ -78,6 +96,7 @@ export function BrowserView({ browserId, mode }: BrowserViewProps) {
       />
       <div ref={contentRef} className="min-h-0 flex-1">
         {isHome && <BrowserNewTab onOpen={navigate} />}
+        {certError && !isHome && <BrowserCertWarning error={certError} onBack={certBack} onProceed={certProceed} />}
       </div>
     </div>
   )

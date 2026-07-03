@@ -778,6 +778,17 @@ export type Messages = {
       noBookmarks: string
       deleteFolder: string
       emptyFolder: string
+      insecureTitle: string
+      insecureBody: string
+      insecureDetails: string
+      insecureHide: string
+      insecureAdvanced: string
+      insecureProceed: string
+      insecureBack: string
+      insecureReasonExpired: string
+      insecureReasonName: string
+      insecureReasonAuthority: string
+      insecureReasonGeneric: string
     }
     reasoning: {
       thinking: string
@@ -2174,6 +2185,17 @@ export const en: Messages = {
       noBookmarks: 'No bookmarks yet',
       deleteFolder: 'Delete folder',
       emptyFolder: 'Empty',
+      insecureTitle: 'Your connection is not private',
+      insecureBody: 'Attackers might be trying to steal your information from {{host}} (for example, passwords, messages, or credit cards).',
+      insecureDetails: 'Advanced',
+      insecureHide: 'Hide details',
+      insecureAdvanced: 'This site’s security certificate could not be verified. Proceeding may expose your data to attackers.',
+      insecureProceed: 'Continue to {{host}} (unsafe)',
+      insecureBack: 'Back to safety',
+      insecureReasonExpired: 'This site’s security certificate has expired, so its identity cannot be verified.',
+      insecureReasonName: 'This site’s security certificate does not match its address, so its identity cannot be verified.',
+      insecureReasonAuthority: 'This site’s security certificate is not trusted (self-signed or from an unknown authority).',
+      insecureReasonGeneric: 'This site’s security certificate could not be verified.',
     },
     reasoning: {
       thinking: 'Thinking...',

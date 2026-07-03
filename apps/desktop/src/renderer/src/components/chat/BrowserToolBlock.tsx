@@ -1,8 +1,9 @@
 import { useState, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ChevronRight, Ban, TriangleAlert, ImageIcon } from 'lucide-react'
+import { ChevronRight, Ban, TriangleAlert, ImageIcon, X } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
-import { Dialog, DialogContent, DialogTitle } from '@superone/ui/components/ui/dialog'
+import { Dialog, DialogContent, DialogTitle, DialogClose } from '@superone/ui/components/ui/dialog'
+import { Button } from '@superone/ui/components/ui/button'
 import { ToolIcon } from './ToolIcon'
 import { PrettyJSONCodeBlock, BrowserEvaluateView } from './tool-result-views'
 import { ImageInteractive, useImageDataUri } from './codex-image-shared'
@@ -140,13 +141,24 @@ function BrowserScreenshotView({ path }: { path: string }) {
 
       <Dialog open={open} onOpenChange={setOpen} modal={false}>
         <DialogContent
-          showCloseButton
+          showCloseButton={false}
           className="left-0 top-0 h-screen max-h-none w-screen max-w-none translate-x-0 translate-y-0 gap-0 overflow-hidden rounded-none border-0 bg-background/95 p-0 shadow-none sm:max-w-none"
         >
           <DialogTitle className="sr-only">{t('chat.toolBlock.browser.screenshot')}</DialogTitle>
           <div className="absolute inset-0 px-[5vw] py-[5vh]">
             <ImagePreview src={dataUri} alt={t('chat.toolBlock.browser.screenshot')} />
           </div>
+          <DialogClose asChild>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+              className="absolute right-3 top-3 z-20 size-9 rounded-full border border-border/50 bg-background/80 text-muted-foreground shadow-sm backdrop-blur-sm hover:bg-muted hover:text-foreground"
+              aria-label={t('common.close')}
+            >
+              <X className="size-4" />
+            </Button>
+          </DialogClose>
         </DialogContent>
       </Dialog>
     </>

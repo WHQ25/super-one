@@ -4,6 +4,24 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.43.8-alpha] - 2026-07-03
+
+### Added
+
+- Browser page-load progress bar replaces the spinning reload icon
+- Proceed past certificate-error sites with an explicit warning
+- Bookmark the current page with Cmd/Ctrl+D and edit its URL in the bookmark editor
+- Chat snaps to its minimum width the first time an activity panel opens
+
+### Fixed
+
+- Cmd/Ctrl+W now reliably closes the active activity tab
+- Cmd/Ctrl+T opens a browser tab from the empty activity launcher
+- The active terminal is focused every time the terminal panel opens
+- Bookmark editor now shows as a modal dialog
+- Maximized browser header favicon aligns with its tab
+- Tightened the Windows header-to-card gap and removed the header divider
+
 ## [0.43.7-alpha] - 2026-07-03
 
 ### Added

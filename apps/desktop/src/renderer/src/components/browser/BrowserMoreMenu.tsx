@@ -5,10 +5,12 @@ import { cn } from '@superone/ui/lib/utils'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { Button } from '@superone/ui/components/ui/button'
 import { Popover, PopoverAnchor, PopoverContent } from '@superone/ui/components/ui/popover'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@superone/ui/components/ui/dropdown-menu'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuShortcut, DropdownMenuTrigger } from '@superone/ui/components/ui/dropdown-menu'
 import { useBrowserStore } from '@/stores/browser'
 import { useBrowserBookmarksStore } from '@/stores/browser-bookmarks'
-import { browserOpenDevTools } from './browser-host-api'
+import { browserOpenDevTools, browserIdByWebContentsId } from './browser-host-api'
+
+const bookmarkShortcut = window.app.platform === 'darwin' ? '⌘D' : 'Ctrl+D'
 
 export function BrowserMoreMenu({ browserId, isHome }: { browserId: string; isHome: boolean }) {
   const { t } = useTranslation()
@@ -35,6 +37,15 @@ export function BrowserMoreMenu({ browserId, isHome }: { browserId: string; isHo
     setTimeout(() => setEditOpen(true), 0)
   }
 
+  const openEditorRef = useRef(openBookmarkEditor)
+  openEditorRef.current = openBookmarkEditor
+
+  useEffect(() => {
+    return window.app.onBrowserBookmarkShortcut((webContentsId) => {
+      if (browserIdByWebContentsId(webContentsId) === browserId) openEditorRef.current()
+    })
+  }, [browserId])
+
   return (
     <Popover open={editOpen} onOpenChange={setEditOpen}>
       <DropdownMenu>
@@ -49,6 +60,7 @@ export function BrowserMoreMenu({ browserId, isHome }: { browserId: string; isHo
           <DropdownMenuItem disabled={isHome} onSelect={openBookmarkEditor}>
             <Star className={cn('size-3.5', isBookmarked && 'fill-primary text-primary')} />
             {isBookmarked ? t('chat.browser.bookmarkEdit') : t('chat.browser.bookmark')}
+            <DropdownMenuShortcut>{bookmarkShortcut}</DropdownMenuShortcut>
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => browserOpenDevTools(browserId)}>
             <Code className="size-3.5" />
@@ -64,6 +76,12 @@ export function BrowserMoreMenu({ browserId, isHome }: { browserId: string; isHo
             value={current.title}
             onChange={(e) => updateBookmark(current.id, { title: e.target.value })}
             placeholder={t('chat.browser.bookmarkName')}
+            className="mb-2 h-7 w-full rounded-md border border-border bg-transparent px-2 text-xs outline-none focus:ring-1 focus:ring-ring/50"
+          />
+          <input
+            value={current.url}
+            onChange={(e) => updateBookmark(current.id, { url: e.target.value })}
+            placeholder={t('chat.browser.bookmarkUrl')}
             className="mb-2 h-7 w-full rounded-md border border-border bg-transparent px-2 text-xs outline-none focus:ring-1 focus:ring-ring/50"
           />
           <select

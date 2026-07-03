@@ -1860,6 +1860,7 @@ export const AgentIpcChannels = {
   MEDIA_SERVER_PORT: 'app:media-server-port',
   CONTENT_ZOOM: 'app:content-zoom',
   BROWSER_ANNOTATE_SHORTCUT: 'app:browser-annotate-shortcut',
+  BROWSER_BOOKMARK_SHORTCUT: 'app:browser-bookmark-shortcut',
   BROWSER_NEW_TAB_SHORTCUT: 'app:browser-new-tab-shortcut',
   CLOSE_TAB_SHORTCUT: 'app:close-tab-shortcut',
   CLOSE_WINDOW: 'app:close-window',
@@ -1926,6 +1927,8 @@ export const AgentIpcChannels = {
   BROWSER_HISTORY_RECORD: 'app:browser-history-record',
   BROWSER_HISTORY_SUGGEST: 'app:browser-history-suggest',
   BROWSER_HISTORY_DELETE: 'app:browser-history-delete',
+  BROWSER_CERT_ERROR: 'app:browser-cert-error',
+  BROWSER_CERT_PROCEED: 'app:browser-cert-proceed',
   APP_SYSTEM_LOCALE: 'app:system-locale',
   APP_LOCALE_CHANGED: 'app:locale-changed',
   APP_ICON_PICK_FILE: 'app:icon-pick-file',
@@ -2283,6 +2286,12 @@ export interface BrowserHistoryEntry {
   title: string
   visitCount: number
   lastVisit: number
+}
+
+export interface BrowserCertError {
+  webContentsId: number
+  url: string
+  error: string
 }
 
 export interface AppSettings {

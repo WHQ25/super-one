@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import { AgentIpcChannels, type NativeContextMenuItemSpec, type AgentPrewarmHint, type BashOutputEvent, type CodexCollaborationMode, type CodexPermissionPreset, type CodexProviderTestProgress, type CodexReasoningEffort, type CodexReviewTarget, type RemoteDeviceConfig, type SandboxMode, type SendMessageRequest, type ContentBlock, type ChatMessageContext, type WorktreeActivateRequest, type WorktreeHandoffResult, type WorktreeAssignResult, type GitDirtyStatus, type SessionForkRequest, type SessionForkResult, type HookSavePayload, type TerminalEvent, type TerminalListItem, type TerminalSnapshot, type HarnessId } from '@superone/shared/agent-types'
+import { AgentIpcChannels, type NativeContextMenuItemSpec, type AgentPrewarmHint, type BashOutputEvent, type CodexCollaborationMode, type CodexPermissionPreset, type CodexProviderTestProgress, type CodexReasoningEffort, type CodexReviewTarget, type RemoteDeviceConfig, type SandboxMode, type SendMessageRequest, type ContentBlock, type ChatMessageContext, type WorktreeActivateRequest, type WorktreeHandoffResult, type WorktreeAssignResult, type GitDirtyStatus, type SessionForkRequest, type SessionForkResult, type HookSavePayload, type TerminalEvent, type TerminalListItem, type TerminalSnapshot, type HarnessId, type BrowserCertError } from '@superone/shared/agent-types'
 import type { McpbInstallRequest } from '@superone/shared/mcpb-types'
 
 try {
@@ -739,6 +739,8 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.BROWSER_HISTORY_SUGGEST, query, limit),
   deleteBrowserHistory: (url: string | null) =>
     ipcRenderer.invoke(AgentIpcChannels.BROWSER_HISTORY_DELETE, url),
+  browserCertProceed: (url: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.BROWSER_CERT_PROCEED, url),
   pickAppIconFile: () =>
     ipcRenderer.invoke(AgentIpcChannels.APP_ICON_PICK_FILE),
   setAppIcon: (pngDataUri: string) =>
@@ -830,11 +832,31 @@ const appAPI = {
     }
   },
 
+  onBrowserBookmarkShortcut: (callback: (webContentsId: number) => void) => {
+    const handler = (_ipcEvent: Electron.IpcRendererEvent, webContentsId: number): void => {
+      callback(webContentsId)
+    }
+    ipcRenderer.on(AgentIpcChannels.BROWSER_BOOKMARK_SHORTCUT, handler)
+    return () => {
+      ipcRenderer.removeListener(AgentIpcChannels.BROWSER_BOOKMARK_SHORTCUT, handler)
+    }
+  },
+
   onBrowserNewTabShortcut: (callback: () => void) => {
     const handler = (): void => callback()
     ipcRenderer.on(AgentIpcChannels.BROWSER_NEW_TAB_SHORTCUT, handler)
     return () => {
       ipcRenderer.removeListener(AgentIpcChannels.BROWSER_NEW_TAB_SHORTCUT, handler)
+    }
+  },
+
+  onBrowserCertError: (callback: (payload: BrowserCertError) => void) => {
+    const handler = (_ipcEvent: Electron.IpcRendererEvent, payload: BrowserCertError): void => {
+      callback(payload)
+    }
+    ipcRenderer.on(AgentIpcChannels.BROWSER_CERT_ERROR, handler)
+    return () => {
+      ipcRenderer.removeListener(AgentIpcChannels.BROWSER_CERT_ERROR, handler)
     }
   },
 

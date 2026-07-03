@@ -421,7 +421,7 @@ export function BrowserNewTab({ onOpen }: BrowserNewTabProps) {
               </IconButton>
             </div>
             {ungrouped.length === 0 && (
-              <p className="mb-6 text-xs text-muted-foreground">{t('chat.browser.noBookmarks')}</p>
+              <p className="mb-6 text-center text-xs text-muted-foreground">{t('chat.browser.noBookmarks')}</p>
             )}
             <UngroupZone>
               <SortableContext items={ungrouped.map((b) => b.id)} strategy={rectSortingStrategy}>

@@ -1,9 +1,8 @@
 import { useCallback } from 'react'
 import { ArrowLeft, ArrowRight, RotateCw, Camera, SquareDashedMousePointer } from 'lucide-react'
-import { motion } from 'motion/react'
+import { AnimatePresence, motion } from 'motion/react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import { cn } from '@superone/ui/lib/utils'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@superone/ui/components/ui/tooltip'
 import { CommandShortcut } from '@superone/ui/components/ui/command'
@@ -21,10 +20,9 @@ interface BrowserChromeProps {
   onBack: () => void
   onForward: () => void
   onReload: () => void
-  onStop: () => void
 }
 
-export function BrowserChrome({ browserId, onNavigate, onBack, onForward, onReload, onStop }: BrowserChromeProps) {
+export function BrowserChrome({ browserId, onNavigate, onBack, onForward, onReload }: BrowserChromeProps) {
   const { t } = useTranslation()
   const state = useBrowserStore((s) => s.tabs[browserId])
   const annotating = useBrowserStore((s) => s.annotatingId === browserId)
@@ -47,20 +45,28 @@ export function BrowserChrome({ browserId, onNavigate, onBack, onForward, onRelo
   }, [browserId, t])
 
   return (
-    <div className="flex h-9 shrink-0 items-center gap-0.5 border-b border-border bg-transparent px-2">
+    <div className="relative flex h-9 shrink-0 items-center gap-0.5 border-b border-border bg-transparent px-2">
+      <AnimatePresence>
+        {loading && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="pointer-events-none absolute inset-x-0 -bottom-px h-0.5 overflow-hidden"
+          >
+            <div className="browser-progress-bar h-full w-1/4 rounded-full bg-primary" />
+          </motion.div>
+        )}
+      </AnimatePresence>
       <IconButton size="xs" variant="ghost" tooltip="Back" disabled={!state?.canGoBack} onClick={onBack}>
         <ArrowLeft className="size-3.5" />
       </IconButton>
       <IconButton size="xs" variant="ghost" tooltip="Forward" disabled={!state?.canGoForward} onClick={onForward}>
         <ArrowRight className="size-3.5" />
       </IconButton>
-      <IconButton
-        size="xs"
-        variant="ghost"
-        tooltip={loading ? 'Stop' : 'Reload'}
-        onClick={loading ? onStop : onReload}
-      >
-        <RotateCw className={cn('size-3', loading && 'animate-spin')} />
+      <IconButton size="xs" variant="ghost" tooltip="Reload" onClick={onReload}>
+        <RotateCw className="size-3" />
       </IconButton>
       <BrowserOmnibox url={url} isHome={isHome} onNavigate={onNavigate} />
       {annotating ? (

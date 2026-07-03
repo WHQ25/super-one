@@ -4,7 +4,7 @@ import { BrowserChrome } from './BrowserChrome'
 import { BrowserNewTab } from './BrowserNewTab'
 import { BrowserCertWarning } from './BrowserCertWarning'
 import { normalizeUrl, isBlankUrl, hostOf } from './browser-url'
-import { browserNavigate, browserGoBack, browserGoForward, browserReload, browserStop } from './browser-host-api'
+import { browserNavigate, browserGoBack, browserGoForward, browserReload } from './browser-host-api'
 
 interface BrowserViewProps {
   browserId: string
@@ -66,7 +66,6 @@ export function BrowserView({ browserId, mode }: BrowserViewProps) {
   const goBack = useCallback(() => browserGoBack(browserId), [browserId])
   const goForward = useCallback(() => browserGoForward(browserId), [browserId])
   const reload = useCallback(() => browserReload(browserId), [browserId])
-  const stop = useCallback(() => browserStop(browserId), [browserId])
 
   const certBack = useCallback(() => {
     const store = useBrowserStore.getState()
@@ -92,7 +91,6 @@ export function BrowserView({ browserId, mode }: BrowserViewProps) {
         onBack={goBack}
         onForward={goForward}
         onReload={reload}
-        onStop={stop}
       />
       <div ref={contentRef} className="min-h-0 flex-1">
         {isHome && <BrowserNewTab onOpen={navigate} />}

@@ -10,6 +10,7 @@ import { CodingLayout } from '@/components/coding/CodingLayout'
 import { CanvasPanel } from '@/components/canvas/CanvasPanel'
 import { ActivityPanel } from '@/components/activity/ActivityPanel'
 import { openBrowserTab, restoreBrowserToPanel, closeFullscreenBrowser, beginMosaicRecording, replayMosaicOpenedPanels } from '@/components/activity/activity-panel-api'
+import { BrowserFavicon } from '@/components/browser/BrowserFavicon'
 import { SessionMosaic } from '@/components/mosaic/SessionMosaic'
 import { useMosaicStore } from '@/components/mosaic/mosaic-store'
 import { MosaicDropZone } from '@/components/mosaic/MosaicDropZone'
@@ -793,9 +794,13 @@ function HeaderTitle({ layoutMode, sessionId, sessionFallback, folderName, folde
   if (layoutMode === 'canvas' && fullscreenBrowser) {
     return (
       <span className="flex max-w-[220px] items-center gap-1.5 text-xs text-muted-foreground">
-        {fullscreenBrowser.favicon
-          ? <img src={fullscreenBrowser.favicon} alt="" className="size-3.5 shrink-0 rounded-sm" />
-          : <Globe className="size-3.5 shrink-0" />}
+        <BrowserFavicon
+          src={fullscreenBrowser.favicon}
+          url={fullscreenBrowser.url}
+          preferSrc
+          className="size-3.5 shrink-0"
+          fallback={<Globe className="size-3.5 shrink-0" />}
+        />
         <span className="truncate">{fullscreenBrowser.title || 'New Tab'}</span>
       </span>
     )

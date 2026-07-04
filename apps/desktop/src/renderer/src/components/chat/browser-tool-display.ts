@@ -15,6 +15,8 @@ export type BrowserOp =
   | 'evaluate'
   | 'tabs'
   | 'network'
+  | 'network_wait'
+  | 'network_body'
   | 'cookies'
   | 'upload_file'
   | 'emulate'
@@ -23,11 +25,11 @@ export type BrowserOp =
 const BROWSER_OPS = new Set<BrowserOp>([
   'snapshot', 'query', 'inspect', 'screenshot', 'click', 'type', 'navigate',
   'wait_for', 'press', 'scroll', 'drag', 'select', 'open', 'evaluate', 'tabs',
-  'network', 'cookies', 'upload_file', 'emulate', 'mock',
+  'network', 'network_wait', 'network_body', 'cookies', 'upload_file', 'emulate', 'mock',
 ])
 
 /** Read-only ops whose JSON result is worth expanding; the rest are lean actions. */
-const READ_OPS = new Set<BrowserOp>(['snapshot', 'query', 'inspect', 'tabs', 'evaluate', 'network', 'cookies'])
+const READ_OPS = new Set<BrowserOp>(['snapshot', 'query', 'inspect', 'tabs', 'evaluate', 'network', 'network_wait', 'network_body', 'cookies'])
 
 /** Ops that report success/failure via an `ok` field (or an error). */
 const ACTION_OPS = new Set<BrowserOp>(['click', 'type', 'press', 'scroll', 'drag', 'select', 'navigate', 'wait_for', 'open', 'upload_file', 'emulate', 'mock'])
@@ -43,6 +45,8 @@ export function getBrowserOp(mcpToolName: string): BrowserOp | null {
 export function browserVerbKey(op: BrowserOp): string {
   if (op === 'wait_for') return 'waitFor'
   if (op === 'upload_file') return 'uploadFile'
+  if (op === 'network_wait') return 'networkWait'
+  if (op === 'network_body') return 'networkBody'
   return op
 }
 
@@ -136,6 +140,9 @@ export function browserInputSummary(op: BrowserOp, p: Record<string, unknown>): 
         p.resourceType != null ? s(p.resourceType) : '',
         p.statusMin != null || p.statusMax != null ? `${p.statusMin != null ? s(p.statusMin) : ''}–${p.statusMax != null ? s(p.statusMax) : ''}` : '',
       ].filter(Boolean).join(' · ')
+    case 'network_wait':
+    case 'network_body':
+      return s(p.url)
     case 'cookies':
       return Array.isArray(p.urls) ? (p.urls as unknown[]).map((u) => stripProtocol(s(u))).join(', ') : ''
     case 'upload_file': {

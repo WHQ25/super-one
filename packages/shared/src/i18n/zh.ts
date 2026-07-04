@@ -671,6 +671,8 @@ export const zh: Messages = {
         evaluate: '执行脚本',
         tabs: '标签页',
         network: '网络',
+        networkWait: '等待请求',
+        networkBody: '响应体',
         cookies: 'Cookie',
         uploadFile: '上传文件',
         emulate: '模拟设备',

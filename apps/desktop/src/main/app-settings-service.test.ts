@@ -60,6 +60,11 @@ describe('app-settings-service', () => {
     customAppIconPath: null,
     browserBookmarks: [],
     browserBookmarkGroups: [],
+    cdpEnabled: false,
+    cdpNetworkEnabled: false,
+    cdpCookiesEnabled: false,
+    cdpMockEnabled: false,
+    cdpEmulateEnabled: false,
     agentPreference: {
       claude: defaultClaude,
       codex: defaultCodex,
@@ -103,6 +108,11 @@ describe('app-settings-service', () => {
         customAppIconPath: null,
         browserBookmarks: [],
         browserBookmarkGroups: [],
+        cdpEnabled: false,
+        cdpNetworkEnabled: false,
+        cdpCookiesEnabled: false,
+        cdpMockEnabled: false,
+        cdpEmulateEnabled: false,
         agentPreference: {
           claude: {
             defaultModel: 'claude-sonnet-4-6',
@@ -178,6 +188,11 @@ describe('app-settings-service', () => {
         customAppIconPath: null,
         browserBookmarks: [],
         browserBookmarkGroups: [],
+        cdpEnabled: false,
+        cdpNetworkEnabled: false,
+        cdpCookiesEnabled: false,
+        cdpMockEnabled: false,
+        cdpEmulateEnabled: false,
         agentPreference: {
           claude: defaultClaude,
           codex: {

@@ -645,6 +645,8 @@ export type Messages = {
         evaluate: string
         tabs: string
         network: string
+        networkWait: string
+        networkBody: string
         cookies: string
         uploadFile: string
         emulate: string
@@ -2096,6 +2098,8 @@ export const en: Messages = {
         evaluate: 'Evaluate',
         tabs: 'Tabs',
         network: 'Network',
+        networkWait: 'Wait for request',
+        networkBody: 'Response body',
         cookies: 'Cookies',
         uploadFile: 'Upload file',
         emulate: 'Emulate',

@@ -23,6 +23,8 @@ export const BROWSER_TOOL_NAMES = [
   'browser_evaluate',
   'browser_tabs',
   'browser_network',
+  'browser_network_wait',
+  'browser_network_body',
   'browser_cookies',
   'browser_upload_file',
   'browser_emulate',
@@ -104,8 +106,8 @@ async function cdpTool(sessionId: string, tab: string | undefined, fn: (webConte
   }
 }
 
-function assertExperimental(enabled: boolean): void {
-  if (!enabled) throw new Error('This experimental browser tool is disabled. Enable it in Settings → Browser → Experimental tools.')
+function assertExperimental(enabled: boolean, setting: string): void {
+  if (!enabled) throw new Error(`The '${setting}' experimental browser tool is disabled. Enable it in Settings → Browser → Experimental tools.`)
 }
 
 const tabField = {
@@ -249,7 +251,7 @@ export function registerBrowserTools(server: McpServer, sessionId: string): void
           .enum(['auto', 'cdp', 'synthetic'])
           .default('auto')
           .describe(
-            "Input engine. 'auto' (default): a real trusted mouse click via CDP when that setting is on, else synthetic. 'cdp': real trusted click through the browser input pipeline — the reliable default; needed for pointer-event UIs (e.g. Radix), popups/window.open, native file pickers, media autoplay, and canvas. 'synthetic': lightweight DOM mouse events (mousedown/mouseup/click only, no pointer events, untrusted) — faster, but drop it down to this only for a plain button/link when you want to skip CDP overhead and don't need user-activation. Errors if 'cdp' is requested while the CDP setting is off.",
+            "'auto' (default): trusted CDP click when the CDP setting is on, else synthetic. 'cdp': trusted click via the browser input pipeline — needed for pointer-event UIs (e.g. Radix), popups/window.open, file pickers, autoplay, canvas; errors if the CDP setting is off. 'synthetic': untrusted DOM mouse events only — fine for a plain button/link.",
           ),
       },
     },
@@ -283,7 +285,7 @@ export function registerBrowserTools(server: McpServer, sessionId: string): void
           .enum(['synthetic', 'cdp'])
           .default('synthetic')
           .describe(
-            "Input engine. 'synthetic' (default): sets the value via the native setter and fires input/change so framework-controlled inputs (React etc.) update — fast and enough for ordinary inputs and textareas. Switch to 'cdp' for a real trusted insert through the browser editing pipeline when targeting rich editors (Monaco, CodeMirror, ProseMirror), masked/auto-complete/max-length inputs that react per keystroke, or logic gated on trusted events. Note: neither engine emits per-character keydown. 'cdp' requires the CDP setting enabled in Settings → Browser.",
+            "'synthetic' (default): sets the value natively and fires input/change — enough for ordinary framework-controlled inputs. 'cdp': trusted insert via the browser editing pipeline — use for rich editors (Monaco, CodeMirror, ProseMirror), masked/per-keystroke inputs, or logic gated on trusted events; requires the CDP setting. Neither engine emits per-character keydown.",
           ),
       },
     },
@@ -365,7 +367,7 @@ export function registerBrowserTools(server: McpServer, sessionId: string): void
           .enum(['synthetic', 'cdp'])
           .default('synthetic')
           .describe(
-            "Input engine. 'synthetic' (default): a DOM KeyboardEvent — fast, focus-independent, and enough for pages that handle keys in JS (app shortcuts, Enter-to-submit, Escape). It is untrusted and does NOT drive native browser behaviors. Switch to 'cdp' for a real trusted key event through the browser input pipeline when a key must move focus (Tab), type into a native input, trigger a browser shortcut, or when a synthetic press had no visible effect (the page ignores untrusted events). 'cdp' requires the CDP setting enabled in Settings → Browser.",
+            "'synthetic' (default): a DOM KeyboardEvent — enough for JS key handlers (shortcuts, Enter-to-submit, Escape) but untrusted, no native browser behavior. 'cdp': trusted key via the browser input pipeline — use when a key must move focus (Tab), type into a native input, trigger a browser shortcut, or when a synthetic press had no effect; requires the CDP setting.",
           ),
       },
     },
@@ -503,49 +505,79 @@ export function registerBrowserTools(server: McpServer, sessionId: string): void
     () => dataTool(sessionId, 'tabs', {}),
   )
 
-  if (isCdpNetworkEnabled()) server.registerTool(
+  server.registerTool(
     'browser_network',
     {
       description:
-        'Inspect the network traffic of the page (requires the browser CDP setting). Lists recent requests with method, URL, status, resource type, and size. Filter by urlIncludes/method/status/resourceType. Long URLs are truncated in the listing. Pass waitForUrl to block until a matching request completes (e.g. after a click that triggers an XHR). Pass bodyForUrl to fetch the response body of the most recent matching request (up to 64KB).',
+        'List recent network requests of the page (experimental; requires the browser CDP setting + network-inspection sub-setting). Each entry has method, URL, status, resource type, and size; long URLs are truncated. Capture starts on the first browser_network* call for a tab — reload or navigate after that to see a page\'s full traffic. Companions: browser_network_wait blocks until a request completes; browser_network_body reads a response body.',
       inputSchema: {
         ...tabField,
         ...descriptionField,
         urlIncludes: z.string().optional().describe('Only include requests whose URL contains this substring.'),
         method: z.string().optional().describe('Only include requests with this HTTP method (GET, POST, ...).'),
-        statusMin: z.number().int().optional().describe('Minimum HTTP status code (inclusive).'),
-        statusMax: z.number().int().optional().describe('Maximum HTTP status code (inclusive), e.g. statusMin 400 to find errors.'),
+        statusMin: z.number().int().optional().describe('Minimum HTTP status code (inclusive), e.g. 400 to find errors.'),
+        statusMax: z.number().int().optional().describe('Maximum HTTP status code (inclusive).'),
         resourceType: z.string().optional().describe('Only include this resource type (Document, XHR, Fetch, Script, Image, ...).'),
         failedOnly: z.boolean().optional().describe('Only include requests that failed.'),
         max: z.number().int().min(1).max(300).optional().describe('Maximum number of requests to return (default 50).'),
-        waitForUrl: z.string().optional().describe('Block until a completed request whose URL contains this substring appears, then return it.'),
-        timeoutMs: z.number().int().min(100).max(60000).optional().describe('Timeout for waitForUrl in milliseconds (default 15000).'),
-        bodyForUrl: z.string().optional().describe('Return the response body of the most recent completed request whose URL contains this substring.'),
       },
     },
     (args) =>
       cdpTool(sessionId, args.tab, async (webContentsId) => {
-        assertExperimental(isCdpNetworkEnabled())
+        assertExperimental(isCdpNetworkEnabled(), 'network inspection')
         await enableNetworkCapture(webContentsId)
-        if (args.bodyForUrl) {
-          const body = await getResponseBody(webContentsId, args.bodyForUrl)
-          if (!body) throw new Error(`No completed request found matching: ${args.bodyForUrl}`)
-          return body
-        }
-        if (args.waitForUrl) {
-          const hit = await waitForRequest(webContentsId, args.waitForUrl, args.timeoutMs ?? 15000)
-          if (!hit) throw new Error(`Timed out waiting for a request matching: ${args.waitForUrl}`)
-          return hit
-        }
         return { requests: readNetwork(webContentsId, args) }
       }),
   )
 
-  if (isCdpCookiesEnabled()) server.registerTool(
+  server.registerTool(
+    'browser_network_wait',
+    {
+      description:
+        'Block until a network request whose URL contains the given substring completes, then return it (experimental; requires the browser CDP setting + network-inspection sub-setting). Use after a click or submit that triggers an XHR/fetch, instead of polling browser_network. Default timeout 15s, max 60s.',
+      inputSchema: {
+        ...tabField,
+        ...descriptionField,
+        url: z.string().min(1).describe('Substring the request URL must contain.'),
+        timeoutMs: z.number().int().min(100).max(60000).default(15000).describe('Maximum wait in milliseconds. Default 15000.'),
+      },
+    },
+    (args) =>
+      cdpTool(sessionId, args.tab, async (webContentsId) => {
+        assertExperimental(isCdpNetworkEnabled(), 'network inspection')
+        await enableNetworkCapture(webContentsId)
+        const hit = await waitForRequest(webContentsId, args.url, args.timeoutMs)
+        if (!hit) throw new Error(`Timed out waiting for a request matching: ${args.url}`)
+        return hit
+      }),
+  )
+
+  server.registerTool(
+    'browser_network_body',
+    {
+      description:
+        'Return the response body (up to 64KB) of the most recent completed request whose URL contains the given substring (experimental; requires the browser CDP setting + network-inspection sub-setting). Works for XHR/fetch/script responses captured after network capture started; the top-level document body is usually unavailable (the renderer consumes it) — use browser_evaluate for that.',
+      inputSchema: {
+        ...tabField,
+        ...descriptionField,
+        url: z.string().min(1).describe('Substring the request URL must contain.'),
+      },
+    },
+    (args) =>
+      cdpTool(sessionId, args.tab, async (webContentsId) => {
+        assertExperimental(isCdpNetworkEnabled(), 'network inspection')
+        await enableNetworkCapture(webContentsId)
+        const body = await getResponseBody(webContentsId, args.url)
+        if (!body) throw new Error(`No completed request found matching: ${args.url}`)
+        return body
+      }),
+  )
+
+  server.registerTool(
     'browser_cookies',
     {
       description:
-        'Read the cookies visible to the page (requires the browser CDP setting). Returns name, value, domain, path, and key flags. Long cookie values are truncated (a valueLength field carries the original length). Pass urls to scope to specific URLs.',
+        'Read the cookies visible to the page (experimental; requires the browser CDP setting + cookie-access sub-setting). Returns name, value, domain, path, and key flags. Long cookie values are truncated (a valueLength field carries the original length). Pass urls to scope to specific URLs.',
       inputSchema: {
         ...tabField,
         ...descriptionField,
@@ -554,7 +586,7 @@ export function registerBrowserTools(server: McpServer, sessionId: string): void
     },
     (args) =>
       cdpTool(sessionId, args.tab, async (webContentsId) => {
-        assertExperimental(isCdpCookiesEnabled())
+        assertExperimental(isCdpCookiesEnabled(), 'cookie access')
         return { cookies: await cdpGetCookies(webContentsId, args.urls) }
       }),
   )
@@ -580,11 +612,11 @@ export function registerBrowserTools(server: McpServer, sessionId: string): void
       }),
   )
 
-  if (isCdpEmulateEnabled()) server.registerTool(
+  server.registerTool(
     'browser_emulate',
     {
       description:
-        'Emulate device and environment conditions for the page (requires the browser CDP setting AND the device-emulation sub-setting): viewport size, device scale, mobile mode, user agent, color scheme, timezone, locale, and geolocation. Pass reset:true to clear all overrides. Overrides persist until reset or the tab is closed. Note: width/height reflow responsive pages (those with a width=device-width viewport meta) to the emulated width; non-responsive pages keep their wide layout, matching standard device-emulation behavior.',
+        'Emulate device and environment conditions for the page (experimental; requires the browser CDP setting + device-emulation sub-setting): viewport size, device scale, mobile mode, user agent, color scheme, timezone, locale, and geolocation. Pass reset:true to clear all overrides; they persist until reset or the tab is closed. width/height reflow only responsive pages (with a width=device-width viewport meta); non-responsive pages keep their wide layout.',
       inputSchema: {
         ...tabField,
         ...descriptionField,
@@ -603,7 +635,7 @@ export function registerBrowserTools(server: McpServer, sessionId: string): void
     },
     (args) =>
       cdpTool(sessionId, args.tab, async (webContentsId) => {
-        assertExperimental(isCdpEmulateEnabled())
+        assertExperimental(isCdpEmulateEnabled(), 'device emulation')
         await cdpEmulate(webContentsId, args)
         if (args.reset || (args.width != null && args.height != null)) {
           await browserAutomationCall(sessionId, 'emulateViewport', {
@@ -617,11 +649,11 @@ export function registerBrowserTools(server: McpServer, sessionId: string): void
       }),
   )
 
-  if (isCdpMockEnabled()) server.registerTool(
+  server.registerTool(
     'browser_mock',
     {
       description:
-        'Intercept matching network requests and respond with a mocked response (requires the browser CDP setting AND the network-mocking sub-setting). Provide a url substring to match and the response to return. Pass clear:true to remove all mocks. WARNING: this can read and alter all page traffic — use only in trusted scenarios.',
+        'Intercept matching network requests and respond with a mocked response (experimental; requires the browser CDP setting + network-mocking sub-setting). Provide a url substring to match and the response to return. Pass clear:true to remove all mocks. WARNING: this can read and alter all page traffic — use only in trusted scenarios.',
       inputSchema: {
         ...tabField,
         ...descriptionField,
@@ -635,7 +667,7 @@ export function registerBrowserTools(server: McpServer, sessionId: string): void
     },
     (args) =>
       cdpTool(sessionId, args.tab, async (webContentsId) => {
-        assertExperimental(isCdpMockEnabled())
+        assertExperimental(isCdpMockEnabled(), 'network mocking')
         if (args.clear) {
           await clearMockRules(webContentsId)
           return { ok: true, cleared: true }

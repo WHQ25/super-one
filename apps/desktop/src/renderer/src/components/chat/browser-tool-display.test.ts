@@ -9,6 +9,8 @@ describe('getBrowserOp', () => {
 
   it('recognizes the CDP-only ops', () => {
     expect(getBrowserOp('browser_network')).toBe('network')
+    expect(getBrowserOp('browser_network_wait')).toBe('network_wait')
+    expect(getBrowserOp('browser_network_body')).toBe('network_body')
     expect(getBrowserOp('browser_cookies')).toBe('cookies')
     expect(getBrowserOp('browser_upload_file')).toBe('upload_file')
     expect(getBrowserOp('browser_emulate')).toBe('emulate')
@@ -26,6 +28,8 @@ describe('browserVerbKey', () => {
   it('camelCases wait_for and upload_file and leaves others intact', () => {
     expect(browserVerbKey('wait_for')).toBe('waitFor')
     expect(browserVerbKey('upload_file')).toBe('uploadFile')
+    expect(browserVerbKey('network_wait')).toBe('networkWait')
+    expect(browserVerbKey('network_body')).toBe('networkBody')
     expect(browserVerbKey('snapshot')).toBe('snapshot')
   })
 })
@@ -35,6 +39,8 @@ describe('isReadBrowserOp', () => {
     expect(isReadBrowserOp('snapshot')).toBe(true)
     expect(isReadBrowserOp('evaluate')).toBe(true)
     expect(isReadBrowserOp('network')).toBe(true)
+    expect(isReadBrowserOp('network_wait')).toBe(true)
+    expect(isReadBrowserOp('network_body')).toBe(true)
     expect(isReadBrowserOp('cookies')).toBe(true)
     expect(isReadBrowserOp('click')).toBe(false)
     expect(isReadBrowserOp('emulate')).toBe(false)
@@ -76,6 +82,11 @@ describe('browserInputSummary', () => {
     expect(browserInputSummary('network', { bodyForUrl: '/api/user' })).toBe('body: /api/user')
     expect(browserInputSummary('network', { waitForUrl: '/search' })).toBe('wait: /search')
     expect(browserInputSummary('network', { method: 'POST', statusMin: 400 })).toBe('POST · 400–')
+  })
+
+  it('summarizes network_wait and network_body by url substring', () => {
+    expect(browserInputSummary('network_wait', { url: '/search' })).toBe('/search')
+    expect(browserInputSummary('network_body', { url: '/api/user' })).toBe('/api/user')
   })
 
   it('summarizes emulate by dimensions or reset, and mock by url or clear', () => {

@@ -91,6 +91,7 @@ interface ResolvePoint {
   y: number
   selector?: string
   name?: string
+  ambiguous?: number
   error?: string
 }
 
@@ -264,7 +265,7 @@ export function registerBrowserTools(server: McpServer, sessionId: string): void
           const point = (await browserAutomationCall(sessionId, 'resolvePoint', args)) as ResolvePoint
           if (!point.ok) throw new Error(point.error ?? 'click target not found')
           await cdpClick(point.webContentsId, point.x, point.y)
-          return { ok: true, selector: point.selector, name: point.name }
+          return { ok: true, selector: point.selector, name: point.name, ...(point.ambiguous ? { ambiguous: point.ambiguous } : {}) }
         },
         args.engine,
       ),

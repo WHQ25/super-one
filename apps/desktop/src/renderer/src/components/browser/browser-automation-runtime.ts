@@ -65,19 +65,43 @@ function resolveBrowserId(tab: string | undefined, sessionId: string): string {
   throw new Error(`Multiple browser tabs are open; specify "tab". Open tabs: ${owned.join(', ')}`)
 }
 
-const HELPERS = `
+export const HELPERS = `
 const __sone = {
+  dynamicToken(v) {
+    if (!v) return false;
+    if (/^(css|sc|jss|emotion|makeStyles|styled|chakra)[-_]/i.test(v)) return true;
+    if (/^(:|«)/.test(v)) return true;
+    if (/^(radix-|headlessui-|mui-|rc-|react-aria)/i.test(v)) return true;
+    if (/^[0-9a-f]{6,}$/i.test(v)) return true;
+    if (v.length >= 6 && v.indexOf('-') === -1 && v.indexOf('_') === -1 && /[a-z]/i.test(v) && /[0-9]/.test(v)) return true;
+    return false;
+  },
+  stableSelector(el) {
+    if (!el.getAttribute) return null;
+    const attrs = ['data-testid', 'data-test', 'data-cy', 'data-qa', 'name', 'aria-label'];
+    for (let i = 0; i < attrs.length; i++) {
+      const a = attrs[i];
+      const v = el.getAttribute(a);
+      if (v && !__sone.dynamicToken(v)) {
+        const sel = el.tagName.toLowerCase() + '[' + a + '=' + JSON.stringify(v) + ']';
+        try { if (document.querySelectorAll(sel).length === 1) return sel; } catch (e) {}
+      }
+    }
+    return null;
+  },
   selectorOf(el) {
     if (!el || el.nodeType !== 1) return null;
-    if (el.id) return '#' + CSS.escape(el.id);
+    if (el.id && !__sone.dynamicToken(el.id)) return '#' + CSS.escape(el.id);
+    const stable = __sone.stableSelector(el);
+    if (stable) return stable;
     const parts = [];
     let node = el, guard = 0;
     while (node && node.nodeType === 1 && node !== document.body && guard < 5) {
       guard++;
       let part = node.tagName.toLowerCase();
-      if (node.id) { parts.unshift('#' + CSS.escape(node.id)); break; }
+      if (node.id && !__sone.dynamicToken(node.id)) { parts.unshift('#' + CSS.escape(node.id)); break; }
       const cls = (node.className && typeof node.className === 'string')
-        ? node.className.trim().split(/\\s+/).filter(Boolean).slice(0, 2) : [];
+        ? node.className.trim().split(/\\s+/).filter((c) => c && !__sone.dynamicToken(c)).slice(0, 2) : [];
       if (cls.length) part += '.' + cls.map((c) => CSS.escape(c)).join('.');
       const parent = node.parentElement;
       if (parent) {
@@ -244,8 +268,8 @@ function clickScript(input: { selector?: string; text?: string; x?: number; y?: 
     const text = ${JSON.stringify(input.text ?? null)};
     const hasXY = ${input.x != null && input.y != null};
     const px = ${JSON.stringify(input.x ?? null)}, py = ${JSON.stringify(input.y ?? null)};
-    let el = null;
-    if (sel) el = document.querySelector(sel);
+    let el = null, ambiguous = 0;
+    if (sel) { const nodes = document.querySelectorAll(sel); ambiguous = nodes.length; el = nodes[0] || null; }
     else if (text) { const t = text.toLowerCase(); el = Array.from(document.querySelectorAll('a,button,input,[role],[onclick],label,summary')).filter((e) => __sone.visible(e)).find((e) => (__sone.name(e) || e.innerText || '').toLowerCase().includes(t)) || null; }
     else if (hasXY) el = document.elementFromPoint(px, py);
     if (!el) return { ok: false, error: 'click target not found' };
@@ -257,7 +281,9 @@ function clickScript(input: { selector?: string; text?: string; x?: number; y?: 
     el.dispatchEvent(new MouseEvent('mouseup', opts));
     el.dispatchEvent(new MouseEvent('click', opts));
     if (typeof el.focus === 'function') el.focus();
-    return { ok: true, selector: __sone.selectorOf(el), name: __sone.name(el) };
+    const res = { ok: true, selector: __sone.selectorOf(el), name: __sone.name(el) };
+    if (ambiguous > 1) res.ambiguous = ambiguous;
+    return res;
   })()`
 }
 
@@ -269,14 +295,16 @@ function resolvePointScript(input: { selector?: string; text?: string; x?: numbe
     const hasXY = ${input.x != null && input.y != null};
     const px = ${JSON.stringify(input.x ?? null)}, py = ${JSON.stringify(input.y ?? null)};
     if (hasXY) return { ok: true, x: px, y: py };
-    let el = null;
-    if (sel) el = document.querySelector(sel);
+    let el = null, ambiguous = 0;
+    if (sel) { const nodes = document.querySelectorAll(sel); ambiguous = nodes.length; el = nodes[0] || null; }
     else if (text) { const t = text.toLowerCase(); el = Array.from(document.querySelectorAll('a,button,input,[role],[onclick],label,summary')).filter((e) => __sone.visible(e)).find((e) => (__sone.name(e) || e.innerText || '').toLowerCase().includes(t)) || null; }
     if (!el) return { ok: false, error: 'click target not found' };
     el.scrollIntoView({ block: 'center', inline: 'center' });
     const r = el.getBoundingClientRect();
     if (r.width <= 0 || r.height <= 0) return { ok: false, error: 'click target is not visible' };
-    return { ok: true, x: r.left + r.width / 2, y: r.top + r.height / 2, selector: __sone.selectorOf(el), name: __sone.name(el) };
+    const res = { ok: true, x: r.left + r.width / 2, y: r.top + r.height / 2, selector: __sone.selectorOf(el), name: __sone.name(el) };
+    if (ambiguous > 1) res.ambiguous = ambiguous;
+    return res;
   })()`
 }
 

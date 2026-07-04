@@ -104,6 +104,18 @@ describe('buildSlashCommands', () => {
     expect(release).toBeTruthy()
     expect(release?.isSkill).toBe(false)
   })
+
+  it('replaces the SDK built-in /clear (dropping its [name] hint) with a local-only clear', () => {
+    const global: SlashCommandInfo[] = [
+      { name: 'clear', description: 'Clear conversation history and free up context', argumentHint: '[name]', isSkill: false },
+    ]
+    const result = buildSlashCommands(global, [], [], [], [])
+
+    const clears = result.filter((c) => c.name === 'clear')
+    expect(clears).toHaveLength(1)
+    expect(clears[0].argumentHint).toBe('')
+    expect(clears[0].isSkill).toBe(false)
+  })
 })
 
 function msg(id: string, role: 'user' | 'assistant', extra?: Partial<ChatMessage>): ChatMessage {

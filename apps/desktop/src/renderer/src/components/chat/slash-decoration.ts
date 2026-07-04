@@ -67,8 +67,20 @@ export const SlashDecoration = Extension.create<SlashDecorationOptions, SlashDec
               let filledCount = 0
               let lastChildIsMention = false
               let lastTextEndsWithSpace = false
+              // Multi-line input is a single paragraph split by hardBreak nodes
+              // (ChatInput's Shift/Alt+Enter → setHardBreak). Confine the hint to
+              // the first visual line: stop at the first break and anchor the
+              // widget there, so it never trails to the end of a later line.
+              let firstLineEnd = paragraph.content.size
+              let reachedBreak = false
 
-              paragraph.forEach((node, _offset, index) => {
+              paragraph.forEach((node, offset, index) => {
+                if (reachedBreak) return
+                if (node.type.name === 'hardBreak') {
+                  firstLineEnd = offset
+                  reachedBreak = true
+                  return
+                }
                 if (node.isText) {
                   let textPart = node.text ?? ''
                   if (index === 0) textPart = textPart.slice(cmdPart.length)
@@ -87,7 +99,7 @@ export const SlashDecoration = Extension.create<SlashDecorationOptions, SlashDec
 
               if (remainingHints.length > 0) {
                 const hintPrefix = lastTextEndsWithSpace || lastChildIsMention ? '' : ' '
-                const endPos = startOffset + paragraph.content.size
+                const endPos = startOffset + firstLineEnd
                 decorations.push(
                   Decoration.widget(endPos, () => {
                     const span = document.createElement('span')

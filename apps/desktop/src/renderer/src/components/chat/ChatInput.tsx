@@ -264,54 +264,83 @@ export function ChatInput() {
       ed.commands.focus('end')
     }, [])
 
+    // Multi-line input is a single paragraph split by hardBreak nodes. Slash
+    // command edits must stay confined to the first line: from the paragraph
+    // content start (doc pos 1) up to the first hardBreak (or end of paragraph).
+    const firstLineBoundary = useCallback(() => {
+      const ed = editorRef.current
+      if (!ed) return null
+      const paragraph = ed.state.doc.firstChild
+      if (!paragraph) return null
+      let lineEnd = paragraph.content.size
+      let hasBreak = false
+      paragraph.forEach((node, offset) => {
+        if (!hasBreak && node.type.name === 'hardBreak') {
+          lineEnd = offset
+          hasBreak = true
+        }
+      })
+      return { ed, from: 1, to: 1 + lineEnd, hasBreak }
+    }, [])
+
+    const replaceFirstLineWith = useCallback((prefix: string) => {
+      const info = firstLineBoundary()
+      if (!info) return
+      if (!info.hasBreak) {
+        replaceEditorTextPreservingTrailingSpace(prefix)
+        setText(prefix)
+        return
+      }
+      info.ed.chain().focus().insertContentAt({ from: info.from, to: info.to }, prefix).run()
+      setText(info.ed.getText())
+    }, [firstLineBoundary, replaceEditorTextPreservingTrailingSpace, setText])
+
+    const clearFirstLine = useCallback(() => {
+      const info = firstLineBoundary()
+      if (!info) return
+      if (!info.hasBreak) {
+        info.ed.commands.clearContent()
+        setText('')
+        return
+      }
+      // Also consume the trailing hardBreak so the next line becomes the first.
+      info.ed.chain().focus().deleteRange({ from: info.from, to: info.to + 1 }).run()
+      setText(info.ed.getText())
+    }, [firstLineBoundary, setText])
+
     const selectSlashCommand = useCallback(
       (name: string) => {
         if (name === 'provider') {
-          const ed = editorRef.current
-          if (ed) ed.chain().focus().setContent('').run()
-          setText('')
+          clearFirstLine()
           setSlashIndex(-1)
           useChatStore.getState().openProviderPopup()
           return
         }
         if (name === 'mcp') {
-          const ed = editorRef.current
-          if (ed) ed.chain().focus().setContent('').run()
-          setText('')
+          clearFirstLine()
           setSlashIndex(-1)
           useChatStore.getState().openMcpPopup()
           return
         }
         if (activeProviderForResources === 'claude' && CLAUDE_INTERCEPTED_COMMAND_NAMES.has(name)) {
-          const ed = editorRef.current
-          if (ed) ed.chain().focus().setContent('').run()
-          setText('')
+          clearFirstLine()
           setSlashIndex(-1)
           void runClaudeInterceptedCommand(name)
           return
         }
         if (name === 'add-dir') {
-          replaceEditorTextPreservingTrailingSpace('/add-dir ')
-          setText('/add-dir ')
+          replaceFirstLineWith('/add-dir ')
           setSlashIndex(-1)
           return
         }
         if (name === 'plan' && activeProviderForResources === 'codex') {
-          const ed = editorRef.current
-          if (ed) {
-            ed.chain().focus().setContent('').run()
-          }
-          setText('')
+          clearFirstLine()
           setSlashIndex(-1)
           useChatStore.getState().setSelectedCodexCollaborationMode('plan')
           return
         }
         if (name === 'review' && activeProviderForResources === 'codex') {
-          const ed = editorRef.current
-          if (ed) {
-            ed.chain().focus().setContent('').run()
-          }
-          setText('')
+          clearFirstLine()
           clearAttachments()
           for (const mention of mentions) {
             removeMention(mention.value)
@@ -320,20 +349,16 @@ export function ChatInput() {
           setShowReviewPanel(true)
           return
         }
-        const ed = editorRef.current
-        if (ed) {
-          ed.chain().focus().setContent(`/${name} `).run()
-          ed.commands.focus('end')
-        }
-        setText(`/${name} `)
+        replaceFirstLineWith(`/${name} `)
         setSlashIndex(-1)
       },
-      [activeProviderForResources, clearAttachments, mentions, removeMention, setShowReviewPanel, setText, replaceEditorTextPreservingTrailingSpace]
+      [activeProviderForResources, clearAttachments, mentions, removeMention, setShowReviewPanel, clearFirstLine, replaceFirstLineWith]
     )
 
     const addDirParse = useMemo(() => {
       if (activeProviderForResources !== 'claude') return { active: false, argsText: '' }
-      const m = text.match(/^\/add-dir(?:\s(.*))?$/s)
+      const firstLine = text.split('\n', 1)[0]
+      const m = firstLine.match(/^\/add-dir(?:\s(.*))?$/)
       if (!m) return { active: false, argsText: '' }
       return { active: true, argsText: m[1] ?? '' }
     }, [text, activeProviderForResources])
@@ -381,11 +406,9 @@ export function ChatInput() {
     const handleAddDirCommit = useCallback(async (absolutePath: string, scope: 'project' | 'session') => {
       const ok = await validateAndAddDir(absolutePath, scope)
       if (!ok) return
-      const ed = editorRef.current
-      if (ed) ed.commands.clearContent()
-      setText('')
+      clearFirstLine()
       setAddDirIndex(0)
-    }, [validateAndAddDir, setText])
+    }, [validateAndAddDir, clearFirstLine])
 
     const handleAddDirPicker = useCallback(async (scope: 'project' | 'session') => {
       const folder = await window.app.selectFolder()

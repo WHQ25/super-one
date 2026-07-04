@@ -44,4 +44,16 @@ describe('slash command match ranking', () => {
     const result = computeMatchingSlashCommands('/review', commands, 'codex')
     expect(result.map((c) => c.name)).toEqual(['review', 'code-review'])
   })
+
+  it('matches only the first line, ignoring later lines of a multi-line message', () => {
+    const commands = [cmd('review', true)]
+    const result = computeMatchingSlashCommands('/review\nsome more context here', commands, 'claude')
+    expect(result.map((c) => c.name)).toEqual(['review'])
+  })
+
+  it('bails on a space in the command line even when it is not the last line', () => {
+    const commands = [cmd('review', true)]
+    const result = computeMatchingSlashCommands('/rev iew\nnext line', commands, 'claude')
+    expect(result).toEqual([])
+  })
 })

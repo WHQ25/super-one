@@ -11,7 +11,11 @@ export function buildSlashCommands(
 ): SlashCommandInfo[] {
   const allSkills = [...userSkills, ...projectSkills]
   const skillMap = new Map(allSkills.map((sk) => [sk.name, sk]))
+  // SuperOne intercepts `/clear` to reset the session; drop the SDK's built-in
+  // `/clear` (it carries a misleading `[name]` argument hint that does nothing
+  // here) and re-add it as a local-only command below.
   const tagged = globalSlashCommands.flatMap((c): SlashCommandInfo[] => {
+    if (c.name === 'clear') return []
     const skill = skillMap.get(c.name)
     if (skill) {
       if (disabledSkills.has(c.name)) return []
@@ -28,6 +32,9 @@ export function buildSlashCommands(
     extra.push(c)
   }
   // Local-only commands (handled in renderer, not sent to agent)
+  if (!seen.has('clear')) {
+    extra.push({ name: 'clear', description: 'Clear the conversation and start fresh', argumentHint: '', isSkill: false })
+  }
   if (!seen.has('add-dir')) {
     extra.push({ name: 'add-dir', description: 'Manage additional working directories', argumentHint: '[project|session] [dir]', isSkill: false })
   }

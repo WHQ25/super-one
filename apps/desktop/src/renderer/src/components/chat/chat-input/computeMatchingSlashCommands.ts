@@ -33,10 +33,14 @@ function rankAndGroup(matched: MatchedSlashCommand[]): MatchedSlashCommand[] {
  * name match indices, so matching on description would surface items with no
  * visible highlight (a long description fuzzy-matches almost any short query).
  *
+ * Only the first line of `text` is treated as the command query — Tiptap's
+ * `getText()` joins block nodes with `\n`, so a multi-line message must not let
+ * later lines bleed into the fuzzy match.
+ *
  * Claude path additionally hides debug commands, bails on `/add-dir …` (a
- * stateful subcommand) and on any input with a space (argument input, not
- * command search). Codex commands legitimately contain spaces (`auth auto`),
- * so the space/add-dir guards do not apply there.
+ * stateful subcommand) and on any command line with a space (argument input,
+ * not command search). Codex commands legitimately contain spaces (`auth
+ * auto`), so the space/add-dir guards do not apply there.
  */
 export function computeMatchingSlashCommands(
   text: string,
@@ -44,12 +48,13 @@ export function computeMatchingSlashCommands(
   activeProvider: ChatProvider,
 ): MatchedSlashCommand[] {
   if (!text.startsWith('/')) return []
+  const firstLine = text.split('\n', 1)[0]
   if (activeProvider !== 'codex') {
-    if (/^\/add-dir(\s|$)/.test(text)) return []
-    if (text.includes(' ')) return []
+    if (/^\/add-dir(\s|$)/.test(firstLine)) return []
+    if (firstLine.includes(' ')) return []
   }
 
-  const query = text.slice(1).toLowerCase()
+  const query = firstLine.slice(1).toLowerCase()
   const pool =
     activeProvider === 'codex'
       ? activeSlashCommands

@@ -4,6 +4,22 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.43.9-alpha] - 2026-07-04
+
+### Added
+
+- Experimental CDP-based browser automation tier, toggleable in tool settings
+
+### Fixed
+
+- CDP key and text input now routes to the focused webview guest
+- Browser screenshot lightbox close button is now clickable on macOS
+
+### Performance
+
+- FireText harness animation switched to a sprite-based renderer
+- Edit-diff computation is now idle-throttled to reduce stream-time jank
+
 ## [0.43.8-alpha] - 2026-07-03
 
 ### Added

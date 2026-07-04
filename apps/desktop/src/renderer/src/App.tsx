@@ -474,6 +474,7 @@ function App(): React.JSX.Element {
       <>
         <div className="h-screen bg-background" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties} />
         <MiniAppHostLayer />
+        <BrowserHostLayer />
       </>
     )
   }
@@ -510,6 +511,7 @@ function App(): React.JSX.Element {
           <UpdateNotification />
         </div>
         <MiniAppHostLayer />
+        <BrowserHostLayer />
       </>
     )
   }

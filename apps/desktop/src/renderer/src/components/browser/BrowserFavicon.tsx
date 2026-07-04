@@ -1,16 +1,18 @@
 import { useEffect, useState } from 'react'
 import { cn } from '@superone/ui/lib/utils'
 import { useIsDark } from '@/hooks/use-is-dark'
-import { faviconForUrl } from './browser-url'
 
-// Renders a favicon backed by the shared, origin-keyed main-process cache — the same
-// source chat markdown links resolve through, kept fresh by the in-app browser.
+// Renders a favicon strictly from the shared, origin-keyed main-process cache, which
+// returns the icon as a self-contained data URL. A remote favicon URL is NEVER used as
+// an `<img src>`: the renderer session has no site cookies/warm connection, so a cold
+// fetch of a hotlink-protected CDN icon (e.g. bilibili's `i0.hdslb.com/...`) fails and
+// paints a broken image. Live resolution (download → cache) happens once when the page
+// loads (`page-favicon-updated`); this component only reads that cache and falls back to
+// `fallback` (a globe) on a miss.
 //
-// `preferSrc` picks the candidate order: a live browser tab passes it so its own
-// `page-favicon-updated` capture (`src`) wins — that is ground truth and re-primes
-// the cache, so a changed favicon updates immediately. Bookmarks/omnibox leave it off
-// so the freshest cache entry wins over their possibly-stale stored icon. Either way
-// the shared cache provides instant paint and `/favicon.ico`/`fallback` back it up.
+// `preferSrc` only matters when `src` is itself already a data URL (a live capture the
+// caller resolved): it then wins over the origin cache so a just-changed icon shows
+// immediately. Any non-data `src` is ignored here.
 export function BrowserFavicon({
   src,
   url,
@@ -35,11 +37,11 @@ export function BrowserFavicon({
     return () => { cancelled = true }
   }, [url, isDark])
 
-  const derived = faviconForUrl(url)
-  const ordered = preferSrc ? [src, resolved, derived] : [resolved, src, derived]
+  const dataSrc = src?.startsWith('data:') ? src : null
+  const ordered = preferSrc ? [dataSrc, resolved] : [resolved, dataSrc]
   const candidates = ordered.filter((c): c is string => !!c)
   const [idx, setIdx] = useState(0)
-  useEffect(() => setIdx(0), [resolved, src, url])
+  useEffect(() => setIdx(0), [resolved, dataSrc])
 
   const current = candidates[idx]
   if (!current) return <>{fallback}</>

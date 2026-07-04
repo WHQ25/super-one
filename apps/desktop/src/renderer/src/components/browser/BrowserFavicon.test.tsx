@@ -15,32 +15,44 @@ const imgSrc = (c: HTMLElement) => c.querySelector('img')?.getAttribute('src')
 
 afterEach(cleanup)
 
-describe('BrowserFavicon candidate ordering', () => {
-  it('keeps the live capture on top of the cache for a browser tab (preferSrc)', async () => {
+describe('BrowserFavicon renders only cached data URLs', () => {
+  it('shows the cached data URL and never the remote favicon URL (preferSrc)', async () => {
+    // Regression: a hotlink-protected CDN favicon URL (e.g. bilibili i0.hdslb.com) must
+    // never reach `<img src>` — a cold renderer fetch of it paints a broken image.
     const resolveFavicon = mockResolveFavicon(async () => 'data:cache')
     const { container } = render(
-      <BrowserFavicon preferSrc src="https://site.com/live.png" url="https://site.com/" fallback={FALLBACK} />,
+      <BrowserFavicon preferSrc src="https://i0.hdslb.com/favicon.ico" url="https://www.bilibili.com/" fallback={FALLBACK} />,
     )
-    // The captured favicon is ground truth and must survive the cache resolving.
     await waitFor(() => expect(resolveFavicon).toHaveBeenCalled())
-    expect(imgSrc(container)).toBe('https://site.com/live.png')
+    await waitFor(() => expect(imgSrc(container)).toBe('data:cache'))
+    expect(imgSrc(container)).not.toContain('http')
   })
 
-  it('upgrades a bookmark from its stored icon to the fresher cache entry', async () => {
+  it('lets a data-URL src (a live capture) win over the origin cache with preferSrc', async () => {
+    mockResolveFavicon(async () => 'data:cache')
+    const { container } = render(
+      <BrowserFavicon preferSrc src="data:live" url="https://site.com/" fallback={FALLBACK} />,
+    )
+    // A resolved data-URL capture is ground truth and must survive the cache resolving.
+    await waitFor(() => expect(imgSrc(container)).toBe('data:live'))
+  })
+
+  it('ignores a remote stored icon and shows the cache for a bookmark', async () => {
     mockResolveFavicon(async () => 'data:cache')
     const { container } = render(
       <BrowserFavicon src="https://site.com/stored.png" url="https://site.com/" fallback={FALLBACK} />,
     )
-    // Instant paint from the stored icon, then the shared cache wins.
-    expect(imgSrc(container)).toBe('https://site.com/stored.png')
     await waitFor(() => expect(imgSrc(container)).toBe('data:cache'))
   })
 
-  it('derives /favicon.ico when neither a capture nor a cache entry exists', async () => {
+  it('falls back to the globe when the cache misses and there is no data-URL src', async () => {
     const resolveFavicon = mockResolveFavicon(async () => null)
-    const { container } = render(<BrowserFavicon url="https://site.com/page" fallback={FALLBACK} />)
+    const { getByTestId, container } = render(
+      <BrowserFavicon preferSrc src="https://site.com/bad.png" url="https://site.com/page" fallback={FALLBACK} />,
+    )
     await waitFor(() => expect(resolveFavicon).toHaveBeenCalled())
-    expect(imgSrc(container)).toBe('https://site.com/favicon.ico')
+    expect(getByTestId('fallback')).toBeInTheDocument()
+    expect(container.querySelector('img')).toBeNull()
   })
 
   it('renders the fallback for a non-http url with nothing to show', () => {
@@ -50,13 +62,11 @@ describe('BrowserFavicon candidate ordering', () => {
     expect(container.querySelector('img')).toBeNull()
   })
 
-  it('falls through to the next candidate when an image fails to load', async () => {
-    mockResolveFavicon(async () => null)
-    const { container } = render(
-      <BrowserFavicon preferSrc src="https://site.com/bad.png" url="https://site.com/page" fallback={FALLBACK} />,
-    )
-    expect(imgSrc(container)).toBe('https://site.com/bad.png')
+  it('falls back to the globe when a cached data URL fails to load', async () => {
+    mockResolveFavicon(async () => 'data:broken')
+    const { getByTestId, container } = render(<BrowserFavicon url="https://site.com/page" fallback={FALLBACK} />)
+    await waitFor(() => expect(imgSrc(container)).toBe('data:broken'))
     fireEvent.error(container.querySelector('img')!)
-    await waitFor(() => expect(imgSrc(container)).toBe('https://site.com/favicon.ico'))
+    await waitFor(() => expect(getByTestId('fallback')).toBeInTheDocument())
   })
 })

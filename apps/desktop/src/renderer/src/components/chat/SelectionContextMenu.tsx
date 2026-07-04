@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
-import { Copy, MessageSquarePlus } from 'lucide-react'
+import { Copy, MessageSquarePlus, type LucideIcon } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useChatStore, useSessionScope } from '@/stores/chat'
+import type { SessionWriteTarget } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 import { showNativeContextMenu } from '@/lib/native-context-menu'
 
@@ -11,15 +12,28 @@ export interface SelectionMenuPos {
   y: number
 }
 
-interface SelectionMenuProps {
-  pos: SelectionMenuPos
-  onCopy: () => void
-  onAddToChat: () => void
-  onClose: () => void
+export interface ContextMenuAction {
+  id: string
+  label: string
+  icon: LucideIcon
+  onSelect: () => void
 }
 
-export function SelectionMenu({ pos, onCopy, onAddToChat, onClose }: SelectionMenuProps) {
-  const { t } = useTranslation()
+export type ContextMenuEntry = ContextMenuAction | { separator: true }
+
+function isSeparator(entry: ContextMenuEntry): entry is { separator: true } {
+  return 'separator' in entry
+}
+
+export function ContextMenuPopover({
+  pos,
+  actions,
+  onClose,
+}: {
+  pos: SelectionMenuPos
+  actions: ContextMenuEntry[]
+  onClose: () => void
+}) {
   const menuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -39,8 +53,9 @@ export function SelectionMenu({ pos, onCopy, onAddToChat, onClose }: SelectionMe
 
   const vw = typeof window !== 'undefined' ? window.innerWidth : 0
   const vh = typeof window !== 'undefined' ? window.innerHeight : 0
-  const left = vw ? Math.max(8, Math.min(pos.x, vw - 180)) : pos.x
-  const top = vh ? Math.max(8, Math.min(pos.y, vh - 100)) : pos.y
+  const estHeight = actions.reduce((h, entry) => h + (isSeparator(entry) ? 9 : 32), 8)
+  const left = vw ? Math.max(8, Math.min(pos.x, vw - 200)) : pos.x
+  const top = vh ? Math.max(8, Math.min(pos.y, vh - estHeight - 8)) : pos.y
 
   const menu = (
     <div
@@ -49,27 +64,47 @@ export function SelectionMenu({ pos, onCopy, onAddToChat, onClose }: SelectionMe
       style={{ left, top }}
       onContextMenu={(e) => e.preventDefault()}
     >
-      <button
-        type="button"
-        onClick={() => { onCopy(); onClose() }}
-        className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm cursor-default outline-none hover:bg-accent hover:text-accent-foreground"
-      >
-        <Copy className="size-4 text-muted-foreground" />
-        <span>{t('chat.selectionMenu.copy')}</span>
-      </button>
-      <button
-        type="button"
-        onClick={() => { onAddToChat(); onClose() }}
-        className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm cursor-default outline-none hover:bg-accent hover:text-accent-foreground"
-      >
-        <MessageSquarePlus className="size-4 text-muted-foreground" />
-        <span>{t('chat.selectionMenu.addToChat')}</span>
-      </button>
+      {actions.map((entry, i) =>
+        isSeparator(entry) ? (
+          <div key={`sep-${i}`} className="-mx-1 my-1 h-px bg-border" />
+        ) : (
+          <button
+            key={entry.id}
+            type="button"
+            onClick={() => { entry.onSelect(); onClose() }}
+            className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm cursor-default outline-none hover:bg-accent hover:text-accent-foreground"
+          >
+            <entry.icon className="size-4 text-muted-foreground" />
+            <span>{entry.label}</span>
+          </button>
+        ),
+      )}
     </div>
   )
 
   if (typeof document === 'undefined') return menu
   return createPortal(menu, document.body)
+}
+
+interface SelectionMenuProps {
+  pos: SelectionMenuPos
+  onCopy: () => void
+  onAddToChat: () => void
+  onClose: () => void
+}
+
+export function SelectionMenu({ pos, onCopy, onAddToChat, onClose }: SelectionMenuProps) {
+  const { t } = useTranslation()
+  return (
+    <ContextMenuPopover
+      pos={pos}
+      onClose={onClose}
+      actions={[
+        { id: 'copy', label: t('chat.selectionMenu.copy'), icon: Copy, onSelect: onCopy },
+        { id: 'addToChat', label: t('chat.selectionMenu.addToChat'), icon: MessageSquarePlus, onSelect: onAddToChat },
+      ]}
+    />
+  )
 }
 
 interface MenuState {
@@ -78,22 +113,15 @@ interface MenuState {
   text: string
 }
 
-interface SelectionContextMenuZoneProps {
-  children: React.ReactNode
-  className?: string
-}
-
-export function SelectionContextMenuZone({ children, className }: SelectionContextMenuZoneProps) {
+export function useSelectionMenu(target?: SessionWriteTarget) {
   const { t } = useTranslation()
   const [menu, setMenu] = useState<MenuState | null>(null)
   const addUserSelection = useChatStore((s) => s.addUserSelection)
-  const sessionScope = useSessionScope()
   const liquidGlass = useAppStore((s) => s.liquidGlass)
-  const addToChat = (text: string) => addUserSelection(text, sessionScope ?? undefined)
+  const addToChat = (text: string) => addUserSelection(text, target)
 
-  const handleContextMenu = (event: React.MouseEvent<HTMLDivElement>) => {
-    event.preventDefault()
-    const selText = window.getSelection()?.toString().trim() ?? ''
+  const openMenu = (text: string, x: number, y: number) => {
+    const selText = text.trim()
     if (!selText) return
     if (liquidGlass) {
       void showNativeContextMenu([
@@ -102,20 +130,39 @@ export function SelectionContextMenuZone({ children, className }: SelectionConte
       ])
       return
     }
-    setMenu({ x: event.clientX, y: event.clientY, text: selText })
+    setMenu({ x, y, text: selText })
+  }
+
+  const menuNode = menu ? (
+    <SelectionMenu
+      pos={{ x: menu.x, y: menu.y }}
+      onCopy={() => navigator.clipboard.writeText(menu.text)}
+      onAddToChat={() => addToChat(menu.text)}
+      onClose={() => setMenu(null)}
+    />
+  ) : null
+
+  return { openMenu, menuNode }
+}
+
+interface SelectionContextMenuZoneProps {
+  children: React.ReactNode
+  className?: string
+}
+
+export function SelectionContextMenuZone({ children, className }: SelectionContextMenuZoneProps) {
+  const sessionScope = useSessionScope()
+  const { openMenu, menuNode } = useSelectionMenu(sessionScope ?? undefined)
+
+  const handleContextMenu = (event: React.MouseEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    openMenu(window.getSelection()?.toString() ?? '', event.clientX, event.clientY)
   }
 
   return (
     <div className={className} onContextMenu={handleContextMenu}>
       {children}
-      {menu && (
-        <SelectionMenu
-          pos={{ x: menu.x, y: menu.y }}
-          onCopy={() => navigator.clipboard.writeText(menu.text)}
-          onAddToChat={() => addToChat(menu.text)}
-          onClose={() => setMenu(null)}
-        />
-      )}
+      {menuNode}
     </div>
   )
 }

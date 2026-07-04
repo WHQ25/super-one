@@ -655,6 +655,12 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.CLIPBOARD_WRITE, text),
   clipboardWriteImage: (absPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.CLIPBOARD_WRITE_IMAGE, absPath),
+  fetchBrowserImage: (url: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.BROWSER_FETCH_IMAGE, url),
+  saveBrowserImage: (base64: string, mimeType: string, suggestedName: string, defaultDir?: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.BROWSER_SAVE_IMAGE, base64, mimeType, suggestedName, defaultDir),
+  copyBrowserImageAt: (webContentsId: number, x: number, y: number) =>
+    ipcRenderer.invoke(AgentIpcChannels.BROWSER_COPY_IMAGE_AT, webContentsId, x, y),
   revealFile: (absPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.REVEAL_FILE, absPath),
   getPathForFile: (file: File) => webUtils.getPathForFile(file),

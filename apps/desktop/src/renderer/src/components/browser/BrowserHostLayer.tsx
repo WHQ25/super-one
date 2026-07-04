@@ -11,6 +11,7 @@ import { useBrowserAutomationHost } from './browser-automation-runtime'
 import { buildSessionScript, handleAnnotationMessage } from './browser-annotate-flow'
 import { ANNOTATE_CANCEL_SCRIPT, ANNOTATE_MSG_PREFIX } from './browser-annotate-script'
 import { isBlankUrl, sameOrigin } from './browser-url'
+import { useBrowserContextMenu } from './browser-context-menu'
 
 export function BrowserHostLayer() {
   const ids = useBrowserStore(useShallow((s) => Object.keys(s.tabs)))
@@ -58,6 +59,9 @@ function PersistentBrowser({ browserId, layoutMode, resizing }: { browserId: str
   const lastRecordedUrl = useRef<string | null>(null)
   const initialSrcRef = useRef(useBrowserStore.getState().tabs[browserId]?.url || 'about:blank')
   const { t } = useTranslation()
+  const { handleContextMenu, menuNode } = useBrowserContextMenu(browserId)
+  const contextMenuRef = useRef(handleContextMenu)
+  contextMenuRef.current = handleContextMenu
 
   useEffect(() => {
     if (!annotating) return
@@ -141,8 +145,10 @@ function PersistentBrowser({ browserId, layoutMode, resizing }: { browserId: str
       clearBrowserConsole(browserId)
       if (e.isMainFrame && useBrowserStore.getState().tabs[browserId]?.certError) patch(browserId, { certError: null })
     }
+    const onContextMenu = (e: Electron.ContextMenuEvent) => contextMenuRef.current(wv, e)
 
     wv.addEventListener('console-message', onConsole)
+    wv.addEventListener('context-menu', onContextMenu)
     wv.addEventListener('did-start-navigation', onNavigateClearConsole)
     wv.addEventListener('did-start-loading', onStart)
     wv.addEventListener('did-stop-loading', onStop)
@@ -155,6 +161,7 @@ function PersistentBrowser({ browserId, layoutMode, resizing }: { browserId: str
       unregister()
       clearBrowserConsole(browserId)
       wv.removeEventListener('console-message', onConsole)
+      wv.removeEventListener('context-menu', onContextMenu)
       wv.removeEventListener('did-start-navigation', onNavigateClearConsole)
       wv.removeEventListener('did-start-loading', onStart)
       wv.removeEventListener('did-stop-loading', onStop)
@@ -175,6 +182,7 @@ function PersistentBrowser({ browserId, layoutMode, resizing }: { browserId: str
   const visible = mounted && hostShown && !home && !certErrored
 
   return (
+    <>
     <div
       data-browser-host=""
       data-browser-id={browserId}
@@ -198,5 +206,7 @@ function PersistentBrowser({ browserId, layoutMode, resizing }: { browserId: str
         style={emulation ? { width: emulation.width, height: emulation.height } : { width: '100%', height: '100%' }}
       />
     </div>
+    {menuNode}
+    </>
   )
 }

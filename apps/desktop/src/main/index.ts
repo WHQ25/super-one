@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, nativeTheme, net, powerMonitor, protocol, screen, session, shell, systemPreferences } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, nativeTheme, net, powerMonitor, protocol, screen, session, shell, systemPreferences, webContents } from 'electron'
 import { join, dirname, basename, resolve, extname, relative, isAbsolute, sep } from 'path'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { readFile, writeFile, readdir, rename, cp, rm, access, stat, mkdir, open } from 'fs/promises'
@@ -1947,6 +1947,55 @@ function registerIpcHandlers(): void {
     const img = nativeImage.createFromPath(absPath)
     if (img.isEmpty()) return { ok: false, error: 'Failed to read image' }
     clipboard.writeImage(img)
+    return { ok: true }
+  })
+
+  ipcMain.handle(AgentIpcChannels.BROWSER_FETCH_IMAGE, async (_event, url: string) => {
+    try {
+      if (typeof url !== 'string' || !url) return { ok: false, error: 'Invalid URL' }
+      if (url.startsWith('data:')) {
+        const match = url.match(/^data:([^;,]*)(;base64)?,(.*)$/s)
+        if (!match) return { ok: false, error: 'Invalid data URL' }
+        const mimeType = match[1] || 'application/octet-stream'
+        const base64 = match[2]
+          ? match[3]
+          : Buffer.from(decodeURIComponent(match[3]), 'utf8').toString('base64')
+        return { ok: true, base64, mimeType }
+      }
+      const resp = await session.fromPartition('persist:browser').fetch(url)
+      if (!resp.ok) return { ok: false, error: `HTTP ${resp.status}` }
+      const buf = Buffer.from(await resp.arrayBuffer())
+      const mimeType = resp.headers.get('content-type')?.split(';')[0]?.trim() || 'image/png'
+      return { ok: true, base64: buf.toString('base64'), mimeType }
+    } catch (err) {
+      return { ok: false, error: (err as Error).message }
+    }
+  })
+
+  ipcMain.handle(
+    AgentIpcChannels.BROWSER_SAVE_IMAGE,
+    async (_event, base64: string, mimeType: string, suggestedName: string, defaultDir?: string) => {
+      try {
+        const ext = (mimeType.split('/')[1]?.split('+')[0] || 'png').toLowerCase()
+        const name = suggestedName || `image.${ext}`
+        const defaultPath = defaultDir && isAbsolute(defaultDir) ? join(defaultDir, name) : name
+        const result = await dialog.showSaveDialog(mainWindow ?? undefined!, {
+          defaultPath,
+          filters: [{ name: ext.toUpperCase(), extensions: [ext] }],
+        })
+        if (result.canceled || !result.filePath) return { ok: false, canceled: true }
+        await writeFile(result.filePath, Buffer.from(base64, 'base64'))
+        return { ok: true, savedPath: result.filePath }
+      } catch (err) {
+        return { ok: false, error: (err as Error).message }
+      }
+    },
+  )
+
+  ipcMain.handle(AgentIpcChannels.BROWSER_COPY_IMAGE_AT, (_event, webContentsId: number, x: number, y: number) => {
+    const contents = webContents.fromId(webContentsId)
+    if (!contents) return { ok: false, error: 'No web contents' }
+    contents.copyImageAt(Math.round(x), Math.round(y))
     return { ok: true }
   })
 

@@ -577,8 +577,12 @@
     }
     function onKey(e) {
       if (e.key === 'Escape') {
-        e.preventDefault()
-        if (phase === 'editing') closeEditor(false); else finishAll()
+        if (phase === 'editing') { e.preventDefault(); closeEditor(false); return }
+        if (dragStart || dragging) {
+          e.preventDefault()
+          dragStart = null; dragging = false; downEl = null
+          clearBox(marqueeBox); clearBox(hoverBox)
+        }
         return
       }
       if (phase === 'editing' && e.key === 'Enter' && !e.shiftKey && !e.isComposing && inEditor(e)) { e.preventDefault(); commit() }

@@ -19,6 +19,7 @@ import { useMiniAppStore } from '@/stores/miniapp'
 import { PasteChipNode, PASTE_CHIP_LINE_THRESHOLD, PASTE_CHIP_CHAR_THRESHOLD } from './paste-chip-node'
 import { SlashDecoration } from './slash-decoration'
 import { PromptSuggestion } from './prompt-suggestion'
+import { addBrowserImageToChat, extractDraggedImageUrl } from '../browser/browser-image'
 import type { MentionNodeAttrs } from './mention-node'
 import type { SlashCommandInfo } from '@superone/shared/agent-types'
 import { fuzzyMatch } from '@/lib/fuzzy-match'
@@ -804,7 +805,11 @@ export function ChatInput() {
         dragCounterRef.current = 0
         setIsDragging(false)
         const files = e.dataTransfer.files
-        if (files.length === 0) return
+        if (files.length === 0) {
+          const imageUrl = extractDraggedImageUrl(e.dataTransfer)
+          if (imageUrl) void addBrowserImageToChat(imageUrl, sessionScope ?? undefined)
+          return
+        }
         if (internalDragSource.active) {
           for (const file of Array.from(files)) {
             const absPath = window.app.getPathForFile(file)
@@ -819,7 +824,7 @@ export function ChatInput() {
         }
         processSelectedFiles(files)
       },
-      [processSelectedFiles, insertMention, fileRoot]
+      [processSelectedFiles, insertMention, fileRoot, sessionScope]
     )
 
     const shouldShowCodexRejectHint = isCodexPlanMode && codexPlanRejectHintActive && text.trim().length === 0

@@ -15,6 +15,22 @@ function readAsBase64(blob: Blob): Promise<string> {
   })
 }
 
+export async function buildImageAttachmentFromBase64(
+  base64: string,
+  mimeType: string,
+  name: string,
+): Promise<ImageAttachment | null> {
+  try {
+    const bin = atob(base64)
+    const bytes = new Uint8Array(bin.length)
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+    const file = new File([bytes], name, { type: mimeType })
+    return await buildImageAttachment(file)
+  } catch {
+    return null
+  }
+}
+
 export async function buildImageAttachment(file: File, maxSide = MAX_SIDE): Promise<ImageAttachment | null> {
   let bitmap: ImageBitmap
   try {

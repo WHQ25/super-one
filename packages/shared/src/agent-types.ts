@@ -1900,6 +1900,9 @@ export const AgentIpcChannels = {
   READ_FILE_AS_DATA_URI: 'app:read-file-as-data-uri',
   SAVE_FILE_AS: 'app:save-file-as',
   CLIPBOARD_WRITE_IMAGE: 'app:clipboard-write-image',
+  BROWSER_FETCH_IMAGE: 'app:browser-fetch-image',
+  BROWSER_SAVE_IMAGE: 'app:browser-save-image',
+  BROWSER_COPY_IMAGE_AT: 'app:browser-copy-image-at',
   REVEAL_FILE: 'app:reveal-file',
 
   // Concurrent session management

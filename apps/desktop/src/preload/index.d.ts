@@ -206,6 +206,20 @@ interface AppAPI {
   clipboardRead(): Promise<string>
   clipboardWrite(text: string): Promise<void>
   clipboardWriteImage(absPath: string): Promise<{ ok: true } | { ok: false; error: string }>
+  fetchBrowserImage(
+    url: string,
+  ): Promise<{ ok: true; base64: string; mimeType: string } | { ok: false; error: string }>
+  saveBrowserImage(
+    base64: string,
+    mimeType: string,
+    suggestedName: string,
+    defaultDir?: string,
+  ): Promise<{ ok: true; savedPath: string } | { ok: false; canceled?: boolean; error?: string }>
+  copyBrowserImageAt(
+    webContentsId: number,
+    x: number,
+    y: number,
+  ): Promise<{ ok: true } | { ok: false; error: string }>
   revealFile(absPath: string): Promise<void>
   getPathForFile(file: File): string
   startDrag(paths: string[], iconOpts?: { png: ArrayBuffer; scaleFactor?: number }): void

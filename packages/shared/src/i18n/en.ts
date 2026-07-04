@@ -776,6 +776,19 @@ export type Messages = {
       addressPlaceholder: string
       screenshotCopied: string
       screenshotFailed: string
+      annotate: string
+      copyText: string
+      addTextToChat: string
+      addImageToChat: string
+      copyImage: string
+      copyImageAddress: string
+      saveImage: string
+      imageSaved: string
+      imageSaveFailed: string
+      openLinkNewTab: string
+      openLinkExternal: string
+      copyLink: string
+      inspect: string
       annotateEnter: string
       annotateExit: string
       annotating: string
@@ -1677,7 +1690,7 @@ export const en: Messages = {
         description: 'Use grayscale font smoothing so text renders thinner and sharper. macOS only.',
       },
       liquidGlass: {
-        label: 'Liquid Glass',
+        label: 'Glass Theme',
         description: 'Make window surfaces translucent to reveal the native macOS glass material behind them. macOS only.',
       },
       language: {
@@ -1935,7 +1948,7 @@ export const en: Messages = {
     },
     selectionMenu: {
       copy: 'Copy',
-      addToChat: 'Add to chat',
+      addToChat: 'Add to Chat',
     },
     codex: {
       statusRunning: 'Running',
@@ -2234,8 +2247,21 @@ export const en: Messages = {
       addressPlaceholder: 'Search or enter a URL',
       screenshotCopied: 'Screenshot copied to clipboard',
       screenshotFailed: 'Failed to capture screenshot',
+      annotate: 'Annotate',
+      copyText: 'Copy Text',
+      addTextToChat: 'Add Text to Chat',
+      addImageToChat: 'Add Image to Chat',
+      copyImage: 'Copy Image',
+      copyImageAddress: 'Copy Image Address',
+      saveImage: 'Save Image',
+      imageSaved: 'Image saved',
+      imageSaveFailed: 'Failed to save image',
+      openLinkNewTab: 'Open Link in New Tab',
+      openLinkExternal: 'Open Link in External Browser',
+      copyLink: 'Copy Link Address',
+      inspect: 'Inspect',
       annotateEnter: 'Annotate',
-      annotateExit: 'Exit annotate mode (Esc)',
+      annotateExit: 'Exit annotate mode',
       annotating: 'Annotating',
       annotateElement: 'Element',
       annotateRegion: 'Region',

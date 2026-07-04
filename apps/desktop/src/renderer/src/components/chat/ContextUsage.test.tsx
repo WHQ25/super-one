@@ -4,7 +4,7 @@ import { render, screen, fireEvent, act } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const chatState = {
-  availableModels: [] as Array<{ id: string; name: string; description: string }>,
+  availableModels: [] as Array<{ id: string; name: string; description: string; resolvedModel?: string }>,
   activeProject: '/test',
   setDetailedUsage: vi.fn(),
 }
@@ -73,10 +73,10 @@ describe('ContextUsage', () => {
     expect(screen.queryByText(/1000\.0k/)).toBeNull()
   })
 
-  it('keeps the Claude fallback when the session context window is unknown', () => {
-    chatState.availableModels = [{ id: 'claude-1m', name: 'Claude 1M', description: '' }]
+  it('uses the 1M window for a Claude model whose id carries [1m]', () => {
+    chatState.availableModels = [{ id: 'opus[1m]', name: 'Opus', description: '' }]
     activeSessionState.contextTokens = 120000
-    activeSessionState.selectedModel = 'claude-1m'
+    activeSessionState.selectedModel = 'opus[1m]'
     activeSessionState.preferredProvider = 'claude'
     activeSessionState.sessionProvider = 'claude'
 
@@ -84,6 +84,32 @@ describe('ContextUsage', () => {
     fireEvent.click(screen.getByRole('button'))
 
     expect(screen.getByText('Context: 120.0k / 1000.0k (12%)')).toBeTruthy()
+  })
+
+  it('uses the 1M window when only resolvedModel carries [1m]', () => {
+    chatState.availableModels = [{ id: 'fable', name: 'Fable', description: '', resolvedModel: 'claude-fable-5[1m]' }]
+    activeSessionState.contextTokens = 120000
+    activeSessionState.selectedModel = 'fable'
+    activeSessionState.preferredProvider = 'claude'
+    activeSessionState.sessionProvider = 'claude'
+
+    render(<ContextUsage />)
+    fireEvent.click(screen.getByRole('button'))
+
+    expect(screen.getByText('Context: 120.0k / 1000.0k (12%)')).toBeTruthy()
+  })
+
+  it('falls back to the 200k window for a Claude model without [1m]', () => {
+    chatState.availableModels = [{ id: 'claude-opus-4-8', name: 'Opus', description: '' }]
+    activeSessionState.contextTokens = 120000
+    activeSessionState.selectedModel = 'claude-opus-4-8'
+    activeSessionState.preferredProvider = 'claude'
+    activeSessionState.sessionProvider = 'claude'
+
+    render(<ContextUsage />)
+    fireEvent.click(screen.getByRole('button'))
+
+    expect(screen.getByText('Context: 120.0k / 200.0k (60%)')).toBeTruthy()
   })
 
   it('does not clear detailedUsage when switching to a different session with the same model', () => {

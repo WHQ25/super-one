@@ -899,6 +899,7 @@ export interface ModelOption {
   id: string
   name: string
   description: string
+  resolvedModel?: string
   isDefault?: boolean
   supportsEffort?: boolean
   supportedEffortLevels?: ('low' | 'medium' | 'high' | 'xhigh' | 'max')[]
@@ -910,6 +911,18 @@ export interface ModelOption {
 }
 
 export const DEFAULT_CONTEXT_WINDOW = 200_000
+export const EXTENDED_CONTEXT_WINDOW = 1_000_000
+
+const EXTENDED_CONTEXT_RE = /\[1m\]/i
+
+export function modelHasExtendedContext(model: { id?: string | null; resolvedModel?: string | null } | null | undefined): boolean {
+  if (!model) return false
+  return EXTENDED_CONTEXT_RE.test(model.id ?? '') || EXTENDED_CONTEXT_RE.test(model.resolvedModel ?? '')
+}
+
+export function resolveModelContextWindow(model: { id?: string | null; resolvedModel?: string | null } | null | undefined): number {
+  return modelHasExtendedContext(model) ? EXTENDED_CONTEXT_WINDOW : DEFAULT_CONTEXT_WINDOW
+}
 
 // --- File rewind ---
 

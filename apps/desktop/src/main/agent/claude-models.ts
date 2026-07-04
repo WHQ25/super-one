@@ -38,12 +38,13 @@ function extractModelName(descPrefix: string): string | null {
   return match[2] ? `${match[1]} ${match[2]}` : match[1]
 }
 
-export function mapModelInfo(m: { value: string; displayName: string; description?: string; supportsEffort?: boolean; supportedEffortLevels?: string[]; supportsAdaptiveThinking?: boolean; supportsFastMode?: boolean; supportsAutoMode?: boolean }): ModelOption {
+export function mapModelInfo(m: { value: string; resolvedModel?: string; displayName: string; description?: string; supportsEffort?: boolean; supportedEffortLevels?: string[]; supportsAdaptiveThinking?: boolean; supportsFastMode?: boolean; supportsAutoMode?: boolean }): ModelOption {
   const raw = m.description ?? ''
   const sepIdx = raw.indexOf('·')
   const descPrefix = sepIdx !== -1 ? raw.slice(0, sepIdx).trim() : ''
   const name = extractModelName(descPrefix) ?? m.displayName
   const base: ModelOption = { id: m.value, name, description: raw }
+  if (m.resolvedModel) base.resolvedModel = m.resolvedModel
   if (m.supportsEffort) base.supportsEffort = true
   if (m.supportedEffortLevels?.length) base.supportedEffortLevels = m.supportedEffortLevels as ModelOption['supportedEffortLevels']
   if (m.supportsAdaptiveThinking) base.supportsAdaptiveThinking = true

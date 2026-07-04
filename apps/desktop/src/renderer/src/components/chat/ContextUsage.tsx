@@ -2,13 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { ChevronDown, ChevronUp } from 'lucide-react'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { useChatStore, useActiveSession, selectClaudeModels } from '@/stores/chat'
-import { DEFAULT_CONTEXT_WINDOW } from '@superone/shared/agent-types'
-
-const EXTENDED_CONTEXT_WINDOW = 1_000_000
-
-function resolveClaudeContextWindow(modelName: string): number {
-  return /\b1[Mm]\b/.test(modelName) ? EXTENDED_CONTEXT_WINDOW : DEFAULT_CONTEXT_WINDOW
-}
+import { resolveModelContextWindow } from '@superone/shared/agent-types'
 
 function formatTokens(n: number): string {
   if (n >= 1000) return `${(n / 1000).toFixed(1)}k`
@@ -59,14 +53,13 @@ export function ContextUsage() {
 
   const activeProvider = sessionProvider ?? preferredProvider
   const currentModel = availableModels.find((m) => m.id === selectedModel)
-  const modelName = currentModel?.name ?? currentModel?.description ?? ''
   const effectiveTokens = detailedUsage?.totalTokens ?? contextTokens
   const contextWindow =
     detailedUsage?.maxTokens ??
     (contextWindowFromSession && contextWindowFromSession > 0
       ? contextWindowFromSession
       : activeProvider === 'claude'
-        ? resolveClaudeContextWindow(modelName)
+        ? resolveModelContextWindow({ id: selectedModel, resolvedModel: currentModel?.resolvedModel })
         : null)
   const pct = contextWindow ? Math.min(effectiveTokens / contextWindow, 1) : 0
   const exceeded = contextWindow ? effectiveTokens > contextWindow : false

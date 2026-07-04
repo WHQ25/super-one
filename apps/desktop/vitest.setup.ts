@@ -15,6 +15,10 @@ if (!i18n.isInitialized) {
     })
 }
 
+if (typeof (globalThis as unknown as { self?: unknown }).self === 'undefined') {
+  Object.defineProperty(globalThis, 'self', { configurable: true, writable: true, value: globalThis })
+}
+
 if (typeof globalThis.window !== 'undefined' && !(globalThis.window as unknown as Record<string, unknown>).app) {
   const noop = () => Promise.resolve(undefined)
   const w = globalThis.window as unknown as Record<string, unknown>

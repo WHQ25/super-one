@@ -162,8 +162,8 @@ describe('SessionManager concurrent isolation', () => {
 
     const aBefore = aEvents.length
     const bBefore = bEvents.length
-    hoisted.queries[0]!.emit?.({ type: 'content_delta', messageId: 'A-only', delta: 'A-text' })
-    hoisted.queries[1]!.emit?.({ type: 'content_delta', messageId: 'B-only', delta: 'B-text' })
+    hoisted.queries[0]!.emit?.({ type: 'content_delta', messageId: 'A-only', delta: { type: 'text', text: 'A-text' } })
+    hoisted.queries[1]!.emit?.({ type: 'content_delta', messageId: 'B-only', delta: { type: 'text', text: 'B-text' } })
 
     const aNew = aEvents.slice(aBefore)
     const bNew = bEvents.slice(bBefore)

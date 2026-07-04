@@ -64,6 +64,14 @@ describe('browserInputSummary', () => {
     expect(browserInputSummary('type', { selector: '#email', text: 'hi@a.com' })).toBe('#email ← hi@a.com')
   })
 
+  it('masks secret input by field name or high-entropy value, but leaves ordinary text alone', () => {
+    expect(browserInputSummary('type', { selector: '#password', text: 'hunter2' })).toBe('#password ← ••••••')
+    expect(browserInputSummary('type', { selector: 'input[name="apiKey"]', text: 'x' })).toBe('input[name="apiKey"] ← ••••••')
+    expect(browserInputSummary('type', { text: 'A1b2C3d4E5f6G7h8xy' })).toBe('••••••')
+    expect(browserInputSummary('type', { selector: '#search', text: 'hello world' })).toBe('#search ← hello world')
+    expect(browserInputSummary('type', { selector: '#spinner-name', text: 'Ada' })).toBe('#spinner-name ← Ada')
+  })
+
   it('joins modifiers for key presses', () => {
     expect(browserInputSummary('press', { key: 'a', modifiers: ['Meta'] })).toBe('Meta+a')
     expect(browserInputSummary('press', { key: 'Enter' })).toBe('Enter')

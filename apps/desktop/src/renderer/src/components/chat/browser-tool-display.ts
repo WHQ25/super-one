@@ -67,6 +67,14 @@ function truncate(text: string, max: number): string {
   return t.length > max ? t.slice(0, max) + '…' : t
 }
 
+const SECRET_HINT = /password|passwd|\bpwd\b|\bpass\b|otp|secret|token|credential|cvv|ssn|creditcard|cardnumber|ccnum|api[_-]?key/i
+
+function isSecretType(selector: string, text: string): boolean {
+  if (selector && SECRET_HINT.test(selector)) return true
+  const t = text.trim()
+  return t.length >= 16 && !/\s/.test(t) && /[a-z]/i.test(t) && /[0-9]/.test(t)
+}
+
 /** A language-neutral summary of the tool's target, derived from its input. */
 export function browserInputSummary(op: BrowserOp, p: Record<string, unknown>): string {
   switch (op) {
@@ -83,8 +91,10 @@ export function browserInputSummary(op: BrowserOp, p: Record<string, unknown>): 
       if (p.x != null && p.y != null) return `(${s(p.x)}, ${s(p.y)})`
       return ''
     case 'type': {
-      const text = truncate(s(p.text), 40)
-      return p.selector != null ? `${s(p.selector)} ← ${text}` : text
+      const selector = p.selector != null ? s(p.selector) : ''
+      const raw = s(p.text)
+      const text = isSecretType(selector, raw) ? '••••••' : truncate(raw, 40)
+      return selector ? `${selector} ← ${text}` : text
     }
     case 'press': {
       const mods = Array.isArray(p.modifiers) ? (p.modifiers as string[]).join('+') : ''

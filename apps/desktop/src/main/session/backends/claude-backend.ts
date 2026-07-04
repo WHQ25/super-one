@@ -386,7 +386,11 @@ export class ClaudeBackend implements SessionBackend {
   async setModel(model: string): Promise<void> {
     if (this._lastStartOpts) this._lastStartOpts.model = model
     if (!this.query) return
-    await this.query.setModel(model)
+    try {
+      await this.query.setModel(model)
+    } catch (err) {
+      log.warn('[ClaudeBackend] setModel rejected by SDK, keeping optimistic model:', model, err)
+    }
   }
 
   async setPermissionMode(mode: PermissionMode): Promise<void> {

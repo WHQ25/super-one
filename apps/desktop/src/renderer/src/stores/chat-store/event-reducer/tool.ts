@@ -48,9 +48,8 @@ export function reduceTool(session: PerSessionState, event: ToolEvent): Partial<
           streamingToolInputRaw.set(event.toolUseId, nextRaw)
           const now = Date.now()
           const hasPrev = !!session._streamingToolInputPreviews[event.toolUseId]
-          const addsCommittedLine = event.partialJson.includes('\\n') || event.partialJson.includes('\n')
           const lastUpdate = streamingPreviewLastUpdate.get(event.toolUseId) ?? 0
-          const shouldExtract = !hasPrev || addsCommittedLine || (now - lastUpdate) >= STREAMING_PREVIEW_THROTTLE_MS
+          const shouldExtract = !hasPrev || (now - lastUpdate) >= STREAMING_PREVIEW_THROTTLE_MS
           const appliedMessages = markMessageEventApplied(session.messages, event.messageId, event)
           if (!shouldExtract) {
             return { lastEventAt: now, ...(appliedMessages ? { messages: appliedMessages } : {}) }

@@ -1,7 +1,5 @@
 import { useEffect, useMemo, useRef } from 'react'
-import { gutterWidth, inferLanguage, useHighlightedTokens, useIncrementalHighlightedLines, type HLToken } from '@/lib/diff-utils'
-import { getHighlightCache } from '@/lib/highlight-cache'
-import { useChatStore } from '@/stores/chat'
+import { gutterWidth, inferLanguage, useIncrementalHighlightedLines, type HLToken } from '@/lib/diff-utils'
 import { getMonoCharWidth, MONO_FONT_FAMILY } from '@/lib/pretext-utils'
 import { useIsDark } from '@/hooks/use-is-dark'
 
@@ -128,13 +126,15 @@ const MAX_CHARS_PER_LINE_PER_FRAME = 6
 
 const MAX_CANVAS_LINES = 40
 
+export const IDLE_FRAME_MS = 50
+
 function useStableTokens(current: HLToken[][] | null): HLToken[][] | null {
   const ref = useRef<HLToken[][] | null>(null)
   if (current) ref.current = current
   return current ?? ref.current
 }
 
-interface AnimatedLine {
+export interface AnimatedLine {
   key: string
   kind: DisplayLineKind
   text: string
@@ -145,7 +145,7 @@ interface AnimatedLine {
   textCharsTarget: number
 }
 
-function reconcileLines(prev: AnimatedLine[], target: DisplayLine[]): AnimatedLine[] {
+export function reconcileLines(prev: AnimatedLine[], target: DisplayLine[]): AnimatedLine[] {
   const prevByKey = new Map(prev.map((l) => [l.key, l]))
   const result: AnimatedLine[] = []
   for (let i = 0; i < target.length; i++) {
@@ -184,7 +184,7 @@ function reconcileLines(prev: AnimatedLine[], target: DisplayLine[]): AnimatedLi
   return result
 }
 
-function advanceAnimations(lines: AnimatedLine[], dt: number): void {
+export function advanceAnimations(lines: AnimatedLine[], dt: number): void {
   let backlog = 0
   for (const line of lines) {
     backlog += Math.max(0, line.textCharsTarget - line.textCharsShown)
@@ -223,7 +223,7 @@ function computeLayout(lines: AnimatedLine[], charWidth: number): {
   return { gw, gutterTextRight, markerColX, textColX, maxTextWidth }
 }
 
-function renderFrame(
+export function renderFrame(
   canvas: HTMLCanvasElement,
   container: HTMLDivElement,
   lines: AnimatedLine[],
@@ -374,21 +374,15 @@ export function CanvasEditDiff({ params }: CanvasEditDiffProps) {
     const stripped = oldStr.replace(/\n$/, '')
     return stripped.split('\n')
   }, [oldStr])
-  const committedOldStr = useMemo(() => {
-    if (!oldStr) return ''
-    const lastNewline = oldStr.lastIndexOf('\n')
-    if (lastNewline === -1) return ''
-    return oldStr.slice(0, lastNewline + 1)
-  }, [oldStr])
+  const committedOldLines = useMemo(() => snapCommittedLines(oldStr, false), [oldStr])
   const committedNewLines = useMemo(() => snapCommittedLines(newStr, false), [newStr])
   const events = useMemo(
     () => greedyLineDiff(fullOldLines, committedNewLines, false),
     [fullOldLines, committedNewLines],
   )
 
-  const activeProject = useChatStore((s) => s.activeProject)
-  const cache = useMemo(() => getHighlightCache(activeProject), [activeProject])
-  const oldTokensFresh = useHighlightedTokens(committedOldStr, language, { cache })
+  const oldLinesForHighlight = inEditPhase ? fullOldLines : committedOldLines
+  const oldTokensFresh = useIncrementalHighlightedLines(oldLinesForHighlight, language)
   const newTokensFresh = useIncrementalHighlightedLines(committedNewLines, language)
   const oldTokens = useStableTokens(oldTokensFresh)
   const newTokens = useStableTokens(newTokensFresh)
@@ -429,6 +423,16 @@ export function CanvasEditDiff({ params }: CanvasEditDiffProps) {
   useEffect(() => {
     let last = performance.now()
     let rafId = 0
+    let idleTimer: ReturnType<typeof setTimeout> | undefined
+    let visible = true
+
+    const hasBacklog = (): boolean => {
+      for (const l of animatedLinesRef.current) {
+        if (l.textCharsShown < l.textCharsTarget) return true
+      }
+      return false
+    }
+
     const tick = (now: number): void => {
       const dt = Math.min(64, now - last)
       last = now
@@ -436,10 +440,42 @@ export function CanvasEditDiff({ params }: CanvasEditDiffProps) {
       const canvas = canvasRef.current
       const container = containerRef.current
       if (canvas && container) renderFrame(canvas, container, animatedLinesRef.current, now, isDark, inEditPhaseRef.current)
-      rafId = requestAnimationFrame(tick)
+      schedule()
     }
+
+    const schedule = (): void => {
+      if (!visible) return
+      if (hasBacklog()) {
+        rafId = requestAnimationFrame(tick)
+      } else {
+        idleTimer = setTimeout(() => {
+          rafId = requestAnimationFrame(tick)
+        }, IDLE_FRAME_MS)
+      }
+    }
+
+    const stop = (): void => {
+      cancelAnimationFrame(rafId)
+      clearTimeout(idleTimer)
+    }
+
+    const observer = new IntersectionObserver((entries) => {
+      const next = entries[entries.length - 1]?.isIntersecting ?? true
+      if (next === visible) return
+      visible = next
+      stop()
+      if (visible) {
+        last = performance.now()
+        rafId = requestAnimationFrame(tick)
+      }
+    })
+    if (containerRef.current) observer.observe(containerRef.current)
+
     rafId = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(rafId)
+    return () => {
+      stop()
+      observer.disconnect()
+    }
   }, [isDark])
 
   if (!oldStr && !newStr) return null

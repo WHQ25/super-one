@@ -51,6 +51,37 @@ describe('reduceTool: tool_input_delta', () => {
     expect(patch._streamingToolInputPreviews?.['t1']).toBeDefined()
   })
 
+  it('throttles preview extraction inside the window even when deltas contain newlines', () => {
+    vi.useFakeTimers()
+    try {
+      streamingToolInputRaw.clear()
+      streamingPreviewLastUpdate.clear()
+      const session = createDefaultPerSessionState()
+      session.messages = [makeAssistant('m1', [toolUseBlock('t1', 'Edit')])]
+
+      const first = reduceTool(session, {
+        type: 'tool_input_delta', messageId: 'm1', toolUseId: 't1', partialJson: '{"file_path":"/x","old_string":"a\\n',
+      } as never)
+      expect(first._streamingToolInputPreviews?.['t1']).toBeDefined()
+      session._streamingToolInputPreviews = first._streamingToolInputPreviews!
+
+      vi.advanceTimersByTime(50)
+      const second = reduceTool(session, {
+        type: 'tool_input_delta', messageId: 'm1', toolUseId: 't1', partialJson: 'b\\nc\\n',
+      } as never)
+      expect(second._streamingToolInputPreviews).toBeUndefined()
+      expect(streamingToolInputRaw.get('t1')).toContain('b\\nc\\n')
+
+      vi.advanceTimersByTime(60)
+      const third = reduceTool(session, {
+        type: 'tool_input_delta', messageId: 'm1', toolUseId: 't1', partialJson: 'd',
+      } as never)
+      expect(third._streamingToolInputPreviews?.['t1']).toBeDefined()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('returns the appended-input messages branch for __widget_show tools (non-STREAMING)', () => {
     const session = createDefaultPerSessionState()
     session.messages = [makeAssistant('m1', [toolUseBlock('t1', 'mcp__superone__myapp__widget_show')])]

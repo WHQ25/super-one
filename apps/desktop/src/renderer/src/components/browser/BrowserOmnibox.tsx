@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { motion } from 'motion/react'
-import { Search, Globe, Bookmark, Clock, ExternalLink, TriangleAlert } from 'lucide-react'
+import { Search, Globe, Bookmark, Clock, TriangleAlert } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@superone/ui/lib/utils'
-import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from '@superone/ui/components/ui/popover'
 import { useBrowserStore } from '@/stores/browser'
 import { useOmniboxSuggestions, type OmniboxKind } from './browser-suggest'
@@ -82,7 +81,7 @@ export function BrowserOmnibox({ url, isHome, onNavigate }: BrowserOmniboxProps)
 
   return (
     <Popover open={showDropdown} onOpenChange={(o) => { if (!o) setOpen(false) }}>
-      <div className="group relative mx-1 min-w-0 flex-1">
+      <div className="relative mx-1 min-w-0 flex-1">
         <PopoverAnchor asChild>
           <form onSubmit={(e) => { e.preventDefault(); commit(draft) }}>
             <input
@@ -127,18 +126,6 @@ export function BrowserOmnibox({ url, isHome, onNavigate }: BrowserOmniboxProps)
               </div>
             </PopoverContent>
           </Popover>
-        )}
-        {!isHome && url && (
-          <IconButton
-            type="button"
-            size="xs"
-            variant="ghost"
-            tooltip="Open in external browser"
-            onClick={() => window.app.openExternalLink(url)}
-            className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
-          >
-            <ExternalLink className="size-3.5" />
-          </IconButton>
         )}
       </div>
       <PopoverContent

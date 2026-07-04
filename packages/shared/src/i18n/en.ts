@@ -803,6 +803,11 @@ export type Messages = {
       bookmarkRemove: string
       bookmarkDone: string
       bookmarks: string
+      openExternal: string
+      zoom: string
+      zoomIn: string
+      zoomOut: string
+      zoomReset: string
       newFolder: string
       newFolderName: string
       renameFolder: string
@@ -2247,15 +2252,20 @@ export const en: Messages = {
       styleRadius: 'Radius',
       stylePadding: 'Padding',
       searchFor: 'Search for "{{query}}"',
-      bookmark: 'Bookmark this page',
-      bookmarkEdit: 'Edit bookmark',
-      bookmarkAdded: 'Bookmark added',
+      bookmark: 'Add Bookmark',
+      bookmarkEdit: 'Edit Bookmark',
+      bookmarkAdded: 'Bookmark Added',
       bookmarkName: 'Name',
       bookmarkUrl: 'URL',
       bookmarkNoFolder: 'No folder',
       bookmarkRemove: 'Remove',
       bookmarkDone: 'Done',
       bookmarks: 'Bookmarks',
+      openExternal: 'Open in External Browser',
+      zoom: 'Zoom',
+      zoomIn: 'Zoom In',
+      zoomOut: 'Zoom Out',
+      zoomReset: 'Reset',
       newFolder: 'New folder',
       newFolderName: 'New folder',
       renameFolder: 'Rename folder',

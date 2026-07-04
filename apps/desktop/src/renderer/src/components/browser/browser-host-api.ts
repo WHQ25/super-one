@@ -151,3 +151,39 @@ export async function browserExecJs(id: string, script: string): Promise<unknown
   if (!wv) return null
   return wv.executeJavaScript(script)
 }
+
+export const BROWSER_ZOOM_MIN = 0.25
+export const BROWSER_ZOOM_MAX = 5
+
+const ZOOM_LEVELS = [0.25, 0.33, 0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4, 5]
+
+export function browserGetZoom(id: string): number {
+  const el = registry.get(id)
+  if (!el) return 1
+  try {
+    return el.getZoomFactor()
+  } catch {
+    return 1
+  }
+}
+
+function applyZoom(id: string, factor: number): number {
+  const clamped = Math.min(BROWSER_ZOOM_MAX, Math.max(BROWSER_ZOOM_MIN, factor))
+  registry.get(id)?.setZoomFactor(clamped)
+  return clamped
+}
+
+export function browserZoomIn(id: string): number {
+  const cur = browserGetZoom(id)
+  return applyZoom(id, ZOOM_LEVELS.find((l) => l > cur + 1e-3) ?? BROWSER_ZOOM_MAX)
+}
+
+export function browserZoomOut(id: string): number {
+  const cur = browserGetZoom(id)
+  const below = ZOOM_LEVELS.filter((l) => l < cur - 1e-3)
+  return applyZoom(id, below.length ? below[below.length - 1] : BROWSER_ZOOM_MIN)
+}
+
+export function browserResetZoom(id: string): number {
+  return applyZoom(id, 1)
+}

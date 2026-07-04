@@ -4,6 +4,26 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.43.10-alpha] - 2026-07-05
+
+### Added
+
+- Browser network inspection split into dedicated `browser_network_wait` and `browser_network_body` tools
+- Experimental CDP browser tools are now always registered so the agent can discover them, with a clear error when the sub-setting is off
+
+### Changed
+
+- Upgraded Claude Agent SDK to 0.3.201
+- Upgraded Codex to 0.142.5
+
+### Performance
+
+- Cut redundant per-delta recomputation in the chat render hot path for smoother streaming
+
+### Tests
+
+- Aligned `content_delta` test shape and added a `self` polyfill
+
 ## [0.43.9-alpha] - 2026-07-04
 
 ### Added

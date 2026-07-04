@@ -5,7 +5,7 @@ import { cn } from '@superone/ui/lib/utils'
 import { Dialog, DialogContent, DialogTitle, DialogClose } from '@superone/ui/components/ui/dialog'
 import { Button } from '@superone/ui/components/ui/button'
 import { ToolIcon } from './ToolIcon'
-import { PrettyJSONCodeBlock, BrowserEvaluateView } from './tool-result-views'
+import { PrettyJSONCodeBlock, BrowserEvaluateView, BrowserMockView } from './tool-result-views'
 import { ImageInteractive, useImageDataUri } from './codex-image-shared'
 import { ImagePreview } from '@/components/coding/ImagePreview'
 import { getStallColor, type StallLevel } from '@/lib/stall-utils'
@@ -35,7 +35,7 @@ export function BrowserToolBlock({ op, params, result, isStreaming, isError, isD
   const hasScreenshot = op === 'screenshot' && !!info.imagePath && !isStreaming && !failed
 
   const countLabel = info.count
-    ? t(`chat.toolBlock.browser.${info.count.kind === 'tabs' ? 'tabsCount' : info.count.kind}`, { count: info.count.n })
+    ? t(`chat.toolBlock.browser.${info.count.kind === 'tabs' ? 'tabsCount' : info.count.kind === 'cookies' ? 'cookiesCount' : info.count.kind}`, { count: info.count.n })
     : info.notFound
       ? t('chat.toolBlock.browser.notFound')
       : ''
@@ -47,7 +47,8 @@ export function BrowserToolBlock({ op, params, result, isStreaming, isError, isD
   const rightCount = !failed && primary && countLabel ? countLabel : ''
 
   const screenshotLabel = hasScreenshot ? (primary || t('chat.toolBlock.browser.viewport')) : ''
-  const expandable = !isStreaming && !!result && (isReadBrowserOp(op) || info.status === 'error' || hasScreenshot)
+  const isMockDetail = op === 'mock' && params.clear !== true && !failed
+  const expandable = !isStreaming && (isMockDetail || (!!result && (isReadBrowserOp(op) || info.status === 'error' || hasScreenshot)))
 
   return (
     <div
@@ -107,9 +108,11 @@ export function BrowserToolBlock({ op, params, result, isStreaming, isError, isD
             <div className="px-2 pb-1.5">
               {expanded && (hasScreenshot
                 ? <BrowserScreenshotView path={info.imagePath!} />
-                : op === 'evaluate'
-                  ? <BrowserEvaluateView expression={typeof params.expression === 'string' ? params.expression : ''} result={result!} />
-                  : <PrettyJSONCodeBlock text={result!} />)}
+                : op === 'mock'
+                  ? <BrowserMockView params={params} />
+                  : op === 'evaluate'
+                    ? <BrowserEvaluateView expression={typeof params.expression === 'string' ? params.expression : ''} result={result!} />
+                    : <PrettyJSONCodeBlock text={result!} />)}
             </div>
           </div>
         </div>

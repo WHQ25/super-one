@@ -9,21 +9,28 @@ export type BrowserOp =
   | 'wait_for'
   | 'press'
   | 'scroll'
+  | 'drag'
   | 'select'
   | 'open'
   | 'evaluate'
   | 'tabs'
+  | 'network'
+  | 'cookies'
+  | 'upload_file'
+  | 'emulate'
+  | 'mock'
 
 const BROWSER_OPS = new Set<BrowserOp>([
   'snapshot', 'query', 'inspect', 'screenshot', 'click', 'type', 'navigate',
-  'wait_for', 'press', 'scroll', 'select', 'open', 'evaluate', 'tabs',
+  'wait_for', 'press', 'scroll', 'drag', 'select', 'open', 'evaluate', 'tabs',
+  'network', 'cookies', 'upload_file', 'emulate', 'mock',
 ])
 
 /** Read-only ops whose JSON result is worth expanding; the rest are lean actions. */
-const READ_OPS = new Set<BrowserOp>(['snapshot', 'query', 'inspect', 'tabs', 'evaluate'])
+const READ_OPS = new Set<BrowserOp>(['snapshot', 'query', 'inspect', 'tabs', 'evaluate', 'network', 'cookies'])
 
 /** Ops that report success/failure via an `ok` field (or an error). */
-const ACTION_OPS = new Set<BrowserOp>(['click', 'type', 'press', 'scroll', 'select', 'navigate', 'wait_for', 'open'])
+const ACTION_OPS = new Set<BrowserOp>(['click', 'type', 'press', 'scroll', 'drag', 'select', 'navigate', 'wait_for', 'open', 'upload_file', 'emulate', 'mock'])
 
 /** Strip the `browser_` prefix; return the op if this is a known browser tool. */
 export function getBrowserOp(mcpToolName: string): BrowserOp | null {
@@ -34,7 +41,9 @@ export function getBrowserOp(mcpToolName: string): BrowserOp | null {
 
 /** i18n key suffix (under chat.toolBlock.browser) for the op's verb label. */
 export function browserVerbKey(op: BrowserOp): string {
-  return op === 'wait_for' ? 'waitFor' : op
+  if (op === 'wait_for') return 'waitFor'
+  if (op === 'upload_file') return 'uploadFile'
+  return op
 }
 
 export function isReadBrowserOp(op: BrowserOp): boolean {
@@ -86,6 +95,16 @@ export function browserInputSummary(op: BrowserOp, p: Record<string, unknown>): 
       const valStr = s(val)
       return p.selector != null ? `${s(p.selector)}${valStr ? ` = ${valStr}` : ''}` : valStr
     }
+    case 'drag': {
+      const target = (t: unknown): string => {
+        const g = t && typeof t === 'object' ? (t as Record<string, unknown>) : {}
+        if (g.selector != null) return s(g.selector)
+        if (g.text != null) return `“${s(g.text)}”`
+        if (g.x != null && g.y != null) return `(${s(g.x)}, ${s(g.y)})`
+        return '?'
+      }
+      return `${target(p.from)} → ${target(p.to)}`
+    }
     case 'inspect':
     case 'screenshot':
       return s(p.selector)
@@ -108,13 +127,40 @@ export function browserInputSummary(op: BrowserOp, p: Record<string, unknown>): 
       return truncate(s(p.expression), 60)
     case 'tabs':
       return ''
+    case 'network':
+      if (p.bodyForUrl != null) return `body: ${s(p.bodyForUrl)}`
+      if (p.waitForUrl != null) return `wait: ${s(p.waitForUrl)}`
+      return [
+        p.urlIncludes != null ? s(p.urlIncludes) : '',
+        p.method != null ? s(p.method) : '',
+        p.resourceType != null ? s(p.resourceType) : '',
+        p.statusMin != null || p.statusMax != null ? `${p.statusMin != null ? s(p.statusMin) : ''}–${p.statusMax != null ? s(p.statusMax) : ''}` : '',
+      ].filter(Boolean).join(' · ')
+    case 'cookies':
+      return Array.isArray(p.urls) ? (p.urls as unknown[]).map((u) => stripProtocol(s(u))).join(', ') : ''
+    case 'upload_file': {
+      const n = Array.isArray(p.files) ? (p.files as unknown[]).length : 0
+      return p.selector != null ? `${s(p.selector)}${n ? ` ← ${n}` : ''}` : (n ? String(n) : '')
+    }
+    case 'emulate':
+      if (p.reset) return 'reset'
+      return [
+        p.width != null && p.height != null ? `${s(p.width)}×${s(p.height)}` : '',
+        p.mobile ? 'mobile' : '',
+        p.colorScheme != null ? s(p.colorScheme) : '',
+        p.timezone != null ? s(p.timezone) : '',
+        p.locale != null ? s(p.locale) : '',
+      ].filter(Boolean).join(' · ')
+    case 'mock':
+      if (p.clear) return 'clear'
+      return p.url != null ? s(p.url) : ''
   }
 }
 
 export interface BrowserResultInfo {
   status: 'ok' | 'error' | 'neutral'
   errorText?: string
-  count?: { kind: 'elements' | 'matches' | 'tabs'; n: number }
+  count?: { kind: 'elements' | 'matches' | 'tabs' | 'requests' | 'cookies'; n: number }
   notFound?: boolean
   imagePath?: string
 }
@@ -156,6 +202,12 @@ export function parseBrowserResult(op: BrowserOp, result: string | undefined, is
       return { status: 'neutral' }
     case 'screenshot':
       return { status: 'ok', imagePath: typeof obj?.path === 'string' ? obj.path : undefined }
+    case 'network':
+      return obj && Array.isArray(obj.requests)
+        ? { status: 'neutral', count: { kind: 'requests', n: obj.requests.length } }
+        : { status: 'neutral' }
+    case 'cookies':
+      return { status: 'neutral', count: { kind: 'cookies', n: arrLen(obj?.cookies) } }
     default:
       return { status: ACTION_OPS.has(op) ? 'ok' : 'neutral' }
   }

@@ -9,6 +9,7 @@ import {
   browserReload,
   isBrowserRegistered,
   readBrowserConsole,
+  webContentsIdForBrowser,
   type ConsoleQuery,
 } from './browser-host-api'
 import { openBrowserTab } from '@/components/activity/activity-panel-api'
@@ -28,6 +29,21 @@ interface BaseInput {
   timeoutMs?: number
   url?: string
   expression?: string
+  width?: number
+  height?: number
+  reset?: boolean
+  from?: PointTarget
+  to?: PointTarget
+  steps?: number
+  holdMs?: number
+  humanize?: boolean
+}
+
+interface PointTarget {
+  selector?: string
+  text?: string
+  x?: number
+  y?: number
 }
 
 function ownedTabIds(sessionId: string): string[] {
@@ -244,6 +260,73 @@ function clickScript(input: { selector?: string; text?: string; x?: number; y?: 
   })()`
 }
 
+function resolvePointScript(input: { selector?: string; text?: string; x?: number; y?: number }): string {
+  return `(() => {
+    ${HELPERS}
+    const sel = ${JSON.stringify(input.selector ?? null)};
+    const text = ${JSON.stringify(input.text ?? null)};
+    const hasXY = ${input.x != null && input.y != null};
+    const px = ${JSON.stringify(input.x ?? null)}, py = ${JSON.stringify(input.y ?? null)};
+    if (hasXY) return { ok: true, x: px, y: py };
+    let el = null;
+    if (sel) el = document.querySelector(sel);
+    else if (text) { const t = text.toLowerCase(); el = Array.from(document.querySelectorAll('a,button,input,[role],[onclick],label,summary')).filter((e) => __sone.visible(e)).find((e) => (__sone.name(e) || e.innerText || '').toLowerCase().includes(t)) || null; }
+    if (!el) return { ok: false, error: 'click target not found' };
+    el.scrollIntoView({ block: 'center', inline: 'center' });
+    const r = el.getBoundingClientRect();
+    if (r.width <= 0 || r.height <= 0) return { ok: false, error: 'click target is not visible' };
+    return { ok: true, x: r.left + r.width / 2, y: r.top + r.height / 2, selector: __sone.selectorOf(el), name: __sone.name(el) };
+  })()`
+}
+
+function dragDispatchScript(fromX: number, fromY: number, toX: number, toY: number, opts: { steps: number; holdMs: number; humanize: boolean }): string {
+  return `(async () => {
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    const STEP_MS = 16;
+    const fx = ${fromX}, fy = ${fromY}, tx = ${toX}, ty = ${toY};
+    const n = Math.max(1, Math.min(${opts.steps}, 50));
+    const hold = Math.max(0, Math.min(${opts.holdMs}, 10000));
+    const humanize = ${opts.humanize};
+    const ease = (t) => humanize ? (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2) : t;
+    const stepDelay = () => humanize ? STEP_MS * (0.5 + Math.random()) : STEP_MS;
+    const pointAt = (i) => { const p = i / n, t = ease(p), amp = humanize ? 6 * (1 - p) : 0; return { x: fx + (tx - fx) * t + (Math.random() * 2 - 1) * amp, y: fy + (ty - fy) * t + (Math.random() * 2 - 1) * amp }; };
+    const at = (x, y) => document.elementFromPoint(x, y);
+    const src = at(fx, fy) || document.body;
+    const dragEl = (src.closest && src.closest('[draggable="true"]')) || (src.draggable ? src : null);
+    if (dragEl) {
+      const dt = new DataTransfer();
+      const de = (el, type, x, y) => el.dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, composed: true, view: window, clientX: x, clientY: y, dataTransfer: dt }));
+      de(dragEl, 'dragstart', fx, fy); await sleep(STEP_MS);
+      for (let i = 1; i <= n; i++) { const q = pointAt(i); const el = at(q.x, q.y) || document.body; de(el, i === 1 ? 'dragenter' : 'dragover', q.x, q.y); await sleep(stepDelay()); }
+      const tgt = at(tx, ty) || document.body;
+      de(tgt, 'dragenter', tx, ty); de(tgt, 'dragover', tx, ty);
+      if (hold) await sleep(hold);
+      de(tgt, 'drop', tx, ty); await sleep(0);
+      de(dragEl, 'dragend', tx, ty);
+      return { ok: true, mode: 'html5' };
+    }
+    const fire = (el, type, x, y, buttons) => {
+      const Ctor = type.startsWith('pointer') ? PointerEvent : MouseEvent;
+      el.dispatchEvent(new Ctor(type, { bubbles: true, cancelable: true, composed: true, view: window, clientX: x, clientY: y, button: 0, buttons, pointerId: 1, isPrimary: true }));
+    };
+    fire(src, 'pointerdown', fx, fy, 1);
+    fire(src, 'mousedown', fx, fy, 1);
+    await sleep(STEP_MS);
+    for (let i = 1; i <= n; i++) {
+      const q = pointAt(i);
+      const el = at(q.x, q.y) || src;
+      fire(el, 'pointermove', q.x, q.y, 1);
+      fire(el, 'mousemove', q.x, q.y, 1);
+      await sleep(stepDelay());
+    }
+    const dst = at(tx, ty) || src;
+    if (hold) await sleep(hold);
+    fire(dst, 'pointerup', tx, ty, 0);
+    fire(dst, 'mouseup', tx, ty, 0);
+    return { ok: true, mode: 'pointer' };
+  })()`
+}
+
 function typeScript(input: { text: string; selector?: string; clear?: boolean }): string {
   return `(() => {
     ${HELPERS}
@@ -441,6 +524,22 @@ export async function runBrowserOp(sessionId: string, op: string, rawInput: unkn
   }
   const id = resolveBrowserId(input.tab, sessionId)
   switch (op) {
+    case 'resolveWebContentsId': {
+      const webContentsId = webContentsIdForBrowser(id)
+      if (webContentsId == null) throw new Error('Browser view is not attached yet')
+      return { webContentsId }
+    }
+    case 'resolvePoint': {
+      const webContentsId = webContentsIdForBrowser(id)
+      if (webContentsId == null) return { ok: false, error: 'Browser view is not attached yet' }
+      const point = (await browserExecJs(id, resolvePointScript(input as Parameters<typeof resolvePointScript>[0]))) as Record<string, unknown>
+      return { ...point, webContentsId }
+    }
+    case 'emulateViewport': {
+      const emulate = input.reset || input.width == null || input.height == null ? null : { width: input.width, height: input.height }
+      useBrowserStore.getState().setEmulation(id, emulate)
+      return { ok: true }
+    }
     case 'snapshot': {
       const include = input.include?.length ? input.include : ['meta', 'elements', 'console']
       const needsPage = include.some((s) => s === 'meta' || s === 'elements' || s === 'text')
@@ -494,6 +593,18 @@ export async function runBrowserOp(sessionId: string, op: string, rawInput: unkn
       return browserExecJs(id, pressScript(input as Parameters<typeof pressScript>[0]))
     case 'scroll':
       return browserExecJs(id, scrollScript(input as Parameters<typeof scrollScript>[0]))
+    case 'drag': {
+      const from = (await browserExecJs(id, resolvePointScript(input.from ?? {}))) as Record<string, unknown>
+      if (from.ok === false) throw new Error(String(from.error ?? 'drag source not found'))
+      const to = (await browserExecJs(id, resolvePointScript(input.to ?? {}))) as Record<string, unknown>
+      if (to.ok === false) throw new Error(String(to.error ?? 'drag target not found'))
+      await browserExecJs(id, dragDispatchScript(Number(from.x), Number(from.y), Number(to.x), Number(to.y), {
+        steps: input.steps ?? 10,
+        holdMs: input.holdMs ?? 0,
+        humanize: input.humanize === true,
+      }))
+      return { ok: true, from: { selector: from.selector, name: from.name }, to: { selector: to.selector, name: to.name } }
+    }
     case 'select':
       return browserExecJs(id, selectScript(input as Parameters<typeof selectScript>[0]))
     case 'evaluate': {

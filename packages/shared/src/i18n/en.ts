@@ -142,6 +142,7 @@ export type Messages = {
       tabs: {
         general: string
         appearance: string
+        browser: string
         apps: string
         remote: string
         usage: string
@@ -162,6 +163,23 @@ export type Messages = {
       title: string
       subtitle: string
       interface: string
+    }
+    browser: {
+      title: string
+      subtitle: string
+      cdp: {
+        label: string
+        description: string
+      }
+      experimental: {
+        title: string
+        description: string
+        requiresCdp: string
+        network: { label: string; description: string }
+        cookies: { label: string; description: string }
+        emulate: { label: string; description: string }
+        mock: { label: string; description: string }
+      }
     }
     general: {
       title: string
@@ -621,21 +639,35 @@ export type Messages = {
         type: string
         press: string
         scroll: string
+        drag: string
         select: string
         waitFor: string
         evaluate: string
         tabs: string
+        network: string
+        cookies: string
+        uploadFile: string
+        emulate: string
+        mock: string
         elements_one: string
         elements_other: string
         matches_one: string
         matches_other: string
         tabsCount_one: string
         tabsCount_other: string
+        requests_one: string
+        requests_other: string
+        cookiesCount_one: string
+        cookiesCount_other: string
         notFound: string
         viewport: string
         screenshotUnavailable: string
         code: string
         result: string
+        mockUrl: string
+        mockStatus: string
+        mockContentType: string
+        mockBody: string
       }
     }
     subagent: {
@@ -1549,6 +1581,7 @@ export const en: Messages = {
       tabs: {
         general: 'General',
         appearance: 'Appearance',
+        browser: 'Browser',
         apps: 'Mini Apps',
         remote: 'Remote Control',
         usage: 'Usage Stats',
@@ -1569,6 +1602,35 @@ export const en: Messages = {
       title: 'Appearance',
       subtitle: 'Customize the look and feel of SuperOne',
       interface: 'Interface',
+    },
+    browser: {
+      title: 'Browser',
+      subtitle: 'Configure the built-in browser and its automation tools',
+      cdp: {
+        label: 'Chrome DevTools Protocol (CDP)',
+        description: 'Attach the debug protocol to the built-in browser. Browser tools then use trusted input events and full-page screenshots, and unlock the file-upload tool. Some tools require this to be on. Note: you cannot open DevTools for a tab while a browser tool is actively debugging it.',
+      },
+      experimental: {
+        title: 'Experimental tools',
+        description: 'These browser tools are experimental and off by default. Enable each individually — when off, the tool is not exposed to the agent at all.',
+        requiresCdp: 'Requires CDP to be enabled.',
+        network: {
+          label: 'Network inspection',
+          description: 'Let the agent list network requests, wait for a request, and read response bodies. High-traffic pages add memory and CPU cost.',
+        },
+        cookies: {
+          label: 'Cookie reading',
+          description: 'Let the agent read the page cookies, including httpOnly session cookies. Values are truncated, but this still exposes login credentials to the model.',
+        },
+        emulate: {
+          label: 'Device emulation',
+          description: 'Let the agent override viewport size, device scale, mobile mode, user agent, color scheme, timezone, locale, and geolocation for the page. Overrides persist until reset or the tab is closed.',
+        },
+        mock: {
+          label: 'Network mocking',
+          description: 'Let the agent intercept and modify requests and responses — including login credentials and cookies. Only enable in trusted scenarios; misuse can hang pages (reload the tab to recover).',
+        },
+      },
     },
     general: {
       title: 'General',
@@ -2028,21 +2090,35 @@ export const en: Messages = {
         type: 'Type',
         press: 'Press',
         scroll: 'Scroll',
+        drag: 'Drag',
         select: 'Select',
         waitFor: 'Wait for',
         evaluate: 'Evaluate',
         tabs: 'Tabs',
+        network: 'Network',
+        cookies: 'Cookies',
+        uploadFile: 'Upload file',
+        emulate: 'Emulate',
+        mock: 'Mock',
         elements_one: '{{count}} element',
         elements_other: '{{count}} elements',
         matches_one: '{{count}} match',
         matches_other: '{{count}} matches',
         tabsCount_one: '{{count}} tab',
         tabsCount_other: '{{count}} tabs',
+        requests_one: '{{count}} request',
+        requests_other: '{{count}} requests',
+        cookiesCount_one: '{{count}} cookie',
+        cookiesCount_other: '{{count}} cookies',
         notFound: 'not found',
         viewport: 'viewport',
         screenshotUnavailable: 'Screenshot no longer available',
         code: 'Code',
         result: 'Result',
+        mockUrl: 'URL',
+        mockStatus: 'Status',
+        mockContentType: 'Content-Type',
+        mockBody: 'Body',
       },
     },
     subagent: {

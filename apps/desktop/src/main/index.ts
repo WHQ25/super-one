@@ -22,7 +22,8 @@ import { buildMiniAppHost } from '@superone/shared/miniapp-host'
 import { previewApp, confirmInstall, cancelInstall, uninstallApp, packApp, getInstallMeta, getPreapproved, getPreapprovedByPath, setPreapproved, setPreapprovedByPath } from './miniapp/miniapp-packager'
 import { previewMcpbBundle, installMcpbBundle, uninstallMcpbBundle, listInstalledMcpb, revealMcpbBundle } from './mcpb/mcpb-installer'
 import { initBrowserAutomation, resolveBrowserAutomation, rejectBrowserAutomation } from './browser/browser-automation-bridge'
-import { registerBrowserPopupRedirect } from './browser-popup-redirect'
+import { detachAllCdp } from './browser/browser-cdp'
+import { registerBrowserPopupRedirect, enableCdpCaptureForExistingBrowserTabs } from './browser-popup-redirect'
 import { initSuperoneMcpServer, registerAppTools, unregisterAppTools, unregisterAppAcrossSessions, resolveToolCall, rejectToolCall, notifyAppReady as notifyMiniAppReady, loadPreapprovedTools, updatePreapprovedTools, registerAppTemplates, unregisterAppTemplates, submitToolIntercept, cancelToolIntercept, clearSessionPendingCalls as clearSessionPendingMiniAppCalls, disposeSuperoneMcpServer, setSessionHostProvider, clearAppReadyGate, isAppStillAuthorizedInProject, addToolsChangedListener, setMobileShareToolDeps, registerMobileShareTool, unregisterMobileShareTool } from './mcp/superone-mcp-server'
 import { MobileShareService, type MobileShareTarget } from './remote/mobile-share-service'
 import { MobileReceiveService, type MobileReceiveTarget } from './remote/mobile-receive-service'
@@ -2068,6 +2069,12 @@ function registerIpcHandlers(): void {
     }
     if (patch?.liquidGlass !== undefined) {
       applyLiquidGlass()
+    }
+    if (patch?.cdpEnabled === true) {
+      enableCdpCaptureForExistingBrowserTabs()
+    }
+    if (patch?.cdpEnabled === false) {
+      detachAllCdp()
     }
     safeSend(AgentIpcChannels.APP_SETTINGS_CHANGED, result)
     return result

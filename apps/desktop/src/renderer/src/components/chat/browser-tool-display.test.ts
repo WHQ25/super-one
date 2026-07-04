@@ -7,6 +7,14 @@ describe('getBrowserOp', () => {
     expect(getBrowserOp('browser_wait_for')).toBe('wait_for')
   })
 
+  it('recognizes the CDP-only ops', () => {
+    expect(getBrowserOp('browser_network')).toBe('network')
+    expect(getBrowserOp('browser_cookies')).toBe('cookies')
+    expect(getBrowserOp('browser_upload_file')).toBe('upload_file')
+    expect(getBrowserOp('browser_emulate')).toBe('emulate')
+    expect(getBrowserOp('browser_mock')).toBe('mock')
+  })
+
   it('returns null for non-browser superone tools and unknown ops', () => {
     expect(getBrowserOp('widget_show')).toBeNull()
     expect(getBrowserOp('miniapp_dev_setup')).toBeNull()
@@ -15,8 +23,9 @@ describe('getBrowserOp', () => {
 })
 
 describe('browserVerbKey', () => {
-  it('camelCases wait_for and leaves others intact', () => {
+  it('camelCases wait_for and upload_file and leaves others intact', () => {
     expect(browserVerbKey('wait_for')).toBe('waitFor')
+    expect(browserVerbKey('upload_file')).toBe('uploadFile')
     expect(browserVerbKey('snapshot')).toBe('snapshot')
   })
 })
@@ -25,8 +34,10 @@ describe('isReadBrowserOp', () => {
   it('marks inspection ops as read-only and actions as not', () => {
     expect(isReadBrowserOp('snapshot')).toBe(true)
     expect(isReadBrowserOp('evaluate')).toBe(true)
+    expect(isReadBrowserOp('network')).toBe(true)
+    expect(isReadBrowserOp('cookies')).toBe(true)
     expect(isReadBrowserOp('click')).toBe(false)
-    expect(isReadBrowserOp('navigate')).toBe(false)
+    expect(isReadBrowserOp('emulate')).toBe(false)
   })
 })
 
@@ -60,6 +71,29 @@ describe('browserInputSummary', () => {
   it('returns empty for tabs', () => {
     expect(browserInputSummary('tabs', {})).toBe('')
   })
+
+  it('summarizes network by body, wait, or filters', () => {
+    expect(browserInputSummary('network', { bodyForUrl: '/api/user' })).toBe('body: /api/user')
+    expect(browserInputSummary('network', { waitForUrl: '/search' })).toBe('wait: /search')
+    expect(browserInputSummary('network', { method: 'POST', statusMin: 400 })).toBe('POST · 400–')
+  })
+
+  it('summarizes emulate by dimensions or reset, and mock by url or clear', () => {
+    expect(browserInputSummary('emulate', { width: 390, height: 844, mobile: true })).toBe('390×844 · mobile')
+    expect(browserInputSummary('emulate', { reset: true })).toBe('reset')
+    expect(browserInputSummary('mock', { url: '/json' })).toBe('/json')
+    expect(browserInputSummary('mock', { clear: true })).toBe('clear')
+  })
+
+  it('summarizes upload_file by selector and file count', () => {
+    expect(browserInputSummary('upload_file', { selector: '#file', files: ['/a', '/b'] })).toBe('#file ← 2')
+  })
+
+  it('summarizes drag as source → destination across targeting modes', () => {
+    expect(browserInputSummary('drag', { from: { selector: '#a' }, to: { selector: '#b' } })).toBe('#a → #b')
+    expect(browserInputSummary('drag', { from: { text: 'Card' }, to: { x: 10, y: 20 } })).toBe('“Card” → (10, 20)')
+    expect(browserInputSummary('drag', { from: {}, to: { selector: '#b' } })).toBe('? → #b')
+  })
 })
 
 describe('parseBrowserResult', () => {
@@ -90,6 +124,14 @@ describe('parseBrowserResult', () => {
     const info = parseBrowserResult('screenshot', JSON.stringify({ path: '/tmp/shot.png', width: 800, height: 600 }), false)
     expect(info.status).toBe('ok')
     expect(info.imagePath).toBe('/tmp/shot.png')
+  })
+
+  it('counts network requests and cookies, and marks CDP actions ok', () => {
+    expect(parseBrowserResult('network', JSON.stringify({ requests: [1, 2, 3] }), false).count).toEqual({ kind: 'requests', n: 3 })
+    expect(parseBrowserResult('network', JSON.stringify('a body string'), false).count).toBeUndefined()
+    expect(parseBrowserResult('cookies', JSON.stringify({ cookies: [1, 2] }), false).count).toEqual({ kind: 'cookies', n: 2 })
+    expect(parseBrowserResult('emulate', JSON.stringify({ ok: true, reset: false }), false).status).toBe('ok')
+    expect(parseBrowserResult('mock', JSON.stringify({ ok: true, mocking: '/json' }), false).status).toBe('ok')
   })
 
   it('flags a missing element for inspect', () => {

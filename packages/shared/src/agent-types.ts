@@ -2305,6 +2305,11 @@ export interface AppSettings {
   terminalFontFamily: string | null
   uiFontFamily: string | null
   liquidGlass: boolean
+  cdpEnabled: boolean
+  cdpNetworkEnabled: boolean
+  cdpCookiesEnabled: boolean
+  cdpMockEnabled: boolean
+  cdpEmulateEnabled: boolean
   miniAppOrder: Record<string, string[]>
   customAppIconPath: string | null
   browserBookmarks: BrowserBookmark[]
@@ -2340,6 +2345,11 @@ export interface AppSettingsPatch {
   terminalFontFamily?: string | null
   uiFontFamily?: string | null
   liquidGlass?: boolean
+  cdpEnabled?: boolean
+  cdpNetworkEnabled?: boolean
+  cdpCookiesEnabled?: boolean
+  cdpMockEnabled?: boolean
+  cdpEmulateEnabled?: boolean
   miniAppOrder?: Record<string, string[]>
   customAppIconPath?: string | null
   browserBookmarks?: BrowserBookmark[]

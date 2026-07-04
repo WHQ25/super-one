@@ -81,6 +81,16 @@ export function isBrowserRegistered(id: string): boolean {
   return registry.has(id)
 }
 
+export function webContentsIdForBrowser(id: string): number | null {
+  const el = registry.get(id)
+  if (!el) return null
+  try {
+    return el.getWebContentsId()
+  } catch {
+    return null
+  }
+}
+
 export function browserIdByWebContentsId(webContentsId: number): string | null {
   for (const [id, el] of registry) {
     try {

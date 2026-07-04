@@ -14,10 +14,14 @@ export type BrowserAutomationOp =
   | 'wait_for'
   | 'press'
   | 'scroll'
+  | 'drag'
   | 'select'
   | 'open'
   | 'evaluate'
   | 'tabs'
+  | 'resolveWebContentsId'
+  | 'resolvePoint'
+  | 'emulateViewport'
 
 interface PendingCall {
   resolve: (result: unknown) => void

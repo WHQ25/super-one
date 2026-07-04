@@ -21,9 +21,15 @@ export interface BrowserSlot {
   height: number
 }
 
+export interface BrowserEmulation {
+  width: number
+  height: number
+}
+
 interface BrowserStore {
   tabs: Record<string, BrowserTabState>
   slots: Record<string, BrowserSlot>
+  emulations: Record<string, BrowserEmulation>
   fullscreenId: string | null
   annotatingId: string | null
   insecureHosts: Record<string, string>
@@ -34,6 +40,7 @@ interface BrowserStore {
   setFullscreen: (id: string | null) => void
   startAnnotate: (id: string) => void
   stopAnnotate: () => void
+  setEmulation: (id: string, emulation: BrowserEmulation | null) => void
   updateSlot: (id: string, mode: BrowserSlotMode, rect: DOMRectReadOnly) => void
   unregisterSlot: (id: string, mode: BrowserSlotMode) => void
 }
@@ -59,6 +66,7 @@ function withoutKey<T extends Record<string, unknown>>(obj: T, key: string): T {
 export const useBrowserStore = create<BrowserStore>((set) => ({
   tabs: {},
   slots: {},
+  emulations: {},
   fullscreenId: null,
   annotatingId: null,
   insecureHosts: {},
@@ -75,8 +83,11 @@ export const useBrowserStore = create<BrowserStore>((set) => ({
     set((s) => ({
       tabs: withoutKey(s.tabs, id),
       slots: withoutKey(s.slots, id),
+      emulations: withoutKey(s.emulations, id),
       annotatingId: s.annotatingId === id ? null : s.annotatingId,
     })),
+  setEmulation: (id, emulation) =>
+    set((s) => (emulation ? { emulations: { ...s.emulations, [id]: emulation } } : { emulations: withoutKey(s.emulations, id) })),
   updateSlot: (id, mode, rect) =>
     set((s) => {
       const prev = s.slots[id]

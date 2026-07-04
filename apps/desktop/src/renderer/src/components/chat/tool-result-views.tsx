@@ -61,6 +61,43 @@ export function BrowserEvaluateView({ expression, result }: { expression: string
   )
 }
 
+function MockRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex gap-2 text-[11px]">
+      <span className="shrink-0 text-muted-foreground/70">{label}</span>
+      <span className="min-w-0 break-all text-foreground">{value}</span>
+    </div>
+  )
+}
+
+/** Expanded view for browser_mock: the mock rule config, sourced from the tool input. */
+export function BrowserMockView({ params }: { params: Record<string, unknown> }) {
+  const { t } = useTranslation()
+  const url = typeof params.url === 'string' ? params.url : ''
+  const status = typeof params.status === 'number' ? params.status : 200
+  const contentType = typeof params.contentType === 'string' ? params.contentType : 'application/json'
+  const headers = params.headers && typeof params.headers === 'object' ? (params.headers as Record<string, unknown>) : null
+  const body = typeof params.body === 'string' ? params.body : ''
+
+  return (
+    <div className="space-y-2">
+      <div className="space-y-0.5">
+        <MockRow label={t('chat.toolBlock.browser.mockUrl')} value={url} />
+        <MockRow label={t('chat.toolBlock.browser.mockStatus')} value={String(status)} />
+        <MockRow label={t('chat.toolBlock.browser.mockContentType')} value={contentType} />
+        {headers &&
+          Object.entries(headers).map(([k, v]) => <MockRow key={k} label={k} value={String(v)} />)}
+      </div>
+      {body && (
+        <div>
+          <SectionLabel>{t('chat.toolBlock.browser.mockBody')}</SectionLabel>
+          <PrettyJSONCodeBlock text={body} />
+        </div>
+      )}
+    </div>
+  )
+}
+
 /** Prettified JSON code block with syntax highlighting and truncation. */
 export function PrettyJSONCodeBlock({ text }: { text: string }) {
   const { t } = useTranslation()

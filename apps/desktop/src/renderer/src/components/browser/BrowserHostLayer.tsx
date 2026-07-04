@@ -49,6 +49,7 @@ export function BrowserHostLayer() {
 
 function PersistentBrowser({ browserId, layoutMode, resizing }: { browserId: string; layoutMode: 'canvas' | 'coding'; resizing: boolean }) {
   const slot = useBrowserStore((s) => s.slots[browserId])
+  const emulation = useBrowserStore((s) => s.emulations[browserId])
   const activityShown = useActivityPanelStore((s) => s.showPanel)
   const annotating = useBrowserStore((s) => s.annotatingId === browserId)
   const home = useBrowserStore((s) => isBlankUrl(s.tabs[browserId]?.url ?? ''))
@@ -194,7 +195,7 @@ function PersistentBrowser({ browserId, layoutMode, resizing }: { browserId: str
         src={initialSrcRef.current}
         partition="persist:browser"
         {...({ allowpopups: 'true' } as Record<string, string>)}
-        style={{ width: '100%', height: '100%' }}
+        style={emulation ? { width: emulation.width, height: emulation.height } : { width: '100%', height: '100%' }}
       />
     </div>
   )

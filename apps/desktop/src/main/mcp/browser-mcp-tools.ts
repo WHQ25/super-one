@@ -1,6 +1,9 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import { browserAutomationCall, type BrowserAutomationOp } from '../browser/browser-automation-bridge'
+import { existsSync } from 'fs'
+import { isCdpEnabled, isCdpNetworkEnabled, isCdpCookiesEnabled, isCdpMockEnabled, isCdpEmulateEnabled, resolveCdpTarget, cdpScreenshot, cdpClick, cdpDrag, cdpPress, cdpType, cdpEmulate, cdpGetCookies, cdpSetFileInput } from '../browser/browser-cdp'
+import { enableNetworkCapture, readNetwork, waitForRequest, getResponseBody, addMockRule, clearMockRules } from '../browser/browser-cdp-network'
 import { persistScreenshot } from '../agent/browser-screenshot-store'
 
 export const BROWSER_TOOL_NAMES = [
@@ -14,10 +17,16 @@ export const BROWSER_TOOL_NAMES = [
   'browser_wait_for',
   'browser_press',
   'browser_scroll',
+  'browser_drag',
   'browser_select',
   'browser_open',
   'browser_evaluate',
   'browser_tabs',
+  'browser_network',
+  'browser_cookies',
+  'browser_upload_file',
+  'browser_emulate',
+  'browser_mock',
 ] as const
 
 interface ScreenshotResult {
@@ -52,6 +61,41 @@ async function dataTool(sessionId: string, op: BrowserAutomationOp, input: unkno
   } catch (err) {
     return errorReply(err)
   }
+}
+
+async function cdpOrData(sessionId: string, op: BrowserAutomationOp, input: unknown, cdpFn: () => Promise<unknown>): Promise<ToolReply> {
+  try {
+    if (isCdpEnabled()) return textReply(await cdpFn())
+    return textReply(await browserAutomationCall(sessionId, op, input))
+  } catch (err) {
+    return errorReply(err)
+  }
+}
+
+interface ResolvePoint {
+  ok: boolean
+  webContentsId: number
+  x: number
+  y: number
+  selector?: string
+  name?: string
+  error?: string
+}
+
+const CDP_REQUIRED_MESSAGE = 'This tool requires the browser CDP setting. Enable it in Settings → Browser.'
+
+async function cdpTool(sessionId: string, tab: string | undefined, fn: (webContentsId: number) => Promise<unknown>): Promise<ToolReply> {
+  try {
+    if (!isCdpEnabled()) return errorReply(CDP_REQUIRED_MESSAGE)
+    const webContentsId = await resolveCdpTarget(sessionId, tab)
+    return textReply(await fn(webContentsId))
+  } catch (err) {
+    return errorReply(err)
+  }
+}
+
+function assertExperimental(enabled: boolean): void {
+  if (!enabled) throw new Error('This experimental browser tool is disabled. Enable it in Settings → Browser → Experimental tools.')
 }
 
 const tabField = {
@@ -153,15 +197,22 @@ export function registerBrowserTools(server: McpServer, sessionId: string): void
     'browser_screenshot',
     {
       description:
-        'Capture a PNG screenshot of the browser page (or one element when a selector is given), save it to disk, and return its file path plus width/height. The image is NOT loaded into your context automatically — if you actually need to look at it, call Read on the returned path. Prefer the text tools (snapshot/query/inspect) first; use a screenshot when pixels matter or to leave a visual record for the user.',
+        'Capture a PNG screenshot of the visible viewport (or one element when a selector is given), save it to disk, and return its file path plus width/height. To capture content below the fold, scroll to it first (browser_scroll) and screenshot again. The image is NOT loaded into your context automatically — if you actually need to look at it, call Read on the returned path. Prefer the text tools (snapshot/query/inspect) first; use a screenshot when pixels matter or to leave a visual record for the user.',
       inputSchema: {
         ...tabField,
         ...descriptionField,
-        selector: z.string().optional().describe('CSS selector to screenshot just that element. Omit for the full viewport.'),
+        selector: z.string().optional().describe('CSS selector to screenshot just that element. Omit for the visible viewport.'),
       },
     },
     async (args) => {
       try {
+        if (isCdpEnabled() && args.selector) {
+          const webContentsId = await resolveCdpTarget(sessionId, args.tab)
+          const shot = await cdpScreenshot(webContentsId, { selector: args.selector })
+          const path = persistScreenshot(shot.data, 'image/png')
+          if (!path) return errorReply('Failed to save screenshot to disk.')
+          return textReply({ path, width: shot.width, height: shot.height })
+        }
         const result = (await browserAutomationCall(sessionId, 'screenshot', args)) as ScreenshotResult
         const path = persistScreenshot(result.data, result.mimeType)
         if (!path) return errorReply('Failed to save screenshot to disk.')
@@ -186,7 +237,13 @@ export function registerBrowserTools(server: McpServer, sessionId: string): void
         y: z.number().optional().describe('Viewport Y coordinate in CSS pixels. Must be paired with x.'),
       },
     },
-    (args) => dataTool(sessionId, 'click', args),
+    (args) =>
+      cdpOrData(sessionId, 'click', args, async () => {
+        const point = (await browserAutomationCall(sessionId, 'resolvePoint', args)) as ResolvePoint
+        if (!point.ok) throw new Error(point.error ?? 'click target not found')
+        await cdpClick(point.webContentsId, point.x, point.y)
+        return { ok: true, selector: point.selector, name: point.name }
+      }),
   )
 
   server.registerTool(
@@ -202,7 +259,12 @@ export function registerBrowserTools(server: McpServer, sessionId: string): void
         clear: z.boolean().default(false).describe('Clear the existing value before typing. Default false.'),
       },
     },
-    (args) => dataTool(sessionId, 'type', args),
+    (args) =>
+      cdpOrData(sessionId, 'type', args, async () => {
+        const webContentsId = await resolveCdpTarget(sessionId, args.tab)
+        await cdpType(webContentsId, args.text, args.selector, args.clear)
+        return { ok: true, selector: args.selector }
+      }),
   )
 
   server.registerTool(
@@ -257,7 +319,7 @@ export function registerBrowserTools(server: McpServer, sessionId: string): void
     'browser_press',
     {
       description:
-        "Press one keyboard key, e.g. { key: 'Enter' }, { key: 'Escape' }, or { key: 'a', modifiers: ['Meta'] }. Targets the element at selector, or the focused element if omitted. Note: dispatches synthetic key events (handlers that listen for them fire); Enter additionally submits the enclosing form when no modifiers are held.",
+        "Press one keyboard key, e.g. { key: 'Enter' }, { key: 'Escape' }, or { key: 'a', modifiers: ['Meta'] }. Targets the element at selector, or the focused element if omitted. Enter submits the enclosing form when no modifiers are held.",
       inputSchema: {
         ...tabField,
         ...descriptionField,
@@ -266,7 +328,12 @@ export function registerBrowserTools(server: McpServer, sessionId: string): void
         selector: z.string().optional().describe('CSS selector of the key target. Omit to target the focused element.'),
       },
     },
-    (args) => dataTool(sessionId, 'press', args),
+    (args) =>
+      cdpOrData(sessionId, 'press', args, async () => {
+        const webContentsId = await resolveCdpTarget(sessionId, args.tab)
+        await cdpPress(webContentsId, args.key, args.modifiers, args.selector)
+        return { ok: true, key: args.key }
+      }),
   )
 
   server.registerTool(
@@ -287,6 +354,47 @@ export function registerBrowserTools(server: McpServer, sessionId: string): void
         return Promise.resolve(errorReply('Provide deltaX or deltaY.'))
       }
       return dataTool(sessionId, 'scroll', args)
+    },
+  )
+
+  const dragTarget = (role: string) =>
+    z
+      .object({
+        selector: z.string().optional().describe('CSS selector of the element.'),
+        text: z.string().optional().describe('Match the first visible element whose accessible name or text contains this substring.'),
+        x: z.number().optional().describe('Viewport X coordinate in CSS pixels. Must be paired with y.'),
+        y: z.number().optional().describe('Viewport Y coordinate in CSS pixels. Must be paired with x.'),
+      })
+      .describe(`Drag ${role}. Provide exactly one targeting mode: selector, text, or x+y.`)
+
+  server.registerTool(
+    'browser_drag',
+    {
+      description:
+        'Drag from a source point to a destination point. Handles both pointer-driven gestures (sliders, sortable lists, canvas panning, drag-resize) and native HTML5 drag-and-drop (elements with draggable=true, e.g. kanban cards and file drop zones) — with the browser CDP setting on, it auto-detects which and drives trusted events for either. Target the source via `from` and the destination via `to`, each by selector, visible text, or x/y viewport coordinates. Tip: enable the browser CDP setting for reliable drags; without it, a best-effort synthetic fallback is used.',
+      inputSchema: {
+        ...tabField,
+        ...descriptionField,
+        from: dragTarget('source'),
+        to: dragTarget('destination'),
+        steps: z.number().int().min(1).max(50).default(10).describe('Number of intermediate move events between source and target. More steps = a slower, smoother drag (each step adds a small delay); fewer = a faster drag. Default 10.'),
+        holdMs: z.number().int().min(0).max(10000).default(0).describe('Time in milliseconds to pause on the target after arriving, before releasing/dropping. Some drop zones only register the drop after a hover. Default 0.'),
+        humanize: z.boolean().default(false).describe('When true, vary per-step timing and add positional jitter along an ease-in-out motion curve to mimic a human drag. Improves success on libraries that reject robotic linear moves. The final position is still exact. Default false.'),
+      },
+    },
+    (args) => {
+      const modes = (g: { selector?: string; text?: string; x?: number; y?: number }) =>
+        Number(g.selector != null) + Number(g.text != null) + Number(g.x != null && g.y != null)
+      if (modes(args.from) !== 1) return Promise.resolve(errorReply('Provide exactly one of selector, text, or x+y for `from`.'))
+      if (modes(args.to) !== 1) return Promise.resolve(errorReply('Provide exactly one of selector, text, or x+y for `to`.'))
+      return cdpOrData(sessionId, 'drag', args, async () => {
+        const src = (await browserAutomationCall(sessionId, 'resolvePoint', { tab: args.tab, ...args.from })) as ResolvePoint
+        if (!src.ok) throw new Error(src.error ?? 'drag source not found')
+        const dst = (await browserAutomationCall(sessionId, 'resolvePoint', { tab: args.tab, ...args.to })) as ResolvePoint
+        if (!dst.ok) throw new Error(dst.error ?? 'drag target not found')
+        await cdpDrag(src.webContentsId, src.x, src.y, dst.x, dst.y, { steps: args.steps, holdMs: args.holdMs, humanize: args.humanize })
+        return { ok: true, from: { selector: src.selector, name: src.name }, to: { selector: dst.selector, name: dst.name } }
+      })
     },
   )
 
@@ -345,5 +453,154 @@ export function registerBrowserTools(server: McpServer, sessionId: string): void
       inputSchema: {},
     },
     () => dataTool(sessionId, 'tabs', {}),
+  )
+
+  if (isCdpNetworkEnabled()) server.registerTool(
+    'browser_network',
+    {
+      description:
+        'Inspect the network traffic of the page (requires the browser CDP setting). Lists recent requests with method, URL, status, resource type, and size. Filter by urlIncludes/method/status/resourceType. Long URLs are truncated in the listing. Pass waitForUrl to block until a matching request completes (e.g. after a click that triggers an XHR). Pass bodyForUrl to fetch the response body of the most recent matching request (up to 64KB).',
+      inputSchema: {
+        ...tabField,
+        ...descriptionField,
+        urlIncludes: z.string().optional().describe('Only include requests whose URL contains this substring.'),
+        method: z.string().optional().describe('Only include requests with this HTTP method (GET, POST, ...).'),
+        statusMin: z.number().int().optional().describe('Minimum HTTP status code (inclusive).'),
+        statusMax: z.number().int().optional().describe('Maximum HTTP status code (inclusive), e.g. statusMin 400 to find errors.'),
+        resourceType: z.string().optional().describe('Only include this resource type (Document, XHR, Fetch, Script, Image, ...).'),
+        failedOnly: z.boolean().optional().describe('Only include requests that failed.'),
+        max: z.number().int().min(1).max(300).optional().describe('Maximum number of requests to return (default 50).'),
+        waitForUrl: z.string().optional().describe('Block until a completed request whose URL contains this substring appears, then return it.'),
+        timeoutMs: z.number().int().min(100).max(60000).optional().describe('Timeout for waitForUrl in milliseconds (default 15000).'),
+        bodyForUrl: z.string().optional().describe('Return the response body of the most recent completed request whose URL contains this substring.'),
+      },
+    },
+    (args) =>
+      cdpTool(sessionId, args.tab, async (webContentsId) => {
+        assertExperimental(isCdpNetworkEnabled())
+        await enableNetworkCapture(webContentsId)
+        if (args.bodyForUrl) {
+          const body = await getResponseBody(webContentsId, args.bodyForUrl)
+          if (!body) throw new Error(`No completed request found matching: ${args.bodyForUrl}`)
+          return body
+        }
+        if (args.waitForUrl) {
+          const hit = await waitForRequest(webContentsId, args.waitForUrl, args.timeoutMs ?? 15000)
+          if (!hit) throw new Error(`Timed out waiting for a request matching: ${args.waitForUrl}`)
+          return hit
+        }
+        return { requests: readNetwork(webContentsId, args) }
+      }),
+  )
+
+  if (isCdpCookiesEnabled()) server.registerTool(
+    'browser_cookies',
+    {
+      description:
+        'Read the cookies visible to the page (requires the browser CDP setting). Returns name, value, domain, path, and key flags. Long cookie values are truncated (a valueLength field carries the original length). Pass urls to scope to specific URLs.',
+      inputSchema: {
+        ...tabField,
+        ...descriptionField,
+        urls: z.array(z.string()).optional().describe('Only return cookies that would be sent to these URLs. Omit for the current page.'),
+      },
+    },
+    (args) =>
+      cdpTool(sessionId, args.tab, async (webContentsId) => {
+        assertExperimental(isCdpCookiesEnabled())
+        return { cookies: await cdpGetCookies(webContentsId, args.urls) }
+      }),
+  )
+
+  server.registerTool(
+    'browser_upload_file',
+    {
+      description:
+        'Set the files on a file <input> element (requires the browser CDP setting). This is the only way to attach files to an upload control, which cannot be driven by synthetic events. Provide the input selector and absolute file paths.',
+      inputSchema: {
+        ...tabField,
+        ...descriptionField,
+        selector: z.string().describe("CSS selector of the file <input> element (input[type=file])."),
+        files: z.array(z.string()).min(1).describe('Absolute paths of the files to attach.'),
+      },
+    },
+    (args) =>
+      cdpTool(sessionId, args.tab, async (webContentsId) => {
+        const missing = args.files.filter((f) => !existsSync(f))
+        if (missing.length) throw new Error(`File(s) not found: ${missing.join(', ')}`)
+        await cdpSetFileInput(webContentsId, args.selector, args.files)
+        return { ok: true, files: args.files.length }
+      }),
+  )
+
+  if (isCdpEmulateEnabled()) server.registerTool(
+    'browser_emulate',
+    {
+      description:
+        'Emulate device and environment conditions for the page (requires the browser CDP setting AND the device-emulation sub-setting): viewport size, device scale, mobile mode, user agent, color scheme, timezone, locale, and geolocation. Pass reset:true to clear all overrides. Overrides persist until reset or the tab is closed. Note: width/height reflow responsive pages (those with a width=device-width viewport meta) to the emulated width; non-responsive pages keep their wide layout, matching standard device-emulation behavior.',
+      inputSchema: {
+        ...tabField,
+        ...descriptionField,
+        width: z.number().int().min(1).optional().describe('Viewport width in CSS pixels (pair with height).'),
+        height: z.number().int().min(1).optional().describe('Viewport height in CSS pixels (pair with width).'),
+        deviceScaleFactor: z.number().min(0).optional().describe('Device pixel ratio. 0 keeps the default.'),
+        mobile: z.boolean().optional().describe('Emulate a mobile device (touch, mobile viewport).'),
+        userAgent: z.string().optional().describe('Override the User-Agent header.'),
+        colorScheme: z.enum(['light', 'dark', 'no-preference']).optional().describe('Emulate prefers-color-scheme.'),
+        timezone: z.string().optional().describe("IANA timezone id, e.g. 'America/New_York'."),
+        locale: z.string().optional().describe("Locale, e.g. 'en-US' or 'ja-JP'."),
+        latitude: z.number().optional().describe('Geolocation latitude (pair with longitude).'),
+        longitude: z.number().optional().describe('Geolocation longitude (pair with latitude).'),
+        reset: z.boolean().optional().describe('Clear all emulation overrides.'),
+      },
+    },
+    (args) =>
+      cdpTool(sessionId, args.tab, async (webContentsId) => {
+        assertExperimental(isCdpEmulateEnabled())
+        await cdpEmulate(webContentsId, args)
+        if (args.reset || (args.width != null && args.height != null)) {
+          await browserAutomationCall(sessionId, 'emulateViewport', {
+            tab: args.tab,
+            reset: args.reset === true,
+            width: args.width,
+            height: args.height,
+          }).catch(() => {})
+        }
+        return { ok: true, reset: args.reset === true }
+      }),
+  )
+
+  if (isCdpMockEnabled()) server.registerTool(
+    'browser_mock',
+    {
+      description:
+        'Intercept matching network requests and respond with a mocked response (requires the browser CDP setting AND the network-mocking sub-setting). Provide a url substring to match and the response to return. Pass clear:true to remove all mocks. WARNING: this can read and alter all page traffic — use only in trusted scenarios.',
+      inputSchema: {
+        ...tabField,
+        ...descriptionField,
+        url: z.string().optional().describe('Substring; requests whose URL contains it are fulfilled with the mock. Required unless clear is set.'),
+        status: z.number().int().min(100).max(599).optional().describe('HTTP status code to return (default 200).'),
+        body: z.string().optional().describe('Response body to return (default empty).'),
+        contentType: z.string().optional().describe("Response Content-Type (default 'application/json')."),
+        headers: z.record(z.string(), z.string()).optional().describe('Extra response headers.'),
+        clear: z.boolean().optional().describe('Remove all mock rules for this tab and stop intercepting.'),
+      },
+    },
+    (args) =>
+      cdpTool(sessionId, args.tab, async (webContentsId) => {
+        assertExperimental(isCdpMockEnabled())
+        if (args.clear) {
+          await clearMockRules(webContentsId)
+          return { ok: true, cleared: true }
+        }
+        if (!args.url) throw new Error('Provide a url to mock, or clear:true to remove mocks.')
+        await addMockRule(webContentsId, {
+          urlPattern: args.url,
+          status: args.status ?? 200,
+          body: args.body ?? '',
+          contentType: args.contentType ?? 'application/json',
+          headers: args.headers,
+        })
+        return { ok: true, mocking: args.url }
+      }),
   )
 }

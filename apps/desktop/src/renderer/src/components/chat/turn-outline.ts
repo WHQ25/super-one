@@ -2,6 +2,7 @@ import type { ChatMessage } from '@superone/shared/agent-types'
 
 export interface TurnOutlineEntry {
   id: string
+  index: number
   text: string
   createdAt: string
   reply?: string
@@ -15,26 +16,29 @@ function textOf(message: ChatMessage): string {
     .trim()
 }
 
+function isUserTurn(message: ChatMessage): boolean {
+  return message.role === 'user' && message.providerId !== 'system'
+}
+
 export function extractTurnOutline(messages: ChatMessage[]): TurnOutlineEntry[] {
   const entries: TurnOutlineEntry[] = []
+  let open: TurnOutlineEntry | null = null
   for (let i = 0; i < messages.length; i++) {
     const message = messages[i]
-    if (message.role !== 'user' || message.providerId === 'system') continue
-    const text = textOf(message)
-    if (!text) continue
-    let reply: string | undefined
-    for (let j = i + 1; j < messages.length; j++) {
-      const next = messages[j]
-      if (next.role === 'user' && next.providerId !== 'system') break
-      if (next.role === 'assistant') {
-        const replyText = textOf(next)
-        if (replyText) {
-          reply = replyText
-          break
-        }
+    if (isUserTurn(message)) {
+      const text = textOf(message)
+      if (!text) {
+        open = null
+        continue
       }
+      open = { id: message.id, index: i, text, createdAt: message.createdAt, reply: undefined }
+      entries.push(open)
+      continue
     }
-    entries.push({ id: message.id, text, createdAt: message.createdAt, reply })
+    if (open && open.reply === undefined && message.role === 'assistant') {
+      const replyText = textOf(message)
+      if (replyText) open.reply = replyText
+    }
   }
   return entries
 }

@@ -855,6 +855,7 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
 
 export {
   useActiveSession,
+  getActiveSessionView,
   useIsRemoteLocked,
   useBashOutput,
   useShareProgress,

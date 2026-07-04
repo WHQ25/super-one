@@ -16,6 +16,20 @@ import { AgentActivity, SubagentScrollArea } from './subagent-activity'
 
 const ZERO_TOKENS = { input: 0, output: 0 }
 
+// groupContent rebuilds a fresh childBlocks array on every render of the streaming message, even
+// for subagent segments whose blocks are unchanged (the immutable delta reducer preserves the
+// block refs). Reuse the previous array when the contents are shallow-equal so the downstream
+// derivations (buildToolResultMap / groupSubagentChildren, incl. nested subagents) stay cached
+// for completed subagents instead of re-deriving their whole subtree each delta.
+function useStableArray<T>(arr: T[]): T[] {
+  const ref = useRef(arr)
+  const prev = ref.current
+  if (prev !== arr && (prev.length !== arr.length || prev.some((v, i) => v !== arr[i]))) {
+    ref.current = arr
+  }
+  return ref.current
+}
+
 interface SubagentBlockProps {
   taskBlock: ContentBlock & { type: 'tool_use' }
   childBlocks: ContentBlock[]
@@ -53,8 +67,9 @@ function SubagentTokens({ input, output }: { input: number; output: number }) {
   )
 }
 
-export function SubagentBlock({ taskBlock, childBlocks, resultBlock, isStreaming, defaultExpanded, trailingAction }: SubagentBlockProps) {
+export function SubagentBlock({ taskBlock, childBlocks: childBlocksProp, resultBlock, isStreaming, defaultExpanded, trailingAction }: SubagentBlockProps) {
   const { t } = useTranslation()
+  const childBlocks = useStableArray(childBlocksProp)
   const tokens = useActiveSession((s) => s.subagentTokens[taskBlock.toolUseId] ?? ZERO_TOKENS)
   const progress = useActiveSession((s) => s.taskProgress[taskBlock.toolUseId])
   const colorIdx = useActiveSession((s) => s.subagentColors[taskBlock.toolUseId])

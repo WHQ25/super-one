@@ -283,6 +283,23 @@ function useCopyText() {
   return { copied, copy }
 }
 
+// Own component so the media-resolution regex is scoped to this block (memoized on text +
+// projectPath by the React Compiler): a completed text block no longer re-runs the scan when a
+// later block in the same streaming message mutates.
+function TextBlock({ text, isStreaming, projectPath, afterThinking }: {
+  text: string
+  isStreaming: boolean
+  projectPath?: string | null
+  afterThinking?: boolean
+}) {
+  const resolved = projectPath ? resolveMarkdownMedia(text, projectPath) : text
+  return (
+    <div className={afterThinking ? 'mt-1 after-thinking' : undefined}>
+      <CopyableMarkdown text={resolved} isStreaming={isStreaming} components={fileLinkComponents} />
+    </div>
+  )
+}
+
 function renderBlock(
   block: ContentBlock,
   index: number,
@@ -296,14 +313,16 @@ function renderBlock(
   projectPath?: string | null,
 ) {
   switch (block.type) {
-    case 'text': {
-      const text = projectPath ? resolveMarkdownMedia(block.text, projectPath) : block.text
+    case 'text':
       return (
-        <div key={index} className={prevBlockType === 'thinking' ? 'mt-1 after-thinking' : undefined}>
-          <CopyableMarkdown text={text} isStreaming={isStreaming} components={fileLinkComponents} />
-        </div>
+        <TextBlock
+          key={index}
+          text={block.text}
+          isStreaming={isStreaming}
+          projectPath={projectPath}
+          afterThinking={prevBlockType === 'thinking'}
+        />
       )
-    }
     case 'image':
       return (
         <div
@@ -714,10 +733,9 @@ export const ChatMessage = memo(function ChatMessage({ message, sessionStatus, i
   const isUser = message.role === 'user'
   const isStreaming = message.status === 'streaming' && sessionStatus === 'streaming' && isLastAssistant
   const isCodexMessage = !isUser && message.providerId === 'codex'
-  const assistantCopyText = useMemo(
-    () => getAssistantCopyText(message),
-    [message],
-  )
+  // Copy text is only needed once the turn settles (the copy button is hidden while streaming),
+  // so skip deriving the full concatenated text on every delta of the live message.
+  const assistantCopyText = isStreaming ? undefined : getAssistantCopyText(message)
 
   const apps = useMiniAppStore((s) => s.apps)
   const grouped = useMemo(

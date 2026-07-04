@@ -1,8 +1,34 @@
-import { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useLayoutEffect, useCallback, useRef, memo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { AnimatePresence, motion } from 'motion/react'
 import { cn } from '@superone/ui/lib/utils'
 import type { TurnOutlineEntry } from './turn-outline'
+
+// Turn elements sit in document order, so their viewport-relative tops are monotonically
+// non-decreasing. `topOf` returns null for a turn whose element is not mounted (lazy
+// loading only mounts a contiguous suffix, so nulls form a top prefix = above threshold).
+// Binary-search the last turn whose top is at/above the threshold — O(log n) rect reads.
+export function findActiveTurnId(
+  entries: { id: string }[],
+  topOf: (id: string) => number | null,
+  threshold: number,
+): string | null {
+  if (entries.length === 0) return null
+  let lo = 0
+  let hi = entries.length - 1
+  let result = 0
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1
+    const top = topOf(entries[mid].id)
+    if (top === null || top <= threshold) {
+      result = mid
+      lo = mid + 1
+    } else {
+      hi = mid - 1
+    }
+  }
+  return entries[result].id
+}
 
 interface ChatScrollIndicatorProps {
   entries: TurnOutlineEntry[]
@@ -23,7 +49,7 @@ function splitTitle(text: string): { title: string; summary: string } {
   return { title: text.slice(0, nl), summary: text.slice(nl + 1).trim() }
 }
 
-export function ChatScrollIndicator({ entries, hasCompact, compactExpanded, compactSplit, viewportRef, onJump, onToggleCompact }: ChatScrollIndicatorProps) {
+function ChatScrollIndicatorImpl({ entries, hasCompact, compactExpanded, compactSplit, viewportRef, onJump, onToggleCompact }: ChatScrollIndicatorProps) {
   const [activeId, setActiveId] = useState<string | null>(null)
   const [hovered, setHovered] = useState<{ index: number; top: number } | null>(null)
   const [compactHovered, setCompactHovered] = useState<{ top: number } | null>(null)
@@ -34,6 +60,9 @@ export function ChatScrollIndicator({ entries, hasCompact, compactExpanded, comp
   const previewRef = useRef<HTMLDivElement>(null)
   const compactRef = useRef<HTMLDivElement>(null)
   const followSuppressedUntil = useRef(0)
+  const entriesRef = useRef(entries)
+  entriesRef.current = entries
+  const elCacheRef = useRef(new Map<string, HTMLElement>())
   const [previewTop, setPreviewTop] = useState<number | null>(null)
   const [compactTop, setCompactTop] = useState<number | null>(null)
   const { t } = useTranslation()
@@ -52,15 +81,18 @@ export function ChatScrollIndicator({ entries, hasCompact, compactExpanded, comp
     const viewport = viewportRef.current
     if (!viewport) return
     const threshold = viewport.getBoundingClientRect().top + viewport.clientHeight * 0.25
-    let next: string | null = entries[0]?.id ?? null
-    for (const entry of entries) {
-      const el = viewport.querySelector(`[data-message-id="${CSS.escape(entry.id)}"]`)
-      if (!el) continue
-      if (el.getBoundingClientRect().top <= threshold) next = entry.id
-      else break
+    const cache = elCacheRef.current
+    const topOf = (id: string): number | null => {
+      let el = cache.get(id)
+      if (!el || !el.isConnected) {
+        el = viewport.querySelector(`[data-message-id="${CSS.escape(id)}"]`) as HTMLElement | null ?? undefined
+        if (el) cache.set(id, el)
+        else { cache.delete(id); return null }
+      }
+      return el.getBoundingClientRect().top
     }
-    setActiveId(next)
-  }, [entries, viewportRef])
+    setActiveId(findActiveTurnId(entriesRef.current, topOf, threshold))
+  }, [viewportRef])
 
   useEffect(() => {
     const viewport = viewportRef.current
@@ -79,6 +111,12 @@ export function ChatScrollIndicator({ entries, hasCompact, compactExpanded, comp
       if (rafRef.current) cancelAnimationFrame(rafRef.current)
     }
   }, [computeActive, viewportRef])
+
+  // Recompute the active tick when a turn is added/removed (entries identity is stable during
+  // streaming after the outline memo fix, so this no longer fires on every content delta).
+  useEffect(() => {
+    computeActive()
+  }, [entries.length, computeActive])
 
   const measure = useCallback(() => {
     const el = stripRef.current
@@ -251,6 +289,8 @@ export function ChatScrollIndicator({ entries, hasCompact, compactExpanded, comp
     </div>
   )
 }
+
+export const ChatScrollIndicator = memo(ChatScrollIndicatorImpl)
 
 const TICK_MIN = 6
 const TICK_RANGE = 4

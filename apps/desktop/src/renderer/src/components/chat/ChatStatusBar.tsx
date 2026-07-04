@@ -22,7 +22,7 @@ import {
   DialogTitle,
 } from '@superone/ui/components/ui/dialog'
 import { Button } from '@superone/ui/components/ui/button'
-import { useActiveSession, useChatStore } from '@/stores/chat'
+import { useActiveSession, useChatStore, useSessionScope, getActiveSessionView } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 import { StatusBarPermission } from './chat-status-bar/StatusBarPermission'
 import { StatusBarSandbox } from './chat-status-bar/StatusBarSandbox'
@@ -148,7 +148,15 @@ export function ChatStatusBar() {
   const fullModeRequiredWidthRef = useRef(0)
   const currentFolder = useAppStore((s) => s.currentFolder)
   const worktrees = useAppStore((s) => s._worktrees)
-  const messages = useActiveSession((s) => s.messages)
+  const scope = useSessionScope()
+  // Subscribe to a cheap signature instead of the whole messages array so text deltas (which
+  // grow the tail block's text without adding blocks) don't re-render this status bar. The
+  // signature changes only when a block is added/removed — the events that alter activities.
+  const activitySignature = useActiveSession((s) => {
+    const msgs = s.messages
+    const tail = msgs[msgs.length - 1]
+    return `${msgs.length}:${tail?.content.length ?? 0}`
+  })
   const sessionStatus = useActiveSession((s) => s.status)
   const taskProgress = useActiveSession((s) => s.taskProgress)
   const activeSessionId = useActiveSession((s) => s._activeSessionId)
@@ -310,8 +318,10 @@ export function ChatStatusBar() {
     && !branches.some((b) => b.toLowerCase() === normalizedTrimmed)
 
   const { bashActivities, agentActivities } = useMemo(
-    () => collectBackgroundActivities(messages, taskProgress, sessionStatus === 'streaming'),
-    [messages, taskProgress, sessionStatus],
+    () => collectBackgroundActivities(getActiveSessionView(scope).messages, taskProgress, sessionStatus === 'streaming'),
+    // messages is read non-reactively; recompute is driven by the cheap signature + task/status.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [activitySignature, taskProgress, sessionStatus, scope],
   )
 
   const handleStopTask = useCallback((taskId: string) => {

@@ -34,6 +34,9 @@ interface ChatContentProps {
   stopAutoScroll?: () => void
 }
 
+const INITIAL_RENDER_COUNT = 12
+const LOAD_MORE_COUNT = 4
+
 export function ChatContent({ scrollViewportRef, showScrollButton = false, scrollToBottom, stopAutoScroll }: ChatContentProps) {
   const {
     messages, isCompacting, compactError, rateLimitInfo, apiRetry, modelFallback, pendingPlanApproval,
@@ -94,9 +97,14 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
   const containerRef = useRef<HTMLDivElement>(null)
   const prevScrollHeightRef = useRef(0)
   const [expandLevel, setExpandLevel] = useState(0)
+  const messagesLen = messages.length
+  const messagesTailId = messages[messagesLen - 1]?.id
   const compactIndices = useMemo(
     () => messages.flatMap((msg, i) => (parseCompactMarker(msg) ? [i] : [])),
-    [messages]
+    // messages identity churns on every streaming delta; compact markers only change
+    // when messages are added/removed, captured by length + tail id.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [messagesLen, messagesTailId]
   )
   const visibleStart =
     compactIndices.length > 0 && expandLevel < compactIndices.length
@@ -104,8 +112,6 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
       : 0
   const visibleMessages = visibleStart > 0 ? messages.slice(visibleStart) : messages
 
-  const INITIAL_RENDER_COUNT = 12
-  const LOAD_MORE_COUNT = 4
   const [renderCount, setRenderCount] = useState(INITIAL_RENDER_COUNT)
   const sentinelRef = useRef<HTMLDivElement>(null)
   useEffect(() => { setRenderCount(INITIAL_RENDER_COUNT) }, [displayedSessionId])
@@ -128,12 +134,19 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
     return () => observer.disconnect()
   }, [hasMore, visibleMessages.length, scrollViewportRef])
 
-  const outline = useMemo(() => extractTurnOutline(visibleMessages), [visibleMessages])
-  const hasCompact = compactIndices.length > 0
-  const recentTurnCount = useMemo(
-    () => (hasCompact ? extractTurnOutline(messages.slice(compactIndices[compactIndices.length - 1])).length : outline.length),
-    [messages, compactIndices, hasCompact, outline.length]
+  const outline = useMemo(
+    () => extractTurnOutline(visibleMessages),
+    // Recompute only when the visible set changes (add/remove/compact expand) or the turn
+    // finishes — not on every streaming text delta (visibleMessages identity churns each delta).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [visibleMessages.length, messagesTailId, sessionStatus]
   )
+  const hasCompact = compactIndices.length > 0
+  const recentTurnCount = useMemo(() => {
+    if (!hasCompact) return outline.length
+    const lastCompactIdx = compactIndices[compactIndices.length - 1]
+    return outline.filter((e) => e.index >= lastCompactIdx - visibleStart).length
+  }, [hasCompact, outline, compactIndices, visibleStart])
   const compactSplit = Math.max(0, outline.length - recentTurnCount)
   const compactExpanded = expandLevel >= compactIndices.length
   const toggleCompact = useCallback(() => {
@@ -142,16 +155,23 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
   }, [compactIndices.length, scrollViewportRef])
   const [jumpNonce, setJumpNonce] = useState(0)
   const pendingScrollIdRef = useRef<string | null>(null)
+  // Read messages/compactIndices through refs so jumpToMessage keeps a stable identity across
+  // streaming deltas — otherwise it would bust the memoized ChatScrollIndicator every delta.
+  const messagesRef = useRef(messages)
+  messagesRef.current = messages
+  const compactIndicesRef = useRef(compactIndices)
+  compactIndicesRef.current = compactIndices
   const jumpToMessage = useCallback((id: string) => {
-    const targetIdx = messages.findIndex((m) => m.id === id)
+    const msgs = messagesRef.current
+    const targetIdx = msgs.findIndex((m) => m.id === id)
     if (targetIdx < 0) return
     stopAutoScroll?.()
-    const needed = compactIndices.filter((ci) => ci > targetIdx).length
+    const needed = compactIndicesRef.current.filter((ci) => ci > targetIdx).length
     setExpandLevel((prev) => Math.max(prev, needed))
-    setRenderCount((prev) => Math.max(prev, messages.length - targetIdx + LOAD_MORE_COUNT))
+    setRenderCount((prev) => Math.max(prev, msgs.length - targetIdx + LOAD_MORE_COUNT))
     pendingScrollIdRef.current = id
     setJumpNonce((n) => n + 1)
-  }, [messages, compactIndices, stopAutoScroll])
+  }, [stopAutoScroll])
 
   useEffect(() => {
     const id = pendingScrollIdRef.current

@@ -24,8 +24,8 @@ describe('extractTurnOutline', () => {
       msg({ id: 'u2', content: [text('second question')], createdAt: 'b' }),
     ])
     expect(out).toEqual([
-      { id: 'u1', text: 'first question', createdAt: 'a', reply: 'answer' },
-      { id: 'u2', text: 'second question', createdAt: 'b', reply: undefined },
+      { id: 'u1', index: 0, text: 'first question', createdAt: 'a', reply: 'answer' },
+      { id: 'u2', index: 2, text: 'second question', createdAt: 'b', reply: undefined },
     ])
   })
 
@@ -70,5 +70,39 @@ describe('extractTurnOutline', () => {
   it('trims whitespace and skips blank turns', () => {
     const out = extractTurnOutline([msg({ content: [text('   \n  ')] })])
     expect(out).toEqual([])
+  })
+
+  it('does not attach a reply across an intervening user turn', () => {
+    const out = extractTurnOutline([
+      msg({ id: 'u1', content: [text('q1')] }),
+      msg({ id: 'u2', content: [text('q2')] }),
+      msg({ id: 'a', role: 'assistant', content: [text('a2')] }),
+    ])
+    expect(out[0].reply).toBeUndefined()
+    expect(out[1].reply).toBe('a2')
+  })
+
+  it('keeps the reply search open across a system (compact) message', () => {
+    const out = extractTurnOutline([
+      msg({ id: 'u', content: [text('q')] }),
+      msg({ id: 'c', providerId: 'system', content: [text('__compact__:auto:1200')] }),
+      msg({ id: 'a', role: 'assistant', content: [text('answer')] }),
+    ])
+    expect(out).toHaveLength(1)
+    expect(out[0].reply).toBe('answer')
+  })
+
+  it('reports the source array index so callers can locate the compact split', () => {
+    const messages = [
+      msg({ id: 'u1', content: [text('q1')] }),
+      msg({ id: 'a1', role: 'assistant', content: [text('a1')] }),
+      msg({ id: 'c', providerId: 'system', content: [text('__compact__:auto:1')] }),
+      msg({ id: 'u2', content: [text('q2')] }),
+    ]
+    const out = extractTurnOutline(messages)
+    const compactIdx = 2
+    const recent = out.filter((e) => e.index >= compactIdx).length
+    expect(recent).toBe(1)
+    expect(out.length - recent).toBe(1)
   })
 })

@@ -91,6 +91,17 @@ export function webContentsIdForBrowser(id: string): number | null {
   }
 }
 
+export function focusBrowserWebview(id: string): boolean {
+  const el = registry.get(id)
+  if (!el) return false
+  try {
+    el.focus()
+    return true
+  } catch {
+    return false
+  }
+}
+
 export function browserIdByWebContentsId(webContentsId: number): string | null {
   for (const [id, el] of registry) {
     try {

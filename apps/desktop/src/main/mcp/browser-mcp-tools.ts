@@ -63,9 +63,19 @@ async function dataTool(sessionId: string, op: BrowserAutomationOp, input: unkno
   }
 }
 
-async function cdpOrData(sessionId: string, op: BrowserAutomationOp, input: unknown, cdpFn: () => Promise<unknown>): Promise<ToolReply> {
+type AutomationEngine = 'auto' | 'cdp' | 'synthetic'
+
+async function cdpOrData(
+  sessionId: string,
+  op: BrowserAutomationOp,
+  input: unknown,
+  cdpFn: () => Promise<unknown>,
+  engine: AutomationEngine = 'auto',
+): Promise<ToolReply> {
   try {
-    if (isCdpEnabled()) return textReply(await cdpFn())
+    if (engine === 'cdp' && !isCdpEnabled()) return errorReply(CDP_REQUIRED_MESSAGE)
+    const useCdp = engine === 'cdp' || (engine === 'auto' && isCdpEnabled())
+    if (useCdp) return textReply(await cdpFn())
     return textReply(await browserAutomationCall(sessionId, op, input))
   } catch (err) {
     return errorReply(err)
@@ -235,15 +245,27 @@ export function registerBrowserTools(server: McpServer, sessionId: string): void
         text: z.string().optional().describe('Click the first visible element whose accessible name or text contains this substring.'),
         x: z.number().optional().describe('Viewport X coordinate in CSS pixels. Must be paired with y.'),
         y: z.number().optional().describe('Viewport Y coordinate in CSS pixels. Must be paired with x.'),
+        engine: z
+          .enum(['auto', 'cdp', 'synthetic'])
+          .default('auto')
+          .describe(
+            "Input engine. 'auto' (default): a real trusted mouse click via CDP when that setting is on, else synthetic. 'cdp': real trusted click through the browser input pipeline — the reliable default; needed for pointer-event UIs (e.g. Radix), popups/window.open, native file pickers, media autoplay, and canvas. 'synthetic': lightweight DOM mouse events (mousedown/mouseup/click only, no pointer events, untrusted) — faster, but drop it down to this only for a plain button/link when you want to skip CDP overhead and don't need user-activation. Errors if 'cdp' is requested while the CDP setting is off.",
+          ),
       },
     },
     (args) =>
-      cdpOrData(sessionId, 'click', args, async () => {
-        const point = (await browserAutomationCall(sessionId, 'resolvePoint', args)) as ResolvePoint
-        if (!point.ok) throw new Error(point.error ?? 'click target not found')
-        await cdpClick(point.webContentsId, point.x, point.y)
-        return { ok: true, selector: point.selector, name: point.name }
-      }),
+      cdpOrData(
+        sessionId,
+        'click',
+        args,
+        async () => {
+          const point = (await browserAutomationCall(sessionId, 'resolvePoint', args)) as ResolvePoint
+          if (!point.ok) throw new Error(point.error ?? 'click target not found')
+          await cdpClick(point.webContentsId, point.x, point.y)
+          return { ok: true, selector: point.selector, name: point.name }
+        },
+        args.engine,
+      ),
   )
 
   server.registerTool(
@@ -257,14 +279,27 @@ export function registerBrowserTools(server: McpServer, sessionId: string): void
         text: z.string().describe('Literal text to insert.'),
         selector: z.string().optional().describe('CSS selector of the input. Omit to type into the focused element.'),
         clear: z.boolean().default(false).describe('Clear the existing value before typing. Default false.'),
+        engine: z
+          .enum(['synthetic', 'cdp'])
+          .default('synthetic')
+          .describe(
+            "Input engine. 'synthetic' (default): sets the value via the native setter and fires input/change so framework-controlled inputs (React etc.) update — fast and enough for ordinary inputs and textareas. Switch to 'cdp' for a real trusted insert through the browser editing pipeline when targeting rich editors (Monaco, CodeMirror, ProseMirror), masked/auto-complete/max-length inputs that react per keystroke, or logic gated on trusted events. Note: neither engine emits per-character keydown. 'cdp' requires the CDP setting enabled in Settings → Browser.",
+          ),
       },
     },
     (args) =>
-      cdpOrData(sessionId, 'type', args, async () => {
-        const webContentsId = await resolveCdpTarget(sessionId, args.tab)
-        await cdpType(webContentsId, args.text, args.selector, args.clear)
-        return { ok: true, selector: args.selector }
-      }),
+      cdpOrData(
+        sessionId,
+        'type',
+        args,
+        async () => {
+          const webContentsId = await resolveCdpTarget(sessionId, args.tab)
+          await browserAutomationCall(sessionId, 'focusView', { tab: args.tab })
+          await cdpType(webContentsId, args.text, args.selector, args.clear)
+          return { ok: true, selector: args.selector }
+        },
+        args.engine,
+      ),
   )
 
   server.registerTool(
@@ -326,14 +361,27 @@ export function registerBrowserTools(server: McpServer, sessionId: string): void
         key: z.string().min(1).describe("Key name such as Enter, Escape, Tab, ArrowDown, Backspace, or a single character."),
         modifiers: z.array(z.enum(['Alt', 'Control', 'Meta', 'Shift'])).optional().describe('Modifier keys held while pressing.'),
         selector: z.string().optional().describe('CSS selector of the key target. Omit to target the focused element.'),
+        engine: z
+          .enum(['synthetic', 'cdp'])
+          .default('synthetic')
+          .describe(
+            "Input engine. 'synthetic' (default): a DOM KeyboardEvent — fast, focus-independent, and enough for pages that handle keys in JS (app shortcuts, Enter-to-submit, Escape). It is untrusted and does NOT drive native browser behaviors. Switch to 'cdp' for a real trusted key event through the browser input pipeline when a key must move focus (Tab), type into a native input, trigger a browser shortcut, or when a synthetic press had no visible effect (the page ignores untrusted events). 'cdp' requires the CDP setting enabled in Settings → Browser.",
+          ),
       },
     },
     (args) =>
-      cdpOrData(sessionId, 'press', args, async () => {
-        const webContentsId = await resolveCdpTarget(sessionId, args.tab)
-        await cdpPress(webContentsId, args.key, args.modifiers, args.selector)
-        return { ok: true, key: args.key }
-      }),
+      cdpOrData(
+        sessionId,
+        'press',
+        args,
+        async () => {
+          const webContentsId = await resolveCdpTarget(sessionId, args.tab)
+          await browserAutomationCall(sessionId, 'focusView', { tab: args.tab })
+          await cdpPress(webContentsId, args.key, args.modifiers, args.selector)
+          return { ok: true, key: args.key }
+        },
+        args.engine,
+      ),
   )
 
   server.registerTool(

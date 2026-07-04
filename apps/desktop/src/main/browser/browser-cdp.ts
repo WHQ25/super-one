@@ -44,6 +44,9 @@ function ensureAttached(wc: WebContents): void {
       log.info('[browser-cdp] detached wc=%d reason=%s', wc.id, reason)
     })
     wc.once('destroyed', () => attached.delete(wc.id))
+    wc.debugger
+      .sendCommand('Emulation.setFocusEmulationEnabled', { enabled: true })
+      .catch((err) => log.warn('[browser-cdp] focus emulation failed wc=%d %s', wc.id, err instanceof Error ? err.message : String(err)))
   }
   attached.add(wc.id)
 }
@@ -260,7 +263,6 @@ async function clickToFocus(webContentsId: number, selector: string): Promise<bo
 }
 
 export async function cdpPress(webContentsId: number, key: string, modifiers: string[] = [], selector?: string): Promise<void> {
-  webContents.fromId(webContentsId)?.focus()
   if (selector && !(await clickToFocus(webContentsId, selector))) {
     throw new Error(`No element matches selector: ${selector}`)
   }

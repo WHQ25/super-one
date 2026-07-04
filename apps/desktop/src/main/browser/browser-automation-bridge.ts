@@ -22,6 +22,7 @@ export type BrowserAutomationOp =
   | 'resolveWebContentsId'
   | 'resolvePoint'
   | 'emulateViewport'
+  | 'focusView'
 
 interface PendingCall {
   resolve: (result: unknown) => void

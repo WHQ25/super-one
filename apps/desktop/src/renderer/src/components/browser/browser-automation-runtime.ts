@@ -10,6 +10,7 @@ import {
   isBrowserRegistered,
   readBrowserConsole,
   webContentsIdForBrowser,
+  focusBrowserWebview,
   type ConsoleQuery,
 } from './browser-host-api'
 import { openBrowserTab } from '@/components/activity/activity-panel-api'
@@ -529,6 +530,8 @@ export async function runBrowserOp(sessionId: string, op: string, rawInput: unkn
       if (webContentsId == null) throw new Error('Browser view is not attached yet')
       return { webContentsId }
     }
+    case 'focusView':
+      return { ok: focusBrowserWebview(id) }
     case 'resolvePoint': {
       const webContentsId = webContentsIdForBrowser(id)
       if (webContentsId == null) return { ok: false, error: 'Browser view is not attached yet' }

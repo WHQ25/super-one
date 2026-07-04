@@ -4,6 +4,25 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.43.11-alpha] - 2026-07-05
+
+### Added
+
+- Right-click context menu in the browser webview, with drag-to-chat for images
+- Browser page zoom controls
+- Framework-aware stable selectors for automation clicks, with ambiguous-match reporting when a selector matches multiple elements
+
+### Changed
+
+- Secret values (passwords, tokens) are now masked in browser type-tool summaries
+- Moved "open in external browser" into the browser more menu
+
+### Fixed
+
+- Slash commands are now scoped to the first input line
+- 1M context window is now detected from the model `[1m]` tag
+- Browser webview persists across view switches and tab favicons render from cache
+
 ## [0.43.10-alpha] - 2026-07-05
 
 ### Added

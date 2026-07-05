@@ -307,6 +307,37 @@ describe('CodexBackend lifecycle', () => {
     expect(close).not.toHaveBeenCalled()
   })
 
+  it('extends the warm-handle idle window on keepalive re-prewarm (aligns with Claude expiry)', async () => {
+    vi.useFakeTimers()
+    try {
+      const close = vi.fn(async () => {})
+      const handle = {
+        connection: {},
+        close,
+        getStderr: () => '',
+        onClosed: vi.fn(() => () => {}),
+      }
+      turnMocks.prewarmCodexConnection.mockResolvedValueOnce(handle as never)
+
+      backend.prewarm(makeStartOpts())
+      await vi.advanceTimersByTimeAsync(0)
+
+      // Keepalive ping just before the original deadline resets the window.
+      await vi.advanceTimersByTimeAsync(CodexBackend.WARM_IDLE_TIMEOUT_MS - 1000)
+      backend.prewarm(makeStartOpts())
+
+      // Past the ORIGINAL deadline but within the reset window → still warm.
+      await vi.advanceTimersByTimeAsync(2000)
+      expect(close).not.toHaveBeenCalled()
+
+      // No further pings → expires WARM_IDLE_TIMEOUT_MS after the last ping.
+      await vi.advanceTimersByTimeAsync(CodexBackend.WARM_IDLE_TIMEOUT_MS)
+      expect(close).toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('returns an idle app-server connection to the shared project pool on close', async () => {
     const close = vi.fn(async () => {})
     const handle = {

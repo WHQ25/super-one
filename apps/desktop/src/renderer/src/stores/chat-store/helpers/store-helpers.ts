@@ -42,17 +42,46 @@ export function triggerPrewarm(state: ChatStore, projectPath?: string | null): v
   void window.agent.prewarm(key, hint).catch(() => {})
 }
 
+const PREWARM_START_DELAY_MS = 10_000
 const PREWARM_KEEPALIVE_INTERVAL_MS = 30_000
+const _prewarmStartTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const _prewarmLastSentByKey = new Map<string, number>()
 
-export function schedulePrewarmKeepalive(state: ChatStore, projectPath?: string | null): void {
-  const key = projectPath ?? state.activeProject
+export function schedulePrewarm(getState: () => ChatStore, projectPath?: string | null): void {
+  const key = projectPath ?? getState().activeProject
   if (!key) return
   const now = Date.now()
   const last = _prewarmLastSentByKey.get(key) ?? 0
-  if (now - last < PREWARM_KEEPALIVE_INTERVAL_MS) return
-  _prewarmLastSentByKey.set(key, now)
-  triggerPrewarm(state, key)
+  if (last > 0) {
+    if (now - last < PREWARM_KEEPALIVE_INTERVAL_MS) return
+    _prewarmLastSentByKey.set(key, now)
+    triggerPrewarm(getState(), key)
+    return
+  }
+  if (_prewarmStartTimers.has(key)) return
+  const timer = setTimeout(() => {
+    _prewarmStartTimers.delete(key)
+    const state = getState()
+    if (getActivePerSession(state, key).draftText.length === 0) return
+    _prewarmLastSentByKey.set(key, Date.now())
+    triggerPrewarm(state, key)
+  }, PREWARM_START_DELAY_MS)
+  _prewarmStartTimers.set(key, timer)
+}
+
+export function cancelPrewarm(projectPath?: string | null): void {
+  if (!projectPath) {
+    for (const timer of _prewarmStartTimers.values()) clearTimeout(timer)
+    _prewarmStartTimers.clear()
+    _prewarmLastSentByKey.clear()
+    return
+  }
+  const timer = _prewarmStartTimers.get(projectPath)
+  if (timer) {
+    clearTimeout(timer)
+    _prewarmStartTimers.delete(projectPath)
+  }
+  _prewarmLastSentByKey.delete(projectPath)
 }
 
 export async function inheritMiniAppToolsForNewSession(

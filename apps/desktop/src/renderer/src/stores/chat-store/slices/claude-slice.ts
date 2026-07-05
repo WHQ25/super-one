@@ -5,7 +5,7 @@ import type { ChatStore, PerSessionState } from '../types'
 import { getDefaultEffortForModel } from '../defaults'
 import {
   getActivePerSession,
-  triggerPrewarm,
+  schedulePrewarm,
   updateActivePerSession,
 } from '../index'
 
@@ -50,7 +50,7 @@ export const createClaudeSlice: StateCreator<ChatStore, [], [], ClaudeSlice> = (
     if (shouldDowngrade) void window.agent.setPermissionMode(activeProject, 'default')
     void window.agent.setSessionSettings(activeProject, { model, effort: defaultEffort ?? null })
     if (getActivePerSession(get(), activeProject).draftText.length > 0) {
-      triggerPrewarm(get(), activeProject)
+      schedulePrewarm(get, activeProject)
     }
   },
 
@@ -60,7 +60,7 @@ export const createClaudeSlice: StateCreator<ChatStore, [], [], ClaudeSlice> = (
     set((s) => updateActivePerSession(s, () => ({ selectedEffort: effort, effortUserChosen: true })))
     void window.agent.setSessionSettings(activeProject, { effort: effort ?? null })
     if (getActivePerSession(get(), activeProject).draftText.length > 0) {
-      triggerPrewarm(get(), activeProject)
+      schedulePrewarm(get, activeProject)
     }
   },
 

@@ -5,9 +5,10 @@ import type { ChatStore, SessionWriteTarget } from '../types'
 import { freshSubagentColorPool } from '../defaults'
 import {
   _truncateAtCheckpoint,
+  cancelPrewarm,
   commitPerSession,
   getScopedPerSession,
-  schedulePrewarmKeepalive,
+  schedulePrewarm,
   updateActivePerSession,
   updatePerSession,
 } from '../index'
@@ -107,15 +108,15 @@ export const createSessionSlice: StateCreator<ChatStore, [], [], SessionSlice> =
     })
     if (target) {
       set((s) => updatePerSession(s, target.projectPath, target.sessionId, updates))
-      if (text.length > 0) schedulePrewarmKeepalive(get(), target.projectPath)
+      if (text.length > 0) schedulePrewarm(get, target.projectPath)
+      else cancelPrewarm(target.projectPath)
       return
     }
     const { activeProject } = get()
     if (!activeProject) return
     set((s) => updateActivePerSession(s, updates))
-    if (text.length > 0) {
-      schedulePrewarmKeepalive(get(), activeProject)
-    }
+    if (text.length > 0) schedulePrewarm(get, activeProject)
+    else cancelPrewarm(activeProject)
   },
 
   assignSubagentColor: (toolUseId) => {

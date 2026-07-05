@@ -186,7 +186,7 @@ export class CodexBackend implements SessionBackend {
 
   private warmHandlePromise: Promise<WarmCodexHandle | null> | null = null
   private warmIdleTimer: ReturnType<typeof setTimeout> | null = null
-  static WARM_IDLE_TIMEOUT_MS = 5 * 60 * 1000
+  static WARM_IDLE_TIMEOUT_MS = 10 * 60 * 1000
 
   private eventListeners = new Set<(e: AgentEvent) => void>()
   private providerSessionIdListeners = new Set<(id: string) => void>()
@@ -265,7 +265,14 @@ export class CodexBackend implements SessionBackend {
 
   prewarm(opts: BackendStartOptions): void {
     if (this.started || this.disposed) return
-    if (this.warmHandlePromise) return
+    if (this.warmHandlePromise) {
+      // Keepalive re-entry: extend the idle window on continued typing so the
+      // warm handle expires WARM_IDLE_TIMEOUT_MS after the LAST input, mirroring
+      // the Claude WarmupManager. Only re-arm once the handle is actually ready
+      // (warmIdleTimer is null while still warming — it gets armed on resolve).
+      if (this.warmIdleTimer) this.armWarmIdleTimer(this.warmHandlePromise)
+      return
+    }
     const auth = this.service.getProjectAuth(opts.projectPath)
     const promise = this.prepareWarmHandle(opts, auth).catch((err) => {
       log.warn('[CodexBackend] prewarm failed: %s', err instanceof Error ? err.message : String(err))
@@ -278,12 +285,17 @@ export class CodexBackend implements SessionBackend {
     void promise.then((warm) => {
       if (!warm) return
       if (this.warmHandlePromise !== promise) return
-      this.warmIdleTimer = setTimeout(() => {
-        if (this.warmHandlePromise !== promise) return
-        log.info('[CodexBackend] warm handle idle timeout, discarding')
-        void this.discardWarmHandle('idle_timeout')
-      }, CodexBackend.WARM_IDLE_TIMEOUT_MS)
+      this.armWarmIdleTimer(promise)
     })
+  }
+
+  private armWarmIdleTimer(promise: Promise<WarmCodexHandle | null>): void {
+    this.clearWarmIdleTimer()
+    this.warmIdleTimer = setTimeout(() => {
+      if (this.warmHandlePromise !== promise) return
+      log.info('[CodexBackend] warm handle idle timeout, discarding')
+      void this.discardWarmHandle('idle_timeout')
+    }, CodexBackend.WARM_IDLE_TIMEOUT_MS)
   }
 
   private clearWarmIdleTimer(): void {

@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 const mockPrewarm = vi.fn().mockResolvedValue(undefined)
 
@@ -49,7 +49,8 @@ const {
   getProject,
   mergeProjectAndSessionDirs,
   resolveActiveSessionId,
-  schedulePrewarmKeepalive,
+  schedulePrewarm,
+  cancelPrewarm,
   triggerPrewarm,
   updateActivePerSession,
   updatePerSession,
@@ -160,20 +161,69 @@ describe('triggerPrewarm', () => {
   })
 })
 
-describe('schedulePrewarmKeepalive', () => {
-  it('first call fires prewarm, second call within the throttle window is suppressed', () => {
+describe('schedulePrewarm', () => {
+  const seedActiveDraft = (path: string, draft = 'hi') => {
     const proj = createDefaultProjectState()
     proj._activeSessionId = 'sid-1'
-    proj._sessions = { 'sid-1': createDefaultPerSessionState() }
-    useChatStore.setState({ projectSessions: { '/p-throttle': proj }, activeProject: '/p-throttle' })
+    proj._sessions = { 'sid-1': { ...createDefaultPerSessionState(), draftText: draft } }
+    useChatStore.setState({ projectSessions: { [path]: proj }, activeProject: path })
+  }
 
-    schedulePrewarmKeepalive(useChatStore.getState())
-    schedulePrewarmKeepalive(useChatStore.getState())
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  it('defers the first prewarm until 10s of sustained typing', () => {
+    seedActiveDraft('/p-delay')
+    schedulePrewarm(useChatStore.getState)
+    expect(mockPrewarm).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(10_000)
     expect(mockPrewarm).toHaveBeenCalledTimes(1)
   })
 
+  it('does not re-arm the 10s timer on subsequent keystrokes before it fires', () => {
+    seedActiveDraft('/p-rearm')
+    schedulePrewarm(useChatStore.getState)
+    vi.advanceTimersByTime(6_000)
+    schedulePrewarm(useChatStore.getState)
+    vi.advanceTimersByTime(4_000)
+    expect(mockPrewarm).toHaveBeenCalledTimes(1)
+  })
+
+  it('cancels the pending prewarm when the draft is cleared within 10s', () => {
+    seedActiveDraft('/p-cancel')
+    schedulePrewarm(useChatStore.getState)
+    vi.advanceTimersByTime(4_000)
+    cancelPrewarm('/p-cancel')
+    vi.advanceTimersByTime(10_000)
+    expect(mockPrewarm).not.toHaveBeenCalled()
+  })
+
+  it('skips the prewarm if the draft became empty by the time the timer fires', () => {
+    seedActiveDraft('/p-empty')
+    schedulePrewarm(useChatStore.getState)
+    useChatStore.setState((s) => {
+      s.projectSessions['/p-empty']._sessions['sid-1'].draftText = ''
+      return { projectSessions: s.projectSessions }
+    })
+    vi.advanceTimersByTime(10_000)
+    expect(mockPrewarm).not.toHaveBeenCalled()
+  })
+
+  it('throttles keepalive pings to once per 30s after the first warm', () => {
+    seedActiveDraft('/p-keepalive')
+    schedulePrewarm(useChatStore.getState)
+    vi.advanceTimersByTime(10_000)
+    expect(mockPrewarm).toHaveBeenCalledTimes(1)
+    schedulePrewarm(useChatStore.getState)
+    expect(mockPrewarm).toHaveBeenCalledTimes(1)
+    vi.advanceTimersByTime(30_000)
+    schedulePrewarm(useChatStore.getState)
+    expect(mockPrewarm).toHaveBeenCalledTimes(2)
+  })
+
   it('is a no-op when no project is active or provided', () => {
-    schedulePrewarmKeepalive(useChatStore.getState())
+    schedulePrewarm(useChatStore.getState)
+    vi.advanceTimersByTime(10_000)
     expect(mockPrewarm).not.toHaveBeenCalled()
   })
 })

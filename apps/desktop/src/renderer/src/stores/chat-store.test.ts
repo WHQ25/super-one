@@ -131,7 +131,7 @@ vi.stubGlobal('window', {
 })
 vi.stubGlobal('localStorage', mockLocalStorage)
 
-const { useChatStore, createSessionId, createDefaultPerSessionState, createDefaultProjectState, invalidateDefaultPermissionModeCache, invalidateDefaultCodexPreferencesCache, invalidateDefaultClaudePreferencesCache, getDefaultEffortForModel } = await import('./chat')
+const { useChatStore, createSessionId, createDefaultPerSessionState, createDefaultProjectState, invalidateDefaultPermissionModeCache, invalidateDefaultCodexPreferencesCache, invalidateDefaultClaudePreferencesCache, getDefaultEffortForModel, cancelPrewarm } = await import('./chat')
 const createDraftSessionId = createSessionId
 const isDraftSession = (id: string | null): boolean => !!id
 
@@ -236,6 +236,7 @@ function makeMessage(id: string, role: 'user' | 'assistant'): ChatMessage {
 
 beforeEach(() => {
   resetStore()
+  cancelPrewarm()
   vi.clearAllMocks()
   mockAppSettingsWithClaude({})
   mockLocalStorage.clear()
@@ -367,16 +368,20 @@ describe('ensureSession', () => {
   })
 
   it('passes session._worktreePath as hint.worktreePath when prewarming an attached worktree', () => {
+    vi.useFakeTimers()
     setupProject('/prewarm-wt-attach')
     patchDraftSession('/prewarm-wt-attach', { _worktreePath: '/prewarm-wt-attach/.worktrees/feat-x' })
     mockWindowAgent.prewarm.mockClear()
 
     useChatStore.getState().setDraftText('hi')
+    expect(mockWindowAgent.prewarm).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(10_000)
 
     expect(mockWindowAgent.prewarm).toHaveBeenCalledWith(
       '/prewarm-wt-attach',
       expect.objectContaining({ worktreePath: '/prewarm-wt-attach/.worktrees/feat-x' }),
     )
+    vi.useRealTimers()
   })
 })
 

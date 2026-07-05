@@ -54,7 +54,7 @@ interface WarmupSlot {
   idleTimer: ReturnType<typeof setTimeout> | null
 }
 
-const STALE_TTL_MS = 3 * 60 * 1000
+const STALE_TTL_MS = 10 * 60 * 1000
 
 export class WarmupManager {
   private slot: WarmupSlot | null = null

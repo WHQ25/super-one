@@ -21,8 +21,13 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
   const statusRef = useRef(status)
   statusRef.current = status
 
-  const isNearBottomRef = useRef(true)
-  const lastScrollTopRef = useRef(0)
+  // Intent state machine. Follow is broken ONLY by user input events (wheel up,
+  // touch drag, key up, stopAutoScroll) — never by scroll events, which cannot
+  // distinguish user scrolls from programmatic pins or browser clamping.
+  // While following is false the hook performs no programmatic scrolls, so every
+  // scroll event in that window is user-driven and reaching the bottom band is an
+  // unambiguous resume signal.
+  const followRef = useRef(true)
   const [showScrollButton, setShowScrollButton] = useState(false)
 
   const sessionSwitchRef = useRef(false)
@@ -30,14 +35,13 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
   const SETTLE_TIMEOUT = 300
 
   useLayoutEffect(() => {
-    isNearBottomRef.current = true
+    followRef.current = true
     sessionSwitchRef.current = true
     setShowScrollButton(false)
     clearTimeout(sessionSwitchTimerRef.current)
     const el = scrollViewportRef.current
     if (el) {
       el.scrollTop = el.scrollHeight
-      lastScrollTopRef.current = el.scrollTop
       window.app.trace?.('scroll', 'session_switch', { sessionId, scrollHeight: el.scrollHeight, scrollTop: el.scrollTop, clientHeight: el.clientHeight, msgCount: messages.length })
     }
   }, [sessionId, scrollViewportRef])
@@ -47,7 +51,7 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
     const wasPending = prevPlanApprovalRef.current
     prevPlanApprovalRef.current = pendingPlanApproval
     if (wasPending && !pendingPlanApproval) {
-      isNearBottomRef.current = true
+      followRef.current = true
       sessionSwitchRef.current = true
       setShowScrollButton(false)
       clearTimeout(sessionSwitchTimerRef.current)
@@ -60,26 +64,42 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
   useEffect(() => {
     const el = scrollViewportRef.current
     if (!el) return
+    const breakFollow = (): void => {
+      if (el.scrollHeight > el.clientHeight) followRef.current = false
+    }
+    let touchY = 0
     const handleWheel = (e: WheelEvent): void => {
-      if (e.deltaY < 0) isNearBottomRef.current = false
+      if (e.deltaY < 0) breakFollow()
+    }
+    const handleTouchStart = (e: TouchEvent): void => {
+      touchY = e.touches[0]?.clientY ?? 0
+    }
+    const handleTouchMove = (e: TouchEvent): void => {
+      const y = e.touches[0]?.clientY ?? 0
+      if (y > touchY) breakFollow()
+      touchY = y
+    }
+    const handleKeyDown = (e: KeyboardEvent): void => {
+      if (e.key === 'ArrowUp' || e.key === 'PageUp' || e.key === 'Home') breakFollow()
     }
     const handleScroll = (): void => {
       const remaining = el.scrollHeight - el.scrollTop - el.clientHeight
-      const scrolledUp = el.scrollTop < lastScrollTopRef.current - 1
-      lastScrollTopRef.current = el.scrollTop
-
-      if (scrolledUp) {
-        isNearBottomRef.current = false
-      } else if (remaining <= RESUME_AT_BOTTOM_PX) {
-        isNearBottomRef.current = true
+      if (!followRef.current && remaining <= RESUME_AT_BOTTOM_PX) {
+        followRef.current = true
       }
       setShowScrollButton(remaining > el.clientHeight)
     }
     el.addEventListener('scroll', handleScroll, { passive: true })
     el.addEventListener('wheel', handleWheel, { passive: true })
+    el.addEventListener('touchstart', handleTouchStart, { passive: true })
+    el.addEventListener('touchmove', handleTouchMove, { passive: true })
+    el.addEventListener('keydown', handleKeyDown)
     return () => {
       el.removeEventListener('scroll', handleScroll)
       el.removeEventListener('wheel', handleWheel)
+      el.removeEventListener('touchstart', handleTouchStart)
+      el.removeEventListener('touchmove', handleTouchMove)
+      el.removeEventListener('keydown', handleKeyDown)
     }
   }, [sessionId, viewportMounted, scrollViewportRef])
 
@@ -88,12 +108,11 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
   useLayoutEffect(() => {
     const el = scrollViewportRef.current
     if (!el) return
-    const shouldScroll = isNearBottomRef.current || lastMsgIsUser || sessionSwitchRef.current
-    window.app.trace?.('scroll', 'msg_change', { msgLen: messages.length, shouldScroll, isNearBottom: isNearBottomRef.current, lastMsgIsUser, sessionSwitch: sessionSwitchRef.current, scrollHeight: el.scrollHeight, scrollTop: el.scrollTop, clientHeight: el.clientHeight })
+    const shouldScroll = followRef.current || lastMsgIsUser || sessionSwitchRef.current
+    window.app.trace?.('scroll', 'msg_change', { msgLen: messages.length, shouldScroll, follow: followRef.current, lastMsgIsUser, sessionSwitch: sessionSwitchRef.current, scrollHeight: el.scrollHeight, scrollTop: el.scrollTop, clientHeight: el.clientHeight })
     if (shouldScroll) {
       el.scrollTop = el.scrollHeight
-      lastScrollTopRef.current = el.scrollTop
-      isNearBottomRef.current = true
+      followRef.current = true
       setShowScrollButton(false)
     }
   }, [messages, lastMsgIsUser, scrollViewportRef])
@@ -103,16 +122,13 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
     if (!viewport) return
     const content = viewport.firstElementChild as HTMLElement | null
     if (!content) return
-    if (sessionSwitchRef.current && isNearBottomRef.current) {
+    if (sessionSwitchRef.current && followRef.current) {
       viewport.scrollTop = viewport.scrollHeight
-      lastScrollTopRef.current = viewport.scrollTop
       setShowScrollButton(false)
     }
-    let rafId = 0
     const observer = new ResizeObserver(() => {
-      if (isNearBottomRef.current && (statusRef.current === 'streaming' || sessionSwitchRef.current)) {
+      if (followRef.current && (statusRef.current === 'streaming' || sessionSwitchRef.current)) {
         viewport.scrollTop = viewport.scrollHeight
-        lastScrollTopRef.current = viewport.scrollTop
         setShowScrollButton(false)
       }
       if (sessionSwitchRef.current) {
@@ -122,20 +138,20 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
     })
     observer.observe(content)
     observer.observe(viewport)
-    return () => { observer.disconnect(); cancelAnimationFrame(rafId) }
+    return () => observer.disconnect()
   }, [sessionId, viewportMounted, scrollViewportRef])
 
   const scrollToBottom = useCallback(() => {
     const el = scrollViewportRef.current
     if (el) {
       el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
-      isNearBottomRef.current = true
+      followRef.current = true
       setShowScrollButton(false)
     }
   }, [scrollViewportRef])
 
   const stopAutoScroll = useCallback(() => {
-    isNearBottomRef.current = false
+    followRef.current = false
     setShowScrollButton(true)
   }, [])
 

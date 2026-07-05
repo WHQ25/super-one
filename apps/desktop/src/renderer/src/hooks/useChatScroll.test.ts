@@ -40,6 +40,19 @@ function createMockViewport() {
   return { el, state, contentChild }
 }
 
+function wheelUp(el: HTMLElement, deltaY = -50) {
+  el.dispatchEvent(new WheelEvent('wheel', { deltaY }))
+}
+
+function touchDrag(el: HTMLElement, fromY: number, toY: number) {
+  const start = new Event('touchstart')
+  Object.defineProperty(start, 'touches', { value: [{ clientY: fromY }] })
+  el.dispatchEvent(start)
+  const move = new Event('touchmove')
+  Object.defineProperty(move, 'touches', { value: [{ clientY: toY }] })
+  el.dispatchEvent(move)
+}
+
 let resizeSubscriptions: Array<{ target: Element; cb: ResizeObserverCallback }> = []
 
 class MockResizeObserver {
@@ -81,7 +94,7 @@ describe('useChatScroll', () => {
     }
   }
 
-  it('scrolls to bottom on ResizeObserver callback when near bottom', () => {
+  it('scrolls to bottom on ResizeObserver callback when following', () => {
     const { el, state } = createMockViewport()
     const ref = { current: el }
 
@@ -103,14 +116,27 @@ describe('useChatScroll', () => {
     expect(state.scrollTop).toBe(250)
   })
 
-  it('does not scroll on resize when user has scrolled up', () => {
+  it('stops following on wheel-up before any scroll event fires', () => {
+    const { el, state } = createMockViewport()
+    const ref = { current: el }
+
+    renderHook(() => useChatScroll({ scrollViewportRef: ref }))
+
+    act(() => { wheelUp(el, -1) })
+
+    state.scrollHeight = 800
+    act(() => { fireResize() })
+    expect(state.scrollTop).toBe(200)
+  })
+
+  it('does not scroll on resize after user wheels up to the top', () => {
     const { el, state } = createMockViewport()
     const ref = { current: el }
 
     renderHook(() => useChatScroll({ scrollViewportRef: ref }))
 
     act(() => {
-      el.dispatchEvent(new Event('wheel'))
+      wheelUp(el)
       state.scrollTop = 0
       el.dispatchEvent(new Event('scroll'))
     })
@@ -120,7 +146,7 @@ describe('useChatScroll', () => {
     expect(state.scrollTop).toBe(0)
   })
 
-  it('disables auto-scroll when user scrolls up slightly during streaming (even within 200px of bottom)', () => {
+  it('stops following on a slight wheel-up during streaming (still outside the bottom band)', () => {
     const { el, state } = createMockViewport()
     const ref = { current: el }
     state.scrollTop = state.scrollHeight - state.clientHeight
@@ -128,7 +154,7 @@ describe('useChatScroll', () => {
     renderHook(() => useChatScroll({ scrollViewportRef: ref }))
 
     act(() => {
-      el.dispatchEvent(new Event('wheel'))
+      wheelUp(el, -30)
       state.scrollTop = state.scrollHeight - state.clientHeight - 30
       el.dispatchEvent(new Event('scroll'))
     })
@@ -136,6 +162,32 @@ describe('useChatScroll', () => {
     state.scrollHeight = 800
     act(() => { fireResize() })
     expect(state.scrollTop).toBe(170)
+  })
+
+  it('stops following on touch drag downward (content scrolling up)', () => {
+    const { el, state } = createMockViewport()
+    const ref = { current: el }
+
+    renderHook(() => useChatScroll({ scrollViewportRef: ref }))
+
+    act(() => { touchDrag(el, 100, 180) })
+
+    state.scrollHeight = 800
+    act(() => { fireResize() })
+    expect(state.scrollTop).toBe(200)
+  })
+
+  it('stops following on PageUp key', () => {
+    const { el, state } = createMockViewport()
+    const ref = { current: el }
+
+    renderHook(() => useChatScroll({ scrollViewportRef: ref }))
+
+    act(() => { el.dispatchEvent(new KeyboardEvent('keydown', { key: 'PageUp' })) })
+
+    state.scrollHeight = 800
+    act(() => { fireResize() })
+    expect(state.scrollTop).toBe(200)
   })
 
   it('disables auto-scroll when stopAutoScroll is called (e.g. scroll-indicator tick jump)', () => {
@@ -152,7 +204,43 @@ describe('useChatScroll', () => {
     expect(result.current.showScrollButton).toBe(true)
   })
 
-  it('keeps auto-scroll when programmatic scroll fires after content expansion', () => {
+  it('resumes following when a tick jump lands at the bottom (stopAutoScroll then reach bottom)', () => {
+    const { el, state } = createMockViewport()
+    const ref = { current: el }
+
+    const { result } = renderHook(() => useChatScroll({ scrollViewportRef: ref }))
+
+    act(() => { result.current.stopAutoScroll() })
+
+    act(() => {
+      state.scrollTop = state.scrollHeight - state.clientHeight
+      el.dispatchEvent(new Event('scroll'))
+    })
+
+    state.scrollHeight = 800
+    act(() => { fireResize() })
+    expect(state.scrollTop).toBe(500)
+  })
+
+  it('stays stopped when a tick jump scrolls upward (stopAutoScroll then land mid)', () => {
+    const { el, state } = createMockViewport()
+    const ref = { current: el }
+
+    const { result } = renderHook(() => useChatScroll({ scrollViewportRef: ref }))
+
+    act(() => { result.current.stopAutoScroll() })
+
+    act(() => {
+      state.scrollTop = 40
+      el.dispatchEvent(new Event('scroll'))
+    })
+
+    state.scrollHeight = 800
+    act(() => { fireResize() })
+    expect(state.scrollTop).toBe(40)
+  })
+
+  it('keeps following across programmatic and clamp scroll events (content expansion)', () => {
     const { el, state } = createMockViewport()
     const ref = { current: el }
 
@@ -172,7 +260,29 @@ describe('useChatScroll', () => {
     expect(state.scrollTop).toBe(700)
   })
 
-  it('disables auto-scroll on user-initiated upward scroll during streaming', () => {
+  it('keeps following when content shrinks and clamps scrollTop while pinned to bottom', () => {
+    const { el, state } = createMockViewport()
+    const ref = { current: el }
+
+    renderHook(() => useChatScroll({ scrollViewportRef: ref }))
+
+    act(() => {
+      state.scrollTop = state.scrollHeight - state.clientHeight
+      el.dispatchEvent(new Event('scroll'))
+    })
+
+    act(() => {
+      state.scrollHeight = 450
+      state.scrollTop = state.scrollHeight - state.clientHeight
+      el.dispatchEvent(new Event('scroll'))
+    })
+
+    state.scrollHeight = 900
+    act(() => { fireResize() })
+    expect(state.scrollTop).toBe(600)
+  })
+
+  it('does not auto-scroll messages while user is scrolled up during streaming', () => {
     vi.useFakeTimers()
     const { el, state } = createMockViewport()
     const ref = { current: el }
@@ -183,7 +293,7 @@ describe('useChatScroll', () => {
 
     const scrolledPos = 0
     act(() => {
-      el.dispatchEvent(new Event('wheel'))
+      wheelUp(el)
       state.scrollTop = scrolledPos
       el.dispatchEvent(new Event('scroll'))
     })
@@ -200,41 +310,14 @@ describe('useChatScroll', () => {
     vi.useRealTimers()
   })
 
-  it('keeps auto-scroll disabled when ResizeObserver fires between wheel and scroll (trackpad race)', () => {
-    const { el, state } = createMockViewport()
-    const ref = { current: el }
-    state.scrollTop = state.scrollHeight - state.clientHeight
-
-    renderHook(() => useChatScroll({ scrollViewportRef: ref }))
-
-    act(() => {
-      el.dispatchEvent(new Event('wheel'))
-    })
-
-    act(() => {
-      state.scrollHeight = 600
-      state.scrollTop = state.scrollHeight - state.clientHeight
-      el.dispatchEvent(new Event('scroll'))
-    })
-
-    act(() => {
-      el.dispatchEvent(new Event('wheel'))
-      state.scrollTop = 100
-      el.dispatchEvent(new Event('scroll'))
-    })
-
-    state.scrollHeight = 900
-    act(() => { fireResize() })
-    expect(state.scrollTop).toBe(100)
-  })
-
-  it('re-enables auto-scroll when user scrolls back near bottom', () => {
+  it('resumes following when user scrolls back to the bottom', () => {
     const { el, state } = createMockViewport()
     const ref = { current: el }
 
     renderHook(() => useChatScroll({ scrollViewportRef: ref }))
 
     act(() => {
+      wheelUp(el)
       state.scrollTop = 0
       el.dispatchEvent(new Event('scroll'))
     })
@@ -265,7 +348,7 @@ describe('useChatScroll', () => {
     vi.useRealTimers()
   })
 
-  it('scrolls to bottom when messages change and near bottom', () => {
+  it('scrolls to bottom when messages change and following', () => {
     const { el, state } = createMockViewport()
     const ref = { current: el }
 
@@ -283,7 +366,7 @@ describe('useChatScroll', () => {
     expect(state.scrollTop).toBe(500)
   })
 
-  it('scrolls to bottom when the last streaming message content updates and near bottom', () => {
+  it('scrolls to bottom when the last streaming message content updates and following', () => {
     const { el, state } = createMockViewport()
     const ref = { current: el }
 

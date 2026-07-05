@@ -57,11 +57,23 @@ export function registerBrowserPopupRedirect(): void {
       contents.hostWebContents?.send(AgentIpcChannels.BROWSER_CERT_ERROR, { webContentsId: contents.id, url, error })
     })
 
-    contents.setWindowOpenHandler(({ url }) => {
+    contents.setWindowOpenHandler(({ url, disposition }) => {
       if (url && url !== 'about:blank') {
-        queueMicrotask(() => {
-          if (!contents.isDestroyed()) void contents.loadURL(url)
-        })
+        // Chrome maps Cmd/Ctrl+click → 'background-tab', Cmd/Ctrl+Shift+click and
+        // target=_blank → 'foreground-tab'. Route those to a real new browser tab.
+        // Everything else (notably feature'd window.open OAuth popups → 'new-window')
+        // keeps the inline same-tab redirect so popup-based login proceeds like before.
+        if (disposition === 'foreground-tab' || disposition === 'background-tab') {
+          contents.hostWebContents?.send(AgentIpcChannels.BROWSER_OPEN_TAB, {
+            webContentsId: contents.id,
+            url,
+            background: disposition === 'background-tab',
+          })
+        } else {
+          queueMicrotask(() => {
+            if (!contents.isDestroyed()) void contents.loadURL(url)
+          })
+        }
       }
       return { action: 'deny' }
     })

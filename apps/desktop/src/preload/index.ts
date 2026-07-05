@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import { AgentIpcChannels, type NativeContextMenuItemSpec, type AgentPrewarmHint, type BashOutputEvent, type CodexCollaborationMode, type CodexPermissionPreset, type CodexProviderTestProgress, type CodexReasoningEffort, type CodexReviewTarget, type RemoteDeviceConfig, type SandboxMode, type SendMessageRequest, type ContentBlock, type ChatMessageContext, type WorktreeActivateRequest, type WorktreeHandoffResult, type WorktreeAssignResult, type GitDirtyStatus, type SessionForkRequest, type SessionForkResult, type HookSavePayload, type TerminalEvent, type TerminalListItem, type TerminalSnapshot, type HarnessId, type BrowserCertError } from '@superone/shared/agent-types'
+import { AgentIpcChannels, type NativeContextMenuItemSpec, type AgentPrewarmHint, type BashOutputEvent, type CodexCollaborationMode, type CodexPermissionPreset, type CodexProviderTestProgress, type CodexReasoningEffort, type CodexReviewTarget, type RemoteDeviceConfig, type SandboxMode, type SendMessageRequest, type ContentBlock, type ChatMessageContext, type WorktreeActivateRequest, type WorktreeHandoffResult, type WorktreeAssignResult, type GitDirtyStatus, type SessionForkRequest, type SessionForkResult, type HookSavePayload, type TerminalEvent, type TerminalListItem, type TerminalSnapshot, type HarnessId, type BrowserCertError, type BrowserOpenTabRequest } from '@superone/shared/agent-types'
 import type { McpbInstallRequest } from '@superone/shared/mcpb-types'
 
 try {
@@ -853,6 +853,16 @@ const appAPI = {
     ipcRenderer.on(AgentIpcChannels.BROWSER_NEW_TAB_SHORTCUT, handler)
     return () => {
       ipcRenderer.removeListener(AgentIpcChannels.BROWSER_NEW_TAB_SHORTCUT, handler)
+    }
+  },
+
+  onBrowserOpenTab: (callback: (payload: BrowserOpenTabRequest) => void) => {
+    const handler = (_ipcEvent: Electron.IpcRendererEvent, payload: BrowserOpenTabRequest): void => {
+      callback(payload)
+    }
+    ipcRenderer.on(AgentIpcChannels.BROWSER_OPEN_TAB, handler)
+    return () => {
+      ipcRenderer.removeListener(AgentIpcChannels.BROWSER_OPEN_TAB, handler)
     }
   },
 

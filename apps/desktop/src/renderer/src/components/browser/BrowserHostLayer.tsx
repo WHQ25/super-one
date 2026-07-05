@@ -12,6 +12,7 @@ import { buildSessionScript, handleAnnotationMessage } from './browser-annotate-
 import { ANNOTATE_CANCEL_SCRIPT, ANNOTATE_CTX_TRACKER_SCRIPT, ANNOTATE_MSG_PREFIX } from './browser-annotate-script'
 import { isBlankUrl, sameOrigin } from './browser-url'
 import { useBrowserContextMenu } from './browser-context-menu'
+import { openBrowserTab } from '@/components/activity/activity-panel-api'
 
 // Fallback viewport used only while capturing a slotless tab (a background session's
 // tab has no dock geometry). Width matches the screenshot cap so no downscale needed.
@@ -32,6 +33,16 @@ export function BrowserHostLayer() {
       const store = useBrowserStore.getState()
       if (store.annotatingId === id) store.stopAnnotate()
       else store.startAnnotate(id)
+    })
+  }, [])
+
+  useEffect(() => {
+    return window.app.onBrowserOpenTab(({ webContentsId, url, background }) => {
+      // Inherit the source tab's owner so a Cmd/Ctrl+click'd tab lands in the same
+      // session's activity panel instead of leaking into the current one.
+      const sourceId = browserIdByWebContentsId(webContentsId)
+      const owner = sourceId ? useBrowserStore.getState().tabs[sourceId]?.owner ?? null : null
+      openBrowserTab(url, undefined, owner, { background })
     })
   }, [])
 

@@ -186,7 +186,7 @@ export function closeMiniAppTab(instanceKey: string) {
   if (existing) existing.api.close()
 }
 
-export function openBrowserTab(url = 'about:blank', reuseId?: string, owner?: string | null) {
+export function openBrowserTab(url = 'about:blank', reuseId?: string, owner?: string | null, opts?: { background?: boolean }) {
   const resolvedOwner = owner !== undefined ? owner : (currentSessionIdGetter?.() ?? null)
   const browserId = reuseId ?? `browser-${crypto.randomUUID()}`
   // Register the tab (and its persistent webview, rendered per store tab by
@@ -208,13 +208,14 @@ export function openBrowserTab(url = 'about:blank', reuseId?: string, owner?: st
   execOrDefer(() => {
     if (!dockApi) return
     const existing = dockApi.panels.find((p) => p.id === browserId)
-    if (existing) existing.api.setActive()
+    if (existing) { if (!opts?.background) existing.api.setActive() }
     else dockApi.addPanel({
       id: browserId,
       component: 'browser',
       tabComponent: 'browser-tab',
       title: 'New Tab',
       params: { browserId, url },
+      ...(opts?.background ? { inactive: true } : {}),
     })
   })
 }

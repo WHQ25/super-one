@@ -1875,6 +1875,7 @@ export const AgentIpcChannels = {
   BROWSER_ANNOTATE_SHORTCUT: 'app:browser-annotate-shortcut',
   BROWSER_BOOKMARK_SHORTCUT: 'app:browser-bookmark-shortcut',
   BROWSER_NEW_TAB_SHORTCUT: 'app:browser-new-tab-shortcut',
+  BROWSER_OPEN_TAB: 'app:browser-open-tab',
   CLOSE_TAB_SHORTCUT: 'app:close-tab-shortcut',
   CLOSE_WINDOW: 'app:close-window',
   GET_FULLSCREEN: 'app:get-fullscreen',
@@ -2308,6 +2309,12 @@ export interface BrowserCertError {
   webContentsId: number
   url: string
   error: string
+}
+
+export interface BrowserOpenTabRequest {
+  webContentsId: number
+  url: string
+  background: boolean
 }
 
 export interface AppSettings {

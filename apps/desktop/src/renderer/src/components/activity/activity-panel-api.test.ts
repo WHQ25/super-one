@@ -110,6 +110,41 @@ describe('mosaic-opened panels survive the return to single', () => {
   })
 })
 
+describe('Cmd/Ctrl+click opens a browser tab in the background', () => {
+  function fakeDock() {
+    const panels: { id: string; api: { setActive: ReturnType<typeof vi.fn>; close: () => void } }[] = []
+    const addPanel = vi.fn((spec: { id: string }) => {
+      panels.push({ id: spec.id, api: { setActive: vi.fn(), close: vi.fn() } })
+    })
+    setDockApi({ panels, activePanel: undefined, addPanel } as never)
+    return { panels, addPanel }
+  }
+
+  beforeEach(() => {
+    useActivityPanelStore.setState({ showPanel: false, side: 'left', panelWidth: 560 })
+    useBrowserStore.setState({ tabs: {}, slots: {}, fullscreenId: null })
+  })
+
+  it('adds the new panel inactive so focus stays on the current tab', () => {
+    const dock = fakeDock()
+
+    openBrowserTab('example.com', 'browser-bg', null, { background: true })
+
+    expect(dock.addPanel).toHaveBeenCalledWith(expect.objectContaining({ id: 'browser-bg', inactive: true }))
+  })
+
+  it('does not steal focus when the background target tab already exists', () => {
+    const dock = fakeDock()
+    openBrowserTab('example.com', 'browser-bg')
+    const created = dock.panels.find((p) => p.id === 'browser-bg')!
+    created.api.setActive.mockClear()
+
+    openBrowserTab('example.com', 'browser-bg', null, { background: true })
+
+    expect(created.api.setActive).not.toHaveBeenCalled()
+  })
+})
+
 describe('browser tabs stay confined to their owner session', () => {
   function fakeDock() {
     const panels: { id: string; api: { setActive: () => void; close: () => void } }[] = []

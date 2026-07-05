@@ -4,6 +4,19 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.43.12-alpha] - 2026-07-05
+
+### Added
+
+- Cmd/Ctrl+click opens browser links in a new tab
+- Quick annotation actions in the browser right-click context menu
+
+### Fixed
+
+- Session rows can now be dragged from pinned rows in the sidebar
+- Browser tabs stay confined to their owner session, fixing background-tab screenshots
+- Annotate and copy now work on pages that enforce Trusted Types (e.g. YouTube)
+
 ## [0.43.11-alpha] - 2026-07-05
 
 ### Added

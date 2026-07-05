@@ -504,6 +504,10 @@ function waitForLoadStop(id: string, timeoutMs = 15_000): Promise<void> {
   })
 }
 
+function nextPaint(): Promise<void> {
+  return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+}
+
 async function waitForTabRegistered(id: string, timeoutMs = 8_000): Promise<void> {
   const deadline = Date.now() + timeoutMs
   while (Date.now() <= deadline) {
@@ -589,22 +593,41 @@ export async function runBrowserOp(sessionId: string, op: string, rawInput: unkn
     case 'type':
       return browserExecJs(id, typeScript(input as { text: string }))
     case 'screenshot': {
-      let rect: Electron.Rectangle | undefined
-      if (input.selector) {
-        const box = (await browserExecJs(
-          id,
-          `(() => { const el = document.querySelector(${JSON.stringify(input.selector)}); if (!el) return null; const b = el.getBoundingClientRect(); return { x: Math.round(b.x), y: Math.round(b.y), width: Math.round(b.width), height: Math.round(b.height) }; })()`,
-        )) as Electron.Rectangle | null
-        if (!box || box.width <= 0 || box.height <= 0) throw new Error('Screenshot selector did not resolve to a visible element')
-        rect = box
+      // Force the tab into the viewport for the duration of the capture: a hidden
+      // or background tab rests off-screen / display:none, where capturePage would
+      // hang (Chromium never rasterizes an off-viewport layer). beginCapture flips
+      // BrowserHostLayer to render it in-viewport (opacity-masked); endCapture in
+      // finally restores the cheap resting state so idle tabs cost nothing.
+      const store = useBrowserStore.getState()
+      store.beginCapture(id)
+      try {
+        await nextPaint()
+        // Resolve the selector box only after the tab is in-viewport — a
+        // display:none tab reports an all-zero getBoundingClientRect.
+        let rect: Electron.Rectangle | undefined
+        if (input.selector) {
+          const box = (await browserExecJs(
+            id,
+            `(() => { const el = document.querySelector(${JSON.stringify(input.selector)}); if (!el) return null; const b = el.getBoundingClientRect(); return { x: Math.round(b.x), y: Math.round(b.y), width: Math.round(b.width), height: Math.round(b.height) }; })()`,
+          )) as Electron.Rectangle | null
+          if (!box || box.width <= 0 || box.height <= 0) throw new Error('Screenshot selector did not resolve to a visible element')
+          rect = box
+        }
+        let image = await browserCapture(id, rect)
+        if (!image || image.isEmpty()) {
+          // A tab woken from display:none may need an extra beat for its first frame.
+          await new Promise((resolve) => setTimeout(resolve, 200))
+          image = await browserCapture(id, rect)
+        }
+        if (!image || image.isEmpty()) throw new Error('Screenshot capture failed')
+        const sized = image.getSize()
+        const final = sized.width > MAX_SCREENSHOT_WIDTH ? image.resize({ width: MAX_SCREENSHOT_WIDTH }) : image
+        const size = final.getSize()
+        const data = final.toDataURL().split(',')[1] ?? ''
+        return { mimeType: 'image/png' as const, data, width: size.width, height: size.height }
+      } finally {
+        store.endCapture(id)
       }
-      const image = await browserCapture(id, rect)
-      if (!image || image.isEmpty()) throw new Error('Screenshot capture failed')
-      const sized = image.getSize()
-      const final = sized.width > MAX_SCREENSHOT_WIDTH ? image.resize({ width: MAX_SCREENSHOT_WIDTH }) : image
-      const size = final.getSize()
-      const data = final.toDataURL().split(',')[1] ?? ''
-      return { mimeType: 'image/png' as const, data, width: size.width, height: size.height }
     }
     case 'navigate': {
       if (input.action) {

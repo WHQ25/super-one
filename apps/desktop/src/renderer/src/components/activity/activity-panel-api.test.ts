@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   openFileTab,
   openBrowserTab,
@@ -8,6 +8,8 @@ import {
   closeBrowserTab,
   beginMosaicRecording,
   replayMosaicOpenedPanels,
+  materializeOwnedBrowserTabs,
+  setCurrentSessionIdGetter,
   setDockApi,
 } from './activity-panel-api'
 import { useActivityPanelStore } from '@/stores/activity-panel'
@@ -105,5 +107,62 @@ describe('mosaic-opened panels survive the return to single', () => {
     replayMosaicOpenedPanels()
 
     expect(dock.panels.length).toBe(0)
+  })
+})
+
+describe('browser tabs stay confined to their owner session', () => {
+  function fakeDock() {
+    const panels: { id: string; api: { setActive: () => void; close: () => void } }[] = []
+    const addPanel = vi.fn((spec: { id: string }) => {
+      panels.push({ id: spec.id, api: { setActive: vi.fn(), close: vi.fn() } })
+    })
+    setDockApi({ panels, activePanel: undefined, addPanel } as never)
+    return { panels, addPanel }
+  }
+
+  beforeEach(() => {
+    useActivityPanelStore.setState({ showPanel: false, side: 'left', panelWidth: 560 })
+    useBrowserStore.setState({ tabs: {}, slots: {}, fullscreenId: null })
+    setCurrentSessionIdGetter(() => 'sess-visible')
+  })
+
+  afterEach(() => {
+    setCurrentSessionIdGetter(null)
+  })
+
+  it('registers a background tab without adding it to the on-screen dock', () => {
+    const dock = fakeDock()
+
+    // sess-hidden's agent opens a tab while the user is viewing sess-visible.
+    openBrowserTab('example.com', 'browser-bg', 'sess-hidden')
+
+    expect(useBrowserStore.getState().tabs['browser-bg']).toMatchObject({ owner: 'sess-hidden' })
+    expect(dock.addPanel).not.toHaveBeenCalled()
+    expect(useActivityPanelStore.getState().showPanel).toBe(false)
+  })
+
+  it('adds a tab to the live dock when its owner is the on-screen session', () => {
+    const dock = fakeDock()
+
+    openBrowserTab('example.com', 'browser-fg', 'sess-visible')
+
+    expect(dock.addPanel).toHaveBeenCalledWith(expect.objectContaining({ id: 'browser-fg' }))
+    expect(useActivityPanelStore.getState().showPanel).toBe(true)
+  })
+
+  it('materializes a background tab into its owner panel on restore, skipping foreign and existing panels', () => {
+    const dock = fakeDock()
+    openBrowserTab('example.com', 'browser-bg', 'sess-hidden')
+    openBrowserTab('other.com', 'browser-foreign', 'sess-other')
+    expect(dock.addPanel).not.toHaveBeenCalled()
+
+    materializeOwnedBrowserTabs('sess-hidden')
+
+    expect(dock.panels.map((p) => p.id)).toEqual(['browser-bg'])
+    expect(useActivityPanelStore.getState().showPanel).toBe(true)
+
+    // Idempotent: a second restore does not duplicate the already-present panel.
+    materializeOwnedBrowserTabs('sess-hidden')
+    expect(dock.panels.map((p) => p.id)).toEqual(['browser-bg'])
   })
 })

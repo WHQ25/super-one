@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import type { SerializedDockview } from 'dockview-core'
-import { applyDockSnapshot, closeGhostMiniAppPanels, getDockSnapshot, isDockReady, setCurrentSessionIdGetter, setOnDockReady } from '@/components/activity/activity-panel-api'
+import { applyDockSnapshot, closeGhostMiniAppPanels, getDockSnapshot, isDockReady, materializeOwnedBrowserTabs, setCurrentSessionIdGetter, setOnDockReady } from '@/components/activity/activity-panel-api'
 import { useActivityPanelStore } from './activity-panel'
 import { useMiniAppStore } from './miniapp'
 
@@ -52,6 +52,7 @@ export const useActivityViewStateStore = create<ActivityViewStateStore>((set, ge
     set({ pendingRestore: null, _currentSessionId: sessionId })
     const target = get().perSession[sessionId]
     applyState(target ? { layout: target.layout ? structuredClone(target.layout) : null, showPanel: target.showPanel } : undefined)
+    materializeOwnedBrowserTabs(sessionId)
   },
 
   seedFromCurrent: (sessionId) => {
@@ -83,6 +84,7 @@ export const useActivityViewStateStore = create<ActivityViewStateStore>((set, ge
     set({ pendingRestore: null })
     const target = state.perSession[sid]
     applyState(target ? { layout: target.layout ? structuredClone(target.layout) : null, showPanel: target.showPanel } : undefined)
+    materializeOwnedBrowserTabs(sid)
   },
 
   _resetForTest: () => set({ perSession: {}, pendingRestore: null, _currentSessionId: null }),

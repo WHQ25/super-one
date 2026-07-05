@@ -187,15 +187,26 @@ export function closeMiniAppTab(instanceKey: string) {
 }
 
 export function openBrowserTab(url = 'about:blank', reuseId?: string, owner?: string | null) {
+  const resolvedOwner = owner !== undefined ? owner : (currentSessionIdGetter?.() ?? null)
+  const browserId = reuseId ?? `browser-${crypto.randomUUID()}`
+  // Register the tab (and its persistent webview, rendered per store tab by
+  // BrowserHostLayer) up front so background automation can drive it even before
+  // its dock panel exists.
+  useBrowserStore.getState().ensure(browserId, normalizeUrl(url), resolvedOwner)
+
+  // A tab opened for a session the user isn't currently viewing must NOT land in
+  // the live dock — the single dockview reflects the current session, so adding
+  // here would surface another session's tab in the wrong activity panel. It is
+  // materialized into its owner's layout when that session is next restored.
+  const currentSession = currentSessionIdGetter?.() ?? null
+  if (resolvedOwner != null && resolvedOwner !== currentSession) return
+
   const app = useAppStore.getState()
   if (app.layoutMode !== 'coding' && app.currentFolder) app.setLayoutMode('coding')
   ensureVisible()
-  const resolvedOwner = owner !== undefined ? owner : (currentSessionIdGetter?.() ?? null)
-  const browserId = reuseId ?? `browser-${crypto.randomUUID()}`
   recordMosaicOpen(browserId, () => openBrowserTab(url, browserId, resolvedOwner))
   execOrDefer(() => {
     if (!dockApi) return
-    useBrowserStore.getState().ensure(browserId, normalizeUrl(url), resolvedOwner)
     const existing = dockApi.panels.find((p) => p.id === browserId)
     if (existing) existing.api.setActive()
     else dockApi.addPanel({
@@ -206,6 +217,32 @@ export function openBrowserTab(url = 'about:blank', reuseId?: string, owner?: st
       params: { browserId, url },
     })
   })
+}
+
+// When a session is restored, add dock panels for any browser tab it owns that a
+// background open registered while another session was on screen. Keeps a session's
+// agent-opened tabs confined to that session's activity panel.
+export function materializeOwnedBrowserTabs(sessionId: string) {
+  if (!dockApi) return
+  const { tabs, fullscreenId } = useBrowserStore.getState()
+  let added = false
+  for (const [id, tab] of Object.entries(tabs)) {
+    if (tab.owner !== sessionId || id === fullscreenId) continue
+    if (dockApi.panels.find((p) => p.id === id)) continue
+    dockApi.addPanel({
+      id,
+      component: 'browser',
+      tabComponent: 'browser-tab',
+      title: tab.title || 'New Tab',
+      params: { browserId: id, url: tab.url },
+    })
+    added = true
+  }
+  if (added) {
+    const app = useAppStore.getState()
+    if (app.layoutMode !== 'coding' && app.currentFolder) app.setLayoutMode('coding')
+    ensureVisible()
+  }
 }
 
 export async function openTerminalTab(projectPath: string, sessionId?: string) {

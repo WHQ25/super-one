@@ -13,6 +13,10 @@ import { ANNOTATE_CANCEL_SCRIPT, ANNOTATE_MSG_PREFIX } from './browser-annotate-
 import { isBlankUrl, sameOrigin } from './browser-url'
 import { useBrowserContextMenu } from './browser-context-menu'
 
+// Fallback viewport used only while capturing a slotless tab (a background session's
+// tab has no dock geometry). Width matches the screenshot cap so no downscale needed.
+const CAPTURE_VIEWPORT = { width: 1280, height: 800 }
+
 export function BrowserHostLayer() {
   const ids = useBrowserStore(useShallow((s) => Object.keys(s.tabs)))
   const layoutMode = useAppStore((s) => s.layoutMode)
@@ -51,6 +55,7 @@ export function BrowserHostLayer() {
 function PersistentBrowser({ browserId, layoutMode, resizing }: { browserId: string; layoutMode: 'canvas' | 'coding'; resizing: boolean }) {
   const slot = useBrowserStore((s) => s.slots[browserId])
   const emulation = useBrowserStore((s) => s.emulations[browserId])
+  const capturing = useBrowserStore((s) => (s.captureRefs[browserId] ?? 0) > 0)
   const activityShown = useActivityPanelStore((s) => s.showPanel)
   const annotating = useBrowserStore((s) => s.annotatingId === browserId)
   const home = useBrowserStore((s) => isBlankUrl(s.tabs[browserId]?.url ?? ''))
@@ -177,9 +182,19 @@ function PersistentBrowser({ browserId, layoutMode, resizing }: { browserId: str
     (slot.mode === 'panel' && layoutMode === 'coding') ||
     (slot.mode === 'canvas' && layoutMode === 'canvas')
   )
-  const mounted = presentationMatches && slot != null && slot.width > 0 && slot.height > 0
+  const hasSlot = slot != null && slot.width > 0 && slot.height > 0
+  const mounted = presentationMatches && hasSlot
   const hostShown = slot?.mode !== 'panel' || activityShown
   const visible = mounted && hostShown && !home && !certErrored
+  // A screenshot transiently pulls a hidden/background tab into the viewport and
+  // masks it with opacity:0 — Chromium won't rasterize a layer parked off-screen,
+  // so capturePage would hang otherwise. Outside capture, hidden tabs keep their
+  // cheap resting state (off-screen if slotted, so live pages don't reload during
+  // mosaic/collapse; display:none if slotless) rather than always compositing,
+  // which would cost GPU + un-throttled CPU for every background tab.
+  const inViewport = visible || capturing
+  const width = hasSlot ? slot!.width : CAPTURE_VIEWPORT.width
+  const height = hasSlot ? slot!.height : CAPTURE_VIEWPORT.height
 
   return (
     <>
@@ -189,11 +204,12 @@ function PersistentBrowser({ browserId, layoutMode, resizing }: { browserId: str
       data-browser-presentation={slot?.mode}
       style={{
         position: 'absolute',
-        left: visible ? slot!.left : -99999,
-        top: slot?.top ?? 0,
-        width: slot?.width ?? 0,
-        height: slot?.height ?? 0,
-        display: mounted ? 'block' : 'none',
+        left: inViewport ? (slot?.left ?? 0) : -99999,
+        top: inViewport ? (slot?.top ?? 0) : 0,
+        width,
+        height,
+        display: mounted || capturing ? 'block' : 'none',
+        opacity: visible ? 1 : 0,
         pointerEvents: visible && !resizing ? 'auto' : 'none',
         overflow: 'hidden',
       }}

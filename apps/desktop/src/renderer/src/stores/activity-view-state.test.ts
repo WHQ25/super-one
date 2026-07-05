@@ -10,6 +10,7 @@ const {
   mockSetOnDockReady,
   mockSetShowPanel,
   mockCloseGhostMiniAppPanels,
+  mockMaterializeOwnedBrowserTabs,
   openAppsRef,
 } = vi.hoisted(() => ({
   mockApplyDockSnapshot: vi.fn(),
@@ -18,6 +19,7 @@ const {
   mockSetOnDockReady: vi.fn<(cb: (() => void) | null) => void>(),
   mockSetShowPanel: vi.fn(),
   mockCloseGhostMiniAppPanels: vi.fn<(isAlive: (appId: string) => boolean) => void>(),
+  mockMaterializeOwnedBrowserTabs: vi.fn<(sessionId: string) => void>(),
   openAppsRef: { value: {} as Record<string, unknown> },
 }))
 
@@ -28,6 +30,7 @@ vi.mock('@/components/activity/activity-panel-api', () => ({
   setOnDockReady: mockSetOnDockReady,
   setCurrentSessionIdGetter: vi.fn(),
   closeGhostMiniAppPanels: mockCloseGhostMiniAppPanels,
+  materializeOwnedBrowserTabs: mockMaterializeOwnedBrowserTabs,
 }))
 
 vi.mock('./miniapp', () => ({
@@ -68,6 +71,7 @@ beforeEach(async () => {
   mockSetOnDockReady.mockReset()
   mockSetShowPanel.mockReset()
   mockCloseGhostMiniAppPanels.mockReset()
+  mockMaterializeOwnedBrowserTabs.mockReset()
   mockShowPanel = false
   openAppsRef.value = {}
   ;({ useActivityViewStateStore, isInstanceReferencedInSavedSessions } = await import('./activity-view-state'))
@@ -216,6 +220,32 @@ describe('activity-view-state', () => {
     expect(useActivityViewStateStore.getState().pendingRestore).toBeNull()
     expect(mockApplyDockSnapshot).toHaveBeenCalledWith(makeLayout('parked'))
     expect(mockSetShowPanel).toHaveBeenCalledWith(true)
+  })
+
+  it('materializes owned browser tabs when a session is restored (regression: background browser_open landed in the on-screen session)', () => {
+    mockIsDockReady.mockReturnValue(true)
+    mockGetDockSnapshot.mockReturnValue(makeLayout('foo'))
+    useActivityViewStateStore.getState().park('sess-A')
+
+    mockMaterializeOwnedBrowserTabs.mockClear()
+    useActivityViewStateStore.getState().restore('sess-A')
+
+    expect(mockMaterializeOwnedBrowserTabs).toHaveBeenCalledWith('sess-A')
+  })
+
+  it('materializes owned browser tabs when a deferred restore flushes on dock-ready', () => {
+    mockIsDockReady.mockReturnValue(true)
+    mockGetDockSnapshot.mockReturnValue(makeLayout('parked'))
+    useActivityViewStateStore.getState().park('sess-A')
+
+    mockIsDockReady.mockReturnValue(false)
+    useActivityViewStateStore.getState().restore('sess-A')
+    expect(mockMaterializeOwnedBrowserTabs).not.toHaveBeenCalled()
+
+    mockIsDockReady.mockReturnValue(true)
+    useActivityViewStateStore.getState().flushPending()
+
+    expect(mockMaterializeOwnedBrowserTabs).toHaveBeenCalledWith('sess-A')
   })
 
   it('clearForSession removes the entry and clears matching pendingRestore', () => {

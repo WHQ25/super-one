@@ -30,6 +30,7 @@ interface BrowserStore {
   tabs: Record<string, BrowserTabState>
   slots: Record<string, BrowserSlot>
   emulations: Record<string, BrowserEmulation>
+  captureRefs: Record<string, number>
   fullscreenId: string | null
   annotatingId: string | null
   insecureHosts: Record<string, string>
@@ -41,6 +42,8 @@ interface BrowserStore {
   startAnnotate: (id: string) => void
   stopAnnotate: () => void
   setEmulation: (id: string, emulation: BrowserEmulation | null) => void
+  beginCapture: (id: string) => void
+  endCapture: (id: string) => void
   updateSlot: (id: string, mode: BrowserSlotMode, rect: DOMRectReadOnly) => void
   unregisterSlot: (id: string, mode: BrowserSlotMode) => void
 }
@@ -67,6 +70,7 @@ export const useBrowserStore = create<BrowserStore>((set) => ({
   tabs: {},
   slots: {},
   emulations: {},
+  captureRefs: {},
   fullscreenId: null,
   annotatingId: null,
   insecureHosts: {},
@@ -84,10 +88,18 @@ export const useBrowserStore = create<BrowserStore>((set) => ({
       tabs: withoutKey(s.tabs, id),
       slots: withoutKey(s.slots, id),
       emulations: withoutKey(s.emulations, id),
+      captureRefs: withoutKey(s.captureRefs, id),
       annotatingId: s.annotatingId === id ? null : s.annotatingId,
     })),
   setEmulation: (id, emulation) =>
     set((s) => (emulation ? { emulations: { ...s.emulations, [id]: emulation } } : { emulations: withoutKey(s.emulations, id) })),
+  beginCapture: (id) =>
+    set((s) => ({ captureRefs: { ...s.captureRefs, [id]: (s.captureRefs[id] ?? 0) + 1 } })),
+  endCapture: (id) =>
+    set((s) => {
+      const next = (s.captureRefs[id] ?? 0) - 1
+      return { captureRefs: next > 0 ? { ...s.captureRefs, [id]: next } : withoutKey(s.captureRefs, id) }
+    }),
   updateSlot: (id, mode, rect) =>
     set((s) => {
       const prev = s.slots[id]

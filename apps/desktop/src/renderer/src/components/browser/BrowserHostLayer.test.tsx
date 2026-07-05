@@ -57,7 +57,7 @@ beforeEach(async () => {
 })
 
 describe('BrowserHostLayer mosaic visibility', () => {
-  it('parks panel-mode browser off-screen but keeps it sized while the activity panel is collapsed (mosaic keep-alive)', () => {
+  it('parks panel-mode browser off-screen but keeps it mounted while the activity panel is collapsed (mosaic keep-alive)', () => {
     const { container } = render(<BrowserHostLayer />)
     act(() => {
       useBrowserStore.getState().ensure('browser-a', 'https://example.com')
@@ -71,6 +71,8 @@ describe('BrowserHostLayer mosaic visibility', () => {
     expect(host.style.pointerEvents).toBe('auto')
 
     act(() => useActivityPanelStore.getState().setShowPanel(false))
+    // Resting hidden state: off-screen (not display:none) so a live page keeps
+    // running without reload, but cheap — no in-viewport compositing.
     expect(host.style.display).toBe('block')
     expect(host.style.left).toBe('-99999px')
     expect(host.style.width).toBe('560px')
@@ -81,6 +83,42 @@ describe('BrowserHostLayer mosaic visibility', () => {
     expect(host.style.display).toBe('block')
     expect(host.style.left).toBe('120px')
     expect(host.style.pointerEvents).toBe('auto')
+  })
+
+  it('display:none for a slotless background tab at rest (no compositing cost)', () => {
+    const { container } = render(<BrowserHostLayer />)
+    act(() => {
+      // A tab a background session opened: registered in the store, never given a
+      // dock slot in the current view.
+      useBrowserStore.getState().ensure('browser-bg', 'https://example.com', 'sess-hidden')
+    })
+
+    const host = container.querySelector('[data-browser-id="browser-bg"]') as HTMLElement
+    expect(host).not.toBeNull()
+    expect(host.style.display).toBe('none')
+  })
+
+  it('pulls a hidden tab into the viewport (opacity-masked) only while a capture is in flight', () => {
+    const { container } = render(<BrowserHostLayer />)
+    act(() => {
+      useBrowserStore.getState().ensure('browser-bg', 'https://example.com', 'sess-hidden')
+    })
+
+    const host = container.querySelector('[data-browser-id="browser-bg"]') as HTMLElement
+    expect(host.style.display).toBe('none')
+
+    // A screenshot forces it into the viewport so capturePage has a surface.
+    act(() => useBrowserStore.getState().beginCapture('browser-bg'))
+    expect(host.style.display).toBe('block')
+    expect(host.style.left).toBe('0px')
+    expect(host.style.width).toBe('1280px')
+    expect(host.style.height).toBe('800px')
+    expect(host.style.opacity).toBe('0')
+    expect(host.style.pointerEvents).toBe('none')
+
+    // Capture done — back to the cheap resting state.
+    act(() => useBrowserStore.getState().endCapture('browser-bg'))
+    expect(host.style.display).toBe('none')
   })
 
   it('hides panel-mode browser when layoutMode is canvas', () => {

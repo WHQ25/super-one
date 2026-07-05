@@ -13,6 +13,8 @@ export interface BrowserTabState {
 
 export type BrowserSlotMode = 'panel' | 'canvas'
 
+export type AnnotateQuickMode = 'plain' | 'shot'
+
 export interface BrowserSlot {
   mode: BrowserSlotMode
   left: number
@@ -33,13 +35,14 @@ interface BrowserStore {
   captureRefs: Record<string, number>
   fullscreenId: string | null
   annotatingId: string | null
+  annotateQuick: AnnotateQuickMode | null
   insecureHosts: Record<string, string>
   markInsecure: (host: string, error: string) => void
   ensure: (id: string, url: string, owner?: string | null) => void
   patch: (id: string, partial: Partial<BrowserTabState>) => void
   remove: (id: string) => void
   setFullscreen: (id: string | null) => void
-  startAnnotate: (id: string) => void
+  startAnnotate: (id: string, quick?: AnnotateQuickMode | null) => void
   stopAnnotate: () => void
   setEmulation: (id: string, emulation: BrowserEmulation | null) => void
   beginCapture: (id: string) => void
@@ -73,12 +76,13 @@ export const useBrowserStore = create<BrowserStore>((set) => ({
   captureRefs: {},
   fullscreenId: null,
   annotatingId: null,
+  annotateQuick: null,
   insecureHosts: {},
   markInsecure: (host, error) =>
     set((s) => (s.insecureHosts[host] === error ? s : { insecureHosts: { ...s.insecureHosts, [host]: error } })),
   setFullscreen: (id) => set({ fullscreenId: id }),
-  startAnnotate: (id) => set({ annotatingId: id }),
-  stopAnnotate: () => set({ annotatingId: null }),
+  startAnnotate: (id, quick = null) => set({ annotatingId: id, annotateQuick: quick }),
+  stopAnnotate: () => set({ annotatingId: null, annotateQuick: null }),
   ensure: (id, url, owner = null) =>
     set((s) => (s.tabs[id] ? s : { tabs: { ...s.tabs, [id]: { ...DEFAULT_TAB, url, owner } } })),
   patch: (id, partial) =>
@@ -90,6 +94,7 @@ export const useBrowserStore = create<BrowserStore>((set) => ({
       emulations: withoutKey(s.emulations, id),
       captureRefs: withoutKey(s.captureRefs, id),
       annotatingId: s.annotatingId === id ? null : s.annotatingId,
+      annotateQuick: s.annotatingId === id ? null : s.annotateQuick,
     })),
   setEmulation: (id, emulation) =>
     set((s) => (emulation ? { emulations: { ...s.emulations, [id]: emulation } } : { emulations: withoutKey(s.emulations, id) })),

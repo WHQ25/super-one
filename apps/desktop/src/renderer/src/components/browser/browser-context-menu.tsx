@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Copy, MessageSquarePlus, Download, Link, ExternalLink, SquarePlus, Code, SquareDashedMousePointer } from 'lucide-react'
+import { Copy, MessageSquarePlus, Download, Link, ExternalLink, SquarePlus, Code, SquareDashedMousePointer, Camera } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { useChatStore } from '@/stores/chat'
@@ -29,7 +29,8 @@ function buildEntries(t: TranslateFn, wv: Electron.WebviewTag, e: Electron.Conte
   const sections: ContextMenuAction[][] = []
 
   sections.push([
-    { id: 'annotate', label: t('chat.browser.annotate'), icon: SquareDashedMousePointer, onSelect: () => useBrowserStore.getState().startAnnotate(browserId) },
+    { id: 'annotate', label: t('chat.browser.quickAnnotate'), icon: SquareDashedMousePointer, onSelect: () => useBrowserStore.getState().startAnnotate(browserId, 'plain') },
+    { id: 'annotateShot', label: t('chat.browser.quickAnnotateWithScreenshot'), icon: Camera, onSelect: () => useBrowserStore.getState().startAnnotate(browserId, 'shot') },
   ])
 
   if (p.linkURL) {

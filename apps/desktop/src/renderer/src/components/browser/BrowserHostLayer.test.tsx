@@ -30,6 +30,7 @@ vi.mock('./browser-annotate-flow', () => ({
 }))
 vi.mock('./browser-annotate-script', () => ({
   ANNOTATE_CANCEL_SCRIPT: '',
+  ANNOTATE_CTX_TRACKER_SCRIPT: '',
   ANNOTATE_MSG_PREFIX: '__annotate__',
 }))
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (k: string) => k }) }))

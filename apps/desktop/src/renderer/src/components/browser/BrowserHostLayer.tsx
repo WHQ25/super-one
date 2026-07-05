@@ -9,7 +9,7 @@ import { useGlobalDragging } from '@/hooks/useGlobalDragging'
 import { registerBrowserWebview, browserExecJs, pushBrowserConsole, clearBrowserConsole, browserIdByWebContentsId } from './browser-host-api'
 import { useBrowserAutomationHost } from './browser-automation-runtime'
 import { buildSessionScript, handleAnnotationMessage } from './browser-annotate-flow'
-import { ANNOTATE_CANCEL_SCRIPT, ANNOTATE_MSG_PREFIX } from './browser-annotate-script'
+import { ANNOTATE_CANCEL_SCRIPT, ANNOTATE_CTX_TRACKER_SCRIPT, ANNOTATE_MSG_PREFIX } from './browser-annotate-script'
 import { isBlankUrl, sameOrigin } from './browser-url'
 import { useBrowserContextMenu } from './browser-context-menu'
 
@@ -76,7 +76,11 @@ function PersistentBrowser({ browserId, layoutMode, resizing }: { browserId: str
     const onConsole = (e: Electron.ConsoleMessageEvent) => {
       if (!e.message.startsWith(ANNOTATE_MSG_PREFIX)) return
       try {
-        void handleAnnotationMessage(browserId, JSON.parse(e.message.slice(ANNOTATE_MSG_PREFIX.length)))
+        const payload = JSON.parse(e.message.slice(ANNOTATE_MSG_PREFIX.length))
+        void handleAnnotationMessage(browserId, payload)
+        if (payload?.op === 'commit' && useBrowserStore.getState().annotateQuick) {
+          useBrowserStore.getState().stopAnnotate()
+        }
       } catch {
         // malformed payload — ignore
       }
@@ -93,7 +97,7 @@ function PersistentBrowser({ browserId, layoutMode, resizing }: { browserId: str
       sWeight: t('chat.browser.styleWeight'),
       sRadius: t('chat.browser.styleRadius'),
       sPadding: t('chat.browser.stylePadding'),
-    })
+    }, useBrowserStore.getState().annotateQuick)
     void browserExecJs(browserId, script).catch(() => {}).finally(() => {
       if (done) return
       done = true
@@ -151,7 +155,10 @@ function PersistentBrowser({ browserId, layoutMode, resizing }: { browserId: str
       if (e.isMainFrame && useBrowserStore.getState().tabs[browserId]?.certError) patch(browserId, { certError: null })
     }
     const onContextMenu = (e: Electron.ContextMenuEvent) => contextMenuRef.current(wv, e)
+    const injectCtxTracker = () => void browserExecJs(browserId, ANNOTATE_CTX_TRACKER_SCRIPT).catch(() => {})
 
+    injectCtxTracker()
+    wv.addEventListener('dom-ready', injectCtxTracker)
     wv.addEventListener('console-message', onConsole)
     wv.addEventListener('context-menu', onContextMenu)
     wv.addEventListener('did-start-navigation', onNavigateClearConsole)
@@ -165,6 +172,7 @@ function PersistentBrowser({ browserId, layoutMode, resizing }: { browserId: str
     return () => {
       unregister()
       clearBrowserConsole(browserId)
+      wv.removeEventListener('dom-ready', injectCtxTracker)
       wv.removeEventListener('console-message', onConsole)
       wv.removeEventListener('context-menu', onContextMenu)
       wv.removeEventListener('did-start-navigation', onNavigateClearConsole)

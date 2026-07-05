@@ -776,7 +776,8 @@ export type Messages = {
       addressPlaceholder: string
       screenshotCopied: string
       screenshotFailed: string
-      annotate: string
+      quickAnnotate: string
+      quickAnnotateWithScreenshot: string
       copyText: string
       addTextToChat: string
       addImageToChat: string
@@ -2247,7 +2248,8 @@ export const en: Messages = {
       addressPlaceholder: 'Search or enter a URL',
       screenshotCopied: 'Screenshot copied to clipboard',
       screenshotFailed: 'Failed to capture screenshot',
-      annotate: 'Annotate',
+      quickAnnotate: 'Quick Annotation',
+      quickAnnotateWithScreenshot: 'Quick Annotation with Screenshot',
       copyText: 'Copy Text',
       addTextToChat: 'Add Text to Chat',
       addImageToChat: 'Add Image to Chat',

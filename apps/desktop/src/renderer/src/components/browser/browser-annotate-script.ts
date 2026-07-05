@@ -45,6 +45,8 @@ export interface AnnotateConfig {
   sWeight: string
   sRadius: string
   sPadding: string
+  quick: boolean
+  quickShot: boolean
 }
 
 export function buildAnnotateScript(config: AnnotateConfig): string {
@@ -53,6 +55,10 @@ export function buildAnnotateScript(config: AnnotateConfig): string {
 
 export const ANNOTATE_CANCEL_SCRIPT =
   'window.__superoneAnnotateCancel && window.__superoneAnnotateCancel()'
+
+export const ANNOTATE_CTX_TRACKER_SCRIPT =
+  'if(!window.__superoneCtxTracker){window.__superoneCtxTracker=1;' +
+  'document.addEventListener("contextmenu",function(e){window.__superoneCtxTarget=e.target},true)}'
 
 export const ANNOTATE_HIDE_AND_WAIT_SCRIPT =
   'window.__superoneAnnotateHide && window.__superoneAnnotateHide();' +

@@ -493,14 +493,14 @@
       trashBtn.style.display = 'none'
     }
     function updateConfirmState() {
-      confirmBtn.disabled = !input.value.trim() && Object.keys(styleChanges).length === 0
+      confirmBtn.disabled = !input.value.trim() && Object.keys(styleChanges).length === 0 && !shotChk.checked
     }
     function sendPayload(obj) {
       try { console.log(PREFIX + JSON.stringify(obj)) } catch (e) {}
     }
     function commit() {
       if (!pending) return
-      if (!input.value.trim() && Object.keys(styleChanges).length === 0) return
+      if (!input.value.trim() && Object.keys(styleChanges).length === 0 && !shotChk.checked) return
       var changes = []
       for (var k in styleChanges) changes.push(styleChanges[k])
       var comment = input.value.trim()
@@ -619,12 +619,17 @@
     }
     function onKey(e) {
       if (e.key === 'Escape') {
-        if (phase === 'editing') { e.preventDefault(); closeEditor(false); return }
+        e.preventDefault()
+        if (phase === 'editing') {
+          if (config.quick) { finishAll(); return }
+          closeEditor(false); return
+        }
         if (dragStart || dragging) {
-          e.preventDefault()
           dragStart = null; dragging = false; downEl = null
           clearBox(marqueeBox); clearBox(hoverBox)
+          return
         }
+        finishAll()
         return
       }
       if (phase === 'editing' && e.key === 'Enter' && !e.shiftKey && !e.isComposing && inEditor(e)) { e.preventDefault(); commit() }
@@ -661,6 +666,7 @@
     confirmBtn.addEventListener('click', function (e) { e.preventDefault(); commit() })
     trashBtn.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); deleteCurrent() })
     input.addEventListener('input', updateConfirmState)
+    shotChk.addEventListener('change', updateConfirmState)
     document.addEventListener('pointermove', onMove, true)
     document.addEventListener('pointerdown', onDown, true)
     document.addEventListener('pointerup', onUp, true)
@@ -671,5 +677,16 @@
     window.__superoneAnnotateShow = function () { marks.style.visibility = 'visible' }
     window.__superoneAnnotateRemoveMark = removeMark
     window.__superoneAnnotateClearMarks = clearMarks
+
+    if (config.quick) {
+      var quickEl = window.__superoneCtxTarget
+      if (
+        quickEl && quickEl.nodeType === 1 && quickEl.isConnected &&
+        quickEl !== document.documentElement && quickEl !== document.body && !host.contains(quickEl)
+      ) {
+        beginEdit('element', rectOf(quickEl), selectorOf(quickEl), quickEl)
+        if (config.quickShot) { shotChk.checked = true; updateConfirmState() }
+      }
+    }
   })
 })

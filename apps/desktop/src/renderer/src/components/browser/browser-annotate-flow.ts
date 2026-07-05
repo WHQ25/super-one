@@ -1,4 +1,5 @@
 import { useChatStore } from '@/stores/chat'
+import type { AnnotateQuickMode } from '@/stores/browser'
 import { browserExecJs, browserCapture } from './browser-host-api'
 import {
   buildAnnotateScript,
@@ -21,7 +22,7 @@ export interface AnnotateLabels {
   sPadding: string
 }
 
-function readTheme(): Omit<AnnotateConfig, keyof AnnotateLabels> {
+function readTheme(): Pick<AnnotateConfig, 'primary' | 'fill' | 'bg' | 'fg' | 'border' | 'mutedFg'> {
   const cs = getComputedStyle(document.documentElement)
   const v = (name: string, fallback: string) => cs.getPropertyValue(name).trim() || fallback
   const primary = v('--primary', 'oklch(0.62 0.19 40)')
@@ -35,8 +36,8 @@ function readTheme(): Omit<AnnotateConfig, keyof AnnotateLabels> {
   }
 }
 
-export function buildSessionScript(labels: AnnotateLabels): string {
-  const config: AnnotateConfig = { ...readTheme(), ...labels }
+export function buildSessionScript(labels: AnnotateLabels, quick: AnnotateQuickMode | null = null): string {
+  const config: AnnotateConfig = { ...readTheme(), ...labels, quick: quick != null, quickShot: quick === 'shot' }
   return buildAnnotateScript(config)
 }
 

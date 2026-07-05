@@ -182,8 +182,8 @@ export const zh: Messages = {
       title: '浏览器',
       subtitle: '配置内置浏览器及其自动化工具',
       cdp: {
-        label: 'Chrome 调试协议 (CDP)',
-        description: '为内置浏览器接入调试协议:浏览器工具将使用可信输入事件、整页截图,并解锁文件上传工具。部分工具需开启此项才能使用。注意:当某个浏览器工具正在调试某标签页时,无法为该页打开开发者工具。',
+        label: 'Chrome 开发者工具协议 (CDP)',
+        description: '内置浏览器工具将路由到 CDP 实现,并解锁文件上传工具。',
       },
       experimental: {
         title: '实验工具',

@@ -1629,7 +1629,7 @@ export const en: Messages = {
       subtitle: 'Configure the built-in browser and its automation tools',
       cdp: {
         label: 'Chrome DevTools Protocol (CDP)',
-        description: 'Attach the debug protocol to the built-in browser. Browser tools then use trusted input events and full-page screenshots, and unlock the file-upload tool. Some tools require this to be on. Note: you cannot open DevTools for a tab while a browser tool is actively debugging it.',
+        description: 'Routes the built-in browser tools to their CDP implementation, and unlocks the file-upload tool.',
       },
       experimental: {
         title: 'Experimental tools',

@@ -31,9 +31,11 @@ function certHost(url: string): string | null {
 }
 
 // The built-in browser <webview> allows popups (required for window.open to reach
-// this handler at all), but has no place to host a native popup window. Convert
-// window.open / target=_blank into a same-tab navigation in the originating webview
-// so popup-based OAuth (e.g. Google Identity Services) proceeds inline like a redirect.
+// this handler at all). Cmd/Ctrl+click and target=_blank (tab dispositions) route to
+// a real browser tab; feature'd window.open popups (disposition 'new-window', the
+// OAuth signature) open as a real popup window so window.opener and the window ref
+// returned to the opener survive — postMessage-relay logins (Google Identity Services
+// on x.com, etc.) break with a same-tab redirect because the opener chain is severed.
 export function registerBrowserPopupRedirect(): void {
   ipcMain.handle(AgentIpcChannels.BROWSER_CERT_PROCEED, (_e, url: string) => {
     const host = certHost(url)
@@ -58,24 +60,22 @@ export function registerBrowserPopupRedirect(): void {
     })
 
     contents.setWindowOpenHandler(({ url, disposition }) => {
-      if (url && url !== 'about:blank') {
-        // Chrome maps Cmd/Ctrl+click → 'background-tab', Cmd/Ctrl+Shift+click and
-        // target=_blank → 'foreground-tab'. Route those to a real new browser tab.
-        // Everything else (notably feature'd window.open OAuth popups → 'new-window')
-        // keeps the inline same-tab redirect so popup-based login proceeds like before.
-        if (disposition === 'foreground-tab' || disposition === 'background-tab') {
-          contents.hostWebContents?.send(AgentIpcChannels.BROWSER_OPEN_TAB, {
-            webContentsId: contents.id,
-            url,
-            background: disposition === 'background-tab',
-          })
-        } else {
-          queueMicrotask(() => {
-            if (!contents.isDestroyed()) void contents.loadURL(url)
-          })
-        }
+      if (!url || url === 'about:blank') return { action: 'deny' }
+      // Chrome maps Cmd/Ctrl+click → 'background-tab', Cmd/Ctrl+Shift+click and
+      // target=_blank → 'foreground-tab'. Route those to a real new browser tab.
+      if (disposition === 'foreground-tab' || disposition === 'background-tab') {
+        contents.hostWebContents?.send(AgentIpcChannels.BROWSER_OPEN_TAB, {
+          webContentsId: contents.id,
+          url,
+          background: disposition === 'background-tab',
+        })
+        return { action: 'deny' }
       }
-      return { action: 'deny' }
+      // Feature'd window.open (disposition 'new-window') → real popup window. Allow it
+      // so the opener keeps a live window ref and the popup keeps window.opener, which
+      // postMessage-relay OAuth (Google Identity Services) depends on. The popup inherits
+      // the opener's session/partition, so browser cookies are shared automatically.
+      return { action: 'allow', overrideBrowserWindowOptions: { autoHideMenuBar: true } }
     })
 
     // Keyboard events inside the guest webview never bubble to the host renderer,

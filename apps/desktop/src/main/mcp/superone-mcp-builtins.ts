@@ -8,6 +8,7 @@ import { createMiniApp, cacheAppEntry, registerDevMiniApp, installDevPointer } f
 import { packApp } from '../miniapp/miniapp-packager'
 import { generateSuperoneDts } from '../miniapp/miniapp-templates'
 import { renameSession as dbRenameSession, isSessionUserRenamed } from '../db-sessions'
+import { registerMediaTools, generateImageToolHandler, listMediaProvidersHandler, type GenerateImageArgs, type ListMediaProvidersArgs } from './media-tools'
 import overviewMd from './guides/overview.md?raw'
 import manifestMd from './guides/manifest.md?raw'
 import permissionsMd from './guides/permissions.md?raw'
@@ -254,6 +255,10 @@ export async function executeBuiltInSuperoneTool(
       return updateSuperoneTypes(args as { appDir: string })
     case 'session_rename':
       return renameSessionTool(args as { title: string }, deps)
+    case 'media_list_providers':
+      return listMediaProvidersHandler(args as ListMediaProvidersArgs)
+    case 'media_generate_image':
+      return generateImageToolHandler(args as unknown as GenerateImageArgs, deps)
   }
 }
 
@@ -327,4 +332,6 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
     },
     (args) => renameSessionTool(args, deps),
   )
+
+  registerMediaTools(server, deps)
 }

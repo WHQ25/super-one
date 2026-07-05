@@ -1659,6 +1659,27 @@ export interface UpdateProviderRequest {
   sort_order?: number
 }
 
+export interface MediaProviderStatus {
+  id: string
+  label: string
+  kind: string
+  categories: string[]
+  defaultModel: string
+  models: { id: string; label: string }[]
+  apiKeyEnv?: string
+  baseURL?: string
+  custom: boolean
+  hasKey: boolean
+  hasEnvKey: boolean
+}
+
+export interface UpsertMediaProviderRequest {
+  id?: string
+  label: string
+  baseURL: string
+  models: string[]
+}
+
 export interface ProcessMetricLite {
   pid: number
   type: string
@@ -1984,6 +2005,12 @@ export const AgentIpcChannels = {
   PROVIDERS_TEST: 'providers:test',
   PROVIDERS_TEST_CODEX: 'providers:test-codex',
   PROVIDERS_TEST_CODEX_PROGRESS: 'providers:test-codex-progress',
+
+  // Media generation providers (image/video)
+  MEDIA_GEN_PROVIDERS: 'mediaGen:providers',
+  MEDIA_GEN_SET_KEY: 'mediaGen:setKey',
+  MEDIA_GEN_UPSERT_CUSTOM: 'mediaGen:upsertCustom',
+  MEDIA_GEN_REMOVE_CUSTOM: 'mediaGen:removeCustom',
 
   // Session Providers (new session_providers table)
   SESSION_PROVIDERS_LIST: 'sessionProviders:list',

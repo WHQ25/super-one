@@ -635,6 +635,14 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.SAVE_FILE, folderPath, filePath, content),
   readFileAsDataUri: (absPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.READ_FILE_AS_DATA_URI, absPath),
+  getMediaProviders: () =>
+    ipcRenderer.invoke(AgentIpcChannels.MEDIA_GEN_PROVIDERS),
+  setMediaProviderKey: (providerId: string, apiKey: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.MEDIA_GEN_SET_KEY, providerId, apiKey),
+  upsertMediaCustomProvider: (input: { id?: string; label: string; baseURL: string; models: string[] }) =>
+    ipcRenderer.invoke(AgentIpcChannels.MEDIA_GEN_UPSERT_CUSTOM, input),
+  removeMediaCustomProvider: (id: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.MEDIA_GEN_REMOVE_CUSTOM, id),
   listWorkflowAgents: (transcriptDir: string) =>
     ipcRenderer.invoke(AgentIpcChannels.LIST_WORKFLOW_AGENTS, transcriptDir),
   readWorkflowOutput: (filePath: string) =>

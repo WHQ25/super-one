@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react'
-import { AppWindow, ArrowLeft, BarChart3, Blocks, Bot, Globe, LayoutGrid, Loader2, Paintbrush, Palette, Puzzle, Server, Settings, Smartphone, Webhook } from 'lucide-react'
+import { AppWindow, ArrowLeft, BarChart3, Blocks, Bot, Globe, Image, LayoutGrid, Loader2, Paintbrush, Palette, Puzzle, Server, Settings, Smartphone, Webhook } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@superone/ui/components/ui/button'
 import { useAppStore } from '@/stores/app'
@@ -15,6 +15,7 @@ import { AppsSettingsPage } from './AppsSettingsPage'
 import { AppSettingsPage } from './AppSettingsPage'
 import { AppearancePage } from './AppearancePage'
 import { BrowserSettingsPage } from './BrowserSettingsPage'
+import { MediaGenSettingsPage } from './MediaGenSettingsPage'
 import { Tabs, TabsList, TabsTrigger } from '@superone/ui/components/ui/tabs'
 import { cn } from '@superone/ui/lib/utils'
 import type { SettingsProvider } from '@superone/shared/agent-types'
@@ -26,6 +27,7 @@ const globalTabs = [
   { id: 'appearance' as const, labelKey: 'settings.layout.tabs.appearance', icon: Paintbrush },
   { id: 'browser' as const, labelKey: 'settings.layout.tabs.browser', icon: AppWindow },
   { id: 'apps' as const, labelKey: 'settings.layout.tabs.apps', icon: LayoutGrid },
+  { id: 'media-gen' as const, labelKey: 'settings.layout.tabs.mediaGen', icon: Image },
   { id: 'remote' as const, labelKey: 'settings.layout.tabs.remote', icon: Smartphone },
   { id: 'usage' as const, labelKey: 'settings.layout.tabs.usage', icon: BarChart3 },
 ]
@@ -133,6 +135,7 @@ export function SettingsLayout() {
         {settingsTab === 'app-settings' && <AppSettingsPage />}
         {settingsTab === 'appearance' && <AppearancePage />}
         {settingsTab === 'browser' && <BrowserSettingsPage />}
+        {settingsTab === 'media-gen' && <MediaGenSettingsPage />}
         {settingsTab === 'apps' && <AppsSettingsPage />}
         {settingsTab === 'preferences' && <PreferencesPage />}
         {settingsTab === 'remote' && <RemotePage />}

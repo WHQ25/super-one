@@ -387,6 +387,27 @@ export function runDatabaseMigrations(db: Database.Database): void {
       value TEXT NOT NULL
     );
   `)
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS media_generations (
+      id TEXT PRIMARY KEY,
+      session_id TEXT,
+      project_id TEXT,
+      source TEXT NOT NULL,
+      provider_id TEXT NOT NULL,
+      model TEXT NOT NULL,
+      media_type TEXT NOT NULL DEFAULT 'image',
+      prompt TEXT NOT NULL,
+      params_json TEXT NOT NULL DEFAULT '{}',
+      warnings_json TEXT NOT NULL DEFAULT '[]',
+      result_paths_json TEXT,
+      status TEXT NOT NULL,
+      error TEXT,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_media_gen_session ON media_generations(session_id);
+    CREATE INDEX IF NOT EXISTS idx_media_gen_created ON media_generations(created_at DESC);
+  `)
 }
 
 function seedBaseSessionProviders(db: Database.Database): void {

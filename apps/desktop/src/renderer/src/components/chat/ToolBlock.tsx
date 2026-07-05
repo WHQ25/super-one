@@ -399,6 +399,8 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
     }
     const superoneToolDisplay: Record<string, { icon: ToolIconType; streaming: string; done: string; summaryField?: string }> = {
       miniapp_dev_read_guide: { icon: 'book-open', streaming: t('chat.toolBlock.readingMiniAppGuide'), done: t('chat.toolBlock.readMiniAppGuide'), summaryField: 'topic' },
+      media_list_providers: { icon: 'image', streaming: t('chat.toolBlock.listingMediaProviders'), done: t('chat.toolBlock.listedMediaProviders') },
+      media_generate_image: { icon: 'image', streaming: t('chat.toolBlock.generatingImage'), done: t('chat.toolBlock.generatedImage'), summaryField: 'prompt' },
     }
     if (mcpInfo.mcpToolName === 'miniapp_dev_pack') {
       const appDir = String(params.appDir ?? '')

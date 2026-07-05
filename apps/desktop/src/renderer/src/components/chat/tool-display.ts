@@ -38,7 +38,7 @@ export function getToolVerb(toolName: string): string {
 
 /** Shared tool name → icon key + summary extraction for ToolBlock & PermissionPrompt. */
 
-export type ToolIcon = 'terminal' | 'file-text' | 'file-edit' | 'file-plus' | 'search' | 'folder-search' | 'globe' | 'message-circle' | 'wrench' | 'plug' | 'clipboard-list' | 'bot' | 'book-open' | 'canvas' | 'toolbox' | 'package' | 'pencil'
+export type ToolIcon = 'terminal' | 'file-text' | 'file-edit' | 'file-plus' | 'search' | 'folder-search' | 'globe' | 'message-circle' | 'wrench' | 'plug' | 'clipboard-list' | 'bot' | 'book-open' | 'canvas' | 'toolbox' | 'package' | 'pencil' | 'image'
 
 export interface ToolDisplay {
   icon: ToolIcon

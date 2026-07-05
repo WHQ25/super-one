@@ -10,6 +10,8 @@ import { activateWorktree, assignBranch, getCheckedOutBranches, getHandoffPrevie
 import { is } from '@electron-toolkit/utils'
 import log from './logger'
 import { startMediaServer, getMediaServerPort } from './media-server'
+import { getMediaProviderStatuses, setMediaProviderKey, upsertMediaCustomProvider, removeMediaCustomProvider } from './media-gen/settings-service'
+import type { UpsertMediaProviderRequest } from '@superone/shared/agent-types'
 import { getAppBasePath, cacheAppEntry, getAppInstallDir, generateCSP, readManifest, validatePath, discoverApps, setAllowedDirectories, clearAllowedDirectories, handleFsRequest, handleGitRequest, discoverProjectApps, startWatch, stopWatch, onFsWatchEvent, onGitHeadChangeEvent, getAllowedDirs, resolveSafePathMulti, setAllowedMedia, clearAllowedMedia, isMediaAllowed, appIdFromUrl, listDevRegistryView, registerDevMiniApp, unregisterDevMiniApp, installDevPointer, removeDevPointer, setDevPointerEnabled, type AllowedDir } from './miniapp/miniapp-service'
 import * as devRegistry from './miniapp/dev-registry'
 import { handleDbRequest, closeAllDbConnections } from './miniapp/miniapp-db'
@@ -1886,6 +1888,42 @@ function registerIpcHandlers(): void {
       const buf = await readFile(absPath)
       const mime = READABLE_IMAGE_MIME[ext] ?? 'application/octet-stream'
       return { ok: true, dataUri: `data:${mime};base64,${buf.toString('base64')}` }
+    } catch (err) {
+      return { ok: false, error: (err as Error).message }
+    }
+  })
+
+  ipcMain.handle(AgentIpcChannels.MEDIA_GEN_PROVIDERS, () => getMediaProviderStatuses())
+
+  ipcMain.handle(AgentIpcChannels.MEDIA_GEN_SET_KEY, async (_event, providerId: string, apiKey: string) => {
+    if (typeof providerId !== 'string' || typeof apiKey !== 'string') {
+      return { ok: false, error: 'Invalid arguments' }
+    }
+    try {
+      await setMediaProviderKey(providerId, apiKey)
+      return { ok: true }
+    } catch (err) {
+      return { ok: false, error: (err as Error).message }
+    }
+  })
+
+  ipcMain.handle(AgentIpcChannels.MEDIA_GEN_UPSERT_CUSTOM, async (_event, input: UpsertMediaProviderRequest) => {
+    if (!input || typeof input.label !== 'string' || typeof input.baseURL !== 'string' || !Array.isArray(input.models)) {
+      return { ok: false, error: 'Invalid arguments' }
+    }
+    try {
+      const result = await upsertMediaCustomProvider(input)
+      return { ok: true, id: result.id }
+    } catch (err) {
+      return { ok: false, error: (err as Error).message }
+    }
+  })
+
+  ipcMain.handle(AgentIpcChannels.MEDIA_GEN_REMOVE_CUSTOM, async (_event, id: string) => {
+    if (typeof id !== 'string') return { ok: false, error: 'Invalid arguments' }
+    try {
+      await removeMediaCustomProvider(id)
+      return { ok: true }
     } catch (err) {
       return { ok: false, error: (err as Error).message }
     }

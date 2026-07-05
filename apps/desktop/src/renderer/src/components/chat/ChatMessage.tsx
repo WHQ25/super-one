@@ -1,4 +1,4 @@
-import type { ChatMessage as ChatMessageType, ContentBlock, AgentStatus } from '@superone/shared/agent-types'
+import type { ChatMessage as ChatMessageType, ContentBlock, AgentStatus, CodexImageGenerationItem } from '@superone/shared/agent-types'
 import { useState, useEffect, useRef, useMemo, useCallback, memo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@superone/ui/lib/utils'
@@ -12,6 +12,7 @@ import type { MiniAppEntry } from '@superone/shared/miniapp-types'
 import { SubagentBlock } from './SubagentBlock'
 import { WorkflowBlock } from './WorkflowBlock'
 import { CodexTurnView } from './CodexTurnView'
+import { CodexImageGalleryBlock } from './CodexImageGalleryBlock'
 import { AttachmentBar } from './AttachmentBar'
 import { UserSelectionChip } from './UserSelectionChip'
 import { FileIcon } from '@superone/ui/components/ui/FileIcon'
@@ -728,6 +729,32 @@ export function RateLimitIndicator({
   )
 }
 
+/** Aggregate all media_generate_image results in a message into gallery items shown at the bottom of the turn. */
+function collectGeneratedImages(content: ContentBlock[], toolResultMap: Map<string, string>): CodexImageGenerationItem[] {
+  const items: CodexImageGenerationItem[] = []
+  for (const block of content) {
+    if (block.type !== 'tool_use' || !block.toolName.endsWith('__media_generate_image')) continue
+    const summary = toolResultMap.get(block.toolUseId)
+    if (!summary) continue
+    const rawPrompt = (block.input as { prompt?: unknown } | undefined)?.prompt
+    const prompt = typeof rawPrompt === 'string' ? rawPrompt : undefined
+    try {
+      const parsed = JSON.parse(summary) as { status?: string; savedPaths?: unknown }
+      if (parsed.status === 'error') {
+        items.push({ id: block.toolUseId, type: 'image_generation', status: 'failed', revisedPrompt: prompt })
+        continue
+      }
+      const paths = Array.isArray(parsed.savedPaths)
+        ? parsed.savedPaths.filter((p): p is string => typeof p === 'string')
+        : []
+      paths.forEach((path, idx) =>
+        items.push({ id: `${block.toolUseId}-${idx}`, type: 'image_generation', status: 'completed', savedPath: path, revisedPrompt: prompt }),
+      )
+    } catch {}
+  }
+  return items
+}
+
 export const ChatMessage = memo(function ChatMessage({ message, sessionStatus, isLastAssistant, hideUserActions }: ChatMessageProps) {
   const projectPath = useChatStore((s) => s.activeProject)
   const isUser = message.role === 'user'
@@ -741,6 +768,11 @@ export const ChatMessage = memo(function ChatMessage({ message, sessionStatus, i
   const grouped = useMemo(
     () => (isUser || isCodexMessage) ? null : groupContent(message.content, apps),
     [isUser, isCodexMessage, message.content, apps],
+  )
+
+  const generatedImages = useMemo(
+    () => (grouped ? collectGeneratedImages(message.content, grouped.toolResultMap) : []),
+    [grouped, message.content],
   )
 
   const userText = useMemo(
@@ -854,6 +886,7 @@ export const ChatMessage = memo(function ChatMessage({ message, sessionStatus, i
               )
             })
         }
+        {!isUser && generatedImages.length > 0 && <CodexImageGalleryBlock items={generatedImages} />}
         {message.status === 'interrupted' && (
           <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
             <OctagonX className="size-3" />

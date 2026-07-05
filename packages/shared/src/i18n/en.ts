@@ -146,6 +146,7 @@ export type Messages = {
         apps: string
         remote: string
         usage: string
+        mediaGen: string
         providers: string
         agents: string
         skills: string
@@ -606,6 +607,10 @@ export type Messages = {
       readWidgetGuidelines: string
       readingMiniAppGuide: string
       readMiniAppGuide: string
+      generatingImage: string
+      generatedImage: string
+      listingMediaProviders: string
+      listedMediaProviders: string
       settingUpMiniApp: string
       setUpMiniApp: string
       setUpMiniAppFailed: string
@@ -1606,6 +1611,7 @@ export const en: Messages = {
         apps: 'Mini Apps',
         remote: 'Remote Control',
         usage: 'Usage Stats',
+        mediaGen: 'Image Gen',
         providers: 'Providers',
         agents: 'Subagents',
         skills: 'Skills',
@@ -2078,6 +2084,10 @@ export const en: Messages = {
       readWidgetGuidelines: 'Read widget guidelines',
       readingMiniAppGuide: 'Reading mini-app guide',
       readMiniAppGuide: 'Read mini-app guide',
+      generatingImage: 'Generating image',
+      generatedImage: 'Generated image',
+      listingMediaProviders: 'Listing image providers',
+      listedMediaProviders: 'Listed image providers',
       settingUpMiniApp: 'Setting up mini-app',
       setUpMiniApp: 'Set up mini-app',
       setUpMiniAppFailed: 'Mini-app setup failed',

@@ -26,6 +26,8 @@ export const BUILT_IN_SUPERONE_TOOL_NAMES = [
   'miniapp_dev_pack',
   'miniapp_dev_update_types',
   'session_rename',
+  'media_list_providers',
+  'media_generate_image',
   'widget_read_guide',
   'widget_show',
   'browser_snapshot',
@@ -105,6 +107,21 @@ export const RENAME_SESSION_DESCRIPTION =
   'Rename the current chat session to a concise topic label shown in the sidebar.\n\n' +
   'Only the top-level agent talking directly to the user may call this. If you were launched as a Task/subagent worker, do NOT call it — you do not own the user-facing session title.\n\n' +
   'If the tool returns an error containing "user_locked", the user has manually named this session — do not call session_rename again for this session.'
+
+export const LIST_MEDIA_PROVIDERS_DESCRIPTION =
+  'List the configured and usable media generation providers and their capabilities. Only providers that have an API key configured are returned. ' +
+  'Call this before media_generate_image when you are unsure which providers/models are available or which one to use. ' +
+  'Pass `category` (e.g. "image") to filter to providers that support that media type. ' +
+  'Returns for each provider: `id` (pass to media_generate_image), `kind`, `categories`, `sizing` ("size" or "aspectRatio"), `supportsMask`, `defaultModel`, and available `models`.'
+
+export const GENERATE_IMAGE_DESCRIPTION =
+  'Generate or edit an image from a text prompt using an AI image model. ' +
+  'Use this when the user asks to create, draw, render, design, or edit an image / picture / illustration / logo / photo. ' +
+  'IMPORTANT — DISPLAY: the generated image is AUTOMATICALLY rendered inline in the chat for the user the moment this tool returns. Do NOT embed, attach, or link it again in your reply. In particular, do NOT write a Markdown image or link to the saved path (e.g. `![...](/path)` or `[...](/path)`) — the path is a local file, re-embedding it is redundant and will not render. After calling this tool, just briefly describe the result in words (or ask what to change next); never paste the file path or a Markdown image of it. ' +
+  'For text-to-image, pass only `prompt`. For image editing / image-to-image (e.g. "change X", "add Y", or iterating on a previous result), also pass the source image file path(s) in `reference_image_paths`. ' +
+  'The result JSON returns the saved file path(s) in `savedPaths` for your own reference only. If you need to visually inspect the output to verify or iterate on it, use the Read tool on a saved path. ' +
+  '`provider` selects the backend by id (default: the first usable provider). If unsure which providers/models exist, call media_list_providers first. Use `aspect_ratio` (e.g. "16:9") for google models and `size` (e.g. "1024x1024") for openai / openai-compatible. ' +
+  'Settings a model does not support are reported in the result `warnings` rather than failing the call.'
 
 export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
   {
@@ -192,6 +209,34 @@ export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
         title: { type: 'string', description: 'A concise 4-8 word title describing the current conversation topic.', minLength: 1, maxLength: 80 },
       },
       required: ['title'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'media_list_providers',
+    description: LIST_MEDIA_PROVIDERS_DESCRIPTION,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        category: { type: 'string', description: 'Filter by media category, e.g. "image". Omit to list all usable providers.' },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'media_generate_image',
+    description: GENERATE_IMAGE_DESCRIPTION,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        prompt: { type: 'string', description: 'A detailed description of the image to generate, or the edit to apply when reference images are provided.' },
+        provider: { type: 'string', description: 'Which configured image provider id to use. Call media_list_providers to discover ids. Defaults to the first usable provider.' },
+        model: { type: 'string', description: "Model id override. Defaults to the provider's default model." },
+        aspect_ratio: { type: 'string', description: 'Aspect ratio like "16:9" or "1:1". Preferred for google models.' },
+        size: { type: 'string', description: 'Pixel size like "1024x1024". Preferred for openai / openai-compatible models.' },
+        reference_image_paths: { type: 'array', items: { type: 'string' }, description: 'Absolute paths to input images for editing / image-to-image / iterating on a prior result. Omit for pure text-to-image.' },
+      },
+      required: ['prompt'],
       additionalProperties: false,
     },
   },

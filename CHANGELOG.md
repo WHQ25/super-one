@@ -4,6 +4,18 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.43.13-alpha] - 2026-07-06
+
+### Added
+
+- Auto-warmup now waits until you've been typing for 10 seconds and expires 10 minutes after your last input
+
+### Fixed
+
+- Browser OAuth login popups now open as real windows, preserving the opener so the login flow completes
+- Chat auto-scroll now follows only when you send input, instead of on every streaming update
+- Corrected the browser CDP setting description to match its actual behavior
+
 ## [0.43.12-alpha] - 2026-07-05
 
 ### Added

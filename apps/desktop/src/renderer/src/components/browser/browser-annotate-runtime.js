@@ -7,10 +7,48 @@
     var PREFIX = '__SUPERONE_ANNO__'
     var BOX_Z = 2147483640
     var CHROME_Z = 2147483646
-    var SLIDERS_SVG = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="21" x2="14" y1="4" y2="4"/><line x1="10" x2="3" y1="4" y2="4"/><line x1="21" x2="12" y1="12" y2="12"/><line x1="8" x2="3" y1="12" y2="12"/><line x1="21" x2="16" y1="20" y2="20"/><line x1="12" x2="3" y1="20" y2="20"/><line x1="14" x2="14" y1="2" y2="6"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="16" x2="16" y1="18" y2="22"/></svg>'
-    var CHECK_SVG = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>'
-    var GRIP_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.4"/><circle cx="15" cy="6" r="1.4"/><circle cx="9" cy="12" r="1.4"/><circle cx="15" cy="12" r="1.4"/><circle cx="9" cy="18" r="1.4"/><circle cx="15" cy="18" r="1.4"/></svg>'
-    var TRASH_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>'
+    var SVGNS = 'http://www.w3.org/2000/svg'
+    function stroked(sw) {
+      return { fill: 'none', stroke: 'currentColor', 'stroke-width': sw, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }
+    }
+    function icon(size, attrs, kids) {
+      var svg = document.createElementNS(SVGNS, 'svg')
+      svg.setAttribute('width', size)
+      svg.setAttribute('height', size)
+      svg.setAttribute('viewBox', '0 0 24 24')
+      for (var k in attrs) svg.setAttribute(k, attrs[k])
+      for (var i = 0; i < kids.length; i++) {
+        var c = document.createElementNS(SVGNS, kids[i][0])
+        var a = kids[i][1]
+        for (var ak in a) c.setAttribute(ak, a[ak])
+        svg.appendChild(c)
+      }
+      return svg
+    }
+    function line(x1, x2, y1, y2) { return ['line', { x1: x1, x2: x2, y1: y1, y2: y2 }] }
+    function slidersIcon() {
+      return icon('15', stroked('2'), [
+        line('21', '14', '4', '4'), line('10', '3', '4', '4'),
+        line('21', '12', '12', '12'), line('8', '3', '12', '12'),
+        line('21', '16', '20', '20'), line('12', '3', '20', '20'),
+        line('14', '14', '2', '6'), line('8', '8', '10', '14'), line('16', '16', '18', '22'),
+      ])
+    }
+    function checkIcon() {
+      return icon('15', stroked('2.5'), [['path', { d: 'M20 6 9 17l-5-5' }]])
+    }
+    function gripIcon() {
+      var dots = [], xs = ['9', '15'], ys = ['6', '12', '18']
+      for (var yi = 0; yi < ys.length; yi++) for (var xi = 0; xi < xs.length; xi++) dots.push(['circle', { cx: xs[xi], cy: ys[yi], r: '1.4' }])
+      return icon('14', { fill: 'currentColor' }, dots)
+    }
+    function trashIcon() {
+      return icon('14', stroked('2'), [
+        ['path', { d: 'M3 6h18' }],
+        ['path', { d: 'M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6' }],
+        ['path', { d: 'M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2' }],
+      ])
+    }
 
     var phase = 'idle'
     var dragStart = null
@@ -24,6 +62,10 @@
 
     var prevOverflow = document.documentElement.style.overflow
     document.documentElement.style.overflow = 'hidden'
+    window.__superoneAnnotateCancel = function () {
+      document.documentElement.style.overflow = prevOverflow
+      if (host && host.parentNode) host.parentNode.removeChild(host)
+    }
 
     var host = document.createElement('div')
     host.style.cssText = 'position:fixed;inset:0;margin:0;padding:0;border:0;cursor:crosshair;pointer-events:auto;z-index:' + CHROME_Z
@@ -77,7 +119,7 @@
     var slidersBtn = document.createElement('button')
     slidersBtn.type = 'button'
     slidersBtn.className = 'anno-sliders'
-    slidersBtn.innerHTML = SLIDERS_SVG
+    slidersBtn.appendChild(slidersIcon())
     slidersBtn.style.cssText = [
       'display:none', 'flex:0 0 auto', 'width:26px', 'height:26px', 'border-radius:50%',
       'align-items:center', 'justify-content:center', 'cursor:pointer', 'border:0',
@@ -104,7 +146,7 @@
     var tagLabel = document.createElement('span')
     tagLabel.style.cssText = 'font:600 12px/1 ui-sans-serif,system-ui,-apple-system,sans-serif;color:' + config.fg
     var dragHandle = document.createElement('span')
-    dragHandle.innerHTML = GRIP_SVG
+    dragHandle.appendChild(gripIcon())
     dragHandle.style.cssText = 'cursor:grab;color:' + config.mutedFg + ';display:flex;align-items:center'
     headerRow.appendChild(tagLabel)
     headerRow.appendChild(dragHandle)
@@ -237,7 +279,7 @@
     var confirmBtn = document.createElement('button')
     confirmBtn.type = 'button'
     confirmBtn.className = 'anno-confirm'
-    confirmBtn.innerHTML = CHECK_SVG
+    confirmBtn.appendChild(checkIcon())
     confirmBtn.style.cssText = [
       'flex:0 0 auto', 'width:26px', 'height:26px', 'border-radius:50%', 'border:0', 'cursor:pointer',
       'display:flex', 'align-items:center', 'justify-content:center',
@@ -245,7 +287,7 @@
     var trashBtn = document.createElement('button')
     trashBtn.type = 'button'
     trashBtn.className = 'anno-trash'
-    trashBtn.innerHTML = TRASH_SVG
+    trashBtn.appendChild(trashIcon())
     trashBtn.style.cssText = [
       'display:none', 'flex:0 0 auto', 'width:26px', 'height:26px', 'border-radius:50%', 'border:0',
       'align-items:center', 'justify-content:center',

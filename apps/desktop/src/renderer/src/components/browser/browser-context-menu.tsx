@@ -35,7 +35,7 @@ function buildEntries(t: TranslateFn, wv: Electron.WebviewTag, e: Electron.Conte
   if (p.linkURL) {
     const link = p.linkURL
     sections.push([
-      { id: 'copyLink', label: t('chat.browser.copyLink'), icon: Link, onSelect: () => void navigator.clipboard.writeText(link) },
+      { id: 'copyLink', label: t('chat.browser.copyLink'), icon: Link, onSelect: () => void window.app.clipboardWrite(link) },
       { id: 'openLinkNewTab', label: t('chat.browser.openLinkNewTab'), icon: SquarePlus, onSelect: () => openBrowserTab(link) },
       { id: 'openLinkExternal', label: t('chat.browser.openLinkExternal'), icon: ExternalLink, onSelect: () => void window.app.openExternalLink(link) },
     ])
@@ -46,7 +46,7 @@ function buildEntries(t: TranslateFn, wv: Electron.WebviewTag, e: Electron.Conte
     sections.push([
       { id: 'addImage', label: t('chat.browser.addImageToChat'), icon: MessageSquarePlus, onSelect: () => void addBrowserImageToChat(srcURL) },
       { id: 'copyImage', label: t('chat.browser.copyImage'), icon: Copy, onSelect: () => void window.app.copyBrowserImageAt(wv.getWebContentsId(), p.x, p.y) },
-      { id: 'copyImageAddress', label: t('chat.browser.copyImageAddress'), icon: Link, onSelect: () => void navigator.clipboard.writeText(srcURL) },
+      { id: 'copyImageAddress', label: t('chat.browser.copyImageAddress'), icon: Link, onSelect: () => void window.app.clipboardWrite(srcURL) },
       { id: 'saveImage', label: t('chat.browser.saveImage'), icon: Download, onSelect: () => {
         void saveBrowserImage(srcURL).then((res) => {
           if (res.ok) toast.success(t('chat.browser.imageSaved'))
@@ -60,7 +60,7 @@ function buildEntries(t: TranslateFn, wv: Electron.WebviewTag, e: Electron.Conte
   if (text) {
     sections.push([
       { id: 'addText', label: t('chat.browser.addTextToChat'), icon: MessageSquarePlus, onSelect: () => useChatStore.getState().addUserSelection(text) },
-      { id: 'copy', label: t('chat.browser.copyText'), icon: Copy, onSelect: () => void navigator.clipboard.writeText(text) },
+      { id: 'copy', label: t('chat.browser.copyText'), icon: Copy, onSelect: () => void window.app.clipboardWrite(text) },
     ])
   }
 

@@ -1,7 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef, memo } from 'react'
-import { Plus, Settings, FolderClosed, ArrowDownUp, SquarePen, MessageSquare, Pin, Copy, Check, Smartphone, Wifi, Cloud, Monitor } from 'lucide-react'
-import { ClaudeSessionIcon, type SessionIconProps } from '@superone/ui/components/harness/ClaudeSessionIcon'
-import { CodexSessionIcon } from '@superone/ui/components/harness/CodexSessionIcon'
+import { Plus, Settings, FolderClosed, ArrowDownUp, SquarePen, MessageSquare, Copy, Check, Smartphone, Wifi, Cloud, Monitor } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@superone/ui/components/ui/button'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
@@ -32,8 +30,8 @@ import { Tabs, TabsList, TabsTrigger } from '@superone/ui/components/ui/tabs'
 import { FileTree } from '@/components/sidebar/FileTree'
 import { useMosaicStore } from '@/components/mosaic/mosaic-store'
 import { ProjectSidebarRow } from '@/components/sidebar/ProjectSidebarRow'
+import { PinnedSessionRow } from '@/components/sidebar/PinnedSessionRow'
 import { RenameSessionDialog } from '@/components/sidebar/RenameSessionDialog'
-import { SessionTitleAnimated } from '@/components/sidebar/AnimatedSessionTitle'
 import { traceSidebar, useSidebarRenderTrace } from '@/components/sidebar/sidebar-trace'
 import type { RecentFolder, SessionHistoryEntry, PinnedSessionEntry } from '@superone/shared/agent-types'
 import { getDeleteSessionRecovery, shouldSkipDeleteConfirm, setSkipDeleteConfirm } from './session-delete-helpers'
@@ -425,50 +423,17 @@ export const AppSidebar = memo(function AppSidebar() {
         <div className="flex flex-col px-1.5 pb-1">
           <span className="px-1.5 py-1.5 text-xs font-medium text-sidebar-foreground/70">{t('sidebar.pinned')}</span>
           {pinnedSessions.map((s) => {
-            const PinHarnessIcon = s.provider === 'codex'
-              ? CodexSessionIcon
-              : s.provider === 'claude'
-                ? ClaudeSessionIcon
-                : null
-            const pinIsActive = currentFolder === s.folderPath && currentActiveSid === s.sessionId
             const [pinStatus, pinUnseenFlag] = (pinnedStatuses[s.sessionId] ?? ':0').split(':')
-            const pinIsRunning = pinStatus === 'streaming'
-            const pinIsBackground = pinStatus === 'background'
-            const pinIsUnseen = pinUnseenFlag === '1'
-            const pinHarnessStatus: SessionIconProps['status'] = pinIsRunning
-              ? 'running'
-              : pinIsBackground
-                ? 'background'
-                : pinIsUnseen
-                  ? 'unseen'
-                  : s.isAutomation
-                    ? 'automation'
-                    : 'default'
             return (
-              <div
+              <PinnedSessionRow
                 key={s.sessionId}
-                onClick={() => handleSwitchSession(s.folderPath, s.sessionId)}
-                className="group/pin flex cursor-pointer items-center gap-2 overflow-hidden rounded-md px-2.5 py-1.5 transition-colors hover:bg-sidebar-accent/80"
-              >
-                {PinHarnessIcon && (
-                  <span className="shrink-0">
-                    <PinHarnessIcon status={pinHarnessStatus} active={pinIsActive} size={22} renderLevel="compact" />
-                  </span>
-                )}
-                <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                  <SessionTitleAnimated sessionId={s.sessionId} fallback={s.title} className="text-[13px]" />
-                  <span className="min-w-0 truncate text-[11px] text-sidebar-foreground/50">{s.folderName}</span>
-                </div>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    handlePinSession(s.sessionId, false, s.folderPath)
-                  }}
-                  className="box-content w-0 shrink-0 overflow-hidden rounded p-0.5 text-sidebar-foreground/70 opacity-0 transition-all hover:text-sidebar-accent-foreground group-hover/pin:w-3 group-hover/pin:opacity-100"
-                >
-                  <Pin className="size-3" />
-                </button>
-              </div>
+                session={s}
+                isActive={currentFolder === s.folderPath && currentActiveSid === s.sessionId}
+                status={pinStatus}
+                isUnseen={pinUnseenFlag === '1'}
+                onSwitch={handleSwitchSession}
+                onUnpin={handlePinSession}
+              />
             )
           })}
         </div>

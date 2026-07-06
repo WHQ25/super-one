@@ -52,6 +52,7 @@ export function createDefaultPerSessionState(): PerSessionState {
     chatInputRestoreFocusNonce: 0,
     preferredProvider: 'claude',
     draftText: '',
+    draftJson: null,
     promptSuggestion: null,
     attachments: [],
     browserAnnotations: [],

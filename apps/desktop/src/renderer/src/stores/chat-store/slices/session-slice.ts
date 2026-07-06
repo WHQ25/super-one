@@ -27,6 +27,7 @@ export interface SessionSlice {
   editQueuedMessage: (messageId: string, target?: SessionWriteTarget) => void
   deleteQueuedMessage: (messageId: string, target?: SessionWriteTarget) => void
   setDraftText: (text: string, target?: SessionWriteTarget) => void
+  setDraftJson: (json: object | null, target?: SessionWriteTarget) => void
   assignSubagentColor: (toolUseId: string) => void
   setDetailedUsage: (projectPath: string, sessionId: string, usage: ContextUsageInfo | null) => void
   removeSessionFromMemory: (projectPath: string, sessionId: string) => void
@@ -117,6 +118,15 @@ export const createSessionSlice: StateCreator<ChatStore, [], [], SessionSlice> =
     set((s) => updateActivePerSession(s, updates))
     if (text.length > 0) schedulePrewarm(get, activeProject)
     else cancelPrewarm(activeProject)
+  },
+
+  setDraftJson: (json, target) => {
+    const updates = () => ({ draftJson: json })
+    if (target) {
+      set((s) => updatePerSession(s, target.projectPath, target.sessionId, updates))
+      return
+    }
+    set((s) => updateActivePerSession(s, updates))
   },
 
   assignSubagentColor: (toolUseId) => {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { Check, KeyRound, Loader2, Plus, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@superone/ui/components/ui/button'
@@ -45,7 +45,9 @@ function ProviderRow({ provider, onChanged }: { provider: MediaProviderStatus; o
           <div className="flex items-center gap-2">
             <p className="text-sm font-medium">{provider.label}</p>
             {provider.custom && (
-              <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">custom</span>
+              <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">
+                {provider.kind === 'google' ? 'custom · google' : 'custom'}
+              </span>
             )}
             {provider.hasKey && (
               <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">
@@ -97,7 +99,30 @@ function ProviderRow({ provider, onChanged }: { provider: MediaProviderStatus; o
   )
 }
 
+type CustomProviderKind = 'openai-compatible' | 'google'
+
+const KIND_OPTIONS: { value: CustomProviderKind; label: string }[] = [
+  { value: 'openai-compatible', label: 'OpenAI-compatible' },
+  { value: 'google', label: 'Google (Gemini)' },
+]
+
+const KIND_HINTS: Record<CustomProviderKind, { hint: ReactNode; baseURL: string }> = {
+  'openai-compatible': {
+    hint: (
+      <>For image proxies / aggregator gateways that expose an OpenAI-compatible <code>/images</code> endpoint.</>
+    ),
+    baseURL: 'Base URL (https://…/v1)',
+  },
+  google: {
+    hint: (
+      <>For proxies / gateways that speak the Gemini API. Point the base URL at your <code>/v1beta</code> endpoint.</>
+    ),
+    baseURL: 'Base URL (https://…/v1beta)',
+  },
+}
+
 function AddCustomProvider({ onAdded }: { onAdded: () => void }) {
+  const [kind, setKind] = useState<CustomProviderKind>('openai-compatible')
   const [label, setLabel] = useState('')
   const [baseURL, setBaseURL] = useState('')
   const [models, setModels] = useState('')
@@ -109,7 +134,7 @@ function AddCustomProvider({ onAdded }: { onAdded: () => void }) {
   const submit = async () => {
     setSaving(true)
     const modelList = models.split(',').map((m) => m.trim()).filter(Boolean)
-    const res = await window.app.upsertMediaCustomProvider({ label: label.trim(), baseURL: baseURL.trim(), models: modelList })
+    const res = await window.app.upsertMediaCustomProvider({ kind, label: label.trim(), baseURL: baseURL.trim(), models: modelList })
     if (!res.ok) {
       setSaving(false)
       toast.error(res.error)
@@ -129,13 +154,25 @@ function AddCustomProvider({ onAdded }: { onAdded: () => void }) {
 
   return (
     <div className="border-t border-border p-4">
-      <p className="text-sm font-medium">Add OpenAI-compatible provider</p>
-      <p className="mt-0.5 text-xs text-muted-foreground">
-        For image proxies / aggregator gateways that expose an OpenAI-compatible <code>/images</code> endpoint.
-      </p>
+      <p className="text-sm font-medium">Add custom provider</p>
+      <p className="mt-0.5 text-xs text-muted-foreground">{KIND_HINTS[kind].hint}</p>
+      <div className="mt-3 inline-flex rounded-md border border-border p-0.5">
+        {KIND_OPTIONS.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            onClick={() => setKind(option.value)}
+            className={`rounded px-2.5 py-1 text-xs transition-colors ${
+              kind === option.value ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
       <div className="mt-3 grid grid-cols-2 gap-2">
         <Input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Name (e.g. My Gateway)" className="h-8 text-sm" />
-        <Input value={baseURL} onChange={(e) => setBaseURL(e.target.value)} placeholder="Base URL (https://…/v1)" className="h-8 text-sm" />
+        <Input value={baseURL} onChange={(e) => setBaseURL(e.target.value)} placeholder={KIND_HINTS[kind].baseURL} className="h-8 text-sm" />
         <Input value={models} onChange={(e) => setModels(e.target.value)} placeholder="Model ids, comma-separated" className="h-8 text-sm" />
         <Input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="API key (optional now)" className="h-8 text-sm" />
       </div>

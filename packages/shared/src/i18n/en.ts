@@ -506,7 +506,7 @@ export type Messages = {
         status: string
       }
     }
-    codexImage: {
+    image: {
       copyImage: string
       copyPrompt: string
       openFolder: string
@@ -514,6 +514,15 @@ export type Messages = {
       copied: string
       promptCopied: string
       copyFailed: string
+      generatedIn: string
+      noMetadata: string
+      prompt: string
+      warnings: string
+      paramProvider: string
+      paramModel: string
+      paramSize: string
+      paramAspectRatio: string
+      paramReferenceImages: string
     }
     worktree: {
       searchPlaceholder: string
@@ -611,6 +620,7 @@ export type Messages = {
       generatedImage: string
       listingMediaProviders: string
       listedMediaProviders: string
+      mediaProvidersMatched: string
       settingUpMiniApp: string
       setUpMiniApp: string
       setUpMiniAppFailed: string
@@ -1983,7 +1993,7 @@ export const en: Messages = {
         status: 'Status: {{status}}',
       },
     },
-    codexImage: {
+    image: {
       copyImage: 'Copy Image',
       copyPrompt: 'Copy Prompt',
       openFolder: 'Open Folder',
@@ -1991,6 +2001,15 @@ export const en: Messages = {
       copied: 'Image copied to clipboard',
       promptCopied: 'Prompt copied to clipboard',
       copyFailed: 'Copy failed: {{error}}',
+      generatedIn: 'Generated in {{duration}}',
+      noMetadata: 'No metadata available.',
+      prompt: 'Prompt',
+      warnings: 'Warnings',
+      paramProvider: 'Provider',
+      paramModel: 'Model',
+      paramSize: 'Size',
+      paramAspectRatio: 'Aspect ratio',
+      paramReferenceImages: 'Reference images',
     },
     worktree: {
       searchPlaceholder: 'Search worktrees and branches…',
@@ -2086,8 +2105,9 @@ export const en: Messages = {
       readMiniAppGuide: 'Read mini-app guide',
       generatingImage: 'Generating image',
       generatedImage: 'Generated image',
-      listingMediaProviders: 'Listing image providers',
-      listedMediaProviders: 'Listed image providers',
+      listingMediaProviders: 'List providers',
+      listedMediaProviders: 'List providers',
+      mediaProvidersMatched: '{{count}} matched',
       settingUpMiniApp: 'Setting up mini-app',
       setUpMiniApp: 'Set up mini-app',
       setUpMiniAppFailed: 'Mini-app setup failed',

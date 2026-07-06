@@ -14,6 +14,7 @@ import { DraggableFileIcon } from './DraggableFileIcon'
 import { getToolDisplay, getToolVerb, parseToolInput, parseMcpToolName, isHiddenToolBlock, formatReadMeta, type ToolIcon as ToolIconType } from './tool-display'
 import { PrettyJSONCodeBlock } from './tool-result-views'
 import { BrowserToolBlock } from './BrowserToolBlock'
+import { MediaProvidersBlock } from './MediaProvidersBlock'
 import { getBrowserOp } from './browser-tool-display'
 import { useStallLevel, getStallColor } from '@/lib/stall-utils'
 import { AnsiText } from '@/lib/ansi'
@@ -429,6 +430,9 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
     }
     if (mcpInfo.mcpToolName === 'mobile_share_file') {
       return <MobileShareFileBlock params={params} result={!isStreaming ? (result ?? null) : null} isStreaming={isStreaming} />
+    }
+    if (mcpInfo.mcpToolName === 'media_list_providers') {
+      return <MediaProvidersBlock result={!isStreaming ? (result ?? null) : null} isStreaming={isStreaming} />
     }
     if (mcpInfo.mcpToolName === 'miniapp_dev_setup') {
       const appName = String(params.name ?? '')

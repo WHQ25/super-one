@@ -16,8 +16,8 @@ vi.mock('./ToolBlock', () => ({
   FileChip: ({ name }: { name: string }) => <div>{name}</div>,
 }))
 
-vi.mock('./CodexImageGalleryBlock', () => ({
-  CodexImageGalleryBlock: ({ items }: { items: Array<{ id: string }> }) => (
+vi.mock('./ImageGalleryBlock', () => ({
+  ImageGalleryBlock: ({ items }: { items: Array<{ id: string }> }) => (
     <div data-testid="gallery">gallery:{items.length}</div>
   ),
 }))

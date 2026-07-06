@@ -20,6 +20,7 @@ export interface CoreSlice {
   toggleTodos: () => void
   addAttachment: (attachment: ImageAttachment, target?: SessionWriteTarget) => void
   removeAttachment: (index: number, target?: SessionWriteTarget) => void
+  removeAttachmentById: (id: string, target?: SessionWriteTarget) => void
   clearAttachments: (target?: SessionWriteTarget) => void
   addBrowserAnnotation: (annotation: BrowserAnnotation, target?: SessionWriteTarget) => void
   updateBrowserAnnotation: (id: string, patch: Partial<Pick<BrowserAnnotation, 'comment' | 'styleChanges' | 'screenshot'>>, target?: SessionWriteTarget) => void
@@ -91,6 +92,12 @@ export const createCoreSlice: StateCreator<ChatStore, [], [], CoreSlice> = (set,
   removeAttachment: (index, target) => {
     set((s) => commitPerSession(s, target, (sess) => ({
       attachments: sess.attachments.filter((_, i) => i !== index),
+    })))
+  },
+
+  removeAttachmentById: (id, target) => {
+    set((s) => commitPerSession(s, target, (sess) => ({
+      attachments: sess.attachments.filter((a) => a.id !== id),
     })))
   },
 

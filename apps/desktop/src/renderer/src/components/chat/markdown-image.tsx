@@ -5,7 +5,7 @@ import { AdaptiveContextMenu } from '@/components/AdaptiveContextMenu'
 import { Dialog, DialogClose, DialogContent, DialogTitle } from '@superone/ui/components/ui/dialog'
 import { ImagePreview } from '@/components/coding/ImagePreview'
 import { toMediaUrl } from '@/lib/path-utils'
-import { ImageInteractive, useImageMenuItems } from './codex-image-shared'
+import { ImageInteractive, useImageMenuItems } from './image-shared'
 
 const MEDIA_STYLE = { maxHeight: '20rem', maxWidth: '100%', width: 'auto', height: 'auto', borderRadius: '8px', display: 'block' } as const
 

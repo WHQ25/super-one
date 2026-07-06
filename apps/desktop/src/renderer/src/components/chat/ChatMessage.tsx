@@ -1,4 +1,4 @@
-import type { ChatMessage as ChatMessageType, ContentBlock, AgentStatus, CodexImageGenerationItem } from '@superone/shared/agent-types'
+import type { ChatMessage as ChatMessageType, ContentBlock, AgentStatus, ImageGenerationItem, ImageAttachment } from '@superone/shared/agent-types'
 import { useState, useEffect, useRef, useMemo, useCallback, memo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@superone/ui/lib/utils'
@@ -12,8 +12,9 @@ import type { MiniAppEntry } from '@superone/shared/miniapp-types'
 import { SubagentBlock } from './SubagentBlock'
 import { WorkflowBlock } from './WorkflowBlock'
 import { CodexTurnView } from './CodexTurnView'
-import { CodexImageGalleryBlock } from './CodexImageGalleryBlock'
-import { AttachmentBar } from './AttachmentBar'
+import { ImageGalleryBlock } from './ImageGalleryBlock'
+import { AttachmentChip, AttachmentPreviewDialog } from './attachment-chip'
+import { TooltipProvider } from '@superone/ui/components/ui/tooltip'
 import { UserSelectionChip } from './UserSelectionChip'
 import { FileIcon } from '@superone/ui/components/ui/FileIcon'
 import { FileText } from 'lucide-react'
@@ -729,26 +730,67 @@ export function RateLimitIndicator({
   )
 }
 
+function buildGenerationParams(
+  input: Record<string, unknown> | undefined,
+  result: { provider?: unknown; model?: unknown },
+): { key: string; value: string }[] {
+  const params: { key: string; value: string }[] = []
+  const push = (key: string, value: unknown) => {
+    if (typeof value === 'string' && value.trim()) params.push({ key, value: value.trim() })
+    else if (typeof value === 'number') params.push({ key, value: String(value) })
+  }
+  push('provider', result.provider ?? input?.provider)
+  push('model', result.model ?? input?.model)
+  push('size', input?.size)
+  push('aspectRatio', input?.aspect_ratio)
+  const refs = input?.reference_image_paths
+  if (Array.isArray(refs) && refs.length > 0) params.push({ key: 'referenceImages', value: String(refs.length) })
+  return params
+}
+
 /** Aggregate all media_generate_image results in a message into gallery items shown at the bottom of the turn. */
-function collectGeneratedImages(content: ContentBlock[], toolResultMap: Map<string, string>): CodexImageGenerationItem[] {
-  const items: CodexImageGenerationItem[] = []
+function collectGeneratedImages(content: ContentBlock[], toolResultMap: Map<string, string>): ImageGenerationItem[] {
+  const items: ImageGenerationItem[] = []
   for (const block of content) {
     if (block.type !== 'tool_use' || !block.toolName.endsWith('__media_generate_image')) continue
-    const summary = toolResultMap.get(block.toolUseId)
-    if (!summary) continue
-    const rawPrompt = (block.input as { prompt?: unknown } | undefined)?.prompt
+    const input = parseToolInput(block.input, block.toolName)
+    const rawPrompt = input.prompt
     const prompt = typeof rawPrompt === 'string' ? rawPrompt : undefined
+    const summary = toolResultMap.get(block.toolUseId)
+    if (!summary) {
+      const params = buildGenerationParams(input, {})
+      items.push({
+        id: block.toolUseId,
+        type: 'image_generation',
+        status: 'in_progress',
+        revisedPrompt: prompt,
+        ...(params.length > 0 ? { params } : {}),
+      })
+      continue
+    }
     try {
-      const parsed = JSON.parse(summary) as { status?: string; savedPaths?: unknown }
+      const parsed = JSON.parse(summary) as { status?: string; savedPaths?: unknown; provider?: unknown; model?: unknown; warnings?: unknown }
       if (parsed.status === 'error') {
-        items.push({ id: block.toolUseId, type: 'image_generation', status: 'failed', revisedPrompt: prompt })
+        // A failed generation produced no image — keep it out of the gallery entirely.
         continue
       }
+      const params = buildGenerationParams(input, parsed)
+      const warnings = Array.isArray(parsed.warnings)
+        ? parsed.warnings.map((w) => (typeof w === 'string' ? w : JSON.stringify(w))).filter(Boolean)
+        : undefined
       const paths = Array.isArray(parsed.savedPaths)
         ? parsed.savedPaths.filter((p): p is string => typeof p === 'string')
         : []
       paths.forEach((path, idx) =>
-        items.push({ id: `${block.toolUseId}-${idx}`, type: 'image_generation', status: 'completed', savedPath: path, revisedPrompt: prompt }),
+        items.push({
+          id: `${block.toolUseId}-${idx}`,
+          type: 'image_generation',
+          status: 'completed',
+          savedPath: path,
+          revisedPrompt: prompt,
+          ...(params.length > 0 ? { params } : {}),
+          ...(warnings && warnings.length > 0 ? { warnings } : {}),
+        }),
       )
     } catch {}
   }
@@ -765,6 +807,7 @@ export const ChatMessage = memo(function ChatMessage({ message, sessionStatus, i
   const assistantCopyText = isStreaming ? undefined : getAssistantCopyText(message)
 
   const apps = useMiniAppStore((s) => s.apps)
+  const [previewAtt, setPreviewAtt] = useState<ImageAttachment | null>(null)
   const grouped = useMemo(
     () => (isUser || isCodexMessage) ? null : groupContent(message.content, apps),
     [isUser, isCodexMessage, message.content, apps],
@@ -794,20 +837,21 @@ export const ChatMessage = memo(function ChatMessage({ message, sessionStatus, i
           )}
         >
           {isUser
-            ? <>
+            ? <TooltipProvider delayDuration={200}>
                 {message.userSelections && message.userSelections.length > 0 && (
                   <div className="mb-1.5 flex flex-wrap gap-1">
                     <UserSelectionChip selections={message.userSelections} readOnly />
                   </div>
                 )}
-                {message.attachments && message.attachments.length > 0 && (
-                  <AttachmentBar attachments={message.attachments} />
-                )}
                 {message.content.map((block, i) => {
-                  if (message.attachments?.length && (block.type === 'image' || block.type === 'document')) return null
+                  if (block.type === 'image' || block.type === 'document') {
+                    const att = message.attachments?.find((a) => (block.id ? a.id === block.id : a.name === block.name))
+                    return att ? <AttachmentChip key={i} att={att} onOpen={() => setPreviewAtt(att)} /> : null
+                  }
                   return block.type === 'text' ? <UserTextBlock key={i} text={block.text} isPaste={block.isPaste} /> : renderBlock(block, i, false)
                 })}
-              </>
+                <AttachmentPreviewDialog attachment={previewAtt} onClose={() => setPreviewAtt(null)} />
+              </TooltipProvider>
           : isCodexMessage
             ? <CodexTurnView message={message} isStreaming={isStreaming} isLastAssistant={isLastAssistant} />
             : grouped!.segments.map((seg, segIdx, segs) => {
@@ -886,7 +930,7 @@ export const ChatMessage = memo(function ChatMessage({ message, sessionStatus, i
               )
             })
         }
-        {!isUser && generatedImages.length > 0 && <CodexImageGalleryBlock items={generatedImages} />}
+        {!isUser && generatedImages.length > 0 && <ImageGalleryBlock items={generatedImages} />}
         {message.status === 'interrupted' && (
           <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
             <OctagonX className="size-3" />

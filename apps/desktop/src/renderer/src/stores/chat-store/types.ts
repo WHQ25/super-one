@@ -48,6 +48,9 @@ export interface Mention {
   displayName: string
 }
 
+/** An ordered piece of a composed message: a text run (optionally a paste chip) or an inline attachment reference. */
+export type InputSegment = { text: string; isPaste: boolean } | { attachmentId: string }
+
 export interface MiniAppContextSlot {
   appId: string
   appName: string
@@ -92,6 +95,8 @@ export interface PerSessionState {
   chatInputRestoreFocusNonce: number
   preferredProvider: ChatProvider
   draftText: string
+  /** Editor JSON snapshot (Tiptap doc) — preserves chip nodes & their inline positions across session switches, unlike the plain-text draft. */
+  draftJson: object | null
   promptSuggestion: string | null
   attachments: ImageAttachment[]
   browserAnnotations: BrowserAnnotation[]
@@ -223,7 +228,7 @@ export interface ChatStore {
   focusProject: (projectPath: string) => Promise<void>
   ensureSession: (projectPath: string) => void
 
-  sendMessage: (content: string, segments?: Array<{ text: string; isPaste: boolean }>, explicitMentions?: Mention[]) => Promise<void>
+  sendMessage: (content: string, segments?: InputSegment[], explicitMentions?: Mention[], attachments?: ImageAttachment[]) => Promise<void>
   approveCodexPlan: () => Promise<void>
   rejectCodexPlan: (feedback?: string) => Promise<void>
   interrupt: () => Promise<void>
@@ -245,6 +250,7 @@ export interface ChatStore {
   deleteQueuedMessage: (messageId: string, target?: SessionWriteTarget) => void
 
   setDraftText: (text: string, target?: SessionWriteTarget) => void
+  setDraftJson: (json: object | null, target?: SessionWriteTarget) => void
 
   assignSubagentColor: (toolUseId: string) => void
 
@@ -267,6 +273,7 @@ export interface ChatStore {
 
   addAttachment: (attachment: ImageAttachment, target?: SessionWriteTarget) => void
   removeAttachment: (index: number, target?: SessionWriteTarget) => void
+  removeAttachmentById: (id: string, target?: SessionWriteTarget) => void
   clearAttachments: (target?: SessionWriteTarget) => void
   addBrowserAnnotation: (annotation: BrowserAnnotation, target?: SessionWriteTarget) => void
   updateBrowserAnnotation: (id: string, patch: Partial<Pick<BrowserAnnotation, 'comment' | 'styleChanges' | 'screenshot'>>, target?: SessionWriteTarget) => void

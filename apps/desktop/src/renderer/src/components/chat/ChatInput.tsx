@@ -21,12 +21,13 @@ import { SlashDecoration } from './slash-decoration'
 import { PromptSuggestion } from './prompt-suggestion'
 import { addBrowserImageToChat, extractDraggedImageUrl } from '../browser/browser-image'
 import type { MentionNodeAttrs } from './mention-node'
-import type { SlashCommandInfo } from '@superone/shared/agent-types'
+import type { SlashCommandInfo, ImageAttachment } from '@superone/shared/agent-types'
+import type { InputSegment } from '@/stores/chat-store/types'
 import { fuzzyMatch } from '@/lib/fuzzy-match'
 import { HighlightedText } from '@superone/ui/components/ui/HighlightedText'
 import { toMentionPath } from './chat-input-utils'
 import { internalDragSource } from '@/components/sidebar/drag-drop-utils'
-import { AttachmentBar } from './AttachmentBar'
+import { AttachmentNode } from './attachment-node'
 import { BrowserAnnotationChips } from '../browser/BrowserAnnotationChips'
 import { notifyAnnotationRemoved, notifyAnnotationsCleared } from '../browser/browser-annotate-flow'
 import { useBrowserStore } from '@/stores/browser'
@@ -56,11 +57,13 @@ export function ChatInput() {
     const fileRoot = useEffectiveProjectRoot()
     const storeActions = useChatStore(useShallow((s) => ({
       setDraftText: s.setDraftText,
+      setDraftJson: s.setDraftJson,
       sendMessage: s.sendMessage,
       editQueuedMessage: s.editQueuedMessage,
       interrupt: s.interrupt,
       addAttachment: s.addAttachment,
       removeAttachment: s.removeAttachment,
+      removeAttachmentById: s.removeAttachmentById,
       clearAttachments: s.clearAttachments,
       removeBrowserAnnotation: s.removeBrowserAnnotation,
       clearBrowserAnnotations: s.clearBrowserAnnotations,
@@ -76,9 +79,10 @@ export function ChatInput() {
       removeDir: s.removeDir,
     })))
     const { sendMessage, interrupt, setShowReviewPanel } = storeActions
-    const { text, status, attachments, browserAnnotations, mentions, permissionMode, hasPendingInteraction, queuedMessages, miniAppContexts, userSelections, userAdditionalDirs, projectAdditionalDirs, additionalDirs } =
+    const { text, draftJson, status, attachments, browserAnnotations, mentions, permissionMode, hasPendingInteraction, queuedMessages, miniAppContexts, userSelections, userAdditionalDirs, projectAdditionalDirs, additionalDirs } =
       useActiveSession(useShallow((s) => ({
         text: s.draftText,
+        draftJson: s.draftJson,
         status: s.status,
         attachments: s.attachments,
         browserAnnotations: s.browserAnnotations,
@@ -119,7 +123,7 @@ export function ChatInput() {
     // active one — otherwise a non-active pane's write (e.g. the editor's draft
     // re-sync on remount) lands on whichever session happens to be active.
     const {
-      setText, editQueuedMessage, addAttachment, removeAttachment, clearAttachments,
+      setText, setDraftJson, editQueuedMessage, addAttachment, removeAttachment, removeAttachmentById, clearAttachments,
       removeBrowserAnnotation,
       clearBrowserAnnotations,
       addMention, removeMention, dismissCommandPopup, toggleMiniAppContext,
@@ -128,9 +132,11 @@ export function ChatInput() {
       const target = sessionScope ?? undefined
       return {
         setText: (value: string) => storeActions.setDraftText(value, target),
+        setDraftJson: (json: object | null) => storeActions.setDraftJson(json, target),
         editQueuedMessage: (id: string) => storeActions.editQueuedMessage(id, target),
         addAttachment: (a: Parameters<typeof storeActions.addAttachment>[0]) => storeActions.addAttachment(a, target),
         removeAttachment: (i: number) => storeActions.removeAttachment(i, target),
+        removeAttachmentById: (id: string) => storeActions.removeAttachmentById(id, target),
         clearAttachments: () => storeActions.clearAttachments(target),
         removeBrowserAnnotation: (id: string) => {
           storeActions.removeBrowserAnnotation(id, target)
@@ -179,6 +185,14 @@ export function ChatInput() {
     slashCommandsRef.current = slashCommands
     const mentionsRef = useRef(mentions)
     mentionsRef.current = mentions
+    const attachmentsRef = useRef(attachments)
+    attachmentsRef.current = attachments
+    const draftJsonRef = useRef(draftJson)
+    draftJsonRef.current = draftJson
+    const removeAttachmentByIdRef = useRef(removeAttachmentById)
+    removeAttachmentByIdRef.current = removeAttachmentById
+    const setDraftJsonRef = useRef(setDraftJson)
+    setDraftJsonRef.current = setDraftJson
     const removeMentionRef = useRef(removeMention)
     removeMentionRef.current = removeMention
     const addMentionRef = useRef(addMention)
@@ -482,7 +496,7 @@ export function ChatInput() {
 
     const serializeAndClear = useCallback(() => {
       const ed = editorRef.current
-      const segments: Array<{ text: string; isPaste: boolean }> = []
+      const segments: InputSegment[] = []
       const collectedMentions: MentionNodeAttrs[] = []
       let current = ''
       if (ed) {
@@ -497,6 +511,10 @@ export function ChatInput() {
             } else {
               current += ` @${attrs.value} `
             }
+          } else if (node.type.name === 'attachment') {
+            if (current.trim()) segments.push({ text: current.trim(), isPaste: false })
+            current = ''
+            segments.push({ attachmentId: (node.attrs as { id: string }).id })
           } else if (node.type.name === 'hardBreak') {
             current += '\n'
           } else if (node.type.name === 'pasteChip') {
@@ -511,6 +529,11 @@ export function ChatInput() {
       } else if (text.trim()) {
         segments.push({ text: text.trim(), isPaste: false })
       }
+      // Resolve the inline attachment refs to their stored bytes, in doc order.
+      const orderedAttachments = segments
+        .flatMap((s) => ('attachmentId' in s ? [s.attachmentId] : []))
+        .map((id) => attachmentsRef.current.find((a) => a.id === id))
+        .filter((a): a is ImageAttachment => !!a)
       setText('')
       ed?.commands.clearContent()
       setSlashIndex(-1)
@@ -518,7 +541,7 @@ export function ChatInput() {
       setMentionIndex(0)
       mentionInfoRef.current = null
       mentionEmptyByAtRef.current.clear()
-      return { segments, mentions: collectedMentions }
+      return { segments, mentions: collectedMentions, attachments: orderedAttachments }
     }, [text])
 
     const handleSend = useCallback(() => {
@@ -533,9 +556,9 @@ export function ChatInput() {
           return
         }
       }
-      const { segments, mentions: editorMentions } = serializeAndClear()
-      const fullText = segments.map((s) => s.text).join('\n')
-      sendMessage(fullText, segments, editorMentions)
+      const { segments, mentions: editorMentions, attachments: sentAttachments } = serializeAndClear()
+      const fullText = segments.flatMap((s) => ('attachmentId' in s ? [] : [s.text])).join('\n')
+      sendMessage(fullText, segments, editorMentions, sentAttachments)
     }, [activeProviderForResources, canSend, sendMessage, serializeAndClear, text])
 
     const handleKeyDownCore = useCallback(
@@ -718,12 +741,23 @@ export function ChatInput() {
       [fileRoot, insertMention]
     )
 
+    // Store the attachment and insert an inline chip node at the cursor, so an
+    // upload reads as a file reference sitting in the message where the caret is.
+    const attachFile = useCallback(
+      (att: ImageAttachment) => {
+        const id = crypto.randomUUID()
+        addAttachment({ ...att, id })
+        editorRef.current?.chain().focus().insertContent({ type: 'attachment', attrs: { id } }).run()
+      },
+      [addAttachment]
+    )
+
     const processSelectedFiles = useCallback(
       (files: FileList | File[]) => {
         for (const file of Array.from(files)) {
           if (file.type.startsWith('image/')) {
             void buildImageAttachment(file).then((att) => {
-              if (att) addAttachment(att)
+              if (att) attachFile(att)
             })
             continue
           }
@@ -733,7 +767,7 @@ export function ChatInput() {
               const result = reader.result as string
               const base64 = result.split(',')[1]
               if (base64) {
-                addAttachment({ mimeType: file.type, base64, name: file.name })
+                attachFile({ mimeType: file.type, base64, name: file.name })
               }
             }
             reader.readAsDataURL(file)
@@ -745,7 +779,7 @@ export function ChatInput() {
           insertFileMention(filePath)
         }
       },
-      [addAttachment, insertFileMention]
+      [attachFile, insertFileMention]
     )
     processSelectedFilesRef.current = processSelectedFiles
 
@@ -761,9 +795,9 @@ export function ChatInput() {
         for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
         const name = absPath.split(/[\\/]/).pop() || 'image.png'
         const att = await buildImageAttachment(new File([bytes], name, { type: mime }))
-        if (att) addAttachment(att)
+        if (att) attachFile(att)
       },
-      [addAttachment],
+      [attachFile],
     )
     chatInputAPI.addImageFromPath = addImageFromPath
 
@@ -859,6 +893,7 @@ export function ChatInput() {
         }),
         Placeholder.configure({ placeholder: () => placeholderTextRef.current }),
         MentionNode,
+        AttachmentNode,
         PasteChipNode,
         SlashDecoration.configure({ slashCommands: activeSlashCommands }),
         PromptSuggestion,
@@ -931,8 +966,15 @@ export function ChatInput() {
       },
       onUpdate: ({ editor: ed }) => {
         isEditorUpdateRef.current = true
+        // Captured before the flag is consumed below: a programmatic content set
+        // (session restore) must NOT prune attachments — the nodes are being
+        // rebuilt from persisted session.attachments, not deleted by the user.
+        const wasProgrammaticSet = isProgrammaticSetRef.current
         const plainText = ed.getText()
         setTextRef.current(plainText)
+        // Snapshot the full doc (text + chip nodes + positions) so a session
+        // switch can restore it exactly, not just the plain text.
+        setDraftJsonRef.current(ed.getJSON())
         setSlashIndex(-1)
         if (isProgrammaticSetRef.current) {
           isProgrammaticSetRef.current = false
@@ -943,14 +985,27 @@ export function ChatInput() {
 
         const editorMentions: MentionNodeAttrs[] = []
         const pasteChipNodes: unknown[] = []
+        const editorAttachmentIds = new Set<string>()
         ed.state.doc.descendants((node) => {
           if (node.type.name === 'mention') {
             editorMentions.push(node.attrs as MentionNodeAttrs)
           } else if (node.type.name === 'pasteChip') {
             pasteChipNodes.push(node)
+          } else if (node.type.name === 'attachment') {
+            editorAttachmentIds.add((node.attrs as { id: string }).id)
           }
         })
         setHasPasteChips(pasteChipNodes.length > 0)
+        // Drop attachments whose chip node was deleted inline (backspace / cut).
+        // Skip during a programmatic restore, where nodes are (re)built from the
+        // persisted store rather than reflecting a user deletion.
+        if (!wasProgrammaticSet) {
+          for (const att of attachmentsRef.current) {
+            if (att.id && !editorAttachmentIds.has(att.id)) {
+              removeAttachmentByIdRef.current(att.id)
+            }
+          }
+        }
         const editorValues = new Set(editorMentions.map((m) => m.value))
         for (const m of mentionsRef.current) {
           if (!editorValues.has(m.value)) {
@@ -1007,9 +1062,30 @@ export function ChatInput() {
         return
       }
       isEditorUpdateRef.current = false
-      if (editor && text !== editor.getText()) {
+      if (!editor) return
+      // Attachments live in per-session store state, not in the text draft, so
+      // detect when the editor's chip nodes drift from session.attachments
+      // (e.g. after a session switch rebuilt the doc from text only).
+      const editorAttIds = new Set<string>()
+      editor.state.doc.descendants((n) => {
+        if (n.type.name === 'attachment') editorAttIds.add((n.attrs as { id: string }).id)
+      })
+      const storeAtts = attachmentsRef.current.filter((a) => a.id)
+      const attMismatch = storeAtts.length !== editorAttIds.size || storeAtts.some((a) => !editorAttIds.has(a.id as string))
+      if (text !== editor.getText() || attMismatch) {
         isProgrammaticSetRef.current = true
-        editor.commands.setContent(text ? `<p>${text}</p>` : '')
+        const json = draftJsonRef.current
+        if (json) {
+          // Restore the exact doc — chip nodes keep their inline positions.
+          editor.commands.setContent(json)
+        } else {
+          // Legacy fallback (draft has no JSON snapshot): rebuild from text and
+          // append attachment chips from the persisted store.
+          editor.commands.setContent(text ? `<p>${text}</p>` : '')
+          if (storeAtts.length > 0) {
+            editor.commands.insertContent(storeAtts.map((a) => ({ type: 'attachment' as const, attrs: { id: a.id } })))
+          }
+        }
         if (isActivePane) editor.commands.focus('end')
       }
     }, [text, editor, activeSessionId, isActivePane])
@@ -1200,7 +1276,6 @@ export function ChatInput() {
           />
         )}
 
-        <AttachmentBar attachments={attachments} onRemove={removeAttachment} />
         <BrowserAnnotationChips annotations={browserAnnotations} onRemove={removeBrowserAnnotation} onClear={clearBrowserAnnotations} />
 
         <ContextBar

@@ -25,7 +25,7 @@ import {
   updateActivePerSession,
 } from './store-helpers'
 import { CLAUDE_INTERCEPTED_COMMANDS, isRemoteSession, useChatStore } from '../index'
-import type { ChatProvider, ChatStore, Mention } from '../types'
+import type { ChatProvider, ChatStore, InputSegment, Mention } from '../types'
 
 /**
  * Body of useChatStore.sendMessage extracted as a free-standing helper so
@@ -46,8 +46,9 @@ export async function sendMessageImpl(
   set: ChatStoreSet,
   get: () => ChatStore,
   content: string,
-  segments?: Array<{ text: string; isPaste: boolean }>,
+  segments?: InputSegment[],
   explicitMentions?: Mention[],
+  explicitAttachments?: ImageAttachment[],
 ): Promise<void> {
   const { activeProject } = get()
   if (!activeProject) return
@@ -121,7 +122,10 @@ export async function sendMessageImpl(
   const annotationImages: ImageAttachment[] = annotations
     .filter((a) => a.screenshot)
     .map((a) => ({ mimeType: 'image/png', base64: a.screenshot as string, name: `annotation-${a.id}.png` }))
-  const attachments: ImageAttachment[] = [...session.attachments, ...annotationImages]
+  // Prefer the doc-ordered attachments the composer collected from its editor
+  // nodes; fall back to session state for non-editor callers (e.g. remote commands).
+  const userAttachments = explicitAttachments ?? session.attachments
+  const attachments: ImageAttachment[] = [...userAttachments, ...annotationImages]
   const annotationSuffix = annotations.length > 0
     ? '\n\n' + annotations.map(buildBrowserAnnotationText).join('\n\n')
     : ''
@@ -295,16 +299,32 @@ export async function sendMessageImpl(
     }
   }
 
-  const userContent: ContentBlock[] = [
-    ...attachments.map((att) =>
-      att.mimeType === 'application/pdf'
-        ? { type: 'document' as const, name: att.name }
-        : { type: 'image' as const, name: att.name }
-    ),
-    ...(segments && segments.length > 0
-      ? segments.map((s) => ({ type: 'text' as const, text: s.text, isPaste: s.isPaste }))
-      : rawContent ? [{ type: 'text' as const, text: rawContent }] : []),
-  ]
+  const attachmentBlock = (att: ImageAttachment): ContentBlock =>
+    att.mimeType === 'application/pdf'
+      ? { type: 'document' as const, name: att.name, id: att.id }
+      : { type: 'image' as const, name: att.name, id: att.id }
+
+  // When the composer supplies ordered segments, interleave text and attachment
+  // blocks so the sent message preserves each chip's inline position. Browser
+  // annotation screenshots have no inline anchor, so they trail at the end.
+  const hasInlineAttachments = !!segments?.some((s) => 'attachmentId' in s)
+  const userContent: ContentBlock[] = hasInlineAttachments
+    ? [
+        ...segments!.flatMap((seg): ContentBlock[] => {
+          if ('attachmentId' in seg) {
+            const att = userAttachments.find((a) => a.id === seg.attachmentId)
+            return att ? [attachmentBlock(att)] : []
+          }
+          return seg.text ? [{ type: 'text' as const, text: seg.text, isPaste: seg.isPaste }] : []
+        }),
+        ...annotationImages.map(attachmentBlock),
+      ]
+    : [
+        ...attachments.map(attachmentBlock),
+        ...(segments && segments.length > 0
+          ? segments.flatMap((s) => ('attachmentId' in s ? [] : [{ type: 'text' as const, text: s.text, isPaste: s.isPaste }]))
+          : rawContent ? [{ type: 'text' as const, text: rawContent }] : []),
+      ]
 
   const userMessageId = `user_${Date.now()}`
   const messageContexts = activeContexts.length > 0

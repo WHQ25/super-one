@@ -38,7 +38,7 @@ export async function listMediaProvidersHandler(args: ListMediaProvidersArgs = {
       sizing: sizingForKind(status.kind),
       supportsMask: status.kind === 'openai',
       defaultModel: status.defaultModel,
-      models: status.models.map((model) => model.id),
+      models: status.models.map((model) => ({ id: model.id, label: model.label })),
     }))
   return { content: [{ type: 'text' as const, text: JSON.stringify({ providers }) }] }
 }

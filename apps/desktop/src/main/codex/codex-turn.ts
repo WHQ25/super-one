@@ -58,6 +58,7 @@ import { getCodexSuperoneMcpConfig } from '../mcp/superone-mcp-stdio-state'
 import { isToolPreapproved, isBuiltInSuperoneTool } from '../mcp/superone-mcp-server'
 import { BUILT_IN_SUPERONE_TOOL_NAMES } from '../mcp/superone-mcp-builtins'
 import { CODEX_SYSTEM_PROMPT_APPEND } from '../agent/superone-system-prompt'
+import { buildAttachmentPathNote } from '../agent/attachment-store'
 
 const SUPERONE_MCP_TOOL_NAME_PATTERN = /run tool "([a-z0-9_]+)"/i
 const MCP_SUPERONE_TOOL_PREFIX = 'mcp__superone__'
@@ -2017,7 +2018,11 @@ export async function runCodexTurn(
 ): Promise<CodexRunResult> {
   const prompt = request.prompt.trim()
   const persistedImagePaths = request.images?.length ? persistImageAttachments(projectPath, request.images) : []
-  const normalizedPrompt = prompt || (persistedImagePaths.length > 0 ? 'Please analyze the attached images.' : '')
+  const attachedFiles = (request.images ?? [])
+    .map((image, index) => ({ name: image.name, path: persistedImagePaths[index] }))
+    .filter((file): file is { name: string; path: string } => !!file.path)
+  const attachmentNote = buildAttachmentPathNote(attachedFiles)
+  const normalizedPrompt = attachmentNote ? (prompt ? `${prompt}\n\n${attachmentNote}` : attachmentNote) : prompt
   if (!normalizedPrompt) {
     throw new Error('Codex prompt is empty')
   }
@@ -2060,7 +2065,6 @@ export async function runCodexTurn(
               text: normalizedPrompt,
               text_elements: [],
             },
-            ...persistedImagePaths.map((path) => ({ type: 'localImage', path })),
           ],
           model: session.model,
           effort: session.modelReasoningEffort,
@@ -2115,7 +2119,6 @@ export async function runCodexTurn(
     throw error
   } finally {
     rejectPendingApprovals(session, 'Codex run interrupted')
-    cleanupPersistedImageAttachments(persistedImagePaths)
     if (session.runningController === controller) {
       session.runningController = null
     }

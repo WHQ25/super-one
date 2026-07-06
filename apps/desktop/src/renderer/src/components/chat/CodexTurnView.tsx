@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { ChatMessage as ChatMessageType, CodexCollabToolCallItem, CodexCommandExecutionItem, CodexImageGenerationItem, CodexMcpToolCallItem, CodexThreadItem } from '@superone/shared/agent-types'
+import type { ChatMessage as ChatMessageType, CodexCollabToolCallItem, CodexCommandExecutionItem, ImageGenerationItem, CodexMcpToolCallItem, CodexThreadItem } from '@superone/shared/agent-types'
 import { ChevronRight, BookOpenText } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 import { CopyableMarkdown } from './CopyableMarkdown'
 import { renderCodexItem, CodexCommandBlock } from './codex-item-renderer'
 import { fileLinkComponents } from './chat-markdown-components'
 import { CodexSubagentMarker, isSpawnReady, isSubagentFollowUp } from './CodexCollabBlock'
-import { CodexImageGalleryBlock } from './CodexImageGalleryBlock'
+import { ImageGalleryBlock } from './ImageGalleryBlock'
 import { useActiveSession, useChatStore } from '@/stores/chat'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
@@ -227,7 +227,7 @@ export function CodexTurnView({ message, isStreaming, isLastAssistant }: CodexTu
     | { kind: 'subagent'; item: CodexCollabToolCallItem }
     | { kind: 'app-tools'; appId: string; items: CodexMcpToolCallItem[] }
   const segments: Segment[] = []
-  const imageItems: CodexImageGenerationItem[] = []
+  const imageItems: ImageGenerationItem[] = []
   let cmdGroup: CodexCommandExecutionItem[] = []
   let appGroup: CodexMcpToolCallItem[] = []
   let appGroupId: string | null = null
@@ -328,7 +328,7 @@ export function CodexTurnView({ message, isStreaming, isLastAssistant }: CodexTu
         </div>
       )}
 
-      {imageItems.length > 0 && <CodexImageGalleryBlock items={imageItems} />}
+      {imageItems.length > 0 && <ImageGalleryBlock items={imageItems} />}
     </div>
   )
 }

@@ -8,6 +8,8 @@ export interface ImageAttachment {
   mimeType: string
   base64: string
   name: string
+  /** Stable id linking an editor attachment chip node and its inline content block to this attachment. */
+  id?: string
 }
 
 export interface ShareFileEncryption {
@@ -90,8 +92,8 @@ export type ContentBlock =
   | { type: 'codex_plan'; text: string; itemId: string }
   | { type: 'codex_image_generation'; itemId: string; status: string; savedPath?: string; revisedPrompt?: string; startedAt?: number; completedAt?: number }
   | { type: 'codex_collab'; items: CodexCollabToolCallItem[]; parentToolUseId?: string | null }
-  | { type: 'image'; name: string }
-  | { type: 'document'; name: string }
+  | { type: 'image'; name: string; id?: string }
+  | { type: 'document'; name: string; id?: string }
 
 // --- Session info (from system init) ---
 
@@ -257,13 +259,15 @@ export interface CodexCompactionItem {
   type: 'compaction'
 }
 
-export interface CodexImageGenerationItem {
+export interface ImageGenerationItem {
   id: string
   type: 'image_generation'
   status: 'in_progress' | 'completed' | 'failed' | string
   revisedPrompt?: string
   savedPath?: string
   generationMs?: number
+  params?: { key: string; value: string }[]
+  warnings?: string[]
 }
 
 export interface CodexPlanApprovalState {
@@ -308,7 +312,7 @@ export type CodexThreadItem =
   | CodexReviewItem
   | CodexCompactionItem
   | CodexCollabToolCallItem
-  | CodexImageGenerationItem
+  | ImageGenerationItem
 
 export interface CodexMcpServerStartup {
   name: string
@@ -1678,6 +1682,7 @@ export interface UpsertMediaProviderRequest {
   label: string
   baseURL: string
   models: string[]
+  kind?: 'openai-compatible' | 'google'
 }
 
 export interface ProcessMetricLite {

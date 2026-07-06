@@ -112,12 +112,12 @@ export const LIST_MEDIA_PROVIDERS_DESCRIPTION =
   'List the configured and usable media generation providers and their capabilities. Only providers that have an API key configured are returned. ' +
   'Call this before media_generate_image when you are unsure which providers/models are available or which one to use. ' +
   'Pass `category` (e.g. "image") to filter to providers that support that media type. ' +
-  'Returns for each provider: `id` (pass to media_generate_image), `kind`, `categories`, `sizing` ("size" or "aspectRatio"), `supportsMask`, `defaultModel`, and available `models`.'
+  'Returns for each provider: `id` (pass to media_generate_image), `kind`, `categories`, `sizing` ("size" or "aspectRatio"), `supportsMask`, `defaultModel`, and available `models` (each with `id` to pass as the model override and a human-readable `label`).'
 
 export const GENERATE_IMAGE_DESCRIPTION =
   'Generate or edit an image from a text prompt using an AI image model. ' +
   'Use this when the user asks to create, draw, render, design, or edit an image / picture / illustration / logo / photo. ' +
-  'IMPORTANT — DISPLAY: the generated image is AUTOMATICALLY rendered inline in the chat for the user the moment this tool returns. Do NOT embed, attach, or link it again in your reply. In particular, do NOT write a Markdown image or link to the saved path (e.g. `![...](/path)` or `[...](/path)`) — the path is a local file, re-embedding it is redundant and will not render. After calling this tool, just briefly describe the result in words (or ask what to change next); never paste the file path or a Markdown image of it. ' +
+  'The generated image is shown to the user automatically. After it returns, do NOT display it again with a Markdown image or link — just briefly describe the result in words. ' +
   'For text-to-image, pass only `prompt`. For image editing / image-to-image (e.g. "change X", "add Y", or iterating on a previous result), also pass the source image file path(s) in `reference_image_paths`. ' +
   'The result JSON returns the saved file path(s) in `savedPaths` for your own reference only. If you need to visually inspect the output to verify or iterate on it, use the Read tool on a saved path. ' +
   '`provider` selects the backend by id (default: the first usable provider). If unsure which providers/models exist, call media_list_providers first. Use `aspect_ratio` (e.g. "16:9") for google models and `size` (e.g. "1024x1024") for openai / openai-compatible. ' +

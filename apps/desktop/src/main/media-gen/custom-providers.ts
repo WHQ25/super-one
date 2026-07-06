@@ -5,10 +5,12 @@ import { join } from 'path'
 import { mediaGenRoot } from './paths'
 import type { MediaProviderKind } from './types'
 
+export type CustomMediaProviderKind = Extract<MediaProviderKind, 'openai-compatible' | 'google'>
+
 export interface CustomMediaProvider {
   id: string
   label: string
-  kind: MediaProviderKind
+  kind: CustomMediaProviderKind
   baseURL: string
   models: string[]
 }
@@ -18,6 +20,7 @@ export interface UpsertCustomProviderInput {
   label: string
   baseURL: string
   models: string[]
+  kind?: CustomMediaProviderKind
 }
 
 function providersPath(): string {
@@ -50,7 +53,7 @@ export async function upsertCustomProvider(input: UpsertCustomProviderInput): Pr
   const entry: CustomMediaProvider = {
     id,
     label: input.label.trim() || id,
-    kind: 'openai-compatible',
+    kind: input.kind ?? 'openai-compatible',
     baseURL: input.baseURL.trim(),
     models: input.models.map((model) => model.trim()).filter(Boolean),
   }

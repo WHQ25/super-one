@@ -10,6 +10,7 @@ import { makeClaudeSpawn } from './claude-spawn'
 import { getSandboxCapability } from '../sandbox-platform'
 import { recordClaudeStepDeltas, modelUsageInfoToDelta, subtractDelta, type UsageStepDelta } from '../usage-stats-service'
 import { SUPERONE_SYSTEM_PROMPT_APPEND } from './superone-system-prompt'
+import { persistAttachment, buildAttachmentPathNote } from './attachment-store'
 
 export interface SessionQueryOptions {
   /** SuperOne session id (Session class) — distinct from SDK sessionId (resume) */
@@ -174,14 +175,25 @@ export function buildUserMessage(request: SendMessageRequest, sessionId: string)
   let content: unknown
 
   if (request.images?.length) {
-    const blocks: Array<Record<string, unknown>> = request.images.map((att) => ({
-      type: att.mimeType === 'application/pdf' ? 'document' : 'image',
-      source: { type: 'base64', media_type: att.mimeType, data: att.base64 },
+    const saved = request.images.map((att) => ({
+      name: att.name,
+      path: persistAttachment(att.base64, att.mimeType),
     }))
-    if (request.content.trim()) {
-      blocks.push({ type: 'text', text: request.content })
+    if (saved.every((entry) => entry.path)) {
+      // Hand the agent file paths instead of inline bytes so it Reads them only
+      // when needed, and can pass them to file-path tools (e.g. image editing).
+      const note = buildAttachmentPathNote(saved as Array<{ name: string; path: string }>)
+      content = request.content.trim() ? `${request.content}\n\n${note}` : note
+    } else {
+      // Persisting to disk failed — fall back to inline base64 so the upload is
+      // never lost.
+      const blocks: Array<Record<string, unknown>> = request.images.map((att) => ({
+        type: att.mimeType === 'application/pdf' ? 'document' : 'image',
+        source: { type: 'base64', media_type: att.mimeType, data: att.base64 },
+      }))
+      if (request.content.trim()) blocks.push({ type: 'text', text: request.content })
+      content = blocks
     }
-    content = blocks
   } else {
     content = request.content
   }

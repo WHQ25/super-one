@@ -61,7 +61,10 @@ const HIDDEN_TASK_TOOLS = new Set(['TodoWrite', 'TaskCreate', 'TaskUpdate'])
 export function isHiddenToolBlock(toolName: string): boolean {
   if (HIDDEN_TASK_TOOLS.has(toolName)) return true
   const mcp = parseMcpToolName(toolName)
-  return mcp?.serverName === 'superone' && mcp.mcpToolName === 'session_rename'
+  return (
+    mcp?.serverName === 'superone' &&
+    (mcp.mcpToolName === 'session_rename' || mcp.mcpToolName === 'media_generate_image')
+  )
 }
 
 export function getToolDisplay(toolName: string, input: Record<string, unknown>, cwd?: string, homedir?: string): ToolDisplay {

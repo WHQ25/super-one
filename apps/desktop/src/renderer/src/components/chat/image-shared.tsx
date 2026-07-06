@@ -9,9 +9,9 @@ import { toast } from 'sonner'
 import { ImagePreview } from '@/components/coding/ImagePreview'
 import { SelectionContextMenuZone } from './SelectionContextMenu'
 import { chatInputAPI } from './ChatInput'
-import type { CodexImageGenerationItem } from '@superone/shared/agent-types'
+import type { ImageGenerationItem } from '@superone/shared/agent-types'
 
-export function buildImageFileName(item: CodexImageGenerationItem): string {
+export function buildImageFileName(item: ImageGenerationItem): string {
   const slugSource = item.revisedPrompt?.trim() || `image-${item.id}`
   const slug = slugSource
     .toLowerCase()
@@ -53,26 +53,26 @@ export function useImageMenuItems({ savedPath, prompt }: { savedPath: string; pr
   const { t } = useTranslation()
   const handleCopy = async () => {
     const res = await window.app.clipboardWriteImage(savedPath)
-    if (res.ok) toast.success(t('chat.codexImage.copied'))
-    else toast.error(t('chat.codexImage.copyFailed', { error: res.error }))
+    if (res.ok) toast.success(t('chat.image.copied'))
+    else toast.error(t('chat.image.copyFailed', { error: res.error }))
   }
   const handleCopyPrompt = async () => {
     if (!prompt) return
     try {
       await navigator.clipboard.writeText(prompt)
-      toast.success(t('chat.codexImage.promptCopied'))
+      toast.success(t('chat.image.promptCopied'))
     } catch (error) {
-      toast.error(t('chat.codexImage.copyFailed', { error: String(error) }))
+      toast.error(t('chat.image.copyFailed', { error: String(error) }))
     }
   }
 
   return [
-    { kind: 'item', id: 'copy', label: t('chat.codexImage.copyImage'), icon: Copy, onSelect: () => { void handleCopy() } },
+    { kind: 'item', id: 'copy', label: t('chat.image.copyImage'), icon: Copy, onSelect: () => { void handleCopy() } },
     ...(prompt
-      ? ([{ kind: 'item', id: 'copyPrompt', label: t('chat.codexImage.copyPrompt'), icon: ClipboardCopy, onSelect: () => { void handleCopyPrompt() } }] as AdaptiveMenuEntry[])
+      ? ([{ kind: 'item', id: 'copyPrompt', label: t('chat.image.copyPrompt'), icon: ClipboardCopy, onSelect: () => { void handleCopyPrompt() } }] as AdaptiveMenuEntry[])
       : []),
-    { kind: 'item', id: 'addToChat', label: t('chat.codexImage.addToChat'), icon: MessageSquarePlus, onSelect: () => chatInputAPI.addImageFromPath?.(savedPath) },
-    { kind: 'item', id: 'openFolder', label: t('chat.codexImage.openFolder'), icon: FolderOpen, onSelect: () => window.app.revealFile(savedPath) },
+    { kind: 'item', id: 'addToChat', label: t('chat.image.addToChat'), icon: MessageSquarePlus, onSelect: () => chatInputAPI.addImageFromPath?.(savedPath) },
+    { kind: 'item', id: 'openFolder', label: t('chat.image.openFolder'), icon: FolderOpen, onSelect: () => window.app.revealFile(savedPath) },
   ]
 }
 
@@ -153,14 +153,23 @@ export function ImageInteractive({ savedPath, onOpen, className, ariaLabel, prom
 }
 
 interface ViewerProps {
-  items: CodexImageGenerationItem[]
+  items: ImageGenerationItem[]
   index: number
   open: boolean
   onOpenChange: (open: boolean) => void
   onIndexChange: (index: number) => void
 }
 
-export function CodexImageViewer({ items, index, open, onOpenChange, onIndexChange }: ViewerProps) {
+const PARAM_LABEL_KEYS: Record<string, string> = {
+  provider: 'chat.image.paramProvider',
+  model: 'chat.image.paramModel',
+  size: 'chat.image.paramSize',
+  aspectRatio: 'chat.image.paramAspectRatio',
+  referenceImages: 'chat.image.paramReferenceImages',
+}
+
+export function ImageViewer({ items, index, open, onOpenChange, onIndexChange }: ViewerProps) {
+  const { t } = useTranslation()
   const item = items[index]
   const { dataUri } = useImageDataUri(item?.savedPath, item?.status === 'failed')
   const [downloading, setDownloading] = useState(false)
@@ -295,18 +304,42 @@ export function CodexImageViewer({ items, index, open, onOpenChange, onIndexChan
         </DialogClose>
 
         {infoOpen && (
-          <div className="absolute right-3 top-14 z-20 w-80 rounded-md border border-border/50 bg-popover p-4 text-xs text-popover-foreground shadow-md">
+          <div className="absolute right-3 top-14 z-20 max-h-[80vh] w-80 overflow-y-auto rounded-md border border-border/50 bg-popover p-4 text-xs text-popover-foreground shadow-md">
             <div className="flex flex-col gap-2">
               <div className="flex items-center gap-2 text-muted-foreground">
                 {dims && <span>{dims.width} × {dims.height}</span>}
                 {dims && generationMs !== null && <span className="text-border">·</span>}
-                {generationMs !== null && <span>Generated in {formatDuration(generationMs)}</span>}
-                {!dims && generationMs === null && <span>No metadata available.</span>}
+                {generationMs !== null && <span>{t('chat.image.generatedIn', { duration: formatDuration(generationMs) })}</span>}
+                {!dims && generationMs === null && !item.params?.length && <span>{t('chat.image.noMetadata')}</span>}
               </div>
+              {item.params && item.params.length > 0 && (
+                <dl className="flex flex-col gap-1 border-t pt-2">
+                  {item.params.map((p) => (
+                    <div key={p.key} className="flex items-baseline justify-between gap-3">
+                      <dt className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                        {PARAM_LABEL_KEYS[p.key] ? t(PARAM_LABEL_KEYS[p.key]) : p.key}
+                      </dt>
+                      <dd className="break-all text-right text-foreground">{p.value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              )}
+              {item.warnings && item.warnings.length > 0 && (
+                <div className="border-t pt-2">
+                  <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-amber-600 dark:text-amber-500">
+                    {t('chat.image.warnings')}
+                  </div>
+                  <ul className="flex list-disc flex-col gap-1 pl-4 leading-relaxed text-muted-foreground">
+                    {item.warnings.map((w, i) => (
+                      <li key={i}>{w}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               {item.revisedPrompt && (
                 <SelectionContextMenuZone className="border-t pt-2">
                   <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                    Revised prompt
+                    {t('chat.image.prompt')}
                   </div>
                   <div className="max-h-48 overflow-y-auto leading-relaxed">
                     {item.revisedPrompt}

@@ -108,7 +108,7 @@ describe('buildUserMessage', () => {
     expect(message.message.content).toBe('Hello Claude')
   })
 
-  it('builds image blocks and appends text block when images are provided', () => {
+  it('replaces attached files with saved paths instead of inlining base64 bytes', () => {
     const request: SendMessageRequest = {
       content: 'Please review this screenshot',
       images: [
@@ -121,22 +121,16 @@ describe('buildUserMessage', () => {
     }
 
     const message = buildUserMessage(request, 'session-2')
-    const blocks = message.message.content as Array<Record<string, unknown>>
+    const content = message.message.content as string
 
-    expect(Array.isArray(blocks)).toBe(true)
-    expect(blocks).toHaveLength(2)
-    expect(blocks[0]).toEqual({
-      type: 'image',
-      source: {
-        type: 'base64',
-        media_type: 'image/png',
-        data: 'ZmFrZS1iYXNlNjQ=',
-      },
-    })
-    expect(blocks[1]).toEqual({
-      type: 'text',
-      text: 'Please review this screenshot',
-    })
+    expect(typeof content).toBe('string')
+    // The user's own text leads, followed by a note pointing at the saved path.
+    expect(content).toContain('Please review this screenshot')
+    expect(content).toContain('screenshot.png → ')
+    expect(content).toMatch(/super-one-attachments/)
+    // The base64 bytes must NOT be inlined — that is the whole point (agent Reads
+    // the path on demand, keeping bytes out of context until needed).
+    expect(content).not.toContain('ZmFrZS1iYXNlNjQ=')
   })
 })
 

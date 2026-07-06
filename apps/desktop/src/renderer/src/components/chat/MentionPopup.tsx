@@ -66,7 +66,7 @@ function getSelectPath(item: FlatItem): string {
     const name = item.entry.isDirectory ? item.entry.name + '/' : item.entry.name
     return item.prefix + name
   }
-  if (item.kind === 'file') return item.path
+  if (item.kind === 'file') return item.isDirectory ? item.path + '/' : item.path
   if (item.kind === 'agent') return item.name
   if (item.kind === 'miniapp') return item.appId
   return ''

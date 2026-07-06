@@ -6,7 +6,7 @@ import { Dialog, DialogContent, DialogTitle, DialogClose } from '@superone/ui/co
 import { Button } from '@superone/ui/components/ui/button'
 import { ToolIcon } from './ToolIcon'
 import { PrettyJSONCodeBlock, BrowserEvaluateView, BrowserMockView } from './tool-result-views'
-import { ImageInteractive, useImageDataUri } from './codex-image-shared'
+import { ImageInteractive, useImageDataUri } from './image-shared'
 import { ImagePreview } from '@/components/coding/ImagePreview'
 import { getStallColor, type StallLevel } from '@/lib/stall-utils'
 import { browserVerbKey, browserInputSummary, parseBrowserResult, isReadBrowserOp, type BrowserOp } from './browser-tool-display'

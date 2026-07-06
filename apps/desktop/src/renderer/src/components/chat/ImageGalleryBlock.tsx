@@ -1,12 +1,12 @@
 import { useState } from 'react'
 import { ImageIcon, Loader2, AlertCircle } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
-import type { CodexImageGenerationItem } from '@superone/shared/agent-types'
-import { ImageInteractive, CodexImageViewer, useImageDataUri } from './codex-image-shared'
+import type { ImageGenerationItem } from '@superone/shared/agent-types'
+import { ImageInteractive, ImageViewer, useImageDataUri } from './image-shared'
 
 const TILE = 'h-40 flex-none overflow-hidden rounded-md border border-border'
 
-function GalleryThumb({ item, onOpen }: { item: CodexImageGenerationItem; onOpen: () => void }) {
+function GalleryThumb({ item, onOpen }: { item: ImageGenerationItem; onOpen: () => void }) {
   const isFailed = item.status === 'failed'
   const savedPath = item.savedPath
   const isWaiting = !savedPath && !isFailed
@@ -45,7 +45,7 @@ function GalleryThumb({ item, onOpen }: { item: CodexImageGenerationItem; onOpen
   )
 }
 
-export function CodexImageGalleryBlock({ items }: { items: CodexImageGenerationItem[] }) {
+export function ImageGalleryBlock({ items }: { items: ImageGenerationItem[] }) {
   const [viewerOpen, setViewerOpen] = useState(false)
   const [index, setIndex] = useState(0)
 
@@ -54,11 +54,15 @@ export function CodexImageGalleryBlock({ items }: { items: CodexImageGenerationI
     setViewerOpen(true)
   }
 
+  const generating = items.some((it) => it.status === 'in_progress')
+
   return (
     <div className="my-2">
       <div className="mb-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
         <ImageIcon className="size-3.5 shrink-0" />
-        <span>{items.length} image{items.length === 1 ? '' : 's'} generated</span>
+        <span>
+          {generating ? 'Generating…' : `${items.length} image${items.length === 1 ? '' : 's'} generated`}
+        </span>
       </div>
       <div className="flex flex-wrap gap-2">
         {items.map((it, i) => (
@@ -66,7 +70,7 @@ export function CodexImageGalleryBlock({ items }: { items: CodexImageGenerationI
         ))}
       </div>
 
-      <CodexImageViewer
+      <ImageViewer
         items={items}
         index={index}
         open={viewerOpen}

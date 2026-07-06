@@ -43,6 +43,7 @@ const { chatActions, activeSessionState, editorState, useChatStore, mentionPopup
     setDraftText: vi.fn((text: string) => {
       activeSessionState.draftText = text
     }),
+    setDraftJson: vi.fn(),
     sendMessage: vi.fn(),
     editQueuedMessage: vi.fn(),
     interrupt: vi.fn(),
@@ -97,6 +98,7 @@ vi.mock('@tiptap/react', () => {
         promptSuggestion: { suggestion: null as string | null },
       },
       getText: () => editorState.text,
+      getJSON: () => ({ type: 'doc', content: [{ type: 'paragraph', content: editorState.text ? [{ type: 'text', text: editorState.text }] : [] }] }),
       chain: () => {
         const chain = {
           focus: () => chain,
@@ -245,8 +247,8 @@ vi.mock('./MentionPopup', () => ({
   },
 }))
 
-vi.mock('./AttachmentBar', () => ({
-  AttachmentBar: () => null,
+vi.mock('./AttachmentChipNode', () => ({
+  AttachmentChipNode: () => null,
 }))
 
 vi.mock('./ContextBar', () => ({

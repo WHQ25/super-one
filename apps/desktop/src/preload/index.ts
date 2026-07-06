@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import { AgentIpcChannels, type NativeContextMenuItemSpec, type AgentPrewarmHint, type BashOutputEvent, type CodexCollaborationMode, type CodexPermissionPreset, type CodexProviderTestProgress, type CodexReasoningEffort, type CodexReviewTarget, type RemoteDeviceConfig, type SandboxMode, type SendMessageRequest, type ContentBlock, type ChatMessageContext, type WorktreeActivateRequest, type WorktreeHandoffResult, type WorktreeAssignResult, type GitDirtyStatus, type SessionForkRequest, type SessionForkResult, type HookSavePayload, type TerminalEvent, type TerminalListItem, type TerminalSnapshot, type HarnessId, type BrowserCertError, type BrowserOpenTabRequest } from '@superone/shared/agent-types'
+import { AgentIpcChannels, type NativeContextMenuItemSpec, type AgentPrewarmHint, type BashOutputEvent, type CodexCollaborationMode, type CodexPermissionPreset, type CodexProviderTestProgress, type CodexReasoningEffort, type CodexReviewTarget, type RemoteDeviceConfig, type SandboxMode, type SendMessageRequest, type ContentBlock, type ChatMessageContext, type WorktreeActivateRequest, type WorktreeHandoffResult, type WorktreeAssignResult, type GitDirtyStatus, type SessionForkRequest, type SessionForkResult, type HookSavePayload, type TerminalEvent, type TerminalListItem, type TerminalSnapshot, type HarnessId, type BrowserCertError, type BrowserOpenTabRequest, type UpsertMediaProviderRequest } from '@superone/shared/agent-types'
 import type { McpbInstallRequest } from '@superone/shared/mcpb-types'
 
 try {
@@ -639,7 +639,7 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.MEDIA_GEN_PROVIDERS),
   setMediaProviderKey: (providerId: string, apiKey: string) =>
     ipcRenderer.invoke(AgentIpcChannels.MEDIA_GEN_SET_KEY, providerId, apiKey),
-  upsertMediaCustomProvider: (input: { id?: string; label: string; baseURL: string; models: string[] }) =>
+  upsertMediaCustomProvider: (input: UpsertMediaProviderRequest) =>
     ipcRenderer.invoke(AgentIpcChannels.MEDIA_GEN_UPSERT_CUSTOM, input),
   removeMediaCustomProvider: (id: string) =>
     ipcRenderer.invoke(AgentIpcChannels.MEDIA_GEN_REMOVE_CUSTOM, id),

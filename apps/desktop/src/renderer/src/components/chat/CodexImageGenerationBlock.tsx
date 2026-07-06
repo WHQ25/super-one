@@ -1,11 +1,11 @@
 import { useState } from 'react'
 import { ImageIcon, Loader2, AlertCircle } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
-import type { CodexImageGenerationItem } from '@superone/shared/agent-types'
-import { ImageInteractive, CodexImageViewer, useImageDataUri } from './codex-image-shared'
+import type { ImageGenerationItem } from '@superone/shared/agent-types'
+import { ImageInteractive, ImageViewer, useImageDataUri } from './image-shared'
 
 interface Props {
-  item: CodexImageGenerationItem
+  item: ImageGenerationItem
 }
 
 export function CodexImageGenerationBlock({ item }: Props) {
@@ -71,7 +71,7 @@ export function CodexImageGenerationBlock({ item }: Props) {
         />
       </ImageInteractive>
 
-      <CodexImageViewer
+      <ImageViewer
         items={[item]}
         index={0}
         open={viewerOpen}

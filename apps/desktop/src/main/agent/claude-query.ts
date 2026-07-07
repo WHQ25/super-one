@@ -536,6 +536,12 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
               } : undefined,
             })
             maybeEmitDeferredIdle()
+          } else if (sys.subtype === 'background_tasks_changed') {
+            activeBackgroundTasks.clear()
+            for (const t of (sys.tasks ?? []) as Array<{ task_id?: string; description?: string }>) {
+              if (t?.task_id) activeBackgroundTasks.set(t.task_id, { description: t.description ?? '' })
+            }
+            maybeEmitDeferredIdle()
           } else if (sys.subtype === 'hook_progress') {
             emit({
               type: 'hook_progress',

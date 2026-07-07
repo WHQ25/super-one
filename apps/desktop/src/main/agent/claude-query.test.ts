@@ -615,6 +615,49 @@ describe('createSessionQuery', () => {
     expect(events).toContainEqual({ type: 'status_change', status: 'idle' })
   })
 
+  it('recovers to idle when background_tasks_changed clears a task whose completion bookend was missed', async () => {
+    state.messages = [
+      { type: 'system', subtype: 'task_started', task_id: 'bg-1', tool_use_id: 't1', description: 'bg' },
+      { type: 'result', subtype: 'success', usage: {} },
+      { type: 'system', subtype: 'background_tasks_changed', tasks: [] },
+    ]
+
+    const events: Array<Record<string, unknown>> = []
+    const handle = createSessionQuery(
+      { consumedTags: [], drainConsumedTag: () => undefined } as unknown as MessageBridge,
+      { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
+      (event) => events.push(event as unknown as Record<string, unknown>),
+      () => 'msg-bg',
+      () => Date.now() - 20,
+      () => false
+    )
+    await handle.iterationDone
+
+    expect(events).toContainEqual({ type: 'status_change', status: 'background' })
+    expect(events).toContainEqual({ type: 'status_change', status: 'idle' })
+  })
+
+  it('does not falsely go idle when background_tasks_changed replaces the set but other tasks remain', async () => {
+    state.messages = [
+      { type: 'system', subtype: 'task_started', task_id: 'bg-1', tool_use_id: 't1', description: 'bg' },
+      { type: 'result', subtype: 'success', usage: {} },
+      { type: 'system', subtype: 'background_tasks_changed', tasks: [{ task_id: 'bg-2', task_type: 'agent', description: 'other' }] },
+    ]
+
+    const events: Array<Record<string, unknown>> = []
+    const handle = createSessionQuery(
+      { consumedTags: [], drainConsumedTag: () => undefined } as unknown as MessageBridge,
+      { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
+      (event) => events.push(event as unknown as Record<string, unknown>),
+      () => 'msg-bg2',
+      () => Date.now() - 20,
+      () => false
+    )
+    await handle.iterationDone
+
+    expect(events).not.toContainEqual({ type: 'status_change', status: 'idle' })
+  })
+
   it('maps iterator errors to message_error + status_change error', async () => {
     state.error = new Error('stream crashed')
 

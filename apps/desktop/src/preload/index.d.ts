@@ -242,6 +242,7 @@ interface AppAPI {
   unwatchBashOutput(toolUseId: string): Promise<void>
   readBashOutputMore(toolUseId: string, tailLines: number): Promise<string>
   readBashOutputFile(filePath: string, tailLines: number): Promise<string>
+  readSubagentTranscript(outputFile: string, dir?: string): Promise<Array<{ type: string; message: { content: Array<{ type: string; name?: string; input?: Record<string, unknown>; text?: string }> } }> | null>
   onBashOutputEvent(callback: (event: BashOutputEvent) => void): () => void
 
   // Settings

@@ -19,18 +19,20 @@ function summarizeToolInput(toolName: string, input: Record<string, unknown>): s
   return ''
 }
 
-export function parseJsonlOutput(raw: string): { entries: JsonlEntry[]; resultText?: string } {
-  const lines = raw.split('\n')
+export interface JsonlRecord {
+  type?: string
+  message?: { content?: Array<{ type: string; name?: string; input?: Record<string, unknown>; text?: string }> }
+}
+
+/**
+ * Maps subagent transcript records into interleaved activity entries. Shared by
+ * the live tail parser (parseJsonlOutput) and the authoritative SDK-backed read
+ * (getSubagentMessages), so both surfaces render identical activity.
+ */
+export function entriesFromRecords(records: JsonlRecord[]): { entries: JsonlEntry[]; resultText?: string } {
   const entries: JsonlEntry[] = []
   let lastTextIndex = -1
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim()
-    if (!line) continue
-    let record: { type?: string; message?: { content?: Array<{ type: string; name?: string; input?: Record<string, unknown>; text?: string }> } }
-    try { record = JSON.parse(line) } catch {
-      if (i === 0) return { entries: [] }
-      continue
-    }
+  for (const record of records) {
     if (record.type !== 'assistant' || !record.message?.content) continue
     for (const block of record.message.content) {
       if (block.type === 'tool_use' && block.name === STRUCTURED_OUTPUT_TOOL) {
@@ -43,11 +45,22 @@ export function parseJsonlOutput(raw: string): { entries: JsonlEntry[]; resultTe
       }
     }
   }
-  let resultText: string | undefined
-  if (lastTextIndex >= 0) {
-    resultText = (entries[lastTextIndex] as { type: 'activity'; text: string }).text
-  }
+  const resultText = lastTextIndex >= 0 ? (entries[lastTextIndex] as { type: 'activity'; text: string }).text : undefined
   return { entries, resultText }
+}
+
+export function parseJsonlOutput(raw: string): { entries: JsonlEntry[]; resultText?: string } {
+  const lines = raw.split('\n')
+  const records: JsonlRecord[] = []
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim()
+    if (!line) continue
+    try { records.push(JSON.parse(line)) } catch {
+      if (i === 0) return { entries: [] }
+      continue
+    }
+  }
+  return entriesFromRecords(records)
 }
 
 export interface ParsedTaskInput {

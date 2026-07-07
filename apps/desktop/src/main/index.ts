@@ -73,6 +73,7 @@ import { startWatching, stopWatching } from './file-watcher'
 import { notifyWidgetReady, clearAllGates } from './generative-ui/widget-gate'
 import { setBashOutputWindow, watchBashOutput, unwatchBashOutput, unwatchAll as unwatchAllBashOutputs, readBashOutputTail, getWatchedFilePath } from './bash-output-watcher'
 import { listWorkflowAgents, readWorkflowOutput, readWorkflowScript } from './workflow-transcripts'
+import { readSubagentTranscript } from './agent/subagent-transcript'
 import { parseGitStatusOutput, parseGitStatusFiles, type GitStatusPair } from './git-status-utils'
 import { mapModelInfo } from './agent/claude-models'
 import { getClaudeRateLimits } from './agent/claude-usage-service'
@@ -1942,6 +1943,11 @@ function registerIpcHandlers(): void {
   ipcMain.handle(AgentIpcChannels.READ_WORKFLOW_SCRIPT, async (_event, filePath: string) => {
     if (typeof filePath !== 'string' || !isAbsolute(filePath)) return null
     return readWorkflowScript(filePath)
+  })
+
+  ipcMain.handle(AgentIpcChannels.READ_SUBAGENT_TRANSCRIPT, async (_event, outputFile: string, dir?: string) => {
+    if (typeof outputFile !== 'string' || !isAbsolute(outputFile)) return null
+    return readSubagentTranscript(outputFile, typeof dir === 'string' ? dir : undefined)
   })
 
   ipcMain.handle(AgentIpcChannels.SAVE_FILE_AS, async (_event, sourcePath: string, defaultName: string) => {

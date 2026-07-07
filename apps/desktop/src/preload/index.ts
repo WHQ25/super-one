@@ -726,6 +726,8 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.BASH_OUTPUT_READ_MORE, toolUseId, tailLines),
   readBashOutputFile: (filePath: string, tailLines: number): Promise<string> =>
     ipcRenderer.invoke(AgentIpcChannels.BASH_OUTPUT_READ_FILE, filePath, tailLines),
+  readSubagentTranscript: (outputFile: string, dir?: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.READ_SUBAGENT_TRANSCRIPT, outputFile, dir),
   onBashOutputEvent: (callback: (event: BashOutputEvent) => void) => {
     const handler = (_e: Electron.IpcRendererEvent, event: BashOutputEvent): void => {
       callback(event)

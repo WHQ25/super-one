@@ -2037,6 +2037,7 @@ export const AgentIpcChannels = {
   LIST_WORKFLOW_AGENTS: 'app:list-workflow-agents',
   READ_WORKFLOW_OUTPUT: 'app:read-workflow-output',
   READ_WORKFLOW_SCRIPT: 'app:read-workflow-script',
+  READ_SUBAGENT_TRANSCRIPT: 'app:read-subagent-transcript',
 
   // Remote control
   REMOTE_COMMAND: 'remote:command',

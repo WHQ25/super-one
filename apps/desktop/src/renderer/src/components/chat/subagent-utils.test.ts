@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ContentBlock } from '@superone/shared/agent-types'
-import { parseJsonlOutput, computeSubagentElapsed, groupSubagentChildren, collectSubagentSubtree, type SubagentChildItem } from './subagent-utils'
+import { parseJsonlOutput, entriesFromRecords, computeSubagentElapsed, groupSubagentChildren, collectSubagentSubtree, type SubagentChildItem } from './subagent-utils'
 
 function line(content: Array<{ type: string; name?: string; text?: string; input?: Record<string, unknown> }>): string {
   return JSON.stringify({ type: 'assistant', message: { content } })
@@ -74,6 +74,34 @@ describe('parseJsonlOutput', () => {
     const { entries, resultText } = parseJsonlOutput('')
     expect(entries).toEqual([])
     expect(resultText).toBeUndefined()
+  })
+})
+
+describe('entriesFromRecords', () => {
+  it('maps SDK-shaped assistant records identically to parseJsonlOutput', () => {
+    const records = [
+      { type: 'assistant', message: { content: [{ type: 'text', text: 'thinking...' }] } },
+      { type: 'assistant', message: { content: [{ type: 'tool_use', name: 'Read', input: { file_path: '/a.ts' } }] } },
+      { type: 'assistant', message: { content: [{ type: 'tool_use', name: 'StructuredOutput', input: { verdict: 'ok' } }] } },
+      { type: 'assistant', message: { content: [{ type: 'text', text: 'done' }] } },
+    ]
+    const { entries, resultText } = entriesFromRecords(records)
+    expect(entries).toEqual([
+      { type: 'activity', text: 'thinking...' },
+      { type: 'tool', toolName: 'Read', description: '/a.ts' },
+      { type: 'structured', data: { verdict: 'ok' } },
+      { type: 'activity', text: 'done' },
+    ])
+    expect(resultText).toBe('done')
+  })
+
+  it('ignores non-assistant records', () => {
+    const records = [
+      { type: 'user', message: { content: [{ type: 'tool_result', text: 'ignored' }] } },
+      { type: 'assistant', message: { content: [{ type: 'text', text: 'kept' }] } },
+    ]
+    const { entries } = entriesFromRecords(records)
+    expect(entries).toEqual([{ type: 'activity', text: 'kept' }])
   })
 })
 

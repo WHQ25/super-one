@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useChatStore, useBashOutput } from '@/stores/chat'
-import { parseJsonlOutput, type JsonlEntry } from './subagent-utils'
+import { parseJsonlOutput, entriesFromRecords, type JsonlEntry } from './subagent-utils'
 
 const SUBAGENT_OUTPUT_TAIL_LINES = 400
 
@@ -61,11 +61,13 @@ export function useSubagentJsonl({
   const bashOutput = useBashOutput(toolUseId)
   const [entries, setEntries] = useState<JsonlEntry[]>([])
   const [resultText, setResultText] = useState<string>()
+  const authoritativeReadFor = useRef<string | null>(null)
   const watchedContent = bashOutput && bashOutput.outputPath === outputFile ? bashOutput.content : ''
 
   useEffect(() => {
     setEntries([])
     setResultText(undefined)
+    authoritativeReadFor.current = null
   }, [outputFile])
 
   useEffect(() => {
@@ -103,6 +105,28 @@ export function useSubagentJsonl({
     if (!enabled || isRunning || bashOutput?.outputPath !== outputFile || bashOutput?.finished !== true) return
     window.app.unwatchBashOutput(toolUseId).catch(() => {})
   }, [bashOutput?.finished, bashOutput?.outputPath, enabled, isRunning, outputFile, toolUseId])
+
+  // Once the agent has finished, do one authoritative full read via the SDK
+  // (parentUuid chain-building, no 400-line tail truncation) and overwrite the
+  // tailed entries. Only overwrites on a non-empty read, so a path/dir mismatch
+  // degrades to the live-tailed result rather than blanking it.
+  useEffect(() => {
+    if (!enabled || !outputFile || isRunning) return
+    if (authoritativeReadFor.current === outputFile) return
+    authoritativeReadFor.current = outputFile
+    const dir = useChatStore.getState().activeProject ?? undefined
+    window.app.readSubagentTranscript(outputFile, dir).then((records) => {
+      if (!records || records.length === 0) return
+      const parsed = entriesFromRecords(records)
+      if (parsed.entries.length === 0 && !parsed.resultText) return
+      setEntries(parsed.entries)
+      setResultText(parsed.resultText)
+      window.app.trace?.('subagent.output', 'authoritative_read', { entries: parsed.entries.length, hasResultText: !!parsed.resultText }, toolUseId)
+      if (parsed.resultText && parsed.resultText !== taskResultText) {
+        persistTaskResultText(toolUseId, parsed.resultText)
+      }
+    }).catch(() => {})
+  }, [enabled, outputFile, isRunning, toolUseId, taskResultText])
 
   return { entries, resultText }
 }

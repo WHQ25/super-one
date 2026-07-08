@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import { AgentIpcChannels, type NativeContextMenuItemSpec, type AgentPrewarmHint, type BashOutputEvent, type CodexCollaborationMode, type CodexPermissionPreset, type CodexProviderTestProgress, type CodexReasoningEffort, type CodexReviewTarget, type CodexExternalAgentItem, type RemoteDeviceConfig, type SandboxMode, type SendMessageRequest, type ContentBlock, type ChatMessageContext, type WorktreeActivateRequest, type WorktreeHandoffResult, type WorktreeAssignResult, type GitDirtyStatus, type SessionForkRequest, type SessionForkResult, type HookSavePayload, type TerminalEvent, type TerminalListItem, type TerminalSnapshot, type HarnessId, type BrowserCertError, type BrowserOpenTabRequest, type UpsertMediaProviderRequest } from '@superone/shared/agent-types'
 import type { McpbInstallRequest } from '@superone/shared/mcpb-types'
+import type { ConsumerBinding, ConsumerId, Credential, EndpointOverride, Platform } from '@superone/shared/platform-registry'
 
 try {
   const ROLE_PREFIX = '--superone-role='
@@ -584,22 +585,44 @@ const appAPI = {
   deleteHook: (projectPath: string, id: string) =>
     ipcRenderer.invoke(AgentIpcChannels.HOOKS_DELETE, projectPath, id),
 
-  // Providers
-  listProviders: () =>
-    ipcRenderer.invoke(AgentIpcChannels.PROVIDERS_LIST),
-  createProvider: (data: { name: string; key_name?: string; provider_type?: string; api_key?: string; category?: string; supported_agents?: string; agent_configs?: string; notes?: string }) =>
-    ipcRenderer.invoke(AgentIpcChannels.PROVIDERS_CREATE, data),
-  updateProvider: (id: string, data: { name?: string; key_name?: string; provider_type?: string; api_key?: string; category?: string; supported_agents?: string; agent_configs?: string; notes?: string; sort_order?: number }) =>
-    ipcRenderer.invoke(AgentIpcChannels.PROVIDERS_UPDATE, id, data),
-  deleteProvider: (id: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.PROVIDERS_DELETE, id),
-  activateProvider: (id: string, agentType: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.PROVIDERS_ACTIVATE, id, agentType),
-  deactivateAllProviders: (agentType: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.PROVIDERS_DEACTIVATE_ALL, agentType),
-  testProvider: (data: { api_key: string; base_url: string; extra_env: string; provider_id?: string }) =>
-    ipcRenderer.invoke(AgentIpcChannels.PROVIDERS_TEST, data) as Promise<{ success: boolean; models: number; error?: string }>,
-  testCodexProvider: (data: { api_key: string; base_url: string; extra_env: string; name?: string; model?: string; provider_id?: string }) =>
+  // Unified AI provider platform (registry + credentials + bindings)
+  listPlatforms: (): Promise<Platform[]> => ipcRenderer.invoke(AgentIpcChannels.PLATFORMS_LIST),
+  createCustomPlatform: (def: Platform): Promise<Platform> =>
+    ipcRenderer.invoke(AgentIpcChannels.PLATFORMS_CREATE_CUSTOM, def),
+  updateCustomPlatform: (def: Platform): Promise<Platform> =>
+    ipcRenderer.invoke(AgentIpcChannels.PLATFORMS_UPDATE_CUSTOM, def),
+  deleteCustomPlatform: (id: string): Promise<boolean> =>
+    ipcRenderer.invoke(AgentIpcChannels.PLATFORMS_DELETE_CUSTOM, id),
+  listCredentials: (): Promise<Credential[]> => ipcRenderer.invoke(AgentIpcChannels.CREDENTIALS_LIST),
+  createCredential: (input: {
+    platformId: string
+    planId: string
+    name: string
+    secret?: string
+    secretEnv?: string
+    overrides?: Record<string, EndpointOverride>
+    notes?: string
+  }): Promise<Credential> => ipcRenderer.invoke(AgentIpcChannels.CREDENTIALS_CREATE, input),
+  updateCredential: (
+    id: string,
+    patch: {
+      name?: string
+      secret?: string
+      secretEnv?: string
+      overrides?: Record<string, EndpointOverride>
+      notes?: string
+      sortOrder?: number
+    },
+  ): Promise<Credential | undefined> => ipcRenderer.invoke(AgentIpcChannels.CREDENTIALS_UPDATE, id, patch),
+  deleteCredential: (id: string): Promise<boolean> => ipcRenderer.invoke(AgentIpcChannels.CREDENTIALS_DELETE, id),
+  listBindings: (): Promise<ConsumerBinding[]> => ipcRenderer.invoke(AgentIpcChannels.BINDINGS_GET),
+  setBinding: (binding: ConsumerBinding): Promise<void> =>
+    ipcRenderer.invoke(AgentIpcChannels.BINDINGS_SET, binding),
+  clearBinding: (consumer: ConsumerId): Promise<void> =>
+    ipcRenderer.invoke(AgentIpcChannels.BINDINGS_CLEAR, consumer),
+  testProviderConnection: (data: { api_key: string; base_url: string; extra_env: string; credential_id?: string }) =>
+    ipcRenderer.invoke(AgentIpcChannels.PROVIDERS_TEST_CONNECTION, data) as Promise<{ success: boolean; models: number; error?: string }>,
+  testCodexProvider: (data: { api_key: string; base_url: string; extra_env: string; name?: string; model?: string; credential_id?: string }) =>
     ipcRenderer.invoke(AgentIpcChannels.PROVIDERS_TEST_CODEX, data) as Promise<{ success: boolean; models: number; error?: string }>,
   onTestCodexProgress: (callback: (progress: CodexProviderTestProgress) => void) => {
     const handler = (_e: Electron.IpcRendererEvent, progress: CodexProviderTestProgress): void => {
@@ -650,12 +673,6 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.MODEL_CATALOG_GET),
   refreshModelCatalog: () =>
     ipcRenderer.invoke(AgentIpcChannels.MODEL_CATALOG_REFRESH),
-  setMediaProviderKey: (providerId: string, apiKey: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.MEDIA_GEN_SET_KEY, providerId, apiKey),
-  upsertMediaCustomProvider: (input: UpsertMediaProviderRequest) =>
-    ipcRenderer.invoke(AgentIpcChannels.MEDIA_GEN_UPSERT_CUSTOM, input),
-  removeMediaCustomProvider: (id: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.MEDIA_GEN_REMOVE_CUSTOM, id),
   listWorkflowAgents: (transcriptDir: string) =>
     ipcRenderer.invoke(AgentIpcChannels.LIST_WORKFLOW_AGENTS, transcriptDir),
   readWorkflowOutput: (filePath: string) =>

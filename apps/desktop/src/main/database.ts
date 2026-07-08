@@ -1,10 +1,8 @@
 import { app, type App } from 'electron'
 import { join } from 'path'
-import { randomUUID } from 'crypto'
 import Database from 'better-sqlite3'
-import type { ApiProvider, CreateProviderRequest, HarnessId, HarnessResourcesMap, UpdateProviderRequest } from '@superone/shared/agent-types'
+import type { HarnessId, HarnessResourcesMap } from '@superone/shared/agent-types'
 import { runDatabaseMigrations } from './database-migrations'
-import { decryptSecret, encryptSecret } from './crypto/secret-store'
 
 export { runDatabaseMigrations }
 
@@ -57,105 +55,6 @@ export function maskApiKey(key: string): string {
   if (!key) return ''
   if (key.length <= 6) return '***'
   return '***' + key.slice(-6)
-}
-
-function maskProvider(row: ApiProvider): ApiProvider {
-  return { ...row, api_key: maskApiKey(decryptSecret(row.api_key)) }
-}
-
-/** Main-only: decrypt the api_key so it can be injected into a backend env. Never send to the renderer. */
-function decryptProvider(row: ApiProvider | undefined): ApiProvider | undefined {
-  return row ? { ...row, api_key: decryptSecret(row.api_key) } : undefined
-}
-
-export function getAllProviders(): ApiProvider[] {
-  return (getDb().prepare('SELECT * FROM api_providers ORDER BY sort_order, created_at').all() as ApiProvider[]).map(maskProvider)
-}
-
-export function getActiveProvider(agentType: string = 'claude'): ApiProvider | undefined {
-  const col = agentType === 'codex' ? 'is_active_codex' : 'is_active_claude'
-  return decryptProvider(getDb().prepare(`SELECT * FROM api_providers WHERE ${col} = 1`).get() as ApiProvider | undefined)
-}
-
-export function getActiveProviderRaw(agentType: string = 'claude'): ApiProvider | undefined {
-  const col = agentType === 'codex' ? 'is_active_codex' : 'is_active_claude'
-  return decryptProvider(getDb().prepare(`SELECT * FROM api_providers WHERE ${col} = 1`).get() as ApiProvider | undefined)
-}
-
-export function getProviderByIdRaw(id: string): ApiProvider | undefined {
-  return decryptProvider(getDb().prepare('SELECT * FROM api_providers WHERE id = ?').get(id) as ApiProvider | undefined)
-}
-
-export function createProvider(data: CreateProviderRequest): ApiProvider {
-  const now = new Date().toISOString()
-  const id = randomUUID()
-  const maxOrder = (getDb().prepare('SELECT MAX(sort_order) as m FROM api_providers').get() as { m: number | null })?.m ?? -1
-  getDb().prepare(`
-    INSERT INTO api_providers (id, name, key_name, provider_type, api_key, api_key_env, category, supported_agents, agent_configs, capabilities, notes, sort_order, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    id,
-    data.name,
-    data.key_name ?? '',
-    data.provider_type ?? 'custom',
-    encryptSecret(data.api_key ?? ''),
-    data.api_key_env ?? '',
-    data.category ?? 'custom',
-    data.supported_agents ?? '["claude"]',
-    data.agent_configs ?? '{}',
-    data.capabilities ?? '[]',
-    data.notes ?? '',
-    maxOrder + 1,
-    now,
-    now,
-  )
-  return maskProvider(getDb().prepare('SELECT * FROM api_providers WHERE id = ?').get(id) as ApiProvider)
-}
-
-export function updateProvider(id: string, data: UpdateProviderRequest): ApiProvider | undefined {
-  const existing = getDb().prepare('SELECT * FROM api_providers WHERE id = ?').get(id) as ApiProvider | undefined
-  if (!existing) return undefined
-  const skipApiKey = data.api_key !== undefined && data.api_key.startsWith('***')
-  getDb().prepare(`
-    UPDATE api_providers SET
-      name = ?, key_name = ?, provider_type = ?, ${skipApiKey ? '' : 'api_key = ?,'}
-      api_key_env = ?, category = ?, supported_agents = ?, agent_configs = ?, capabilities = ?,
-      notes = ?, sort_order = ?, updated_at = ?
-    WHERE id = ?
-  `).run(
-    ...[
-      data.name ?? existing.name,
-      data.key_name ?? existing.key_name,
-      data.provider_type ?? existing.provider_type,
-      ...(skipApiKey ? [] : [encryptSecret(data.api_key ?? existing.api_key)]),
-      data.api_key_env ?? existing.api_key_env,
-      data.category ?? existing.category,
-      data.supported_agents ?? existing.supported_agents,
-      data.agent_configs ?? existing.agent_configs,
-      data.capabilities ?? existing.capabilities,
-      data.notes ?? existing.notes,
-      data.sort_order ?? existing.sort_order,
-      new Date().toISOString(),
-      id,
-    ],
-  )
-  return maskProvider(getDb().prepare('SELECT * FROM api_providers WHERE id = ?').get(id) as ApiProvider)
-}
-
-export function deleteProvider(id: string): boolean {
-  return getDb().prepare('DELETE FROM api_providers WHERE id = ?').run(id).changes > 0
-}
-
-export function activateProvider(id: string, agentType: string): boolean {
-  const d = getDb()
-  const col = agentType === 'codex' ? 'is_active_codex' : 'is_active_claude'
-  d.prepare(`UPDATE api_providers SET ${col} = 0`).run()
-  return d.prepare(`UPDATE api_providers SET ${col} = 1 WHERE id = ?`).run(id).changes > 0
-}
-
-export function deactivateAllProviders(agentType: string): void {
-  const col = agentType === 'codex' ? 'is_active_codex' : 'is_active_claude'
-  getDb().prepare(`UPDATE api_providers SET ${col} = 0`).run()
 }
 
 export function closeDb(): void {

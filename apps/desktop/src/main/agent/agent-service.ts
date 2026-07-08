@@ -18,9 +18,24 @@ import { getRecentFolders, addRecentFolder } from '../recent-folders'
 import { readdir, mkdir } from 'fs/promises'
 import { existsSync, mkdirSync, readdirSync, readFileSync } from 'fs'
 import { homedir } from 'os'
-import { getDb, getCachedHarnessResources, getActiveProviderRaw } from '../database'
+import { getDb, getCachedHarnessResources } from '../database'
 import { resolveTestApiKey } from './provider-test-key'
-import { buildRemoteActiveProvider } from '@superone/shared/provider-utils'
+import { buildRemoteActiveService, resolveChatService } from '../providers/resolver'
+import { getPlatforms } from '../providers/registry'
+import {
+  createCredential,
+  deleteBinding,
+  deleteCredential,
+  deleteCustomPlatform,
+  listBindings,
+  listCredentials,
+  setBinding,
+  updateCredential,
+  upsertCustomPlatform,
+  type CreateCredentialInput,
+  type UpdateCredentialInput,
+} from '../providers/credential-store'
+import type { ConsumerBinding, ConsumerId, Platform } from '@superone/shared/platform-registry'
 import { sanitizeGitRef } from '../path-security'
 import { authorizeAndStat, FileBridgeError, type AuthorizedFile } from '../file-bridge'
 import { tmpdir } from 'os'
@@ -56,8 +71,7 @@ import { cacheRemoteImage } from '../image-cache'
 import { resolveFavicon, cacheCapturedFavicon } from '../favicon'
 import { backupMcpServers, listLibrary, deleteLibraryEntry, getLibraryEntry } from '../mcp-library-service'
 import { uninstallMcpbBundle } from '../mcpb/mcpb-installer'
-import { getAllProviders, createProvider, updateProvider, deleteProvider, activateProvider, deactivateAllProviders } from '../database'
-import type { CreateProviderRequest, UpdateProviderRequest, HookSavePayload, SessionForkRequest, HarnessId } from '@superone/shared/agent-types'
+import type { HookSavePayload, SessionForkRequest, HarnessId } from '@superone/shared/agent-types'
 import { forkSession } from '../session/session-fork'
 
 export class AgentService {
@@ -244,10 +258,18 @@ export class AgentService {
   }
 
   private broadcastProviderChanged(harnessId: 'claude' | 'codex'): void {
-    const provider = buildRemoteActiveProvider(getActiveProviderRaw(harnessId), harnessId)
+    const provider = buildRemoteActiveService(resolveChatService(harnessId), harnessId)
     const event: AgentEvent = { type: 'provider_changed', harnessId, provider }
     this.notifyEventSubscribers(event)
     this.broadcastEventToRenderer(event)
+  }
+
+  /** A credential/platform change can affect either harness — rebuild and re-broadcast both. */
+  private broadcastProviderConfigChanged(): void {
+    this.markAllNeedsRebuild()
+    this.codexProviderChanged?.()
+    this.broadcastProviderChanged('claude')
+    this.broadcastProviderChanged('codex')
   }
 
   private validateAddDirCandidate(
@@ -967,7 +989,7 @@ export class AgentService {
             const fetchStart = Date.now()
             const models = cachedModels?.length ? cachedModels : await fetchModels(command.projectPath)
             log.info('[get_system_info] resolvedModels=%d source=%s modelsElapsed=%dms', models.length, cachedModels?.length ? 'cache' : 'fetch', Date.now() - fetchStart)
-            const activeProvider = buildRemoteActiveProvider(getActiveProviderRaw('claude'), 'claude')
+            const activeProvider = buildRemoteActiveService(resolveChatService('claude'), 'claude')
             await respond?.(command.requestId, {
               models,
               userSlashCommands: cached?.slashCommands ?? [],
@@ -985,7 +1007,7 @@ export class AgentService {
             const cached = getCachedHarnessResources('codex')
             const models = this.codexListModels ? await this.codexListModels(command.projectPath) : []
             const userPrompts = cached?.prompts ?? []
-            const activeProvider = buildRemoteActiveProvider(getActiveProviderRaw('codex'), 'codex')
+            const activeProvider = buildRemoteActiveService(resolveChatService('codex'), 'codex')
             await respond?.(command.requestId, {
               models,
               slashCommands: [
@@ -1229,7 +1251,7 @@ export class AgentService {
       }
       case 'list_providers': {
         try {
-          await respond?.(command.requestId, { providers: getAllProviders() })
+          await respond?.(command.requestId, { providers: listCredentials() })
         } catch (err) {
           await respond?.(command.requestId, { error: (err as Error).message })
         }
@@ -1963,40 +1985,47 @@ export class AgentService {
 
     // --- Providers ---
 
-    ipcMain.handle(AgentIpcChannels.PROVIDERS_LIST, () => {
-      return getAllProviders()
+    ipcMain.handle(AgentIpcChannels.PLATFORMS_LIST, () => getPlatforms())
+    ipcMain.handle(AgentIpcChannels.PLATFORMS_CREATE_CUSTOM, (_event, def: Platform) => upsertCustomPlatform(def))
+    ipcMain.handle(AgentIpcChannels.PLATFORMS_UPDATE_CUSTOM, (_event, def: Platform) => upsertCustomPlatform(def))
+    ipcMain.handle(AgentIpcChannels.PLATFORMS_DELETE_CUSTOM, (_event, id: string) => {
+      const ok = deleteCustomPlatform(id)
+      this.broadcastProviderConfigChanged()
+      return ok
     })
 
-    ipcMain.handle(AgentIpcChannels.PROVIDERS_CREATE, (_event, data: CreateProviderRequest) => {
-      return createProvider(data)
-    })
-
-    ipcMain.handle(AgentIpcChannels.PROVIDERS_UPDATE, (_event, id: string, data: UpdateProviderRequest) => {
-      return updateProvider(id, data)
-    })
-
-    ipcMain.handle(AgentIpcChannels.PROVIDERS_DELETE, (_event, id: string) => {
-      return deleteProvider(id)
-    })
-
-    ipcMain.handle(AgentIpcChannels.PROVIDERS_ACTIVATE, (_event, id: string, agentType: string) => {
-      log.info('[providers] activate id=%s agentType=%s', id, agentType)
-      const result = activateProvider(id, agentType)
-      this.markAllNeedsRebuild()
-      if (agentType === 'codex') this.codexProviderChanged?.()
-      this.broadcastProviderChanged(agentType === 'codex' ? 'codex' : 'claude')
+    ipcMain.handle(AgentIpcChannels.CREDENTIALS_LIST, () => listCredentials())
+    ipcMain.handle(AgentIpcChannels.CREDENTIALS_CREATE, (_event, input: CreateCredentialInput) => createCredential(input))
+    ipcMain.handle(AgentIpcChannels.CREDENTIALS_UPDATE, (_event, id: string, patch: UpdateCredentialInput) => {
+      const result = updateCredential(id, patch)
+      this.broadcastProviderConfigChanged()
       return result
     })
-
-    ipcMain.handle(AgentIpcChannels.PROVIDERS_DEACTIVATE_ALL, (_event, agentType: string) => {
-      log.info('[providers] deactivate all, agentType=%s', agentType)
-      deactivateAllProviders(agentType)
-      this.markAllNeedsRebuild()
-      if (agentType === 'codex') this.codexProviderChanged?.()
-      this.broadcastProviderChanged(agentType === 'codex' ? 'codex' : 'claude')
+    ipcMain.handle(AgentIpcChannels.CREDENTIALS_DELETE, (_event, id: string) => {
+      const ok = deleteCredential(id)
+      this.broadcastProviderConfigChanged()
+      return ok
     })
 
-    ipcMain.handle(AgentIpcChannels.PROVIDERS_TEST, async (_event, data: { api_key: string; base_url: string; extra_env: string; provider_id?: string }) => {
+    ipcMain.handle(AgentIpcChannels.BINDINGS_GET, () => listBindings())
+    ipcMain.handle(AgentIpcChannels.BINDINGS_SET, (_event, binding: ConsumerBinding) => {
+      log.info('[bindings] set consumer=%s credential=%s', binding.consumer, binding.credentialId)
+      setBinding(binding)
+      const harness = binding.consumer === 'chat:codex' ? 'codex' : 'claude'
+      this.markAllNeedsRebuild()
+      if (harness === 'codex') this.codexProviderChanged?.()
+      this.broadcastProviderChanged(harness)
+    })
+    ipcMain.handle(AgentIpcChannels.BINDINGS_CLEAR, (_event, consumer: ConsumerId) => {
+      log.info('[bindings] clear consumer=%s', consumer)
+      deleteBinding(consumer)
+      const harness = consumer === 'chat:codex' ? 'codex' : 'claude'
+      this.markAllNeedsRebuild()
+      if (harness === 'codex') this.codexProviderChanged?.()
+      this.broadcastProviderChanged(harness)
+    })
+
+    ipcMain.handle(AgentIpcChannels.PROVIDERS_TEST_CONNECTION, async (_event, data: { api_key: string; base_url: string; extra_env: string; credential_id?: string }) => {
       const apiKey = resolveTestApiKey(data)
       const SYSTEM_ENV_ALLOWLIST = ['PATH', 'HOME', 'TMPDIR', 'TEMP', 'TMP', 'USER', 'LOGNAME', 'SHELL', 'LANG', 'LC_ALL', 'SystemRoot', 'APPDATA', 'LOCALAPPDATA', 'PROGRAMFILES', 'USERPROFILE', 'PROGRAMDATA', 'COMSPEC']
       const env: Record<string, string> = {}
@@ -2072,7 +2101,7 @@ export class AgentService {
       }
     })
 
-    ipcMain.handle(AgentIpcChannels.PROVIDERS_TEST_CODEX, async (event, data: { api_key: string; base_url: string; extra_env: string; name?: string; model?: string; provider_id?: string }) => {
+    ipcMain.handle(AgentIpcChannels.PROVIDERS_TEST_CODEX, async (event, data: { api_key: string; base_url: string; extra_env: string; name?: string; model?: string; credential_id?: string }) => {
       const { testCodexProvider } = await import('../codex/codex-provider-test')
       return testCodexProvider({ ...data, api_key: resolveTestApiKey(data) }, undefined, (progress) => {
         if (!event.sender.isDestroyed()) {

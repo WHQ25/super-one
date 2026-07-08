@@ -270,6 +270,7 @@ export type Messages = {
         error: string
       }
       sections: { project: string; user: string }
+      defaultProvider: { label: string; description: string }
       outputStyle: {
         label: string
         description: string
@@ -955,6 +956,30 @@ export type Messages = {
       empty: string
       emptyHint: string
       updateAvailable: string
+      official: string
+      useForTitle: string
+      useForClaude: string
+      useForCodex: string
+      useForImage: string
+      useForVideo: string
+      useForTts: string
+      useForAsr: string
+      getKey: string
+      apiKeys: string
+      keyLabel: string
+      keyNameConflict: string
+      notSet: string
+      customName: string
+      baseUrl: string
+      apiKey: string
+      protocolAnthropic: string
+      protocolOpenaiChat: string
+      protocolOpenaiImages: string
+      defaultKeyName: string
+      advanced: string
+      claudeBaseUrl: string
+      selectModel: string
+      modelNone: string
     }
     providerDialog: {
       addTitle: string
@@ -1013,6 +1038,7 @@ export type Messages = {
         priceOut: string
         empty: string
         noEntry: string
+        copied: string
         all: string
         chat: string
         image: string
@@ -1824,6 +1850,10 @@ export const en: Messages = {
         error: 'Import failed',
       },
       sections: { project: 'Project Settings', user: 'User Settings' },
+      defaultProvider: {
+        label: 'Default Provider',
+        description: 'Which API provider new sessions use by default. Switch per chat via /provider.',
+      },
       outputStyle: {
         label: 'Output Style',
         description: 'Controls how Claude formats responses - tone, structure, and level of detail.',
@@ -2481,26 +2511,26 @@ export const en: Messages = {
       subtitleUnified: 'Manage API providers and their capabilities (chat, image, …)',
       activateFor: 'Activate for',
       enabled: 'Enabled',
-      disabled: 'Not configured',
+      disabled: 'Not Configured',
       selectHint: 'Select a provider to view and edit its configuration',
       add: 'Add Provider',
-      addCustom: 'Add custom provider',
-      addKey: 'Add key',
-      newKey: 'New key',
+      addCustom: 'Add Custom Provider',
+      addKey: 'Add Key',
+      newKey: 'New Key',
       others: 'Others',
       keyCount_one: '{{count}} key',
       keyCount_other: '{{count}} keys',
       accountPlan: 'Plan',
       accountEmail: 'Email',
       accountOrg: 'Organization',
-      accountSignIn: 'Sign-in',
-      accountNotSignedIn: 'Not signed in',
+      accountSignIn: 'Sign-In',
+      accountNotSignedIn: 'Not Signed In',
       accountLoading: 'Loading account…',
       codexNeedsProject: 'Open a project to view the Codex account',
       keyNameDuplicate: 'A key with this name already exists on this platform',
-      deleteKeyTitle: 'Delete key',
+      deleteKeyTitle: 'Delete Key',
       deleteKeyDescription: 'Delete key "{{name}}"? This action cannot be undone.',
-      setDefault: 'Set as default',
+      setDefault: 'Set as Default',
       default: 'Default',
       defaultLabelClaude: 'Claude Code (Official)',
       defaultLabelCodex: 'Codex (Official)',
@@ -2508,7 +2538,31 @@ export const en: Messages = {
       defaultDescCodex: 'Uses Codex session auth (ChatGPT login or API key)',
       empty: 'No third-party providers configured',
       emptyHint: 'Click "Add Provider" to add a third-party API',
-      updateAvailable: 'Sync from preset',
+      updateAvailable: 'Sync from Preset',
+      official: 'Official',
+      useForTitle: 'Use This Platform for',
+      useForClaude: 'Claude',
+      useForCodex: 'Codex',
+      useForImage: 'Image Generation',
+      useForVideo: 'Video Generation',
+      useForTts: 'Text to Speech',
+      useForAsr: 'Speech to Text',
+      getKey: 'Get a Key',
+      apiKeys: 'API Keys',
+      keyLabel: 'Key Name',
+      keyNameConflict: 'A key with this name already exists',
+      notSet: 'Not Set',
+      customName: 'Platform Name',
+      baseUrl: 'Base URL',
+      apiKey: 'API Key',
+      protocolAnthropic: 'Anthropic Messages (Chat)',
+      protocolOpenaiChat: 'OpenAI Chat (Chat)',
+      protocolOpenaiImages: 'OpenAI Images (Image)',
+      defaultKeyName: 'Key',
+      advanced: 'Advanced Settings',
+      claudeBaseUrl: 'Claude Compatible Endpoint',
+      selectModel: 'Select a Model',
+      modelNone: 'None',
     },
     providerDialog: {
       addTitle: 'Add Provider',
@@ -2567,6 +2621,7 @@ export const en: Messages = {
         priceOut: 'Out',
         empty: 'No models match.',
         noEntry: 'No models.dev catalog entry matched this platform. Configured model ids still work.',
+        copied: 'Copied',
         all: 'All',
         chat: 'Chat',
         image: 'Image',

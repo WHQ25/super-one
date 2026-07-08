@@ -1,35 +1,58 @@
-import { IMAGE_PROTOCOL_TO_MEDIA_KIND, imageCapabilityFor } from '@superone/shared/provider-utils'
-import { getAllProviders, getProviderByIdRaw } from '../database'
+import type { ResolvedService } from '@superone/shared/platform-registry'
+import { listCredentials } from '../providers/credential-store'
+import { resolveService } from '../providers/resolver'
 import type { MediaProviderConfig, MediaProviderKind } from './types'
 
-export async function resolveMediaProvider(providerId: string): Promise<MediaProviderConfig> {
-  const provider = getProviderByIdRaw(providerId)
-  const cap = provider ? imageCapabilityFor(provider) : undefined
-  if (!provider || !cap) throw new Error(`Unknown media-gen provider: ${providerId}`)
-
-  const kind = IMAGE_PROTOCOL_TO_MEDIA_KIND[cap.protocol] as MediaProviderKind | undefined
-  if (!kind) throw new Error(`media-gen provider '${providerId}' has no image capability`)
-
-  const envKey = provider.api_key_env ? process.env[provider.api_key_env] : undefined
-  const apiKey = provider.api_key || envKey || ''
-  if (!apiKey) throw new Error(`No API key configured for media-gen provider '${providerId}'`)
-
-  return { id: provider.id, kind, apiKey, baseURL: cap.baseUrl, models: cap.models }
+/**
+ * Adapter selection for image protocols. The strict-vs-compatible OpenAI split is decided by
+ * platform id (official `openai` → strict `createOpenAI`), not by protocol (plan §2.1).
+ */
+export function mediaKindFor(resolved: ResolvedService): MediaProviderKind {
+  switch (resolved.protocol) {
+    case 'google-generative':
+      return 'google'
+    case 'openai-images':
+    case 'openai-responses':
+      return resolved.platformId === 'openai' || resolved.platformId === 'openai-official'
+        ? 'openai'
+        : 'openai-compatible'
+    default:
+      throw new Error(`protocol '${resolved.protocol}' does not serve image generation`)
+  }
 }
 
-export async function resolveDefaultModel(providerId: string): Promise<string> {
-  const provider = getProviderByIdRaw(providerId)
-  const first = provider ? imageCapabilityFor(provider)?.models?.[0] : undefined
-  if (!first) throw new Error(`No default model available for media-gen provider '${providerId}'`)
+function toConfig(resolved: ResolvedService): MediaProviderConfig {
+  return {
+    id: resolved.credentialId,
+    kind: mediaKindFor(resolved),
+    apiKey: resolved.apiKey,
+    baseURL: resolved.baseUrl || undefined,
+    models: resolved.models.map((m) => m.id),
+  }
+}
+
+/** Resolve an image provider from a credential id (or the global `media:image` binding when omitted). */
+export async function resolveMediaProvider(credentialId?: string | null): Promise<MediaProviderConfig> {
+  const resolved = resolveService('media:image', { credentialId })
+  if (!resolved) throw new Error('No image provider is configured. Ask the user to add one in Settings → Providers.')
+  if (!resolved.apiKey) throw new Error(`No API key configured for image provider '${resolved.credentialId}'`)
+  return toConfig(resolved)
+}
+
+export async function resolveDefaultModel(credentialId?: string | null): Promise<string> {
+  const resolved = resolveService('media:image', { credentialId })
+  const first = resolved?.models[0]?.id
+  if (!first) throw new Error('No default model available for the image provider')
   return first
 }
 
-/** Pick the first image provider that has a usable key (stored or env). */
+/** Pick an image credential that resolves with a usable key — the bound one first, else any. */
 export async function resolveDefaultProviderId(): Promise<string> {
-  for (const provider of getAllProviders()) {
-    if (!imageCapabilityFor(provider)) continue
-    const hasEnv = !!(provider.api_key_env && process.env[provider.api_key_env])
-    if (provider.api_key || hasEnv) return provider.id
+  const bound = resolveService('media:image')
+  if (bound?.apiKey) return bound.credentialId
+  for (const cred of listCredentials()) {
+    const resolved = resolveService('media:image', { credentialId: cred.id })
+    if (resolved?.apiKey) return resolved.credentialId
   }
-  throw new Error('No media-gen provider is configured. Ask the user to add one in Settings → Providers.')
+  throw new Error('No image provider is configured. Ask the user to add one in Settings → Providers.')
 }

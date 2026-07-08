@@ -24,6 +24,10 @@ vi.mock('../database', () => ({
   getProviderByIdRaw: vi.fn(() => undefined),
 }))
 
+vi.mock('../providers/resolver', () => ({
+  resolveChatService: vi.fn(() => null),
+}))
+
 vi.mock('../agent/resolve-cli', () => ({
   getNodeRuntime: vi.fn(() => ({ executable: '/mock/node' })),
 }))
@@ -92,7 +96,24 @@ const {
   getCodexProviderOverrideFor,
   buildCodexProviderCliOverrides,
 } = await import('./app-server-connection')
-const { getActiveProviderRaw, getProviderByIdRaw } = await import('../database')
+const { resolveChatService } = await import('../providers/resolver')
+
+function resolvedService(over: Partial<Record<string, unknown>> = {}) {
+  return {
+    platformId: 'gw',
+    brand: 'My Gateway',
+    planId: 'api',
+    endpointId: 'openai',
+    credentialId: 'c1',
+    task: 'chat',
+    protocol: 'openai-chat',
+    baseUrl: '',
+    apiKey: '',
+    auth: 'api-key',
+    models: [],
+    ...over,
+  } as never
+}
 
 function writeLineToChild(child: FakeChild, payload: Record<string, unknown>): void {
   child.stdout.write(`${JSON.stringify(payload)}\n`)
@@ -405,18 +426,13 @@ describe('resolvePermissionProfile', () => {
 
 describe('buildAppServerEnv custom Codex provider', () => {
   beforeEach(() => {
-    vi.mocked(getActiveProviderRaw).mockReturnValue(null as never)
+    vi.mocked(resolveChatService).mockReturnValue(null)
   })
 
   it('injects CODEX_API_KEY and extra_env but never the unsupported OPENAI_BASE_URL', () => {
-    vi.mocked(getActiveProviderRaw).mockReturnValue({
-      id: 'p1',
-      name: 'My Gateway',
-      api_key: 'sk-test',
-      agent_configs: JSON.stringify({
-        codex: { base_url: 'https://gw.example.com/v1', extra_env: JSON.stringify({ FOO: 'bar' }) },
-      }),
-    } as never)
+    vi.mocked(resolveChatService).mockReturnValue(
+      resolvedService({ baseUrl: 'https://gw.example.com/v1', apiKey: 'sk-test', extraEnv: { FOO: 'bar' } }),
+    )
 
     const env = buildAppServerEnv({ mode: 'apiKey' } as never)
 
@@ -428,30 +444,22 @@ describe('buildAppServerEnv custom Codex provider', () => {
 
 describe('getCodexProviderOverride', () => {
   beforeEach(() => {
-    vi.mocked(getActiveProviderRaw).mockReturnValue(null as never)
+    vi.mocked(resolveChatService).mockReturnValue(null)
   })
 
-  it('returns null when no active codex provider', () => {
+  it('returns null when no codex service resolves', () => {
     expect(getCodexProviderOverride()).toBeNull()
   })
 
-  it('returns null when the active codex provider has no base_url', () => {
-    vi.mocked(getActiveProviderRaw).mockReturnValue({
-      id: 'p2',
-      name: 'No URL',
-      api_key: 'sk',
-      agent_configs: JSON.stringify({ codex: {} }),
-    } as never)
+  it('returns null when the resolved service has no base_url', () => {
+    vi.mocked(resolveChatService).mockReturnValue(resolvedService({ baseUrl: '' }))
     expect(getCodexProviderOverride()).toBeNull()
   })
 
   it('builds a Responses-API provider definition keyed by superone_custom', () => {
-    vi.mocked(getActiveProviderRaw).mockReturnValue({
-      id: 'p3',
-      name: 'My Gateway',
-      api_key: 'sk',
-      agent_configs: JSON.stringify({ codex: { base_url: 'https://gw.example.com/v1' } }),
-    } as never)
+    vi.mocked(resolveChatService).mockReturnValue(
+      resolvedService({ baseUrl: 'https://gw.example.com/v1', brand: 'My Gateway' }),
+    )
 
     expect(getCodexProviderOverride()).toEqual({
       id: 'superone_custom',
@@ -467,42 +475,16 @@ describe('getCodexProviderOverride', () => {
 })
 
 describe('getCodexProviderOverrideFor (session-scoped)', () => {
-  beforeEach(() => {
-    vi.mocked(getActiveProviderRaw).mockReturnValue(null as never)
-    vi.mocked(getProviderByIdRaw).mockReturnValue(undefined as never)
-  })
-
-  it('resolves the explicit per-session provider by id over the DB-active provider', () => {
-    vi.mocked(getActiveProviderRaw).mockReturnValue({
-      id: 'global', name: 'Global', api_key: 'sk',
-      agent_configs: JSON.stringify({ codex: { base_url: 'https://global/v1' } }),
-    } as never)
-    vi.mocked(getProviderByIdRaw).mockReturnValue({
-      id: 'sess-1', name: 'Session GW', api_key: 'sk2',
-      agent_configs: JSON.stringify({ codex: { base_url: 'https://session/v1' } }),
-    } as never)
+  it('builds the override from the resolved codex service for the given credential id', () => {
+    vi.mocked(resolveChatService).mockReturnValue(resolvedService({ baseUrl: 'https://session/v1' }))
 
     const ov = getCodexProviderOverrideFor('sess-1')
+    expect(resolveChatService).toHaveBeenCalledWith('codex', 'sess-1')
     expect(ov?.info.base_url).toBe('https://session/v1')
-    expect(ov?.info.name).toBe('Session GW')
   })
 
-  it('falls back to the DB-active provider when apiProviderId is null', () => {
-    vi.mocked(getActiveProviderRaw).mockReturnValue({
-      id: 'global', name: 'Global', api_key: 'sk',
-      agent_configs: JSON.stringify({ codex: { base_url: 'https://global/v1' } }),
-    } as never)
-
-    expect(getCodexProviderOverrideFor(null)?.info.base_url).toBe('https://global/v1')
-  })
-
-  it('falls back to DB-active when the explicit id is not found', () => {
-    vi.mocked(getActiveProviderRaw).mockReturnValue({
-      id: 'global', name: 'Global', api_key: 'sk',
-      agent_configs: JSON.stringify({ codex: { base_url: 'https://global/v1' } }),
-    } as never)
-    vi.mocked(getProviderByIdRaw).mockReturnValue(undefined as never)
-
-    expect(getCodexProviderOverrideFor('missing')?.info.base_url).toBe('https://global/v1')
+  it('returns null when the resolved service has no base_url', () => {
+    vi.mocked(resolveChatService).mockReturnValue(resolvedService({ baseUrl: '' }))
+    expect(getCodexProviderOverrideFor('missing')).toBeNull()
   })
 })

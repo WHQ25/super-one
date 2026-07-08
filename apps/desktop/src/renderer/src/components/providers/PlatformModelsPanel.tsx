@@ -3,6 +3,7 @@ import {
   ArrowRight,
   AudioLines,
   Brain,
+  Check,
   FileText,
   Image as ImageIcon,
   LayoutGrid,
@@ -19,13 +20,12 @@ import type { LucideIcon } from 'lucide-react'
 import { ModelIcon, modelMappings } from '@lobehub/icons'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@superone/ui/components/ui/button'
-import { Switch } from '@superone/ui/components/ui/switch'
-import { useModelCatalog } from '@/hooks/useModelCatalog'
-import { ProviderLabel } from './ProviderLabel'
-import { resolveProviderKey } from '@superone/shared/provider-utils'
-import { MODEL_TASK_ORDER, modelTasks } from '@superone/shared/model-tasks'
-import type { ApiProvider, CapabilityTask, ProviderCapability } from '@superone/shared/agent-types'
+import type { CapabilityTask } from '@superone/shared/agent-types'
+import { catalogProviderIdFor, type Plan, type Platform } from '@superone/shared/platform-registry'
 import type { CatalogModality, CatalogModel, CatalogProvider } from '@superone/shared/model-catalog-types'
+import { MODEL_TASK_ORDER, modelTasks } from '@superone/shared/model-tasks'
+import { useModelCatalog } from '@/hooks/useModelCatalog'
+import { ProviderLabel } from '../ProviderLabel'
 
 type Tab = 'all' | CapabilityTask
 
@@ -76,30 +76,35 @@ function formatContext(tokens?: number): string {
   return String(tokens)
 }
 
-// Our brand keys (lobehub icon keys) don't always equal the models.dev catalog provider id.
 const CATALOG_ID_ALIAS: Record<string, string> = {
   claude: 'anthropic',
   chatgpt: 'openai',
   zhipu: 'zhipuai',
+  zai: 'zhipuai',
   kimi: 'moonshotai',
   bailian: 'alibaba',
   bedrock: 'amazon-bedrock',
   siliconcloud: 'siliconflow',
   xiaomimimo: 'xiaomi',
+  gemini: 'google',
+  vertexai: 'google',
 }
 
-// True when @lobehub/icons has a model-family icon for this id (same keyword match ModelIcon uses).
 function hasModelIcon(id: string): boolean {
   const m = id.toLowerCase()
   return modelMappings.some((entry) => entry.keywords.some((k) => new RegExp(k, 'i').test(m)))
 }
 
-function matchCatalogProvider(catalogProviders: CatalogProvider[], brandKey: string | null): CatalogProvider | null {
-  if (!brandKey) return null
-  const target = CATALOG_ID_ALIAS[brandKey] ?? brandKey
+function matchCatalogProvider(providers: CatalogProvider[], platform: Platform, plan: Plan): CatalogProvider | null {
+  const catalogId = catalogProviderIdFor(platform, plan)
+  if (catalogId) {
+    const direct = providers.find((p) => p.id === catalogId)
+    if (direct) return direct
+  }
+  const target = CATALOG_ID_ALIAS[platform.brand] ?? platform.brand
   return (
-    catalogProviders.find((p) => p.id === target) ??
-    catalogProviders.find((p) => p.id.includes(target) || p.name.toLowerCase().includes(target)) ??
+    providers.find((p) => p.id === target) ??
+    providers.find((p) => p.id.includes(target) || p.name.toLowerCase().includes(target)) ??
     null
   )
 }
@@ -126,27 +131,46 @@ function CapBadge({ icon: Icon, title }: { icon: LucideIcon; title: string }) {
   )
 }
 
-export function PlatformModelsPanel({
-  provider,
-  brandKey: brandKeyProp,
-  imageCapability,
-  onImageCapabilityChange,
-}: {
-  provider: ApiProvider
-  brandKey?: string | null
-  imageCapability: ProviderCapability | null
-  onImageCapabilityChange: (v: ProviderCapability | null) => void
-}) {
+function ModelIdBadge({ id }: { id: string }) {
+  const { t } = useTranslation()
+  const [copied, setCopied] = useState(false)
+  return (
+    <span className="flex min-w-0 shrink items-center gap-1">
+      <button
+        type="button"
+        title={id}
+        onClick={() => {
+          void window.app.clipboardWrite(id)
+          setCopied(true)
+          setTimeout(() => setCopied(false), 1200)
+        }}
+        className="shrink-0 rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground transition-colors hover:text-foreground"
+      >
+        {id}
+      </button>
+      {copied && (
+        <span className="flex shrink-0 items-center gap-0.5 text-[10px] font-medium text-green-500">
+          {t('resources.providerDialog.models.copied')}
+          <Check className="size-3" />
+        </span>
+      )}
+    </span>
+  )
+}
+
+export function PlatformModelsPanel({ platform, plan }: { platform: Platform; plan: Plan }) {
   const { t } = useTranslation()
   const { catalog, loading, refreshing, refresh } = useModelCatalog()
-  const brandKey = useMemo(() => brandKeyProp ?? resolveProviderKey(provider), [brandKeyProp, provider])
   const catProvider = useMemo(
-    () => (catalog ? matchCatalogProvider(catalog.providers, brandKey) : null),
-    [catalog, brandKey],
+    () => (catalog ? matchCatalogProvider(catalog.providers, platform, plan) : null),
+    [catalog, platform, plan],
   )
 
   const annotated = useMemo(
-    () => (catProvider?.models ?? []).map((m) => ({ m, tasks: modelTasks(m), iconMatched: hasModelIcon(m.id) })),
+    () =>
+      (catProvider?.models ?? [])
+        .map((m) => ({ m, tasks: modelTasks(m), iconMatched: hasModelIcon(m.id) }))
+        .sort((a, b) => (b.m.releaseDate ?? '').localeCompare(a.m.releaseDate ?? '')),
     [catProvider],
   )
 
@@ -161,8 +185,6 @@ export function PlatformModelsPanel({
   const [query, setQuery] = useState('')
   const activeTab: Tab = tab !== 'all' && !taskCounts.has(tab) ? 'all' : tab
 
-  const imageModelIds = useMemo(() => new Set(imageCapability?.models ?? []), [imageCapability])
-
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase()
     return annotated.filter(({ m, tasks }) => {
@@ -172,21 +194,13 @@ export function PlatformModelsPanel({
     })
   }, [annotated, activeTab, query])
 
-  const toggleImageModel = (id: string, on: boolean) => {
-    const cap: ProviderCapability = imageCapability ?? { id: 'image', task: 'image', protocol: 'openai-image', enabled: true, models: [] }
-    const models = on ? [...(cap.models ?? []), id] : (cap.models ?? []).filter((x) => x !== id)
-    onImageCapabilityChange({ ...cap, enabled: true, models })
-  }
-
   const subtitle = (m: CatalogModel): string => {
     const parts: string[] = []
     if (m.releaseDate) parts.push(t('resources.providerDialog.models.released', { date: m.releaseDate }))
-    if (m.knowledge) parts.push(t('resources.providerDialog.models.knowledge', { date: m.knowledge }))
     if (m.cost) {
       parts.push(`${t('resources.providerDialog.models.priceIn')} $${m.cost.input}/M`)
       parts.push(`${t('resources.providerDialog.models.priceOut')} $${m.cost.output}/M`)
     }
-    if (m.maxOutput) parts.push(`${t('resources.providerDialog.models.maxOutput')} ${formatContext(m.maxOutput)}`)
     return parts.join(' · ')
   }
 
@@ -247,17 +261,17 @@ export function PlatformModelsPanel({
 
       <div className="max-h-[420px] overflow-y-auto">
         {visible.length === 0 && <p className="p-4 text-xs text-muted-foreground">{t('resources.providerDialog.models.empty')}</p>}
-        {visible.map(({ m, tasks, iconMatched }) => (
+        {visible.map(({ m, iconMatched }) => (
           <div key={m.id} className="flex items-center gap-3 px-3 py-2.5">
             <div className="flex size-7 shrink-0 items-center justify-center">
               {iconMatched
                 ? <ModelIcon model={m.id} type="color" size={26} />
-                : <ProviderLabel provider={provider} brandKey={brandKey} iconOnly size={26} />}
+                : <ProviderLabel brandKey={platform.brand} iconOnly size={26} />}
             </div>
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5">
                 <span className="truncate text-sm font-medium">{m.name}</span>
-                <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">{m.id}</span>
+                <ModelIdBadge id={m.id} />
                 {m.status && <span className="shrink-0 rounded bg-amber-500/10 px-1 text-[9px] text-amber-600 dark:text-amber-400">{m.status}</span>}
               </div>
               {subtitle(m) && <div className="mt-0.5 truncate text-[11px] text-muted-foreground">{subtitle(m)}</div>}
@@ -271,9 +285,6 @@ export function PlatformModelsPanel({
               {m.toolCall && <CapBadge icon={Wrench} title={t('resources.providerDialog.models.tools')} />}
               {m.reasoning && <CapBadge icon={Brain} title={t('resources.providerDialog.models.reasoning')} />}
               {m.contextWindow ? <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{formatContext(m.contextWindow)}</span> : null}
-              {tasks.includes('image') && (
-                <Switch size="sm" checked={imageModelIds.has(m.id)} onCheckedChange={(v) => toggleImageModel(m.id, v)} />
-              )}
             </div>
           </div>
         ))}

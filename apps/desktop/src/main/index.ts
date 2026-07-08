@@ -10,8 +10,7 @@ import { activateWorktree, assignBranch, getCheckedOutBranches, getHandoffPrevie
 import { is } from '@electron-toolkit/utils'
 import log from './logger'
 import { startMediaServer, getMediaServerPort } from './media-server'
-import { getMediaProviderStatuses, setMediaProviderKey, upsertMediaCustomProvider, removeMediaCustomProvider } from './media-gen/settings-service'
-import type { UpsertMediaProviderRequest } from '@superone/shared/agent-types'
+import { getMediaProviderStatuses } from './media-gen/settings-service'
 import { getAppBasePath, cacheAppEntry, getAppInstallDir, generateCSP, readManifest, validatePath, discoverApps, setAllowedDirectories, clearAllowedDirectories, handleFsRequest, handleGitRequest, discoverProjectApps, startWatch, stopWatch, onFsWatchEvent, onGitHeadChangeEvent, getAllowedDirs, resolveSafePathMulti, setAllowedMedia, clearAllowedMedia, isMediaAllowed, appIdFromUrl, listDevRegistryView, registerDevMiniApp, unregisterDevMiniApp, installDevPointer, removeDevPointer, setDevPointerEnabled, type AllowedDir } from './miniapp/miniapp-service'
 import * as devRegistry from './miniapp/dev-registry'
 import { handleDbRequest, closeAllDbConnections } from './miniapp/miniapp-db'
@@ -46,7 +45,8 @@ import { DeviceRegistry } from './remote/device-registry'
 import { MobileBroadcaster } from './remote/mobile-broadcaster'
 import { PresenceCoordinator } from './remote/presence-coordinator'
 import { listWorktreePaths, loadSessionStateBySid, saveSessionStateBySid, updateProviderSessionId } from './session/session-repo'
-import { buildProviderEnv } from './agent/provider-env'
+import { buildClaudeEnv, buildRemoteActiveService, resolveChatService } from './providers/resolver'
+import { getBinding } from './providers/credential-store'
 import type { SessionProvider } from './session/types'
 import {
   AgentIpcChannels,
@@ -80,7 +80,7 @@ import { mapModelInfo } from './agent/claude-models'
 import { getClaudeRateLimits } from './agent/claude-usage-service'
 import { getProviderRateLimits } from './agent/provider-usage-service'
 import { getRecentFolders, addRecentFolder, removeRecentFolder, getProjectId, getProjectPathById } from './recent-folders'
-import { getDb, closeDb, getCachedHarnessResources, setCachedHarnessResources, upsertPairedDevice, listPairedDevices, deletePairedDevice, isPairedDevice, getActiveProviderRaw, getProviderByIdRaw } from './database'
+import { getDb, closeDb, getCachedHarnessResources, setCachedHarnessResources, upsertPairedDevice, listPairedDevices, deletePairedDevice, isPairedDevice } from './database'
 import { backfillFromHistory, getBackfillStatus, queryCounts, queryUsage } from './usage-stats-service'
 import { discoverUserSkills, discoverUserCommands, discoverUserAgents, discoverCodexUserPrompts } from './agent/discover-resources'
 import { CodexExperimentService } from './codex/codex-experiment-service'
@@ -104,7 +104,6 @@ import { applyLocale, getSystemLocale, getCurrentLocale, initMainI18n, t } from 
 import { applyAppIcon, clearStoredCustomIcons, getAppIcon, storeCustomIcon } from './app-icon'
 import { planStartDrag } from './start-drag'
 import type { RemoteCommand, PairedDevice, CreateAutomationRequest, RemoteDeviceConfig, UpdateAutomationRequest, ChatMessageContext, ContentBlock, WorktreeActivateRequest } from '@superone/shared/agent-types'
-import { buildRemoteActiveProvider, providerSupportsHarness } from '@superone/shared/provider-utils'
 import type { RemoteControlCallbacks } from './remote-control-service'
 
 
@@ -159,19 +158,12 @@ const codexGoalService = new CodexGoalService(codexService)
 const codexMarketplaceService = new CodexMarketplaceService(codexService)
 setCodexServiceFactory(() => codexService)
 const automationService = new AutomationService()
-function resolveApiProviderForSession(harnessId: SessionProvider['harnessId'], apiProviderId: string | null) {
-  if (apiProviderId) {
-    const explicit = getProviderByIdRaw(apiProviderId)
-    if (explicit && providerSupportsHarness(explicit, harnessId)) return explicit
-  }
-  return getActiveProviderRaw(harnessId)
-}
-
+// `apiProviderId` carries the session's chosen credential id (dynamic-follow: null follows the global binding).
 function resolveBaseProviderConfig(provider: SessionProvider, apiProviderId: string | null = null): unknown {
   if (!provider.isBase) return provider.config
-  const activeApiProvider = resolveApiProviderForSession(provider.harnessId, apiProviderId)
-  if (!activeApiProvider) return provider.config
-  const env = buildProviderEnv(activeApiProvider, provider.harnessId)
+  const resolved = resolveChatService(provider.harnessId, apiProviderId)
+  if (!resolved) return provider.config
+  const env = buildClaudeEnv(resolved)
   const { ANTHROPIC_API_KEY, ANTHROPIC_BASE_URL, ...extraEnv } = env
   return {
     apiKey: ANTHROPIC_API_KEY,
@@ -224,11 +216,10 @@ const sessionManager = new SessionManagerImpl({
       apiProviderId: loaded.record.apiProviderId,
     }
   },
-  getActiveProvider: (harnessId, apiProviderId) => buildRemoteActiveProvider(
-    resolveApiProviderForSession(harnessId, apiProviderId ?? null),
-    harnessId,
-  ),
-  getActiveDefaultApiProviderId: (harnessId) => getActiveProviderRaw(harnessId)?.id ?? null,
+  getActiveProvider: (harnessId, apiProviderId) =>
+    buildRemoteActiveService(resolveChatService(harnessId, apiProviderId ?? null), harnessId),
+  getActiveDefaultApiProviderId: (harnessId) =>
+    getBinding(harnessId === 'codex' ? 'chat:codex' : 'chat:claude')?.credentialId ?? null,
   onBeforeInterrupt: (sessionId) => {
     clearAllGates()
     clearSessionPendingMiniAppCalls(sessionId)
@@ -1917,40 +1908,6 @@ function registerIpcHandlers(): void {
   ipcMain.handle(AgentIpcChannels.MODEL_CATALOG_REFRESH, async () => {
     const { refreshModelCatalog } = await import('./model-catalog')
     return refreshModelCatalog()
-  })
-
-  ipcMain.handle(AgentIpcChannels.MEDIA_GEN_SET_KEY, async (_event, providerId: string, apiKey: string) => {
-    if (typeof providerId !== 'string' || typeof apiKey !== 'string') {
-      return { ok: false, error: 'Invalid arguments' }
-    }
-    try {
-      await setMediaProviderKey(providerId, apiKey)
-      return { ok: true }
-    } catch (err) {
-      return { ok: false, error: (err as Error).message }
-    }
-  })
-
-  ipcMain.handle(AgentIpcChannels.MEDIA_GEN_UPSERT_CUSTOM, async (_event, input: UpsertMediaProviderRequest) => {
-    if (!input || typeof input.label !== 'string' || typeof input.baseURL !== 'string' || !Array.isArray(input.models)) {
-      return { ok: false, error: 'Invalid arguments' }
-    }
-    try {
-      const result = await upsertMediaCustomProvider(input)
-      return { ok: true, id: result.id }
-    } catch (err) {
-      return { ok: false, error: (err as Error).message }
-    }
-  })
-
-  ipcMain.handle(AgentIpcChannels.MEDIA_GEN_REMOVE_CUSTOM, async (_event, id: string) => {
-    if (typeof id !== 'string') return { ok: false, error: 'Invalid arguments' }
-    try {
-      await removeMediaCustomProvider(id)
-      return { ok: true }
-    } catch (err) {
-      return { ok: false, error: (err as Error).message }
-    }
   })
 
   ipcMain.handle(AgentIpcChannels.LIST_WORKFLOW_AGENTS, async (_event, transcriptDir: string) => {

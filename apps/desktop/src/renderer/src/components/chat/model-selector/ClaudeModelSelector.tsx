@@ -2,11 +2,10 @@ import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ChevronDown, Loader2, Zap } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@superone/ui/components/ui/popover'
-import type { AgentProviderConfig, EffortLevel } from '@superone/shared/agent-types'
-import { parseProviderModelEnv } from '@superone/shared/agent-types'
+import type { EffortLevel } from '@superone/shared/agent-types'
 import { useActiveSession, useChatStore, selectClaudeModels } from '@/stores/chat'
 import { useSettingsStore } from '@/stores/settings'
-import { selectEffectiveApiProvider } from '@/lib/effective-api-provider'
+import { consumerForHarness, resolveEffective } from '@/lib/provider-resolve'
 import { FireText } from '../FireText'
 import { ClaudeModelList, EffortList, resolveClaudeDisplayName } from '../ModelSelectorLists'
 
@@ -38,42 +37,27 @@ export function ClaudeModelSelector({ onCloseAutoFocus }: Props) {
 
   const activeProvider = sessionProvider ?? preferredProvider
 
-  const providers = useSettingsStore((s) => s.providers)
-  const fetchProviders = useSettingsStore((s) => s.fetchProviders)
-  useEffect(() => { void fetchProviders() }, [fetchProviders])
-  const activeApiProvider = useMemo(
-    () => selectEffectiveApiProvider(providers, activeProvider, sessionApiProviderId),
-    [providers, activeProvider, sessionApiProviderId],
+  const platforms = useSettingsStore((s) => s.platforms)
+  const credentials = useSettingsStore((s) => s.credentials)
+  const bindings = useSettingsStore((s) => s.bindings)
+  const fetchProviderData = useSettingsStore((s) => s.fetchProviderData)
+  useEffect(() => { void fetchProviderData() }, [fetchProviderData])
+  const effective = useMemo(
+    () => resolveEffective(platforms, credentials, bindings, consumerForHarness(activeProvider), sessionApiProviderId),
+    [platforms, credentials, bindings, activeProvider, sessionApiProviderId],
   )
   const activeModelEnv = useMemo(() => {
-    if (!activeApiProvider) return null
-    try {
-      const configs = JSON.parse(activeApiProvider.agent_configs || '{}') as Record<string, AgentProviderConfig>
-      const claudeConfig = configs.claude
-      if (!claudeConfig) return null
-      const parsed = parseProviderModelEnv(claudeConfig.model_env)
-      return Object.keys(parsed).length > 0 ? parsed : null
-    } catch {
-      return null
-    }
-  }, [activeApiProvider])
+    const mapping = effective?.modelMapping
+    return mapping && Object.keys(mapping).length > 0 ? mapping : null
+  }, [effective])
 
   const forcedEffort = useMemo<EffortLevel | 'auto' | null>(() => {
-    if (!activeApiProvider) return null
-    try {
-      const configs = JSON.parse(activeApiProvider.agent_configs || '{}') as Record<string, AgentProviderConfig>
-      const claudeConfig = configs.claude
-      if (!claudeConfig) return null
-      const extraEnv = JSON.parse(claudeConfig.extra_env || '{}') as Record<string, string>
-      const raw = (extraEnv.CLAUDE_CODE_EFFORT_LEVEL ?? '').toLowerCase().trim()
-      if (!raw) return null
-      if (raw === 'auto') return 'auto'
-      if (raw === 'low' || raw === 'medium' || raw === 'high' || raw === 'xhigh' || raw === 'max') return raw
-      return null
-    } catch {
-      return null
-    }
-  }, [activeApiProvider])
+    const raw = (effective?.extraEnv.CLAUDE_CODE_EFFORT_LEVEL ?? '').toLowerCase().trim()
+    if (!raw) return null
+    if (raw === 'auto') return 'auto'
+    if (raw === 'low' || raw === 'medium' || raw === 'high' || raw === 'xhigh' || raw === 'max') return raw
+    return null
+  }, [effective])
 
   const forcedEffortLabel = forcedEffort === 'auto' ? 'Auto' : forcedEffort ? EFFORT_LABELS[forcedEffort] : null
 

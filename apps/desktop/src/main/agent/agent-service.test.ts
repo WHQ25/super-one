@@ -124,6 +124,12 @@ vi.mock('../database', () => ({
   getDb: vi.fn(),
 }))
 
+vi.mock('../providers/resolver', () => ({
+  resolveChatService: vi.fn(() => null),
+  buildRemoteActiveService: vi.fn(() => null),
+  buildClaudeEnv: vi.fn(() => ({})),
+}))
+
 vi.mock('./claude-models', () => ({
   fetchModels: vi.fn(async () => []),
 }))
@@ -137,12 +143,6 @@ vi.mock('../app-settings-service', () => ({
       codex: { defaultModel: '', defaultReasoningEffort: '' },
     },
   })),
-}))
-
-vi.mock('../../shared/provider-utils', () => ({
-  buildRemoteActiveProvider: vi.fn(() => null),
-  resolveProviderKey: vi.fn(() => null),
-  PRESET_PROVIDER_KEY: {},
 }))
 
 vi.mock('../logger', () => ({

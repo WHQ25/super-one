@@ -1,7 +1,12 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Check, ChevronDown } from 'lucide-react'
 import { toast } from 'sonner'
 import { useTranslation } from 'react-i18next'
+import { findPlatform, type Credential } from '@superone/shared/platform-registry'
+import { Badge } from '@superone/ui/components/ui/badge'
+import { useSettingsStore } from '@/stores/settings'
+import { credentialsForConsumer } from '@/lib/provider-resolve'
+import { ProviderLabel } from '@/components/ProviderLabel'
 import { ProjectSelector } from '@/components/coding/ProjectSelector'
 import { CodexImportConfigSection } from '@/components/CodexImportConfigSection'
 import { formatCodexModelLabel, formatReasoningEffortLabel } from '@/components/chat/chat-input-utils'
@@ -81,6 +86,77 @@ function SandboxStatusBlock({ supportLevel, probe, capabilityReason, onProbe }: 
       >
         {t('settings.preferences.sandbox.reProbe')}
       </button>
+    </div>
+  )
+}
+
+function ProviderOptionLabel({ brandKey, keyName }: { brandKey: string; keyName?: string }) {
+  return (
+    <span className="flex min-w-0 items-center gap-2 [&_svg]:!size-auto">
+      <span className="shrink-0">
+        <ProviderLabel brandKey={brandKey} combine size={20} />
+      </span>
+      {keyName && <Badge variant="secondary" className="min-w-0 truncate font-normal">{keyName}</Badge>}
+    </span>
+  )
+}
+
+function DefaultProviderRow({ consumer }: { consumer: 'chat:claude' | 'chat:codex' }) {
+  const { t } = useTranslation()
+  const platforms = useSettingsStore((s) => s.platforms)
+  const credentials = useSettingsStore((s) => s.credentials)
+  const bindings = useSettingsStore((s) => s.bindings)
+  const setBinding = useSettingsStore((s) => s.setBinding)
+  const clearBinding = useSettingsStore((s) => s.clearBinding)
+  const fetchProviderData = useSettingsStore((s) => s.fetchProviderData)
+
+  useEffect(() => {
+    void fetchProviderData()
+  }, [fetchProviderData])
+
+  const candidates = useMemo(
+    () => credentialsForConsumer(platforms, credentials, consumer),
+    [platforms, credentials, consumer],
+  )
+  const currentId = bindings.find((b) => b.consumer === consumer)?.credentialId ?? ''
+  const current = candidates.find((c) => c.id === currentId)
+  const officialBrand = consumer === 'chat:codex' ? 'openai' : 'claude'
+  const brandFor = (c: Credential): string => findPlatform(platforms, c.platformId)?.brand ?? 'custom'
+
+  return (
+    <div className="flex items-center justify-between gap-4 border-b border-border p-4">
+      <div className="min-w-0">
+        <p className="text-sm font-medium">{t('settings.preferences.defaultProvider.label')}</p>
+        <p className="mt-0.5 text-xs text-muted-foreground">{t('settings.preferences.defaultProvider.description')}</p>
+      </div>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button className="flex max-w-64 items-center gap-2 rounded-md border border-border bg-background px-3 py-1.5 text-sm transition-colors hover:bg-muted">
+            {current ? (
+              <ProviderOptionLabel brandKey={brandFor(current)} keyName={current.name} />
+            ) : (
+              <ProviderOptionLabel brandKey={officialBrand} />
+            )}
+            <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-64">
+          <DropdownMenuItem onClick={() => void clearBinding(consumer)} className="flex items-center justify-between gap-2">
+            <ProviderOptionLabel brandKey={officialBrand} />
+            {!currentId && <Check className="size-4 shrink-0 text-muted-foreground" />}
+          </DropdownMenuItem>
+          {candidates.map((c) => (
+            <DropdownMenuItem
+              key={c.id}
+              onClick={() => void setBinding({ consumer, credentialId: c.id })}
+              className="flex items-center justify-between gap-2"
+            >
+              <ProviderOptionLabel brandKey={brandFor(c)} keyName={c.name} />
+              {currentId === c.id && <Check className="size-4 shrink-0 text-muted-foreground" />}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   )
 }
@@ -303,6 +379,7 @@ function ClaudePreferencesPage() {
           <div className="border-b border-border px-4 py-2">
             <p className="text-xs font-medium text-muted-foreground">{t('settings.preferences.sections.user')}</p>
           </div>
+          <DefaultProviderRow consumer="chat:claude" />
           <div className="flex items-center justify-between gap-4 border-b border-border p-4">
             <div className="min-w-0">
               <p className="text-sm font-medium">{t('settings.preferences.permissionMode.label')}</p>
@@ -627,6 +704,7 @@ function CodexPreferencesPage() {
           <div className="border-b border-border px-4 py-2">
             <p className="text-xs font-medium text-muted-foreground">{t('settings.preferences.sections.user')}</p>
           </div>
+          <DefaultProviderRow consumer="chat:codex" />
 
           <div className="flex items-center justify-between gap-4 border-b border-border p-4">
             <div className="min-w-0">

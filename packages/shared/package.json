@@ -10,6 +10,8 @@
     },
     "./i18n": "./src/i18n/index.ts",
     "./i18n/*": "./src/i18n/*.ts",
+    "./platform-registry": "./src/platform-registry/index.ts",
+    "./platform-registry/*": "./src/platform-registry/*.ts",
     "./generative-ui/*": "./src/generative-ui/*.ts",
     "./*.js": "./src/*.js",
     "./*.d.ts": "./src/*.d.ts",

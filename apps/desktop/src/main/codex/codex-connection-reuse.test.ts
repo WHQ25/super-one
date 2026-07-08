@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest'
 
+vi.mock('../providers/resolver', () => ({ resolveChatService: vi.fn(() => null) }))
+
 vi.mock('../logger', () => ({
   default: {
     info: vi.fn(),

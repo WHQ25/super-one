@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+vi.mock('../providers/resolver', () => ({ resolveChatService: vi.fn(() => null) }))
+
 vi.mock('../logger', () => ({
   default: {
     info: vi.fn(),
@@ -41,6 +43,28 @@ vi.mock('./app-server-connection', async () => {
 
 const { CodexExperimentService } = await import('./codex-experiment-service')
 const { getActiveProviderRaw, getProviderByIdRaw } = await import('../database')
+const { resolveChatService } = await import('../providers/resolver')
+
+// Bridge the new resolver to the legacy DB mocks the setups below still use.
+function resolveChatServiceFromDbMocks(_harness: string, id?: string | null) {
+  const row = (id ? getProviderByIdRaw(id) : undefined) ?? getActiveProviderRaw('codex')
+  if (!row) return null
+  const codex = JSON.parse((row as { agent_configs?: string }).agent_configs || '{}').codex ?? {}
+  return {
+    platformId: 'gw',
+    brand: (row as { name: string }).name,
+    planId: 'api',
+    endpointId: 'openai',
+    credentialId: (row as { id: string }).id,
+    task: 'chat',
+    protocol: 'openai-chat',
+    baseUrl: codex.base_url ?? '',
+    apiKey: (row as { api_key?: string }).api_key ?? '',
+    auth: 'api-key',
+    models: [],
+    extraEnv: codex.extra_env ? JSON.parse(codex.extra_env) : undefined,
+  } as never
+}
 
 function codexProviderRow(id: string, baseUrl: string) {
   return {
@@ -83,6 +107,7 @@ describe('CodexExperimentService auth state', () => {
     createHandleMock.mockReset()
     vi.mocked(getActiveProviderRaw).mockReturnValue(null as never)
     vi.mocked(getProviderByIdRaw).mockReturnValue(undefined as never)
+    vi.mocked(resolveChatService).mockImplementation(resolveChatServiceFromDbMocks)
   })
 
   it('setAuth emits onAuthChanged event for listeners on the same project', () => {

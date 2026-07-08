@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+vi.mock('../providers/resolver', () => ({ resolveChatService: vi.fn(() => null) }))
+
 vi.mock('../logger', () => ({
   default: {
     info: vi.fn(),
@@ -46,6 +48,15 @@ const {
   waitForCodexMcpServerReady,
 } = await import('./codex-turn')
 const { getActiveProviderRaw, getProviderByIdRaw } = await import('../database')
+const { resolveChatService } = await import('../providers/resolver')
+
+function codexService(over: Record<string, unknown> = {}) {
+  return {
+    platformId: 'gw', brand: 'My Gateway', planId: 'api', endpointId: 'openai', credentialId: 'c1',
+    task: 'chat', protocol: 'openai-chat', baseUrl: '', apiKey: 'sk-test', auth: 'api-key', models: [],
+    ...over,
+  } as never
+}
 const { createCodexSession } = await import('./codex-session')
 const { CODEX_SYSTEM_PROMPT_APPEND } = await import('../agent/superone-system-prompt')
 
@@ -192,17 +203,11 @@ describe('resolveThread custom Codex provider', () => {
   }
 
   beforeEach(() => {
-    vi.mocked(getActiveProviderRaw).mockReturnValue(null as never)
-    vi.mocked(getProviderByIdRaw).mockReturnValue(undefined as never)
+    vi.mocked(resolveChatService).mockReturnValue(null)
   })
 
   it('injects model_providers config and selects it via top-level model_provider when an active codex provider has a base_url', async () => {
-    vi.mocked(getActiveProviderRaw).mockReturnValue({
-      id: 'p1',
-      name: 'My Gateway',
-      api_key: 'sk-test',
-      agent_configs: JSON.stringify({ codex: { base_url: 'https://gw.example.com/v1' } }),
-    } as never)
+    vi.mocked(resolveChatService).mockReturnValue(codexService({ baseUrl: 'https://gw.example.com/v1' }))
     const session = makeSession({ model: 'gpt-5' })
     const mockConnection = {
       request: vi.fn().mockResolvedValueOnce({ thread: { id: 'fresh-thread' } }),
@@ -237,12 +242,7 @@ describe('resolveThread custom Codex provider', () => {
   })
 
   it('does not set a provider override when the active codex provider has no base_url', async () => {
-    vi.mocked(getActiveProviderRaw).mockReturnValue({
-      id: 'p2',
-      name: 'No URL',
-      api_key: 'sk-test',
-      agent_configs: JSON.stringify({ codex: {} }),
-    } as never)
+    vi.mocked(resolveChatService).mockReturnValue(codexService({ baseUrl: '' }))
     const session = makeSession({ model: 'gpt-5' })
     const mockConnection = {
       request: vi.fn().mockResolvedValueOnce({ thread: { id: 'fresh-thread' } }),
@@ -256,14 +256,9 @@ describe('resolveThread custom Codex provider', () => {
   })
 
   it('resolves the override from the session apiProviderId (per-session /provider) over the DB-active provider', async () => {
-    vi.mocked(getActiveProviderRaw).mockReturnValue({
-      id: 'global', name: 'Global', api_key: 'sk',
-      agent_configs: JSON.stringify({ codex: { base_url: 'https://global/v1' } }),
-    } as never)
-    vi.mocked(getProviderByIdRaw).mockReturnValue({
-      id: 'sess-gw', name: 'Session GW', api_key: 'sk2',
-      agent_configs: JSON.stringify({ codex: { base_url: 'https://session/v1' } }),
-    } as never)
+    vi.mocked(resolveChatService).mockImplementation((_h, id) =>
+      id === 'sess-gw' ? codexService({ baseUrl: 'https://session/v1' }) : codexService({ baseUrl: 'https://global/v1' }),
+    )
     const session = {
       ...createCodexSession('test-session', '/project', 'gpt-5', undefined, undefined, 'default', 'sess-gw'),
     }

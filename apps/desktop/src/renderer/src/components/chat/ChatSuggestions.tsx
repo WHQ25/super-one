@@ -5,7 +5,7 @@ import { useAppStore, useHasRealProject } from '@/stores/app'
 import { useActiveSession, useChatStore, type ChatProvider } from '@/stores/chat'
 import { useSettingsStore } from '@/stores/settings'
 import { ProviderLabel } from '@/components/ProviderLabel'
-import { selectEffectiveApiProvider } from '@/lib/effective-api-provider'
+import { consumerForHarness, resolveEffective } from '@/lib/provider-resolve'
 import { ProjectSelector } from '@/components/coding/ProjectSelector'
 import {
   DropdownMenu,
@@ -57,27 +57,27 @@ function ActiveProviderHint() {
   const { t } = useTranslation()
   const preferredProvider = useActiveSession((s) => s.preferredProvider)
   const sessionApiProviderId = useActiveSession((s) => s.apiProviderId)
-  const providers = useSettingsStore((s) => s.providers)
-  const fetchProviders = useSettingsStore((s) => s.fetchProviders)
+  const platforms = useSettingsStore((s) => s.platforms)
+  const credentials = useSettingsStore((s) => s.credentials)
+  const bindings = useSettingsStore((s) => s.bindings)
+  const fetchProviderData = useSettingsStore((s) => s.fetchProviderData)
 
-  useEffect(() => { fetchProviders() }, [fetchProviders])
+  useEffect(() => { fetchProviderData() }, [fetchProviderData])
 
-  const activeProvider = selectEffectiveApiProvider(providers, preferredProvider, sessionApiProviderId)
+  const effective = resolveEffective(platforms, credentials, bindings, consumerForHarness(preferredProvider), sessionApiProviderId)
+  const defaultBrand = preferredProvider === 'codex' ? 'openai' : 'claude'
+  const defaultLabel = preferredProvider === 'codex'
+    ? t('resources.providers.defaultLabelCodex')
+    : t('resources.providers.defaultLabelClaude')
 
   return (
     <span className="inline-flex items-center gap-1.5">
       <span className="text-xs text-muted-foreground">{t('chat.suggestions.poweredBy')}</span>
-      {activeProvider ? (
-        <ProviderLabel provider={activeProvider} fallback={activeProvider.name} size={12} />
-      ) : (
-        <ProviderLabel
-          presetKey={preferredProvider === 'codex' ? 'default-codex' : 'default-claude'}
-          fallback={preferredProvider === 'codex'
-            ? t('resources.providers.defaultLabelCodex')
-            : t('resources.providers.defaultLabelClaude')}
-          size={12}
-        />
-      )}
+      <ProviderLabel
+        brandKey={effective?.brand ?? defaultBrand}
+        fallback={effective?.credential.name ?? defaultLabel}
+        size={12}
+      />
     </span>
   )
 }

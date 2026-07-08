@@ -5,6 +5,7 @@ import type { MiniAppEntry, MiniAppInstallMeta, MiniAppInstallResult, MiniAppPac
 import type { McpbInstallRequest, McpbInstalledEntry, McpbPreview } from '@superone/shared/mcpb-types'
 import type { LiveSessionSnapshot } from '@superone/shared/session-types'
 import type { ModelCatalog } from '@superone/shared/model-catalog-types'
+import type { ConsumerBinding, ConsumerId, Credential, EndpointOverride, Platform } from '@superone/shared/platform-registry'
 
 
 interface AgentAPI {
@@ -178,15 +179,20 @@ interface AppAPI {
   saveHook(projectPath: string, payload: HookSavePayload, replaceId?: string): Promise<void>
   deleteHook(projectPath: string, id: string): Promise<void>
 
-  // Providers
-  listProviders(): Promise<ApiProvider[]>
-  createProvider(data: CreateProviderRequest): Promise<ApiProvider>
-  updateProvider(id: string, data: UpdateProviderRequest): Promise<ApiProvider | undefined>
-  deleteProvider(id: string): Promise<boolean>
-  activateProvider(id: string, agentType: string): Promise<boolean>
-  deactivateAllProviders(agentType: string): Promise<void>
-  testProvider(data: { api_key: string; base_url: string; extra_env: string; provider_id?: string }): Promise<{ success: boolean; models: number; error?: string }>
-  testCodexProvider(data: { api_key: string; base_url: string; extra_env: string; name?: string; model?: string; provider_id?: string }): Promise<{ success: boolean; models: number; error?: string }>
+  // Unified AI provider platform (registry + credentials + bindings)
+  listPlatforms(): Promise<Platform[]>
+  createCustomPlatform(def: Platform): Promise<Platform>
+  updateCustomPlatform(def: Platform): Promise<Platform>
+  deleteCustomPlatform(id: string): Promise<boolean>
+  listCredentials(): Promise<Credential[]>
+  createCredential(input: { platformId: string; planId: string; name: string; secret?: string; secretEnv?: string; overrides?: Record<string, EndpointOverride>; notes?: string }): Promise<Credential>
+  updateCredential(id: string, patch: { name?: string; secret?: string; secretEnv?: string; overrides?: Record<string, EndpointOverride>; notes?: string; sortOrder?: number }): Promise<Credential | undefined>
+  deleteCredential(id: string): Promise<boolean>
+  listBindings(): Promise<ConsumerBinding[]>
+  setBinding(binding: ConsumerBinding): Promise<void>
+  clearBinding(consumer: ConsumerId): Promise<void>
+  testProviderConnection(data: { api_key: string; base_url: string; extra_env: string; credential_id?: string }): Promise<{ success: boolean; models: number; error?: string }>
+  testCodexProvider(data: { api_key: string; base_url: string; extra_env: string; name?: string; model?: string; credential_id?: string }): Promise<{ success: boolean; models: number; error?: string }>
   onTestCodexProgress(callback: (progress: CodexProviderTestProgress) => void): () => void
 
   // File operations
@@ -200,9 +206,6 @@ interface AppAPI {
   getMediaProviders(): Promise<MediaProviderStatus[]>
   getModelCatalog(): Promise<ModelCatalog>
   refreshModelCatalog(): Promise<ModelCatalog>
-  setMediaProviderKey(providerId: string, apiKey: string): Promise<{ ok: true } | { ok: false; error: string }>
-  upsertMediaCustomProvider(input: UpsertMediaProviderRequest): Promise<{ ok: true; id: string } | { ok: false; error: string }>
-  removeMediaCustomProvider(id: string): Promise<{ ok: true } | { ok: false; error: string }>
   listWorkflowAgents(transcriptDir: string): Promise<Array<{ agentId: string; jsonlPath: string; label: string; prompt?: string; toolCount: number; tokens?: number; resultText?: string }>>
   readWorkflowOutput(filePath: string): Promise<{ summary?: string; agentCount?: number; logs: string[]; result?: unknown } | null>
   readWorkflowScript(filePath: string): Promise<string | null>

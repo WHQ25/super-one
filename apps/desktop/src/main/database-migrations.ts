@@ -1,9 +1,4 @@
-import { randomUUID } from 'crypto'
 import type Database from 'better-sqlite3'
-import type { ApiProvider, ProviderCapability } from '@superone/shared/agent-types'
-import { agentConfigsToCapabilities, MEDIA_KIND_TO_CAPABILITY_PROTOCOL } from '@superone/shared/provider-utils'
-import { encryptSecret, isEncryptedSecret } from './crypto/secret-store'
-import { readMediaGenForMigration } from './media-gen/migration'
 
 export function runDatabaseMigrations(db: Database.Database): void {
   db.exec(`
@@ -120,58 +115,35 @@ export function runDatabaseMigrations(db: Database.Database): void {
     `)
   }
 
+  // Unified AI provider platform (wholesale replacement of api_providers — no data migration in alpha).
+  db.exec('DROP TABLE IF EXISTS api_providers')
   db.exec(`
-    CREATE TABLE IF NOT EXISTS api_providers (
+    CREATE TABLE IF NOT EXISTS credentials (
       id TEXT PRIMARY KEY,
+      platform_id TEXT NOT NULL,
+      plan_id TEXT NOT NULL,
       name TEXT NOT NULL,
-      provider_type TEXT NOT NULL DEFAULT 'anthropic',
-      base_url TEXT NOT NULL DEFAULT '',
-      api_key TEXT NOT NULL DEFAULT '',
-      is_active INTEGER NOT NULL DEFAULT 0,
-      sort_order INTEGER NOT NULL DEFAULT 0,
-      extra_env TEXT NOT NULL DEFAULT '{}',
+      secret TEXT NOT NULL DEFAULT '',
+      secret_env TEXT NOT NULL DEFAULT '',
+      overrides_json TEXT NOT NULL DEFAULT '{}',
       notes TEXT NOT NULL DEFAULT '',
+      sort_order INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL DEFAULT '',
       updated_at TEXT NOT NULL DEFAULT ''
     );
+    CREATE TABLE IF NOT EXISTS custom_platforms (
+      id TEXT PRIMARY KEY,
+      definition_json TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT '',
+      updated_at TEXT NOT NULL DEFAULT ''
+    );
+    CREATE TABLE IF NOT EXISTS consumer_bindings (
+      consumer TEXT PRIMARY KEY,
+      credential_id TEXT NOT NULL,
+      endpoint_id TEXT,
+      config_json TEXT NOT NULL DEFAULT '{}'
+    );
   `)
-
-  const provCols = db.prepare("PRAGMA table_info(api_providers)").all() as Array<{ name: string }>
-  if (!provCols.some((c) => c.name === 'agent_type')) {
-    db.exec("ALTER TABLE api_providers ADD COLUMN agent_type TEXT NOT NULL DEFAULT 'claude'")
-  }
-  if (!provCols.some((c) => c.name === 'api_format')) {
-    db.exec("ALTER TABLE api_providers ADD COLUMN api_format TEXT NOT NULL DEFAULT 'anthropic'")
-  }
-  if (!provCols.some((c) => c.name === 'category')) {
-    db.exec("ALTER TABLE api_providers ADD COLUMN category TEXT NOT NULL DEFAULT 'custom'")
-  }
-  if (!provCols.some((c) => c.name === 'supported_agents')) {
-    db.exec(`ALTER TABLE api_providers ADD COLUMN supported_agents TEXT NOT NULL DEFAULT '["claude"]'`)
-  }
-  if (!provCols.some((c) => c.name === 'agent_configs')) {
-    db.exec("ALTER TABLE api_providers ADD COLUMN agent_configs TEXT NOT NULL DEFAULT '{}'")
-  }
-  if (!provCols.some((c) => c.name === 'is_active_claude')) {
-    db.exec('ALTER TABLE api_providers ADD COLUMN is_active_claude INTEGER NOT NULL DEFAULT 0')
-  }
-  if (!provCols.some((c) => c.name === 'is_active_codex')) {
-    db.exec('ALTER TABLE api_providers ADD COLUMN is_active_codex INTEGER NOT NULL DEFAULT 0')
-  }
-  if (!provCols.some((c) => c.name === 'api_key_env')) {
-    db.exec("ALTER TABLE api_providers ADD COLUMN api_key_env TEXT NOT NULL DEFAULT ''")
-  }
-  if (!provCols.some((c) => c.name === 'capabilities')) {
-    db.exec("ALTER TABLE api_providers ADD COLUMN capabilities TEXT NOT NULL DEFAULT '[]'")
-  }
-  if (!provCols.some((c) => c.name === 'key_name')) {
-    db.exec("ALTER TABLE api_providers ADD COLUMN key_name TEXT NOT NULL DEFAULT ''")
-  }
-
-  migrateProvidersToUnified(db)
-  migrateModelEnvToStructured(db)
-  migrateAgentConfigsToCapabilities(db)
-  migrateApiKeysToEncrypted(db)
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS harness_resource_cache (
@@ -423,8 +395,6 @@ export function runDatabaseMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_media_gen_session ON media_generations(session_id);
     CREATE INDEX IF NOT EXISTS idx_media_gen_created ON media_generations(created_at DESC);
   `)
-
-  migrateMediaGenToProviders(db)
 }
 
 function seedBaseSessionProviders(db: Database.Database): void {
@@ -436,80 +406,6 @@ function seedBaseSessionProviders(db: Database.Database): void {
   `)
   stmt.run('claude-base', 'claude', 'Claude (Base)', now, now)
   stmt.run('codex-base', 'codex', 'Codex (Base)', now, now)
-}
-
-const FLAT_TO_BUCKET: Record<string, 'default' | 'opus' | 'sonnet' | 'haiku' | 'subagent'> = {
-  ANTHROPIC_MODEL: 'default',
-  ANTHROPIC_DEFAULT_OPUS_MODEL: 'opus',
-  ANTHROPIC_DEFAULT_SONNET_MODEL: 'sonnet',
-  ANTHROPIC_DEFAULT_HAIKU_MODEL: 'haiku',
-  CLAUDE_CODE_SUBAGENT_MODEL: 'subagent',
-}
-
-function hasStructuredShape(obj: Record<string, unknown>): boolean {
-  for (const bucket of ['default', 'opus', 'sonnet', 'haiku', 'subagent']) {
-    const v = obj[bucket]
-    if (v && typeof v === 'object' && 'id' in (v as object)) return true
-  }
-  return false
-}
-
-function migrateModelEnvToStructured(db: Database.Database): void {
-  const rows = db.prepare('SELECT id, agent_configs FROM api_providers').all() as Array<{ id: string; agent_configs: string }>
-  if (rows.length === 0) return
-  const stmt = db.prepare('UPDATE api_providers SET agent_configs = ? WHERE id = ?')
-  for (const row of rows) {
-    let configs: Record<string, { base_url: string; model_env: string; extra_env: string; api_format: string }>
-    try {
-      configs = JSON.parse(row.agent_configs || '{}')
-    } catch {
-      continue
-    }
-    let changed = false
-    for (const [agent, ac] of Object.entries(configs)) {
-      if (!ac || typeof ac !== 'object') continue
-      let modelEnvObj: Record<string, unknown> = {}
-      try {
-        modelEnvObj = JSON.parse(ac.model_env || '{}')
-      } catch {
-        modelEnvObj = {}
-      }
-      let extraEnvObj: Record<string, string> = {}
-      try {
-        extraEnvObj = JSON.parse(ac.extra_env || '{}')
-      } catch {
-        extraEnvObj = {}
-      }
-
-      if (hasStructuredShape(modelEnvObj)) continue
-
-      const structured: Record<string, { id: string; name?: string }> = {}
-      for (const [flatKey, bucket] of Object.entries(FLAT_TO_BUCKET)) {
-        const fromModel = typeof modelEnvObj[flatKey] === 'string' ? (modelEnvObj[flatKey] as string) : ''
-        const fromExtra = typeof extraEnvObj[flatKey] === 'string' ? extraEnvObj[flatKey] : ''
-        const id = fromModel || fromExtra
-        if (id) {
-          structured[bucket] = { id }
-        }
-        if (flatKey in extraEnvObj) {
-          delete extraEnvObj[flatKey]
-          changed = true
-        }
-      }
-
-      if (Object.keys(structured).length > 0 || Object.keys(modelEnvObj).length > 0) {
-        configs[agent] = {
-          ...ac,
-          model_env: JSON.stringify(structured),
-          extra_env: JSON.stringify(extraEnvObj),
-        }
-        changed = true
-      }
-    }
-    if (changed) {
-      stmt.run(JSON.stringify(configs), row.id)
-    }
-  }
 }
 
 function migrateGlobalResourceCacheToHarness(db: Database.Database): void {
@@ -566,104 +462,3 @@ function safeParse<T>(input: string, fallback: T): T {
   }
 }
 
-function migrateProvidersToUnified(db: Database.Database): void {
-  const rows = db.prepare('SELECT * FROM api_providers WHERE agent_configs = \'{}\'').all() as ApiProvider[]
-  if (rows.length === 0) return
-  const stmt = db.prepare(`
-    UPDATE api_providers SET
-      supported_agents = ?, agent_configs = ?,
-      is_active_claude = ?, is_active_codex = ?
-    WHERE id = ?
-  `)
-  for (const row of rows) {
-    const agentType = row.agent_type || 'claude'
-    const supportedAgents = JSON.stringify([agentType])
-    const config = {
-      base_url: row.base_url || '',
-      model_env: '{}',
-      extra_env: row.extra_env || '{}',
-      api_format: row.api_format || 'anthropic',
-    }
-    const agentConfigs = JSON.stringify({ [agentType]: config })
-    const isActiveClaude = agentType === 'claude' ? (row.is_active ?? 0) : 0
-    const isActiveCodex = agentType === 'codex' ? (row.is_active ?? 0) : 0
-    stmt.run(supportedAgents, agentConfigs, isActiveClaude, isActiveCodex, row.id)
-  }
-}
-
-/** Backfill unified `capabilities` from legacy `agent_configs`. Idempotent: skips rows that already have capabilities. */
-function migrateAgentConfigsToCapabilities(db: Database.Database): void {
-  const rows = db.prepare('SELECT id, agent_configs, capabilities FROM api_providers').all() as Array<{
-    id: string
-    agent_configs: string
-    capabilities: string
-  }>
-  if (rows.length === 0) return
-  const stmt = db.prepare('UPDATE api_providers SET capabilities = ? WHERE id = ?')
-  for (const row of rows) {
-    if (safeParse<unknown[]>(row.capabilities || '[]', []).length > 0) continue
-    const caps = agentConfigsToCapabilities(row.agent_configs)
-    if (caps.length === 0) continue
-    stmt.run(JSON.stringify(caps), row.id)
-  }
-}
-
-/** Encrypt plaintext `api_key` values at rest. Idempotent: already-encrypted values are skipped. */
-function migrateApiKeysToEncrypted(db: Database.Database): void {
-  const rows = db.prepare('SELECT id, api_key FROM api_providers').all() as Array<{ id: string; api_key: string }>
-  if (rows.length === 0) return
-  const stmt = db.prepare('UPDATE api_providers SET api_key = ? WHERE id = ?')
-  for (const row of rows) {
-    if (!row.api_key || isEncryptedSecret(row.api_key)) continue
-    stmt.run(encryptSecret(row.api_key), row.id)
-  }
-}
-
-/** One-time: fold legacy media-gen JSON providers into `api_providers` with an image capability. Guarded by an app_meta flag. */
-function migrateMediaGenToProviders(db: Database.Database): void {
-  const flag = db.prepare("SELECT value FROM app_meta WHERE key = 'media_gen_migrated'").get() as { value: string } | undefined
-  if (flag) return
-
-  let legacy: ReturnType<typeof readMediaGenForMigration> = []
-  try {
-    legacy = readMediaGenForMigration()
-  } catch {
-    legacy = []
-  }
-
-  const now = new Date().toISOString()
-  const maxOrder = (db.prepare('SELECT MAX(sort_order) as m FROM api_providers').get() as { m: number | null })?.m ?? -1
-  const insert = db.prepare(`
-    INSERT INTO api_providers (id, name, provider_type, api_key, api_key_env, category, supported_agents, agent_configs, capabilities, sort_order, notes, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `)
-
-  legacy.forEach((entry, index) => {
-    const protocol = MEDIA_KIND_TO_CAPABILITY_PROTOCOL[entry.kind] ?? 'openai-compatible-image'
-    const capability: ProviderCapability = {
-      id: `image-${entry.id}`,
-      task: 'image',
-      protocol,
-      enabled: true,
-      baseUrl: entry.baseURL || undefined,
-      models: entry.models,
-    }
-    insert.run(
-      randomUUID(),
-      entry.name,
-      'custom',
-      entry.apiKey ? encryptSecret(entry.apiKey) : '',
-      entry.apiKeyEnv ?? '',
-      'custom',
-      '[]',
-      '{}',
-      JSON.stringify([capability]),
-      maxOrder + 1 + index,
-      '',
-      now,
-      now,
-    )
-  })
-
-  db.prepare("INSERT OR REPLACE INTO app_meta (key, value) VALUES ('media_gen_migrated', ?)").run(now)
-}

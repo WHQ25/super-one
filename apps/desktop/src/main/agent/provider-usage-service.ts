@@ -1,7 +1,6 @@
 import log from '../logger'
 import type { ProviderRateLimits } from '@superone/shared/agent-types'
-import { chatCapabilityFor } from '@superone/shared/provider-utils'
-import { getProviderByIdRaw } from '../database'
+import { resolveChatService } from '../providers/resolver'
 import {
   detectProvider,
   parseGlmUsage,
@@ -69,10 +68,10 @@ async function fetchMinimax(detected: DetectedProvider, apiKey: string): Promise
 
 export async function getProviderRateLimits(apiProviderId: string, force = false): Promise<ProviderRateLimits | null> {
   try {
-    const provider = getProviderByIdRaw(apiProviderId)
-    if (!provider?.api_key) return null
+    const resolved = resolveChatService('claude', apiProviderId)
+    if (!resolved?.apiKey) return null
 
-    const detected = detectProvider(chatCapabilityFor(provider, 'claude')?.baseUrl?.trim() || null)
+    const detected = detectProvider(resolved.baseUrl?.trim() || null)
     if (!detected) return null
 
     const nowMs = Date.now()
@@ -81,7 +80,7 @@ export async function getProviderRateLimits(apiProviderId: string, force = false
     if (!force && entry?.data && nowMs - entry.lastFetchMs < MIN_FETCH_INTERVAL_MS) return entry.data
 
     const fetcher = detected.brand === 'glm' ? fetchGlm : fetchMinimax
-    const { result, rateLimited } = await fetcher(detected, provider.api_key)
+    const { result, rateLimited } = await fetcher(detected, resolved.apiKey)
 
     const next: CacheEntry = {
       data: result ? { ...result, fetchedAt: nowMs } : entry?.data ?? null,

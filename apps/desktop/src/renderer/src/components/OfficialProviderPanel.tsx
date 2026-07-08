@@ -69,11 +69,11 @@ function WindowBar({ label, usedPercent, resetsAt }: { label: string; usedPercen
   )
 }
 
-function PanelShell({ presetKey, children, onRefresh, refreshing }: { presetKey: string; children: ReactNode; onRefresh: () => void; refreshing: boolean }) {
+function PanelShell({ brandKey, children, onRefresh, refreshing }: { brandKey: string; children: ReactNode; onRefresh: () => void; refreshing: boolean }) {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between gap-3">
-        <ProviderLabel presetKey={presetKey} combine size={30} />
+        <ProviderLabel brandKey={brandKey} combine size={30} />
         <IconButton size="sm" variant="ghost" disabled={refreshing} onClick={onRefresh}>
           <RefreshCw className={cn(refreshing && 'animate-spin')} />
         </IconButton>
@@ -103,7 +103,7 @@ function ClaudeAccount() {
   const plan = account?.subscriptionType || limits?.planType
 
   return (
-    <PanelShell presetKey="default-claude" onRefresh={() => fetchLimits(true)} refreshing={loading}>
+    <PanelShell brandKey="claude" onRefresh={() => fetchLimits(true)} refreshing={loading}>
       <Section>
         {plan ? <InfoRow label={t('resources.providers.accountPlan')} value={plan} /> : null}
         {account?.email ? <InfoRow label={t('resources.providers.accountEmail')} value={account.email} /> : null}
@@ -151,14 +151,14 @@ function CodexAccount() {
 
   if (!projectPath) {
     return (
-      <PanelShell presetKey="default-codex" onRefresh={fetchAll} refreshing={false}>
+      <PanelShell brandKey="openai" onRefresh={fetchAll} refreshing={false}>
         <span className="text-sm text-muted-foreground">{t('resources.providers.codexNeedsProject')}</span>
       </PanelShell>
     )
   }
 
   return (
-    <PanelShell presetKey="default-codex" onRefresh={fetchAll} refreshing={loading}>
+    <PanelShell brandKey="openai" onRefresh={fetchAll} refreshing={loading}>
       <Section>
         {auth ? <InfoRow label={t('resources.providers.accountSignIn')} value={auth.resolvedMode === 'chatgpt' ? 'ChatGPT' : 'API Key'} /> : null}
         {limits?.planType ? <InfoRow label={t('resources.providers.accountPlan')} value={limits.planType} /> : null}

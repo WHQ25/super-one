@@ -1,5 +1,6 @@
 import { create } from 'zustand'
-import type { AgentInfo, ApiProvider, CreateProviderRequest, HookConfig, HookSavePayload, MarketplacePlugin, MarketplacePluginDetail, MarketplaceScope, McpLibraryEntry, McpServerConfig, McpServerInfo, McpServerMeta, PluginDetail, PluginInfo, ResourceScope, SkillDetail, SkillInfo, UpdateProviderRequest } from '@superone/shared/agent-types'
+import type { AgentInfo, HookConfig, HookSavePayload, MarketplacePlugin, MarketplacePluginDetail, MarketplaceScope, McpLibraryEntry, McpServerConfig, McpServerInfo, McpServerMeta, PluginDetail, PluginInfo, ResourceScope, SkillDetail, SkillInfo } from '@superone/shared/agent-types'
+import type { ConsumerBinding, ConsumerId, Credential, Platform } from '@superone/shared/platform-registry'
 import type { McpbInstalledEntry } from '@superone/shared/mcpb-types'
 import { useAppStore } from './app'
 import { useChatStore } from './chat'
@@ -65,14 +66,19 @@ interface SettingsState {
   uninstallMcpb: (name: string) => Promise<void>
   revealMcpb: (name: string) => Promise<void>
 
-  // Providers
-  providers: ApiProvider[]
-  fetchProviders: () => Promise<void>
-  createProvider: (data: CreateProviderRequest) => Promise<ApiProvider>
-  updateProvider: (id: string, data: UpdateProviderRequest) => Promise<void>
-  deleteProvider: (id: string) => Promise<void>
-  activateProvider: (id: string, agentType: string) => Promise<void>
-  deactivateAllProviders: (agentType: string) => Promise<void>
+  // Unified AI provider platform (registry + credentials + bindings)
+  platforms: Platform[]
+  credentials: Credential[]
+  bindings: ConsumerBinding[]
+  fetchProviderData: () => Promise<void>
+  createCredential: (input: Parameters<typeof window.app.createCredential>[0]) => Promise<Credential>
+  updateCredential: (id: string, patch: Parameters<typeof window.app.updateCredential>[1]) => Promise<void>
+  deleteCredential: (id: string) => Promise<void>
+  createCustomPlatform: (def: Platform) => Promise<Platform>
+  updateCustomPlatform: (def: Platform) => Promise<void>
+  deleteCustomPlatform: (id: string) => Promise<void>
+  setBinding: (binding: ConsumerBinding) => Promise<void>
+  clearBinding: (consumer: ConsumerId) => Promise<void>
 
   // Plugins
   plugins: PluginInfo[]
@@ -137,7 +143,9 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   codexMcpConfigs: [],
   mcpLibrary: [],
   mcpbInstalled: [],
-  providers: [],
+  platforms: [],
+  credentials: [],
+  bindings: [],
   plugins: [],
   pluginsLoading: false,
   pluginDetail: null,
@@ -474,35 +482,55 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     await get().fetchPlugins()
   },
 
-  fetchProviders: async () => {
-    const providers = await window.app.listProviders()
-    set({ providers })
+  fetchProviderData: async () => {
+    const [platforms, credentials, bindings] = await Promise.all([
+      window.app.listPlatforms(),
+      window.app.listCredentials(),
+      window.app.listBindings(),
+    ])
+    set({ platforms, credentials, bindings })
   },
 
-  createProvider: async (data) => {
-    const created = await window.app.createProvider(data)
-    await get().fetchProviders()
+  createCredential: async (input) => {
+    const created = await window.app.createCredential(input)
+    await get().fetchProviderData()
     return created
   },
 
-  updateProvider: async (id, data) => {
-    await window.app.updateProvider(id, data)
-    await get().fetchProviders()
+  updateCredential: async (id, patch) => {
+    await window.app.updateCredential(id, patch)
+    await get().fetchProviderData()
   },
 
-  deleteProvider: async (id) => {
-    await window.app.deleteProvider(id)
-    await get().fetchProviders()
+  deleteCredential: async (id) => {
+    await window.app.deleteCredential(id)
+    await get().fetchProviderData()
   },
 
-  activateProvider: async (id, agentType) => {
-    await window.app.activateProvider(id, agentType)
-    await get().fetchProviders()
+  createCustomPlatform: async (def) => {
+    const created = await window.app.createCustomPlatform(def)
+    await get().fetchProviderData()
+    return created
   },
 
-  deactivateAllProviders: async (agentType) => {
-    await window.app.deactivateAllProviders(agentType)
-    await get().fetchProviders()
+  updateCustomPlatform: async (def) => {
+    await window.app.updateCustomPlatform(def)
+    await get().fetchProviderData()
+  },
+
+  deleteCustomPlatform: async (id) => {
+    await window.app.deleteCustomPlatform(id)
+    await get().fetchProviderData()
+  },
+
+  setBinding: async (binding) => {
+    await window.app.setBinding(binding)
+    await get().fetchProviderData()
+  },
+
+  clearBinding: async (consumer) => {
+    await window.app.clearBinding(consumer)
+    await get().fetchProviderData()
   },
 
   fetchHooks: async () => {

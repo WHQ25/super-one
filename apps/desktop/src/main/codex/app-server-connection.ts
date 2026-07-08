@@ -5,8 +5,7 @@ import { createInterface } from 'readline'
 import log from '../logger'
 import { trace } from '../agent/event-trace'
 import { CODEX_SYSTEM_PROMPT_APPEND } from '../agent/superone-system-prompt'
-import { getActiveProviderRaw, getProviderByIdRaw } from '../database'
-import { chatCapabilityFor } from '@superone/shared/provider-utils'
+import { resolveChatService } from '../providers/resolver'
 import { ProcessTitle } from '../process-titles'
 import {
   CODEX_PERMISSION_PRESETS,
@@ -301,20 +300,11 @@ export function buildCodexProviderCliOverrides(override: CodexProviderOverride |
   return args
 }
 
-function resolveCodexProviderRow(apiProviderId?: string | null) {
-  if (apiProviderId) {
-    const explicit = getProviderByIdRaw(apiProviderId)
-    if (explicit) return explicit
-  }
-  return getActiveProviderRaw('codex')
-}
-
 export function getCodexProviderOverrideFor(apiProviderId?: string | null): CodexProviderOverride | null {
-  const codexProvider = resolveCodexProviderRow(apiProviderId)
-  if (!codexProvider) return null
-  const baseUrl = chatCapabilityFor(codexProvider, 'codex')?.baseUrl?.trim()
-  if (!baseUrl) return null
-  return makeCodexProviderOverride(codexProvider.name, baseUrl)
+  const resolved = resolveChatService('codex', apiProviderId ?? null)
+  const baseUrl = resolved?.baseUrl?.trim()
+  if (!resolved || !baseUrl) return null
+  return makeCodexProviderOverride(resolved.brand, baseUrl)
 }
 
 export function getCodexProviderOverride(): CodexProviderOverride | null {
@@ -340,11 +330,10 @@ export function buildAppServerEnv(auth: CodexProjectAuth, apiProviderId?: string
   if (process.versions.electron) {
     env.ELECTRON_RUN_AS_NODE = '1'
   }
-  const codexProvider = resolveCodexProviderRow(apiProviderId)
-  if (codexProvider) {
-    const cap = chatCapabilityFor(codexProvider, 'codex')
-    if (codexProvider.api_key) env.CODEX_API_KEY = codexProvider.api_key
-    if (cap?.extraEnv) Object.assign(env, cap.extraEnv)
+  const resolved = resolveChatService('codex', apiProviderId ?? null)
+  if (resolved && resolved.baseUrl.trim()) {
+    if (resolved.apiKey) env.CODEX_API_KEY = resolved.apiKey
+    if (resolved.extraEnv) Object.assign(env, resolved.extraEnv)
     return env
   }
   if (auth.mode === 'chatgpt') {

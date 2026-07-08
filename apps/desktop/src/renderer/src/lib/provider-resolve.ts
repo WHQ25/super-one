@@ -1,0 +1,94 @@
+import type { HarnessId, ProviderModelEnv } from '@superone/shared/agent-types'
+import {
+  CONSUMER_IDS,
+  findPlan,
+  findPlatform,
+  mergeEndpoint,
+  selectEndpoint,
+  type ConsumerBinding,
+  type ConsumerId,
+  type Credential,
+  type Platform,
+} from '@superone/shared/platform-registry'
+
+export function consumerForHarness(harness: HarnessId): ConsumerId {
+  return harness === 'codex' ? 'chat:codex' : 'chat:claude'
+}
+
+export interface EffectiveService {
+  credential: Credential
+  platform: Platform
+  planId: string
+  endpointId: string
+  brand: string
+  baseUrl: string
+  modelMapping: ProviderModelEnv
+  extraEnv: Record<string, string>
+}
+
+/** Credentials whose plan can serve the given consumer (i.e. has a matching endpoint). */
+export function credentialsForConsumer(
+  platforms: Platform[],
+  credentials: Credential[],
+  consumer: ConsumerId,
+): Credential[] {
+  return credentials.filter((c) => {
+    const plan = findPlan(findPlatform(platforms, c.platformId), c.planId)
+    return !!plan && !!selectEndpoint(plan, consumer)
+  })
+}
+
+/**
+ * Renderer mirror of the main-process resolver's selection logic (no secrets).
+ * sessionCredentialId (an explicit in-chat switch) wins over the global binding; a stale id falls back.
+ */
+export function resolveEffective(
+  platforms: Platform[],
+  credentials: Credential[],
+  bindings: ConsumerBinding[],
+  consumer: ConsumerId,
+  sessionCredentialId?: string | null,
+): EffectiveService | null {
+  const binding = bindings.find((b) => b.consumer === consumer)
+  const pick = (id: string | null | undefined): Credential | undefined =>
+    id ? credentials.find((c) => c.id === id) : undefined
+  const cred = pick(sessionCredentialId) ?? pick(binding?.credentialId)
+  if (!cred) return null
+  const platform = findPlatform(platforms, cred.platformId)
+  const plan = findPlan(platform, cred.planId)
+  if (!platform || !plan) return null
+  const usingBound = cred.id === binding?.credentialId
+  const endpoint = selectEndpoint(plan, consumer, usingBound ? binding?.endpointId : undefined)
+  if (!endpoint) return null
+  const merged = mergeEndpoint(endpoint, cred.overrides?.[endpoint.id], usingBound ? binding?.config : undefined)
+  return {
+    credential: cred,
+    platform,
+    planId: plan.id,
+    endpointId: endpoint.id,
+    brand: platform.brand,
+    baseUrl: merged.baseUrl,
+    modelMapping: merged.modelMapping,
+    extraEnv: merged.extraEnv,
+  }
+}
+
+export function brandOfCredential(platforms: Platform[], credential: Credential): string | null {
+  return findPlatform(platforms, credential.platformId)?.brand ?? null
+}
+
+/** Consumers this platform can serve (has at least one matching endpoint across its plans). */
+export function platformConsumers(platform: Platform): ConsumerId[] {
+  return CONSUMER_IDS.filter((consumer) => platform.plans.some((plan) => !!selectEndpoint(plan, consumer)))
+}
+
+/** Group platforms by brand for the settings list (stable insertion order). */
+export function platformsByBrand(platforms: Platform[]): Array<{ brand: string; platforms: Platform[] }> {
+  const groups = new Map<string, Platform[]>()
+  for (const p of platforms) {
+    const list = groups.get(p.brand) ?? []
+    list.push(p)
+    groups.set(p.brand, list)
+  }
+  return [...groups.entries()].map(([brand, ps]) => ({ brand, platforms: ps }))
+}

@@ -5,13 +5,14 @@ import { useActiveSession, useChatStore } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 import { useSettingsStore } from '@/stores/settings'
 import { ProviderLabel } from '@/components/ProviderLabel'
-import type { ApiProvider } from '@superone/shared/agent-types'
-import { providerSupportsHarness } from '@superone/shared/provider-utils'
+import { brandOfCredential, consumerForHarness, credentialsForConsumer } from '@/lib/provider-resolve'
+import type { Credential } from '@superone/shared/platform-registry'
 
 interface ProviderItem {
   id: string | null
-  provider: ApiProvider | null
+  brand: string | null
   label: string
+  keyName?: string
 }
 
 export function ProviderSlashPopup({ onClose }: { onClose: () => void }) {
@@ -19,30 +20,32 @@ export function ProviderSlashPopup({ onClose }: { onClose: () => void }) {
   const harness = useActiveSession((s) => s.sessionProvider ?? s.preferredProvider)
   const status = useActiveSession((s) => s.status)
   const apiProviderId = useActiveSession((s) => s.apiProviderId)
-  const providers = useSettingsStore((s) => s.providers)
-  const fetchProviders = useSettingsStore((s) => s.fetchProviders)
+  const platforms = useSettingsStore((s) => s.platforms)
+  const credentials = useSettingsStore((s) => s.credentials)
+  const fetchProviderData = useSettingsStore((s) => s.fetchProviderData)
   const setSessionApiProviderId = useChatStore((s) => s.setSessionApiProviderId)
   const navigateTo = useAppStore((s) => s.navigateTo)
   const setSettingsTab = useAppStore((s) => s.setSettingsTab)
   const isStreaming = status === 'streaming'
 
-  useEffect(() => { void fetchProviders() }, [fetchProviders])
+  useEffect(() => { void fetchProviderData() }, [fetchProviderData])
 
-  const filteredProviders = useMemo(
-    () => providers.filter((p) => providerSupportsHarness(p, harness)),
-    [providers, harness],
+  const consumer = consumerForHarness(harness)
+  const filtered = useMemo<Credential[]>(
+    () => credentialsForConsumer(platforms, credentials, consumer),
+    [platforms, credentials, consumer],
   )
 
   const items = useMemo<ProviderItem[]>(() => {
     const defaultLabel = harness === 'codex'
       ? t('resources.providers.defaultLabelCodex')
       : t('resources.providers.defaultLabelClaude')
-    const list: ProviderItem[] = [{ id: null, provider: null, label: defaultLabel }]
-    for (const p of filteredProviders) {
-      list.push({ id: p.id, provider: p, label: p.name })
+    const list: ProviderItem[] = [{ id: null, brand: harness === 'codex' ? 'openai' : 'claude', label: defaultLabel }]
+    for (const c of filtered) {
+      list.push({ id: c.id, brand: brandOfCredential(platforms, c), label: c.name, keyName: c.name })
     }
     return list
-  }, [filteredProviders, harness, t])
+  }, [filtered, platforms, harness, t])
 
   const [selectedIndex, setSelectedIndex] = useState(() => {
     const idx = items.findIndex((i) => i.id === apiProviderId)
@@ -61,6 +64,12 @@ export function ProviderSlashPopup({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     itemRefs.current.get(selectedIndex)?.scrollIntoView({ block: 'nearest' })
   }, [selectedIndex])
+
+  const openProvidersSettings = () => {
+    onClose()
+    setSettingsTab('providers')
+    navigateTo('settings')
+  }
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -85,12 +94,6 @@ export function ProviderSlashPopup({ onClose }: { onClose: () => void }) {
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
   }, [items, selectedIndex, setSessionApiProviderId, onClose])
-
-  const openProvidersSettings = () => {
-    onClose()
-    setSettingsTab('providers')
-    navigateTo('settings')
-  }
 
   return (
     <div className="flex max-h-72 flex-col overflow-hidden">
@@ -117,18 +120,10 @@ export function ProviderSlashPopup({ onClose }: { onClose: () => void }) {
                 isSelected ? 'bg-primary/15' : 'hover:bg-muted/40'
               }`}
             >
-              {item.provider ? (
-                <ProviderLabel provider={item.provider} fallback={item.label} size={20} />
-              ) : (
-                <ProviderLabel
-                  presetKey={harness === 'codex' ? 'default-codex' : 'default-claude'}
-                  fallback={item.label}
-                  size={20}
-                />
-              )}
+              <ProviderLabel brandKey={item.brand} fallback={item.label} size={20} />
               <span className="flex min-w-0 shrink-0 items-center gap-1.5">
-                {item.provider?.key_name && (
-                  <span className="truncate text-[11px] text-muted-foreground">{item.provider.key_name}</span>
+                {item.id && item.keyName && (
+                  <span className="truncate text-[11px] text-muted-foreground">{item.keyName}</span>
                 )}
                 {isCurrent && <Check className="size-3.5 shrink-0 text-primary" />}
               </span>

@@ -1649,14 +1649,63 @@ export interface AgentProviderConfig {
   api_format: string
 }
 
+// --- Unified provider capabilities ---
+
+export type CapabilityTask = 'chat' | 'image' | 'video' | 'tts' | 'asr'
+
+export type CapabilityProtocol =
+  | 'anthropic-messages' // Claude Message API (real: harness env expansion)
+  | 'openai-responses' // OpenAI Response API chat (placeholder)
+  | 'openai-chat' // OpenAI-compatible chat (codex)
+  | 'openai-image' // createOpenAI().image()
+  | 'openai-compatible-image' // createOpenAICompatible().imageModel()
+  | 'google-image' // createGoogleGenerativeAI().image()
+
+export interface ProviderCapability {
+  id: string
+  task: CapabilityTask
+  protocol: CapabilityProtocol
+  enabled: boolean
+  baseUrl?: string
+  extraEnv?: Record<string, string>
+  models?: string[]
+  modelMapping?: ProviderModelEnv
+  harnesses?: ('claude' | 'codex')[]
+}
+
+export function parseProviderCapabilities(raw: string | undefined): ProviderCapability[] {
+  try {
+    const arr = JSON.parse(raw || '[]') as unknown
+    if (!Array.isArray(arr)) return []
+    return arr.filter(
+      (c): c is ProviderCapability =>
+        !!c && typeof c === 'object' && typeof (c as ProviderCapability).protocol === 'string' && typeof (c as ProviderCapability).task === 'string',
+    )
+  } catch {
+    return []
+  }
+}
+
+export function findChatCapability(
+  capabilities: ProviderCapability[],
+  harness: 'claude' | 'codex',
+): ProviderCapability | undefined {
+  return capabilities.find(
+    (c) => c.task === 'chat' && c.enabled !== false && (c.harnesses?.includes(harness) ?? harness === 'claude'),
+  )
+}
+
 export interface ApiProvider {
   id: string
   name: string
+  key_name: string
   provider_type: string
   api_key: string
+  api_key_env: string
   category: string
   supported_agents: string
   agent_configs: string
+  capabilities: string
   is_active_claude: number
   is_active_codex: number
   sort_order: number
@@ -1673,21 +1722,27 @@ export interface ApiProvider {
 
 export interface CreateProviderRequest {
   name: string
+  key_name?: string
   provider_type?: string
   api_key?: string
+  api_key_env?: string
   category?: string
   supported_agents?: string
   agent_configs?: string
+  capabilities?: string
   notes?: string
 }
 
 export interface UpdateProviderRequest {
   name?: string
+  key_name?: string
   provider_type?: string
   api_key?: string
+  api_key_env?: string
   category?: string
   supported_agents?: string
   agent_configs?: string
+  capabilities?: string
   notes?: string
   sort_order?: number
 }
@@ -2048,6 +2103,10 @@ export const AgentIpcChannels = {
   MEDIA_GEN_SET_KEY: 'mediaGen:setKey',
   MEDIA_GEN_UPSERT_CUSTOM: 'mediaGen:upsertCustom',
   MEDIA_GEN_REMOVE_CUSTOM: 'mediaGen:removeCustom',
+
+  // Model catalog (models.dev, local-cached)
+  MODEL_CATALOG_GET: 'modelCatalog:get',
+  MODEL_CATALOG_REFRESH: 'modelCatalog:refresh',
 
   // Session Providers (new session_providers table)
   SESSION_PROVIDERS_LIST: 'sessionProviders:list',

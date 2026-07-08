@@ -1909,6 +1909,16 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(AgentIpcChannels.MEDIA_GEN_PROVIDERS, () => getMediaProviderStatuses())
 
+  ipcMain.handle(AgentIpcChannels.MODEL_CATALOG_GET, async () => {
+    const { getModelCatalog } = await import('./model-catalog')
+    return getModelCatalog()
+  })
+
+  ipcMain.handle(AgentIpcChannels.MODEL_CATALOG_REFRESH, async () => {
+    const { refreshModelCatalog } = await import('./model-catalog')
+    return refreshModelCatalog()
+  })
+
   ipcMain.handle(AgentIpcChannels.MEDIA_GEN_SET_KEY, async (_event, providerId: string, apiKey: string) => {
     if (typeof providerId !== 'string' || typeof apiKey !== 'string') {
       return { ok: false, error: 'Invalid arguments' }

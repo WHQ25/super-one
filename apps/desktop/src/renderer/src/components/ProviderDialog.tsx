@@ -17,10 +17,62 @@ import { diffProviderAgainstPreset, type PresetSyncDiff } from '@/lib/preset-mer
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@superone/ui/components/ui/tooltip'
 import { ProviderLabel } from './ProviderLabel'
 import { PresetSyncDialog } from './PresetSyncDialog'
-import type { ApiProvider, CreateProviderRequest, UpdateProviderRequest, AgentProviderConfig, ProviderModelEnv, ModelBucket, ProviderModelSlot } from '@superone/shared/agent-types'
-import { MODEL_BUCKETS, expandProviderModelEnv, parseProviderModelEnv } from '@superone/shared/agent-types'
+import type { ApiProvider, CreateProviderRequest, UpdateProviderRequest, AgentProviderConfig, ProviderModelEnv, ModelBucket, ProviderModelSlot, ProviderCapability, CapabilityProtocol } from '@superone/shared/agent-types'
+import { MODEL_BUCKETS, expandProviderModelEnv, parseProviderModelEnv, parseProviderCapabilities } from '@superone/shared/agent-types'
+import { agentConfigsToCapabilities } from '@superone/shared/provider-utils'
+import { ModelCatalogPicker } from './ModelCatalogPicker'
 
-interface AgentFormState {
+const IMAGE_PROTOCOLS: { value: CapabilityProtocol; label: string; hint: string }[] = [
+  { value: 'openai-image', label: 'OpenAI', hint: 'Official OpenAI image API (gpt-image-*)' },
+  { value: 'google-image', label: 'Google (Gemini)', hint: 'Gemini image models (Nano Banana)' },
+  { value: 'openai-compatible-image', label: 'OpenAI-compatible', hint: 'A proxy/gateway exposing an OpenAI-compatible /images endpoint' },
+]
+
+export function ImageCapabilityEditor({ value, onChange }: { value: ProviderCapability | null; onChange: (v: ProviderCapability | null) => void }) {
+  const { t } = useTranslation()
+  const enabled = !!value
+  const cap: ProviderCapability = value ?? { id: 'image', task: 'image', protocol: 'openai-image', enabled: true, models: [] }
+
+  const update = (patch: Partial<ProviderCapability>) => onChange({ ...cap, ...patch })
+  const needsBaseUrl = cap.protocol === 'openai-compatible-image' || cap.protocol === 'google-image'
+
+  return (
+    <div className="flex flex-col gap-2 rounded-md border border-border p-3">
+      <label className="flex items-center gap-2 text-xs font-medium">
+        <input type="checkbox" checked={enabled} onChange={(e) => onChange(e.target.checked ? cap : null)} />
+        {t('resources.providerDialog.imageCapability')}
+      </label>
+      {enabled && (
+        <div className="flex flex-col gap-2">
+          <div className="flex flex-wrap gap-1.5">
+            {IMAGE_PROTOCOLS.map((p) => (
+              <button
+                key={p.value}
+                type="button"
+                title={p.hint}
+                onClick={() => update({ protocol: p.value })}
+                className={`rounded-full border px-2.5 py-0.5 text-[11px] transition-colors ${cap.protocol === p.value ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:border-primary/50'}`}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+          {needsBaseUrl && (
+            <input
+              className="rounded-md border border-border bg-background px-3 py-1.5 text-sm outline-none focus:ring-1 focus:ring-ring"
+              value={cap.baseUrl ?? ''}
+              onChange={(e) => update({ baseUrl: e.target.value })}
+              placeholder={cap.protocol === 'google-image' ? 'https://…/v1beta' : 'https://…/v1'}
+            />
+          )}
+          <ModelCatalogPicker modality="image" selected={cap.models ?? []} onChange={(ids) => update({ models: ids })} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+export interface AgentFormState {
   base_url: string
   extra_env: string
   model_env: ProviderModelEnv
@@ -30,6 +82,12 @@ interface FormState {
   name: string
   api_key: string
   agentForms: Record<string, AgentFormState>
+  imageCapability: ProviderCapability | null
+}
+
+function initialImageCapability(provider: ApiProvider | null): ProviderCapability | null {
+  if (!provider) return null
+  return parseProviderCapabilities(provider.capabilities).find((c) => c.task === 'image') ?? null
 }
 
 type DialogStep = 'select' | 'form'
@@ -65,7 +123,7 @@ function serializeEnvPairs(pairs: EnvPairs): string {
   return JSON.stringify(obj)
 }
 
-function EnvEditor({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+export function EnvEditor({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const { t } = useTranslation()
   const [pairs, setPairs] = useState<EnvPairs>(() => parseEnvPairs(value))
   const [pasteOpen, setPasteOpen] = useState(false)
@@ -160,7 +218,7 @@ function EnvEditor({ value, onChange }: { value: string; onChange: (v: string) =
   )
 }
 
-function ModelEnvEditor({ value, onChange }: { value: ProviderModelEnv; onChange: (v: ProviderModelEnv) => void }) {
+export function ModelEnvEditor({ value, onChange }: { value: ProviderModelEnv; onChange: (v: ProviderModelEnv) => void }) {
   const { t } = useTranslation()
   const bucketLabel: Record<ModelBucket, string> = {
     default: t('resources.providerDialog.bucketDefault'),
@@ -292,7 +350,14 @@ function AgentConfigForm({
   )
 }
 
-function buildAgentConfigs(agentForms: Record<string, AgentFormState>): string {
+export function buildCapabilities(agentConfigs: string, imageCapability: ProviderCapability | null): string {
+  const chat = agentConfigsToCapabilities(agentConfigs).filter(
+    (c) => c.baseUrl || c.modelMapping || (c.extraEnv && Object.keys(c.extraEnv).length > 0),
+  )
+  return JSON.stringify([...chat, ...(imageCapability ? [imageCapability] : [])])
+}
+
+export function buildAgentConfigs(agentForms: Record<string, AgentFormState>): string {
   const configs: Record<string, AgentProviderConfig> = {}
   for (const [agent, form] of Object.entries(agentForms)) {
     configs[agent] = {
@@ -305,7 +370,7 @@ function buildAgentConfigs(agentForms: Record<string, AgentFormState>): string {
   return JSON.stringify(configs)
 }
 
-function parseAgentForm(config: AgentProviderConfig | undefined, presetConfig?: AgentPresetConfig): AgentFormState {
+export function parseAgentForm(config: AgentProviderConfig | undefined, presetConfig?: AgentPresetConfig): AgentFormState {
   if (!config) {
     return {
       base_url: presetConfig?.base_url ?? '',
@@ -378,9 +443,10 @@ function ProviderDialogBody({
         name: editProvider.name,
         api_key: editProvider.api_key,
         agentForms: { [entryAgent]: parseAgentForm(configs[entryAgent] as AgentProviderConfig | undefined) },
+        imageCapability: initialImageCapability(editProvider),
       }
     }
-    return { name: '', api_key: '', agentForms: {} }
+    return { name: '', api_key: '', agentForms: {}, imageCapability: null }
   })
   const [step, setStep] = useState<DialogStep>(editProvider ? 'form' : 'select')
   const [selectedPreset, setSelectedPreset] = useState<QuickPreset | null>(null)
@@ -396,11 +462,12 @@ function ProviderDialogBody({
     const agentForms: Record<string, AgentFormState> = {
       [entryAgent]: parseAgentForm(undefined, preset.agent_configs[entryAgent]),
     }
-    setForm({
+    setForm((prev) => ({
       name: preset.name === 'Custom API' ? '' : preset.name,
       api_key: '',
       agentForms,
-    })
+      imageCapability: prev.imageCapability,
+    }))
     if (preset.templateValues) {
       const vals: Record<string, string> = {}
       for (const [k, v] of Object.entries(preset.templateValues)) {
@@ -504,12 +571,14 @@ function ProviderDialogBody({
         }
       }
     }
+    const syncedAgentConfigs = buildAgentConfigs(resolvedAgentForms)
     onSave({
       id: editProvider.id,
       name: form.name,
       api_key: form.api_key,
       supported_agents: JSON.stringify([entryAgent]),
-      agent_configs: buildAgentConfigs(resolvedAgentForms),
+      agent_configs: syncedAgentConfigs,
+      capabilities: buildCapabilities(syncedAgentConfigs, form.imageCapability),
     })
 
     setSyncDialogOpen(false)
@@ -586,6 +655,7 @@ function ProviderDialogBody({
     }
     const agentConfigs = buildAgentConfigs(resolvedAgentForms)
     const supportedAgentsStr = JSON.stringify(supportedAgents)
+    const capabilities = buildCapabilities(agentConfigs, form.imageCapability)
 
     if (editProvider) {
       onSave({
@@ -594,6 +664,7 @@ function ProviderDialogBody({
         api_key: form.api_key,
         supported_agents: supportedAgentsStr,
         agent_configs: agentConfigs,
+        capabilities,
       })
     } else {
       onSave({
@@ -603,6 +674,7 @@ function ProviderDialogBody({
         category: selectedPreset?.category ?? 'custom',
         supported_agents: supportedAgentsStr,
         agent_configs: agentConfigs,
+        capabilities,
       })
     }
     onOpenChange(false)
@@ -764,6 +836,10 @@ function ProviderDialogBody({
                 preset={currentPresetConfig}
                 isEdit={!!editProvider}
                 isCustom={isCustomProvider}
+              />
+              <ImageCapabilityEditor
+                value={form.imageCapability}
+                onChange={(imageCapability) => setForm((f) => ({ ...f, imageCapability }))}
               />
             </div>
             {testStatus !== 'idle' && (

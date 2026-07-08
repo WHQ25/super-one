@@ -4,6 +4,7 @@ import { randomUUID } from 'crypto'
 import Database from 'better-sqlite3'
 import type { ApiProvider, CreateProviderRequest, HarnessId, HarnessResourcesMap, UpdateProviderRequest } from '@superone/shared/agent-types'
 import { runDatabaseMigrations } from './database-migrations'
+import { decryptSecret, encryptSecret } from './crypto/secret-store'
 
 export { runDatabaseMigrations }
 
@@ -59,7 +60,12 @@ export function maskApiKey(key: string): string {
 }
 
 function maskProvider(row: ApiProvider): ApiProvider {
-  return { ...row, api_key: maskApiKey(row.api_key) }
+  return { ...row, api_key: maskApiKey(decryptSecret(row.api_key)) }
+}
+
+/** Main-only: decrypt the api_key so it can be injected into a backend env. Never send to the renderer. */
+function decryptProvider(row: ApiProvider | undefined): ApiProvider | undefined {
+  return row ? { ...row, api_key: decryptSecret(row.api_key) } : undefined
 }
 
 export function getAllProviders(): ApiProvider[] {
@@ -68,16 +74,16 @@ export function getAllProviders(): ApiProvider[] {
 
 export function getActiveProvider(agentType: string = 'claude'): ApiProvider | undefined {
   const col = agentType === 'codex' ? 'is_active_codex' : 'is_active_claude'
-  return getDb().prepare(`SELECT * FROM api_providers WHERE ${col} = 1`).get() as ApiProvider | undefined
+  return decryptProvider(getDb().prepare(`SELECT * FROM api_providers WHERE ${col} = 1`).get() as ApiProvider | undefined)
 }
 
 export function getActiveProviderRaw(agentType: string = 'claude'): ApiProvider | undefined {
   const col = agentType === 'codex' ? 'is_active_codex' : 'is_active_claude'
-  return getDb().prepare(`SELECT * FROM api_providers WHERE ${col} = 1`).get() as ApiProvider | undefined
+  return decryptProvider(getDb().prepare(`SELECT * FROM api_providers WHERE ${col} = 1`).get() as ApiProvider | undefined)
 }
 
 export function getProviderByIdRaw(id: string): ApiProvider | undefined {
-  return getDb().prepare('SELECT * FROM api_providers WHERE id = ?').get(id) as ApiProvider | undefined
+  return decryptProvider(getDb().prepare('SELECT * FROM api_providers WHERE id = ?').get(id) as ApiProvider | undefined)
 }
 
 export function createProvider(data: CreateProviderRequest): ApiProvider {
@@ -85,16 +91,19 @@ export function createProvider(data: CreateProviderRequest): ApiProvider {
   const id = randomUUID()
   const maxOrder = (getDb().prepare('SELECT MAX(sort_order) as m FROM api_providers').get() as { m: number | null })?.m ?? -1
   getDb().prepare(`
-    INSERT INTO api_providers (id, name, provider_type, api_key, category, supported_agents, agent_configs, notes, sort_order, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO api_providers (id, name, key_name, provider_type, api_key, api_key_env, category, supported_agents, agent_configs, capabilities, notes, sort_order, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id,
     data.name,
+    data.key_name ?? '',
     data.provider_type ?? 'custom',
-    data.api_key ?? '',
+    encryptSecret(data.api_key ?? ''),
+    data.api_key_env ?? '',
     data.category ?? 'custom',
     data.supported_agents ?? '["claude"]',
     data.agent_configs ?? '{}',
+    data.capabilities ?? '[]',
     data.notes ?? '',
     maxOrder + 1,
     now,
@@ -109,18 +118,21 @@ export function updateProvider(id: string, data: UpdateProviderRequest): ApiProv
   const skipApiKey = data.api_key !== undefined && data.api_key.startsWith('***')
   getDb().prepare(`
     UPDATE api_providers SET
-      name = ?, provider_type = ?, ${skipApiKey ? '' : 'api_key = ?,'}
-      category = ?, supported_agents = ?, agent_configs = ?,
+      name = ?, key_name = ?, provider_type = ?, ${skipApiKey ? '' : 'api_key = ?,'}
+      api_key_env = ?, category = ?, supported_agents = ?, agent_configs = ?, capabilities = ?,
       notes = ?, sort_order = ?, updated_at = ?
     WHERE id = ?
   `).run(
     ...[
       data.name ?? existing.name,
+      data.key_name ?? existing.key_name,
       data.provider_type ?? existing.provider_type,
-      ...(skipApiKey ? [] : [data.api_key ?? existing.api_key]),
+      ...(skipApiKey ? [] : [encryptSecret(data.api_key ?? existing.api_key)]),
+      data.api_key_env ?? existing.api_key_env,
       data.category ?? existing.category,
       data.supported_agents ?? existing.supported_agents,
       data.agent_configs ?? existing.agent_configs,
+      data.capabilities ?? existing.capabilities,
       data.notes ?? existing.notes,
       data.sort_order ?? existing.sort_order,
       new Date().toISOString(),

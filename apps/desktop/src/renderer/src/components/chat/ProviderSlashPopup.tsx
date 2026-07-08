@@ -126,7 +126,12 @@ export function ProviderSlashPopup({ onClose }: { onClose: () => void }) {
                   size={20}
                 />
               )}
-              {isCurrent && <Check className="size-3.5 shrink-0 text-primary" />}
+              <span className="flex min-w-0 shrink-0 items-center gap-1.5">
+                {item.provider?.key_name && (
+                  <span className="truncate text-[11px] text-muted-foreground">{item.provider.key_name}</span>
+                )}
+                {isCurrent && <Check className="size-3.5 shrink-0 text-primary" />}
+              </span>
             </button>
           )
         })}

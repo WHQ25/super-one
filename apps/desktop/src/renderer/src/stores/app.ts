@@ -21,10 +21,11 @@ export type { RemoteDeviceConfig }
 type AppView = 'loading' | 'startup' | 'setup' | 'main' | 'settings'
 type InstallStatus = 'idle' | 'installing' | 'success' | 'error'
 type UpdateStatus = 'idle' | 'checking' | 'preparing' | 'downloading' | 'ready' | 'up-to-date' | 'error'
-export type SettingsTab = 'providers' | 'agents' | 'skills' | 'mcp' | 'plugins' | 'hooks' | 'apps' | 'preferences' | 'remote' | 'usage' | 'automations' | 'app-settings' | 'appearance' | 'browser' | 'media-gen'
+export type SettingsTab = 'providers' | 'agents' | 'skills' | 'mcp' | 'plugins' | 'hooks' | 'apps' | 'preferences' | 'remote' | 'usage' | 'automations' | 'app-settings' | 'appearance' | 'browser'
 
-const PROVIDER_SETTINGS_TABS: SettingsTab[] = ['providers', 'agents', 'skills', 'mcp', 'hooks', 'plugins', 'preferences']
+const PROVIDER_SETTINGS_TABS: SettingsTab[] = ['agents', 'skills', 'mcp', 'hooks', 'plugins', 'preferences']
 const FIRST_SETTINGS_SECTION: SettingsTab = 'providers'
+const FIRST_PROVIDER_TAB: SettingsTab = 'agents'
 export type LayoutMode = 'canvas' | 'coding'
 export type SidebarTab = 'sessions' | 'files'
 
@@ -214,7 +215,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   remoteConfig: null,
   settingsProvider: 'claude',
   settingsTab: FIRST_SETTINGS_SECTION,
-  settingsProviderTabs: { claude: FIRST_SETTINGS_SECTION, codex: FIRST_SETTINGS_SECTION },
+  settingsProviderTabs: { claude: FIRST_PROVIDER_TAB, codex: FIRST_PROVIDER_TAB },
   layoutMode: 'coding',
   setLayoutMode: async (mode) => {
     set({ layoutMode: mode })
@@ -403,7 +404,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (PROVIDER_SETTINGS_TABS.includes(settingsTab)) nextTabs[prev] = settingsTab
     set({
       settingsProvider: provider,
-      settingsTab: nextTabs[provider] ?? FIRST_SETTINGS_SECTION,
+      settingsTab: nextTabs[provider] ?? FIRST_PROVIDER_TAB,
       settingsProviderTabs: nextTabs,
     })
   },

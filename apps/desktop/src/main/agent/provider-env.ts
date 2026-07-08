@@ -1,14 +1,14 @@
 import type { ApiProvider } from '@superone/shared/agent-types'
-import { expandProviderModelEnv, parseProviderModelEnv } from '@superone/shared/agent-types'
+import { expandProviderModelEnv, findChatCapability, parseProviderCapabilities } from '@superone/shared/agent-types'
+import { agentConfigsToCapabilities } from '@superone/shared/provider-utils'
 
 export function buildProviderEnv(provider: ApiProvider, agentType: string = 'claude'): Record<string, string> {
-  const configs = JSON.parse(provider.agent_configs || '{}')
-  const ac = configs[agentType]
-  if (!ac) return {}
+  const caps = parseProviderCapabilities(provider.capabilities)
+  const effective = caps.length > 0 ? caps : agentConfigsToCapabilities(provider.agent_configs)
+  const cap = findChatCapability(effective, agentType === 'codex' ? 'codex' : 'claude')
+  if (!cap) return {}
 
-  const extraEnv = JSON.parse(ac.extra_env || '{}') as Record<string, string>
-  const modelEnv = parseProviderModelEnv(ac.model_env)
-  const env: Record<string, string> = { ...extraEnv, ...expandProviderModelEnv(modelEnv) }
+  const env: Record<string, string> = { ...(cap.extraEnv ?? {}), ...expandProviderModelEnv(cap.modelMapping ?? {}) }
 
   if (provider.api_key) {
     env.ANTHROPIC_API_KEY = provider.api_key
@@ -16,6 +16,6 @@ export function buildProviderEnv(provider: ApiProvider, agentType: string = 'cla
       env.ANTHROPIC_AUTH_TOKEN = provider.api_key
     }
   }
-  if (ac.base_url) env.ANTHROPIC_BASE_URL = ac.base_url
+  if (cap.baseUrl) env.ANTHROPIC_BASE_URL = cap.baseUrl
   return env
 }

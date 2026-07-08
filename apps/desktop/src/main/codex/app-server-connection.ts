@@ -6,6 +6,7 @@ import log from '../logger'
 import { trace } from '../agent/event-trace'
 import { CODEX_SYSTEM_PROMPT_APPEND } from '../agent/superone-system-prompt'
 import { getActiveProviderRaw, getProviderByIdRaw } from '../database'
+import { chatCapabilityFor } from '@superone/shared/provider-utils'
 import { ProcessTitle } from '../process-titles'
 import {
   CODEX_PERMISSION_PRESETS,
@@ -271,19 +272,6 @@ export interface CodexProviderOverride {
   info: Record<string, unknown>
 }
 
-interface CodexProviderConfig {
-  base_url?: string
-  extra_env?: string
-}
-
-function parseCodexProviderConfig(agentConfigs: string | null | undefined): CodexProviderConfig | undefined {
-  try {
-    return (JSON.parse(agentConfigs || '{}') as { codex?: CodexProviderConfig }).codex
-  } catch {
-    return undefined
-  }
-}
-
 export function makeCodexProviderOverride(name: string, baseUrl: string): CodexProviderOverride {
   return {
     id: SUPERONE_CODEX_PROVIDER_ID,
@@ -324,7 +312,7 @@ function resolveCodexProviderRow(apiProviderId?: string | null) {
 export function getCodexProviderOverrideFor(apiProviderId?: string | null): CodexProviderOverride | null {
   const codexProvider = resolveCodexProviderRow(apiProviderId)
   if (!codexProvider) return null
-  const baseUrl = parseCodexProviderConfig(codexProvider.agent_configs)?.base_url?.trim()
+  const baseUrl = chatCapabilityFor(codexProvider, 'codex')?.baseUrl?.trim()
   if (!baseUrl) return null
   return makeCodexProviderOverride(codexProvider.name, baseUrl)
 }
@@ -354,9 +342,9 @@ export function buildAppServerEnv(auth: CodexProjectAuth, apiProviderId?: string
   }
   const codexProvider = resolveCodexProviderRow(apiProviderId)
   if (codexProvider) {
-    const cc = parseCodexProviderConfig(codexProvider.agent_configs)
+    const cap = chatCapabilityFor(codexProvider, 'codex')
     if (codexProvider.api_key) env.CODEX_API_KEY = codexProvider.api_key
-    try { Object.assign(env, JSON.parse(cc?.extra_env || '{}')) } catch {}
+    if (cap?.extraEnv) Object.assign(env, cap.extraEnv)
     return env
   }
   if (auth.mode === 'chatgpt') {

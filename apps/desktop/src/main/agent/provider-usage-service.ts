@@ -1,5 +1,6 @@
 import log from '../logger'
 import type { ProviderRateLimits } from '@superone/shared/agent-types'
+import { chatCapabilityFor } from '@superone/shared/provider-utils'
 import { getProviderByIdRaw } from '../database'
 import {
   detectProvider,
@@ -29,10 +30,6 @@ function tryParseJson<T>(text: string | null | undefined): T | null {
   }
 }
 
-function resolveBaseUrl(agentConfigs: string | null | undefined): string | null {
-  const configs = tryParseJson<{ claude?: { base_url?: string } }>(agentConfigs || '{}')
-  return configs?.claude?.base_url?.trim() || null
-}
 
 async function fetchWithTimeout(url: string, apiKey: string, timeoutMs: number): Promise<Response> {
   const controller = new AbortController()
@@ -75,7 +72,7 @@ export async function getProviderRateLimits(apiProviderId: string, force = false
     const provider = getProviderByIdRaw(apiProviderId)
     if (!provider?.api_key) return null
 
-    const detected = detectProvider(resolveBaseUrl(provider.agent_configs))
+    const detected = detectProvider(chatCapabilityFor(provider, 'claude')?.baseUrl?.trim() || null)
     if (!detected) return null
 
     const nowMs = Date.now()

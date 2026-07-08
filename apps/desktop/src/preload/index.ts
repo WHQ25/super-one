@@ -587,9 +587,9 @@ const appAPI = {
   // Providers
   listProviders: () =>
     ipcRenderer.invoke(AgentIpcChannels.PROVIDERS_LIST),
-  createProvider: (data: { name: string; provider_type?: string; api_key?: string; category?: string; supported_agents?: string; agent_configs?: string; notes?: string }) =>
+  createProvider: (data: { name: string; key_name?: string; provider_type?: string; api_key?: string; category?: string; supported_agents?: string; agent_configs?: string; notes?: string }) =>
     ipcRenderer.invoke(AgentIpcChannels.PROVIDERS_CREATE, data),
-  updateProvider: (id: string, data: { name?: string; provider_type?: string; api_key?: string; category?: string; supported_agents?: string; agent_configs?: string; notes?: string; sort_order?: number }) =>
+  updateProvider: (id: string, data: { name?: string; key_name?: string; provider_type?: string; api_key?: string; category?: string; supported_agents?: string; agent_configs?: string; notes?: string; sort_order?: number }) =>
     ipcRenderer.invoke(AgentIpcChannels.PROVIDERS_UPDATE, id, data),
   deleteProvider: (id: string) =>
     ipcRenderer.invoke(AgentIpcChannels.PROVIDERS_DELETE, id),
@@ -646,6 +646,10 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.READ_FILE_AS_DATA_URI, absPath),
   getMediaProviders: () =>
     ipcRenderer.invoke(AgentIpcChannels.MEDIA_GEN_PROVIDERS),
+  getModelCatalog: () =>
+    ipcRenderer.invoke(AgentIpcChannels.MODEL_CATALOG_GET),
+  refreshModelCatalog: () =>
+    ipcRenderer.invoke(AgentIpcChannels.MODEL_CATALOG_REFRESH),
   setMediaProviderKey: (providerId: string, apiKey: string) =>
     ipcRenderer.invoke(AgentIpcChannels.MEDIA_GEN_SET_KEY, providerId, apiKey),
   upsertMediaCustomProvider: (input: UpsertMediaProviderRequest) =>

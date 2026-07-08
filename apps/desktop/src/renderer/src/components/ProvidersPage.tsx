@@ -1,86 +1,70 @@
 import { useEffect, useState, useCallback, useMemo } from 'react'
-import { Check, Plus, RefreshCw } from 'lucide-react'
+import { Plus } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useSettingsStore } from '@/stores/settings'
-import { useAppStore } from '@/stores/app'
-import { Button } from '@superone/ui/components/ui/button'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@superone/ui/components/ui/tooltip'
-import { resolvePresetKey, getPresetByKey } from '@/lib/preset-match'
-import { diffProviderAgainstPreset } from '@/lib/preset-merge'
-import type { ApiProvider, AgentType, CreateProviderRequest, UpdateProviderRequest } from '@superone/shared/agent-types'
-import { ProviderDialog } from './ProviderDialog'
+import { useChatStore } from '@/stores/chat'
+import { IconButton } from '@superone/ui/components/ui/icon-button'
+import type { AgentType, CreateProviderRequest } from '@superone/shared/agent-types'
+import { buildProviderBrands, draftCustomBrand, providerBrandId, DRAFT_CUSTOM_BRAND_ID, type ProviderBrand } from '@/lib/provider-brands'
+import { ProviderBrandPanel } from './ProviderBrandPanel'
+import { OfficialProviderPanel } from './OfficialProviderPanel'
 import { ProviderLabel } from './ProviderLabel'
 
+const OFFICIAL_PROVIDERS = [
+  { id: 'official-claude', harness: 'claude', presetKey: 'default-claude' },
+  { id: 'official-codex', harness: 'codex', presetKey: 'default-codex' },
+] as const
 
-function DefaultButton({ isActive, onClick, label }: { isActive: boolean; onClick: () => void; label?: string }) {
-  const { t } = useTranslation()
+function OfficialRow({ presetKey, plan, selected, onClick }: { presetKey: string; plan?: string; selected: boolean; onClick: () => void }) {
   return (
-    <Button
-      variant="outline"
-      size="sm"
-      className={`h-7 shrink-0 text-xs ${isActive ? 'border-primary/40 text-primary hover:bg-primary/10' : ''}`}
-      onClick={(e) => { e.stopPropagation(); if (!isActive) onClick() }}
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left transition-colors ${
+        selected ? 'bg-primary/10' : 'hover:bg-muted/50'
+      }`}
     >
-      {label && <span className="mr-1 text-[10px] text-muted-foreground">{label}</span>}
-      {isActive ? t('resources.providers.default') : t('resources.providers.setDefault')} {isActive && <Check className="size-3.5" />}
-    </Button>
+      <ProviderLabel presetKey={presetKey} combine size={26} />
+      {plan && <span className="shrink-0 text-[10px] font-medium text-muted-foreground">{plan}</span>}
+    </button>
   )
 }
 
-function ProviderRow({
-  provider,
-  currentAgent,
-  onEdit,
-  onSync,
-  onActivate,
-}: {
-  provider: ApiProvider
-  currentAgent: AgentType
-  onEdit: () => void
-  onSync: () => void
-  onActivate: () => void
-}) {
+function BrandRow({ brand, selected, onClick }: { brand: ProviderBrand; selected: boolean; onClick: () => void }) {
   const { t } = useTranslation()
-  const configs = JSON.parse(provider.agent_configs || '{}')
-  const url = configs[currentAgent]?.base_url || ''
-  const isActive = currentAgent === 'claude' ? provider.is_active_claude === 1 : provider.is_active_codex === 1
-
-  const hasUpdate = useMemo(() => {
-    const key = resolvePresetKey(provider)
-    if (!key) return false
-    const preset = getPresetByKey(key)
-    if (!preset) return false
-    return diffProviderAgainstPreset(provider, preset).hasChanges
-  }, [provider])
-
+  const count = brand.providers.length
   return (
-    <div className="flex cursor-pointer items-center justify-between rounded-lg border border-border bg-card px-4 py-3 transition-colors hover:bg-muted/50" onClick={onEdit}>
-      <div className="flex items-center gap-3 overflow-hidden">
-        <ProviderLabel provider={provider} fallback={provider.name} size={28} />
-        {url && (
-          <span className="truncate text-xs text-muted-foreground">{url}</span>
-        )}
-      </div>
-      <div className="flex items-center gap-2">
-        {hasUpdate && (
-          <TooltipProvider delayDuration={300}>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  type="button"
-                  onClick={(e) => { e.stopPropagation(); onSync() }}
-                  className="flex size-6 items-center justify-center rounded-full border border-amber-500/40 bg-amber-500/10 text-amber-700 transition-colors hover:bg-amber-500/20 dark:text-amber-400"
-                  aria-label={t('resources.providers.updateAvailable')}
-                >
-                  <RefreshCw className="size-3" />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="top">{t('resources.providers.updateAvailable')}</TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-        )}
-        <DefaultButton isActive={isActive} onClick={onActivate} />
-      </div>
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left transition-colors ${
+        selected ? 'bg-primary/10' : 'hover:bg-muted/50'
+      }`}
+    >
+      <span className="flex min-w-0 items-center gap-1.5">
+        <ProviderLabel presetKey={brand.presetKey} combine fallback={brand.name} size={26} />
+        {brand.regionLabel && <span className="shrink-0 text-[11px] text-muted-foreground">({brand.regionLabel})</span>}
+      </span>
+      {count > 0 && (
+        <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">{t('resources.providers.keyCount', { count })}</span>
+      )}
+    </button>
+  )
+}
+
+type OfficialEntry = (typeof OFFICIAL_PROVIDERS)[number]
+
+function Group({ title, officials, brands, plans, selectedId, onSelect }: { title: string; officials: OfficialEntry[]; brands: ProviderBrand[]; plans?: Partial<Record<AgentType, string>>; selectedId: string | null; onSelect: (id: string) => void }) {
+  if (officials.length === 0 && brands.length === 0) return null
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="px-1 pb-0.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">{title}</div>
+      {officials.map((o) => (
+        <OfficialRow key={o.id} presetKey={o.presetKey} plan={plans?.[o.harness]} selected={selectedId === o.id} onClick={() => onSelect(o.id)} />
+      ))}
+      {brands.map((brand) => (
+        <BrandRow key={brand.brandId} brand={brand} selected={selectedId === brand.brandId} onClick={() => onSelect(brand.brandId)} />
+      ))}
     </div>
   )
 }
@@ -88,132 +72,126 @@ function ProviderRow({
 export function ProvidersPage() {
   const { t } = useTranslation()
   const { providers, fetchProviders, createProvider, updateProvider, deleteProvider, activateProvider, deactivateAllProviders } = useSettingsStore()
-  const settingsProvider = useAppStore((s) => s.settingsProvider) as AgentType
-
-  const [dialogOpen, setDialogOpen] = useState(false)
-  const [editingProvider, setEditingProvider] = useState<ApiProvider | null>(null)
-  const [autoSync, setAutoSync] = useState(false)
+  const activeProject = useChatStore((s) => s.activeProject)
+  const [selectedBrandId, setSelectedBrandId] = useState<string | null>(null)
+  const [draft, setDraft] = useState(false)
+  const [createSeq, setCreateSeq] = useState(0)
+  const [signedIn, setSignedIn] = useState<{ claude: boolean; codex: boolean }>({ claude: false, codex: false })
+  const [plan, setPlan] = useState<{ claude?: string; codex?: string }>({})
+  const claudeAccount = useChatStore((s) => s.harnessResources.claude?.account)
 
   useEffect(() => {
     fetchProviders()
   }, [fetchProviders])
 
-  const filteredProviders = useMemo(() =>
-    providers.filter((p) => {
-      const agents: string[] = JSON.parse(p.supported_agents || '["claude"]')
-      return agents.includes(settingsProvider)
-    }),
-  [providers, settingsProvider])
-
-  const handleAdd = useCallback(() => {
-    setEditingProvider(null)
-    setAutoSync(false)
-    setDialogOpen(true)
-  }, [])
-
-  const handleEdit = useCallback((provider: ApiProvider) => {
-    setEditingProvider(provider)
-    setAutoSync(false)
-    setDialogOpen(true)
-  }, [])
-
-  const handleSync = useCallback((provider: ApiProvider) => {
-    setEditingProvider(provider)
-    setAutoSync(true)
-    setDialogOpen(true)
-  }, [])
-
-  const handleSave = useCallback(async (data: CreateProviderRequest | (UpdateProviderRequest & { id: string })) => {
-    if ('id' in data) {
-      const { id, ...rest } = data
-      await updateProvider(id, rest)
-    } else {
-      await createProvider(data)
+  useEffect(() => {
+    window.app.claudeGetRateLimits().then((r) => {
+      setSignedIn((s) => ({ ...s, claude: !!r && (r.windows.length > 0 || !!r.planType) }))
+      setPlan((p) => ({ ...p, claude: r?.planType || undefined }))
+    }).catch(() => {})
+    if (activeProject) {
+      window.app.codexGetAuthStatus(activeProject)
+        .then((a) => setSignedIn((s) => ({ ...s, codex: a.resolvedMode === 'chatgpt' || a.hasEnvApiKey || a.hasSessionApiKey })))
+        .catch(() => {})
+      window.app.codexGetRateLimits(activeProject, null)
+        .then((r) => setPlan((p) => ({ ...p, codex: r?.planType || undefined })))
+        .catch(() => {})
     }
-  }, [createProvider, updateProvider])
+  }, [activeProject])
+
+  const officialPlans = useMemo<Partial<Record<AgentType, string>>>(
+    () => ({ claude: claudeAccount?.subscriptionType || plan.claude, codex: plan.codex }),
+    [claudeAccount?.subscriptionType, plan.claude, plan.codex],
+  )
+
+  const brands = useMemo(() => buildProviderBrands(providers), [providers])
+  const { enabled, others } = useMemo(() => {
+    const enabled: ProviderBrand[] = []
+    const others: ProviderBrand[] = []
+    for (const b of brands) (b.providers.length > 0 ? enabled : others).push(b)
+    return { enabled, others }
+  }, [brands])
+
+  const { officialEnabled, officialOthers } = useMemo(() => {
+    const officialEnabled: OfficialEntry[] = []
+    const officialOthers: OfficialEntry[] = []
+    for (const o of OFFICIAL_PROVIDERS) (signedIn[o.harness] ? officialEnabled : officialOthers).push(o)
+    return { officialEnabled, officialOthers }
+  }, [signedIn])
+
+  const official = OFFICIAL_PROVIDERS.find((o) => o.id === selectedBrandId) ?? null
+  const selectedBrand = draft ? draftCustomBrand() : brands.find((b) => b.brandId === selectedBrandId) ?? null
+
+  const selectBrand = useCallback((id: string) => {
+    setDraft(false)
+    setSelectedBrandId(id)
+  }, [])
+
+  const addCustom = useCallback(() => {
+    setDraft(true)
+    setSelectedBrandId(DRAFT_CUSTOM_BRAND_ID)
+    setCreateSeq((s) => s + 1)
+  }, [])
+
+  const handleSave = useCallback(async (id: string, data: { name: string; key_name: string; api_key: string; supported_agents: string; agent_configs: string; capabilities: string }) => {
+    await updateProvider(id, data)
+  }, [updateProvider])
+
+  const handleCreate = useCallback(async (data: CreateProviderRequest) => {
+    const created = await createProvider(data)
+    if (draft) {
+      setDraft(false)
+      setSelectedBrandId(providerBrandId(created))
+    }
+    return created
+  }, [createProvider, draft])
 
   const handleDelete = useCallback(async (id: string) => {
     await deleteProvider(id)
   }, [deleteProvider])
 
-  const handleActivate = useCallback(async (id: string) => {
-    await activateProvider(id, settingsProvider)
-  }, [activateProvider, settingsProvider])
+  const handleActivate = useCallback(async (id: string, harness: AgentType) => {
+    await activateProvider(id, harness)
+  }, [activateProvider])
 
-  const activeProvider = filteredProviders.find((p) =>
-    settingsProvider === 'claude' ? p.is_active_claude === 1 : p.is_active_codex === 1
-  )
-
-  const defaultLabel = settingsProvider === 'codex'
-    ? t('resources.providers.defaultLabelCodex')
-    : t('resources.providers.defaultLabelClaude')
-  const defaultDesc = settingsProvider === 'codex'
-    ? t('resources.providers.defaultDescCodex')
-    : t('resources.providers.defaultDescClaude')
+  const handleDeactivate = useCallback(async (harness: AgentType) => {
+    await deactivateAllProviders(harness)
+  }, [deactivateAllProviders])
 
   return (
-    <div className="mx-auto max-w-4xl">
-      <div className="mb-6 flex items-center justify-between gap-3">
-        <div>
+    <div className="flex h-full min-h-0 gap-4">
+      <div className="flex w-72 shrink-0 flex-col gap-3 overflow-y-auto pr-1">
+        <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">{t('resources.providers.title')}</h2>
-          <p className="text-sm text-muted-foreground">
-            {settingsProvider === 'codex'
-              ? t('resources.providers.subtitleCodex')
-              : t('resources.providers.subtitleClaude')}
-          </p>
+          <IconButton size="md" tooltip={t('resources.providers.addCustom')} onClick={addCustom}>
+            <Plus className="size-4" />
+          </IconButton>
         </div>
-        <Button size="sm" onClick={handleAdd}>
-          <Plus className="size-4" />
-          {t('resources.providers.add')}
-        </Button>
+
+        <Group title={t('resources.providers.enabled')} officials={officialEnabled} brands={enabled} plans={officialPlans} selectedId={selectedBrandId} onSelect={selectBrand} />
+        <Group title={t('resources.providers.others')} officials={officialOthers} brands={others} selectedId={selectedBrandId} onSelect={selectBrand} />
       </div>
 
-      <div className="space-y-2">
-        <div className="flex items-center justify-between rounded-lg border border-border bg-card px-4 py-3">
-          <div className="flex items-center gap-3 overflow-hidden">
-            <ProviderLabel
-              presetKey={settingsProvider === 'codex' ? 'default-codex' : 'default-claude'}
-              fallback={defaultLabel}
-              size={28}
-            />
-            <span className="truncate text-xs text-muted-foreground">{defaultDesc}</span>
-          </div>
-          <DefaultButton
-            isActive={!activeProvider}
-            onClick={() => deactivateAllProviders(settingsProvider)}
+      <div className="min-w-0 flex-1 overflow-y-auto px-1 py-1">
+        {official ? (
+          <OfficialProviderPanel harness={official.harness} />
+        ) : selectedBrand ? (
+          <ProviderBrandPanel
+            key={`${selectedBrand.brandId}-${createSeq}`}
+            brand={selectedBrand}
+            forceCreate={draft}
+            onCreate={handleCreate}
+            onSave={handleSave}
+            onDelete={handleDelete}
+            onActivate={handleActivate}
+            onDeactivate={handleDeactivate}
           />
-        </div>
-
-        {filteredProviders.map((p) => (
-          <ProviderRow
-            key={p.id}
-            provider={p}
-            currentAgent={settingsProvider}
-            onEdit={() => handleEdit(p)}
-            onSync={() => handleSync(p)}
-            onActivate={() => handleActivate(p.id)}
-          />
-        ))}
-
-        {filteredProviders.length === 0 && (
-          <div className="rounded-lg border border-dashed border-border p-6 text-center">
-            <p className="text-sm text-muted-foreground">{t('resources.providers.empty')}</p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {t('resources.providers.emptyHint')}
-            </p>
+        ) : (
+          <div className="flex h-full items-center justify-center">
+            <p className="text-sm text-muted-foreground">{t('resources.providers.selectHint')}</p>
           </div>
         )}
       </div>
-
-      <ProviderDialog
-        open={dialogOpen}
-        onOpenChange={setDialogOpen}
-        editProvider={editingProvider}
-        onSave={handleSave}
-        onDelete={handleDelete}
-        agentFilter={settingsProvider}
-        autoSync={autoSync}
-      />
     </div>
   )
 }

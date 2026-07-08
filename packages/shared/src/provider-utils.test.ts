@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { PRESET_PROVIDER_KEY, resolveProviderKey, buildRemoteActiveProvider } from './provider-utils'
+import { PRESET_PROVIDER_KEY, resolveProviderKey, buildRemoteActiveProvider, agentConfigsToCapabilities } from './provider-utils'
 import type { ApiProvider } from './agent-types'
 
 function makeProvider(overrides: Partial<ApiProvider> = {}): ApiProvider {
@@ -8,9 +8,11 @@ function makeProvider(overrides: Partial<ApiProvider> = {}): ApiProvider {
     name: '',
     provider_type: '',
     api_key: '',
+    api_key_env: '',
     category: 'model_provider',
     supported_agents: '',
     agent_configs: '{}',
+    capabilities: '[]',
     is_active_claude: 0,
     is_active_codex: 0,
     sort_order: 0,
@@ -202,5 +204,53 @@ describe('buildRemoteActiveProvider', () => {
     expect(result).not.toBeNull()
     expect(result!.modelEnv).toEqual({})
     expect(result!.forcedEffort).toBeNull()
+  })
+})
+
+describe('agentConfigsToCapabilities', () => {
+  it('maps claude anthropic config to an anthropic-messages chat capability', () => {
+    const caps = agentConfigsToCapabilities(JSON.stringify({
+      claude: {
+        base_url: 'https://api.anthropic.com',
+        api_format: 'anthropic',
+        extra_env: JSON.stringify({ CLAUDE_CODE_EFFORT_LEVEL: 'high' }),
+        model_env: JSON.stringify({ opus: { id: 'glm-4.6', name: 'GLM' } }),
+      },
+    }))
+    expect(caps).toHaveLength(1)
+    const cap = caps[0]
+    expect(cap.task).toBe('chat')
+    expect(cap.protocol).toBe('anthropic-messages')
+    expect(cap.baseUrl).toBe('https://api.anthropic.com')
+    expect(cap.harnesses).toEqual(['claude'])
+    expect(cap.extraEnv?.CLAUDE_CODE_EFFORT_LEVEL).toBe('high')
+    expect(cap.modelMapping?.opus?.id).toBe('glm-4.6')
+    expect(cap.enabled).toBe(true)
+  })
+
+  it('maps codex openai_chat config to an openai-chat capability', () => {
+    const caps = agentConfigsToCapabilities(JSON.stringify({
+      codex: { base_url: 'https://api.example.com/v1', api_format: 'openai_chat', extra_env: '{}', model_env: '{}' },
+    }))
+    expect(caps).toHaveLength(1)
+    expect(caps[0].protocol).toBe('openai-chat')
+    expect(caps[0].harnesses).toEqual(['codex'])
+    expect(caps[0].modelMapping).toBeUndefined()
+    expect(caps[0].extraEnv).toBeUndefined()
+  })
+
+  it('produces one capability per harness entry', () => {
+    const caps = agentConfigsToCapabilities(JSON.stringify({
+      claude: { base_url: 'https://a', api_format: 'anthropic', extra_env: '{}', model_env: '{}' },
+      codex: { base_url: 'https://b', api_format: 'openai_chat', extra_env: '{}', model_env: '{}' },
+    }))
+    expect(caps).toHaveLength(2)
+    expect(caps.map((c) => c.protocol).sort()).toEqual(['anthropic-messages', 'openai-chat'])
+  })
+
+  it('returns empty for blank or malformed input', () => {
+    expect(agentConfigsToCapabilities('')).toEqual([])
+    expect(agentConfigsToCapabilities('{}')).toEqual([])
+    expect(agentConfigsToCapabilities('not json')).toEqual([])
   })
 })

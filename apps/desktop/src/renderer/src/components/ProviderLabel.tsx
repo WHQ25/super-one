@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
 import { Globe } from 'lucide-react'
 import { Anthropic, Claude, OpenRouter, Zhipu, Kimi, Minimax, Volcengine, Bailian, Bedrock, Google, DeepSeek, Doubao, KwaiKAT, LongCat, ModelScope, Nvidia, SiliconCloud, XiaomiMiMo, OpenAI } from '@lobehub/icons'
 import type { IconType } from '@lobehub/icons'
@@ -38,8 +38,8 @@ const BRANDS: Record<string, BrandEntry> = {
   chatgpt: { Mono: OpenAI, Combine: OpenAI.Combine, extraLabel: 'ChatGPT' },
 }
 
-export function ProviderLabel({ presetKey, provider, fallback, size = 44, iconOnly = false }: { presetKey?: string; provider?: ApiProvider; fallback?: string; size?: number; iconOnly?: boolean }): ReactNode {
-  const key = presetKey ? PRESET_PROVIDER_KEY[presetKey] : provider ? resolveProviderKey(provider) : null
+export function ProviderLabel({ presetKey, provider, brandKey, fallback, size = 44, iconOnly = false, combine = false }: { presetKey?: string; provider?: ApiProvider; brandKey?: string | null; fallback?: string; size?: number; iconOnly?: boolean; combine?: boolean }): ReactNode {
+  const key = brandKey ?? (presetKey ? PRESET_PROVIDER_KEY[presetKey] : provider ? resolveProviderKey(provider) : null)
   const brand = key ? BRANDS[key] : null
   if (brand) {
     const IconComp = brand.Color ?? brand.Mono
@@ -55,6 +55,10 @@ export function ProviderLabel({ presetKey, provider, fallback, size = 44, iconOn
           style={{ display: 'inline-flex', flexDirection: 'row', alignItems: 'center' }}
         />
       )
+    }
+    const CombineComp = (brand.Mono as unknown as { Combine?: (p: { size?: number; type?: 'color' | 'mono'; style?: CSSProperties }) => ReactNode }).Combine
+    if (combine && CombineComp) {
+      return <CombineComp size={size} type="color" style={{ display: 'inline-flex', flexDirection: 'row', alignItems: 'center' }} />
     }
     if (brand.Text) {
       return (

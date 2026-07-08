@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react'
-import { AppWindow, ArrowLeft, BarChart3, Blocks, Bot, Globe, Image, LayoutGrid, Loader2, Paintbrush, Palette, Puzzle, Server, Settings, Smartphone, Webhook } from 'lucide-react'
+import { AppWindow, ArrowLeft, BarChart3, Blocks, Bot, Globe, LayoutGrid, Loader2, Paintbrush, Palette, Puzzle, Server, Settings, Smartphone, Webhook } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@superone/ui/components/ui/button'
 import { useAppStore } from '@/stores/app'
@@ -15,7 +15,6 @@ import { AppsSettingsPage } from './AppsSettingsPage'
 import { AppSettingsPage } from './AppSettingsPage'
 import { AppearancePage } from './AppearancePage'
 import { BrowserSettingsPage } from './BrowserSettingsPage'
-import { MediaGenSettingsPage } from './MediaGenSettingsPage'
 import { Tabs, TabsList, TabsTrigger } from '@superone/ui/components/ui/tabs'
 import { cn } from '@superone/ui/lib/utils'
 import type { SettingsProvider } from '@superone/shared/agent-types'
@@ -25,15 +24,14 @@ const UsagePage = lazy(() => import('./UsagePage').then((m) => ({ default: m.Usa
 const globalTabs = [
   { id: 'app-settings' as const, labelKey: 'settings.layout.tabs.general', icon: Settings },
   { id: 'appearance' as const, labelKey: 'settings.layout.tabs.appearance', icon: Paintbrush },
+  { id: 'providers' as const, labelKey: 'settings.layout.tabs.providers', icon: Globe },
   { id: 'browser' as const, labelKey: 'settings.layout.tabs.browser', icon: AppWindow },
   { id: 'apps' as const, labelKey: 'settings.layout.tabs.apps', icon: LayoutGrid },
-  { id: 'media-gen' as const, labelKey: 'settings.layout.tabs.mediaGen', icon: Image },
   { id: 'remote' as const, labelKey: 'settings.layout.tabs.remote', icon: Smartphone },
   { id: 'usage' as const, labelKey: 'settings.layout.tabs.usage', icon: BarChart3 },
 ]
 
 const providerTabs = [
-  { id: 'providers' as const, labelKey: 'settings.layout.tabs.providers', icon: Globe },
   { id: 'agents' as const, labelKey: 'settings.layout.tabs.agents', icon: Bot },
   { id: 'skills' as const, labelKey: 'settings.layout.tabs.skills', icon: Puzzle },
   { id: 'mcp' as const, labelKey: 'settings.layout.tabs.mcp', icon: Server },
@@ -42,7 +40,7 @@ const providerTabs = [
   { id: 'preferences' as const, labelKey: 'settings.layout.tabs.preferences', icon: Palette },
 ]
 
-const codexTabs = new Set<string>(['providers', 'skills', 'mcp', 'hooks', 'plugins', 'preferences'])
+const codexTabs = new Set<string>(['skills', 'mcp', 'hooks', 'plugins', 'preferences'])
 
 const providers: { id: SettingsProvider; labelKey: string }[] = [
   { id: 'claude', labelKey: 'settings.layout.providers.claude' },
@@ -125,7 +123,7 @@ export function SettingsLayout() {
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto p-6 [scrollbar-gutter:stable]">
+      <div className="flex-1 overflow-y-auto p-3 [scrollbar-gutter:stable]">
         {settingsTab === 'providers' && <ProvidersPage />}
         {settingsTab === 'agents' && <AgentsPage />}
         {settingsTab === 'skills' && <SkillsPage />}
@@ -135,7 +133,6 @@ export function SettingsLayout() {
         {settingsTab === 'app-settings' && <AppSettingsPage />}
         {settingsTab === 'appearance' && <AppearancePage />}
         {settingsTab === 'browser' && <BrowserSettingsPage />}
-        {settingsTab === 'media-gen' && <MediaGenSettingsPage />}
         {settingsTab === 'apps' && <AppsSettingsPage />}
         {settingsTab === 'preferences' && <PreferencesPage />}
         {settingsTab === 'remote' && <RemotePage />}

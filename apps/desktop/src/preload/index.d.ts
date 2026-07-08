@@ -4,6 +4,7 @@ import type { AgentEvent, AgentInfo, AgentPrewarmHint, ApiProvider, AppSettings,
 import type { MiniAppEntry, MiniAppInstallMeta, MiniAppInstallResult, MiniAppPackResult, MiniAppPreviewResult, MiniAppToolCallRequest, MiniAppFsWatchEvent, MiniAppToolInterceptOpenRequest, MiniAppWorkerInfo, DevRegistryEntry, DevRegistryView } from '@superone/shared/miniapp-types'
 import type { McpbInstallRequest, McpbInstalledEntry, McpbPreview } from '@superone/shared/mcpb-types'
 import type { LiveSessionSnapshot } from '@superone/shared/session-types'
+import type { ModelCatalog } from '@superone/shared/model-catalog-types'
 
 
 interface AgentAPI {
@@ -197,6 +198,8 @@ interface AppAPI {
   saveFile(folderPath: string, filePath: string, content: string): Promise<FileOpResult>
   readFileAsDataUri(absPath: string): Promise<{ ok: true; dataUri: string } | { ok: false; error: string }>
   getMediaProviders(): Promise<MediaProviderStatus[]>
+  getModelCatalog(): Promise<ModelCatalog>
+  refreshModelCatalog(): Promise<ModelCatalog>
   setMediaProviderKey(providerId: string, apiKey: string): Promise<{ ok: true } | { ok: false; error: string }>
   upsertMediaCustomProvider(input: UpsertMediaProviderRequest): Promise<{ ok: true; id: string } | { ok: false; error: string }>
   removeMediaCustomProvider(id: string): Promise<{ ok: true } | { ok: false; error: string }>

@@ -1,55 +1,64 @@
-import type { MediaProviderStatus, UpsertMediaProviderRequest } from '@superone/shared/agent-types'
+import type { MediaProviderStatus, ProviderCapability, UpsertMediaProviderRequest } from '@superone/shared/agent-types'
 import {
-  readCustomProviders,
-  removeCustomProvider,
-  upsertCustomProvider,
-} from './custom-providers'
-import { readMediaKeys, setMediaKey } from './keys'
-import { MEDIA_PROVIDER_PRESETS } from './presets'
+  IMAGE_PROTOCOL_TO_MEDIA_KIND,
+  MEDIA_KIND_TO_CAPABILITY_PROTOCOL,
+  imageCapabilityFor,
+} from '@superone/shared/provider-utils'
+import { createProvider, deleteProvider, getAllProviders, updateProvider } from '../database'
 
 export async function getMediaProviderStatuses(): Promise<MediaProviderStatus[]> {
-  const keys = await readMediaKeys().catch(() => ({}) as Record<string, string>)
-  const customs = await readCustomProviders()
-
-  const presetStatuses: MediaProviderStatus[] = MEDIA_PROVIDER_PRESETS.map((preset) => ({
-    id: preset.id,
-    label: preset.label,
-    kind: preset.kind,
-    categories: preset.categories,
-    defaultModel: preset.defaultModel,
-    models: preset.models,
-    apiKeyEnv: preset.apiKeyEnv,
-    custom: false,
-    hasKey: !!keys[preset.id],
-    hasEnvKey: !!(preset.apiKeyEnv && process.env[preset.apiKeyEnv]),
-  }))
-
-  const customStatuses: MediaProviderStatus[] = customs.map((provider) => ({
-    id: provider.id,
-    label: provider.label,
-    kind: provider.kind,
-    categories: ['image'],
-    defaultModel: provider.models[0] ?? '',
-    models: provider.models.map((model) => ({ id: model, label: model })),
-    baseURL: provider.baseURL,
-    custom: true,
-    hasKey: !!keys[provider.id],
-    hasEnvKey: false,
-  }))
-
-  return [...presetStatuses, ...customStatuses]
+  return getAllProviders().flatMap((provider): MediaProviderStatus[] => {
+    const cap = imageCapabilityFor(provider)
+    if (!cap) return []
+    const models = cap.models ?? []
+    return [{
+      id: provider.id,
+      label: provider.name,
+      kind: IMAGE_PROTOCOL_TO_MEDIA_KIND[cap.protocol] ?? 'openai-compatible',
+      categories: ['image'],
+      defaultModel: models[0] ?? '',
+      models: models.map((model) => ({ id: model, label: model })),
+      apiKeyEnv: provider.api_key_env || undefined,
+      baseURL: cap.baseUrl,
+      custom: true,
+      hasKey: !!provider.api_key,
+      hasEnvKey: !!(provider.api_key_env && process.env[provider.api_key_env]),
+    }]
+  })
 }
 
 export async function setMediaProviderKey(providerId: string, apiKey: string): Promise<void> {
-  await setMediaKey(providerId, apiKey.trim())
+  updateProvider(providerId, { api_key: apiKey.trim() })
 }
 
 export async function upsertMediaCustomProvider(input: UpsertMediaProviderRequest): Promise<{ id: string }> {
-  const entry = await upsertCustomProvider(input)
-  return { id: entry.id }
+  const kind = input.kind ?? 'openai-compatible'
+  const models = input.models.map((m) => m.trim()).filter(Boolean)
+  const capability: ProviderCapability = {
+    id: `image-${kind}`,
+    task: 'image',
+    protocol: MEDIA_KIND_TO_CAPABILITY_PROTOCOL[kind] ?? 'openai-compatible-image',
+    enabled: true,
+    baseUrl: input.baseURL.trim() || undefined,
+    models,
+  }
+  const capabilities = JSON.stringify([capability])
+  const label = input.label.trim() || 'Image Provider'
+
+  if (input.id) {
+    updateProvider(input.id, { name: label, capabilities })
+    return { id: input.id }
+  }
+  const created = createProvider({
+    name: label,
+    provider_type: 'custom',
+    category: 'custom',
+    supported_agents: '[]',
+    capabilities,
+  })
+  return { id: created.id }
 }
 
 export async function removeMediaCustomProvider(id: string): Promise<void> {
-  await removeCustomProvider(id)
-  await setMediaKey(id, '')
+  deleteProvider(id)
 }

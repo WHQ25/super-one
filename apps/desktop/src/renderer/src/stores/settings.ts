@@ -68,7 +68,7 @@ interface SettingsState {
   // Providers
   providers: ApiProvider[]
   fetchProviders: () => Promise<void>
-  createProvider: (data: CreateProviderRequest) => Promise<void>
+  createProvider: (data: CreateProviderRequest) => Promise<ApiProvider>
   updateProvider: (id: string, data: UpdateProviderRequest) => Promise<void>
   deleteProvider: (id: string) => Promise<void>
   activateProvider: (id: string, agentType: string) => Promise<void>
@@ -480,8 +480,9 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   },
 
   createProvider: async (data) => {
-    await window.app.createProvider(data)
+    const created = await window.app.createProvider(data)
     await get().fetchProviders()
+    return created
   },
 
   updateProvider: async (id, data) => {

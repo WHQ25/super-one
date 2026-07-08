@@ -924,7 +924,28 @@ export type Messages = {
       title: string
       subtitleClaude: string
       subtitleCodex: string
+      subtitleUnified: string
+      activateFor: string
+      enabled: string
+      disabled: string
+      selectHint: string
       add: string
+      addCustom: string
+      addKey: string
+      newKey: string
+      others: string
+      keyCount_one: string
+      keyCount_other: string
+      accountPlan: string
+      accountEmail: string
+      accountOrg: string
+      accountSignIn: string
+      accountNotSignedIn: string
+      accountLoading: string
+      codexNeedsProject: string
+      keyNameDuplicate: string
+      deleteKeyTitle: string
+      deleteKeyDescription: string
       setDefault: string
       default: string
       defaultLabelClaude: string
@@ -941,6 +962,8 @@ export type Messages = {
       editDescription: string
       name: string
       namePlaceholder: string
+      keyName: string
+      keyNamePlaceholder: string
       apiKey: string
       getApiKey: string
       envShow: string
@@ -953,6 +976,7 @@ export type Messages = {
       applyPaste: string
       environmentVariables: string
       modelMapping: string
+      imageCapability: string
       modelIdPlaceholder: string
       modelNamePlaceholder: string
       bucketDefault: string
@@ -977,6 +1001,28 @@ export type Messages = {
       syncBaseUrlSection: string
       syncEmptyPlaceholder: string
       syncApply: string
+      models: {
+        title: string
+        count: string
+        search: string
+        refresh: string
+        released: string
+        knowledge: string
+        maxOutput: string
+        priceIn: string
+        priceOut: string
+        empty: string
+        noEntry: string
+        all: string
+        chat: string
+        image: string
+        video: string
+        tts: string
+        asr: string
+        vision: string
+        tools: string
+        reasoning: string
+      }
     }
     mcp: {
       title: string
@@ -2432,7 +2478,28 @@ export const en: Messages = {
       title: 'Providers',
       subtitleClaude: 'Configure third-party Anthropic-compatible API providers',
       subtitleCodex: 'Configure third-party OpenAI-compatible API providers for Codex',
+      subtitleUnified: 'Manage API providers and their capabilities (chat, image, …)',
+      activateFor: 'Activate for',
+      enabled: 'Enabled',
+      disabled: 'Not configured',
+      selectHint: 'Select a provider to view and edit its configuration',
       add: 'Add Provider',
+      addCustom: 'Add custom provider',
+      addKey: 'Add key',
+      newKey: 'New key',
+      others: 'Others',
+      keyCount_one: '{{count}} key',
+      keyCount_other: '{{count}} keys',
+      accountPlan: 'Plan',
+      accountEmail: 'Email',
+      accountOrg: 'Organization',
+      accountSignIn: 'Sign-in',
+      accountNotSignedIn: 'Not signed in',
+      accountLoading: 'Loading account…',
+      codexNeedsProject: 'Open a project to view the Codex account',
+      keyNameDuplicate: 'A key with this name already exists on this platform',
+      deleteKeyTitle: 'Delete key',
+      deleteKeyDescription: 'Delete key "{{name}}"? This action cannot be undone.',
       setDefault: 'Set as default',
       default: 'Default',
       defaultLabelClaude: 'Claude Code (Official)',
@@ -2449,6 +2516,8 @@ export const en: Messages = {
       editDescription: 'Update provider configuration',
       name: 'Name',
       namePlaceholder: 'Provider name',
+      keyName: 'Key name',
+      keyNamePlaceholder: 'default',
       apiKey: 'API Key',
       getApiKey: 'Get API Key',
       envShow: 'Show environment variables',
@@ -2461,6 +2530,7 @@ export const en: Messages = {
       applyPaste: 'Apply',
       environmentVariables: 'Environment variables',
       modelMapping: 'Model mapping',
+      imageCapability: 'Image generation',
       modelIdPlaceholder: 'model id',
       modelNamePlaceholder: 'display name',
       bucketDefault: 'Default',
@@ -2485,6 +2555,28 @@ export const en: Messages = {
       syncBaseUrlSection: 'Base URL',
       syncEmptyPlaceholder: '<empty, filled by API key>',
       syncApply: 'Apply',
+      models: {
+        title: 'Models',
+        count: '{{count}} models available',
+        search: 'Search models…',
+        refresh: 'Fetch models',
+        released: 'Released {{date}}',
+        knowledge: 'Knowledge {{date}}',
+        maxOutput: 'Max out',
+        priceIn: 'In',
+        priceOut: 'Out',
+        empty: 'No models match.',
+        noEntry: 'No models.dev catalog entry matched this platform. Configured model ids still work.',
+        all: 'All',
+        chat: 'Chat',
+        image: 'Image',
+        video: 'Video',
+        tts: 'TTS',
+        asr: 'ASR',
+        vision: 'Vision',
+        tools: 'Tools',
+        reasoning: 'Reasoning',
+      },
     },
     mcp: {
       title: 'MCP Servers',

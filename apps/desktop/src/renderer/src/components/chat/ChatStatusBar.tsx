@@ -585,7 +585,7 @@ export function ChatStatusBar() {
                 <p>
                   Failed to switch to <strong>{failedCheckout?.branch}</strong>.
                 </p>
-                <pre className="whitespace-pre-wrap rounded-md bg-muted p-3 text-xs text-muted-foreground">
+                <pre className="max-w-full overflow-x-auto whitespace-pre rounded-md bg-muted p-3 text-xs text-muted-foreground">
                   {failedCheckout?.error}
                 </pre>
                 {dirty && (

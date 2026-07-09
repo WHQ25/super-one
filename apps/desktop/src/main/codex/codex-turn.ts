@@ -1363,7 +1363,7 @@ export async function streamTurnEvents(
   activeTurnId: string | null,
   controller: AbortController,
   callbacks?: CodexRunStreamCallbacks,
-): Promise<{ threadId: string | null; usage: CodexUsageInfo | null; items: CodexThreadItem[] }> {
+): Promise<{ threadId: string | null; turnId?: string; usage: CodexUsageInfo | null; items: CodexThreadItem[] }> {
   let threadStartedEmitted = false
   const emitThreadStarted = (threadId: string) => {
     if (threadStartedEmitted) return
@@ -1996,6 +1996,7 @@ export async function streamTurnEvents(
 
   return {
     threadId: session.threadId,
+    ...(activeTurnId ? { turnId: activeTurnId } : {}),
     usage,
     items,
   }
@@ -2108,6 +2109,7 @@ export async function runCodexTurn(
 
     return {
       threadId: streamed.threadId,
+      ...(streamed.turnId ? { turnId: streamed.turnId } : {}),
       finalResponse: deriveFinalResponse(streamed.items),
       usage: streamed.usage,
       items: streamed.items,
@@ -2164,6 +2166,7 @@ export async function reviewCodexTurn(
 
     return {
       threadId: streamed.threadId,
+      ...(streamed.turnId ? { turnId: streamed.turnId } : {}),
       finalResponse: deriveFinalResponse(streamed.items),
       usage: streamed.usage,
       items: streamed.items,
@@ -2209,6 +2212,7 @@ export async function compactCodexTurn(
 
     return {
       threadId: streamed.threadId,
+      ...(streamed.turnId ? { turnId: streamed.turnId } : {}),
       finalResponse: deriveFinalResponse(streamed.items),
       usage: streamed.usage,
       items: streamed.items,

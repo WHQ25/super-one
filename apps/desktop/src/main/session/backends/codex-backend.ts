@@ -540,7 +540,7 @@ export class CodexBackend implements SessionBackend {
     const runStart = Date.now()
     const finalizeSegment = (
       messageId: string,
-      opts: { finalResponseFallback?: string; threadId: string | null; usage: CodexUsageInfo | null },
+      opts: { finalResponseFallback?: string; threadId: string | null; turnId?: string; usage: CodexUsageInfo | null },
     ): void => {
       if (this.finalizedSegments.has(messageId)) return
       this.finalizedSegments.add(messageId)
@@ -558,6 +558,7 @@ export class CodexBackend implements SessionBackend {
             durationMs: Date.now() - runStart,
             items,
             threadId: opts.threadId,
+            ...(opts.turnId ? { turnId: opts.turnId } : {}),
             usage: opts.usage,
             model: resolvedModel,
           },
@@ -646,6 +647,7 @@ export class CodexBackend implements SessionBackend {
         finalizeSegment(runningAssistantId, {
           finalResponseFallback: finalText,
           threadId: result.threadId,
+          turnId: result.turnId,
           usage: result.usage,
         })
       } catch (error) {

@@ -321,6 +321,7 @@ export interface CodexMcpServerStartup {
 
 export interface CodexTurnInfo {
   threadId: string | null
+  turnId?: string
   usage: CodexUsageInfo | null
   items: CodexThreadItem[]
   planApproval?: CodexPlanApprovalState
@@ -1494,6 +1495,7 @@ export interface CodexRunRequest {
 
 export interface CodexRunResult {
   threadId: string | null
+  turnId?: string
   finalResponse: string
   usage: CodexUsageInfo | null
   items: CodexThreadItem[]

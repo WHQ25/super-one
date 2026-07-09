@@ -107,7 +107,33 @@ describe('forkSession harness dispatch', () => {
     expect(loadSessionStateBySidMock).not.toHaveBeenCalled()
   })
 
-  it('forks a Codex session, rolling back the turns after the selected message', async () => {
+  it('forks a Codex session through the anchor turnId in a single thread/fork call', async () => {
+    setupSource(makeRecord({ harnessId: 'codex', providerId: 'codex-base', providerSessionId: 'thread-src' }), [
+      msg('u1', 'user'), msg('a1', 'assistant', { metadata: { codex: { threadId: null, turnId: 'turn-a1', usage: null, items: [] } } }),
+      msg('u2', 'user'), msg('a2', 'assistant', { metadata: { codex: { threadId: null, turnId: 'turn-a2', usage: null, items: [] } } }),
+      msg('u3', 'user'), msg('a3', 'assistant'),
+    ])
+    const calls: Array<[string, unknown]> = []
+    withAppServerRequestMock.mockImplementation(async (_p: string, fn: (r: unknown) => Promise<unknown>) => {
+      const request = vi.fn(async (method: string, params: unknown) => {
+        calls.push([method, params])
+        return method === 'thread/fork' ? { thread: { id: 'thread-forked' } } : {}
+      })
+      return fn(request)
+    })
+
+    const result = await forkSession({ sessionId: 's-src', mode: 'local', forkFromMessageId: 'a1' })
+
+    expect(result.ok).toBe(true)
+    expect(calls).toEqual([
+      ['thread/fork', { threadId: 'thread-src', lastTurnId: 'turn-a1' }],
+    ])
+    expect(forkSessionRecordMock).toHaveBeenCalledWith(
+      expect.objectContaining({ providerSessionId: 'thread-forked', forkFromMessageId: 'a1' }),
+    )
+  })
+
+  it('falls back to deprecated fork+rollback when the anchor message has no persisted turnId', async () => {
     setupSource(makeRecord({ harnessId: 'codex', providerId: 'codex-base', providerSessionId: 'thread-src' }), [
       msg('u1', 'user'), msg('a1', 'assistant'),
       msg('u2', 'user'), msg('a2', 'assistant'),

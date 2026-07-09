@@ -485,6 +485,8 @@ export type Messages = {
       statusReading: string
       statusSearching: string
       startingMcpServers: string
+      mcpNeedsReauth: string
+      mcpStartupFailed: string
       runningInline: string
       waitingFor: string
       waitingForWithElapsed: string
@@ -1972,6 +1974,8 @@ export const en: Messages = {
       statusReading: 'Reading',
       statusSearching: 'Searching',
       startingMcpServers: 'Starting MCP servers {{ready}}/{{total}}',
+      mcpNeedsReauth: 'MCP server {{name}} needs re-authentication',
+      mcpStartupFailed: 'MCP server {{name}} failed to start',
       runningInline: 'Running…',
       waitingFor: 'Waiting for {{name}}...',
       waitingForWithElapsed: 'Waiting for {{name}} for {{elapsed}}s...',

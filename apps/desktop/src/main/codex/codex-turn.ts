@@ -1377,7 +1377,7 @@ export async function streamTurnEvents(
 
   const itemOrder: string[] = []
   const itemMap = new Map<string, CodexThreadItem>()
-  const mcpServerStatus = new Map<string, CodexMcpServerStartup['status']>()
+  const mcpServerStatus = new Map<string, { status: CodexMcpServerStartup['status']; failureReason?: 'reauthenticationRequired' }>()
   let usage: CodexUsageInfo | null = null
   let turnCompleted = false
   let lastTurnItemCompletedAt = Date.now()
@@ -1938,8 +1938,11 @@ export async function streamTurnEvents(
         if (!name) break
         const raw = readString(params.status)
         const status: CodexMcpServerStartup['status'] = raw === 'ready' || raw === 'failed' || raw === 'cancelled' ? raw : 'starting'
-        mcpServerStatus.set(name, status)
-        callbacks?.onMcpServerStatus?.([...mcpServerStatus].map(([n, s]) => ({ name: n, status: s })))
+        const failureReason = readString(params.failureReason) === 'reauthenticationRequired' ? 'reauthenticationRequired' as const : undefined
+        mcpServerStatus.set(name, { status, failureReason })
+        callbacks?.onMcpServerStatus?.(
+          [...mcpServerStatus].map(([n, s]) => ({ name: n, status: s.status, ...(s.failureReason ? { failureReason: s.failureReason } : {}) })),
+        )
         break
       }
 

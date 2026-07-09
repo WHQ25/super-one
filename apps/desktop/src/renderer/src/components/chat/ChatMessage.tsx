@@ -1089,7 +1089,9 @@ function DurationFooter({ message, copyText, parentIsStreaming }: { message: Cha
   const hasCodexItems = (message.metadata?.codex?.items?.length ?? 0) > 0
   const showMcpStartup = isStreaming && !!mcpStartup && mcpStartup.length > 0 && !hasCodexItems
   const mcpReadyCount = showMcpStartup ? mcpStartup.filter((s) => s.status === 'ready').length : 0
-  if (!showDuration && !hasTokens && !showCopy && !showTerminalReason && !showMcpStartup) return null
+  const failedMcp = mcpStartup?.filter((s) => s.status === 'failed') ?? []
+  const showMcpFailure = !isStreaming && failedMcp.length > 0
+  if (!showDuration && !hasTokens && !showCopy && !showTerminalReason && !showMcpStartup && !showMcpFailure) return null
 
   const seconds = durationMs ? Math.round(durationMs / 1000) : 0
   const display = seconds < 60
@@ -1139,6 +1141,17 @@ function DurationFooter({ message, copyText, parentIsStreaming }: { message: Cha
           {(showDuration || hasTokens) && <span>·</span>}
           <AlertTriangle className="size-3 text-warning" />
           <span className="text-warning">{formatTerminalReason(terminalReason!)}</span>
+        </>
+      )}
+      {showMcpFailure && (
+        <>
+          {(showDuration || hasTokens || showTerminalReason) && <span>·</span>}
+          <AlertTriangle className="size-3 text-warning" />
+          <span className="text-warning">
+            {failedMcp.some((s) => s.failureReason === 'reauthenticationRequired')
+              ? t('chat.codex.mcpNeedsReauth', { name: failedMcp.map((s) => s.name).join(', ') })
+              : t('chat.codex.mcpStartupFailed', { name: failedMcp.map((s) => s.name).join(', ') })}
+          </span>
         </>
       )}
       {showFork && (

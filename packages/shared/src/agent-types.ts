@@ -317,6 +317,7 @@ export type CodexThreadItem =
 export interface CodexMcpServerStartup {
   name: string
   status: 'starting' | 'ready' | 'failed' | 'cancelled'
+  failureReason?: 'reauthenticationRequired'
 }
 
 export interface CodexTurnInfo {

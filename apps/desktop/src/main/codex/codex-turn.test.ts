@@ -570,6 +570,37 @@ describe('respondToCodexElicitation', () => {
   })
 })
 
+describe('streamTurnEvents mcp startup failure reason', () => {
+  it('surfaces reauthenticationRequired on onMcpServerStatus when a server fails to start', async () => {
+    const session = { ...makeSession(), threadId: 'main-thread' }
+    const notifications: Array<{ method: string; params: Record<string, unknown> }> = [
+      { method: 'mcpServer/startupStatus/updated', params: { name: 'linear', status: 'starting' } },
+      {
+        method: 'mcpServer/startupStatus/updated',
+        params: { name: 'linear', status: 'failed', failureReason: 'reauthenticationRequired' },
+      },
+      { method: 'turn/completed', params: { turn: { status: 'completed' } } },
+    ]
+    const mockConnection = {
+      request: vi.fn().mockResolvedValue({}),
+      respond: vi.fn().mockResolvedValue(undefined),
+      notify: vi.fn().mockResolvedValue(undefined),
+      nextNotification: vi.fn().mockImplementation(async () => {
+        const next = notifications.shift()
+        if (!next) throw new Error('no notification')
+        return next
+      }),
+    } as never
+    const onMcpServerStatus = vi.fn()
+
+    await streamTurnEvents(mockConnection, session, null, new AbortController(), { onMcpServerStatus })
+
+    expect(onMcpServerStatus).toHaveBeenLastCalledWith([
+      { name: 'linear', status: 'failed', failureReason: 'reauthenticationRequired' },
+    ])
+  })
+})
+
 describe('streamTurnEvents child-thread routing', () => {
   beforeEach(() => {
     vi.clearAllMocks()

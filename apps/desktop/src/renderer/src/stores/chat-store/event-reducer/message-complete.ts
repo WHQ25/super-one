@@ -44,6 +44,10 @@ export function reduceMessageComplete(session: PerSessionState, event: MessageCo
               usage: codexCompletionMeta.usage ?? prevCodex?.usage ?? null,
               items: codexCompletionMeta.items.length > 0 ? codexCompletionMeta.items : (prevCodex?.items ?? []),
               ...(prevCodex?.planApproval ? { planApproval: prevCodex.planApproval } : {}),
+              ...(() => {
+                const failed = prevCodex?.mcpStartup?.filter((s) => s.status === 'failed')
+                return failed && failed.length > 0 ? { mcpStartup: failed } : {}
+              })(),
             },
             ...(consumedTokens ? { consumedTokens } : {}),
           }

@@ -146,6 +146,25 @@ describe('reduceMessageComplete: codex completion', () => {
     const msg = patch.messages?.[0] as ChatMessage
     expect(msg.metadata?.codex?.items[0]?.id).toBe('i-prev')
   })
+
+  it('preserves failed mcpStartup servers past completion but drops ready/starting ones', () => {
+    const session = createDefaultPerSessionState()
+    session.messages = [{
+      ...assistant('m1'),
+      metadata: { codex: { threadId: 't0', usage: null, items: [], mcpStartup: [
+        { name: 'ok', status: 'ready' },
+        { name: 'linear', status: 'failed', failureReason: 'reauthenticationRequired' },
+      ] } },
+    }]
+    const patch = reduceMessageComplete(session, {
+      type: 'message_complete', messageId: 'm1',
+      metadata: { codex: { threadId: 't1', usage: codexUsage(), items: [], finalResponse: '', durationMs: 0 } },
+    } as never)
+    const msg = patch.messages?.[0] as ChatMessage
+    expect(msg.metadata?.codex?.mcpStartup).toEqual([
+      { name: 'linear', status: 'failed', failureReason: 'reauthenticationRequired' },
+    ])
+  })
 })
 
 describe('reduceMessageComplete: non-codex contextWindow / contextTokens fallbacks', () => {

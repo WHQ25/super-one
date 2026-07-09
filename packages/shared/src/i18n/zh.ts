@@ -511,6 +511,8 @@ export const zh: Messages = {
       statusReading: '读取中',
       statusSearching: '搜索中',
       startingMcpServers: '正在启动 MCP 服务器 {{ready}}/{{total}}',
+      mcpNeedsReauth: 'MCP 服务器 {{name}} 需要重新认证',
+      mcpStartupFailed: 'MCP 服务器 {{name}} 启动失败',
       runningInline: '运行中…',
       waitingFor: '等待 {{name}}...',
       waitingForWithElapsed: '等待 {{name}} {{elapsed}}s...',

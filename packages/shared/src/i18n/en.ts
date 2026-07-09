@@ -8,6 +8,7 @@ export type Messages = {
   common: {
     cancel: string
     confirm: string
+    create: string
     save: string
     saving: string
     delete: string
@@ -972,9 +973,15 @@ export type Messages = {
       customName: string
       baseUrl: string
       apiKey: string
-      protocolAnthropic: string
-      protocolOpenaiChat: string
-      protocolOpenaiImages: string
+      formats: string
+      familyAnthropic: string
+      familyOpenai: string
+      familyGoogle: string
+      taskChat: string
+      taskImage: string
+      taskVideo: string
+      taskTts: string
+      taskAsr: string
       defaultKeyName: string
       advanced: string
       claudeBaseUrl: string
@@ -1564,6 +1571,7 @@ export const en: Messages = {
   common: {
     cancel: 'Cancel',
     confirm: 'Confirm',
+    create: 'Create',
     save: 'Save',
     saving: 'Saving...',
     delete: 'Delete',
@@ -2555,12 +2563,18 @@ export const en: Messages = {
       customName: 'Platform Name',
       baseUrl: 'Base URL',
       apiKey: 'API Key',
-      protocolAnthropic: 'Anthropic Messages (Chat)',
-      protocolOpenaiChat: 'OpenAI Chat (Chat)',
-      protocolOpenaiImages: 'OpenAI Images (Image)',
+      formats: 'Compatible formats',
+      familyAnthropic: 'Anthropic (Claude)',
+      familyOpenai: 'OpenAI',
+      familyGoogle: 'Google (Gemini)',
+      taskChat: 'Chat',
+      taskImage: 'Image generation',
+      taskVideo: 'Video generation',
+      taskTts: 'Text-to-speech',
+      taskAsr: 'Speech-to-text',
       defaultKeyName: 'Key',
       advanced: 'Advanced Settings',
-      claudeBaseUrl: 'Claude Compatible Endpoint',
+      claudeBaseUrl: 'Base URL (Claude Compatible)',
       selectModel: 'Select a Model',
       modelNone: 'None',
     },
@@ -2569,24 +2583,24 @@ export const en: Messages = {
       addDescription: 'Select a provider template to get started',
       editDescription: 'Update provider configuration',
       name: 'Name',
-      namePlaceholder: 'Provider name',
-      keyName: 'Key name',
+      namePlaceholder: 'Provider Name',
+      keyName: 'Key Name',
       keyNamePlaceholder: 'default',
       apiKey: 'API Key',
       getApiKey: 'Get API Key',
-      envShow: 'Show environment variables',
-      envHide: 'Hide environment variables',
-      advancedShow: 'Show advanced options',
-      advancedHide: 'Hide advanced options',
+      envShow: 'Show Environment Variables',
+      envHide: 'Hide Environment Variables',
+      advancedShow: 'Show Advanced Options',
+      advancedHide: 'Hide Advanced Options',
       baseUrl: 'Base URL',
-      addVariable: 'Add variable',
+      addVariable: 'Add Variable',
       pasteEnv: 'Paste .env',
       applyPaste: 'Apply',
-      environmentVariables: 'Environment variables',
-      modelMapping: 'Model mapping',
-      imageCapability: 'Image generation',
-      modelIdPlaceholder: 'model id',
-      modelNamePlaceholder: 'display name',
+      environmentVariables: 'Environment Variables',
+      modelMapping: 'Model Mapping',
+      imageCapability: 'Image Generation',
+      modelIdPlaceholder: 'Model ID',
+      modelNamePlaceholder: 'Display Name',
       bucketDefault: 'Default',
       bucketSubagent: 'Subagent',
       testing: 'Testing connection...',
@@ -2599,24 +2613,24 @@ export const en: Messages = {
       test: 'Test',
       save: 'Save',
       delete: 'Delete',
-      sync: 'Sync from preset',
-      syncTitle: 'Sync from {{name}} preset',
+      sync: 'Sync from Preset',
+      syncTitle: 'Sync from {{name}} Preset',
       syncDescription: 'Pick what to sync. Newly added items are checked by default; items that differ from your current values are unchecked — enable them only if you want to override.',
       syncNoChanges: 'This provider already matches the preset exactly.',
-      syncSupportedAgentsAdded: 'Newly supported agents',
-      syncExtraEnvSection: 'Environment variables',
-      syncModelEnvSection: 'Model mappings',
+      syncSupportedAgentsAdded: 'Newly Supported Agents',
+      syncExtraEnvSection: 'Environment Variables',
+      syncModelEnvSection: 'Model Mappings',
       syncBaseUrlSection: 'Base URL',
       syncEmptyPlaceholder: '<empty, filled by API key>',
       syncApply: 'Apply',
       models: {
         title: 'Models',
         count: '{{count}} models available',
-        search: 'Search models…',
-        refresh: 'Fetch models',
+        search: 'Search Models…',
+        refresh: 'Fetch Models',
         released: 'Released {{date}}',
         knowledge: 'Knowledge {{date}}',
-        maxOutput: 'Max out',
+        maxOutput: 'Max Out',
         priceIn: 'In',
         priceOut: 'Out',
         empty: 'No models match.',

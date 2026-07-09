@@ -4,15 +4,9 @@ import { useTranslation } from 'react-i18next'
 import { Button } from '@superone/ui/components/ui/button'
 import { Badge } from '@superone/ui/components/ui/badge'
 import { Input } from '@superone/ui/components/ui/input'
+import { Checkbox } from '@superone/ui/components/ui/checkbox'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { cn } from '@superone/ui/lib/utils'
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@superone/ui/components/ui/dialog'
 import {
   Select,
   SelectContent,
@@ -21,18 +15,24 @@ import {
   SelectValue,
 } from '@superone/ui/components/ui/select'
 import {
+  customPlatformEndpoints,
   defaultOverridesForPlan,
+  FAMILY_TASKS,
+  PROTOCOL_FAMILIES,
+  type CapabilityTask,
   type Credential,
+  type EndpointDefaults,
   type EndpointOverride,
   type Plan,
   type Platform,
-  type WireProtocol,
+  type ProtocolFamily,
 } from '@superone/shared/platform-registry'
+import type { ProviderModelEnv } from '@superone/shared/agent-types'
 import { useSettingsStore } from '@/stores/settings'
 import { platformsByBrand } from '@/lib/provider-resolve'
 import { OfficialProviderPanel } from './OfficialProviderPanel'
 import { ProviderLabel } from './ProviderLabel'
-import { CredentialConfig, OverridesEditor, pruneOverrides } from './providers/CredentialConfig'
+import { CredentialConfig, EnvEditor, ModelEnvEditor, OverridesEditor, pruneOverrides } from './providers/CredentialConfig'
 import { PlatformModelsPanel } from './providers/PlatformModelsPanel'
 
 function isCustomPlatform(platform: Platform): boolean {
@@ -41,11 +41,15 @@ function isCustomPlatform(platform: Platform): boolean {
 
 const BRAND_POPULARITY = [
   'anthropic',
+  'openai',
+  'gemini',
   'deepseek',
   'zhipu',
   'zai',
   'kimi',
   'openrouter',
+  'bedrock',
+  'vertexai',
   'minimax',
   'bailian',
   'volcengine',
@@ -54,11 +58,7 @@ const BRAND_POPULARITY = [
   'xiaomimimo',
   'nvidia',
   'kwaikat',
-  'longcat',
-  'gemini',
-  'openai',
-  'bedrock',
-  'vertexai',
+  'longcat'
 ]
 
 function brandRank(brand: string): number {
@@ -386,24 +386,81 @@ function PlatformDetail({ platform }: { platform: Platform }) {
 
 // --- custom platform dialog --------------------------------------------------
 
-const PROTOCOL_OPTIONS: { value: WireProtocol; labelKey: string }[] = [
-  { value: 'anthropic-messages', labelKey: 'resources.providers.protocolAnthropic' },
-  { value: 'openai-chat', labelKey: 'resources.providers.protocolOpenaiChat' },
-  { value: 'openai-images', labelKey: 'resources.providers.protocolOpenaiImages' },
-]
+const FAMILY_LABEL_KEY: Record<ProtocolFamily, string> = {
+  anthropic: 'resources.providers.familyAnthropic',
+  openai: 'resources.providers.familyOpenai',
+  google: 'resources.providers.familyGoogle',
+}
 
-function CustomPlatformDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
+const TASK_LABEL_KEY: Record<CapabilityTask, string> = {
+  chat: 'resources.providers.taskChat',
+  image: 'resources.providers.taskImage',
+  video: 'resources.providers.taskVideo',
+  tts: 'resources.providers.taskTts',
+  asr: 'resources.providers.taskAsr',
+}
+
+// Inline add-form rendered in the detail panel (not a modal). onDone(id) is called with the new
+// platform id on success, or with no argument on cancel; the parent unmounts the form either way.
+function CustomPlatformForm({ onDone }: { onDone: (createdId?: string) => void }) {
   const { t } = useTranslation()
   const createCustomPlatform = useSettingsStore((s) => s.createCustomPlatform)
   const createCredential = useSettingsStore((s) => s.createCredential)
   const [name, setName] = useState('')
+  const [families, setFamilies] = useState<Set<ProtocolFamily>>(() => new Set(['anthropic']))
   const [baseUrl, setBaseUrl] = useState('')
-  const [protocol, setProtocol] = useState<WireProtocol>('anthropic-messages')
+  const [familyTasks, setFamilyTasks] = useState<Record<ProtocolFamily, Set<CapabilityTask>>>(() => ({
+    anthropic: new Set(['chat']),
+    openai: new Set(['chat']),
+    google: new Set(['chat']),
+  }))
+  const [extraEnv, setExtraEnv] = useState<Record<string, string>>({})
+  const [modelMapping, setModelMapping] = useState<ProviderModelEnv>({})
   const [secret, setSecret] = useState('')
   const [busy, setBusy] = useState(false)
 
+  const toggleFamily = useCallback((family: ProtocolFamily, checked: boolean) => {
+    setFamilies((prev) => {
+      const next = new Set(prev)
+      if (checked) next.add(family)
+      else next.delete(family)
+      return next
+    })
+  }, [])
+
+  const toggleTask = useCallback((family: ProtocolFamily, task: CapabilityTask, checked: boolean) => {
+    setFamilyTasks((prev) => {
+      const next = new Set(prev[family])
+      if (checked) next.add(task)
+      else next.delete(task)
+      return { ...prev, [family]: next }
+    })
+  }, [])
+
+  // Each selected format carries its own capabilities. A format with only chat (anthropic) contributes
+  // ['chat'] implicitly and shows no sub-picker; multi-capability formats expose a nested checkbox group.
+  const tasksByFamily: Partial<Record<ProtocolFamily, CapabilityTask[]>> = {}
+  for (const f of PROTOCOL_FAMILIES) {
+    if (!families.has(f)) continue
+    const caps = FAMILY_TASKS[f]
+    tasksByFamily[f] = caps.length > 1 ? caps.filter((task) => familyTasks[f].has(task)) : ['chat']
+  }
+  // Selected formats that expose more than chat get a capability picker, rendered below the API key.
+  const capabilityFamilies = PROTOCOL_FAMILIES.filter((f) => families.has(f) && FAMILY_TASKS[f].length > 1)
+  const hasExtraEnv = Object.keys(extraEnv).length > 0
+  // Model mapping is a claude-harness concept, so it only attaches to the anthropic-messages endpoint.
+  const hasModelMapping = families.has('anthropic') && Object.keys(modelMapping).length > 0
+  const rawEndpoints = customPlatformEndpoints(tasksByFamily, baseUrl.trim())
+  const endpoints = rawEndpoints.map((e) => {
+    const defaults: EndpointDefaults = {}
+    if (hasExtraEnv) defaults.extraEnv = extraEnv
+    if (hasModelMapping && e.protocol === 'anthropic-messages') defaults.modelMapping = modelMapping
+    return Object.keys(defaults).length > 0 ? { ...e, defaults } : e
+  })
+  const canSubmit = !!name.trim() && !!baseUrl.trim() && endpoints.length > 0
+
   const submit = useCallback(async () => {
-    if (!name.trim() || !baseUrl.trim()) return
+    if (!canSubmit) return
     setBusy(true)
     try {
       const id = `custom:${crypto.randomUUID()}`
@@ -411,58 +468,68 @@ function CustomPlatformDialog({ open, onOpenChange }: { open: boolean; onOpenCha
         id,
         brand: 'custom',
         name: name.trim(),
-        plans: [
-          {
-            id: 'api',
-            name: 'API',
-            auth: 'api-key',
-            endpoints: [{ id: 'endpoint', protocol, baseUrl: baseUrl.trim() }],
-          },
-        ],
+        plans: [{ id: 'api', name: 'API', auth: 'api-key', endpoints }],
       }
       await createCustomPlatform(platform)
       await createCredential({ platformId: id, planId: 'api', name: t('resources.providers.defaultKeyName'), secret: secret.trim() })
-      onOpenChange(false)
-      setName(''); setBaseUrl(''); setSecret('')
+      onDone(id)
     } finally {
       setBusy(false)
     }
-  }, [name, baseUrl, protocol, secret, createCustomPlatform, createCredential, onOpenChange, t])
+  }, [canSubmit, endpoints, name, secret, createCustomPlatform, createCredential, onDone, t])
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>{t('resources.providers.addCustom')}</DialogTitle>
-        </DialogHeader>
-        <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-4">
+      <span className="text-base font-semibold">{t('resources.providers.addCustom')}</span>
+      <div className="flex flex-col gap-3">
           <Input placeholder={t('resources.providers.customName')} value={name} onChange={(e) => setName(e.target.value)} />
           <Input placeholder={t('resources.providers.baseUrl')} value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} />
-          <Select value={protocol} onValueChange={(v) => setProtocol(v as WireProtocol)}>
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {PROTOCOL_OPTIONS.map((o) => (
-                <SelectItem key={o.value} value={o.value}>{t(o.labelKey)}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
           <Input
             type="password"
             placeholder={t('resources.providers.apiKey')}
             value={secret}
             onChange={(e) => setSecret(e.target.value)}
           />
+          <div className="flex flex-col gap-2 rounded-md border border-border p-3">
+            <span className="text-xs text-muted-foreground">{t('resources.providers.formats')}</span>
+            {PROTOCOL_FAMILIES.map((f) => (
+              <label key={f} className="flex items-center gap-2 text-sm">
+                <Checkbox checked={families.has(f)} onCheckedChange={(v) => toggleFamily(f, v === true)} />
+                {t(FAMILY_LABEL_KEY[f])}
+              </label>
+            ))}
+          </div>
+          {capabilityFamilies.map((f) => (
+            <div key={f} className="flex flex-col gap-2 rounded-md border border-border p-3">
+              <span className="text-xs text-muted-foreground">{t(FAMILY_LABEL_KEY[f])}</span>
+              <div className="grid grid-cols-2 gap-2">
+                {FAMILY_TASKS[f].map((task) => (
+                  <label key={task} className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Checkbox checked={familyTasks[f].has(task)} onCheckedChange={(v) => toggleTask(f, task, v === true)} />
+                    {t(TASK_LABEL_KEY[task])}
+                  </label>
+                ))}
+              </div>
+            </div>
+          ))}
+          {families.has('anthropic') && (
+            <div className="flex flex-col gap-1.5">
+              <span className="text-xs font-medium text-muted-foreground">{t('resources.providerDialog.modelMapping')}</span>
+              <ModelEnvEditor value={modelMapping} onChange={setModelMapping} />
+            </div>
+          )}
+          <div className="flex flex-col gap-1.5">
+            <span className="text-xs font-medium text-muted-foreground">{t('resources.providerDialog.environmentVariables')}</span>
+            <EnvEditor value={extraEnv} onChange={setExtraEnv} />
+          </div>
         </div>
-        <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>{t('common.cancel')}</Button>
-          <Button disabled={busy || !name.trim() || !baseUrl.trim()} onClick={submit}>
+        <div className="flex items-center gap-2">
+          <Button disabled={busy || !canSubmit} onClick={submit}>
             {busy ? <Loader2 className="size-4 animate-spin" /> : t('common.create')}
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          <Button variant="ghost" onClick={() => onDone()}>{t('common.cancel')}</Button>
+        </div>
+    </div>
   )
 }
 
@@ -474,9 +541,14 @@ export function ProvidersPage() {
   const credentials = useSettingsStore((s) => s.credentials)
   const fetchProviderData = useSettingsStore((s) => s.fetchProviderData)
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [dialogOpen, setDialogOpen] = useState(false)
+  const [adding, setAdding] = useState(false)
 
   useEffect(() => { void fetchProviderData() }, [fetchProviderData])
+
+  const selectPlatform = useCallback((id: string) => {
+    setSelectedId(id)
+    setAdding(false)
+  }, [])
 
   const officials = platforms.filter(isOfficial)
   const rest = platforms.filter((p) => !isOfficial(p))
@@ -496,7 +568,11 @@ export function ProvidersPage() {
       <div className="flex w-72 shrink-0 flex-col gap-3 overflow-y-auto pr-1">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">{t('resources.providers.title')}</h2>
-          <IconButton size="md" tooltip={t('resources.providers.addCustom')} onClick={() => setDialogOpen(true)}>
+          <IconButton
+            size="md"
+            tooltip={t('resources.providers.addCustom')}
+            onClick={() => { setAdding(true); setSelectedId(null) }}
+          >
             <Plus className="size-4" />
           </IconButton>
         </div>
@@ -511,7 +587,7 @@ export function ProvidersPage() {
                 key={p.id}
                 platform={p}
                 selected={selectedId === p.id}
-                onClick={() => setSelectedId(p.id)}
+                onClick={() => selectPlatform(p.id)}
                 count={0}
                 variantLabel={platformVariantLabel(p, platforms)}
               />
@@ -526,7 +602,7 @@ export function ProvidersPage() {
                 key={p.id}
                 platform={p}
                 selected={selectedId === p.id}
-                onClick={() => setSelectedId(p.id)}
+                onClick={() => selectPlatform(p.id)}
                 count={credCount(p.id)}
                 variantLabel={platformVariantLabel(p, platforms)}
               />
@@ -536,7 +612,9 @@ export function ProvidersPage() {
       </div>
 
       <div className="min-w-0 flex-1 overflow-y-auto px-1 py-1">
-        {selected ? (
+        {adding ? (
+          <CustomPlatformForm onDone={(id) => { setAdding(false); if (id) setSelectedId(id) }} />
+        ) : selected ? (
           isOfficial(selected) ? (
             <OfficialProviderPanel harness={officialHarness(selected)} />
           ) : (
@@ -548,8 +626,6 @@ export function ProvidersPage() {
           </div>
         )}
       </div>
-
-      <CustomPlatformDialog open={dialogOpen} onOpenChange={setDialogOpen} />
     </div>
   )
 }

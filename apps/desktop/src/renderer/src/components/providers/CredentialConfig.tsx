@@ -65,7 +65,7 @@ function parseEnvString(text: string): Array<{ key: string; value: string }> {
 
 // --- env editor (Record<string,string>) --------------------------------------
 
-function EnvEditor({ value, onChange }: { value: Record<string, string>; onChange: (v: Record<string, string>) => void }) {
+export function EnvEditor({ value, onChange }: { value: Record<string, string>; onChange: (v: Record<string, string>) => void }) {
   const { t } = useTranslation()
   const [pairs, setPairs] = useState<Array<{ key: string; value: string }>>(() =>
     Object.entries(value).map(([key, v]) => ({ key, value: v })),
@@ -198,6 +198,51 @@ function ModelMappingEditor({
   )
 }
 
+/** Manual model-mapping editor: type a model id + display name per bucket. For custom providers with no catalog. */
+export function ModelEnvEditor({ value, onChange }: { value: ProviderModelEnv; onChange: (v: ProviderModelEnv) => void }) {
+  const { t } = useTranslation()
+  const bucketLabel: Record<ModelBucket, string> = {
+    default: t('resources.providerDialog.bucketDefault'),
+    opus: 'Opus',
+    sonnet: 'Sonnet',
+    haiku: 'Haiku',
+    subagent: t('resources.providerDialog.bucketSubagent'),
+  }
+
+  const update = (bucket: ModelBucket, field: 'id' | 'name', v: string) => {
+    const existing: ProviderModelSlot = value[bucket] ?? { id: '' }
+    const nextSlot: ProviderModelSlot = { ...existing, [field]: v }
+    const next: ProviderModelEnv = { ...value, [bucket]: nextSlot }
+    if (!nextSlot.id && !nextSlot.name) delete next[bucket]
+    onChange(next)
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      {MODEL_BUCKETS.map((bucket) => {
+        const slot = value[bucket]
+        return (
+          <div key={bucket} className="flex items-center gap-1.5">
+            <span className="w-16 shrink-0 text-xs text-muted-foreground">{bucketLabel[bucket]}</span>
+            <input
+              className="w-[40%] rounded-md border border-border bg-background px-2 py-1 font-mono text-xs outline-none focus:ring-1 focus:ring-ring"
+              value={slot?.id ?? ''}
+              onChange={(e) => update(bucket, 'id', e.target.value)}
+              placeholder={t('resources.providerDialog.modelIdPlaceholder')}
+            />
+            <input
+              className="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-ring"
+              value={slot?.name ?? ''}
+              onChange={(e) => update(bucket, 'name', e.target.value)}
+              placeholder={t('resources.providerDialog.modelNamePlaceholder')}
+            />
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 function ModelSlotSelect({
   models,
   value,
@@ -287,7 +332,7 @@ function EndpointOverrideFields({
 
       {!isFirstPartyAnthropic && (
         <label className="flex flex-col gap-1">
-          <span className="text-xs font-medium text-muted-foreground">{t('resources.providers.claudeBaseUrl')}</span>
+          <span className="text-xs font-medium text-muted-foreground">{isAnthropic ? t('resources.providers.claudeBaseUrl') : t('resources.providers.baseUrl')}</span>
           <Input
             value={value.baseUrl ?? ''}
             onChange={(e) => onChange({ ...value, baseUrl: e.target.value })}

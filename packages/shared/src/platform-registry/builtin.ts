@@ -25,11 +25,28 @@ const XIAOMI_MODELS: ProviderModelEnv = {
   haiku: { id: 'mimo-v2.5-pro', name: 'MiMo V2.5 Pro' },
 }
 
-const BAILIAN_MODELS: ProviderModelEnv = {
-  default: { id: 'qwen3.5-plus', name: 'Qwen 3.5 Plus' },
-  opus: { id: 'qwen3.5-plus', name: 'Qwen 3.5 Plus' },
-  sonnet: { id: 'qwen3.5-plus', name: 'Qwen 3.5 Plus' },
-  haiku: { id: 'qwen3-coder-next', name: 'Qwen 3 Coder Next' },
+const BAILIAN_CODING_PLAN_MODELS: ProviderModelEnv = {
+  default: { id: 'qwen3.7-plus', name: 'Qwen 3.7 Plus' },
+  opus: { id: 'qwen3.7-plus', name: 'Qwen 3.7 Plus' },
+  sonnet: { id: 'qwen3.7-plus', name: 'Qwen 3.7 Plus' },
+  haiku: { id: 'qwen3.7-plus', name: 'Qwen 3.7 Plus' },
+  subagent: { id: 'qwen3.7-plus', name: 'Qwen 3.7 Plus' },
+}
+
+const BAILIAN_TOKEN_PLAN_MODELS: ProviderModelEnv = {
+  default: { id: 'qwen3.7-max', name: 'Qwen 3.7 Max' },
+  opus: { id: 'qwen3.7-max', name: 'Qwen 3.7 Max' },
+  sonnet: { id: 'qwen3.7-max', name: 'Qwen 3.7 Max' },
+  haiku: { id: 'qwen3.6-flash', name: 'Qwen 3.6 Flash' },
+  subagent: { id: 'qwen3.7-max', name: 'Qwen 3.7 Max' },
+}
+
+const BAILIAN_API_MODELS: ProviderModelEnv = {
+  default: { id: 'qwen3.7-max', name: 'Qwen 3.7 Max' },
+  opus: { id: 'qwen3.7-max', name: 'Qwen 3.7 Max' },
+  sonnet: { id: 'qwen3.7-max', name: 'Qwen 3.7 Max' },
+  haiku: { id: 'qwen3.6-flash', name: 'Qwen 3.6 Flash' },
+  subagent: { id: 'qwen3.7-max', name: 'Qwen 3.7 Max' },
 }
 
 const GLM_MODELS: ProviderModelEnv = {
@@ -51,6 +68,13 @@ const DOUBAO_MODELS: ProviderModelEnv = {
   opus: { id: 'doubao-seed-2-0-code-preview-latest', name: 'Doubao Seed 2.0 Code' },
   sonnet: { id: 'doubao-seed-2-0-code-preview-latest', name: 'Doubao Seed 2.0 Code' },
   haiku: { id: 'doubao-seed-2-0-code-preview-latest', name: 'Doubao Seed 2.0 Code' },
+}
+
+const ARK_CODE_MODELS: ProviderModelEnv = {
+  default: { id: 'ark-code-latest', name: 'Ark Code Latest' },
+  opus: { id: 'ark-code-latest', name: 'Ark Code Latest' },
+  sonnet: { id: 'ark-code-latest', name: 'Ark Code Latest' },
+  haiku: { id: 'ark-code-latest', name: 'Ark Code Latest' },
 }
 
 const CODING_TIMEOUT = { API_TIMEOUT_MS: '3000000' }
@@ -103,6 +127,7 @@ export const BUILTIN_PLATFORMS: Platform[] = [
       {
         id: 'coding',
         name: 'Coding Plan',
+        description: '智谱 GLM 编程套餐 — 中国区，支持 Claude 协议兼容调用',
         auth: 'api-key',
         apiKeyUrl: 'https://bigmodel.cn/usercenter/proj-mgmt/apikeys',
         catalogProviderId: 'zhipuai-coding-plan',
@@ -253,21 +278,32 @@ export const BUILTIN_PLATFORMS: Platform[] = [
     brand: 'volcengine',
     name: 'Volcengine Ark',
     description: '火山引擎方舟 — 聚合豆包、GLM、DeepSeek、Kimi 等多模型',
+    catalogProviderId: 'volcengine',
     plans: [
+      {
+        id: 'agent',
+        name: 'Agent Plan',
+        description: '火山方舟 Agent Plan — 编程 + 多模态 + Harness 工具链，需专属 Agent Plan API Key',
+        auth: 'api-key',
+        apiKeyUrl: 'https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey',
+        catalogProviderId: 'volcengine-agent-plan',
+        endpoints: [
+          anthropic('https://ark.cn-beijing.volces.com/api/plan', {
+            extraEnv: { ...CODING_TIMEOUT, ...EMPTY_AUTH_TOKEN },
+            modelMapping: ARK_CODE_MODELS,
+          }),
+        ],
+      },
       {
         id: 'coding',
         name: 'Coding Plan',
         auth: 'api-key',
         apiKeyUrl: 'https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey',
+        catalogProviderId: 'volcengine-coding-plan',
         endpoints: [
           anthropic('https://ark.cn-beijing.volces.com/api/coding', {
             extraEnv: { ...CODING_TIMEOUT, ...EMPTY_AUTH_TOKEN },
-            modelMapping: {
-              default: { id: 'ark-code-latest', name: 'Ark Code Latest' },
-              opus: { id: 'ark-code-latest', name: 'Ark Code Latest' },
-              sonnet: { id: 'ark-code-latest', name: 'Ark Code Latest' },
-              haiku: { id: 'ark-code-latest', name: 'Ark Code Latest' },
-            },
+            modelMapping: ARK_CODE_MODELS,
           }),
         ],
       },
@@ -276,6 +312,7 @@ export const BUILTIN_PLATFORMS: Platform[] = [
         name: 'API',
         auth: 'api-key',
         apiKeyUrl: 'https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey',
+        catalogProviderId: 'volcengine',
         endpoints: [
           anthropic('https://ark.cn-beijing.volces.com/api/compatible', {
             extraEnv: { ...CODING_TIMEOUT, ...EMPTY_AUTH_TOKEN },
@@ -333,7 +370,7 @@ export const BUILTIN_PLATFORMS: Platform[] = [
         endpoints: [
           anthropic('https://coding.dashscope.aliyuncs.com/apps/anthropic', {
             extraEnv: { ...EMPTY_AUTH_TOKEN },
-            modelMapping: BAILIAN_MODELS,
+            modelMapping: BAILIAN_CODING_PLAN_MODELS,
           }),
         ],
       },
@@ -346,7 +383,7 @@ export const BUILTIN_PLATFORMS: Platform[] = [
         endpoints: [
           anthropic('https://dashscope.aliyuncs.com/apps/anthropic', {
             extraEnv: { ...EMPTY_AUTH_TOKEN },
-            modelMapping: BAILIAN_MODELS,
+            modelMapping: BAILIAN_TOKEN_PLAN_MODELS,
           }),
         ],
       },
@@ -359,7 +396,7 @@ export const BUILTIN_PLATFORMS: Platform[] = [
         endpoints: [
           anthropic('https://dashscope.aliyuncs.com/apps/anthropic', {
             extraEnv: { ...EMPTY_AUTH_TOKEN },
-            modelMapping: BAILIAN_MODELS,
+            modelMapping: BAILIAN_API_MODELS,
           }),
         ],
       },
@@ -458,8 +495,8 @@ export const BUILTIN_PLATFORMS: Platform[] = [
               CLAUDE_CODE_EFFORT_LEVEL: 'max',
             },
             modelMapping: {
-              default: { id: 'deepseek-v4-pro[1m]', name: 'DeepSeek V4 Pro 1M' },
-              opus: { id: 'deepseek-v4-pro[1m]', name: 'DeepSeek V4 Pro 1M' },
+              default: { id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro' },
+              opus: { id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro' },
               sonnet: { id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro' },
               haiku: { id: 'deepseek-v4-flash', name: 'DeepSeek V4 Flash' },
               subagent: { id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro' },
@@ -564,7 +601,7 @@ export const BUILTIN_PLATFORMS: Platform[] = [
     ],
   },
 
-  // Cloud platforms (IAM / service-account auth, no api key)
+  // Cloud platforms
   {
     id: 'bedrock',
     brand: 'bedrock',
@@ -574,14 +611,11 @@ export const BUILTIN_PLATFORMS: Platform[] = [
       {
         id: 'aws',
         name: 'AWS',
-        auth: 'aws',
+        auth: 'api-key',
         endpoints: [
-          anthropic('', {
+          anthropic('https://bedrock-mantle.<your-region>.api.aws/anthropic', {
             extraEnv: {
-              CLAUDE_CODE_USE_BEDROCK: '1',
-              AWS_REGION: '${AWS_REGION}',
-              AWS_ACCESS_KEY_ID: '${AWS_ACCESS_KEY_ID}',
-              AWS_SECRET_ACCESS_KEY: '${AWS_SECRET_ACCESS_KEY}',
+              CLAUDE_CODE_USE_BEDROCK: '1'
             },
           }),
         ],

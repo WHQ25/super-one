@@ -18,6 +18,8 @@ import {
 import type {
   CodexAuthStatus,
   CodexAccountUsage,
+  CodexExternalAgentItem,
+  CodexExternalAgentImportResult,
   CodexMcpOauthLoginResult,
   CodexRateLimits,
   CodexRateLimitResetCredit,
@@ -154,6 +156,32 @@ function parseResetCredit(raw: unknown): CodexRateLimitResetCredit | null {
     description: readString(rec.description) ?? null,
     expiresAt: readNumericLike(rec.expiresAt),
   }
+}
+
+function parseExternalAgentItem(raw: unknown): CodexExternalAgentItem | null {
+  if (!raw || typeof raw !== 'object') return null
+  const rec = raw as Record<string, unknown>
+  const itemType = readString(rec.itemType)
+  if (!itemType) return null
+  return {
+    itemType,
+    description: readString(rec.description) ?? '',
+    cwd: readString(rec.cwd) ?? null,
+    ...(rec.details !== undefined ? { details: rec.details } : {}),
+  }
+}
+
+function summarizeImportResults(raw: unknown): CodexExternalAgentImportResult {
+  const results = Array.isArray(raw) ? raw : []
+  let successCount = 0
+  let failureCount = 0
+  for (const result of results) {
+    if (!result || typeof result !== 'object') continue
+    const rec = result as Record<string, unknown>
+    if (Array.isArray(rec.successes)) successCount += rec.successes.length
+    if (Array.isArray(rec.failures)) failureCount += rec.failures.length
+  }
+  return { successCount, failureCount }
 }
 
 function parseResetOutcome(raw: Record<string, unknown>): CodexRateLimitResetOutcome {
@@ -542,6 +570,49 @@ export class CodexExperimentService {
       const message = error instanceof Error ? error.message : String(error)
       log.info('[codex] loginMcpServerOauth failed project=%s server=%s: %s', projectPath, serverName, message)
       return { success: false, error: message }
+    }
+  }
+
+  async detectExternalAgentConfig(projectPath: string, apiProviderId: string | null = null): Promise<CodexExternalAgentItem[]> {
+    const auth = this.getProjectAuth(projectPath)
+    try {
+      return await this.withAppServerConnection(projectPath, auth, undefined, async (connection) => {
+        const res = await connection.request('externalAgentConfig/detect', { includeHome: true, cwds: [projectPath] })
+        const items = Array.isArray(res.items) ? res.items : []
+        return items.map(parseExternalAgentItem).filter((i): i is CodexExternalAgentItem => i !== null)
+      }, apiProviderId)
+    } catch (error) {
+      log.info('[codex] detectExternalAgentConfig failed project=%s: %s', projectPath, error instanceof Error ? error.message : String(error))
+      return []
+    }
+  }
+
+  async importExternalAgentConfig(
+    projectPath: string,
+    items: CodexExternalAgentItem[],
+    apiProviderId: string | null = null,
+  ): Promise<CodexExternalAgentImportResult | null> {
+    if (items.length === 0) return { successCount: 0, failureCount: 0 }
+    const auth = this.getProjectAuth(projectPath)
+    try {
+      return await this.withAppServerConnection(projectPath, auth, undefined, async (connection) => {
+        const res = await connection.request('externalAgentConfig/import', { migrationItems: items, source: 'superone' })
+        const importId = readString(res.importId)
+        const deadline = Date.now() + 120_000
+        while (Date.now() < deadline) {
+          const notif = connection.pollNotification
+            ? await connection.pollNotification(Math.min(1_000, deadline - Date.now()))
+            : await connection.nextNotification()
+          if (!notif) continue
+          if (notif.method === 'externalAgentConfig/import/completed' && (!importId || readString(notif.params.importId) === importId)) {
+            return summarizeImportResults(notif.params.itemTypeResults)
+          }
+        }
+        return { successCount: 0, failureCount: 0 }
+      }, apiProviderId)
+    } catch (error) {
+      log.info('[codex] importExternalAgentConfig failed project=%s: %s', projectPath, error instanceof Error ? error.message : String(error))
+      return null
     }
   }
 

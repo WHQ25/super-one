@@ -423,6 +423,64 @@ describe('CodexExperimentService auth state', () => {
     expect(result).toEqual({ success: true, error: undefined })
   })
 
+  it('detectExternalAgentConfig parses migration items from the app-server', async () => {
+    const request = vi.fn(async (method: string) =>
+      method === 'externalAgentConfig/detect'
+        ? { items: [
+            { itemType: 'AGENTS_MD', description: 'AGENTS.md', cwd: '/project', details: { foo: 1 } },
+            { itemType: 'MCP_SERVER_CONFIG', description: 'linear', cwd: null },
+            { description: 'no type — dropped', cwd: null },
+          ] }
+        : {})
+    const handle = {
+      connection: { request, respond: vi.fn(), notify: vi.fn(), nextNotification: vi.fn() },
+      close: vi.fn(async () => {}), getStderr: () => '', onClosed: vi.fn(() => () => {}),
+    }
+    createHandleMock.mockResolvedValue(handle)
+    const service = new CodexExperimentService()
+    service.setAuth('/project', { mode: 'chatgpt' })
+
+    const items = await service.detectExternalAgentConfig('/project')
+
+    expect(request).toHaveBeenCalledWith('externalAgentConfig/detect', { includeHome: true, cwds: ['/project'] })
+    expect(items).toEqual([
+      { itemType: 'AGENTS_MD', description: 'AGENTS.md', cwd: '/project', details: { foo: 1 } },
+      { itemType: 'MCP_SERVER_CONFIG', description: 'linear', cwd: null },
+    ])
+  })
+
+  it('importExternalAgentConfig re-sends items and summarizes the completed notification', async () => {
+    const request = vi.fn(async (method: string) =>
+      method === 'externalAgentConfig/import' ? { importId: 'imp-1' } : {})
+    let polled = false
+    const handle = {
+      connection: {
+        request, respond: vi.fn(), notify: vi.fn(), nextNotification: vi.fn(),
+        pollNotification: vi.fn(async () => {
+          if (polled) return null
+          polled = true
+          return {
+            method: 'externalAgentConfig/import/completed',
+            params: { importId: 'imp-1', itemTypeResults: [
+              { itemType: 'AGENTS_MD', successes: [{}, {}], failures: [] },
+              { itemType: 'MCP_SERVER_CONFIG', successes: [], failures: [{}] },
+            ] },
+          }
+        }),
+      },
+      close: vi.fn(async () => {}), getStderr: () => '', onClosed: vi.fn(() => () => {}),
+    }
+    createHandleMock.mockResolvedValue(handle)
+    const service = new CodexExperimentService()
+    service.setAuth('/project', { mode: 'chatgpt' })
+    const items = [{ itemType: 'AGENTS_MD', description: 'AGENTS.md', cwd: '/project' }]
+
+    const result = await service.importExternalAgentConfig('/project', items)
+
+    expect(request).toHaveBeenCalledWith('externalAgentConfig/import', { migrationItems: items, source: 'superone' })
+    expect(result).toEqual({ successCount: 2, failureCount: 1 })
+  })
+
   it('getRateLimits returns null when a custom codex provider is active (not a ChatGPT subscription)', async () => {
     vi.mocked(getActiveProviderRaw).mockReturnValue(codexProviderRow('p1', 'https://gateway.example.com/v1') as never)
     const service = new CodexExperimentService()

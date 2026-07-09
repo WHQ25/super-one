@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import { AgentIpcChannels, type NativeContextMenuItemSpec, type AgentPrewarmHint, type BashOutputEvent, type CodexCollaborationMode, type CodexPermissionPreset, type CodexProviderTestProgress, type CodexReasoningEffort, type CodexReviewTarget, type RemoteDeviceConfig, type SandboxMode, type SendMessageRequest, type ContentBlock, type ChatMessageContext, type WorktreeActivateRequest, type WorktreeHandoffResult, type WorktreeAssignResult, type GitDirtyStatus, type SessionForkRequest, type SessionForkResult, type HookSavePayload, type TerminalEvent, type TerminalListItem, type TerminalSnapshot, type HarnessId, type BrowserCertError, type BrowserOpenTabRequest, type UpsertMediaProviderRequest } from '@superone/shared/agent-types'
+import { AgentIpcChannels, type NativeContextMenuItemSpec, type AgentPrewarmHint, type BashOutputEvent, type CodexCollaborationMode, type CodexPermissionPreset, type CodexProviderTestProgress, type CodexReasoningEffort, type CodexReviewTarget, type CodexExternalAgentItem, type RemoteDeviceConfig, type SandboxMode, type SendMessageRequest, type ContentBlock, type ChatMessageContext, type WorktreeActivateRequest, type WorktreeHandoffResult, type WorktreeAssignResult, type GitDirtyStatus, type SessionForkRequest, type SessionForkResult, type HookSavePayload, type TerminalEvent, type TerminalListItem, type TerminalSnapshot, type HarnessId, type BrowserCertError, type BrowserOpenTabRequest, type UpsertMediaProviderRequest } from '@superone/shared/agent-types'
 import type { McpbInstallRequest } from '@superone/shared/mcpb-types'
 
 try {
@@ -356,6 +356,12 @@ const appAPI = {
 
   codexMcpServerOauthLogin: (projectPath: string, serverName: string, apiProviderId?: string | null) =>
     ipcRenderer.invoke(AgentIpcChannels.CODEX_MCP_OAUTH_LOGIN, projectPath, serverName, apiProviderId),
+
+  codexDetectExternalAgentConfig: (projectPath: string, apiProviderId?: string | null) =>
+    ipcRenderer.invoke(AgentIpcChannels.CODEX_EXTERNAL_AGENT_DETECT, projectPath, apiProviderId),
+
+  codexImportExternalAgentConfig: (projectPath: string, items: CodexExternalAgentItem[], apiProviderId?: string | null) =>
+    ipcRenderer.invoke(AgentIpcChannels.CODEX_EXTERNAL_AGENT_IMPORT, projectPath, items, apiProviderId),
 
   claudeGetRateLimits: (force?: boolean) => ipcRenderer.invoke(AgentIpcChannels.CLAUDE_GET_RATE_LIMITS, force),
 

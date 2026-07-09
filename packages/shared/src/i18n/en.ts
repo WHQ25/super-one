@@ -255,6 +255,20 @@ export type Messages = {
       title: string
       claudeSubtitle: string
       codexSubtitle: string
+      import: {
+        section: string
+        label: string
+        description: string
+        detect: string
+        detecting: string
+        none: string
+        dialogTitle: string
+        dialogDescription: string
+        confirm: string
+        importing: string
+        done: string
+        error: string
+      }
       sections: { project: string; user: string }
       outputStyle: {
         label: string
@@ -1749,6 +1763,20 @@ export const en: Messages = {
       title: 'Preferences',
       claudeSubtitle: 'Configure Claude Code behavior',
       codexSubtitle: 'Configure Codex defaults for new sessions',
+      import: {
+        section: 'Migration',
+        label: 'Import from other agents',
+        description: 'Detect and import AGENTS.md, MCP servers, skills, and more from other AI agents.',
+        detect: 'Detect',
+        detecting: 'Detecting…',
+        none: 'No importable configuration found',
+        dialogTitle: 'Import agent configuration',
+        dialogDescription: 'Found {{count}} item(s) to import into Codex.',
+        confirm: 'Import',
+        importing: 'Importing…',
+        done: 'Imported {{success}} item(s), {{failure}} failed',
+        error: 'Import failed',
+      },
       sections: { project: 'Project Settings', user: 'User Settings' },
       outputStyle: {
         label: 'Output Style',

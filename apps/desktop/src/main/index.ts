@@ -55,6 +55,7 @@ import {
   type CodexReasoningEffort,
   type CodexReviewTarget,
   type CodexRunResult,
+  type CodexExternalAgentItem,
   type AgentEvent,
   type CodexThreadItem,
   type CodexUsageInfo,
@@ -940,6 +941,14 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(AgentIpcChannels.CODEX_MCP_OAUTH_LOGIN, (_event, projectPath: string, serverName: string, apiProviderId?: string | null) => {
     return codexService.loginMcpServerOauth(projectPath, serverName, apiProviderId ?? null, (url) => shell.openExternal(url))
+  })
+
+  ipcMain.handle(AgentIpcChannels.CODEX_EXTERNAL_AGENT_DETECT, (_event, projectPath: string, apiProviderId?: string | null) => {
+    return codexService.detectExternalAgentConfig(projectPath, apiProviderId ?? null)
+  })
+
+  ipcMain.handle(AgentIpcChannels.CODEX_EXTERNAL_AGENT_IMPORT, (_event, projectPath: string, items: CodexExternalAgentItem[], apiProviderId?: string | null) => {
+    return codexService.importExternalAgentConfig(projectPath, items, apiProviderId ?? null)
   })
 
   ipcMain.handle(AgentIpcChannels.CLAUDE_GET_RATE_LIMITS, (_event, force?: boolean) => {

@@ -3,6 +3,7 @@ import { Check, ChevronDown } from 'lucide-react'
 import { toast } from 'sonner'
 import { useTranslation } from 'react-i18next'
 import { ProjectSelector } from '@/components/coding/ProjectSelector'
+import { CodexImportConfigSection } from '@/components/CodexImportConfigSection'
 import { formatCodexModelLabel, formatReasoningEffortLabel } from '@/components/chat/chat-input-utils'
 import { useAppStore } from '@/stores/app'
 import { invalidateDefaultClaudePreferencesCache, invalidateDefaultCodexPreferencesCache, invalidateDefaultPermissionModeCache, resolveCodexReasoningEffort, useChatStore, selectClaudeModels, selectCodexModels, selectClaudeAccount, selectClaudeOutputStyles } from '@/stores/chat'
@@ -707,6 +708,8 @@ function CodexPreferencesPage() {
             </Popover>
           </div>
         </div>
+
+        <CodexImportConfigSection projectPath={currentFolder} />
       </div>
     </div>
   )

@@ -1362,6 +1362,18 @@ export interface CodexMcpOauthLoginResult {
   error?: string
 }
 
+export interface CodexExternalAgentItem {
+  itemType: string
+  description: string
+  cwd: string | null
+  details?: unknown
+}
+
+export interface CodexExternalAgentImportResult {
+  successCount: number
+  failureCount: number
+}
+
 export interface CodexRateLimitResetCredit {
   id: string
   status: 'available' | 'redeeming' | 'redeemed' | 'unknown'
@@ -1752,6 +1764,8 @@ export const AgentIpcChannels = {
   CODEX_GET_ACCOUNT_USAGE: 'codex:get-account-usage',
   CODEX_CONSUME_RATE_LIMIT_RESET: 'codex:consume-rate-limit-reset',
   CODEX_MCP_OAUTH_LOGIN: 'codex:mcp-oauth-login',
+  CODEX_EXTERNAL_AGENT_DETECT: 'codex:external-agent-detect',
+  CODEX_EXTERNAL_AGENT_IMPORT: 'codex:external-agent-import',
 
   // Claude channels
   CLAUDE_GET_RATE_LIMITS: 'claude:get-rate-limits',

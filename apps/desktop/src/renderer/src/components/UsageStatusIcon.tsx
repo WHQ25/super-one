@@ -8,7 +8,7 @@ import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { Button } from '@superone/ui/components/ui/button'
 import { cn } from '@superone/ui/lib/utils'
 import { useActiveSession, useChatStore } from '@/stores/chat'
-import type { ClaudeExtraUsage, ClaudeRateLimits, CodexAccountUsage, CodexRateLimits, CodexRateLimitResetOutcome, ProviderRateLimits } from '@superone/shared/agent-types'
+import type { ClaudeExtraUsage, ClaudeRateLimits, CodexAccountUsage, CodexRateLimits, CodexRateLimitResetCredit, CodexRateLimitResetOutcome, ProviderRateLimits } from '@superone/shared/agent-types'
 
 const FORCE_REFRESH_ON_OPEN_STALE_MS = 5 * 60 * 1000
 
@@ -110,35 +110,64 @@ function StatRow({ label, value }: { label: string; value: string }) {
   )
 }
 
-function ResetCreditsRow({ count, projectPath, apiProviderId, onConsumed }: { count: number; projectPath: string; apiProviderId: string | null; onConsumed: () => void }) {
+function ResetCreditsRow({ count, credits, projectPath, apiProviderId, onConsumed }: { count: number; credits?: CodexRateLimitResetCredit[]; projectPath: string; apiProviderId: string | null; onConsumed: () => void }) {
   const { t } = useTranslation()
-  const [busy, setBusy] = useState(false)
+  const [busyId, setBusyId] = useState<string | null>(null)
 
-  const handleReset = useCallback(async () => {
-    setBusy(true)
+  const handleReset = useCallback(async (creditId?: string) => {
+    setBusyId(creditId ?? '__all__')
     try {
-      const outcome = await window.app.codexConsumeRateLimitReset(projectPath, apiProviderId)
+      const outcome = await window.app.codexConsumeRateLimitReset(projectPath, apiProviderId, creditId)
       const feedback = RESET_OUTCOME_TOAST[outcome ?? 'unknown']
       toast[feedback.kind](t(feedback.key))
       onConsumed()
     } catch {
       toast.error(t(RESET_OUTCOME_TOAST.unknown.key))
     } finally {
-      setBusy(false)
+      setBusyId(null)
     }
   }, [projectPath, apiProviderId, onConsumed, t])
+
+  const redeemable = credits?.filter((c) => c.status !== 'redeemed')
+  if (redeemable && redeemable.length > 0) {
+    return (
+      <div className="flex flex-col gap-1.5">
+        <span className="opacity-70">{t('usageGauge.resetCredits')}</span>
+        {redeemable.map((credit) => {
+          const busy = busyId === credit.id
+          return (
+            <div key={credit.id} className="flex items-center justify-between gap-3 pl-2">
+              <div className="flex min-w-0 flex-col">
+                <span className="truncate">{credit.title ?? t('usageGauge.resetCreditDefault')}</span>
+                {credit.expiresAt != null && (
+                  <span className="text-[11px] opacity-60">{t('usageGauge.resetCreditExpires', { date: formatCreditExpiry(credit.expiresAt) })}</span>
+                )}
+              </div>
+              <Button size="sm" variant="outline" className="h-6 shrink-0 px-2 text-xs" disabled={busy || credit.status !== 'available'} onClick={() => handleReset(credit.id)}>
+                {busy || credit.status === 'redeeming' ? t('usageGauge.resetting') : t('usageGauge.resetNow')}
+              </Button>
+            </div>
+          )
+        })}
+      </div>
+    )
+  }
 
   return (
     <div className="flex items-center justify-between gap-3">
       <span className="opacity-70">{t('usageGauge.resetCredits')}</span>
       <div className="flex items-center gap-2">
         <span className="font-medium tabular-nums">{count}</span>
-        <Button size="sm" variant="outline" className="h-6 px-2 text-xs" disabled={busy} onClick={handleReset}>
-          {busy ? t('usageGauge.resetting') : t('usageGauge.resetNow')}
+        <Button size="sm" variant="outline" className="h-6 px-2 text-xs" disabled={busyId !== null} onClick={() => handleReset()}>
+          {busyId !== null ? t('usageGauge.resetting') : t('usageGauge.resetNow')}
         </Button>
       </div>
     </div>
   )
+}
+
+function formatCreditExpiry(unixSeconds: number): string {
+  return new Date(unixSeconds * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }
 
 function AccountUsageSection({ usage }: { usage: CodexAccountUsage }) {
@@ -248,7 +277,7 @@ function CodexRateLimitIcon({ projectPath, apiProviderId, status }: { projectPat
         <WindowRow label={formatWindowLabel(limits.secondary.windowDurationMins, t)} usedPercent={limits.secondary.usedPercent} resetsAt={limits.secondary.resetsAt} />
       )}
       {limits.resetCredits != null && limits.resetCredits > 0 && (
-        <ResetCreditsRow count={limits.resetCredits} projectPath={projectPath} apiProviderId={apiProviderId} onConsumed={fetchLimits} />
+        <ResetCreditsRow count={limits.resetCredits} credits={limits.resetCreditList} projectPath={projectPath} apiProviderId={apiProviderId} onConsumed={fetchLimits} />
       )}
       {usage && <AccountUsageSection usage={usage} />}
     </RateLimitGauge>

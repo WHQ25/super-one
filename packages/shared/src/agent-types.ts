@@ -1357,11 +1357,20 @@ export interface CodexRateLimitWindow {
   resetsAt: number | null
 }
 
+export interface CodexRateLimitResetCredit {
+  id: string
+  status: 'available' | 'redeeming' | 'redeemed' | 'unknown'
+  title: string | null
+  description: string | null
+  expiresAt: number | null
+}
+
 export interface CodexRateLimits {
   primary: CodexRateLimitWindow | null
   secondary: CodexRateLimitWindow | null
   planType: string | null
   resetCredits: number | null
+  resetCreditList?: CodexRateLimitResetCredit[]
 }
 
 export type CodexRateLimitResetOutcome = 'reset' | 'nothingToReset' | 'noCredit' | 'alreadyRedeemed' | 'unknown'

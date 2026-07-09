@@ -1469,6 +1469,8 @@ export const zh: Messages = {
     resetsIn: '{{time}} 后重置',
     extraUsage: '额外用量',
     resetCredits: '重置额度',
+    resetCreditDefault: '重置额度',
+    resetCreditExpires: '{{date}} 到期',
     resetNow: '立即重置',
     resetting: '重置中…',
     lifetimeTokens: '累计 Token',

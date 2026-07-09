@@ -1443,6 +1443,8 @@ export type Messages = {
     resetsIn: string
     extraUsage: string
     resetCredits: string
+    resetCreditDefault: string
+    resetCreditExpires: string
     resetNow: string
     resetting: string
     lifetimeTokens: string
@@ -2932,6 +2934,8 @@ export const en: Messages = {
     resetsIn: 'resets in {{time}}',
     extraUsage: 'Extra usage',
     resetCredits: 'Reset credits',
+    resetCreditDefault: 'Reset credit',
+    resetCreditExpires: 'Expires {{date}}',
     resetNow: 'Reset now',
     resetting: 'Resetting…',
     lifetimeTokens: 'Lifetime tokens',

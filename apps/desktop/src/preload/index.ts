@@ -351,8 +351,8 @@ const appAPI = {
   codexGetAccountUsage: (projectPath: string, apiProviderId?: string | null) =>
     ipcRenderer.invoke(AgentIpcChannels.CODEX_GET_ACCOUNT_USAGE, projectPath, apiProviderId),
 
-  codexConsumeRateLimitReset: (projectPath: string, apiProviderId?: string | null) =>
-    ipcRenderer.invoke(AgentIpcChannels.CODEX_CONSUME_RATE_LIMIT_RESET, projectPath, apiProviderId),
+  codexConsumeRateLimitReset: (projectPath: string, apiProviderId?: string | null, creditId?: string | null) =>
+    ipcRenderer.invoke(AgentIpcChannels.CODEX_CONSUME_RATE_LIMIT_RESET, projectPath, apiProviderId, creditId),
 
   claudeGetRateLimits: (force?: boolean) => ipcRenderer.invoke(AgentIpcChannels.CLAUDE_GET_RATE_LIMITS, force),
 

@@ -76,7 +76,7 @@ interface AppAPI {
   codexGetAuthStatus(projectPath: string): Promise<CodexAuthStatus>
   codexGetRateLimits(projectPath: string, apiProviderId?: string | null): Promise<CodexRateLimits | null>
   codexGetAccountUsage(projectPath: string, apiProviderId?: string | null): Promise<CodexAccountUsage | null>
-  codexConsumeRateLimitReset(projectPath: string, apiProviderId?: string | null): Promise<CodexRateLimitResetOutcome | null>
+  codexConsumeRateLimitReset(projectPath: string, apiProviderId?: string | null, creditId?: string | null): Promise<CodexRateLimitResetOutcome | null>
   claudeGetRateLimits(force?: boolean): Promise<ClaudeRateLimits | null>
   providerGetRateLimits(apiProviderId: string, force?: boolean): Promise<ProviderRateLimits | null>
   codexSetAuth(projectPath: string, request: CodexSetAuthRequest): Promise<CodexAuthStatus>

@@ -343,6 +343,56 @@ describe('CodexExperimentService auth state', () => {
     expect(limits?.resetCredits).toBe(3)
   })
 
+  it('getRateLimits parses per-credit reset detail rows into resetCreditList', async () => {
+    const handle = {
+      connection: {
+        request: vi.fn(async (method: string) => {
+          if (method === 'account/rateLimits/read') {
+            return {
+              rateLimits: { primary: { usedPercent: 10, windowDurationMins: 300, resetsAt: 1_700_000_000 }, secondary: null, planType: 'plus' },
+              rateLimitResetCredits: {
+                availableCount: 2,
+                credits: [
+                  { id: 'cr-1', status: 'available', resetType: 'codexRateLimits', grantedAt: 1_700_000_000, expiresAt: 1_700_100_000, title: 'Weekly boost', description: null },
+                  { id: 'cr-2', status: 'redeemed', resetType: 'codexRateLimits', grantedAt: 1_699_000_000, expiresAt: null, title: null, description: null },
+                ],
+              },
+            }
+          }
+          return {}
+        }),
+        respond: vi.fn(), notify: vi.fn(), nextNotification: vi.fn(),
+      },
+      close: vi.fn(async () => {}), getStderr: () => '', onClosed: vi.fn(() => () => {}),
+    }
+    createHandleMock.mockResolvedValue(handle)
+    const service = new CodexExperimentService()
+    service.setAuth('/project', { mode: 'chatgpt' })
+
+    const limits = await service.getRateLimits('/project')
+
+    expect(limits?.resetCredits).toBe(2)
+    expect(limits?.resetCreditList).toEqual([
+      { id: 'cr-1', status: 'available', title: 'Weekly boost', description: null, expiresAt: 1_700_100_000 },
+      { id: 'cr-2', status: 'redeemed', title: null, description: null, expiresAt: null },
+    ])
+  })
+
+  it('consumeRateLimitReset forwards creditId to the app-server when given', async () => {
+    const request = vi.fn(async (method: string) => (method === 'account/rateLimitResetCredit/consume' ? { outcome: 'reset' } : {}))
+    const handle = {
+      connection: { request, respond: vi.fn(), notify: vi.fn(), nextNotification: vi.fn() },
+      close: vi.fn(async () => {}), getStderr: () => '', onClosed: vi.fn(() => () => {}),
+    }
+    createHandleMock.mockResolvedValue(handle)
+    const service = new CodexExperimentService()
+    service.setAuth('/project', { mode: 'chatgpt' })
+
+    await service.consumeRateLimitReset('/project', null, 'cr-1')
+
+    expect(request).toHaveBeenCalledWith('account/rateLimitResetCredit/consume', expect.objectContaining({ creditId: 'cr-1' }))
+  })
+
   it('getRateLimits returns null when a custom codex provider is active (not a ChatGPT subscription)', async () => {
     vi.mocked(getActiveProviderRaw).mockReturnValue(codexProviderRow('p1', 'https://gateway.example.com/v1') as never)
     const service = new CodexExperimentService()

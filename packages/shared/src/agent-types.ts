@@ -1357,6 +1357,11 @@ export interface CodexRateLimitWindow {
   resetsAt: number | null
 }
 
+export interface CodexMcpOauthLoginResult {
+  success: boolean
+  error?: string
+}
+
 export interface CodexRateLimitResetCredit {
   id: string
   status: 'available' | 'redeeming' | 'redeemed' | 'unknown'
@@ -1746,6 +1751,7 @@ export const AgentIpcChannels = {
   CODEX_GET_RATE_LIMITS: 'codex:get-rate-limits',
   CODEX_GET_ACCOUNT_USAGE: 'codex:get-account-usage',
   CODEX_CONSUME_RATE_LIMIT_RESET: 'codex:consume-rate-limit-reset',
+  CODEX_MCP_OAUTH_LOGIN: 'codex:mcp-oauth-login',
 
   // Claude channels
   CLAUDE_GET_RATE_LIMITS: 'claude:get-rate-limits',

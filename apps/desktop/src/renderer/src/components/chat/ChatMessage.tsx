@@ -20,6 +20,7 @@ import { FileIcon } from '@superone/ui/components/ui/FileIcon'
 import { FileText } from 'lucide-react'
 import { PasteChipPreview } from './PasteChipPreview'
 import { PASTE_CHIP_LINE_THRESHOLD, PASTE_CHIP_CHAR_THRESHOLD } from './paste-chip-node'
+import { toast } from 'sonner'
 import { useActiveSession, useChatStore } from '@/stores/chat'
 import { useShallow } from 'zustand/react/shallow'
 import { getAssistantCopyText } from './chat-message/getAssistantCopyText'
@@ -1008,6 +1009,22 @@ const STATIC_FOOTER = { isCompacting: false, pendingApproval: false, streamingTo
 
 function DurationFooter({ message, copyText, parentIsStreaming }: { message: ChatMessageType; copyText?: string; parentIsStreaming: boolean }) {
   const { t } = useTranslation()
+  const activeProject = useChatStore((s) => s.activeProject)
+  const sessionApiProviderId = useActiveSession((s) => s.apiProviderId)
+  const [reauthBusy, setReauthBusy] = useState(false)
+  const handleReauth = useCallback(async (names: string[]) => {
+    if (!activeProject) return
+    setReauthBusy(true)
+    try {
+      for (const name of names) {
+        const res = await window.app.codexMcpServerOauthLogin(activeProject, name, sessionApiProviderId ?? null)
+        if (res.success) toast.success(t('chat.codex.mcpReauthSuccess', { name }))
+        else toast.error(t('chat.codex.mcpReauthFailed', { name, error: res.error ?? '' }))
+      }
+    } finally {
+      setReauthBusy(false)
+    }
+  }, [activeProject, sessionApiProviderId, t])
   const { isCompacting, pendingApproval, streamingTokens: rawStreamingTokens } = useActiveSession(useShallow((s) => {
     if (!parentIsStreaming) return STATIC_FOOTER
     return {
@@ -1143,17 +1160,29 @@ function DurationFooter({ message, copyText, parentIsStreaming }: { message: Cha
           <span className="text-warning">{formatTerminalReason(terminalReason!)}</span>
         </>
       )}
-      {showMcpFailure && (
-        <>
-          {(showDuration || hasTokens || showTerminalReason) && <span>·</span>}
-          <AlertTriangle className="size-3 text-warning" />
-          <span className="text-warning">
-            {failedMcp.some((s) => s.failureReason === 'reauthenticationRequired')
-              ? t('chat.codex.mcpNeedsReauth', { name: failedMcp.map((s) => s.name).join(', ') })
-              : t('chat.codex.mcpStartupFailed', { name: failedMcp.map((s) => s.name).join(', ') })}
-          </span>
-        </>
-      )}
+      {showMcpFailure && (() => {
+        const reauthServers = failedMcp.filter((s) => s.failureReason === 'reauthenticationRequired')
+        return (
+          <>
+            {(showDuration || hasTokens || showTerminalReason) && <span>·</span>}
+            <AlertTriangle className="size-3 text-warning" />
+            {reauthServers.length > 0 ? (
+              <button
+                type="button"
+                disabled={reauthBusy}
+                onClick={() => handleReauth(reauthServers.map((s) => s.name))}
+                className="text-warning underline-offset-2 hover:underline disabled:opacity-60"
+              >
+                {reauthBusy
+                  ? t('chat.codex.mcpReauthenticating')
+                  : t('chat.codex.mcpNeedsReauth', { name: reauthServers.map((s) => s.name).join(', ') })}
+              </button>
+            ) : (
+              <span className="text-warning">{t('chat.codex.mcpStartupFailed', { name: failedMcp.map((s) => s.name).join(', ') })}</span>
+            )}
+          </>
+        )
+      })()}
       {showFork && (
         <ForkButton
           message={message}

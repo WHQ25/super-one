@@ -487,6 +487,9 @@ export type Messages = {
       startingMcpServers: string
       mcpNeedsReauth: string
       mcpStartupFailed: string
+      mcpReauthenticating: string
+      mcpReauthSuccess: string
+      mcpReauthFailed: string
       runningInline: string
       waitingFor: string
       waitingForWithElapsed: string
@@ -1978,6 +1981,9 @@ export const en: Messages = {
       startingMcpServers: 'Starting MCP servers {{ready}}/{{total}}',
       mcpNeedsReauth: 'MCP server {{name}} needs re-authentication',
       mcpStartupFailed: 'MCP server {{name}} failed to start',
+      mcpReauthenticating: 'Waiting for authorization…',
+      mcpReauthSuccess: 'Re-authenticated {{name}}',
+      mcpReauthFailed: 'Re-authentication failed for {{name}}',
       runningInline: 'Running…',
       waitingFor: 'Waiting for {{name}}...',
       waitingForWithElapsed: 'Waiting for {{name}} for {{elapsed}}s...',

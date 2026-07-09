@@ -18,6 +18,7 @@ import {
 import type {
   CodexAuthStatus,
   CodexAccountUsage,
+  CodexMcpOauthLoginResult,
   CodexRateLimits,
   CodexRateLimitResetCredit,
   CodexRateLimitResetOutcome,
@@ -509,6 +510,38 @@ export class CodexExperimentService {
     } catch (error) {
       log.info('[codex] consumeRateLimitReset failed project=%s: %s', projectPath, error instanceof Error ? error.message : String(error))
       return null
+    }
+  }
+
+  async loginMcpServerOauth(
+    projectPath: string,
+    serverName: string,
+    apiProviderId: string | null = null,
+    openUrl?: (url: string) => void,
+  ): Promise<CodexMcpOauthLoginResult> {
+    const auth = this.getProjectAuth(projectPath)
+    try {
+      return await this.withAppServerConnection(projectPath, auth, undefined, async (connection) => {
+        const res = await connection.request('mcpServer/oauth/login', { name: serverName })
+        const authorizationUrl = readString(res.authorizationUrl)
+        if (!authorizationUrl) return { success: false, error: 'Codex returned no authorization URL' }
+        openUrl?.(authorizationUrl)
+        const deadline = Date.now() + 180_000
+        while (Date.now() < deadline) {
+          const notif = connection.pollNotification
+            ? await connection.pollNotification(Math.min(1_000, deadline - Date.now()))
+            : await connection.nextNotification()
+          if (!notif) continue
+          if (notif.method === 'mcpServer/oauthLogin/completed' && readString(notif.params.name) === serverName) {
+            return { success: readBoolean(notif.params.success) ?? false, error: readString(notif.params.error) ?? undefined }
+          }
+        }
+        return { success: false, error: 'Timed out waiting for authorization' }
+      }, apiProviderId)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      log.info('[codex] loginMcpServerOauth failed project=%s server=%s: %s', projectPath, serverName, message)
+      return { success: false, error: message }
     }
   }
 

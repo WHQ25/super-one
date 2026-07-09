@@ -938,6 +938,10 @@ function registerIpcHandlers(): void {
     return codexService.consumeRateLimitReset(projectPath, apiProviderId ?? null, creditId ?? null)
   })
 
+  ipcMain.handle(AgentIpcChannels.CODEX_MCP_OAUTH_LOGIN, (_event, projectPath: string, serverName: string, apiProviderId?: string | null) => {
+    return codexService.loginMcpServerOauth(projectPath, serverName, apiProviderId ?? null, (url) => shell.openExternal(url))
+  })
+
   ipcMain.handle(AgentIpcChannels.CLAUDE_GET_RATE_LIMITS, (_event, force?: boolean) => {
     return getClaudeRateLimits(force ?? false)
   })

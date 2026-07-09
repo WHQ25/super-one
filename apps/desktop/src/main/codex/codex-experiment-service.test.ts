@@ -393,6 +393,36 @@ describe('CodexExperimentService auth state', () => {
     expect(request).toHaveBeenCalledWith('account/rateLimitResetCredit/consume', expect.objectContaining({ creditId: 'cr-1' }))
   })
 
+  it('loginMcpServerOauth opens the authorization url then resolves on the completed notification', async () => {
+    const request = vi.fn(async (method: string) =>
+      method === 'mcpServer/oauth/login' ? { authorizationUrl: 'https://auth.example.com/go' } : {})
+    let polled = false
+    const handle = {
+      connection: {
+        request,
+        respond: vi.fn(),
+        notify: vi.fn(),
+        nextNotification: vi.fn(),
+        pollNotification: vi.fn(async () => {
+          if (polled) return null
+          polled = true
+          return { method: 'mcpServer/oauthLogin/completed', params: { name: 'linear', threadId: null, success: true } }
+        }),
+      },
+      close: vi.fn(async () => {}), getStderr: () => '', onClosed: vi.fn(() => () => {}),
+    }
+    createHandleMock.mockResolvedValue(handle)
+    const service = new CodexExperimentService()
+    service.setAuth('/project', { mode: 'chatgpt' })
+    const openUrl = vi.fn()
+
+    const result = await service.loginMcpServerOauth('/project', 'linear', null, openUrl)
+
+    expect(request).toHaveBeenCalledWith('mcpServer/oauth/login', { name: 'linear' })
+    expect(openUrl).toHaveBeenCalledWith('https://auth.example.com/go')
+    expect(result).toEqual({ success: true, error: undefined })
+  })
+
   it('getRateLimits returns null when a custom codex provider is active (not a ChatGPT subscription)', async () => {
     vi.mocked(getActiveProviderRaw).mockReturnValue(codexProviderRow('p1', 'https://gateway.example.com/v1') as never)
     const service = new CodexExperimentService()

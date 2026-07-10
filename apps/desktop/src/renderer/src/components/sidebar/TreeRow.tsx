@@ -301,7 +301,7 @@ export const TreeRow = memo(function TreeRow({
   )
 
   const menuItems: AdaptiveMenuEntry[] = [
-    { kind: 'item', id: 'rename', label: t('sidebar.contextMenu.rename'), icon: Pencil, onSelect: () => setRenamingPath(item.path) },
+    { kind: 'item', id: 'rename', label: t('sidebar.contextMenu.renameFile'), icon: Pencil, onSelect: () => setRenamingPath(item.path) },
     { kind: 'item', id: 'addToChat', label: t('sidebar.contextMenu.addToChat'), icon: AtSign, onSelect: () => {
       chatInputAPI.insertMention?.(
         item.isDirectory ? 'directory' : 'file',

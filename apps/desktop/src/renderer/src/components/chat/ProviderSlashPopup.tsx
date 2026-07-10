@@ -6,7 +6,7 @@ import { useAppStore } from '@/stores/app'
 import { useSettingsStore } from '@/stores/settings'
 import { ProviderLabel } from '@/components/ProviderLabel'
 import { brandOfCredential, consumerForHarness, credentialsForConsumer } from '@/lib/provider-resolve'
-import type { Credential } from '@superone/shared/platform-registry'
+import { findPlatform, type Credential } from '@superone/shared/platform-registry'
 
 interface ProviderItem {
   id: string | null
@@ -42,7 +42,10 @@ export function ProviderSlashPopup({ onClose }: { onClose: () => void }) {
       : t('resources.providers.defaultLabelClaude')
     const list: ProviderItem[] = [{ id: null, brand: harness === 'codex' ? 'openai' : 'claude', label: defaultLabel }]
     for (const c of filtered) {
-      list.push({ id: c.id, brand: brandOfCredential(platforms, c), label: c.name, keyName: c.name })
+      // Main label = platform name (shown as fallback when the brand has no icon, e.g. custom providers);
+      // the key name is the secondary badge on the right.
+      const label = findPlatform(platforms, c.platformId)?.name ?? c.name
+      list.push({ id: c.id, brand: brandOfCredential(platforms, c), label, keyName: c.name })
     }
     return list
   }, [filtered, platforms, harness, t])

@@ -19,6 +19,7 @@ import {
 import {
   catalogProviderIdFor,
   defaultOverridesForPlan,
+  isCustomPlatform,
   resolveEndpointModels,
   type Credential,
   type EndpointModel,
@@ -357,6 +358,9 @@ function EndpointOverrideFields({
   // model remapping and a compatible-endpoint override make no sense there.
   const isFirstPartyAnthropic = platform.id === 'anthropic'
   const isAnthropic = endpoint.protocol === 'anthropic-messages'
+  // Custom providers have no catalog, so the model dropdown would be empty — always let the
+  // user type model id + display name manually instead.
+  const isCustom = isCustomPlatform(platform)
 
   return (
     <div className="flex flex-col gap-3">
@@ -378,12 +382,19 @@ function EndpointOverrideFields({
       {isAnthropic && !isFirstPartyAnthropic && (
         <div className="flex flex-col gap-1.5">
           <span className="text-xs font-medium text-muted-foreground">{t('resources.providerDialog.modelMapping')}</span>
-          <ModelMappingEditor
-            models={suggestions}
-            oneMillionIds={oneMillionIds}
-            value={value.modelMapping ?? {}}
-            onChange={(v) => onChange({ ...value, modelMapping: v })}
-          />
+          {isCustom ? (
+            <ModelEnvEditor
+              value={value.modelMapping ?? {}}
+              onChange={(v) => onChange({ ...value, modelMapping: v })}
+            />
+          ) : (
+            <ModelMappingEditor
+              models={suggestions}
+              oneMillionIds={oneMillionIds}
+              value={value.modelMapping ?? {}}
+              onChange={(v) => onChange({ ...value, modelMapping: v })}
+            />
+          )}
         </div>
       )}
 

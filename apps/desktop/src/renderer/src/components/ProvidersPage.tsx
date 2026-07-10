@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ChevronDown, ExternalLink, Loader2, Plus, Trash2 } from 'lucide-react'
+import { ChevronDown, ExternalLink, Loader2, Pencil, Plus, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@superone/ui/components/ui/button'
 import { Badge } from '@superone/ui/components/ui/badge'
@@ -17,8 +17,11 @@ import {
 import {
   customPlatformEndpoints,
   defaultOverridesForPlan,
+  endpointTasks,
   FAMILY_TASKS,
+  isCustomPlatform,
   PROTOCOL_FAMILIES,
+  PROTOCOL_FAMILY,
   type CapabilityTask,
   type Credential,
   type EndpointDefaults,
@@ -41,10 +44,6 @@ import {
   upsertCustomModel,
   type CustomModel,
 } from './providers/custom-models'
-
-function isCustomPlatform(platform: Platform): boolean {
-  return platform.id.startsWith('custom:')
-}
 
 const BRAND_POPULARITY = [
   'anthropic',
@@ -87,7 +86,81 @@ function officialHarness(platform: Platform): 'claude' | 'codex' {
 
 // --- credential row + add form -----------------------------------------------
 
-function CredentialRow({ credential, onDelete }: { credential: Credential; onDelete: () => void }) {
+function CredentialRow({
+  credential,
+  takenNames,
+  onDelete,
+}: {
+  credential: Credential
+  takenNames: string[]
+  onDelete: () => void
+}) {
+  const { t } = useTranslation()
+  const updateCredential = useSettingsStore((s) => s.updateCredential)
+  const [editing, setEditing] = useState(false)
+  const [name, setName] = useState(credential.name)
+  const [secret, setSecret] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const effectiveName = name.trim() || credential.name
+  // Other keys on the same platform, excluding this one — renaming to a sibling's name conflicts.
+  const conflict = useMemo(
+    () =>
+      effectiveName.toLowerCase() !== credential.name.toLowerCase() &&
+      takenNames.some((n) => n.toLowerCase() === effectiveName.toLowerCase()),
+    [takenNames, effectiveName, credential.name],
+  )
+
+  const cancel = useCallback(() => {
+    setEditing(false)
+    setName(credential.name)
+    setSecret('')
+  }, [credential.name])
+
+  // A blank secret input means "keep the stored key" — only send `secret` when the user typed a new one.
+  const save = useCallback(async () => {
+    if (conflict) return
+    setBusy(true)
+    try {
+      await updateCredential(credential.id, {
+        name: effectiveName,
+        ...(secret.trim() ? { secret: secret.trim() } : {}),
+      })
+      setEditing(false)
+      setSecret('')
+    } finally {
+      setBusy(false)
+    }
+  }, [conflict, credential.id, effectiveName, secret, updateCredential])
+
+  if (editing) {
+    return (
+      <div className="flex flex-col gap-2 rounded-md border border-dashed border-border p-3">
+        <div className="flex flex-col gap-1">
+          <Input
+            placeholder={t('resources.providers.keyLabel')}
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            aria-invalid={conflict}
+          />
+          {conflict && <span className="text-[11px] text-destructive">{t('resources.providers.keyNameConflict')}</span>}
+        </div>
+        <Input
+          type="password"
+          placeholder={credential.secretEnv ? `$${credential.secretEnv}` : credential.secret || t('resources.providers.apiKey')}
+          value={secret}
+          onChange={(e) => setSecret(e.target.value)}
+        />
+        <div className="flex justify-end gap-2">
+          <Button variant="ghost" size="sm" onClick={cancel}>{t('common.cancel')}</Button>
+          <Button size="sm" disabled={busy || conflict} onClick={save}>
+            {busy ? <Loader2 className="size-4 animate-spin" /> : t('common.save')}
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="flex items-center justify-between gap-2 rounded-md border border-border px-3 py-2">
       <div className="flex min-w-0 flex-col">
@@ -96,9 +169,14 @@ function CredentialRow({ credential, onDelete }: { credential: Credential; onDel
           {credential.secretEnv ? `$${credential.secretEnv}` : credential.secret || '—'}
         </span>
       </div>
-      <IconButton size="sm" variant="destructive" onClick={onDelete}>
-        <Trash2 />
-      </IconButton>
+      <div className="flex shrink-0 items-center gap-1">
+        <IconButton size="sm" onClick={() => setEditing(true)}>
+          <Pencil />
+        </IconButton>
+        <IconButton size="sm" variant="destructive" onClick={onDelete}>
+          <Trash2 />
+        </IconButton>
+      </div>
     </div>
   )
 }
@@ -256,7 +334,12 @@ function PlanCard({
         )}
       </div>
       {planCreds.map((c) => (
-        <CredentialRow key={c.id} credential={c} onDelete={() => void deleteCredential(c.id)} />
+        <CredentialRow
+          key={c.id}
+          credential={c}
+          takenNames={takenNames}
+          onDelete={() => void deleteCredential(c.id)}
+        />
       ))}
       {adding ? (
         <AddKeyForm
@@ -296,6 +379,7 @@ function AdvancedConfigSection({
   const [open, setOpen] = useState(false)
   const [keyId, setKeyId] = useState('')
   const selected = planCreds.find((c) => c.id === keyId) ?? planCreds[0]
+  const isCustom = isCustomPlatform(platform)
 
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-border p-3">
@@ -307,28 +391,32 @@ function AdvancedConfigSection({
         <span className="text-sm font-semibold">{t('resources.providers.advanced')}</span>
         <ChevronDown className={cn('size-4 text-muted-foreground transition-transform', open && 'rotate-180')} />
       </button>
-      {open &&
-        (pending ? (
-          <div className="flex flex-col gap-4 rounded-md border border-border bg-muted/30 p-3">
-            <OverridesEditor platform={platform} plan={plan} value={pendingOverrides} onChange={onPendingOverridesChange} />
-          </div>
-        ) : (
-          <>
-            {planCreds.length > 1 && (
-              <Select value={selected?.id ?? ''} onValueChange={setKeyId}>
-                <SelectTrigger className="w-52">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {planCreds.map((c) => (
-                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-            {selected && <CredentialConfig key={selected.id} platform={platform} plan={plan} credential={selected} />}
-          </>
-        ))}
+      {open && (
+        <>
+          {isCustom && <CustomCapabilitiesSection platform={platform} plan={plan} />}
+          {pending ? (
+            <div className="flex flex-col gap-4 rounded-md border border-border bg-muted/30 p-3">
+              <OverridesEditor platform={platform} plan={plan} value={pendingOverrides} onChange={onPendingOverridesChange} />
+            </div>
+          ) : (
+            <>
+              {planCreds.length > 1 && (
+                <Select value={selected?.id ?? ''} onValueChange={setKeyId}>
+                  <SelectTrigger className="w-52">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {planCreds.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+              {selected && <CredentialConfig key={selected.id} platform={platform} plan={plan} credential={selected} />}
+            </>
+          )}
+        </>
+      )}
     </div>
   )
 }
@@ -407,25 +495,24 @@ const TASK_LABEL_KEY: Record<CapabilityTask, string> = {
   asr: 'resources.providers.taskAsr',
 }
 
-// Inline add-form rendered in the detail panel (not a modal). onDone(id) is called with the new
-// platform id on success, or with no argument on cancel; the parent unmounts the form either way.
-function CustomPlatformForm({ onDone }: { onDone: (createdId?: string) => void }) {
-  const { t } = useTranslation()
-  const createCustomPlatform = useSettingsStore((s) => s.createCustomPlatform)
-  const createCredential = useSettingsStore((s) => s.createCredential)
-  const [name, setName] = useState('')
-  const [families, setFamilies] = useState<Set<ProtocolFamily>>(() => new Set(['anthropic']))
-  const [baseUrl, setBaseUrl] = useState('')
-  const [familyTasks, setFamilyTasks] = useState<Record<ProtocolFamily, Set<CapabilityTask>>>(() => ({
-    anthropic: new Set(['chat']),
-    openai: new Set(['chat']),
-    google: new Set(['chat']),
-  }))
-  const [extraEnv, setExtraEnv] = useState<Record<string, string>>({})
-  const [modelMapping, setModelMapping] = useState<ProviderModelEnv>({})
-  const [customModels, setCustomModels] = useState<CustomModel[]>([])
-  const [secret, setSecret] = useState('')
-  const [busy, setBusy] = useState(false)
+type CapabilitySelection = {
+  families: Set<ProtocolFamily>
+  familyTasks: Record<ProtocolFamily, Set<CapabilityTask>>
+}
+
+// Format + per-family capability selection state, shared by the create form and the post-create editor.
+// Each family's task set is seeded from `initial`, falling back to ['chat'] so a newly-checked format
+// behaves like the create dialog (chat pre-selected); disabled families are ignored until enabled.
+function useCapabilityState(initial?: CapabilitySelection) {
+  const [families, setFamilies] = useState<Set<ProtocolFamily>>(() => new Set(initial?.families ?? ['anthropic']))
+  const [familyTasks, setFamilyTasks] = useState<Record<ProtocolFamily, Set<CapabilityTask>>>(() => {
+    const base = {} as Record<ProtocolFamily, Set<CapabilityTask>>
+    for (const f of PROTOCOL_FAMILIES) {
+      const seed = initial?.familyTasks[f]
+      base[f] = seed && seed.size > 0 ? new Set(seed) : new Set<CapabilityTask>(['chat'])
+    }
+    return base
+  })
 
   const toggleFamily = useCallback((family: ProtocolFamily, checked: boolean) => {
     setFamilies((prev) => {
@@ -445,16 +532,140 @@ function CustomPlatformForm({ onDone }: { onDone: (createdId?: string) => void }
     })
   }, [])
 
-  // Each selected format carries its own capabilities. A format with only chat (anthropic) contributes
-  // ['chat'] implicitly and shows no sub-picker; multi-capability formats expose a nested checkbox group.
-  const tasksByFamily: Partial<Record<ProtocolFamily, CapabilityTask[]>> = {}
+  return { families, familyTasks, toggleFamily, toggleTask }
+}
+
+// Collapse the format + per-family capability selections into the tasksByFamily map endpoints derive from.
+// A single-capability family (anthropic → chat) contributes ['chat'] implicitly with no sub-picker.
+function deriveTasksByFamily({ families, familyTasks }: CapabilitySelection): Partial<Record<ProtocolFamily, CapabilityTask[]>> {
+  const out: Partial<Record<ProtocolFamily, CapabilityTask[]>> = {}
   for (const f of PROTOCOL_FAMILIES) {
     if (!families.has(f)) continue
     const caps = FAMILY_TASKS[f]
-    tasksByFamily[f] = caps.length > 1 ? caps.filter((task) => familyTasks[f].has(task)) : ['chat']
+    out[f] = caps.length > 1 ? caps.filter((task) => familyTasks[f].has(task)) : ['chat']
   }
-  // Selected formats that expose more than chat get a capability picker, rendered below the API key.
+  return out
+}
+
+// Reverse of deriveTasksByFamily: recover the format + capability selections (and shared base URL) from an
+// existing custom plan's endpoints, so its capabilities can be re-edited after creation.
+function planCapabilities(plan: Plan): CapabilitySelection & { baseUrl: string } {
+  const families = new Set<ProtocolFamily>()
+  const familyTasks = {} as Record<ProtocolFamily, Set<CapabilityTask>>
+  for (const f of PROTOCOL_FAMILIES) familyTasks[f] = new Set<CapabilityTask>()
+  let baseUrl = ''
+  for (const e of plan.endpoints) {
+    const family = PROTOCOL_FAMILY[e.protocol]
+    families.add(family)
+    for (const task of endpointTasks(e)) familyTasks[family].add(task)
+    if (!baseUrl) baseUrl = e.baseUrl
+  }
+  return { families, familyTasks, baseUrl }
+}
+
+// Formats checkbox group + a nested task picker for every selected multi-capability format.
+function CapabilityPicker({
+  families,
+  familyTasks,
+  onToggleFamily,
+  onToggleTask,
+}: {
+  families: Set<ProtocolFamily>
+  familyTasks: Record<ProtocolFamily, Set<CapabilityTask>>
+  onToggleFamily: (family: ProtocolFamily, checked: boolean) => void
+  onToggleTask: (family: ProtocolFamily, task: CapabilityTask, checked: boolean) => void
+}) {
+  const { t } = useTranslation()
   const capabilityFamilies = PROTOCOL_FAMILIES.filter((f) => families.has(f) && FAMILY_TASKS[f].length > 1)
+  return (
+    <>
+      <div className="flex flex-col gap-2 rounded-md border border-border p-3">
+        <span className="text-xs text-muted-foreground">{t('resources.providers.formats')}</span>
+        {PROTOCOL_FAMILIES.map((f) => (
+          <label key={f} className="flex items-center gap-2 text-sm">
+            <Checkbox checked={families.has(f)} onCheckedChange={(v) => onToggleFamily(f, v === true)} />
+            {t(FAMILY_LABEL_KEY[f])}
+          </label>
+        ))}
+      </div>
+      {capabilityFamilies.map((f) => (
+        <div key={f} className="flex flex-col gap-2 rounded-md border border-border p-3">
+          <span className="text-xs text-muted-foreground">{t(FAMILY_LABEL_KEY[f])}</span>
+          <div className="grid grid-cols-2 gap-2">
+            {FAMILY_TASKS[f].map((task) => (
+              <label key={task} className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Checkbox checked={familyTasks[f].has(task)} onCheckedChange={(v) => onToggleTask(f, task, v === true)} />
+                {t(TASK_LABEL_KEY[task])}
+              </label>
+            ))}
+          </div>
+        </div>
+      ))}
+    </>
+  )
+}
+
+// Post-create capability editor (a subsection of Advanced Settings): re-pick formats/tasks for an existing
+// custom platform and persist the rebuilt endpoints, preserving each endpoint's defaults (extraEnv / claude
+// model mapping) by id.
+function CustomCapabilitiesSection({ platform, plan }: { platform: Platform; plan: Plan }) {
+  const { t } = useTranslation()
+  const updateCustomPlatform = useSettingsStore((s) => s.updateCustomPlatform)
+  const initial = useMemo(() => planCapabilities(plan), [plan])
+  const baseUrl = initial.baseUrl
+  const { families, familyTasks, toggleFamily, toggleTask } = useCapabilityState(initial)
+  const [busy, setBusy] = useState(false)
+
+  const prevById = useMemo(() => new Map(plan.endpoints.map((e) => [e.id, e])), [plan.endpoints])
+  const endpoints = customPlatformEndpoints(deriveTasksByFamily({ families, familyTasks }), baseUrl).map((e) => {
+    const defaults = prevById.get(e.id)?.defaults
+    return defaults ? { ...e, defaults } : e
+  })
+  const dirty = JSON.stringify(plan.endpoints) !== JSON.stringify(endpoints)
+  const canSave = endpoints.length > 0 && dirty
+
+  const save = useCallback(async () => {
+    if (!canSave) return
+    setBusy(true)
+    try {
+      const nextPlan: Plan = { ...plan, endpoints }
+      const next: Platform = { ...platform, plans: platform.plans.map((p) => (p.id === plan.id ? nextPlan : p)) }
+      await updateCustomPlatform(next)
+    } finally {
+      setBusy(false)
+    }
+  }, [canSave, endpoints, plan, platform, updateCustomPlatform])
+
+  return (
+    <div className="flex flex-col gap-2.5">
+      <span className="text-xs font-medium text-muted-foreground">{t('resources.providers.capabilities')}</span>
+      <CapabilityPicker families={families} familyTasks={familyTasks} onToggleFamily={toggleFamily} onToggleTask={toggleTask} />
+      <Button size="sm" className="self-start" disabled={busy || !canSave} onClick={save}>
+        {busy ? <Loader2 className="size-4 animate-spin" /> : t('common.save')}
+      </Button>
+    </div>
+  )
+}
+
+// Inline add-form rendered in the detail panel (not a modal). onDone(id) is called with the new
+// platform id on success, or with no argument on cancel; the parent unmounts the form either way.
+function CustomPlatformForm({ onDone }: { onDone: (createdId?: string) => void }) {
+  const { t } = useTranslation()
+  const createCustomPlatform = useSettingsStore((s) => s.createCustomPlatform)
+  const createCredential = useSettingsStore((s) => s.createCredential)
+  const [name, setName] = useState('')
+  const [baseUrl, setBaseUrl] = useState('')
+  const { families, familyTasks, toggleFamily, toggleTask } = useCapabilityState()
+  const [extraEnv, setExtraEnv] = useState<Record<string, string>>({})
+  const [modelMapping, setModelMapping] = useState<ProviderModelEnv>({})
+  const [customModels, setCustomModels] = useState<CustomModel[]>([])
+  const [keyName, setKeyName] = useState('')
+  const [secret, setSecret] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  // Each selected format carries its own capabilities. A format with only chat (anthropic) contributes
+  // ['chat'] implicitly and shows no sub-picker; multi-capability formats expose a nested checkbox group.
+  const tasksByFamily = deriveTasksByFamily({ families, familyTasks })
   const hasExtraEnv = Object.keys(extraEnv).length > 0
   // Model mapping is a claude-harness concept, so it only attaches to the anthropic-messages endpoint.
   const hasModelMapping = families.has('anthropic') && Object.keys(modelMapping).length > 0
@@ -481,7 +692,7 @@ function CustomPlatformForm({ onDone }: { onDone: (createdId?: string) => void }
       await createCredential({
         platformId: id,
         planId: 'api',
-        name: t('resources.providers.defaultKeyName'),
+        name: keyName.trim() || t('resources.providers.defaultKeyName'),
         secret: secret.trim(),
         overrides: Object.keys(overrides).length > 0 ? overrides : undefined,
       })
@@ -489,7 +700,7 @@ function CustomPlatformForm({ onDone }: { onDone: (createdId?: string) => void }
     } finally {
       setBusy(false)
     }
-  }, [canSubmit, endpoints, customModels, name, secret, createCustomPlatform, createCredential, onDone, t])
+  }, [canSubmit, endpoints, customModels, name, keyName, secret, createCustomPlatform, createCredential, onDone, t])
 
   return (
     <div className="flex flex-col gap-4">
@@ -497,34 +708,14 @@ function CustomPlatformForm({ onDone }: { onDone: (createdId?: string) => void }
       <div className="flex flex-col gap-3">
           <Input placeholder={t('resources.providers.customName')} value={name} onChange={(e) => setName(e.target.value)} />
           <Input placeholder={t('resources.providers.baseUrl')} value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} />
+          <Input placeholder={t('resources.providers.keyLabel')} value={keyName} onChange={(e) => setKeyName(e.target.value)} />
           <Input
             type="password"
             placeholder={t('resources.providers.apiKey')}
             value={secret}
             onChange={(e) => setSecret(e.target.value)}
           />
-          <div className="flex flex-col gap-2 rounded-md border border-border p-3">
-            <span className="text-xs text-muted-foreground">{t('resources.providers.formats')}</span>
-            {PROTOCOL_FAMILIES.map((f) => (
-              <label key={f} className="flex items-center gap-2 text-sm">
-                <Checkbox checked={families.has(f)} onCheckedChange={(v) => toggleFamily(f, v === true)} />
-                {t(FAMILY_LABEL_KEY[f])}
-              </label>
-            ))}
-          </div>
-          {capabilityFamilies.map((f) => (
-            <div key={f} className="flex flex-col gap-2 rounded-md border border-border p-3">
-              <span className="text-xs text-muted-foreground">{t(FAMILY_LABEL_KEY[f])}</span>
-              <div className="grid grid-cols-2 gap-2">
-                {FAMILY_TASKS[f].map((task) => (
-                  <label key={task} className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <Checkbox checked={familyTasks[f].has(task)} onCheckedChange={(v) => toggleTask(f, task, v === true)} />
-                    {t(TASK_LABEL_KEY[task])}
-                  </label>
-                ))}
-              </div>
-            </div>
-          ))}
+          <CapabilityPicker families={families} familyTasks={familyTasks} onToggleFamily={toggleFamily} onToggleTask={toggleTask} />
           {families.has('anthropic') && (
             <div className="flex flex-col gap-1.5">
               <span className="text-xs font-medium text-muted-foreground">{t('resources.providerDialog.modelMapping')}</span>

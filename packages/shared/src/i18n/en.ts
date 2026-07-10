@@ -977,6 +977,7 @@ export type Messages = {
       baseUrl: string
       apiKey: string
       formats: string
+      capabilities: string
       familyAnthropic: string
       familyOpenai: string
       familyGoogle: string
@@ -2582,6 +2583,7 @@ export const en: Messages = {
       baseUrl: 'Base URL',
       apiKey: 'API Key',
       formats: 'Compatible formats',
+      capabilities: 'Capabilities',
       familyAnthropic: 'Anthropic (Claude)',
       familyOpenai: 'OpenAI',
       familyGoogle: 'Google (Gemini)',

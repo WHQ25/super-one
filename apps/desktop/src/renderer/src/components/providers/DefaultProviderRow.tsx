@@ -15,11 +15,11 @@ import { useSettingsStore } from '@/stores/settings'
 import { credentialsForConsumer } from '@/lib/provider-resolve'
 import { ProviderLabel } from '@/components/ProviderLabel'
 
-export function ProviderOptionLabel({ brandKey, keyName }: { brandKey: string; keyName?: string }) {
+export function ProviderOptionLabel({ brandKey, name, keyName }: { brandKey: string; name?: string; keyName?: string }) {
   return (
     <span className="flex min-w-0 items-center gap-2 [&_svg]:!size-auto">
-      <span className="flex shrink-0 items-center">
-        <ProviderLabel brandKey={brandKey} combine size={20} />
+      <span className="flex min-w-0 shrink items-center">
+        <ProviderLabel brandKey={brandKey} fallback={name} combine size={20} />
       </span>
       {keyName && <Badge variant="secondary" className="min-w-0 truncate font-normal">{keyName}</Badge>}
     </span>
@@ -69,6 +69,7 @@ export function DefaultProviderRow({
   const currentId = bindings.find((b) => b.consumer === consumer)?.credentialId ?? ''
   const current = candidates.find((c) => c.id === currentId)
   const brandFor = (c: Credential): string => findPlatform(platforms, c.platformId)?.brand ?? 'custom'
+  const nameFor = (c: Credential): string | undefined => findPlatform(platforms, c.platformId)?.name
 
   return (
     <div className="flex items-center justify-between gap-4 border-b border-border p-4">
@@ -79,7 +80,7 @@ export function DefaultProviderRow({
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button className="flex max-w-64 items-center gap-2 rounded-md border border-border bg-background px-3 py-1.5 text-sm transition-colors hover:bg-muted">
-            {current ? <ProviderOptionLabel brandKey={brandFor(current)} keyName={current.name} /> : fallback}
+            {current ? <ProviderOptionLabel brandKey={brandFor(current)} name={nameFor(current)} keyName={current.name} /> : fallback}
             <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
           </button>
         </DropdownMenuTrigger>
@@ -97,7 +98,7 @@ export function DefaultProviderRow({
                   onClick={() => void setBinding({ consumer, credentialId: c.id })}
                   className="flex items-center justify-between gap-2"
                 >
-                  <ProviderOptionLabel brandKey={brandFor(c)} />
+                  <ProviderOptionLabel brandKey={brandFor(c)} name={nameFor(c)} />
                   {currentId === c.id && <Check className="size-4 shrink-0 text-muted-foreground" />}
                 </DropdownMenuItem>
               )
@@ -106,7 +107,7 @@ export function DefaultProviderRow({
             return (
               <DropdownMenuSub key={group[0].platformId}>
                 <DropdownMenuSubTrigger>
-                  <ProviderOptionLabel brandKey={brandFor(group[0])} />
+                  <ProviderOptionLabel brandKey={brandFor(group[0])} name={nameFor(group[0])} />
                   {groupHasCurrent && <Check className="ml-auto size-4 shrink-0 text-muted-foreground" />}
                 </DropdownMenuSubTrigger>
                 <DropdownMenuSubContent className="w-56">
@@ -116,7 +117,7 @@ export function DefaultProviderRow({
                       onClick={() => void setBinding({ consumer, credentialId: c.id })}
                       className="flex items-center justify-between gap-2"
                     >
-                      <ProviderOptionLabel brandKey={brandFor(c)} keyName={c.name} />
+                      <ProviderOptionLabel brandKey={brandFor(c)} name={nameFor(c)} keyName={c.name} />
                       {currentId === c.id && <Check className="size-4 shrink-0 text-muted-foreground" />}
                     </DropdownMenuItem>
                   ))}

@@ -15,6 +15,11 @@ export function findPlatform(platforms: Platform[], platformId: string): Platfor
   return platforms.find((p) => p.id === platformId)
 }
 
+/** A user-created platform (id `custom:<uuid>`) — no catalog, capabilities editable, manual model mapping. */
+export function isCustomPlatform(platform: Platform): boolean {
+  return platform.id.startsWith('custom:')
+}
+
 export function findPlan(platform: Platform | undefined, planId: string): Plan | undefined {
   return platform?.plans.find((p) => p.id === planId)
 }

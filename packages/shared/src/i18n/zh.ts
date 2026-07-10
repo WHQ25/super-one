@@ -1006,6 +1006,7 @@ export const zh: Messages = {
       baseUrl: 'Base URL',
       apiKey: 'API 密钥',
       formats: '兼容格式',
+      capabilities: '能力',
       familyAnthropic: 'Anthropic（Claude）',
       familyOpenai: 'OpenAI',
       familyGoogle: 'Google（Gemini）',

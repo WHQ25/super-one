@@ -12,6 +12,7 @@ import {
   Mic,
   RefreshCw,
   Search,
+  Trash2,
   Type,
   Video,
   Wrench,
@@ -20,6 +21,7 @@ import type { LucideIcon } from 'lucide-react'
 import { ModelIcon, modelMappings } from '@lobehub/icons'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@superone/ui/components/ui/button'
+import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { Switch } from '@superone/ui/components/ui/switch'
 import {
   Select,
@@ -46,6 +48,14 @@ import { useModelCatalog } from '@/hooks/useModelCatalog'
 import { useSettingsStore } from '@/stores/settings'
 import { stripOneM } from '@/lib/model-id'
 import { ProviderLabel } from '../ProviderLabel'
+import {
+  AddCustomModelPopover,
+  listCustomModels,
+  planSupportedTasks,
+  removeCustomModel,
+  upsertCustomModel,
+  type CustomModel,
+} from './custom-models'
 
 type Tab = 'all' | CapabilityTask
 
@@ -252,10 +262,13 @@ export function PlatformModelsPanel({ platform, plan }: { platform: Platform; pl
       const overrides = { ...selectedCred.overrides }
       for (const ep of endpoints) {
         const pool = endpointPools.get(ep.id) ?? []
-        const enabledIds = new Set((overrides[ep.id]?.models ?? []).map((m) => m.id))
+        const existing = overrides[ep.id]?.models ?? []
+        const enabledIds = new Set(existing.map((m) => m.id))
         if (next) enabledIds.add(model.id)
         else enabledIds.delete(model.id)
-        const nextModels = pool.filter((m) => enabledIds.has(m.id))
+        // Preserve user-added models (not in the catalog pool) — only the catalog subset is re-derived.
+        const custom = existing.filter((m) => !pool.some((p) => p.id === m.id))
+        const nextModels = [...pool.filter((m) => enabledIds.has(m.id)), ...custom]
         const nextOverride = { ...overrides[ep.id] }
         if (nextModels.length > 0) nextOverride.models = nextModels
         else delete nextOverride.models
@@ -267,11 +280,40 @@ export function PlatformModelsPanel({ platform, plan }: { platform: Platform; pl
     [selectedCred, endpointPools, updateCredential],
   )
 
+  // A model id belongs to the catalog if the endpoint's resolved pool contains it; anything else in
+  // the credential's overrides is a user-added custom model.
+  const isCatalogModel = useCallback(
+    (endpointId: string, modelId: string) => (endpointPools.get(endpointId) ?? []).some((m) => m.id === modelId),
+    [endpointPools],
+  )
+  const customModels = useMemo(
+    () => listCustomModels(selectedCred?.overrides, isCatalogModel),
+    [selectedCred, isCatalogModel],
+  )
+  const supportedTasks = useMemo(() => planSupportedTasks(plan), [plan])
+
+  const addCustom = useCallback(
+    (model: CustomModel) => {
+      if (!selectedCred) return
+      void updateCredential(selectedCred.id, { overrides: upsertCustomModel(selectedCred.overrides, plan, model) })
+    },
+    [selectedCred, plan, updateCredential],
+  )
+  const removeCustom = useCallback(
+    (id: string) => {
+      if (!selectedCred) return
+      void updateCredential(selectedCred.id, { overrides: removeCustomModel(selectedCred.overrides, id) })
+    },
+    [selectedCred, updateCredential],
+  )
+
   const taskCounts = useMemo(() => {
     const counts = new Map<CapabilityTask, number>()
     for (const { m } of annotated) for (const tk of modelTasks(m)) counts.set(tk, (counts.get(tk) ?? 0) + 1)
+    for (const cm of customModels) for (const tk of cm.tasks) counts.set(tk, (counts.get(tk) ?? 0) + 1)
     return counts
-  }, [annotated])
+  }, [annotated, customModels])
+  const totalCount = annotated.length + customModels.length
   const presentTasks = MODEL_TASK_ORDER.filter((tk) => taskCounts.has(tk))
 
   const [tab, setTab] = useState<Tab>('all')
@@ -292,6 +334,19 @@ export function PlatformModelsPanel({ platform, plan }: { platform: Platform; pl
 
   const enabledRows = useMemo(() => rows.filter((r) => r.enabled), [rows])
   const disabledRows = useMemo(() => rows.filter((r) => !r.enabled), [rows])
+
+  const customRows = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    return customModels.filter((cm) => {
+      if (activeTab !== 'all' && !cm.tasks.includes(activeTab)) return false
+      if (q && !cm.id.toLowerCase().includes(q) && !(cm.name ?? '').toLowerCase().includes(q)) return false
+      return true
+    })
+  }, [customModels, activeTab, query])
+  const existingIds = useMemo(
+    () => [...annotated.map((a) => a.m.id), ...customModels.map((c) => c.id)],
+    [annotated, customModels],
+  )
 
   const subtitle = (m: CatalogModel): string => {
     const parts: string[] = []
@@ -340,6 +395,37 @@ export function PlatformModelsPanel({ platform, plan }: { platform: Platform; pl
     </div>
   )
 
+  const renderCustomRow = (cm: CustomModel) => (
+    <div key={cm.id} className="flex items-center gap-3 px-3 py-2.5">
+      <div className="flex size-7 shrink-0 items-center justify-center">
+        {hasModelIcon(cm.id)
+          ? <ModelIcon model={cm.id} type="color" size={26} />
+          : <ProviderLabel brandKey={platform.brand} iconOnly size={26} />}
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-1.5">
+          <span className="truncate text-sm font-medium">{cm.name || cm.id}</span>
+          <ModelIdBadge id={cm.id} />
+        </div>
+      </div>
+      <div className="flex shrink-0 items-center gap-2">
+        <span className="flex items-center gap-1">
+          {cm.tasks.map((tk) => (
+            <CapBadge key={tk} icon={TASK_ICON[tk]} title={t(`resources.providerDialog.models.${tk}`)} />
+          ))}
+        </span>
+        <IconButton
+          size="sm"
+          variant="destructive"
+          tooltip={t('resources.providerDialog.models.deleteCustom')}
+          onClick={() => removeCustom(cm.id)}
+        >
+          <Trash2 />
+        </IconButton>
+      </div>
+    </div>
+  )
+
   const groupHeader = (label: string, count: number) => (
     <div className="sticky top-0 z-10 flex items-center gap-1.5 bg-background/95 px-3 py-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground backdrop-blur">
       {label}
@@ -351,9 +437,12 @@ export function PlatformModelsPanel({ platform, plan }: { platform: Platform; pl
     <div className="flex items-center justify-between gap-2">
       <div className="flex items-baseline gap-2">
         <span className="text-sm font-semibold">{t('resources.providerDialog.models.title')}</span>
-        <span className="text-xs text-muted-foreground">{t('resources.providerDialog.models.count', { count: annotated.length })}</span>
+        <span className="text-xs text-muted-foreground">{t('resources.providerDialog.models.count', { count: totalCount })}</span>
       </div>
       <div className="flex items-center gap-1.5">
+        {selectedCred && supportedTasks.length > 0 && (
+          <AddCustomModelPopover supportedTasks={supportedTasks} existingIds={existingIds} onAdd={addCustom} />
+        )}
         {planCreds.length > 1 && (
           <Select value={selectedCred?.id ?? ''} onValueChange={setKeyId}>
             <SelectTrigger className="h-7 w-40 text-xs">
@@ -394,39 +483,46 @@ export function PlatformModelsPanel({ platform, plan }: { platform: Platform; pl
     )
   }
 
-  if (!catProvider) {
-    return (
-      <div className="flex flex-col gap-3">
-        {header}
-        <p className="p-4 text-xs text-muted-foreground">{t('resources.providerDialog.models.noEntry')}</p>
-      </div>
-    )
-  }
+  const showList = !!catProvider || totalCount > 0
 
   return (
     <div className="flex flex-col gap-3">
       {header}
 
-      <div className="flex items-center gap-1 border-b border-border">
-        <TabButton active={activeTab === 'all'} onClick={() => setTab('all')} icon={LayoutGrid} label={t('resources.providerDialog.models.all')} count={annotated.length} />
-        {presentTasks.map((tk) => (
-          <TabButton key={tk} active={activeTab === tk} onClick={() => setTab(tk)} icon={TASK_ICON[tk]} label={t(`resources.providerDialog.models.${tk}`)} count={taskCounts.get(tk) ?? 0} />
-        ))}
-      </div>
+      {!catProvider && customModels.length === 0 && (
+        <p className="text-xs text-muted-foreground">{t('resources.providerDialog.models.noEntry')}</p>
+      )}
 
-      <div className="max-h-[420px] overflow-y-auto">
-        {rows.length === 0 && <p className="p-4 text-xs text-muted-foreground">{t('resources.providerDialog.models.empty')}</p>}
-        {selectedCred ? (
-          <>
-            {enabledRows.length > 0 && groupHeader(t('resources.providerDialog.models.enabledGroup'), enabledRows.length)}
-            {enabledRows.map(renderRow)}
-            {disabledRows.length > 0 && groupHeader(t('resources.providerDialog.models.disabledGroup'), disabledRows.length)}
-            {disabledRows.map(renderRow)}
-          </>
-        ) : (
-          rows.map(renderRow)
-        )}
-      </div>
+      {showList && (
+        <>
+          <div className="flex items-center gap-1 border-b border-border">
+            <TabButton active={activeTab === 'all'} onClick={() => setTab('all')} icon={LayoutGrid} label={t('resources.providerDialog.models.all')} count={totalCount} />
+            {presentTasks.map((tk) => (
+              <TabButton key={tk} active={activeTab === tk} onClick={() => setTab(tk)} icon={TASK_ICON[tk]} label={t(`resources.providerDialog.models.${tk}`)} count={taskCounts.get(tk) ?? 0} />
+            ))}
+          </div>
+
+          <div className="max-h-[420px] overflow-y-auto">
+            {rows.length === 0 && customRows.length === 0 && <p className="p-4 text-xs text-muted-foreground">{t('resources.providerDialog.models.empty')}</p>}
+            {customRows.length > 0 && (
+              <>
+                {groupHeader(t('resources.providerDialog.models.customGroup'), customRows.length)}
+                {customRows.map(renderCustomRow)}
+              </>
+            )}
+            {selectedCred ? (
+              <>
+                {enabledRows.length > 0 && groupHeader(t('resources.providerDialog.models.enabledGroup'), enabledRows.length)}
+                {enabledRows.map(renderRow)}
+                {disabledRows.length > 0 && groupHeader(t('resources.providerDialog.models.disabledGroup'), disabledRows.length)}
+                {disabledRows.map(renderRow)}
+              </>
+            ) : (
+              rows.map(renderRow)
+            )}
+          </div>
+        </>
+      )}
     </div>
   )
 }

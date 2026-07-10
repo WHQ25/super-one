@@ -1013,6 +1013,8 @@ export type Messages = {
       environmentVariables: string
       modelMapping: string
       imageCapability: string
+      mediaModels: string
+      addModel: string
       modelIdPlaceholder: string
       modelNamePlaceholder: string
       bucketDefault: string
@@ -1062,6 +1064,12 @@ export type Messages = {
         enabledGroup: string
         disabledGroup: string
         lockedHint: string
+        addCustom: string
+        customGroup: string
+        usedFor: string
+        add: string
+        duplicate: string
+        deleteCustom: string
       }
     }
     mcp: {
@@ -2610,6 +2618,8 @@ export const en: Messages = {
       environmentVariables: 'Environment Variables',
       modelMapping: 'Model Mapping',
       imageCapability: 'Image Generation',
+      mediaModels: 'Models',
+      addModel: 'Add Model',
       modelIdPlaceholder: 'Model ID',
       modelNamePlaceholder: 'Display Name',
       bucketDefault: 'Default',
@@ -2659,6 +2669,12 @@ export const en: Messages = {
         enabledGroup: 'Enabled',
         disabledGroup: 'Disabled',
         lockedHint: 'Always on — used by your model mapping.',
+        addCustom: 'Add Model',
+        customGroup: 'Custom',
+        usedFor: 'Used for',
+        add: 'Add',
+        duplicate: 'This model id already exists.',
+        deleteCustom: 'Remove custom model',
       },
     },
     mcp: {

@@ -1648,6 +1648,7 @@ export type CapabilityTask = 'chat' | 'image' | 'video' | 'tts' | 'asr'
 export interface MediaProviderStatus {
   id: string
   label: string
+  providerLabel?: string
   kind: string
   categories: string[]
   defaultModel: string

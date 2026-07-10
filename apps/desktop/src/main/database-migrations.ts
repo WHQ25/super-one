@@ -1,4 +1,7 @@
+import { parseProviderModelEnv, type ProviderModelEnv } from '@superone/shared/agent-types'
+import type { EndpointDefaults, Platform, ServiceEndpoint, WireProtocol } from '@superone/shared/platform-registry'
 import type Database from 'better-sqlite3'
+import { encryptSecret } from './crypto/secret-store'
 
 export function runDatabaseMigrations(db: Database.Database): void {
   db.exec(`
@@ -115,8 +118,6 @@ export function runDatabaseMigrations(db: Database.Database): void {
     `)
   }
 
-  // Unified AI provider platform (wholesale replacement of api_providers — no data migration in alpha).
-  db.exec('DROP TABLE IF EXISTS api_providers')
   db.exec(`
     CREATE TABLE IF NOT EXISTS credentials (
       id TEXT PRIMARY KEY,
@@ -144,6 +145,8 @@ export function runDatabaseMigrations(db: Database.Database): void {
       config_json TEXT NOT NULL DEFAULT '{}'
     );
   `)
+
+  migrateLegacyApiProviders(db)
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS harness_resource_cache (
@@ -460,5 +463,174 @@ function safeParse<T>(input: string, fallback: T): T {
   } catch {
     return fallback
   }
+}
+
+export interface LegacyApiProviderRow {
+  id: string
+  name: string | null
+  api_key: string | null
+  notes: string | null
+  sort_order: number | null
+  supported_agents: string | null
+  agent_configs: string | null
+  is_active_claude: number | null
+  is_active_codex: number | null
+  agent_type: string | null
+  base_url: string | null
+  api_format: string | null
+  extra_env: string | null
+  created_at: string | null
+  updated_at: string | null
+}
+
+export interface LegacyProviderMigration {
+  platform: Platform
+  bindings: Array<{ consumer: 'chat:claude' | 'chat:codex'; endpointId: string }>
+}
+
+interface LegacyAgentConfig {
+  base_url?: string
+  api_format?: string
+  model_env?: unknown
+  extra_env?: unknown
+}
+
+function legacyEndpointForFormat(apiFormat: string | undefined, agent: string): { protocol: WireProtocol; id: string } {
+  switch (apiFormat || (agent === 'codex' ? 'openai_chat' : 'anthropic')) {
+    case 'openai_responses':
+      return { protocol: 'openai-responses', id: 'responses' }
+    case 'openai_chat':
+    case 'openai':
+      return { protocol: 'openai-chat', id: 'chat' }
+    default:
+      return { protocol: 'anthropic-messages', id: 'messages' }
+  }
+}
+
+function legacyModelMapping(raw: unknown): ProviderModelEnv {
+  const text = typeof raw === 'string' ? raw : raw && typeof raw === 'object' ? JSON.stringify(raw) : '{}'
+  return parseProviderModelEnv(text)
+}
+
+function legacyStringRecord(raw: unknown): Record<string, string> {
+  let obj: unknown = raw
+  if (typeof raw === 'string') {
+    try {
+      obj = JSON.parse(raw || '{}')
+    } catch {
+      obj = {}
+    }
+  }
+  const out: Record<string, string> = {}
+  if (obj && typeof obj === 'object') {
+    for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
+      if (typeof v === 'string') out[k] = v
+    }
+  }
+  return out
+}
+
+function normalizeLegacyAgents(row: LegacyApiProviderRow): string[] {
+  const parsed = safeParse<unknown>(row.supported_agents || '[]', [])
+  const list = Array.isArray(parsed) ? parsed.filter((a): a is string => typeof a === 'string') : []
+  return list.length > 0 ? list : [row.agent_type || 'claude']
+}
+
+function normalizeLegacyAgentConfigs(
+  row: LegacyApiProviderRow,
+  agents: string[],
+): Record<string, LegacyAgentConfig> {
+  const parsed = safeParse<Record<string, LegacyAgentConfig>>(row.agent_configs || '{}', {})
+  if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) return parsed
+  const agent = agents[0] || 'claude'
+  return {
+    [agent]: {
+      base_url: row.base_url || '',
+      api_format: row.api_format || (agent === 'codex' ? 'openai_chat' : 'anthropic'),
+      extra_env: row.extra_env || '{}',
+    },
+  }
+}
+
+export function buildLegacyProviderMigration(row: LegacyApiProviderRow): LegacyProviderMigration | null {
+  const agents = normalizeLegacyAgents(row)
+  const agentConfigs = normalizeLegacyAgentConfigs(row, agents)
+
+  const endpoints: ServiceEndpoint[] = []
+  const bindings: LegacyProviderMigration['bindings'] = []
+  const usedEndpointIds = new Set<string>()
+
+  for (const agent of agents) {
+    const ac = agentConfigs[agent]
+    if (!ac) continue
+    const { protocol, id } = legacyEndpointForFormat(ac.api_format, agent)
+    let endpointId = id
+    let n = 2
+    while (usedEndpointIds.has(endpointId)) endpointId = `${id}-${n++}`
+    usedEndpointIds.add(endpointId)
+
+    const defaults: EndpointDefaults = {}
+    const modelMapping = legacyModelMapping(ac.model_env)
+    const extraEnv = legacyStringRecord(ac.extra_env)
+    if (Object.keys(modelMapping).length > 0) defaults.modelMapping = modelMapping
+    if (Object.keys(extraEnv).length > 0) defaults.extraEnv = extraEnv
+
+    const endpoint: ServiceEndpoint = { id: endpointId, protocol, baseUrl: ac.base_url || '' }
+    if (Object.keys(defaults).length > 0) endpoint.defaults = defaults
+    endpoints.push(endpoint)
+
+    const isActive = agent === 'codex' ? row.is_active_codex : row.is_active_claude
+    if (isActive) bindings.push({ consumer: agent === 'codex' ? 'chat:codex' : 'chat:claude', endpointId })
+  }
+
+  if (endpoints.length === 0) return null
+
+  const platform: Platform = {
+    id: `custom:${row.id}`,
+    brand: 'custom',
+    name: row.name || 'Provider',
+    plans: [{ id: 'api', name: 'API', auth: 'api-key', endpoints }],
+  }
+  return { platform, bindings }
+}
+
+function migrateLegacyApiProviders(db: Database.Database): void {
+  const exists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='api_providers'").get()
+  if (!exists) return
+
+  const rows = db.prepare('SELECT * FROM api_providers').all() as LegacyApiProviderRow[]
+  const insertPlatform = db.prepare(
+    'INSERT OR IGNORE INTO custom_platforms (id, definition_json, created_at, updated_at) VALUES (?, ?, ?, ?)',
+  )
+  const insertCredential = db.prepare(
+    `INSERT OR IGNORE INTO credentials
+       (id, platform_id, plan_id, name, secret, secret_env, overrides_json, notes, sort_order, created_at, updated_at)
+     VALUES (?, ?, 'api', ?, ?, '', '{}', ?, ?, ?, ?)`,
+  )
+  const insertBinding = db.prepare(
+    "INSERT OR IGNORE INTO consumer_bindings (consumer, credential_id, endpoint_id, config_json) VALUES (?, ?, ?, '{}')",
+  )
+
+  for (const row of rows) {
+    const result = buildLegacyProviderMigration(row)
+    if (!result) continue
+    const now = new Date().toISOString()
+    const createdAt = row.created_at || now
+    const updatedAt = row.updated_at || now
+    insertPlatform.run(result.platform.id, JSON.stringify(result.platform), createdAt, updatedAt)
+    insertCredential.run(
+      row.id,
+      result.platform.id,
+      result.platform.name,
+      encryptSecret(row.api_key || ''),
+      row.notes || '',
+      row.sort_order ?? 0,
+      createdAt,
+      updatedAt,
+    )
+    for (const b of result.bindings) insertBinding.run(b.consumer, row.id, b.endpointId)
+  }
+
+  db.exec('DROP TABLE IF EXISTS api_providers')
 }
 

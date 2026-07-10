@@ -35,6 +35,12 @@ import { OfficialProviderPanel } from './OfficialProviderPanel'
 import { ProviderLabel } from './ProviderLabel'
 import { CredentialConfig, EnvEditor, ModelEnvEditor, OverridesEditor, pruneOverrides } from './providers/CredentialConfig'
 import { PlatformModelsPanel } from './providers/PlatformModelsPanel'
+import {
+  AddCustomModelPopover,
+  endpointsSupportedTasks,
+  upsertCustomModel,
+  type CustomModel,
+} from './providers/custom-models'
 
 function isCustomPlatform(platform: Platform): boolean {
   return platform.id.startsWith('custom:')
@@ -417,6 +423,7 @@ function CustomPlatformForm({ onDone }: { onDone: (createdId?: string) => void }
   }))
   const [extraEnv, setExtraEnv] = useState<Record<string, string>>({})
   const [modelMapping, setModelMapping] = useState<ProviderModelEnv>({})
+  const [customModels, setCustomModels] = useState<CustomModel[]>([])
   const [secret, setSecret] = useState('')
   const [busy, setBusy] = useState(false)
 
@@ -458,6 +465,7 @@ function CustomPlatformForm({ onDone }: { onDone: (createdId?: string) => void }
     if (hasModelMapping && e.protocol === 'anthropic-messages') defaults.modelMapping = modelMapping
     return Object.keys(defaults).length > 0 ? { ...e, defaults } : e
   })
+  const supportedTasks = useMemo(() => endpointsSupportedTasks(endpoints), [endpoints])
   const canSubmit = !!name.trim() && !!baseUrl.trim() && endpoints.length > 0
 
   const submit = useCallback(async () => {
@@ -465,19 +473,23 @@ function CustomPlatformForm({ onDone }: { onDone: (createdId?: string) => void }
     setBusy(true)
     try {
       const id = `custom:${crypto.randomUUID()}`
-      const platform: Platform = {
-        id,
-        brand: 'custom',
-        name: name.trim(),
-        plans: [{ id: 'api', name: 'API', auth: 'api-key', endpoints }],
-      }
+      const plan: Plan = { id: 'api', name: 'API', auth: 'api-key', endpoints }
+      const platform: Platform = { id, brand: 'custom', name: name.trim(), plans: [plan] }
+      let overrides: Record<string, EndpointOverride> = {}
+      for (const m of customModels) overrides = upsertCustomModel(overrides, plan, m)
       await createCustomPlatform(platform)
-      await createCredential({ platformId: id, planId: 'api', name: t('resources.providers.defaultKeyName'), secret: secret.trim() })
+      await createCredential({
+        platformId: id,
+        planId: 'api',
+        name: t('resources.providers.defaultKeyName'),
+        secret: secret.trim(),
+        overrides: Object.keys(overrides).length > 0 ? overrides : undefined,
+      })
       onDone(id)
     } finally {
       setBusy(false)
     }
-  }, [canSubmit, endpoints, name, secret, createCustomPlatform, createCredential, onDone, t])
+  }, [canSubmit, endpoints, customModels, name, secret, createCustomPlatform, createCredential, onDone, t])
 
   return (
     <div className="flex flex-col gap-4">
@@ -517,6 +529,27 @@ function CustomPlatformForm({ onDone }: { onDone: (createdId?: string) => void }
             <div className="flex flex-col gap-1.5">
               <span className="text-xs font-medium text-muted-foreground">{t('resources.providerDialog.modelMapping')}</span>
               <ModelEnvEditor value={modelMapping} onChange={setModelMapping} />
+            </div>
+          )}
+          {supportedTasks.length > 0 && (
+            <div className="flex flex-col gap-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-medium text-muted-foreground">{t('resources.providerDialog.mediaModels')}</span>
+                <AddCustomModelPopover
+                  supportedTasks={supportedTasks}
+                  existingIds={customModels.map((m) => m.id)}
+                  onAdd={(m) => setCustomModels((prev) => [...prev, m])}
+                />
+              </div>
+              {customModels.map((m) => (
+                <div key={m.id} className="flex items-center gap-2 rounded-md border border-border px-2.5 py-1.5">
+                  <span className="min-w-0 flex-1 truncate text-xs font-medium">{m.name || m.id}</span>
+                  <span className="shrink-0 text-[10px] text-muted-foreground">{m.tasks.map((tk) => t(TASK_LABEL_KEY[tk])).join(' / ')}</span>
+                  <IconButton size="sm" variant="destructive" onClick={() => setCustomModels((prev) => prev.filter((x) => x.id !== m.id))}>
+                    <Trash2 />
+                  </IconButton>
+                </div>
+              ))}
             </div>
           )}
           <div className="flex flex-col gap-1.5">

@@ -33,6 +33,7 @@ export async function listMediaProvidersHandler(args: ListMediaProvidersArgs = {
     .map((status) => ({
       id: status.id,
       label: status.label,
+      provider: status.providerLabel,
       kind: status.kind,
       categories: status.categories,
       sizing: sizingForKind(status.kind),

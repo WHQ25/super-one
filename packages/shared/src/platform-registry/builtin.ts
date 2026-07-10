@@ -57,10 +57,10 @@ const GLM_MODELS: ProviderModelEnv = {
 }
 
 const MINIMAX_MODELS: ProviderModelEnv = {
-  default: { id: 'MiniMax-M2.7', name: 'MiniMax M2.7' },
-  opus: { id: 'MiniMax-M2.7', name: 'MiniMax M2.7' },
-  sonnet: { id: 'MiniMax-M2.7', name: 'MiniMax M2.7' },
-  haiku: { id: 'MiniMax-M2.7', name: 'MiniMax M2.7' },
+  default: { id: 'MiniMax-M3[1m]', name: 'MiniMax M3' },
+  opus: { id: 'MiniMax-M3[1m]', name: 'MiniMax M3' },
+  sonnet: { id: 'MiniMax-M3', name: 'MiniMax M3' },
+  haiku: { id: 'MiniMax-M3', name: 'MiniMax M3' },
 }
 
 const DOUBAO_MODELS: ProviderModelEnv = {

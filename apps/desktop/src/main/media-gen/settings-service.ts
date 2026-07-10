@@ -1,5 +1,7 @@
 import type { MediaProviderStatus } from '@superone/shared/agent-types'
+import { findPlatform } from '@superone/shared/platform-registry'
 import { listCredentials } from '../providers/credential-store'
+import { getPlatforms } from '../providers/registry'
 import { resolveService } from '../providers/resolver'
 import { imageModelsFor, mediaKindFor } from './providers'
 
@@ -13,6 +15,7 @@ export async function getMediaProviderStatuses(): Promise<MediaProviderStatus[]>
       return {
         id: cred.id,
         label: cred.name,
+        providerLabel: findPlatform(getPlatforms(), resolved.platformId)?.name || resolved.brand,
         kind: mediaKindFor(resolved),
         categories: ['image'],
         defaultModel: models[0]?.id ?? '',

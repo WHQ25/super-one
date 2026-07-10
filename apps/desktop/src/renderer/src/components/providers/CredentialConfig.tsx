@@ -312,13 +312,14 @@ function ModelSlotSelect({
 // --- per-endpoint override config --------------------------------------------
 
 function isEmptyOverride(o: EndpointOverride): boolean {
-  return !o.baseUrl && !o.models && !o.extraEnv && !o.modelMapping
+  return !o.baseUrl && !o.models?.length && !o.extraEnv && !o.modelMapping
 }
 
 function pruneOverride(o: EndpointOverride): EndpointOverride {
   const out: EndpointOverride = {}
   if (o.baseUrl?.trim()) out.baseUrl = o.baseUrl.trim()
-  if (o.models) out.models = o.models
+  const models = o.models?.filter((m) => m.id.trim())
+  if (models && models.length > 0) out.models = models
   if (o.extraEnv && Object.keys(o.extraEnv).length > 0) out.extraEnv = o.extraEnv
   if (o.modelMapping && Object.keys(o.modelMapping).length > 0) out.modelMapping = o.modelMapping
   return out

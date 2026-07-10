@@ -12,6 +12,7 @@ interface ModelInfo {
 interface ProviderInfo {
   id: string
   label: string
+  provider?: string
   kind: string
   defaultModel?: string
   models?: ModelInfo[]
@@ -54,9 +55,10 @@ export function MediaProvidersBlock({ result, isStreaming }: { result: string | 
           {providers.map((p) => (
             <div key={p.id} className="flex flex-col gap-0.5">
               <div className="flex items-center gap-1.5 text-xs">
-                <span className="font-medium text-foreground">{p.label}</span>
-                <span className="text-muted-foreground/70">{p.id}</span>
-                <span className="rounded bg-muted px-1 text-[10px] text-muted-foreground">{p.kind}</span>
+                <span className="font-medium text-foreground">{p.provider ?? p.label}</span>
+                {p.provider && (
+                  <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{p.label}</span>
+                )}
               </div>
               {p.models && p.models.length > 0 && (
                 <div className="text-[11px] text-muted-foreground">

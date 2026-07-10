@@ -112,7 +112,7 @@ export const LIST_MEDIA_PROVIDERS_DESCRIPTION =
   'List the configured and usable media generation providers and their capabilities. Only providers that have an API key configured are returned. ' +
   'Call this before media_generate_image when you are unsure which providers/models are available or which one to use. ' +
   'Pass `category` (e.g. "image") to filter to providers that support that media type. ' +
-  'Returns for each provider: `id` (pass to media_generate_image), `kind`, `categories`, `sizing` ("size" or "aspectRatio"), `supportsMask`, `defaultModel`, and available `models` (each with `id` to pass as the model override and a human-readable `label`).'
+  'Returns for each provider: `id` (pass to media_generate_image), `provider` (platform name) and `label` (key name) for display, `kind`, `categories`, `sizing` ("size" or "aspectRatio"), `supportsMask`, `defaultModel`, and available `models` (each with `id` to pass as the model override and a human-readable `label`).'
 
 export const GENERATE_IMAGE_DESCRIPTION =
   'Generate or edit an image from a text prompt using an AI image model. ' +

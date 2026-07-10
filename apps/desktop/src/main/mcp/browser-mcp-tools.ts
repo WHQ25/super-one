@@ -2,9 +2,11 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import { browserAutomationCall, type BrowserAutomationOp } from '../browser/browser-automation-bridge'
 import { existsSync } from 'fs'
-import { isCdpEnabled, isCdpNetworkEnabled, isCdpCookiesEnabled, isCdpMockEnabled, isCdpEmulateEnabled, resolveCdpTarget, cdpScreenshot, cdpClick, cdpDrag, cdpPress, cdpType, cdpEmulate, cdpGetCookies, cdpSetFileInput } from '../browser/browser-cdp'
-import { enableNetworkCapture, readNetwork, waitForRequest, getResponseBody, addMockRule, clearMockRules } from '../browser/browser-cdp-network'
+import { isCdpEnabled, isCdpCookiesEnabled, isCdpMockEnabled, isCdpEmulateEnabled, resolveCdpTarget, cdpScreenshot, cdpClick, cdpHover, cdpDrag, cdpPress, cdpType, cdpEmulate, cdpGetCookies, cdpSetFileInput } from '../browser/browser-cdp'
+import { encode as toonEncode } from '@toon-format/toon'
+import { startRecording, stopRecording, waitForRecordedRequest, getRecordedRequest, addMockRule, clearMockRules, type RecordedRequest } from '../browser/browser-cdp-network'
 import { persistScreenshot } from '../agent/browser-screenshot-store'
+import { persistTextArtifact } from '../agent/browser-artifact-store'
 
 export const BROWSER_TOOL_NAMES = [
   'browser_snapshot',
@@ -12,6 +14,7 @@ export const BROWSER_TOOL_NAMES = [
   'browser_inspect',
   'browser_screenshot',
   'browser_click',
+  'browser_hover',
   'browser_type',
   'browser_navigate',
   'browser_wait_for',
@@ -22,7 +25,9 @@ export const BROWSER_TOOL_NAMES = [
   'browser_open',
   'browser_evaluate',
   'browser_tabs',
-  'browser_network',
+  'browser_resize',
+  'browser_network_start',
+  'browser_network_stop',
   'browser_network_wait',
   'browser_network_body',
   'browser_cookies',
@@ -50,6 +55,14 @@ function textReply(data: unknown): ToolReply {
   return { content: [{ type: 'text', text: JSON.stringify(data) }] }
 }
 
+// Network tools return TOON instead of JSON: a recording's request manifest is a
+// uniform array of flat rows, where TOON's tabular encoding (header once + CSV
+// rows) is far cheaper than JSON's per-row repeated keys. TOON only wins on
+// uniform/flat data — that is why the manifest is kept flat (see toManifest).
+function toonReply(data: unknown): ToolReply {
+  return { content: [{ type: 'text', text: toonEncode(data) }] }
+}
+
 function errorReply(err: unknown): ToolReply {
   return {
     content: [{ type: 'text', text: `[Error] ${err instanceof Error ? err.message : String(err)}` }],
@@ -57,11 +70,56 @@ function errorReply(err: unknown): ToolReply {
   }
 }
 
-async function dataTool(sessionId: string, op: BrowserAutomationOp, input: unknown): Promise<ToolReply> {
+async function dataTool(
+  sessionId: string,
+  op: BrowserAutomationOp,
+  input: unknown,
+  reply: (data: unknown) => ToolReply = textReply,
+): Promise<ToolReply> {
   try {
-    return textReply(await browserAutomationCall(sessionId, op, input))
+    return reply(await browserAutomationCall(sessionId, op, input))
   } catch (err) {
     return errorReply(err)
+  }
+}
+
+const INLINE_ARTIFACT_LIMIT = 32_000
+const ARTIFACT_PREVIEW_CHARS = 600
+
+// Spill a large text/JSON result to disk instead of dumping it into context.
+// Returns the original payload untouched when it fits inline (or on write
+// failure); otherwise replaces the heavy `field` with a { path, bytes, preview }
+// so the model can Read/grep the artifact on demand. Inert, one-shot results
+// only (evaluate output, an HTTP response body) — never live DOM, which is
+// cheaper to re-query at the source than to jq over a stale dump.
+function spillLargeField(
+  payload: Record<string, unknown>,
+  field: string,
+  ext: string,
+): Record<string, unknown> {
+  const content = String(payload[field] ?? '')
+  if (content.length <= INLINE_ARTIFACT_LIMIT) return payload
+  const path = persistTextArtifact(content, ext)
+  const { [field]: _omitted, ...rest } = payload
+  if (!path) return { ...rest, [field]: content.slice(0, INLINE_ARTIFACT_LIMIT), bytes: content.length, spilled: false }
+  return { ...rest, spilled: true, path, bytes: content.length, preview: content.slice(0, ARTIFACT_PREVIEW_CHARS) }
+}
+
+const REQUEST_BODY_CAP = 8192
+
+// A stop/wait manifest row: a LEAN, UNIFORM set of scan fields (same keys on
+// every row) so TOON encodes the array as a compact table. Headers, request
+// payload, and the full response body are NOT here — read one request's full
+// detail on demand with browser_network_body via `requestId`. Keeping every key
+// present (null when absent) preserves the uniformity TOON's tabular form needs.
+function toManifest(entry: RecordedRequest): Record<string, unknown> {
+  return {
+    requestId: entry.requestId,
+    method: entry.method,
+    status: entry.failed ? 'failed' : entry.status ?? null,
+    resourceType: entry.resourceType ?? null,
+    url: entry.url,
+    bodyBytes: entry.body?.length ?? null,
   }
 }
 
@@ -97,11 +155,22 @@ interface ResolvePoint {
 
 const CDP_REQUIRED_MESSAGE = 'This tool requires the browser CDP setting. Enable it in Settings → Browser.'
 
-async function cdpTool(sessionId: string, tab: string | undefined, fn: (webContentsId: number) => Promise<unknown>): Promise<ToolReply> {
+const VIEWPORT_PRESETS: Record<'mobile' | 'tablet' | 'desktop', { width: number; height: number }> = {
+  mobile: { width: 375, height: 812 },
+  tablet: { width: 768, height: 1024 },
+  desktop: { width: 1280, height: 800 },
+}
+
+async function cdpTool(
+  sessionId: string,
+  tab: string | undefined,
+  fn: (webContentsId: number) => Promise<unknown>,
+  reply: (data: unknown) => ToolReply = textReply,
+): Promise<ToolReply> {
   try {
     if (!isCdpEnabled()) return errorReply(CDP_REQUIRED_MESSAGE)
     const webContentsId = await resolveCdpTarget(sessionId, tab)
-    return textReply(await fn(webContentsId))
+    return reply(await fn(webContentsId))
   } catch (err) {
     return errorReply(err)
   }
@@ -132,11 +201,11 @@ export function registerBrowserTools(server: McpServer, sessionId: string): void
     'browser_snapshot',
     {
       description:
-        "Inspect the current browser page. Pick which data sections to return via `include`: 'meta' (url/title/loading), 'elements' (top interactive elements + CSS selectors + total count), 'text' (truncated visible text), 'console' (recent console entries, filterable). Default include is ['meta','elements','console'] (lean, warning+error console only). Fetch just logs with include:['console'] — that skips the DOM scan entirely. Call this first to orient.",
+        "Inspect the current browser page. Pick which data sections to return via `include`: 'meta' (url/title/loading), 'elements' (flat list of top interactive elements + CSS selectors + total count), 'tree' (hierarchical accessibility tree of landmarks/headings/interactive nodes — use when you need page STRUCTURE and nesting, not just a flat list), 'text' (truncated visible text), 'console' (recent console entries, filterable). Default include is ['meta','elements','console'] (lean, warning+error console only). Fetch just logs with include:['console'] — that skips the DOM scan entirely. Call this first to orient. The result is TOON, not JSON: arrays render as a header row `name[N]{col,col}:` followed by one indented CSV-style row per item.",
       inputSchema: {
         ...tabField,
         include: z
-          .array(z.enum(['meta', 'elements', 'text', 'console']))
+          .array(z.enum(['meta', 'elements', 'tree', 'text', 'console']))
           .default(['meta', 'elements', 'console'])
           .describe("Which data sections to return. Default ['meta','elements','console']."),
         filter: z
@@ -144,6 +213,8 @@ export function registerBrowserTools(server: McpServer, sessionId: string): void
           .optional()
           .describe("Elements section only: case-insensitive substring; only return interactive elements whose name or role contains it."),
         max: z.number().int().min(1).max(200).default(40).describe('Elements section only: max interactive elements, ranked by viewport proximity. Default 40.'),
+        depth: z.number().int().min(1).max(30).default(12).describe('Tree section only: max nesting depth to descend. Default 12.'),
+        treeMax: z.number().int().min(1).max(500).default(150).describe('Tree section only: max nodes to emit (overload budget). When hit, the tree is cut and treeTruncated:true is returned. Default 150.'),
         textMaxChars: z.number().int().min(0).max(20000).default(4000).describe('Text section only: truncate visible text to this many chars. Default 4000.'),
         console: z
           .object({
@@ -161,14 +232,14 @@ export function registerBrowserTools(server: McpServer, sessionId: string): void
           .describe("Console section filtering. Only consulted when `include` contains 'console'."),
       },
     },
-    (args) => dataTool(sessionId, 'snapshot', args),
+    (args) => dataTool(sessionId, 'snapshot', args, toonReply),
   )
 
   server.registerTool(
     'browser_query',
     {
       description:
-        'Find elements on the page by structured criteria. Combine role, text, css selector, and attribute matchers. Returns matching elements with reusable selectors plus the total match count. Use this instead of snapshot when you already know what you are looking for.',
+        'Find elements on the page by structured criteria. Combine role, text, css selector, and attribute matchers. Returns matching elements with reusable selectors plus the total match count, as TOON (matches render as a `matches[N]{...}:` table + rows). Use this instead of snapshot when you already know what you are looking for.',
       inputSchema: {
         ...tabField,
         ...descriptionField,
@@ -184,7 +255,7 @@ export function registerBrowserTools(server: McpServer, sessionId: string): void
           .describe('Extra per-match fields beyond the lean reference. Omit for the cheapest result.'),
       },
     },
-    (args) => dataTool(sessionId, 'query', args),
+    (args) => dataTool(sessionId, 'query', args, toonReply),
   )
 
   server.registerTool(
@@ -269,6 +340,44 @@ export function registerBrowserTools(server: McpServer, sessionId: string): void
         },
         args.engine,
       ),
+  )
+
+  server.registerTool(
+    'browser_hover',
+    {
+      description:
+        'Hover the pointer over one element without clicking. Reveals hover-triggered UI: dropdown/flyout menus, tooltips, and controls that only appear on mouseover. Prefer selector with a CSS selector from snapshot/query; alternatively pass text to match the first visible element, or x/y viewport coordinates. Provide exactly one targeting mode. After hovering, snapshot/query again to read whatever the hover revealed.',
+      inputSchema: {
+        ...tabField,
+        ...descriptionField,
+        selector: z.string().optional().describe('CSS selector of the element to hover.'),
+        text: z.string().optional().describe('Hover the first visible element whose accessible name or text contains this substring.'),
+        x: z.number().optional().describe('Viewport X coordinate in CSS pixels. Must be paired with y.'),
+        y: z.number().optional().describe('Viewport Y coordinate in CSS pixels. Must be paired with x.'),
+        engine: z
+          .enum(['auto', 'cdp', 'synthetic'])
+          .default('auto')
+          .describe(
+            "'auto' (default): trusted CDP mouse move when the CDP setting is on, else synthetic. 'cdp': trusted hover via the browser input pipeline — needed for menus/tooltips gated on real pointer events (e.g. Radix, native title tooltips); errors if the CDP setting is off. 'synthetic': untrusted DOM pointer/mouse events only (pointerover/mouseover/mouseenter/mousemove) — fine for CSS :hover and most JS handlers.",
+          ),
+      },
+    },
+    (args) => {
+      const modes = Number(args.selector != null) + Number(args.text != null) + Number(args.x != null && args.y != null)
+      if (modes !== 1) return Promise.resolve(errorReply('Provide exactly one of selector, text, or x+y.'))
+      return cdpOrData(
+        sessionId,
+        'hover',
+        args,
+        async () => {
+          const point = (await browserAutomationCall(sessionId, 'resolvePoint', args)) as ResolvePoint
+          if (!point.ok) throw new Error(point.error ?? 'hover target not found')
+          await cdpHover(point.webContentsId, point.x, point.y)
+          return { ok: true, selector: point.selector, name: point.name, ...(point.ambiguous ? { ambiguous: point.ambiguous } : {}) }
+        },
+        args.engine,
+      )
+    },
   )
 
   server.registerTool(
@@ -486,99 +595,180 @@ export function registerBrowserTools(server: McpServer, sessionId: string): void
     'browser_evaluate',
     {
       description:
-        'Evaluate a JavaScript expression in the page and return its serializable result (up to 64KB). Prefer snapshot and the semantic action tools; use evaluate only for inspection or interactions those tools cannot express. The expression runs in the page and may mutate its state. A returned Promise is awaited.',
+        'Evaluate a JavaScript expression in the page and return its serializable result. Prefer snapshot and the semantic action tools; use evaluate only for inspection or interactions those tools cannot express. The expression runs in the page and may mutate its state. A returned Promise is awaited. A large result (>32KB serialized) is written to a temp file and returned as { spilled:true, path, bytes, preview } — Read/grep the path for the full value instead of it flooding context.',
       inputSchema: {
         ...tabField,
         ...descriptionField,
         expression: z.string().min(1).max(64000).describe('JavaScript expression, e.g. document.title or (() => ({ items: [...document.querySelectorAll("li")].map(li => li.textContent) }))().'),
       },
     },
-    (args) => dataTool(sessionId, 'evaluate', args),
+    async (args) => {
+      try {
+        const res = (await browserAutomationCall(sessionId, 'evaluate', args)) as { value: unknown }
+        const json = JSON.stringify(res.value ?? null)
+        if (json.length <= INLINE_ARTIFACT_LIMIT) return textReply({ value: res.value ?? null })
+        const path = persistTextArtifact(json, 'json')
+        if (!path) return textReply({ value: res.value ?? null, bytes: json.length })
+        return textReply({ spilled: true, path, bytes: json.length, preview: json.slice(0, ARTIFACT_PREVIEW_CHARS) })
+      } catch (err) {
+        return errorReply(err)
+      }
+    },
   )
 
   server.registerTool(
     'browser_tabs',
     {
       description:
-        'List the browser tabs available to this session, each with its tab id, url, title, and loading state. Use the returned tab id as the "tab" argument to target a specific tab. Only tabs belonging to this session are listed.',
+        'List the browser tabs available to this session, each with its tab id, url, title, and loading state (result in TOON: a `tabs[N]{...}:` table). Use the returned tab id as the "tab" argument to target a specific tab. Only tabs belonging to this session are listed.',
       inputSchema: {},
     },
-    () => dataTool(sessionId, 'tabs', {}),
+    () => dataTool(sessionId, 'tabs', {}, toonReply),
   )
 
   server.registerTool(
-    'browser_network',
+    'browser_resize',
     {
       description:
-        'List recent network requests of the page (experimental; requires the browser CDP setting + network-inspection sub-setting). Each entry has method, URL, status, resource type, and size; long URLs are truncated. Capture starts on the first browser_network* call for a tab — reload or navigate after that to see a page\'s full traffic. Companions: browser_network_wait blocks until a request completes; browser_network_body reads a response body.',
+        "Resize the browser viewport to test responsive layouts — no CDP setting required. Pass a preset ('mobile' 375×812, 'tablet' 768×1024, 'desktop' 1280×800) or explicit width/height (CSS pixels). Pass reset:true to restore the panel's natural size. Only responsive pages (with a width=device-width viewport meta) reflow; non-responsive pages keep their wide layout. For device-pixel-ratio, touch emulation, user-agent, color scheme, timezone, or geolocation, use browser_emulate instead (it requires the CDP setting).",
       inputSchema: {
         ...tabField,
         ...descriptionField,
-        urlIncludes: z.string().optional().describe('Only include requests whose URL contains this substring.'),
-        method: z.string().optional().describe('Only include requests with this HTTP method (GET, POST, ...).'),
-        statusMin: z.number().int().optional().describe('Minimum HTTP status code (inclusive), e.g. 400 to find errors.'),
-        statusMax: z.number().int().optional().describe('Maximum HTTP status code (inclusive).'),
-        resourceType: z.string().optional().describe('Only include this resource type (Document, XHR, Fetch, Script, Image, ...).'),
-        failedOnly: z.boolean().optional().describe('Only include requests that failed.'),
-        max: z.number().int().min(1).max(300).optional().describe('Maximum number of requests to return (default 50).'),
+        preset: z.enum(['mobile', 'tablet', 'desktop']).optional().describe('Named viewport size: mobile 375×812, tablet 768×1024, desktop 1280×800.'),
+        width: z.number().int().min(1).max(10000).optional().describe('Explicit viewport width in CSS pixels (pair with height). Overrides preset.'),
+        height: z.number().int().min(1).max(10000).optional().describe('Explicit viewport height in CSS pixels (pair with width). Overrides preset.'),
+        reset: z.boolean().optional().describe("Restore the panel's natural size, clearing any resize."),
+      },
+    },
+    (args) => {
+      if (args.reset) return dataTool(sessionId, 'emulateViewport', { tab: args.tab, reset: true })
+      const preset = args.preset ? VIEWPORT_PRESETS[args.preset] : undefined
+      const width = args.width ?? preset?.width
+      const height = args.height ?? preset?.height
+      if (width == null || height == null) {
+        return Promise.resolve(errorReply('Provide a preset, both width and height, or reset:true.'))
+      }
+      return dataTool(sessionId, 'emulateViewport', { tab: args.tab, width, height })
+    },
+  )
+
+  server.registerTool(
+    'browser_network_start',
+    {
+      description:
+        "Start recording network requests on a tab (requires the browser CDP setting). Nothing is captured until you start, and capture is torn down with zero overhead when you stop — so record only around the action you care about. Response bodies of matching requests are captured EAGERLY, so they are always readable later (never lost to the browser's cache eviction). Typical flow: browser_network_start → do an action (browser_click / browser_navigate) → browser_network_stop to collect exactly what that action triggered. Scope with `match` + `resourceTypes` to keep it lean.",
+      inputSchema: {
+        ...tabField,
+        ...descriptionField,
+        match: z.string().optional().describe('Only record requests whose URL contains this substring. Omit to record everything (within resourceTypes).'),
+        resourceTypes: z
+          .array(z.string())
+          .optional()
+          .describe("Resource types to record, case-insensitive: XHR, Fetch, Document, Script, Image, Stylesheet, Font, Media, WebSocket. Default ['XHR','Fetch'] (the app's own API calls). Pass ['*'] for all types."),
+        captureBodies: z.boolean().default(true).describe('Capture response bodies of matching requests. Default true. Set false to record only metadata + headers (cheaper).'),
+        max: z.number().int().min(1).max(1000).default(200).describe('Max requests to record before ignoring further ones. Default 200.'),
       },
     },
     (args) =>
-      cdpTool(sessionId, args.tab, async (webContentsId) => {
-        assertExperimental(isCdpNetworkEnabled(), 'network inspection')
-        await enableNetworkCapture(webContentsId)
-        return { requests: readNetwork(webContentsId, args) }
-      }),
+      cdpTool(
+        sessionId,
+        args.tab,
+        async (webContentsId) => {
+          const recordingId = await startRecording(webContentsId, {
+            match: args.match,
+            resourceTypes: args.resourceTypes,
+            captureBodies: args.captureBodies,
+            max: args.max,
+          })
+          return { recordingId, capturing: true, match: args.match ?? null }
+        },
+        toonReply,
+      ),
+  )
+
+  server.registerTool(
+    'browser_network_stop',
+    {
+      description:
+        'Stop a recording started with browser_network_start and return a lean manifest of what it captured, as TOON (a compact tabular format — read the rows top-to-bottom). Each row has requestId, method, status, resourceType, url, and bodyBytes — enough to scan and pick which requests matter. It deliberately does NOT include headers, the request payload, or the response body: read one request\'s full detail (headers + payload + response body) on demand with browser_network_body({ recordingId, requestId }), so a many-request recording never floods context. Bodies stay readable after stop (recent recordings are retained). Pass keep:true to read the manifest so far WITHOUT stopping (peek during a long-running action).',
+      inputSchema: {
+        recordingId: z.string().describe('The id returned by browser_network_start.'),
+        keep: z.boolean().default(false).describe('Keep recording (peek) instead of stopping. Default false: stop and tear down capture.'),
+      },
+    },
+    async (args) => {
+      try {
+        const requests = await stopRecording(args.recordingId, args.keep)
+        if (requests == null) return errorReply(`No active recording with id: ${args.recordingId}`)
+        return toonReply({ count: requests.length, requests: requests.map(toManifest) })
+      } catch (err) {
+        return errorReply(err)
+      }
+    },
   )
 
   server.registerTool(
     'browser_network_wait',
     {
       description:
-        'Block until a network request whose URL contains the given substring completes, then return it (experimental; requires the browser CDP setting + network-inspection sub-setting). Use after a click or submit that triggers an XHR/fetch, instead of polling browser_network. Default timeout 15s, max 60s.',
+        'Within an active recording, block until a recorded request whose URL contains the given substring finishes, then return its manifest row as TOON (requestId, method, status, resourceType, url, bodyBytes; read the full detail/body with browser_network_body via requestId). Use after an action that fires an async XHR/fetch, before browser_network_stop, instead of guessing a delay. Default timeout 15s, max 60s.',
       inputSchema: {
-        ...tabField,
         ...descriptionField,
+        recordingId: z.string().describe('The id returned by browser_network_start.'),
         url: z.string().min(1).describe('Substring the request URL must contain.'),
         timeoutMs: z.number().int().min(100).max(60000).default(15000).describe('Maximum wait in milliseconds. Default 15000.'),
       },
     },
-    (args) =>
-      cdpTool(sessionId, args.tab, async (webContentsId) => {
-        assertExperimental(isCdpNetworkEnabled(), 'network inspection')
-        await enableNetworkCapture(webContentsId)
-        const hit = await waitForRequest(webContentsId, args.url, args.timeoutMs)
-        if (!hit) throw new Error(`Timed out waiting for a request matching: ${args.url}`)
-        return hit
-      }),
+    async (args) => {
+      try {
+        const hit = await waitForRecordedRequest(args.recordingId, args.url, args.timeoutMs)
+        if (!hit) return errorReply(`Timed out after ${args.timeoutMs}ms waiting for a request matching "${args.url}" (or recording ${args.recordingId} was not found).`)
+        return toonReply(toManifest(hit))
+      } catch (err) {
+        return errorReply(err)
+      }
+    },
   )
 
   server.registerTool(
     'browser_network_body',
     {
       description:
-        'Return the response body (up to 64KB) of the most recent completed request whose URL contains the given substring (experimental; requires the browser CDP setting + network-inspection sub-setting). Works for XHR/fetch/script responses captured after network capture started; the top-level document body is usually unavailable (the renderer consumes it) — use browser_evaluate for that.',
+        "Read one recorded request's full detail on demand (result in TOON), by the requestId from a browser_network_stop / browser_network_wait manifest: method, url, status, mimeType, requestHeaders, requestBody (POST payload), responseHeaders, and the full response body. Reads from the recording's own captured store (not the browser's volatile cache), so it works even for large bodies long after the request finished. A large response body is written to a temp file and returned as { spilled:true, path, bytes, preview } — Read/grep the path. Works while the recording is active or after it has stopped (recent recordings are retained).",
       inputSchema: {
-        ...tabField,
         ...descriptionField,
-        url: z.string().min(1).describe('Substring the request URL must contain.'),
+        recordingId: z.string().describe('The id returned by browser_network_start.'),
+        requestId: z.string().describe('The requestId of the entry (from the stop/wait manifest) whose detail to read.'),
       },
     },
-    (args) =>
-      cdpTool(sessionId, args.tab, async (webContentsId) => {
-        assertExperimental(isCdpNetworkEnabled(), 'network inspection')
-        await enableNetworkCapture(webContentsId)
-        const body = await getResponseBody(webContentsId, args.url)
-        if (!body) throw new Error(`No completed request found matching: ${args.url}`)
-        return body
-      }),
+    (args) => {
+      const e = getRecordedRequest(args.recordingId, args.requestId)
+      if (!e) return Promise.resolve(errorReply(`No recorded request ${args.requestId} in recording ${args.recordingId} (it may have been evicted — recent recordings are retained).`))
+      const detail: Record<string, unknown> = {
+        url: e.url,
+        method: e.method,
+        status: e.failed ? 'failed' : e.status ?? null,
+        statusText: e.statusText ?? null,
+        mimeType: e.mimeType ?? null,
+        requestHeaders: e.requestHeaders ?? null,
+        requestBody: e.requestBody != null && e.requestBody.length > REQUEST_BODY_CAP ? e.requestBody.slice(0, REQUEST_BODY_CAP) : e.requestBody ?? null,
+        responseHeaders: e.responseHeaders ?? null,
+      }
+      if (e.errorText) detail.errorText = e.errorText
+      if (e.body == null) {
+        detail.body = null
+        detail.bodyOmitted = e.bodyOmitted ?? 'not-captured'
+        return Promise.resolve(toonReply(detail))
+      }
+      return Promise.resolve(toonReply(spillLargeField({ ...detail, body: e.body, bodyTruncated: e.bodyTruncated }, 'body', 'txt')))
+    },
   )
 
   server.registerTool(
     'browser_cookies',
     {
       description:
-        'Read the cookies visible to the page (experimental; requires the browser CDP setting + cookie-access sub-setting). Returns name, value, domain, path, and key flags. Long cookie values are truncated (a valueLength field carries the original length). Pass urls to scope to specific URLs.',
+        'Read the cookies visible to the page (experimental; requires the browser CDP setting + cookie-access sub-setting). Returns name, value, domain, path, and key flags as TOON (a `cookies[N]{...}:` table). Long cookie values are truncated (a valueLength field carries the original length). Pass urls to scope to specific URLs.',
       inputSchema: {
         ...tabField,
         ...descriptionField,
@@ -586,10 +776,15 @@ export function registerBrowserTools(server: McpServer, sessionId: string): void
       },
     },
     (args) =>
-      cdpTool(sessionId, args.tab, async (webContentsId) => {
-        assertExperimental(isCdpCookiesEnabled(), 'cookie access')
-        return { cookies: await cdpGetCookies(webContentsId, args.urls) }
-      }),
+      cdpTool(
+        sessionId,
+        args.tab,
+        async (webContentsId) => {
+          assertExperimental(isCdpCookiesEnabled(), 'cookie access')
+          return { cookies: await cdpGetCookies(webContentsId, args.urls) }
+        },
+        toonReply,
+      ),
   )
 
   server.registerTool(

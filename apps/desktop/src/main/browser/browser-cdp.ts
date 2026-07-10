@@ -7,11 +7,6 @@ export function isCdpEnabled(): boolean {
   return readAppSettings().cdpEnabled
 }
 
-export function isCdpNetworkEnabled(): boolean {
-  const s = readAppSettings()
-  return s.cdpEnabled && s.cdpNetworkEnabled
-}
-
 export function isCdpCookiesEnabled(): boolean {
   const s = readAppSettings()
   return s.cdpEnabled && s.cdpCookiesEnabled
@@ -141,6 +136,10 @@ export async function cdpClick(webContentsId: number, x: number, y: number): Pro
   await cdpSend(webContentsId, 'Input.dispatchMouseEvent', { type: 'mouseMoved', x, y })
   await cdpSend(webContentsId, 'Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', buttons: 1, clickCount: 1 })
   await cdpSend(webContentsId, 'Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', buttons: 0, clickCount: 1 })
+}
+
+export async function cdpHover(webContentsId: number, x: number, y: number): Promise<void> {
+  await cdpSend(webContentsId, 'Input.dispatchMouseEvent', { type: 'mouseMoved', x, y })
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))

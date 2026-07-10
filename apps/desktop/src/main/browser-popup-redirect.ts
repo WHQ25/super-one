@@ -1,23 +1,10 @@
-import { app, ipcMain, session, webContents } from 'electron'
+import { app, ipcMain, session } from 'electron'
 import { AgentIpcChannels } from '@superone/shared/agent-types'
-import { isCdpEnabled } from './browser/browser-cdp'
-import { enableNetworkCapture } from './browser/browser-cdp-network'
-import log from './logger'
 
 const BROWSER_PARTITION = 'persist:browser'
 
 function isBrowserWebview(wc: Electron.WebContents): boolean {
   return wc.getType() === 'webview' && wc.session === session.fromPartition(BROWSER_PARTITION)
-}
-
-// Turned on when CDP is toggled on at runtime: attach + Network.enable to every
-// already-open browser tab so their traffic is captured without a reload.
-export function enableCdpCaptureForExistingBrowserTabs(): void {
-  for (const wc of webContents.getAllWebContents()) {
-    if (isBrowserWebview(wc)) {
-      void enableNetworkCapture(wc.id).catch((err) => log.warn('[browser-cdp] backfill capture failed: %s', err instanceof Error ? err.message : String(err)))
-    }
-  }
 }
 
 const allowedCertHosts = new Set<string>()
@@ -44,10 +31,6 @@ export function registerBrowserPopupRedirect(): void {
 
   app.on('web-contents-created', (_event, contents) => {
     if (!isBrowserWebview(contents)) return
-
-    if (isCdpEnabled()) {
-      void enableNetworkCapture(contents.id).catch((err) => log.warn('[browser-cdp] capture attach failed: %s', err instanceof Error ? err.message : String(err)))
-    }
 
     contents.on('certificate-error', (event, url, error, _certificate, callback) => {
       const host = certHost(url)

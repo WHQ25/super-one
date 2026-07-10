@@ -4,6 +4,7 @@ export type BrowserOp =
   | 'inspect'
   | 'screenshot'
   | 'click'
+  | 'hover'
   | 'type'
   | 'navigate'
   | 'wait_for'
@@ -14,7 +15,9 @@ export type BrowserOp =
   | 'open'
   | 'evaluate'
   | 'tabs'
-  | 'network'
+  | 'resize'
+  | 'network_start'
+  | 'network_stop'
   | 'network_wait'
   | 'network_body'
   | 'cookies'
@@ -23,16 +26,16 @@ export type BrowserOp =
   | 'mock'
 
 const BROWSER_OPS = new Set<BrowserOp>([
-  'snapshot', 'query', 'inspect', 'screenshot', 'click', 'type', 'navigate',
-  'wait_for', 'press', 'scroll', 'drag', 'select', 'open', 'evaluate', 'tabs',
-  'network', 'network_wait', 'network_body', 'cookies', 'upload_file', 'emulate', 'mock',
+  'snapshot', 'query', 'inspect', 'screenshot', 'click', 'hover', 'type', 'navigate',
+  'wait_for', 'press', 'scroll', 'drag', 'select', 'open', 'evaluate', 'tabs', 'resize',
+  'network_start', 'network_stop', 'network_wait', 'network_body', 'cookies', 'upload_file', 'emulate', 'mock',
 ])
 
 /** Read-only ops whose JSON result is worth expanding; the rest are lean actions. */
-const READ_OPS = new Set<BrowserOp>(['snapshot', 'query', 'inspect', 'tabs', 'evaluate', 'network', 'network_wait', 'network_body', 'cookies'])
+const READ_OPS = new Set<BrowserOp>(['snapshot', 'query', 'inspect', 'tabs', 'evaluate', 'network_stop', 'network_wait', 'network_body', 'cookies'])
 
 /** Ops that report success/failure via an `ok` field (or an error). */
-const ACTION_OPS = new Set<BrowserOp>(['click', 'type', 'press', 'scroll', 'drag', 'select', 'navigate', 'wait_for', 'open', 'upload_file', 'emulate', 'mock'])
+const ACTION_OPS = new Set<BrowserOp>(['click', 'hover', 'type', 'press', 'scroll', 'drag', 'select', 'navigate', 'wait_for', 'open', 'resize', 'network_start', 'upload_file', 'emulate', 'mock'])
 
 /** Strip the `browser_` prefix; return the op if this is a known browser tool. */
 export function getBrowserOp(mcpToolName: string): BrowserOp | null {
@@ -45,6 +48,8 @@ export function getBrowserOp(mcpToolName: string): BrowserOp | null {
 export function browserVerbKey(op: BrowserOp): string {
   if (op === 'wait_for') return 'waitFor'
   if (op === 'upload_file') return 'uploadFile'
+  if (op === 'network_start') return 'networkStart'
+  if (op === 'network_stop') return 'networkStop'
   if (op === 'network_wait') return 'networkWait'
   if (op === 'network_body') return 'networkBody'
   return op
@@ -86,6 +91,7 @@ export function browserInputSummary(op: BrowserOp, p: Record<string, unknown>): 
     case 'open':
       return p.url != null ? stripProtocol(s(p.url)) : ''
     case 'click':
+    case 'hover':
       if (p.selector != null) return s(p.selector)
       if (p.text != null) return `“${s(p.text)}”`
       if (p.x != null && p.y != null) return `(${s(p.x)}, ${s(p.y)})`
@@ -141,18 +147,22 @@ export function browserInputSummary(op: BrowserOp, p: Record<string, unknown>): 
       return truncate(s(p.expression), 60)
     case 'tabs':
       return ''
-    case 'network':
-      if (p.bodyForUrl != null) return `body: ${s(p.bodyForUrl)}`
-      if (p.waitForUrl != null) return `wait: ${s(p.waitForUrl)}`
+    case 'resize':
+      if (p.reset) return 'reset'
+      if (p.preset != null) return s(p.preset)
+      if (p.width != null && p.height != null) return `${s(p.width)}×${s(p.height)}`
+      return ''
+    case 'network_start':
       return [
-        p.urlIncludes != null ? s(p.urlIncludes) : '',
-        p.method != null ? s(p.method) : '',
-        p.resourceType != null ? s(p.resourceType) : '',
-        p.statusMin != null || p.statusMax != null ? `${p.statusMin != null ? s(p.statusMin) : ''}–${p.statusMax != null ? s(p.statusMax) : ''}` : '',
+        p.match != null ? s(p.match) : '',
+        Array.isArray(p.resourceTypes) ? (p.resourceTypes as unknown[]).map(s).join(',') : '',
       ].filter(Boolean).join(' · ')
+    case 'network_stop':
+      return p.keep ? 'peek' : ''
     case 'network_wait':
-    case 'network_body':
       return s(p.url)
+    case 'network_body':
+      return s(p.requestId)
     case 'cookies':
       return Array.isArray(p.urls) ? (p.urls as unknown[]).map((u) => stripProtocol(s(u))).join(', ') : ''
     case 'upload_file': {
@@ -182,20 +192,50 @@ export interface BrowserResultInfo {
   imagePath?: string
 }
 
-function arrLen(v: unknown): number {
-  return Array.isArray(v) ? v.length : 0
-}
-
 function cleanError(result: string | undefined): string | undefined {
   if (!result) return undefined
   const text = result.replace(/^\[Error\]\s*/, '').replace(/<\/?tool_use_error>/g, '').trim()
   return text || undefined
 }
 
-/** Parse a browser tool's JSON result into a status + optional count/notFound summary. */
+/** Read/list tools return TOON (not JSON) to save tokens. */
+const TOON_RESULT_OPS = new Set<BrowserOp>([
+  'snapshot', 'query', 'tabs', 'cookies',
+  'network_start', 'network_stop', 'network_wait', 'network_body',
+])
+
+/** Pull a count from a TOON tabular array header `name[N]{...}:` without a full decode. */
+function toonArrayCount(result: string, name: string): number | undefined {
+  const m = result.match(new RegExp(`${name}\\[(\\d+)\\]`))
+  return m ? Number(m[1]) : undefined
+}
+
+function parseToonResult(op: BrowserOp, result: string): BrowserResultInfo {
+  const count = (kind: 'matches' | 'tabs' | 'requests' | 'cookies', n: number | undefined): BrowserResultInfo =>
+    n != null ? { status: 'neutral', count: { kind, n } } : { status: 'neutral' }
+  switch (op) {
+    case 'network_start':
+      return { status: 'ok' }
+    case 'network_stop':
+      return count('requests', toonArrayCount(result, 'requests'))
+    case 'query': {
+      const total = result.match(/(?:^|\n)total: (\d+)/)
+      return count('matches', total ? Number(total[1]) : toonArrayCount(result, 'matches'))
+    }
+    case 'tabs':
+      return count('tabs', toonArrayCount(result, 'tabs'))
+    case 'cookies':
+      return count('cookies', toonArrayCount(result, 'cookies'))
+    default:
+      return { status: 'neutral' } // snapshot, network_wait, network_body
+  }
+}
+
+/** Parse a browser tool's result into a status + optional count/notFound summary. */
 export function parseBrowserResult(op: BrowserOp, result: string | undefined, isError: boolean): BrowserResultInfo {
   if (isError) return { status: 'error', errorText: cleanError(result) }
   if (!result) return { status: 'neutral' }
+  if (TOON_RESULT_OPS.has(op)) return parseToonResult(op, result)
 
   let data: unknown
   try { data = JSON.parse(result) } catch { return { status: 'neutral' } }
@@ -206,25 +246,11 @@ export function parseBrowserResult(op: BrowserOp, result: string | undefined, is
   }
 
   switch (op) {
-    case 'snapshot':
-      return { status: 'neutral' }
-    case 'query': {
-      const n = typeof obj?.total === 'number' ? obj.total : arrLen(obj?.matches)
-      return { status: 'neutral', count: { kind: 'matches', n } }
-    }
-    case 'tabs':
-      return { status: 'neutral', count: { kind: 'tabs', n: arrLen(data) } }
     case 'inspect':
       if (obj && obj.exists === false) return { status: 'neutral', notFound: true }
       return { status: 'neutral' }
     case 'screenshot':
       return { status: 'ok', imagePath: typeof obj?.path === 'string' ? obj.path : undefined }
-    case 'network':
-      return obj && Array.isArray(obj.requests)
-        ? { status: 'neutral', count: { kind: 'requests', n: obj.requests.length } }
-        : { status: 'neutral' }
-    case 'cookies':
-      return { status: 'neutral', count: { kind: 'cookies', n: arrLen(obj?.cookies) } }
     default:
       return { status: ACTION_OPS.has(op) ? 'ok' : 'neutral' }
   }

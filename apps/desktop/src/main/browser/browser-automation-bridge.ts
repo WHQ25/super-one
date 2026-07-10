@@ -9,6 +9,7 @@ export type BrowserAutomationOp =
   | 'inspect'
   | 'screenshot'
   | 'click'
+  | 'hover'
   | 'type'
   | 'navigate'
   | 'wait_for'

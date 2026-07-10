@@ -22,6 +22,8 @@ interface BaseInput {
   include?: string[]
   filter?: string
   max?: number
+  depth?: number
+  treeMax?: number
   textMaxChars?: number
   console?: ConsoleQuery
   selector?: string
@@ -169,9 +171,16 @@ const __sone = {
 
 const INTERACTIVE_SELECTOR = 'a[href],button,input,textarea,select,[role],[tabindex],[onclick]'
 
-function snapshotScript(input: { include: string[]; filter?: string; max?: number; textMaxChars?: number }): string {
+const TREE_TAGS = new Set([
+  'main', 'nav', 'header', 'footer', 'aside', 'section', 'article', 'form', 'dialog',
+  'ul', 'ol', 'li', 'table', 'thead', 'tbody', 'tr', 'fieldset', 'label', 'figure',
+  'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+])
+
+function snapshotScript(input: { include: string[]; filter?: string; max?: number; depth?: number; treeMax?: number; textMaxChars?: number }): string {
   const wantMeta = input.include.includes('meta')
   const wantElements = input.include.includes('elements')
+  const wantTree = input.include.includes('tree')
   const wantText = input.include.includes('text')
   return `(() => {
     ${HELPERS}
@@ -192,7 +201,46 @@ function snapshotScript(input: { include: string[]; filter?: string; max?: numbe
     out.elementsTotal = all.length;`
         : ''
     }
-    ${wantText ? `out.text = (document.body && document.body.innerText || '').slice(0, ${input.textMaxChars ?? 4000});` : ''}
+    ${
+      wantTree
+        ? `const TREE_TAGS = ${JSON.stringify([...TREE_TAGS])};
+    const maxDepth = ${input.depth ?? 12};
+    let budget = ${input.treeMax ?? 150};
+    let treeCut = false;
+    const significant = (el) => {
+      if (__sone.role(el)) return true;
+      return TREE_TAGS.indexOf(el.tagName.toLowerCase()) !== -1;
+    };
+    const collect = (parent, depth) => {
+      const nodes = [];
+      for (const child of parent.children) {
+        if (budget <= 0) { treeCut = true; break; }
+        if (!__sone.visible(child)) continue;
+        if (significant(child)) {
+          budget--;
+          const node = { tag: child.tagName.toLowerCase(), role: __sone.role(child), name: __sone.name(child).slice(0, 80) };
+          const sel = __sone.selectorOf(child);
+          if (sel) node.selector = sel;
+          if (depth < maxDepth) { const kids = collect(child, depth + 1); if (kids.length) node.children = kids; }
+          else if (child.children.length) { node.truncated = true; treeCut = true; }
+          nodes.push(node);
+        } else {
+          for (const g of collect(child, depth)) nodes.push(g);
+        }
+      }
+      return nodes;
+    };
+    out.tree = collect(document.body || document.documentElement, 1);
+    if (treeCut) out.treeTruncated = true;`
+        : ''
+    }
+    ${
+      wantText
+        ? `const __full = (document.body && document.body.innerText || '');
+    out.text = __full.slice(0, ${input.textMaxChars ?? 4000});
+    if (__full.length > out.text.length) out.textTruncated = true;`
+        : ''
+    }
     return out;
   })()`
 }
@@ -258,6 +306,34 @@ function inspectScript(input: { selector: string; fields?: string[]; maxChars?: 
       out.context = { ancestors, labels, form };
     }
     return out;
+  })()`
+}
+
+function hoverScript(input: { selector?: string; text?: string; x?: number; y?: number }): string {
+  return `(() => {
+    ${HELPERS}
+    const sel = ${JSON.stringify(input.selector ?? null)};
+    const text = ${JSON.stringify(input.text ?? null)};
+    const hasXY = ${input.x != null && input.y != null};
+    const px = ${JSON.stringify(input.x ?? null)}, py = ${JSON.stringify(input.y ?? null)};
+    let el = null, ambiguous = 0;
+    if (sel) { const nodes = document.querySelectorAll(sel); ambiguous = nodes.length; el = nodes[0] || null; }
+    else if (text) { const t = text.toLowerCase(); el = Array.from(document.querySelectorAll('a,button,input,[role],[onclick],label,summary')).filter((e) => __sone.visible(e)).find((e) => (__sone.name(e) || e.innerText || '').toLowerCase().includes(t)) || null; }
+    else if (hasXY) el = document.elementFromPoint(px, py);
+    if (!el) return { ok: false, error: 'hover target not found' };
+    el.scrollIntoView({ block: 'center', inline: 'center' });
+    const r = el.getBoundingClientRect();
+    const cx = hasXY ? px : r.left + r.width / 2, cy = hasXY ? py : r.top + r.height / 2;
+    const base = { bubbles: true, cancelable: true, clientX: cx, clientY: cy, view: window };
+    el.dispatchEvent(new PointerEvent('pointerover', Object.assign({ pointerType: 'mouse' }, base)));
+    el.dispatchEvent(new MouseEvent('mouseover', base));
+    el.dispatchEvent(new PointerEvent('pointerenter', Object.assign({ pointerType: 'mouse', bubbles: false }, base)));
+    el.dispatchEvent(new MouseEvent('mouseenter', Object.assign({}, base, { bubbles: false })));
+    el.dispatchEvent(new PointerEvent('pointermove', Object.assign({ pointerType: 'mouse' }, base)));
+    el.dispatchEvent(new MouseEvent('mousemove', base));
+    const res = { ok: true, selector: __sone.selectorOf(el), name: __sone.name(el) };
+    if (ambiguous > 1) res.ambiguous = ambiguous;
+    return res;
   })()`
 }
 
@@ -577,9 +653,9 @@ export async function runBrowserOp(sessionId: string, op: string, rawInput: unkn
     }
     case 'snapshot': {
       const include = input.include?.length ? input.include : ['meta', 'elements', 'console']
-      const needsPage = include.some((s) => s === 'meta' || s === 'elements' || s === 'text')
+      const needsPage = include.some((s) => s === 'meta' || s === 'elements' || s === 'tree' || s === 'text')
       const page = needsPage
-        ? ((await browserExecJs(id, snapshotScript({ include, filter: input.filter, max: input.max, textMaxChars: input.textMaxChars }))) as Record<string, unknown>)
+        ? ((await browserExecJs(id, snapshotScript({ include, filter: input.filter, max: input.max, depth: input.depth, treeMax: input.treeMax, textMaxChars: input.textMaxChars }))) as Record<string, unknown>)
         : {}
       if (include.includes('console')) page.console = readBrowserConsole(id, input.console ?? {})
       return page
@@ -590,6 +666,8 @@ export async function runBrowserOp(sessionId: string, op: string, rawInput: unkn
       return browserExecJs(id, inspectScript(input as { selector: string }))
     case 'click':
       return browserExecJs(id, clickScript(input as Parameters<typeof clickScript>[0]))
+    case 'hover':
+      return browserExecJs(id, hoverScript(input as Parameters<typeof hoverScript>[0]))
     case 'type':
       return browserExecJs(id, typeScript(input as { text: string }))
     case 'screenshot': {
@@ -665,7 +743,7 @@ export async function runBrowserOp(sessionId: string, op: string, rawInput: unkn
       const expr = String(input.expression ?? '')
       const value = await browserExecJs(id, `(async () => { return (${expr}); })()`)
       const json = JSON.stringify(value ?? null)
-      if (json.length > 64_000) throw new Error('Evaluate result exceeds 64KB; narrow the expression')
+      if (json.length > 5_000_000) throw new Error('Evaluate result exceeds 5MB; narrow the expression')
       return { value: value ?? null }
     }
     default:

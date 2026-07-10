@@ -11,7 +11,7 @@
     },
     "apps/desktop": {
       "name": "@superone/desktop",
-      "version": "0.43.13-alpha",
+      "version": "0.44.0-alpha",
       "dependencies": {
         "@ai-sdk/google": "^4.0.8",
         "@ai-sdk/openai": "^4.0.7",
@@ -37,6 +37,7 @@
         "@tiptap/extension-table": "^3.23.6",
         "@tiptap/html": "^3.23.6",
         "@tiptap/suggestion": "^3.23.6",
+        "@toon-format/toon": "^2.3.0",
         "@xterm/addon-fit": "^0.10.0",
         "@xterm/addon-search": "^0.16.0",
         "@xterm/addon-serialize": "^0.13.0",
@@ -1582,6 +1583,8 @@
     "@tiptap/starter-kit": ["@tiptap/starter-kit@3.23.6", "", { "dependencies": { "@tiptap/core": "^3.23.6", "@tiptap/extension-blockquote": "^3.23.6", "@tiptap/extension-bold": "^3.23.6", "@tiptap/extension-bullet-list": "^3.23.6", "@tiptap/extension-code": "^3.23.6", "@tiptap/extension-code-block": "^3.23.6", "@tiptap/extension-document": "^3.23.6", "@tiptap/extension-dropcursor": "^3.23.6", "@tiptap/extension-gapcursor": "^3.23.6", "@tiptap/extension-hard-break": "^3.23.6", "@tiptap/extension-heading": "^3.23.6", "@tiptap/extension-horizontal-rule": "^3.23.6", "@tiptap/extension-italic": "^3.23.6", "@tiptap/extension-link": "^3.23.6", "@tiptap/extension-list": "^3.23.6", "@tiptap/extension-list-item": "^3.23.6", "@tiptap/extension-list-keymap": "^3.23.6", "@tiptap/extension-ordered-list": "^3.23.6", "@tiptap/extension-paragraph": "^3.23.6", "@tiptap/extension-strike": "^3.23.6", "@tiptap/extension-text": "^3.23.6", "@tiptap/extension-underline": "^3.23.6", "@tiptap/extensions": "^3.23.6", "@tiptap/pm": "^3.23.6" } }, "sha512-gykwtGWrnWCmtql1hid3opac/KV8zQvOAnu3bTqIqcHrn1FusbUwKmNzavSbfGvcktHM3hFjb35W48JyVLyu/A=="],
 
     "@tiptap/suggestion": ["@tiptap/suggestion@3.23.6", "", { "peerDependencies": { "@tiptap/core": "3.23.6", "@tiptap/pm": "3.23.6" } }, "sha512-YAoI2jctPClcyUhIcpxb1QlrUFG2a1Xsv1gS4tIfgh5KoOuEfGfCoeCq89TKgz/rHeP+ktRhzg1E2E4EY68HEA=="],
+
+    "@toon-format/toon": ["@toon-format/toon@2.3.0", "", {}, "sha512-/Ew9etdRQKVMnm9fDaCG0JjyAOK/O7T0M97oum1aW4W+UR8ZhVVPBanIV7oWgHBiGlnVxV9M55PWQCHofDV07w=="],
 
     "@tybys/wasm-util": ["@tybys/wasm-util@0.10.2", "", { "dependencies": { "tslib": "^2.4.0" } }, "sha512-RoBvJ2X0wuKlWFIjrwffGw1IqZHKQqzIchKaadZZfnNpsAYp2mM0h36JtPCjNDAHGgYez/15uMBpfGwchhiMgg=="],
 

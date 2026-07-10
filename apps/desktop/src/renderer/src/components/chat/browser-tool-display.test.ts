@@ -8,9 +8,9 @@ describe('getBrowserOp', () => {
   })
 
   it('recognizes the CDP-only ops', () => {
-    expect(getBrowserOp('browser_network')).toBe('network')
+    expect(getBrowserOp('browser_network_start')).toBe('network_start')
+    expect(getBrowserOp('browser_network_stop')).toBe('network_stop')
     expect(getBrowserOp('browser_network_wait')).toBe('network_wait')
-    expect(getBrowserOp('browser_network_body')).toBe('network_body')
     expect(getBrowserOp('browser_cookies')).toBe('cookies')
     expect(getBrowserOp('browser_upload_file')).toBe('upload_file')
     expect(getBrowserOp('browser_emulate')).toBe('emulate')
@@ -28,8 +28,9 @@ describe('browserVerbKey', () => {
   it('camelCases wait_for and upload_file and leaves others intact', () => {
     expect(browserVerbKey('wait_for')).toBe('waitFor')
     expect(browserVerbKey('upload_file')).toBe('uploadFile')
+    expect(browserVerbKey('network_start')).toBe('networkStart')
+    expect(browserVerbKey('network_stop')).toBe('networkStop')
     expect(browserVerbKey('network_wait')).toBe('networkWait')
-    expect(browserVerbKey('network_body')).toBe('networkBody')
     expect(browserVerbKey('snapshot')).toBe('snapshot')
   })
 })
@@ -38,9 +39,8 @@ describe('isReadBrowserOp', () => {
   it('marks inspection ops as read-only and actions as not', () => {
     expect(isReadBrowserOp('snapshot')).toBe(true)
     expect(isReadBrowserOp('evaluate')).toBe(true)
-    expect(isReadBrowserOp('network')).toBe(true)
+    expect(isReadBrowserOp('network_stop')).toBe(true)
     expect(isReadBrowserOp('network_wait')).toBe(true)
-    expect(isReadBrowserOp('network_body')).toBe(true)
     expect(isReadBrowserOp('cookies')).toBe(true)
     expect(isReadBrowserOp('click')).toBe(false)
     expect(isReadBrowserOp('emulate')).toBe(false)
@@ -86,15 +86,14 @@ describe('browserInputSummary', () => {
     expect(browserInputSummary('tabs', {})).toBe('')
   })
 
-  it('summarizes network by body, wait, or filters', () => {
-    expect(browserInputSummary('network', { bodyForUrl: '/api/user' })).toBe('body: /api/user')
-    expect(browserInputSummary('network', { waitForUrl: '/search' })).toBe('wait: /search')
-    expect(browserInputSummary('network', { method: 'POST', statusMin: 400 })).toBe('POST · 400–')
+  it('summarizes network_start by match and resource types', () => {
+    expect(browserInputSummary('network_start', { match: '/api', resourceTypes: ['XHR', 'Fetch'] })).toBe('/api · XHR,Fetch')
+    expect(browserInputSummary('network_start', {})).toBe('')
+    expect(browserInputSummary('network_stop', { keep: true })).toBe('peek')
   })
 
-  it('summarizes network_wait and network_body by url substring', () => {
+  it('summarizes network_wait by url substring', () => {
     expect(browserInputSummary('network_wait', { url: '/search' })).toBe('/search')
-    expect(browserInputSummary('network_body', { url: '/api/user' })).toBe('/api/user')
   })
 
   it('summarizes emulate by dimensions or reset, and mock by url or clear', () => {
@@ -133,10 +132,10 @@ describe('parseBrowserResult', () => {
     expect(parseBrowserResult('navigate', JSON.stringify({ url: 'https://x.com' }), false).status).toBe('ok')
   })
 
-  it('counts matches and tabs for read ops but not snapshot', () => {
-    expect(parseBrowserResult('snapshot', JSON.stringify({ elements: [1, 2, 3] }), false).count).toBeUndefined()
-    expect(parseBrowserResult('query', JSON.stringify({ matches: [1], total: 7 }), false).count).toEqual({ kind: 'matches', n: 7 })
-    expect(parseBrowserResult('tabs', JSON.stringify([1, 2]), false).count).toEqual({ kind: 'tabs', n: 2 })
+  it('counts matches and tabs from the TOON header for read ops but not snapshot', () => {
+    expect(parseBrowserResult('snapshot', 'elements[3]{selector}:\n  a\n  b\n  c', false).count).toBeUndefined()
+    expect(parseBrowserResult('query', 'matches[1]{selector}:\n  a\ntotal: 7', false).count).toEqual({ kind: 'matches', n: 7 })
+    expect(parseBrowserResult('tabs', 'tabs[2]{tab,url}:\n  t0,x\n  t1,y\ncount: 2', false).count).toEqual({ kind: 'tabs', n: 2 })
   })
 
   it('extracts the saved path for a screenshot and marks it ok', () => {
@@ -146,9 +145,9 @@ describe('parseBrowserResult', () => {
   })
 
   it('counts network requests and cookies, and marks CDP actions ok', () => {
-    expect(parseBrowserResult('network', JSON.stringify({ requests: [1, 2, 3] }), false).count).toEqual({ kind: 'requests', n: 3 })
-    expect(parseBrowserResult('network', JSON.stringify('a body string'), false).count).toBeUndefined()
-    expect(parseBrowserResult('cookies', JSON.stringify({ cookies: [1, 2] }), false).count).toEqual({ kind: 'cookies', n: 2 })
+    expect(parseBrowserResult('network_stop', 'count: 3\nrequests[3]{requestId,method}:\n  a,GET', false).count).toEqual({ kind: 'requests', n: 3 })
+    expect(parseBrowserResult('network_start', 'recordingId: r\ncapturing: true', false).status).toBe('ok')
+    expect(parseBrowserResult('cookies', 'cookies[2]{name,value}:\n  a,1\n  b,2', false).count).toEqual({ kind: 'cookies', n: 2 })
     expect(parseBrowserResult('emulate', JSON.stringify({ ok: true, reset: false }), false).status).toBe('ok')
     expect(parseBrowserResult('mock', JSON.stringify({ ok: true, mocking: '/json' }), false).status).toBe('ok')
   })

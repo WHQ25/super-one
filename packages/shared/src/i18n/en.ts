@@ -85,6 +85,7 @@ export type Messages = {
       showLess: string
       searchSessions: string
       rename: string
+      renameFile: string
       pin: string
       unpin: string
       hide: string
@@ -177,7 +178,6 @@ export type Messages = {
         title: string
         description: string
         requiresCdp: string
-        network: { label: string; description: string }
         cookies: { label: string; description: string }
         emulate: { label: string; description: string }
         mock: { label: string; description: string }
@@ -672,6 +672,7 @@ export type Messages = {
         inspect: string
         screenshot: string
         click: string
+        hover: string
         type: string
         press: string
         scroll: string
@@ -680,7 +681,9 @@ export type Messages = {
         waitFor: string
         evaluate: string
         tabs: string
-        network: string
+        resize: string
+        networkStart: string
+        networkStop: string
         networkWait: string
         networkBody: string
         cookies: string
@@ -1664,6 +1667,7 @@ export const en: Messages = {
       showLess: 'Show less',
       searchSessions: 'Search sessions…',
       rename: 'Rename Session',
+      renameFile: 'Rename',
       pin: 'Pin Session',
       unpin: 'Unpin Session',
       hide: 'Hide Session',
@@ -1768,10 +1772,6 @@ export const en: Messages = {
         title: 'Experimental tools',
         description: 'These browser tools are experimental and off by default. Enable each individually — when off, the tool is not exposed to the agent at all.',
         requiresCdp: 'Requires CDP to be enabled.',
-        network: {
-          label: 'Network inspection',
-          description: 'Let the agent list network requests, wait for a request, and read response bodies. High-traffic pages add memory and CPU cost.',
-        },
         cookies: {
           label: 'Cookie reading',
           description: 'Let the agent read the page cookies, including httpOnly session cookies. Values are truncated, but this still exposes login credentials to the model.',
@@ -2278,6 +2278,7 @@ export const en: Messages = {
         inspect: 'Inspect',
         screenshot: 'Screenshot',
         click: 'Click',
+        hover: 'Hover',
         type: 'Type',
         press: 'Press',
         scroll: 'Scroll',
@@ -2286,7 +2287,9 @@ export const en: Messages = {
         waitFor: 'Wait for',
         evaluate: 'Evaluate',
         tabs: 'Tabs',
-        network: 'Network',
+        resize: 'Resize',
+        networkStart: 'Record network',
+        networkStop: 'Collect network',
         networkWait: 'Wait for request',
         networkBody: 'Response body',
         cookies: 'Cookies',

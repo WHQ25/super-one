@@ -2354,7 +2354,6 @@ export interface AppSettings {
   uiFontFamily: string | null
   liquidGlass: boolean
   cdpEnabled: boolean
-  cdpNetworkEnabled: boolean
   cdpCookiesEnabled: boolean
   cdpMockEnabled: boolean
   cdpEmulateEnabled: boolean
@@ -2394,7 +2393,6 @@ export interface AppSettingsPatch {
   uiFontFamily?: string | null
   liquidGlass?: boolean
   cdpEnabled?: boolean
-  cdpNetworkEnabled?: boolean
   cdpCookiesEnabled?: boolean
   cdpMockEnabled?: boolean
   cdpEmulateEnabled?: boolean

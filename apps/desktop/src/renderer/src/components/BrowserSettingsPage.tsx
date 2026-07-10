@@ -32,7 +32,6 @@ function ExperimentalRow({
 export function BrowserSettingsPage() {
   const { t } = useTranslation()
   const [cdpEnabled, setCdpEnabled] = useState(false)
-  const [networkEnabled, setNetworkEnabled] = useState(false)
   const [cookiesEnabled, setCookiesEnabled] = useState(false)
   const [mockEnabled, setMockEnabled] = useState(false)
   const [emulateEnabled, setEmulateEnabled] = useState(false)
@@ -43,7 +42,6 @@ export function BrowserSettingsPage() {
     window.app.getAppSettings().then((settings) => {
       if (!mounted) return
       setCdpEnabled(settings.cdpEnabled)
-      setNetworkEnabled(settings.cdpNetworkEnabled)
       setCookiesEnabled(settings.cdpCookiesEnabled)
       setMockEnabled(settings.cdpMockEnabled)
       setEmulateEnabled(settings.cdpEmulateEnabled)
@@ -55,7 +53,6 @@ export function BrowserSettingsPage() {
   async function handleCdpToggle(enabled: boolean) {
     const result = await window.app.saveAppSettings({ cdpEnabled: enabled })
     setCdpEnabled(result.cdpEnabled)
-    setNetworkEnabled(result.cdpNetworkEnabled)
     setCookiesEnabled(result.cdpCookiesEnabled)
     setMockEnabled(result.cdpMockEnabled)
     setEmulateEnabled(result.cdpEmulateEnabled)
@@ -94,16 +91,6 @@ export function BrowserSettingsPage() {
             <p className="mt-1 text-xs text-muted-foreground">{t('settings.browser.experimental.requiresCdp')}</p>
           )}
         </div>
-        <ExperimentalRow
-          label={t('settings.browser.experimental.network.label')}
-          description={t('settings.browser.experimental.network.description')}
-          checked={cdpEnabled && networkEnabled}
-          disabled={expDisabled}
-          onCheckedChange={async (v) => {
-            const r = await window.app.saveAppSettings({ cdpNetworkEnabled: v })
-            setNetworkEnabled(r.cdpNetworkEnabled)
-          }}
-        />
         <ExperimentalRow
           label={t('settings.browser.experimental.cookies.label')}
           description={t('settings.browser.experimental.cookies.description')}

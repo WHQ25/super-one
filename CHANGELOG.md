@@ -4,6 +4,31 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.44.0-alpha] - 2026-07-10
+
+### Added
+
+- AI image generation for agent and human use, with a breathing loading placeholder while images generate
+- Inline attachment chips with file-path handoff to agents
+- Finished-subagent transcript reads now backed directly by the SDK
+- Import Codex configuration from other AI agents
+- Codex MCP OAuth re-authentication flow
+- Codex per-credit rate-limit reset with targeted redemption
+- Surface Codex MCP server reauthentication-required failures
+- Unified capability-based provider registry, with custom endpoint families and builtin model updates
+- Manage custom models in the model list
+- Derive media capability from enabled models
+
+### Fixed
+
+- Checkout error box is now horizontally scrollable
+
+### Changed
+
+- Codex upgraded to 0.144.0; conversation forking migrated to lastTurnId tracking
+- Claude Agent SDK upgraded to 0.3.206
+- Migrated to the TypeScript 7 native compiler
+
 ## [0.43.13-alpha] - 2026-07-06
 
 ### Added

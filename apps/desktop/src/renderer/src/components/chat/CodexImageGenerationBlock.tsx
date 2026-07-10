@@ -1,8 +1,8 @@
 import { useState } from 'react'
-import { ImageIcon, Loader2, AlertCircle } from 'lucide-react'
+import { AlertCircle } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 import type { ImageGenerationItem } from '@superone/shared/agent-types'
-import { ImageInteractive, ImageViewer, useImageDataUri } from './image-shared'
+import { ImageInteractive, ImageSkeleton, ImageViewer, useImageDataUri } from './image-shared'
 
 interface Props {
   item: ImageGenerationItem
@@ -26,12 +26,7 @@ export function CodexImageGenerationBlock({ item }: Props) {
   }
 
   if (isWaiting) {
-    return (
-      <div className="my-2 flex items-center gap-2 rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-        <Loader2 className="size-3.5 shrink-0 animate-spin" />
-        <span>Generating image…</span>
-      </div>
-    )
+    return <ImageSkeleton className="my-2 h-40 w-40 rounded-md border border-border" />
   }
 
   if (loadError) {
@@ -44,12 +39,7 @@ export function CodexImageGenerationBlock({ item }: Props) {
   }
 
   if (!dataUri) {
-    return (
-      <div className="my-2 flex items-center gap-2 rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-        <ImageIcon className="size-3.5 shrink-0" />
-        <span>Loading image…</span>
-      </div>
-    )
+    return <ImageSkeleton className="my-2 h-40 w-40 rounded-md border border-border" />
   }
 
   return (

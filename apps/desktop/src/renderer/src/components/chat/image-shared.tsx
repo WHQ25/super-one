@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
-import { Download, Loader2, X, Info, ChevronLeft, ChevronRight, Copy, FolderOpen, MessageSquarePlus, ClipboardCopy } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Download, Loader2, X, Info, ChevronLeft, ChevronRight, Copy, FolderOpen, MessageSquarePlus, ClipboardCopy, ImageIcon } from 'lucide-react'
+import { cn } from '@superone/ui/lib/utils'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@superone/ui/components/ui/button'
 import { AdaptiveContextMenu } from '@/components/AdaptiveContextMenu'
@@ -9,7 +10,7 @@ import { toast } from 'sonner'
 import { ImagePreview } from '@/components/coding/ImagePreview'
 import { SelectionContextMenuZone } from './SelectionContextMenu'
 import { chatInputAPI } from './ChatInput'
-import type { ImageGenerationItem } from '@superone/shared/agent-types'
+import type { ImageGenerationItem, MediaProviderStatus } from '@superone/shared/agent-types'
 
 export function buildImageFileName(item: ImageGenerationItem): string {
   const slugSource = item.revisedPrompt?.trim() || `image-${item.id}`
@@ -24,6 +25,14 @@ export function buildImageFileName(item: ImageGenerationItem): string {
 export function formatDuration(ms: number): string {
   if (ms < 1000) return `${ms}ms`
   return `${(ms / 1000).toFixed(1)}s`
+}
+
+export function ImageSkeleton({ className }: { className?: string }) {
+  return (
+    <div className={cn('image-skeleton flex items-center justify-center', className)}>
+      <ImageIcon className="size-6 animate-breathe text-muted-foreground" />
+    </div>
+  )
 }
 
 export function useImageDataUri(savedPath: string | undefined, isFailed: boolean) {
@@ -168,6 +177,58 @@ const PARAM_LABEL_KEYS: Record<string, string> = {
   referenceImages: 'chat.image.paramReferenceImages',
 }
 
+let mediaProvidersCache: MediaProviderStatus[] | null = null
+let mediaProvidersPromise: Promise<MediaProviderStatus[]> | null = null
+
+function useMediaProviderMap(enabled: boolean): Map<string, MediaProviderStatus> {
+  const [providers, setProviders] = useState<MediaProviderStatus[]>(mediaProvidersCache ?? [])
+  useEffect(() => {
+    if (!enabled || mediaProvidersCache) return
+    let cancelled = false
+    if (!mediaProvidersPromise) {
+      mediaProvidersPromise = window.app.getMediaProviders().then((list) => {
+        mediaProvidersCache = list
+        return list
+      }).catch((error) => {
+        mediaProvidersPromise = null
+        throw error
+      })
+    }
+    mediaProvidersPromise.then((list) => { if (!cancelled) setProviders(list) }).catch(() => {})
+    return () => { cancelled = true }
+  }, [enabled])
+  return useMemo(() => new Map(providers.map((p) => [p.id, p])), [providers])
+}
+
+function ProviderParamValue({ id, providerMap }: { id: string; providerMap: Map<string, MediaProviderStatus> }) {
+  const info = providerMap.get(id)
+  if (!info) return <dd className="break-all text-right text-foreground">{id}</dd>
+  return (
+    <dd className="flex flex-wrap items-center justify-end gap-1.5">
+      <span className="text-foreground">{info.providerLabel ?? info.label}</span>
+      {info.providerLabel && (
+        <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{info.label}</span>
+      )}
+    </dd>
+  )
+}
+
+function resolveModelLabel(modelId: string, providerId: string | undefined, providerMap: Map<string, MediaProviderStatus>): string {
+  const preferred = providerId ? providerMap.get(providerId)?.models : undefined
+  const inPreferred = preferred?.find((m) => m.id === modelId)
+  if (inPreferred) return inPreferred.label
+  for (const provider of providerMap.values()) {
+    const match = provider.models.find((m) => m.id === modelId)
+    if (match) return match.label
+  }
+  return modelId
+}
+
+function ModelParamValue({ id, providerId, providerMap }: { id: string; providerId?: string; providerMap: Map<string, MediaProviderStatus> }) {
+  const label = resolveModelLabel(id, providerId, providerMap)
+  return <dd className="break-all text-right text-foreground" title={id}>{label}</dd>
+}
+
 export function ImageViewer({ items, index, open, onOpenChange, onIndexChange }: ViewerProps) {
   const { t } = useTranslation()
   const item = items[index]
@@ -176,6 +237,8 @@ export function ImageViewer({ items, index, open, onOpenChange, onIndexChange }:
   const [downloadStatus, setDownloadStatus] = useState<string | null>(null)
   const [dims, setDims] = useState<{ width: number; height: number } | null>(null)
   const [infoOpen, setInfoOpen] = useState(false)
+  const providerMap = useMediaProviderMap(infoOpen)
+  const providerParamId = item?.params?.find((p) => p.key === 'provider')?.value
 
   const menuItems = useImageMenuItems({ savedPath: item?.savedPath ?? '', prompt: item?.revisedPrompt })
   const multi = items.length > 1
@@ -319,7 +382,13 @@ export function ImageViewer({ items, index, open, onOpenChange, onIndexChange }:
                       <dt className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
                         {PARAM_LABEL_KEYS[p.key] ? t(PARAM_LABEL_KEYS[p.key]) : p.key}
                       </dt>
-                      <dd className="break-all text-right text-foreground">{p.value}</dd>
+                      {p.key === 'provider' ? (
+                        <ProviderParamValue id={p.value} providerMap={providerMap} />
+                      ) : p.key === 'model' ? (
+                        <ModelParamValue id={p.value} providerId={providerParamId} providerMap={providerMap} />
+                      ) : (
+                        <dd className="break-all text-right text-foreground">{p.value}</dd>
+                      )}
                     </div>
                   ))}
                 </dl>

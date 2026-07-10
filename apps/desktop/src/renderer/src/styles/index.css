@@ -42,6 +42,21 @@
   animation: shimmer 2s ease-in-out infinite;
 }
 
+@keyframes breathe {
+  0%, 100% { opacity: 0.3; transform: scale(0.9); }
+  50% { opacity: 1; transform: scale(1); }
+}
+
+.animate-breathe {
+  animation: breathe 1.8s ease-in-out infinite;
+}
+
+.image-skeleton {
+  position: relative;
+  overflow: hidden;
+  background-color: var(--muted);
+}
+
 @keyframes rainbow-scroll {
   0% { background-position: 200% 50%; }
   100% { background-position: 0% 50%; }

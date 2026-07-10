@@ -1,8 +1,8 @@
 import { useState } from 'react'
-import { ImageIcon, Loader2, AlertCircle } from 'lucide-react'
+import { ImageIcon, AlertCircle } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 import type { ImageGenerationItem } from '@superone/shared/agent-types'
-import { ImageInteractive, ImageViewer, useImageDataUri } from './image-shared'
+import { ImageInteractive, ImageSkeleton, ImageViewer, useImageDataUri } from './image-shared'
 
 const TILE = 'h-40 flex-none overflow-hidden rounded-md border border-border'
 
@@ -21,11 +21,7 @@ function GalleryThumb({ item, onOpen }: { item: ImageGenerationItem; onOpen: () 
   }
 
   if (isWaiting || !dataUri) {
-    return (
-      <div className={cn(TILE, 'flex w-40 items-center justify-center bg-muted/40 text-muted-foreground')}>
-        {isWaiting ? <Loader2 className="size-4 animate-spin" /> : <ImageIcon className="size-4" />}
-      </div>
-    )
+    return <ImageSkeleton className={cn(TILE, 'w-40')} />
   }
 
   return (

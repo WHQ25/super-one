@@ -1,7 +1,7 @@
 import type { CapabilityTask } from '../agent-types'
 import type { CatalogProvider, ModelCatalog } from '../model-catalog-types'
 import { HARNESS_CHAT_PROTOCOLS, PROTOCOL_TASKS, protocolServes, type WireProtocol } from './protocols'
-import type { ConsumerId, EndpointModel, EndpointOverride, Plan, Platform, ServiceEndpoint } from './types'
+import type { Credential, ConsumerId, EndpointModel, EndpointOverride, Plan, Platform, ServiceEndpoint } from './types'
 import { CONSUMER_TASK } from './types'
 
 export * from './protocols'
@@ -37,11 +37,23 @@ export function endpointServes(endpoint: ServiceEndpoint, task: CapabilityTask):
  * chat:claude/chat:codex additionally require a harness-compatible protocol.
  * An explicit endpointId wins when present and valid.
  */
-export function selectEndpoint(plan: Plan, consumer: ConsumerId, endpointId?: string): ServiceEndpoint | undefined {
+export function selectEndpoint(
+  plan: Plan,
+  consumer: ConsumerId,
+  endpointId?: string,
+  credential?: Pick<Credential, 'overrides'>,
+): ServiceEndpoint | undefined {
   const task = CONSUMER_TASK[consumer]
   const harness = consumer === 'chat:claude' ? 'claude' : consumer === 'chat:codex' ? 'codex' : undefined
-  const ok = (e: ServiceEndpoint): boolean =>
-    endpointServes(e, task) && (!harness || HARNESS_CHAT_PROTOCOLS[harness].includes(e.protocol))
+  const ok = (e: ServiceEndpoint): boolean => {
+    if (!endpointServes(e, task)) return false
+    if (harness) return HARNESS_CHAT_PROTOCOLS[harness].includes(e.protocol)
+    // Media consumers derive capability from the credential's enabled models (each tagged with the
+    // tasks it serves) — a provider serves image/video/tts/asr only once such a model is enabled.
+    // No credential context → protocol capability only.
+    if (!credential) return true
+    return (credential.overrides?.[e.id]?.models ?? []).some((m) => !m.tasks || m.tasks.includes(task))
+  }
   if (endpointId) {
     const explicit = plan.endpoints.find((e) => e.id === endpointId)
     if (explicit && ok(explicit)) return explicit
@@ -69,7 +81,7 @@ export function resolveEndpointModels(
   const task = endpointTasks(endpoint)
   return provider.models
     .filter((m) => task.some((t) => modelServesTask(m, t)))
-    .map((m) => ({ id: m.id, name: m.name }))
+    .map((m) => ({ id: m.id, name: m.name, tasks: task.filter((t) => modelServesTask(m, t)) }))
 }
 
 function modelServesTask(m: CatalogProvider['models'][number], task: CapabilityTask): boolean {

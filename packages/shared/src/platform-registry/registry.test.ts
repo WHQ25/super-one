@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest'
+import type { CatalogModel, ModelCatalog } from '../model-catalog-types'
 import {
   assembleRegistry,
   BUILTIN_PLATFORMS,
   endpointTasks,
   everyHarnessReachable,
+  findEndpoint,
+  findPlan,
   findPlatform,
   PROTOCOL_TASKS,
+  resolveEndpointModels,
   selectEndpoint,
   synthesizePlatformFromCatalog,
   validatePlatform,
@@ -67,6 +71,26 @@ describe('selectEndpoint', () => {
     const plan = openrouter.plans[0]
     expect(selectEndpoint(plan, 'chat:claude', 'anthropic')?.id).toBe('anthropic')
   })
+
+  it('derives media capability from the credential enabled models', () => {
+    const plan = findPlatform(BUILTIN_PLATFORMS, 'gemini')!.plans[0]
+    // No credential context → protocol capability only (generateContent serves image).
+    expect(selectEndpoint(plan, 'media:image')?.id).toBe('generative')
+    // A credential with nothing enabled does not serve image.
+    expect(selectEndpoint(plan, 'media:image', undefined, { overrides: {} })).toBeUndefined()
+    // Enabling an image-tagged model makes the endpoint serve image.
+    expect(
+      selectEndpoint(plan, 'media:image', undefined, {
+        overrides: { generative: { models: [{ id: 'nano', name: 'Nano', tasks: ['image'] }] } },
+      })?.id,
+    ).toBe('generative')
+    // A chat-only enabled model does not make it an image provider.
+    expect(
+      selectEndpoint(plan, 'media:image', undefined, {
+        overrides: { generative: { models: [{ id: 'flash', name: 'Flash', tasks: ['chat'] }] } },
+      }),
+    ).toBeUndefined()
+  })
 })
 
 describe('validatePlatform', () => {
@@ -111,5 +135,85 @@ describe('synthesizePlatformFromCatalog', () => {
     expect(platform.id).toBe('catalog:groq')
     expect(platform.plans[0].endpoints[0].protocol).toBe('openai-chat')
     expect(platform.plans[0].endpoints[0].baseUrl).toBe('https://api.groq.com/openai/v1')
+  })
+})
+
+describe('resolveEndpointModels (image source)', () => {
+  const model = (id: string, output: CatalogModel['outputModalities']): CatalogModel => ({
+    id,
+    name: id,
+    providerId: 'openai',
+    inputModalities: ['text'],
+    outputModalities: output,
+    reasoning: false,
+    toolCall: false,
+    attachment: false,
+  })
+
+  const catalog: ModelCatalog = {
+    generatedAt: '',
+    source: 'snapshot',
+    providers: [
+      {
+        id: 'openai',
+        name: 'OpenAI',
+        npm: '@ai-sdk/openai',
+        env: [],
+        doc: '',
+        models: [
+          model('gpt-image-2', ['image']),
+          model('gpt-5-chat', ['text']),
+          model('dall-e-3', ['image']),
+        ],
+      },
+    ],
+  }
+
+  const openaiImage = () => {
+    const platform = findPlatform(BUILTIN_PLATFORMS, 'openai')!
+    const plan = findPlan(platform, 'api')!
+    const endpoint = findEndpoint(plan, 'images')!
+    return { platform, plan, endpoint }
+  }
+
+  it('sources builtin image models from the catalog filtered to the image task', () => {
+    const { platform, plan, endpoint } = openaiImage()
+    // Builtin openai image endpoint no longer hardcodes models.
+    expect(endpoint.models).toBeUndefined()
+    const models = resolveEndpointModels(platform, plan, endpoint, catalog)
+    expect(models.map((m) => m.id)).toEqual(['gpt-image-2', 'dall-e-3'])
+  })
+
+  it('returns nothing without a catalog when no curated list exists', () => {
+    const { platform, plan, endpoint } = openaiImage()
+    expect(resolveEndpointModels(platform, plan, endpoint, undefined)).toEqual([])
+  })
+
+  it('prefers a curated endpoint list over the catalog', () => {
+    const platform: Platform = {
+      id: 'custom:x',
+      brand: 'custom',
+      name: 'Custom',
+      catalogProviderId: 'openai',
+      plans: [
+        {
+          id: 'api',
+          name: 'API',
+          auth: 'api-key',
+          endpoints: [
+            {
+              id: 'images',
+              protocol: 'openai-images',
+              baseUrl: '',
+              tasks: ['image'],
+              models: [{ id: 'my-model', name: 'Mine' }],
+            },
+          ],
+        },
+      ],
+    }
+    const plan = findPlan(platform, 'api')!
+    const endpoint = findEndpoint(plan, 'images')!
+    expect(resolveEndpointModels(platform, plan, endpoint, catalog).map((m) => m.id)).toEqual(['my-model'])
   })
 })

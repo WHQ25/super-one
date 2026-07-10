@@ -34,7 +34,7 @@ export function credentialsForConsumer(
 ): Credential[] {
   return credentials.filter((c) => {
     const plan = findPlan(findPlatform(platforms, c.platformId), c.planId)
-    return !!plan && !!selectEndpoint(plan, consumer)
+    return !!plan && !!selectEndpoint(plan, consumer, undefined, c)
   })
 }
 
@@ -58,7 +58,7 @@ export function resolveEffective(
   const plan = findPlan(platform, cred.planId)
   if (!platform || !plan) return null
   const usingBound = cred.id === binding?.credentialId
-  const endpoint = selectEndpoint(plan, consumer, usingBound ? binding?.endpointId : undefined)
+  const endpoint = selectEndpoint(plan, consumer, usingBound ? binding?.endpointId : undefined, cred)
   if (!endpoint) return null
   const merged = mergeEndpoint(endpoint, cred.overrides?.[endpoint.id], usingBound ? binding?.config : undefined)
   return {

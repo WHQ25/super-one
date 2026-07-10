@@ -29,6 +29,7 @@ import {
 } from '@superone/shared/platform-registry'
 import type { ProviderModelEnv } from '@superone/shared/agent-types'
 import { useSettingsStore } from '@/stores/settings'
+import { useChatStore } from '@/stores/chat'
 import { platformsByBrand } from '@/lib/provider-resolve'
 import { OfficialProviderPanel } from './OfficialProviderPanel'
 import { ProviderLabel } from './ProviderLabel'
@@ -550,6 +551,7 @@ export function ProvidersPage() {
     setAdding(false)
   }, [])
 
+  const claudeAccount = useChatStore((s) => s.harnessResources.claude?.account)
   const officials = platforms.filter(isOfficial)
   const rest = platforms.filter((p) => !isOfficial(p))
   const brandGroups = useMemo(
@@ -561,7 +563,38 @@ export function ProvidersPage() {
     [credentials],
   )
 
+  // A provider is "enabled" once it is usable: a non-official with at least one key, a signed-in
+  // Claude account, or Codex (a built-in harness with no cheap local sign-in signal, so always on).
+  const isEnabled = useCallback(
+    (p: Platform): boolean => {
+      if (isOfficial(p)) {
+        if (officialHarness(p) === 'codex') return true
+        return !!(claudeAccount?.email || claudeAccount?.subscriptionType)
+      }
+      return credCount(p.id) > 0
+    },
+    [claudeAccount, credCount],
+  )
+  // Officials first, then non-officials by brand popularity — order preserved within each bucket.
+  const ordered = useMemo(
+    () => [...officials, ...brandGroups.flatMap((g) => g.platforms)],
+    [officials, brandGroups],
+  )
+  const enabledPlatforms = ordered.filter(isEnabled)
+  const disabledPlatforms = ordered.filter((p) => !isEnabled(p))
+
   const selected = platforms.find((p) => p.id === selectedId) ?? null
+
+  const renderRow = (p: Platform) => (
+    <PlatformRow
+      key={p.id}
+      platform={p}
+      selected={selectedId === p.id}
+      onClick={() => selectPlatform(p.id)}
+      count={isOfficial(p) ? 0 : credCount(p.id)}
+      variantLabel={platformVariantLabel(p, platforms)}
+    />
+  )
 
   return (
     <div className="flex h-full min-h-0 gap-4">
@@ -577,38 +610,23 @@ export function ProvidersPage() {
           </IconButton>
         </div>
 
-        {officials.length > 0 && (
+        {enabledPlatforms.length > 0 && (
           <div className="flex flex-col gap-1">
             <div className="px-1 pb-0.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-              {t('resources.providers.official')}
+              {t('resources.providers.enabled')}
             </div>
-            {officials.map((p) => (
-              <PlatformRow
-                key={p.id}
-                platform={p}
-                selected={selectedId === p.id}
-                onClick={() => selectPlatform(p.id)}
-                count={0}
-                variantLabel={platformVariantLabel(p, platforms)}
-              />
-            ))}
+            {enabledPlatforms.map(renderRow)}
           </div>
         )}
 
-        {brandGroups.map((group) => (
-          <div key={group.brand} className="flex flex-col gap-1">
-            {group.platforms.map((p) => (
-              <PlatformRow
-                key={p.id}
-                platform={p}
-                selected={selectedId === p.id}
-                onClick={() => selectPlatform(p.id)}
-                count={credCount(p.id)}
-                variantLabel={platformVariantLabel(p, platforms)}
-              />
-            ))}
+        {disabledPlatforms.length > 0 && (
+          <div className="flex flex-col gap-1">
+            <div className="px-1 pb-0.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+              {t('resources.providers.disabled')}
+            </div>
+            {disabledPlatforms.map(renderRow)}
           </div>
-        ))}
+        )}
       </div>
 
       <div className="min-w-0 flex-1 overflow-y-auto px-1 py-1">

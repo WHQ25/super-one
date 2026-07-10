@@ -931,6 +931,9 @@ export type Messages = {
       enabled: string
       disabled: string
       selectHint: string
+      defaultImageProviderLabel: string
+      defaultImageProviderDescription: string
+      defaultImageProviderAuto: string
       add: string
       addCustom: string
       addKey: string
@@ -987,6 +990,7 @@ export type Messages = {
       claudeBaseUrl: string
       selectModel: string
       modelNone: string
+      oneMillionHint: string
     }
     providerDialog: {
       addTitle: string
@@ -1055,6 +1059,9 @@ export type Messages = {
         vision: string
         tools: string
         reasoning: string
+        enabledGroup: string
+        disabledGroup: string
+        lockedHint: string
       }
     }
     mcp: {
@@ -1723,7 +1730,7 @@ export const en: Messages = {
         remote: 'Remote Control',
         usage: 'Usage Stats',
         mediaGen: 'Image Gen',
-        providers: 'Providers',
+        providers: 'AI Provider',
         agents: 'Subagents',
         skills: 'Skills',
         mcp: 'MCP Servers',
@@ -2519,8 +2526,11 @@ export const en: Messages = {
       subtitleUnified: 'Manage API providers and their capabilities (chat, image, …)',
       activateFor: 'Activate for',
       enabled: 'Enabled',
-      disabled: 'Not Configured',
+      disabled: 'Disabled',
       selectHint: 'Select a provider to view and edit its configuration',
+      defaultImageProviderLabel: 'Default image provider',
+      defaultImageProviderDescription: 'Used by the image tool when no provider is specified. Its first enabled model is the default.',
+      defaultImageProviderAuto: 'Auto (first usable)',
       add: 'Add Provider',
       addCustom: 'Add Custom Provider',
       addKey: 'Add Key',
@@ -2577,6 +2587,7 @@ export const en: Messages = {
       claudeBaseUrl: 'Base URL (Claude Compatible)',
       selectModel: 'Select a Model',
       modelNone: 'None',
+      oneMillionHint: 'Enable the 1M-token context window (adds the [1m] suffix).',
     },
     providerDialog: {
       addTitle: 'Add Provider',
@@ -2645,6 +2656,9 @@ export const en: Messages = {
         vision: 'Vision',
         tools: 'Tools',
         reasoning: 'Reasoning',
+        enabledGroup: 'Enabled',
+        disabledGroup: 'Disabled',
+        lockedHint: 'Always on — used by your model mapping.',
       },
     },
     mcp: {

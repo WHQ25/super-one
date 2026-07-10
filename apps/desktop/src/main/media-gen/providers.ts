@@ -1,4 +1,4 @@
-import type { ResolvedService } from '@superone/shared/platform-registry'
+import { type EndpointModel, type ResolvedService } from '@superone/shared/platform-registry'
 import { listCredentials } from '../providers/credential-store'
 import { resolveService } from '../providers/resolver'
 import type { MediaProviderConfig, MediaProviderKind } from './types'
@@ -21,13 +21,24 @@ export function mediaKindFor(resolved: ResolvedService): MediaProviderKind {
   }
 }
 
-function toConfig(resolved: ResolvedService): MediaProviderConfig {
+/**
+ * Effective enabled image models for a resolved service — the user's explicit enabled subset
+ * (`resolved.models`), narrowed to models that actually serve the image task. A single endpoint
+ * (e.g. Gemini generateContent) may serve chat/image/tts at once, so the shared enabled list is
+ * filtered by each model's tagged tasks. Enabling is opt-in: an empty result means no image model
+ * is available until the user enables one in Settings → Providers.
+ */
+export function imageModelsFor(resolved: ResolvedService): EndpointModel[] {
+  return resolved.models.filter((m) => !m.tasks || m.tasks.includes('image'))
+}
+
+async function toConfig(resolved: ResolvedService): Promise<MediaProviderConfig> {
   return {
     id: resolved.credentialId,
     kind: mediaKindFor(resolved),
     apiKey: resolved.apiKey,
     baseURL: resolved.baseUrl || undefined,
-    models: resolved.models.map((m) => m.id),
+    models: imageModelsFor(resolved).map((m) => m.id),
   }
 }
 
@@ -41,7 +52,7 @@ export async function resolveMediaProvider(credentialId?: string | null): Promis
 
 export async function resolveDefaultModel(credentialId?: string | null): Promise<string> {
   const resolved = resolveService('media:image', { credentialId })
-  const first = resolved?.models[0]?.id
+  const first = resolved ? imageModelsFor(resolved)[0]?.id : undefined
   if (!first) throw new Error('No default model available for the image provider')
   return first
 }

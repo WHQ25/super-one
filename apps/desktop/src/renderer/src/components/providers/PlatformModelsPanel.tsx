@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import {
   ArrowRight,
   AudioLines,
@@ -20,11 +20,31 @@ import type { LucideIcon } from 'lucide-react'
 import { ModelIcon, modelMappings } from '@lobehub/icons'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@superone/ui/components/ui/button'
+import { Switch } from '@superone/ui/components/ui/switch'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@superone/ui/components/ui/select'
 import type { CapabilityTask } from '@superone/shared/agent-types'
-import { catalogProviderIdFor, type Plan, type Platform } from '@superone/shared/platform-registry'
+import {
+  catalogProviderIdFor,
+  endpointServes,
+  mergeModelMapping,
+  resolveEndpointModels,
+  type Credential,
+  type EndpointModel,
+  type Plan,
+  type Platform,
+  type ServiceEndpoint,
+} from '@superone/shared/platform-registry'
 import type { CatalogModality, CatalogModel, CatalogProvider } from '@superone/shared/model-catalog-types'
 import { MODEL_TASK_ORDER, modelTasks } from '@superone/shared/model-tasks'
 import { useModelCatalog } from '@/hooks/useModelCatalog'
+import { useSettingsStore } from '@/stores/settings'
+import { stripOneM } from '@/lib/model-id'
 import { ProviderLabel } from '../ProviderLabel'
 
 type Tab = 'all' | CapabilityTask
@@ -158,25 +178,98 @@ function ModelIdBadge({ id }: { id: string }) {
   )
 }
 
+type ModelRow = { m: CatalogModel; iconMatched: boolean; endpoints: ServiceEndpoint[]; enabled: boolean; locked: boolean }
+
+/** Every plan endpoint that serves any of a model's tasks — its enable state is stored on each. */
+function endpointsForTasks(plan: Plan, tasks: CapabilityTask[]): ServiceEndpoint[] {
+  return plan.endpoints.filter((e) => tasks.some((t) => endpointServes(e, t)))
+}
+
 export function PlatformModelsPanel({ platform, plan }: { platform: Platform; plan: Plan }) {
   const { t } = useTranslation()
   const { catalog, loading, refreshing, refresh } = useModelCatalog()
+  const credentials = useSettingsStore((s) => s.credentials)
+  const updateCredential = useSettingsStore((s) => s.updateCredential)
+
+  const planCreds = useMemo(
+    () => credentials.filter((c) => c.platformId === platform.id && c.planId === plan.id),
+    [credentials, platform.id, plan.id],
+  )
+  const [keyId, setKeyId] = useState('')
+  const selectedCred: Credential | undefined = planCreds.find((c) => c.id === keyId) ?? planCreds[0]
+
   const catProvider = useMemo(
     () => (catalog ? matchCatalogProvider(catalog.providers, platform, plan) : null),
     [catalog, platform, plan],
   )
 
+  // Only models this plan's endpoints actually serve are shown — a model no endpoint serves
+  // (e.g. a chat model on the image-only Gemini plan) isn't configurable here.
   const annotated = useMemo(
     () =>
       (catProvider?.models ?? [])
-        .map((m) => ({ m, tasks: modelTasks(m), iconMatched: hasModelIcon(m.id) }))
+        .map((m) => ({ m, endpoints: endpointsForTasks(plan, modelTasks(m)), iconMatched: hasModelIcon(m.id) }))
+        .filter((x) => x.endpoints.length > 0)
         .sort((a, b) => (b.m.releaseDate ?? '').localeCompare(a.m.releaseDate ?? '')),
-    [catProvider],
+    [catProvider, plan],
+  )
+
+  // Resolved model pool per endpoint — the "all on" baseline the enabled subset is measured against.
+  const endpointPools = useMemo(() => {
+    const map = new Map<string, EndpointModel[]>()
+    for (const e of plan.endpoints) map.set(e.id, resolveEndpointModels(platform, plan, e, catalog ?? undefined))
+    return map
+  }, [platform, plan, catalog])
+
+  // Model ids referenced by each endpoint's effective model mapping (defaults ← credential override).
+  // These are always-on and cannot be disabled — the harness routes to them.
+  const mappedByEndpoint = useMemo(() => {
+    const map = new Map<string, Set<string>>()
+    for (const e of plan.endpoints) {
+      const mapping = mergeModelMapping(e.defaults?.modelMapping, selectedCred?.overrides?.[e.id]?.modelMapping)
+      const ids = new Set<string>()
+      // Mapping ids may carry the `[1m]` context suffix (e.g. glm-5.2[1m]); catalog ids don't — match on the base id.
+      for (const slot of Object.values(mapping)) if (slot?.id) ids.add(stripOneM(slot.id))
+      map.set(e.id, ids)
+    }
+    return map
+  }, [plan, selectedCred])
+
+  // Enabling is opt-in: a model is off unless the user explicitly enabled it, or the mapping locks it on.
+  const modelState = useCallback(
+    (endpoints: ServiceEndpoint[], modelId: string): { enabled: boolean; locked: boolean } => {
+      const locked = endpoints.some((ep) => mappedByEndpoint.get(ep.id)?.has(modelId))
+      if (locked) return { enabled: true, locked: true }
+      const enabled = endpoints.some((ep) => (selectedCred?.overrides?.[ep.id]?.models ?? []).some((x) => x.id === modelId))
+      return { enabled, locked: false }
+    },
+    [mappedByEndpoint, selectedCred],
+  )
+
+  const toggle = useCallback(
+    (endpoints: ServiceEndpoint[], model: EndpointModel, next: boolean) => {
+      if (!selectedCred || endpoints.length === 0) return
+      const overrides = { ...selectedCred.overrides }
+      for (const ep of endpoints) {
+        const pool = endpointPools.get(ep.id) ?? []
+        const enabledIds = new Set((overrides[ep.id]?.models ?? []).map((m) => m.id))
+        if (next) enabledIds.add(model.id)
+        else enabledIds.delete(model.id)
+        const nextModels = pool.filter((m) => enabledIds.has(m.id))
+        const nextOverride = { ...overrides[ep.id] }
+        if (nextModels.length > 0) nextOverride.models = nextModels
+        else delete nextOverride.models
+        if (Object.keys(nextOverride).length === 0) delete overrides[ep.id]
+        else overrides[ep.id] = nextOverride
+      }
+      void updateCredential(selectedCred.id, { overrides })
+    },
+    [selectedCred, endpointPools, updateCredential],
   )
 
   const taskCounts = useMemo(() => {
     const counts = new Map<CapabilityTask, number>()
-    for (const { tasks } of annotated) for (const tk of tasks) counts.set(tk, (counts.get(tk) ?? 0) + 1)
+    for (const { m } of annotated) for (const tk of modelTasks(m)) counts.set(tk, (counts.get(tk) ?? 0) + 1)
     return counts
   }, [annotated])
   const presentTasks = MODEL_TASK_ORDER.filter((tk) => taskCounts.has(tk))
@@ -185,14 +278,20 @@ export function PlatformModelsPanel({ platform, plan }: { platform: Platform; pl
   const [query, setQuery] = useState('')
   const activeTab: Tab = tab !== 'all' && !taskCounts.has(tab) ? 'all' : tab
 
-  const visible = useMemo(() => {
+  const rows = useMemo<ModelRow[]>(() => {
     const q = query.trim().toLowerCase()
-    return annotated.filter(({ m, tasks }) => {
-      if (activeTab !== 'all' && !tasks.includes(activeTab)) return false
-      if (q && !m.id.toLowerCase().includes(q) && !m.name.toLowerCase().includes(q)) return false
-      return true
-    })
-  }, [annotated, activeTab, query])
+    return annotated
+      .filter(({ m }) => {
+        const tasks = modelTasks(m)
+        if (activeTab !== 'all' && !tasks.includes(activeTab)) return false
+        if (q && !m.id.toLowerCase().includes(q) && !m.name.toLowerCase().includes(q)) return false
+        return true
+      })
+      .map(({ m, endpoints, iconMatched }) => ({ m, iconMatched, endpoints, ...modelState(endpoints, m.id) }))
+  }, [annotated, activeTab, query, modelState])
+
+  const enabledRows = useMemo(() => rows.filter((r) => r.enabled), [rows])
+  const disabledRows = useMemo(() => rows.filter((r) => !r.enabled), [rows])
 
   const subtitle = (m: CatalogModel): string => {
     const parts: string[] = []
@@ -204,6 +303,50 @@ export function PlatformModelsPanel({ platform, plan }: { platform: Platform; pl
     return parts.join(' · ')
   }
 
+  const renderRow = ({ m, iconMatched, endpoints, enabled, locked }: ModelRow) => (
+    <div key={m.id} className="flex items-center gap-3 px-3 py-2.5">
+      <div className="flex size-7 shrink-0 items-center justify-center">
+        {iconMatched
+          ? <ModelIcon model={m.id} type="color" size={26} />
+          : <ProviderLabel brandKey={platform.brand} iconOnly size={26} />}
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-1.5">
+          <span className={`truncate text-sm font-medium ${selectedCred && !enabled ? 'text-muted-foreground' : ''}`}>{m.name}</span>
+          <ModelIdBadge id={m.id} />
+          {m.status && <span className="shrink-0 rounded bg-amber-500/10 px-1 text-[9px] text-amber-600 dark:text-amber-400">{m.status}</span>}
+        </div>
+        {subtitle(m) && <div className="mt-0.5 truncate text-[11px] text-muted-foreground">{subtitle(m)}</div>}
+      </div>
+      <div className="flex shrink-0 items-center gap-2">
+        <span className="flex items-center gap-1 rounded bg-muted px-1.5 py-1 text-muted-foreground">
+          <ModalityIcons mods={m.inputModalities} />
+          <ArrowRight className="size-3 opacity-50" />
+          <ModalityIcons mods={m.outputModalities} />
+        </span>
+        {m.toolCall && <CapBadge icon={Wrench} title={t('resources.providerDialog.models.tools')} />}
+        {m.reasoning && <CapBadge icon={Brain} title={t('resources.providerDialog.models.reasoning')} />}
+        {m.contextWindow ? <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{formatContext(m.contextWindow)}</span> : null}
+        {selectedCred && (
+          <span title={locked ? t('resources.providerDialog.models.lockedHint') : undefined} className="flex">
+            <Switch
+              checked={enabled}
+              disabled={locked || endpoints.length === 0}
+              onCheckedChange={(v) => toggle(endpoints, { id: m.id, name: m.name }, v)}
+            />
+          </span>
+        )}
+      </div>
+    </div>
+  )
+
+  const groupHeader = (label: string, count: number) => (
+    <div className="sticky top-0 z-10 flex items-center gap-1.5 bg-background/95 px-3 py-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground backdrop-blur">
+      {label}
+      <span className="text-muted-foreground/70">({count})</span>
+    </div>
+  )
+
   const header = (
     <div className="flex items-center justify-between gap-2">
       <div className="flex items-baseline gap-2">
@@ -211,6 +354,18 @@ export function PlatformModelsPanel({ platform, plan }: { platform: Platform; pl
         <span className="text-xs text-muted-foreground">{t('resources.providerDialog.models.count', { count: annotated.length })}</span>
       </div>
       <div className="flex items-center gap-1.5">
+        {planCreds.length > 1 && (
+          <Select value={selectedCred?.id ?? ''} onValueChange={setKeyId}>
+            <SelectTrigger className="h-7 w-40 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {planCreds.map((c) => (
+                <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
         <div className="relative">
           <Search className="absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
           <input
@@ -260,34 +415,17 @@ export function PlatformModelsPanel({ platform, plan }: { platform: Platform; pl
       </div>
 
       <div className="max-h-[420px] overflow-y-auto">
-        {visible.length === 0 && <p className="p-4 text-xs text-muted-foreground">{t('resources.providerDialog.models.empty')}</p>}
-        {visible.map(({ m, iconMatched }) => (
-          <div key={m.id} className="flex items-center gap-3 px-3 py-2.5">
-            <div className="flex size-7 shrink-0 items-center justify-center">
-              {iconMatched
-                ? <ModelIcon model={m.id} type="color" size={26} />
-                : <ProviderLabel brandKey={platform.brand} iconOnly size={26} />}
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-1.5">
-                <span className="truncate text-sm font-medium">{m.name}</span>
-                <ModelIdBadge id={m.id} />
-                {m.status && <span className="shrink-0 rounded bg-amber-500/10 px-1 text-[9px] text-amber-600 dark:text-amber-400">{m.status}</span>}
-              </div>
-              {subtitle(m) && <div className="mt-0.5 truncate text-[11px] text-muted-foreground">{subtitle(m)}</div>}
-            </div>
-            <div className="flex shrink-0 items-center gap-2">
-              <span className="flex items-center gap-1 rounded bg-muted px-1.5 py-1 text-muted-foreground">
-                <ModalityIcons mods={m.inputModalities} />
-                <ArrowRight className="size-3 opacity-50" />
-                <ModalityIcons mods={m.outputModalities} />
-              </span>
-              {m.toolCall && <CapBadge icon={Wrench} title={t('resources.providerDialog.models.tools')} />}
-              {m.reasoning && <CapBadge icon={Brain} title={t('resources.providerDialog.models.reasoning')} />}
-              {m.contextWindow ? <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{formatContext(m.contextWindow)}</span> : null}
-            </div>
-          </div>
-        ))}
+        {rows.length === 0 && <p className="p-4 text-xs text-muted-foreground">{t('resources.providerDialog.models.empty')}</p>}
+        {selectedCred ? (
+          <>
+            {enabledRows.length > 0 && groupHeader(t('resources.providerDialog.models.enabledGroup'), enabledRows.length)}
+            {enabledRows.map(renderRow)}
+            {disabledRows.length > 0 && groupHeader(t('resources.providerDialog.models.disabledGroup'), disabledRows.length)}
+            {disabledRows.map(renderRow)}
+          </>
+        ) : (
+          rows.map(renderRow)
+        )}
       </div>
     </div>
   )

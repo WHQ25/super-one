@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react'
-import { AppWindow, ArrowLeft, BarChart3, Blocks, Bot, Globe, LayoutGrid, Loader2, Paintbrush, Palette, Puzzle, Server, Settings, Smartphone, Webhook } from 'lucide-react'
+import { ArrowLeft, BarChart3, Blocks, Bot, Brain, Globe, LayoutGrid, Loader2, Paintbrush, Palette, Puzzle, Server, Settings, Smartphone, Webhook } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@superone/ui/components/ui/button'
 import { useAppStore } from '@/stores/app'
@@ -24,8 +24,8 @@ const UsagePage = lazy(() => import('./UsagePage').then((m) => ({ default: m.Usa
 const globalTabs = [
   { id: 'app-settings' as const, labelKey: 'settings.layout.tabs.general', icon: Settings },
   { id: 'appearance' as const, labelKey: 'settings.layout.tabs.appearance', icon: Paintbrush },
-  { id: 'providers' as const, labelKey: 'settings.layout.tabs.providers', icon: Globe },
-  { id: 'browser' as const, labelKey: 'settings.layout.tabs.browser', icon: AppWindow },
+  { id: 'providers' as const, labelKey: 'settings.layout.tabs.providers', icon: Brain },
+  { id: 'browser' as const, labelKey: 'settings.layout.tabs.browser', icon: Globe },
   { id: 'apps' as const, labelKey: 'settings.layout.tabs.apps', icon: LayoutGrid },
   { id: 'remote' as const, labelKey: 'settings.layout.tabs.remote', icon: Smartphone },
   { id: 'usage' as const, labelKey: 'settings.layout.tabs.usage', icon: BarChart3 },

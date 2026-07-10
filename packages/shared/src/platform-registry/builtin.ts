@@ -50,9 +50,9 @@ const BAILIAN_API_MODELS: ProviderModelEnv = {
 }
 
 const GLM_MODELS: ProviderModelEnv = {
-  default: { id: 'glm-5.2[1m]', name: 'GLM-5.2 (1M)' },
-  opus: { id: 'glm-5.2[1m]', name: 'GLM-5.2 (1M)' },
-  sonnet: { id: 'glm-5.2[1m]', name: 'GLM-5.2 (1M)' },
+  default: { id: 'glm-5.2[1m]', name: 'GLM-5.2' },
+  opus: { id: 'glm-5.2[1m]', name: 'GLM-5.2' },
+  sonnet: { id: 'glm-5.2[1m]', name: 'GLM-5.2' },
   haiku: { id: 'glm-4.5-air', name: 'GLM-4.5 Air' },
 }
 
@@ -664,7 +664,6 @@ export const BUILTIN_PLATFORMS: Platform[] = [
             protocol: 'openai-images',
             baseUrl: '',
             tasks: ['image'],
-            models: [{ id: 'gpt-image-2', name: 'GPT Image 2', tasks: ['image'] }],
           },
         ],
       },
@@ -687,12 +686,6 @@ export const BUILTIN_PLATFORMS: Platform[] = [
             id: 'generative',
             protocol: 'google-generative',
             baseUrl: '',
-            tasks: ['image'],
-            models: [
-              { id: 'gemini-3.1-flash-lite-image', name: 'Nano Banana 2 Lite' },
-              { id: 'gemini-3.1-flash-image', name: 'Nano Banana 2' },
-              { id: 'gemini-3-pro-image', name: 'Nano Banana Pro' },
-            ],
           },
         ],
       },

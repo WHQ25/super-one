@@ -3,6 +3,7 @@ import { ChevronDown, Plus, X } from 'lucide-react'
 import { ModelIcon } from '@lobehub/icons'
 import { useTranslation } from 'react-i18next'
 import { Input } from '@superone/ui/components/ui/input'
+import { cn } from '@superone/ui/lib/utils'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -16,6 +17,7 @@ import {
   type ProviderModelSlot,
 } from '@superone/shared/agent-types'
 import {
+  catalogProviderIdFor,
   defaultOverridesForPlan,
   resolveEndpointModels,
   type Credential,
@@ -25,8 +27,10 @@ import {
   type Plan,
   type ServiceEndpoint,
 } from '@superone/shared/platform-registry'
+
 import { useModelCatalog } from '@/hooks/useModelCatalog'
 import { useSettingsStore } from '@/stores/settings'
+import { ONE_M_SUFFIX, stripOneM } from '@/lib/model-id'
 
 const RESERVED_ENV_KEYS = new Set([
   'ANTHROPIC_API_KEY',
@@ -163,10 +167,12 @@ export function EnvEditor({ value, onChange }: { value: Record<string, string>; 
 
 function ModelMappingEditor({
   models,
+  oneMillionIds,
   value,
   onChange,
 }: {
   models: EndpointModel[]
+  oneMillionIds: Set<string>
   value: ProviderModelEnv
   onChange: (v: ProviderModelEnv) => void
 }) {
@@ -179,9 +185,9 @@ function ModelMappingEditor({
     subagent: t('resources.providerDialog.bucketSubagent'),
   }
 
-  const setSlot = (bucket: ModelBucket, model: EndpointModel | null) => {
+  const setSlot = (bucket: ModelBucket, slot: ProviderModelSlot | null) => {
     const next: ProviderModelEnv = { ...value }
-    if (model) next[bucket] = { id: model.id, name: model.name }
+    if (slot) next[bucket] = slot
     else delete next[bucket]
     onChange(next)
   }
@@ -191,7 +197,7 @@ function ModelMappingEditor({
       {MODEL_BUCKETS.map((bucket) => (
         <div key={bucket} className="flex items-center gap-1.5">
           <span className="w-16 shrink-0 text-xs text-muted-foreground">{label[bucket]}</span>
-          <ModelSlotSelect models={models} value={value[bucket]} onSelect={(m) => setSlot(bucket, m)} />
+          <ModelSlotSelect models={models} oneMillionIds={oneMillionIds} value={value[bucket]} onChange={(s) => setSlot(bucket, s)} />
         </div>
       ))}
     </div>
@@ -245,41 +251,61 @@ export function ModelEnvEditor({ value, onChange }: { value: ProviderModelEnv; o
 
 function ModelSlotSelect({
   models,
+  oneMillionIds,
   value,
-  onSelect,
+  onChange,
 }: {
   models: EndpointModel[]
+  oneMillionIds: Set<string>
   value: ProviderModelSlot | undefined
-  onSelect: (m: EndpointModel | null) => void
+  onChange: (slot: ProviderModelSlot | null) => void
 }) {
   const { t } = useTranslation()
+  const baseId = value ? stripOneM(value.id) : undefined
+  const has1m = !!value && value.id.endsWith(ONE_M_SUFFIX)
+  const supports1m = !!baseId && oneMillionIds.has(baseId)
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md border border-border bg-background px-2 py-1.5 text-xs transition-colors hover:bg-muted">
-          {value?.id ? (
-            <>
-              <ModelIcon model={value.id} size={14} className="shrink-0" />
-              <span className="truncate">{value.name ?? value.id}</span>
-            </>
-          ) : (
-            <span className="text-muted-foreground">{t('resources.providers.selectModel')}</span>
-          )}
-          <ChevronDown className="ml-auto size-3 shrink-0 text-muted-foreground" />
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="max-h-72 w-64 overflow-y-auto">
-        <DropdownMenuItem onClick={() => onSelect(null)} className="text-muted-foreground">
-          {t('resources.providers.modelNone')}
-        </DropdownMenuItem>
-        {models.map((m) => (
-          <DropdownMenuItem key={m.id} onClick={() => onSelect(m)} className="flex items-center gap-1.5">
-            <ModelIcon model={m.id} size={16} className="shrink-0" />
-            <span className="truncate">{m.name ?? m.id}</span>
+    <div className="flex min-w-0 flex-1 items-center gap-1.5">
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md border border-border bg-background px-2 py-1.5 text-xs transition-colors hover:bg-muted">
+            {baseId ? (
+              <>
+                <ModelIcon model={baseId} size={14} className="shrink-0" />
+                <span className="truncate">{value?.name ?? baseId}</span>
+              </>
+            ) : (
+              <span className="text-muted-foreground">{t('resources.providers.selectModel')}</span>
+            )}
+            <ChevronDown className="ml-auto size-3 shrink-0 text-muted-foreground" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="max-h-72 w-64 overflow-y-auto">
+          <DropdownMenuItem onClick={() => onChange(null)} className="text-muted-foreground">
+            {t('resources.providers.modelNone')}
           </DropdownMenuItem>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
+          {models.map((m) => (
+            <DropdownMenuItem key={m.id} onClick={() => onChange({ id: m.id, name: m.name })} className="flex items-center gap-1.5">
+              <ModelIcon model={m.id} size={16} className="shrink-0" />
+              <span className="truncate">{m.name ?? m.id}</span>
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+      {supports1m && baseId && (
+        <button
+          type="button"
+          title={t('resources.providers.oneMillionHint')}
+          onClick={() => onChange({ id: has1m ? baseId : baseId + ONE_M_SUFFIX, name: value?.name })}
+          className={cn(
+            'shrink-0 rounded-md border px-1.5 py-1.5 text-[10px] font-semibold transition-colors',
+            has1m ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:text-foreground',
+          )}
+        >
+          1M
+        </button>
+      )}
+    </div>
   )
 }
 
@@ -319,6 +345,13 @@ function EndpointOverrideFields({
     () => resolveEndpointModels(platform, plan, endpoint, catalog ?? undefined),
     [platform, plan, endpoint, catalog],
   )
+  // Catalog ids whose context window is >=1M — eligible for the `[1m]` long-context toggle.
+  const oneMillionIds = useMemo(() => {
+    const ids = new Set<string>()
+    const provider = catalog?.providers.find((p) => p.id === catalogProviderIdFor(platform, plan))
+    for (const m of provider?.models ?? []) if ((m.contextWindow ?? 0) >= 1_000_000) ids.add(m.id)
+    return ids
+  }, [catalog, platform, plan])
   // The first-party Anthropic API uses native Claude models on the real endpoint —
   // model remapping and a compatible-endpoint override make no sense there.
   const isFirstPartyAnthropic = platform.id === 'anthropic'
@@ -346,6 +379,7 @@ function EndpointOverrideFields({
           <span className="text-xs font-medium text-muted-foreground">{t('resources.providerDialog.modelMapping')}</span>
           <ModelMappingEditor
             models={suggestions}
+            oneMillionIds={oneMillionIds}
             value={value.modelMapping ?? {}}
             onChange={(v) => onChange({ ...value, modelMapping: v })}
           />

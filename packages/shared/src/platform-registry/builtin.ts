@@ -487,6 +487,7 @@ export const BUILTIN_PLATFORMS: Platform[] = [
         auth: 'api-key',
         apiKeyUrl: 'https://platform.deepseek.com/api_keys',
         endpoints: [
+          openaiChat('https://api.deepseek.com'),
           anthropic('https://api.deepseek.com/anthropic', {
             extraEnv: {
               ...EMPTY_AUTH_TOKEN,

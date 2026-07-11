@@ -1,8 +1,8 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import { AgentIpcChannels, type NativeContextMenuItemSpec, type AgentPrewarmHint, type BashOutputEvent, type CodexCollaborationMode, type CodexPermissionPreset, type CodexProviderTestProgress, type CodexReasoningEffort, type CodexReviewTarget, type CodexExternalAgentItem, type RemoteDeviceConfig, type SandboxMode, type SendMessageRequest, type ContentBlock, type ChatMessageContext, type WorktreeActivateRequest, type WorktreeHandoffResult, type WorktreeAssignResult, type GitDirtyStatus, type SessionForkRequest, type SessionForkResult, type HookSavePayload, type TerminalEvent, type TerminalListItem, type TerminalSnapshot, type HarnessId, type BrowserCertError, type BrowserOpenTabRequest, type UpsertMediaProviderRequest } from '@superone/shared/agent-types'
+import { AgentIpcChannels, type NativeContextMenuItemSpec, type AgentPrewarmHint, type BashOutputEvent, type CodexCollaborationMode, type CodexPermissionPreset, type CodexReasoningEffort, type CodexReviewTarget, type CodexExternalAgentItem, type ProviderEndpointTestResponse, type RemoteDeviceConfig, type SandboxMode, type SendMessageRequest, type ContentBlock, type ChatMessageContext, type WorktreeActivateRequest, type WorktreeHandoffResult, type WorktreeAssignResult, type GitDirtyStatus, type SessionForkRequest, type SessionForkResult, type HookSavePayload, type TerminalEvent, type TerminalListItem, type TerminalSnapshot, type HarnessId, type BrowserCertError, type BrowserOpenTabRequest, type UpsertMediaProviderRequest } from '@superone/shared/agent-types'
 import type { McpbInstallRequest } from '@superone/shared/mcpb-types'
-import type { ConsumerBinding, ConsumerId, Credential, EndpointOverride, Platform } from '@superone/shared/platform-registry'
+import type { ConsumerBinding, ConsumerId, Credential, EndpointOverride, Platform, ServiceEndpoint } from '@superone/shared/platform-registry'
 
 try {
   const ROLE_PREFIX = '--superone-role='
@@ -620,19 +620,8 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.BINDINGS_SET, binding),
   clearBinding: (consumer: ConsumerId): Promise<void> =>
     ipcRenderer.invoke(AgentIpcChannels.BINDINGS_CLEAR, consumer),
-  testProviderConnection: (data: { api_key: string; base_url: string; extra_env: string; credential_id?: string }) =>
-    ipcRenderer.invoke(AgentIpcChannels.PROVIDERS_TEST_CONNECTION, data) as Promise<{ success: boolean; models: number; error?: string }>,
-  testCodexProvider: (data: { api_key: string; base_url: string; extra_env: string; name?: string; model?: string; credential_id?: string }) =>
-    ipcRenderer.invoke(AgentIpcChannels.PROVIDERS_TEST_CODEX, data) as Promise<{ success: boolean; models: number; error?: string }>,
-  onTestCodexProgress: (callback: (progress: CodexProviderTestProgress) => void) => {
-    const handler = (_e: Electron.IpcRendererEvent, progress: CodexProviderTestProgress): void => {
-      callback(progress)
-    }
-    ipcRenderer.on(AgentIpcChannels.PROVIDERS_TEST_CODEX_PROGRESS, handler)
-    return () => {
-      ipcRenderer.removeListener(AgentIpcChannels.PROVIDERS_TEST_CODEX_PROGRESS, handler)
-    }
-  },
+  testProviderEndpoint: (data: { apiKey: string; credentialId?: string; endpoints: ServiceEndpoint[] }) =>
+    ipcRenderer.invoke(AgentIpcChannels.PROVIDERS_TEST_ENDPOINT, data) as Promise<ProviderEndpointTestResponse>,
 
   // Session Providers (new session layer)
   sessionProviders: {

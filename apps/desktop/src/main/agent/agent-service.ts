@@ -7,9 +7,6 @@ import { ipcMain, type BrowserWindow } from 'electron'
 import { addProjectAdditionalDir, readScopedAdditionalDirs, removeProjectAdditionalDir } from './project-additional-dirs'
 import { WarmupManager } from './warmup-manager'
 import { fetchModels } from './claude-models'
-import { resolveSdkClaudeBinary } from './claude-binary'
-import { makeClaudeSpawn } from './claude-spawn'
-import { resolveProbeCwd } from './probe-cwd'
 import { AgentIpcChannels, type AgentEvent, type AgentPrewarmHint, type CodexCollaborationMode, type CodexPermissionPreset, type CodexReasoningEffort, type ModelOption, type PermissionMode, type QuestionAnnotations, type RemoteCommand, type ResourceScope, type SandboxMode, type SendMessageRequest, type TerminalEvent } from '@superone/shared/agent-types'
 import type { RemoteControlService, RemoteResponder } from '../remote-control-service'
 import { stripMessagesForRemote, stripEventForRemote } from '../remote-control-service'
@@ -22,6 +19,7 @@ import { getDb, getCachedHarnessResources } from '../database'
 import { resolveTestApiKey } from './provider-test-key'
 import { buildRemoteActiveService, resolveChatService } from '../providers/resolver'
 import { getPlatforms } from '../providers/registry'
+import { testServiceEndpoints } from '../providers/endpoint-test'
 import {
   createCredential,
   deleteBinding,
@@ -35,7 +33,7 @@ import {
   type CreateCredentialInput,
   type UpdateCredentialInput,
 } from '../providers/credential-store'
-import type { ConsumerBinding, ConsumerId, Platform } from '@superone/shared/platform-registry'
+import type { ConsumerBinding, ConsumerId, Platform, ServiceEndpoint } from '@superone/shared/platform-registry'
 import { sanitizeGitRef } from '../path-security'
 import { authorizeAndStat, FileBridgeError, type AuthorizedFile } from '../file-bridge'
 import { tmpdir } from 'os'
@@ -2025,89 +2023,11 @@ export class AgentService {
       this.broadcastProviderChanged(harness)
     })
 
-    ipcMain.handle(AgentIpcChannels.PROVIDERS_TEST_CONNECTION, async (_event, data: { api_key: string; base_url: string; extra_env: string; credential_id?: string }) => {
-      const apiKey = resolveTestApiKey(data)
-      const SYSTEM_ENV_ALLOWLIST = ['PATH', 'HOME', 'TMPDIR', 'TEMP', 'TMP', 'USER', 'LOGNAME', 'SHELL', 'LANG', 'LC_ALL', 'SystemRoot', 'APPDATA', 'LOCALAPPDATA', 'PROGRAMFILES', 'USERPROFILE', 'PROGRAMDATA', 'COMSPEC']
-      const env: Record<string, string> = {}
-      for (const key of SYSTEM_ENV_ALLOWLIST) {
-        const v = process.env[key]
-        if (v !== undefined) env[key] = v
-      }
-      if (apiKey) env.ANTHROPIC_API_KEY = apiKey
-      if (data.base_url) env.ANTHROPIC_BASE_URL = data.base_url
-      try {
-        const parsed = JSON.parse(data.extra_env || '{}')
-        Object.assign(env, parsed)
-      } catch { /* ignore */ }
-      if (apiKey && env.ANTHROPIC_AUTH_TOKEN !== undefined) env.ANTHROPIC_AUTH_TOKEN = apiKey
-      const TEST_TIMEOUT_MS = 15000
-      try {
-        const { query: testQuery } = await import('@anthropic-ai/claude-agent-sdk')
-        const probeCwd = resolveProbeCwd()
-        trace('providers.test', 'options', {
-          cwd: probeCwd,
-          envKeys: Object.keys(env),
-        })
-        const q = testQuery({
-          prompt: 'Reply with "ok" only.',
-          options: {
-            env,
-            cwd: probeCwd,
-            pathToClaudeCodeExecutable: resolveSdkClaudeBinary(),
-            spawnClaudeCodeProcess: makeClaudeSpawn(),
-            maxTurns: 1,
-            permissionMode: 'bypassPermissions',
-            persistSession: false,
-            systemPrompt: 'Reply with a single word. Do not use any tools.',
-            allowedTools: ['Noop'],
-          },
-        })
-        const drain = async (): Promise<{ success: boolean; models: number; error?: string }> => {
-          let authError = ''
-          for await (const msg of q) {
-            const m = msg as any
-            trace('providers.test', 'msg', { type: m.type, subtype: m.subtype, error: m.error })
-            if (m.type === 'assistant' && m.error) {
-              authError = m.error
-              break
-            }
-            if (m.type === 'result') {
-              if (m.is_error) authError = m.result ?? 'Unknown error'
-              break
-            }
-            if (m.type === 'stream_event' && m.event?.type === 'content_block_start') {
-              break
-            }
-          }
-          return authError
-            ? { success: false, models: 0, error: authError }
-            : { success: true, models: 0 }
-        }
-        let timer: NodeJS.Timeout | undefined
-        const timeout = new Promise<{ success: false; models: 0; error: string }>((resolve) => {
-          timer = setTimeout(() => resolve({ success: false, models: 0, error: `Test timed out after ${TEST_TIMEOUT_MS / 1000}s` }), TEST_TIMEOUT_MS)
-        })
-        try {
-          const result = await Promise.race([drain(), timeout])
-          trace('providers.test', 'result', result)
-          return result
-        } finally {
-          if (timer) clearTimeout(timer)
-          try { q.close() } catch { /* ignore */ }
-        }
-      } catch (err) {
-        trace('providers.test', 'error', { message: err instanceof Error ? err.message : String(err), stack: err instanceof Error ? err.stack : undefined })
-        return { success: false, models: 0, error: err instanceof Error ? err.message : String(err) }
-      }
-    })
-
-    ipcMain.handle(AgentIpcChannels.PROVIDERS_TEST_CODEX, async (event, data: { api_key: string; base_url: string; extra_env: string; name?: string; model?: string; credential_id?: string }) => {
-      const { testCodexProvider } = await import('../codex/codex-provider-test')
-      return testCodexProvider({ ...data, api_key: resolveTestApiKey(data) }, undefined, (progress) => {
-        if (!event.sender.isDestroyed()) {
-          event.sender.send(AgentIpcChannels.PROVIDERS_TEST_CODEX_PROGRESS, progress)
-        }
-      })
+    ipcMain.handle(AgentIpcChannels.PROVIDERS_TEST_ENDPOINT, async (_event, data: { apiKey: string; credentialId?: string; endpoints: ServiceEndpoint[] }) => {
+      const apiKey = resolveTestApiKey({ api_key: data.apiKey, credential_id: data.credentialId })
+      const results = await testServiceEndpoints(data.endpoints, apiKey)
+      trace('providers.test', 'result', results)
+      return { success: results.every((r) => r.success), results }
     })
 
     // --- Session Providers (new session_providers table) ---

@@ -23,7 +23,7 @@ Three kinds of data, split by who owns their lifecycle:
 ```
 Platform { id, brand, name, catalogProviderId? }
 └─ Plan { id, name, auth, apiKeyUrl?, endpoints[] }
-   └─ ServiceEndpoint { protocol, baseUrl, tasks?, models?, defaults? }
+   └─ ServiceEndpoint { baseUrl, protocols[], models?, defaults? }
 
 Credential { id, platformId, planId, name, secret | secretEnv, overrides?, notes, sortOrder }
 ConsumerBinding { consumer, credentialId, endpointId?, config? }
@@ -49,9 +49,12 @@ const PROTOCOL_TASKS: Record<WireProtocol, CapabilityTask[]> = { ... }
 
 Rules:
 
-- `endpoint.tasks` defaults to `PROTOCOL_TASKS[protocol]`; may narrow it, never widen it (registry validation).
-- `endpoint.models[].tasks` narrows further per model (e.g. Gemini endpoint: gemini-pro → chat, flash-image → image).
+- An endpoint is **one addressable service** (`baseUrl` + auth) that speaks **a set of protocols** (`protocols[]`). `baseUrl` belongs to the endpoint, shared by every protocol on it — never duplicated per protocol. Each protocol determines its own wire format + sub-path (`/chat/completions`, `/images/generations`, `/audio/speech`, …). This models an OpenAI-compatible base that serves chat+image+audio at once, or a relay that speaks `anthropic-messages` **and** `openai-chat` under a single URL.
+- The endpoint's raw task surface = `⋃ PROTOCOL_TASKS[p] for p in protocols`. It carries **no** `tasks` narrowing field — actual capability is opt-in via **enabled models**: `endpoint.models[].tasks` (each model tagged with what it serves) is the only narrowing knob. A provider serves image/tts/asr only once a model tagged with that task is enabled (matches the existing media opt-in doctrine in `selectEndpoint`).
+- Resolution returns a **(endpoint, protocol)** pair: pick the endpoint whose `protocols[]` serves the consumer's task (and, for chat harnesses, includes a `HARNESS_CHAT_PROTOCOLS` member), then resolve the single protocol for that task. `ResolvedService.protocol` stays **singular** — one API call speaks one wire format. Harness gates: `claude → ['anthropic-messages']`, `codex → ['openai-responses']` **only** — codex speaks the Responses wire exclusively; it cannot use `openai-chat`, so a chat-completions endpoint must never resolve for `chat:codex`.
 - The old `openai-image` vs `openai-compatible-image` split (ai-sdk `createOpenAI` vs `createOpenAICompatible`) is **not** a protocol distinction — the adapter picks strict-vs-compatible by platform id (`openai` official → strict).
+- `openai-chat` currently has **no** chat consumer (claude=anthropic-only, codex=responses-only) — it stays in the union as a **placeholder** for a future generic openai-chat harness. Consequence, accepted for now: `synthesizePlatformFromCatalog` emits an `openai-chat` endpoint, so a models.dev-derived provider's chat endpoint is **not bindable** to any harness until it also speaks Responses/Anthropic. Do not add a fake consumer to paper over this.
+- Known debt (out of scope here): `openai-audio` still bundles two genuinely different wire shapes — `/audio/speech` (text→audio, tts) and `/audio/transcriptions` (audio→text, asr). Whichever protocol resolves for a task, the audio adapter must still branch tts-vs-asr internally. Splitting it into `openai-speech` / `openai-transcription` is deferred until tts/asr get a runtime implementation.
 
 ### 2.2 Platform
 
@@ -89,11 +92,10 @@ interface Plan {
 ```ts
 interface ServiceEndpoint {
   id: string                  // unique within the plan
-  protocol: WireProtocol
-  baseUrl: string
-  tasks?: CapabilityTask[]        // default = PROTOCOL_TASKS[protocol]
-  models?: EndpointModel[]        // curated list; default = platform catalog models
-  defaults?: EndpointDefaults     // shipped recommended config
+  baseUrl: string             // the addressable service; shared by every protocol below
+  protocols: WireProtocol[]   // wire formats this base speaks; each maps to a sub-path + task set
+  models?: EndpointModel[]        // curated list; default = platform catalog models. models[].tasks = narrowing knob
+  defaults?: EndpointDefaults     // shipped recommended config (chat-harness mapping/env)
 }
 
 interface EndpointModel { id: string; name?: string; tasks?: CapabilityTask[] }

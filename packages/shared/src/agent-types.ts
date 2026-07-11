@@ -1503,9 +1503,16 @@ export interface CodexSetAuthRequest {
   apiKey?: string
 }
 
-export interface CodexProviderTestProgress {
-  phase: 'model_list' | 'turn'
-  status: 'start' | 'ok'
+export interface EndpointTestResult {
+  endpointId: string
+  success: boolean
+  status?: number
+  error?: string
+}
+
+export interface ProviderEndpointTestResponse {
+  success: boolean
+  results: EndpointTestResult[]
 }
 
 export interface CodexRunRequest {
@@ -1998,9 +2005,7 @@ export const AgentIpcChannels = {
   BINDINGS_GET: 'bindings:get',
   BINDINGS_SET: 'bindings:set',
   BINDINGS_CLEAR: 'bindings:clear',
-  PROVIDERS_TEST_CONNECTION: 'providers:test-connection',
-  PROVIDERS_TEST_CODEX: 'providers:test-codex',
-  PROVIDERS_TEST_CODEX_PROGRESS: 'providers:test-codex-progress',
+  PROVIDERS_TEST_ENDPOINT: 'providers:test-endpoint',
 
   // Media generation providers (read-only status derived from image-serving credentials)
   MEDIA_GEN_PROVIDERS: 'mediaGen:providers',

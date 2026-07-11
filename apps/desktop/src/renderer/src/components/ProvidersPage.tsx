@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ChevronDown, ExternalLink, Loader2, Pencil, Plus, Trash2 } from 'lucide-react'
+import { ChevronDown, ExternalLink, Loader2, Pencil, Plus, Trash2, Zap } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@superone/ui/components/ui/button'
 import { Badge } from '@superone/ui/components/ui/badge'
@@ -44,6 +44,7 @@ import {
   upsertCustomModel,
   type CustomModel,
 } from './providers/custom-models'
+import { planTestEndpoints, useEndpointTest } from './providers/test-endpoints'
 
 const BRAND_POPULARITY = [
   'anthropic',
@@ -88,10 +89,12 @@ function officialHarness(platform: Platform): 'claude' | 'codex' {
 
 function CredentialRow({
   credential,
+  plan,
   takenNames,
   onDelete,
 }: {
   credential: Credential
+  plan: Plan
   takenNames: string[]
   onDelete: () => void
 }) {
@@ -101,6 +104,11 @@ function CredentialRow({
   const [name, setName] = useState(credential.name)
   const [secret, setSecret] = useState('')
   const [busy, setBusy] = useState(false)
+  const { state: testState, run: runTest } = useEndpointTest()
+  const test = useCallback(
+    () => void runTest(planTestEndpoints(plan, credential.overrides), secret.trim(), credential.id),
+    [runTest, plan, credential.overrides, credential.id, secret],
+  )
 
   const effectiveName = name.trim() || credential.name
   // Other keys on the same platform, excluding this one — renaming to a sibling's name conflicts.
@@ -151,11 +159,27 @@ function CredentialRow({
           value={secret}
           onChange={(e) => setSecret(e.target.value)}
         />
-        <div className="flex justify-end gap-2">
-          <Button variant="ghost" size="sm" onClick={cancel}>{t('common.cancel')}</Button>
-          <Button size="sm" disabled={busy || conflict} onClick={save}>
-            {busy ? <Loader2 className="size-4 animate-spin" /> : t('common.save')}
-          </Button>
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex flex-row items-center gap-2">  
+            <Button variant="outline" size="sm" disabled={testState.status === 'testing'} onClick={test}>
+              {testState.status === 'testing' ? <Loader2 className="size-4 animate-spin" /> : <Zap className="size-4" /> }
+              {testState.status === 'testing' ? t('resources.providerDialog.testing') : t('resources.providerDialog.test')}
+            </Button>
+            {testState.status === 'success' && (
+              <span className="text-[11px] text-success">{t('resources.providerDialog.connected')}</span>
+            )}
+            {testState.status === 'error' && (
+              <span className="text-[11px] text-destructive">
+                {t('resources.providerDialog.connectionFailed')}{testState.message ? `: ${testState.message}` : ''}
+              </span>
+            )}
+          </div>
+          <div className="flex gap-2">
+            <Button variant="ghost" size="sm" onClick={cancel}>{t('common.cancel')}</Button>
+            <Button size="sm" disabled={busy || conflict} onClick={save}>
+              {busy ? <Loader2 className="size-4 animate-spin" /> : t('common.save')}
+            </Button>
+          </div>
         </div>
       </div>
     )
@@ -184,12 +208,14 @@ function CredentialRow({
 function AddKeyForm({
   platformId,
   planId,
+  plan,
   pendingOverrides,
   takenNames,
   onDone,
 }: {
   platformId: string
   planId: string
+  plan: Plan
   pendingOverrides: Record<string, EndpointOverride>
   takenNames: string[]
   onDone: () => void
@@ -199,6 +225,11 @@ function AddKeyForm({
   const [name, setName] = useState('')
   const [secret, setSecret] = useState('')
   const [busy, setBusy] = useState(false)
+  const { state: testState, run: runTest } = useEndpointTest()
+  const test = useCallback(
+    () => void runTest(planTestEndpoints(plan, pendingOverrides), secret.trim()),
+    [runTest, plan, pendingOverrides, secret],
+  )
 
   const effectiveName = name.trim() || 'Key'
   const conflict = useMemo(
@@ -241,12 +272,25 @@ function AddKeyForm({
         value={secret}
         onChange={(e) => setSecret(e.target.value)}
       />
-      <div className="flex justify-end gap-2">
-        <Button variant="ghost" size="sm" onClick={onDone}>{t('common.cancel')}</Button>
-        <Button size="sm" disabled={busy || conflict} onClick={submit}>
-          {busy ? <Loader2 className="size-4 animate-spin" /> : t('resources.providers.addKey')}
+      <div className="flex items-center justify-between gap-2">
+        <Button variant="outline" size="sm" disabled={!secret.trim() || testState.status === 'testing'} onClick={test}>
+          {testState.status === 'testing' ? <Loader2 className="size-4 animate-spin" /> : t('resources.providerDialog.test')}
         </Button>
+        <div className="flex gap-2">
+          <Button variant="ghost" size="sm" onClick={onDone}>{t('common.cancel')}</Button>
+          <Button size="sm" disabled={busy || conflict} onClick={submit}>
+            {busy ? <Loader2 className="size-4 animate-spin" /> : t('resources.providers.addKey')}
+          </Button>
+        </div>
       </div>
+      {testState.status === 'success' && (
+        <span className="text-[11px] text-success">{t('resources.providerDialog.connected')}</span>
+      )}
+      {testState.status === 'error' && (
+        <span className="text-[11px] text-destructive">
+          {t('resources.providerDialog.connectionFailed')}{testState.message ? `: ${testState.message}` : ''}
+        </span>
+      )}
     </div>
   )
 }
@@ -337,6 +381,7 @@ function PlanCard({
         <CredentialRow
           key={c.id}
           credential={c}
+          plan={plan}
           takenNames={takenNames}
           onDelete={() => void deleteCredential(c.id)}
         />
@@ -345,6 +390,7 @@ function PlanCard({
         <AddKeyForm
           platformId={platform.id}
           planId={plan.id}
+          plan={plan}
           pendingOverrides={pendingOverrides}
           takenNames={takenNames}
           onDone={onDoneAdd}
@@ -678,6 +724,8 @@ function CustomPlatformForm({ onDone }: { onDone: (createdId?: string) => void }
   })
   const supportedTasks = useMemo(() => endpointsSupportedTasks(endpoints), [endpoints])
   const canSubmit = !!name.trim() && !!baseUrl.trim() && endpoints.length > 0
+  const { state: testState, run: runTest } = useEndpointTest()
+  const test = useCallback(() => void runTest(endpoints.slice(0, 1), secret.trim()), [runTest, endpoints, secret])
 
   const submit = useCallback(async () => {
     if (!canSubmit) return
@@ -753,6 +801,21 @@ function CustomPlatformForm({ onDone }: { onDone: (createdId?: string) => void }
             {busy ? <Loader2 className="size-4 animate-spin" /> : t('common.create')}
           </Button>
           <Button variant="ghost" onClick={() => onDone()}>{t('common.cancel')}</Button>
+          <Button
+            variant="outline"
+            disabled={!baseUrl.trim() || !secret.trim() || endpoints.length === 0 || testState.status === 'testing'}
+            onClick={test}
+          >
+            {testState.status === 'testing' ? <Loader2 className="size-4 animate-spin" /> : t('resources.providerDialog.test')}
+          </Button>
+          {testState.status === 'success' && (
+            <span className="text-[11px] text-success">{t('resources.providerDialog.connected')}</span>
+          )}
+          {testState.status === 'error' && (
+            <span className="text-[11px] text-destructive">
+              {t('resources.providerDialog.connectionFailed')}{testState.message ? `: ${testState.message}` : ''}
+            </span>
+          )}
         </div>
     </div>
   )

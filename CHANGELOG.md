@@ -4,6 +4,18 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.44.1-alpha] - 2026-07-11
+
+### Added
+
+- Custom provider endpoints now support multiple protocols with a shared base URL per addressable service
+- Make custom provider capabilities, keys, and model mapping editable
+- Browser automation tools expanded with hover, tree snapshot, resize, on-demand network recording, and TOON output
+
+### Fixed
+
+- File tree context menu now shows the correct rename label
+
 ## [0.44.0-alpha] - 2026-07-10
 
 ### Added

@@ -30,10 +30,9 @@ export interface EndpointDefaults {
 
 export interface ServiceEndpoint {
   id: string // unique within the plan
-  protocol: WireProtocol
-  baseUrl: string
-  tasks?: CapabilityTask[] // default = PROTOCOL_TASKS[protocol]
-  models?: EndpointModel[] // curated list; default = platform catalog models
+  baseUrl: string // the addressable service; shared by every protocol below
+  protocols: WireProtocol[] // wire formats this base speaks; each maps to a sub-path + task set
+  models?: EndpointModel[] // curated list; default = platform catalog models. models[].tasks = capability narrowing knob
   defaults?: EndpointDefaults
 }
 

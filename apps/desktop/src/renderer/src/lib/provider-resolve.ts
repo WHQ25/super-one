@@ -58,8 +58,9 @@ export function resolveEffective(
   const plan = findPlan(platform, cred.planId)
   if (!platform || !plan) return null
   const usingBound = cred.id === binding?.credentialId
-  const endpoint = selectEndpoint(plan, consumer, usingBound ? binding?.endpointId : undefined, cred)
-  if (!endpoint) return null
+  const selected = selectEndpoint(plan, consumer, usingBound ? binding?.endpointId : undefined, cred)
+  if (!selected) return null
+  const { endpoint } = selected
   const merged = mergeEndpoint(endpoint, cred.overrides?.[endpoint.id], usingBound ? binding?.config : undefined)
   return {
     credential: cred,

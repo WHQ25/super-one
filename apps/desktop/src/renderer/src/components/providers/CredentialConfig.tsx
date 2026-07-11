@@ -357,7 +357,7 @@ function EndpointOverrideFields({
   // The first-party Anthropic API uses native Claude models on the real endpoint —
   // model remapping and a compatible-endpoint override make no sense there.
   const isFirstPartyAnthropic = platform.id === 'anthropic'
-  const isAnthropic = endpoint.protocol === 'anthropic-messages'
+  const isAnthropic = endpoint.protocols.includes('anthropic-messages')
   // Custom providers have no catalog, so the model dropdown would be empty — always let the
   // user type model id + display name manually instead.
   const isCustom = isCustomPlatform(platform)
@@ -365,7 +365,7 @@ function EndpointOverrideFields({
   return (
     <div className="flex flex-col gap-3">
       {showLabel && (
-        <span className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">{endpoint.protocol}</span>
+        <span className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">{endpoint.protocols.join(' · ')}</span>
       )}
 
       {!isFirstPartyAnthropic && (

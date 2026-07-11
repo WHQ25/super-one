@@ -15,20 +15,21 @@ import {
   validatePlatform,
   validateRegistry,
 } from './index'
+import type { WireProtocol } from './protocols'
 import type { Platform } from './types'
 
 describe('builtin registry', () => {
-  it('passes structural validation (unique ids, tasks ⊆ protocol tasks)', () => {
+  it('passes structural validation (unique ids, known protocols)', () => {
     expect(validateRegistry(BUILTIN_PLATFORMS)).toEqual([])
   })
 
-  it('every endpoint task is a subset of its protocol tasks', () => {
+  it('every endpoint declares at least one known protocol and derives a non-empty task set', () => {
     for (const platform of BUILTIN_PLATFORMS) {
       for (const plan of platform.plans) {
         for (const endpoint of plan.endpoints) {
-          for (const t of endpointTasks(endpoint)) {
-            expect(PROTOCOL_TASKS[endpoint.protocol]).toContain(t)
-          }
+          expect(endpoint.protocols.length).toBeGreaterThan(0)
+          for (const p of endpoint.protocols) expect(PROTOCOL_TASKS[p]).toBeDefined()
+          expect(endpointTasks(endpoint).length).toBeGreaterThan(0)
         }
       }
     }
@@ -54,11 +55,21 @@ describe('builtin registry', () => {
 })
 
 describe('selectEndpoint', () => {
-  it('picks the anthropic endpoint for chat:claude and openai for chat:codex on a dual-endpoint plan', () => {
-    const openrouter = findPlatform(BUILTIN_PLATFORMS, 'openrouter')!
-    const plan = openrouter.plans[0]
-    expect(selectEndpoint(plan, 'chat:claude')?.protocol).toBe('anthropic-messages')
-    expect(selectEndpoint(plan, 'chat:codex')?.protocol).toBe('openai-chat')
+  it('picks the anthropic endpoint + protocol for chat:claude on a cross-family plan', () => {
+    const plan = findPlatform(BUILTIN_PLATFORMS, 'openrouter')!.plans[0]
+    const claude = selectEndpoint(plan, 'chat:claude')
+    expect(claude?.endpoint.id).toBe('anthropic')
+    expect(claude?.protocol).toBe('anthropic-messages')
+  })
+
+  it('does not resolve chat:codex against a chat-completions-only endpoint (codex is Responses-only)', () => {
+    const plan = findPlatform(BUILTIN_PLATFORMS, 'openrouter')!.plans[0]
+    expect(selectEndpoint(plan, 'chat:codex')).toBeUndefined()
+  })
+
+  it('resolves chat:codex to the openai-responses protocol on a responses endpoint', () => {
+    const plan = findPlatform(BUILTIN_PLATFORMS, 'openai-official')!.plans[0]
+    expect(selectEndpoint(plan, 'chat:codex')?.protocol).toBe('openai-responses')
   })
 
   it('returns undefined when the plan cannot serve the consumer', () => {
@@ -67,22 +78,21 @@ describe('selectEndpoint', () => {
   })
 
   it('honors an explicit valid endpointId', () => {
-    const openrouter = findPlatform(BUILTIN_PLATFORMS, 'openrouter')!
-    const plan = openrouter.plans[0]
-    expect(selectEndpoint(plan, 'chat:claude', 'anthropic')?.id).toBe('anthropic')
+    const plan = findPlatform(BUILTIN_PLATFORMS, 'openrouter')!.plans[0]
+    expect(selectEndpoint(plan, 'chat:claude', 'anthropic')?.endpoint.id).toBe('anthropic')
   })
 
   it('derives media capability from the credential enabled models', () => {
     const plan = findPlatform(BUILTIN_PLATFORMS, 'gemini')!.plans[0]
     // No credential context → protocol capability only (generateContent serves image).
-    expect(selectEndpoint(plan, 'media:image')?.id).toBe('generative')
+    expect(selectEndpoint(plan, 'media:image')?.endpoint.id).toBe('generative')
     // A credential with nothing enabled does not serve image.
     expect(selectEndpoint(plan, 'media:image', undefined, { overrides: {} })).toBeUndefined()
     // Enabling an image-tagged model makes the endpoint serve image.
     expect(
       selectEndpoint(plan, 'media:image', undefined, {
         overrides: { generative: { models: [{ id: 'nano', name: 'Nano', tasks: ['image'] }] } },
-      })?.id,
+      })?.endpoint.id,
     ).toBe('generative')
     // A chat-only enabled model does not make it an image provider.
     expect(
@@ -94,7 +104,7 @@ describe('selectEndpoint', () => {
 })
 
 describe('validatePlatform', () => {
-  it('flags an endpoint task that its protocol does not serve', () => {
+  it('flags an endpoint with an unknown protocol', () => {
     const bad: Platform = {
       id: 'bad',
       brand: 'bad',
@@ -104,9 +114,19 @@ describe('validatePlatform', () => {
           id: 'api',
           name: 'API',
           auth: 'api-key',
-          endpoints: [{ id: 'x', protocol: 'anthropic-messages', baseUrl: '', tasks: ['image'] }],
+          endpoints: [{ id: 'x', baseUrl: '', protocols: ['bogus-protocol' as WireProtocol] }],
         },
       ],
+    }
+    expect(validatePlatform(bad).length).toBeGreaterThan(0)
+  })
+
+  it('flags an endpoint with no protocols', () => {
+    const bad: Platform = {
+      id: 'bad2',
+      brand: 'bad',
+      name: 'Bad',
+      plans: [{ id: 'api', name: 'API', auth: 'api-key', endpoints: [{ id: 'x', baseUrl: '', protocols: [] }] }],
     }
     expect(validatePlatform(bad).length).toBeGreaterThan(0)
   })
@@ -133,7 +153,7 @@ describe('synthesizePlatformFromCatalog', () => {
       models: [],
     })
     expect(platform.id).toBe('catalog:groq')
-    expect(platform.plans[0].endpoints[0].protocol).toBe('openai-chat')
+    expect(platform.plans[0].endpoints[0].protocols).toEqual(['openai-chat'])
     expect(platform.plans[0].endpoints[0].baseUrl).toBe('https://api.groq.com/openai/v1')
   })
 })
@@ -172,16 +192,17 @@ describe('resolveEndpointModels (image source)', () => {
   const openaiImage = () => {
     const platform = findPlatform(BUILTIN_PLATFORMS, 'openai')!
     const plan = findPlan(platform, 'api')!
-    const endpoint = findEndpoint(plan, 'images')!
+    const endpoint = findEndpoint(plan, 'openai')!
     return { platform, plan, endpoint }
   }
 
-  it('sources builtin image models from the catalog filtered to the image task', () => {
+  it('sources builtin models from the catalog across the endpoint task union (chat + image)', () => {
     const { platform, plan, endpoint } = openaiImage()
-    // Builtin openai image endpoint no longer hardcodes models.
+    // Builtin openai endpoint no longer hardcodes models.
     expect(endpoint.models).toBeUndefined()
     const models = resolveEndpointModels(platform, plan, endpoint, catalog)
-    expect(models.map((m) => m.id)).toEqual(['gpt-image-2', 'dall-e-3'])
+    // The collapsed openai endpoint speaks responses+images+audio, so chat and image models both qualify.
+    expect(models.map((m) => m.id)).toEqual(['gpt-image-2', 'gpt-5-chat', 'dall-e-3'])
   })
 
   it('returns nothing without a catalog when no curated list exists', () => {
@@ -203,9 +224,8 @@ describe('resolveEndpointModels (image source)', () => {
           endpoints: [
             {
               id: 'images',
-              protocol: 'openai-images',
               baseUrl: '',
-              tasks: ['image'],
+              protocols: ['openai-images'],
               models: [{ id: 'my-model', name: 'Mine' }],
             },
           ],

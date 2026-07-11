@@ -1,5 +1,18 @@
 import { parseProviderModelEnv, type ProviderModelEnv } from '@superone/shared/agent-types'
-import type { EndpointDefaults, Platform, ServiceEndpoint, WireProtocol } from '@superone/shared/platform-registry'
+import {
+  mergeExtraEnv,
+  mergeModelMapping,
+  PROTOCOL_FAMILIES,
+  PROTOCOL_FAMILY,
+  PROTOCOL_ORDER,
+  type EndpointDefaults,
+  type EndpointModel,
+  type EndpointOverride,
+  type Platform,
+  type ProtocolFamily,
+  type ServiceEndpoint,
+  type WireProtocol,
+} from '@superone/shared/platform-registry'
 import type Database from 'better-sqlite3'
 import { encryptSecret } from './crypto/secret-store'
 
@@ -147,6 +160,7 @@ export function runDatabaseMigrations(db: Database.Database): void {
   `)
 
   migrateLegacyApiProviders(db)
+  migrateEndpointProtocols(db)
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS harness_resource_cache (
@@ -575,7 +589,7 @@ export function buildLegacyProviderMigration(row: LegacyApiProviderRow): LegacyP
     if (Object.keys(modelMapping).length > 0) defaults.modelMapping = modelMapping
     if (Object.keys(extraEnv).length > 0) defaults.extraEnv = extraEnv
 
-    const endpoint: ServiceEndpoint = { id: endpointId, protocol, baseUrl: ac.base_url || '' }
+    const endpoint: ServiceEndpoint = { id: endpointId, baseUrl: ac.base_url || '', protocols: [protocol] }
     if (Object.keys(defaults).length > 0) endpoint.defaults = defaults
     endpoints.push(endpoint)
 
@@ -632,5 +646,156 @@ function migrateLegacyApiProviders(db: Database.Database): void {
   }
 
   db.exec('DROP TABLE IF EXISTS api_providers')
+}
+
+// --- endpoint protocols model (protocol → protocols[], baseUrl per addressable service) --------
+// Collapses the pre-protocols[] endpoint model into one endpoint per protocol family (id = family
+// name), migrating persisted custom platforms, credential overrides, and consumer bindings in place.
+// Idempotent: already-migrated data regroups to itself, and rows are only rewritten when they change.
+
+export interface OldServiceEndpoint {
+  id: string
+  baseUrl: string
+  protocol?: WireProtocol // pre-migration single protocol
+  protocols?: WireProtocol[] // post-migration
+  models?: EndpointModel[]
+  defaults?: EndpointDefaults
+}
+
+// Endpoint id remap for the builtin `openai` media platform, whose images/responses/audio endpoints
+// collapse into a single `openai` endpoint. Scoped to platform_id = 'openai' so it never touches
+// the `openai-official` platform (which keeps its own `responses` endpoint).
+const OPENAI_BUILTIN_REMAP: Record<string, string> = { images: 'openai', responses: 'openai', audio: 'openai' }
+
+function mergeOverride(a: EndpointOverride, b: EndpointOverride): EndpointOverride {
+  const out: EndpointOverride = {}
+  const baseUrl = b.baseUrl ?? a.baseUrl
+  if (baseUrl) out.baseUrl = baseUrl
+  const models = [...(a.models ?? []), ...(b.models ?? [])]
+  const byId = new Map<string, EndpointModel>()
+  for (const m of models) byId.set(m.id, m)
+  if (byId.size > 0) out.models = [...byId.values()]
+  const extraEnv = mergeExtraEnv(a.extraEnv, b.extraEnv)
+  if (Object.keys(extraEnv).length > 0) out.extraEnv = extraEnv
+  const modelMapping = mergeModelMapping(a.modelMapping, b.modelMapping)
+  if (Object.keys(modelMapping).length > 0) out.modelMapping = modelMapping
+  return out
+}
+
+export function remapOverrides(
+  overrides: Record<string, EndpointOverride>,
+  remap: Record<string, string>,
+): Record<string, EndpointOverride> {
+  const out: Record<string, EndpointOverride> = {}
+  for (const [oldId, ov] of Object.entries(overrides)) {
+    const newId = remap[oldId] ?? oldId
+    out[newId] = out[newId] ? mergeOverride(out[newId], ov) : ov
+  }
+  return out
+}
+
+// Regroup a plan's endpoints by protocol family into one endpoint each (id = family), returning the
+// rebuilt endpoints and the old→new id remap. Defaults/models merge across a collapsed family.
+export function regroupPlanEndpoints(oldEndpoints: OldServiceEndpoint[]): {
+  endpoints: ServiceEndpoint[]
+  remap: Record<string, string>
+} {
+  const groups = new Map<
+    ProtocolFamily,
+    { protocols: Set<WireProtocol>; baseUrl: string; models: EndpointModel[]; defaults: EndpointDefaults; ids: string[] }
+  >()
+  for (const e of oldEndpoints) {
+    const protocols = e.protocols ?? (e.protocol ? [e.protocol] : [])
+    if (protocols.length === 0) continue
+    const family = PROTOCOL_FAMILY[protocols[0]]
+    const g = groups.get(family) ?? { protocols: new Set(), baseUrl: '', models: [], defaults: {}, ids: [] }
+    for (const p of protocols) g.protocols.add(p)
+    if (!g.baseUrl) g.baseUrl = e.baseUrl
+    if (e.models) g.models.push(...e.models)
+    if (e.defaults?.modelMapping) g.defaults.modelMapping = mergeModelMapping(g.defaults.modelMapping, e.defaults.modelMapping)
+    if (e.defaults?.extraEnv) g.defaults.extraEnv = mergeExtraEnv(g.defaults.extraEnv, e.defaults.extraEnv)
+    g.ids.push(e.id)
+    groups.set(family, g)
+  }
+  const endpoints: ServiceEndpoint[] = []
+  const remap: Record<string, string> = {}
+  for (const family of PROTOCOL_FAMILIES) {
+    const g = groups.get(family)
+    if (!g) continue
+    const protocols = [...g.protocols].sort((a, b) => PROTOCOL_ORDER.indexOf(a) - PROTOCOL_ORDER.indexOf(b))
+    const endpoint: ServiceEndpoint = { id: family, baseUrl: g.baseUrl, protocols }
+    if (g.models.length > 0) endpoint.models = g.models
+    if (g.defaults.modelMapping || g.defaults.extraEnv) endpoint.defaults = g.defaults
+    endpoints.push(endpoint)
+    for (const oldId of g.ids) remap[oldId] = family
+  }
+  return { endpoints, remap }
+}
+
+function migrateEndpointProtocols(db: Database.Database): void {
+  const now = new Date().toISOString()
+  // platform_id → (old endpoint id → new endpoint id), used to remap credentials & bindings.
+  const platformRemap = new Map<string, Record<string, string>>()
+  platformRemap.set('openai', OPENAI_BUILTIN_REMAP)
+
+  const platforms = db.prepare('SELECT id, definition_json FROM custom_platforms').all() as Array<{
+    id: string
+    definition_json: string
+  }>
+  const updatePlatform = db.prepare('UPDATE custom_platforms SET definition_json = ?, updated_at = ? WHERE id = ?')
+  for (const row of platforms) {
+    let platform: Platform
+    try {
+      platform = JSON.parse(row.definition_json) as Platform
+    } catch {
+      continue
+    }
+    const remap: Record<string, string> = {}
+    let changed = false
+    for (const plan of platform.plans) {
+      const oldEndpoints = plan.endpoints as unknown as OldServiceEndpoint[]
+      const { endpoints, remap: planRemap } = regroupPlanEndpoints(oldEndpoints)
+      Object.assign(remap, planRemap)
+      if (JSON.stringify(plan.endpoints) !== JSON.stringify(endpoints)) changed = true
+      plan.endpoints = endpoints
+    }
+    if (Object.keys(remap).length > 0) platformRemap.set(platform.id, remap)
+    if (changed) updatePlatform.run(JSON.stringify(platform), now, row.id)
+  }
+
+  const credentials = db.prepare('SELECT id, platform_id, overrides_json FROM credentials').all() as Array<{
+    id: string
+    platform_id: string
+    overrides_json: string
+  }>
+  const updateCredential = db.prepare('UPDATE credentials SET overrides_json = ?, updated_at = ? WHERE id = ?')
+  const credPlatform = new Map<string, string>()
+  for (const row of credentials) {
+    credPlatform.set(row.id, row.platform_id)
+    const remap = platformRemap.get(row.platform_id)
+    if (!remap) continue
+    let overrides: Record<string, EndpointOverride>
+    try {
+      overrides = JSON.parse(row.overrides_json) as Record<string, EndpointOverride>
+    } catch {
+      continue
+    }
+    const next = remapOverrides(overrides, remap)
+    if (JSON.stringify(overrides) !== JSON.stringify(next)) updateCredential.run(JSON.stringify(next), now, row.id)
+  }
+
+  const bindings = db.prepare('SELECT consumer, credential_id, endpoint_id FROM consumer_bindings').all() as Array<{
+    consumer: string
+    credential_id: string
+    endpoint_id: string | null
+  }>
+  const updateBinding = db.prepare('UPDATE consumer_bindings SET endpoint_id = ? WHERE consumer = ?')
+  for (const row of bindings) {
+    if (!row.endpoint_id) continue
+    const platformId = credPlatform.get(row.credential_id)
+    const remap = platformId ? platformRemap.get(platformId) : undefined
+    const next = remap?.[row.endpoint_id]
+    if (next && next !== row.endpoint_id) updateBinding.run(next, row.consumer)
+  }
 }
 

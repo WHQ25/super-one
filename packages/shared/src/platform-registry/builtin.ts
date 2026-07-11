@@ -9,11 +9,11 @@ function anthropic(
 ): ServiceEndpoint {
   const defaults =
     opts.extraEnv || opts.modelMapping ? { extraEnv: opts.extraEnv, modelMapping: opts.modelMapping } : undefined
-  return { id: opts.id ?? 'anthropic', protocol: 'anthropic-messages', baseUrl, defaults }
+  return { id: opts.id ?? 'anthropic', baseUrl, protocols: ['anthropic-messages'], defaults }
 }
 
 function openaiChat(baseUrl: string, extraEnv?: Record<string, string>, id = 'openai'): ServiceEndpoint {
-  return { id, protocol: 'openai-chat', baseUrl, defaults: extraEnv ? { extraEnv } : undefined }
+  return { id, baseUrl, protocols: ['openai-chat'], defaults: extraEnv ? { extraEnv } : undefined }
 }
 
 // --- shared model mappings ----------------------------------------------------
@@ -111,7 +111,7 @@ export const BUILTIN_PLATFORMS: Platform[] = [
         id: 'subscription',
         name: 'Subscription',
         auth: 'oauth',
-        endpoints: [{ id: 'responses', protocol: 'openai-responses', baseUrl: '' }],
+        endpoints: [{ id: 'responses', baseUrl: '', protocols: ['openai-responses'] }],
       },
     ],
   },
@@ -649,8 +649,8 @@ export const BUILTIN_PLATFORMS: Platform[] = [
   {
     id: 'openai',
     brand: 'openai',
-    name: 'OpenAI',
-    description: 'OpenAI image generation (GPT Image)',
+    name: 'Platform',
+    description: 'OpenAI Developer Platform',
     catalogProviderId: 'openai',
     plans: [
       {
@@ -660,10 +660,9 @@ export const BUILTIN_PLATFORMS: Platform[] = [
         apiKeyUrl: 'https://platform.openai.com/api-keys',
         endpoints: [
           {
-            id: 'images',
-            protocol: 'openai-images',
+            id: 'openai',
             baseUrl: '',
-            tasks: ['image'],
+            protocols: ['openai-responses', 'openai-images', 'openai-audio'],
           },
         ],
       },
@@ -684,8 +683,8 @@ export const BUILTIN_PLATFORMS: Platform[] = [
         endpoints: [
           {
             id: 'generative',
-            protocol: 'google-generative',
             baseUrl: '',
+            protocols: ['google-generative'],
           },
         ],
       },

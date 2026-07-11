@@ -555,7 +555,7 @@ function planCapabilities(plan: Plan): CapabilitySelection & { baseUrl: string }
   for (const f of PROTOCOL_FAMILIES) familyTasks[f] = new Set<CapabilityTask>()
   let baseUrl = ''
   for (const e of plan.endpoints) {
-    const family = PROTOCOL_FAMILY[e.protocol]
+    const family = PROTOCOL_FAMILY[e.protocols[0]]
     families.add(family)
     for (const task of endpointTasks(e)) familyTasks[family].add(task)
     if (!baseUrl) baseUrl = e.baseUrl
@@ -673,7 +673,7 @@ function CustomPlatformForm({ onDone }: { onDone: (createdId?: string) => void }
   const endpoints = rawEndpoints.map((e) => {
     const defaults: EndpointDefaults = {}
     if (hasExtraEnv) defaults.extraEnv = extraEnv
-    if (hasModelMapping && e.protocol === 'anthropic-messages') defaults.modelMapping = modelMapping
+    if (hasModelMapping && e.protocols.includes('anthropic-messages')) defaults.modelMapping = modelMapping
     return Object.keys(defaults).length > 0 ? { ...e, defaults } : e
   })
   const supportedTasks = useMemo(() => endpointsSupportedTasks(endpoints), [endpoints])

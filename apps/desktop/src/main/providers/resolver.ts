@@ -46,8 +46,9 @@ export function resolveService(consumer: ConsumerId, override?: ResolveOverride)
 
   // Only honor the binding's endpointId when this credential is the bound one.
   const usingBoundCredential = cred.id === binding?.credentialId
-  const endpoint = selectEndpoint(plan, consumer, usingBoundCredential ? binding?.endpointId : undefined, cred)
-  if (!endpoint) return null
+  const selected = selectEndpoint(plan, consumer, usingBoundCredential ? binding?.endpointId : undefined, cred)
+  if (!selected) return null
+  const { endpoint, protocol } = selected
 
   const merged = mergeEndpoint(endpoint, cred.overrides?.[endpoint.id], usingBoundCredential ? binding?.config : undefined)
 
@@ -58,7 +59,7 @@ export function resolveService(consumer: ConsumerId, override?: ResolveOverride)
     endpointId: endpoint.id,
     credentialId: cred.id,
     task: CONSUMER_TASK[consumer],
-    protocol: endpoint.protocol,
+    protocol,
     baseUrl: merged.baseUrl,
     apiKey: credentialApiKey(cred),
     auth: plan.auth,

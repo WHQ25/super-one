@@ -60,17 +60,7 @@ export const FAMILY_PROTOCOLS: Record<ProtocolFamily, WireProtocol[]> = {
   google: ['google-generative'],
 }
 
-/** Stable, human-readable endpoint id per protocol for generated custom plans. */
-export const PROTOCOL_ENDPOINT_ID: Record<WireProtocol, string> = {
-  'anthropic-messages': 'messages',
-  'openai-chat': 'chat',
-  'openai-responses': 'responses',
-  'openai-images': 'images',
-  'openai-audio': 'audio',
-  'google-generative': 'generative',
-}
-
-/** Endpoint priority within a plan (flattened family order). selectEndpoint() takes the first match. */
+/** Protocol priority within an endpoint / plan (flattened family order). selectEndpoint() takes the first match. */
 export const PROTOCOL_ORDER: WireProtocol[] = PROTOCOL_FAMILIES.flatMap((f) => FAMILY_PROTOCOLS[f])
 
 export const CAPABILITY_ORDER: CapabilityTask[] = ['chat', 'image', 'video', 'tts', 'asr']
@@ -96,61 +86,53 @@ export const FAMILY_TASKS: Record<ProtocolFamily, CapabilityTask[]> = {
 }
 
 /**
- * Build the endpoints for a custom platform from a compat family + the capabilities it exposes,
- * all sharing one base URL. Capabilities served by the same protocol collapse into one endpoint
- * (e.g. gemini chat+image+tts → a single generative endpoint), whose `tasks` narrows to the picked set.
+ * Build the endpoint for a custom platform from a compat family + the capabilities it exposes.
+ * One family = one addressable service = **one endpoint** (id = the family name), holding every
+ * protocol needed to serve the picked capabilities (e.g. openai chat+image → one endpoint speaking
+ * `openai-chat` + `openai-images`). Capability narrowing is not stored on the endpoint — it happens
+ * downstream via the enabled models' `tasks` tags. Returns `[]` when the family serves none of the tasks.
  */
 export function customEndpointsFor(
   family: ProtocolFamily,
   tasks: CapabilityTask[],
   baseUrl: string,
 ): ServiceEndpoint[] {
-  const byProtocol = new Map<WireProtocol, CapabilityTask[]>()
+  const protocols: WireProtocol[] = []
   for (const task of CAPABILITY_ORDER) {
     if (!tasks.includes(task)) continue
     const protocol = FAMILY_TASK_PROTOCOL[family][task]
-    if (!protocol) continue
-    const existing = byProtocol.get(protocol)
-    if (existing) existing.push(task)
-    else byProtocol.set(protocol, [task])
+    if (protocol && !protocols.includes(protocol)) protocols.push(protocol)
   }
-  return [...byProtocol.entries()]
-    .sort(([a], [b]) => PROTOCOL_ORDER.indexOf(a) - PROTOCOL_ORDER.indexOf(b))
-    .map(([protocol, picked]) => {
-      const endpoint: ServiceEndpoint = { id: PROTOCOL_ENDPOINT_ID[protocol], protocol, baseUrl }
-      if (picked.length < PROTOCOL_TASKS[protocol].length) endpoint.tasks = picked
-      return endpoint
-    })
+  if (protocols.length === 0) return []
+  protocols.sort((a, b) => PROTOCOL_ORDER.indexOf(a) - PROTOCOL_ORDER.indexOf(b))
+  return [{ id: family, baseUrl, protocols }]
 }
 
 /**
  * Build all endpoints for a custom platform that speaks several compat families over one shared base URL
- * (e.g. a relay exposing both Claude and OpenAI formats). Each family carries its OWN picked capabilities,
- * so a format can expose a different capability set than its siblings. Endpoint ids stay unique across
- * families (suffixed on the rare clash); families are emitted in canonical order regardless of map order.
+ * (e.g. a relay exposing both Claude and OpenAI formats). Each family carries its OWN picked capabilities
+ * and becomes one endpoint keyed by the family name; families are emitted in canonical order regardless
+ * of map order. Endpoint ids are unique by construction (one per family).
  */
 export function customPlatformEndpoints(
   tasksByFamily: Partial<Record<ProtocolFamily, CapabilityTask[]>>,
   baseUrl: string,
 ): ServiceEndpoint[] {
-  const used = new Set<string>()
   const out: ServiceEndpoint[] = []
   for (const family of PROTOCOL_FAMILIES) {
     const tasks = tasksByFamily[family]
     if (!tasks || tasks.length === 0) continue
-    for (const endpoint of customEndpointsFor(family, tasks, baseUrl)) {
-      let id = endpoint.id
-      let n = 2
-      while (used.has(id)) id = `${endpoint.id}-${n++}`
-      used.add(id)
-      out.push({ ...endpoint, id })
-    }
+    out.push(...customEndpointsFor(family, tasks, baseUrl))
   }
   return out
 }
 
-/** The protocols a chat harness consumer accepts. */
+/**
+ * The protocols a chat harness consumer accepts, in preference order.
+ * codex speaks the Responses wire **exclusively** — it cannot use `openai-chat`, so a
+ * chat-completions endpoint must never resolve for `chat:codex`.
+ */
 export const HARNESS_CHAT_PROTOCOLS: Record<'claude' | 'codex', WireProtocol[]> = {
   claude: ['anthropic-messages'],
-  codex: ['openai-responses', 'openai-chat'],
+  codex: ['openai-responses'],
 }

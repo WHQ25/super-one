@@ -12,9 +12,9 @@ const plan: Plan = {
   name: 'API',
   auth: 'api-key',
   endpoints: [
-    { id: 'chat', protocol: 'anthropic-messages', baseUrl: 'https://x/chat' },
-    { id: 'img', protocol: 'openai-images', baseUrl: 'https://x/img' },
-    { id: 'audio', protocol: 'openai-audio', baseUrl: 'https://x/audio' },
+    { id: 'chat', baseUrl: 'https://x/chat', protocols: ['anthropic-messages'] },
+    { id: 'img', baseUrl: 'https://x/img', protocols: ['openai-images'] },
+    { id: 'audio', baseUrl: 'https://x/audio', protocols: ['openai-audio'] },
   ],
 }
 

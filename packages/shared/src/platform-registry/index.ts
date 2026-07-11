@@ -1,6 +1,13 @@
 import type { CapabilityTask } from '../agent-types'
 import type { CatalogProvider, ModelCatalog } from '../model-catalog-types'
-import { HARNESS_CHAT_PROTOCOLS, PROTOCOL_TASKS, protocolServes, type WireProtocol } from './protocols'
+import {
+  CAPABILITY_ORDER,
+  HARNESS_CHAT_PROTOCOLS,
+  PROTOCOL_ORDER,
+  PROTOCOL_TASKS,
+  protocolServes,
+  type WireProtocol,
+} from './protocols'
 import type { Credential, ConsumerId, EndpointModel, EndpointOverride, Plan, Platform, ServiceEndpoint } from './types'
 import { CONSUMER_TASK } from './types'
 
@@ -28,17 +35,40 @@ export function findEndpoint(plan: Plan | undefined, endpointId: string): Servic
   return plan?.endpoints.find((e) => e.id === endpointId)
 }
 
-/** Effective tasks an endpoint serves: its `tasks` narrowing, else the protocol's full set. */
+/** Effective tasks an endpoint serves: the union of its protocols' task sets, in canonical order. */
 export function endpointTasks(endpoint: ServiceEndpoint): CapabilityTask[] {
-  return endpoint.tasks ?? PROTOCOL_TASKS[endpoint.protocol]
+  const set = new Set<CapabilityTask>()
+  for (const p of endpoint.protocols) for (const t of PROTOCOL_TASKS[p]) set.add(t)
+  return CAPABILITY_ORDER.filter((t) => set.has(t))
 }
 
 export function endpointServes(endpoint: ServiceEndpoint, task: CapabilityTask): boolean {
   return endpointTasks(endpoint).includes(task)
 }
 
+/** An endpoint paired with the single protocol resolved for a given task — the output of selectEndpoint(). */
+export interface SelectedEndpoint {
+  endpoint: ServiceEndpoint
+  protocol: WireProtocol
+}
+
 /**
- * Pick the endpoint that satisfies a consumer within a plan.
+ * The one protocol an endpoint uses to serve a task. For chat harnesses only a harness-compatible
+ * protocol qualifies (codex → Responses only), returned in the harness's preference order; other
+ * consumers take the endpoint's protocols in canonical priority order.
+ */
+export function selectProtocol(
+  endpoint: ServiceEndpoint,
+  task: CapabilityTask,
+  harness?: 'claude' | 'codex',
+): WireProtocol | undefined {
+  const serving = endpoint.protocols.filter((p) => protocolServes(p, task))
+  if (harness) return HARNESS_CHAT_PROTOCOLS[harness].find((p) => serving.includes(p))
+  return [...serving].sort((a, b) => PROTOCOL_ORDER.indexOf(a) - PROTOCOL_ORDER.indexOf(b))[0]
+}
+
+/**
+ * Pick the endpoint + protocol that satisfies a consumer within a plan.
  * chat:claude/chat:codex additionally require a harness-compatible protocol.
  * An explicit endpointId wins when present and valid.
  */
@@ -47,23 +77,32 @@ export function selectEndpoint(
   consumer: ConsumerId,
   endpointId?: string,
   credential?: Pick<Credential, 'overrides'>,
-): ServiceEndpoint | undefined {
+): SelectedEndpoint | undefined {
   const task = CONSUMER_TASK[consumer]
   const harness = consumer === 'chat:claude' ? 'claude' : consumer === 'chat:codex' ? 'codex' : undefined
-  const ok = (e: ServiceEndpoint): boolean => {
-    if (!endpointServes(e, task)) return false
-    if (harness) return HARNESS_CHAT_PROTOCOLS[harness].includes(e.protocol)
+  const pick = (e: ServiceEndpoint): WireProtocol | undefined => {
+    const protocol = selectProtocol(e, task, harness)
+    if (!protocol) return undefined
+    if (harness) return protocol
     // Media consumers derive capability from the credential's enabled models (each tagged with the
     // tasks it serves) — a provider serves image/video/tts/asr only once such a model is enabled.
     // No credential context → protocol capability only.
-    if (!credential) return true
-    return (credential.overrides?.[e.id]?.models ?? []).some((m) => !m.tasks || m.tasks.includes(task))
+    if (!credential) return protocol
+    const enabled = (credential.overrides?.[e.id]?.models ?? []).some((m) => !m.tasks || m.tasks.includes(task))
+    return enabled ? protocol : undefined
   }
   if (endpointId) {
     const explicit = plan.endpoints.find((e) => e.id === endpointId)
-    if (explicit && ok(explicit)) return explicit
+    if (explicit) {
+      const protocol = pick(explicit)
+      if (protocol) return { endpoint: explicit, protocol }
+    }
   }
-  return plan.endpoints.find(ok)
+  for (const e of plan.endpoints) {
+    const protocol = pick(e)
+    if (protocol) return { endpoint: e, protocol }
+  }
+  return undefined
 }
 
 /** The models.dev catalog provider id backing a plan; plan overrides platform. */
@@ -145,8 +184,8 @@ export function synthesizePlatformFromCatalog(provider: CatalogProvider): Platfo
         endpoints: [
           {
             id: 'openai',
-            protocol: 'openai-chat',
             baseUrl: provider.api ?? '',
+            protocols: ['openai-chat'],
           },
         ],
       },
@@ -184,15 +223,12 @@ export function validatePlatform(platform: Platform): RegistryValidationError[] 
     for (const endpoint of plan.endpoints) {
       if (endpointIds.has(endpoint.id)) err(`plan "${plan.id}" has duplicate endpoint id "${endpoint.id}"`)
       endpointIds.add(endpoint.id)
-      const allowed = PROTOCOL_TASKS[endpoint.protocol as WireProtocol]
-      if (!allowed) {
-        err(`endpoint "${endpoint.id}" has unknown protocol "${endpoint.protocol}"`)
+      if (!endpoint.protocols || endpoint.protocols.length === 0) {
+        err(`endpoint "${endpoint.id}" has no protocols`)
         continue
       }
-      for (const t of endpoint.tasks ?? []) {
-        if (!protocolServes(endpoint.protocol, t)) {
-          err(`endpoint "${endpoint.id}" declares task "${t}" not served by protocol "${endpoint.protocol}"`)
-        }
+      for (const p of endpoint.protocols) {
+        if (!PROTOCOL_TASKS[p as WireProtocol]) err(`endpoint "${endpoint.id}" has unknown protocol "${p}"`)
       }
     }
   }
@@ -216,7 +252,7 @@ export function everyHarnessReachable(platforms: Platform[]): boolean {
     platforms.some((p) =>
       p.plans.some((plan) =>
         plan.endpoints.some(
-          (e) => endpointServes(e, 'chat') && HARNESS_CHAT_PROTOCOLS[harness].includes(e.protocol),
+          (e) => endpointServes(e, 'chat') && e.protocols.some((p) => HARNESS_CHAT_PROTOCOLS[harness].includes(p)),
         ),
       ),
     )

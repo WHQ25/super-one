@@ -25,8 +25,8 @@ const platform: Platform = {
       endpoints: [
         {
           id: 'anthropic',
-          protocol: 'anthropic-messages',
           baseUrl: 'https://base',
+          protocols: ['anthropic-messages'],
           defaults: {
             extraEnv: { API_TIMEOUT_MS: '3000000', ANTHROPIC_AUTH_TOKEN: '' },
             modelMapping: { opus: { id: 'glm-opus' } },

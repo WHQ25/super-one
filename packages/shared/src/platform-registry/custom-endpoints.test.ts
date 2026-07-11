@@ -2,34 +2,33 @@ import { describe, expect, it } from 'vitest'
 import { customEndpointsFor, customPlatformEndpoints } from './protocols'
 
 describe('customEndpointsFor', () => {
-  it('maps anthropic chat to a single messages endpoint without a narrowing tasks field', () => {
+  it('maps anthropic chat to a single messages endpoint keyed by family', () => {
     expect(customEndpointsFor('anthropic', ['chat'], 'https://x/v1')).toEqual([
-      { id: 'messages', protocol: 'anthropic-messages', baseUrl: 'https://x/v1' },
+      { id: 'anthropic', baseUrl: 'https://x/v1', protocols: ['anthropic-messages'] },
     ])
   })
 
-  it('splits openai chat + image into separate chat and images endpoints in priority order', () => {
-    const endpoints = customEndpointsFor('openai', ['image', 'chat'], 'https://x/v1')
-    expect(endpoints.map((e) => e.protocol)).toEqual(['openai-chat', 'openai-images'])
-    expect(endpoints.every((e) => e.baseUrl === 'https://x/v1')).toBe(true)
-    expect(endpoints.some((e) => e.tasks)).toBe(false)
+  it('collapses openai chat + image into one endpoint speaking both protocols in priority order', () => {
+    expect(customEndpointsFor('openai', ['image', 'chat'], 'https://x/v1')).toEqual([
+      { id: 'openai', baseUrl: 'https://x/v1', protocols: ['openai-chat', 'openai-images'] },
+    ])
   })
 
-  it('collapses openai tts + asr into one audio endpoint (full set → no narrowing)', () => {
+  it('collapses openai tts + asr into one endpoint (both served by the audio protocol)', () => {
     expect(customEndpointsFor('openai', ['tts', 'asr'], 'https://x/v1')).toEqual([
-      { id: 'audio', protocol: 'openai-audio', baseUrl: 'https://x/v1' },
+      { id: 'openai', baseUrl: 'https://x/v1', protocols: ['openai-audio'] },
     ])
   })
 
-  it('narrows the audio endpoint tasks when only one of tts/asr is picked', () => {
+  it('does not carry a narrowing field when only one of tts/asr is picked (narrowing is by models)', () => {
     expect(customEndpointsFor('openai', ['tts'], 'https://x/v1')).toEqual([
-      { id: 'audio', protocol: 'openai-audio', baseUrl: 'https://x/v1', tasks: ['tts'] },
+      { id: 'openai', baseUrl: 'https://x/v1', protocols: ['openai-audio'] },
     ])
   })
 
-  it('collapses gemini capabilities into one generative endpoint, narrowing to the picked subset', () => {
+  it('collapses gemini capabilities into one generative endpoint', () => {
     expect(customEndpointsFor('google', ['chat', 'tts'], 'https://x/v1')).toEqual([
-      { id: 'generative', protocol: 'google-generative', baseUrl: 'https://x/v1', tasks: ['chat', 'tts'] },
+      { id: 'google', baseUrl: 'https://x/v1', protocols: ['google-generative'] },
     ])
   })
 
@@ -39,33 +38,33 @@ describe('customEndpointsFor', () => {
 })
 
 describe('customPlatformEndpoints (multiple compat formats, per-format capabilities)', () => {
-  it('emits one chat endpoint per selected family sharing the base URL (Claude + OpenAI relay)', () => {
+  it('emits one endpoint per selected family sharing the base URL (Claude + OpenAI relay)', () => {
     const endpoints = customPlatformEndpoints({ anthropic: ['chat'], openai: ['chat'] }, 'https://relay/v1')
     expect(endpoints).toEqual([
-      { id: 'messages', protocol: 'anthropic-messages', baseUrl: 'https://relay/v1' },
-      { id: 'chat', protocol: 'openai-chat', baseUrl: 'https://relay/v1' },
+      { id: 'anthropic', baseUrl: 'https://relay/v1', protocols: ['anthropic-messages'] },
+      { id: 'openai', baseUrl: 'https://relay/v1', protocols: ['openai-chat'] },
     ])
   })
 
   it('honors a different capability set per format', () => {
-    // openai exposes chat+image; gemini only chat.
+    // openai exposes chat+image (one endpoint, two protocols); gemini only chat.
     const endpoints = customPlatformEndpoints({ openai: ['chat', 'image'], google: ['chat'] }, 'https://relay/v1')
-    expect(endpoints.map((e) => e.protocol)).toEqual(['openai-chat', 'openai-images', 'google-generative'])
+    expect(endpoints.map((e) => e.protocols)).toEqual([['openai-chat', 'openai-images'], ['google-generative']])
   })
 
   it('drops capabilities a format cannot serve (image passed to anthropic)', () => {
     const endpoints = customPlatformEndpoints({ anthropic: ['chat', 'image'] }, 'https://relay/v1')
-    expect(endpoints.map((e) => e.protocol)).toEqual(['anthropic-messages'])
+    expect(endpoints.map((e) => e.protocols)).toEqual([['anthropic-messages']])
   })
 
   it('orders families canonically regardless of map key order', () => {
     const endpoints = customPlatformEndpoints({ google: ['chat'], anthropic: ['chat'] }, 'https://relay/v1')
-    expect(endpoints.map((e) => e.protocol)).toEqual(['anthropic-messages', 'google-generative'])
+    expect(endpoints.map((e) => e.id)).toEqual(['anthropic', 'google'])
   })
 
   it('skips a selected format with no capabilities picked', () => {
-    expect(customPlatformEndpoints({ anthropic: ['chat'], openai: [] }, 'https://relay/v1').map((e) => e.protocol)).toEqual([
-      'anthropic-messages',
+    expect(customPlatformEndpoints({ anthropic: ['chat'], openai: [] }, 'https://relay/v1').map((e) => e.id)).toEqual([
+      'anthropic',
     ])
   })
 })

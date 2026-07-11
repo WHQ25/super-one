@@ -49,7 +49,7 @@ describe('buildLegacyProviderMigration', () => {
     expect(plan.id).toBe('api')
     expect(plan.endpoints).toHaveLength(1)
     const endpoint = plan.endpoints[0]
-    expect(endpoint).toMatchObject({ id: 'messages', protocol: 'anthropic-messages', baseUrl: 'https://open.bigmodel.cn/api/anthropic' })
+    expect(endpoint).toMatchObject({ id: 'messages', protocols: ['anthropic-messages'], baseUrl: 'https://open.bigmodel.cn/api/anthropic' })
     expect(endpoint.defaults?.modelMapping?.default).toEqual({ id: 'glm-5.2[1m]', name: 'GLM-5.2 (1M)' })
     expect(endpoint.defaults?.extraEnv).toEqual({ API_TIMEOUT_MS: '3000000' })
     expect(result!.bindings).toEqual([{ consumer: 'chat:claude', endpointId: 'messages' }])
@@ -69,9 +69,9 @@ describe('buildLegacyProviderMigration', () => {
     )
 
     const endpoints = result!.platform.plans[0].endpoints
-    expect(endpoints.map((e) => [e.id, e.protocol])).toEqual([
-      ['messages', 'anthropic-messages'],
-      ['chat', 'openai-chat'],
+    expect(endpoints.map((e) => [e.id, e.protocols])).toEqual([
+      ['messages', ['anthropic-messages']],
+      ['chat', ['openai-chat']],
     ])
     expect(result!.bindings).toEqual([
       { consumer: 'chat:claude', endpointId: 'messages' },
@@ -91,7 +91,7 @@ describe('buildLegacyProviderMigration', () => {
       row({ supported_agents: '[]', agent_type: 'claude', base_url: 'https://legacy.example.com', api_format: 'anthropic', extra_env: '{"K":"V"}', is_active_claude: 1 }),
     )
     const endpoint = result!.platform.plans[0].endpoints[0]
-    expect(endpoint).toMatchObject({ protocol: 'anthropic-messages', baseUrl: 'https://legacy.example.com' })
+    expect(endpoint).toMatchObject({ protocols: ['anthropic-messages'], baseUrl: 'https://legacy.example.com' })
     expect(endpoint.defaults?.extraEnv).toEqual({ K: 'V' })
     expect(result!.bindings).toEqual([{ consumer: 'chat:claude', endpointId: 'messages' }])
   })

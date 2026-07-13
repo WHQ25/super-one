@@ -4,6 +4,14 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.44.2-alpha] - 2026-07-15
+
+### Added
+- Custom OpenAI provider now exposes a Chat Response (Responses API) toggle, enabling Codex to reach third-party OpenAI-compatible gateways
+
+### Changed
+- Custom provider connection test now probes the first endpoint's models list uniformly instead of building per-family URLs
+
 ## [0.44.1-alpha] - 2026-07-11
 
 ### Added

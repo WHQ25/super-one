@@ -96,7 +96,7 @@ export const AppSidebar = memo(function AppSidebar() {
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set())
   const [folderSessions, setFolderSessions] = useState<Record<string, SessionHistoryEntry[]>>({})
   const [pinnedSessions, setPinnedSessions] = useState<PinnedSessionEntry[]>([])
-  const [deleteTarget, setDeleteTarget] = useState<{ sessionId: string; title: string; folderPath: string; provider: 'claude' | 'codex' } | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<{ sessionId: string; title: string; folderPath: string; provider: import('@superone/shared/agent-types').HarnessId } | null>(null)
   const [copiedCmd, setCopiedCmd] = useState<'cd' | 'resume' | null>(null)
   const [removeTarget, setRemoveTarget] = useState<{ name: string; path: string } | null>(null)
   const [renameTarget, setRenameTarget] = useState<{ sessionId: string; title: string; folderPath: string } | null>(null)
@@ -360,7 +360,7 @@ export const AppSidebar = memo(function AppSidebar() {
     setRenameTarget(target)
   }, [])
 
-  const handleRequestDeleteSession = useCallback((target: { sessionId: string; title: string; folderPath: string; provider: 'claude' | 'codex' }) => {
+  const handleRequestDeleteSession = useCallback((target: { sessionId: string; title: string; folderPath: string; provider: import('@superone/shared/agent-types').HarnessId }) => {
     if (shouldSkipDeleteConfirm()) {
       void executeDeleteSession(target)
     } else {

@@ -94,7 +94,7 @@ describe('database migration', () => {
     expect(normalized).toContain('updated_at TEXT NOT NULL')
   })
 
-  it('seeds two base providers (claude-base and codex-base)', async () => {
+  it('seeds base providers (claude-base, codex-base, acp-base)', async () => {
     const { getDb } = await import('./database')
     getDb()
 

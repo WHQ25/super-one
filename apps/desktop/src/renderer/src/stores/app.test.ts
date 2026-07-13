@@ -84,7 +84,7 @@ const mockWindowApp = {
   selectFolder: vi.fn(),
   getRecentFolders: vi.fn().mockResolvedValue([]),
   getProjectId: vi.fn().mockResolvedValue(null),
-  getStartupData: vi.fn().mockResolvedValue({ cached: { claude: null, codex: null } }),
+  getStartupData: vi.fn().mockResolvedValue({ cached: { claude: null, codex: null, acp: null } }),
   connectClaude: vi.fn().mockResolvedValue({ models: [], account: {}, slashCommands: [], skills: [], commands: [], agents: [], outputStyles: [] }),
   connectCodex: vi.fn().mockResolvedValue({ models: [] }),
 }

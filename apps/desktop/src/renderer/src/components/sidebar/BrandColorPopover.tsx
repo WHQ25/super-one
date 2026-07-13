@@ -37,6 +37,7 @@ import { LCHEditor } from './LCHEditor'
 const HARNESS_LABEL: Record<HarnessId, string> = {
   claude: 'Claude',
   codex: 'Codex',
+  acp: 'Others',
 }
 
 const GROUP_LABEL: Record<TokenGroup, string> = {

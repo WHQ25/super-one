@@ -92,7 +92,7 @@ function resetStore() {
   useChatStore.setState({
     projectSessions: {},
     activeProject: null,
-    harnessResources: { claude: null, codex: null },
+    harnessResources: { claude: null, codex: null, acp: null },
     initializedHarnesses: new Set(),
   })
 }
@@ -232,6 +232,7 @@ describe('PlanApprovalPrompt — integration', () => {
           outputStyles: [],
         },
         codex: null,
+        acp: null,
       },
     })
     seedPlanApprovalState('plan', { selectedModel: 'claude-opus-4-7' })
@@ -267,6 +268,7 @@ describe('PlanApprovalPrompt — integration', () => {
           outputStyles: [],
         },
         codex: null,
+        acp: null,
       },
     })
     seedPlanApprovalState('plan', { selectedModel: 'claude-opus-4-7' })

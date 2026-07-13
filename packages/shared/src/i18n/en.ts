@@ -424,6 +424,11 @@ export type Messages = {
       addProject: string
       poweredBy: string
       selectProject: string
+      others: string
+      acpLabel: string
+      selectAgent: string
+      agentNotInstalled: string
+      agentInstallHint: string
     }
     additionalDirs: {
       label: string
@@ -2032,6 +2037,11 @@ export const en: Messages = {
       addProject: 'Add Project',
       poweredBy: 'Powered by',
       selectProject: 'Select Project',
+      others: 'Others',
+      acpLabel: 'ACP agents',
+      selectAgent: 'Agent',
+      agentNotInstalled: 'Not installed',
+      agentInstallHint: 'Install this CLI on your machine, then restart SuperOne.',
     },
     additionalDirs: {
       label: 'Additional folder',

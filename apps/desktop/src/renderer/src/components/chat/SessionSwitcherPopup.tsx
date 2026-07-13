@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
 import { Bot, Loader2, MessageSquare, Smartphone } from 'lucide-react'
+import { AcpSessionIcon } from '@superone/ui/components/harness/AcpSessionIcon'
 import { ClaudeSessionIcon, type SessionIconProps } from '@superone/ui/components/harness/ClaudeSessionIcon'
 import { CodexSessionIcon } from '@superone/ui/components/harness/CodexSessionIcon'
 import { useChatStore, type PerSessionState, type ProjectState } from '@/stores/chat'
@@ -9,7 +10,7 @@ import { getPendingReason, isLiveSession, resolveSessionTitle } from '@/componen
 import { useStallLevel, getStallColor } from '@/lib/stall-utils'
 import { Kbd } from '@superone/ui/components/ui/kbd'
 import { cn } from '@superone/ui/lib/utils'
-import type { AgentStatus, SessionHistoryEntry } from '@superone/shared/agent-types'
+import type { AgentStatus, HarnessId, SessionHistoryEntry } from '@superone/shared/agent-types'
 
 interface SessionSwitcherPopupProps {
   scopeRef: RefObject<HTMLElement | null>
@@ -39,7 +40,7 @@ export interface SwitcherRow {
   isRemote: boolean
   isAutomation: boolean
   isWorktree: boolean
-  provider?: 'claude' | 'codex'
+  provider?: HarnessId
   pendingReason: string | null
 }
 
@@ -357,7 +358,7 @@ interface SessionStatusIconProps {
   isUnseen: boolean
   isAutomation: boolean
   isRemote: boolean
-  provider?: 'claude' | 'codex'
+  provider?: HarnessId
 }
 
 function SessionStatusIcon({ status, lastEventAt, isUnseen, isAutomation, isRemote, provider }: SessionStatusIconProps) {
@@ -378,9 +379,11 @@ function SessionStatusIcon({ status, lastEventAt, isUnseen, isAutomation, isRemo
           : 'default'
   const HarnessIcon = provider === 'codex'
     ? CodexSessionIcon
-    : provider === 'claude'
-      ? ClaudeSessionIcon
-      : null
+    : provider === 'acp'
+      ? AcpSessionIcon
+      : provider === 'claude'
+        ? ClaudeSessionIcon
+        : null
   if (HarnessIcon && harnessStatus !== 'default') {
     return <HarnessIcon status={harnessStatus} renderLevel="compact" />
   }

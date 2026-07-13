@@ -51,6 +51,7 @@ export function createDefaultPerSessionState(): PerSessionState {
     chatInputFocusNonce: 0,
     chatInputRestoreFocusNonce: 0,
     preferredProvider: 'claude',
+    acpAgentId: null,
     draftText: '',
     draftJson: null,
     promptSuggestion: null,

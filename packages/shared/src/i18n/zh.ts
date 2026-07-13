@@ -450,6 +450,11 @@ export const zh: Messages = {
       addProject: '添加项目',
       poweredBy: 'Powered by',
       selectProject: '选择项目',
+      others: 'Others',
+      acpLabel: 'ACP agents',
+      selectAgent: 'Agent',
+      agentNotInstalled: '未安装',
+      agentInstallHint: '请在本机安装对应 CLI 后重启 SuperOne。',
     },
     additionalDirs: {
       label: '附加目录',

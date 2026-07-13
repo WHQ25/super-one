@@ -45,6 +45,11 @@ describe('app-settings-service', () => {
     brandHue: null,
     tokenOverrides: {},
   }
+  const defaultAcp = {
+    brandHue: null,
+    tokenOverrides: {},
+    selectedAgentId: null,
+  }
   const defaultSettings = {
     analyticsEnabled: true,
     crispText: true,
@@ -67,6 +72,7 @@ describe('app-settings-service', () => {
     agentPreference: {
       claude: defaultClaude,
       codex: defaultCodex,
+      acp: defaultAcp,
     },
   }
 
@@ -128,6 +134,7 @@ describe('app-settings-service', () => {
             brandHue: null,
             tokenOverrides: {},
           },
+          acp: defaultAcp,
         },
       })
     })
@@ -198,6 +205,7 @@ describe('app-settings-service', () => {
             brandHue: null,
             tokenOverrides: {},
           },
+          acp: defaultAcp,
         },
       })
     })

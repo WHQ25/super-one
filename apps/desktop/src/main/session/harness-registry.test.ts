@@ -48,9 +48,9 @@ setCodexServiceFactory(() => ({
 }))
 
 describe('harnessRegistry', () => {
-  it('lists claude and codex harnesses', () => {
+  it('lists claude, codex, and acp harnesses', () => {
     const ids = harnessRegistry.list().map((h) => h.id).sort()
-    expect(ids).toEqual(['claude', 'codex'])
+    expect(ids).toEqual(['acp', 'claude', 'codex'])
   })
 
   it('get returns the claude harness', () => {
@@ -64,6 +64,12 @@ describe('harnessRegistry', () => {
     const h = harnessRegistry.get('codex')
     expect(h).toBeDefined()
     expect(h?.id).toBe('codex')
+  })
+
+  it('get returns the acp harness', () => {
+    const h = harnessRegistry.get('acp')
+    expect(h).toBeDefined()
+    expect(h?.id).toBe('acp')
   })
 
   it('get returns undefined for unknown id', () => {
@@ -82,6 +88,11 @@ describe('harnessRegistry', () => {
     expect(h.createBackend().kind).toBe('codex')
   })
 
+  it('acp createBackend returns an acp backend', () => {
+    const h = harnessRegistry.get('acp')!
+    expect(h.createBackend().kind).toBe('acp')
+  })
+
   it('configSchema is defined (Zod schema)', () => {
     const h = harnessRegistry.get('claude')!
     expect(h.configSchema).toBeDefined()
@@ -90,5 +101,10 @@ describe('harnessRegistry', () => {
   it('codex configSchema accepts xhigh reasoning effort', () => {
     const h = harnessRegistry.get('codex')!
     expect(() => h.configSchema.parse({ reasoningEffort: 'xhigh' })).not.toThrow()
+  })
+
+  it('acp configSchema accepts agentId', () => {
+    const h = harnessRegistry.get('acp')!
+    expect(() => h.configSchema.parse({ agentId: 'grok-build' })).not.toThrow()
   })
 })

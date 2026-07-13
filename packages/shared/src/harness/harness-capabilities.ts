@@ -48,4 +48,13 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     supportsStreamingToolInput: false,
     displayName: 'Codex',
   },
+  acp: {
+    supportsMcp: false,
+    supportsPlanMode: false,
+    supportsTodos: false,
+    supportsSubagents: false,
+    supportsCompact: false,
+    supportsStreamingToolInput: false,
+    displayName: 'Others',
+  },
 }

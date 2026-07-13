@@ -106,6 +106,7 @@ function makeFakeDb() {
     const now = new Date().toISOString()
     rows.set('claude-base', { id: 'claude-base', harness_id: 'claude', name: 'Claude (Base)', is_base: 1, config_json: '{}', created_at: now, updated_at: now })
     rows.set('codex-base', { id: 'codex-base', harness_id: 'codex', name: 'Codex (Base)', is_base: 1, config_json: '{}', created_at: now, updated_at: now })
+    rows.set('acp-base', { id: 'acp-base', harness_id: 'acp', name: 'Others (ACP)', is_base: 1, config_json: '{}', created_at: now, updated_at: now })
   }
 
   return { db, seed }
@@ -119,14 +120,15 @@ describe('session-provider-repo', () => {
   })
 
   describe('list / get', () => {
-    it('lists both base providers', () => {
+    it('lists base providers', () => {
       const ids = listSessionProviders().map((p) => p.id).sort()
-      expect(ids).toEqual(['claude-base', 'codex-base'])
+      expect(ids).toEqual(['acp-base', 'claude-base', 'codex-base'])
     })
 
     it('listByHarness filters by harness', () => {
       expect(listByHarness('claude').map((p) => p.id)).toEqual(['claude-base'])
       expect(listByHarness('codex').map((p) => p.id)).toEqual(['codex-base'])
+      expect(listByHarness('acp').map((p) => p.id)).toEqual(['acp-base'])
     })
 
     it('get returns null for unknown id', () => {
@@ -136,6 +138,7 @@ describe('session-provider-repo', () => {
     it('getBaseProvider returns the seeded base', () => {
       expect(getBaseProvider('claude').isBase).toBe(true)
       expect(getBaseProvider('codex').isBase).toBe(true)
+      expect(getBaseProvider('acp').isBase).toBe(true)
     })
   })
 

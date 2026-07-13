@@ -34,7 +34,7 @@ export interface SessionRowCallbacks {
   onPinSession: (sessionId: string, pinned: boolean, folderPath: string) => void
   onHideSession: (sessionId: string, hidden: boolean, folderPath: string) => void
   onRenameSession: (target: { sessionId: string; title: string; folderPath: string }) => void
-  onDeleteSession: (target: { sessionId: string; title: string; folderPath: string; provider: 'claude' | 'codex' }) => void
+  onDeleteSession: (target: { sessionId: string; title: string; folderPath: string; provider: import('@superone/shared/agent-types').HarnessId }) => void
 }
 
 interface SessionRowProps extends SessionRowCallbacks {

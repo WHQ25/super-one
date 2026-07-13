@@ -157,7 +157,7 @@ function resetStore() {
     activeProject: null,
     remoteSessions: {},
     _previousFocusedSession: null,
-    harnessResources: { claude: null, codex: null },
+    harnessResources: { claude: null, codex: null, acp: null },
     initializedHarnesses: new Set(),
   })
 }
@@ -1740,7 +1740,7 @@ describe('switchSession Case A (in _sessions)', () => {
   it('switches pointer and resumes runtime for non-running target session', async () => {
     setupProject('/test')
     useChatStore.setState({
-      harnessResources: { claude: { models: [{ id: "claude-sonnet-4-6", name: "Sonnet", supportedEffortLevels: ["low", "medium", "high"] }] as never[], account: {}, slashCommands: [], skills: [], commands: [], agents: [], outputStyles: [] }, codex: null },
+      harnessResources: { claude: { models: [{ id: "claude-sonnet-4-6", name: "Sonnet", supportedEffortLevels: ["low", "medium", "high"] }] as never[], account: {}, slashCommands: [], skills: [], commands: [], agents: [], outputStyles: [] }, codex: null, acp: null },
     })
     const proj = useChatStore.getState().projectSessions['/test']
 
@@ -1854,7 +1854,7 @@ describe('switchSession does NOT prewarm (regression: prewarm only on typing)', 
   it('does NOT prewarm a Claude session restored from DB (Case B) — every old session click would otherwise leak a warmup process', async () => {
     setupProject('/test')
     useChatStore.setState({
-      harnessResources: { claude: { models: [{ id: 'claude-sonnet-4-6', name: 'Sonnet', supportedEffortLevels: ['low', 'medium', 'high'] }] as never[], account: {}, slashCommands: [], skills: [], commands: [], agents: [], outputStyles: [] }, codex: null },
+      harnessResources: { claude: { models: [{ id: 'claude-sonnet-4-6', name: 'Sonnet', supportedEffortLevels: ['low', 'medium', 'high'] }] as never[], account: {}, slashCommands: [], skills: [], commands: [], agents: [], outputStyles: [] }, codex: null, acp: null },
     })
     mockWindowApp.loadSessionState.mockResolvedValue({
       messages: [{ id: 'm', role: 'assistant', content: [], status: 'complete', createdAt: '', providerId: 'claude' }],
@@ -1872,7 +1872,7 @@ describe('switchSession Case B (from DB)', () => {
   it('loads session from DB and sets active', async () => {
     setupProject('/test')
     useChatStore.setState({
-      harnessResources: { claude: { models: [{ id: "claude-sonnet-4-6", name: "Sonnet", supportedEffortLevels: ["low", "medium", "high"] }] as never[], account: {}, slashCommands: [], skills: [], commands: [], agents: [], outputStyles: [] }, codex: null },
+      harnessResources: { claude: { models: [{ id: "claude-sonnet-4-6", name: "Sonnet", supportedEffortLevels: ["low", "medium", "high"] }] as never[], account: {}, slashCommands: [], skills: [], commands: [], agents: [], outputStyles: [] }, codex: null, acp: null },
     })
 
     mockWindowApp.loadSessionState.mockResolvedValue({
@@ -2518,7 +2518,7 @@ describe('awaitingAssistantReply state machine', () => {
   it('sets awaitingAssistantReply true when sending a new Claude turn', async () => {
     setupProject('/test')
     useChatStore.setState({
-      harnessResources: { claude: { models: [{ id: "claude-sonnet-4-6", name: "Sonnet", supportedEffortLevels: ["low", "medium", "high"] }] as never[], account: {}, slashCommands: [], skills: [], commands: [], agents: [], outputStyles: [] }, codex: null },
+      harnessResources: { claude: { models: [{ id: "claude-sonnet-4-6", name: "Sonnet", supportedEffortLevels: ["low", "medium", "high"] }] as never[], account: {}, slashCommands: [], skills: [], commands: [], agents: [], outputStyles: [] }, codex: null, acp: null },
     })
 
     await useChatStore.getState().sendMessage('hello')
@@ -2593,7 +2593,7 @@ describe('awaitingAssistantReply state machine', () => {
   it('clears awaitingAssistantReply when sendMessage throws', async () => {
     setupProject('/test')
     useChatStore.setState({
-      harnessResources: { claude: { models: [{ id: "claude-sonnet-4-6", name: "Sonnet", supportedEffortLevels: ["low", "medium", "high"] }] as never[], account: {}, slashCommands: [], skills: [], commands: [], agents: [], outputStyles: [] }, codex: null },
+      harnessResources: { claude: { models: [{ id: "claude-sonnet-4-6", name: "Sonnet", supportedEffortLevels: ["low", "medium", "high"] }] as never[], account: {}, slashCommands: [], skills: [], commands: [], agents: [], outputStyles: [] }, codex: null, acp: null },
     })
     mockWindowAgent.sendMessage.mockRejectedValueOnce(new Error('send failed'))
 

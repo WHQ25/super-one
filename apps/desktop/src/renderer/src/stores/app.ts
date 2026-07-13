@@ -557,8 +557,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     window.app.saveRemoteConfig(config)
   },
 
-  brandHues: { claude: null, codex: null },
-  tokenOverrides: { claude: {}, codex: {} },
+  brandHues: { claude: null, codex: null, acp: null },
+  tokenOverrides: { claude: {}, codex: {}, acp: {} },
   terminalLightPalette: null,
   terminalDarkPalette: null,
   terminalFontSize: 14,
@@ -573,10 +573,12 @@ export const useAppStore = create<AppState>((set, get) => ({
         brandHues: {
           claude: settings.agentPreference.claude.brandHue,
           codex: settings.agentPreference.codex.brandHue,
+          acp: settings.agentPreference.acp?.brandHue ?? null,
         },
         tokenOverrides: {
           claude: settings.agentPreference.claude.tokenOverrides ?? {},
           codex: settings.agentPreference.codex.tokenOverrides ?? {},
+          acp: settings.agentPreference.acp?.tokenOverrides ?? {},
         },
         terminalLightPalette: settings.terminalLightPalette,
         terminalDarkPalette: settings.terminalDarkPalette,
@@ -664,7 +666,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 }))
 
 const PERSIST_DELAY_MS = 150
-const persistTimers: { claude?: ReturnType<typeof setTimeout>; codex?: ReturnType<typeof setTimeout> } = {}
+const persistTimers: Partial<Record<HarnessId, ReturnType<typeof setTimeout>>> = {}
 
 function schedulePersist(harness: HarnessId, getState: () => AppState): void {
   const existing = persistTimers[harness]
@@ -714,11 +716,13 @@ if (typeof window !== 'undefined') {
   window.app?.onAppSettingsChange?.((settings: AppSettings) => {
     const claude = settings.agentPreference.claude
     const codex = settings.agentPreference.codex
+    const acp = settings.agentPreference.acp
     useAppStore.setState({
-      brandHues: { claude: claude.brandHue, codex: codex.brandHue },
+      brandHues: { claude: claude.brandHue, codex: codex.brandHue, acp: acp?.brandHue ?? null },
       tokenOverrides: {
         claude: claude.tokenOverrides ?? {},
         codex: codex.tokenOverrides ?? {},
+        acp: acp?.tokenOverrides ?? {},
       },
       terminalLightPalette: settings.terminalLightPalette,
       terminalDarkPalette: settings.terminalDarkPalette,

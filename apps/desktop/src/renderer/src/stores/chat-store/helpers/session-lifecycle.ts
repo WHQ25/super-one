@@ -424,5 +424,41 @@ export function setPreferredProviderImpl(
       void get().refreshCodexSkills(activeProject)
     }
   }
+  if (provider === 'acp') {
+    void (async () => {
+      try {
+        const settings = await window.app.getAppSettings()
+        const agentId = settings.agentPreference.acp?.selectedAgentId
+          ?? get().harnessResources.acp?.selectedAgentId
+          ?? 'grok-build'
+        set((s) => updateActivePerSession(s, () => ({ acpAgentId: agentId })))
+      } catch {
+        set((s) => updateActivePerSession(s, () => ({ acpAgentId: 'grok-build' })))
+      }
+    })()
+  }
   void get().initializeHarness(provider)
+}
+
+export function setAcpAgentIdImpl(
+  set: ChatStoreSet,
+  get: () => ChatStore,
+  agentId: string | null,
+): void {
+  const session = getActivePerSession(get())
+  if (session.sessionProvider && session.messages.length > 0 && session.sessionProvider !== 'acp') return
+  if (session.acpAgentId === agentId) {
+    const acp = get().harnessResources.acp
+    if (acp?.selectedAgentId === agentId) return
+  }
+  set((s) => updateActivePerSession(s, () => ({ acpAgentId: agentId })))
+  const acp = get().harnessResources.acp
+  if (acp && acp.selectedAgentId !== agentId) {
+    get().setHarnessResources('acp', { ...acp, selectedAgentId: agentId })
+  }
+  void window.app.saveAppSettings({
+    agentPreference: {
+      acp: { selectedAgentId: agentId },
+    },
+  }).catch((err) => console.error('[acp] persist selectedAgentId failed:', err))
 }

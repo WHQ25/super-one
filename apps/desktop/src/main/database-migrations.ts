@@ -419,10 +419,11 @@ function seedBaseSessionProviders(db: Database.Database): void {
   const stmt = db.prepare(`
     INSERT OR IGNORE INTO session_providers
       (id, harness_id, name, is_base, config_json, created_at, updated_at)
-    VALUES (?, ?, ?, 1, '{}', ?, ?)
+    VALUES (?, ?, ?, 1, ?, ?, ?)
   `)
-  stmt.run('claude-base', 'claude', 'Claude (Base)', now, now)
-  stmt.run('codex-base', 'codex', 'Codex (Base)', now, now)
+  stmt.run('claude-base', 'claude', 'Claude (Base)', '{}', now, now)
+  stmt.run('codex-base', 'codex', 'Codex (Base)', '{}', now, now)
+  stmt.run('acp-base', 'acp', 'Others (ACP)', JSON.stringify({ agentId: 'grok-build' }), now, now)
 }
 
 function migrateGlobalResourceCacheToHarness(db: Database.Database): void {

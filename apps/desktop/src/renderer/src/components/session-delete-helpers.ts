@@ -1,4 +1,6 @@
-export type SessionProvider = 'claude' | 'codex'
+import type { HarnessId } from '@superone/shared/agent-types'
+
+export type SessionProvider = HarnessId
 
 const SKIP_DELETE_CONFIRM_KEY = 'super-one.skip-delete-session-confirm'
 
@@ -18,6 +20,12 @@ export function getDeleteSessionRecovery(provider: SessionProvider, sessionId: s
     return {
       cliName: 'Codex CLI',
       resumeCommand: `codex resume ${sessionId}`,
+    }
+  }
+  if (provider === 'acp') {
+    return {
+      cliName: 'ACP agent',
+      resumeCommand: sessionId,
     }
   }
   return {

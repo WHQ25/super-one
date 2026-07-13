@@ -1,5 +1,6 @@
 import type {
   AccountInfo,
+  AcpResources,
   AgentEvent,
   AgentInfo,
   AgentStatus,
@@ -94,6 +95,8 @@ export interface PerSessionState {
   chatInputFocusNonce: number
   chatInputRestoreFocusNonce: number
   preferredProvider: ChatProvider
+  /** Selected ACP agent id when preferredProvider/sessionProvider is acp. */
+  acpAgentId: string | null
   draftText: string
   /** Editor JSON snapshot (Tiptap doc) — preserves chip nodes & their inline positions across session switches, unlike the plain-text draft. */
   draftJson: object | null
@@ -214,6 +217,7 @@ export interface ChatStore {
   harnessResources: {
     claude: ClaudeResources | null
     codex: CodexResources | null
+    acp: AcpResources | null
   }
   initializedHarnesses: Set<HarnessId>
   disabledSkills: string[]
@@ -266,6 +270,7 @@ export interface ChatStore {
   refreshCodexModels: (force?: boolean) => Promise<void>
   refreshCodexSkills: (projectPath?: string) => Promise<void>
   setPreferredProvider: (provider: ChatProvider) => void
+  setAcpAgentId: (agentId: string | null) => void
 
   setSessionApiProviderId: (apiProviderId: string | null) => Promise<void>
   openProviderPopup: () => void

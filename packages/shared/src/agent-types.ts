@@ -877,6 +877,8 @@ export interface SendMessageRequest {
   userSelections?: string[]
   /** null/undefined = follow global default. */
   apiProviderId?: string | null
+  /** Harness used when creating a new session for this send. */
+  provider?: HarnessId
 }
 
 export interface CodexSendExtras {
@@ -895,7 +897,7 @@ export interface AgentPrewarmHint {
   model?: string
   additionalDirs?: string[]
   sessionId?: string
-  provider?: 'claude' | 'codex'
+  provider?: HarnessId
   worktreePath?: string
 }
 
@@ -1245,7 +1247,7 @@ export interface SessionHistoryEntry {
   sessionId: string
   title: string        // First user message, truncated
   lastActiveAt: string // File modification time
-  provider?: 'claude' | 'codex'
+  provider?: HarnessId
   providerSessionId?: string // Claude Code SDK session UUID / Codex thread id
   gitBranch?: string
   messageCount: number // Total user + assistant messages
@@ -1285,9 +1287,24 @@ export interface CodexResources {
   prompts: SlashCommandInfo[]
 }
 
+export interface AcpAgentDescriptor {
+  id: string
+  name: string
+  installed: boolean
+  commandPreview: string
+}
+
+export interface AcpResources {
+  agents: AcpAgentDescriptor[]
+  selectedAgentId: string | null
+  /** True while a background re-detect is in flight. */
+  detecting?: boolean
+}
+
 export interface HarnessResourcesMap {
   claude: ClaudeResources
   codex: CodexResources
+  acp: AcpResources
 }
 
 export type HarnessId = keyof HarnessResourcesMap
@@ -1298,6 +1315,7 @@ export interface StartupData {
   cached: {
     claude: ClaudeResources | null
     codex: CodexResources | null
+    acp: AcpResources | null
   }
   sandboxCapability: SandboxCapability
   appVersion: string
@@ -2006,6 +2024,7 @@ export const AgentIpcChannels = {
   BINDINGS_SET: 'bindings:set',
   BINDINGS_CLEAR: 'bindings:clear',
   PROVIDERS_TEST_ENDPOINT: 'providers:test-endpoint',
+  ACP_LIST_AGENTS: 'acp:list-agents',
 
   // Media generation providers (read-only status derived from image-serving credentials)
   MEDIA_GEN_PROVIDERS: 'mediaGen:providers',
@@ -2383,6 +2402,11 @@ export interface AppSettings {
       brandHue: number | null
       tokenOverrides: TokenOverrides
     }
+    acp: {
+      brandHue: number | null
+      tokenOverrides: TokenOverrides
+      selectedAgentId: string | null
+    }
   }
 }
 
@@ -2408,5 +2432,6 @@ export interface AppSettingsPatch {
   agentPreference?: {
     claude?: Partial<AppSettings['agentPreference']['claude']>
     codex?: Partial<AppSettings['agentPreference']['codex']>
+    acp?: Partial<AppSettings['agentPreference']['acp']>
   }
 }

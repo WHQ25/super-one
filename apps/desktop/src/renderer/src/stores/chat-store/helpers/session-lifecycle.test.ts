@@ -94,7 +94,7 @@ function resetStore() {
     activeProject: null,
     remoteSessions: {},
     _previousFocusedSession: null,
-    harnessResources: { claude: null, codex: null },
+    harnessResources: { claude: null, codex: null, acp: null },
     initializedHarnesses: new Set(),
     _bashOutputs: {},
   })

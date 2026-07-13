@@ -165,6 +165,16 @@ const automationService = new AutomationService()
 // `apiProviderId` carries the session's chosen credential id (dynamic-follow: null follows the global binding).
 function resolveBaseProviderConfig(provider: SessionProvider, apiProviderId: string | null = null): unknown {
   if (!provider.isBase) return provider.config
+  if (provider.harnessId === 'acp') {
+    const base = (provider.config && typeof provider.config === 'object')
+      ? provider.config as Record<string, unknown>
+      : {}
+    const selected = readAppSettings().agentPreference.acp?.selectedAgentId
+    const agentId = (typeof selected === 'string' && selected)
+      || (typeof base.agentId === 'string' && base.agentId)
+      || 'grok-build'
+    return { ...base, agentId }
+  }
   const resolved = resolveChatService(provider.harnessId, apiProviderId)
   if (!resolved) return provider.config
 
@@ -250,10 +260,14 @@ const sessionManager = new SessionManagerImpl({
       apiProviderId: loaded.record.apiProviderId,
     }
   },
-  getActiveProvider: (harnessId, apiProviderId) =>
-    buildRemoteActiveService(resolveChatService(harnessId, apiProviderId ?? null), harnessId),
-  getActiveDefaultApiProviderId: (harnessId) =>
-    getBinding(harnessId === 'codex' ? 'chat:codex' : 'chat:claude')?.credentialId ?? null,
+  getActiveProvider: (harnessId, apiProviderId) => {
+    if (harnessId === 'acp') return null
+    return buildRemoteActiveService(resolveChatService(harnessId, apiProviderId ?? null), harnessId)
+  },
+  getActiveDefaultApiProviderId: (harnessId) => {
+    if (harnessId === 'acp') return null
+    return getBinding(harnessId === 'codex' ? 'chat:codex' : 'chat:claude')?.credentialId ?? null
+  },
   onBeforeInterrupt: (sessionId) => {
     clearAllGates()
     clearSessionPendingMiniAppCalls(sessionId)
@@ -2392,14 +2406,16 @@ function registerIpcHandlers(): void {
   ipcMain.handle(AgentIpcChannels.GET_STARTUP_DATA, (): StartupData => {
     const claude = getCachedHarnessResources('claude')
     const codex = getCachedHarnessResources('codex')
+    const acp = getCachedHarnessResources('acp')
     const sandboxCapability = getSandboxCapability()
     log.info(
-      '[GET_STARTUP_DATA] cached: claude=%s codex=%s sandbox=%s',
+      '[GET_STARTUP_DATA] cached: claude=%s codex=%s acp=%s sandbox=%s',
       claude ? `${claude.models?.length ?? 0} models` : 'null',
       codex ? `${codex.models?.length ?? 0} models` : 'null',
+      acp ? `${acp.agents?.length ?? 0} agents` : 'null',
       sandboxCapability.supportLevel,
     )
-    return { cached: { claude, codex }, sandboxCapability, appVersion: app.getVersion() }
+    return { cached: { claude, codex, acp }, sandboxCapability, appVersion: app.getVersion() }
   })
 
   ipcMain.handle(AgentIpcChannels.SANDBOX_PROBE, async () => {
@@ -2881,6 +2897,22 @@ app.whenReady().then(async () => {
   startMediaServer().catch((err) => log.error('[media-server] failed to start:', err))
   ipcMain.handle(AgentIpcChannels.MEDIA_SERVER_PORT, () => getMediaServerPort())
   getDb() // Initialize database
+  void import('./acp/acp-detect').then(async ({ detectBuiltinAgents }) => {
+    try {
+      const agents = await detectBuiltinAgents()
+      setCachedHarnessResources('acp', {
+        agents: agents.map((a) => ({
+          id: a.id,
+          name: a.name,
+          installed: a.installed,
+          commandPreview: a.commandPreview,
+        })),
+        selectedAgentId: null,
+      })
+    } catch (err) {
+      log.warn('[acp] detectBuiltinAgents failed:', err)
+    }
+  })
   registerIpcHandlers()
   terminalSweepTimer = setInterval(() => terminalManager.sweep(), 30_000)
 

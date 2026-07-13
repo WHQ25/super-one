@@ -8,6 +8,7 @@ export type { AppSettings, AppSettingsPatch }
 
 type ClaudePref = AppSettings['agentPreference']['claude']
 type CodexPref = AppSettings['agentPreference']['codex']
+type AcpPref = AppSettings['agentPreference']['acp']
 
 const defaults: AppSettings = {
   analyticsEnabled: true,
@@ -44,6 +45,11 @@ const defaults: AppSettings = {
       defaultReasoningEffort: '',
       brandHue: null,
       tokenOverrides: {},
+    },
+    acp: {
+      brandHue: null,
+      tokenOverrides: {},
+      selectedAgentId: null,
     },
   },
 }
@@ -189,6 +195,23 @@ function readCodexPreference(data: Record<string, unknown>): CodexPref {
   }
 }
 
+function readAcpPreference(data: Record<string, unknown>): AcpPref {
+  const agentPreference = data.agentPreference && typeof data.agentPreference === 'object'
+    ? data.agentPreference as Record<string, unknown>
+    : undefined
+  const acpPreference = agentPreference?.acp && typeof agentPreference.acp === 'object'
+    ? agentPreference.acp as Record<string, unknown>
+    : undefined
+
+  return {
+    brandHue: readBrandHue(acpPreference?.brandHue),
+    tokenOverrides: sanitizeOverrides(acpPreference?.tokenOverrides),
+    selectedAgentId: typeof acpPreference?.selectedAgentId === 'string'
+      ? acpPreference.selectedAgentId
+      : defaults.agentPreference.acp.selectedAgentId,
+  }
+}
+
 function getSettingsPath(): string {
   return join(app.getPath('userData'), 'app-settings.json')
 }
@@ -218,6 +241,7 @@ export function readAppSettings(): AppSettings {
       agentPreference: {
         claude: readClaudePreference(data),
         codex: readCodexPreference(data),
+        acp: readAcpPreference(data),
       },
     }
   } catch {
@@ -243,6 +267,7 @@ export function readAppSettings(): AppSettings {
       agentPreference: {
         claude: { ...defaults.agentPreference.claude },
         codex: { ...defaults.agentPreference.codex },
+        acp: { ...defaults.agentPreference.acp },
       },
     }
   }
@@ -279,6 +304,10 @@ export function saveAppSettings(patch: AppSettingsPatch): AppSettings {
       codex: {
         ...current.agentPreference.codex,
         ...patch.agentPreference?.codex,
+      },
+      acp: {
+        ...current.agentPreference.acp,
+        ...patch.agentPreference?.acp,
       },
     },
   }

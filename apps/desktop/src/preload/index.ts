@@ -623,6 +623,8 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.BINDINGS_CLEAR, consumer),
   testProviderEndpoint: (data: { apiKey: string; credentialId?: string; endpoints: ServiceEndpoint[] }) =>
     ipcRenderer.invoke(AgentIpcChannels.PROVIDERS_TEST_ENDPOINT, data) as Promise<ProviderEndpointTestResponse>,
+  listAcpAgents: () =>
+    ipcRenderer.invoke(AgentIpcChannels.ACP_LIST_AGENTS) as Promise<import('@superone/shared/agent-types').AcpResources>,
 
   // Session Providers (new session layer)
   sessionProviders: {

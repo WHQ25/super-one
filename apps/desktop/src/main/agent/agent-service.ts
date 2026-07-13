@@ -1401,16 +1401,28 @@ export class AgentService {
     return this.sessionManager
   }
 
+  private baseProviderIdForHarness(harnessId: 'claude' | 'codex' | 'acp' | undefined): string {
+    if (harnessId === 'codex') return 'codex-base'
+    if (harnessId === 'acp') return 'acp-base'
+    return 'claude-base'
+  }
+
   private getOrCreateActiveSession(
     projectPath: string,
     requestedSid?: string,
-    hint?: { worktreePath?: string | null; gitBranch?: string | null; apiProviderId?: string | null },
+    hint?: {
+      worktreePath?: string | null
+      gitBranch?: string | null
+      apiProviderId?: string | null
+      provider?: 'claude' | 'codex' | 'acp'
+    },
   ): import('../session/types').Session {
     const mgr = this.requireSessionManager()
     const activeCwd = mgr.getActiveSession(projectPath)?.cwd
     const cwd = hint?.worktreePath ?? activeCwd
     const gitBranch = hint?.gitBranch ?? null
     const apiProviderHint = hint?.apiProviderId ?? null
+    const providerId = this.baseProviderIdForHarness(hint?.provider)
     const shouldApplyHint = (existing: import('../session/types').Session): boolean =>
       apiProviderHint !== null && existing.snapshot.apiProviderId !== apiProviderHint
     if (requestedSid) {
@@ -1425,8 +1437,19 @@ export class AgentService {
         if (shouldApplyHint(resumed)) resumed.setApiProviderId(apiProviderHint)
         return resumed
       } catch {
-        const { permissionMode, sandboxMode } = this.readDefaultSessionPrefs()
-        return mgr.createSession({ projectPath, cwd, providerId: 'claude-base', id: requestedSid, gitBranch, permissionMode, sandboxMode, apiProviderId: apiProviderHint })
+        const prefs = hint?.provider === 'claude' || !hint?.provider
+          ? this.readDefaultSessionPrefs()
+          : { permissionMode: undefined, sandboxMode: undefined }
+        return mgr.createSession({
+          projectPath,
+          cwd,
+          providerId,
+          id: requestedSid,
+          gitBranch,
+          permissionMode: prefs.permissionMode,
+          sandboxMode: prefs.sandboxMode,
+          apiProviderId: apiProviderHint,
+        })
       }
     }
     const active = mgr.getActiveSession(projectPath)
@@ -1434,8 +1457,18 @@ export class AgentService {
       if (shouldApplyHint(active)) active.setApiProviderId(apiProviderHint)
       return active
     }
-    const { permissionMode, sandboxMode } = this.readDefaultSessionPrefs()
-    return mgr.createSession({ projectPath, cwd, providerId: 'claude-base', gitBranch, permissionMode, sandboxMode, apiProviderId: apiProviderHint })
+    const prefs = hint?.provider === 'claude' || !hint?.provider
+      ? this.readDefaultSessionPrefs()
+      : { permissionMode: undefined, sandboxMode: undefined }
+    return mgr.createSession({
+      projectPath,
+      cwd,
+      providerId,
+      gitBranch,
+      permissionMode: prefs.permissionMode,
+      sandboxMode: prefs.sandboxMode,
+      apiProviderId: apiProviderHint,
+    })
   }
 
   private async getOrCreatePrewarmSession(
@@ -1443,8 +1476,8 @@ export class AgentService {
     hint?: AgentPrewarmHint,
   ): Promise<import('../session/types').Session | null> {
     const mgr = this.requireSessionManager()
-    const providerId = hint?.provider === 'codex' ? 'codex-base' : 'claude-base'
-    const harnessId = hint?.provider === 'codex' ? 'codex' : 'claude'
+    const providerId = this.baseProviderIdForHarness(hint?.provider)
+    const harnessId = hint?.provider ?? 'claude'
     const activeCwd = mgr.getActiveSession(projectPath)?.cwd
     const cwd = hint?.worktreePath ?? activeCwd
     const { permissionMode, sandboxMode } = this.readDefaultSessionPrefs()
@@ -1497,6 +1530,7 @@ export class AgentService {
         worktreePath: request.worktreePath,
         gitBranch: request.gitBranch,
         ...(request.apiProviderId !== undefined ? { apiProviderId: request.apiProviderId } : {}),
+        ...(request.provider ? { provider: request.provider } : {}),
       })
       trace('session.lifecycle', 'ipc_sendMessage', {
         projectPath,
@@ -2028,6 +2062,24 @@ export class AgentService {
       const results = await testServiceEndpoints(data.endpoints, apiKey)
       trace('providers.test', 'result', results)
       return { success: results.every((r) => r.success), results }
+    })
+
+    ipcMain.handle(AgentIpcChannels.ACP_LIST_AGENTS, async () => {
+      const { detectBuiltinAgents } = await import('../acp/acp-detect')
+      const { setCachedHarnessResources, getCachedHarnessResources } = await import('../database')
+      const agents = await detectBuiltinAgents()
+      const prev = getCachedHarnessResources('acp')
+      const resources = {
+        agents: agents.map((a) => ({
+          id: a.id,
+          name: a.name,
+          installed: a.installed,
+          commandPreview: a.commandPreview,
+        })),
+        selectedAgentId: prev?.selectedAgentId ?? null,
+      }
+      setCachedHarnessResources('acp', resources)
+      return resources
     })
 
     // --- Session Providers (new session_providers table) ---

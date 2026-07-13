@@ -1,6 +1,8 @@
 import { z } from 'zod'
+import { AcpBackend } from './backends/acp-backend'
 import { ClaudeBackend } from './backends/claude-backend'
 import { CodexBackend } from './backends/codex-backend'
+import { forkAcpTranscript } from './backends/acp-fork'
 import { forkClaudeTranscript } from './backends/claude-fork'
 import { forkCodexThread } from './backends/codex-fork'
 import type { Harness, HarnessId } from './types'
@@ -23,6 +25,14 @@ const codexConfigSchema = z.object({
   reasoningEffort: z.enum(['minimal', 'low', 'medium', 'high', 'xhigh']).optional(),
 }).passthrough()
 
+const acpConfigSchema = z.object({
+  agentId: z.string().optional(),
+  command: z.string().optional(),
+  args: z.array(z.string()).optional(),
+  env: z.record(z.string(), z.string()).optional(),
+  cwd: z.string().optional(),
+}).passthrough()
+
 const claudeHarness: Harness = {
   id: 'claude',
   name: 'Claude (Anthropic)',
@@ -39,9 +49,18 @@ const codexHarness: Harness = {
   forkTranscript: forkCodexThread,
 }
 
+const acpHarness: Harness = {
+  id: 'acp',
+  name: 'Others (ACP)',
+  configSchema: acpConfigSchema,
+  createBackend: () => new AcpBackend(),
+  forkTranscript: forkAcpTranscript,
+}
+
 const registry = new Map<HarnessId, Harness>([
   ['claude', claudeHarness],
   ['codex', codexHarness],
+  ['acp', acpHarness],
 ])
 
 export const harnessRegistry = {

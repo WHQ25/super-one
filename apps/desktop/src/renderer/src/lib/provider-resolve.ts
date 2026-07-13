@@ -12,7 +12,8 @@ import {
 } from '@superone/shared/platform-registry'
 
 export function consumerForHarness(harness: HarnessId): ConsumerId {
-  return harness === 'codex' ? 'chat:codex' : 'chat:claude'
+  if (harness === 'codex') return 'chat:codex'
+  return 'chat:claude'
 }
 
 export interface EffectiveService {

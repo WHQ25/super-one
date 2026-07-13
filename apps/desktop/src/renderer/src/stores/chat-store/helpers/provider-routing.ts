@@ -12,5 +12,6 @@ export function resolveProvider(session: ProviderResolvableSession): HarnessId {
 export function inferProviderFromHarnessId(harnessId: string | null | undefined): HarnessId | null {
   if (harnessId === 'codex') return 'codex'
   if (harnessId === 'claude') return 'claude'
+  if (harnessId === 'acp') return 'acp'
   return null
 }

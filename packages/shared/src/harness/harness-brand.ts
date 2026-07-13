@@ -3,6 +3,7 @@ import type { HarnessId } from '../session-types'
 export const HARNESS_DEFAULT_BRAND_HUE: Record<HarnessId, number> = {
   claude: 40,
   codex: 240,
+  acp: 280,
 }
 
 export const BRAND_HUE_LIGHTNESS = 0.65
@@ -104,6 +105,7 @@ function buildHarnessDefaults(harness: HarnessId): Record<DesignToken, LCH> {
 export const HARNESS_DEFAULT_TOKENS: Record<HarnessId, Record<DesignToken, LCH>> = {
   claude: buildHarnessDefaults('claude'),
   codex: buildHarnessDefaults('codex'),
+  acp: buildHarnessDefaults('acp'),
 }
 
 export function clampBrandHue(hue: number): number {

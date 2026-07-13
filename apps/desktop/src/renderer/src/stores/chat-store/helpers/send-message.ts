@@ -148,7 +148,8 @@ export async function sendMessageImpl(
       .join('\n')
     quoteSuffix = `\n\n<quote>\n${inner}\n</quote>`
   }
-  const requestedProvider: ChatProvider = preferredProvider === 'codex' ? 'codex' : 'claude'
+  const requestedProvider: ChatProvider =
+    preferredProvider === 'codex' || preferredProvider === 'acp' ? preferredProvider : 'claude'
   const effectiveProvider: ChatProvider = session.sessionProvider ?? requestedProvider
   let miniAppReminderSuffix = ''
   const miniAppMentions = mentions.filter((m) => m.kind === 'miniapp')
@@ -189,7 +190,7 @@ export async function sendMessageImpl(
   )
   const resolvedCodexModel = resolvedCodexSelection.modelId || undefined
   const resolvedCodexReasoningEffort = resolvedCodexSelection.reasoningEffort
-  const isQueuedSend = effectiveProvider === 'claude' && session.status === 'streaming'
+  const isQueuedSend = (effectiveProvider === 'claude' || effectiveProvider === 'acp') && session.status === 'streaming'
 
   if (!session.sessionProvider) {
     set((s) => updateActivePerSession(s, () => ({
@@ -350,7 +351,9 @@ export async function sendMessageImpl(
       codexPlanRejectHintActive: false,
       additionalDirsDirty: false,
       ...(isCompactSlash ? { _pendingCompactUserId: userMessageId } : {}),
-      ...(effectiveProvider === 'claude' && !isQueuedSend ? { awaitingAssistantReply: true } : {}),
+      ...((effectiveProvider === 'claude' || effectiveProvider === 'acp') && !isQueuedSend
+        ? { awaitingAssistantReply: true }
+        : {}),
     })),
     isOpen: true,
   }))
@@ -403,7 +406,9 @@ export async function sendMessageImpl(
     return
   }
 
-  await _ensureClaudeSessionReadyForSend(get, activeProject)
+  if (effectiveProvider === 'claude') {
+    await _ensureClaudeSessionReadyForSend(get, activeProject)
+  }
 
   const mergedDirs = mergeProjectAndSessionDirs(project, session)
 
@@ -421,6 +426,7 @@ export async function sendMessageImpl(
       userMessageContent: userContent,
       contexts: messageContexts,
       userSelections: userSelections.length > 0 ? [...userSelections] : undefined,
+      provider: effectiveProvider,
       ...(session.apiProviderId ? { apiProviderId: session.apiProviderId } : {}),
       ...(isQueuedSend ? { priority: 'next' as const } : {}),
     })

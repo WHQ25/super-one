@@ -1,0 +1,205 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import type { AgentEvent } from '@superone/shared/agent-types'
+
+vi.mock('../../logger', () => ({
+  default: { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() },
+}))
+
+import { AcpBackend, setAcpRuntimeFactory } from './acp-backend'
+import type { BackendStartOptions } from '../types'
+import type { AcpRuntime } from '../../acp/acp-runtime'
+
+function startOpts(config: unknown = {}): BackendStartOptions {
+  return {
+    sessionId: 'sess-1',
+    projectPath: '/tmp/proj',
+    cwd: '/tmp/proj',
+    config,
+    permissionMode: 'default',
+    abortController: new AbortController(),
+  }
+}
+
+function mockRuntime(overrides?: Partial<AcpRuntime>): AcpRuntime {
+  return {
+    sessionId: 'acp-sess-1',
+    launch: {
+      agentId: 'custom',
+      command: 'echo',
+      args: [],
+      env: {},
+      cwd: '/tmp/proj',
+    },
+    prompt: async (_text, messageId, onEvent) => {
+      onEvent({
+        type: 'content_delta',
+        messageId,
+        delta: { type: 'text', text: 'hello-from-mock' },
+      })
+      onEvent({ type: 'message_complete', messageId })
+      onEvent({ type: 'status_change', status: 'idle' })
+    },
+    cancel: async () => {},
+    close: async () => {},
+    ...overrides,
+  }
+}
+
+describe('AcpBackend', () => {
+  beforeEach(() => {
+    setAcpRuntimeFactory(async () => mockRuntime())
+  })
+
+  afterEach(() => {
+    setAcpRuntimeFactory(null)
+  })
+
+  it('starts and reports kind acp', async () => {
+    const backend = new AcpBackend()
+    expect(backend.kind).toBe('acp')
+    await backend.start(startOpts({ agentId: 'grok-build' }))
+    await backend.close()
+  })
+
+  it('emits message_error when agent is not configured', async () => {
+    const backend = new AcpBackend()
+    await backend.start(startOpts({}))
+    const events: AgentEvent[] = []
+    backend.onEvent((e) => events.push(e))
+    await backend.send({ content: 'hi' })
+    expect(events.some((e) => e.type === 'message_error')).toBe(true)
+    const err = events.find((e) => e.type === 'message_error')
+    expect(err && err.type === 'message_error' ? err.error : '').toMatch(/No ACP agent configured/)
+    await backend.close()
+  })
+
+  it('streams prompt through runtime when agent is configured', async () => {
+    const backend = new AcpBackend()
+    await backend.start(startOpts({ agentId: 'custom', command: 'mock' }))
+    const events: AgentEvent[] = []
+    backend.onEvent((e) => events.push(e))
+    await backend.send({ content: 'hi', assistantMessageId: 'a1' })
+
+    expect(events.some((e) => e.type === 'message_start')).toBe(true)
+    const text = events
+      .filter((e): e is Extract<AgentEvent, { type: 'content_delta' }> => e.type === 'content_delta')
+      .map((e) => e.delta)
+      .filter((d): d is { type: 'text'; text: string } => d.type === 'text')
+      .map((d) => d.text)
+      .join('')
+    expect(text).toContain('hello-from-mock')
+    expect(events.some((e) => e.type === 'message_complete')).toBe(true)
+    await backend.close()
+  })
+
+  it('forwards permission decisions to the pending gate', async () => {
+    setAcpRuntimeFactory(async (opts) => mockRuntime({
+      prompt: async (_text, messageId, onEvent) => {
+        const response = await opts.permission.request({
+          sessionId: 'acp-sess-1',
+          toolCall: { toolCallId: 'tc1', title: 'Write file', kind: 'edit' },
+          options: [
+            { optionId: 'allow', name: 'Allow', kind: 'allow_once' },
+            { optionId: 'deny', name: 'Deny', kind: 'reject_once' },
+          ],
+        })
+        onEvent({
+          type: 'content_delta',
+          messageId,
+          delta: {
+            type: 'text',
+            text: response.outcome.outcome === 'selected' ? `opt:${response.outcome.optionId}` : 'cancelled',
+          },
+        })
+        onEvent({ type: 'message_complete', messageId })
+        onEvent({ type: 'status_change', status: 'idle' })
+      },
+    }))
+
+    const backend = new AcpBackend()
+    await backend.start(startOpts({ agentId: 'custom', command: 'mock' }))
+    const events: AgentEvent[] = []
+    backend.onEvent((e) => {
+      events.push(e)
+      if (e.type === 'permission_request') {
+        backend.respondToPermission(e.request.requestId, true)
+      }
+    })
+    await backend.send({ content: 'write', assistantMessageId: 'a2' })
+    const text = events
+      .filter((e): e is Extract<AgentEvent, { type: 'content_delta' }> => e.type === 'content_delta')
+      .map((e) => e.delta)
+      .filter((d): d is { type: 'text'; text: string } => d.type === 'text')
+      .map((d) => d.text)
+      .join('')
+    expect(text).toContain('opt:allow')
+    expect(backend.getPendingInteractions()).toEqual([])
+    await backend.close()
+  })
+
+  it('exposes pending permissions via getPendingInteractions', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((r) => { release = r })
+    setAcpRuntimeFactory(async (opts) => mockRuntime({
+      prompt: async (_text, messageId, onEvent) => {
+        const pending = opts.permission.request({
+          sessionId: 's',
+          toolCall: { toolCallId: 'p1', title: 'Run', kind: 'execute' },
+          options: [{ optionId: 'a', name: 'Allow', kind: 'allow_once' }],
+        })
+        release()
+        await pending
+        onEvent({ type: 'message_complete', messageId })
+        onEvent({ type: 'status_change', status: 'idle' })
+      },
+    }))
+
+    const backend = new AcpBackend()
+    await backend.start(startOpts({ agentId: 'custom', command: 'mock' }))
+    const sendPromise = backend.send({ content: 'x', assistantMessageId: 'm1' })
+    await gate
+    await new Promise((r) => setTimeout(r, 0))
+    const pending = backend.getPendingInteractions()
+    expect(pending).toHaveLength(1)
+    expect(pending[0]?.type).toBe('permission_request')
+    backend.respondToPermission('p1', true)
+    await sendPromise
+    await backend.close()
+  })
+
+  it('does not double-emit error when runtime already reported failure', async () => {
+    setAcpRuntimeFactory(async () => mockRuntime({
+      prompt: async (_text, messageId, onEvent) => {
+        onEvent({ type: 'message_error', messageId, error: 'spawn failed' })
+        onEvent({ type: 'status_change', status: 'error' })
+        throw new Error('spawn failed')
+      },
+    }))
+    const backend = new AcpBackend()
+    await backend.start(startOpts({ agentId: 'custom', command: 'mock' }))
+    const events: AgentEvent[] = []
+    backend.onEvent((e) => events.push(e))
+    await backend.send({ content: 'hi', assistantMessageId: 'e1' })
+    expect(events.filter((e) => e.type === 'message_error')).toHaveLength(1)
+    await backend.close()
+  })
+
+  it('emits message_interrupted when interrupt races a throw', async () => {
+    setAcpRuntimeFactory(async () => mockRuntime({
+      prompt: async () => {
+        await new Promise((r) => setTimeout(r, 30))
+        throw new Error('aborted')
+      },
+      cancel: async () => {},
+    }))
+    const backend = new AcpBackend()
+    await backend.start(startOpts({ agentId: 'custom', command: 'mock' }))
+    const events: AgentEvent[] = []
+    backend.onEvent((e) => events.push(e))
+    const sendPromise = backend.send({ content: 'hi', assistantMessageId: 'i1' })
+    await backend.interrupt()
+    await sendPromise
+    expect(events.some((e) => e.type === 'message_interrupted')).toBe(true)
+    await backend.close()
+  })
+})

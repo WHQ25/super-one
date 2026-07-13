@@ -290,6 +290,7 @@ import {
   resetSessionForWorktreeSwitchImpl,
   resetSessionImpl,
   setPreferredProviderImpl,
+  setAcpAgentIdImpl,
 } from './helpers/session-lifecycle'
 import {
   answerQuestionImpl,
@@ -341,6 +342,7 @@ export const addMountedSession = addSessionToRegistry
 export const removeMountedSession = removeSessionFromRegistry
 
 import type { HarnessHandler, HarnessHandlerMap } from './harness/harness-handler'
+import { applyAcpResources, connectAcpResources } from './harness/acp-handler'
 import { applyClaudeResources } from './harness/claude-handler'
 import { applyCodexResources } from './harness/codex-handler'
 
@@ -352,6 +354,10 @@ const harnessHandlers: HarnessHandlerMap = {
   codex: {
     connect: () => window.app.connectCodex(),
     apply: (s, r) => applyCodexResources(s, r, resolveSessionCodexSelection),
+  },
+  acp: {
+    connect: () => connectAcpResources(),
+    apply: (s, r) => applyAcpResources(s, r),
   },
 }
 
@@ -379,7 +385,7 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
 
   isOpen: false,
   corner: 'br',
-  harnessResources: { claude: null, codex: null },
+  harnessResources: { claude: null, codex: null, acp: null },
   initializedHarnesses: new Set<HarnessId>(),
   disabledSkills: [],
 
@@ -389,7 +395,8 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
   },
 
   initializeHarness: async (harness) => {
-    if (get().initializedHarnesses.has(harness)) return
+    // ACP agents are detected via PATH; re-probe each time so install status stays fresh.
+    if (harness !== 'acp' && get().initializedHarnesses.has(harness)) return
     set((s) => ({ initializedHarnesses: new Set([...s.initializedHarnesses, harness]) }))
     try {
       const handler = harnessHandlers[harness] as HarnessHandler<typeof harness>
@@ -460,6 +467,7 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
   // setSelectedCodexCollaborationMode / refreshCodexModels / refreshCodexSkills now provided by createCodexSlice
 
   setPreferredProvider: (provider) => setPreferredProviderImpl(set, get, provider),
+  setAcpAgentId: (agentId) => setAcpAgentIdImpl(set, get, agentId),
 
   // addAttachment / removeAttachment / clearAttachments now provided by createCoreSlice
 

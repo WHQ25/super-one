@@ -1010,6 +1010,8 @@ export const zh: Messages = {
       familyAnthropic: 'Anthropic（Claude）',
       familyOpenai: 'OpenAI',
       familyGoogle: 'Google（Gemini）',
+      protocolOpenaiChatCompletion: 'Chat Completion',
+      protocolOpenaiResponses: 'Chat Response',
       taskChat: '对话',
       taskImage: '图像生成',
       taskVideo: '视频生成',

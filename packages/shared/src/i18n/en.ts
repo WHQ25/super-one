@@ -984,6 +984,8 @@ export type Messages = {
       familyAnthropic: string
       familyOpenai: string
       familyGoogle: string
+      protocolOpenaiChatCompletion: string
+      protocolOpenaiResponses: string
       taskChat: string
       taskImage: string
       taskVideo: string
@@ -2590,6 +2592,8 @@ export const en: Messages = {
       familyAnthropic: 'Anthropic (Claude)',
       familyOpenai: 'OpenAI',
       familyGoogle: 'Google (Gemini)',
+      protocolOpenaiChatCompletion: 'Chat Completion',
+      protocolOpenaiResponses: 'Chat Response',
       taskChat: 'Chat',
       taskImage: 'Image generation',
       taskVideo: 'Video generation',

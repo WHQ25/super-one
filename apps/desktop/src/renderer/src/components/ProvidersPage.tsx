@@ -17,7 +17,8 @@ import {
 import {
   customPlatformEndpoints,
   defaultOverridesForPlan,
-  endpointTasks,
+  FAMILY_EXTRA_PROTOCOLS,
+  FAMILY_TASK_PROTOCOL,
   FAMILY_TASKS,
   isCustomPlatform,
   PROTOCOL_FAMILIES,
@@ -29,6 +30,7 @@ import {
   type Plan,
   type Platform,
   type ProtocolFamily,
+  type WireProtocol,
 } from '@superone/shared/platform-registry'
 import type { ProviderModelEnv } from '@superone/shared/agent-types'
 import { useSettingsStore } from '@/stores/settings'
@@ -533,6 +535,17 @@ const FAMILY_LABEL_KEY: Record<ProtocolFamily, string> = {
   google: 'resources.providers.familyGoogle',
 }
 
+// Labels for opt-in extra wires (FAMILY_EXTRA_PROTOCOLS) rendered alongside a family's capability tasks.
+const PROTOCOL_LABEL_KEY: Partial<Record<WireProtocol, string>> = {
+  'openai-responses': 'resources.providers.protocolOpenaiResponses',
+}
+
+// Per-family task label overrides — OpenAI's chat task is the "Chat Completion" wire (paired with the
+// "Chat Response" extra wire), whereas other families keep the generic TASK_LABEL_KEY.
+const FAMILY_TASK_LABEL: Partial<Record<ProtocolFamily, Partial<Record<CapabilityTask, string>>>> = {
+  openai: { chat: 'resources.providers.protocolOpenaiChatCompletion' },
+}
+
 const TASK_LABEL_KEY: Record<CapabilityTask, string> = {
   chat: 'resources.providers.taskChat',
   image: 'resources.providers.taskImage',
@@ -544,19 +557,26 @@ const TASK_LABEL_KEY: Record<CapabilityTask, string> = {
 type CapabilitySelection = {
   families: Set<ProtocolFamily>
   familyTasks: Record<ProtocolFamily, Set<CapabilityTask>>
+  familyExtras: Record<ProtocolFamily, Set<WireProtocol>>
 }
 
-// Format + per-family capability selection state, shared by the create form and the post-create editor.
-// Each family's task set is seeded from `initial`, falling back to ['chat'] so a newly-checked format
-// behaves like the create dialog (chat pre-selected); disabled families are ignored until enabled.
+// Format + per-family capability/extra-wire selection state, shared by the create form and the post-create
+// editor. A family's task set is seeded from `initial` when that family is present in the plan (empty is
+// honored — e.g. an OpenAI endpoint speaking only Responses), otherwise it defaults to ['chat'] so a
+// newly-checked format behaves like the create dialog (chat pre-selected).
 function useCapabilityState(initial?: CapabilitySelection) {
   const [families, setFamilies] = useState<Set<ProtocolFamily>>(() => new Set(initial?.families ?? ['anthropic']))
   const [familyTasks, setFamilyTasks] = useState<Record<ProtocolFamily, Set<CapabilityTask>>>(() => {
     const base = {} as Record<ProtocolFamily, Set<CapabilityTask>>
     for (const f of PROTOCOL_FAMILIES) {
-      const seed = initial?.familyTasks[f]
-      base[f] = seed && seed.size > 0 ? new Set(seed) : new Set<CapabilityTask>(['chat'])
+      base[f] =
+        initial && initial.families.has(f) ? new Set(initial.familyTasks[f]) : new Set<CapabilityTask>(['chat'])
     }
+    return base
+  })
+  const [familyExtras, setFamilyExtras] = useState<Record<ProtocolFamily, Set<WireProtocol>>>(() => {
+    const base = {} as Record<ProtocolFamily, Set<WireProtocol>>
+    for (const f of PROTOCOL_FAMILIES) base[f] = new Set(initial?.familyExtras[f] ?? [])
     return base
   })
 
@@ -578,7 +598,16 @@ function useCapabilityState(initial?: CapabilitySelection) {
     })
   }, [])
 
-  return { families, familyTasks, toggleFamily, toggleTask }
+  const toggleExtra = useCallback((family: ProtocolFamily, protocol: WireProtocol, checked: boolean) => {
+    setFamilyExtras((prev) => {
+      const next = new Set(prev[family])
+      if (checked) next.add(protocol)
+      else next.delete(protocol)
+      return { ...prev, [family]: next }
+    })
+  }, [])
+
+  return { families, familyTasks, familyExtras, toggleFamily, toggleTask, toggleExtra }
 }
 
 // Collapse the format + per-family capability selections into the tasksByFamily map endpoints derive from.
@@ -593,36 +622,66 @@ function deriveTasksByFamily({ families, familyTasks }: CapabilitySelection): Pa
   return out
 }
 
-// Reverse of deriveTasksByFamily: recover the format + capability selections (and shared base URL) from an
-// existing custom plan's endpoints, so its capabilities can be re-edited after creation.
+// The opt-in extra wires (e.g. OpenAI Responses) picked per selected family.
+function deriveExtraByFamily({ families, familyExtras }: CapabilitySelection): Partial<Record<ProtocolFamily, WireProtocol[]>> {
+  const out: Partial<Record<ProtocolFamily, WireProtocol[]>> = {}
+  for (const f of PROTOCOL_FAMILIES) {
+    if (!families.has(f)) continue
+    const picked = FAMILY_EXTRA_PROTOCOLS[f].filter((p) => familyExtras[f].has(p))
+    if (picked.length > 0) out[f] = picked
+  }
+  return out
+}
+
+// Reverse of the derive helpers: recover the family + capability/extra selections (and shared base URL)
+// from an existing custom plan's endpoints, so they can be re-edited after creation. A task is selected
+// only when its own wire protocol is present — so an endpoint speaking only openai-responses recovers as
+// Responses without spuriously checking chat/image.
 function planCapabilities(plan: Plan): CapabilitySelection & { baseUrl: string } {
   const families = new Set<ProtocolFamily>()
   const familyTasks = {} as Record<ProtocolFamily, Set<CapabilityTask>>
-  for (const f of PROTOCOL_FAMILIES) familyTasks[f] = new Set<CapabilityTask>()
+  const familyExtras = {} as Record<ProtocolFamily, Set<WireProtocol>>
+  for (const f of PROTOCOL_FAMILIES) {
+    familyTasks[f] = new Set<CapabilityTask>()
+    familyExtras[f] = new Set<WireProtocol>()
+  }
   let baseUrl = ''
   for (const e of plan.endpoints) {
     const family = PROTOCOL_FAMILY[e.protocols[0]]
     families.add(family)
-    for (const task of endpointTasks(e)) familyTasks[family].add(task)
+    for (const task of FAMILY_TASKS[family]) {
+      const proto = FAMILY_TASK_PROTOCOL[family][task]
+      if (proto && e.protocols.includes(proto)) familyTasks[family].add(task)
+    }
+    for (const p of FAMILY_EXTRA_PROTOCOLS[family]) {
+      if (e.protocols.includes(p)) familyExtras[family].add(p)
+    }
     if (!baseUrl) baseUrl = e.baseUrl
   }
-  return { families, familyTasks, baseUrl }
+  return { families, familyTasks, familyExtras, baseUrl }
 }
 
-// Formats checkbox group + a nested task picker for every selected multi-capability format.
+// Formats checkbox group + a nested picker (capability tasks + opt-in extra wires) for every selected family
+// that has more than one thing to pick.
 function CapabilityPicker({
   families,
   familyTasks,
+  familyExtras,
   onToggleFamily,
   onToggleTask,
+  onToggleExtra,
 }: {
   families: Set<ProtocolFamily>
   familyTasks: Record<ProtocolFamily, Set<CapabilityTask>>
+  familyExtras: Record<ProtocolFamily, Set<WireProtocol>>
   onToggleFamily: (family: ProtocolFamily, checked: boolean) => void
   onToggleTask: (family: ProtocolFamily, task: CapabilityTask, checked: boolean) => void
+  onToggleExtra: (family: ProtocolFamily, protocol: WireProtocol, checked: boolean) => void
 }) {
   const { t } = useTranslation()
-  const capabilityFamilies = PROTOCOL_FAMILIES.filter((f) => families.has(f) && FAMILY_TASKS[f].length > 1)
+  const pickerFamilies = PROTOCOL_FAMILIES.filter(
+    (f) => families.has(f) && (FAMILY_TASKS[f].length > 1 || FAMILY_EXTRA_PROTOCOLS[f].length > 0),
+  )
   return (
     <>
       <div className="flex flex-col gap-2 rounded-md border border-border p-3">
@@ -634,14 +693,23 @@ function CapabilityPicker({
           </label>
         ))}
       </div>
-      {capabilityFamilies.map((f) => (
+      {pickerFamilies.map((f) => (
         <div key={f} className="flex flex-col gap-2 rounded-md border border-border p-3">
           <span className="text-xs text-muted-foreground">{t(FAMILY_LABEL_KEY[f])}</span>
           <div className="grid grid-cols-2 gap-2">
+            {FAMILY_EXTRA_PROTOCOLS[f].map((protocol) => (
+              <label key={protocol} className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Checkbox
+                  checked={familyExtras[f].has(protocol)}
+                  onCheckedChange={(v) => onToggleExtra(f, protocol, v === true)}
+                />
+                {t(PROTOCOL_LABEL_KEY[protocol] ?? protocol)}
+              </label>
+            ))}
             {FAMILY_TASKS[f].map((task) => (
               <label key={task} className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Checkbox checked={familyTasks[f].has(task)} onCheckedChange={(v) => onToggleTask(f, task, v === true)} />
-                {t(TASK_LABEL_KEY[task])}
+                {t(FAMILY_TASK_LABEL[f]?.[task] ?? TASK_LABEL_KEY[task])}
               </label>
             ))}
           </div>
@@ -659,11 +727,12 @@ function CustomCapabilitiesSection({ platform, plan }: { platform: Platform; pla
   const updateCustomPlatform = useSettingsStore((s) => s.updateCustomPlatform)
   const initial = useMemo(() => planCapabilities(plan), [plan])
   const baseUrl = initial.baseUrl
-  const { families, familyTasks, toggleFamily, toggleTask } = useCapabilityState(initial)
+  const { families, familyTasks, familyExtras, toggleFamily, toggleTask, toggleExtra } = useCapabilityState(initial)
   const [busy, setBusy] = useState(false)
 
+  const selection = { families, familyTasks, familyExtras }
   const prevById = useMemo(() => new Map(plan.endpoints.map((e) => [e.id, e])), [plan.endpoints])
-  const endpoints = customPlatformEndpoints(deriveTasksByFamily({ families, familyTasks }), baseUrl).map((e) => {
+  const endpoints = customPlatformEndpoints(deriveTasksByFamily(selection), baseUrl, deriveExtraByFamily(selection)).map((e) => {
     const defaults = prevById.get(e.id)?.defaults
     return defaults ? { ...e, defaults } : e
   })
@@ -685,7 +754,14 @@ function CustomCapabilitiesSection({ platform, plan }: { platform: Platform; pla
   return (
     <div className="flex flex-col gap-2.5">
       <span className="text-xs font-medium text-muted-foreground">{t('resources.providers.capabilities')}</span>
-      <CapabilityPicker families={families} familyTasks={familyTasks} onToggleFamily={toggleFamily} onToggleTask={toggleTask} />
+      <CapabilityPicker
+        families={families}
+        familyTasks={familyTasks}
+        familyExtras={familyExtras}
+        onToggleFamily={toggleFamily}
+        onToggleTask={toggleTask}
+        onToggleExtra={toggleExtra}
+      />
       <Button size="sm" className="self-start" disabled={busy || !canSave} onClick={save}>
         {busy ? <Loader2 className="size-4 animate-spin" /> : t('common.save')}
       </Button>
@@ -701,7 +777,7 @@ function CustomPlatformForm({ onDone }: { onDone: (createdId?: string) => void }
   const createCredential = useSettingsStore((s) => s.createCredential)
   const [name, setName] = useState('')
   const [baseUrl, setBaseUrl] = useState('')
-  const { families, familyTasks, toggleFamily, toggleTask } = useCapabilityState()
+  const { families, familyTasks, familyExtras, toggleFamily, toggleTask, toggleExtra } = useCapabilityState()
   const [extraEnv, setExtraEnv] = useState<Record<string, string>>({})
   const [modelMapping, setModelMapping] = useState<ProviderModelEnv>({})
   const [customModels, setCustomModels] = useState<CustomModel[]>([])
@@ -709,13 +785,13 @@ function CustomPlatformForm({ onDone }: { onDone: (createdId?: string) => void }
   const [secret, setSecret] = useState('')
   const [busy, setBusy] = useState(false)
 
-  // Each selected format carries its own capabilities. A format with only chat (anthropic) contributes
-  // ['chat'] implicitly and shows no sub-picker; multi-capability formats expose a nested checkbox group.
-  const tasksByFamily = deriveTasksByFamily({ families, familyTasks })
+  // Each selected format carries its own capabilities (plus any opt-in extra wire like OpenAI Responses).
+  // A format with only chat (anthropic) contributes ['chat'] implicitly and shows no sub-picker.
+  const selection = { families, familyTasks, familyExtras }
   const hasExtraEnv = Object.keys(extraEnv).length > 0
   // Model mapping is a claude-harness concept, so it only attaches to the anthropic-messages endpoint.
   const hasModelMapping = families.has('anthropic') && Object.keys(modelMapping).length > 0
-  const rawEndpoints = customPlatformEndpoints(tasksByFamily, baseUrl.trim())
+  const rawEndpoints = customPlatformEndpoints(deriveTasksByFamily(selection), baseUrl.trim(), deriveExtraByFamily(selection))
   const endpoints = rawEndpoints.map((e) => {
     const defaults: EndpointDefaults = {}
     if (hasExtraEnv) defaults.extraEnv = extraEnv
@@ -763,7 +839,14 @@ function CustomPlatformForm({ onDone }: { onDone: (createdId?: string) => void }
             value={secret}
             onChange={(e) => setSecret(e.target.value)}
           />
-          <CapabilityPicker families={families} familyTasks={familyTasks} onToggleFamily={toggleFamily} onToggleTask={toggleTask} />
+          <CapabilityPicker
+            families={families}
+            familyTasks={familyTasks}
+            familyExtras={familyExtras}
+            onToggleFamily={toggleFamily}
+            onToggleTask={toggleTask}
+            onToggleExtra={toggleExtra}
+          />
           {families.has('anthropic') && (
             <div className="flex flex-col gap-1.5">
               <span className="text-xs font-medium text-muted-foreground">{t('resources.providerDialog.modelMapping')}</span>

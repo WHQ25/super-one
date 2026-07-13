@@ -35,6 +35,24 @@ describe('customEndpointsFor', () => {
   it('ignores capabilities the family has no protocol for (e.g. video)', () => {
     expect(customEndpointsFor('openai', ['video'], 'https://x/v1')).toEqual([])
   })
+
+  it('appends an opt-in extra wire (openai-responses) ahead of chat/completions in priority order', () => {
+    expect(customEndpointsFor('openai', ['chat'], 'https://x/v1', ['openai-responses'])).toEqual([
+      { id: 'openai', baseUrl: 'https://x/v1', protocols: ['openai-responses', 'openai-chat'] },
+    ])
+  })
+
+  it('builds a Responses-only endpoint (Codex gateway) when only the extra wire is picked', () => {
+    expect(customEndpointsFor('openai', [], 'https://x/v1', ['openai-responses'])).toEqual([
+      { id: 'openai', baseUrl: 'https://x/v1', protocols: ['openai-responses'] },
+    ])
+  })
+
+  it('drops an extra wire the family does not offer', () => {
+    expect(customEndpointsFor('anthropic', ['chat'], 'https://x/v1', ['openai-responses'])).toEqual([
+      { id: 'anthropic', baseUrl: 'https://x/v1', protocols: ['anthropic-messages'] },
+    ])
+  })
 })
 
 describe('customPlatformEndpoints (multiple compat formats, per-format capabilities)', () => {
@@ -66,5 +84,17 @@ describe('customPlatformEndpoints (multiple compat formats, per-format capabilit
     expect(customPlatformEndpoints({ anthropic: ['chat'], openai: [] }, 'https://relay/v1').map((e) => e.id)).toEqual([
       'anthropic',
     ])
+  })
+
+  it('carries an opt-in extra wire onto its family endpoint', () => {
+    const endpoints = customPlatformEndpoints({ openai: ['chat'] }, 'https://relay/v1', { openai: ['openai-responses'] })
+    expect(endpoints).toEqual([
+      { id: 'openai', baseUrl: 'https://relay/v1', protocols: ['openai-responses', 'openai-chat'] },
+    ])
+  })
+
+  it('emits a family endpoint even when only its extra wire is picked (no tasks)', () => {
+    const endpoints = customPlatformEndpoints({}, 'https://relay/v1', { openai: ['openai-responses'] })
+    expect(endpoints).toEqual([{ id: 'openai', baseUrl: 'https://relay/v1', protocols: ['openai-responses'] }])
   })
 })

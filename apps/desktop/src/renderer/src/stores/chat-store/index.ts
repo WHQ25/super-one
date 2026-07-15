@@ -395,8 +395,7 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
   },
 
   initializeHarness: async (harness) => {
-    // ACP agents are detected via PATH; re-probe each time so install status stays fresh.
-    if (harness !== 'acp' && get().initializedHarnesses.has(harness)) return
+    if (get().initializedHarnesses.has(harness)) return
     set((s) => ({ initializedHarnesses: new Set([...s.initializedHarnesses, harness]) }))
     try {
       const handler = harnessHandlers[harness] as HarnessHandler<typeof harness>

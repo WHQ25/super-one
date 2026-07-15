@@ -97,6 +97,12 @@ export interface PerSessionState {
   preferredProvider: ChatProvider
   /** Selected ACP agent id when preferredProvider/sessionProvider is acp. */
   acpAgentId: string | null
+  /** Models from ACP session/new configOptions (category=model). */
+  acpModels: ModelOption[]
+  /** ACP config option id used for set_config_option (usually "model"). */
+  acpModelConfigId: string | null
+  acpModelsStatus: 'idle' | 'loading' | 'ready' | 'error'
+  acpModelsError: string | null
   draftText: string
   /** Editor JSON snapshot (Tiptap doc) — preserves chip nodes & their inline positions across session switches, unlike the plain-text draft. */
   draftJson: object | null

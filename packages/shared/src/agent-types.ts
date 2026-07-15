@@ -821,6 +821,15 @@ export type AgentEventBase =
   | { type: 'session_title_changed'; sessionId: string; title: string; source: 'user' | 'agent' }
   | { type: 'shared_file'; shareId: string; file: ShareFilePayload; sentAt: number }
   | { type: 'shared_file_progress'; path: string; loaded: number; total: number }
+  /** ACP session/new or set_config_option model catalog for the active session. */
+  | {
+      type: 'acp_models'
+      models: ModelOption[]
+      selectedModelId: string | null
+      configId: string | null
+      status?: 'loading' | 'ready' | 'error'
+      error?: string
+    }
 
 export type AgentEvent = AgentEventBase & { projectPath?: string; sessionId?: string; draftSessionId?: string; seq?: number; epoch?: number }
 

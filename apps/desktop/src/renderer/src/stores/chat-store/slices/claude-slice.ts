@@ -24,13 +24,25 @@ export const createClaudeSlice: StateCreator<ChatStore, [], [], ClaudeSlice> = (
   setSelectedModel: (model) => {
     const state = get()
     const { activeProject } = state
+    if (!activeProject) return
+    const session = getActivePerSession(get(), activeProject)
+    const provider = session.sessionProvider ?? session.preferredProvider
+
+    if (provider === 'acp') {
+      set((s) => updateActivePerSession(s, () => ({
+        selectedModel: model,
+        modelUserChosen: true,
+        contextWindow: null,
+      })))
+      void window.agent.setSessionSettings(activeProject, { model })
+      return
+    }
+
     const claude = state.harnessResources.claude
     const availableModels = claude?.models ?? []
     const account = claude?.account ?? {}
-    if (!activeProject) return
     const modelInfo = availableModels.find((m) => m.id === model)
     const defaultEffort = getDefaultEffortForModel(modelInfo)
-    const session = getActivePerSession(get(), activeProject)
     const shouldDowngrade =
       session.permissionMode === 'auto' &&
       !checkAutoModeEligibility({

@@ -2897,8 +2897,10 @@ app.whenReady().then(async () => {
   startMediaServer().catch((err) => log.error('[media-server] failed to start:', err))
   ipcMain.handle(AgentIpcChannels.MEDIA_SERVER_PORT, () => getMediaServerPort())
   getDb() // Initialize database
+  // ACP agent PATH probe: once per app open, async. Runtime reads use harness_resource_cache only.
   void import('./acp/acp-detect').then(async ({ detectBuiltinAgents }) => {
     try {
+      const prev = getCachedHarnessResources('acp')
       const agents = await detectBuiltinAgents()
       setCachedHarnessResources('acp', {
         agents: agents.map((a) => ({
@@ -2907,8 +2909,9 @@ app.whenReady().then(async () => {
           installed: a.installed,
           commandPreview: a.commandPreview,
         })),
-        selectedAgentId: null,
+        selectedAgentId: prev?.selectedAgentId ?? null,
       })
+      log.info('[acp] agent cache refreshed: %d agents', agents.length)
     } catch (err) {
       log.warn('[acp] detectBuiltinAgents failed:', err)
     }

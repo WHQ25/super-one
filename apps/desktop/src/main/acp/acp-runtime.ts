@@ -6,9 +6,17 @@ import {
   type ClientConnection,
   type RequestPermissionRequest,
   type RequestPermissionResponse,
+  type SessionConfigOption,
   type Stream,
 } from '@agentclientprotocol/sdk'
 import log from '../logger'
+import {
+  coalesceModelConfig,
+  extractModelsFromInitializeResult,
+  extractModelsFromNewSessionResult,
+  extractModelConfig,
+  type AcpModelConfig,
+} from './acp-config'
 import { spawnAcpProcess, type AcpProcessHandle } from './acp-process'
 import { mapSessionUpdate, mapStopReason } from './acp-event-map'
 import { resolveAcpLaunch, type ResolvedAcpLaunch } from './agent-catalog'
@@ -30,6 +38,9 @@ export interface AcpPermissionGate {
 export interface AcpRuntime {
   readonly sessionId: string
   readonly launch: ResolvedAcpLaunch
+  getConfigOptions(): SessionConfigOption[]
+  getModelConfig(): AcpModelConfig | null
+  setConfigOption(configId: string, value: string): Promise<SessionConfigOption[]>
   prompt(
     text: string,
     messageId: string,
@@ -44,6 +55,8 @@ export interface AcpRuntimeOptions {
   permission: AcpPermissionGate
   /** Inject stream (in-process agent) instead of spawning a process. */
   streamFactory?: (launch: ResolvedAcpLaunch) => Promise<{ stream: Stream; dispose: () => void }>
+  /** Called as soon as a model catalog is known (e.g. after initialize, before session/new). */
+  onModelConfig?: (config: AcpModelConfig) => void
 }
 
 function formatProcessExit(
@@ -84,6 +97,8 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
 
   let connection: ClientConnection | null = null
   let session: ActiveSession | null = null
+  let initModels: AcpModelConfig | null = null
+  let sessionModels: AcpModelConfig | null = null
 
   try {
     connection = client({ name: 'superone' })
@@ -96,16 +111,52 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       .onRequest(methods.client.fs.writeTextFile, async () => ({}))
       .connect(stream)
 
-    await connection.agent.request(methods.agent.initialize, {
+    const initResult = await connection.agent.request(methods.agent.initialize, {
       protocolVersion: PROTOCOL_VERSION,
       clientInfo: { name: 'superone', version: '0.0.0' },
       clientCapabilities: {
         fs: { readTextFile: true, writeTextFile: true },
       },
     })
+    initModels = extractModelsFromInitializeResult(initResult)
+    if (initModels) opts.onModelConfig?.(initModels)
+
+    // Grok and others require authenticate before session/new responds usefully.
+    const initAny = initResult as {
+      authMethods?: Array<{ id?: string }>
+      _meta?: Record<string, unknown> | null
+    }
+    const authMethods = Array.isArray(initAny.authMethods) ? initAny.authMethods : []
+    const defaultAuthId =
+      typeof initAny._meta?.defaultAuthMethodId === 'string'
+        ? initAny._meta.defaultAuthMethodId
+        : null
+    if (authMethods.length > 0) {
+      const methodId =
+        (defaultAuthId && authMethods.some((m) => m.id === defaultAuthId) ? defaultAuthId : null)
+        ?? authMethods.find((m) => m.id === 'cached_token')?.id
+        ?? authMethods[0]?.id
+      if (methodId) {
+        try {
+          await connection.agent.request(methods.agent.authenticate, { methodId })
+          log.info('[acp-runtime] authenticated method=%s agent=%s', methodId, launch.agentId)
+        } catch (err) {
+          log.warn('[acp-runtime] authenticate failed method=%s:', methodId, err)
+        }
+      }
+    }
 
     session = await connection.agent.buildSession(launch.cwd).start()
-    log.info('[acp-runtime] session ready id=%s agent=%s', session.sessionId, launch.agentId)
+    sessionModels = extractModelsFromNewSessionResult(session.newSessionResponse)
+    const resolvedModels = coalesceModelConfig(sessionModels, initModels)
+    if (resolvedModels) opts.onModelConfig?.(resolvedModels)
+    log.info(
+      '[acp-runtime] session ready id=%s agent=%s configOptions=%d models=%d',
+      session.sessionId,
+      launch.agentId,
+      session.newSessionResponse.configOptions?.length ?? 0,
+      resolvedModels?.models.length ?? 0,
+    )
   } catch (err) {
     processHandle?.kill()
     disposeStream?.()
@@ -117,6 +168,12 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
 
   const activeSession = session
   const activeConnection = connection
+  let configOptions: SessionConfigOption[] = [...(activeSession.newSessionResponse.configOptions ?? [])]
+  let modelConfig: AcpModelConfig | null = coalesceModelConfig(
+    sessionModels,
+    initModels,
+    extractModelConfig(configOptions),
+  )
   let closed = false
   void activeConnection.closed.then(() => {
     closed = true
@@ -125,6 +182,24 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
   return {
     sessionId: activeSession.sessionId,
     launch,
+    getConfigOptions() {
+      return configOptions
+    },
+    getModelConfig() {
+      return modelConfig
+    },
+    async setConfigOption(configId, value) {
+      const result = await activeConnection.agent.request(methods.agent.session.setConfigOption, {
+        sessionId: activeSession.sessionId,
+        configId,
+        value,
+      })
+      if (Array.isArray(result.configOptions)) {
+        configOptions = result.configOptions
+        modelConfig = coalesceModelConfig(extractModelConfig(configOptions), modelConfig)
+      }
+      return configOptions
+    },
     async prompt(text, messageId, onEvent) {
       let settled = false
       const fail = (error: string) => {

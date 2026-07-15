@@ -22,7 +22,7 @@ describe('acp-detect', () => {
 
   it('marks agents installed when which finds them on PATH', async () => {
     const agents = await detectBuiltinAgents()
-    expect(agents.map((a) => a.id).sort()).toEqual(['gemini-cli', 'grok-build', 'opencode'])
+    expect(agents.map((a) => a.id).sort()).toEqual(['grok-build', 'opencode'])
     // In this developer environment these CLIs exist; tolerate CI without them.
     for (const a of agents) {
       if (a.resolvedPath) {

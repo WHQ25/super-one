@@ -17,6 +17,8 @@ export interface DetectedAcpAgent {
   resolvedPath?: string
 }
 
+let pathReady = false
+
 function isExecutable(path: string): boolean {
   try {
     accessSync(path, constants.X_OK)
@@ -45,7 +47,10 @@ function knownBinDirs(): string[] {
 }
 
 function ensureSearchPath(): string {
-  fixPath()
+  if (!pathReady) {
+    fixPath()
+    pathReady = true
+  }
   const current = process.env.PATH ?? ''
   const parts = current.split(':').filter(Boolean)
   const seen = new Set(parts)
@@ -60,27 +65,45 @@ function ensureSearchPath(): string {
   return merged
 }
 
+function resolveFromKnownDirs(command: string): string | null {
+  for (const dir of knownBinDirs()) {
+    const candidate = join(dir, command)
+    if (isExecutable(candidate)) return candidate
+  }
+  return null
+}
+
+function resolveFromPathEnv(command: string, pathEnv: string): string | null {
+  for (const dir of pathEnv.split(':').filter(Boolean)) {
+    const candidate = join(dir, command)
+    if (isExecutable(candidate)) return candidate
+  }
+  return null
+}
+
 async function whichCommand(command: string, pathEnv: string): Promise<string | null> {
   if (!command) return null
   if (command.includes('/') || command.includes('\\')) {
     return isExecutable(command) ? command : null
   }
 
+  const fromPath = resolveFromPathEnv(command, pathEnv)
+  if (fromPath) return fromPath
+
+  const fromKnown = resolveFromKnownDirs(command)
+  if (fromKnown) return fromKnown
+
+  // Last resort: shell which/where (slow when missing). Keep timeout short.
   const whichBin = process.platform === 'win32' ? 'where' : 'which'
   try {
     const { stdout } = await execFileAsync(whichBin, [command], {
-      timeout: 3000,
+      timeout: 400,
       env: { ...process.env, PATH: pathEnv },
     })
     const first = stdout.split(/\r?\n/).map((s) => s.trim()).find(Boolean)
     if (first && isExecutable(first)) return first
   } catch {
-    /* fall through to known dirs */
-  }
-
-  for (const dir of knownBinDirs()) {
-    const candidate = join(dir, command)
-    if (isExecutable(candidate)) return candidate
+    /* not found */
   }
   return null
 }

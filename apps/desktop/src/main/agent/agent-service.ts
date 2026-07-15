@@ -2064,22 +2064,16 @@ export class AgentService {
       return { success: results.every((r) => r.success), results }
     })
 
+    // Cache-only. Detection runs once on app open (see main process startup).
     ipcMain.handle(AgentIpcChannels.ACP_LIST_AGENTS, async () => {
-      const { detectBuiltinAgents } = await import('../acp/acp-detect')
-      const { setCachedHarnessResources, getCachedHarnessResources } = await import('../database')
-      const agents = await detectBuiltinAgents()
-      const prev = getCachedHarnessResources('acp')
-      const resources = {
-        agents: agents.map((a) => ({
-          id: a.id,
-          name: a.name,
-          installed: a.installed,
-          commandPreview: a.commandPreview,
-        })),
-        selectedAgentId: prev?.selectedAgentId ?? null,
+      const { getCachedHarnessResources } = await import('../database')
+      const { listBuiltinAgentDescriptors } = await import('../acp/agent-catalog')
+      const cached = getCachedHarnessResources('acp')
+      if (cached?.agents?.length) return cached
+      return {
+        agents: listBuiltinAgentDescriptors(false),
+        selectedAgentId: null,
       }
-      setCachedHarnessResources('acp', resources)
-      return resources
     })
 
     // --- Session Providers (new session_providers table) ---

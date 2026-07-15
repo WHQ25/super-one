@@ -22,6 +22,7 @@ import {
   getProject,
   inheritMiniAppToolsForNewSession,
   resolveActiveSessionId,
+  triggerPrewarm,
   updateActivePerSession,
 } from './store-helpers'
 import { createDefaultPerSessionState, createDefaultProjectState, createSessionId, freshSubagentColorPool } from '../defaults'
@@ -425,16 +426,31 @@ export function setPreferredProviderImpl(
     }
   }
   if (provider === 'acp') {
+    set((s) => updateActivePerSession(s, () => ({
+      acpModels: [],
+      acpModelConfigId: null,
+      acpModelsStatus: 'loading' as const,
+      acpModelsError: null,
+    })))
     void (async () => {
       try {
-        const settings = await window.app.getAppSettings()
-        const agentId = settings.agentPreference.acp?.selectedAgentId
-          ?? get().harnessResources.acp?.selectedAgentId
-          ?? 'grok-build'
-        set((s) => updateActivePerSession(s, () => ({ acpAgentId: agentId })))
+        if (!getActivePerSession(get()).acpAgentId) {
+          const settings = await window.app.getAppSettings()
+          const agentId = settings.agentPreference.acp?.selectedAgentId
+            ?? get().harnessResources.acp?.selectedAgentId
+            ?? 'grok-build'
+          set((s) => {
+            if (getActivePerSession(s).acpAgentId) return {}
+            return updateActivePerSession(s, () => ({ acpAgentId: agentId }))
+          })
+        }
       } catch {
-        set((s) => updateActivePerSession(s, () => ({ acpAgentId: 'grok-build' })))
+        set((s) => {
+          if (getActivePerSession(s).acpAgentId) return {}
+          return updateActivePerSession(s, () => ({ acpAgentId: 'grok-build' }))
+        })
       }
+      triggerPrewarm(get())
     })()
   }
   void get().initializeHarness(provider)
@@ -451,14 +467,30 @@ export function setAcpAgentIdImpl(
     const acp = get().harnessResources.acp
     if (acp?.selectedAgentId === agentId) return
   }
-  set((s) => updateActivePerSession(s, () => ({ acpAgentId: agentId })))
+  set((s) => updateActivePerSession(s, () => ({
+    acpAgentId: agentId,
+    acpModels: [],
+    acpModelConfigId: null,
+    acpModelsStatus: 'loading',
+    acpModelsError: null,
+    selectedModel: '',
+    modelUserChosen: false,
+  })))
   const acp = get().harnessResources.acp
   if (acp && acp.selectedAgentId !== agentId) {
     get().setHarnessResources('acp', { ...acp, selectedAgentId: agentId })
   }
-  void window.app.saveAppSettings({
-    agentPreference: {
-      acp: { selectedAgentId: agentId },
-    },
-  }).catch((err) => console.error('[acp] persist selectedAgentId failed:', err))
+  void (async () => {
+    try {
+      await window.app.saveAppSettings({
+        agentPreference: {
+          acp: { selectedAgentId: agentId },
+        },
+      })
+    } catch (err) {
+      console.error('[acp] persist selectedAgentId failed:', err)
+    }
+    // Spawn ACP agent so session/new can surface real model configOptions.
+    triggerPrewarm(get())
+  })()
 }

@@ -121,6 +121,10 @@ export function mapSessionUpdate(update: SessionUpdate, ctx: AcpMapContext): Age
         delta: { type: 'text', text: `\n${lines.join('\n')}\n` },
       }]
     }
+    case 'config_option_update': {
+      // Handled by runtime/backend (full config state); no content delta.
+      return []
+    }
     default:
       return []
   }

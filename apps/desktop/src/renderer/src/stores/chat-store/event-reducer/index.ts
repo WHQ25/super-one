@@ -81,6 +81,32 @@ export function applyEventToSession(session: PerSessionState, event: AgentEvent)
     case 'stream_message_start':
     case 'stream_message_stop':
       return {}
+
+    case 'acp_models': {
+      const status = event.status ?? (event.models.length > 0 ? 'ready' : 'ready')
+      const patch: Partial<PerSessionState> = {
+        acpModels: event.models,
+        acpModelConfigId: event.configId,
+        acpModelsStatus: status,
+        acpModelsError: event.error ?? null,
+      }
+      if (status === 'loading') {
+        return patch
+      }
+      if (event.selectedModelId && !session.modelUserChosen) {
+        patch.selectedModel = event.selectedModelId
+      } else if (event.selectedModelId && !session.selectedModel) {
+        patch.selectedModel = event.selectedModelId
+      } else if (
+        event.models.length > 0
+        && session.selectedModel
+        && !event.models.some((m) => m.id === session.selectedModel)
+        && event.selectedModelId
+      ) {
+        patch.selectedModel = event.selectedModelId
+      }
+      return patch
+    }
   }
   return {}
 }

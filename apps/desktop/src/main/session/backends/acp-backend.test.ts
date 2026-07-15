@@ -30,6 +30,28 @@ function mockRuntime(overrides?: Partial<AcpRuntime>): AcpRuntime {
       env: {},
       cwd: '/tmp/proj',
     },
+    getConfigOptions: () => [
+      {
+        id: 'model',
+        name: 'Model',
+        category: 'model',
+        type: 'select',
+        currentValue: 'm1',
+        options: [
+          { value: 'm1', name: 'Model 1' },
+          { value: 'm2', name: 'Model 2' },
+        ],
+      },
+    ],
+    getModelConfig: () => ({
+      configId: 'model',
+      selectedModelId: 'm1',
+      models: [
+        { id: 'm1', name: 'Model 1', description: '' },
+        { id: 'm2', name: 'Model 2', description: '' },
+      ],
+    }),
+    setConfigOption: async () => [],
     prompt: async (_text, messageId, onEvent) => {
       onEvent({
         type: 'content_delta',

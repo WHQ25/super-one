@@ -616,6 +616,12 @@ export class Session implements SessionContract {
   }
 
   prewarm(hint?: PrewarmHint): void {
+    // ACP agentId lives in app settings; re-resolve so prewarm sees the latest selection.
+    if (this.harnessId === 'acp' && this.resolveProviderConfigForApiProvider) {
+      try {
+        this.providerConfig = this.resolveProviderConfigForApiProvider(this._apiProviderId)
+      } catch { /* keep previous config */ }
+    }
     const dirs = hint?.additionalDirs ?? this.additionalDirectories
     const opts: BackendStartOptions = {
       sessionId: this.id,

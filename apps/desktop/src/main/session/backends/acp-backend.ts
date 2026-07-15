@@ -10,6 +10,7 @@ import type {
 } from '@superone/shared/agent-types'
 import type { RequestPermissionRequest, RequestPermissionResponse } from '@agentclientprotocol/sdk'
 import log from '../../logger'
+import { extractModelConfig } from '../../acp/acp-config'
 import { createAcpRuntime, type AcpRuntime, type AcpRuntimeOptions } from '../../acp/acp-runtime'
 import { mapPermissionDecision, mapPermissionRequest, type PendingPermissionOptions } from '../../acp/acp-permission-map'
 import type { BackendStartOptions, HarnessId, SessionBackend } from '../types'
@@ -57,6 +58,9 @@ export class AcpBackend implements SessionBackend {
     event: AgentEvent
   }>()
 
+  private modelConfigId: string | null = null
+  private ensureRuntimePromise: Promise<AcpRuntime> | null = null
+
   async start(opts: BackendStartOptions): Promise<void> {
     if (this.started) throw new Error('AcpBackend already started')
     if (this.disposed) throw new Error('AcpBackend already disposed')
@@ -74,32 +78,120 @@ export class AcpBackend implements SessionBackend {
     this.disposed = false
   }
 
-  prewarm(_opts: BackendStartOptions): void {}
+  prewarm(opts: BackendStartOptions): void {
+    if (this.disposed) return
+    const next = readConfig(opts.config)
+    const agentChanged =
+      this.runtime
+      && (next.agentId !== this.config.agentId || next.command !== this.config.command)
+    if (agentChanged) {
+      void this.teardownRuntime().then(() => {
+        this.startOpts = opts
+        this.config = next
+        this.started = true
+        return this.ensureRuntime()
+      }).catch((err) => {
+        log.warn('[AcpBackend] prewarm rebuild failed:', err instanceof Error ? err.message : String(err))
+      })
+      return
+    }
+    this.startOpts = opts
+    this.config = next
+    this.started = true
+    void this.ensureRuntime().catch((err) => {
+      log.warn('[AcpBackend] prewarm failed:', err instanceof Error ? err.message : String(err))
+    })
+  }
+
+  private emitModelsFromRuntime(runtime: AcpRuntime): void {
+    const extracted = runtime.getModelConfig() ?? extractModelConfig(runtime.getConfigOptions())
+    if (!extracted || extracted.models.length === 0) {
+      this.modelConfigId = null
+      this.emit({
+        type: 'acp_models',
+        models: [],
+        selectedModelId: null,
+        configId: null,
+        status: 'ready',
+      })
+      return
+    }
+    this.modelConfigId = extracted.configId
+    this.emit({
+      type: 'acp_models',
+      models: extracted.models,
+      selectedModelId: extracted.selectedModelId,
+      configId: extracted.configId,
+      status: 'ready',
+    })
+  }
+
+  private emitModelsError(error: string): void {
+    this.modelConfigId = null
+    this.emit({
+      type: 'acp_models',
+      models: [],
+      selectedModelId: null,
+      configId: null,
+      status: 'error',
+      error,
+    })
+  }
 
   private async ensureRuntime(): Promise<AcpRuntime> {
     if (this.runtime) return this.runtime
+    if (this.ensureRuntimePromise) return this.ensureRuntimePromise
     if (!this.startOpts) throw new Error('AcpBackend missing startOpts')
     if (!this.config.agentId && !this.config.command) {
       throw new Error('No ACP agent configured. Pick an agent under Others, then try again.')
     }
-    const runtime = await runtimeFactory({
-      launch: {
-        agentId: this.config.agentId,
-        command: this.config.command,
-        args: this.config.args,
-        env: this.config.env,
-        cwd: this.config.cwd,
-        defaultCwd: this.startOpts.cwd || this.startOpts.projectPath,
-      },
-      permission: {
-        request: (params) => this.handlePermissionRequest(params),
-      },
+    this.emit({
+      type: 'acp_models',
+      models: [],
+      selectedModelId: null,
+      configId: null,
+      status: 'loading',
     })
-    this.runtime = runtime
-    for (const cb of this.providerSessionIdListeners) {
-      try { cb(runtime.sessionId) } catch (err) { log.warn('[AcpBackend] providerSessionId listener error:', err) }
+    this.ensureRuntimePromise = (async () => {
+      const runtime = await runtimeFactory({
+        launch: {
+          agentId: this.config.agentId,
+          command: this.config.command,
+          args: this.config.args,
+          env: this.config.env,
+          cwd: this.config.cwd,
+          defaultCwd: this.startOpts!.cwd || this.startOpts!.projectPath,
+        },
+        permission: {
+          request: (params) => this.handlePermissionRequest(params),
+        },
+        onModelConfig: (cfg) => {
+          this.modelConfigId = cfg.configId
+          this.emit({
+            type: 'acp_models',
+            models: cfg.models,
+            selectedModelId: cfg.selectedModelId,
+            configId: cfg.configId,
+            status: 'ready',
+          })
+        },
+      })
+      this.runtime = runtime
+      for (const cb of this.providerSessionIdListeners) {
+        try { cb(runtime.sessionId) } catch (err) { log.warn('[AcpBackend] providerSessionId listener error:', err) }
+      }
+      this.emitModelsFromRuntime(runtime)
+      return runtime
+    })()
+    try {
+      return await this.ensureRuntimePromise
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      this.emitModelsError(msg)
+      throw err
+    } finally {
+      this.ensureRuntimePromise = null
     }
-    return runtime
   }
 
   private handlePermissionRequest(params: RequestPermissionRequest): Promise<RequestPermissionResponse> {
@@ -145,6 +237,24 @@ export class AcpBackend implements SessionBackend {
 
     try {
       const runtime = await this.ensureRuntime()
+      if (request.model && this.modelConfigId) {
+        try {
+          const next = await runtime.setConfigOption(this.modelConfigId, request.model)
+          const extracted = extractModelConfig(next) ?? runtime.getModelConfig()
+          if (extracted) {
+            this.modelConfigId = extracted.configId
+            this.emit({
+              type: 'acp_models',
+              models: extracted.models,
+              selectedModelId: extracted.selectedModelId,
+              configId: extracted.configId,
+              status: 'ready',
+            })
+          }
+        } catch (err) {
+          log.debug('[AcpBackend] set model before prompt failed:', err)
+        }
+      }
       const turn = runtime.prompt(request.content, messageId, onEvent)
       this.activePrompt = turn
       await turn
@@ -185,6 +295,8 @@ export class AcpBackend implements SessionBackend {
       pending.resolve({ outcome: { outcome: 'cancelled' } })
       this.pendingPermissions.delete(id)
     }
+    this.ensureRuntimePromise = null
+    this.modelConfigId = null
     const runtime = this.runtime
     this.runtime = null
     if (runtime) {
@@ -202,7 +314,26 @@ export class AcpBackend implements SessionBackend {
     this.permissionModeAppliedListeners.clear()
   }
 
-  async setModel(_model: string): Promise<void> {}
+  async setModel(model: string): Promise<void> {
+    // Grok does not implement session/set_config_option; keep optimistic selection in renderer.
+    if (!this.runtime || !this.modelConfigId) return
+    try {
+      const next = await this.runtime.setConfigOption(this.modelConfigId, model)
+      const extracted = extractModelConfig(next) ?? this.runtime.getModelConfig()
+      if (extracted) {
+        this.modelConfigId = extracted.configId
+        this.emit({
+          type: 'acp_models',
+          models: extracted.models,
+          selectedModelId: extracted.selectedModelId ?? model,
+          configId: extracted.configId,
+          status: 'ready',
+        })
+      }
+    } catch (err) {
+      log.warn('[AcpBackend] setModel failed:', err)
+    }
+  }
 
   async setPermissionMode(_mode: PermissionMode): Promise<void> {}
 

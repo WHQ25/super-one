@@ -981,7 +981,7 @@ export class Session implements SessionContract {
   }
 
   private applyReducer(event: AgentEvent): void {
-    if (this.harnessId === 'claude') {
+    if (this.harnessId === 'claude' || this.harnessId === 'acp') {
       const runtime: ClaudeSessionRuntime = {
         projectPath: this.projectPath,
         sessionId: this.id,

@@ -52,6 +52,9 @@ import { getBinding } from './providers/credential-store'
 import type { SessionProvider } from './session/types'
 import { expandProviderModelEnv } from '@superone/shared/agent-types'
 import { PROXY_TRANSFORMERS_ENV } from '@superone/shared/platform-registry'
+import { detectBuiltinAgents } from './acp/acp-detect'
+import { getBuiltinAgent } from './acp/agent-catalog'
+import { readAcpResourcesCache, writeAcpResourcesCache, refreshAcpModelsOnce } from './acp/acp-model-cache'
 import {
   AgentIpcChannels,
   type CodexCollaborationMode,
@@ -2897,11 +2900,8 @@ app.whenReady().then(async () => {
   startMediaServer().catch((err) => log.error('[media-server] failed to start:', err))
   ipcMain.handle(AgentIpcChannels.MEDIA_SERVER_PORT, () => getMediaServerPort())
   getDb() // Initialize database
-  // ACP: detect agents + refresh model catalogs once per app open (like CONNECT_CLAUDE).
-  void import('./acp/acp-detect').then(async ({ detectBuiltinAgents }) => {
+  void (async () => {
     try {
-      const { getBuiltinAgent } = await import('./acp/agent-catalog')
-      const { readAcpResourcesCache, writeAcpResourcesCache, refreshAcpModelsOnce } = await import('./acp/acp-model-cache')
       const prev = readAcpResourcesCache()
       const agents = await detectBuiltinAgents()
       const prevSelected = prev.selectedAgentId
@@ -2929,7 +2929,7 @@ app.whenReady().then(async () => {
     } catch (err) {
       log.warn('[acp] detect/refresh models failed:', err)
     }
-  })
+  })()
   registerIpcHandlers()
   terminalSweepTimer = setInterval(() => terminalManager.sweep(), 30_000)
 

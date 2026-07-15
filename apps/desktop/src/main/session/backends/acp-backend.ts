@@ -61,12 +61,26 @@ export class AcpBackend implements SessionBackend {
 
   private modelConfigId: string | null = null
   private ensureRuntimePromise: Promise<AcpRuntime> | null = null
+  private runtimeEpoch = 0
+  private runtimeAgentKey: string | null = null
+
+  private agentKey(cfg: AcpBackendConfig = this.config): string {
+    return `${cfg.agentId ?? ''}\0${cfg.command ?? ''}`
+  }
+
+  private isLaunchChanged(next: AcpBackendConfig): boolean {
+    return this.agentKey(next) !== this.agentKey(this.config)
+  }
 
   async start(opts: BackendStartOptions): Promise<void> {
-    if (this.started) throw new Error('AcpBackend already started')
     if (this.disposed) throw new Error('AcpBackend already disposed')
+    const next = readConfig(opts.config)
+    const launchChanged = this.isLaunchChanged(next)
     this.startOpts = opts
-    this.config = readConfig(opts.config)
+    this.config = next
+    if (launchChanged && (this.runtime || this.ensureRuntimePromise)) {
+      await this.teardownRuntime()
+    }
     this.started = true
     log.info('[AcpBackend] start sid=%s agentId=%s', opts.sessionId, this.config.agentId ?? '(none)')
   }
@@ -82,14 +96,11 @@ export class AcpBackend implements SessionBackend {
   prewarm(opts: BackendStartOptions): void {
     if (this.disposed) return
     const next = readConfig(opts.config)
-    const agentChanged =
-      this.runtime
-      && (next.agentId !== this.config.agentId || next.command !== this.config.command)
-    if (agentChanged) {
+    const launchChanged = this.isLaunchChanged(next)
+    if (launchChanged && (this.runtime || this.ensureRuntimePromise)) {
       void this.teardownRuntime().then(() => {
         this.startOpts = opts
         this.config = next
-        this.started = true
         return this.ensureRuntime()
       }).catch((err) => {
         log.warn('[AcpBackend] prewarm rebuild failed:', err instanceof Error ? err.message : String(err))
@@ -98,19 +109,23 @@ export class AcpBackend implements SessionBackend {
     }
     this.startOpts = opts
     this.config = next
-    this.started = true
     void this.ensureRuntime().catch((err) => {
       log.warn('[AcpBackend] prewarm failed:', err instanceof Error ? err.message : String(err))
     })
   }
 
-  private persistAndEmitModels(extracted: {
-    models: import('@superone/shared/agent-types').ModelOption[]
-    selectedModelId: string | null
-    configId: string | null
-  }): void {
+  private persistAndEmitModels(
+    extracted: {
+      models: import('@superone/shared/agent-types').ModelOption[]
+      selectedModelId: string | null
+      configId: string | null
+    },
+    agentId: string | null,
+    epoch: number,
+  ): void {
+    if (epoch !== this.runtimeEpoch) return
+    if (agentId !== (this.config.agentId ?? null)) return
     this.modelConfigId = extracted.configId
-    const agentId = this.config.agentId ?? null
     if (agentId && extracted.models.length > 0) {
       try {
         upsertAcpAgentModels(agentId, extracted)
@@ -128,7 +143,8 @@ export class AcpBackend implements SessionBackend {
     })
   }
 
-  private emitModelsFromRuntime(runtime: AcpRuntime): void {
+  private emitModelsFromRuntime(runtime: AcpRuntime, agentId: string | null, epoch: number): void {
+    if (epoch !== this.runtimeEpoch) return
     const extracted = runtime.getModelConfig() ?? extractModelConfig(runtime.getConfigOptions())
     if (!extracted || extracted.models.length === 0) {
       this.modelConfigId = null
@@ -138,14 +154,15 @@ export class AcpBackend implements SessionBackend {
         selectedModelId: null,
         configId: null,
         status: 'ready',
-        agentId: this.config.agentId ?? null,
+        agentId,
       })
       return
     }
-    this.persistAndEmitModels(extracted)
+    this.persistAndEmitModels(extracted, agentId, epoch)
   }
 
-  private emitModelsError(error: string): void {
+  private emitModelsError(error: string, agentId: string | null, epoch: number): void {
+    if (epoch !== this.runtimeEpoch) return
     this.modelConfigId = null
     this.emit({
       type: 'acp_models',
@@ -154,16 +171,30 @@ export class AcpBackend implements SessionBackend {
       configId: null,
       status: 'error',
       error,
-      agentId: this.config.agentId ?? null,
+      agentId,
     })
   }
 
   private async ensureRuntime(): Promise<AcpRuntime> {
-    if (this.runtime) return this.runtime
+    if (this.runtime && this.runtimeAgentKey === this.agentKey()) return this.runtime
+    if (this.runtime && this.runtimeAgentKey !== this.agentKey()) {
+      await this.teardownRuntime()
+    }
     if (this.ensureRuntimePromise) return this.ensureRuntimePromise
     if (!this.startOpts) throw new Error('AcpBackend missing startOpts')
     if (!this.config.agentId && !this.config.command) {
       throw new Error('No ACP agent configured. Pick an agent under Others, then try again.')
+    }
+    const epoch = this.runtimeEpoch
+    const agentId = this.config.agentId ?? null
+    const launchKey = this.agentKey()
+    const launch = {
+      agentId: this.config.agentId,
+      command: this.config.command,
+      args: this.config.args,
+      env: this.config.env,
+      cwd: this.config.cwd,
+      defaultCwd: this.startOpts.cwd || this.startOpts.projectPath,
     }
     this.emit({
       type: 'acp_models',
@@ -171,40 +202,41 @@ export class AcpBackend implements SessionBackend {
       selectedModelId: null,
       configId: null,
       status: 'loading',
-      agentId: this.config.agentId ?? null,
+      agentId,
     })
-    this.ensureRuntimePromise = (async () => {
+    const promise = (async () => {
       const runtime = await runtimeFactory({
-        launch: {
-          agentId: this.config.agentId,
-          command: this.config.command,
-          args: this.config.args,
-          env: this.config.env,
-          cwd: this.config.cwd,
-          defaultCwd: this.startOpts!.cwd || this.startOpts!.projectPath,
-        },
+        launch,
         permission: {
           request: (params) => this.handlePermissionRequest(params),
         },
         onModelConfig: (cfg) => {
-          this.persistAndEmitModels(cfg)
+          this.persistAndEmitModels(cfg, agentId, epoch)
         },
       })
+      if (epoch !== this.runtimeEpoch || this.agentKey() !== launchKey) {
+        try { await runtime.close() } catch { /* ignore */ }
+        throw new Error('ACP runtime superseded by agent switch')
+      }
       this.runtime = runtime
+      this.runtimeAgentKey = launchKey
       for (const cb of this.providerSessionIdListeners) {
         try { cb(runtime.sessionId) } catch (err) { log.warn('[AcpBackend] providerSessionId listener error:', err) }
       }
-      this.emitModelsFromRuntime(runtime)
+      this.emitModelsFromRuntime(runtime, agentId, epoch)
       return runtime
     })()
+    this.ensureRuntimePromise = promise
     try {
-      return await this.ensureRuntimePromise
+      return await promise
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      this.emitModelsError(msg)
+      if (epoch === this.runtimeEpoch) {
+        const msg = err instanceof Error ? err.message : String(err)
+        if (!msg.includes('superseded')) this.emitModelsError(msg, agentId, epoch)
+      }
       throw err
     } finally {
-      this.ensureRuntimePromise = null
+      if (this.ensureRuntimePromise === promise) this.ensureRuntimePromise = null
     }
   }
 
@@ -253,17 +285,20 @@ export class AcpBackend implements SessionBackend {
       const runtime = await this.ensureRuntime()
       if (request.model && this.modelConfigId) {
         try {
+          const epoch = this.runtimeEpoch
+          const agentId = this.config.agentId ?? null
           const next = await runtime.setConfigOption(this.modelConfigId, request.model)
           const extracted = extractModelConfig(next) ?? runtime.getModelConfig()
           if (extracted) {
-            this.modelConfigId = extracted.configId
-            this.emit({
-              type: 'acp_models',
-              models: extracted.models,
-              selectedModelId: extracted.selectedModelId,
-              configId: extracted.configId,
-              status: 'ready',
-            })
+            this.persistAndEmitModels(
+              {
+                models: extracted.models,
+                selectedModelId: extracted.selectedModelId,
+                configId: extracted.configId,
+              },
+              agentId,
+              epoch,
+            )
           }
         } catch (err) {
           log.debug('[AcpBackend] set model before prompt failed:', err)
@@ -309,8 +344,10 @@ export class AcpBackend implements SessionBackend {
       pending.resolve({ outcome: { outcome: 'cancelled' } })
       this.pendingPermissions.delete(id)
     }
+    this.runtimeEpoch += 1
     this.ensureRuntimePromise = null
     this.modelConfigId = null
+    this.runtimeAgentKey = null
     const runtime = this.runtime
     this.runtime = null
     if (runtime) {
@@ -329,20 +366,22 @@ export class AcpBackend implements SessionBackend {
   }
 
   async setModel(model: string): Promise<void> {
-    // Grok does not implement session/set_config_option; keep optimistic selection in renderer.
     if (!this.runtime || !this.modelConfigId) return
+    const epoch = this.runtimeEpoch
+    const agentId = this.config.agentId ?? null
     try {
       const next = await this.runtime.setConfigOption(this.modelConfigId, model)
       const extracted = extractModelConfig(next) ?? this.runtime.getModelConfig()
       if (extracted) {
-        this.modelConfigId = extracted.configId
-        this.emit({
-          type: 'acp_models',
-          models: extracted.models,
-          selectedModelId: extracted.selectedModelId ?? model,
-          configId: extracted.configId,
-          status: 'ready',
-        })
+        this.persistAndEmitModels(
+          {
+            models: extracted.models,
+            selectedModelId: extracted.selectedModelId ?? model,
+            configId: extracted.configId,
+          },
+          agentId,
+          epoch,
+        )
       }
     } catch (err) {
       log.warn('[AcpBackend] setModel failed:', err)

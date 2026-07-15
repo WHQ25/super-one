@@ -224,4 +224,84 @@ describe('AcpBackend', () => {
     expect(events.some((e) => e.type === 'message_interrupted')).toBe(true)
     await backend.close()
   })
+
+  it('allows start() after prewarm without throwing already started', async () => {
+    let createCount = 0
+    setAcpRuntimeFactory(async () => {
+      createCount += 1
+      return mockRuntime()
+    })
+    const backend = new AcpBackend()
+    const opts = startOpts({ agentId: 'custom', command: 'mock' })
+    backend.prewarm(opts)
+    await new Promise((r) => setTimeout(r, 10))
+    await expect(backend.start(opts)).resolves.toBeUndefined()
+    const events: AgentEvent[] = []
+    backend.onEvent((e) => events.push(e))
+    await backend.send({ content: 'hi', assistantMessageId: 'pw1' })
+    expect(events.some((e) => e.type === 'message_start')).toBe(true)
+    expect(events.some((e) => e.type === 'message_complete')).toBe(true)
+    expect(createCount).toBe(1)
+    await backend.close()
+  })
+
+  it('start is idempotent when called twice with the same agent', async () => {
+    const backend = new AcpBackend()
+    const opts = startOpts({ agentId: 'custom', command: 'mock' })
+    await backend.start(opts)
+    await expect(backend.start(opts)).resolves.toBeUndefined()
+    await backend.close()
+  })
+
+  it('does not publish models from a superseded agent when switching mid-prewarm', async () => {
+    let resolveGrok!: (r: AcpRuntime) => void
+    const grokGate = new Promise<AcpRuntime>((r) => { resolveGrok = r })
+    let createN = 0
+    setAcpRuntimeFactory(async (opts) => {
+      createN += 1
+      const agentId = opts.launch.agentId ?? 'custom'
+      if (agentId === 'grok-build') {
+        return grokGate
+      }
+      return mockRuntime({
+        sessionId: 'opencode-sess',
+        getModelConfig: () => ({
+          configId: 'model',
+          selectedModelId: 'oc-1',
+          models: [{ id: 'oc-1', name: 'OpenCode 1', description: '' }],
+        }),
+        getConfigOptions: () => [],
+      })
+    })
+
+    const backend = new AcpBackend()
+    const events: AgentEvent[] = []
+    backend.onEvent((e) => events.push(e))
+
+    backend.prewarm(startOpts({ agentId: 'grok-build' }))
+    await new Promise((r) => setTimeout(r, 5))
+    backend.prewarm(startOpts({ agentId: 'opencode', command: 'opencode' }))
+    await new Promise((r) => setTimeout(r, 20))
+
+    resolveGrok(mockRuntime({
+      sessionId: 'grok-sess',
+      getModelConfig: () => ({
+        configId: null,
+        selectedModelId: 'grok-4.5',
+        models: [{ id: 'grok-4.5', name: 'Grok 4.5', description: '' }],
+      }),
+      getConfigOptions: () => [],
+    }))
+    await new Promise((r) => setTimeout(r, 20))
+
+    const ready = events.filter((e) => e.type === 'acp_models' && e.status === 'ready')
+    const withModels = ready.filter((e) => e.type === 'acp_models' && e.models.length > 0) as Array<
+      Extract<AgentEvent, { type: 'acp_models' }>
+    >
+    expect(withModels.every((e) => e.agentId === 'opencode')).toBe(true)
+    expect(withModels.some((e) => e.models.some((m) => m.id === 'oc-1'))).toBe(true)
+    expect(withModels.some((e) => e.models.some((m) => m.id === 'grok-4.5'))).toBe(false)
+    expect(createN).toBeGreaterThanOrEqual(2)
+    await backend.close()
+  })
 })

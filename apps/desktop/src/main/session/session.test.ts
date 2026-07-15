@@ -1021,6 +1021,20 @@ describe('Session message accumulation', () => {
     expect(msg?.content).toEqual([{ type: 'text', text: 'Hello world' }])
   })
 
+  it('accumulates content_delta for acp harness and keeps text on message_complete', () => {
+    const { session, backend } = makeSession({ harnessId: 'acp', providerId: 'acp-base' })
+    backend.emit({
+      type: 'message_start',
+      message: { id: 'a1', role: 'assistant', status: 'streaming', content: [], createdAt: '', providerId: 'acp' },
+    })
+    backend.emit({ type: 'content_delta', messageId: 'a1', delta: { type: 'text', text: 'Hi' } })
+    backend.emit({ type: 'message_complete', messageId: 'a1' })
+
+    const msg = session.snapshot.messages.find((m) => m.id === 'a1')
+    expect(msg?.status).toBe('complete')
+    expect(msg?.content).toEqual([{ type: 'text', text: 'Hi' }])
+  })
+
   it('tags emitted events with a monotonic per-session seq and tracks _lastAppliedSeq on streaming message', () => {
     const { session, backend } = makeSession()
     const seen: number[] = []

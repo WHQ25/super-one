@@ -4,6 +4,13 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.44.3-alpha] - 2026-07-15
+
+### Changed
+
+- Upgraded `claude-agent-sdk` to 0.3.210, bringing abort/hook-callback correctness fixes (gated tools no longer run after an abort), a fix for `extraArgs` values that look like CLI flags, and several process/stream stability fixes
+- Refactored the provider connection-test button and status into reusable components, unifying behavior across the add-key, credential, and custom-platform forms
+
 ## [0.44.2-alpha] - 2026-07-15
 
 ### Added

@@ -622,12 +622,19 @@ export class Session implements SessionContract {
         this.providerConfig = this.resolveProviderConfigForApiProvider(this._apiProviderId)
       } catch { /* keep previous config */ }
     }
+    // Prefer explicit acpAgentId from renderer hint — settings write can lag behind UI selection.
+    let config = this.providerConfig
+    if (this.harnessId === 'acp' && hint?.acpAgentId) {
+      const base = (config && typeof config === 'object') ? config as Record<string, unknown> : {}
+      config = { ...base, agentId: hint.acpAgentId }
+      this.providerConfig = config
+    }
     const dirs = hint?.additionalDirs ?? this.additionalDirectories
     const opts: BackendStartOptions = {
       sessionId: this.id,
       projectPath: this.projectPath,
       cwd: this.cwd,
-      config: this.providerConfig,
+      config,
       permissionMode: this.permissionMode,
       sandboxInfo: this.sandboxInfo,
       effort: hint?.effort ?? this.effort,

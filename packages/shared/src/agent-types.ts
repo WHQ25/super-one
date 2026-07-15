@@ -829,6 +829,8 @@ export type AgentEventBase =
       configId: string | null
       status?: 'loading' | 'ready' | 'error'
       error?: string
+      /** Which ACP agent produced this catalog — drop events that don't match session.acpAgentId. */
+      agentId?: string | null
     }
 
 export type AgentEvent = AgentEventBase & { projectPath?: string; sessionId?: string; draftSessionId?: string; seq?: number; epoch?: number }
@@ -908,6 +910,8 @@ export interface AgentPrewarmHint {
   sessionId?: string
   provider?: HarnessId
   worktreePath?: string
+  /** ACP agent id override for prewarm (avoids racing app-settings persistence). */
+  acpAgentId?: string
 }
 
 // --- Model selection ---
@@ -1303,11 +1307,21 @@ export interface AcpAgentDescriptor {
   commandPreview: string
 }
 
+/** Per-agent model catalog (persisted in harness_resource_cache, refreshed once per app open). */
+export interface AcpAgentModelCatalog {
+  models: ModelOption[]
+  selectedModelId: string | null
+  configId: string | null
+  updatedAt: string
+}
+
 export interface AcpResources {
   agents: AcpAgentDescriptor[]
   selectedAgentId: string | null
   /** True while a background re-detect is in flight. */
   detecting?: boolean
+  /** Model lists keyed by agent id (grok-build, opencode, …). */
+  modelsByAgentId?: Record<string, AcpAgentModelCatalog>
 }
 
 export interface HarnessResourcesMap {
@@ -2034,6 +2048,8 @@ export const AgentIpcChannels = {
   BINDINGS_CLEAR: 'bindings:clear',
   PROVIDERS_TEST_ENDPOINT: 'providers:test-endpoint',
   ACP_LIST_AGENTS: 'acp:list-agents',
+  /** Refresh ACP agent model catalogs once per app open (uses cache thereafter). */
+  ACP_REFRESH_MODELS: 'acp:refresh-models',
 
   // Media generation providers (read-only status derived from image-serving credentials)
   MEDIA_GEN_PROVIDERS: 'mediaGen:providers',

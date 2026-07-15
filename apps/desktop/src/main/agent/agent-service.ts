@@ -2064,16 +2064,16 @@ export class AgentService {
       return { success: results.every((r) => r.success), results }
     })
 
-    // Cache-only. Detection runs once on app open (see main process startup).
+    // Cache-only. Detection / model probes run on app open (see main process startup).
     ipcMain.handle(AgentIpcChannels.ACP_LIST_AGENTS, async () => {
-      const { getCachedHarnessResources } = await import('../database')
-      const { listBuiltinAgentDescriptors } = await import('../acp/agent-catalog')
-      const cached = getCachedHarnessResources('acp')
-      if (cached?.agents?.length) return cached
-      return {
-        agents: listBuiltinAgentDescriptors(false),
-        selectedAgentId: null,
-      }
+      const { readAcpResourcesCache } = await import('../acp/acp-model-cache')
+      return readAcpResourcesCache()
+    })
+
+    // Once-per-launch model catalog refresh for installed ACP agents.
+    ipcMain.handle(AgentIpcChannels.ACP_REFRESH_MODELS, async (_event, agentId?: string) => {
+      const { refreshAcpModelsOnce } = await import('../acp/acp-model-cache')
+      return refreshAcpModelsOnce(agentId ? { agentIds: [agentId] } : undefined)
     })
 
     // --- Session Providers (new session_providers table) ---

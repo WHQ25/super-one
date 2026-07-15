@@ -146,6 +146,30 @@ describe('triggerPrewarm', () => {
     expect(hint).toMatchObject({ provider: 'claude', model: 'opus-4-8', effort: 'high' })
   })
 
+  it('includes acpAgentId in prewarm hint for ACP sessions', () => {
+    const proj = createDefaultProjectState()
+    const sess = {
+      ...createDefaultPerSessionState(),
+      preferredProvider: 'acp' as const,
+      sessionProvider: 'acp' as const,
+      acpAgentId: 'opencode',
+      selectedModel: 'opencode/big-pickle',
+    }
+    proj._activeSessionId = 'sid-acp'
+    proj._sessions = { 'sid-acp': sess }
+    useChatStore.setState({ projectSessions: { '/p1': proj }, activeProject: '/p1' })
+
+    triggerPrewarm(useChatStore.getState())
+    expect(mockPrewarm).toHaveBeenCalledTimes(1)
+    const [, hint] = mockPrewarm.mock.calls[0]
+    expect(hint).toMatchObject({
+      provider: 'acp',
+      model: 'opencode/big-pickle',
+      acpAgentId: 'opencode',
+    })
+    expect(hint.effort).toBeUndefined()
+  })
+
   it('passes codex hint shape for codex sessions', () => {
     const proj = createDefaultProjectState()
     const sess = { ...createDefaultPerSessionState(), sessionProvider: 'codex' as const, selectedCodexModel: 'gpt-5-high' }

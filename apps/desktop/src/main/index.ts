@@ -2897,23 +2897,37 @@ app.whenReady().then(async () => {
   startMediaServer().catch((err) => log.error('[media-server] failed to start:', err))
   ipcMain.handle(AgentIpcChannels.MEDIA_SERVER_PORT, () => getMediaServerPort())
   getDb() // Initialize database
-  // ACP agent PATH probe: once per app open, async. Runtime reads use harness_resource_cache only.
+  // ACP: detect agents + refresh model catalogs once per app open (like CONNECT_CLAUDE).
   void import('./acp/acp-detect').then(async ({ detectBuiltinAgents }) => {
     try {
-      const prev = getCachedHarnessResources('acp')
+      const { getBuiltinAgent } = await import('./acp/agent-catalog')
+      const { readAcpResourcesCache, writeAcpResourcesCache, refreshAcpModelsOnce } = await import('./acp/acp-model-cache')
+      const prev = readAcpResourcesCache()
       const agents = await detectBuiltinAgents()
-      setCachedHarnessResources('acp', {
+      const prevSelected = prev.selectedAgentId
+      const selectedAgentId =
+        prevSelected && (getBuiltinAgent(prevSelected) || prevSelected === 'custom')
+          ? prevSelected
+          : null
+      writeAcpResourcesCache({
+        ...prev,
         agents: agents.map((a) => ({
           id: a.id,
           name: a.name,
           installed: a.installed,
           commandPreview: a.commandPreview,
         })),
-        selectedAgentId: prev?.selectedAgentId ?? null,
+        selectedAgentId,
+        modelsByAgentId: prev.modelsByAgentId ?? {},
       })
       log.info('[acp] agent cache refreshed: %d agents', agents.length)
+      const withModels = await refreshAcpModelsOnce()
+      log.info(
+        '[acp] model cache refreshed: %d agents with models',
+        Object.keys(withModels.modelsByAgentId ?? {}).length,
+      )
     } catch (err) {
-      log.warn('[acp] detectBuiltinAgents failed:', err)
+      log.warn('[acp] detect/refresh models failed:', err)
     }
   })
   registerIpcHandlers()

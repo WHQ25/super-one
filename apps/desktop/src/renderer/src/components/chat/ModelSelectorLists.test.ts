@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { resolveClaudeEntries } from './ModelSelectorLists'
+import {
+  groupModelsBySlashPrefix,
+  resolveClaudeEntries,
+  resolveSlashModelLabel,
+  splitSlashModelId,
+} from './ModelSelectorLists'
 import type { ModelOption, ProviderModelEnv } from '@superone/shared/agent-types'
 
 const claudeModels: ModelOption[] = [
@@ -60,3 +65,32 @@ describe('resolveClaudeEntries', () => {
     expect(entries.filter((e) => e.displayName === 'Shared')).toHaveLength(1)
   })
 })
+
+describe('splitSlashModelId / groupModelsBySlashPrefix', () => {
+  it('splits provider/model ids', () => {
+    expect(splitSlashModelId('openai/gpt-5.4')).toEqual({ group: 'openai', label: 'gpt-5.4' })
+    expect(splitSlashModelId('grok-4.5')).toEqual({ group: '', label: 'grok-4.5' })
+  })
+
+  it('uses name after slash for display when available', () => {
+    expect(resolveSlashModelLabel({
+      id: 'openai/gpt-5.4-fast',
+      name: 'OpenAI/GPT-5.4 Fast',
+      description: '',
+    })).toBe('GPT-5.4 Fast')
+  })
+
+  it('groups OpenCode-style models by provider prefix', () => {
+    const models: ModelOption[] = [
+      { id: 'openai/gpt-5.4', name: 'OpenAI/GPT-5.4', description: '' },
+      { id: 'openai/gpt-5.4-mini', name: 'OpenAI/GPT-5.4 mini', description: '' },
+      { id: 'opencode/big-pickle', name: 'OpenCode Zen/Big Pickle', description: '' },
+      { id: 'google/gemini-3-flash', name: 'Google/Gemini 3 Flash', description: '' },
+    ]
+    const groups = groupModelsBySlashPrefix(models)
+    expect(groups.map((g) => g.group)).toEqual(['openai', 'opencode', 'google'])
+    expect(groups[0].items.map((i) => i.label)).toEqual(['GPT-5.4', 'GPT-5.4 mini'])
+    expect(groups[1].items[0].label).toBe('Big Pickle')
+  })
+})
+

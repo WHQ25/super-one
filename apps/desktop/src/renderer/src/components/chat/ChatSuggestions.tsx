@@ -84,10 +84,11 @@ function ProviderSelector() {
       setPreferredProvider(choice.kind)
       return
     }
+    // Set agent id first so provider switch / prewarm never races with stale grok defaults.
+    setAcpAgentId(choice.agentId)
     if (preferredProvider !== 'acp') {
       setPreferredProvider('acp')
     }
-    setAcpAgentId(choice.agentId)
   }
 
   return (

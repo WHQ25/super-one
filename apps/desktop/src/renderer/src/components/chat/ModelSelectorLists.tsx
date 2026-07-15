@@ -133,6 +133,92 @@ export function resolveClaudeDisplayName(model: ModelOption | undefined, modelEn
   return slot?.name ?? slot?.id ?? model.name ?? model.id
 }
 
+/** OpenCode-style ids: `provider/model-name` → group + short label. */
+export function splitSlashModelId(id: string): { group: string; label: string } {
+  const idx = id.indexOf('/')
+  if (idx <= 0 || idx >= id.length - 1) return { group: '', label: id }
+  return { group: id.slice(0, idx), label: id.slice(idx + 1) }
+}
+
+/** Prefer human label after `/` from name when present, else from id. */
+export function resolveSlashModelLabel(model: ModelOption): string {
+  if (model.name.includes('/')) {
+    const { label } = splitSlashModelId(model.name)
+    if (label) return label
+  }
+  const fromId = splitSlashModelId(model.id)
+  if (fromId.group) return fromId.label
+  return model.name || model.id
+}
+
+export function groupModelsBySlashPrefix(models: ModelOption[]): Array<{ group: string; items: Array<{ model: ModelOption; label: string }> }> {
+  const order: string[] = []
+  const map = new Map<string, Array<{ model: ModelOption; label: string }>>()
+  for (const model of models) {
+    const { group } = splitSlashModelId(model.id)
+    const key = group || 'other'
+    if (!map.has(key)) {
+      map.set(key, [])
+      order.push(key)
+    }
+    map.get(key)!.push({ model, label: resolveSlashModelLabel(model) })
+  }
+  return order.map((group) => ({ group, items: map.get(group)! }))
+}
+
+interface GroupedSlashModelListProps {
+  models: ModelOption[]
+  activeId: string
+  onSelect: (id: string) => void
+  title?: string
+  emptyMessage?: string
+}
+
+/** Models grouped by `provider/` prefix; rows show only the part after `/`. */
+export function GroupedSlashModelList({
+  models,
+  activeId,
+  onSelect,
+  title,
+  emptyMessage = 'No models',
+}: GroupedSlashModelListProps) {
+  const groups = groupModelsBySlashPrefix(models)
+  return (
+    <>
+      <ListHeader title={title} />
+      {groups.map(({ group, items }) => (
+        <div key={group}>
+          {group && group !== 'other' && (
+            <div className="px-2 pb-0.5 pt-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+              {group}
+            </div>
+          )}
+          {items.map(({ model, label }) => {
+            const active = model.id === activeId
+            return (
+              <button
+                key={model.id}
+                onClick={() => onSelect(model.id)}
+                className={`flex w-full items-start justify-between gap-2 rounded px-2 py-1.5 text-left text-xs transition-colors ${
+                  active ? 'bg-accent text-accent-foreground' : 'text-foreground hover:bg-accent/50'
+                }`}
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="truncate font-medium">{label}</div>
+                </div>
+                {active && <Check className="mt-0.5 size-3.5 shrink-0 text-primary" />}
+              </button>
+            )
+          })}
+        </div>
+      ))}
+      {groups.length === 0 && (
+        <div className="px-2 py-1.5 text-xs text-muted-foreground">{emptyMessage}</div>
+      )}
+    </>
+  )
+}
+
 interface EffortListProps {
   levels: EffortLevel[]
   labels: Record<EffortLevel, string>

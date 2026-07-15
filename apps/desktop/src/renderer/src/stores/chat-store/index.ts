@@ -342,7 +342,7 @@ export const addMountedSession = addSessionToRegistry
 export const removeMountedSession = removeSessionFromRegistry
 
 import type { HarnessHandler, HarnessHandlerMap } from './harness/harness-handler'
-import { applyAcpResources, connectAcpResources } from './harness/acp-handler'
+import { applyAcpResources, connectAcpResources, refreshAcpModels } from './harness/acp-handler'
 import { applyClaudeResources } from './harness/claude-handler'
 import { applyCodexResources } from './harness/codex-handler'
 
@@ -356,6 +356,7 @@ const harnessHandlers: HarnessHandlerMap = {
     apply: (s, r) => applyCodexResources(s, r, resolveSessionCodexSelection),
   },
   acp: {
+    // Serve disk cache immediately; background refresh runs once per app open in main.
     connect: () => connectAcpResources(),
     apply: (s, r) => applyAcpResources(s, r),
   },
@@ -401,6 +402,12 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
       const handler = harnessHandlers[harness] as HarnessHandler<typeof harness>
       const resources = await handler.connect()
       get().setHarnessResources(harness, resources)
+      // ACP: re-pull once after main's per-launch model probe (cache-first, then refresh).
+      if (harness === 'acp') {
+        void refreshAcpModels().then((fresh) => {
+          if (fresh) get().setHarnessResources('acp', fresh)
+        })
+      }
     } catch (err) {
       set((s) => {
         const next = new Set(s.initializedHarnesses)

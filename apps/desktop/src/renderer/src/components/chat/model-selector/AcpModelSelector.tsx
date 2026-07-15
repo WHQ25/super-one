@@ -4,9 +4,20 @@ import { ChevronDown, Loader2 } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@superone/ui/components/ui/popover'
 import { useActiveSession, useChatStore } from '@/stores/chat'
 import type { AcpAgentDescriptor } from '@superone/shared/agent-types'
-import { ClaudeModelList } from '../ModelSelectorLists'
+import {
+  ClaudeModelList,
+  GroupedSlashModelList,
+  resolveSlashModelLabel,
+  splitSlashModelId,
+} from '../ModelSelectorLists'
 
 const EMPTY_ACP_AGENTS: AcpAgentDescriptor[] = []
+
+function useGroupedSlashList(agentId: string | null): boolean {
+  // OpenCode catalogs use `provider/model` ids; group by provider.
+  if (agentId === 'opencode') return true
+  return false
+}
 
 export function AcpModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?: (e: Event) => void } = {}) {
   const { t } = useTranslation()
@@ -21,11 +32,13 @@ export function AcpModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?: (e: 
   const setSelectedModel = useChatStore((s) => s.setSelectedModel)
 
   const agent = agents.find((a) => a.id === acpAgentId)
+  const grouped = useGroupedSlashList(acpAgentId)
   const currentModel = acpModels.find((m) => m.id === selectedModel)
-  const currentLabel = currentModel?.name
-    ?? selectedModel
-    ?? agent?.name
-    ?? t('chat.suggestions.acpLabel')
+  const currentLabel = currentModel
+    ? (grouped ? resolveSlashModelLabel(currentModel) : (currentModel.name || currentModel.id))
+    : selectedModel
+      ? (grouped ? splitSlashModelId(selectedModel).label : selectedModel)
+      : (agent?.name ?? t('chat.suggestions.acpLabel'))
 
   if (acpModelsStatus === 'loading' || (acpModelsStatus === 'idle' && agent?.installed)) {
     return (
@@ -68,12 +81,21 @@ export function AcpModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?: (e: 
           className="w-64 max-h-60 overflow-y-auto border-border bg-popover p-1"
           onCloseAutoFocus={onCloseAutoFocus}
         >
-          <ClaudeModelList
-            title={t('tooltips.selectModel')}
-            models={acpModels}
-            activeId={selectedModel ?? ''}
-            onSelect={(id) => { setSelectedModel(id); setModelOpen(false) }}
-          />
+          {grouped ? (
+            <GroupedSlashModelList
+              title={t('tooltips.selectModel')}
+              models={acpModels}
+              activeId={selectedModel ?? ''}
+              onSelect={(id) => { setSelectedModel(id); setModelOpen(false) }}
+            />
+          ) : (
+            <ClaudeModelList
+              title={t('tooltips.selectModel')}
+              models={acpModels}
+              activeId={selectedModel ?? ''}
+              onSelect={(id) => { setSelectedModel(id); setModelOpen(false) }}
+            />
+          )}
         </PopoverContent>
       </Popover>
     </div>

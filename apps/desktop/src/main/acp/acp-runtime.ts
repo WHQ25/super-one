@@ -121,9 +121,10 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
     initModels = extractModelsFromInitializeResult(initResult)
     if (initModels) opts.onModelConfig?.(initModels)
 
-    // Grok and others require authenticate before session/new responds usefully.
+    // Only auto-run non-interactive auth. OpenCode's `opencode-login` is interactive
+    // (terminal browser flow) and must not block session setup / model loading.
     const initAny = initResult as {
-      authMethods?: Array<{ id?: string }>
+      authMethods?: Array<{ id?: string; type?: string }>
       _meta?: Record<string, unknown> | null
     }
     const authMethods = Array.isArray(initAny.authMethods) ? initAny.authMethods : []
@@ -131,19 +132,34 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       typeof initAny._meta?.defaultAuthMethodId === 'string'
         ? initAny._meta.defaultAuthMethodId
         : null
-    if (authMethods.length > 0) {
-      const methodId =
-        (defaultAuthId && authMethods.some((m) => m.id === defaultAuthId) ? defaultAuthId : null)
-        ?? authMethods.find((m) => m.id === 'cached_token')?.id
-        ?? authMethods[0]?.id
-      if (methodId) {
-        try {
-          await connection.agent.request(methods.agent.authenticate, { methodId })
-          log.info('[acp-runtime] authenticated method=%s agent=%s', methodId, launch.agentId)
-        } catch (err) {
-          log.warn('[acp-runtime] authenticate failed method=%s:', methodId, err)
-        }
+    const isNonInteractiveAuth = (id: string | undefined): boolean => {
+      if (!id) return false
+      const lower = id.toLowerCase()
+      return lower === 'cached_token'
+        || lower.includes('cached')
+        || lower.includes('api_key')
+        || lower.includes('apikey')
+        || lower.includes('token')
+    }
+    const methodId =
+      (defaultAuthId && isNonInteractiveAuth(defaultAuthId) && authMethods.some((m) => m.id === defaultAuthId)
+        ? defaultAuthId
+        : null)
+      ?? authMethods.find((m) => isNonInteractiveAuth(m.id))?.id
+      ?? null
+    if (methodId) {
+      try {
+        await connection.agent.request(methods.agent.authenticate, { methodId })
+        log.info('[acp-runtime] authenticated method=%s agent=%s', methodId, launch.agentId)
+      } catch (err) {
+        log.warn('[acp-runtime] authenticate failed method=%s:', methodId, err)
       }
+    } else if (authMethods.length > 0) {
+      log.info(
+        '[acp-runtime] skip interactive auth methods agent=%s methods=%s',
+        launch.agentId,
+        authMethods.map((m) => m.id).join(','),
+      )
     }
 
     session = await connection.agent.buildSession(launch.cwd).start()

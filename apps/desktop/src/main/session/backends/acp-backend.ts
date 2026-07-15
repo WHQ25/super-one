@@ -11,6 +11,7 @@ import type {
 import type { RequestPermissionRequest, RequestPermissionResponse } from '@agentclientprotocol/sdk'
 import log from '../../logger'
 import { extractModelConfig } from '../../acp/acp-config'
+import { upsertAcpAgentModels } from '../../acp/acp-model-cache'
 import { createAcpRuntime, type AcpRuntime, type AcpRuntimeOptions } from '../../acp/acp-runtime'
 import { mapPermissionDecision, mapPermissionRequest, type PendingPermissionOptions } from '../../acp/acp-permission-map'
 import type { BackendStartOptions, HarnessId, SessionBackend } from '../types'
@@ -103,6 +104,30 @@ export class AcpBackend implements SessionBackend {
     })
   }
 
+  private persistAndEmitModels(extracted: {
+    models: import('@superone/shared/agent-types').ModelOption[]
+    selectedModelId: string | null
+    configId: string | null
+  }): void {
+    this.modelConfigId = extracted.configId
+    const agentId = this.config.agentId ?? null
+    if (agentId && extracted.models.length > 0) {
+      try {
+        upsertAcpAgentModels(agentId, extracted)
+      } catch (err) {
+        log.debug('[AcpBackend] upsert model cache failed:', err)
+      }
+    }
+    this.emit({
+      type: 'acp_models',
+      models: extracted.models,
+      selectedModelId: extracted.selectedModelId,
+      configId: extracted.configId,
+      status: 'ready',
+      agentId,
+    })
+  }
+
   private emitModelsFromRuntime(runtime: AcpRuntime): void {
     const extracted = runtime.getModelConfig() ?? extractModelConfig(runtime.getConfigOptions())
     if (!extracted || extracted.models.length === 0) {
@@ -113,17 +138,11 @@ export class AcpBackend implements SessionBackend {
         selectedModelId: null,
         configId: null,
         status: 'ready',
+        agentId: this.config.agentId ?? null,
       })
       return
     }
-    this.modelConfigId = extracted.configId
-    this.emit({
-      type: 'acp_models',
-      models: extracted.models,
-      selectedModelId: extracted.selectedModelId,
-      configId: extracted.configId,
-      status: 'ready',
-    })
+    this.persistAndEmitModels(extracted)
   }
 
   private emitModelsError(error: string): void {
@@ -135,6 +154,7 @@ export class AcpBackend implements SessionBackend {
       configId: null,
       status: 'error',
       error,
+      agentId: this.config.agentId ?? null,
     })
   }
 
@@ -151,6 +171,7 @@ export class AcpBackend implements SessionBackend {
       selectedModelId: null,
       configId: null,
       status: 'loading',
+      agentId: this.config.agentId ?? null,
     })
     this.ensureRuntimePromise = (async () => {
       const runtime = await runtimeFactory({
@@ -166,14 +187,7 @@ export class AcpBackend implements SessionBackend {
           request: (params) => this.handlePermissionRequest(params),
         },
         onModelConfig: (cfg) => {
-          this.modelConfigId = cfg.configId
-          this.emit({
-            type: 'acp_models',
-            models: cfg.models,
-            selectedModelId: cfg.selectedModelId,
-            configId: cfg.configId,
-            status: 'ready',
-          })
+          this.persistAndEmitModels(cfg)
         },
       })
       this.runtime = runtime

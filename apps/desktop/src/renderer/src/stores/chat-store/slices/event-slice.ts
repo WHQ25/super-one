@@ -424,8 +424,43 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
         setTimeout(() => window.app.watchBashOutput(tid, op), 0)
       }
 
+      let harnessUpdate: Partial<ChatStore> | undefined
+      if (
+        event.type === 'acp_models'
+        && (event.status === 'ready' || !event.status)
+        && event.models.length > 0
+      ) {
+        // Prefer event.agentId so a stale grok catalog never overwrites opencode cache.
+        const agentId = event.agentId ?? updatedSession.acpAgentId
+        const acp = s.harnessResources.acp
+        if (
+          agentId
+          && acp
+          && (!updatedSession.acpAgentId || !event.agentId || event.agentId === updatedSession.acpAgentId)
+        ) {
+          harnessUpdate = {
+            harnessResources: {
+              ...s.harnessResources,
+              acp: {
+                ...acp,
+                modelsByAgentId: {
+                  ...(acp.modelsByAgentId ?? {}),
+                  [agentId]: {
+                    models: event.models,
+                    selectedModelId: event.selectedModelId,
+                    configId: event.configId,
+                    updatedAt: new Date().toISOString(),
+                  },
+                },
+              },
+            },
+          }
+        }
+      }
+
       return {
         ...bashOutputUpdate,
+        ...harnessUpdate,
         projectSessions: {
           ...s.projectSessions,
           [projectPath]: updatedProject,

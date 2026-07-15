@@ -1,7 +1,8 @@
 import type { PermissionMode, SandboxInfo } from '@superone/shared/agent-types'
 import { useActivityViewStateStore } from '../../activity-view-state'
 import { useAppStore } from '../../app'
-import { applyDefaultModel } from './agent-defaults'
+import { applyDefaultModel, resolveDefaultClaudeEffort, resolveDefaultClaudeModel } from './agent-defaults'
+import { getCachedAcpCatalog, sessionPatchFromAcpCatalog } from '../harness/acp-handler'
 import { resolveDefaultCodexSelection, resolveSessionCodexSelection } from './codex-helpers'
 import {
   ChatStoreSet,
@@ -377,6 +378,44 @@ export function setPreferredProviderImpl(
   const nextSid = willReplaceSid
     ? (provider === 'codex' ? _createLocalCodexSessionId() : createSessionId())
     : null
+
+  // ACP model ids (e.g. grok-4.5 / opencode/…) must not stick on Claude/Codex selectors.
+  const modelReset = (() => {
+    if (provider === 'claude') {
+      const claudeModels = get().harnessResources.claude?.models ?? []
+      const defaultModel = resolveDefaultClaudeModel(claudeModels)
+      return {
+        selectedModel: defaultModel?.id ?? '',
+        selectedEffort: resolveDefaultClaudeEffort(defaultModel),
+        modelUserChosen: false,
+        effortUserChosen: false,
+        acpModels: [] as import('@superone/shared/agent-types').ModelOption[],
+        acpModelConfigId: null as string | null,
+        acpModelsStatus: 'idle' as const,
+        acpModelsError: null as string | null,
+      }
+    }
+    if (provider === 'codex') {
+      return {
+        selectedModel: '',
+        modelUserChosen: false,
+        effortUserChosen: false,
+        acpModels: [] as import('@superone/shared/agent-types').ModelOption[],
+        acpModelConfigId: null as string | null,
+        acpModelsStatus: 'idle' as const,
+        acpModelsError: null as string | null,
+      }
+    }
+    return {
+      acpModels: [] as import('@superone/shared/agent-types').ModelOption[],
+      acpModelConfigId: null as string | null,
+      acpModelsStatus: 'loading' as const,
+      acpModelsError: null as string | null,
+      selectedModel: '',
+      modelUserChosen: false,
+    }
+  })()
+
   set((s) => {
     const proj = getProject(s, activeProject)
     const currentSid = proj._activeSessionId
@@ -386,6 +425,7 @@ export function setPreferredProviderImpl(
       if (currentSid) delete nextSessions[currentSid]
       nextSessions[nextSid] = {
         ...currentSess,
+        ...modelReset,
         preferredProvider: provider,
         sessionProvider: provider,
         slashCommandOutput: null,
@@ -401,7 +441,12 @@ export function setPreferredProviderImpl(
         },
       }
     }
-    return updateActivePerSession(s, () => ({ preferredProvider: provider, sessionProvider: provider, slashCommandOutput: null }))
+    return updateActivePerSession(s, () => ({
+      ...modelReset,
+      preferredProvider: provider,
+      sessionProvider: provider,
+      slashCommandOutput: null,
+    }))
   })
   if (nextSid) useActivityViewStateStore.getState().seedFromCurrent(nextSid)
   if (provider === 'codex') {
@@ -426,34 +471,59 @@ export function setPreferredProviderImpl(
     }
   }
   if (provider === 'acp') {
-    set((s) => updateActivePerSession(s, () => ({
-      acpModels: [],
-      acpModelConfigId: null,
-      acpModelsStatus: 'loading' as const,
-      acpModelsError: null,
-    })))
-    void (async () => {
-      try {
-        if (!getActivePerSession(get()).acpAgentId) {
+    // Prefer agent id already set by setAcpAgentId (UI selects agent before harness).
+    const existingAgentId = getActivePerSession(get()).acpAgentId
+    if (existingAgentId) {
+      const catalog = getCachedAcpCatalog(get().harnessResources.acp, existingAgentId)
+      if (catalog) {
+        set((s) => updateActivePerSession(s, () => sessionPatchFromAcpCatalog(catalog)))
+      }
+      triggerPrewarm(get())
+    } else {
+      void (async () => {
+        try {
           const settings = await window.app.getAppSettings()
           const agentId = settings.agentPreference.acp?.selectedAgentId
             ?? get().harnessResources.acp?.selectedAgentId
             ?? 'grok-build'
-          set((s) => {
-            if (getActivePerSession(s).acpAgentId) return {}
-            return updateActivePerSession(s, () => ({ acpAgentId: agentId }))
-          })
+          if (!getActivePerSession(get()).acpAgentId) {
+            set((s) => updateActivePerSession(s, () => ({ acpAgentId: agentId })))
+          }
+        } catch {
+          if (!getActivePerSession(get()).acpAgentId) {
+            set((s) => updateActivePerSession(s, () => ({ acpAgentId: 'grok-build' })))
+          }
         }
-      } catch {
-        set((s) => {
-          if (getActivePerSession(s).acpAgentId) return {}
-          return updateActivePerSession(s, () => ({ acpAgentId: 'grok-build' }))
-        })
-      }
-      triggerPrewarm(get())
-    })()
+        const agentId = getActivePerSession(get()).acpAgentId
+        const catalog = getCachedAcpCatalog(get().harnessResources.acp, agentId)
+        if (catalog) {
+          set((s) => updateActivePerSession(s, () => sessionPatchFromAcpCatalog(catalog)))
+        }
+        triggerPrewarm(get())
+      })()
+    }
   }
-  void get().initializeHarness(provider)
+  if (provider === 'claude') {
+    // If Claude models load later, re-apply defaults for sessions still missing a valid model.
+    void get().initializeHarness('claude').then(() => {
+      const sess = getActivePerSession(get())
+      if ((sess.sessionProvider ?? sess.preferredProvider) !== 'claude') return
+      const claudeModels = get().harnessResources.claude?.models ?? []
+      if (claudeModels.length === 0) return
+      const known = claudeModels.some((m) => m.id === sess.selectedModel)
+      if (known && sess.selectedModel) return
+      const defaultModel = resolveDefaultClaudeModel(claudeModels)
+      if (!defaultModel) return
+      set((s) => updateActivePerSession(s, () => ({
+        selectedModel: defaultModel.id,
+        selectedEffort: resolveDefaultClaudeEffort(defaultModel),
+        modelUserChosen: false,
+        effortUserChosen: false,
+      })))
+    })
+  } else {
+    void get().initializeHarness(provider)
+  }
 }
 
 export function setAcpAgentIdImpl(
@@ -467,14 +537,19 @@ export function setAcpAgentIdImpl(
     const acp = get().harnessResources.acp
     if (acp?.selectedAgentId === agentId) return
   }
+  const catalog = getCachedAcpCatalog(get().harnessResources.acp, agentId)
   set((s) => updateActivePerSession(s, () => ({
     acpAgentId: agentId,
-    acpModels: [],
-    acpModelConfigId: null,
-    acpModelsStatus: 'loading',
-    acpModelsError: null,
-    selectedModel: '',
-    modelUserChosen: false,
+    ...(catalog
+      ? sessionPatchFromAcpCatalog(catalog)
+      : {
+          acpModels: [],
+          acpModelConfigId: null,
+          acpModelsStatus: 'loading' as const,
+          acpModelsError: null,
+          selectedModel: '',
+          modelUserChosen: false,
+        }),
   })))
   const acp = get().harnessResources.acp
   if (acp && acp.selectedAgentId !== agentId) {
@@ -490,7 +565,21 @@ export function setAcpAgentIdImpl(
     } catch (err) {
       console.error('[acp] persist selectedAgentId failed:', err)
     }
-    // Spawn ACP agent so session/new can surface real model configOptions.
+    // If cache miss, request a once-per-launch probe for this agent then hydrate.
+    if (!catalog && agentId) {
+      try {
+        const fresh = await window.app.refreshAcpModels?.(agentId)
+        if (fresh) {
+          get().setHarnessResources('acp', fresh)
+          const nextCatalog = getCachedAcpCatalog(fresh, agentId)
+          if (nextCatalog) {
+            set((s) => updateActivePerSession(s, () => sessionPatchFromAcpCatalog(nextCatalog)))
+          }
+        }
+      } catch (err) {
+        console.warn('[acp] refresh models for agent failed:', err)
+      }
+    }
     triggerPrewarm(get())
   })()
 }

@@ -97,6 +97,8 @@ export interface PrewarmHint {
   effort?: SendMessageRequest['effort']
   model?: string
   additionalDirs?: string[]
+  /** ACP agent id override from renderer (avoids settings write race). */
+  acpAgentId?: string
 }
 
 export type BackendCommand =

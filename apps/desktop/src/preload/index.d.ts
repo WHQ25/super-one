@@ -193,6 +193,7 @@ interface AppAPI {
   clearBinding(consumer: ConsumerId): Promise<void>
   testProviderEndpoint(data: { apiKey: string; credentialId?: string; endpoints: ServiceEndpoint[] }): Promise<ProviderEndpointTestResponse>
   listAcpAgents(): Promise<import('@superone/shared/agent-types').AcpResources>
+  refreshAcpModels(agentId?: string): Promise<import('@superone/shared/agent-types').AcpResources>
 
   // File operations
   moveFile(folderPath: string, srcRelPath: string, destDirRelPath: string): Promise<FileOpResult>

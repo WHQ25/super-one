@@ -61,12 +61,16 @@ const mockWindowApp = {
     agentPreference: {
       claude: { defaultModel: '', defaultEffort: '', defaultPermissionMode: '', defaultSandboxMode: '' },
       codex: { defaultModel: '', defaultReasoningEffort: '' },
+      acp: { selectedAgentId: null },
     },
   }),
+  saveAppSettings: vi.fn().mockResolvedValue(undefined),
   connectClaude: vi.fn().mockResolvedValue({
     models: [], account: {}, slashCommands: [], skills: [], commands: [], agents: [], outputStyles: [],
   }),
   connectCodex: vi.fn().mockResolvedValue({ models: [], prompts: [] }),
+  listAcpAgents: vi.fn().mockResolvedValue({ agents: [], selectedAgentId: null, modelsByAgentId: {} }),
+  refreshAcpModels: vi.fn().mockResolvedValue({ agents: [], selectedAgentId: null, modelsByAgentId: {} }),
 }
 
 const mockMiniApp = { authorize: vi.fn().mockResolvedValue(undefined) }
@@ -279,7 +283,94 @@ describe('setPreferredProviderImpl', () => {
     expect(activeSession().preferredProvider).toBe('codex')
     expect(mockSeedFromCurrent).toHaveBeenCalledWith(newSid)
   })
+
+  it('clears ACP selectedModel when switching back to claude', () => {
+    setupProject()
+    useChatStore.setState((s) => ({
+      harnessResources: {
+        ...s.harnessResources,
+        claude: {
+          models: [
+            { id: 'claude-sonnet-4', name: 'Sonnet', description: '', isDefault: true } as ModelOption,
+          ],
+          account: {} as never,
+          slashCommands: [],
+          skills: [],
+          commands: [],
+          agents: [],
+          outputStyles: [],
+        },
+      },
+    }))
+    patchSession({
+      sessionProvider: 'acp',
+      preferredProvider: 'acp',
+      selectedModel: 'grok-4.5',
+      modelUserChosen: true,
+      acpModels: [{ id: 'grok-4.5', name: 'Grok 4.5', description: '' }],
+      acpModelsStatus: 'ready',
+    })
+
+    useChatStore.getState().setPreferredProvider('claude')
+
+    const sess = activeSession()
+    expect(sess.sessionProvider).toBe('claude')
+    expect(sess.selectedModel).toBe('claude-sonnet-4')
+    expect(sess.modelUserChosen).toBe(false)
+    expect(sess.acpModels).toEqual([])
+    expect(sess.acpModelsStatus).toBe('idle')
+  })
+
+  it('hydrates OpenCode models from cache when switching ACP agent', () => {
+    setupProject()
+    useChatStore.setState((s) => ({
+      harnessResources: {
+        ...s.harnessResources,
+        acp: {
+          agents: [
+            { id: 'grok-build', name: 'Grok Build', installed: true, commandPreview: 'grok agent stdio' },
+            { id: 'opencode', name: 'OpenCode', installed: true, commandPreview: 'opencode acp' },
+          ],
+          selectedAgentId: 'grok-build',
+          modelsByAgentId: {
+            'grok-build': {
+              models: [{ id: 'grok-4.5', name: 'Grok 4.5', description: '' }],
+              selectedModelId: 'grok-4.5',
+              configId: null,
+              updatedAt: '2026-01-01T00:00:00.000Z',
+            },
+            opencode: {
+              models: [
+                { id: 'openai/gpt-5.4', name: 'OpenAI/GPT-5.4', description: '' },
+                { id: 'opencode/big-pickle', name: 'OpenCode Zen/Big Pickle', description: '' },
+              ],
+              selectedModelId: 'opencode/big-pickle',
+              configId: 'model',
+              updatedAt: '2026-01-01T00:00:00.000Z',
+            },
+          },
+        },
+      },
+    }))
+    patchSession({
+      sessionProvider: 'acp',
+      preferredProvider: 'acp',
+      acpAgentId: 'grok-build',
+      selectedModel: 'grok-4.5',
+      acpModels: [{ id: 'grok-4.5', name: 'Grok 4.5', description: '' }],
+      acpModelsStatus: 'ready',
+    })
+
+    useChatStore.getState().setAcpAgentId('opencode')
+
+    const sess = activeSession()
+    expect(sess.acpAgentId).toBe('opencode')
+    expect(sess.acpModels.map((m) => m.id)).toEqual(['openai/gpt-5.4', 'opencode/big-pickle'])
+    expect(sess.selectedModel).toBe('opencode/big-pickle')
+    expect(sess.acpModelsStatus).toBe('ready')
+  })
 })
+
 
 describe('clearMessagesImpl', () => {
   it('resets per-session state, frees subagent colors, and unwatches only this session\'s bash outputs', () => {

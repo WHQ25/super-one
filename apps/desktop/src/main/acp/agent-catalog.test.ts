@@ -24,7 +24,10 @@ describe('agent-catalog', () => {
     expect(() => resolveAcpLaunch({ agentId: 'custom', defaultCwd: '/p' })).toThrow(/command/)
   })
 
-  it('lists builtin agents', () => {
+  it('lists builtin agents without retired gemini-cli', () => {
     expect(getBuiltinAgent('grok-build')?.name).toBe('Grok Build')
+    expect(getBuiltinAgent('opencode')?.name).toBe('OpenCode')
+    expect(getBuiltinAgent('gemini-cli')).toBeUndefined()
   })
 })
+

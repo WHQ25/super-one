@@ -38,6 +38,7 @@ export function triggerPrewarm(state: ChatStore, projectPath?: string | null): v
     additionalDirs: dirs.length > 0 ? dirs : undefined,
     sessionId: project._activeSessionId ?? undefined,
     worktreePath: session._worktreePath ?? undefined,
+    acpAgentId: provider === 'acp' ? (session.acpAgentId ?? undefined) : undefined,
   }
   void window.agent.prewarm(key, hint).catch(() => {})
 }

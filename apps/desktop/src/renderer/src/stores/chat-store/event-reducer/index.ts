@@ -83,7 +83,15 @@ export function applyEventToSession(session: PerSessionState, event: AgentEvent)
       return {}
 
     case 'acp_models': {
-      const status = event.status ?? (event.models.length > 0 ? 'ready' : 'ready')
+      // Ignore catalogs from a different ACP agent (stale prewarm race grok → opencode).
+      if (event.agentId && session.acpAgentId && event.agentId !== session.acpAgentId) {
+        return {}
+      }
+      const status = event.status ?? 'ready'
+      // Prefer already-hydrated cache while a background prewarm is still loading.
+      if (status === 'loading' && session.acpModels.length > 0 && session.acpModelsStatus === 'ready') {
+        return {}
+      }
       const patch: Partial<PerSessionState> = {
         acpModels: event.models,
         acpModelConfigId: event.configId,

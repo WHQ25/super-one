@@ -342,7 +342,7 @@ export const addMountedSession = addSessionToRegistry
 export const removeMountedSession = removeSessionFromRegistry
 
 import type { HarnessHandler, HarnessHandlerMap } from './harness/harness-handler'
-import { applyAcpResources, connectAcpResources, refreshAcpModels } from './harness/acp-handler'
+import { applyAcpResources, connectAcpResources, getCachedAcpCatalog, refreshAcpModels, sessionPatchFromAcpCatalog } from './harness/acp-handler'
 import { applyClaudeResources } from './harness/claude-handler'
 import { applyCodexResources } from './harness/codex-handler'
 
@@ -677,6 +677,7 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
     let savedWorktreePath: string | undefined
     let savedProvider: string | null = null
     let savedApiProviderId: string | null = null
+    let savedAcpAgentId: string | null = null
     let savedTitle: string | null = null
     try {
       const saved = await window.app.loadSessionState(sessionId) as PersistedSessionState | null
@@ -688,6 +689,7 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
         savedProvider = saved.provider
         savedWorktreePath = saved.worktreePath ?? undefined
         savedApiProviderId = saved.apiProviderId ?? null
+        savedAcpAgentId = saved.acpAgentId ?? null
         savedTitle = saved.title ?? null
       }
     } catch (err) { console.warn('[chat] loadSessionState failed:', err) }
@@ -718,14 +720,20 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
       sessionProvider: restoredProvider,
       lastAssistantMessageId: savedMessages.findLast((m) => m.role === 'assistant')?.id ?? null,
       apiProviderId: savedApiProviderId,
+      acpAgentId: restoredProvider === 'acp' ? savedAcpAgentId : null,
       _title: savedTitle,
       _historyHydrated: true,
       permissionMode: defaultPermissionMode,
     }
-    Object.assign(
-      restoredSession,
-      applySessionAgentDefaults(restoredSession, freshProject, get().harnessResources.claude?.models ?? []),
-    )
+    if (restoredProvider === 'acp' && savedAcpAgentId) {
+      const catalog = getCachedAcpCatalog(get().harnessResources.acp, savedAcpAgentId)
+      if (catalog) Object.assign(restoredSession, sessionPatchFromAcpCatalog(catalog))
+    } else {
+      Object.assign(
+        restoredSession,
+        applySessionAgentDefaults(restoredSession, freshProject, get().harnessResources.claude?.models ?? []),
+      )
+    }
 
     set((s) => {
       const proj = getProject(s, activeProject)
@@ -756,6 +764,9 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
       await _syncAndResumeSession(activeProject, sessionId, set, _getSessionCwd(activeProject, getProject(get())._sessions[sessionId]))
     } catch (err) {
       console.warn('[chat] resumeSession failed:', err)
+    }
+    if (restoredProvider === 'acp') {
+      triggerPrewarm(get(), activeProject)
     }
   },
 

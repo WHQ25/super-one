@@ -235,6 +235,7 @@ const sessionManager = new SessionManagerImpl({
         worktreePath: snapshot.worktreePath,
         gitBranch: snapshot.gitBranch,
         apiProviderId: snapshot.apiProviderId,
+        acpAgentId: snapshot.acpAgentId,
       })
     } catch (err) {
       log.warn('[sessionManager] saveSessionStateBySid failed:', err)
@@ -261,6 +262,7 @@ const sessionManager = new SessionManagerImpl({
       worktreePath: loaded.record.worktreePath,
       gitBranch: loaded.record.gitBranch,
       apiProviderId: loaded.record.apiProviderId,
+      acpAgentId: loaded.record.acpAgentId,
     }
   },
   getActiveProvider: (harnessId, apiProviderId) => {

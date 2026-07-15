@@ -14,6 +14,7 @@ import {
   getSessionRecord,
   listSessionRecordsByProject,
   updateProviderSessionId,
+  updateAcpAgentId,
   updateSessionTitle,
   deleteSessionRecord,
   saveSessionStateBySid,
@@ -37,6 +38,8 @@ interface SessionRow {
   worktree_path: string | null
   is_pinned: number | null
   is_hidden: number | null
+  api_provider_id?: string | null
+  acp_agent_id?: string | null
 }
 
 interface MessageRow {
@@ -91,6 +94,30 @@ function makeFakeDb() {
           },
         }
       }
+      if (/INSERT INTO sessions \( id, project_id, provider_id, provider, title, created_at, last_user_message_at, is_worktree, git_branch, worktree_path, api_provider_id, acp_agent_id/.test(sql)
+        || /INSERT INTO sessions \( id, project_id, provider_id, provider, title, created_at, last_user_message_at, is_worktree, git_branch, worktree_path, api_provider_id /.test(sql)
+        || (/INSERT INTO sessions/.test(sql) && /api_provider_id/.test(sql) && /ON CONFLICT/.test(sql))) {
+        return {
+          run: (
+            id: string, projectId: string, providerId: string, provider: string,
+            title: string | null, createdAt: string, lastUserMsg: string,
+            isWorktree: number, gitBranch: string | null, worktreePath: string | null,
+            apiProviderId?: string | null, acpAgentId?: string | null,
+          ) => {
+            const prev = sessionsRows.get(id)
+            sessionsRows.set(id, {
+              id, project_id: projectId, provider_id: providerId, provider, title,
+              created_at: prev?.created_at ?? createdAt, last_user_message_at: lastUserMsg,
+              provider_session_id: prev?.provider_session_id ?? null,
+              total_cost_usd: prev?.total_cost_usd ?? 0, context_tokens: prev?.context_tokens ?? 0,
+              is_worktree: isWorktree, git_branch: gitBranch, worktree_path: worktreePath,
+              is_pinned: prev?.is_pinned ?? 0, is_hidden: prev?.is_hidden ?? 0,
+              api_provider_id: apiProviderId ?? null,
+              acp_agent_id: acpAgentId ?? null,
+            })
+          },
+        }
+      }
       if (/^INSERT INTO sessions/.test(sql)) {
         return {
           run: (id: string, projectId: string, providerId: string, provider: string, title: string | null, createdAt: string, lastUserMsg: string, isWorktree: number, gitBranch: string | null, worktreePath: string | null) => {
@@ -101,6 +128,8 @@ function makeFakeDb() {
               total_cost_usd: 0, context_tokens: 0,
               is_worktree: isWorktree, git_branch: gitBranch, worktree_path: worktreePath,
               is_pinned: 0, is_hidden: 0,
+              api_provider_id: null,
+              acp_agent_id: null,
             })
           },
         }
@@ -125,6 +154,14 @@ function makeFakeDb() {
           run: (psid: string, id: string) => {
             const row = sessionsRows.get(id)
             if (row) sessionsRows.set(id, { ...row, provider_session_id: psid })
+          },
+        }
+      }
+      if (/UPDATE sessions SET acp_agent_id/.test(sql)) {
+        return {
+          run: (agentId: string | null, id: string) => {
+            const row = sessionsRows.get(id)
+            if (row) sessionsRows.set(id, { ...row, acp_agent_id: agentId })
           },
         }
       }
@@ -230,6 +267,12 @@ describe('session-repo', () => {
       expect(fake.sessionsRows.get('sess-2')?.provider).toBe('codex')
     })
 
+    it('maps acp-* providerId to legacy provider=acp', () => {
+      insertSessionRecord({ id: 'sess-acp', projectPath: '/tmp/proj', providerId: 'acp-base' })
+      expect(fake.sessionsRows.get('sess-acp')?.provider).toBe('acp')
+      expect(fake.sessionsRows.get('sess-acp')?.provider_id).toBe('acp-base')
+    })
+
     it('throws when project is not in recent-folders', () => {
       getProjectIdMock.mockReturnValue(null)
       expect(() => insertSessionRecord({ id: 'x', projectPath: '/missing', providerId: 'claude-base' })).toThrow(/Project not found/)
@@ -252,6 +295,41 @@ describe('session-repo', () => {
     it('derives harnessId=codex from codex providerId', () => {
       insertSessionRecord({ id: 'x1', projectPath: '/tmp/proj', providerId: 'codex-base' })
       expect(getSessionRecord('x1')?.harnessId).toBe('codex')
+    })
+
+    it('derives harnessId=acp from acp providerId', () => {
+      insertSessionRecord({ id: 'a1', projectPath: '/tmp/proj', providerId: 'acp-base' })
+      const rec = getSessionRecord('a1')
+      expect(rec?.harnessId).toBe('acp')
+      expect(rec?.providerId).toBe('acp-base')
+    })
+  })
+
+  describe('acp_agent_id persistence', () => {
+    it('round-trips acpAgentId via saveSessionStateBySid', () => {
+      const messages: ChatMessage[] = [
+        { id: 'u1', role: 'user', status: 'complete', content: [{ type: 'text', text: 'hi' }], createdAt: '2026-04-18T00:00:00Z', providerId: 'acp' },
+        { id: 'a1', role: 'assistant', status: 'complete', content: [{ type: 'text', text: 'hello' }], createdAt: '2026-04-18T00:00:01Z', providerId: 'acp' },
+      ]
+      saveSessionStateBySid({
+        sid: 's-acp-agent',
+        projectPath: '/tmp/proj',
+        providerId: 'acp-base',
+        messages,
+        totalCostUsd: 0,
+        contextTokens: 0,
+        acpAgentId: 'opencode',
+      })
+      const loaded = loadSessionStateBySid('s-acp-agent')
+      expect(loaded?.record.harnessId).toBe('acp')
+      expect(loaded?.record.acpAgentId).toBe('opencode')
+      expect(fake.sessionsRows.get('s-acp-agent')?.provider).toBe('acp')
+    })
+
+    it('updateAcpAgentId patches existing row', () => {
+      insertSessionRecord({ id: 's-upd-agent', projectPath: '/tmp/proj', providerId: 'acp-base' })
+      updateAcpAgentId('s-upd-agent', 'grok-build')
+      expect(getSessionRecord('s-upd-agent')?.acpAgentId).toBe('grok-build')
     })
   })
 

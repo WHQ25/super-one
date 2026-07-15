@@ -42,7 +42,8 @@ describe('db-sessions session query + mapping', () => {
         last_user_msg_at: '2026-01-01T00:00:00.000Z',
         is_worktree: 0,
         is_pinned: 0,
-        provider: 'codex' as const,
+        provider_id: 'codex-base',
+        provider: 'codex',
       },
       {
         id: 's2',
@@ -51,12 +52,24 @@ describe('db-sessions session query + mapping', () => {
         last_user_msg_at: '2026-01-01T00:00:00.000Z',
         is_worktree: 0,
         is_pinned: 1,
-        provider: 'claude' as const,
+        provider_id: 'claude-base',
+        provider: 'claude',
+      },
+      {
+        id: 's3',
+        title: 'acp session with stale legacy column',
+        created_at: '2026-01-01T00:00:00.000Z',
+        last_user_msg_at: '2026-01-01T00:00:00.000Z',
+        is_worktree: 0,
+        is_pinned: 0,
+        provider_id: 'acp-base',
+        provider: 'claude',
       },
     ]
     const allMock = vi.fn().mockReturnValue(rows)
     const prepareMock = vi.fn((sql: string) => {
       expect(sql).toContain('last_user_message_at')
+      expect(sql).toContain('provider_id')
       expect(sql).not.toContain("m2.provider_id = 'codex'")
       return { all: allMock }
     })
@@ -68,6 +81,7 @@ describe('db-sessions session query + mapping', () => {
     expect(allMock).toHaveBeenCalledWith('proj-1')
     expect(providerBySessionId['s1']).toBe('codex')
     expect(providerBySessionId['s2']).toBe('claude')
+    expect(providerBySessionId['s3']).toBe('acp')
   })
 
   it('listPinnedSessions keeps inferred provider from SQL rows', () => {
@@ -80,7 +94,8 @@ describe('db-sessions session query + mapping', () => {
         is_worktree: 0,
         folder_path: '/tmp/project-1',
         folder_name: 'project-1',
-        provider: 'codex' as const,
+        provider_id: 'codex-base',
+        provider: 'codex',
       },
       {
         id: 'p2',
@@ -90,12 +105,25 @@ describe('db-sessions session query + mapping', () => {
         is_worktree: 1,
         folder_path: '/tmp/project-2',
         folder_name: 'project-2',
-        provider: 'claude' as const,
+        provider_id: 'claude-base',
+        provider: 'claude',
+      },
+      {
+        id: 'p3',
+        title: 'acp pinned',
+        created_at: '2026-01-01T00:00:00.000Z',
+        last_user_msg_at: '2026-01-01T00:00:00.000Z',
+        is_worktree: 0,
+        folder_path: '/tmp/project-3',
+        folder_name: 'project-3',
+        provider_id: 'acp-base',
+        provider: 'claude',
       },
     ]
     const allMock = vi.fn().mockReturnValue(rows)
     const prepareMock = vi.fn((sql: string) => {
       expect(sql).toContain('last_user_message_at')
+      expect(sql).toContain('provider_id')
       expect(sql).not.toContain("m2.provider_id = 'codex'")
       return { all: allMock }
     })
@@ -106,6 +134,7 @@ describe('db-sessions session query + mapping', () => {
 
     expect(providerBySessionId['p1']).toBe('codex')
     expect(providerBySessionId['p2']).toBe('claude')
+    expect(providerBySessionId['p3']).toBe('acp')
   })
 })
 

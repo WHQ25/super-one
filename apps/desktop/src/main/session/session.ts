@@ -29,6 +29,7 @@ import {
   type CodexSessionRuntime,
 } from '../agent/codex-session-runtime'
 import { renameSession as dbRenameSession } from '../db-sessions'
+import { updateAcpAgentId as dbUpdateAcpAgentId } from './session-repo'
 import { nextEventSeq } from './event-seq'
 import {
   LOCAL_OWNER,
@@ -71,6 +72,7 @@ export interface SessionConstructorOptions {
   initialTotalCostUsd?: number
   initialContextTokens?: number
   apiProviderId?: string | null
+  acpAgentId?: string | null
   homedir?: string
   getProjectResources?: (cwd: string) => ProjectResources
   invalidateProjectResources?: (cwd: string) => void
@@ -80,6 +82,17 @@ export interface SessionConstructorOptions {
   resolveProviderConfigForApiProvider?: (apiProviderId: string | null) => unknown
   getActiveDefaultApiProviderId?: (harnessId: HarnessId) => string | null
   onBeforeInterrupt?: () => void
+}
+
+function agentIdFromConfig(config: unknown): string | null {
+  if (!config || typeof config !== 'object') return null
+  const id = (config as { agentId?: unknown }).agentId
+  return typeof id === 'string' && id ? id : null
+}
+
+function withAgentId(config: unknown, agentId: string): unknown {
+  const base = (config && typeof config === 'object') ? config as Record<string, unknown> : {}
+  return { ...base, agentId }
 }
 
 function getDefaultSandbox(): SandboxInfo {
@@ -144,6 +157,7 @@ export class Session implements SessionContract {
   private model: string | undefined
   private additionalDirectories: string[]
   private _apiProviderId: string | null = null
+  private _acpAgentId: string | null = null
 
   private homedir: string
   private getProjectResources?: (cwd: string) => ProjectResources
@@ -259,6 +273,10 @@ export class Session implements SessionContract {
     this._gitBranch = opts.gitBranch ?? null
     this._missingWorktreePath = opts.missingWorktreePath ?? null
     this._apiProviderId = opts.apiProviderId ?? null
+    this._acpAgentId = opts.acpAgentId ?? agentIdFromConfig(opts.providerConfig)
+    if (this.harnessId === 'acp' && this._acpAgentId) {
+      this.providerConfig = withAgentId(this.providerConfig, this._acpAgentId)
+    }
     this.homedir = opts.homedir ?? ''
     this.getProjectResources = opts.getProjectResources
     this.invalidateProjectResources = opts.invalidateProjectResources
@@ -616,25 +634,21 @@ export class Session implements SessionContract {
   }
 
   prewarm(hint?: PrewarmHint): void {
-    // ACP agentId lives in app settings; re-resolve so prewarm sees the latest selection.
     if (this.harnessId === 'acp' && this.resolveProviderConfigForApiProvider) {
       try {
         this.providerConfig = this.resolveProviderConfigForApiProvider(this._apiProviderId)
       } catch { /* keep previous config */ }
     }
-    // Prefer explicit acpAgentId from renderer hint — settings write can lag behind UI selection.
-    let config = this.providerConfig
-    if (this.harnessId === 'acp' && hint?.acpAgentId) {
-      const base = (config && typeof config === 'object') ? config as Record<string, unknown> : {}
-      config = { ...base, agentId: hint.acpAgentId }
-      this.providerConfig = config
+    if (this.harnessId === 'acp') {
+      if (hint?.acpAgentId) this.setAcpAgentId(hint.acpAgentId)
+      else this.applyAcpAgentToConfig()
     }
     const dirs = hint?.additionalDirs ?? this.additionalDirectories
     const opts: BackendStartOptions = {
       sessionId: this.id,
       projectPath: this.projectPath,
       cwd: this.cwd,
-      config,
+      config: this.providerConfig,
       permissionMode: this.permissionMode,
       sandboxInfo: this.sandboxInfo,
       effort: hint?.effort ?? this.effort,
@@ -645,6 +659,26 @@ export class Session implements SessionContract {
       apiProviderId: this._apiProviderId,
     }
     this.backend.prewarm(opts)
+  }
+
+  setAcpAgentId(agentId: string | null): void {
+    if (this.harnessId !== 'acp') return
+    if (this._acpAgentId === agentId) {
+      this.applyAcpAgentToConfig()
+      return
+    }
+    this._acpAgentId = agentId
+    this.applyAcpAgentToConfig()
+    try {
+      dbUpdateAcpAgentId(this.id, agentId)
+    } catch (err) {
+      log.debug('[Session] updateAcpAgentId skipped:', err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  private applyAcpAgentToConfig(): void {
+    if (this.harnessId !== 'acp' || !this._acpAgentId) return
+    this.providerConfig = withAgentId(this.providerConfig, this._acpAgentId)
   }
 
   dequeueMessage(clientMessageId: string): boolean {
@@ -886,6 +920,7 @@ export class Session implements SessionContract {
 
   private buildBackendStartOpts(): BackendStartOptions {
     this.abortController = new AbortController()
+    this.applyAcpAgentToConfig()
     return {
       sessionId: this.id,
       projectPath: this.projectPath,
@@ -1076,6 +1111,9 @@ export class Session implements SessionContract {
     if (this._messages.length === 0) return
     try {
       const isWorktree = this._cwd !== this.projectPath
+      if (this.harnessId === 'acp' && !this._acpAgentId) {
+        this._acpAgentId = agentIdFromConfig(this.providerConfig)
+      }
       this.onStateChange({
         sid: this.id,
         projectPath: this.projectPath,
@@ -1089,6 +1127,7 @@ export class Session implements SessionContract {
         gitBranch: this._gitBranch,
         worktreeMissing: this._missingWorktreePath !== null,
         apiProviderId: this._apiProviderId,
+        acpAgentId: this._acpAgentId,
       })
     } catch (err) {
       log.warn('[Session] onStateChange hook error:', err)

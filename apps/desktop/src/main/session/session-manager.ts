@@ -33,6 +33,7 @@ export interface LoadedSessionData {
   worktreePath?: string | null
   gitBranch?: string | null
   apiProviderId?: string | null
+  acpAgentId?: string | null
 }
 
 export interface SessionManagerPersistence {
@@ -170,6 +171,7 @@ export class SessionManagerImpl implements SessionManagerContract {
       additionalDirectories: opts.additionalDirectories,
       gitBranch: opts.gitBranch ?? null,
       apiProviderId,
+      acpAgentId: opts.acpAgentId ?? null,
       homedir: homedir(),
       getProjectResources: (c) => this.projectResources.get(c),
       invalidateProjectResources: (c) => this.projectResources.invalidate(c),
@@ -263,6 +265,7 @@ export class SessionManagerImpl implements SessionManagerContract {
       gitBranch: data.gitBranch ?? null,
       missingWorktreePath,
       apiProviderId,
+      acpAgentId: data.acpAgentId ?? null,
       homedir: homedir(),
       getProjectResources: (c) => this.projectResources.get(c),
       invalidateProjectResources: (c) => this.projectResources.invalidate(c),

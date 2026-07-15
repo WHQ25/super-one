@@ -26,7 +26,7 @@ export function buildSessionMenuItems(
     { kind: 'item', id: 'mini', label: t('sidebar.contextMenu.openInMiniWindow'), icon: PictureInPicture2, onSelect: () => window.app.openSessionWindow(folderPath, session.sessionId, session.title) },
     { kind: 'separator' },
     { kind: 'item', id: 'copyId', label: t('sidebar.contextMenu.copySessionId'), icon: Copy, onSelect: () => {
-      const providerLabel = session.provider === 'codex' ? 'Codex' : 'Claude Code'
+      const providerLabel = session.provider === 'codex' ? 'Codex' : session.provider === 'acp' ? 'ACP' : 'Claude Code'
       if (session.providerSessionId) {
         navigator.clipboard.writeText(session.providerSessionId)
         toast.success(`${providerLabel} ${t('sidebar.contextMenu.sessionIdCopiedToast')}`)

@@ -351,7 +351,7 @@ interface AppAPI {
   resumeSession(projectPath: string, sessionId: string, worktreeCwd?: string, permissionMode?: PermissionMode): Promise<{ permissionMode: PermissionMode; sandboxInfo: SandboxInfo } | undefined>
   loadSessionMessages(projectPath: string, sessionId: string, limit: number, cursor?: number): Promise<LoadSessionMessagesResult>
   renameSession(sessionId: string, title: string): Promise<void>
-  loadSessionState(sessionId: string): Promise<{ messages: ChatMessage[]; totalCostUsd: number; contextTokens: number; isWorktree: boolean; gitBranch: string | null; worktreePath: string | null; provider: string } | null>
+  loadSessionState(sessionId: string): Promise<{ messages: ChatMessage[]; totalCostUsd: number; contextTokens: number; isWorktree: boolean; gitBranch: string | null; worktreePath: string | null; provider: string; apiProviderId?: string | null; acpAgentId?: string | null; title?: string | null } | null>
   deleteSession(sessionId: string): Promise<void>
   deleteSessionsOlderThan(folderPath: string, cutoffDate: string): Promise<string[]>
   pinSession(sessionId: string, pinned: boolean): Promise<void>

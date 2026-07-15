@@ -57,6 +57,7 @@ export function applySessionAgentDefaults(
     )
     return { selectedCodexModel: sel.modelId, selectedCodexReasoningEffort: sel.reasoningEffort }
   }
+  if (provider === 'acp') return {}
   if (!session.selectedModel) {
     const draft = { ...session }
     applyDefaultModel(draft, claudeModels)

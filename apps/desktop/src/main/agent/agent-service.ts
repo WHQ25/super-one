@@ -1490,6 +1490,7 @@ export class AgentService {
       effort: hint?.effort,
       model: hint?.model,
       additionalDirectories: hint?.additionalDirs,
+      acpAgentId: hint?.acpAgentId ?? null,
     }
     if (hint?.sessionId) {
       const existing = mgr.getSession(hint.sessionId)

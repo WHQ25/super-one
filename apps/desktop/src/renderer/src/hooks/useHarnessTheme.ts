@@ -26,10 +26,7 @@ function useDarkClass(): boolean {
 }
 
 export function useActiveHarness(): HarnessId {
-  return useActiveSession((s) => {
-    const provider = s.sessionProvider ?? s.preferredProvider
-    return provider === 'codex' ? 'codex' : 'claude'
-  })
+  return useActiveSession((s) => s.sessionProvider ?? s.preferredProvider ?? 'claude')
 }
 
 interface AppliedSnapshot {
@@ -92,19 +89,15 @@ function syncBrandProps(
 export function usePaneHarnessTheme(ref: RefObject<HTMLElement | null>): void {
   const dark = useDarkClass()
   const harness = useActiveHarness()
-  const claudeHue = useAppStore((s) => s.brandHues.claude)
-  const codexHue = useAppStore((s) => s.brandHues.codex)
-  const claudeOverrides = useAppStore((s) => s.tokenOverrides.claude)
-  const codexOverrides = useAppStore((s) => s.tokenOverrides.codex)
+  const brandHue = useAppStore((s) => s.brandHues[harness])
+  const overrides = useAppStore((s) => s.tokenOverrides[harness])
 
   const appliedRef = useRef<AppliedSnapshot>(EMPTY_SNAPSHOT)
 
   useEffect(() => {
     const el = ref.current
     if (!el) return
-    const rawHue = harness === 'codex' ? codexHue : claudeHue
-    const userHue = rawHue ?? HARNESS_DEFAULT_BRAND_HUE[harness]
-    const overrides = harness === 'codex' ? codexOverrides : claudeOverrides
+    const userHue = brandHue ?? HARNESS_DEFAULT_BRAND_HUE[harness]
     el.dataset.harness = harness
     el.classList.toggle('brand-scope', !dark)
     let raf: number | null = requestAnimationFrame(() => {
@@ -114,16 +107,14 @@ export function usePaneHarnessTheme(ref: RefObject<HTMLElement | null>): void {
     return () => {
       if (raf !== null) cancelAnimationFrame(raf)
     }
-  }, [ref, harness, dark, claudeHue, codexHue, claudeOverrides, codexOverrides])
+  }, [ref, harness, dark, brandHue, overrides])
 }
 
 export function useHarnessTheme(): void {
   const dark = useDarkClass()
   const harness = useActiveHarness()
-  const claudeHue = useAppStore((s) => s.brandHues.claude)
-  const codexHue = useAppStore((s) => s.brandHues.codex)
-  const claudeOverrides = useAppStore((s) => s.tokenOverrides.claude)
-  const codexOverrides = useAppStore((s) => s.tokenOverrides.codex)
+  const brandHue = useAppStore((s) => s.brandHues[harness])
+  const overrides = useAppStore((s) => s.tokenOverrides[harness])
   const terminalLightPalette = useAppStore((s) => s.terminalLightPalette)
   const terminalDarkPalette = useAppStore((s) => s.terminalDarkPalette)
   const terminalFontSize = useAppStore((s) => s.terminalFontSize)
@@ -134,8 +125,7 @@ export function useHarnessTheme(): void {
   const appliedRef = useRef<AppliedSnapshot>(EMPTY_SNAPSHOT)
 
   useEffect(() => {
-    const userHue = harness === 'codex' ? codexHue : claudeHue
-    const overrides = harness === 'codex' ? codexOverrides : claudeOverrides
+    const userHue = brandHue ?? HARNESS_DEFAULT_BRAND_HUE[harness]
     const root = document.documentElement
     root.dataset.harness = harness
     root.classList.toggle('liquid-glass', liquidGlass)
@@ -159,5 +149,5 @@ export function useHarnessTheme(): void {
     return () => {
       if (raf !== null) cancelAnimationFrame(raf)
     }
-  }, [harness, dark, claudeHue, codexHue, claudeOverrides, codexOverrides, terminalLightPalette, terminalDarkPalette, terminalFontSize, terminalFontFamily, uiFontFamily, liquidGlass])
+  }, [harness, dark, brandHue, overrides, terminalLightPalette, terminalDarkPalette, terminalFontSize, terminalFontFamily, uiFontFamily, liquidGlass])
 }

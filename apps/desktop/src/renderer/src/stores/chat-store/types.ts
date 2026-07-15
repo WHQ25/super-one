@@ -193,6 +193,7 @@ export type PersistedSessionState = {
   worktreePath: string | null
   provider: ChatProvider
   apiProviderId?: string | null
+  acpAgentId?: string | null
   title?: string | null
 }
 

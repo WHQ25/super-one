@@ -58,6 +58,7 @@ export function _mergePersistedSessionState(session: PerSessionState, saved: Per
     _worktreePath: session._worktreePath ?? saved.worktreePath,
     lastAssistantMessageId: mergedMessages.findLast((message) => message.role === 'assistant')?.id ?? session.lastAssistantMessageId,
     apiProviderId: session.apiProviderId ?? saved.apiProviderId ?? null,
+    acpAgentId: session.acpAgentId ?? saved.acpAgentId ?? null,
     _historyHydrated: true,
   }
 }

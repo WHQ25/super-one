@@ -48,6 +48,7 @@ export interface SessionRecord {
   createdAt: string
   lastUserMessageAt: string | null
   apiProviderId: string | null
+  acpAgentId: string | null
 }
 
 interface SessionRow {
@@ -67,6 +68,7 @@ interface SessionRow {
   is_pinned: number | null
   is_hidden: number | null
   api_provider_id: string | null
+  acp_agent_id: string | null
 }
 
 interface MessageRow {
@@ -104,12 +106,21 @@ function rowToRecord(row: SessionRow, projectPath: string): SessionRecord {
     createdAt: row.created_at,
     lastUserMessageAt: row.last_user_message_at,
     apiProviderId: row.api_provider_id ?? null,
+    acpAgentId: row.acp_agent_id ?? null,
   }
 }
 
 function inferLegacyProviderId(row: { provider?: string | null }): string {
   if (row.provider === 'codex') return 'codex-base'
+  if (row.provider === 'acp') return 'acp-base'
   return 'claude-base'
+}
+
+/** Map a session_providers id (or legacy base id) to its harness. */
+export function harnessIdFromProviderId(providerId: string): HarnessId {
+  if (providerId.startsWith('codex')) return 'codex'
+  if (providerId.startsWith('acp')) return 'acp'
+  return 'claude'
 }
 
 /**
@@ -118,9 +129,9 @@ function inferLegacyProviderId(row: { provider?: string | null }): string {
  * both are absent. Shared by session-repo and db-sessions so there is exactly
  * one place that maps a persisted row to a harness.
  */
-export function deriveHarnessId(row: { provider_id?: string | null; provider?: string | null }): 'codex' | 'claude' {
+export function deriveHarnessId(row: { provider_id?: string | null; provider?: string | null }): HarnessId {
   const providerId = row.provider_id ?? inferLegacyProviderId(row)
-  return providerId.startsWith('codex') ? 'codex' : 'claude'
+  return harnessIdFromProviderId(providerId)
 }
 
 export interface InsertSessionInput {
@@ -137,7 +148,7 @@ export function insertSessionRecord(input: InsertSessionInput): void {
   const projectId = getProjectId(input.projectPath)
   if (!projectId) throw new Error(`Project not found for path: ${input.projectPath}`)
   const now = new Date().toISOString()
-  const legacyProvider = input.providerId.startsWith('codex') ? 'codex' : 'claude'
+  const legacyProvider = harnessIdFromProviderId(input.providerId)
   getDb().prepare(`
     INSERT INTO sessions (
       id, project_id, provider_id, provider, title, created_at, last_user_message_at,
@@ -195,6 +206,10 @@ export function updateProviderSessionId(sid: string, providerSessionId: string):
   getDb().prepare('UPDATE sessions SET provider_session_id = ? WHERE id = ?').run(providerSessionId, sid)
 }
 
+export function updateAcpAgentId(sid: string, acpAgentId: string | null): void {
+  getDb().prepare('UPDATE sessions SET acp_agent_id = ? WHERE id = ?').run(acpAgentId, sid)
+}
+
 export function updateSessionTitle(sid: string, title: string): void {
   getDb().prepare('UPDATE sessions SET title = ? WHERE id = ?').run(title, sid)
 }
@@ -215,6 +230,7 @@ export interface SaveSessionStateInput {
   worktreePath?: string | null
   gitBranch?: string | null
   apiProviderId?: string | null
+  acpAgentId?: string | null
 }
 
 export function saveSessionStateBySid(input: SaveSessionStateInput): void {
@@ -222,20 +238,23 @@ export function saveSessionStateBySid(input: SaveSessionStateInput): void {
   const projectId = getProjectId(input.projectPath)
   if (!projectId) throw new Error(`Project not found for path: ${input.projectPath}`)
   const lastUserMessageAt = [...input.messages].reverse().find((m) => m.role === 'user')?.createdAt ?? null
-  const legacyProvider = input.providerId.startsWith('codex') ? 'codex' : 'claude'
+  const legacyProvider = harnessIdFromProviderId(input.providerId)
   const now = new Date().toISOString()
 
   const upsertSession = db.prepare(`
     INSERT INTO sessions (
       id, project_id, provider_id, provider, title, created_at, last_user_message_at,
-      is_worktree, git_branch, worktree_path, api_provider_id
+      is_worktree, git_branch, worktree_path, api_provider_id, acp_agent_id
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
+      provider_id = excluded.provider_id,
+      provider = excluded.provider,
       is_worktree = excluded.is_worktree,
       git_branch = excluded.git_branch,
       worktree_path = excluded.worktree_path,
-      api_provider_id = excluded.api_provider_id
+      api_provider_id = excluded.api_provider_id,
+      acp_agent_id = excluded.acp_agent_id
   `)
 
   const upsertMsg = db.prepare(`
@@ -277,7 +296,8 @@ export function saveSessionStateBySid(input: SaveSessionStateInput): void {
   `).all(input.sid) as Array<{ id: string }>
   const priorCountedIds = new Set(priorCounted.map((r) => r.id))
 
-  const harness: HarnessKind = legacyProvider === 'codex' ? 'codex' : 'claude'
+  const harness: HarnessKind | null =
+    legacyProvider === 'codex' || legacyProvider === 'claude' ? legacyProvider : null
   const newlyCountedMessages: Array<{ role: string; createdAt: string }> = []
   let countSessionStarted = false
   let sessionCreatedAt = sessionRow?.created_at ?? now
@@ -295,6 +315,7 @@ export function saveSessionStateBySid(input: SaveSessionStateInput): void {
       input.gitBranch ?? null,
       input.worktreePath ?? null,
       input.apiProviderId ?? null,
+      input.acpAgentId ?? null,
     )
     if (!sessionRow) sessionCreatedAt = now
     deleteStale.run(input.sid)
@@ -334,24 +355,26 @@ export function saveSessionStateBySid(input: SaveSessionStateInput): void {
 
   tx()
 
-  if (countSessionStarted) {
-    recordSessionStarted(harness, sessionCreatedAt)
-  }
-  if (newlyCountedMessages.length > 0) {
-    const userByDay = new Map<string, number>()
-    const assistantByDay = new Map<string, number>()
-    for (const m of newlyCountedMessages) {
-      if (m.role === 'user') {
-        userByDay.set(m.createdAt, (userByDay.get(m.createdAt) ?? 0) + 1)
-      } else if (m.role === 'assistant') {
-        assistantByDay.set(m.createdAt, (assistantByDay.get(m.createdAt) ?? 0) + 1)
+  if (harness) {
+    if (countSessionStarted) {
+      recordSessionStarted(harness, sessionCreatedAt)
+    }
+    if (newlyCountedMessages.length > 0) {
+      const userByDay = new Map<string, number>()
+      const assistantByDay = new Map<string, number>()
+      for (const m of newlyCountedMessages) {
+        if (m.role === 'user') {
+          userByDay.set(m.createdAt, (userByDay.get(m.createdAt) ?? 0) + 1)
+        } else if (m.role === 'assistant') {
+          assistantByDay.set(m.createdAt, (assistantByDay.get(m.createdAt) ?? 0) + 1)
+        }
       }
-    }
-    for (const [createdAt, n] of userByDay) {
-      recordMessageCounts(harness, createdAt, { userMessages: n })
-    }
-    for (const [createdAt, n] of assistantByDay) {
-      recordMessageCounts(harness, createdAt, { assistantMessages: n })
+      for (const [createdAt, n] of userByDay) {
+        recordMessageCounts(harness, createdAt, { userMessages: n })
+      }
+      for (const [createdAt, n] of assistantByDay) {
+        recordMessageCounts(harness, createdAt, { assistantMessages: n })
+      }
     }
   }
 }
@@ -389,7 +412,7 @@ export function forkSessionRecord(input: ForkSessionRecordInput): void {
   const source = getSessionRecord(input.sourceId)
   if (!source) throw new Error(`Source session not found: ${input.sourceId}`)
   const now = new Date().toISOString()
-  const legacyProvider = source.providerId.startsWith('codex') ? 'codex' : 'claude'
+  const legacyProvider = harnessIdFromProviderId(source.providerId)
 
   const allSrcMsgs = db.prepare(`
     SELECT id, role, status, content_json, created_at, provider_id, metadata_json
@@ -407,8 +430,8 @@ export function forkSessionRecord(input: ForkSessionRecordInput): void {
     INSERT INTO sessions (
       id, project_id, provider_id, provider, provider_session_id, title,
       created_at, last_user_message_at, total_cost_usd, context_tokens,
-      is_worktree, git_branch, worktree_path, api_provider_id, usage_counted_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)
+      is_worktree, git_branch, worktree_path, api_provider_id, acp_agent_id, usage_counted_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)
   `)
   const insMsg = db.prepare(`
     INSERT INTO chat_messages (id, session_id, sort_order, role, status, content_json, created_at, provider_id, metadata_json, usage_counted_at)
@@ -419,7 +442,8 @@ export function forkSessionRecord(input: ForkSessionRecordInput): void {
     insSession.run(
       input.newId, source.projectId, source.providerId, legacyProvider,
       input.providerSessionId, input.title, now, lastUserAt, source.contextTokens,
-      input.worktreePath ? 1 : 0, input.gitBranch, input.worktreePath, source.apiProviderId, now,
+      input.worktreePath ? 1 : 0, input.gitBranch, input.worktreePath, source.apiProviderId,
+      source.acpAgentId, now,
     )
     srcMsgs.forEach((m, i) => {
       insMsg.run(

@@ -59,6 +59,7 @@ export interface SessionCreateOptions {
   title?: string
   gitBranch?: string | null
   apiProviderId?: string | null
+  acpAgentId?: string | null
 }
 
 export interface SessionStateChange {
@@ -74,6 +75,7 @@ export interface SessionStateChange {
   gitBranch: string | null
   worktreeMissing: boolean
   apiProviderId: string | null
+  acpAgentId: string | null
 }
 
 export type ActiveApiProviderIdGetter = (harnessId: HarnessId) => string | null

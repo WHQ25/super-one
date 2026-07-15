@@ -35,22 +35,21 @@ export function listSessionsForFolder(folderPath: string, limit?: number, offset
   const db = getDb()
   const baseSql = `
     SELECT s.id, s.title, s.created_at, s.is_worktree, s.is_pinned, s.is_hidden, s.git_branch, s.worktree_path,
-           s.is_automation, s.automation_id, s.provider_session_id,
-           COALESCE(s.last_user_message_at, s.created_at) AS last_user_msg_at,
-           COALESCE(NULLIF(s.provider, ''), 'claude') AS provider
+           s.is_automation, s.automation_id, s.provider_session_id, s.provider_id, s.provider,
+           COALESCE(s.last_user_message_at, s.created_at) AS last_user_msg_at
     FROM sessions s
     WHERE s.project_id = ?
     ORDER BY last_user_msg_at DESC`
   const rows = (limit != null
     ? db.prepare(`${baseSql} LIMIT ? OFFSET ?`).all(projectId, limit, offset ?? 0)
     : db.prepare(baseSql).all(projectId)
-  ) as Array<{ id: string; title: string | null; created_at: string; last_user_msg_at: string; is_worktree: number | null; is_pinned: number | null; is_hidden: number | null; git_branch: string | null; worktree_path: string | null; is_automation: number | null; automation_id: string | null; provider_session_id: string | null; provider: 'claude' | 'codex' }>
+  ) as Array<{ id: string; title: string | null; created_at: string; last_user_msg_at: string; is_worktree: number | null; is_pinned: number | null; is_hidden: number | null; git_branch: string | null; worktree_path: string | null; is_automation: number | null; automation_id: string | null; provider_session_id: string | null; provider_id: string | null; provider: string | null }>
 
   return rows.map((r) => ({
     sessionId: r.id,
     title: r.title ?? 'Untitled',
     lastActiveAt: r.last_user_msg_at,
-    provider: r.provider,
+    provider: deriveHarnessId(r),
     messageCount: 0,
     ...(r.is_worktree ? { isWorktree: true } : {}),
     ...(r.is_pinned ? { isPinned: true } : {}),
@@ -155,7 +154,8 @@ export function saveSessionState(
   const priorCountedIds = new Set(priorCounted.map((r) => r.id))
 
   const provider = data.provider ?? 'claude'
-  const harness: HarnessKind = provider === 'codex' ? 'codex' : 'claude'
+  const harness: HarnessKind | null =
+    provider === 'codex' || provider === 'claude' ? provider : null
 
   const newlyCountedMessages: Array<{ role: string; createdAt: string }> = []
   let countSessionStarted = false
@@ -204,24 +204,26 @@ export function saveSessionState(
 
   tx()
 
-  if (countSessionStarted && sessionRow) {
-    recordSessionStarted(harness, sessionRow.created_at)
-  }
-  if (newlyCountedMessages.length > 0) {
-    const userByDay = new Map<string, number>()
-    const assistantByDay = new Map<string, number>()
-    for (const m of newlyCountedMessages) {
-      if (m.role === 'user') {
-        userByDay.set(m.createdAt, (userByDay.get(m.createdAt) ?? 0) + 1)
-      } else if (m.role === 'assistant') {
-        assistantByDay.set(m.createdAt, (assistantByDay.get(m.createdAt) ?? 0) + 1)
+  if (harness) {
+    if (countSessionStarted && sessionRow) {
+      recordSessionStarted(harness, sessionRow.created_at)
+    }
+    if (newlyCountedMessages.length > 0) {
+      const userByDay = new Map<string, number>()
+      const assistantByDay = new Map<string, number>()
+      for (const m of newlyCountedMessages) {
+        if (m.role === 'user') {
+          userByDay.set(m.createdAt, (userByDay.get(m.createdAt) ?? 0) + 1)
+        } else if (m.role === 'assistant') {
+          assistantByDay.set(m.createdAt, (assistantByDay.get(m.createdAt) ?? 0) + 1)
+        }
       }
-    }
-    for (const [createdAt, n] of userByDay) {
-      recordMessageCounts(harness, createdAt, { userMessages: n })
-    }
-    for (const [createdAt, n] of assistantByDay) {
-      recordMessageCounts(harness, createdAt, { assistantMessages: n })
+      for (const [createdAt, n] of userByDay) {
+        recordMessageCounts(harness, createdAt, { userMessages: n })
+      }
+      for (const [createdAt, n] of assistantByDay) {
+        recordMessageCounts(harness, createdAt, { assistantMessages: n })
+      }
     }
   }
 }
@@ -229,12 +231,12 @@ export function saveSessionState(
 /** Load session state from DB */
 export function loadSessionState(
   sessionId: string,
-): { messages: ChatMessage[]; totalCostUsd: number; contextTokens: number; isWorktree: boolean; gitBranch: string | null; worktreePath: string | null; provider: string; apiProviderId: string | null; title: string | null } | null {
+): { messages: ChatMessage[]; totalCostUsd: number; contextTokens: number; isWorktree: boolean; gitBranch: string | null; worktreePath: string | null; provider: string; apiProviderId: string | null; acpAgentId: string | null; title: string | null } | null {
   const db = getDb()
 
   const session = db.prepare(`
-    SELECT title, total_cost_usd, context_tokens, is_worktree, git_branch, worktree_path, provider, provider_id, api_provider_id FROM sessions WHERE id = ?
-  `).get(sessionId) as (DbSession & { is_worktree: number | null; git_branch: string | null; worktree_path: string | null; provider: string | null; provider_id: string | null; api_provider_id: string | null }) | undefined
+    SELECT title, total_cost_usd, context_tokens, is_worktree, git_branch, worktree_path, provider, provider_id, api_provider_id, acp_agent_id FROM sessions WHERE id = ?
+  `).get(sessionId) as (DbSession & { is_worktree: number | null; git_branch: string | null; worktree_path: string | null; provider: string | null; provider_id: string | null; api_provider_id: string | null; acp_agent_id: string | null }) | undefined
 
   if (!session) return null
 
@@ -274,6 +276,7 @@ export function loadSessionState(
     worktreePath: session.worktree_path ?? null,
     provider: deriveHarnessId(session),
     apiProviderId: session.api_provider_id ?? null,
+    acpAgentId: session.acp_agent_id ?? null,
     title: session.title ?? null,
   }
 }
@@ -377,20 +380,20 @@ export function listPinnedSessions(): PinnedSessionEntry[] {
   const db = getDb()
   const rows = db.prepare(`
     SELECT s.id, s.title, s.created_at, s.is_worktree, s.is_automation, s.automation_id, s.provider_session_id,
+           s.provider_id, s.provider,
            p.path AS folder_path, p.name AS folder_name,
-           COALESCE(s.last_user_message_at, s.created_at) AS last_user_msg_at,
-           COALESCE(NULLIF(s.provider, ''), 'claude') AS provider
+           COALESCE(s.last_user_message_at, s.created_at) AS last_user_msg_at
     FROM sessions s
     JOIN projects p ON p.id = s.project_id
     WHERE s.is_pinned = 1 AND COALESCE(s.is_hidden, 0) = 0
     ORDER BY last_user_msg_at DESC
-  `).all() as Array<{ id: string; title: string | null; created_at: string; last_user_msg_at: string; is_worktree: number | null; is_automation: number | null; automation_id: string | null; provider_session_id: string | null; folder_path: string; folder_name: string; provider: 'claude' | 'codex' }>
+  `).all() as Array<{ id: string; title: string | null; created_at: string; last_user_msg_at: string; is_worktree: number | null; is_automation: number | null; automation_id: string | null; provider_session_id: string | null; provider_id: string | null; provider: string | null; folder_path: string; folder_name: string }>
 
   return rows.map((r) => ({
     sessionId: r.id,
     title: r.title ?? 'Untitled',
     lastActiveAt: r.last_user_msg_at,
-    provider: r.provider,
+    provider: deriveHarnessId(r),
     messageCount: 0,
     ...(r.is_worktree ? { isWorktree: true } : {}),
     ...(r.is_automation ? { isAutomation: true } : {}),

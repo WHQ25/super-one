@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ChevronDown, ExternalLink, Loader2, Pencil, Plus, Trash2, Zap } from 'lucide-react'
+import { ChevronDown, ExternalLink, Loader2, Pencil, Plus, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@superone/ui/components/ui/button'
 import { Badge } from '@superone/ui/components/ui/badge'
@@ -47,6 +47,7 @@ import {
   type CustomModel,
 } from './providers/custom-models'
 import { planTestEndpoints, useEndpointTest } from './providers/test-endpoints'
+import { TestConnectionButton, TestConnectionStatus } from './providers/TestConnection'
 
 const BRAND_POPULARITY = [
   'anthropic',
@@ -162,19 +163,9 @@ function CredentialRow({
           onChange={(e) => setSecret(e.target.value)}
         />
         <div className="flex items-center justify-between gap-2">
-          <div className="flex flex-row items-center gap-2">  
-            <Button variant="outline" size="sm" disabled={testState.status === 'testing'} onClick={test}>
-              {testState.status === 'testing' ? <Loader2 className="size-4 animate-spin" /> : <Zap className="size-4" /> }
-              {testState.status === 'testing' ? t('resources.providerDialog.testing') : t('resources.providerDialog.test')}
-            </Button>
-            {testState.status === 'success' && (
-              <span className="text-[11px] text-success">{t('resources.providerDialog.connected')}</span>
-            )}
-            {testState.status === 'error' && (
-              <span className="text-[11px] text-destructive">
-                {t('resources.providerDialog.connectionFailed')}{testState.message ? `: ${testState.message}` : ''}
-              </span>
-            )}
+          <div className="flex flex-row items-center gap-2">
+            <TestConnectionButton state={testState} onTest={test} />
+            <TestConnectionStatus state={testState} />
           </div>
           <div className="flex gap-2">
             <Button variant="ghost" size="sm" onClick={cancel}>{t('common.cancel')}</Button>
@@ -275,9 +266,7 @@ function AddKeyForm({
         onChange={(e) => setSecret(e.target.value)}
       />
       <div className="flex items-center justify-between gap-2">
-        <Button variant="outline" size="sm" disabled={!secret.trim() || testState.status === 'testing'} onClick={test}>
-          {testState.status === 'testing' ? <Loader2 className="size-4 animate-spin" /> : t('resources.providerDialog.test')}
-        </Button>
+        <TestConnectionButton state={testState} onTest={test} disabled={!secret.trim()} />
         <div className="flex gap-2">
           <Button variant="ghost" size="sm" onClick={onDone}>{t('common.cancel')}</Button>
           <Button size="sm" disabled={busy || conflict} onClick={submit}>
@@ -285,14 +274,7 @@ function AddKeyForm({
           </Button>
         </div>
       </div>
-      {testState.status === 'success' && (
-        <span className="text-[11px] text-success">{t('resources.providerDialog.connected')}</span>
-      )}
-      {testState.status === 'error' && (
-        <span className="text-[11px] text-destructive">
-          {t('resources.providerDialog.connectionFailed')}{testState.message ? `: ${testState.message}` : ''}
-        </span>
-      )}
+      <TestConnectionStatus state={testState} />
     </div>
   )
 }
@@ -884,21 +866,13 @@ function CustomPlatformForm({ onDone }: { onDone: (createdId?: string) => void }
             {busy ? <Loader2 className="size-4 animate-spin" /> : t('common.create')}
           </Button>
           <Button variant="ghost" onClick={() => onDone()}>{t('common.cancel')}</Button>
-          <Button
-            variant="outline"
-            disabled={!baseUrl.trim() || !secret.trim() || endpoints.length === 0 || testState.status === 'testing'}
-            onClick={test}
-          >
-            {testState.status === 'testing' ? <Loader2 className="size-4 animate-spin" /> : t('resources.providerDialog.test')}
-          </Button>
-          {testState.status === 'success' && (
-            <span className="text-[11px] text-success">{t('resources.providerDialog.connected')}</span>
-          )}
-          {testState.status === 'error' && (
-            <span className="text-[11px] text-destructive">
-              {t('resources.providerDialog.connectionFailed')}{testState.message ? `: ${testState.message}` : ''}
-            </span>
-          )}
+          <TestConnectionButton
+            state={testState}
+            onTest={test}
+            size="default"
+            disabled={!baseUrl.trim() || !secret.trim() || endpoints.length === 0}
+          />
+          <TestConnectionStatus state={testState} />
         </div>
     </div>
   )

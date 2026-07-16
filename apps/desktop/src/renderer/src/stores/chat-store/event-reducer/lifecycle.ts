@@ -6,6 +6,7 @@ type LifecycleEvent = Extract<AgentEvent, {
   type:
     | 'queued_message_consumed'
     | 'message_start'
+    | 'message_timestamp'
     | 'user_message_appended'
     | 'message_interrupted'
     | 'message_error'
@@ -44,6 +45,16 @@ export function reduceLifecycle(session: PerSessionState, event: LifecycleEvent)
           ? { lastAssistantMessageId: event.message.id, streamingTokens: { input: 0, output: 0 } }
           : {}),
       }
+    }
+
+    case 'message_timestamp': {
+      let changed = false
+      const messages = session.messages.map((msg) => {
+        if (msg.id !== event.messageId || msg.createdAt === event.timestamp) return msg
+        changed = true
+        return { ...msg, createdAt: event.timestamp }
+      })
+      return changed ? { messages } : {}
     }
 
     case 'user_message_appended': {

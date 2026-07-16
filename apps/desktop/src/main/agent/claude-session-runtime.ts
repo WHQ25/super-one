@@ -215,6 +215,15 @@ export function applyClaudeEventToRuntime(
   switch (event.type) {
     case 'message_start':
       return { ...runtime, messages: upsertMessage(runtime.messages, event.message) }
+    case 'message_timestamp':
+      return {
+        ...runtime,
+        messages: runtime.messages.map((message) =>
+          message.id === event.messageId && message.createdAt !== event.timestamp
+            ? { ...message, createdAt: event.timestamp }
+            : message,
+        ),
+      }
     case 'content_delta': {
       const sourceMsg = runtime.messages.find((m) => m.id === event.messageId)
       if (sourceMsg && isReplayedEventForMessage(event, sourceMsg)) return runtime

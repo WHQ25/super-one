@@ -973,6 +973,97 @@ describe('createSessionQuery', () => {
     expect(streamingIdx).toBeGreaterThan(startIdx)
   })
 
+  it('emits message_timestamp once from the first top-level assistant SDK timestamp', async () => {
+    state.messages = [
+      {
+        type: 'assistant',
+        timestamp: '2026-07-15T12:00:00.000Z',
+        message: { content: [{ type: 'text', text: 'first' }] },
+      },
+      {
+        type: 'assistant',
+        timestamp: '2026-07-15T12:00:01.000Z',
+        message: { content: [{ type: 'text', text: 'second' }] },
+      },
+      { type: 'result', subtype: 'success', usage: {} },
+    ]
+
+    const events: Array<Record<string, unknown>> = []
+    const handle = createSessionQuery(
+      { consumedTags: [], drainConsumedTag: () => undefined } as unknown as MessageBridge,
+      { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
+      (event) => events.push(event as unknown as Record<string, unknown>),
+      () => 'msg-ts',
+      () => Date.now() - 50,
+      () => false,
+    )
+    await handle.iterationDone
+
+    const timestamps = events.filter((e) => e.type === 'message_timestamp')
+    expect(timestamps).toHaveLength(1)
+    expect(timestamps[0]).toMatchObject({
+      type: 'message_timestamp',
+      messageId: 'msg-ts',
+      timestamp: '2026-07-15T12:00:00.000Z',
+    })
+  })
+
+  it('does not emit message_timestamp for subagent assistant frames', async () => {
+    state.messages = [
+      {
+        type: 'assistant',
+        parent_tool_use_id: 'agent-1',
+        timestamp: '2026-07-15T12:00:00.000Z',
+        message: { content: [{ type: 'text', text: 'sub' }] },
+      },
+      { type: 'result', subtype: 'success', usage: {} },
+    ]
+
+    const events: Array<Record<string, unknown>> = []
+    const handle = createSessionQuery(
+      { consumedTags: [], drainConsumedTag: () => undefined } as unknown as MessageBridge,
+      { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
+      (event) => events.push(event as unknown as Record<string, unknown>),
+      () => 'msg-ts-sub',
+      () => Date.now() - 50,
+      () => false,
+    )
+    await handle.iterationDone
+
+    expect(events.filter((e) => e.type === 'message_timestamp')).toHaveLength(0)
+  })
+
+  it('uses SDK timestamp for queued-turn message_start when available', async () => {
+    state.messages = [
+      { type: 'assistant', message: { content: [{ type: 'text', text: 'reply 1' }] } },
+      { type: 'result', subtype: 'success', usage: {} },
+      {
+        type: 'assistant',
+        timestamp: '2026-07-15T13:00:00.000Z',
+        message: { content: [{ type: 'text', text: 'reply 2' }] },
+      },
+      { type: 'result', subtype: 'success', usage: {} },
+    ]
+
+    let currentId = 'msg-A'
+    const events: Array<Record<string, unknown>> = []
+    const handle = createSessionQuery(
+      { consumedTags: [], drainConsumedTag: () => undefined } as unknown as MessageBridge,
+      { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
+      (event) => events.push(event as unknown as Record<string, unknown>),
+      () => currentId,
+      () => Date.now() - 50,
+      () => false,
+      undefined,
+      (id) => { currentId = id },
+    )
+    await handle.iterationDone
+
+    const starts = events.filter((e) => e.type === 'message_start')
+    expect(starts).toHaveLength(1)
+    expect((starts[0].message as Record<string, unknown>).createdAt).toBe('2026-07-15T13:00:00.000Z')
+  })
+
   it('calls onStepBoundary when top-level tool_result is received', async () => {
     state.messages = [
       {

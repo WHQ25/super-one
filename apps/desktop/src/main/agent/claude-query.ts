@@ -255,8 +255,25 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
   let turnActive = false
   let resultSeen = false
   let turnUserEchoSeen = false
+  const timestampAppliedIds = new Set<string>()
 
   const activeBackgroundTasks = opts.activeBackgroundTasks ?? new Map<string, BackgroundTaskInfo>()
+
+  const resolveSdkTimestamp = (raw: unknown): string | undefined => {
+    const ts = (raw as { timestamp?: unknown } | null | undefined)?.timestamp
+    return typeof ts === 'string' && ts.length > 0 ? ts : undefined
+  }
+
+  const seedMessageTimestamp = (targetMessageId: string, raw: unknown): void => {
+    if (!targetMessageId || timestampAppliedIds.has(targetMessageId)) return
+    const timestamp = resolveSdkTimestamp(raw)
+    if (!timestamp) return
+    timestampAppliedIds.add(targetMessageId)
+    emit({ type: 'message_timestamp', messageId: targetMessageId, timestamp })
+  }
+
+  const resolveCreatedAt = (raw: unknown): string =>
+    resolveSdkTimestamp(raw) ?? new Date().toISOString()
   const maybeEmitDeferredIdle = () => {
     if (resultSeen && activeBackgroundTasks.size === 0 && turnMessageId === getCurrentMessageId()) {
       emit({ type: 'status_change', status: 'idle' })
@@ -286,14 +303,16 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
             turnMessageId = queuedMessageId
             onQueuedTurnStart?.(queuedMessageId)
             if (bridge.consumedTags.length > 0) bridge.drainConsumedTag()
+            const createdAt = resolveCreatedAt(msg)
             emit({ type: 'message_start', message: {
               id: queuedMessageId,
               role: 'assistant',
               status: 'streaming',
               content: [],
-              createdAt: new Date().toISOString(),
+              createdAt,
               providerId: 'claude',
             } })
+            if (resolveSdkTimestamp(msg)) timestampAppliedIds.add(queuedMessageId)
             emit({ type: 'status_change', status: 'streaming' })
             resultSeen = false
             turnActive = true
@@ -328,14 +347,16 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
             turnMessageId = queuedMessageId
             messageId = queuedMessageId
             onQueuedTurnStart?.(queuedMessageId)
+            const createdAt = resolveCreatedAt(userMsg)
             emit({ type: 'message_start', message: {
               id: queuedMessageId,
               role: 'assistant',
               status: 'streaming',
               content: [],
-              createdAt: new Date().toISOString(),
+              createdAt,
               providerId: 'claude',
             } })
+            if (resolveSdkTimestamp(userMsg)) timestampAppliedIds.add(queuedMessageId)
             emit({ type: 'status_change', status: 'streaming' })
             turnActive = true
           }
@@ -617,6 +638,7 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
           if (!assistantParent) {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             lastTopLevelAssistantUuid = (msg as any).uuid ?? ''
+            seedMessageTimestamp(messageId, msg)
           }
 
           // Track top-level message usage (latest step snapshot, deduped by SDK message ID)

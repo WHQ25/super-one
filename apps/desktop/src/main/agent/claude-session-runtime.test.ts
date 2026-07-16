@@ -249,6 +249,46 @@ describe('message_start is an idempotent upsert', () => {
   })
 })
 
+describe('message_timestamp', () => {
+  it('patches createdAt when the SDK origin timestamp arrives', () => {
+    let rt = createClaudeRuntime('/test', 'sess-1', {
+      messages: [{
+        id: 'msg-1',
+        role: 'assistant',
+        status: 'streaming',
+        content: [],
+        createdAt: '2024-01-01T00:00:00.000Z',
+        providerId: 'claude',
+      }],
+    })
+    rt = applyClaudeEventToRuntime(rt, {
+      type: 'message_timestamp',
+      messageId: 'msg-1',
+      timestamp: '2024-01-01T00:00:01.500Z',
+    } as AgentEvent)
+    expect(rt.messages.find((m) => m.id === 'msg-1')!.createdAt).toBe('2024-01-01T00:00:01.500Z')
+  })
+
+  it('ignores timestamps for unknown message ids', () => {
+    let rt = createClaudeRuntime('/test', 'sess-1', {
+      messages: [{
+        id: 'msg-1',
+        role: 'assistant',
+        status: 'streaming',
+        content: [],
+        createdAt: '2024-01-01T00:00:00.000Z',
+        providerId: 'claude',
+      }],
+    })
+    rt = applyClaudeEventToRuntime(rt, {
+      type: 'message_timestamp',
+      messageId: 'msg-missing',
+      timestamp: '2024-01-01T00:00:01.500Z',
+    } as AgentEvent)
+    expect(rt.messages.find((m) => m.id === 'msg-1')!.createdAt).toBe('2024-01-01T00:00:00.000Z')
+  })
+})
+
 describe('content_delta never leaks subagent text/thinking into the main agent', () => {
   function emptyAssistant(): ChatMessage {
     return { id: 'msg-1', role: 'assistant', status: 'streaming', content: [], createdAt: '', providerId: 'claude' }

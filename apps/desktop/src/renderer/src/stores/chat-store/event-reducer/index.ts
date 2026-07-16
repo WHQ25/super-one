@@ -21,6 +21,7 @@ export function applyEventToSession(session: PerSessionState, event: AgentEvent)
   switch (event.type) {
     case 'queued_message_consumed':
     case 'message_start':
+    case 'message_timestamp':
     case 'user_message_appended':
     case 'message_interrupted':
     case 'message_error':

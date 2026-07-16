@@ -45,11 +45,33 @@ vi.mock('../agent/browser-artifact-store', () => ({
   persistTextArtifact: vi.fn(() => '/tmp/art.json'),
 }))
 
+vi.mock('../browser/browser-download-tasks', () => ({
+  startUrlDownloadTask: vi.fn(() => ({
+    taskId: 'bdl_1',
+    sessionId: 'sess-1',
+    kind: 'url',
+    status: 'running',
+    backgrounded: false,
+    startedAt: 1,
+    url: 'https://x.test/a.png',
+  })),
+  raceDownloadTask: vi.fn(async () => ({
+    mode: 'sync',
+    settled: { ok: true, result: { path: '/tmp/dl/a.png', filename: 'a.png', bytes: 12, mimeType: 'image/png' } },
+  })),
+}))
+
+vi.mock('../browser/browser-downloads', () => ({
+  listDownloads: vi.fn(async () => []),
+}))
+
 import { decode as toonDecode } from '@toon-format/toon'
 import { registerBrowserTools, BROWSER_TOOL_NAMES } from './browser-mcp-tools'
 import { startRecording, stopRecording, waitForRecordedRequest, getRecordedRequest } from './../browser/browser-cdp-network'
 import { browserAutomationCall } from '../browser/browser-automation-bridge'
 import { cdpHover } from '../browser/browser-cdp'
+import { startUrlDownloadTask, raceDownloadTask } from '../browser/browser-download-tasks'
+import { listDownloads } from '../browser/browser-downloads'
 
 type Handler = (args: Record<string, unknown>) => Promise<{ content: Array<{ type: string; text?: string }>; isError?: boolean }>
 
@@ -222,5 +244,86 @@ describe('browser tool registration under experimental gates', () => {
     expect(data.spilled).toBe(true)
     expect(data.path).toBe('/tmp/art.json')
     expect(data.value).toBeUndefined()
+  })
+})
+
+describe('browser_download', () => {
+  beforeEach(() => {
+    gates.cdp = false
+    vi.clearAllMocks()
+    vi.mocked(raceDownloadTask).mockResolvedValue({
+      mode: 'sync',
+      settled: { ok: true, result: { path: '/tmp/dl/a.png', filename: 'a.png', bytes: 12, mimeType: 'image/png' } },
+    })
+  })
+
+  it('starts a url task and returns the path when it finishes within timeout', async () => {
+    const tools = buildTools()
+    const reply = await tools.get('browser_download')!({ url: 'https://x.test/a.png', timeoutMs: 15000 })
+
+    expect(startUrlDownloadTask).toHaveBeenCalledWith('sess-1', 'https://x.test/a.png', undefined)
+    expect(raceDownloadTask).toHaveBeenCalledWith('bdl_1', 15000)
+    expect(reply.isError).toBeUndefined()
+    expect(JSON.parse(resultText(reply))).toMatchObject({ status: 'completed', path: '/tmp/dl/a.png', filename: 'a.png' })
+  })
+
+  it('returns background status with taskId when the download exceeds timeout', async () => {
+    vi.mocked(raceDownloadTask).mockResolvedValueOnce({
+      mode: 'background',
+      task: {
+        taskId: 'bdl_1',
+        sessionId: 'sess-1',
+        kind: 'url',
+        status: 'running',
+        backgrounded: true,
+        startedAt: 1,
+        url: 'https://x.test/a.png',
+      },
+    })
+    const tools = buildTools()
+    const reply = await tools.get('browser_download')!({ url: 'https://x.test/a.png', timeoutMs: 500 })
+
+    expect(reply.isError).toBeUndefined()
+    expect(JSON.parse(resultText(reply))).toMatchObject({ status: 'background', taskId: 'bdl_1' })
+  })
+
+  it('surfaces a failed download as a tool error', async () => {
+    vi.mocked(raceDownloadTask).mockResolvedValueOnce({
+      mode: 'sync',
+      settled: { ok: false, error: 'HTTP 404 Not Found' },
+    })
+    const tools = buildTools()
+    const reply = await tools.get('browser_download')!({ url: 'https://x.test/gone.png', timeoutMs: 15000 })
+
+    expect(reply.isError).toBe(true)
+    expect(resultText(reply)).toContain('HTTP 404')
+  })
+})
+
+describe('browser_list_downloads', () => {
+  beforeEach(() => {
+    gates.cdp = false
+    vi.clearAllMocks()
+  })
+
+  it('returns the session capture list', async () => {
+    vi.mocked(listDownloads).mockResolvedValueOnce([
+      {
+        url: 'https://x.test/export.csv',
+        filename: 'export.csv',
+        path: '/tmp/dl/export.csv',
+        bytes: 90,
+        state: 'completed',
+        startedAt: 2,
+      },
+    ])
+    const tools = buildTools()
+    const reply = await tools.get('browser_list_downloads')!({ state: 'all', wait: false, timeoutMs: 15000 })
+
+    expect(listDownloads).toHaveBeenCalledWith('sess-1', { state: 'all', wait: false, timeoutMs: 15000 })
+    expect(JSON.parse(resultText(reply))).toMatchObject({
+      count: 1,
+      downloads: [{ filename: 'export.csv', state: 'completed' }],
+    })
   })
 })

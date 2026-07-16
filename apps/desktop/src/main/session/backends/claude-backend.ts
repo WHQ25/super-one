@@ -30,6 +30,7 @@ import { readAppSettings } from '../../app-settings-service'
 import { ensureProxy, type ProxyUpstream } from '../../providers/llm-proxy-manager'
 import { getSandboxCapability } from '../../sandbox-platform'
 import { listSkills } from '../../skills-service'
+import { hasRunningDownloadTasks } from '../../browser/browser-download-tasks'
 
 interface ClaudeConfig {
   apiKey?: string
@@ -208,6 +209,32 @@ export class ClaudeBackend implements SessionBackend {
     if (this._idleTimer) {
       clearInterval(this._idleTimer)
       this._idleTimer = null
+    }
+  }
+
+  /**
+   * Push a machine wake-up via Claude Agent SDK provenance
+   * `origin: { kind: 'task-notification' }` (not a human composer message).
+   * Uses priority `next` so an in-flight turn is not interrupted.
+   */
+  async injectTaskNotification(content: string): Promise<void> {
+    await this.ensureRuntime()
+    if (!this.bridge) throw new Error('ClaudeBackend not started')
+    this._lastActiveAt = Date.now()
+    const userMsg: SDKUserMessage = {
+      type: 'user',
+      message: { role: 'user', content },
+      parent_tool_use_id: null,
+      session_id: this.providerSessionId ?? '',
+      origin: { kind: 'task-notification' },
+      isSynthetic: true,
+      priority: 'next',
+    }
+    const tag = `task-notify-${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+    if (this.turnResolves.size > 0) {
+      this.pendingQueued.push({ msg: userMsg, clientMessageId: tag })
+    } else {
+      this.bridge.push(userMsg, tag)
     }
   }
 
@@ -598,7 +625,9 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   hasActiveBackgroundTasks(): boolean {
-    return (this.activeBackgroundTasks?.size ?? 0) > 0
+    if ((this.activeBackgroundTasks?.size ?? 0) > 0) return true
+    const sid = this._lastStartOpts?.sessionId
+    return sid ? hasRunningDownloadTasks(sid) : false
   }
 
   private emit(event: AgentEvent): void {

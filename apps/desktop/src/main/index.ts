@@ -25,6 +25,8 @@ import { previewMcpbBundle, installMcpbBundle, uninstallMcpbBundle, listInstalle
 import { initBrowserAutomation, resolveBrowserAutomation, rejectBrowserAutomation } from './browser/browser-automation-bridge'
 import { detachAllCdp } from './browser/browser-cdp'
 import { registerBrowserPopupRedirect } from './browser-popup-redirect'
+import { fetchBrowserBytes, registerBrowserDownloadCapture } from './browser/browser-downloads'
+import { setBrowserDownloadTaskHost } from './browser/browser-download-tasks'
 import { initSuperoneMcpServer, registerAppTools, unregisterAppTools, unregisterAppAcrossSessions, resolveToolCall, rejectToolCall, notifyAppReady as notifyMiniAppReady, loadPreapprovedTools, updatePreapprovedTools, registerAppTemplates, unregisterAppTemplates, submitToolIntercept, cancelToolIntercept, clearSessionPendingCalls as clearSessionPendingMiniAppCalls, disposeSuperoneMcpServer, setSessionHostProvider, clearAppReadyGate, isAppStillAuthorizedInProject, addToolsChangedListener, setMobileShareToolDeps, registerMobileShareTool, unregisterMobileShareTool } from './mcp/superone-mcp-server'
 import { MobileShareService, type MobileShareTarget } from './remote/mobile-share-service'
 import { MobileReceiveService, type MobileReceiveTarget } from './remote/mobile-receive-service'
@@ -2053,20 +2055,8 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(AgentIpcChannels.BROWSER_FETCH_IMAGE, async (_event, url: string) => {
     try {
-      if (typeof url !== 'string' || !url) return { ok: false, error: 'Invalid URL' }
-      if (url.startsWith('data:')) {
-        const match = url.match(/^data:([^;,]*)(;base64)?,(.*)$/s)
-        if (!match) return { ok: false, error: 'Invalid data URL' }
-        const mimeType = match[1] || 'application/octet-stream'
-        const base64 = match[2]
-          ? match[3]
-          : Buffer.from(decodeURIComponent(match[3]), 'utf8').toString('base64')
-        return { ok: true, base64, mimeType }
-      }
-      const resp = await session.fromPartition('persist:browser').fetch(url)
-      if (!resp.ok) return { ok: false, error: `HTTP ${resp.status}` }
-      const buf = Buffer.from(await resp.arrayBuffer())
-      const mimeType = resp.headers.get('content-type')?.split(';')[0]?.trim() || 'image/png'
+      if (typeof url !== 'string') return { ok: false, error: 'Invalid URL' }
+      const { buf, mimeType } = await fetchBrowserBytes(url, 'image/png')
       return { ok: true, base64: buf.toString('base64'), mimeType }
     } catch (err) {
       return { ok: false, error: (err as Error).message }
@@ -2519,6 +2509,16 @@ function registerIpcHandlers(): void {
   initSuperoneMcpServer(() => mainWindow)
   initBrowserAutomation(() => mainWindow)
   setSessionHostProvider(() => sessionManager)
+  setBrowserDownloadTaskHost({
+    emitHostEvent(sessionId, event) {
+      sessionManager.getSession(sessionId)?.emitHostEvent(event)
+    },
+    async injectTaskNotification(sessionId, content) {
+      const session = sessionManager.getSession(sessionId)
+      if (!session) throw new Error(`Session ${sessionId} not found`)
+      await session.injectTaskNotification(content)
+    },
+  })
 
   // When a session's app-tool set changes (mini-app opened/closed/@-mentioned),
   // ask its backend to refresh MCP servers. Codex snapshots tools once per thread
@@ -2870,6 +2870,7 @@ app.whenReady().then(async () => {
 
   syncNativeAppearance()
   registerBrowserPopupRedirect()
+  registerBrowserDownloadCapture()
 
   if (is.dev && process.env.SUPERONE_BENCH) {
     ipcMain.handle(AgentIpcChannels.GET_APP_METRICS, (event) => ({

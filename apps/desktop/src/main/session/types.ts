@@ -197,6 +197,11 @@ export interface SessionBackend {
   setAdditionalDirectories?(dirs: string[]): Promise<boolean>
   hasActiveBackgroundTasks?(): boolean
   stopTask?(taskId: string): Promise<void>
+  /**
+   * Claude: push an SDK user message with origin `{ kind: 'task-notification' }`.
+   * Other harnesses omit this and Session falls back to a normal send.
+   */
+  injectTaskNotification?(content: string): Promise<void>
   respondToPermission(
     requestId: string,
     allow: boolean,
@@ -255,6 +260,8 @@ export interface Session {
   setApiProviderId(apiProviderId: string | null): void
   getApiProviderId(): string | null
   setTitle(title: string, source: 'user' | 'agent'): void
+  emitHostEvent(event: import('@superone/shared/agent-types').AgentEvent): void
+  injectTaskNotification(content: string): Promise<void>
   respondToPermission(
     requestId: string,
     allow: boolean,

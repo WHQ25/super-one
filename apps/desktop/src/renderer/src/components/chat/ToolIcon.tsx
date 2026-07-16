@@ -1,4 +1,4 @@
-import { Terminal, FileText, FileEdit, FilePlus, Search, FolderSearch, Globe, MessageCircleQuestion, Wrench, Plug, ClipboardList, Bot, BookOpen, Paintbrush, Toolbox, Package, Pencil, Image as ImageIcon } from 'lucide-react'
+import { Terminal, FileText, FileEdit, FilePlus, Search, FolderSearch, Globe, Download, MessageCircleQuestion, Wrench, Plug, ClipboardList, Bot, BookOpen, Paintbrush, Toolbox, Package, Pencil, Image as ImageIcon } from 'lucide-react'
 import type { ToolIcon as ToolIconName } from './tool-display'
 
 const iconComponents: Record<ToolIconName, React.FC<{ className?: string }>> = {
@@ -9,6 +9,7 @@ const iconComponents: Record<ToolIconName, React.FC<{ className?: string }>> = {
   'search': Search,
   'folder-search': FolderSearch,
   'globe': Globe,
+  'download': Download,
   'message-circle': MessageCircleQuestion,
   'wrench': Wrench,
   'plug': Plug,

@@ -20,7 +20,33 @@ type ToolEvent = Extract<AgentEvent, {
     | 'task_started'
     | 'task_progress'
     | 'task_notification'
+    | 'browser_download_update'
 }>
+
+function patchBrowserDownloadToolResult(
+  messages: PerSessionState['messages'],
+  taskId: string,
+  patch: Record<string, unknown>,
+): PerSessionState['messages'] {
+  let changed = false
+  const next = messages.map((msg) => ({
+    ...msg,
+    content: msg.content.map((block) => {
+      if (block.type !== 'tool_result') return block
+      const summary = block.summary
+      if (typeof summary !== 'string' || !summary.includes(taskId)) return block
+      try {
+        const data = JSON.parse(summary) as Record<string, unknown>
+        if (data.taskId !== taskId) return block
+        changed = true
+        return { ...block, summary: JSON.stringify({ ...data, ...patch }) }
+      } catch {
+        return block
+      }
+    }),
+  }))
+  return changed ? next : messages
+}
 
 export function reduceTool(session: PerSessionState, event: ToolEvent): Partial<PerSessionState> {
   switch (event.type) {
@@ -159,7 +185,43 @@ export function reduceTool(session: PerSessionState, event: ToolEvent): Partial<
       // A resume notification carries the waker's toolUseId; map it back to the
       // original Agent block via the shared taskId so we close the right block.
       const tid = resolveTaskToolUseId(session.taskProgress, event.toolUseId, event.taskId)
-      if (!tid) return {}
+      let msgs = session.messages
+      let browserDownloads = session.browserDownloads ?? {}
+      // Host browser_download tasks (bdl_*) finish via task_notification — flip the tool block UI.
+      if (event.taskId?.startsWith('bdl_')) {
+        let parsedExtra: Record<string, unknown> = {}
+        if (event.resultText) {
+          try { parsedExtra = JSON.parse(event.resultText) as Record<string, unknown> } catch { /* ignore */ }
+        }
+        const dlPatch: Record<string, unknown> = {
+          status: event.taskStatus === 'completed' ? 'completed' : 'failed',
+          ...(typeof parsedExtra.path === 'string' ? { path: parsedExtra.path } : event.outputFile ? { path: event.outputFile } : {}),
+          ...(typeof parsedExtra.filename === 'string' ? { filename: parsedExtra.filename } : {}),
+          ...(typeof parsedExtra.bytes === 'number' ? { bytes: parsedExtra.bytes } : {}),
+          ...(typeof parsedExtra.mimeType === 'string' ? { mimeType: parsedExtra.mimeType } : {}),
+          ...(typeof parsedExtra.url === 'string' ? { url: parsedExtra.url } : {}),
+          ...(event.taskStatus !== 'completed' && event.summary ? { error: event.summary } : {}),
+        }
+        msgs = patchBrowserDownloadToolResult(msgs, event.taskId, dlPatch)
+        browserDownloads = {
+          ...browserDownloads,
+          [event.taskId]: {
+            ...(browserDownloads[event.taskId] ?? { status: 'progressing' }),
+            status: event.taskStatus === 'completed' ? 'completed' : 'failed',
+            path: typeof dlPatch.path === 'string' ? dlPatch.path : browserDownloads[event.taskId]?.path,
+            filename: typeof dlPatch.filename === 'string' ? dlPatch.filename : browserDownloads[event.taskId]?.filename,
+            bytes: typeof dlPatch.bytes === 'number' ? dlPatch.bytes : browserDownloads[event.taskId]?.bytes,
+            mimeType: typeof dlPatch.mimeType === 'string' ? dlPatch.mimeType : browserDownloads[event.taskId]?.mimeType,
+            url: typeof dlPatch.url === 'string' ? dlPatch.url : browserDownloads[event.taskId]?.url,
+            error: typeof dlPatch.error === 'string' ? dlPatch.error : undefined,
+          },
+        }
+      }
+      if (!tid) {
+        return msgs !== session.messages || browserDownloads !== (session.browserDownloads ?? {})
+          ? { messages: msgs, browserDownloads }
+          : {}
+      }
       const file = event.outputFile
       const prevProgress = session.taskProgress[tid]
       const usageUpdate = event.usage ? {
@@ -179,7 +241,7 @@ export function reduceTool(session: PerSessionState, event: ToolEvent): Partial<
         taskToolHistory: finalToolHistory,
         taskSummary: finalSummary,
       }
-      const msgs = session.messages.map((msg) => ({
+      msgs = msgs.map((msg) => ({
         ...msg,
         content: msg.content.map((block) => {
           if (block.type === 'tool_use' && block.toolName === 'Agent' && block.toolUseId === tid) return { ...block, ...agentPatch }
@@ -189,6 +251,7 @@ export function reduceTool(session: PerSessionState, event: ToolEvent): Partial<
       }))
       return {
         messages: msgs,
+        browserDownloads,
         taskProgress: {
           ...session.taskProgress,
           [tid]: {
@@ -201,6 +264,39 @@ export function reduceTool(session: PerSessionState, event: ToolEvent): Partial<
           },
         },
       }
+    }
+
+    case 'browser_download_update': {
+      const prevMap = session.browserDownloads ?? {}
+      const prev = prevMap[event.taskId]
+      const next = {
+        ...prev,
+        status: event.status,
+        path: event.path ?? prev?.path,
+        filename: event.filename ?? prev?.filename,
+        bytes: event.bytes ?? prev?.bytes,
+        totalBytes: event.totalBytes ?? prev?.totalBytes,
+        mimeType: event.mimeType ?? prev?.mimeType,
+        url: event.url ?? prev?.url,
+        error: event.error ?? (event.status === 'failed' ? prev?.error : undefined),
+      }
+      const browserDownloads = { ...prevMap, [event.taskId]: next }
+      if (event.status === 'completed' || event.status === 'failed') {
+        const patch: Record<string, unknown> = {
+          status: event.status,
+          ...(event.path ? { path: event.path } : {}),
+          ...(event.filename ? { filename: event.filename } : {}),
+          ...(event.bytes != null ? { bytes: event.bytes } : {}),
+          ...(event.mimeType ? { mimeType: event.mimeType } : {}),
+          ...(event.url ? { url: event.url } : {}),
+          ...(event.error ? { error: event.error } : {}),
+        }
+        return {
+          browserDownloads,
+          messages: patchBrowserDownloadToolResult(session.messages, event.taskId, patch),
+        }
+      }
+      return { browserDownloads }
     }
   }
 }

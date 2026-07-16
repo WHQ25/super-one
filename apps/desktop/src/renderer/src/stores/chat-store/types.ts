@@ -78,6 +78,17 @@ export interface PerSessionState {
   subagentColors: Record<string, number>
   _subagentColorsFree: number[]
   taskProgress: Record<string, { description: string; taskId?: string; lastToolName?: string; summary?: string; totalTokens: number; toolUses: number; durationMs: number; completed?: boolean; status?: 'completed' | 'failed' | 'stopped'; outputFile?: string; toolHistory: Array<{ toolName: string; description: string }> }>
+  /** Live browser_download (URL) tasks keyed by taskId (bdl_*), for tool-block UI. */
+  browserDownloads: Record<string, {
+    status: 'progressing' | 'completed' | 'failed'
+    path?: string
+    filename?: string
+    bytes?: number
+    totalBytes?: number
+    mimeType?: string
+    url?: string
+    error?: string
+  }>
   streamingTokens: { input: number; output: number }
   codexUsageSnapshot: CodexUsageInfo | null
   codexTurnLastUsage: CodexUsageInfo | null

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { getBrowserOp, browserVerbKey, isReadBrowserOp, browserInputSummary, parseBrowserResult } from './browser-tool-display'
+import { getBrowserOp, browserVerbKey, isReadBrowserOp, browserInputSummary, parseBrowserResult, parseListDownloadsResult } from './browser-tool-display'
 
 describe('getBrowserOp', () => {
   it('strips the browser_ prefix for known ops', () => {
@@ -13,6 +13,8 @@ describe('getBrowserOp', () => {
     expect(getBrowserOp('browser_network_wait')).toBe('network_wait')
     expect(getBrowserOp('browser_cookies')).toBe('cookies')
     expect(getBrowserOp('browser_upload_file')).toBe('upload_file')
+    expect(getBrowserOp('browser_download')).toBe('download')
+    expect(getBrowserOp('browser_list_downloads')).toBe('list_downloads')
     expect(getBrowserOp('browser_emulate')).toBe('emulate')
     expect(getBrowserOp('browser_mock')).toBe('mock')
   })
@@ -25,13 +27,24 @@ describe('getBrowserOp', () => {
 })
 
 describe('browserVerbKey', () => {
-  it('camelCases wait_for and upload_file and leaves others intact', () => {
+  it('camelCases multi-word ops and leaves others intact', () => {
     expect(browserVerbKey('wait_for')).toBe('waitFor')
     expect(browserVerbKey('upload_file')).toBe('uploadFile')
     expect(browserVerbKey('network_start')).toBe('networkStart')
     expect(browserVerbKey('network_stop')).toBe('networkStop')
     expect(browserVerbKey('network_wait')).toBe('networkWait')
+    expect(browserVerbKey('list_downloads')).toBe('listDownloads')
+    expect(browserVerbKey('download')).toBe('download')
     expect(browserVerbKey('snapshot')).toBe('snapshot')
+  })
+
+  it('returns progressive keys when streaming', () => {
+    expect(browserVerbKey('navigate', true)).toBe('navigating')
+    expect(browserVerbKey('wait_for', true)).toBe('waitingFor')
+    expect(browserVerbKey('upload_file', true)).toBe('uploadingFile')
+    expect(browserVerbKey('network_start', true)).toBe('recordingNetwork')
+    expect(browserVerbKey('list_downloads', true)).toBe('listingDownloads')
+    expect(browserVerbKey('download', true)).toBe('downloading')
   })
 })
 
@@ -107,6 +120,12 @@ describe('browserInputSummary', () => {
     expect(browserInputSummary('upload_file', { selector: '#file', files: ['/a', '/b'] })).toBe('#file ← 2')
   })
 
+  it('summarizes download by url and list_downloads by state', () => {
+    expect(browserInputSummary('download', { url: 'https://x.test/a.png' })).toBe('x.test/a.png')
+    expect(browserInputSummary('list_downloads', { state: 'completed' })).toBe('completed')
+    expect(browserInputSummary('list_downloads', { state: 'all' })).toBe('')
+  })
+
   it('summarizes drag as source → destination across targeting modes', () => {
     expect(browserInputSummary('drag', { from: { selector: '#a' }, to: { selector: '#b' } })).toBe('#a → #b')
     expect(browserInputSummary('drag', { from: { text: 'Card' }, to: { x: 10, y: 20 } })).toBe('“Card” → (10, 20)')
@@ -160,5 +179,35 @@ describe('parseBrowserResult', () => {
   it('stays neutral when the result is missing or unparseable', () => {
     expect(parseBrowserResult('snapshot', undefined, false).status).toBe('neutral')
     expect(parseBrowserResult('evaluate', 'not json', false).status).toBe('neutral')
+  })
+})
+
+describe('parseListDownloadsResult', () => {
+  it('returns empty for missing or invalid results', () => {
+    expect(parseListDownloadsResult(undefined)).toEqual([])
+    expect(parseListDownloadsResult('not json')).toEqual([])
+    expect(parseListDownloadsResult(JSON.stringify({ count: 0, downloads: [] }))).toEqual([])
+  })
+
+  it('parses download rows with filename, size, state, and url', () => {
+    const items = parseListDownloadsResult(JSON.stringify({
+      count: 2,
+      downloads: [
+        { filename: 'a.pdf', path: '/tmp/a.pdf', bytes: 100, state: 'completed', url: 'https://x.test/a.pdf' },
+        { filename: 'b.csv', path: '/tmp/b.csv', bytes: 20, state: 'progressing', url: 'https://x.test/b.csv' },
+      ],
+    }))
+    expect(items).toEqual([
+      { filename: 'a.pdf', path: '/tmp/a.pdf', bytes: 100, state: 'completed', url: 'https://x.test/a.pdf' },
+      { filename: 'b.csv', path: '/tmp/b.csv', bytes: 20, state: 'progressing', url: 'https://x.test/b.csv' },
+    ])
+  })
+
+  it('falls back to path basename when filename is missing', () => {
+    const items = parseListDownloadsResult(JSON.stringify({
+      downloads: [{ path: '/tmp/dl/report.pdf', bytes: 1, state: 'completed' }],
+    }))
+    expect(items[0]?.filename).toBe('report.pdf')
+    expect(items[0]?.path).toBe('/tmp/dl/report.pdf')
   })
 })

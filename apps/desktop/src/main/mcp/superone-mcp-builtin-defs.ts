@@ -19,6 +19,39 @@ export const MINIAPP_GUIDE_TOPICS = [
   'tools',
 ] as const
 
+// Single source of truth for the browser tool surface: registerBrowserTools()
+// registers exactly these, and they are spread into the permission-bypass list
+// below. Keeping one list means a new tool cannot silently miss the bypass.
+export const BROWSER_TOOL_NAMES = [
+  'browser_snapshot',
+  'browser_query',
+  'browser_inspect',
+  'browser_screenshot',
+  'browser_click',
+  'browser_hover',
+  'browser_type',
+  'browser_navigate',
+  'browser_wait_for',
+  'browser_press',
+  'browser_scroll',
+  'browser_drag',
+  'browser_select',
+  'browser_open',
+  'browser_evaluate',
+  'browser_tabs',
+  'browser_resize',
+  'browser_network_start',
+  'browser_network_stop',
+  'browser_network_wait',
+  'browser_network_body',
+  'browser_cookies',
+  'browser_upload_file',
+  'browser_download',
+  'browser_list_downloads',
+  'browser_emulate',
+  'browser_mock',
+] as const
+
 export const BUILT_IN_SUPERONE_TOOL_NAMES = [
   'miniapp_dev_read_guide',
   'miniapp_dev_setup',
@@ -30,26 +63,7 @@ export const BUILT_IN_SUPERONE_TOOL_NAMES = [
   'media_generate_image',
   'widget_read_guide',
   'widget_show',
-  'browser_snapshot',
-  'browser_query',
-  'browser_inspect',
-  'browser_screenshot',
-  'browser_click',
-  'browser_type',
-  'browser_navigate',
-  'browser_wait_for',
-  'browser_press',
-  'browser_scroll',
-  'browser_drag',
-  'browser_select',
-  'browser_open',
-  'browser_evaluate',
-  'browser_tabs',
-  'browser_network',
-  'browser_cookies',
-  'browser_upload_file',
-  'browser_emulate',
-  'browser_mock',
+  ...BROWSER_TOOL_NAMES,
 ] as const
 
 export type BuiltInSuperoneToolName = typeof BUILT_IN_SUPERONE_TOOL_NAMES[number]

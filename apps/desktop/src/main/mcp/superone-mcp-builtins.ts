@@ -66,6 +66,14 @@ const MINIAPP_GUIDES: Record<string, string> = {
 
 export interface SessionTitleSetter {
   setTitle(title: string, source: 'user' | 'agent'): void
+  /** Host-emitted AgentEvents (e.g. browser download task lifecycle). */
+  emitHostEvent?(event: import('@superone/shared/agent-types').AgentEvent): void
+  /**
+   * Wake the agent with a non-human task notification. Claude uses SDK
+   * origin `{ kind: 'task-notification' }`; other harnesses fall back to a
+   * synthetic send.
+   */
+  injectTaskNotification?(content: string): Promise<void>
 }
 
 export interface SessionTitleHost {

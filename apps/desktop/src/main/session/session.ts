@@ -1156,6 +1156,44 @@ export class Session implements SessionContract {
     this.forwardEvent({ type: 'session_title_changed', sessionId: this.id, title: trimmed, source } as AgentEvent)
   }
 
+  emitHostEvent(event: AgentEvent): void {
+    if (this._status === 'disposed') return
+    this.forwardEvent(event)
+  }
+
+  /**
+   * Wake the agent after a host background task settles. Prefer Claude SDK
+   * `origin: { kind: 'task-notification' }`; other harnesses fall back to a
+   * queued synthetic user send.
+   */
+  async injectTaskNotification(content: string): Promise<void> {
+    if (this._status === 'disposed') return
+    try {
+      await this.ensureStarted()
+    } catch (err) {
+      log.warn('[Session] injectTaskNotification ensureStarted failed sid=%s: %s', this.id, err instanceof Error ? err.message : String(err))
+      return
+    }
+    if (this.backend.injectTaskNotification) {
+      try {
+        await this.backend.injectTaskNotification(content)
+        return
+      } catch (err) {
+        log.warn('[Session] injectTaskNotification harness path failed, falling back sid=%s: %s', this.id, err instanceof Error ? err.message : String(err))
+      }
+    }
+    const clientMessageId = `task-notify-${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+    try {
+      await this.send({
+        content,
+        priority: this.isStreaming() ? 'next' : 'now',
+        clientMessageId,
+      })
+    } catch (err) {
+      log.warn('[Session] injectTaskNotification fallback send failed sid=%s: %s', this.id, err instanceof Error ? err.message : String(err))
+    }
+  }
+
   private computeTitle(): string | null {
     if (this._title) return this._title
     if (this._messages.length === 0) return null

@@ -679,30 +679,75 @@ export type Messages = {
       moreLines_other: string
       browser: {
         navigate: string
+        navigating: string
         open: string
+        opening: string
         snapshot: string
+        snapshotting: string
         query: string
+        querying: string
         inspect: string
+        inspecting: string
         screenshot: string
+        screenshotting: string
         click: string
+        clicking: string
         hover: string
+        hovering: string
         type: string
+        typing: string
         press: string
+        pressing: string
         scroll: string
+        scrolling: string
         drag: string
+        dragging: string
         select: string
+        selecting: string
         waitFor: string
+        waitingFor: string
         evaluate: string
+        evaluating: string
         tabs: string
+        listingTabs: string
         resize: string
+        resizing: string
         networkStart: string
+        recordingNetwork: string
         networkStop: string
+        collectingNetwork: string
         networkWait: string
+        waitingForRequest: string
         networkBody: string
+        loadingResponseBody: string
         cookies: string
+        readingCookies: string
         uploadFile: string
+        uploadingFile: string
+        download: string
+        downloading: string
+        downloaded: string
+        downloadBackground: string
+        downloadBackgroundHint: string
+        downloadSaveTo: string
+        downloadSaved: string
+        downloadSaveFailed: string
+        downloadPath: string
+        downloadSize: string
+        downloadMime: string
+        downloadUrl: string
+        downloadProgress: string
+        listDownloads: string
+        listingDownloads: string
+        listDownloadsEmpty: string
+        downloadStateCompleted: string
+        downloadStateProgressing: string
+        downloadStateCancelled: string
+        downloadStateInterrupted: string
         emulate: string
+        emulating: string
         mock: string
+        mocking: string
         elements_one: string
         elements_other: string
         matches_one: string
@@ -713,6 +758,8 @@ export type Messages = {
         requests_other: string
         cookiesCount_one: string
         cookiesCount_other: string
+        downloads_one: string
+        downloads_other: string
         notFound: string
         viewport: string
         screenshotUnavailable: string
@@ -2300,30 +2347,75 @@ export const en: Messages = {
       moreLines_other: '{{count}} more lines',
       browser: {
         navigate: 'Navigate',
-        open: 'Open tab',
+        navigating: 'Navigating',
+        open: 'Open Tab',
+        opening: 'Opening Tab',
         snapshot: 'Snapshot',
+        snapshotting: 'Snapshotting',
         query: 'Query',
+        querying: 'Querying',
         inspect: 'Inspect',
+        inspecting: 'Inspecting',
         screenshot: 'Screenshot',
+        screenshotting: 'Screenshotting',
         click: 'Click',
+        clicking: 'Clicking',
         hover: 'Hover',
+        hovering: 'Hovering',
         type: 'Type',
+        typing: 'Typing',
         press: 'Press',
+        pressing: 'Pressing',
         scroll: 'Scroll',
+        scrolling: 'Scrolling',
         drag: 'Drag',
+        dragging: 'Dragging',
         select: 'Select',
-        waitFor: 'Wait for',
+        selecting: 'Selecting',
+        waitFor: 'Wait For',
+        waitingFor: 'Waiting For',
         evaluate: 'Evaluate',
+        evaluating: 'Evaluating',
         tabs: 'Tabs',
+        listingTabs: 'Listing Tabs',
         resize: 'Resize',
-        networkStart: 'Record network',
-        networkStop: 'Collect network',
-        networkWait: 'Wait for request',
-        networkBody: 'Response body',
+        resizing: 'Resizing',
+        networkStart: 'Record Network',
+        recordingNetwork: 'Recording Network',
+        networkStop: 'Collect Network',
+        collectingNetwork: 'Collecting Network',
+        networkWait: 'Wait For Request',
+        waitingForRequest: 'Waiting For Request',
+        networkBody: 'Response Body',
+        loadingResponseBody: 'Loading Response Body',
         cookies: 'Cookies',
-        uploadFile: 'Upload file',
+        readingCookies: 'Reading Cookies',
+        uploadFile: 'Upload File',
+        uploadingFile: 'Uploading File',
+        download: 'Download',
+        downloading: 'Downloading',
+        downloaded: 'Downloaded',
+        downloadBackground: 'Downloading In Background',
+        downloadBackgroundHint: 'This file is still downloading. You will get a notification when it finishes.',
+        downloadSaveTo: 'Save To…',
+        downloadSaved: 'Saved',
+        downloadSaveFailed: 'Could Not Save File',
+        downloadPath: 'Path',
+        downloadSize: 'Size',
+        downloadMime: 'Type',
+        downloadUrl: 'URL',
+        downloadProgress: '{{loaded}} / {{total}}',
+        listDownloads: 'List Downloads',
+        listingDownloads: 'Listing Downloads',
+        listDownloadsEmpty: 'No downloads captured',
+        downloadStateCompleted: 'Completed',
+        downloadStateProgressing: 'Downloading',
+        downloadStateCancelled: 'Cancelled',
+        downloadStateInterrupted: 'Interrupted',
         emulate: 'Emulate',
+        emulating: 'Emulating',
         mock: 'Mock',
+        mocking: 'Mocking',
         elements_one: '{{count}} element',
         elements_other: '{{count}} elements',
         matches_one: '{{count}} match',
@@ -2334,9 +2426,11 @@ export const en: Messages = {
         requests_other: '{{count}} requests',
         cookiesCount_one: '{{count}} cookie',
         cookiesCount_other: '{{count}} cookies',
-        notFound: 'not found',
-        viewport: 'viewport',
-        screenshotUnavailable: 'Screenshot no longer available',
+        downloads_one: '{{count}} download',
+        downloads_other: '{{count}} downloads',
+        notFound: 'Not Found',
+        viewport: 'Viewport',
+        screenshotUnavailable: 'Screenshot No Longer Available',
         code: 'Code',
         result: 'Result',
         mockUrl: 'URL',

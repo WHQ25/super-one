@@ -620,6 +620,12 @@ export async function runBrowserOp(sessionId: string, op: string, rawInput: unkn
     const tab = useBrowserStore.getState().tabs[targetId]
     return { ok: true, tab: targetId, url: tab?.url ?? url, title: tab?.title ?? '' }
   }
+  if (op === 'ownedWebContentsIds') {
+    const ids = ownedTabIds(sessionId)
+      .map((id) => webContentsIdForBrowser(id))
+      .filter((id): id is number => id != null)
+    return { webContentsIds: ids }
+  }
   if (op === 'tabs') {
     const state = useBrowserStore.getState()
     const tabs = ownedTabIds(sessionId).map((id) => ({

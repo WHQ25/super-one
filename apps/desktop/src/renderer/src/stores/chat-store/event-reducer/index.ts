@@ -42,6 +42,7 @@ export function applyEventToSession(session: PerSessionState, event: AgentEvent)
     case 'task_started':
     case 'task_progress':
     case 'task_notification':
+    case 'browser_download_update':
       return reduceTool(session, event)
 
     case 'permission_request':

@@ -21,6 +21,7 @@ export type BrowserAutomationOp =
   | 'evaluate'
   | 'tabs'
   | 'resolveWebContentsId'
+  | 'ownedWebContentsIds'
   | 'resolvePoint'
   | 'emulateViewport'
   | 'focusView'

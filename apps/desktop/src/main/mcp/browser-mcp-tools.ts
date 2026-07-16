@@ -6,35 +6,11 @@ import { isCdpEnabled, isCdpCookiesEnabled, isCdpMockEnabled, isCdpEmulateEnable
 import { encode as toonEncode } from '@toon-format/toon'
 import { startRecording, stopRecording, waitForRecordedRequest, getRecordedRequest, addMockRule, clearMockRules, type RecordedRequest } from '../browser/browser-cdp-network'
 import { persistScreenshot } from '../agent/browser-screenshot-store'
+import { raceDownloadTask, startUrlDownloadTask } from '../browser/browser-download-tasks'
+import { listDownloads } from '../browser/browser-downloads'
 import { persistTextArtifact } from '../agent/browser-artifact-store'
 
-export const BROWSER_TOOL_NAMES = [
-  'browser_snapshot',
-  'browser_query',
-  'browser_inspect',
-  'browser_screenshot',
-  'browser_click',
-  'browser_hover',
-  'browser_type',
-  'browser_navigate',
-  'browser_wait_for',
-  'browser_press',
-  'browser_scroll',
-  'browser_drag',
-  'browser_select',
-  'browser_open',
-  'browser_evaluate',
-  'browser_tabs',
-  'browser_resize',
-  'browser_network_start',
-  'browser_network_stop',
-  'browser_network_wait',
-  'browser_network_body',
-  'browser_cookies',
-  'browser_upload_file',
-  'browser_emulate',
-  'browser_mock',
-] as const
+export { BROWSER_TOOL_NAMES } from './superone-mcp-builtin-defs'
 
 interface ScreenshotResult {
   mimeType: 'image/png'
@@ -806,6 +782,87 @@ export function registerBrowserTools(server: McpServer, sessionId: string): void
         await cdpSetFileInput(webContentsId, args.selector, args.files)
         return { ok: true, files: args.files.length }
       }),
+  )
+
+  server.registerTool(
+    'browser_download',
+    {
+      description:
+        "Fetch a file by URL and save it to disk through the browser session (cookies/auth apply, no CORS; data: URLs ok). Completes synchronously if finished within `timeoutMs`; otherwise continues in the background and returns status 'background' with a taskId — you will receive a task notification when it finishes. For downloads the page starts itself (export buttons, attachment links), click first then use browser_list_downloads. Files land in a temp dir — Read the path, or copy/move if the user wants it kept.",
+      inputSchema: {
+        ...descriptionField,
+        url: z.string().min(1).describe('Absolute URL (or data: URL) of the file to download.'),
+        filename: z
+          .string()
+          .optional()
+          .describe("Override the saved file name. Defaults to Content-Disposition or the URL path segment."),
+        timeoutMs: z
+          .number()
+          .int()
+          .min(100)
+          .max(120000)
+          .default(15000)
+          .describe('How long to wait for a synchronous result before moving the job to the background. Default 15000.'),
+      },
+    },
+    async (args) => {
+      try {
+        const snap = startUrlDownloadTask(sessionId, args.url, args.filename)
+        const raced = await raceDownloadTask(snap.taskId, args.timeoutMs)
+        if (raced.mode === 'background') {
+          return textReply({
+            status: 'background',
+            taskId: raced.task.taskId,
+            url: raced.task.url,
+            message:
+              `Download still running after ${args.timeoutMs}ms; moved to background as task ${raced.task.taskId}. ` +
+              'You will receive a task notification when it finishes. Continue other work in the meantime.',
+          })
+        }
+        if (!raced.settled.ok) return errorReply(raced.settled.error)
+        return textReply({ status: 'completed', taskId: snap.taskId, ...raced.settled.result })
+      } catch (err) {
+        return errorReply(err)
+      }
+    },
+  )
+
+  server.registerTool(
+    'browser_list_downloads',
+    {
+      description:
+        'List files the page triggered for download in this session (export buttons, Content-Disposition links, etc.). Captures are saved automatically without a save dialog. Newest first. Use after browser_click on a download control. Set wait:true to block until at least one matching capture is terminal and nothing is still progressing (or until timeout). Filter with state. This is observation only — to fetch a known URL use browser_download.',
+      inputSchema: {
+        ...descriptionField,
+        state: z
+          .enum(['all', 'progressing', 'completed', 'failed'])
+          .default('all')
+          .describe("Which captures to include. 'failed' = cancelled or interrupted. Default all."),
+        wait: z
+          .boolean()
+          .default(false)
+          .describe('If true, wait for captures to settle (see timeoutMs). Default false (immediate snapshot).'),
+        timeoutMs: z
+          .number()
+          .int()
+          .min(0)
+          .max(120000)
+          .default(15000)
+          .describe('Max wait when wait is true. Default 15000. Ignored when wait is false.'),
+      },
+    },
+    async (args) => {
+      try {
+        const downloads = await listDownloads(sessionId, {
+          state: args.state,
+          wait: args.wait,
+          timeoutMs: args.timeoutMs,
+        })
+        return textReply({ count: downloads.length, downloads })
+      } catch (err) {
+        return errorReply(err)
+      }
+    },
   )
 
   server.registerTool(

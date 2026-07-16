@@ -34,6 +34,7 @@ export function createDefaultPerSessionState(): PerSessionState {
     subagentColors: {},
     _subagentColorsFree: freshSubagentColorPool(),
     taskProgress: {},
+    browserDownloads: {},
     streamingTokens: { input: 0, output: 0 },
     codexUsageSnapshot: null,
     codexTurnLastUsage: null,

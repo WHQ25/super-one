@@ -22,20 +22,23 @@ export type BrowserOp =
   | 'network_body'
   | 'cookies'
   | 'upload_file'
+  | 'download'
+  | 'list_downloads'
   | 'emulate'
   | 'mock'
 
 const BROWSER_OPS = new Set<BrowserOp>([
   'snapshot', 'query', 'inspect', 'screenshot', 'click', 'hover', 'type', 'navigate',
   'wait_for', 'press', 'scroll', 'drag', 'select', 'open', 'evaluate', 'tabs', 'resize',
-  'network_start', 'network_stop', 'network_wait', 'network_body', 'cookies', 'upload_file', 'emulate', 'mock',
+  'network_start', 'network_stop', 'network_wait', 'network_body', 'cookies', 'upload_file',
+  'download', 'list_downloads', 'emulate', 'mock',
 ])
 
 /** Read-only ops whose JSON result is worth expanding; the rest are lean actions. */
-const READ_OPS = new Set<BrowserOp>(['snapshot', 'query', 'inspect', 'tabs', 'evaluate', 'network_stop', 'network_wait', 'network_body', 'cookies'])
+const READ_OPS = new Set<BrowserOp>(['snapshot', 'query', 'inspect', 'tabs', 'evaluate', 'network_stop', 'network_wait', 'network_body', 'cookies', 'list_downloads'])
 
 /** Ops that report success/failure via an `ok` field (or an error). */
-const ACTION_OPS = new Set<BrowserOp>(['click', 'hover', 'type', 'press', 'scroll', 'drag', 'select', 'navigate', 'wait_for', 'open', 'resize', 'network_start', 'upload_file', 'emulate', 'mock'])
+const ACTION_OPS = new Set<BrowserOp>(['click', 'hover', 'type', 'press', 'scroll', 'drag', 'select', 'navigate', 'wait_for', 'open', 'resize', 'network_start', 'upload_file', 'download', 'emulate', 'mock'])
 
 /** Strip the `browser_` prefix; return the op if this is a known browser tool. */
 export function getBrowserOp(mcpToolName: string): BrowserOp | null {
@@ -44,15 +47,69 @@ export function getBrowserOp(mcpToolName: string): BrowserOp | null {
   return BROWSER_OPS.has(op) ? op : null
 }
 
+const VERB_BASE: Record<BrowserOp, string> = {
+  snapshot: 'snapshot',
+  query: 'query',
+  inspect: 'inspect',
+  screenshot: 'screenshot',
+  click: 'click',
+  hover: 'hover',
+  type: 'type',
+  navigate: 'navigate',
+  wait_for: 'waitFor',
+  press: 'press',
+  scroll: 'scroll',
+  drag: 'drag',
+  select: 'select',
+  open: 'open',
+  evaluate: 'evaluate',
+  tabs: 'tabs',
+  resize: 'resize',
+  network_start: 'networkStart',
+  network_stop: 'networkStop',
+  network_wait: 'networkWait',
+  network_body: 'networkBody',
+  cookies: 'cookies',
+  upload_file: 'uploadFile',
+  download: 'download',
+  list_downloads: 'listDownloads',
+  emulate: 'emulate',
+  mock: 'mock',
+}
+
+const VERB_STREAMING: Record<BrowserOp, string> = {
+  snapshot: 'snapshotting',
+  query: 'querying',
+  inspect: 'inspecting',
+  screenshot: 'screenshotting',
+  click: 'clicking',
+  hover: 'hovering',
+  type: 'typing',
+  navigate: 'navigating',
+  wait_for: 'waitingFor',
+  press: 'pressing',
+  scroll: 'scrolling',
+  drag: 'dragging',
+  select: 'selecting',
+  open: 'opening',
+  evaluate: 'evaluating',
+  tabs: 'listingTabs',
+  resize: 'resizing',
+  network_start: 'recordingNetwork',
+  network_stop: 'collectingNetwork',
+  network_wait: 'waitingForRequest',
+  network_body: 'loadingResponseBody',
+  cookies: 'readingCookies',
+  upload_file: 'uploadingFile',
+  download: 'downloading',
+  list_downloads: 'listingDownloads',
+  emulate: 'emulating',
+  mock: 'mocking',
+}
+
 /** i18n key suffix (under chat.toolBlock.browser) for the op's verb label. */
-export function browserVerbKey(op: BrowserOp): string {
-  if (op === 'wait_for') return 'waitFor'
-  if (op === 'upload_file') return 'uploadFile'
-  if (op === 'network_start') return 'networkStart'
-  if (op === 'network_stop') return 'networkStop'
-  if (op === 'network_wait') return 'networkWait'
-  if (op === 'network_body') return 'networkBody'
-  return op
+export function browserVerbKey(op: BrowserOp, streaming = false): string {
+  return streaming ? VERB_STREAMING[op] : VERB_BASE[op]
 }
 
 export function isReadBrowserOp(op: BrowserOp): boolean {
@@ -169,6 +226,10 @@ export function browserInputSummary(op: BrowserOp, p: Record<string, unknown>): 
       const n = Array.isArray(p.files) ? (p.files as unknown[]).length : 0
       return p.selector != null ? `${s(p.selector)}${n ? ` ← ${n}` : ''}` : (n ? String(n) : '')
     }
+    case 'download':
+      return p.url != null ? stripProtocol(s(p.url)) : (p.filename != null ? s(p.filename) : '')
+    case 'list_downloads':
+      return p.state != null && p.state !== 'all' ? s(p.state) : ''
     case 'emulate':
       if (p.reset) return 'reset'
       return [
@@ -184,12 +245,25 @@ export function browserInputSummary(op: BrowserOp, p: Record<string, unknown>): 
   }
 }
 
+export interface BrowserDownloadInfo {
+  phase: 'streaming' | 'background' | 'completed' | 'failed'
+  taskId?: string
+  path?: string
+  filename?: string
+  bytes?: number
+  mimeType?: string
+  url?: string
+  error?: string
+  message?: string
+}
+
 export interface BrowserResultInfo {
   status: 'ok' | 'error' | 'neutral'
   errorText?: string
-  count?: { kind: 'elements' | 'matches' | 'tabs' | 'requests' | 'cookies'; n: number }
+  count?: { kind: 'elements' | 'matches' | 'tabs' | 'requests' | 'cookies' | 'downloads'; n: number }
   notFound?: boolean
   imagePath?: string
+  download?: BrowserDownloadInfo
 }
 
 function cleanError(result: string | undefined): string | undefined {
@@ -251,7 +325,88 @@ export function parseBrowserResult(op: BrowserOp, result: string | undefined, is
       return { status: 'neutral' }
     case 'screenshot':
       return { status: 'ok', imagePath: typeof obj?.path === 'string' ? obj.path : undefined }
+    case 'download': {
+      if (obj?.status === 'background') {
+        return {
+          status: 'neutral',
+          download: {
+            phase: 'background',
+            taskId: typeof obj.taskId === 'string' ? obj.taskId : undefined,
+            url: typeof obj.url === 'string' ? obj.url : undefined,
+            filename: typeof obj.filename === 'string' ? obj.filename : undefined,
+            bytes: typeof obj.bytes === 'number' ? obj.bytes : undefined,
+            mimeType: typeof obj.mimeType === 'string' ? obj.mimeType : undefined,
+            message: typeof obj.message === 'string' ? obj.message : undefined,
+          },
+        }
+      }
+      if (obj?.status === 'failed' || obj?.error) {
+        return {
+          status: 'error',
+          errorText: typeof obj.error === 'string' ? obj.error : undefined,
+          download: {
+            phase: 'failed',
+            taskId: typeof obj.taskId === 'string' ? obj.taskId : undefined,
+            url: typeof obj.url === 'string' ? obj.url : undefined,
+            error: typeof obj.error === 'string' ? obj.error : undefined,
+          },
+        }
+      }
+      return {
+        status: 'ok',
+        download: {
+          phase: 'completed',
+          taskId: typeof obj?.taskId === 'string' ? obj.taskId : undefined,
+          path: typeof obj?.path === 'string' ? obj.path : undefined,
+          filename: typeof obj?.filename === 'string' ? obj.filename : undefined,
+          bytes: typeof obj?.bytes === 'number' ? obj.bytes : undefined,
+          mimeType: typeof obj?.mimeType === 'string' ? obj.mimeType : undefined,
+          url: typeof obj?.url === 'string' ? obj.url : undefined,
+        },
+      }
+    }
+    case 'list_downloads': {
+      const n = typeof obj?.count === 'number' ? obj.count : (Array.isArray(obj?.downloads) ? obj.downloads.length : undefined)
+      return n != null ? { status: 'neutral', count: { kind: 'downloads', n } } : { status: 'neutral' }
+    }
     default:
       return { status: ACTION_OPS.has(op) ? 'ok' : 'neutral' }
   }
+}
+
+export type BrowserDownloadListState = 'progressing' | 'completed' | 'cancelled' | 'interrupted' | string
+
+export interface BrowserDownloadListItem {
+  filename: string
+  path?: string
+  bytes?: number
+  state?: BrowserDownloadListState
+  url?: string
+}
+
+/** Parse browser_list_downloads JSON result into a human-friendly item list. */
+export function parseListDownloadsResult(result: string | undefined): BrowserDownloadListItem[] {
+  if (!result) return []
+  let data: unknown
+  try { data = JSON.parse(result) } catch { return [] }
+  const obj = data && typeof data === 'object' && !Array.isArray(data) ? data as Record<string, unknown> : null
+  const raw = Array.isArray(obj?.downloads) ? obj.downloads : (Array.isArray(data) ? data : [])
+  const items: BrowserDownloadListItem[] = []
+  for (const entry of raw) {
+    if (!entry || typeof entry !== 'object') continue
+    const d = entry as Record<string, unknown>
+    const filename = typeof d.filename === 'string' ? d.filename
+      : typeof d.path === 'string' ? d.path.split('/').pop() || d.path
+        : typeof d.url === 'string' ? d.url.split('/').pop()?.split('?')[0] || d.url
+          : ''
+    if (!filename && d.path == null && d.url == null) continue
+    items.push({
+      filename: filename || 'download',
+      path: typeof d.path === 'string' ? d.path : undefined,
+      bytes: typeof d.bytes === 'number' ? d.bytes : undefined,
+      state: typeof d.state === 'string' ? d.state : undefined,
+      url: typeof d.url === 'string' ? d.url : undefined,
+    })
+  }
+  return items
 }

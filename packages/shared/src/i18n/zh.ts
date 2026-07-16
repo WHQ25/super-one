@@ -430,6 +430,9 @@ export const zh: Messages = {
     },
     acpCommands: {
       clearDesc: '清空对话并重新开始',
+      loading: '正在加载命令…',
+      updating: '正在更新命令…',
+      loadingHint: '正在从 agent 获取命令列表',
     },
     dropToAttach: '拖入图片或 PDF 以添加附件',
     permissionModeTitle: '权限模式',

@@ -215,11 +215,33 @@ export function upsertAcpAgentSlashCommands(
   return next
 }
 
+function mergeAgentCatalog(
+  next: AcpAgentConfigCatalog,
+  prev: AcpAgentConfigCatalog | undefined,
+): AcpAgentConfigCatalog {
+  if (!prev) return next
+  return {
+    configOptions: next.configOptions.length ? next.configOptions : prev.configOptions,
+    extraModels: next.extraModels?.length ? next.extraModels : prev.extraModels,
+    selectedModelId: next.selectedModelId ?? prev.selectedModelId ?? null,
+    modelConfigId: next.modelConfigId ?? prev.modelConfigId ?? null,
+    // Slash commands are loaded lazily when the user opens the / popup — never
+    // collected during startup model/config probe. Always preserve cached ones.
+    slashCommands: prev.slashCommands,
+    updatedAt: next.updatedAt,
+  }
+}
+
+/**
+ * Startup probe for models/modes only. Slash commands are intentionally not
+ * waited on here — they load when the user first opens the ACP / popup.
+ */
 async function probeAgentConfig(agentId: string): Promise<AcpAgentConfigCatalog | null> {
   const def = getBuiltinAgent(agentId)
   if (!def) return null
   const cwd = homedir()
   log.info('[acp-model-cache] probe start agent=%s', agentId)
+
   const runtime = await createAcpRuntime({
     launch: {
       agentId,
@@ -234,11 +256,14 @@ async function probeAgentConfig(agentId: string): Promise<AcpAgentConfigCatalog 
   try {
     const options = runtime.getConfigOptions()
     const modelCfg = runtime.getModelConfig()
-    if ((!options || options.length === 0) && (!modelCfg || modelCfg.models.length === 0)) {
+    const prev = readAcpResourcesCache().configByAgentId?.[agentId]
+    const hasConfig = (options?.length ?? 0) > 0 || (modelCfg?.models.length ?? 0) > 0
+    if (!hasConfig && !prev) {
       log.info('[acp-model-cache] probe empty agent=%s', agentId)
       return null
     }
-    const catalog = catalogFromConfigOptions(options, modelCfg)
+
+    const catalog = mergeAgentCatalog(catalogFromConfigOptions(options, modelCfg), prev)
     log.info(
       '[acp-model-cache] probe ok agent=%s configOptions=%d models=%d',
       agentId,
@@ -252,8 +277,8 @@ async function probeAgentConfig(agentId: string): Promise<AcpAgentConfigCatalog 
 }
 
 /**
- * Refresh session config catalogs for installed agents once per app open.
- * Returns immediately-usable resources (previous cache + any successful probes).
+ * Refresh model/mode catalogs for installed agents once per app open.
+ * Does not probe slash commands (lazy, on first / popup open).
  */
 export async function refreshAcpModelsOnce(opts?: {
   agentIds?: string[]
@@ -271,7 +296,9 @@ export async function refreshAcpModelsOnce(opts?: {
     probedThisLaunch.add(agent.id)
     try {
       const catalog = await probeAgentConfig(agent.id)
-      if (catalog) configByAgentId[agent.id] = catalog
+      if (catalog) {
+        configByAgentId[agent.id] = mergeAgentCatalog(catalog, configByAgentId[agent.id])
+      }
     } catch (err) {
       log.warn(
         '[acp-model-cache] probe failed agent=%s: %s',
@@ -304,7 +331,14 @@ export function getCachedSessionCatalog(agentId: string): AcpSessionCatalog | nu
   const cat = readAcpResourcesCache().configByAgentId?.[agentId]
   if (!cat) return null
   const session = deriveSessionCatalog(cat)
-  if (!session.models.length && !session.modes.length && !session.configOptions.length) return null
+  if (
+    !session.models.length
+    && !session.modes.length
+    && !session.configOptions.length
+    && !session.slashCommands.length
+  ) {
+    return null
+  }
   return session
 }
 

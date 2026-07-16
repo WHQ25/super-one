@@ -404,6 +404,9 @@ export type Messages = {
     }
     acpCommands: {
       clearDesc: string
+      loading: string
+      updating: string
+      loadingHint: string
     }
     dropToAttach: string
     permissionModeTitle: string
@@ -2018,10 +2021,13 @@ export const en: Messages = {
       codexAsk: 'Ask Codex anything, @ for files & mini-apps, / for commands and skills',
       claudePlan: "Let's make a plan! What's in your mind?",
       claudeAsk: 'Ask Claude anything, @ for files, agents & mini-apps, / for commands and skills',
-      acpAsk: 'Ask {{agent}} anything, @ for files & mini-apps, / for commands',
+      acpAsk: 'Ask {{agent}} anything, @ for files & mini-apps, / for slash commands',
     },
     acpCommands: {
       clearDesc: 'Clear the conversation and start fresh',
+      loading: 'Loading slash commands…',
+      updating: 'Updating slash commands…',
+      loadingHint: 'Fetching slash commands from the agent',
     },
     dropToAttach: 'Drop images or PDFs to attach',
     permissionModeTitle: 'Permission Mode',
@@ -2423,7 +2429,7 @@ export const en: Messages = {
       authBadge: 'auth',
     },
     slashCommand: {
-      groupCommands: 'Commands',
+      groupCommands: 'Slash commands',
       groupSkills: 'Skills',
     },
     mentionPopup: {

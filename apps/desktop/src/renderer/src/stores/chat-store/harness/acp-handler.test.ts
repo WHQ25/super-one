@@ -78,8 +78,21 @@ describe('getCachedAcpCatalog', () => {
 })
 
 describe('sessionPatchFromAcpCatalog', () => {
-  it('hydrates session model and mode fields from catalog defaults', () => {
-    const catalog = getCachedAcpCatalog(resources, 'opencode')!
+  it('hydrates session model, mode, and slash command fields from catalog defaults', () => {
+    const withCommands = {
+      ...resources,
+      configByAgentId: {
+        ...resources.configByAgentId,
+        opencode: {
+          ...resources.configByAgentId!.opencode!,
+          slashCommands: [
+            { name: 'web', description: 'Search', argumentHint: 'q', isSkill: false },
+            { name: 'plan', description: 'Plan', argumentHint: '', isSkill: false },
+          ],
+        },
+      },
+    }
+    const catalog = getCachedAcpCatalog(withCommands, 'opencode')!
     const patch = sessionPatchFromAcpCatalog(catalog)
     expect(patch.acpModelsStatus).toBe('ready')
     expect(patch.selectedModel).toBe('opencode/big-pickle')
@@ -89,6 +102,7 @@ describe('sessionPatchFromAcpCatalog', () => {
     expect(patch.selectedAcpModeId).toBe('code')
     expect(patch.acpModeConfigId).toBe('mode')
     expect(patch.acpModes?.map((m) => m.id)).toEqual(['ask', 'code'])
+    expect(patch.acpSlashCommands?.map((c) => c.name)).toEqual(['web', 'plan'])
   })
 
   it('honors preferSelected when present in catalog', () => {

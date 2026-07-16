@@ -26,6 +26,7 @@ import {
   triggerPrewarm,
   updateActivePerSession,
 } from './store-helpers'
+import { resolveProvider } from './provider-routing'
 import { createDefaultPerSessionState, createDefaultProjectState, createSessionId, freshSubagentColorPool } from '../defaults'
 import { isRemoteSession, removeRemoteSession } from '../index'
 import type { ChatProvider, ChatStore } from '../types'
@@ -386,6 +387,7 @@ export function setPreferredProviderImpl(
     selectedAcpModeId: null as string | null,
     acpModesStatus: 'idle' as const,
     acpSlashCommands: [] as import('@superone/shared/agent-types').SlashCommandInfo[],
+    acpSlashCommandsStatus: 'idle' as const,
   }
   const modelReset = (() => {
     if (provider === 'claude') {
@@ -556,6 +558,7 @@ export function setAcpAgentIdImpl(
     selectedAcpModeId: null,
     acpModesStatus: 'idle' as const,
     acpSlashCommands: [],
+    acpSlashCommandsStatus: 'idle' as const,
     ...(catalog
       ? sessionPatchFromAcpCatalog(catalog)
       : {
@@ -582,6 +585,7 @@ export function setAcpAgentIdImpl(
       console.error('[acp] persist selectedAgentId failed:', err)
     }
     // If cache miss, request a once-per-launch probe for this agent then hydrate.
+    // Slash commands are not part of startup probe — loaded when / popup opens.
     if (!catalog && agentId) {
       try {
         const fresh = await window.app.refreshAcpModels?.(agentId)
@@ -598,4 +602,48 @@ export function setAcpAgentIdImpl(
     }
     triggerPrewarm(get())
   })()
+}
+
+const ACP_SLASH_LOAD_TIMEOUT_MS = 10_000
+const _acpSlashLoadTimeouts = new Map<string, ReturnType<typeof setTimeout>>()
+
+/**
+ * Lazy-load ACP slash commands when the user opens the / popup.
+ * - Shows cached commands immediately when present
+ * - Starts/ensures the agent runtime so available_commands_update can refresh the cache
+ * - Sets loading status until the agent advertises commands (or timeout)
+ */
+export function ensureAcpSlashCommandsImpl(
+  set: ChatStoreSet,
+  get: () => ChatStore,
+): void {
+  const { activeProject } = get()
+  if (!activeProject) return
+  const session = getActivePerSession(get())
+  if (resolveProvider(session) !== 'acp') return
+  if (!session.acpAgentId) return
+  if (session.acpSlashCommandsStatus === 'loading') return
+
+  const key = `${activeProject}:${session.acpAgentId}`
+
+  // Always show loading while ensuring runtime so popup can display a spinner
+  // (cached commands still render underneath). Live available_commands_update
+  // writes ready + refreshed list into the cache.
+  set((s) => updateActivePerSession(s, () => ({
+    acpSlashCommandsStatus: 'loading',
+  })))
+
+  triggerPrewarm(get())
+
+  const prevTimer = _acpSlashLoadTimeouts.get(key)
+  if (prevTimer) clearTimeout(prevTimer)
+  const timer = setTimeout(() => {
+    _acpSlashLoadTimeouts.delete(key)
+    const current = getActivePerSession(get())
+    if (resolveProvider(current) !== 'acp') return
+    if (current.acpAgentId !== session.acpAgentId) return
+    if (current.acpSlashCommandsStatus !== 'loading') return
+    set((s) => updateActivePerSession(s, () => ({ acpSlashCommandsStatus: 'ready' })))
+  }, ACP_SLASH_LOAD_TIMEOUT_MS)
+  _acpSlashLoadTimeouts.set(key, timer)
 }

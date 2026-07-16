@@ -60,6 +60,7 @@ import {
   refreshAcpModelsOnce,
   upsertAcpAgentModels,
   upsertAcpAgentConfig,
+  upsertAcpAgentSlashCommands,
   resetAcpModelProbeStateForTests,
   getCachedSessionCatalog,
 } from './acp-model-cache'
@@ -155,7 +156,7 @@ describe('acp-model-cache', () => {
     expect(getCachedSessionCatalog('opencode')?.models[0]?.id).toBe('a')
   })
 
-  it('probes each agent only once per launch and stores full config', async () => {
+  it('probes models/modes only — does not collect slash commands at startup', async () => {
     writeAcpResourcesCache({
       agents: [
         { id: 'opencode', name: 'OpenCode', installed: true, commandPreview: 'opencode acp' },
@@ -163,13 +164,76 @@ describe('acp-model-cache', () => {
       ],
       selectedAgentId: null,
       modelsByAgentId: {},
-      configByAgentId: {},
+      configByAgentId: {
+        opencode: {
+          configOptions: [],
+          slashCommands: [
+            { name: 'cached-web', description: 'From previous session', argumentHint: '', isSkill: false },
+          ],
+          updatedAt: '2026-01-01T00:00:00.000Z',
+        },
+      },
     })
     const first = await refreshAcpModelsOnce()
     expect(first.configByAgentId?.opencode?.configOptions.length).toBe(2)
     expect(first.modelsByAgentId?.opencode?.models.length).toBe(2)
     expect(getCachedSessionCatalog('opencode')?.modes.map((m) => m.id)).toEqual(['ask', 'code'])
+    // Startup probe must preserve, not fetch, slash commands.
+    expect(first.configByAgentId?.opencode?.slashCommands?.map((c) => c.name)).toEqual(['cached-web'])
     const second = await refreshAcpModelsOnce()
     expect(second.configByAgentId?.opencode?.configOptions.length).toBe(2)
+    expect(second.configByAgentId?.opencode?.slashCommands?.map((c) => c.name)).toEqual(['cached-web'])
+  })
+
+  it('upserts slash commands into config cache without wiping configOptions', () => {
+    writeAcpResourcesCache({
+      agents: [{ id: 'opencode', name: 'OpenCode', installed: true, commandPreview: 'opencode acp' }],
+      selectedAgentId: 'opencode',
+      configByAgentId: {
+        opencode: {
+          configOptions: [{
+            id: 'model',
+            name: 'Model',
+            category: 'model',
+            type: 'select',
+            currentValue: 'm1',
+            options: [{ value: 'm1', name: 'M1' }],
+          }],
+          updatedAt: '2026-01-01T00:00:00.000Z',
+        },
+      },
+    })
+    upsertAcpAgentSlashCommands('opencode', [
+      { name: 'web', description: 'Search', argumentHint: 'q', isSkill: false },
+    ])
+    const cached = readAcpResourcesCache()
+    expect(cached.configByAgentId?.opencode?.configOptions[0]?.id).toBe('model')
+    expect(cached.configByAgentId?.opencode?.slashCommands?.map((c) => c.name)).toEqual(['web'])
+    expect(getCachedSessionCatalog('opencode')?.slashCommands[0]?.name).toBe('web')
+  })
+
+  it('config-only upsert preserves previously cached slash commands', () => {
+    writeAcpResourcesCache({
+      agents: [{ id: 'opencode', name: 'OpenCode', installed: true, commandPreview: 'opencode acp' }],
+      selectedAgentId: 'opencode',
+      configByAgentId: {
+        opencode: {
+          configOptions: [],
+          slashCommands: [
+            { name: 'web', description: 'Search', argumentHint: '', isSkill: false },
+          ],
+          updatedAt: '2026-01-01T00:00:00.000Z',
+        },
+      },
+    })
+    upsertAcpAgentConfig('opencode', [{
+      id: 'model',
+      name: 'Model',
+      category: 'model',
+      type: 'select',
+      currentValue: 'm1',
+      options: [{ value: 'm1', name: 'M1' }],
+    }])
+    expect(readAcpResourcesCache().configByAgentId?.opencode?.slashCommands?.map((c) => c.name)).toEqual(['web'])
   })
 })

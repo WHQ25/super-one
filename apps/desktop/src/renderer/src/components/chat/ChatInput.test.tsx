@@ -28,6 +28,7 @@ const { chatActions, activeSessionState, editorState, useChatStore, mentionPopup
     preferredProvider: 'claude' as 'claude' | 'codex' | 'acp',
     sessionProvider: null as 'claude' | 'codex' | 'acp' | null,
     acpSlashCommands: [] as Array<{ name: string; description: string; argumentHint: string; isSkill: boolean }>,
+    acpSlashCommandsStatus: 'idle' as 'idle' | 'loading' | 'ready' | 'error',
     acpAgentId: null as string | null,
     agents: [] as Array<{ name: string }>,
     selectedCodexCollaborationMode: 'default' as const,
@@ -73,6 +74,7 @@ const { chatActions, activeSessionState, editorState, useChatStore, mentionPopup
       codex: null,
       acp: { agents: [], selectedAgentId: null },
     },
+    ensureAcpSlashCommands: vi.fn(),
   }
 
   const useChatStore = Object.assign(
@@ -418,7 +420,7 @@ describe('ChatInput @-mention no-match suppression', () => {
 })
 
 describe('ChatInput slash command grouping', () => {
-  it('splits the slash popup into Commands and Skills sections with commands listed first', () => {
+  it('splits the slash popup into Slash commands and Skills sections with commands listed first', () => {
     activeSessionState.slashCommands = [
       { name: 'release', description: 'Release the app', argumentHint: '', isSkill: true },
       { name: 'clear', description: 'Clear conversation', argumentHint: '', isSkill: false },
@@ -430,7 +432,7 @@ describe('ChatInput slash command grouping', () => {
     typeInEditor('/')
     rerender(<ChatInput />)
 
-    expect(screen.getByText('Commands')).toBeInTheDocument()
+    expect(screen.getByText('Slash commands')).toBeInTheDocument()
     expect(screen.getByText('Skills')).toBeInTheDocument()
 
     const order = screen
@@ -452,7 +454,7 @@ describe('ChatInput slash command grouping', () => {
     typeInEditor('/')
     rerender(<ChatInput />)
 
-    expect(screen.getByText('Commands')).toBeInTheDocument()
+    expect(screen.getByText('Slash commands')).toBeInTheDocument()
     expect(screen.queryByText('skill')).toBeNull()
   })
 

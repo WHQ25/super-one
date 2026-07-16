@@ -147,7 +147,10 @@ export function applyEventToSession(session: PerSessionState, event: AgentEvent)
       if (event.agentId && session.acpAgentId && event.agentId !== session.acpAgentId) {
         return {}
       }
-      return { acpSlashCommands: event.commands }
+      return {
+        acpSlashCommands: event.commands,
+        acpSlashCommandsStatus: 'ready' as const,
+      }
     }
   }
   return {}

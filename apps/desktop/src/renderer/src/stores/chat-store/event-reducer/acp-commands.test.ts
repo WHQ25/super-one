@@ -33,6 +33,7 @@ describe('applyEventToSession: acp_commands', () => {
       commands,
     })
     expect(patch.acpSlashCommands).toEqual(commands)
+    expect(patch.acpSlashCommandsStatus).toBe('ready')
   })
 
   it('drops commands from a different ACP agent', () => {

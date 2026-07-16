@@ -5,7 +5,7 @@ import { cn } from '@superone/ui/lib/utils'
 import { CLAUDE_INTERCEPTED_COMMAND_NAMES, CODEX_REJECT_PLAN_PLACEHOLDER, getLatestCodexThreadId, runClaudeInterceptedCommand, selectActiveCodexSkills, selectCodexPrompts, useChatStore, useActiveSession, useIsRemoteLocked, useSessionScope } from '@/stores/chat'
 import { useEffectiveProjectRoot } from '@/stores/app'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
-import { ArrowUp, Paperclip, X } from 'lucide-react'
+import { ArrowUp, Loader2, Paperclip, X } from 'lucide-react'
 import type { MentionKind } from '@/stores/chat'
 import { ContextUsage } from './ContextUsage'
 import { MentionPopup, type MentionPopupHandle } from './MentionPopup'
@@ -245,8 +245,10 @@ export function ChatInput() {
     ]), [t, codexPrompts, codexSkills])
 
     const acpSlashCommandsFromAgent = useActiveSession((s) => s.acpSlashCommands)
+    const acpSlashCommandsStatus = useActiveSession((s) => s.acpSlashCommandsStatus)
     const acpAgentId = useActiveSession((s) => s.acpAgentId)
     const acpAgents = useChatStore((s) => s.harnessResources?.acp?.agents)
+    const ensureAcpSlashCommands = useChatStore((s) => s.ensureAcpSlashCommands)
     const acpAgentName = acpAgents?.find((a) => a.id === acpAgentId)?.name
     const acpSlashCommands = useMemo<SlashCommandInfo[]>(() => {
       const local: SlashCommandInfo[] = [
@@ -284,6 +286,22 @@ export function ChatInput() {
     )
     matchingCommandsRef.current = matchingCommands
     slashDismissedRef.current = slashDismissed
+
+    // Lazy-load ACP slash commands only when the user opens the / popup.
+    const acpSlashPopupOpen =
+      activeProviderForResources === 'acp'
+      && text.startsWith('/')
+      && !slashDismissed
+    useEffect(() => {
+      if (!acpSlashPopupOpen) return
+      ensureAcpSlashCommands()
+    }, [acpSlashPopupOpen, ensureAcpSlashCommands, acpAgentId])
+
+    const acpSlashLoading = activeProviderForResources === 'acp' && acpSlashCommandsStatus === 'loading'
+    const showSlashPopup =
+      !slashDismissed
+      && text.startsWith('/')
+      && (matchingCommands.length > 0 || acpSlashLoading)
 
     const slashGroups = useMemo(() => {
       const order: string[] = []
@@ -1207,8 +1225,18 @@ export function ChatInput() {
           onDragOver={handleDragOver}
           onDrop={handleDrop}
         >
-        {matchingCommands.length > 0 && !slashDismissed && (
+        {showSlashPopup && (
           <div className="absolute bottom-full left-0 right-0 z-10 mb-1 flex max-h-64 flex-col overflow-hidden rounded-xl border border-border bg-popover p-1.5">
+            {acpSlashLoading && (
+              <div className="mb-1 flex items-center gap-2 rounded-md px-2 py-1.5 text-xs text-muted-foreground">
+                <Loader2 className="size-3.5 shrink-0 animate-spin" />
+                <span>
+                  {acpSlashCommandsFromAgent.length > 0
+                    ? t('chat.acpCommands.updating')
+                    : t('chat.acpCommands.loading')}
+                </span>
+              </div>
+            )}
             <div className="min-h-0 flex-1 overflow-y-auto">
               {slashGroups.map((group) => (
                 <div key={group.key}>
@@ -1251,6 +1279,11 @@ export function ChatInput() {
                   })}
                 </div>
               ))}
+              {acpSlashLoading && matchingCommands.length === 0 && (
+                <div className="px-2 py-3 text-center text-[11px] text-muted-foreground">
+                  {t('chat.acpCommands.loadingHint')}
+                </div>
+              )}
             </div>
           </div>
         )}

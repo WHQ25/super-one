@@ -337,8 +337,9 @@ export class AcpBackend implements SessionBackend {
     if (event.type === 'acp_models' && event.configId) this.modelConfigId = event.configId
     if (event.type === 'acp_modes' && event.configId) this.modeConfigId = event.configId
     if (event.type === 'acp_commands') {
-      if (agentId && event.commands) {
+      if (agentId) {
         try {
+          // Always persist (including empty) so cache mirrors agent-advertised set.
           upsertAcpAgentSlashCommands(agentId, event.commands)
         } catch (err) {
           log.debug('[AcpBackend] upsert slash commands cache failed:', err)

@@ -215,6 +215,8 @@ export function sessionPatchFromAcpCatalog(
     selectedAcpModeId: session.selectedModeId,
     acpModesStatus: session.modes.length > 0 ? 'ready' : 'idle',
     acpSlashCommands: session.slashCommands,
+    // Cached commands count as ready for instant popup; opening / still triggers a live refresh.
+    acpSlashCommandsStatus: session.slashCommands.length > 0 ? 'ready' : 'idle',
   }
   return patch
 }

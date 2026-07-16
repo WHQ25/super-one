@@ -291,6 +291,7 @@ import {
   resetSessionImpl,
   setPreferredProviderImpl,
   setAcpAgentIdImpl,
+  ensureAcpSlashCommandsImpl,
 } from './helpers/session-lifecycle'
 import {
   answerQuestionImpl,
@@ -474,6 +475,7 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
 
   setPreferredProvider: (provider) => setPreferredProviderImpl(set, get, provider),
   setAcpAgentId: (agentId) => setAcpAgentIdImpl(set, get, agentId),
+  ensureAcpSlashCommands: () => ensureAcpSlashCommandsImpl(set, get),
 
   // addAttachment / removeAttachment / clearAttachments now provided by createCoreSlice
 

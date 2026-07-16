@@ -25,6 +25,7 @@ import {
   KwaiKAT,
   LongCat,
   Minimax,
+  Moonshot,
   ModelScope,
   Nvidia,
   OpenAI,
@@ -530,6 +531,7 @@ export type ProviderBrandKey =
   | "deepseek"
   | "zhipu"
   | "kimi"
+  | "moonshot"
   | "minimax"
   | "volcengine"
   | "bailian"
@@ -557,6 +559,7 @@ const BRANDS: Record<ProviderBrandKey, BrandEntry> = {
   openrouter: { Mono: OpenRouter, Text: OpenRouter.Text },
   zhipu: { Mono: Zhipu, Color: Zhipu.Color, Text: Zhipu.Text },
   kimi: { Mono: Kimi, Color: Kimi.Color, Text: Kimi.Text },
+  moonshot: { Mono: Moonshot, Text: Moonshot.Text },
   minimax: { Mono: Minimax, Color: Minimax.Color, Text: Minimax.Text },
   volcengine: { Mono: Volcengine, Color: Volcengine.Color, Text: Volcengine.Text },
   bailian: { Mono: Bailian, Color: Bailian.Color, Text: Bailian.Text },

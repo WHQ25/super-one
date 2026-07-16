@@ -31,7 +31,7 @@ import {
 
 import { useModelCatalog } from '@/hooks/useModelCatalog'
 import { useSettingsStore } from '@/stores/settings'
-import { ONE_M_SUFFIX, stripOneM } from '@/lib/model-id'
+import { collectOneMillionIds, ONE_M_SUFFIX, stripOneM } from '@/lib/model-id'
 
 const RESERVED_ENV_KEYS = new Set([
   'ANTHROPIC_API_KEY',
@@ -347,12 +347,14 @@ function EndpointOverrideFields({
     () => resolveEndpointModels(platform, plan, endpoint, catalog ?? undefined),
     [platform, plan, endpoint, catalog],
   )
-  // Catalog ids whose context window is >=1M — eligible for the `[1m]` long-context toggle.
+  // Catalog ids with contextWindow >=1M, plus coding-plan preset base ids that ship with `[1m]`
+  // (e.g. k3 from k3[1m] — catalog only knows kimi-k3).
   const oneMillionIds = useMemo(() => {
-    const ids = new Set<string>()
     const provider = catalog?.providers.find((p) => p.id === catalogProviderIdFor(platform, plan))
-    for (const m of provider?.models ?? []) if ((m.contextWindow ?? 0) >= 1_000_000) ids.add(m.id)
-    return ids
+    return collectOneMillionIds(
+      provider?.models ?? [],
+      plan.endpoints.map((e) => e.defaults?.modelMapping),
+    )
   }, [catalog, platform, plan])
   // The first-party Anthropic API uses native Claude models on the real endpoint —
   // model remapping and a compatible-endpoint override make no sense there.

@@ -47,6 +47,52 @@ describe('builtin registry', () => {
     expect(cn?.id).not.toBe(global?.id)
   })
 
+  it('splits Kimi Code membership tiers and Moonshot API regions into plans', () => {
+    const kimi = findPlatform(BUILTIN_PLATFORMS, 'kimi')
+    const moonshot = findPlatform(BUILTIN_PLATFORMS, 'moonshot')
+    expect(kimi?.brand).toBe('kimi')
+    expect(moonshot?.brand).toBe('moonshot')
+    expect(kimi?.plans.map((p) => p.id)).toEqual(['andante', 'moderato', 'allegretto'])
+    expect(moonshot?.plans.map((p) => p.id).sort()).toEqual(['cn', 'global'])
+    for (const plan of [...(kimi?.plans ?? []), ...(moonshot?.plans ?? [])]) {
+      expect(plan.endpoints.some((e) => e.protocols.includes('anthropic-messages'))).toBe(true)
+      expect(plan.endpoints.some((e) => e.protocols.includes('openai-chat'))).toBe(true)
+    }
+
+    const andante = findPlan(kimi, 'andante')?.endpoints.find((e) => e.id === 'anthropic')
+    expect(andante?.defaults?.modelMapping?.default?.id).toBe('kimi-for-coding')
+    expect(andante?.models?.map((m) => m.id)).toEqual(['kimi-for-coding'])
+    expect(andante?.defaults?.extraEnv?.CLAUDE_CODE_AUTO_COMPACT_WINDOW).toBe('262144')
+    expect(andante?.defaults?.extraEnv?.CLAUDE_CODE_EFFORT_LEVEL).toBeUndefined()
+
+    const moderato = findPlan(kimi, 'moderato')?.endpoints.find((e) => e.id === 'anthropic')
+    expect(moderato?.defaults?.modelMapping?.default?.id).toBe('k3')
+    expect(moderato?.models?.map((m) => m.id)).toEqual(['k3', 'kimi-for-coding'])
+    expect(moderato?.defaults?.extraEnv?.CLAUDE_CODE_AUTO_COMPACT_WINDOW).toBe('262144')
+    expect(moderato?.defaults?.extraEnv?.CLAUDE_CODE_EFFORT_LEVEL).toBe('max')
+
+    const allegretto = findPlan(kimi, 'allegretto')?.endpoints.find((e) => e.id === 'anthropic')
+    expect(allegretto?.defaults?.modelMapping?.default?.id).toBe('k3[1m]')
+    expect(allegretto?.models?.map((m) => m.id)).toEqual([
+      'k3',
+      'kimi-for-coding',
+      'kimi-for-coding-highspeed',
+    ])
+    expect(allegretto?.defaults?.extraEnv?.CLAUDE_CODE_AUTO_COMPACT_WINDOW).toBe('1048576')
+    expect(allegretto?.defaults?.extraEnv?.CLAUDE_CODE_MAX_CONTEXT_TOKENS).toBe('1048576')
+    expect(allegretto?.defaults?.extraEnv?.CLAUDE_CODE_EFFORT_LEVEL).toBe('max')
+
+    expect(findPlan(moonshot, 'cn')?.endpoints.find((e) => e.id === 'anthropic')?.baseUrl).toBe(
+      'https://api.moonshot.cn/anthropic',
+    )
+    expect(findPlan(moonshot, 'global')?.endpoints.find((e) => e.id === 'anthropic')?.baseUrl).toBe(
+      'https://api.moonshot.ai/anthropic',
+    )
+    expect(
+      findPlan(moonshot, 'cn')?.endpoints.find((e) => e.id === 'anthropic')?.defaults?.modelMapping?.default?.id,
+    ).toBe('kimi-k3')
+  })
+
   it('official oauth platforms carry an oauth plan and no api key url', () => {
     const claude = findPlatform(BUILTIN_PLATFORMS, 'claude-official')
     expect(claude?.plans[0].auth).toBe('oauth')

@@ -161,6 +161,7 @@ export function runDatabaseMigrations(db: Database.Database): void {
 
   migrateLegacyApiProviders(db)
   migrateEndpointProtocols(db)
+  migrateKimiMoonshotPlatforms(db)
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS harness_resource_cache (
@@ -800,6 +801,26 @@ function migrateEndpointProtocols(db: Database.Database): void {
     const remap = platformId ? platformRemap.get(platformId) : undefined
     const next = remap?.[row.endpoint_id]
     if (next && next !== row.endpoint_id) updateBinding.run(next, row.consumer)
+  }
+}
+
+// kimi-cn / kimi-global → kimi (membership tiers) + moonshot (cn | global).
+// Legacy coding settings match Allegretto+ (k3[1m] + 1M context + HighSpeed).
+function migrateKimiMoonshotPlatforms(db: Database.Database): void {
+  const now = new Date().toISOString()
+  const update = db.prepare(
+    `UPDATE credentials SET platform_id = ?, plan_id = ?, updated_at = ?
+     WHERE platform_id = ? AND plan_id = ?`,
+  )
+  const remaps: Array<{ fromPlatform: string; fromPlan: string; toPlatform: string; toPlan: string }> = [
+    { fromPlatform: 'kimi-cn', fromPlan: 'coding', toPlatform: 'kimi', toPlan: 'allegretto' },
+    { fromPlatform: 'kimi-global', fromPlan: 'coding', toPlatform: 'kimi', toPlan: 'allegretto' },
+    { fromPlatform: 'kimi', fromPlan: 'coding', toPlatform: 'kimi', toPlan: 'allegretto' },
+    { fromPlatform: 'kimi-cn', fromPlan: 'api', toPlatform: 'moonshot', toPlan: 'cn' },
+    { fromPlatform: 'kimi-global', fromPlan: 'api', toPlatform: 'moonshot', toPlan: 'global' },
+  ]
+  for (const r of remaps) {
+    update.run(r.toPlatform, r.toPlan, now, r.fromPlatform, r.fromPlan)
   }
 }
 

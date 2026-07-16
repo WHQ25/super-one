@@ -10,3 +10,27 @@ export function stripOneM(id: string): string {
 export function hasOneM(id: string): boolean {
   return id.endsWith(ONE_M_SUFFIX)
 }
+
+/**
+ * Model ids eligible for the UI `[1m]` long-context toggle.
+ * - Catalog models with contextWindow >= 1M (e.g. kimi-k3)
+ * - Base ids of plan preset mappings that ship with `[1m]` (e.g. k3 from k3[1m] on Kimi Coding)
+ *   — coding-plan ids often differ from catalog ids.
+ */
+export function collectOneMillionIds(
+  catalogModels: ReadonlyArray<{ id: string; contextWindow?: number }>,
+  planModelMappings: ReadonlyArray<Record<string, { id?: string } | undefined | null> | undefined | null>,
+): Set<string> {
+  const ids = new Set<string>()
+  for (const m of catalogModels) {
+    if ((m.contextWindow ?? 0) >= 1_000_000) ids.add(m.id)
+  }
+  for (const mapping of planModelMappings) {
+    if (!mapping) continue
+    for (const slot of Object.values(mapping)) {
+      const id = slot?.id
+      if (id && hasOneM(id)) ids.add(stripOneM(id))
+    }
+  }
+  return ids
+}

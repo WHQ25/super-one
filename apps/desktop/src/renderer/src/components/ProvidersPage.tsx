@@ -57,6 +57,7 @@ const BRAND_POPULARITY = [
   'zhipu',
   'zai',
   'kimi',
+  'moonshot',
   'openrouter',
   'bedrock',
   'vertexai',
@@ -496,7 +497,9 @@ function PlatformDetail({ platform }: { platform: Platform }) {
           </IconButton>
         )}
       </div>
-      {platform.description && <p className="text-sm text-muted-foreground">{platform.description}</p>}
+      {(selectedPlan?.description ?? platform.description) && (
+        <p className="text-sm text-muted-foreground">{selectedPlan?.description ?? platform.description}</p>
+      )}
 
       {selectedPlan && <PlanSection key={selectedPlan.id} platform={platform} plan={selectedPlan} />}
 

@@ -112,6 +112,7 @@ const CATALOG_ID_ALIAS: Record<string, string> = {
   zhipu: 'zhipuai',
   zai: 'zhipuai',
   kimi: 'moonshotai',
+  moonshot: 'moonshotai',
   bailian: 'alibaba',
   bedrock: 'amazon-bedrock',
   siliconcloud: 'siliconflow',

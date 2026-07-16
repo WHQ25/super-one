@@ -6,11 +6,11 @@ import type { EndpointModel, Platform, ServiceEndpoint } from './types'
 
 function anthropic(
   baseUrl: string,
-  opts: { extraEnv?: Record<string, string>; modelMapping?: ProviderModelEnv; id?: string } = {},
+  opts: { extraEnv?: Record<string, string>; modelMapping?: ProviderModelEnv; models?: EndpointModel[]; id?: string } = {},
 ): ServiceEndpoint {
   const defaults =
     opts.extraEnv || opts.modelMapping ? { extraEnv: opts.extraEnv, modelMapping: opts.modelMapping } : undefined
-  return { id: opts.id ?? 'anthropic', baseUrl, protocols: ['anthropic-messages'], defaults }
+  return { id: opts.id ?? 'anthropic', baseUrl, protocols: ['anthropic-messages'], defaults, models: opts.models }
 }
 
 function openaiChat(
@@ -83,16 +83,102 @@ const ARK_CODE_MODELS: ProviderModelEnv = {
   haiku: { id: 'ark-code-latest', name: 'Ark Code Latest' },
 }
 
+const KIMI_API_MODELS: ProviderModelEnv = {
+  default: { id: 'kimi-k3', name: 'Kimi K3' },
+  opus: { id: 'kimi-k3', name: 'Kimi K3' },
+  sonnet: { id: 'kimi-k3', name: 'Kimi K3' },
+  haiku: { id: 'kimi-k2.7-code-highspeed', name: 'Kimi K2.7 Code HighSpeed' },
+  subagent: { id: 'kimi-k3', name: 'Kimi K3' },
+}
+
+const KIMI_ANDANTE_MODELS: ProviderModelEnv = {
+  default: { id: 'kimi-for-coding', name: 'Kimi for Coding' },
+  opus: { id: 'kimi-for-coding', name: 'Kimi for Coding' },
+  sonnet: { id: 'kimi-for-coding', name: 'Kimi for Coding' },
+  haiku: { id: 'kimi-for-coding', name: 'Kimi for Coding' },
+  subagent: { id: 'kimi-for-coding', name: 'Kimi for Coding' },
+}
+
+const KIMI_ANDANTE_ENDPOINT_MODELS: EndpointModel[] = [
+  { id: 'kimi-for-coding', name: 'Kimi for Coding', tasks: ['chat'] },
+]
+
+const KIMI_MODERATO_MODELS: ProviderModelEnv = {
+  default: { id: 'k3', name: 'Kimi K3' },
+  opus: { id: 'k3', name: 'Kimi K3' },
+  sonnet: { id: 'k3', name: 'Kimi K3' },
+  haiku: { id: 'kimi-for-coding', name: 'Kimi for Coding' },
+  subagent: { id: 'k3', name: 'Kimi K3' },
+}
+
+const KIMI_MODERATO_ENDPOINT_MODELS: EndpointModel[] = [
+  { id: 'k3', name: 'Kimi K3', tasks: ['chat'] },
+  { id: 'kimi-for-coding', name: 'Kimi for Coding', tasks: ['chat'] },
+]
+
+const KIMI_ALLEGRETTO_MODELS: ProviderModelEnv = {
+  default: { id: 'k3[1m]', name: 'Kimi K3' },
+  opus: { id: 'k3[1m]', name: 'Kimi K3' },
+  sonnet: { id: 'k3[1m]', name: 'Kimi K3' },
+  haiku: { id: 'kimi-for-coding', name: 'Kimi for Coding' },
+  subagent: { id: 'k3[1m]', name: 'Kimi K3' },
+}
+
+const KIMI_ALLEGRETTO_ENDPOINT_MODELS: EndpointModel[] = [
+  { id: 'k3', name: 'Kimi K3', tasks: ['chat'] },
+  { id: 'kimi-for-coding', name: 'Kimi for Coding', tasks: ['chat'] },
+  { id: 'kimi-for-coding-highspeed', name: 'Kimi for Coding HighSpeed', tasks: ['chat'] },
+]
+
 const NVIDIA_MODELS: ProviderModelEnv = {
-  default: { id: 'moonshotai/kimi-k2.6', name: 'Kimi K2.6' },
-  opus: { id: 'moonshotai/kimi-k2.6', name: 'Kimi K2.6' },
-  sonnet: { id: 'moonshotai/kimi-k2.6', name: 'Kimi K2.6' },
-  haiku: { id: 'moonshotai/kimi-k2.6', name: 'Kimi K2.6' },
+  default: { id: 'moonshotai/kimi-k3', name: 'Kimi K3' },
+  opus: { id: 'moonshotai/kimi-k3', name: 'Kimi K3' },
+  sonnet: { id: 'moonshotai/kimi-k3', name: 'Kimi K3' },
+  haiku: { id: 'moonshotai/kimi-k3', name: 'Kimi K3' },
 }
 
 const CODING_TIMEOUT = { API_TIMEOUT_MS: '3000000' }
 const DISABLE_NONESSENTIAL = { CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1' }
 const EMPTY_AUTH_TOKEN = { ANTHROPIC_AUTH_TOKEN: '' }
+
+const KIMI_BASE_EXTRA_ENV = {
+  ...CODING_TIMEOUT,
+  ENABLE_TOOL_SEARCH: 'false',
+  ...DISABLE_NONESSENTIAL,
+  ...EMPTY_AUTH_TOKEN,
+}
+
+const KIMI_CTX_256K = {
+  CLAUDE_CODE_AUTO_COMPACT_WINDOW: '262144',
+  CLAUDE_CODE_MAX_CONTEXT_TOKENS: '262144',
+}
+
+const KIMI_CTX_1M = {
+  CLAUDE_CODE_AUTO_COMPACT_WINDOW: '1048576',
+  CLAUDE_CODE_MAX_CONTEXT_TOKENS: '1048576',
+}
+
+const KIMI_ANDANTE_EXTRA_ENV = {
+  ...KIMI_BASE_EXTRA_ENV,
+  ...KIMI_CTX_256K,
+}
+
+const KIMI_MODERATO_EXTRA_ENV = {
+  ...KIMI_BASE_EXTRA_ENV,
+  ...KIMI_CTX_256K,
+  CLAUDE_CODE_EFFORT_LEVEL: 'max',
+}
+
+const KIMI_ALLEGRETTO_EXTRA_ENV = {
+  ...KIMI_BASE_EXTRA_ENV,
+  ...KIMI_CTX_1M,
+  CLAUDE_CODE_EFFORT_LEVEL: 'max',
+}
+
+const KIMI_EXTRA_ENV = {
+  ...KIMI_BASE_EXTRA_ENV,
+  ...KIMI_CTX_1M,
+}
 
 // --- built-in platforms -------------------------------------------------------
 
@@ -225,22 +311,103 @@ export const BUILTIN_PLATFORMS: Platform[] = [
     id: 'kimi',
     brand: 'kimi',
     name: 'Kimi',
-    description: 'Kimi 编程套餐 — 月之暗面旗下代码智能助手',
+    description: 'Kimi Code — 编程套餐订阅，按会员档位区分模型与上下文配置',
     catalogProviderId: 'moonshotai',
     plans: [
       {
-        id: 'coding',
-        name: 'Coding Plan',
+        id: 'andante',
+        name: 'Andante',
+        description: 'Kimi Code Andante — kimi-for-coding，256k 上下文',
         auth: 'api-key',
         apiKeyUrl: 'https://www.kimi.com/code/console',
         endpoints: [
           anthropic('https://api.kimi.com/coding/', {
-            modelMapping: {
-              default: { id: 'kimi-k2.6', name: 'Kimi K2.6' },
-              opus: { id: 'kimi-k2.6', name: 'Kimi K2.6' },
-              sonnet: { id: 'kimi-k2.6', name: 'Kimi K2.6' },
-              haiku: { id: 'kimi-k2.6', name: 'Kimi K2.6' },
-            },
+            extraEnv: KIMI_ANDANTE_EXTRA_ENV,
+            modelMapping: KIMI_ANDANTE_MODELS,
+            models: KIMI_ANDANTE_ENDPOINT_MODELS,
+          }),
+          openaiChat('https://api.kimi.com/coding/v1', {
+            modelMapping: KIMI_ANDANTE_MODELS,
+            models: KIMI_ANDANTE_ENDPOINT_MODELS,
+          }),
+        ],
+      },
+      {
+        id: 'moderato',
+        name: 'Moderato',
+        description: 'Kimi Code Moderato — k3 / kimi-for-coding，256k 上下文',
+        auth: 'api-key',
+        apiKeyUrl: 'https://www.kimi.com/code/console',
+        endpoints: [
+          anthropic('https://api.kimi.com/coding/', {
+            extraEnv: KIMI_MODERATO_EXTRA_ENV,
+            modelMapping: KIMI_MODERATO_MODELS,
+            models: KIMI_MODERATO_ENDPOINT_MODELS,
+          }),
+          openaiChat('https://api.kimi.com/coding/v1', {
+            modelMapping: KIMI_MODERATO_MODELS,
+            models: KIMI_MODERATO_ENDPOINT_MODELS,
+          }),
+        ],
+      },
+      {
+        id: 'allegretto',
+        name: 'Allegretto+',
+        description: 'Kimi Code Allegretto 及以上 — k3[1m] / HighSpeed，最高 1M 上下文',
+        auth: 'api-key',
+        apiKeyUrl: 'https://www.kimi.com/code/console',
+        endpoints: [
+          anthropic('https://api.kimi.com/coding/', {
+            extraEnv: KIMI_ALLEGRETTO_EXTRA_ENV,
+            modelMapping: KIMI_ALLEGRETTO_MODELS,
+            models: KIMI_ALLEGRETTO_ENDPOINT_MODELS,
+          }),
+          openaiChat('https://api.kimi.com/coding/v1', {
+            modelMapping: KIMI_ALLEGRETTO_MODELS,
+            models: KIMI_ALLEGRETTO_ENDPOINT_MODELS,
+          }),
+        ],
+      },
+    ],
+  },
+  {
+    id: 'moonshot',
+    brand: 'moonshot',
+    name: 'Moonshot',
+    description: 'Moonshot 开放平台 — 按量计费 API',
+    catalogProviderId: 'moonshotai',
+    plans: [
+      {
+        id: 'cn',
+        name: '中国版',
+        description: 'Moonshot 开放平台 API — 按量计费，中国区端点',
+        auth: 'api-key',
+        apiKeyUrl: 'https://platform.kimi.com/console/api-keys',
+        catalogProviderId: 'moonshotai',
+        endpoints: [
+          anthropic('https://api.moonshot.cn/anthropic', {
+            extraEnv: KIMI_EXTRA_ENV,
+            modelMapping: KIMI_API_MODELS,
+          }),
+          openaiChat('https://api.moonshot.cn/v1', {
+            modelMapping: KIMI_API_MODELS,
+          }),
+        ],
+      },
+      {
+        id: 'global',
+        name: 'Global',
+        description: 'Moonshot Open Platform API — pay-as-you-go, global endpoint',
+        auth: 'api-key',
+        apiKeyUrl: 'https://platform.kimi.ai/console/api-keys',
+        catalogProviderId: 'moonshotai',
+        endpoints: [
+          anthropic('https://api.moonshot.ai/anthropic', {
+            extraEnv: KIMI_EXTRA_ENV,
+            modelMapping: KIMI_API_MODELS,
+          }),
+          openaiChat('https://api.moonshot.ai/v1', {
+            modelMapping: KIMI_API_MODELS,
           }),
         ],
       },

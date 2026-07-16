@@ -1,6 +1,6 @@
 import type { CSSProperties, ReactNode } from 'react'
 import { Globe } from 'lucide-react'
-import { Anthropic, Claude, OpenRouter, Zhipu, ZAI, Kimi, Minimax, Volcengine, Bailian, Bedrock, Google, Gemini, VertexAI, DeepSeek, KwaiKAT, LongCat, ModelScope, Nvidia, SiliconCloud, XiaomiMiMo, OpenAI } from '@lobehub/icons'
+import { Anthropic, Claude, OpenRouter, Zhipu, ZAI, Kimi, Moonshot, Minimax, Volcengine, Bailian, Bedrock, Google, Gemini, VertexAI, DeepSeek, KwaiKAT, LongCat, ModelScope, Nvidia, SiliconCloud, XiaomiMiMo, OpenAI } from '@lobehub/icons'
 import type { IconType } from '@lobehub/icons'
 
 interface BrandEntry {
@@ -18,6 +18,7 @@ const BRANDS: Record<string, BrandEntry> = {
   zhipu: { Mono: Zhipu, Color: Zhipu.Color, Text: Zhipu.Text },
   zai: { Mono: ZAI, Text: ZAI.Text },
   kimi: { Mono: Kimi, Color: Kimi.Color, Text: Kimi.Text },
+  moonshot: { Mono: Moonshot, Text: Moonshot.Text },
   minimax: { Mono: Minimax, Color: Minimax.Color, Text: Minimax.Text },
   volcengine: { Mono: Volcengine, Color: Volcengine.Color, Text: Volcengine.Text },
   bailian: { Mono: Bailian, Color: Bailian.Color, Text: Bailian.Text },

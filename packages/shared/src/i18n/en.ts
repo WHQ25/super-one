@@ -216,6 +216,13 @@ export type Messages = {
         enabled: string
         disabled: string
       }
+      experimental: string
+      acp: {
+        label: string
+        description: string
+        enabled: string
+        disabled: string
+      }
       crispText: {
         label: string
         description: string
@@ -1880,6 +1887,13 @@ export const en: Messages = {
         description: 'Send anonymous usage data to help improve SuperOne. No personal data or conversation content is collected.',
         enabled: 'Analytics enabled',
         disabled: 'Analytics disabled',
+      },
+      experimental: 'Experimental',
+      acp: {
+        label: 'ACP Agents',
+        description: 'Show the third harness tab for Grok Build and other Agent Client Protocol agents. Experimental — behavior may change.',
+        enabled: 'ACP agents enabled',
+        disabled: 'ACP agents disabled',
       },
       crispText: {
         label: 'Crisp Text',

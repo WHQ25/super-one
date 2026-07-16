@@ -141,7 +141,7 @@ vi.mock('../app-settings-service', () => ({
     agentPreference: {
       claude: { defaultModel: '', defaultEffort: '', defaultPermissionMode: '', defaultSandboxMode: '' },
       codex: { defaultModel: '', defaultReasoningEffort: '' },
-      acp: { brandHue: null, tokenOverrides: {}, selectedAgentId: null },
+      acp: { enabled: false, brandHue: null, tokenOverrides: {}, selectedAgentId: null },
     },
   })),
 }))

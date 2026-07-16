@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type MouseEvent } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import { useTranslation } from 'react-i18next'
 import { useAppStore, useHasRealProject } from '@/stores/app'
@@ -15,6 +15,7 @@ import {
   DropdownMenuTrigger,
 } from '@superone/ui/components/ui/dropdown-menu'
 import { Check, ChevronDown, Plus } from 'lucide-react'
+import { Tabs, TabsList, TabsTrigger } from '@superone/ui/components/ui/tabs'
 import { AcpSessionIcon } from '@superone/ui/components/harness/AcpSessionIcon'
 import { ClaudeSessionIcon } from '@superone/ui/components/harness/ClaudeSessionIcon'
 import { CodexSessionIcon } from '@superone/ui/components/harness/CodexSessionIcon'
@@ -23,20 +24,15 @@ import { homePath } from '@/lib/path-utils'
 import type { AcpAgentDescriptor } from '@superone/shared/agent-types'
 
 const EMPTY_ACP_AGENTS: AcpAgentDescriptor[] = []
+const DEFAULT_ACP_AGENT_ID = 'grok-build'
 
-type AgentChoice =
-  | { kind: 'claude' }
-  | { kind: 'codex' }
-  | { kind: 'acp'; agentId: string }
+const tabsTriggerClass =
+  'relative z-10 inline-flex flex-1 items-center justify-center gap-1 whitespace-nowrap rounded px-3 py-2 text-xs font-medium transition-colors text-muted-foreground hover:text-foreground data-[state=active]:text-foreground'
 
 function ProviderIcon({ provider, size = 64 }: { provider: ChatProvider; size?: number }) {
   if (provider === 'codex') return <CodexSessionIcon status="default" size={size} />
   if (provider === 'acp') return <AcpSessionIcon status="default" size={size} />
   return <ClaudeSessionIcon status="default" size={size} />
-}
-
-function choiceKey(choice: AgentChoice): string {
-  return choice.kind === 'acp' ? `acp:${choice.agentId}` : choice.kind
 }
 
 function ProviderSelector() {
@@ -47,11 +43,20 @@ function ProviderSelector() {
   const setPreferredProvider = useChatStore((s) => s.setPreferredProvider)
   const setAcpAgentId = useChatStore((s) => s.setAcpAgentId)
   const initializeHarness = useChatStore((s) => s.initializeHarness)
-  const [menuOpen, setMenuOpen] = useState(false)
+  const acpEnabled = useAppStore((s) => s.acpEnabled)
+  const [acpMenuOpen, setAcpMenuOpen] = useState(false)
 
   useEffect(() => {
+    if (!acpEnabled) return
     void initializeHarness('acp')
-  }, [initializeHarness])
+  }, [acpEnabled, initializeHarness])
+
+  useEffect(() => {
+    if (!acpEnabled && preferredProvider === 'acp') {
+      setAcpMenuOpen(false)
+      setPreferredProvider('claude')
+    }
+  }, [acpEnabled, preferredProvider, setPreferredProvider])
 
   const selectedAcpAgent = useMemo(() => {
     if (agents.length === 0) return null
@@ -59,43 +64,42 @@ function ProviderSelector() {
   }, [agents, acpAgentId])
 
   useEffect(() => {
+    if (!acpEnabled) return
     if (preferredProvider === 'acp' && !acpAgentId && selectedAcpAgent?.id) {
       setAcpAgentId(selectedAcpAgent.id)
     }
-  }, [preferredProvider, acpAgentId, selectedAcpAgent?.id, setAcpAgentId])
+  }, [acpEnabled, preferredProvider, acpAgentId, selectedAcpAgent?.id, setAcpAgentId])
 
-  const selectedChoice: AgentChoice = preferredProvider === 'codex'
-    ? { kind: 'codex' }
-    : preferredProvider === 'acp'
-      ? { kind: 'acp', agentId: selectedAcpAgent?.id ?? acpAgentId ?? 'grok-build' }
-      : { kind: 'claude' }
+  const effectiveAcpAgentId = selectedAcpAgent?.id ?? acpAgentId ?? DEFAULT_ACP_AGENT_ID
+  const acpTabLabel = selectedAcpAgent?.name
+    ?? (effectiveAcpAgentId === DEFAULT_ACP_AGENT_ID ? 'Grok' : t('chat.suggestions.selectAgent'))
+  const iconKey = preferredProvider === 'acp' ? `acp:${effectiveAcpAgentId}` : preferredProvider
 
-  const selectedLabel = selectedChoice.kind === 'claude'
-    ? 'Claude Code'
-    : selectedChoice.kind === 'codex'
-      ? 'Codex'
-      : (selectedAcpAgent?.name ?? t('chat.suggestions.selectAgent'))
+  const selectBuiltin = (provider: 'claude' | 'codex') => {
+    setAcpMenuOpen(false)
+    setPreferredProvider(provider)
+  }
 
-  const selectedKey = choiceKey(selectedChoice)
-
-  const selectAgent = (choice: AgentChoice) => {
-    if (choiceKey(choice) === selectedKey) return
-    if (choice.kind === 'claude' || choice.kind === 'codex') {
-      setPreferredProvider(choice.kind)
-      return
-    }
+  const selectAcpAgent = (agentId: string) => {
     // Set agent id first so provider switch / prewarm never races with stale grok defaults.
-    setAcpAgentId(choice.agentId)
-    if (preferredProvider !== 'acp') {
-      setPreferredProvider('acp')
-    }
+    setAcpAgentId(agentId)
+    if (preferredProvider !== 'acp') setPreferredProvider('acp')
+    setAcpMenuOpen(false)
+  }
+
+  const onAcpTabActivate = (e: MouseEvent) => {
+    if (preferredProvider === 'acp') return
+    // First click switches to ACP without opening the agent menu.
+    e.preventDefault()
+    e.stopPropagation()
+    selectAcpAgent(effectiveAcpAgentId)
   }
 
   return (
     <div className="flex flex-col items-center gap-3">
       <AnimatePresence mode="wait">
         <motion.div
-          key={selectedKey}
+          key={iconKey}
           initial={{ opacity: 0, y: 12, scale: 0.85 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: -12, scale: 0.85 }}
@@ -105,49 +109,67 @@ function ProviderSelector() {
         </motion.div>
       </AnimatePresence>
       {preferredProvider !== 'acp' && <ActiveProviderHint />}
-      <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
-        <DropdownMenuTrigger asChild>
-          <button className="flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent">
-            <span>{selectedLabel}</span>
-            <ChevronDown className={cn('size-4 text-muted-foreground transition-transform duration-200', menuOpen && 'rotate-180')} />
-          </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="center" className="min-w-48">
-          <DropdownMenuItem
-            onClick={() => selectAgent({ kind: 'claude' })}
-            className="gap-2 focus-visible:shadow-none"
-          >
-            <span className="flex-1">Claude Code</span>
-            {selectedChoice.kind === 'claude' && <Check className="size-4 shrink-0 text-primary" />}
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            onClick={() => selectAgent({ kind: 'codex' })}
-            className="gap-2 focus-visible:shadow-none"
-          >
-            <span className="flex-1">Codex</span>
-            {selectedChoice.kind === 'codex' && <Check className="size-4 shrink-0 text-primary" />}
-          </DropdownMenuItem>
-          {agents.map((agent) => {
-            const selected = selectedChoice.kind === 'acp' && selectedChoice.agentId === agent.id
-            return (
-              <DropdownMenuItem
-                key={agent.id}
-                onClick={() => selectAgent({ kind: 'acp', agentId: agent.id })}
-                className="gap-2 focus-visible:shadow-none"
-              >
-                <span className="min-w-0 flex-1 truncate">{agent.name}</span>
-                {!agent.installed && (
-                  <span className="shrink-0 text-[10px] text-muted-foreground">
-                    {t('chat.suggestions.agentNotInstalled')}
-                  </span>
-                )}
-                {selected && <Check className="size-4 shrink-0 text-primary" />}
-              </DropdownMenuItem>
-            )
-          })}
-        </DropdownMenuContent>
-      </DropdownMenu>
-      {preferredProvider === 'acp' && selectedAcpAgent && !selectedAcpAgent.installed && (
+      <Tabs
+        value={preferredProvider}
+        onValueChange={(v) => {
+          if (v === 'claude' || v === 'codex') selectBuiltin(v)
+        }}
+      >
+        <TabsList>
+          <TabsTrigger value="claude" className="px-3 py-2">Claude Code</TabsTrigger>
+          <TabsTrigger value="codex" className="px-3 py-2">Codex</TabsTrigger>
+          {acpEnabled && (
+            <DropdownMenu
+              open={acpMenuOpen}
+              onOpenChange={(open) => {
+                if (open && preferredProvider !== 'acp') return
+                setAcpMenuOpen(open)
+              }}
+            >
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  role="tab"
+                  data-slot="tabs-trigger"
+                  data-state={preferredProvider === 'acp' ? 'active' : 'inactive'}
+                  className={cn(tabsTriggerClass, 'max-w-[9.5rem]')}
+                  onPointerDown={onAcpTabActivate}
+                  onClick={onAcpTabActivate}
+                >
+                  <span className="min-w-0 truncate">{acpTabLabel}</span>
+                  <ChevronDown
+                    className={cn(
+                      'size-3.5 shrink-0 text-muted-foreground transition-transform duration-200',
+                      acpMenuOpen && preferredProvider === 'acp' && 'rotate-180',
+                    )}
+                  />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="center" className="min-w-48">
+                {agents.map((agent) => {
+                  const selected = preferredProvider === 'acp' && effectiveAcpAgentId === agent.id
+                  return (
+                    <DropdownMenuItem
+                      key={agent.id}
+                      onClick={() => selectAcpAgent(agent.id)}
+                      className="gap-2 focus-visible:shadow-none"
+                    >
+                      <span className="min-w-0 flex-1 truncate">{agent.name}</span>
+                      {!agent.installed && (
+                        <span className="shrink-0 text-[10px] text-muted-foreground">
+                          {t('chat.suggestions.agentNotInstalled')}
+                        </span>
+                      )}
+                      {selected && <Check className="size-4 shrink-0 text-primary" />}
+                    </DropdownMenuItem>
+                  )
+                })}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+        </TabsList>
+      </Tabs>
+      {acpEnabled && preferredProvider === 'acp' && selectedAcpAgent && !selectedAcpAgent.installed && (
         <p className="max-w-xs text-center text-[11px] text-muted-foreground">
           {t('chat.suggestions.agentInstallHint')}
         </p>

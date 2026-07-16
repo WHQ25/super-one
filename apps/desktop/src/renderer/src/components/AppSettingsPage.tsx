@@ -42,6 +42,9 @@ export function AppSettingsPage() {
     }
   }
 
+  const acpEnabled = useAppStore((s) => s.acpEnabled)
+  const setAcpEnabled = useAppStore((s) => s.setAcpEnabled)
+
   useEffect(() => {
     let mounted = true
     window.app.getAppSettings().then((settings) => {
@@ -62,6 +65,11 @@ export function AppSettingsPage() {
       shutdownAnalytics()
     }
     toast.success(t(result.analyticsEnabled ? 'settings.general.analytics.enabled' : 'settings.general.analytics.disabled'))
+  }
+
+  async function handleAcpToggle(enabled: boolean) {
+    await setAcpEnabled(enabled)
+    toast.success(t(enabled ? 'settings.general.acp.enabled' : 'settings.general.acp.disabled'))
   }
 
   const effectiveChannel: UpdateChannel = updateChannel ?? channelFromVersion(appVersion)
@@ -179,6 +187,25 @@ export function AppSettingsPage() {
             <Switch
               checked={analyticsEnabled}
               onCheckedChange={handleAnalyticsToggle}
+              disabled={loading}
+            />
+          </div>
+        </div>
+
+        <div className="rounded-lg border border-border">
+          <div className="border-b border-border px-4 py-2">
+            <p className="text-xs font-medium text-muted-foreground">{t('settings.general.experimental')}</p>
+          </div>
+          <div className="flex items-center justify-between gap-4 p-4">
+            <div className="min-w-0">
+              <p className="text-sm font-medium">{t('settings.general.acp.label')}</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {t('settings.general.acp.description')}
+              </p>
+            </div>
+            <Switch
+              checked={acpEnabled}
+              onCheckedChange={(v) => void handleAcpToggle(v)}
               disabled={loading}
             />
           </div>

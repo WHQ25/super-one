@@ -132,6 +132,9 @@ interface AppState {
   loadBrandHues: () => Promise<void>
   setBrandHue: (harness: HarnessId, hue: number | null) => Promise<void>
 
+  acpEnabled: boolean
+  setAcpEnabled: (enabled: boolean) => Promise<void>
+
   // Terminal display settings
   terminalLightPalette: string | null
   terminalDarkPalette: string | null
@@ -559,6 +562,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   brandHues: { claude: null, codex: null, acp: null },
   tokenOverrides: { claude: {}, codex: {}, acp: {} },
+  acpEnabled: false,
   terminalLightPalette: null,
   terminalDarkPalette: null,
   terminalFontSize: 14,
@@ -580,6 +584,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           codex: settings.agentPreference.codex.tokenOverrides ?? {},
           acp: settings.agentPreference.acp?.tokenOverrides ?? {},
         },
+        acpEnabled: settings.agentPreference.acp?.enabled ?? false,
         terminalLightPalette: settings.terminalLightPalette,
         terminalDarkPalette: settings.terminalDarkPalette,
         terminalFontSize: settings.terminalFontSize,
@@ -589,6 +594,17 @@ export const useAppStore = create<AppState>((set, get) => ({
       })
     } catch (err) {
       console.error('[brand-hue] loadBrandHues failed:', err)
+    }
+  },
+
+  setAcpEnabled: async (enabled) => {
+    set({ acpEnabled: enabled })
+    try {
+      const result = await window.app.saveAppSettings({ agentPreference: { acp: { enabled } } })
+      set({ acpEnabled: result.agentPreference.acp?.enabled ?? enabled })
+    } catch (err) {
+      console.error('[acp] persist enabled failed:', err)
+      throw err
     }
   },
 
@@ -724,6 +740,7 @@ if (typeof window !== 'undefined') {
         codex: codex.tokenOverrides ?? {},
         acp: acp?.tokenOverrides ?? {},
       },
+      acpEnabled: acp?.enabled ?? false,
       terminalLightPalette: settings.terminalLightPalette,
       terminalDarkPalette: settings.terminalDarkPalette,
       terminalFontSize: settings.terminalFontSize,

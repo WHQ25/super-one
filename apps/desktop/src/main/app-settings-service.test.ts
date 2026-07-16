@@ -46,6 +46,7 @@ describe('app-settings-service', () => {
     tokenOverrides: {},
   }
   const defaultAcp = {
+    enabled: false,
     brandHue: null,
     tokenOverrides: {},
     selectedAgentId: null,

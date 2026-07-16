@@ -47,6 +47,7 @@ const defaults: AppSettings = {
       tokenOverrides: {},
     },
     acp: {
+      enabled: false,
       brandHue: null,
       tokenOverrides: {},
       selectedAgentId: null,
@@ -204,6 +205,9 @@ function readAcpPreference(data: Record<string, unknown>): AcpPref {
     : undefined
 
   return {
+    enabled: typeof acpPreference?.enabled === 'boolean'
+      ? acpPreference.enabled
+      : defaults.agentPreference.acp.enabled,
     brandHue: readBrandHue(acpPreference?.brandHue),
     tokenOverrides: sanitizeOverrides(acpPreference?.tokenOverrides),
     selectedAgentId: typeof acpPreference?.selectedAgentId === 'string'

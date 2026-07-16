@@ -239,6 +239,13 @@ export const zh: Messages = {
         enabled: '已开启使用情况分析',
         disabled: '已关闭使用情况分析',
       },
+      experimental: '实验功能',
+      acp: {
+        label: 'ACP 智能体',
+        description: '在空会话页显示第三个 harness 标签（Grok Build 及其他 Agent Client Protocol 智能体）。实验性功能，行为可能变化。',
+        enabled: '已开启 ACP 智能体',
+        disabled: '已关闭 ACP 智能体',
+      },
       crispText: {
         label: '锐利文本',
         description: '使用灰度抗锯齿,让文字更纤细锐利。仅 macOS 生效。',

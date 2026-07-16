@@ -2499,6 +2499,7 @@ export interface AppSettings {
       tokenOverrides: TokenOverrides
     }
     acp: {
+      enabled: boolean
       brandHue: number | null
       tokenOverrides: TokenOverrides
       selectedAgentId: string | null

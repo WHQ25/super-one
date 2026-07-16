@@ -25,6 +25,7 @@ export function createDefaultPerSessionState(): PerSessionState {
     status: 'idle',
     awaitingAssistantReply: false,
     session: null,
+    _providerSessionId: null,
     sessionProvider: null,
     totalCostUsd: 0,
     contextTokens: 0,

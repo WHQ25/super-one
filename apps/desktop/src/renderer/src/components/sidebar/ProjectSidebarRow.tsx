@@ -135,7 +135,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
           title: title ?? DEFAULT_SESSION_TITLE,
           lastActiveAt: new Date().toISOString(),
           provider: data.sessionProvider ?? undefined,
-          providerSessionId: data.session?.sessionId || undefined,
+          providerSessionId: data._providerSessionId ?? undefined,
           messageCount: data.messages.length,
           isWorktree: !!data._gitBranch,
           gitBranch: data._gitBranch ?? undefined,

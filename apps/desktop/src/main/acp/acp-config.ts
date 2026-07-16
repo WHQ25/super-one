@@ -291,6 +291,37 @@ export function extractModelsFromXaiSessionConfig(meta: unknown): AcpModelConfig
   }
 }
 
+/**
+ * Agent-declared capabilities from `initialize`. Only the fields SuperOne acts on.
+ * Everything is optional — an agent that omits a flag does not support it.
+ */
+export interface AcpAgentCapabilities {
+  loadSession: boolean
+  mcp: { http: boolean; sse: boolean; acp: boolean }
+  sessionCapabilities: { additionalDirectories: boolean }
+}
+
+export function readAgentCapabilities(result: unknown): AcpAgentCapabilities | null {
+  if (!result || typeof result !== 'object') return null
+  const caps = (result as Record<string, unknown>).agentCapabilities
+  if (!caps || typeof caps !== 'object') return null
+  const c = caps as Record<string, unknown>
+  const mcp = (c.mcpCapabilities ?? {}) as Record<string, unknown>
+  const session = (c.sessionCapabilities ?? {}) as Record<string, unknown>
+  return {
+    loadSession: c.loadSession === true,
+    mcp: {
+      http: mcp.http === true,
+      sse: mcp.sse === true,
+      acp: mcp.acp === true,
+    },
+    sessionCapabilities: {
+      // `{}` means supported; null/undefined means not.
+      additionalDirectories: !!session.additionalDirectories,
+    },
+  }
+}
+
 export function extractModelsFromInitializeResult(result: unknown): AcpModelConfig | null {
   if (!result || typeof result !== 'object') return null
   const meta = (result as Record<string, unknown>)._meta

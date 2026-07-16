@@ -18,10 +18,13 @@ interface SuperoneMcpBridgeRuntime {
   bridgeScriptPath: string
 }
 
-export interface CodexSuperoneMcpConfig {
+export interface SuperoneMcpStdioConfig {
   command: string
   args: string[]
   env: Record<string, string>
+}
+
+export interface CodexSuperoneMcpConfig extends SuperoneMcpStdioConfig {
   startup_timeout_sec: number
 }
 
@@ -31,7 +34,7 @@ export function setSuperoneMcpBridgeRuntime(runtime: SuperoneMcpBridgeRuntime | 
   bridgeRuntime = runtime
 }
 
-export function getCodexSuperoneMcpConfig(sessionId: string): CodexSuperoneMcpConfig | null {
+export function getSuperoneMcpStdioConfig(sessionId: string): SuperoneMcpStdioConfig | null {
   if (!bridgeRuntime) return null
   const nodeRuntime = getNodeRuntime()
   const command = nodeRuntime.executable ?? process.execPath
@@ -44,10 +47,11 @@ export function getCodexSuperoneMcpConfig(sessionId: string): CodexSuperoneMcpCo
   if (!nodeRuntime.executable && process.versions.electron) {
     env.ELECTRON_RUN_AS_NODE = '1'
   }
-  return {
-    command,
-    args: [bridgeRuntime.bridgeScriptPath],
-    env,
-    startup_timeout_sec: SUPERONE_MCP_STARTUP_TIMEOUT_SEC,
-  }
+  return { command, args: [bridgeRuntime.bridgeScriptPath], env }
+}
+
+export function getCodexSuperoneMcpConfig(sessionId: string): CodexSuperoneMcpConfig | null {
+  const base = getSuperoneMcpStdioConfig(sessionId)
+  if (!base) return null
+  return { ...base, startup_timeout_sec: SUPERONE_MCP_STARTUP_TIMEOUT_SEC }
 }

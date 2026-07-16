@@ -12,6 +12,7 @@ type LifecycleEvent = Extract<AgentEvent, {
     | 'message_error'
     | 'status_change'
     | 'session_init'
+    | 'provider_session_id'
     | 'init_ready'
     | 'worktree_missing'
 }>
@@ -128,7 +129,14 @@ export function reduceLifecycle(session: PerSessionState, event: LifecycleEvent)
 
     case 'session_init':
       console.log('[applyEvent] session_init', { sessionId: event.session?.sessionId, outputStyle: event.session?.outputStyle, availableOutputStyles: event.session?.availableOutputStyles })
-      return { session: event.session, sessionProvider: session.sessionProvider ?? DEFAULT_PROVIDER }
+      return {
+        session: event.session,
+        _providerSessionId: event.session?.sessionId ?? session._providerSessionId,
+        sessionProvider: session.sessionProvider ?? DEFAULT_PROVIDER,
+      }
+
+    case 'provider_session_id':
+      return { _providerSessionId: event.providerSessionId }
 
     case 'init_ready':
       return { permissionMode: event.permissionMode }

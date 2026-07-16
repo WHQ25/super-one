@@ -40,6 +40,7 @@ export function HeaderSessionMenu({ sessionId, folderPath }: { sessionId: string
         title: live._title ?? '',
         lastActiveAt: '',
         provider: live.sessionProvider ?? undefined,
+        providerSessionId: live._providerSessionId ?? undefined,
         worktreePath: live._worktreePath ?? undefined,
         isWorktree: !!live._worktreePath,
         gitBranch: live._gitBranch ?? undefined,

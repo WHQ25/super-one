@@ -5,6 +5,11 @@ vi.mock('../../logger', () => ({
   default: { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() },
 }))
 
+// acp-runtime reaches resolve-cli (for the MCP bridge node runtime), which imports electron.
+vi.mock('../../agent/resolve-cli', () => ({
+  getNodeRuntime: () => ({ executable: '/fake/node', env: {} }),
+}))
+
 import { AcpBackend, setAcpRuntimeFactory } from './acp-backend'
 import type { BackendStartOptions } from '../types'
 import type { AcpRuntime } from '../../acp/acp-runtime'
@@ -114,6 +119,36 @@ describe('AcpBackend', () => {
     const backend = new AcpBackend()
     expect(backend.kind).toBe('acp')
     await backend.start(startOpts({ agentId: 'grok-build' }))
+    await backend.close()
+  })
+
+  it('emits provider_session_id so the renderer can copy the real agent id', async () => {
+    const backend = new AcpBackend()
+    const events: AgentEvent[] = []
+    backend.onEvent((e) => events.push(e))
+    const viaListener: string[] = []
+    backend.onProviderSessionId((id) => viaListener.push(id))
+
+    // start() spawns the runtime fire-and-forget; let it settle.
+    await backend.start(startOpts({ agentId: 'grok-build' }))
+    await new Promise((r) => setTimeout(r, 10))
+
+    // The DB path (listener) and the renderer path (event) must both carry the id.
+    expect(viaListener).toEqual(['acp-sess-1'])
+    expect(events).toContainEqual({ type: 'provider_session_id', providerSessionId: 'acp-sess-1' })
+    await backend.close()
+  })
+
+  it('passes the SuperOne session id to the runtime so the MCP bridge is session-scoped', async () => {
+    let seen: string | undefined = 'unset'
+    setAcpRuntimeFactory(async (opts) => {
+      seen = opts.superoneSessionId
+      return mockRuntime()
+    })
+    const backend = new AcpBackend()
+    await backend.start(startOpts({ agentId: 'grok-build' }))
+    await new Promise((r) => setTimeout(r, 10))
+    expect(seen).toBe('sess-1')
     await backend.close()
   })
 

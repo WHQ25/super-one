@@ -304,6 +304,7 @@ export class AcpBackend implements SessionBackend {
     const promise = (async () => {
       const runtime = await runtimeFactory({
         launch,
+        superoneSessionId: this.startOpts?.sessionId,
         permission: {
           request: (params) => this.handlePermissionRequest(params),
         },
@@ -329,6 +330,8 @@ export class AcpBackend implements SessionBackend {
       for (const cb of this.providerSessionIdListeners) {
         try { cb(runtime.sessionId) } catch (err) { log.warn('[AcpBackend] providerSessionId listener error:', err) }
       }
+      // The listeners above only reach the DB. The renderer learns the real id from this event.
+      this.emit({ type: 'provider_session_id', providerSessionId: runtime.sessionId })
       this.emitConfigFromRuntime(runtime, agentId, epoch)
       return runtime
     })()

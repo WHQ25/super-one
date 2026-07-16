@@ -16,6 +16,8 @@ import {
   extractModelsFromInitializeResult,
   extractModelsFromNewSessionResult,
   extractModelConfig,
+  readAgentCapabilities,
+  type AcpAgentCapabilities,
   type AcpModelConfig,
 } from './acp-config'
 import { spawnAcpProcess, type AcpProcessHandle } from './acp-process'
@@ -28,6 +30,8 @@ import {
   trackOpenTools,
 } from './acp-event-map'
 import { getUnsavedBuffer } from './acp-unsaved-buffer'
+import { buildSuperoneAcpMcpServer } from './acp-mcp'
+import { ACP_SYSTEM_PROMPT_BLOCK } from '../agent/superone-system-prompt'
 import { resolveAcpLaunch, type ResolvedAcpLaunch } from './agent-catalog'
 import { handleReadTextFile, handleWriteTextFile } from './acp-fs'
 import { AcpTerminalManager } from './acp-terminals'
@@ -87,6 +91,8 @@ export interface AcpRuntimeOptions {
   onSessionEvent?: (event: AgentEvent) => void
   getUnsaved?: (absolutePath: string) => string | null | undefined
   additionalRoots?: string[]
+  /** SuperOne session id — scopes the built-in MCP bridge to this session. */
+  superoneSessionId?: string
 }
 
 function formatProcessExit(
@@ -138,15 +144,20 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
   let session: ActiveSession | null = null
   let initModels: AcpModelConfig | null = null
   let sessionModels: AcpModelConfig | null = null
+  let agentCapabilities: AcpAgentCapabilities | null = null
+  let mcpAttached = false
 
   try {
-    const askUserHandler = async (ctx: { params: unknown }) => {
-      const params = (ctx.params && typeof ctx.params === 'object' ? ctx.params : {}) as GrokAskUserQuestionParams
+    // Custom (non-spec) methods require the 3-arg onRequest form with a params
+    // parser; the 2-arg form throws for any method the SDK does not know.
+    const askUserParams = (raw: unknown): GrokAskUserQuestionParams =>
+      (raw && typeof raw === 'object' ? raw : {}) as GrokAskUserQuestionParams
+    const askUserHandler = async (ctx: { params: GrokAskUserQuestionParams }) => {
       if (!opts.askUserQuestion) {
         log.warn('[acp-runtime] x.ai/ask_user_question with no gate — cancelling')
         return { cancelled: {} }
       }
-      return opts.askUserQuestion.request(params)
+      return opts.askUserQuestion.request(ctx.params)
     }
 
     connection = client({ name: 'superone' })
@@ -168,8 +179,8 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       .onRequest(methods.client.terminal.kill, async (ctx) => terminalManager.kill(ctx.params))
       .onRequest(methods.client.terminal.release, async (ctx) => terminalManager.release(ctx.params))
       // Grok Build interactive tools — both bare and underscore-prefixed method ids
-      .onRequest(XAI_ASK_USER_QUESTION, askUserHandler)
-      .onRequest(`_${XAI_ASK_USER_QUESTION}`, askUserHandler)
+      .onRequest(XAI_ASK_USER_QUESTION, askUserParams, askUserHandler)
+      .onRequest(`_${XAI_ASK_USER_QUESTION}`, askUserParams, askUserHandler)
       .connect(stream)
 
     const initResult = await connection.agent.request(methods.agent.initialize, {
@@ -183,6 +194,7 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
         askUserQuestion: true,
       },
     } as never)
+    agentCapabilities = readAgentCapabilities(initResult)
     initModels = extractModelsFromInitializeResult(initResult)
     if (initModels) opts.onModelConfig?.(initModels)
 
@@ -227,16 +239,31 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       )
     }
 
-    session = await connection.agent.buildSession(launch.cwd).start()
+    const superoneMcpServer = opts.superoneSessionId
+      ? buildSuperoneAcpMcpServer(opts.superoneSessionId)
+      : null
+    mcpAttached = !!superoneMcpServer
+    const extraRoots = fsRoots.slice(1)
+    const supportsExtraRoots = agentCapabilities?.sessionCapabilities.additionalDirectories ?? false
+    let builder = connection.agent.buildSession({
+      cwd: launch.cwd,
+      mcpServers: superoneMcpServer ? [superoneMcpServer] : [],
+    })
+    if (extraRoots.length > 0 && supportsExtraRoots) {
+      builder = builder.withAdditionalDirectories(extraRoots)
+    }
+    session = await builder.start()
     sessionModels = extractModelsFromNewSessionResult(session.newSessionResponse)
     const resolvedModels = coalesceModelConfig(sessionModels, initModels)
     if (resolvedModels) opts.onModelConfig?.(resolvedModels)
     log.info(
-      '[acp-runtime] session ready id=%s agent=%s configOptions=%d models=%d',
+      '[acp-runtime] session ready id=%s agent=%s configOptions=%d models=%d mcp=%s roots=%d',
       session.sessionId,
       launch.agentId,
       session.newSessionResponse.configOptions?.length ?? 0,
       resolvedModels?.models.length ?? 0,
+      mcpAttached ? 'superone' : 'none',
+      supportsExtraRoots ? extraRoots.length : 0,
     )
   } catch (err) {
     processHandle?.kill()
@@ -272,6 +299,7 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
   const agentMsgToLocal = new Map<string, string>()
   let openToolIds = new Set<string>()
   let primaryPromptMessageId: string | null = null
+  let systemPromptSent = false
 
   const deliver = (event: AgentEvent) => {
     if (event.type === 'acp_commands') {
@@ -400,6 +428,12 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
         cwd: launch.cwd,
         getUnsaved: (abs) => opts.getUnsaved?.(abs) ?? getUnsavedBuffer(abs),
       })
+      // ACP carries no system-prompt field; ride the first prompt instead. Gated on
+      // mcpAttached — without the tools it names, the text would be instructions to nowhere.
+      if (!systemPromptSent && mcpAttached) {
+        systemPromptSent = true
+        promptBlocks.unshift({ type: 'text', text: ACP_SYSTEM_PROMPT_BLOCK })
+      }
       const promptPromise = activeSession.prompt(promptBlocks as never)
       try {
         const stopReason = await Promise.race([

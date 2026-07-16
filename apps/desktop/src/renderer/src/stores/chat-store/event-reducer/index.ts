@@ -27,6 +27,7 @@ export function applyEventToSession(session: PerSessionState, event: AgentEvent)
     case 'message_error':
     case 'status_change':
     case 'session_init':
+    case 'provider_session_id':
     case 'init_ready':
     case 'worktree_missing':
       return reduceLifecycle(session, event)

@@ -784,6 +784,8 @@ export type AgentEventBase =
   | { type: 'agent_setting_change'; selectedModel?: string | null; selectedEffort?: EffortLevel | null; patch?: SessionSettingsPatch }
   | { type: 'provider_changed'; harnessId: 'claude' | 'codex'; provider: RemoteActiveProvider | null }
   | { type: 'session_init'; session: SessionInfo }
+  /** Provider-side session id for harnesses that have no SessionInfo to report (ACP). */
+  | { type: 'provider_session_id'; providerSessionId: string }
   | { type: 'ask_user_question'; request: AskUserQuestionRequest }
   | { type: 'plan_approval'; request: PlanApprovalRequest }
   | { type: 'hook_started'; hook: HookEvent }

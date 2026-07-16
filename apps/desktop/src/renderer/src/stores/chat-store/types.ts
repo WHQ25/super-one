@@ -69,6 +69,8 @@ export interface PerSessionState {
   status: AgentStatus
   awaitingAssistantReply: boolean
   session: SessionInfo | null
+  /** Provider-side session id (Claude SDK / ACP agent). Survives harnesses with no SessionInfo. */
+  _providerSessionId: string | null
   sessionProvider: ChatProvider | null
   totalCostUsd: number
   contextTokens: number

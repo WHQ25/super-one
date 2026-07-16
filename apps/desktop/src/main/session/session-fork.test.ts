@@ -29,6 +29,7 @@ vi.mock('./session-repo', () => ({
 // in the heavy Electron-laden backend modules — fork never instantiates them.
 vi.mock('./backends/claude-backend', () => ({ ClaudeBackend: class {} }))
 vi.mock('./backends/codex-backend', () => ({ CodexBackend: class {} }))
+vi.mock('./backends/acp-backend', () => ({ AcpBackend: class {} }))
 
 import { forkSession } from './session-fork'
 

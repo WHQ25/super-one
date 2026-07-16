@@ -14,6 +14,12 @@ import { extractModeConfig, extractModelConfig } from '../../acp/acp-config'
 import { upsertAcpAgentConfig, upsertAcpAgentModels, upsertAcpAgentSlashCommands } from '../../acp/acp-model-cache'
 import { createAcpRuntime, type AcpRuntime, type AcpRuntimeOptions } from '../../acp/acp-runtime'
 import { mapPermissionDecision, mapPermissionRequest, type PendingPermissionOptions } from '../../acp/acp-permission-map'
+import {
+  buildAskUserQuestionRequest,
+  formatGrokAskUserResponse,
+  type GrokAskUserAnswer,
+  type GrokAskUserQuestionParams,
+} from '../../acp/acp-xai-extensions'
 import type { BackendStartOptions, HarnessId, SessionBackend } from '../types'
 
 export interface AcpBackendConfig {
@@ -56,6 +62,11 @@ export class AcpBackend implements SessionBackend {
   private pendingPermissions = new Map<string, {
     resolve: (response: RequestPermissionResponse) => void
     options: PendingPermissionOptions[]
+    event: AgentEvent
+  }>()
+
+  private pendingQuestions = new Map<string, {
+    resolve: (answer: GrokAskUserAnswer) => void
     event: AgentEvent
   }>()
 
@@ -296,6 +307,9 @@ export class AcpBackend implements SessionBackend {
         permission: {
           request: (params) => this.handlePermissionRequest(params),
         },
+        askUserQuestion: {
+          request: (params) => this.handleAskUserQuestion(params),
+        },
         onModelConfig: (cfg) => {
           // Early model discovery (initialize) before session/new configOptions land.
           this.emitModels(cfg, agentId, epoch)
@@ -371,6 +385,32 @@ export class AcpBackend implements SessionBackend {
     })
   }
 
+  private handleAskUserQuestion(params: GrokAskUserQuestionParams): Promise<Record<string, unknown>> {
+    const requestId =
+      (typeof params.toolCallId === 'string' && params.toolCallId)
+      || `acp_ask_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+    const request = buildAskUserQuestionRequest(params, requestId)
+    if (request.questions.length === 0) {
+      log.warn('[AcpBackend] ask_user_question with empty questions — cancelling')
+      return Promise.resolve(formatGrokAskUserResponse({ kind: 'cancelled' }))
+    }
+    const event: AgentEvent = { type: 'ask_user_question', request }
+    return new Promise((resolve) => {
+      this.pendingQuestions.set(requestId, {
+        resolve: (answer) => resolve(formatGrokAskUserResponse(answer)),
+        event,
+      })
+      this.emit(event)
+    })
+  }
+
+  private rejectPendingQuestions(): void {
+    for (const [, pending] of this.pendingQuestions) {
+      pending.resolve({ kind: 'cancelled' })
+    }
+    this.pendingQuestions.clear()
+  }
+
   async send(request: SendMessageRequest): Promise<void> {
     if (!this.started || this.disposed) throw new Error('AcpBackend not started')
     const messageId = request.assistantMessageId
@@ -443,6 +483,7 @@ export class AcpBackend implements SessionBackend {
       pending.resolve({ outcome: { outcome: 'cancelled' } })
       this.pendingPermissions.delete(id)
     }
+    this.rejectPendingQuestions()
     try {
       await this.runtime?.cancel()
     } catch (err) {
@@ -455,6 +496,7 @@ export class AcpBackend implements SessionBackend {
       pending.resolve({ outcome: { outcome: 'cancelled' } })
       this.pendingPermissions.delete(id)
     }
+    this.rejectPendingQuestions()
     this.runtimeEpoch += 1
     this.ensureRuntimePromise = null
     this.modelConfigId = null
@@ -541,12 +583,22 @@ export class AcpBackend implements SessionBackend {
   }
 
   respondToQuestion(
-    _requestId: string,
-    _answers: Record<string, string>,
-    _annotations?: QuestionAnnotations,
-  ): void {}
+    requestId: string,
+    answers: Record<string, string>,
+    annotations?: QuestionAnnotations,
+  ): void {
+    const pending = this.pendingQuestions.get(requestId)
+    if (!pending) return
+    this.pendingQuestions.delete(requestId)
+    pending.resolve({ kind: 'accepted', answers, annotations })
+  }
 
-  dismissQuestion(_requestId: string): void {}
+  dismissQuestion(requestId: string): void {
+    const pending = this.pendingQuestions.get(requestId)
+    if (!pending) return
+    this.pendingQuestions.delete(requestId)
+    pending.resolve({ kind: 'cancelled' })
+  }
 
   respondToPlanApproval(_requestId: string, _approved: boolean, _feedback?: string): void {}
 
@@ -577,7 +629,10 @@ export class AcpBackend implements SessionBackend {
   }
 
   getPendingInteractions(): AgentEvent[] {
-    return Array.from(this.pendingPermissions.values()).map((p) => p.event)
+    return [
+      ...Array.from(this.pendingPermissions.values()).map((p) => p.event),
+      ...Array.from(this.pendingQuestions.values()).map((p) => p.event),
+    ]
   }
 
   onEvent(handler: (event: AgentEvent) => void): () => void {

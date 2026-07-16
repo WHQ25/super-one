@@ -29,6 +29,11 @@ const TOOL_VERBS: Record<string, string> = {
   AskUserQuestion: 'Asking questions',
   EnterPlanMode: 'Planning',
   ExitPlanMode: 'Reviewing',
+  KillTask: 'Stopping task',
+  ImageGen: 'Generating image',
+  ImageEdit: 'Editing image',
+  Monitor: 'Monitoring',
+  UpdateGoal: 'Updating goal',
   LS: 'Listing',
   ToolSearch: 'Searching tools',
   UseTool: 'Calling tool',
@@ -101,6 +106,17 @@ const TOOL_LABELS: Record<string, string> = {
   SandboxNetworkAccess: 'Network Access',
   EnterPlanMode: 'Enter Plan Mode',
   ExitPlanMode: 'Exit Plan Mode',
+  KillTask: 'Kill Task',
+  ImageGen: 'Image Gen',
+  ImageEdit: 'Image Edit',
+  ImageToVideo: 'Image To Video',
+  ReferenceToVideo: 'Reference To Video',
+  VideoGen: 'Video Gen',
+  Monitor: 'Monitor',
+  UpdateGoal: 'Update Goal',
+  SchedulerCreate: 'Scheduler Create',
+  SchedulerDelete: 'Scheduler Delete',
+  SchedulerList: 'Scheduler List',
   Agent: 'Agent',
   Workflow: 'Workflow',
 }
@@ -164,8 +180,23 @@ export function getToolDisplay(toolName: string, input: Record<string, unknown>,
     }
     case 'Task':
       return { icon: 'bot', summary: String(input.name ?? input.subagent_type ?? input.description ?? '') }
-    case 'TaskOutput':
-      return { icon: 'clipboard-list', summary: String(input.task_id ?? '') }
+    case 'TaskOutput': {
+      const ids = Array.isArray(input.task_ids)
+        ? input.task_ids.filter((id): id is string => typeof id === 'string')
+        : []
+      const id = String(input.task_id ?? ids[0] ?? '')
+      const extra = ids.length > 1 ? ` (+${ids.length - 1})` : ''
+      return { icon: 'clipboard-list', summary: id ? `${id}${extra}` : '' }
+    }
+    case 'KillTask':
+      return { icon: 'clipboard-list', summary: String(input.task_id ?? input.taskId ?? '') }
+    case 'ImageGen':
+    case 'ImageEdit':
+      return { icon: 'image', summary: String(input.prompt ?? '') }
+    case 'Monitor':
+      return { icon: 'terminal', summary: String(input.description ?? input.command ?? '') }
+    case 'UpdateGoal':
+      return { icon: 'wrench', summary: String(input.message ?? input.blocked_reason ?? '') }
     case 'TaskCreate':
       return { icon: 'clipboard-list', summary: String(input.subject ?? '') }
     case 'TaskUpdate': {

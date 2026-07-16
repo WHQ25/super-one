@@ -31,6 +31,10 @@ import { getUnsavedBuffer } from './acp-unsaved-buffer'
 import { resolveAcpLaunch, type ResolvedAcpLaunch } from './agent-catalog'
 import { handleReadTextFile, handleWriteTextFile } from './acp-fs'
 import { AcpTerminalManager } from './acp-terminals'
+import {
+  XAI_ASK_USER_QUESTION,
+  type GrokAskUserQuestionParams,
+} from './acp-xai-extensions'
 import { pushBashOutput } from '../bash-output-watcher'
 import type { AgentEvent, ImageAttachment } from '@superone/shared/agent-types'
 
@@ -45,6 +49,11 @@ export interface AcpRuntimeLaunchConfig {
 
 export interface AcpPermissionGate {
   request(params: RequestPermissionRequest): Promise<RequestPermissionResponse>
+}
+
+/** Grok (and similar) client extension: interactive multi-choice questions. */
+export interface AcpAskUserQuestionGate {
+  request(params: GrokAskUserQuestionParams): Promise<Record<string, unknown>>
 }
 
 export interface AcpRuntime {
@@ -66,6 +75,7 @@ export interface AcpRuntime {
 export interface AcpRuntimeOptions {
   launch: AcpRuntimeLaunchConfig
   permission: AcpPermissionGate
+  askUserQuestion?: AcpAskUserQuestionGate
   /** Inject stream (in-process agent) instead of spawning a process. */
   streamFactory?: (launch: ResolvedAcpLaunch) => Promise<{ stream: Stream; dispose: () => void }>
   /** Called as soon as a model catalog is known (e.g. after initialize, before session/new). */
@@ -130,6 +140,15 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
   let sessionModels: AcpModelConfig | null = null
 
   try {
+    const askUserHandler = async (ctx: { params: unknown }) => {
+      const params = (ctx.params && typeof ctx.params === 'object' ? ctx.params : {}) as GrokAskUserQuestionParams
+      if (!opts.askUserQuestion) {
+        log.warn('[acp-runtime] x.ai/ask_user_question with no gate — cancelling')
+        return { cancelled: {} }
+      }
+      return opts.askUserQuestion.request(params)
+    }
+
     connection = client({ name: 'superone' })
       .onRequest(methods.client.session.requestPermission, async (ctx) => {
         return opts.permission.request(ctx.params)
@@ -148,6 +167,9 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       .onRequest(methods.client.terminal.waitForExit, async (ctx) => terminalManager.waitForExit(ctx.params))
       .onRequest(methods.client.terminal.kill, async (ctx) => terminalManager.kill(ctx.params))
       .onRequest(methods.client.terminal.release, async (ctx) => terminalManager.release(ctx.params))
+      // Grok Build interactive tools — both bare and underscore-prefixed method ids
+      .onRequest(XAI_ASK_USER_QUESTION, askUserHandler)
+      .onRequest(`_${XAI_ASK_USER_QUESTION}`, askUserHandler)
       .connect(stream)
 
     const initResult = await connection.agent.request(methods.agent.initialize, {
@@ -157,7 +179,10 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
         fs: { readTextFile: true, writeTextFile: true },
         terminal: true,
       },
-    })
+      _meta: {
+        askUserQuestion: true,
+      },
+    } as never)
     initModels = extractModelsFromInitializeResult(initResult)
     if (initModels) opts.onModelConfig?.(initModels)
 

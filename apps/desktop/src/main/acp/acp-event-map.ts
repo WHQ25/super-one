@@ -114,6 +114,7 @@ const TOOL_ID_TO_NAME: Record<string, string> = {
   bash: 'Bash',
   shell: 'Bash',
   run_terminal_command: 'Bash',
+  run_terminal_cmd: 'Bash',
   run_command: 'Bash',
   execute: 'Bash',
   command: 'Bash',
@@ -128,6 +129,8 @@ const TOOL_ID_TO_NAME: Record<string, string> = {
   web_fetch: 'WebFetch',
   webfetch: 'WebFetch',
   fetch: 'WebFetch',
+  open_page: 'WebFetch',
+  open_page_with_find: 'WebFetch',
   web_search: 'WebSearch',
   websearch: 'WebSearch',
   todo_write: 'TodoWrite',
@@ -147,6 +150,29 @@ const TOOL_ID_TO_NAME: Record<string, string> = {
   memory_search: 'MemorySearch',
   memorysearch: 'MemorySearch',
   search_memory: 'MemorySearch',
+  ask_user_question: 'AskUserQuestion',
+  askuserquestion: 'AskUserQuestion',
+  get_task_output: 'TaskOutput',
+  get_command_or_subagent_output: 'TaskOutput',
+  get_terminal_command_output: 'TaskOutput',
+  wait_tasks: 'TaskOutput',
+  wait_commands_or_subagents: 'TaskOutput',
+  kill_task: 'KillTask',
+  kill_command_or_subagent: 'KillTask',
+  kill_terminal_command: 'KillTask',
+  enter_plan_mode: 'EnterPlanMode',
+  exit_plan_mode: 'ExitPlanMode',
+  skill: 'Skill',
+  image_gen: 'ImageGen',
+  image_edit: 'ImageEdit',
+  image_to_video: 'ImageToVideo',
+  reference_to_video: 'ReferenceToVideo',
+  video_gen: 'VideoGen',
+  monitor: 'Monitor',
+  update_goal: 'UpdateGoal',
+  scheduler_create: 'SchedulerCreate',
+  scheduler_delete: 'SchedulerDelete',
+  scheduler_list: 'SchedulerList',
 }
 
 function normalizeToolId(id: string): string {
@@ -166,7 +192,7 @@ function nameFromVariant(raw: Record<string, unknown>): string | null {
   if (variant) {
     const mapped = nameFromToolId(variant)
     if (mapped) return mapped
-    // PascalCase variants: ListDir, WebSearch, Todo
+    // PascalCase variants: ListDir, WebSearch, Todo, TaskOutput, AskUserQuestion, …
     if (variant === 'ListDir') return 'LS'
     if (variant === 'WebSearch') return 'WebSearch'
     if (variant === 'SearchTool' || variant === 'ToolSearch') return 'ToolSearch'
@@ -174,6 +200,16 @@ function nameFromVariant(raw: Record<string, unknown>): string | null {
     if (variant === 'Todo' || variant === 'TodoWrite') return 'TodoWrite'
     if (variant === 'Grep' || variant === 'GrepSearch') return 'Grep'
     if (variant === 'MemorySearch') return 'MemorySearch'
+    if (variant === 'AskUserQuestion') return 'AskUserQuestion'
+    if (variant === 'TaskOutput') return 'TaskOutput'
+    if (variant === 'EnterPlanMode') return 'EnterPlanMode'
+    if (variant === 'ExitPlanMode') return 'ExitPlanMode'
+    if (variant === 'KillTask') return 'KillTask'
+    if (variant === 'Skill') return 'Skill'
+  }
+  if (Array.isArray(raw.questions) && raw.questions.length > 0) return 'AskUserQuestion'
+  if (Array.isArray(raw.task_ids) || raw.task_id != null || raw.taskId != null) {
+    if (pickString(raw, ['command', 'cmd']) == null) return 'TaskOutput'
   }
   const action = raw.action
   if (action && typeof action === 'object' && !Array.isArray(action)) {
@@ -234,6 +270,8 @@ function resolveMappedToolName(
       return pickString(raw, ['query', 'q', 'search']) && !pickString(raw, ['url', 'uri', 'href'])
         ? 'WebSearch'
         : 'WebFetch'
+    case 'ask_user':
+      return 'AskUserQuestion'
     default:
       return null
   }
@@ -362,11 +400,14 @@ function normalizeInput(
       return Object.keys(out).length > 0 ? out : { ...raw }
     }
     case 'WebFetch': {
+      // Also covers Grok open_page / open_page_with_find
       const out: Record<string, unknown> = {}
       const url = pickString(raw, ['url', 'uri', 'href'])
       if (url) out.url = url
-      const prompt = pickString(raw, ['prompt', 'question'])
+      const prompt = pickString(raw, ['prompt', 'question', 'pattern'])
       if (prompt) out.prompt = prompt
+      const startLine = pickUnknown(raw, ['start_line', 'startLine', 'offset'])
+      if (startLine != null) out.offset = startLine
       return Object.keys(out).length > 0 ? out : { ...raw }
     }
     case 'WebSearch': {
@@ -408,6 +449,54 @@ function normalizeInput(
       if (raw.run_in_background === true || raw.background === true) out.run_in_background = true
       return Object.keys(out).length > 0 ? out : { ...raw }
     }
+    case 'AskUserQuestion': {
+      const out: Record<string, unknown> = {}
+      if (Array.isArray(raw.questions)) out.questions = raw.questions
+      return Object.keys(out).length > 0 ? out : { ...raw }
+    }
+    case 'TaskOutput': {
+      const out: Record<string, unknown> = {}
+      const taskIds = Array.isArray(raw.task_ids)
+        ? raw.task_ids.filter((id): id is string => typeof id === 'string' && id.length > 0)
+        : []
+      const single =
+        pickString(raw, ['task_id', 'taskId', 'id'])
+        ?? (taskIds.length > 0 ? taskIds[0] : undefined)
+      if (single) out.task_id = single
+      if (taskIds.length > 0) out.task_ids = taskIds
+      if (raw.timeout_ms != null) out.timeout_ms = raw.timeout_ms
+      if (raw.timeout != null && out.timeout_ms == null) out.timeout_ms = raw.timeout
+      if (raw.block === true || raw.block === false) out.block = raw.block
+      return Object.keys(out).length > 0 ? out : { ...raw }
+    }
+    case 'KillTask': {
+      const out: Record<string, unknown> = {}
+      const id = pickString(raw, ['task_id', 'taskId', 'id'])
+      if (id) out.task_id = id
+      return Object.keys(out).length > 0 ? out : { ...raw }
+    }
+    case 'EnterPlanMode':
+    case 'ExitPlanMode':
+      return { ...raw }
+    case 'Skill': {
+      const out: Record<string, unknown> = {}
+      const skill = pickString(raw, ['skill', 'name', 'skill_name', 'skillName'])
+      if (skill) out.skill = skill
+      return Object.keys(out).length > 0 ? out : { ...raw }
+    }
+    case 'ImageGen':
+    case 'ImageEdit': {
+      const out: Record<string, unknown> = {}
+      const prompt = pickString(raw, ['prompt', 'description', 'text'])
+      if (prompt) out.prompt = prompt
+      return Object.keys(out).length > 0 ? out : { ...raw }
+    }
+    case 'Monitor':
+    case 'UpdateGoal':
+    case 'SchedulerCreate':
+    case 'SchedulerDelete':
+    case 'SchedulerList':
+      return { ...raw }
     default:
       return { ...raw }
   }

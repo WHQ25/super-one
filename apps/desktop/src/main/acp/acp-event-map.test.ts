@@ -624,6 +624,17 @@ describe('Grok full tool set mapping', () => {
     ['use_tool', 'other', 'Use Tool', { tool_name: 'GitHub__list_issues' }, 'UseTool'],
     ['spawn_subagent', 'other', 'Spawn', { description: 'explore' }, 'Task'],
     ['memory_search', 'search', 'Memory', { query: 'prior decision' }, 'MemorySearch'],
+    ['ask_user_question', 'ask_user', 'Ask User', { questions: [{ question: 'Pick?', options: [{ label: 'A' }] }] }, 'AskUserQuestion'],
+    ['get_command_or_subagent_output', 'other', 'Task Output', { task_ids: ['t1'], timeout_ms: 60000 }, 'TaskOutput'],
+    ['get_task_output', 'other', 'Task Output', { task_id: 't2' }, 'TaskOutput'],
+    ['kill_task', 'other', 'Kill', { task_id: 't3' }, 'KillTask'],
+    ['enter_plan_mode', 'other', 'Plan', {}, 'EnterPlanMode'],
+    ['exit_plan_mode', 'other', 'Exit Plan', {}, 'ExitPlanMode'],
+    ['open_page', 'fetch', 'Open Page', { url: 'https://x.ai' }, 'WebFetch'],
+    ['skill', 'other', 'Skill', { skill: 'help' }, 'Skill'],
+    ['image_gen', 'other', 'Image', { prompt: 'cat' }, 'ImageGen'],
+    ['monitor', 'other', 'Monitor', { description: 'watch logs' }, 'Monitor'],
+    ['update_goal', 'other', 'Goal', { message: 'done' }, 'UpdateGoal'],
   ] as const)('maps grok %s → %s', (name, kind, label, rawInput, expected) => {
     const events = mapSessionUpdate({
       sessionUpdate: 'tool_call',
@@ -634,6 +645,48 @@ describe('Grok full tool set mapping', () => {
       _meta: grokMeta(name, kind, label),
     } as never, ctx)
     expect(toolUseDelta(events).toolName).toBe(expected)
+  })
+
+  it('normalizes TaskOutput task_ids into task_id summary field', () => {
+    const events = mapSessionUpdate({
+      sessionUpdate: 'tool_call',
+      toolCallId: 'c_to',
+      title: 'get_command_or_subagent_output',
+      kind: 'other',
+      rawInput: { variant: 'TaskOutput', task_ids: ['abc-1', 'abc-2'], timeout_ms: 120000 },
+      _meta: grokMeta('get_command_or_subagent_output', 'other', 'Task Output'),
+    } as never, ctx)
+    const delta = toolUseDelta(events)
+    expect(delta.toolName).toBe('TaskOutput')
+    expect(JSON.parse(delta.input as string)).toMatchObject({
+      task_id: 'abc-1',
+      task_ids: ['abc-1', 'abc-2'],
+      timeout_ms: 120000,
+    })
+  })
+
+  it('maps ask_user_question with questions payload', () => {
+    const events = mapSessionUpdate({
+      sessionUpdate: 'tool_call',
+      toolCallId: 'c_ask',
+      title: 'ask_user_question',
+      kind: 'ask_user',
+      rawInput: {
+        questions: [{
+          question: 'Which approach?',
+          options: [
+            { label: 'A', description: 'first' },
+            { label: 'B', description: 'second' },
+          ],
+        }],
+      },
+      _meta: grokMeta('ask_user_question', 'ask_user', 'Ask User'),
+    } as never, ctx)
+    const delta = toolUseDelta(events)
+    expect(delta.toolName).toBe('AskUserQuestion')
+    const input = JSON.parse(delta.input as string)
+    expect(input.questions).toHaveLength(1)
+    expect(input.questions[0].question).toBe('Which approach?')
   })
 
   it('formats SearchTool result as readable tool catalog', () => {

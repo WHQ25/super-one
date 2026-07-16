@@ -184,6 +184,96 @@ describe('AcpBackend', () => {
     await backend.close()
   })
 
+  it('forwards ask_user_question answers to the Grok extension gate', async () => {
+    setAcpRuntimeFactory(async (opts) => mockRuntime({
+      prompt: async (_text, messageId, onEvent) => {
+        const response = await opts.askUserQuestion!.request({
+          sessionId: 'acp-sess-1',
+          toolCallId: 'ask-1',
+          questions: [{
+            question: 'Pick?',
+            options: [
+              { label: 'One', description: 'first' },
+              { label: 'Two', description: 'second' },
+            ],
+          }],
+        })
+        onEvent({
+          type: 'content_delta',
+          messageId,
+          delta: {
+            type: 'text',
+            text: JSON.stringify(response),
+          },
+        })
+        onEvent({ type: 'message_complete', messageId })
+        onEvent({ type: 'status_change', status: 'idle' })
+      },
+    }))
+
+    const backend = new AcpBackend()
+    await backend.start(startOpts({ agentId: 'custom', command: 'mock' }))
+    const events: AgentEvent[] = []
+    backend.onEvent((e) => {
+      events.push(e)
+      if (e.type === 'ask_user_question') {
+        backend.respondToQuestion(e.request.requestId, { 'Pick?': 'One' })
+      }
+    })
+    await backend.send({ content: 'ask', assistantMessageId: 'a-ask' })
+    const text = events
+      .filter((e): e is Extract<AgentEvent, { type: 'content_delta' }> => e.type === 'content_delta')
+      .map((e) => e.delta)
+      .filter((d): d is { type: 'text'; text: string } => d.type === 'text')
+      .map((d) => d.text)
+      .join('')
+    expect(JSON.parse(text)).toMatchObject({
+      accepted: {
+        answers: { 'Pick?': ['One'] },
+      },
+    })
+    expect(events.some((e) => e.type === 'ask_user_question')).toBe(true)
+    expect(backend.getPendingInteractions()).toEqual([])
+    await backend.close()
+  })
+
+  it('dismisses ask_user_question as cancelled', async () => {
+    setAcpRuntimeFactory(async (opts) => mockRuntime({
+      prompt: async (_text, messageId, onEvent) => {
+        const response = await opts.askUserQuestion!.request({
+          toolCallId: 'ask-2',
+          questions: [{ question: 'Q?', options: [{ label: 'A', description: '' }] }],
+        })
+        onEvent({
+          type: 'content_delta',
+          messageId,
+          delta: { type: 'text', text: JSON.stringify(response) },
+        })
+        onEvent({ type: 'message_complete', messageId })
+        onEvent({ type: 'status_change', status: 'idle' })
+      },
+    }))
+
+    const backend = new AcpBackend()
+    await backend.start(startOpts({ agentId: 'custom', command: 'mock' }))
+    const events: AgentEvent[] = []
+    backend.onEvent((e) => {
+      events.push(e)
+      if (e.type === 'ask_user_question') {
+        backend.dismissQuestion(e.request.requestId)
+      }
+    })
+    await backend.send({ content: 'ask', assistantMessageId: 'a-dismiss' })
+    const text = events
+      .filter((e): e is Extract<AgentEvent, { type: 'content_delta' }> => e.type === 'content_delta')
+      .map((e) => e.delta)
+      .filter((d): d is { type: 'text'; text: string } => d.type === 'text')
+      .map((d) => d.text)
+      .join('')
+    expect(JSON.parse(text)).toEqual({ cancelled: {} })
+    await backend.close()
+  })
+
   it('forwards permission decisions to the pending gate', async () => {
     setAcpRuntimeFactory(async (opts) => mockRuntime({
       prompt: async (_text, messageId, onEvent) => {

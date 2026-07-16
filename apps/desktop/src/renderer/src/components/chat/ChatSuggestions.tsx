@@ -44,7 +44,10 @@ function ProviderSelector() {
   const setAcpAgentId = useChatStore((s) => s.setAcpAgentId)
   const initializeHarness = useChatStore((s) => s.initializeHarness)
   const acpEnabled = useAppStore((s) => s.acpEnabled)
-  const [acpMenuOpen, setAcpMenuOpen] = useState(false)
+  const [agentMenuOpen, setAgentMenuOpen] = useState(false)
+  const [lastAgentGroup, setLastAgentGroup] = useState<'codex' | 'acp'>(
+    preferredProvider === 'acp' ? 'acp' : 'codex',
+  )
 
   useEffect(() => {
     if (!acpEnabled) return
@@ -53,10 +56,15 @@ function ProviderSelector() {
 
   useEffect(() => {
     if (!acpEnabled && preferredProvider === 'acp') {
-      setAcpMenuOpen(false)
+      setAgentMenuOpen(false)
       setPreferredProvider('claude')
     }
   }, [acpEnabled, preferredProvider, setPreferredProvider])
+
+  useEffect(() => {
+    if (preferredProvider === 'codex') setLastAgentGroup('codex')
+    else if (preferredProvider === 'acp') setLastAgentGroup('acp')
+  }, [preferredProvider])
 
   const selectedAcpAgent = useMemo(() => {
     if (agents.length === 0) return null
@@ -71,28 +79,44 @@ function ProviderSelector() {
   }, [acpEnabled, preferredProvider, acpAgentId, selectedAcpAgent?.id, setAcpAgentId])
 
   const effectiveAcpAgentId = selectedAcpAgent?.id ?? acpAgentId ?? DEFAULT_ACP_AGENT_ID
-  const acpTabLabel = selectedAcpAgent?.name
-    ?? (effectiveAcpAgentId === DEFAULT_ACP_AGENT_ID ? 'Grok' : t('chat.suggestions.selectAgent'))
+  const showAcpLabel = preferredProvider === 'acp'
+    || (preferredProvider === 'claude' && lastAgentGroup === 'acp')
+  const agentTabLabel = showAcpLabel
+    ? (selectedAcpAgent?.name
+      ?? (effectiveAcpAgentId === DEFAULT_ACP_AGENT_ID ? 'Grok' : t('chat.suggestions.selectAgent')))
+    : 'Codex'
+  const agentTabActive = preferredProvider === 'codex' || preferredProvider === 'acp'
   const iconKey = preferredProvider === 'acp' ? `acp:${effectiveAcpAgentId}` : preferredProvider
+  const tabsValue = preferredProvider === 'claude'
+    ? 'claude'
+    : acpEnabled
+      ? 'agent'
+      : 'codex'
 
   const selectBuiltin = (provider: 'claude' | 'codex') => {
-    setAcpMenuOpen(false)
+    setAgentMenuOpen(false)
     setPreferredProvider(provider)
   }
 
   const selectAcpAgent = (agentId: string) => {
-    // Set agent id first so provider switch / prewarm never races with stale grok defaults.
     setAcpAgentId(agentId)
     if (preferredProvider !== 'acp') setPreferredProvider('acp')
-    setAcpMenuOpen(false)
+    setAgentMenuOpen(false)
   }
 
-  const onAcpTabActivate = (e: MouseEvent) => {
-    if (preferredProvider === 'acp') return
-    // First click switches to ACP without opening the agent menu.
+  const restoreAgentTab = () => {
+    if (lastAgentGroup === 'acp') {
+      selectAcpAgent(effectiveAcpAgentId)
+      return
+    }
+    selectBuiltin('codex')
+  }
+
+  const onAgentTabActivate = (e: MouseEvent) => {
+    if (agentTabActive) return
     e.preventDefault()
     e.stopPropagation()
-    selectAcpAgent(effectiveAcpAgentId)
+    restoreAgentTab()
   }
 
   return (
@@ -110,20 +134,20 @@ function ProviderSelector() {
       </AnimatePresence>
       {preferredProvider !== 'acp' && <ActiveProviderHint />}
       <Tabs
-        value={preferredProvider}
+        value={tabsValue}
         onValueChange={(v) => {
-          if (v === 'claude' || v === 'codex') selectBuiltin(v)
+          if (v === 'claude') selectBuiltin('claude')
+          else if (v === 'codex') selectBuiltin('codex')
         }}
       >
         <TabsList>
           <TabsTrigger value="claude" className="px-3 py-2">Claude Code</TabsTrigger>
-          <TabsTrigger value="codex" className="px-3 py-2">Codex</TabsTrigger>
-          {acpEnabled && (
+          {acpEnabled ? (
             <DropdownMenu
-              open={acpMenuOpen}
+              open={agentMenuOpen}
               onOpenChange={(open) => {
-                if (open && preferredProvider !== 'acp') return
-                setAcpMenuOpen(open)
+                if (open && !agentTabActive) return
+                setAgentMenuOpen(open)
               }}
             >
               <DropdownMenuTrigger asChild>
@@ -131,21 +155,31 @@ function ProviderSelector() {
                   type="button"
                   role="tab"
                   data-slot="tabs-trigger"
-                  data-state={preferredProvider === 'acp' ? 'active' : 'inactive'}
+                  data-state={agentTabActive ? 'active' : 'inactive'}
                   className={cn(tabsTriggerClass, 'max-w-[9.5rem]')}
-                  onPointerDown={onAcpTabActivate}
-                  onClick={onAcpTabActivate}
+                  onPointerDown={onAgentTabActivate}
+                  onClick={onAgentTabActivate}
                 >
-                  <span className="min-w-0 truncate">{acpTabLabel}</span>
+                  <span className="min-w-0 truncate">{agentTabLabel}</span>
                   <ChevronDown
                     className={cn(
                       'size-3.5 shrink-0 text-muted-foreground transition-transform duration-200',
-                      acpMenuOpen && preferredProvider === 'acp' && 'rotate-180',
+                      agentMenuOpen && agentTabActive && 'rotate-180',
                     )}
                   />
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="center" className="min-w-48">
+                <DropdownMenuItem
+                  onClick={() => selectBuiltin('codex')}
+                  className="gap-2 focus-visible:shadow-none"
+                >
+                  <span className="min-w-0 flex-1 truncate">Codex</span>
+                  {preferredProvider === 'codex' && (
+                    <Check className="size-4 shrink-0 text-primary" />
+                  )}
+                </DropdownMenuItem>
+                {agents.length > 0 && <DropdownMenuSeparator />}
                 {agents.map((agent) => {
                   const selected = preferredProvider === 'acp' && effectiveAcpAgentId === agent.id
                   return (
@@ -166,6 +200,8 @@ function ProviderSelector() {
                 })}
               </DropdownMenuContent>
             </DropdownMenu>
+          ) : (
+            <TabsTrigger value="codex" className="px-3 py-2">Codex</TabsTrigger>
           )}
         </TabsList>
       </Tabs>

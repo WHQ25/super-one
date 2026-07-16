@@ -4,6 +4,24 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.45.0-alpha] - 2026-07-16
+
+### Added
+
+- ACP (Agent Client Protocol) support as an experimental third harness alongside Claude Code and Codex, gated behind General → Experimental. Includes agent discovery and picking, per-agent model catalogs with caching, agent-declared session config modes, and slash commands loaded on demand when the `/` popup opens
+- Browser `download` / `list_downloads` tools with session-scoped capture, background timeout, and task notifications; downloads render as file chips with a friendly list view in chat
+- Codex can now drive chat-completions-only providers through a built-in LLM proxy that transforms between the Responses and chat protocols
+
+### Fixed
+
+- ACP sessions were restored as Claude sessions from history; harness and agent id are now persisted and rehydrated correctly
+- The first message to an ACP session could be blocked after prewarm, and switching agents could mislabel one vendor's models as another's
+- The Claude slash command popup was empty after switching away from an ACP session
+
+### Changed
+
+- Codex startup no longer pays for ChatGPT-only MCP and plugin side paths, cutting first-turn latency for custom providers
+
 ## [0.44.3-alpha] - 2026-07-15
 
 ### Changed

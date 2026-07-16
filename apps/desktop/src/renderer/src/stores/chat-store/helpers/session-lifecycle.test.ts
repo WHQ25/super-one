@@ -255,6 +255,26 @@ describe('resetSessionForWorktreeSwitchImpl', () => {
   })
 })
 
+describe('ensureSessionImpl slashCommands', () => {
+  it('seeds project slashCommands from cached Claude harness resources', () => {
+    setClaudeResources({
+      slashCommands: [
+        { name: 'compact', description: 'Compact context', argumentHint: '', isSkill: false },
+      ],
+      skills: [
+        { name: 'tdd', description: 'TDD skill', argumentHint: '', isSkill: true },
+      ],
+    })
+
+    setupProject()
+
+    const names = activeProjectState().slashCommands.map((c) => c.name)
+    expect(names).toContain('compact')
+    expect(names).toContain('tdd')
+    expect(names).toContain('clear')
+  })
+})
+
 describe('setPreferredProviderImpl', () => {
   it('is a no-op when sessionProvider already matches the requested provider', () => {
     setupProject()
@@ -319,6 +339,55 @@ describe('setPreferredProviderImpl', () => {
     expect(sess.modelUserChosen).toBe(false)
     expect(sess.acpModels).toEqual([])
     expect(sess.acpModelsStatus).toBe('idle')
+  })
+
+  it('rebuilds Claude slashCommands when switching back from ACP', () => {
+    setClaudeResources({
+      models: [
+        { id: 'claude-sonnet-4', name: 'Sonnet', description: '', isDefault: true } as ModelOption,
+      ],
+      slashCommands: [
+        { name: 'compact', description: 'Compact context', argumentHint: '', isSkill: false },
+        { name: 'help', description: 'Help', argumentHint: '', isSkill: false },
+      ],
+      skills: [
+        { name: 'tdd', description: 'TDD skill', argumentHint: '', isSkill: true },
+      ],
+      commands: [
+        { name: 'release', description: 'Release cmd', argumentHint: '', isSkill: false },
+      ],
+    })
+    useChatStore.setState({ initializedHarnesses: new Set(['claude']) })
+    setupProject()
+    useChatStore.setState((s) => {
+      const proj = s.projectSessions[PATH]
+      return {
+        projectSessions: {
+          ...s.projectSessions,
+          [PATH]: { ...proj, slashCommands: [] },
+        },
+      }
+    })
+    expect(activeProjectState().slashCommands).toEqual([])
+    patchSession({
+      sessionProvider: 'acp',
+      preferredProvider: 'acp',
+      acpAgentId: 'opencode',
+      acpSlashCommands: [{ name: 'web', description: 'ACP web', argumentHint: '', isSkill: false }],
+      acpSlashCommandsStatus: 'ready',
+    })
+
+    useChatStore.getState().setPreferredProvider('claude')
+
+    const names = activeProjectState().slashCommands.map((c) => c.name)
+    expect(names).toContain('compact')
+    expect(names).toContain('help')
+    expect(names).toContain('tdd')
+    expect(names).toContain('release')
+    expect(names).toContain('clear')
+    expect(names).not.toContain('web')
+    expect(activeSession().sessionProvider).toBe('claude')
+    expect(activeSession().acpSlashCommands).toEqual([])
   })
 
   it('hydrates OpenCode models from cache when switching ACP agent', () => {

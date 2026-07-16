@@ -2,6 +2,7 @@ import type { PermissionMode, SandboxInfo } from '@superone/shared/agent-types'
 import { useActivityViewStateStore } from '../../activity-view-state'
 import { useAppStore } from '../../app'
 import { applyDefaultModel, resolveDefaultClaudeEffort, resolveDefaultClaudeModel } from './agent-defaults'
+import { buildSlashCommands } from './chat-helpers'
 import { getCachedAcpCatalog, sessionPatchFromAcpCatalog } from '../harness/acp-handler'
 import { resolveDefaultCodexSelection, resolveSessionCodexSelection } from './codex-helpers'
 import {
@@ -25,6 +26,7 @@ import {
   resolveActiveSessionId,
   triggerPrewarm,
   updateActivePerSession,
+  updateProjectState,
 } from './store-helpers'
 import { resolveProvider } from './provider-routing'
 import { createDefaultPerSessionState, createDefaultProjectState, createSessionId, freshSubagentColorPool } from '../defaults'
@@ -120,7 +122,16 @@ export function ensureSessionImpl(set: ChatStoreSet, projectPath: string): void 
   set((s) => {
     if (s.projectSessions[projectPath]) return {}
     const project = createDefaultProjectState()
-    project.agents = s.harnessResources.claude?.agents ?? []
+    const claude = s.harnessResources.claude
+    project.agents = claude?.agents ?? []
+    project.slashCommands = buildSlashCommands(
+      claude?.slashCommands ?? [],
+      claude?.skills ?? [],
+      claude?.commands ?? [],
+      project._projectSkills,
+      project._projectCommands,
+      new Set(s.disabledSkills),
+    )
     project.codexModels = s.harnessResources.codex?.models ?? []
     if (defaultPrefsCache.sandboxMode) project.sandboxInfo = sandboxModeToInfo(defaultPrefsCache.sandboxMode)
     const draftId = createSessionId()
@@ -517,7 +528,21 @@ export function setPreferredProviderImpl(
     }
   }
   if (provider === 'claude') {
-    // If Claude models load later, re-apply defaults for sessions still missing a valid model.
+    set((s) => {
+      const claude = s.harnessResources.claude
+      if (!claude) return {}
+      const proj = getProject(s, activeProject)
+      return updateProjectState(s, activeProject, () => ({
+        slashCommands: buildSlashCommands(
+          claude.slashCommands,
+          claude.skills,
+          claude.commands,
+          proj._projectSkills,
+          proj._projectCommands,
+          new Set(s.disabledSkills),
+        ),
+      }))
+    })
     void get().initializeHarness('claude').then(() => {
       const sess = getActivePerSession(get())
       if ((sess.sessionProvider ?? sess.preferredProvider) !== 'claude') return

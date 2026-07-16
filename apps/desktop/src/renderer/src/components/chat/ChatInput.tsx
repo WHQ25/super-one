@@ -297,11 +297,14 @@ export function ChatInput() {
       ensureAcpSlashCommands()
     }, [acpSlashPopupOpen, ensureAcpSlashCommands, acpAgentId])
 
-    const acpSlashLoading = activeProviderForResources === 'acp' && acpSlashCommandsStatus === 'loading'
+    const acpSlashInitialLoading =
+      activeProviderForResources === 'acp'
+      && acpSlashCommandsStatus === 'loading'
+      && acpSlashCommandsFromAgent.length === 0
     const showSlashPopup =
       !slashDismissed
       && text.startsWith('/')
-      && (matchingCommands.length > 0 || acpSlashLoading)
+      && (matchingCommands.length > 0 || acpSlashInitialLoading)
 
     const slashGroups = useMemo(() => {
       const order: string[] = []
@@ -1227,14 +1230,10 @@ export function ChatInput() {
         >
         {showSlashPopup && (
           <div className="absolute bottom-full left-0 right-0 z-10 mb-1 flex max-h-64 flex-col overflow-hidden rounded-xl border border-border bg-popover p-1.5">
-            {acpSlashLoading && (
+            {acpSlashInitialLoading && (
               <div className="mb-1 flex items-center gap-2 rounded-md px-2 py-1.5 text-xs text-muted-foreground">
                 <Loader2 className="size-3.5 shrink-0 animate-spin" />
-                <span>
-                  {acpSlashCommandsFromAgent.length > 0
-                    ? t('chat.acpCommands.updating')
-                    : t('chat.acpCommands.loading')}
-                </span>
+                <span>{t('chat.acpCommands.loading')}</span>
               </div>
             )}
             <div className="min-h-0 flex-1 overflow-y-auto">
@@ -1279,7 +1278,7 @@ export function ChatInput() {
                   })}
                 </div>
               ))}
-              {acpSlashLoading && matchingCommands.length === 0 && (
+              {acpSlashInitialLoading && matchingCommands.length === 0 && (
                 <div className="px-2 py-3 text-center text-[11px] text-muted-foreground">
                   {t('chat.acpCommands.loadingHint')}
                 </div>

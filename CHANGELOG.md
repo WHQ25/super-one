@@ -4,6 +4,18 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.45.1-alpha] - 2026-07-17
+
+### Added
+
+- Grok ACP tools now map into SuperOne chat UIs (Read/Edit/Bash/Grep/etc.), including AskUserQuestion multi-choice prompts, TaskOutput/KillTask/plan/image/monitor tools, plus FS, terminals, and unsaved buffers on the ACP client surface
+- Kimi membership tiers restructured into Andante / Moderato / Allegretto coding plans, with separate Moonshot China/global API platforms and legacy credential migration
+
+### Changed
+
+- When ACP is enabled, chat suggestions keep two tabs: Claude Code plus a dropdown that holds Codex and ACP agents (no third tab)
+- Upgraded `claude-agent-sdk` to 0.3.211; assistant message timestamps prefer SDK origin time when available
+
 ## [0.45.0-alpha] - 2026-07-16
 
 ### Added

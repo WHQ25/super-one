@@ -1,11 +1,14 @@
 {
   "name": "super-one",
-  "version": "0.45.0-alpha",
+  "version": "0.45.1-alpha",
   "private": true,
   "type": "module",
   "license": "BUSL-1.1",
   "packageManager": "bun@1.3.9",
-  "workspaces": ["apps/*", "packages/*"],
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "overrides": {
     "vite": "~7.3.1"
   },

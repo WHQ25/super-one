@@ -199,6 +199,8 @@ describe('superone-mcp-stdio-ipc', () => {
     const names = (res.result?.tools ?? []).map((t) => t.name)
     expect(names).toContain('miniapp_dev_read_guide')
     expect(names).toContain('myapp__do_thing')
+    expect(names).toContain('browser_snapshot')
+    expect(names).toContain('browser_navigate')
     client.close()
   })
 

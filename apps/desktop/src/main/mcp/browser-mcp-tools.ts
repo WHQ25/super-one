@@ -1,5 +1,5 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
-import { z } from 'zod'
+import { z, toJSONSchema, type ZodTypeAny } from 'zod'
 import { browserAutomationCall, type BrowserAutomationOp } from '../browser/browser-automation-bridge'
 import { existsSync } from 'fs'
 import { isCdpEnabled, isCdpCookiesEnabled, isCdpMockEnabled, isCdpEmulateEnabled, resolveCdpTarget, cdpScreenshot, cdpClick, cdpHover, cdpDrag, cdpPress, cdpType, cdpEmulate, cdpGetCookies, cdpSetFileInput } from '../browser/browser-cdp'
@@ -9,8 +9,10 @@ import { persistScreenshot } from '../agent/browser-screenshot-store'
 import { raceDownloadTask, startUrlDownloadTask } from '../browser/browser-download-tasks'
 import { listDownloads } from '../browser/browser-downloads'
 import { persistTextArtifact } from '../agent/browser-artifact-store'
+import type { SuperoneMcpToolDescriptor } from './superone-mcp-types'
 
-export { BROWSER_TOOL_NAMES } from './superone-mcp-builtin-defs'
+import { BROWSER_TOOL_NAMES } from './superone-mcp-builtin-defs'
+export { BROWSER_TOOL_NAMES }
 
 interface ScreenshotResult {
   mimeType: 'image/png'
@@ -170,6 +172,84 @@ const descriptionField = {
     .describe(
       "A short, human-friendly explanation of what this action accomplishes, phrased for the end user watching (e.g. 'Fill in the login email', 'Submit the checkout form'). Shown in the UI in place of the raw selector. Write it in the conversation's language.",
     ),
+}
+
+type BrowserToolHandler = (args: Record<string, unknown>) => Promise<ToolReply>
+
+interface CapturingServer {
+  registerTool: (
+    name: string,
+    config: { description: string; inputSchema?: Record<string, ZodTypeAny> },
+    handler: BrowserToolHandler,
+  ) => unknown
+}
+
+const browserHandlerCache = new Map<string, Map<string, BrowserToolHandler>>()
+let browserToolDescriptors: SuperoneMcpToolDescriptor[] | null = null
+
+function zodShapeToJsonSchema(shape: Record<string, ZodTypeAny> | undefined): Record<string, unknown> {
+  const schema = toJSONSchema(z.object(shape ?? {})) as Record<string, unknown>
+  const { $schema: _schema, ...rest } = schema
+  return rest
+}
+
+function captureBrowserTools(sessionId: string): {
+  descriptors: SuperoneMcpToolDescriptor[]
+  handlers: Map<string, BrowserToolHandler>
+} {
+  const descriptors: SuperoneMcpToolDescriptor[] = []
+  const handlers = new Map<string, BrowserToolHandler>()
+  const capturing: CapturingServer = {
+    registerTool: (name, config, handler) => {
+      const shape = config.inputSchema ?? {}
+      const schema = z.object(shape)
+      descriptors.push({
+        name,
+        description: config.description,
+        inputSchema: zodShapeToJsonSchema(shape),
+      })
+      // Stdio path does not run the MCP SDK's Zod parse, so apply defaults here.
+      handlers.set(name, async (args) => {
+        try {
+          return await handler(schema.parse(args ?? {}) as Record<string, unknown>)
+        } catch (err) {
+          return errorReply(err)
+        }
+      })
+      return { remove: () => {} }
+    },
+  }
+  registerBrowserTools(capturing as unknown as McpServer, sessionId)
+  return { descriptors, handlers }
+}
+
+export function getBrowserToolDescriptors(): SuperoneMcpToolDescriptor[] {
+  if (browserToolDescriptors) return browserToolDescriptors
+  browserToolDescriptors = captureBrowserTools('__descriptor__').descriptors
+  return browserToolDescriptors
+}
+
+export async function executeBrowserTool(
+  sessionId: string,
+  toolName: string,
+  args: Record<string, unknown>,
+): Promise<ToolReply> {
+  let handlers = browserHandlerCache.get(sessionId)
+  if (!handlers) {
+    handlers = captureBrowserTools(sessionId).handlers
+    browserHandlerCache.set(sessionId, handlers)
+  }
+  const handler = handlers.get(toolName)
+  if (!handler) throw new Error(`Unknown browser tool: ${toolName}`)
+  return handler(args)
+}
+
+export function clearBrowserToolHandlers(sessionId: string): void {
+  browserHandlerCache.delete(sessionId)
+}
+
+export function isBrowserToolName(name: string): boolean {
+  return (BROWSER_TOOL_NAMES as readonly string[]).includes(name)
 }
 
 export function registerBrowserTools(server: McpServer, sessionId: string): void {

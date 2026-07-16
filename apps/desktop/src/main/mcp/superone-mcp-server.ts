@@ -19,7 +19,7 @@ import {
   MOBILE_SHARE_FILE_INPUT_SCHEMA,
 } from './superone-mcp-builtin-defs'
 import { registerWidgetTools } from '../generative-ui/mcp-server'
-import { registerBrowserTools } from './browser-mcp-tools'
+import { clearBrowserToolHandlers, registerBrowserTools } from './browser-mcp-tools'
 
 export interface MobileShareToolResult {
   ok: boolean
@@ -217,6 +217,7 @@ export function createSuperoneMcpServer(sessionId: string): McpSdkServerConfigWi
 
 export function disposeSuperoneMcpServer(sessionId: string): void {
   sessionServers.delete(sessionId)
+  clearBrowserToolHandlers(sessionId)
   log.debug('[superone-mcp] disposed all instances for sessionId=%s', sessionId)
 }
 

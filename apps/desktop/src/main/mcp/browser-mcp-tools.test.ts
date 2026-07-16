@@ -66,7 +66,14 @@ vi.mock('../browser/browser-downloads', () => ({
 }))
 
 import { decode as toonDecode } from '@toon-format/toon'
-import { registerBrowserTools, BROWSER_TOOL_NAMES } from './browser-mcp-tools'
+import {
+  registerBrowserTools,
+  BROWSER_TOOL_NAMES,
+  getBrowserToolDescriptors,
+  executeBrowserTool,
+  isBrowserToolName,
+  clearBrowserToolHandlers,
+} from './browser-mcp-tools'
 import { startRecording, stopRecording, waitForRecordedRequest, getRecordedRequest } from './../browser/browser-cdp-network'
 import { browserAutomationCall } from '../browser/browser-automation-bridge'
 import { cdpHover } from '../browser/browser-cdp'
@@ -105,6 +112,28 @@ describe('browser tool registration under experimental gates', () => {
     for (const name of BROWSER_TOOL_NAMES) {
       expect(tools.has(name), name).toBe(true)
     }
+  })
+
+  it('exports descriptors for every browser tool with object input schemas', () => {
+    const descriptors = getBrowserToolDescriptors()
+    expect(descriptors.map((d) => d.name).sort()).toEqual([...BROWSER_TOOL_NAMES].sort())
+    for (const d of descriptors) {
+      expect(d.description.length).toBeGreaterThan(0)
+      expect(d.inputSchema).toMatchObject({ type: 'object' })
+      expect(isBrowserToolName(d.name)).toBe(true)
+    }
+  })
+
+  it('executes browser tools via the stdio-facing dispatcher', async () => {
+    clearBrowserToolHandlers('sess-stdio')
+    vi.mocked(browserAutomationCall).mockResolvedValueOnce({ ok: true, selector: '#x' })
+    const reply = await executeBrowserTool('sess-stdio', 'browser_hover', { selector: '#x' })
+    expect(reply.isError).not.toBe(true)
+    expect(vi.mocked(browserAutomationCall)).toHaveBeenCalledWith(
+      'sess-stdio',
+      'hover',
+      expect.objectContaining({ selector: '#x', engine: 'auto' }),
+    )
   })
 
   it('rejects network recording with the CDP-required message when the master setting is off', async () => {

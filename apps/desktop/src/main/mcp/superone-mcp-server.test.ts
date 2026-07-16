@@ -441,6 +441,8 @@ describe('stdio SuperOne MCP tool surface', () => {
     expect(names).toContain('miniapp_dev_read_guide')
     expect(names).toContain('myapp__a_tool')
     expect(names).not.toContain('other__b_tool')
+    expect(names).toContain('browser_snapshot')
+    expect(names).toContain('browser_click')
   })
 
   it('notifies stdio clients when project tools change', () => {

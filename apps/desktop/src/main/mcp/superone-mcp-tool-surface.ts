@@ -5,6 +5,11 @@ import {
   executeBuiltInSuperoneTool,
 } from './superone-mcp-builtins'
 import {
+  executeBrowserTool,
+  getBrowserToolDescriptors,
+  isBrowserToolName,
+} from './browser-mcp-tools'
+import {
   dispatchAppToolCall,
   getAppToolDefs,
   getSessionHost,
@@ -13,7 +18,7 @@ import {
 import type { SuperoneMcpToolDescriptor } from './superone-mcp-types'
 
 export function listSuperoneMcpTools(sessionId: string): SuperoneMcpToolDescriptor[] {
-  const tools = [...BUILT_IN_SUPERONE_TOOL_DEFS]
+  const tools = [...BUILT_IN_SUPERONE_TOOL_DEFS, ...getBrowserToolDescriptors()]
   for (const entry of getAppToolDefs().values()) {
     if (entry.sessionId !== sessionId) continue
     for (const t of entry.tools) {
@@ -32,6 +37,10 @@ export async function executeSuperoneMcpTool(
   toolName: string,
   args: Record<string, unknown>,
 ) {
+  if (isBrowserToolName(toolName)) {
+    return executeBrowserTool(sessionId, toolName, args)
+  }
+
   if ((BUILT_IN_SUPERONE_TOOL_NAMES as readonly string[]).includes(toolName)) {
     return executeBuiltInSuperoneTool(toolName as BuiltInSuperoneToolName, args, {
       notifyDevAppReady,

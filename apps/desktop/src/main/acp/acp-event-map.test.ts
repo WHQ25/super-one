@@ -509,6 +509,25 @@ describe('tool mapping from real ACP agent traces', () => {
 })
 
 describe('formatAcpRawOutput', () => {
+  it('unwraps the MCP result envelope to the tool payload', () => {
+    // Real grok shape: the variant key (OkayOutput) is a serde tag around the payload.
+    expect(formatAcpRawOutput({
+      type: 'MCP',
+      tool_name: 'widget_read_guide',
+      server_name: 'superone',
+      output: { OkayOutput: '# Widget — Visual creation suite' },
+    })).toBe('# Widget — Visual creation suite')
+  })
+
+  it('unwraps an MCP error variant without knowing its tag name', () => {
+    expect(formatAcpRawOutput({
+      type: 'MCP',
+      tool_name: 'widget_show',
+      server_name: 'superone',
+      output: { ErrorOutput: 'tool execution failed' },
+    })).toBe('tool execution failed')
+  })
+
   it('unwraps ListDir Content.content tree', () => {
     const tree = '- /proj/node_modules/@opencode-ai/models/\n  - dist/\n    - client.d.ts\n  - package.json\n'
     expect(formatAcpRawOutput({
@@ -564,10 +583,50 @@ describe('formatAcpRawOutput', () => {
       TodosUpdated: { summary_for_prompt: '- [x] done\n- [ ] next' },
     })).toBe('- [x] done\n- [ ] next')
   })
+
+  it('keeps widget_show MCP payload compact and untruncated past 4k', () => {
+    const widgetPayload = JSON.stringify({
+      title: 'mortgage_calculator',
+      widget_code: `<div class="w">${'x'.repeat(5000)}</div>`,
+      width: 720,
+      height: 720,
+      isSVG: false,
+    })
+    expect(widgetPayload.length).toBeGreaterThan(4000)
+    expect(formatAcpRawOutput({
+      type: 'MCP',
+      tool_name: 'widget_show',
+      server_name: 'superone',
+      output: { OkayOutput: widgetPayload },
+    })).toBe(widgetPayload)
+
+    const events = mapSessionUpdate({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 'call_widget',
+      status: 'completed',
+      rawOutput: {
+        type: 'MCP',
+        tool_name: 'widget_show',
+        server_name: 'superone',
+        output: { OkayOutput: widgetPayload },
+      },
+    } as never, ctx)
+    const result = events.find((e) => e.type === 'content_delta' && e.delta.type === 'tool_result')
+    expect(result).toMatchObject({
+      type: 'content_delta',
+      delta: { type: 'tool_result', summary: widgetPayload, isError: false },
+    })
+    expect(JSON.parse((result as { delta: { summary: string } }).delta.summary).widget_code.length).toBeGreaterThan(4000)
+  })
+
+  it('does not pretty-print opaque JSON when re-formatting a string payload', () => {
+    const compact = '{"title":"w","widget_code":"<div/>","width":1,"height":1,"isSVG":false}'
+    expect(formatAcpRawOutput(compact)).toBe(compact)
+  })
 })
 
 describe('Grok Build tool meta mapping', () => {
-  it('maps search_tool / SearchTool to ToolSearch with query summary input', () => {
+  it('maps search_tool / SearchTool to SearchTools with query summary input', () => {
     const events = mapSessionUpdate({
       sessionUpdate: 'tool_call',
       toolCallId: 'call_st',
@@ -584,7 +643,7 @@ describe('Grok Build tool meta mapping', () => {
         },
       },
     } as never, ctx)
-    expect(toolUseDelta(events).toolName).toBe('ToolSearch')
+    expect(toolUseDelta(events).toolName).toBe('SearchTools')
     expect(JSON.parse(toolUseDelta(events).input as string)).toMatchObject({
       query: 'github pull request comment list',
       limit: 10,
@@ -606,6 +665,77 @@ describe('Grok Build tool meta mapping', () => {
   })
 })
 
+// Grok routes every MCP call through a generic `use_tool` envelope; payloads below are
+// verbatim from an event-trace recording of a real grok-build session.
+describe('Grok use_tool MCP envelope', () => {
+  const useToolMeta = {
+    'x.ai/tool': {
+      version: 1,
+      name: 'use_tool',
+      kind: 'use_tool',
+      namespace: 'grok_build',
+      label: 'Use Tool',
+      read_only: false,
+    },
+  }
+
+  it('unwraps tool_call to the canonical mcp__server__tool name the UI parses', () => {
+    const events = mapSessionUpdate({
+      sessionUpdate: 'tool_call',
+      toolCallId: 'call-x-2',
+      title: 'use_tool',
+      rawInput: {
+        tool_name: 'superone__session_rename',
+        tool_input: { title: '测试房贷计算器 Widget' },
+      },
+      _meta: useToolMeta,
+    } as never, ctx)
+    const delta = toolUseDelta(events)
+    expect(delta.toolName).toBe('mcp__superone__session_rename')
+    // The envelope must be peeled off the input too — not surfaced as tool_name/tool_input.
+    expect(JSON.parse(delta.input as string)).toEqual({ title: '测试房贷计算器 Widget' })
+  })
+
+  it('unwraps tool_call_update, where title already carries the combined tool id', () => {
+    const events = mapSessionUpdate({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 'call-x-4',
+      kind: 'other',
+      title: 'superone__widget_show',
+      rawInput: {
+        variant: 'UseTool',
+        tool_name: 'superone__widget_show',
+        tool_input: { title: 'mortgage_calculator', widget_code: '<div/>' },
+      },
+      _meta: useToolMeta,
+    } as never, ctx)
+    const delta = toolUseDelta(events)
+    expect(delta.toolName).toBe('mcp__superone__widget_show')
+    expect(JSON.parse(delta.input as string)).toMatchObject({ title: 'mortgage_calculator' })
+  })
+
+  it('keeps grok native tools out of the envelope path', () => {
+    expect(normalizeAcpTool({
+      toolCallId: 'call-native',
+      title: 'run_terminal_command',
+      rawInput: { command: 'echo hi', description: 'probe' },
+      _meta: {
+        'x.ai/tool': { name: 'run_terminal_command', kind: 'execute', namespace: 'grok_build' },
+      },
+    } as never)?.toolName).toBe('Bash')
+  })
+
+  it('leaves a use_tool envelope alone when the tool id carries no server prefix', () => {
+    // Nothing to build `mcp__<server>__<tool>` from — must not fabricate a name.
+    expect(normalizeAcpTool({
+      toolCallId: 'call-bare',
+      title: 'use_tool',
+      rawInput: { tool_name: 'localthing', tool_input: {} },
+      _meta: useToolMeta,
+    } as never)?.toolName).toBe('UseTool')
+  })
+})
+
 describe('Grok full tool set mapping', () => {
   const grokMeta = (name: string, kind: string, label: string) => ({
     'x.ai/tool': { version: 1, name, kind, namespace: 'grok_build', label, read_only: true },
@@ -620,8 +750,8 @@ describe('Grok full tool set mapping', () => {
     ['web_search', 'fetch', 'Web Search', { query: 'xai' }, 'WebSearch'],
     ['web_fetch', 'fetch', 'Web Fetch', { url: 'https://x.ai' }, 'WebFetch'],
     ['todo_write', 'other', 'Todo', { todos: [] }, 'TodoWrite'],
-    ['search_tool', 'search_tool', 'Search Tools', { query: 'github issue' }, 'ToolSearch'],
-    ['use_tool', 'other', 'Use Tool', { tool_name: 'GitHub__list_issues' }, 'UseTool'],
+    ['search_tool', 'search_tool', 'Search Tools', { query: 'github issue' }, 'SearchTools'],
+    ['use_tool', 'other', 'Use Tool', { tool_name: 'GitHub__list_issues' }, 'mcp__GitHub__list_issues'],
     ['spawn_subagent', 'other', 'Spawn', { description: 'explore' }, 'Task'],
     ['memory_search', 'search', 'Memory', { query: 'prior decision' }, 'MemorySearch'],
     ['ask_user_question', 'ask_user', 'Ask User', { questions: [{ question: 'Pick?', options: [{ label: 'A' }] }] }, 'AskUserQuestion'],

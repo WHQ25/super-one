@@ -546,7 +546,7 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
   }
 
   if (mcpInfo?.mcpToolName === 'widget_show') {
-    const widgetData = result ? parseWidgetResult(result) : parsePartialWidgetInput(input)
+    const widgetData = (result ? parseWidgetResult(result) : null) ?? parsePartialWidgetInput(input)
     const jsonComplete = isCompleteJson(input)
     const inputComplete = !isStreaming || jsonComplete
     if (isStreaming && jsonComplete && widgetData) {
@@ -565,14 +565,14 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
   return (
     <div
       className={cn(
-        'tool-node my-0.5 rounded transition-colors',
+        'tool-node my-0.5 min-w-0 rounded transition-colors',
         isDenied ? 'denied bg-error/10' : isError ? 'errored bg-warning/10' : 'bg-muted/20',
         expandable && 'cursor-pointer',
         expandable && (isDenied ? 'hover:bg-error/20' : isError ? 'hover:bg-warning/20' : 'hover:bg-muted/40')
       )}
     >
       <div
-        className="flex items-center gap-1.5 px-2 py-1.5 text-xs"
+        className="flex min-w-0 items-center gap-1.5 px-2 py-1.5 text-xs"
         onClick={expandable ? () => setExpanded((e) => !e) : undefined}
       >
         {isDenied ? (
@@ -584,7 +584,7 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
         ) : (
           <ToolIcon icon={display.icon} className="size-3 shrink-0 text-muted-foreground" />
         )}
-        <span className={cn('font-medium', isDenied && toolName !== 'AskUserQuestion' ? 'text-error' : isError ? 'text-warning' : 'text-foreground')}>
+        <span className={cn('shrink-0 whitespace-nowrap font-medium', isDenied && toolName !== 'AskUserQuestion' ? 'text-error' : isError ? 'text-warning' : 'text-foreground')}>
           {isStreaming ? <>{getToolVerb(toolName)}…</> : toolName === 'AskUserQuestion' ? `Asked${display.summary ? ` ${display.summary}` : ''}` : displayName}
         </span>
         {isQuestionDismissed ? (
@@ -614,10 +614,10 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
           <>
             <FileChip name={fileToolName} title={display.summary} filePath={fileToolPath} />
             {toolName === 'FileChange' && params.kind && (
-              <span className="text-muted-foreground">{String(params.kind)}</span>
+              <span className="shrink-0 whitespace-nowrap text-muted-foreground">{String(params.kind)}</span>
             )}
             {toolName === 'Read' && formatReadMeta(params) && (
-              <span className="text-muted-foreground">{formatReadMeta(params)}</span>
+              <span className="shrink-0 whitespace-nowrap text-muted-foreground">{formatReadMeta(params)}</span>
             )}
           </>
         ) : summary ? (
@@ -675,7 +675,7 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
                     <div onClick={(e) => e.stopPropagation()}>
                       {isMcp ? (
                         <PrettyJSONCodeBlock text={cleanResult!} />
-                      ) : toolName === 'LS' || toolName === 'ToolSearch' ? (
+                      ) : toolName === 'LS' || toolName === 'ToolSearch' || toolName === 'SearchTools' ? (
                         <ScrollableToolResult text={cleanResult!} />
                       ) : (
                         <ToolResult text={cleanResult!} />

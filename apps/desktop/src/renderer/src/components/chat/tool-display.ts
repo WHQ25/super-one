@@ -35,7 +35,7 @@ const TOOL_VERBS: Record<string, string> = {
   Monitor: 'Monitoring',
   UpdateGoal: 'Updating goal',
   LS: 'Listing',
-  ToolSearch: 'Searching tools',
+  SearchTools: 'Searching tools',
   UseTool: 'Calling tool',
   MemorySearch: 'Searching memory',
 }
@@ -90,7 +90,8 @@ const TOOL_LABELS: Record<string, string> = {
   WebSearch: 'Web Search',
   WebFetch: 'Web Fetch',
   LS: 'List Dir',
-  ToolSearch: 'Search Tools',
+  ToolSearch: 'ToolSearch',
+  SearchTools: 'Search Tools',
   UseTool: 'Use Tool',
   MemorySearch: 'Memory Search',
   Skill: 'Skill',
@@ -218,6 +219,7 @@ export function getToolDisplay(toolName: string, input: Record<string, unknown>,
     case 'LS':
       return { icon: 'folder-search', summary: sp(String(input.path ?? input.target_directory ?? input.directory ?? '')) }
     case 'ToolSearch':
+    case 'SearchTools':
       return { icon: 'toolbox', summary: String(input.query ?? '') }
     case 'UseTool': {
       const name = String(input.tool_name ?? input.name ?? input.tool ?? '')

@@ -84,6 +84,10 @@ describe('getToolDisplay', () => {
       icon: 'toolbox',
       summary: 'github pr',
     })
+    expect(getToolDisplay('SearchTools', { query: 'github pr' })).toEqual({
+      icon: 'toolbox',
+      summary: 'github pr',
+    })
     expect(getToolDisplay('UseTool', { tool_name: 'GitHub__list_issues', server: 'GitHub' })).toEqual({
       icon: 'plug',
       summary: 'GitHub · GitHub__list_issues',
@@ -157,7 +161,8 @@ describe('getToolLabel', () => {
     expect(getToolLabel('LS')).toBe('List Dir')
     expect(getToolLabel('WebSearch')).toBe('Web Search')
     expect(getToolLabel('WebFetch')).toBe('Web Fetch')
-    expect(getToolLabel('ToolSearch')).toBe('Search Tools')
+    expect(getToolLabel('ToolSearch')).toBe('ToolSearch')
+    expect(getToolLabel('SearchTools')).toBe('Search Tools')
     expect(getToolLabel('UseTool')).toBe('Use Tool')
     expect(getToolLabel('MemorySearch')).toBe('Memory Search')
     expect(getToolLabel('FileChange')).toBe('File Change')

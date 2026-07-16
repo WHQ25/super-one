@@ -136,10 +136,10 @@ const TOOL_ID_TO_NAME: Record<string, string> = {
   todo_write: 'TodoWrite',
   todowrite: 'TodoWrite',
   todo: 'TodoWrite',
-  search_tool: 'ToolSearch',
-  searchtool: 'ToolSearch',
-  tool_search: 'ToolSearch',
-  toolsearch: 'ToolSearch',
+  search_tool: 'SearchTools',
+  searchtool: 'SearchTools',
+  tool_search: 'SearchTools',
+  toolsearch: 'SearchTools',
   use_tool: 'UseTool',
   usetool: 'UseTool',
   call_tool: 'UseTool',
@@ -195,7 +195,8 @@ function nameFromVariant(raw: Record<string, unknown>): string | null {
     // PascalCase variants: ListDir, WebSearch, Todo, TaskOutput, AskUserQuestion, …
     if (variant === 'ListDir') return 'LS'
     if (variant === 'WebSearch') return 'WebSearch'
-    if (variant === 'SearchTool' || variant === 'ToolSearch') return 'ToolSearch'
+    if (variant === 'SearchTool') return 'SearchTools'
+    if (variant === 'ToolSearch') return 'ToolSearch'
     if (variant === 'UseTool') return 'UseTool'
     if (variant === 'Todo' || variant === 'TodoWrite') return 'TodoWrite'
     if (variant === 'Grep' || variant === 'GrepSearch') return 'Grep'
@@ -416,7 +417,8 @@ function normalizeInput(
       if (query) out.query = query
       return Object.keys(out).length > 0 ? out : { ...raw }
     }
-    case 'ToolSearch': {
+    case 'ToolSearch':
+    case 'SearchTools': {
       const out: Record<string, unknown> = {}
       const query = pickString(raw, ['query', 'q', 'search', 'pattern'])
       if (query) out.query = query
@@ -502,11 +504,27 @@ function normalizeInput(
   }
 }
 
+/**
+ * Grok routes every MCP call through a generic `use_tool` envelope: title and _meta
+ * both read "use_tool", while the real id and arguments sit in rawInput.tool_name /
+ * rawInput.tool_input. Rebuild the canonical `mcp__<server>__<tool>` the renderer's
+ * parseMcpToolName expects — grok's tool_name is already `<server>__<tool>`.
+ */
+function unwrapMcpEnvelope(tool: AcpToolLike, raw: Record<string, unknown>): NormalizedAcpTool | null {
+  const isEnvelope = nameFromGrokMeta(tool) === 'UseTool' || raw.variant === 'UseTool'
+  if (!isEnvelope) return null
+  const id = raw.tool_name
+  if (typeof id !== 'string' || !id.includes('__')) return null
+  return { toolName: `mcp__${id}`, input: asRecord(raw.tool_input) }
+}
+
 export function normalizeAcpTool(
   tool: AcpToolLike,
   opts?: { terminalCommand?: string },
 ): NormalizedAcpTool | null {
   const raw = asRecord(tool.rawInput)
+  const mcp = unwrapMcpEnvelope(tool, raw)
+  if (mcp) return mcp
   const diffs = extractDiffs(tool.content)
   const terminalId = extractEmbeddedTerminalId(tool.content)
   const toolName = resolveToolName(tool, raw, diffs, !!terminalId)
@@ -602,13 +620,35 @@ function formatSearchToolPayload(obj: Record<string, unknown>): string | null {
  * Unwrap agent-native rawOutput envelopes (Grok Build / OpenCode / similar) into UI text.
  * Prefer the human tree/listing string over dumping the whole JSON wrapper.
  */
+function isAgentOutputEnvelope(obj: Record<string, unknown>): boolean {
+  const t = obj.type
+  return (
+    t === 'MCP'
+    || t === 'ListDir'
+    || t === 'list_dir'
+    || t === 'LS'
+    || t === 'Todo'
+    || t === 'SearchTool'
+    || t === 'GrepSearch'
+    || t === 'grep'
+    || obj.TodosUpdated != null
+    || (obj.Content != null && typeof obj.Content === 'object')
+    || Array.isArray(obj.results)
+    || (obj.action != null && typeof obj.action === 'object')
+  )
+}
+
 export function formatAcpRawOutput(raw: unknown): string {
   if (raw == null) return ''
   if (typeof raw === 'string') {
     const trimmed = raw.trim()
     if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
       try {
-        return formatAcpRawOutput(JSON.parse(trimmed))
+        const parsed = JSON.parse(trimmed)
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && isAgentOutputEnvelope(parsed as Record<string, unknown>)) {
+          return formatAcpRawOutput(parsed)
+        }
+        return raw
       } catch {
         return raw
       }
@@ -618,6 +658,17 @@ export function formatAcpRawOutput(raw: unknown): string {
   if (typeof raw !== 'object') return String(raw)
 
   const obj = raw as Record<string, unknown>
+
+  // MCP: { type: "MCP", server_name, tool_name, output: { OkayOutput: "<payload>" } }.
+  // The output key is grok's serde variant tag — read the payload structurally so error
+  // variants unwrap the same way without hardcoding the tag set.
+  if (obj.type === 'MCP' && obj.output != null) {
+    if (typeof obj.output === 'string') return obj.output
+    if (typeof obj.output === 'object') {
+      const values = Object.values(obj.output as Record<string, unknown>)
+      if (values.length === 1 && typeof values[0] === 'string') return values[0]
+    }
+  }
 
   // ListDir: { type: "ListDir", Content: { content: "- /path\n  - a", absolute_root_path?: string } }
   const listContent = obj.Content ?? obj.content
@@ -756,16 +807,27 @@ function toolResultFromUpdate(update: ToolCallUpdate, terminalOutput?: string): 
       parts.push(formatted)
     }
   }
-  // Final pass: unwrap any remaining JSON-looking summaries
   const summary = parts
     .map((p) => formatAcpRawOutput(p))
     .join('\n')
-    .slice(0, 4000)
+  const capped = shouldKeepFullToolResult(summary) ? summary : summary.slice(0, 4000)
   return {
     type: 'tool_result',
     toolUseId: update.toolCallId,
-    summary: summary || (update.status === 'failed' ? 'failed' : 'done'),
+    summary: capped || (update.status === 'failed' ? 'failed' : 'done'),
     isError: update.status === 'failed',
+  }
+}
+
+function shouldKeepFullToolResult(summary: string): boolean {
+  if (summary.length <= 4000) return true
+  const trimmed = summary.trim()
+  if (!trimmed.startsWith('{')) return false
+  try {
+    const obj = JSON.parse(trimmed) as Record<string, unknown>
+    return typeof obj.widget_code === 'string' && obj.widget_code.length > 0
+  } catch {
+    return false
   }
 }
 

@@ -160,6 +160,7 @@ function computeToolMeta(block: Record<string, unknown>) {
         summary = String(p.description ?? p.name ?? '')
         return { toolSummary: summary, subagentType: p.subagent_type ? String(p.subagent_type) : undefined, toolPrompt: p.prompt ? String(p.prompt) : undefined }
       case 'ToolSearch':
+      case 'SearchTools':
         summary = String(p.query ?? '')
         break
     }

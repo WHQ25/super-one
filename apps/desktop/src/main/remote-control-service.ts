@@ -325,6 +325,7 @@ export function computeToolMeta(block: ContentBlock & { type: 'tool_use' }, proj
         break
       }
       case 'ToolSearch':
+      case 'SearchTools':
         summary = String(p.query ?? '')
         break
     }

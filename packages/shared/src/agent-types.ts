@@ -797,7 +797,7 @@ export type AgentEventBase =
   | { type: 'auth_status'; isAuthenticating: boolean; output: string[]; error?: string }
   | { type: 'slash_command_output'; messageId: string; content: string }
   | { type: 'subagent_usage'; messageId: string; parentToolUseId: string; inputTokens: number; outputTokens: number }
-  | { type: 'message_usage'; messageId: string; inputTokens: number; outputTokens: number; codexUsage?: CodexUsageInfo }
+  | { type: 'message_usage'; messageId: string; inputTokens: number; outputTokens: number; codexUsage?: CodexUsageInfo; contextTokens?: number; contextWindow?: number; costUsd?: number }
   | { type: 'codex_thread_started'; messageId: string; threadId: string }
   | { type: 'codex_item_delta'; messageId: string; phase: 'started' | 'updated' | 'completed'; item: CodexThreadItem }
   | { type: 'codex_mcp_startup'; messageId: string; servers: CodexMcpServerStartup[] }
@@ -2121,6 +2121,8 @@ export const AgentIpcChannels = {
   ACP_LIST_AGENTS: 'acp:list-agents',
   /** Refresh ACP agent model catalogs once per app open (uses cache thereafter). */
   ACP_REFRESH_MODELS: 'acp:refresh-models',
+  /** Report unsaved editor buffer content for ACP fs/read_text_file. */
+  ACP_SET_UNSAVED_BUFFER: 'acp:set-unsaved-buffer',
 
   // Media generation providers (read-only status derived from image-serving credentials)
   MEDIA_GEN_PROVIDERS: 'mediaGen:providers',

@@ -415,7 +415,7 @@ export class AcpBackend implements SessionBackend {
           log.debug('[AcpBackend] set model before prompt failed:', err)
         }
       }
-      const turn = runtime.prompt(request.content, messageId, onEvent)
+      const turn = runtime.prompt(request.content, messageId, onEvent, request.images)
       this.activePrompt = turn
       await turn
     } catch (err) {

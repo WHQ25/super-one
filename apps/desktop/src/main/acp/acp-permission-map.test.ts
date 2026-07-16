@@ -3,14 +3,14 @@ import type { RequestPermissionRequest } from '@agentclientprotocol/sdk'
 import { mapPermissionDecision, mapPermissionRequest } from './acp-permission-map'
 
 describe('mapPermissionRequest', () => {
-  it('maps tool call + options into PermissionRequest', () => {
+  it('maps tool call + options into PermissionRequest with Claude-shaped names', () => {
     const params: RequestPermissionRequest = {
       sessionId: 's1',
       toolCall: {
         toolCallId: 'tc1',
         title: 'Edit file',
         kind: 'edit',
-        rawInput: { path: '/a.ts' },
+        rawInput: { path: '/a.ts', oldText: 'x', newText: 'y' },
         locations: [{ path: '/a.ts' }],
       },
       options: [
@@ -21,11 +21,35 @@ describe('mapPermissionRequest', () => {
     }
     const { request, options } = mapPermissionRequest(params)
     expect(request.requestId).toBe('tc1')
-    expect(request.toolName).toBe('Edit file')
+    expect(request.toolName).toBe('Edit')
     expect(request.allowAlwaysAllow).toBe(true)
     expect(request.blockedPath).toBe('/a.ts')
-    expect(request.input).toEqual({ path: '/a.ts' })
+    expect(request.decisionReason).toBe('Edit file')
+    expect(request.input).toEqual({
+      file_path: '/a.ts',
+      old_string: 'x',
+      new_string: 'y',
+    })
     expect(options).toHaveLength(3)
+  })
+
+  it('maps execute permission to Bash with command', () => {
+    const params: RequestPermissionRequest = {
+      sessionId: 's1',
+      toolCall: {
+        toolCallId: 'tc2',
+        kind: 'execute',
+        title: 'Run tests',
+        rawInput: { command: 'bun test' },
+      },
+      options: [
+        { optionId: 'a1', name: 'Allow', kind: 'allow_once' },
+        { optionId: 'r1', name: 'Deny', kind: 'reject_once' },
+      ],
+    }
+    const { request } = mapPermissionRequest(params)
+    expect(request.toolName).toBe('Bash')
+    expect(request.input).toEqual({ command: 'bun test' })
   })
 })
 

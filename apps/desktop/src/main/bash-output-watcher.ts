@@ -121,8 +121,13 @@ export async function readBashOutputTail(filePath: string, lines: number): Promi
   }
 }
 
-function send(toolUseId: string, content: string, finished: boolean): void {
+function send(toolUseId: string, content: string, finished: boolean, outputPath?: string): void {
   if (!win || win.isDestroyed()) return
-  const event: BashOutputEvent = { toolUseId, content, finished }
+  const event: BashOutputEvent = { toolUseId, content, finished, ...(outputPath ? { outputPath } : {}) }
   win.webContents.send(AgentIpcChannels.BASH_OUTPUT_EVENT, event)
+}
+
+/** Push live bash/terminal output without a file watcher (ACP terminals). */
+export function pushBashOutput(toolUseId: string, content: string, finished: boolean, outputPath?: string): void {
+  send(toolUseId, content, finished, outputPath)
 }

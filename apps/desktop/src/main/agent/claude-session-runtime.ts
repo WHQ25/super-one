@@ -259,6 +259,17 @@ export function applyClaudeEventToRuntime(
         )),
       }
     }
+    case 'message_usage': {
+      return {
+        ...runtime,
+        contextTokens: typeof event.contextTokens === 'number' && event.contextTokens > 0
+          ? event.contextTokens
+          : runtime.contextTokens,
+        totalCostUsd: typeof event.costUsd === 'number' && event.costUsd >= 0
+          ? event.costUsd
+          : runtime.totalCostUsd,
+      }
+    }
     case 'message_interrupted':
       return {
         ...runtime,

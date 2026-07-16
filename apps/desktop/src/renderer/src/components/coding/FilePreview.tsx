@@ -11,6 +11,7 @@ import { FileDiffView } from './source-control/FileDiffView'
 import { FileWithDiffView } from './source-control/FileWithDiffView'
 import { ImagePreview } from './ImagePreview'
 import { MarkdownEditor } from './MarkdownEditor'
+import { TextFileEditor } from './TextFileEditor'
 import { HtmlPreview } from './HtmlPreview'
 import { FileSelectionContextMenuZone } from './FileSelectionContextMenuZone'
 
@@ -51,7 +52,17 @@ function useOwnFileData(filePath: string | undefined, refreshKey: number) {
       const ext = filePath.split('.').pop()?.toLowerCase() ?? ''
       const isHtml = HTML_EXTS.has(ext)
       const isMd = MARKDOWN_EXTS.has(ext)
-      setTab(isBin || isSvg || isHtml ? 'preview' : d.diff ? 'changes' : isMd ? 'editor' : 'file')
+      const isText = !isBin && c.language !== 'binary' && c.language !== 'too-large'
+      // Prefer editor for editable text; Changes when dirty in git; media stays on preview.
+      setTab(
+        isBin || isSvg || isHtml
+          ? 'preview'
+          : d.diff
+            ? 'changes'
+            : isText || isMd
+              ? 'editor'
+              : 'file',
+      )
     }).catch(() => {
       if (!cancelled && pickedTabForPathRef.current !== filePath) { setDiff(null); setContent(null) }
     })
@@ -86,6 +97,7 @@ export function FilePreview({ filePath }: FilePreviewProps) {
   const hasDiff = !!fileDiff?.diff
   const isBinaryPreview = isBinImg || isPdfFile || isVideoFile || isAudioFile
   const isUnpreviewable = fileContent?.language === 'binary' || fileContent?.language === 'too-large'
+  const isTextEditable = !isBinaryPreview && !isUnpreviewable && !isSvgFile && !isHtml
   const fullFilePath = selectedFile.startsWith('/') ? selectedFile : `${fileRoot}/${selectedFile}`
 
   const tabs = (() => {
@@ -94,7 +106,7 @@ export function FilePreview({ filePath }: FilePreviewProps) {
     const items: { key: TabKey; label: string }[] = []
     if (hasDiff) items.push({ key: 'changes', label: 'Changes' })
     if (isSvgFile || isHtml) items.push({ key: 'preview', label: 'Preview' })
-    if (isMd) items.push({ key: 'editor', label: 'Editor' })
+    if (isTextEditable || isMd) items.push({ key: 'editor', label: 'Editor' })
     items.push({ key: 'file', label: 'File' })
     return items
   })()
@@ -104,9 +116,41 @@ export function FilePreview({ filePath }: FilePreviewProps) {
     setActiveTab(v as TabKey)
   }, [setActiveTab])
 
-  const handleDirtyChange = useCallback((dirty: boolean) => setIsDirty(dirty), [])
-  const handleContentChange = useCallback((text: string) => { liveContentRef.current = text }, [])
-  const handleSaved = useCallback(() => setRefreshKey((k) => k + 1), [])
+  const reportUnsaved = useCallback((text: string | null) => {
+    if (!fullFilePath) return
+    void window.app.setUnsavedEditorBuffer?.(fullFilePath, text)
+  }, [fullFilePath])
+
+  const handleDirtyChange = useCallback((dirty: boolean) => {
+    setIsDirty(dirty)
+    if (!dirty) {
+      reportUnsaved(null)
+    } else if (liveContentRef.current != null) {
+      reportUnsaved(liveContentRef.current)
+    }
+  }, [reportUnsaved])
+
+  const handleContentChange = useCallback((text: string) => {
+    liveContentRef.current = text
+    // Only publish draft while content differs from last loaded disk snapshot.
+    const disk = fileContent?.content ?? ''
+    if (text !== disk) {
+      reportUnsaved(text)
+    } else {
+      reportUnsaved(null)
+    }
+  }, [fileContent?.content, reportUnsaved])
+
+  useEffect(() => {
+    return () => {
+      reportUnsaved(null)
+    }
+  }, [reportUnsaved])
+
+  const handleSaved = useCallback(() => {
+    reportUnsaved(null)
+    setRefreshKey((k) => k + 1)
+  }, [reportUnsaved])
 
   const rootRef = useRef<HTMLDivElement>(null)
   const [zoom, setZoom] = useState(1)
@@ -129,6 +173,23 @@ export function FilePreview({ filePath }: FilePreviewProps) {
   }
 
   const pathSegments = selectedFile.split('/')
+  const editorBody = isMd ? (
+    <MarkdownEditor
+      content={fileContent?.content ?? ''}
+      filePath={selectedFile}
+      onDirtyChange={handleDirtyChange}
+      onContentChange={handleContentChange}
+      onSaved={handleSaved}
+    />
+  ) : (
+    <TextFileEditor
+      content={fileContent?.content ?? ''}
+      filePath={selectedFile}
+      onDirtyChange={handleDirtyChange}
+      onContentChange={handleContentChange}
+      onSaved={handleSaved}
+    />
+  )
 
   return (
     <div ref={rootRef} className="flex h-full flex-col">
@@ -172,13 +233,13 @@ export function FilePreview({ filePath }: FilePreviewProps) {
           </div>
         ) : (
           <>
-            {isMd && (
+            {(isTextEditable || isMd) && (
               <FileSelectionContextMenuZone
                 filePath={fullFilePath}
-                fileContent={fileContent?.content ?? null}
+                fileContent={liveContentRef.current ?? fileContent?.content ?? null}
                 className={effectiveTab === 'editor' ? 'size-full' : 'hidden'}
               >
-                <MarkdownEditor content={fileContent?.content ?? ''} filePath={selectedFile} onDirtyChange={handleDirtyChange} onContentChange={handleContentChange} onSaved={handleSaved} />
+                {editorBody}
               </FileSelectionContextMenuZone>
             )}
             {effectiveTab === 'changes' && hasDiff ? (

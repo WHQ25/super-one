@@ -4,6 +4,7 @@ import type {
   RequestPermissionRequest,
   RequestPermissionResponse,
 } from '@agentclientprotocol/sdk'
+import { normalizeAcpTool } from './acp-event-map'
 
 export interface PendingPermissionOptions {
   optionId: string
@@ -18,26 +19,27 @@ export function mapPermissionRequest(params: RequestPermissionRequest): {
     optionId: o.optionId,
     kind: o.kind,
   }))
-  const toolName =
-    (typeof params.toolCall.title === 'string' && params.toolCall.title)
-    || (typeof params.toolCall.kind === 'string' && params.toolCall.kind)
-    || 'tool'
+  const normalized = normalizeAcpTool(params.toolCall)
   const raw = params.toolCall.rawInput
-  const input =
+  const fallbackInput =
     raw && typeof raw === 'object' && !Array.isArray(raw)
       ? raw as Record<string, unknown>
-      : { rawInput: raw }
+      : {}
 
   return {
     options,
     request: {
       requestId: params.toolCall.toolCallId,
-      toolName,
+      toolName: normalized?.toolName
+        ?? (typeof params.toolCall.title === 'string' && params.toolCall.title.trim()
+          ? params.toolCall.title.trim()
+          : 'tool'),
       toolUseId: params.toolCall.toolCallId,
-      input,
+      input: normalized?.input ?? fallbackInput,
       allowAlwaysAllow: options.some((o) => o.kind === 'allow_always'),
-      decisionReason: typeof params.toolCall.title === 'string' ? params.toolCall.title : undefined,
-      blockedPath: params.toolCall.locations?.[0]?.path,
+      decisionReason: normalized?.toolSummary
+        ?? (typeof params.toolCall.title === 'string' ? params.toolCall.title : undefined),
+      blockedPath: normalized?.toolFilePath ?? params.toolCall.locations?.[0]?.path,
     },
   }
 }

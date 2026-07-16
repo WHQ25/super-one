@@ -10,6 +10,7 @@ import {
   type Stream,
 } from '@agentclientprotocol/sdk'
 import log from '../logger'
+import { trace } from '../agent/event-trace'
 import {
   coalesceModelConfig,
   extractModelsFromInitializeResult,
@@ -18,9 +19,20 @@ import {
   type AcpModelConfig,
 } from './acp-config'
 import { spawnAcpProcess, type AcpProcessHandle } from './acp-process'
-import { mapSessionUpdate, mapStopReason } from './acp-event-map'
+import {
+  buildAcpPromptContentAsync,
+  cancelOpenToolEvents,
+  getAgentChunkMessageId,
+  mapSessionUpdate,
+  mapStopReason,
+  trackOpenTools,
+} from './acp-event-map'
+import { getUnsavedBuffer } from './acp-unsaved-buffer'
 import { resolveAcpLaunch, type ResolvedAcpLaunch } from './agent-catalog'
-import type { AgentEvent } from '@superone/shared/agent-types'
+import { handleReadTextFile, handleWriteTextFile } from './acp-fs'
+import { AcpTerminalManager } from './acp-terminals'
+import { pushBashOutput } from '../bash-output-watcher'
+import type { AgentEvent, ImageAttachment } from '@superone/shared/agent-types'
 
 export interface AcpRuntimeLaunchConfig {
   agentId?: string
@@ -45,6 +57,7 @@ export interface AcpRuntime {
     text: string,
     messageId: string,
     onEvent: (event: AgentEvent) => void,
+    images?: ImageAttachment[],
   ): Promise<void>
   cancel(): Promise<void>
   close(): Promise<void>
@@ -62,6 +75,8 @@ export interface AcpRuntimeOptions {
    * Prompt-turn events still go to the prompt onEvent callback.
    */
   onSessionEvent?: (event: AgentEvent) => void
+  getUnsaved?: (absolutePath: string) => string | null | undefined
+  additionalRoots?: string[]
 }
 
 function formatProcessExit(
@@ -76,6 +91,15 @@ function formatProcessExit(
 
 export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRuntime> {
   const launch = resolveAcpLaunch(opts.launch)
+  const fsRoots = [launch.cwd, ...(opts.additionalRoots ?? [])].filter(Boolean)
+  const terminalManager = new AcpTerminalManager({
+    projectPath: launch.cwd,
+    allowedRoots: fsRoots,
+    onOutput: ({ toolUseId, content, finished }) => {
+      if (!toolUseId) return
+      pushBashOutput(toolUseId, content, finished)
+    },
+  })
   let processHandle: AcpProcessHandle | null = null
   let disposeStream: (() => void) | null = null
   let stream: Stream
@@ -110,10 +134,20 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       .onRequest(methods.client.session.requestPermission, async (ctx) => {
         return opts.permission.request(ctx.params)
       })
-      .onRequest(methods.client.fs.readTextFile, async () => ({
-        content: '',
-      }))
-      .onRequest(methods.client.fs.writeTextFile, async () => ({}))
+      .onRequest(methods.client.fs.readTextFile, async (ctx) => {
+        return handleReadTextFile(ctx.params, {
+          roots: fsRoots,
+          getUnsaved: (abs) => opts.getUnsaved?.(abs) ?? getUnsavedBuffer(abs),
+        })
+      })
+      .onRequest(methods.client.fs.writeTextFile, async (ctx) => {
+        return handleWriteTextFile(ctx.params, { roots: fsRoots })
+      })
+      .onRequest(methods.client.terminal.create, async (ctx) => terminalManager.create(ctx.params))
+      .onRequest(methods.client.terminal.output, async (ctx) => terminalManager.output(ctx.params))
+      .onRequest(methods.client.terminal.waitForExit, async (ctx) => terminalManager.waitForExit(ctx.params))
+      .onRequest(methods.client.terminal.kill, async (ctx) => terminalManager.kill(ctx.params))
+      .onRequest(methods.client.terminal.release, async (ctx) => terminalManager.release(ctx.params))
       .connect(stream)
 
     const initResult = await connection.agent.request(methods.agent.initialize, {
@@ -121,6 +155,7 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       clientInfo: { name: 'superone', version: '0.0.0' },
       clientCapabilities: {
         fs: { readTextFile: true, writeTextFile: true },
+        terminal: true,
       },
     })
     initModels = extractModelsFromInitializeResult(initResult)
@@ -208,6 +243,10 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
   let promptOnEvent: ((event: AgentEvent) => void) | null = null
   const promptStopWaiters: Array<(stopReason: string) => void> = []
   let pumping = true
+  /** Agent-side messageId → local assistant message id for multi-message turns. */
+  const agentMsgToLocal = new Map<string, string>()
+  let openToolIds = new Set<string>()
+  let primaryPromptMessageId: string | null = null
 
   const deliver = (event: AgentEvent) => {
     if (event.type === 'acp_commands') {
@@ -240,8 +279,46 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
           else log.debug('[acp-runtime] stop with no active prompt reason=%s', message.stopReason)
           continue
         }
-        const messageId = promptMessageId ?? `acp_session_${activeSession.sessionId}`
-        for (const event of mapSessionUpdate(message.update, { messageId })) {
+        const update = message.update
+        trace('acp.session', update.sessionUpdate, update, promptMessageId ?? activeSession.sessionId)
+        let messageId = promptMessageId ?? `acp_session_${activeSession.sessionId}`
+        const agentMid = getAgentChunkMessageId(update)
+        if (agentMid && promptOnEvent) {
+          const existing = agentMsgToLocal.get(agentMid)
+          if (existing) {
+            messageId = existing
+            promptMessageId = existing
+          } else if (agentMsgToLocal.size === 0 && primaryPromptMessageId) {
+            agentMsgToLocal.set(agentMid, primaryPromptMessageId)
+            messageId = primaryPromptMessageId
+            promptMessageId = primaryPromptMessageId
+          } else {
+            const newId = `acp_msg_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
+            agentMsgToLocal.set(agentMid, newId)
+            messageId = newId
+            promptMessageId = newId
+            deliver({
+              type: 'message_start',
+              message: {
+                id: newId,
+                role: 'assistant',
+                status: 'streaming',
+                content: [],
+                createdAt: new Date().toISOString(),
+                providerId: 'acp',
+              },
+            })
+          }
+        }
+        const mapped = mapSessionUpdate(update, { messageId }, {
+          resolveTerminalCommand: (id) => terminalManager.getCommandLine(id),
+          resolveTerminalOutput: (id) => terminalManager.getOutput(id),
+          onTerminalEmbedded: (terminalId, toolUseId) => {
+            terminalManager.bindTool(terminalId, toolUseId)
+          },
+        })
+        trackOpenTools(openToolIds, mapped)
+        for (const event of mapped) {
           deliver(event)
         }
       } catch (err) {
@@ -272,7 +349,7 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       }
       return configOptions
     },
-    async prompt(text, messageId, onEvent) {
+    async prompt(text, messageId, onEvent, images) {
       let settled = false
       const fail = (error: string) => {
         if (settled) return
@@ -288,9 +365,17 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
         promptStopWaiters.push(resolve)
       })
       promptMessageId = messageId
+      primaryPromptMessageId = messageId
       promptOnEvent = onEvent
+      agentMsgToLocal.clear()
+      openToolIds = new Set()
 
-      const promptPromise = activeSession.prompt(text)
+      const promptBlocks = await buildAcpPromptContentAsync(text, {
+        images,
+        cwd: launch.cwd,
+        getUnsaved: (abs) => opts.getUnsaved?.(abs) ?? getUnsavedBuffer(abs),
+      })
+      const promptPromise = activeSession.prompt(promptBlocks as never)
       try {
         const stopReason = await Promise.race([
           stopPromise,
@@ -300,10 +385,18 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
         ])
         settled = true
         const { complete, interrupted } = mapStopReason(stopReason)
+        const localIds = new Set<string>([primaryPromptMessageId ?? messageId, ...agentMsgToLocal.values()])
         if (interrupted) {
-          onEvent({ type: 'message_interrupted', messageId })
+          for (const ev of cancelOpenToolEvents(promptMessageId ?? messageId, openToolIds)) {
+            onEvent(ev)
+          }
+          for (const id of localIds) {
+            onEvent({ type: 'message_interrupted', messageId: id })
+          }
         } else if (complete) {
-          onEvent({ type: 'message_complete', messageId })
+          for (const id of localIds) {
+            onEvent({ type: 'message_complete', messageId: id })
+          }
         }
         onEvent({ type: 'status_change', status: 'idle' })
         await promptPromise
@@ -315,7 +408,10 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       } finally {
         if (gen === promptGen) {
           promptMessageId = null
+          primaryPromptMessageId = null
           promptOnEvent = null
+          agentMsgToLocal.clear()
+          openToolIds.clear()
         }
         if (stopWaiter) {
           const idx = promptStopWaiters.indexOf(stopWaiter)
@@ -324,6 +420,11 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       }
     },
     async cancel() {
+      if (promptOnEvent && promptMessageId) {
+        for (const ev of cancelOpenToolEvents(promptMessageId, openToolIds)) {
+          promptOnEvent(ev)
+        }
+      }
       try {
         await activeConnection.agent.notify(methods.agent.session.cancel, {
           sessionId: activeSession.sessionId,
@@ -335,6 +436,7 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
     async close() {
       pumping = false
       closed = true
+      try { terminalManager.dispose() } catch { /* ignore */ }
       try { activeSession.dispose() } catch { /* ignore */ }
       try { activeConnection.close() } catch { /* ignore */ }
       try {

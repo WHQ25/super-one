@@ -341,6 +341,7 @@ interface AppAPI {
   getGitLog(folderPath: string, query?: string): Promise<GitLogEntry[]>
   getGitDiffFile(folderPath: string, filePath: string, staged: boolean): Promise<GitFileDiff>
   readProjectFile(folderPath: string, filePath: string): Promise<GitFileContent>
+  setUnsavedEditorBuffer(filePath: string, content: string | null): Promise<void>
   getFileTree(folderPath: string): Promise<FileTreeEntry[]>
   listDir(folderPath: string, dirRelPath: string): Promise<FileTreeEntry[]>
 

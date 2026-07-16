@@ -29,6 +29,10 @@ const TOOL_VERBS: Record<string, string> = {
   AskUserQuestion: 'Asking questions',
   EnterPlanMode: 'Planning',
   ExitPlanMode: 'Reviewing',
+  LS: 'Listing',
+  ToolSearch: 'Searching tools',
+  UseTool: 'Calling tool',
+  MemorySearch: 'Searching memory',
 }
 
 export function getToolVerb(toolName: string): string {
@@ -65,6 +69,57 @@ export function isHiddenToolBlock(toolName: string): boolean {
     mcp?.serverName === 'superone' &&
     (mcp.mcpToolName === 'session_rename' || mcp.mcpToolName === 'media_generate_image')
   )
+}
+
+
+/** Human-readable tool title for chat UI (internal toolName stays PascalCase / id). */
+const TOOL_LABELS: Record<string, string> = {
+  Bash: 'Bash',
+  Read: 'Read',
+  Edit: 'Edit',
+  Write: 'Write',
+  FileChange: 'File Change',
+  NotebookEdit: 'Notebook Edit',
+  Grep: 'Grep',
+  Glob: 'Glob',
+  WebSearch: 'Web Search',
+  WebFetch: 'Web Fetch',
+  LS: 'List Dir',
+  ToolSearch: 'Search Tools',
+  UseTool: 'Use Tool',
+  MemorySearch: 'Memory Search',
+  Skill: 'Skill',
+  Task: 'Task',
+  TaskOutput: 'Task Output',
+  TaskCreate: 'Task Create',
+  TaskUpdate: 'Task Update',
+  TaskGet: 'Task Get',
+  TaskList: 'Task List',
+  TodoList: 'Todo List',
+  TodoWrite: 'Todo Write',
+  AskUserQuestion: 'Ask User',
+  SandboxNetworkAccess: 'Network Access',
+  EnterPlanMode: 'Enter Plan Mode',
+  ExitPlanMode: 'Exit Plan Mode',
+  Agent: 'Agent',
+  Workflow: 'Workflow',
+}
+
+/** Split camel/PascalCase and underscores into Title Case words for unknown tools. */
+export function formatToolLabel(toolName: string): string {
+  if (!toolName) return toolName
+  if (TOOL_LABELS[toolName]) return TOOL_LABELS[toolName]
+  const mcp = parseMcpToolName(toolName)
+  if (mcp) return mcp.mcpToolName.replace(/_/g, ' ')
+  return toolName
+    .replace(/[_-]+/g, ' ')
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+export function getToolLabel(toolName: string): string {
+  return formatToolLabel(toolName)
 }
 
 export function getToolDisplay(toolName: string, input: Record<string, unknown>, cwd?: string, homedir?: string): ToolDisplay {
@@ -129,8 +184,17 @@ export function getToolDisplay(toolName: string, input: Record<string, unknown>,
     }
     case 'SandboxNetworkAccess':
       return { icon: 'globe', summary: String(input.host ?? '') }
+    case 'LS':
+      return { icon: 'folder-search', summary: sp(String(input.path ?? input.target_directory ?? input.directory ?? '')) }
     case 'ToolSearch':
       return { icon: 'toolbox', summary: String(input.query ?? '') }
+    case 'UseTool': {
+      const name = String(input.tool_name ?? input.name ?? input.tool ?? '')
+      const server = input.server ? String(input.server) : ''
+      return { icon: 'plug', summary: server && name ? `${server} · ${name}` : name }
+    }
+    case 'MemorySearch':
+      return { icon: 'book-open', summary: String(input.query ?? input.text ?? '') }
     case 'EnterPlanMode':
       return { icon: 'wrench', summary: 'Entered plan mode' }
     case 'ExitPlanMode':

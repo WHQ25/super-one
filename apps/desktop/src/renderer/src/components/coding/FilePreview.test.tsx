@@ -8,6 +8,9 @@ import { FilePreview } from './FilePreview'
 vi.mock('./MarkdownEditor', () => ({
   MarkdownEditor: () => <div data-testid="markdown-editor" />,
 }))
+vi.mock('./TextFileEditor', () => ({
+  TextFileEditor: () => <div data-testid="text-file-editor" />,
+}))
 vi.mock('./source-control/FileWithDiffView', () => ({
   FileWithDiffView: () => <div data-testid="file-view" />,
 }))
@@ -27,6 +30,8 @@ function stubFile({ language, content, diff }: FakeFile) {
     getGitDiffFile: () => Promise.resolve({ path: 'f', diff }),
     readProjectFile: () => Promise.resolve({ path: 'f', content, language }),
     onContentZoom: () => () => {},
+    setUnsavedEditorBuffer: vi.fn(() => Promise.resolve()),
+    saveFile: vi.fn(() => Promise.resolve({ ok: true })),
   }
 }
 
@@ -49,19 +54,19 @@ describe('FilePreview tab derivation', () => {
     expect(tabLabels()).toEqual(['Editor', 'File'])
   })
 
-  it('labels the non-markdown tab File (not Editor) and renders the read-only view', async () => {
+  it('shows Editor + File for non-markdown text and mounts TextFileEditor', async () => {
     stubFile({ language: 'typescript', content: 'const a = 1', diff: '' })
     render(<FilePreview filePath="src/app.ts" />)
-    await waitFor(() => expect(screen.getByTestId('file-view')).toBeInTheDocument())
-    expect(screen.queryByText('Editor')).not.toBeInTheDocument()
+    await waitFor(() => expect(screen.getByTestId('text-file-editor')).toBeInTheDocument())
+    expect(tabLabels()).toEqual(['Editor', 'File'])
     expect(screen.queryByTestId('markdown-editor')).not.toBeInTheDocument()
   })
 
-  it('adds a Changes tab and defaults to it when a non-markdown file has a diff, still no Editor', async () => {
+  it('adds Changes + Editor + File when a non-markdown file has a diff', async () => {
     stubFile({ language: 'typescript', content: 'const a = 2', diff: '@@ -1 +1 @@\n-const a = 1\n+const a = 2' })
     render(<FilePreview filePath="src/app.ts" />)
     await waitFor(() => expect(screen.getByTestId('diff-view')).toBeInTheDocument())
-    expect(tabLabels()).toEqual(['Changes', 'File'])
+    expect(tabLabels()).toEqual(['Changes', 'Editor', 'File'])
   })
 
   it('exposes Changes, Editor and File for a markdown file with a diff', async () => {

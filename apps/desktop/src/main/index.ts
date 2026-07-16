@@ -82,6 +82,7 @@ import { initUpdater, installUpdate, checkForUpdates, simulateUpdate, simulateNo
 import { startWatching, stopWatching } from './file-watcher'
 import { notifyWidgetReady, clearAllGates } from './generative-ui/widget-gate'
 import { setBashOutputWindow, watchBashOutput, unwatchBashOutput, unwatchAll as unwatchAllBashOutputs, readBashOutputTail, getWatchedFilePath } from './bash-output-watcher'
+import { setUnsavedBuffer } from './acp/acp-unsaved-buffer'
 import { listWorkflowAgents, readWorkflowOutput, readWorkflowScript } from './workflow-transcripts'
 import { readSubagentTranscript } from './agent/subagent-transcript'
 import { parseGitStatusOutput, parseGitStatusFiles, type GitStatusPair } from './git-status-utils'
@@ -2168,6 +2169,11 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(AgentIpcChannels.FILE_WATCH_STOP, () => {
     stopWatching()
+  })
+
+  ipcMain.handle(AgentIpcChannels.ACP_SET_UNSAVED_BUFFER, (_e, filePath: string, content: string | null) => {
+    if (typeof filePath !== 'string' || !filePath) return
+    setUnsavedBuffer(filePath, content)
   })
 
   ipcMain.handle(AgentIpcChannels.BASH_OUTPUT_WATCH, (_e, toolUseId: string, filePath: string, tailLines?: number) => {

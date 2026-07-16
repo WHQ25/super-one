@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { getToolDisplay, parseMcpToolName, parseToolInput, shortenPath } from './tool-display'
+import { getToolDisplay, getToolLabel, parseMcpToolName, parseToolInput, shortenPath } from './tool-display'
 
 describe('shortenPath', () => {
   it('shortens paths relative to cwd and homedir', () => {
@@ -74,6 +74,26 @@ describe('getToolDisplay', () => {
     })
   })
 
+
+  it('maps Grok-facing tools to icons and summaries', () => {
+    expect(getToolDisplay('LS', { path: '/Users/demo/workspace/src' }, '/Users/demo/workspace', '/Users/demo')).toEqual({
+      icon: 'folder-search',
+      summary: 'src',
+    })
+    expect(getToolDisplay('ToolSearch', { query: 'github pr' })).toEqual({
+      icon: 'toolbox',
+      summary: 'github pr',
+    })
+    expect(getToolDisplay('UseTool', { tool_name: 'GitHub__list_issues', server: 'GitHub' })).toEqual({
+      icon: 'plug',
+      summary: 'GitHub · GitHub__list_issues',
+    })
+    expect(getToolDisplay('MemorySearch', { query: 'auth decision' })).toEqual({
+      icon: 'book-open',
+      summary: 'auth decision',
+    })
+  })
+
   it('omits trailing colon when TaskUpdate has only status', () => {
     expect(getToolDisplay('TaskUpdate', { status: 'completed' })).toEqual({
       icon: 'clipboard-list',
@@ -131,3 +151,20 @@ describe('parseToolInput', () => {
     })
   })
 })
+
+describe('getToolLabel', () => {
+  it('uses descriptive labels for known tools', () => {
+    expect(getToolLabel('LS')).toBe('List Dir')
+    expect(getToolLabel('WebSearch')).toBe('Web Search')
+    expect(getToolLabel('WebFetch')).toBe('Web Fetch')
+    expect(getToolLabel('ToolSearch')).toBe('Search Tools')
+    expect(getToolLabel('UseTool')).toBe('Use Tool')
+    expect(getToolLabel('MemorySearch')).toBe('Memory Search')
+    expect(getToolLabel('FileChange')).toBe('File Change')
+  })
+
+  it('splits unknown PascalCase names', () => {
+    expect(getToolLabel('SomeCustomTool')).toBe('Some Custom Tool')
+  })
+})
+

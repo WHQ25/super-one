@@ -32,7 +32,21 @@ export function reduceUsage(session: PerSessionState, event: UsageEvent): Partia
           messages: messagesWithSeq,
         }
       }
-      return { lastEventAt: Date.now(), streamingTokens: { input: event.inputTokens, output: event.outputTokens }, messages: messagesWithSeq }
+      const patch: Partial<PerSessionState> = {
+        lastEventAt: Date.now(),
+        streamingTokens: { input: event.inputTokens, output: event.outputTokens },
+        messages: messagesWithSeq,
+      }
+      if (typeof event.contextTokens === 'number' && event.contextTokens > 0) {
+        patch.contextTokens = event.contextTokens
+      }
+      if (typeof event.contextWindow === 'number' && event.contextWindow > 0) {
+        patch.contextWindow = event.contextWindow
+      }
+      if (typeof event.costUsd === 'number' && event.costUsd >= 0) {
+        patch.totalCostUsd = event.costUsd
+      }
+      return patch
     }
 
     case 'status_indicator': {

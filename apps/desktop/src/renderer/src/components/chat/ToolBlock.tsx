@@ -11,7 +11,7 @@ import { useSettingsStore } from '@/stores/settings'
 import { useSourceControlStore } from '@/stores/source-control'
 import { ToolIcon } from './ToolIcon'
 import { DraggableFileIcon } from './DraggableFileIcon'
-import { getToolDisplay, getToolVerb, parseToolInput, parseMcpToolName, isHiddenToolBlock, formatReadMeta, type ToolIcon as ToolIconType } from './tool-display'
+import { getToolDisplay, getToolLabel, getToolVerb, parseToolInput, parseMcpToolName, isHiddenToolBlock, formatReadMeta, type ToolIcon as ToolIconType } from './tool-display'
 import { PrettyJSONCodeBlock } from './tool-result-views'
 import { BrowserToolBlock } from './BrowserToolBlock'
 import { MediaProvidersBlock } from './MediaProvidersBlock'
@@ -367,8 +367,8 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
     : '')
 
   const displayName = mcpInfo
-    ? <>{mcpInfo.serverName}<span className="text-muted-foreground"> · </span>{mcpInfo.mcpToolName}</>
-    : toolName
+    ? <>{mcpInfo.serverName}<span className="text-muted-foreground"> · </span>{mcpInfo.mcpToolName.replace(/_/g, ' ')}</>
+    : getToolLabel(toolName)
 
   if (mcpInfo?.mcpToolName === 'widget_read_guide') {
     const modules = Array.isArray(params.modules) ? (params.modules as string[]).join(', ') : ''
@@ -672,8 +672,14 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
                     <div className="text-xs text-warning/90">{extractToolError(cleanResult)}</div>
                   )}
                   {hasResult && !isError && (!hasDiff || toolName === 'FileChange') && (
-                    <div>
-                      {isMcp ? <PrettyJSONCodeBlock text={cleanResult!} /> : <ToolResult text={cleanResult!} />}
+                    <div onClick={(e) => e.stopPropagation()}>
+                      {isMcp ? (
+                        <PrettyJSONCodeBlock text={cleanResult!} />
+                      ) : toolName === 'LS' || toolName === 'ToolSearch' ? (
+                        <ScrollableToolResult text={cleanResult!} />
+                      ) : (
+                        <ToolResult text={cleanResult!} />
+                      )}
                     </div>
                   )}
                   {hasQA && <QAResult text={cleanResult!} />}
@@ -1041,6 +1047,21 @@ function BashTerminalView({
 }
 
 const RESULT_PREVIEW_LINES = 10
+const SCROLLABLE_RESULT_MAX_H = 'max-h-60'
+
+/** Full output in a fixed-height scroll area (no nested expand). */
+function ScrollableToolResult({ text }: { text: string }) {
+  return (
+    <div
+      className={cn(
+        'overflow-auto rounded bg-background/70 px-2 py-1.5 font-mono text-[11px] leading-relaxed text-muted-foreground whitespace-pre-wrap',
+        SCROLLABLE_RESULT_MAX_H,
+      )}
+    >
+      {text}
+    </div>
+  )
+}
 
 /** Truncated tool output with secondary expand for long results. */
 function ToolResult({ text }: { text: string }) {

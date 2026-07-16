@@ -8,7 +8,7 @@ import { useMiniAppStore } from '@/stores/miniapp'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
 import { Circle, CheckCircle2, ChevronDown, ChevronUp, ShieldAlert, AlertTriangle } from 'lucide-react'
 import { ToolIcon } from './ToolIcon'
-import { getToolDisplay, parseMcpToolName } from './tool-display'
+import { getToolDisplay, getToolLabel, parseMcpToolName } from './tool-display'
 import { EditDiff, WriteDiff } from './ToolBlock'
 import { modes as permissionModes } from './PermissionModeSelector'
 import { useRestoreChatInputFocus } from '@/hooks/useRestoreChatInputFocus'
@@ -455,7 +455,7 @@ export function PermissionPrompt() {
           ) : miniAppInfo ? (
             <MiniAppToolLabel info={miniAppInfo} />
           ) : (
-            <span className="text-xs font-medium text-foreground">{toolName}</span>
+            <span className="text-xs font-medium text-foreground">{getToolLabel(toolName ?? '')}</span>
           )}
           <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
             {collapsedSummary}
@@ -507,7 +507,7 @@ export function PermissionPrompt() {
                             {miniAppInfo ? (
                               <MiniAppToolLabel info={miniAppInfo} textSize="text-xs" />
                             ) : (
-                              <span className="font-medium text-foreground">{toolName}</span>
+                              <span className="font-medium text-foreground">{getToolLabel(toolName ?? '')}</span>
                             )}
                             {isBash && typeof input.description === 'string' && input.description && (
                               <span className="min-w-0 truncate text-muted-foreground">{input.description}</span>

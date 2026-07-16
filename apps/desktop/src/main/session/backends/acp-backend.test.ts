@@ -32,6 +32,17 @@ function mockRuntime(overrides?: Partial<AcpRuntime>): AcpRuntime {
     },
     getConfigOptions: () => [
       {
+        id: 'mode',
+        name: 'Session Mode',
+        category: 'mode',
+        type: 'select',
+        currentValue: 'ask',
+        options: [
+          { value: 'ask', name: 'Ask' },
+          { value: 'code', name: 'Code' },
+        ],
+      },
+      {
         id: 'model',
         name: 'Model',
         category: 'model',
@@ -51,7 +62,30 @@ function mockRuntime(overrides?: Partial<AcpRuntime>): AcpRuntime {
         { id: 'm2', name: 'Model 2', description: '' },
       ],
     }),
-    setConfigOption: async () => [],
+    setConfigOption: async (_configId, value) => [
+      {
+        id: 'mode',
+        name: 'Session Mode',
+        category: 'mode',
+        type: 'select',
+        currentValue: value,
+        options: [
+          { value: 'ask', name: 'Ask' },
+          { value: 'code', name: 'Code' },
+        ],
+      },
+      {
+        id: 'model',
+        name: 'Model',
+        category: 'model',
+        type: 'select',
+        currentValue: 'm1',
+        options: [
+          { value: 'm1', name: 'Model 1' },
+          { value: 'm2', name: 'Model 2' },
+        ],
+      },
+    ],
     prompt: async (_text, messageId, onEvent) => {
       onEvent({
         type: 'content_delta',
@@ -80,6 +114,42 @@ describe('AcpBackend', () => {
     const backend = new AcpBackend()
     expect(backend.kind).toBe('acp')
     await backend.start(startOpts({ agentId: 'grok-build' }))
+    await backend.close()
+  })
+
+  it('emits acp_modes from configOptions and setSessionMode updates selection', async () => {
+    const setConfigOption = vi.fn(async (_id: string, value: string) => [
+      {
+        id: 'mode',
+        name: 'Session Mode',
+        category: 'mode' as const,
+        type: 'select' as const,
+        currentValue: value,
+        options: [
+          { value: 'ask', name: 'Ask' },
+          { value: 'code', name: 'Code' },
+        ],
+      },
+    ])
+    setAcpRuntimeFactory(async () => mockRuntime({ setConfigOption }))
+    const backend = new AcpBackend()
+    const events: AgentEvent[] = []
+    backend.onEvent((e) => events.push(e))
+    await backend.start(startOpts({ agentId: 'custom', command: 'mock' }))
+    await backend.send({ content: 'hi', assistantMessageId: 'm1' })
+
+    const readyModes = events.filter((e): e is Extract<AgentEvent, { type: 'acp_modes' }> =>
+      e.type === 'acp_modes' && e.status === 'ready' && e.modes.length > 0)
+    expect(readyModes.length).toBeGreaterThan(0)
+    expect(readyModes[0]?.selectedModeId).toBe('ask')
+    expect(readyModes[0]?.configId).toBe('mode')
+
+    events.length = 0
+    await backend.setSessionMode('code')
+    expect(setConfigOption).toHaveBeenCalledWith('mode', 'code')
+    const after = events.find((e): e is Extract<AgentEvent, { type: 'acp_modes' }> =>
+      e.type === 'acp_modes' && e.selectedModeId === 'code')
+    expect(after?.modes.map((m) => m.id)).toEqual(['ask', 'code'])
     await backend.close()
   })
 

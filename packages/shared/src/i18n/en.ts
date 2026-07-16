@@ -400,9 +400,14 @@ export type Messages = {
       codexAsk: string
       claudePlan: string
       claudeAsk: string
+      acpAsk: string
+    }
+    acpCommands: {
+      clearDesc: string
     }
     dropToAttach: string
     permissionModeTitle: string
+    sessionModeTitle: string
     sandboxModeTitle: string
     permissionModes: {
       default: { label: string; description: string }
@@ -2013,9 +2018,14 @@ export const en: Messages = {
       codexAsk: 'Ask Codex anything, @ for files & mini-apps, / for commands and skills',
       claudePlan: "Let's make a plan! What's in your mind?",
       claudeAsk: 'Ask Claude anything, @ for files, agents & mini-apps, / for commands and skills',
+      acpAsk: 'Ask {{agent}} anything, @ for files & mini-apps, / for commands',
+    },
+    acpCommands: {
+      clearDesc: 'Clear the conversation and start fresh',
     },
     dropToAttach: 'Drop images or PDFs to attach',
     permissionModeTitle: 'Permission Mode',
+    sessionModeTitle: 'Session Mode',
     sandboxModeTitle: 'Sandbox Mode',
     permissionModes: {
       default: { label: 'Normal', description: 'Prompts for dangerous operations' },

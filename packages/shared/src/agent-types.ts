@@ -832,6 +832,22 @@ export type AgentEventBase =
       /** Which ACP agent produced this catalog — drop events that don't match session.acpAgentId. */
       agentId?: string | null
     }
+  /** ACP configOptions with category/id "mode" for the active session. */
+  | {
+      type: 'acp_modes'
+      modes: ModelOption[]
+      selectedModeId: string | null
+      configId: string | null
+      status?: 'loading' | 'ready' | 'error'
+      error?: string
+      agentId?: string | null
+    }
+  /** ACP available_commands_update for slash-command popup. */
+  | {
+      type: 'acp_commands'
+      commands: SlashCommandInfo[]
+      agentId?: string | null
+    }
 
 export type AgentEvent = AgentEventBase & { projectPath?: string; sessionId?: string; draftSessionId?: string; seq?: number; epoch?: number }
 
@@ -1315,13 +1331,66 @@ export interface AcpAgentModelCatalog {
   updatedAt: string
 }
 
+/** Serializable ACP session config option value (select). Nested `options` = option groups. */
+export interface AcpConfigSelectValue {
+  value?: string
+  name?: string
+  description?: string | null
+  options?: AcpConfigSelectValue[]
+}
+
+/** Serializable subset of ACP SessionConfigOption for harness_resource_cache. */
+export interface AcpConfigOption {
+  id: string
+  name: string
+  description?: string | null
+  category?: string | null
+  type: 'select' | 'boolean' | string
+  currentValue?: string | boolean | null
+  options?: AcpConfigSelectValue[]
+}
+
+/**
+ * Full per-agent ACP session config snapshot.
+ * Prefer this over modelsByAgentId — models/modes are derived from configOptions
+ * (with extraModels for agents that expose models outside configOptions, e.g. Grok).
+ */
+export interface AcpAgentConfigCatalog {
+  configOptions: AcpConfigOption[]
+  /** Non-standard model list when not present in configOptions. */
+  extraModels?: ModelOption[]
+  selectedModelId?: string | null
+  modelConfigId?: string | null
+  /** Last known available_commands_update list for this agent. */
+  slashCommands?: SlashCommandInfo[]
+  updatedAt: string
+}
+
+/** Unified session-facing catalog derived from cache (models + modes). */
+export interface AcpSessionCatalog {
+  configOptions: AcpConfigOption[]
+  models: ModelOption[]
+  selectedModelId: string | null
+  modelConfigId: string | null
+  modes: ModelOption[]
+  selectedModeId: string | null
+  modeConfigId: string | null
+  slashCommands: SlashCommandInfo[]
+  updatedAt: string
+}
+
 export interface AcpResources {
   agents: AcpAgentDescriptor[]
   selectedAgentId: string | null
   /** True while a background re-detect is in flight. */
   detecting?: boolean
-  /** Model lists keyed by agent id (grok-build, opencode, …). */
+  /**
+   * @deprecated Prefer configByAgentId. Still written as a derived view for
+   * older cache readers; readers should use derive helpers / getCachedAcpCatalog.
+   */
   modelsByAgentId?: Record<string, AcpAgentModelCatalog>
+  /** Full session configOptions keyed by agent id (grok-build, opencode, …). */
+  configByAgentId?: Record<string, AcpAgentConfigCatalog>
 }
 
 export interface HarnessResourcesMap {

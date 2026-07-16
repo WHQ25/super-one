@@ -115,6 +115,40 @@ export function applyEventToSession(session: PerSessionState, event: AgentEvent)
       }
       return patch
     }
+
+    case 'acp_modes': {
+      if (event.agentId && session.acpAgentId && event.agentId !== session.acpAgentId) {
+        return {}
+      }
+      const status = event.status ?? 'ready'
+      if (status === 'loading' && session.acpModes.length > 0 && session.acpModesStatus === 'ready') {
+        return {}
+      }
+      const patch: Partial<PerSessionState> = {
+        acpModes: event.modes,
+        acpModeConfigId: event.configId,
+        acpModesStatus: status,
+      }
+      if (status === 'loading') return patch
+      if (event.selectedModeId) {
+        if (!session.selectedAcpModeId || !event.modes.some((m) => m.id === session.selectedAcpModeId)) {
+          patch.selectedAcpModeId = event.selectedModeId
+        } else if (event.selectedModeId !== session.selectedAcpModeId) {
+          // Agent-initiated mode change (config_option_update / set_config_option response).
+          patch.selectedAcpModeId = event.selectedModeId
+        }
+      } else if (event.modes.length === 0) {
+        patch.selectedAcpModeId = null
+      }
+      return patch
+    }
+
+    case 'acp_commands': {
+      if (event.agentId && session.acpAgentId && event.agentId !== session.acpAgentId) {
+        return {}
+      }
+      return { acpSlashCommands: event.commands }
+    }
   }
   return {}
 }

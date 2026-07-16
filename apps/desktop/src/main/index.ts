@@ -2921,12 +2921,13 @@ app.whenReady().then(async () => {
         })),
         selectedAgentId,
         modelsByAgentId: prev.modelsByAgentId ?? {},
+        configByAgentId: prev.configByAgentId ?? {},
       })
       log.info('[acp] agent cache refreshed: %d agents', agents.length)
-      const withModels = await refreshAcpModelsOnce()
+      const withConfig = await refreshAcpModelsOnce()
       log.info(
-        '[acp] model cache refreshed: %d agents with models',
-        Object.keys(withModels.modelsByAgentId ?? {}).length,
+        '[acp] config cache refreshed: %d agents with config',
+        Object.keys(withConfig.configByAgentId ?? {}).length,
       )
     } catch (err) {
       log.warn('[acp] detect/refresh models failed:', err)

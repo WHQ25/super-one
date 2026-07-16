@@ -190,6 +190,8 @@ export interface SessionBackend {
   interrupt(): Promise<void>
   close(): Promise<void>
   setModel(model: string): Promise<void>
+  /** ACP session config option category=mode; no-op for other harnesses. */
+  setSessionMode(modeId: string): Promise<void>
   setPermissionMode(mode: PermissionMode): Promise<void>
   setSandbox(sandboxInfo: SandboxInfo): Promise<void>
   setAdditionalDirectories?(dirs: string[]): Promise<boolean>
@@ -245,7 +247,8 @@ export interface Session {
   getCurrentPermissionMode(): PermissionMode
   getCurrentSandboxInfo(): SandboxInfo
   setModel(model: string): Promise<void>
-  setSelectedSettings(opts: { model?: string | null; effort?: SendMessageRequest['effort'] | null }): void
+  setSessionMode(modeId: string): Promise<void>
+  setSelectedSettings(opts: { model?: string | null; effort?: SendMessageRequest['effort'] | null; mode?: string | null }): void
   broadcastSettingsPatch(patch: import('@superone/shared/agent-types').SessionSettingsPatch): void
   getSelectedModel(): string | undefined
   getSelectedEffort(): SendMessageRequest['effort']

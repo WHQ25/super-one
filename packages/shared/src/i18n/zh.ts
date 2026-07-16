@@ -426,9 +426,14 @@ export const zh: Messages = {
       codexAsk: '随便问 Codex，@ 提及文件和小程序，/ 查看命令和技能',
       claudePlan: '一起来做个计划吧！你有什么想法？',
       claudeAsk: '随便问 Claude，@ 提及文件、子代理和小程序，/ 查看命令和技能',
+      acpAsk: '随便问 {{agent}}，@ 提及文件和小程序，/ 查看命令',
+    },
+    acpCommands: {
+      clearDesc: '清空对话并重新开始',
     },
     dropToAttach: '拖入图片或 PDF 以添加附件',
     permissionModeTitle: '权限模式',
+    sessionModeTitle: '会话模式',
     sandboxModeTitle: '沙盒模式',
     permissionModes: {
       default: { label: '普通', description: '危险操作会弹窗询问' },

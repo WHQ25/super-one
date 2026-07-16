@@ -93,6 +93,25 @@ describe('mapSessionUpdate', () => {
     }
   })
 
+  it('maps available_commands_update to acp_commands', () => {
+    const update: SessionUpdate = {
+      sessionUpdate: 'available_commands_update',
+      availableCommands: [
+        { name: 'web', description: 'Search the web', input: { hint: 'query' } },
+        { name: '/plan', description: 'Make a plan' },
+        { name: '', description: 'skip empty' },
+      ],
+    }
+    const events = mapSessionUpdate(update, ctx)
+    expect(events).toEqual([{
+      type: 'acp_commands',
+      commands: [
+        { name: 'web', description: 'Search the web', argumentHint: 'query', isSkill: false },
+        { name: 'plan', description: 'Make a plan', argumentHint: '', isSkill: false },
+      ],
+    }])
+  })
+
   it('ignores unknown update kinds', () => {
     const update = {
       sessionUpdate: 'session_info_update',

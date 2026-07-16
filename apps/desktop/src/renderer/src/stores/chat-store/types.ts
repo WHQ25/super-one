@@ -103,6 +103,13 @@ export interface PerSessionState {
   acpModelConfigId: string | null
   acpModelsStatus: 'idle' | 'loading' | 'ready' | 'error'
   acpModelsError: string | null
+  /** Modes from ACP configOptions (category=mode). */
+  acpModes: ModelOption[]
+  acpModeConfigId: string | null
+  selectedAcpModeId: string | null
+  acpModesStatus: 'idle' | 'loading' | 'ready' | 'error'
+  /** Slash commands from ACP available_commands_update. */
+  acpSlashCommands: SlashCommandInfo[]
   draftText: string
   /** Editor JSON snapshot (Tiptap doc) — preserves chip nodes & their inline positions across session switches, unlike the plain-text draft. */
   draftJson: object | null
@@ -278,6 +285,7 @@ export interface ChatStore {
   refreshCodexSkills: (projectPath?: string) => Promise<void>
   setPreferredProvider: (provider: ChatProvider) => void
   setAcpAgentId: (agentId: string | null) => void
+  setSelectedAcpMode: (modeId: string) => void
 
   setSessionApiProviderId: (apiProviderId: string | null) => Promise<void>
   openProviderPopup: () => void

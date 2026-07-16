@@ -57,6 +57,7 @@ class FakeBackend implements SessionBackend {
   async interrupt(): Promise<void> {}
   async close(): Promise<void> { this.disposed = true }
   async setModel(): Promise<void> {}
+  async setSessionMode(): Promise<void> {}
   async setPermissionMode(): Promise<void> {}
   async setSandbox(): Promise<void> {}
   respondToPermission(): boolean { return true }

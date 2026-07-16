@@ -1,5 +1,6 @@
-import type { AgentEvent, ContentBlock } from '@superone/shared/agent-types'
-import type { SessionUpdate, ToolCall, ToolCallUpdate } from '@agentclientprotocol/sdk'
+import type { AgentEvent, ContentBlock, SlashCommandInfo } from '@superone/shared/agent-types'
+import type { SessionConfigOption, SessionUpdate, ToolCall, ToolCallUpdate } from '@agentclientprotocol/sdk'
+import { extractModeConfig, extractModelConfig } from './acp-config'
 
 export interface AcpMapContext {
   messageId: string
@@ -122,8 +123,57 @@ export function mapSessionUpdate(update: SessionUpdate, ctx: AcpMapContext): Age
       }]
     }
     case 'config_option_update': {
-      // Handled by runtime/backend (full config state); no content delta.
-      return []
+      const configOptions = (update as { configOptions?: SessionConfigOption[] }).configOptions
+      if (!configOptions?.length) return []
+      const events: AgentEvent[] = []
+      const models = extractModelConfig(configOptions)
+      if (models) {
+        events.push({
+          type: 'acp_models',
+          models: models.models,
+          selectedModelId: models.selectedModelId,
+          configId: models.configId,
+          status: 'ready',
+        })
+      }
+      const modes = extractModeConfig(configOptions)
+      if (modes) {
+        events.push({
+          type: 'acp_modes',
+          modes: modes.modes,
+          selectedModeId: modes.selectedModeId,
+          configId: modes.configId,
+          status: 'ready',
+        })
+      }
+      return events
+    }
+    case 'available_commands_update': {
+      const raw = (update as { availableCommands?: unknown[] }).availableCommands
+      if (!Array.isArray(raw)) return []
+      const commands: SlashCommandInfo[] = []
+      for (const item of raw) {
+        if (!item || typeof item !== 'object') continue
+        const c = item as {
+          name?: string
+          description?: string
+          input?: { hint?: string } | null
+        }
+        if (typeof c.name !== 'string' || !c.name.trim()) continue
+        const name = c.name.replace(/^\//, '').trim()
+        if (!name) continue
+        const hint =
+          c.input && typeof c.input === 'object' && typeof c.input.hint === 'string'
+            ? c.input.hint
+            : ''
+        commands.push({
+          name,
+          description: typeof c.description === 'string' ? c.description : '',
+          argumentHint: hint,
+          isSkill: false,
+        })
+      }
+      return [{ type: 'acp_commands', commands }]
     }
     default:
       return []

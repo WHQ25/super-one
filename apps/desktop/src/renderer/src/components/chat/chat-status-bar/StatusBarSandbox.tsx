@@ -2,8 +2,8 @@ import type { ChatProvider } from '@/stores/chat'
 import { SandboxModeSelector } from '../SandboxModeSelector'
 
 /**
- * Sandbox-mode chip. Claude only — Codex does not expose a sandbox mode
- * (its permission preset already covers that axis).
+ * Sandbox-mode chip. Claude only — Codex covers this via permission presets;
+ * ACP has no sandbox protocol surface.
  */
 export function StatusBarSandbox({
   activeProvider,
@@ -14,7 +14,7 @@ export function StatusBarSandbox({
   compactIndicators: boolean
   showDivider: boolean
 }) {
-  if (activeProvider === 'codex') return null
+  if (activeProvider === 'codex' || activeProvider === 'acp') return null
   return (
     <>
       {showDivider && <div className="h-3 w-px bg-border" />}

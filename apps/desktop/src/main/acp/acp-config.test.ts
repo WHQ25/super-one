@@ -1,9 +1,12 @@
 import { describe, it, expect } from 'vitest'
 import type { SessionConfigOption } from '@agentclientprotocol/sdk'
 import {
+  deriveSessionCatalog,
+  extractModeConfig,
   extractModelConfig,
   extractModelsFromInitializeResult,
   extractModelsFromNewSessionResult,
+  serializeConfigOptions,
 } from './acp-config'
 
 describe('extractModelConfig', () => {
@@ -66,6 +69,118 @@ describe('extractModelConfig', () => {
   it('returns null when no select options', () => {
     expect(extractModelConfig([])).toBeNull()
     expect(extractModelConfig(undefined)).toBeNull()
+  })
+
+  it('does not treat mode select as model', () => {
+    const options = [
+      {
+        id: 'mode',
+        name: 'Mode',
+        category: 'mode',
+        type: 'select',
+        currentValue: 'ask',
+        options: [{ value: 'ask', name: 'Ask' }],
+      },
+    ] as SessionConfigOption[]
+    expect(extractModelConfig(options)).toBeNull()
+  })
+})
+
+describe('extractModeConfig', () => {
+  it('extracts category=mode select options', () => {
+    const options = [
+      {
+        id: 'mode',
+        name: 'Session Mode',
+        category: 'mode',
+        type: 'select',
+        currentValue: 'code',
+        options: [
+          { value: 'ask', name: 'Ask', description: 'prompt first' },
+          { value: 'code', name: 'Code' },
+        ],
+      },
+      {
+        id: 'model',
+        name: 'Model',
+        category: 'model',
+        type: 'select',
+        currentValue: 'm1',
+        options: [{ value: 'm1', name: 'M1' }],
+      },
+    ] as SessionConfigOption[]
+
+    const result = extractModeConfig(options)
+    expect(result?.configId).toBe('mode')
+    expect(result?.selectedModeId).toBe('code')
+    expect(result?.modes).toEqual([
+      { id: 'ask', name: 'Ask', description: 'prompt first' },
+      { id: 'code', name: 'Code', description: '' },
+    ])
+  })
+
+  it('returns null when no mode select', () => {
+    const options = [
+      {
+        id: 'model',
+        category: 'model',
+        type: 'select',
+        currentValue: 'm1',
+        options: [{ value: 'm1', name: 'M1' }],
+      },
+    ] as SessionConfigOption[]
+    expect(extractModeConfig(options)).toBeNull()
+    expect(extractModeConfig([])).toBeNull()
+  })
+})
+
+describe('serializeConfigOptions + deriveSessionCatalog', () => {
+  it('round-trips model and mode for cache', () => {
+    const serialized = serializeConfigOptions([
+      {
+        id: 'mode',
+        name: 'Mode',
+        category: 'mode',
+        type: 'select',
+        currentValue: 'ask',
+        options: [{ value: 'ask', name: 'Ask' }],
+      },
+      {
+        id: 'model',
+        name: 'Model',
+        category: 'model',
+        type: 'select',
+        currentValue: 'm1',
+        options: [{ value: 'm1', name: 'M1', description: 'fast' }],
+      },
+    ] as SessionConfigOption[])
+    const session = deriveSessionCatalog({
+      configOptions: serialized,
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    })
+    expect(session.models).toEqual([{ id: 'm1', name: 'M1', description: 'fast' }])
+    expect(session.selectedModelId).toBe('m1')
+    expect(session.modes[0]?.id).toBe('ask')
+    expect(session.modeConfigId).toBe('mode')
+  })
+
+  it('uses extraModels when configOptions lack model', () => {
+    const session = deriveSessionCatalog({
+      configOptions: [{
+        id: 'mode',
+        name: 'Mode',
+        category: 'mode',
+        type: 'select',
+        currentValue: 'ask',
+        options: [{ value: 'ask', name: 'Ask' }],
+      }],
+      extraModels: [{ id: 'grok-4.5', name: 'Grok 4.5', description: '' }],
+      selectedModelId: 'grok-4.5',
+      modelConfigId: null,
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    })
+    expect(session.models[0]?.id).toBe('grok-4.5')
+    expect(session.modes[0]?.id).toBe('ask')
   })
 })
 

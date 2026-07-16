@@ -49,7 +49,7 @@ const agentAPI = {
   setSandboxMode: (projectPath: string, mode: SandboxMode) =>
     ipcRenderer.invoke(AgentIpcChannels.SET_SANDBOX_MODE, projectPath, mode),
 
-  setSessionSettings: (projectPath: string, settings: { model?: string | null; effort?: SendMessageRequest['effort'] | null }) =>
+  setSessionSettings: (projectPath: string, settings: { model?: string | null; effort?: SendMessageRequest['effort'] | null; mode?: string | null }) =>
     ipcRenderer.invoke(AgentIpcChannels.SET_SESSION_SETTINGS, projectPath, settings),
 
   setSessionApiProvider: (sessionId: string, apiProviderId: string | null) =>

@@ -10,8 +10,8 @@ import type {
 } from '@superone/shared/agent-types'
 import type { RequestPermissionRequest, RequestPermissionResponse } from '@agentclientprotocol/sdk'
 import log from '../../logger'
-import { extractModelConfig } from '../../acp/acp-config'
-import { upsertAcpAgentModels } from '../../acp/acp-model-cache'
+import { extractModeConfig, extractModelConfig } from '../../acp/acp-config'
+import { upsertAcpAgentConfig, upsertAcpAgentModels, upsertAcpAgentSlashCommands } from '../../acp/acp-model-cache'
 import { createAcpRuntime, type AcpRuntime, type AcpRuntimeOptions } from '../../acp/acp-runtime'
 import { mapPermissionDecision, mapPermissionRequest, type PendingPermissionOptions } from '../../acp/acp-permission-map'
 import type { BackendStartOptions, HarnessId, SessionBackend } from '../types'
@@ -60,6 +60,7 @@ export class AcpBackend implements SessionBackend {
   }>()
 
   private modelConfigId: string | null = null
+  private modeConfigId: string | null = null
   private ensureRuntimePromise: Promise<AcpRuntime> | null = null
   private runtimeEpoch = 0
   private runtimeAgentKey: string | null = null
@@ -83,6 +84,10 @@ export class AcpBackend implements SessionBackend {
     }
     this.started = true
     log.info('[AcpBackend] start sid=%s agentId=%s', opts.sessionId, this.config.agentId ?? '(none)')
+    // Spawn early so available_commands_update can fill the / popup before the first send.
+    void this.ensureRuntime().catch((err) => {
+      log.warn('[AcpBackend] start ensureRuntime failed:', err instanceof Error ? err.message : String(err))
+    })
   }
 
   async rebuild(opts: BackendStartOptions): Promise<void> {
@@ -114,7 +119,28 @@ export class AcpBackend implements SessionBackend {
     })
   }
 
-  private persistAndEmitModels(
+  private persistConfigCache(
+    configOptions: import('@agentclientprotocol/sdk').SessionConfigOption[] | null | undefined,
+    modelFallback: {
+      models: import('@superone/shared/agent-types').ModelOption[]
+      selectedModelId: string | null
+      configId: string | null
+    } | null,
+    agentId: string | null,
+  ): void {
+    if (!agentId) return
+    try {
+      if (configOptions?.length) {
+        upsertAcpAgentConfig(agentId, configOptions, modelFallback)
+      } else if (modelFallback && modelFallback.models.length > 0) {
+        upsertAcpAgentModels(agentId, modelFallback)
+      }
+    } catch (err) {
+      log.debug('[AcpBackend] upsert config cache failed:', err)
+    }
+  }
+
+  private emitModels(
     extracted: {
       models: import('@superone/shared/agent-types').ModelOption[]
       selectedModelId: string | null
@@ -126,13 +152,6 @@ export class AcpBackend implements SessionBackend {
     if (epoch !== this.runtimeEpoch) return
     if (agentId !== (this.config.agentId ?? null)) return
     this.modelConfigId = extracted.configId
-    if (agentId && extracted.models.length > 0) {
-      try {
-        upsertAcpAgentModels(agentId, extracted)
-      } catch (err) {
-        log.debug('[AcpBackend] upsert model cache failed:', err)
-      }
-    }
     this.emit({
       type: 'acp_models',
       models: extracted.models,
@@ -143,10 +162,53 @@ export class AcpBackend implements SessionBackend {
     })
   }
 
-  private emitModelsFromRuntime(runtime: AcpRuntime, agentId: string | null, epoch: number): void {
+  private emitModesFromConfigOptions(
+    configOptions: import('@agentclientprotocol/sdk').SessionConfigOption[] | null | undefined,
+    agentId: string | null,
+    epoch: number,
+  ): void {
     if (epoch !== this.runtimeEpoch) return
-    const extracted = runtime.getModelConfig() ?? extractModelConfig(runtime.getConfigOptions())
-    if (!extracted || extracted.models.length === 0) {
+    const extracted = extractModeConfig(configOptions)
+    if (!extracted || extracted.modes.length === 0) {
+      this.modeConfigId = null
+      this.emit({
+        type: 'acp_modes',
+        modes: [],
+        selectedModeId: null,
+        configId: null,
+        status: 'ready',
+        agentId,
+      })
+      return
+    }
+    this.modeConfigId = extracted.configId
+    this.emit({
+      type: 'acp_modes',
+      modes: extracted.modes,
+      selectedModeId: extracted.selectedModeId,
+      configId: extracted.configId,
+      status: 'ready',
+      agentId,
+    })
+  }
+
+  private emitConfigFromOptions(
+    configOptions: import('@agentclientprotocol/sdk').SessionConfigOption[] | null | undefined,
+    agentId: string | null,
+    epoch: number,
+    modelFallback?: {
+      models: import('@superone/shared/agent-types').ModelOption[]
+      selectedModelId: string | null
+      configId: string | null
+    } | null,
+  ): void {
+    if (epoch !== this.runtimeEpoch) return
+    const models = extractModelConfig(configOptions)
+      ?? (modelFallback && modelFallback.models.length > 0 ? modelFallback : null)
+    this.persistConfigCache(configOptions, models, agentId)
+    if (models && models.models.length > 0) {
+      this.emitModels(models, agentId, epoch)
+    } else {
       this.modelConfigId = null
       this.emit({
         type: 'acp_models',
@@ -156,18 +218,34 @@ export class AcpBackend implements SessionBackend {
         status: 'ready',
         agentId,
       })
-      return
     }
-    this.persistAndEmitModels(extracted, agentId, epoch)
+    this.emitModesFromConfigOptions(configOptions, agentId, epoch)
+  }
+
+  private emitConfigFromRuntime(runtime: AcpRuntime, agentId: string | null, epoch: number): void {
+    if (epoch !== this.runtimeEpoch) return
+    const options = runtime.getConfigOptions()
+    const modelFallback = runtime.getModelConfig() ?? extractModelConfig(options)
+    this.emitConfigFromOptions(options, agentId, epoch, modelFallback)
   }
 
   private emitModelsError(error: string, agentId: string | null, epoch: number): void {
     if (epoch !== this.runtimeEpoch) return
     this.modelConfigId = null
+    this.modeConfigId = null
     this.emit({
       type: 'acp_models',
       models: [],
       selectedModelId: null,
+      configId: null,
+      status: 'error',
+      error,
+      agentId,
+    })
+    this.emit({
+      type: 'acp_modes',
+      modes: [],
+      selectedModeId: null,
       configId: null,
       status: 'error',
       error,
@@ -204,6 +282,14 @@ export class AcpBackend implements SessionBackend {
       status: 'loading',
       agentId,
     })
+    this.emit({
+      type: 'acp_modes',
+      modes: [],
+      selectedModeId: null,
+      configId: null,
+      status: 'loading',
+      agentId,
+    })
     const promise = (async () => {
       const runtime = await runtimeFactory({
         launch,
@@ -211,7 +297,13 @@ export class AcpBackend implements SessionBackend {
           request: (params) => this.handlePermissionRequest(params),
         },
         onModelConfig: (cfg) => {
-          this.persistAndEmitModels(cfg, agentId, epoch)
+          // Early model discovery (initialize) before session/new configOptions land.
+          this.emitModels(cfg, agentId, epoch)
+          this.persistConfigCache(null, cfg, agentId)
+        },
+        onSessionEvent: (event) => {
+          if (epoch !== this.runtimeEpoch) return
+          this.routeSessionEvent(event, agentId, epoch)
         },
       })
       if (epoch !== this.runtimeEpoch || this.agentKey() !== launchKey) {
@@ -223,7 +315,7 @@ export class AcpBackend implements SessionBackend {
       for (const cb of this.providerSessionIdListeners) {
         try { cb(runtime.sessionId) } catch (err) { log.warn('[AcpBackend] providerSessionId listener error:', err) }
       }
-      this.emitModelsFromRuntime(runtime, agentId, epoch)
+      this.emitConfigFromRuntime(runtime, agentId, epoch)
       return runtime
     })()
     this.ensureRuntimePromise = promise
@@ -238,6 +330,35 @@ export class AcpBackend implements SessionBackend {
     } finally {
       if (this.ensureRuntimePromise === promise) this.ensureRuntimePromise = null
     }
+  }
+
+  private routeSessionEvent(event: AgentEvent, agentId: string | null, epoch: number): void {
+    if (epoch !== this.runtimeEpoch) return
+    if (event.type === 'acp_models' && event.configId) this.modelConfigId = event.configId
+    if (event.type === 'acp_modes' && event.configId) this.modeConfigId = event.configId
+    if (event.type === 'acp_commands') {
+      if (agentId && event.commands) {
+        try {
+          upsertAcpAgentSlashCommands(agentId, event.commands)
+        } catch (err) {
+          log.debug('[AcpBackend] upsert slash commands cache failed:', err)
+        }
+      }
+      log.info(
+        '[AcpBackend] acp_commands agent=%s count=%d names=%s',
+        agentId ?? '(none)',
+        event.commands.length,
+        event.commands.slice(0, 12).map((c) => c.name).join(','),
+      )
+    }
+    if (
+      (event.type === 'acp_models' || event.type === 'acp_modes' || event.type === 'acp_commands')
+      && event.agentId === undefined
+    ) {
+      this.emit({ ...event, agentId })
+      return
+    }
+    this.emit(event)
   }
 
   private handlePermissionRequest(params: RequestPermissionRequest): Promise<RequestPermissionResponse> {
@@ -278,7 +399,7 @@ export class AcpBackend implements SessionBackend {
       ) {
         emittedTerminal = true
       }
-      this.emit(event)
+      this.routeSessionEvent(event, this.config.agentId ?? null, this.runtimeEpoch)
     }
 
     try {
@@ -288,18 +409,7 @@ export class AcpBackend implements SessionBackend {
           const epoch = this.runtimeEpoch
           const agentId = this.config.agentId ?? null
           const next = await runtime.setConfigOption(this.modelConfigId, request.model)
-          const extracted = extractModelConfig(next) ?? runtime.getModelConfig()
-          if (extracted) {
-            this.persistAndEmitModels(
-              {
-                models: extracted.models,
-                selectedModelId: extracted.selectedModelId,
-                configId: extracted.configId,
-              },
-              agentId,
-              epoch,
-            )
-          }
+          this.emitConfigFromOptions(next, agentId, epoch)
         } catch (err) {
           log.debug('[AcpBackend] set model before prompt failed:', err)
         }
@@ -347,6 +457,7 @@ export class AcpBackend implements SessionBackend {
     this.runtimeEpoch += 1
     this.ensureRuntimePromise = null
     this.modelConfigId = null
+    this.modeConfigId = null
     this.runtimeAgentKey = null
     const runtime = this.runtime
     this.runtime = null
@@ -372,19 +483,40 @@ export class AcpBackend implements SessionBackend {
     try {
       const next = await this.runtime.setConfigOption(this.modelConfigId, model)
       const extracted = extractModelConfig(next) ?? this.runtime.getModelConfig()
-      if (extracted) {
-        this.persistAndEmitModels(
-          {
+      const fallback = extracted
+        ? {
             models: extracted.models,
             selectedModelId: extracted.selectedModelId ?? model,
             configId: extracted.configId,
-          },
-          agentId,
-          epoch,
-        )
-      }
+          }
+        : null
+      this.emitConfigFromOptions(next, agentId, epoch, fallback)
     } catch (err) {
       log.warn('[AcpBackend] setModel failed:', err)
+    }
+  }
+
+  async setSessionMode(modeId: string): Promise<void> {
+    if (!this.runtime || !this.modeConfigId) return
+    const epoch = this.runtimeEpoch
+    const agentId = this.config.agentId ?? null
+    try {
+      const next = await this.runtime.setConfigOption(this.modeConfigId, modeId)
+      this.emitConfigFromOptions(next, agentId, epoch)
+      const extracted = extractModeConfig(next)
+      if (extracted && extracted.selectedModeId !== modeId) {
+        this.modeConfigId = extracted.configId
+        this.emit({
+          type: 'acp_modes',
+          modes: extracted.modes,
+          selectedModeId: modeId,
+          configId: extracted.configId,
+          status: 'ready',
+          agentId,
+        })
+      }
+    } catch (err) {
+      log.warn('[AcpBackend] setSessionMode failed:', err)
     }
   }
 

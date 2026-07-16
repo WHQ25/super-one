@@ -380,6 +380,13 @@ export function setPreferredProviderImpl(
     : null
 
   // ACP model ids (e.g. grok-4.5 / opencode/…) must not stick on Claude/Codex selectors.
+  const acpModeReset = {
+    acpModes: [] as import('@superone/shared/agent-types').ModelOption[],
+    acpModeConfigId: null as string | null,
+    selectedAcpModeId: null as string | null,
+    acpModesStatus: 'idle' as const,
+    acpSlashCommands: [] as import('@superone/shared/agent-types').SlashCommandInfo[],
+  }
   const modelReset = (() => {
     if (provider === 'claude') {
       const claudeModels = get().harnessResources.claude?.models ?? []
@@ -393,6 +400,7 @@ export function setPreferredProviderImpl(
         acpModelConfigId: null as string | null,
         acpModelsStatus: 'idle' as const,
         acpModelsError: null as string | null,
+        ...acpModeReset,
       }
     }
     if (provider === 'codex') {
@@ -404,6 +412,7 @@ export function setPreferredProviderImpl(
         acpModelConfigId: null as string | null,
         acpModelsStatus: 'idle' as const,
         acpModelsError: null as string | null,
+        ...acpModeReset,
       }
     }
     return {
@@ -413,6 +422,8 @@ export function setPreferredProviderImpl(
       acpModelsError: null as string | null,
       selectedModel: '',
       modelUserChosen: false,
+      ...acpModeReset,
+      acpModesStatus: 'idle' as const,
     }
   })()
 
@@ -540,6 +551,11 @@ export function setAcpAgentIdImpl(
   const catalog = getCachedAcpCatalog(get().harnessResources.acp, agentId)
   set((s) => updateActivePerSession(s, () => ({
     acpAgentId: agentId,
+    acpModes: [],
+    acpModeConfigId: null,
+    selectedAcpModeId: null,
+    acpModesStatus: 'idle' as const,
+    acpSlashCommands: [],
     ...(catalog
       ? sessionPatchFromAcpCatalog(catalog)
       : {

@@ -57,6 +57,11 @@ export interface AcpRuntimeOptions {
   streamFactory?: (launch: ResolvedAcpLaunch) => Promise<{ stream: Stream; dispose: () => void }>
   /** Called as soon as a model catalog is known (e.g. after initialize, before session/new). */
   onModelConfig?: (config: AcpModelConfig) => void
+  /**
+   * Session-level updates outside an active prompt (available_commands, config, …).
+   * Prompt-turn events still go to the prompt onEvent callback.
+   */
+  onSessionEvent?: (event: AgentEvent) => void
 }
 
 function formatProcessExit(
@@ -195,6 +200,57 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
     closed = true
   })
 
+  // Single consumer for session/update — start immediately after session/new so
+  // available_commands_update (often sent right after create) is not missed.
+  // Route to the active prompt callback when one is in flight.
+  let promptGen = 0
+  let promptMessageId: string | null = null
+  let promptOnEvent: ((event: AgentEvent) => void) | null = null
+  const promptStopWaiters: Array<(stopReason: string) => void> = []
+  let pumping = true
+
+  const deliver = (event: AgentEvent) => {
+    if (event.type === 'acp_commands') {
+      log.info(
+        '[acp-runtime] available_commands agent=%s count=%d',
+        launch.agentId,
+        event.commands.length,
+      )
+    }
+    if (promptOnEvent) promptOnEvent(event)
+    else opts.onSessionEvent?.(event)
+  }
+
+  void (async () => {
+    while (pumping && !closed) {
+      try {
+        let connectionClosed = false
+        const next = await Promise.race([
+          activeSession.nextUpdate().then((m) => ({ type: 'msg' as const, m })),
+          activeConnection.closed.then(() => {
+            connectionClosed = true
+            return { type: 'closed' as const }
+          }),
+        ])
+        if (connectionClosed || next.type === 'closed' || closed || !pumping) break
+        const message = next.m
+        if (message.kind === 'stop') {
+          const waiter = promptStopWaiters.shift()
+          if (waiter) waiter(String(message.stopReason))
+          else log.debug('[acp-runtime] stop with no active prompt reason=%s', message.stopReason)
+          continue
+        }
+        const messageId = promptMessageId ?? `acp_session_${activeSession.sessionId}`
+        for (const event of mapSessionUpdate(message.update, { messageId })) {
+          deliver(event)
+        }
+      } catch (err) {
+        if (!closed) log.debug('[acp-runtime] update pump ended:', err)
+        break
+      }
+    }
+  })()
+
   return {
     sessionId: activeSession.sessionId,
     launch,
@@ -225,39 +281,46 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
         onEvent({ type: 'status_change', status: 'error' })
       }
 
-      const connectionLost = activeConnection.closed.then(() => {
-        throw new Error(formatProcessExit(exitInfo))
+      const gen = ++promptGen
+      let stopWaiter: ((stopReason: string) => void) | null = null
+      const stopPromise = new Promise<string>((resolve) => {
+        stopWaiter = resolve
+        promptStopWaiters.push(resolve)
       })
+      promptMessageId = messageId
+      promptOnEvent = onEvent
 
       const promptPromise = activeSession.prompt(text)
       try {
-        for (;;) {
-          if (closed) throw new Error(formatProcessExit(exitInfo))
-          const message = await Promise.race([
-            activeSession.nextUpdate(),
-            connectionLost,
-          ])
-          if (message.kind === 'stop') {
-            settled = true
-            const { complete, interrupted } = mapStopReason(message.stopReason)
-            if (interrupted) {
-              onEvent({ type: 'message_interrupted', messageId })
-            } else if (complete) {
-              onEvent({ type: 'message_complete', messageId })
-            }
-            onEvent({ type: 'status_change', status: 'idle' })
-            break
-          }
-          for (const event of mapSessionUpdate(message.update, { messageId })) {
-            onEvent(event)
-          }
+        const stopReason = await Promise.race([
+          stopPromise,
+          activeConnection.closed.then(() => {
+            throw new Error(formatProcessExit(exitInfo))
+          }),
+        ])
+        settled = true
+        const { complete, interrupted } = mapStopReason(stopReason)
+        if (interrupted) {
+          onEvent({ type: 'message_interrupted', messageId })
+        } else if (complete) {
+          onEvent({ type: 'message_complete', messageId })
         }
+        onEvent({ type: 'status_change', status: 'idle' })
         await promptPromise
       } catch (err) {
         if (settled) return
         const error = err instanceof Error ? err.message : String(err)
         fail(error)
         throw err
+      } finally {
+        if (gen === promptGen) {
+          promptMessageId = null
+          promptOnEvent = null
+        }
+        if (stopWaiter) {
+          const idx = promptStopWaiters.indexOf(stopWaiter)
+          if (idx >= 0) promptStopWaiters.splice(idx, 1)
+        }
       }
     },
     async cancel() {
@@ -270,6 +333,8 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       }
     },
     async close() {
+      pumping = false
+      closed = true
       try { activeSession.dispose() } catch { /* ignore */ }
       try { activeConnection.close() } catch { /* ignore */ }
       try {

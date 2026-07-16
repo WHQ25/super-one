@@ -1599,7 +1599,7 @@ export class AgentService {
       return this.getOrCreateActiveSession(projectPath).setSandboxMode(mode)
     })
 
-    ipcMain.handle(AgentIpcChannels.SET_SESSION_SETTINGS, (_event, projectPath: string, settings: { model?: string | null; effort?: SendMessageRequest['effort'] | null }) => {
+    ipcMain.handle(AgentIpcChannels.SET_SESSION_SETTINGS, (_event, projectPath: string, settings: { model?: string | null; effort?: SendMessageRequest['effort'] | null; mode?: string | null }) => {
       if (this.isRemoteLockedSession(projectPath)) return
       const session = this.sessionManager?.getActiveSession(projectPath)
       if (!session) return

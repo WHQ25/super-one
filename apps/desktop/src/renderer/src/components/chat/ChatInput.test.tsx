@@ -25,8 +25,10 @@ const { chatActions, activeSessionState, editorState, useChatStore, mentionPopup
     cwd: '/project' as string,
     homedir: '/home/user' as string,
     slashCommands: [] as Array<{ name: string; description: string; argumentHint: string; isSkill: boolean }>,
-    preferredProvider: 'claude' as 'claude' | 'codex',
-    sessionProvider: null as 'claude' | 'codex' | null,
+    preferredProvider: 'claude' as 'claude' | 'codex' | 'acp',
+    sessionProvider: null as 'claude' | 'codex' | 'acp' | null,
+    acpSlashCommands: [] as Array<{ name: string; description: string; argumentHint: string; isSkill: boolean }>,
+    acpAgentId: null as string | null,
     agents: [] as Array<{ name: string }>,
     selectedCodexCollaborationMode: 'default' as const,
     codexPlanRejectHintActive: false,
@@ -66,6 +68,11 @@ const { chatActions, activeSessionState, editorState, useChatStore, mentionPopup
     clearUserSelections: vi.fn(),
     activeProject: '/project',
     isOpen: true,
+    harnessResources: {
+      claude: null,
+      codex: null,
+      acp: { agents: [], selectedAgentId: null },
+    },
   }
 
   const useChatStore = Object.assign(
@@ -325,7 +332,6 @@ describe('ChatInput', () => {
     fireEvent.mouseDown(slashButton!)
 
     expect(chatActions.setShowReviewPanel).toHaveBeenCalledWith(true)
-    expect(chatActions.setDraftText).toHaveBeenCalledWith('', undefined)
   })
 })
 
@@ -448,5 +454,34 @@ describe('ChatInput slash command grouping', () => {
 
     expect(screen.getByText('Commands')).toBeInTheDocument()
     expect(screen.queryByText('skill')).toBeNull()
+  })
+
+  it('does not show Claude project skills/commands when provider is ACP', () => {
+    activeSessionState.preferredProvider = 'acp'
+    activeSessionState.sessionProvider = 'acp'
+    activeSessionState.slashCommands = [
+      { name: 'compact', description: 'Claude compact', argumentHint: '', isSkill: false },
+      { name: 'tdd', description: 'Claude skill', argumentHint: '', isSkill: true },
+      { name: 'release', description: 'Claude skill', argumentHint: '', isSkill: true },
+    ]
+    activeSessionState.acpSlashCommands = [
+      { name: 'web', description: 'ACP web search', argumentHint: 'q', isSkill: false },
+    ]
+
+    const { rerender } = render(<ChatInput />)
+    typeInEditor('/')
+    rerender(<ChatInput />)
+
+    const labels = screen
+      .getAllByRole('button')
+      .map((b) => b.querySelector('.font-medium')?.textContent ?? '')
+      .filter(Boolean)
+
+    expect(labels.some((label) => label.startsWith('/web'))).toBe(true)
+    expect(labels.some((label) => label.startsWith('/clear'))).toBe(true)
+    expect(labels.some((label) => label.startsWith('/compact'))).toBe(false)
+    expect(labels.some((label) => label.startsWith('/tdd'))).toBe(false)
+    expect(labels.some((label) => label.startsWith('/release'))).toBe(false)
+    expect(screen.queryByText('Skills')).toBeNull()
   })
 })

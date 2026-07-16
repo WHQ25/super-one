@@ -397,6 +397,8 @@ export class ClaudeBackend implements SessionBackend {
     await this.start({ ...opts, providerSessionId: resumeId })
   }
 
+  async setSessionMode(_modeId: string): Promise<void> {}
+
   async setModel(model: string): Promise<void> {
     if (this._lastStartOpts) this._lastStartOpts.model = model
     if (!this.query) return

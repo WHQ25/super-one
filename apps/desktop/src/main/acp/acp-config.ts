@@ -1,4 +1,10 @@
-import type { ModelOption } from '@superone/shared/agent-types'
+import type {
+  AcpAgentConfigCatalog,
+  AcpConfigOption,
+  AcpConfigSelectValue,
+  AcpSessionCatalog,
+  ModelOption,
+} from '@superone/shared/agent-types'
 import type { SessionConfigOption } from '@agentclientprotocol/sdk'
 
 export interface AcpModelConfig {
@@ -6,6 +12,17 @@ export interface AcpModelConfig {
   configId: string | null
   models: ModelOption[]
   selectedModelId: string | null
+}
+
+/** Loose config option shape (SDK SessionConfigOption or cached AcpConfigOption). */
+export type ConfigOptionLike = {
+  id?: string
+  name?: string
+  description?: string | null
+  category?: string | null
+  type?: string
+  currentValue?: string | boolean | null
+  options?: unknown
 }
 
 type SelectOptionLike = {
@@ -42,9 +59,75 @@ function flattenSelectOptions(options: unknown): Array<{ value: string; name: st
   return out
 }
 
-/** Prefer category "model", else option id "model", else first select with options. */
+export interface AcpModeConfig {
+  configId: string
+  modes: ModelOption[]
+  selectedModeId: string | null
+}
+
+function isModeSelect(o: ConfigOptionLike): boolean {
+  return o.type === 'select' && (o.category === 'mode' || o.id === 'mode')
+}
+
+function serializeSelectValues(options: unknown): AcpConfigSelectValue[] | undefined {
+  if (!Array.isArray(options)) return undefined
+  const out: AcpConfigSelectValue[] = []
+  for (const item of options as SelectOptionLike[]) {
+    if (typeof item?.value === 'string' && typeof item?.name === 'string') {
+      out.push({
+        value: item.value,
+        name: item.name,
+        description: typeof item.description === 'string' ? item.description : null,
+      })
+      continue
+    }
+    if (Array.isArray(item?.options)) {
+      const nested = serializeSelectValues(item.options)
+      if (nested?.length) {
+        out.push({
+          name: typeof item?.name === 'string' ? item.name : undefined,
+          options: nested,
+        })
+      }
+    }
+  }
+  return out.length ? out : undefined
+}
+
+/** Strip SDK-only fields so configOptions can live in harness_resource_cache JSON. */
+export function serializeConfigOptions(
+  configOptions: Array<ConfigOptionLike | SessionConfigOption> | null | undefined,
+): AcpConfigOption[] {
+  if (!configOptions?.length) return []
+  const out: AcpConfigOption[] = []
+  for (const o of configOptions) {
+    if (!o || typeof o !== 'object') continue
+    const id = typeof o.id === 'string' ? o.id : null
+    const name = typeof o.name === 'string' ? o.name : id
+    if (!id || !name) continue
+    const type = typeof o.type === 'string' ? o.type : 'select'
+    const entry: AcpConfigOption = {
+      id,
+      name,
+      type,
+      description: typeof o.description === 'string' ? o.description : null,
+      category: typeof o.category === 'string' ? o.category : null,
+      currentValue:
+        typeof o.currentValue === 'string' || typeof o.currentValue === 'boolean'
+          ? o.currentValue
+          : null,
+    }
+    if (type === 'select') {
+      entry.options = serializeSelectValues((o as ConfigOptionLike).options)
+    }
+    out.push(entry)
+  }
+  return out
+}
+
+/** Prefer category "model", else option id "model", else first non-mode select. */
 export function extractModelConfig(
-  configOptions: SessionConfigOption[] | null | undefined,
+  configOptions: Array<ConfigOptionLike | SessionConfigOption> | null | undefined,
 ): AcpModelConfig | null {
   if (!configOptions?.length) return null
 
@@ -53,8 +136,9 @@ export function extractModelConfig(
 
   const byCategory = selects.find((o) => o.category === 'model')
   const byId = selects.find((o) => o.id === 'model')
-  const chosen = byCategory ?? byId ?? selects[0]
-  if (!chosen || chosen.type !== 'select') return null
+  const fallback = selects.find((o) => !isModeSelect(o))
+  const chosen = byCategory ?? byId ?? fallback
+  if (!chosen || chosen.type !== 'select' || typeof chosen.id !== 'string') return null
 
   const models: ModelOption[] = flattenSelectOptions(chosen.options).map((opt) => ({
     id: opt.value,
@@ -72,6 +156,80 @@ export function extractModelConfig(
     configId: chosen.id,
     models,
     selectedModelId: selected,
+  }
+}
+
+/** Prefer category "mode", else option id "mode". No fallback to other selects. */
+export function extractModeConfig(
+  configOptions: Array<ConfigOptionLike | SessionConfigOption> | null | undefined,
+): AcpModeConfig | null {
+  if (!configOptions?.length) return null
+
+  const selects = configOptions.filter((o) => o.type === 'select')
+  const chosen = selects.find((o) => o.category === 'mode')
+    ?? selects.find((o) => o.id === 'mode')
+  if (!chosen || chosen.type !== 'select' || typeof chosen.id !== 'string') return null
+
+  const modes: ModelOption[] = flattenSelectOptions(chosen.options).map((opt) => ({
+    id: opt.value,
+    name: opt.name,
+    description: opt.description,
+  }))
+  if (modes.length === 0) return null
+
+  const selected =
+    typeof chosen.currentValue === 'string' && modes.some((m) => m.id === chosen.currentValue)
+      ? chosen.currentValue
+      : (modes[0]?.id ?? null)
+
+  return {
+    configId: chosen.id,
+    modes,
+    selectedModeId: selected,
+  }
+}
+
+/** Build session-facing catalog from a persisted agent config snapshot. */
+export function deriveSessionCatalog(catalog: AcpAgentConfigCatalog): AcpSessionCatalog {
+  const fromOptions = extractModelConfig(catalog.configOptions)
+  const models = fromOptions?.models.length
+    ? fromOptions.models
+    : (catalog.extraModels ?? [])
+  const selectedModelId =
+    (fromOptions?.selectedModelId
+      ?? catalog.selectedModelId
+      ?? models[0]?.id
+      ?? null)
+  const modelConfigId = fromOptions?.configId ?? catalog.modelConfigId ?? null
+  const modesCfg = extractModeConfig(catalog.configOptions)
+  return {
+    configOptions: catalog.configOptions,
+    models,
+    selectedModelId:
+      selectedModelId && models.some((m) => m.id === selectedModelId)
+        ? selectedModelId
+        : (models[0]?.id ?? null),
+    modelConfigId,
+    modes: modesCfg?.modes ?? [],
+    selectedModeId: modesCfg?.selectedModeId ?? null,
+    modeConfigId: modesCfg?.configId ?? null,
+    slashCommands: catalog.slashCommands ?? [],
+    updatedAt: catalog.updatedAt,
+  }
+}
+
+export function modelCatalogFromSession(session: AcpSessionCatalog): {
+  models: ModelOption[]
+  selectedModelId: string | null
+  configId: string | null
+  updatedAt: string
+} | null {
+  if (!session.models.length) return null
+  return {
+    models: session.models,
+    selectedModelId: session.selectedModelId,
+    configId: session.modelConfigId,
+    updatedAt: session.updatedAt,
   }
 }
 

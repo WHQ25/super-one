@@ -535,6 +535,11 @@ export class Session implements SessionContract {
     if (this.backendStarted) await this.backend.setModel(model)
   }
 
+  async setSessionMode(modeId: string): Promise<void> {
+    this.assertNotDisposed()
+    if (this.backendStarted) await this.backend.setSessionMode(modeId)
+  }
+
   /**
    * Broadcast a generic settings patch to all listeners (multi-window sync).
    *
@@ -547,7 +552,7 @@ export class Session implements SessionContract {
     this.forwardEvent({ type: 'agent_setting_change', patch } as AgentEvent)
   }
 
-  setSelectedSettings(opts: { model?: string | null; effort?: SendMessageRequest['effort'] | null }): void {
+  setSelectedSettings(opts: { model?: string | null; effort?: SendMessageRequest['effort'] | null; mode?: string | null }): void {
     this.assertNotDisposed()
     let changed = false
     if (opts.model !== undefined) {
@@ -561,6 +566,9 @@ export class Session implements SessionContract {
         changed = true
         if (this.backendStarted) this._needsRebuild = true
       }
+    }
+    if (opts.mode !== undefined && opts.mode) {
+      void this.setSessionMode(opts.mode)
     }
     if (!changed) return
     this.forwardEvent({

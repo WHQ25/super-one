@@ -1,12 +1,27 @@
 import { homedir } from 'os'
 import log from '../logger'
 import { getCachedHarnessResources, setCachedHarnessResources } from '../database'
-import type { AcpAgentModelCatalog, AcpResources, ModelOption } from '@superone/shared/agent-types'
+import type {
+  AcpAgentConfigCatalog,
+  AcpAgentModelCatalog,
+  AcpConfigOption,
+  AcpResources,
+  AcpSessionCatalog,
+  ModelOption,
+  SlashCommandInfo,
+} from '@superone/shared/agent-types'
 import { listBuiltinAgentDescriptors, getBuiltinAgent } from './agent-catalog'
 import { createAcpRuntime } from './acp-runtime'
-import type { AcpModelConfig } from './acp-config'
+import {
+  deriveSessionCatalog,
+  modelCatalogFromSession,
+  serializeConfigOptions,
+  type AcpModelConfig,
+  type ConfigOptionLike,
+} from './acp-config'
+import type { SessionConfigOption } from '@agentclientprotocol/sdk'
 
-/** Agents already probed for models during this process lifetime. */
+/** Agents already probed for config during this process lifetime. */
 const probedThisLaunch = new Set<string>()
 
 function emptyResources(selectedAgentId: string | null = null): AcpResources {
@@ -14,6 +29,65 @@ function emptyResources(selectedAgentId: string | null = null): AcpResources {
     agents: listBuiltinAgentDescriptors(false),
     selectedAgentId,
     modelsByAgentId: {},
+    configByAgentId: {},
+  }
+}
+
+function deriveModelsByAgentId(
+  configByAgentId: Record<string, AcpAgentConfigCatalog>,
+): Record<string, AcpAgentModelCatalog> {
+  const out: Record<string, AcpAgentModelCatalog> = {}
+  for (const [agentId, cat] of Object.entries(configByAgentId)) {
+    const session = deriveSessionCatalog(cat)
+    const models = modelCatalogFromSession(session)
+    if (models) out[agentId] = models
+  }
+  return out
+}
+
+/** Migrate legacy modelsByAgentId entries into configByAgentId when missing. */
+function migrateModelsIntoConfig(
+  configByAgentId: Record<string, AcpAgentConfigCatalog>,
+  modelsByAgentId: Record<string, AcpAgentModelCatalog> | undefined,
+): Record<string, AcpAgentConfigCatalog> {
+  if (!modelsByAgentId) return configByAgentId
+  const next = { ...configByAgentId }
+  for (const [agentId, models] of Object.entries(modelsByAgentId)) {
+    if (next[agentId] || !models.models?.length) continue
+    const configOptions: AcpConfigOption[] = models.configId
+      ? [{
+          id: models.configId,
+          name: 'Model',
+          category: 'model',
+          type: 'select',
+          currentValue: models.selectedModelId,
+          options: models.models.map((m) => ({
+            value: m.id,
+            name: m.name,
+            description: m.description || null,
+          })),
+        }]
+      : []
+    next[agentId] = {
+      configOptions,
+      extraModels: models.configId ? undefined : models.models,
+      selectedModelId: models.selectedModelId,
+      modelConfigId: models.configId,
+      updatedAt: models.updatedAt || new Date().toISOString(),
+    }
+  }
+  return next
+}
+
+function normalizeResources(raw: AcpResources): AcpResources {
+  const configByAgentId = migrateModelsIntoConfig(
+    { ...(raw.configByAgentId ?? {}) },
+    raw.modelsByAgentId,
+  )
+  return {
+    ...raw,
+    configByAgentId,
+    modelsByAgentId: deriveModelsByAgentId(configByAgentId),
   }
 }
 
@@ -25,16 +99,17 @@ export function readAcpResourcesCache(): AcpResources {
     cached.selectedAgentId && (getBuiltinAgent(cached.selectedAgentId) || cached.selectedAgentId === 'custom')
       ? cached.selectedAgentId
       : null
-  return {
+  return normalizeResources({
     agents: agents.length ? agents : listBuiltinAgentDescriptors(false),
     selectedAgentId,
     detecting: cached.detecting,
     modelsByAgentId: cached.modelsByAgentId ?? {},
-  }
+    configByAgentId: cached.configByAgentId ?? {},
+  })
 }
 
 export function writeAcpResourcesCache(resources: AcpResources): void {
-  setCachedHarnessResources('acp', resources)
+  setCachedHarnessResources('acp', normalizeResources(resources))
 }
 
 export function catalogFromModelConfig(cfg: AcpModelConfig): AcpAgentModelCatalog {
@@ -46,18 +121,101 @@ export function catalogFromModelConfig(cfg: AcpModelConfig): AcpAgentModelCatalo
   }
 }
 
-/** Merge a live model discovery into the persistent ACP cache. */
-export function upsertAcpAgentModels(agentId: string, cfg: AcpModelConfig): AcpResources {
+export function catalogFromConfigOptions(
+  configOptions: Array<ConfigOptionLike | SessionConfigOption> | null | undefined,
+  modelFallback?: AcpModelConfig | null,
+): AcpAgentConfigCatalog {
+  const serialized = serializeConfigOptions(configOptions)
+  const hasModelInOptions = serialized.some((o) => o.category === 'model' || o.id === 'model')
+  return {
+    configOptions: serialized,
+    extraModels:
+      modelFallback && modelFallback.models.length > 0 && !hasModelInOptions
+        ? modelFallback.models
+        : undefined,
+    selectedModelId: modelFallback?.selectedModelId ?? null,
+    modelConfigId: modelFallback?.configId ?? null,
+    updatedAt: new Date().toISOString(),
+  }
+}
+
+/** Merge a live full-config discovery into the persistent ACP cache. */
+export function upsertAcpAgentConfig(
+  agentId: string,
+  configOptions: Array<ConfigOptionLike | SessionConfigOption> | null | undefined,
+  modelFallback?: AcpModelConfig | null,
+): AcpResources {
   const current = readAcpResourcesCache()
-  const catalog = catalogFromModelConfig(cfg)
-  const modelsByAgentId = { ...(current.modelsByAgentId ?? {}), [agentId]: catalog }
-  const next: AcpResources = { ...current, modelsByAgentId }
+  const catalog = catalogFromConfigOptions(configOptions, modelFallback)
+  // Keep previous modes/commands if new payload has empty options but we only got a model-only update.
+  const prev = current.configByAgentId?.[agentId]
+  if (prev && catalog.configOptions.length === 0 && catalog.extraModels?.length) {
+    const merged: AcpAgentConfigCatalog = {
+      configOptions: prev.configOptions,
+      extraModels: catalog.extraModels,
+      selectedModelId: catalog.selectedModelId ?? prev.selectedModelId,
+      modelConfigId: catalog.modelConfigId ?? prev.modelConfigId,
+      slashCommands: prev.slashCommands,
+      updatedAt: catalog.updatedAt,
+    }
+    const configByAgentId = { ...(current.configByAgentId ?? {}), [agentId]: merged }
+    const next = normalizeResources({ ...current, configByAgentId })
+    writeAcpResourcesCache(next)
+    probedThisLaunch.add(agentId)
+    return next
+  }
+  // Preserve slash commands across config-only upserts.
+  const withCommands: AcpAgentConfigCatalog = prev?.slashCommands?.length && !catalog.slashCommands?.length
+    ? { ...catalog, slashCommands: prev.slashCommands }
+    : catalog
+  const configByAgentId = { ...(current.configByAgentId ?? {}), [agentId]: withCommands }
+  const next = normalizeResources({ ...current, configByAgentId })
   writeAcpResourcesCache(next)
   probedThisLaunch.add(agentId)
   return next
 }
 
-async function probeAgentModels(agentId: string): Promise<AcpAgentModelCatalog | null> {
+/** @deprecated Prefer upsertAcpAgentConfig — still used for model-only Grok updates. */
+export function upsertAcpAgentModels(agentId: string, cfg: AcpModelConfig): AcpResources {
+  if (cfg.configId) {
+    return upsertAcpAgentConfig(agentId, [{
+      id: cfg.configId,
+      name: 'Model',
+      category: 'model',
+      type: 'select',
+      currentValue: cfg.selectedModelId,
+      options: cfg.models.map((m) => ({
+        value: m.id,
+        name: m.name,
+        description: m.description || null,
+      })),
+    }], cfg)
+  }
+  return upsertAcpAgentConfig(agentId, [], cfg)
+}
+
+/** Merge slash commands from available_commands_update into the agent config cache. */
+export function upsertAcpAgentSlashCommands(
+  agentId: string,
+  commands: SlashCommandInfo[],
+): AcpResources {
+  const current = readAcpResourcesCache()
+  const prev = current.configByAgentId?.[agentId]
+  const nextCatalog: AcpAgentConfigCatalog = {
+    configOptions: prev?.configOptions ?? [],
+    extraModels: prev?.extraModels,
+    selectedModelId: prev?.selectedModelId ?? null,
+    modelConfigId: prev?.modelConfigId ?? null,
+    slashCommands: commands,
+    updatedAt: new Date().toISOString(),
+  }
+  const configByAgentId = { ...(current.configByAgentId ?? {}), [agentId]: nextCatalog }
+  const next = normalizeResources({ ...current, configByAgentId })
+  writeAcpResourcesCache(next)
+  return next
+}
+
+async function probeAgentConfig(agentId: string): Promise<AcpAgentConfigCatalog | null> {
   const def = getBuiltinAgent(agentId)
   if (!def) return null
   const cwd = homedir()
@@ -74,20 +232,27 @@ async function probeAgentModels(agentId: string): Promise<AcpAgentModelCatalog |
     },
   })
   try {
-    const cfg = runtime.getModelConfig()
-    if (!cfg || cfg.models.length === 0) {
+    const options = runtime.getConfigOptions()
+    const modelCfg = runtime.getModelConfig()
+    if ((!options || options.length === 0) && (!modelCfg || modelCfg.models.length === 0)) {
       log.info('[acp-model-cache] probe empty agent=%s', agentId)
       return null
     }
-    log.info('[acp-model-cache] probe ok agent=%s models=%d', agentId, cfg.models.length)
-    return catalogFromModelConfig(cfg)
+    const catalog = catalogFromConfigOptions(options, modelCfg)
+    log.info(
+      '[acp-model-cache] probe ok agent=%s configOptions=%d models=%d',
+      agentId,
+      catalog.configOptions.length,
+      deriveSessionCatalog(catalog).models.length,
+    )
+    return catalog
   } finally {
     try { await runtime.close() } catch { /* ignore */ }
   }
 }
 
 /**
- * Refresh model catalogs for installed agents once per app open.
+ * Refresh session config catalogs for installed agents once per app open.
  * Returns immediately-usable resources (previous cache + any successful probes).
  */
 export async function refreshAcpModelsOnce(opts?: {
@@ -95,7 +260,7 @@ export async function refreshAcpModelsOnce(opts?: {
   force?: boolean
 }): Promise<AcpResources> {
   const current = readAcpResourcesCache()
-  const modelsByAgentId = { ...(current.modelsByAgentId ?? {}) }
+  const configByAgentId = { ...(current.configByAgentId ?? {}) }
   const targets = (opts?.agentIds?.length
     ? current.agents.filter((a) => opts.agentIds!.includes(a.id))
     : current.agents
@@ -105,19 +270,18 @@ export async function refreshAcpModelsOnce(opts?: {
     if (!opts?.force && probedThisLaunch.has(agent.id)) return
     probedThisLaunch.add(agent.id)
     try {
-      const catalog = await probeAgentModels(agent.id)
-      if (catalog) modelsByAgentId[agent.id] = catalog
+      const catalog = await probeAgentConfig(agent.id)
+      if (catalog) configByAgentId[agent.id] = catalog
     } catch (err) {
       log.warn(
         '[acp-model-cache] probe failed agent=%s: %s',
         agent.id,
         err instanceof Error ? err.message : String(err),
       )
-      // Keep previous catalog if any.
     }
   }))
 
-  const next: AcpResources = { ...current, modelsByAgentId }
+  const next = normalizeResources({ ...current, configByAgentId })
   writeAcpResourcesCache(next)
   return next
 }
@@ -127,13 +291,21 @@ export function getCachedModelsForAgent(agentId: string): {
   selectedModelId: string | null
   configId: string | null
 } | null {
-  const catalog = readAcpResourcesCache().modelsByAgentId?.[agentId]
-  if (!catalog?.models?.length) return null
+  const session = getCachedSessionCatalog(agentId)
+  if (!session?.models.length) return null
   return {
-    models: catalog.models,
-    selectedModelId: catalog.selectedModelId,
-    configId: catalog.configId,
+    models: session.models,
+    selectedModelId: session.selectedModelId,
+    configId: session.modelConfigId,
   }
+}
+
+export function getCachedSessionCatalog(agentId: string): AcpSessionCatalog | null {
+  const cat = readAcpResourcesCache().configByAgentId?.[agentId]
+  if (!cat) return null
+  const session = deriveSessionCatalog(cat)
+  if (!session.models.length && !session.modes.length && !session.configOptions.length) return null
+  return session
 }
 
 /** Test helper. */

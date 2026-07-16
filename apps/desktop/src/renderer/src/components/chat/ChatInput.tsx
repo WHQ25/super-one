@@ -43,7 +43,9 @@ import { SlashCommandContent } from './SlashCommandContent'
 import { StopButton } from './StopButton'
 import { groupItems, PopupSectionHeader } from './popup-groups'
 import { computeMatchingSlashCommands } from './chat-input/computeMatchingSlashCommands'
+import { resolveSlashCommandsForProvider } from './chat-input/resolveSlashCommandsForProvider'
 import { CodexGoalDialog } from './CodexGoalDialog'
+import { resolveProvider } from '@/stores/chat-store/helpers/provider-routing'
 
 export const chatInputAPI: {
   insertMention: ((kind: MentionKind, value: string, displayName: string) => void) | null
@@ -214,7 +216,7 @@ export function ChatInput() {
 
     const isRemoteLocked = useIsRemoteLocked()
     const isStreaming = status === 'streaming'
-    const activeProviderForResources = sessionProvider ?? preferredProvider
+    const activeProviderForResources = resolveProvider({ sessionProvider, preferredProvider })
     const isCodexPlanMode = activeProviderForResources === 'codex' && selectedCodexCollaborationMode === 'plan'
     const hasContent = text.trim().length > 0 || attachments.length > 0 || browserAnnotations.length > 0 || mentions.length > 0 || hasPasteChips
     const canSend = hasContent && !isRemoteLocked
@@ -242,7 +244,39 @@ export function ChatInput() {
       ...codexSkills.map((s): SlashCommandInfo => ({ name: s.name, description: s.description, argumentHint: '', isSkill: true })),
     ]), [t, codexPrompts, codexSkills])
 
-    const activeSlashCommands = activeProviderForResources === 'codex' ? codexSlashCommands : slashCommands
+    const acpSlashCommandsFromAgent = useActiveSession((s) => s.acpSlashCommands)
+    const acpAgentId = useActiveSession((s) => s.acpAgentId)
+    const acpAgents = useChatStore((s) => s.harnessResources?.acp?.agents)
+    const acpAgentName = acpAgents?.find((a) => a.id === acpAgentId)?.name
+    const acpSlashCommands = useMemo<SlashCommandInfo[]>(() => {
+      const local: SlashCommandInfo[] = [
+        { name: 'clear', description: t('chat.acpCommands.clearDesc'), argumentHint: '', isSkill: false },
+      ]
+      const seen = new Set(local.map((c) => c.name))
+      const agentCmds = Array.isArray(acpSlashCommandsFromAgent) ? acpSlashCommandsFromAgent : []
+      const fromAgent = agentCmds.filter((c) => {
+        const name = c.name.replace(/^\//, '').trim()
+        if (!name || seen.has(name)) return false
+        seen.add(name)
+        return true
+      }).map((c) => ({
+        ...c,
+        name: c.name.replace(/^\//, '').trim(),
+        // ACP available_commands are agent commands, never Claude project skills.
+        isSkill: false,
+      }))
+      return [...fromAgent, ...local]
+    }, [t, acpSlashCommandsFromAgent])
+
+    // Never fall through to project-level Claude slashCommands/skills for ACP.
+    const activeSlashCommands = useMemo(
+      () => resolveSlashCommandsForProvider(activeProviderForResources, {
+        claude: slashCommands,
+        codex: codexSlashCommands,
+        acp: acpSlashCommands,
+      }),
+      [activeProviderForResources, slashCommands, codexSlashCommands, acpSlashCommands],
+    )
 
     const matchingCommands = useMemo(
       () => computeMatchingSlashCommands(text, activeSlashCommands, activeProviderForResources),
@@ -870,6 +904,8 @@ export function ChatInput() {
         ? t('chat.placeholder.codexPlan')
         : activeProviderForResources === 'codex'
           ? t('chat.placeholder.codexAsk')
+        : activeProviderForResources === 'acp'
+          ? t('chat.placeholder.acpAsk', { agent: acpAgentName || t('chat.suggestions.acpLabel') })
         : permissionMode === 'plan'
           ? t('chat.placeholder.claudePlan')
           : t('chat.placeholder.claudeAsk')

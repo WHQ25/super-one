@@ -712,6 +712,8 @@ export class CodexBackend implements SessionBackend {
     this.providerSessionIdListeners.clear()
   }
 
+  async setSessionMode(_modeId: string): Promise<void> {}
+
   async setModel(_model: string): Promise<void> {
     this.assertStarted()
   }

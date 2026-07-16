@@ -70,6 +70,10 @@ class FakeBackend implements SessionBackend {
   }
 
   async setModel(_model: string): Promise<void> {}
+  setSessionModeCalls: string[] = []
+  async setSessionMode(modeId: string): Promise<void> {
+    this.setSessionModeCalls.push(modeId)
+  }
   setPermissionModeCalls: import('@superone/shared/agent-types').PermissionMode[] = []
   async setPermissionMode(mode: import('@superone/shared/agent-types').PermissionMode): Promise<void> {
     this.setPermissionModeCalls.push(mode)

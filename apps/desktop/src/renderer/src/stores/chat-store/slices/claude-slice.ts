@@ -18,9 +18,21 @@ export interface ClaudeSlice {
   setSelectedModel: (model: string) => void
   setSelectedEffort: (effort?: EffortLevel) => void
   setFastMode: (enabled: boolean) => void
+  setSelectedAcpMode: (modeId: string) => void
 }
 
 export const createClaudeSlice: StateCreator<ChatStore, [], [], ClaudeSlice> = (set, get) => ({
+  setSelectedAcpMode: (modeId) => {
+    const { activeProject } = get()
+    if (!activeProject) return
+    const session = getActivePerSession(get(), activeProject)
+    const provider = session.sessionProvider ?? session.preferredProvider
+    if (provider !== 'acp') return
+    if (session.selectedAcpModeId === modeId) return
+    set((s) => updateActivePerSession(s, () => ({ selectedAcpModeId: modeId })))
+    void window.agent.setSessionSettings(activeProject, { mode: modeId })
+  },
+
   setSelectedModel: (model) => {
     const state = get()
     const { activeProject } = state

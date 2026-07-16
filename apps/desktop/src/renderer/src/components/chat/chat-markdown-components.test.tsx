@@ -42,4 +42,28 @@ describe('FileLink chip rendering', () => {
     render(<FileLink href="https://example.com">docs</FileLink>)
     expect(screen.getByRole('link')).toHaveTextContent('docs')
   })
+
+  it('renders a bare relative path as a file chip, not an http link', () => {
+    useAppStore.setState({ currentFolder: PROJECT, _worktrees: {} })
+    render(
+      <FileLink href="apps/desktop/src/main/mcp/superone-mcp-server.ts">
+        superone-mcp-server.ts
+      </FileLink>,
+    )
+    const chip = screen.getByRole('button')
+    expect(chip).toHaveTextContent('superone-mcp-server.ts')
+    expect(screen.queryByRole('link')).toBeNull()
+  })
+
+  it('renders rehype-harden localhost artifacts as a file chip', () => {
+    useAppStore.setState({ currentFolder: PROJECT, _worktrees: {} })
+    render(
+      <FileLink href="https://localhost/apps/desktop/src/main/mcp/superone-mcp-server.ts">
+        superone-mcp-server.ts
+      </FileLink>,
+    )
+    const chip = screen.getByRole('button')
+    expect(chip).toHaveTextContent('superone-mcp-server.ts')
+    expect(screen.queryByRole('link')).toBeNull()
+  })
 })

@@ -12,7 +12,7 @@ import { toMentionPath } from '@/components/chat/chat-input-utils'
 import { DraggableFileIcon } from '@/components/chat/DraggableFileIcon'
 import { useAppStore, selectEffectiveProjectRoot } from '@/stores/app'
 import { useSourceControlStore } from '@/stores/source-control'
-import { clickReleasedOnSelection, parseFileLinkTarget } from '@/lib/file-link'
+import { clickReleasedOnSelection, resolveProjectFileHref } from '@/lib/file-link'
 import { requestOpenExternalLink } from '@/lib/external-link'
 
 export function InlineFileChip({ name, filePath, lineNumber }: { name: string; filePath: string; lineNumber?: number }) {
@@ -169,12 +169,11 @@ function LinkFavicon({ href }: { href: string }) {
 function FileLink(props: React.AnchorHTMLAttributes<HTMLAnchorElement>) {
   const { href: rawHref, children, className, ...rest } = props
   const projectRoot = selectEffectiveProjectRoot(useAppStore.getState())
-  const href = rawHref ? decodeURIComponent(rawHref) : rawHref
-  if (href && projectRoot) {
-    const { filePath, lineNumber } = parseFileLinkTarget(href)
-    if (filePath.startsWith(projectRoot + '/')) {
-      const name = filePath.split('/').pop() || ''
-      return <InlineFileChip name={name} filePath={filePath} lineNumber={lineNumber} />
+  if (rawHref && projectRoot) {
+    const resolved = resolveProjectFileHref(rawHref, projectRoot)
+    if (resolved) {
+      const name = resolved.filePath.split('/').pop() || ''
+      return <InlineFileChip name={name} filePath={resolved.filePath} lineNumber={resolved.lineNumber} />
     }
   }
   return (

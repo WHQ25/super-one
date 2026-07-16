@@ -26,7 +26,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { getAssistantCopyText } from './chat-message/getAssistantCopyText'
 import {
   formatTokens,
-  resolveMarkdownMedia,
+  resolveMarkdownLocalRefs,
 } from './chat-shared'
 import { RewindButton } from './RewindButton'
 import { ForkButton } from './ForkButton'
@@ -295,7 +295,7 @@ function TextBlock({ text, isStreaming, projectPath, afterThinking }: {
   projectPath?: string | null
   afterThinking?: boolean
 }) {
-  const resolved = projectPath ? resolveMarkdownMedia(text, projectPath) : text
+  const resolved = projectPath ? resolveMarkdownLocalRefs(text, projectPath) : text
   return (
     <div className={afterThinking ? 'mt-1 after-thinking' : undefined}>
       <CopyableMarkdown text={resolved} isStreaming={isStreaming} components={fileLinkComponents} />

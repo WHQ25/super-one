@@ -24,10 +24,16 @@ describe('chat markdown link hardening', () => {
     expect(html).toContain('<a')
   })
 
+  it('rewrites bare relative paths to https://localhost via defaultOrigin (pre-resolve target)', () => {
+    const html = renderMarkdown('see [superone-mcp-server.ts](apps/desktop/src/main/mcp/superone-mcp-server.ts)')
+    expect(html).toContain('href="https://localhost/apps/desktop/src/main/mcp/superone-mcp-server.ts"')
+  })
+
   it('preserves an absolute project-style path as an anchor', () => {
     const html = renderMarkdown('[file](/Users/me/repo/x.ts)')
     expect(html).not.toContain('[blocked]')
     expect(html).toContain('<a')
+    expect(html).toContain('href="/Users/me/repo/x.ts"')
   })
 
   it('degrades a javascript: link to text with no href and no [blocked] badge', () => {

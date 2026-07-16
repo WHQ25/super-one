@@ -21,7 +21,7 @@ vi.mock('./CodeBlock', () => ({ createStreamdownCodeComponent: () => ({}) }))
 vi.mock('./LinkSafetyModal', () => ({ LinkSafetyModal: () => null }))
 vi.mock('./markdown-image', () => ({ MarkdownImage: () => null }))
 
-import { resolveMarkdownMedia, formatTokens } from './chat-shared'
+import { resolveMarkdownMedia, resolveMarkdownFileLinks, resolveMarkdownLocalRefs, formatTokens } from './chat-shared'
 
 describe('formatTokens', () => {
   it('should return "0" for 0', () => {
@@ -153,5 +153,60 @@ describe('resolveMarkdownMedia', () => {
     const input = '![alt](./img.png "title")'
     const result = resolveMarkdownMedia(input, project)
     expect(result).toBe('![alt](local-file:///Users/foo/project/img.png "title")')
+  })
+})
+
+describe('resolveMarkdownFileLinks', () => {
+  const project = '/Users/foo/project'
+
+  it('rewrites bare relative file links to absolute project paths', () => {
+    const input = 'see [superone-mcp-server.ts](apps/desktop/src/main/mcp/superone-mcp-server.ts)'
+    expect(resolveMarkdownFileLinks(input, project)).toBe(
+      'see [superone-mcp-server.ts](/Users/foo/project/apps/desktop/src/main/mcp/superone-mcp-server.ts)',
+    )
+  })
+
+  it('rewrites ./ relative file links', () => {
+    expect(resolveMarkdownFileLinks('[x](./src/x.ts)', project)).toBe('[x](/Users/foo/project/src/x.ts)')
+  })
+
+  it('leaves absolute file links unchanged', () => {
+    const input = '[x](/Users/foo/project/src/x.ts)'
+    expect(resolveMarkdownFileLinks(input, project)).toBe(input)
+  })
+
+  it('leaves http links unchanged', () => {
+    const input = '[docs](https://example.com/path)'
+    expect(resolveMarkdownFileLinks(input, project)).toBe(input)
+  })
+
+  it('leaves scheme URLs unchanged', () => {
+    expect(resolveMarkdownFileLinks('[x](javascript:alert(1))', project)).toBe('[x](javascript:alert(1))')
+    expect(resolveMarkdownFileLinks('[x](mailto:a@b.com)', project)).toBe('[x](mailto:a@b.com)')
+  })
+
+  it('does not rewrite image syntax', () => {
+    const input = '![alt](./image.png)'
+    expect(resolveMarkdownFileLinks(input, project)).toBe(input)
+  })
+
+  it('preserves line anchors and titles', () => {
+    expect(resolveMarkdownFileLinks('[x](src/x.ts#L10)', project)).toBe(
+      '[x](/Users/foo/project/src/x.ts#L10)',
+    )
+    expect(resolveMarkdownFileLinks('[x](src/x.ts "title")', project)).toBe(
+      '[x](/Users/foo/project/src/x.ts "title")',
+    )
+  })
+})
+
+describe('resolveMarkdownLocalRefs', () => {
+  const project = '/Users/foo/project'
+
+  it('resolves both file links and media', () => {
+    const input = 'see [f](apps/a.ts) and ![i](./img.png)'
+    expect(resolveMarkdownLocalRefs(input, project)).toBe(
+      'see [f](/Users/foo/project/apps/a.ts) and ![i](local-file:///Users/foo/project/img.png)',
+    )
   })
 })

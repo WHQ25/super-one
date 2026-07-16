@@ -133,6 +133,7 @@ export const streamdownRehypePlugins: PluggableList = Object.values({
 }) as PluggableList
 
 const MD_IMAGE_RE = /!\[([^\]]*)\]\((?!https?:\/\/|data:|local-file:\/\/)([^)\s]+)([^)]*)\)/g
+const MD_FILE_LINK_RE = /(?<!!)\[([^\]]*)\]\((?!https?:\/\/|mailto:|data:|#|local-file:\/\/)([^)\s]+)([^)]*)\)/g
 
 function resolveLocalSrc(src: string, projectPath: string): string {
   const cleanSrc = src.replace(/^\.\//, '')
@@ -141,10 +142,23 @@ function resolveLocalSrc(src: string, projectPath: string): string {
     : toLocalFileUrl(`${projectPath}/${cleanSrc}`)
 }
 
+export function resolveMarkdownFileLinks(text: string, projectPath: string): string {
+  return text.replace(MD_FILE_LINK_RE, (match, label: string, src: string, rest: string) => {
+    if (src.startsWith('/') || /^[A-Za-z]:[\\/]/.test(src)) return match
+    if (/^[a-zA-Z][a-zA-Z0-9+.-]+:/.test(src)) return match
+    const cleanSrc = src.replace(/^\.\//, '')
+    return `[${label}](${projectPath}/${cleanSrc}${rest})`
+  })
+}
+
 export function resolveMarkdownMedia(text: string, projectPath: string): string {
   return text.replace(MD_IMAGE_RE, (_, alt, src, rest) => {
     return `![${alt}](${resolveLocalSrc(src, projectPath)}${rest})`
   })
+}
+
+export function resolveMarkdownLocalRefs(text: string, projectPath: string): string {
+  return resolveMarkdownMedia(resolveMarkdownFileLinks(text, projectPath), projectPath)
 }
 
 /** Format token count: plain number if < 1k, otherwise k with 1 decimal. */

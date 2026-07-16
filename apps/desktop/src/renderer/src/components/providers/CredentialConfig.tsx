@@ -358,8 +358,8 @@ function EndpointOverrideFields({
   // model remapping and a compatible-endpoint override make no sense there.
   const isFirstPartyAnthropic = platform.id === 'anthropic'
   const isAnthropic = endpoint.protocols.includes('anthropic-messages')
-  // Custom providers have no catalog, so the model dropdown would be empty — always let the
-  // user type model id + display name manually instead.
+  const planHasAnthropic = plan.endpoints.some((e) => e.protocols.includes('anthropic-messages'))
+  const supportsModelMapping = isAnthropic || (endpoint.protocols.includes('openai-chat') && !planHasAnthropic)
   const isCustom = isCustomPlatform(platform)
 
   return (
@@ -379,7 +379,7 @@ function EndpointOverrideFields({
         </label>
       )}
 
-      {isAnthropic && !isFirstPartyAnthropic && (
+      {supportsModelMapping && !isFirstPartyAnthropic && (
         <div className="flex flex-col gap-1.5">
           <span className="text-xs font-medium text-muted-foreground">{t('resources.providerDialog.modelMapping')}</span>
           {isCustom ? (

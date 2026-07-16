@@ -27,7 +27,7 @@ export function CodexModelSelector({ onCloseAutoFocus }: Props) {
   const selectedCodexModelOption = codexModels.find((m) => m.id === selectedCodexModel)
   const currentCodexModelName =
     selectedCodexModelOption
-      ? formatCodexModelLabel(selectedCodexModelOption.id || selectedCodexModelOption.name)
+      ? selectedCodexModelOption.name || formatCodexModelLabel(selectedCodexModelOption.id)
       : selectedCodexModel
         ? formatCodexModelLabel(selectedCodexModel)
         : null
@@ -42,9 +42,8 @@ export function CodexModelSelector({ onCloseAutoFocus }: Props) {
     : null
 
   useEffect(() => {
-    if (codexModelsLoading || codexModels.length > 0) return
     void refreshCodexModels()
-  }, [codexModelsLoading, codexModels.length, refreshCodexModels])
+  }, [])
 
   return (
     <div className="flex items-center gap-1">

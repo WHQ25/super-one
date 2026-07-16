@@ -1,5 +1,6 @@
 import type { ProviderModelEnv } from '../agent-types'
-import type { Platform, ServiceEndpoint } from './types'
+import { PROXY_TRANSFORMERS_ENV } from './protocols'
+import type { EndpointModel, Platform, ServiceEndpoint } from './types'
 
 // --- endpoint helpers ---------------------------------------------------------
 
@@ -12,8 +13,13 @@ function anthropic(
   return { id: opts.id ?? 'anthropic', baseUrl, protocols: ['anthropic-messages'], defaults }
 }
 
-function openaiChat(baseUrl: string, extraEnv?: Record<string, string>, id = 'openai'): ServiceEndpoint {
-  return { id, baseUrl, protocols: ['openai-chat'], defaults: extraEnv ? { extraEnv } : undefined }
+function openaiChat(
+  baseUrl: string,
+  opts: { extraEnv?: Record<string, string>; modelMapping?: ProviderModelEnv; models?: EndpointModel[]; id?: string } = {},
+): ServiceEndpoint {
+  const defaults =
+    opts.extraEnv || opts.modelMapping ? { extraEnv: opts.extraEnv, modelMapping: opts.modelMapping } : undefined
+  return { id: opts.id ?? 'openai', baseUrl, protocols: ['openai-chat'], defaults, models: opts.models }
 }
 
 // --- shared model mappings ----------------------------------------------------
@@ -75,6 +81,13 @@ const ARK_CODE_MODELS: ProviderModelEnv = {
   opus: { id: 'ark-code-latest', name: 'Ark Code Latest' },
   sonnet: { id: 'ark-code-latest', name: 'Ark Code Latest' },
   haiku: { id: 'ark-code-latest', name: 'Ark Code Latest' },
+}
+
+const NVIDIA_MODELS: ProviderModelEnv = {
+  default: { id: 'moonshotai/kimi-k2.6', name: 'Kimi K2.6' },
+  opus: { id: 'moonshotai/kimi-k2.6', name: 'Kimi K2.6' },
+  sonnet: { id: 'moonshotai/kimi-k2.6', name: 'Kimi K2.6' },
+  haiku: { id: 'moonshotai/kimi-k2.6', name: 'Kimi K2.6' },
 }
 
 const CODING_TIMEOUT = { API_TIMEOUT_MS: '3000000' }
@@ -521,7 +534,9 @@ export const BUILTIN_PLATFORMS: Platform[] = [
         apiKeyUrl: 'https://openrouter.ai/settings/keys',
         endpoints: [
           anthropic('https://openrouter.ai/api'),
-          openaiChat('https://openrouter.ai/api/v1', { OPENAI_BASE_URL: 'https://openrouter.ai/api/v1' }),
+          openaiChat('https://openrouter.ai/api/v1', {
+            extraEnv: { OPENAI_BASE_URL: 'https://openrouter.ai/api/v1' },
+          }),
         ],
       },
     ],
@@ -581,6 +596,7 @@ export const BUILTIN_PLATFORMS: Platform[] = [
     brand: 'nvidia',
     name: 'Nvidia NIM',
     description: 'Nvidia NIM — 通过 NVIDIA 推理微服务访问 AI 模型',
+    catalogProviderId: 'nvidia',
     plans: [
       {
         id: 'api',
@@ -588,14 +604,9 @@ export const BUILTIN_PLATFORMS: Platform[] = [
         auth: 'api-key',
         apiKeyUrl: 'https://build.nvidia.com/settings/api-keys',
         endpoints: [
-          anthropic('https://integrate.api.nvidia.com', {
-            extraEnv: { ...EMPTY_AUTH_TOKEN },
-            modelMapping: {
-              default: { id: 'moonshotai/kimi-k2.6', name: 'Kimi K2.6' },
-              opus: { id: 'moonshotai/kimi-k2.6', name: 'Kimi K2.6' },
-              sonnet: { id: 'moonshotai/kimi-k2.6', name: 'Kimi K2.6' },
-              haiku: { id: 'moonshotai/kimi-k2.6', name: 'Kimi K2.6' },
-            },
+          openaiChat('https://integrate.api.nvidia.com/v1', {
+            modelMapping: NVIDIA_MODELS,
+            extraEnv: { [PROXY_TRANSFORMERS_ENV]: 'openai,reasoning' },
           }),
         ],
       },

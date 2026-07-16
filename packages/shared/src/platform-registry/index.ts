@@ -98,6 +98,13 @@ export function selectEndpoint(
       if (protocol) return { endpoint: explicit, protocol }
     }
   }
+  if (harness) {
+    for (const proto of HARNESS_CHAT_PROTOCOLS[harness]) {
+      const endpoint = plan.endpoints.find((e) => e.protocols.includes(proto) && protocolServes(proto, task))
+      if (endpoint) return { endpoint, protocol: proto }
+    }
+    return undefined
+  }
   for (const e of plan.endpoints) {
     const protocol = pick(e)
     if (protocol) return { endpoint: e, protocol }

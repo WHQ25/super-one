@@ -246,6 +246,9 @@ describe('buildCodexProviderCliOverrides', () => {
       pairs.push(args[i + 1])
     }
     expect(pairs).toContain('model_provider=superone_custom')
+    expect(pairs).toContain('features.remote_plugin=false')
+    expect(pairs).toContain('features.apps=false')
+    expect(pairs).toContain('mcp_servers.node_repl.enabled=false')
     expect(pairs).toContain('model_providers.superone_custom.base_url="https://gw.example.com/v1"')
     expect(pairs).toContain('model_providers.superone_custom.env_key="CODEX_API_KEY"')
     expect(pairs).toContain('model_providers.superone_custom.wire_api="responses"')

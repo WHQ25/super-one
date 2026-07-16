@@ -204,7 +204,7 @@ export function AutomationDialog({
 
   const codexModelOptions = [
     { id: '', label: t('resources.automation.defaultValue') },
-    ...(cachedCodexModels ?? []).map((m) => ({ id: m.id, label: formatCodexModelLabel(m.id || m.name) })),
+    ...(cachedCodexModels ?? []).map((m) => ({ id: m.id, label: m.name || formatCodexModelLabel(m.id) })),
   ]
 
   const effortOptions = [

@@ -46,8 +46,12 @@ import { MobileBroadcaster } from './remote/mobile-broadcaster'
 import { PresenceCoordinator } from './remote/presence-coordinator'
 import { listWorktreePaths, loadSessionStateBySid, saveSessionStateBySid, updateProviderSessionId } from './session/session-repo'
 import { buildClaudeEnv, buildRemoteActiveService, resolveChatService } from './providers/resolver'
+import type { ProxyUpstream } from './providers/llm-proxy-manager'
+import { shutdownAll as shutdownAllProxies } from './providers/llm-proxy-manager'
 import { getBinding } from './providers/credential-store'
 import type { SessionProvider } from './session/types'
+import { expandProviderModelEnv } from '@superone/shared/agent-types'
+import { PROXY_TRANSFORMERS_ENV } from '@superone/shared/platform-registry'
 import {
   AgentIpcChannels,
   type CodexCollaborationMode,
@@ -163,6 +167,36 @@ function resolveBaseProviderConfig(provider: SessionProvider, apiProviderId: str
   if (!provider.isBase) return provider.config
   const resolved = resolveChatService(provider.harnessId, apiProviderId)
   if (!resolved) return provider.config
+
+  if (resolved.protocol === 'openai-chat') {
+    const name = resolved.brand
+    const modelMapping = resolved.modelMapping ?? {}
+    const prefixed: Record<string, { id: string; name?: string; description?: string }> = {}
+    for (const [bucket, slot] of Object.entries(modelMapping)) {
+      if (slot) prefixed[bucket] = { ...slot, id: `${name},${slot.id}` }
+    }
+    const transformersRaw = (resolved.extraEnv ?? {})[PROXY_TRANSFORMERS_ENV] ?? 'openai'
+    const apiBase = resolved.baseUrl.replace(/\/$/, '')
+    const proxy: ProxyUpstream = {
+      name,
+      api_base_url: `${apiBase}/chat/completions`,
+      api_key: resolved.apiKey,
+      models: Object.values(modelMapping).map((s) => s?.id).filter(Boolean) as string[],
+      transformers: transformersRaw.split(',').map((t) => t.trim()).filter(Boolean),
+    }
+    const env: Record<string, string> = {}
+    for (const [key, value] of Object.entries(resolved.extraEnv ?? {})) {
+      if (key !== PROXY_TRANSFORMERS_ENV) env[key] = value
+    }
+    Object.assign(env, expandProviderModelEnv(prefixed))
+    return {
+      apiKey: 'sk-superone-proxy',
+      baseUrl: undefined,
+      extraEnv: Object.keys(env).length > 0 ? env : undefined,
+      proxy,
+    }
+  }
+
   const env = buildClaudeEnv(resolved)
   const { ANTHROPIC_API_KEY, ANTHROPIC_BASE_URL, ...extraEnv } = env
   return {
@@ -704,13 +738,16 @@ function setAppMediaPermissions(appId: string, manifest: { permissions?: { media
 }
 
 
-function getOrCreateCodexSession(sessionId: string, projectPath: string, cwd?: string, gitBranch?: string | null) {
+function getOrCreateCodexSession(sessionId: string, projectPath: string, cwd?: string, gitBranch?: string | null, apiProviderId?: string | null) {
   const existing = sessionManager.getSession(sessionId)
   if (existing) {
     if (existing.snapshot.harnessId !== 'codex') {
       throw new Error(`Session ${sessionId} is not a codex session (harness=${existing.snapshot.harnessId})`)
     }
     sessionManager.setActiveSession(projectPath, existing.snapshot.id)
+    if (apiProviderId != null && existing.snapshot.apiProviderId !== apiProviderId) {
+      existing.setApiProviderId(apiProviderId)
+    }
     return existing
   }
   const fresh = sessionManager.createSession({
@@ -719,6 +756,7 @@ function getOrCreateCodexSession(sessionId: string, projectPath: string, cwd?: s
     providerId: 'codex-base',
     cwd,
     gitBranch: gitBranch ?? null,
+    apiProviderId: apiProviderId ?? null,
   })
   return fresh
 }
@@ -877,11 +915,11 @@ function registerIpcHandlers(): void {
       userMessageText?: string,
       gitBranch?: string,
       worktreePath?: string,
-      extras?: { contexts?: ChatMessageContext[]; userSelections?: string[]; userMessageContent?: ContentBlock[] },
+      extras?: { contexts?: ChatMessageContext[]; userSelections?: string[]; userMessageContent?: ContentBlock[]; apiProviderId?: string | null },
     ) => {
       const assistantMessageId = messageId ?? `codex_${Date.now()}`
       const persistedUserMessageId = userMessageId ?? `user_${Date.now()}`
-      const session = getOrCreateCodexSession(sessionId, projectPath, cwd, gitBranch)
+      const session = getOrCreateCodexSession(sessionId, projectPath, cwd, gitBranch, extras?.apiProviderId)
       return runCodexTurnViaSessionManager(session, assistantMessageId, {
         content: userMessageText ?? prompt,
         model,
@@ -907,10 +945,30 @@ function registerIpcHandlers(): void {
   )
 
   ipcMain.handle(AgentIpcChannels.CODEX_LIST_MODELS, async (_event, projectPath: string, apiProviderId?: string | null, force?: boolean) => {
-    const models = await codexService.listModels(projectPath, apiProviderId ?? null, force ?? false)
+    let models = await codexService.listModels(projectPath, apiProviderId ?? null, force ?? false)
+    const resolved = resolveChatService('codex', apiProviderId ?? null)
+    log.debug('[CODEX_LIST_MODELS] raw=%d protocol=%s models=%d hasMapping=%s apiProvider=%s',
+      models.length, resolved?.protocol ?? 'null', resolved?.models?.length ?? 0, String(Boolean(resolved?.modelMapping)), apiProviderId ?? 'null')
+    if (resolved && resolved.protocol === 'openai-chat') {
+      const catalogById = new Map<string, string>()
+      for (const m of (resolved.models ?? [])) if (m.name) catalogById.set(m.id, m.name)
+      const mapped = new Map<string, { id: string; name: string; isDefault: boolean }>()
+      for (const m of (resolved.models ?? [])) mapped.set(m.id, { id: m.id, name: m.name ?? m.id, isDefault: false })
+      for (const slot of Object.values(resolved.modelMapping ?? {})) {
+        if (!slot.id) continue
+        const strippedId = slot.id.replace(/\[1m\]/i, '')
+        if (!mapped.has(strippedId)) {
+          const name = slot.name?.replace(/\[1m\]/i, '').trim() || catalogById.get(strippedId) || strippedId
+          mapped.set(strippedId, { id: strippedId, name, isDefault: true })
+        }
+      }
+      models = [...mapped.values()]
+      log.debug('[CODEX_LIST_MODELS] overrode with %d models (enabled=%d mapped=%d)',
+        models.length, resolved.models?.length ?? 0, Object.keys(resolved.modelMapping ?? {}).length)
+    }
     const current = getCachedHarnessResources('codex')
     setCachedHarnessResources('codex', { models, prompts: current?.prompts ?? [] })
-    log.debug('[CODEX_LIST_MODELS] project=%s apiProvider=%s models=%s', projectPath, apiProviderId ?? 'default', JSON.stringify(models))
+    log.debug('[CODEX_LIST_MODELS] done project=%s apiProvider=%s models=%d', projectPath, apiProviderId ?? 'default', models.length)
     return models
   })
 
@@ -1083,10 +1141,10 @@ function registerIpcHandlers(): void {
       userMessageText?: string,
       gitBranch?: string,
       worktreePath?: string,
-      extras?: { contexts?: ChatMessageContext[]; userSelections?: string[]; userMessageContent?: ContentBlock[] },
+      extras?: { contexts?: ChatMessageContext[]; userSelections?: string[]; userMessageContent?: ContentBlock[]; apiProviderId?: string | null },
     ) => {
       const assistantMessageId = messageId ?? `codex_${Date.now()}`
-      const session = getOrCreateCodexSession(sessionId, projectPath, cwd, gitBranch)
+      const session = getOrCreateCodexSession(sessionId, projectPath, cwd, gitBranch, extras?.apiProviderId)
       return runCodexTurnViaSessionManager(session, assistantMessageId, {
         content: userMessageText ?? '/review',
         model,
@@ -1124,10 +1182,10 @@ function registerIpcHandlers(): void {
       userMessageText?: string,
       gitBranch?: string,
       worktreePath?: string,
-      extras?: { contexts?: ChatMessageContext[]; userSelections?: string[]; userMessageContent?: ContentBlock[] },
+      extras?: { contexts?: ChatMessageContext[]; userSelections?: string[]; userMessageContent?: ContentBlock[]; apiProviderId?: string | null },
     ) => {
       const assistantMessageId = messageId ?? `codex_${Date.now()}`
-      const session = getOrCreateCodexSession(sessionId, projectPath, cwd, gitBranch)
+      const session = getOrCreateCodexSession(sessionId, projectPath, cwd, gitBranch, extras?.apiProviderId)
       return runCodexTurnViaSessionManager(session, assistantMessageId, {
         content: userMessageText ?? '/compact',
         model,
@@ -2973,6 +3031,7 @@ let quitting = false
 function performQuit(): void {
   quitting = true
   if (terminalSweepTimer) clearInterval(terminalSweepTimer)
+  shutdownAllProxies()
   terminalManager.killAll()
   automationService.stop()
   stopAllWorkers()

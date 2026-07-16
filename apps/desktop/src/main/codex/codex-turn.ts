@@ -3,6 +3,7 @@ import { tmpdir } from 'os'
 import { basename, extname, join } from 'path'
 import log from '../logger'
 import { trace } from '../agent/event-trace'
+import { ensureCodexProxyUrl } from '../providers/llm-proxy-manager'
 import {
   asRecord,
   buildCollaborationMode,
@@ -1156,7 +1157,11 @@ export async function resolveThread(
   cwd: string,
   permissionProfile: ReturnType<typeof resolvePermissionProfile>,
 ): Promise<string> {
-  const providerOverride = getCodexProviderOverrideFor(session.apiProviderId)
+  let providerOverride = getCodexProviderOverrideFor(session.apiProviderId)
+  const proxyUrl = await ensureCodexProxyUrl(session.apiProviderId)
+  if (proxyUrl && providerOverride) {
+    providerOverride = { ...providerOverride, info: { ...providerOverride.info, base_url: proxyUrl } }
+  }
   const threadConfig = buildThreadConfig(session.superoneSessionId, permissionProfile, providerOverride)
   const modelProvider = providerOverride?.id
   if (session.threadId && session.threadReady) {

@@ -211,7 +211,7 @@ export function CodexModelList({
               active ? 'bg-accent text-accent-foreground' : 'text-foreground hover:bg-accent/50'
             }`}
           >
-            <div className="font-medium">{formatCodexModelLabel(model.id || model.name)}</div>
+            <div className="font-medium">{model.name || formatCodexModelLabel(model.id)}</div>
             {active && <Check className="size-3.5 shrink-0 text-primary" />}
           </button>
         )

@@ -16,7 +16,7 @@ import {
   validateRegistry,
 } from './index'
 import type { WireProtocol } from './protocols'
-import type { Platform } from './types'
+import type { Plan, Platform } from './types'
 
 describe('builtin registry', () => {
   it('passes structural validation (unique ids, known protocols)', () => {
@@ -62,9 +62,10 @@ describe('selectEndpoint', () => {
     expect(claude?.protocol).toBe('anthropic-messages')
   })
 
-  it('does not resolve chat:codex against a chat-completions-only endpoint (codex is Responses-only)', () => {
+  it('resolves chat:codex against a chat-completions-only endpoint (bridged through proxy)', () => {
     const plan = findPlatform(BUILTIN_PLATFORMS, 'openrouter')!.plans[0]
-    expect(selectEndpoint(plan, 'chat:codex')).toBeUndefined()
+    const resolved = selectEndpoint(plan, 'chat:codex')
+    expect(resolved?.protocol).toBe('openai-chat')
   })
 
   it('resolves chat:codex to the openai-responses protocol on a responses endpoint', () => {
@@ -80,6 +81,33 @@ describe('selectEndpoint', () => {
   it('honors an explicit valid endpointId', () => {
     const plan = findPlatform(BUILTIN_PLATFORMS, 'openrouter')!.plans[0]
     expect(selectEndpoint(plan, 'chat:claude', 'anthropic')?.endpoint.id).toBe('anthropic')
+  })
+
+  it('prefers anthropic-messages for chat:claude even when an openai-chat endpoint is listed first', () => {
+    const plan: Plan = {
+      id: 'api',
+      name: 'API',
+      auth: 'api-key',
+      endpoints: [
+        { id: 'openai', baseUrl: 'https://x/v1', protocols: ['openai-chat'] },
+        { id: 'anthropic', baseUrl: 'https://x/anthropic', protocols: ['anthropic-messages'] },
+      ],
+    }
+    const claude = selectEndpoint(plan, 'chat:claude')
+    expect(claude?.endpoint.id).toBe('anthropic')
+    expect(claude?.protocol).toBe('anthropic-messages')
+  })
+
+  it('falls back to an openai-chat endpoint for chat:claude when no anthropic-messages endpoint exists', () => {
+    const plan: Plan = {
+      id: 'api',
+      name: 'API',
+      auth: 'api-key',
+      endpoints: [{ id: 'openai', baseUrl: 'https://x/v1/chat/completions', protocols: ['openai-chat'] }],
+    }
+    const claude = selectEndpoint(plan, 'chat:claude')
+    expect(claude?.endpoint.id).toBe('openai')
+    expect(claude?.protocol).toBe('openai-chat')
   })
 
   it('derives media capability from the credential enabled models', () => {

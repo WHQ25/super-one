@@ -52,6 +52,15 @@ export function resolveService(consumer: ConsumerId, override?: ResolveOverride)
 
   const merged = mergeEndpoint(endpoint, cred.overrides?.[endpoint.id], usingBoundCredential ? binding?.config : undefined)
 
+  const modelMapping = Object.keys(merged.modelMapping).length > 0
+    ? merged.modelMapping
+    : protocol === 'openai-chat'
+      ? plan.endpoints
+          .filter((e) => e.protocols.includes('anthropic-messages'))
+          .map((e) => mergeEndpoint(e, cred.overrides?.[e.id], usingBoundCredential ? binding?.config : undefined).modelMapping)
+          .find((m) => Object.keys(m).length > 0)
+      : undefined
+
   return {
     platformId: platform.id,
     brand: platform.brand,
@@ -64,7 +73,7 @@ export function resolveService(consumer: ConsumerId, override?: ResolveOverride)
     apiKey: credentialApiKey(cred),
     auth: plan.auth,
     models: merged.models,
-    modelMapping: Object.keys(merged.modelMapping).length > 0 ? merged.modelMapping : undefined,
+    modelMapping: modelMapping && Object.keys(modelMapping).length > 0 ? modelMapping : undefined,
     extraEnv: Object.keys(merged.extraEnv).length > 0 ? merged.extraEnv : undefined,
   }
 }

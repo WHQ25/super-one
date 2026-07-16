@@ -6,6 +6,7 @@ import log from '../logger'
 import { trace } from '../agent/event-trace'
 import { CODEX_SYSTEM_PROMPT_APPEND } from '../agent/superone-system-prompt'
 import { resolveChatService } from '../providers/resolver'
+import { ensureCodexProxyUrl, getCodexProxyUrl } from '../providers/llm-proxy-manager'
 import { ProcessTitle } from '../process-titles'
 import {
   CODEX_PERMISSION_PRESETS,
@@ -24,6 +25,16 @@ import type {
 } from '@superone/shared/agent-types'
 
 export const APP_SERVER_RESPONSE_TIMEOUT_MS = 15_000
+
+export const APP_SERVER_THREAD_LIFECYCLE_TIMEOUT_MS = 70_000
+
+const APP_SERVER_SLOW_METHODS = new Set<string>(['thread/start', 'thread/resume'])
+
+export function appServerTimeoutForMethod(method: string): number {
+  return APP_SERVER_SLOW_METHODS.has(method)
+    ? APP_SERVER_THREAD_LIFECYCLE_TIMEOUT_MS
+    : APP_SERVER_RESPONSE_TIMEOUT_MS
+}
 
 export const APP_SERVER_BACKPRESSURE_CODE = -32001
 export const APP_SERVER_BACKPRESSURE_MAX_ATTEMPTS = 3
@@ -292,7 +303,12 @@ function tomlOverrideValue(value: unknown): string {
 
 export function buildCodexProviderCliOverrides(override: CodexProviderOverride | null): string[] {
   if (!override) return []
-  const args: string[] = ['-c', `model_provider=${override.id}`]
+  const args: string[] = [
+    '-c', `model_provider=${override.id}`,
+    '-c', 'features.remote_plugin=false',
+    '-c', 'features.apps=false',
+    '-c', 'mcp_servers.node_repl.enabled=false',
+  ]
   for (const [key, value] of Object.entries(override.info)) {
     if (value === undefined || value === null) continue
     args.push('-c', `model_providers.${override.id}.${key}=${tomlOverrideValue(value)}`)
@@ -304,7 +320,8 @@ export function getCodexProviderOverrideFor(apiProviderId?: string | null): Code
   const resolved = resolveChatService('codex', apiProviderId ?? null)
   const baseUrl = resolved?.baseUrl?.trim()
   if (!resolved || !baseUrl) return null
-  return makeCodexProviderOverride(resolved.brand, baseUrl)
+  const proxyUrl = getCodexProxyUrl(apiProviderId ?? null)
+  return makeCodexProviderOverride(resolved.brand, proxyUrl ?? baseUrl)
 }
 
 export function getCodexProviderOverride(): CodexProviderOverride | null {
@@ -333,6 +350,7 @@ export function buildAppServerEnv(auth: CodexProjectAuth, apiProviderId?: string
   const resolved = resolveChatService('codex', apiProviderId ?? null)
   if (resolved && resolved.baseUrl.trim()) {
     if (resolved.apiKey) env.CODEX_API_KEY = resolved.apiKey
+    else delete env.CODEX_API_KEY
     if (resolved.extraEnv) Object.assign(env, resolved.extraEnv)
     return env
   }
@@ -402,6 +420,7 @@ export async function createAppServerConnection(
   }
 
   const baseEnv = envOverride ?? buildAppServerEnv(auth, apiProviderId)
+  await ensureCodexProxyUrl(apiProviderId)
   const overrideArgs = cliOverrides ?? buildCodexProviderCliOverrides(getCodexProviderOverrideFor(apiProviderId))
   const expectedPackage = resolveCodexPlatformPackage()
   const hasBundledPackage = expectedPackage ? hasCodexPlatformPackage(expectedPackage) : false
@@ -445,8 +464,15 @@ export async function createAppServerConnection(
   const rl = createInterface({ input: stdout })
   const iterator = rl[Symbol.asyncIterator]()
   const stderrChunks: string[] = []
+  const liveStderr = process.env.NODE_ENV === 'development' && !!process.env.RUST_LOG
   child.stderr?.setEncoding('utf8')
-  child.stderr?.on('data', (chunk: string) => stderrChunks.push(chunk))
+  child.stderr?.on('data', (chunk: string) => {
+    stderrChunks.push(chunk)
+    if (liveStderr) {
+      const line = chunk.replace(/\s+$/, '')
+      if (line) log.info('[codex.stderr] %s', line)
+    }
+  })
 
   const onAbort = () => {
     if (!child.killed) child.kill()
@@ -581,14 +607,14 @@ export async function createAppServerConnection(
     }
   })()
 
-  const waitForResponse = (id: number, label: string): Promise<Record<string, unknown>> => {
+  const waitForResponse = (id: number, label: string, timeoutMs: number): Promise<Record<string, unknown>> => {
     if (readerError) return Promise.reject(readerError)
     const key = String(id)
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         responseWaiters.delete(key)
-        reject(new Error(`Codex app-server ${label} timed out after ${APP_SERVER_RESPONSE_TIMEOUT_MS}ms`))
-      }, APP_SERVER_RESPONSE_TIMEOUT_MS)
+        reject(new Error(`Codex app-server ${label} timed out after ${timeoutMs}ms`))
+      }, timeoutMs)
       responseWaiters.set(key, { resolve, reject, timer })
     })
   }
@@ -601,7 +627,7 @@ export async function createAppServerConnection(
     if (isDev) trace('codex.appserver.request', method, { requestId, params }, String(requestId))
     await sendMessage(compactRecord({ id: requestId, method, params }))
     try {
-      const result = await waitForResponse(requestId, method)
+      const result = await waitForResponse(requestId, method, appServerTimeoutForMethod(method))
       if (isDev) trace('codex.appserver.response', method, { requestId, ok: true, result }, String(requestId))
       return result
     } catch (err) {

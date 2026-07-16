@@ -32,6 +32,7 @@ export default defineConfig(({ mode }) => {
         input: {
           index: resolve('src/main/index.ts'),
           'superone-mcp-stdio-bridge': resolve('src/main/mcp/superone-mcp-stdio-bridge.ts'),
+          'llm-proxy-entry': resolve('src/main/providers/llm-proxy-entry.ts'),
         },
         output: {
           format: 'es',

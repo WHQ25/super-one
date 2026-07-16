@@ -27,14 +27,16 @@ import log from '../../logger'
 import { trace } from '../../agent/event-trace'
 import type { BackendStartOptions, HarnessId, SessionBackend } from '../types'
 import { readAppSettings } from '../../app-settings-service'
-import { listSkills } from '../../skills-service'
+import { ensureProxy, type ProxyUpstream } from '../../providers/llm-proxy-manager'
 import { getSandboxCapability } from '../../sandbox-platform'
+import { listSkills } from '../../skills-service'
 
 interface ClaudeConfig {
   apiKey?: string
   baseUrl?: string
   model?: string
   extraEnv?: Record<string, string>
+  proxy?: ProxyUpstream
 }
 
 export class ClaudeBackend implements SessionBackend {
@@ -70,6 +72,7 @@ export class ClaudeBackend implements SessionBackend {
   private _spawnedAdditionalDirs: string[] = []
   private activeBackgroundTasks: Map<string, BackgroundTaskInfo> | null = null
   private _idleTimer: ReturnType<typeof setInterval> | null = null
+  private _proxyBaseUrl: string | null = null
   private _activeRuntimeKey: string | null = null
 
   static IDLE_TIMEOUT_MS = 180_000
@@ -100,7 +103,11 @@ export class ClaudeBackend implements SessionBackend {
     const config = (opts.config ?? {}) as ClaudeConfig
     const custom: Record<string, string | undefined> = { ...(config.extraEnv ?? {}) }
     if (config.apiKey) custom.ANTHROPIC_API_KEY = config.apiKey
-    if (config.baseUrl) custom.ANTHROPIC_BASE_URL = config.baseUrl
+    if (this._proxyBaseUrl) {
+      custom.ANTHROPIC_BASE_URL = this._proxyBaseUrl
+    } else if (config.baseUrl) {
+      custom.ANTHROPIC_BASE_URL = config.baseUrl
+    }
     const { canUseTool, trackPlanFile } = this.ensurePermissionHandles()
     const claudePref = readAppSettings().agentPreference.claude
     const disabled = claudePref.disabledSkills
@@ -132,6 +139,11 @@ export class ClaudeBackend implements SessionBackend {
     if (this.bridge) throw new Error('ClaudeBackend already started')
     this._lastStartOpts = opts
     this._spawnedAdditionalDirs = [...(opts.additionalDirectories ?? [])]
+    const config = (opts.config ?? {}) as ClaudeConfig
+    if (config.proxy) {
+      const { url } = await ensureProxy(config.proxy)
+      this._proxyBaseUrl = url
+    }
     this.bridge = new MessageBridge()
     this.bridge.onConsumed = (tag) => {
       this.emit({ type: 'queued_message_consumed', clientMessageId: tag })
@@ -364,6 +376,8 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   prewarm(opts: BackendStartOptions): void {
+    const config = (opts.config ?? {}) as ClaudeConfig
+    if (config.proxy) return
     try {
       const options = buildClaudeOptions(this.buildQueryOptions(opts))
       if (this.query && this._activeRuntimeKey === WarmupManager.keyOf(options)) return

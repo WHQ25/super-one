@@ -21,6 +21,7 @@ type UserMessageExtras = {
   contexts?: ChatMessageContext[]
   userSelections?: string[]
   userMessageContent?: ContentBlock[]
+  apiProviderId?: string | null
 }
 
 const agentAPI = {

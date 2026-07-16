@@ -89,8 +89,7 @@ export const FAMILY_TASKS: Record<ProtocolFamily, CapabilityTask[]> = {
 /**
  * Opt-in wire protocols a family exposes as separate toggles beyond its capability tasks — a second wire
  * for a task already served by another protocol. OpenAI's Responses wire serves the same chat task as
- * chat/completions but is the ONLY wire codex can reach (HARNESS_CHAT_PROTOCOLS.codex), so a custom
- * OpenAI endpoint must opt into it to drive Codex. Empty for families with a single chat wire.
+ * chat/completions and is codex's native wire; codex also accepts openai-chat through the built-in proxy.
  */
 export const FAMILY_EXTRA_PROTOCOLS: Record<ProtocolFamily, WireProtocol[]> = {
   anthropic: [],
@@ -149,10 +148,12 @@ export function customPlatformEndpoints(
 
 /**
  * The protocols a chat harness consumer accepts, in preference order.
- * codex speaks the Responses wire **exclusively** — it cannot use `openai-chat`, so a
- * chat-completions endpoint must never resolve for `chat:codex`.
+ * codex speaks Responses wire natively; openai-chat providers are bridged through the
+ * built-in Responses→Chat proxy (see llm-proxy-manager ensureCodexProxyUrl).
  */
 export const HARNESS_CHAT_PROTOCOLS: Record<'claude' | 'codex', WireProtocol[]> = {
-  claude: ['anthropic-messages'],
-  codex: ['openai-responses'],
+  claude: ['anthropic-messages', 'openai-chat'],
+  codex: ['openai-responses', 'openai-chat'],
 }
+
+export const PROXY_TRANSFORMERS_ENV = 'SUPERONE_PROXY_TRANSFORMERS'

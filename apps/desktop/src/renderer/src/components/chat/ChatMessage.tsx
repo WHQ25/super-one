@@ -999,6 +999,7 @@ const TERMINAL_REASON_LABELS: Record<string, string> = {
   max_turns: 'Max turns',
   aborted_tools: 'Aborted',
   blocking_limit: 'Blocked',
+  api_error: 'API Error',
 }
 function formatTerminalReason(reason: string): string {
   return TERMINAL_REASON_LABELS[reason] ?? reason.replace(/_/g, ' ')

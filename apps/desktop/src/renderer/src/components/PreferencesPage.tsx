@@ -656,7 +656,7 @@ function CodexPreferencesPage() {
                   className={pillTriggerClass}
                 >
                   <span className="max-w-[160px] truncate">
-                    {defaultModel ? formatCodexModelLabel(defaultModel) : t('common.systemDefault')}
+                    {defaultModel ? (selectedModel?.name || formatCodexModelLabel(defaultModel)) : t('common.systemDefault')}
                   </span>
                   <ChevronDown className={`size-3 transition-transform duration-200 ${modelOpen ? 'rotate-180' : ''}`} />
                 </button>

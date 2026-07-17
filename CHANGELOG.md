@@ -4,6 +4,23 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.45.2-alpha] - 2026-07-17
+
+### Added
+
+- Codex consecutive reasoning items now merge into a single Thought block instead of rendering each separately
+- ACP reliably unwraps Grok's use_tool message envelope and maps SearchTools to native chat tool blocks
+- ACP sessions carry the SuperOne MCP tools, a host system prompt, and the provider session id visible in the admin console
+- MCP stdio surface now exposes browser tools (read_url, write_url, search_url) for use by any MCP client
+
+### Fixed
+
+- Project-relative markdown links (e.g. ./src/foo.ts) in chat messages now render as clickable file chips
+
+### Performance
+
+- Sidebar folder sessions and project workers use shallow comparison to skip no-op state updates and avoid unnecessary re-renders
+
 ## [0.45.1-alpha] - 2026-07-17
 
 ### Added

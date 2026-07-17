@@ -163,11 +163,9 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
     }
   }, [allSessions, folder.path, isExpanded, maxSessions, liveSessionSig, expandLevel])
 
-  const allWorkers = useMiniAppStore((s) => s.workers)
-  const projectWorkers = useMemo(
-    () => allWorkers.filter((w) => w.projectDir === folder.path),
-    [allWorkers, folder.path],
-  )
+  const projectWorkers = useMiniAppStore(useShallow((s) =>
+    s.workers.filter((w) => w.projectDir === folder.path),
+  ))
   const handleStopWorker = useCallback((appId: string) => {
     window.miniapp.workerStop(folder.path, appId).catch(() => {})
   }, [folder.path])

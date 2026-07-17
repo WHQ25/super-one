@@ -22,6 +22,7 @@ import {
 import { useChatStore } from '@/stores/chat'
 import { useAppStore, type SidebarTab } from '@/stores/app'
 import { useShallow } from 'zustand/react/shallow'
+import { shallow } from 'zustand/shallow'
 import { useFullscreen } from '@/hooks/useFullscreen'
 import { useRemoteStatus } from '@/hooks/useRemoteStatus'
 
@@ -49,6 +50,7 @@ type SortMode = 'recent' | 'added'
 
 const MAX_DISPLAY_SESSIONS = 12
 const SESSIONS_FETCH_LIMIT = MAX_DISPLAY_SESSIONS + 1
+const EMPTY_SESSIONS: SessionHistoryEntry[] = []
 
 export const AppSidebar = memo(function AppSidebar() {
   const { t } = useTranslation()
@@ -142,7 +144,13 @@ export const AppSidebar = memo(function AppSidebar() {
           if (page.length < SESSIONS_FETCH_LIMIT) break
           offset += page.length
         }
-        setFolderSessions((prev) => ({ ...prev, [folderPath]: sessions }))
+        setFolderSessions((prev) => {
+          const existing = prev[folderPath]
+          if (existing && existing.length === sessions.length && existing.every((session, i) => shallow(session, sessions[i]))) {
+            return prev
+          }
+          return { ...prev, [folderPath]: sessions }
+        })
         traceSidebar('sessions_load:end', {
           folderPath,
           reason,
@@ -486,7 +494,7 @@ export const AppSidebar = memo(function AppSidebar() {
                     key={folder.path}
                     folder={folder}
                     isExpanded={expandedFolders.has(folder.path)}
-                    sessions={folderSessions[folder.path] ?? []}
+                    sessions={folderSessions[folder.path] ?? EMPTY_SESSIONS}
                     maxSessions={MAX_DISPLAY_SESSIONS}
                     onToggleExpand={toggleExpand}
                     onSwitchSession={handleSwitchSession}

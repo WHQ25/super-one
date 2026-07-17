@@ -1,6 +1,7 @@
 import { sep } from 'path'
 import { homedir } from 'os'
 import { spawn } from 'child_process'
+import { sanitizeEnv } from '../spawn-env'
 import type { McpbManifest, McpbMcpConfig, McpbServerType, McpbUserConfigValues, McpbRuntimeAvailability } from '@superone/shared/mcpb-types'
 
 export type { McpbUserConfigValues } from '@superone/shared/mcpb-types'
@@ -35,7 +36,7 @@ function mergePlatformOverride(cfg: McpbMcpConfig, platform: NodeJS.Platform): M
   return {
     command: override.command ?? cfg.command,
     args: override.args ?? cfg.args,
-    env: { ...cfg.env, ...(override.env ?? {}) },
+    env: sanitizeEnv({ ...cfg.env, ...(override.env ?? {}) }),
     platform_overrides: cfg.platform_overrides,
   }
 }

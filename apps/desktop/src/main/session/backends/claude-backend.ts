@@ -13,6 +13,7 @@ import {
   type PendingQuestion,
   type PendingPlanApproval,
 } from '../../agent/claude-permissions'
+import { buildSafeEnv } from '../../spawn-env'
 import type {
   AgentEvent,
   ContextUsageInfo,
@@ -130,7 +131,7 @@ export class ClaudeBackend implements SessionBackend {
       resume: opts.providerSessionId,
       abortController: opts.abortController,
       additionalDirectories: opts.additionalDirectories,
-      env: Object.keys(custom).length > 0 ? { ...process.env, ...custom } : undefined,
+      env: Object.keys(custom).length > 0 ? buildSafeEnv(custom) : undefined,
       enabledSkills,
       askUserQuestionPreviewFormat: claudePref.askUserQuestionPreviewFormat,
     }

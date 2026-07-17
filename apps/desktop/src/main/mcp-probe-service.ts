@@ -6,6 +6,7 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js'
 import type { McpCheckResult, McpServerConfig, McpServerInfo, McpServerMeta, McpToolInfo } from '@superone/shared/agent-types'
+import { buildSafeEnv } from './spawn-env'
 
 const CACHE_FILE = 'mcp-server-meta-cache.json'
 
@@ -70,7 +71,7 @@ async function checkOne(config: McpServerConfig): Promise<{ status: McpServerInf
     transport = new StdioClientTransport({
       command: config.command,
       args: config.args,
-      env: { ...process.env, ...(config.env ?? {}) } as Record<string, string>,
+      env: buildSafeEnv(config.env ?? {}) as Record<string, string>,
     })
   } else {
     return {

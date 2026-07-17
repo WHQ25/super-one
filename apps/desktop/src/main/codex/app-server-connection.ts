@@ -8,6 +8,7 @@ import { CODEX_SYSTEM_PROMPT_APPEND } from '../agent/superone-system-prompt'
 import { resolveChatService } from '../providers/resolver'
 import { ensureCodexProxyUrl, getCodexProxyUrl } from '../providers/llm-proxy-manager'
 import { ProcessTitle } from '../process-titles'
+import { buildSafeEnv } from '../spawn-env'
 import {
   CODEX_PERMISSION_PRESETS,
   DEFAULT_CODEX_PERMISSION_PRESET,
@@ -343,7 +344,7 @@ export function buildCodexProviderTestEnv(apiKey: string, extraEnv: string): Nod
 }
 
 export function buildAppServerEnv(auth: CodexProjectAuth, apiProviderId?: string | null): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = { ...process.env }
+  const env = buildSafeEnv()
   if (process.versions.electron) {
     env.ELECTRON_RUN_AS_NODE = '1'
   }

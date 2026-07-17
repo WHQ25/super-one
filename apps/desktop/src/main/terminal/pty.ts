@@ -1,4 +1,5 @@
 import { createRequire } from 'node:module'
+import { sanitizeEnv } from '../spawn-env'
 
 const nodeRequire = createRequire(import.meta.url)
 
@@ -58,7 +59,7 @@ function getSystemUtf8Locale(): string {
 export const nodePtySpawner: PtySpawner = {
   spawn(opts: PtySpawnOptions): PtyLike {
     const { spawn } = nodeRequire('node-pty') as typeof import('node-pty')
-    const baseEnv: Record<string, string> = { ...process.env, ...opts.env } as Record<string, string>
+    const baseEnv = sanitizeEnv(process.env, opts.env) as Record<string, string>
     const env: Record<string, string> = { ...baseEnv, TERM: 'xterm-256color' }
     if (process.platform !== 'win32') {
       if (!env.LANG && !env.LC_ALL) env.LANG = getSystemUtf8Locale()

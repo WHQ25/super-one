@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process'
+import { buildSafeEnv } from '../spawn-env'
 import { randomBytes } from 'node:crypto'
 import { RequestError } from '@agentclientprotocol/sdk'
 import type {
@@ -84,7 +85,7 @@ export class AcpTerminalManager {
         : (() => { throw RequestError.invalidParams({ cwd: params.cwd }, 'cwd outside allowed roots') })())
       : this.projectPath
 
-    const env: NodeJS.ProcessEnv = { ...process.env }
+    const env: NodeJS.ProcessEnv = buildSafeEnv()
     for (const item of params.env ?? []) {
       if (item?.name) env[item.name] = item.value ?? ''
     }

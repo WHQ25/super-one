@@ -4,6 +4,7 @@ import { join } from 'path'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
 import { fixPath } from '../agent/resolve-cli'
+import { buildSafeEnv } from '../spawn-env'
 import { BUILTIN_ACP_AGENTS, type AcpAgentDefinition } from './agent-catalog'
 
 const execFileAsync = promisify(execFile)
@@ -98,7 +99,7 @@ async function whichCommand(command: string, pathEnv: string): Promise<string | 
   try {
     const { stdout } = await execFileAsync(whichBin, [command], {
       timeout: 400,
-      env: { ...process.env, PATH: pathEnv },
+      env: buildSafeEnv({ PATH: pathEnv }),
     })
     const first = stdout.split(/\r?\n/).map((s) => s.trim()).find(Boolean)
     if (first && isExecutable(first)) return first

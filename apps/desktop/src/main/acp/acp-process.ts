@@ -3,6 +3,7 @@ import { Readable, Writable } from 'stream'
 import type { Stream } from '@agentclientprotocol/sdk'
 import { ndJsonStream } from '@agentclientprotocol/sdk'
 import log from '../logger'
+import { buildSafeEnv } from '../spawn-env'
 import type { ResolvedAcpLaunch } from './agent-catalog'
 
 export interface AcpProcessHandle {
@@ -13,7 +14,7 @@ export interface AcpProcessHandle {
 }
 
 export function spawnAcpProcess(launch: ResolvedAcpLaunch): AcpProcessHandle {
-  const env = { ...process.env, ...launch.env } as NodeJS.ProcessEnv
+  const env = buildSafeEnv(launch.env)
   const child = spawn(launch.command, launch.args, {
     cwd: launch.cwd,
     env,

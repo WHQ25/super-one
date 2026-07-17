@@ -38,6 +38,7 @@ import { resolveSdkClaudeBinary } from './agent/claude-binary'
 import { disposeGlobalWarmupManager } from './agent/warmup-manager'
 import { resolveProbeCwd } from './agent/probe-cwd'
 import { fixPath } from './agent/resolve-cli'
+import { buildSafeEnv } from './spawn-env'
 import { AgentService } from './agent/agent-service'
 import { SessionManagerImpl } from './session/session-manager'
 import { TerminalManager } from './terminal/terminal-manager'
@@ -2109,12 +2110,11 @@ function registerIpcHandlers(): void {
       ? 'irm https://claude.ai/install.ps1 | iex'
       : (testInstall ? testCmd : 'curl -fsSL https://claude.ai/install.sh | bash')
 
-    const colorEnv = {
-      ...process.env,
+    const colorEnv = buildSafeEnv({
       TERM: 'xterm-256color',
       FORCE_COLOR: '1',
       CLICOLOR_FORCE: '1',
-    }
+    })
     const child = isWin
       ? spawn('powershell', ['-NoProfile', '-Command', installCmd], { env: colorEnv, argv0: ProcessTitle.Installer })
       : spawn('bash', ['-c', installCmd], { env: colorEnv, argv0: ProcessTitle.Installer })

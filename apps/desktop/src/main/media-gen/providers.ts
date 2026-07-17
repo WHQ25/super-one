@@ -11,6 +11,8 @@ export function mediaKindFor(resolved: ResolvedService): MediaProviderKind {
   switch (resolved.protocol) {
     case 'google-generative':
       return 'google'
+    case 'ark-images':
+      return 'ark'
     case 'openai-images':
     case 'openai-responses':
       return resolved.platformId === 'openai' || resolved.platformId === 'openai-official'

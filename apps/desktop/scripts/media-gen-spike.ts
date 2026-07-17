@@ -49,6 +49,51 @@ async function runOpenAI(apiKey: string): Promise<void> {
   }
 }
 
+async function runArk(apiKey: string): Promise<void> {
+  const provider: MediaProviderConfig = {
+    id: 'volcengine',
+    kind: 'ark',
+    apiKey,
+    baseURL: 'https://ark.cn-beijing.volces.com/api/v3',
+  }
+  const model = 'doubao-seedream-5-0-260128'
+
+  await step('ark · text-to-image (Seedream 5.0 Lite, no size → 2K default)', async () => {
+    const res = await generateMedia(
+      { provider, model, prompt: 'a single red LEGO brick on a white background, product photo' },
+      { outputDir: OUT_DIR, generationId: `ark-t2i-${randomUUID()}` },
+    )
+    console.log('  ✔ saved:', res.images.map((i) => i.path))
+    console.log('  warnings:', res.warnings)
+  })
+
+  // The regression this adapter exists for: the generic openai-compatible model posts multipart to
+  // /images/edits, which Ark does not have, so every reference-image call 404'd.
+  await step('ark · image-to-image with a reference image (used to be a hard 404)', async () => {
+    const iconPath = join(import.meta.dirname, '..', '..', '..', 'docs', 'logo', 'app-icon.png')
+    const res = await generateMedia(
+      {
+        provider,
+        model,
+        prompt:
+          'Change the background baseplate color from black to white. Keep the colorful LEGO bricks spelling "SUPER ONE" exactly as they are.',
+        referenceImages: [{ mediaType: 'image/png', data: readFileSync(iconPath) }],
+      },
+      { outputDir: OUT_DIR, generationId: `ark-i2i-${randomUUID()}` },
+    )
+    console.log('  ✔ saved:', res.images.map((i) => i.path))
+    console.log('  warnings:', res.warnings)
+  })
+
+  await step('ark · size below the ~3.7MP floor → expect a clear Ark error, not a 404', async () => {
+    const res = await generateMedia(
+      { provider, model, prompt: 'a blue cube', size: '1024x1024' },
+      { outputDir: OUT_DIR, generationId: `ark-small-${randomUUID()}` },
+    )
+    console.log('  ✔ saved (unexpected — the floor may have moved):', res.images.map((i) => i.path))
+  })
+}
+
 async function runGoogle(apiKey: string): Promise<void> {
   const provider: MediaProviderConfig = { id: 'google', kind: 'google', apiKey }
   let firstPath = ''
@@ -87,12 +132,14 @@ async function main(): Promise<void> {
   console.log(`media-gen spike → output dir: ${OUT_DIR}`)
   const openaiKey = process.env.OPENAI_API_KEY
   const geminiKey = process.env.GEMINI_API_KEY
-  if (!openaiKey && !geminiKey) {
-    console.error('Set OPENAI_API_KEY and/or GEMINI_API_KEY to run the spike.')
+  const arkKey = process.env.ARK_API_KEY
+  if (!openaiKey && !geminiKey && !arkKey) {
+    console.error('Set OPENAI_API_KEY and/or GEMINI_API_KEY and/or ARK_API_KEY to run the spike.')
     process.exit(1)
   }
   if (openaiKey) await runOpenAI(openaiKey)
   if (geminiKey) await runGoogle(geminiKey)
+  if (arkKey) await runArk(arkKey)
   console.log('\nDone.')
 }
 

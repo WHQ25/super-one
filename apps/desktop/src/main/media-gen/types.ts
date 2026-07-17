@@ -1,6 +1,6 @@
 import type { ProviderOptions } from '@ai-sdk/provider-utils'
 
-export type MediaProviderKind = 'openai' | 'google' | 'openai-compatible'
+export type MediaProviderKind = 'openai' | 'google' | 'openai-compatible' | 'ark'
 
 export interface MediaProviderConfig {
   id: string

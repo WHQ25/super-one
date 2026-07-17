@@ -1,11 +1,14 @@
 import { useState, type ComponentProps } from 'react'
 import { Download, Loader2, X } from 'lucide-react'
 import { Button } from '@superone/ui/components/ui/button'
+import { cn } from '@superone/ui/lib/utils'
 import { AdaptiveContextMenu } from '@/components/AdaptiveContextMenu'
 import { Dialog, DialogClose, DialogContent, DialogTitle } from '@superone/ui/components/ui/dialog'
 import { ImagePreview } from '@/components/coding/ImagePreview'
 import { toMediaUrl } from '@/lib/path-utils'
 import { ImageInteractive, useImageMenuItems } from './image-shared'
+
+const isWindows = window.app.platform === 'win32'
 
 const MEDIA_STYLE = { maxHeight: '20rem', maxWidth: '100%', width: 'auto', height: 'auto', borderRadius: '8px', display: 'block' } as const
 
@@ -68,8 +71,11 @@ function MarkdownImageLightbox({ src, alt, savedPath, open, onOpenChange }: Ligh
           variant="ghost"
           size="icon-xs"
           style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-          className="absolute right-[60px] top-3 z-20 size-9 rounded-full border border-border/50 bg-background/80 text-muted-foreground shadow-sm backdrop-blur-sm hover:bg-muted hover:text-foreground"
-          onClick={handleDownload}
+          className={cn(
+            "absolute right-[60px] z-20 size-9 rounded-full border border-border/50 bg-background/80 text-muted-foreground shadow-sm backdrop-blur-sm hover:bg-muted hover:text-foreground",
+            isWindows ? "top-12" : "top-3"
+          )}
+           onClick={handleDownload}
           disabled={downloading}
           aria-label="Download image"
         >
@@ -81,7 +87,10 @@ function MarkdownImageLightbox({ src, alt, savedPath, open, onOpenChange }: Ligh
             variant="ghost"
             size="icon-xs"
             style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-            className="absolute right-3 top-3 z-20 size-9 rounded-full border border-border/50 bg-background/80 text-muted-foreground shadow-sm backdrop-blur-sm hover:bg-muted hover:text-foreground"
+            className={cn(
+              "absolute right-3 z-20 size-9 rounded-full border border-border/50 bg-background/80 text-muted-foreground shadow-sm backdrop-blur-sm hover:bg-muted hover:text-foreground",
+              isWindows ? "top-12" : "top-3"
+            )}
             aria-label="Close"
           >
             <X className="size-4" />
@@ -89,7 +98,10 @@ function MarkdownImageLightbox({ src, alt, savedPath, open, onOpenChange }: Ligh
         </DialogClose>
 
         {downloadStatus && (
-          <div className="absolute right-3 top-14 z-20 max-w-[280px] truncate rounded-md border border-border/50 bg-background/90 px-3 py-1.5 text-[11px] text-muted-foreground shadow-sm backdrop-blur-sm">
+          <div className={cn(
+            "absolute right-3 z-20 max-w-[280px] truncate rounded-md border border-border/50 bg-background/90 px-3 py-1.5 text-[11px] text-muted-foreground shadow-sm backdrop-blur-sm",
+            isWindows ? "top-[84px]" : "top-14"
+          )}>
             {downloadStatus}
           </div>
         )}

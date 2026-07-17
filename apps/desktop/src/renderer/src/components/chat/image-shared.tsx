@@ -13,6 +13,8 @@ import { SelectionContextMenuZone } from './SelectionContextMenu'
 import { chatInputAPI } from './ChatInput'
 import type { ImageGenerationItem, MediaProviderStatus } from '@superone/shared/agent-types'
 
+const isWindows = window.app.platform === 'win32'
+
 export function buildImageFileName(item: ImageGenerationItem): string {
   const slugSource = item.revisedPrompt?.trim() || `image-${item.id}`
   const slug = slugSource
@@ -368,7 +370,10 @@ export function ImageViewer({ items, index, open, onOpenChange, onIndexChange }:
             >
               <ChevronRight className="size-5" />
             </Button>
-            <div className="absolute left-1/2 top-3 z-20 -translate-x-1/2 rounded-full border border-border/50 bg-background/80 px-3 py-1 text-xs text-muted-foreground shadow-sm backdrop-blur-sm">
+            <div className={cn(
+              "absolute left-1/2 z-20 -translate-x-1/2 rounded-full border border-border/50 bg-background/80 px-3 py-1 text-xs text-muted-foreground shadow-sm backdrop-blur-sm",
+              isWindows ? "top-12" : "top-3"
+            )}>
               {index + 1} / {items.length}
             </div>
           </>
@@ -378,8 +383,11 @@ export function ImageViewer({ items, index, open, onOpenChange, onIndexChange }:
           variant="ghost"
           size="icon-xs"
           style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-          className="absolute right-[108px] top-3 z-20 size-9 rounded-full border border-border/50 bg-background/80 text-muted-foreground shadow-sm backdrop-blur-sm hover:bg-muted hover:text-foreground"
-          onClick={() => setInfoOpen((v) => !v)}
+          className={cn(
+            "absolute right-[108px] z-20 size-9 rounded-full border border-border/50 bg-background/80 text-muted-foreground shadow-sm backdrop-blur-sm hover:bg-muted hover:text-foreground",
+            isWindows ? "top-12" : "top-3"
+          )}
+           onClick={() => setInfoOpen((v) => !v)}
           aria-label="Image info"
           aria-expanded={infoOpen}
         >
@@ -390,8 +398,11 @@ export function ImageViewer({ items, index, open, onOpenChange, onIndexChange }:
           variant="ghost"
           size="icon-xs"
           style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-          className="absolute right-[60px] top-3 z-20 size-9 rounded-full border border-border/50 bg-background/80 text-muted-foreground shadow-sm backdrop-blur-sm hover:bg-muted hover:text-foreground"
-          onClick={handleDownload}
+          className={cn(
+            "absolute right-[60px] z-20 size-9 rounded-full border border-border/50 bg-background/80 text-muted-foreground shadow-sm backdrop-blur-sm hover:bg-muted hover:text-foreground",
+            isWindows ? "top-12" : "top-3"
+          )}
+           onClick={handleDownload}
           disabled={downloading}
           aria-label="Download image"
         >
@@ -403,7 +414,10 @@ export function ImageViewer({ items, index, open, onOpenChange, onIndexChange }:
             variant="ghost"
             size="icon-xs"
             style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-            className="absolute right-3 top-3 z-20 size-9 rounded-full border border-border/50 bg-background/80 text-muted-foreground shadow-sm backdrop-blur-sm hover:bg-muted hover:text-foreground"
+            className={cn(
+              "absolute right-3 z-20 size-9 rounded-full border border-border/50 bg-background/80 text-muted-foreground shadow-sm backdrop-blur-sm hover:bg-muted hover:text-foreground",
+              isWindows ? "top-12" : "top-3"
+            )}
             aria-label="Close"
           >
             <X className="size-4" />
@@ -411,7 +425,10 @@ export function ImageViewer({ items, index, open, onOpenChange, onIndexChange }:
         </DialogClose>
 
         {infoOpen && (
-          <div className="absolute right-3 top-14 z-20 max-h-[80vh] w-80 overflow-y-auto rounded-md border border-border/50 bg-popover p-4 text-xs text-popover-foreground shadow-md">
+          <div className={cn(
+            "absolute right-3 z-20 max-h-[80vh] w-80 overflow-y-auto rounded-md border border-border/50 bg-popover p-4 text-xs text-popover-foreground shadow-md",
+            isWindows ? "top-[84px]" : "top-14"
+          )}>
             <div className="flex flex-col gap-2">
               <div className="flex items-center gap-2 text-muted-foreground">
                 {dims && <span>{dims.width} × {dims.height}</span>}
@@ -476,7 +493,10 @@ export function ImageViewer({ items, index, open, onOpenChange, onIndexChange }:
         )}
 
         {downloadStatus && (
-          <div className="absolute right-3 top-14 z-20 max-w-[280px] truncate rounded-md border border-border/50 bg-background/90 px-3 py-1.5 text-[11px] text-muted-foreground shadow-sm backdrop-blur-sm">
+          <div className={cn(
+            "absolute right-3 z-20 max-w-[280px] truncate rounded-md border border-border/50 bg-background/90 px-3 py-1.5 text-[11px] text-muted-foreground shadow-sm backdrop-blur-sm",
+            isWindows ? "top-[84px]" : "top-14"
+          )}>
             {downloadStatus}
           </div>
         )}

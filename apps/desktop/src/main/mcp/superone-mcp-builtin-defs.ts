@@ -126,7 +126,7 @@ export const LIST_MEDIA_PROVIDERS_DESCRIPTION =
   'List the configured and usable media generation providers and their capabilities. Only providers that have an API key configured are returned. ' +
   'Call this before media_generate_image when you are unsure which providers/models are available or which one to use. ' +
   'Pass `category` (e.g. "image") to filter to providers that support that media type. ' +
-  'Returns for each provider: `id` (pass to media_generate_image), `provider` (platform name) and `label` (key name) for display, `kind`, `categories`, `sizing` ("size" or "aspectRatio"), `supportsMask`, `defaultModel`, and available `models` (each with `id` to pass as the model override and a human-readable `label`).'
+  'Returns for each provider: `id` (pass to media_generate_image), `provider` (platform name) and `label` (key name) for display, `kind`, `categories`, `sizing` ("size" or "aspectRatio"), an optional `sizeNote` spelling out that provider\'s size constraints (honor it over the generic guidance in media_generate_image), `supportsMask`, `defaultModel`, and available `models` (each with `id` to pass as the model override and a human-readable `label`).'
 
 export const GENERATE_IMAGE_DESCRIPTION =
   'Generate or edit an image from a text prompt using an AI image model. ' +
@@ -134,7 +134,7 @@ export const GENERATE_IMAGE_DESCRIPTION =
   'The generated image is shown to the user automatically. After it returns, do NOT display it again with a Markdown image or link — just briefly describe the result in words. ' +
   'For text-to-image, pass only `prompt`. For image editing / image-to-image (e.g. "change X", "add Y", or iterating on a previous result), also pass the source image file path(s) in `reference_image_paths`. ' +
   'The result JSON returns the saved file path(s) in `savedPaths` for your own reference only. If you need to visually inspect the output to verify or iterate on it, use the Read tool on a saved path. ' +
-  '`provider` selects the backend by id (default: the first usable provider). If unsure which providers/models exist, call media_list_providers first. Use `aspect_ratio` (e.g. "16:9") for google models and `size` (e.g. "1024x1024") for openai / openai-compatible. ' +
+  '`provider` selects the backend by id (default: the first usable provider). If unsure which providers/models exist, call media_list_providers first. Use `aspect_ratio` (e.g. "16:9") for google models and `size` (e.g. "1024x1024") for openai / openai-compatible. Some providers constrain `size` further — check `sizeNote` from media_list_providers, or omit `size` to take the provider default. ' +
   'Settings a model does not support are reported in the result `warnings` rather than failing the call.'
 
 export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [

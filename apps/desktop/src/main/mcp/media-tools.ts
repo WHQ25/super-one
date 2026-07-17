@@ -21,6 +21,13 @@ function sizingForKind(kind: string): 'size' | 'aspectRatio' {
   return kind === 'google' ? 'aspectRatio' : 'size'
 }
 
+/** Ark's valid sizes differ per model, so state the constraint rather than enumerate a list that would lie. */
+function sizeNoteForKind(kind: string): string | undefined {
+  return kind === 'ark'
+    ? 'Accepts "2K" / "4K" or an explicit "WxH". Seedream models reject anything under ~3.7MP, so "1024x1024" fails — omit `size` to use the 2K default.'
+    : undefined
+}
+
 export interface ListMediaProvidersArgs {
   category?: string
 }
@@ -37,6 +44,7 @@ export async function listMediaProvidersHandler(args: ListMediaProvidersArgs = {
       kind: status.kind,
       categories: status.categories,
       sizing: sizingForKind(status.kind),
+      ...(sizeNoteForKind(status.kind) ? { sizeNote: sizeNoteForKind(status.kind) } : {}),
       supportsMask: status.kind === 'openai',
       defaultModel: status.defaultModel,
       models: status.models.map((model) => ({ id: model.id, label: model.label })),

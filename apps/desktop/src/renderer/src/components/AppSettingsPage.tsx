@@ -12,6 +12,7 @@ import {
 import { initAnalytics, shutdownAnalytics } from '@/lib/analytics'
 import { changeLocale } from '@/i18n'
 import { useAppStore } from '@/stores/app'
+import { DefaultProviderRow } from '@/components/providers/DefaultProviderRow'
 import type { Locale, UpdateChannel } from '@superone/shared/agent-types'
 import { AVAILABLE_UPDATE_CHANNELS, channelFromVersion } from '@superone/shared/update-channels'
 
@@ -171,6 +172,18 @@ export function AppSettingsPage() {
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
+        </div>
+
+        <div className="rounded-lg border border-border">
+          <div className="border-b border-border px-4 py-2">
+            <p className="text-xs font-medium text-muted-foreground">{t('settings.general.media')}</p>
+          </div>
+          <DefaultProviderRow
+            consumer="media:image"
+            title={t('settings.general.imageProvider.label')}
+            description={t('settings.general.imageProvider.description')}
+            fallback={<span className="truncate text-sm text-muted-foreground">{t('settings.general.imageProvider.auto')}</span>}
+          />
         </div>
 
         <div className="rounded-lg border border-border">

@@ -1,5 +1,6 @@
 import { shortenPath } from '@/lib/path-utils'
 import { extractJsonStringValue } from '@superone/shared/partial-json'
+import { isMediaGenerateImageTool, isSuccessfulGenerationResult } from './media-generation'
 
 const PARTIAL_STRING_FIELDS: Record<string, string[]> = {
   Edit: ['file_path', 'old_string', 'new_string'],
@@ -67,13 +68,12 @@ export function parseMcpToolName(toolName: string): { serverName: string; mcpToo
  * mid-turn, not conversational content). Shared by ToolBlock (renders null) and
  * groupContent (emits no segment, so surrounding thinking blocks stay adjacent). */
 const HIDDEN_TASK_TOOLS = new Set(['TodoWrite', 'TaskCreate', 'TaskUpdate'])
-export function isHiddenToolBlock(toolName: string): boolean {
+
+export function isHiddenToolBlock(toolName: string, result?: string): boolean {
   if (HIDDEN_TASK_TOOLS.has(toolName)) return true
+  if (isMediaGenerateImageTool(toolName)) return !result || isSuccessfulGenerationResult(result)
   const mcp = parseMcpToolName(toolName)
-  return (
-    mcp?.serverName === 'superone' &&
-    (mcp.mcpToolName === 'session_rename' || mcp.mcpToolName === 'media_generate_image')
-  )
+  return mcp?.serverName === 'superone' && mcp.mcpToolName === 'session_rename'
 }
 
 

@@ -7,6 +7,7 @@ import { ToolBlock } from './ToolBlock'
 import { ToolGroup } from './ToolGroup'
 import { AppToolGroup } from './AppToolGroup'
 import { parseToolInput, parseMcpToolName, isHiddenToolBlock } from './tool-display'
+import { toImageGenerationItems, isMediaGenerateImageTool, collectCodexGeneratedImages } from './media-generation'
 import { useMiniAppStore } from '@/stores/miniapp'
 import type { MiniAppEntry } from '@superone/shared/miniapp-types'
 import { SubagentBlock } from './SubagentBlock'
@@ -240,8 +241,8 @@ export function groupContent(content: ContentBlock[], apps: MiniAppEntry[]): Gro
     } else if (block.type === 'tool_result' && COLLAPSIBLE_TOOLS.has(toolNameMap.get(block.toolUseId) ?? '')) {
       group.push(block)
     } else if (
-      (block.type === 'tool_use' && isHiddenToolBlock(block.toolName)) ||
-      (block.type === 'tool_result' && isHiddenToolBlock(toolNameMap.get(block.toolUseId) ?? ''))
+      (block.type === 'tool_use' && isHiddenToolBlock(block.toolName, toolResultMap.get(block.toolUseId))) ||
+      (block.type === 'tool_result' && isHiddenToolBlock(toolNameMap.get(block.toolUseId) ?? '', toolResultMap.get(block.toolUseId)))
     ) {
       // Hidden tools render nothing — emit no segment so two thinking blocks
       // straddling one collapse into a single reasoning card instead of two.
@@ -731,69 +732,15 @@ export function RateLimitIndicator({
   )
 }
 
-function buildGenerationParams(
-  input: Record<string, unknown> | undefined,
-  result: { provider?: unknown; model?: unknown },
-): { key: string; value: string }[] {
-  const params: { key: string; value: string }[] = []
-  const push = (key: string, value: unknown) => {
-    if (typeof value === 'string' && value.trim()) params.push({ key, value: value.trim() })
-    else if (typeof value === 'number') params.push({ key, value: String(value) })
-  }
-  push('provider', result.provider ?? input?.provider)
-  push('model', result.model ?? input?.model)
-  push('size', input?.size)
-  push('aspectRatio', input?.aspect_ratio)
-  const refs = input?.reference_image_paths
-  if (Array.isArray(refs) && refs.length > 0) params.push({ key: 'referenceImages', value: String(refs.length) })
-  return params
-}
-
-/** Aggregate all media_generate_image results in a message into gallery items shown at the bottom of the turn. */
 function collectGeneratedImages(content: ContentBlock[], toolResultMap: Map<string, string>): ImageGenerationItem[] {
   const items: ImageGenerationItem[] = []
   for (const block of content) {
-    if (block.type !== 'tool_use' || !block.toolName.endsWith('__media_generate_image')) continue
-    const input = parseToolInput(block.input, block.toolName)
-    const rawPrompt = input.prompt
-    const prompt = typeof rawPrompt === 'string' ? rawPrompt : undefined
-    const summary = toolResultMap.get(block.toolUseId)
-    if (!summary) {
-      const params = buildGenerationParams(input, {})
-      items.push({
-        id: block.toolUseId,
-        type: 'image_generation',
-        status: 'in_progress',
-        revisedPrompt: prompt,
-        ...(params.length > 0 ? { params } : {}),
-      })
-      continue
-    }
-    try {
-      const parsed = JSON.parse(summary) as { status?: string; savedPaths?: unknown; provider?: unknown; model?: unknown; warnings?: unknown }
-      if (parsed.status === 'error') {
-        // A failed generation produced no image — keep it out of the gallery entirely.
-        continue
-      }
-      const params = buildGenerationParams(input, parsed)
-      const warnings = Array.isArray(parsed.warnings)
-        ? parsed.warnings.map((w) => (typeof w === 'string' ? w : JSON.stringify(w))).filter(Boolean)
-        : undefined
-      const paths = Array.isArray(parsed.savedPaths)
-        ? parsed.savedPaths.filter((p): p is string => typeof p === 'string')
-        : []
-      paths.forEach((path, idx) =>
-        items.push({
-          id: `${block.toolUseId}-${idx}`,
-          type: 'image_generation',
-          status: 'completed',
-          savedPath: path,
-          revisedPrompt: prompt,
-          ...(params.length > 0 ? { params } : {}),
-          ...(warnings && warnings.length > 0 ? { warnings } : {}),
-        }),
-      )
-    } catch {}
+    if (block.type !== 'tool_use' || !isMediaGenerateImageTool(block.toolName)) continue
+    items.push(...toImageGenerationItems(
+      block.toolUseId,
+      parseToolInput(block.input, block.toolName),
+      toolResultMap.get(block.toolUseId),
+    ))
   }
   return items
 }
@@ -814,9 +761,12 @@ export const ChatMessage = memo(function ChatMessage({ message, sessionStatus, i
     [isUser, isCodexMessage, message.content, apps],
   )
 
+  const codexItems = message.metadata?.codex?.items
   const generatedImages = useMemo(
-    () => (grouped ? collectGeneratedImages(message.content, grouped.toolResultMap) : []),
-    [grouped, message.content],
+    () => isCodexMessage
+      ? collectCodexGeneratedImages(codexItems)
+      : grouped ? collectGeneratedImages(message.content, grouped.toolResultMap) : [],
+    [isCodexMessage, codexItems, grouped, message.content],
   )
 
   const userText = useMemo(

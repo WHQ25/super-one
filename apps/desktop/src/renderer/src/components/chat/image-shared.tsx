@@ -6,6 +6,7 @@ import { Button } from '@superone/ui/components/ui/button'
 import { AdaptiveContextMenu } from '@/components/AdaptiveContextMenu'
 import type { AdaptiveMenuEntry } from '@/lib/native-context-menu'
 import { Dialog, DialogClose, DialogContent, DialogTitle } from '@superone/ui/components/ui/dialog'
+import { HoverCard, HoverCardContent, HoverCardTrigger } from '@superone/ui/components/ui/hover-card'
 import { toast } from 'sonner'
 import { ImagePreview } from '@/components/coding/ImagePreview'
 import { SelectionContextMenuZone } from './SelectionContextMenu'
@@ -174,7 +175,6 @@ const PARAM_LABEL_KEYS: Record<string, string> = {
   model: 'chat.image.paramModel',
   size: 'chat.image.paramSize',
   aspectRatio: 'chat.image.paramAspectRatio',
-  referenceImages: 'chat.image.paramReferenceImages',
 }
 
 let mediaProvidersCache: MediaProviderStatus[] | null = null
@@ -227,6 +227,50 @@ function resolveModelLabel(modelId: string, providerId: string | undefined, prov
 function ModelParamValue({ id, providerId, providerMap }: { id: string; providerId?: string; providerMap: Map<string, MediaProviderStatus> }) {
   const label = resolveModelLabel(id, providerId, providerMap)
   return <dd className="break-all text-right text-foreground" title={id}>{label}</dd>
+}
+
+function ReferenceImageThumb({ path }: { path: string }) {
+  const { dataUri, loadError } = useImageDataUri(path, false)
+  const name = path.split(/[/\\]/).pop() || path
+
+  if (loadError) {
+    return (
+      <div
+        title={`${path} — ${loadError}`}
+        className="flex aspect-square w-full items-center justify-center rounded border border-destructive/30 bg-destructive/5"
+      >
+        <ImageIcon className="size-4 text-destructive/70" />
+      </div>
+    )
+  }
+  if (!dataUri) return <ImageSkeleton className="aspect-square w-full rounded border border-border/50" />
+
+  return (
+    <HoverCard openDelay={150} closeDelay={80}>
+      <HoverCardTrigger asChild>
+        <img
+          src={dataUri}
+          alt={name}
+          className="aspect-square w-full cursor-zoom-in rounded border border-border/50 bg-muted/30 object-cover transition-colors hover:border-border"
+        />
+      </HoverCardTrigger>
+      <HoverCardContent
+        side="left"
+        align="start"
+        sideOffset={12}
+        className="w-auto max-w-[min(42vw,520px)] overflow-hidden rounded-lg p-1.5"
+      >
+        <img
+          src={dataUri}
+          alt={name}
+          className="max-h-[60vh] w-auto max-w-full rounded object-contain"
+        />
+        <div className="truncate px-1 pb-0.5 pt-1.5 text-[10px] text-muted-foreground" title={path}>
+          {name}
+        </div>
+      </HoverCardContent>
+    </HoverCard>
+  )
 }
 
 export function ImageViewer({ items, index, open, onOpenChange, onIndexChange }: ViewerProps) {
@@ -373,7 +417,7 @@ export function ImageViewer({ items, index, open, onOpenChange, onIndexChange }:
                 {dims && <span>{dims.width} × {dims.height}</span>}
                 {dims && generationMs !== null && <span className="text-border">·</span>}
                 {generationMs !== null && <span>{t('chat.image.generatedIn', { duration: formatDuration(generationMs) })}</span>}
-                {!dims && generationMs === null && !item.params?.length && <span>{t('chat.image.noMetadata')}</span>}
+                {!dims && generationMs === null && !item.params?.length && !item.referenceImagePaths?.length && <span>{t('chat.image.noMetadata')}</span>}
               </div>
               {item.params && item.params.length > 0 && (
                 <dl className="flex flex-col gap-1 border-t pt-2">
@@ -392,6 +436,18 @@ export function ImageViewer({ items, index, open, onOpenChange, onIndexChange }:
                     </div>
                   ))}
                 </dl>
+              )}
+              {item.referenceImagePaths && item.referenceImagePaths.length > 0 && (
+                <div className="border-t pt-2">
+                  <div className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                    {t('chat.image.paramReferenceImages')}
+                  </div>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {item.referenceImagePaths.map((p) => (
+                      <ReferenceImageThumb key={p} path={p} />
+                    ))}
+                  </div>
+                </div>
               )}
               {item.warnings && item.warnings.length > 0 && (
                 <div className="border-t pt-2">

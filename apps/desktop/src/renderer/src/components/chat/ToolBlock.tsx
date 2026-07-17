@@ -318,7 +318,7 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
     return <DebugToolBlock toolName={toolName} input={input} result={result} status={status} elapsedSeconds={elapsedSeconds} />
   }
 
-  if (isHiddenToolBlock(toolName)) return null
+  if (isHiddenToolBlock(toolName, result)) return null
 
   const isQuestionDismissed = toolName === 'AskUserQuestion' && !!result && (isDenied || result.includes('dismissed'))
 

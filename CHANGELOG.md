@@ -4,6 +4,18 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.45.3-alpha] - 2026-07-17
+
+### Added
+
+- Volcengine Ark image generation model adapter, with size constraints surfaced in the media provider listing
+- Chat gallery now shows reference images and collects Codex-generated images
+
+### Fixed
+
+- Image viewer controls no longer overlap the native title bar on Windows
+- Claude API errors now log full detail for debugging
+
 ## [0.45.2-alpha] - 2026-07-17
 
 ### Added

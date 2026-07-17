@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { ChatMessage as ChatMessageType, CodexCollabToolCallItem, CodexCommandExecutionItem, ImageGenerationItem, CodexMcpToolCallItem, CodexThreadItem } from '@superone/shared/agent-types'
+import type { ChatMessage as ChatMessageType, CodexCollabToolCallItem, CodexCommandExecutionItem, ImageGenerationItem, CodexMcpToolCallItem, CodexReasoningItem, CodexThreadItem } from '@superone/shared/agent-types'
 import { ChevronRight, BookOpenText } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 import { CopyableMarkdown } from './CopyableMarkdown'
@@ -11,6 +11,7 @@ import { useActiveSession, useChatStore } from '@/stores/chat'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
 import { ToolBlock } from './ToolBlock'
+import { ReasoningBlock } from './ReasoningBlock'
 
 function safeStringify(value: unknown): string {
   try { return JSON.stringify(value) } catch { return String(value) }
@@ -224,6 +225,7 @@ export function CodexTurnView({ message, isStreaming, isLastAssistant }: CodexTu
   type Segment =
     | { kind: 'item'; item: CodexThreadItem; index: number }
     | { kind: 'group'; items: CodexCommandExecutionItem[] }
+    | { kind: 'reasoning'; items: CodexReasoningItem[]; startIndex: number }
     | { kind: 'subagent'; item: CodexCollabToolCallItem }
     | { kind: 'app-tools'; appId: string; items: CodexMcpToolCallItem[] }
   const segments: Segment[] = []
@@ -267,6 +269,12 @@ export function CodexTurnView({ message, isStreaming, isLastAssistant }: CodexTu
     } else if (isCollapsibleCommand(item)) {
       flushAppGroup()
       cmdGroup.push(item)
+    } else if (item.type === 'reasoning') {
+      flushCmd()
+      flushAppGroup()
+      const previous = segments[segments.length - 1]
+      if (previous?.kind === 'reasoning') previous.items.push(item)
+      else segments.push({ kind: 'reasoning', items: [item], startIndex: i })
     } else {
       flushCmd()
       flushAppGroup()
@@ -299,6 +307,22 @@ export function CodexTurnView({ message, isStreaming, isLastAssistant }: CodexTu
               items={seg.items}
               isStreaming={isStreaming}
               sealed={!isStreaming || segIdx < segments.length - 1}
+            />
+          )
+        }
+        if (seg.kind === 'reasoning') {
+          const text = seg.items.map((item) => item.text).join('\n\n')
+          const first = seg.items[0]
+          const last = seg.items[seg.items.length - 1]
+          return (
+            <ReasoningBlock
+              key={`reasoning-${seg.startIndex}`}
+              text={text}
+              startedAt={first.startedAt}
+              endedAt={last.endedAt}
+              blockDone={!isStreaming || segIdx < segments.length - 1}
+              showContent={text.trim().length > 0}
+              isFirst={segIdx === 0}
             />
           )
         }

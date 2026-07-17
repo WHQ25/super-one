@@ -137,6 +137,60 @@ describe('CodexTurnView', () => {
     expect(screen.getByText('working')).toBeTruthy()
   })
 
+  it('merges consecutive codex reasoning items into one block', () => {
+    render(
+      <CodexTurnView
+        message={createMessage({
+          status: 'complete',
+          metadata: {
+            codex: {
+              threadId: 'thread-1',
+              usage: null,
+              items: [
+                { id: 'reasoning-1', type: 'reasoning', text: 'first thought' },
+                { id: 'reasoning-2', type: 'reasoning', text: 'second thought' },
+              ],
+            },
+          },
+        })}
+        isStreaming={false}
+        isLastAssistant
+      />,
+    )
+
+    expect(screen.getAllByText('Thought')).toHaveLength(1)
+
+    fireEvent.click(screen.getByText('Thought'))
+
+    expect(screen.getByText(/first thought\s+second thought/)).toBeTruthy()
+  })
+
+  it('keeps codex reasoning items separate across visible content', () => {
+    render(
+      <CodexTurnView
+        message={createMessage({
+          status: 'complete',
+          metadata: {
+            codex: {
+              threadId: 'thread-1',
+              usage: null,
+              items: [
+                { id: 'reasoning-1', type: 'reasoning', text: 'first thought' },
+                { id: 'agent-1', type: 'agent_message', text: 'visible answer' },
+                { id: 'reasoning-2', type: 'reasoning', text: 'second thought' },
+              ],
+            },
+          },
+        })}
+        isStreaming={false}
+        isLastAssistant
+      />,
+    )
+
+    expect(screen.getAllByText('Thought')).toHaveLength(2)
+    expect(screen.getByText('visible answer')).toBeTruthy()
+  })
+
   it('renders empty codex reasoning as a non-expandable status block', () => {
     render(
       <CodexTurnView

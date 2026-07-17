@@ -41,11 +41,13 @@ vi.mock('../mcp/superone-mcp-server', () => ({
 }))
 
 import { buildUserMessage, buildClaudeOptions, createSessionQuery } from './claude-query'
+import log from '../logger'
 
 beforeEach(() => {
   state.messages = []
   state.error = null
   state.queryMock.mockClear()
+  vi.mocked(log.error).mockClear()
 })
 
 describe('buildClaudeOptions permissionMode', () => {
@@ -405,6 +407,35 @@ describe('createSessionQuery', () => {
       error: 'failure-1; failure-2',
     })
     expect(events).toContainEqual({ type: 'status_change', status: 'idle' })
+  })
+
+  it('logs the SDK error details when the terminal reason is api_error', async () => {
+    state.messages = [
+      {
+        type: 'result',
+        subtype: 'error',
+        terminal_reason: 'api_error',
+        api_error_status: 529,
+        errors: ['upstream overloaded'],
+      },
+    ]
+
+    const handle = createSessionQuery(
+      { consumedTags: [], drainConsumedTag: () => undefined } as unknown as MessageBridge,
+      { superoneSessionId: 'session-api-error', cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
+      vi.fn(),
+      () => 'msg-api-error',
+      () => Date.now() - 50,
+      () => false,
+    )
+    await handle.iterationDone
+    expect(log.error).toHaveBeenCalledWith(
+      '[claude-query] API error session=%s message=%s httpStatus=%s error=%s',
+      'session-api-error',
+      'msg-api-error',
+      529,
+      'upstream overloaded',
+    )
   })
 
   it('does not emit slash_command_output for a synthetic API-error assistant message so the real reply is preserved', async () => {

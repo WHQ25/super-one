@@ -159,6 +159,7 @@ export function createSessionQuery(
     getCurrentMessageId,
     getCurrentStartTime,
     getInterrupted,
+    superoneSessionId: options.superoneSessionId,
     onSessionId,
     trackPlanFile: options.trackPlanFile,
     onQueuedTurnStart,
@@ -214,6 +215,7 @@ export interface IterateMessagesOptions {
   getCurrentMessageId: () => string
   getCurrentStartTime: () => number
   getInterrupted: () => boolean
+  superoneSessionId: string
   onSessionId?: (id: string) => void
   trackPlanFile?: (filePath: string) => void
   onQueuedTurnStart?: (messageId: string) => void
@@ -930,6 +932,15 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
           } else {
             const rawError = result.errors?.join('; ') ?? 'Unknown error'
             const decorated = decorateMessageErrorText(rawError, lastAssistantTypedError, metadata.apiErrorStatus)
+            if (result.terminal_reason === 'api_error') {
+              log.error(
+                '[claude-query] API error session=%s message=%s httpStatus=%s error=%s',
+                opts.superoneSessionId,
+                messageId,
+                metadata.apiErrorStatus ?? 'unknown',
+                decorated,
+              )
+            }
             emit({ type: 'message_error', messageId, error: decorated })
           }
           lastAssistantTypedError = undefined

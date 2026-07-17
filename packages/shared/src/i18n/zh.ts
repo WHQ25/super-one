@@ -239,6 +239,12 @@ export const zh: Messages = {
         enabled: '已开启使用情况分析',
         disabled: '已关闭使用情况分析',
       },
+      media: '媒体',
+      imageProvider: {
+        label: '图片生成服务商',
+        description: '由哪个服务商生成图片。在「服务商」中添加密钥并启用图片模型。',
+        auto: '自动（第一个可用）',
+      },
       experimental: '实验功能',
       acp: {
         label: 'ACP 智能体',

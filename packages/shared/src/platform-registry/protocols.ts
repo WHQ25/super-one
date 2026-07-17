@@ -11,6 +11,7 @@ export type WireProtocol =
   | 'openai-images' // image (/images/generations|edits)
   | 'openai-audio' // tts, asr (/audio/speech, /audio/transcriptions)
   | 'google-generative' // chat, image, tts (generateContent)
+  | 'ark-images' // image (/images/generations only — reference images ride a JSON `image` field, no /edits)
 
 export const WIRE_PROTOCOLS: WireProtocol[] = [
   'anthropic-messages',
@@ -19,6 +20,7 @@ export const WIRE_PROTOCOLS: WireProtocol[] = [
   'openai-images',
   'openai-audio',
   'google-generative',
+  'ark-images',
 ]
 
 /** Capabilities each protocol can serve. An endpoint may narrow this set, never widen it. */
@@ -29,6 +31,7 @@ export const PROTOCOL_TASKS: Record<WireProtocol, CapabilityTask[]> = {
   'openai-images': ['image'],
   'openai-audio': ['tts', 'asr'],
   'google-generative': ['chat', 'image', 'tts'],
+  'ark-images': ['image'],
 }
 
 export function protocolServes(protocol: WireProtocol, task: CapabilityTask): boolean {
@@ -47,12 +50,15 @@ export const PROTOCOL_FAMILY: Record<WireProtocol, ProtocolFamily> = {
   'openai-images': 'openai',
   'openai-audio': 'openai',
   'google-generative': 'google',
+  'ark-images': 'openai',
 }
 
 /**
  * Protocols a family offers in the custom-platform dialog.
  * Order is behavioral: selectEndpoint() returns the first endpoint serving a task,
  * so responses precedes chat (codex's native wire is Responses; chat/completions is being deprecated upstream).
+ * Vendor-private protocols (ark-images) are deliberately absent — they are only reachable from the
+ * builtin platform that speaks them, never offered to an arbitrary custom platform of the same family.
  */
 export const FAMILY_PROTOCOLS: Record<ProtocolFamily, WireProtocol[]> = {
   anthropic: ['anthropic-messages'],

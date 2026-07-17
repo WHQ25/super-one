@@ -216,6 +216,12 @@ export type Messages = {
         enabled: string
         disabled: string
       }
+      media: string
+      imageProvider: {
+        label: string
+        description: string
+        auto: string
+      }
       experimental: string
       acp: {
         label: string
@@ -1887,6 +1893,12 @@ export const en: Messages = {
         description: 'Send anonymous usage data to help improve SuperOne. No personal data or conversation content is collected.',
         enabled: 'Analytics enabled',
         disabled: 'Analytics disabled',
+      },
+      media: 'Media',
+      imageProvider: {
+        label: 'Image Provider',
+        description: 'Which provider generates images. Add keys and enable image models in Providers.',
+        auto: 'Auto (first usable)',
       },
       experimental: 'Experimental',
       acp: {

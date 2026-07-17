@@ -175,6 +175,22 @@ describe('selectEndpoint', () => {
       }),
     ).toBeUndefined()
   })
+
+  it('routes volcengine image to the ark wire while its chat endpoint keeps serving claude', () => {
+    const plan = findPlatform(BUILTIN_PLATFORMS, 'volcengine')!.plans.find((p) => p.id === 'api')!
+    expect(selectEndpoint(plan, 'media:image')?.protocol).toBe('ark-images')
+    // Ark's image wire is not openai-compatible — resolving it as such is what made image edits 404.
+    expect(selectEndpoint(plan, 'media:image')?.endpoint.id).toBe('ark-images')
+    // The added image endpoint must not shadow the chat endpoint that shares the plan.
+    expect(selectEndpoint(plan, 'chat:claude')?.protocol).toBe('anthropic-messages')
+    // Media still gates on an enabled image-tagged model once a credential is in play.
+    expect(selectEndpoint(plan, 'media:image', undefined, { overrides: {} })).toBeUndefined()
+    expect(
+      selectEndpoint(plan, 'media:image', undefined, {
+        overrides: { 'ark-images': { models: [{ id: 'doubao-seedream-5-0-260128', name: 'Seedream', tasks: ['image'] }] } },
+      })?.endpoint.id,
+    ).toBe('ark-images')
+  })
 })
 
 describe('validatePlatform', () => {

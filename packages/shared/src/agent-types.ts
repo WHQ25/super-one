@@ -265,6 +265,7 @@ export interface ImageGenerationItem {
   status: 'in_progress' | 'completed' | 'failed' | string
   revisedPrompt?: string
   savedPath?: string
+  referenceImagePaths?: string[]
   generationMs?: number
   params?: { key: string; value: string }[]
   warnings?: string[]

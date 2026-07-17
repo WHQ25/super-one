@@ -498,6 +498,11 @@ export const BUILTIN_PLATFORMS: Platform[] = [
             extraEnv: { ...CODING_TIMEOUT, ...EMPTY_AUTH_TOKEN },
             modelMapping: DOUBAO_MODELS,
           }),
+          {
+            id: 'ark-images',
+            baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
+            protocols: ['ark-images'],
+          },
         ],
       },
     ],

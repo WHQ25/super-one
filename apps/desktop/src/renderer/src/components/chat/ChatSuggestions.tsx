@@ -238,7 +238,7 @@ function ActiveProviderHint() {
       <span className="text-xs text-muted-foreground">{t('chat.suggestions.poweredBy')}</span>
       <ProviderLabel
         brandKey={effective?.brand ?? defaultBrand}
-        fallback={effective?.credential.name ?? defaultLabel}
+        fallback={effective?.platform.name ?? defaultLabel}
         size={12}
       />
     </span>

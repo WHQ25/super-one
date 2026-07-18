@@ -417,12 +417,12 @@ export const BUILTIN_PLATFORMS: Platform[] = [
     id: 'minimax',
     brand: 'minimax',
     name: 'MiniMax',
-    description: 'MiniMax 编程套餐 — 海螺 AI 代码模型',
+    description: 'MiniMax 编程套餐或 API — 海螺 AI 代码模型',
     plans: [
       {
         id: 'cn',
         name: '中国版',
-        description: 'MiniMax 编程套餐 — 中国区，海螺 AI 代码模型',
+        description: 'MiniMax 编程套餐或 API — 中国区，海螺 AI 代码模型',
         auth: 'api-key',
         apiKeyUrl: 'https://platform.minimaxi.com/user-center/basic-information/interface-key',
         endpoints: [
@@ -435,7 +435,7 @@ export const BUILTIN_PLATFORMS: Platform[] = [
       {
         id: 'global',
         name: 'Global',
-        description: 'MiniMax Code Plan — Global endpoint for international users',
+        description: 'MiniMax Coding Plan or API — Global endpoint for international users',
         auth: 'api-key',
         apiKeyUrl: 'https://platform.minimax.io/user-center/basic-information/interface-key',
         endpoints: [

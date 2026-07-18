@@ -1,5 +1,5 @@
 import { diffLines } from 'diff'
-import { splitContentLines } from '@/lib/diff-utils'
+import { splitContentLines } from '@/lib/text-lines'
 
 function countContentLines(text: string): number {
   return splitContentLines(text).length

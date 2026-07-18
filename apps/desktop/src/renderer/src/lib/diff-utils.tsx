@@ -7,6 +7,7 @@ import { measureMaxLineWidth, getMonoFont, getMonoCharWidth, MONO_FONT_FAMILY } 
 import { codePlugin, codePluginLight } from '@/components/chat/chat-shared'
 import { useIsDark } from '@/hooks/use-is-dark'
 import { buildHighlightKey, type HighlightCache } from './highlight-cache'
+import { splitContentLines } from './text-lines'
 
 const EXT_LANG: Record<string, string> = {
   ts: 'typescript', tsx: 'tsx', mts: 'typescript', cts: 'typescript',
@@ -321,10 +322,7 @@ export interface DiffLine {
   sourceIdx: number
 }
 
-export function splitContentLines(text: string): string[] {
-  if (!text) return []
-  return text.replace(/\r\n/g, '\n').replace(/\n$/, '').split('\n')
-}
+export { splitContentLines }
 
 export function buildUnifiedFileChangeDiffLines(unifiedDiff: string): DiffLine[] {
   const rows = splitContentLines(unifiedDiff)

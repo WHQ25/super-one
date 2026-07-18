@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ChevronDown, ExternalLink, Loader2, Pencil, Plus, Sparkles, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@superone/ui/components/ui/button'
+import { Badge } from '@superone/ui/components/ui/badge'
 import { Input } from '@superone/ui/components/ui/input'
 import { Checkbox } from '@superone/ui/components/ui/checkbox'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
@@ -70,6 +71,11 @@ const BRAND_POPULARITY = [
 function brandRank(brand: string): number {
   const i = BRAND_POPULARITY.indexOf(brand)
   return i === -1 ? BRAND_POPULARITY.length : i
+}
+
+function platformVariantLabel(platform: Platform, all: Platform[]): string | null {
+  if (isCustomPlatform(platform)) return null
+  return all.filter((p) => p.brand === platform.brand).length > 1 ? platform.name : null
 }
 
 function isOfficial(platform: Platform): boolean {
@@ -479,8 +485,10 @@ function AdvancedConfigSection({
 
 function PlatformDetail({ platform }: { platform: Platform }) {
   const { t } = useTranslation()
+  const platforms = useSettingsStore((s) => s.platforms)
   const deleteCustomPlatform = useSettingsStore((s) => s.deleteCustomPlatform)
   const isCustom = isCustomPlatform(platform)
+  const variantLabel = platformVariantLabel(platform, platforms)
   const [planId, setPlanId] = useState(platform.plans[0]?.id ?? '')
   const selectedPlan = platform.plans.find((p) => p.id === planId) ?? platform.plans[0]
   const [selectedKeyId, setSelectedKeyId] = useState('')
@@ -491,6 +499,7 @@ function PlatformDetail({ platform }: { platform: Platform }) {
         <span className="flex min-w-0 items-center gap-3">
           <span className="flex shrink-0 items-center gap-2">
             <ProviderLabel brandKey={platform.brand} fallback={platform.name} combine size={28} />
+            {variantLabel && <Badge variant="secondary">{variantLabel}</Badge>}
           </span>
           {platform.plans.length > 0 && (
             <span className="flex items-center gap-0.5 rounded-lg border border-border p-0.5">
@@ -1018,6 +1027,7 @@ export function ProvidersPage() {
       selected={selectedId === p.id}
       onClick={() => selectPlatform(p.id)}
       count={isOfficial(p) ? 0 : credCount(p.id)}
+      variantLabel={platformVariantLabel(p, platforms)}
     />
   )
 
@@ -1078,11 +1088,13 @@ function PlatformRow({
   selected,
   onClick,
   count,
+  variantLabel,
 }: {
   platform: Platform
   selected: boolean
   onClick: () => void
   count: number
+  variantLabel?: string | null
 }) {
   const { t } = useTranslation()
   return (
@@ -1096,6 +1108,11 @@ function PlatformRow({
     >
       <span className="flex min-w-0 items-center gap-1.5">
         <ProviderLabel brandKey={platform.brand} fallback={platform.name} combine size={24} />
+        {variantLabel && (
+          <Badge variant="secondary" className="shrink-0 px-1.5 py-0 text-[9px] font-normal">
+            {variantLabel}
+          </Badge>
+        )}
       </span>
       <span className="flex shrink-0 items-center gap-1.5">
         {count > 0 && (

@@ -1,3 +1,4 @@
+/** @vitest-environment jsdom */
 import { describe, it, expect } from 'vitest'
 import { collectBackgroundActivities, computeIsInWorktree } from './ChatStatusBar'
 import type { ContentBlock } from '@superone/shared/agent-types'

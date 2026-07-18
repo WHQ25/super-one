@@ -41,7 +41,8 @@ vi.mock('./ToolIcon', () => ({
   ToolIcon: () => <span>icon</span>,
 }))
 
-vi.mock('./tool-display', () => ({
+vi.mock('./tool-display', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   getToolDisplay: () => ({ icon: 'terminal', summary: 'ls' }),
   extractPartialToolInput: () => ({}),
   parseMcpToolName: (name: string) => {

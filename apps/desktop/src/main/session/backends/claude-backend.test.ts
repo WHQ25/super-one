@@ -112,6 +112,12 @@ vi.mock('../../logger', () => ({
   default: { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() },
 }))
 
+vi.mock('../../agent/resolve-cli', () => ({
+  getNodeRuntime: vi.fn(() => ({})),
+  dedupePath: vi.fn((p: string) => p),
+  fixPath: vi.fn(),
+}))
+
 const permissionHoisted = vi.hoisted(() => ({
   createCanUseToolMock: vi.fn(() => ({ canUseTool: vi.fn(), trackPlanFile: vi.fn() })),
   rejectAllPendingMock: vi.fn(),
@@ -199,7 +205,7 @@ describe('ClaudeBackend', () => {
         ANTHROPIC_BASE_URL: 'https://proxy.example.com',
         CUSTOM_VAR: 'x',
       })
-      expect(env?.PATH).toBe(process.env.PATH)
+      expect(env?.PATH?.split(':')).toEqual(expect.arrayContaining(process.env.PATH!.split(':')))
     })
 
     it('inherits PATH so spawned bash can find git under a custom provider', async () => {
@@ -210,7 +216,7 @@ describe('ClaudeBackend', () => {
       })
       const [, opts] = hoisted.captured.createSessionQueryMock.mock.calls[0]!
       const env = (opts as { env?: Record<string, string | undefined> }).env
-      expect(env?.PATH).toBe(process.env.PATH)
+      expect(env?.PATH?.split(':')).toEqual(expect.arrayContaining(process.env.PATH!.split(':')))
       expect(env?.ANTHROPIC_BASE_URL).toBe('https://proxy.example.com')
     })
 

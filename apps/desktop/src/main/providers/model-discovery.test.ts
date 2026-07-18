@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ServiceEndpoint } from '@superone/shared/platform-registry'
 import { discoverModels } from './model-discovery'
 
+vi.mock('../logger', () => ({ default: { info: vi.fn(), warn: vi.fn() } }))
+
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
 }

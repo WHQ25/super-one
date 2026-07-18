@@ -2,6 +2,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../providers/resolver', () => ({ resolveChatService: vi.fn(() => null) }))
 
+vi.mock('../providers/llm-proxy-manager', () => ({
+  ensureCodexProxyUrl: vi.fn(async () => undefined),
+  getCodexProxyUrl: vi.fn(() => undefined),
+  ensureProxy: vi.fn(async () => ({ url: '', port: 0 })),
+  shutdownAll: vi.fn(),
+}))
+
 vi.mock('../logger', () => ({
   default: {
     info: vi.fn(),

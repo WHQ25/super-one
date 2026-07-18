@@ -31,7 +31,8 @@ vi.mock('@/stores/miniapp', () => ({
   useMiniAppStore: (selector: (state: { apps: never[] }) => unknown) => selector({ apps: [] }),
 }))
 
-vi.mock('@/components/activity/activity-panel-api', () => ({
+vi.mock('@/components/activity/activity-panel-api', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   openFileTab: vi.fn(),
 }))
 
@@ -73,7 +74,8 @@ vi.mock('./CodeBlock', () => ({
   HighlightedCodeBlock: ({ text }: { text: string }) => <pre>{text}</pre>,
 }))
 
-vi.mock('./tool-display', () => ({
+vi.mock('./tool-display', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   getToolDisplay: () => ({ icon: 'file-edit', summary: 'foo.ts' }),
   getToolVerb: (name: string) => name,
   parseToolInput: (input: string) => JSON.parse(input),

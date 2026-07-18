@@ -266,25 +266,25 @@ export function WidgetBlock({ data, streaming }: WidgetBlockProps) {
 
   return (
     <div className="group/widget my-2 w-full">
-      <div className="flex h-5 items-center justify-end gap-1.5 px-1 opacity-0 transition-opacity group-hover/widget:opacity-100">
+      <div className="mb-1.5 flex h-5 items-center justify-end gap-1.5 px-1 opacity-0 transition-opacity group-hover/widget:opacity-100">
         <span className="text-xs text-muted-foreground/70">
           {displayTitle}
         </span>
         {mountIframe && iframeReady && (
           <>
             <button
-              onClick={(e) => { e.stopPropagation(); setSaveOpen(true) }}
-              className="text-muted-foreground/70 transition-colors hover:text-foreground"
-              title={data.templateId ? t('widget.save.updateTitle') : t('widget.save.title')}
-            >
-              <Bookmark className="size-3.5" />
-            </button>
-            <button
               onClick={(e) => downloadWidget(finalSrcdoc, displayTitle, e)}
               className="text-muted-foreground/70 transition-colors hover:text-foreground"
               title={t('tooltips.saveAsHtml')}
             >
               <Download className="size-3.5" />
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); setSaveOpen(true) }}
+              className="text-muted-foreground/70 transition-colors hover:text-foreground"
+              title={data.templateId ? t('widget.save.updateTitle') : t('widget.save.title')}
+            >
+              <Bookmark className="size-3.5" />
             </button>
           </>
         )}

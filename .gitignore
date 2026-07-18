@@ -64,3 +64,6 @@ storybook-static/
 .agents/skills/remotion-best-practices
 .claude/skills/remotion-best-practices
 skills-lock.json
+
+# WorkBuddy 
+.workbuddy

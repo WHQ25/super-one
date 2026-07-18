@@ -169,14 +169,14 @@ export function isBuiltInSuperoneTool(qualifiedName: string): boolean {
   return BUILT_IN_QUALIFIED_NAMES.has(qualifiedName)
 }
 
-export function createSuperoneMcpServer(sessionId: string): McpSdkServerConfigWithInstance {
+export function createSuperoneMcpServer(sessionId: string, projectPath?: string): McpSdkServerConfigWithInstance {
   const server = new McpServer({ name: 'superone', version: '1.0.0' })
   registerSuperoneTools(server, {
     notifyDevAppReady,
     sessionId,
     sessionHost: getSessionHost(),
   })
-  registerWidgetTools(server)
+  registerWidgetTools(server, { projectPath })
   registerBrowserTools(server, sessionId)
   const state: ProjectServerState = { server, registeredTools: new Map() }
 

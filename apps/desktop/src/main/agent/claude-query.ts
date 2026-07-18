@@ -92,7 +92,7 @@ export function buildClaudeOptions(opts: SessionQueryOptions): Options {
     }),
     systemPrompt: { type: 'preset', preset: 'claude_code', append: SUPERONE_SYSTEM_PROMPT_APPEND },
     hooks: { PreToolUse: [{ hooks: [denySubagentSessionRename] }] },
-    mcpServers: { 'superone': createSuperoneMcpServer(opts.superoneSessionId) },
+    mcpServers: { 'superone': createSuperoneMcpServer(opts.superoneSessionId, opts.projectPath) },
     ...(opts.enabledSkills ? { skills: opts.enabledSkills } : {}),
     ...(opts.askUserQuestionPreviewFormat
       ? { toolConfig: { askUserQuestion: { previewFormat: opts.askUserQuestionPreviewFormat } } }

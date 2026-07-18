@@ -60,6 +60,7 @@ import { getBuiltinAgent } from './acp/agent-catalog'
 import { readAcpResourcesCache, writeAcpResourcesCache, refreshAcpModelsOnce } from './acp/acp-model-cache'
 import {
   AgentIpcChannels,
+  type ModelOption,
   type SaveWidgetTemplateRequest,
   type CodexCollaborationMode,
   type CodexPermissionPreset,
@@ -976,14 +977,14 @@ function registerIpcHandlers(): void {
     if (resolved && resolved.protocol === 'openai-chat') {
       const catalogById = new Map<string, string>()
       for (const m of (resolved.models ?? [])) if (m.name) catalogById.set(m.id, m.name)
-      const mapped = new Map<string, { id: string; name: string; isDefault: boolean }>()
-      for (const m of (resolved.models ?? [])) mapped.set(m.id, { id: m.id, name: m.name ?? m.id, isDefault: false })
+      const mapped = new Map<string, ModelOption>()
+      for (const m of (resolved.models ?? [])) mapped.set(m.id, { id: m.id, name: m.name ?? m.id, description: '', isDefault: false })
       for (const slot of Object.values(resolved.modelMapping ?? {})) {
         if (!slot.id) continue
         const strippedId = slot.id.replace(/\[1m\]/i, '')
         if (!mapped.has(strippedId)) {
           const name = slot.name?.replace(/\[1m\]/i, '').trim() || catalogById.get(strippedId) || strippedId
-          mapped.set(strippedId, { id: strippedId, name, isDefault: true })
+          mapped.set(strippedId, { id: strippedId, name, description: '', isDefault: true })
         }
       }
       models = [...mapped.values()]

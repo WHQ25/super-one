@@ -20,7 +20,8 @@ function templateRoots(opts?: WidgetToolsOptions): TemplateRoots {
 export function registerWidgetTools(server: McpServer, opts?: WidgetToolsOptions): void {
   server.tool(
     'widget_read_guide',
-    'Returns design guidelines for widget_show (CSS patterns, colors, typography, layout rules, examples). ' +
+    'Returns design guidelines for widget_show (CSS patterns, colors, typography, layout rules, examples), ' +
+    'plus the widget templates the user has already saved and can reuse. ' +
     'Call this tool once before your first widget_show call. Do NOT mention this call to the user. ' +
     'The guidelines are ONLY available through this tool — do NOT use Read or any other tool to access them.',
     {
@@ -28,9 +29,11 @@ export function registerWidgetTools(server: McpServer, opts?: WidgetToolsOptions
         'Which guideline modules to load: diagram, mockup, interactive, chart, art. Pick all that fit.'
       ),
     },
-    async ({ modules }) => ({
-      content: [{ type: 'text' as const, text: getGuidelines(modules) }],
-    }),
+    async ({ modules }) => {
+      const { listTemplates, formatTemplateList } = await import('./template-store')
+      const saved = formatTemplateList(listTemplates(templateRoots(opts)))
+      return { content: [{ type: 'text' as const, text: saved + getGuidelines(modules) }] }
+    },
   )
 
   server.tool(
@@ -84,6 +87,51 @@ export function registerWidgetTools(server: McpServer, opts?: WidgetToolsOptions
         await waitForWidgetReady(title)
       }
       return { content }
+    },
+  )
+
+  server.tool(
+    'widget_save',
+    'Save a widget as a reusable template so it can be re-rendered later with widget_show({ template, data }). ' +
+    'Only call this when the user asks to keep a widget, or asks to change one that is already saved — ' +
+    'saving writes a file into their project, so it is their decision, not yours. ' +
+    'To edit a saved template, pass its existing id: read the file, change it, and save it back under the same id.',
+    {
+      id: z.string().describe(
+        'Existing template id to update, or a short kebab-case name for a new one ' +
+        '(a unique suffix is appended so distinct saves never collide).'
+      ),
+      title: z.string().describe('Human-readable name shown in the template list.'),
+      code: z.string().describe('The widget HTML or SVG to store, exactly as it should be re-rendered.'),
+      description: z.string().optional().describe('One line telling a future agent when to reuse this template.'),
+      inputSchema: z.record(z.string(), z.unknown()).optional().describe(
+        'JSON Schema for the data this template expects. Omit for a template that renders without data.'
+      ),
+      scope: z.enum(['project', 'user']).optional().describe(
+        'project (default) stores it under the project so it can be shared through git; user makes it available everywhere.'
+      ),
+    },
+    async ({ id, title, code, description, inputSchema, scope }) => {
+      const roots = templateRoots(opts)
+      const target = scope ?? 'project'
+      if (target === 'project' && !roots.project) {
+        return { content: [{ type: 'text' as const, text: 'No project is open, so this template can only be saved with scope "user".' }], isError: true }
+      }
+      try {
+        const { allocateTemplateId, saveTemplate } = await import('./template-store')
+        const resolvedId = allocateTemplateId(roots, id, target)
+        const existed = resolvedId === id
+        const saved = saveTemplate(roots, { id: resolvedId, scope: target, code, title, description, inputSchema })
+        return {
+          content: [{
+            type: 'text' as const,
+            text: `${existed ? 'Updated' : 'Saved'} widget template "${saved.id}" (${target} scope, v${saved.version}). `
+              + `Re-render it with widget_show({ template: "${saved.id}", data: { ... } }).`,
+          }],
+        }
+      } catch (err) {
+        return { content: [{ type: 'text' as const, text: `Could not save widget template: ${err instanceof Error ? err.message : String(err)}` }], isError: true }
+      }
     },
   )
 }

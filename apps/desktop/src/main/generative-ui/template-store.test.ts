@@ -3,6 +3,8 @@ import { join } from 'path'
 import { tmpdir } from 'os'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
+  allocateTemplateId,
+  formatTemplateList,
   listTemplates,
   readTemplate,
   saveTemplate,
@@ -95,11 +97,65 @@ describe('widget template store', () => {
     expect(found?.version).toBe(2)
   })
 
+  it('gives a brand new template a unique suffixed id so distinct saves never collide', () => {
+    const first = allocateTemplateId(roots, 'video gen', 'project')
+    const second = allocateTemplateId(roots, 'video gen', 'project')
+
+    expect(first).toMatch(/^video-gen-[0-9a-f]{8}$/)
+    expect(second).not.toBe(first)
+  })
+
+  it('reuses the id verbatim when it already names a template in that scope', () => {
+    seed(roots.project!, 'video-gen-a1b2c3d4', '<div>v1</div>')
+
+    expect(allocateTemplateId(roots, 'video-gen-a1b2c3d4', 'project')).toBe('video-gen-a1b2c3d4')
+  })
+
+  it('treats an id that exists only in the other scope as a new template', () => {
+    seed(roots.user!, 'video-gen-a1b2c3d4', '<div>user copy</div>')
+
+    expect(allocateTemplateId(roots, 'video-gen-a1b2c3d4', 'project')).not.toBe('video-gen-a1b2c3d4')
+  })
+
+  it('strips characters that are not valid in a template id', () => {
+    expect(allocateTemplateId(roots, '../Video Gen!!', 'project')).toMatch(/^video-gen-[0-9a-f]{8}$/)
+  })
+
   it('works with no project root so user-scope templates still resolve', () => {
     const userOnly: TemplateRoots = { user: roots.user! }
     seed(roots.user!, 'personal-aaaaaaaa', '<div>mine</div>')
 
     expect(readTemplate(userOnly, 'personal-aaaaaaaa')?.scope).toBe('user')
     expect(listTemplates(userOnly)).toHaveLength(1)
+  })
+})
+
+describe('template list rendered into the guide', () => {
+  it('renders nothing when no templates are saved so the guide is unchanged', () => {
+    expect(formatTemplateList([])).toBe('')
+  })
+
+  it('lists each template with its scope, description and expected data shape', () => {
+    saveTemplate(roots, {
+      id: 'video-gen-a1b2c3d4',
+      scope: 'project',
+      code: '<div/>',
+      title: 'Video gen',
+      description: 'Panel for driving the video CLI',
+      inputSchema: { type: 'object', properties: { prompt: { type: 'string' } } },
+    })
+
+    const rendered = formatTemplateList(listTemplates(roots))
+
+    expect(rendered).toContain('`video-gen-a1b2c3d4` (project)')
+    expect(rendered).toContain('Panel for driving the video CLI')
+    expect(rendered).toContain('"prompt"')
+    expect(rendered).toContain('widget_show({ template: "<id>", data: { ... } })')
+  })
+
+  it('falls back to the title when a template has no description', () => {
+    saveTemplate(roots, { id: 'plain-a1b2c3d4', scope: 'user', code: '<div/>', title: 'Plain panel' })
+
+    expect(formatTemplateList(listTemplates(roots))).toContain('(user) — Plain panel.')
   })
 })

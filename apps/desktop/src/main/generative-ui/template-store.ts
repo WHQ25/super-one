@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto'
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
 
@@ -100,6 +101,41 @@ export function listTemplates(roots: TemplateRoots): WidgetTemplate[] {
     }
   }
   return [...byId.values()]
+}
+
+export function formatTemplateList(templates: WidgetTemplate[]): string {
+  if (templates.length === 0) return ''
+  const rows = [...templates]
+    .sort((a, b) => a.id.localeCompare(b.id))
+    .map((t) => {
+      const schema = t.inputSchema ? ` Data: ${JSON.stringify(t.inputSchema)}` : ''
+      return `- \`${t.id}\` (${t.scope}) — ${t.description || t.title}.${schema}`
+    })
+  return [
+    '## Saved templates',
+    '',
+    'The user saved these widgets for reuse. When one fits the task, re-render it with',
+    '`widget_show({ template: "<id>", data: { ... } })` instead of writing new code.',
+    '',
+    ...rows,
+    '',
+    '---',
+    '',
+  ].join('\n')
+}
+
+function slugify(requested: string): string {
+  const slug = requested
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60)
+  return slug || 'widget'
+}
+
+export function allocateTemplateId(roots: TemplateRoots, requested: string, scope: TemplateScope): string {
+  if (isValidTemplateId(requested) && templateExists(roots, requested, scope)) return requested
+  return `${slugify(requested)}-${randomUUID().slice(0, 8)}`
 }
 
 export function templateExists(roots: TemplateRoots, id: string, scope: TemplateScope): boolean {

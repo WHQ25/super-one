@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
+import type { CapabilityTask } from '../agent-types'
+import type { ModelCatalog } from '../model-catalog-types'
 import {
   MAX_DISCOVERED_MODELS,
+  buildCatalogTaskIndex,
   flattenDiscoveredTasks,
   mergeDiscovered,
   parseNewApiPricing,
@@ -119,6 +122,137 @@ describe('parseOpenAiModelsList', () => {
   it('skips malformed entries (missing id) without throwing', () => {
     const json = { data: [{ object: 'model' }, { id: 'gpt-5' }] }
     expect(parseOpenAiModelsList(json)).toEqual([{ id: 'gpt-5', name: undefined, byFamily: { openai: ['chat'] } }])
+  })
+
+  it('classifies an id via the catalog index when supported_endpoint_types is absent', () => {
+    const catalogIndex: Map<string, CapabilityTask[]> = new Map([
+      ['gpt-image-1', ['image']],
+      ['dall-e-3', ['image']],
+    ])
+    const json = { data: [{ id: 'gpt-image-1' }, { id: 'dall-e-3' }, { id: 'gpt-5' }] }
+    expect(parseOpenAiModelsList(json, catalogIndex)).toEqual([
+      { id: 'gpt-image-1', name: undefined, byFamily: { openai: ['image'] } },
+      { id: 'dall-e-3', name: undefined, byFamily: { openai: ['image'] } },
+      { id: 'gpt-5', name: undefined, byFamily: { openai: ['chat'] } },
+    ])
+  })
+
+  it('prefers supported_endpoint_types over the catalog index when both are present', () => {
+    const catalogIndex: Map<string, CapabilityTask[]> = new Map([['gpt-5', ['image']]])
+    const json = { data: [{ id: 'gpt-5', supported_endpoint_types: ['openai'] }] }
+    expect(parseOpenAiModelsList(json, catalogIndex)).toEqual([
+      { id: 'gpt-5', name: undefined, byFamily: { openai: ['chat'] } },
+    ])
+  })
+})
+
+describe('buildCatalogTaskIndex', () => {
+  it('indexes catalog models by bare id (vendor namespace stripped) with their capability tasks', () => {
+    const catalog: ModelCatalog = {
+      generatedAt: '2026-01-01',
+      source: 'snapshot',
+      providers: [
+        {
+          id: 'openrouter',
+          name: 'OpenRouter',
+          npm: '',
+          env: [],
+          doc: '',
+          models: [
+            {
+              id: 'openai/gpt-image-1',
+              name: 'GPT Image 1',
+              providerId: 'openrouter',
+              inputModalities: ['text'],
+              outputModalities: ['image'],
+              reasoning: false,
+              toolCall: false,
+              attachment: false,
+            },
+          ],
+        },
+      ],
+    }
+    const index = buildCatalogTaskIndex(catalog)
+    expect(index.get('gpt-image-1')).toEqual(['image'])
+  })
+
+  it('prefers a canonical vendor (openai/anthropic/google) over other providers on id collision', () => {
+    const catalog: ModelCatalog = {
+      generatedAt: '2026-01-01',
+      source: 'snapshot',
+      providers: [
+        {
+          id: 'some-reseller',
+          name: 'Reseller',
+          npm: '',
+          env: [],
+          doc: '',
+          models: [
+            {
+              id: 'gpt-4o',
+              name: 'GPT-4o (reseller)',
+              providerId: 'some-reseller',
+              inputModalities: ['text'],
+              outputModalities: ['text'],
+              reasoning: false,
+              toolCall: false,
+              attachment: false,
+            },
+          ],
+        },
+        {
+          id: 'openai',
+          name: 'OpenAI',
+          npm: '',
+          env: [],
+          doc: '',
+          models: [
+            {
+              id: 'gpt-4o',
+              name: 'GPT-4o',
+              providerId: 'openai',
+              inputModalities: ['text', 'image'],
+              outputModalities: ['text'],
+              reasoning: false,
+              toolCall: false,
+              attachment: true,
+            },
+          ],
+        },
+      ],
+    }
+    const index = buildCatalogTaskIndex(catalog)
+    expect(index.get('gpt-4o')).toEqual(['chat'])
+  })
+
+  it('omits catalog models with no CapabilityTask-mapped modality (e.g. text-only embeddings)', () => {
+    const catalog: ModelCatalog = {
+      generatedAt: '2026-01-01',
+      source: 'snapshot',
+      providers: [
+        {
+          id: 'openai',
+          name: 'OpenAI',
+          npm: '',
+          env: [],
+          doc: '',
+          models: [
+            {
+              id: 'text-embedding-3-large',
+              name: 'text-embedding-3-large',
+              providerId: 'openai',
+              inputModalities: ['text'],
+              outputModalities: [],
+              reasoning: false,
+              toolCall: false,
+              attachment: false,
+            },
+          ],
+        },
+      ],
+    }
+    expect(buildCatalogTaskIndex(catalog).has('text-embedding-3-large')).toBe(false)
   })
 })
 

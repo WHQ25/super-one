@@ -34,7 +34,7 @@ import {
   type CreateCredentialInput,
   type UpdateCredentialInput,
 } from '../providers/credential-store'
-import type { ConsumerBinding, ConsumerId, Platform, ServiceEndpoint } from '@superone/shared/platform-registry'
+import type { CapabilityTask, ConsumerBinding, ConsumerId, Platform, ServiceEndpoint } from '@superone/shared/platform-registry'
 import { sanitizeGitRef } from '../path-security'
 import { authorizeAndStat, FileBridgeError, type AuthorizedFile } from '../file-bridge'
 import { tmpdir } from 'os'
@@ -261,6 +261,22 @@ export class AgentService {
     const event: AgentEvent = { type: 'provider_changed', harnessId, provider }
     this.notifyEventSubscribers(event)
     this.broadcastEventToRenderer(event)
+  }
+
+  /**
+   * Index the cached models.dev catalog by bare model id so relay model discovery can classify a
+   * plain OpenAI-compatible `/v1/models` id (no `supported_endpoint_types`) instead of defaulting
+   * every id to chat. Never throws — a catalog miss just falls back to the old chat-only default.
+   */
+  private async buildDiscoveryCatalogIndex(): Promise<Map<string, CapabilityTask[]> | undefined> {
+    try {
+      const { getModelCatalog } = await import('../model-catalog')
+      const { buildCatalogTaskIndex } = await import('@superone/shared/platform-registry')
+      return buildCatalogTaskIndex(await getModelCatalog())
+    } catch (err) {
+      log.warn('[discover-models] catalog index unavailable:', err)
+      return undefined
+    }
   }
 
   /** A credential/platform change can affect either harness — rebuild and re-broadcast both. */
@@ -2068,7 +2084,8 @@ export class AgentService {
 
     ipcMain.handle(AgentIpcChannels.PROVIDERS_DISCOVER_MODELS, async (_event, data: { apiKey: string; credentialId?: string; endpoint: ServiceEndpoint }) => {
       const apiKey = resolveTestApiKey({ api_key: data.apiKey, credential_id: data.credentialId })
-      const result = await discoverModels(data.endpoint, apiKey)
+      const catalogIndex = await this.buildDiscoveryCatalogIndex()
+      const result = await discoverModels(data.endpoint, apiKey, catalogIndex)
       trace('providers.discover', 'result', result)
       return result
     })

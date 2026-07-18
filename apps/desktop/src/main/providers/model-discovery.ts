@@ -1,4 +1,4 @@
-import type { DiscoverModelsResult, DiscoveredOpenAiModel } from '@superone/shared/agent-types'
+import type { CapabilityTask, DiscoverModelsResult, DiscoveredOpenAiModel } from '@superone/shared/agent-types'
 import {
   MAX_DISCOVERED_MODELS,
   flattenDiscoveredTasks,
@@ -90,14 +90,18 @@ async function fetchPricing(siteRoot: string): Promise<DiscoveredModel[] | null>
 }
 
 /** Single OpenAI-format list — NewAPI returns all families here with supported_endpoint_types. */
-async function fetchOpenAiModelsList(baseUrl: string, apiKey: string): Promise<DiscoveredModel[] | null> {
+async function fetchOpenAiModelsList(
+  baseUrl: string,
+  apiKey: string,
+  catalogIndex?: Map<string, CapabilityTask[]>,
+): Promise<DiscoveredModel[] | null> {
   const url = modelsUrl('openai', baseUrl)
   const result = await fetchJson(url, { headers: authHeaders('openai', apiKey) })
   if (!result.ok) {
     log.info('[discover-models] modelsList unavailable url=%s reason=%s', url, result.error)
     return null
   }
-  const parsed = parseOpenAiModelsList(result.json)
+  const parsed = parseOpenAiModelsList(result.json, catalogIndex)
   if (!parsed) {
     log.warn(
       '[discover-models] modelsList parse returned null (shape mismatch) url=%s keys=%s sample=%j',
@@ -135,7 +139,11 @@ function toResultModel(m: DiscoveredModel): DiscoveredOpenAiModel | null {
  * from `supported_endpoint_types` so anthropic/gemini/openai can all be enabled on the right wire.
  * Never throws: either source failing degrades to 'unavailable', never blocks the other.
  */
-export async function discoverModels(endpoint: ServiceEndpoint, apiKey: string): Promise<DiscoverModelsResult> {
+export async function discoverModels(
+  endpoint: ServiceEndpoint,
+  apiKey: string,
+  catalogIndex?: Map<string, CapabilityTask[]>,
+): Promise<DiscoverModelsResult> {
   const siteRoot = siteRootFrom(endpoint.baseUrl)
   const listUrl = modelsUrl('openai', endpoint.baseUrl)
   log.info(
@@ -149,7 +157,10 @@ export async function discoverModels(endpoint: ServiceEndpoint, apiKey: string):
     apiKey ? `${apiKey.slice(0, 4)}…` : '(empty)',
   )
 
-  const [pricing, modelsList] = await Promise.all([fetchPricing(siteRoot), fetchOpenAiModelsList(endpoint.baseUrl, apiKey)])
+  const [pricing, modelsList] = await Promise.all([
+    fetchPricing(siteRoot),
+    fetchOpenAiModelsList(endpoint.baseUrl, apiKey, catalogIndex),
+  ])
 
   const merged = mergeDiscovered(pricing, modelsList)
   const models: DiscoveredOpenAiModel[] = []

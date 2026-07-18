@@ -1,5 +1,6 @@
 import type { CapabilityTask } from '../agent-types'
-import { MODEL_TASK_ORDER } from '../model-tasks'
+import type { ModelCatalog } from '../model-catalog-types'
+import { MODEL_TASK_ORDER, modelTasks } from '../model-tasks'
 import type { ProtocolFamily } from './protocols'
 import { FAMILY_TASKS } from './protocols'
 
@@ -30,6 +31,36 @@ function addTask(byFamily: Partial<Record<ProtocolFamily, CapabilityTask[]>>, fa
   const tasks = byFamily[family] ?? []
   if (!tasks.includes(task)) tasks.push(task)
   byFamily[family] = tasks
+}
+
+/** Bare model id with any `vendor/` namespace prefix stripped, for cross-catalog id matching. */
+function normalizeModelId(id: string): string {
+  const slash = id.lastIndexOf('/')
+  return (slash >= 0 ? id.slice(slash + 1) : id).toLowerCase()
+}
+
+const CANONICAL_CATALOG_PROVIDERS = ['openai', 'anthropic', 'google']
+
+/**
+ * Index every models.dev catalog model by its bare id so a discovered model with no
+ * `supported_endpoint_types` (a plain OpenAI-compatible `/v1/models` response) can borrow its
+ * real capability tasks instead of defaulting to chat-only. Canonical vendors win id collisions
+ * since relays overwhelmingly proxy those ids verbatim (e.g. `gpt-image-1`, `dall-e-3`).
+ */
+export function buildCatalogTaskIndex(catalog: ModelCatalog): Map<string, CapabilityTask[]> {
+  const index = new Map<string, CapabilityTask[]>()
+  const providers = [...catalog.providers].sort(
+    (a, b) => Number(CANONICAL_CATALOG_PROVIDERS.includes(b.id)) - Number(CANONICAL_CATALOG_PROVIDERS.includes(a.id)),
+  )
+  for (const provider of providers) {
+    for (const model of provider.models) {
+      const key = normalizeModelId(model.id)
+      if (index.has(key)) continue
+      const tasks = modelTasks(model)
+      if (tasks.length > 0) index.set(key, tasks)
+    }
+  }
+  return index
 }
 
 function byFamilyFromEndpointTypes(endpointTypes: unknown): Partial<Record<ProtocolFamily, CapabilityTask[]>> {
@@ -108,10 +139,12 @@ export function parseNewApiPricing(json: unknown): DiscoveredModel[] | null {
 
 /**
  * Parse OpenAI-compatible `GET {base}/v1/models` (NewAPI Bearer form). When NewAPI attaches
- * `supported_endpoint_types`, those map to openai/anthropic/google families; plain OpenAI-compatible
- * gateways without that field default every id to openai/chat.
+ * `supported_endpoint_types`, those map to openai/anthropic/google families. Plain OpenAI-compatible
+ * gateways without that field fall back to a `catalogIndex` lookup (see `buildCatalogTaskIndex`) —
+ * matching the discovered id against models.dev's real capability data — and only default to
+ * openai/chat when no catalog match exists either.
  */
-export function parseOpenAiModelsList(json: unknown): DiscoveredModel[] | null {
+export function parseOpenAiModelsList(json: unknown, catalogIndex?: Map<string, CapabilityTask[]>): DiscoveredModel[] | null {
   if (!json || typeof json !== 'object') return null
   const data = (json as Record<string, unknown>).data
   if (!Array.isArray(data)) return null
@@ -123,7 +156,10 @@ export function parseOpenAiModelsList(json: unknown): DiscoveredModel[] | null {
     const id = row.id
     if (typeof id !== 'string' || !id) continue
     let byFamily = byFamilyFromEndpointTypes(row.supported_endpoint_types)
-    if (Object.keys(byFamily).length === 0) byFamily = { openai: ['chat'] }
+    if (Object.keys(byFamily).length === 0) {
+      const catalogTasks = catalogIndex?.get(normalizeModelId(id))
+      byFamily = { openai: catalogTasks && catalogTasks.length > 0 ? catalogTasks : ['chat'] }
+    }
     const name = typeof row.name === 'string' && row.name ? row.name : undefined
     models.push({ id, name, byFamily })
   }

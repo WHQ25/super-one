@@ -9,13 +9,13 @@ const DEFAULT_BASE_URL: Record<ProtocolFamily, string> = {
 
 const TEST_TIMEOUT_MS = 10000
 
-function modelsUrl(family: ProtocolFamily, baseUrl: string): string {
+export function modelsUrl(family: ProtocolFamily, baseUrl: string): string {
   const root = (baseUrl || DEFAULT_BASE_URL[family]).replace(/\/+$/, '')
   if (family === 'google') return `${root.replace(/\/v1(beta)?$/, '')}/v1beta/models`
   return `${root.replace(/\/v1$/, '')}/v1/models`
 }
 
-function authHeaders(family: ProtocolFamily, apiKey: string): Record<string, string> {
+export function authHeaders(family: ProtocolFamily, apiKey: string): Record<string, string> {
   if (family === 'anthropic') return { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' }
   if (family === 'google') return { 'x-goog-api-key': apiKey }
   return { Authorization: `Bearer ${apiKey}` }

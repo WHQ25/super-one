@@ -9,14 +9,21 @@ import { cn } from '@superone/ui/lib/utils'
 import {
   endpointServes,
   endpointTasks,
+  PROTOCOL_FAMILY,
   type EndpointOverride,
   type Plan,
+  type ProtocolFamily,
   type ServiceEndpoint,
 } from '@superone/shared/platform-registry'
-import type { CapabilityTask } from '@superone/shared/agent-types'
+import type { CapabilityTask, DiscoveredProtocolFamily } from '@superone/shared/agent-types'
 import { MODEL_TASK_ORDER } from '@superone/shared/model-tasks'
 
-export type CustomModel = { id: string; name?: string; tasks: CapabilityTask[] }
+export type CustomModel = {
+  id: string
+  name?: string
+  tasks: CapabilityTask[]
+  byFamily?: Partial<Record<DiscoveredProtocolFamily, CapabilityTask[]>>
+}
 
 /** Plan endpoints that serve any of the given tasks — a custom model is written to each. */
 export function endpointsForTasks(plan: Plan, tasks: CapabilityTask[]): ServiceEndpoint[] {
@@ -51,10 +58,15 @@ function dropModel(overrides: Record<string, EndpointOverride>, id: string): Rec
   return next
 }
 
+function findFamilyEndpoint(plan: Plan, family: ProtocolFamily): ServiceEndpoint | undefined {
+  return plan.endpoints.find((e) => e.id === family || PROTOCOL_FAMILY[e.protocols[0]] === family)
+}
+
 /**
  * Add or replace a user-defined model across the plan endpoints serving its tasks. The prior
  * entry is removed everywhere first (its task set may have changed → a different endpoint set),
  * then re-added, storing per endpoint only the intersection of tasks that endpoint serves.
+ * When `byFamily` is set (discovered models), write each family only onto that family's endpoint.
  */
 export function upsertCustomModel(
   overrides: Record<string, EndpointOverride> | undefined,
@@ -66,6 +78,20 @@ export function upsertCustomModel(
   let next: Record<string, EndpointOverride> = { ...(overrides ?? {}) }
   if (!id || model.tasks.length === 0) return next
   next = dropModel(next, id)
+
+  if (model.byFamily && Object.keys(model.byFamily).length > 0) {
+    for (const [family, tasks] of Object.entries(model.byFamily) as [ProtocolFamily, CapabilityTask[]][]) {
+      if (!tasks?.length) continue
+      const ep = findFamilyEndpoint(plan, family)
+      if (!ep) continue
+      const served = tasks.filter((t) => endpointServes(ep, t))
+      if (served.length === 0) continue
+      const ov = next[ep.id] ?? {}
+      next[ep.id] = { ...ov, models: [...(ov.models ?? []), { id, name, tasks: served }] }
+    }
+    return next
+  }
+
   for (const ep of endpointsForTasks(plan, model.tasks)) {
     const tasks = model.tasks.filter((t) => endpointServes(ep, t))
     if (tasks.length === 0) continue

@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import { AgentIpcChannels, type NativeContextMenuItemSpec, type AgentPrewarmHint, type BashOutputEvent, type CodexCollaborationMode, type CodexPermissionPreset, type CodexReasoningEffort, type CodexReviewTarget, type CodexExternalAgentItem, type ProviderEndpointTestResponse, type RemoteDeviceConfig, type SandboxMode, type SendMessageRequest, type ContentBlock, type ChatMessageContext, type WorktreeActivateRequest, type WorktreeHandoffResult, type WorktreeAssignResult, type GitDirtyStatus, type SessionForkRequest, type SessionForkResult, type HookSavePayload, type TerminalEvent, type TerminalListItem, type TerminalSnapshot, type HarnessId, type BrowserCertError, type BrowserOpenTabRequest, type UpsertMediaProviderRequest } from '@superone/shared/agent-types'
+import { AgentIpcChannels, type NativeContextMenuItemSpec, type AgentPrewarmHint, type BashOutputEvent, type CodexCollaborationMode, type CodexPermissionPreset, type CodexReasoningEffort, type CodexReviewTarget, type CodexExternalAgentItem, type ProviderEndpointTestResponse, type DiscoverModelsResult, type RemoteDeviceConfig, type SandboxMode, type SendMessageRequest, type ContentBlock, type ChatMessageContext, type WorktreeActivateRequest, type WorktreeHandoffResult, type WorktreeAssignResult, type GitDirtyStatus, type SessionForkRequest, type SessionForkResult, type HookSavePayload, type TerminalEvent, type TerminalListItem, type TerminalSnapshot, type HarnessId, type BrowserCertError, type BrowserOpenTabRequest, type UpsertMediaProviderRequest } from '@superone/shared/agent-types'
 import type { McpbInstallRequest } from '@superone/shared/mcpb-types'
 import type { ConsumerBinding, ConsumerId, Credential, EndpointOverride, Platform, ServiceEndpoint } from '@superone/shared/platform-registry'
 
@@ -623,6 +623,8 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.BINDINGS_CLEAR, consumer),
   testProviderEndpoint: (data: { apiKey: string; credentialId?: string; endpoints: ServiceEndpoint[] }) =>
     ipcRenderer.invoke(AgentIpcChannels.PROVIDERS_TEST_ENDPOINT, data) as Promise<ProviderEndpointTestResponse>,
+  discoverProviderModels: (data: { apiKey: string; credentialId?: string; endpoint: ServiceEndpoint }) =>
+    ipcRenderer.invoke(AgentIpcChannels.PROVIDERS_DISCOVER_MODELS, data) as Promise<DiscoverModelsResult>,
   listAcpAgents: () =>
     ipcRenderer.invoke(AgentIpcChannels.ACP_LIST_AGENTS) as Promise<import('@superone/shared/agent-types').AcpResources>,
   refreshAcpModels: (agentId?: string) =>

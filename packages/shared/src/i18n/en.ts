@@ -1051,6 +1051,8 @@ export type Messages = {
       notSet: string
       customName: string
       baseUrl: string
+      relayHint: string
+      discoverModelsDone: string
       apiKey: string
       formats: string
       capabilities: string
@@ -1149,6 +1151,12 @@ export type Messages = {
         add: string
         duplicate: string
         deleteCustom: string
+        discover: string
+        discoverError: string
+        discoverEmpty: string
+        discoverTruncated: string
+        discoveredGroup: string
+        enableAllDiscovered: string
       }
     }
     mcp: {
@@ -2732,6 +2740,8 @@ export const en: Messages = {
       notSet: 'Not Set',
       customName: 'Platform Name',
       baseUrl: 'Base URL',
+      relayHint: 'Relay / aggregator (e.g. NewAPI): enter the site root — OpenAI-compatible paths get /v1 appended automatically.',
+      discoverModelsDone: 'Models discovered — review the checked formats/capabilities and the model list below.',
       apiKey: 'API Key',
       formats: 'Compatible formats',
       capabilities: 'Capabilities',
@@ -2830,6 +2840,12 @@ export const en: Messages = {
         add: 'Add',
         duplicate: 'This model id already exists.',
         deleteCustom: 'Remove custom model',
+        discover: 'Discover Models',
+        discoverError: 'Could not discover models: {{message}}',
+        discoverEmpty: 'No models were discovered on this endpoint.',
+        discoverTruncated: 'Showing the first 500 discovered models.',
+        discoveredGroup: 'Discovered',
+        enableAllDiscovered: 'Enable all',
       },
     },
     mcp: {

@@ -20,6 +20,7 @@ import { resolveTestApiKey } from './provider-test-key'
 import { buildRemoteActiveService, resolveChatService } from '../providers/resolver'
 import { getPlatforms } from '../providers/registry'
 import { testServiceEndpoints } from '../providers/endpoint-test'
+import { discoverModels } from '../providers/model-discovery'
 import {
   createCredential,
   deleteBinding,
@@ -2063,6 +2064,13 @@ export class AgentService {
       const results = await testServiceEndpoints(data.endpoints, apiKey)
       trace('providers.test', 'result', results)
       return { success: results.every((r) => r.success), results }
+    })
+
+    ipcMain.handle(AgentIpcChannels.PROVIDERS_DISCOVER_MODELS, async (_event, data: { apiKey: string; credentialId?: string; endpoint: ServiceEndpoint }) => {
+      const apiKey = resolveTestApiKey({ api_key: data.apiKey, credential_id: data.credentialId })
+      const result = await discoverModels(data.endpoint, apiKey)
+      trace('providers.discover', 'result', result)
+      return result
     })
 
     // Cache-only. Detection / model probes run on app open (see main process startup).

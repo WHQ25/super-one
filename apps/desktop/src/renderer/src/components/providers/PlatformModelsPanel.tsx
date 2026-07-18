@@ -23,17 +23,11 @@ import { useTranslation } from 'react-i18next'
 import { Button } from '@superone/ui/components/ui/button'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { Switch } from '@superone/ui/components/ui/switch'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@superone/ui/components/ui/select'
-import type { CapabilityTask } from '@superone/shared/agent-types'
+import type { CapabilityTask, DiscoveredOpenAiModel } from '@superone/shared/agent-types'
 import {
   catalogProviderIdFor,
   endpointServes,
+  isCustomPlatform,
   mergeModelMapping,
   resolveEndpointModels,
   type Credential,
@@ -56,6 +50,8 @@ import {
   upsertCustomModel,
   type CustomModel,
 } from './custom-models'
+import { excludeDiscoveredIds } from './discovery-apply'
+import { useModelDiscovery } from './useModelDiscovery'
 
 type Tab = 'all' | CapabilityTask
 
@@ -196,23 +192,50 @@ function endpointsForTasks(plan: Plan, tasks: CapabilityTask[]): ServiceEndpoint
   return plan.endpoints.filter((e) => tasks.some((t) => endpointServes(e, t)))
 }
 
-export function PlatformModelsPanel({ platform, plan }: { platform: Platform; plan: Plan }) {
+export function PlatformModelsPanel({
+  platform,
+  plan,
+  selectedKeyId = '',
+}: {
+  platform: Platform
+  plan: Plan
+  selectedKeyId?: string
+}) {
   const { t } = useTranslation()
   const { catalog, loading, refreshing, refresh } = useModelCatalog()
   const credentials = useSettingsStore((s) => s.credentials)
   const updateCredential = useSettingsStore((s) => s.updateCredential)
+  const updateCustomPlatform = useSettingsStore((s) => s.updateCustomPlatform)
+  const isCustom = isCustomPlatform(platform)
 
   const planCreds = useMemo(
     () => credentials.filter((c) => c.platformId === platform.id && c.planId === plan.id),
     [credentials, platform.id, plan.id],
   )
-  const [keyId, setKeyId] = useState('')
-  const selectedCred: Credential | undefined = planCreds.find((c) => c.id === keyId) ?? planCreds[0]
+  const selectedCred: Credential | undefined = planCreds.find((c) => c.id === selectedKeyId) ?? planCreds[0]
 
   const catProvider = useMemo(
     () => (catalog ? matchCatalogProvider(catalog.providers, platform, plan) : null),
     [catalog, platform, plan],
   )
+
+  const {
+    endpoint: discoveryEp,
+    discovered,
+    state: discoverState,
+    discover,
+    enableModels,
+  } = useModelDiscovery({ platform, plan, credential: selectedCred, updateCredential, updateCustomPlatform })
+
+  const fetchBusy = isCustom ? discoverState.status === 'loading' : refreshing
+  const canFetch = isCustom ? !!discoveryEp && !!selectedCred : true
+  const handleFetch = useCallback(() => {
+    if (isCustom) {
+      if (canFetch) void discover()
+      return
+    }
+    void refresh()
+  }, [isCustom, canFetch, discover, refresh])
 
   // Only models this plan's endpoints actually serve are shown — a model no endpoint serves
   // (e.g. a chat model on the image-only Gemini plan) isn't configurable here.
@@ -288,8 +311,8 @@ export function PlatformModelsPanel({ platform, plan }: { platform: Platform; pl
     [endpointPools],
   )
   const customModels = useMemo(
-    () => listCustomModels(selectedCred?.overrides, isCatalogModel),
-    [selectedCred, isCatalogModel],
+    () => excludeDiscoveredIds(listCustomModels(selectedCred?.overrides, isCatalogModel), discovered),
+    [selectedCred, isCatalogModel, discovered],
   )
   const supportedTasks = useMemo(() => planSupportedTasks(plan), [plan])
 
@@ -308,13 +331,24 @@ export function PlatformModelsPanel({ platform, plan }: { platform: Platform; pl
     [selectedCred, updateCredential],
   )
 
+  // Enabling may synthesize/widen family endpoints (openai/anthropic/google) before writing. Disabling
+  // drops the model id from every override slot regardless of family.
+  const toggleDiscovered = useCallback(
+    (model: DiscoveredOpenAiModel, next: boolean) => {
+      if (next) void enableModels([model])
+      else removeCustom(model.id)
+    },
+    [enableModels, removeCustom],
+  )
+
   const taskCounts = useMemo(() => {
     const counts = new Map<CapabilityTask, number>()
     for (const { m } of annotated) for (const tk of modelTasks(m)) counts.set(tk, (counts.get(tk) ?? 0) + 1)
     for (const cm of customModels) for (const tk of cm.tasks) counts.set(tk, (counts.get(tk) ?? 0) + 1)
+    for (const d of discovered) for (const tk of d.tasks) counts.set(tk, (counts.get(tk) ?? 0) + 1)
     return counts
-  }, [annotated, customModels])
-  const totalCount = annotated.length + customModels.length
+  }, [annotated, customModels, discovered])
+  const totalCount = annotated.length + customModels.length + discovered.length
   const presentTasks = MODEL_TASK_ORDER.filter((tk) => taskCounts.has(tk))
 
   const [tab, setTab] = useState<Tab>('all')
@@ -344,9 +378,17 @@ export function PlatformModelsPanel({ platform, plan }: { platform: Platform; pl
       return true
     })
   }, [customModels, activeTab, query])
+  const discoveredRows = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    return discovered.filter((d) => {
+      if (activeTab !== 'all' && !d.tasks.includes(activeTab)) return false
+      if (q && !d.id.toLowerCase().includes(q) && !(d.name ?? '').toLowerCase().includes(q)) return false
+      return true
+    })
+  }, [discovered, activeTab, query])
   const existingIds = useMemo(
-    () => [...annotated.map((a) => a.m.id), ...customModels.map((c) => c.id)],
-    [annotated, customModels],
+    () => [...annotated.map((a) => a.m.id), ...customModels.map((c) => c.id), ...discovered.map((d) => d.id)],
+    [annotated, customModels, discovered],
   )
 
   const subtitle = (m: CatalogModel): string => {
@@ -427,6 +469,36 @@ export function PlatformModelsPanel({ platform, plan }: { platform: Platform; pl
     </div>
   )
 
+  const renderDiscoveredRow = (d: DiscoveredOpenAiModel) => {
+    const endpoints = endpointsForTasks(plan, d.tasks)
+    const { enabled, locked } = modelState(endpoints, d.id)
+    return (
+      <div key={d.id} className="flex items-center gap-3 px-3 py-2.5">
+        <div className="flex size-7 shrink-0 items-center justify-center">
+          {hasModelIcon(d.id)
+            ? <ModelIcon model={d.id} type="color" size={26} />
+            : <ProviderLabel brandKey={platform.brand} iconOnly size={26} />}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5">
+            <span className={`truncate text-sm font-medium ${!enabled ? 'text-muted-foreground' : ''}`}>{d.name || d.id}</span>
+            <ModelIdBadge id={d.id} />
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <span className="flex items-center gap-1">
+            {d.tasks.map((tk) => (
+              <CapBadge key={tk} icon={TASK_ICON[tk]} title={t(`resources.providerDialog.models.${tk}`)} />
+            ))}
+          </span>
+          <span title={locked ? t('resources.providerDialog.models.lockedHint') : undefined} className="flex">
+            <Switch checked={enabled} disabled={locked} onCheckedChange={(v) => toggleDiscovered(d, v)} />
+          </span>
+        </div>
+      </div>
+    )
+  }
+
   const groupHeader = (label: string, count: number) => (
     <div className="sticky top-0 z-10 flex items-center gap-1.5 bg-background/95 px-3 py-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground backdrop-blur">
       {label}
@@ -441,21 +513,6 @@ export function PlatformModelsPanel({ platform, plan }: { platform: Platform; pl
         <span className="text-xs text-muted-foreground">{t('resources.providerDialog.models.count', { count: totalCount })}</span>
       </div>
       <div className="flex items-center gap-1.5">
-        {selectedCred && supportedTasks.length > 0 && (
-          <AddCustomModelPopover supportedTasks={supportedTasks} existingIds={existingIds} onAdd={addCustom} />
-        )}
-        {planCreds.length > 1 && (
-          <Select value={selectedCred?.id ?? ''} onValueChange={setKeyId}>
-            <SelectTrigger className="h-7 w-40 text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {planCreds.map((c) => (
-                <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
         <div className="relative">
           <Search className="absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
           <input
@@ -465,8 +522,17 @@ export function PlatformModelsPanel({ platform, plan }: { platform: Platform; pl
             placeholder={t('resources.providerDialog.models.search')}
           />
         </div>
-        <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => void refresh()} disabled={refreshing}>
-          {refreshing ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
+        {selectedCred && supportedTasks.length > 0 && (
+          <AddCustomModelPopover supportedTasks={supportedTasks} existingIds={existingIds} onAdd={addCustom} />
+        )}
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-7 text-xs"
+          onClick={handleFetch}
+          disabled={!canFetch || fetchBusy}
+        >
+          {fetchBusy ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
           {t('resources.providerDialog.models.refresh')}
         </Button>
       </div>
@@ -490,7 +556,17 @@ export function PlatformModelsPanel({ platform, plan }: { platform: Platform; pl
     <div className="flex flex-col gap-3">
       {header}
 
-      {!catProvider && customModels.length === 0 && (
+      {discoverState.status === 'error' && (
+        <p className="text-xs text-destructive">{t('resources.providerDialog.models.discoverError', { message: discoverState.message })}</p>
+      )}
+      {discoverState.status === 'done' && discovered.length === 0 && (
+        <p className="text-xs text-muted-foreground">{t('resources.providerDialog.models.discoverEmpty')}</p>
+      )}
+      {discoverState.status === 'done' && discoverState.truncated && (
+        <p className="text-xs text-muted-foreground">{t('resources.providerDialog.models.discoverTruncated')}</p>
+      )}
+
+      {!catProvider && customModels.length === 0 && discovered.length === 0 && (
         <p className="text-xs text-muted-foreground">{t('resources.providerDialog.models.noEntry')}</p>
       )}
 
@@ -504,11 +580,31 @@ export function PlatformModelsPanel({ platform, plan }: { platform: Platform; pl
           </div>
 
           <div className="max-h-[420px] overflow-y-auto">
-            {rows.length === 0 && customRows.length === 0 && <p className="p-4 text-xs text-muted-foreground">{t('resources.providerDialog.models.empty')}</p>}
+            {rows.length === 0 && customRows.length === 0 && discoveredRows.length === 0 && (
+              <p className="p-4 text-xs text-muted-foreground">{t('resources.providerDialog.models.empty')}</p>
+            )}
             {customRows.length > 0 && (
               <>
                 {groupHeader(t('resources.providerDialog.models.customGroup'), customRows.length)}
                 {customRows.map(renderCustomRow)}
+              </>
+            )}
+            {discoveredRows.length > 0 && (
+              <>
+                <div className="flex items-center justify-between gap-1.5 bg-background/95 px-3 py-1.5 backdrop-blur">
+                  <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                    {t('resources.providerDialog.models.discoveredGroup')} <span className="text-muted-foreground/70">({discoveredRows.length})</span>
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 text-[11px]"
+                    onClick={() => void enableModels(discoveredRows.filter((d) => !modelState(endpointsForTasks(plan, d.tasks), d.id).enabled))}
+                  >
+                    {t('resources.providerDialog.models.enableAllDiscovered')}
+                  </Button>
+                </div>
+                {discoveredRows.map(renderDiscoveredRow)}
               </>
             )}
             {selectedCred ? (

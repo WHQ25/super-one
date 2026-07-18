@@ -56,6 +56,25 @@ describe('custom model routing', () => {
     const removed = removeCustomModel(start, 'm6')
     expect(removed.chat).toEqual({ baseUrl: 'https://y' })
   })
+
+  it('routes byFamily models only onto the matching protocol-family endpoint', () => {
+    const multi: Plan = {
+      id: 'api',
+      name: 'API',
+      auth: 'api-key',
+      endpoints: [
+        { id: 'openai', baseUrl: 'https://relay.com/v1', protocols: ['openai-chat'] },
+        { id: 'anthropic', baseUrl: 'https://relay.com', protocols: ['anthropic-messages'] },
+      ],
+    }
+    const out = upsertCustomModel({}, multi, {
+      id: 'claude-opus',
+      tasks: ['chat'],
+      byFamily: { anthropic: ['chat'] },
+    })
+    expect(out.openai).toBeUndefined()
+    expect(out.anthropic.models).toEqual([{ id: 'claude-opus', name: undefined, tasks: ['chat'] }])
+  })
 })
 
 describe('listCustomModels', () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { customEndpointsFor, customPlatformEndpoints } from './protocols'
+import { customEndpointsFor, customPlatformEndpoints, familyBaseUrl } from './protocols'
 
 describe('customEndpointsFor', () => {
   it('maps anthropic chat to a single messages endpoint keyed by family', () => {
@@ -96,5 +96,45 @@ describe('customPlatformEndpoints (multiple compat formats, per-format capabilit
   it('emits a family endpoint even when only its extra wire is picked (no tasks)', () => {
     const endpoints = customPlatformEndpoints({}, 'https://relay/v1', { openai: ['openai-responses'] })
     expect(endpoints).toEqual([{ id: 'openai', baseUrl: 'https://relay/v1', protocols: ['openai-responses'] }])
+  })
+})
+
+describe('familyBaseUrl (single relay root → per-protocol base URL)', () => {
+  it('appends /v1 to an openai root that has no version segment', () => {
+    expect(familyBaseUrl('openai', 'https://relay.com')).toBe('https://relay.com/v1')
+  })
+
+  it('leaves an openai root that already carries a version segment untouched', () => {
+    expect(familyBaseUrl('openai', 'https://relay.com/v1')).toBe('https://relay.com/v1')
+    expect(familyBaseUrl('openai', 'https://relay.com/v3')).toBe('https://relay.com/v3')
+  })
+
+  it('strips a trailing slash before appending /v1', () => {
+    expect(familyBaseUrl('openai', 'https://relay.com/')).toBe('https://relay.com/v1')
+  })
+
+  it('addresses anthropic and google from the root verbatim (trailing slash stripped)', () => {
+    expect(familyBaseUrl('anthropic', 'https://relay.com')).toBe('https://relay.com')
+    expect(familyBaseUrl('anthropic', 'https://relay.com/')).toBe('https://relay.com')
+    expect(familyBaseUrl('google', 'https://relay.com')).toBe('https://relay.com')
+  })
+
+  it('returns an empty root unchanged (official OAuth platforms carry no base)', () => {
+    expect(familyBaseUrl('openai', '')).toBe('')
+  })
+})
+
+describe('customPlatformEndpoints (NewAPI-style relay: one site root, all protocols)', () => {
+  it('splits a bare site root into anthropic={root} + openai={root}/v1 (chat + codex + image)', () => {
+    const endpoints = customPlatformEndpoints({ anthropic: ['chat'], openai: ['chat', 'image'] }, 'https://relay.com')
+    expect(endpoints).toEqual([
+      { id: 'anthropic', baseUrl: 'https://relay.com', protocols: ['anthropic-messages'] },
+      { id: 'openai', baseUrl: 'https://relay.com/v1', protocols: ['openai-chat', 'openai-images'] },
+    ])
+  })
+
+  it('is idempotent when the root already ends in /v1', () => {
+    const endpoints = customPlatformEndpoints({ anthropic: ['chat'], openai: ['chat', 'image'] }, 'https://relay.com/v1')
+    expect(endpoints.map((e) => e.baseUrl)).toEqual(['https://relay.com/v1', 'https://relay.com/v1'])
   })
 })

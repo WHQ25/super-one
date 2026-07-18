@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ChevronDown, ExternalLink, Loader2, Pencil, Plus, Trash2 } from 'lucide-react'
+import { ChevronDown, ExternalLink, Loader2, Pencil, Plus, Sparkles, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@superone/ui/components/ui/button'
 import { Badge } from '@superone/ui/components/ui/badge'
@@ -7,13 +7,6 @@ import { Input } from '@superone/ui/components/ui/input'
 import { Checkbox } from '@superone/ui/components/ui/checkbox'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { cn } from '@superone/ui/lib/utils'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@superone/ui/components/ui/select'
 import {
   customPlatformEndpoints,
   defaultOverridesForPlan,
@@ -30,6 +23,7 @@ import {
   type Plan,
   type Platform,
   type ProtocolFamily,
+  type ServiceEndpoint,
   type WireProtocol,
 } from '@superone/shared/platform-registry'
 import type { ProviderModelEnv } from '@superone/shared/agent-types'
@@ -46,6 +40,8 @@ import {
   upsertCustomModel,
   type CustomModel,
 } from './providers/custom-models'
+import { mergeDiscoveredIntoCustomModels } from './providers/discovery-apply'
+import type { DiscoverState } from './providers/useModelDiscovery'
 import { planTestEndpoints, useEndpointTest } from './providers/test-endpoints'
 import { TestConnectionButton, TestConnectionStatus } from './providers/TestConnection'
 
@@ -95,11 +91,15 @@ function CredentialRow({
   credential,
   plan,
   takenNames,
+  selected,
+  onSelect,
   onDelete,
 }: {
   credential: Credential
   plan: Plan
   takenNames: string[]
+  selected: boolean
+  onSelect: () => void
   onDelete: () => void
 }) {
   const { t } = useTranslation()
@@ -147,7 +147,12 @@ function CredentialRow({
 
   if (editing) {
     return (
-      <div className="flex flex-col gap-2 rounded-md border border-dashed border-border p-3">
+      <div
+        className={cn(
+          'flex flex-col gap-2 rounded-md border border-dashed p-3',
+          selected ? 'border-primary ring-1 ring-primary/40' : 'border-border',
+        )}
+      >
         <div className="flex flex-col gap-1">
           <Input
             placeholder={t('resources.providers.keyLabel')}
@@ -180,14 +185,30 @@ function CredentialRow({
   }
 
   return (
-    <div className="flex items-center justify-between gap-2 rounded-md border border-border px-3 py-2">
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onSelect}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onSelect()
+        }
+      }}
+      className={cn(
+        'flex cursor-pointer items-center justify-between gap-2 rounded-md border px-3 py-2 transition-colors',
+        selected
+          ? 'border-primary bg-primary/5 ring-1 ring-primary/40'
+          : 'border-border hover:border-muted-foreground/40',
+      )}
+    >
       <div className="flex min-w-0 flex-col">
         <span className="truncate text-sm font-medium">{credential.name}</span>
         <span className="truncate font-mono text-[11px] text-muted-foreground">
           {credential.secretEnv ? `$${credential.secretEnv}` : credential.secret || '—'}
         </span>
       </div>
-      <div className="flex shrink-0 items-center gap-1">
+      <div className="flex shrink-0 items-center gap-1" onClick={(e) => e.stopPropagation()}>
         <IconButton size="sm" onClick={() => setEditing(true)}>
           <Pencil />
         </IconButton>
@@ -282,7 +303,17 @@ function AddKeyForm({
 
 // --- plan section (keys + advanced, shared draft state) ----------------------
 
-function PlanSection({ platform, plan }: { platform: Platform; plan: Plan }) {
+function PlanSection({
+  platform,
+  plan,
+  selectedKeyId,
+  onSelectKey,
+}: {
+  platform: Platform
+  plan: Plan
+  selectedKeyId: string
+  onSelectKey: (id: string) => void
+}) {
   const credentials = useSettingsStore((s) => s.credentials)
   const planCreds = useMemo(
     () => credentials.filter((c) => c.platformId === platform.id && c.planId === plan.id),
@@ -295,6 +326,7 @@ function PlanSection({ platform, plan }: { platform: Platform; plan: Plan }) {
   const planDefaults = useMemo(() => defaultOverridesForPlan(plan), [plan])
   const [adding, setAdding] = useState(planCreds.length === 0)
   const [pendingOverrides, setPendingOverrides] = useState<Record<string, EndpointOverride>>(planDefaults)
+  const activeKeyId = planCreds.some((c) => c.id === selectedKeyId) ? selectedKeyId : (planCreds[0]?.id ?? '')
 
   const closeAdd = useCallback(() => {
     setAdding(false)
@@ -308,6 +340,8 @@ function PlanSection({ platform, plan }: { platform: Platform; plan: Plan }) {
         plan={plan}
         planCreds={planCreds}
         takenNames={takenNames}
+        selectedKeyId={activeKeyId}
+        onSelectKey={onSelectKey}
         adding={adding}
         onStartAdd={() => setAdding(true)}
         onDoneAdd={closeAdd}
@@ -317,6 +351,7 @@ function PlanSection({ platform, plan }: { platform: Platform; plan: Plan }) {
         platform={platform}
         plan={plan}
         planCreds={planCreds}
+        selectedKeyId={activeKeyId}
         pending={adding || planCreds.length === 0}
         pendingOverrides={pendingOverrides}
         onPendingOverridesChange={setPendingOverrides}
@@ -330,6 +365,8 @@ function PlanCard({
   plan,
   planCreds,
   takenNames,
+  selectedKeyId,
+  onSelectKey,
   adding,
   onStartAdd,
   onDoneAdd,
@@ -339,6 +376,8 @@ function PlanCard({
   plan: Plan
   planCreds: Credential[]
   takenNames: string[]
+  selectedKeyId: string
+  onSelectKey: (id: string) => void
   adding: boolean
   onStartAdd: () => void
   onDoneAdd: () => void
@@ -368,6 +407,8 @@ function PlanCard({
           credential={c}
           plan={plan}
           takenNames={takenNames}
+          selected={c.id === selectedKeyId}
+          onSelect={() => onSelectKey(c.id)}
           onDelete={() => void deleteCredential(c.id)}
         />
       ))}
@@ -395,6 +436,7 @@ function AdvancedConfigSection({
   platform,
   plan,
   planCreds,
+  selectedKeyId,
   pending,
   pendingOverrides,
   onPendingOverridesChange,
@@ -402,14 +444,14 @@ function AdvancedConfigSection({
   platform: Platform
   plan: Plan
   planCreds: Credential[]
+  selectedKeyId: string
   pending: boolean
   pendingOverrides: Record<string, EndpointOverride>
   onPendingOverridesChange: (v: Record<string, EndpointOverride>) => void
 }) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
-  const [keyId, setKeyId] = useState('')
-  const selected = planCreds.find((c) => c.id === keyId) ?? planCreds[0]
+  const selected = planCreds.find((c) => c.id === selectedKeyId) ?? planCreds[0]
   const isCustom = isCustomPlatform(platform)
 
   return (
@@ -430,21 +472,7 @@ function AdvancedConfigSection({
               <OverridesEditor platform={platform} plan={plan} value={pendingOverrides} onChange={onPendingOverridesChange} />
             </div>
           ) : (
-            <>
-              {planCreds.length > 1 && (
-                <Select value={selected?.id ?? ''} onValueChange={setKeyId}>
-                  <SelectTrigger className="w-52">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {planCreds.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
-              {selected && <CredentialConfig key={selected.id} platform={platform} plan={plan} credential={selected} />}
-            </>
+            selected && <CredentialConfig key={selected.id} platform={platform} plan={plan} credential={selected} />
           )}
         </>
       )}
@@ -462,6 +490,7 @@ function PlatformDetail({ platform }: { platform: Platform }) {
   const variantLabel = platformVariantLabel(platform, platforms)
   const [planId, setPlanId] = useState(platform.plans[0]?.id ?? '')
   const selectedPlan = platform.plans.find((p) => p.id === planId) ?? platform.plans[0]
+  const [selectedKeyId, setSelectedKeyId] = useState('')
 
   return (
     <div className="flex flex-col gap-4">
@@ -477,7 +506,10 @@ function PlatformDetail({ platform }: { platform: Platform }) {
                 <button
                   key={plan.id}
                   type="button"
-                  onClick={() => setPlanId(plan.id)}
+                  onClick={() => {
+                    setPlanId(plan.id)
+                    setSelectedKeyId('')
+                  }}
                   className={cn(
                     'rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
                     plan.id === selectedPlan?.id
@@ -501,11 +533,23 @@ function PlatformDetail({ platform }: { platform: Platform }) {
         <p className="text-sm text-muted-foreground">{selectedPlan?.description ?? platform.description}</p>
       )}
 
-      {selectedPlan && <PlanSection key={selectedPlan.id} platform={platform} plan={selectedPlan} />}
+      {selectedPlan && (
+        <PlanSection
+          key={selectedPlan.id}
+          platform={platform}
+          plan={selectedPlan}
+          selectedKeyId={selectedKeyId}
+          onSelectKey={setSelectedKeyId}
+        />
+      )}
 
       {selectedPlan && (
         <div className="rounded-lg border border-border p-3">
-          <PlatformModelsPanel platform={platform} plan={selectedPlan} />
+          <PlatformModelsPanel
+            platform={platform}
+            plan={selectedPlan}
+            selectedKeyId={selectedKeyId}
+          />
         </div>
       )}
     </div>
@@ -788,6 +832,28 @@ function CustomPlatformForm({ onDone }: { onDone: (createdId?: string) => void }
   const { state: testState, run: runTest } = useEndpointTest()
   const test = useCallback(() => void runTest(endpoints.slice(0, 1), secret.trim()), [runTest, endpoints, secret])
 
+  const [discoverState, setDiscoverState] = useState<DiscoverState>({ status: 'idle' })
+  const runDiscover = useCallback(async () => {
+    const trimmedBase = baseUrl.trim()
+    if (!trimmedBase) return
+    setDiscoverState({ status: 'loading' })
+    try {
+      const probe: ServiceEndpoint = { id: 'openai', baseUrl: trimmedBase, protocols: ['openai-chat'] }
+      const result = await window.app.discoverProviderModels({ apiKey: secret.trim(), endpoint: probe })
+      for (const m of result.models) {
+        for (const [family, tasks] of Object.entries(m.byFamily) as [ProtocolFamily, CapabilityTask[]][]) {
+          if (!tasks?.length) continue
+          toggleFamily(family, true)
+          for (const tk of tasks) toggleTask(family, tk, true)
+        }
+      }
+      setCustomModels((prev) => mergeDiscoveredIntoCustomModels(prev, result.models))
+      setDiscoverState({ status: 'done', truncated: result.truncated })
+    } catch (err) {
+      setDiscoverState({ status: 'error', message: err instanceof Error ? err.message : String(err) })
+    }
+  }, [baseUrl, secret, toggleFamily, toggleTask])
+
   const submit = useCallback(async () => {
     if (!canSubmit) return
     setBusy(true)
@@ -817,6 +883,9 @@ function CustomPlatformForm({ onDone }: { onDone: (createdId?: string) => void }
       <div className="flex flex-col gap-3">
           <Input placeholder={t('resources.providers.customName')} value={name} onChange={(e) => setName(e.target.value)} />
           <Input placeholder={t('resources.providers.baseUrl')} value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} />
+          {families.size > 1 && (
+            <span className="text-xs text-muted-foreground">{t('resources.providers.relayHint')}</span>
+          )}
           <Input placeholder={t('resources.providers.keyLabel')} value={keyName} onChange={(e) => setKeyName(e.target.value)} />
           <Input
             type="password"
@@ -876,6 +945,24 @@ function CustomPlatformForm({ onDone }: { onDone: (createdId?: string) => void }
             disabled={!baseUrl.trim() || !secret.trim() || endpoints.length === 0}
           />
           <TestConnectionStatus state={testState} />
+          <Button
+            variant="outline"
+            onClick={() => void runDiscover()}
+            disabled={!baseUrl.trim() || !secret.trim() || discoverState.status === 'loading'}
+          >
+            {discoverState.status === 'loading' ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
+            {t('resources.providerDialog.models.discover')}
+          </Button>
+          {discoverState.status === 'error' && (
+            <span className="text-[11px] text-destructive">{t('resources.providerDialog.models.discoverError', { message: discoverState.message })}</span>
+          )}
+          {discoverState.status === 'done' && (
+            <span className="text-[11px] text-success">
+              {discoverState.truncated
+                ? t('resources.providerDialog.models.discoverTruncated')
+                : t('resources.providers.discoverModelsDone')}
+            </span>
+          )}
         </div>
     </div>
   )

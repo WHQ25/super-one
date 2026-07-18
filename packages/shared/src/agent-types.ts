@@ -1631,6 +1631,26 @@ export interface ProviderEndpointTestResponse {
   results: EndpointTestResult[]
 }
 
+/** Protocol families a discovered relay model can be reached over (mirrors platform-registry ProtocolFamily). */
+export type DiscoveredProtocolFamily = 'anthropic' | 'openai' | 'google'
+
+/**
+ * A model discovered on a relay/aggregator (e.g. NewAPI OpenAI-format `/v1/models` + optional `/api/pricing`).
+ * `byFamily` is the source of truth for which wire to enable on; `tasks` is the flattened union for UI filters.
+ */
+export interface DiscoveredOpenAiModel {
+  id: string
+  name?: string
+  tasks: CapabilityTask[]
+  byFamily: Partial<Record<DiscoveredProtocolFamily, CapabilityTask[]>>
+}
+
+export interface DiscoverModelsResult {
+  models: DiscoveredOpenAiModel[]
+  truncated: boolean
+  sources: { pricing: 'ok' | 'unavailable'; modelsList: 'ok' | 'unavailable' }
+}
+
 export interface CodexRunRequest {
   prompt: string
   model?: string
@@ -2122,6 +2142,7 @@ export const AgentIpcChannels = {
   BINDINGS_SET: 'bindings:set',
   BINDINGS_CLEAR: 'bindings:clear',
   PROVIDERS_TEST_ENDPOINT: 'providers:test-endpoint',
+  PROVIDERS_DISCOVER_MODELS: 'providers:discover-models',
   ACP_LIST_AGENTS: 'acp:list-agents',
   /** Refresh ACP agent model catalogs once per app open (uses cache thereafter). */
   ACP_REFRESH_MODELS: 'acp:refresh-models',

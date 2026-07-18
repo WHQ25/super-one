@@ -62,8 +62,15 @@ export const PROTOCOL_FAMILY: Record<WireProtocol, ProtocolFamily> = {
  */
 export const FAMILY_PROTOCOLS: Record<ProtocolFamily, WireProtocol[]> = {
   anthropic: ['anthropic-messages'],
-  openai: ['openai-responses', 'openai-chat', 'openai-images', 'openai-audio'],
-  google: ['google-generative'],
+  openai: [
+    'openai-responses', 
+    'openai-chat', 
+    'openai-images', 
+    'openai-audio'
+  ],
+  google: [
+    'google-generative'
+  ],
 }
 
 /** Protocol priority within an endpoint / plan (flattened family order). selectEndpoint() takes the first match. */
@@ -104,12 +111,27 @@ export const FAMILY_EXTRA_PROTOCOLS: Record<ProtocolFamily, WireProtocol[]> = {
 }
 
 /**
+ * Base URL for a family's endpoint derived from a single relay root (the "one base URL" a user pastes for
+ * a NewAPI-style aggregator that speaks several formats at once). openai-compatible wires live under `/v1`
+ * (`/v1/chat/completions`, `/v1/images/generations`, …); anthropic-messages and gemini address from the
+ * root (the Claude SDK appends `/v1/messages`, generateContent carries its own path). Idempotent: a root
+ * already ending in a version segment is left as-is, so pasting either `https://relay.com` or
+ * `https://relay.com/v1` resolves the openai endpoint correctly. Trailing slashes are stripped.
+ */
+export function familyBaseUrl(family: ProtocolFamily, baseUrl: string): string {
+  const trimmed = baseUrl.replace(/\/+$/, '')
+  if (family !== 'openai' || !trimmed || /\/v\d+$/.test(trimmed)) return trimmed
+  return `${trimmed}/v1`
+}
+
+/**
  * Build the endpoint for a custom platform from a compat family + the capabilities it exposes (plus any
  * opt-in extra wires like OpenAI's Responses). One family = one addressable service = **one endpoint**
  * (id = the family name), holding every protocol needed to serve the picked capabilities (e.g. openai
  * chat+image → one endpoint speaking `openai-chat` + `openai-images`). Capability narrowing is not stored
- * on the endpoint — it happens downstream via the enabled models' `tasks` tags. Returns `[]` when nothing
- * is picked.
+ * on the endpoint — it happens downstream via the enabled models' `tasks` tags. The base URL is derived
+ * per family via familyBaseUrl so one relay root fans out to the right sub-path per protocol. Returns `[]`
+ * when nothing is picked.
  */
 export function customEndpointsFor(
   family: ProtocolFamily,
@@ -128,7 +150,7 @@ export function customEndpointsFor(
   }
   if (protocols.length === 0) return []
   protocols.sort((a, b) => PROTOCOL_ORDER.indexOf(a) - PROTOCOL_ORDER.indexOf(b))
-  return [{ id: family, baseUrl, protocols }]
+  return [{ id: family, baseUrl: familyBaseUrl(family, baseUrl), protocols }]
 }
 
 /**

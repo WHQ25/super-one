@@ -4,8 +4,9 @@ import morphdom from 'morphdom'
 import { SVG_STYLES } from '@superone/shared/generative-ui/svg-styles'
 import { rewriteCdnUrls } from '@superone/shared/generative-ui/cdn-allowlist'
 import type { WidgetData } from '@superone/shared/generative-ui/types'
-import { Download } from 'lucide-react'
+import { Download, Bookmark } from 'lucide-react'
 import { useChatStore } from '@/stores/chat'
+import { WidgetSaveDialog } from './WidgetSaveDialog'
 
 const THROTTLE_MS = 150
 
@@ -241,6 +242,7 @@ export function WidgetBlock({ data, streaming }: WidgetBlockProps) {
   const finalSrcdoc = useMemo(() => buildSrcdoc(data.widget_code, data.isSVG), [data.widget_code, data.isSVG])
   const [iframeReady, setIframeReady] = useState(false)
   const [mountIframe, setMountIframe] = useState(!streaming)
+  const [saveOpen, setSaveOpen] = useState(false)
   const gateNotifiedRef = useRef(false)
 
   useEffect(() => {
@@ -269,13 +271,22 @@ export function WidgetBlock({ data, streaming }: WidgetBlockProps) {
           {displayTitle}
         </span>
         {mountIframe && iframeReady && (
-          <button
-            onClick={(e) => downloadWidget(finalSrcdoc, displayTitle, e)}
-            className="text-muted-foreground/70 transition-colors hover:text-foreground"
-            title={t('tooltips.saveAsHtml')}
-          >
-            <Download className="size-3.5" />
-          </button>
+          <>
+            <button
+              onClick={(e) => { e.stopPropagation(); setSaveOpen(true) }}
+              className="text-muted-foreground/70 transition-colors hover:text-foreground"
+              title={data.templateId ? t('widget.save.updateTitle') : t('widget.save.title')}
+            >
+              <Bookmark className="size-3.5" />
+            </button>
+            <button
+              onClick={(e) => downloadWidget(finalSrcdoc, displayTitle, e)}
+              className="text-muted-foreground/70 transition-colors hover:text-foreground"
+              title={t('tooltips.saveAsHtml')}
+            >
+              <Download className="size-3.5" />
+            </button>
+          </>
         )}
       </div>
       <div className="relative">
@@ -292,6 +303,7 @@ export function WidgetBlock({ data, streaming }: WidgetBlockProps) {
           />
         )}
       </div>
+      {saveOpen && <WidgetSaveDialog data={data} open={saveOpen} onOpenChange={setSaveOpen} />}
     </div>
   )
 }

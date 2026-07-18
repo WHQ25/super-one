@@ -1591,6 +1591,23 @@ export type Messages = {
       removedCount: string
     }
   }
+  widget: {
+    save: {
+      title: string
+      updateTitle: string
+      description: string
+      namePlaceholder: string
+      descriptionPlaceholder: string
+      scopeProject: string
+      scopeUser: string
+      scopeProjectHint: string
+      scopeUserHint: string
+      staticHint: string
+      confirm: string
+      saved: string
+      failed: string
+    }
+  }
   tooltips: {
     toggleSidebar: string
     moveChatLeft: string
@@ -3278,6 +3295,23 @@ export const en: Messages = {
       remove: 'Remove',
       removing: 'Removing…',
       removedCount: 'Removed {{count}} entry(s)',
+    },
+  },
+  widget: {
+    save: {
+      title: 'Save as template',
+      updateTitle: 'Update template',
+      description: 'Saved templates can be re-rendered later without regenerating the code.',
+      namePlaceholder: 'Template name',
+      descriptionPlaceholder: 'When should this be reused?',
+      scopeProject: 'Project',
+      scopeUser: 'Personal',
+      scopeProjectHint: 'Stored in the project and shareable through git.',
+      scopeUserHint: 'Available in every project on this machine.',
+      staticHint: 'Saved without a data schema, so it will re-render exactly as shown.',
+      confirm: 'Save',
+      saved: 'Saved template "{{id}}"',
+      failed: 'Could not save template: {{error}}',
     },
   },
   tooltips: {

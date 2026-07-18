@@ -1160,6 +1160,9 @@ const appAPI = {
   widgetIframeReady: (widgetId: string): Promise<void> =>
     ipcRenderer.invoke(AgentIpcChannels.WIDGET_IFRAME_READY, widgetId),
 
+  saveWidgetTemplate: (projectPath: string | null, input: import('@superone/shared/agent-types').SaveWidgetTemplateRequest) =>
+    ipcRenderer.invoke(AgentIpcChannels.WIDGET_SAVE_TEMPLATE, projectPath, input) as Promise<import('@superone/shared/agent-types').SavedWidgetTemplate>,
+
   // Automations
   listAutomations: (projectPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.AUTOMATIONS_LIST, projectPath) as Promise<import('@superone/shared/agent-types').Automation[]>,

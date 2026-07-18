@@ -60,6 +60,7 @@ import { getBuiltinAgent } from './acp/agent-catalog'
 import { readAcpResourcesCache, writeAcpResourcesCache, refreshAcpModelsOnce } from './acp/acp-model-cache'
 import {
   AgentIpcChannels,
+  type SaveWidgetTemplateRequest,
   type CodexCollaborationMode,
   type CodexPermissionPreset,
   type CodexReasoningEffort,
@@ -2510,6 +2511,15 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(AgentIpcChannels.WIDGET_IFRAME_READY, (_e, widgetId: string) => {
     notifyWidgetReady(widgetId)
+  })
+
+  ipcMain.handle(AgentIpcChannels.WIDGET_SAVE_TEMPLATE, async (_e, projectPath: string | null, input: SaveWidgetTemplateRequest) => {
+    const { allocateTemplateId, saveTemplate } = await import('./generative-ui/template-store')
+    const roots = { project: projectPath ?? undefined, user: homedir() }
+    if (input.scope === 'project' && !roots.project) throw new Error('no project open')
+    const id = allocateTemplateId(roots, input.id, input.scope)
+    const saved = saveTemplate(roots, { ...input, id })
+    return { id: saved.id, scope: saved.scope, version: saved.version }
   })
 
   initSuperoneMcpServer(() => mainWindow)

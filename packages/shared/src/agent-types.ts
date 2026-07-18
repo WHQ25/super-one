@@ -1828,6 +1828,21 @@ export interface AppMetricsSnapshot {
 
 // --- IPC channel constants ---
 
+export interface SaveWidgetTemplateRequest {
+  id: string
+  title: string
+  code: string
+  description?: string
+  inputSchema?: Record<string, unknown>
+  scope: 'project' | 'user'
+}
+
+export interface SavedWidgetTemplate {
+  id: string
+  scope: 'project' | 'user'
+  version: number
+}
+
 export const AgentIpcChannels = {
   // App-level channels
   CONNECT_CLAUDE: 'app:connect-claude',
@@ -2200,6 +2215,7 @@ export const AgentIpcChannels = {
   REMOTE_LAN_STATUS: 'remote:lan-status',
 
   WIDGET_IFRAME_READY: 'widget:iframe-ready',
+  WIDGET_SAVE_TEMPLATE: 'widget:save-template',
 
   // Mini-App
   MINIAPP_LIST: 'miniapp:list',

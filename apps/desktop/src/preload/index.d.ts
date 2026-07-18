@@ -390,6 +390,7 @@ interface AppAPI {
   onLanStatusChanged(callback: (active: boolean) => void): () => void
 
   widgetIframeReady(widgetId: string): Promise<void>
+  saveWidgetTemplate(projectPath: string | null, input: import('@superone/shared/agent-types').SaveWidgetTemplateRequest): Promise<import('@superone/shared/agent-types').SavedWidgetTemplate>
 
   // Automations
   listAutomations(projectPath: string): Promise<Automation[]>

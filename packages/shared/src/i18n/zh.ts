@@ -1617,6 +1617,23 @@ export const zh: Messages = {
       removedCount: '已移除 {{count}} 条',
     },
   },
+  widget: {
+    save: {
+      title: '保存为模板',
+      updateTitle: '更新模板',
+      description: '保存后可直接复用，无需重新生成代码。',
+      namePlaceholder: '模板名称',
+      descriptionPlaceholder: '什么时候该复用它？',
+      scopeProject: '项目',
+      scopeUser: '个人',
+      scopeProjectHint: '存放在项目内，可通过 git 共享。',
+      scopeUserHint: '在本机所有项目中可用。',
+      staticHint: '未附带数据结构，将按当前样子原样复现。',
+      confirm: '保存',
+      saved: '已保存模板“{{id}}”',
+      failed: '保存模板失败：{{error}}',
+    },
+  },
   tooltips: {
     toggleSidebar: '切换侧边栏',
     moveChatLeft: '将对话移至左侧',

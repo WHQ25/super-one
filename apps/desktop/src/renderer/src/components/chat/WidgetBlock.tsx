@@ -26,9 +26,10 @@ ${SVG_STYLES
 
 const BRIDGE_SCRIPT = `<script>
 (function(){
-  var s=function(){document.documentElement.classList.toggle('dark',parent.document.documentElement.classList.contains('dark'))};
-  s();
-  new MutationObserver(s).observe(parent.document.documentElement,{attributes:true,attributeFilter:['class']});
+  window.addEventListener('message',function(e){
+    var d=e.data;
+    if(d&&d.type==='widget-theme')document.documentElement.classList.toggle('dark',!!d.dark)
+  });
   window.sendPrompt=function(t){parent.postMessage({type:'widget-sendPrompt',text:String(t)},'*')};
   window.openLink=function(u){parent.postMessage({type:'widget-openLink',url:String(u)},'*')};
   document.addEventListener('click',function(e){
@@ -39,6 +40,7 @@ const BRIDGE_SCRIPT = `<script>
   document.documentElement.style.overflow='hidden';
   document.body.style.overflow='hidden';
   window.addEventListener('wheel',function(e){parent.postMessage({type:'widget-wheel',deltaX:e.deltaX,deltaY:e.deltaY,deltaMode:e.deltaMode},'*')},{passive:true});
+  parent.postMessage({type:'widget-ready'},'*');
 })();
 </script>`
 
@@ -158,14 +160,18 @@ function AutoIframe({ srcdoc, title, fallbackHeight, hidden, onReady }: {
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const [height, setHeight] = useState(fallbackHeight)
 
-  const measure = useCallback(() => {
-    try {
-      const doc = iframeRef.current?.contentDocument
-      if (!doc) return
-      const h = doc.body.offsetHeight || doc.documentElement.scrollHeight
-      if (h > 0) setHeight(h)
-    } catch {}
+  const postTheme = useCallback(() => {
+    iframeRef.current?.contentWindow?.postMessage(
+      { type: 'widget-theme', dark: document.documentElement.classList.contains('dark') },
+      '*',
+    )
   }, [])
+
+  useEffect(() => {
+    const observer = new MutationObserver(postTheme)
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] })
+    return () => observer.disconnect()
+  }, [postTheme])
 
   useLayoutEffect(() => {
     const handler = (e: MessageEvent) => {
@@ -173,6 +179,9 @@ function AutoIframe({ srcdoc, title, fallbackHeight, hidden, onReady }: {
       const { data } = e
       if (!data?.type) return
       switch (data.type) {
+        case 'widget-ready':
+          postTheme()
+          break
         case 'widget-resize':
           if (typeof data.height === 'number' && data.height > 0) setHeight(data.height)
           break
@@ -189,21 +198,18 @@ function AutoIframe({ srcdoc, title, fallbackHeight, hidden, onReady }: {
     }
     window.addEventListener('message', handler)
     return () => window.removeEventListener('message', handler)
-  }, [])
+  }, [postTheme])
 
   const handleLoad = useCallback(() => {
-    measure()
-    setTimeout(measure, 300)
-    setTimeout(measure, 1000)
     onReady?.()
-  }, [measure, onReady])
+  }, [onReady])
 
   return (
     <iframe
       ref={iframeRef}
       srcDoc={srcdoc}
       onLoad={handleLoad}
-      sandbox="allow-scripts allow-same-origin"
+      sandbox="allow-scripts"
       className="w-full border-0 rounded-md"
       style={hidden
         ? { height, visibility: 'hidden' as const, position: 'absolute' as const, inset: 0 }

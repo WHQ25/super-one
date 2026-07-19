@@ -1,5 +1,5 @@
 import type { CapabilityTask } from '../agent-types'
-import type { ModelCatalog } from '../model-catalog-types'
+import type { CatalogModel, ModelCatalog } from '../model-catalog-types'
 import { MODEL_TASK_ORDER, modelTasks } from '../model-tasks'
 import type { ProtocolFamily } from './protocols'
 import { FAMILY_TASKS } from './protocols'
@@ -34,7 +34,7 @@ function addTask(byFamily: Partial<Record<ProtocolFamily, CapabilityTask[]>>, fa
 }
 
 /** Bare model id with any `vendor/` namespace prefix stripped, for cross-catalog id matching. */
-function normalizeModelId(id: string): string {
+export function normalizeModelId(id: string): string {
   const slash = id.lastIndexOf('/')
   return (slash >= 0 ? id.slice(slash + 1) : id).toLowerCase()
 }
@@ -58,6 +58,25 @@ export function buildCatalogTaskIndex(catalog: ModelCatalog): Map<string, Capabi
       if (index.has(key)) continue
       const tasks = modelTasks(model)
       if (tasks.length > 0) index.set(key, tasks)
+    }
+  }
+  return index
+}
+
+/**
+ * Same bare-id index as {@link buildCatalogTaskIndex}, but keeping the full catalog model so the
+ * renderer can show context window / pricing / modality / reasoning info for custom and
+ * auto-discovered models, not just their capability tasks.
+ */
+export function buildCatalogModelIndex(catalog: ModelCatalog): Map<string, CatalogModel> {
+  const index = new Map<string, CatalogModel>()
+  const providers = [...catalog.providers].sort(
+    (a, b) => Number(CANONICAL_CATALOG_PROVIDERS.includes(b.id)) - Number(CANONICAL_CATALOG_PROVIDERS.includes(a.id)),
+  )
+  for (const provider of providers) {
+    for (const model of provider.models) {
+      const key = normalizeModelId(model.id)
+      if (!index.has(key)) index.set(key, model)
     }
   }
   return index

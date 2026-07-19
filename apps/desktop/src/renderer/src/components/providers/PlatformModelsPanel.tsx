@@ -25,10 +25,12 @@ import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { Switch } from '@superone/ui/components/ui/switch'
 import type { CapabilityTask, DiscoveredOpenAiModel } from '@superone/shared/agent-types'
 import {
+  buildCatalogModelIndex,
   catalogProviderIdFor,
   endpointServes,
   isCustomPlatform,
   mergeModelMapping,
+  normalizeModelId,
   resolveEndpointModels,
   type Credential,
   type EndpointModel,
@@ -219,6 +221,11 @@ export function PlatformModelsPanel({
     [catalog, platform, plan],
   )
 
+  // Bare-id lookup so custom/auto-discovered models can show the same catalog info (pricing,
+  // context window, modalities, reasoning/tool support) as catalog-matched models — even though
+  // they weren't sourced from `catProvider`.
+  const catalogModelIndex = useMemo(() => (catalog ? buildCatalogModelIndex(catalog) : null), [catalog])
+
   const {
     endpoint: discoveryEp,
     discovered,
@@ -401,6 +408,21 @@ export function PlatformModelsPanel({
     return parts.join(' · ')
   }
 
+  // Modality/tool/reasoning/context badges — shared between catalog-matched rows and custom/
+  // discovered rows that happen to resolve to a catalog entry via `catalogModelIndex`.
+  const catalogExtras = (m: CatalogModel) => (
+    <>
+      <span className="flex items-center gap-1 rounded bg-muted px-1.5 py-1 text-muted-foreground">
+        <ModalityIcons mods={m.inputModalities} />
+        <ArrowRight className="size-3 opacity-50" />
+        <ModalityIcons mods={m.outputModalities} />
+      </span>
+      {m.toolCall && <CapBadge icon={Wrench} title={t('resources.providerDialog.models.tools')} />}
+      {m.reasoning && <CapBadge icon={Brain} title={t('resources.providerDialog.models.reasoning')} />}
+      {m.contextWindow ? <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{formatContext(m.contextWindow)}</span> : null}
+    </>
+  )
+
   const renderRow = ({ m, iconMatched, endpoints, enabled, locked }: ModelRow) => (
     <div key={m.id} className="flex items-center gap-3 px-3 py-2.5">
       <div className="flex size-7 shrink-0 items-center justify-center">
@@ -417,14 +439,7 @@ export function PlatformModelsPanel({
         {subtitle(m) && <div className="mt-0.5 truncate text-[11px] text-muted-foreground">{subtitle(m)}</div>}
       </div>
       <div className="flex shrink-0 items-center gap-2">
-        <span className="flex items-center gap-1 rounded bg-muted px-1.5 py-1 text-muted-foreground">
-          <ModalityIcons mods={m.inputModalities} />
-          <ArrowRight className="size-3 opacity-50" />
-          <ModalityIcons mods={m.outputModalities} />
-        </span>
-        {m.toolCall && <CapBadge icon={Wrench} title={t('resources.providerDialog.models.tools')} />}
-        {m.reasoning && <CapBadge icon={Brain} title={t('resources.providerDialog.models.reasoning')} />}
-        {m.contextWindow ? <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{formatContext(m.contextWindow)}</span> : null}
+        {catalogExtras(m)}
         {selectedCred && (
           <span title={locked ? t('resources.providerDialog.models.lockedHint') : undefined} className="flex">
             <Switch
@@ -438,40 +453,46 @@ export function PlatformModelsPanel({
     </div>
   )
 
-  const renderCustomRow = (cm: CustomModel) => (
-    <div key={cm.id} className="flex items-center gap-3 px-3 py-2.5">
-      <div className="flex size-7 shrink-0 items-center justify-center">
-        {hasModelIcon(cm.id)
-          ? <ModelIcon model={cm.id} type="color" size={26} />
-          : <ProviderLabel brandKey={platform.brand} iconOnly size={26} />}
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-1.5">
-          <span className="truncate text-sm font-medium">{cm.name || cm.id}</span>
-          <ModelIdBadge id={cm.id} />
+  const renderCustomRow = (cm: CustomModel) => {
+    const catModel = catalogModelIndex?.get(normalizeModelId(cm.id))
+    return (
+      <div key={cm.id} className="flex items-center gap-3 px-3 py-2.5">
+        <div className="flex size-7 shrink-0 items-center justify-center">
+          {hasModelIcon(cm.id)
+            ? <ModelIcon model={cm.id} type="color" size={26} />
+            : <ProviderLabel brandKey={platform.brand} iconOnly size={26} />}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5">
+            <span className="truncate text-sm font-medium">{cm.name || cm.id}</span>
+            <ModelIdBadge id={cm.id} />
+          </div>
+          {catModel && subtitle(catModel) && <div className="mt-0.5 truncate text-[11px] text-muted-foreground">{subtitle(catModel)}</div>}
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          {catModel && catalogExtras(catModel)}
+          <span className="flex items-center gap-1">
+            {cm.tasks.map((tk) => (
+              <CapBadge key={tk} icon={TASK_ICON[tk]} title={t(`resources.providerDialog.models.${tk}`)} />
+            ))}
+          </span>
+          <IconButton
+            size="sm"
+            variant="destructive"
+            tooltip={t('resources.providerDialog.models.deleteCustom')}
+            onClick={() => removeCustom(cm.id)}
+          >
+            <Trash2 />
+          </IconButton>
         </div>
       </div>
-      <div className="flex shrink-0 items-center gap-2">
-        <span className="flex items-center gap-1">
-          {cm.tasks.map((tk) => (
-            <CapBadge key={tk} icon={TASK_ICON[tk]} title={t(`resources.providerDialog.models.${tk}`)} />
-          ))}
-        </span>
-        <IconButton
-          size="sm"
-          variant="destructive"
-          tooltip={t('resources.providerDialog.models.deleteCustom')}
-          onClick={() => removeCustom(cm.id)}
-        >
-          <Trash2 />
-        </IconButton>
-      </div>
-    </div>
-  )
+    )
+  }
 
   const renderDiscoveredRow = (d: DiscoveredOpenAiModel) => {
     const endpoints = endpointsForTasks(plan, d.tasks)
     const { enabled, locked } = modelState(endpoints, d.id)
+    const catModel = catalogModelIndex?.get(normalizeModelId(d.id))
     return (
       <div key={d.id} className="flex items-center gap-3 px-3 py-2.5">
         <div className="flex size-7 shrink-0 items-center justify-center">
@@ -484,8 +505,10 @@ export function PlatformModelsPanel({
             <span className={`truncate text-sm font-medium ${!enabled ? 'text-muted-foreground' : ''}`}>{d.name || d.id}</span>
             <ModelIdBadge id={d.id} />
           </div>
+          {catModel && subtitle(catModel) && <div className="mt-0.5 truncate text-[11px] text-muted-foreground">{subtitle(catModel)}</div>}
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          {catModel && catalogExtras(catModel)}
           <span className="flex items-center gap-1">
             {d.tasks.map((tk) => (
               <CapBadge key={tk} icon={TASK_ICON[tk]} title={t(`resources.providerDialog.models.${tk}`)} />

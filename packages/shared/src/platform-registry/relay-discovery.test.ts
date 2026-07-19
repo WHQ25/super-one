@@ -3,6 +3,7 @@ import type { CapabilityTask } from '../agent-types'
 import type { ModelCatalog } from '../model-catalog-types'
 import {
   MAX_DISCOVERED_MODELS,
+  buildCatalogModelIndex,
   buildCatalogTaskIndex,
   flattenDiscoveredTasks,
   mergeDiscovered,
@@ -253,6 +254,88 @@ describe('buildCatalogTaskIndex', () => {
       ],
     }
     expect(buildCatalogTaskIndex(catalog).has('text-embedding-3-large')).toBe(false)
+  })
+})
+
+describe('buildCatalogModelIndex', () => {
+  it('indexes catalog models by bare id (vendor namespace stripped), keeping the full model', () => {
+    const catalog: ModelCatalog = {
+      generatedAt: '2026-01-01',
+      source: 'snapshot',
+      providers: [
+        {
+          id: 'openrouter',
+          name: 'OpenRouter',
+          npm: '',
+          env: [],
+          doc: '',
+          models: [
+            {
+              id: 'openai/gpt-image-1',
+              name: 'GPT Image 1',
+              providerId: 'openrouter',
+              contextWindow: 128000,
+              inputModalities: ['text'],
+              outputModalities: ['image'],
+              reasoning: false,
+              toolCall: false,
+              attachment: false,
+            },
+          ],
+        },
+      ],
+    }
+    const index = buildCatalogModelIndex(catalog)
+    expect(index.get('gpt-image-1')).toEqual(catalog.providers[0].models[0])
+  })
+
+  it('prefers a canonical vendor (openai/anthropic/google) over other providers on id collision', () => {
+    const catalog: ModelCatalog = {
+      generatedAt: '2026-01-01',
+      source: 'snapshot',
+      providers: [
+        {
+          id: 'some-reseller',
+          name: 'Reseller',
+          npm: '',
+          env: [],
+          doc: '',
+          models: [
+            {
+              id: 'gpt-4o',
+              name: 'GPT-4o (reseller)',
+              providerId: 'some-reseller',
+              inputModalities: ['text'],
+              outputModalities: ['text'],
+              reasoning: false,
+              toolCall: false,
+              attachment: false,
+            },
+          ],
+        },
+        {
+          id: 'openai',
+          name: 'GPT-4o',
+          npm: '',
+          env: [],
+          doc: '',
+          models: [
+            {
+              id: 'gpt-4o',
+              name: 'GPT-4o',
+              providerId: 'openai',
+              inputModalities: ['text', 'image'],
+              outputModalities: ['text'],
+              reasoning: false,
+              toolCall: false,
+              attachment: true,
+            },
+          ],
+        },
+      ],
+    }
+    const index = buildCatalogModelIndex(catalog)
+    expect(index.get('gpt-4o')?.providerId).toBe('openai')
   })
 })
 

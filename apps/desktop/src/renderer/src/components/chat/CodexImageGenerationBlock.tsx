@@ -49,6 +49,7 @@ export function CodexImageGenerationBlock({ item }: Props) {
         onOpen={() => setViewerOpen(true)}
         ariaLabel={item.revisedPrompt ?? 'Generated image'}
         prompt={item.revisedPrompt}
+        downloadable
         className={cn(
           'my-2 block overflow-hidden rounded-md border border-border bg-muted/30',
           'cursor-pointer transition-shadow hover:shadow-sm',

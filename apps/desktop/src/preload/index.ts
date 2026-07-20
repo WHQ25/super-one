@@ -678,8 +678,8 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.READ_WORKFLOW_OUTPUT, filePath),
   readWorkflowScript: (filePath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.READ_WORKFLOW_SCRIPT, filePath),
-  saveFileAs: (sourcePath: string, defaultName: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.SAVE_FILE_AS, sourcePath, defaultName),
+  saveFileAs: (sourcePath: string, defaultName: string, defaultDir?: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.SAVE_FILE_AS, sourcePath, defaultName, defaultDir),
   showInFolder: (folderPath: string, relPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.FILE_SHOW_IN_FOLDER, folderPath, relPath),
   showContextMenu: (items: NativeContextMenuItemSpec[]) =>

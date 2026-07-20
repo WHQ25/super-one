@@ -2013,15 +2013,17 @@ function registerIpcHandlers(): void {
     return readSubagentTranscript(outputFile, typeof dir === 'string' ? dir : undefined)
   })
 
-  ipcMain.handle(AgentIpcChannels.SAVE_FILE_AS, async (_event, sourcePath: string, defaultName: string) => {
+  ipcMain.handle(AgentIpcChannels.SAVE_FILE_AS, async (_event, sourcePath: string, defaultName: string, defaultDir?: string) => {
     try {
       if (typeof sourcePath !== 'string' || !isAbsolute(sourcePath)) {
         return { ok: false, error: 'Source path must be absolute' }
       }
       await access(sourcePath)
       const ext = extname(sourcePath).toLowerCase().replace(/^\./, '') || 'png'
+      const name = defaultName || basename(sourcePath)
+      const defaultPath = defaultDir && isAbsolute(defaultDir) ? join(defaultDir, name) : name
       const result = await dialog.showSaveDialog(mainWindow ?? undefined!, {
-        defaultPath: defaultName || basename(sourcePath),
+        defaultPath,
         filters: [{ name: ext.toUpperCase(), extensions: [ext] }],
       })
       if (result.canceled || !result.filePath) {

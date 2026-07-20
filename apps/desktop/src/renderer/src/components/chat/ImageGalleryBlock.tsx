@@ -30,6 +30,7 @@ function GalleryThumb({ item, onOpen }: { item: ImageGenerationItem; onOpen: () 
       onOpen={onOpen}
       ariaLabel={item.revisedPrompt ?? 'Generated image'}
       prompt={item.revisedPrompt}
+      downloadable
       className={cn(TILE, 'cursor-pointer bg-muted/30 transition-shadow hover:shadow-sm')}
     >
       <img

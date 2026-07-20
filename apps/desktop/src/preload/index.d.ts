@@ -214,6 +214,7 @@ interface AppAPI {
   saveFileAs(
     sourcePath: string,
     defaultName: string,
+    defaultDir?: string,
   ): Promise<{ ok: true; savedPath: string } | { ok: false; canceled?: boolean; error?: string }>
   showInFolder(folderPath: string, relPath: string): Promise<void>
   showContextMenu(items: NativeContextMenuItemSpec[]): Promise<string | null>

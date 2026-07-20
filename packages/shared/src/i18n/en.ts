@@ -563,9 +563,12 @@ export type Messages = {
       copyPrompt: string
       openFolder: string
       addToChat: string
+      download: string
       copied: string
       promptCopied: string
       copyFailed: string
+      downloaded: string
+      downloadFailed: string
       generatedIn: string
       noMetadata: string
       prompt: string
@@ -2301,9 +2304,12 @@ export const en: Messages = {
       copyPrompt: 'Copy Prompt',
       openFolder: 'Open Folder',
       addToChat: 'Add to Chat',
+      download: 'Download',
       copied: 'Image copied to clipboard',
       promptCopied: 'Prompt copied to clipboard',
       copyFailed: 'Copy failed: {{error}}',
+      downloaded: 'Image saved to {{path}}',
+      downloadFailed: 'Download failed: {{error}}',
       generatedIn: 'Generated in {{duration}}',
       noMetadata: 'No metadata available.',
       prompt: 'Prompt',

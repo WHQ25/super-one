@@ -11,6 +11,7 @@ import { toast } from 'sonner'
 import { ImagePreview } from '@/components/coding/ImagePreview'
 import { SelectionContextMenuZone } from './SelectionContextMenu'
 import { chatInputAPI } from './ChatInput'
+import { useAppStore } from '@/stores/app'
 import type { ImageGenerationItem, MediaProviderStatus } from '@superone/shared/agent-types'
 
 const isWindows = window.app.platform === 'win32'
@@ -61,7 +62,12 @@ export function useImageDataUri(savedPath: string | undefined, isFailed: boolean
   return { dataUri, loadError }
 }
 
-export function useImageMenuItems({ savedPath, prompt }: { savedPath: string; prompt?: string }): AdaptiveMenuEntry[] {
+function basename(path: string): string {
+  const slash = path.lastIndexOf('/')
+  return slash >= 0 ? path.slice(slash + 1) : path
+}
+
+export function useImageMenuItems({ savedPath, prompt, downloadable }: { savedPath: string; prompt?: string; downloadable?: boolean }): AdaptiveMenuEntry[] {
   const { t } = useTranslation()
   const handleCopy = async () => {
     const res = await window.app.clipboardWriteImage(savedPath)
@@ -77,9 +83,18 @@ export function useImageMenuItems({ savedPath, prompt }: { savedPath: string; pr
       toast.error(t('chat.image.copyFailed', { error: String(error) }))
     }
   }
+  const handleDownload = async () => {
+    const defaultDir = useAppStore.getState().currentFolder ?? undefined
+    const res = await window.app.saveFileAs(savedPath, basename(savedPath), defaultDir)
+    if (res.ok) toast.success(t('chat.image.downloaded', { path: res.savedPath }))
+    else if (!res.canceled) toast.error(t('chat.image.downloadFailed', { error: res.error }))
+  }
 
   return [
     { kind: 'item', id: 'copy', label: t('chat.image.copyImage'), icon: Copy, onSelect: () => { void handleCopy() } },
+    ...(downloadable
+      ? ([{ kind: 'item', id: 'download', label: t('chat.image.download'), icon: Download, onSelect: () => { void handleDownload() } }] as AdaptiveMenuEntry[])
+      : []),
     ...(prompt
       ? ([{ kind: 'item', id: 'copyPrompt', label: t('chat.image.copyPrompt'), icon: ClipboardCopy, onSelect: () => { void handleCopyPrompt() } }] as AdaptiveMenuEntry[])
       : []),
@@ -121,12 +136,13 @@ interface InteractiveProps {
   className: string
   ariaLabel: string
   prompt?: string
+  downloadable?: boolean
   children: React.ReactNode
 }
 
-export function ImageInteractive({ savedPath, onOpen, className, ariaLabel, prompt, children }: InteractiveProps) {
+export function ImageInteractive({ savedPath, onOpen, className, ariaLabel, prompt, downloadable, children }: InteractiveProps) {
   const dragEndRef = useRef(0)
-  const menuItems = useImageMenuItems({ savedPath, prompt })
+  const menuItems = useImageMenuItems({ savedPath, prompt, downloadable })
 
   const handleDragStart = (e: React.DragEvent) => {
     e.preventDefault()
@@ -286,7 +302,7 @@ export function ImageViewer({ items, index, open, onOpenChange, onIndexChange }:
   const providerMap = useMediaProviderMap(infoOpen)
   const providerParamId = item?.params?.find((p) => p.key === 'provider')?.value
 
-  const menuItems = useImageMenuItems({ savedPath: item?.savedPath ?? '', prompt: item?.revisedPrompt })
+  const menuItems = useImageMenuItems({ savedPath: item?.savedPath ?? '', prompt: item?.revisedPrompt, downloadable: true })
   const multi = items.length > 1
   const hasPrev = index > 0
   const hasNext = index < items.length - 1
@@ -314,7 +330,8 @@ export function ImageViewer({ items, index, open, onOpenChange, onIndexChange }:
     setDownloading(true)
     setDownloadStatus(null)
     try {
-      const res = await window.app.saveFileAs(item.savedPath, buildImageFileName(item))
+      const defaultDir = useAppStore.getState().currentFolder ?? undefined
+      const res = await window.app.saveFileAs(item.savedPath, buildImageFileName(item), defaultDir)
       if (res.ok) setDownloadStatus(`Saved to ${res.savedPath}`)
       else if (!res.canceled) setDownloadStatus(`Failed: ${res.error ?? 'unknown error'}`)
       setDownloading(false)

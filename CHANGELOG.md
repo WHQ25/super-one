@@ -4,6 +4,33 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.46.0-alpha] - 2026-07-21
+
+### Added
+
+- Video generation support (Sora, Veo, Seedance, New API) with a confirmation dialog, gallery card rendering in chat, and an MCP media guide tool
+- Save and reuse rendered widgets as templates, surfaced in the widget guide
+- Discover and classify models from relay and OpenAI-compatible endpoints via the local models.dev catalog
+- Show catalog details for custom and discovered models in provider settings
+- Show the selected preview inline in AskUserQuestion results
+- Terminal open/close transition animation
+- Generated-image downloads default to the project folder, with a download option in the context menu
+
+### Fixed
+
+- Prevent spawn environment corruption
+- Exempt foreground-visible sessions from idle release
+- Isolate the widget iframe from the host origin
+- Queue widget ready-gate waiters per title
+- Clarify MiniMax description covers coding plan or API
+- Remove redundant provider name badge, show platform name in chat hint
+- Type the codex model override map as ModelOption
+
+### Changed
+
+- Merge MiniMax CN/Global into a single platform with two plans
+- Fetch video generation status on demand instead of polling
+
 ## [0.45.3-alpha] - 2026-07-17
 
 ### Added

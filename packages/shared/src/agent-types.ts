@@ -271,6 +271,22 @@ export interface ImageGenerationItem {
   warnings?: string[]
 }
 
+/**
+ * A video produced by `media_generate_video`. Unlike an image it is rendered from disk rather than
+ * inlined, and it stays `in_progress` across two tool calls — the submit and the status poll — so
+ * the placeholder card is visible for the minutes the render takes.
+ */
+export interface VideoGenerationItem {
+  id: string
+  type: 'video_generation'
+  status: 'in_progress' | 'completed' | 'failed' | string
+  prompt?: string
+  savedPath?: string
+  frameImagePaths?: string[]
+  params?: { key: string; value: string }[]
+  warnings?: string[]
+}
+
 export interface CodexPlanApprovalState {
   status: 'approved' | 'rejected'
   feedback?: string
@@ -314,6 +330,7 @@ export type CodexThreadItem =
   | CodexCompactionItem
   | CodexCollabToolCallItem
   | ImageGenerationItem
+  | VideoGenerationItem
 
 export interface CodexMcpServerStartup {
   name: string

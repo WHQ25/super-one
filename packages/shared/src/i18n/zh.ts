@@ -245,6 +245,11 @@ export const zh: Messages = {
         description: '由哪个服务商生成图片。在「服务商」中添加密钥并启用图片模型。',
         auto: '自动（第一个可用）',
       },
+      videoProvider: {
+        label: '视频生成服务商',
+        description: '由哪个服务商生成视频。在「服务商」中添加密钥并启用视频模型。',
+        auto: '自动（第一个可用）',
+      },
       experimental: '实验功能',
       acp: {
         label: 'ACP 智能体',
@@ -1084,6 +1089,7 @@ export const zh: Messages = {
       capabilities: '能力',
       familyAnthropic: 'Anthropic（Claude）',
       familyOpenai: 'OpenAI',
+      familyNewapi: 'New API 视频中转（Seedance / 可灵）',
       familyGoogle: 'Google（Gemini）',
       protocolOpenaiChatCompletion: 'Chat Completion',
       protocolOpenaiResponses: 'Chat Response',

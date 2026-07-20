@@ -1,6 +1,8 @@
-import type { ImageGenerationItem, CodexThreadItem } from '@superone/shared/agent-types'
+import type { ImageGenerationItem, VideoGenerationItem, CodexThreadItem } from '@superone/shared/agent-types'
 
 const MEDIA_GENERATE_IMAGE_TOOL = 'mcp__superone__media_generate_image'
+const MEDIA_GENERATE_VIDEO_TOOL = 'mcp__superone__media_generate_video'
+const MEDIA_VIDEO_STATUS_TOOL = 'mcp__superone__media_video_status'
 
 interface GenerationResult {
   status?: string
@@ -8,10 +10,19 @@ interface GenerationResult {
   provider?: unknown
   model?: unknown
   warnings?: unknown
+  generationId?: unknown
 }
 
 export function isMediaGenerateImageTool(toolName: string): boolean {
   return toolName === MEDIA_GENERATE_IMAGE_TOOL
+}
+
+export function isMediaGenerateVideoTool(toolName: string): boolean {
+  return toolName === MEDIA_GENERATE_VIDEO_TOOL
+}
+
+export function isMediaVideoStatusTool(toolName: string): boolean {
+  return toolName === MEDIA_VIDEO_STATUS_TOOL
 }
 
 function parseGenerationResult(resultText: string | undefined): GenerationResult | null {
@@ -35,20 +46,40 @@ export function isSuccessfulGenerationResult(resultText: string | undefined): bo
   return toSavedPaths(parsed).length > 0
 }
 
+export function isFailedGenerationResult(resultText: string | undefined): boolean {
+  return parseGenerationResult(resultText)?.status === 'error'
+}
+
+/** A status poll that reports the job is still rendering — nothing new to show yet. */
+export function isVideoStatusStillRunning(resultText: string | undefined): boolean {
+  return parseGenerationResult(resultText)?.status === 'running'
+}
+
 function toRecord(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined
 }
 
+function toStringList(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((p): p is string => typeof p === 'string' && p.trim().length > 0) : []
+}
+
 function toReferenceImagePaths(input: Record<string, unknown> | undefined): string[] | undefined {
-  const refs = input?.reference_image_paths
-  if (!Array.isArray(refs)) return undefined
-  const paths = refs.filter((p): p is string => typeof p === 'string' && p.trim().length > 0)
+  const paths = toStringList(input?.reference_image_paths)
   return paths.length > 0 ? paths : undefined
 }
+
+/** Label shown in the card, paired with the tool-input key it reads from. */
+type ParamKeys = [label: string, inputKey: string][]
+
+const IMAGE_PARAM_KEYS: ParamKeys = [
+  ['size', 'size'],
+  ['aspectRatio', 'aspect_ratio'],
+]
 
 function buildGenerationParams(
   input: Record<string, unknown> | undefined,
   result: GenerationResult,
+  extraKeys: ParamKeys = IMAGE_PARAM_KEYS,
 ): { key: string; value: string }[] {
   const params: { key: string; value: string }[] = []
   const push = (key: string, value: unknown) => {
@@ -57,8 +88,7 @@ function buildGenerationParams(
   }
   push('provider', result.provider ?? input?.provider)
   push('model', result.model ?? input?.model)
-  push('size', input?.size)
-  push('aspectRatio', input?.aspect_ratio)
+  for (const [label, inputKey] of extraKeys) push(label, input?.[inputKey])
   return params
 }
 
@@ -100,6 +130,32 @@ export function toImageGenerationItems(
     revisedPrompt,
     ...(referenceImagePaths ? { referenceImagePaths } : {}),
     ...(params.length > 0 ? { params } : {}),
+    ...(warnings && warnings.length > 0 ? { warnings } : {}),
+  }))
+}
+
+/**
+ * Map a completed `media_video_status` poll onto the finished card.
+ *
+ * Returns nothing while the job is still running so the placeholder from the submit call stays put
+ * rather than being replaced by a second, identical in-progress card.
+ */
+export function toVideoStatusItems(resultText: string | undefined): VideoGenerationItem[] {
+  const parsed = parseGenerationResult(resultText)
+  if (!parsed || parsed.status !== 'generated') return []
+
+  const generationId = typeof parsed.generationId === 'string' ? parsed.generationId : undefined
+  const warnings = Array.isArray(parsed.warnings)
+    ? parsed.warnings.map((w) => (typeof w === 'string' ? w : JSON.stringify(w))).filter(Boolean)
+    : undefined
+
+  // The id deliberately matches the placeholder's so the finished card replaces it rather than
+  // appearing next to it. A generation yields exactly one video, so no index suffix is needed.
+  return toSavedPaths(parsed).map((savedPath) => ({
+    id: generationId ?? savedPath,
+    type: 'video_generation',
+    status: 'completed',
+    savedPath,
     ...(warnings && warnings.length > 0 ? { warnings } : {}),
   }))
 }

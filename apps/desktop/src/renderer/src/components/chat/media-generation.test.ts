@@ -1,6 +1,13 @@
 import { describe, it, expect } from 'vitest'
 import type { CodexMcpToolCallItem } from '@superone/shared/agent-types'
-import { toImageGenerationItems, isMediaGenerateImageTool, collectCodexGeneratedImages } from './media-generation'
+import {
+  toImageGenerationItems,
+  toVideoStatusItems,
+  isMediaGenerateImageTool,
+  isMediaGenerateVideoTool,
+  isMediaVideoStatusTool,
+  collectCodexGeneratedImages,
+} from './media-generation'
 import { isHiddenToolBlock } from './tool-display'
 
 const TOOL = 'mcp__superone__media_generate_image'
@@ -192,5 +199,87 @@ describe('collecting generated images from a codex turn', () => {
       codexCall({ id: 'exec-2' }),
     ])
     expect(items.map((i) => i.id)).toEqual(['exec-1-0', 'exec-2-0'])
+  })
+})
+
+const VIDEO_TOOL = 'mcp__superone__media_generate_video'
+const STATUS_TOOL = 'mcp__superone__media_video_status'
+
+const SUBMITTED = JSON.stringify({
+  status: 'submitted',
+  generationId: 'vid-1',
+  provider: 'Volcengine Ark',
+  model: 'doubao-seedance-2-0-260128',
+})
+
+const RUNNING = JSON.stringify({ status: 'running', generationId: 'vid-1' })
+
+const GENERATED = JSON.stringify({
+  status: 'generated',
+  generationId: 'vid-1',
+  savedPaths: ['/tmp/out/vid-1-0.mp4'],
+})
+
+describe('video generation tool identification', () => {
+  it('tells the two video tools apart from each other and from the image tool', () => {
+    expect(isMediaGenerateVideoTool(VIDEO_TOOL)).toBe(true)
+    expect(isMediaVideoStatusTool(STATUS_TOOL)).toBe(true)
+    expect(isMediaGenerateVideoTool(STATUS_TOOL)).toBe(false)
+    expect(isMediaGenerateImageTool(VIDEO_TOOL)).toBe(false)
+  })
+
+  it('rejects a same-named tool from a different mcp server', () => {
+    expect(isMediaGenerateVideoTool('mcp__other__media_generate_video')).toBe(false)
+  })
+})
+
+describe('suppressing raw video tool blocks', () => {
+  it('keeps the submit block visible as the only progress affordance while rendering', () => {
+    expect(isHiddenToolBlock(VIDEO_TOOL, SUBMITTED)).toBe(false)
+    expect(isHiddenToolBlock(VIDEO_TOOL, undefined)).toBe(false)
+  })
+
+  it('hides an in-flight status poll because it carries no news', () => {
+    expect(isHiddenToolBlock(STATUS_TOOL, RUNNING)).toBe(true)
+    expect(isHiddenToolBlock(STATUS_TOOL, undefined)).toBe(true)
+  })
+
+  it('hides a completed status poll because the gallery renders the video', () => {
+    expect(isHiddenToolBlock(STATUS_TOOL, GENERATED)).toBe(true)
+  })
+
+  it('shows a failed status poll so the reason reaches the user', () => {
+    expect(isHiddenToolBlock(STATUS_TOOL, ERROR_RESULT)).toBe(false)
+  })
+})
+
+describe('toVideoStatusItems', () => {
+  it('emits nothing while the job is still running so no empty card appears', () => {
+    expect(toVideoStatusItems(RUNNING)).toEqual([])
+    expect(toVideoStatusItems(undefined)).toEqual([])
+  })
+
+  it('emits nothing on failure, leaving the visible error block to explain', () => {
+    expect(toVideoStatusItems(ERROR_RESULT)).toEqual([])
+  })
+
+  it('maps a finished job onto one completed card keyed by generation id', () => {
+    expect(toVideoStatusItems(GENERATED)).toEqual([
+      { id: 'vid-1', type: 'video_generation', status: 'completed', savedPath: '/tmp/out/vid-1-0.mp4' },
+    ])
+  })
+
+  it('carries warnings through so unsupported settings stay visible', () => {
+    const withWarnings = JSON.stringify({
+      status: 'generated',
+      generationId: 'vid-2',
+      savedPaths: ['/tmp/out/v.mp4'],
+      warnings: [{ type: 'unsupported', feature: 'fps' }],
+    })
+    expect(toVideoStatusItems(withWarnings)[0].warnings).toHaveLength(1)
+  })
+
+  it('survives a result that is not json rather than throwing mid-render', () => {
+    expect(toVideoStatusItems('not json at all')).toEqual([])
   })
 })

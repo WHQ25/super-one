@@ -1,6 +1,11 @@
 import { shortenPath } from '@/lib/path-utils'
 import { extractJsonStringValue } from '@superone/shared/partial-json'
-import { isMediaGenerateImageTool, isSuccessfulGenerationResult } from './media-generation'
+import {
+  isMediaGenerateImageTool,
+  isMediaVideoStatusTool,
+  isSuccessfulGenerationResult,
+  isVideoStatusStillRunning,
+} from './media-generation'
 
 const PARTIAL_STRING_FIELDS: Record<string, string[]> = {
   Edit: ['file_path', 'old_string', 'new_string'],
@@ -72,6 +77,13 @@ const HIDDEN_TASK_TOOLS = new Set(['TodoWrite', 'TaskCreate', 'TaskUpdate'])
 export function isHiddenToolBlock(toolName: string, result?: string): boolean {
   if (HIDDEN_TASK_TOOLS.has(toolName)) return true
   if (isMediaGenerateImageTool(toolName)) return !result || isSuccessfulGenerationResult(result)
+  // The submit block stays visible: it is the only progress affordance during the minutes a video
+  // renders, and the gallery card cannot stand in for it because the completing poll usually lands
+  // in a later message. Polls are hidden while running (pure noise) and on success (the gallery
+  // shows the video); a failed poll keeps its block so the error is visible.
+  if (isMediaVideoStatusTool(toolName)) {
+    return !result || isVideoStatusStillRunning(result) || isSuccessfulGenerationResult(result)
+  }
   const mcp = parseMcpToolName(toolName)
   return mcp?.serverName === 'superone' && mcp.mcpToolName === 'session_rename'
 }

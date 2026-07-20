@@ -222,6 +222,11 @@ export type Messages = {
         description: string
         auto: string
       }
+      videoProvider: {
+        label: string
+        description: string
+        auto: string
+      }
       experimental: string
       acp: {
         label: string
@@ -1058,6 +1063,7 @@ export type Messages = {
       capabilities: string
       familyAnthropic: string
       familyOpenai: string
+      familyNewapi: string
       familyGoogle: string
       protocolOpenaiChatCompletion: string
       protocolOpenaiResponses: string
@@ -1925,6 +1931,11 @@ export const en: Messages = {
         description: 'Which provider generates images. Add keys and enable image models in Providers.',
         auto: 'Auto (first usable)',
       },
+      videoProvider: {
+        label: 'Video Provider',
+        description: 'Which provider generates videos. Add keys and enable video models in Providers.',
+        auto: 'Auto (first usable)',
+      },
       experimental: 'Experimental',
       acp: {
         label: 'ACP Agents',
@@ -2764,6 +2775,7 @@ export const en: Messages = {
       capabilities: 'Capabilities',
       familyAnthropic: 'Anthropic (Claude)',
       familyOpenai: 'OpenAI',
+      familyNewapi: 'New API Video Relay (Seedance / Kling)',
       familyGoogle: 'Google (Gemini)',
       protocolOpenaiChatCompletion: 'Chat Completion',
       protocolOpenaiResponses: 'Chat Response',

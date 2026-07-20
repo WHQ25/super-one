@@ -184,6 +184,12 @@ export function AppSettingsPage() {
             description={t('settings.general.imageProvider.description')}
             fallback={<span className="truncate text-sm text-muted-foreground">{t('settings.general.imageProvider.auto')}</span>}
           />
+          <DefaultProviderRow
+            consumer="media:video"
+            title={t('settings.general.videoProvider.label')}
+            description={t('settings.general.videoProvider.description')}
+            fallback={<span className="truncate text-sm text-muted-foreground">{t('settings.general.videoProvider.auto')}</span>}
+          />
         </div>
 
         <div className="rounded-lg border border-border">

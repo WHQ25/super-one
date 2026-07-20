@@ -1,4 +1,4 @@
-import type { ChatMessage as ChatMessageType, ContentBlock, AgentStatus, ImageGenerationItem, ImageAttachment } from '@superone/shared/agent-types'
+import type { ChatMessage as ChatMessageType, ContentBlock, AgentStatus, ImageGenerationItem, VideoGenerationItem, ImageAttachment } from '@superone/shared/agent-types'
 import { useState, useEffect, useRef, useMemo, useCallback, memo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@superone/ui/lib/utils'
@@ -7,13 +7,14 @@ import { ToolBlock } from './ToolBlock'
 import { ToolGroup } from './ToolGroup'
 import { AppToolGroup } from './AppToolGroup'
 import { parseToolInput, parseMcpToolName, isHiddenToolBlock } from './tool-display'
-import { toImageGenerationItems, isMediaGenerateImageTool, collectCodexGeneratedImages } from './media-generation'
+import { toImageGenerationItems, toVideoStatusItems, isMediaGenerateImageTool, isMediaVideoStatusTool, collectCodexGeneratedImages } from './media-generation'
 import { useMiniAppStore } from '@/stores/miniapp'
 import type { MiniAppEntry } from '@superone/shared/miniapp-types'
 import { SubagentBlock } from './SubagentBlock'
 import { WorkflowBlock } from './WorkflowBlock'
 import { CodexTurnView } from './CodexTurnView'
 import { ImageGalleryBlock } from './ImageGalleryBlock'
+import { VideoGalleryBlock } from './VideoGalleryBlock'
 import { AttachmentChip, AttachmentPreviewDialog } from './attachment-chip'
 import { TooltipProvider } from '@superone/ui/components/ui/tooltip'
 import { UserSelectionChip } from './UserSelectionChip'
@@ -745,6 +746,23 @@ function collectGeneratedImages(content: ContentBlock[], toolResultMap: Map<stri
   return items
 }
 
+/**
+ * Collect the finished video cards for a turn.
+ *
+ * Only the completing status poll produces a card. A generation spans two tool calls and the poll
+ * usually lands in a later message than the submit, so a placeholder emitted at submit time would
+ * be stranded in an earlier message with no way to ever settle — the visible submit tool block is
+ * the progress affordance instead.
+ */
+function collectGeneratedVideos(content: ContentBlock[], toolResultMap: Map<string, string>): VideoGenerationItem[] {
+  const byId = new Map<string, VideoGenerationItem>()
+  for (const block of content) {
+    if (block.type !== 'tool_use' || !isMediaVideoStatusTool(block.toolName)) continue
+    for (const item of toVideoStatusItems(toolResultMap.get(block.toolUseId))) byId.set(item.id, item)
+  }
+  return [...byId.values()]
+}
+
 export const ChatMessage = memo(function ChatMessage({ message, sessionStatus, isLastAssistant, hideUserActions }: ChatMessageProps) {
   const projectPath = useChatStore((s) => s.activeProject)
   const isUser = message.role === 'user'
@@ -767,6 +785,11 @@ export const ChatMessage = memo(function ChatMessage({ message, sessionStatus, i
       ? collectCodexGeneratedImages(codexItems)
       : grouped ? collectGeneratedImages(message.content, grouped.toolResultMap) : [],
     [isCodexMessage, codexItems, grouped, message.content],
+  )
+
+  const generatedVideos = useMemo(
+    () => (grouped ? collectGeneratedVideos(message.content, grouped.toolResultMap) : []),
+    [grouped, message.content],
   )
 
   const userText = useMemo(
@@ -882,6 +905,7 @@ export const ChatMessage = memo(function ChatMessage({ message, sessionStatus, i
             })
         }
         {!isUser && generatedImages.length > 0 && <ImageGalleryBlock items={generatedImages} />}
+        {!isUser && generatedVideos.length > 0 && <VideoGalleryBlock items={generatedVideos} />}
         {message.status === 'interrupted' && (
           <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
             <OctagonX className="size-3" />

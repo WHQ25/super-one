@@ -1,15 +1,14 @@
 import type { SharedV4Warning } from '@ai-sdk/provider'
-import { collectHeaders, definedHeaders, readJson } from '../../http'
-import { pollUntilDone, type PollOptions } from '../poll'
-import type { VideoTask } from '../ark/response'
-import type { VideoModelV4, VideoModelV4CallOptions, VideoModelV4Result } from '../sdk-types'
+import { definedHeaders, readJson } from '../../http'
+import { unrecognisedStatus, type VideoTask } from '../ark/response'
+import type { VideoDownload, VideoSubmission, VideoTaskDriver } from '../driver'
+import type { VideoModelV4CallOptions } from '../sdk-types'
 
 export interface OpenAIVideoModelConfig {
   provider: string
   baseURL: string
   apiKey: string
   fetch?: typeof globalThis.fetch
-  poll?: PollOptions
 }
 
 interface SoraJob {
@@ -40,7 +39,7 @@ function toTask(job: SoraJob): VideoTask {
     case 'cancelled':
       return { id, status: 'cancelled', error: job.error?.message }
     default:
-      return { id, status: 'failed', error: `Sora returned an unrecognised job status: ${job.status}` }
+      return unrecognisedStatus(id, job.status)
   }
 }
 
@@ -94,21 +93,20 @@ function buildBody(
 /**
  * OpenAI Sora video model, also used for relays that copy its `/videos` shape.
  *
- * Three stages behind one `doGenerate`: POST to create the job, poll until it completes, then GET
- * `/content` for the MP4 bytes. Unlike Ark it returns binary rather than an expiring URL, so there
- * is no download deadline to race.
+ * POST to create the job, GET the job for status, GET `/content` for the MP4 bytes. Unlike Ark it
+ * returns binary rather than an expiring URL, so there is no download deadline to race.
  */
-export function createOpenAIVideoModel(cfg: OpenAIVideoModelConfig, modelId: string): VideoModelV4 {
+export function createOpenAIVideoDriver(cfg: OpenAIVideoModelConfig, modelId: string): VideoTaskDriver {
   const base = cfg.baseURL.replace(/\/+$/, '')
   const videosUrl = `${base}/videos`
   const doFetch = cfg.fetch ?? globalThis.fetch
+  const auth = { authorization: `Bearer ${cfg.apiKey}` }
 
   return {
-    specificationVersion: 'v4',
     provider: cfg.provider,
     modelId,
-    maxVideosPerCall: 1,
-    async doGenerate(options: VideoModelV4CallOptions): Promise<VideoModelV4Result> {
+
+    async submit(options: VideoModelV4CallOptions): Promise<VideoSubmission> {
       const warnings: SharedV4Warning[] = []
       if (options.n > 1) {
         warnings.push({
@@ -118,57 +116,36 @@ export function createOpenAIVideoModel(cfg: OpenAIVideoModelConfig, modelId: str
         })
       }
 
-      const authHeaders = {
-        authorization: `Bearer ${cfg.apiKey}`,
-        ...definedHeaders(options.headers),
-      }
-      const signal = options.abortSignal ? { signal: options.abortSignal } : {}
-
-      const createResponse = await doFetch(videosUrl, {
+      const response = await doFetch(videosUrl, {
         method: 'POST',
-        headers: { ...authHeaders, 'content-type': 'application/json' },
+        headers: { ...auth, ...definedHeaders(options.headers), 'content-type': 'application/json' },
         body: JSON.stringify(buildBody(modelId, options, warnings)),
-        ...signal,
+        ...(options.abortSignal ? { signal: options.abortSignal } : {}),
       })
-      const job = await readJson<SoraJob>(createResponse, 'Sora')
-      if (!createResponse.ok || !job.id) {
+      const job = await readJson<SoraJob>(response, 'Sora')
+      if (!response.ok || !job.id) {
         throw new Error(
-          `Sora video submission failed (${createResponse.status}): ${job.error?.message ?? 'no job id returned'}`,
+          `Sora video submission failed (${response.status}): ${job.error?.message ?? 'no job id returned'}`,
         )
       }
+      return { taskId: job.id, warnings }
+    },
 
-      const jobUrl = `${videosUrl}/${job.id}`
-      const task = await pollUntilDone(
-        async () => {
-          const response = await doFetch(jobUrl, { method: 'GET', headers: authHeaders, ...signal })
-          const polled = await readJson<SoraJob>(response, 'Sora')
-          if (!response.ok) {
-            throw new Error(`Sora job lookup failed (${response.status}): ${polled.error?.message ?? job.id}`)
-          }
-          return toTask(polled)
-        },
-        { ...cfg.poll, abortSignal: options.abortSignal },
-      )
-      if (task.status !== 'succeeded') {
-        throw new Error(`Sora video generation ${task.status}: ${task.error ?? 'no details'}`)
+    async fetch(taskId: string): Promise<VideoTask> {
+      const response = await doFetch(`${videosUrl}/${taskId}`, { method: 'GET', headers: auth })
+      const job = await readJson<SoraJob>(response, 'Sora')
+      if (!response.ok) {
+        throw new Error(`Sora job lookup failed (${response.status}): ${job.error?.message ?? taskId}`)
       }
+      return toTask({ ...job, id: job.id ?? taskId })
+    },
 
-      const contentResponse = await doFetch(`${jobUrl}/content`, { method: 'GET', headers: authHeaders, ...signal })
+    async download(task: VideoTask): Promise<VideoDownload> {
+      const contentResponse = await doFetch(`${videosUrl}/${task.id}/content`, { method: 'GET', headers: auth })
       if (!contentResponse.ok) {
-        throw new Error(`Sora video download failed (${contentResponse.status}) for job ${job.id}`)
+        throw new Error(`Sora video download failed (${contentResponse.status}) for job ${task.id}`)
       }
-      const bytes = new Uint8Array(await contentResponse.arrayBuffer())
-
-      return {
-        videos: [{ type: 'binary', data: bytes, mediaType: 'video/mp4' }],
-        warnings,
-        response: {
-          timestamp: new Date(),
-          modelId,
-          headers: collectHeaders(createResponse.headers),
-        },
-        providerMetadata: { openai: { jobId: job.id } },
-      }
+      return { data: new Uint8Array(await contentResponse.arrayBuffer()), mediaType: 'video/mp4' }
     },
   }
 }

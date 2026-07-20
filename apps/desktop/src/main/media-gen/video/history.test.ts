@@ -39,6 +39,7 @@ vi.mock('../../db-media-generations', () => ({
       status: row.status,
       error: row.error,
       createdAt: row.created_at,
+      upstreamTaskId: row.upstream_task_id,
     }
   },
 }))
@@ -49,80 +50,90 @@ vi.mock('../providers', () => ({
   resolveVideoProvider: vi.fn(async () => ({ id: 'cred', kind: 'ark', apiKey: 'k', baseURL: 'https://x' })),
 }))
 
-const generateVideoMedia = vi.fn()
-vi.mock('./service', () => ({ generateVideoMedia: (...args: unknown[]) => generateVideoMedia(...args) }))
+const submitVideoTask = vi.fn()
+const fetchVideoTask = vi.fn()
+const persistVideoTask = vi.fn()
+vi.mock('./service', () => ({
+  submitVideoTask: (...args: unknown[]) => submitVideoTask(...args),
+  fetchVideoTask: (...args: unknown[]) => fetchVideoTask(...args),
+  persistVideoTask: (...args: unknown[]) => persistVideoTask(...args),
+}))
 
-const { submitVideoGeneration, readVideoGeneration, cancelVideoGeneration } = await import('./history')
-
-/** Lets the background promise chain settle without coupling the test to its internals. */
-const settle = () => new Promise((resolve) => setImmediate(resolve))
+const { submitVideoGeneration, readVideoGeneration } = await import('./history')
 
 const PARAMS = { providerId: 'cred', model: 'seedance', prompt: 'a cat', source: 'agent' as const }
 
 describe('video generation history', () => {
   beforeEach(() => {
     rows.clear()
-    generateVideoMedia.mockReset()
+    submitVideoTask.mockReset().mockResolvedValue({ taskId: 'cgt-1', warnings: [] })
+    fetchVideoTask.mockReset()
+    persistVideoTask.mockReset().mockResolvedValue([{ path: '/tmp/out/v.mp4', mediaType: 'video/mp4' }])
   })
 
-  it('records the row and returns before the video is finished', async () => {
-    let finish: (value: unknown) => void = () => {}
-    generateVideoMedia.mockReturnValue(new Promise((resolve) => (finish = resolve)))
-
+  it('persists the provider task id so a later read can pick the job back up', async () => {
     const id = await submitVideoGeneration(PARAMS)
 
-    expect(readVideoGeneration(id)).toMatchObject({ status: 'running', savedPaths: [] })
+    expect(rows.get(id)?.upstream_task_id).toBe('cgt-1')
     expect(rows.get(id)?.media_type).toBe('video')
-
-    finish({ images: [{ path: '/tmp/out/v.mp4', mediaType: 'video/mp4' }], warnings: [] })
-    await settle()
-    expect(readVideoGeneration(id)).toMatchObject({ status: 'succeeded', savedPaths: ['/tmp/out/v.mp4'] })
   })
 
-  it('keeps one row across both phases rather than inserting a second', async () => {
-    generateVideoMedia.mockResolvedValue({ images: [{ path: '/tmp/out/v.mp4' }], warnings: [] })
+  it('asks the provider only while the row is unsettled', async () => {
+    fetchVideoTask.mockResolvedValue({ id: 'cgt-1', status: 'succeeded', videoUrl: 'https://cdn/v.mp4' })
     const id = await submitVideoGeneration(PARAMS)
-    await settle()
-    expect(rows.size).toBe(1)
-    expect(rows.get(id)?.status).toBe('succeeded')
+
+    await expect(readVideoGeneration(id)).resolves.toMatchObject({
+      status: 'succeeded',
+      savedPaths: ['/tmp/out/v.mp4'],
+    })
+    expect(fetchVideoTask).toHaveBeenCalledTimes(1)
+
+    // Settled rows are answered from the table; the provider is not asked again.
+    await readVideoGeneration(id)
+    expect(fetchVideoTask).toHaveBeenCalledTimes(1)
   })
 
-  it('settles the row to failed with the upstream message', async () => {
-    generateVideoMedia.mockRejectedValue(new Error('content filtered'))
+  it('leaves the row running when the job has not finished, so the next call asks again', async () => {
+    fetchVideoTask.mockResolvedValue({ id: 'cgt-1', status: 'running' })
     const id = await submitVideoGeneration(PARAMS)
-    await settle()
-    expect(readVideoGeneration(id)).toMatchObject({ status: 'failed', error: 'content filtered' })
+
+    await expect(readVideoGeneration(id)).resolves.toMatchObject({ status: 'running', savedPaths: [] })
+    await expect(readVideoGeneration(id)).resolves.toMatchObject({ status: 'running' })
+    expect(fetchVideoTask).toHaveBeenCalledTimes(2)
+    expect(rows.get(id)?.status).toBe('running')
   })
 
-  it('reports an interrupted job instead of polling a stale running row forever', async () => {
-    generateVideoMedia.mockReturnValue(new Promise(() => {}))
+  it('resumes a job submitted before a restart instead of writing it off', async () => {
+    fetchVideoTask.mockResolvedValue({ id: 'cgt-1', status: 'succeeded', videoUrl: 'https://cdn/v.mp4' })
     const id = await submitVideoGeneration(PARAMS)
 
-    // Simulate a restart: the row survives, the in-process job map does not.
+    // Simulate a restart: the row survives, and nothing else has to.
     vi.resetModules()
     const reloaded = await import('./history')
 
-    const state = reloaded.readVideoGeneration(id)
-    expect(state).toMatchObject({ status: 'failed' })
-    expect(state?.error).toMatch(/restart/i)
-    // The row is settled, so a second read stays failed rather than re-reporting.
-    expect(reloaded.readVideoGeneration(id)?.status).toBe('failed')
-  })
-
-  it('returns null for an unknown generation id', () => {
-    expect(readVideoGeneration('nope')).toBeNull()
-  })
-
-  it('aborts a running job and reports nothing to cancel once it has settled', async () => {
-    let signal: AbortSignal | undefined
-    generateVideoMedia.mockImplementation((params: { abortSignal?: AbortSignal }) => {
-      signal = params.abortSignal
-      return new Promise(() => {})
+    await expect(reloaded.readVideoGeneration(id)).resolves.toMatchObject({
+      status: 'succeeded',
+      savedPaths: ['/tmp/out/v.mp4'],
     })
+  })
+
+  it('does not settle the row when the provider cannot be reached', async () => {
+    fetchVideoTask.mockRejectedValue(new Error('socket hang up'))
     const id = await submitVideoGeneration(PARAMS)
 
-    expect(cancelVideoGeneration(id)).toBe(true)
-    expect(signal?.aborted).toBe(true)
-    expect(cancelVideoGeneration('other')).toBe(false)
+    await expect(readVideoGeneration(id)).rejects.toThrow(/socket hang up/)
+    expect(rows.get(id)?.status).toBe('running')
+  })
+
+  it('settles the row to failed with the upstream message', async () => {
+    fetchVideoTask.mockResolvedValue({ id: 'cgt-1', status: 'failed', error: 'content filtered' })
+    const id = await submitVideoGeneration(PARAMS)
+
+    await expect(readVideoGeneration(id)).resolves.toMatchObject({ status: 'failed', error: 'content filtered' })
+    expect(rows.get(id)?.status).toBe('failed')
+  })
+
+  it('returns null for an unknown generation id', async () => {
+    await expect(readVideoGeneration('nope')).resolves.toBeNull()
   })
 })

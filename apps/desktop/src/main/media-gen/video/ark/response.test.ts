@@ -48,9 +48,9 @@ describe('parseArkVideoTask', () => {
     expect(parseArkVideoTask({ id: 'cgt-1', status: 'cancelled' }).status).toBe('cancelled')
   })
 
-  it('fails loudly on an unrecognised status rather than polling forever', () => {
+  it('keeps polling on an unrecognised status, preserving it for the timeout message', () => {
     const parsed = parseArkVideoTask({ id: 'cgt-1', status: 'wat' })
-    expect(parsed.status).toBe('failed')
-    expect(parsed.error).toMatch(/wat/)
+    expect(parsed.status).toBe('running')
+    expect(parsed.rawStatus).toBe('wat')
   })
 })

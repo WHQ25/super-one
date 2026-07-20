@@ -1,9 +1,10 @@
 import type { ProviderOptions } from '@ai-sdk/provider-utils'
-import { experimental_generateVideo as generateVideo, type DataContent } from 'ai'
+import type { DataContent } from 'ai'
 import { persistVideos } from '../storage'
-import type { MediaCoreResult, MediaProviderConfig } from '../types'
-import type { PollOptions } from './poll'
-import { resolveVideoModel } from './registry'
+import type { MediaProviderConfig, SavedImage } from '../types'
+import type { VideoTask } from './ark/response'
+import { buildVideoCallOptions } from './call-options'
+import { resolveVideoDriver } from './registry'
 import type { VideoModelV4FrameType } from './sdk-types'
 
 /** A frame image as the SDK's user-facing surface takes it: raw bytes plus the role it plays. */
@@ -26,38 +27,40 @@ export interface GenerateVideoCoreParams {
   generateAudio?: boolean
   providerOptions?: ProviderOptions
   abortSignal?: AbortSignal
-  /** Overrides the hand-written adapters' polling cadence. Mainly a test seam. */
-  poll?: PollOptions
 }
 
 /**
- * Generate a video and write it to disk.
+ * Submit a video job and return its provider-side handle.
  *
- * Deliberately the mirror image of `media-gen/service.ts`: resolve a model, hand it to the SDK's
- * one generic entry point, persist what comes back. Everything vendor-specific — async task
- * submission, polling, expiring URLs — lives inside the model returned by `resolveVideoModel`.
+ * Nothing is kept running afterwards: the handle is the entire continuation, and `fetchVideoTask`
+ * picks the job back up from it whenever the caller next asks. Deliberately the mirror image of
+ * `media-gen/service.ts`, except that images settle within the one call and videos do not.
  */
-export async function generateVideoMedia(
+export async function submitVideoTask(
   params: GenerateVideoCoreParams,
+): Promise<{ taskId: string; warnings: unknown[] }> {
+  const driver = resolveVideoDriver(params.provider, params.model)
+  const { options, warnings: inputWarnings } = buildVideoCallOptions(params)
+  const { taskId, warnings } = await driver.submit(options)
+  return { taskId, warnings: [...inputWarnings, ...warnings] }
+}
+
+/** Ask the provider once what state a previously submitted job is in. */
+export async function fetchVideoTask(
+  provider: MediaProviderConfig,
+  model: string,
+  taskId: string,
+): Promise<VideoTask> {
+  return resolveVideoDriver(provider, model).fetch(taskId)
+}
+
+/** Download a succeeded job's video and write it to disk. */
+export async function persistVideoTask(
+  provider: MediaProviderConfig,
+  model: string,
+  task: VideoTask,
   opts: { outputDir: string; generationId: string },
-): Promise<MediaCoreResult> {
-  const model = resolveVideoModel(params.provider, params.model, { poll: params.poll })
-
-  const result = await generateVideo({
-    model,
-    prompt: params.prompt,
-    ...(params.frameImages ? { frameImages: params.frameImages } : {}),
-    ...(params.inputReferences ? { inputReferences: params.inputReferences } : {}),
-    ...(params.aspectRatio ? { aspectRatio: params.aspectRatio as `${number}:${number}` } : {}),
-    ...(params.resolution ? { resolution: params.resolution as `${number}x${number}` } : {}),
-    ...(params.duration != null ? { duration: params.duration } : {}),
-    ...(params.fps != null ? { fps: params.fps } : {}),
-    ...(params.seed != null ? { seed: params.seed } : {}),
-    ...(params.generateAudio != null ? { generateAudio: params.generateAudio } : {}),
-    ...(params.providerOptions ? { providerOptions: params.providerOptions } : {}),
-    ...(params.abortSignal ? { abortSignal: params.abortSignal } : {}),
-  })
-
-  const videos = persistVideos(result.videos, opts.outputDir, opts.generationId)
-  return { images: videos, warnings: result.warnings, providerMetadata: result.providerMetadata }
+): Promise<SavedImage[]> {
+  const { data, mediaType } = await resolveVideoDriver(provider, model).download(task)
+  return persistVideos([{ uint8Array: data, mediaType }], opts.outputDir, opts.generationId)
 }

@@ -694,6 +694,8 @@ export const zh: Messages = {
       readWidgetGuidelines: '已读取 Widget 指南',
       readingMiniAppGuide: '正在读取小程序指南',
       readMiniAppGuide: '已读取小程序指南',
+      readingMediaGuide: '正在读取媒体指南',
+      readMediaGuide: '已读取媒体指南',
       generatingImage: '正在生成图片',
       generatedImage: '已生成图片',
       listingMediaProviders: '列出服务商',

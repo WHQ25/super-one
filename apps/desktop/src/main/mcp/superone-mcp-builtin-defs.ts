@@ -162,8 +162,8 @@ export const GENERATE_IMAGE_DESCRIPTION =
 export const GENERATE_VIDEO_DESCRIPTION =
   'Start generating a video from a text prompt (and optionally images, video or audio) using an AI video model. ' +
   'Use this when the user asks to create, generate, animate, or render a video / clip / animation. ' +
-  'Video generation is ASYNCHRONOUS: this tool returns immediately with a `generationId` while the video renders in the background, which typically takes 1-5 minutes. ' +
-  'You MUST then poll `media_video_status` with that id roughly every 30 seconds until it returns `generated` or `error` — the job is not finished until it does. ' +
+  'Video generation is ASYNCHRONOUS: this tool returns immediately with a `generationId` once the job is accepted by the provider, and rendering typically takes 1-5 minutes. ' +
+  'You MUST then poll `media_video_status` with that id roughly every 30 seconds until it returns `generated` or `error` — the job is not finished until it does, and nothing collects the result unless you ask. ' +
   'The finished video is shown to the user automatically. After it completes, do NOT embed it again with Markdown — just briefly describe the result in words. ' +
   'For text-to-video pass only `prompt`. For image-to-video pass `first_frame_path` (and optionally `last_frame_path` to control the ending) — but check media_read_guide first, since not every provider actually uses these. ' +
   '`provider` selects the backend by id (default: the first usable provider). Call media_list_providers with category "video" if unsure which providers/models exist, and call media_read_guide before setting anything beyond `prompt`/`first_frame_path` — most of the remaining fields only apply to specific providers and are silently ignored elsewhere. ' +
@@ -172,6 +172,7 @@ export const GENERATE_VIDEO_DESCRIPTION =
 export const VIDEO_STATUS_DESCRIPTION =
   'Check on a video generation started by media_generate_video. ' +
   'Returns `{status:"running"}` while it renders, `{status:"generated", savedPaths:[...]}` when finished, or `{status:"error", message}` if it failed. ' +
+  'Each call asks the provider directly and is what advances the job, so polling is required rather than cosmetic: without it the video is never downloaded or saved. ' +
   'Poll roughly every 30 seconds while it is running. Do not tell the user the video is ready until this returns `generated`.'
 
 export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [

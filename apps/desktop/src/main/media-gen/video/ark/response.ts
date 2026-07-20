@@ -6,6 +6,29 @@ export interface VideoTask {
   status: VideoTaskStatus
   videoUrl?: string
   error?: string
+  /**
+   * The vendor's own status string, kept only when it did not map onto a known `VideoTaskStatus`.
+   * Such a status is treated as non-terminal (see `unrecognisedStatus`), so this is what makes a
+   * subsequent timeout say "still unknown" instead of the misleading "still running".
+   */
+  rawStatus?: string
+}
+
+/**
+ * How every provider must handle a status string it does not recognise: keep polling.
+ *
+ * Mapping the unknown onto `failed` is tempting but wrong — a terminal status stops `pollUntilDone`
+ * immediately and `history.ts` writes that outcome to `media_generations` permanently, so one
+ * unrecognised string kills a task that was merely still starting up. That is exactly what New API
+ * does: a freshly created task sits in `NOT_START`, which its OpenAI-compatible view renders as
+ * `"unknown"` (`model/task.go#ToVideoStatus` has no `NOT_START` case and falls through to its
+ * default) before the relay's worker dispatches it upstream.
+ *
+ * Treating it as running instead costs at most one poll timeout in the genuinely-broken case, and
+ * relays report real failures with a real failure status anyway. Prefer the recoverable error.
+ */
+export function unrecognisedStatus(id: string, status: string | undefined): VideoTask {
+  return { id, status: 'running', rawStatus: status ?? 'missing' }
 }
 
 interface ArkTaskResponse {
@@ -47,6 +70,6 @@ export function parseArkVideoTask(raw: ArkTaskResponse): VideoTask {
         error: message || 'The Ark task expired before its result was retrieved.',
       }
     default:
-      return { id, status: 'failed', error: `Ark returned an unrecognised task status: ${raw.status}` }
+      return unrecognisedStatus(id, raw.status)
   }
 }

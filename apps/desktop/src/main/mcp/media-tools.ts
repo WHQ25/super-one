@@ -237,7 +237,7 @@ export async function generateVideoToolHandler(args: GenerateVideoArgs, deps: Bu
       generationId,
       provider: providerId,
       model,
-      hint: 'Video generation runs in the background. Poll media_video_status with this generationId about every 30 seconds until it returns generated or error.',
+      hint: 'The provider accepted the job. Poll media_video_status with this generationId about every 30 seconds until it returns generated or error — each call is what checks on and collects the render.',
     })
   } catch (error) {
     return toolError(error)
@@ -246,7 +246,7 @@ export async function generateVideoToolHandler(args: GenerateVideoArgs, deps: Bu
 
 export async function videoStatusToolHandler(args: VideoStatusArgs) {
   try {
-    const state = readVideoGeneration(args.generation_id)
+    const state = await readVideoGeneration(args.generation_id)
     if (!state) {
       return toolError(new Error(`No video generation found with id '${args.generation_id}'.`))
     }

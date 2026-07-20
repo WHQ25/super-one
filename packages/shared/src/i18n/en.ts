@@ -668,6 +668,8 @@ export type Messages = {
       readWidgetGuidelines: string
       readingMiniAppGuide: string
       readMiniAppGuide: string
+      readingMediaGuide: string
+      readMediaGuide: string
       generatingImage: string
       generatedImage: string
       listingMediaProviders: string
@@ -2380,6 +2382,8 @@ export const en: Messages = {
       readWidgetGuidelines: 'Read widget guidelines',
       readingMiniAppGuide: 'Reading mini-app guide',
       readMiniAppGuide: 'Read mini-app guide',
+      readingMediaGuide: 'Reading media guide',
+      readMediaGuide: 'Read media guide',
       generatingImage: 'Generating image',
       generatedImage: 'Generated image',
       listingMediaProviders: 'List providers',

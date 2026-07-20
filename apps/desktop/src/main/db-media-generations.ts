@@ -22,6 +22,8 @@ export interface MediaGenerationRow {
   status: MediaGenerationStatus
   error: string | null
   created_at: string
+  /** The provider's own handle for the job, used to fetch status on demand. Null for images. */
+  upstream_task_id: string | null
 }
 
 export interface MediaGenerationEntry {
@@ -36,6 +38,7 @@ export interface MediaGenerationEntry {
   status: MediaGenerationStatus
   error: string | null
   createdAt: string
+  upstreamTaskId: string | null
 }
 
 export function insertMediaGeneration(row: MediaGenerationRow): void {
@@ -43,10 +46,11 @@ export function insertMediaGeneration(row: MediaGenerationRow): void {
     .prepare(
       `INSERT INTO media_generations
         (id, session_id, project_id, source, provider_id, model, media_type, prompt,
-         params_json, warnings_json, result_paths_json, status, error, created_at)
+         params_json, warnings_json, result_paths_json, status, error, created_at, upstream_task_id)
        VALUES
         (@id, @session_id, @project_id, @source, @provider_id, @model, @media_type, @prompt,
-         @params_json, @warnings_json, @result_paths_json, @status, @error, @created_at)`,
+         @params_json, @warnings_json, @result_paths_json, @status, @error, @created_at,
+         @upstream_task_id)`,
     )
     .run(row)
 }
@@ -87,6 +91,7 @@ function toEntry(row: MediaGenerationRow): MediaGenerationEntry {
     status: row.status,
     error: row.error,
     createdAt: row.created_at,
+    upstreamTaskId: row.upstream_task_id,
   }
 }
 

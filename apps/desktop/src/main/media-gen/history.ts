@@ -71,6 +71,7 @@ export async function generateAndRecord(params: GenerateAndRecordParams): Promis
       status: 'succeeded',
       error: null,
       created_at: createdAt,
+      upstream_task_id: null,
     })
 
     return { generationId, images: result.images, warnings: result.warnings }
@@ -90,6 +91,7 @@ export async function generateAndRecord(params: GenerateAndRecordParams): Promis
       status: 'failed',
       error: error instanceof Error ? error.message : String(error),
       created_at: createdAt,
+      upstream_task_id: null,
     })
     throw error
   }

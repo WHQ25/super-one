@@ -1,6 +1,6 @@
-import { collectHeaders, definedHeaders, readJson } from '../../http'
-import type { VideoModelV4, VideoModelV4CallOptions, VideoModelV4Result } from '../sdk-types'
-import { pollUntilDone, type PollOptions } from '../poll'
+import { definedHeaders, readJson } from '../../http'
+import type { VideoDownload, VideoSubmission, VideoTaskDriver } from '../driver'
+import type { VideoModelV4CallOptions } from '../sdk-types'
 import { buildArkVideoRequest } from './request'
 import { parseArkVideoTask, type VideoTask } from './response'
 
@@ -9,7 +9,6 @@ export interface ArkVideoModelConfig {
   baseURL: string
   apiKey: string
   fetch?: typeof globalThis.fetch
-  poll?: PollOptions
 }
 
 interface ArkSubmitResponse {
@@ -20,75 +19,58 @@ interface ArkSubmitResponse {
 /**
  * Native Volcengine Ark video model (Seedance).
  *
- * Ark is asynchronous — submit returns a task id and the result URL only appears minutes later — so
- * the whole submit/poll/return cycle is folded into one `doGenerate`, which is the shape the SDK's
- * `experimental_generateVideo` expects. The returned URL expires 24h after success, so callers must
- * download promptly; that is the storage layer's job, not this adapter's.
+ * Ark hands back a TOS URL rather than bytes, and that URL expires 24h after the task succeeds — so
+ * `download` fetches it immediately on the caller's behalf instead of letting the URL travel any
+ * further. It is deliberately unauthenticated: the URL is pre-signed, and attaching the Ark key to a
+ * TOS request is at best pointless.
  */
-export function createArkVideoModel(cfg: ArkVideoModelConfig, modelId: string): VideoModelV4 {
+export function createArkVideoDriver(cfg: ArkVideoModelConfig, modelId: string): VideoTaskDriver {
   const base = cfg.baseURL.replace(/\/+$/, '')
   const tasksUrl = `${base}/contents/generations/tasks`
   const doFetch = cfg.fetch ?? globalThis.fetch
-
-  function headers(options: VideoModelV4CallOptions): Record<string, string> {
-    return {
-      'content-type': 'application/json',
-      authorization: `Bearer ${cfg.apiKey}`,
-      ...definedHeaders(options.headers),
-    }
-  }
+  const auth = { 'content-type': 'application/json', authorization: `Bearer ${cfg.apiKey}` }
 
   return {
-    specificationVersion: 'v4',
     provider: cfg.provider,
     modelId,
-    maxVideosPerCall: 1,
-    async doGenerate(options: VideoModelV4CallOptions): Promise<VideoModelV4Result> {
-      const { body, warnings } = buildArkVideoRequest(modelId, options)
 
-      const submitResponse = await doFetch(tasksUrl, {
+    async submit(options: VideoModelV4CallOptions): Promise<VideoSubmission> {
+      const { body, warnings } = buildArkVideoRequest(modelId, options)
+      const response = await doFetch(tasksUrl, {
         method: 'POST',
-        headers: headers(options),
+        headers: { ...auth, ...definedHeaders(options.headers) },
         body: JSON.stringify(body),
         ...(options.abortSignal ? { signal: options.abortSignal } : {}),
       })
-      const submitted = await readJson<ArkSubmitResponse>(submitResponse, 'Ark')
-
-      if (!submitResponse.ok || !submitted.id) {
+      const submitted = await readJson<ArkSubmitResponse>(response, 'Ark')
+      if (!response.ok || !submitted.id) {
         throw new Error(
-          `Ark video submission failed (${submitResponse.status}): ${submitted.error?.message ?? 'no task id returned'}`,
+          `Ark video submission failed (${response.status}): ${submitted.error?.message ?? 'no task id returned'}`,
         )
       }
+      return { taskId: submitted.id, warnings }
+    },
 
-      const taskUrl = `${tasksUrl}/${submitted.id}`
-      const check = async (): Promise<VideoTask> => {
-        const response = await doFetch(taskUrl, {
-          method: 'GET',
-          headers: headers(options),
-          ...(options.abortSignal ? { signal: options.abortSignal } : {}),
-        })
-        const raw = await readJson<Parameters<typeof parseArkVideoTask>[0]>(response, 'Ark')
-        if (!response.ok) {
-          throw new Error(`Ark task lookup failed (${response.status}): ${raw.error?.message ?? submitted.id}`)
-        }
-        return parseArkVideoTask(raw)
+    async fetch(taskId: string): Promise<VideoTask> {
+      const response = await doFetch(`${tasksUrl}/${taskId}`, { method: 'GET', headers: auth })
+      const raw = await readJson<Parameters<typeof parseArkVideoTask>[0]>(response, 'Ark')
+      if (!response.ok) {
+        throw new Error(`Ark task lookup failed (${response.status}): ${raw.error?.message ?? taskId}`)
       }
+      return parseArkVideoTask({ ...raw, id: raw.id ?? taskId })
+    },
 
-      const task = await pollUntilDone(check, { ...cfg.poll, abortSignal: options.abortSignal })
-      if (task.status !== 'succeeded' || !task.videoUrl) {
-        throw new Error(`Ark video generation ${task.status}: ${task.error ?? 'no details'}`)
+    async download(task: VideoTask): Promise<VideoDownload> {
+      if (!task.videoUrl) {
+        throw new Error(`Ark task ${task.id} succeeded but carried no video url.`)
       }
-
-      return {
-        videos: [{ type: 'url', url: task.videoUrl, mediaType: 'video/mp4' }],
-        warnings,
-        response: {
-          timestamp: new Date(),
-          modelId,
-          headers: collectHeaders(submitResponse.headers),
-        },
-        providerMetadata: { ark: { taskId: submitted.id } },
+      const response = await doFetch(task.videoUrl, { method: 'GET' })
+      if (!response.ok) {
+        throw new Error(
+          `Ark video download failed (${response.status}) for task ${task.id}. The result url expires 24h after the task succeeds.`,
+        )
       }
+      return { data: new Uint8Array(await response.arrayBuffer()), mediaType: 'video/mp4' }
     },
   }
 }

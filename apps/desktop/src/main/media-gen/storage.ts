@@ -17,11 +17,22 @@ const VIDEO_EXT_BY_MEDIA_TYPE: Record<string, string> = {
 }
 
 /**
+ * What persisting actually reads. Narrower than `GeneratedFile` so a caller that produced bytes
+ * itself — the video drivers, which no longer go through the SDK — can persist them without having
+ * to fabricate an SDK object around them.
+ */
+export interface PersistableFile {
+  mediaType?: string
+  uint8Array: Uint8Array
+  base64?: string
+}
+
+/**
  * Write generated files to disk atomically (tmp + rename), so a crashed or concurrent run can never
  * leave a half-written file behind that a later read would treat as complete.
  */
 function persistFiles(
-  files: readonly GeneratedFile[],
+  files: readonly PersistableFile[],
   outputDir: string,
   generationId: string,
   extByMediaType: Record<string, string>,
@@ -53,7 +64,7 @@ export function persistImages(
  * and nothing downstream reads it — the renderer plays the file from disk.
  */
 export function persistVideos(
-  videos: readonly GeneratedFile[],
+  videos: readonly PersistableFile[],
   outputDir: string,
   generationId: string,
 ): SavedImage[] {

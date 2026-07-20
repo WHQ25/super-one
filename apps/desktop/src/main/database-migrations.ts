@@ -411,11 +411,20 @@ export function runDatabaseMigrations(db: Database.Database): void {
       result_paths_json TEXT,
       status TEXT NOT NULL,
       error TEXT,
-      created_at TEXT NOT NULL
+      created_at TEXT NOT NULL,
+      upstream_task_id TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_media_gen_session ON media_generations(session_id);
     CREATE INDEX IF NOT EXISTS idx_media_gen_created ON media_generations(created_at DESC);
   `)
+
+  // Video status is fetched on demand rather than tracked by a background poller, so the provider's
+  // own task handle has to outlive the tool call that created it — without this column a `running`
+  // row is unresolvable after the submitting call returns.
+  const mediaGenCols = db.prepare('PRAGMA table_info(media_generations)').all() as Array<{ name: string }>
+  if (!mediaGenCols.some((c) => c.name === 'upstream_task_id')) {
+    db.exec('ALTER TABLE media_generations ADD COLUMN upstream_task_id TEXT')
+  }
 }
 
 function seedBaseSessionProviders(db: Database.Database): void {

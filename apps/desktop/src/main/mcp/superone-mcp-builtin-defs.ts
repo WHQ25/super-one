@@ -162,6 +162,7 @@ export const GENERATE_IMAGE_DESCRIPTION =
 export const GENERATE_VIDEO_DESCRIPTION =
   'Start generating a video from a text prompt (and optionally images, video or audio) using an AI video model. ' +
   'Use this when the user asks to create, generate, animate, or render a video / clip / animation. ' +
+  'Before anything is submitted, the user reviews and may edit your parameters in a confirmation dialog: instead of `submitted` this tool can return `{status:"rejected", feedback}` — adjust your parameters according to the feedback and call again — `{status:"cancelled"}` — stop and wait for further instructions from the user — or `{status:"error", message}` mentioning elicitation if the confirmation UI is unavailable — do not retry, report it to the user. ' +
   'Video generation is ASYNCHRONOUS: this tool returns immediately with a `generationId` once the job is accepted by the provider, and rendering typically takes 1-5 minutes. ' +
   'You MUST then poll `media_video_status` with that id roughly every 30 seconds until it returns `generated` or `error` — the job is not finished until it does, and nothing collects the result unless you ask. ' +
   'The finished video is shown to the user automatically. After it completes, do NOT embed it again with Markdown — just briefly describe the result in words. ' +

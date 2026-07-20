@@ -146,6 +146,10 @@ body {
   color: var(--foreground);
 }
 
+body[data-scroll-locked] {
+  padding-right: 0 !important;
+}
+
 .liquid-glass.dark body {
   background-color: transparent;
 }

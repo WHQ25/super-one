@@ -1,4 +1,4 @@
-import { query, type CanUseTool, type HookCallback, type Options, type Query, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
+import { query, type CanUseTool, type HookCallback, type OnElicitation, type Options, type Query, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import type { AgentEvent, MessageMetadata, PermissionMode, QuestionPreviewFormat, SandboxInfo, SendMessageRequest } from '@superone/shared/agent-types'
 import type { MessageBridge } from './message-bridge'
 import log from '../logger'
@@ -22,6 +22,7 @@ export interface SessionQueryOptions {
   permissionMode: PermissionMode
   sandboxInfo?: SandboxInfo
   canUseTool?: CanUseTool
+  onElicitation?: OnElicitation
   trackPlanFile?: (filePath: string) => void
   resume?: string
   resumeSessionAt?: string
@@ -67,6 +68,7 @@ export function buildClaudeOptions(opts: SessionQueryOptions): Options {
     permissionMode: opts.permissionMode,
     allowDangerouslySkipPermissions: true,
     canUseTool: opts.canUseTool,
+    onElicitation: opts.onElicitation,
     sandbox: opts.sandboxInfo?.enabled && getSandboxCapability().supportLevel !== 'unsupported'
       ? { enabled: true, autoAllowBashIfSandboxed: opts.sandboxInfo.autoAllowBash, failIfUnavailable: false }
       : undefined,

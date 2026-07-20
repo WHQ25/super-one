@@ -33,6 +33,8 @@ vi.mock('../agent/discover-resources', () => ({
 
 vi.mock('../agent/claude-permissions', () => ({
   createCanUseTool: vi.fn(() => ({ canUseTool: vi.fn(), trackPlanFile: vi.fn() })),
+  createOnElicitation: vi.fn(() => vi.fn()),
+  respondToElicitation: vi.fn(),
   respondToPermission: vi.fn(),
   respondToQuestion: vi.fn(),
   dismissQuestion: vi.fn(),

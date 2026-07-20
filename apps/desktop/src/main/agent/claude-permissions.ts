@@ -4,8 +4,9 @@ import { homedir } from 'os'
 import log from '../logger'
 import { isToolPreapproved, isBuiltInSuperoneTool } from '../mcp/superone-mcp-server'
 import { readAppSettings } from '../app-settings-service'
-import type { PermissionUpdate } from '@anthropic-ai/claude-agent-sdk'
+import type { ElicitationRequest, ElicitationResult, PermissionUpdate } from '@anthropic-ai/claude-agent-sdk'
 import type { AgentEvent, PermissionMode, QuestionAnnotations } from '@superone/shared/agent-types'
+import { parseElicitationSchema, extractVideoGenConfirmPayload } from './elicitation-schema'
 import { trace } from './event-trace'
 
 export interface PendingPermission {
@@ -28,6 +29,102 @@ export interface PendingQuestion {
 export interface PendingPlanApproval {
   resolve: (result: { approved: boolean; feedback?: string }) => void
   event: AgentEvent
+}
+
+export interface PendingElicitation {
+  resolve: (result: ElicitationResult) => void
+  event: AgentEvent
+}
+
+/**
+ * Factory for the SDK's Options.onElicitation callback. Mirrors createCanUseTool's
+ * emit-then-suspend pattern: emit a permission_request event, park the Promise in
+ * pendingElicitations, and let respondToElicitation() (driven by the renderer over the
+ * shared PERMISSION_RESPONSE IPC channel) resolve it.
+ *
+ * The SDK auto-declines every elicitation when no onElicitation is provided
+ * (sdk.mjs processControlRequest: `return {action:"decline"}`), so wiring this up also
+ * enables the generic JSON-Schema form path as a side effect.
+ */
+export function createOnElicitation(
+  pendingElicitations: Map<string, PendingElicitation>,
+  emit: (event: AgentEvent) => void,
+) {
+  return async (request: ElicitationRequest, options: { signal: AbortSignal }): Promise<ElicitationResult> => {
+    if (request.mode === 'url') {
+      // No browser-auth UI this round.
+      return { action: 'decline' }
+    }
+
+    const schema = request.requestedSchema ?? null
+    const videoGenConfirm = extractVideoGenConfirmPayload(schema)
+    const elicitationForm = videoGenConfirm ? undefined : parseElicitationSchema(schema)
+    const requestId = `elicit_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+
+    const permEvent: AgentEvent = {
+      type: 'permission_request',
+      request: {
+        requestId,
+        toolName: request.serverName,
+        toolUseId: requestId,
+        input: {},
+        allowAlwaysAllow: false,
+        requestKind: videoGenConfirm ? 'video_gen_confirm' : 'mcp_elicitation',
+        serverName: request.serverName,
+        message: request.message,
+        ...(request.description ? { subtitle: request.description } : {}),
+        ...(elicitationForm && elicitationForm.length > 0 ? { elicitationForm } : {}),
+        ...(videoGenConfirm ? { videoGenConfirm } : {}),
+      },
+    }
+    trace('permission.flow', 'elicit_emit', { serverName: request.serverName, videoGen: !!videoGenConfirm }, requestId)
+    log.info('[onElicitation] emit permission_request requestId=%s serverName=%s videoGen=%s', requestId, request.serverName, !!videoGenConfirm)
+    emit(permEvent)
+
+    return new Promise<ElicitationResult>((resolve) => {
+      if (options.signal.aborted) {
+        trace('permission.flow', 'elicit_resolve', { source: 'signal_already_aborted' }, requestId)
+        resolve({ action: 'cancel' })
+        return
+      }
+      pendingElicitations.set(requestId, { resolve, event: permEvent })
+      // Note: no listener for future abort events, same as createCanUseTool —
+      // cleanup is handled by rejectAllPending() on session reset/interrupt.
+    })
+  }
+}
+
+/**
+ * Resolve a parked elicitation from the renderer's PERMISSION_RESPONSE IPC.
+ * formAnswers carries the flat content record: `{ paramsJson }` on accept for
+ * video-gen confirms, `{ feedback }` on reject-with-reason, or generic form values
+ * for plain mcp_elicitation requests.
+ */
+export function respondToElicitation(
+  pendingElicitations: Map<string, PendingElicitation>,
+  requestId: string,
+  allow: boolean,
+  decision?: 'cancel',
+  formAnswers?: Record<string, unknown>,
+): boolean {
+  const pending = pendingElicitations.get(requestId)
+  if (!pending) return false
+  pendingElicitations.delete(requestId)
+  trace('permission.flow', 'elicit_resolve', { source: 'response', allow, cancel: decision === 'cancel' }, requestId)
+  if (decision === 'cancel') {
+    pending.resolve({ action: 'cancel' })
+    return true
+  }
+  if (allow) {
+    const content = formAnswers && Object.keys(formAnswers).length > 0
+      ? (formAnswers as Record<string, string | number | boolean | string[]>)
+      : undefined
+    pending.resolve({ action: 'accept', ...(content ? { content } : {}) })
+    return true
+  }
+  const feedback = typeof formAnswers?.feedback === 'string' ? formAnswers.feedback : undefined
+  pending.resolve({ action: 'decline', ...(feedback ? { content: { feedback } } : {}) })
+  return true
 }
 
 export function createCanUseTool(
@@ -349,14 +446,16 @@ export function rejectAllPending(
   pendingPermissions: Map<string, PendingPermission>,
   pendingQuestions?: Map<string, PendingQuestion>,
   pendingPlanApprovals?: Map<string, PendingPlanApproval>,
+  pendingElicitations?: Map<string, PendingElicitation>,
   reason: string = 'unspecified'
 ): void {
-  if (pendingPermissions.size > 0 || pendingQuestions?.size || pendingPlanApprovals?.size) {
+  if (pendingPermissions.size > 0 || pendingQuestions?.size || pendingPlanApprovals?.size || pendingElicitations?.size) {
     trace('permission.flow', 'reject_all', {
       reason,
       permCount: pendingPermissions.size,
       questionCount: pendingQuestions?.size ?? 0,
       planCount: pendingPlanApprovals?.size ?? 0,
+      elicitationCount: pendingElicitations?.size ?? 0,
       permIds: [...pendingPermissions.keys()],
       stack: new Error().stack?.split('\n').slice(1, 6).join(' | '),
     })
@@ -377,5 +476,12 @@ export function rejectAllPending(
       pending.resolve({ approved: false })
     }
     pendingPlanApprovals.clear()
+  }
+  if (pendingElicitations) {
+    for (const [requestId, pending] of pendingElicitations.entries()) {
+      trace('permission.flow', 'elicit_resolve', { source: 'reject_all', reason }, requestId)
+      pending.resolve({ action: 'cancel' })
+    }
+    pendingElicitations.clear()
   }
 }

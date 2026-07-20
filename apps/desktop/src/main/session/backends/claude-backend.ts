@@ -1,18 +1,22 @@
-import type { CanUseTool, Query, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
+import type { CanUseTool, OnElicitation, Query, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import { MessageBridge } from '../../agent/message-bridge'
 import { buildClaudeOptions, createSessionQuery, buildUserMessage, type SessionQueryOptions, type BackgroundTaskInfo } from '../../agent/claude-query'
 import { getGlobalWarmupManager, WarmupManager } from '../../agent/warmup-manager'
 import {
   createCanUseTool,
+  createOnElicitation,
   rejectAllPending,
+  respondToElicitation as respondToElicitationInternal,
   respondToPermission as respondToPermissionInternal,
   respondToQuestion as respondToQuestionInternal,
   dismissQuestion as dismissQuestionInternal,
   respondToPlanApproval as respondToPlanApprovalInternal,
+  type PendingElicitation,
   type PendingPermission,
   type PendingQuestion,
   type PendingPlanApproval,
 } from '../../agent/claude-permissions'
+import { resolveVideoConfirm, rejectVideoConfirm } from '../../mcp/media-tools'
 import { buildSafeEnv } from '../../spawn-env'
 import type {
   AgentEvent,
@@ -63,8 +67,10 @@ export class ClaudeBackend implements SessionBackend {
   private pendingPermissions = new Map<string, PendingPermission>()
   private pendingQuestions = new Map<string, PendingQuestion>()
   private pendingPlanApprovals = new Map<string, PendingPlanApproval>()
+  private pendingElicitations = new Map<string, PendingElicitation>()
 
   private canUseToolHandle: CanUseTool | null = null
+  private onElicitationHandle: OnElicitation | null = null
   private trackPlanFileHandle: ((filePath: string) => void) | null = null
 
   private get warmupManager() { return getGlobalWarmupManager() }
@@ -102,6 +108,13 @@ export class ClaudeBackend implements SessionBackend {
     return { canUseTool: this.canUseToolHandle, trackPlanFile: this.trackPlanFileHandle }
   }
 
+  private ensureOnElicitation(): OnElicitation {
+    if (!this.onElicitationHandle) {
+      this.onElicitationHandle = createOnElicitation(this.pendingElicitations, (e) => this.emit(e))
+    }
+    return this.onElicitationHandle
+  }
+
   private emitPermissionModeApplied(mode: PermissionMode): void {
     for (const cb of this.permissionModeAppliedListeners) {
       try { cb(mode) } catch (err) { log.warn('[ClaudeBackend] permissionModeApplied listener error:', err) }
@@ -134,6 +147,7 @@ export class ClaudeBackend implements SessionBackend {
       permissionMode: opts.permissionMode,
       sandboxInfo: opts.sandboxInfo,
       canUseTool,
+      onElicitation: this.ensureOnElicitation(),
       trackPlanFile,
       resume: opts.providerSessionId,
       abortController: opts.abortController,
@@ -314,7 +328,7 @@ export class ClaudeBackend implements SessionBackend {
     this.interrupted = true
     this._lastActiveAt = Date.now()
     this.pendingQueued = []
-    rejectAllPending(this.pendingPermissions, this.pendingQuestions, this.pendingPlanApprovals, 'backend.interrupt')
+    rejectAllPending(this.pendingPermissions, this.pendingQuestions, this.pendingPlanApprovals, this.pendingElicitations, 'backend.interrupt')
     if (this.query) {
       try { await this.query.interrupt() } catch (err) {
         log.debug('[ClaudeBackend] interrupt error:', err)
@@ -364,7 +378,7 @@ export class ClaudeBackend implements SessionBackend {
     for (const resolve of this.turnResolves.values()) resolve()
     this.turnResolves.clear()
     this.pendingQueued = []
-    rejectAllPending(this.pendingPermissions, this.pendingQuestions, this.pendingPlanApprovals, `backend.${reason}`)
+    rejectAllPending(this.pendingPermissions, this.pendingQuestions, this.pendingPlanApprovals, this.pendingElicitations, `backend.${reason}`)
     if (query) {
       const t1 = Date.now()
       try { query.close() } catch { /* ignore */ }
@@ -483,7 +497,14 @@ export class ClaudeBackend implements SessionBackend {
     await this.query.stopTask(taskId)
   }
 
-  respondToPermission(requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[], _decision?: 'cancel', _formAnswers?: Record<string, unknown>): boolean {
+  respondToPermission(requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[], decision?: 'cancel', formAnswers?: Record<string, unknown>): boolean {
+    if (decision === 'cancel') {
+      if (rejectVideoConfirm(requestId, 'User cancelled')) return true
+    }
+    if (resolveVideoConfirm(requestId, allow ? 'accept' : 'decline', formAnswers)) return true
+    if (this.pendingElicitations.has(requestId)) {
+      return respondToElicitationInternal(this.pendingElicitations, requestId, allow, decision, formAnswers)
+    }
     return respondToPermissionInternal(this.pendingPermissions, requestId, allow, alwaysAllow, reason, selectedSuggestions)
   }
 
@@ -597,6 +618,7 @@ export class ClaudeBackend implements SessionBackend {
     for (const p of this.pendingPermissions.values()) events.push(p.event)
     for (const q of this.pendingQuestions.values()) events.push(q.event)
     for (const a of this.pendingPlanApprovals.values()) events.push(a.event)
+    for (const e of this.pendingElicitations.values()) events.push(e.event)
     return events
   }
 
@@ -627,6 +649,7 @@ export class ClaudeBackend implements SessionBackend {
     if (this.pendingPermissions.size > 0) return false
     if (this.pendingQuestions.size > 0) return false
     if (this.pendingPlanApprovals.size > 0) return false
+    if (this.pendingElicitations.size > 0) return false
     if (this.turnResolves.size > 0) return false
     if (this.pendingQueued.length > 0) return false
     if (this.hasActiveBackgroundTasks()) return false

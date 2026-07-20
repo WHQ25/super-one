@@ -125,6 +125,8 @@ const permissionHoisted = vi.hoisted(() => ({
 
 vi.mock('../../agent/claude-permissions', () => ({
   createCanUseTool: permissionHoisted.createCanUseToolMock,
+  createOnElicitation: vi.fn(() => vi.fn()),
+  respondToElicitation: vi.fn(),
   respondToPermission: vi.fn(),
   respondToQuestion: vi.fn(),
   dismissQuestion: vi.fn(),
@@ -543,7 +545,7 @@ describe('ClaudeBackend', () => {
       await backend.start(makeStartOpts())
       permissionHoisted.rejectAllPendingMock.mockClear()
       await backend.interrupt()
-      expect(permissionHoisted.rejectAllPendingMock).toHaveBeenCalledWith(expect.any(Map), expect.any(Map), expect.any(Map), 'backend.interrupt')
+      expect(permissionHoisted.rejectAllPendingMock).toHaveBeenCalledWith(expect.any(Map), expect.any(Map), expect.any(Map), expect.any(Map), 'backend.interrupt')
     })
 
     it('close() tags rejectAllPending with backend.close', async () => {
@@ -552,7 +554,7 @@ describe('ClaudeBackend', () => {
       hoisted.captured.iterationDone?.resolve()
       permissionHoisted.rejectAllPendingMock.mockClear()
       await backend.close()
-      expect(permissionHoisted.rejectAllPendingMock).toHaveBeenCalledWith(expect.any(Map), expect.any(Map), expect.any(Map), 'backend.close')
+      expect(permissionHoisted.rejectAllPendingMock).toHaveBeenCalledWith(expect.any(Map), expect.any(Map), expect.any(Map), expect.any(Map), 'backend.close')
     })
 
     it('rebuild() tags rejectAllPending with backend.rebuild', async () => {
@@ -561,7 +563,7 @@ describe('ClaudeBackend', () => {
       hoisted.captured.iterationDone?.resolve()
       permissionHoisted.rejectAllPendingMock.mockClear()
       await backend.rebuild(makeStartOpts())
-      expect(permissionHoisted.rejectAllPendingMock).toHaveBeenCalledWith(expect.any(Map), expect.any(Map), expect.any(Map), 'backend.rebuild')
+      expect(permissionHoisted.rejectAllPendingMock).toHaveBeenCalledWith(expect.any(Map), expect.any(Map), expect.any(Map), expect.any(Map), 'backend.rebuild')
     })
   })
 
@@ -716,7 +718,7 @@ describe('ClaudeBackend', () => {
       await (backend as unknown as { releaseRuntime: (r: 'idle') => Promise<void> }).releaseRuntime('idle')
 
       expect(permissionHoisted.rejectAllPendingMock).toHaveBeenCalledWith(
-        expect.any(Map), expect.any(Map), expect.any(Map), 'backend.idle',
+        expect.any(Map), expect.any(Map), expect.any(Map), expect.any(Map), 'backend.idle',
       )
     })
   })

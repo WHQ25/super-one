@@ -51,10 +51,10 @@ import type {
   CodexThreadItem,
   CodexUsageInfo,
   ElicitationFormField,
-  ElicitationFormFieldType,
   ImageAttachment,
   PermissionRequest,
 } from '@superone/shared/agent-types'
+import { parseElicitationSchema, extractVideoGenConfirmPayload } from '../agent/elicitation-schema'
 import { getCodexSuperoneMcpConfig } from '../mcp/superone-mcp-stdio-state'
 import { isToolPreapproved, isBuiltInSuperoneTool } from '../mcp/superone-mcp-server'
 import { BUILT_IN_SUPERONE_TOOL_NAMES } from '../mcp/superone-mcp-builtins'
@@ -668,49 +668,6 @@ function extractTurnErrorMessage(raw: unknown): string {
 const POSITIVE_OPTION_PATTERN = /\b(accept|allow|yes|continue|proceed|approve|ok|confirm|run)\b/i
 const NEGATIVE_OPTION_PATTERN = /\b(decline|deny|reject|cancel|no|stop|abort|disallow)\b/i
 
-function parseElicitationSchema(schema: Record<string, unknown> | null): ElicitationFormField[] {
-  if (!schema) return []
-  const properties = asRecord(schema.properties)
-  if (!properties || Object.keys(properties).length === 0) return []
-  const required = Array.isArray(schema.required)
-    ? schema.required.filter((r): r is string => typeof r === 'string')
-    : []
-  const fields: ElicitationFormField[] = []
-  for (const [name, raw] of Object.entries(properties)) {
-    const propRec = asRecord(raw)
-    if (!propRec) continue
-    const t = readString(propRec.type)
-    const label = readString(propRec.title) ?? name
-    const description = readString(propRec.description) ?? undefined
-    const isRequired = required.includes(name)
-    const enumValues = Array.isArray(propRec.enum)
-      ? propRec.enum.filter((v): v is string => typeof v === 'string')
-      : undefined
-    let fieldType: ElicitationFormFieldType | null = null
-    let enumOptions: string[] | undefined
-    if (enumValues && enumValues.length > 0 && t === 'string') {
-      fieldType = 'enum'
-      enumOptions = enumValues
-    } else if (t === 'boolean') {
-      fieldType = 'boolean'
-    } else if (t === 'number' || t === 'integer') {
-      fieldType = 'number'
-    } else if (t === 'string') {
-      fieldType = 'string'
-    }
-    if (!fieldType) continue
-    fields.push({
-      name,
-      type: fieldType,
-      label,
-      ...(description ? { description } : {}),
-      required: isRequired,
-      ...(enumOptions ? { enumOptions } : {}),
-    })
-  }
-  return fields
-}
-
 function parseUserInputQuestions(value: unknown): AppServerUserInputQuestion[] {
   if (!Array.isArray(value)) return []
 
@@ -843,6 +800,33 @@ export function mapApprovalRequest(notification: AppServerNotification): ParsedA
       : []
     const supportsAlwaysPersist = persistFlags.includes('always')
     const schema = asRecord(notification.params.requestedSchema)
+
+    // Probe BEFORE parseElicitationSchema / the miniApp branch: our payload lives in
+    // the paramsJson field's description, and a non-empty properties object would both
+    // produce a meaningless generic form field and interfere with the miniApp
+    // formFields.length === 0 heuristic below.
+    const videoGenConfirm = extractVideoGenConfirmPayload(schema)
+    if (videoGenConfirm) {
+      return {
+        responseKind: 'elicitation',
+        // Placeholder keeps this dispatchable as an elicitation without colliding
+        // with the miniApp empty-formFields heuristic. Never rendered — the UI
+        // branches on requestKind before touching elicitationForm.
+        formFields: [{ name: 'paramsJson', type: 'string', label: 'params', required: false }],
+        request: {
+          requestId,
+          toolName: serverName,
+          toolUseId: requestId,
+          input: {},
+          allowAlwaysAllow: false,
+          requestKind: 'video_gen_confirm',
+          serverName,
+          message,
+          videoGenConfirm,
+        },
+      }
+    }
+
     const formFields = parseElicitationSchema(schema)
 
     const miniAppToolName = serverName === 'superone' && formFields.length === 0
@@ -942,8 +926,14 @@ export async function processServerRequest(
 
     if (parsedApprovalRequest.responseKind === 'elicitation') {
       const requestToolName = parsedApprovalRequest.request.toolName
+      // Rich-confirm payloads (video_gen_confirm) must always reach the UI — the
+      // auto-accept bypass below would silently swallow the confirmation and let the
+      // tool run unreviewed. Keyed on payload type, not the tool allowlist, so any
+      // future tool reusing this mechanism is covered without touching this branch.
+      const isRichConfirm = parsedApprovalRequest.request.requestKind === 'video_gen_confirm'
       if (
-        typeof requestToolName === 'string'
+        !isRichConfirm
+        && typeof requestToolName === 'string'
         && requestToolName.startsWith(MCP_SUPERONE_TOOL_PREFIX)
         && (isToolPreapproved(requestToolName) || isBuiltInSuperoneTool(requestToolName))
       ) {

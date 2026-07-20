@@ -652,6 +652,30 @@ export type Messages = {
       denyReasonPlaceholder: string
       alwaysAllow: string
     }
+    videoGenConfirm: {
+      title: string
+      promptLabel: string
+      promptPlaceholder: string
+      providerLabel: string
+      modelLabel: string
+      aspectRatioLabel: string
+      resolutionLabel: string
+      durationLabel: string
+      advancedOptions: string
+      fpsLabel: string
+      fpsPlaceholder: string
+      seedLabel: string
+      seedPlaceholder: string
+      generateAudio: string
+      watermark: string
+      lockCamera: string
+      confirm: string
+      reject: string
+      feedbackPlaceholder: string
+      startFrame: string
+      endFrame: string
+      reference: string
+    }
     askUser: {
       otherOption: string
       selectOptionPreview: string
@@ -2365,6 +2389,30 @@ export const en: Messages = {
       deny: 'Deny',
       denyReasonPlaceholder: 'Deny reason (optional, Enter to submit)',
       alwaysAllow: 'Always Allow',
+    },
+    videoGenConfirm: {
+      title: 'Confirm Video Generation',
+      promptLabel: 'Prompt',
+      promptPlaceholder: 'Describe the scene, motion, and camera direction…',
+      providerLabel: 'Provider',
+      modelLabel: 'Model',
+      aspectRatioLabel: 'Aspect Ratio',
+      resolutionLabel: 'Resolution',
+      durationLabel: 'Duration (s)',
+      advancedOptions: 'Advanced Options',
+      fpsLabel: 'FPS',
+      fpsPlaceholder: 'Auto',
+      seedLabel: 'Seed',
+      seedPlaceholder: 'Random',
+      generateAudio: 'Generate Audio',
+      watermark: 'Watermark',
+      lockCamera: 'Lock Camera',
+      confirm: 'Confirm & Generate',
+      reject: 'Reject',
+      feedbackPlaceholder: 'Feedback (required, Enter to submit)',
+      startFrame: 'Start Frame',
+      endFrame: 'End Frame',
+      reference: 'Reference {{index}}',
     },
     askUser: {
       otherOption: 'Other...',

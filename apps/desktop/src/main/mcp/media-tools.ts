@@ -1,6 +1,15 @@
 import { readFileSync } from 'fs'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
+import {
+  VIDEO_GEN_PARAMS_FIELD,
+  type VideoGenConfirmPayload,
+  type VideoGenParams,
+  type VideoGenProviderOption,
+  type VideoGenReferenceImageRef,
+} from '@superone/shared/agent-types'
+import log from '../logger'
+import { trace } from '../agent/event-trace'
 import { detectImageMime } from '../image-cache'
 import { generateAndRecord } from '../media-gen/history'
 import {
@@ -180,6 +189,237 @@ function toolResult(payload: unknown) {
   return { content: [{ type: 'text' as const, text: JSON.stringify(payload) }] }
 }
 
+// Static fallback option lists — GenerateVideoArgs.aspect_ratio/resolution are free-form
+// strings and there is no structured per-provider/per-model source of valid values (only
+// prose in the guide markdown). If the user picks a value the provider rejects, the
+// provider API errors and the tool returns the message — an acceptable degrade path.
+const COMMON_ASPECT_RATIOS = ['16:9', '9:16', '1:1', '4:3', '3:4']
+const COMMON_RESOLUTIONS = ['480p', '720p', '1080p']
+
+/** Same underlying query as media_list_providers, projected to the confirm dialog's shape. */
+async function buildVideoGenProviderOptions(): Promise<VideoGenProviderOption[]> {
+  const statuses = await getMediaProviderStatuses()
+  return statuses
+    .filter((status) => status.hasKey || status.hasEnvKey)
+    .filter((status) => status.categories.includes('video'))
+    .map((status) => ({
+      id: status.id,
+      label: status.label,
+      models: status.models.map((model) => ({ id: model.id, label: model.label })),
+      aspectRatios: [...COMMON_ASPECT_RATIOS],
+      resolutions: [...COMMON_RESOLUTIONS],
+    }))
+}
+
+/** GenerateVideoArgs (snake_case) → VideoGenParams (camelCase) with defaults filled in. */
+function buildInitialVideoGenParams(args: GenerateVideoArgs, providerId: string, model: string): VideoGenParams {
+  return {
+    prompt: args.prompt,
+    provider: providerId,
+    model,
+    aspectRatio: args.aspect_ratio ?? '16:9',
+    resolution: args.resolution ?? '720p',
+    duration: args.duration ?? 5,
+    ...(args.fps != null ? { fps: args.fps } : {}),
+    ...(args.seed != null ? { seed: args.seed } : {}),
+    generateAudio: args.generate_audio ?? false,
+    watermark: args.watermark ?? false,
+    cameraFixed: args.camera_fixed ?? false,
+  }
+}
+
+/** Paths only, no bytes — the renderer loads thumbnails over IPC. */
+function buildReferenceImageRefs(args: GenerateVideoArgs): VideoGenReferenceImageRef[] {
+  const refs: VideoGenReferenceImageRef[] = []
+  if (args.first_frame_path) refs.push({ path: args.first_frame_path, role: 'first_frame' })
+  if (args.last_frame_path) refs.push({ path: args.last_frame_path, role: 'last_frame' })
+  for (const path of args.reference_image_paths ?? []) refs.push({ path, role: 'reference' })
+  return refs
+}
+
+/** Write user-edited VideoGenParams back onto GenerateVideoArgs. */
+function applyVideoGenParams(args: GenerateVideoArgs, params: VideoGenParams): void {
+  args.prompt = params.prompt
+  args.provider = params.provider
+  args.model = params.model
+  args.aspect_ratio = params.aspectRatio
+  args.resolution = params.resolution
+  args.duration = params.duration
+  args.fps = params.fps
+  args.seed = params.seed
+  args.generate_audio = params.generateAudio
+  args.watermark = params.watermark
+  args.camera_fixed = params.cameraFixed
+}
+
+/**
+ * Ask the user to review/edit video generation parameters before anything is submitted.
+ * Returns null to proceed (accept — possibly with edited params written back to args),
+ * or a tool_result payload to return immediately (rejected / cancelled / unsupported).
+ *
+ * The confirm payload travels as a JSON string inside the paramsJson field's description:
+ * the MCP SDK's zod validation strips top-level custom keys from requestedSchema (it is
+ * restricted to the flat JSON Schema subset), while per-field schema definitions survive
+ * verbatim. Both the Claude and Codex backends extract it with the same shared
+ * extractVideoGenConfirmPayload().
+ */
+/**
+ * The claude CLI's in-process SDK-server MCP client connects with `capabilities: {}` —
+ * no `elicitation` key — so the SDK Server's elicitInput capability gate rejects every
+ * form request before it ever reaches the wire (anthropics/claude-code#62319 tracks the
+ * interactive side of the same misroute). Patching the CLI binary is off the table, so we
+ * fix the handshake at our end of the transport: `registerMediaTools` wraps `connect()`
+ * so the transport handed to the Query is first wrapped in a shim that merges
+ * `elicitation: {}` into the client's initialize params as they pass through (an empty
+ * elicitation object means form-mode support per the MCP spec). The shim is otherwise
+ * fully transparent. If a future CLI build declares the capability natively, the merge
+ * is a no-op.
+ */
+const ELICITATION_CAP_PATCH = Symbol.for('superone.elicitationCapPatch')
+
+type JsonRpcMessage = { method?: string; params?: { capabilities?: Record<string, unknown> } }
+type TransportLike = {
+  onmessage?: (message: JsonRpcMessage, extra?: unknown) => void
+  onclose?: () => void
+  onerror?: (error: unknown) => void
+  start?: () => Promise<void>
+  send: (message: unknown) => Promise<void>
+  close: () => Promise<void>
+}
+
+function wrapTransportWithElicitationCapability<T extends TransportLike>(transport: T): T {
+  let serverOnMessage: TransportLike['onmessage'] = undefined
+  return new Proxy(transport, {
+    set(target, prop, value) {
+      if (prop === 'onmessage') {
+        serverOnMessage = value
+        target.onmessage = (message, extra) => {
+          serverOnMessage?.(message, extra)
+        }
+        return true
+      }
+      target[prop as keyof TransportLike] = value
+      return true
+    },
+  }) as T
+}
+
+const pendingVideoConfirms = new Map<string, {
+  resolve: (value: { action: 'accept' | 'decline' | 'cancel'; content?: Record<string, unknown> }) => void
+  reject: (error: Error) => void
+  timer: ReturnType<typeof setTimeout>
+}>()
+
+const VIDEO_CONFIRM_TIMEOUT_MS = 120_000
+
+export function resolveVideoConfirm(requestId: string, action: string, content?: Record<string, unknown>): boolean {
+  const pending = pendingVideoConfirms.get(requestId)
+  if (!pending) return false
+  clearTimeout(pending.timer)
+  pendingVideoConfirms.delete(requestId)
+  pending.resolve({ action: action as 'accept' | 'decline' | 'cancel', content })
+  return true
+}
+
+export function rejectVideoConfirm(requestId: string, reason: string): boolean {
+  const pending = pendingVideoConfirms.get(requestId)
+  if (!pending) return false
+  clearTimeout(pending.timer)
+  pendingVideoConfirms.delete(requestId)
+  pending.reject(new Error(reason))
+  return true
+}
+
+async function confirmVideoGeneration(
+  args: GenerateVideoArgs,
+  providerId: string,
+  model: string,
+  server: McpServer | undefined,
+  deps: BuiltInSuperoneToolDeps,
+): Promise<Record<string, unknown> | null> {
+  if (!server) return null // no server = no confirmation needed (Codex stdio path)
+
+  const payload: VideoGenConfirmPayload = {
+    params: buildInitialVideoGenParams(args, providerId, model),
+    providers: await buildVideoGenProviderOptions(),
+    referenceImages: buildReferenceImageRefs(args),
+  }
+
+  const requestId = `videoconfirm_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+  log.info('[media-tools] opening video confirm requestId=%s', requestId)
+  trace('media.elicitation', 'video-confirm-open', { requestId })
+
+  const session = deps.sessionHost?.getSession(deps.sessionId) ?? null
+  if (!session?.emitHostEvent) {
+    return {
+      status: 'error',
+      message: 'Video generation requires a confirmation dialog, but the session is not available. Nothing was submitted.',
+      hint: 'Do NOT retry media_generate_video — it will fail the same way. Report the error to the user.',
+    }
+  }
+
+  let elicitResult: { action: 'accept' | 'decline' | 'cancel'; content?: Record<string, unknown> }
+  try {
+    elicitResult = await new Promise<typeof elicitResult>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        pendingVideoConfirms.delete(requestId)
+        reject(new Error(`Video confirmation timed out after ${VIDEO_CONFIRM_TIMEOUT_MS}ms`))
+      }, VIDEO_CONFIRM_TIMEOUT_MS)
+      pendingVideoConfirms.set(requestId, { resolve, reject, timer })
+
+      session.emitHostEvent!({
+        type: 'permission_request',
+        request: {
+          requestId,
+          toolName: 'media_generate_video',
+          toolUseId: requestId,
+          input: {} as Record<string, unknown>,
+          allowAlwaysAllow: false,
+          requestKind: 'video_gen_confirm' as const,
+          serverName: 'superone',
+          message: `Confirm video generation: "${args.prompt.slice(0, 120)}"`,
+          videoGenConfirm: payload,
+        },
+      })
+    })
+  } catch (error) {
+    return {
+      status: 'error',
+      message: `Video confirmation failed: ${error instanceof Error ? error.message : String(error)}. Nothing was submitted.`,
+      hint: 'Do NOT retry media_generate_video — it will fail the same way. Report the error to the user.',
+    }
+  }
+
+  if (elicitResult.action === 'cancel') {
+    return {
+      status: 'cancelled',
+      hint: 'The user dismissed the confirmation without choosing. Do NOT retry this call on your own — wait for further instructions from the user.',
+    }
+  }
+  if (elicitResult.action === 'decline') {
+    const feedback = typeof elicitResult.content?.feedback === 'string' ? elicitResult.content.feedback : ''
+    return {
+      status: 'rejected',
+      ...(feedback ? { feedback } : {}),
+      hint: 'The user rejected these generation parameters. Adjust the parameters according to the feedback and call media_generate_video again.',
+    }
+  }
+
+  const paramsJson = elicitResult.content?.[VIDEO_GEN_PARAMS_FIELD]
+  if (typeof paramsJson === 'string') {
+    try {
+      const edited = JSON.parse(paramsJson) as VideoGenParams
+      if (edited && typeof edited.prompt === 'string' && edited.prompt.trim()) {
+        applyVideoGenParams(args, edited)
+      }
+    } catch {
+      // keep original args
+    }
+  }
+  return null
+}
+
+
 function frameInputs(args: GenerateVideoArgs): VideoFrameInput[] | undefined {
   const frames: VideoFrameInput[] = []
   if (args.first_frame_path) {
@@ -201,10 +441,25 @@ function dataUris(paths: string[] | undefined, mediaType: string): string[] | un
   return paths.map((path) => `data:${mediaType};base64,${readFileSync(path).toString('base64')}`)
 }
 
-export async function generateVideoToolHandler(args: GenerateVideoArgs, deps: BuiltInSuperoneToolDeps) {
+export async function generateVideoToolHandler(args: GenerateVideoArgs, deps: BuiltInSuperoneToolDeps, server?: McpServer) {
   try {
+    log.info('[media-tools] generateVideoToolHandler called, server=%s', !!server)
     const providerId = args.provider ?? (await resolveDefaultVideoProviderId())
     const model = args.model ?? (await resolveDefaultVideoModel(providerId))
+
+    // Fill defaults onto args up front so every path below (accept-apply, auto-accept
+    // fallback) submits exactly the parameter set the user saw in the confirm dialog.
+    applyVideoGenParams(args, buildInitialVideoGenParams(args, providerId, model))
+
+    // User confirmation gate — may write edited params back onto args, or short-circuit
+    // with a rejected/cancelled tool_result (a normal result, not an error, so the model
+    // naturally adjusts and retries rather than treating it as a failure).
+    const earlyReturn = await confirmVideoGeneration(args, providerId, model, server, deps)
+    if (earlyReturn) return toolResult(earlyReturn)
+
+    // Provider/model may have been changed by the user's edits.
+    const finalProviderId = args.provider ?? providerId
+    const finalModel = args.model ?? model
 
     const referenceVideos = dataUris(args.reference_video_paths, 'video/mp4')
     const referenceAudios = dataUris(args.reference_audio_paths, 'audio/mpeg')
@@ -216,8 +471,8 @@ export async function generateVideoToolHandler(args: GenerateVideoArgs, deps: Bu
     }
 
     const generationId = await submitVideoGeneration({
-      providerId,
-      model,
+      providerId: finalProviderId,
+      model: finalModel,
       prompt: args.prompt,
       frameImages: frameInputs(args),
       inputReferences: args.reference_image_paths?.map((path) => readFileSync(path)),
@@ -235,8 +490,8 @@ export async function generateVideoToolHandler(args: GenerateVideoArgs, deps: Bu
     return toolResult({
       status: 'submitted',
       generationId,
-      provider: providerId,
-      model,
+      provider: finalProviderId,
+      model: finalModel,
       hint: 'The provider accepted the job. Poll media_video_status with this generationId about every 30 seconds until it returns generated or error — each call is what checks on and collects the render.',
     })
   } catch (error) {
@@ -268,6 +523,20 @@ export async function videoStatusToolHandler(args: VideoStatusArgs) {
 }
 
 export function registerMediaTools(server: McpServer, deps: BuiltInSuperoneToolDeps): void {
+  const marked = server as unknown as Record<symbol, boolean>
+  if (!marked[ELICITATION_CAP_PATCH]) {
+    marked[ELICITATION_CAP_PATCH] = true
+    log.info('[media-tools] registerMediaTools, server.connect=%s', typeof (server as unknown as Record<string, unknown>).connect)
+    if (server.connect) {
+      const originalConnect = server.connect.bind(server)
+      server.connect = (async (transport) => {
+        log.info('[media-tools] patched connect called')
+        trace('media.elicitation', 'patched-connect-called', {})
+        return originalConnect(wrapTransportWithElicitationCapability(transport as TransportLike) as any)
+      }) as typeof server.connect
+    }
+  }
+
   server.registerTool(
     'media_read_guide',
     {
@@ -332,7 +601,7 @@ export function registerMediaTools(server: McpServer, deps: BuiltInSuperoneToolD
         camera_fixed: z.boolean().optional().describe('Lock the camera in place instead of letting the model move it. Volcengine Ark only.'),
       },
     },
-    (args) => generateVideoToolHandler(args, deps),
+    (args) => generateVideoToolHandler(args, deps, server),
   )
 
   server.registerTool(

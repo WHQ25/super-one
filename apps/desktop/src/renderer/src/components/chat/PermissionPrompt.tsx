@@ -15,6 +15,7 @@ import { useRestoreChatInputFocus } from '@/hooks/useRestoreChatInputFocus'
 import { eligibilityFromStore } from '@/lib/auto-mode-eligibility'
 import { ElicitationForm, isElicitationFormValid } from './ElicitationForm'
 import { getPermissionPromptConfig } from './permission-prompt/permission-prompt-config'
+import { VideoGenConfirmPromptContainer } from './VideoGenConfirmPromptContainer'
 
 interface MiniAppToolInfo {
   appId: string
@@ -126,6 +127,7 @@ export function PermissionPrompt() {
   const toolName = pendingPermission?.toolName
   const allowAlwaysAllow = pendingPermission?.allowAlwaysAllow
   const isElicitation = pendingPermission?.requestKind === 'mcp_elicitation'
+  const isVideoGenConfirm = pendingPermission?.requestKind === 'video_gen_confirm'
   const elicitationForm = pendingPermission?.elicitationForm ?? []
   const supportsAlwaysPersist = pendingPermission?.supportsAlwaysPersist ?? false
   useRestoreChatInputFocus(!!requestId)
@@ -168,10 +170,12 @@ export function PermissionPrompt() {
   }, [requestId, suggestionsCount])
 
   useEffect(() => {
-    if (requestId && !isCollapsed) {
+    // VideoGenConfirmPrompt mounts its own window keydown listener and manages its
+    // own focus — this autofocus effect must not fight it.
+    if (requestId && !isCollapsed && !isVideoGenConfirm) {
       requestAnimationFrame(() => btnRefs.current[0]?.focus())
     }
-  }, [requestId, isCollapsed])
+  }, [requestId, isCollapsed, isVideoGenConfirm])
 
   const btnCount = promptConfig.buttonCount
 
@@ -247,7 +251,10 @@ export function PermissionPrompt() {
   }, [requestId, respondToPermission])
 
   useEffect(() => {
-    if (!requestId) return
+    // VideoGenConfirmPrompt has its own window keydown listener (Tab/Enter/Escape).
+    // Without this gate both listeners fire and Enter/Escape would additionally
+    // trigger handleAllow/handleDeny here with the wrong payload.
+    if (!requestId || isVideoGenConfirm) return
 
     function onKeyDown(e: KeyboardEvent) {
       if (isCollapsed) {
@@ -331,9 +338,13 @@ export function PermissionPrompt() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [requestId, btnCount, handleCancel, handleDeny, handleAcceptEdit, handleAllow, isCodexDecisionPrompt, isEditTool, isCollapsed, suggestionsCount, toggleSuggestion])
+  }, [requestId, btnCount, handleCancel, handleDeny, handleAcceptEdit, handleAllow, isCodexDecisionPrompt, isEditTool, isCollapsed, suggestionsCount, toggleSuggestion, isVideoGenConfirm])
 
   if (!pendingPermission) return null
+
+  if (isVideoGenConfirm) {
+    return <VideoGenConfirmPromptContainer request={pendingPermission} />
+  }
 
   if (isElicitation) {
     const message = pendingPermission.message ?? `Allow ${pendingPermission.serverName ?? 'tool'}?`

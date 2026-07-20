@@ -9,7 +9,7 @@ import type { Locale } from '@superone/shared/agent-types'
 import { MockLocaleProvider } from '@superone/desktop-mocks'
 
 const sbOverrideStyle = document.createElement('style')
-sbOverrideStyle.textContent = 'html, body { overflow: auto !important; }'
+sbOverrideStyle.textContent = 'html, body { overflow: auto !important; scrollbar-gutter: stable !important; }'
 document.head.appendChild(sbOverrideStyle)
 import { useAppStore } from '../src/renderer/src/stores/app'
 import {

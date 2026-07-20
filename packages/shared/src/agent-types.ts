@@ -418,6 +418,59 @@ export interface ChatMessage {
   _lastAppliedEpoch?: number
 }
 
+// --- Video generation confirmation (MCP elicitation) ---
+
+export interface VideoGenParams {
+  prompt: string
+  provider: string
+  model: string
+  aspectRatio: string
+  resolution: string
+  duration: number
+  fps?: number
+  seed?: number
+  generateAudio: boolean
+  watermark: boolean
+  cameraFixed: boolean
+}
+
+export interface VideoGenReferenceImage {
+  path: string
+  dataUri: string
+  role: 'first_frame' | 'last_frame' | 'reference'
+}
+
+export interface VideoGenProviderOption {
+  id: string
+  label: string
+  models: { id: string; label: string }[]
+  aspectRatios: string[]
+  resolutions: string[]
+}
+
+/** Main-process-side reference image descriptor — path only, no bytes (renderer loads dataUri via IPC). */
+export interface VideoGenReferenceImageRef {
+  path: string
+  role: 'first_frame' | 'last_frame' | 'reference'
+}
+
+export interface VideoGenConfirmPayload {
+  params: VideoGenParams
+  providers: VideoGenProviderOption[]
+  referenceImages: VideoGenReferenceImageRef[]
+}
+
+/**
+ * The elicitation requestedSchema field that carries the serialized VideoGenConfirmPayload.
+ * The payload travels as a JSON string inside
+ * `requestedSchema.properties[VIDEO_GEN_PARAMS_FIELD].description` — a top-level custom key
+ * would be silently stripped by the MCP SDK's zod validation (ElicitRequestSchema restricts
+ * requestedSchema to the flat JSON Schema subset), while per-field schema definitions survive
+ * verbatim. The same field name is reused for the renderer's accept response
+ * (`content.paramsJson = JSON.stringify(editedParams)`).
+ */
+export const VIDEO_GEN_PARAMS_FIELD = 'paramsJson'
+
 // --- Permission request ---
 
 export type ElicitationFormFieldType = 'string' | 'number' | 'boolean' | 'enum'
@@ -444,13 +497,15 @@ export interface PermissionRequest {
   toolDiff?: string
   toolDiffTokens?: { added?: DiffTokenLine[]; removed?: DiffTokenLine[] }
   toolLineDelta?: { added: number; removed: number }
-  requestKind?: 'mcp_elicitation'
+  requestKind?: 'mcp_elicitation' | 'video_gen_confirm'
   serverName?: string
   message?: string
   subtitle?: string
   riskLevel?: 'low' | 'medium' | 'high'
   supportsAlwaysPersist?: boolean
   elicitationForm?: ElicitationFormField[]
+  /** Present only when requestKind === 'video_gen_confirm'. */
+  videoGenConfirm?: VideoGenConfirmPayload
 }
 
 export type PermissionMode = 'default' | 'acceptEdits' | 'bypassPermissions' | 'plan' | 'dontAsk' | 'auto'

@@ -96,6 +96,10 @@ class FakeBackend implements SessionBackend {
   async stopTask(taskId: string): Promise<void> {
     this.stopTaskCalls.push(taskId)
   }
+  setForegroundCalls: boolean[] = []
+  setForeground(visible: boolean): void {
+    this.setForegroundCalls.push(visible)
+  }
   respondToPermission(): boolean { return true }
   respondToQuestion(): void {}
   dismissQuestion(): void {}
@@ -532,6 +536,35 @@ describe('Session state machine', () => {
       expect(backend.stopTaskCalls).toEqual([])
       backend.resolveSend?.()
       await pending
+    })
+  })
+
+  describe('setForeground', () => {
+    it('forwards true/false to backend on the first mount and last unmount', () => {
+      session.setForeground(true)
+      session.setForeground(false)
+      expect(backend.setForegroundCalls).toEqual([true, false])
+    })
+
+    it('ref-counts across multiple simultaneous viewers (e.g. mosaic tile + mini window)', () => {
+      session.setForeground(true) // first viewer mounts
+      session.setForeground(true) // second viewer mounts
+      expect(backend.setForegroundCalls).toEqual([true]) // only one transition so far
+
+      session.setForeground(false) // first viewer unmounts — second still visible
+      expect(backend.setForegroundCalls).toEqual([true]) // no change forwarded
+
+      session.setForeground(false) // second viewer unmounts — now truly hidden
+      expect(backend.setForegroundCalls).toEqual([true, false])
+    })
+
+    it('does not go negative when unmounted more times than mounted', () => {
+      session.setForeground(false)
+      session.setForeground(false)
+      expect(backend.setForegroundCalls).toEqual([])
+
+      session.setForeground(true)
+      expect(backend.setForegroundCalls).toEqual([true])
     })
   })
 

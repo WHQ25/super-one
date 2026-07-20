@@ -2096,6 +2096,7 @@ export const AgentIpcChannels = {
   // Concurrent session management
   PARK_SESSION: 'agent:park-session',
   ACTIVATE_SESSION: 'agent:activate-session',
+  SET_SESSION_FOREGROUND: 'agent:set-session-foreground',
 
   // Live session snapshots for renderer resync
   GET_LIVE_SNAPSHOTS: 'agent:get-live-snapshots',

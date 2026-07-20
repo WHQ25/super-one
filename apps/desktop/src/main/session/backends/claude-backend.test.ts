@@ -583,6 +583,15 @@ describe('ClaudeBackend', () => {
       expect(backend.isRuntimeIdle(60_000)).toBe(false)
     })
 
+    it('isRuntimeIdle returns false when foreground, even past the timeout window', async () => {
+      const backend = new ClaudeBackend()
+      await backend.start(makeStartOpts())
+      backend.setForeground(true)
+      expect(backend.isRuntimeIdle(0)).toBe(false)
+      backend.setForeground(false)
+      expect(backend.isRuntimeIdle(0)).toBe(true)
+    })
+
     it('isRuntimeIdle returns false while a turn is in-flight', async () => {
       const backend = new ClaudeBackend()
       await backend.start(makeStartOpts())

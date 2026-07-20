@@ -197,6 +197,8 @@ export interface SessionBackend {
   setAdditionalDirectories?(dirs: string[]): Promise<boolean>
   hasActiveBackgroundTasks?(): boolean
   stopTask?(taskId: string): Promise<void>
+  /** Foreground-visible sessions are exempt from idle-triggered runtime release. */
+  setForeground?(visible: boolean): void
   /**
    * Claude: push an SDK user message with origin `{ kind: 'task-notification' }`.
    * Other harnesses omit this and Session falls back to a normal send.
@@ -242,6 +244,7 @@ export interface Session {
   readonly subscribers: ReadonlySet<string>
   claim(owner: Extract<SessionOwner, { kind: 'remote' }>): void
   release(deviceId: string, reason?: SessionLeaveReason): void
+  setForeground(visible: boolean): void
   subscribe(deviceId: string): void
   unsubscribe(deviceId: string, reason?: SessionLeaveReason): void
   onLifecycle(handler: (event: SessionLifecycleEvent) => void): () => void

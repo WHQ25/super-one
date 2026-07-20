@@ -60,6 +60,18 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
   })))
   const scope = useSessionScope()
   const displayedSessionId = scope?.sessionId ?? historySessionId
+
+  // ChatContent is the single render root for a visible session — mounted once per
+  // single-mode pane, per mosaic tile, and per mini window. Reporting foreground here
+  // (rather than in mosaic/mini-window-specific code) covers all three for free.
+  useEffect(() => {
+    if (!displayedSessionId) return
+    void window.agent.setSessionForeground(displayedSessionId, true)
+    return () => {
+      void window.agent.setSessionForeground(displayedSessionId, false)
+    }
+  }, [displayedSessionId])
+
   const liquidGlass = useAppStore((s) => s.liquidGlass)
   const { editQueuedMessage, deleteQueuedMessage, disconnectRemoteSession, dismissCompactError } = useChatStore(useShallow((s) => ({
     editQueuedMessage: s.editQueuedMessage,

@@ -28,6 +28,7 @@ interface AgentAPI {
   truncateAtCheckpoint(projectPath: string, checkpointId: string): Promise<boolean>
   parkSession(projectPath: string): Promise<{ permissionMode: PermissionMode; sandboxInfo: SandboxInfo }>
   activateSession(projectPath: string, sessionId: string): Promise<void>
+  setSessionForeground(sessionId: string, foreground: boolean): Promise<void>
   getLiveSnapshots(): Promise<LiveSessionSnapshot[]>
   rewindFiles(projectPath: string, userMessageId: string): Promise<RewindFilesResult>
   previewRewind(projectPath: string, userMessageId: string): Promise<RewindFilesResult>

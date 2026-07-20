@@ -177,6 +177,21 @@ export class Session implements SessionContract {
   private _cachedWorktreeMissing: AgentEvent | null = null
   private _pendingQueuedRequests = new Map<string, { request: SendMessageRequest; providerOrigin: 'local' | 'remote' }>()
 
+  private _foregroundRefCount = 0
+
+  /**
+   * A session can be rendered in more than one place at once (e.g. a mosaic tile
+   * and a mini window on the same session) — ref-count so unmounting one place
+   * doesn't drop foreground status while another is still visible.
+   */
+  setForeground(visible: boolean): void {
+    const wasForeground = this._foregroundRefCount > 0
+    this._foregroundRefCount = Math.max(0, this._foregroundRefCount + (visible ? 1 : -1))
+    const isForeground = this._foregroundRefCount > 0
+    if (isForeground === wasForeground) return
+    this.backend.setForeground?.(isForeground)
+  }
+
   private _owner: SessionOwner = LOCAL_OWNER
   private _subscribers = new Set<string>()
   private _lifecycleListeners = new Set<(event: SessionLifecycleEvent) => void>()

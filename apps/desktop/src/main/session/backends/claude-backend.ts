@@ -77,8 +77,15 @@ export class ClaudeBackend implements SessionBackend {
   private _proxyBaseUrl: string | null = null
   private _activeRuntimeKey: string | null = null
 
-  static IDLE_TIMEOUT_MS = 180_000
+  static IDLE_TIMEOUT_MS = 600_000
   static IDLE_CHECK_INTERVAL_MS = 30_000
+
+  private _foreground = false
+
+  /** Foreground-visible sessions (mosaic tile, mini window, or the active single-mode pane) never idle-release. */
+  setForeground(visible: boolean): void {
+    this._foreground = visible
+  }
 
   private ensurePermissionHandles(): { canUseTool: CanUseTool; trackPlanFile: (filePath: string) => void } {
     if (!this.canUseToolHandle || !this.trackPlanFileHandle) {
@@ -613,6 +620,7 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   isRuntimeIdle(timeoutMs: number): boolean {
+    if (this._foreground) return false
     if (!this.bridge || !this.query) return false
     if (this._lastActiveAt == null) return false
     if (Date.now() - this._lastActiveAt < timeoutMs) return false

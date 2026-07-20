@@ -2206,6 +2206,10 @@ export class AgentService {
       try { mgr.setActiveSession(projectPath, sessionId) } catch { /* belongs to another project */ }
     })
 
+    ipcMain.handle(AgentIpcChannels.SET_SESSION_FOREGROUND, (_event, sessionId: string, foreground: boolean) => {
+      this.requireSessionManager().getSession(sessionId)?.setForeground(foreground)
+    })
+
     ipcMain.handle(AgentIpcChannels.GET_LIVE_SNAPSHOTS, () => {
       return this.requireSessionManager().listLiveSnapshots()
     })
@@ -2370,6 +2374,7 @@ export class AgentService {
     ipcMain.removeHandler(AgentIpcChannels.SESSION_PROVIDERS_DELETE)
     ipcMain.removeHandler(AgentIpcChannels.PARK_SESSION)
     ipcMain.removeHandler(AgentIpcChannels.ACTIVATE_SESSION)
+    ipcMain.removeHandler(AgentIpcChannels.SET_SESSION_FOREGROUND)
     ipcMain.removeHandler(AgentIpcChannels.GET_LIVE_SNAPSHOTS)
     ipcMain.removeHandler(AgentIpcChannels.SESSIONS_LIST)
     ipcMain.removeHandler(AgentIpcChannels.SESSIONS_LIST_FOR_FOLDER)

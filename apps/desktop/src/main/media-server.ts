@@ -1,6 +1,7 @@
 import { createServer, type Server } from 'http'
 import { createReadStream, statSync } from 'fs'
 import { extname } from 'path'
+import { mediaGenRoot } from './media-gen/paths'
 import { resolveRealPath, isPathWithinAllowed, getReadableAssetRoots } from './path-security'
 import { getRecentFolders } from './recent-folders'
 import { listWorktreePaths } from './session/session-repo'
@@ -20,6 +21,8 @@ function getAllowedRoots(): string[] {
   return getReadableAssetRoots([
     ...getRecentFolders().map((f) => f.path),
     ...listWorktreePaths(),
+    // Generated media lives under userData, outside any project, but the gallery has to stream it.
+    mediaGenRoot(),
   ])
 }
 

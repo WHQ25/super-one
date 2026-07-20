@@ -1,6 +1,6 @@
 import type { ProviderOptions } from '@ai-sdk/provider-utils'
 
-export type MediaProviderKind = 'openai' | 'google' | 'openai-compatible' | 'ark'
+export type MediaProviderKind = 'openai' | 'google' | 'openai-compatible' | 'ark' | 'newapi'
 
 export interface MediaProviderConfig {
   id: string
@@ -32,7 +32,8 @@ export interface GenerateMediaCoreParams {
 export interface SavedImage {
   path: string
   mediaType: string
-  base64: string
+  /** Absent for video, whose files are too large to keep a second in-memory copy of. */
+  base64?: string
 }
 
 export interface MediaCoreResult {

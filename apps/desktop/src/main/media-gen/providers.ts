@@ -1,7 +1,12 @@
-import { type EndpointModel, type ResolvedService } from '@superone/shared/platform-registry'
+import type { CapabilityTask } from '@superone/shared/agent-types'
+import { type ConsumerId, type EndpointModel, type ResolvedService } from '@superone/shared/platform-registry'
 import { listCredentials } from '../providers/credential-store'
 import { resolveService } from '../providers/resolver'
 import type { MediaProviderConfig, MediaProviderKind } from './types'
+
+function officialOpenAI(resolved: ResolvedService): boolean {
+  return resolved.platformId === 'openai' || resolved.platformId === 'openai-official'
+}
 
 /**
  * Adapter selection for image protocols. The strict-vs-compatible OpenAI split is decided by
@@ -15,57 +20,118 @@ export function mediaKindFor(resolved: ResolvedService): MediaProviderKind {
       return 'ark'
     case 'openai-images':
     case 'openai-responses':
-      return resolved.platformId === 'openai' || resolved.platformId === 'openai-official'
-        ? 'openai'
-        : 'openai-compatible'
+      return officialOpenAI(resolved) ? 'openai' : 'openai-compatible'
     default:
       throw new Error(`protocol '${resolved.protocol}' does not serve image generation`)
   }
 }
 
-/**
- * Effective enabled image models for a resolved service — the user's explicit enabled subset
- * (`resolved.models`), narrowed to models that actually serve the image task. A single endpoint
- * (e.g. Gemini generateContent) may serve chat/image/tts at once, so the shared enabled list is
- * filtered by each model's tagged tasks. Enabling is opt-in: an empty result means no image model
- * is available until the user enables one in Settings → Providers.
- */
-export function imageModelsFor(resolved: ResolvedService): EndpointModel[] {
-  return resolved.models.filter((m) => !m.tasks || m.tasks.includes('image'))
+/** Adapter selection for video protocols — same official-vs-relay split as images. */
+export function videoKindFor(resolved: ResolvedService): MediaProviderKind {
+  switch (resolved.protocol) {
+    case 'google-video':
+      return 'google'
+    case 'ark-video':
+      return 'ark'
+    case 'openai-video':
+      return officialOpenAI(resolved) ? 'openai' : 'openai-compatible'
+    case 'newapi-video':
+      return 'newapi'
+    default:
+      throw new Error(`protocol '${resolved.protocol}' does not serve video generation`)
+  }
 }
 
-async function toConfig(resolved: ResolvedService): Promise<MediaProviderConfig> {
+/**
+ * Effective enabled models for a resolved service, narrowed to those that actually serve the task.
+ * A single endpoint (e.g. Gemini generateContent) may serve chat/image/tts at once, so the shared
+ * enabled list is filtered by each model's tagged tasks. Enabling is opt-in: an empty result means
+ * no model is available until the user enables one in Settings → Providers.
+ */
+export function modelsForTask(resolved: ResolvedService, task: CapabilityTask): EndpointModel[] {
+  return resolved.models.filter((m) => !m.tasks || m.tasks.includes(task))
+}
+
+export function imageModelsFor(resolved: ResolvedService): EndpointModel[] {
+  return modelsForTask(resolved, 'image')
+}
+
+export function videoModelsFor(resolved: ResolvedService): EndpointModel[] {
+  return modelsForTask(resolved, 'video')
+}
+
+/** One media capability's resolution rules. Image and video differ only in these four values. */
+interface MediaConsumerSpec {
+  consumer: ConsumerId
+  task: CapabilityTask
+  kindFor: (resolved: ResolvedService) => MediaProviderKind
+  label: string
+}
+
+const IMAGE: MediaConsumerSpec = { consumer: 'media:image', task: 'image', kindFor: mediaKindFor, label: 'image' }
+const VIDEO: MediaConsumerSpec = { consumer: 'media:video', task: 'video', kindFor: videoKindFor, label: 'video' }
+
+function toConfig(resolved: ResolvedService, spec: MediaConsumerSpec): MediaProviderConfig {
   return {
     id: resolved.credentialId,
-    kind: mediaKindFor(resolved),
+    kind: spec.kindFor(resolved),
     apiKey: resolved.apiKey,
     baseURL: resolved.baseUrl || undefined,
-    models: imageModelsFor(resolved).map((m) => m.id),
+    models: modelsForTask(resolved, spec.task).map((m) => m.id),
   }
+}
+
+function resolveProvider(spec: MediaConsumerSpec, credentialId?: string | null): MediaProviderConfig {
+  const resolved = resolveService(spec.consumer, { credentialId })
+  if (!resolved) {
+    throw new Error(`No ${spec.label} provider is configured. Ask the user to add one in Settings → Providers.`)
+  }
+  if (!resolved.apiKey) {
+    throw new Error(`No API key configured for ${spec.label} provider '${resolved.credentialId}'`)
+  }
+  return toConfig(resolved, spec)
+}
+
+function resolveDefaultModelFor(spec: MediaConsumerSpec, credentialId?: string | null): string {
+  const resolved = resolveService(spec.consumer, { credentialId })
+  const first = resolved ? modelsForTask(resolved, spec.task)[0]?.id : undefined
+  if (!first) throw new Error(`No default model available for the ${spec.label} provider`)
+  return first
+}
+
+/** Pick a credential that resolves with a usable key — the bound one first, else any. */
+function resolveDefaultProviderIdFor(spec: MediaConsumerSpec): string {
+  const bound = resolveService(spec.consumer)
+  if (bound?.apiKey) return bound.credentialId
+  for (const cred of listCredentials()) {
+    const resolved = resolveService(spec.consumer, { credentialId: cred.id })
+    if (resolved?.apiKey) return resolved.credentialId
+  }
+  throw new Error(`No ${spec.label} provider is configured. Ask the user to add one in Settings → Providers.`)
 }
 
 /** Resolve an image provider from a credential id (or the global `media:image` binding when omitted). */
 export async function resolveMediaProvider(credentialId?: string | null): Promise<MediaProviderConfig> {
-  const resolved = resolveService('media:image', { credentialId })
-  if (!resolved) throw new Error('No image provider is configured. Ask the user to add one in Settings → Providers.')
-  if (!resolved.apiKey) throw new Error(`No API key configured for image provider '${resolved.credentialId}'`)
-  return toConfig(resolved)
+  return resolveProvider(IMAGE, credentialId)
 }
 
 export async function resolveDefaultModel(credentialId?: string | null): Promise<string> {
-  const resolved = resolveService('media:image', { credentialId })
-  const first = resolved ? imageModelsFor(resolved)[0]?.id : undefined
-  if (!first) throw new Error('No default model available for the image provider')
-  return first
+  return resolveDefaultModelFor(IMAGE, credentialId)
 }
 
-/** Pick an image credential that resolves with a usable key — the bound one first, else any. */
 export async function resolveDefaultProviderId(): Promise<string> {
-  const bound = resolveService('media:image')
-  if (bound?.apiKey) return bound.credentialId
-  for (const cred of listCredentials()) {
-    const resolved = resolveService('media:image', { credentialId: cred.id })
-    if (resolved?.apiKey) return resolved.credentialId
-  }
-  throw new Error('No image provider is configured. Ask the user to add one in Settings → Providers.')
+  return resolveDefaultProviderIdFor(IMAGE)
+}
+
+/** Resolve a video provider from a credential id (or the global `media:video` binding when omitted). */
+export async function resolveVideoProvider(credentialId?: string | null): Promise<MediaProviderConfig> {
+  return resolveProvider(VIDEO, credentialId)
+}
+
+export async function resolveDefaultVideoModel(credentialId?: string | null): Promise<string> {
+  return resolveDefaultModelFor(VIDEO, credentialId)
+}
+
+export async function resolveDefaultVideoProviderId(): Promise<string> {
+  return resolveDefaultProviderIdFor(VIDEO)
 }

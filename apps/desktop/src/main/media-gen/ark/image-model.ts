@@ -1,4 +1,5 @@
 import type { ImageModelV3, ImageModelV3CallOptions } from '@ai-sdk/provider'
+import { collectHeaders, definedHeaders } from '../http'
 import { buildArkImageRequest } from './request'
 
 interface ArkImageResponse {
@@ -11,22 +12,6 @@ export interface ArkImageModelConfig {
   baseURL: string
   apiKey: string
   fetch?: typeof globalThis.fetch
-}
-
-function collectHeaders(headers: Headers): Record<string, string> {
-  const out: Record<string, string> = {}
-  headers.forEach((value, key) => {
-    out[key] = value
-  })
-  return out
-}
-
-function definedHeaders(headers: Record<string, string | undefined> | undefined): Record<string, string> {
-  const out: Record<string, string> = {}
-  for (const [key, value] of Object.entries(headers ?? {})) {
-    if (value != null) out[key] = value
-  }
-  return out
 }
 
 /**

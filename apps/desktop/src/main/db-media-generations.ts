@@ -1,5 +1,12 @@
 import { getDb } from './database'
 
+/**
+ * `running` exists for video: generation is an asynchronous job that outlives the tool call which
+ * started it, so the row is written on submission and settled later. Image generation goes straight
+ * to a terminal status.
+ */
+export type MediaGenerationStatus = 'running' | 'succeeded' | 'failed'
+
 export interface MediaGenerationRow {
   id: string
   session_id: string | null
@@ -12,7 +19,7 @@ export interface MediaGenerationRow {
   params_json: string
   warnings_json: string
   result_paths_json: string | null
-  status: 'succeeded' | 'failed'
+  status: MediaGenerationStatus
   error: string | null
   created_at: string
 }
@@ -26,7 +33,7 @@ export interface MediaGenerationEntry {
   mediaType: string
   prompt: string
   resultPaths: string[]
-  status: 'succeeded' | 'failed'
+  status: MediaGenerationStatus
   error: string | null
   createdAt: string
 }
@@ -42,6 +49,29 @@ export function insertMediaGeneration(row: MediaGenerationRow): void {
          @params_json, @warnings_json, @result_paths_json, @status, @error, @created_at)`,
     )
     .run(row)
+}
+
+/** Settle a previously-submitted generation. Only the fields a completing job can change. */
+export function updateMediaGeneration(
+  id: string,
+  patch: { status: MediaGenerationStatus; resultPaths?: string[]; error?: string | null; warnings?: unknown[] },
+): void {
+  getDb()
+    .prepare(
+      `UPDATE media_generations
+          SET status = @status,
+              result_paths_json = COALESCE(@result_paths_json, result_paths_json),
+              warnings_json = COALESCE(@warnings_json, warnings_json),
+              error = @error
+        WHERE id = @id`,
+    )
+    .run({
+      id,
+      status: patch.status,
+      result_paths_json: patch.resultPaths ? JSON.stringify(patch.resultPaths) : null,
+      warnings_json: patch.warnings ? JSON.stringify(patch.warnings) : null,
+      error: patch.error ?? null,
+    })
 }
 
 function toEntry(row: MediaGenerationRow): MediaGenerationEntry {

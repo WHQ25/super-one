@@ -191,6 +191,39 @@ describe('selectEndpoint', () => {
       })?.endpoint.id,
     ).toBe('ark-images')
   })
+
+  it('routes video to a dedicated endpoint per vendor without shadowing image or chat', () => {
+    const ark = findPlatform(BUILTIN_PLATFORMS, 'volcengine')!.plans.find((p) => p.id === 'api')!
+    expect(selectEndpoint(ark, 'media:video')?.endpoint.id).toBe('ark-video')
+    expect(selectEndpoint(ark, 'media:video')?.protocol).toBe('ark-video')
+    // The video endpoint must not steal the image or chat consumers that share the plan.
+    expect(selectEndpoint(ark, 'media:image')?.endpoint.id).toBe('ark-images')
+    expect(selectEndpoint(ark, 'chat:claude')?.protocol).toBe('anthropic-messages')
+
+    const openai = findPlatform(BUILTIN_PLATFORMS, 'openai')!.plans[0]
+    expect(selectEndpoint(openai, 'media:video')?.endpoint.id).toBe('sora')
+    expect(selectEndpoint(openai, 'media:image')?.endpoint.id).toBe('openai')
+
+    const gemini = findPlatform(BUILTIN_PLATFORMS, 'gemini')!.plans[0]
+    expect(selectEndpoint(gemini, 'media:video')?.endpoint.id).toBe('veo')
+    expect(selectEndpoint(gemini, 'media:image')?.endpoint.id).toBe('generative')
+  })
+
+  it('gates video on an enabled video-tagged model like the other media consumers', () => {
+    const plan = findPlatform(BUILTIN_PLATFORMS, 'volcengine')!.plans.find((p) => p.id === 'api')!
+    expect(selectEndpoint(plan, 'media:video', undefined, { overrides: {} })).toBeUndefined()
+    expect(
+      selectEndpoint(plan, 'media:video', undefined, {
+        overrides: { 'ark-video': { models: [{ id: 'doubao-seedance-2-0-260128', name: 'Seedance', tasks: ['video'] }] } },
+      })?.endpoint.id,
+    ).toBe('ark-video')
+    // An image-tagged model on the video endpoint does not make it a video provider.
+    expect(
+      selectEndpoint(plan, 'media:video', undefined, {
+        overrides: { 'ark-video': { models: [{ id: 'doubao-seedance-2-0-260128', name: 'Seedance', tasks: ['image'] }] } },
+      }),
+    ).toBeUndefined()
+  })
 })
 
 describe('validatePlatform', () => {

@@ -4,6 +4,7 @@ import { PROTOCOL_FAMILY, type ProtocolFamily, type ServiceEndpoint } from '@sup
 const DEFAULT_BASE_URL: Record<ProtocolFamily, string> = {
   anthropic: 'https://api.anthropic.com',
   openai: 'https://api.openai.com/v1',
+  newapi: '',
   google: 'https://generativelanguage.googleapis.com',
 }
 

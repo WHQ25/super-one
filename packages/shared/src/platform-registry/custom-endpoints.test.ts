@@ -32,8 +32,20 @@ describe('customEndpointsFor', () => {
     ])
   })
 
-  it('ignores capabilities the family has no protocol for (e.g. video)', () => {
-    expect(customEndpointsFor('openai', ['video'], 'https://x/v1')).toEqual([])
+  it('ignores capabilities the family has no protocol for (e.g. image on anthropic)', () => {
+    expect(customEndpointsFor('anthropic', ['image'], 'https://x/v1')).toEqual([])
+  })
+
+  it('derives the sora-shaped video wire for an openai-compatible relay', () => {
+    expect(customEndpointsFor('openai', ['video'], 'https://x/v1')).toEqual([
+      { id: 'openai', baseUrl: 'https://x/v1', protocols: ['openai-video'] },
+    ])
+  })
+
+  it('keeps veo on its own wire alongside generateContent in one gemini endpoint', () => {
+    expect(customEndpointsFor('google', ['chat', 'video'], 'https://x/v1')).toEqual([
+      { id: 'google', baseUrl: 'https://x/v1', protocols: ['google-generative', 'google-video'] },
+    ])
   })
 
   it('appends an opt-in extra wire (openai-responses) ahead of chat/completions in priority order', () => {

@@ -10,8 +10,12 @@ export type WireProtocol =
   | 'openai-responses' // chat, image (image via built-in image_generation tool)
   | 'openai-images' // image (/images/generations|edits)
   | 'openai-audio' // tts, asr (/audio/speech, /audio/transcriptions)
+  | 'openai-video' // video (/videos submit + poll + /content — Sora and relays that copy its shape)
+  | 'newapi-video' // video (/video/generations submit + poll + /videos/{id}/content — New API's own generic multi-vendor task relay, distinct from the Sora-shaped /videos wire; fans out to Doubao/Kling/etc. by model id)
   | 'google-generative' // chat, image, tts (generateContent)
+  | 'google-video' // video (Veo via predictLongRunning + operations poll; same key/base as generateContent)
   | 'ark-images' // image (/images/generations only — reference images ride a JSON `image` field, no /edits)
+  | 'ark-video' // video (/contents/generations/tasks submit + poll; settings ride as top-level JSON fields)
 
 export const WIRE_PROTOCOLS: WireProtocol[] = [
   'anthropic-messages',
@@ -19,8 +23,12 @@ export const WIRE_PROTOCOLS: WireProtocol[] = [
   'openai-responses',
   'openai-images',
   'openai-audio',
+  'openai-video',
+  'newapi-video',
   'google-generative',
+  'google-video',
   'ark-images',
+  'ark-video',
 ]
 
 /** Capabilities each protocol can serve. An endpoint may narrow this set, never widen it. */
@@ -30,18 +38,29 @@ export const PROTOCOL_TASKS: Record<WireProtocol, CapabilityTask[]> = {
   'openai-responses': ['chat', 'image'],
   'openai-images': ['image'],
   'openai-audio': ['tts', 'asr'],
+  'openai-video': ['video'],
+  'newapi-video': ['video'],
   'google-generative': ['chat', 'image', 'tts'],
+  'google-video': ['video'],
   'ark-images': ['image'],
+  'ark-video': ['video'],
 }
 
 export function protocolServes(protocol: WireProtocol, task: CapabilityTask): boolean {
   return PROTOCOL_TASKS[protocol].includes(task)
 }
 
-/** Vendor family a protocol belongs to. Derived UI grouping only — never a source of truth. */
-export type ProtocolFamily = 'anthropic' | 'openai' | 'google'
+/**
+ * Vendor family a protocol belongs to. Derived UI grouping only — never a source of truth.
+ * `newapi` is not a real AI vendor — it groups New API/one-api-style relays' own proprietary
+ * multi-vendor video wire (`newapi-video`), which is neither OpenAI's nor any single upstream
+ * vendor's actual protocol shape (unlike `openai-video`, which genuinely is Sora's `/videos`
+ * shape copied by relays). It gets its own family instead of hiding inside `openai` so the
+ * custom-platform dialog doesn't label a non-OpenAI wire "OpenAI".
+ */
+export type ProtocolFamily = 'anthropic' | 'openai' | 'newapi' | 'google'
 
-export const PROTOCOL_FAMILIES: ProtocolFamily[] = ['anthropic', 'openai', 'google']
+export const PROTOCOL_FAMILIES: ProtocolFamily[] = ['anthropic', 'openai', 'newapi', 'google']
 
 export const PROTOCOL_FAMILY: Record<WireProtocol, ProtocolFamily> = {
   'anthropic-messages': 'anthropic',
@@ -49,27 +68,35 @@ export const PROTOCOL_FAMILY: Record<WireProtocol, ProtocolFamily> = {
   'openai-responses': 'openai',
   'openai-images': 'openai',
   'openai-audio': 'openai',
+  'openai-video': 'openai',
+  'newapi-video': 'newapi',
   'google-generative': 'google',
+  'google-video': 'google',
   'ark-images': 'openai',
+  'ark-video': 'openai',
 }
 
 /**
  * Protocols a family offers in the custom-platform dialog.
  * Order is behavioral: selectEndpoint() returns the first endpoint serving a task,
  * so responses precedes chat (codex's native wire is Responses; chat/completions is being deprecated upstream).
- * Vendor-private protocols (ark-images) are deliberately absent — they are only reachable from the
- * builtin platform that speaks them, never offered to an arbitrary custom platform of the same family.
+ * Vendor-private protocols (ark-images, ark-video) are deliberately absent — they are only reachable
+ * from the builtin platform that speaks them, never offered to an arbitrary custom platform of the
+ * same family.
  */
 export const FAMILY_PROTOCOLS: Record<ProtocolFamily, WireProtocol[]> = {
   anthropic: ['anthropic-messages'],
   openai: [
-    'openai-responses', 
-    'openai-chat', 
-    'openai-images', 
-    'openai-audio'
+    'openai-responses',
+    'openai-chat',
+    'openai-images',
+    'openai-audio',
+    'openai-video',
   ],
+  newapi: ['newapi-video'],
   google: [
-    'google-generative'
+    'google-generative',
+    'google-video'
   ],
 }
 
@@ -81,21 +108,38 @@ export const CAPABILITY_ORDER: CapabilityTask[] = ['chat', 'image', 'video', 'tt
 /**
  * The wire protocol that serves each capability within a family — the mapping behind the
  * capability-driven custom-platform dialog. A user picks a compat family + the capabilities their
- * endpoint exposes; we derive the endpoints. Tasks absent here (e.g. video) have no wire protocol yet.
+ * endpoint exposes; we derive the endpoints.
  * openai chat → chat/completions (what "OpenAI-compatible" relays actually implement; the Responses
- * wire is offered separately via FAMILY_EXTRA_PROTOCOLS). tts+asr share one audio endpoint; gemini
- * serves all via generateContent.
+ * wire is offered separately via FAMILY_EXTRA_PROTOCOLS). tts+asr share one audio endpoint; video is
+ * Sora's `/videos` shape, which relays copy (see ENDPOINT_TYPE_MAP's `openai-video`); gemini serves
+ * chat/image/tts via generateContent but Veo rides its own predictLongRunning wire, so video is a
+ * separate protocol rather than a task added to google-generative — keeping the two off one protocol
+ * means a curated Veo model list can live on its own endpoint without replacing the catalog-driven
+ * model list of the generateContent endpoint (resolveEndpointModels treats `models` as a full replace).
  */
 export const FAMILY_TASK_PROTOCOL: Record<ProtocolFamily, Partial<Record<CapabilityTask, WireProtocol>>> = {
   anthropic: { chat: 'anthropic-messages' },
-  openai: { chat: 'openai-chat', image: 'openai-images', tts: 'openai-audio', asr: 'openai-audio' },
-  google: { chat: 'google-generative', image: 'google-generative', tts: 'google-generative' },
+  openai: {
+    chat: 'openai-chat',
+    image: 'openai-images',
+    video: 'openai-video',
+    tts: 'openai-audio',
+    asr: 'openai-audio',
+  },
+  newapi: { video: 'newapi-video' },
+  google: {
+    chat: 'google-generative',
+    image: 'google-generative',
+    video: 'google-video',
+    tts: 'google-generative',
+  },
 }
 
 /** Capabilities a family can expose, in canonical order. Derived from FAMILY_TASK_PROTOCOL. */
 export const FAMILY_TASKS: Record<ProtocolFamily, CapabilityTask[]> = {
   anthropic: CAPABILITY_ORDER.filter((task) => FAMILY_TASK_PROTOCOL.anthropic[task]),
   openai: CAPABILITY_ORDER.filter((task) => FAMILY_TASK_PROTOCOL.openai[task]),
+  newapi: CAPABILITY_ORDER.filter((task) => FAMILY_TASK_PROTOCOL.newapi[task]),
   google: CAPABILITY_ORDER.filter((task) => FAMILY_TASK_PROTOCOL.google[task]),
 }
 
@@ -107,6 +151,7 @@ export const FAMILY_TASKS: Record<ProtocolFamily, CapabilityTask[]> = {
 export const FAMILY_EXTRA_PROTOCOLS: Record<ProtocolFamily, WireProtocol[]> = {
   anthropic: [],
   openai: ['openai-responses'],
+  newapi: [],
   google: [],
 }
 
@@ -114,13 +159,16 @@ export const FAMILY_EXTRA_PROTOCOLS: Record<ProtocolFamily, WireProtocol[]> = {
  * Base URL for a family's endpoint derived from a single relay root (the "one base URL" a user pastes for
  * a NewAPI-style aggregator that speaks several formats at once). openai-compatible wires live under `/v1`
  * (`/v1/chat/completions`, `/v1/images/generations`, …); anthropic-messages and gemini address from the
- * root (the Claude SDK appends `/v1/messages`, generateContent carries its own path). Idempotent: a root
- * already ending in a version segment is left as-is, so pasting either `https://relay.com` or
- * `https://relay.com/v1` resolves the openai endpoint correctly. Trailing slashes are stripped.
+ * root (the Claude SDK appends `/v1/messages`, generateContent carries its own path). newapi-video rides
+ * the same `/v1` root (`/v1/video/generations`) since New API mounts its own relay endpoints alongside its
+ * OpenAI-compatible ones. Idempotent: a root already ending in a version segment is left as-is, so pasting
+ * either `https://relay.com` or `https://relay.com/v1` resolves the openai/newapi endpoints correctly.
+ * Trailing slashes are stripped.
  */
 export function familyBaseUrl(family: ProtocolFamily, baseUrl: string): string {
   const trimmed = baseUrl.replace(/\/+$/, '')
-  if (family !== 'openai' || !trimmed || /\/v\d+$/.test(trimmed)) return trimmed
+  const needsV1 = family === 'openai' || family === 'newapi'
+  if (!needsV1 || !trimmed || /\/v\d+$/.test(trimmed)) return trimmed
   return `${trimmed}/v1`
 }
 

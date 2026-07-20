@@ -76,6 +76,34 @@ const DOUBAO_MODELS: ProviderModelEnv = {
   haiku: { id: 'doubao-seed-2-0-code-preview-latest', name: 'Doubao Seed 2.0 Code' },
 }
 
+/**
+ * Curated video model lists. These live on their own endpoints because `resolveEndpointModels`
+ * treats a curated `models` array as a full replacement for the catalog list — putting them on the
+ * shared chat/image endpoint would wipe out its catalog-driven models. models.dev carries no video
+ * models for volcengine / openai / google, so a curated list is the only way these resolve at all.
+ */
+const SEEDANCE_MODELS: EndpointModel[] = [
+  { id: 'doubao-seedance-2-0-260128', name: 'Seedance 2.0', tasks: ['video'] },
+  { id: 'doubao-seedance-2-0-fast-260128', name: 'Seedance 2.0 Fast', tasks: ['video'] },
+  { id: 'doubao-seedance-1-5-pro-250428', name: 'Seedance 1.5 Pro', tasks: ['video'] },
+  { id: 'doubao-seedance-1-0-pro-250528', name: 'Seedance 1.0 Pro', tasks: ['video'] },
+  { id: 'doubao-seedance-1-0-lite-t2v-250428', name: 'Seedance 1.0 Lite (T2V)', tasks: ['video'] },
+  { id: 'doubao-seedance-1-0-lite-i2v-250428', name: 'Seedance 1.0 Lite (I2V)', tasks: ['video'] },
+]
+
+const SORA_MODELS: EndpointModel[] = [
+  { id: 'sora-2', name: 'Sora 2', tasks: ['video'] },
+  { id: 'sora-2-pro', name: 'Sora 2 Pro', tasks: ['video'] },
+]
+
+const VEO_MODELS: EndpointModel[] = [
+  { id: 'veo-3.1-generate', name: 'Veo 3.1', tasks: ['video'] },
+  { id: 'veo-3.1-fast-generate-preview', name: 'Veo 3.1 Fast', tasks: ['video'] },
+  { id: 'veo-3.0-generate-001', name: 'Veo 3.0', tasks: ['video'] },
+  { id: 'veo-3.0-fast-generate-001', name: 'Veo 3.0 Fast', tasks: ['video'] },
+  { id: 'veo-2.0-generate-001', name: 'Veo 2.0', tasks: ['video'] },
+]
+
 const ARK_CODE_MODELS: ProviderModelEnv = {
   default: { id: 'ark-code-latest', name: 'Ark Code Latest' },
   opus: { id: 'ark-code-latest', name: 'Ark Code Latest' },
@@ -497,6 +525,12 @@ export const BUILTIN_PLATFORMS: Platform[] = [
             baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
             protocols: ['ark-images'],
           },
+          {
+            id: 'ark-video',
+            baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
+            protocols: ['ark-video'],
+            models: SEEDANCE_MODELS,
+          },
         ],
       },
     ],
@@ -842,6 +876,12 @@ export const BUILTIN_PLATFORMS: Platform[] = [
             baseUrl: '',
             protocols: ['openai-responses', 'openai-images', 'openai-audio'],
           },
+          {
+            id: 'sora',
+            baseUrl: '',
+            protocols: ['openai-video'],
+            models: SORA_MODELS,
+          },
         ],
       },
     ],
@@ -850,7 +890,7 @@ export const BUILTIN_PLATFORMS: Platform[] = [
     id: 'gemini',
     brand: 'gemini',
     name: 'Google Gemini',
-    description: 'Google Gemini image generation (Nano Banana)',
+    description: 'Google Gemini image generation (Nano Banana) + Veo video generation',
     catalogProviderId: 'google',
     plans: [
       {
@@ -863,6 +903,12 @@ export const BUILTIN_PLATFORMS: Platform[] = [
             id: 'generative',
             baseUrl: '',
             protocols: ['google-generative'],
+          },
+          {
+            id: 'veo',
+            baseUrl: '',
+            protocols: ['google-video'],
+            models: VEO_MODELS,
           },
         ],
       },

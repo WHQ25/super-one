@@ -12,13 +12,13 @@ import { useSourceControlStore } from '@/stores/source-control'
 import { ToolIcon } from './ToolIcon'
 import { DraggableFileIcon } from './DraggableFileIcon'
 import { getToolDisplay, getToolLabel, getToolVerb, parseToolInput, parseMcpToolName, isHiddenToolBlock, formatReadMeta, type ToolIcon as ToolIconType } from './tool-display'
-import { PrettyJSONCodeBlock } from './tool-result-views'
+import { PrettyJSONCodeBlock, AskUserQuestionResult } from './tool-result-views'
 import { BrowserToolBlock } from './BrowserToolBlock'
 import { MediaProvidersBlock } from './MediaProvidersBlock'
 import { getBrowserOp } from './browser-tool-display'
 import { useStallLevel, getStallColor } from '@/lib/stall-utils'
 import { AnsiText } from '@/lib/ansi'
-import { countUnifiedDiffDelta, countPrefixedDiffDelta, computeLineDelta, computeStreamingEditDelta, tryPrettifyJson, parseQAPairs, extractToolError } from './tool-block-utils'
+import { countUnifiedDiffDelta, countPrefixedDiffDelta, computeLineDelta, computeStreamingEditDelta, tryPrettifyJson, extractToolError } from './tool-block-utils'
 import { WidgetBlock } from './WidgetBlock'
 import { useNestedToolDefaults } from './nested-tool-context'
 import { CanvasEditDiff } from './CanvasEditDiff'
@@ -682,7 +682,11 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
                       )}
                     </div>
                   )}
-                  {hasQA && <QAResult text={cleanResult!} />}
+                  {hasQA && (
+                    <div onClick={(e) => e.stopPropagation()}>
+                      <AskUserQuestionResult text={cleanResult!} params={params} />
+                    </div>
+                  )}
                 </>
               )}
             </div>
@@ -1090,24 +1094,6 @@ function ToolResult({ text }: { text: string }) {
     </div>
   )
 }
-
-/** Render AskUserQuestion result as Q&A pairs. */
-function QAResult({ text }: { text: string }) {
-  const pairs = parseQAPairs(text)
-  if (pairs.length === 0) return null
-
-  return (
-    <div className="space-y-1">
-      {pairs.map((pair, i) => (
-        <div key={i} className="rounded bg-background/70 px-2 py-1.5 text-[11px] leading-relaxed">
-          <div className="text-muted-foreground">{pair.question}</div>
-          <div className="text-success">{pair.answer}</div>
-        </div>
-      ))}
-    </div>
-  )
-}
-
 
 /** Build unified diff lines with actual file line numbers. */
 function buildDiffLines(oldStr: string, newStr: string, startLine: number): DiffLine[] {

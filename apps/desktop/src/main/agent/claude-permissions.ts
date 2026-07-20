@@ -210,7 +210,10 @@ async function handleAskUserQuestion(
   for (const q of questions) {
     const answer = answers[q.question]
     if (!answer) continue
-    const selected = q.options?.find((o: { label: string }) => o.label === answer)
+    // For multiSelect, the answer is a ", "-joined list of labels — mirror the live
+    // preview panel, which shows the LAST selected option's preview.
+    const lastLabel = q.multiSelect ? answer.split(', ').pop() : answer
+    const selected = q.options?.find((o: { label: string }) => o.label === lastLabel)
     if (selected?.preview) {
       annotations[q.question] = { ...annotations[q.question], preview: selected.preview }
     }
@@ -222,6 +225,7 @@ async function handleAskUserQuestion(
       questions,
       answers,
       ...(Object.keys(annotations).length > 0 && { annotations }),
+      ...(previewFormat && { previewFormat }),
     },
     toolUseID: context.toolUseID,
   }

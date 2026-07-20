@@ -3,33 +3,9 @@ import { useTranslation } from 'react-i18next'
 import { Button } from '@superone/ui/components/ui/button'
 import { useChatStore, useActiveSession } from '@/stores/chat'
 import { Kbd } from '@superone/ui/components/ui/kbd'
-import { Streamdown } from 'streamdown'
-import DOMPurify from 'dompurify'
-import { streamdownPlugins, streamdownRehypePlugins, streamdownControls, streamdownComponents, streamdownLinkSafety } from './chat-shared'
+import { QuestionPreviewContent as PreviewContent } from './tool-result-views'
 import { useRestoreChatInputFocus } from '@/hooks/useRestoreChatInputFocus'
 import type { UserQuestion, QuestionAnnotations, QuestionPreviewFormat } from '@superone/shared/agent-types'
-
-function PreviewContent({ content, format }: { content: string; format: QuestionPreviewFormat }) {
-  const html = useMemo(
-    () => (format === 'html' ? DOMPurify.sanitize(content, { USE_PROFILES: { html: true } }) : ''),
-    [content, format],
-  )
-  if (format === 'html') {
-    return <div className="ask-html-preview" dangerouslySetInnerHTML={{ __html: html }} />
-  }
-  return (
-    <Streamdown
-      className="github-md"
-      plugins={streamdownPlugins}
-      rehypePlugins={streamdownRehypePlugins}
-      components={streamdownComponents}
-      controls={streamdownControls}
-      linkSafety={streamdownLinkSafety}
-    >
-      {content}
-    </Streamdown>
-  )
-}
 
 function questionKey(q: UserQuestion): string {
   return q.question

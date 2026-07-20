@@ -384,6 +384,33 @@ describe('createCanUseTool', () => {
       questions: questionList,
       answers: { 'Pick one': 'B' },
       annotations: { 'Pick one': { preview: 'preview-B' } },
+      previewFormat: 'markdown',
+    })
+  })
+
+  it('captures the last-selected option preview for a multiSelect question', async () => {
+    const { canUseTool } = createCanUseTool(perms, questions, plans, emit)
+    const questionList = [{
+      question: 'Pick some',
+      multiSelect: true,
+      options: [
+        { label: 'A', preview: 'preview-A' },
+        { label: 'B', preview: 'preview-B' },
+      ],
+    }]
+
+    const promise = canUseTool('AskUserQuestion', { questions: questionList }, makeContext())
+
+    const [id] = [...questions.keys()]
+    respondToQuestion(questions, id, { 'Pick some': 'A, B' })
+
+    const result = await promise
+    expect(result.behavior).toBe('allow')
+    expect(result.updatedInput).toEqual({
+      questions: questionList,
+      answers: { 'Pick some': 'A, B' },
+      annotations: { 'Pick some': { preview: 'preview-B' } },
+      previewFormat: 'markdown',
     })
   })
 

@@ -32,6 +32,7 @@ function closeActiveDockTab(): void {
 
 export const CodingLayout = memo(function CodingLayout() {
   const chatScopeRef = useRef<HTMLDivElement>(null)
+  const termSurfaceRef = useRef<HTMLDivElement>(null)
 
   useChatKeyboardShortcuts()
 
@@ -81,6 +82,8 @@ export const CodingLayout = memo(function CodingLayout() {
 
   const startResize = useCallback((e: React.PointerEvent) => {
     e.preventDefault()
+    const surface = termSurfaceRef.current
+    if (surface) surface.style.transition = 'none'
     const startY = e.clientY
     const startH = termHeight
     const maxH = () => Math.round(window.innerHeight * 0.8)
@@ -89,6 +92,7 @@ export const CodingLayout = memo(function CodingLayout() {
       setTermHeight(next)
     }
     const onUp = (): void => {
+      if (surface) surface.style.transition = ''
       window.removeEventListener('pointermove', onMove)
       window.removeEventListener('pointerup', onUp)
     }
@@ -97,27 +101,37 @@ export const CodingLayout = memo(function CodingLayout() {
   }, [termHeight])
 
   return (
-    <div ref={chatScopeRef} className="flex min-w-0 flex-1 flex-col overflow-hidden">
+    <div ref={chatScopeRef} className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
       <SessionPane />
 
       <div
-        className={`coding-terminal-surface relative flex shrink-0 flex-col border-t border-border bg-card ${termOpen ? '' : 'hidden'}`}
-        style={{ height: termHeight }}
+        ref={termSurfaceRef}
+        className="relative shrink-0 overflow-hidden transition-[height] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]"
+        style={{ height: termOpen ? termHeight : 0 }}
       >
         <div
+          className="coding-terminal-surface flex flex-col border-t border-border bg-card"
+          style={{ height: termHeight }}
+        >
+          <div className="min-h-0 flex-1">
+            {termEverActive && (
+              <Suspense fallback={null}>
+                <TerminalPanel />
+              </Suspense>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {termOpen && (
+        <div
           onPointerDown={startResize}
-          className="group absolute inset-x-0 -top-1 z-10 h-2 cursor-row-resize"
+          className="group absolute inset-x-0 z-10 h-2 cursor-row-resize"
+          style={{ bottom: termHeight - 4 }}
         >
           <ResizeHandleLine orientation="horizontal" />
         </div>
-        <div className="min-h-0 flex-1">
-          {termEverActive && (
-            <Suspense fallback={null}>
-              <TerminalPanel />
-            </Suspense>
-          )}
-        </div>
-      </div>
+      )}
 
       <SessionSwitcherPopup scopeRef={chatScopeRef} />
     </div>

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ChevronDown, ExternalLink, Loader2, Pencil, Plus, Sparkles, Trash2 } from 'lucide-react'
+import { ChevronDown, Loader2, Plus, Sparkles, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@superone/ui/components/ui/button'
 import { Badge } from '@superone/ui/components/ui/badge'
@@ -32,7 +32,8 @@ import { useChatStore } from '@/stores/chat'
 import { platformsByBrand } from '@/lib/provider-resolve'
 import { OfficialProviderPanel } from './OfficialProviderPanel'
 import { ProviderLabel } from './ProviderLabel'
-import { CredentialConfig, EnvEditor, ModelEnvEditor, OverridesEditor, pruneOverrides } from './providers/CredentialConfig'
+import { CredentialConfig, EnvEditor, ModelEnvEditor, OverridesEditor } from './providers/CredentialConfig'
+import { CredentialTabs } from './providers/CredentialTabs'
 import { PlatformModelsPanel } from './providers/PlatformModelsPanel'
 import {
   AddCustomModelPopover,
@@ -42,7 +43,7 @@ import {
 } from './providers/custom-models'
 import { mergeDiscoveredIntoCustomModels } from './providers/discovery-apply'
 import type { DiscoverState } from './providers/useModelDiscovery'
-import { planTestEndpoints, useEndpointTest } from './providers/test-endpoints'
+import { useEndpointTest } from './providers/test-endpoints'
 import { TestConnectionButton, TestConnectionStatus } from './providers/TestConnection'
 
 const BRAND_POPULARITY = [
@@ -86,222 +87,6 @@ function officialHarness(platform: Platform): 'claude' | 'codex' {
   return platform.brand === 'openai' ? 'codex' : 'claude'
 }
 
-// --- credential row + add form -----------------------------------------------
-
-function CredentialRow({
-  credential,
-  plan,
-  takenNames,
-  selected,
-  onSelect,
-  onDelete,
-}: {
-  credential: Credential
-  plan: Plan
-  takenNames: string[]
-  selected: boolean
-  onSelect: () => void
-  onDelete: () => void
-}) {
-  const { t } = useTranslation()
-  const updateCredential = useSettingsStore((s) => s.updateCredential)
-  const [editing, setEditing] = useState(false)
-  const [name, setName] = useState(credential.name)
-  const [secret, setSecret] = useState('')
-  const [busy, setBusy] = useState(false)
-  const { state: testState, run: runTest } = useEndpointTest()
-  const test = useCallback(
-    () => void runTest(planTestEndpoints(plan, credential.overrides), secret.trim(), credential.id),
-    [runTest, plan, credential.overrides, credential.id, secret],
-  )
-
-  const effectiveName = name.trim() || credential.name
-  // Other keys on the same platform, excluding this one — renaming to a sibling's name conflicts.
-  const conflict = useMemo(
-    () =>
-      effectiveName.toLowerCase() !== credential.name.toLowerCase() &&
-      takenNames.some((n) => n.toLowerCase() === effectiveName.toLowerCase()),
-    [takenNames, effectiveName, credential.name],
-  )
-
-  const cancel = useCallback(() => {
-    setEditing(false)
-    setName(credential.name)
-    setSecret('')
-  }, [credential.name])
-
-  // A blank secret input means "keep the stored key" — only send `secret` when the user typed a new one.
-  const save = useCallback(async () => {
-    if (conflict) return
-    setBusy(true)
-    try {
-      await updateCredential(credential.id, {
-        name: effectiveName,
-        ...(secret.trim() ? { secret: secret.trim() } : {}),
-      })
-      setEditing(false)
-      setSecret('')
-    } finally {
-      setBusy(false)
-    }
-  }, [conflict, credential.id, effectiveName, secret, updateCredential])
-
-  if (editing) {
-    return (
-      <div
-        className={cn(
-          'flex flex-col gap-2 rounded-md border border-dashed p-3',
-          selected ? 'border-primary ring-1 ring-primary/40' : 'border-border',
-        )}
-      >
-        <div className="flex flex-col gap-1">
-          <Input
-            placeholder={t('resources.providers.keyLabel')}
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            aria-invalid={conflict}
-          />
-          {conflict && <span className="text-[11px] text-destructive">{t('resources.providers.keyNameConflict')}</span>}
-        </div>
-        <Input
-          type="password"
-          placeholder={credential.secretEnv ? `$${credential.secretEnv}` : credential.secret || t('resources.providers.apiKey')}
-          value={secret}
-          onChange={(e) => setSecret(e.target.value)}
-        />
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex flex-row items-center gap-2">
-            <TestConnectionButton state={testState} onTest={test} />
-            <TestConnectionStatus state={testState} />
-          </div>
-          <div className="flex gap-2">
-            <Button variant="ghost" size="sm" onClick={cancel}>{t('common.cancel')}</Button>
-            <Button size="sm" disabled={busy || conflict} onClick={save}>
-              {busy ? <Loader2 className="size-4 animate-spin" /> : t('common.save')}
-            </Button>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  return (
-    <div
-      role="button"
-      tabIndex={0}
-      onClick={onSelect}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault()
-          onSelect()
-        }
-      }}
-      className={cn(
-        'flex cursor-pointer items-center justify-between gap-2 rounded-md border px-3 py-2 transition-colors',
-        selected
-          ? 'border-primary bg-primary/5 ring-1 ring-primary/40'
-          : 'border-border hover:border-muted-foreground/40',
-      )}
-    >
-      <div className="flex min-w-0 flex-col">
-        <span className="truncate text-sm font-medium">{credential.name}</span>
-        <span className="truncate font-mono text-[11px] text-muted-foreground">
-          {credential.secretEnv ? `$${credential.secretEnv}` : credential.secret || '—'}
-        </span>
-      </div>
-      <div className="flex shrink-0 items-center gap-1" onClick={(e) => e.stopPropagation()}>
-        <IconButton size="sm" onClick={() => setEditing(true)}>
-          <Pencil />
-        </IconButton>
-        <IconButton size="sm" variant="destructive" onClick={onDelete}>
-          <Trash2 />
-        </IconButton>
-      </div>
-    </div>
-  )
-}
-
-function AddKeyForm({
-  platformId,
-  planId,
-  plan,
-  pendingOverrides,
-  takenNames,
-  onDone,
-}: {
-  platformId: string
-  planId: string
-  plan: Plan
-  pendingOverrides: Record<string, EndpointOverride>
-  takenNames: string[]
-  onDone: () => void
-}) {
-  const { t } = useTranslation()
-  const createCredential = useSettingsStore((s) => s.createCredential)
-  const [name, setName] = useState('')
-  const [secret, setSecret] = useState('')
-  const [busy, setBusy] = useState(false)
-  const { state: testState, run: runTest } = useEndpointTest()
-  const test = useCallback(
-    () => void runTest(planTestEndpoints(plan, pendingOverrides), secret.trim()),
-    [runTest, plan, pendingOverrides, secret],
-  )
-
-  const effectiveName = name.trim() || 'Key'
-  const conflict = useMemo(
-    () => takenNames.some((n) => n.toLowerCase() === effectiveName.toLowerCase()),
-    [takenNames, effectiveName],
-  )
-
-  const submit = useCallback(async () => {
-    if (conflict || (!name.trim() && !secret.trim())) return
-    setBusy(true)
-    try {
-      const overrides = pruneOverrides(pendingOverrides)
-      await createCredential({
-        platformId,
-        planId,
-        name: effectiveName,
-        secret: secret.trim(),
-        ...(Object.keys(overrides).length > 0 ? { overrides } : {}),
-      })
-      onDone()
-    } finally {
-      setBusy(false)
-    }
-  }, [conflict, name, secret, effectiveName, platformId, planId, pendingOverrides, createCredential, onDone])
-
-  return (
-    <div className="flex flex-col gap-2 rounded-md border border-dashed border-border p-3">
-      <div className="flex flex-col gap-1">
-        <Input
-          placeholder={t('resources.providers.keyLabel')}
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          aria-invalid={conflict}
-        />
-        {conflict && <span className="text-[11px] text-destructive">{t('resources.providers.keyNameConflict')}</span>}
-      </div>
-      <Input
-        type="password"
-        placeholder={t('resources.providers.apiKey')}
-        value={secret}
-        onChange={(e) => setSecret(e.target.value)}
-      />
-      <div className="flex items-center justify-between gap-2">
-        <TestConnectionButton state={testState} onTest={test} disabled={!secret.trim()} />
-        <div className="flex gap-2">
-          <Button variant="ghost" size="sm" onClick={onDone}>{t('common.cancel')}</Button>
-          <Button size="sm" disabled={busy || conflict} onClick={submit}>
-            {busy ? <Loader2 className="size-4 animate-spin" /> : t('resources.providers.addKey')}
-          </Button>
-        </div>
-      </div>
-      <TestConnectionStatus state={testState} />
-    </div>
-  )
-}
-
 // --- plan section (keys + advanced, shared draft state) ----------------------
 
 function PlanSection({
@@ -336,8 +121,8 @@ function PlanSection({
 
   return (
     <>
-      <PlanCard
-        platform={platform}
+      <CredentialTabs
+        platformId={platform.id}
         plan={plan}
         planCreds={planCreds}
         takenNames={takenNames}
@@ -358,76 +143,6 @@ function PlanSection({
         onPendingOverridesChange={setPendingOverrides}
       />
     </>
-  )
-}
-
-function PlanCard({
-  platform,
-  plan,
-  planCreds,
-  takenNames,
-  selectedKeyId,
-  onSelectKey,
-  adding,
-  onStartAdd,
-  onDoneAdd,
-  pendingOverrides,
-}: {
-  platform: Platform
-  plan: Plan
-  planCreds: Credential[]
-  takenNames: string[]
-  selectedKeyId: string
-  onSelectKey: (id: string) => void
-  adding: boolean
-  onStartAdd: () => void
-  onDoneAdd: () => void
-  pendingOverrides: Record<string, EndpointOverride>
-}) {
-  const { t } = useTranslation()
-  const deleteCredential = useSettingsStore((s) => s.deleteCredential)
-
-  return (
-    <div className="flex flex-col gap-2 rounded-lg border border-border p-3">
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-sm font-semibold">{t('resources.providers.apiKeys')}</span>
-        {plan.apiKeyUrl && (
-          <button
-            type="button"
-            className="flex items-center gap-1 text-[11px] text-primary hover:underline"
-            onClick={() => window.app.openExternalLink(plan.apiKeyUrl!)}
-          >
-            {t('resources.providers.getKey')}
-            <ExternalLink className="size-3" />
-          </button>
-        )}
-      </div>
-      {planCreds.map((c) => (
-        <CredentialRow
-          key={c.id}
-          credential={c}
-          plan={plan}
-          takenNames={takenNames}
-          selected={c.id === selectedKeyId}
-          onSelect={() => onSelectKey(c.id)}
-          onDelete={() => void deleteCredential(c.id)}
-        />
-      ))}
-      {adding ? (
-        <AddKeyForm
-          platformId={platform.id}
-          planId={plan.id}
-          plan={plan}
-          pendingOverrides={pendingOverrides}
-          takenNames={takenNames}
-          onDone={onDoneAdd}
-        />
-      ) : (
-        <Button variant="outline" size="sm" className="self-start" onClick={onStartAdd}>
-          <Plus className="size-4" /> {t('resources.providers.addKey')}
-        </Button>
-      )}
-    </div>
   )
 }
 
@@ -562,6 +277,7 @@ function PlatformDetail({ platform }: { platform: Platform }) {
 const FAMILY_LABEL_KEY: Record<ProtocolFamily, string> = {
   anthropic: 'resources.providers.familyAnthropic',
   openai: 'resources.providers.familyOpenai',
+  newapi: 'resources.providers.familyNewapi',
   google: 'resources.providers.familyGoogle',
 }
 
@@ -641,13 +357,14 @@ function useCapabilityState(initial?: CapabilitySelection) {
 }
 
 // Collapse the format + per-family capability selections into the tasksByFamily map endpoints derive from.
-// A single-capability family (anthropic → chat) contributes ['chat'] implicitly with no sub-picker.
+// A single-capability family (anthropic → chat, newapi → video) contributes its one task implicitly
+// with no sub-picker.
 function deriveTasksByFamily({ families, familyTasks }: CapabilitySelection): Partial<Record<ProtocolFamily, CapabilityTask[]>> {
   const out: Partial<Record<ProtocolFamily, CapabilityTask[]>> = {}
   for (const f of PROTOCOL_FAMILIES) {
     if (!families.has(f)) continue
     const caps = FAMILY_TASKS[f]
-    out[f] = caps.length > 1 ? caps.filter((task) => familyTasks[f].has(task)) : ['chat']
+    out[f] = caps.length > 1 ? caps.filter((task) => familyTasks[f].has(task)) : caps
   }
   return out
 }

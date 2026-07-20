@@ -1,0 +1,7 @@
+# Google video (Veo) — official AI SDK provider, `google.video(modelId)`
+
+No custom adapter in this repo — `@ai-sdk/google` is used unmodified. Consult Google's own docs (`ai.google.dev/gemini-api/docs/veo`) if something doesn't behave as expected — don't assume this repo's other providers' quirks carry over here.
+
+The standard AI SDK video fields (`aspect_ratio`, `resolution`, `duration`, `fps`, `seed`, `generate_audio`) are passed straight through to Google's implementation with no translation, since — unlike Ark and Sora — this repo doesn't wrap it in a hand-written adapter that could add its own warnings for unsupported combinations. That means an unsupported value here is more likely to surface as a raw API error from Google than a clean `unsupported` warning in the tool result. Known constraints, not independently verified against this integration: Veo generally accepts `aspect_ratio` `16:9`/`9:16`, and newer Veo 3 models can generate native audio — but exact duration ranges and which fields are honored are model-dependent and better confirmed by checking the result `warnings` (or the raw error) after a real call than assumed from this note.
+
+`reference_video_paths` / `reference_audio_paths` / `watermark` / `camera_fixed` — these tool args exist only for Ark and are ignored for Google (they're never even attempted; they only get threaded into `providerOptions.ark`, which Google's model never sees).

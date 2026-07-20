@@ -1,5 +1,16 @@
 import type { SuperoneMcpToolDescriptor } from './superone-mcp-types'
 
+export const MEDIA_GUIDE_TOPICS = [
+  'overview',
+  'ark-image',
+  'ark-video',
+  'openai-image',
+  'openai-video',
+  'google-image',
+  'google-video',
+  'newapi-video',
+] as const
+
 export const MINIAPP_GUIDE_TOPICS = [
   'overview',
   'manifest',
@@ -59,8 +70,11 @@ export const BUILT_IN_SUPERONE_TOOL_NAMES = [
   'miniapp_dev_pack',
   'miniapp_dev_update_types',
   'session_rename',
+  'media_read_guide',
   'media_list_providers',
   'media_generate_image',
+  'media_generate_video',
+  'media_video_status',
   'widget_read_guide',
   'widget_show',
   ...BROWSER_TOOL_NAMES,
@@ -122,10 +136,18 @@ export const RENAME_SESSION_DESCRIPTION =
   'Only the top-level agent talking directly to the user may call this. If you were launched as a Task/subagent worker, do NOT call it — you do not own the user-facing session title.\n\n' +
   'If the tool returns an error containing "user_locked", the user has manually named this session — do not call session_rename again for this session.'
 
+export const READ_MEDIA_GUIDE_DESCRIPTION =
+  'Returns reference documentation for media_generate_image / media_generate_video: which settings actually work for which provider, exact parameter mappings, and known silent-failure modes (a setting being ignored instead of erroring). ' +
+  'Call `overview` before your first media_generate_image/media_generate_video call in a session, then call the topic for the specific provider you are about to use (check the provider `kind` via media_list_providers) before setting anything beyond `prompt`. ' +
+  'Do NOT mention this call to the user. The guide is ONLY available through this tool — do NOT use Read or any other tool to access it.'
+
+export const MEDIA_GUIDE_TOPIC_DESCRIPTION =
+  'Which guide topic to read. overview (shared vocabulary, which topic to pick for a given provider+task, always read first), then one <provider>-<task> topic matching the provider `kind` from media_list_providers and whether you are calling media_generate_image or media_generate_video: ark-image, ark-video (Volcengine/BytePlus ModelArk — Seedream / Seedance), openai-image, openai-video (Dall-E/gpt-image / Sora), google-image, google-video (Imagen / Veo), newapi-video (Doubao/Kling via a NewAPI-style relay — a different wire from openai-video even though both serve video).'
+
 export const LIST_MEDIA_PROVIDERS_DESCRIPTION =
   'List the configured and usable media generation providers and their capabilities. Only providers that have an API key configured are returned. ' +
   'Call this before media_generate_image when you are unsure which providers/models are available or which one to use. ' +
-  'Pass `category` (e.g. "image") to filter to providers that support that media type. ' +
+  'Pass `category` ("image" or "video") to filter to providers that support that media type. ' +
   'Returns for each provider: `id` (pass to media_generate_image), `provider` (platform name) and `label` (key name) for display, `kind`, `categories`, `sizing` ("size" or "aspectRatio"), an optional `sizeNote` spelling out that provider\'s size constraints (honor it over the generic guidance in media_generate_image), `supportsMask`, `defaultModel`, and available `models` (each with `id` to pass as the model override and a human-readable `label`).'
 
 export const GENERATE_IMAGE_DESCRIPTION =
@@ -134,8 +156,23 @@ export const GENERATE_IMAGE_DESCRIPTION =
   'The generated image is shown to the user automatically. After it returns, do NOT display it again with a Markdown image or link — just briefly describe the result in words. ' +
   'For text-to-image, pass only `prompt`. For image editing / image-to-image (e.g. "change X", "add Y", or iterating on a previous result), also pass the source image file path(s) in `reference_image_paths`. ' +
   'The result JSON returns the saved file path(s) in `savedPaths` for your own reference only. If you need to visually inspect the output to verify or iterate on it, use the Read tool on a saved path. ' +
-  '`provider` selects the backend by id (default: the first usable provider). If unsure which providers/models exist, call media_list_providers first. Use `aspect_ratio` (e.g. "16:9") for google models and `size` (e.g. "1024x1024") for openai / openai-compatible. Some providers constrain `size` further — check `sizeNote` from media_list_providers, or omit `size` to take the provider default. ' +
+  '`provider` selects the backend by id (default: the first usable provider). Which settings beyond `prompt` actually work varies by provider — call media_list_providers first to see `sizing`/`sizeNote`, and call media_read_guide for the specifics before setting `aspect_ratio` or `size`. ' +
   'Settings a model does not support are reported in the result `warnings` rather than failing the call.'
+
+export const GENERATE_VIDEO_DESCRIPTION =
+  'Start generating a video from a text prompt (and optionally images, video or audio) using an AI video model. ' +
+  'Use this when the user asks to create, generate, animate, or render a video / clip / animation. ' +
+  'Video generation is ASYNCHRONOUS: this tool returns immediately with a `generationId` while the video renders in the background, which typically takes 1-5 minutes. ' +
+  'You MUST then poll `media_video_status` with that id roughly every 30 seconds until it returns `generated` or `error` — the job is not finished until it does. ' +
+  'The finished video is shown to the user automatically. After it completes, do NOT embed it again with Markdown — just briefly describe the result in words. ' +
+  'For text-to-video pass only `prompt`. For image-to-video pass `first_frame_path` (and optionally `last_frame_path` to control the ending) — but check media_read_guide first, since not every provider actually uses these. ' +
+  '`provider` selects the backend by id (default: the first usable provider). Call media_list_providers with category "video" if unsure which providers/models exist, and call media_read_guide before setting anything beyond `prompt`/`first_frame_path` — most of the remaining fields only apply to specific providers and are silently ignored elsewhere. ' +
+  'Settings a model does not support are reported as `warnings` rather than failing the call.'
+
+export const VIDEO_STATUS_DESCRIPTION =
+  'Check on a video generation started by media_generate_video. ' +
+  'Returns `{status:"running"}` while it renders, `{status:"generated", savedPaths:[...]}` when finished, or `{status:"error", message}` if it failed. ' +
+  'Poll roughly every 30 seconds while it is running. Do not tell the user the video is ready until this returns `generated`.'
 
 export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
   {
@@ -227,6 +264,22 @@ export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
     },
   },
   {
+    name: 'media_read_guide',
+    description: READ_MEDIA_GUIDE_DESCRIPTION,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        topic: {
+          type: 'string',
+          enum: MEDIA_GUIDE_TOPICS,
+          description: MEDIA_GUIDE_TOPIC_DESCRIPTION,
+        },
+      },
+      required: ['topic'],
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'media_list_providers',
     description: LIST_MEDIA_PROVIDERS_DESCRIPTION,
     inputSchema: {
@@ -251,6 +304,45 @@ export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
         reference_image_paths: { type: 'array', items: { type: 'string' }, description: 'Absolute paths to input images for editing / image-to-image / iterating on a prior result. Omit for pure text-to-image.' },
       },
       required: ['prompt'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'media_generate_video',
+    description: GENERATE_VIDEO_DESCRIPTION,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        prompt: { type: 'string', description: 'A detailed description of the video to generate, including motion and camera direction.' },
+        provider: { type: 'string', description: 'Which configured video provider id to use. Call media_list_providers with category "video" to discover ids. Defaults to the first usable provider.' },
+        model: { type: 'string', description: "Model id override. Defaults to the provider's default video model." },
+        first_frame_path: { type: 'string', description: 'Absolute path to an image to animate from (image-to-video). This is the starting frame.' },
+        last_frame_path: { type: 'string', description: 'Absolute path to an image the video should end on. Requires first_frame_path.' },
+        reference_image_paths: { type: 'array', items: { type: 'string' }, description: 'Absolute paths to reference images for character or scene consistency. Up to 9 images total across all roles on Ark.' },
+        reference_video_paths: { type: 'array', items: { type: 'string' }, description: 'Absolute paths to reference video clips. Volcengine Ark (Seedance) only; ignored by other providers.' },
+        reference_audio_paths: { type: 'array', items: { type: 'string' }, description: 'Absolute paths to reference audio tracks. Volcengine Ark (Seedance) only; ignored by other providers.' },
+        aspect_ratio: { type: 'string', description: 'Aspect ratio like "16:9", "9:16" or "1:1".' },
+        resolution: { type: 'string', description: 'Pixel resolution like "1920x1080" or "1280x720". Ark maps this onto its 480p/720p/1080p tiers; Sora accepts only 720x1280, 1280x720, 1024x1792, 1792x1024.' },
+        duration: { type: 'number', description: 'Clip length in seconds. Ark accepts 2-15; Sora accepts only 4, 8 or 12.' },
+        fps: { type: 'number', description: 'Frames per second, e.g. 24. Ignored by providers that derive it from the model.' },
+        seed: { type: 'number', description: 'Seed for reproducible generation.' },
+        generate_audio: { type: 'boolean', description: 'Whether the model should generate a soundtrack alongside the video, where supported.' },
+        watermark: { type: 'boolean', description: 'Whether to stamp the provider watermark. Volcengine Ark only.' },
+        camera_fixed: { type: 'boolean', description: 'Lock the camera in place instead of letting the model move it. Volcengine Ark only.' },
+      },
+      required: ['prompt'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'media_video_status',
+    description: VIDEO_STATUS_DESCRIPTION,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        generation_id: { type: 'string', description: 'The generationId returned by media_generate_video.' },
+      },
+      required: ['generation_id'],
       additionalProperties: false,
     },
   },

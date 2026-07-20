@@ -1,0 +1,67 @@
+import { describe, expect, it } from 'vitest'
+import { BUILT_IN_SUPERONE_TOOL_DEFS, BUILT_IN_SUPERONE_TOOL_NAMES } from './superone-mcp-builtin-defs'
+
+/**
+ * A built-in tool has to be declared on two surfaces: the Zod `registerTool` calls the in-process
+ * Claude SDK server uses, and these JSON-Schema descriptors the stdio bridge serves to Codex.
+ * Adding a tool to one and forgetting the other is the recurring failure here — it works in one
+ * harness and is silently absent in the other, with nothing failing loudly at startup.
+ *
+ * Browser and widget tools are the sanctioned exception: they carry their own descriptors instead
+ * of a `BUILT_IN_SUPERONE_TOOL_DEFS` entry — browser tools via `getBrowserToolDescriptors()`, widget
+ * tools via `registerWidgetTools()` — which both `superone-mcp-server.ts` (Claude, in-process) and
+ * `superone-mcp-stdio-bridge.ts` (Codex) call directly and independently. They never round-trip
+ * through the IPC-forwarding built-in tool machinery this file governs (`listSuperoneMcpTools` /
+ * `executeSuperoneMcpTool`), so they don't need an entry here. In the Codex bridge specifically,
+ * `registerWidgetTools()` runs before the transport connects and registers straight onto the local
+ * `McpServer`, bypassing the `registeredTools` map that `refreshTools()` reconciles against — so they
+ * also survive every subsequent tool-list refresh.
+ */
+const SEPARATELY_DESCRIBED = ['browser_', 'widget_']
+
+describe('built-in superone tool registration surfaces', () => {
+  const describedNames = new Set(BUILT_IN_SUPERONE_TOOL_DEFS.map((def) => def.name))
+  const browserTools = BUILT_IN_SUPERONE_TOOL_NAMES.filter((name) => name.startsWith('browser_'))
+  const widgetTools = BUILT_IN_SUPERONE_TOOL_NAMES.filter((name) => name.startsWith('widget_'))
+
+  it('gives every tool name a JSON-Schema descriptor for the stdio bridge', () => {
+    const missing = BUILT_IN_SUPERONE_TOOL_NAMES.filter(
+      (name) => !SEPARATELY_DESCRIBED.some((prefix) => name.startsWith(prefix)) && !describedNames.has(name),
+    )
+    expect(missing).toEqual([])
+  })
+
+  it('does not describe a tool that is absent from the name allowlist', () => {
+    const names = new Set<string>(BUILT_IN_SUPERONE_TOOL_NAMES)
+    expect(BUILT_IN_SUPERONE_TOOL_DEFS.filter((def) => !names.has(def.name)).map((d) => d.name)).toEqual([])
+  })
+
+  it('keeps browser tools on their own descriptor path rather than silently dropping them', () => {
+    expect(browserTools.length).toBeGreaterThan(0)
+    expect(browserTools.every((name) => !describedNames.has(name))).toBe(true)
+  })
+
+  it('keeps widget tools on their own descriptor path rather than silently dropping them', () => {
+    expect(widgetTools.length).toBeGreaterThan(0)
+    expect(widgetTools.every((name) => !describedNames.has(name))).toBe(true)
+  })
+
+  it('gives every descriptor a usable object schema', () => {
+    for (const def of BUILT_IN_SUPERONE_TOOL_DEFS) {
+      expect(def.description, `${def.name} description`).toBeTruthy()
+      expect(def.inputSchema.type, `${def.name} schema type`).toBe('object')
+    }
+  })
+
+  it('exposes both video tools, since the pair is useless if either half is missing', () => {
+    expect(describedNames.has('media_generate_video')).toBe(true)
+    expect(describedNames.has('media_video_status')).toBe(true)
+
+    const submit = BUILT_IN_SUPERONE_TOOL_DEFS.find((d) => d.name === 'media_generate_video')!
+    const status = BUILT_IN_SUPERONE_TOOL_DEFS.find((d) => d.name === 'media_video_status')!
+    expect(submit.inputSchema.required).toEqual(['prompt'])
+    expect(status.inputSchema.required).toEqual(['generation_id'])
+    // The submit tool returns an id, not a file, so its description must send the model to poll.
+    expect(submit.description).toMatch(/media_video_status/)
+  })
+})

@@ -47,19 +47,22 @@ describe('FilePreview tab derivation', () => {
     vi.restoreAllMocks()
   })
 
-  it('shows Editor + File tabs for markdown, defaulting to the WYSIWYG editor', async () => {
+  it('shows Editor + File tabs for markdown, defaulting to the File view', async () => {
     stubFile({ language: 'markdown', content: '# hi', diff: '' })
     render(<FilePreview filePath="docs/readme.md" />)
-    await waitFor(() => expect(screen.getByTestId('markdown-editor')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByTestId('file-view')).toBeInTheDocument())
     expect(tabLabels()).toEqual(['Editor', 'File'])
+    expect(screen.getByRole('tab', { name: 'File' })).toHaveAttribute('data-state', 'active')
+    expect(screen.getByRole('tab', { name: 'Editor' })).toHaveAttribute('data-state', 'inactive')
   })
 
-  it('shows Editor + File for non-markdown text and mounts TextFileEditor', async () => {
+  it('shows Editor + File for non-markdown text, defaulting to the File view', async () => {
     stubFile({ language: 'typescript', content: 'const a = 1', diff: '' })
     render(<FilePreview filePath="src/app.ts" />)
-    await waitFor(() => expect(screen.getByTestId('text-file-editor')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByTestId('file-view')).toBeInTheDocument())
     expect(tabLabels()).toEqual(['Editor', 'File'])
-    expect(screen.queryByTestId('markdown-editor')).not.toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'File' })).toHaveAttribute('data-state', 'active')
+    expect(screen.getByRole('tab', { name: 'Editor' })).toHaveAttribute('data-state', 'inactive')
   })
 
   it('adds Changes + Editor + File when a non-markdown file has a diff', async () => {

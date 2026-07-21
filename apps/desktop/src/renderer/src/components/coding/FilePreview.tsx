@@ -51,17 +51,13 @@ function useOwnFileData(filePath: string | undefined, refreshKey: number) {
       const isSvg = c.language === 'svg'
       const ext = filePath.split('.').pop()?.toLowerCase() ?? ''
       const isHtml = HTML_EXTS.has(ext)
-      const isMd = MARKDOWN_EXTS.has(ext)
-      const isText = !isBin && c.language !== 'binary' && c.language !== 'too-large'
-      // Prefer editor for editable text; Changes when dirty in git; media stays on preview.
+      // Default to File view; Changes when dirty in git; media stays on preview.
       setTab(
         isBin || isSvg || isHtml
           ? 'preview'
           : d.diff
             ? 'changes'
-            : isText || isMd
-              ? 'editor'
-              : 'file',
+            : 'file',
       )
     }).catch(() => {
       if (!cancelled && pickedTabForPathRef.current !== filePath) { setDiff(null); setContent(null) }

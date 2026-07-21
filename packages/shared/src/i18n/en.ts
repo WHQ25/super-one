@@ -679,6 +679,34 @@ export type Messages = {
       endFrame: string
       reference: string
     }
+    videoGenToolBlock: {
+      label: string
+      generating: string
+      submitted: string
+      rendering: string
+      completed: string
+      failed: string
+      referenceMaterials: string
+      firstFrame: string
+      lastFrame: string
+      referenceImages: string
+      referenceVideos: string
+      referenceAudio: string
+      reference: string
+      prompt: string
+      provider: string
+      model: string
+      aspectRatio: string
+      resolution: string
+      duration: string
+      fps: string
+      seed: string
+      generateAudio: string
+      watermark: string
+      cameraFixed: string
+      on: string
+      off: string
+    }
     configConfirm: {
       title: string
       confirm: string
@@ -2442,6 +2470,34 @@ export const en: Messages = {
       startFrame: 'Start Frame',
       endFrame: 'End Frame',
       reference: 'Reference {{index}}',
+    },
+    videoGenToolBlock: {
+      label: 'Video Generation',
+      generating: 'Generating video',
+      submitted: 'Submitted',
+      rendering: 'Rendering…',
+      completed: 'Completed',
+      failed: 'Failed',
+      referenceMaterials: 'Reference Materials',
+      firstFrame: 'First frame',
+      lastFrame: 'Last frame',
+      referenceImages: 'Reference images',
+      referenceVideos: 'Reference videos',
+      referenceAudio: 'Reference audio',
+      reference: 'Reference {{index}}',
+      prompt: 'Prompt',
+      provider: 'Provider',
+      model: 'Model',
+      aspectRatio: 'Aspect Ratio',
+      resolution: 'Resolution',
+      duration: 'Duration',
+      fps: 'FPS',
+      seed: 'Seed',
+      generateAudio: 'Generate Audio',
+      watermark: 'Watermark',
+      cameraFixed: 'Lock Camera',
+      on: 'on',
+      off: 'off',
     },
     configConfirm: {
       title: 'Confirm Settings Change',

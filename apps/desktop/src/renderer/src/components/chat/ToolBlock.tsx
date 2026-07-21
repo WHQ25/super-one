@@ -15,6 +15,7 @@ import { getToolDisplay, getToolLabel, getToolVerb, parseToolInput, parseMcpTool
 import { PrettyJSONCodeBlock, AskUserQuestionResult } from './tool-result-views'
 import { BrowserToolBlock } from './BrowserToolBlock'
 import { MediaProvidersBlock } from './MediaProvidersBlock'
+import { VideoGenToolBlock } from './VideoGenToolBlock'
 import { getBrowserOp } from './browser-tool-display'
 import { useStallLevel, getStallColor } from '@/lib/stall-utils'
 import { AnsiText } from '@/lib/ansi'
@@ -574,6 +575,9 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
     }
     if (mcpInfo.mcpToolName === 'media_list_providers') {
       return <MediaProvidersBlock result={!isStreaming ? (result ?? null) : null} isStreaming={isStreaming} />
+    }
+    if (mcpInfo.mcpToolName === 'media_generate_video') {
+      return <VideoGenToolBlock params={params} result={cleanResult} isStreaming={isStreaming} />
     }
     if (mcpInfo.mcpToolName === 'miniapp_dev_setup') {
       const appName = String(params.name ?? '')

@@ -91,6 +91,17 @@ export interface PerSessionState {
     url?: string
     error?: string
   }>
+  /** Video generation status keyed by generationId, updated by media_generate_video and media_video_status results. */
+  videoGenStatuses: Record<string, {
+    status: string
+    generationId: string
+    prompt?: string
+    provider?: string
+    model?: string
+    savedPaths?: string[]
+    warnings?: string[]
+    error?: string
+  }>
   streamingTokens: { input: number; output: number }
   codexUsageSnapshot: CodexUsageInfo | null
   codexTurnLastUsage: CodexUsageInfo | null

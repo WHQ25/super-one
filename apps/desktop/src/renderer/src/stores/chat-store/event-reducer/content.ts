@@ -1,6 +1,7 @@
 import type { AgentEvent, TodoItem } from '@superone/shared/agent-types'
 import { applySeqToMessage, isReplayedEventForMessage } from '@superone/shared/event-seq-utils'
 import { resolveDeltaHomeMessageId } from '@superone/shared/subagent-routing'
+import { isMediaGenerateVideoTool, isMediaVideoStatusTool } from '@/components/chat/media-generation'
 import { applyDelta } from '../helpers/event-helpers'
 import { persistStreamingToolInput } from '../index'
 import type { PerSessionState } from '../types'
@@ -158,6 +159,57 @@ export function reduceContentDelta(session: PerSessionState, event: ContentDelta
           }
           return { ...m, content: nextContent }
         })
+      }
+
+      if (isMediaGenerateVideoTool(tn)) {
+        try {
+          const result = JSON.parse(resultDelta.summary ?? '{}')
+          const genId = result.generationId
+          if (genId && typeof genId === 'string') {
+            const input = JSON.parse(toolBlock.input)
+            const prev = session.videoGenStatuses[genId]
+            extraUpdates = {
+              ...extraUpdates,
+              videoGenStatuses: {
+                ...session.videoGenStatuses,
+                [genId]: {
+                  status: result.status === 'error' ? 'error' : (prev?.status ?? 'submitted'),
+                  generationId: genId,
+                  prompt: typeof input.prompt === 'string' ? input.prompt : undefined,
+                  provider: typeof input.provider === 'string' ? input.provider : undefined,
+                  model: typeof input.model === 'string' ? input.model : undefined,
+                  savedPaths: Array.isArray(result.savedPaths) ? result.savedPaths : prev?.savedPaths,
+                  warnings: Array.isArray(result.warnings) ? result.warnings : prev?.warnings,
+                  error: result.status === 'error' ? String(result.message ?? '') : prev?.error,
+                },
+              },
+            }
+          }
+        } catch { /* ignore malformed JSON */ }
+      }
+
+      if (isMediaVideoStatusTool(tn)) {
+        try {
+          const input = JSON.parse(toolBlock.input)
+          const genId = input.generation_id
+          if (genId && typeof genId === 'string') {
+            const result = JSON.parse(resultDelta.summary ?? '{}')
+            const prev = session.videoGenStatuses[genId]
+            extraUpdates = {
+              ...extraUpdates,
+              videoGenStatuses: {
+                ...session.videoGenStatuses,
+                [genId]: {
+                  ...(prev ?? { status: 'running', generationId: genId }),
+                  status: result.status === 'error' ? 'error' : (result.status === 'generated' ? 'generated' : 'running'),
+                  savedPaths: Array.isArray(result.savedPaths) ? result.savedPaths : prev?.savedPaths,
+                  warnings: Array.isArray(result.warnings) ? result.warnings : prev?.warnings,
+                  error: result.status === 'error' ? String(result.message ?? '') : prev?.error,
+                },
+              },
+            }
+          }
+        } catch { /* ignore malformed JSON */ }
       }
     }
   }

@@ -4,6 +4,19 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.46.1-alpha] - 2026-07-22
+
+### Added
+- Surface subagent rate-limit retry status from SDK 0.3.216
+- Config management tools and settings UI components (MCP)
+
+### Fixed
+- Default file tabs to File view instead of Editor
+- Improve browser screenshot/snapshot UX
+
+### Changed
+- Improve video generation tool block with expandable UI and live status
+
 ## [0.46.0-alpha] - 2026-07-21
 
 ### Added

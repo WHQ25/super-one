@@ -13,6 +13,7 @@ import { streamdownPlugins, streamdownRehypePlugins, streamdownControls, streamd
 import { parseTaskInput, buildToolResultMap, buildToolErrorMaps, computeSubagentElapsed, groupSubagentChildren, type ToolErrorMaps } from './subagent-utils'
 import { useSubagentJsonl } from './use-subagent-jsonl'
 import { AgentActivity, SubagentScrollArea } from './subagent-activity'
+import { SubagentRetryBadge } from './SubagentRetryBadge'
 
 const ZERO_TOKENS = { input: 0, output: 0 }
 
@@ -238,6 +239,7 @@ export function SubagentBlock({ taskBlock, childBlocks: childBlocksProp, resultB
         {showSpawningPlaceholder && (
           <span className="min-w-0 text-left text-muted-foreground">{t('chat.subagent.spawning')}</span>
         )}
+        {isRunning && progress?.retry && <SubagentRetryBadge retry={progress.retry} className="ml-1" />}
         {isExpandable && (
           <span className="ml-auto flex shrink-0 items-center gap-1.5 text-[11px] text-muted-foreground">
             {!isExpanded && isFailed && (

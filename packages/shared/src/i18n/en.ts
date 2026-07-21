@@ -882,6 +882,7 @@ export type Messages = {
       notFound: string
       openFullView: string
       noActivity: string
+      retrying: string
     }
     codexCollab: {
       defaultName: string
@@ -2674,6 +2675,7 @@ export const en: Messages = {
       notFound: 'Subagent not found',
       openFullView: 'Open full view',
       noActivity: 'No activity recorded',
+      retrying: 'Rate limited — retrying ({{attempt}}/{{max}})',
     },
     codexCollab: {
       defaultName: 'Subagent',

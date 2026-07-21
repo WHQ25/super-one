@@ -114,6 +114,36 @@ describe('reduceTool: tool_progress', () => {
     expect(blocks[0].elapsedSeconds).toBe(9)
     expect(blocks[1].elapsedSeconds).toBeUndefined()
   })
+
+  it('records subagent retry status onto taskProgress keyed by tool use id', () => {
+    const session = createDefaultPerSessionState()
+    session.taskProgress = { t1: { description: 'sub', totalTokens: 0, toolUses: 0, durationMs: 0, toolHistory: [] } }
+    session.messages = [makeAssistant('m1', [toolUseBlock('t1', 'Task')])]
+    const patch = reduceTool(session, {
+      type: 'tool_progress', messageId: 'm1', toolUseId: 't1', elapsedSeconds: 2,
+      subagentRetry: { agentId: 'a1', attempt: 2, maxRetries: 5, retryDelayMs: 60000, errorStatus: 429, errorCategory: 'rate_limit' },
+    } as never)
+    expect(patch.taskProgress?.t1.retry).toEqual({ agentId: 'a1', attempt: 2, maxRetries: 5, retryDelayMs: 60000, errorStatus: 429, errorCategory: 'rate_limit' })
+  })
+
+  it('clears a prior retry once a plain progress tick arrives', () => {
+    const session = createDefaultPerSessionState()
+    session.taskProgress = { t1: { description: 'sub', totalTokens: 0, toolUses: 0, durationMs: 0, toolHistory: [], retry: { agentId: 'a1', attempt: 2, maxRetries: 5, retryDelayMs: 60000, errorStatus: 429, errorCategory: 'rate_limit' } } }
+    session.messages = [makeAssistant('m1', [toolUseBlock('t1', 'Task')])]
+    const patch = reduceTool(session, {
+      type: 'tool_progress', messageId: 'm1', toolUseId: 't1', elapsedSeconds: 3,
+    } as never)
+    expect(patch.taskProgress?.t1.retry).toBeUndefined()
+  })
+
+  it('does not create a taskProgress entry for a non-subagent tool tick', () => {
+    const session = createDefaultPerSessionState()
+    session.messages = [makeAssistant('m1', [toolUseBlock('t1', 'BashTool')])]
+    const patch = reduceTool(session, {
+      type: 'tool_progress', messageId: 'm1', toolUseId: 't1', elapsedSeconds: 3,
+    } as never)
+    expect(patch.taskProgress).toBeUndefined()
+  })
 })
 
 describe('reduceTool: subagent_usage', () => {

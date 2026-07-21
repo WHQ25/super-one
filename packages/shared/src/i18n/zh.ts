@@ -908,6 +908,7 @@ export const zh: Messages = {
       notFound: '未找到子代理',
       openFullView: '打开全屏视图',
       noActivity: '暂无活动记录',
+      retrying: '触发限流,重试中 ({{attempt}}/{{max}})',
     },
     codexCollab: {
       defaultName: '子代理',

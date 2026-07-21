@@ -110,7 +110,11 @@ export function reduceTool(session: PerSessionState, event: ToolEvent): Partial<
       return { lastEventAt: Date.now() }
     }
 
-    case 'tool_progress':
+    case 'tool_progress': {
+      const prevTask = session.taskProgress[event.toolUseId]
+      // Retry status only lives on sub-agent tool_progress (Task/Agent). A plain
+      // tick clears any prior retry; a non-subagent tool never gets an entry.
+      const touchRetry = !!event.subagentRetry || !!prevTask?.retry
       return {
         lastEventAt: Date.now(),
         messages: session.messages.map((msg) => {
@@ -125,7 +129,19 @@ export function reduceTool(session: PerSessionState, event: ToolEvent): Partial<
             }),
           }
         }),
+        ...(touchRetry
+          ? {
+              taskProgress: {
+                ...session.taskProgress,
+                [event.toolUseId]: {
+                  ...(prevTask ?? { description: '', totalTokens: 0, toolUses: 0, durationMs: 0, toolHistory: [] }),
+                  retry: event.subagentRetry,
+                },
+              },
+            }
+          : {}),
       }
+    }
 
     case 'subagent_usage':
       return {

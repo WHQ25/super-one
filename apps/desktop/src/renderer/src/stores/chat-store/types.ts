@@ -30,6 +30,7 @@ import type {
   SessionInfo,
   SkillInfo,
   SlashCommandInfo,
+  SubagentRetryInfo,
   TodoItem,
 } from '@superone/shared/agent-types'
 import type { BrowserAnnotation } from './helpers/browser-annotation'
@@ -79,7 +80,7 @@ export interface PerSessionState {
   subagentTokens: Record<string, { input: number; output: number }>
   subagentColors: Record<string, number>
   _subagentColorsFree: number[]
-  taskProgress: Record<string, { description: string; taskId?: string; lastToolName?: string; summary?: string; totalTokens: number; toolUses: number; durationMs: number; completed?: boolean; status?: 'completed' | 'failed' | 'stopped'; outputFile?: string; toolHistory: Array<{ toolName: string; description: string }> }>
+  taskProgress: Record<string, { description: string; taskId?: string; lastToolName?: string; summary?: string; totalTokens: number; toolUses: number; durationMs: number; completed?: boolean; status?: 'completed' | 'failed' | 'stopped'; outputFile?: string; retry?: SubagentRetryInfo; toolHistory: Array<{ toolName: string; description: string }> }>
   /** Live browser_download (URL) tasks keyed by taskId (bdl_*), for tool-block UI. */
   browserDownloads: Record<string, {
     status: 'progressing' | 'completed' | 'failed'

@@ -6,6 +6,7 @@ import type { ContentBlock } from '@superone/shared/agent-types'
 import { useActiveSession, useChatStore } from '@/stores/chat'
 import { formatTokens } from './chat-shared'
 import { getSubagentColorClasses } from './subagent-colors'
+import { SubagentRetryBadge } from './SubagentRetryBadge'
 import { parseWorkflowInput, parseWorkflowLaunch, extractWorkflowScript } from './workflow-utils'
 import { useWorkflowAgents } from './use-workflow-agents'
 import { useWorkflowOutput } from './use-workflow-output'
@@ -163,6 +164,7 @@ export function WorkflowBlock({ toolBlock, resultBlock, isStreaming, defaultExpa
         {isSpawning && (
           <span className="min-w-0 text-left text-muted-foreground">{t('chat.workflow.spawning', 'Starting workflow…')}</span>
         )}
+        {isRunning && progress?.retry && <SubagentRetryBadge retry={progress.retry} className="ml-1" />}
         <span className="ml-auto flex shrink-0 items-center gap-1.5 text-[11px] text-muted-foreground">
           {!expanded && activePhase && <span className="text-primary">{activePhase}</span>}
           {!expanded && stats}

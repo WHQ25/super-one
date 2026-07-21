@@ -556,7 +556,7 @@ export interface PermissionRequest {
 
 export type PermissionMode = 'default' | 'acceptEdits' | 'bypassPermissions' | 'plan' | 'dontAsk' | 'auto'
 
-export type AccountApiProvider = 'firstParty' | 'bedrock' | 'vertex' | 'foundry' | 'anthropicAws' | 'mantle' | 'gateway'
+export type AccountApiProvider = 'firstParty' | 'bedrock' | 'vertex' | 'foundry' | 'anthropicAws' | 'anthropicGoogleCloud' | 'mantle' | 'gateway'
 
 // --- AskUserQuestion ---
 
@@ -887,12 +887,22 @@ export type SessionForkResult =
 
 // --- Main → Renderer push events ---
 
+/** Subagent API-retry status carried on tool_progress while a sub-agent waits out a rate-limit/backoff. */
+export interface SubagentRetryInfo {
+  agentId: string
+  attempt: number
+  maxRetries: number
+  retryDelayMs: number
+  errorStatus: number | null
+  errorCategory: string
+}
+
 export type AgentEventBase =
   | { type: 'message_start'; message: ChatMessage }
   | { type: 'user_message_appended'; message: ChatMessage }
   | { type: 'content_delta'; messageId: string; delta: ContentBlock; isSynthetic?: boolean; isReplay?: boolean }
   | { type: 'tool_input_delta'; messageId: string; toolUseId: string; partialJson: string; parentToolUseId?: string | null }
-  | { type: 'tool_progress'; messageId: string; toolUseId: string; toolName: string; elapsedSeconds: number; parentToolUseId?: string | null; taskId?: string }
+  | { type: 'tool_progress'; messageId: string; toolUseId: string; toolName: string; elapsedSeconds: number; parentToolUseId?: string | null; taskId?: string; subagentType?: string; subagentRetry?: SubagentRetryInfo }
   | { type: 'message_timestamp'; messageId: string; timestamp: string }
   | { type: 'message_complete'; messageId: string; metadata?: MessageMetadata }
   | { type: 'message_interrupted'; messageId: string; metadata?: MessageMetadata }

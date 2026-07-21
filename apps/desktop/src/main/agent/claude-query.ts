@@ -861,6 +861,7 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
         case 'tool_progress': {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const tp = msg as any
+          const retry = tp.subagent_retry
           emit({
             type: 'tool_progress',
             messageId,
@@ -869,6 +870,17 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
             elapsedSeconds: tp.elapsed_time_seconds ?? 0,
             parentToolUseId: tp.parent_tool_use_id ?? null,
             taskId: tp.task_id,
+            subagentType: tp.subagent_type,
+            subagentRetry: retry
+              ? {
+                  agentId: retry.agent_id ?? '',
+                  attempt: retry.attempt ?? 0,
+                  maxRetries: retry.max_retries ?? 0,
+                  retryDelayMs: retry.retry_delay_ms ?? 0,
+                  errorStatus: retry.error_status ?? null,
+                  errorCategory: retry.error_category ?? '',
+                }
+              : undefined,
           })
           break
         }

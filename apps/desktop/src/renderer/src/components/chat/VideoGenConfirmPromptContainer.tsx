@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useChatStore } from '@/stores/chat'
-import type { PermissionRequest, VideoGenParams, VideoGenReferenceImage } from '@superone/shared/agent-types'
+import { VIDEO_GEN_PARAMS_FIELD, type PermissionRequest, type VideoGenParams, type VideoGenReferenceImage } from '@superone/shared/agent-types'
 import { VideoGenConfirmPrompt } from './VideoGenConfirmPrompt'
 
 /**
@@ -9,8 +9,8 @@ import { VideoGenConfirmPrompt } from './VideoGenConfirmPrompt'
  * carries paths only, no bytes) and wires Confirm/Reject to the shared
  * PERMISSION_RESPONSE channel via the chat store's respondToPermission.
  *
- * Response packing (flat content record, per MCP ElicitResult constraints):
- * - confirm → allow=true,  formAnswers={ paramsJson: JSON.stringify(editedParams) }
+ * Response packing (flat record, resolved by resolveVideoConfirm in media-tools):
+ * - confirm → allow=true,  formAnswers={ [VIDEO_GEN_PARAMS_FIELD]: JSON.stringify(editedParams) }
  * - reject  → allow=false, formAnswers={ feedback }
  */
 export function VideoGenConfirmPromptContainer({ request }: { request: PermissionRequest }) {
@@ -50,7 +50,7 @@ export function VideoGenConfirmPromptContainer({ request }: { request: Permissio
       undefined,
       undefined,
       undefined,
-      { paramsJson: JSON.stringify(params) },
+      { [VIDEO_GEN_PARAMS_FIELD]: JSON.stringify(params) },
     )
   }
 

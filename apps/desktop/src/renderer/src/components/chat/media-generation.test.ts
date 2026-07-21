@@ -7,6 +7,7 @@ import {
   isMediaGenerateVideoTool,
   isMediaVideoStatusTool,
   collectCodexGeneratedImages,
+  collectCodexGeneratedVideos,
 } from './media-generation'
 import { isHiddenToolBlock } from './tool-display'
 
@@ -281,5 +282,45 @@ describe('toVideoStatusItems', () => {
 
   it('survives a result that is not json rather than throwing mid-render', () => {
     expect(toVideoStatusItems('not json at all')).toEqual([])
+  })
+})
+
+const codexVideoCall = (over: Partial<CodexMcpToolCallItem> = {}): CodexMcpToolCallItem => ({
+  id: 'exec-video-1',
+  type: 'mcp_tool_call',
+  server: 'superone',
+  tool: 'media_video_status',
+  arguments: { generation_id: 'vid-1' },
+  result: { content: [{ type: 'text', text: GENERATED }], structuredContent: null },
+  status: 'completed',
+  ...over,
+})
+
+describe('collecting generated videos from a codex turn', () => {
+  it('surfaces the finished video so it lands in the turn gallery like the claude path', () => {
+    const items = collectCodexGeneratedVideos([codexVideoCall()])
+    expect(items).toEqual([
+      { id: 'vid-1', type: 'video_generation', status: 'completed', savedPath: '/tmp/out/vid-1-0.mp4' },
+    ])
+  })
+
+  it('emits nothing for the submit call or an in-flight poll, leaving the tool block as the progress affordance', () => {
+    const items = collectCodexGeneratedVideos([
+      codexVideoCall({ id: 'exec-submit', tool: 'media_generate_video', result: { content: [{ type: 'text', text: SUBMITTED }], structuredContent: null } }),
+      codexVideoCall({ id: 'exec-poll', result: { content: [{ type: 'text', text: RUNNING }], structuredContent: null } }),
+    ])
+    expect(items).toEqual([])
+  })
+
+  it('ignores a failed poll so the error block explains instead of an empty card', () => {
+    expect(collectCodexGeneratedVideos([codexVideoCall({ error: { message: 'boom' } })])).toEqual([])
+  })
+
+  it('dedupes repeated polls of the same generation onto one card', () => {
+    const items = collectCodexGeneratedVideos([
+      codexVideoCall({ id: 'exec-poll-1' }),
+      codexVideoCall({ id: 'exec-poll-2' }),
+    ])
+    expect(items).toHaveLength(1)
   })
 })

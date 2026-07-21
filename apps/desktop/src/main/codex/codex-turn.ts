@@ -54,11 +54,12 @@ import type {
   ImageAttachment,
   PermissionRequest,
 } from '@superone/shared/agent-types'
-import { parseElicitationSchema, extractVideoGenConfirmPayload } from '../agent/elicitation-schema'
+import { parseElicitationSchema } from '../agent/elicitation-schema'
 import { getCodexSuperoneMcpConfig } from '../mcp/superone-mcp-stdio-state'
 import { isToolPreapproved, isBuiltInSuperoneTool } from '../mcp/superone-mcp-server'
 import { BUILT_IN_SUPERONE_TOOL_NAMES } from '../mcp/superone-mcp-builtins'
 import { resolveConfigConfirm, rejectConfigConfirm } from '../mcp/config-tools'
+import { resolveVideoConfirm, rejectVideoConfirm } from '../mcp/media-tools'
 import { CODEX_SYSTEM_PROMPT_APPEND } from '../agent/superone-system-prompt'
 import { buildAttachmentPathNote } from '../agent/attachment-store'
 
@@ -801,33 +802,6 @@ export function mapApprovalRequest(notification: AppServerNotification): ParsedA
       : []
     const supportsAlwaysPersist = persistFlags.includes('always')
     const schema = asRecord(notification.params.requestedSchema)
-
-    // Probe BEFORE parseElicitationSchema / the miniApp branch: our payload lives in
-    // the paramsJson field's description, and a non-empty properties object would both
-    // produce a meaningless generic form field and interfere with the miniApp
-    // formFields.length === 0 heuristic below.
-    const videoGenConfirm = extractVideoGenConfirmPayload(schema)
-    if (videoGenConfirm) {
-      return {
-        responseKind: 'elicitation',
-        // Placeholder keeps this dispatchable as an elicitation without colliding
-        // with the miniApp empty-formFields heuristic. Never rendered — the UI
-        // branches on requestKind before touching elicitationForm.
-        formFields: [{ name: 'paramsJson', type: 'string', label: 'params', required: false }],
-        request: {
-          requestId,
-          toolName: serverName,
-          toolUseId: requestId,
-          input: {},
-          allowAlwaysAllow: false,
-          requestKind: 'video_gen_confirm',
-          serverName,
-          message,
-          videoGenConfirm,
-        },
-      }
-    }
-
     const formFields = parseElicitationSchema(schema)
 
     const miniAppToolName = serverName === 'superone' && formFields.length === 0
@@ -2254,8 +2228,10 @@ export function respondToCodexPermission(
   formAnswers?: Record<string, unknown>,
 ): boolean {
   if (decision === 'cancel') {
+    if (rejectVideoConfirm(requestId, 'User cancelled')) return true
     if (rejectConfigConfirm(requestId, 'User cancelled')) return true
   }
+  if (resolveVideoConfirm(requestId, allow ? 'accept' : 'decline', formAnswers)) return true
   if (resolveConfigConfirm(requestId, allow ? 'accept' : 'decline', formAnswers)) return true
 
   const pending = session.pendingApprovals.get(requestId)

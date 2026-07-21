@@ -160,14 +160,29 @@ export function toVideoStatusItems(resultText: string | undefined): VideoGenerat
   }))
 }
 
+function codexMcpResultText(item: Extract<CodexThreadItem, { type: 'mcp_tool_call' }>): string | undefined {
+  const content = item.result?.content as Array<{ type: string; text: string }> | undefined
+  const textParts = content?.filter((c) => c.type === 'text').map((c) => c.text)
+  return textParts?.length ? textParts.join('\n') : undefined
+}
+
 export function collectCodexGeneratedImages(codexItems: CodexThreadItem[] | undefined): ImageGenerationItem[] {
   const items: ImageGenerationItem[] = []
   for (const item of codexItems ?? []) {
     if (item.type !== 'mcp_tool_call') continue
     if (!isMediaGenerateImageTool(`mcp__${item.server}__${item.tool}`) || item.error) continue
-    const content = item.result?.content as Array<{ type: string; text: string }> | undefined
-    const textParts = content?.filter((c) => c.type === 'text').map((c) => c.text)
-    items.push(...toImageGenerationItems(item.id, item.arguments, textParts?.length ? textParts.join('\n') : undefined))
+    items.push(...toImageGenerationItems(item.id, item.arguments, codexMcpResultText(item)))
   }
   return items
+}
+
+/** Codex counterpart of collectGeneratedVideos — same completing-poll-only contract. */
+export function collectCodexGeneratedVideos(codexItems: CodexThreadItem[] | undefined): VideoGenerationItem[] {
+  const byId = new Map<string, VideoGenerationItem>()
+  for (const item of codexItems ?? []) {
+    if (item.type !== 'mcp_tool_call') continue
+    if (!isMediaVideoStatusTool(`mcp__${item.server}__${item.tool}`) || item.error) continue
+    for (const video of toVideoStatusItems(codexMcpResultText(item))) byId.set(video.id, video)
+  }
+  return [...byId.values()]
 }

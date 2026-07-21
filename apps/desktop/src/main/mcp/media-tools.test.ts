@@ -24,9 +24,15 @@ vi.mock('../media-gen/video/history', () => ({
 vi.mock('../media-gen/history', () => ({ generateAndRecord: vi.fn() }))
 vi.mock('../image-cache', () => ({ detectImageMime: vi.fn(() => 'image/png') }))
 
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import type { AgentEvent, PermissionRequest } from '@superone/shared/agent-types'
 import { VIDEO_GEN_PARAMS_FIELD } from '@superone/shared/agent-types'
-import { readMediaGuideHandler, generateVideoToolHandler, type GenerateVideoArgs } from './media-tools'
+import {
+  readMediaGuideHandler,
+  generateVideoToolHandler,
+  resolveVideoConfirm,
+  rejectVideoConfirm,
+  type GenerateVideoArgs,
+} from './media-tools'
 import { MEDIA_GUIDE_TOPICS } from './superone-mcp-builtin-defs'
 
 function makeProviderStatuses() {
@@ -45,13 +51,31 @@ function makeProviderStatuses() {
   ]
 }
 
-/** Minimal fake of the McpServer wrapper exposing the underlying SDK Server. */
-function makeServerStub(elicitInput: ReturnType<typeof vi.fn>): McpServer {
-  return { server: { elicitInput } } as unknown as McpServer
+type ConfirmResponder = (request: PermissionRequest) => void
+
+/**
+ * Session host whose emitHostEvent answers the confirm request the way the renderer would.
+ * `respond` runs on the next tick so the awaiting handler is genuinely suspended first.
+ */
+function makeSessionHost(respond: ConfirmResponder) {
+  const emitted: PermissionRequest[] = []
+  const sessionHost = {
+    getSession: () => ({
+      emitHostEvent: (event: AgentEvent) => {
+        if (event.type !== 'permission_request') return
+        emitted.push(event.request)
+        queueMicrotask(() => respond(event.request))
+      },
+    }),
+  }
+  return { sessionHost: sessionHost as never, emitted }
 }
 
 const BASE_ARGS: GenerateVideoArgs = { prompt: 'a cat walks through neon city' }
-const DEPS = { notifyDevAppReady: vi.fn(), sessionId: 'sess-test', sessionHost: null }
+
+function makeDeps(sessionHost: unknown) {
+  return { notifyDevAppReady: vi.fn(), sessionId: 'sess-test', sessionHost: sessionHost as never }
+}
 
 describe('readMediaGuideHandler', () => {
   it('returns non-empty, distinct content for every declared topic', () => {
@@ -76,12 +100,11 @@ describe('generateVideoToolHandler confirmation gate', () => {
     mockGetMediaProviderStatuses.mockReset()
   })
 
-  it('elicits confirmation and submits with edited params on accept', async () => {
+  it('asks the user to confirm and submits with the edited params on accept', async () => {
     mockGetMediaProviderStatuses.mockResolvedValue(makeProviderStatuses())
     mockSubmitVideoGeneration.mockResolvedValue('gen-123')
-    const elicitInput = vi.fn(async () => ({
-      action: 'accept',
-      content: {
+    const { sessionHost, emitted } = makeSessionHost((req) => {
+      resolveVideoConfirm(req.requestId, 'accept', {
         [VIDEO_GEN_PARAMS_FIELD]: JSON.stringify({
           prompt: 'edited: two cats',
           provider: 'cred-ark',
@@ -93,23 +116,18 @@ describe('generateVideoToolHandler confirmation gate', () => {
           watermark: false,
           cameraFixed: true,
         }),
-      },
-    }))
+      })
+    })
 
-    const result = await generateVideoToolHandler({ ...BASE_ARGS }, DEPS, makeServerStub(elicitInput))
+    const result = await generateVideoToolHandler({ ...BASE_ARGS }, makeDeps(sessionHost))
 
-    expect(elicitInput).toHaveBeenCalledTimes(1)
-    const [elicitArgs] = elicitInput.mock.calls[0]
-    expect(elicitArgs.mode).toBe('form')
-    expect(elicitArgs.message).toContain('a cat walks through neon city')
-    // Payload must travel in the paramsJson field description (top-level custom keys get stripped)
-    const description = elicitArgs.requestedSchema.properties[VIDEO_GEN_PARAMS_FIELD].description
-    const payload = JSON.parse(description)
-    expect(payload.params.prompt).toBe('a cat walks through neon city')
-    expect(payload.params.provider).toBe('cred-ark')
-    expect(payload.providers).toHaveLength(1)
+    expect(emitted).toHaveLength(1)
+    expect(emitted[0].requestKind).toBe('video_gen_confirm')
+    expect(emitted[0].message).toContain('a cat walks through neon city')
+    expect(emitted[0].videoGenConfirm?.params.prompt).toBe('a cat walks through neon city')
+    expect(emitted[0].videoGenConfirm?.params.provider).toBe('cred-ark')
+    expect(emitted[0].videoGenConfirm?.providers).toHaveLength(1)
 
-    // Edited params applied to the actual submission
     expect(mockSubmitVideoGeneration).toHaveBeenCalledWith(
       expect.objectContaining({
         providerId: 'cred-ark',
@@ -130,12 +148,11 @@ describe('generateVideoToolHandler confirmation gate', () => {
 
   it('returns rejected tool_result with feedback on decline, without submitting', async () => {
     mockGetMediaProviderStatuses.mockResolvedValue(makeProviderStatuses())
-    const elicitInput = vi.fn(async () => ({
-      action: 'decline',
-      content: { feedback: 'duration too long' },
-    }))
+    const { sessionHost } = makeSessionHost((req) => {
+      resolveVideoConfirm(req.requestId, 'decline', { feedback: 'duration too long' })
+    })
 
-    const result = await generateVideoToolHandler({ ...BASE_ARGS }, DEPS, makeServerStub(elicitInput))
+    const result = await generateVideoToolHandler({ ...BASE_ARGS }, makeDeps(sessionHost))
 
     const text = JSON.parse(result.content[0].text)
     expect(text.status).toBe('rejected')
@@ -146,48 +163,64 @@ describe('generateVideoToolHandler confirmation gate', () => {
 
   it('returns cancelled tool_result on cancel, without submitting', async () => {
     mockGetMediaProviderStatuses.mockResolvedValue(makeProviderStatuses())
-    const elicitInput = vi.fn(async () => ({ action: 'cancel' }))
+    const { sessionHost } = makeSessionHost((req) => {
+      resolveVideoConfirm(req.requestId, 'cancel')
+    })
 
-    const result = await generateVideoToolHandler({ ...BASE_ARGS }, DEPS, makeServerStub(elicitInput))
+    const result = await generateVideoToolHandler({ ...BASE_ARGS }, makeDeps(sessionHost))
 
     const text = JSON.parse(result.content[0].text)
     expect(text.status).toBe('cancelled')
     expect(mockSubmitVideoGeneration).not.toHaveBeenCalled()
   })
 
-  it('fails closed with an explanatory error when elicitation is unsupported', async () => {
+  it('fails closed with an explanatory error when the confirm request is aborted', async () => {
     mockGetMediaProviderStatuses.mockResolvedValue(makeProviderStatuses())
-    const elicitInput = vi.fn(async () => {
-      throw new Error('Client does not support form elicitation.')
+    const { sessionHost } = makeSessionHost((req) => {
+      rejectVideoConfirm(req.requestId, 'Session closed')
     })
 
-    const result = await generateVideoToolHandler({ ...BASE_ARGS }, DEPS, makeServerStub(elicitInput))
+    const result = await generateVideoToolHandler({ ...BASE_ARGS }, makeDeps(sessionHost))
 
     const text = JSON.parse(result.content[0].text)
     expect(text.status).toBe('error')
-    expect(text.message).toContain('elicitation')
+    expect(text.message).toContain('Session closed')
     expect(text.hint).toContain('Do NOT retry')
     // Fail-closed: an unreviewed expensive generation must never go out the door.
     expect(mockSubmitVideoGeneration).not.toHaveBeenCalled()
   })
 
-  it('proceeds without confirmation when no server is available (Codex stdio path)', async () => {
+  it('still gates the Codex stdio path, which executes the tool without an McpServer in hand', async () => {
     mockGetMediaProviderStatuses.mockResolvedValue(makeProviderStatuses())
     mockSubmitVideoGeneration.mockResolvedValue('gen-789')
+    const { sessionHost, emitted } = makeSessionHost((req) => {
+      resolveVideoConfirm(req.requestId, 'accept')
+    })
 
-    const result = await generateVideoToolHandler({ ...BASE_ARGS }, DEPS, undefined)
+    const result = await generateVideoToolHandler({ ...BASE_ARGS }, makeDeps(sessionHost))
+
+    expect(emitted).toHaveLength(1)
+    expect(JSON.parse(result.content[0].text).status).toBe('submitted')
+  })
+
+  it('fails closed when the session cannot host a confirm dialog at all', async () => {
+    mockGetMediaProviderStatuses.mockResolvedValue(makeProviderStatuses())
+
+    const result = await generateVideoToolHandler({ ...BASE_ARGS }, makeDeps(null))
 
     const text = JSON.parse(result.content[0].text)
-    expect(text.status).toBe('submitted')
-    expect(mockGetMediaProviderStatuses).not.toHaveBeenCalled()
+    expect(text.status).toBe('error')
+    expect(mockSubmitVideoGeneration).not.toHaveBeenCalled()
   })
 
   it('keeps original params when accept content has no paramsJson (auto-accept path)', async () => {
     mockGetMediaProviderStatuses.mockResolvedValue(makeProviderStatuses())
     mockSubmitVideoGeneration.mockResolvedValue('gen-auto')
-    const elicitInput = vi.fn(async () => ({ action: 'accept', content: null }))
+    const { sessionHost } = makeSessionHost((req) => {
+      resolveVideoConfirm(req.requestId, 'accept')
+    })
 
-    const result = await generateVideoToolHandler({ ...BASE_ARGS, duration: 8 }, DEPS, makeServerStub(elicitInput))
+    const result = await generateVideoToolHandler({ ...BASE_ARGS, duration: 8 }, makeDeps(sessionHost))
 
     const text = JSON.parse(result.content[0].text)
     expect(text.status).toBe('submitted')

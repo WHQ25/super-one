@@ -6,12 +6,8 @@ vi.mock('../mcp/superone-mcp-server', () => ({
   isBuiltInSuperoneTool: vi.fn(() => false),
 }))
 
-import {
-  VIDEO_GEN_PARAMS_FIELD,
-  type AgentEvent,
-  type VideoGenConfirmPayload,
-} from '@superone/shared/agent-types'
-import { parseElicitationSchema, extractVideoGenConfirmPayload } from './elicitation-schema'
+import type { AgentEvent } from '@superone/shared/agent-types'
+import { parseElicitationSchema } from './elicitation-schema'
 import {
   createOnElicitation,
   respondToElicitation,
@@ -21,48 +17,16 @@ import {
 } from './claude-permissions'
 import type { ElicitationRequest } from '@anthropic-ai/claude-agent-sdk'
 
-function makePayload(): VideoGenConfirmPayload {
-  return {
-    params: {
-      prompt: 'a cat walks through a neon city',
-      provider: 'cred-ark',
-      model: 'seedance-1.0',
-      aspectRatio: '16:9',
-      resolution: '720p',
-      duration: 5,
-      generateAudio: false,
-      watermark: false,
-      cameraFixed: false,
-    },
-    providers: [
-      {
-        id: 'cred-ark',
-        label: 'Volcengine Ark',
-        models: [{ id: 'seedance-1.0', label: 'Seedance 1.0' }],
-        aspectRatios: ['16:9', '9:16'],
-        resolutions: ['480p', '720p'],
-      },
-    ],
-    referenceImages: [{ path: '/tmp/first.png', role: 'first_frame' }],
-  }
-}
-
-function makeVideoGenSchema(payload: VideoGenConfirmPayload = makePayload()): Record<string, unknown> {
-  return {
-    type: 'object',
-    properties: {
-      [VIDEO_GEN_PARAMS_FIELD]: { type: 'string', description: JSON.stringify(payload) },
-    },
-    required: [],
-  }
-}
-
 function makeRequest(overrides: Partial<ElicitationRequest> = {}): ElicitationRequest {
   return {
-    serverName: 'superone',
-    message: 'Confirm video generation: "a cat..."',
+    serverName: 'some-mcp-server',
+    message: 'Which environment should I deploy to?',
     mode: 'form',
-    requestedSchema: makeVideoGenSchema(),
+    requestedSchema: {
+      type: 'object',
+      properties: { environment: { type: 'string', title: 'Environment' } },
+      required: ['environment'],
+    },
     ...overrides,
   }
 }
@@ -98,44 +62,6 @@ describe('parseElicitationSchema', () => {
   })
 })
 
-describe('extractVideoGenConfirmPayload', () => {
-  it('round-trips a full payload through the paramsJson description channel', () => {
-    const payload = makePayload()
-    expect(extractVideoGenConfirmPayload(makeVideoGenSchema(payload))).toEqual(payload)
-  })
-
-  it('returns null when the paramsJson field or description is missing', () => {
-    expect(extractVideoGenConfirmPayload(null)).toBeNull()
-    expect(extractVideoGenConfirmPayload({ type: 'object', properties: {} })).toBeNull()
-    expect(
-      extractVideoGenConfirmPayload({
-        type: 'object',
-        properties: { [VIDEO_GEN_PARAMS_FIELD]: { type: 'string' } },
-      }),
-    ).toBeNull()
-  })
-
-  it('returns null on corrupt JSON or shape mismatch', () => {
-    expect(
-      extractVideoGenConfirmPayload({
-        type: 'object',
-        properties: { [VIDEO_GEN_PARAMS_FIELD]: { type: 'string', description: '{not json' } },
-      }),
-    ).toBeNull()
-
-    const badParams = makePayload()
-    // @ts-expect-error intentionally break the shape
-    badParams.params.duration = 'five'
-    expect(extractVideoGenConfirmPayload(makeVideoGenSchema(badParams))).toBeNull()
-  })
-
-  it('returns null when a reference image has an invalid role', () => {
-    const payload = makePayload()
-    payload.referenceImages = [{ path: '/tmp/x.png', role: 'middle' as never }]
-    expect(extractVideoGenConfirmPayload(makeVideoGenSchema(payload))).toBeNull()
-  })
-})
-
 describe('createOnElicitation', () => {
   it('declines url-mode requests immediately', async () => {
     const pending = new Map<string, PendingElicitation>()
@@ -147,7 +73,7 @@ describe('createOnElicitation', () => {
     expect(pending.size).toBe(0)
   })
 
-  it('emits video_gen_confirm requestKind with payload and parks the promise', async () => {
+  it('emits mcp_elicitation with parsed form fields and parks the promise', async () => {
     const pending = new Map<string, PendingElicitation>()
     const events: AgentEvent[] = []
     const onElicitation = createOnElicitation(pending, (e) => events.push(e))
@@ -156,40 +82,14 @@ describe('createOnElicitation', () => {
     expect(events).toHaveLength(1)
     const event = events[0]
     if (event.type !== 'permission_request') throw new Error('expected permission_request')
-    expect(event.request.requestKind).toBe('video_gen_confirm')
-    expect(event.request.videoGenConfirm).toEqual(makePayload())
-    expect(event.request.elicitationForm).toBeUndefined()
-    expect(pending.size).toBe(1)
-
-    respondToElicitation(pending, event.request.requestId, true)
-    await expect(promise).resolves.toEqual({ action: 'accept' })
-  })
-
-  it('emits generic mcp_elicitation with parsed form fields for non-video-gen schemas', async () => {
-    const pending = new Map<string, PendingElicitation>()
-    const events: AgentEvent[] = []
-    const onElicitation = createOnElicitation(pending, (e) => events.push(e))
-    const promise = onElicitation(
-      makeRequest({
-        requestedSchema: {
-          type: 'object',
-          properties: { name: { type: 'string', title: 'Name' } },
-          required: ['name'],
-        },
-      }),
-      { signal: makeSignal() },
-    )
-
-    const event = events[0]
-    if (event.type !== 'permission_request') throw new Error('expected permission_request')
     expect(event.request.requestKind).toBe('mcp_elicitation')
     expect(event.request.elicitationForm).toEqual([
-      { name: 'name', type: 'string', label: 'Name', required: true },
+      { name: 'environment', type: 'string', label: 'Environment', required: true },
     ])
-    expect(event.request.videoGenConfirm).toBeUndefined()
+    expect(pending.size).toBe(1)
 
-    respondToElicitation(pending, event.request.requestId, true, undefined, { name: 'Ada' })
-    await expect(promise).resolves.toEqual({ action: 'accept', content: { name: 'Ada' } })
+    respondToElicitation(pending, event.request.requestId, true, undefined, { environment: 'staging' })
+    await expect(promise).resolves.toEqual({ action: 'accept', content: { environment: 'staging' } })
   })
 
   it('resolves cancel immediately when the signal is already aborted', async () => {
@@ -214,9 +114,8 @@ describe('respondToElicitation', () => {
     const { pending, requestId } = parkRequest()
     const held = pending.get(requestId)!
     const resolved = new Promise((resolve) => held.resolve = resolve as never)
-    const paramsJson = JSON.stringify(makePayload().params)
-    expect(respondToElicitation(pending, requestId, true, undefined, { paramsJson })).toBe(true)
-    await expect(resolved).resolves.toEqual({ action: 'accept', content: { paramsJson } })
+    expect(respondToElicitation(pending, requestId, true, undefined, { environment: 'staging' })).toBe(true)
+    await expect(resolved).resolves.toEqual({ action: 'accept', content: { environment: 'staging' } })
   })
 
   it('reject forwards feedback as flat content', async () => {

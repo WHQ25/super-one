@@ -6,7 +6,7 @@ import { isToolPreapproved, isBuiltInSuperoneTool } from '../mcp/superone-mcp-se
 import { readAppSettings } from '../app-settings-service'
 import type { ElicitationRequest, ElicitationResult, PermissionUpdate } from '@anthropic-ai/claude-agent-sdk'
 import type { AgentEvent, PermissionMode, QuestionAnnotations } from '@superone/shared/agent-types'
-import { parseElicitationSchema, extractVideoGenConfirmPayload } from './elicitation-schema'
+import { parseElicitationSchema } from './elicitation-schema'
 import { trace } from './event-trace'
 
 export interface PendingPermission {
@@ -56,9 +56,7 @@ export function createOnElicitation(
       return { action: 'decline' }
     }
 
-    const schema = request.requestedSchema ?? null
-    const videoGenConfirm = extractVideoGenConfirmPayload(schema)
-    const elicitationForm = videoGenConfirm ? undefined : parseElicitationSchema(schema)
+    const elicitationForm = parseElicitationSchema(request.requestedSchema ?? null)
     const requestId = `elicit_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
 
     const permEvent: AgentEvent = {
@@ -69,16 +67,15 @@ export function createOnElicitation(
         toolUseId: requestId,
         input: {},
         allowAlwaysAllow: false,
-        requestKind: videoGenConfirm ? 'video_gen_confirm' : 'mcp_elicitation',
+        requestKind: 'mcp_elicitation',
         serverName: request.serverName,
         message: request.message,
         ...(request.description ? { subtitle: request.description } : {}),
-        ...(elicitationForm && elicitationForm.length > 0 ? { elicitationForm } : {}),
-        ...(videoGenConfirm ? { videoGenConfirm } : {}),
+        ...(elicitationForm.length > 0 ? { elicitationForm } : {}),
       },
     }
-    trace('permission.flow', 'elicit_emit', { serverName: request.serverName, videoGen: !!videoGenConfirm }, requestId)
-    log.info('[onElicitation] emit permission_request requestId=%s serverName=%s videoGen=%s', requestId, request.serverName, !!videoGenConfirm)
+    trace('permission.flow', 'elicit_emit', { serverName: request.serverName }, requestId)
+    log.info('[onElicitation] emit permission_request requestId=%s serverName=%s', requestId, request.serverName)
     emit(permEvent)
 
     return new Promise<ElicitationResult>((resolve) => {
@@ -96,9 +93,8 @@ export function createOnElicitation(
 
 /**
  * Resolve a parked elicitation from the renderer's PERMISSION_RESPONSE IPC.
- * formAnswers carries the flat content record: `{ paramsJson }` on accept for
- * video-gen confirms, `{ feedback }` on reject-with-reason, or generic form values
- * for plain mcp_elicitation requests.
+ * formAnswers carries the flat content record: the generic form values on accept,
+ * or `{ feedback }` on reject-with-reason.
  */
 export function respondToElicitation(
   pendingElicitations: Map<string, PendingElicitation>,

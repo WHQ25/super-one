@@ -7,7 +7,7 @@ import { ToolBlock } from './ToolBlock'
 import { ToolGroup } from './ToolGroup'
 import { AppToolGroup } from './AppToolGroup'
 import { parseToolInput, parseMcpToolName, isHiddenToolBlock } from './tool-display'
-import { toImageGenerationItems, toVideoStatusItems, isMediaGenerateImageTool, isMediaVideoStatusTool, collectCodexGeneratedImages } from './media-generation'
+import { toImageGenerationItems, toVideoStatusItems, isMediaGenerateImageTool, isMediaVideoStatusTool, collectCodexGeneratedImages, collectCodexGeneratedVideos } from './media-generation'
 import { useMiniAppStore } from '@/stores/miniapp'
 import type { MiniAppEntry } from '@superone/shared/miniapp-types'
 import { SubagentBlock } from './SubagentBlock'
@@ -788,8 +788,10 @@ export const ChatMessage = memo(function ChatMessage({ message, sessionStatus, i
   )
 
   const generatedVideos = useMemo(
-    () => (grouped ? collectGeneratedVideos(message.content, grouped.toolResultMap) : []),
-    [grouped, message.content],
+    () => isCodexMessage
+      ? collectCodexGeneratedVideos(codexItems)
+      : grouped ? collectGeneratedVideos(message.content, grouped.toolResultMap) : [],
+    [isCodexMessage, codexItems, grouped, message.content],
   )
 
   const userText = useMemo(

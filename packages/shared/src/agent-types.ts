@@ -461,13 +461,10 @@ export interface VideoGenConfirmPayload {
 }
 
 /**
- * The elicitation requestedSchema field that carries the serialized VideoGenConfirmPayload.
- * The payload travels as a JSON string inside
- * `requestedSchema.properties[VIDEO_GEN_PARAMS_FIELD].description` — a top-level custom key
- * would be silently stripped by the MCP SDK's zod validation (ElicitRequestSchema restricts
- * requestedSchema to the flat JSON Schema subset), while per-field schema definitions survive
- * verbatim. The same field name is reused for the renderer's accept response
- * (`content.paramsJson = JSON.stringify(editedParams)`).
+ * formAnswers key carrying the user-edited VideoGenParams back from a video_gen_confirm
+ * response: `formAnswers[VIDEO_GEN_PARAMS_FIELD] = JSON.stringify(editedParams)`. The
+ * request direction needs no such channel — the payload rides on the permission_request
+ * event's `videoGenConfirm` field directly.
  */
 export const VIDEO_GEN_PARAMS_FIELD = 'paramsJson'
 

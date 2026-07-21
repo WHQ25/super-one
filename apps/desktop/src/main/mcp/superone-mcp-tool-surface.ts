@@ -13,6 +13,7 @@ import {
   dispatchAppToolCall,
   getAppToolDefs,
   getSessionHost,
+  getAppSettingsApplier,
   notifyDevAppReady,
 } from './superone-mcp-server'
 import type { SuperoneMcpToolDescriptor } from './superone-mcp-types'
@@ -46,6 +47,7 @@ export async function executeSuperoneMcpTool(
       notifyDevAppReady,
       sessionId,
       sessionHost: getSessionHost(),
+      applyAppSettings: getAppSettingsApplier(),
     })
   }
 

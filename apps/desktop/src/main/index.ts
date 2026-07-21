@@ -27,7 +27,7 @@ import { detachAllCdp } from './browser/browser-cdp'
 import { registerBrowserPopupRedirect } from './browser-popup-redirect'
 import { fetchBrowserBytes, registerBrowserDownloadCapture } from './browser/browser-downloads'
 import { setBrowserDownloadTaskHost } from './browser/browser-download-tasks'
-import { initSuperoneMcpServer, registerAppTools, unregisterAppTools, unregisterAppAcrossSessions, resolveToolCall, rejectToolCall, notifyAppReady as notifyMiniAppReady, loadPreapprovedTools, updatePreapprovedTools, registerAppTemplates, unregisterAppTemplates, submitToolIntercept, cancelToolIntercept, clearSessionPendingCalls as clearSessionPendingMiniAppCalls, disposeSuperoneMcpServer, setSessionHostProvider, clearAppReadyGate, isAppStillAuthorizedInProject, addToolsChangedListener, setMobileShareToolDeps, registerMobileShareTool, unregisterMobileShareTool } from './mcp/superone-mcp-server'
+import { initSuperoneMcpServer, registerAppTools, unregisterAppTools, unregisterAppAcrossSessions, resolveToolCall, rejectToolCall, notifyAppReady as notifyMiniAppReady, loadPreapprovedTools, updatePreapprovedTools, registerAppTemplates, unregisterAppTemplates, submitToolIntercept, cancelToolIntercept, clearSessionPendingCalls as clearSessionPendingMiniAppCalls, disposeSuperoneMcpServer, setSessionHostProvider, setAppSettingsApplier, clearAppReadyGate, isAppStillAuthorizedInProject, addToolsChangedListener, setMobileShareToolDeps, registerMobileShareTool, unregisterMobileShareTool } from './mcp/superone-mcp-server'
 import { MobileShareService, type MobileShareTarget } from './remote/mobile-share-service'
 import { MobileReceiveService, type MobileReceiveTarget } from './remote/mobile-receive-service'
 import { MobileShareToolCoordinator } from './remote/mobile-share-tool-coordinator'
@@ -110,6 +110,7 @@ import { trace, closeTraceDb } from './agent/event-trace'
 import { RemoteControlService } from './remote-control-service'
 import { readProjectPreferences, saveProjectPreferences } from './claude-preferences-service'
 import { readAppSettings, saveAppSettings } from './app-settings-service'
+import type { AppSettings, AppSettingsPatch } from '@superone/shared/agent-types'
 import { recordBrowserHistory, suggestBrowserHistory, deleteBrowserHistory } from './browser-history-service'
 import { getSandboxCapability, probeSandboxDependencies } from './sandbox-platform'
 import { ProcessTitle, WindowRole, roleArg, glassBootArgs } from './process-titles'
@@ -451,6 +452,24 @@ function applyLiquidGlass(): void {
     win.setVibrancy(active ? 'under-window' : null)
     win.setBackgroundColor(active ? '#00000000' : currentDarkTheme ? '#1c1c1c' : '#ffffff')
   }
+}
+
+async function applyAppSettingsPatch(patch: AppSettingsPatch): Promise<AppSettings> {
+  const result = saveAppSettings(patch)
+  if (result.locale) {
+    await applyLocale(result.locale)
+  }
+  if (patch?.updateChannel !== undefined) {
+    setUpdateChannel(result.updateChannel)
+  }
+  if (patch?.liquidGlass !== undefined) {
+    applyLiquidGlass()
+  }
+  if (patch?.cdpEnabled === false) {
+    detachAllCdp()
+  }
+  safeSend(AgentIpcChannels.APP_SETTINGS_CHANGED, result)
+  return result
 }
 
 function syncNativeAppearance(): void {
@@ -2209,23 +2228,7 @@ function registerIpcHandlers(): void {
   })
 
   ipcMain.handle(AgentIpcChannels.APP_SETTINGS_GET, () => readAppSettings())
-  ipcMain.handle(AgentIpcChannels.APP_SETTINGS_SAVE, async (_e, patch) => {
-    const result = saveAppSettings(patch)
-    if (result.locale) {
-      await applyLocale(result.locale)
-    }
-    if (patch?.updateChannel !== undefined) {
-      setUpdateChannel(result.updateChannel)
-    }
-    if (patch?.liquidGlass !== undefined) {
-      applyLiquidGlass()
-    }
-    if (patch?.cdpEnabled === false) {
-      detachAllCdp()
-    }
-    safeSend(AgentIpcChannels.APP_SETTINGS_CHANGED, result)
-    return result
-  })
+  ipcMain.handle(AgentIpcChannels.APP_SETTINGS_SAVE, (_e, patch) => applyAppSettingsPatch(patch))
   ipcMain.handle(AgentIpcChannels.APP_SYSTEM_LOCALE, () => getSystemLocale())
 
   ipcMain.handle(AgentIpcChannels.BROWSER_HISTORY_RECORD, (_e, url: string, title: string, titleOnly?: boolean) => recordBrowserHistory(url, title, titleOnly))
@@ -2528,6 +2531,7 @@ function registerIpcHandlers(): void {
   initSuperoneMcpServer(() => mainWindow)
   initBrowserAutomation(() => mainWindow)
   setSessionHostProvider(() => sessionManager)
+  setAppSettingsApplier(applyAppSettingsPatch)
   setBrowserDownloadTaskHost({
     emitHostEvent(sessionId, event) {
       sessionManager.getSession(sessionId)?.emitHostEvent(event)

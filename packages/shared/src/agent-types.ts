@@ -471,6 +471,50 @@ export interface VideoGenConfirmPayload {
  */
 export const VIDEO_GEN_PARAMS_FIELD = 'paramsJson'
 
+// --- App settings (config) apply confirmation ---
+
+export type ConfigFieldType = 'boolean' | 'enum' | 'number' | 'string' | 'json'
+
+export interface ConfigConfirmField {
+  key: string
+  domain: string
+  label: string
+  type: ConfigFieldType
+  enumValues?: string[]
+  min?: number
+  max?: number
+  /** True when the field can be reset to its default (empty) value. */
+  clearable?: boolean
+  note?: string
+  currentValue: string | number | boolean | null
+  proposedValue: string | number | boolean | null
+}
+
+export interface ConfigConfirmResourceOp {
+  resource: string
+  operation: 'create' | 'update' | 'delete'
+  recordId?: string
+  /** Record identity, shown for delete (and as a heading for create/update). */
+  title: string
+  subtitle?: string
+  /** The record's editable fields for create/update; empty for delete. */
+  fields: ConfigConfirmField[]
+}
+
+export interface ConfigConfirmPayload {
+  /** Scalar AppSettings field changes. */
+  fields?: ConfigConfirmField[]
+  /** A resource create/update/delete proposal. */
+  resource?: ConfigConfirmResourceOp
+}
+
+/**
+ * The renderer packs the user's final (possibly edited) config values into
+ * `content[CONFIG_APPLY_FIELD] = JSON.stringify({ [key]: value })` when accepting a
+ * `config_confirm` request, mirroring the video-gen confirm flow's response shape.
+ */
+export const CONFIG_APPLY_FIELD = 'configJson'
+
 // --- Permission request ---
 
 export type ElicitationFormFieldType = 'string' | 'number' | 'boolean' | 'enum'
@@ -497,7 +541,7 @@ export interface PermissionRequest {
   toolDiff?: string
   toolDiffTokens?: { added?: DiffTokenLine[]; removed?: DiffTokenLine[] }
   toolLineDelta?: { added: number; removed: number }
-  requestKind?: 'mcp_elicitation' | 'video_gen_confirm'
+  requestKind?: 'mcp_elicitation' | 'video_gen_confirm' | 'config_confirm'
   serverName?: string
   message?: string
   subtitle?: string
@@ -506,6 +550,8 @@ export interface PermissionRequest {
   elicitationForm?: ElicitationFormField[]
   /** Present only when requestKind === 'video_gen_confirm'. */
   videoGenConfirm?: VideoGenConfirmPayload
+  /** Present only when requestKind === 'config_confirm'. */
+  configConfirm?: ConfigConfirmPayload
 }
 
 export type PermissionMode = 'default' | 'acceptEdits' | 'bypassPermissions' | 'plan' | 'dontAsk' | 'auto'

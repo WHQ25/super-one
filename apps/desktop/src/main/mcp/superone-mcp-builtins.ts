@@ -1,4 +1,5 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import type { AppSettings, AppSettingsPatch } from '@superone/shared/agent-types'
 import { existsSync } from 'fs'
 import { writeFile } from 'fs/promises'
 import { join } from 'path'
@@ -39,6 +40,9 @@ import toolsMd from './guides/tools.md?raw'
 import {
   BUILT_IN_SUPERONE_TOOL_DEFS,
   BUILT_IN_SUPERONE_TOOL_NAMES,
+  CONFIG_SETTINGS_DOMAINS,
+  CONFIG_READ_GUIDE_DESCRIPTION,
+  CONFIG_APPLY_DESCRIPTION,
   MINIAPP_GUIDE_TOPICS,
   READ_MINIAPP_GUIDE_DESCRIPTION,
   MINIAPP_GUIDE_TOPIC_DESCRIPTION,
@@ -49,6 +53,7 @@ import {
   RENAME_SESSION_DESCRIPTION,
   type BuiltInSuperoneToolName,
 } from './superone-mcp-builtin-defs'
+import { configApplyHandler, configReadGuideHandler, type ConfigApplyArgs } from './config-tools'
 
 export {
   BUILT_IN_SUPERONE_TOOL_DEFS,
@@ -77,6 +82,8 @@ const MINIAPP_GUIDES: Record<string, string> = {
 
 export interface SessionTitleSetter {
   setTitle(title: string, source: 'user' | 'agent'): void
+  /** Project directory this session is scoped to (present on the real Session object). */
+  readonly projectPath?: string
   /** Host-emitted AgentEvents (e.g. browser download task lifecycle). */
   emitHostEvent?(event: import('@superone/shared/agent-types').AgentEvent): void
   /**
@@ -95,6 +102,8 @@ export interface BuiltInSuperoneToolDeps {
   notifyDevAppReady: (projectDir: string, appId: string) => void
   sessionId: string
   sessionHost: SessionTitleHost | null
+  /** Persist an app-settings patch through the shared side-effect + broadcast path. */
+  applyAppSettings: (patch: AppSettingsPatch) => Promise<AppSettings> | AppSettings
 }
 
 interface SetupMiniAppDevArgs {
@@ -274,6 +283,10 @@ export async function executeBuiltInSuperoneTool(
       return updateSuperoneTypes(args as { appDir: string })
     case 'session_rename':
       return renameSessionTool(args as { title: string }, deps)
+    case 'config_read_guide':
+      return configReadGuideHandler(args as { domain?: string }, deps)
+    case 'config_apply':
+      return configApplyHandler(args as ConfigApplyArgs, deps)
     case 'media_read_guide':
       return readMediaGuideHandler(args as { topic: string })
     case 'media_list_providers':
@@ -344,6 +357,37 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
       appDir: z.string().describe('Absolute path to the mini-app directory'),
     },
     updateSuperoneTypes,
+  )
+
+  server.registerTool(
+    'config_read_guide',
+    {
+      description: CONFIG_READ_GUIDE_DESCRIPTION,
+      inputSchema: {
+        domain: z.enum(CONFIG_SETTINGS_DOMAINS).optional().describe('Which settings domain to read. Omit to list all domains.'),
+      },
+    },
+    (args) => configReadGuideHandler(args, deps),
+  )
+
+  server.registerTool(
+    'config_apply',
+    {
+      description: CONFIG_APPLY_DESCRIPTION,
+      inputSchema: {
+        changes: z.array(z.object({
+          key: z.string().describe('The settings field key, exactly as returned by config_read_guide.'),
+          value: z.union([z.string(), z.number(), z.boolean(), z.null()]).describe('The new value. Use null or "" to reset a clearable field to its default.'),
+        })).optional().describe('Scalar settings changes to propose. Mutually exclusive with `resource`.'),
+        resource: z.object({
+          resource: z.string().describe('The resource domain, e.g. "credential" — as returned by config_read_guide.'),
+          operation: z.enum(['create', 'update', 'delete']).describe('Which operation to perform.'),
+          recordId: z.string().optional().describe('The record\'s `id` (from config_read_guide). Required for update/delete.'),
+          values: z.record(z.string(), z.unknown()).optional().describe('Field values keyed by field key. Required for create (all required fields) and update (only the fields being changed).'),
+        }).optional().describe('A resource create/update/delete to propose. Mutually exclusive with `changes`.'),
+      },
+    },
+    (args) => configApplyHandler(args, deps),
   )
 
   server.registerTool(

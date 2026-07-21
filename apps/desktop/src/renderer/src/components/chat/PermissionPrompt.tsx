@@ -16,6 +16,7 @@ import { eligibilityFromStore } from '@/lib/auto-mode-eligibility'
 import { ElicitationForm, isElicitationFormValid } from './ElicitationForm'
 import { getPermissionPromptConfig } from './permission-prompt/permission-prompt-config'
 import { VideoGenConfirmPromptContainer } from './VideoGenConfirmPromptContainer'
+import { ConfigConfirmPromptContainer } from './ConfigConfirmPromptContainer'
 
 interface MiniAppToolInfo {
   appId: string
@@ -128,6 +129,8 @@ export function PermissionPrompt() {
   const allowAlwaysAllow = pendingPermission?.allowAlwaysAllow
   const isElicitation = pendingPermission?.requestKind === 'mcp_elicitation'
   const isVideoGenConfirm = pendingPermission?.requestKind === 'video_gen_confirm'
+  const isConfigConfirm = pendingPermission?.requestKind === 'config_confirm'
+  const isSelfManagedConfirm = isVideoGenConfirm || isConfigConfirm
   const elicitationForm = pendingPermission?.elicitationForm ?? []
   const supportsAlwaysPersist = pendingPermission?.supportsAlwaysPersist ?? false
   useRestoreChatInputFocus(!!requestId)
@@ -172,10 +175,10 @@ export function PermissionPrompt() {
   useEffect(() => {
     // VideoGenConfirmPrompt mounts its own window keydown listener and manages its
     // own focus — this autofocus effect must not fight it.
-    if (requestId && !isCollapsed && !isVideoGenConfirm) {
+    if (requestId && !isCollapsed && !isSelfManagedConfirm) {
       requestAnimationFrame(() => btnRefs.current[0]?.focus())
     }
-  }, [requestId, isCollapsed, isVideoGenConfirm])
+  }, [requestId, isCollapsed, isSelfManagedConfirm])
 
   const btnCount = promptConfig.buttonCount
 
@@ -254,7 +257,7 @@ export function PermissionPrompt() {
     // VideoGenConfirmPrompt has its own window keydown listener (Tab/Enter/Escape).
     // Without this gate both listeners fire and Enter/Escape would additionally
     // trigger handleAllow/handleDeny here with the wrong payload.
-    if (!requestId || isVideoGenConfirm) return
+    if (!requestId || isSelfManagedConfirm) return
 
     function onKeyDown(e: KeyboardEvent) {
       if (isCollapsed) {
@@ -338,12 +341,16 @@ export function PermissionPrompt() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [requestId, btnCount, handleCancel, handleDeny, handleAcceptEdit, handleAllow, isCodexDecisionPrompt, isEditTool, isCollapsed, suggestionsCount, toggleSuggestion, isVideoGenConfirm])
+  }, [requestId, btnCount, handleCancel, handleDeny, handleAcceptEdit, handleAllow, isCodexDecisionPrompt, isEditTool, isCollapsed, suggestionsCount, toggleSuggestion, isSelfManagedConfirm])
 
   if (!pendingPermission) return null
 
   if (isVideoGenConfirm) {
     return <VideoGenConfirmPromptContainer request={pendingPermission} />
+  }
+
+  if (isConfigConfirm) {
+    return <ConfigConfirmPromptContainer request={pendingPermission} />
   }
 
   if (isElicitation) {

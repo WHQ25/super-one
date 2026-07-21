@@ -17,6 +17,7 @@ import {
   type PendingPlanApproval,
 } from '../../agent/claude-permissions'
 import { resolveVideoConfirm, rejectVideoConfirm } from '../../mcp/media-tools'
+import { resolveConfigConfirm, rejectConfigConfirm } from '../../mcp/config-tools'
 import { buildSafeEnv } from '../../spawn-env'
 import type {
   AgentEvent,
@@ -500,8 +501,10 @@ export class ClaudeBackend implements SessionBackend {
   respondToPermission(requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[], decision?: 'cancel', formAnswers?: Record<string, unknown>): boolean {
     if (decision === 'cancel') {
       if (rejectVideoConfirm(requestId, 'User cancelled')) return true
+      if (rejectConfigConfirm(requestId, 'User cancelled')) return true
     }
     if (resolveVideoConfirm(requestId, allow ? 'accept' : 'decline', formAnswers)) return true
+    if (resolveConfigConfirm(requestId, allow ? 'accept' : 'decline', formAnswers)) return true
     if (this.pendingElicitations.has(requestId)) {
       return respondToElicitationInternal(this.pendingElicitations, requestId, allow, decision, formAnswers)
     }

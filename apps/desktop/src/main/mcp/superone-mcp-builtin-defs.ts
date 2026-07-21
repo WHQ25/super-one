@@ -77,7 +77,19 @@ export const BUILT_IN_SUPERONE_TOOL_NAMES = [
   'media_video_status',
   'widget_read_guide',
   'widget_show',
+  'config_read_guide',
+  'config_apply',
   ...BROWSER_TOOL_NAMES,
+] as const
+
+export const CONFIG_SETTINGS_DOMAINS = [
+  'general',
+  'appearance',
+  'browser',
+  'agent-claude',
+  'agent-codex',
+  'ai-provider',
+  'custom-platform',
 ] as const
 
 export type BuiltInSuperoneToolName = typeof BUILT_IN_SUPERONE_TOOL_NAMES[number]
@@ -136,6 +148,20 @@ export const RENAME_SESSION_DESCRIPTION =
   'Only the top-level agent talking directly to the user may call this. If you were launched as a Task/subagent worker, do NOT call it — you do not own the user-facing session title.\n\n' +
   'If the tool returns an error containing "user_locked", the user has manually named this session — do not call session_rename again for this session.'
 
+export const CONFIG_READ_GUIDE_DESCRIPTION =
+  'Read the current SuperOne app settings so you can help the user change them. ' +
+  'ALWAYS call this before config_apply. Call with no `domain` to list every settings domain — general, appearance, browser, agent-claude, agent-codex (each mirroring a Settings page) — plus every resource domain: ai-provider (AI provider API keys), custom-platform (user-defined AI provider platforms); ' +
+  'call with a `domain` to get that domain\'s fields, each with its exact `key`, `type`, `currentValue`, allowed values / numeric range, and whether it is clearable to a default. ' +
+  'For a resource domain like `ai-provider` or `custom-platform`, the response instead has `fields` (the shared schema for every record) and `records` (every current record with its actual field values, keyed by `id`) — pass a record\'s `id` as `recordId` when updating/deleting it via config_apply. ' +
+  'Use the returned `key`s and value constraints to build the `changes` (or `resource`) you pass to config_apply. Do NOT guess keys or values — they are only valid if returned here.'
+
+export const CONFIG_APPLY_DESCRIPTION =
+  'Propose SuperOne app settings changes, or a resource create/update/delete, for the user to review. ' +
+  'Every call opens a confirmation dialog: the user sees the proposal (current → new, or the record to delete), can edit values, and must explicitly confirm before ANYTHING is applied — nothing is changed silently. ' +
+  'Pass EXACTLY ONE of: `changes` — an array of { key, value } using keys from config_read_guide, for scalar settings; or `resource` — { resource, operation:"create"|"update"|"delete", recordId?, values? } using the resource domain, field keys, and record ids from config_read_guide, for resource records like AI provider credentials or custom AI provider platforms. ' +
+  'The result is one of: `{status:"applied", ...}` — the user confirmed (possibly after editing); `{status:"rejected", feedback?}` — the user rejected, adjust per feedback or ask before retrying; `{status:"cancelled"}` — the user dismissed, stop and wait; `{status:"error", message}` — nothing was changed, do not retry, report to the user. ' +
+  'For `changes`, invalid keys/values are reported in `rejected` rather than failing the whole call.'
+
 export const READ_MEDIA_GUIDE_DESCRIPTION =
   'Returns reference documentation for media_generate_image / media_generate_video: which settings actually work for which provider, exact parameter mappings, and known silent-failure modes (a setting being ignored instead of erroring). ' +
   'Call `overview` before your first media_generate_image/media_generate_video call in a session, then call the topic for the specific provider you are about to use (check the provider `kind` via media_list_providers) before setting anything beyond `prompt`. ' +
@@ -177,6 +203,62 @@ export const VIDEO_STATUS_DESCRIPTION =
   'Poll roughly every 30 seconds while it is running. Do not tell the user the video is ready until this returns `generated`.'
 
 export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
+  {
+    name: 'config_read_guide',
+    description: CONFIG_READ_GUIDE_DESCRIPTION,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        domain: {
+          type: 'string',
+          enum: CONFIG_SETTINGS_DOMAINS,
+          description: 'Which settings domain to read. Omit to list all domains with their descriptions.',
+        },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'config_apply',
+    description: CONFIG_APPLY_DESCRIPTION,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        changes: {
+          type: 'array',
+          description: 'Scalar settings changes to propose. Each item targets one field key from config_read_guide. Mutually exclusive with `resource`.',
+          items: {
+            type: 'object',
+            properties: {
+              key: { type: 'string', description: 'The settings field key, exactly as returned by config_read_guide.' },
+              value: {
+                type: ['string', 'number', 'boolean', 'null'],
+                description: 'The new value. Use null (or "") to reset a clearable field to its default.',
+              },
+            },
+            required: ['key', 'value'],
+            additionalProperties: false,
+          },
+        },
+        resource: {
+          type: 'object',
+          description: 'A resource create/update/delete to propose, e.g. resource:"ai-provider". Mutually exclusive with `changes`.',
+          properties: {
+            resource: { type: 'string', description: 'The resource domain, e.g. "ai-provider" — as returned by config_read_guide.' },
+            operation: { type: 'string', enum: ['create', 'update', 'delete'], description: 'Which operation to perform.' },
+            recordId: { type: 'string', description: 'The record\'s `id` (from config_read_guide). Required for update/delete.' },
+            values: {
+              type: 'object',
+              description: 'Field values keyed by field key, using the field keys/types from config_read_guide. Required for create (all required fields) and update (only the fields being changed).',
+            },
+          },
+          required: ['resource', 'operation'],
+          additionalProperties: false,
+        },
+      },
+      additionalProperties: false,
+    },
+  },
   {
     name: 'miniapp_dev_read_guide',
     description: READ_MINIAPP_GUIDE_DESCRIPTION,

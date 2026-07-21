@@ -679,6 +679,17 @@ export type Messages = {
       endFrame: string
       reference: string
     }
+    configConfirm: {
+      title: string
+      confirm: string
+      deleteConfirm: string
+      reject: string
+      feedbackPlaceholder: string
+      currentValue: string
+      defaultOption: string
+      clearedValue: string
+      emptyValue: string
+    }
     askUser: {
       otherOption: string
       selectOptionPreview: string
@@ -697,6 +708,18 @@ export type Messages = {
       readMiniAppGuide: string
       readingMediaGuide: string
       readMediaGuide: string
+      readingConfigGuide: string
+      readConfigGuide: string
+      guideOverview: string
+      applyingSettings: string
+      appliedSettings: string
+      settingsChangeRejected: string
+      settingsChangeCancelled: string
+      settingsChangeFailed: string
+      settingsChangeCount: string
+      configCreated: string
+      configUpdated: string
+      configDeleted: string
       generatingImage: string
       generatedImage: string
       listingMediaProviders: string
@@ -2420,6 +2443,17 @@ export const en: Messages = {
       endFrame: 'End Frame',
       reference: 'Reference {{index}}',
     },
+    configConfirm: {
+      title: 'Confirm Settings Change',
+      confirm: 'Confirm & Apply',
+      deleteConfirm: 'Delete',
+      reject: 'Reject',
+      feedbackPlaceholder: 'Feedback (required, Enter to submit)',
+      currentValue: 'Current: {{value}}',
+      defaultOption: 'Default',
+      clearedValue: 'Default',
+      emptyValue: 'Not set',
+    },
     askUser: {
       otherOption: 'Other...',
       selectOptionPreview: 'Select an option to preview',
@@ -2438,6 +2472,18 @@ export const en: Messages = {
       readMiniAppGuide: 'Read mini-app guide',
       readingMediaGuide: 'Reading media guide',
       readMediaGuide: 'Read media guide',
+      readingConfigGuide: 'Reading settings guide',
+      readConfigGuide: 'Read settings guide',
+      guideOverview: 'Overview',
+      applyingSettings: 'Updating settings',
+      appliedSettings: 'Updated settings',
+      settingsChangeRejected: 'Settings change rejected',
+      settingsChangeCancelled: 'Settings change dismissed',
+      settingsChangeFailed: 'Settings change failed',
+      settingsChangeCount: '{{count}} changes',
+      configCreated: 'Created',
+      configUpdated: 'Updated',
+      configDeleted: 'Deleted',
       generatingImage: 'Generating image',
       generatedImage: 'Generated image',
       listingMediaProviders: 'List providers',

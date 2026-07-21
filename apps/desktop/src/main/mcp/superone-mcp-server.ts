@@ -11,6 +11,7 @@ import { jsonSchemaToZodShape } from './json-schema-zod'
 import {
   BUILT_IN_SUPERONE_TOOL_NAMES,
   registerSuperoneTools,
+  type BuiltInSuperoneToolDeps,
   type SessionTitleHost,
 } from './superone-mcp-builtins'
 import {
@@ -153,6 +154,18 @@ export function getSessionHost(): SessionTitleHost | null {
   return sessionHostProvider?.() ?? null
 }
 
+type AppSettingsApplier = BuiltInSuperoneToolDeps['applyAppSettings']
+
+let appSettingsApplier: AppSettingsApplier | null = null
+
+export function setAppSettingsApplier(applier: AppSettingsApplier | null): void {
+  appSettingsApplier = applier
+}
+
+export function getAppSettingsApplier(): AppSettingsApplier {
+  return appSettingsApplier ?? (() => { throw new Error('App settings applier is not registered') })
+}
+
 export function notifyDevAppReady(projectDir: string, appId: string): void {
   const win = getMainWindow?.()
   if (win && !win.isDestroyed()) {
@@ -175,6 +188,7 @@ export function createSuperoneMcpServer(sessionId: string, projectPath?: string)
     notifyDevAppReady,
     sessionId,
     sessionHost: getSessionHost(),
+    applyAppSettings: getAppSettingsApplier(),
   })
   registerWidgetTools(server, { projectPath })
   registerBrowserTools(server, sessionId)

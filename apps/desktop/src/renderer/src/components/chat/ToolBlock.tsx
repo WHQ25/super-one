@@ -1,6 +1,6 @@
 import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback, memo, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ChevronRight, PenLine, Check, X, Ban, TriangleAlert, Upload, Smartphone } from 'lucide-react'
+import { ChevronRight, PenLine, Check, X, Ban, TriangleAlert, Upload, Smartphone, SlidersHorizontal } from 'lucide-react'
 import { diffLines } from 'diff'
 import { cn } from '@superone/ui/lib/utils'
 import { inferLanguage, useHighlightedTokens, useIncrementalHighlightedLines, type DiffLine, DiffView, splitContentLines, buildUnifiedFileChangeDiffLines } from '@/lib/diff-utils'
@@ -154,6 +154,116 @@ function SetupMiniAppDevBlock({ appName, isStreaming, params, result }: {
           </div>
         </div>
       </div>
+    </div>
+  )
+}
+
+function formatConfigValue(v: unknown, emptyLabel: string): string {
+  if (v === null || v === undefined || v === '') return emptyLabel
+  if (typeof v === 'boolean') return v ? 'on' : 'off'
+  if (typeof v === 'object') return JSON.stringify(v)
+  return String(v)
+}
+
+type ConfigAppliedChange = { key?: string; label?: string; oldValue?: unknown; newValue?: unknown }
+
+function ConfigApplyBlock({ params, result, isStreaming, isError, isDenied }: {
+  params: Record<string, unknown>
+  result: string | null
+  isStreaming: boolean
+  isError: boolean
+  isDenied: boolean
+}) {
+  const { t } = useTranslation()
+  const [expanded, setExpanded] = useState(false)
+  const emptyLabel = t('chat.configConfirm.emptyValue')
+
+  const parsed = useMemo<Record<string, unknown> | null>(() => {
+    if (!result) return null
+    try {
+      const p = JSON.parse(result)
+      return p && typeof p === 'object' ? (p as Record<string, unknown>) : null
+    } catch {
+      return null
+    }
+  }, [result])
+
+  const status = typeof parsed?.status === 'string' ? (parsed.status as string) : undefined
+
+  const rows = useMemo(() => {
+    const applied = Array.isArray(parsed?.applied) ? (parsed.applied as ConfigAppliedChange[]) : null
+    if (applied?.length) {
+      return applied.map((a) => ({
+        key: String(a.key ?? ''),
+        label: a.label ?? String(a.key ?? ''),
+        from: 'oldValue' in a ? formatConfigValue(a.oldValue, emptyLabel) : null,
+        to: formatConfigValue(a.newValue, emptyLabel),
+      }))
+    }
+    const changes = Array.isArray(params.changes) ? (params.changes as Array<{ key?: string; value?: unknown }>) : null
+    if (changes) {
+      return changes.map((c) => ({ key: String(c.key ?? ''), label: String(c.key ?? ''), from: null, to: formatConfigValue(c.value, emptyLabel) }))
+    }
+    return []
+  }, [parsed, params, emptyLabel])
+
+  const resourceReq = params.resource && typeof params.resource === 'object' ? (params.resource as { operation?: string }) : undefined
+  const resourceOp = typeof parsed?.operation === 'string' ? (parsed.operation as string) : resourceReq?.operation
+  const resourceTitle = typeof parsed?.title === 'string' ? (parsed.title as string) : undefined
+
+  const failed = isError || isDenied || status === 'error'
+  const rejected = status === 'rejected'
+  const cancelled = status === 'cancelled'
+  const muted = failed || rejected || cancelled
+
+  let headerLabel: string
+  if (isStreaming) headerLabel = t('chat.toolBlock.applyingSettings')
+  else if (failed) headerLabel = t('chat.toolBlock.settingsChangeFailed')
+  else if (rejected) headerLabel = t('chat.toolBlock.settingsChangeRejected')
+  else if (cancelled) headerLabel = t('chat.toolBlock.settingsChangeCancelled')
+  else if (resourceOp === 'delete') headerLabel = t('chat.toolBlock.configDeleted')
+  else if (resourceOp === 'create') headerLabel = t('chat.toolBlock.configCreated')
+  else if (resourceOp === 'update') headerLabel = t('chat.toolBlock.configUpdated')
+  else headerLabel = t('chat.toolBlock.appliedSettings')
+
+  const summary = resourceTitle ?? (rows.length > 0 ? t('chat.toolBlock.settingsChangeCount', { count: rows.length }) : '')
+  const errorMsg = failed && typeof parsed?.message === 'string' ? (parsed.message as string) : ''
+  const expandable = rows.length > 0 || !!errorMsg
+
+  return (
+    <div className={cn('tool-node my-0.5 rounded', muted ? 'bg-muted/10' : 'bg-muted/20', expandable && 'cursor-pointer', expandable && 'hover:bg-muted/40')}>
+      <div
+        className="flex min-w-0 items-center gap-1.5 px-2 py-1.5 text-xs"
+        onClick={expandable ? () => setExpanded((e) => !e) : undefined}
+      >
+        <SlidersHorizontal className={cn('size-3 shrink-0', failed ? 'text-destructive' : 'text-muted-foreground')} />
+        <span className="shrink-0 font-medium text-foreground">{headerLabel}{isStreaming && '…'}</span>
+        {summary && <span className="min-w-0 truncate text-muted-foreground">{summary}</span>}
+        {expandable && <ChevronRight className={cn('ml-auto size-3 shrink-0 text-muted-foreground transition-transform duration-200', expanded && 'rotate-90')} />}
+      </div>
+      {expandable && (
+        <div className="grid transition-[grid-template-rows] duration-200 ease-out" style={{ gridTemplateRows: expanded ? '1fr' : '0fr' }}>
+          <div className="overflow-hidden">
+            <div className="space-y-1.5 border-t border-border/40 px-2 py-2 text-xs">
+              {errorMsg && <div className="mb-1 rounded bg-destructive/10 px-2 py-1.5 text-destructive">{errorMsg}</div>}
+              {rows.map((r) => (
+                <div key={r.key} className="flex items-baseline gap-2">
+                  <span className="w-32 shrink-0 truncate text-muted-foreground" title={r.label}>{r.label}</span>
+                  <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-1.5">
+                    {r.from !== null && (
+                      <>
+                        <span className="text-muted-foreground/60 line-through">{r.from}</span>
+                        <span className="text-muted-foreground/50">→</span>
+                      </>
+                    )}
+                    <span className="break-all font-medium text-foreground">{r.to}</span>
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -431,6 +541,36 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
     }
     if (mcpInfo.mcpToolName === 'mobile_share_file') {
       return <MobileShareFileBlock params={params} result={!isStreaming ? (result ?? null) : null} isStreaming={isStreaming} />
+    }
+    if (mcpInfo.mcpToolName === 'config_apply') {
+      return (
+        <ConfigApplyBlock
+          params={params}
+          result={!isStreaming ? (result ?? null) : null}
+          isStreaming={isStreaming}
+          isError={!!isError}
+          isDenied={isDenied}
+        />
+      )
+    }
+    if (mcpInfo.mcpToolName === 'config_read_guide') {
+      const hasDomain = typeof params.domain === 'string' && params.domain.length > 0
+      let domainLabel = ''
+      if (!isStreaming && result) {
+        try {
+          const parsed = JSON.parse(result)
+          if (parsed && typeof parsed === 'object' && typeof parsed.label === 'string') domainLabel = parsed.label
+        } catch { /* ignore */ }
+      }
+      const summaryValue = domainLabel || (hasDomain ? '' : t('chat.toolBlock.guideOverview'))
+      return (
+        <CompactToolRow icon={<ToolIcon icon="book-open" className="size-3 shrink-0 text-muted-foreground" />}>
+          <span className="font-medium text-foreground">
+            {isStreaming ? <>{t('chat.toolBlock.readingConfigGuide')}…</> : t('chat.toolBlock.readConfigGuide')}
+            {summaryValue && <>: <span className="text-muted-foreground">{summaryValue}</span></>}
+          </span>
+        </CompactToolRow>
+      )
     }
     if (mcpInfo.mcpToolName === 'media_list_providers') {
       return <MediaProvidersBlock result={!isStreaming ? (result ?? null) : null} isStreaming={isStreaming} />

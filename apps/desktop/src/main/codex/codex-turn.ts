@@ -58,6 +58,7 @@ import { parseElicitationSchema, extractVideoGenConfirmPayload } from '../agent/
 import { getCodexSuperoneMcpConfig } from '../mcp/superone-mcp-stdio-state'
 import { isToolPreapproved, isBuiltInSuperoneTool } from '../mcp/superone-mcp-server'
 import { BUILT_IN_SUPERONE_TOOL_NAMES } from '../mcp/superone-mcp-builtins'
+import { resolveConfigConfirm, rejectConfigConfirm } from '../mcp/config-tools'
 import { CODEX_SYSTEM_PROMPT_APPEND } from '../agent/superone-system-prompt'
 import { buildAttachmentPathNote } from '../agent/attachment-store'
 
@@ -2252,6 +2253,11 @@ export function respondToCodexPermission(
   decision?: 'cancel',
   formAnswers?: Record<string, unknown>,
 ): boolean {
+  if (decision === 'cancel') {
+    if (rejectConfigConfirm(requestId, 'User cancelled')) return true
+  }
+  if (resolveConfigConfirm(requestId, allow ? 'accept' : 'decline', formAnswers)) return true
+
   const pending = session.pendingApprovals.get(requestId)
   if (!pending) return false
 

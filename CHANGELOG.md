@@ -4,6 +4,15 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.46.2-alpha] - 2026-07-22
+
+### Added
+- Config management MCP tools (config_read_guide/config_apply) with permission-gated apply flow, capability picker and structured settings UI
+
+### Fixed
+- Restore video generation confirm dialog and turn-end gallery on Codex sessions
+- Prevent premature idle release when active runtime count is low
+
 ## [0.46.1-alpha] - 2026-07-22
 
 ### Added

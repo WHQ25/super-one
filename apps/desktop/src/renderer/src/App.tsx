@@ -1,7 +1,6 @@
 import { useEffect, useLayoutEffect, useCallback, useRef, useState, lazy, Suspense } from 'react'
 import { flushSync } from 'react-dom'
 import { Sun, Moon, X, Smartphone, Minimize2, SquareTerminal, RotateCw, Bug, LayoutGrid, Globe, PanelLeft, PanelRight, PanelLeftDashed, PanelRightDashed } from 'lucide-react'
-import { motion } from 'motion/react'
 import { toast } from 'sonner'
 import { useTranslation } from 'react-i18next'
 import { LayoutToggle } from '@/components/coding/LayoutToggle'
@@ -58,6 +57,7 @@ import { initAnalytics } from '@/lib/analytics'
 import { applyCrispText } from '@/lib/font-smoothing'
 import { preloadFileHighlighter } from '@/lib/diff-utils'
 import { LAYOUT, maxSidebarWidth } from '@/lib/layout-constants'
+import { toggleSidebar } from '@/lib/layout-actions'
 
 export { LAYOUT }
 
@@ -178,7 +178,7 @@ function App(): React.JSX.Element {
       if (!e.metaKey) return
       if (e.key === 'b' && !e.altKey) {
         e.preventDefault()
-        useAppStore.getState().setShowSidebar(!useAppStore.getState().showSidebar)
+        toggleSidebar()
       } else if (e.key === ',') {
         e.preventDefault()
         const { view, navigateTo } = useAppStore.getState()
@@ -307,13 +307,6 @@ function App(): React.JSX.Element {
   const sidebarInnerRef = useRef<HTMLDivElement>(null)
   const mainWrapperRef = useRef<HTMLDivElement>(null)
 
-  const nudgeDragRegions = useCallback(() => {
-    const el = mainWrapperRef.current
-    if (!el) return
-    el.style.setProperty('-webkit-app-region', 'no-drag')
-    requestAnimationFrame(() => el.style.removeProperty('-webkit-app-region'))
-  }, [])
-
   const getLinkedPanel = useCallback((newW: number, prevW: number) => {
     const ap = useActivityPanelStore.getState()
     if (!ap.showPanel || ap.side !== 'left') return null
@@ -370,7 +363,6 @@ function App(): React.JSX.Element {
     let raf = 0
     let restoreTimer = 0
     let prevWidth = window.innerWidth
-    let prevSidebar = useAppStore.getState().showSidebar
     const clampBody = () => {
       const { showSidebar: sb, sidebarWidth: sw, setSidebarWidth: setSW } = useAppStore.getState()
       const ap = useActivityPanelStore.getState()
@@ -378,14 +370,8 @@ function App(): React.JSX.Element {
       const delta = curWidth - prevWidth
       prevWidth = curWidth
 
-      const sidebarJustHidden = prevSidebar && !sb
-      prevSidebar = sb
-
       const mainMin = mainMinWRef.current
-      if (sidebarJustHidden && ap.showPanel) {
-        const maxAp = curWidth - mainMin - CARD_GUTTER
-        ap.setPanelWidth(Math.min(maxAp, ap.panelWidth + sw))
-      } else if (delta !== 0 && ap.showPanel) {
+      if (delta !== 0 && ap.showPanel) {
         const maxAp = curWidth - (sb ? sw : 0) - mainMin - CARD_GUTTER
         ap.setPanelWidth(Math.max(MIN_AP, Math.min(ap.panelWidth + delta, maxAp)))
       }
@@ -412,12 +398,10 @@ function App(): React.JSX.Element {
       raf = requestAnimationFrame(clampBody)
     }
     const onWindowResize = () => {
-      const outer = document.querySelector<HTMLElement>('[data-activity-outer]')
-      if (outer) {
-        outer.style.transition = 'none'
-        clearTimeout(restoreTimer)
-        restoreTimer = window.setTimeout(() => { outer.style.transition = '' }, 160)
-      }
+      const outers = document.querySelectorAll<HTMLElement>('[data-activity-outer],[data-sidebar-outer]')
+      outers.forEach((el) => { el.style.transition = 'none' })
+      clearTimeout(restoreTimer)
+      restoreTimer = window.setTimeout(() => { outers.forEach((el) => { el.style.transition = '' }) }, 160)
       flushSync(clampBody)
     }
     clampPanelsRef.current = clampPanels
@@ -526,17 +510,16 @@ function App(): React.JSX.Element {
       <>
       {/* Sidebar — hidden in canvas mode */}
       <div className={cn('relative flex shrink-0', layoutMode !== 'coding' && 'hidden')}>
-      <motion.div
+      <div
         ref={sidebarRef}
-        layout="position"
-        transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
-        className="relative shrink-0 overflow-hidden"
+        data-sidebar-outer=""
+        className="relative shrink-0 overflow-hidden transition-[width] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]"
         style={{ width: showSidebar ? sidebarWidth : 0 }}
       >
         <div ref={sidebarInnerRef} className="h-full" style={{ width: sidebarWidth }}>
           <AppSidebar />
         </div>
-      </motion.div>
+      </div>
         {showSidebar && (
           <div
             data-resize-handle
@@ -565,7 +548,7 @@ function App(): React.JSX.Element {
         <ActivityPanel getMaxWidth={getActivityMaxWidth} hidden={layoutMode !== 'coding' || mosaicMode === 'mosaic'} />
 
         {/* Main area */}
-        <motion.div layout="position" onLayoutAnimationComplete={nudgeDragRegions} transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }} className={cn('relative z-10 flex min-w-[400px] flex-1 flex-col', layoutMode === 'coding' && 'overflow-hidden', layoutMode === 'coding' && showActivityPanel && (activitySide === 'left' ? 'border-l border-border' : 'border-r border-border'))} style={{ order: 1 }}>
+        <div data-main-area="" className={cn('relative z-10 flex min-w-[400px] flex-1 flex-col', layoutMode === 'coding' && 'overflow-hidden', layoutMode === 'coding' && showActivityPanel && (activitySide === 'left' ? 'border-l border-border' : 'border-r border-border'))} style={{ order: 1 }}>
         {/* Main header — drag region (hidden in mosaic; each tile carries its own) */}
         {mosaicMode !== 'mosaic' && (
         <div
@@ -667,7 +650,7 @@ function App(): React.JSX.Element {
           </div>
         )}
         {layoutMode === 'coding' && draggingSession && mosaicMode === 'mosaic' && <MosaicDropPreview />}
-      </motion.div>
+      </div>
       </div>
       </>
       {layoutMode === 'canvas' && <ChatPanel />}

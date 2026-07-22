@@ -1,6 +1,5 @@
 import { useRef, useCallback, useEffect } from 'react'
 import { Plus } from 'lucide-react'
-import { motion } from 'motion/react'
 import { DockviewReact } from 'dockview'
 import type { DockviewReadyEvent, DockviewApi } from 'dockview-core'
 import 'dockview/dist/styles/dockview.css'
@@ -172,11 +171,9 @@ export function ActivityPanel({ getMaxWidth, hidden }: ActivityPanelProps) {
 
   return (
     <>
-      <motion.div
+      <div
         ref={outerRef}
         data-activity-outer=""
-        layout="position"
-        transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
         className={cn('relative shrink-0 overflow-hidden transition-[width] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]')}
         style={{ width: visible ? panelWidth : 0, order: side === 'left' ? 0 : 2 }}
       >
@@ -194,7 +191,7 @@ export function ActivityPanel({ getMaxWidth, hidden }: ActivityPanelProps) {
             />
           </div>
         </div>
-      </motion.div>
+      </div>
 
       {visible && (
         <div

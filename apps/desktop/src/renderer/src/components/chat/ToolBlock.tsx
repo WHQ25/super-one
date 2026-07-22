@@ -3,6 +3,8 @@ import { useTranslation } from 'react-i18next'
 import { ChevronRight, PenLine, Check, X, Ban, TriangleAlert, Upload, Smartphone, SlidersHorizontal } from 'lucide-react'
 import { diffLines } from 'diff'
 import { cn } from '@superone/ui/lib/utils'
+import type { ConfigFieldType } from '@superone/shared/agent-types'
+import { diffConfigFieldValue, formatConfigFieldValue } from '@/lib/config-field-summary'
 import { inferLanguage, useHighlightedTokens, useIncrementalHighlightedLines, type DiffLine, DiffView, splitContentLines, buildUnifiedFileChangeDiffLines } from '@/lib/diff-utils'
 import { getHighlightCache } from '@/lib/highlight-cache'
 import { useChatStore, useActiveSession, useBashOutput, useShareProgress } from '@/stores/chat'
@@ -159,14 +161,7 @@ function SetupMiniAppDevBlock({ appName, isStreaming, params, result }: {
   )
 }
 
-function formatConfigValue(v: unknown, emptyLabel: string): string {
-  if (v === null || v === undefined || v === '') return emptyLabel
-  if (typeof v === 'boolean') return v ? 'on' : 'off'
-  if (typeof v === 'object') return JSON.stringify(v)
-  return String(v)
-}
-
-type ConfigAppliedChange = { key?: string; label?: string; oldValue?: unknown; newValue?: unknown }
+type ConfigAppliedChange = { key?: string; label?: string; type?: ConfigFieldType; oldValue?: unknown; newValue?: unknown }
 
 function ConfigApplyBlock({ params, result, isStreaming, isError, isDenied }: {
   params: Record<string, unknown>
@@ -194,16 +189,27 @@ function ConfigApplyBlock({ params, result, isStreaming, isError, isDenied }: {
   const rows = useMemo(() => {
     const applied = Array.isArray(parsed?.applied) ? (parsed.applied as ConfigAppliedChange[]) : null
     if (applied?.length) {
-      return applied.map((a) => ({
-        key: String(a.key ?? ''),
-        label: a.label ?? String(a.key ?? ''),
-        from: 'oldValue' in a ? formatConfigValue(a.oldValue, emptyLabel) : null,
-        to: formatConfigValue(a.newValue, emptyLabel),
-      }))
+      return applied.map((a) => {
+        const type = a.type ?? 'string'
+        const diff = 'oldValue' in a ? diffConfigFieldValue(type, a.oldValue, a.newValue) : null
+        return {
+          key: String(a.key ?? ''),
+          label: a.label ?? String(a.key ?? ''),
+          diff,
+          from: diff || !('oldValue' in a) ? null : formatConfigFieldValue(type, a.oldValue, emptyLabel),
+          to: diff ? null : formatConfigFieldValue(type, a.newValue, emptyLabel),
+        }
+      })
     }
     const changes = Array.isArray(params.changes) ? (params.changes as Array<{ key?: string; value?: unknown }>) : null
     if (changes) {
-      return changes.map((c) => ({ key: String(c.key ?? ''), label: String(c.key ?? ''), from: null, to: formatConfigValue(c.value, emptyLabel) }))
+      return changes.map((c) => ({
+        key: String(c.key ?? ''),
+        label: String(c.key ?? ''),
+        diff: null,
+        from: null,
+        to: formatConfigFieldValue('string', c.value, emptyLabel),
+      }))
     }
     return []
   }, [parsed, params, emptyLabel])
@@ -251,13 +257,19 @@ function ConfigApplyBlock({ params, result, isStreaming, isError, isDenied }: {
                 <div key={r.key} className="flex items-baseline gap-2">
                   <span className="w-32 shrink-0 truncate text-muted-foreground" title={r.label}>{r.label}</span>
                   <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-1.5">
-                    {r.from !== null && (
+                    {r.diff ? (
+                      <span className="break-all font-medium text-foreground">{r.diff}</span>
+                    ) : (
                       <>
-                        <span className="text-muted-foreground/60 line-through">{r.from}</span>
-                        <span className="text-muted-foreground/50">→</span>
+                        {r.from !== null && (
+                          <>
+                            <span className="text-muted-foreground/60 line-through">{r.from}</span>
+                            <span className="text-muted-foreground/50">→</span>
+                          </>
+                        )}
+                        <span className="break-all font-medium text-foreground">{r.to}</span>
                       </>
                     )}
-                    <span className="break-all font-medium text-foreground">{r.to}</span>
                   </span>
                 </div>
               ))}

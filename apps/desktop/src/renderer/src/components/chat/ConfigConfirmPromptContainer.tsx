@@ -16,7 +16,7 @@ export function ConfigConfirmPromptContainer({ request }: { request: PermissionR
   const payload = request.configConfirm
   if (!payload) return null
 
-  const handleConfirm = (values: Record<string, string | number | boolean | null>): void => {
+  const handleConfirm = (values: Record<string, unknown>): void => {
     void respondToPermission(
       request.requestId,
       true,

@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next'
 import { Check, ChevronDown } from 'lucide-react'
+import type { ConfigFieldType } from '@superone/shared/agent-types'
 import { Input } from '@superone/ui/components/ui/input'
 import { Switch } from '@superone/ui/components/ui/switch'
 import { Textarea } from '@superone/ui/components/ui/textarea'
@@ -10,7 +11,7 @@ import {
   DropdownMenuTrigger,
 } from '@superone/ui/components/ui/dropdown-menu'
 
-export type SettingFieldType = 'boolean' | 'enum' | 'number' | 'string' | 'json'
+export type SettingFieldType = ConfigFieldType
 export type SettingFieldValue = string | number | boolean | null
 
 export interface SettingFieldDefLike {
@@ -21,6 +22,7 @@ export interface SettingFieldDefLike {
   min?: number
   max?: number
   clearable?: boolean
+  secret?: boolean
   note?: string
 }
 
@@ -93,7 +95,7 @@ export function SettingField({ field, value, onChange, size = 'default', disable
     case 'string':
       return (
         <Input
-          type="text"
+          type={field.secret ? 'password' : 'text'}
           disabled={disabled}
           value={value === null || value === undefined ? '' : String(value)}
           onChange={(e) => onChange(e.target.value === '' ? (field.clearable ? null : '') : e.target.value)}
@@ -101,7 +103,8 @@ export function SettingField({ field, value, onChange, size = 'default', disable
         />
       )
 
-    case 'json':
+    // Structured types are rendered by StructuredSettingField; anything reaching here falls back to text.
+    default:
       return (
         <Textarea
           disabled={disabled}

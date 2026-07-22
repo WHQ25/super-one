@@ -152,7 +152,7 @@ export const CONFIG_READ_GUIDE_DESCRIPTION =
   'Read the current SuperOne app settings so you can help the user change them. ' +
   'ALWAYS call this before config_apply. Call with no `domain` to list every settings domain — general, appearance, browser, agent-claude, agent-codex (each mirroring a Settings page) — plus every resource domain: ai-provider (AI provider API keys), custom-platform (user-defined AI provider platforms); ' +
   'call with a `domain` to get that domain\'s fields, each with its exact `key`, `type`, `currentValue`, allowed values / numeric range, and whether it is clearable to a default. ' +
-  'For a resource domain like `ai-provider` or `custom-platform`, the response instead has `fields` (the shared schema for every record) and `records` (every current record with its actual field values, keyed by `id`) — pass a record\'s `id` as `recordId` when updating/deleting it via config_apply. ' +
+  'For a resource domain like `ai-provider` or `custom-platform`, the response instead has `fields` (the shared schema for every record) and `records` (each record\'s `id` + identity) — pass a record\'s `id` as `recordId` here to read that one record\'s full current values, and as `resource.recordId` when updating/deleting it via config_apply. ' +
   'Use the returned `key`s and value constraints to build the `changes` (or `resource`) you pass to config_apply. Do NOT guess keys or values — they are only valid if returned here.'
 
 export const CONFIG_APPLY_DESCRIPTION =
@@ -160,7 +160,8 @@ export const CONFIG_APPLY_DESCRIPTION =
   'Every call opens a confirmation dialog: the user sees the proposal (current → new, or the record to delete), can edit values, and must explicitly confirm before ANYTHING is applied — nothing is changed silently. ' +
   'Pass EXACTLY ONE of: `changes` — an array of { key, value } using keys from config_read_guide, for scalar settings; or `resource` — { resource, operation:"create"|"update"|"delete", recordId?, values? } using the resource domain, field keys, and record ids from config_read_guide, for resource records like AI provider credentials or custom AI provider platforms. ' +
   'The result is one of: `{status:"applied", ...}` — the user confirmed (possibly after editing); `{status:"rejected", feedback?}` — the user rejected, adjust per feedback or ask before retrying; `{status:"cancelled"}` — the user dismissed, stop and wait; `{status:"error", message}` — nothing was changed, do not retry, report to the user. ' +
-  'For `changes`, invalid keys/values are reported in `rejected` rather than failing the whole call.'
+  'For `changes`, invalid keys/values are reported in `rejected` rather than failing the whole call. ' +
+  'For a resource `update`, send ONLY the fields that actually change — every field is applied independently and map-shaped fields (extraEnv, modelMapping) are merged key by key, so there is never a reason to re-send a whole configuration to change one property.'
 
 export const READ_MEDIA_GUIDE_DESCRIPTION =
   'Returns reference documentation for media_generate_image / media_generate_video: which settings actually work for which provider, exact parameter mappings, and known silent-failure modes (a setting being ignored instead of erroring). ' +
@@ -213,6 +214,10 @@ export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
           type: 'string',
           enum: CONFIG_SETTINGS_DOMAINS,
           description: 'Which settings domain to read. Omit to list all domains with their descriptions.',
+        },
+        recordId: {
+          type: 'string',
+          description: 'Resource domains only: read one record\'s full current values instead of the record list.',
         },
       },
       additionalProperties: false,

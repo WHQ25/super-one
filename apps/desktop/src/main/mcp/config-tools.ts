@@ -1,4 +1,10 @@
-import { CONFIG_APPLY_FIELD, type ConfigConfirmField, type ConfigConfirmPayload } from '@superone/shared/agent-types'
+import {
+  CONFIG_APPLY_FIELD,
+  type ConfigConfirmField,
+  type ConfigConfirmPayload,
+  type ConfigFieldContext,
+  type ConfigFieldType,
+} from '@superone/shared/agent-types'
 import log from '../logger'
 import { readAppSettings } from '../app-settings-service'
 import {
@@ -8,7 +14,14 @@ import {
   toConfirmFields,
   validateChanges,
 } from './settings-registry'
-import { findResourceDef, listResourceSummaries, type ResourceDef, type ResourceFieldDef } from './resource-registry'
+import {
+  findResourceDef,
+  listResourceSummaries,
+  readResourceField,
+  resourceContext,
+  type ResourceDef,
+  type ResourceFieldDef,
+} from './resource-registry'
 import type { BuiltInSuperoneToolDeps, SessionTitleSetter } from './superone-mcp-builtins'
 
 export interface ConfigApplyArgs {
@@ -86,28 +99,51 @@ async function awaitConfigConfirm(session: SessionTitleSetter, message: string, 
   })
 }
 
-function toDisplayValue(v: unknown): string | number | boolean | null {
-  if (v === undefined || v === null) return null
-  if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') return v
-  return JSON.stringify(v, null, 2)
+/**
+ * Structured field types carry their value as a plain object all the way to the confirm dialog, which
+ * renders the same editor the settings page uses for them. Only `json` — the untyped escape hatch —
+ * degrades to pretty-printed text, since there is nothing better to render it with.
+ */
+function toFieldValue(type: ConfigFieldType, raw: unknown): unknown {
+  if (raw === undefined) return null
+  if (type !== 'json') return raw
+  if (raw === null || typeof raw === 'string') return raw
+  return JSON.stringify(raw, null, 2)
 }
 
-function toResourceConfirmField(resource: string, def: ResourceFieldDef, currentRaw: unknown, proposedRaw: unknown): ConfigConfirmField {
+function toResourceConfirmField(
+  resource: string,
+  def: ResourceFieldDef,
+  ctx: ConfigFieldContext,
+  currentRaw: unknown,
+  proposedRaw: unknown,
+): ConfigConfirmField {
   return {
     key: def.key,
     domain: resource,
     label: def.label,
     type: def.type,
     ...(def.enumValues ? { enumValues: [...def.enumValues] } : {}),
+    ...(def.secret ? { secret: true } : {}),
     ...(def.note ? { note: def.note } : {}),
-    currentValue: toDisplayValue(currentRaw),
-    proposedValue: toDisplayValue(proposedRaw),
+    context: ctx,
+    currentValue: toFieldValue(def.type, currentRaw),
+    proposedValue: toFieldValue(def.type, proposedRaw),
   }
 }
 
-function findRecordById(resourceDef: ResourceDef, projectPath: string, recordId: string): Record<string, unknown> | null {
-  const record = resourceDef.list(projectPath).find((r) => (r as { id?: string }).id === recordId)
-  return record ? (resourceDef.toRecordSummary(record) as Record<string, unknown>) : null
+function findRecordById(resourceDef: ResourceDef, projectPath: string, recordId: string): unknown | null {
+  return resourceDef.list(projectPath).find((r) => (r as { id?: string }).id === recordId) ?? null
+}
+
+/** Fields the agent may send for an operation — selectors feed the context, createOnly fields are create-time. */
+function editableFields(resourceDef: ResourceDef, operation: 'create' | 'update'): ResourceFieldDef[] {
+  return resourceDef.fields.filter((f) => !f.selector && (operation === 'create' || !f.createOnly))
+}
+
+function unknownValueKeys(resourceDef: ResourceDef, operation: 'create' | 'update', values: Record<string, unknown>): string[] {
+  const allowed = new Set([...editableFields(resourceDef, operation).map((f) => f.key), ...resourceDef.fields.filter((f) => f.selector).map((f) => f.key)])
+  return Object.keys(values).filter((k) => !allowed.has(k))
 }
 
 async function applyResourceChange(req: NonNullable<ConfigApplyArgs['resource']>, deps: BuiltInSuperoneToolDeps) {
@@ -122,8 +158,18 @@ async function applyResourceChange(req: NonNullable<ConfigApplyArgs['resource']>
   if ((req.operation === 'update' || req.operation === 'delete') && !req.recordId) {
     return toolResult({ status: 'error', message: `\`recordId\` is required for operation "${req.operation}"` })
   }
+  const values = req.values ?? {}
+  if (req.operation !== 'delete') {
+    const unknownKeys = unknownValueKeys(resourceDef, req.operation, values)
+    if (unknownKeys.length) {
+      return toolResult({
+        status: 'error',
+        message: `Unknown ${req.resource} field(s) for ${req.operation}: ${unknownKeys.join(', ')}`,
+        availableFields: editableFields(resourceDef, req.operation).map((f) => f.key),
+      })
+    }
+  }
   if (req.operation === 'create') {
-    const values = req.values ?? {}
     const missing = resourceDef.fields.filter((f) => f.required && !(f.key in values)).map((f) => f.key)
     if (missing.length) return toolResult({ status: 'error', message: `Missing required fields for ${req.resource} create: ${missing.join(', ')}` })
   }
@@ -146,40 +192,41 @@ async function applyResourceChange(req: NonNullable<ConfigApplyArgs['resource']>
     })
   }
 
-  let title: string
-  let subtitle: string | undefined
-  let confirmFields: ConfigConfirmField[]
-  let existing: Record<string, unknown> | null = null
-
+  let existing: unknown = null
   if (req.operation === 'delete' || req.operation === 'update') {
     existing = findRecordById(resourceDef, projectPath, req.recordId!)
     if (!existing) return toolResult({ status: 'error', message: `No ${req.resource} found with id "${req.recordId}"` })
   }
 
-  if (req.operation === 'delete') {
-    const identity = resourceDef.identifyBy(existing)
-    title = identity.title
-    subtitle = identity.subtitle
-    confirmFields = []
-  } else if (req.operation === 'update') {
-    const identity = resourceDef.identifyBy(existing)
-    title = identity.title
-    subtitle = identity.subtitle
-    const values = req.values ?? {}
-    confirmFields = resourceDef.fields
-      .filter((f) => f.key in values)
-      .map((f) => toResourceConfirmField(req.resource, f, existing![f.key], values[f.key]))
-  } else {
-    const values = req.values ?? {}
-    title = typeof values.name === 'string' ? values.name : `New ${resourceDef.label}`
-    subtitle = undefined
-    confirmFields = resourceDef.fields
-      .filter((f) => f.key in values)
-      .map((f) => toResourceConfirmField(req.resource, f, undefined, values[f.key]))
+  const ctx = resourceContext(resourceDef, existing, values)
+  const identity = existing ? resourceDef.identifyBy(existing) : null
+  const title = identity?.title ?? (typeof values.name === 'string' ? values.name : `New ${resourceDef.label}`)
+  const subtitle = identity?.subtitle
+
+  let confirmFields: ConfigConfirmField[] = []
+  if (req.operation !== 'delete') {
+    try {
+      confirmFields = editableFields(resourceDef, req.operation)
+        .filter((f) => f.key in values)
+        .map((f) =>
+          toResourceConfirmField(
+            req.resource,
+            f,
+            ctx,
+            existing ? readResourceField(resourceDef, existing, f.key, ctx) : undefined,
+            values[f.key],
+          ),
+        )
+    } catch (error) {
+      return toolResult({ status: 'error', message: `Cannot read current ${req.resource} values: ${error instanceof Error ? error.message : String(error)}` })
+    }
+    if (confirmFields.length === 0) {
+      return toolResult({ status: 'error', message: `No known ${req.resource} fields were provided in \`values\`.`, availableFields: editableFields(resourceDef, req.operation).map((f) => f.key) })
+    }
   }
 
   const payload: ConfigConfirmPayload = {
-    resource: { resource: req.resource, operation: req.operation, recordId: req.recordId, title, subtitle, fields: confirmFields },
+    resource: { resource: req.resource, operation: req.operation, recordId: req.recordId, title, subtitle, context: ctx, fields: confirmFields },
   }
 
   let result: ConfirmOutcome
@@ -233,8 +280,9 @@ async function applyResourceChange(req: NonNullable<ConfigApplyArgs['resource']>
   const resourceChanges = confirmFields.map((f) => ({
     key: f.key,
     label: f.label,
+    type: f.type,
     oldValue: f.currentValue,
-    newValue: toDisplayValue(f.key in finalValues ? finalValues[f.key] : f.proposedValue),
+    newValue: f.key in finalValues ? finalValues[f.key] : f.proposedValue,
   }))
 
   try {
@@ -243,19 +291,22 @@ async function applyResourceChange(req: NonNullable<ConfigApplyArgs['resource']>
       if (!ok) return toolResult({ status: 'error', message: `Failed to delete ${req.resource} "${req.recordId}" — it may have already been removed.` })
       return toolResult({ status: 'applied', operation: 'delete', resource: req.resource, resourceLabel: resourceDef.label, recordId: req.recordId, title })
     }
+    // Selectors never reach the dialog, so re-derive the context from the agent's values plus the
+    // user's edits — the user may have retargeted a change by editing e.g. the platform it lands on.
+    const finalCtx = resourceContext(resourceDef, existing, { ...values, ...finalValues })
     if (req.operation === 'update') {
-      const updated = resourceDef.update(req.recordId!, finalValues)
+      const updated = resourceDef.update(req.recordId!, finalValues, finalCtx)
       if (!updated) return toolResult({ status: 'error', message: `Failed to update ${req.resource} "${req.recordId}" — it may have been removed.` })
       return toolResult({ status: 'applied', operation: 'update', resource: req.resource, resourceLabel: resourceDef.label, title, applied: resourceChanges, record: resourceDef.toRecordSummary(updated) })
     }
-    const created = resourceDef.create(projectPath, finalValues)
+    const created = resourceDef.create(projectPath, finalValues, finalCtx)
     return toolResult({ status: 'applied', operation: 'create', resource: req.resource, resourceLabel: resourceDef.label, title, applied: resourceChanges, record: resourceDef.toRecordSummary(created) })
   } catch (error) {
     return toolResult({ status: 'error', message: `Failed to ${req.operation} ${req.resource}: ${error instanceof Error ? error.message : String(error)}` })
   }
 }
 
-export function configReadGuideHandler(args: { domain?: string }, deps: BuiltInSuperoneToolDeps) {
+export function configReadGuideHandler(args: { domain?: string; recordId?: string }, deps: BuiltInSuperoneToolDeps) {
   if (!args.domain) {
     return toolResult({ domains: [...listDomainSummaries(), ...listResourceSummaries()] })
   }
@@ -270,12 +321,34 @@ export function configReadGuideHandler(args: { domain?: string }, deps: BuiltInS
       }
       projectPath = p
     }
+    const records = resourceDef.list(projectPath)
+    // The record list stays an identity index: a full dump of every record's nested structure is what
+    // pushed the agent towards re-sending whole configurations. One record is read on demand instead.
+    if (args.recordId) {
+      const record = records.find((r) => (r as { id?: string }).id === args.recordId)
+      if (!record) {
+        return toolResult({ status: 'error', message: `No ${resourceDef.resource} found with id "${args.recordId}"`, recordIds: records.map((r) => (r as { id?: string }).id) })
+      }
+      const ctx = resourceContext(resourceDef, record, {})
+      return toolResult({
+        resource: resourceDef.resource,
+        label: resourceDef.label,
+        record: resourceDef.toRecordSummary(record),
+        ...(Object.keys(ctx).length ? { context: ctx } : {}),
+        currentValues: Object.fromEntries(
+          resourceDef.fields
+            .filter((f) => !f.selector && !f.createOnly)
+            .map((f) => [f.key, readResourceField(resourceDef, record, f.key, ctx)]),
+        ),
+      })
+    }
     return toolResult({
       resource: resourceDef.resource,
       label: resourceDef.label,
       description: resourceDef.description,
       fields: resourceDef.fields,
-      records: resourceDef.list(projectPath).map((r) => resourceDef.toRecordSummary(r)),
+      records: records.map((r) => ({ id: (r as { id?: string }).id, ...resourceDef.identifyBy(r) })),
+      hint: 'Call config_read_guide again with `recordId` to read one record\'s current values. When updating, send only the fields that change.',
     })
   }
 

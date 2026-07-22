@@ -5,8 +5,10 @@ import { Button } from '@superone/ui/components/ui/button'
 import { Kbd } from '@superone/ui/components/ui/kbd'
 import type { ConfigConfirmPayload } from '@superone/shared/agent-types'
 import { SettingField, type SettingFieldValue } from '../settings/SettingField'
+import { isStructuredFieldType, StructuredSettingField } from '../settings/StructuredSettingField'
+import { diffConfigFieldValue, formatConfigFieldValue } from '@/lib/config-field-summary'
 
-type ConfigValue = SettingFieldValue
+type ConfigValue = unknown
 
 export interface ConfigConfirmPromptProps {
   payload: ConfigConfirmPayload
@@ -20,8 +22,10 @@ function isEditableElement(el: Element | null): boolean {
   return el.getAttribute('role') === 'combobox'
 }
 
+// Modal layers lock scroll; non-modal ones (the add-model Popover) only mount a popper wrapper — both
+// must swallow Escape/Tab so dismissing a picker never reaches the reject shortcut.
 function hasOpenPopover(): boolean {
-  return document.body.hasAttribute('data-scroll-locked')
+  return document.body.hasAttribute('data-scroll-locked') || !!document.querySelector('[data-radix-popper-content-wrapper]')
 }
 
 export function ConfigConfirmPrompt({ payload, onConfirm, onReject }: ConfigConfirmPromptProps) {
@@ -78,11 +82,7 @@ export function ConfigConfirmPrompt({ payload, onConfirm, onReject }: ConfigConf
     }
   }
 
-  const formatValue = (v: ConfigValue): string => {
-    if (v === null || v === '') return t('chat.configConfirm.emptyValue')
-    if (typeof v === 'boolean') return v ? 'on' : 'off'
-    return String(v)
-  }
+  const emptyLabel = t('chat.configConfirm.emptyValue')
 
   if (isCollapsed) {
     return (
@@ -121,28 +121,47 @@ export function ConfigConfirmPrompt({ payload, onConfirm, onReject }: ConfigConf
         {resource && (
           <div className={`mb-3 rounded border px-2.5 py-2 ${isDelete ? 'border-destructive/40 bg-destructive/10' : 'border-border/60 bg-muted/20'}`}>
             <p className={`truncate text-xs font-medium ${isDelete ? 'text-destructive' : 'text-foreground'}`}>{resource.title}</p>
-            {resource.subtitle && (
-              <p className={`truncate text-[10px] ${isDelete ? 'text-destructive/80' : 'text-muted-foreground'}`}>{resource.subtitle}</p>
+            {(resource.subtitle || resource.context?.endpointId) && (
+              <p className={`truncate text-[10px] ${isDelete ? 'text-destructive/80' : 'text-muted-foreground'}`}>
+                {[resource.subtitle, resource.context?.endpointId].filter(Boolean).join(' · ')}
+              </p>
             )}
           </div>
         )}
 
         {!isDelete && (
           <div className="mb-3 flex flex-col divide-y divide-border/60 rounded border border-border/60 bg-muted/20">
-            {fields.map((field) => (
-              <div key={field.key} className="flex items-center justify-between gap-3 px-2.5 py-2">
+            {fields.map((field) => {
+              const structured = isStructuredFieldType(field.type)
+              const diff = diffConfigFieldValue(field.type, field.currentValue, values[field.key])
+              const meta = (
                 <div className="flex min-w-0 flex-col gap-0.5">
                   <span className="truncate text-[11px] font-medium text-foreground">{field.label}</span>
                   <span className="truncate text-[10px] text-muted-foreground">
-                    {t('chat.configConfirm.currentValue', { value: formatValue(field.currentValue) })}
+                    {diff ?? t('chat.configConfirm.currentValue', { value: formatConfigFieldValue(field.type, field.currentValue, emptyLabel) })}
                   </span>
-                  {field.note && <span className="truncate text-[10px] text-muted-foreground/70">{field.note}</span>}
+                  {field.note && !structured && <span className="truncate text-[10px] text-muted-foreground/70">{field.note}</span>}
                 </div>
-                <div className="flex-none">
-                  <SettingField field={field} value={values[field.key]} onChange={(v) => setValue(field.key, v)} size="compact" />
+              )
+              return structured ? (
+                <div key={field.key} className="flex flex-col gap-2 px-2.5 py-2">
+                  {meta}
+                  <StructuredSettingField field={field} value={values[field.key]} onChange={(v) => setValue(field.key, v)} />
                 </div>
-              </div>
-            ))}
+              ) : (
+                <div key={field.key} className="flex items-center justify-between gap-3 px-2.5 py-2">
+                  {meta}
+                  <div className="flex-none">
+                    <SettingField
+                      field={field}
+                      value={values[field.key] as SettingFieldValue}
+                      onChange={(v) => setValue(field.key, v)}
+                      size="compact"
+                    />
+                  </div>
+                </div>
+              )
+            })}
           </div>
         )}
 

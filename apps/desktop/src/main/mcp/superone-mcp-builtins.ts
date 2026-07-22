@@ -284,7 +284,7 @@ export async function executeBuiltInSuperoneTool(
     case 'session_rename':
       return renameSessionTool(args as { title: string }, deps)
     case 'config_read_guide':
-      return configReadGuideHandler(args as { domain?: string }, deps)
+      return configReadGuideHandler(args as { domain?: string; recordId?: string }, deps)
     case 'config_apply':
       return configApplyHandler(args as ConfigApplyArgs, deps)
     case 'media_read_guide':
@@ -365,6 +365,7 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
       description: CONFIG_READ_GUIDE_DESCRIPTION,
       inputSchema: {
         domain: z.enum(CONFIG_SETTINGS_DOMAINS).optional().describe('Which settings domain to read. Omit to list all domains.'),
+        recordId: z.string().optional().describe('Resource domains only: read one record\'s full current values instead of the record list.'),
       },
     },
     (args) => configReadGuideHandler(args, deps),

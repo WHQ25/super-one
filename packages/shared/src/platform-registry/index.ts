@@ -13,6 +13,7 @@ import { CONSUMER_TASK } from './types'
 
 export * from './protocols'
 export * from './types'
+export * from './capabilities'
 export * from './merge'
 export * from './relay-discovery'
 export { BUILTIN_PLATFORMS } from './builtin'

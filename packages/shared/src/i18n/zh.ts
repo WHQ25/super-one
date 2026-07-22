@@ -743,6 +743,7 @@ export const zh: Messages = {
       defaultOption: '默认',
       clearedValue: '默认',
       emptyValue: '未设置',
+      modelCount: '{{count}} 个模型',
     },
     askUser: {
       otherOption: '其他...',

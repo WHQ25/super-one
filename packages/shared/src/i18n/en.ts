@@ -717,6 +717,7 @@ export type Messages = {
       defaultOption: string
       clearedValue: string
       emptyValue: string
+      modelCount: string
     }
     askUser: {
       otherOption: string
@@ -2510,6 +2511,7 @@ export const en: Messages = {
       defaultOption: 'Default',
       clearedValue: 'Default',
       emptyValue: 'Not set',
+      modelCount: '{{count}} model(s)',
     },
     askUser: {
       otherOption: 'Other...',

@@ -470,7 +470,25 @@ export const VIDEO_GEN_PARAMS_FIELD = 'paramsJson'
 
 // --- App settings (config) apply confirmation ---
 
-export type ConfigFieldType = 'boolean' | 'enum' | 'number' | 'string' | 'json'
+export type ConfigScalarFieldType = 'boolean' | 'enum' | 'number' | 'string'
+
+/**
+ * Structured field types. Each names a domain concept the settings UI already has a real editor for
+ * (env table, model-mapping slots, enabled-model list, format/capability checkboxes) so the confirm
+ * dialog can render that same editor instead of a JSON textarea. Values are plain JSON objects, not
+ * strings — `json` remains the untyped escape hatch and is the only one edited as raw text.
+ */
+export type ConfigStructuredFieldType = 'json' | 'env' | 'model-mapping' | 'models' | 'capabilities'
+
+export type ConfigFieldType = ConfigScalarFieldType | ConfigStructuredFieldType
+
+/** Where a structured field lives, so the renderer can resolve the real Platform/Plan to edit against. */
+export interface ConfigFieldContext {
+  platformId?: string
+  planId?: string
+  endpointId?: string
+  credentialId?: string
+}
 
 export interface ConfigConfirmField {
   key: string
@@ -482,9 +500,12 @@ export interface ConfigConfirmField {
   max?: number
   /** True when the field can be reset to its default (empty) value. */
   clearable?: boolean
+  /** Carries a credential. Rendered masked, the same way the settings form renders an API key input. */
+  secret?: boolean
   note?: string
-  currentValue: string | number | boolean | null
-  proposedValue: string | number | boolean | null
+  context?: ConfigFieldContext
+  currentValue: unknown
+  proposedValue: unknown
 }
 
 export interface ConfigConfirmResourceOp {
@@ -494,6 +515,8 @@ export interface ConfigConfirmResourceOp {
   /** Record identity, shown for delete (and as a heading for create/update). */
   title: string
   subtitle?: string
+  /** Shared context for the whole proposal (e.g. the platform/plan a credential override targets). */
+  context?: ConfigFieldContext
   /** The record's editable fields for create/update; empty for delete. */
   fields: ConfigConfirmField[]
 }

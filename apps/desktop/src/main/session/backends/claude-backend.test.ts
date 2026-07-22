@@ -171,6 +171,7 @@ describe('ClaudeBackend', () => {
     permissionHoisted.createCanUseToolMock.mockClear()
     permissionHoisted.createCanUseToolMock.mockImplementation(() => ({ canUseTool: vi.fn(), trackPlanFile: vi.fn() }))
     permissionHoisted.rejectAllPendingMock.mockClear()
+    ClaudeBackend._resetActiveRuntimesForTests()
   })
 
   describe('lifecycle', () => {
@@ -832,12 +833,18 @@ describe('ClaudeBackend', () => {
   })
 
   describe('idle timer (fake timers)', () => {
-    it('timer fires releaseRuntime after IDLE_TIMEOUT_MS + IDLE_CHECK_INTERVAL_MS elapse', async () => {
+    it('timer fires releaseRuntime after IDLE_TIMEOUT_MS + IDLE_CHECK_INTERVAL_MS elapse, once active sessions meet the threshold', async () => {
       vi.useFakeTimers()
       try {
         const backend = new ClaudeBackend()
         await backend.start(makeStartOpts())
         expect((backend as unknown as { bridge: unknown }).bridge).not.toBeNull()
+
+        const fillers = [new ClaudeBackend(), new ClaudeBackend()]
+        for (const filler of fillers) {
+          await filler.start(makeStartOpts())
+          filler.setForeground(true)
+        }
 
         hoisted.captured.iterationDone?.resolve()
 
@@ -845,6 +852,24 @@ describe('ClaudeBackend', () => {
 
         expect((backend as unknown as { bridge: unknown }).bridge).toBeNull()
         expect((backend as unknown as { query: unknown }).query).toBeNull()
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('timer does not release while active sessions are below MIN_ACTIVE_SESSIONS_FOR_IDLE_RELEASE', async () => {
+      vi.useFakeTimers()
+      try {
+        const backend = new ClaudeBackend()
+        await backend.start(makeStartOpts())
+        hoisted.captured.iterationDone?.resolve()
+
+        expect(ClaudeBackend.activeRuntimeCount).toBeLessThan(ClaudeBackend.MIN_ACTIVE_SESSIONS_FOR_IDLE_RELEASE)
+
+        await vi.advanceTimersByTimeAsync(ClaudeBackend.IDLE_TIMEOUT_MS + ClaudeBackend.IDLE_CHECK_INTERVAL_MS + 100)
+
+        expect((backend as unknown as { bridge: unknown }).bridge).not.toBeNull()
+        expect((backend as unknown as { query: unknown }).query).not.toBeNull()
       } finally {
         vi.useRealTimers()
       }

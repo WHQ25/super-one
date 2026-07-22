@@ -84,8 +84,19 @@ export class ClaudeBackend implements SessionBackend {
   private _proxyBaseUrl: string | null = null
   private _activeRuntimeKey: string | null = null
 
-  static IDLE_TIMEOUT_MS = 600_000
+  static IDLE_TIMEOUT_MS = 30 * 60 * 1000
   static IDLE_CHECK_INTERVAL_MS = 30_000
+  static MIN_ACTIVE_SESSIONS_FOR_IDLE_RELEASE = 3
+
+  private static activeRuntimes = new Set<ClaudeBackend>()
+
+  static get activeRuntimeCount(): number {
+    return ClaudeBackend.activeRuntimes.size
+  }
+
+  static _resetActiveRuntimesForTests(): void {
+    ClaudeBackend.activeRuntimes.clear()
+  }
 
   private _foreground = false
 
@@ -212,6 +223,7 @@ export class ClaudeBackend implements SessionBackend {
     this.activeBackgroundTasks = handle.activeBackgroundTasks ?? null
     this._activeRuntimeKey = WarmupManager.keyOf(buildClaudeOptions(queryOptions))
     this._lastActiveAt = Date.now()
+    ClaudeBackend.activeRuntimes.add(this)
     this.startIdleTimer()
   }
 
@@ -219,12 +231,16 @@ export class ClaudeBackend implements SessionBackend {
     this.stopIdleTimer()
     log.info('[ClaudeBackend.idle-diag] timer start sid=%s timeoutMs=%d intervalMs=%d', this._lastStartOpts?.sessionId, ClaudeBackend.IDLE_TIMEOUT_MS, ClaudeBackend.IDLE_CHECK_INTERVAL_MS)
     this._idleTimer = setInterval(() => {
-      if (this.isRuntimeIdle(ClaudeBackend.IDLE_TIMEOUT_MS)) {
-        log.info('[ClaudeBackend.idle-diag] eligible sid=%s elapsedMs=%d', this._lastStartOpts?.sessionId, this._lastActiveAt ? Date.now() - this._lastActiveAt : -1)
-        void this.releaseRuntime('idle').catch((err) => {
-          log.debug('[ClaudeBackend] idle release error:', err)
-        })
+      if (!this.isRuntimeIdle(ClaudeBackend.IDLE_TIMEOUT_MS)) return
+      const activeCount = ClaudeBackend.activeRuntimeCount
+      if (activeCount < ClaudeBackend.MIN_ACTIVE_SESSIONS_FOR_IDLE_RELEASE) {
+        log.info('[ClaudeBackend.idle-diag] skip release, active sessions below threshold sid=%s activeCount=%d', this._lastStartOpts?.sessionId, activeCount)
+        return
       }
+      log.info('[ClaudeBackend.idle-diag] eligible sid=%s elapsedMs=%d activeCount=%d', this._lastStartOpts?.sessionId, this._lastActiveAt ? Date.now() - this._lastActiveAt : -1, activeCount)
+      void this.releaseRuntime('idle').catch((err) => {
+        log.debug('[ClaudeBackend] idle release error:', err)
+      })
     }, ClaudeBackend.IDLE_CHECK_INTERVAL_MS)
   }
 
@@ -375,6 +391,7 @@ export class ClaudeBackend implements SessionBackend {
     this.spawnAbortController = null
     this._activeRuntimeKey = null
     this._lastActiveAt = null
+    ClaudeBackend.activeRuntimes.delete(this)
     this.stopIdleTimer()
     for (const resolve of this.turnResolves.values()) resolve()
     this.turnResolves.clear()

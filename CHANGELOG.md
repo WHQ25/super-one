@@ -4,6 +4,15 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.46.3-alpha] - 2026-07-23
+
+### Added
+- Upgrade Codex to 0.145.0 with cache-write usage tracking and sessionEnd hooks
+
+### Fixed
+- Move provider test connection button to the footer row
+- Stop chat jitter when collapsing the sidebar
+
 ## [0.46.2-alpha] - 2026-07-22
 
 ### Added

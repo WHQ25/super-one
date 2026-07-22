@@ -115,8 +115,6 @@ function KeyForm({
     onCreated,
   ])
 
-  const footer = testState.status !== 'idle' || dirty || !credential
-
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center gap-2">
@@ -140,41 +138,41 @@ function KeyForm({
           value={secret}
           onChange={(e) => setSecret(e.target.value)}
         />
-        <TestConnectionButton state={testState} onTest={test} disabled={!credential && !secret.trim()} />
-        {/* Kept mounted while adding so the secret input keeps its width across tab switches. */}
-        <IconButton
-          size="sm"
-          variant="destructive"
-          className={cn(!credential && 'invisible')}
-          onClick={() => credential && void deleteCredential(credential.id)}
-        >
-          <Trash2 />
-        </IconButton>
+        {credential && (
+          <IconButton
+            size="sm"
+            variant="destructive"
+            onClick={() => void deleteCredential(credential.id)}
+          >
+            <Trash2 />
+          </IconButton>
+        )}
       </div>
       {conflict && <span className="text-[11px] text-destructive">{t('resources.providers.keyNameConflict')}</span>}
-      {footer && (
-        <div className="flex items-center justify-between gap-2">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <TestConnectionButton state={testState} onTest={test} disabled={!credential && !secret.trim()} />
           <TestConnectionStatus state={testState} />
-          <div className="ml-auto flex gap-2">
-            {!credential && (
-              <Button variant="ghost" size="sm" onClick={onCancel}>
-                {t('common.cancel')}
-              </Button>
-            )}
-            {dirty && (
-              <Button size="sm" disabled={busy || conflict} onClick={submit}>
-                {busy ? (
-                  <Loader2 className="size-4 animate-spin" />
-                ) : credential ? (
-                  t('common.save')
-                ) : (
-                  t('resources.providers.addKey')
-                )}
-              </Button>
-            )}
-          </div>
         </div>
-      )}
+        <div className="flex items-center gap-2">
+          {!credential && (
+            <Button variant="ghost" size="sm" onClick={onCancel}>
+              {t('common.cancel')}
+            </Button>
+          )}
+          {dirty && (
+            <Button size="sm" disabled={busy || conflict} onClick={submit}>
+              {busy ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : credential ? (
+                t('common.save')
+              ) : (
+                t('resources.providers.addKey')
+              )}
+            </Button>
+          )}
+        </div>
+      </div>
     </div>
   )
 }

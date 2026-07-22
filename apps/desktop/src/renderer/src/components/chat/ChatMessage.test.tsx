@@ -96,9 +96,11 @@ describe('ChatMessage token footer', () => {
               usage: {
                 totalInputTokens: 240,
                 totalCachedInputTokens: 0,
+                totalCacheWriteInputTokens: 0,
                 totalOutputTokens: 100,
                 lastInputTokens: 240,
                 lastCachedInputTokens: 0,
+                lastCacheWriteInputTokens: 0,
                 lastOutputTokens: 100,
                 reasoningOutputTokens: 0,
                 contextWindow: 200000,

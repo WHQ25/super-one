@@ -158,9 +158,11 @@ export type CodexPatchChangeKind = 'add' | 'delete' | 'update'
 export interface CodexUsageInfo {
   totalInputTokens: number
   totalCachedInputTokens: number
+  totalCacheWriteInputTokens?: number
   totalOutputTokens: number
   lastInputTokens: number
   lastCachedInputTokens: number
+  lastCacheWriteInputTokens?: number
   lastOutputTokens: number
   reasoningOutputTokens: number
   contextWindow: number
@@ -1693,6 +1695,7 @@ export type CodexHookEventName =
   | 'preCompact'
   | 'postCompact'
   | 'sessionStart'
+  | 'sessionEnd'
   | 'userPromptSubmit'
   | 'stop'
 

@@ -15,6 +15,7 @@ const HOOK_EVENT_NAMES: readonly CodexHookEventName[] = [
   'preCompact',
   'postCompact',
   'sessionStart',
+  'sessionEnd',
   'userPromptSubmit',
   'stop',
 ]

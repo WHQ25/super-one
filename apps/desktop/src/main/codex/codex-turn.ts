@@ -612,12 +612,13 @@ function upsertItem(order: string[], map: Map<string, CodexThreadItem>, item: Co
 export function mapUsageFromTokenUsage(raw: unknown): CodexUsageInfo | null {
   const rec = asRecord(raw)
   if (!rec) return null
-  const parseBreakdown = (value: unknown): { inputTokens: number; cachedInputTokens: number; outputTokens: number; reasoningOutputTokens: number } | null => {
+  const parseBreakdown = (value: unknown): { inputTokens: number; cachedInputTokens: number; cacheWriteInputTokens: number; outputTokens: number; reasoningOutputTokens: number } | null => {
     const breakdown = asRecord(value)
     if (!breakdown) return null
     return {
       inputTokens: readNumber(breakdown.inputTokens ?? breakdown.input_tokens) ?? 0,
       cachedInputTokens: readNumber(breakdown.cachedInputTokens ?? breakdown.cached_input_tokens) ?? 0,
+      cacheWriteInputTokens: readNumber(breakdown.cacheWriteInputTokens ?? breakdown.cache_write_input_tokens) ?? 0,
       outputTokens: readNumber(breakdown.outputTokens ?? breakdown.output_tokens) ?? 0,
       reasoningOutputTokens: readNumber(breakdown.reasoningOutputTokens ?? breakdown.reasoning_output_tokens) ?? 0,
     }
@@ -632,9 +633,11 @@ export function mapUsageFromTokenUsage(raw: unknown): CodexUsageInfo | null {
   return {
     totalInputTokens: resolvedTotal.inputTokens,
     totalCachedInputTokens: resolvedTotal.cachedInputTokens,
+    totalCacheWriteInputTokens: resolvedTotal.cacheWriteInputTokens,
     totalOutputTokens: resolvedTotal.outputTokens,
     lastInputTokens: resolvedLast.inputTokens,
     lastCachedInputTokens: resolvedLast.cachedInputTokens,
+    lastCacheWriteInputTokens: resolvedLast.cacheWriteInputTokens,
     lastOutputTokens: resolvedLast.outputTokens,
     reasoningOutputTokens: resolvedTotal.reasoningOutputTokens || (readNumber(rec.reasoningOutputTokens ?? rec.reasoning_output_tokens) ?? 0),
     contextWindow: readNumber(rec.modelContextWindow ?? rec.model_context_window ?? rec.contextWindow ?? rec.context_window) ?? 0,

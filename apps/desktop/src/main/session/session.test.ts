@@ -1235,9 +1235,11 @@ describe('Session message accumulation', () => {
     const firstUsage = {
       totalInputTokens: 5628794,
       totalCachedInputTokens: 4912768,
+      totalCacheWriteInputTokens: 0,
       totalOutputTokens: 48132,
       lastInputTokens: 67647,
       lastCachedInputTokens: 0,
+      lastCacheWriteInputTokens: 0,
       lastOutputTokens: 21554,
       reasoningOutputTokens: 28942,
       contextWindow: 258400,
@@ -1245,9 +1247,11 @@ describe('Session message accumulation', () => {
     const finalUsage = {
       totalInputTokens: 5696441,
       totalCachedInputTokens: 4980224,
+      totalCacheWriteInputTokens: 0,
       totalOutputTokens: 49016,
       lastInputTokens: 67647,
       lastCachedInputTokens: 67456,
+      lastCacheWriteInputTokens: 0,
       lastOutputTokens: 884,
       reasoningOutputTokens: 29826,
       contextWindow: 258400,

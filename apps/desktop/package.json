@@ -53,7 +53,7 @@
     "@lobehub/ui": "^5.3.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@musistudio/llms": "1.0.53",
-    "@openai/codex": "0.144.0",
+    "@openai/codex": "0.145.0",
     "@opencode-ai/models": "^0.0.2",
     "@streamdown/math": "^1.0.2",
     "@superone/shared": "workspace:*",

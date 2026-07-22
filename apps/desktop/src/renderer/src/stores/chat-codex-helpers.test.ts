@@ -16,9 +16,11 @@ function makeUsage(overrides: Partial<CodexUsageInfo> = {}): CodexUsageInfo {
   return {
     totalInputTokens: 100,
     totalCachedInputTokens: 20,
+    totalCacheWriteInputTokens: 0,
     totalOutputTokens: 50,
     lastInputTokens: 30,
     lastCachedInputTokens: 5,
+    lastCacheWriteInputTokens: 0,
     lastOutputTokens: 15,
     reasoningOutputTokens: 0,
     contextWindow: 128000,

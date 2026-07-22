@@ -248,13 +248,15 @@ function makeClaudeMetadata(scale = 1): MessageMetadata {
   }
 }
 
-function makeCodexUsage(input = 80, output = 150, cached = 20): CodexUsageInfo {
+function makeCodexUsage(input = 80, output = 150, cached = 20, cacheWrite = 0): CodexUsageInfo {
   return {
     totalInputTokens: input,
     totalCachedInputTokens: cached,
+    totalCacheWriteInputTokens: cacheWrite,
     totalOutputTokens: output,
     lastInputTokens: input,
     lastCachedInputTokens: cached,
+    lastCacheWriteInputTokens: cacheWrite,
     lastOutputTokens: output,
     reasoningOutputTokens: 0,
     contextWindow: 200000,
@@ -283,6 +285,12 @@ describe('usage-stats-service: codexUsageStepDelta', () => {
   it('clamps negative input to zero when cached exceeds raw input', async () => {
     const { codexUsageStepDelta } = await import('./usage-stats-service')
     expect(codexUsageStepDelta(makeCodexUsage(20, 100, 50)).inputTokens).toBe(0)
+  })
+
+  it('maps cache-write tokens to cacheCreationTokens', async () => {
+    const { codexUsageStepDelta } = await import('./usage-stats-service')
+    const delta = codexUsageStepDelta(makeCodexUsage(100, 200, 30, 15))
+    expect(delta).toEqual({ inputTokens: 70, outputTokens: 200, cacheReadTokens: 30, cacheCreationTokens: 15 })
   })
 })
 

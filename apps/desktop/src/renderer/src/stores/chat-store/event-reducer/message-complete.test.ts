@@ -22,9 +22,11 @@ function codexUsage(overrides: Partial<CodexUsageInfo> = {}): CodexUsageInfo {
   return {
     totalInputTokens: 0,
     totalCachedInputTokens: 0,
+    totalCacheWriteInputTokens: 0,
     totalOutputTokens: 0,
     lastInputTokens: 0,
     lastCachedInputTokens: 0,
+    lastCacheWriteInputTokens: 0,
     lastOutputTokens: 0,
     reasoningOutputTokens: 0,
     contextWindow: 0,

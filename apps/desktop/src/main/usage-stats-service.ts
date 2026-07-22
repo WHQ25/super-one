@@ -116,7 +116,7 @@ export function codexUsageStepDelta(usage: CodexUsageInfo): UsageStepDelta {
     inputTokens: Math.max(0, (usage.lastInputTokens ?? 0) - (usage.lastCachedInputTokens ?? 0)),
     outputTokens: usage.lastOutputTokens ?? 0,
     cacheReadTokens: usage.lastCachedInputTokens ?? 0,
-    cacheCreationTokens: 0,
+    cacheCreationTokens: usage.lastCacheWriteInputTokens ?? 0,
   }
 }
 

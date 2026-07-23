@@ -245,6 +245,9 @@ export function CodexTurnView({ message, isStreaming, isLastAssistant }: CodexTu
       imageItems.push(item)
       continue
     }
+    if (item.type === 'todo_list' || item.type === 'video_generation') {
+      continue
+    }
     const appIdForItem = item.type === 'mcp_tool_call' ? groupableAppForMcpItem(item) : null
     if (appIdForItem) {
       flushCmd()
@@ -252,17 +255,23 @@ export function CodexTurnView({ message, isStreaming, isLastAssistant }: CodexTu
       appGroupId = appIdForItem
       appGroup.push(item as CodexMcpToolCallItem)
     } else if (item.type === 'collab_tool_call' && item.tool === 'spawnAgent') {
-      flushCmd()
-      flushAppGroup()
       if (!isSpawnReady(item)) {
         continue
       }
+      flushCmd()
+      flushAppGroup()
       segments.push({ kind: 'subagent', item })
     } else if (item.type === 'collab_tool_call' && isSubagentFollowUp(item)) {
       flushCmd()
       flushAppGroup()
       segments.push({ kind: 'subagent', item })
     } else if (item.type === 'collab_tool_call') {
+      if (item.tool === 'wait' && item.status !== 'in_progress') {
+        continue
+      }
+      if (item.tool === 'closeAgent' || item.tool === 'resumeAgent') {
+        continue
+      }
       flushCmd()
       flushAppGroup()
       segments.push({ kind: 'item', item, index: i })

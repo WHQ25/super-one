@@ -165,6 +165,43 @@ describe('CodexTurnView', () => {
     expect(screen.getByText(/first thought\s+second thought/)).toBeTruthy()
   })
 
+  it('merges reasoning items separated only by invisible codex items', () => {
+    render(
+      <CodexTurnView
+        message={createMessage({
+          status: 'complete',
+          metadata: {
+            codex: {
+              threadId: 'thread-1',
+              usage: null,
+              items: [
+                { id: 'reasoning-1', type: 'reasoning', text: 'first thought' },
+                { id: 'todo-1', type: 'todo_list', items: [] },
+                {
+                  id: 'wait-1',
+                  type: 'collab_tool_call',
+                  tool: 'wait',
+                  status: 'completed',
+                  receiverThreadIds: [],
+                  agentsStates: {},
+                },
+                { id: 'reasoning-2', type: 'reasoning', text: 'second thought' },
+              ],
+            },
+          },
+        })}
+        isStreaming={false}
+        isLastAssistant
+      />,
+    )
+
+    expect(screen.getAllByText('Thought')).toHaveLength(1)
+
+    fireEvent.click(screen.getByText('Thought'))
+
+    expect(screen.getByText(/first thought\s+second thought/)).toBeTruthy()
+  })
+
   it('keeps codex reasoning items separate across visible content', () => {
     render(
       <CodexTurnView

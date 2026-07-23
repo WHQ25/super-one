@@ -1,16 +1,14 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
-import { Check, ChevronDown, ChevronRight, Settings2 } from 'lucide-react'
+import { Check, ChevronDown, ChevronRight, RefreshCw, Settings2 } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@superone/ui/components/ui/dropdown-menu'
+import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { cn } from '@superone/ui/lib/utils'
 import { ProviderOptionLabel } from '@/components/providers/DefaultProviderRow'
 
@@ -54,6 +52,8 @@ interface GroupedModelEffortSelectorProps {
   selectedProviderId?: string | null
   onSelectProvider?: (id: string | null) => void
   onManageProviders?: () => void
+  onRefreshModels?: () => void
+  modelsLoading?: boolean
   triggerLabel?: ReactNode
   onCloseAutoFocus?: (event: Event) => void
   className?: string
@@ -62,16 +62,18 @@ interface GroupedModelEffortSelectorProps {
 function ModelRow({
   model,
   selected,
+  keepOpen,
   onSelect,
 }: {
   model: SelectorModelOption
   selected: boolean
+  keepOpen: boolean
   onSelect: () => void
 }) {
   return (
     <DropdownMenuItem
       onSelect={(event) => {
-        event.preventDefault()
+        if (keepOpen) event.preventDefault()
         onSelect()
       }}
       className={cn('items-center gap-2 px-2 py-1.5', ITEM_FOCUS, selected && 'bg-muted')}
@@ -91,8 +93,9 @@ function ModelList({
   models,
   modelGroups,
   selectedModelId,
+  keepOpen,
   onSelectModel,
-}: Pick<GroupedModelEffortSelectorProps, 'models' | 'modelGroups' | 'selectedModelId' | 'onSelectModel'>) {
+}: Pick<GroupedModelEffortSelectorProps, 'models' | 'modelGroups' | 'selectedModelId' | 'onSelectModel'> & { keepOpen: boolean }) {
   const [expandedGroupIds, setExpandedGroupIds] = useState<Set<string>>(new Set())
   const hasGroups = Boolean(modelGroups?.length)
 
@@ -127,6 +130,7 @@ function ModelList({
                           key={model.id}
                           model={model}
                           selected={model.id === selectedModelId}
+                          keepOpen={keepOpen}
                           onSelect={() => onSelectModel(model.id)}
                         />
                       ))}
@@ -140,6 +144,7 @@ function ModelList({
                 key={model.id}
                 model={model}
                 selected={model.id === selectedModelId}
+                keepOpen={keepOpen}
                 onSelect={() => onSelectModel(model.id)}
               />
             ))}
@@ -227,11 +232,15 @@ export function GroupedModelEffortSelector({
   selectedProviderId,
   onSelectProvider,
   onManageProviders,
+  onRefreshModels,
+  modelsLoading,
   triggerLabel,
   onCloseAutoFocus,
   className,
 }: GroupedModelEffortSelectorProps) {
   const [modelsExpanded, setModelsExpanded] = useState(false)
+  const [providersExpanded, setProvidersExpanded] = useState(false)
+  const collapseAll = () => { setModelsExpanded(false); setProvidersExpanded(false) }
   const selectedModel = useMemo(() => {
     const allModels = modelGroups?.flatMap((group) => group.models) ?? models ?? []
     return allModels.find((model) => model.id === selectedModelId)
@@ -240,9 +249,13 @@ export function GroupedModelEffortSelector({
   const selectedProvider = providers.find((provider) => provider.id === selectedProviderId)
   const modelLabel = selectedModelLabel ?? selectedModel?.name ?? selectedModelId ?? 'Model'
   const effortLabel = selectedEffortLabel ?? selectedEffortOption?.label ?? 'Effort'
+  // No effort → the collapsed model row is meaningless: default to the expanded list,
+  // and let selecting a model close the popup outright.
+  const noEffort = effortOptions.length === 0
+  const listOpen = modelsExpanded || noEffort
 
   return (
-    <DropdownMenu onOpenChange={(open) => { if (!open) setModelsExpanded(false) }}>
+    <DropdownMenu onOpenChange={(open) => { if (!open) collapseAll() }}>
       <DropdownMenuTrigger asChild>
         <button
           type="button"
@@ -265,18 +278,36 @@ export function GroupedModelEffortSelector({
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" side="top" className="max-h-[70vh] w-72 overflow-hidden p-1" onCloseAutoFocus={onCloseAutoFocus}>
-        <div className="px-2 pb-1 pt-1.5 text-xs text-muted-foreground">Models</div>
+        <div className="flex items-center justify-between px-2 pb-1 pt-1.5">
+          <span className="text-xs text-muted-foreground">Models</span>
+          {onRefreshModels && (
+            <IconButton
+              size="xs"
+              variant="nested"
+              tooltip="Refresh models"
+              disabled={modelsLoading}
+              onClick={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+                onRefreshModels()
+              }}
+            >
+              <RefreshCw className={cn(modelsLoading && 'animate-spin')} />
+            </IconButton>
+          )}
+        </div>
 
         <AnimatePresence initial={false}>
-          {modelsExpanded ? (
+          {listOpen ? (
             <motion.div key="model-list" {...MORPH} className="overflow-hidden">
               <ModelList
                 models={models}
                 modelGroups={modelGroups}
                 selectedModelId={selectedModelId}
+                keepOpen={!noEffort}
                 onSelectModel={(id) => {
                   onSelectModel(id)
-                  setModelsExpanded(false)
+                  if (!noEffort) collapseAll()
                 }}
               />
             </motion.div>
@@ -300,68 +331,87 @@ export function GroupedModelEffortSelector({
         </AnimatePresence>
 
         <AnimatePresence initial={false}>
-          {modelsExpanded ? (
-            providers.length > 0 && onSelectProvider ? (
-              <motion.div key="provider" {...MORPH} className="overflow-hidden">
-                <DropdownMenuSeparator />
-                <div className="px-2 pb-1 pt-1.5 text-xs text-muted-foreground">Provider</div>
-                <DropdownMenuSub>
-                  <DropdownMenuSubTrigger className={cn('items-center gap-1.5 px-2 py-1.5', ITEM_FOCUS, 'data-[state=open]:bg-muted data-[state=open]:text-foreground')}>
-                    {selectedProvider ? (
-                      <>
-                        <span className="flex min-w-0 flex-1 items-center">
-                          <ProviderOptionLabel brandKey={selectedProvider.brand ?? ''} name={selectedProvider.name} />
+          {!modelsExpanded && effortOptions.length > 0 && (
+            <motion.div key="effort" {...MORPH} className="overflow-hidden">
+              <DropdownMenuSeparator />
+              <EffortSlider
+                effortOptions={effortOptions}
+                selectedEffort={selectedEffort}
+                selectedEffortLabel={selectedEffortLabel}
+                onSelectEffort={onSelectEffort}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <AnimatePresence initial={false}>
+          {listOpen && providers.length > 0 && onSelectProvider && (
+            <motion.div key="provider-header" {...MORPH} className="overflow-hidden">
+              <DropdownMenuSeparator />
+              <div className="px-2 pb-1 pt-1.5 text-xs text-muted-foreground">Provider</div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <AnimatePresence initial={false}>
+          {listOpen && providers.length > 0 && onSelectProvider && (
+            providersExpanded ? (
+              <motion.div key="provider-list" {...MORPH} className="overflow-hidden">
+                <div className="max-h-60 min-h-0 overflow-y-auto pr-1">
+                  {providers.map((provider) => {
+                    const selected = provider.id === selectedProviderId
+                    return (
+                      <DropdownMenuItem
+                        key={provider.id ?? '__default__'}
+                        onSelect={(event) => {
+                          event.preventDefault()
+                          onSelectProvider(provider.id)
+                          setProvidersExpanded(false)
+                        }}
+                        className={cn('justify-between gap-2 px-2 py-1.5', ITEM_FOCUS, selected && 'bg-muted')}
+                      >
+                        <ProviderOptionLabel brandKey={provider.brand ?? ''} name={provider.name} />
+                        <span className="flex min-w-0 shrink-0 items-center gap-1.5">
+                          {provider.keyName && <span className="truncate text-xs text-muted-foreground">{provider.keyName}</span>}
+                          {selected && <Check className="size-4 shrink-0 text-primary" />}
                         </span>
-                        {selectedProvider.keyName && (
-                          <span className="truncate text-xs text-muted-foreground">{selectedProvider.keyName}</span>
-                        )}
-                      </>
-                    ) : (
-                      <span className="min-w-0 flex-1 truncate text-sm font-medium">Default</span>
-                    )}
-                  </DropdownMenuSubTrigger>
-                  <DropdownMenuSubContent className="w-64">
-                    {providers.map((provider) => {
-                      const selected = provider.id === selectedProviderId
-                      return (
-                        <DropdownMenuItem
-                          key={provider.id ?? '__default__'}
-                          onSelect={() => onSelectProvider(provider.id)}
-                          className={cn('justify-between gap-2 px-2 py-1.5', ITEM_FOCUS, selected && 'bg-muted')}
-                        >
-                          <ProviderOptionLabel brandKey={provider.brand ?? ''} name={provider.name} />
-                          <span className="flex min-w-0 shrink-0 items-center gap-1.5">
-                            {provider.keyName && <span className="truncate text-xs text-muted-foreground">{provider.keyName}</span>}
-                            {selected && <Check className="size-4 shrink-0 text-primary" />}
-                          </span>
-                        </DropdownMenuItem>
-                      )
-                    })}
-                    {onManageProviders && (
-                      <>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem onSelect={onManageProviders} className={cn('gap-2 px-2 py-1.5 text-sm text-muted-foreground', ITEM_FOCUS)}>
-                          <Settings2 className="size-4 shrink-0" />
-                          <span>Provider settings</span>
-                        </DropdownMenuItem>
-                      </>
-                    )}
-                  </DropdownMenuSubContent>
-                </DropdownMenuSub>
+                      </DropdownMenuItem>
+                    )
+                  })}
+                </div>
+                {onManageProviders && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onSelect={onManageProviders} className={cn('gap-2 px-2 py-1.5 text-sm text-muted-foreground', ITEM_FOCUS)}>
+                      <Settings2 className="size-4 shrink-0" />
+                      <span>Provider settings</span>
+                    </DropdownMenuItem>
+                  </>
+                )}
               </motion.div>
-            ) : null
-          ) : (
-            effortOptions.length > 0 ? (
-              <motion.div key="effort" {...MORPH} className="overflow-hidden">
-                <DropdownMenuSeparator />
-                <EffortSlider
-                  effortOptions={effortOptions}
-                  selectedEffort={selectedEffort}
-                  selectedEffortLabel={selectedEffortLabel}
-                  onSelectEffort={onSelectEffort}
-                />
+            ) : (
+              <motion.div key="provider-row" {...MORPH} className="overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setProvidersExpanded(true)}
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-muted focus:bg-muted focus:outline-none"
+                >
+                  {selectedProvider ? (
+                    <>
+                      <span className="flex min-w-0 flex-1 items-center">
+                        <ProviderOptionLabel brandKey={selectedProvider.brand ?? ''} name={selectedProvider.name} />
+                      </span>
+                      {selectedProvider.keyName && (
+                        <span className="truncate text-xs text-muted-foreground">{selectedProvider.keyName}</span>
+                      )}
+                    </>
+                  ) : (
+                    <span className="min-w-0 flex-1 truncate text-sm font-medium">Default</span>
+                  )}
+                  <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+                </button>
               </motion.div>
-            ) : null
+            )
           )}
         </AnimatePresence>
       </DropdownMenuContent>

@@ -5,7 +5,7 @@ import { findPlatform, type Credential } from '@superone/shared/platform-registr
 import { useActiveSession, useChatStore } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 import { useSettingsStore } from '@/stores/settings'
-import { brandOfCredential, consumerForHarness, credentialsForConsumer } from '@/lib/provider-resolve'
+import { brandOfCredential, consumerForHarness, credentialsForConsumer, resolveEffective } from '@/lib/provider-resolve'
 import type { SelectorProviderOption } from './GroupedModelEffortSelector'
 
 export function useSelectorProviders(harness: HarnessId) {
@@ -13,6 +13,7 @@ export function useSelectorProviders(harness: HarnessId) {
   const apiProviderId = useActiveSession((s) => s.apiProviderId)
   const platforms = useSettingsStore((s) => s.platforms)
   const credentials = useSettingsStore((s) => s.credentials)
+  const bindings = useSettingsStore((s) => s.bindings)
   const fetchProviderData = useSettingsStore((s) => s.fetchProviderData)
   const setSessionApiProviderId = useChatStore((s) => s.setSessionApiProviderId)
   const navigateTo = useAppStore((s) => s.navigateTo)
@@ -25,6 +26,13 @@ export function useSelectorProviders(harness: HarnessId) {
     () => credentialsForConsumer(platforms, credentials, consumer),
     [platforms, credentials, consumer],
   )
+
+  // When the session has no explicit override, show the globally-bound default provider,
+  // not the abstract "Default" entry — resolveEffective mirrors the main-process selection.
+  const resolvedProviderId = useMemo(() => {
+    if (apiProviderId) return apiProviderId
+    return resolveEffective(platforms, credentials, bindings, consumer, apiProviderId)?.credential.id ?? null
+  }, [apiProviderId, platforms, credentials, bindings, consumer])
 
   const providers = useMemo<SelectorProviderOption[]>(() => {
     const defaultLabel = harness === 'codex'
@@ -42,7 +50,7 @@ export function useSelectorProviders(harness: HarnessId) {
 
   return {
     providers,
-    selectedProviderId: apiProviderId,
+    selectedProviderId: resolvedProviderId,
     onSelectProvider: (id: string | null) => { void setSessionApiProviderId(id) },
     onManageProviders: () => { setSettingsTab('providers'); navigateTo('settings') },
   }

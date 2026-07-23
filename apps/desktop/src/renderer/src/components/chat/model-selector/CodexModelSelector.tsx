@@ -14,6 +14,7 @@ export function CodexModelSelector({ onCloseAutoFocus }: Props) {
   const selectedCodexModel = useActiveSession((s) => s.selectedCodexModel)
   const selectedCodexReasoningEffort = useActiveSession((s) => s.selectedCodexReasoningEffort)
   const codexModels = useActiveSession((s) => s.codexModels)
+  const codexModelsLoading = useActiveSession((s) => s.codexModelsLoading)
   const setSelectedCodexModel = useChatStore((s) => s.setSelectedCodexModel)
   const setSelectedCodexReasoningEffort = useChatStore((s) => s.setSelectedCodexReasoningEffort)
   const refreshCodexModels = useChatStore((s) => s.refreshCodexModels)
@@ -53,6 +54,8 @@ export function CodexModelSelector({ onCloseAutoFocus }: Props) {
         effortOptions={effortOptions}
         selectedEffort={currentCodexReasoningEffort}
         onSelectEffort={(value) => setSelectedCodexReasoningEffort(value as CodexReasoningEffort)}
+        onRefreshModels={() => void refreshCodexModels(true)}
+        modelsLoading={codexModelsLoading}
         onCloseAutoFocus={onCloseAutoFocus}
         {...providerProps}
       />

@@ -33,7 +33,7 @@ import { MobileReceiveService, type MobileReceiveTarget } from './remote/mobile-
 import { MobileShareToolCoordinator } from './remote/mobile-share-tool-coordinator'
 import { startSuperoneMcpStdioBridge, stopSuperoneMcpStdioBridge } from './mcp/superone-mcp-stdio-ipc'
 import { scheduleMcpReload } from './mcp/mcp-reload-scheduler'
-import { query } from '@anthropic-ai/claude-agent-sdk'
+import { query, type SDKResultMessage } from '@anthropic-ai/claude-agent-sdk'
 import { resolveSdkClaudeBinary } from './agent/claude-binary'
 import { disposeGlobalWarmupManager } from './agent/warmup-manager'
 import { resolveProbeCwd } from './agent/probe-cwd'
@@ -93,7 +93,7 @@ import { mapModelInfo } from './agent/claude-models'
 import { getClaudeRateLimits } from './agent/claude-usage-service'
 import { getProviderRateLimits } from './agent/provider-usage-service'
 import { getRecentFolders, addRecentFolder, removeRecentFolder, getProjectId, getProjectPathById } from './recent-folders'
-import { getDb, closeDb, getCachedHarnessResources, setCachedHarnessResources, upsertPairedDevice, listPairedDevices, deletePairedDevice, isPairedDevice } from './database'
+import { getDb, closeDb, getCachedHarnessResources, getHarnessResourceCacheAgeMs, setCachedHarnessResources, upsertPairedDevice, listPairedDevices, deletePairedDevice, isPairedDevice } from './database'
 import { backfillFromHistory, getBackfillStatus, queryCounts, queryUsage } from './usage-stats-service'
 import { discoverUserSkills, discoverUserCommands, discoverUserAgents, discoverCodexUserPrompts } from './agent/discover-resources'
 import { CodexExperimentService } from './codex/codex-experiment-service'
@@ -2433,6 +2433,19 @@ function registerIpcHandlers(): void {
   })
 
   ipcMain.handle(AgentIpcChannels.CONNECT_CLAUDE, async (): Promise<ClaudeResources> => {
+    const CLAUDE_RESOURCES_CACHE_TTL_MS = 24 * 60 * 60 * 1000
+    const cached = getCachedHarnessResources('claude')
+    const cacheAgeMs = getHarnessResourceCacheAgeMs('claude')
+    const skills = discoverUserSkills()
+    const userCommands = discoverUserCommands()
+    const agents = discoverUserAgents()
+    if (cached && cacheAgeMs !== null && cacheAgeMs < CLAUDE_RESOURCES_CACHE_TTL_MS) {
+      log.info('[CONNECT_CLAUDE] cache fresh (ageMs=%d), skipping CLI query', cacheAgeMs)
+      const resources: ClaudeResources = { ...cached, skills, commands: userCommands, agents }
+      setCachedHarnessResources('claude', resources)
+      return resources
+    }
+
     const probeCwd = resolveProbeCwd()
     log.info('[CONNECT_CLAUDE] cwd:', probeCwd)
     log.info('[CONNECT_CLAUDE] platform=%s arch=%s', process.platform, process.arch)
@@ -2442,18 +2455,33 @@ function registerIpcHandlers(): void {
     })
     try {
       log.info('[CONNECT_CLAUDE] Fetching models, account, commands...')
-      const [modelInfos, accountInfo, commands, initResult] = await Promise.all([
+      const drainResult = (async (): Promise<SDKResultMessage | null> => {
+        for await (const msg of q) {
+          if (msg.type === 'result') return msg
+        }
+        return null
+      })()
+      const [modelInfos, accountInfo, commands, initResult, resultMessage] = await Promise.all([
         q.supportedModels(),
         q.accountInfo(),
         q.supportedCommands(),
         q.initializationResult(),
+        drainResult,
       ])
       log.info('[CONNECT_CLAUDE] Fetch complete, closing query...')
       q.close()
 
-      const skills = discoverUserSkills()
-      const userCommands = discoverUserCommands()
-      const agents = discoverUserAgents()
+      if (resultMessage) {
+        log.info(
+          '[CONNECT_CLAUDE] handshake result subtype=%s costUSD=%d usage=%s modelUsage=%s',
+          resultMessage.subtype,
+          resultMessage.total_cost_usd,
+          JSON.stringify(resultMessage.usage),
+          JSON.stringify(resultMessage.modelUsage),
+        )
+      } else {
+        log.warn('[CONNECT_CLAUDE] handshake result message never arrived')
+      }
       log.info('[CONNECT_CLAUDE] Models:', JSON.stringify(modelInfos, null, 2))
       log.info('[CONNECT_CLAUDE] Account:', JSON.stringify(accountInfo, null, 2))
       log.info('[CONNECT_CLAUDE] Commands:', JSON.stringify(commands, null, 2))

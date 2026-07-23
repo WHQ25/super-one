@@ -38,6 +38,14 @@ export function getCachedHarnessResources<H extends HarnessId>(
   }
 }
 
+export function getHarnessResourceCacheAgeMs(harnessId: HarnessId): number | null {
+  const row = getDb()
+    .prepare('SELECT updated_at FROM harness_resource_cache WHERE harness_id = ?')
+    .get(harnessId) as { updated_at: string } | undefined
+  if (!row) return null
+  return Date.now() - new Date(row.updated_at).getTime()
+}
+
 export function setCachedHarnessResources<H extends HarnessId>(
   harnessId: H,
   resources: HarnessResourcesMap[H],

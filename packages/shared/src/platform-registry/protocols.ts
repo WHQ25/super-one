@@ -155,21 +155,12 @@ export const FAMILY_EXTRA_PROTOCOLS: Record<ProtocolFamily, WireProtocol[]> = {
   google: [],
 }
 
-/**
- * Base URL for a family's endpoint derived from a single relay root (the "one base URL" a user pastes for
- * a NewAPI-style aggregator that speaks several formats at once). openai-compatible wires live under `/v1`
- * (`/v1/chat/completions`, `/v1/images/generations`, …); anthropic-messages and gemini address from the
- * root (the Claude SDK appends `/v1/messages`, generateContent carries its own path). newapi-video rides
- * the same `/v1` root (`/v1/video/generations`) since New API mounts its own relay endpoints alongside its
- * OpenAI-compatible ones. Idempotent: a root already ending in a version segment is left as-is, so pasting
- * either `https://relay.com` or `https://relay.com/v1` resolves the openai/newapi endpoints correctly.
- * Trailing slashes are stripped.
- */
 export function familyBaseUrl(family: ProtocolFamily, baseUrl: string): string {
   const trimmed = baseUrl.replace(/\/+$/, '')
-  const needsV1 = family === 'openai' || family === 'newapi'
-  if (!needsV1 || !trimmed || /\/v\d+$/.test(trimmed)) return trimmed
-  return `${trimmed}/v1`
+  if (!trimmed || /\/v\d+(?:alpha|beta)?$/.test(trimmed)) return trimmed
+  if (family === 'google') return `${trimmed}/v1beta`
+  if (family === 'openai' || family === 'newapi') return `${trimmed}/v1`
+  return trimmed
 }
 
 /**

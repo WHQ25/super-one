@@ -125,10 +125,19 @@ describe('familyBaseUrl (single relay root → per-protocol base URL)', () => {
     expect(familyBaseUrl('openai', 'https://relay.com/')).toBe('https://relay.com/v1')
   })
 
-  it('addresses anthropic and google from the root verbatim (trailing slash stripped)', () => {
+  it('addresses anthropic from the root verbatim (trailing slash stripped)', () => {
     expect(familyBaseUrl('anthropic', 'https://relay.com')).toBe('https://relay.com')
     expect(familyBaseUrl('anthropic', 'https://relay.com/')).toBe('https://relay.com')
-    expect(familyBaseUrl('google', 'https://relay.com')).toBe('https://relay.com')
+  })
+
+  it('appends /v1beta to a google root with no API version', () => {
+    expect(familyBaseUrl('google', 'https://relay.com')).toBe('https://relay.com/v1beta')
+    expect(familyBaseUrl('google', 'https://relay.com/')).toBe('https://relay.com/v1beta')
+  })
+
+  it('leaves explicit google API versions untouched', () => {
+    expect(familyBaseUrl('google', 'https://relay.com/v1')).toBe('https://relay.com/v1')
+    expect(familyBaseUrl('google', 'https://relay.com/v1beta')).toBe('https://relay.com/v1beta')
   })
 
   it('returns an empty root unchanged (official OAuth platforms carry no base)', () => {

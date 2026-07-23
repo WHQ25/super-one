@@ -47,6 +47,20 @@ const cred: Credential = {
   sortOrder: 0,
 }
 
+const googlePlatform: Platform = {
+  id: 'custom:google-relay',
+  brand: 'custom',
+  name: 'Google relay',
+  plans: [
+    {
+      id: 'api',
+      name: 'API',
+      auth: 'api-key',
+      endpoints: [{ id: 'google', baseUrl: 'https://relay.example.com', protocols: ['google-generative'] }],
+    },
+  ],
+}
+
 const mockedGetBinding = vi.mocked(getBinding)
 const mockedGetCred = vi.mocked(getCredentialDecrypted)
 const mockedGetPlatforms = vi.mocked(getPlatforms)
@@ -105,6 +119,22 @@ describe('resolveService', () => {
     bind({ consumer: 'chat:claude', credentialId: 'cred1' }, [{ ...cred, secret: '', secretEnv: 'MY_TEST_KEY' }])
     expect(resolveService('chat:claude')!.apiKey).toBe('env-secret')
     delete process.env.MY_TEST_KEY
+  })
+
+  it('adds /v1beta when resolving an existing custom google endpoint with a root URL', () => {
+    const googleCred: Credential = {
+      ...cred,
+      platformId: 'custom:google-relay',
+      planId: 'api',
+      overrides: { google: { models: [{ id: 'gemini-3.1-flash-lite-image', tasks: ['image'] }] } },
+    }
+    mockedGetBinding.mockImplementation((consumer) =>
+      consumer === 'media:image' ? { consumer, credentialId: googleCred.id } : undefined,
+    )
+    mockedGetCred.mockImplementation((id) => (id === googleCred.id ? googleCred : undefined))
+    mockedGetPlatforms.mockReturnValue([googlePlatform])
+
+    expect(resolveService('media:image')?.baseUrl).toBe('https://relay.example.com/v1beta')
   })
 })
 

@@ -1,9 +1,11 @@
 import { expandProviderModelEnv, type EffortLevel, type RemoteActiveProvider } from '@superone/shared/agent-types'
 import {
   CONSUMER_TASK,
+  familyBaseUrl,
   findPlan,
   findPlatform,
   mergeEndpoint,
+  PROTOCOL_FAMILY,
   selectEndpoint,
   type ConsumerId,
   type Credential,
@@ -69,7 +71,7 @@ export function resolveService(consumer: ConsumerId, override?: ResolveOverride)
     credentialId: cred.id,
     task: CONSUMER_TASK[consumer],
     protocol,
-    baseUrl: merged.baseUrl,
+    baseUrl: familyBaseUrl(PROTOCOL_FAMILY[protocol], merged.baseUrl),
     apiKey: credentialApiKey(cred),
     auth: plan.auth,
     models: merged.models,

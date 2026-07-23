@@ -1,6 +1,6 @@
 import { Check, Loader2 } from 'lucide-react'
 import type { CodexReasoningEffort, EffortLevel, ModelBucket, ModelOption, ProviderModelEnv, ReasoningEffortOption } from '@superone/shared/agent-types'
-import { formatCodexModelLabel, formatReasoningEffortLabel } from './chat-input-utils'
+import { formatCodexModelName, formatReasoningEffortLabel } from './chat-input-utils'
 
 function claudeIdToBucket(id: string): ModelBucket {
   const lower = id.toLowerCase()
@@ -293,12 +293,18 @@ export function CodexModelList({
           <button
             key={model.id}
             onClick={() => onSelect(model.id)}
-            className={`flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-xs transition-colors ${
+            className={`flex w-full items-start justify-between gap-2 rounded px-2 py-1.5 text-left text-xs transition-colors ${
               active ? 'bg-accent text-accent-foreground' : 'text-foreground hover:bg-accent/50'
             }`}
           >
-            <div className="font-medium">{model.name || formatCodexModelLabel(model.id)}</div>
-            {active && <Check className="size-3.5 shrink-0 text-primary" />}
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5">
+                <span className="truncate font-medium">{formatCodexModelName(model.name, model.id)}</span>
+                {model.isDefault && <span className="shrink-0 rounded bg-primary/10 px-1 py-0.5 text-[9px] font-medium text-primary">Default</span>}
+              </div>
+              {model.description && <div className="mt-0.5 line-clamp-2 text-[10px] leading-4 text-muted-foreground">{model.description}</div>}
+            </div>
+            {active && <Check className="mt-0.5 size-3.5 shrink-0 text-primary" />}
           </button>
         )
       })}
@@ -341,12 +347,15 @@ export function CodexReasoningEffortList({
           <button
             key={option.value}
             onClick={() => onSelect(option.value)}
-            className={`flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-xs transition-colors ${
+            className={`flex w-full items-start justify-between gap-2 rounded px-2 py-1.5 text-left text-xs transition-colors ${
               active ? 'bg-accent text-accent-foreground' : 'text-foreground hover:bg-accent/50'
             }`}
           >
-            <div className="font-medium">{formatReasoningEffortLabel(option.value)}</div>
-            {active && <Check className="size-3.5 shrink-0 text-primary" />}
+            <div className="min-w-0 flex-1">
+              <div className="font-medium">{formatReasoningEffortLabel(option.value)}</div>
+              {option.description && <div className="mt-0.5 line-clamp-2 text-[10px] leading-4 text-muted-foreground">{option.description}</div>}
+            </div>
+            {active && <Check className="mt-0.5 size-3.5 shrink-0 text-primary" />}
           </button>
         )
       })}

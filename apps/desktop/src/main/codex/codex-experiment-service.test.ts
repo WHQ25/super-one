@@ -231,26 +231,44 @@ describe('CodexExperimentService auth state', () => {
     expect(handleB.connection.request).toHaveBeenCalledTimes(1)
   })
 
-  it('caches per session apiProviderId: same id hits cache, different id refetches with that provider', async () => {
+  it('caches per session apiProviderId even when providers share a base URL', async () => {
     const handleA = makeModelHandle()
     const handleB = makeModelHandle()
     createHandleMock.mockResolvedValueOnce(handleA).mockResolvedValueOnce(handleB)
     vi.mocked(getProviderByIdRaw).mockImplementation(((id: string) =>
       id === 'sess-a'
-        ? codexProviderRow('sess-a', 'https://a/v1')
-        : codexProviderRow('sess-b', 'https://b/v1')) as never)
+        ? codexProviderRow('sess-a', 'https://shared/v1')
+        : codexProviderRow('sess-b', 'https://shared/v1')) as never)
     const service = new CodexExperimentService()
 
     await service.listModels('/project', 'sess-a')
     await service.listModels('/project', 'sess-a')
     expect(createHandleMock).toHaveBeenCalledTimes(1)
     expect(handleA.connection.request).toHaveBeenCalledTimes(1)
-    expect(createHandleMock.mock.calls[0][3]).toContain('model_providers.superone_custom.base_url="https://a/v1"')
+    expect(createHandleMock.mock.calls[0][3]).toContain('model_providers.superone_custom.base_url="https://shared/v1"')
 
     await service.listModels('/project', 'sess-b')
     expect(createHandleMock).toHaveBeenCalledTimes(2)
     expect(handleB.connection.request).toHaveBeenCalledTimes(1)
-    expect(createHandleMock.mock.calls[1][3]).toContain('model_providers.superone_custom.base_url="https://b/v1"')
+    expect(createHandleMock.mock.calls[1][3]).toContain('model_providers.superone_custom.base_url="https://shared/v1"')
+  })
+
+  it('refetches default models when its bound credential changes on the same base URL', async () => {
+    const handleA = makeModelHandle()
+    const handleB = makeModelHandle()
+    createHandleMock.mockResolvedValueOnce(handleA).mockResolvedValueOnce(handleB)
+    vi.mocked(getActiveProviderRaw).mockReturnValue(codexProviderRow('default-a', 'https://shared/v1') as never)
+    const service = new CodexExperimentService()
+
+    await service.listModels('/project')
+    vi.mocked(getActiveProviderRaw).mockReturnValue(codexProviderRow('default-b', 'https://shared/v1') as never)
+    service.handleProviderChanged(false)
+    await new Promise((resolve) => setImmediate(resolve))
+    await service.listModels('/project')
+
+    expect(createHandleMock).toHaveBeenCalledTimes(2)
+    expect(handleA.connection.request).toHaveBeenCalledTimes(1)
+    expect(handleB.connection.request).toHaveBeenCalledTimes(1)
   })
 
   it('handleProviderChanged clears the model cache and closes metadata connections', async () => {
@@ -270,6 +288,26 @@ describe('CodexExperimentService auth state', () => {
     await service.listModels('/project')
     expect(createHandleMock).toHaveBeenCalledTimes(2)
     expect(handleB.connection.request).toHaveBeenCalledTimes(1)
+  })
+
+  it('preserves per-provider model caches when only the default provider changes', async () => {
+    const handleA = makeModelHandle()
+    const handleB = makeModelHandle()
+    createHandleMock.mockResolvedValueOnce(handleA).mockResolvedValueOnce(handleB)
+    vi.mocked(getProviderByIdRaw).mockImplementation(((id: string) =>
+      id === 'provider-a'
+        ? codexProviderRow('provider-a', 'https://a.example.com/v1')
+        : codexProviderRow('provider-b', 'https://b.example.com/v1')) as never)
+    const service = new CodexExperimentService()
+
+    await service.listModels('/project', 'provider-a')
+    await service.listModels('/project', 'provider-b')
+    service.handleProviderChanged(false)
+    await new Promise((resolve) => setImmediate(resolve))
+    await service.listModels('/project', 'provider-a')
+
+    expect(createHandleMock).toHaveBeenCalledTimes(2)
+    expect(handleA.connection.request).toHaveBeenCalledTimes(1)
   })
 
   it('closes the cached metadata connection when auth changes', async () => {

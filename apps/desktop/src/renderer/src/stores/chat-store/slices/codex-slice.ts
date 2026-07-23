@@ -1,8 +1,8 @@
 import type { StateCreator } from 'zustand'
-import type { CodexCollaborationMode, CodexPermissionPreset, CodexReasoningEffort } from '@superone/shared/agent-types'
+import type { CodexCollaborationMode, CodexPermissionPreset, CodexReasoningEffort, ModelOption } from '@superone/shared/agent-types'
 import { resolveCodexReasoningEffort } from '../helpers/codex-helpers'
+import { codexModelCacheKey } from '../helpers/codex-model-cache'
 import type { ChatStore } from '../types'
-import { createDefaultPerSessionState } from '../defaults'
 import {
   _getEffectiveSessionId,
   getActivePerSession,
@@ -23,6 +23,7 @@ export interface CodexSlice {
   setSelectedCodexReasoningEffort: (effort?: CodexReasoningEffort) => void
   setSelectedCodexPermissionPreset: (preset: CodexPermissionPreset) => void
   setSelectedCodexCollaborationMode: (mode: CodexCollaborationMode) => void
+  loadCodexModels: (projectPath: string, apiProviderId: string | null, force?: boolean) => Promise<ModelOption[]>
   refreshCodexModels: (force?: boolean) => Promise<void>
   refreshCodexSkills: (projectPath?: string) => Promise<void>
 }
@@ -97,77 +98,91 @@ export const createCodexSlice: StateCreator<ChatStore, [], [], CodexSlice> = (se
     }
   },
 
-  refreshCodexModels: async (force = false) => {
-    const { activeProject } = get()
-    if (!activeProject) return
+  loadCodexModels: async (projectPath, apiProviderId, force = false) => {
+    const cacheKey = codexModelCacheKey(apiProviderId)
+    const project0 = get().projectSessions[projectPath]
+    if (!project0) return window.app.codexListModels(projectPath, apiProviderId, force)
 
-    const project0 = getProject(get(), activeProject)
-    const activeSid0 = project0._activeSessionId
-    const apiProviderId = activeSid0
-      ? (project0._sessions[activeSid0]?.apiProviderId ?? null)
-      : null
+    const isActiveProvider = (project: typeof project0): boolean => {
+      const sessionId = project._activeSessionId
+      const session = sessionId ? project._sessions[sessionId] : undefined
+      return (session?.apiProviderId ?? null) === apiProviderId
+    }
 
-    const applyModels = (models: typeof project0.codexModels, clearLoading: boolean) => {
+    const applyModels = (models: ModelOption[]) => {
       set((s) => {
-        const proj = getProject(s, activeProject)
-        const activeSid = proj._activeSessionId
-        const sess = activeSid ? (proj._sessions[activeSid] ?? createDefaultPerSessionState()) : createDefaultPerSessionState()
-        const selected = resolveSessionCodexSelection(
-          models,
-          sess.selectedCodexModel,
-          sess.selectedCodexReasoningEffort,
-        )
-        const updatedSessions = activeSid
-          ? {
-              ...proj._sessions,
-              [activeSid]: {
-                ...sess,
-                selectedCodexModel: selected.modelId,
-                selectedCodexReasoningEffort: selected.reasoningEffort,
-              },
-            }
-          : proj._sessions
+        const project = s.projectSessions[projectPath]
+        if (!project) return {}
+        const activeSessionId = project._activeSessionId
+        const activeSession = activeSessionId ? project._sessions[activeSessionId] : undefined
+        const appliesToActiveSession = isActiveProvider(project)
+        const selected = appliesToActiveSession && activeSession
+          ? resolveSessionCodexSelection(models, activeSession.selectedCodexModel, activeSession.selectedCodexReasoningEffort)
+          : null
         return {
           projectSessions: {
             ...s.projectSessions,
-            [activeProject]: {
-              ...proj,
-              codexModels: models,
-              ...(clearLoading ? { codexModelsLoading: false } : {}),
-              _sessions: updatedSessions,
+            [projectPath]: {
+              ...project,
+              codexModelsByProvider: { ...project.codexModelsByProvider, [cacheKey]: models },
+              ...(appliesToActiveSession ? { codexModels: models, codexModelsLoading: false } : {}),
+              ...(activeSessionId && activeSession && selected
+                ? {
+                    _sessions: {
+                      ...project._sessions,
+                      [activeSessionId]: {
+                        ...activeSession,
+                        selectedCodexModel: selected.modelId,
+                        selectedCodexReasoningEffort: selected.reasoningEffort,
+                      },
+                    },
+                  }
+                : {}),
             },
           },
-          harnessResources: { ...s.harnessResources, codex: { models, prompts: s.harnessResources.codex?.prompts ?? [] } },
+          ...(apiProviderId === null
+            ? { harnessResources: { ...s.harnessResources, codex: { models, prompts: s.harnessResources.codex?.prompts ?? [] } } }
+            : {}),
         }
       })
     }
 
-    const revalidate = async () => {
-      try {
-        const fresh = await window.app.codexListModels(activeProject, apiProviderId, true)
-        applyModels(fresh, true)
-      } catch (error) {
-        console.warn('[refreshCodexModels] revalidate failed:', error)
-        set((s) => updateProjectState(s, activeProject, () => ({ codexModelsLoading: false })))
-      }
+    const cached = project0.codexModelsByProvider[cacheKey]
+    if (!force && cached) {
+      applyModels(cached)
+      return cached
     }
 
-    if (force) {
-      set((s) => updateProjectState(s, activeProject, () => ({ codexModelsLoading: true })))
-      await revalidate()
-      return
+    if (isActiveProvider(project0)) {
+      set((s) => updateProjectState(s, projectPath, () => ({ codexModelsLoading: true })))
     }
-
-    if (project0.codexModelsLoading) return
-
-    set((s) => updateProjectState(s, activeProject, () => ({ codexModelsLoading: true })))
     try {
-      const cached = await window.app.codexListModels(activeProject, apiProviderId, false)
-      applyModels(cached, false)
+      const models = await window.app.codexListModels(projectPath, apiProviderId, force)
+      applyModels(models)
+      return models
+    } catch (error) {
+      set((s) => {
+        const project = s.projectSessions[projectPath]
+        return project && isActiveProvider(project)
+          ? updateProjectState(s, projectPath, () => ({ codexModelsLoading: false }))
+          : {}
+      })
+      throw error
+    }
+  },
+
+  refreshCodexModels: async (force = false) => {
+    const { activeProject } = get()
+    if (!activeProject) return
+
+    try {
+      const project = getProject(get(), activeProject)
+      const sessionId = project._activeSessionId
+      const apiProviderId = sessionId ? (project._sessions[sessionId]?.apiProviderId ?? null) : null
+      await get().loadCodexModels(activeProject, apiProviderId, force)
     } catch (error) {
       console.warn('[refreshCodexModels] Failed:', error)
     }
-    void revalidate()
   },
 
   refreshCodexSkills: async (projectPath) => {

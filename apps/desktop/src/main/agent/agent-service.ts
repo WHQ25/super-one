@@ -79,7 +79,7 @@ export class AgentService {
   private eventSubscribers: Array<(event: AgentEvent) => void> = []
   private codexListModels?: (projectPath: string) => Promise<ModelOption[]>
   private codexGetAuthStatus?: (projectPath: string) => unknown
-  private codexProviderChanged?: () => void
+  private codexProviderChanged?: (invalidateModelCache?: boolean) => void
   private remoteControlService?: RemoteControlService
   private mobileReceiveService?: import('../remote/mobile-receive-service').MobileReceiveService
   private deviceRegistry?: import('../remote/device-registry').DeviceRegistry
@@ -90,7 +90,7 @@ export class AgentService {
     this.codexListModels = fn
   }
 
-  setCodexProviderChanged(fn: () => void): void {
+  setCodexProviderChanged(fn: (invalidateModelCache?: boolean) => void): void {
     this.codexProviderChanged = fn
   }
 
@@ -2063,7 +2063,7 @@ export class AgentService {
       setBinding(binding)
       const harness = binding.consumer === 'chat:codex' ? 'codex' : 'claude'
       this.markAllNeedsRebuild()
-      if (harness === 'codex') this.codexProviderChanged?.()
+      if (harness === 'codex') this.codexProviderChanged?.(false)
       this.broadcastProviderChanged(harness)
     })
     ipcMain.handle(AgentIpcChannels.BINDINGS_CLEAR, (_event, consumer: ConsumerId) => {
@@ -2071,7 +2071,7 @@ export class AgentService {
       deleteBinding(consumer)
       const harness = consumer === 'chat:codex' ? 'codex' : 'claude'
       this.markAllNeedsRebuild()
-      if (harness === 'codex') this.codexProviderChanged?.()
+      if (harness === 'codex') this.codexProviderChanged?.(false)
       this.broadcastProviderChanged(harness)
     })
 

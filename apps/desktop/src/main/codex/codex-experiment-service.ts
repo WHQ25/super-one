@@ -15,6 +15,8 @@ import {
   type CodexAppServerModel,
   type CodexProjectAuth,
 } from './app-server-connection'
+import { clearCodexProxyCache } from '../providers/llm-proxy-manager'
+import { resolveChatService } from '../providers/resolver'
 import type {
   CodexAuthStatus,
   CodexAccountUsage,
@@ -224,8 +226,14 @@ function authsEqual(a: CodexProjectAuth, b: CodexProjectAuth): boolean {
 }
 
 function codexProviderSignature(apiProviderId?: string | null): string {
-  const override = getCodexProviderOverrideFor(apiProviderId)
-  return override ? `${override.id}|${String(override.info.base_url ?? '')}` : ''
+  const resolved = resolveChatService('codex', apiProviderId ?? null)
+  if (!resolved) return ''
+  return [
+    resolved.credentialId,
+    resolved.endpointId,
+    resolved.protocol,
+    resolved.baseUrl.trim(),
+  ].join('|')
 }
 
 interface CachedAppServerConnection {
@@ -472,6 +480,7 @@ export class CodexExperimentService {
       if (!mapped.some((m) => m.isDefault) && mapped[0]) {
         mapped[0] = { ...mapped[0], isDefault: true }
       }
+      log.info('[codex] listModels: app-server models=%s', JSON.stringify(mapped))
       return mapped
     }, apiProviderId)
   }
@@ -482,7 +491,7 @@ export class CodexExperimentService {
     if (!force) {
       const cached = this.modelCacheByProvider.get(sig)
       if (cached) {
-        log.info('[codex] listModels: cache hit key=%s models=%d', sig, cached.length)
+        log.info('[codex] listModels: cache hit key=%s models=%s', sig, JSON.stringify(cached))
         return cached
       }
     }
@@ -493,8 +502,9 @@ export class CodexExperimentService {
     return models
   }
 
-  handleProviderChanged(): void {
-    this.modelCacheByProvider.clear()
+  handleProviderChanged(invalidateModelCache = true): void {
+    if (invalidateModelCache) this.modelCacheByProvider.clear()
+    clearCodexProxyCache()
     for (const projectPath of [...this.appServerConnections.keys()]) {
       void this.closeAppServerConnection(projectPath)
     }

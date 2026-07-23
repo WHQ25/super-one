@@ -6,9 +6,9 @@ import { useSettingsStore } from '@/stores/settings'
 import { DefaultProviderRow, ProviderOptionLabel } from '@/components/providers/DefaultProviderRow'
 import { ProjectSelector } from '@/components/coding/ProjectSelector'
 import { CodexImportConfigSection } from '@/components/CodexImportConfigSection'
-import { formatCodexModelLabel, formatReasoningEffortLabel } from '@/components/chat/chat-input-utils'
+import { formatCodexModelName, formatReasoningEffortLabel } from '@/components/chat/chat-input-utils'
 import { useAppStore } from '@/stores/app'
-import { invalidateDefaultClaudePreferencesCache, invalidateDefaultCodexPreferencesCache, invalidateDefaultPermissionModeCache, resolveCodexReasoningEffort, useChatStore, selectClaudeModels, selectCodexModels, selectClaudeAccount, selectClaudeOutputStyles } from '@/stores/chat'
+import { invalidateDefaultClaudePreferencesCache, invalidateDefaultCodexPreferencesCache, invalidateDefaultPermissionModeCache, resolveCodexReasoningEffort, useChatStore, selectClaudeModels, selectClaudeAccount, selectClaudeOutputStyles } from '@/stores/chat'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -513,7 +513,9 @@ function ClaudePreferencesPage() {
 function CodexPreferencesPage() {
   const { t } = useTranslation()
   const currentFolder = useAppStore((s) => s.currentFolder)
-  const cachedCodexModels = useChatStore(selectCodexModels)
+  const bindings = useSettingsStore((s) => s.bindings)
+  const loadCodexModels = useChatStore((s) => s.loadCodexModels)
+  const defaultProviderId = bindings.find((binding) => binding.consumer === 'chat:codex')?.credentialId ?? null
 
   const [defaultModel, setDefaultModel] = useState('')
   const [defaultReasoningEffort, setDefaultReasoningEffort] = useState<CodexReasoningEffort | ''>('')
@@ -541,10 +543,13 @@ function CodexPreferencesPage() {
 
   useEffect(() => {
     let mounted = true
-    setCodexModels(cachedCodexModels)
-    if (!currentFolder) return () => { mounted = false }
+    if (!currentFolder) {
+      setCodexModels([])
+      setModelsLoading(false)
+      return () => { mounted = false }
+    }
     setModelsLoading(true)
-    window.app.codexListModels(currentFolder)
+    loadCodexModels(currentFolder, defaultProviderId)
       .then((models) => {
         if (!mounted) return
         setCodexModels(models)
@@ -554,7 +559,7 @@ function CodexPreferencesPage() {
         if (mounted) setModelsLoading(false)
       })
     return () => { mounted = false }
-  }, [cachedCodexModels, currentFolder])
+  }, [currentFolder, defaultProviderId, loadCodexModels])
 
   const selectedModel = codexModels.find((entry) => entry.id === defaultModel)
   const supportedReasoningEfforts = selectedModel?.supportedReasoningEfforts ?? []
@@ -656,7 +661,7 @@ function CodexPreferencesPage() {
                   className={pillTriggerClass}
                 >
                   <span className="max-w-[160px] truncate">
-                    {defaultModel ? (selectedModel?.name || formatCodexModelLabel(defaultModel)) : t('common.systemDefault')}
+                    {defaultModel ? formatCodexModelName(selectedModel?.name, defaultModel) : t('common.systemDefault')}
                   </span>
                   <ChevronDown className={`size-3 transition-transform duration-200 ${modelOpen ? 'rotate-180' : ''}`} />
                 </button>

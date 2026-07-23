@@ -1,4 +1,5 @@
 import type { CodexReasoningEffort, CodexResources, ModelOption } from '@superone/shared/agent-types'
+import { DEFAULT_CODEX_PROVIDER_CACHE_KEY } from '../helpers/codex-model-cache'
 import type { ChatStore } from '../types'
 
 /**
@@ -27,9 +28,18 @@ export function applyCodexResources(
   const projects = { ...s.projectSessions }
   let changed = false
   for (const [path, project] of Object.entries(projects)) {
-    const patched = { ...project, codexModels: r.models }
-    const activeSid = patched._activeSessionId
-    if (activeSid && patched._sessions[activeSid]) {
+    const activeSid = project._activeSessionId
+    const activeSession = activeSid ? project._sessions[activeSid] : undefined
+    const appliesToActiveSession = (activeSession?.apiProviderId ?? null) === null
+    const patched = {
+      ...project,
+      ...(appliesToActiveSession ? { codexModels: r.models } : {}),
+      codexModelsByProvider: {
+        ...project.codexModelsByProvider,
+        [DEFAULT_CODEX_PROVIDER_CACHE_KEY]: r.models,
+      },
+    }
+    if (appliesToActiveSession && activeSid && patched._sessions[activeSid]) {
       const sess = patched._sessions[activeSid]
       if (!sess.selectedCodexModel || !sess.selectedCodexReasoningEffort) {
         const selected = resolveSessionSelectionFn(r.models, sess.selectedCodexModel, sess.selectedCodexReasoningEffort)

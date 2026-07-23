@@ -186,12 +186,20 @@ export function shutdownAll(): void {
 
 const codexProxyCache = new Map<string, string>()
 
+function codexProxyCacheKey(apiProviderId?: string | null): string {
+  return resolveChatService('codex', apiProviderId ?? null)?.credentialId ?? apiProviderId ?? ''
+}
+
 export function getCodexProxyUrl(apiProviderId: string | null): string | undefined {
-  return codexProxyCache.get(apiProviderId ?? '')
+  return codexProxyCache.get(codexProxyCacheKey(apiProviderId))
+}
+
+export function clearCodexProxyCache(): void {
+  codexProxyCache.clear()
 }
 
 export async function ensureCodexProxyUrl(apiProviderId?: string | null): Promise<string | undefined> {
-  const key = apiProviderId ?? ''
+  const key = codexProxyCacheKey(apiProviderId)
   const cached = codexProxyCache.get(key)
   if (cached) return cached
 

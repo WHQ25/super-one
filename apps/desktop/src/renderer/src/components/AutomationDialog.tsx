@@ -16,7 +16,7 @@ const SchedulePicker = lazy(() => import('./SchedulePicker').then((m) => ({ defa
 import { useChatStore, selectClaudeModels, selectCodexModels } from '@/stores/chat'
 import { modes as permissionModes } from '@/components/chat/PermissionModeSelector'
 import { sandboxModes } from '@/components/chat/SandboxModeSelector'
-import { formatCodexModelLabel, formatReasoningEffortLabel } from '@/components/chat/chat-input-utils'
+import { formatCodexModelName, formatReasoningEffortLabel } from '@/components/chat/chat-input-utils'
 import type { AgentType, Automation, AgentRunConfig, AutomationSchedule, ClaudeRunConfig, CodexRunConfig, EffortLevel } from '@superone/shared/agent-types'
 
 const EFFORT_LEVELS: EffortLevel[] = ['low', 'medium', 'high', 'xhigh', 'max']
@@ -204,7 +204,7 @@ export function AutomationDialog({
 
   const codexModelOptions = [
     { id: '', label: t('resources.automation.defaultValue') },
-    ...(cachedCodexModels ?? []).map((m) => ({ id: m.id, label: m.name || formatCodexModelLabel(m.id) })),
+    ...(cachedCodexModels ?? []).map((m) => ({ id: m.id, label: formatCodexModelName(m.name, m.id) })),
   ]
 
   const effortOptions = [

@@ -878,7 +878,7 @@ function registerIpcHandlers(): void {
 
   // Setup agent IPC handlers (does NOT auto-initialize)
   agentService.setCodexListModels((projectPath) => codexService.listModels(projectPath))
-  agentService.setCodexProviderChanged(() => codexService.handleProviderChanged())
+  agentService.setCodexProviderChanged((invalidateModelCache) => codexService.handleProviderChanged(invalidateModelCache))
   agentService.setCodexGetAuthStatus((projectPath) => codexService.getAuthStatus(projectPath))
   agentService.setup()
 
@@ -1010,9 +1010,11 @@ function registerIpcHandlers(): void {
       log.debug('[CODEX_LIST_MODELS] overrode with %d models (enabled=%d mapped=%d)',
         models.length, resolved.models?.length ?? 0, Object.keys(resolved.modelMapping ?? {}).length)
     }
-    const current = getCachedHarnessResources('codex')
-    setCachedHarnessResources('codex', { models, prompts: current?.prompts ?? [] })
-    log.debug('[CODEX_LIST_MODELS] done project=%s apiProvider=%s models=%d', projectPath, apiProviderId ?? 'default', models.length)
+    if (apiProviderId == null) {
+      const current = getCachedHarnessResources('codex')
+      setCachedHarnessResources('codex', { models, prompts: current?.prompts ?? [] })
+    }
+    log.info('[CODEX_LIST_MODELS] response project=%s apiProvider=%s models=%s', projectPath, apiProviderId ?? 'default', JSON.stringify(models))
     return models
   })
 
@@ -2452,7 +2454,6 @@ function registerIpcHandlers(): void {
       const skills = discoverUserSkills()
       const userCommands = discoverUserCommands()
       const agents = discoverUserAgents()
-
       log.info('[CONNECT_CLAUDE] Models:', JSON.stringify(modelInfos, null, 2))
       log.info('[CONNECT_CLAUDE] Account:', JSON.stringify(accountInfo, null, 2))
       log.info('[CONNECT_CLAUDE] Commands:', JSON.stringify(commands, null, 2))

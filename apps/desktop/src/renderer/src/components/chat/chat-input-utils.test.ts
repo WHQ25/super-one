@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   formatCodexModelLabel,
+  formatCodexModelName,
   formatReasoningEffortLabel,
   normalizeFilePath,
   toMentionPath,
@@ -21,6 +22,16 @@ describe('formatCodexModelLabel', () => {
 
   it('should preserve version numbers', () => {
     expect(formatCodexModelLabel('model-4.1')).toBe('Model-4.1')
+  })
+
+  it('should join GPT and decimal version while separating the variant', () => {
+    expect(formatCodexModelLabel('gpt-5.6-sol')).toBe('GPT5.6 Sol')
+  })
+
+  it('should format versioned GPT display names without changing other names', () => {
+    expect(formatCodexModelName('GPT-5.6-Sol', 'gpt-5.6-sol')).toBe('GPT5.6 Sol')
+    expect(formatCodexModelName('GPT5.6 Sol', 'gpt-5.6-sol')).toBe('GPT5.6 Sol')
+    expect(formatCodexModelName('My Custom Model', 'custom-model')).toBe('My Custom Model')
   })
 
   it('should convert underscores to hyphens', () => {

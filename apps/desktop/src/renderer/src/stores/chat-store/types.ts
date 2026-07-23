@@ -193,6 +193,7 @@ export interface ProjectState {
   hasPendingInteraction: boolean
   unseenCompletedSessions: Set<string>
   codexModels: ModelOption[]
+  codexModelsByProvider: Record<string, ModelOption[]>
   codexModelsLoading: boolean
   _codexSkills: SkillInfo[]
   _codexSkillsLoading: boolean
@@ -307,6 +308,7 @@ export interface ChatStore {
   setSelectedCodexReasoningEffort: (effort?: CodexReasoningEffort) => void
   setSelectedCodexPermissionPreset: (preset: CodexPermissionPreset) => void
   setSelectedCodexCollaborationMode: (mode: CodexCollaborationMode) => void
+  loadCodexModels: (projectPath: string, apiProviderId: string | null, force?: boolean) => Promise<ModelOption[]>
   refreshCodexModels: (force?: boolean) => Promise<void>
   refreshCodexSkills: (projectPath?: string) => Promise<void>
   setPreferredProvider: (provider: ChatProvider) => void

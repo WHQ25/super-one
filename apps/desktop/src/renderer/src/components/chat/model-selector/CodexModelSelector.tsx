@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { ChevronDown, Loader2 } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@superone/ui/components/ui/popover'
 import { useActiveSession, useChatStore } from '@/stores/chat'
-import { formatCodexModelLabel, formatReasoningEffortLabel } from '../chat-input-utils'
+import { formatCodexModelName, formatReasoningEffortLabel } from '../chat-input-utils'
 import { CodexModeSelector } from '../CodexModeSelector'
 import { CodexModelList, CodexReasoningEffortList } from '../ModelSelectorLists'
 
@@ -27,9 +27,9 @@ export function CodexModelSelector({ onCloseAutoFocus }: Props) {
   const selectedCodexModelOption = codexModels.find((m) => m.id === selectedCodexModel)
   const currentCodexModelName =
     selectedCodexModelOption
-      ? selectedCodexModelOption.name || formatCodexModelLabel(selectedCodexModelOption.id)
+      ? formatCodexModelName(selectedCodexModelOption.name, selectedCodexModelOption.id)
       : selectedCodexModel
-        ? formatCodexModelLabel(selectedCodexModel)
+        ? formatCodexModelName(undefined, selectedCodexModel)
         : null
   const codexReasoningEfforts = selectedCodexModelOption?.supportedReasoningEfforts ?? []
   const currentCodexReasoningEffort =

@@ -123,6 +123,7 @@ export function createDefaultProjectState(): ProjectState {
     hasPendingInteraction: false,
     unseenCompletedSessions: new Set(),
     codexModels: [],
+    codexModelsByProvider: {},
     codexModelsLoading: false,
     _codexSkills: [],
     _codexSkillsLoading: false,

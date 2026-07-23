@@ -1659,6 +1659,48 @@ describe('codex model cache + defaults', () => {
     expect((useChatStore.getState().harnessResources.codex?.models ?? []).map((m) => m.id)).toEqual(['gpt-5.4'])
   })
 
+  it('caches Codex models separately for each provider', async () => {
+    setupProject('/codex-provider-cache')
+    mockWindowApp.codexListModels
+      .mockResolvedValueOnce([{ id: 'provider-a-model', name: 'Provider A', description: '' }])
+      .mockResolvedValueOnce([{ id: 'provider-b-model', name: 'Provider B', description: '' }])
+
+    await useChatStore.getState().loadCodexModels('/codex-provider-cache', 'provider-a')
+    await useChatStore.getState().loadCodexModels('/codex-provider-cache', 'provider-b')
+    const restored = await useChatStore.getState().loadCodexModels('/codex-provider-cache', 'provider-a')
+
+    const cache = useChatStore.getState().projectSessions['/codex-provider-cache'].codexModelsByProvider
+    expect(cache['provider-a'].map((model) => model.id)).toEqual(['provider-a-model'])
+    expect(cache['provider-b'].map((model) => model.id)).toEqual(['provider-b-model'])
+    expect(restored.map((model) => model.id)).toEqual(['provider-a-model'])
+    expect(mockWindowApp.codexListModels).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps active provider models when default Codex resources initialize', () => {
+    setupProject('/codex-provider-init')
+    patchDraftSession('/codex-provider-init', { apiProviderId: 'provider-b' })
+    const project = useChatStore.getState().projectSessions['/codex-provider-init']
+    useChatStore.setState({
+      projectSessions: {
+        ...useChatStore.getState().projectSessions,
+        '/codex-provider-init': {
+          ...project,
+          codexModels: [{ id: 'provider-b-model', name: 'Provider B', description: '' }],
+          codexModelsByProvider: { 'provider-b': [{ id: 'provider-b-model', name: 'Provider B', description: '' }] },
+        },
+      },
+    })
+
+    useChatStore.getState().setHarnessResources('codex', {
+      models: [{ id: 'default-model', name: 'Default', description: '' }],
+      prompts: [],
+    })
+
+    const updated = useChatStore.getState().projectSessions['/codex-provider-init']
+    expect(updated.codexModels.map((model) => model.id)).toEqual(['provider-b-model'])
+    expect(updated.codexModelsByProvider.__default__.map((model) => model.id)).toEqual(['default-model'])
+  })
+
   it('persists codex selection changes to localStorage', () => {
     setCodex({
       models: [

@@ -43,6 +43,17 @@ function ActivityPrefixActions() {
   )
 }
 
+function ActivityWatermark() {
+  return (
+    <div className="relative h-full">
+      <div className="absolute inset-x-0 top-0 z-10 h-[34px]">
+        <ActivityPrefixActions />
+      </div>
+      <ActivityLauncher />
+    </div>
+  )
+}
+
 function ActivityNewTabAction() {
   const types = useActivityLaunchTypes()
   return (
@@ -185,7 +196,7 @@ export function ActivityPanel({ getMaxWidth, hidden }: ActivityPanelProps) {
               onReady={onReady}
               components={activityPanelComponents}
               tabComponents={activityTabComponents}
-              watermarkComponent={ActivityLauncher}
+              watermarkComponent={ActivityWatermark}
               prefixHeaderActionsComponent={ActivityPrefixActions}
               leftHeaderActionsComponent={ActivityNewTabAction}
             />

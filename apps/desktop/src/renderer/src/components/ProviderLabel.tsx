@@ -37,7 +37,7 @@ const BRANDS: Record<string, BrandEntry> = {
   chatgpt: { Mono: OpenAI, Combine: OpenAI.Combine, extraLabel: 'ChatGPT' },
 }
 
-export function ProviderLabel({ brandKey, fallback, size = 44, iconOnly = false, combine = false }: { brandKey?: string | null; fallback?: string; size?: number; iconOnly?: boolean; combine?: boolean }): ReactNode {
+export function ProviderLabel({ brandKey, fallback, size = 44, iconOnly = false, combine = false, compactFallback = false }: { brandKey?: string | null; fallback?: string; size?: number; iconOnly?: boolean; combine?: boolean; compactFallback?: boolean }): ReactNode {
   const brand = brandKey ? BRANDS[brandKey] : null
   if (brand) {
     const IconComp = brand.Color ?? brand.Mono
@@ -70,6 +70,14 @@ export function ProviderLabel({ brandKey, fallback, size = 44, iconOnly = false,
   }
   if (iconOnly) {
     return <Globe className="text-muted-foreground" style={{ width: size, height: size }} />
+  }
+  if (compactFallback) {
+    return (
+      <span className="inline-flex items-center gap-1.5">
+        <Globe className="text-muted-foreground" style={{ width: size, height: size }} />
+        <span className="leading-none" style={{ fontSize: size * 0.75 }}>{fallback}</span>
+      </span>
+    )
   }
   return <span className="flex items-center gap-2 text-sm font-medium"><Globe className="size-5 text-muted-foreground" />{fallback}</span>
 }

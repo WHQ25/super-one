@@ -240,6 +240,7 @@ function ActiveProviderHint() {
         brandKey={effective?.brand ?? defaultBrand}
         fallback={effective?.platform.name ?? defaultLabel}
         size={12}
+        compactFallback
       />
     </span>
   )

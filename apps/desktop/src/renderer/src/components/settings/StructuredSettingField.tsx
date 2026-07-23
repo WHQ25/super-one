@@ -94,8 +94,8 @@ function ModelsField({ field, value, onChange }: StructuredSettingFieldProps) {
 function CapabilitiesField({ field, value, onChange }: StructuredSettingFieldProps) {
   const { plan } = useFieldTarget(field.context)
   const caps = useMemo<PlanCapabilities>(() => {
-    const v = value as PlanCapabilities | undefined
-    if (v?.families) return v
+    const v = value as Partial<PlanCapabilities> | undefined
+    if (v?.families) return { families: v.families, tasks: v.tasks ?? {}, extras: v.extras ?? {} }
     return plan ? planCapabilities(plan) : { families: [], tasks: {}, extras: {} }
   }, [value, plan])
   return <CapabilityField value={caps} onChange={onChange} />

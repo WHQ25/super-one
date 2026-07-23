@@ -4,6 +4,22 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.46.4-alpha] - 2026-07-23
+
+### Fixed
+
+- Normalized partial plan capabilities so accounts with incomplete plan data resolve correctly.
+- Preserved prefix actions when rendering the activity watermark.
+- Disabled watermarks on Ark-generated images.
+- Hid internal Codex turn items from the conversation view.
+- Scoped Codex model catalogs to their owning providers.
+- Compacted the custom provider label in the chat input.
+- Clamped overly long slash command descriptions.
+
+### Performance
+
+- Cached discovered Claude resources to avoid repeated lookups.
+
 ## [0.46.3-alpha] - 2026-07-23
 
 ### Added

@@ -444,6 +444,20 @@ describe('ChatInput slash command grouping', () => {
     expect(order.slice(2, 4).sort()).toEqual(['/release', '/tdd'])
   })
 
+  it('limits slash command and skill descriptions to two lines', () => {
+    activeSessionState.slashCommands = [
+      { name: 'clear', description: 'Clear conversation', argumentHint: '', isSkill: false },
+      { name: 'release', description: 'Release the app', argumentHint: '', isSkill: true },
+    ]
+
+    const { rerender } = render(<ChatInput />)
+    typeInEditor('/')
+    rerender(<ChatInput />)
+
+    expect(screen.getByText('Clear conversation')).toHaveClass('line-clamp-2')
+    expect(screen.getByText('Release the app')).toHaveClass('line-clamp-2')
+  })
+
   it('drops the per-row skill badge now that skills have their own section', () => {
     activeSessionState.slashCommands = [
       { name: 'clear', description: 'Clear conversation', argumentHint: '', isSkill: false },

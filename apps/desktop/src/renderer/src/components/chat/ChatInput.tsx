@@ -1269,7 +1269,7 @@ export function ChatInput() {
                           )}
                         </span>
                         {cmd.description && (
-                          <span className={cn('text-muted-foreground leading-snug', cmd.isSkill && 'line-clamp-2')}>
+                          <span className="line-clamp-2 text-muted-foreground leading-snug">
                             {cmd.description}
                           </span>
                         )}

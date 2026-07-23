@@ -12,6 +12,7 @@ import { useMiniAppStore } from '@/stores/miniapp'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
 import { ToolBlock } from './ToolBlock'
 import { ReasoningBlock } from './ReasoningBlock'
+import { isHiddenToolBlock } from './tool-display'
 
 function safeStringify(value: unknown): string {
   try { return JSON.stringify(value) } catch { return String(value) }
@@ -31,6 +32,11 @@ function codexMcpItemResultText(item: CodexMcpToolCallItem): string | undefined 
   if (item.error) chunks.push(`Error: ${item.error.message}`)
   const text = chunks.join('\n\n').trim()
   return text.length > 0 ? text : undefined
+}
+
+function isHiddenCodexMcpItem(item: CodexThreadItem): item is CodexMcpToolCallItem {
+  return item.type === 'mcp_tool_call'
+    && isHiddenToolBlock(`mcp__${item.server}__${item.tool}`, codexMcpItemResultText(item))
 }
 
 interface CodexAppToolGroupProps {
@@ -246,6 +252,9 @@ export function CodexTurnView({ message, isStreaming, isLastAssistant }: CodexTu
       continue
     }
     if (item.type === 'todo_list' || item.type === 'video_generation') {
+      continue
+    }
+    if (isHiddenCodexMcpItem(item)) {
       continue
     }
     const appIdForItem = item.type === 'mcp_tool_call' ? groupableAppForMcpItem(item) : null

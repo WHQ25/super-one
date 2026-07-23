@@ -202,6 +202,38 @@ describe('CodexTurnView', () => {
     expect(screen.getByText(/first thought\s+second thought/)).toBeTruthy()
   })
 
+  it('merges reasoning items separated by a hidden MCP tool', () => {
+    render(
+      <CodexTurnView
+        message={createMessage({
+          status: 'complete',
+          metadata: {
+            codex: {
+              threadId: 'thread-1',
+              usage: null,
+              items: [
+                { id: 'reasoning-1', type: 'reasoning', text: 'first thought' },
+                {
+                  id: 'rename-1',
+                  type: 'mcp_tool_call',
+                  server: 'superone',
+                  tool: 'session_rename',
+                  arguments: { title: 'Renamed session' },
+                  status: 'completed',
+                },
+                { id: 'reasoning-2', type: 'reasoning', text: 'second thought' },
+              ],
+            },
+          },
+        })}
+        isStreaming={false}
+        isLastAssistant
+      />,
+    )
+
+    expect(screen.getAllByText('Thought')).toHaveLength(1)
+  })
+
   it('keeps codex reasoning items separate across visible content', () => {
     render(
       <CodexTurnView

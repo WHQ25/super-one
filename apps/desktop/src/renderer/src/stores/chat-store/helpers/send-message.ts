@@ -282,14 +282,15 @@ export async function sendMessageImpl(
     }
   }
 
-  {
-    const providerMatch = rawContent.match(/^\/provider$/)
-    if (providerMatch) {
-      set((s) => updateActivePerSession(s, () => ({ _pendingSlashCommand: '' })))
-      useChatStore.getState().openProviderPopup()
-      return
-    }
-  }
+  // /provider command retired — provider selection moved into the model selector (kept for reference)
+  // {
+  //   const providerMatch = rawContent.match(/^\/provider$/)
+  //   if (providerMatch) {
+  //     set((s) => updateActivePerSession(s, () => ({ _pendingSlashCommand: '' })))
+  //     useChatStore.getState().openProviderPopup()
+  //     return
+  //   }
+  // }
 
   if (effectiveProvider === 'claude') {
     const m = rawContent.match(/^\/(\S+)$/)

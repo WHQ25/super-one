@@ -1,17 +1,17 @@
-import { useState } from 'react'
+import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ChevronDown, Loader2 } from 'lucide-react'
-import { Popover, PopoverContent, PopoverTrigger } from '@superone/ui/components/ui/popover'
+import { Loader2 } from 'lucide-react'
 import { useActiveSession, useChatStore } from '@/stores/chat'
 import type { AcpAgentDescriptor } from '@superone/shared/agent-types'
 import {
-  ClaudeModelList,
-  GroupedSlashModelList,
+  groupModelsBySlashPrefix,
   resolveSlashModelLabel,
   splitSlashModelId,
 } from '../ModelSelectorLists'
+import { GroupedModelEffortSelector, type SelectorModelGroup, type SelectorModelOption } from './GroupedModelEffortSelector'
 
 const EMPTY_ACP_AGENTS: AcpAgentDescriptor[] = []
+const NO_EFFORT: never[] = []
 
 function useGroupedSlashList(agentId: string | null): boolean {
   // OpenCode catalogs use `provider/model` ids; group by provider.
@@ -21,7 +21,6 @@ function useGroupedSlashList(agentId: string | null): boolean {
 
 export function AcpModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?: (e: Event) => void } = {}) {
   const { t } = useTranslation()
-  const [modelOpen, setModelOpen] = useState(false)
 
   const acpAgentId = useActiveSession((s) => s.acpAgentId)
   const acpModels = useActiveSession((s) => s.acpModels)
@@ -39,6 +38,21 @@ export function AcpModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?: (e: 
     : selectedModel
       ? (grouped ? splitSlashModelId(selectedModel).label : selectedModel)
       : (agent?.name ?? t('chat.suggestions.acpLabel'))
+
+  const models = useMemo<SelectorModelOption[] | undefined>(
+    () => grouped ? undefined : acpModels.map((m) => ({ id: m.id, name: m.name || m.id, description: m.description })),
+    [grouped, acpModels],
+  )
+  const modelGroups = useMemo<SelectorModelGroup[] | undefined>(
+    () => grouped
+      ? groupModelsBySlashPrefix(acpModels).map(({ group, items }) => ({
+          id: group || 'other',
+          name: group || 'other',
+          models: items.map(({ model, label }) => ({ id: model.id, name: label, description: model.description })),
+        }))
+      : undefined,
+    [grouped, acpModels],
+  )
 
   if (acpModelsStatus === 'loading' || (acpModelsStatus === 'idle' && agent?.installed)) {
     return (
@@ -68,36 +82,17 @@ export function AcpModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?: (e: 
 
   return (
     <div className="flex items-center gap-1">
-      <Popover open={modelOpen} onOpenChange={setModelOpen}>
-        <PopoverTrigger asChild>
-          <button className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
-            <span className="max-w-[160px] truncate">{currentLabel}</span>
-            <ChevronDown className={`size-3 transition-transform duration-200 ${modelOpen ? 'rotate-180' : ''}`} />
-          </button>
-        </PopoverTrigger>
-        <PopoverContent
-          align="start"
-          side="top"
-          className="w-64 max-h-60 overflow-y-auto border-border bg-popover p-1"
-          onCloseAutoFocus={onCloseAutoFocus}
-        >
-          {grouped ? (
-            <GroupedSlashModelList
-              title={t('tooltips.selectModel')}
-              models={acpModels}
-              activeId={selectedModel ?? ''}
-              onSelect={(id) => { setSelectedModel(id); setModelOpen(false) }}
-            />
-          ) : (
-            <ClaudeModelList
-              title={t('tooltips.selectModel')}
-              models={acpModels}
-              activeId={selectedModel ?? ''}
-              onSelect={(id) => { setSelectedModel(id); setModelOpen(false) }}
-            />
-          )}
-        </PopoverContent>
-      </Popover>
+      <GroupedModelEffortSelector
+        models={models}
+        modelGroups={modelGroups}
+        selectedModelId={selectedModel}
+        selectedModelLabel={currentLabel}
+        onSelectModel={setSelectedModel}
+        effortOptions={NO_EFFORT}
+        selectedEffort={null}
+        onSelectEffort={() => undefined}
+        onCloseAutoFocus={onCloseAutoFocus}
+      />
     </div>
   )
 }

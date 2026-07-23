@@ -38,9 +38,10 @@ export function buildSlashCommands(
   if (!seen.has('add-dir')) {
     extra.push({ name: 'add-dir', description: 'Manage additional working directories', argumentHint: '[project|session] [dir]', isSkill: false })
   }
-  if (!seen.has('provider')) {
-    extra.push({ name: 'provider', description: 'Choose API provider for this session', argumentHint: '', isSkill: false })
-  }
+  // /provider command retired — provider selection moved into the model selector (kept for reference)
+  // if (!seen.has('provider')) {
+  //   extra.push({ name: 'provider', description: 'Choose API provider for this session', argumentHint: '', isSkill: false })
+  // }
   if (!seen.has('mcp')) {
     extra.push({ name: 'mcp', description: 'View MCP servers in this session', argumentHint: '', isSkill: false })
   }

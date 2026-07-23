@@ -36,7 +36,7 @@ import { ChatInputDirsHint } from './ChatInputDirsHint'
 import { ContextBar } from './ContextBar'
 import { ModelSelector } from './ModelSelector'
 import { AddDirPopup, type AddDirPopupHandle } from './AddDirPopup'
-import { ProviderSlashPopup } from './ProviderSlashPopup'
+// import { ProviderSlashPopup } from './ProviderSlashPopup' // /provider popup retired — kept for reference
 import { McpSlashPopup } from './McpSlashPopup'
 import { ReviewPanel } from './ReviewPanel'
 import { SlashCommandContent } from './SlashCommandContent'
@@ -237,7 +237,8 @@ export function ChatInput() {
       { name: 'review', description: t('chat.codexCommands.reviewDesc'), argumentHint: '', isSkill: false },
       { name: 'compact', description: t('chat.codexCommands.compactDesc'), argumentHint: '', isSkill: false },
       { name: 'plan', description: t('chat.codexCommands.planDesc'), argumentHint: '', isSkill: false },
-      { name: 'provider', description: t('chat.codexCommands.providerDesc'), argumentHint: '', isSkill: false },
+      // /provider command retired — provider selection moved into the model selector (kept for reference)
+      // { name: 'provider', description: t('chat.codexCommands.providerDesc'), argumentHint: '', isSkill: false },
       { name: 'mcp', description: t('chat.codexCommands.mcpDesc'), argumentHint: '', isSkill: false },
       { name: 'goal', description: t('chat.codexCommands.goalDesc'), argumentHint: t('chat.codexCommands.goalArg'), isSkill: false },
       ...codexPrompts,
@@ -1287,11 +1288,12 @@ export function ChatInput() {
           </div>
         )}
 
+        {/* /provider popup layer retired — provider selection moved into the model selector (kept for reference)
         {commandPopup && commandPopup.command === 'provider' && (
           <div className="absolute bottom-full left-0 right-0 z-10 mb-1 overflow-hidden rounded-xl border border-border bg-popover">
             <ProviderSlashPopup onClose={dismissCommandPopup} />
           </div>
-        )}
+        )} */}
 
         {commandPopup && commandPopup.command === 'mcp' && (
           <div className="absolute bottom-full left-0 right-0 z-10 mb-1 overflow-hidden rounded-xl border border-border bg-popover">

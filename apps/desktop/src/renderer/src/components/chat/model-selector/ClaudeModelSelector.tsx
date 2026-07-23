@@ -1,13 +1,14 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ChevronDown, Loader2, Zap } from 'lucide-react'
-import { Popover, PopoverContent, PopoverTrigger } from '@superone/ui/components/ui/popover'
+import { Zap } from 'lucide-react'
 import type { EffortLevel } from '@superone/shared/agent-types'
 import { useActiveSession, useChatStore, selectClaudeModels } from '@/stores/chat'
 import { useSettingsStore } from '@/stores/settings'
 import { consumerForHarness, resolveEffective } from '@/lib/provider-resolve'
 import { FireText } from '../FireText'
-import { ClaudeModelList, EffortList, resolveClaudeDisplayName } from '../ModelSelectorLists'
+import { resolveClaudeEntries, resolveClaudeDisplayName } from '../ModelSelectorLists'
+import { GroupedModelEffortSelector, type SelectorEffortOption, type SelectorModelOption } from './GroupedModelEffortSelector'
+import { useSelectorProviders } from './useSelectorProviders'
 
 const EFFORT_LABELS: Record<EffortLevel, string> = {
   low: 'Low',
@@ -23,8 +24,6 @@ interface Props {
 
 export function ClaudeModelSelector({ onCloseAutoFocus }: Props) {
   const { t } = useTranslation()
-  const [modelOpen, setModelOpen] = useState(false)
-  const [effortOpen, setEffortOpen] = useState(false)
 
   const selectedModel = useActiveSession((s) => s.selectedModel)
   const selectedEffort = useActiveSession((s) => s.selectedEffort)
@@ -51,22 +50,32 @@ export function ClaudeModelSelector({ onCloseAutoFocus }: Props) {
     return mapping && Object.keys(mapping).length > 0 ? mapping : null
   }, [effective])
 
-  const forcedEffort = useMemo<EffortLevel | 'auto' | null>(() => {
-    const raw = (effective?.extraEnv.CLAUDE_CODE_EFFORT_LEVEL ?? '').toLowerCase().trim()
-    if (!raw) return null
-    if (raw === 'auto') return 'auto'
-    if (raw === 'low' || raw === 'medium' || raw === 'high' || raw === 'xhigh' || raw === 'max') return raw
-    return null
-  }, [effective])
-
-  const forcedEffortLabel = forcedEffort === 'auto' ? 'Auto' : forcedEffort ? EFFORT_LABELS[forcedEffort] : null
-
   const fastModeState = useActiveSession((s) => s.session?.fastModeState)
+  const providerProps = useSelectorProviders(activeProvider)
 
   const currentModel = availableModels.find((m) => m.id === selectedModel)
   const currentModelName = resolveClaudeDisplayName(currentModel, activeModelEnv) ?? selectedModel ?? null
-  const effortLevels = currentModel?.supportedEffortLevels
-  const currentEffortLabel = selectedEffort ? EFFORT_LABELS[selectedEffort] : null
+
+  const models = useMemo<SelectorModelOption[]>(
+    () => resolveClaudeEntries(availableModels, activeModelEnv).map(({ model, displayName, description }) => ({
+      id: model.id,
+      name: displayName,
+      description,
+    })),
+    [availableModels, activeModelEnv],
+  )
+
+  const effortOptions = useMemo<SelectorEffortOption[]>(() => {
+    if (activeModelEnv) return []
+    return (currentModel?.supportedEffortLevels ?? []).map((level) => ({ value: level, label: EFFORT_LABELS[level] }))
+  }, [activeModelEnv, currentModel])
+
+  const eggName = (currentModelName ?? 'Model').toUpperCase()
+  const triggerLabel = selectedEffort === 'max'
+    ? <FireText>{`${eggName} · MAX`}</FireText>
+    : selectedEffort === 'xhigh'
+      ? <span className="rainbow-text font-normal">{`${eggName} · ULTRATHINK`}</span>
+      : undefined
 
   return (
     <div className="flex items-center gap-1">
@@ -75,58 +84,18 @@ export function ClaudeModelSelector({ onCloseAutoFocus }: Props) {
           <Zap className={`size-3 ${fastModeState === 'on' ? 'text-yellow-500' : 'text-muted-foreground'}`} />
         </span>
       )}
-      <Popover open={modelOpen} onOpenChange={setModelOpen}>
-        <PopoverTrigger asChild>
-          <button className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
-            {currentModelName ? (
-              <span className="max-w-[140px] truncate">{currentModelName}</span>
-            ) : (
-              <Loader2 className="size-3 animate-spin" />
-            )}
-            <ChevronDown className={`size-3 transition-transform duration-200 ${modelOpen ? 'rotate-180' : ''}`} />
-          </button>
-        </PopoverTrigger>
-        <PopoverContent align="start" side="top" className="w-64 max-h-60 overflow-y-auto border-border bg-popover p-1" onCloseAutoFocus={onCloseAutoFocus}>
-          <ClaudeModelList
-            title={t('tooltips.selectModel')}
-            models={availableModels}
-            activeId={selectedModel ?? ''}
-            onSelect={(id) => { setSelectedModel(id); setModelOpen(false) }}
-            modelEnv={activeModelEnv}
-          />
-        </PopoverContent>
-      </Popover>
-
-      {activeModelEnv ? (
-        forcedEffortLabel && (
-          <span
-            title={t('tooltips.effortFromEnv')}
-            className="flex cursor-default items-center gap-0.5 rounded-lg px-2 py-1 text-xs text-muted-foreground"
-          >
-            <span className="max-w-[100px] truncate">{forcedEffortLabel}</span>
-          </span>
-        )
-      ) : (
-        effortLevels && effortLevels.length > 0 && (
-          <Popover open={effortOpen} onOpenChange={setEffortOpen}>
-            <PopoverTrigger asChild>
-              <button className={`flex items-center gap-0.5 rounded-lg px-2 py-1 text-xs transition-colors hover:bg-muted hover:text-foreground ${selectedEffort === 'xhigh' || selectedEffort === 'max' ? '' : 'text-muted-foreground'}`}>
-                {selectedEffort === 'max' ? <FireText>MAX</FireText> : <span className={`max-w-[100px] truncate ${selectedEffort === 'xhigh' ? 'rainbow-text font-normal' : ''}`}>{selectedEffort === 'xhigh' ? 'ULTRATHINK' : (currentEffortLabel ?? 'Effort')}</span>}
-                <ChevronDown className={`size-3 transition-transform duration-200 ${effortOpen ? 'rotate-180' : ''}`} />
-              </button>
-            </PopoverTrigger>
-            <PopoverContent align="start" side="top" className="w-48 border-border bg-popover p-1" onCloseAutoFocus={onCloseAutoFocus}>
-              <EffortList
-                title={t('tooltips.thinkingEffort')}
-                levels={effortLevels}
-                labels={EFFORT_LABELS}
-                activeLevel={selectedEffort ?? ''}
-                onSelect={(level) => { setSelectedEffort(level); setEffortOpen(false) }}
-              />
-            </PopoverContent>
-          </Popover>
-        )
-      )}
+      <GroupedModelEffortSelector
+        models={models}
+        selectedModelId={selectedModel}
+        selectedModelLabel={currentModelName}
+        onSelectModel={setSelectedModel}
+        effortOptions={effortOptions}
+        selectedEffort={selectedEffort ?? null}
+        onSelectEffort={(value) => setSelectedEffort(value as EffortLevel)}
+        triggerLabel={triggerLabel}
+        onCloseAutoFocus={onCloseAutoFocus}
+        {...providerProps}
+      />
     </div>
   )
 }

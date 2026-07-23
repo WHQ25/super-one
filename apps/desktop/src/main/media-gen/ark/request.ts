@@ -9,6 +9,7 @@ export interface ArkImageRequestBody {
   prompt: string
   response_format: 'b64_json'
   size: string
+  watermark: boolean
   image?: string | string[]
   seed?: number
 }
@@ -68,6 +69,7 @@ export function buildArkImageRequest(modelId: string, options: ImageModelV3CallO
       prompt: options.prompt ?? '',
       response_format: 'b64_json',
       size: options.size ?? DEFAULT_SIZE,
+      watermark: false,
       ...(images.length === 1 ? { image: images[0] } : {}),
       ...(images.length > 1 ? { image: images } : {}),
       ...(options.seed != null ? { seed: options.seed } : {}),

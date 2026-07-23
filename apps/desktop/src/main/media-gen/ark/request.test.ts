@@ -34,6 +34,11 @@ describe('ark image request mapping', () => {
     expect(body.size).toBe('2048x2048')
   })
 
+  it('always sends watermark: false explicitly, since Ark defaults to stamping one when the field is omitted', () => {
+    const { body } = buildArkImageRequest('doubao-seedream-5-0-260128', callOptions())
+    expect(body.watermark).toBe(false)
+  })
+
   it('sends a single reference image as a bare string, not an array', () => {
     const { body } = buildArkImageRequest(
       'doubao-seedream-5-0-260128',

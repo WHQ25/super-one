@@ -3,8 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({
   createSession: vi.fn(async () => ({ id: 'oc-session' })),
   updatePermission: vi.fn(async () => undefined),
+  updateSessionTitle: vi.fn(async () => undefined),
   promptAsync: vi.fn(async () => undefined),
   command: vi.fn(async () => undefined),
+  shell: vi.fn(async () => undefined),
   initSession: vi.fn(async () => undefined),
   summarize: vi.fn(async () => undefined),
   shareSession: vi.fn(async () => 'https://opncd.ai/share/demo'),
@@ -43,8 +45,10 @@ vi.mock('./opencode-client', () => ({
     commands = async () => [{ name: 'review', source: 'command', hints: [], template: '' }]
     createSession = mocks.createSession
     updatePermission = mocks.updatePermission
+    updateSessionTitle = mocks.updateSessionTitle
     promptAsync = mocks.promptAsync
     command = mocks.command
+    shell = mocks.shell
     initSession = mocks.initSession
     summarize = mocks.summarize
     shareSession = mocks.shareSession
@@ -160,6 +164,8 @@ describe('opencode-runtime', () => {
     expect(runtime.initialTodos).toEqual([{ content: 'Resume work', status: 'pending', priority: 'high' }])
     expect(runtime.pendingPermissions).toEqual([expect.objectContaining({ id: 'permission-1' })])
     expect(runtime.pendingQuestions).toEqual([expect.objectContaining({ id: 'question-1' })])
+    await runtime.setTitle('Renamed session')
+    expect(mocks.updateSessionTitle).toHaveBeenCalledWith('oc-session', 'Renamed session')
     await runtime.command('review', 'working tree', 'openai/gpt-5', 'high', undefined, 'general')
     expect(mocks.command).toHaveBeenCalledWith('oc-session', {
       command: 'review',
@@ -168,6 +174,11 @@ describe('opencode-runtime', () => {
       variant: 'high',
       images: undefined,
       agent: 'general',
+    })
+    await runtime.setPermissionMode('plan')
+    await runtime.shell('git status', 'openai/gpt-5', 'general')
+    expect(mocks.shell).toHaveBeenCalledWith('oc-session', {
+      command: 'git status', model: 'openai/gpt-5', agent: 'plan',
     })
     expect(await runtime.getMcpServerStatus()).toEqual([{ name: 'github', status: 'connected' }])
     await runtime.authenticateMcp('github')

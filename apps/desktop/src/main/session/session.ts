@@ -1200,6 +1200,9 @@ export class Session implements SessionContract {
     } catch (err) {
       log.warn('[Session] dbRenameSession error:', err)
     }
+    if (this.backendStarted && this.backend.setTitle) {
+      void this.backend.setTitle(trimmed).catch((err) => log.debug('[Session] provider title sync failed:', err))
+    }
     this.forwardEvent({ type: 'session_title_changed', sessionId: this.id, title: trimmed, source } as AgentEvent)
   }
 

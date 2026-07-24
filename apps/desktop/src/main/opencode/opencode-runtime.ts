@@ -56,8 +56,10 @@ export interface OpenCodeRuntime {
   readonly initialTodos: Todo[]
   readonly pendingPermissions: PermissionV2Request[]
   readonly pendingQuestions: QuestionV2Request[]
+  setTitle(title: string): Promise<void>
   prompt(text: string, model?: string, effort?: EffortLevel, images?: ImageAttachment[], agent?: string): Promise<void>
   command(name: string, args?: string, model?: string, effort?: EffortLevel, images?: ImageAttachment[], agent?: string): Promise<void>
+  shell(command: string, model?: string, agent?: string): Promise<void>
   init(model?: string): Promise<void>
   compact(model?: string): Promise<void>
   share(): Promise<string>
@@ -216,14 +218,16 @@ export async function createOpenCodeRuntime(opts: OpenCodeRuntimeOptions): Promi
 
     let permissionMode = opts.permissionMode
     const models = parseModels(providers)
+    const parsedAgents = parseOpenCodeAgents(agents)
     return {
       sessionId: session.id,
       models,
-      agents: parseOpenCodeAgents(agents),
+      agents: parsedAgents,
       commands: withOpenCodeLocalCommands(parseOpenCodeCommands(commands)),
       initialTodos,
       pendingPermissions: pendingInteractions.permissions,
       pendingQuestions: pendingInteractions.questions,
+      setTitle: (title) => client.updateSessionTitle(session.id, title),
       prompt: (text, model, effort, images, agent) => client.promptAsync(session.id, {
         text,
         model,
@@ -238,6 +242,11 @@ export async function createOpenCodeRuntime(opts: OpenCodeRuntimeOptions): Promi
         variant: effort,
         images,
         agent: permissionMode === 'plan' ? 'plan' : agent,
+      }),
+      shell: (command, model, agent) => client.shell(session.id, {
+        command,
+        model,
+        agent: permissionMode === 'plan' ? 'plan' : agent ?? parsedAgents[0]?.id ?? 'build',
       }),
       init: (model) => client.initSession(session.id, model),
       compact: (model) => client.summarize(session.id, model),

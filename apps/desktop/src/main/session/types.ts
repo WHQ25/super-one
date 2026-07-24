@@ -198,6 +198,8 @@ export interface SessionBackend {
   setModel(model: string): Promise<void>
   /** ACP session config option category=mode; no-op for other harnesses. */
   setSessionMode(modeId: string): Promise<void>
+  /** Sync a live provider session title when the harness exposes one. */
+  setTitle?(title: string): Promise<void>
   setPermissionMode(mode: PermissionMode): Promise<void>
   setSandbox(sandboxInfo: SandboxInfo): Promise<void>
   setAdditionalDirectories?(dirs: string[]): Promise<boolean>

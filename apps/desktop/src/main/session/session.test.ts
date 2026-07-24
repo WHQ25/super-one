@@ -70,6 +70,8 @@ class FakeBackend implements SessionBackend {
   }
 
   async setModel(_model: string): Promise<void> {}
+  setTitleCalls: string[] = []
+  async setTitle(title: string): Promise<void> { this.setTitleCalls.push(title) }
   setSessionModeCalls: string[] = []
   async setSessionMode(modeId: string): Promise<void> {
     this.setSessionModeCalls.push(modeId)
@@ -199,6 +201,19 @@ describe('Session state machine', () => {
 
     backend.resolveSend?.()
     await second
+  })
+
+  it('syncs title changes only after the backend has started', async () => {
+    session.setTitle('Before start', 'user')
+    expect(backend.setTitleCalls).toEqual([])
+
+    const send = session.send({ content: 'start' })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    backend.resolveSend?.()
+    await send
+
+    session.setTitle('After start', 'agent')
+    await vi.waitFor(() => expect(backend.setTitleCalls).toEqual(['After start']))
   })
 
   it('interrupt() during streaming transitions streaming → interrupting → ended', async () => {

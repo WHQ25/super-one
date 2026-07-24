@@ -231,6 +231,10 @@ export class OpenCodeBackend implements SessionBackend {
     await this.runtime?.setModel(model)
   }
 
+  async setTitle(title: string): Promise<void> {
+    await this.runtime?.setTitle(title)
+  }
+
   async setSessionMode(_modeId: string): Promise<void> {}
 
   async setPermissionMode(mode: PermissionMode): Promise<void> {

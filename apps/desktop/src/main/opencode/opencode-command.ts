@@ -32,6 +32,11 @@ export function resolveOpenCodeCommandInvocation(
   return null
 }
 
+export function resolveOpenCodeShellCommand(content: string): string | null {
+  if (!content.startsWith('!')) return null
+  return content.slice(1).trimStart() || null
+}
+
 export type OpenCodeDispatchResult =
   | { kind: 'turn' }
   | { kind: 'local'; command: 'share' | 'unshare'; content: string }
@@ -40,6 +45,13 @@ export async function dispatchOpenCodeRequest(
   runtime: OpenCodeRuntime,
   request: SendMessageRequest,
 ): Promise<OpenCodeDispatchResult> {
+  if (request.content.startsWith('!')) {
+    const shellCommand = resolveOpenCodeShellCommand(request.content)
+    if (!shellCommand) throw new Error('OpenCode shell command cannot be empty')
+    if (request.images?.length) throw new Error('OpenCode shell commands do not support attachments')
+    await runtime.shell(shellCommand, request.model, request.agent)
+    return { kind: 'turn' }
+  }
   if (request.content.trim() === '/init') {
     await runtime.init(request.model)
     return { kind: 'turn' }

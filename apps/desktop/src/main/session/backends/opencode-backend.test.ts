@@ -24,8 +24,10 @@ function startOptions(overrides: Partial<BackendStartOptions> = {}): BackendStar
 describe('OpenCodeBackend', () => {
   let route: (event: OpenCodeRuntimeEvent) => void
   let runtime: OpenCodeRuntime
+  let setTitle: ReturnType<typeof vi.fn>
   let prompt: ReturnType<typeof vi.fn>
   let command: ReturnType<typeof vi.fn>
+  let shell: ReturnType<typeof vi.fn>
   let init: ReturnType<typeof vi.fn>
   let compact: ReturnType<typeof vi.fn>
   let share: ReturnType<typeof vi.fn>
@@ -47,8 +49,10 @@ describe('OpenCodeBackend', () => {
 
   beforeEach(() => {
     route = () => undefined
+    setTitle = vi.fn(async () => undefined)
     prompt = vi.fn(async () => undefined)
     command = vi.fn(async () => undefined)
+    shell = vi.fn(async () => undefined)
     init = vi.fn(async () => undefined)
     compact = vi.fn(async () => undefined)
     share = vi.fn(async () => 'https://opncd.ai/share/demo')
@@ -84,8 +88,10 @@ describe('OpenCodeBackend', () => {
       initialTodos: [],
       pendingPermissions: [],
       pendingQuestions: [],
+      setTitle,
       prompt,
       command,
+      shell,
       init,
       compact,
       share,
@@ -396,6 +402,17 @@ describe('OpenCodeBackend', () => {
     await backend.close()
   })
 
+  it('syncs title changes only through an active runtime', async () => {
+    const backend = new OpenCodeBackend()
+    await backend.setTitle('Before start')
+    expect(setTitle).not.toHaveBeenCalled()
+
+    await backend.start(startOptions())
+    await backend.setTitle('Renamed session')
+    expect(setTitle).toHaveBeenCalledWith('Renamed session')
+    await backend.close()
+  })
+
   it('dispatches known slash commands through the SDK and keeps unknown commands as prompts', async () => {
     const backend = new OpenCodeBackend()
     await backend.start(startOptions())
@@ -409,6 +426,31 @@ describe('OpenCodeBackend', () => {
     await vi.waitFor(() => expect(prompt).toHaveBeenCalledWith('/unknown keep this literal', 'openai/gpt-5', undefined, undefined, undefined))
     route({ id: 'idle-prompt', type: 'session.idle', properties: { sessionID: 'oc-session' } } as OpenCodeRuntimeEvent)
     await promptSend
+    await backend.close()
+  })
+
+  it('routes native shell mode through the runtime and completes on idle', async () => {
+    const backend = new OpenCodeBackend()
+    const events: AgentEvent[] = []
+    backend.onEvent((event) => events.push(event))
+    await backend.start(startOptions())
+
+    const send = backend.send({
+      content: '!git status',
+      model: 'openai/gpt-5',
+      agent: 'build',
+      assistantMessageId: 'shell-message',
+    })
+    await vi.waitFor(() => expect(shell).toHaveBeenCalledWith('git status', 'openai/gpt-5', 'build'))
+    route({
+      id: 'event-shell-idle',
+      type: 'session.idle',
+      properties: { sessionID: 'oc-session' },
+    })
+    await send
+
+    expect(prompt).not.toHaveBeenCalled()
+    expect(events).toContainEqual({ type: 'message_complete', messageId: 'shell-message' })
     await backend.close()
   })
 

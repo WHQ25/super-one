@@ -213,6 +213,10 @@ export class OpenCodeClient {
     await this.sdk.session.update({ sessionID: sessionId, permission })
   }
 
+  async updateSessionTitle(sessionId: string, title: string): Promise<void> {
+    await this.sdk.session.update({ sessionID: sessionId, title })
+  }
+
   async promptAsync(sessionId: string, input: {
     text: string
     model?: string
@@ -250,6 +254,21 @@ export class OpenCodeClient {
       variant: input.variant,
       agent: input.agent,
       parts: parts.length > 0 ? parts : undefined,
+    })
+  }
+
+  async shell(sessionId: string, input: {
+    command: string
+    model?: string
+    agent: string
+  }): Promise<void> {
+    const model = parseOpenCodeModelSlug(input.model)
+    if (input.model && !model) throw new OpenCodeApiError(`Invalid OpenCode model id: ${input.model}`)
+    await this.sdk.session.shell({
+      sessionID: sessionId,
+      command: input.command,
+      model: model ?? undefined,
+      agent: input.agent,
     })
   }
 

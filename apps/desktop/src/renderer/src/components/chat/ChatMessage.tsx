@@ -619,7 +619,7 @@ export function CompactErrorIndicator({ error, onDismiss }: { error: string; onD
   )
 }
 
-export function ApiRetryIndicator({ info }: { info: { attempt: number; maxRetries: number; delayMs: number } }) {
+export function ApiRetryIndicator({ info }: { info: { attempt: number; maxRetries?: number; delayMs: number; message?: string } }) {
   const [remaining, setRemaining] = useState(info.delayMs)
   const startRef = useRef(Date.now())
 
@@ -640,8 +640,8 @@ export function ApiRetryIndicator({ info }: { info: { attempt: number; maxRetrie
   return (
     <div className="my-0.5 flex items-center gap-1.5 rounded bg-warning/10 px-2 py-1.5 text-xs">
       <Loader2 className="size-3 shrink-0 animate-spin text-warning" />
-      <span className="font-medium text-warning">
-        Retrying API request ({info.attempt}/{info.maxRetries})… {secs > 0 && <>{secs}s</>}
+      <span className="font-medium text-warning" title={info.message}>
+        Retrying API request ({info.attempt}{info.maxRetries ? `/${info.maxRetries}` : ''})… {secs > 0 && <>{secs}s</>}
       </span>
     </div>
   )

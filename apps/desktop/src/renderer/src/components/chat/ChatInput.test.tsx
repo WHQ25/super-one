@@ -25,8 +25,8 @@ const { chatActions, activeSessionState, editorState, useChatStore, mentionPopup
     cwd: '/project' as string,
     homedir: '/home/user' as string,
     slashCommands: [] as Array<{ name: string; description: string; argumentHint: string; isSkill: boolean }>,
-    preferredProvider: 'claude' as 'claude' | 'codex' | 'acp',
-    sessionProvider: null as 'claude' | 'codex' | 'acp' | null,
+    preferredProvider: 'claude' as 'claude' | 'codex' | 'acp' | 'opencode',
+    sessionProvider: null as 'claude' | 'codex' | 'acp' | 'opencode' | null,
     acpSlashCommands: [] as Array<{ name: string; description: string; argumentHint: string; isSkill: boolean }>,
     acpSlashCommandsStatus: 'idle' as 'idle' | 'loading' | 'ready' | 'error',
     acpAgentId: null as string | null,
@@ -73,6 +73,7 @@ const { chatActions, activeSessionState, editorState, useChatStore, mentionPopup
       claude: null,
       codex: null,
       acp: { agents: [], selectedAgentId: null },
+      opencode: { models: [], agents: [], commands: [] },
     },
     ensureAcpSlashCommands: vi.fn(),
   }

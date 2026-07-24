@@ -1,5 +1,6 @@
-import type { Message, Part } from '@opencode-ai/sdk/v2'
+import type { Event, Message, Part } from '@opencode-ai/sdk/v2'
 import type {
+  AgentEvent,
   AskUserQuestionRequest,
   MessageMetadata,
   PermissionRequest,
@@ -58,6 +59,22 @@ export function mapOpenCodeQuestionRequest(input: {
       multiSelect: question.multiple ?? false,
     })),
   }
+}
+
+export function routeOpenCodeTodoEvent(event: Event, emit: (event: AgentEvent) => void): boolean {
+  if (event.type !== 'todo.updated') return false
+  emit({
+    type: 'todos_updated',
+    todos: event.properties.todos.map((todo, index) => ({
+      id: String(index + 1),
+      subject: todo.content,
+      description: '',
+      status: todo.status === 'in_progress'
+        ? 'in_progress'
+        : todo.status === 'completed' || todo.status === 'cancelled' ? 'completed' : 'pending',
+    })),
+  })
+  return true
 }
 
 export function openCodeToolName(tool: string): string {

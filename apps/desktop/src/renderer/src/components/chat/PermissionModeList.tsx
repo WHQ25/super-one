@@ -77,20 +77,22 @@ export const modes: PermissionModeDescriptor[] = [
 
 interface PermissionModeListProps {
   activeMode: PermissionMode
-  autoEligibility: AutoModeEligibility
+  availableModes?: PermissionMode[]
+  autoEligibility?: AutoModeEligibility
   onSelect: (mode: PermissionMode) => void
 }
 
-export function PermissionModeList({ activeMode, autoEligibility, onSelect }: PermissionModeListProps) {
+export function PermissionModeList({ activeMode, availableModes, autoEligibility, onSelect }: PermissionModeListProps) {
   const { t } = useTranslation()
+  const visibleModes = availableModes ? modes.filter((mode) => availableModes.includes(mode.id)) : modes
   return (
     <>
       <div className="px-2 py-1.5 text-xs text-muted-foreground">{t('chat.permissionModeTitle')}</div>
-      {modes.map((mode) => {
-        const isAutoBlocked = mode.id === 'auto' && !autoEligibility.ok
+      {visibleModes.map((mode) => {
+        const isAutoBlocked = mode.id === 'auto' && autoEligibility?.ok !== true
         const label = t(`chat.permissionModes.${mode.id}.label`)
         const description = isAutoBlocked
-          ? autoEligibility.message
+          ? autoEligibility?.message ?? t(`chat.permissionModes.${mode.id}.description`)
           : t(`chat.permissionModes.${mode.id}.description`)
         const active = mode.id === activeMode
         const showDivider = mode.id === 'dontAsk'
@@ -99,7 +101,7 @@ export function PermissionModeList({ activeMode, autoEligibility, onSelect }: Pe
             {showDivider && <div className="my-1 border-t border-border/60" />}
             <button
               disabled={isAutoBlocked}
-              title={isAutoBlocked ? autoEligibility.message : undefined}
+              title={isAutoBlocked ? description : undefined}
               onClick={() => {
                 if (isAutoBlocked) return
                 onSelect(mode.id)

@@ -13,6 +13,7 @@ import type {
   SendMessageRequest,
 } from '@superone/shared/agent-types'
 import log from '../../logger'
+import { dispatchOpenCodeRequest } from '../../opencode/opencode-command'
 import {
   commonPrefixLength,
   mapOpenCodePermissionRequest,
@@ -21,6 +22,7 @@ import {
   openCodeErrorMessage,
   openCodeToolName,
   readOpenCodeConfig,
+  routeOpenCodeTodoEvent,
   textFromOpenCodePart,
 } from '../../opencode/opencode-event-map'
 import {
@@ -146,7 +148,7 @@ export class OpenCodeBackend implements SessionBackend {
     try {
       const runtime = await this.ensureRuntime()
       const turnComplete = new Promise<void>((resolve) => { this.activeTurn = { messageId, resolve } })
-      await runtime.prompt(request.content, request.model, request.effort, request.images)
+      await dispatchOpenCodeRequest(runtime, request)
       await turnComplete
     } catch (error) {
       if (this.interrupted) this.complete(messageId, true)
@@ -254,12 +256,12 @@ export class OpenCodeBackend implements SessionBackend {
 
   respondToPlanApproval(_requestId: string, _approved: boolean, _feedback?: string): void {}
   async getContextUsage(): Promise<ContextUsageInfo | null> { return null }
-  async getMcpServerStatus(): Promise<McpServerInfo[]> { return [] }
+  async getMcpServerStatus(): Promise<McpServerInfo[]> { return (await this.ensureRuntime()).getMcpServerStatus() }
   async rewindFiles(_userMessageId: string, _opts?: { dryRun?: boolean }): Promise<RewindFilesResult> {
     return { canRewind: false, error: 'OpenCode harness does not support rewind yet' }
   }
-  async reconnectMcp(_serverName: string): Promise<void> {}
-  async toggleMcpServer(_serverName: string, _enabled: boolean): Promise<void> {}
+  async reconnectMcp(serverName: string): Promise<void> { await (await this.ensureRuntime()).reconnectMcp(serverName) }
+  async toggleMcpServer(serverName: string, enabled: boolean): Promise<void> { await (await this.ensureRuntime()).toggleMcpServer(serverName, enabled) }
   async reloadMcpServers(): Promise<void> {}
   async reloadPlugins(): Promise<boolean> { return false }
   dequeueMessage(_clientMessageId: string): boolean { return false }
@@ -364,6 +366,7 @@ export class OpenCodeBackend implements SessionBackend {
       this.invalidateRuntime()
       return
     }
+    if (routeOpenCodeTodoEvent(event, (item) => this.emit(item))) return
 
     if (event.type === 'message.updated') {
       const info = event.properties.info
@@ -475,8 +478,13 @@ export class OpenCodeBackend implements SessionBackend {
     }
 
     if (event.type === 'session.status') {
-      if (event.properties.status.type === 'busy') this.emit({ type: 'status_change', status: 'streaming' })
-      if (event.properties.status.type === 'idle' && messageId) this.complete(messageId)
+      const status = event.properties.status
+      if (status.type === 'busy') this.emit({ type: 'status_change', status: 'streaming' })
+      if (status.type === 'retry') {
+        this.emit({ type: 'status_change', status: 'streaming' })
+        this.emit({ type: 'api_retry', attempt: status.attempt, delayMs: Math.max(0, status.next - Date.now()), message: status.message })
+      }
+      if (status.type === 'idle' && messageId) this.complete(messageId)
       return
     }
 

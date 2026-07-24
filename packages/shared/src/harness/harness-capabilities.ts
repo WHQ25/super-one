@@ -13,7 +13,7 @@ import type { HarnessId } from './harness-id'
  *    with `HARNESS_CAPABILITIES[provider].supportsXxx`.
  */
 export interface HarnessCapabilities {
-  /** Supports MCP server tool surface (Claude only as of writing). */
+  /** Supports MCP server tool surface. */
   supportsMcp: boolean
   /** Has explicit plan/approve mode workflow. Both harnesses do, but the protocol differs. */
   supportsPlanMode: boolean
@@ -58,9 +58,9 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     displayName: 'Others',
   },
   opencode: {
-    supportsMcp: false,
+    supportsMcp: true,
     supportsPlanMode: true,
-    supportsTodos: false,
+    supportsTodos: true,
     supportsSubagents: true,
     supportsCompact: false,
     supportsStreamingToolInput: false,

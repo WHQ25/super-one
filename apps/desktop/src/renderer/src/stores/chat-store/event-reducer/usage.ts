@@ -70,7 +70,14 @@ export function reduceUsage(session: PerSessionState, event: UsageEvent): Partia
       }
 
     case 'api_retry':
-      return { apiRetry: { attempt: event.attempt, maxRetries: event.maxRetries, delayMs: event.delayMs } }
+      return {
+        apiRetry: {
+          attempt: event.attempt,
+          delayMs: event.delayMs,
+          ...(event.maxRetries === undefined ? {} : { maxRetries: event.maxRetries }),
+          ...(event.message === undefined ? {} : { message: event.message }),
+        },
+      }
 
     case 'model_fallback':
       return { modelFallback: { trigger: event.trigger, fromModel: event.fromModel, toModel: event.toModel } }

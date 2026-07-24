@@ -1,8 +1,9 @@
 import type { PermissionRuleset } from '@opencode-ai/sdk/v2'
-import type { EffortLevel, ImageAttachment, ModelOption, PermissionMode } from '@superone/shared/agent-types'
+import type { EffortLevel, ImageAttachment, McpServerInfo, ModelOption, PermissionMode, SlashCommandInfo } from '@superone/shared/agent-types'
 import {
   OpenCodeClient,
   parseModels,
+  parseOpenCodeCommands,
   startOpenCodeServer,
   type OpenCodeEvent,
   type OpenCodeServerHandle,
@@ -34,13 +35,18 @@ export interface OpenCodeRuntime {
   readonly sessionId: string
   readonly models: ModelOption[]
   readonly agents: Array<{ id: string; name: string; description?: string }>
+  readonly commands: SlashCommandInfo[]
   prompt(text: string, model?: string, effort?: EffortLevel, images?: ImageAttachment[], agent?: string): Promise<void>
+  command(name: string, args?: string, model?: string, effort?: EffortLevel, images?: ImageAttachment[], agent?: string): Promise<void>
   setModel(model: string): Promise<void>
   setPermissionMode(mode: PermissionMode): Promise<void>
   cancel(): Promise<void>
   permissionReply(requestId: string, reply: 'once' | 'always' | 'reject'): Promise<void>
   questionReply(requestId: string, answers: string[][]): Promise<void>
   questionReject(requestId: string): Promise<void>
+  getMcpServerStatus(): Promise<McpServerInfo[]>
+  reconnectMcp(name: string): Promise<void>
+  toggleMcpServer(name: string, enabled: boolean): Promise<void>
   close(): Promise<void>
 }
 
@@ -96,7 +102,7 @@ export async function createOpenCodeRuntime(opts: OpenCodeRuntimeOptions): Promi
   let closing = false
   try {
     const client = new OpenCodeClient({ baseUrl: server.url, directory: opts.cwd, password: opts.config.serverPassword })
-    const [providers, agents] = await Promise.all([client.providerList(), client.agents()])
+    const [providers, agents, commands] = await Promise.all([client.providerList(), client.agents(), client.commands()])
     const permission = buildOpenCodePermissionRules(opts.permissionMode)
     const session = opts.providerSessionId
       ? { id: opts.providerSessionId }
@@ -140,8 +146,17 @@ export async function createOpenCodeRuntime(opts: OpenCodeRuntimeOptions): Promi
       agents: agents
         .filter((agent) => !agent.hidden)
         .map((agent) => ({ id: agent.name, name: agent.name, description: agent.description })),
+      commands: parseOpenCodeCommands(commands),
       prompt: (text, model, effort, images, agent) => client.promptAsync(session.id, {
         text,
+        model,
+        variant: effort,
+        images,
+        agent: agent ?? (permissionMode === 'plan' ? 'plan' : undefined),
+      }),
+      command: (name, args, model, effort, images, agent) => client.command(session.id, {
+        command: name,
+        arguments: args,
         model,
         variant: effort,
         images,
@@ -156,6 +171,12 @@ export async function createOpenCodeRuntime(opts: OpenCodeRuntimeOptions): Promi
       permissionReply: (requestId, reply) => client.permissionReply(requestId, reply),
       questionReply: (requestId, answers) => client.questionReply(requestId, answers),
       questionReject: (requestId) => client.questionReject(requestId),
+      getMcpServerStatus: () => client.mcpStatus(),
+      reconnectMcp: async (name) => {
+        await client.disconnectMcp(name).catch(() => undefined)
+        await client.connectMcp(name)
+      },
+      toggleMcpServer: (name, enabled) => enabled ? client.connectMcp(name) : client.disconnectMcp(name),
       close: async () => {
         if (closing) return
         closing = true

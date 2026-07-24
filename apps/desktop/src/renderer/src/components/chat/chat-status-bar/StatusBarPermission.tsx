@@ -1,14 +1,9 @@
 import type { ChatProvider } from '@/stores/chat'
 import { AcpModeSelector } from '../AcpModeSelector'
 import { CodexPermissionSelector } from '../CodexPermissionSelector'
+import { OpenCodePermissionSelector } from '../OpenCodePermissionSelector'
 import { PermissionModeSelector } from '../PermissionModeSelector'
 
-/**
- * Permission / session-mode selector router.
- * - Codex: permission presets
- * - ACP: agent-declared configOptions category=mode (hidden when agent has none)
- * - Claude: permission modes
- */
 export function StatusBarPermission({
   activeProvider,
   compactIndicators,
@@ -21,6 +16,9 @@ export function StatusBarPermission({
   }
   if (activeProvider === 'acp') {
     return <AcpModeSelector compact={compactIndicators} />
+  }
+  if (activeProvider === 'opencode') {
+    return <OpenCodePermissionSelector compact={compactIndicators} />
   }
   return <PermissionModeSelector compact={compactIndicators} />
 }

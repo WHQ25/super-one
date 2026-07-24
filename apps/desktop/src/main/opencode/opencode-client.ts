@@ -5,14 +5,16 @@ import { delimiter, join } from 'path'
 import {
   createOpencodeClient,
   type Agent,
+  type Command,
   type Event,
   type FilePartInput,
+  type McpStatus,
   type OpencodeClient,
   type PermissionRuleset,
   type ProviderListResponse,
   type TextPartInput,
 } from '@opencode-ai/sdk/v2'
-import type { EffortLevel, ImageAttachment, ModelOption } from '@superone/shared/agent-types'
+import type { EffortLevel, ImageAttachment, McpServerInfo, ModelOption, OpenCodeResources, SlashCommandInfo } from '@superone/shared/agent-types'
 import { buildSafeEnv } from '../spawn-env'
 
 export type OpenCodeEvent = Event
@@ -51,6 +53,38 @@ export function parseModels(payload: ProviderListResponse): ModelOption[] {
     }))
 }
 
+export function parseOpenCodeCommands(commands: Command[]): SlashCommandInfo[] {
+  return commands.map((command) => ({
+    name: command.name.replace(/^\//, ''),
+    description: command.description ?? '',
+    argumentHint: command.hints.join(' '),
+    isSkill: command.source === 'skill',
+  }))
+}
+
+export function parseOpenCodeMcpStatus(statuses: Record<string, McpStatus>): McpServerInfo[] {
+  return Object.entries(statuses).map(([name, value]) => {
+    if (value.status === 'connected') return { name, status: 'connected', scope: 'project' }
+    if (value.status === 'disabled') return { name, status: 'disabled', scope: 'project' }
+    if (value.status === 'failed') return { name, status: 'failed', error: value.error, scope: 'project' }
+    return {
+      name,
+      status: 'needs-auth',
+      ...('error' in value ? { error: value.error } : {}),
+      scope: 'project',
+    }
+  })
+}
+
+function imageParts(images: ImageAttachment[] | undefined): FilePartInput[] {
+  return (images ?? []).map((image) => ({
+    type: 'file',
+    mime: image.mimeType,
+    filename: image.name,
+    url: `data:${image.mimeType};base64,${image.base64}`,
+  }))
+}
+
 export class OpenCodeApiError extends Error {
   constructor(message: string, cause?: unknown) {
     super(message, cause ? { cause } : undefined)
@@ -83,6 +117,24 @@ export class OpenCodeClient {
     return result.data ?? []
   }
 
+  async commands(): Promise<Command[]> {
+    const result = await this.sdk.command.list()
+    return result.data ?? []
+  }
+
+  async mcpStatus(): Promise<McpServerInfo[]> {
+    const result = await this.sdk.mcp.status()
+    return parseOpenCodeMcpStatus(result.data ?? {})
+  }
+
+  async connectMcp(name: string): Promise<void> {
+    await this.sdk.mcp.connect({ name })
+  }
+
+  async disconnectMcp(name: string): Promise<void> {
+    await this.sdk.mcp.disconnect({ name })
+  }
+
   async createSession(permission: PermissionRuleset, title?: string): Promise<{ id: string }> {
     const result = await this.sdk.session.create({ title, permission })
     if (!result.data) throw new OpenCodeApiError('OpenCode session was not created')
@@ -101,12 +153,7 @@ export class OpenCodeClient {
     images?: ImageAttachment[]
   }): Promise<void> {
     const parts: TextPartInput[] = input.text ? [{ type: 'text', text: input.text }] : []
-    const fileParts: FilePartInput[] = (input.images ?? []).map((image) => ({
-      type: 'file',
-      mime: image.mimeType,
-      filename: image.name,
-      url: `data:${image.mimeType};base64,${image.base64}`,
-    }))
+    const fileParts = imageParts(input.images)
     const model = parseOpenCodeModelSlug(input.model)
     if (input.model && !model) throw new OpenCodeApiError(`Invalid OpenCode model id: ${input.model}`)
     await this.sdk.session.promptAsync({
@@ -115,6 +162,26 @@ export class OpenCodeClient {
       variant: input.variant,
       agent: input.agent,
       parts: [...parts, ...fileParts],
+    })
+  }
+
+  async command(sessionId: string, input: {
+    command: string
+    arguments?: string
+    model?: string
+    variant?: string
+    agent?: string
+    images?: ImageAttachment[]
+  }): Promise<void> {
+    const parts = imageParts(input.images)
+    await this.sdk.session.command({
+      sessionID: sessionId,
+      command: input.command,
+      arguments: input.arguments,
+      model: input.model,
+      variant: input.variant,
+      agent: input.agent,
+      parts: parts.length > 0 ? parts : undefined,
     })
   }
 
@@ -276,16 +343,17 @@ export async function probeOpenCodeResources(config: {
   env?: Record<string, string>
   serverUrl?: string | null
   serverPassword?: string
-}): Promise<{ models: ModelOption[]; agents: Array<{ id: string; name: string; description?: string }> }> {
+}): Promise<OpenCodeResources> {
   const server = await startOpenCodeServer(config)
   try {
     const client = new OpenCodeClient({ baseUrl: server.url, directory: config.cwd, password: config.serverPassword })
-    const [providers, agents] = await Promise.all([client.providerList(), client.agents()])
+    const [providers, agents, commands] = await Promise.all([client.providerList(), client.agents(), client.commands()])
     return {
       models: parseModels(providers),
       agents: agents
         .filter((agent) => !agent.hidden)
         .map((agent) => ({ id: agent.name, name: agent.name, description: agent.description })),
+      commands: parseOpenCodeCommands(commands),
     }
   } finally {
     await server.close()

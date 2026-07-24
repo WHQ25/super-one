@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { ProviderListResponse } from '@opencode-ai/sdk/v2'
-import { parseModels, parseOpenCodeModelSlug } from './opencode-client'
+import type { Command, McpStatus, ProviderListResponse } from '@opencode-ai/sdk/v2'
+import { parseModels, parseOpenCodeCommands, parseOpenCodeMcpStatus, parseOpenCodeModelSlug } from './opencode-client'
 
 describe('opencode-client', () => {
   it('parses model slugs at the first separator', () => {
@@ -53,6 +53,36 @@ describe('opencode-client', () => {
         supportsEffort: true,
         supportedEffortLevels: ['low', 'medium'],
       },
+    ])
+  })
+
+  it('maps SDK commands and skills into slash command resources', () => {
+    const commands = [
+      { name: 'review', description: 'Review changes', source: 'command', hints: ['target'], template: '' },
+      { name: '/deploy', source: 'skill', hints: ['env', 'version'], template: '' },
+    ] as Command[]
+
+    expect(parseOpenCodeCommands(commands)).toEqual([
+      { name: 'review', description: 'Review changes', argumentHint: 'target', isSkill: false },
+      { name: 'deploy', description: '', argumentHint: 'env version', isSkill: true },
+    ])
+  })
+
+  it('maps OpenCode MCP auth and connection states', () => {
+    const statuses = {
+      github: { status: 'connected' },
+      local: { status: 'disabled' },
+      broken: { status: 'failed', error: 'exited' },
+      oauth: { status: 'needs_auth' },
+      registration: { status: 'needs_client_registration', error: 'register first' },
+    } as Record<string, McpStatus>
+
+    expect(parseOpenCodeMcpStatus(statuses)).toEqual([
+      { name: 'github', status: 'connected', scope: 'project' },
+      { name: 'local', status: 'disabled', scope: 'project' },
+      { name: 'broken', status: 'failed', error: 'exited', scope: 'project' },
+      { name: 'oauth', status: 'needs-auth', scope: 'project' },
+      { name: 'registration', status: 'needs-auth', error: 'register first', scope: 'project' },
     ])
   })
 })

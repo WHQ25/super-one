@@ -424,6 +424,8 @@ export type Messages = {
       codexAsk: string
       claudePlan: string
       claudeAsk: string
+      openCodePlan: string
+      openCodeAsk: string
       acpAsk: string
     }
     acpCommands: {
@@ -2235,6 +2237,8 @@ export const en: Messages = {
       codexAsk: 'Ask Codex anything, @ for files & mini-apps, / for commands and skills',
       claudePlan: "Let's make a plan! What's in your mind?",
       claudeAsk: 'Ask Claude anything, @ for files, agents & mini-apps, / for commands and skills',
+      openCodePlan: "Let's make a plan! What's in your mind?",
+      openCodeAsk: 'Ask OpenCode anything, @ for files & mini-apps, / for commands and skills',
       acpAsk: 'Ask {{agent}} anything, @ for files & mini-apps, / for slash commands',
     },
     acpCommands: {

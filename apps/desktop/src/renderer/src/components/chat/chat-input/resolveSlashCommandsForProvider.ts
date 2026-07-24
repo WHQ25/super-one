@@ -11,6 +11,7 @@ export function resolveSlashCommandsForProvider(
     claude: SlashCommandInfo[]
     codex: SlashCommandInfo[]
     acp: SlashCommandInfo[]
+    opencode: SlashCommandInfo[]
   },
 ): SlashCommandInfo[] {
   switch (provider) {
@@ -19,7 +20,7 @@ export function resolveSlashCommandsForProvider(
     case 'acp':
       return catalogs.acp
     case 'opencode':
-      return []
+      return catalogs.opencode
     case 'claude':
     default:
       return catalogs.claude

@@ -8,6 +8,7 @@ import { reducePermission } from './permission'
 import { reduceQuestionPlan } from './question-plan'
 import { reduceSlash } from './slash'
 import { reduceTool } from './tool'
+import { reduceTodosUpdated } from './todos'
 import { reduceUsage } from './usage'
 
 /**
@@ -34,6 +35,9 @@ export function applyEventToSession(session: PerSessionState, event: AgentEvent)
 
     case 'content_delta':
       return reduceContentDelta(session, event)
+
+    case 'todos_updated':
+      return reduceTodosUpdated(session, event)
 
     case 'message_complete':
       return reduceMessageComplete(session, event)

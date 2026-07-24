@@ -44,6 +44,7 @@ import { StopButton } from './StopButton'
 import { groupItems, PopupSectionHeader } from './popup-groups'
 import { computeMatchingSlashCommands } from './chat-input/computeMatchingSlashCommands'
 import { resolveSlashCommandsForProvider } from './chat-input/resolveSlashCommandsForProvider'
+import { resolveChatInputPlaceholder } from './chat-input/resolveChatInputPlaceholder'
 import { CodexGoalDialog } from './CodexGoalDialog'
 import { CodexGoalIndicator } from './CodexGoalIndicator'
 import { resolveProvider } from '@/stores/chat-store/helpers/provider-routing'
@@ -222,6 +223,7 @@ export function ChatInput() {
 
     const codexPrompts = useChatStore(selectCodexPrompts)
     const codexSkills = useChatStore(selectActiveCodexSkills)
+    const openCodeSlashCommands = useChatStore((s) => s.harnessResources.opencode?.commands ?? [])
     const codexThreadId = useActiveSession((s) => getLatestCodexThreadId(s.messages))
     const [codexGoal, setCodexGoal] = useState<CodexGoal | null>(null)
     const [goalDialogState, setGoalDialogState] = useState<{ open: boolean; prefill: string }>({ open: false, prefill: '' })
@@ -290,8 +292,9 @@ export function ChatInput() {
         claude: slashCommands,
         codex: codexSlashCommands,
         acp: acpSlashCommands,
+        opencode: openCodeSlashCommands,
       }),
-      [activeProviderForResources, slashCommands, codexSlashCommands, acpSlashCommands],
+      [activeProviderForResources, slashCommands, codexSlashCommands, acpSlashCommands, openCodeSlashCommands],
     )
 
     const matchingCommands = useMemo(
@@ -931,19 +934,17 @@ export function ChatInput() {
     )
 
     const shouldShowCodexRejectHint = isCodexPlanMode && codexPlanRejectHintActive && text.trim().length === 0
+    const providerPlaceholder = resolveChatInputPlaceholder(t, {
+      provider: activeProviderForResources,
+      permissionMode,
+      codexPlanMode: isCodexPlanMode,
+      acpAgentName: acpAgentName || t('chat.suggestions.acpLabel'),
+    })
     const placeholderText = mentions.length > 0
       ? t('chat.placeholder.addInstructions')
       : shouldShowCodexRejectHint
         ? CODEX_REJECT_PLAN_PLACEHOLDER
-      : isCodexPlanMode
-        ? t('chat.placeholder.codexPlan')
-        : activeProviderForResources === 'codex'
-          ? t('chat.placeholder.codexAsk')
-        : activeProviderForResources === 'acp'
-          ? t('chat.placeholder.acpAsk', { agent: acpAgentName || t('chat.suggestions.acpLabel') })
-        : permissionMode === 'plan'
-          ? t('chat.placeholder.claudePlan')
-          : t('chat.placeholder.claudeAsk')
+        : providerPlaceholder
     placeholderTextRef.current = placeholderText
 
     const editor = useEditor({

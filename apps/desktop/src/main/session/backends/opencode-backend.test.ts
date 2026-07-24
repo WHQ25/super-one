@@ -23,31 +23,44 @@ describe('OpenCodeBackend', () => {
   let route: (event: OpenCodeRuntimeEvent) => void
   let runtime: OpenCodeRuntime
   let prompt: ReturnType<typeof vi.fn>
+  let command: ReturnType<typeof vi.fn>
   let setPermissionMode: ReturnType<typeof vi.fn>
   let permissionReply: ReturnType<typeof vi.fn>
   let questionReply: ReturnType<typeof vi.fn>
   let questionReject: ReturnType<typeof vi.fn>
+  let getMcpServerStatus: ReturnType<typeof vi.fn>
+  let reconnectMcp: ReturnType<typeof vi.fn>
+  let toggleMcpServer: ReturnType<typeof vi.fn>
   let close: ReturnType<typeof vi.fn>
 
   beforeEach(() => {
     route = () => undefined
     prompt = vi.fn(async () => undefined)
+    command = vi.fn(async () => undefined)
     setPermissionMode = vi.fn(async () => undefined)
     permissionReply = vi.fn(async () => undefined)
     questionReply = vi.fn(async () => undefined)
     questionReject = vi.fn(async () => undefined)
+    getMcpServerStatus = vi.fn(async () => [{ name: 'github', status: 'connected' as const }])
+    reconnectMcp = vi.fn(async () => undefined)
+    toggleMcpServer = vi.fn(async () => undefined)
     close = vi.fn(async () => undefined)
     runtime = {
       sessionId: 'oc-session',
       models: [],
       agents: [],
+      commands: [{ name: 'review', description: '', argumentHint: '', isSkill: false }],
       prompt,
+      command,
       setModel: vi.fn(async () => undefined),
       setPermissionMode,
       cancel: vi.fn(async () => undefined),
       permissionReply,
       questionReply,
       questionReject,
+      getMcpServerStatus,
+      reconnectMcp,
+      toggleMcpServer,
       close,
     }
     setOpenCodeRuntimeFactory(async (opts: OpenCodeRuntimeOptions) => {
@@ -255,5 +268,76 @@ describe('OpenCodeBackend', () => {
     expect(setPermissionMode).toHaveBeenCalledWith('plan')
     await backend.close()
     expect(questionReject).not.toHaveBeenCalled()
+  })
+
+  it('routes MCP status and lifecycle calls through the runtime', async () => {
+    const backend = new OpenCodeBackend()
+    await backend.start(startOptions())
+
+    expect(await backend.getMcpServerStatus()).toEqual([{ name: 'github', status: 'connected' }])
+    await backend.reconnectMcp('github')
+    await backend.toggleMcpServer('github', false)
+    expect(reconnectMcp).toHaveBeenCalledWith('github')
+    expect(toggleMcpServer).toHaveBeenCalledWith('github', false)
+    await backend.close()
+  })
+
+  it('dispatches known slash commands through the SDK and keeps unknown commands as prompts', async () => {
+    const backend = new OpenCodeBackend()
+    await backend.start(startOptions())
+
+    const commandSend = backend.send({ content: '/review working tree', model: 'openai/gpt-5' })
+    await vi.waitFor(() => expect(command).toHaveBeenCalledWith('review', 'working tree', 'openai/gpt-5', undefined, undefined))
+    route({ id: 'idle-command', type: 'session.idle', properties: { sessionID: 'oc-session' } } as OpenCodeRuntimeEvent)
+    await commandSend
+
+    const promptSend = backend.send({ content: '/unknown keep this literal', model: 'openai/gpt-5' })
+    await vi.waitFor(() => expect(prompt).toHaveBeenCalledWith('/unknown keep this literal', 'openai/gpt-5', undefined, undefined))
+    route({ id: 'idle-prompt', type: 'session.idle', properties: { sessionID: 'oc-session' } } as OpenCodeRuntimeEvent)
+    await promptSend
+    await backend.close()
+  })
+
+  it('maps retry and todo status without completing the active turn', async () => {
+    const backend = new OpenCodeBackend()
+    const events: AgentEvent[] = []
+    backend.onEvent((event) => events.push(event))
+    await backend.start(startOptions())
+
+    const send = backend.send({ content: 'work' })
+    await vi.waitFor(() => expect(prompt).toHaveBeenCalledOnce())
+    route({
+      id: 'retry',
+      type: 'session.status',
+      properties: {
+        sessionID: 'oc-session',
+        status: { type: 'retry', attempt: 2, message: 'rate limited', next: Date.now() + 1000 },
+      },
+    } as OpenCodeRuntimeEvent)
+    route({
+      id: 'todos',
+      type: 'todo.updated',
+      properties: {
+        sessionID: 'oc-session',
+        todos: [
+          { content: 'Inspect', status: 'in_progress', priority: 'high' },
+          { content: 'Old task', status: 'cancelled', priority: 'low' },
+        ],
+      },
+    } as OpenCodeRuntimeEvent)
+
+    expect(events.some((event) => event.type === 'message_complete')).toBe(false)
+    expect(events).toContainEqual(expect.objectContaining({ type: 'api_retry', attempt: 2, message: 'rate limited' }))
+    expect(events).toContainEqual({
+      type: 'todos_updated',
+      todos: [
+        { id: '1', subject: 'Inspect', description: '', status: 'in_progress' },
+        { id: '2', subject: 'Old task', description: '', status: 'completed' },
+      ],
+    })
+
+    route({ id: 'idle', type: 'session.idle', properties: { sessionID: 'oc-session' } } as OpenCodeRuntimeEvent)
+    await send
+    await backend.close()
   })
 })

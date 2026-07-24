@@ -4,6 +4,10 @@ const mocks = vi.hoisted(() => ({
   createSession: vi.fn(async () => ({ id: 'oc-session' })),
   updatePermission: vi.fn(async () => undefined),
   promptAsync: vi.fn(async () => undefined),
+  command: vi.fn(async () => undefined),
+  mcpStatus: vi.fn(async () => [{ name: 'github', status: 'connected' }]),
+  connectMcp: vi.fn(async () => undefined),
+  disconnectMcp: vi.fn(async () => undefined),
   abort: vi.fn(async () => undefined),
   permissionReply: vi.fn(async () => undefined),
   questionReply: vi.fn(async () => undefined),
@@ -16,9 +20,14 @@ vi.mock('./opencode-client', () => ({
   OpenCodeClient: class {
     providerList = async () => ({ connected: [], default: {}, all: [] })
     agents = async () => [{ name: 'build', mode: 'primary', hidden: false }]
+    commands = async () => [{ name: 'review', source: 'command', hints: [], template: '' }]
     createSession = mocks.createSession
     updatePermission = mocks.updatePermission
     promptAsync = mocks.promptAsync
+    command = mocks.command
+    mcpStatus = mocks.mcpStatus
+    connectMcp = mocks.connectMcp
+    disconnectMcp = mocks.disconnectMcp
     abort = mocks.abort
     permissionReply = mocks.permissionReply
     questionReply = mocks.questionReply
@@ -29,6 +38,7 @@ vi.mock('./opencode-client', () => ({
     })()
   },
   parseModels: () => [{ id: 'openai/gpt-5', name: 'GPT-5', description: '' }],
+  parseOpenCodeCommands: () => [{ name: 'review', description: '', argumentHint: '', isSkill: false }],
   startOpenCodeServer: async () => ({
     url: 'http://127.0.0.1:4000',
     exited: null,
@@ -79,6 +89,24 @@ describe('opencode-runtime', () => {
       images: undefined,
       agent: undefined,
     })
+    expect(runtime.commands).toEqual([
+      { name: 'review', description: '', argumentHint: '', isSkill: false },
+    ])
+    await runtime.command('review', 'working tree', 'openai/gpt-5', 'high')
+    expect(mocks.command).toHaveBeenCalledWith('oc-session', {
+      command: 'review',
+      arguments: 'working tree',
+      model: 'openai/gpt-5',
+      variant: 'high',
+      images: undefined,
+      agent: undefined,
+    })
+    expect(await runtime.getMcpServerStatus()).toEqual([{ name: 'github', status: 'connected' }])
+    await runtime.reconnectMcp('github')
+    expect(mocks.disconnectMcp).toHaveBeenCalledWith('github')
+    expect(mocks.connectMcp).toHaveBeenCalledWith('github')
+    await runtime.toggleMcpServer('github', false)
+    expect(mocks.disconnectMcp).toHaveBeenCalledTimes(2)
     await runtime.close()
     expect(mocks.closeServer).toHaveBeenCalledOnce()
   })

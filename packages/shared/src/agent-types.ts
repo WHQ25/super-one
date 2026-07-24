@@ -952,6 +952,7 @@ export type AgentEventBase =
   | { type: 'slash_command_output'; messageId: string; content: string }
   | { type: 'subagent_usage'; messageId: string; parentToolUseId: string; inputTokens: number; outputTokens: number }
   | { type: 'message_usage'; messageId: string; inputTokens: number; outputTokens: number; codexUsage?: CodexUsageInfo; contextTokens?: number; contextWindow?: number; costUsd?: number }
+  | { type: 'todos_updated'; todos: TodoItem[] }
   | { type: 'codex_thread_started'; messageId: string; threadId: string }
   | { type: 'codex_item_delta'; messageId: string; phase: 'started' | 'updated' | 'completed'; item: CodexThreadItem }
   | { type: 'codex_mcp_startup'; messageId: string; servers: CodexMcpServerStartup[] }
@@ -970,7 +971,7 @@ export type AgentEventBase =
   | { type: 'interaction_resolved'; interactionType: 'permission' | 'question' | 'plan_approval'; requestId: string; approved?: boolean; feedback?: string }
   | { type: 'codex_collaboration_mode_change'; mode: string }
   | { type: 'codex_plan_approval'; messageId: string; status: 'approved' | 'rejected'; feedback?: string }
-  | { type: 'api_retry'; attempt: number; maxRetries: number; delayMs: number }
+  | { type: 'api_retry'; attempt: number; maxRetries?: number; delayMs: number; message?: string }
   | { type: 'model_fallback'; trigger: string; fromModel?: string; toModel?: string }
   | { type: 'queued_message_consumed'; clientMessageId: string }
   | { type: 'worktree_missing'; worktreePath: string; fallbackCwd: string }
@@ -1475,6 +1476,7 @@ export interface CodexResources {
 export interface OpenCodeResources {
   models: ModelOption[]
   agents: Array<{ id: string; name: string; description?: string }>
+  commands: SlashCommandInfo[]
 }
 
 export interface AcpAgentDescriptor {

@@ -219,15 +219,18 @@ export async function setSandboxModeImpl(
 
 export function cyclePermissionModeImpl(get: () => ChatStore): void {
   const session = getActivePerSession(get())
-  const claude = get().harnessResources.claude
-  const account = claude?.account ?? {}
-  const availableModels = claude?.models ?? []
-  const modelInfo = availableModels.find((m) => m.id === session.selectedModel)
-  const startIdx = PERMISSION_MODES.indexOf(session.permissionMode)
+  const provider = resolveProvider(session)
+  const permissionModes = provider === 'opencode'
+    ? PERMISSION_MODES.filter((mode) => mode !== 'auto')
+    : PERMISSION_MODES
+  const startIdx = permissionModes.indexOf(session.permissionMode)
   const anchor = startIdx === -1 ? 0 : startIdx
-  for (let step = 1; step <= PERMISSION_MODES.length; step++) {
-    const candidate = PERMISSION_MODES[(anchor + step) % PERMISSION_MODES.length]
+  for (let step = 1; step <= permissionModes.length; step++) {
+    const candidate = permissionModes[(anchor + step) % permissionModes.length]
     if (candidate === 'auto') {
+      const claude = get().harnessResources.claude
+      const account = claude?.account ?? {}
+      const modelInfo = claude?.models.find((model) => model.id === session.selectedModel)
       const elig = checkAutoModeEligibility({
         subscriptionType: account?.subscriptionType,
         apiProvider: account?.apiProvider,

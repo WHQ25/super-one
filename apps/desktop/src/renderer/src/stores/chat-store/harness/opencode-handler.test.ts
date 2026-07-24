@@ -28,7 +28,7 @@ describe('opencode-handler', () => {
   })
 
   it('reconciles stale model and effort selections', () => {
-    const resources: OpenCodeResources = { models, agents: [] }
+    const resources: OpenCodeResources = { models, agents: [], commands: [] }
     const state = {
       harnessResources: { claude: null, codex: null, acp: null, opencode: null },
       projectSessions: {

@@ -1,9 +1,9 @@
 /** @vitest-environment jsdom */
 
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { chatActions, activeSessionState, editorState, useChatStore, mentionPopup, sessionScope } = vi.hoisted(() => {
+const { chatActions, activeSessionState, editorState, useChatStore, mentionPopup, sessionScope, goalState } = vi.hoisted(() => {
   const mentionPopup = {
     props: null as null | { query: string; onResultState?: (q: string, isEmpty: boolean) => void },
   }
@@ -99,7 +99,12 @@ const { chatActions, activeSessionState, editorState, useChatStore, mentionPopup
     value: null as { projectPath: string; sessionId: string } | null,
   }
 
-  return { chatActions, activeSessionState, editorState, useChatStore, mentionPopup, sessionScope }
+  const goalState = {
+    threadId: undefined as string | undefined,
+    getGoal: vi.fn(),
+  }
+
+  return { chatActions, activeSessionState, editorState, useChatStore, mentionPopup, sessionScope, goalState }
 })
 
 vi.mock('@tiptap/react', () => {
@@ -242,7 +247,7 @@ vi.mock('@/stores/chat', () => ({
   useSessionScope: () => sessionScope.value,
   selectCodexPrompts: () => [],
   selectActiveCodexSkills: () => [],
-  getLatestCodexThreadId: () => undefined,
+  getLatestCodexThreadId: () => goalState.threadId,
 }))
 
 vi.mock('@/stores/app', () => ({
@@ -277,6 +282,12 @@ vi.mock('./ContextBar', () => ({
 
 vi.mock('./ModelSelector', () => ({
   ModelSelector: () => null,
+}))
+
+vi.mock('./CodexGoalIndicator', () => ({
+  CodexGoalIndicator: ({ goal }: { goal: { objective: string } }) => (
+    <div data-testid="codex-goal-indicator">{goal.objective}</div>
+  ),
 }))
 
 vi.mock('./ProviderSlashPopup', () => ({
@@ -317,6 +328,14 @@ beforeEach(() => {
   activeSessionState.showReviewPanel = false
   activeSessionState._activeSessionId = 'session-1'
   sessionScope.value = null
+  goalState.threadId = undefined
+  goalState.getGoal.mockReset()
+  Object.assign(window, {
+    app: {
+      ...window.app,
+      codexGetGoal: goalState.getGoal,
+    },
+  })
   mentionPopup.props = null
 })
 
@@ -384,6 +403,28 @@ describe('ChatInput', () => {
         value: projectActiveSessionId,
       })
     }
+  })
+
+  it('shows a persisted Goal next to the Codex model controls', async () => {
+    activeSessionState.preferredProvider = 'codex'
+    goalState.threadId = 'thread-1'
+    goalState.getGoal.mockResolvedValue({
+      threadId: 'thread-1',
+      objective: 'Ship the goal UX',
+      status: 'active',
+      tokenBudget: null,
+      tokensUsed: 0,
+      timeUsedSeconds: 0,
+      createdAt: 1,
+      updatedAt: 1,
+    })
+
+    render(<ChatInput />)
+
+    await waitFor(() => {
+      expect(goalState.getGoal).toHaveBeenCalledWith('session-1', 'thread-1')
+    })
+    expect(screen.getByTestId('codex-goal-indicator')).toHaveTextContent('Ship the goal UX')
   })
 })
 

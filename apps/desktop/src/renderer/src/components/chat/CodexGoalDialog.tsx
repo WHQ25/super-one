@@ -9,12 +9,13 @@ import type { CodexGoal } from '@superone/shared/agent-types'
 interface CodexGoalDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  projectPath: string
+  sessionId: string | null
   threadId: string | null
   prefill?: string
+  onGoalChange?: (goal: CodexGoal | null) => void
 }
 
-export function CodexGoalDialog({ open, onOpenChange, projectPath, threadId, prefill }: CodexGoalDialogProps) {
+export function CodexGoalDialog({ open, onOpenChange, sessionId, threadId, prefill, onGoalChange }: CodexGoalDialogProps) {
   const { t } = useTranslation()
   const [goal, setGoal] = useState<CodexGoal | null>(null)
   const [objective, setObjective] = useState('')
@@ -25,14 +26,14 @@ export function CodexGoalDialog({ open, onOpenChange, projectPath, threadId, pre
   useEffect(() => {
     if (!open) return
     setError(null)
-    if (!threadId) {
+    if (!sessionId || !threadId) {
       setGoal(null)
       setObjective(prefill ?? '')
       return
     }
     let cancelled = false
     setLoading(true)
-    void window.app.codexGetGoal(projectPath, threadId)
+    void window.app.codexGetGoal(sessionId, threadId)
       .then((result) => {
         if (cancelled) return
         setGoal(result)
@@ -44,40 +45,42 @@ export function CodexGoalDialog({ open, onOpenChange, projectPath, threadId, pre
       })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [open, projectPath, threadId, prefill])
+  }, [open, sessionId, threadId, prefill])
 
   const handleSave = useCallback(async () => {
-    if (!threadId) return
+    if (!sessionId || !threadId) return
     const trimmed = objective.trim()
     if (!trimmed) return
     setBusy(true)
     setError(null)
     try {
-      const next = await window.app.codexSetGoal(projectPath, threadId, trimmed)
+      const next = await window.app.codexSetGoal(sessionId, threadId, trimmed)
       setGoal(next)
+      onGoalChange?.(next)
       onOpenChange(false)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     }
     setBusy(false)
-  }, [projectPath, threadId, objective, onOpenChange])
+  }, [sessionId, threadId, objective, onOpenChange, onGoalChange])
 
   const handleClear = useCallback(async () => {
-    if (!threadId) return
+    if (!sessionId || !threadId) return
     setBusy(true)
     setError(null)
     try {
-      await window.app.codexClearGoal(projectPath, threadId)
+      await window.app.codexClearGoal(sessionId, threadId)
       setGoal(null)
       setObjective('')
+      onGoalChange?.(null)
       onOpenChange(false)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     }
     setBusy(false)
-  }, [projectPath, threadId, onOpenChange])
+  }, [sessionId, threadId, onOpenChange, onGoalChange])
 
-  const canSave = !!threadId && objective.trim().length > 0 && !busy
+  const canSave = !!sessionId && !!threadId && objective.trim().length > 0 && !busy
   const canClear = !!goal && !busy
 
   return (
@@ -89,7 +92,7 @@ export function CodexGoalDialog({ open, onOpenChange, projectPath, threadId, pre
             {t('chat.codex.goal.title')}
           </DialogTitle>
           <DialogDescription>
-            {threadId
+            {sessionId && threadId
               ? t('chat.codex.goal.description')
               : t('chat.codex.goal.noThread')}
           </DialogDescription>
@@ -106,7 +109,7 @@ export function CodexGoalDialog({ open, onOpenChange, projectPath, threadId, pre
           onChange={(e) => setObjective(e.target.value)}
           placeholder={t('chat.codex.goal.placeholder')}
           rows={4}
-          disabled={!threadId || loading || busy}
+          disabled={!sessionId || !threadId || loading || busy}
           autoFocus
         />
 

@@ -1337,6 +1337,7 @@ export async function streamTurnEvents(
   controller: AbortController,
   callbacks?: CodexRunStreamCallbacks,
 ): Promise<{ threadId: string | null; turnId?: string; usage: CodexUsageInfo | null; items: CodexThreadItem[] }> {
+  let observedTurnId = activeTurnId
   let threadStartedEmitted = false
   const emitThreadStarted = (threadId: string) => {
     if (threadStartedEmitted) return
@@ -1554,9 +1555,9 @@ export async function streamTurnEvents(
     const notifThreadId = readNotificationThreadId(params)
     if (notifThreadId && subscribedChildThreads.has(notifThreadId)) return true
     if (notifThreadId && session.threadId && notifThreadId !== session.threadId) return false
-    if (!activeTurnId) return true
+    if (!observedTurnId) return true
     const turnId = readNotificationTurnId(params)
-    return !turnId || turnId === activeTurnId
+    return !turnId || turnId === observedTurnId
   }
 
   const mainInbox: NotificationInbox | null = session.notificationDispatcher?.mainInbox ?? null
@@ -1720,6 +1721,29 @@ export async function streamTurnEvents(
     }
 
     switch (method) {
+      case 'turn/started': {
+        const startedTurn = asRecord(params.turn)
+        const startedTurnId = readString(startedTurn?.id) ?? readNotificationTurnId(params)
+        if (!observedTurnId && startedTurnId) {
+          observedTurnId = startedTurnId
+          session.activeTurnId = startedTurnId
+          session.steerFn = async (text: string) => {
+            await connection.request('turn/steer', {
+              threadId: session.threadId,
+              input: [{ type: 'text', text }],
+              expectedTurnId: startedTurnId,
+            })
+          }
+          session.interruptFn = async () => {
+            await connection.request('turn/interrupt', {
+              threadId: session.threadId,
+              turnId: startedTurnId,
+            })
+          }
+        }
+        break
+      }
+
       case 'item/started':
       case 'item/completed': {
         const rawItem = asRecord(params.item)
@@ -1972,7 +1996,7 @@ export async function streamTurnEvents(
 
   return {
     threadId: session.threadId,
-    ...(activeTurnId ? { turnId: activeTurnId } : {}),
+    ...(observedTurnId ? { turnId: observedTurnId } : {}),
     usage,
     items,
   }

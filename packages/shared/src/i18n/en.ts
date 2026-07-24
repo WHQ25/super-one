@@ -555,13 +555,25 @@ export type Messages = {
       modelFallback: string
       permissionPreset: string
       goal: {
+        label: string
         title: string
         description: string
         noThread: string
         placeholder: string
         save: string
+        edit: string
+        pause: string
+        resume: string
         clear: string
         status: string
+        statuses: {
+          active: string
+          paused: string
+          blocked: string
+          usageLimited: string
+          budgetLimited: string
+          complete: string
+        }
       }
     }
     image: {
@@ -2354,13 +2366,25 @@ export const en: Messages = {
       modelFallback: 'Codex model',
       permissionPreset: 'Permission Preset',
       goal: {
+        label: 'Goal',
         title: 'Codex Goal',
         description: 'Anchor what this Codex thread is trying to achieve. The model uses it to keep turns on track.',
         noThread: 'Start a Codex session first (send a message), then come back to set a goal.',
         placeholder: 'e.g. Refactor the auth middleware to use JWT and ship behind the legacy flag',
         save: 'Save goal',
+        edit: 'Edit',
+        pause: 'Pause',
+        resume: 'Resume',
         clear: 'Clear goal',
         status: 'Status: {{status}}',
+        statuses: {
+          active: 'Active',
+          paused: 'Paused',
+          blocked: 'Blocked',
+          usageLimited: 'Usage limited',
+          budgetLimited: 'Budget limited',
+          complete: 'Complete',
+        },
       },
     },
     image: {

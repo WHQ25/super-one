@@ -100,7 +100,6 @@ import { CodexExperimentService } from './codex/codex-experiment-service'
 import { getCodexProviderOverrideFor } from './codex/app-server-connection'
 import { CodexPluginsService } from './codex/codex-plugins-service'
 import { CodexHooksService } from './codex/codex-hooks-service'
-import { CodexGoalService } from './codex/codex-goal-service'
 import { CodexMarketplaceService } from './codex/codex-marketplace-service'
 import { setCodexSkillsWatcherWindow } from './codex/codex-skills-watcher'
 import { deleteCodexMcpConfig, saveCodexMcpConfig, toggleCodexMcpConfig } from './codex-config-service'
@@ -169,7 +168,6 @@ const agentService = new AgentService()
 const codexService = new CodexExperimentService()
 const codexPluginsService = new CodexPluginsService(codexService)
 const codexHooksService = new CodexHooksService(codexService)
-const codexGoalService = new CodexGoalService(codexService)
 const codexMarketplaceService = new CodexMarketplaceService(codexService)
 setCodexServiceFactory(() => codexService)
 const automationService = new AutomationService()
@@ -1078,16 +1076,22 @@ function registerIpcHandlers(): void {
     return codexHooksService.list(projectPath)
   })
 
-  ipcMain.handle(AgentIpcChannels.CODEX_GOAL_GET, (_event, projectPath: string, threadId: string) => {
-    return codexGoalService.get(projectPath, threadId)
+  ipcMain.handle(AgentIpcChannels.CODEX_GOAL_GET, (_event, sessionId: string, threadId: string) => {
+    const session = getCodexSession(sessionId)
+    if (!session) throw new Error(`CODEX_GOAL_GET: no codex session found for sid=${sessionId}`)
+    return session.getCodexGoal(threadId)
   })
 
-  ipcMain.handle(AgentIpcChannels.CODEX_GOAL_SET, (_event, projectPath: string, threadId: string, objective: string) => {
-    return codexGoalService.set(projectPath, threadId, objective)
+  ipcMain.handle(AgentIpcChannels.CODEX_GOAL_SET, (_event, sessionId: string, threadId: string, objective: string, status?: import('@superone/shared/agent-types').CodexGoalStatus) => {
+    const session = getCodexSession(sessionId)
+    if (!session) throw new Error(`CODEX_GOAL_SET: no codex session found for sid=${sessionId}`)
+    return session.setCodexGoal(threadId, objective, status)
   })
 
-  ipcMain.handle(AgentIpcChannels.CODEX_GOAL_CLEAR, (_event, projectPath: string, threadId: string) => {
-    return codexGoalService.clear(projectPath, threadId)
+  ipcMain.handle(AgentIpcChannels.CODEX_GOAL_CLEAR, (_event, sessionId: string, threadId: string) => {
+    const session = getCodexSession(sessionId)
+    if (!session) throw new Error(`CODEX_GOAL_CLEAR: no codex session found for sid=${sessionId}`)
+    return session.clearCodexGoal(threadId)
   })
 
   ipcMain.handle(AgentIpcChannels.CODEX_MARKETPLACE_ADD, (_event, projectPath: string, request: import('@superone/shared/agent-types').CodexMarketplaceAddRequest) => {

@@ -2,6 +2,8 @@ import type {
   AgentEvent,
   AgentInfo,
   ChatMessage,
+  CodexGoal,
+  CodexGoalStatus,
   ContextUsageInfo,
   McpServerInfo,
   PermissionMode,
@@ -196,6 +198,9 @@ export interface SessionBackend {
   setSandbox(sandboxInfo: SandboxInfo): Promise<void>
   setAdditionalDirectories?(dirs: string[]): Promise<boolean>
   hasActiveBackgroundTasks?(): boolean
+  getCodexGoal?(threadId: string): Promise<CodexGoal | null>
+  setCodexGoal?(threadId: string, objective: string, status?: CodexGoalStatus): Promise<CodexGoal | null>
+  clearCodexGoal?(threadId: string): Promise<boolean>
   stopTask?(taskId: string): Promise<void>
   /** Foreground-visible sessions are exempt from idle-triggered runtime release. */
   setForeground?(visible: boolean): void
@@ -291,6 +296,9 @@ export interface Session {
   prewarm(hint?: PrewarmHint): void
   dequeueMessage(clientMessageId: string): boolean
   getPendingInteractions(): AgentEvent[]
+  getCodexGoal(threadId: string): Promise<CodexGoal | null>
+  setCodexGoal(threadId: string, objective: string, status?: CodexGoalStatus): Promise<CodexGoal | null>
+  clearCodexGoal(threadId: string): Promise<boolean>
   dispatchBackendCommand(cmd: BackendCommand): Promise<void>
   updateProviderConfig(nextConfig: unknown): void
   markNeedsRebuild(): void

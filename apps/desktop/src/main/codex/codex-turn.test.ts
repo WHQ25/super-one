@@ -1618,6 +1618,43 @@ describe('streamTurnEvents finalizes stale in_progress items on turn/completed',
     } as never
   }
 
+  it('captures an automatic turn id and installs turn controls from turn/started', async () => {
+    const session = { ...makeSession(), threadId: 'main-thread' }
+    const mockConnection = makeStreamingConnection([
+      {
+        method: 'turn/started',
+        params: { threadId: 'main-thread', turn: { id: 'automatic-turn' } },
+      },
+      {
+        method: 'turn/completed',
+        params: { threadId: 'main-thread', turn: { id: 'automatic-turn', status: 'completed' } },
+      },
+    ])
+
+    const result = await streamTurnEvents(
+      mockConnection,
+      session,
+      null,
+      new AbortController(),
+    )
+
+    expect(result.turnId).toBe('automatic-turn')
+    expect(session.activeTurnId).toBe('automatic-turn')
+
+    await session.steerFn?.('Continue')
+    await session.interruptFn?.()
+
+    expect(mockConnection.request).toHaveBeenNthCalledWith(1, 'turn/steer', {
+      threadId: 'main-thread',
+      input: [{ type: 'text', text: 'Continue' }],
+      expectedTurnId: 'automatic-turn',
+    })
+    expect(mockConnection.request).toHaveBeenNthCalledWith(2, 'turn/interrupt', {
+      threadId: 'main-thread',
+      turnId: 'automatic-turn',
+    })
+  })
+
   it('finalizes mcp_tool_call stuck in_progress when item/completed never arrives', async () => {
     const session = { ...makeSession(), threadId: 'main-thread' }
     const mockConnection = makeStreamingConnection([

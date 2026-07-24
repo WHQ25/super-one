@@ -21,7 +21,7 @@ import { SlashDecoration } from './slash-decoration'
 import { PromptSuggestion } from './prompt-suggestion'
 import { addBrowserImageToChat, extractDraggedImageUrl } from '../browser/browser-image'
 import type { MentionNodeAttrs } from './mention-node'
-import type { SlashCommandInfo, ImageAttachment } from '@superone/shared/agent-types'
+import type { CodexGoal, SlashCommandInfo, ImageAttachment } from '@superone/shared/agent-types'
 import type { InputSegment } from '@/stores/chat-store/types'
 import { fuzzyMatch } from '@/lib/fuzzy-match'
 import { HighlightedText } from '@superone/ui/components/ui/HighlightedText'
@@ -45,6 +45,7 @@ import { groupItems, PopupSectionHeader } from './popup-groups'
 import { computeMatchingSlashCommands } from './chat-input/computeMatchingSlashCommands'
 import { resolveSlashCommandsForProvider } from './chat-input/resolveSlashCommandsForProvider'
 import { CodexGoalDialog } from './CodexGoalDialog'
+import { CodexGoalIndicator } from './CodexGoalIndicator'
 import { resolveProvider } from '@/stores/chat-store/helpers/provider-routing'
 
 export const chatInputAPI: {
@@ -222,7 +223,22 @@ export function ChatInput() {
     const codexPrompts = useChatStore(selectCodexPrompts)
     const codexSkills = useChatStore(selectActiveCodexSkills)
     const codexThreadId = useActiveSession((s) => getLatestCodexThreadId(s.messages))
+    const [codexGoal, setCodexGoal] = useState<CodexGoal | null>(null)
     const [goalDialogState, setGoalDialogState] = useState<{ open: boolean; prefill: string }>({ open: false, prefill: '' })
+
+    useEffect(() => {
+      if (activeProviderForResources !== 'codex' || !displayedSessionId || !codexThreadId) {
+        setCodexGoal(null)
+        return
+      }
+      let cancelled = false
+      void window.app.codexGetGoal(displayedSessionId, codexThreadId)
+        .then((goal) => {
+          if (!cancelled) setCodexGoal(goal)
+        })
+        .catch(() => {})
+      return () => { cancelled = true }
+    }, [activeProviderForResources, displayedSessionId, codexThreadId, status])
 
     const codexSlashCommands = useMemo<SlashCommandInfo[]>(() => ([
       { name: 'help', description: t('chat.codexCommands.helpDesc'), argumentHint: '', isSkill: false },
@@ -1370,6 +1386,15 @@ export function ChatInput() {
             </IconButton>
 
             <ModelSelector onCloseAutoFocus={(e) => { e.preventDefault(); if (editor && !editor.isDestroyed) editor.commands.focus() }} />
+            {activeProviderForResources === 'codex' && displayedSessionId && codexThreadId && codexGoal && (
+              <CodexGoalIndicator
+                sessionId={displayedSessionId}
+                threadId={codexThreadId}
+                goal={codexGoal}
+                onGoalChange={setCodexGoal}
+                onEdit={() => setGoalDialogState({ open: true, prefill: codexGoal.objective })}
+              />
+            )}
           </div>
 
           <div className="flex items-center gap-1.5">
@@ -1397,9 +1422,10 @@ export function ChatInput() {
           <CodexGoalDialog
             open={goalDialogState.open}
             onOpenChange={(open) => setGoalDialogState((s) => ({ ...s, open }))}
-            projectPath={activeProject}
+            sessionId={displayedSessionId}
             threadId={codexThreadId ?? null}
             prefill={goalDialogState.prefill}
+            onGoalChange={setCodexGoal}
           />
         )}
         </div>

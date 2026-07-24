@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import { AgentIpcChannels, type NativeContextMenuItemSpec, type AgentPrewarmHint, type BashOutputEvent, type CodexCollaborationMode, type CodexPermissionPreset, type CodexReasoningEffort, type CodexReviewTarget, type CodexExternalAgentItem, type ProviderEndpointTestResponse, type DiscoverModelsResult, type RemoteDeviceConfig, type SandboxMode, type SendMessageRequest, type ContentBlock, type ChatMessageContext, type WorktreeActivateRequest, type WorktreeHandoffResult, type WorktreeAssignResult, type GitDirtyStatus, type SessionForkRequest, type SessionForkResult, type HookSavePayload, type TerminalEvent, type TerminalListItem, type TerminalSnapshot, type HarnessId, type BrowserCertError, type BrowserOpenTabRequest, type UpsertMediaProviderRequest, type ThemeMode } from '@superone/shared/agent-types'
+import { AgentIpcChannels, type NativeContextMenuItemSpec, type AgentPrewarmHint, type BashOutputEvent, type CodexCollaborationMode, type CodexGoalStatus, type CodexPermissionPreset, type CodexReasoningEffort, type CodexReviewTarget, type CodexExternalAgentItem, type ProviderEndpointTestResponse, type DiscoverModelsResult, type RemoteDeviceConfig, type SandboxMode, type SendMessageRequest, type ContentBlock, type ChatMessageContext, type WorktreeActivateRequest, type WorktreeHandoffResult, type WorktreeAssignResult, type GitDirtyStatus, type SessionForkRequest, type SessionForkResult, type HookSavePayload, type TerminalEvent, type TerminalListItem, type TerminalSnapshot, type HarnessId, type BrowserCertError, type BrowserOpenTabRequest, type UpsertMediaProviderRequest, type ThemeMode } from '@superone/shared/agent-types'
 import type { McpbInstallRequest } from '@superone/shared/mcpb-types'
 import type { ConsumerBinding, ConsumerId, Credential, EndpointOverride, Platform, ServiceEndpoint } from '@superone/shared/platform-registry'
 
@@ -484,12 +484,12 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.CODEX_HOOKS_LIST, projectPath),
 
   // Codex Goal
-  codexGetGoal: (projectPath: string, threadId: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.CODEX_GOAL_GET, projectPath, threadId),
-  codexSetGoal: (projectPath: string, threadId: string, objective: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.CODEX_GOAL_SET, projectPath, threadId, objective),
-  codexClearGoal: (projectPath: string, threadId: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.CODEX_GOAL_CLEAR, projectPath, threadId),
+  codexGetGoal: (sessionId: string, threadId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.CODEX_GOAL_GET, sessionId, threadId),
+  codexSetGoal: (sessionId: string, threadId: string, objective: string, status?: CodexGoalStatus) =>
+    ipcRenderer.invoke(AgentIpcChannels.CODEX_GOAL_SET, sessionId, threadId, objective, status),
+  codexClearGoal: (sessionId: string, threadId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.CODEX_GOAL_CLEAR, sessionId, threadId),
 
   // Codex Marketplace
   codexMarketplaceAdd: (projectPath: string, request: { source: string; refName?: string; sparsePaths?: string[] }) =>

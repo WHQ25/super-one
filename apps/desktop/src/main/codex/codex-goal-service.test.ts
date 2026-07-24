@@ -75,6 +75,27 @@ describe('CodexGoalService', () => {
     expect(goal?.objective).toBe('Refactor auth')
   })
 
+  it('forwards an explicit goal status', async () => {
+    const service = makeService(async (method, params) => {
+      expect(method).toBe('thread/goal/set')
+      expect(params).toEqual({ threadId: 't1', objective: 'Refactor auth', status: 'paused' })
+      return {
+        goal: {
+          threadId: 't1',
+          objective: 'Refactor auth',
+          status: 'paused',
+          tokenBudget: null,
+          tokensUsed: 0,
+          timeUsedSeconds: 0,
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      }
+    })
+
+    expect((await service.set('/p', 't1', 'Refactor auth', 'paused'))?.status).toBe('paused')
+  })
+
   it('returns the cleared boolean from thread/goal/clear', async () => {
     const service = makeService(async (method, params) => {
       expect(method).toBe('thread/goal/clear')

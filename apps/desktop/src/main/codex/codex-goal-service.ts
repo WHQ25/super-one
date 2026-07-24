@@ -30,7 +30,7 @@ function readStatus(value: unknown): CodexGoalStatus {
     : 'active'
 }
 
-function mapGoal(raw: unknown): CodexGoal | null {
+export function mapCodexGoal(raw: unknown): CodexGoal | null {
   const rec = asRecord(raw)
   if (!rec) return null
   const threadId = readString(rec.threadId)
@@ -54,16 +54,16 @@ export class CodexGoalService {
   async get(projectPath: string, threadId: string): Promise<CodexGoal | null> {
     return this.codexService.withAppServerRequest(projectPath, async (request) => {
       const result = await request('thread/goal/get', { threadId })
-      return mapGoal(result.goal)
+      return mapCodexGoal(result.goal)
     })
   }
 
-  async set(projectPath: string, threadId: string, objective: string): Promise<CodexGoal | null> {
+  async set(projectPath: string, threadId: string, objective: string, status?: CodexGoalStatus): Promise<CodexGoal | null> {
     const trimmed = objective.trim()
     if (!trimmed) throw new Error('Goal objective cannot be empty')
     return this.codexService.withAppServerRequest(projectPath, async (request) => {
-      const result = await request('thread/goal/set', { threadId, objective: trimmed })
-      return mapGoal(result.goal)
+      const result = await request('thread/goal/set', { threadId, objective: trimmed, ...(status ? { status } : {}) })
+      return mapCodexGoal(result.goal)
     })
   }
 

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type {
   AgentEvent,
   AskUserQuestionRequest,
+  CodexGoal,
   CodexRunRequest,
   CodexRunResult,
   CodexThreadItem,
@@ -157,6 +158,19 @@ function makeResult(overrides: Partial<CodexRunResult> = {}): CodexRunResult {
   }
 }
 
+function makeGoal(status: CodexGoal['status']): CodexGoal {
+  return {
+    threadId: 'thread-xyz',
+    objective: 'Ship the goal UX',
+    status,
+    tokenBudget: null,
+    tokensUsed: 0,
+    timeUsedSeconds: 0,
+    createdAt: 1,
+    updatedAt: 1,
+  }
+}
+
 function makeFakeService(): CodexServiceDeps & {
   capturedCallbacks: CodexRunStreamCallbacksDeps | undefined
   runMock: typeof turnMocks.runCodexTurn
@@ -266,6 +280,7 @@ describe('CodexBackend lifecycle', () => {
         permissionPreset: 'full-access',
       },
     })
+    await vi.waitFor(() => expect(service.runMock).toHaveBeenCalledOnce())
     service.resolveRun(makeResult())
     await pending
 
@@ -420,6 +435,49 @@ describe('CodexBackend send()', () => {
     expect(request.cwd).toBe('/tmp/proj')
     expect(request.messageId).toMatch(/^codex_/)
     expect(request.images).toHaveLength(1)
+  })
+
+  it('resumes a paused goal after a successful explicit turn', async () => {
+    const controller = (backend as unknown as {
+      goalController: {
+        readonly goal: CodexGoal | null
+        setStatus(threadId: string, status: CodexGoal['status']): Promise<CodexGoal | null>
+      }
+    }).goalController
+    vi.spyOn(controller, 'goal', 'get').mockReturnValue(makeGoal('paused'))
+    const setStatus = vi.spyOn(controller, 'setStatus').mockResolvedValue(makeGoal('active'))
+
+    const pending = backend.send({ content: 'continue with this prompt' })
+    service.resolveRun(makeResult({ threadId: 'thread-xyz' }))
+    await pending
+
+    expect(setStatus).toHaveBeenCalledWith('thread-xyz', 'active')
+  })
+
+  it('loads a persisted paused goal before deciding whether to resume it', async () => {
+    const controller = (backend as unknown as {
+      goalController: {
+        readonly goal: CodexGoal | null
+        get(threadId: string): Promise<CodexGoal | null>
+        setStatus(threadId: string, status: CodexGoal['status']): Promise<CodexGoal | null>
+      }
+      session: { threadId: string | null }
+    }).goalController
+    const backendSession = (backend as unknown as { session: { threadId: string | null } }).session
+    backendSession.threadId = 'thread-xyz'
+    vi.spyOn(controller, 'goal', 'get')
+      .mockReturnValueOnce(null)
+      .mockReturnValue(makeGoal('paused'))
+    const get = vi.spyOn(controller, 'get').mockResolvedValue(makeGoal('paused'))
+    const setStatus = vi.spyOn(controller, 'setStatus').mockResolvedValue(makeGoal('active'))
+
+    const pending = backend.send({ content: 'continue immediately after reload' })
+    await vi.waitFor(() => expect(service.runMock).toHaveBeenCalledOnce())
+    service.resolveRun(makeResult({ threadId: 'thread-xyz' }))
+    await pending
+
+    expect(get).toHaveBeenCalledWith('thread-xyz')
+    expect(setStatus).toHaveBeenCalledWith('thread-xyz', 'active')
   })
 
   it('honors request.assistantMessageId when provided (renderer-provided id)', async () => {
@@ -605,6 +663,23 @@ describe('CodexBackend interrupt / approval forwarding', () => {
   it('interrupt() forwards to interruptCodex with session object', async () => {
     await backend.interrupt()
     expect(service.interruptMock).toHaveBeenCalledWith(expect.objectContaining({ projectPath: '/tmp/proj' }))
+  })
+
+  it('pauses an active goal before interrupting its current turn', async () => {
+    const controller = (backend as unknown as {
+      goalController: {
+        readonly goal: CodexGoal | null
+        pause(): Promise<CodexGoal | null>
+      }
+    }).goalController
+    vi.spyOn(controller, 'goal', 'get').mockReturnValue(makeGoal('active'))
+    const pause = vi.spyOn(controller, 'pause').mockResolvedValue(makeGoal('paused'))
+
+    await backend.interrupt()
+
+    expect(pause).toHaveBeenCalledOnce()
+    expect(service.interruptMock).toHaveBeenCalledOnce()
+    expect(pause.mock.invocationCallOrder[0]).toBeLessThan(service.interruptMock.mock.invocationCallOrder[0]!)
   })
 
   it('respondToPermission forwards allow + reason to respondToCodexPermission', () => {

@@ -1,6 +1,8 @@
 import type {
   AgentEvent,
   ChatMessage,
+  CodexGoal,
+  CodexGoalStatus,
   CodexUsageInfo,
   ContextUsageInfo,
   McpServerInfo,
@@ -716,6 +718,30 @@ export class Session implements SessionContract {
       const existingProjectPath = (event as { projectPath?: string }).projectPath
       return { ...event, sessionId: this.id, projectPath: existingProjectPath ?? this.projectPath } as AgentEvent
     })
+  }
+
+  async getCodexGoal(threadId: string): Promise<CodexGoal | null> {
+    this.assertNotDisposed()
+    if (this.harnessId !== 'codex') throw new Error(`Session ${this.id} is not a Codex session`)
+    await this.ensureStarted()
+    if (!this.backend.getCodexGoal) throw new Error('Codex goal operations are unavailable')
+    return this.backend.getCodexGoal(threadId)
+  }
+
+  async setCodexGoal(threadId: string, objective: string, status?: CodexGoalStatus): Promise<CodexGoal | null> {
+    this.assertNotDisposed()
+    if (this.harnessId !== 'codex') throw new Error(`Session ${this.id} is not a Codex session`)
+    await this.ensureStarted()
+    if (!this.backend.setCodexGoal) throw new Error('Codex goal operations are unavailable')
+    return this.backend.setCodexGoal(threadId, objective, status)
+  }
+
+  async clearCodexGoal(threadId: string): Promise<boolean> {
+    this.assertNotDisposed()
+    if (this.harnessId !== 'codex') throw new Error(`Session ${this.id} is not a Codex session`)
+    await this.ensureStarted()
+    if (!this.backend.clearCodexGoal) throw new Error('Codex goal operations are unavailable')
+    return this.backend.clearCodexGoal(threadId)
   }
 
   async dispatchBackendCommand(cmd: BackendCommand): Promise<void> {

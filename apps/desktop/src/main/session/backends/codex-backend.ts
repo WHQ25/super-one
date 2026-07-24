@@ -2,6 +2,8 @@ import type {
   AgentEvent,
   AskUserQuestionRequest,
   CodexCompactRequest,
+  CodexGoal,
+  CodexGoalStatus,
   CodexPermissionPreset,
   CodexReasoningEffort,
   CodexReviewRequest,
@@ -42,6 +44,7 @@ import {
   steerCodex,
   type CodexRunStreamCallbacks,
 } from '../../codex/codex-turn'
+import { CodexGoalController } from '../../codex/codex-goal-controller'
 import type { BackendCommand, BackendStartOptions, HarnessId, SessionBackend } from '../types'
 import {
   getActiveRuntimeCount,
@@ -169,6 +172,7 @@ export class CodexBackend implements SessionBackend {
   readonly kind: HarnessId = 'codex'
 
   private readonly service: CodexServiceDeps
+  private readonly goalController: CodexGoalController
 
   private started = false
   private disposed = false
@@ -221,6 +225,58 @@ export class CodexBackend implements SessionBackend {
       throw new Error('CodexBackend: no CodexServiceDeps provided and factory not registered')
     }
     this.service = resolved
+    this.goalController = new CodexGoalController({
+      getSession: () => this.session,
+      getAuth: () => {
+        const projectPath = this.startOpts?.projectPath
+        if (!projectPath) throw new Error('CodexBackend missing startOpts')
+        return this.service.getProjectAuth(projectPath)
+      },
+      getCwd: () => this.startOpts?.cwd || this.startOpts?.projectPath || '',
+      getCurrentRun: () => this.activeRun,
+      getCallbacks: () => this.buildCallbacks(),
+      onRunStart: (messageId) => {
+        this.resetSegments(messageId)
+        this.currentMessageId = messageId
+        this.emit({
+          type: 'message_start',
+          message: {
+            id: messageId,
+            role: 'assistant',
+            status: 'streaming',
+            content: [],
+            createdAt: new Date().toISOString(),
+            providerId: 'codex',
+          },
+        })
+        this.emit({ type: 'status_change', status: 'streaming' })
+      },
+      onRunComplete: (messageId, result, startedAt) => {
+        try {
+          recordCodexFromUsage(result.usage, this.session?.model, new Date())
+        } catch (err) {
+          log.warn('[usage-stats] failed to record Codex usage: %s', err instanceof Error ? err.message : String(err))
+        }
+        this.finalizeMessage(messageId, {
+          finalResponseFallback: result.finalResponse,
+          threadId: result.threadId,
+          turnId: result.turnId,
+          usage: result.usage,
+          model: this.session?.model,
+          startedAt,
+        })
+      },
+      onRunError: (messageId, error) => {
+        const isInterrupt = /interrupt|abort/i.test(error.message)
+        this.emit(isInterrupt
+          ? { type: 'message_interrupted', messageId }
+          : { type: 'message_error', messageId, error: error.message })
+      },
+      onIdle: () => {
+        this.emit({ type: 'status_change', status: 'idle' })
+        this.currentMessageId = null
+      },
+    })
   }
 
   async start(opts: BackendStartOptions): Promise<void> {
@@ -458,7 +514,7 @@ export class CodexBackend implements SessionBackend {
   private releaseIdleConnectionToProjectPool(): boolean {
     const session = this.session
     const startOpts = this.startOpts
-    if (!session || !startOpts || session.runningController) return false
+    if (!session || !startOpts || session.runningController || this.goalController.active) return false
     const handle = session.connectionHandle
     const auth = session.connectionAuth
     if (!handle || !auth || !this.service.releaseAppServerConnection) return false
@@ -530,6 +586,16 @@ export class CodexBackend implements SessionBackend {
 
   async send(request: SendMessageRequest): Promise<void> {
     this.assertStarted()
+    const sessionThreadId = this.session?.threadId
+    if (!this.goalController.goal && sessionThreadId) {
+      try {
+        await this.goalController.get(sessionThreadId)
+      } catch (err) {
+        log.warn('[CodexBackend] failed to refresh goal before explicit turn: %s', err instanceof Error ? err.message : String(err))
+      }
+    }
+    if (this.goalController.active) throw new Error('Codex goal is active')
+    const resumePausedGoal = this.goalController.goal?.status === 'paused'
     this._lastActiveAt = Date.now()
     const startOpts = this.startOpts
     if (!startOpts) throw new Error('CodexBackend missing startOpts')
@@ -566,28 +632,7 @@ export class CodexBackend implements SessionBackend {
       messageId: string,
       opts: { finalResponseFallback?: string; threadId: string | null; turnId?: string; usage: CodexUsageInfo | null },
     ): void => {
-      if (this.finalizedSegments.has(messageId)) return
-      this.finalizedSegments.add(messageId)
-      const seg = this.segments.get(messageId)
-      const items = seg
-        ? seg.order.map((id) => seg.map.get(id)).filter((i): i is CodexThreadItem => Boolean(i))
-        : []
-      const finalText = deriveFinalResponse(items).trim() || opts.finalResponseFallback?.trim() || ''
-      this.emit({
-        type: 'message_complete',
-        messageId,
-        metadata: {
-          codex: {
-            finalResponse: finalText,
-            durationMs: Date.now() - runStart,
-            items,
-            threadId: opts.threadId,
-            ...(opts.turnId ? { turnId: opts.turnId } : {}),
-            usage: opts.usage,
-            model: resolvedModel,
-          },
-        } as Record<string, unknown>,
-      })
+      this.finalizeMessage(messageId, { ...opts, model: resolvedModel, startedAt: runStart })
     }
     this.swapRunAssistantId = (nextId: string) => {
       finalizeSegment(runningAssistantId, {
@@ -674,6 +719,13 @@ export class CodexBackend implements SessionBackend {
           turnId: result.turnId,
           usage: result.usage,
         })
+        if (resumePausedGoal && result.threadId && this.goalController.goal?.status === 'paused') {
+          try {
+            await this.goalController.setStatus(result.threadId, 'active')
+          } catch (err) {
+            log.warn('[CodexBackend] failed to resume paused goal: %s', err instanceof Error ? err.message : String(err))
+          }
+        }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         const isInterrupt = /interrupt|abort/i.test(message)
@@ -697,19 +749,21 @@ export class CodexBackend implements SessionBackend {
   async interrupt(): Promise<void> {
     if (!this.started) return
     this._lastActiveAt = Date.now()
-    const session = this.session
-    if (!session) return
-    try {
-      interruptCodex(session)
-    } catch (err) {
-      log.warn('[CodexBackend] interrupt threw: %s', err instanceof Error ? err.message : String(err))
+    if (this.goalController.goal?.status === 'active' || this.goalController.active) {
+      try {
+        await this.goalController.pause()
+      } catch (err) {
+        log.warn('[CodexBackend] failed to pause goal before interrupt: %s', err instanceof Error ? err.message : String(err))
+      }
     }
+    this.interruptSession()
   }
 
   async close(): Promise<void> {
     if (this.disposed) return
     this.stopIdleTimer()
     this._lastActiveAt = null
+    this.goalController.stop()
     const session = this.session
     try {
       if (session && !this.releaseIdleConnectionToProjectPool()) resetCodexSession(session)
@@ -724,6 +778,7 @@ export class CodexBackend implements SessionBackend {
       } catch { /* ignore */ }
     }
     if (this.activeRun) { try { await this.activeRun } catch { /* ignore */ } }
+    await this.goalController.wait()
     if (this.authChangedUnsub) {
       try { this.authChangedUnsub() } catch { /* ignore */ }
       this.authChangedUnsub = null
@@ -794,7 +849,7 @@ export class CodexBackend implements SessionBackend {
           newUserMessageId: cmd.newUserMessageId ?? null,
           inputLength: cmd.input.length,
         }, cmd.newAssistantMessageId ?? this.currentMessageId ?? '')
-        if (cmd.newAssistantMessageId) {
+        if (cmd.newAssistantMessageId && !this.goalController.active) {
           this.emit({
             type: 'message_start',
             message: {
@@ -819,6 +874,29 @@ export class CodexBackend implements SessionBackend {
 
   async getContextUsage(): Promise<ContextUsageInfo | null> {
     return null
+  }
+
+  hasActiveBackgroundTasks(): boolean {
+    return this.goalController.active
+  }
+
+  async getCodexGoal(threadId: string): Promise<CodexGoal | null> {
+    this.assertStarted()
+    return this.goalController.get(threadId)
+  }
+
+  async setCodexGoal(threadId: string, objective: string, status?: CodexGoalStatus): Promise<CodexGoal | null> {
+    this.assertStarted()
+    const goal = await this.goalController.set(threadId, objective, status)
+    if (status === 'paused') this.interruptSession()
+    return goal
+  }
+
+  async clearCodexGoal(threadId: string): Promise<boolean> {
+    this.assertStarted()
+    const cleared = await this.goalController.clear(threadId)
+    if (cleared) this.interruptSession()
+    return cleared
   }
 
   async getMcpServerStatus(): Promise<McpServerInfo[]> {
@@ -913,6 +991,16 @@ export class CodexBackend implements SessionBackend {
     }
   }
 
+  private interruptSession(): void {
+    const session = this.session
+    if (!session) return
+    try {
+      interruptCodex(session)
+    } catch (err) {
+      log.warn('[CodexBackend] interrupt threw: %s', err instanceof Error ? err.message : String(err))
+    }
+  }
+
   private fireProviderSessionId(threadId: string): void {
     if (this.providerSessionId === threadId) return
     this.providerSessionId = threadId
@@ -986,6 +1074,41 @@ export class CodexBackend implements SessionBackend {
     this.finalizedSegments.clear()
     this.lastUsageSnapshot = null
     this.ensureSegment(firstId)
+  }
+
+  private finalizeMessage(
+    messageId: string,
+    opts: {
+      finalResponseFallback?: string
+      threadId: string | null
+      turnId?: string
+      usage: CodexUsageInfo | null
+      model?: string
+      startedAt: number
+    },
+  ): void {
+    if (this.finalizedSegments.has(messageId)) return
+    this.finalizedSegments.add(messageId)
+    const seg = this.segments.get(messageId)
+    const items = seg
+      ? seg.order.map((id) => seg.map.get(id)).filter((item): item is CodexThreadItem => Boolean(item))
+      : []
+    const finalText = deriveFinalResponse(items).trim() || opts.finalResponseFallback?.trim() || ''
+    this.emit({
+      type: 'message_complete',
+      messageId,
+      metadata: {
+        codex: {
+          finalResponse: finalText,
+          durationMs: Date.now() - opts.startedAt,
+          items,
+          threadId: opts.threadId,
+          ...(opts.turnId ? { turnId: opts.turnId } : {}),
+          usage: opts.usage,
+          model: opts.model,
+        },
+      } as Record<string, unknown>,
+    })
   }
 
   private ensureSegment(messageId: string): { order: string[]; map: Map<string, CodexThreadItem> } {

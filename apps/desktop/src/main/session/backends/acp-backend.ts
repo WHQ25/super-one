@@ -10,7 +10,12 @@ import type {
 } from '@superone/shared/agent-types'
 import type { RequestPermissionRequest, RequestPermissionResponse } from '@agentclientprotocol/sdk'
 import log from '../../logger'
-import { extractModeConfig, extractModelConfig } from '../../acp/acp-config'
+import {
+  extractModeConfig,
+  extractModelConfig,
+  type AcpModeConfig,
+  type AcpModelConfig,
+} from '../../acp/acp-config'
 import { upsertAcpAgentConfig, upsertAcpAgentModels, upsertAcpAgentSlashCommands } from '../../acp/acp-model-cache'
 import { createAcpRuntime, type AcpRuntime, type AcpRuntimeOptions } from '../../acp/acp-runtime'
 import { mapPermissionDecision, mapPermissionRequest, type PendingPermissionOptions } from '../../acp/acp-permission-map'
@@ -82,6 +87,10 @@ export class AcpBackend implements SessionBackend {
 
   private modelConfigId: string | null = null
   private modeConfigId: string | null = null
+  /** Last known selected model (needed for Grok set_model / effort without configId). */
+  private selectedModelId: string | null = null
+  /** Last known mode/effort options when configId is null (Grok reasoning effort). */
+  private lastModeConfig: AcpModeConfig | null = null
   private ensureRuntimePromise: Promise<AcpRuntime> | null = null
   private runtimeEpoch = 0
   private runtimeAgentKey: string | null = null
@@ -206,6 +215,7 @@ export class AcpBackend implements SessionBackend {
     if (epoch !== this.runtimeEpoch) return
     if (agentId !== (this.config.agentId ?? null)) return
     this.modelConfigId = extracted.configId
+    this.selectedModelId = extracted.selectedModelId
     this.emit({
       type: 'acp_models',
       models: extracted.models,
@@ -216,15 +226,15 @@ export class AcpBackend implements SessionBackend {
     })
   }
 
-  private emitModesFromConfigOptions(
-    configOptions: import('@agentclientprotocol/sdk').SessionConfigOption[] | null | undefined,
+  private emitModes(
+    extracted: AcpModeConfig | null,
     agentId: string | null,
     epoch: number,
   ): void {
     if (epoch !== this.runtimeEpoch) return
-    const extracted = extractModeConfig(configOptions)
     if (!extracted || extracted.modes.length === 0) {
       this.modeConfigId = null
+      this.lastModeConfig = null
       this.emit({
         type: 'acp_modes',
         modes: [],
@@ -236,6 +246,7 @@ export class AcpBackend implements SessionBackend {
       return
     }
     this.modeConfigId = extracted.configId
+    this.lastModeConfig = extracted
     this.emit({
       type: 'acp_modes',
       modes: extracted.modes,
@@ -244,6 +255,18 @@ export class AcpBackend implements SessionBackend {
       status: 'ready',
       agentId,
     })
+  }
+
+  private emitModesFromConfigOptions(
+    configOptions: import('@agentclientprotocol/sdk').SessionConfigOption[] | null | undefined,
+    agentId: string | null,
+    epoch: number,
+    modeFallback?: AcpModeConfig | null,
+  ): void {
+    if (epoch !== this.runtimeEpoch) return
+    const extracted = extractModeConfig(configOptions)
+      ?? (modeFallback && modeFallback.modes.length > 0 ? modeFallback : null)
+    this.emitModes(extracted, agentId, epoch)
   }
 
   private emitConfigFromOptions(
@@ -281,12 +304,21 @@ export class AcpBackend implements SessionBackend {
     const options = runtime.getConfigOptions()
     const modelFallback = runtime.getModelConfig() ?? extractModelConfig(options)
     this.emitConfigFromOptions(options, agentId, epoch, modelFallback)
+    // Grok effort options live outside standard configOptions.
+    if (!this.modeConfigId) {
+      const modeFallback = runtime.getModeConfig()
+      if (modeFallback?.modes.length) {
+        this.emitModes(modeFallback, agentId, epoch)
+      }
+    }
   }
 
   private emitModelsError(error: string, agentId: string | null, epoch: number): void {
     if (epoch !== this.runtimeEpoch) return
     this.modelConfigId = null
     this.modeConfigId = null
+    this.selectedModelId = null
+    this.lastModeConfig = null
     this.emit({
       type: 'acp_models',
       models: [],
@@ -357,6 +389,8 @@ export class AcpBackend implements SessionBackend {
         launch,
         superoneSessionId: this.startOpts?.sessionId,
         permissionMode: this.startOpts?.permissionMode,
+        // Resume Grok/ACP agent memory when we have a stored provider session id.
+        resumeSessionId: this.startOpts?.providerSessionId ?? undefined,
         permission: {
           request: (params) => this.handlePermissionRequest(params),
         },
@@ -370,6 +404,9 @@ export class AcpBackend implements SessionBackend {
           // Early model discovery (initialize) before session/new configOptions land.
           this.emitModels(cfg, agentId, epoch)
           this.persistConfigCache(null, cfg, agentId)
+        },
+        onModeConfig: (cfg) => {
+          this.emitModes(cfg, agentId, epoch)
         },
         onSessionEvent: (event) => {
           if (epoch !== this.runtimeEpoch) return
@@ -413,8 +450,13 @@ export class AcpBackend implements SessionBackend {
 
   private routeSessionEvent(event: AgentEvent, agentId: string | null, epoch: number): void {
     if (epoch !== this.runtimeEpoch) return
-    if (event.type === 'acp_models' && event.configId) this.modelConfigId = event.configId
-    if (event.type === 'acp_modes' && event.configId) this.modeConfigId = event.configId
+    if (event.type === 'acp_models') {
+      this.modelConfigId = event.configId ?? null
+      if (event.selectedModelId) this.selectedModelId = event.selectedModelId
+    }
+    if (event.type === 'acp_modes') {
+      this.modeConfigId = event.configId ?? null
+    }
     if (event.type === 'acp_commands') {
       if (agentId) {
         try {
@@ -558,12 +600,9 @@ export class AcpBackend implements SessionBackend {
 
     try {
       const runtime = await this.ensureRuntime()
-      if (request.model && this.modelConfigId) {
+      if (request.model) {
         try {
-          const epoch = this.runtimeEpoch
-          const agentId = this.config.agentId ?? null
-          const next = await runtime.setConfigOption(this.modelConfigId, request.model)
-          this.emitConfigFromOptions(next, agentId, epoch)
+          await this.applyModel(runtime, request.model)
         } catch (err) {
           log.debug('[AcpBackend] set model before prompt failed:', err)
         }
@@ -616,6 +655,8 @@ export class AcpBackend implements SessionBackend {
     this.ensureRuntimePromise = null
     this.modelConfigId = null
     this.modeConfigId = null
+    this.selectedModelId = null
+    this.lastModeConfig = null
     this.runtimeAgentKey = null
     this.runtimeCwd = null
     const runtime = this.runtime
@@ -635,13 +676,16 @@ export class AcpBackend implements SessionBackend {
     this.permissionModeAppliedListeners.clear()
   }
 
-  async setModel(model: string): Promise<void> {
-    if (!this.runtime || !this.modelConfigId) return
+  /**
+   * Apply model selection: standard set_config_option when configId is known,
+   * otherwise ACP session/set_model (Grok and similar).
+   */
+  private async applyModel(runtime: AcpRuntime, model: string): Promise<void> {
     const epoch = this.runtimeEpoch
     const agentId = this.config.agentId ?? null
-    try {
-      const next = await this.runtime.setConfigOption(this.modelConfigId, model)
-      const extracted = extractModelConfig(next) ?? this.runtime.getModelConfig()
+    if (this.modelConfigId) {
+      const next = await runtime.setConfigOption(this.modelConfigId, model)
+      const extracted = extractModelConfig(next) ?? runtime.getModelConfig()
       const fallback = extracted
         ? {
             models: extracted.models,
@@ -650,29 +694,83 @@ export class AcpBackend implements SessionBackend {
           }
         : null
       this.emitConfigFromOptions(next, agentId, epoch, fallback)
+      return
+    }
+    await runtime.setModel(model)
+    const cfg: AcpModelConfig = runtime.getModelConfig() ?? {
+      configId: null,
+      models: [{ id: model, name: model, description: '' }],
+      selectedModelId: model,
+    }
+    this.emitModels(
+      {
+        models: cfg.models,
+        selectedModelId: model,
+        configId: cfg.configId,
+      },
+      agentId,
+      epoch,
+    )
+    this.persistConfigCache(null, { ...cfg, selectedModelId: model }, agentId)
+  }
+
+  async setModel(model: string): Promise<void> {
+    if (!this.runtime) return
+    try {
+      await this.applyModel(this.runtime, model)
     } catch (err) {
       log.warn('[AcpBackend] setModel failed:', err)
     }
   }
 
   async setSessionMode(modeId: string): Promise<void> {
-    if (!this.runtime || !this.modeConfigId) return
+    if (!this.runtime) return
     const epoch = this.runtimeEpoch
     const agentId = this.config.agentId ?? null
     try {
-      const next = await this.runtime.setConfigOption(this.modeConfigId, modeId)
-      this.emitConfigFromOptions(next, agentId, epoch)
-      const extracted = extractModeConfig(next)
-      if (extracted && extracted.selectedModeId !== modeId) {
-        this.modeConfigId = extracted.configId
-        this.emit({
-          type: 'acp_modes',
-          modes: extracted.modes,
-          selectedModeId: modeId,
-          configId: extracted.configId,
-          status: 'ready',
+      if (this.modeConfigId) {
+        const next = await this.runtime.setConfigOption(this.modeConfigId, modeId)
+        this.emitConfigFromOptions(next, agentId, epoch)
+        const extracted = extractModeConfig(next)
+        if (extracted && extracted.selectedModeId !== modeId) {
+          this.emitModes(
+            { ...extracted, selectedModeId: modeId },
+            agentId,
+            epoch,
+          )
+        }
+        return
+      }
+
+      // Grok: category=mode options are reasoning effort — switch via set_model + _meta.
+      const modelId =
+        this.selectedModelId
+        ?? this.runtime.getModelConfig()?.selectedModelId
+        ?? null
+      if (!modelId) {
+        log.warn('[AcpBackend] setSessionMode: no model id for effort switch mode=%s', modeId)
+        return
+      }
+      await this.runtime.setModel(modelId, { reasoningEffort: modeId })
+      const modes =
+        this.runtime.getModeConfig()
+        ?? this.lastModeConfig
+      if (modes && modes.modes.length > 0) {
+        this.emitModes(
+          { ...modes, selectedModeId: modeId, configId: null },
           agentId,
-        })
+          epoch,
+        )
+      } else {
+        this.emitModes(
+          {
+            configId: null,
+            modes: [{ id: modeId, name: modeId, description: '' }],
+            selectedModeId: modeId,
+          },
+          agentId,
+          epoch,
+        )
       }
     } catch (err) {
       log.warn('[AcpBackend] setSessionMode failed:', err)

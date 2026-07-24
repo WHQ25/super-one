@@ -12,13 +12,20 @@ import {
 import log from '../logger'
 import { trace } from '../agent/event-trace'
 import {
+  ACP_SESSION_SET_MODEL,
+  buildSetModelParams,
+  coalesceModeConfig,
   coalesceModelConfig,
+  extractModeConfig,
+  extractModelConfig,
+  extractModesFromNewSessionResult,
   extractModelsFromInitializeResult,
   extractModelsFromNewSessionResult,
-  extractModelConfig,
   readAgentCapabilities,
   type AcpAgentCapabilities,
+  type AcpModeConfig,
   type AcpModelConfig,
+  type AcpSetModelOptions,
 } from './acp-config'
 import { spawnAcpProcess, type AcpProcessHandle } from './acp-process'
 import {
@@ -30,7 +37,7 @@ import {
   trackOpenTools,
 } from './acp-event-map'
 import { getUnsavedBuffer } from './acp-unsaved-buffer'
-import { buildSuperoneAcpMcpServer } from './acp-mcp'
+import { buildAcpSessionMcpServers } from './acp-mcp'
 import { ACP_SYSTEM_PROMPT_BLOCK } from '../agent/superone-system-prompt'
 import { resolveAcpLaunch, type ResolvedAcpLaunch } from './agent-catalog'
 import { handleReadTextFile, handleWriteTextFile } from './acp-fs'
@@ -78,7 +85,14 @@ export interface AcpRuntime {
   readonly launch: ResolvedAcpLaunch
   getConfigOptions(): SessionConfigOption[]
   getModelConfig(): AcpModelConfig | null
+  /** Session modes (OpenCode-style) or Grok reasoning-effort options. */
+  getModeConfig(): AcpModeConfig | null
   setConfigOption(configId: string, value: string): Promise<SessionConfigOption[]>
+  /**
+   * Switch model via ACP session/set_model (Grok and agents without configOptions model id).
+   * Optional reasoningEffort is sent as `_meta.reasoningEffort`.
+   */
+  setModel(modelId: string, opts?: AcpSetModelOptions): Promise<void>
   /**
    * Map SuperOne permission mode onto Grok ACP (session meta / yolo notification).
    * No-op for agents that ignore x.ai permission extensions.
@@ -103,6 +117,8 @@ export interface AcpRuntimeOptions {
   streamFactory?: (launch: ResolvedAcpLaunch) => Promise<{ stream: Stream; dispose: () => void }>
   /** Called as soon as a model catalog is known (e.g. after initialize, before session/new). */
   onModelConfig?: (config: AcpModelConfig) => void
+  /** Called when mode/effort options are known (session/new). */
+  onModeConfig?: (config: AcpModeConfig) => void
   /**
    * Session-level updates outside an active prompt (available_commands, config, …).
    * Prompt-turn events still go to the prompt onEvent callback.
@@ -114,6 +130,42 @@ export interface AcpRuntimeOptions {
   superoneSessionId?: string
   /** SuperOne session permission mode — mapped to Grok yolo/auto on session/new. */
   permissionMode?: PermissionMode
+  /**
+   * Provider (agent) session id to resume via session/load when the agent
+   * advertises loadSession. Falls back to session/new on failure.
+   */
+  resumeSessionId?: string
+}
+
+/**
+ * ClientContext.attachSession is private in the SDK typings but available at
+ * runtime — required so we can route session/update *during* session/load.
+ */
+type AcpAgentWithAttach = {
+  attachSession(response: {
+    sessionId: string
+    configOptions?: SessionConfigOption[] | null
+    modes?: unknown
+    _meta?: Record<string, unknown> | null
+    [key: string]: unknown
+  }): ActiveSession
+}
+
+/** Discard historical session/update events replayed by session/load (UI uses SuperOne DB). */
+async function drainLoadReplay(session: ActiveSession, maxQuietMs = 40, maxEvents = 20_000): Promise<number> {
+  let drained = 0
+  for (;;) {
+    if (drained >= maxEvents) break
+    const msg = await Promise.race([
+      session.nextUpdate().then((m) => ({ kind: 'msg' as const, m })),
+      new Promise<{ kind: 'quiet' }>((resolve) => {
+        setTimeout(() => resolve({ kind: 'quiet' }), maxQuietMs)
+      }),
+    ])
+    if (msg.kind === 'quiet') break
+    drained += 1
+  }
+  return drained
 }
 
 function formatProcessExit(
@@ -272,34 +324,103 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       )
     }
 
-    const superoneMcpServer = opts.superoneSessionId
-      ? buildSuperoneAcpMcpServer(opts.superoneSessionId)
-      : null
-    mcpAttached = !!superoneMcpServer
+    const mcpServers = buildAcpSessionMcpServers({
+      cwd: launch.cwd,
+      superoneSessionId: opts.superoneSessionId,
+      agentCapabilities,
+    })
+    mcpAttached = mcpServers.some((s) => s.name === 'superone')
     const extraRoots = fsRoots.slice(1)
     const supportsExtraRoots = agentCapabilities?.sessionCapabilities.additionalDirectories ?? false
     const permissionMeta = grokSessionPermissionMeta(opts.permissionMode)
-    let builder = connection.agent.buildSession({
+    const sessionRequestBase = {
       cwd: launch.cwd,
-      mcpServers: superoneMcpServer ? [superoneMcpServer] : [],
+      mcpServers,
+      ...(extraRoots.length > 0 && supportsExtraRoots
+        ? { additionalDirectories: extraRoots }
+        : {}),
       ...(Object.keys(permissionMeta).length > 0
         ? { _meta: permissionMeta }
         : {}),
-    })
-    if (extraRoots.length > 0 && supportsExtraRoots) {
-      builder = builder.withAdditionalDirectories(extraRoots)
     }
-    session = await builder.start()
+
+    let sessionVia: 'new' | 'load' = 'new'
+    const resumeId = opts.resumeSessionId?.trim() || ''
+    if (resumeId && agentCapabilities?.loadSession) {
+      try {
+        // Attach routing *before* load so replayed session/update is not dropped.
+        const sessionResponse: {
+          sessionId: string
+          configOptions?: SessionConfigOption[] | null
+          modes?: unknown
+          _meta?: Record<string, unknown> | null
+          [key: string]: unknown
+        } = { sessionId: resumeId }
+        const agentWithAttach = connection.agent as unknown as AcpAgentWithAttach
+        const loaded = agentWithAttach.attachSession(sessionResponse)
+        const loadResult = await connection.agent.request(
+          methods.agent.session.load,
+          {
+            sessionId: resumeId,
+            ...sessionRequestBase,
+          },
+        ) as {
+          configOptions?: SessionConfigOption[] | null
+          modes?: unknown
+          _meta?: Record<string, unknown> | null
+        } | null | undefined
+        if (loadResult && typeof loadResult === 'object') {
+          if (loadResult.configOptions !== undefined) sessionResponse.configOptions = loadResult.configOptions
+          if (loadResult.modes !== undefined) sessionResponse.modes = loadResult.modes
+          if (loadResult._meta !== undefined) sessionResponse._meta = loadResult._meta
+        }
+        const replayed = await drainLoadReplay(loaded)
+        session = loaded
+        sessionVia = 'load'
+        log.info(
+          '[acp-runtime] session/load ok id=%s agent=%s replayed=%d',
+          resumeId,
+          launch.agentId,
+          replayed,
+        )
+      } catch (err) {
+        log.warn(
+          '[acp-runtime] session/load failed id=%s agent=%s — falling back to session/new:',
+          resumeId,
+          launch.agentId,
+          err,
+        )
+        try { session?.dispose() } catch { /* ignore */ }
+        session = null
+      }
+    }
+
+    if (!session) {
+      let builder = connection.agent.buildSession(sessionRequestBase)
+      // buildSession already has cwd/mcpServers; re-apply additional dirs if helper expects chain API
+      if (extraRoots.length > 0 && supportsExtraRoots) {
+        builder = builder.withAdditionalDirectories(extraRoots)
+      }
+      session = await builder.start()
+      sessionVia = 'new'
+    }
+    if (!session) throw new Error('ACP session not established')
+
     sessionModels = extractModelsFromNewSessionResult(session.newSessionResponse)
     const resolvedModels = coalesceModelConfig(sessionModels, initModels)
     if (resolvedModels) opts.onModelConfig?.(resolvedModels)
+    const sessionModes = extractModesFromNewSessionResult(session.newSessionResponse)
+    if (sessionModes) opts.onModeConfig?.(sessionModes)
     log.info(
-      '[acp-runtime] session ready id=%s agent=%s configOptions=%d models=%d mcp=%s roots=%d',
+      '[acp-runtime] session ready via=%s id=%s agent=%s configOptions=%d models=%d modes=%d mcp=%d superone=%s roots=%d',
+      sessionVia,
       session.sessionId,
       launch.agentId,
       session.newSessionResponse.configOptions?.length ?? 0,
       resolvedModels?.models.length ?? 0,
-      mcpAttached ? 'superone' : 'none',
+      sessionModes?.modes.length ?? 0,
+      mcpServers.length,
+      mcpAttached ? 'yes' : 'no',
       supportsExtraRoots ? extraRoots.length : 0,
     )
   } catch (err) {
@@ -318,6 +439,10 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
     sessionModels,
     initModels,
     extractModelConfig(configOptions),
+  )
+  let modeConfig: AcpModeConfig | null = coalesceModeConfig(
+    extractModesFromNewSessionResult(activeSession.newSessionResponse),
+    extractModeConfig(configOptions),
   )
   let closed = false
   void activeConnection.closed.then(() => {
@@ -427,6 +552,9 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
     getModelConfig() {
       return modelConfig
     },
+    getModeConfig() {
+      return modeConfig
+    },
     async setConfigOption(configId, value) {
       const result = await activeConnection.agent.request(methods.agent.session.setConfigOption, {
         sessionId: activeSession.sessionId,
@@ -436,8 +564,42 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       if (Array.isArray(result.configOptions)) {
         configOptions = result.configOptions
         modelConfig = coalesceModelConfig(extractModelConfig(configOptions), modelConfig)
+        modeConfig = coalesceModeConfig(extractModeConfig(configOptions), modeConfig)
       }
       return configOptions
+    },
+    async setModel(modelId, setOpts) {
+      const params = buildSetModelParams(activeSession.sessionId, modelId, setOpts)
+      await activeConnection.agent.request(ACP_SESSION_SET_MODEL, params)
+      if (modelConfig && modelConfig.models.some((m) => m.id === modelId)) {
+        modelConfig = {
+          ...modelConfig,
+          selectedModelId: modelId,
+        }
+      } else if (modelConfig) {
+        // Agent accepted a model not in our cached list — still track selection.
+        modelConfig = { ...modelConfig, selectedModelId: modelId }
+      } else {
+        modelConfig = {
+          configId: null,
+          models: [{ id: modelId, name: modelId, description: '' }],
+          selectedModelId: modelId,
+        }
+      }
+      if (setOpts?.reasoningEffort && modeConfig) {
+        const effort = setOpts.reasoningEffort.trim()
+        if (effort && modeConfig.modes.some((m) => m.id === effort)) {
+          modeConfig = { ...modeConfig, selectedModeId: effort }
+        } else if (effort) {
+          modeConfig = { ...modeConfig, selectedModeId: effort }
+        }
+      }
+      log.info(
+        '[acp-runtime] session/set_model agent=%s model=%s effort=%s',
+        launch.agentId,
+        modelId,
+        setOpts?.reasoningEffort ?? '',
+      )
     },
     async setPermissionMode(mode) {
       // Grok mid-session permission baseline: x.ai/yolo_mode_changed (not set_config_option).

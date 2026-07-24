@@ -19,16 +19,28 @@ vi.mock('../agent/resolve-cli', () => ({
   getNodeRuntime: () => ({ executable: '/fake/node', env: { NODE_FAKE: '1' } }),
 }))
 
+// Isolate session/new MCP list from the developer's real ~/.claude.json MCP configs.
+vi.mock('../mcp-config-service', () => ({
+  listMcpConfigs: vi.fn(() => []),
+}))
+
 interface CapturedRequests {
   initialize?: Record<string, unknown>
   newSession: Record<string, unknown> | null
   prompts: Array<Array<{ type: string; text?: string }>>
   notifications: Array<{ method: string; params: unknown }>
+  setModelRequests?: Array<Record<string, unknown>>
+}
+
+interface CapturedLoad {
+  loads: Array<Record<string, unknown>>
+  news: number
 }
 
 function makeEchoAgentStream(
   captured?: CapturedRequests,
   agentCapabilities: Record<string, unknown> = {},
+  loadCapture?: CapturedLoad,
 ): { stream: Stream; dispose: () => void } {
   if (captured && !captured.notifications) captured.notifications = []
   const agentApp = agent({ name: 'test-agent' })
@@ -41,7 +53,31 @@ function makeEchoAgentStream(
     })
     .onRequest(methods.agent.session.new, async (ctx) => {
       if (captured) captured.newSession = ctx.params as Record<string, unknown>
+      if (loadCapture) loadCapture.news += 1
       return { sessionId: 'test-session-1' }
+    })
+    .onRequest(methods.agent.session.load, async (ctx) => {
+      if (loadCapture) loadCapture.loads.push(ctx.params as Record<string, unknown>)
+      // Replay a historical chunk then return (client drains before normal pump).
+      await ctx.client.notify(methods.client.session.update, {
+        sessionId: ctx.params.sessionId,
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: 'replayed-history' },
+        },
+      })
+      return {
+        configOptions: [
+          {
+            id: 'model',
+            name: 'Model',
+            category: 'model',
+            type: 'select',
+            currentValue: 'm1',
+            options: [{ value: 'm1', name: 'Model 1' }],
+          },
+        ],
+      }
     })
     .onRequest(methods.agent.session.prompt, async (ctx) => {
       if (captured) {
@@ -65,6 +101,17 @@ function makeEchoAgentStream(
         if (captured) {
           captured.notifications.push({ method: 'x.ai/yolo_mode_changed', params: ctx.params })
         }
+      },
+    )
+    .onRequest(
+      'session/set_model',
+      (raw: unknown) => raw,
+      async (ctx) => {
+        if (captured) {
+          captured.setModelRequests = captured.setModelRequests ?? []
+          captured.setModelRequests.push(ctx.params as Record<string, unknown>)
+        }
+        return {}
       },
     )
 
@@ -153,6 +200,34 @@ describe('createAcpRuntime (in-process agent)', () => {
     const meta = captured.newSession?._meta as Record<string, unknown> | null | undefined
     expect(meta?.yoloMode).toBeUndefined()
     expect(meta?.autoMode).toBeUndefined()
+  })
+
+  it('setModel sends session/set_model with optional reasoningEffort meta', async () => {
+    const captured: CapturedRequests = { newSession: null, prompts: [], notifications: [] }
+    const runtime = await createAcpRuntime({
+      launch: {
+        agentId: 'grok-build',
+        command: 'unused',
+        defaultCwd: '/tmp/proj',
+      },
+      permission: {
+        request: async () => ({ outcome: { outcome: 'cancelled' } }),
+      },
+      streamFactory: async () => makeEchoAgentStream(captured),
+    })
+    await runtime.setModel('grok-4.5')
+    await runtime.setModel('grok-4.5', { reasoningEffort: 'high' })
+    await new Promise((r) => setTimeout(r, 20))
+    expect(captured.setModelRequests).toEqual([
+      { sessionId: 'test-session-1', modelId: 'grok-4.5' },
+      {
+        sessionId: 'test-session-1',
+        modelId: 'grok-4.5',
+        _meta: { reasoningEffort: 'high' },
+      },
+    ])
+    expect(runtime.getModelConfig()?.selectedModelId).toBe('grok-4.5')
+    await runtime.close()
   })
 
   it('setPermissionMode notifies x.ai/yolo_mode_changed with always-approve params', async () => {
@@ -275,6 +350,118 @@ describe('ACP host integration (MCP + system prompt)', () => {
     const captured: CapturedRequests = { newSession: null, prompts: [] }
     await run({ captured })
     expect(captured.newSession?.mcpServers).toEqual([])
+  })
+
+  it('loads an existing session when loadSession is advertised and resumeSessionId is set', async () => {
+    const loadCapture: CapturedLoad = { loads: [], news: 0 }
+    const captured: CapturedRequests = { newSession: null, prompts: [] }
+    const runtime = await createAcpRuntime({
+      launch: { agentId: 'grok-build', command: 'unused', defaultCwd: '/tmp/proj' },
+      permission: { request: async () => ({ outcome: { outcome: 'cancelled' } }) },
+      superoneSessionId: 'sid-load',
+      resumeSessionId: 'prior-grok-session',
+      streamFactory: async () => makeEchoAgentStream(
+        captured,
+        { loadSession: true },
+        loadCapture,
+      ),
+    })
+    expect(runtime.sessionId).toBe('prior-grok-session')
+    expect(loadCapture.loads).toHaveLength(1)
+    expect(loadCapture.loads[0]).toMatchObject({
+      sessionId: 'prior-grok-session',
+      cwd: '/tmp/proj',
+    })
+    expect(loadCapture.news).toBe(0)
+    // Model catalog from load response configOptions
+    expect(runtime.getModelConfig()?.selectedModelId).toBe('m1')
+    await runtime.close()
+  })
+
+  it('falls back to session/new when session/load fails', async () => {
+    const loadCapture: CapturedLoad = { loads: [], news: 0 }
+    const captured: CapturedRequests = { newSession: null, prompts: [] }
+    // Agent advertises loadSession but rejects the load request.
+    const agentApp = agent({ name: 'fail-load' })
+      .onRequest(methods.agent.initialize, async () => ({
+        protocolVersion: PROTOCOL_VERSION,
+        agentCapabilities: { loadSession: true },
+      }))
+      .onRequest(methods.agent.session.load, async () => {
+        loadCapture.loads.push({})
+        throw new Error('unknown session')
+      })
+      .onRequest(methods.agent.session.new, async (ctx) => {
+        loadCapture.news += 1
+        captured.newSession = ctx.params as Record<string, unknown>
+        return { sessionId: 'fresh-session' }
+      })
+      .onRequest(methods.agent.session.prompt, async () => ({ stopReason: 'end_turn' as const }))
+      .onNotification(methods.agent.session.cancel, async () => {})
+
+    const clientToAgent = new TransformStream<Uint8Array>()
+    const agentToClient = new TransformStream<Uint8Array>()
+    agentApp.connect(ndJsonStream(agentToClient.writable, clientToAgent.readable))
+    const clientStream = ndJsonStream(clientToAgent.writable, agentToClient.readable)
+
+    const runtime = await createAcpRuntime({
+      launch: { agentId: 'grok-build', command: 'unused', defaultCwd: '/tmp/proj' },
+      permission: { request: async () => ({ outcome: { outcome: 'cancelled' } }) },
+      resumeSessionId: 'missing-id',
+      streamFactory: async () => ({
+        stream: clientStream,
+        dispose: () => {
+          try { void clientToAgent.writable.close().catch(() => undefined) } catch { /* */ }
+          try { void agentToClient.writable.close().catch(() => undefined) } catch { /* */ }
+        },
+      }),
+    })
+    expect(runtime.sessionId).toBe('fresh-session')
+    expect(loadCapture.loads.length).toBe(1)
+    expect(loadCapture.news).toBe(1)
+    await runtime.close()
+  })
+
+  it('appends user MCP configs after superone when listMcpConfigs returns servers', async () => {
+    const { listMcpConfigs } = await import('../mcp-config-service')
+    vi.mocked(listMcpConfigs).mockReturnValueOnce([
+      {
+        name: 'github',
+        type: 'stdio',
+        scope: 'user',
+        command: 'gh-mcp',
+        args: [],
+        env: { TOKEN: 't' },
+      },
+      {
+        name: 'linear',
+        type: 'http',
+        scope: 'user',
+        url: 'https://mcp.linear.app',
+      },
+    ])
+
+    const captured: CapturedRequests = { newSession: null, prompts: [] }
+    await run({
+      captured,
+      superoneSessionId: 'sid-mcp',
+      agentCapabilities: {
+        mcpCapabilities: { http: true, sse: false },
+      },
+    })
+
+    const servers = captured.newSession?.mcpServers as Array<Record<string, unknown>>
+    expect(servers.map((s) => s.name)).toEqual(['superone', 'github', 'linear'])
+    expect(servers[1]).toMatchObject({
+      name: 'github',
+      command: 'gh-mcp',
+      env: [{ name: 'TOKEN', value: 't' }],
+    })
+    expect(servers[2]).toMatchObject({
+      type: 'http',
+      name: 'linear',
+      url: 'https://mcp.linear.app',
+    })
   })
 
   it('prepends the host-context block to the first prompt only', async () => {

@@ -91,6 +91,15 @@ function mockRuntime(overrides?: Partial<AcpRuntime>): AcpRuntime {
         ],
       },
     ],
+    getModeConfig: () => ({
+      configId: 'mode',
+      selectedModeId: 'ask',
+      modes: [
+        { id: 'ask', name: 'Ask', description: '' },
+        { id: 'code', name: 'Code', description: '' },
+      ],
+    }),
+    setModel: async () => {},
     prompt: async (_text, messageId, onEvent) => {
       onEvent({
         type: 'content_delta',
@@ -186,6 +195,83 @@ describe('AcpBackend', () => {
     const after = events.find((e): e is Extract<AgentEvent, { type: 'acp_modes' }> =>
       e.type === 'acp_modes' && e.selectedModeId === 'code')
     expect(after?.modes.map((m) => m.id)).toEqual(['ask', 'code'])
+    await backend.close()
+  })
+
+  it('setModel uses session/set_model when model configId is null (Grok path)', async () => {
+    const setModel = vi.fn(async () => {})
+    const setConfigOption = vi.fn(async () => [])
+    setAcpRuntimeFactory(async () => mockRuntime({
+      getModelConfig: () => ({
+        configId: null,
+        selectedModelId: 'grok-4.5',
+        models: [
+          { id: 'grok-4.5', name: 'Grok 4.5', description: '' },
+          { id: 'composer', name: 'Composer', description: '' },
+        ],
+      }),
+      getModeConfig: () => ({
+        configId: null,
+        selectedModeId: 'high',
+        modes: [
+          { id: 'low', name: 'Low', description: '' },
+          { id: 'high', name: 'High', description: '' },
+        ],
+      }),
+      getConfigOptions: () => [],
+      setModel,
+      setConfigOption,
+    }))
+    const backend = new AcpBackend()
+    const events: AgentEvent[] = []
+    backend.onEvent((e) => events.push(e))
+    await backend.start(startOpts({ agentId: 'grok-build' }))
+    await new Promise((r) => setTimeout(r, 10))
+
+    events.length = 0
+    await backend.setModel('composer')
+    expect(setModel).toHaveBeenCalledWith('composer')
+    expect(setConfigOption).not.toHaveBeenCalled()
+    const modelEvt = events.find((e): e is Extract<AgentEvent, { type: 'acp_models' }> =>
+      e.type === 'acp_models' && e.selectedModelId === 'composer')
+    expect(modelEvt?.configId).toBeNull()
+    expect(modelEvt?.models.map((m) => m.id)).toEqual(['grok-4.5', 'composer'])
+    await backend.close()
+  })
+
+  it('setSessionMode uses set_model + reasoningEffort when mode configId is null', async () => {
+    const setModel = vi.fn(async () => {})
+    setAcpRuntimeFactory(async () => mockRuntime({
+      getModelConfig: () => ({
+        configId: null,
+        selectedModelId: 'grok-4.5',
+        models: [{ id: 'grok-4.5', name: 'Grok 4.5', description: '' }],
+      }),
+      getModeConfig: () => ({
+        configId: null,
+        selectedModeId: 'medium',
+        modes: [
+          { id: 'low', name: 'Low', description: '' },
+          { id: 'medium', name: 'Medium', description: '' },
+          { id: 'high', name: 'High', description: '' },
+        ],
+      }),
+      getConfigOptions: () => [],
+      setModel,
+    }))
+    const backend = new AcpBackend()
+    const events: AgentEvent[] = []
+    backend.onEvent((e) => events.push(e))
+    await backend.start(startOpts({ agentId: 'grok-build' }))
+    await new Promise((r) => setTimeout(r, 10))
+
+    events.length = 0
+    await backend.setSessionMode('high')
+    expect(setModel).toHaveBeenCalledWith('grok-4.5', { reasoningEffort: 'high' })
+    const modeEvt = events.find((e): e is Extract<AgentEvent, { type: 'acp_modes' }> =>
+      e.type === 'acp_modes' && e.selectedModeId === 'high')
+    expect(modeEvt?.configId).toBeNull()
+    expect(modeEvt?.modes.map((m) => m.id)).toEqual(['low', 'medium', 'high'])
     await backend.close()
   })
 

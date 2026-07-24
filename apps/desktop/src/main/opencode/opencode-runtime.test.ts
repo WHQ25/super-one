@@ -22,6 +22,7 @@ const mocks = vi.hoisted(() => ({
   diff: vi.fn(async () => [{ file: 'src/app.ts', additions: 3, deletions: 1, status: 'modified' }] as const),
   revert: vi.fn(async () => undefined),
   mcpStatus: vi.fn(async () => [{ name: 'github', status: 'connected' }]),
+  authenticateMcp: vi.fn(async () => undefined),
   connectMcp: vi.fn(async () => undefined),
   disconnectMcp: vi.fn(async () => undefined),
   addMcp: vi.fn(async () => undefined),
@@ -50,6 +51,7 @@ vi.mock('./opencode-client', () => ({
     diff = mocks.diff
     revert = mocks.revert
     mcpStatus = mocks.mcpStatus
+    authenticateMcp = mocks.authenticateMcp
     connectMcp = mocks.connectMcp
     disconnectMcp = mocks.disconnectMcp
     addMcp = mocks.addMcp
@@ -158,6 +160,8 @@ describe('opencode-runtime', () => {
       agent: 'general',
     })
     expect(await runtime.getMcpServerStatus()).toEqual([{ name: 'github', status: 'connected' }])
+    await runtime.authenticateMcp('github')
+    expect(mocks.authenticateMcp).toHaveBeenCalledWith('github')
     await runtime.reconnectMcp('github')
     expect(mocks.disconnectMcp).toHaveBeenCalledWith('github')
     expect(mocks.connectMcp).toHaveBeenCalledWith('github')
@@ -177,6 +181,20 @@ describe('opencode-runtime', () => {
     expect(mocks.revert).toHaveBeenCalledWith('oc-session', 'user-message')
     await runtime.close()
     expect(mocks.closeServer).toHaveBeenCalledOnce()
+  })
+
+  it('rejects MCP OAuth when the OpenCode server is remote', async () => {
+    const runtime = await createOpenCodeRuntime({
+      sessionId: 'superone-session',
+      cwd: '/project',
+      config: { serverUrl: 'https://opencode.example.com' },
+      permissionMode: 'default',
+      onEvent: vi.fn(),
+    })
+
+    await expect(runtime.authenticateMcp('github')).rejects.toThrow(/local OpenCode runtime/)
+    expect(mocks.authenticateMcp).not.toHaveBeenCalled()
+    await runtime.close()
   })
 
   it('forwards only events for its provider session', async () => {

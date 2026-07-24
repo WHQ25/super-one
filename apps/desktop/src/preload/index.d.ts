@@ -37,6 +37,7 @@ interface AgentAPI {
   rewindConversation(projectPath: string): Promise<RewindFilesResult>
   getSessionId(projectPath: string): Promise<string>
   getMcpServerStatus(projectPath: string): Promise<McpServerInfo[]>
+  authenticateMcpServer(projectPath: string, serverName: string): Promise<void>
   getContextUsage(projectPath: string, sessionId?: string): Promise<ContextUsageInfo | null>
   reloadPlugins(projectPath: string): Promise<boolean>
   listDirectory(projectPath: string, relativePath: string): Promise<ListDirEntry[]>

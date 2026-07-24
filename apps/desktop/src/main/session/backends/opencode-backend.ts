@@ -288,6 +288,7 @@ export class OpenCodeBackend implements SessionBackend {
     }
   }
   async getMcpServerStatus(): Promise<McpServerInfo[]> { return (await this.ensureRuntime()).getMcpServerStatus() }
+  async authenticateMcp(serverName: string): Promise<void> { await (await this.ensureRuntime()).authenticateMcp(serverName) }
   async rewindFiles(userMessageId: string, opts?: { dryRun?: boolean }): Promise<RewindFilesResult> {
     try {
       const runtime = await this.ensureRuntime()

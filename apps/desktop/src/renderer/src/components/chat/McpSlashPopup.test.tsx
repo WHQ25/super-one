@@ -7,8 +7,8 @@ import type { McpServerInfo } from '@superone/shared/agent-types'
 vi.mock('@/stores/chat', () => {
   const state = {
     activeProject: '/project',
-    sessionProvider: null as 'claude' | 'codex' | null,
-    preferredProvider: 'claude' as 'claude' | 'codex',
+    sessionProvider: null as 'claude' | 'codex' | 'opencode' | null,
+    preferredProvider: 'claude' as 'claude' | 'codex' | 'opencode',
   }
   return {
     useChatStore: (selector: (s: typeof state) => unknown) => selector(state),
@@ -43,6 +43,7 @@ function mockWindow(agentStatus: McpServerInfo[], probeStatus: McpServerInfo[]) 
   const w = window as unknown as Record<string, unknown>
   w.agent = {
     getMcpServerStatus: vi.fn().mockResolvedValue(agentStatus),
+    authenticateMcpServer: vi.fn().mockResolvedValue(undefined),
   }
   w.app = {
     checkMcpServers: vi.fn().mockResolvedValue({ status: probeStatus, meta: {} }),
@@ -183,6 +184,26 @@ describe('McpSlashPopup', () => {
     render(<McpSlashPopup onClose={vi.fn()} />)
 
     expect(await screen.findByText(/Live · Codex session/)).toBeInTheDocument()
+  })
+
+  it('authenticates an OpenCode MCP server and refreshes live status', async () => {
+    setChat({ sessionProvider: 'opencode' })
+    mockWindow([{ name: 'linear', status: 'needs-auth' }], [])
+    const agent = (window as unknown as { agent: {
+      getMcpServerStatus: ReturnType<typeof vi.fn>
+      authenticateMcpServer: ReturnType<typeof vi.fn>
+    } }).agent
+    agent.getMcpServerStatus
+      .mockResolvedValueOnce([{ name: 'linear', status: 'needs-auth' }])
+      .mockResolvedValueOnce([{ name: 'linear', status: 'connected', toolCount: 2 }])
+
+    render(<McpSlashPopup onClose={vi.fn()} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Authenticate linear' }))
+
+    await waitFor(() => expect(agent.authenticateMcpServer).toHaveBeenCalledWith('/project', 'linear'))
+    await waitFor(() => expect(screen.getByText('2 tools')).toBeInTheDocument())
+    expect(screen.queryByText('auth')).not.toBeInTheDocument()
   })
 
   it('probes the codex config (not claude) when a codex session has no live status', async () => {

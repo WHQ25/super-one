@@ -71,6 +71,7 @@ export interface OpenCodeRuntime {
   questionReply(requestId: string, answers: string[][]): Promise<void>
   questionReject(requestId: string): Promise<void>
   getMcpServerStatus(): Promise<McpServerInfo[]>
+  authenticateMcp(name: string): Promise<void>
   reconnectMcp(name: string): Promise<void>
   toggleMcpServer(name: string, enabled: boolean): Promise<void>
   reloadMcpServers(): Promise<void>
@@ -252,6 +253,13 @@ export async function createOpenCodeRuntime(opts: OpenCodeRuntimeOptions): Promi
       questionReply: (requestId, answers) => client.questionReply(requestId, answers),
       questionReject: (requestId) => client.questionReject(requestId),
       getMcpServerStatus: () => client.mcpStatus(),
+      authenticateMcp: async (name) => {
+        if (opts.config.serverUrl?.trim()) {
+          throw new Error('MCP OAuth is only supported for a local OpenCode runtime')
+        }
+        mcpNames = await syncMcpServers(client, opts.cwd, opts.sessionId, mcpNames)
+        await client.authenticateMcp(name)
+      },
       reconnectMcp: async (name) => {
         mcpNames = await syncMcpServers(client, opts.cwd, opts.sessionId, mcpNames)
         await client.disconnectMcp(name).catch(() => undefined)

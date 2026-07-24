@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ChevronDown, ChevronRight, RefreshCw, Settings2, X } from 'lucide-react'
+import { ChevronDown, ChevronRight, LogIn, RefreshCw, Settings2, X } from 'lucide-react'
+import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { cn } from '@superone/ui/lib/utils'
 import { useActiveSession, useChatStore } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
@@ -70,6 +71,7 @@ export function McpSlashPopup({ onClose }: { onClose: () => void }) {
   const [bundles, setBundles] = useState<McpbInstalledEntry[]>([])
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [refreshing, setRefreshing] = useState(false)
+  const [authenticatingServer, setAuthenticatingServer] = useState<string | null>(null)
 
   const bundlesByName = useMemo(() => {
     const map: Record<string, McpbInstalledEntry> = {}
@@ -181,6 +183,21 @@ export function McpSlashPopup({ onClose }: { onClose: () => void }) {
     }
   }, [load])
 
+  const handleAuthenticate = useCallback(async (serverName: string) => {
+    if (!activeProject) return
+    setAuthenticatingServer(serverName)
+    setState((current) => ({ ...current, error: undefined }))
+    try {
+      await window.agent.authenticateMcpServer(activeProject, serverName)
+      await load()
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      setState((current) => ({ ...current, error: message }))
+    } finally {
+      setAuthenticatingServer(null)
+    }
+  }, [activeProject, load])
+
   const toggleExpand = useCallback((name: string) => {
     setExpanded((prev) => {
       const next = new Set(prev)
@@ -276,47 +293,68 @@ export function McpSlashPopup({ onClose }: { onClose: () => void }) {
             const isError = server.status === 'failed' || server.status === 'needs-auth'
             const hasErrorDetail = isError && !!server.error
             const canExpand = tools.length > 0 || hasErrorDetail
+            const canAuthenticate = state.mode === 'live'
+              && harness === 'opencode'
+              && server.status === 'needs-auth'
+            const isAuthenticating = authenticatingServer === server.name
             return (
               <div key={`${server.scope ?? 'local'}:${server.name}`} className="px-1">
-                <button
-                  type="button"
-                  onMouseDown={(e) => { e.preventDefault(); if (canExpand) toggleExpand(server.name) }}
-                  className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-muted/50"
-                >
-                  <ServerIcon name={server.name} meta={state.meta[server.name]} bundle={bundlesByName[server.name]} />
-                  <div className="flex min-w-0 flex-1 items-center gap-2">
-                    <span className="truncate text-sm font-medium">{server.name}</span>
-                    {server.scope && server.scope !== 'user' && server.scope !== 'project' && (
-                      <span className="rounded bg-muted px-1 py-px text-[9px] uppercase text-muted-foreground">{server.scope}</span>
+                <div className="flex items-center rounded-lg transition-colors hover:bg-muted/50">
+                  <button
+                    type="button"
+                    onMouseDown={(e) => { e.preventDefault(); if (canExpand) toggleExpand(server.name) }}
+                    className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left"
+                  >
+                    <ServerIcon name={server.name} meta={state.meta[server.name]} bundle={bundlesByName[server.name]} />
+                    <div className="flex min-w-0 flex-1 items-center gap-2">
+                      <span className="truncate text-sm font-medium">{server.name}</span>
+                      {server.scope && server.scope !== 'user' && server.scope !== 'project' && (
+                        <span className="rounded bg-muted px-1 py-px text-[9px] uppercase text-muted-foreground">{server.scope}</span>
+                      )}
+                      {isError && (
+                        <span
+                          className={cn(
+                            'shrink-0 rounded px-1 py-px text-[9px] font-medium uppercase',
+                            server.status === 'needs-auth'
+                              ? 'bg-warning/15 text-warning'
+                              : 'bg-error/15 text-error',
+                          )}
+                        >
+                          {server.status === 'needs-auth' ? t('chat.mcpPopup.authBadge') : t('chat.mcpPopup.errorBadge')}
+                        </span>
+                      )}
+                    </div>
+                    <span
+                      className={cn(
+                        'size-2 shrink-0 rounded-full',
+                        probe ? 'ring-1 ring-inset ring-border bg-transparent' : STATUS_DOT[server.status],
+                      )}
+                    />
+                    {!isError && (
+                      <span className="shrink-0 truncate text-xs text-muted-foreground">{statusLabel(server, t)}</span>
                     )}
-                    {isError && (
-                      <span
-                        className={cn(
-                          'shrink-0 rounded px-1 py-px text-[9px] font-medium uppercase',
-                          server.status === 'needs-auth'
-                            ? 'bg-warning/15 text-warning'
-                            : 'bg-error/15 text-error',
-                        )}
-                      >
-                        {server.status === 'needs-auth' ? t('chat.mcpPopup.authBadge') : t('chat.mcpPopup.errorBadge')}
-                      </span>
-                    )}
-                  </div>
-                  <span
-                    className={cn(
-                      'size-2 shrink-0 rounded-full',
-                      probe ? 'ring-1 ring-inset ring-border bg-transparent' : STATUS_DOT[server.status],
-                    )}
-                  />
-                  {!isError && (
-                    <span className="shrink-0 truncate text-xs text-muted-foreground">{statusLabel(server, t)}</span>
+                    {canExpand
+                      ? (isExpanded
+                        ? <ChevronDown className="size-3 shrink-0 text-muted-foreground" />
+                        : <ChevronRight className="size-3 shrink-0 text-muted-foreground" />)
+                      : <span className="size-3 shrink-0" />}
+                  </button>
+                  {canAuthenticate && (
+                    <IconButton
+                      size="xs"
+                      className="mr-1 text-warning"
+                      aria-label={t('chat.mcpPopup.authenticate', { name: server.name })}
+                      tooltip={t('chat.mcpPopup.authenticate', { name: server.name })}
+                      disabled={isAuthenticating}
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => void handleAuthenticate(server.name)}
+                    >
+                      {isAuthenticating
+                        ? <RefreshCw className="animate-spin" />
+                        : <LogIn />}
+                    </IconButton>
                   )}
-                  {canExpand
-                    ? (isExpanded
-                      ? <ChevronDown className="size-3 shrink-0 text-muted-foreground" />
-                      : <ChevronRight className="size-3 shrink-0 text-muted-foreground" />)
-                    : <span className="size-3 shrink-0" />}
-                </button>
+                </div>
                 {isExpanded && canExpand && (
                   // ml aligns the guide line with the icon center: button px-2 (8px) + size-7 icon half (14px) = 22px
                   <div className="ml-[22px] mb-1 space-y-0.5 border-l border-border pl-2">

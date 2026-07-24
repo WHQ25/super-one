@@ -1730,6 +1730,12 @@ export class AgentService {
       return session.getMcpServerStatus()
     })
 
+    ipcMain.handle(AgentIpcChannels.MCP_SERVER_AUTHENTICATE, async (_event, projectPath: string, serverName: string) => {
+      const session = this.sessionManager?.getActiveSession(projectPath)
+      if (!session) throw new Error('No active session')
+      await session.authenticateMcp(serverName)
+    })
+
     ipcMain.handle(AgentIpcChannels.GET_CONTEXT_USAGE, async (_event, projectPath: string, sessionId?: string) => {
       const session = sessionId
         ? this.sessionManager?.getSession(sessionId)
@@ -2321,6 +2327,7 @@ export class AgentService {
     ipcMain.removeHandler(AgentIpcChannels.REWIND_CONVERSATION)
     ipcMain.removeHandler(AgentIpcChannels.GET_SESSION_ID)
     ipcMain.removeHandler(AgentIpcChannels.MCP_SERVER_STATUS)
+    ipcMain.removeHandler(AgentIpcChannels.MCP_SERVER_AUTHENTICATE)
     ipcMain.removeHandler(AgentIpcChannels.GET_CONTEXT_USAGE)
     ipcMain.removeHandler(AgentIpcChannels.PLUGINS_RELOAD)
     ipcMain.removeHandler(AgentIpcChannels.LIST_DIRECTORY)

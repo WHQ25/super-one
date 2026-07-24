@@ -973,6 +973,7 @@ export type Messages = {
       noActiveSession: string
       errorBadge: string
       authBadge: string
+      authenticate: string
     }
     slashCommand: {
       groupCommands: string
@@ -2786,6 +2787,7 @@ export const en: Messages = {
       noActiveSession: 'Start a turn to load live MCP status',
       errorBadge: 'error',
       authBadge: 'auth',
+      authenticate: 'Authenticate {{name}}',
     },
     slashCommand: {
       groupCommands: 'Slash commands',

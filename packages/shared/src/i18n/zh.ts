@@ -999,6 +999,7 @@ export const zh: Messages = {
       noActiveSession: '发送一条消息以加载实时 MCP 状态',
       errorBadge: '错误',
       authBadge: '待认证',
+      authenticate: '认证 {{name}}',
     },
     slashCommand: {
       groupCommands: '命令',

@@ -629,6 +629,12 @@ export class Session implements SessionContract {
     return this.backend.getMcpServerStatus()
   }
 
+  async authenticateMcp(serverName: string): Promise<void> {
+    this.assertStarted()
+    if (!this.backend.authenticateMcp) throw new Error(`MCP authentication is not supported by ${this.harnessId}`)
+    return this.backend.authenticateMcp(serverName)
+  }
+
   async rewindFiles(userMessageId: string, opts?: { dryRun?: boolean }): Promise<RewindFilesResult> {
     if (!this.backendStarted) return { canRewind: false, error: 'No active session' }
     return this.backend.rewindFiles(userMessageId, opts)

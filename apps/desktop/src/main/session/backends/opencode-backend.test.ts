@@ -37,6 +37,7 @@ describe('OpenCodeBackend', () => {
   let questionReply: ReturnType<typeof vi.fn>
   let questionReject: ReturnType<typeof vi.fn>
   let getMcpServerStatus: ReturnType<typeof vi.fn>
+  let authenticateMcp: ReturnType<typeof vi.fn>
   let reconnectMcp: ReturnType<typeof vi.fn>
   let toggleMcpServer: ReturnType<typeof vi.fn>
   let reloadMcpServers: ReturnType<typeof vi.fn>
@@ -66,6 +67,7 @@ describe('OpenCodeBackend', () => {
     questionReply = vi.fn(async () => undefined)
     questionReject = vi.fn(async () => undefined)
     getMcpServerStatus = vi.fn(async () => [{ name: 'github', status: 'connected' as const }])
+    authenticateMcp = vi.fn(async () => undefined)
     reconnectMcp = vi.fn(async () => undefined)
     toggleMcpServer = vi.fn(async () => undefined)
     reloadMcpServers = vi.fn(async () => undefined)
@@ -93,6 +95,7 @@ describe('OpenCodeBackend', () => {
       questionReply,
       questionReject,
       getMcpServerStatus,
+      authenticateMcp,
       reconnectMcp,
       toggleMcpServer,
       reloadMcpServers,
@@ -376,9 +379,11 @@ describe('OpenCodeBackend', () => {
     await backend.start(startOptions())
 
     expect(await backend.getMcpServerStatus()).toEqual([{ name: 'github', status: 'connected' }])
+    await backend.authenticateMcp('github')
     await backend.reconnectMcp('github')
     await backend.toggleMcpServer('github', false)
     await backend.reloadMcpServers()
+    expect(authenticateMcp).toHaveBeenCalledWith('github')
     expect(reconnectMcp).toHaveBeenCalledWith('github')
     expect(toggleMcpServer).toHaveBeenCalledWith('github', false)
     expect(reloadMcpServers).toHaveBeenCalledOnce()

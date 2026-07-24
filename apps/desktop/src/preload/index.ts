@@ -106,6 +106,9 @@ const agentAPI = {
   getMcpServerStatus: (projectPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.MCP_SERVER_STATUS, projectPath),
 
+  authenticateMcpServer: (projectPath: string, serverName: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.MCP_SERVER_AUTHENTICATE, projectPath, serverName),
+
   getContextUsage: (projectPath: string, sessionId?: string) =>
     ipcRenderer.invoke(AgentIpcChannels.GET_CONTEXT_USAGE, projectPath, sessionId),
 

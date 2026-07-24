@@ -192,6 +192,10 @@ export class OpenCodeClient {
     await this.sdk.mcp.disconnect({ name })
   }
 
+  async authenticateMcp(name: string): Promise<void> {
+    await this.sdk.mcp.auth.authenticate({ name })
+  }
+
   async createSession(permission: PermissionRuleset, title?: string): Promise<{ id: string }> {
     const result = await this.sdk.session.create({ title, permission })
     if (!result.data) throw new OpenCodeApiError('OpenCode session was not created')

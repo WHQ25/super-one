@@ -2081,6 +2081,7 @@ export const AgentIpcChannels = {
   REWIND_CONVERSATION: 'agent:rewind-conversation',
   GET_SESSION_ID: 'agent:get-session-id',
   MCP_SERVER_STATUS: 'agent:mcp-server-status',
+  MCP_SERVER_AUTHENTICATE: 'agent:mcp-server-authenticate',
   GET_CONTEXT_USAGE: 'agent:get-context-usage',
   LIST_DIRECTORY: 'agent:list-directory',
   LIST_DIRECTORY_FOR_ADD_DIR: 'agent:list-directory-for-add-dir',

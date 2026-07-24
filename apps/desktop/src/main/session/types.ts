@@ -231,6 +231,7 @@ export interface SessionBackend {
   respondToPlanApproval(requestId: string, approved: boolean, feedback?: string): void
   getContextUsage(): Promise<ContextUsageInfo | null>
   getMcpServerStatus(): Promise<McpServerInfo[]>
+  authenticateMcp?(serverName: string): Promise<void>
   rewindFiles(userMessageId: string, opts?: { dryRun?: boolean }): Promise<RewindFilesResult>
   reconnectMcp(serverName: string): Promise<void>
   toggleMcpServer(serverName: string, enabled: boolean): Promise<void>
@@ -292,6 +293,7 @@ export interface Session {
   respondToPlanApproval(requestId: string, approved: boolean, feedback?: string): void
   getContextUsage(): Promise<ContextUsageInfo | null>
   getMcpServerStatus(): Promise<McpServerInfo[]>
+  authenticateMcp(serverName: string): Promise<void>
   rewindFiles(userMessageId: string, opts?: { dryRun?: boolean }): Promise<RewindFilesResult>
   reconnectMcp(serverName: string): Promise<void>
   toggleMcpServer(serverName: string, enabled: boolean): Promise<void>

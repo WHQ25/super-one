@@ -49,9 +49,12 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     displayName: 'Codex',
   },
   acp: {
-    supportsMcp: false,
-    supportsPlanMode: false,
-    supportsTodos: false,
+    // Host injects SuperOne MCP on every ACP session; user MCP attach is a separate gap.
+    supportsMcp: true,
+    // Agent-driven plan + x.ai/exit_plan_mode approval is shipped (not host enter-plan).
+    supportsPlanMode: true,
+    // ACP session/update plan entries map to todo_write-style UI events.
+    supportsTodos: true,
     supportsSubagents: false,
     supportsCompact: false,
     supportsStreamingToolInput: false,

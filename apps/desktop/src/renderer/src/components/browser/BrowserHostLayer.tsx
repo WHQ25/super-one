@@ -68,6 +68,7 @@ function PersistentBrowser({ browserId, layoutMode, resizing }: { browserId: str
   const emulation = useBrowserStore((s) => s.emulations[browserId])
   const capturing = useBrowserStore((s) => (s.captureRefs[browserId] ?? 0) > 0)
   const activityShown = useActivityPanelStore((s) => s.showPanel)
+  const activitySide = useActivityPanelStore((s) => s.side)
   const annotating = useBrowserStore((s) => s.annotatingId === browserId)
   const home = useBrowserStore((s) => isBlankUrl(s.tabs[browserId]?.url ?? ''))
   const certErrored = useBrowserStore((s) => s.tabs[browserId]?.certError != null)
@@ -231,6 +232,8 @@ function PersistentBrowser({ browserId, layoutMode, resizing }: { browserId: str
         opacity: visible ? 1 : 0,
         pointerEvents: visible && !resizing ? 'auto' : 'none',
         overflow: 'hidden',
+        borderBottomLeftRadius: (layoutMode === 'coding' && activitySide === 'left') || (layoutMode === 'canvas' && slot?.mode === 'canvas') ? 'var(--radius-xl)' : undefined,
+        borderBottomRightRadius: (layoutMode === 'coding' && activitySide === 'right') || (layoutMode === 'canvas' && slot?.mode === 'canvas') ? 'var(--radius-xl)' : undefined,
       }}
     >
       <webview

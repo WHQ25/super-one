@@ -170,4 +170,21 @@ describe('BrowserHostLayer mosaic visibility', () => {
     expect(host.style.display).toBe('block')
     expect(host.style.left).toBe('120px')
   })
+
+  it('matches the outer bottom corner to the activity panel side', () => {
+    const { container } = render(<BrowserHostLayer />)
+    act(() => {
+      useBrowserStore.getState().ensure('browser-a', 'https://example.com')
+      useBrowserStore.getState().updateSlot('browser-a', 'panel', RECT)
+      useActivityPanelStore.getState().setSide('left')
+    })
+
+    const host = container.querySelector('[data-browser-id="browser-a"]') as HTMLElement
+    expect(host.style.borderBottomLeftRadius).toBe('var(--radius-xl)')
+    expect(host.style.borderBottomRightRadius).toBe('')
+
+    act(() => useActivityPanelStore.getState().setSide('right'))
+    expect(host.style.borderBottomLeftRadius).toBe('')
+    expect(host.style.borderBottomRightRadius).toBe('var(--radius-xl)')
+  })
 })

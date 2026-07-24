@@ -9,6 +9,7 @@ import type {
   PermissionRequest,
 } from '@superone/shared/agent-types'
 import type { BackendStartOptions } from '../types'
+import { registerActiveRuntime } from '../active-runtime-registry'
 
 vi.mock('../../logger', () => ({
   default: { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() },
@@ -209,6 +210,7 @@ describe('CodexBackend lifecycle', () => {
   let backend: CodexBackend
 
   beforeEach(() => {
+    CodexBackend._resetActiveRuntimesForTests()
     service = makeFakeService()
     backend = new CodexBackend(service)
   })
@@ -893,6 +895,7 @@ describe('CodexBackend idle dispose', () => {
   let releaseAppServerSpy: ReturnType<typeof vi.fn>
 
   beforeEach(() => {
+    CodexBackend._resetActiveRuntimesForTests()
     service = makeFakeService()
     releaseAppServerSpy = vi.fn()
     service.releaseAppServerConnection = releaseAppServerSpy
@@ -929,6 +932,16 @@ describe('CodexBackend idle dispose', () => {
     expect(backend.isRuntimeIdle(0)).toBe(true)
   })
 
+  it('isRuntimeIdle returns false while foreground', async () => {
+    await backend.start(makeStartOpts())
+    const session = getSession()
+    session.connectionHandle = makeFakeHandle()
+    session.connectionAuth = { mode: 'auto' }
+    backend.setForeground(true)
+
+    expect(backend.isRuntimeIdle(0)).toBe(false)
+  })
+
   it('isRuntimeIdle returns false within timeout window', async () => {
     await backend.start(makeStartOpts())
     const session = getSession()
@@ -946,7 +959,30 @@ describe('CodexBackend idle dispose', () => {
     expect(backend.isRuntimeIdle(0)).toBe(false)
   })
 
-  it('timer fires release after timeout, returning handle to project pool', async () => {
+  it('timer fires release after timeout when the global active runtime threshold is met', async () => {
+    vi.useFakeTimers()
+    try {
+      await backend.start(makeStartOpts())
+      const session = getSession()
+      session.connectionHandle = makeFakeHandle()
+      session.connectionAuth = { mode: 'auto' }
+      registerActiveRuntime({}, () => true)
+      registerActiveRuntime({}, () => true)
+      registerActiveRuntime({}, () => true)
+      registerActiveRuntime({}, () => true)
+
+      expect(CodexBackend.activeRuntimeCount).toBe(CodexBackend.MIN_ACTIVE_SESSIONS_FOR_IDLE_RELEASE)
+
+      await vi.advanceTimersByTimeAsync(CodexBackend.IDLE_TIMEOUT_MS + CodexBackend.IDLE_CHECK_INTERVAL_MS + 100)
+
+      expect(releaseAppServerSpy).toHaveBeenCalled()
+      expect(session.connectionHandle).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('timer does not release while global active runtimes are below the threshold', async () => {
     vi.useFakeTimers()
     try {
       await backend.start(makeStartOpts())
@@ -954,10 +990,12 @@ describe('CodexBackend idle dispose', () => {
       session.connectionHandle = makeFakeHandle()
       session.connectionAuth = { mode: 'auto' }
 
+      expect(CodexBackend.activeRuntimeCount).toBeLessThan(CodexBackend.MIN_ACTIVE_SESSIONS_FOR_IDLE_RELEASE)
+
       await vi.advanceTimersByTimeAsync(CodexBackend.IDLE_TIMEOUT_MS + CodexBackend.IDLE_CHECK_INTERVAL_MS + 100)
 
-      expect(releaseAppServerSpy).toHaveBeenCalled()
-      expect(session.connectionHandle).toBeNull()
+      expect(releaseAppServerSpy).not.toHaveBeenCalled()
+      expect(session.connectionHandle).not.toBeNull()
     } finally {
       vi.useRealTimers()
     }

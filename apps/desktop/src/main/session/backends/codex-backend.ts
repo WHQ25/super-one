@@ -43,6 +43,14 @@ import {
   type CodexRunStreamCallbacks,
 } from '../../codex/codex-turn'
 import type { BackendCommand, BackendStartOptions, HarnessId, SessionBackend } from '../types'
+import {
+  getActiveRuntimeCount,
+  IDLE_RUNTIME_TIMEOUT_MS,
+  MIN_ACTIVE_RUNTIMES_FOR_IDLE_RELEASE,
+  registerActiveRuntime,
+  resetActiveRuntimeRegistryForTests,
+  unregisterActiveRuntime,
+} from '../active-runtime-registry'
 
 export interface CodexRunStreamCallbacksDeps {
   onThreadStarted?: (threadId: string) => void
@@ -193,9 +201,19 @@ export class CodexBackend implements SessionBackend {
 
   private _lastActiveAt: number | null = null
   private _idleTimer: ReturnType<typeof setInterval> | null = null
+  private _foreground = false
 
-  static IDLE_TIMEOUT_MS = 60_000
+  static IDLE_TIMEOUT_MS = IDLE_RUNTIME_TIMEOUT_MS
   static IDLE_CHECK_INTERVAL_MS = 30_000
+  static MIN_ACTIVE_SESSIONS_FOR_IDLE_RELEASE = MIN_ACTIVE_RUNTIMES_FOR_IDLE_RELEASE
+
+  static get activeRuntimeCount(): number {
+    return getActiveRuntimeCount()
+  }
+
+  static _resetActiveRuntimesForTests(): void {
+    resetActiveRuntimeRegistryForTests()
+  }
 
   constructor(service?: CodexServiceDeps) {
     const resolved = service ?? (codexServiceFactory ? codexServiceFactory() : null)
@@ -227,10 +245,16 @@ export class CodexBackend implements SessionBackend {
     })
     this.started = true
     this._lastActiveAt = Date.now()
+    registerActiveRuntime(this, () => Boolean(this.session?.connectionHandle))
     this.startIdleTimer()
   }
 
+  setForeground(visible: boolean): void {
+    this._foreground = visible
+  }
+
   isRuntimeIdle(timeoutMs: number): boolean {
+    if (this._foreground) return false
     if (!this.started || this.disposed) return false
     const session = this.session
     if (!session) return false
@@ -246,12 +270,12 @@ export class CodexBackend implements SessionBackend {
   private startIdleTimer(): void {
     this.stopIdleTimer()
     this._idleTimer = setInterval(() => {
-      if (this.isRuntimeIdle(CodexBackend.IDLE_TIMEOUT_MS)) {
-        const released = this.releaseIdleConnectionToProjectPool()
-        if (released) {
-          this._lastActiveAt = null
-          trace('backend.lifecycle', 'runtime_released', { reason: 'idle', backend: 'codex' })
-        }
+      if (!this.isRuntimeIdle(CodexBackend.IDLE_TIMEOUT_MS)) return
+      if (CodexBackend.activeRuntimeCount < CodexBackend.MIN_ACTIVE_SESSIONS_FOR_IDLE_RELEASE) return
+      const released = this.releaseIdleConnectionToProjectPool()
+      if (released) {
+        this._lastActiveAt = null
+        trace('backend.lifecycle', 'runtime_released', { reason: 'idle', backend: 'codex' })
       }
     }, CodexBackend.IDLE_CHECK_INTERVAL_MS)
   }
@@ -708,6 +732,7 @@ export class CodexBackend implements SessionBackend {
     this.disposed = true
     this.started = false
     this.startOpts = null
+    unregisterActiveRuntime(this)
     this.eventListeners.clear()
     this.providerSessionIdListeners.clear()
   }

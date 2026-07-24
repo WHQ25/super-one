@@ -37,6 +37,14 @@ import { ensureProxy, type ProxyUpstream } from '../../providers/llm-proxy-manag
 import { getSandboxCapability } from '../../sandbox-platform'
 import { listSkills } from '../../skills-service'
 import { hasRunningDownloadTasks } from '../../browser/browser-download-tasks'
+import {
+  getActiveRuntimeCount,
+  IDLE_RUNTIME_TIMEOUT_MS,
+  MIN_ACTIVE_RUNTIMES_FOR_IDLE_RELEASE,
+  registerActiveRuntime,
+  resetActiveRuntimeRegistryForTests,
+  unregisterActiveRuntime,
+} from '../active-runtime-registry'
 
 interface ClaudeConfig {
   apiKey?: string
@@ -84,18 +92,16 @@ export class ClaudeBackend implements SessionBackend {
   private _proxyBaseUrl: string | null = null
   private _activeRuntimeKey: string | null = null
 
-  static IDLE_TIMEOUT_MS = 30 * 60 * 1000
+  static IDLE_TIMEOUT_MS = IDLE_RUNTIME_TIMEOUT_MS
   static IDLE_CHECK_INTERVAL_MS = 30_000
-  static MIN_ACTIVE_SESSIONS_FOR_IDLE_RELEASE = 3
-
-  private static activeRuntimes = new Set<ClaudeBackend>()
+  static MIN_ACTIVE_SESSIONS_FOR_IDLE_RELEASE = MIN_ACTIVE_RUNTIMES_FOR_IDLE_RELEASE
 
   static get activeRuntimeCount(): number {
-    return ClaudeBackend.activeRuntimes.size
+    return getActiveRuntimeCount()
   }
 
   static _resetActiveRuntimesForTests(): void {
-    ClaudeBackend.activeRuntimes.clear()
+    resetActiveRuntimeRegistryForTests()
   }
 
   private _foreground = false
@@ -223,7 +229,7 @@ export class ClaudeBackend implements SessionBackend {
     this.activeBackgroundTasks = handle.activeBackgroundTasks ?? null
     this._activeRuntimeKey = WarmupManager.keyOf(buildClaudeOptions(queryOptions))
     this._lastActiveAt = Date.now()
-    ClaudeBackend.activeRuntimes.add(this)
+    registerActiveRuntime(this, () => Boolean(this.bridge && this.query))
     this.startIdleTimer()
   }
 
@@ -355,6 +361,7 @@ export class ClaudeBackend implements SessionBackend {
 
   async close(): Promise<void> {
     await this.releaseRuntime('close')
+    unregisterActiveRuntime(this)
     this.eventListeners.clear()
     this.providerSessionIdListeners.clear()
     this.permissionModeAppliedListeners.clear()
@@ -391,7 +398,6 @@ export class ClaudeBackend implements SessionBackend {
     this.spawnAbortController = null
     this._activeRuntimeKey = null
     this._lastActiveAt = null
-    ClaudeBackend.activeRuntimes.delete(this)
     this.stopIdleTimer()
     for (const resolve of this.turnResolves.values()) resolve()
     this.turnResolves.clear()

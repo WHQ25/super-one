@@ -840,7 +840,7 @@ describe('ClaudeBackend', () => {
         await backend.start(makeStartOpts())
         expect((backend as unknown as { bridge: unknown }).bridge).not.toBeNull()
 
-        const fillers = [new ClaudeBackend(), new ClaudeBackend()]
+        const fillers = [new ClaudeBackend(), new ClaudeBackend(), new ClaudeBackend(), new ClaudeBackend()]
         for (const filler of fillers) {
           await filler.start(makeStartOpts())
           filler.setForeground(true)

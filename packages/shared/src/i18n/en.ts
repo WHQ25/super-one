@@ -446,6 +446,14 @@ export type Messages = {
       dontAsk: { label: string; description: string }
       bypassPermissions: { label: string; description: string }
     }
+    /** Grok Build / ACP permission baseline — product language differs from Claude. */
+    acpPermissionModes: {
+      title: string
+      subtitle: string
+      ask: { label: string; description: string }
+      auto: { label: string; description: string }
+      alwaysApprove: { label: string; description: string }
+    }
     sandboxModes: {
       off: { label: string; description: string }
       on: { label: string; description: string }
@@ -2259,6 +2267,22 @@ export const en: Messages = {
       plan: { label: 'Plan Mode', description: 'Planning only, no actual execution' },
       dontAsk: { label: "Don't Ask", description: 'Deny anything not pre-approved' },
       bypassPermissions: { label: 'Bypass', description: 'Bypass all permission checks' },
+    },
+    acpPermissionModes: {
+      title: 'Permission Modes',
+      subtitle: 'How often Grok asks before tools run',
+      ask: {
+        label: 'Ask',
+        description: 'Prompts for edits and shell commands',
+      },
+      auto: {
+        label: 'Auto',
+        description: 'Classifier allows routine work, escalates the rest',
+      },
+      alwaysApprove: {
+        label: 'Always Approve',
+        description: 'Skip ordinary prompts; deny rules still apply',
+      },
     },
     sandboxModes: {
       off: { label: 'Sandbox Off', description: 'No execution isolation' },

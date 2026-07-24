@@ -23,12 +23,14 @@ interface CapturedRequests {
   initialize?: Record<string, unknown>
   newSession: Record<string, unknown> | null
   prompts: Array<Array<{ type: string; text?: string }>>
+  notifications: Array<{ method: string; params: unknown }>
 }
 
 function makeEchoAgentStream(
   captured?: CapturedRequests,
   agentCapabilities: Record<string, unknown> = {},
 ): { stream: Stream; dispose: () => void } {
+  if (captured && !captured.notifications) captured.notifications = []
   const agentApp = agent({ name: 'test-agent' })
     .onRequest(methods.agent.initialize, async (ctx) => {
       if (captured) captured.initialize = ctx.params as Record<string, unknown>
@@ -55,6 +57,16 @@ function makeEchoAgentStream(
       return { stopReason: 'end_turn' as const }
     })
     .onNotification(methods.agent.session.cancel, async () => {})
+    // Custom methods need an explicit params parser (same pattern as client onRequest).
+    .onNotification(
+      'x.ai/yolo_mode_changed',
+      (raw: unknown) => raw,
+      async (ctx) => {
+        if (captured) {
+          captured.notifications.push({ method: 'x.ai/yolo_mode_changed', params: ctx.params })
+        }
+      },
+    )
 
   const clientToAgent = new TransformStream<Uint8Array>()
   const agentToClient = new TransformStream<Uint8Array>()
@@ -99,6 +111,79 @@ describe('createAcpRuntime (in-process agent)', () => {
     await new Promise((r) => setTimeout(r, 0))
 
     expect(captured.initialize?.clientCapabilities).toMatchObject({ terminal })
+  })
+
+  it('passes yoloMode on session/new when permissionMode is bypassPermissions', async () => {
+    const captured: CapturedRequests = { newSession: null, prompts: [], notifications: [] }
+    const runtime = await createAcpRuntime({
+      launch: {
+        agentId: 'grok-build',
+        command: 'unused',
+        defaultCwd: '/tmp/proj',
+      },
+      permissionMode: 'bypassPermissions',
+      permission: {
+        request: async () => ({ outcome: { outcome: 'cancelled' } }),
+      },
+      streamFactory: async () => makeEchoAgentStream(captured),
+    })
+    await runtime.close()
+    expect(captured.newSession?._meta).toMatchObject({ yoloMode: true })
+  })
+
+  it('omits permission _meta on session/new for default mode', async () => {
+    const captured: CapturedRequests = { newSession: null, prompts: [], notifications: [] }
+    const runtime = await createAcpRuntime({
+      launch: {
+        agentId: 'grok-build',
+        command: 'unused',
+        defaultCwd: '/tmp/proj',
+      },
+      permissionMode: 'default',
+      permission: {
+        request: async () => ({ outcome: { outcome: 'cancelled' } }),
+      },
+      streamFactory: async () => makeEchoAgentStream(captured),
+    })
+    await runtime.close()
+    const meta = captured.newSession?._meta as Record<string, unknown> | null | undefined
+    expect(meta?.yoloMode).toBeUndefined()
+    expect(meta?.autoMode).toBeUndefined()
+  })
+
+  it('setPermissionMode notifies x.ai/yolo_mode_changed with always-approve params', async () => {
+    const captured: CapturedRequests = { newSession: null, prompts: [], notifications: [] }
+    const runtime = await createAcpRuntime({
+      launch: {
+        agentId: 'grok-build',
+        command: 'unused',
+        defaultCwd: '/tmp/proj',
+      },
+      permissionMode: 'default',
+      permission: {
+        request: async () => ({ outcome: { outcome: 'cancelled' } }),
+      },
+      streamFactory: async () => makeEchoAgentStream(captured),
+    })
+    await runtime.setPermissionMode('bypassPermissions')
+    // allow notify to flush across streams
+    await new Promise((r) => setTimeout(r, 20))
+    expect(captured.notifications).toContainEqual({
+      method: 'x.ai/yolo_mode_changed',
+      params: {
+        yolo_mode: true,
+        auto_mode: false,
+        permission_mode: 'always-approve',
+        clientIdentifier: 'superone',
+      },
+    })
+    await runtime.setPermissionMode('default')
+    await new Promise((r) => setTimeout(r, 20))
+    expect(captured.notifications.some((n) =>
+      n.method === 'x.ai/yolo_mode_changed'
+      && (n.params as { permission_mode?: string }).permission_mode === 'ask',
+    )).toBe(true)
+    await runtime.close()
   })
 
   it('streams text then completes', async () => {

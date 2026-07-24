@@ -1,6 +1,7 @@
 import type { AgentEvent, ContentBlock, SlashCommandInfo } from '@superone/shared/agent-types'
 import type { SessionConfigOption, SessionUpdate, ToolCall, ToolCallUpdate } from '@agentclientprotocol/sdk'
 import { extractModeConfig, extractModelConfig } from './acp-config'
+import { isHiddenAcpPermissionSlashCommand } from './acp-slash-filter'
 
 export interface AcpMapContext {
   messageId: string
@@ -1034,6 +1035,9 @@ export function mapSessionUpdate(
         if (typeof c.name !== 'string' || !c.name.trim()) continue
         const name = c.name.replace(/^\//, '').trim()
         if (!name) continue
+        // Host owns permission baseline via the status-bar selector — hide Grok's
+        // /always-approve so users don't have two competing controls.
+        if (isHiddenAcpPermissionSlashCommand(name)) continue
         const hint =
           c.input && typeof c.input === 'object' && typeof c.input.hint === 'string'
             ? c.input.hint

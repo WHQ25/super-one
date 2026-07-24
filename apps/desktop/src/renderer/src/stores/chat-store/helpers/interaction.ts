@@ -6,6 +6,7 @@ import type {
 } from '@superone/shared/agent-types'
 import { useAppStore } from '../../app'
 import { checkAutoModeEligibility } from '@/lib/auto-mode-eligibility'
+import { ACP_PERMISSION_MODES } from '@/components/chat/acpPermissionModes'
 import { PERMISSION_MODES } from '@/components/chat/PermissionModeList'
 import { extractModeFromSuggestions } from './chat-helpers'
 import {
@@ -220,14 +221,18 @@ export async function setSandboxModeImpl(
 export function cyclePermissionModeImpl(get: () => ChatStore): void {
   const session = getActivePerSession(get())
   const provider = resolveProvider(session)
-  const permissionModes = provider === 'opencode'
-    ? PERMISSION_MODES.filter((mode) => mode !== 'auto')
-    : PERMISSION_MODES
+  // ACP/Grok: only modes SuperOne can drive over the wire (see acpPermissionModes).
+  // OpenCode: no auto classifier. Claude: full cycle list (excludes bypass/dontAsk).
+  const permissionModes: PermissionMode[] = provider === 'acp'
+    ? [...ACP_PERMISSION_MODES]
+    : provider === 'opencode'
+      ? PERMISSION_MODES.filter((mode) => mode !== 'auto')
+      : PERMISSION_MODES
   const startIdx = permissionModes.indexOf(session.permissionMode)
   const anchor = startIdx === -1 ? 0 : startIdx
   for (let step = 1; step <= permissionModes.length; step++) {
     const candidate = permissionModes[(anchor + step) % permissionModes.length]
-    if (candidate === 'auto') {
+    if (candidate === 'auto' && provider === 'claude') {
       const claude = get().harnessResources.claude
       const account = claude?.account ?? {}
       const modelInfo = claude?.models.find((model) => model.id === session.selectedModel)

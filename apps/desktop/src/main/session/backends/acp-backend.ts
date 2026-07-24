@@ -14,6 +14,7 @@ import { extractModeConfig, extractModelConfig } from '../../acp/acp-config'
 import { upsertAcpAgentConfig, upsertAcpAgentModels, upsertAcpAgentSlashCommands } from '../../acp/acp-model-cache'
 import { createAcpRuntime, type AcpRuntime, type AcpRuntimeOptions } from '../../acp/acp-runtime'
 import { mapPermissionDecision, mapPermissionRequest, type PendingPermissionOptions } from '../../acp/acp-permission-map'
+import { shouldAutoAllowAcpPermission } from '../../acp/acp-permission-preapprove'
 import {
   buildAskUserQuestionRequest,
   formatGrokAskUserResponse,
@@ -75,6 +76,8 @@ export class AcpBackend implements SessionBackend {
   private ensureRuntimePromise: Promise<AcpRuntime> | null = null
   private runtimeEpoch = 0
   private runtimeAgentKey: string | null = null
+  /** Cwd the live ACP process was started with (session/new). */
+  private runtimeCwd: string | null = null
 
   private agentKey(cfg: AcpBackendConfig = this.config): string {
     return `${cfg.agentId ?? ''}\0${cfg.command ?? ''}`
@@ -84,17 +87,36 @@ export class AcpBackend implements SessionBackend {
     return this.agentKey(next) !== this.agentKey(this.config)
   }
 
+  private effectiveCwd(opts: BackendStartOptions): string {
+    return (opts.cwd?.trim() || opts.projectPath).trim()
+  }
+
+  /** Agent id/command change OR working directory change requires a new ACP process. */
+  private needsRuntimeRestart(opts: BackendStartOptions): boolean {
+    if (this.isLaunchChanged(readConfig(opts.config))) return true
+    if (!this.runtime && !this.ensureRuntimePromise) return false
+    const nextCwd = this.effectiveCwd(opts)
+    if (this.runtimeCwd && this.runtimeCwd !== nextCwd) return true
+    if (this.startOpts && this.effectiveCwd(this.startOpts) !== nextCwd) return true
+    return false
+  }
+
   async start(opts: BackendStartOptions): Promise<void> {
     if (this.disposed) throw new Error('AcpBackend already disposed')
     const next = readConfig(opts.config)
-    const launchChanged = this.isLaunchChanged(next)
+    const restart = this.needsRuntimeRestart(opts) || this.isLaunchChanged(next)
     this.startOpts = opts
     this.config = next
-    if (launchChanged && (this.runtime || this.ensureRuntimePromise)) {
+    if (restart && (this.runtime || this.ensureRuntimePromise)) {
       await this.teardownRuntime()
     }
     this.started = true
-    log.info('[AcpBackend] start sid=%s agentId=%s', opts.sessionId, this.config.agentId ?? '(none)')
+    log.info(
+      '[AcpBackend] start sid=%s agentId=%s cwd=%s',
+      opts.sessionId,
+      this.config.agentId ?? '(none)',
+      this.effectiveCwd(opts),
+    )
     // Spawn early so available_commands_update can fill the / popup before the first send.
     void this.ensureRuntime().catch((err) => {
       log.warn('[AcpBackend] start ensureRuntime failed:', err instanceof Error ? err.message : String(err))
@@ -107,13 +129,25 @@ export class AcpBackend implements SessionBackend {
     this.config = readConfig(opts.config)
     this.started = true
     this.disposed = false
+    log.info(
+      '[AcpBackend] rebuild sid=%s agentId=%s cwd=%s',
+      opts.sessionId,
+      this.config.agentId ?? '(none)',
+      this.effectiveCwd(opts),
+    )
+    // Re-spawn so worktree/cwd switches take effect before the next prompt
+    // (Grok binds cwd at session/new; a cold start on send is too late if UI
+    // already showed tools from the previous project root).
+    void this.ensureRuntime().catch((err) => {
+      log.warn('[AcpBackend] rebuild ensureRuntime failed:', err instanceof Error ? err.message : String(err))
+    })
   }
 
   prewarm(opts: BackendStartOptions): void {
     if (this.disposed) return
     const next = readConfig(opts.config)
-    const launchChanged = this.isLaunchChanged(next)
-    if (launchChanged && (this.runtime || this.ensureRuntimePromise)) {
+    const restart = this.needsRuntimeRestart(opts)
+    if (restart && (this.runtime || this.ensureRuntimePromise)) {
       void this.teardownRuntime().then(() => {
         this.startOpts = opts
         this.config = next
@@ -265,25 +299,33 @@ export class AcpBackend implements SessionBackend {
   }
 
   private async ensureRuntime(): Promise<AcpRuntime> {
-    if (this.runtime && this.runtimeAgentKey === this.agentKey()) return this.runtime
-    if (this.runtime && this.runtimeAgentKey !== this.agentKey()) {
+    if (!this.startOpts) throw new Error('AcpBackend missing startOpts')
+    const desiredCwd = this.effectiveCwd(this.startOpts)
+    if (
+      this.runtime
+      && this.runtimeAgentKey === this.agentKey()
+      && this.runtimeCwd === desiredCwd
+    ) {
+      return this.runtime
+    }
+    if (this.runtime) {
       await this.teardownRuntime()
     }
     if (this.ensureRuntimePromise) return this.ensureRuntimePromise
-    if (!this.startOpts) throw new Error('AcpBackend missing startOpts')
     if (!this.config.agentId && !this.config.command) {
       throw new Error('No ACP agent configured. Pick an agent under Others, then try again.')
     }
     const epoch = this.runtimeEpoch
     const agentId = this.config.agentId ?? null
     const launchKey = this.agentKey()
+    // Prefer startOpts.cwd (session/worktree) over provider config cwd overrides.
     const launch = {
       agentId: this.config.agentId,
       command: this.config.command,
       args: this.config.args,
       env: this.config.env,
-      cwd: this.config.cwd,
-      defaultCwd: this.startOpts.cwd || this.startOpts.projectPath,
+      cwd: undefined as string | undefined,
+      defaultCwd: desiredCwd,
     }
     this.emit({
       type: 'acp_models',
@@ -305,6 +347,7 @@ export class AcpBackend implements SessionBackend {
       const runtime = await runtimeFactory({
         launch,
         superoneSessionId: this.startOpts?.sessionId,
+        permissionMode: this.startOpts?.permissionMode,
         permission: {
           request: (params) => this.handlePermissionRequest(params),
         },
@@ -327,6 +370,13 @@ export class AcpBackend implements SessionBackend {
       }
       this.runtime = runtime
       this.runtimeAgentKey = launchKey
+      this.runtimeCwd = runtime.launch.cwd || desiredCwd
+      log.info(
+        '[AcpBackend] runtime ready sid=%s agent=%s cwd=%s',
+        this.startOpts?.sessionId,
+        agentId ?? '(none)',
+        this.runtimeCwd,
+      )
       for (const cb of this.providerSessionIdListeners) {
         try { cb(runtime.sessionId) } catch (err) { log.warn('[AcpBackend] providerSessionId listener error:', err) }
       }
@@ -381,6 +431,17 @@ export class AcpBackend implements SessionBackend {
 
   private handlePermissionRequest(params: RequestPermissionRequest): Promise<RequestPermissionResponse> {
     const { request, options } = mapPermissionRequest(params)
+    // Host built-ins + mini-app preapprovals must not block Grok turns (Claude parity).
+    const pre = shouldAutoAllowAcpPermission(params)
+    if (pre.allow) {
+      log.info(
+        '[AcpBackend] auto-allow permission tool=%s reason=%s requestId=%s',
+        pre.toolName,
+        pre.reason,
+        request.requestId,
+      )
+      return Promise.resolve(mapPermissionDecision(options, true, false))
+    }
     const event: AgentEvent = { type: 'permission_request', request }
     return new Promise((resolve) => {
       this.pendingPermissions.set(request.requestId, { resolve, options, event })
@@ -505,6 +566,7 @@ export class AcpBackend implements SessionBackend {
     this.modelConfigId = null
     this.modeConfigId = null
     this.runtimeAgentKey = null
+    this.runtimeCwd = null
     const runtime = this.runtime
     this.runtime = null
     if (runtime) {
@@ -566,7 +628,21 @@ export class AcpBackend implements SessionBackend {
     }
   }
 
-  async setPermissionMode(_mode: PermissionMode): Promise<void> {}
+  async setPermissionMode(mode: PermissionMode): Promise<void> {
+    if (this.startOpts) {
+      this.startOpts = { ...this.startOpts, permissionMode: mode }
+    }
+    if (!this.runtime) {
+      log.info('[AcpBackend] setPermissionMode deferred until runtime ready mode=%s', mode)
+      return
+    }
+    try {
+      await this.runtime.setPermissionMode(mode)
+      log.info('[AcpBackend] setPermissionMode applied mode=%s agent=%s', mode, this.config.agentId ?? '')
+    } catch (err) {
+      log.warn('[AcpBackend] setPermissionMode failed mode=%s:', mode, err)
+    }
+  }
 
   async setSandbox(_sandboxInfo: SandboxInfo): Promise<void> {}
 

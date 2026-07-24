@@ -352,6 +352,26 @@ describe('mapSessionUpdate', () => {
     }])
   })
 
+  it('hides /always-approve from acp slash commands (host permission selector owns it)', () => {
+    const update: SessionUpdate = {
+      sessionUpdate: 'available_commands_update',
+      availableCommands: [
+        { name: 'compact', description: 'Compact context' },
+        { name: 'always-approve', description: 'Skip permission prompts' },
+        { name: '/always-approve', description: 'with slash prefix' },
+        { name: 'context', description: 'Show context' },
+      ],
+    }
+    const events = mapSessionUpdate(update, ctx)
+    expect(events).toEqual([{
+      type: 'acp_commands',
+      commands: [
+        { name: 'compact', description: 'Compact context', argumentHint: '', isSkill: false },
+        { name: 'context', description: 'Show context', argumentHint: '', isSkill: false },
+      ],
+    }])
+  })
+
   it('ignores unknown update kinds', () => {
     const update = {
       sessionUpdate: 'session_info_update',

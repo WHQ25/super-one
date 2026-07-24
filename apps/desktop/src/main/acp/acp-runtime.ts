@@ -39,8 +39,12 @@ import {
   XAI_ASK_USER_QUESTION,
   type GrokAskUserQuestionParams,
 } from './acp-xai-extensions'
+import {
+  grokSessionPermissionMeta,
+  grokYoloModeNotificationParams,
+} from './acp-permission-preapprove'
 import { pushBashOutput } from '../bash-output-watcher'
-import type { AgentEvent, ImageAttachment } from '@superone/shared/agent-types'
+import type { AgentEvent, ImageAttachment, PermissionMode } from '@superone/shared/agent-types'
 
 export interface AcpRuntimeLaunchConfig {
   agentId?: string
@@ -66,6 +70,11 @@ export interface AcpRuntime {
   getConfigOptions(): SessionConfigOption[]
   getModelConfig(): AcpModelConfig | null
   setConfigOption(configId: string, value: string): Promise<SessionConfigOption[]>
+  /**
+   * Map SuperOne permission mode onto Grok ACP (session meta / yolo notification).
+   * No-op for agents that ignore x.ai permission extensions.
+   */
+  setPermissionMode(mode: PermissionMode): Promise<void>
   prompt(
     text: string,
     messageId: string,
@@ -93,6 +102,8 @@ export interface AcpRuntimeOptions {
   additionalRoots?: string[]
   /** SuperOne session id — scopes the built-in MCP bridge to this session. */
   superoneSessionId?: string
+  /** SuperOne session permission mode — mapped to Grok yolo/auto on session/new. */
+  permissionMode?: PermissionMode
 }
 
 function formatProcessExit(
@@ -245,9 +256,13 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
     mcpAttached = !!superoneMcpServer
     const extraRoots = fsRoots.slice(1)
     const supportsExtraRoots = agentCapabilities?.sessionCapabilities.additionalDirectories ?? false
+    const permissionMeta = grokSessionPermissionMeta(opts.permissionMode)
     let builder = connection.agent.buildSession({
       cwd: launch.cwd,
       mcpServers: superoneMcpServer ? [superoneMcpServer] : [],
+      ...(Object.keys(permissionMeta).length > 0
+        ? { _meta: permissionMeta }
+        : {}),
     })
     if (extraRoots.length > 0 && supportsExtraRoots) {
       builder = builder.withAdditionalDirectories(extraRoots)
@@ -401,6 +416,22 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
         modelConfig = coalesceModelConfig(extractModelConfig(configOptions), modelConfig)
       }
       return configOptions
+    },
+    async setPermissionMode(mode) {
+      // Grok mid-session permission baseline: x.ai/yolo_mode_changed (not set_config_option).
+      // Other ACP agents ignore unknown notifications.
+      const params = grokYoloModeNotificationParams(mode)
+      try {
+        await activeConnection.agent.notify('x.ai/yolo_mode_changed', params)
+        log.info(
+          '[acp-runtime] yolo_mode_changed agent=%s mode=%s params=%j',
+          launch.agentId,
+          mode,
+          params,
+        )
+      } catch (err) {
+        log.warn('[acp-runtime] yolo_mode_changed failed agent=%s mode=%s:', launch.agentId, mode, err)
+      }
     },
     async prompt(text, messageId, onEvent, images) {
       let settled = false

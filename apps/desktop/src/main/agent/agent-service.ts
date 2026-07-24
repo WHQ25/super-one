@@ -1426,7 +1426,31 @@ export class AgentService {
     return 'claude-base'
   }
 
-  private getOrCreateActiveSession(
+  /**
+   * Align a live session's cwd with the renderer's worktree selection.
+   * Without this, a prewarmed ACP/Claude process stays bound to the project
+   * root after the user switches into a worktree (session/new cwd is sticky).
+   */
+  private async applyWorktreeCwdHint(
+    session: import('../session/types').Session,
+    hint?: {
+      worktreePath?: string | null
+      gitBranch?: string | null
+    },
+  ): Promise<void> {
+    const wt = hint?.worktreePath?.trim()
+    if (!wt || !existsSync(wt)) return
+    const branch = hint?.gitBranch
+    if (session.cwd === wt) {
+      if (branch !== undefined && branch !== session.snapshot.gitBranch) {
+        await session.switchCwd(wt, branch)
+      }
+      return
+    }
+    await session.switchCwd(wt, branch ?? undefined)
+  }
+
+  private async getOrCreateActiveSession(
     projectPath: string,
     requestedSid?: string,
     hint?: {
@@ -1435,7 +1459,7 @@ export class AgentService {
       apiProviderId?: string | null
       provider?: 'claude' | 'codex' | 'acp' | 'opencode'
     },
-  ): import('../session/types').Session {
+  ): Promise<import('../session/types').Session> {
     const mgr = this.requireSessionManager()
     const activeCwd = mgr.getActiveSession(projectPath)?.cwd
     const cwd = hint?.worktreePath ?? activeCwd
@@ -1449,11 +1473,13 @@ export class AgentService {
       if (existing) {
         mgr.setActiveSession(projectPath, requestedSid)
         if (shouldApplyHint(existing)) existing.setApiProviderId(apiProviderHint)
+        await this.applyWorktreeCwdHint(existing, hint)
         return existing
       }
       try {
         const resumed = mgr.resumeSession(requestedSid)
         if (shouldApplyHint(resumed)) resumed.setApiProviderId(apiProviderHint)
+        await this.applyWorktreeCwdHint(resumed, hint)
         return resumed
       } catch {
         const prefs = hint?.provider === 'claude' || !hint?.provider
@@ -1474,6 +1500,7 @@ export class AgentService {
     const active = mgr.getActiveSession(projectPath)
     if (active) {
       if (shouldApplyHint(active)) active.setApiProviderId(apiProviderHint)
+      await this.applyWorktreeCwdHint(active, hint)
       return active
     }
     const prefs = hint?.provider === 'claude' || !hint?.provider
@@ -1516,6 +1543,9 @@ export class AgentService {
       if (existing) {
         if (existing.snapshot.harnessId === harnessId) {
           mgr.setActiveSession(projectPath, hint.sessionId)
+          await this.applyWorktreeCwdHint(existing, {
+            worktreePath: hint.worktreePath,
+          })
           return existing
         }
         if (existing.snapshot.messages.length > 0 || existing.isStreaming()) {
@@ -1527,7 +1557,12 @@ export class AgentService {
       return mgr.createSession({ ...createOpts, id: hint.sessionId })
     }
     const active = mgr.getActiveSession(projectPath)
-    if (active?.snapshot.harnessId === harnessId) return active
+    if (active?.snapshot.harnessId === harnessId) {
+      await this.applyWorktreeCwdHint(active, {
+        worktreePath: hint?.worktreePath,
+      })
+      return active
+    }
     return mgr.createSession(createOpts)
   }
 
@@ -1546,7 +1581,7 @@ export class AgentService {
 
     ipcMain.handle(AgentIpcChannels.SEND_MESSAGE, async (_event, projectPath: string, request: SendMessageRequest) => {
       this.throwIfRemoteLocked(projectPath)
-      const session = this.getOrCreateActiveSession(projectPath, request.sessionId, {
+      const session = await this.getOrCreateActiveSession(projectPath, request.sessionId, {
         worktreePath: request.worktreePath,
         gitBranch: request.gitBranch,
         ...(request.apiProviderId !== undefined ? { apiProviderId: request.apiProviderId } : {}),
@@ -1557,6 +1592,8 @@ export class AgentService {
         sessionId: session.snapshot.id,
         providerSessionId: session.snapshot.providerSessionId ?? '(none)',
         status: session.snapshot.status,
+        cwd: session.cwd,
+        worktreePath: request.worktreePath ?? null,
       })
       await session.send(request)
     })
@@ -1604,7 +1641,7 @@ export class AgentService {
 
     ipcMain.handle(AgentIpcChannels.SET_PERMISSION_MODE, async (_event, projectPath: string, mode: PermissionMode) => {
       this.throwIfRemoteLocked(projectPath)
-      const session = this.getOrCreateActiveSession(projectPath)
+      const session = await this.getOrCreateActiveSession(projectPath)
       trace('permission.flow', 'ipc_setMode', { projectPath, mode, sid: session.id, status: session.snapshot.status })
       await session.setPermissionMode(mode)
     })
@@ -1615,7 +1652,8 @@ export class AgentService {
       if (mode !== 'off' && capability.supportLevel === 'unsupported') {
         throw new Error(capability.unsupportedReason ?? '当前平台不支持沙盒')
       }
-      return this.getOrCreateActiveSession(projectPath).setSandboxMode(mode)
+      const session = await this.getOrCreateActiveSession(projectPath)
+      return session.setSandboxMode(mode)
     })
 
     ipcMain.handle(AgentIpcChannels.SET_SESSION_SETTINGS, (_event, projectPath: string, settings: { model?: string | null; effort?: SendMessageRequest['effort'] | null; mode?: string | null }) => {

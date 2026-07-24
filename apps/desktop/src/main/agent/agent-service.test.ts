@@ -415,6 +415,85 @@ describe('AgentService SESSIONS_RESUME (cwd sync)', () => {
   })
 })
 
+describe('AgentService SEND_MESSAGE (worktree cwd sync)', () => {
+  it('switches a prewarmed ACP session to the worktree cwd before send', async () => {
+    const service = new AgentService()
+    const switchCwd = vi.fn().mockResolvedValue(undefined)
+    const send = vi.fn().mockResolvedValue(undefined)
+    const existing = makeMockSession({
+      id: 'sid-acp',
+      cwd: '/repo/main',
+      snapshot: {
+        id: 'sid-acp',
+        harnessId: 'acp',
+        messages: [],
+        providerSessionId: 'acp-sess',
+        status: 'idle',
+      },
+      isStreaming: vi.fn(() => false),
+      switchCwd,
+      send,
+    })
+    Object.defineProperty(existing, 'cwd', {
+      get: () => switchCwd.mock.calls.length > 0 ? '/repo/main/.worktrees/feat' : '/repo/main',
+      configurable: true,
+    })
+    ;(service as { sessionManager: unknown }).sessionManager = {
+      getSession: vi.fn(() => existing),
+      setActiveSession: vi.fn(),
+      getActiveSession: vi.fn(() => existing),
+    }
+    service.setup()
+    const handler = getRegisteredIpcHandler(AgentIpcChannels.SEND_MESSAGE)!
+    mockExistsSync.mockReturnValue(true)
+
+    await handler(null, '/repo/main', {
+      content: 'hello',
+      sessionId: 'sid-acp',
+      provider: 'acp',
+      worktreePath: '/repo/main/.worktrees/feat',
+      gitBranch: 'feat',
+    })
+
+    expect(switchCwd).toHaveBeenCalledWith('/repo/main/.worktrees/feat', 'feat')
+    expect(send).toHaveBeenCalled()
+  })
+
+  it('prewarm switches existing session cwd when worktreePath differs', async () => {
+    const service = new AgentService()
+    const switchCwd = vi.fn().mockResolvedValue(undefined)
+    const prewarm = vi.fn()
+    const existing = makeMockSession({
+      id: 'sid-acp',
+      cwd: '/repo/main',
+      snapshot: { harnessId: 'acp', messages: [] },
+      isStreaming: vi.fn(() => false),
+      switchCwd,
+      prewarm,
+    })
+    ;(service as { sessionManager: unknown }).sessionManager = {
+      getSession: vi.fn(() => existing),
+      setActiveSession: vi.fn(),
+      getActiveSession: vi.fn(() => existing),
+      disposeSession: vi.fn().mockResolvedValue(undefined),
+      createSession: vi.fn(),
+    }
+    service.setup()
+    const handler = getRegisteredIpcHandler(AgentIpcChannels.PREWARM)!
+    mockExistsSync.mockReturnValue(true)
+
+    await handler(null, '/repo/main', {
+      provider: 'acp',
+      sessionId: 'sid-acp',
+      worktreePath: '/repo/main/.worktrees/feat',
+      acpAgentId: 'grok-build',
+    })
+
+    expect(switchCwd).toHaveBeenCalledWith('/repo/main/.worktrees/feat', undefined)
+    expect(prewarm).toHaveBeenCalled()
+  })
+})
+
 describe('AgentService.resumeSession', () => {
   it.skip('recreates the active agent when resuming a local session from a worktree cwd', async () => {
     const service = new AgentService()

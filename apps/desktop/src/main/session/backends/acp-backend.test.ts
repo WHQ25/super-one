@@ -100,6 +100,7 @@ function mockRuntime(overrides?: Partial<AcpRuntime>): AcpRuntime {
       onEvent({ type: 'message_complete', messageId })
       onEvent({ type: 'status_change', status: 'idle' })
     },
+    setPermissionMode: async () => {},
     cancel: async () => {},
     close: async () => {},
     ...overrides,
@@ -216,6 +217,134 @@ describe('AcpBackend', () => {
       .join('')
     expect(text).toContain('hello-from-mock')
     expect(events.some((e) => e.type === 'message_complete')).toBe(true)
+    await backend.close()
+  })
+
+  it('auto-allows SuperOne built-in MCP tools without emitting permission_request', async () => {
+    setAcpRuntimeFactory(async (opts) => mockRuntime({
+      prompt: async (_text, messageId, onEvent) => {
+        const response = await opts.permission.request({
+          sessionId: 'acp-sess-1',
+          toolCall: {
+            toolCallId: 'tc-rename',
+            title: 'use_tool',
+            kind: 'other',
+            rawInput: {
+              tool_name: 'superone__session_rename',
+              tool_input: { title: 'Hello' },
+            },
+            _meta: {
+              'x.ai/tool': { name: 'use_tool', kind: 'use_tool', namespace: 'grok_build' },
+            },
+          },
+          options: [
+            { optionId: 'allow-once', name: 'Allow', kind: 'allow_once' },
+            { optionId: 'reject-once', name: 'Deny', kind: 'reject_once' },
+          ],
+        } as never)
+        onEvent({
+          type: 'content_delta',
+          messageId,
+          delta: { type: 'text', text: JSON.stringify(response) },
+        })
+        onEvent({ type: 'message_complete', messageId })
+        onEvent({ type: 'status_change', status: 'idle' })
+      },
+    }))
+
+    const backend = new AcpBackend()
+    await backend.start(startOpts({ agentId: 'grok-build' }))
+    const events: AgentEvent[] = []
+    backend.onEvent((e) => events.push(e))
+    await backend.send({ content: 'rename', assistantMessageId: 'a-rename' })
+
+    expect(events.some((e) => e.type === 'permission_request')).toBe(false)
+    const text = events
+      .filter((e): e is Extract<AgentEvent, { type: 'content_delta' }> => e.type === 'content_delta')
+      .map((e) => e.delta)
+      .filter((d): d is { type: 'text'; text: string } => d.type === 'text')
+      .map((d) => d.text)
+      .join('')
+    expect(JSON.parse(text)).toEqual({
+      outcome: { outcome: 'selected', optionId: 'allow-once' },
+    })
+    await backend.close()
+  })
+
+  it('forwards setPermissionMode to the runtime', async () => {
+    const setPermissionMode = vi.fn(async () => {})
+    setAcpRuntimeFactory(async () => mockRuntime({ setPermissionMode }))
+    const backend = new AcpBackend()
+    await backend.start(startOpts({ agentId: 'grok-build' }))
+    await new Promise((r) => setTimeout(r, 10))
+    await backend.setPermissionMode('bypassPermissions')
+    expect(setPermissionMode).toHaveBeenCalledWith('bypassPermissions')
+    await backend.close()
+  })
+
+  it('recreates the ACP runtime when rebuild switches cwd (worktree)', async () => {
+    const cwds: string[] = []
+    let closeCount = 0
+    setAcpRuntimeFactory(async (opts) => {
+      const cwd = opts.launch.cwd || opts.launch.defaultCwd
+      cwds.push(cwd)
+      return mockRuntime({
+        launch: {
+          agentId: 'grok-build',
+          command: 'grok',
+          args: ['agent', 'stdio'],
+          env: {},
+          cwd,
+        },
+        close: async () => { closeCount += 1 },
+      })
+    })
+    const backend = new AcpBackend()
+    await backend.start(startOpts({ agentId: 'grok-build' }))
+    await new Promise((r) => setTimeout(r, 15))
+    expect(cwds).toEqual(['/tmp/proj'])
+
+    await backend.rebuild({
+      ...startOpts({ agentId: 'grok-build' }),
+      cwd: '/tmp/proj/.worktrees/feat',
+    })
+    await new Promise((r) => setTimeout(r, 15))
+    expect(closeCount).toBeGreaterThanOrEqual(1)
+    expect(cwds.at(-1)).toBe('/tmp/proj/.worktrees/feat')
+
+    // Same agent + same cwd: do not spawn a third process
+    const before = cwds.length
+    await backend.send({ content: 'hi', assistantMessageId: 'm-wt' })
+    expect(cwds.length).toBe(before)
+    await backend.close()
+  })
+
+  it('prewarm restarts runtime when cwd changes to a worktree', async () => {
+    const cwds: string[] = []
+    setAcpRuntimeFactory(async (opts) => {
+      const cwd = opts.launch.cwd || opts.launch.defaultCwd
+      cwds.push(cwd)
+      return mockRuntime({
+        launch: {
+          agentId: 'grok-build',
+          command: 'grok',
+          args: [],
+          env: {},
+          cwd,
+        },
+      })
+    })
+    const backend = new AcpBackend()
+    backend.prewarm(startOpts({ agentId: 'grok-build' }))
+    await new Promise((r) => setTimeout(r, 15))
+    expect(cwds).toEqual(['/tmp/proj'])
+
+    backend.prewarm({
+      ...startOpts({ agentId: 'grok-build' }),
+      cwd: '/tmp/proj/.worktrees/feat',
+    })
+    await new Promise((r) => setTimeout(r, 20))
+    expect(cwds.at(-1)).toBe('/tmp/proj/.worktrees/feat')
     await backend.close()
   })
 

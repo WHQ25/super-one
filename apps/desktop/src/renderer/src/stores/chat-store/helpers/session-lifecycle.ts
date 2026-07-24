@@ -243,6 +243,10 @@ export function resetSessionForWorktreeSwitchImpl(
     newSession.sessionProvider = nextProvider
     newSession._worktreePath = opts?.wtPath ?? null
     newSession._gitBranch = opts?.gitBranch ?? null
+    // Keep ACP agent selection across worktree switches (otherwise defaults drop).
+    if (nextProvider === 'acp' && previousSession?.acpAgentId) {
+      newSession.acpAgentId = previousSession.acpAgentId
+    }
     if (defaultPrefsCache.permissionMode) newSession.permissionMode = defaultPrefsCache.permissionMode
     applyDefaultModel(newSession, s.harnessResources.claude?.models ?? [])
     const codexSelection = resolveDefaultCodexSelection(proj.codexModels)

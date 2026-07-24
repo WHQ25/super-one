@@ -472,6 +472,22 @@ export const zh: Messages = {
       dontAsk: { label: '不询问', description: '拒绝所有未预授权的操作' },
       bypassPermissions: { label: '绕过', description: '绕过所有权限检查' },
     },
+    acpPermissionModes: {
+      title: '权限模式',
+      subtitle: '工具执行前询问的频率',
+      ask: {
+        label: '询问',
+        description: '编辑与终端命令会弹窗确认',
+      },
+      auto: {
+        label: '自动',
+        description: '常规操作自动放行，其余升级询问',
+      },
+      alwaysApprove: {
+        label: '始终允许',
+        description: '跳过常规提示，拒绝规则仍生效',
+      },
+    },
     sandboxModes: {
       off: { label: '关闭沙盒', description: '无执行隔离' },
       on: { label: '沙盒', description: '命令在沙盒环境中运行' },

@@ -47,22 +47,6 @@ jobs:
           echo "--- downloaded manifests ---"
           ls -la manifests/
 
-      - name: Compute cascade manifests + fixed-link plan
-        run: |
-          set -euo pipefail
-          bun scripts/set-latest.ts \
-            "${{ inputs.release_tag }}" \
-            "${{ inputs.channel }}" \
-            "${{ inputs.force }}" \
-            manifests \
-            https://dl.super-one.dev \
-            out \
-            fixed-copies.json
-          echo "--- staged channel manifests ---"
-          ls -la out/ 2>/dev/null || echo "(none staged — semver guard held; rerun with force=true to override)"
-          echo "--- fixed-link plan ---"
-          cat fixed-copies.json
-
       - name: Ensure release binaries are on R2 (backfill from GitHub if missing)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -85,6 +69,22 @@ jobs:
           aws s3 cp binstage/ "s3://super-one-releases/v${VERSION}/" --recursive \
             --endpoint-url "$ENDPOINT" --no-progress
           echo "Backfilled v${VERSION}/ to R2"
+
+      - name: Compute cascade manifests + fixed-link plan
+        run: |
+          set -euo pipefail
+          bun scripts/set-latest.ts \
+            "${{ inputs.release_tag }}" \
+            "${{ inputs.channel }}" \
+            "${{ inputs.force }}" \
+            manifests \
+            https://dl.super-one.dev \
+            out \
+            fixed-copies.json
+          echo "--- staged channel manifests ---"
+          ls -la out/ 2>/dev/null || echo "(none staged — semver guard held; rerun with force=true to override)"
+          echo "--- fixed-link plan ---"
+          cat fixed-copies.json
 
       - name: Publish channel manifests + fixed download links to R2
         env:

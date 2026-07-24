@@ -7,6 +7,7 @@ import {
   prefixVersionPaths,
   fixedLinkName,
   fixedDownloadPath,
+  artifactPathCandidates,
 } from './channels'
 
 describe('nativeYmlChannel', () => {
@@ -94,6 +95,7 @@ describe('fixedLinkName', () => {
     expect(fixedLinkName('SuperOne-0.40.0-alpha.dmg', '0.40.0-alpha')).toBe('SuperOne.dmg')
     expect(fixedLinkName('SuperOne-0.40.0-alpha-arm64.dmg', '0.40.0-alpha')).toBe('SuperOne-arm64.dmg')
     expect(fixedLinkName('SuperOne Setup 0.40.1-alpha.exe', '0.40.1-alpha')).toBe('SuperOne Setup.exe')
+    expect(fixedLinkName('SuperOne.Setup.0.40.1-alpha.exe', '0.40.1-alpha')).toBe('SuperOne Setup.exe')
     expect(fixedLinkName('SuperOne-0.40.1-alpha.AppImage', '0.40.1-alpha')).toBe('SuperOne.AppImage')
   })
 })
@@ -102,5 +104,23 @@ describe('fixedDownloadPath', () => {
   it('builds the per-channel latest path', () => {
     expect(fixedDownloadPath('alpha', 'SuperOne.dmg')).toBe('alpha/latest/SuperOne.dmg')
     expect(fixedDownloadPath('stable', 'SuperOne.AppImage')).toBe('stable/latest/SuperOne.AppImage')
+  })
+})
+
+describe('artifactPathCandidates', () => {
+  it('falls back to GitHub-normalized names for legacy Windows artifacts', () => {
+    expect(artifactPathCandidates('v0.46.6-alpha/SuperOne Setup 0.46.6-alpha.exe')).toEqual([
+      'v0.46.6-alpha/SuperOne Setup 0.46.6-alpha.exe',
+      'v0.46.6-alpha/SuperOne.Setup.0.46.6-alpha.exe',
+    ])
+  })
+
+  it('does not rewrite non-Windows or already normalized artifact names', () => {
+    expect(artifactPathCandidates('v0.46.6-alpha/SuperOne-0.46.6-alpha.dmg')).toEqual([
+      'v0.46.6-alpha/SuperOne-0.46.6-alpha.dmg',
+    ])
+    expect(artifactPathCandidates('v0.46.6-alpha/SuperOne.Setup.0.46.6-alpha.exe')).toEqual([
+      'v0.46.6-alpha/SuperOne.Setup.0.46.6-alpha.exe',
+    ])
   })
 })

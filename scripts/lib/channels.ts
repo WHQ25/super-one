@@ -96,11 +96,24 @@ export function prefixVersionPaths(ymlText: string, version: string): string {
 // "SuperOne Setup 0.40.1-alpha.exe" -> "SuperOne Setup.exe"
 export function fixedLinkName(filename: string, version: string): string {
   const escaped = version.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  return filename.replace(new RegExp(`[ _-]?${escaped}`), '')
+  const withoutVersion = filename.replace(new RegExp(`[ ._-]?${escaped}`), '')
+  if (!withoutVersion.toLowerCase().endsWith('.exe')) return withoutVersion
+  const stem = withoutVersion.slice(0, -'.exe'.length).replaceAll('.', ' ')
+  return `${stem}.exe`
 }
 
 // Stable, version-less download URL path for a channel's newest build, e.g.
 // fixedDownloadPath('alpha', 'SuperOne.dmg') -> 'alpha/latest/SuperOne.dmg'.
 export function fixedDownloadPath(channel: UpdateChannel, fileName: string): string {
   return `${channel}/latest/${fileName}`
+}
+
+// GitHub normalizes spaces in release asset names to dots. Releases archived
+// through the legacy GitHub bridge can therefore have a dotted Windows binary
+// on R2 even though electron-builder's manifest still contains spaces.
+export function artifactPathCandidates(path: string): string[] {
+  if (!path.toLowerCase().endsWith('.exe')) return [path]
+  const slash = path.lastIndexOf('/') + 1
+  const dotted = `${path.slice(0, slash)}${path.slice(slash).replaceAll(' ', '.')}`
+  return dotted === path ? [path] : [path, dotted]
 }

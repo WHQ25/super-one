@@ -3,6 +3,7 @@ import { basename, join } from 'node:path'
 import type { UpdateChannel } from '@superone/shared/agent-types'
 import { UPDATE_CHANNELS, UPDATE_CHANNEL_TO_YML, type YmlChannel } from '@superone/shared/update-channels'
 import {
+  artifactPathCandidates,
   cascadeTargets,
   fixedDownloadPath,
   fixedLinkName,
@@ -38,6 +39,46 @@ function parseInstallerUrls(text: string): string[] {
   return [...text.matchAll(/^\s*-?\s*url:\s*(.+)$/gm)]
     .map((m) => unquote(m[1]))
     .filter((u) => INSTALLER_EXTS.some((ext) => u.toLowerCase().endsWith(ext)))
+}
+
+function replaceManifestPath(text: string, current: string, replacement: string): string {
+  return text
+    .split('\n')
+    .map((line) => {
+      const match = line.match(/^(\s*-?\s*(?:url|path):\s*)(.+?)\s*$/)
+      if (!match || unquote(match[2]) !== current) return line
+      const quote = match[2].trim().match(/^['"]/)?.[0] ?? ''
+      return `${match[1]}${quote}${replacement}${quote}`
+    })
+    .join('\n')
+}
+
+async function artifactExists(baseUrl: string, path: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${baseUrl}/${path}`, {
+      method: 'HEAD',
+      cache: 'no-store',
+    })
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
+async function resolveArtifactPaths(text: string, baseUrl: string): Promise<string> {
+  let resolved = text
+  for (const path of [...new Set(parseInstallerUrls(text))]) {
+    const candidates = artifactPathCandidates(path)
+    if (candidates.length === 1 || (await artifactExists(baseUrl, path))) continue
+    for (const candidate of candidates.slice(1)) {
+      if (await artifactExists(baseUrl, candidate)) {
+        console.log(`resolve legacy artifact ${path} -> ${candidate}`)
+        resolved = replaceManifestPath(resolved, path, candidate)
+        break
+      }
+    }
+  }
+  return resolved
 }
 
 async function fetchRemoteVersion(baseUrl: string, ymlName: string): Promise<string | null> {
@@ -79,7 +120,10 @@ async function main(): Promise<void> {
       console.log(`skip ${platform.key}: ${platform.ymlName(nativeChannel)} not downloaded`)
       continue
     }
-    const prefixed = prefixVersionPaths(readFileSync(manifestPath, 'utf8'), version)
+    const prefixed = await resolveArtifactPaths(
+      prefixVersionPaths(readFileSync(manifestPath, 'utf8'), version),
+      baseUrl,
+    )
     const installerUrls = parseInstallerUrls(prefixed)
 
     for (const target of targets) {
@@ -94,7 +138,10 @@ async function main(): Promise<void> {
       writeFileSync(join(outDir, targetName), prefixed)
       console.log(`stage ${targetName} -> ${version}`)
       for (const url of installerUrls) {
-        plan.push({ src: url, dst: fixedDownloadPath(YML_TO_UPDATE_CHANNEL[target], fixedLinkName(basename(url), version)) })
+        plan.push({
+          src: url,
+          dst: fixedDownloadPath(YML_TO_UPDATE_CHANNEL[target], fixedLinkName(basename(url), version)),
+        })
       }
     }
   }

@@ -60,6 +60,8 @@ export interface OpenCodeRuntime {
   command(name: string, args?: string, model?: string, effort?: EffortLevel, images?: ImageAttachment[], agent?: string): Promise<void>
   init(model?: string): Promise<void>
   compact(model?: string): Promise<void>
+  share(): Promise<string>
+  unshare(): Promise<void>
   getContextUsage(): Promise<ContextUsageInfo | null>
   diff(messageId: string): Promise<SnapshotFileDiff[]>
   revert(messageId: string): Promise<void>
@@ -239,6 +241,8 @@ export async function createOpenCodeRuntime(opts: OpenCodeRuntimeOptions): Promi
       }),
       init: (model) => client.initSession(session.id, model),
       compact: (model) => client.summarize(session.id, model),
+      share: () => client.shareSession(session.id),
+      unshare: () => client.unshareSession(session.id),
       getContextUsage: () => client.contextUsage(session.id, models),
       diff: (messageId) => client.diff(session.id, messageId),
       revert: (messageId) => client.revert(session.id, messageId),

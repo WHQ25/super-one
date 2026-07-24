@@ -12,7 +12,7 @@ import {
 } from './chat-shared'
 import { createStreamdownCodeComponent } from './CodeBlock'
 
-const MARKDOWN_COMMANDS = new Set(['usage', 'cost'])
+const MARKDOWN_COMMANDS = new Set(['usage', 'cost', 'share', 'unshare'])
 
 function MarkdownCommandView({ content }: { content: string }) {
   const codeComponent = useMemo(() => createStreamdownCodeComponent(codePlugin), [])

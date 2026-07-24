@@ -32,4 +32,25 @@ describe('dispatchOpenCodeRequest', () => {
     expect(runtime.prompt).toHaveBeenCalledWith('hello', undefined, undefined, undefined, 'build')
     expect(runtime.command).toHaveBeenCalledWith('review', 'tree', undefined, undefined, undefined, 'general')
   })
+
+  it('returns local slash output for session sharing without prompting the model', async () => {
+    const runtime = {
+      commands,
+      prompt: vi.fn(async () => undefined),
+      command: vi.fn(async () => undefined),
+      share: vi.fn(async () => 'https://opncd.ai/share/demo'),
+      unshare: vi.fn(async () => undefined),
+    }
+
+    await expect(dispatchOpenCodeRequest(runtime as never, { content: '/share' })).resolves.toEqual({
+      kind: 'local',
+      command: 'share',
+      content: '[Open shared session](https://opncd.ai/share/demo)\n\nThis link is public.',
+    })
+    await expect(dispatchOpenCodeRequest(runtime as never, { content: '/unshare' })).resolves.toEqual({
+      kind: 'local', command: 'unshare', content: 'Public access removed.',
+    })
+    expect(runtime.prompt).not.toHaveBeenCalled()
+    expect(runtime.command).not.toHaveBeenCalled()
+  })
 })

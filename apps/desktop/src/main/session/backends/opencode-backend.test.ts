@@ -28,6 +28,8 @@ describe('OpenCodeBackend', () => {
   let command: ReturnType<typeof vi.fn>
   let init: ReturnType<typeof vi.fn>
   let compact: ReturnType<typeof vi.fn>
+  let share: ReturnType<typeof vi.fn>
+  let unshare: ReturnType<typeof vi.fn>
   let getContextUsage: ReturnType<typeof vi.fn>
   let diff: ReturnType<typeof vi.fn>
   let revert: ReturnType<typeof vi.fn>
@@ -49,6 +51,8 @@ describe('OpenCodeBackend', () => {
     command = vi.fn(async () => undefined)
     init = vi.fn(async () => undefined)
     compact = vi.fn(async () => undefined)
+    share = vi.fn(async () => 'https://opncd.ai/share/demo')
+    unshare = vi.fn(async () => undefined)
     getContextUsage = vi.fn(async () => ({
       categories: [{ name: 'Input', tokens: 20, color: '#22c55e' }],
       totalTokens: 20,
@@ -84,6 +88,8 @@ describe('OpenCodeBackend', () => {
       command,
       init,
       compact,
+      share,
+      unshare,
       getContextUsage,
       diff,
       revert,
@@ -403,6 +409,24 @@ describe('OpenCodeBackend', () => {
     await vi.waitFor(() => expect(prompt).toHaveBeenCalledWith('/unknown keep this literal', 'openai/gpt-5', undefined, undefined, undefined))
     route({ id: 'idle-prompt', type: 'session.idle', properties: { sessionID: 'oc-session' } } as OpenCodeRuntimeEvent)
     await promptSend
+    await backend.close()
+  })
+
+  it('completes local share commands without waiting for a model idle event', async () => {
+    const backend = new OpenCodeBackend()
+    const events: AgentEvent[] = []
+    backend.onEvent((event) => events.push(event))
+    await backend.start(startOptions())
+
+    await expect(backend.send({ content: '/share', assistantMessageId: 'share-message' })).resolves.toBeUndefined()
+
+    expect(share).toHaveBeenCalledOnce()
+    expect(events).toContainEqual({
+      type: 'slash_command_output',
+      messageId: 'share-message',
+      content: '[Open shared session](https://opncd.ai/share/demo)\n\nThis link is public.',
+    })
+    expect(events).toContainEqual({ type: 'message_complete', messageId: 'share-message' })
     await backend.close()
   })
 

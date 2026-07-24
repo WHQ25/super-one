@@ -7,6 +7,8 @@ const mocks = vi.hoisted(() => ({
   command: vi.fn(async () => undefined),
   initSession: vi.fn(async () => undefined),
   summarize: vi.fn(async () => undefined),
+  shareSession: vi.fn(async () => 'https://opncd.ai/share/demo'),
+  unshareSession: vi.fn(async () => undefined),
   todos: vi.fn(async () => [{ content: 'Resume work', status: 'pending', priority: 'high' }]),
   pendingInteractions: vi.fn(async () => ({
     permissions: [{ id: 'permission-1', sessionID: 'oc-session', action: 'bash', resources: ['git status'] }],
@@ -45,6 +47,8 @@ vi.mock('./opencode-client', () => ({
     command = mocks.command
     initSession = mocks.initSession
     summarize = mocks.summarize
+    shareSession = mocks.shareSession
+    unshareSession = mocks.unshareSession
     todos = mocks.todos
     pendingInteractions = mocks.pendingInteractions
     contextUsage = mocks.contextUsage
@@ -71,6 +75,10 @@ vi.mock('./opencode-client', () => ({
     name: 'init', description: 'Create AGENTS.md', argumentHint: '', isSkill: false,
   }, {
     name: 'compact', description: 'Compact context', argumentHint: '', isSkill: false,
+  }, {
+    name: 'share', description: 'Share session', argumentHint: '', isSkill: false,
+  }, {
+    name: 'unshare', description: 'Unshare session', argumentHint: '', isSkill: false,
   }],
   startOpenCodeServer: async () => ({
     url: 'http://127.0.0.1:4000',
@@ -146,6 +154,8 @@ describe('opencode-runtime', () => {
       { name: 'review', description: '', argumentHint: '', isSkill: false },
       { name: 'init', description: 'Create AGENTS.md', argumentHint: '', isSkill: false },
       { name: 'compact', description: 'Compact context', argumentHint: '', isSkill: false },
+      { name: 'share', description: 'Share session', argumentHint: '', isSkill: false },
+      { name: 'unshare', description: 'Unshare session', argumentHint: '', isSkill: false },
     ])
     expect(runtime.initialTodos).toEqual([{ content: 'Resume work', status: 'pending', priority: 'high' }])
     expect(runtime.pendingPermissions).toEqual([expect.objectContaining({ id: 'permission-1' })])
@@ -176,6 +186,10 @@ describe('opencode-runtime', () => {
     expect(mocks.initSession).toHaveBeenCalledWith('oc-session', 'openai/gpt-5')
     await runtime.compact('openai/gpt-5')
     expect(mocks.summarize).toHaveBeenCalledWith('oc-session', 'openai/gpt-5')
+    expect(await runtime.share()).toBe('https://opncd.ai/share/demo')
+    await runtime.unshare()
+    expect(mocks.shareSession).toHaveBeenCalledWith('oc-session')
+    expect(mocks.unshareSession).toHaveBeenCalledWith('oc-session')
     expect(await runtime.diff('user-message')).toHaveLength(1)
     await runtime.revert('user-message')
     expect(mocks.revert).toHaveBeenCalledWith('oc-session', 'user-message')

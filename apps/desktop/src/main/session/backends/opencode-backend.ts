@@ -164,7 +164,11 @@ export class OpenCodeBackend implements SessionBackend {
         this.activeCompaction = { preTokens: usage?.totalTokens ?? this.lastContextTokens, startedAt: Date.now() }
         this.emit({ type: 'status_indicator', indicator: 'compacting' })
       }
-      await dispatchOpenCodeRequest(runtime, request)
+      const dispatch = await dispatchOpenCodeRequest(runtime, request)
+      if (dispatch.kind === 'local') {
+        this.emit({ type: 'slash_command_output', messageId, content: dispatch.content })
+        this.complete(messageId)
+      }
       await turnComplete
     } catch (error) {
       if (this.activeCompaction) {

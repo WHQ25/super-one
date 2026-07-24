@@ -33,6 +33,7 @@ import type {
   SlashCommandInfo,
 } from '@superone/shared/agent-types'
 import { buildSafeEnv } from '../spawn-env'
+import { OPEN_CODE_LOCAL_COMMANDS } from './opencode-command'
 
 export type OpenCodeEvent = Event
 
@@ -105,14 +106,9 @@ export function toOpenCodeMcpConfig(config: McpServerConfig): McpLocalConfig | M
   }
 }
 
-const openCodeLocalCommands: SlashCommandInfo[] = [
-  { name: 'init', description: 'Create or update project AGENTS.md', argumentHint: '', isSkill: false },
-  { name: 'compact', description: 'Compact session context', argumentHint: '', isSkill: false },
-]
-
 export function withOpenCodeLocalCommands(commands: SlashCommandInfo[]): SlashCommandInfo[] {
   const seen = new Set(commands.map((command) => command.name.replace(/^\//, '')))
-  return [...commands, ...openCodeLocalCommands.filter((command) => !seen.has(command.name))]
+  return [...commands, ...OPEN_CODE_LOCAL_COMMANDS.filter((command) => !seen.has(command.name))]
 }
 
 export function parseOpenCodeMcpStatus(statuses: Record<string, McpStatus>): McpServerInfo[] {
@@ -194,6 +190,17 @@ export class OpenCodeClient {
 
   async authenticateMcp(name: string): Promise<void> {
     await this.sdk.mcp.auth.authenticate({ name })
+  }
+
+  async shareSession(sessionId: string): Promise<string> {
+    const result = await this.sdk.session.share({ sessionID: sessionId })
+    const url = result.data?.share?.url
+    if (!url) throw new OpenCodeApiError('OpenCode did not return a session share URL')
+    return url
+  }
+
+  async unshareSession(sessionId: string): Promise<void> {
+    await this.sdk.session.unshare({ sessionID: sessionId })
   }
 
   async createSession(permission: PermissionRuleset, title?: string): Promise<{ id: string }> {

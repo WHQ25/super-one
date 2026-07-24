@@ -60,7 +60,11 @@ function flattenSelectOptions(options: unknown): Array<{ value: string; name: st
 }
 
 export interface AcpModeConfig {
-  configId: string
+  /**
+   * ACP configId for session/set_config_option.
+   * null when modes come from Grok x.ai/sessionConfig (effort via session/set_model + _meta.reasoningEffort).
+   */
+  configId: string | null
   modes: ModelOption[]
   selectedModeId: string | null
 }
@@ -263,13 +267,19 @@ export function extractModelsFromAgentModelsField(raw: unknown): AcpModelConfig 
   return { configId: null, models, selectedModelId: current }
 }
 
-/** Grok: `_meta["x.ai/sessionConfig"].options` with category model. */
-export function extractModelsFromXaiSessionConfig(meta: unknown): AcpModelConfig | null {
+/** Options array from `_meta["x.ai/sessionConfig"].options`. */
+function xaiSessionConfigOptions(meta: unknown): unknown[] | null {
   if (!meta || typeof meta !== 'object') return null
   const sessionConfig = (meta as Record<string, unknown>)['x.ai/sessionConfig']
   if (!sessionConfig || typeof sessionConfig !== 'object') return null
   const options = (sessionConfig as Record<string, unknown>).options
-  if (!Array.isArray(options)) return null
+  return Array.isArray(options) ? options : null
+}
+
+/** Grok: `_meta["x.ai/sessionConfig"].options` with category model. */
+export function extractModelsFromXaiSessionConfig(meta: unknown): AcpModelConfig | null {
+  const options = xaiSessionConfigOptions(meta)
+  if (!options) return null
 
   const models: ModelOption[] = []
   let selected: string | null = null
@@ -290,6 +300,57 @@ export function extractModelsFromXaiSessionConfig(meta: unknown): AcpModelConfig
     selectedModelId: selected && models.some((m) => m.id === selected) ? selected : (models[0]?.id ?? null),
   }
 }
+
+/**
+ * Grok: `_meta["x.ai/sessionConfig"].options` with category mode = reasoning effort.
+ * These are NOT plan/permission modes — switching uses session/set_model + _meta.reasoningEffort.
+ */
+export function extractModesFromXaiSessionConfig(meta: unknown): AcpModeConfig | null {
+  const options = xaiSessionConfigOptions(meta)
+  if (!options) return null
+
+  const modes: ModelOption[] = []
+  let selected: string | null = null
+  for (const item of options) {
+    if (!item || typeof item !== 'object') continue
+    const o = item as Record<string, unknown>
+    if (o.category !== 'mode') continue
+    const id = typeof o.id === 'string' ? o.id : null
+    const label = typeof o.label === 'string' ? o.label : id
+    if (!id || !label) continue
+    modes.push({
+      id,
+      name: label,
+      description: typeof o.description === 'string' ? o.description : '',
+    })
+    if (o.selected === true) selected = id
+  }
+  if (modes.length === 0) return null
+  return {
+    configId: null,
+    modes,
+    selectedModeId: selected && modes.some((m) => m.id === selected) ? selected : (modes[0]?.id ?? null),
+  }
+}
+
+/** Modes from session/new: standard configOptions first, else Grok x.ai sessionConfig. */
+export function extractModesFromNewSessionResult(result: unknown): AcpModeConfig | null {
+  if (!result || typeof result !== 'object') return null
+  const r = result as Record<string, unknown>
+  const fromConfig = extractModeConfig(r.configOptions as SessionConfigOption[] | undefined)
+  if (fromConfig) return fromConfig
+  return extractModesFromXaiSessionConfig(r._meta)
+}
+
+export function coalesceModeConfig(...candidates: Array<AcpModeConfig | null | undefined>): AcpModeConfig | null {
+  for (const c of candidates) {
+    if (c && c.modes.length > 0) return c
+  }
+  return null
+}
+
+/** ACP method name for model switch (not always present on typed SDK methods map). */
+export const ACP_SESSION_SET_MODEL = 'session/set_model'
 
 /**
  * Agent-declared capabilities from `initialize`. Only the fields SuperOne acts on.
@@ -349,4 +410,28 @@ export function coalesceModelConfig(...candidates: Array<AcpModelConfig | null |
     if (c && c.models.length > 0) return c
   }
   return null
+}
+
+export interface AcpSetModelOptions {
+  /** Grok reasoning effort id (minimal|low|medium|high|xhigh|…). */
+  reasoningEffort?: string
+}
+
+/**
+ * Params for ACP session/set_model.
+ * Grok also accepts `_meta.reasoningEffort` for effort switches on the same model.
+ */
+export function buildSetModelParams(
+  sessionId: string,
+  modelId: string,
+  opts?: AcpSetModelOptions,
+): Record<string, unknown> {
+  const effort = opts?.reasoningEffort?.trim()
+  return {
+    sessionId,
+    modelId,
+    ...(effort
+      ? { _meta: { reasoningEffort: effort } }
+      : {}),
+  }
 }

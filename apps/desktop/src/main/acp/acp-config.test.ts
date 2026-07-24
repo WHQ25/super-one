@@ -1,9 +1,12 @@
 import { describe, it, expect } from 'vitest'
 import type { SessionConfigOption } from '@agentclientprotocol/sdk'
 import {
+  buildSetModelParams,
   deriveSessionCatalog,
   extractModeConfig,
   extractModelConfig,
+  extractModesFromNewSessionResult,
+  extractModesFromXaiSessionConfig,
   extractModelsFromInitializeResult,
   extractModelsFromNewSessionResult,
   serializeConfigOptions,
@@ -232,5 +235,71 @@ describe('extractModelsFromNewSessionResult (Grok)', () => {
     })
     expect(result?.models.map((m) => m.id)).toEqual(['a', 'b'])
     expect(result?.selectedModelId).toBe('b')
+  })
+})
+
+describe('extractModesFromXaiSessionConfig (Grok effort)', () => {
+  it('reads category=mode options with configId null', () => {
+    const modes = extractModesFromXaiSessionConfig({
+      'x.ai/sessionConfig': {
+        options: [
+          { id: 'a', category: 'model', label: 'A', selected: true },
+          { id: 'low', category: 'mode', label: 'Low', selected: false },
+          { id: 'high', category: 'mode', label: 'High', selected: true },
+        ],
+      },
+    })
+    expect(modes?.configId).toBeNull()
+    expect(modes?.modes.map((m) => m.id)).toEqual(['low', 'high'])
+    expect(modes?.selectedModeId).toBe('high')
+  })
+
+  it('extractModesFromNewSessionResult prefers standard configOptions', () => {
+    const result = extractModesFromNewSessionResult({
+      configOptions: [
+        {
+          id: 'mode',
+          name: 'Mode',
+          category: 'mode',
+          type: 'select',
+          currentValue: 'code',
+          options: [
+            { value: 'ask', name: 'Ask' },
+            { value: 'code', name: 'Code' },
+          ],
+        },
+      ],
+      _meta: {
+        'x.ai/sessionConfig': {
+          options: [{ id: 'high', category: 'mode', label: 'High', selected: true }],
+        },
+      },
+    })
+    expect(result?.configId).toBe('mode')
+    expect(result?.selectedModeId).toBe('code')
+  })
+})
+
+describe('buildSetModelParams', () => {
+  it('includes sessionId and modelId', () => {
+    expect(buildSetModelParams('s1', 'grok-4.5')).toEqual({
+      sessionId: 's1',
+      modelId: 'grok-4.5',
+    })
+  })
+
+  it('adds _meta.reasoningEffort when provided', () => {
+    expect(buildSetModelParams('s1', 'grok-4.5', { reasoningEffort: 'xhigh' })).toEqual({
+      sessionId: 's1',
+      modelId: 'grok-4.5',
+      _meta: { reasoningEffort: 'xhigh' },
+    })
+  })
+
+  it('omits empty effort', () => {
+    expect(buildSetModelParams('s1', 'm', { reasoningEffort: '  ' })).toEqual({
+      sessionId: 's1',
+      modelId: 'm',
+    })
   })
 })

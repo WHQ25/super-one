@@ -953,6 +953,8 @@ export {
   selectClaudeOutputStyles,
 } from './selectors'
 
+export { selectOpenCodeAgents, selectOpenCodeCommands } from './opencode-selectors'
+
 export { SessionScopeProvider, useSessionScope, type SessionScope } from './session-scope'
 
 export {

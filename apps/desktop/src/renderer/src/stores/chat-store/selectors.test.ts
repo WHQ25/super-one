@@ -69,6 +69,7 @@ const {
   selectCodexPrompts,
   selectCodexResources,
 } = await import('./selectors')
+const { selectOpenCodeAgents, selectOpenCodeCommands } = await import('./opencode-selectors')
 const { createDefaultPerSessionState, createDefaultProjectState } = await import('./defaults')
 const { SessionScopeProvider } = await import('./session-scope')
 
@@ -107,7 +108,7 @@ beforeEach(() => {
     activeProject: null,
     remoteSessions: {},
     _previousFocusedSession: null,
-    harnessResources: { claude: null, codex: null, acp: null },
+    harnessResources: { claude: null, codex: null, acp: null, opencode: null },
     initializedHarnesses: new Set(),
     _bashOutputs: {},
   })
@@ -308,5 +309,30 @@ describe('Codex resource selectors', () => {
       },
     }))
     expect(selectActiveCodexSkills(useChatStore.getState())[0]?.name).toBe('codex-skill-1')
+  })
+})
+
+describe('OpenCode resource selectors', () => {
+  it('return stable empty defaults when OpenCode resources are not loaded', () => {
+    const state = useChatStore.getState()
+
+    expect(renderHook(() => useChatStore(selectOpenCodeCommands)).result.current).toEqual([])
+    expect(renderHook(() => useChatStore(selectOpenCodeAgents)).result.current).toEqual([])
+    expect(selectOpenCodeCommands(state)).toEqual([])
+    expect(selectOpenCodeAgents(state)).toEqual([])
+    expect(selectOpenCodeCommands(state)).toBe(selectOpenCodeCommands(state))
+    expect(selectOpenCodeAgents(state)).toBe(selectOpenCodeAgents(state))
+  })
+
+  it('return live OpenCode resources once loaded', () => {
+    useChatStore.getState().setHarnessResources('opencode', {
+      models: [],
+      commands: [{ name: 'help' } as never],
+      agents: [{ id: 'build', name: 'Build' }],
+    })
+    const state = useChatStore.getState()
+
+    expect(selectOpenCodeCommands(state)[0]?.name).toBe('help')
+    expect(selectOpenCodeAgents(state)[0]?.id).toBe('build')
   })
 })

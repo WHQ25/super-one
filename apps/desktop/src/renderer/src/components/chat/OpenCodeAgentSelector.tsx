@@ -7,11 +7,11 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from '@superone/ui/components/ui/dropdown-menu'
-import { useActiveSession, useChatStore } from '@/stores/chat'
+import { selectOpenCodeAgents, useActiveSession, useChatStore } from '@/stores/chat'
 import { resolveDefaultOpenCodeAgent } from '@/stores/chat-store/harness/opencode-handler'
 
 export function OpenCodeAgentSelector({ compact = false }: { compact?: boolean }) {
-  const agents = useChatStore((state) => state.harnessResources.opencode?.agents ?? [])
+  const agents = useChatStore(selectOpenCodeAgents)
   const selectedAgentId = useActiveSession((state) => state.openCodeAgentId)
   const permissionMode = useActiveSession((state) => state.permissionMode)
   const setOpenCodeAgentId = useChatStore((state) => state.setOpenCodeAgentId)

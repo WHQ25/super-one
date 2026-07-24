@@ -248,6 +248,7 @@ vi.mock('@/stores/chat', () => ({
   useSessionScope: () => sessionScope.value,
   selectCodexPrompts: () => [],
   selectActiveCodexSkills: () => [],
+  selectOpenCodeCommands: (state: typeof chatActions) => state.harnessResources.opencode.commands,
   getLatestCodexThreadId: () => goalState.threadId,
 }))
 

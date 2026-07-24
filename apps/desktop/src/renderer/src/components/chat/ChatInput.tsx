@@ -2,7 +2,7 @@ import { useRef, useState, useCallback, useMemo, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { cn } from '@superone/ui/lib/utils'
-import { CLAUDE_INTERCEPTED_COMMAND_NAMES, CODEX_REJECT_PLAN_PLACEHOLDER, getLatestCodexThreadId, runClaudeInterceptedCommand, selectActiveCodexSkills, selectCodexPrompts, useChatStore, useActiveSession, useIsRemoteLocked, useSessionScope } from '@/stores/chat'
+import { CLAUDE_INTERCEPTED_COMMAND_NAMES, CODEX_REJECT_PLAN_PLACEHOLDER, getLatestCodexThreadId, runClaudeInterceptedCommand, selectActiveCodexSkills, selectCodexPrompts, selectOpenCodeCommands, useChatStore, useActiveSession, useIsRemoteLocked, useSessionScope } from '@/stores/chat'
 import { useEffectiveProjectRoot } from '@/stores/app'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { ArrowUp, Loader2, Paperclip, X } from 'lucide-react'
@@ -223,7 +223,7 @@ export function ChatInput() {
 
     const codexPrompts = useChatStore(selectCodexPrompts)
     const codexSkills = useChatStore(selectActiveCodexSkills)
-    const openCodeSlashCommands = useChatStore((s) => s.harnessResources.opencode?.commands ?? [])
+    const openCodeSlashCommands = useChatStore(selectOpenCodeCommands)
     const codexThreadId = useActiveSession((s) => getLatestCodexThreadId(s.messages))
     const [codexGoal, setCodexGoal] = useState<CodexGoal | null>(null)
     const [goalDialogState, setGoalDialogState] = useState<{ open: boolean; prefill: string }>({ open: false, prefill: '' })

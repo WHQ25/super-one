@@ -1308,7 +1308,7 @@ describe('/provider slash command + setSessionApiProviderId', () => {
     expect(popup).toMatchObject({ command: 'provider' })
   })
 
-  it('intercepts /provider under codex provider too (universal command)', async () => {
+  it('does not intercept /provider under codex provider (retired outside Claude)', async () => {
     mockWindowApp.codexRun.mockClear()
     setupProject('/test')
     const proj = useChatStore.getState().projectSessions['/test']
@@ -1332,9 +1332,9 @@ describe('/provider slash command + setSessionApiProviderId', () => {
 
     await useChatStore.getState().sendMessage('/provider')
 
-    expect(mockWindowApp.codexRun).not.toHaveBeenCalled()
+    expect(mockWindowApp.codexRun).toHaveBeenCalledTimes(1)
     const popup = useChatStore.getState().projectSessions['/test']._sessions[codexSid].slashCommandOutput
-    expect(popup).toMatchObject({ command: 'provider' })
+    expect(popup).toBeNull()
   })
 
   it('setSessionApiProviderId updates the active session and dispatches IPC', async () => {
@@ -1673,6 +1673,25 @@ describe('codex model cache + defaults', () => {
 
     await useChatStore.getState().refreshCodexModels(true)
     expect((useChatStore.getState().harnessResources.codex?.models ?? []).map((m) => m.id)).toEqual(['gpt-5.4'])
+  })
+
+  it('bypasses the main-process cache and updates claude resources on manual refresh', async () => {
+    setupProject('/claude-refresh')
+    mockWindowApp.connectClaude.mockResolvedValueOnce({
+      models: [{ id: 'opus-5', name: 'Opus 5', description: '' }],
+      account: {},
+      slashCommands: [],
+      skills: [],
+      commands: [],
+      agents: [],
+      outputStyles: [],
+    })
+
+    await useChatStore.getState().refreshClaudeResources(true)
+
+    expect(mockWindowApp.connectClaude).toHaveBeenCalledWith(true)
+    expect((useChatStore.getState().harnessResources.claude?.models ?? []).map((m) => m.id)).toEqual(['opus-5'])
+    expect(useChatStore.getState().claudeResourcesLoading).toBe(false)
   })
 
   it('caches Codex models separately for each provider', async () => {

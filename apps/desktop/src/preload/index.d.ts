@@ -55,7 +55,7 @@ interface AgentAPI {
 
 interface AppAPI {
   platform: NodeJS.Platform
-  connectClaude(): Promise<ClaudeResources>
+  connectClaude(force?: boolean): Promise<ClaudeResources>
   connectCodex(): Promise<CodexResources>
   connectOpenCode(): Promise<OpenCodeResources>
   getStartupData(): Promise<StartupData>

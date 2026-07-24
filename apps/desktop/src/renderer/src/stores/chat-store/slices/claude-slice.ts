@@ -19,9 +19,28 @@ export interface ClaudeSlice {
   setSelectedEffort: (effort?: EffortLevel) => void
   setFastMode: (enabled: boolean) => void
   setSelectedAcpMode: (modeId: string) => void
+  refreshClaudeResources: (force?: boolean) => Promise<void>
 }
 
 export const createClaudeSlice: StateCreator<ChatStore, [], [], ClaudeSlice> = (set, get) => ({
+  /**
+   * Re-pull the global Claude resource bundle (models, commands, skills,
+   * account). `force` bypasses main's 24h cache — that's the manual
+   * "refresh models" path, mirroring refreshCodexModels(true).
+   */
+  refreshClaudeResources: async (force = false) => {
+    if (get().claudeResourcesLoading) return
+    set({ claudeResourcesLoading: true })
+    try {
+      const resources = await window.app.connectClaude(force)
+      get().setHarnessResources('claude', resources)
+    } catch (error) {
+      console.warn('[refreshClaudeResources] Failed:', error)
+    } finally {
+      set({ claudeResourcesLoading: false })
+    }
+  },
+
   setSelectedAcpMode: (modeId) => {
     const { activeProject } = get()
     if (!activeProject) return

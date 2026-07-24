@@ -33,6 +33,8 @@ export function ClaudeModelSelector({ onCloseAutoFocus }: Props) {
   const availableModels = useChatStore(selectClaudeModels)
   const setSelectedModel = useChatStore((s) => s.setSelectedModel)
   const setSelectedEffort = useChatStore((s) => s.setSelectedEffort)
+  const refreshClaudeResources = useChatStore((s) => s.refreshClaudeResources)
+  const claudeResourcesLoading = useChatStore((s) => s.claudeResourcesLoading)
 
   const activeProvider = sessionProvider ?? preferredProvider
 
@@ -92,6 +94,8 @@ export function ClaudeModelSelector({ onCloseAutoFocus }: Props) {
         effortOptions={effortOptions}
         selectedEffort={selectedEffort ?? null}
         onSelectEffort={(value) => setSelectedEffort(value as EffortLevel)}
+        onRefreshModels={() => void refreshClaudeResources(true)}
+        modelsLoading={claudeResourcesLoading}
         triggerLabel={triggerLabel}
         onCloseAutoFocus={onCloseAutoFocus}
         {...providerProps}

@@ -266,6 +266,8 @@ export interface ChatStore {
     opencode?: OpenCodeResources | null
   }
   initializedHarnesses: Set<HarnessId>
+  /** True while a manual `refreshClaudeResources` round-trip is in flight. */
+  claudeResourcesLoading: boolean
   disabledSkills: string[]
 
   setHarnessResources<H extends HarnessId>(harness: H, resources: HarnessResourcesMap[H]): void
@@ -309,6 +311,7 @@ export interface ChatStore {
   setSelectedModel: (model: string) => void
   setSelectedEffort: (effort?: EffortLevel) => void
   setFastMode: (enabled: boolean) => void
+  refreshClaudeResources: (force?: boolean) => Promise<void>
   setSelectedCodexModel: (model: string) => void
   setSelectedCodexReasoningEffort: (effort?: CodexReasoningEffort) => void
   setSelectedCodexPermissionPreset: (preset: CodexPermissionPreset) => void

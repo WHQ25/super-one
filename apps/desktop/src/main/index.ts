@@ -2452,14 +2452,14 @@ function registerIpcHandlers(): void {
     return probeSandboxDependencies()
   })
 
-  ipcMain.handle(AgentIpcChannels.CONNECT_CLAUDE, async (): Promise<ClaudeResources> => {
+  ipcMain.handle(AgentIpcChannels.CONNECT_CLAUDE, async (_e, force?: boolean): Promise<ClaudeResources> => {
     const CLAUDE_RESOURCES_CACHE_TTL_MS = 24 * 60 * 60 * 1000
     const cached = getCachedHarnessResources('claude')
     const cacheAgeMs = getHarnessResourceCacheAgeMs('claude')
     const skills = discoverUserSkills()
     const userCommands = discoverUserCommands()
     const agents = discoverUserAgents()
-    if (cached && cacheAgeMs !== null && cacheAgeMs < CLAUDE_RESOURCES_CACHE_TTL_MS) {
+    if (!force && cached && cacheAgeMs !== null && cacheAgeMs < CLAUDE_RESOURCES_CACHE_TTL_MS) {
       log.info('[CONNECT_CLAUDE] cache fresh (ageMs=%d), skipping CLI query', cacheAgeMs)
       const resources: ClaudeResources = { ...cached, skills, commands: userCommands, agents }
       setCachedHarnessResources('claude', resources)

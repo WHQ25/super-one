@@ -188,8 +188,8 @@ const terminalAPI = {
 
 
 const appAPI = {
-  connectClaude: () =>
-    ipcRenderer.invoke(AgentIpcChannels.CONNECT_CLAUDE),
+  connectClaude: (force?: boolean) =>
+    ipcRenderer.invoke(AgentIpcChannels.CONNECT_CLAUDE, force),
 
   connectCodex: () =>
     ipcRenderer.invoke(AgentIpcChannels.CONNECT_CODEX),

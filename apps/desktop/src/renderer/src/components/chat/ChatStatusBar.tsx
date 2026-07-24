@@ -159,7 +159,7 @@ export function ChatStatusBar() {
   })
   const sessionStatus = useActiveSession((s) => s.status)
   const taskProgress = useActiveSession((s) => s.taskProgress)
-  const activeSessionId = useActiveSession((s) => s._activeSessionId)
+  const activeSessionId = useActiveSession((s) => scope?.sessionId ?? s._activeSessionId)
   const sessionProvider = useActiveSession((s) => s.sessionProvider)
   const preferredProvider = useActiveSession((s) => s.preferredProvider)
   const activeProvider = sessionProvider ?? preferredProvider

@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, useMemo } from 'react'
 import { useTranslation, Trans } from 'react-i18next'
 import { GitBranch, ChevronDown, Check, Monitor, GitCommit, Circle } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@superone/ui/components/ui/popover'
-import { useActiveSession } from '@/stores/chat'
+import { useActiveSession, useSessionScope } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 import type { GitDirtyStatus, WorktreeEntry, WorktreeInfo, WorktreeMode } from '@superone/shared/agent-types'
 import { WorktreeHandoffSection } from './WorktreeHandoffSection'
@@ -27,6 +27,7 @@ interface WtMeta {
 
 export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicatorProps) {
   const { t } = useTranslation()
+  const scope = useSessionScope()
   const currentFolder = useAppStore((s) => s.currentFolder)
   const worktrees = useAppStore((s) => s._worktrees)
   const wtState = currentFolder ? worktrees[currentFolder] : undefined
@@ -34,7 +35,7 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
   const messageCount = useActiveSession((s) => s.messages.length)
   const isOldSession = sdkSession !== null || messageCount > 0
   const activeGitBranch = useActiveSession((s) => s._gitBranch)
-  const activeSessionId = useActiveSession((s) => s._activeSessionId)
+  const activeSessionId = useActiveSession((s) => scope?.sessionId ?? s._activeSessionId)
 
   const [worktreeInfo, setWorktreeInfo] = useState<WorktreeInfo | null>(null)
   const [popoverOpen, setPopoverOpen] = useState(false)

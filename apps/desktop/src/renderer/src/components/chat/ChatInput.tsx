@@ -81,6 +81,7 @@ export function ChatInput() {
       removeDir: s.removeDir,
     })))
     const { sendMessage, interrupt, setShowReviewPanel } = storeActions
+    const sessionScope = useSessionScope()
     const { text, draftJson, status, attachments, browserAnnotations, mentions, permissionMode, hasPendingInteraction, queuedMessages, miniAppContexts, userSelections, userAdditionalDirs, projectAdditionalDirs, additionalDirs } =
       useActiveSession(useShallow((s) => ({
         text: s.draftText,
@@ -102,7 +103,7 @@ export function ChatInput() {
       slashCommands, preferredProvider, sessionProvider, agents,
       selectedCodexCollaborationMode, codexPlanRejectHintActive, chatInputFocusNonce, chatInputRestoreFocusNonce,
       promptSuggestion, showReviewPanel,
-      activeSessionId,
+      displayedSessionId,
     } = useActiveSession(useShallow((s) => ({
       slashCommands: s.slashCommands,
       preferredProvider: s.preferredProvider,
@@ -114,13 +115,9 @@ export function ChatInput() {
       chatInputRestoreFocusNonce: s.chatInputRestoreFocusNonce,
       promptSuggestion: s.promptSuggestion,
       showReviewPanel: s.showReviewPanel,
-      activeSessionId: s._activeSessionId,
+      displayedSessionId: sessionScope?.sessionId ?? s._activeSessionId,
     })))
     const commandPopup = useActiveSession((s) => s.slashCommandOutput)
-    // In mosaic mode every tile mounts its own ChatInput; only the tile whose
-    // session is the project's active one should grab keyboard focus.
-    const sessionScope = useSessionScope()
-    const isActivePane = !sessionScope || sessionScope.sessionId === activeSessionId
     // Every per-session write is routed to this pane's session, not the project's
     // active one — otherwise a non-active pane's write (e.g. the editor's draft
     // re-sync on remount) lands on whichever session happens to be active.
@@ -1107,20 +1104,20 @@ export function ChatInput() {
         }
       },
     })
-    editorRef.current = editor
+    editorRef.current = editor && !editor.isDestroyed ? editor : null
 
     const isEditorUpdateRef = useRef(false)
     const isProgrammaticSetRef = useRef(false)
-    const prevSessionIdRef = useRef(activeSessionId)
+    const prevSessionIdRef = useRef(displayedSessionId)
     useEffect(() => {
-      const sessionChanged = prevSessionIdRef.current !== activeSessionId
-      prevSessionIdRef.current = activeSessionId
+      const sessionChanged = prevSessionIdRef.current !== displayedSessionId
+      prevSessionIdRef.current = displayedSessionId
       if (!sessionChanged && isEditorUpdateRef.current) {
         isEditorUpdateRef.current = false
         return
       }
       isEditorUpdateRef.current = false
-      if (!editor) return
+      if (!editor || editor.isDestroyed) return
       // Attachments live in per-session store state, not in the text draft, so
       // detect when the editor's chip nodes drift from session.attachments
       // (e.g. after a session switch rebuilt the doc from text only).
@@ -1144,39 +1141,38 @@ export function ChatInput() {
             editor.commands.insertContent(storeAtts.map((a) => ({ type: 'attachment' as const, attrs: { id: a.id } })))
           }
         }
-        if (isActivePane) editor.commands.focus('end')
       }
-    }, [text, editor, activeSessionId, isActivePane])
+    }, [text, editor, displayedSessionId])
 
     useEffect(() => {
-      if (editor && !showReviewPanel && isActivePane) {
+      if (!sessionScope && editor && !editor.isDestroyed && !showReviewPanel) {
         editor.commands.focus('end')
       }
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [editor, showReviewPanel, activeSessionId, isActivePane])
+    }, [editor, showReviewPanel, displayedSessionId, sessionScope])
 
     useEffect(() => {
       if (!chatInputFocusNonce) return
-      if (editor && !showReviewPanel && isActivePane) {
+      if (editor && !editor.isDestroyed && !showReviewPanel) {
         editor.commands.focus('end')
       }
-    }, [chatInputFocusNonce, editor, showReviewPanel, isActivePane])
+    }, [chatInputFocusNonce, editor, showReviewPanel])
 
     useEffect(() => {
       if (!chatInputRestoreFocusNonce) return
-      if (editor && !showReviewPanel && isActivePane) {
+      if (editor && !editor.isDestroyed && !showReviewPanel) {
         editor.commands.focus()
       }
-    }, [chatInputRestoreFocusNonce, editor, showReviewPanel, isActivePane])
+    }, [chatInputRestoreFocusNonce, editor, showReviewPanel])
 
     useEffect(() => {
-      if (showReviewPanel && editor) {
+      if (showReviewPanel && editor && !editor.isDestroyed) {
         editor.commands.blur()
       }
     }, [showReviewPanel, editor])
 
     useEffect(() => {
-      if (editor) {
+      if (editor && !editor.isDestroyed) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         ;(editor.storage as any).slashDecoration.slashCommands = activeSlashCommands
         editor.view.dispatch(editor.state.tr)
@@ -1184,7 +1180,7 @@ export function ChatInput() {
     }, [activeSlashCommands, editor])
 
     useEffect(() => {
-      if (editor) {
+      if (editor && !editor.isDestroyed) {
         const active = status !== 'streaming' ? promptSuggestion : null
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         ;(editor.storage as any).promptSuggestion.suggestion = active
@@ -1194,7 +1190,7 @@ export function ChatInput() {
     }, [promptSuggestion, status, editor])
 
     useEffect(() => {
-      if (editor) {
+      if (editor && !editor.isDestroyed) {
         editor.view.dispatch(editor.state.tr)
       }
     }, [placeholderText, editor])
@@ -1373,7 +1369,7 @@ export function ChatInput() {
               <Paperclip />
             </IconButton>
 
-            <ModelSelector onCloseAutoFocus={(e) => { e.preventDefault(); editor?.commands.focus() }} />
+            <ModelSelector onCloseAutoFocus={(e) => { e.preventDefault(); if (editor && !editor.isDestroyed) editor.commands.focus() }} />
           </div>
 
           <div className="flex items-center gap-1.5">

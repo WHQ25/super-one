@@ -21,16 +21,20 @@ export async function _syncAndResumeSession(
     if (!proj) return {}
     const sess = proj._sessions[sessionId]
     if (!sess) return {}
+    const permissionChanged = sess.permissionMode !== result.permissionMode
+    const sandboxChanged =
+      proj.sandboxInfo.enabled !== result.sandboxInfo.enabled ||
+      proj.sandboxInfo.autoAllowBash !== result.sandboxInfo.autoAllowBash
+    if (!permissionChanged && !sandboxChanged) return s
     return {
       projectSessions: {
         ...s.projectSessions,
         [projectPath]: {
           ...proj,
-          sandboxInfo: result.sandboxInfo,
-          _sessions: {
-            ...proj._sessions,
-            [sessionId]: { ...sess, permissionMode: result.permissionMode },
-          },
+          sandboxInfo: sandboxChanged ? result.sandboxInfo : proj.sandboxInfo,
+          _sessions: permissionChanged
+            ? { ...proj._sessions, [sessionId]: { ...sess, permissionMode: result.permissionMode } }
+            : proj._sessions,
         },
       },
     }

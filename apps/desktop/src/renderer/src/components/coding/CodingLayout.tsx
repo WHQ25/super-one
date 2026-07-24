@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState, useCallback, memo, lazy, Suspense } from 'react'
-import { useChatStore } from '@/stores/chat'
+import { useChatStore, type SessionScope } from '@/stores/chat'
 import { SessionPane } from '@/components/chat/SessionPane'
 import { SessionSwitcherPopup } from '@/components/chat/SessionSwitcherPopup'
 import { useAppStore } from '@/stores/app'
@@ -16,6 +16,11 @@ const MIN_TERM_HEIGHT = 120
 
 const TerminalPanel = lazy(() => import('@/components/coding/TerminalPanel').then((m) => ({ default: m.TerminalPanel })))
 
+interface CodingLayoutProps {
+  foreground?: boolean
+  scope?: SessionScope
+}
+
 // Closing the active dock tab is not a plain `api.close()`: browser/mini-app/terminal
 // tabs keep their real content (webview, iframe instance, PTY) in fixed host-layer
 // overlays or the main process, so a bare panel close would orphan them. Dispatch by
@@ -30,7 +35,7 @@ function closeActiveDockTab(): void {
   else closeBrowserTab(id)
 }
 
-export const CodingLayout = memo(function CodingLayout() {
+export const CodingLayout = memo(function CodingLayout({ foreground = true, scope }: CodingLayoutProps) {
   const chatScopeRef = useRef<HTMLDivElement>(null)
   const termSurfaceRef = useRef<HTMLDivElement>(null)
 
@@ -102,7 +107,7 @@ export const CodingLayout = memo(function CodingLayout() {
 
   return (
     <div ref={chatScopeRef} className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
-      <SessionPane />
+      <SessionPane foreground={foreground} scope={scope} />
 
       <div
         ref={termSurfaceRef}

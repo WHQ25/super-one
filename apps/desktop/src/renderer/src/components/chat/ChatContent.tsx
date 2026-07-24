@@ -32,15 +32,17 @@ interface ChatContentProps {
   showScrollButton?: boolean
   scrollToBottom?: () => void
   stopAutoScroll?: () => void
+  foreground?: boolean
 }
 
 const INITIAL_RENDER_COUNT = 12
 const LOAD_MORE_COUNT = 4
 
-export function ChatContent({ scrollViewportRef, showScrollButton = false, scrollToBottom, stopAutoScroll }: ChatContentProps) {
+export function ChatContent({ scrollViewportRef, showScrollButton = false, scrollToBottom, stopAutoScroll, foreground = true }: ChatContentProps) {
+  const scope = useSessionScope()
   const {
     messages, isCompacting, compactError, rateLimitInfo, apiRetry, modelFallback, pendingPlanApproval,
-    historySessionId, historyHydrated, worktreeRemoved,
+    displayedSessionId, historyHydrated, worktreeRemoved,
     sessionStatus, lastAssistantMessageId, queuedMessages, awaitingAssistantReply,
   } = useActiveSession(useShallow((s) => ({
     messages: s.messages,
@@ -50,7 +52,7 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
     apiRetry: s.apiRetry,
     modelFallback: s.modelFallback,
     pendingPlanApproval: s.pendingPlanApproval,
-    historySessionId: s._activeSessionId,
+    displayedSessionId: scope?.sessionId ?? s._activeSessionId,
     historyHydrated: s._historyHydrated,
     worktreeRemoved: s._worktreeRemoved,
     sessionStatus: s.status,
@@ -58,19 +60,17 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
     queuedMessages: s.queuedMessages,
     awaitingAssistantReply: s.awaitingAssistantReply,
   })))
-  const scope = useSessionScope()
-  const displayedSessionId = scope?.sessionId ?? historySessionId
 
   // ChatContent is the single render root for a visible session — mounted once per
   // single-mode pane, per mosaic tile, and per mini window. Reporting foreground here
   // (rather than in mosaic/mini-window-specific code) covers all three for free.
   useEffect(() => {
-    if (!displayedSessionId) return
+    if (!displayedSessionId || !foreground) return
     void window.agent.setSessionForeground(displayedSessionId, true)
     return () => {
       void window.agent.setSessionForeground(displayedSessionId, false)
     }
-  }, [displayedSessionId])
+  }, [displayedSessionId, foreground])
 
   const liquidGlass = useAppStore((s) => s.liquidGlass)
   const { editQueuedMessage, deleteQueuedMessage, disconnectRemoteSession, dismissCompactError } = useChatStore(useShallow((s) => ({

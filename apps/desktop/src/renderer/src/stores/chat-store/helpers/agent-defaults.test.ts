@@ -187,6 +187,16 @@ describe('applySessionAgentDefaults', () => {
     expect(patch.selectedCodexReasoningEffort).toBe('high')
   })
 
+  it('returns {} when the Codex session already has the resolved selection', () => {
+    const session = createDefaultPerSessionState()
+    session.sessionProvider = 'codex'
+    session.selectedCodexModel = 'gpt-5-high'
+    session.selectedCodexReasoningEffort = 'high'
+    const project = createDefaultProjectState()
+    project.codexModels = [codexHigh]
+    expect(applySessionAgentDefaults(session, project, [])).toEqual({})
+  })
+
   it('returns Claude default patch when session.selectedModel is empty (claude provider)', () => {
     const session = createDefaultPerSessionState()
     session.sessionProvider = 'claude'

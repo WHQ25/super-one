@@ -215,6 +215,28 @@ describe('_syncAndResumeSession', () => {
     expect(proj._sessions['sid-1'].permissionMode).toBe('plan')
   })
 
+  it('preserves state when resumeSession returns unchanged settings', async () => {
+    resumeSession.mockResolvedValueOnce({
+      permissionMode: 'default',
+      sandboxInfo: { enabled: false, autoAllowBash: false },
+    })
+    const baseState = {
+      projectSessions: {
+        '/p1': {
+          ...createDefaultProjectState(),
+          _activeSessionId: 'sid-1',
+          _sessions: { 'sid-1': createDefaultPerSessionState() },
+        },
+      },
+    } as never
+    let captured: unknown
+    const set = (updater: (s: never) => unknown) => { captured = updater(baseState) }
+
+    await _syncAndResumeSession('/p1', 'sid-1', set as never, '/p1')
+
+    expect(captured).toBe(baseState)
+  })
+
   it('returns empty patch when project/session goes missing between IPC + apply', async () => {
     resumeSession.mockResolvedValueOnce({ permissionMode: 'default', sandboxInfo: { enabled: false, autoAllowBash: false } })
     let captured: unknown

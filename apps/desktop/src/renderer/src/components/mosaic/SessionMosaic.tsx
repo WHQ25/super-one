@@ -22,6 +22,11 @@ interface RenderCtx {
   reserveTrafficLights: boolean
   showSidebar: boolean
   containerRef: RefObject<HTMLDivElement | null>
+  foreground: boolean
+}
+
+interface SessionMosaicProps {
+  foreground?: boolean
 }
 
 function MosaicTile({ tile, ctx }: { tile: MosaicLeaf; ctx: RenderCtx }) {
@@ -56,8 +61,9 @@ function MosaicTile({ tile, ctx }: { tile: MosaicLeaf; ctx: RenderCtx }) {
           </IconButton>
         </div>
       </div>
-      <div className={cn('relative flex min-h-0 flex-1 flex-col overflow-hidden transition-opacity', !focused && 'opacity-75')}>
-        <SessionPane scope={{ projectPath: tile.projectPath, sessionId: tile.sessionId }} />
+      <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+        <SessionPane scope={{ projectPath: tile.projectPath, sessionId: tile.sessionId }} foreground={ctx.foreground} />
+        <div className={cn('pointer-events-none absolute inset-0 z-10 bg-card transition-opacity duration-150', focused ? 'opacity-0' : 'opacity-25')} />
       </div>
       {dragging && (
         <MosaicDropZone
@@ -93,9 +99,9 @@ function MosaicNodeView({ node, path, ctx }: { node: MosaicNode; path: MosaicPat
   )
 }
 
-export function SessionMosaic() {
+export function SessionMosaic({ foreground = true }: SessionMosaicProps) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const root = useMosaicStore((s) => s.root)
+  const root = useMosaicStore((s) => s.root ?? s.lastLayout?.root ?? null)
   const showSidebar = useAppStore((s) => s.showSidebar)
   const isFullscreen = useFullscreen()
   if (!root) return null
@@ -104,6 +110,7 @@ export function SessionMosaic() {
     reserveTrafficLights: isMac && !showSidebar && !isFullscreen,
     showSidebar,
     containerRef,
+    foreground,
   }
   return (
     <div ref={containerRef} className="flex min-h-0 min-w-0 flex-1 overflow-hidden">

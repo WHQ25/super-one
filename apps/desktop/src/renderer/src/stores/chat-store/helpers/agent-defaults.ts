@@ -55,7 +55,10 @@ export function applySessionAgentDefaults(
       session.selectedCodexModel,
       session.selectedCodexReasoningEffort,
     )
-    return { selectedCodexModel: sel.modelId, selectedCodexReasoningEffort: sel.reasoningEffort }
+    const patch: Partial<PerSessionState> = {}
+    if (sel.modelId !== session.selectedCodexModel) patch.selectedCodexModel = sel.modelId
+    if (sel.reasoningEffort !== session.selectedCodexReasoningEffort) patch.selectedCodexReasoningEffort = sel.reasoningEffort
+    return patch
   }
   if (provider === 'acp') return {}
   if (!session.selectedModel) {

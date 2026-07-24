@@ -240,17 +240,33 @@ describe('ChatContent scroll-area key follows the pane-displayed session (mosaic
     // Mosaic pane: content is pinned to sid-1 via scope, regardless of which session is project-active.
     hoisted.scope.value = { projectPath: '/p', sessionId: 'sid-1' }
     hoisted.sessionState._activeSessionId = 'sid-1'
+    let projectActiveSessionId = 'sid-1'
+    const readProjectActiveSessionId = vi.fn(() => projectActiveSessionId)
+    Object.defineProperty(hoisted.sessionState, '_activeSessionId', {
+      configurable: true,
+      get: readProjectActiveSessionId,
+      set: (value: string | null) => { projectActiveSessionId = value ?? '' },
+    })
 
-    const ref = createRef<HTMLDivElement>()
-    const { rerender } = render(<ChatContent scrollViewportRef={ref} />)
-    const mountsAfterFirst = hoisted.scrollMounts.count
-    expect(mountsAfterFirst).toBe(1)
+    try {
+      const ref = createRef<HTMLDivElement>()
+      const { rerender } = render(<ChatContent scrollViewportRef={ref} />)
+      const mountsAfterFirst = hoisted.scrollMounts.count
+      expect(mountsAfterFirst).toBe(1)
 
-    // Focusing another pane flips the project-level _activeSessionId — this pane must stay put.
-    hoisted.sessionState._activeSessionId = 'sid-2'
-    rerender(<ChatContent scrollViewportRef={ref} />)
+      // Focusing another pane flips the project-level _activeSessionId — this pane must stay put.
+      hoisted.sessionState._activeSessionId = 'sid-2'
+      rerender(<ChatContent scrollViewportRef={ref} />)
 
-    expect(hoisted.scrollMounts.count).toBe(mountsAfterFirst)
+      expect(hoisted.scrollMounts.count).toBe(mountsAfterFirst)
+      expect(readProjectActiveSessionId).not.toHaveBeenCalled()
+    } finally {
+      Object.defineProperty(hoisted.sessionState, '_activeSessionId', {
+        configurable: true,
+        writable: true,
+        value: projectActiveSessionId,
+      })
+    }
   })
 
   it('DOES remount the scroll area when the displayed session changes in unscoped (single) mode', () => {
@@ -267,5 +283,25 @@ describe('ChatContent scroll-area key follows the pane-displayed session (mosaic
     rerender(<ChatContent scrollViewportRef={ref} />)
 
     expect(hoisted.scrollMounts.count).toBe(mountsAfterFirst + 1)
+  })
+})
+
+describe('ChatContent foreground visibility', () => {
+  it('holds a foreground reference only while visible', () => {
+    hoisted.scope.value = null
+    hoisted.sessionState._activeSessionId = 'sid-1'
+    hoisted.sessionState._historyHydrated = true
+    hoisted.sessionState.messages = []
+    const setSessionForeground = vi.fn().mockResolvedValue(undefined)
+    window.agent = { ...window.agent, setSessionForeground } as never
+
+    const ref = createRef<HTMLDivElement>()
+    const { rerender, unmount } = render(<ChatContent scrollViewportRef={ref} foreground />)
+    rerender(<ChatContent scrollViewportRef={ref} foreground={false} />)
+    unmount()
+
+    expect(setSessionForeground).toHaveBeenCalledTimes(2)
+    expect(setSessionForeground).toHaveBeenNthCalledWith(1, 'sid-1', true)
+    expect(setSessionForeground).toHaveBeenNthCalledWith(2, 'sid-1', false)
   })
 })

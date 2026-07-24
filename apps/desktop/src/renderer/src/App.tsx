@@ -5,12 +5,11 @@ import { toast } from 'sonner'
 import { useTranslation } from 'react-i18next'
 import { LayoutToggle } from '@/components/coding/LayoutToggle'
 import { ChatPanel } from '@/components/chat/ChatPanel'
-import { CodingLayout } from '@/components/coding/CodingLayout'
+import { CodingWorkspace } from '@/components/coding/CodingWorkspace'
 import { CanvasPanel } from '@/components/canvas/CanvasPanel'
 import { ActivityPanel } from '@/components/activity/ActivityPanel'
 import { openBrowserTab, restoreBrowserToPanel, closeFullscreenBrowser, beginMosaicRecording, replayMosaicOpenedPanels } from '@/components/activity/activity-panel-api'
 import { BrowserFavicon } from '@/components/browser/BrowserFavicon'
-import { SessionMosaic } from '@/components/mosaic/SessionMosaic'
 import { useMosaicStore } from '@/components/mosaic/mosaic-store'
 import { MosaicDropZone } from '@/components/mosaic/MosaicDropZone'
 import { MosaicDropPreview } from '@/components/mosaic/MosaicDropPreview'
@@ -630,7 +629,7 @@ function App(): React.JSX.Element {
         {layoutMode === 'coding' ? (
           <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
             {!liquidGlass && mosaicMode !== 'mosaic' && <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-6 bg-linear-to-b from-card to-transparent" />}
-            {mosaicMode === 'mosaic' ? <SessionMosaic /> : <CodingLayout />}
+            <CodingWorkspace mosaicMode={mosaicMode} />
           </div>
         ) : (
           <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">

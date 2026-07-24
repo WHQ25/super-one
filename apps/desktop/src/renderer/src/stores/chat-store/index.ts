@@ -579,8 +579,10 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
     // Track the outgoing session as "previous" so Ctrl+Tab can bounce back even if it's idle.
     const prevSid = project._activeSessionId
     if (prevSid && prevSid !== sessionId) {
-      set((s) => updateProjectState(s, activeProject, () => ({ _previousSessionId: prevSid })))
-      set({ _previousFocusedSession: { projectPath: activeProject, sessionId: prevSid } })
+      set((s) => ({
+        ...updateProjectState(s, activeProject, () => ({ _previousSessionId: prevSid })),
+        _previousFocusedSession: { projectPath: activeProject, sessionId: prevSid },
+      }))
     }
 
     if (project.unseenCompletedSessions.has(sessionId)) {
@@ -609,19 +611,21 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
       set((s) => {
         const proj = getProject(s, activeProject)
         const targetSession = proj._sessions[sessionId]
+        const nextCwd = worktreeMissing ? activeProject : _getSessionCwd(activeProject, targetSession)
         const patched: PerSessionState = worktreeMissing
           ? { ...targetSession, _worktreeRemoved: true, cwd: activeProject }
-          : { ...targetSession, cwd: _getSessionCwd(activeProject, targetSession) }
+          : targetSession.cwd === nextCwd
+            ? targetSession
+            : { ...targetSession, cwd: nextCwd }
         return {
           projectSessions: {
             ...s.projectSessions,
             [activeProject]: {
               ...proj,
               _activeSessionId: sessionId,
-              _sessions: {
-                ...proj._sessions,
-                [sessionId]: patched,
-              },
+              _sessions: patched === targetSession
+                ? proj._sessions
+                : { ...proj._sessions, [sessionId]: patched },
             },
           },
         }
@@ -659,9 +663,14 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
       })
       useAppStore.getState().setActiveWorktree(activeProject, _getSessionWorktreePath(targetSession))
 
-      set((s) => updatePerSession(s, activeProject, sessionId, (sess) =>
-        applySessionAgentDefaults(sess, getProject(s, activeProject), s.harnessResources.claude?.models ?? []),
-      ))
+      const defaultsPatch = applySessionAgentDefaults(
+        targetSession,
+        getProject(get(), activeProject),
+        get().harnessResources.claude?.models ?? [],
+      )
+      if (Object.keys(defaultsPatch).length > 0) {
+        set((s) => updatePerSession(s, activeProject, sessionId, () => defaultsPatch))
+      }
 
       try {
         await _syncAndResumeSession(activeProject, sessionId, set, _getSessionCwd(activeProject, runtimeSession))

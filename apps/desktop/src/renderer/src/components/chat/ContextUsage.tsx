@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ChevronDown, ChevronUp } from 'lucide-react'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
-import { useChatStore, useActiveSession, selectClaudeModels } from '@/stores/chat'
+import { useChatStore, useActiveSession, useSessionScope, selectClaudeModels } from '@/stores/chat'
 import { resolveModelContextWindow } from '@superone/shared/agent-types'
 
 function formatTokens(n: number): string {
@@ -10,6 +10,7 @@ function formatTokens(n: number): string {
 }
 
 export function ContextUsage() {
+  const scope = useSessionScope()
   const contextTokens = useActiveSession((s) => s.contextTokens)
   const contextWindowFromSession = useActiveSession((s) => s.contextWindow)
   const selectedModel = useActiveSession((s) => s.selectedModel)
@@ -18,7 +19,7 @@ export function ContextUsage() {
   const totalCostUsd = useActiveSession((s) => s.totalCostUsd)
   const status = useActiveSession((s) => s.status)
   const detailedUsage = useActiveSession((s) => s.detailedUsage)
-  const activeSessionId = useActiveSession((s) => s._activeSessionId)
+  const activeSessionId = useActiveSession((s) => scope?.sessionId ?? s._activeSessionId)
   const availableModels = useChatStore(selectClaudeModels)
   const activeProject = useChatStore((s) => s.activeProject)
   const setDetailedUsage = useChatStore((s) => s.setDetailedUsage)

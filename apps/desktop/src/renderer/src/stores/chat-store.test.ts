@@ -1752,6 +1752,33 @@ describe('switchSession Case A (in _sessions)', () => {
     expect(mockWindowApp.resumeSession).toHaveBeenCalledWith('/test', 'ses-b', '/test')
   })
 
+  it('preserves the cached target session when switching does not change its state', async () => {
+    setupProject('/test')
+    const proj = useChatStore.getState().projectSessions['/test']
+    const target = {
+      ...createDefaultPerSessionState(),
+      cwd: '/test',
+      selectedModel: 'claude-sonnet-4-6',
+      sessionProvider: 'claude' as const,
+    }
+    useChatStore.setState({
+      projectSessions: {
+        '/test': {
+          ...proj,
+          _activeSessionId: 'ses-a',
+          _sessions: {
+            'ses-a': createDefaultPerSessionState(),
+            'ses-b': target,
+          },
+        },
+      },
+    })
+
+    await useChatStore.getState().switchSession('ses-b')
+
+    expect(useChatStore.getState().projectSessions['/test']._sessions['ses-b']).toBe(target)
+  })
+
   it('records the outgoing session as _previousSessionId so Ctrl+Tab can bounce back', async () => {
     setupProject('/test')
     const proj = useChatStore.getState().projectSessions['/test']

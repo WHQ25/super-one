@@ -3,7 +3,7 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { chatActions, activeSessionState, editorState, useChatStore, mentionPopup } = vi.hoisted(() => {
+const { chatActions, activeSessionState, editorState, useChatStore, mentionPopup, sessionScope } = vi.hoisted(() => {
   const mentionPopup = {
     props: null as null | { query: string; onResultState?: (q: string, isEmpty: boolean) => void },
   }
@@ -92,9 +92,14 @@ const { chatActions, activeSessionState, editorState, useChatStore, mentionPopup
     onUpdate: null as null | ((payload: { editor: unknown }) => void),
     editor: null as unknown,
     composing: false,
+    destroyed: false,
   }
 
-  return { chatActions, activeSessionState, editorState, useChatStore, mentionPopup }
+  const sessionScope = {
+    value: null as { projectPath: string; sessionId: string } | null,
+  }
+
+  return { chatActions, activeSessionState, editorState, useChatStore, mentionPopup, sessionScope }
 })
 
 vi.mock('@tiptap/react', () => {
@@ -106,7 +111,10 @@ vi.mock('@tiptap/react', () => {
         slashDecoration: { slashCommands: [] as unknown[] },
         promptSuggestion: { suggestion: null as string | null },
       },
-      getText: () => editorState.text,
+      getText: () => {
+        if (editorState.destroyed) throw new Error('Destroyed editor accessed')
+        return editorState.text
+      },
       getJSON: () => ({ type: 'doc', content: [{ type: 'paragraph', content: editorState.text ? [{ type: 'text', text: editorState.text }] : [] }] }),
       chain: () => {
         const chain = {
@@ -165,6 +173,9 @@ vi.mock('@tiptap/react', () => {
         get composing() {
           return editorState.composing
         },
+      },
+      get isDestroyed() {
+        return editorState.destroyed
       },
     }
 
@@ -228,7 +239,7 @@ vi.mock('@/stores/chat', () => ({
   useChatStore,
   useActiveSession: (selector: (state: typeof activeSessionState) => unknown) => selector(activeSessionState),
   useIsRemoteLocked: () => false,
-  useSessionScope: () => null,
+  useSessionScope: () => sessionScope.value,
   selectCodexPrompts: () => [],
   selectActiveCodexSkills: () => [],
   getLatestCodexThreadId: () => undefined,
@@ -296,6 +307,7 @@ beforeEach(() => {
   editorState.onUpdate = null
   editorState.editor = null
   editorState.composing = false
+  editorState.destroyed = false
   activeSessionState.draftText = ''
   activeSessionState.attachments = []
   activeSessionState.mentions = []
@@ -303,6 +315,8 @@ beforeEach(() => {
   activeSessionState.sessionProvider = null
   activeSessionState.showDirManager = false
   activeSessionState.showReviewPanel = false
+  activeSessionState._activeSessionId = 'session-1'
+  sessionScope.value = null
   mentionPopup.props = null
 })
 
@@ -313,6 +327,11 @@ function typeInEditor(value: string) {
 }
 
 describe('ChatInput', () => {
+  it('does not access a destroyed editor while Activity restores effects', () => {
+    editorState.destroyed = true
+    expect(() => render(<ChatInput />)).not.toThrow()
+  })
+
   it('opens the Codex review panel after switching providers without remounting', () => {
     const { rerender } = render(<ChatInput />)
 
@@ -334,6 +353,37 @@ describe('ChatInput', () => {
     fireEvent.mouseDown(slashButton!)
 
     expect(chatActions.setShowReviewPanel).toHaveBeenCalledWith(true)
+  })
+
+  it('does not subscribe or refocus when the project focus changes outside a scoped pane', () => {
+    sessionScope.value = { projectPath: '/project', sessionId: 'session-1' }
+    let projectActiveSessionId = 'session-1'
+    const readProjectActiveSessionId = vi.fn(() => projectActiveSessionId)
+    Object.defineProperty(activeSessionState, '_activeSessionId', {
+      configurable: true,
+      get: readProjectActiveSessionId,
+      set: (value: string) => { projectActiveSessionId = value },
+    })
+
+    try {
+      const { rerender } = render(<ChatInput />)
+      const firstEditor = editorState.editor as { commands: { focus: ReturnType<typeof vi.fn> } }
+      firstEditor.commands.focus.mockClear()
+
+      activeSessionState._activeSessionId = 'session-2'
+      rerender(<ChatInput />)
+
+      const nextEditor = editorState.editor as { commands: { focus: ReturnType<typeof vi.fn> } }
+      expect(readProjectActiveSessionId).not.toHaveBeenCalled()
+      expect(firstEditor.commands.focus).not.toHaveBeenCalled()
+      expect(nextEditor.commands.focus).not.toHaveBeenCalled()
+    } finally {
+      Object.defineProperty(activeSessionState, '_activeSessionId', {
+        configurable: true,
+        writable: true,
+        value: projectActiveSessionId,
+      })
+    }
   })
 })
 

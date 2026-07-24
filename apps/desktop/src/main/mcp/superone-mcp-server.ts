@@ -321,22 +321,38 @@ function registerMobileShareToolOnState(state: ProjectServerState, sessionId: st
   const registered = state.server.registerTool(
     MOBILE_SHARE_FILE_TOOL_NAME,
     { description: MOBILE_SHARE_FILE_DESCRIPTION, inputSchema: zodShape },
-    async (args: Record<string, unknown>) => {
-      if (!mobileShareDeps) {
-        return { content: [{ type: 'text' as const, text: '[Error] Mobile sharing is unavailable.' }], isError: true }
-      }
-      const result = await mobileShareDeps.shareFile({
-        sessionId,
-        path: String(args.path ?? ''),
-        caption: args.caption != null ? String(args.caption) : undefined,
-      })
-      if (!result.ok) {
-        return { content: [{ type: 'text' as const, text: `[Error] ${result.error ?? 'Failed to share file.'}` }], isError: true }
-      }
-      return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] }
-    },
+    async (args: Record<string, unknown>) => executeMobileShareFileTool(sessionId, args),
   )
   state.registeredTools.set(MOBILE_SHARE_FILE_TOOL_NAME, registered)
+}
+
+export function isMobileShareToolEnabled(sessionId: string): boolean {
+  return mobileShareEnabled.has(sessionId)
+}
+
+/** Execute mobile_share_file for ACP/stdio bridge (same handler as in-process MCP). */
+export async function executeMobileShareFileTool(
+  sessionId: string,
+  args: Record<string, unknown>,
+): Promise<{ content: Array<{ type: 'text'; text: string }>; isError?: boolean }> {
+  if (!mobileShareDeps) {
+    return {
+      content: [{ type: 'text', text: '[Error] Mobile sharing is unavailable.' }],
+      isError: true,
+    }
+  }
+  const result = await mobileShareDeps.shareFile({
+    sessionId,
+    path: String(args.path ?? ''),
+    caption: args.caption != null ? String(args.caption) : undefined,
+  })
+  if (!result.ok) {
+    return {
+      content: [{ type: 'text', text: `[Error] ${result.error ?? 'Failed to share file.'}` }],
+      isError: true,
+    }
+  }
+  return { content: [{ type: 'text', text: JSON.stringify(result) }] }
 }
 
 export function registerMobileShareTool(sessionId: string): void {

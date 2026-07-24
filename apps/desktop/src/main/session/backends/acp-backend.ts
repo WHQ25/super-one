@@ -488,13 +488,17 @@ export class AcpBackend implements SessionBackend {
     // Host built-ins + mini-app preapprovals must not block Grok turns (Claude parity).
     const pre = shouldAutoAllowAcpPermission(params)
     if (pre.allow) {
+      // Built-ins: prefer allow_always / allow-always-mcp so Grok stops re-prompting
+      // the same host tool. Mini-app preapprovals stay one-shot (tool-scoped list).
+      const alwaysAllow = pre.reason === 'builtin'
       log.info(
-        '[AcpBackend] auto-allow permission tool=%s reason=%s requestId=%s',
+        '[AcpBackend] auto-allow permission tool=%s reason=%s always=%s requestId=%s',
         pre.toolName,
         pre.reason,
+        alwaysAllow,
         request.requestId,
       )
-      return Promise.resolve(mapPermissionDecision(options, true, false))
+      return Promise.resolve(mapPermissionDecision(options, true, alwaysAllow))
     }
     const event: AgentEvent = { type: 'permission_request', request }
     return new Promise((resolve) => {

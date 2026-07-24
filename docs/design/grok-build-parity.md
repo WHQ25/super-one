@@ -135,7 +135,7 @@ Priority: **P0** broken host correctness · **P1** Claude/Codex host UX parity �
 | RT-01 | Spawn `grok agent stdio` + ndjson stream | runtime | done | `acp-process.ts`, `agent-catalog.ts` (`grok-build`) | — | — |
 | RT-02 | Safe spawn env / Windows shell | runtime | done | `acp-process.ts`, `spawn-env.ts` | — | — |
 | RT-03 | Detect installed grok CLI | runtime | done | `acp-detect.ts`, `~/.grok/bin` PATH | — | — |
-| RT-04 | initialize PROTOCOL_VERSION + fs caps | acp-host | partial | `acp-runtime.ts` | `clientInfo.version` hardcoded `0.0.0`; no `_meta.clientType` | P2 |
+| RT-04 | initialize PROTOCOL_VERSION + fs caps | acp-host | **done** | `resolveAcpClientVersion()` | no `_meta.clientType` (intentional Generic) | P3 |
 | RT-05 | Grok: `terminal: false` on initialize | acp-host | done | `launch.agentId !== 'grok-build'` | intentional non-goal to re-enable | na |
 | RT-06 | Advertise askUserQuestion + exitPlanMode | acp-host | done | initialize `_meta` | — | — |
 | RT-07 | Non-interactive authenticate | acp-host | partial | cached_token / api_key heuristics | Interactive auth skipped; weak tests | P2 |
@@ -162,7 +162,7 @@ Priority: **P0** broken host correctness · **P1** Claude/Codex host UX parity �
 | PM-05 | AcpPermissionSelector ask/auto/always | session-ui | done | `acpPermissionModes.ts` | — | — |
 | PM-06 | enable-always-approve option id | acp-host | missing | Generic client; no special option handling | Desktop-style option ignored if agent ever sends it | P2 |
 | PM-07 | acceptEdits / dontAsk mid-session | acp-host | missing | yolo notify only ask/auto/always-approve | By wire design; phase-2 rebuild only | P3 |
-| PM-08 | allow-always-mcp server grant for builtins | acp-host | missing | always `allow_once` | Extra reverse-RPC noise | P2 |
+| PM-08 | allow-always-mcp / allow_always for builtins | acp-host | **done** | auto-allow uses alwaysAllow for builtins | — | — |
 | PM-09 | Hide /always-approve slash | session-ui | done | `acp-slash-filter.ts` | — | — |
 | PM-10 | Plan ≠ permissionMode | session-ui | done | separate selectors; plan approval ≠ yolo | Host enter-plan still optional | P2 |
 | PM-11 | Design doc accuracy | tests-docs | partial | `grok-acp-permissions.md` Draft | §1 still describes no-op setPermissionMode | P1 |
@@ -188,7 +188,7 @@ Priority: **P0** broken host correctness · **P1** Claude/Codex host UX parity �
 | MCP-03 | use_tool → mcp__ unwrap for UI/preapprove | mcp-host | done | `acp-event-map.ts` | — | — |
 | MCP-04 | User-configured MCP → session/new | mcp-host | **done** | `buildAcpSessionMcpServers` + `listMcpConfigs` | Mid-session reload still missing | P2 |
 | MCP-05 | Honor agent mcpCapabilities http/sse | mcp-host | **done** | filter in `toAcpMcpServer` | — | — |
-| MCP-06 | mobile_share_file on ACP stdio surface | mcp-host | missing | in-process Claude only | Preapprove list includes it; agent cannot call | P2 |
+| MCP-06 | mobile_share_file on ACP stdio surface | mcp-host | **done** | list/execute when session has mobile share enabled | — | — |
 | MCP-07 | supportsMcp capability flag for acp | session-ui | **done** | `HARNESS_CAPABILITIES.acp.supportsMcp: true` | — | — |
 | MCP-08 | SDK MCP (x.ai/mcp/sdk_call) | acp-host | missing | — | Alternative to stdio superone; defer | P3 |
 | MCP-09 | MCP status notifications UI | acp-host | missing | — | Agent-side catalog UI | P2 |
@@ -485,8 +485,9 @@ Phase B (PR3–PR4) — **host UX parity**
 
 Phase C (PR5–PR6) — **polish**
 
-- [ ] Built-in MCP reverse-requests reduced via allow-always-mcp when offered.
-- [ ] Honest client version string.
+- [x] Built-in MCP reverse-requests reduced via allow-always-mcp / allow_always when offered.
+- [x] Honest client version string (`resolveAcpClientVersion`).
+- [x] mobile_share_file on ACP stdio surface when phone subscribed.
 - [ ] Manual Grok acceptance checklist signed off (include plan approve/reject + line comments).
 
 ---
@@ -521,7 +522,7 @@ Phase C (PR5–PR6) — **polish**
 
 **Shipped recently:** plan approval, model/effort `session/set_model`, harness caps, user MCP attach, session/load resume, permissions phase-1 + docs status.
 
-**High-priority next:** permission polish (allow-always-mcp, client version); manual Grok CLI checklist.
+**High-priority next:** manual Grok CLI checklist (PR6).
 
 **Not a blocker:** host enter-plan (optional P2).
 

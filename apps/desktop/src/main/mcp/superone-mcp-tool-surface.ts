@@ -5,21 +5,36 @@ import {
   executeBuiltInSuperoneTool,
 } from './superone-mcp-builtins'
 import {
+  MOBILE_SHARE_FILE_DESCRIPTION,
+  MOBILE_SHARE_FILE_INPUT_SCHEMA,
+  MOBILE_SHARE_FILE_TOOL_NAME,
+} from './superone-mcp-builtin-defs'
+import {
   executeBrowserTool,
   getBrowserToolDescriptors,
   isBrowserToolName,
 } from './browser-mcp-tools'
 import {
   dispatchAppToolCall,
+  executeMobileShareFileTool,
   getAppToolDefs,
   getSessionHost,
   getAppSettingsApplier,
+  isMobileShareToolEnabled,
   notifyDevAppReady,
 } from './superone-mcp-server'
 import type { SuperoneMcpToolDescriptor } from './superone-mcp-types'
 
 export function listSuperoneMcpTools(sessionId: string): SuperoneMcpToolDescriptor[] {
   const tools = [...BUILT_IN_SUPERONE_TOOL_DEFS, ...getBrowserToolDescriptors()]
+  // Match in-process MCP: only advertise mobile share while a phone is subscribed.
+  if (isMobileShareToolEnabled(sessionId)) {
+    tools.push({
+      name: MOBILE_SHARE_FILE_TOOL_NAME,
+      description: MOBILE_SHARE_FILE_DESCRIPTION,
+      inputSchema: MOBILE_SHARE_FILE_INPUT_SCHEMA as SuperoneMcpToolDescriptor['inputSchema'],
+    })
+  }
   for (const entry of getAppToolDefs().values()) {
     if (entry.sessionId !== sessionId) continue
     for (const t of entry.tools) {
@@ -40,6 +55,16 @@ export async function executeSuperoneMcpTool(
 ) {
   if (isBrowserToolName(toolName)) {
     return executeBrowserTool(sessionId, toolName, args)
+  }
+
+  if (toolName === MOBILE_SHARE_FILE_TOOL_NAME) {
+    if (!isMobileShareToolEnabled(sessionId)) {
+      return {
+        content: [{ type: 'text' as const, text: '[Error] Mobile share is not available for this session.' }],
+        isError: true,
+      }
+    }
+    return executeMobileShareFileTool(sessionId, args)
   }
 
   if ((BUILT_IN_SUPERONE_TOOL_NAMES as readonly string[]).includes(toolName)) {

@@ -324,6 +324,7 @@ describe('AcpBackend', () => {
             },
           },
           options: [
+            { optionId: 'allow-always-mcp', name: 'Always allow', kind: 'allow_always' },
             { optionId: 'allow-once', name: 'Allow', kind: 'allow_once' },
             { optionId: 'reject-once', name: 'Deny', kind: 'reject_once' },
           ],
@@ -351,8 +352,9 @@ describe('AcpBackend', () => {
       .filter((d): d is { type: 'text'; text: string } => d.type === 'text')
       .map((d) => d.text)
       .join('')
+    // Built-ins prefer allow-always-mcp so Grok grants session-scoped tool allow.
     expect(JSON.parse(text)).toEqual({
-      outcome: { outcome: 'selected', optionId: 'allow-once' },
+      outcome: { outcome: 'selected', optionId: 'allow-always-mcp' },
     })
     await backend.close()
   })

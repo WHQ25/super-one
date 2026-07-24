@@ -72,6 +72,21 @@ describe('mapPermissionDecision', () => {
     })
   })
 
+  it('prefers allow-always-mcp option id for MCP session grants', () => {
+    const mcpOptions = [
+      { optionId: 'allow-always-mcp', kind: 'allow_always' as const },
+      { optionId: 'allow-once', kind: 'allow_once' as const },
+      { optionId: 'reject-once', kind: 'reject_once' as const },
+    ]
+    expect(mapPermissionDecision(mcpOptions, true, true)).toEqual({
+      outcome: { outcome: 'selected', optionId: 'allow-always-mcp' },
+    })
+    // One-shot path still picks allow_once
+    expect(mapPermissionDecision(mcpOptions, true, false)).toEqual({
+      outcome: { outcome: 'selected', optionId: 'allow-once' },
+    })
+  })
+
   it('selects reject_once on deny', () => {
     expect(mapPermissionDecision(options, false)).toEqual({
       outcome: { outcome: 'selected', optionId: 'r1' },

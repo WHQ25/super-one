@@ -44,6 +44,9 @@ export function mapPermissionRequest(params: RequestPermissionRequest): {
   }
 }
 
+/** Grok Desktop/TUI MCP option id — carries server/tool scope meta on the agent. */
+export const ALLOW_ALWAYS_MCP_OPTION_ID = 'allow-always-mcp'
+
 export function mapPermissionDecision(
   options: PendingPermissionOptions[],
   allow: boolean,
@@ -52,6 +55,14 @@ export function mapPermissionDecision(
 ): RequestPermissionResponse {
   if (decision === 'cancel') {
     return { outcome: { outcome: 'cancelled' } }
+  }
+  if (allow && alwaysAllow) {
+    // Prefer Grok's MCP-scoped always option so the agent grants tool/server
+    // session allow-lists instead of only a one-shot allow.
+    const mcpAlways = options.find((o) => o.optionId === ALLOW_ALWAYS_MCP_OPTION_ID)
+    if (mcpAlways) {
+      return { outcome: { outcome: 'selected', optionId: mcpAlways.optionId } }
+    }
   }
   const preferredKind: PermissionOptionKind = allow
     ? (alwaysAllow ? 'allow_always' : 'allow_once')

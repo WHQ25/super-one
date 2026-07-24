@@ -37,6 +37,7 @@ import {
   trackOpenTools,
 } from './acp-event-map'
 import { getUnsavedBuffer } from './acp-unsaved-buffer'
+import { resolveAcpClientVersion } from './acp-client-info'
 import { buildAcpSessionMcpServers } from './acp-mcp'
 import { ACP_SYSTEM_PROMPT_BLOCK } from '../agent/superone-system-prompt'
 import { resolveAcpLaunch, type ResolvedAcpLaunch } from './agent-catalog'
@@ -266,9 +267,10 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       .onRequest(`_${XAI_EXIT_PLAN_MODE}`, exitPlanParams, exitPlanHandler)
       .connect(stream)
 
+    const clientVersion = resolveAcpClientVersion()
     const initResult = await connection.agent.request(methods.agent.initialize, {
       protocolVersion: PROTOCOL_VERSION,
-      clientInfo: { name: 'superone', version: '0.0.0' },
+      clientInfo: { name: 'superone', version: clientVersion },
       clientCapabilities: {
         fs: { readTextFile: true, writeTextFile: true },
         terminal: launch.agentId !== 'grok-build',

@@ -162,6 +162,10 @@ describe('createAcpRuntime (in-process agent)', () => {
       askUserQuestion: true,
       exitPlanMode: true,
     })
+    const clientInfo = captured.initialize?.clientInfo as { name?: string; version?: string }
+    expect(clientInfo?.name).toBe('superone')
+    expect(clientInfo?.version).toMatch(/^\d+\.\d+/)
+    expect(clientInfo?.version).not.toBe('0.0.0')
   })
 
   it('passes yoloMode on session/new when permissionMode is bypassPermissions', async () => {

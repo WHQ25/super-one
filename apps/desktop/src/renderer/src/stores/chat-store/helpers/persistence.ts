@@ -4,6 +4,10 @@ import { resolveActiveSessionId } from './store-helpers'
 
 const CODEX_LOCAL_SESSION_PREFIX = 'codex_local_'
 
+export function _isLocalCodexSessionId(sessionId: string): boolean {
+  return sessionId.startsWith(CODEX_LOCAL_SESSION_PREFIX)
+}
+
 export function _getEffectiveSessionId(project: ProjectState): string | null {
   return resolveActiveSessionId(project)
 }
@@ -62,6 +66,31 @@ export function _mergePersistedSessionState(session: PerSessionState, saved: Per
     openCodeAgentId: session.openCodeAgentId
       ?? saved.messages.findLast((message) => message.role === 'assistant')?.metadata?.agent
       ?? null,
+    _historyHydrated: true,
+  }
+}
+
+export function _mergeHydratedSessionState(
+  session: PerSessionState,
+  hydrated: PerSessionState,
+): PerSessionState {
+  const mergedMessages = _mergePersistedMessages(hydrated.messages, session.messages)
+  return {
+    ...session,
+    _title: session._title ?? hydrated._title,
+    messages: mergedMessages,
+    totalCostUsd: Math.max(session.totalCostUsd, hydrated.totalCostUsd),
+    contextTokens: Math.max(session.contextTokens, hydrated.contextTokens),
+    contextWindow: session.contextWindow ?? hydrated.contextWindow,
+    codexUsageSnapshot: session.codexUsageSnapshot ?? hydrated.codexUsageSnapshot,
+    sessionProvider: session.sessionProvider ?? hydrated.sessionProvider,
+    preferredProvider: session.sessionProvider ? session.preferredProvider : hydrated.preferredProvider,
+    _gitBranch: session._gitBranch ?? hydrated._gitBranch,
+    _worktreePath: session._worktreePath ?? hydrated._worktreePath,
+    lastAssistantMessageId: mergedMessages.findLast((message) => message.role === 'assistant')?.id ?? session.lastAssistantMessageId,
+    apiProviderId: session.apiProviderId ?? hydrated.apiProviderId,
+    acpAgentId: session.acpAgentId ?? hydrated.acpAgentId,
+    openCodeAgentId: session.openCodeAgentId ?? hydrated.openCodeAgentId,
     _historyHydrated: true,
   }
 }

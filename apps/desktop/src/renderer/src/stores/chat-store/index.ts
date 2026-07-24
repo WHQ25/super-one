@@ -203,8 +203,10 @@ import {
 export {
   _getEffectiveSessionId,
   _createLocalCodexSessionId,
+  _isLocalCodexSessionId,
   _getSessionGitBranch,
   _getSessionCwd,
+  _mergeHydratedSessionState,
   _mergePersistedMessages,
   _mergePersistedSessionState,
   _ensureSessionHydrated,
@@ -218,6 +220,8 @@ import {
   _getSessionCwd,
   _getSessionWorktreePath,
   _hydrateSessionState,
+  _isLocalCodexSessionId,
+  _mergeHydratedSessionState,
 } from './helpers/persistence'
 
 export {
@@ -621,11 +625,27 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
         const proj = getProject(s, activeProject)
         const targetSession = proj._sessions[sessionId]
         const nextCwd = worktreeMissing ? activeProject : _getSessionCwd(activeProject, targetSession)
-        const patched: PerSessionState = worktreeMissing
+        const cwdPatched: PerSessionState = worktreeMissing
           ? { ...targetSession, _worktreeRemoved: true, cwd: activeProject }
           : targetSession.cwd === nextCwd
             ? targetSession
             : { ...targetSession, cwd: nextCwd }
+        // An explicit history selection must not trust a provider-less empty cache.
+        // This state can be produced by an earlier load that raced the first DB save;
+        // mark it pending so Case A retries the persisted transcript below.
+        const providerMismatched = _isLocalCodexSessionId(sessionId)
+          && cwdPatched.sessionProvider !== null
+          && cwdPatched.sessionProvider !== 'codex'
+        const providerMissingOrMismatched = !cwdPatched.sessionProvider || providerMismatched
+        const patched = providerMissingOrMismatched
+          && cwdPatched.messages.length === 0
+          && cwdPatched._historyHydrated
+          ? {
+              ...cwdPatched,
+              ...(providerMismatched ? { sessionProvider: null } : {}),
+              _historyHydrated: false,
+            }
+          : cwdPatched
         return {
           projectSessions: {
             ...s.projectSessions,
@@ -647,13 +667,17 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
         if (hydrated) {
           set((s) => {
             const proj = s.projectSessions[activeProject]
-            if (!proj?._sessions[sessionId]) return {}
+            const currentSession = proj?._sessions[sessionId]
+            if (!proj || !currentSession) return {}
+            const merged = currentSession === targetSession
+              ? hydrated
+              : _mergeHydratedSessionState(currentSession, hydrated)
             return {
               projectSessions: {
                 ...s.projectSessions,
                 [activeProject]: {
                   ...proj,
-                  _sessions: { ...proj._sessions, [sessionId]: hydrated },
+                  _sessions: { ...proj._sessions, [sessionId]: merged },
                 },
               },
             }

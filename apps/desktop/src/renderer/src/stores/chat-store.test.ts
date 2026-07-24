@@ -1910,6 +1910,101 @@ describe('switchSession Case A (in _sessions)', () => {
     expect(after._sessions['codex-bg']._historyHydrated).toBe(true)
   })
 
+  it('reloads a cached empty session when persisted Codex history exists', async () => {
+    setupProject('/test')
+    const proj = useChatStore.getState().projectSessions['/test']
+    useChatStore.setState({
+      projectSessions: {
+        '/test': {
+          ...proj,
+          _activeSessionId: 'ses-a',
+          _sessions: {
+            'ses-a': createDefaultPerSessionState(),
+            'codex_local_stale': {
+              ...createDefaultPerSessionState(),
+              messages: [],
+              sessionProvider: 'claude',
+              preferredProvider: 'claude',
+              _historyHydrated: true,
+            },
+          },
+        },
+      },
+    })
+    mockWindowApp.loadSessionState.mockResolvedValue({
+      messages: [{ id: 'codex-msg', role: 'assistant', content: [], status: 'complete', createdAt: '', providerId: 'codex' }],
+      totalCostUsd: 0.02,
+      contextTokens: 500,
+      gitBranch: null,
+      provider: 'codex',
+    })
+
+    await useChatStore.getState().switchSession('codex_local_stale')
+
+    const restored = useChatStore.getState().projectSessions['/test']._sessions['codex_local_stale']
+    expect(mockWindowApp.loadSessionState).toHaveBeenCalledWith('codex_local_stale')
+    expect(restored.messages.map((message) => message.id)).toEqual(['codex-msg'])
+    expect(restored.sessionProvider).toBe('codex')
+    expect(restored.preferredProvider).toBe('codex')
+  })
+
+  it('preserves newer runtime messages when empty history reload finishes later', async () => {
+    setupProject('/test')
+    const proj = useChatStore.getState().projectSessions['/test']
+    useChatStore.setState({
+      projectSessions: {
+        '/test': {
+          ...proj,
+          _activeSessionId: 'ses-a',
+          _sessions: {
+            'ses-a': createDefaultPerSessionState(),
+            'codex_local_stale': {
+              ...createDefaultPerSessionState(),
+              sessionProvider: 'claude',
+              preferredProvider: 'claude',
+              _historyHydrated: true,
+            },
+          },
+        },
+      },
+    })
+    let resolveLoad!: (saved: null) => void
+    mockWindowApp.loadSessionState.mockImplementationOnce(() => new Promise((resolve) => {
+      resolveLoad = resolve
+    }))
+
+    const switching = useChatStore.getState().switchSession('codex_local_stale')
+    await vi.waitFor(() => expect(mockWindowApp.loadSessionState).toHaveBeenCalledWith('codex_local_stale'))
+    useChatStore.setState((state) => {
+      const currentProject = state.projectSessions['/test']
+      const currentSession = currentProject._sessions['codex_local_stale']
+      return {
+        projectSessions: {
+          ...state.projectSessions,
+          '/test': {
+            ...currentProject,
+            _sessions: {
+              ...currentProject._sessions,
+              'codex_local_stale': {
+                ...currentSession,
+                messages: [{ id: 'runtime-msg', role: 'assistant', content: [], status: 'complete', createdAt: '', providerId: 'codex' }],
+                sessionProvider: 'codex',
+                preferredProvider: 'codex',
+              },
+            },
+          },
+        },
+      }
+    })
+    resolveLoad(null)
+    await switching
+
+    const restored = useChatStore.getState().projectSessions['/test']._sessions['codex_local_stale']
+    expect(restored.messages.map((message) => message.id)).toEqual(['runtime-msg'])
+    expect(restored.sessionProvider).toBe('codex')
+    expect(restored._historyHydrated).toBe(true)
+  })
+
   it('resolves codex model selection by the session own provider when switching to a codex stub (Case A no longer hardcodes claude)', async () => {
     setupProject('/test')
     const proj = useChatStore.getState().projectSessions['/test']

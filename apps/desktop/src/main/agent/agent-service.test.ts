@@ -140,7 +140,7 @@ vi.mock('../app-settings-service', () => ({
     locale: '',
     agentPreference: {
       claude: { defaultModel: '', defaultEffort: '', defaultPermissionMode: '', defaultSandboxMode: '' },
-      codex: { defaultModel: '', defaultReasoningEffort: '' },
+      codex: { defaultModel: '', defaultReasoningEffort: '', defaultPermissionPreset: '' },
       acp: { enabled: false, brandHue: null, tokenOverrides: {}, selectedAgentId: null },
     },
   })),
@@ -1832,7 +1832,7 @@ describe('AgentService.handleRemoteCommand', () => {
           defaultPermissionMode: 'acceptEdits',
           defaultSandboxMode: '',
         },
-        codex: { defaultModel: '', defaultReasoningEffort: '' },
+        codex: { defaultModel: '', defaultReasoningEffort: '', defaultPermissionPreset: '' },
       },
     })
     vi.mocked(claudeModels.fetchModels).mockResolvedValue([
@@ -1865,7 +1865,7 @@ describe('AgentService.handleRemoteCommand', () => {
       locale: '',
       agentPreference: {
         claude: { defaultModel: '', defaultEffort: '', defaultPermissionMode: '', defaultSandboxMode: '' },
-        codex: { defaultModel: '', defaultReasoningEffort: '' },
+        codex: { defaultModel: '', defaultReasoningEffort: '', defaultPermissionPreset: '' },
       },
     })
     vi.mocked(claudeModels.fetchModels).mockResolvedValue([])
@@ -1887,7 +1887,7 @@ describe('AgentService.handleRemoteCommand', () => {
       locale: '',
       agentPreference: {
         claude: { defaultModel: '', defaultEffort: '', defaultPermissionMode: '', defaultSandboxMode: '' },
-        codex: { defaultModel: 'gpt-5-codex', defaultReasoningEffort: 'high' },
+        codex: { defaultModel: 'gpt-5-codex', defaultReasoningEffort: 'high', defaultPermissionPreset: 'full-access' },
       },
     })
 
@@ -1900,8 +1900,8 @@ describe('AgentService.handleRemoteCommand', () => {
     )
 
     const [, payload] = respond.mock.calls[0] as [string, Record<string, unknown>]
-    expect(payload.defaults).toEqual({ model: 'gpt-5-codex', reasoningEffort: 'high' })
-    expect(payload.permissionPresets).toEqual(['default', 'full-access'])
+    expect(payload.defaults).toEqual({ model: 'gpt-5-codex', reasoningEffort: 'high', permissionPreset: 'full-access' })
+    expect(payload.permissionPresets).toEqual(['read-only', 'default', 'full-access'])
   })
 })
 

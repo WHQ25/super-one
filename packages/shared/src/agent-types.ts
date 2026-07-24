@@ -2693,6 +2693,7 @@ export interface AppSettings {
     codex: {
       defaultModel: string
       defaultReasoningEffort: CodexReasoningEffort | ''
+      defaultPermissionPreset: CodexPermissionPreset | ''
       brandHue: number | null
       tokenOverrides: TokenOverrides
     }

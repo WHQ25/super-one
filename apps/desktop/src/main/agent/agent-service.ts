@@ -1034,11 +1034,12 @@ export class AgentService {
                 ...userPrompts.map((p) => ({ name: p.name, description: p.description ?? '', argumentHint: p.argumentHint ?? '' })),
               ],
               account: this.codexGetAuthStatus?.(command.projectPath) ?? null,
-              permissionPresets: ['default', 'full-access'],
+              permissionPresets: ['read-only', 'default', 'full-access'],
               activeProvider,
               defaults: {
                 model: agentPreference.codex.defaultModel || null,
                 reasoningEffort: agentPreference.codex.defaultReasoningEffort || null,
+                permissionPreset: agentPreference.codex.defaultPermissionPreset || null,
               },
             })
           }

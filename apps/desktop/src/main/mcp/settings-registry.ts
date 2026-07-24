@@ -27,6 +27,7 @@ const EFFORT_VALUES = ['low', 'medium', 'high', 'xhigh', 'max'] as const
 const PERMISSION_VALUES = ['default', 'acceptEdits', 'bypassPermissions', 'plan', 'dontAsk', 'auto'] as const
 const SANDBOX_VALUES = ['off', 'on', 'auto'] as const
 const CODEX_EFFORT_VALUES = ['minimal', 'low', 'medium', 'high', 'xhigh'] as const
+const CODEX_PERMISSION_VALUES = ['read-only', 'default', 'full-access'] as const
 const QUESTION_PREVIEW_FORMAT_VALUES = ['markdown', 'html'] as const
 const TERMINAL_LIGHT_PALETTE_VALUES = ['catppuccin-latte', 'github-light', 'atom-one-light', 'ayu-light', 'dayfox', 'bluloco-light'] as const
 const TERMINAL_DARK_PALETTE_VALUES = ['monokai-remastered', 'catppuccin-mocha', 'tokyo-night', 'dracula', 'gruvbox-dark', 'nord', 'rose-pine'] as const
@@ -272,6 +273,15 @@ export const SETTINGS_DOMAINS: SettingsDomainDef[] = [
         clearTo: '',
         read: (s) => s.agentPreference.codex.defaultReasoningEffort,
         toPatch: (v) => ({ agentPreference: { codex: { defaultReasoningEffort: (v ?? '') as AppSettings['agentPreference']['codex']['defaultReasoningEffort'] } } }),
+      },
+      {
+        key: 'codexDefaultPermissionPreset',
+        label: 'Default Permission Mode',
+        type: 'enum',
+        enumValues: CODEX_PERMISSION_VALUES,
+        clearTo: '',
+        read: (s) => s.agentPreference.codex.defaultPermissionPreset,
+        toPatch: (v) => ({ agentPreference: { codex: { defaultPermissionPreset: (v ?? '') as AppSettings['agentPreference']['codex']['defaultPermissionPreset'] } } }),
       },
       {
         key: 'codexBrandHue',

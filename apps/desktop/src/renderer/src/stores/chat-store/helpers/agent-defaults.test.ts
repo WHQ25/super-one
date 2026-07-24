@@ -36,7 +36,7 @@ vi.stubGlobal('window', {
       analyticsEnabled: true,
       agentPreference: {
         claude: { defaultModel: '', defaultEffort: '', defaultPermissionMode: '', defaultSandboxMode: '' },
-        codex: { defaultModel: '', defaultReasoningEffort: '' },
+        codex: { defaultModel: '', defaultReasoningEffort: '', defaultPermissionPreset: '' },
       },
     }),
   },

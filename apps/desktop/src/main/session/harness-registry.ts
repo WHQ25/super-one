@@ -21,7 +21,7 @@ const codexConfigSchema = z.object({
   model: z.string().optional(),
   extraEnv: z.record(z.string(), z.string()).optional(),
   initializeTimeoutMs: z.number().positive().optional(),
-  permissionPreset: z.enum(['default', 'full-access']).optional(),
+  permissionPreset: z.enum(['read-only', 'default', 'full-access']).optional(),
   reasoningEffort: z.enum(['minimal', 'low', 'medium', 'high', 'xhigh']).optional(),
 }).passthrough()
 

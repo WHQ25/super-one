@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { app } from 'electron'
-import type { AppSettings, AppSettingsPatch, BrowserBookmark, BrowserBookmarkGroup, EffortLevel, Locale, PermissionMode, QuestionPreviewFormat, SandboxMode, ThemeMode, UpdateChannel } from '@superone/shared/agent-types'
+import type { AppSettings, AppSettingsPatch, BrowserBookmark, BrowserBookmarkGroup, CodexPermissionPreset, EffortLevel, Locale, PermissionMode, QuestionPreviewFormat, SandboxMode, ThemeMode, UpdateChannel } from '@superone/shared/agent-types'
 import { sanitizeOverrides } from '@superone/shared/harness-brand'
 
 export type { AppSettings, AppSettingsPatch }
@@ -44,6 +44,7 @@ const defaults: AppSettings = {
     codex: {
       defaultModel: '',
       defaultReasoningEffort: '',
+      defaultPermissionPreset: '',
       brandHue: null,
       tokenOverrides: {},
     },
@@ -144,6 +145,10 @@ function isCodexReasoningEffort(value: unknown): value is CodexPref['defaultReas
   return value === '' || value === 'minimal' || value === 'low' || value === 'medium' || value === 'high' || value === 'xhigh'
 }
 
+function isCodexPermissionPreset(value: unknown): value is CodexPermissionPreset {
+  return value === 'read-only' || value === 'default' || value === 'full-access'
+}
+
 function readClaudePreference(data: Record<string, unknown>): ClaudePref {
   const agentPreference = data.agentPreference && typeof data.agentPreference === 'object'
     ? data.agentPreference as Record<string, unknown>
@@ -196,6 +201,9 @@ function readCodexPreference(data: Record<string, unknown>): CodexPref {
     defaultReasoningEffort: isCodexReasoningEffort(codexPreference?.defaultReasoningEffort)
       ? codexPreference.defaultReasoningEffort
       : (legacyDefaultReasoningEffort ?? defaults.agentPreference.codex.defaultReasoningEffort),
+    defaultPermissionPreset: codexPreference?.defaultPermissionPreset === '' || isCodexPermissionPreset(codexPreference?.defaultPermissionPreset)
+      ? (codexPreference.defaultPermissionPreset as CodexPermissionPreset | '')
+      : defaults.agentPreference.codex.defaultPermissionPreset,
     brandHue: readBrandHue(codexPreference?.brandHue),
     tokenOverrides: sanitizeOverrides(codexPreference?.tokenOverrides),
   }

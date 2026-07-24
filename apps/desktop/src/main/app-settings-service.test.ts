@@ -42,6 +42,7 @@ describe('app-settings-service', () => {
   const defaultCodex = {
     defaultModel: '',
     defaultReasoningEffort: '',
+    defaultPermissionPreset: '',
     brandHue: null,
     tokenOverrides: {},
   }
@@ -56,6 +57,7 @@ describe('app-settings-service', () => {
     crispText: true,
     locale: '',
     updateChannel: null,
+    themeMode: 'system',
     terminalLightPalette: null,
     terminalDarkPalette: null,
     terminalFontSize: 14,
@@ -96,6 +98,7 @@ describe('app-settings-service', () => {
           codex: {
             defaultModel: 'gpt-5.4',
             defaultReasoningEffort: 'high',
+            defaultPermissionPreset: 'full-access',
           },
         },
       }))
@@ -104,6 +107,7 @@ describe('app-settings-service', () => {
         crispText: true,
         locale: '',
         updateChannel: null,
+        themeMode: 'system',
         terminalLightPalette: null,
         terminalDarkPalette: null,
         terminalFontSize: 14,
@@ -132,6 +136,7 @@ describe('app-settings-service', () => {
           codex: {
             defaultModel: 'gpt-5.4',
             defaultReasoningEffort: 'high',
+            defaultPermissionPreset: 'full-access',
             brandHue: null,
             tokenOverrides: {},
           },
@@ -167,6 +172,7 @@ describe('app-settings-service', () => {
           codex: {
             defaultModel: 123,
             defaultReasoningEffort: 'max',
+            defaultPermissionPreset: 'unrestricted',
           },
         },
       }))
@@ -184,6 +190,7 @@ describe('app-settings-service', () => {
         crispText: true,
         locale: '',
         updateChannel: null,
+        themeMode: 'system',
         terminalLightPalette: null,
         terminalDarkPalette: null,
         terminalFontSize: 14,
@@ -203,6 +210,7 @@ describe('app-settings-service', () => {
           codex: {
             defaultModel: 'gpt-5.4',
             defaultReasoningEffort: 'low',
+            defaultPermissionPreset: '',
             brandHue: null,
             tokenOverrides: {},
           },
@@ -258,11 +266,12 @@ describe('app-settings-service', () => {
 
       const result = saveAppSettings({
         agentPreference: {
-          codex: { defaultModel: 'gpt-5.4' },
+          codex: { defaultModel: 'gpt-5.4', defaultPermissionPreset: 'read-only' },
         },
       })
       expect(result.agentPreference.claude.defaultModel).toBe('claude-opus-4-8')
       expect(result.agentPreference.codex.defaultModel).toBe('gpt-5.4')
+      expect(result.agentPreference.codex.defaultPermissionPreset).toBe('read-only')
     })
 
     it('creates file with defaults merged when file does not exist', () => {

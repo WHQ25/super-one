@@ -1,4 +1,5 @@
 import type {
+  CodexPermissionPreset,
   CodexReasoningEffort,
   EffortLevel,
   PermissionMode,
@@ -12,6 +13,7 @@ interface DefaultPrefsCache {
   sandboxMode: SandboxMode | null
   claudeSelection: { modelId: string; effort?: EffortLevel } | null
   codexSelection: { modelId: string; reasoningEffort?: CodexReasoningEffort } | null
+  codexPermissionPreset: CodexPermissionPreset
 }
 
 export const defaultPrefsCache: DefaultPrefsCache = {
@@ -19,6 +21,7 @@ export const defaultPrefsCache: DefaultPrefsCache = {
   sandboxMode: null,
   claudeSelection: null,
   codexSelection: null,
+  codexPermissionPreset: 'default',
 }
 
 export function toCodexReasoningEffort(value: unknown): CodexReasoningEffort | undefined {
@@ -32,6 +35,10 @@ export function toCodexReasoningEffort(value: unknown): CodexReasoningEffort | u
     default:
       return undefined
   }
+}
+
+export function toCodexPermissionPreset(value: unknown): CodexPermissionPreset {
+  return value === 'read-only' || value === 'full-access' ? value : 'default'
 }
 
 export function toEffortLevel(value: unknown): EffortLevel | undefined {
@@ -68,11 +75,13 @@ export async function _loadDefaultSessionPrefs(): Promise<void> {
       modelId: typeof appSettings.agentPreference?.codex?.defaultModel === 'string' ? appSettings.agentPreference.codex.defaultModel : '',
       reasoningEffort: toCodexReasoningEffort(appSettings.agentPreference?.codex?.defaultReasoningEffort),
     }
+    defaultPrefsCache.codexPermissionPreset = toCodexPermissionPreset(appSettings.agentPreference?.codex?.defaultPermissionPreset)
   } catch {
     defaultPrefsCache.permissionMode = 'default'
     defaultPrefsCache.sandboxMode = null
     defaultPrefsCache.claudeSelection = { modelId: '', effort: undefined }
     defaultPrefsCache.codexSelection = { modelId: '', reasoningEffort: undefined }
+    defaultPrefsCache.codexPermissionPreset = 'default'
   }
 }
 
@@ -90,6 +99,7 @@ export function _clearDefaultPrefsCache(): void {
   defaultPrefsCache.sandboxMode = null
   defaultPrefsCache.claudeSelection = null
   defaultPrefsCache.codexSelection = null
+  defaultPrefsCache.codexPermissionPreset = 'default'
 }
 
 // Eager load on module init — same side-effect as the original index.ts.

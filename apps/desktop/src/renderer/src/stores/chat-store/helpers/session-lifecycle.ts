@@ -143,6 +143,7 @@ export function ensureSessionImpl(set: ChatStoreSet, projectPath: string): void 
     const codexSelection = resolveDefaultCodexSelection(project.codexModels)
     newSession.selectedCodexModel = codexSelection.modelId
     newSession.selectedCodexReasoningEffort = codexSelection.reasoningEffort
+    newSession.selectedCodexPermissionPreset = defaultPrefsCache.codexPermissionPreset
     project._sessions = { [draftId]: newSession }
     return {
       projectSessions: {
@@ -247,6 +248,7 @@ export function resetSessionForWorktreeSwitchImpl(
     const codexSelection = resolveDefaultCodexSelection(proj.codexModels)
     newSession.selectedCodexModel = codexSelection.modelId
     newSession.selectedCodexReasoningEffort = codexSelection.reasoningEffort
+    newSession.selectedCodexPermissionPreset = defaultPrefsCache.codexPermissionPreset
     return {
       projectSessions: {
         ...s.projectSessions,
@@ -305,6 +307,7 @@ export async function resetSessionImpl(set: ChatStoreSet, get: () => ChatStore):
     const codexSelection = resolveDefaultCodexSelection(proj.codexModels)
     newSession.selectedCodexModel = codexSelection.modelId
     newSession.selectedCodexReasoningEffort = codexSelection.reasoningEffort
+    newSession.selectedCodexPermissionPreset = defaultPrefsCache.codexPermissionPreset
     return {
       projectSessions: {
         ...s.projectSessions,

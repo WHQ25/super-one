@@ -93,7 +93,7 @@ const mockWindowApp = {
     analyticsEnabled: true,
     agentPreference: {
       claude: { defaultModel: '', defaultEffort: '', defaultPermissionMode: '', defaultSandboxMode: '' },
-      codex: { defaultModel: '', defaultReasoningEffort: '' },
+      codex: { defaultModel: '', defaultReasoningEffort: '', defaultPermissionPreset: '' },
     },
   }),
 }
@@ -115,7 +115,7 @@ function mockAppSettingsWithClaude(patch: ClaudePrefPatch) {
         defaultSandboxMode: '',
         ...patch,
       },
-      codex: { defaultModel: '', defaultReasoningEffort: '' },
+      codex: { defaultModel: '', defaultReasoningEffort: '', defaultPermissionPreset: '' },
     },
   })
 }
@@ -299,6 +299,22 @@ describe('ensureSession', () => {
     useChatStore.getState().ensureSession('/sandbox-auto')
     const proj = useChatStore.getState().projectSessions['/sandbox-auto']
     expect(proj.sandboxInfo).toEqual({ enabled: true, autoAllowBash: true })
+  })
+
+  it('applies app-level codex permission preset to new sessions', async () => {
+    mockWindowApp.getAppSettings.mockResolvedValue({
+      analyticsEnabled: true,
+      agentPreference: {
+        claude: { defaultModel: '', defaultEffort: '', defaultPermissionMode: '', defaultSandboxMode: '' },
+        codex: { defaultModel: '', defaultReasoningEffort: '', defaultPermissionPreset: 'read-only' },
+      },
+    })
+    invalidateDefaultCodexPreferencesCache()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    useChatStore.getState().ensureSession('/codex-permission')
+
+    expect(getActiveDraftSession('/codex-permission')!.selectedCodexPermissionPreset).toBe('read-only')
   })
 
   it('setSandboxMode skips IPC when capability is unsupported', async () => {

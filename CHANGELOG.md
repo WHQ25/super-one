@@ -4,6 +4,21 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.46.5-alpha] - 2026-07-24
+
+### Added
+
+- Support model reasoning capabilities for providers
+- Unify model/effort/provider selection into a single shared selector across Claude/Codex/ACP, with an inline provider list and manual Codex model refresh
+
+### Fixed
+
+- Preserve tile sessions on harness switch in mosaic
+- Round browser activity panel corners
+- Prevent browser toolbar jitter on resize
+- Normalize custom Google API base URLs
+- Merge reasoning across hidden Codex MCP calls
+
 ## [0.46.4-alpha] - 2026-07-23
 
 ### Fixed

@@ -17,9 +17,13 @@ import { mapPermissionDecision, mapPermissionRequest, type PendingPermissionOpti
 import { shouldAutoAllowAcpPermission } from '../../acp/acp-permission-preapprove'
 import {
   buildAskUserQuestionRequest,
+  buildPlanApprovalRequest,
   formatGrokAskUserResponse,
+  formatGrokExitPlanModeResponse,
   type GrokAskUserAnswer,
   type GrokAskUserQuestionParams,
+  type GrokExitPlanModeAnswer,
+  type GrokExitPlanModeParams,
 } from '../../acp/acp-xai-extensions'
 import type { BackendStartOptions, HarnessId, SessionBackend } from '../types'
 
@@ -68,6 +72,11 @@ export class AcpBackend implements SessionBackend {
 
   private pendingQuestions = new Map<string, {
     resolve: (answer: GrokAskUserAnswer) => void
+    event: AgentEvent
+  }>()
+
+  private pendingPlanApprovals = new Map<string, {
+    resolve: (answer: GrokExitPlanModeAnswer) => void
     event: AgentEvent
   }>()
 
@@ -354,6 +363,9 @@ export class AcpBackend implements SessionBackend {
         askUserQuestion: {
           request: (params) => this.handleAskUserQuestion(params),
         },
+        exitPlanMode: {
+          request: (params) => this.handleExitPlanMode(params),
+        },
         onModelConfig: (cfg) => {
           // Early model discovery (initialize) before session/new configOptions land.
           this.emitModels(cfg, agentId, epoch)
@@ -468,11 +480,48 @@ export class AcpBackend implements SessionBackend {
     })
   }
 
+  private handleExitPlanMode(params: GrokExitPlanModeParams): Promise<Record<string, unknown>> {
+    const requestId =
+      (typeof params.toolCallId === 'string' && params.toolCallId)
+      || `acp_plan_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+    // Replace a prior parked plan approval (Grok may re-issue on resume).
+    const prev = this.pendingPlanApprovals.get(requestId)
+    if (prev) {
+      this.pendingPlanApprovals.delete(requestId)
+      prev.resolve({ kind: 'abandoned' })
+    }
+    for (const [id, pending] of this.pendingPlanApprovals) {
+      this.pendingPlanApprovals.delete(id)
+      pending.resolve({ kind: 'abandoned' })
+    }
+    const request = buildPlanApprovalRequest(params, requestId)
+    const event: AgentEvent = { type: 'plan_approval', request }
+    log.info(
+      '[AcpBackend] exit_plan_mode requestId=%s planChars=%d',
+      requestId,
+      request.planContent.length,
+    )
+    return new Promise((resolve) => {
+      this.pendingPlanApprovals.set(requestId, {
+        resolve: (answer) => resolve(formatGrokExitPlanModeResponse(answer)),
+        event,
+      })
+      this.emit(event)
+    })
+  }
+
   private rejectPendingQuestions(): void {
     for (const [, pending] of this.pendingQuestions) {
       pending.resolve({ kind: 'cancelled' })
     }
     this.pendingQuestions.clear()
+  }
+
+  private rejectPendingPlanApprovals(reason: 'cancelled' | 'abandoned' = 'abandoned'): void {
+    for (const [, pending] of this.pendingPlanApprovals) {
+      pending.resolve(reason === 'cancelled' ? { kind: 'cancelled' } : { kind: 'abandoned' })
+    }
+    this.pendingPlanApprovals.clear()
   }
 
   async send(request: SendMessageRequest): Promise<void> {
@@ -548,6 +597,7 @@ export class AcpBackend implements SessionBackend {
       this.pendingPermissions.delete(id)
     }
     this.rejectPendingQuestions()
+    this.rejectPendingPlanApprovals('abandoned')
     try {
       await this.runtime?.cancel()
     } catch (err) {
@@ -561,6 +611,7 @@ export class AcpBackend implements SessionBackend {
       this.pendingPermissions.delete(id)
     }
     this.rejectPendingQuestions()
+    this.rejectPendingPlanApprovals('abandoned')
     this.runtimeEpoch += 1
     this.ensureRuntimePromise = null
     this.modelConfigId = null
@@ -679,7 +730,19 @@ export class AcpBackend implements SessionBackend {
     pending.resolve({ kind: 'cancelled' })
   }
 
-  respondToPlanApproval(_requestId: string, _approved: boolean, _feedback?: string): void {}
+  respondToPlanApproval(requestId: string, approved: boolean, feedback?: string): void {
+    const pending = this.pendingPlanApprovals.get(requestId)
+    if (!pending) {
+      log.debug('[AcpBackend] respondToPlanApproval miss requestId=%s', requestId)
+      return
+    }
+    this.pendingPlanApprovals.delete(requestId)
+    if (approved) {
+      pending.resolve({ kind: 'approved' })
+    } else {
+      pending.resolve({ kind: 'cancelled', feedback })
+    }
+  }
 
   async getContextUsage(): Promise<ContextUsageInfo | null> {
     return null
@@ -711,6 +774,7 @@ export class AcpBackend implements SessionBackend {
     return [
       ...Array.from(this.pendingPermissions.values()).map((p) => p.event),
       ...Array.from(this.pendingQuestions.values()).map((p) => p.event),
+      ...Array.from(this.pendingPlanApprovals.values()).map((p) => p.event),
     ]
   }
 

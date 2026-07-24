@@ -1,4 +1,9 @@
-import type { AskUserQuestionRequest, QuestionAnnotations, UserQuestion } from '@superone/shared/agent-types'
+import type {
+  AskUserQuestionRequest,
+  PlanApprovalRequest,
+  QuestionAnnotations,
+  UserQuestion,
+} from '@superone/shared/agent-types'
 
 /** Grok ACP client methods (agent → client). */
 export const XAI_ASK_USER_QUESTION = 'x.ai/ask_user_question'
@@ -14,6 +19,23 @@ export interface GrokAskUserQuestionParams {
 export type GrokAskUserAnswer =
   | { kind: 'accepted'; answers: Record<string, string>; annotations?: QuestionAnnotations }
   | { kind: 'cancelled' }
+
+/** Wire params for `x.ai/exit_plan_mode` (camelCase per Grok ExitPlanModeExtRequest). */
+export interface GrokExitPlanModeParams {
+  sessionId?: string
+  toolCallId?: string
+  planContent?: string | null
+  [key: string]: unknown
+}
+
+/**
+ * SuperOne → Grok outcome for exit_plan_mode.
+ * Grok wire: `{ outcome: "approved" | "cancelled" | "abandoned", feedback? }`.
+ */
+export type GrokExitPlanModeAnswer =
+  | { kind: 'approved' }
+  | { kind: 'cancelled'; feedback?: string }
+  | { kind: 'abandoned' }
 
 /** Normalize Grok/Claude-shaped question list into SuperOne UserQuestion[]. */
 export function normalizeGrokQuestions(raw: unknown): UserQuestion[] {
@@ -86,5 +108,57 @@ export function formatGrokAskUserResponse(answer: GrokAskUserAnswer): Record<str
       partial_answers: {},
       ...(Object.keys(annotations).length > 0 ? { annotations } : {}),
     },
+  }
+}
+
+/** Parse `x.ai/exit_plan_mode` params (camelCase preferred; snake_case tolerated). */
+export function parseGrokExitPlanModeParams(raw: unknown): GrokExitPlanModeParams {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
+  const o = raw as Record<string, unknown>
+  const sessionId =
+    typeof o.sessionId === 'string' ? o.sessionId
+    : typeof o.session_id === 'string' ? o.session_id
+    : undefined
+  const toolCallId =
+    typeof o.toolCallId === 'string' ? o.toolCallId
+    : typeof o.tool_call_id === 'string' ? o.tool_call_id
+    : undefined
+  let planContent: string | null | undefined
+  if (typeof o.planContent === 'string') planContent = o.planContent
+  else if (typeof o.plan_content === 'string') planContent = o.plan_content
+  else if (o.planContent === null || o.plan_content === null) planContent = null
+  return {
+    ...o,
+    ...(sessionId !== undefined ? { sessionId } : {}),
+    ...(toolCallId !== undefined ? { toolCallId } : {}),
+    ...(planContent !== undefined ? { planContent } : {}),
+  }
+}
+
+export function buildPlanApprovalRequest(
+  params: GrokExitPlanModeParams,
+  requestId: string,
+): PlanApprovalRequest {
+  const planContent = typeof params.planContent === 'string' ? params.planContent : ''
+  return {
+    requestId,
+    planContent,
+    planFilePath: '',
+    allowedPrompts: [],
+  }
+}
+
+/** Grok ExitPlanModeExtResponse — flat `{ outcome, feedback? }`. */
+export function formatGrokExitPlanModeResponse(answer: GrokExitPlanModeAnswer): Record<string, unknown> {
+  if (answer.kind === 'approved') {
+    return { outcome: 'approved' }
+  }
+  if (answer.kind === 'abandoned') {
+    return { outcome: 'abandoned' }
+  }
+  const feedback = answer.feedback?.trim()
+  return {
+    outcome: 'cancelled',
+    ...(feedback ? { feedback } : {}),
   }
 }

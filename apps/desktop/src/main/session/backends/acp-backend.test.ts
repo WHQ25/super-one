@@ -438,6 +438,123 @@ describe('AcpBackend', () => {
     await backend.close()
   })
 
+  it('forwards exit_plan_mode approval to Grok outcome=approved', async () => {
+    setAcpRuntimeFactory(async (opts) => mockRuntime({
+      prompt: async (_text, messageId, onEvent) => {
+        const response = await opts.exitPlanMode!.request({
+          sessionId: 'acp-sess-1',
+          toolCallId: 'plan-1',
+          planContent: '# Ship it\n\n1. Test\n2. Deploy',
+        })
+        onEvent({
+          type: 'content_delta',
+          messageId,
+          delta: { type: 'text', text: JSON.stringify(response) },
+        })
+        onEvent({ type: 'message_complete', messageId })
+        onEvent({ type: 'status_change', status: 'idle' })
+      },
+    }))
+
+    const backend = new AcpBackend()
+    await backend.start(startOpts({ agentId: 'grok-build' }))
+    const events: AgentEvent[] = []
+    backend.onEvent((e) => {
+      events.push(e)
+      if (e.type === 'plan_approval') {
+        expect(e.request).toMatchObject({
+          requestId: 'plan-1',
+          planContent: '# Ship it\n\n1. Test\n2. Deploy',
+          planFilePath: '',
+        })
+        backend.respondToPlanApproval(e.request.requestId, true)
+      }
+    })
+    await backend.send({ content: 'exit plan', assistantMessageId: 'a-plan-ok' })
+    const text = events
+      .filter((e): e is Extract<AgentEvent, { type: 'content_delta' }> => e.type === 'content_delta')
+      .map((e) => e.delta)
+      .filter((d): d is { type: 'text'; text: string } => d.type === 'text')
+      .map((d) => d.text)
+      .join('')
+    expect(JSON.parse(text)).toEqual({ outcome: 'approved' })
+    expect(events.some((e) => e.type === 'plan_approval')).toBe(true)
+    expect(backend.getPendingInteractions()).toEqual([])
+    await backend.close()
+  })
+
+  it('forwards exit_plan_mode rejection with feedback as outcome=cancelled', async () => {
+    setAcpRuntimeFactory(async (opts) => mockRuntime({
+      prompt: async (_text, messageId, onEvent) => {
+        const response = await opts.exitPlanMode!.request({
+          toolCallId: 'plan-2',
+          planContent: 'thin plan',
+        })
+        onEvent({
+          type: 'content_delta',
+          messageId,
+          delta: { type: 'text', text: JSON.stringify(response) },
+        })
+        onEvent({ type: 'message_complete', messageId })
+        onEvent({ type: 'status_change', status: 'idle' })
+      },
+    }))
+
+    const backend = new AcpBackend()
+    await backend.start(startOpts({ agentId: 'grok-build' }))
+    const events: AgentEvent[] = []
+    backend.onEvent((e) => {
+      events.push(e)
+      if (e.type === 'plan_approval') {
+        backend.respondToPlanApproval(e.request.requestId, false, 'Add error handling')
+      }
+    })
+    await backend.send({ content: 'reject plan', assistantMessageId: 'a-plan-no' })
+    const text = events
+      .filter((e): e is Extract<AgentEvent, { type: 'content_delta' }> => e.type === 'content_delta')
+      .map((e) => e.delta)
+      .filter((d): d is { type: 'text'; text: string } => d.type === 'text')
+      .map((d) => d.text)
+      .join('')
+    expect(JSON.parse(text)).toEqual({
+      outcome: 'cancelled',
+      feedback: 'Add error handling',
+    })
+    await backend.close()
+  })
+
+  it('abandons pending plan approval on interrupt', async () => {
+    let resolveParked: (() => void) | null = null
+    const parked = new Promise<void>((resolve) => { resolveParked = resolve })
+    setAcpRuntimeFactory(async (opts) => mockRuntime({
+      prompt: async (_text, messageId, onEvent) => {
+        const planPromise = opts.exitPlanMode!.request({
+          toolCallId: 'plan-int',
+          planContent: 'wip',
+        })
+        resolveParked?.()
+        const response = await planPromise
+        onEvent({
+          type: 'content_delta',
+          messageId,
+          delta: { type: 'text', text: JSON.stringify(response) },
+        })
+        onEvent({ type: 'message_interrupted', messageId })
+        onEvent({ type: 'status_change', status: 'idle' })
+      },
+    }))
+
+    const backend = new AcpBackend()
+    await backend.start(startOpts({ agentId: 'grok-build' }))
+    const sendP = backend.send({ content: 'plan', assistantMessageId: 'a-plan-int' })
+    await parked
+    expect(backend.getPendingInteractions().some((e) => e.type === 'plan_approval')).toBe(true)
+    await backend.interrupt()
+    await sendP
+    expect(backend.getPendingInteractions().every((e) => e.type !== 'plan_approval')).toBe(true)
+    await backend.close()
+  })
+
   it('forwards permission decisions to the pending gate', async () => {
     setAcpRuntimeFactory(async (opts) => mockRuntime({
       prompt: async (_text, messageId, onEvent) => {

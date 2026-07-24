@@ -6,7 +6,7 @@
 | Scope | ACP / Grok Build harness |
 | Repo | `super-one` |
 | Related source | `/Users/wuhangqi25/Developer/Projects/grok-build` (`xai-org/grok-build`) |
-| Out of scope | `exit_plan_mode` reverse-request, terminal capability re-enable, session resume, hooks |
+| Out of scope | terminal capability re-enable, session resume, hooks (`exit_plan_mode` shipped separately) |
 
 ---
 

@@ -81,7 +81,7 @@ vi.mock('lucide-react', () => {
   const Stub = () => null
   return {
     PenLine: Stub, Check: Stub, X: Stub, FastForward: Stub, Zap: Stub,
-    Circle: Stub, CheckCircle2: Stub,
+    Circle: Stub, CheckCircle2: Stub, MessageSquarePlus: Stub, Trash2: Stub,
   }
 })
 
@@ -99,7 +99,7 @@ function resetStore() {
 
 function seedPlanApprovalState(
   initialMode: 'plan' | 'default' = 'plan',
-  opts?: { selectedModel?: string },
+  opts?: { selectedModel?: string; sessionProvider?: 'claude' | 'acp' | 'codex' | null },
 ) {
   useChatStore.getState().ensureSession('/proj')
   useChatStore.setState({ activeProject: '/proj' })
@@ -114,6 +114,7 @@ function seedPlanApprovalState(
             ...createDefaultPerSessionState(),
             permissionMode: initialMode,
             selectedModel: opts?.selectedModel ?? '',
+            sessionProvider: opts?.sessionProvider ?? 'claude',
             pendingPlanApproval: {
               requestId: 'plan-req-1',
               planContent: '# My plan\n- step A\n- step B',
@@ -278,5 +279,84 @@ describe('PlanApprovalPrompt — integration', () => {
 
     expect(mockWindowAgent.setPermissionMode).toHaveBeenCalledWith('/proj', 'auto')
     expect(activeSession().permissionMode).toBe('auto')
+  })
+
+  it('scenario: freeform feedback is included when rejecting (Claude)', () => {
+    seedPlanApprovalState('plan', { sessionProvider: 'claude' })
+    render(<PlanApprovalPrompt />)
+
+    const inputs = screen.getAllByPlaceholderText(/Reject feedback|拒绝反馈/)
+    fireEvent.change(inputs[0], { target: { value: 'add error handling' } })
+    // Click Reject rather than Enter — Enter without feedback-focus approves.
+    fireEvent.click(screen.getAllByRole('button', { name: /Reject|拒绝/ })[0])
+
+    expect(mockWindowAgent.respondToPlanApproval).toHaveBeenCalledWith(
+      expect.any(String), 'plan-req-1', false, 'add error handling',
+    )
+    expect(mockWindowAgent.setPermissionMode).not.toHaveBeenCalled()
+  })
+
+  it('scenario: line comment is serialized into reject feedback', () => {
+    seedPlanApprovalState('plan', { sessionProvider: 'claude' })
+    render(<PlanApprovalPrompt />)
+
+    // Line 2 is "- step A" (1-based: # My plan, - step A, - step B)
+    const line = document.querySelector('[data-plan-line="2"]')
+    expect(line).toBeTruthy()
+    fireEvent.mouseDown(line!)
+    fireEvent.doubleClick(line!)
+
+    const draft = screen.getByPlaceholderText(/comment on the selected|针对所选行/i)
+    fireEvent.change(draft, { target: { value: 'make this async' } })
+    fireEvent.keyDown(draft, { key: 'Enter' })
+
+    fireEvent.keyDown(window, { key: 'Escape' })
+
+    expect(mockWindowAgent.respondToPlanApproval).toHaveBeenCalledWith(
+      expect.any(String),
+      'plan-req-1',
+      false,
+      expect.stringContaining('Proposed plan line 2:'),
+    )
+    const feedback = mockWindowAgent.respondToPlanApproval.mock.calls[0][3] as string
+    expect(feedback).toContain('> - step A')
+    expect(feedback).toContain('Comment:\nmake this async')
+  })
+
+  it('scenario: ACP approve with freeform sends follow-up user message, not feedback on wire', async () => {
+    seedPlanApprovalState('plan', { sessionProvider: 'acp' })
+    const sendSpy = vi.fn().mockResolvedValue(undefined)
+    useChatStore.setState({ sendMessage: sendSpy })
+
+    render(<PlanApprovalPrompt />)
+
+    const inputs = screen.getAllByPlaceholderText(/Overall feedback|总体反馈/)
+    fireEvent.change(inputs[0], { target: { value: 'ship after tests' } })
+    fireEvent.keyDown(window, { key: 'Enter' })
+
+    expect(mockWindowAgent.respondToPlanApproval).toHaveBeenCalledWith(
+      expect.any(String), 'plan-req-1', true, undefined,
+    )
+    expect(sendSpy).toHaveBeenCalledWith(
+      expect.stringContaining('The user approved the plan with the following review comments:'),
+    )
+    expect(sendSpy.mock.calls[0][0]).toContain('ship after tests')
+  })
+
+  it('scenario: Claude approve does not send follow-up even if freeform was typed', () => {
+    seedPlanApprovalState('plan', { sessionProvider: 'claude' })
+    const sendSpy = vi.fn().mockResolvedValue(undefined)
+    useChatStore.setState({ sendMessage: sendSpy })
+
+    render(<PlanApprovalPrompt />)
+
+    const inputs = screen.getAllByPlaceholderText(/Reject feedback|拒绝反馈/)
+    fireEvent.change(inputs[0], { target: { value: 'ignore on approve' } })
+    fireEvent.keyDown(window, { key: 'Enter' })
+
+    expect(mockWindowAgent.respondToPlanApproval).toHaveBeenCalledWith(
+      expect.any(String), 'plan-req-1', true, undefined,
+    )
+    expect(sendSpy).not.toHaveBeenCalled()
   })
 })

@@ -488,6 +488,17 @@ export type Messages = {
       approveAuto: string
       reject: string
       feedbackPlaceholder: string
+      /** Freeform when both approve and reject can carry feedback (Grok/ACP). */
+      feedbackPlaceholderBoth: string
+      commentHint: string
+      emptyPlan: string
+      comments: string
+      commentOn: string
+      addComment: string
+      commentPlaceholder: string
+      saveComment: string
+      cancelComment: string
+      removeComment: string
       switchTo: string
       acceptEdits: string
       auto: string
@@ -2318,6 +2329,16 @@ export const en: Messages = {
       approveAuto: 'Approve & Auto',
       reject: 'Reject',
       feedbackPlaceholder: 'Reject feedback (optional, Enter to submit)',
+      feedbackPlaceholderBoth: 'Overall feedback (optional — sent on approve or reject)',
+      commentHint: 'Select lines · C comment · double-click line',
+      emptyPlan: 'No plan content to review.',
+      comments: 'Comments',
+      commentOn: 'Comment on {{range}}',
+      addComment: 'Add comment',
+      commentPlaceholder: 'Write a comment on the selected lines…',
+      saveComment: 'Save',
+      cancelComment: 'Cancel',
+      removeComment: 'Remove comment',
       switchTo: 'Switch to',
       acceptEdits: 'Accept Edits',
       auto: 'Auto',

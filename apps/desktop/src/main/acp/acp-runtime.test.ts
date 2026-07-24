@@ -111,6 +111,10 @@ describe('createAcpRuntime (in-process agent)', () => {
     await new Promise((r) => setTimeout(r, 0))
 
     expect(captured.initialize?.clientCapabilities).toMatchObject({ terminal })
+    expect(captured.initialize?._meta).toMatchObject({
+      askUserQuestion: true,
+      exitPlanMode: true,
+    })
   })
 
   it('passes yoloMode on session/new when permissionMode is bypassPermissions', async () => {

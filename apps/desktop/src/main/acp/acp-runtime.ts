@@ -37,7 +37,11 @@ import { handleReadTextFile, handleWriteTextFile } from './acp-fs'
 import { AcpTerminalManager } from './acp-terminals'
 import {
   XAI_ASK_USER_QUESTION,
+  XAI_EXIT_PLAN_MODE,
+  parseGrokExitPlanModeParams,
+  formatGrokExitPlanModeResponse,
   type GrokAskUserQuestionParams,
+  type GrokExitPlanModeParams,
 } from './acp-xai-extensions'
 import {
   grokSessionPermissionMeta,
@@ -62,6 +66,11 @@ export interface AcpPermissionGate {
 /** Grok (and similar) client extension: interactive multi-choice questions. */
 export interface AcpAskUserQuestionGate {
   request(params: GrokAskUserQuestionParams): Promise<Record<string, unknown>>
+}
+
+/** Grok client extension: plan approval when agent calls exit_plan_mode. */
+export interface AcpExitPlanModeGate {
+  request(params: GrokExitPlanModeParams): Promise<Record<string, unknown>>
 }
 
 export interface AcpRuntime {
@@ -89,6 +98,7 @@ export interface AcpRuntimeOptions {
   launch: AcpRuntimeLaunchConfig
   permission: AcpPermissionGate
   askUserQuestion?: AcpAskUserQuestionGate
+  exitPlanMode?: AcpExitPlanModeGate
   /** Inject stream (in-process agent) instead of spawning a process. */
   streamFactory?: (launch: ResolvedAcpLaunch) => Promise<{ stream: Stream; dispose: () => void }>
   /** Called as soon as a model catalog is known (e.g. after initialize, before session/new). */
@@ -170,6 +180,14 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       }
       return opts.askUserQuestion.request(ctx.params)
     }
+    const exitPlanParams = (raw: unknown): GrokExitPlanModeParams => parseGrokExitPlanModeParams(raw)
+    const exitPlanHandler = async (ctx: { params: GrokExitPlanModeParams }) => {
+      if (!opts.exitPlanMode) {
+        log.warn('[acp-runtime] x.ai/exit_plan_mode with no gate — abandoning')
+        return formatGrokExitPlanModeResponse({ kind: 'abandoned' })
+      }
+      return opts.exitPlanMode.request(ctx.params)
+    }
 
     connection = client({ name: 'superone' })
       .onRequest(methods.client.session.requestPermission, async (ctx) => {
@@ -192,6 +210,8 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       // Grok Build interactive tools — both bare and underscore-prefixed method ids
       .onRequest(XAI_ASK_USER_QUESTION, askUserParams, askUserHandler)
       .onRequest(`_${XAI_ASK_USER_QUESTION}`, askUserParams, askUserHandler)
+      .onRequest(XAI_EXIT_PLAN_MODE, exitPlanParams, exitPlanHandler)
+      .onRequest(`_${XAI_EXIT_PLAN_MODE}`, exitPlanParams, exitPlanHandler)
       .connect(stream)
 
     const initResult = await connection.agent.request(methods.agent.initialize, {
@@ -203,6 +223,8 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       },
       _meta: {
         askUserQuestion: true,
+        // Advertise plan-approval capability so Grok parks exit_plan_mode on us.
+        exitPlanMode: true,
       },
     } as never)
     agentCapabilities = readAgentCapabilities(initResult)

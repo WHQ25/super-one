@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildAskUserQuestionRequest,
+  buildPlanApprovalRequest,
   formatGrokAskUserResponse,
+  formatGrokExitPlanModeResponse,
   normalizeGrokQuestions,
+  parseGrokExitPlanModeParams,
 } from './acp-xai-extensions'
 
 describe('normalizeGrokQuestions', () => {
@@ -79,5 +82,73 @@ describe('buildAskUserQuestionRequest', () => {
     }, 'req-1')
     expect(req.requestId).toBe('req-1')
     expect(req.questions[0].question).toBe('Go?')
+  })
+})
+
+describe('parseGrokExitPlanModeParams', () => {
+  it('reads camelCase wire fields', () => {
+    expect(parseGrokExitPlanModeParams({
+      sessionId: 's1',
+      toolCallId: 'tc1',
+      planContent: '# Plan',
+    })).toMatchObject({
+      sessionId: 's1',
+      toolCallId: 'tc1',
+      planContent: '# Plan',
+    })
+  })
+
+  it('tolerates snake_case', () => {
+    expect(parseGrokExitPlanModeParams({
+      session_id: 's2',
+      tool_call_id: 'tc2',
+      plan_content: 'body',
+    })).toMatchObject({
+      sessionId: 's2',
+      toolCallId: 'tc2',
+      planContent: 'body',
+    })
+  })
+
+  it('handles empty plan and invalid input', () => {
+    expect(parseGrokExitPlanModeParams({ toolCallId: 't', planContent: null }).planContent).toBeNull()
+    expect(parseGrokExitPlanModeParams(null)).toEqual({})
+    expect(parseGrokExitPlanModeParams('x')).toEqual({})
+  })
+})
+
+describe('buildPlanApprovalRequest', () => {
+  it('maps plan content and empty path/prompts', () => {
+    expect(buildPlanApprovalRequest({
+      toolCallId: 'tc',
+      planContent: '## Steps\n1. A',
+    }, 'tc')).toEqual({
+      requestId: 'tc',
+      planContent: '## Steps\n1. A',
+      planFilePath: '',
+      allowedPrompts: [],
+    })
+  })
+
+  it('uses empty string when planContent missing', () => {
+    expect(buildPlanApprovalRequest({}, 'id').planContent).toBe('')
+  })
+})
+
+describe('formatGrokExitPlanModeResponse', () => {
+  it('formats approved without feedback', () => {
+    expect(formatGrokExitPlanModeResponse({ kind: 'approved' })).toEqual({ outcome: 'approved' })
+  })
+
+  it('formats cancelled with optional feedback', () => {
+    expect(formatGrokExitPlanModeResponse({ kind: 'cancelled' })).toEqual({ outcome: 'cancelled' })
+    expect(formatGrokExitPlanModeResponse({ kind: 'cancelled', feedback: ' add tests ' })).toEqual({
+      outcome: 'cancelled',
+      feedback: 'add tests',
+    })
+  })
+
+  it('formats abandoned', () => {
+    expect(formatGrokExitPlanModeResponse({ kind: 'abandoned' })).toEqual({ outcome: 'abandoned' })
   })
 })

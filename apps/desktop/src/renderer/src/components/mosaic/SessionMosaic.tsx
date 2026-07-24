@@ -1,6 +1,6 @@
 import { useRef, type RefObject } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Maximize, Moon, Sun, X } from 'lucide-react'
+import { Maximize, X } from 'lucide-react'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { cn } from '@superone/ui/lib/utils'
 import { SessionPane } from '@/components/chat/SessionPane'
@@ -8,23 +8,19 @@ import { LayoutToggle } from '@/components/coding/LayoutToggle'
 import { useChatStore, extractSessionTitle } from '@/stores/chat'
 import { SessionTitleAnimated } from '@/components/sidebar/AnimatedSessionTitle'
 import { HeaderSessionMenu } from '@/components/chat/HeaderSessionMenu'
-import { useTheme } from '@/hooks/useTheme'
 import { useFullscreen } from '@/hooks/useFullscreen'
 import { useAppStore } from '@/stores/app'
 import { useMosaicStore } from './mosaic-store'
 import { MosaicDivider } from './MosaicDivider'
 import { MosaicDropZone } from './MosaicDropZone'
-import { measureMin, topLeftLeafId, topRightLeafId, type MosaicLeaf, type MosaicNode, type MosaicPath } from './mosaic-tree'
+import { measureMin, topLeftLeafId, type MosaicLeaf, type MosaicNode, type MosaicPath } from './mosaic-tree'
 
 const isMac = window.app.platform === 'darwin'
 
 interface RenderCtx {
   topLeftId: string
-  topRightId: string
   reserveTrafficLights: boolean
   showSidebar: boolean
-  themeDark: boolean
-  onToggleTheme: () => void
   containerRef: RefObject<HTMLDivElement | null>
 }
 
@@ -37,7 +33,6 @@ function MosaicTile({ tile, ctx }: { tile: MosaicLeaf; ctx: RenderCtx }) {
     return (sess?._title ?? (sess ? extractSessionTitle(sess.messages) : null)) ?? 'New Session'
   })
   const isTopLeft = tile.id === ctx.topLeftId
-  const isTopRight = tile.id === ctx.topRightId
   return (
     <div
       data-tile-id={tile.id}
@@ -59,11 +54,6 @@ function MosaicTile({ tile, ctx }: { tile: MosaicLeaf; ctx: RenderCtx }) {
           <IconButton size="xs" variant="nested" tooltip={t('tooltips.close')} onClick={(e) => { e.stopPropagation(); useMosaicStore.getState().removeTile(tile.id) }}>
             <X className="size-3.5" />
           </IconButton>
-          {isTopRight && (
-            <IconButton size="xs" variant="nested" tooltip={t('tooltips.toggleTheme')} onClick={(e) => { e.stopPropagation(); ctx.onToggleTheme() }}>
-              {ctx.themeDark ? <Sun className="size-3.5" /> : <Moon className="size-3.5" />}
-            </IconButton>
-          )}
         </div>
       </div>
       <div className={cn('relative flex min-h-0 flex-1 flex-col overflow-hidden transition-opacity', !focused && 'opacity-75')}>
@@ -106,17 +96,13 @@ function MosaicNodeView({ node, path, ctx }: { node: MosaicNode; path: MosaicPat
 export function SessionMosaic() {
   const containerRef = useRef<HTMLDivElement>(null)
   const root = useMosaicStore((s) => s.root)
-  const theme = useTheme()
   const showSidebar = useAppStore((s) => s.showSidebar)
   const isFullscreen = useFullscreen()
   if (!root) return null
   const ctx: RenderCtx = {
     topLeftId: topLeftLeafId(root),
-    topRightId: topRightLeafId(root),
     reserveTrafficLights: isMac && !showSidebar && !isFullscreen,
     showSidebar,
-    themeDark: theme.dark,
-    onToggleTheme: theme.toggle,
     containerRef,
   }
   return (

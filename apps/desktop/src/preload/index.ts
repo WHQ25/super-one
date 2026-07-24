@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import { AgentIpcChannels, type NativeContextMenuItemSpec, type AgentPrewarmHint, type BashOutputEvent, type CodexCollaborationMode, type CodexPermissionPreset, type CodexReasoningEffort, type CodexReviewTarget, type CodexExternalAgentItem, type ProviderEndpointTestResponse, type DiscoverModelsResult, type RemoteDeviceConfig, type SandboxMode, type SendMessageRequest, type ContentBlock, type ChatMessageContext, type WorktreeActivateRequest, type WorktreeHandoffResult, type WorktreeAssignResult, type GitDirtyStatus, type SessionForkRequest, type SessionForkResult, type HookSavePayload, type TerminalEvent, type TerminalListItem, type TerminalSnapshot, type HarnessId, type BrowserCertError, type BrowserOpenTabRequest, type UpsertMediaProviderRequest } from '@superone/shared/agent-types'
+import { AgentIpcChannels, type NativeContextMenuItemSpec, type AgentPrewarmHint, type BashOutputEvent, type CodexCollaborationMode, type CodexPermissionPreset, type CodexReasoningEffort, type CodexReviewTarget, type CodexExternalAgentItem, type ProviderEndpointTestResponse, type DiscoverModelsResult, type RemoteDeviceConfig, type SandboxMode, type SendMessageRequest, type ContentBlock, type ChatMessageContext, type WorktreeActivateRequest, type WorktreeHandoffResult, type WorktreeAssignResult, type GitDirtyStatus, type SessionForkRequest, type SessionForkResult, type HookSavePayload, type TerminalEvent, type TerminalListItem, type TerminalSnapshot, type HarnessId, type BrowserCertError, type BrowserOpenTabRequest, type UpsertMediaProviderRequest, type ThemeMode } from '@superone/shared/agent-types'
 import type { McpbInstallRequest } from '@superone/shared/mcpb-types'
 import type { ConsumerBinding, ConsumerId, Credential, EndpointOverride, Platform, ServiceEndpoint } from '@superone/shared/platform-registry'
 
@@ -957,10 +957,10 @@ const appAPI = {
   },
   setWindowAlwaysOnTop: (value: boolean) =>
     ipcRenderer.invoke(AgentIpcChannels.SET_WINDOW_ALWAYS_ON_TOP, value) as Promise<boolean>,
-  getTheme: () => ipcRenderer.invoke(AgentIpcChannels.GET_THEME) as Promise<boolean>,
-  setTheme: (dark: boolean) => ipcRenderer.invoke(AgentIpcChannels.SET_THEME, dark) as Promise<void>,
-  onThemeChange: (callback: (dark: boolean) => void) => {
-    const handler = (_ipcEvent: Electron.IpcRendererEvent, dark: boolean): void => callback(dark)
+  getTheme: () => ipcRenderer.invoke(AgentIpcChannels.GET_THEME) as Promise<{ mode: ThemeMode; dark: boolean }>,
+  setTheme: (mode: ThemeMode) => ipcRenderer.invoke(AgentIpcChannels.SET_THEME, mode) as Promise<void>,
+  onThemeChange: (callback: (state: { mode: ThemeMode; dark: boolean }) => void) => {
+    const handler = (_ipcEvent: Electron.IpcRendererEvent, state: { mode: ThemeMode; dark: boolean }): void => callback(state)
     ipcRenderer.on(AgentIpcChannels.THEME_CHANGED, handler)
     return () => { ipcRenderer.removeListener(AgentIpcChannels.THEME_CHANGED, handler) }
   },

@@ -166,6 +166,12 @@ export type Messages = {
       title: string
       subtitle: string
       interface: string
+      theme: {
+        label: string
+        system: string
+        light: string
+        dark: string
+      }
     }
     browser: {
       title: string
@@ -1735,7 +1741,6 @@ export type Messages = {
     unsavedChanges: string
     maximize: string
     sessionGrid: string
-    toggleTheme: string
   }
   usageGauge: {
     claudeTitle: string
@@ -1948,6 +1953,12 @@ export const en: Messages = {
       title: 'Appearance',
       subtitle: 'Customize the look and feel of SuperOne',
       interface: 'Interface',
+      theme: {
+        label: 'Theme',
+        system: 'System',
+        light: 'Light',
+        dark: 'Dark',
+      },
     },
     browser: {
       title: 'Browser',
@@ -3529,7 +3540,6 @@ export const en: Messages = {
     unsavedChanges: 'Unsaved changes',
     maximize: 'Maximize',
     sessionGrid: 'Session grid',
-    toggleTheme: 'Toggle theme',
   },
   usageGauge: {
     claudeTitle: 'Claude Usage',

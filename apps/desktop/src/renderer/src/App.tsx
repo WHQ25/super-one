@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useCallback, useRef, useState, lazy, Suspense } from 'react'
 import { flushSync } from 'react-dom'
-import { Sun, Moon, X, Smartphone, Minimize2, SquareTerminal, RotateCw, Bug, LayoutGrid, Globe, PanelLeft, PanelRight, PanelLeftDashed, PanelRightDashed } from 'lucide-react'
+import { X, Smartphone, Minimize2, SquareTerminal, RotateCw, Bug, LayoutGrid, Globe, PanelLeft, PanelRight, PanelLeftDashed, PanelRightDashed } from 'lucide-react'
 import { toast } from 'sonner'
 import { useTranslation } from 'react-i18next'
 import { LayoutToggle } from '@/components/coding/LayoutToggle'
@@ -71,7 +71,7 @@ function App(): React.JSX.Element {
   useStandaloneToolCallRouter()
   const devReactScan = useDevToolsStore((s) => s.reactScan)
   useReactScan(devReactScan)
-  const theme = useTheme()
+  useTheme()
   const { t } = useTranslation()
   const { view, currentFolder, showSidebar, sidebarWidth, setSidebarWidth, layoutMode } = useAppStore(useShallow((s) => ({ view: s.view, currentFolder: s.currentFolder, showSidebar: s.showSidebar, sidebarWidth: s.sidebarWidth, setSidebarWidth: s.setSidebarWidth, layoutMode: s.layoutMode })))
   const liquidGlass = useAppStore((s) => s.liquidGlass)
@@ -477,12 +477,6 @@ function App(): React.JSX.Element {
             <div />
             <div className="flex items-center gap-1.5" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
               <MiniAppMediaIndicator />
-              <button
-                onClick={theme.toggle}
-                className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              >
-                {theme.dark ? <Sun className="size-4" /> : <Moon className="size-4" />}
-              </button>
             </div>
           </div>
           {view === 'startup' && <StartupPage />}
@@ -561,7 +555,7 @@ function App(): React.JSX.Element {
 
           <div className="flex-1" />
 
-          {/* Mini-app controls + theme */}
+          {/* Mini-app controls */}
           <div className="mr-3 flex items-center gap-1.5" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
             <MiniAppMediaIndicator />
             <CanvasDevControls />
@@ -628,12 +622,6 @@ function App(): React.JSX.Element {
                 </Tooltip>
               </TooltipProvider>
             )}
-            <button
-              onClick={theme.toggle}
-              className="rounded-md p-1.5 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground"
-            >
-              {theme.dark ? <Sun className="size-3.5" /> : <Moon className="size-3.5" />}
-            </button>
           </div>
         </div>
         )}

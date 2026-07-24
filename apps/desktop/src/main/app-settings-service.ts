@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { app } from 'electron'
-import type { AppSettings, AppSettingsPatch, BrowserBookmark, BrowserBookmarkGroup, EffortLevel, Locale, PermissionMode, QuestionPreviewFormat, SandboxMode, UpdateChannel } from '@superone/shared/agent-types'
+import type { AppSettings, AppSettingsPatch, BrowserBookmark, BrowserBookmarkGroup, EffortLevel, Locale, PermissionMode, QuestionPreviewFormat, SandboxMode, ThemeMode, UpdateChannel } from '@superone/shared/agent-types'
 import { sanitizeOverrides } from '@superone/shared/harness-brand'
 
 export type { AppSettings, AppSettingsPatch }
@@ -15,6 +15,7 @@ const defaults: AppSettings = {
   crispText: true,
   locale: '',
   updateChannel: null,
+  themeMode: 'system',
   terminalLightPalette: null,
   terminalDarkPalette: null,
   terminalFontSize: 14,
@@ -84,6 +85,10 @@ function isQuestionPreviewFormat(value: unknown): value is QuestionPreviewFormat
 
 function isUpdateChannel(value: unknown): value is UpdateChannel {
   return value === 'alpha' || value === 'beta' || value === 'stable'
+}
+
+function isThemeMode(value: unknown): value is ThemeMode {
+  return value === 'system' || value === 'light' || value === 'dark'
 }
 
 function readTerminalFontSize(value: unknown): number {
@@ -228,6 +233,7 @@ export function readAppSettings(): AppSettings {
       crispText: typeof data.crispText === 'boolean' ? data.crispText : defaults.crispText,
       locale: data.locale === '' || isLocale(data.locale) ? data.locale : defaults.locale,
       updateChannel: data.updateChannel === null || isUpdateChannel(data.updateChannel) ? data.updateChannel : defaults.updateChannel,
+      themeMode: isThemeMode(data.themeMode) ? data.themeMode : defaults.themeMode,
       terminalLightPalette: typeof data.terminalLightPalette === 'string' ? data.terminalLightPalette : defaults.terminalLightPalette,
       terminalDarkPalette: typeof data.terminalDarkPalette === 'string' ? data.terminalDarkPalette : defaults.terminalDarkPalette,
       terminalFontSize: readTerminalFontSize(data.terminalFontSize),
@@ -254,6 +260,7 @@ export function readAppSettings(): AppSettings {
       crispText: defaults.crispText,
       locale: defaults.locale,
       updateChannel: defaults.updateChannel,
+      themeMode: defaults.themeMode,
       terminalLightPalette: defaults.terminalLightPalette,
       terminalDarkPalette: defaults.terminalDarkPalette,
       terminalFontSize: defaults.terminalFontSize,
@@ -284,6 +291,7 @@ export function saveAppSettings(patch: AppSettingsPatch): AppSettings {
     crispText: patch.crispText ?? current.crispText,
     locale: patch.locale ?? current.locale,
     updateChannel: patch.updateChannel === undefined ? current.updateChannel : patch.updateChannel,
+    themeMode: patch.themeMode === undefined ? current.themeMode : patch.themeMode,
     terminalLightPalette: patch.terminalLightPalette === undefined ? current.terminalLightPalette : patch.terminalLightPalette,
     terminalDarkPalette: patch.terminalDarkPalette === undefined ? current.terminalDarkPalette : patch.terminalDarkPalette,
     terminalFontSize: patch.terminalFontSize === undefined ? current.terminalFontSize : readTerminalFontSize(patch.terminalFontSize),

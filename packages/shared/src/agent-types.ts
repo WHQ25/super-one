@@ -2623,6 +2623,8 @@ export type Locale = 'en' | 'zh'
 
 export type UpdateChannel = 'alpha' | 'beta' | 'stable'
 
+export type ThemeMode = 'system' | 'light' | 'dark'
+
 export interface BrowserBookmark {
   id: string
   title: string
@@ -2662,6 +2664,7 @@ export interface AppSettings {
   crispText: boolean
   locale: Locale | ''
   updateChannel: UpdateChannel | null
+  themeMode: ThemeMode
   terminalLightPalette: string | null
   terminalDarkPalette: string | null
   terminalFontSize: number
@@ -2707,6 +2710,7 @@ export interface AppSettingsPatch {
   crispText?: boolean
   locale?: Locale | ''
   updateChannel?: UpdateChannel | null
+  themeMode?: ThemeMode
   terminalLightPalette?: string | null
   terminalDarkPalette?: string | null
   terminalFontSize?: number

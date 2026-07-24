@@ -87,7 +87,7 @@ vi.mock('@/hooks/useFullscreen', () => ({
 }))
 
 vi.mock('@/hooks/useTheme', () => ({
-  useTheme: () => ({ dark: false, toggle: vi.fn() }),
+  useTheme: () => ({ mode: 'light', dark: false, setMode: vi.fn() }),
 }))
 
 vi.mock('@/components/sidebar/FileTree', () => ({

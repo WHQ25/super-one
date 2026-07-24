@@ -111,7 +111,7 @@ import { trace, closeTraceDb } from './agent/event-trace'
 import { RemoteControlService } from './remote-control-service'
 import { readProjectPreferences, saveProjectPreferences } from './claude-preferences-service'
 import { readAppSettings, saveAppSettings } from './app-settings-service'
-import type { AppSettings, AppSettingsPatch } from '@superone/shared/agent-types'
+import type { AppSettings, AppSettingsPatch, ThemeMode } from '@superone/shared/agent-types'
 import { recordBrowserHistory, suggestBrowserHistory, deleteBrowserHistory } from './browser-history-service'
 import { getSandboxCapability, probeSandboxDependencies } from './sandbox-platform'
 import { ProcessTitle, WindowRole, roleArg, glassBootArgs } from './process-titles'
@@ -341,6 +341,7 @@ let mainWindow: BrowserWindow | null = null
 const miniAppSessionRefs = new Map<string, Set<string>>()
 const allWindows = new Set<BrowserWindow>()
 const sessionWindows = new Map<string, BrowserWindow>()
+let currentThemeMode: ThemeMode = 'system'
 let currentDarkTheme = true
 
 const sessionWindowKey = (projectPath: string, sessionId: string): string =>
@@ -474,7 +475,21 @@ async function applyAppSettingsPatch(patch: AppSettingsPatch): Promise<AppSettin
 }
 
 function syncNativeAppearance(): void {
-  nativeTheme.themeSource = currentDarkTheme ? 'dark' : 'light'
+  nativeTheme.themeSource = currentThemeMode
+}
+
+function broadcastTheme(): void {
+  safeSend(AgentIpcChannels.THEME_CHANGED, { mode: currentThemeMode, dark: currentDarkTheme })
+}
+
+function setThemeMode(mode: ThemeMode): void {
+  if (currentThemeMode === mode) return
+  currentThemeMode = mode
+  saveAppSettings({ themeMode: mode })
+  syncNativeAppearance()
+  currentDarkTheme = nativeTheme.shouldUseDarkColors
+  applyLiquidGlass()
+  broadcastTheme()
 }
 
 
@@ -2377,14 +2392,10 @@ function registerIpcHandlers(): void {
     return win.isAlwaysOnTop()
   })
 
-  ipcMain.handle(AgentIpcChannels.GET_THEME, (): boolean => currentDarkTheme)
+  ipcMain.handle(AgentIpcChannels.GET_THEME, () => ({ mode: currentThemeMode, dark: currentDarkTheme }))
 
-  ipcMain.handle(AgentIpcChannels.SET_THEME, (_e, dark: boolean): void => {
-    if (currentDarkTheme === dark) return
-    currentDarkTheme = dark
-    syncNativeAppearance()
-    applyLiquidGlass()
-    safeSend(AgentIpcChannels.THEME_CHANGED, dark)
+  ipcMain.handle(AgentIpcChannels.SET_THEME, (_e, mode: ThemeMode): void => {
+    setThemeMode(mode)
   })
 
   ipcMain.handle(AgentIpcChannels.BROADCAST_SESSION_SETTING, (_e, sessionId: string, patch: import('@superone/shared/agent-types').SessionSettingsPatch): void => {
@@ -2921,7 +2932,17 @@ app.whenReady().then(async () => {
     log.transports.file.getFile().path,
   )
 
+  currentThemeMode = readAppSettings().themeMode
   syncNativeAppearance()
+  currentDarkTheme = nativeTheme.shouldUseDarkColors
+  nativeTheme.on('updated', () => {
+    if (currentThemeMode !== 'system') return
+    const nextDark = nativeTheme.shouldUseDarkColors
+    if (nextDark === currentDarkTheme) return
+    currentDarkTheme = nextDark
+    applyLiquidGlass()
+    broadcastTheme()
+  })
   registerBrowserPopupRedirect()
   registerBrowserDownloadCapture()
 

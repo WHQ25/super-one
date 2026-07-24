@@ -180,6 +180,12 @@ export const zh: Messages = {
       title: '外观',
       subtitle: '自定义 SuperOne 的外观与样式',
       interface: '界面',
+      theme: {
+        label: '主题',
+        system: '跟随系统',
+        light: '浅色',
+        dark: '深色',
+      },
     },
     browser: {
       title: '浏览器',
@@ -1761,7 +1767,6 @@ export const zh: Messages = {
     unsavedChanges: '未保存的修改',
     maximize: '最大化',
     sessionGrid: '会话网格',
-    toggleTheme: '切换主题',
   },
   usageGauge: {
     claudeTitle: 'Claude 用量',

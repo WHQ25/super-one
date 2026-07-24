@@ -20,6 +20,7 @@ vi.mock('../agent/resolve-cli', () => ({
 }))
 
 interface CapturedRequests {
+  initialize?: Record<string, unknown>
   newSession: Record<string, unknown> | null
   prompts: Array<Array<{ type: string; text?: string }>>
 }
@@ -29,10 +30,13 @@ function makeEchoAgentStream(
   agentCapabilities: Record<string, unknown> = {},
 ): { stream: Stream; dispose: () => void } {
   const agentApp = agent({ name: 'test-agent' })
-    .onRequest(methods.agent.initialize, async () => ({
-      protocolVersion: PROTOCOL_VERSION,
-      agentCapabilities,
-    }))
+    .onRequest(methods.agent.initialize, async (ctx) => {
+      if (captured) captured.initialize = ctx.params as Record<string, unknown>
+      return {
+        protocolVersion: PROTOCOL_VERSION,
+        agentCapabilities,
+      }
+    })
     .onRequest(methods.agent.session.new, async (ctx) => {
       if (captured) captured.newSession = ctx.params as Record<string, unknown>
       return { sessionId: 'test-session-1' }
@@ -74,6 +78,29 @@ function makeEchoAgentStream(
 }
 
 describe('createAcpRuntime (in-process agent)', () => {
+  it.each([
+    ['grok-build', false],
+    ['custom', true],
+  ])('advertises terminal capability for %s as %s', async (agentId, terminal) => {
+    const captured: CapturedRequests = { newSession: null, prompts: [] }
+    const runtime = await createAcpRuntime({
+      launch: {
+        agentId,
+        command: 'unused',
+        defaultCwd: '/tmp/proj',
+      },
+      permission: {
+        request: async () => ({ outcome: { outcome: 'cancelled' } }),
+      },
+      streamFactory: async () => makeEchoAgentStream(captured),
+    })
+
+    await runtime.close()
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(captured.initialize?.clientCapabilities).toMatchObject({ terminal })
+  })
+
   it('streams text then completes', async () => {
     const events: AgentEvent[] = []
     const runtime = await createAcpRuntime({

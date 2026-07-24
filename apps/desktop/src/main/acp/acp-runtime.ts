@@ -188,7 +188,7 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       clientInfo: { name: 'superone', version: '0.0.0' },
       clientCapabilities: {
         fs: { readTextFile: true, writeTextFile: true },
-        terminal: true,
+        terminal: launch.agentId !== 'grok-build',
       },
       _meta: {
         askUserQuestion: true,

@@ -4,6 +4,13 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.47.1-alpha] - 2026-07-25
+
+### Fixed
+
+- Prevent OpenCode sessions from entering a React update loop before commands and agents finish loading
+- Support channel rollback to legacy Windows releases with GitHub-normalized installer names
+
 ## [0.47.0-alpha] - 2026-07-25
 
 ### Added

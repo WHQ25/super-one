@@ -307,7 +307,7 @@ export class OpenCodeBackend implements SessionBackend {
   }
   async reconnectMcp(serverName: string): Promise<void> { await (await this.ensureRuntime()).reconnectMcp(serverName) }
   async toggleMcpServer(serverName: string, enabled: boolean): Promise<void> { await (await this.ensureRuntime()).toggleMcpServer(serverName, enabled) }
-  async reloadMcpServers(): Promise<void> {}
+  async reloadMcpServers(): Promise<void> { await (await this.ensureRuntime()).reloadMcpServers() }
   async reloadPlugins(): Promise<boolean> { return false }
   dequeueMessage(_clientMessageId: string): boolean { return false }
   getPendingInteractions(): AgentEvent[] {

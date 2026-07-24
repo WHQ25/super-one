@@ -28,6 +28,7 @@ export function reducePermission(session: PerSessionState, event: PermissionEven
         selectedCodexReasoningEffort: eventPatch.selectedCodexReasoningEffort,
         selectedCodexPermissionPreset: eventPatch.selectedCodexPermissionPreset,
         selectedCodexCollaborationMode: eventPatch.selectedCodexCollaborationMode,
+        openCodeAgentId: eventPatch.openCodeAgentId,
         permissionMode: eventPatch.permissionMode,
         apiProviderId: eventPatch.apiProviderId,
       }
@@ -53,6 +54,9 @@ export function reducePermission(session: PerSessionState, event: PermissionEven
       if (merged.selectedCodexCollaborationMode != null) {
         patch.selectedCodexCollaborationMode = merged.selectedCodexCollaborationMode
         patch.codexPlanRejectHintActive = false
+      }
+      if (merged.openCodeAgentId !== undefined) {
+        patch.openCodeAgentId = merged.openCodeAgentId
       }
       if (merged.permissionMode !== undefined) {
         patch.permissionMode = merged.permissionMode

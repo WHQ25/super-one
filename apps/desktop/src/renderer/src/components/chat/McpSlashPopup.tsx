@@ -203,7 +203,7 @@ export function McpSlashPopup({ onClose }: { onClose: () => void }) {
     if (state.loading) return ''
     if (state.error) return state.error
     if (state.mode === 'live') {
-      const harnessLabel = harness === 'codex' ? 'Codex' : 'Claude'
+      const harnessLabel = harness === 'codex' ? 'Codex' : harness === 'opencode' ? 'OpenCode' : 'Claude'
       return t('chat.mcpPopup.liveBadge', { harness: harnessLabel })
     }
     if (state.mode === 'probe') return t('chat.mcpPopup.probeBadge')

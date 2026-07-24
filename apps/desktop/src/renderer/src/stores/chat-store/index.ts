@@ -348,7 +348,7 @@ import type { HarnessHandler, HarnessHandlerMap } from './harness/harness-handle
 import { applyAcpResources, connectAcpResources, getCachedAcpCatalog, refreshAcpModels, sessionPatchFromAcpCatalog } from './harness/acp-handler'
 import { applyClaudeResources } from './harness/claude-handler'
 import { applyCodexResources } from './harness/codex-handler'
-import { applyOpenCodeResources, resolveDefaultOpenCodeSelection } from './harness/opencode-handler'
+import { applyOpenCodeResources, resolveDefaultOpenCodeAgent, resolveDefaultOpenCodeSelection } from './harness/opencode-handler'
 
 const harnessHandlers: HarnessHandlerMap = {
   claude: {
@@ -376,6 +376,7 @@ import { createCodexSlice } from './slices/codex-slice'
 import { createSessionSlice } from './slices/session-slice'
 import { createCoreSlice } from './slices/core-slice'
 import { createEventSlice } from './slices/event-slice'
+import { createOpenCodeSlice } from './slices/opencode-slice'
 
 export const useChatStore = create<ChatStore>((set, get, store) => ({
   ...createToolSlice(set, get, store),
@@ -384,6 +385,7 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
   ...createSessionSlice(set, get, store),
   ...createCoreSlice(set, get, store),
   ...createEventSlice(set, get, store),
+  ...createOpenCodeSlice(set, get, store),
 
   projectSessions: {},
   activeProject: null,
@@ -696,6 +698,7 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
     let savedProvider: string | null = null
     let savedApiProviderId: string | null = null
     let savedAcpAgentId: string | null = null
+    let savedOpenCodeAgentId: string | null = null
     let savedTitle: string | null = null
     try {
       const saved = await window.app.loadSessionState(sessionId) as PersistedSessionState | null
@@ -708,6 +711,7 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
         savedWorktreePath = saved.worktreePath ?? undefined
         savedApiProviderId = saved.apiProviderId ?? null
         savedAcpAgentId = saved.acpAgentId ?? null
+        savedOpenCodeAgentId = saved.messages.findLast((message) => message.role === 'assistant')?.metadata?.agent ?? null
         savedTitle = saved.title ?? null
       }
     } catch (err) { console.warn('[chat] loadSessionState failed:', err) }
@@ -739,6 +743,9 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
       lastAssistantMessageId: savedMessages.findLast((m) => m.role === 'assistant')?.id ?? null,
       apiProviderId: savedApiProviderId,
       acpAgentId: restoredProvider === 'acp' ? savedAcpAgentId : null,
+      openCodeAgentId: restoredProvider === 'opencode'
+        ? savedOpenCodeAgentId ?? resolveDefaultOpenCodeAgent(get().harnessResources.opencode?.agents ?? [])
+        : null,
       _title: savedTitle,
       _historyHydrated: true,
       permissionMode: defaultPermissionMode,

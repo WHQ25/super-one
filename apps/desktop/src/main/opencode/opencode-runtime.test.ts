@@ -24,6 +24,7 @@ const mocks = vi.hoisted(() => ({
   mcpStatus: vi.fn(async () => [{ name: 'github', status: 'connected' }]),
   connectMcp: vi.fn(async () => undefined),
   disconnectMcp: vi.fn(async () => undefined),
+  addMcp: vi.fn(async () => undefined),
   abort: vi.fn(async () => undefined),
   permissionReply: vi.fn(async () => undefined),
   questionReply: vi.fn(async () => undefined),
@@ -51,6 +52,7 @@ vi.mock('./opencode-client', () => ({
     mcpStatus = mocks.mcpStatus
     connectMcp = mocks.connectMcp
     disconnectMcp = mocks.disconnectMcp
+    addMcp = mocks.addMcp
     abort = mocks.abort
     permissionReply = mocks.permissionReply
     questionReply = mocks.questionReply
@@ -61,6 +63,7 @@ vi.mock('./opencode-client', () => ({
     })()
   },
   parseModels: () => [{ id: 'openai/gpt-5', name: 'GPT-5', description: '', contextWindow: 400_000 }],
+  parseOpenCodeAgents: () => [{ id: 'build', name: 'build' }],
   parseOpenCodeCommands: () => [{ name: 'review', description: '', argumentHint: '', isSkill: false }],
   withOpenCodeLocalCommands: (commands: unknown[]) => [...commands, {
     name: 'init', description: 'Create AGENTS.md', argumentHint: '', isSkill: false,
@@ -71,6 +74,19 @@ vi.mock('./opencode-client', () => ({
     url: 'http://127.0.0.1:4000',
     exited: null,
     close: mocks.closeServer,
+  }),
+  toOpenCodeMcpConfig: (config: { command?: string; disabled?: boolean }) => config.command
+    ? { type: 'local', command: [config.command], enabled: !config.disabled }
+    : null,
+}))
+
+vi.mock('../mcp-config-service', () => ({
+  listMcpConfigs: () => [{ name: 'project-tools', type: 'stdio', command: 'tools-server' }],
+}))
+
+vi.mock('../mcp/superone-mcp-stdio-state', () => ({
+  getSuperoneMcpStdioConfig: () => ({
+    command: 'node', args: ['/bridge.js'], env: { SUPERONE_MCP_SESSION_ID: 'superone-session' },
   }),
 }))
 
@@ -95,13 +111,20 @@ describe('opencode-runtime', () => {
       onEvent: vi.fn(),
     })
 
-    await runtime.prompt('Plan this', 'openai/gpt-5', 'high')
+    await runtime.prompt('Plan this', 'openai/gpt-5', 'high', undefined, 'build')
     expect(mocks.promptAsync).toHaveBeenCalledWith('oc-session', {
       text: 'Plan this',
       model: 'openai/gpt-5',
       variant: 'high',
       images: undefined,
       agent: 'plan',
+    })
+    expect(mocks.addMcp).toHaveBeenCalledWith('superone', {
+      type: 'local',
+      command: ['node', '/bridge.js'],
+      environment: { SUPERONE_MCP_SESSION_ID: 'superone-session' },
+      enabled: true,
+      timeout: 60_000,
     })
 
     await runtime.setPermissionMode('bypassPermissions')
@@ -125,14 +148,14 @@ describe('opencode-runtime', () => {
     expect(runtime.initialTodos).toEqual([{ content: 'Resume work', status: 'pending', priority: 'high' }])
     expect(runtime.pendingPermissions).toEqual([expect.objectContaining({ id: 'permission-1' })])
     expect(runtime.pendingQuestions).toEqual([expect.objectContaining({ id: 'question-1' })])
-    await runtime.command('review', 'working tree', 'openai/gpt-5', 'high')
+    await runtime.command('review', 'working tree', 'openai/gpt-5', 'high', undefined, 'general')
     expect(mocks.command).toHaveBeenCalledWith('oc-session', {
       command: 'review',
       arguments: 'working tree',
       model: 'openai/gpt-5',
       variant: 'high',
       images: undefined,
-      agent: undefined,
+      agent: 'general',
     })
     expect(await runtime.getMcpServerStatus()).toEqual([{ name: 'github', status: 'connected' }])
     await runtime.reconnectMcp('github')
@@ -140,6 +163,10 @@ describe('opencode-runtime', () => {
     expect(mocks.connectMcp).toHaveBeenCalledWith('github')
     await runtime.toggleMcpServer('github', false)
     expect(mocks.disconnectMcp).toHaveBeenCalledTimes(2)
+    await runtime.reloadMcpServers()
+    expect(mocks.addMcp).toHaveBeenCalledWith('project-tools', {
+      type: 'local', command: ['tools-server'], enabled: true,
+    })
     expect(await runtime.getContextUsage()).toEqual(expect.objectContaining({ maxTokens: 400_000 }))
     await runtime.init('openai/gpt-5')
     expect(mocks.initSession).toHaveBeenCalledWith('oc-session', 'openai/gpt-5')
@@ -155,6 +182,7 @@ describe('opencode-runtime', () => {
   it('forwards only events for its provider session', async () => {
     mocks.events = [
       { type: 'session.idle', properties: { sessionID: 'other-session' } },
+      { type: 'mcp.tools.changed', properties: { server: 'superone' } },
       { type: 'session.idle', properties: { sessionID: 'oc-session' } },
     ]
     const onEvent = vi.fn()
@@ -165,16 +193,16 @@ describe('opencode-runtime', () => {
       permissionMode: 'default',
       onEvent,
     })
-    await vi.waitFor(() => expect(onEvent).toHaveBeenCalledOnce())
-    expect(onEvent.mock.calls[0][0].properties.sessionID).toBe('oc-session')
+    await vi.waitFor(() => expect(onEvent).toHaveBeenCalledTimes(2))
+    expect(onEvent.mock.calls.map(([event]) => event.type)).toEqual(['mcp.tools.changed', 'session.idle'])
     await runtime.close()
   })
 
   it('builds deny and accept-edits rules without disabling questions', () => {
-    expect(buildOpenCodePermissionRules('dontAsk')).toEqual([
-      { permission: '*', pattern: '*', action: 'deny' },
-      { permission: 'question', pattern: '*', action: 'allow' },
-    ])
+    const denyRules = buildOpenCodePermissionRules('dontAsk')
+    expect(denyRules).toContainEqual({ permission: '*', pattern: '*', action: 'deny' })
+    expect(denyRules).toContainEqual({ permission: 'question', pattern: '*', action: 'allow' })
+    expect(denyRules).toContainEqual({ permission: 'superone_session_rename', pattern: '*', action: 'allow' })
     expect(buildOpenCodePermissionRules('acceptEdits')).toContainEqual({
       permission: 'edit',
       pattern: '*',

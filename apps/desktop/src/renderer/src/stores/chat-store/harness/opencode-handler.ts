@@ -8,6 +8,10 @@ export function resolveDefaultOpenCodeSelection(models: ModelOption[]): { modelI
   return { modelId: model?.id ?? '', effort }
 }
 
+export function resolveDefaultOpenCodeAgent(agents: OpenCodeResources['agents']): string | null {
+  return agents.find((agent) => agent.id === 'build')?.id ?? agents[0]?.id ?? null
+}
+
 export function applyOpenCodeResources(s: ChatStore, resources: OpenCodeResources): Partial<ChatStore> {
   const projects = { ...s.projectSessions }
   let changed = false
@@ -16,7 +20,6 @@ export function applyOpenCodeResources(s: ChatStore, resources: OpenCodeResource
     if (!activeSid) continue
     const active = activeSid ? project._sessions[activeSid] : undefined
     if (!active || (active.sessionProvider !== 'opencode' && active.preferredProvider !== 'opencode')) continue
-    if (resources.models.length === 0) continue
     const selected = resources.models.find((model) => model.id === active.selectedModel)
     const fallback = resolveDefaultOpenCodeSelection(resources.models)
     const model = selected ?? resources.models.find((item) => item.id === fallback.modelId)
@@ -24,12 +27,20 @@ export function applyOpenCodeResources(s: ChatStore, resources: OpenCodeResource
     const effort = active.selectedEffort && levels.includes(active.selectedEffort)
       ? active.selectedEffort
       : levels.includes('medium') ? 'medium' : levels[0]
-    if (selected && active.selectedEffort === effort) continue
+    const agentId = resources.agents.some((agent) => agent.id === active.openCodeAgentId)
+      ? active.openCodeAgentId
+      : resolveDefaultOpenCodeAgent(resources.agents)
+    if (selected && active.selectedEffort === effort && active.openCodeAgentId === agentId) continue
     projects[path] = {
       ...project,
       _sessions: {
         ...project._sessions,
-        [activeSid]: { ...active, selectedModel: model?.id ?? fallback.modelId, selectedEffort: effort },
+        [activeSid]: {
+          ...active,
+          selectedModel: model?.id ?? fallback.modelId,
+          selectedEffort: effort,
+          openCodeAgentId: agentId,
+        },
       },
     }
     changed = true

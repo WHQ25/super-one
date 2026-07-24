@@ -36,6 +36,6 @@ export async function dispatchOpenCodeRequest(runtime: OpenCodeRuntime, request:
     request.content,
     runtime.commands.filter((candidate) => !['init', 'compact'].includes(candidate.name.replace(/^\//, ''))),
   )
-  if (command) await runtime.command(command.name, command.arguments, request.model, request.effort, request.images)
-  else await runtime.prompt(request.content, request.model, request.effort, request.images)
+  if (command) await runtime.command(command.name, command.arguments, request.model, request.effort, request.images, request.agent)
+  else await runtime.prompt(request.content, request.model, request.effort, request.images, request.agent)
 }

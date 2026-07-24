@@ -358,6 +358,8 @@ export interface PermissionDenialInfo {
 
 export interface MessageMetadata {
   model?: string
+  /** Harness-native agent used for the turn (for example an OpenCode primary agent). */
+  agent?: string
   costUsd?: number
   durationMs?: number
   durationApiMs?: number
@@ -1031,6 +1033,8 @@ export interface SessionSettingsPatch {
   selectedCodexReasoningEffort?: CodexReasoningEffort | null
   selectedCodexPermissionPreset?: CodexPermissionPreset | null
   selectedCodexCollaborationMode?: CodexCollaborationMode | null
+  // OpenCode
+  openCodeAgentId?: string | null
   // Shared
   permissionMode?: PermissionMode
   sandboxInfo?: SandboxInfo
@@ -1043,6 +1047,8 @@ export interface SendMessageRequest {
   content: string
   model?: string
   effort?: EffortLevel
+  /** Harness-native primary agent selection. */
+  agent?: string
   images?: ImageAttachment[]
   additionalDirs?: string[]
   clientMessageId?: string

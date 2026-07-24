@@ -3,6 +3,8 @@ import type { AgentEvent } from '@superone/shared/agent-types'
 import type { OpenCodeRuntime, OpenCodeRuntimeEvent, OpenCodeRuntimeOptions } from '../../opencode/opencode-runtime'
 
 vi.mock('../../logger', () => ({ default: { debug: vi.fn(), warn: vi.fn() } }))
+vi.mock('../../mcp-config-service', () => ({ listMcpConfigs: () => [] }))
+vi.mock('../../mcp/superone-mcp-stdio-state', () => ({ getSuperoneMcpStdioConfig: () => null }))
 
 import { OpenCodeBackend, setOpenCodeRuntimeFactory } from './opencode-backend'
 import type { BackendStartOptions } from '../types'
@@ -37,6 +39,7 @@ describe('OpenCodeBackend', () => {
   let getMcpServerStatus: ReturnType<typeof vi.fn>
   let reconnectMcp: ReturnType<typeof vi.fn>
   let toggleMcpServer: ReturnType<typeof vi.fn>
+  let reloadMcpServers: ReturnType<typeof vi.fn>
   let close: ReturnType<typeof vi.fn>
 
   beforeEach(() => {
@@ -65,6 +68,7 @@ describe('OpenCodeBackend', () => {
     getMcpServerStatus = vi.fn(async () => [{ name: 'github', status: 'connected' as const }])
     reconnectMcp = vi.fn(async () => undefined)
     toggleMcpServer = vi.fn(async () => undefined)
+    reloadMcpServers = vi.fn(async () => undefined)
     close = vi.fn(async () => undefined)
     runtime = {
       sessionId: 'oc-session',
@@ -91,6 +95,7 @@ describe('OpenCodeBackend', () => {
       getMcpServerStatus,
       reconnectMcp,
       toggleMcpServer,
+      reloadMcpServers,
       close,
     }
     setOpenCodeRuntimeFactory(async (opts: OpenCodeRuntimeOptions) => {
@@ -373,8 +378,10 @@ describe('OpenCodeBackend', () => {
     expect(await backend.getMcpServerStatus()).toEqual([{ name: 'github', status: 'connected' }])
     await backend.reconnectMcp('github')
     await backend.toggleMcpServer('github', false)
+    await backend.reloadMcpServers()
     expect(reconnectMcp).toHaveBeenCalledWith('github')
     expect(toggleMcpServer).toHaveBeenCalledWith('github', false)
+    expect(reloadMcpServers).toHaveBeenCalledOnce()
     await backend.close()
   })
 
@@ -383,12 +390,12 @@ describe('OpenCodeBackend', () => {
     await backend.start(startOptions())
 
     const commandSend = backend.send({ content: '/review working tree', model: 'openai/gpt-5' })
-    await vi.waitFor(() => expect(command).toHaveBeenCalledWith('review', 'working tree', 'openai/gpt-5', undefined, undefined))
+    await vi.waitFor(() => expect(command).toHaveBeenCalledWith('review', 'working tree', 'openai/gpt-5', undefined, undefined, undefined))
     route({ id: 'idle-command', type: 'session.idle', properties: { sessionID: 'oc-session' } } as OpenCodeRuntimeEvent)
     await commandSend
 
     const promptSend = backend.send({ content: '/unknown keep this literal', model: 'openai/gpt-5' })
-    await vi.waitFor(() => expect(prompt).toHaveBeenCalledWith('/unknown keep this literal', 'openai/gpt-5', undefined, undefined))
+    await vi.waitFor(() => expect(prompt).toHaveBeenCalledWith('/unknown keep this literal', 'openai/gpt-5', undefined, undefined, undefined))
     route({ id: 'idle-prompt', type: 'session.idle', properties: { sessionID: 'oc-session' } } as OpenCodeRuntimeEvent)
     await promptSend
     await backend.close()

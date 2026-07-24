@@ -95,6 +95,13 @@ describe('reducePermission: agent_setting_change', () => {
     expect(patch.permissionMode).toBe('bypassPermissions')
   })
 
+  it('writes OpenCode agent selection', () => {
+    const patch = reducePermission(createDefaultPerSessionState(), {
+      type: 'agent_setting_change', patch: { openCodeAgentId: 'general' },
+    } as never)
+    expect(patch.openCodeAgentId).toBe('general')
+  })
+
   it("writes apiProviderId (null normalizes to null)", () => {
     expect(reducePermission(createDefaultPerSessionState(), {
       type: 'agent_setting_change', patch: { apiProviderId: 'gateway-1' },

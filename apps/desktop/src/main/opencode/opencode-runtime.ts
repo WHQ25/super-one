@@ -10,14 +10,21 @@ import type {
 } from '@superone/shared/agent-types'
 import {
   OpenCodeClient,
+  parseOpenCodeAgents,
   parseModels,
   parseOpenCodeCommands,
   startOpenCodeServer,
+  toOpenCodeMcpConfig,
   withOpenCodeLocalCommands,
   type OpenCodeEvent,
   type OpenCodeServerHandle,
 } from './opencode-client'
 import type { SnapshotFileDiff } from '@opencode-ai/sdk/v2'
+import { listMcpConfigs } from '../mcp-config-service'
+import { getSuperoneMcpStdioConfig } from '../mcp/superone-mcp-stdio-state'
+import { BUILT_IN_SUPERONE_TOOL_NAMES } from '../mcp/superone-mcp-builtin-defs'
+
+const SUPERONE_MCP_NAME = 'superone'
 
 export interface OpenCodeRuntimeConfig {
   binaryPath?: string
@@ -66,6 +73,7 @@ export interface OpenCodeRuntime {
   getMcpServerStatus(): Promise<McpServerInfo[]>
   reconnectMcp(name: string): Promise<void>
   toggleMcpServer(name: string, enabled: boolean): Promise<void>
+  reloadMcpServers(): Promise<void>
   close(): Promise<void>
 }
 
@@ -73,15 +81,22 @@ export function buildOpenCodePermissionRules(mode: PermissionMode): PermissionRu
   if (mode === 'bypassPermissions') {
     return [{ permission: '*', pattern: '*', action: 'allow' }]
   }
+  const builtInSuperoneRules: PermissionRuleset = BUILT_IN_SUPERONE_TOOL_NAMES.map((name) => ({
+    permission: `${SUPERONE_MCP_NAME}_${name}`,
+    pattern: '*',
+    action: 'allow',
+  }))
   if (mode === 'dontAsk') {
     return [
       { permission: '*', pattern: '*', action: 'deny' },
+      ...builtInSuperoneRules,
       { permission: 'question', pattern: '*', action: 'allow' },
     ]
   }
   return [
     { permission: '*', pattern: '*', action: 'ask' },
     ...(mode === 'acceptEdits' ? [{ permission: 'edit', pattern: '*', action: 'allow' as const }] : []),
+    ...builtInSuperoneRules,
     { permission: 'question', pattern: '*', action: 'allow' },
   ]
 }
@@ -110,6 +125,35 @@ async function closeServer(server: OpenCodeServerHandle): Promise<void> {
   await server.close().catch(() => undefined)
 }
 
+async function syncMcpServers(
+  client: OpenCodeClient,
+  cwd: string,
+  sessionId: string,
+  previousNames: Set<string>,
+): Promise<Set<string>> {
+  const configs = new Map(
+    listMcpConfigs(cwd).flatMap((config) => {
+      const mapped = toOpenCodeMcpConfig(config)
+      return mapped ? [[config.name, mapped] as const] : []
+    }),
+  )
+  const superone = getSuperoneMcpStdioConfig(sessionId)
+  if (superone) {
+    configs.set(SUPERONE_MCP_NAME, {
+      type: 'local',
+      command: [superone.command, ...superone.args],
+      environment: superone.env,
+      enabled: true,
+      timeout: 60_000,
+    })
+  }
+  for (const name of previousNames) {
+    if (!configs.has(name)) await client.disconnectMcp(name).catch(() => undefined)
+  }
+  await Promise.all([...configs].map(([name, config]) => client.addMcp(name, config)))
+  return new Set(configs.keys())
+}
+
 export async function createOpenCodeRuntime(opts: OpenCodeRuntimeOptions): Promise<OpenCodeRuntime> {
   const server = await startOpenCodeServer({
     binaryPath: opts.config.binaryPath,
@@ -121,6 +165,7 @@ export async function createOpenCodeRuntime(opts: OpenCodeRuntimeOptions): Promi
   let closing = false
   try {
     const client = new OpenCodeClient({ baseUrl: server.url, directory: opts.cwd, password: opts.config.serverPassword })
+    let mcpNames = await syncMcpServers(client, opts.cwd, opts.sessionId, new Set())
     const [providers, agents, commands] = await Promise.all([client.providerList(), client.agents(), client.commands()])
     const permission = buildOpenCodePermissionRules(opts.permissionMode)
     const session = opts.providerSessionId
@@ -137,6 +182,10 @@ export async function createOpenCodeRuntime(opts: OpenCodeRuntimeOptions): Promi
     const subscriptionPromise = (async () => {
       try {
         for await (const event of stream) {
+          if (event.type === 'mcp.tools.changed') {
+            opts.onEvent(event)
+            continue
+          }
           const sessionId = eventSessionId(event)
           if (sessionId !== session.id) continue
           opts.onEvent(event)
@@ -167,9 +216,7 @@ export async function createOpenCodeRuntime(opts: OpenCodeRuntimeOptions): Promi
     return {
       sessionId: session.id,
       models,
-      agents: agents
-        .filter((agent) => !agent.hidden)
-        .map((agent) => ({ id: agent.name, name: agent.name, description: agent.description })),
+      agents: parseOpenCodeAgents(agents),
       commands: withOpenCodeLocalCommands(parseOpenCodeCommands(commands)),
       initialTodos,
       pendingPermissions: pendingInteractions.permissions,
@@ -179,7 +226,7 @@ export async function createOpenCodeRuntime(opts: OpenCodeRuntimeOptions): Promi
         model,
         variant: effort,
         images,
-        agent: agent ?? (permissionMode === 'plan' ? 'plan' : undefined),
+        agent: permissionMode === 'plan' ? 'plan' : agent,
       }),
       command: (name, args, model, effort, images, agent) => client.command(session.id, {
         command: name,
@@ -187,7 +234,7 @@ export async function createOpenCodeRuntime(opts: OpenCodeRuntimeOptions): Promi
         model,
         variant: effort,
         images,
-        agent: agent ?? (permissionMode === 'plan' ? 'plan' : undefined),
+        agent: permissionMode === 'plan' ? 'plan' : agent,
       }),
       init: (model) => client.initSession(session.id, model),
       compact: (model) => client.summarize(session.id, model),
@@ -206,10 +253,21 @@ export async function createOpenCodeRuntime(opts: OpenCodeRuntimeOptions): Promi
       questionReject: (requestId) => client.questionReject(requestId),
       getMcpServerStatus: () => client.mcpStatus(),
       reconnectMcp: async (name) => {
+        mcpNames = await syncMcpServers(client, opts.cwd, opts.sessionId, mcpNames)
         await client.disconnectMcp(name).catch(() => undefined)
         await client.connectMcp(name)
       },
-      toggleMcpServer: (name, enabled) => enabled ? client.connectMcp(name) : client.disconnectMcp(name),
+      toggleMcpServer: async (name, enabled) => {
+        if (enabled) {
+          mcpNames = await syncMcpServers(client, opts.cwd, opts.sessionId, mcpNames)
+          await client.connectMcp(name)
+        } else {
+          await client.disconnectMcp(name)
+        }
+      },
+      reloadMcpServers: async () => {
+        mcpNames = await syncMcpServers(client, opts.cwd, opts.sessionId, mcpNames)
+      },
       close: async () => {
         if (closing) return
         closing = true

@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import type { Command, McpStatus, ProviderListResponse } from '@opencode-ai/sdk/v2'
+import type { Agent, Command, McpStatus, ProviderListResponse } from '@opencode-ai/sdk/v2'
 import {
   parseModels,
+  parseOpenCodeAgents,
   parseOpenCodeCommands,
   parseOpenCodeMcpStatus,
   parseOpenCodeModelSlug,
+  toOpenCodeMcpConfig,
   withOpenCodeLocalCommands,
 } from './opencode-client'
 
@@ -83,6 +85,28 @@ describe('opencode-client', () => {
       { name: 'review', description: 'Review changes', argumentHint: 'target', isSkill: false },
       { name: 'deploy', description: '', argumentHint: 'env version', isSkill: true },
     ])
+  })
+
+  it('keeps only visible primary agents and prefers no client-side mode coercion', () => {
+    const agents = [
+      { name: 'build', mode: 'primary', hidden: false },
+      { name: 'general', mode: 'all', hidden: false },
+      { name: 'explore', mode: 'subagent', hidden: false },
+      { name: 'hidden', mode: 'primary', hidden: true },
+    ] as Agent[]
+    expect(parseOpenCodeAgents(agents)).toEqual([
+      { id: 'build', name: 'build', description: undefined },
+      { id: 'general', name: 'general', description: undefined },
+    ])
+  })
+
+  it('converts SuperOne stdio and remote MCP configs to OpenCode format', () => {
+    expect(toOpenCodeMcpConfig({
+      name: 'local', type: 'stdio', scope: 'project', command: 'node', args: ['server.js'], env: { TOKEN: 'x' }, disabled: false,
+    })).toEqual({ type: 'local', command: ['node', 'server.js'], environment: { TOKEN: 'x' }, enabled: true })
+    expect(toOpenCodeMcpConfig({
+      name: 'remote', type: 'http', scope: 'user', url: 'https://mcp.example.com', headers: { Authorization: 'Bearer x' }, disabled: true,
+    })).toEqual({ type: 'remote', url: 'https://mcp.example.com', headers: { Authorization: 'Bearer x' }, enabled: false })
   })
 
   it('maps OpenCode MCP auth and connection states', () => {

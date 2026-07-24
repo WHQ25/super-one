@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { resolveOpenCodeCommandInvocation } from './opencode-command'
+import { describe, expect, it, vi } from 'vitest'
+import { dispatchOpenCodeRequest, resolveOpenCodeCommandInvocation } from './opencode-command'
 
 const commands = [
   { name: 'review', description: '', argumentHint: '', isSkill: false },
@@ -17,5 +17,19 @@ describe('resolveOpenCodeCommandInvocation', () => {
   it('does not treat unknown or partial names as SDK commands', () => {
     expect(resolveOpenCodeCommandInvocation('/unknown value', commands)).toBeNull()
     expect(resolveOpenCodeCommandInvocation('/reviewer value', commands)).toBeNull()
+  })
+})
+
+describe('dispatchOpenCodeRequest', () => {
+  it('forwards the selected agent to prompts and SDK commands', async () => {
+    const runtime = {
+      commands,
+      prompt: vi.fn(async () => undefined),
+      command: vi.fn(async () => undefined),
+    }
+    await dispatchOpenCodeRequest(runtime as never, { content: 'hello', agent: 'build' })
+    await dispatchOpenCodeRequest(runtime as never, { content: '/review tree', agent: 'general' })
+    expect(runtime.prompt).toHaveBeenCalledWith('hello', undefined, undefined, undefined, 'build')
+    expect(runtime.command).toHaveBeenCalledWith('review', 'tree', undefined, undefined, undefined, 'general')
   })
 })

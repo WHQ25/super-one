@@ -122,6 +122,7 @@ export function openCodeErrorMessage(error: unknown): string {
 export function openCodeAssistantMetadata(info: Extract<Message, { role: 'assistant' }>): MessageMetadata {
   return {
     model: `${info.providerID}/${info.modelID}`,
+    agent: info.agent,
     costUsd: info.cost,
     usage: {
       inputTokens: info.tokens.input,

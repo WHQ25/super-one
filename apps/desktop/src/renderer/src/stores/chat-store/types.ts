@@ -123,6 +123,8 @@ export interface PerSessionState {
   preferredProvider: ChatProvider
   /** Selected ACP agent id when preferredProvider/sessionProvider is acp. */
   acpAgentId: string | null
+  /** Selected OpenCode primary agent for this session. */
+  openCodeAgentId: string | null
   /** Models from ACP session/new configOptions (category=model). */
   acpModels: ModelOption[]
   /** ACP config option id used for set_config_option (usually "model"). */
@@ -315,6 +317,7 @@ export interface ChatStore {
   refreshCodexSkills: (projectPath?: string) => Promise<void>
   setPreferredProvider: (provider: ChatProvider) => void
   setAcpAgentId: (agentId: string | null) => void
+  setOpenCodeAgentId: (agentId: string | null) => void
   setSelectedAcpMode: (modeId: string) => void
   /** Lazy-load ACP slash commands when the / popup opens (also refreshes cache). */
   ensureAcpSlashCommands: () => void

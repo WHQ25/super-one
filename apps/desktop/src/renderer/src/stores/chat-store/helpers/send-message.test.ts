@@ -214,6 +214,22 @@ describe('sendMessageImpl: intercepted commands', () => {
 })
 
 describe('sendMessageImpl: IPC dispatch + rollback', () => {
+  it('sends the per-session OpenCode agent selection', async () => {
+    seedProject('/proj', 'sid-opencode', {
+      sessionProvider: 'opencode',
+      preferredProvider: 'opencode',
+      selectedModel: 'openai/gpt-5',
+      openCodeAgentId: 'general',
+    })
+
+    await useChatStore.getState().sendMessage('hello')
+
+    expect(mockSendMessage).toHaveBeenCalledWith('/proj', expect.objectContaining({
+      provider: 'opencode',
+      agent: 'general',
+    }))
+  })
+
   it('rolls back awaitingAssistantReply and rethrows when sendMessage rejects', async () => {
     seedProject('/proj', 'sid-1')
     mockSendMessage.mockRejectedValueOnce(new Error('network down'))

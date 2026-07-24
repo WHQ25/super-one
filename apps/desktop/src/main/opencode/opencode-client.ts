@@ -10,6 +10,8 @@ import {
   type FilePartInput,
   type Message,
   type McpStatus,
+  type McpLocalConfig,
+  type McpRemoteConfig,
   type OpencodeClient,
   type Part,
   type PermissionV2Request,
@@ -24,6 +26,7 @@ import type {
   ContextUsageInfo,
   EffortLevel,
   ImageAttachment,
+  McpServerConfig,
   McpServerInfo,
   ModelOption,
   OpenCodeResources,
@@ -75,6 +78,31 @@ export function parseOpenCodeCommands(commands: Command[]): SlashCommandInfo[] {
     argumentHint: command.hints.join(' '),
     isSkill: command.source === 'skill',
   }))
+}
+
+export function parseOpenCodeAgents(agents: Agent[]): OpenCodeResources['agents'] {
+  return agents
+    .filter((agent) => !agent.hidden && agent.mode !== 'subagent')
+    .map((agent) => ({ id: agent.name, name: agent.name, description: agent.description }))
+}
+
+export function toOpenCodeMcpConfig(config: McpServerConfig): McpLocalConfig | McpRemoteConfig | null {
+  if (config.type === 'stdio') {
+    if (!config.command?.trim()) return null
+    return {
+      type: 'local',
+      command: [config.command, ...(config.args ?? [])],
+      environment: config.env,
+      enabled: !config.disabled,
+    }
+  }
+  if (!config.url?.trim()) return null
+  return {
+    type: 'remote',
+    url: config.url,
+    headers: config.headers,
+    enabled: !config.disabled,
+  }
 }
 
 const openCodeLocalCommands: SlashCommandInfo[] = [
@@ -150,6 +178,10 @@ export class OpenCodeClient {
   async mcpStatus(): Promise<McpServerInfo[]> {
     const result = await this.sdk.mcp.status()
     return parseOpenCodeMcpStatus(result.data ?? {})
+  }
+
+  async addMcp(name: string, config: McpLocalConfig | McpRemoteConfig): Promise<void> {
+    await this.sdk.mcp.add({ name, config })
   }
 
   async connectMcp(name: string): Promise<void> {
@@ -481,9 +513,7 @@ export async function probeOpenCodeResources(config: {
     const [providers, agents, commands] = await Promise.all([client.providerList(), client.agents(), client.commands()])
     return {
       models: parseModels(providers),
-      agents: agents
-        .filter((agent) => !agent.hidden)
-        .map((agent) => ({ id: agent.name, name: agent.name, description: agent.description })),
+      agents: parseOpenCodeAgents(agents),
       commands: withOpenCodeLocalCommands(parseOpenCodeCommands(commands)),
     }
   } finally {

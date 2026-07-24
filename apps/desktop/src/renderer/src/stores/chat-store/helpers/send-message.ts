@@ -420,6 +420,9 @@ export async function sendMessageImpl(
       content: finalContent,
       model: selectedModel || undefined,
       effort: selectedEffort,
+      ...(effectiveProvider === 'opencode' && session.openCodeAgentId
+        ? { agent: session.openCodeAgentId }
+        : {}),
       images: attachments.length > 0 ? attachments : undefined,
       additionalDirs: mergedDirs.length > 0 ? mergedDirs : undefined,
       clientMessageId: userMessageId,

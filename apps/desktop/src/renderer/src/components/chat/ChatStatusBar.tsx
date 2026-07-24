@@ -26,6 +26,7 @@ import { useActiveSession, useChatStore, useSessionScope, getActiveSessionView }
 import { useAppStore } from '@/stores/app'
 import { StatusBarPermission } from './chat-status-bar/StatusBarPermission'
 import { StatusBarSandbox } from './chat-status-bar/StatusBarSandbox'
+import { OpenCodeAgentSelector } from './OpenCodeAgentSelector'
 import { WorkDirIndicator } from './WorkDirIndicator'
 import { parseToolInput } from './tool-display'
 import { ToolBlock } from './ToolBlock'
@@ -539,6 +540,13 @@ export function ChatStatusBar() {
         <div className="h-3 w-px bg-border" />
 
         <StatusBarPermission activeProvider={activeProvider} compactIndicators={compactIndicators} />
+
+        {activeProvider === 'opencode' && (
+          <>
+            <div className="h-3 w-px bg-border" />
+            <OpenCodeAgentSelector compact={compactIndicators} />
+          </>
+        )}
 
         <div className="flex-1" />
 

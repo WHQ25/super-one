@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState, type MouseEvent } from 'react'
+import { useCallback, useEffect, useMemo, useState, type MouseEvent } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import { useTranslation } from 'react-i18next'
 import { useAppStore, useHasRealProject } from '@/stores/app'
-import { useActiveSession, useChatStore, type ChatProvider } from '@/stores/chat'
+import { useActiveSession, useChatStore, useSessionScope, type ChatProvider } from '@/stores/chat'
 import { useSettingsStore } from '@/stores/settings'
 import { ProviderLabel } from '@/components/ProviderLabel'
 import { consumerForHarness, resolveEffective } from '@/lib/provider-resolve'
@@ -21,6 +21,7 @@ import { ClaudeSessionIcon } from '@superone/ui/components/harness/ClaudeSession
 import { CodexSessionIcon } from '@superone/ui/components/harness/CodexSessionIcon'
 import { cn } from '@superone/ui/lib/utils'
 import { homePath } from '@/lib/path-utils'
+import { useMosaicStore } from '@/components/mosaic/mosaic-store'
 import type { AcpAgentDescriptor } from '@superone/shared/agent-types'
 
 const EMPTY_ACP_AGENTS: AcpAgentDescriptor[] = []
@@ -44,6 +45,7 @@ function ProviderSelector() {
   const setAcpAgentId = useChatStore((s) => s.setAcpAgentId)
   const initializeHarness = useChatStore((s) => s.initializeHarness)
   const acpEnabled = useAppStore((s) => s.acpEnabled)
+  const sessionScope = useSessionScope()
   const [agentMenuOpen, setAgentMenuOpen] = useState(false)
   const [lastAgentGroup, setLastAgentGroup] = useState<'codex' | 'acp'>(
     preferredProvider === 'acp' ? 'acp' : 'codex',
@@ -54,12 +56,24 @@ function ProviderSelector() {
     void initializeHarness('acp')
   }, [acpEnabled, initializeHarness])
 
+  const selectProvider = useCallback(async (provider: ChatProvider) => {
+    if (sessionScope) {
+      await useChatStore.getState().switchToSession(sessionScope.projectPath, sessionScope.sessionId)
+    }
+    setPreferredProvider(provider)
+    if (!sessionScope) return
+    const nextSessionId = useChatStore.getState().projectSessions[sessionScope.projectPath]?._activeSessionId
+    if (nextSessionId && nextSessionId !== sessionScope.sessionId) {
+      useMosaicStore.getState().replaceTileSession(sessionScope.projectPath, sessionScope.sessionId, nextSessionId)
+    }
+  }, [sessionScope, setPreferredProvider])
+
   useEffect(() => {
     if (!acpEnabled && preferredProvider === 'acp') {
       setAgentMenuOpen(false)
-      setPreferredProvider('claude')
+      void selectProvider('claude')
     }
-  }, [acpEnabled, preferredProvider, setPreferredProvider])
+  }, [acpEnabled, preferredProvider, selectProvider])
 
   useEffect(() => {
     if (preferredProvider === 'codex') setLastAgentGroup('codex')
@@ -95,13 +109,18 @@ function ProviderSelector() {
 
   const selectBuiltin = (provider: 'claude' | 'codex') => {
     setAgentMenuOpen(false)
-    setPreferredProvider(provider)
+    void selectProvider(provider)
   }
 
   const selectAcpAgent = (agentId: string) => {
-    setAcpAgentId(agentId)
-    if (preferredProvider !== 'acp') setPreferredProvider('acp')
     setAgentMenuOpen(false)
+    void (async () => {
+      if (sessionScope) {
+        await useChatStore.getState().switchToSession(sessionScope.projectPath, sessionScope.sessionId)
+      }
+      setAcpAgentId(agentId)
+      if (preferredProvider !== 'acp') await selectProvider('acp')
+    })()
   }
 
   const restoreAgentTab = () => {

@@ -376,9 +376,21 @@ export const AppSidebar = memo(function AppSidebar() {
     }
   }, [executeDeleteSession])
 
+  const createNewSession = useCallback(async () => {
+    const before = useChatStore.getState()
+    const projectPath = before.activeProject
+    const previousSessionId = projectPath ? before.projectSessions[projectPath]?._activeSessionId : null
+    await resetSession()
+    if (!projectPath) return
+    const sessionId = useChatStore.getState().projectSessions[projectPath]?._activeSessionId
+    if (sessionId && sessionId !== previousSessionId) {
+      useMosaicStore.getState().focusOrReplaceFocused(projectPath, sessionId)
+    }
+  }, [resetSession])
+
   const handleNewSession = useCallback((folderPath: string) => {
-    selectProject(folderPath).then(() => resetSession())
-  }, [selectProject, resetSession])
+    void selectProject(folderPath).then(createNewSession)
+  }, [selectProject, createNewSession])
 
   useSidebarRenderTrace({
     sidebarTab,
@@ -405,7 +417,7 @@ export const AppSidebar = memo(function AppSidebar() {
         <Button
           variant="outline"
           size="sm"
-          onClick={() => resetSession()}
+          onClick={() => void createNewSession()}
           className="mb-1 w-full justify-center gap-1.5 border-sidebar-border bg-sidebar text-sidebar-foreground hover:bg-sidebar hover:border-sidebar-foreground/25"
         >
           <SquarePen className="size-3.5" />

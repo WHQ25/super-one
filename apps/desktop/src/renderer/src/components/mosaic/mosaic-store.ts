@@ -50,6 +50,7 @@ interface MosaicState {
   exitToSingle: () => void
   restoreLayout: () => void
   focusOrReplaceFocused: (projectPath: string, sessionId: string) => boolean
+  replaceTileSession: (projectPath: string, previousSessionId: string, sessionId: string) => boolean
 }
 
 /**
@@ -214,6 +215,22 @@ export const useMosaicStore = create<MosaicState>((set, get) => ({
     set({ root: replaceLeaf(st.root, focusId, makeLeaf(targetId, projectPath, sessionId)), focusedTileId: targetId })
     if (previous) chat.unmountSession(previous.projectPath, previous.sessionId)
     void chat.switchToSession(projectPath, sessionId)
+    return true
+  },
+
+  replaceTileSession: (projectPath, previousSessionId, sessionId) => {
+    const st = get()
+    if (!st.root || previousSessionId === sessionId) return false
+    const previousTileId = mosaicTileId(projectPath, previousSessionId)
+    const nextTileId = mosaicTileId(projectPath, sessionId)
+    if (!findLeaf(st.root, previousTileId) || findLeaf(st.root, nextTileId)) return false
+    const chat = useChatStore.getState()
+    void chat.mountSession(projectPath, sessionId)
+    chat.unmountSession(projectPath, previousSessionId)
+    set({
+      root: replaceLeaf(st.root, previousTileId, makeLeaf(nextTileId, projectPath, sessionId)),
+      focusedTileId: st.focusedTileId === previousTileId ? nextTileId : st.focusedTileId,
+    })
     return true
   },
 }))

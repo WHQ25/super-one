@@ -185,3 +185,26 @@ describe('mosaic-store focusOrReplaceFocused', () => {
     expect(chat.switchToSession).toHaveBeenLastCalledWith('/p', 's-new')
   })
 })
+
+describe('mosaic-store replaceTileSession', () => {
+  beforeEach(() => {
+    resetStore()
+    chat.activeProject = '/p'
+    chat.projectSessions = { '/p': { _activeSessionId: 's-active' } }
+    vi.clearAllMocks()
+  })
+
+  it('keeps the tile in place when a fresh harness changes its session id', () => {
+    useMosaicStore.getState().addTile('/p', 's-new', { edge: 'right' })
+    vi.clearAllMocks()
+
+    const replaced = useMosaicStore.getState().replaceTileSession('/p', 's-new', 'codex_local_new')
+    const st = useMosaicStore.getState()
+
+    expect(replaced).toBe(true)
+    expect(collectLeaves(st.root!).map((leaf) => leaf.sessionId).sort()).toEqual(['codex_local_new', 's-active'])
+    expect(st.focusedTileId).toBe(mosaicTileId('/p', 'codex_local_new'))
+    expect(chat.mountSession).toHaveBeenCalledWith('/p', 'codex_local_new')
+    expect(chat.unmountSession).toHaveBeenCalledWith('/p', 's-new')
+  })
+})

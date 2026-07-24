@@ -12,10 +12,13 @@ import {
   type McpStatus,
   type OpencodeClient,
   type Part,
+  type PermissionV2Request,
   type PermissionRuleset,
   type ProviderListResponse,
+  type QuestionV2Request,
   type SnapshotFileDiff,
   type TextPartInput,
+  type Todo,
 } from '@opencode-ai/sdk/v2'
 import type {
   ContextUsageInfo,
@@ -75,6 +78,7 @@ export function parseOpenCodeCommands(commands: Command[]): SlashCommandInfo[] {
 }
 
 const openCodeLocalCommands: SlashCommandInfo[] = [
+  { name: 'init', description: 'Create or update project AGENTS.md', argumentHint: '', isSkill: false },
   { name: 'compact', description: 'Compact session context', argumentHint: '', isSkill: false },
 ]
 
@@ -211,6 +215,25 @@ export class OpenCodeClient {
     return result.data ?? []
   }
 
+  async todos(sessionId: string): Promise<Todo[]> {
+    const result = await this.sdk.session.todo({ sessionID: sessionId })
+    return result.data ?? []
+  }
+
+  async pendingInteractions(sessionId: string): Promise<{
+    permissions: PermissionV2Request[]
+    questions: QuestionV2Request[]
+  }> {
+    const [permissions, questions] = await Promise.all([
+      this.sdk.v2.session.permission.list({ sessionID: sessionId }),
+      this.sdk.v2.session.question.list({ sessionID: sessionId }),
+    ])
+    return {
+      permissions: permissions.data?.data ?? [],
+      questions: questions.data?.data ?? [],
+    }
+  }
+
   private async resolveSessionModel(sessionId: string, model?: string): Promise<{ providerID: string; modelID: string }> {
     const parsed = parseOpenCodeModelSlug(model)
     if (model && !parsed) throw new OpenCodeApiError(`Invalid OpenCode model id: ${model}`)
@@ -229,6 +252,11 @@ export class OpenCodeClient {
   async summarize(sessionId: string, model?: string): Promise<void> {
     const resolved = await this.resolveSessionModel(sessionId, model)
     await this.sdk.session.summarize({ sessionID: sessionId, ...resolved, auto: false })
+  }
+
+  async initSession(sessionId: string, model?: string): Promise<void> {
+    const resolved = await this.resolveSessionModel(sessionId, model)
+    await this.sdk.session.init({ sessionID: sessionId, ...resolved })
   }
 
   async contextUsage(sessionId: string, models: ModelOption[]): Promise<ContextUsageInfo | null> {

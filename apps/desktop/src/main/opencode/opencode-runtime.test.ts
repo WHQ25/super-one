@@ -5,7 +5,13 @@ const mocks = vi.hoisted(() => ({
   updatePermission: vi.fn(async () => undefined),
   promptAsync: vi.fn(async () => undefined),
   command: vi.fn(async () => undefined),
+  initSession: vi.fn(async () => undefined),
   summarize: vi.fn(async () => undefined),
+  todos: vi.fn(async () => [{ content: 'Resume work', status: 'pending', priority: 'high' }]),
+  pendingInteractions: vi.fn(async () => ({
+    permissions: [{ id: 'permission-1', sessionID: 'oc-session', action: 'bash', resources: ['git status'] }],
+    questions: [{ id: 'question-1', sessionID: 'oc-session', questions: [{ question: 'Continue?', header: 'Continue', options: [] }] }],
+  })),
   contextUsage: vi.fn(async () => ({
     categories: [{ name: 'Input', tokens: 12, color: '#22c55e' }],
     totalTokens: 12,
@@ -35,7 +41,10 @@ vi.mock('./opencode-client', () => ({
     updatePermission = mocks.updatePermission
     promptAsync = mocks.promptAsync
     command = mocks.command
+    initSession = mocks.initSession
     summarize = mocks.summarize
+    todos = mocks.todos
+    pendingInteractions = mocks.pendingInteractions
     contextUsage = mocks.contextUsage
     diff = mocks.diff
     revert = mocks.revert
@@ -54,6 +63,8 @@ vi.mock('./opencode-client', () => ({
   parseModels: () => [{ id: 'openai/gpt-5', name: 'GPT-5', description: '', contextWindow: 400_000 }],
   parseOpenCodeCommands: () => [{ name: 'review', description: '', argumentHint: '', isSkill: false }],
   withOpenCodeLocalCommands: (commands: unknown[]) => [...commands, {
+    name: 'init', description: 'Create AGENTS.md', argumentHint: '', isSkill: false,
+  }, {
     name: 'compact', description: 'Compact context', argumentHint: '', isSkill: false,
   }],
   startOpenCodeServer: async () => ({
@@ -108,8 +119,12 @@ describe('opencode-runtime', () => {
     })
     expect(runtime.commands).toEqual([
       { name: 'review', description: '', argumentHint: '', isSkill: false },
+      { name: 'init', description: 'Create AGENTS.md', argumentHint: '', isSkill: false },
       { name: 'compact', description: 'Compact context', argumentHint: '', isSkill: false },
     ])
+    expect(runtime.initialTodos).toEqual([{ content: 'Resume work', status: 'pending', priority: 'high' }])
+    expect(runtime.pendingPermissions).toEqual([expect.objectContaining({ id: 'permission-1' })])
+    expect(runtime.pendingQuestions).toEqual([expect.objectContaining({ id: 'question-1' })])
     await runtime.command('review', 'working tree', 'openai/gpt-5', 'high')
     expect(mocks.command).toHaveBeenCalledWith('oc-session', {
       command: 'review',
@@ -126,6 +141,8 @@ describe('opencode-runtime', () => {
     await runtime.toggleMcpServer('github', false)
     expect(mocks.disconnectMcp).toHaveBeenCalledTimes(2)
     expect(await runtime.getContextUsage()).toEqual(expect.objectContaining({ maxTokens: 400_000 }))
+    await runtime.init('openai/gpt-5')
+    expect(mocks.initSession).toHaveBeenCalledWith('oc-session', 'openai/gpt-5')
     await runtime.compact('openai/gpt-5')
     expect(mocks.summarize).toHaveBeenCalledWith('oc-session', 'openai/gpt-5')
     expect(await runtime.diff('user-message')).toHaveLength(1)

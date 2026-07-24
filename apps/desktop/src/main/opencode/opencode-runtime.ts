@@ -1,4 +1,4 @@
-import type { PermissionRuleset } from '@opencode-ai/sdk/v2'
+import type { PermissionRuleset, PermissionV2Request, QuestionV2Request, Todo } from '@opencode-ai/sdk/v2'
 import type {
   ContextUsageInfo,
   EffortLevel,
@@ -46,8 +46,12 @@ export interface OpenCodeRuntime {
   readonly models: ModelOption[]
   readonly agents: Array<{ id: string; name: string; description?: string }>
   readonly commands: SlashCommandInfo[]
+  readonly initialTodos: Todo[]
+  readonly pendingPermissions: PermissionV2Request[]
+  readonly pendingQuestions: QuestionV2Request[]
   prompt(text: string, model?: string, effort?: EffortLevel, images?: ImageAttachment[], agent?: string): Promise<void>
   command(name: string, args?: string, model?: string, effort?: EffortLevel, images?: ImageAttachment[], agent?: string): Promise<void>
+  init(model?: string): Promise<void>
   compact(model?: string): Promise<void>
   getContextUsage(): Promise<ContextUsageInfo | null>
   diff(messageId: string): Promise<SnapshotFileDiff[]>
@@ -125,7 +129,11 @@ export async function createOpenCodeRuntime(opts: OpenCodeRuntimeOptions): Promi
     if (opts.providerSessionId) await client.updatePermission(session.id, permission)
 
     const abortController = new AbortController()
-    const stream = await client.eventStream(abortController.signal)
+    const [stream, initialTodos, pendingInteractions] = await Promise.all([
+      client.eventStream(abortController.signal),
+      client.todos(session.id).catch(() => []),
+      client.pendingInteractions(session.id).catch(() => ({ permissions: [], questions: [] })),
+    ])
     const subscriptionPromise = (async () => {
       try {
         for await (const event of stream) {
@@ -163,6 +171,9 @@ export async function createOpenCodeRuntime(opts: OpenCodeRuntimeOptions): Promi
         .filter((agent) => !agent.hidden)
         .map((agent) => ({ id: agent.name, name: agent.name, description: agent.description })),
       commands: withOpenCodeLocalCommands(parseOpenCodeCommands(commands)),
+      initialTodos,
+      pendingPermissions: pendingInteractions.permissions,
+      pendingQuestions: pendingInteractions.questions,
       prompt: (text, model, effort, images, agent) => client.promptAsync(session.id, {
         text,
         model,
@@ -178,6 +189,7 @@ export async function createOpenCodeRuntime(opts: OpenCodeRuntimeOptions): Promi
         images,
         agent: agent ?? (permissionMode === 'plan' ? 'plan' : undefined),
       }),
+      init: (model) => client.initSession(session.id, model),
       compact: (model) => client.summarize(session.id, model),
       getContextUsage: () => client.contextUsage(session.id, models),
       diff: (messageId) => client.diff(session.id, messageId),

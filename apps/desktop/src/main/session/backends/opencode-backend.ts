@@ -16,6 +16,7 @@ import log from '../../logger'
 import { dispatchOpenCodeRequest } from '../../opencode/opencode-command'
 import {
   commonPrefixLength,
+  mapOpenCodeTodos,
   mapOpenCodePermissionRequest,
   mapOpenCodeQuestionRequest,
   openCodeAssistantMetadata,
@@ -121,6 +122,13 @@ export class OpenCodeBackend implements SessionBackend {
       opts.providerSessionId = runtime.sessionId
       for (const callback of this.providerSessionListeners) callback(runtime.sessionId)
       this.emit({ type: 'provider_session_id', providerSessionId: runtime.sessionId })
+      this.emit(mapOpenCodeTodos(runtime.initialTodos))
+      for (const request of runtime.pendingPermissions) {
+        this.routeEvent({ id: `snapshot-${request.id}`, type: 'permission.v2.asked', properties: request })
+      }
+      for (const request of runtime.pendingQuestions) {
+        this.routeEvent({ id: `snapshot-${request.id}`, type: 'question.v2.asked', properties: request })
+      }
       return runtime
     }).finally(() => {
       if (this.runtimePromise === promise) this.runtimePromise = null
@@ -482,6 +490,7 @@ export class OpenCodeBackend implements SessionBackend {
         toolUseId: event.properties.tool?.callID,
       })
       const item = { type: 'permission_request', request } as AgentEvent
+      if (this.pendingPermissions.has(request.requestId)) return
       this.pendingPermissions.set(request.requestId, { request, event: item })
       this.emit(item)
       return
@@ -497,6 +506,7 @@ export class OpenCodeBackend implements SessionBackend {
         toolUseId: event.properties.source?.callID,
       })
       const item = { type: 'permission_request', request } as AgentEvent
+      if (this.pendingPermissions.has(request.requestId)) return
       this.pendingPermissions.set(request.requestId, { request, event: item })
       this.emit(item)
       return
@@ -516,6 +526,7 @@ export class OpenCodeBackend implements SessionBackend {
     if (event.type === 'question.asked' || event.type === 'question.v2.asked') {
       const request = mapOpenCodeQuestionRequest({ id: event.properties.id, questions: event.properties.questions })
       const item = { type: 'ask_user_question', request } as AgentEvent
+      if (this.pendingQuestions.has(request.requestId)) return
       this.pendingQuestions.set(request.requestId, { request, event: item })
       this.emit(item)
       return

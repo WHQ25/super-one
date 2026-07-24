@@ -24,6 +24,7 @@ describe('OpenCodeBackend', () => {
   let runtime: OpenCodeRuntime
   let prompt: ReturnType<typeof vi.fn>
   let command: ReturnType<typeof vi.fn>
+  let init: ReturnType<typeof vi.fn>
   let compact: ReturnType<typeof vi.fn>
   let getContextUsage: ReturnType<typeof vi.fn>
   let diff: ReturnType<typeof vi.fn>
@@ -42,6 +43,7 @@ describe('OpenCodeBackend', () => {
     route = () => undefined
     prompt = vi.fn(async () => undefined)
     command = vi.fn(async () => undefined)
+    init = vi.fn(async () => undefined)
     compact = vi.fn(async () => undefined)
     getContextUsage = vi.fn(async () => ({
       categories: [{ name: 'Input', tokens: 20, color: '#22c55e' }],
@@ -69,8 +71,12 @@ describe('OpenCodeBackend', () => {
       models: [{ id: 'openai/gpt-5', name: 'GPT-5', description: '', contextWindow: 400_000 }],
       agents: [],
       commands: [{ name: 'review', description: '', argumentHint: '', isSkill: false }],
+      initialTodos: [],
+      pendingPermissions: [],
+      pendingQuestions: [],
       prompt,
       command,
+      init,
       compact,
       getContextUsage,
       diff,
@@ -266,6 +272,56 @@ describe('OpenCodeBackend', () => {
       contextWindow: 400_000,
     }))
     expect(deltas.some((event) => event.delta.type === 'text' && event.delta.text === 'hello')).toBe(false)
+    await backend.close()
+  })
+
+  it('restores todo and pending interaction snapshots on session resume', async () => {
+    Object.assign(runtime, {
+      initialTodos: [{ content: 'Resume work', status: 'in_progress', priority: 'high' }],
+      pendingPermissions: [{
+        id: 'permission-snapshot',
+        sessionID: 'oc-session',
+        action: 'bash',
+        resources: ['git status'],
+        save: ['git *'],
+      }],
+      pendingQuestions: [{
+        id: 'question-snapshot',
+        sessionID: 'oc-session',
+        questions: [{ question: 'Continue?', header: 'Continue', options: [], multiple: false }],
+      }],
+    })
+    const backend = new OpenCodeBackend()
+    const events: AgentEvent[] = []
+    backend.onEvent((event) => events.push(event))
+    await backend.start(startOptions({ providerSessionId: 'oc-session' }))
+
+    expect(events).toContainEqual({
+      type: 'todos_updated',
+      todos: [{ id: '1', subject: 'Resume work', description: '', status: 'in_progress' }],
+    })
+    expect(events).toContainEqual(expect.objectContaining({
+      type: 'permission_request',
+      request: expect.objectContaining({ requestId: 'permission-snapshot', toolName: 'bash' }),
+    }))
+    expect(events).toContainEqual(expect.objectContaining({
+      type: 'ask_user_question',
+      request: expect.objectContaining({ requestId: 'question-snapshot' }),
+    }))
+    expect(backend.getPendingInteractions()).toHaveLength(2)
+    await backend.close()
+  })
+
+  it('initializes project instructions through the native session endpoint', async () => {
+    const backend = new OpenCodeBackend()
+    await backend.start(startOptions())
+
+    const send = backend.send({ content: '/init', model: 'openai/gpt-5' })
+    await vi.waitFor(() => expect(init).toHaveBeenCalledWith('openai/gpt-5'))
+    route({ id: 'idle-init', type: 'session.idle', properties: { sessionID: 'oc-session' } } as OpenCodeRuntimeEvent)
+    await send
+    expect(prompt).not.toHaveBeenCalled()
+    expect(command).not.toHaveBeenCalled()
     await backend.close()
   })
 

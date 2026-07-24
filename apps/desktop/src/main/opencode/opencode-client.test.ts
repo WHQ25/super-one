@@ -67,7 +67,7 @@ describe('opencode-client', () => {
   it('adds local SDK-backed commands without duplicating server commands', () => {
     const commands = [{ name: 'review', description: '', argumentHint: '', isSkill: false }]
 
-    expect(withOpenCodeLocalCommands(commands).map((command) => command.name)).toEqual(['review', 'compact'])
+    expect(withOpenCodeLocalCommands(commands).map((command) => command.name)).toEqual(['review', 'init', 'compact'])
     expect(withOpenCodeLocalCommands([...commands, {
       name: 'compact', description: 'Server compact', argumentHint: '', isSkill: false,
     }]).filter((command) => command.name === 'compact')).toHaveLength(1)

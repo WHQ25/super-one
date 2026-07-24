@@ -24,13 +24,17 @@ export function resolveOpenCodeCommandInvocation(
 }
 
 export async function dispatchOpenCodeRequest(runtime: OpenCodeRuntime, request: SendMessageRequest): Promise<void> {
+  if (request.content.trim() === '/init') {
+    await runtime.init(request.model)
+    return
+  }
   if (request.content.trim() === '/compact') {
     await runtime.compact(request.model)
     return
   }
   const command = resolveOpenCodeCommandInvocation(
     request.content,
-    runtime.commands.filter((candidate) => candidate.name.replace(/^\//, '') !== 'compact'),
+    runtime.commands.filter((candidate) => !['init', 'compact'].includes(candidate.name.replace(/^\//, ''))),
   )
   if (command) await runtime.command(command.name, command.arguments, request.model, request.effort, request.images)
   else await runtime.prompt(request.content, request.model, request.effort, request.images)

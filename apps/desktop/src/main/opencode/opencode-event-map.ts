@@ -1,4 +1,4 @@
-import type { Event, Message, Part } from '@opencode-ai/sdk/v2'
+import type { Event, Message, Part, Todo } from '@opencode-ai/sdk/v2'
 import type {
   AgentEvent,
   AskUserQuestionRequest,
@@ -61,11 +61,10 @@ export function mapOpenCodeQuestionRequest(input: {
   }
 }
 
-export function routeOpenCodeTodoEvent(event: Event, emit: (event: AgentEvent) => void): boolean {
-  if (event.type !== 'todo.updated') return false
-  emit({
+export function mapOpenCodeTodos(todos: Todo[]): Extract<AgentEvent, { type: 'todos_updated' }> {
+  return {
     type: 'todos_updated',
-    todos: event.properties.todos.map((todo, index) => ({
+    todos: todos.map((todo, index) => ({
       id: String(index + 1),
       subject: todo.content,
       description: '',
@@ -73,7 +72,12 @@ export function routeOpenCodeTodoEvent(event: Event, emit: (event: AgentEvent) =
         ? 'in_progress'
         : todo.status === 'completed' || todo.status === 'cancelled' ? 'completed' : 'pending',
     })),
-  })
+  }
+}
+
+export function routeOpenCodeTodoEvent(event: Event, emit: (event: AgentEvent) => void): boolean {
+  if (event.type !== 'todo.updated') return false
+  emit(mapOpenCodeTodos(event.properties.todos))
   return true
 }
 

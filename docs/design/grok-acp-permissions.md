@@ -2,30 +2,26 @@
 
 | Field | Value |
 |-------|--------|
-| Status | Draft (implementation-ready) |
+| Status | **Implemented (phase 1)** — live code; §1 is historical problem statement |
 | Scope | ACP / Grok Build harness |
 | Repo | `super-one` |
 | Related source | `/Users/wuhangqi25/Developer/Projects/grok-build` (`xai-org/grok-build`) |
-| Out of scope | terminal capability re-enable, session resume, hooks (`exit_plan_mode` shipped separately) |
+| Broader parity | [`grok-build-parity.md`](./grok-build-parity.md) (models, MCP attach, session/load, …) |
+| Out of scope | terminal capability re-enable, session resume, hooks |
 
 ---
 
-## 1. Problem statement
+## 1. Problem statement (historical)
 
-Grok Build is SuperOne’s default experimental ACP agent (`grok agent stdio`). Two permission gaps make Grok sessions feel broken relative to Claude / Codex / OpenCode:
+> **Update (2026-07-25):** Phase-1 permission goals below are **shipped**. Keep this section as the original bug report. Remaining host work lives in `grok-build-parity.md`.
 
-1. **Host MCP tools keep prompting.** SuperOne injects the built-in `superone` MCP server on every ACP session. On Claude, `createCanUseTool` auto-allows built-ins (`isBuiltInSuperoneTool`) and mini-app preapprovals (`isToolPreapproved`). On Grok, every MCP call becomes a `session/request_permission` reverse-request and `AcpBackend.handlePermissionRequest` **always** surfaces a UI prompt — including `session_rename`, `widget_show`, guides, etc.
+Grok Build is SuperOne's default experimental ACP agent (`grok agent stdio`). Two permission gaps made Grok sessions feel broken relative to Claude / Codex / OpenCode:
 
-2. **Permission mode switching is a no-op.** The composer still shows SuperOne’s permission mode control and calls `backend.setPermissionMode`. For ACP:
+1. **Host MCP tools kept prompting.** SuperOne injects the built-in `superone` MCP server on every ACP session. On Claude, built-ins auto-allow; on Grok every MCP call used to surface a UI prompt. **Fixed:** `shouldAutoAllowAcpPermission` / preapprove path.
 
-   ```ts
-   // apps/desktop/src/main/session/backends/acp-backend.ts
-   async setPermissionMode(_mode: PermissionMode): Promise<void> {}
-   ```
+2. **Permission mode switching was a no-op.** Composer called `backend.setPermissionMode` but ACP was empty. **Fixed:** session/new `_meta` yolo/auto + mid-session `x.ai/yolo_mode_changed`.
 
-   Grok never leaves its default **ask** baseline unless the process was spawned with `--always-approve`. Users cannot switch to always-approve / auto / accept-edits mid-session from SuperOne.
-
-These are correctness and UX bugs, not polish: host tools should be silent infrastructure; mode toggles should change agent behavior.
+**Also shipped separately:** full `x.ai/exit_plan_mode` plan approval UI — see parity doc §4.0.
 
 ---
 
@@ -43,9 +39,9 @@ These are correctness and UX bugs, not polish: host tools should be silent infra
 
 ### Non-goals (this design)
 
-- Full plan-mode approval UI (`x.ai/exit_plan_mode`) — separate track.
+- ~~Full plan-mode approval UI (`x.ai/exit_plan_mode`)~~ — **shipped** (see `grok-build-parity.md` §4.0).
 - Re-enabling client `terminal` capability for Grok.
-- `session/load` resume, queue, hooks, hunkTracker.
+- `session/load` resume, queue, hooks, hunkTracker (tracked in parity plan).
 - Changing Grok’s deny rules / sandbox semantics.
 - Spoofing `clientType: grok_desktop` unless we fully implement Desktop option handling.
 

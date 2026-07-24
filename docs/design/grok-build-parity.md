@@ -47,7 +47,7 @@ Reviewed uncommitted + main ACP plan surface against Grok wire. **Verdict: agent
 | Approve-with-comments for ACP (follow-up user turn) | **done** | no wire feedback on approve; `sendMessage` review wrap |
 | Hide Claude-only post-approve acceptEdits/auto toggle on ACP | **done** | `showPostApprovalModeToggle = sessionProvider === 'claude'` |
 | Host chrome “enter plan” (`session/set_mode` plan / prompt `_meta.mode`) | **missing** | optional P2 — agent enters via tools; SuperOne does not need toggle for approval path |
-| `HARNESS_CAPABILITIES.acp.supportsPlanMode` | **still false** | flags lag; fix in remaining PR (caps only) |
+| `HARNESS_CAPABILITIES.acp.supportsPlanMode` | **true** | plan/todo/mcp caps updated |
 
 ---
 
@@ -141,10 +141,10 @@ Priority: **P0** broken host correctness · **P1** Claude/Codex host UX parity �
 | RT-07 | Non-interactive authenticate | acp-host | partial | cached_token / api_key heuristics | Interactive auth skipped; weak tests | P2 |
 | RT-08 | session/new + SuperOne MCP attach | acp-host | done | `acp-mcp.ts`, runtime tests | Only `superone`; no user MCPs | P1 |
 | RT-09 | session/new yoloMode/autoMode | acp-host | done | `grokSessionPermissionMeta` | autoMode create path lightly integration-tested | P3 |
-| RT-10 | session/load resume | acp-host | missing | `loadSession` parsed, never called | Always session/new; provider resume impossible | P1 |
+| RT-10 | session/load resume | acp-host | **done** | `resumeSessionId` + attach-before-load + drain replay | Fail → session/new | — |
 | RT-11 | session/prompt + cancel + update pump | acp-host | done | `acp-runtime.ts` | Multi-message turn thin tests | P3 |
 | RT-12 | session/set_config_option model/mode | acp-host | partial | `setConfigOption` | Grok often has `configId: null` → setModel no-ops | **P0** |
-| RT-13 | session/set_model + reasoningEffort | acp-host | missing | no `methods.agent.session.set_model` usage | Required for Grok model/effort when no configOptions | **P0** |
+| RT-13 | session/set_model + reasoningEffort | acp-host | **done** | `AcpRuntime.setModel`, backend applyModel / setSessionMode effort path | — | — |
 | RT-14 | Mid-session yolo_mode_changed | acp-host | done | `setPermissionMode` | — | — |
 | RT-15 | FS reverse read/write | acp-host | done | `acp-fs.ts` | — | — |
 | RT-16 | Terminal reverse create/output/… | acp-host | partial | `acp-terminals.ts` implemented; not advertised for Grok | OK by policy | na |
@@ -186,10 +186,10 @@ Priority: **P0** broken host correctness · **P1** Claude/Codex host UX parity �
 | MCP-01 | Attach superone stdio MCP | mcp-host | done | `buildSuperoneAcpMcpServer` | — | — |
 | MCP-02 | Bridge + builtins + browser tools | mcp-host | done | stdio bridge, tool surface | — | — |
 | MCP-03 | use_tool → mcp__ unwrap for UI/preapprove | mcp-host | done | `acp-event-map.ts` | — | — |
-| MCP-04 | User-configured MCP → session/new | mcp-host | missing | only superone or [] | Claude has user MCP; ACP does not | P1 |
-| MCP-05 | Honor agent mcpCapabilities http/sse | mcp-host | missing | parsed, unused | Cannot attach HTTP/SSE servers to Grok session | P1 |
+| MCP-04 | User-configured MCP → session/new | mcp-host | **done** | `buildAcpSessionMcpServers` + `listMcpConfigs` | Mid-session reload still missing | P2 |
+| MCP-05 | Honor agent mcpCapabilities http/sse | mcp-host | **done** | filter in `toAcpMcpServer` | — | — |
 | MCP-06 | mobile_share_file on ACP stdio surface | mcp-host | missing | in-process Claude only | Preapprove list includes it; agent cannot call | P2 |
-| MCP-07 | supportsMcp capability flag for acp | session-ui | missing | `HARNESS_CAPABILITIES.acp.supportsMcp: false` | UI may hide MCP-related chrome despite attach | P1 |
+| MCP-07 | supportsMcp capability flag for acp | session-ui | **done** | `HARNESS_CAPABILITIES.acp.supportsMcp: true` | — | — |
 | MCP-08 | SDK MCP (x.ai/mcp/sdk_call) | acp-host | missing | — | Alternative to stdio superone; defer | P3 |
 | MCP-09 | MCP status notifications UI | acp-host | missing | — | Agent-side catalog UI | P2 |
 
@@ -197,12 +197,12 @@ Priority: **P0** broken host correctness · **P1** Claude/Codex host UX parity �
 
 | id | name | surface | SuperOne status | evidence | gap | priority |
 |----|------|---------|-----------------|----------|-----|----------|
-| SU-01 | Model catalog from modelState / sessionConfig | session-ui | done | `coalesceModelConfig` | Switch broken without configId | **P0** |
-| SU-02 | Reasoning effort picker (Grok category=mode) | session-ui | partial | AcpModeSelector may show effort as “mode” if configOptions present | No set_model + reasoningEffort path for pure x.ai meta | **P0** |
+| SU-01 | Model catalog from modelState / sessionConfig | session-ui | done | `coalesceModelConfig` | — | — |
+| SU-02 | Reasoning effort picker (Grok category=mode) | session-ui | **done** | `set_model` + `_meta.reasoningEffort`; modes from x.ai sessionConfig | Label still “session mode” in UI | P3 |
 | SU-03 | available_commands → slash palette | session-ui | done | acp_commands events | — | — |
 | SU-04 | Host-driven plan enter (set_mode plan) | session-ui | missing | no ACP plan shortcut / set_mode plan | Optional; agent-driven path is product-complete | **P2** |
-| SU-05 | supportsPlanMode flag | session-ui | partial | still `false` while exit_plan fully wired | Flip to `true` — approval path is enough | **P1** (flags only) |
-| SU-06 | Plan sessionUpdate → todos | session-ui | partial | `mapPlanToTodoEvents` | supportsTodos false may hide panel | P1 |
+| SU-05 | supportsPlanMode flag | session-ui | **done** | `HARNESS_CAPABILITIES.acp.supportsPlanMode: true` | — | — |
+| SU-06 | Plan sessionUpdate → todos | session-ui | **done** | `mapPlanToTodoEvents` + `supportsTodos: true` | — | — |
 | SU-07 | Context usage bar | session-ui | missing | `getContextUsage` always null | No token meter for Grok | P2 |
 | SU-08 | provider_session_id | session-ui | done | backend emit | — | — |
 | SU-09 | Rewind / compact / fork | acp-host | missing | stubs return unsupported | Grok has x.ai/rewind/* etc. | P2 |
@@ -222,68 +222,25 @@ Priority: **P0** broken host correctness · **P1** Claude/Codex host UX parity �
 
 ## 4. Gap deep-dives (P0 / P1)
 
-### 4.1 P0 — Grok model / effort switch dead path
+### 4.1 ✅ Shipped — Grok model / effort via session/set_model
 
-**Problem.**  
-Grok often exposes models via initialize `_meta.modelState` and/or `session/new` `_meta["x.ai/sessionConfig"]` with `category: "model"`. SuperOne correctly **displays** these (`configId: null`), but `AcpBackend.setModel` returns early when `!this.modelConfigId`. Users pick a model and nothing changes on the agent.
+**Was P0.** `AcpBackend.setModel` no longer early-returns when `configId` is null.
 
-Reasoning effort options (same sessionConfig, `category: "mode"`) need `session/set_model` + `_meta.reasoningEffort` on Grok — not SuperOne permission mode and not always standard `set_config_option`.
+| Path | Behavior |
+|------|----------|
+| Standard ACP `configId` present | `session/set_config_option` (unchanged) |
+| Grok-style `configId: null` | `session/set_model` `{ sessionId, modelId }` |
+| Effort (x.ai sessionConfig category=mode) | `session/set_model` same model + `_meta.reasoningEffort` |
 
-**Grok wire facts.**
+Evidence: `acp-runtime.setModel`, `applyModel` / `setSessionMode`, unit tests in `acp-runtime.test.ts`, `acp-backend.test.ts`, `acp-config.test.ts`.
 
-- `session/set_model` with `modelId`; optional `_meta.reasoningEffort` (`minimal|low|medium|high|xhigh`).
-- Rejects non-allowlisted models.
-- Restored on `session/load` with persisted effort.
-- Host should **not** invent options; render agent-advertised list.
-
-**SuperOne touch files.**
-
-- `apps/desktop/src/main/acp/acp-runtime.ts` — add `setModel(modelId, opts?)` using agent request for set_model when configId path unavailable.
-- `apps/desktop/src/main/acp/acp-config.ts` — surface effort options from x.ai/sessionConfig category=mode; distinguish effort vs plan modes.
-- `apps/desktop/src/main/session/backends/acp-backend.ts` — branch setModel; wire effort if UI needs it.
-- Renderer: `AcpModelSelector` / status bar effort control if separate from AcpModeSelector.
-- Tests: `acp-runtime.test.ts`, `acp-backend.test.ts`, `acp-config.test.ts`.
-
-**Proposed approach.**
-
-1. Detect Grok-style catalog (`configId == null` + models present).
-2. Call ACP `session/set_model` (SDK method name per installed `@agentclientprotocol/sdk`; fall back to raw request if needed).
-3. Parse effort options from sessionConfig; on select, `set_model` same modelId with `_meta.reasoningEffort`.
-4. Keep standard `set_config_option` path for OpenCode/other agents that advertise configOptions.
-5. On success, emit updated `acp_models` / effort selection events.
+**Manual still open:** live grok CLI model switch.
 
 ---
 
-### 4.2 P1 — Harness capability flags lag real ACP features
+### 4.2 ✅ Shipped — Harness capability flags
 
-**Problem.**  
-`HARNESS_CAPABILITIES.acp` sets `supportsPlanMode: false`, `supportsTodos: false`, `supportsMcp: false` while SuperOne already:
-
-- handles full `x.ai/exit_plan_mode` + PlanApprovalPrompt (line review, Grok outcomes),
-- maps ACP `plan` updates to todo events,
-- attaches SuperOne MCP on every ACP session with tools.
-
-UI gates that trust these flags under-report Grok/ACP capabilities and may hide plan/todo/MCP chrome.
-
-**Grok wire facts.**
-
-- Plan mode + exit_plan_mode reverse request are first-class.
-- `session/update` plan entries and todo_write tool stream exist.
-- MCP attach via session/new mcpServers is core agent mode.
-
-**SuperOne touch files.**
-
-- `packages/shared/src/harness/harness-capabilities.ts`
-- Call sites that branch on `supportsPlanMode` / `supportsTodos` / `supportsMcp` (renderer chat chrome, placeholders).
-- Tests for capability consumers.
-
-**Proposed approach.**
-
-1. Set `supportsMcp: true` for acp (host injects MCP).
-2. Set `supportsPlanMode: true` **now** — bar is agent-driven plan + exit approval (shipped); do **not** wait for host enter-plan.
-3. Set `supportsTodos: true` if plan/todo_write mapping is considered enough for the TODO panel.
-4. Prefer capability flags over `provider === 'acp'` string checks at remaining call sites.
-5. Audit call sites: flipping `supportsPlanMode` must not surface a Claude-style “enter plan” control that is still a no-op for ACP (gate enter UI on a finer flag or provider if needed).
+`HARNESS_CAPABILITIES.acp` now: `supportsMcp/PlanMode/Todos: true`. No renderer call sites currently gate enter-plan solely on `supportsPlanMode` (table was under-used); safe flip.
 
 ---
 
@@ -356,28 +313,16 @@ Claude sessions load user/project MCP configs. ACP runtime only attaches the bui
 
 ---
 
-### 4.5 P1 — session/load resume
+### 4.5 ✅ Shipped — session/load resume
 
-**Problem.**  
-SuperOne always `session/new`. Grok advertises `loadSession: true` and persists under `~/.grok/sessions/…`. Host cannot resume a Grok provider session after restart/reconnect; only SuperOne’s own transcript DB remains.
+**Was P1.** When `BackendStartOptions.providerSessionId` is set and the agent advertises `loadSession`:
 
-**Grok wire facts.**
+1. Attach SDK update routing for that session id **before** the load request (so replay is not dropped).
+2. `session/load` with same cwd/mcpServers/permission `_meta` as session/new.
+3. Drain replayed `session/update` events (SuperOne DB remains UI history).
+4. On failure → log + `session/new`.
 
-- session/load streams session/update (replay) before response.
-- Meta: yolo/auto, cursor, restore_code, client fs/terminal overrides for multi-client.
-- Host must tolerate pre-response updates (runtime pump already exists).
-
-**SuperOne touch files.**
-
-- `acp-runtime.ts` — load path when `provider_session_id` + loadSession capability.
-- Session persistence: store agent session id (already emitted as provider_session_id).
-- Replay policy: dedupe vs SuperOne DB messages (`isReplay` / eventId if present).
-
-**Proposed approach.**
-
-1. On session reopen with saved provider session id + same cwd, try session/load; fall back to new on failure.
-2. During load, route updates carefully (mark replay / suppress duplicate user bubbles).
-3. Keep SuperOne DB as source of truth for UI history if load replay is messy — still restore agent memory/grants.
+Evidence: `acp-runtime.ts` resume path; tests for load success + fallback.
 
 ---
 
@@ -524,17 +469,18 @@ Ordered slices. Each is one logical change (Agents.md commit style). Titles are 
 
 Phase A (PR0–PR2) — **correctness**
 
-- [x] Agent-driven plan mode: exit_plan reverse + PlanApproval UI + line comments + Grok outcomes (working tree).
+- [x] Agent-driven plan mode: exit_plan reverse + PlanApproval UI + line comments + Grok outcomes.
 - [x] Plan approval never offers acceptEdits toggle on ACP/Grok sessions.
-- [ ] Grok model selection changes the running agent model (verified with mock + manual).
-- [ ] Reasoning effort can be set when Grok advertises effort options.
-- [ ] Permissions design doc matches shipped preapprove + yolo + plan-approval behavior.
-- [ ] Capability flags no longer hide MCP/plan/todo that we already support (as decided in PR2).
+- [x] Grok model selection via `session/set_model` when configId missing (unit tests).
+- [x] Reasoning effort via `set_model` + `_meta.reasoningEffort` (unit tests).
+- [x] Permissions design doc status updated; §1 marked historical.
+- [x] Capability flags: acp supportsMcp/plan/todos true.
+- [ ] Manual verification with live `grok` CLI (model switch + plan approval).
 
 Phase B (PR3–PR4) — **host UX parity**
 
-- [ ] User MCP tools reachable in Grok turns (with permission prompts).
-- [ ] Optional: session/load restores agent session for same cwd + provider id.
+- [x] User MCP tools attached on session/new (stdio always; http/sse if agent caps).
+- [x] session/load when provider_session_id + loadSession (unit-tested; manual open).
 - [ ] ~~User can enter plan from SuperOne chrome~~ → **deferred** (Future / §4.3).
 
 Phase C (PR5–PR6) — **polish**
@@ -573,8 +519,10 @@ Phase C (PR5–PR6) — **polish**
 
 **Already good enough for interactive Grok coding:** process spawn, session/new, streaming, cancel, FS reverse, SuperOne MCP + preapprove, yolo/auto permission UI, ask_user_question, **full plan approval** (`exit_plan_mode` + line review + Grok outcomes), slash command catalog, tool card mapping (including use_tool).
 
-**Broken / high-priority next:** Grok **model (and effort) switching** when catalogs arrive without standard configIds (**P0**); **capability flags** so plan/todo/MCP chrome is not under-reported (**P1**); **user MCP attach**; **session/load**; docs honesty.
+**Shipped recently:** plan approval, model/effort `session/set_model`, harness caps, user MCP attach, session/load resume, permissions phase-1 + docs status.
 
-**Not a blocker anymore:** plan mode approval path (shipped). Host enter-plan is optional P2.
+**High-priority next:** permission polish (allow-always-mcp, client version); manual Grok CLI checklist.
+
+**Not a blocker:** host enter-plan (optional P2).
 
 **Defer:** host enter-plan chrome, TUI-only features, full x.ai admin surface, terminal re-enable for Grok, clientType spoofing, acceptEdits/dontAsk mid-session.

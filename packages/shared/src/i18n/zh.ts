@@ -257,11 +257,11 @@ export const zh: Messages = {
         auto: '自动（第一个可用）',
       },
       experimental: '实验功能',
-      acp: {
-        label: 'ACP 智能体',
-        description: '在空会话页显示第三个 harness 标签（Grok Build 及其他 Agent Client Protocol 智能体）。实验性功能，行为可能变化。',
-        enabled: '已开启 ACP 智能体',
-        disabled: '已关闭 ACP 智能体',
+      experimentalAgents: {
+        label: '实验性 Agent',
+        description: '显示 Claude Code 和 Codex 之外的实验性 Agent，包括 OpenCode、Grok Build 和其他 ACP 智能体。行为可能变化。',
+        enabled: '已开启实验性 Agent',
+        disabled: '已关闭实验性 Agent',
       },
       crispText: {
         label: '锐利文本',

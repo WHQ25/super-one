@@ -28,9 +28,14 @@ export function getDeleteSessionRecovery(provider: SessionProvider, sessionId: s
       resumeCommand: sessionId,
     }
   }
+  if (provider === 'opencode') {
+    return {
+      cliName: 'OpenCode CLI',
+      resumeCommand: `opencode -s ${sessionId}`,
+    }
+  }
   return {
     cliName: 'Claude Code CLI',
     resumeCommand: `claude --resume ${sessionId}`,
   }
 }
-

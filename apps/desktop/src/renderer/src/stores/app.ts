@@ -132,8 +132,8 @@ interface AppState {
   loadBrandHues: () => Promise<void>
   setBrandHue: (harness: HarnessId, hue: number | null) => Promise<void>
 
-  acpEnabled: boolean
-  setAcpEnabled: (enabled: boolean) => Promise<void>
+  experimentalAgentsEnabled: boolean
+  setExperimentalAgentsEnabled: (enabled: boolean) => Promise<void>
 
   // Terminal display settings
   terminalLightPalette: string | null
@@ -560,9 +560,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     window.app.saveRemoteConfig(config)
   },
 
-  brandHues: { claude: null, codex: null, acp: null },
-  tokenOverrides: { claude: {}, codex: {}, acp: {} },
-  acpEnabled: false,
+  brandHues: { claude: null, codex: null, acp: null, opencode: null },
+  tokenOverrides: { claude: {}, codex: {}, acp: {}, opencode: {} },
+  experimentalAgentsEnabled: false,
   terminalLightPalette: null,
   terminalDarkPalette: null,
   terminalFontSize: 14,
@@ -578,13 +578,15 @@ export const useAppStore = create<AppState>((set, get) => ({
           claude: settings.agentPreference.claude.brandHue,
           codex: settings.agentPreference.codex.brandHue,
           acp: settings.agentPreference.acp?.brandHue ?? null,
+          opencode: null,
         },
         tokenOverrides: {
           claude: settings.agentPreference.claude.tokenOverrides ?? {},
           codex: settings.agentPreference.codex.tokenOverrides ?? {},
           acp: settings.agentPreference.acp?.tokenOverrides ?? {},
+          opencode: {},
         },
-        acpEnabled: settings.agentPreference.acp?.enabled ?? false,
+        experimentalAgentsEnabled: settings.experimentalAgentsEnabled,
         terminalLightPalette: settings.terminalLightPalette,
         terminalDarkPalette: settings.terminalDarkPalette,
         terminalFontSize: settings.terminalFontSize,
@@ -597,13 +599,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  setAcpEnabled: async (enabled) => {
-    set({ acpEnabled: enabled })
+  setExperimentalAgentsEnabled: async (enabled) => {
+    set({ experimentalAgentsEnabled: enabled })
     try {
-      const result = await window.app.saveAppSettings({ agentPreference: { acp: { enabled } } })
-      set({ acpEnabled: result.agentPreference.acp?.enabled ?? enabled })
+      const result = await window.app.saveAppSettings({ experimentalAgentsEnabled: enabled })
+      set({ experimentalAgentsEnabled: result.experimentalAgentsEnabled })
     } catch (err) {
-      console.error('[acp] persist enabled failed:', err)
+      console.error('[experimental-agents] persist enabled failed:', err)
       throw err
     }
   },
@@ -690,6 +692,7 @@ function schedulePersist(harness: HarnessId, getState: () => AppState): void {
   persistTimers[harness] = setTimeout(() => {
     delete persistTimers[harness]
     const state = getState()
+    if (harness === 'opencode') return
     void window.app.saveAppSettings({
       agentPreference: {
         [harness]: {
@@ -734,13 +737,14 @@ if (typeof window !== 'undefined') {
     const codex = settings.agentPreference.codex
     const acp = settings.agentPreference.acp
     useAppStore.setState({
-      brandHues: { claude: claude.brandHue, codex: codex.brandHue, acp: acp?.brandHue ?? null },
+      brandHues: { claude: claude.brandHue, codex: codex.brandHue, acp: acp?.brandHue ?? null, opencode: null },
       tokenOverrides: {
         claude: claude.tokenOverrides ?? {},
         codex: codex.tokenOverrides ?? {},
         acp: acp?.tokenOverrides ?? {},
+        opencode: {},
       },
-      acpEnabled: acp?.enabled ?? false,
+      experimentalAgentsEnabled: settings.experimentalAgentsEnabled,
       terminalLightPalette: settings.terminalLightPalette,
       terminalDarkPalette: settings.terminalDarkPalette,
       terminalFontSize: settings.terminalFontSize,

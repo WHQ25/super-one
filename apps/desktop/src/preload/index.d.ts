@@ -1,5 +1,6 @@
 import type { ElectronAPI } from '@electron-toolkit/preload'
 import type { AppMetricsSnapshot } from '@superone/shared/agent-types'
+import type { OpenCodeResources } from '@superone/shared/agent-types'
 import type { AgentEvent, AgentInfo, AgentPrewarmHint, ApiProvider, AppSettings, AppSettingsPatch, Automation, AutomationRunStatus, BashOutputEvent, BrowserCertError, BrowserOpenTabRequest, BrowserHistoryEntry, ChatMessage, ChatMessageContext, ClaudePreferences, ClaudeResources, CodexAuthStatus, CodexCollaborationMode, CodexGoal, CodexGoalStatus, CodexHookGroup, CodexMarketplaceAddRequest, CodexMarketplaceAddResult, CodexMarketplaceUpgradeResult, CodexPermissionPreset, CodexRateLimits, CodexRateLimitResetOutcome, CodexMcpOauthLoginResult, CodexExternalAgentItem, CodexExternalAgentImportResult, CodexAccountUsage, ClaudeRateLimits, ProviderRateLimits, CodexReasoningEffort, CodexResources, CodexReviewTarget, CodexRunResult, CodexSetAuthRequest, ContentBlock, ContextUsageInfo, CreateAutomationRequest, CreateProviderRequest, DiscoverModelsResult, FileOpResult, FileSearchResult, FileTreeEntry, NativeContextMenuItemSpec, GitDirtyStatus, GitFileContent, GitFileDiff, GitInfo, GitLogEntry, GitResult, GitStatusFile, HarnessId, HookConfig, HookSavePayload, ImageAttachment, ListDirEntry, LoadSessionMessagesResult, Locale, MarketplacePlugin, MarketplacePluginDetail, MarketplaceScope, McpCheckResult, McpLibraryEntry, McpServerConfig, McpServerInfo, McpServerMeta, MediaProviderStatus, UpsertMediaProviderRequest, MentionSearchItem, ModelOption, PermissionMode, PinnedSessionEntry, PluginDetail, PluginInfo, ProviderEndpointTestResponse, QuestionAnnotations, RecentFolder, RemoteDeviceConfig, ResourceScope, RewindFilesResult, SandboxInfo, SandboxMode, SandboxProbeResult, SendMessageRequest, SessionHistoryEntry, SessionSettingsPatch, SetupEvent, SkillDetail, SkillInfo, StartupData, TerminalEvent, TerminalListItem, TerminalSnapshot, ThemeMode, UpdateAutomationRequest, UpdateEvent, UpdateProviderRequest, WorktreeActivateRequest, WorktreeInfo, WorktreeHandoffResult, WorktreeAssignResult, SessionForkRequest, SessionForkResult } from '@superone/shared/agent-types'
 import type { MiniAppEntry, MiniAppInstallMeta, MiniAppInstallResult, MiniAppPackResult, MiniAppPreviewResult, MiniAppToolCallRequest, MiniAppFsWatchEvent, MiniAppToolInterceptOpenRequest, MiniAppWorkerInfo, DevRegistryEntry, DevRegistryView } from '@superone/shared/miniapp-types'
 import type { McpbInstallRequest, McpbInstalledEntry, McpbPreview } from '@superone/shared/mcpb-types'
@@ -55,6 +56,7 @@ interface AppAPI {
   platform: NodeJS.Platform
   connectClaude(): Promise<ClaudeResources>
   connectCodex(): Promise<CodexResources>
+  connectOpenCode(): Promise<OpenCodeResources>
   getStartupData(): Promise<StartupData>
   getAppMetrics(): Promise<AppMetricsSnapshot>
   probeSandbox(): Promise<SandboxProbeResult>

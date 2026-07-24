@@ -55,6 +55,7 @@
     "@musistudio/llms": "1.0.53",
     "@openai/codex": "0.145.0",
     "@opencode-ai/models": "^0.0.2",
+    "@opencode-ai/sdk": "^1.18.4",
     "@streamdown/math": "^1.0.2",
     "@superone/shared": "workspace:*",
     "@superone/ui": "workspace:*",

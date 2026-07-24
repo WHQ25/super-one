@@ -346,6 +346,7 @@ import type { HarnessHandler, HarnessHandlerMap } from './harness/harness-handle
 import { applyAcpResources, connectAcpResources, getCachedAcpCatalog, refreshAcpModels, sessionPatchFromAcpCatalog } from './harness/acp-handler'
 import { applyClaudeResources } from './harness/claude-handler'
 import { applyCodexResources } from './harness/codex-handler'
+import { applyOpenCodeResources, resolveDefaultOpenCodeSelection } from './harness/opencode-handler'
 
 const harnessHandlers: HarnessHandlerMap = {
   claude: {
@@ -360,6 +361,10 @@ const harnessHandlers: HarnessHandlerMap = {
     // Serve disk cache immediately; background refresh runs once per app open in main.
     connect: () => connectAcpResources(),
     apply: (s, r) => applyAcpResources(s, r),
+  },
+  opencode: {
+    connect: () => window.app.connectOpenCode(),
+    apply: (s, r) => applyOpenCodeResources(s, r),
   },
 }
 
@@ -387,7 +392,7 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
 
   isOpen: false,
   corner: 'br',
-  harnessResources: { claude: null, codex: null, acp: null },
+  harnessResources: { claude: null, codex: null, acp: null, opencode: null },
   initializedHarnesses: new Set<HarnessId>(),
   disabledSkills: [],
 
@@ -739,6 +744,10 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
     if (restoredProvider === 'acp' && savedAcpAgentId) {
       const catalog = getCachedAcpCatalog(get().harnessResources.acp, savedAcpAgentId)
       if (catalog) Object.assign(restoredSession, sessionPatchFromAcpCatalog(catalog))
+    } else if (restoredProvider === 'opencode') {
+      const selection = resolveDefaultOpenCodeSelection(get().harnessResources.opencode?.models ?? [])
+      if (selection.modelId) restoredSession.selectedModel = selection.modelId
+      restoredSession.selectedEffort = selection.effort
     } else {
       Object.assign(
         restoredSession,

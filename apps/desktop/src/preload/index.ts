@@ -191,6 +191,9 @@ const appAPI = {
   connectCodex: () =>
     ipcRenderer.invoke(AgentIpcChannels.CONNECT_CODEX),
 
+  connectOpenCode: () =>
+    ipcRenderer.invoke(AgentIpcChannels.CONNECT_OPENCODE),
+
   getStartupData: () =>
     ipcRenderer.invoke(AgentIpcChannels.GET_STARTUP_DATA),
 

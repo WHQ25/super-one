@@ -379,7 +379,7 @@ function SessionStatusIcon({ status, lastEventAt, isUnseen, isAutomation, isRemo
           : 'default'
   const HarnessIcon = provider === 'codex'
     ? CodexSessionIcon
-    : provider === 'acp'
+    : provider === 'acp' || provider === 'opencode'
       ? AcpSessionIcon
       : provider === 'claude'
         ? ClaudeSessionIcon

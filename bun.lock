@@ -32,6 +32,7 @@
         "@musistudio/llms": "1.0.53",
         "@openai/codex": "0.145.0",
         "@opencode-ai/models": "^0.0.2",
+        "@opencode-ai/sdk": "^1.18.4",
         "@streamdown/math": "^1.0.2",
         "@superone/shared": "workspace:*",
         "@superone/ui": "workspace:*",
@@ -827,6 +828,8 @@
     "@openai/codex-win32-x64": ["@openai/codex@0.145.0-win32-x64", "", { "os": "win32", "cpu": "x64" }, "sha512-u0h9lk094CaXRSqE34SBW2dRaQTPa6fASXqehczWH9QdsU62mBsiAgAdp6tCG4i+YzPmmhjD8FdXNnYGNmwuMg=="],
 
     "@opencode-ai/models": ["@opencode-ai/models@0.0.2", "", { "peerDependencies": { "effect": "4.0.0-beta.83" }, "optionalPeers": ["effect"] }, "sha512-cLi1zlL3YwvienzuoILQOm2t4lkvwlVyINM/E0BPTu8SyEn9laiuRIghvDN/pgCvu6mySQn675mjKRXrr1bHdw=="],
+
+    "@opencode-ai/sdk": ["@opencode-ai/sdk@1.18.4", "", { "dependencies": { "cross-spawn": "7.0.6" } }, "sha512-p/3P0KtWknoLvpsk8QrUzCKd4Q1A5Z3RmACEvwuQBGxnUy4AGo379lUYMgt7fczFn53079oroLuo6BosQri+HA=="],
 
     "@opentelemetry/api": ["@opentelemetry/api@1.9.1", "", {}, "sha512-gLyJlPHPZYdAk1JENA9LeHejZe1Ti77/pTeFm/nMXmQH/HFZlcS/O2XJB+L8fkbrNSqhdtlvjBVjxwUYanNH5Q=="],
 

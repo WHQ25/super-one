@@ -38,6 +38,7 @@ const HARNESS_LABEL: Record<HarnessId, string> = {
   claude: 'Claude',
   codex: 'Codex',
   acp: 'Others',
+  opencode: 'OpenCode',
 }
 
 const GROUP_LABEL: Record<TokenGroup, string> = {

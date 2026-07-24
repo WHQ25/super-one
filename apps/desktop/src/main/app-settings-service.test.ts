@@ -54,6 +54,7 @@ describe('app-settings-service', () => {
   }
   const defaultSettings = {
     analyticsEnabled: true,
+    experimentalAgentsEnabled: false,
     crispText: true,
     locale: '',
     updateChannel: null,
@@ -104,6 +105,7 @@ describe('app-settings-service', () => {
       }))
       expect(readAppSettings()).toEqual({
         analyticsEnabled: false,
+        experimentalAgentsEnabled: false,
         crispText: true,
         locale: '',
         updateChannel: null,
@@ -150,6 +152,21 @@ describe('app-settings-service', () => {
       expect(readAppSettings()).toEqual(defaultSettings)
     })
 
+    it('migrates the legacy ACP flag to experimental agents', () => {
+      mocks.readFileSync.mockReturnValue(JSON.stringify({
+        agentPreference: { acp: { enabled: true } },
+      }))
+      expect(readAppSettings().experimentalAgentsEnabled).toBe(true)
+    })
+
+    it('prefers the experimental agents flag over the legacy ACP flag', () => {
+      mocks.readFileSync.mockReturnValue(JSON.stringify({
+        experimentalAgentsEnabled: false,
+        agentPreference: { acp: { enabled: true } },
+      }))
+      expect(readAppSettings().experimentalAgentsEnabled).toBe(false)
+    })
+
     it('ignores invalid claude preference values and falls back to defaults', () => {
       mocks.readFileSync.mockReturnValue(JSON.stringify({
         analyticsEnabled: true,
@@ -187,6 +204,7 @@ describe('app-settings-service', () => {
       }))
       expect(readAppSettings()).toEqual({
         analyticsEnabled: false,
+        experimentalAgentsEnabled: false,
         crispText: true,
         locale: '',
         updateChannel: null,
@@ -226,6 +244,12 @@ describe('app-settings-service', () => {
   })
 
   describe('saveAppSettings', () => {
+    it('maps a legacy ACP patch to experimental agents', () => {
+      mocks.readFileSync.mockImplementation(fileNotFound)
+      const result = saveAppSettings({ agentPreference: { acp: { enabled: true } } })
+      expect(result.experimentalAgentsEnabled).toBe(true)
+    })
+
     it('merges claude patch with existing settings', () => {
       mocks.readFileSync.mockReturnValue(JSON.stringify({
         analyticsEnabled: true,

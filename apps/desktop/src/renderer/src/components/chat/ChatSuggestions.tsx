@@ -19,9 +19,11 @@ import { Tabs, TabsList, TabsTrigger } from '@superone/ui/components/ui/tabs'
 import { AcpSessionIcon } from '@superone/ui/components/harness/AcpSessionIcon'
 import { ClaudeSessionIcon } from '@superone/ui/components/harness/ClaudeSessionIcon'
 import { CodexSessionIcon } from '@superone/ui/components/harness/CodexSessionIcon'
+import { OpenCode } from '@lobehub/icons'
 import { cn } from '@superone/ui/lib/utils'
 import { homePath } from '@/lib/path-utils'
 import { useMosaicStore } from '@/components/mosaic/mosaic-store'
+import { isExperimentalAgentProvider } from '@/stores/chat-store/helpers/provider-routing'
 import type { AcpAgentDescriptor } from '@superone/shared/agent-types'
 
 const EMPTY_ACP_AGENTS: AcpAgentDescriptor[] = []
@@ -33,6 +35,7 @@ const tabsTriggerClass =
 function ProviderIcon({ provider, size = 64 }: { provider: ChatProvider; size?: number }) {
   if (provider === 'codex') return <CodexSessionIcon status="default" size={size} />
   if (provider === 'acp') return <AcpSessionIcon status="default" size={size} />
+  if (provider === 'opencode') return <OpenCode size={size} />
   return <ClaudeSessionIcon status="default" size={size} />
 }
 
@@ -44,17 +47,17 @@ function ProviderSelector() {
   const setPreferredProvider = useChatStore((s) => s.setPreferredProvider)
   const setAcpAgentId = useChatStore((s) => s.setAcpAgentId)
   const initializeHarness = useChatStore((s) => s.initializeHarness)
-  const acpEnabled = useAppStore((s) => s.acpEnabled)
+  const experimentalAgentsEnabled = useAppStore((s) => s.experimentalAgentsEnabled)
   const sessionScope = useSessionScope()
   const [agentMenuOpen, setAgentMenuOpen] = useState(false)
-  const [lastAgentGroup, setLastAgentGroup] = useState<'codex' | 'acp'>(
-    preferredProvider === 'acp' ? 'acp' : 'codex',
+  const [lastAgentGroup, setLastAgentGroup] = useState<'codex' | 'acp' | 'opencode'>(
+    preferredProvider === 'acp' || preferredProvider === 'opencode' ? preferredProvider : 'codex',
   )
 
   useEffect(() => {
-    if (!acpEnabled) return
+    if (!experimentalAgentsEnabled) return
     void initializeHarness('acp')
-  }, [acpEnabled, initializeHarness])
+  }, [experimentalAgentsEnabled, initializeHarness])
 
   const selectProvider = useCallback(async (provider: ChatProvider) => {
     if (sessionScope) {
@@ -69,16 +72,21 @@ function ProviderSelector() {
   }, [sessionScope, setPreferredProvider])
 
   useEffect(() => {
-    if (!acpEnabled && preferredProvider === 'acp') {
+    if (!experimentalAgentsEnabled && isExperimentalAgentProvider(preferredProvider)) {
       setAgentMenuOpen(false)
       void selectProvider('claude')
     }
-  }, [acpEnabled, preferredProvider, selectProvider])
+  }, [experimentalAgentsEnabled, preferredProvider, selectProvider])
 
   useEffect(() => {
+    if (!experimentalAgentsEnabled) {
+      setLastAgentGroup('codex')
+      return
+    }
     if (preferredProvider === 'codex') setLastAgentGroup('codex')
     else if (preferredProvider === 'acp') setLastAgentGroup('acp')
-  }, [preferredProvider])
+    else if (preferredProvider === 'opencode') setLastAgentGroup('opencode')
+  }, [experimentalAgentsEnabled, preferredProvider])
 
   const selectedAcpAgent = useMemo(() => {
     if (agents.length === 0) return null
@@ -86,24 +94,27 @@ function ProviderSelector() {
   }, [agents, acpAgentId])
 
   useEffect(() => {
-    if (!acpEnabled) return
+    if (!experimentalAgentsEnabled) return
     if (preferredProvider === 'acp' && !acpAgentId && selectedAcpAgent?.id) {
       setAcpAgentId(selectedAcpAgent.id)
     }
-  }, [acpEnabled, preferredProvider, acpAgentId, selectedAcpAgent?.id, setAcpAgentId])
+  }, [experimentalAgentsEnabled, preferredProvider, acpAgentId, selectedAcpAgent?.id, setAcpAgentId])
 
   const effectiveAcpAgentId = selectedAcpAgent?.id ?? acpAgentId ?? DEFAULT_ACP_AGENT_ID
-  const showAcpLabel = preferredProvider === 'acp'
+  const showAcpLabel = experimentalAgentsEnabled && (preferredProvider === 'acp'
     || (preferredProvider === 'claude' && lastAgentGroup === 'acp')
+  )
   const agentTabLabel = showAcpLabel
     ? (selectedAcpAgent?.name
       ?? (effectiveAcpAgentId === DEFAULT_ACP_AGENT_ID ? 'Grok' : t('chat.suggestions.selectAgent')))
-    : 'Codex'
-  const agentTabActive = preferredProvider === 'codex' || preferredProvider === 'acp'
+    : experimentalAgentsEnabled && (preferredProvider === 'opencode' || (preferredProvider === 'claude' && lastAgentGroup === 'opencode'))
+      ? 'OpenCode'
+      : 'Codex'
+  const agentTabActive = preferredProvider === 'codex' || preferredProvider === 'acp' || preferredProvider === 'opencode'
   const iconKey = preferredProvider === 'acp' ? `acp:${effectiveAcpAgentId}` : preferredProvider
   const tabsValue = preferredProvider === 'claude'
     ? 'claude'
-    : acpEnabled
+    : experimentalAgentsEnabled
       ? 'agent'
       : 'codex'
 
@@ -124,6 +135,14 @@ function ProviderSelector() {
   }
 
   const restoreAgentTab = () => {
+    if (!experimentalAgentsEnabled) {
+      selectBuiltin('codex')
+      return
+    }
+    if (lastAgentGroup === 'opencode') {
+      void selectProvider('opencode')
+      return
+    }
     if (lastAgentGroup === 'acp') {
       selectAcpAgent(effectiveAcpAgentId)
       return
@@ -161,7 +180,7 @@ function ProviderSelector() {
       >
         <TabsList>
           <TabsTrigger value="claude" className="px-3 py-2">Claude Code</TabsTrigger>
-          {acpEnabled ? (
+          {experimentalAgentsEnabled ? (
             <DropdownMenu
               open={agentMenuOpen}
               onOpenChange={(open) => {
@@ -180,39 +199,25 @@ function ProviderSelector() {
                   onClick={onAgentTabActivate}
                 >
                   <span className="min-w-0 truncate">{agentTabLabel}</span>
-                  <ChevronDown
-                    className={cn(
-                      'size-3.5 shrink-0 text-muted-foreground transition-transform duration-200',
-                      agentMenuOpen && agentTabActive && 'rotate-180',
-                    )}
-                  />
+                  <ChevronDown className={cn('size-3.5 shrink-0 text-muted-foreground transition-transform duration-200', agentMenuOpen && agentTabActive && 'rotate-180')} />
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="center" className="min-w-48">
-                <DropdownMenuItem
-                  onClick={() => selectBuiltin('codex')}
-                  className="gap-2 focus-visible:shadow-none"
-                >
+                <DropdownMenuItem onClick={() => selectBuiltin('codex')} className="gap-2 focus-visible:shadow-none">
                   <span className="min-w-0 flex-1 truncate">Codex</span>
-                  {preferredProvider === 'codex' && (
-                    <Check className="size-4 shrink-0 text-primary" />
-                  )}
+                  {preferredProvider === 'codex' && <Check className="size-4 shrink-0 text-primary" />}
                 </DropdownMenuItem>
-                {agents.length > 0 && <DropdownMenuSeparator />}
-                {agents.map((agent) => {
+                <DropdownMenuItem onClick={() => void selectProvider('opencode')} className="gap-2 focus-visible:shadow-none">
+                  <span className="min-w-0 flex-1 truncate">OpenCode</span>
+                  {preferredProvider === 'opencode' && <Check className="size-4 shrink-0 text-primary" />}
+                </DropdownMenuItem>
+                {agents.some((agent) => agent.id !== 'opencode') && <DropdownMenuSeparator />}
+                {agents.filter((agent) => agent.id !== 'opencode').map((agent) => {
                   const selected = preferredProvider === 'acp' && effectiveAcpAgentId === agent.id
                   return (
-                    <DropdownMenuItem
-                      key={agent.id}
-                      onClick={() => selectAcpAgent(agent.id)}
-                      className="gap-2 focus-visible:shadow-none"
-                    >
+                    <DropdownMenuItem key={agent.id} onClick={() => selectAcpAgent(agent.id)} className="gap-2 focus-visible:shadow-none">
                       <span className="min-w-0 flex-1 truncate">{agent.name}</span>
-                      {!agent.installed && (
-                        <span className="shrink-0 text-[10px] text-muted-foreground">
-                          {t('chat.suggestions.agentNotInstalled')}
-                        </span>
-                      )}
+                      {!agent.installed && <span className="shrink-0 text-[10px] text-muted-foreground">{t('chat.suggestions.agentNotInstalled')}</span>}
                       {selected && <Check className="size-4 shrink-0 text-primary" />}
                     </DropdownMenuItem>
                   )
@@ -224,7 +229,7 @@ function ProviderSelector() {
           )}
         </TabsList>
       </Tabs>
-      {acpEnabled && preferredProvider === 'acp' && selectedAcpAgent && !selectedAcpAgent.installed && (
+      {experimentalAgentsEnabled && preferredProvider === 'acp' && selectedAcpAgent && !selectedAcpAgent.installed && (
         <p className="max-w-xs text-center text-[11px] text-muted-foreground">
           {t('chat.suggestions.agentInstallHint')}
         </p>
@@ -244,7 +249,7 @@ function ActiveProviderHint() {
 
   useEffect(() => { fetchProviderData() }, [fetchProviderData])
 
-  if (preferredProvider === 'acp') return null
+  if (preferredProvider === 'acp' || preferredProvider === 'opencode') return null
 
   const effective = resolveEffective(platforms, credentials, bindings, consumerForHarness(preferredProvider), sessionApiProviderId)
   const defaultBrand = preferredProvider === 'codex' ? 'openai' : 'claude'

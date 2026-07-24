@@ -9,9 +9,14 @@ export function resolveProvider(session: ProviderResolvableSession): HarnessId {
   return session.sessionProvider ?? session.preferredProvider
 }
 
+export function isExperimentalAgentProvider(provider: HarnessId): boolean {
+  return provider !== 'claude' && provider !== 'codex'
+}
+
 export function inferProviderFromHarnessId(harnessId: string | null | undefined): HarnessId | null {
   if (harnessId === 'codex') return 'codex'
   if (harnessId === 'claude') return 'claude'
   if (harnessId === 'acp') return 'acp'
+  if (harnessId === 'opencode') return 'opencode'
   return null
 }

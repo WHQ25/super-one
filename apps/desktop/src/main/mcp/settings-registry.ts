@@ -67,11 +67,11 @@ export const SETTINGS_DOMAINS: SettingsDomainDef[] = [
         toPatch: (v) => ({ analyticsEnabled: v as boolean }),
       },
       {
-        key: 'acpEnabled',
-        label: 'Enable ACP (Experimental)',
+        key: 'experimentalAgentsEnabled',
+        label: 'Enable Experimental Agents',
         type: 'boolean',
-        read: (s) => s.agentPreference.acp.enabled,
-        toPatch: (v) => ({ agentPreference: { acp: { enabled: v as boolean } } }),
+        read: (s) => s.experimentalAgentsEnabled,
+        toPatch: (v) => ({ experimentalAgentsEnabled: v as boolean }),
       },
       {
         key: 'acpSelectedAgentId',

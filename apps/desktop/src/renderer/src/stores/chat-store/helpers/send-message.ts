@@ -149,7 +149,7 @@ export async function sendMessageImpl(
     quoteSuffix = `\n\n<quote>\n${inner}\n</quote>`
   }
   const requestedProvider: ChatProvider =
-    preferredProvider === 'codex' || preferredProvider === 'acp' ? preferredProvider : 'claude'
+    preferredProvider === 'codex' || preferredProvider === 'acp' || preferredProvider === 'opencode' ? preferredProvider : 'claude'
   const effectiveProvider: ChatProvider = session.sessionProvider ?? requestedProvider
   let miniAppReminderSuffix = ''
   const miniAppMentions = mentions.filter((m) => m.kind === 'miniapp')
@@ -190,7 +190,7 @@ export async function sendMessageImpl(
   )
   const resolvedCodexModel = resolvedCodexSelection.modelId || undefined
   const resolvedCodexReasoningEffort = resolvedCodexSelection.reasoningEffort
-  const isQueuedSend = (effectiveProvider === 'claude' || effectiveProvider === 'acp') && session.status === 'streaming'
+  const isQueuedSend = (effectiveProvider === 'claude' || effectiveProvider === 'acp' || effectiveProvider === 'opencode') && session.status === 'streaming'
 
   if (!session.sessionProvider) {
     set((s) => updateActivePerSession(s, () => ({
@@ -438,4 +438,3 @@ export async function sendMessageImpl(
     throw err
   }
 }
-

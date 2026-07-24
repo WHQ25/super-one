@@ -234,7 +234,7 @@ export type Messages = {
         auto: string
       }
       experimental: string
-      acp: {
+      experimentalAgents: {
         label: string
         description: string
         enabled: string
@@ -2042,11 +2042,11 @@ export const en: Messages = {
         auto: 'Auto (first usable)',
       },
       experimental: 'Experimental',
-      acp: {
-        label: 'ACP Agents',
-        description: 'Show the third harness tab for Grok Build and other Agent Client Protocol agents. Experimental — behavior may change.',
-        enabled: 'ACP agents enabled',
-        disabled: 'ACP agents disabled',
+      experimentalAgents: {
+        label: 'Experimental Agents',
+        description: 'Show experimental agents other than Claude Code and Codex, including OpenCode, Grok Build, and other ACP agents. Behavior may change.',
+        enabled: 'Experimental agents enabled',
+        disabled: 'Experimental agents disabled',
       },
       crispText: {
         label: 'Crisp Text',

@@ -4,6 +4,7 @@ import { useAppStore } from '../../app'
 import { applyDefaultModel, resolveDefaultClaudeEffort, resolveDefaultClaudeModel } from './agent-defaults'
 import { buildSlashCommands } from './chat-helpers'
 import { getCachedAcpCatalog, sessionPatchFromAcpCatalog } from '../harness/acp-handler'
+import { resolveDefaultOpenCodeSelection } from '../harness/opencode-handler'
 import { resolveDefaultCodexSelection, resolveSessionCodexSelection } from './codex-helpers'
 import {
   ChatStoreSet,
@@ -431,6 +432,20 @@ export function setPreferredProviderImpl(
         ...acpModeReset,
       }
     }
+    if (provider === 'opencode') {
+      const selection = resolveDefaultOpenCodeSelection(get().harnessResources.opencode?.models ?? [])
+      return {
+        selectedModel: selection.modelId,
+        selectedEffort: selection.effort,
+        modelUserChosen: false,
+        effortUserChosen: false,
+        acpModels: [] as import('@superone/shared/agent-types').ModelOption[],
+        acpModelConfigId: null as string | null,
+        acpModelsStatus: 'idle' as const,
+        acpModelsError: null as string | null,
+        ...acpModeReset,
+      }
+    }
     return {
       acpModels: [] as import('@superone/shared/agent-types').ModelOption[],
       acpModelConfigId: null as string | null,
@@ -529,6 +544,23 @@ export function setPreferredProviderImpl(
         triggerPrewarm(get())
       })()
     }
+  }
+  if (provider === 'opencode') {
+    void get().initializeHarness('opencode').then(() => {
+      const session = getActivePerSession(get())
+      const models = get().harnessResources.opencode?.models ?? []
+      const selected = models.find((model) => model.id === session.selectedModel)
+      const fallback = resolveDefaultOpenCodeSelection(models)
+      const model = selected ?? models.find((item) => item.id === fallback.modelId)
+      const levels = model?.supportedEffortLevels ?? []
+      const effort = session.selectedEffort && levels.includes(session.selectedEffort)
+        ? session.selectedEffort
+        : levels.includes('medium') ? 'medium' : levels[0]
+      if (model && (model.id !== session.selectedModel || effort !== session.selectedEffort)) {
+        set((state) => updateActivePerSession(state, () => ({ selectedModel: model.id, selectedEffort: effort })))
+      }
+      triggerPrewarm(get())
+    })
   }
   if (provider === 'claude') {
     set((s) => {

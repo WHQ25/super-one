@@ -11,6 +11,7 @@ import {
 function makeSettings(overrides: Partial<AppSettings> = {}): AppSettings {
   return {
     analyticsEnabled: true,
+    experimentalAgentsEnabled: false,
     crispText: true,
     locale: '',
     updateChannel: null,
@@ -136,25 +137,29 @@ describe('settings registry — new field groups', () => {
     expect(patch.agentPreference?.claude?.askUserQuestionPreviewFormat).toBe('html')
   })
 
-  it('applies ACP fields (folded into general) into a nested agentPreference.acp patch', () => {
-    const { patch, applied } = buildPatchFromValues({ acpEnabled: true, acpSelectedAgentId: 'gemini-cli' }, makeSettings())
+  it('applies experimental agent and ACP selection fields under general settings', () => {
+    const { patch, applied } = buildPatchFromValues({ experimentalAgentsEnabled: true, acpSelectedAgentId: 'gemini-cli' }, makeSettings())
     expect(applied).toEqual([
-      { key: 'acpEnabled', label: 'Enable ACP (Experimental)', oldValue: false, newValue: true },
+      { key: 'experimentalAgentsEnabled', label: 'Enable Experimental Agents', oldValue: false, newValue: true },
       { key: 'acpSelectedAgentId', label: 'Selected ACP Agent', oldValue: null, newValue: 'gemini-cli' },
     ])
-    expect(patch.agentPreference?.acp).toMatchObject({ enabled: true, selectedAgentId: 'gemini-cli' })
+    expect(patch.experimentalAgentsEnabled).toBe(true)
+    expect(patch.agentPreference?.acp).toMatchObject({ selectedAgentId: 'gemini-cli' })
   })
 
-  it('lists ACP fields under the general domain (matches the General settings page)', () => {
+  it('lists experimental and ACP fields under the general domain', () => {
     const domains = listDomainSummaries()
     expect(domains.find((d) => d.domain === 'general')).toBeTruthy()
     expect(domains.find((d) => d.domain === 'agent-acp')).toBeFalsy()
-    const guide = buildDomainGuide('general', makeSettings({ agentPreference: { ...makeSettings().agentPreference, acp: { enabled: true, brandHue: null, tokenOverrides: {}, selectedAgentId: 'gemini-cli' } } }))
+    const guide = buildDomainGuide('general', makeSettings({
+      experimentalAgentsEnabled: true,
+      agentPreference: { ...makeSettings().agentPreference, acp: { enabled: true, brandHue: null, tokenOverrides: {}, selectedAgentId: 'gemini-cli' } },
+    }))
     expect(guide?.fields).toMatchObject([
       { key: 'locale' },
       { key: 'updateChannel' },
       { key: 'analyticsEnabled' },
-      { key: 'acpEnabled', currentValue: true },
+      { key: 'experimentalAgentsEnabled', currentValue: true },
       { key: 'acpSelectedAgentId', currentValue: 'gemini-cli' },
     ])
   })

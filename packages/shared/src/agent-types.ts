@@ -1472,6 +1472,11 @@ export interface CodexResources {
   prompts: SlashCommandInfo[]
 }
 
+export interface OpenCodeResources {
+  models: ModelOption[]
+  agents: Array<{ id: string; name: string; description?: string }>
+}
+
 export interface AcpAgentDescriptor {
   id: string
   name: string
@@ -1553,6 +1558,7 @@ export interface HarnessResourcesMap {
   claude: ClaudeResources
   codex: CodexResources
   acp: AcpResources
+  opencode: OpenCodeResources
 }
 
 export type HarnessId = keyof HarnessResourcesMap
@@ -1564,6 +1570,7 @@ export interface StartupData {
     claude: ClaudeResources | null
     codex: CodexResources | null
     acp: AcpResources | null
+    opencode?: OpenCodeResources | null
   }
   sandboxCapability: SandboxCapability
   appVersion: string
@@ -1998,6 +2005,7 @@ export const AgentIpcChannels = {
   // App-level channels
   CONNECT_CLAUDE: 'app:connect-claude',
   CONNECT_CODEX: 'app:connect-codex',
+  CONNECT_OPENCODE: 'app:connect-opencode',
   GET_STARTUP_DATA: 'app:get-startup-data',
   GET_APP_METRICS: 'app:get-app-metrics',
   SELECT_FOLDER: 'app:select-folder',
@@ -2661,6 +2669,7 @@ export interface BrowserOpenTabRequest {
 
 export interface AppSettings {
   analyticsEnabled: boolean
+  experimentalAgentsEnabled: boolean
   crispText: boolean
   locale: Locale | ''
   updateChannel: UpdateChannel | null
@@ -2708,6 +2717,7 @@ export interface AppSettings {
 
 export interface AppSettingsPatch {
   analyticsEnabled?: boolean
+  experimentalAgentsEnabled?: boolean
   crispText?: boolean
   locale?: Locale | ''
   updateChannel?: UpdateChannel | null

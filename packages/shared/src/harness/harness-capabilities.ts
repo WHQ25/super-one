@@ -57,4 +57,13 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     supportsStreamingToolInput: false,
     displayName: 'Others',
   },
+  opencode: {
+    supportsMcp: false,
+    supportsPlanMode: true,
+    supportsTodos: false,
+    supportsSubagents: true,
+    supportsCompact: false,
+    supportsStreamingToolInput: false,
+    displayName: 'OpenCode',
+  },
 }

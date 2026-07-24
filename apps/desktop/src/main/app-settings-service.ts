@@ -12,6 +12,7 @@ type AcpPref = AppSettings['agentPreference']['acp']
 
 const defaults: AppSettings = {
   analyticsEnabled: true,
+  experimentalAgentsEnabled: false,
   crispText: true,
   locale: '',
   updateChannel: null,
@@ -238,6 +239,9 @@ export function readAppSettings(): AppSettings {
     const data = JSON.parse(readFileSync(getSettingsPath(), 'utf-8'))
     return {
       analyticsEnabled: typeof data.analyticsEnabled === 'boolean' ? data.analyticsEnabled : defaults.analyticsEnabled,
+      experimentalAgentsEnabled: typeof data.experimentalAgentsEnabled === 'boolean'
+        ? data.experimentalAgentsEnabled
+        : readAcpPreference(data).enabled,
       crispText: typeof data.crispText === 'boolean' ? data.crispText : defaults.crispText,
       locale: data.locale === '' || isLocale(data.locale) ? data.locale : defaults.locale,
       updateChannel: data.updateChannel === null || isUpdateChannel(data.updateChannel) ? data.updateChannel : defaults.updateChannel,
@@ -265,6 +269,7 @@ export function readAppSettings(): AppSettings {
   } catch {
     return {
       analyticsEnabled: defaults.analyticsEnabled,
+      experimentalAgentsEnabled: defaults.experimentalAgentsEnabled,
       crispText: defaults.crispText,
       locale: defaults.locale,
       updateChannel: defaults.updateChannel,
@@ -296,6 +301,9 @@ export function saveAppSettings(patch: AppSettingsPatch): AppSettings {
   const current = readAppSettings()
   const merged: AppSettings = {
     analyticsEnabled: patch.analyticsEnabled ?? current.analyticsEnabled,
+    experimentalAgentsEnabled: patch.experimentalAgentsEnabled
+      ?? patch.agentPreference?.acp?.enabled
+      ?? current.experimentalAgentsEnabled,
     crispText: patch.crispText ?? current.crispText,
     locale: patch.locale ?? current.locale,
     updateChannel: patch.updateChannel === undefined ? current.updateChannel : patch.updateChannel,

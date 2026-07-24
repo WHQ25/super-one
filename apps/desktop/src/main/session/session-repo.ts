@@ -113,6 +113,7 @@ function rowToRecord(row: SessionRow, projectPath: string): SessionRecord {
 function inferLegacyProviderId(row: { provider?: string | null }): string {
   if (row.provider === 'codex') return 'codex-base'
   if (row.provider === 'acp') return 'acp-base'
+  if (row.provider === 'opencode') return 'opencode-base'
   return 'claude-base'
 }
 
@@ -120,6 +121,7 @@ function inferLegacyProviderId(row: { provider?: string | null }): string {
 export function harnessIdFromProviderId(providerId: string): HarnessId {
   if (providerId.startsWith('codex')) return 'codex'
   if (providerId.startsWith('acp')) return 'acp'
+  if (providerId.startsWith('opencode')) return 'opencode'
   return 'claude'
 }
 

@@ -43,8 +43,8 @@ export function AppSettingsPage() {
     }
   }
 
-  const acpEnabled = useAppStore((s) => s.acpEnabled)
-  const setAcpEnabled = useAppStore((s) => s.setAcpEnabled)
+  const experimentalAgentsEnabled = useAppStore((s) => s.experimentalAgentsEnabled)
+  const setExperimentalAgentsEnabled = useAppStore((s) => s.setExperimentalAgentsEnabled)
 
   useEffect(() => {
     let mounted = true
@@ -68,9 +68,9 @@ export function AppSettingsPage() {
     toast.success(t(result.analyticsEnabled ? 'settings.general.analytics.enabled' : 'settings.general.analytics.disabled'))
   }
 
-  async function handleAcpToggle(enabled: boolean) {
-    await setAcpEnabled(enabled)
-    toast.success(t(enabled ? 'settings.general.acp.enabled' : 'settings.general.acp.disabled'))
+  async function handleExperimentalAgentsToggle(enabled: boolean) {
+    await setExperimentalAgentsEnabled(enabled)
+    toast.success(t(enabled ? 'settings.general.experimentalAgents.enabled' : 'settings.general.experimentalAgents.disabled'))
   }
 
   const effectiveChannel: UpdateChannel = updateChannel ?? channelFromVersion(appVersion)
@@ -217,14 +217,14 @@ export function AppSettingsPage() {
           </div>
           <div className="flex items-center justify-between gap-4 p-4">
             <div className="min-w-0">
-              <p className="text-sm font-medium">{t('settings.general.acp.label')}</p>
+              <p className="text-sm font-medium">{t('settings.general.experimentalAgents.label')}</p>
               <p className="mt-0.5 text-xs text-muted-foreground">
-                {t('settings.general.acp.description')}
+                {t('settings.general.experimentalAgents.description')}
               </p>
             </div>
             <Switch
-              checked={acpEnabled}
-              onCheckedChange={(v) => void handleAcpToggle(v)}
+              checked={experimentalAgentsEnabled}
+              onCheckedChange={(v) => void handleExperimentalAgentsToggle(v)}
               disabled={loading}
             />
           </div>

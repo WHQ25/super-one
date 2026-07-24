@@ -1419,9 +1419,10 @@ export class AgentService {
     return this.sessionManager
   }
 
-  private baseProviderIdForHarness(harnessId: 'claude' | 'codex' | 'acp' | undefined): string {
+  private baseProviderIdForHarness(harnessId: 'claude' | 'codex' | 'acp' | 'opencode' | undefined): string {
     if (harnessId === 'codex') return 'codex-base'
     if (harnessId === 'acp') return 'acp-base'
+    if (harnessId === 'opencode') return 'opencode-base'
     return 'claude-base'
   }
 
@@ -1432,7 +1433,7 @@ export class AgentService {
       worktreePath?: string | null
       gitBranch?: string | null
       apiProviderId?: string | null
-      provider?: 'claude' | 'codex' | 'acp'
+      provider?: 'claude' | 'codex' | 'acp' | 'opencode'
     },
   ): import('../session/types').Session {
     const mgr = this.requireSessionManager()

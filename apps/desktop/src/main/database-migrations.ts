@@ -437,6 +437,7 @@ function seedBaseSessionProviders(db: Database.Database): void {
   stmt.run('claude-base', 'claude', 'Claude (Base)', '{}', now, now)
   stmt.run('codex-base', 'codex', 'Codex (Base)', '{}', now, now)
   stmt.run('acp-base', 'acp', 'Others (ACP)', JSON.stringify({ agentId: 'grok-build' }), now, now)
+  stmt.run('opencode-base', 'opencode', 'OpenCode (Base)', '{}', now, now)
 }
 
 function migrateGlobalResourceCacheToHarness(db: Database.Database): void {
@@ -832,4 +833,3 @@ function migrateKimiMoonshotPlatforms(db: Database.Database): void {
     update.run(r.toPlatform, r.toPlan, now, r.fromPlatform, r.fromPlan)
   }
 }
-

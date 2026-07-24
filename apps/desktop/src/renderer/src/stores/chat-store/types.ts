@@ -11,6 +11,7 @@ import type {
   CodexPermissionPreset,
   CodexReasoningEffort,
   CodexResources,
+  OpenCodeResources,
   CodexReviewTarget,
   CodexUsageInfo,
   ContextUsageInfo,
@@ -259,6 +260,7 @@ export interface ChatStore {
     claude: ClaudeResources | null
     codex: CodexResources | null
     acp: AcpResources | null
+    opencode?: OpenCodeResources | null
   }
   initializedHarnesses: Set<HarnessId>
   disabledSkills: string[]

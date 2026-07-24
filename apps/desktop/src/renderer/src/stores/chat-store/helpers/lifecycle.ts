@@ -125,6 +125,6 @@ export async function _ensureClaudeSessionReadyForSend(
   const sessionId = resolveActiveSessionId(project)
   if (!sessionId) return
   const session = project._sessions[sessionId]
-  if (!session || session.sessionProvider === 'codex' || session.sessionProvider === 'acp') return
+  if (!session || session.sessionProvider === 'codex' || session.sessionProvider === 'acp' || session.sessionProvider === 'opencode') return
   await window.app.resumeSession(projectPath, sessionId, _getSessionCwd(projectPath, session))
 }

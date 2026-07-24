@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { AcpBackend } from './backends/acp-backend'
 import { ClaudeBackend } from './backends/claude-backend'
 import { CodexBackend } from './backends/codex-backend'
+import { OpenCodeBackend } from './backends/opencode-backend'
 import { forkAcpTranscript } from './backends/acp-fork'
 import { forkClaudeTranscript } from './backends/claude-fork'
 import { forkCodexThread } from './backends/codex-fork'
@@ -33,6 +34,14 @@ const acpConfigSchema = z.object({
   cwd: z.string().optional(),
 }).passthrough()
 
+const openCodeConfigSchema = z.object({
+  binaryPath: z.string().optional(),
+  serverUrl: z.string().url().optional(),
+  serverPassword: z.string().optional(),
+  env: z.record(z.string(), z.string()).optional(),
+  startupTimeoutMs: z.number().positive().optional(),
+}).passthrough()
+
 const claudeHarness: Harness = {
   id: 'claude',
   name: 'Claude (Anthropic)',
@@ -57,10 +66,21 @@ const acpHarness: Harness = {
   forkTranscript: forkAcpTranscript,
 }
 
+const openCodeHarness: Harness = {
+  id: 'opencode',
+  name: 'OpenCode',
+  configSchema: openCodeConfigSchema,
+  createBackend: () => new OpenCodeBackend(),
+  forkTranscript: async (source, targetCwd) => {
+    throw new Error(`OpenCode transcript fork is not supported yet (${source.providerSessionId} -> ${targetCwd})`)
+  },
+}
+
 const registry = new Map<HarnessId, Harness>([
   ['claude', claudeHarness],
   ['codex', codexHarness],
   ['acp', acpHarness],
+  ['opencode', openCodeHarness],
 ])
 
 export const harnessRegistry = {

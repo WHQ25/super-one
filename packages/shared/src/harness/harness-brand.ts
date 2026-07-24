@@ -4,6 +4,7 @@ export const HARNESS_DEFAULT_BRAND_HUE: Record<HarnessId, number> = {
   claude: 40,
   codex: 240,
   acp: 280,
+  opencode: 150,
 }
 
 export const BRAND_HUE_LIGHTNESS = 0.65
@@ -106,6 +107,7 @@ export const HARNESS_DEFAULT_TOKENS: Record<HarnessId, Record<DesignToken, LCH>>
   claude: buildHarnessDefaults('claude'),
   codex: buildHarnessDefaults('codex'),
   acp: buildHarnessDefaults('acp'),
+  opencode: buildHarnessDefaults('opencode'),
 }
 
 export function clampBrandHue(hue: number): number {

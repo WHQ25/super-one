@@ -18,6 +18,8 @@ export function resolveSlashCommandsForProvider(
       return catalogs.codex
     case 'acp':
       return catalogs.acp
+    case 'opencode':
+      return []
     case 'claude':
     default:
       return catalogs.claude

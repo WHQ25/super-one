@@ -1065,7 +1065,7 @@ export class Session implements SessionContract {
   }
 
   private applyReducer(event: AgentEvent): void {
-    if (this.harnessId === 'claude' || this.harnessId === 'acp') {
+    if (this.harnessId === 'claude' || this.harnessId === 'acp' || this.harnessId === 'opencode') {
       const runtime: ClaudeSessionRuntime = {
         projectPath: this.projectPath,
         sessionId: this.id,
@@ -1238,9 +1238,9 @@ export class Session implements SessionContract {
   private computeTitle(): string | null {
     if (this._title) return this._title
     if (this._messages.length === 0) return null
-    const title = this.harnessId === 'claude'
-      ? extractClaudeTitle(this._messages)
-      : extractCodexTitle(this._messages)
+    const title = this.harnessId === 'codex'
+      ? extractCodexTitle(this._messages)
+      : extractClaudeTitle(this._messages)
     return title ?? null
   }
 

@@ -86,6 +86,7 @@ import { startWatching, stopWatching } from './file-watcher'
 import { notifyWidgetReady, clearAllGates } from './generative-ui/widget-gate'
 import { setBashOutputWindow, watchBashOutput, unwatchBashOutput, unwatchAll as unwatchAllBashOutputs, readBashOutputTail, getWatchedFilePath } from './bash-output-watcher'
 import { setUnsavedBuffer } from './acp/acp-unsaved-buffer'
+import { probeOpenCodeResources } from './opencode/opencode-client'
 import { listWorkflowAgents, readWorkflowOutput, readWorkflowScript } from './workflow-transcripts'
 import { readSubagentTranscript } from './agent/subagent-transcript'
 import { parseGitStatusOutput, parseGitStatusFiles, type GitStatusPair } from './git-status-utils'
@@ -174,6 +175,7 @@ const automationService = new AutomationService()
 // `apiProviderId` carries the session's chosen credential id (dynamic-follow: null follows the global binding).
 function resolveBaseProviderConfig(provider: SessionProvider, apiProviderId: string | null = null): unknown {
   if (!provider.isBase) return provider.config
+  if (provider.harnessId === 'opencode') return provider.config
   if (provider.harnessId === 'acp') {
     const base = (provider.config && typeof provider.config === 'object')
       ? provider.config as Record<string, unknown>
@@ -272,11 +274,11 @@ const sessionManager = new SessionManagerImpl({
     }
   },
   getActiveProvider: (harnessId, apiProviderId) => {
-    if (harnessId === 'acp') return null
+    if (harnessId === 'acp' || harnessId === 'opencode') return null
     return buildRemoteActiveService(resolveChatService(harnessId, apiProviderId ?? null), harnessId)
   },
   getActiveDefaultApiProviderId: (harnessId) => {
-    if (harnessId === 'acp') return null
+    if (harnessId === 'acp' || harnessId === 'opencode') return null
     return getBinding(harnessId === 'codex' ? 'chat:codex' : 'chat:claude')?.credentialId ?? null
   },
   onBeforeInterrupt: (sessionId) => {
@@ -2433,15 +2435,17 @@ function registerIpcHandlers(): void {
     const claude = getCachedHarnessResources('claude')
     const codex = getCachedHarnessResources('codex')
     const acp = getCachedHarnessResources('acp')
+    const opencode = getCachedHarnessResources('opencode')
     const sandboxCapability = getSandboxCapability()
     log.info(
-      '[GET_STARTUP_DATA] cached: claude=%s codex=%s acp=%s sandbox=%s',
+      '[GET_STARTUP_DATA] cached: claude=%s codex=%s acp=%s opencode=%s sandbox=%s',
       claude ? `${claude.models?.length ?? 0} models` : 'null',
       codex ? `${codex.models?.length ?? 0} models` : 'null',
       acp ? `${acp.agents?.length ?? 0} agents` : 'null',
+      opencode ? `${opencode.models?.length ?? 0} models` : 'null',
       sandboxCapability.supportLevel,
     )
-    return { cached: { claude, codex, acp }, sandboxCapability, appVersion: app.getVersion() }
+    return { cached: { claude, codex, acp, opencode }, sandboxCapability, appVersion: app.getVersion() }
   })
 
   ipcMain.handle(AgentIpcChannels.SANDBOX_PROBE, async () => {
@@ -2557,6 +2561,18 @@ function registerIpcHandlers(): void {
     } catch (error) {
       log.error('[CONNECT_CODEX] failed: %s', error instanceof Error ? error.message : String(error))
       throw error
+    }
+  })
+
+  ipcMain.handle(AgentIpcChannels.CONNECT_OPENCODE, async () => {
+    const cached = getCachedHarnessResources('opencode')
+    try {
+      const resources = await probeOpenCodeResources({ cwd: resolveProbeCwd() })
+      setCachedHarnessResources('opencode', resources)
+      return resources
+    } catch (error) {
+      log.warn('[CONNECT_OPENCODE] failed: %s', error instanceof Error ? error.message : String(error))
+      return cached ?? { models: [], agents: [] }
     }
   })
 

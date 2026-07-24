@@ -40,7 +40,7 @@ export const createClaudeSlice: StateCreator<ChatStore, [], [], ClaudeSlice> = (
     const session = getActivePerSession(get(), activeProject)
     const provider = session.sessionProvider ?? session.preferredProvider
 
-    if (provider === 'acp') {
+    if (provider === 'acp' || provider === 'opencode') {
       set((s) => updateActivePerSession(s, () => ({
         selectedModel: model,
         modelUserChosen: true,

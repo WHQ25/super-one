@@ -96,6 +96,7 @@ const {
   getCodexProviderOverrideFor,
   buildCodexProviderCliOverrides,
   buildCodexProviderCliOverridesFor,
+  buildNodeReplDisableCliOverrides,
 } = await import('./app-server-connection')
 const { resolveChatService } = await import('../providers/resolver')
 
@@ -222,8 +223,23 @@ describe('createAppServerConnection', () => {
 })
 
 describe('buildCodexProviderCliOverrides', () => {
-  it('returns [] for a null override', () => {
-    expect(buildCodexProviderCliOverrides(null)).toEqual([])
+  it('returns [] for GPT subscription (null override) so node_repl stays available', () => {
+    const args = buildCodexProviderCliOverrides(null)
+    expect(args).toEqual([])
+    expect(args.join(' ')).not.toContain('mcp_servers.node_repl')
+  })
+
+  it('disables node_repl with a stub stdio command so Codex accepts the table', () => {
+    const pairs: string[] = []
+    const args = buildNodeReplDisableCliOverrides()
+    for (let i = 0; i < args.length; i += 2) {
+      expect(args[i]).toBe('-c')
+      pairs.push(args[i + 1])
+    }
+    expect(pairs).toEqual([
+      'mcp_servers.node_repl.command="superone-disabled-node-repl"',
+      'mcp_servers.node_repl.enabled=false',
+    ])
   })
 
   it('flattens the provider override into -c key=value pairs with TOML-quoted strings', () => {
@@ -249,6 +265,9 @@ describe('buildCodexProviderCliOverrides', () => {
     expect(pairs).toContain('model_provider=superone_custom')
     expect(pairs).toContain('features.remote_plugin=false')
     expect(pairs).toContain('features.apps=false')
+    // Dummy command + enabled=false so Codex accepts the table (no invalid transport)
+    // when the user has no prior [mcp_servers.node_repl] block.
+    expect(pairs).toContain('mcp_servers.node_repl.command="superone-disabled-node-repl"')
     expect(pairs).toContain('mcp_servers.node_repl.enabled=false')
     expect(pairs).toContain('model_providers.superone_custom.base_url="https://gw.example.com/v1"')
     expect(pairs).toContain('model_providers.superone_custom.env_key="CODEX_API_KEY"')

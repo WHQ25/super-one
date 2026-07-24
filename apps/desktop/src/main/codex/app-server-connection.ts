@@ -303,16 +303,37 @@ function tomlOverrideValue(value: unknown): string {
   return JSON.stringify(String(value))
 }
 
+/**
+ * Codex rejects any `mcp_servers.*` entry that has neither `command` nor `url`
+ * (`invalid transport`). ChatGPT Desktop's `node_repl` is only useful with a
+ * GPT subscription + host app; for third-party providers we disable it.
+ *
+ * Setting only `enabled=false` is not enough when the user has no prior
+ * `node_repl` block (new installs / SuperOne-only users): the CLI override
+ * becomes a transport-less table and fails both primary and default config
+ * load. Supply a stub stdio command so deserialize succeeds; `enabled=false`
+ * keeps Codex from actually spawning it.
+ */
+export function buildNodeReplDisableCliOverrides(): string[] {
+  return [
+    '-c', 'mcp_servers.node_repl.command="superone-disabled-node-repl"',
+    '-c', 'mcp_servers.node_repl.enabled=false',
+  ]
+}
+
 export function buildCodexProviderCliOverrides(
   override: CodexProviderOverride | null,
   supportsReasoning = false,
 ): string[] {
+  // GPT subscription / official auth: no custom provider → leave node_repl alone
+  // so ChatGPT Desktop's MCP (if present) stays available.
   if (!override) return []
+  // Third-party provider: pin custom model_provider and disable desktop-only MCP.
   const args: string[] = [
     '-c', `model_provider=${override.id}`,
     '-c', 'features.remote_plugin=false',
     '-c', 'features.apps=false',
-    '-c', 'mcp_servers.node_repl.enabled=false',
+    ...buildNodeReplDisableCliOverrides(),
   ]
   for (const [key, value] of Object.entries(override.info)) {
     if (value === undefined || value === null) continue

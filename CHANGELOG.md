@@ -13,6 +13,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - Add OpenCode session rewind, fork, compaction, sharing, shell commands, initialization, and title synchronization
 - Automatically continue Codex turns until the active goal completes
 
+### Changed
+
+- Upgrade Claude Agent SDK to 0.3.219; you can now use Opus 5 in SuperOne
+
 ### Fixed
 
 - Reload stale Codex history when switching sessions

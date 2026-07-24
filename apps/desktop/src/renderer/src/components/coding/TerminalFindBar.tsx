@@ -1,5 +1,6 @@
 import type { RefObject } from 'react'
 import { ArrowUp, ArrowDown, X } from 'lucide-react'
+import { getTerminalFindDirection } from './terminal-keybindings'
 
 interface Props {
   value: string
@@ -22,9 +23,10 @@ export function TerminalFindBar({ value, onChange, hits, onNext, onPrev, onClose
         spellCheck={false}
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === 'Enter') {
+          const direction = getTerminalFindDirection(e, true)
+          if (direction) {
             e.preventDefault()
-            if (e.shiftKey) onPrev()
+            if (direction === 'previous') onPrev()
             else onNext()
           } else if (e.key === 'Escape') {
             e.preventDefault()

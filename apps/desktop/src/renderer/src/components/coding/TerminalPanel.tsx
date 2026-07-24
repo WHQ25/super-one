@@ -8,6 +8,7 @@ import { setCloseActiveTerminal, setCreateTerminal } from './terminal-panel-api'
 import { getTerminalFontFamily, getTerminalFontSize, getTerminalTheme, onTerminalThemeChange } from './terminal-theme'
 import { applyTerminalEvent, createBaseXterm, disposeTermInstance, SEARCH_DECORATIONS } from './term-instance'
 import { TerminalFindBar } from './TerminalFindBar'
+import { createTerminalKeyEventHandler } from './terminal-keybindings'
 import type { TerminalEvent, TerminalListItem } from '@superone/shared/agent-types'
 import { useAppStore } from '@/stores/app'
 import { useChatStore } from '@/stores/chat'
@@ -87,6 +88,11 @@ export function TerminalPanel() {
   const hostRef = useRef<HTMLDivElement>(null)
   const findInputRef = useRef<HTMLInputElement>(null)
   const openFindRef = useRef<() => void>(() => {})
+  const shortcutStateRef = useRef<{
+    find: string | null
+    runSearch: (query: string, dir: 'next' | 'prev', incremental?: boolean) => void
+    closeFind: () => void
+  } | null>(null)
   const creatingRef = useRef(false)
   const wasOpenRef = useRef(false)
 
@@ -114,6 +120,7 @@ export function TerminalPanel() {
     setFind((prev) => (sel ? sel : (prev ?? '')))
     requestAnimationFrame(() => findInputRef.current?.select())
   }
+  shortcutStateRef.current = { find, runSearch, closeFind }
 
   const ensureInstance = useCallback(
     (terminalId: string) => {
@@ -121,16 +128,30 @@ export function TerminalPanel() {
       if (inst) return inst
       const { xterm, fit, search } = createBaseXterm()
       search.onDidChangeResults((e) => setFindHits({ idx: e.resultIndex, count: e.resultCount }))
-      xterm.attachCustomKeyEventHandler((e) => {
-        if (e.type === 'keydown' && (e.metaKey || e.ctrlKey)) {
-          if (e.key === 'f') {
-            openFindRef.current()
-            return false
-          }
-          if (e.key === 'w' && e.metaKey) return false
-        }
-        return true
-      })
+      xterm.attachCustomKeyEventHandler(
+        createTerminalKeyEventHandler({
+          clearSelection: () => xterm.clearSelection(),
+          closeFind: () => shortcutStateRef.current?.closeFind(),
+          findNext: () => {
+            const state = shortcutStateRef.current
+            if (!state) return
+            const { find, runSearch } = state
+            if (find === null) openFindRef.current()
+            else runSearch(find, 'next')
+          },
+          findPrevious: () => {
+            const state = shortcutStateRef.current
+            if (!state) return
+            const { find, runSearch } = state
+            if (find === null) openFindRef.current()
+            else runSearch(find, 'prev')
+          },
+          hasSelection: () => xterm.hasSelection(),
+          isFindVisible: () => shortcutStateRef.current?.find != null,
+          openFind: () => openFindRef.current(),
+          sendInput: (data) => xterm.input(data),
+        }),
+      )
       xterm.onData((data) => {
         if (instances.get(terminalId)?.writable === false) return
         void window.terminal.write(terminalId, data)

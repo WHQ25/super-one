@@ -5,6 +5,7 @@ import { SelectionMenu } from '@/components/chat/SelectionContextMenu'
 import { getTerminalFontFamily, getTerminalFontSize, getTerminalTheme, onTerminalThemeChange } from '@/components/coding/terminal-theme'
 import { SEARCH_DECORATIONS } from '@/components/coding/term-instance'
 import { TerminalFindBar } from '@/components/coding/TerminalFindBar'
+import { createTerminalKeyEventHandler } from '@/components/coding/terminal-keybindings'
 import { ensureActivityTermInstance, feedActivityTerminal, getActivityTermInstance } from './activity-terminal'
 
 interface Props {
@@ -20,6 +21,11 @@ export function ActivityTerminalPanel({ terminalId, api }: Props) {
   const [findHits, setFindHits] = useState({ idx: -1, count: 0 })
   const findInputRef = useRef<HTMLInputElement>(null)
   const openFindRef = useRef<() => void>(() => {})
+  const shortcutStateRef = useRef<{
+    find: string | null
+    runSearch: (query: string, dir: 'next' | 'prev', incremental?: boolean) => void
+    closeFind: () => void
+  } | null>(null)
 
   const runSearch = useCallback(
     (query: string, dir: 'next' | 'prev', incremental = false) => {
@@ -45,6 +51,7 @@ export function ActivityTerminalPanel({ terminalId, api }: Props) {
     setFind((prev) => (sel ? sel : (prev ?? '')))
     requestAnimationFrame(() => findInputRef.current?.select())
   }
+  shortcutStateRef.current = { find, runSearch, closeFind }
 
   // Own PTY listener, filtered by id. The bottom panel's global listener never
   // matches these ids (their instances live in a separate registry).
@@ -100,16 +107,33 @@ export function ActivityTerminalPanel({ terminalId, api }: Props) {
         /* WebGL unavailable — xterm falls back to the DOM renderer */
       }
     }
-    inst.xterm.attachCustomKeyEventHandler((e) => {
-      if (e.type === 'keydown' && (e.metaKey || e.ctrlKey)) {
-        if (e.key === 'f') {
-          openFindRef.current()
-          return false
-        }
-        if (e.key === 'w' && (e.metaKey || e.ctrlKey)) return false
-      }
-      return true
-    })
+    inst.xterm.attachCustomKeyEventHandler(
+      createTerminalKeyEventHandler(
+        {
+          clearSelection: () => inst.xterm.clearSelection(),
+          closeFind: () => shortcutStateRef.current?.closeFind(),
+          findNext: () => {
+            const state = shortcutStateRef.current
+            if (!state) return
+            const { find, runSearch } = state
+            if (find === null) openFindRef.current()
+            else runSearch(find, 'next')
+          },
+          findPrevious: () => {
+            const state = shortcutStateRef.current
+            if (!state) return
+            const { find, runSearch } = state
+            if (find === null) openFindRef.current()
+            else runSearch(find, 'prev')
+          },
+          hasSelection: () => inst.xterm.hasSelection(),
+          isFindVisible: () => shortcutStateRef.current?.find != null,
+          openFind: () => openFindRef.current(),
+          sendInput: (data) => inst.xterm.input(data),
+        },
+        { interceptCtrlW: true },
+      ),
+    )
     const searchDisp = inst.search.onDidChangeResults((e) =>
       setFindHits({ idx: e.resultIndex, count: e.resultCount }),
     )

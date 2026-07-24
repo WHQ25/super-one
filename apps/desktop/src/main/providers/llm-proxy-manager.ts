@@ -4,6 +4,7 @@ import net from 'net'
 import { join } from 'path'
 import log from '../logger'
 import { getNodeRuntime } from '../agent/resolve-cli'
+import { resolveCodexChatReasoning, type CodexChatReasoningConfig } from './codex-responses/reasoning'
 import { resolveChatService } from './resolver'
 
 export interface ProxyUpstream {
@@ -11,7 +12,8 @@ export interface ProxyUpstream {
   api_base_url: string
   api_key: string
   models: string[]
-  transformers: string[]
+  transformerUse: string[]
+  reasoningConfig?: CodexChatReasoningConfig
 }
 
 interface ProxyInstance {
@@ -54,6 +56,26 @@ function resolveEntryPath(): string {
   return join(__dirname, 'llm-proxy-entry.js')
 }
 
+export function buildProxyConfig(port: number, upstream: ProxyUpstream): Record<string, unknown> {
+  const { transformerUse, reasoningConfig, ...provider } = upstream
+  return {
+    PORT: port,
+    HOST: '127.0.0.1',
+    ...(reasoningConfig ? { superoneReasoningConfig: reasoningConfig } : {}),
+    providers: [{ ...provider, transformer: { use: transformerUse } }],
+  }
+}
+
+export function buildProxyEnv(config: Record<string, unknown>, runtimeEnv?: Record<string, string>): NodeJS.ProcessEnv {
+  return {
+    ...process.env,
+    ...runtimeEnv,
+    SUPERONE_PROXY_CONFIG: JSON.stringify(config),
+    SUPERONE_EVENT_TRACE_CHILD: '1',
+    SUPERONE_EVENT_TRACE_DB: join(process.cwd(), 'llm-proxy-event-trace.db'),
+  }
+}
+
 function startSweepIfNeeded(): void {
   if (sweepTimer) return
   sweepTimer = setInterval(() => {
@@ -75,15 +97,8 @@ function startSweepIfNeeded(): void {
 function spawnChild(port: number, upstream: ProxyUpstream): ChildProcess {
   const entryPath = resolveEntryPath()
   const runtime = getNodeRuntime()
-  const config = {
-    PORT: port,
-    HOST: '127.0.0.1',
-    providers: [upstream],
-  }
-  const env: Record<string, string> = {
-    ...(runtime.env ?? {}),
-    SUPERONE_PROXY_CONFIG: JSON.stringify(config),
-  }
+  const config = buildProxyConfig(port, upstream)
+  const env = buildProxyEnv(config, runtime.env)
   if (runtime.executable) {
     const proc = fork(entryPath, [], {
       execPath: runtime.executable,
@@ -214,7 +229,8 @@ export async function ensureCodexProxyUrl(apiProviderId?: string | null): Promis
     api_base_url: `${apiBase}/chat/completions`,
     api_key: resolved.apiKey,
     models: Object.values(modelMapping).map((s) => s?.id?.replace(/\[1m\]/i, '')).filter(Boolean) as string[],
-    transformers: [],
+    transformerUse: [],
+    reasoningConfig: resolveCodexChatReasoning(resolved.platformId),
   }
 
   const { url } = await ensureProxy(upstream)

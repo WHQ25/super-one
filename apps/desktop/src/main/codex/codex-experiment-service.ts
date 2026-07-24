@@ -1,7 +1,9 @@
-import { randomUUID } from 'crypto'
+import { createHash, randomUUID } from 'crypto'
 import log from '../logger'
+import { authHeaders, modelsUrl } from '../providers/endpoint-test'
+import { parseOpenAiModelsList } from '@superone/shared/platform-registry'
 import {
-  buildCodexProviderCliOverrides,
+  buildCodexProviderCliOverridesFor,
   compactRecord,
   createAppServerConnection,
   getCodexProviderOverrideFor,
@@ -17,6 +19,7 @@ import {
 } from './app-server-connection'
 import { clearCodexProxyCache } from '../providers/llm-proxy-manager'
 import { resolveChatService } from '../providers/resolver'
+import { codexReasoningOptions, resolveCodexChatReasoning } from '../providers/codex-responses/reasoning'
 import type {
   CodexAuthStatus,
   CodexAccountUsage,
@@ -34,6 +37,8 @@ import type {
 } from '@superone/shared/agent-types'
 
 const APP_SERVER_METADATA_IDLE_MS = 5 * 60_000
+const MODEL_CACHE_TTL_MS = 3 * 60_000
+const CUSTOM_PROVIDER_MODELS_TIMEOUT_MS = 10_000
 
 export {
   createCodexSession,
@@ -236,6 +241,35 @@ function codexProviderSignature(apiProviderId?: string | null): string {
   ].join('|')
 }
 
+function modelCacheSignature(auth: CodexProjectAuth, apiProviderId?: string | null): string {
+  const resolved = resolveChatService('codex', apiProviderId ?? null)
+  const apiKey = resolved?.apiKey || normalizeApiKey(auth.apiKey) || ''
+  const apiKeyFingerprint = apiKey
+    ? createHash('sha256').update(apiKey).digest('hex').slice(0, 16)
+    : ''
+  return `${codexProviderSignature(apiProviderId)}::${auth.mode}:${apiKeyFingerprint}`
+}
+
+function modelOptionsFromOpenAiList(payload: unknown, platformId?: string): ModelOption[] | null {
+  const models = parseOpenAiModelsList(payload)
+  if (!models) return null
+  const reasoning = resolveCodexChatReasoning(platformId)
+  const supportedReasoningEfforts = codexReasoningOptions(reasoning)
+  return models.map((model, index) => ({
+    id: model.id,
+    name: model.name ?? model.id,
+    description: '',
+    isDefault: index === 0,
+    supportedReasoningEfforts,
+    defaultReasoningEffort: reasoning?.defaultEffort,
+  }))
+}
+
+interface CachedModelList {
+  models: ModelOption[]
+  expiresAt: number
+}
+
 interface CachedAppServerConnection {
   auth: CodexProjectAuth
   providerSig: string
@@ -250,7 +284,7 @@ export class CodexExperimentService {
   private projectAuth = new Map<string, CodexProjectAuth>()
   private authChangedListeners = new Map<string, Set<() => void>>()
   private appServerConnections = new Map<string, CachedAppServerConnection>()
-  private modelCacheByProvider = new Map<string, ModelOption[]>()
+  private modelCacheByProvider = new Map<string, CachedModelList>()
 
   getProjectAuth(projectPath: string): CodexProjectAuth {
     let auth = this.projectAuth.get(projectPath)
@@ -323,7 +357,7 @@ export class CodexExperimentService {
       auth,
       signal,
       undefined,
-      buildCodexProviderCliOverrides(getCodexProviderOverrideFor(apiProviderId)),
+      buildCodexProviderCliOverridesFor(apiProviderId),
       apiProviderId,
     )
       .then((handle) => {
@@ -485,20 +519,60 @@ export class CodexExperimentService {
     }, apiProviderId)
   }
 
+  private async fetchModelsFromCustomProvider(apiProviderId?: string | null): Promise<ModelOption[]> {
+    const resolved = resolveChatService('codex', apiProviderId ?? null)
+    const baseUrl = resolved?.baseUrl.trim()
+    if (!resolved || !baseUrl || !resolved.apiKey) {
+      throw new Error('Custom Codex provider requires a base URL and API key')
+    }
+
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), CUSTOM_PROVIDER_MODELS_TIMEOUT_MS)
+    const url = modelsUrl('openai', baseUrl)
+    try {
+      const response = await fetch(url, {
+        headers: authHeaders('openai', resolved.apiKey),
+        signal: controller.signal,
+      })
+      if (!response.ok) {
+        throw new Error(`Custom Codex provider models request failed with HTTP ${response.status}`)
+      }
+      const payload = await response.json()
+      log.debug('[codex] custom provider models response provider=%s status=%d payload=%s', resolved.credentialId, response.status, JSON.stringify(payload))
+      const models = modelOptionsFromOpenAiList(payload, resolved.platformId)
+      if (!models) {
+        throw new Error('Custom Codex provider returned an invalid models response')
+      }
+      log.info('[codex] custom provider models fetched provider=%s count=%d', resolved.credentialId, models.length)
+      return models
+    } catch (error) {
+      const message = error instanceof Error
+        ? error.name === 'AbortError'
+          ? `timed out after ${CUSTOM_PROVIDER_MODELS_TIMEOUT_MS}ms`
+          : error.message
+        : String(error)
+      throw new Error(`Custom Codex provider models request failed: ${message}`)
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+
   async listModels(projectPath: string, apiProviderId: string | null = null, force = false): Promise<ModelOption[]> {
     const auth = this.getProjectAuth(projectPath)
-    const sig = `${codexProviderSignature(apiProviderId)}::${auth.mode}:${normalizeApiKey(auth.apiKey) ?? ''}`
+    const sig = modelCacheSignature(auth, apiProviderId)
     if (!force) {
       const cached = this.modelCacheByProvider.get(sig)
-      if (cached) {
-        log.info('[codex] listModels: cache hit key=%s models=%s', sig, JSON.stringify(cached))
-        return cached
+      if (cached && cached.expiresAt > Date.now()) {
+        log.info('[codex] listModels: cache hit key=%s count=%d', sig, cached.models.length)
+        return cached.models
       }
     }
     log.info('[codex] listModels: mode=%s, hasApiKey=%s providerSig=%s', auth.mode, Boolean(auth.apiKey || process.env.CODEX_API_KEY), sig || 'default')
-    const models = await this.fetchModelsFromAppServer(projectPath, auth, apiProviderId)
+    const models = getCodexProviderOverrideFor(apiProviderId)
+      ? await this.fetchModelsFromCustomProvider(apiProviderId)
+      : await this.fetchModelsFromAppServer(projectPath, auth, apiProviderId)
     log.info('[codex] listModels: fetched %d models', models.length)
-    this.modelCacheByProvider.set(sig, models)
+    this.modelCacheByProvider.set(sig, { models, expiresAt: Date.now() + MODEL_CACHE_TTL_MS })
     return models
   }
 

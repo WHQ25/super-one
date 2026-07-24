@@ -29,8 +29,9 @@ vi.mock('../agent/resolve-cli', () => ({
   getNodeRuntime: vi.fn(() => ({})),
 }))
 
-const { createHandleMock } = vi.hoisted(() => ({
+const { createHandleMock, getProviderOverrideMock } = vi.hoisted(() => ({
   createHandleMock: vi.fn(),
+  getProviderOverrideMock: vi.fn(() => null),
 }))
 
 vi.mock('./app-server-connection', async () => {
@@ -38,6 +39,7 @@ vi.mock('./app-server-connection', async () => {
   return {
     ...actual,
     createAppServerConnection: (...args: unknown[]) => createHandleMock(...args),
+    getCodexProviderOverrideFor: (...args: unknown[]) => getProviderOverrideMock(...args),
   }
 })
 
@@ -104,6 +106,7 @@ function makeModelHandle() {
 describe('CodexExperimentService auth state', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    getProviderOverrideMock.mockReturnValue(null)
     createHandleMock.mockReset()
     vi.mocked(getActiveProviderRaw).mockReturnValue(null as never)
     vi.mocked(getProviderByIdRaw).mockReturnValue(undefined as never)
@@ -207,7 +210,7 @@ describe('CodexExperimentService auth state', () => {
     expect(models[0]?.supportedReasoningEfforts?.map((e) => e.value)).toEqual(['high', 'minimal', 'medium'])
   })
 
-  it('caches models per active codex provider and refetches with new -c overrides when the provider changes', async () => {
+  it('caches models per active codex provider and refetches when the provider changes', async () => {
     const handleA = makeModelHandle()
     const handleB = makeModelHandle()
     createHandleMock.mockResolvedValueOnce(handleA).mockResolvedValueOnce(handleB)
@@ -218,12 +221,6 @@ describe('CodexExperimentService auth state', () => {
     await service.listModels('/project')
     expect(createHandleMock).toHaveBeenCalledTimes(1)
     expect(handleA.connection.request).toHaveBeenCalledTimes(1)
-    // spawn carried the provider as -c overrides
-    const cliArgs = createHandleMock.mock.calls[0][3] as string[]
-    expect(cliArgs).toContain('model_provider=superone_custom')
-    expect(cliArgs).toContain('model_providers.superone_custom.base_url="https://a.example.com/v1"')
-
-    // Switch active provider → different signature → fresh connection + fetch
     vi.mocked(getActiveProviderRaw).mockReturnValue(codexProviderRow('p2', 'https://b.example.com/v1') as never)
     await service.listModels('/project')
     expect(createHandleMock).toHaveBeenCalledTimes(2)
@@ -245,12 +242,9 @@ describe('CodexExperimentService auth state', () => {
     await service.listModels('/project', 'sess-a')
     expect(createHandleMock).toHaveBeenCalledTimes(1)
     expect(handleA.connection.request).toHaveBeenCalledTimes(1)
-    expect(createHandleMock.mock.calls[0][3]).toContain('model_providers.superone_custom.base_url="https://shared/v1"')
-
     await service.listModels('/project', 'sess-b')
     expect(createHandleMock).toHaveBeenCalledTimes(2)
     expect(handleB.connection.request).toHaveBeenCalledTimes(1)
-    expect(createHandleMock.mock.calls[1][3]).toContain('model_providers.superone_custom.base_url="https://shared/v1"')
   })
 
   it('refetches default models when its bound credential changes on the same base URL', async () => {
@@ -546,6 +540,7 @@ describe('CodexExperimentService auth state', () => {
 
   it('getRateLimits returns null when a custom codex provider is active (not a ChatGPT subscription)', async () => {
     vi.mocked(getActiveProviderRaw).mockReturnValue(codexProviderRow('p1', 'https://gateway.example.com/v1') as never)
+    getProviderOverrideMock.mockReturnValue({})
     const service = new CodexExperimentService()
     service.setAuth('/project', { mode: 'chatgpt' })
 
@@ -681,6 +676,7 @@ describe('CodexExperimentService auth state', () => {
 
   it('getAccountUsage returns null when a custom codex provider is active', async () => {
     vi.mocked(getActiveProviderRaw).mockReturnValue(codexProviderRow('p1', 'https://gateway.example.com/v1') as never)
+    getProviderOverrideMock.mockReturnValue({})
     const service = new CodexExperimentService()
     service.setAuth('/project', { mode: 'chatgpt' })
 

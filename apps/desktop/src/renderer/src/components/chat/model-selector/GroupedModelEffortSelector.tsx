@@ -1,6 +1,7 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
-import { Check, ChevronDown, ChevronRight, RefreshCw, Settings2 } from 'lucide-react'
+import { Check, ChevronDown, ChevronRight, RefreshCw, Search, Settings2, X } from 'lucide-react'
+import { Command, CommandInput } from '@superone/ui/components/ui/command'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -44,6 +45,7 @@ interface GroupedModelEffortSelectorProps {
   selectedModelId: string | null
   selectedModelLabel?: string | null
   onSelectModel: (id: string) => void
+  shouldCloseAfterModelSelect?: (id: string) => boolean
   effortOptions: SelectorEffortOption[]
   selectedEffort: string | null
   selectedEffortLabel?: string | null
@@ -89,21 +91,52 @@ function ModelRow({
   )
 }
 
+function RefreshModelsButton({
+  onRefreshModels,
+  modelsLoading,
+}: Pick<GroupedModelEffortSelectorProps, 'onRefreshModels' | 'modelsLoading'>) {
+  if (!onRefreshModels) return null
+  return (
+    <IconButton
+      size="xs"
+      variant="nested"
+      tooltip="Refresh models"
+      disabled={modelsLoading}
+      onClick={(event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        onRefreshModels()
+      }}
+    >
+      <RefreshCw className={cn(modelsLoading && 'animate-spin')} />
+    </IconButton>
+  )
+}
+
 function ModelList({
   models,
   modelGroups,
   selectedModelId,
-  keepOpen,
+  shouldKeepOpen,
   onSelectModel,
-}: Pick<GroupedModelEffortSelectorProps, 'models' | 'modelGroups' | 'selectedModelId' | 'onSelectModel'> & { keepOpen: boolean }) {
+  searchActive,
+  emptyMessage,
+}: Pick<GroupedModelEffortSelectorProps, 'models' | 'modelGroups' | 'selectedModelId' | 'onSelectModel'> & {
+  shouldKeepOpen: (model: SelectorModelOption) => boolean
+  searchActive: boolean
+  emptyMessage: string
+}) {
   const [expandedGroupIds, setExpandedGroupIds] = useState<Set<string>>(new Set())
-  const hasGroups = Boolean(modelGroups?.length)
+  const hasGroups = modelGroups !== undefined
+  const hasModels = hasGroups
+    ? modelGroups!.some((group) => group.models.length > 0)
+    : (models?.length ?? 0) > 0
 
   return (
     <div className="max-h-60 min-h-0 shrink overflow-y-auto pr-1">
         {hasGroups
           ? modelGroups!.map((group) => {
-              const expanded = expandedGroupIds.has(group.id)
+              const expanded = searchActive || expandedGroupIds.has(group.id)
               const hasSelectedModel = group.models.some((model) => model.id === selectedModelId)
               return (
                 <div key={group.id}>
@@ -130,7 +163,7 @@ function ModelList({
                           key={model.id}
                           model={model}
                           selected={model.id === selectedModelId}
-                          keepOpen={keepOpen}
+                          keepOpen={shouldKeepOpen(model)}
                           onSelect={() => onSelectModel(model.id)}
                         />
                       ))}
@@ -144,10 +177,13 @@ function ModelList({
                 key={model.id}
                 model={model}
                 selected={model.id === selectedModelId}
-                keepOpen={keepOpen}
+                keepOpen={shouldKeepOpen(model)}
                 onSelect={() => onSelectModel(model.id)}
               />
             ))}
+        {!hasModels && (
+          <div className="px-2 py-1.5 text-xs text-muted-foreground">{emptyMessage}</div>
+        )}
     </div>
   )
 }
@@ -218,12 +254,23 @@ function EffortSlider({
   )
 }
 
+export function hasSelectableEffort(effortOptions: SelectorEffortOption[]): boolean {
+  return effortOptions.length > 1
+}
+
+export function matchesModelSearch(model: SelectorModelOption, query: string): boolean {
+  return [model.id, model.name, model.description]
+    .filter((value): value is string => Boolean(value))
+    .some((value) => value.toLowerCase().includes(query))
+}
+
 export function GroupedModelEffortSelector({
   models,
   modelGroups,
   selectedModelId,
   selectedModelLabel,
   onSelectModel,
+  shouldCloseAfterModelSelect,
   effortOptions,
   selectedEffort,
   selectedEffortLabel,
@@ -240,19 +287,44 @@ export function GroupedModelEffortSelector({
 }: GroupedModelEffortSelectorProps) {
   const [modelsExpanded, setModelsExpanded] = useState(false)
   const [providersExpanded, setProvidersExpanded] = useState(false)
-  const collapseAll = () => { setModelsExpanded(false); setProvidersExpanded(false) }
-  const selectedModel = useMemo(() => {
-    const allModels = modelGroups?.flatMap((group) => group.models) ?? models ?? []
-    return allModels.find((model) => model.id === selectedModelId)
-  }, [modelGroups, models, selectedModelId])
+  const [modelSearchOpen, setModelSearchOpen] = useState(false)
+  const [modelSearch, setModelSearch] = useState('')
+  const collapseAll = () => {
+    setModelsExpanded(false)
+    setProvidersExpanded(false)
+    setModelSearchOpen(false)
+    setModelSearch('')
+  }
+  const allModels = useMemo(
+    () => modelGroups?.flatMap((group) => group.models) ?? models ?? [],
+    [modelGroups, models],
+  )
+  const selectedModel = useMemo(
+    () => allModels.find((model) => model.id === selectedModelId),
+    [allModels, selectedModelId],
+  )
   const selectedEffortOption = effortOptions.find((option) => option.value === selectedEffort)
   const selectedProvider = providers.find((provider) => provider.id === selectedProviderId)
   const modelLabel = selectedModelLabel ?? selectedModel?.name ?? selectedModelId ?? 'Model'
   const effortLabel = selectedEffortLabel ?? selectedEffortOption?.label ?? 'Effort'
-  // No effort → the collapsed model row is meaningless: default to the expanded list,
-  // and let selecting a model close the popup outright.
-  const noEffort = effortOptions.length === 0
-  const listOpen = modelsExpanded || noEffort
+  const canSelectEffort = hasSelectableEffort(effortOptions)
+  const shouldCloseAfterSelect = (modelId: string): boolean =>
+    shouldCloseAfterModelSelect?.(modelId) ?? !canSelectEffort
+  const listOpen = modelsExpanded || !canSelectEffort
+  const modelSearchAvailable = listOpen && allModels.length > 10
+  const normalizedModelSearch = modelSearch.trim().toLowerCase()
+  const filteredModels = useMemo(
+    () => !normalizedModelSearch ? models : models?.filter((model) => matchesModelSearch(model, normalizedModelSearch)),
+    [models, normalizedModelSearch],
+  )
+  const filteredModelGroups = useMemo(
+    () => !normalizedModelSearch
+      ? modelGroups
+      : modelGroups
+          ?.map((group) => ({ ...group, models: group.models.filter((model) => matchesModelSearch(model, normalizedModelSearch)) }))
+          .filter((group) => group.models.length > 0),
+    [modelGroups, normalizedModelSearch],
+  )
 
   return (
     <DropdownMenu onOpenChange={(open) => { if (!open) collapseAll() }}>
@@ -266,7 +338,7 @@ export function GroupedModelEffortSelector({
           ) : (
             <>
               <span className="truncate">{modelLabel}</span>
-              {effortOptions.length > 0 && (
+              {canSelectEffort && (
                 <>
                   <span className="text-muted-foreground/70">·</span>
                   <span className="shrink-0">{effortLabel}</span>
@@ -278,36 +350,67 @@ export function GroupedModelEffortSelector({
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" side="top" className="max-h-[70vh] w-72 overflow-hidden p-1" onCloseAutoFocus={onCloseAutoFocus}>
-        <div className="flex items-center justify-between px-2 pb-1 pt-1.5">
-          <span className="text-xs text-muted-foreground">Models</span>
-          {onRefreshModels && (
+        {modelSearchAvailable && modelSearchOpen ? (
+          <div className="flex items-center gap-1 border-b">
+            <Command shouldFilter={false} className="min-w-0 flex-1 rounded-none [&_[data-slot=command-input-wrapper]]:border-b-0">
+              <CommandInput
+                autoFocus
+                placeholder="Search models..."
+                value={modelSearch}
+                onValueChange={setModelSearch}
+                onKeyDown={(event) => event.stopPropagation()}
+              />
+            </Command>
             <IconButton
               size="xs"
               variant="nested"
-              tooltip="Refresh models"
-              disabled={modelsLoading}
+              tooltip="Close search"
               onClick={(event) => {
                 event.preventDefault()
                 event.stopPropagation()
-                onRefreshModels()
+                setModelSearch('')
+                setModelSearchOpen(false)
               }}
             >
-              <RefreshCw className={cn(modelsLoading && 'animate-spin')} />
+              <X />
             </IconButton>
-          )}
-        </div>
+          </div>
+        ) : (
+          <div className="flex items-center justify-between px-2 pb-1 pt-1.5">
+            <span className="text-xs text-muted-foreground">Models</span>
+            <div className="flex items-center gap-1">
+              <RefreshModelsButton onRefreshModels={onRefreshModels} modelsLoading={modelsLoading} />
+              {modelSearchAvailable && (
+                <IconButton
+                  size="xs"
+                  variant="nested"
+                  tooltip="Search models"
+                  onClick={(event) => {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    setModelSearchOpen(true)
+                  }}
+                >
+                  <Search />
+                </IconButton>
+              )}
+            </div>
+          </div>
+        )}
 
         <AnimatePresence initial={false}>
           {listOpen ? (
             <motion.div key="model-list" {...MORPH} className="overflow-hidden">
               <ModelList
-                models={models}
-                modelGroups={modelGroups}
+                models={filteredModels}
+                modelGroups={filteredModelGroups}
                 selectedModelId={selectedModelId}
-                keepOpen={!noEffort}
+                shouldKeepOpen={(model) => !shouldCloseAfterSelect(model.id)}
+                searchActive={Boolean(normalizedModelSearch)}
+                emptyMessage={normalizedModelSearch ? 'No models found' : 'No models'}
                 onSelectModel={(id) => {
                   onSelectModel(id)
-                  if (!noEffort) collapseAll()
+                  if (!shouldCloseAfterSelect(id)) collapseAll()
                 }}
               />
             </motion.div>
@@ -331,7 +434,7 @@ export function GroupedModelEffortSelector({
         </AnimatePresence>
 
         <AnimatePresence initial={false}>
-          {!modelsExpanded && effortOptions.length > 0 && (
+          {!modelsExpanded && canSelectEffort && (
             <motion.div key="effort" {...MORPH} className="overflow-hidden">
               <DropdownMenuSeparator />
               <EffortSlider

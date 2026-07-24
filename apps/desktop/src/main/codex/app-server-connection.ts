@@ -6,6 +6,7 @@ import log from '../logger'
 import { trace } from '../agent/event-trace'
 import { CODEX_SYSTEM_PROMPT_APPEND } from '../agent/superone-system-prompt'
 import { resolveChatService } from '../providers/resolver'
+import { resolveCodexChatReasoning, supportsCodexChatReasoning } from '../providers/codex-responses/reasoning'
 import { ensureCodexProxyUrl, getCodexProxyUrl } from '../providers/llm-proxy-manager'
 import { ProcessTitle } from '../process-titles'
 import { buildSafeEnv } from '../spawn-env'
@@ -302,7 +303,10 @@ function tomlOverrideValue(value: unknown): string {
   return JSON.stringify(String(value))
 }
 
-export function buildCodexProviderCliOverrides(override: CodexProviderOverride | null): string[] {
+export function buildCodexProviderCliOverrides(
+  override: CodexProviderOverride | null,
+  supportsReasoning = false,
+): string[] {
   if (!override) return []
   const args: string[] = [
     '-c', `model_provider=${override.id}`,
@@ -314,7 +318,16 @@ export function buildCodexProviderCliOverrides(override: CodexProviderOverride |
     if (value === undefined || value === null) continue
     args.push('-c', `model_providers.${override.id}.${key}=${tomlOverrideValue(value)}`)
   }
+  if (supportsReasoning) args.push('-c', 'model_supports_reasoning_summaries=true')
   return args
+}
+
+export function buildCodexProviderCliOverridesFor(apiProviderId?: string | null): string[] {
+  const resolved = resolveChatService('codex', apiProviderId ?? null)
+  return buildCodexProviderCliOverrides(
+    getCodexProviderOverrideFor(apiProviderId),
+    supportsCodexChatReasoning(resolveCodexChatReasoning(resolved?.platformId)),
+  )
 }
 
 export function getCodexProviderOverrideFor(apiProviderId?: string | null): CodexProviderOverride | null {
@@ -422,7 +435,7 @@ export async function createAppServerConnection(
 
   const baseEnv = envOverride ?? buildAppServerEnv(auth, apiProviderId)
   await ensureCodexProxyUrl(apiProviderId)
-  const overrideArgs = cliOverrides ?? buildCodexProviderCliOverrides(getCodexProviderOverrideFor(apiProviderId))
+  const overrideArgs = cliOverrides ?? buildCodexProviderCliOverridesFor(apiProviderId)
   const expectedPackage = resolveCodexPlatformPackage()
   const hasBundledPackage = expectedPackage ? hasCodexPlatformPackage(expectedPackage) : false
   const bundledBinary = hasBundledPackage && expectedPackage ? resolveCodexNativeBinary(expectedPackage) : null

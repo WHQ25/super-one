@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { responsesToChatCompletions } from './request'
+import { resolveCodexChatReasoning } from './reasoning'
 
 describe('responses→chat request conversion', () => {
   it('injects stream_options.include_usage when streaming', () => {
@@ -61,7 +62,7 @@ describe('responses→chat request conversion', () => {
       max_output_tokens: 100,
       reasoning: { effort: 'high' },
       stream: true,
-    })
+    }, resolveCodexChatReasoning('custom:openai-compatible'))
 
     const messages = result.messages as Record<string, unknown>[]
     expect(messages[0].role).toBe('system')

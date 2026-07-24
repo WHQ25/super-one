@@ -1,4 +1,5 @@
 import { responsesToChatCompletions } from './request'
+import type { CodexChatReasoningConfig } from './reasoning'
 import { chatCompletionToResponse, chatErrorToResponseError } from './response'
 import { createResponsesSseStreamFromChat } from './stream'
 
@@ -16,9 +17,14 @@ function passthroughHeaders(source: Headers, contentType: string): Headers {
 export class CodexResponsesTransformer {
   name = 'codex-responses'
   endPoint = '/responses'
+  private readonly reasoningConfig: CodexChatReasoningConfig | undefined
+
+  constructor(reasoningConfig?: CodexChatReasoningConfig) {
+    this.reasoningConfig = reasoningConfig
+  }
 
   async transformRequestOut(request: unknown): Promise<Record<string, unknown>> {
-    return responsesToChatCompletions(request)
+    return responsesToChatCompletions(request, this.reasoningConfig)
   }
 
   async transformResponseIn(response: Response): Promise<Response> {

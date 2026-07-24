@@ -95,6 +95,7 @@ const {
   getCodexProviderOverride,
   getCodexProviderOverrideFor,
   buildCodexProviderCliOverrides,
+  buildCodexProviderCliOverridesFor,
 } = await import('./app-server-connection')
 const { resolveChatService } = await import('../providers/resolver')
 
@@ -254,6 +255,25 @@ describe('buildCodexProviderCliOverrides', () => {
     expect(pairs).toContain('model_providers.superone_custom.wire_api="responses"')
     expect(pairs).toContain('model_providers.superone_custom.requires_openai_auth=false')
     expect(pairs).toContain('model_providers.superone_custom.name="My GW"')
+  })
+
+  it('enables reasoning summaries for a mapped Chat provider', () => {
+    const args = buildCodexProviderCliOverrides({
+      id: 'superone_custom',
+      info: { name: 'My GW' },
+    }, true)
+
+    expect(args).toContain('model_supports_reasoning_summaries=true')
+  })
+
+  it('derives the reasoning override from the resolved provider', () => {
+    vi.mocked(resolveChatService).mockReturnValue(resolvedService({
+      platformId: 'custom:gateway',
+      baseUrl: 'https://gw.example.com/v1',
+    }))
+
+    expect(buildCodexProviderCliOverridesFor()).toContain('model_supports_reasoning_summaries=true')
+    vi.mocked(resolveChatService).mockReturnValue(null)
   })
 
   it('close is idempotent', async () => {

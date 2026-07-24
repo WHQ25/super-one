@@ -1,5 +1,8 @@
 import { createRequire } from 'node:module'
+import { trace, traceReady } from '../agent/event-trace'
 import { CodexResponsesTransformer } from './codex-responses/transformer'
+import type { CodexChatReasoningConfig } from './codex-responses/reasoning'
+import { normalizeAdaptiveThinkingRequest, OpenAiNormalizedTrace, OpenAiReasoningDiagnostic } from './openai-reasoning-diagnostic'
 
 const require = createRequire(import.meta.url)
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -20,12 +23,31 @@ try {
   process.exit(1)
 }
 
+const reasoningConfig = cfg.superoneReasoningConfig as CodexChatReasoningConfig | undefined
+
 const server = new Server({ initialConfig: cfg as Record<string, unknown> })
 await server.transformerService.initialize()
+await traceReady
 server.transformerService.removeTransformer('openai-responses')
 
+for (let attempts = 0; !server.providerService && attempts < 20; attempts++) {
+  await new Promise((resolve) => setTimeout(resolve, 0))
+}
+if (!server.providerService) throw new Error('llm proxy provider service did not initialize')
+
+for (const provider of server.providerService.getProviders()) {
+  const transformer = provider.transformer ?? (provider.transformer = {})
+  const use = transformer.use ?? (transformer.use = [])
+  if (!use.some((item: { name?: string }) => item?.name === 'superone-normalized-trace')) {
+    use.unshift(new OpenAiNormalizedTrace())
+  }
+  if (!use.some((item: { name?: string }) => item?.name === 'superone-reasoning-diagnostic')) {
+    use.push(new OpenAiReasoningDiagnostic())
+  }
+}
+
 for (const endpoint of ['/responses', '/v1/responses', '/responses/compact']) {
-  const t = new CodexResponsesTransformer()
+  const t = new CodexResponsesTransformer(reasoningConfig)
   t.endPoint = endpoint
   server.transformerService.registerTransformer(`codex-responses-${endpoint.replace(/\//g, '-')}`, t)
 }
@@ -40,6 +62,11 @@ const codexModelList = { models: [] as unknown[] }
 server.app.get('/models', async (_req: unknown, reply: ReplyLike) => { void reply.send(codexModelList) })
 const openAiModelList = { object: 'list', data: providerModels.map((id) => ({ id, object: 'model' })) }
 server.app.get('/v1/models', async (_req: unknown, reply: ReplyLike) => { void reply.send(openAiModelList) })
+
+server.app.addHook('preValidation', async (req: { id?: string; method: string; body?: unknown }) => {
+  if (req.method === 'POST') trace('llm-proxy.in', 'raw_request', req.body, req.id)
+  normalizeAdaptiveThinkingRequest(req.body)
+})
 
 const codexProviderName = typeof providers[0]?.name === 'string' ? (providers[0].name as string) : undefined
 if (codexProviderName) {

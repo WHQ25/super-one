@@ -51,6 +51,10 @@ export function CodexModelSelector({ onCloseAutoFocus }: Props) {
         selectedModelId={selectedCodexModel}
         selectedModelLabel={currentCodexModelName}
         onSelectModel={setSelectedCodexModel}
+        shouldCloseAfterModelSelect={(id) => {
+          const model = codexModels.find((entry) => entry.id === id)
+          return (model?.supportedReasoningEfforts?.length ?? 0) <= 1
+        }}
         effortOptions={effortOptions}
         selectedEffort={currentCodexReasoningEffort}
         onSelectEffort={(value) => setSelectedCodexReasoningEffort(value as CodexReasoningEffort)}

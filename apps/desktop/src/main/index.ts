@@ -97,6 +97,7 @@ import { getDb, closeDb, getCachedHarnessResources, getHarnessResourceCacheAgeMs
 import { backfillFromHistory, getBackfillStatus, queryCounts, queryUsage } from './usage-stats-service'
 import { discoverUserSkills, discoverUserCommands, discoverUserAgents, discoverCodexUserPrompts } from './agent/discover-resources'
 import { CodexExperimentService } from './codex/codex-experiment-service'
+import { getCodexProviderOverrideFor } from './codex/app-server-connection'
 import { CodexPluginsService } from './codex/codex-plugins-service'
 import { CodexHooksService } from './codex/codex-hooks-service'
 import { CodexGoalService } from './codex/codex-goal-service'
@@ -195,14 +196,14 @@ function resolveBaseProviderConfig(provider: SessionProvider, apiProviderId: str
     for (const [bucket, slot] of Object.entries(modelMapping)) {
       if (slot) prefixed[bucket] = { ...slot, id: `${name},${slot.id}` }
     }
-    const transformersRaw = (resolved.extraEnv ?? {})[PROXY_TRANSFORMERS_ENV] ?? 'openai'
+    const transformersRaw = (resolved.extraEnv ?? {})[PROXY_TRANSFORMERS_ENV] ?? 'openai,reasoning'
     const apiBase = resolved.baseUrl.replace(/\/$/, '')
     const proxy: ProxyUpstream = {
       name,
       api_base_url: `${apiBase}/chat/completions`,
       api_key: resolved.apiKey,
       models: Object.values(modelMapping).map((s) => s?.id).filter(Boolean) as string[],
-      transformers: transformersRaw.split(',').map((t) => t.trim()).filter(Boolean),
+      transformerUse: transformersRaw.split(',').map((t) => t.trim()).filter(Boolean),
     }
     const env: Record<string, string> = {}
     for (const [key, value] of Object.entries(resolved.extraEnv ?? {})) {
@@ -993,7 +994,7 @@ function registerIpcHandlers(): void {
     const resolved = resolveChatService('codex', apiProviderId ?? null)
     log.debug('[CODEX_LIST_MODELS] raw=%d protocol=%s models=%d hasMapping=%s apiProvider=%s',
       models.length, resolved?.protocol ?? 'null', resolved?.models?.length ?? 0, String(Boolean(resolved?.modelMapping)), apiProviderId ?? 'null')
-    if (resolved && resolved.protocol === 'openai-chat') {
+    if (resolved && resolved.protocol === 'openai-chat' && !getCodexProviderOverrideFor(apiProviderId ?? null)) {
       const catalogById = new Map<string, string>()
       for (const m of (resolved.models ?? [])) if (m.name) catalogById.set(m.id, m.name)
       const mapped = new Map<string, ModelOption>()

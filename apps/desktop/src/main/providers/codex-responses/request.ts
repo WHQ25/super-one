@@ -10,9 +10,9 @@ import {
   extractReasoningSummaryText,
   get,
   isOpenAiOSeries,
-  supportsReasoningEffort,
   type JsonValue,
 } from './helpers'
+import { applyCodexChatReasoning, type CodexChatReasoningConfig } from './reasoning'
 
 type Message = Record<string, unknown>
 
@@ -33,7 +33,10 @@ const EXTRA_CHAT_PASSTHROUGH_FIELDS = [
   'user',
 ] as const
 
-export function responsesToChatCompletions(body: unknown): Record<string, unknown> {
+export function responsesToChatCompletions(
+  body: unknown,
+  reasoningConfig?: CodexChatReasoningConfig,
+): Record<string, unknown> {
   const result: Record<string, unknown> = {}
   const src = asObject(body) ?? {}
 
@@ -57,8 +60,7 @@ export function responsesToChatCompletions(body: unknown): Record<string, unknow
     if (src[key] !== undefined) result[key] = src[key]
   }
 
-  const effort = asString(get(src.reasoning, 'effort'))
-  if (effort && supportsReasoningEffort(model)) result.reasoning_effort = effort
+  applyCodexChatReasoning(result, src, reasoningConfig)
 
   const tools = asArray(src.tools)
   if (tools) {

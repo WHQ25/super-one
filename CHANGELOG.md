@@ -4,6 +4,23 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.47.0-alpha] - 2026-07-25
+
+### Added
+
+- Add OpenCode as an experimental session harness with native model, agent, permission, command, and session lifecycle support
+- Add OpenCode MCP integration with OAuth authentication
+- Add OpenCode session rewind, fork, compaction, sharing, shell commands, initialization, and title synchronization
+- Automatically continue Codex turns until the active goal completes
+
+### Fixed
+
+- Reload stale Codex history when switching sessions
+- Preserve manual scroll position during streamed responses
+- Preserve the default Codex permission preset
+- Require an explicit base branch when starting a Codex branch review
+- Disable the unavailable terminal capability for Grok Build ACP sessions
+
 ## [0.46.6-alpha] - 2026-07-24
 
 ### Added

@@ -29,6 +29,8 @@ Tags are created by GitHub at publish time, never pushed from local. A failing b
 
 ## Workflow
 
+**Sandbox note**: every `gh workflow run`, `gh run view`, `gh release ...`, and verification `curl` in this skill talks to hosts (`api.github.com`, `dl.super-one.dev`) that are outside the default Bash sandbox's network allowlist. Run these with `dangerouslyDisableSandbox: true` from the start — don't wait for a sandbox-denial error first. This applies to every network-touching command below (Steps 3, 4, 5, 6, 7, 8, and the Recovery Patterns).
+
 ### Step 1: Confirm version + CHANGELOG + relay-deploy decision (single turn)
 
 This is the **only** human checkpoint in the pipeline. Do all of the following **in one response** and ask for a single combined confirmation:
@@ -42,11 +44,11 @@ This is the **only** human checkpoint in the pipeline. Do all of the following *
    - Drop noise (`chore(release): bump version`, purely internal refactors with no user impact).
    - Group by type — **Added** (feat), **Fixed** (fix), **Changed** (refactor affecting user behavior, dep upgrades with user impact), **Performance** (perf), **Tests** (test), **CI** (ci). Omit empty groups.
    - Concise, human-readable bullets. Combine related commits. No unverified claims ("may fix X") — only statements you can defend.
-7. Show the user **all** of this in one message:
+7. Show the user **all** of this in one plain markdown message — no tool call, just text in your reply:
    - `Current: X.Y.Z-alpha → New: A.B.C-alpha`
    - `Relay deploy: yes (apps/relay/package.json: <previous-relay-version> → <new-version>)` **or** `Relay deploy: no (no apps/relay/ diff since v<previous-version>)`
    - The full drafted CHANGELOG entry (as the literal block that will be inserted)
-8. Ask for one combined confirmation / edits.
+8. Ask for one combined confirmation / edits, as a plain-language question at the end of the same message (e.g. "Proceed with this?"). **Do NOT use the `AskUserQuestion` tool for this step** — the CHANGELOG draft is multi-line formatted content that AskUserQuestion's option-card UI isn't built to display; it's for discrete choices, not reviewing a text block. A normal markdown reply lets the user read and edit it inline.
 
 After this confirmation, **everything below runs without further prompting** unless an actual error occurs. Do not ask the user to confirm before push, before build, before promote, or before publish.
 

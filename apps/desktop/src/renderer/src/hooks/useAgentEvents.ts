@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { useChatStore } from '@/stores/chat'
+import { _loadDefaultSessionPrefs, useChatStore } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 import { useMiniAppStore } from '@/stores/miniapp'
 import type { AgentEvent } from '@superone/shared/agent-types'
@@ -21,7 +21,7 @@ export function useAgentEvents(): void {
       }
       handleAgentEvent(event as AgentEvent)
     })
-    void useChatStore.getState().syncLiveSnapshots().finally(() => {
+    void _loadDefaultSessionPrefs().then(() => useChatStore.getState().syncLiveSnapshots()).finally(() => {
       hydrated = true
       if (disposed) return
       for (const ev of buffer) {

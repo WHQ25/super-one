@@ -99,7 +99,7 @@ export function CodexPreferencesPage() {
       setDefaultModel(result.agentPreference.codex.defaultModel)
       setDefaultReasoningEffort(result.agentPreference.codex.defaultReasoningEffort)
       setDefaultPermissionPreset(result.agentPreference.codex.defaultPermissionPreset)
-      invalidateDefaultCodexPreferencesCache()
+      await invalidateDefaultCodexPreferencesCache()
       toast.success(successMessage)
       setSaving(false)
     } catch (e) {

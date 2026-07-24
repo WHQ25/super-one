@@ -1,6 +1,7 @@
 import type { AgentPrewarmHint } from '@superone/shared/agent-types'
 import { createDefaultPerSessionState, createDefaultProjectState } from '../defaults'
 import type { ChatStore, PerSessionState, ProjectState, SessionWriteTarget } from '../types'
+import { applyCachedCodexPermissionPreset } from './prefs-cache'
 import { resolveProvider } from './provider-routing'
 
 export function getProject(state: ChatStore, projectPath?: string | null): ProjectState {
@@ -11,8 +12,8 @@ export function getProject(state: ChatStore, projectPath?: string | null): Proje
 
 export function getActivePerSession(state: ChatStore, projectPath?: string | null): PerSessionState {
   const proj = getProject(state, projectPath)
-  if (!proj._activeSessionId) return createDefaultPerSessionState()
-  return proj._sessions[proj._activeSessionId] ?? createDefaultPerSessionState()
+  if (!proj._activeSessionId) return applyCachedCodexPermissionPreset(createDefaultPerSessionState())
+  return proj._sessions[proj._activeSessionId] ?? applyCachedCodexPermissionPreset(createDefaultPerSessionState())
 }
 
 export function mergeProjectAndSessionDirs(project: ProjectState, session: PerSessionState): string[] {
@@ -140,7 +141,7 @@ export function updatePerSession(
   updater: (s: PerSessionState) => Partial<PerSessionState>,
 ): Partial<ChatStore> {
   const project = state.projectSessions[projectPath] ?? createDefaultProjectState()
-  const session = project._sessions[sessionId] ?? createDefaultPerSessionState()
+  const session = project._sessions[sessionId] ?? applyCachedCodexPermissionPreset(createDefaultPerSessionState())
   const updates = updater(session)
   return {
     projectSessions: {
@@ -175,7 +176,7 @@ export function resolveActiveSessionId(project: ProjectState): string | null {
 export function getScopedPerSession(state: ChatStore, target?: SessionWriteTarget): PerSessionState {
   if (!target) return getActivePerSession(state)
   const project = state.projectSessions[target.projectPath]
-  return project?._sessions[target.sessionId] ?? createDefaultPerSessionState()
+  return project?._sessions[target.sessionId] ?? applyCachedCodexPermissionPreset(createDefaultPerSessionState())
 }
 
 export function commitPerSession(

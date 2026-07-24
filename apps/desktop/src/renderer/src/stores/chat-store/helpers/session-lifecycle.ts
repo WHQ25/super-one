@@ -19,7 +19,7 @@ import {
   _getSessionWorktreePath,
   _hydrateSessionState,
 } from './persistence'
-import { defaultPrefsCache, sandboxModeToInfo } from './prefs-cache'
+import { applyCachedCodexPermissionPreset, defaultPrefsCache, sandboxModeToInfo } from './prefs-cache'
 import {
   getActivePerSession,
   getProject,
@@ -56,7 +56,7 @@ export async function focusProjectImpl(
           set((s) => {
             const proj = s.projectSessions[currentProject]
             if (!proj || proj._sessions[outgoingSid]) return {}
-            const stub = createDefaultPerSessionState()
+            const stub = applyCachedCodexPermissionPreset(createDefaultPerSessionState())
             stub.cwd = currentProject
             return {
               projectSessions: {
@@ -137,14 +137,13 @@ export function ensureSessionImpl(set: ChatStoreSet, projectPath: string): void 
     if (defaultPrefsCache.sandboxMode) project.sandboxInfo = sandboxModeToInfo(defaultPrefsCache.sandboxMode)
     const draftId = createSessionId()
     project._activeSessionId = draftId
-    const newSession = createDefaultPerSessionState()
+    const newSession = applyCachedCodexPermissionPreset(createDefaultPerSessionState())
     newSession.cwd = projectPath
     if (defaultPrefsCache.permissionMode) newSession.permissionMode = defaultPrefsCache.permissionMode
     applyDefaultModel(newSession, s.harnessResources.claude?.models ?? [])
     const codexSelection = resolveDefaultCodexSelection(project.codexModels)
     newSession.selectedCodexModel = codexSelection.modelId
     newSession.selectedCodexReasoningEffort = codexSelection.reasoningEffort
-    newSession.selectedCodexPermissionPreset = defaultPrefsCache.codexPermissionPreset
     project._sessions = { [draftId]: newSession }
     return {
       projectSessions: {
@@ -238,7 +237,7 @@ export function resetSessionForWorktreeSwitchImpl(
   const draftId = nextProvider === 'codex' ? _createLocalCodexSessionId() : createSessionId()
   set((s) => {
     const proj = getProject(s, projectPath)
-    const newSession = createDefaultPerSessionState()
+    const newSession = applyCachedCodexPermissionPreset(createDefaultPerSessionState())
     newSession.cwd = opts?.wtPath ?? projectPath
     newSession.preferredProvider = nextProvider
     newSession.sessionProvider = nextProvider
@@ -249,7 +248,6 @@ export function resetSessionForWorktreeSwitchImpl(
     const codexSelection = resolveDefaultCodexSelection(proj.codexModels)
     newSession.selectedCodexModel = codexSelection.modelId
     newSession.selectedCodexReasoningEffort = codexSelection.reasoningEffort
-    newSession.selectedCodexPermissionPreset = defaultPrefsCache.codexPermissionPreset
     return {
       projectSessions: {
         ...s.projectSessions,
@@ -300,7 +298,7 @@ export async function resetSessionImpl(set: ChatStoreSet, get: () => ChatStore):
 
   set((s) => {
     const proj = getProject(s, activeProject)
-    const newSession = createDefaultPerSessionState()
+    const newSession = applyCachedCodexPermissionPreset(createDefaultPerSessionState())
     newSession.cwd = activeProject
     newSession.preferredProvider = nextProvider
     newSession.sessionProvider = nextProvider
@@ -308,7 +306,6 @@ export async function resetSessionImpl(set: ChatStoreSet, get: () => ChatStore):
     const codexSelection = resolveDefaultCodexSelection(proj.codexModels)
     newSession.selectedCodexModel = codexSelection.modelId
     newSession.selectedCodexReasoningEffort = codexSelection.reasoningEffort
-    newSession.selectedCodexPermissionPreset = defaultPrefsCache.codexPermissionPreset
     return {
       projectSessions: {
         ...s.projectSessions,

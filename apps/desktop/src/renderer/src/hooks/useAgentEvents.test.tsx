@@ -8,6 +8,7 @@ const handleAgentEvent = vi.fn()
 const syncLiveSnapshots = vi.fn<() => Promise<void>>()
 
 vi.mock('@/stores/chat', () => ({
+  _loadDefaultSessionPrefs: vi.fn().mockResolvedValue(undefined),
   useChatStore: Object.assign(
     (selector: (s: unknown) => unknown) => selector({ handleAgentEvent }),
     {
@@ -47,6 +48,7 @@ describe('useAgentEvents', () => {
     syncLiveSnapshots.mockImplementation(() => new Promise<void>((r) => { resolveSync = r }))
 
     renderHook(() => useAgentEvents())
+    await act(async () => { await Promise.resolve() })
 
     const subscriber = onAgentEventSubscribers[onAgentEventSubscribers.length - 1]
     expect(subscriber).toBeTruthy()

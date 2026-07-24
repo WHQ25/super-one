@@ -131,7 +131,7 @@ vi.stubGlobal('window', {
 })
 vi.stubGlobal('localStorage', mockLocalStorage)
 
-const { useChatStore, createSessionId, createDefaultPerSessionState, createDefaultProjectState, invalidateDefaultPermissionModeCache, invalidateDefaultCodexPreferencesCache, invalidateDefaultClaudePreferencesCache, getDefaultEffortForModel, cancelPrewarm } = await import('./chat')
+const { useChatStore, createSessionId, createDefaultPerSessionState, createDefaultProjectState, invalidateDefaultPermissionModeCache, invalidateDefaultCodexPreferencesCache, invalidateDefaultClaudePreferencesCache, defaultPrefsCache, getDefaultEffortForModel, cancelPrewarm } = await import('./chat')
 const createDraftSessionId = createSessionId
 const isDraftSession = (id: string | null): boolean => !!id
 
@@ -2012,6 +2012,23 @@ describe('switchSession Case B (from DB)', () => {
     const after = useChatStore.getState().projectSessions['/test']
     expect(after._sessions['pref-session'].permissionMode).toBe('acceptEdits')
     expect(mockWindowApp.resumeSession).toHaveBeenCalledWith('/test', 'pref-session', '/test')
+  })
+
+  it('restores the default Codex permission preset when loading a session from DB', async () => {
+    setupProject('/test')
+    defaultPrefsCache.codexPermissionPreset = 'full-access'
+    mockWindowApp.loadSessionState.mockResolvedValue({
+      messages: [],
+      totalCostUsd: 0,
+      contextTokens: 0,
+      gitBranch: null,
+      provider: 'codex',
+    })
+
+    await useChatStore.getState().switchSession('codex-pref-session')
+
+    const session = useChatStore.getState().projectSessions['/test']._sessions['codex-pref-session']
+    expect(session.selectedCodexPermissionPreset).toBe('full-access')
   })
 
   it('passes permissionMode to resumeSession in Case B', async () => {

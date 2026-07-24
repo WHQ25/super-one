@@ -7,6 +7,7 @@ import type {
   SandboxMode,
 } from '@superone/shared/agent-types'
 import { useAppStore } from '../../app'
+import type { PerSessionState } from '../types'
 
 interface DefaultPrefsCache {
   permissionMode: PermissionMode | null
@@ -23,6 +24,8 @@ export const defaultPrefsCache: DefaultPrefsCache = {
   codexSelection: null,
   codexPermissionPreset: 'default',
 }
+
+let defaultPrefsLoadGeneration = 0
 
 export function toCodexReasoningEffort(value: unknown): CodexReasoningEffort | undefined {
   switch (value) {
@@ -62,8 +65,10 @@ export function resolveDefaultSandboxMode(stored: SandboxMode | null): SandboxMo
 }
 
 export async function _loadDefaultSessionPrefs(): Promise<void> {
+  const generation = ++defaultPrefsLoadGeneration
   try {
     const appSettings = await window.app.getAppSettings()
+    if (generation !== defaultPrefsLoadGeneration) return
     const claude = appSettings.agentPreference?.claude
     defaultPrefsCache.permissionMode = (claude?.defaultPermissionMode as PermissionMode) || 'default'
     defaultPrefsCache.sandboxMode = resolveDefaultSandboxMode((claude?.defaultSandboxMode as SandboxMode) || null)
@@ -77,12 +82,18 @@ export async function _loadDefaultSessionPrefs(): Promise<void> {
     }
     defaultPrefsCache.codexPermissionPreset = toCodexPermissionPreset(appSettings.agentPreference?.codex?.defaultPermissionPreset)
   } catch {
+    if (generation !== defaultPrefsLoadGeneration) return
     defaultPrefsCache.permissionMode = 'default'
     defaultPrefsCache.sandboxMode = null
     defaultPrefsCache.claudeSelection = { modelId: '', effort: undefined }
     defaultPrefsCache.codexSelection = { modelId: '', reasoningEffort: undefined }
     defaultPrefsCache.codexPermissionPreset = 'default'
   }
+}
+
+export function applyCachedCodexPermissionPreset(session: PerSessionState): PerSessionState {
+  session.selectedCodexPermissionPreset = defaultPrefsCache.codexPermissionPreset
+  return session
 }
 
 export async function _getDefaultPermissionMode(): Promise<PermissionMode> {
@@ -95,6 +106,7 @@ export function sandboxModeToInfo(mode: SandboxMode): SandboxInfo {
 }
 
 export function _clearDefaultPrefsCache(): void {
+  defaultPrefsLoadGeneration += 1
   defaultPrefsCache.permissionMode = null
   defaultPrefsCache.sandboxMode = null
   defaultPrefsCache.claudeSelection = null

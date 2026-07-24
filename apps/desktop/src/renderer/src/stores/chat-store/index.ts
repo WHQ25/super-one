@@ -224,6 +224,7 @@ export {
   _clearDefaultPrefsCache,
   _getDefaultPermissionMode,
   _loadDefaultSessionPrefs,
+  applyCachedCodexPermissionPreset,
   defaultPrefsCache,
   sandboxModeToInfo,
 } from './helpers/prefs-cache'
@@ -232,23 +233,24 @@ import {
   _clearDefaultPrefsCache,
   _getDefaultPermissionMode,
   _loadDefaultSessionPrefs,
+  applyCachedCodexPermissionPreset,
   defaultPrefsCache,
   sandboxModeToInfo,
 } from './helpers/prefs-cache'
 
-export function invalidateDefaultPermissionModeCache(): void {
+export function invalidateDefaultPermissionModeCache(): Promise<void> {
   _clearDefaultPrefsCache()
-  _loadDefaultSessionPrefs()
+  return _loadDefaultSessionPrefs()
 }
 
-export function invalidateDefaultClaudePreferencesCache(): void {
+export function invalidateDefaultClaudePreferencesCache(): Promise<void> {
   _clearDefaultPrefsCache()
-  void _loadDefaultSessionPrefs().then(() => _reapplyAgentDefaultsToSessions('claude'))
+  return _loadDefaultSessionPrefs().then(() => _reapplyAgentDefaultsToSessions('claude'))
 }
 
-export function invalidateDefaultCodexPreferencesCache(): void {
+export function invalidateDefaultCodexPreferencesCache(): Promise<void> {
   _clearDefaultPrefsCache()
-  void _loadDefaultSessionPrefs().then(() => _reapplyAgentDefaultsToSessions('codex'))
+  return _loadDefaultSessionPrefs().then(() => _reapplyAgentDefaultsToSessions('codex'))
 }
 
 export {
@@ -721,7 +723,7 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
 
     const defaultPermissionMode = await _getDefaultPermissionMode()
     const restoredSession: PerSessionState = {
-      ...createDefaultPerSessionState(),
+      ...applyCachedCodexPermissionPreset(createDefaultPerSessionState()),
       cwd: _getSessionCwd(activeProject, { _worktreePath: savedWorktreePath ?? null, _worktreeRemoved: false }),
       messages: savedMessages,
       totalCostUsd: savedCost,
@@ -801,7 +803,7 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
             ...s.projectSessions,
             [projectPath]: {
               ...proj,
-              _sessions: { ...proj._sessions, [sessionId]: { ...createDefaultPerSessionState(), _historyHydrated: false } },
+              _sessions: { ...proj._sessions, [sessionId]: { ...applyCachedCodexPermissionPreset(createDefaultPerSessionState()), _historyHydrated: false } },
             },
           },
         }

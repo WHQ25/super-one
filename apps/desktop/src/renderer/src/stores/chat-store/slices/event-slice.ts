@@ -7,6 +7,7 @@ import { accumulateCodexFooterTokens, getCodexUsageStepTokens } from '../helpers
 import { mergeMessagesByMaxSeq } from '../helpers/event-helpers'
 import { inferProviderFromHarnessId } from '../helpers/provider-routing'
 import { createDefaultPerSessionState, createDefaultProjectState, getDefaultEffortForModel } from '../defaults'
+import { applyCachedCodexPermissionPreset } from '../helpers/prefs-cache'
 import {
   _computeHasPendingInteraction,
   _ensureSessionHydrated,
@@ -56,7 +57,7 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
         const project = s.projectSessions[projectPath] ?? createDefaultProjectState()
         const existingSession = project._sessions[sessionId]
         const baseSession = existingSession ?? {
-          ...createDefaultPerSessionState(),
+          ...applyCachedCodexPermissionPreset(createDefaultPerSessionState()),
           _historyHydrated: !event.isSubscribe,
         }
         const nextSession = remoteProvider && !baseSession.sessionProvider
@@ -161,7 +162,7 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
           _sessions: {
             ...project._sessions,
             [eventSessionId]: {
-              ...createDefaultPerSessionState(),
+              ...applyCachedCodexPermissionPreset(createDefaultPerSessionState()),
               _historyHydrated: false,
             },
           },
@@ -588,7 +589,7 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
       const nextProjects = { ...s.projectSessions }
       for (const entry of entries) {
         const prevProject = nextProjects[entry.projectPath] ?? createDefaultProjectState()
-        const prevSession = prevProject._sessions[entry.sid] ?? createDefaultPerSessionState()
+        const prevSession = prevProject._sessions[entry.sid] ?? applyCachedCodexPermissionPreset(createDefaultPerSessionState())
         const mergedMessages = mergeMessagesByMaxSeq(entry.snapshot.messages as ChatMessage[], prevSession.messages)
         const provider: ChatProvider = inferProviderFromHarnessId(entry.snapshot.harnessId) ?? 'claude'
         const inferredStatus: AgentStatus = entry.isStreaming ? 'streaming' : prevSession.status === 'error' ? 'error' : 'idle'

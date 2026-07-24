@@ -365,7 +365,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     )
     if (startupData.sandboxCapability) {
       const { invalidateDefaultPermissionModeCache } = await import('./chat')
-      invalidateDefaultPermissionModeCache()
+      await invalidateDefaultPermissionModeCache()
     }
     const { useChatStore } = await import('./chat')
 

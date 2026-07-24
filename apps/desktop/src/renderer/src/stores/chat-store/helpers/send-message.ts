@@ -18,6 +18,7 @@ import {
 } from './codex-helpers'
 import { _ensureClaudeSessionReadyForSend, resetLock, type ChatStoreSet } from './lifecycle'
 import { _createLocalCodexSessionId, _getEffectiveSessionId } from './persistence'
+import { applyCachedCodexPermissionPreset } from './prefs-cache'
 import {
   getActivePerSession,
   getProject,
@@ -212,7 +213,7 @@ export async function sendMessageImpl(
         nextSessions[localSid] = { ...currentSess, sessionProvider: 'codex', preferredProvider: 'codex' }
       } else {
         nextSessions[localSid] = {
-          ...createDefaultPerSessionState(),
+          ...applyCachedCodexPermissionPreset(createDefaultPerSessionState()),
           cwd: currentSess?.cwd ?? '',
           sessionProvider: 'codex',
           preferredProvider: 'codex',

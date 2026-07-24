@@ -54,7 +54,7 @@ vi.stubGlobal('window', {
 })
 vi.stubGlobal('localStorage', mockLocalStorage)
 
-const { useChatStore, mergeMessagesByMaxSeq } = await import('./chat')
+const { useChatStore, mergeMessagesByMaxSeq, defaultPrefsCache } = await import('./chat')
 
 const TEST_EPOCH = 1
 
@@ -88,6 +88,7 @@ function resetStore() {
 beforeEach(() => {
   mockGetLiveSnapshots.mockReset()
   resetStore()
+  defaultPrefsCache.codexPermissionPreset = 'default'
 })
 
 describe('content_delta seq deduplication', () => {
@@ -234,6 +235,18 @@ function makeSnapshotEntry(overrides: Partial<{
 }
 
 describe('syncLiveSnapshots', () => {
+  it('applies the default Codex permission preset when hydrating an unknown live session', async () => {
+    defaultPrefsCache.codexPermissionPreset = 'full-access'
+    mockGetLiveSnapshots.mockResolvedValueOnce([
+      makeSnapshotEntry({ harnessId: 'codex', isStreaming: false, currentMessageId: null }),
+    ])
+
+    await useChatStore.getState().syncLiveSnapshots()
+
+    const session = useChatStore.getState().projectSessions['/p']._sessions['sid-1']
+    expect(session.selectedCodexPermissionPreset).toBe('full-access')
+  })
+
   it('hydrates store from live snapshots and replays pending interactions', async () => {
     const snapshotMsg = makeMessage('m1', 'streamed so far', 42)
     mockGetLiveSnapshots.mockResolvedValueOnce([

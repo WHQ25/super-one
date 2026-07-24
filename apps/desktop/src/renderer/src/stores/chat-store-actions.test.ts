@@ -713,12 +713,15 @@ describe('startCodexReview', () => {
     expect(activeProjectState().showReviewPanel).toBe(false)
   })
 
-  it("baseBranch target translates to '/review branch'", async () => {
+  it("baseBranch target includes the selected branch", async () => {
     setupProject()
     patchSession({ sessionProvider: 'codex' })
-    useChatStore.getState().startCodexReview({ type: 'baseBranch' })
+    useChatStore.getState().startCodexReview({ type: 'baseBranch', branch: 'main' })
     await new Promise((r) => setTimeout(r, 0))
-    expect(mockWindowApp.codexReview).toHaveBeenCalled()
+    expect(mockWindowApp.codexReview.mock.calls[0]?.[2]).toEqual({
+      type: 'baseBranch',
+      branch: 'main',
+    })
   })
 
   it("commit target translates to '/review commit <sha>'", async () => {

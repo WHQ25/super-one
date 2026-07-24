@@ -211,6 +211,17 @@ describe('sendMessageImpl: intercepted commands', () => {
 
     expect(mockSendMessage).not.toHaveBeenCalled()
   })
+
+  it('opens the branch review picker without sending an invalid review request', async () => {
+    seedProject('/proj', 'sid-1', { sessionProvider: 'codex', preferredProvider: 'codex' })
+
+    await useChatStore.getState().sendMessage('/review branch')
+
+    const project = useChatStore.getState().projectSessions['/proj']
+    expect(project.showReviewPanel).toBe(true)
+    expect(project.reviewPanelInitialMode).toBe('branch')
+    expect(mockRunCodexCommand).not.toHaveBeenCalled()
+  })
 })
 
 describe('sendMessageImpl: IPC dispatch + rollback', () => {

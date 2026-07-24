@@ -134,6 +134,7 @@ export function createDefaultProjectState(): ProjectState {
     projectLocalDirs: [],
     showDirManager: false,
     showReviewPanel: false,
+    reviewPanelInitialMode: 'uncommitted',
   }
 }
 

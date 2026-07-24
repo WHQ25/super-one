@@ -22,6 +22,7 @@ export type CodexCommand =
   | { kind: 'auth-set'; mode: CodexAuthMode; apiKey?: string }
   | { kind: 'run'; prompt: string }
   | { kind: 'review'; target: CodexReviewTarget }
+  | { kind: 'review-picker' }
   | { kind: 'compact' }
   | { kind: 'plan' }
 
@@ -105,8 +106,12 @@ export function parseCodexCommand(input: string): CodexCommand | null {
 
   if (body === 'review' || body.startsWith('review ')) {
     const reviewBody = body.slice('review'.length).trim()
-    if (reviewBody.startsWith('branch')) return { kind: 'review', target: { type: 'baseBranch' } }
-    if (reviewBody.startsWith('commit')) {
+    if (reviewBody === 'branch' || reviewBody.startsWith('branch ')) {
+      const branch = reviewBody.slice('branch'.length).trim()
+      if (!branch) return { kind: 'review-picker' }
+      return { kind: 'review', target: { type: 'baseBranch', branch } }
+    }
+    if (reviewBody === 'commit' || reviewBody.startsWith('commit ')) {
       const sha = reviewBody.slice('commit'.length).trim()
       if (!sha) return { kind: 'help' }
       return { kind: 'review', target: { type: 'commit', sha } }
@@ -267,7 +272,7 @@ export function getCodexHelpText(): string {
     '/auth chatgpt — force ChatGPT login mode',
     '/auth apikey <KEY> — force API key mode',
     '/review — review uncommitted changes',
-    '/review branch — review diff against base branch',
+    '/review branch <name> — review diff against base branch',
     '/review commit <sha> — review a specific commit',
     '/compact — compact thread context',
     '/plan — enter plan mode',

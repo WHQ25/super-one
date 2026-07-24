@@ -206,6 +206,7 @@ export interface ProjectState {
   projectLocalDirs: string[]
   showDirManager: boolean
   showReviewPanel: boolean
+  reviewPanelInitialMode?: 'uncommitted' | 'branch' | 'commit'
 }
 
 export type ActiveSessionView = PerSessionState & ProjectState
@@ -373,7 +374,7 @@ export interface ChatStore {
   addDir: (path: string, scope: 'session' | 'project', target?: SessionWriteTarget) => void
   removeDir: (path: string, scope: 'session' | 'project', target?: SessionWriteTarget) => void
   setShowDirManager: (show: boolean) => void
-  setShowReviewPanel: (show: boolean) => void
+  setShowReviewPanel: (show: boolean, initialMode?: 'uncommitted' | 'branch' | 'commit') => void
   startCodexReview: (target: CodexReviewTarget) => void
 }
 

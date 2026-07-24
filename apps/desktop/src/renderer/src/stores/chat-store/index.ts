@@ -927,7 +927,7 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
     set((s) => updateProjectState(s, activeProject, () => ({ showReviewPanel: false })))
     let command: string
     if (target.type === 'uncommittedChanges') command = '/review'
-    else if (target.type === 'baseBranch') command = '/review branch'
+    else if (target.type === 'baseBranch') command = `/review branch ${target.branch}`
     else command = `/review commit ${target.sha}`
     get().sendMessage(command)
   },

@@ -1843,7 +1843,7 @@ export interface CodexRunResult {
 
 export type CodexReviewTarget =
   | { type: 'uncommittedChanges' }
-  | { type: 'baseBranch' }
+  | { type: 'baseBranch'; branch: string }
   | { type: 'commit'; sha: string; title?: string }
 
 export interface CodexReviewRequest {

@@ -35,7 +35,7 @@ export interface CoreSlice {
   removeUserSelectionAt: (index: number, target?: SessionWriteTarget) => void
   clearUserSelections: (target?: SessionWriteTarget) => void
   setShowDirManager: (show: boolean) => void
-  setShowReviewPanel: (show: boolean) => void
+  setShowReviewPanel: (show: boolean, initialMode?: 'uncommitted' | 'branch' | 'commit') => void
 }
 
 export const createCoreSlice: StateCreator<ChatStore, [], [], CoreSlice> = (set, get) => ({
@@ -201,9 +201,12 @@ export const createCoreSlice: StateCreator<ChatStore, [], [], CoreSlice> = (set,
     set((s) => updateProjectState(s, activeProject, () => ({ showDirManager: show })))
   },
 
-  setShowReviewPanel: (show) => {
+  setShowReviewPanel: (show, initialMode = 'uncommitted') => {
     const { activeProject } = get()
     if (!activeProject) return
-    set((s) => updateProjectState(s, activeProject, () => ({ showReviewPanel: show })))
+    set((s) => updateProjectState(s, activeProject, () => ({
+      showReviewPanel: show,
+      ...(show ? { reviewPanelInitialMode: initialMode } : {}),
+    })))
   },
 })

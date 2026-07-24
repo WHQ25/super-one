@@ -240,11 +240,14 @@ export async function sendMessageImpl(
   // Utility codex commands → popup (no chat messages); errors fall through to in-chat assistant error message
   if (resolvedCodexCommand) {
     const utilityKind = resolvedCodexCommand.kind
-    if (utilityKind === 'help' || utilityKind === 'reset' || utilityKind === 'auth-status' || utilityKind === 'auth-set' || utilityKind === 'plan') {
+    if (utilityKind === 'help' || utilityKind === 'reset' || utilityKind === 'auth-status' || utilityKind === 'auth-set' || utilityKind === 'plan' || utilityKind === 'review-picker') {
       set((s) => updateActivePerSession(s, () => ({ _pendingSlashCommand: '' })))
       try {
         let popupContent: string
-        if (utilityKind === 'help') {
+        if (utilityKind === 'review-picker') {
+          get().setShowReviewPanel(true, 'branch')
+          return
+        } else if (utilityKind === 'help') {
           popupContent = getCodexHelpText()
         } else if (utilityKind === 'reset') {
           if (codexSessionId) await window.agent.resetSession(codexSessionId)

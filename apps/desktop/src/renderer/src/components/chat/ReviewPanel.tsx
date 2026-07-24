@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { cn } from '@superone/ui/lib/utils'
-import { useChatStore } from '@/stores/chat'
+import { useActiveSession, useChatStore } from '@/stores/chat'
 import { X, GitCommitHorizontal, GitBranch, FileDiff, Search, Loader2 } from 'lucide-react'
 import type { GitLogEntry, CodexReviewTarget } from '@superone/shared/agent-types'
 import { fuzzyMatch } from '@/lib/fuzzy-match'
@@ -30,21 +30,50 @@ export function ReviewPanel() {
   const setShowReviewPanel = useChatStore((s) => s.setShowReviewPanel)
   const startCodexReview = useChatStore((s) => s.startCodexReview)
   const activeProject = useChatStore((s) => s.activeProject)
+  const initialMode = useChatStore((s) => {
+    if (!s.activeProject) return 'uncommitted' as const
+    return s.projectSessions[s.activeProject]?.reviewPanelInitialMode ?? 'uncommitted'
+  })
+  const sessionCwd = useActiveSession((s) => s._worktreePath ?? s.cwd)
+  const reviewPath = sessionCwd || activeProject
 
-  const [mode, setMode] = useState<ReviewMode>('uncommitted')
+  const [mode, setMode] = useState<ReviewMode>(initialMode)
+  const [branches, setBranches] = useState<string[]>([])
   const [commits, setCommits] = useState<GitLogEntry[]>([])
   const [loading, setLoading] = useState(false)
   const [query, setQuery] = useState('')
+  const [selectedBranchIndex, setSelectedBranchIndex] = useState(0)
   const [selectedCommitIndex, setSelectedCommitIndex] = useState(0)
   const panelRef = useRef<HTMLDivElement>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
-  const commitListRef = useRef<HTMLDivElement>(null)
+  const resultListRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    if (mode !== 'commit' || !activeProject) return
+    if (mode !== 'branch' || !reviewPath) return
     let cancelled = false
     setLoading(true)
-    void window.app.getGitLog(activeProject).then((entries) => {
+    void Promise.all([
+      window.app.getGitBranches(reviewPath),
+      window.app.getGitInfo(reviewPath).catch(() => null),
+    ]).then(([entries, gitInfo]) => {
+      if (cancelled) return
+      setBranches(entries.filter((branch) => branch !== gitInfo?.branch))
+      setSelectedBranchIndex(0)
+      setLoading(false)
+    }).catch(() => {
+      if (cancelled) return
+      setBranches([])
+      setSelectedBranchIndex(0)
+      setLoading(false)
+    })
+    return () => { cancelled = true }
+  }, [mode, reviewPath])
+
+  useEffect(() => {
+    if (mode !== 'commit' || !reviewPath) return
+    let cancelled = false
+    setLoading(true)
+    void window.app.getGitLog(reviewPath).then((entries) => {
       if (cancelled) return
       setCommits(entries)
       setSelectedCommitIndex(0)
@@ -56,15 +85,28 @@ export function ReviewPanel() {
       setLoading(false)
     })
     return () => { cancelled = true }
-  }, [mode, activeProject])
+  }, [mode, reviewPath])
 
   useEffect(() => {
-    const target = mode === 'commit' ? searchInputRef : panelRef
+    const target = mode === 'branch' || mode === 'commit' ? searchInputRef : panelRef
     const id = setTimeout(() => target.current?.focus(), 50)
     return () => clearTimeout(id)
   }, [mode])
 
+  type ScoredBranch = { name: string; indices: number[]; score: number }
   type ScoredCommit = GitLogEntry & { msgIndices: number[]; shaIndices: number[] }
+
+  const filteredBranches: ScoredBranch[] = useMemo(() => {
+    const q = query.trim()
+    if (!q) return branches.map((name) => ({ name, indices: [], score: 0 }))
+    return branches
+      .map((name) => {
+        const result = fuzzyMatch(q, name)
+        return { name, indices: result.indices, score: result.score, match: result.match }
+      })
+      .filter((entry) => entry.match)
+      .sort((a, b) => b.score - a.score)
+  }, [branches, query])
 
   const filteredCommits: ScoredCommit[] = useMemo(() => {
     const q = query.trim()
@@ -81,8 +123,13 @@ export function ReviewPanel() {
   }, [commits, query])
 
   useEffect(() => {
+    setSelectedBranchIndex(0)
     setSelectedCommitIndex(0)
   }, [query])
+
+  useEffect(() => {
+    setQuery('')
+  }, [mode])
 
   const confirm = useCallback((target: CodexReviewTarget) => {
     startCodexReview(target)
@@ -96,24 +143,45 @@ export function ReviewPanel() {
       return
     }
 
-    if (mode !== 'commit') {
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
       const modes: ReviewMode[] = ['uncommitted', 'branch', 'commit']
       const idx = modes.indexOf(mode)
-      if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
+      const nextIndex = e.key === 'ArrowLeft' ? Math.max(0, idx - 1) : Math.min(modes.length - 1, idx + 1)
+      if (nextIndex !== idx) {
         e.preventDefault()
-        setMode(modes[Math.min(idx + 1, modes.length - 1)])
+        setMode(modes[nextIndex])
+      }
+      return
+    }
+
+    if (mode === 'uncommitted') {
+      if (e.key === 'Enter') {
+        e.preventDefault()
+        confirm({ type: 'uncommittedChanges' })
+      } else if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        setMode('branch')
+      }
+      return
+    }
+
+    if (mode === 'branch') {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        setSelectedBranchIndex((i) => filteredBranches.length > 0
+          ? Math.min(i + 1, filteredBranches.length - 1)
+          : 0)
         return
       }
-      if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
+      if (e.key === 'ArrowUp') {
         e.preventDefault()
-        if (idx > 0) setMode(modes[idx - 1])
+        setSelectedBranchIndex((i) => Math.max(0, i - 1))
         return
       }
       if (e.key === 'Enter') {
         e.preventDefault()
-        if (mode === 'uncommitted') confirm({ type: 'uncommittedChanges' })
-        else if (mode === 'branch') confirm({ type: 'baseBranch' })
-        return
+        const branch = filteredBranches[selectedBranchIndex]?.name
+        if (branch) confirm({ type: 'baseBranch', branch })
       }
       return
     }
@@ -140,12 +208,12 @@ export function ReviewPanel() {
       if (commit) confirm({ type: 'commit', sha: commit.sha, title: commit.message })
       return
     }
-  }, [mode, filteredCommits, selectedCommitIndex, confirm, setShowReviewPanel])
+  }, [mode, filteredBranches, filteredCommits, selectedBranchIndex, selectedCommitIndex, confirm, setShowReviewPanel])
 
   useEffect(() => {
-    const el = commitListRef.current?.querySelector('[data-selected="true"]')
+    const el = resultListRef.current?.querySelector('[data-selected="true"]')
     el?.scrollIntoView({ block: 'nearest' })
-  }, [selectedCommitIndex])
+  }, [selectedBranchIndex, selectedCommitIndex])
 
   const modeOptions: { key: ReviewMode; icon: typeof FileDiff; label: string }[] = [
     { key: 'uncommitted', icon: FileDiff, label: 'Uncommitted Changes' },
@@ -176,14 +244,8 @@ export function ReviewPanel() {
             key={key}
             onMouseDown={(e) => {
               e.preventDefault()
-              if (key === 'commit') {
-                setMode('commit')
-              } else {
-                const target: CodexReviewTarget = key === 'uncommitted'
-                  ? { type: 'uncommittedChanges' }
-                  : { type: 'baseBranch' }
-                confirm(target)
-              }
+              if (key === 'uncommitted') confirm({ type: 'uncommittedChanges' })
+              else setMode(key)
             }}
             className={cn(
               'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs transition-colors',
@@ -197,7 +259,7 @@ export function ReviewPanel() {
           </button>
         ))}
 
-        {mode === 'commit' && (
+        {(mode === 'branch' || mode === 'commit') && (
           <div className="mt-1.5 space-y-1">
             <div className="relative">
               <Search className="absolute left-2 top-1/2 size-3 -translate-y-1/2 text-muted-foreground" />
@@ -206,17 +268,40 @@ export function ReviewPanel() {
                 type="text"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search commits..."
+                placeholder={mode === 'branch' ? 'Search branches...' : 'Search commits...'}
                 className="w-full rounded-md border border-border bg-background py-1 pl-7 pr-2 text-xs text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-ring"
               />
             </div>
 
-            <div ref={commitListRef} className="max-h-40 overflow-y-auto rounded-md border border-border">
+            <div ref={resultListRef} className="max-h-40 overflow-y-auto rounded-md border border-border">
               {loading ? (
                 <div className="flex items-center justify-center gap-1.5 py-4 text-xs text-muted-foreground">
                   <Loader2 className="size-3 animate-spin" />
-                  <span>Loading commits...</span>
+                  <span>{mode === 'branch' ? 'Loading branches...' : 'Loading commits...'}</span>
                 </div>
+              ) : mode === 'branch' ? filteredBranches.length === 0 ? (
+                <div className="py-4 text-center text-xs text-muted-foreground/60">No other branches found</div>
+              ) : (
+                filteredBranches.map((branch, i) => (
+                  <button
+                    key={branch.name}
+                    data-selected={i === selectedBranchIndex}
+                    onMouseDown={(e) => {
+                      e.preventDefault()
+                      confirm({ type: 'baseBranch', branch: branch.name })
+                    }}
+                    onMouseEnter={() => setSelectedBranchIndex(i)}
+                    className={cn(
+                      'flex w-full items-center gap-2 px-2 py-1.5 text-left text-xs transition-colors',
+                      i === selectedBranchIndex ? 'bg-muted' : 'hover:bg-muted/50'
+                    )}
+                  >
+                    <GitBranch className="size-3.5 shrink-0 text-muted-foreground" />
+                    <span className="min-w-0 truncate font-mono text-foreground">
+                      <HighlightText text={branch.name} indices={branch.indices} />
+                    </span>
+                  </button>
+                ))
               ) : filteredCommits.length === 0 ? (
                 <div className="py-4 text-center text-xs text-muted-foreground/60">No commits found</div>
               ) : (

@@ -86,8 +86,15 @@ describe('parseCodexCommand', () => {
     expect(parseCodexCommand('/review')).toEqual({ kind: 'review', target: { type: 'uncommittedChanges' } })
   })
 
-  it('should parse /review branch', () => {
-    expect(parseCodexCommand('/review branch')).toEqual({ kind: 'review', target: { type: 'baseBranch' } })
+  it('should parse /review branch <name>', () => {
+    expect(parseCodexCommand('/review branch main')).toEqual({
+      kind: 'review',
+      target: { type: 'baseBranch', branch: 'main' },
+    })
+  })
+
+  it('should open the branch picker for /review branch without a branch name', () => {
+    expect(parseCodexCommand('/review branch')).toEqual({ kind: 'review-picker' })
   })
 
   it('should parse /review commit <sha>', () => {

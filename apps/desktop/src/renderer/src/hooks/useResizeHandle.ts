@@ -15,6 +15,7 @@ interface UseResizeHandleOptions {
   outerRef: RefObject<HTMLDivElement | null>
   innerRef: RefObject<HTMLDivElement | null>
   getLinkedPanel?: (newWidth: number, prevWidth: number) => LinkedPanel | null
+  onResize?: (width: number) => void
   onDragEnd?: () => void
 }
 
@@ -27,6 +28,7 @@ export function useResizeHandle({
   outerRef,
   innerRef,
   getLinkedPanel,
+  onResize,
   onDragEnd,
 }: UseResizeHandleOptions) {
   return useCallback((e: React.MouseEvent) => {
@@ -53,8 +55,7 @@ export function useResizeHandle({
       return Math.min(maxW, Math.max(minWidth, startW + sign * (clientX - startX)))
     }
 
-    const onMove = (ev: MouseEvent) => {
-      const w = calc(ev.clientX)
+    const applyWidth = (w: number) => {
       outer.style.width = `${w}px`
       inner.style.width = `${w}px`
       const linked = getLinkedPanel?.(w, prevW)
@@ -64,6 +65,11 @@ export function useResizeHandle({
         linked.inner.style.width = `${linked.width}px`
       }
       prevW = w
+      onResize?.(w)
+    }
+
+    const onMove = (ev: MouseEvent) => {
+      applyWidth(calc(ev.clientX))
     }
 
     const cleanup = () => {
@@ -78,12 +84,14 @@ export function useResizeHandle({
 
     const onUp = (ev: MouseEvent) => {
       const w = calc(ev.clientX)
+      applyWidth(w)
       cleanup()
       setWidth(w)
       onDragEnd?.()
     }
 
     const onBlur = () => {
+      applyWidth(prevW)
       cleanup()
       setWidth(prevW)
       onDragEnd?.()
@@ -92,5 +100,5 @@ export function useResizeHandle({
     document.addEventListener('mousemove', onMove)
     document.addEventListener('mouseup', onUp)
     window.addEventListener('blur', onBlur)
-  }, [getWidth, setWidth, minWidth, getMaxWidth, direction, outerRef, innerRef, getLinkedPanel, onDragEnd])
+  }, [getWidth, setWidth, minWidth, getMaxWidth, direction, outerRef, innerRef, getLinkedPanel, onResize, onDragEnd])
 }

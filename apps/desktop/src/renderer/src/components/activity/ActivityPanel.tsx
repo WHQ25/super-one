@@ -87,8 +87,24 @@ export function ActivityPanel({ getMaxWidth, hidden }: ActivityPanelProps) {
   const outerRef = useRef<HTMLDivElement>(null)
   const innerRef = useRef<HTMLDivElement>(null)
   const apiRef = useRef<DockviewApi | null>(null)
+  const resizeObserverRef = useRef<ResizeObserver | null>(null)
 
   const getWidth = useCallback(() => useActivityPanelStore.getState().panelWidth, [])
+  const layoutDockview = useCallback((width?: number, height?: number) => {
+    const inner = innerRef.current
+    if (inner) apiRef.current?.layout(width ?? inner.clientWidth, height ?? inner.clientHeight)
+  }, [])
+  const observeDockview = useCallback((api: DockviewApi) => {
+    const inner = innerRef.current
+    if (!inner) return
+    resizeObserverRef.current?.disconnect()
+    api.layout(inner.clientWidth, inner.clientHeight)
+    const observer = new ResizeObserver(([entry]) => {
+      api.layout(entry.contentRect.width, entry.contentRect.height)
+    })
+    observer.observe(inner)
+    resizeObserverRef.current = observer
+  }, [])
 
   const onResizeStart = useResizeHandle({
     getWidth,
@@ -98,10 +114,12 @@ export function ActivityPanel({ getMaxWidth, hidden }: ActivityPanelProps) {
     direction: side === 'right' ? 'rtl' : 'ltr',
     outerRef,
     innerRef,
+    onResize: layoutDockview,
   })
 
   const onReady = useCallback((event: DockviewReadyEvent) => {
     apiRef.current = event.api
+    observeDockview(event.api)
     setDockApi(event.api)
 
     const syncHasPanels = () => useActivityPanelStore.getState().setHasPanels(event.api.panels.length > 0)
@@ -166,13 +184,15 @@ export function ActivityPanel({ getMaxWidth, hidden }: ActivityPanelProps) {
     const d4 = event.api.onDidRemoveGroup(updateSingleGroupClass)
 
     return () => { dAdd.dispose(); d1.dispose(); d2.dispose(); d3.dispose(); d4.dispose() }
-  }, [])
+  }, [observeDockview])
 
   useEffect(() => {
     const vs = useActivityViewStateStore.getState()
     const sid = vs._currentSessionId
     if (sid) vs.restore(sid)
     return () => {
+      resizeObserverRef.current?.disconnect()
+      resizeObserverRef.current = null
       const cur = useActivityViewStateStore.getState()._currentSessionId
       if (cur) useActivityViewStateStore.getState().park(cur)
       setDockApi(null)
@@ -192,6 +212,7 @@ export function ActivityPanel({ getMaxWidth, hidden }: ActivityPanelProps) {
           <div className="min-h-0 flex-1">
             <DockviewReact
               className="dockview-theme-superone"
+              disableAutoResizing
               tabAnimation="smooth"
               onReady={onReady}
               components={activityPanelComponents}

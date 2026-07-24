@@ -8,8 +8,10 @@ vi.mock('@/stores/chat', () => ({
   useActiveSession: vi.fn((selector: (s: Record<string, unknown>) => unknown) =>
     selector(mockSessionState)
   ),
+  useSessionScope: vi.fn(() => mockSessionScope),
 }))
 
+let mockSessionScope: { projectPath: string; sessionId: string } | null = null
 let mockSessionState: Record<string, unknown> = {
   messages: [],
   _activeSessionId: 'session-1',
@@ -70,6 +72,7 @@ class MockResizeObserver {
 describe('useChatScroll', () => {
   beforeEach(() => {
     resizeSubscriptions = []
+    mockSessionScope = null
     vi.stubGlobal('ResizeObserver', MockResizeObserver)
     mockSessionState = {
       messages: [{ id: '1', role: 'assistant', content: [] }],
@@ -162,6 +165,24 @@ describe('useChatScroll', () => {
     state.scrollHeight = 800
     act(() => { fireResize() })
     expect(state.scrollTop).toBe(170)
+  })
+
+  it('keeps a slight wheel-up paused even when it remains inside the bottom band', () => {
+    const { el, state } = createMockViewport()
+    const ref = { current: el }
+    state.scrollTop = state.scrollHeight - state.clientHeight
+
+    renderHook(() => useChatScroll({ scrollViewportRef: ref }))
+
+    act(() => {
+      wheelUp(el, -10)
+      state.scrollTop -= 10
+      el.dispatchEvent(new Event('scroll'))
+    })
+
+    state.scrollHeight = 800
+    act(() => { fireResize() })
+    expect(state.scrollTop).toBe(190)
   })
 
   it('stops following on touch drag downward (content scrolling up)', () => {
@@ -308,6 +329,45 @@ describe('useChatScroll', () => {
     rerender()
     expect(state.scrollTop).toBe(scrolledPos)
     vi.useRealTimers()
+  })
+
+  it('preserves wheel-up intent while session-switch layout is still settling', () => {
+    const { el, state } = createMockViewport()
+    const ref = { current: el }
+    const { rerender } = renderHook(() => useChatScroll({ scrollViewportRef: ref }))
+
+    act(() => {
+      wheelUp(el)
+      state.scrollTop = 100
+      el.dispatchEvent(new Event('scroll'))
+    })
+
+    state.scrollHeight = 800
+    mockSessionState = {
+      ...mockSessionState,
+      messages: [{ id: '1', role: 'assistant', content: [{ type: 'text', text: 'updated' }] }],
+    }
+    rerender()
+
+    expect(state.scrollTop).toBe(100)
+  })
+
+  it('rebinds scrolling when a scoped pane changes sessions', () => {
+    mockSessionScope = { projectPath: '/project', sessionId: 'scoped-1' }
+    const first = createMockViewport()
+    const ref = { current: first.el }
+    const { rerender } = renderHook(() => useChatScroll({ scrollViewportRef: ref }))
+
+    const second = createMockViewport()
+    second.state.scrollTop = 0
+    ref.current = second.el
+    mockSessionScope = { projectPath: '/project', sessionId: 'scoped-2' }
+    rerender()
+
+    expect(second.state.scrollTop).toBe(200)
+    second.state.scrollHeight = 800
+    act(() => { fireResize(second.contentChild) })
+    expect(second.state.scrollTop).toBe(500)
   })
 
   it('resumes following when user scrolls back to the bottom', () => {

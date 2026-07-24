@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect, useLayoutEffect, useCallback } from 'react'
-import { useActiveSession } from '@/stores/chat'
+import { useActiveSession, useSessionScope } from '@/stores/chat'
 
 interface UseChatScrollOptions {
   scrollViewportRef: React.RefObject<HTMLDivElement | null>
@@ -14,20 +14,21 @@ interface UseChatScrollReturn {
 const RESUME_AT_BOTTOM_PX = 24
 
 export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseChatScrollReturn {
+  const scope = useSessionScope()
   const messages = useActiveSession((s) => s.messages)
-  const sessionId = useActiveSession((s) => s._activeSessionId)
+  const activeSessionId = useActiveSession((s) => s._activeSessionId)
+  const sessionId = scope?.sessionId ?? activeSessionId
+  const sessionKey = scope ? `${scope.projectPath}\0${scope.sessionId}` : activeSessionId
   const status = useActiveSession((s) => s.status)
   const pendingPlanApproval = useActiveSession((s) => s.pendingPlanApproval)
   const statusRef = useRef(status)
   statusRef.current = status
 
-  // Intent state machine. Follow is broken ONLY by user input events (wheel up,
-  // touch drag, key up, stopAutoScroll) — never by scroll events, which cannot
-  // distinguish user scrolls from programmatic pins or browser clamping.
-  // While following is false the hook performs no programmatic scrolls, so every
-  // scroll event in that window is user-driven and reaching the bottom band is an
-  // unambiguous resume signal.
+  // Explicit upward input pauses following. It resumes only when the user moves
+  // back toward the bottom, or a deliberate tick jump lands there.
   const followRef = useRef(true)
+  const pausedScrollTopRef = useRef(0)
+  const allowStationaryBottomResumeRef = useRef(false)
   const [showScrollButton, setShowScrollButton] = useState(false)
 
   const sessionSwitchRef = useRef(false)
@@ -36,6 +37,7 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
 
   useLayoutEffect(() => {
     followRef.current = true
+    allowStationaryBottomResumeRef.current = false
     sessionSwitchRef.current = true
     setShowScrollButton(false)
     clearTimeout(sessionSwitchTimerRef.current)
@@ -44,7 +46,7 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
       el.scrollTop = el.scrollHeight
       window.app.trace?.('scroll', 'session_switch', { sessionId, scrollHeight: el.scrollHeight, scrollTop: el.scrollTop, clientHeight: el.clientHeight, msgCount: messages.length })
     }
-  }, [sessionId, scrollViewportRef])
+  }, [sessionKey, scrollViewportRef])
 
   const prevPlanApprovalRef = useRef(pendingPlanApproval)
   useLayoutEffect(() => {
@@ -52,6 +54,7 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
     prevPlanApprovalRef.current = pendingPlanApproval
     if (wasPending && !pendingPlanApproval) {
       followRef.current = true
+      allowStationaryBottomResumeRef.current = false
       sessionSwitchRef.current = true
       setShowScrollButton(false)
       clearTimeout(sessionSwitchTimerRef.current)
@@ -61,33 +64,50 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
 
   const viewportMounted = !pendingPlanApproval && messages.length > 0
 
+  const pauseAutoScroll = useCallback((allowStationaryBottomResume: boolean) => {
+    const el = scrollViewportRef.current
+    if (el && el.scrollHeight <= el.clientHeight) return
+    followRef.current = false
+    pausedScrollTopRef.current = el?.scrollTop ?? 0
+    allowStationaryBottomResumeRef.current = allowStationaryBottomResume
+    sessionSwitchRef.current = false
+    clearTimeout(sessionSwitchTimerRef.current)
+    setShowScrollButton(true)
+  }, [scrollViewportRef])
+
+  const stopAutoScroll = useCallback(() => {
+    pauseAutoScroll(true)
+  }, [pauseAutoScroll])
+
   useEffect(() => {
     const el = scrollViewportRef.current
     if (!el) return
-    const breakFollow = (): void => {
-      if (el.scrollHeight > el.clientHeight) followRef.current = false
-    }
     let touchY = 0
     const handleWheel = (e: WheelEvent): void => {
-      if (e.deltaY < 0) breakFollow()
+      if (e.deltaY < 0) pauseAutoScroll(false)
     }
     const handleTouchStart = (e: TouchEvent): void => {
       touchY = e.touches[0]?.clientY ?? 0
     }
     const handleTouchMove = (e: TouchEvent): void => {
       const y = e.touches[0]?.clientY ?? 0
-      if (y > touchY) breakFollow()
+      if (y > touchY) pauseAutoScroll(false)
       touchY = y
     }
     const handleKeyDown = (e: KeyboardEvent): void => {
-      if (e.key === 'ArrowUp' || e.key === 'PageUp' || e.key === 'Home') breakFollow()
+      if (e.key === 'ArrowUp' || e.key === 'PageUp' || e.key === 'Home') pauseAutoScroll(false)
     }
     const handleScroll = (): void => {
       const remaining = el.scrollHeight - el.scrollTop - el.clientHeight
-      if (!followRef.current && remaining <= RESUME_AT_BOTTOM_PX) {
-        followRef.current = true
+      if (!followRef.current) {
+        const movedTowardBottom = el.scrollTop > pausedScrollTopRef.current + 1
+        pausedScrollTopRef.current = el.scrollTop
+        if ((movedTowardBottom || allowStationaryBottomResumeRef.current) && remaining <= RESUME_AT_BOTTOM_PX) {
+          followRef.current = true
+        }
+        allowStationaryBottomResumeRef.current = false
       }
-      setShowScrollButton(remaining > el.clientHeight)
+      setShowScrollButton(!followRef.current)
     }
     el.addEventListener('scroll', handleScroll, { passive: true })
     el.addEventListener('wheel', handleWheel, { passive: true })
@@ -101,18 +121,19 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
       el.removeEventListener('touchmove', handleTouchMove)
       el.removeEventListener('keydown', handleKeyDown)
     }
-  }, [sessionId, viewportMounted, scrollViewportRef])
+  }, [sessionKey, viewportMounted, scrollViewportRef, pauseAutoScroll])
 
   const lastMsgIsUser = messages.length > 0 && messages[messages.length - 1].role === 'user'
 
   useLayoutEffect(() => {
     const el = scrollViewportRef.current
     if (!el) return
-    const shouldScroll = followRef.current || lastMsgIsUser || sessionSwitchRef.current
+    const shouldScroll = followRef.current || lastMsgIsUser
     window.app.trace?.('scroll', 'msg_change', { msgLen: messages.length, shouldScroll, follow: followRef.current, lastMsgIsUser, sessionSwitch: sessionSwitchRef.current, scrollHeight: el.scrollHeight, scrollTop: el.scrollTop, clientHeight: el.clientHeight })
     if (shouldScroll) {
       el.scrollTop = el.scrollHeight
       followRef.current = true
+      allowStationaryBottomResumeRef.current = false
       setShowScrollButton(false)
     }
   }, [messages, lastMsgIsUser, scrollViewportRef])
@@ -139,21 +160,19 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
     observer.observe(content)
     observer.observe(viewport)
     return () => observer.disconnect()
-  }, [sessionId, viewportMounted, scrollViewportRef])
+  }, [sessionKey, viewportMounted, scrollViewportRef])
 
   const scrollToBottom = useCallback(() => {
     const el = scrollViewportRef.current
     if (el) {
       el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
       followRef.current = true
+      allowStationaryBottomResumeRef.current = false
+      sessionSwitchRef.current = false
+      clearTimeout(sessionSwitchTimerRef.current)
       setShowScrollButton(false)
     }
   }, [scrollViewportRef])
-
-  const stopAutoScroll = useCallback(() => {
-    followRef.current = false
-    setShowScrollButton(true)
-  }, [])
 
   return { showScrollButton, scrollToBottom, stopAutoScroll }
 }

@@ -461,6 +461,17 @@ describe('cyclePermissionMode + togglePlanModeShortcut', () => {
     useChatStore.getState().togglePlanModeShortcut()
     expect(mockWindowAgent.setPermissionMode).toHaveBeenCalledTimes(1)
   })
+
+  it('togglePlanModeShortcut toggles plan vs default for ACP sessions', () => {
+    setupProject()
+    patchSession({ sessionProvider: 'acp', permissionMode: 'default' })
+    useChatStore.getState().togglePlanModeShortcut()
+    expect(mockWindowAgent.setPermissionMode).toHaveBeenCalledWith(expect.any(String), 'plan')
+    mockWindowAgent.setPermissionMode.mockClear()
+    patchSession({ sessionProvider: 'acp', permissionMode: 'plan' })
+    useChatStore.getState().togglePlanModeShortcut()
+    expect(mockWindowAgent.setPermissionMode).toHaveBeenCalledWith(expect.any(String), 'default')
+  })
 })
 
 // ─────────────────────────────────────────────────────────────────────────────

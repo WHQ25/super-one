@@ -95,10 +95,13 @@ export interface AcpRuntime {
    */
   setModel(modelId: string, opts?: AcpSetModelOptions): Promise<void>
   /**
-   * Map SuperOne permission mode onto Grok ACP (session meta / yolo notification).
-   * No-op for agents that ignore x.ai permission extensions.
+   * Map SuperOne permission / plan mode onto Grok ACP:
+   * - `plan` → session/set_mode plan (not yolo)
+   * - other → session/set_mode default + x.ai/yolo_mode_changed
    */
   setPermissionMode(mode: PermissionMode): Promise<void>
+  /** ACP session/set_mode (plan | ask | default). */
+  setAcpSessionMode(modeId: string): Promise<void>
   prompt(
     text: string,
     messageId: string,
@@ -425,6 +428,18 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       mcpAttached ? 'yes' : 'no',
       supportsExtraRoots ? extraRoots.length : 0,
     )
+    // Host-selected plan mode before runtime existed — apply after session is live.
+    if (opts.permissionMode === 'plan') {
+      try {
+        await connection.agent.request(methods.agent.session.setMode, {
+          sessionId: session.sessionId,
+          modeId: 'plan',
+        })
+        log.info('[acp-runtime] session/set_mode plan on create agent=%s', launch.agentId)
+      } catch (err) {
+        log.warn('[acp-runtime] session/set_mode plan on create failed:', err)
+      }
+    }
   } catch (err) {
     processHandle?.kill()
     disposeStream?.()
@@ -603,9 +618,35 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
         setOpts?.reasoningEffort ?? '',
       )
     },
+    async setAcpSessionMode(modeId) {
+      const id = modeId.trim() || 'default'
+      try {
+        await activeConnection.agent.request(methods.agent.session.setMode, {
+          sessionId: activeSession.sessionId,
+          modeId: id,
+        })
+        log.info('[acp-runtime] session/set_mode agent=%s modeId=%s', launch.agentId, id)
+      } catch (err) {
+        log.warn('[acp-runtime] session/set_mode failed agent=%s modeId=%s:', launch.agentId, id, err)
+        throw err
+      }
+    },
     async setPermissionMode(mode) {
-      // Grok mid-session permission baseline: x.ai/yolo_mode_changed (not set_config_option).
-      // Other ACP agents ignore unknown notifications.
+      // Plan is ACP session mode, not Grok yolo/auto permission baseline.
+      if (mode === 'plan') {
+        try {
+          await this.setAcpSessionMode('plan')
+        } catch (err) {
+          log.warn('[acp-runtime] enter plan mode failed agent=%s:', launch.agentId, err)
+        }
+        return
+      }
+      // Leaving plan (or switching permission): restore agent mode then yolo baseline.
+      try {
+        await this.setAcpSessionMode('default')
+      } catch (err) {
+        log.debug('[acp-runtime] set_mode default before yolo (may be unsupported):', err)
+      }
       const params = grokYoloModeNotificationParams(mode)
       try {
         await activeConnection.agent.notify('x.ai/yolo_mode_changed', params)

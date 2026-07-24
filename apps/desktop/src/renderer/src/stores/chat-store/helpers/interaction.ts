@@ -256,6 +256,11 @@ export function togglePlanModeShortcutImpl(get: () => ChatStore): void {
     get().setSelectedCodexCollaborationMode(next)
     return
   }
+  // ACP/Grok: plan is session/set_mode — toggle plan vs default (not permission cycle).
+  if (provider === 'acp') {
+    get().setPermissionMode(session.permissionMode === 'plan' ? 'default' : 'plan')
+    return
+  }
   get().cyclePermissionMode()
 }
 

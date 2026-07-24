@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ChevronDown, MessageCircle, Unlock, Zap } from 'lucide-react'
+import { ChevronDown, ListTodo, MessageCircle, Unlock, Zap } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@superone/ui/components/ui/popover'
 import { useActiveSession, useChatStore } from '@/stores/chat'
 import {
@@ -15,7 +15,8 @@ type Option = AcpPermissionModeMeta & { icon: ReactNode }
 const OPTIONS: Option[] = ACP_PERMISSION_MODE_META.map((meta) => ({
   ...meta,
   icon:
-    meta.id === 'auto' ? <Zap className="size-3" />
+    meta.id === 'plan' ? <ListTodo className="size-3" />
+    : meta.id === 'auto' ? <Zap className="size-3" />
     : meta.id === 'bypassPermissions' ? <Unlock className="size-3" />
     : <MessageCircle className="size-3" />,
 }))

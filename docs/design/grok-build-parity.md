@@ -200,7 +200,7 @@ Priority: **P0** broken host correctness · **P1** Claude/Codex host UX parity �
 | SU-01 | Model catalog from modelState / sessionConfig | session-ui | done | `coalesceModelConfig` | — | — |
 | SU-02 | Reasoning effort picker (Grok category=mode) | session-ui | **done** | `set_model` + `_meta.reasoningEffort`; modes from x.ai sessionConfig | Label still “session mode” in UI | P3 |
 | SU-03 | available_commands → slash palette | session-ui | done | acp_commands events | — | — |
-| SU-04 | Host-driven plan enter (set_mode plan) | session-ui | missing | no ACP plan shortcut / set_mode plan | Optional; agent-driven path is product-complete | **P2** |
+| SU-04 | Host-driven plan enter (set_mode plan) | session-ui | **done** | setPermissionMode(plan) → session/set_mode; UI + shortcut | — | — |
 | SU-05 | supportsPlanMode flag | session-ui | **done** | `HARNESS_CAPABILITIES.acp.supportsPlanMode: true` | — | — |
 | SU-06 | Plan sessionUpdate → todos | session-ui | **done** | `mapPlanToTodoEvents` + `supportsTodos: true` | — | — |
 | SU-07 | Context usage bar | session-ui | missing | `getContextUsage` always null | No token meter for Grok | P2 |

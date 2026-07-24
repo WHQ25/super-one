@@ -426,6 +426,7 @@ export type Messages = {
       claudeAsk: string
       openCodePlan: string
       openCodeAsk: string
+      acpPlan: string
       acpAsk: string
     }
     acpCommands: {
@@ -451,6 +452,7 @@ export type Messages = {
       title: string
       subtitle: string
       ask: { label: string; description: string }
+      plan: { label: string; description: string }
       auto: { label: string; description: string }
       alwaysApprove: { label: string; description: string }
     }
@@ -2259,6 +2261,7 @@ export const en: Messages = {
       claudeAsk: 'Ask Claude anything, @ for files, agents & mini-apps, / for commands and skills',
       openCodePlan: "Let's make a plan! What's in your mind?",
       openCodeAsk: 'Ask OpenCode anything, @ for files & mini-apps, / for commands and skills',
+      acpPlan: "Let's make a plan with {{agent}}! What's in your mind?",
       acpAsk: 'Ask {{agent}} anything, @ for files & mini-apps, / for slash commands',
     },
     acpCommands: {
@@ -2285,6 +2288,10 @@ export const en: Messages = {
       ask: {
         label: 'Ask',
         description: 'Prompts for edits and shell commands',
+      },
+      plan: {
+        label: 'Plan',
+        description: 'Research and draft a plan; edits limited until you approve',
       },
       auto: {
         label: 'Auto',

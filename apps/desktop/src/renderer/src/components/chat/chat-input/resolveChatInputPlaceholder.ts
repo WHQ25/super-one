@@ -13,7 +13,12 @@ export function resolveChatInputPlaceholder(
 ): string {
   if (options.codexPlanMode) return t('chat.placeholder.codexPlan')
   if (options.provider === 'codex') return t('chat.placeholder.codexAsk')
-  if (options.provider === 'acp') return t('chat.placeholder.acpAsk', { agent: options.acpAgentName })
+  if (options.provider === 'acp') {
+    return t(
+      options.permissionMode === 'plan' ? 'chat.placeholder.acpPlan' : 'chat.placeholder.acpAsk',
+      { agent: options.acpAgentName },
+    )
+  }
   if (options.provider === 'opencode') {
     return t(options.permissionMode === 'plan' ? 'chat.placeholder.openCodePlan' : 'chat.placeholder.openCodeAsk')
   }

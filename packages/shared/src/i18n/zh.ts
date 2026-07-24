@@ -452,6 +452,7 @@ export const zh: Messages = {
       claudeAsk: '随便问 Claude，@ 提及文件、子代理和小程序，/ 查看命令和技能',
       openCodePlan: '一起来做个计划吧！你有什么想法？',
       openCodeAsk: '随便问 OpenCode，@ 提及文件和小程序，/ 查看命令和技能',
+      acpPlan: '和 {{agent}} 一起来做个计划吧！你有什么想法？',
       acpAsk: '随便问 {{agent}}，@ 提及文件和小程序，/ 查看命令',
     },
     acpCommands: {
@@ -478,6 +479,10 @@ export const zh: Messages = {
       ask: {
         label: '询问',
         description: '编辑与终端命令会弹窗确认',
+      },
+      plan: {
+        label: '计划',
+        description: '先调研并写计划，批准前限制改动',
       },
       auto: {
         label: '自动',

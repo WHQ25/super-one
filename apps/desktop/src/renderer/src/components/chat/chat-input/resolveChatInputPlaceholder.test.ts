@@ -39,5 +39,11 @@ describe('resolveChatInputPlaceholder', () => {
       codexPlanMode: false,
       acpAgentName: 'Gemini',
     })).toBe('chat.placeholder.acpAsk:Gemini')
+    expect(resolveChatInputPlaceholder(t, {
+      provider: 'acp',
+      permissionMode: 'plan',
+      codexPlanMode: false,
+      acpAgentName: 'Grok',
+    })).toBe('chat.placeholder.acpPlan:Grok')
   })
 })

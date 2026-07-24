@@ -50,6 +50,7 @@ vi.mock('./acp-runtime', () => ({
     setConfigOption: async () => [],
     getModeConfig: () => null,
     setModel: async () => {},
+    setAcpSessionMode: async () => {},
     setPermissionMode: async () => {},
     prompt: async () => {},
     cancel: async () => {},

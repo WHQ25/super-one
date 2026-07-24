@@ -1,8 +1,9 @@
 import type { PermissionMode } from '@superone/shared/agent-types'
 
 /**
- * Grok ACP permission baselines SuperOne can drive over the wire:
- * - default → ask
+ * Grok ACP modes SuperOne can drive over the wire:
+ * - default → ask permission baseline + session mode default
+ * - plan → session/set_mode plan (not yolo)
  * - auto → autoMode
  * - bypassPermissions → yolo / always-approve
  *
@@ -11,13 +12,14 @@ import type { PermissionMode } from '@superone/shared/agent-types'
  */
 export const ACP_PERMISSION_MODES: PermissionMode[] = [
   'default',
+  'plan',
   'auto',
   'bypassPermissions',
 ]
 
 export type AcpPermissionModeId = (typeof ACP_PERMISSION_MODES)[number]
 
-export type AcpPermissionLabelKey = 'ask' | 'auto' | 'alwaysApprove'
+export type AcpPermissionLabelKey = 'ask' | 'plan' | 'auto' | 'alwaysApprove'
 
 export interface AcpPermissionModeMeta {
   id: AcpPermissionModeId
@@ -35,6 +37,13 @@ export const ACP_PERMISSION_MODE_META: AcpPermissionModeMeta[] = [
     color: 'text-muted-foreground',
     hoverBg: 'hover:bg-accent',
     activeBg: 'bg-accent',
+  },
+  {
+    id: 'plan',
+    labelKey: 'plan',
+    color: 'text-blue-500 dark:text-blue-400',
+    hoverBg: 'hover:bg-blue-500/10',
+    activeBg: 'bg-blue-500/15',
   },
   {
     id: 'auto',

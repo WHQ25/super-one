@@ -114,6 +114,7 @@ function makeEchoAgentStream(
         return {}
       },
     )
+    .onRequest(methods.agent.session.setMode, async () => ({}))
 
   const clientToAgent = new TransformStream<Uint8Array>()
   const agentToClient = new TransformStream<Uint8Array>()
@@ -231,6 +232,57 @@ describe('createAcpRuntime (in-process agent)', () => {
       },
     ])
     expect(runtime.getModelConfig()?.selectedModelId).toBe('grok-4.5')
+    await runtime.close()
+  })
+
+  it('setPermissionMode plan uses session/set_mode without yolo notification', async () => {
+    const captured: CapturedRequests = { newSession: null, prompts: [], notifications: [] }
+    const setModeCalls: Array<Record<string, unknown>> = []
+    const agentApp = agent({ name: 'plan-mode-agent' })
+      .onRequest(methods.agent.initialize, async () => ({
+        protocolVersion: PROTOCOL_VERSION,
+        agentCapabilities: {},
+      }))
+      .onRequest(methods.agent.session.new, async () => ({ sessionId: 'test-session-1' }))
+      .onRequest(methods.agent.session.setMode, async (ctx) => {
+        setModeCalls.push(ctx.params as Record<string, unknown>)
+        return {}
+      })
+      .onRequest(methods.agent.session.prompt, async () => ({ stopReason: 'end_turn' as const }))
+      .onNotification(methods.agent.session.cancel, async () => {})
+      .onNotification(
+        'x.ai/yolo_mode_changed',
+        (raw: unknown) => raw,
+        async (ctx) => {
+          captured.notifications.push({ method: 'x.ai/yolo_mode_changed', params: ctx.params })
+        },
+      )
+
+    const clientToAgent = new TransformStream<Uint8Array>()
+    const agentToClient = new TransformStream<Uint8Array>()
+    agentApp.connect(ndJsonStream(agentToClient.writable, clientToAgent.readable))
+    const clientStream = ndJsonStream(clientToAgent.writable, agentToClient.readable)
+
+    const runtime = await createAcpRuntime({
+      launch: { agentId: 'grok-build', command: 'unused', defaultCwd: '/tmp/proj' },
+      permission: { request: async () => ({ outcome: { outcome: 'cancelled' } }) },
+      streamFactory: async () => ({
+        stream: clientStream,
+        dispose: () => {
+          try { void clientToAgent.writable.close().catch(() => undefined) } catch { /* */ }
+          try { void agentToClient.writable.close().catch(() => undefined) } catch { /* */ }
+        },
+      }),
+    })
+    await runtime.setPermissionMode('plan')
+    await new Promise((r) => setTimeout(r, 20))
+    expect(setModeCalls).toContainEqual({ sessionId: 'test-session-1', modeId: 'plan' })
+    expect(captured.notifications.filter((n) => n.method === 'x.ai/yolo_mode_changed')).toHaveLength(0)
+
+    await runtime.setPermissionMode('default')
+    await new Promise((r) => setTimeout(r, 20))
+    expect(setModeCalls.some((c) => c.modeId === 'default')).toBe(true)
+    expect(captured.notifications.some((n) => n.method === 'x.ai/yolo_mode_changed')).toBe(true)
     await runtime.close()
   })
 

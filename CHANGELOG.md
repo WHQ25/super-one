@@ -4,6 +4,22 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.46.6-alpha] - 2026-07-24
+
+### Added
+
+- Add a persistent default Codex permission preset, including read-only mode
+- Add macOS terminal shortcuts for navigation, deletion, and search
+- Move theme selection into Appearance settings with persistent System, Light, and Dark modes
+
+### Fixed
+
+- Apply a shared idle runtime retention policy across Claude and Codex sessions
+
+### Performance
+
+- Reduce redundant rendering and state updates when switching mosaic sessions
+
 ## [0.46.5-alpha] - 2026-07-24
 
 ### Added

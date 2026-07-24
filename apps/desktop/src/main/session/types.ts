@@ -21,6 +21,10 @@ export type { HarnessId, LiveSessionSnapshot, SessionSnapshot, SessionStatus }
 export interface ForkSource {
   providerSessionId: string
   projectPath: string
+  /** Effective cwd of the source session, including a source worktree. */
+  cwd?: string
+  /** Persisted harness provider config needed by cold fork operations. */
+  providerConfig?: unknown
 }
 
 export interface ForkContext {

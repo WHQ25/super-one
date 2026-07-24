@@ -45,6 +45,12 @@ const chatOnlyOptions: RewindOption[] = [
   { key: 'cancel', labelKey: 'cancel' },
 ]
 
+const codeAndChatOptions: RewindOption[] = [
+  { key: 'code_and_chat', labelKey: 'codeAndChat' },
+  { key: 'conversation', labelKey: 'conversation' },
+  { key: 'cancel', labelKey: 'cancel' },
+]
+
 export function RewindButton({ checkpointId, rewound, className }: RewindButtonProps) {
   const { t } = useTranslation()
   const [preview, setPreview] = useState<RewindFilesResult | null>(null)
@@ -112,7 +118,11 @@ export function RewindButton({ checkpointId, rewound, className }: RewindButtonP
   const ins = preview?.insertions ?? 0
   const del = preview?.deletions ?? 0
   const hasCodeChanges = fileCount > 0
-  const options = codeAlreadyRestored ? chatOnlyOptions : hasCodeChanges ? codeOptions : chatOnlyOptions
+  const options = codeAlreadyRestored
+    ? chatOnlyOptions
+    : hasCodeChanges
+      ? preview?.supportsCodeOnly === false ? codeAndChatOptions : codeOptions
+      : chatOnlyOptions
 
   useEffect(() => {
     if (!dialogOpen || !preview?.canRewind) return

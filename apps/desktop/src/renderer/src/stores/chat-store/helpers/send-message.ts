@@ -340,7 +340,8 @@ export async function sendMessageImpl(
     contexts: messageContexts,
     userSelections: userSelections.length > 0 ? [...userSelections] : undefined,
   }
-  const isCompactSlash = effectiveProvider === 'claude' && slashMatch?.[1] === 'compact'
+  const isCompactSlash = (effectiveProvider === 'claude' || effectiveProvider === 'opencode')
+    && finalContent.trim() === '/compact'
   set((s) => ({
     ...updateActivePerSession(s, (sess) => ({
       ...(!isQueuedSend ? { messages: [...sess.messages, userMessage] } : {}),

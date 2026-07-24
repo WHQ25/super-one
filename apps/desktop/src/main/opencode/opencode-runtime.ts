@@ -1,13 +1,23 @@
 import type { PermissionRuleset } from '@opencode-ai/sdk/v2'
-import type { EffortLevel, ImageAttachment, McpServerInfo, ModelOption, PermissionMode, SlashCommandInfo } from '@superone/shared/agent-types'
+import type {
+  ContextUsageInfo,
+  EffortLevel,
+  ImageAttachment,
+  McpServerInfo,
+  ModelOption,
+  PermissionMode,
+  SlashCommandInfo,
+} from '@superone/shared/agent-types'
 import {
   OpenCodeClient,
   parseModels,
   parseOpenCodeCommands,
   startOpenCodeServer,
+  withOpenCodeLocalCommands,
   type OpenCodeEvent,
   type OpenCodeServerHandle,
 } from './opencode-client'
+import type { SnapshotFileDiff } from '@opencode-ai/sdk/v2'
 
 export interface OpenCodeRuntimeConfig {
   binaryPath?: string
@@ -38,6 +48,11 @@ export interface OpenCodeRuntime {
   readonly commands: SlashCommandInfo[]
   prompt(text: string, model?: string, effort?: EffortLevel, images?: ImageAttachment[], agent?: string): Promise<void>
   command(name: string, args?: string, model?: string, effort?: EffortLevel, images?: ImageAttachment[], agent?: string): Promise<void>
+  compact(model?: string): Promise<void>
+  getContextUsage(): Promise<ContextUsageInfo | null>
+  diff(messageId: string): Promise<SnapshotFileDiff[]>
+  revert(messageId: string): Promise<void>
+  unrevert(): Promise<void>
   setModel(model: string): Promise<void>
   setPermissionMode(mode: PermissionMode): Promise<void>
   cancel(): Promise<void>
@@ -140,13 +155,14 @@ export async function createOpenCodeRuntime(opts: OpenCodeRuntimeOptions): Promi
     }
 
     let permissionMode = opts.permissionMode
+    const models = parseModels(providers)
     return {
       sessionId: session.id,
-      models: parseModels(providers),
+      models,
       agents: agents
         .filter((agent) => !agent.hidden)
         .map((agent) => ({ id: agent.name, name: agent.name, description: agent.description })),
-      commands: parseOpenCodeCommands(commands),
+      commands: withOpenCodeLocalCommands(parseOpenCodeCommands(commands)),
       prompt: (text, model, effort, images, agent) => client.promptAsync(session.id, {
         text,
         model,
@@ -162,6 +178,11 @@ export async function createOpenCodeRuntime(opts: OpenCodeRuntimeOptions): Promi
         images,
         agent: agent ?? (permissionMode === 'plan' ? 'plan' : undefined),
       }),
+      compact: (model) => client.summarize(session.id, model),
+      getContextUsage: () => client.contextUsage(session.id, models),
+      diff: (messageId) => client.diff(session.id, messageId),
+      revert: (messageId) => client.revert(session.id, messageId),
+      unrevert: () => client.unrevert(session.id),
       setModel: async () => undefined,
       setPermissionMode: async (mode) => {
         await client.updatePermission(session.id, buildOpenCodePermissionRules(mode))

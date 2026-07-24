@@ -6,6 +6,7 @@ import { OpenCodeBackend } from './backends/opencode-backend'
 import { forkAcpTranscript } from './backends/acp-fork'
 import { forkClaudeTranscript } from './backends/claude-fork'
 import { forkCodexThread } from './backends/codex-fork'
+import { forkOpenCodeSession } from './backends/opencode-fork'
 import type { Harness, HarnessId } from './types'
 
 const claudeConfigSchema = z.object({
@@ -71,9 +72,7 @@ const openCodeHarness: Harness = {
   name: 'OpenCode',
   configSchema: openCodeConfigSchema,
   createBackend: () => new OpenCodeBackend(),
-  forkTranscript: async (source, targetCwd) => {
-    throw new Error(`OpenCode transcript fork is not supported yet (${source.providerSessionId} -> ${targetCwd})`)
-  },
+  forkTranscript: forkOpenCodeSession,
 }
 
 const registry = new Map<HarnessId, Harness>([

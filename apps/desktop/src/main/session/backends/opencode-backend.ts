@@ -60,7 +60,10 @@ export class OpenCodeBackend implements SessionBackend {
   private partById = new Map<string, Part>()
   private emittedTextByPartId = new Map<string, string>()
   private completedToolIds = new Set<string>()
+  private capturedUserMessageIds = new Set<string>()
   private latestMetadata: MessageMetadata | undefined
+  private lastContextTokens = 0
+  private activeCompaction: { preTokens: number; startedAt: number } | null = null
   private pendingPermissions = new Map<string, { request: PermissionRequest; event: AgentEvent }>()
   private pendingQuestions = new Map<string, { request: AskUserQuestionRequest; event: AgentEvent }>()
   private listeners = new Set<(event: AgentEvent) => void>()
@@ -148,9 +151,23 @@ export class OpenCodeBackend implements SessionBackend {
     try {
       const runtime = await this.ensureRuntime()
       const turnComplete = new Promise<void>((resolve) => { this.activeTurn = { messageId, resolve } })
+      if (request.content.trim() === '/compact') {
+        const usage = await runtime.getContextUsage().catch(() => null)
+        this.activeCompaction = { preTokens: usage?.totalTokens ?? this.lastContextTokens, startedAt: Date.now() }
+        this.emit({ type: 'status_indicator', indicator: 'compacting' })
+      }
       await dispatchOpenCodeRequest(runtime, request)
       await turnComplete
     } catch (error) {
+      if (this.activeCompaction) {
+        this.activeCompaction = null
+        this.emit({
+          type: 'status_indicator',
+          indicator: null,
+          compactResult: 'failed',
+          compactError: error instanceof Error ? error.message : String(error),
+        })
+      }
       if (this.interrupted) this.complete(messageId, true)
       else this.fail(messageId, error instanceof Error ? error.message : String(error))
     } finally {
@@ -255,10 +272,30 @@ export class OpenCodeBackend implements SessionBackend {
   }
 
   respondToPlanApproval(_requestId: string, _approved: boolean, _feedback?: string): void {}
-  async getContextUsage(): Promise<ContextUsageInfo | null> { return null }
+  async getContextUsage(): Promise<ContextUsageInfo | null> {
+    try {
+      return await (await this.ensureRuntime()).getContextUsage()
+    } catch {
+      return null
+    }
+  }
   async getMcpServerStatus(): Promise<McpServerInfo[]> { return (await this.ensureRuntime()).getMcpServerStatus() }
-  async rewindFiles(_userMessageId: string, _opts?: { dryRun?: boolean }): Promise<RewindFilesResult> {
-    return { canRewind: false, error: 'OpenCode harness does not support rewind yet' }
+  async rewindFiles(userMessageId: string, opts?: { dryRun?: boolean }): Promise<RewindFilesResult> {
+    try {
+      const runtime = await this.ensureRuntime()
+      const changes = await runtime.diff(userMessageId)
+      const result: RewindFilesResult = {
+        canRewind: true,
+        supportsCodeOnly: false,
+        filesChanged: changes.flatMap((change) => change.file ? [change.file] : []),
+        insertions: changes.reduce((total, change) => total + change.additions, 0),
+        deletions: changes.reduce((total, change) => total + change.deletions, 0),
+      }
+      if (!opts?.dryRun) await runtime.revert(userMessageId)
+      return result
+    } catch (error) {
+      return { canRewind: false, error: openCodeErrorMessage(error) }
+    }
   }
   async reconnectMcp(serverName: string): Promise<void> { await (await this.ensureRuntime()).reconnectMcp(serverName) }
   async toggleMcpServer(serverName: string, enabled: boolean): Promise<void> { await (await this.ensureRuntime()).toggleMcpServer(serverName, enabled) }
@@ -282,6 +319,7 @@ export class OpenCodeBackend implements SessionBackend {
     this.partById.clear()
     this.emittedTextByPartId.clear()
     this.completedToolIds.clear()
+    this.capturedUserMessageIds.clear()
     this.latestMetadata = undefined
   }
 
@@ -371,6 +409,15 @@ export class OpenCodeBackend implements SessionBackend {
     if (event.type === 'message.updated') {
       const info = event.properties.info
       this.messageRoleById.set(info.id, info.role)
+      if (info.role === 'user' && messageId && !this.capturedUserMessageIds.has(info.id)) {
+        this.capturedUserMessageIds.add(info.id)
+        this.emit({
+          type: 'checkpoint_captured',
+          messageId,
+          checkpointId: info.id,
+          resumePointId: info.id,
+        })
+      }
       if (info.role === 'assistant' && messageId) {
         this.latestMetadata = openCodeAssistantMetadata(info)
         const total = info.tokens.total
@@ -381,8 +428,12 @@ export class OpenCodeBackend implements SessionBackend {
           inputTokens: info.tokens.input + info.tokens.cache.read + info.tokens.cache.write,
           outputTokens: info.tokens.output + info.tokens.reasoning,
           contextTokens: total,
+          contextWindow: this.runtime?.models.find(
+            (model) => model.id === `${info.providerID}/${info.modelID}`,
+          )?.contextWindow,
           costUsd: info.cost,
         })
+        this.lastContextTokens = total
         for (const part of this.partById.values()) {
           if (part.messageID === info.id) this.emitTextSnapshot(part, messageId)
         }
@@ -490,6 +541,22 @@ export class OpenCodeBackend implements SessionBackend {
 
     if (event.type === 'session.idle') {
       if (messageId) this.complete(messageId)
+      return
+    }
+
+    if (event.type === 'session.compacted') {
+      const compaction = this.activeCompaction
+      if (compaction && messageId) {
+        this.emit({ type: 'slash_command_output', messageId, content: '' })
+      }
+      this.emit({
+        type: 'compact_boundary',
+        trigger: compaction ? 'manual' : 'auto',
+        preTokens: compaction?.preTokens ?? this.lastContextTokens,
+        ...(compaction ? { durationMs: Date.now() - compaction.startedAt } : {}),
+      })
+      this.emit({ type: 'status_indicator', indicator: null, compactResult: 'success' })
+      this.activeCompaction = null
       return
     }
 

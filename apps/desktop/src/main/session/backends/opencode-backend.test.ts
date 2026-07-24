@@ -24,6 +24,11 @@ describe('OpenCodeBackend', () => {
   let runtime: OpenCodeRuntime
   let prompt: ReturnType<typeof vi.fn>
   let command: ReturnType<typeof vi.fn>
+  let compact: ReturnType<typeof vi.fn>
+  let getContextUsage: ReturnType<typeof vi.fn>
+  let diff: ReturnType<typeof vi.fn>
+  let revert: ReturnType<typeof vi.fn>
+  let unrevert: ReturnType<typeof vi.fn>
   let setPermissionMode: ReturnType<typeof vi.fn>
   let permissionReply: ReturnType<typeof vi.fn>
   let questionReply: ReturnType<typeof vi.fn>
@@ -37,6 +42,20 @@ describe('OpenCodeBackend', () => {
     route = () => undefined
     prompt = vi.fn(async () => undefined)
     command = vi.fn(async () => undefined)
+    compact = vi.fn(async () => undefined)
+    getContextUsage = vi.fn(async () => ({
+      categories: [{ name: 'Input', tokens: 20, color: '#22c55e' }],
+      totalTokens: 20,
+      maxTokens: 400_000,
+      percentage: 0.005,
+      model: 'openai/gpt-5',
+    }))
+    diff = vi.fn(async () => [
+      { file: 'src/app.ts', additions: 3, deletions: 1, status: 'modified' as const },
+      { file: 'src/new.ts', additions: 5, deletions: 0, status: 'added' as const },
+    ])
+    revert = vi.fn(async () => undefined)
+    unrevert = vi.fn(async () => undefined)
     setPermissionMode = vi.fn(async () => undefined)
     permissionReply = vi.fn(async () => undefined)
     questionReply = vi.fn(async () => undefined)
@@ -47,11 +66,16 @@ describe('OpenCodeBackend', () => {
     close = vi.fn(async () => undefined)
     runtime = {
       sessionId: 'oc-session',
-      models: [],
+      models: [{ id: 'openai/gpt-5', name: 'GPT-5', description: '', contextWindow: 400_000 }],
       agents: [],
       commands: [{ name: 'review', description: '', argumentHint: '', isSkill: false }],
       prompt,
       command,
+      compact,
+      getContextUsage,
+      diff,
+      revert,
+      unrevert,
       setModel: vi.fn(async () => undefined),
       setPermissionMode,
       cancel: vi.fn(async () => undefined),
@@ -224,7 +248,23 @@ describe('OpenCodeBackend', () => {
       },
     ])
     const complete = events.find((event): event is Extract<AgentEvent, { type: 'message_complete' }> => event.type === 'message_complete')
-    expect(complete?.metadata).toMatchObject({ model: 'openai/gpt-5', costUsd: 0.01, stopReason: 'stop' })
+    expect(complete?.metadata).toMatchObject({
+      model: 'openai/gpt-5',
+      costUsd: 0.01,
+      stopReason: 'stop',
+      forkAnchorId: 'assistant-message',
+    })
+    expect(events).toContainEqual({
+      type: 'checkpoint_captured',
+      messageId: 'assistant-local',
+      checkpointId: 'user-message',
+      resumePointId: 'user-message',
+    })
+    expect(events).toContainEqual(expect.objectContaining({
+      type: 'message_usage',
+      contextTokens: 20,
+      contextWindow: 400_000,
+    }))
     expect(deltas.some((event) => event.delta.type === 'text' && event.delta.text === 'hello')).toBe(false)
     await backend.close()
   })
@@ -338,6 +378,45 @@ describe('OpenCodeBackend', () => {
 
     route({ id: 'idle', type: 'session.idle', properties: { sessionID: 'oc-session' } } as OpenCodeRuntimeEvent)
     await send
+    await backend.close()
+  })
+
+  it('compacts through summarize and emits the existing compact UI events', async () => {
+    const backend = new OpenCodeBackend()
+    const events: AgentEvent[] = []
+    backend.onEvent((event) => events.push(event))
+    await backend.start(startOptions())
+
+    const send = backend.send({ content: '/compact', model: 'openai/gpt-5', assistantMessageId: 'compact-message' })
+    await vi.waitFor(() => expect(compact).toHaveBeenCalledWith('openai/gpt-5'))
+    route({ id: 'compacted', type: 'session.compacted', properties: { sessionID: 'oc-session' } } as OpenCodeRuntimeEvent)
+    route({ id: 'idle', type: 'session.idle', properties: { sessionID: 'oc-session' } } as OpenCodeRuntimeEvent)
+    await send
+
+    expect(events).toContainEqual({ type: 'status_indicator', indicator: 'compacting' })
+    expect(events).toContainEqual({ type: 'slash_command_output', messageId: 'compact-message', content: '' })
+    expect(events).toContainEqual(expect.objectContaining({
+      type: 'compact_boundary', trigger: 'manual', preTokens: 20,
+    }))
+    expect(events).toContainEqual({ type: 'status_indicator', indicator: null, compactResult: 'success' })
+    await backend.close()
+  })
+
+  it('previews and reverts files using the provider user message checkpoint', async () => {
+    const backend = new OpenCodeBackend()
+    await backend.start(startOptions())
+
+    expect(await backend.rewindFiles('user-message', { dryRun: true })).toEqual({
+      canRewind: true,
+      supportsCodeOnly: false,
+      filesChanged: ['src/app.ts', 'src/new.ts'],
+      insertions: 8,
+      deletions: 1,
+    })
+    expect(revert).not.toHaveBeenCalled()
+
+    expect(await backend.rewindFiles('user-message')).toEqual(expect.objectContaining({ canRewind: true }))
+    expect(revert).toHaveBeenCalledWith('user-message')
     await backend.close()
   })
 })

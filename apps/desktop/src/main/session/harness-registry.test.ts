@@ -50,9 +50,9 @@ setCodexServiceFactory(() => ({
 }))
 
 describe('harnessRegistry', () => {
-  it('lists claude, codex, and acp harnesses', () => {
+  it('lists every registered harness', () => {
     const ids = harnessRegistry.list().map((h) => h.id).sort()
-    expect(ids).toEqual(['acp', 'claude', 'codex'])
+    expect(ids).toEqual(['acp', 'claude', 'codex', 'opencode'])
   })
 
   it('get returns the claude harness', () => {
@@ -93,6 +93,11 @@ describe('harnessRegistry', () => {
   it('acp createBackend returns an acp backend', () => {
     const h = harnessRegistry.get('acp')!
     expect(h.createBackend().kind).toBe('acp')
+  })
+
+  it('opencode createBackend returns an opencode backend', () => {
+    const h = harnessRegistry.get('opencode')!
+    expect(h.createBackend().kind).toBe('opencode')
   })
 
   it('configSchema is defined (Zod schema)', () => {

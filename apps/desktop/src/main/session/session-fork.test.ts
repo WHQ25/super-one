@@ -5,12 +5,14 @@ import { join } from 'node:path'
 import type { ChatMessage } from '@superone/shared/agent-types'
 import type { SessionRecord } from './session-repo'
 
-const { getSessionRecordMock, loadSessionStateBySidMock, forkSessionRecordMock, sdkForkSessionMock, withAppServerRequestMock } = vi.hoisted(() => ({
+const { getSessionRecordMock, loadSessionStateBySidMock, forkSessionRecordMock, getSessionProviderMock, sdkForkSessionMock, withAppServerRequestMock, forkOpenCodeSessionMock } = vi.hoisted(() => ({
   getSessionRecordMock: vi.fn(),
   loadSessionStateBySidMock: vi.fn(),
   forkSessionRecordMock: vi.fn(),
+  getSessionProviderMock: vi.fn(),
   sdkForkSessionMock: vi.fn(),
   withAppServerRequestMock: vi.fn(),
+  forkOpenCodeSessionMock: vi.fn(async () => 'opencode-forked'),
 }))
 
 vi.mock('../logger', () => ({
@@ -25,6 +27,8 @@ vi.mock('./session-repo', () => ({
   loadSessionStateBySid: loadSessionStateBySidMock,
   forkSessionRecord: forkSessionRecordMock,
 }))
+vi.mock('./session-provider-repo', () => ({ getSessionProvider: getSessionProviderMock }))
+vi.mock('./backends/opencode-fork', () => ({ forkOpenCodeSession: forkOpenCodeSessionMock }))
 // Stub the backend classes so the real harness registry loads without pulling
 // in the heavy Electron-laden backend modules — fork never instantiates them.
 vi.mock('./backends/claude-backend', () => ({ ClaudeBackend: class {} }))
@@ -63,6 +67,7 @@ beforeEach(() => {
   projectPath = join(tmpRoot, 'repo')
   mkdirSync(projectPath, { recursive: true })
   process.env.CLAUDE_CONFIG_DIR = configDir
+  getSessionProviderMock.mockReturnValue({ id: 'claude-base', config: {} })
 })
 
 afterEach(() => {
@@ -176,5 +181,29 @@ describe('forkSession harness dispatch', () => {
 
     expect(methods).toEqual(['thread/fork'])
     expect(loadSessionStateBySidMock).not.toHaveBeenCalled()
+  })
+
+  it('passes OpenCode provider config and persisted message anchor into the cold fork', async () => {
+    const config = { serverUrl: 'http://127.0.0.1:4000', serverPassword: 'secret' }
+    setupSource(makeRecord({
+      harnessId: 'opencode', providerId: 'opencode-custom', providerSessionId: 'opencode-src',
+    }), [
+      msg('u1', 'user'),
+      msg('a1', 'assistant', { metadata: { forkAnchorId: 'provider-a1' } }),
+    ])
+    getSessionProviderMock.mockReturnValue({ id: 'opencode-custom', config })
+
+    const result = await forkSession({ sessionId: 's-src', mode: 'local', forkFromMessageId: 'a1' })
+
+    expect(result.ok).toBe(true)
+    expect(forkOpenCodeSessionMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerSessionId: 'opencode-src',
+        cwd: projectPath,
+        providerConfig: config,
+      }),
+      projectPath,
+      expect.objectContaining({ forkFromMessageId: 'a1' }),
+    )
   })
 })

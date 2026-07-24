@@ -43,7 +43,7 @@ export function ContextUsage() {
     const wasStreaming = prevStatusRef.current === 'streaming'
     prevStatusRef.current = status
     if (!wasStreaming || status !== 'idle' || !activeProject || !activeSessionId) return
-    if (sessionProvider && sessionProvider !== 'claude') return
+    if (sessionProvider && sessionProvider !== 'claude' && sessionProvider !== 'opencode') return
     const sid = activeSessionId
     const project = activeProject
     window.agent.getContextUsage(project, sid).then((usage) => {

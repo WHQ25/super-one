@@ -6,6 +6,7 @@ import { gitRun } from '../git-run'
 import { activateWorktree, gitErrorMessage } from '../git/worktree-ops'
 import { harnessRegistry } from './harness-registry'
 import { forkSessionRecord, getSessionRecord, loadSessionStateBySid, type SessionRecord } from './session-repo'
+import { getSessionProvider } from './session-provider-repo'
 import type { ForkContext, Harness } from './types'
 
 function forkTitle(title: string | null): string {
@@ -24,6 +25,7 @@ async function persistFork(
   record: SessionRecord,
   harness: Harness,
   ctx: ForkContext,
+  sourceCwd: string,
   targetCwd: string,
   worktreePath: string | null,
   gitBranch: string | null,
@@ -32,7 +34,12 @@ async function persistFork(
   let newProviderSessionId: string
   try {
     newProviderSessionId = await harness.forkTranscript(
-      { providerSessionId: record.providerSessionId!, projectPath: record.projectPath },
+      {
+        providerSessionId: record.providerSessionId!,
+        projectPath: record.projectPath,
+        cwd: sourceCwd,
+        providerConfig: getSessionProvider(record.providerId)?.config,
+      },
       targetCwd,
       ctx,
     )
@@ -88,7 +95,7 @@ async function forkToNewWorktree(
     }
   }
 
-  const result = await persistFork(record, harness, ctx, worktreePath, worktreePath, null, rollback)
+  const result = await persistFork(record, harness, ctx, sourceCwd, worktreePath, worktreePath, null, rollback)
   if (result.ok) log.info('[session-fork] forked %s → %s (worktree %s)', record.id, result.sessionId, worktreePath)
   return result
 }
@@ -104,7 +111,7 @@ async function forkToLocal(
   ctx: ForkContext,
   sourceCwd: string,
 ): Promise<SessionForkResult> {
-  const result = await persistFork(record, harness, ctx, sourceCwd, record.worktreePath, record.gitBranch, async () => {})
+  const result = await persistFork(record, harness, ctx, sourceCwd, sourceCwd, record.worktreePath, record.gitBranch, async () => {})
   if (result.ok) log.info('[session-fork] forked %s → %s (local %s)', record.id, result.sessionId, sourceCwd)
   return result
 }

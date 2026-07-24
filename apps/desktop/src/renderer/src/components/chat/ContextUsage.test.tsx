@@ -13,13 +13,15 @@ const activeSessionState = {
   contextTokens: 0,
   contextWindow: null as number | null,
   selectedModel: '',
-  preferredProvider: 'claude' as 'claude' | 'codex',
-  sessionProvider: null as 'claude' | 'codex' | null,
+  preferredProvider: 'claude' as 'claude' | 'codex' | 'opencode',
+  sessionProvider: null as 'claude' | 'codex' | 'opencode' | null,
   totalCostUsd: 0,
   status: 'idle' as string,
   detailedUsage: null as unknown,
   _activeSessionId: 'sid-1' as string | null,
 }
+
+let getContextUsageMock = vi.fn(async (_projectPath: string, _sessionId?: string) => null as unknown)
 
 vi.mock('@/stores/chat', () => ({
   useChatStore: (selector: (state: typeof chatState) => unknown) => selector(chatState),
@@ -42,6 +44,13 @@ beforeEach(() => {
   activeSessionState.status = 'idle'
   activeSessionState.detailedUsage = null
   activeSessionState._activeSessionId = 'sid-1'
+  getContextUsageMock = vi.fn(async (_projectPath: string, _sessionId?: string) => null)
+  Object.defineProperty(window, 'agent', {
+    configurable: true,
+    value: {
+      getContextUsage: (projectPath: string, sessionId?: string) => getContextUsageMock(projectPath, sessionId),
+    },
+  })
 })
 
 describe('ContextUsage', () => {
@@ -148,5 +157,26 @@ describe('ContextUsage', () => {
     rerender(<ContextUsage />)
 
     expect(chatState.setDetailedUsage).toHaveBeenCalledWith('/test', 'sid-A', null)
+  })
+
+  it('refreshes detailed context usage after an OpenCode turn completes', async () => {
+    activeSessionState.preferredProvider = 'opencode'
+    activeSessionState.sessionProvider = 'opencode'
+    activeSessionState.contextTokens = 12_000
+    activeSessionState.status = 'streaming'
+    getContextUsageMock = vi.fn(async (_projectPath: string, _sessionId?: string) => ({
+      categories: [{ name: 'Input', tokens: 12_000, color: '#22c55e' }],
+      totalTokens: 12_000,
+      maxTokens: 400_000,
+      percentage: 3,
+      model: 'openai/gpt-5',
+    }))
+
+    const { rerender } = render(<ContextUsage />)
+    act(() => { activeSessionState.status = 'idle' })
+    rerender(<ContextUsage />)
+
+    await vi.waitFor(() => expect(getContextUsageMock).toHaveBeenCalledWith('/test', 'sid-1'))
+    expect(chatState.setDetailedUsage).toHaveBeenCalledWith('/test', 'sid-1', expect.objectContaining({ maxTokens: 400_000 }))
   })
 })

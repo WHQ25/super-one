@@ -8,13 +8,24 @@ import {
   type Command,
   type Event,
   type FilePartInput,
+  type Message,
   type McpStatus,
   type OpencodeClient,
+  type Part,
   type PermissionRuleset,
   type ProviderListResponse,
+  type SnapshotFileDiff,
   type TextPartInput,
 } from '@opencode-ai/sdk/v2'
-import type { EffortLevel, ImageAttachment, McpServerInfo, ModelOption, OpenCodeResources, SlashCommandInfo } from '@superone/shared/agent-types'
+import type {
+  ContextUsageInfo,
+  EffortLevel,
+  ImageAttachment,
+  McpServerInfo,
+  ModelOption,
+  OpenCodeResources,
+  SlashCommandInfo,
+} from '@superone/shared/agent-types'
 import { buildSafeEnv } from '../spawn-env'
 
 export type OpenCodeEvent = Event
@@ -47,6 +58,7 @@ export function parseModels(payload: ProviderListResponse): ModelOption[] {
         name: model.name || model.id,
         description: `${provider.name} ${model.capabilities.reasoning ? 'reasoning' : 'chat'} model`,
         isDefault: payload.default[provider.id] === model.id,
+        contextWindow: model.limit.context,
         supportsEffort: supportedEffortLevels.length > 0,
         supportedEffortLevels: supportedEffortLevels.length > 0 ? supportedEffortLevels : undefined,
       }
@@ -60,6 +72,15 @@ export function parseOpenCodeCommands(commands: Command[]): SlashCommandInfo[] {
     argumentHint: command.hints.join(' '),
     isSkill: command.source === 'skill',
   }))
+}
+
+const openCodeLocalCommands: SlashCommandInfo[] = [
+  { name: 'compact', description: 'Compact session context', argumentHint: '', isSkill: false },
+]
+
+export function withOpenCodeLocalCommands(commands: SlashCommandInfo[]): SlashCommandInfo[] {
+  const seen = new Set(commands.map((command) => command.name.replace(/^\//, '')))
+  return [...commands, ...openCodeLocalCommands.filter((command) => !seen.has(command.name))]
 }
 
 export function parseOpenCodeMcpStatus(statuses: Record<string, McpStatus>): McpServerInfo[] {
@@ -183,6 +204,88 @@ export class OpenCodeClient {
       agent: input.agent,
       parts: parts.length > 0 ? parts : undefined,
     })
+  }
+
+  async sessionMessages(sessionId: string): Promise<Array<{ info: Message; parts: Part[] }>> {
+    const result = await this.sdk.session.messages({ sessionID: sessionId })
+    return result.data ?? []
+  }
+
+  private async resolveSessionModel(sessionId: string, model?: string): Promise<{ providerID: string; modelID: string }> {
+    const parsed = parseOpenCodeModelSlug(model)
+    if (model && !parsed) throw new OpenCodeApiError(`Invalid OpenCode model id: ${model}`)
+    if (parsed) return parsed
+    const messages = await this.sessionMessages(sessionId)
+    const assistant = messages.findLast((message) => message.info.role === 'assistant')
+    if (assistant?.info.role === 'assistant') {
+      return { providerID: assistant.info.providerID, modelID: assistant.info.modelID }
+    }
+    const session = await this.sdk.session.get({ sessionID: sessionId })
+    const sessionModel = session.data?.model
+    if (sessionModel) return { providerID: sessionModel.providerID, modelID: sessionModel.id }
+    throw new OpenCodeApiError('OpenCode session has no model to compact')
+  }
+
+  async summarize(sessionId: string, model?: string): Promise<void> {
+    const resolved = await this.resolveSessionModel(sessionId, model)
+    await this.sdk.session.summarize({ sessionID: sessionId, ...resolved, auto: false })
+  }
+
+  async contextUsage(sessionId: string, models: ModelOption[]): Promise<ContextUsageInfo | null> {
+    const messages = await this.sessionMessages(sessionId)
+    const assistant = messages.findLast((message) => message.info.role === 'assistant')
+    if (!assistant || assistant.info.role !== 'assistant') return null
+    const info = assistant.info
+    const model = `${info.providerID}/${info.modelID}`
+    const maxTokens = models.find((candidate) => candidate.id === model)?.contextWindow
+    if (!maxTokens) return null
+    const categories = [
+      { name: 'Input', tokens: info.tokens.input, color: '#22c55e' },
+      { name: 'Output', tokens: info.tokens.output, color: '#06b6d4' },
+      { name: 'Reasoning', tokens: info.tokens.reasoning, color: '#8b5cf6' },
+      { name: 'Cache read', tokens: info.tokens.cache.read, color: '#6366f1' },
+      { name: 'Cache write', tokens: info.tokens.cache.write, color: '#f59e0b' },
+    ]
+    const totalTokens = info.tokens.total
+      ?? categories.reduce((total, category) => total + category.tokens, 0)
+    return {
+      categories,
+      totalTokens,
+      maxTokens,
+      percentage: Math.min(100, (totalTokens / maxTokens) * 100),
+      model,
+    }
+  }
+
+  async diff(sessionId: string, messageId: string): Promise<SnapshotFileDiff[]> {
+    const result = await this.sdk.session.diff({ sessionID: sessionId, messageID: messageId })
+    return result.data ?? []
+  }
+
+  async revert(sessionId: string, messageId: string): Promise<void> {
+    await this.sdk.session.revert({ sessionID: sessionId, messageID: messageId })
+  }
+
+  async unrevert(sessionId: string): Promise<void> {
+    await this.sdk.session.unrevert({ sessionID: sessionId })
+  }
+
+  async forkSession(sessionId: string, messageId?: string): Promise<{ id: string; directory: string }> {
+    const result = await this.sdk.session.fork({ sessionID: sessionId, messageID: messageId })
+    if (!result.data) throw new OpenCodeApiError('OpenCode session fork was empty')
+    return { id: result.data.id, directory: result.data.directory }
+  }
+
+  async moveSession(sessionId: string, directory: string): Promise<void> {
+    await this.sdk.experimental.controlPlane.moveSession({
+      sessionID: sessionId,
+      destination: { directory },
+      moveChanges: false,
+    })
+  }
+
+  async deleteSession(sessionId: string): Promise<void> {
+    await this.sdk.session.delete({ sessionID: sessionId })
   }
 
   async abort(sessionId: string): Promise<void> {
@@ -353,7 +456,7 @@ export async function probeOpenCodeResources(config: {
       agents: agents
         .filter((agent) => !agent.hidden)
         .map((agent) => ({ id: agent.name, name: agent.name, description: agent.description })),
-      commands: parseOpenCodeCommands(commands),
+      commands: withOpenCodeLocalCommands(parseOpenCodeCommands(commands)),
     }
   } finally {
     await server.close()

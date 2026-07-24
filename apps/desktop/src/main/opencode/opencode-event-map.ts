@@ -126,5 +126,6 @@ export function openCodeAssistantMetadata(info: Extract<Message, { role: 'assist
       cacheCreationInputTokens: info.tokens.cache.write,
     },
     stopReason: info.finish ?? null,
+    forkAnchorId: info.id,
   }
 }

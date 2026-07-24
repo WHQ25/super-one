@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import type { Command, McpStatus, ProviderListResponse } from '@opencode-ai/sdk/v2'
-import { parseModels, parseOpenCodeCommands, parseOpenCodeMcpStatus, parseOpenCodeModelSlug } from './opencode-client'
+import {
+  parseModels,
+  parseOpenCodeCommands,
+  parseOpenCodeMcpStatus,
+  parseOpenCodeModelSlug,
+  withOpenCodeLocalCommands,
+} from './opencode-client'
 
 describe('opencode-client', () => {
   it('parses model slugs at the first separator', () => {
@@ -25,6 +31,7 @@ describe('opencode-client', () => {
               id: 'gpt-5',
               name: 'GPT-5',
               capabilities: { reasoning: true },
+              limit: { context: 400_000, output: 32_000 },
               variants: { low: {}, medium: {}, turbo: {} },
             },
           },
@@ -52,8 +59,18 @@ describe('opencode-client', () => {
         isDefault: true,
         supportsEffort: true,
         supportedEffortLevels: ['low', 'medium'],
+        contextWindow: 400_000,
       },
     ])
+  })
+
+  it('adds local SDK-backed commands without duplicating server commands', () => {
+    const commands = [{ name: 'review', description: '', argumentHint: '', isSkill: false }]
+
+    expect(withOpenCodeLocalCommands(commands).map((command) => command.name)).toEqual(['review', 'compact'])
+    expect(withOpenCodeLocalCommands([...commands, {
+      name: 'compact', description: 'Server compact', argumentHint: '', isSkill: false,
+    }]).filter((command) => command.name === 'compact')).toHaveLength(1)
   })
 
   it('maps SDK commands and skills into slash command resources', () => {

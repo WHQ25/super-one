@@ -5,6 +5,16 @@ const mocks = vi.hoisted(() => ({
   updatePermission: vi.fn(async () => undefined),
   promptAsync: vi.fn(async () => undefined),
   command: vi.fn(async () => undefined),
+  summarize: vi.fn(async () => undefined),
+  contextUsage: vi.fn(async () => ({
+    categories: [{ name: 'Input', tokens: 12, color: '#22c55e' }],
+    totalTokens: 12,
+    maxTokens: 400_000,
+    percentage: 0.003,
+    model: 'openai/gpt-5',
+  })),
+  diff: vi.fn(async () => [{ file: 'src/app.ts', additions: 3, deletions: 1, status: 'modified' }] as const),
+  revert: vi.fn(async () => undefined),
   mcpStatus: vi.fn(async () => [{ name: 'github', status: 'connected' }]),
   connectMcp: vi.fn(async () => undefined),
   disconnectMcp: vi.fn(async () => undefined),
@@ -25,6 +35,10 @@ vi.mock('./opencode-client', () => ({
     updatePermission = mocks.updatePermission
     promptAsync = mocks.promptAsync
     command = mocks.command
+    summarize = mocks.summarize
+    contextUsage = mocks.contextUsage
+    diff = mocks.diff
+    revert = mocks.revert
     mcpStatus = mocks.mcpStatus
     connectMcp = mocks.connectMcp
     disconnectMcp = mocks.disconnectMcp
@@ -37,8 +51,11 @@ vi.mock('./opencode-client', () => ({
       await new Promise<void>((resolve) => signal.addEventListener('abort', () => resolve(), { once: true }))
     })()
   },
-  parseModels: () => [{ id: 'openai/gpt-5', name: 'GPT-5', description: '' }],
+  parseModels: () => [{ id: 'openai/gpt-5', name: 'GPT-5', description: '', contextWindow: 400_000 }],
   parseOpenCodeCommands: () => [{ name: 'review', description: '', argumentHint: '', isSkill: false }],
+  withOpenCodeLocalCommands: (commands: unknown[]) => [...commands, {
+    name: 'compact', description: 'Compact context', argumentHint: '', isSkill: false,
+  }],
   startOpenCodeServer: async () => ({
     url: 'http://127.0.0.1:4000',
     exited: null,
@@ -91,6 +108,7 @@ describe('opencode-runtime', () => {
     })
     expect(runtime.commands).toEqual([
       { name: 'review', description: '', argumentHint: '', isSkill: false },
+      { name: 'compact', description: 'Compact context', argumentHint: '', isSkill: false },
     ])
     await runtime.command('review', 'working tree', 'openai/gpt-5', 'high')
     expect(mocks.command).toHaveBeenCalledWith('oc-session', {
@@ -107,6 +125,12 @@ describe('opencode-runtime', () => {
     expect(mocks.connectMcp).toHaveBeenCalledWith('github')
     await runtime.toggleMcpServer('github', false)
     expect(mocks.disconnectMcp).toHaveBeenCalledTimes(2)
+    expect(await runtime.getContextUsage()).toEqual(expect.objectContaining({ maxTokens: 400_000 }))
+    await runtime.compact('openai/gpt-5')
+    expect(mocks.summarize).toHaveBeenCalledWith('oc-session', 'openai/gpt-5')
+    expect(await runtime.diff('user-message')).toHaveLength(1)
+    await runtime.revert('user-message')
+    expect(mocks.revert).toHaveBeenCalledWith('oc-session', 'user-message')
     await runtime.close()
     expect(mocks.closeServer).toHaveBeenCalledOnce()
   })

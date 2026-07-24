@@ -1093,6 +1093,8 @@ export interface ModelOption {
   id: string
   name: string
   description: string
+  /** Provider-reported maximum context tokens when the harness exposes it. */
+  contextWindow?: number
   resolvedModel?: string
   isDefault?: boolean
   supportsEffort?: boolean
@@ -1122,6 +1124,8 @@ export function resolveModelContextWindow(model: { id?: string | null; resolvedM
 
 export interface RewindFilesResult {
   canRewind: boolean
+  /** False when the provider can only rewind code together with its conversation. */
+  supportsCodeOnly?: boolean
   error?: string
   filesChanged?: string[]
   insertions?: number

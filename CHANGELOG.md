@@ -4,6 +4,23 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.47.3-alpha] - 2026-07-26
+
+### Added
+
+- Store custom platform endpoints per API key
+
+### Fixed
+
+- Seed ACP/Grok models from cache when creating a new session so the model selector paints immediately
+- Show Grok image_gen results in the media gallery
+- Restore Grok provider session id on cold prewarm
+- Stop bridging Claude through chat completions
+
+### Changed
+
+- Remove chip styling from resource mentions
+
 ## [0.47.2-alpha] - 2026-07-25
 
 ### Added

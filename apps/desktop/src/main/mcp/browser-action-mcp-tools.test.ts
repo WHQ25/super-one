@@ -99,6 +99,40 @@ describe('browser action MCP tools', () => {
     })
   })
 
+  it('saves and executes flow control through the public MCP tools', async () => {
+    const dispatcher = vi.fn(async (_sessionId: string, tool: string): Promise<BrowserToolReply> => ({
+      content: [{ type: 'text', text: JSON.stringify(tool === 'browser_query' ? { count: 2 } : { ok: true }) }],
+    }))
+    const { tools } = buildTools(dispatcher)
+    const save = await tools.get('browser_action_save')!({
+      domain: 'example.com',
+      name: 'open_when_ready',
+      description: 'Open the item when results are ready',
+      parameters: [],
+      steps: [
+        { kind: 'tool', tool: 'browser_query', args: { selector: '.item' }, saveAs: 'query' },
+        {
+          kind: 'if',
+          condition: {
+            kind: 'op',
+            op: 'gt',
+            args: [{ kind: 'ref', path: 'vars.query.count' }, 0],
+          },
+          then: [{ kind: 'tool', tool: 'browser_click', args: { selector: '.item' } }],
+        },
+      ],
+    })
+    expect(save.isError).toBeUndefined()
+    expect(JSON.parse(text(save))).toMatchObject({ action: { stepCount: 3 } })
+
+    const reply = await tools.get('browser_action_do')!({ domain: 'example.com', name: 'open_when_ready' })
+
+    expect(reply.isError).toBeUndefined()
+    expect(JSON.parse(text(reply))).toMatchObject({ ok: true, stepsExecuted: 3 })
+    expect(dispatcher).toHaveBeenNthCalledWith(1, 'session-1', 'browser_query', { selector: '.item' })
+    expect(dispatcher).toHaveBeenNthCalledWith(2, 'session-1', 'browser_click', { selector: '.item' })
+  })
+
   it('marks lookup and child execution failures as MCP errors', async () => {
     const failingDispatcher = vi.fn(async (): Promise<BrowserToolReply> => ({
       content: [{ type: 'text', text: '[Error] button unavailable' }],

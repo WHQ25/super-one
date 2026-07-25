@@ -82,6 +82,40 @@ describe('browser action store', () => {
     expect(listBrowserActions().map((item) => item.name)).toEqual(['first'])
   })
 
+  it('detects nested action cycles inside control-flow steps', () => {
+    saveBrowserAction(action({
+      name: 'first',
+      parameters: [],
+      steps: [{
+        kind: 'if',
+        condition: true,
+        then: [{ kind: 'action', domain: 'example.com', name: 'second', input: {} }],
+      }],
+    }))
+
+    expect(() => saveBrowserAction(action({
+      name: 'second',
+      parameters: [],
+      steps: [{
+        kind: 'repeat',
+        times: 1,
+        steps: [{ kind: 'action', domain: 'example.com', name: 'first', input: {} }],
+      }],
+    }))).toThrow(/cycle detected/i)
+    expect(listBrowserActions().map((item) => item.name)).toEqual(['first'])
+  })
+
+  it('limits the total number of defined steps across control-flow branches', () => {
+    expect(() => saveBrowserAction(action({
+      parameters: [],
+      steps: [{
+        kind: 'if',
+        condition: true,
+        then: Array.from({ length: 50 }, () => ({ kind: 'tool', tool: 'browser_tabs', args: {} })),
+      }],
+    }))).toThrow(/at most 50 steps/i)
+  })
+
   it('does not silently replace a corrupt store', () => {
     writeFileSync(join(electron.userData, 'browser-actions.json'), '{broken')
     expect(() => listBrowserActions()).toThrow(/Cannot read browser actions/)
@@ -110,6 +144,139 @@ describe('browser action templates', () => {
 })
 
 describe('browser action execution', () => {
+  it('passes typed values through variables, branches, and bounded loops in order', async () => {
+    saveBrowserAction(action({
+      name: 'process_results',
+      parameters: [
+        { name: 'offset', type: 'number' },
+        { name: 'repeats', type: 'number' },
+      ],
+      steps: [
+        { kind: 'tool', tool: 'browser_query', args: { selector: '.result' }, saveAs: 'query' },
+        {
+          kind: 'set',
+          name: 'total',
+          value: {
+            kind: 'op',
+            op: 'add',
+            args: [
+              { kind: 'ref', path: 'vars.query.count' },
+              { kind: 'ref', path: 'input.offset' },
+            ],
+          },
+        },
+        {
+          kind: 'if',
+          condition: {
+            kind: 'op',
+            op: 'gte',
+            args: [{ kind: 'ref', path: 'vars.total' }, 4],
+          },
+          then: [{ kind: 'tool', tool: 'browser_click', args: { selector: '${vars.query.selector}' } }],
+          else: [{ kind: 'tool', tool: 'browser_hover', args: { selector: '#empty' } }],
+        },
+        {
+          kind: 'forEach',
+          items: { kind: 'ref', path: 'vars.query.items' },
+          steps: [{ kind: 'tool', tool: 'browser_type', args: { selector: '#log', text: '${item.label}:${index}' } }],
+        },
+        {
+          kind: 'repeat',
+          times: { kind: 'ref', path: 'input.repeats' },
+          steps: [{ kind: 'tool', tool: 'browser_press', args: { key: 'iteration-${index}' } }],
+        },
+      ],
+    }))
+    const executeTool = vi.fn(async (tool: string) => tool === 'browser_query'
+      ? okReply({ count: 2, selector: '#run', items: [{ label: 'alpha' }, { label: 'beta' }] })
+      : okReply({ ok: true, tool }))
+
+    const result = await executeBrowserAction({
+      domain: 'example.com',
+      name: 'process_results',
+      input: { offset: 2, repeats: 2 },
+      executeTool,
+    })
+
+    expect(result).toMatchObject({ ok: true, stepsExecuted: 10, lastResult: { ok: true, tool: 'browser_press' } })
+    expect(executeTool).toHaveBeenNthCalledWith(1, 'browser_query', { selector: '.result' })
+    expect(executeTool).toHaveBeenNthCalledWith(2, 'browser_click', { selector: '#run' })
+    expect(executeTool).toHaveBeenNthCalledWith(3, 'browser_type', { selector: '#log', text: 'alpha:0' })
+    expect(executeTool).toHaveBeenNthCalledWith(4, 'browser_type', { selector: '#log', text: 'beta:1' })
+    expect(executeTool).toHaveBeenNthCalledWith(5, 'browser_press', { key: 'iteration-0' })
+    expect(executeTool).toHaveBeenNthCalledWith(6, 'browser_press', { key: 'iteration-1' })
+  })
+
+  it('shares variables with nested actions and saves their last result', async () => {
+    saveBrowserAction(action({
+      name: 'child',
+      parameters: [],
+      steps: [
+        { kind: 'tool', tool: 'browser_query', args: { selector: '#value' }, saveAs: 'child_result' },
+        {
+          kind: 'set',
+          name: 'combined',
+          value: {
+            kind: 'op',
+            op: 'add',
+            args: [
+              { kind: 'ref', path: 'vars.seed' },
+              { kind: 'ref', path: 'vars.child_result.value' },
+            ],
+          },
+        },
+      ],
+    }))
+    saveBrowserAction(action({
+      name: 'parent',
+      parameters: [],
+      steps: [
+        { kind: 'set', name: 'seed', value: 2 },
+        { kind: 'action', domain: 'example.com', name: 'child', input: {}, saveAs: 'nested_result' },
+        {
+          kind: 'tool',
+          tool: 'browser_evaluate',
+          args: { expression: '${vars.combined}', nested: '${vars.nested_result.value}' },
+        },
+      ],
+    }))
+    const executeTool = vi.fn(async (tool: string) => tool === 'browser_query'
+      ? okReply({ value: 5 })
+      : okReply({ ok: true }))
+
+    const result = await executeBrowserAction({ domain: 'example.com', name: 'parent', executeTool })
+
+    expect(result).toMatchObject({ ok: true, stepsExecuted: 5 })
+    expect(executeTool).toHaveBeenLastCalledWith('browser_evaluate', { expression: 7, nested: 5 })
+  })
+
+  it('short-circuits boolean expressions and executes the else branch', async () => {
+    saveBrowserAction(action({
+      name: 'check_optional_value',
+      parameters: [],
+      steps: [{
+        kind: 'if',
+        condition: {
+          kind: 'op',
+          op: 'and',
+          args: [
+            { kind: 'op', op: 'exists', args: [{ kind: 'ref', path: 'vars.optional' }] },
+            { kind: 'op', op: 'gt', args: [{ kind: 'ref', path: 'vars.optional.count' }, 0] },
+          ],
+        },
+        then: [{ kind: 'tool', tool: 'browser_click', args: { selector: '#present' } }],
+        else: [{ kind: 'tool', tool: 'browser_hover', args: { selector: '#missing' } }],
+      }],
+    }))
+    const executeTool = vi.fn(async () => okReply())
+
+    const result = await executeBrowserAction({ domain: 'example.com', name: 'check_optional_value', executeTool })
+
+    expect(result).toMatchObject({ ok: true, stepsExecuted: 2 })
+    expect(executeTool).toHaveBeenCalledOnce()
+    expect(executeTool).toHaveBeenCalledWith('browser_hover', { selector: '#missing' })
+  })
+
   it('runs nested actions, maps parent input, inherits tab, and returns the last result', async () => {
     saveBrowserAction(action({
       name: 'fill_search',
@@ -261,5 +428,38 @@ describe('browser action execution', () => {
 
     expect(result).toMatchObject({ ok: false, stepsExecuted: 100, error: expect.stringContaining('maximum of 100 steps') })
     expect(executeTool).toHaveBeenCalledTimes(98)
+  })
+
+  it('enforces expression arity, loop bounds, and the cumulative step budget inside loops', async () => {
+    expect(() => saveBrowserAction(action({
+      parameters: [],
+      steps: [{ kind: 'set', name: 'invalid', value: { kind: 'op', op: 'not', args: [true, false] } }],
+    }))).toThrow(/expects 1 argument/i)
+
+    saveBrowserAction(action({
+      name: 'too_many_iterations',
+      parameters: [],
+      steps: [{ kind: 'repeat', times: 51, steps: [{ kind: 'tool', tool: 'browser_tabs', args: {} }] }],
+    }))
+    const executeTool = vi.fn(async () => okReply())
+    const tooMany = await executeBrowserAction({ domain: 'example.com', name: 'too_many_iterations', executeTool })
+    expect(tooMany).toMatchObject({ ok: false, error: expect.stringContaining('maximum of 50 iterations') })
+    expect(executeTool).not.toHaveBeenCalled()
+
+    saveBrowserAction(action({
+      name: 'loop_budget',
+      parameters: [],
+      steps: [{
+        kind: 'repeat',
+        times: 50,
+        steps: [
+          { kind: 'tool', tool: 'browser_tabs', args: {} },
+          { kind: 'tool', tool: 'browser_tabs', args: {} },
+        ],
+      }],
+    }))
+    const budget = await executeBrowserAction({ domain: 'example.com', name: 'loop_budget', executeTool })
+    expect(budget).toMatchObject({ ok: false, stepsExecuted: 100, error: expect.stringContaining('maximum of 100 steps') })
+    expect(executeTool).toHaveBeenCalledTimes(99)
   })
 })

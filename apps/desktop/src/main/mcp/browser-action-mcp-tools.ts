@@ -41,13 +41,13 @@ export function registerBrowserActionTools(
     'browser_action_save',
     {
       description:
-        'Create or replace a reusable semantic browser action. Actions are global across projects and sessions and are keyed by normalized domain + name. Define each step explicitly: kind:"tool" invokes one primitive browser_* tool; kind:"action" invokes another saved action. Step values may reference declared inputs with ${input.name}. This tool does not record prior browser calls.',
+        'Create or replace a reusable semantic browser action. Actions are global across projects and sessions and are keyed by normalized domain + name. Steps run sequentially and support kind:"tool", "action", "set", "if", "forEach", and "repeat". Tool/action steps may saveAs a shared variable. Templates in tool args and nested action input may reference ${input.*}, ${vars.*}, ${result.*}, ${item.*}, and ${index}. Structured expressions use literal scalars, {kind:"literal",value}, {kind:"ref",path}, or {kind:"op",op,args}; arbitrary code is not executed. This tool does not record prior browser calls.',
       inputSchema: {
         domain: browserActionSchema.shape.domain,
         name: browserActionSchema.shape.name.describe('Stable lowercase action name using letters, numbers, underscores, or hyphens.'),
         description: browserActionSchema.shape.description.describe('Concise explanation of the action outcome and when to use it. Do not embed credentials or other secrets in steps; pass them as action inputs.'),
         parameters: browserActionSchema.shape.parameters.describe('Inputs accepted by browser_action_do. Values are referenced in steps as ${input.name}.'),
-        steps: browserActionSchema.shape.steps.describe('Ordered primitive-tool or nested-action steps. Execution is fail-fast.'),
+        steps: browserActionSchema.shape.steps.describe('Ordered flow steps. set writes to shared vars; if runs then or else; forEach exposes item and index; repeat exposes index. Loops allow at most 50 iterations, definitions at most 50 total steps, and execution at most 100 cumulative steps. Execution is fail-fast.'),
       },
     },
     async (args) => {
@@ -68,7 +68,7 @@ export function registerBrowserActionTools(
     'browser_action_do',
     {
       description:
-        'Execute one saved semantic browser action, including nested actions. Call browser_action_list first when you do not know its parameters. Execution is fail-fast, detects recursive action cycles, and returns the last primitive tool result plus a step count. The domain is a semantic namespace only and does not restrict navigation.',
+        'Execute one saved semantic browser action, including flow control and nested actions. Call browser_action_list first when you do not know its parameters. Variables are shared across nested actions for the duration of this call. Execution is sequential and fail-fast, detects recursive action cycles, and returns the last primitive tool result plus the actual step count. The domain is a semantic namespace only and does not restrict navigation.',
       inputSchema: {
         domain: z.string().describe('Action domain namespace. Normalized before lookup.'),
         name: z.string().describe('Saved action name.'),

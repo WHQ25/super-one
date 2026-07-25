@@ -219,7 +219,7 @@ export function customPlatformEndpoints(
  * built-in Responses→Chat proxy (see llm-proxy-manager ensureCodexProxyUrl).
  */
 export const HARNESS_CHAT_PROTOCOLS: Record<'claude' | 'codex', WireProtocol[]> = {
-  claude: ['anthropic-messages', 'openai-chat'],
+  claude: ['anthropic-messages'],
   codex: ['openai-responses', 'openai-chat'],
 }
 

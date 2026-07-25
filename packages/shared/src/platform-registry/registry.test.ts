@@ -144,16 +144,14 @@ describe('selectEndpoint', () => {
     expect(claude?.protocol).toBe('anthropic-messages')
   })
 
-  it('falls back to an openai-chat endpoint for chat:claude when no anthropic-messages endpoint exists', () => {
+  it('does not resolve chat:claude against an openai-chat-only endpoint', () => {
     const plan: Plan = {
       id: 'api',
       name: 'API',
       auth: 'api-key',
       endpoints: [{ id: 'openai', baseUrl: 'https://x/v1/chat/completions', protocols: ['openai-chat'] }],
     }
-    const claude = selectEndpoint(plan, 'chat:claude')
-    expect(claude?.endpoint.id).toBe('openai')
-    expect(claude?.protocol).toBe('openai-chat')
+    expect(selectEndpoint(plan, 'chat:claude')).toBeUndefined()
   })
 
   it('derives media capability from the credential enabled models', () => {

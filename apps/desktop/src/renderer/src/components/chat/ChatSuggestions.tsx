@@ -19,7 +19,7 @@ import { Tabs, TabsList, TabsTrigger } from '@superone/ui/components/ui/tabs'
 import { AcpSessionIcon } from '@superone/ui/components/harness/AcpSessionIcon'
 import { ClaudeSessionIcon } from '@superone/ui/components/harness/ClaudeSessionIcon'
 import { CodexSessionIcon } from '@superone/ui/components/harness/CodexSessionIcon'
-import { OpenCode } from '@lobehub/icons'
+import { Grok, OpenCode } from '@lobehub/icons'
 import { cn } from '@superone/ui/lib/utils'
 import { homePath } from '@/lib/path-utils'
 import { useMosaicStore } from '@/components/mosaic/mosaic-store'
@@ -32,9 +32,23 @@ const DEFAULT_ACP_AGENT_ID = 'grok-build'
 const tabsTriggerClass =
   'relative z-10 inline-flex flex-1 items-center justify-center gap-1 whitespace-nowrap rounded px-3 py-2 text-xs font-medium transition-colors text-muted-foreground hover:text-foreground data-[state=active]:text-foreground'
 
-function ProviderIcon({ provider, size = 64 }: { provider: ChatProvider; size?: number }) {
+function ProviderIcon({
+  provider,
+  acpAgentId,
+  size = 64,
+}: {
+  provider: ChatProvider
+  acpAgentId?: string | null
+  size?: number
+}) {
   if (provider === 'codex') return <CodexSessionIcon status="default" size={size} />
-  if (provider === 'acp') return <AcpSessionIcon status="default" size={size} />
+  if (provider === 'acp') {
+    // Default / Grok Build → official Grok mark; other ACP agents keep the generic ACP glyph.
+    if (!acpAgentId || acpAgentId === DEFAULT_ACP_AGENT_ID) {
+      return <Grok size={size} className="text-foreground" />
+    }
+    return <AcpSessionIcon status="default" size={size} />
+  }
   if (provider === 'opencode') return <OpenCode size={size} />
   return <ClaudeSessionIcon status="default" size={size} />
 }
@@ -167,7 +181,10 @@ function ProviderSelector() {
           exit={{ opacity: 0, y: -12, scale: 0.85 }}
           transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
         >
-          <ProviderIcon provider={preferredProvider} />
+          <ProviderIcon
+            provider={preferredProvider}
+            acpAgentId={preferredProvider === 'acp' ? effectiveAcpAgentId : null}
+          />
         </motion.div>
       </AnimatePresence>
       {preferredProvider !== 'acp' && <ActiveProviderHint />}

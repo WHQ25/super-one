@@ -346,6 +346,7 @@ export interface SessionManager {
   resumeSession(sessionId: string, opts?: { permissionMode?: PermissionMode; sandboxMode?: SandboxMode; passive?: boolean }): Session
   getSession(sessionId: string): Session | null
   disposeSession(sessionId: string): Promise<void>
+  disposeAllSessions(): Promise<void>
   forEachSession(fn: (session: Session) => void): void
 
   on(sessionId: string, handler: (event: AgentEvent) => void): () => void

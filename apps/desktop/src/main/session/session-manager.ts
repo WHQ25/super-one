@@ -390,6 +390,10 @@ export class SessionManagerImpl implements SessionManagerContract {
     cancelMcpReload(sessionId)
   }
 
+  async disposeAllSessions(): Promise<void> {
+    await Promise.all([...this.sessions.keys()].map((sessionId) => this.disposeSession(sessionId)))
+  }
+
   on(sessionId: string, handler: (e: AgentEvent) => void): () => void {
     let set = this.scopedListeners.get(sessionId)
     if (!set) {

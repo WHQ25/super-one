@@ -181,6 +181,18 @@ describe('SessionManager', () => {
     it('disposeSession is a no-op for unknown id', async () => {
       await expect(mgr.disposeSession('nope')).resolves.toBeUndefined()
     })
+
+    it('disposeAllSessions closes every backend and removes every live session', async () => {
+      const first = mgr.createSession({ projectPath: '/a', providerId: 'claude-base' })
+      const second = mgr.createSession({ projectPath: '/b', providerId: 'codex-base' })
+
+      await mgr.disposeAllSessions()
+
+      expect(hoisted.backendsCreated.every((backend) => (backend as FakeBackend).disposed)).toBe(true)
+      expect(mgr.getSession(first.snapshot.id)).toBeNull()
+      expect(mgr.getSession(second.snapshot.id)).toBeNull()
+      expect(mgr.listLiveSnapshots()).toEqual([])
+    })
   })
 
   describe('closeProject', () => {

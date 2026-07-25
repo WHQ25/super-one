@@ -3174,6 +3174,15 @@ app.on('window-all-closed', () => {
 })
 
 let quitting = false
+let agentSessionCleanupPromise: Promise<void> | null = null
+
+function disposeAgentSessions(): Promise<void> {
+  agentSessionCleanupPromise ??= Promise.allSettled([
+    agentService.dispose(),
+    sessionManager.disposeAllSessions(),
+  ]).then(() => undefined)
+  return agentSessionCleanupPromise
+}
 
 function performQuit(): void {
   quitting = true
@@ -3189,7 +3198,7 @@ function performQuit(): void {
     remoteControlService.stop(),
     new Promise<void>((r) => setTimeout(r, 1500)),
   ]).catch(() => {})
-  Promise.allSettled([remoteStop, agentService.dispose()]).finally(() => {
+  Promise.allSettled([remoteStop, disposeAgentSessions()]).finally(() => {
     codexService.dispose()
     disposeGlobalWarmupManager()
     closeAllDbConnections()
@@ -3207,8 +3216,11 @@ const handleSignalQuit = (sig: NodeJS.Signals): void => {
   if (terminalSweepTimer) clearInterval(terminalSweepTimer)
   terminalManager.killAll()
   closeAllDbConnections()
-  remoteControlService.stop().catch(() => {}).finally(() => process.exit(0))
-  setTimeout(() => process.exit(0), 1500).unref()
+  Promise.allSettled([
+    remoteControlService.stop(),
+    disposeAgentSessions(),
+  ]).finally(() => process.exit(0))
+  setTimeout(() => process.exit(0), 3000).unref()
 }
 process.once('SIGTERM', () => handleSignalQuit('SIGTERM'))
 process.once('SIGINT', () => handleSignalQuit('SIGINT'))

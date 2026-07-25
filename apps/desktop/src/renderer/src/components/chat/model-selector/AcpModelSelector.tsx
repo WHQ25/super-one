@@ -6,7 +6,6 @@ import type { AcpAgentDescriptor } from '@superone/shared/agent-types'
 import {
   groupModelsBySlashPrefix,
   resolveSlashModelLabel,
-  splitSlashModelId,
 } from '../ModelSelectorLists'
 import {
   GroupedModelEffortSelector,
@@ -49,11 +48,10 @@ export function AcpModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?: (e: 
   const agent = agents.find((a) => a.id === acpAgentId)
   const grouped = useGroupedSlashList(acpAgentId)
   const currentModel = acpModels.find((m) => m.id === selectedModel)
+  // Only show selectedModel when it exists in this agent's catalog (avoids Claude/OpenCode ids after switch).
   const currentLabel = currentModel
     ? (grouped ? resolveSlashModelLabel(currentModel) : (currentModel.name || currentModel.id))
-    : selectedModel
-      ? (grouped ? splitSlashModelId(selectedModel).label : selectedModel)
-      : (agent?.name ?? t('chat.suggestions.acpLabel'))
+    : (agent?.name ?? t('chat.suggestions.acpLabel'))
 
   const models = useMemo<SelectorModelOption[] | undefined>(
     () => grouped ? undefined : acpModels.map((m) => ({ id: m.id, name: m.name || m.id, description: m.description })),

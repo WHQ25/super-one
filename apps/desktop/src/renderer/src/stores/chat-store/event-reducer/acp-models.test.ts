@@ -66,9 +66,51 @@ describe('applyEventToSession: acp_models', () => {
     expect(patch).toEqual({})
   })
 
+  it('ignores ACP model events after switching harness (stale prewarm)', () => {
+    const session = {
+      ...createDefaultPerSessionState(),
+      preferredProvider: 'claude' as const,
+      sessionProvider: 'claude' as const,
+      // Kept for when the user switches back to ACP
+      acpAgentId: 'grok-build',
+      selectedModel: 'claude-sonnet-4',
+      modelUserChosen: false,
+    }
+    const patch = applyEventToSession(session, {
+      type: 'acp_models',
+      agentId: 'grok-build',
+      models: grokModels,
+      selectedModelId: 'grok-4.5',
+      configId: null,
+      status: 'ready',
+    })
+    expect(patch).toEqual({})
+  })
+
+  it('ignores ACP mode events when harness is not acp', () => {
+    const session = {
+      ...createDefaultPerSessionState(),
+      preferredProvider: 'opencode' as const,
+      sessionProvider: 'opencode' as const,
+      acpAgentId: 'grok-build',
+      selectedModel: 'openai/gpt-5',
+    }
+    const patch = applyEventToSession(session, {
+      type: 'acp_modes',
+      agentId: 'grok-build',
+      modes: [{ id: 'high', name: 'High', description: '' }],
+      selectedModeId: 'high',
+      configId: null,
+      status: 'ready',
+    })
+    expect(patch).toEqual({})
+  })
+
   it('does not wipe ready cache while a loading event arrives', () => {
     const session = {
       ...createDefaultPerSessionState(),
+      preferredProvider: 'acp' as const,
+      sessionProvider: 'acp' as const,
       acpAgentId: 'opencode',
       acpModels: openCodeModels,
       acpModelsStatus: 'ready' as const,
@@ -88,6 +130,8 @@ describe('applyEventToSession: acp_models', () => {
   it('preserves user-chosen model when still in the catalog', () => {
     const session = {
       ...createDefaultPerSessionState(),
+      preferredProvider: 'acp' as const,
+      sessionProvider: 'acp' as const,
       acpAgentId: 'opencode',
       selectedModel: 'openai/gpt-5.4',
       modelUserChosen: true,
@@ -107,6 +151,8 @@ describe('applyEventToSession: acp_models', () => {
   it('resets selection when user-chosen model is no longer in catalog', () => {
     const session = {
       ...createDefaultPerSessionState(),
+      preferredProvider: 'acp' as const,
+      sessionProvider: 'acp' as const,
       acpAgentId: 'opencode',
       selectedModel: 'stale-model',
       modelUserChosen: true,

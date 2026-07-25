@@ -224,6 +224,14 @@ describe('_computeClaudeDefaultPatch', () => {
     expect(_computeClaudeDefaultPatch(session, [opus])).toBeNull()
   })
 
+  it('returns null for non-Claude harness sessions (shared selectedModel field)', () => {
+    const session = createDefaultPerSessionState()
+    session.sessionProvider = 'acp'
+    session.preferredProvider = 'acp'
+    session.selectedModel = 'grok-4.5'
+    expect(_computeClaudeDefaultPatch(session, [opus])).toBeNull()
+  })
+
   it('returns null when no models are available', () => {
     const session = createDefaultPerSessionState()
     expect(_computeClaudeDefaultPatch(session, [])).toBeNull()
@@ -278,6 +286,8 @@ describe('_computeCodexDefaultPatch', () => {
 
   it('proposes both fields when neither is user-chosen', () => {
     const session = createDefaultPerSessionState()
+    session.sessionProvider = 'codex'
+    session.preferredProvider = 'codex'
     session.selectedCodexModel = ''
     const patch = _computeCodexDefaultPatch(session, [codexHigh])
     expect(patch?.selectedCodexModel).toBe('gpt-5-high')
@@ -286,6 +296,8 @@ describe('_computeCodexDefaultPatch', () => {
 
   it('skips model when current is already the default', () => {
     const session = createDefaultPerSessionState()
+    session.sessionProvider = 'codex'
+    session.preferredProvider = 'codex'
     session.selectedCodexModel = 'gpt-5-high'
     session.selectedCodexReasoningEffort = undefined
     const patch = _computeCodexDefaultPatch(session, [codexHigh])
@@ -295,8 +307,17 @@ describe('_computeCodexDefaultPatch', () => {
 
   it('returns null when nothing changes', () => {
     const session = createDefaultPerSessionState()
+    session.sessionProvider = 'codex'
+    session.preferredProvider = 'codex'
     session.selectedCodexModel = 'gpt-5-high'
     session.selectedCodexReasoningEffort = 'high'
+    expect(_computeCodexDefaultPatch(session, [codexHigh])).toBeNull()
+  })
+
+  it('returns null for non-Codex harness sessions', () => {
+    const session = createDefaultPerSessionState()
+    session.sessionProvider = 'claude'
+    session.preferredProvider = 'claude'
     expect(_computeCodexDefaultPatch(session, [codexHigh])).toBeNull()
   })
 })
@@ -344,7 +365,12 @@ describe('_reapplyAgentDefaultsToSessions', () => {
   })
 
   it("applies Codex defaults when kind='codex'", () => {
-    seedProject('/p1', { selectedCodexModel: '', selectedCodexReasoningEffort: undefined })
+    seedProject('/p1', {
+      sessionProvider: 'codex',
+      preferredProvider: 'codex',
+      selectedCodexModel: '',
+      selectedCodexReasoningEffort: undefined,
+    })
 
     _reapplyAgentDefaultsToSessions('codex')
 

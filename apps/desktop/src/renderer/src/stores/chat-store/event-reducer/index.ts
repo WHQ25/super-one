@@ -90,6 +90,10 @@ export function applyEventToSession(session: PerSessionState, event: AgentEvent)
       return {}
 
     case 'acp_models': {
+      // After harness switch, acpAgentId is kept for restore — but late prewarm must not
+      // overwrite Claude/OpenCode/Codex selectedModel with Grok/ACP ids.
+      const sessionProvider = session.sessionProvider ?? session.preferredProvider
+      if (sessionProvider !== 'acp') return {}
       // Ignore catalogs from a different ACP agent (stale prewarm race grok → opencode).
       if (event.agentId && session.acpAgentId && event.agentId !== session.acpAgentId) {
         return {}
@@ -124,6 +128,8 @@ export function applyEventToSession(session: PerSessionState, event: AgentEvent)
     }
 
     case 'acp_modes': {
+      const sessionProvider = session.sessionProvider ?? session.preferredProvider
+      if (sessionProvider !== 'acp') return {}
       if (event.agentId && session.acpAgentId && event.agentId !== session.acpAgentId) {
         return {}
       }
@@ -151,6 +157,8 @@ export function applyEventToSession(session: PerSessionState, event: AgentEvent)
     }
 
     case 'acp_commands': {
+      const sessionProvider = session.sessionProvider ?? session.preferredProvider
+      if (sessionProvider !== 'acp') return {}
       if (event.agentId && session.acpAgentId && event.agentId !== session.acpAgentId) {
         return {}
       }

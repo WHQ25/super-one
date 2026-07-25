@@ -70,6 +70,8 @@ export function applySessionAgentDefaults(
 }
 
 export function _computeClaudeDefaultPatch(sess: PerSessionState, models: ModelOption[]): Partial<PerSessionState> | null {
+  // selectedModel is shared across harnesses — never reapply Claude defaults onto ACP/OpenCode/Codex.
+  if (resolveProvider(sess) !== 'claude') return null
   if (sess.modelUserChosen && sess.effortUserChosen) return null
   if (models.length === 0) return null
   const patch: Partial<PerSessionState> = {}
@@ -89,6 +91,7 @@ export function _computeClaudeDefaultPatch(sess: PerSessionState, models: ModelO
 }
 
 export function _computeCodexDefaultPatch(sess: PerSessionState, models: ModelOption[]): Partial<PerSessionState> | null {
+  if (resolveProvider(sess) !== 'codex') return null
   if (sess.codexModelUserChosen && sess.codexReasoningEffortUserChosen) return null
   if (models.length === 0) return null
   const selected = resolveDefaultCodexSelection(models)

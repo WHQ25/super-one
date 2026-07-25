@@ -549,6 +549,8 @@ export function setPreferredProviderImpl(
   if (provider === 'opencode') {
     void get().initializeHarness('opencode').then(() => {
       const session = getActivePerSession(get())
+      // User may have switched harness before OpenCode resources finished loading.
+      if ((session.sessionProvider ?? session.preferredProvider) !== 'opencode') return
       const models = get().harnessResources.opencode?.models ?? []
       const selected = models.find((model) => model.id === session.selectedModel)
       const fallback = resolveDefaultOpenCodeSelection(models)

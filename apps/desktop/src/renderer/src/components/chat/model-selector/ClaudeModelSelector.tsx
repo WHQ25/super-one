@@ -56,7 +56,8 @@ export function ClaudeModelSelector({ onCloseAutoFocus }: Props) {
   const providerProps = useSelectorProviders(activeProvider)
 
   const currentModel = availableModels.find((m) => m.id === selectedModel)
-  const currentModelName = resolveClaudeDisplayName(currentModel, activeModelEnv) ?? selectedModel ?? null
+  // Never surface a foreign harness model id (stale ACP/OpenCode race) as the label.
+  const currentModelName = resolveClaudeDisplayName(currentModel, activeModelEnv)
 
   const models = useMemo<SelectorModelOption[]>(
     () => resolveClaudeEntries(availableModels, activeModelEnv).map(({ model, displayName, description }) => ({

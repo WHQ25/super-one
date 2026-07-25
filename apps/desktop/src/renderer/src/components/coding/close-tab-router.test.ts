@@ -41,18 +41,6 @@ describe('⌘W close-tab routing by focused region', () => {
     expect(handlers.closeWindow).not.toHaveBeenCalled()
   })
 
-  it('closes the window when focus is inside a canvas (fullscreen) browser (no dock tab to close)', () => {
-    document.body.innerHTML = `
-      <div style="position:fixed">
-        <div data-browser-host="" data-browser-presentation="canvas"><webview id="wv"></webview></div>
-      </div>`
-    const wv = document.getElementById('wv')!
-
-    expect(routeCloseTabShortcut(wv, handlers)).toBe('window')
-    expect(handlers.closeWindow).toHaveBeenCalledOnce()
-    expect(handlers.closeDock).not.toHaveBeenCalled()
-  })
-
   it('closes the active dockview panel when focus is inside a panel mini-app iframe (the reported regression)', () => {
     // The mini-app iframe is portaled into the fixed host layer, NOT nested
     // inside [data-activity-outer]. Only the panel-presentation marker links
@@ -68,18 +56,6 @@ describe('⌘W close-tab routing by focused region', () => {
     expect(handlers.closeDock).toHaveBeenCalledOnce()
     expect(handlers.closeTerminal).not.toHaveBeenCalled()
     expect(handlers.closeWindow).not.toHaveBeenCalled()
-  })
-
-  it('closes the window when focus is inside a canvas mini-app (no dock tab to close)', () => {
-    document.body.innerHTML = `
-      <div data-miniapp-host-layer="">
-        <div data-miniapp-host="" data-miniapp-presentation="canvas"><iframe id="mini"></iframe></div>
-      </div>`
-    const iframe = document.getElementById('mini')!
-
-    expect(routeCloseTabShortcut(iframe, handlers)).toBe('window')
-    expect(handlers.closeWindow).toHaveBeenCalledOnce()
-    expect(handlers.closeDock).not.toHaveBeenCalled()
   })
 
   it('closes the window when focus is outside both the terminal and the activity panel', () => {

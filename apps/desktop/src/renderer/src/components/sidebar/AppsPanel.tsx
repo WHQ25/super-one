@@ -3,6 +3,7 @@ import { Maximize, PackagePlus, Search } from 'lucide-react'
 import { ScrollArea } from '@superone/ui/components/ui/scroll-area'
 import { useAppStore } from '@/stores/app'
 import { useMiniAppStore } from '@/stores/miniapp'
+import { maximizeActivityPanel } from '@/components/activity/activity-panel-api'
 import { useShallow } from 'zustand/react/shallow'
 import { cn } from '@superone/ui/lib/utils'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
@@ -33,10 +34,7 @@ function getS1AppPaths(e: DragEvent): string[] {
 
 export function AppsPanel() {
   const currentFolder = useAppStore((s) => s.currentFolder)
-  const setLayoutMode = useAppStore((s) => s.setLayoutMode)
-
   const apps = useMiniAppStore(useShallow((s) => s.apps))
-  const requestOpenInCanvas = useMiniAppStore((s) => s.requestOpenInCanvas)
   const openAppInPanel = useMiniAppStore((s) => s.openAppInPanel)
   const previewInstall = useMiniAppStore((s) => s.previewInstall)
 
@@ -153,21 +151,19 @@ export function AppsPanel() {
                     <span className="truncate text-[13px]">{app.manifest.name}</span>
                     {app.manifest.description && <MarqueeText className="text-[11px] text-sidebar-foreground/50">{app.manifest.description}</MarqueeText>}
                   </div>
-                  {app.manifest.fullscreen && (
-                    <IconButton
-                      size="sm"
-                      variant="nested"
-                      className="ml-1 opacity-0 transition-all group-hover/app:opacity-100"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        setLayoutMode('canvas')
-                        requestOpenInCanvas(app.id)
-                      }}
-                      tooltip="Open in canvas"
-                    >
-                      <Maximize />
-                    </IconButton>
-                  )}
+                  <IconButton
+                    size="sm"
+                    variant="nested"
+                    className="ml-1 opacity-0 transition-all group-hover/app:opacity-100"
+                    onClick={async (e) => {
+                      e.stopPropagation()
+                      await openAppInPanel(app, currentFolder ?? '')
+                      maximizeActivityPanel()
+                    }}
+                    tooltip="Open maximized"
+                  >
+                    <Maximize />
+                  </IconButton>
                 </div>
               ))}
             </div>

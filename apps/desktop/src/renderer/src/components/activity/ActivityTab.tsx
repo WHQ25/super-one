@@ -1,14 +1,16 @@
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import type { IDockviewPanelHeaderProps } from 'dockview-core'
-import { Bug, Globe, Maximize, RotateCw, Terminal as TerminalIcon, X } from 'lucide-react'
+import { Bug, Globe, Maximize, RotateCw, Shrink, Terminal as TerminalIcon, X } from 'lucide-react'
 import { motion } from 'motion/react'
 import { cn } from '@superone/ui/lib/utils'
 import { FileIcon } from '@superone/ui/components/ui/FileIcon'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { useBrowserStore } from '@/stores/browser'
+import { useActivityPanelStore } from '@/stores/activity-panel'
 import { BrowserFavicon } from '@/components/browser/BrowserFavicon'
-import { closeActivityTerminalTab, closeBrowserTab, maximizeBrowserTab } from './activity-panel-api'
+import { closeActivityTerminalTab, closeBrowserTab, toggleMaximizedActivityGroup } from './activity-panel-api'
 
 function useIsActive(api: IDockviewPanelHeaderProps['api']) {
   const [active, setActive] = useState(api.isActive)
@@ -66,6 +68,7 @@ export function FilePreviewTab(props: IDockviewPanelHeaderProps<{ filePath: stri
         {fileName && <FileIcon name={fileName} size={14} className="shrink-0" />}
       </HoverCloseSlot>
       <span className="min-w-0 truncate text-xs">{fileName || 'File'}</span>
+      <MaximizeTabAction api={props.api} active={active} />
     </div>
   )
 }
@@ -99,13 +102,27 @@ function TabActionButton({
   )
 }
 
+function MaximizeTabAction({ api, active }: { api: IDockviewPanelHeaderProps['api']; active: boolean }) {
+  const { t } = useTranslation()
+  const maximizedGroupId = useActivityPanelStore((s) => s.maximizedGroupId)
+  const maximized = maximizedGroupId === api.group.id
+  const Icon = maximized ? Shrink : Maximize
+  return (
+    <TabActionButton
+      active={active}
+      onClick={(e) => { e.stopPropagation(); toggleMaximizedActivityGroup(api.id) }}
+      title={t(maximized ? 'tooltips.restoreActivityPanel' : 'tooltips.maximizeActivityPanel')}
+    >
+      <Icon className="size-3 shrink-0" />
+    </TabActionButton>
+  )
+}
+
 export function MiniAppTab(props: IDockviewPanelHeaderProps<{ instanceKey: string; appId: string }>) {
   const { instanceKey, appId } = props.params
   const app = useMiniAppStore((s) => s.apps.find((a) => a.id === appId))
-  const moveAppToCanvas = useMiniAppStore((s) => s.moveAppToCanvas)
   const closeApp = useMiniAppStore((s) => s.closeApp)
   const devControls = useMiniAppStore((s) => s.devControls[instanceKey])
-  const canFullscreen = app?.manifest.fullscreen === true
   const isDev = app?.manifest.isDev === true
   const active = useIsActive(props.api)
 
@@ -133,15 +150,7 @@ export function MiniAppTab(props: IDockviewPanelHeaderProps<{ instanceKey: strin
           </TabActionButton>
         </>
       )}
-      {canFullscreen && (
-        <TabActionButton
-          active={active}
-          onClick={(e) => { e.stopPropagation(); moveAppToCanvas(instanceKey) }}
-          title="Open in fullscreen"
-        >
-          <Maximize className="size-3 shrink-0" />
-        </TabActionButton>
-      )}
+      <MaximizeTabAction api={props.api} active={active} />
     </div>
   )
 }
@@ -164,13 +173,7 @@ export function BrowserTab(props: IDockviewPanelHeaderProps<{ browserId: string 
         />
       </HoverCloseSlot>
       <span className="min-w-0 truncate text-xs">{title}</span>
-      <TabActionButton
-        active={active}
-        onClick={(e) => { e.stopPropagation(); maximizeBrowserTab(browserId) }}
-        title="Open in fullscreen"
-      >
-        <Maximize className="size-3 shrink-0" />
-      </TabActionButton>
+      <MaximizeTabAction api={props.api} active={active} />
     </div>
   )
 }
@@ -184,6 +187,7 @@ export function TerminalTab(props: IDockviewPanelHeaderProps<{ terminalId: strin
         <TerminalIcon className="size-3.5 shrink-0" />
       </HoverCloseSlot>
       <span className="min-w-0 truncate text-xs">{title || 'Terminal'}</span>
+      <MaximizeTabAction api={props.api} active={active} />
     </div>
   )
 }

@@ -2,7 +2,6 @@ import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { PanelLeft, PanelRight, PanelTop, PanelBottom, SquarePlus } from 'lucide-react'
 import { useMiniAppStore } from '@/stores/miniapp'
-import { useAppStore } from '@/stores/app'
 import { useActivityDropStore, type DropPosition } from '@/stores/activity-drop'
 import { useActivityPanelStore } from '@/stores/activity-panel'
 import { useSashResizing } from '@/hooks/useSashResizing'
@@ -31,7 +30,6 @@ function DropGuide({ position }: { position: DropPosition }) {
 
 export function MiniAppHostLayer() {
   const openInstanceKeys = useMiniAppStore(useShallow((s) => Object.keys(s.openApps)))
-  const layoutMode = useAppStore((s) => s.layoutMode)
   const globalDragging = useGlobalDragging()
   const sashResizing = useSashResizing()
   const dragging = globalDragging || sashResizing
@@ -52,7 +50,7 @@ export function MiniAppHostLayer() {
       }}
     >
       {openInstanceKeys.map((instanceKey) => (
-        <PersistentMiniAppContainer key={instanceKey} instanceKey={instanceKey} layoutMode={layoutMode} dragging={dragging} />
+        <PersistentMiniAppContainer key={instanceKey} instanceKey={instanceKey} dragging={dragging} />
       ))}
       {dragging && indicator && (
         <div
@@ -79,19 +77,14 @@ export function MiniAppHostLayer() {
   )
 }
 
-function PersistentMiniAppContainer({ instanceKey, layoutMode, dragging }: { instanceKey: string; layoutMode: 'canvas' | 'coding'; dragging: boolean }) {
+function PersistentMiniAppContainer({ instanceKey, dragging }: { instanceKey: string; dragging: boolean }) {
   const slot = useMiniAppStore((s) => s.slots[instanceKey])
   const activitySide = useActivityPanelStore((s) => s.side)
   const activityShown = useActivityPanelStore((s) => s.showPanel)
   const open = useMiniAppStore((s) => s.openApps[instanceKey])
   const appId = open?.entry.id
-  const presentation = open?.presentation
-  const presentationMatches =
-    (layoutMode === 'canvas' && presentation === 'canvas') ||
-    (layoutMode === 'coding' && presentation === 'panel')
-  const mounted = presentationMatches && slot != null && slot.width > 0 && slot.height > 0
-  const hostShown = presentation !== 'panel' || activityShown
-  const visible = mounted && hostShown
+  const mounted = slot != null && slot.width > 0 && slot.height > 0
+  const visible = mounted && activityShown
 
   if (!appId) return null
 
@@ -100,7 +93,7 @@ function PersistentMiniAppContainer({ instanceKey, layoutMode, dragging }: { ins
       data-miniapp-host=""
       data-instance-key={instanceKey}
       data-app-id={appId}
-      data-miniapp-presentation={presentation}
+      data-miniapp-presentation="panel"
       style={{
         position: 'absolute',
         left: visible ? (slot?.left ?? 0) : -99999,
@@ -110,8 +103,8 @@ function PersistentMiniAppContainer({ instanceKey, layoutMode, dragging }: { ins
         display: mounted ? 'block' : 'none',
         pointerEvents: visible && !dragging ? 'auto' : 'none',
         overflow: 'hidden',
-        borderBottomLeftRadius: (layoutMode === 'coding' && activitySide === 'left') || (layoutMode === 'canvas' && presentation === 'canvas') ? 'var(--radius-xl)' : undefined,
-        borderBottomRightRadius: (layoutMode === 'coding' && activitySide === 'right') || (layoutMode === 'canvas' && presentation === 'canvas') ? 'var(--radius-xl)' : undefined,
+        borderBottomLeftRadius: activitySide === 'left' ? 'var(--radius-xl)' : undefined,
+        borderBottomRightRadius: activitySide === 'right' ? 'var(--radius-xl)' : undefined,
       }}
     >
       <MiniAppView instanceKey={instanceKey} appId={appId} className="h-full w-full" />

@@ -19,7 +19,7 @@ export function toggleSidebar(): void {
   const ap = useActivityPanelStore.getState()
   const next = !showSidebar
 
-  if (ap.showPanel) {
+  if (ap.showPanel && !ap.maximized) {
     const maxAp = window.innerWidth - (next ? sidebarWidth : 0) - LAYOUT.MIN_MAIN - LAYOUT.CARD_GUTTER
     const target = next ? ap.panelWidth - sidebarWidth : ap.panelWidth + sidebarWidth
     ap.setPanelWidth(Math.max(LAYOUT.MIN_AP, Math.min(target, maxAp)))

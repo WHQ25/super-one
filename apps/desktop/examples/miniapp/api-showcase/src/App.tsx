@@ -6,7 +6,7 @@ export default function App() {
   const [active, setActive] = useState(SECTIONS[0].id)
   const [wide, setWide] = useState(false)
 
-  // Left rail when there's room (canvas / fullscreen), top pill nav otherwise.
+  // Left rail when the activity panel is wide enough, top pill nav otherwise.
   useEffect(() => {
     const onResize = () => setWide(window.innerWidth >= 880)
     onResize()

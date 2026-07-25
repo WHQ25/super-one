@@ -23,13 +23,13 @@ No URL-based router — views are driven by `useAppStore.view` state machine:
 
 `startup` → `setup` → `main` → `settings`
 
-Navigation via `navigateTo()` action. The `main` view has two layout modes: `canvas` and `coding`.
+Navigation uses the `navigateTo()` action. The `main` view has one coding layout. Its Activity Dockview can maximize across the main area while the chat switches to a floating panel; the sidebar remains independently collapsible.
 
 ### State Management (Zustand)
 
 Four stores with clear responsibilities:
 
-- **`useAppStore`** — App lifecycle, folder/project management, layout mode, sidebar state, auto-update status, worktree management
+- **`useAppStore`** — App lifecycle, folder/project management, sidebar state, auto-update status, worktree management
 - **`useChatStore`** — Multi-project chat sessions (`projectSessions: Record<path, SessionState>`), message streaming, permission handling, background sessions (`_bgSessions`)
 - **`useSettingsStore`** — Resource CRUD (agents, skills, MCP configs, plugins), lazy-loaded per settings view
 - **`useMiniAppStore`** — Mini-app discovery, install/uninstall actions, app list caching

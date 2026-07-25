@@ -91,7 +91,7 @@ The worker is reclaimed automatically — you do not need to babysit it, but you
 
 | Trigger | Effect |
 |---------|--------|
-| Panel closed / panel↔canvas switch / app closed | Worker **keeps running** (it is a separate process). |
+| Panel closed / app closed | Worker **keeps running** (it is a separate process). |
 | **Idle 30s** with no active `keepAlive` lease | Worker auto-stops. |
 | Active `keepAlive` lease | Idle timer is suspended until every lease is released. |
 | **Runaway guard: 6h** | Hard cap — worker is reclaimed even with leases held. Re-`start()` and resume from a checkpoint for longer jobs. |

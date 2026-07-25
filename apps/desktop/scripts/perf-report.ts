@@ -26,7 +26,7 @@ interface SampleData {
     toolBlocksTotal: number
     activeProject: string | null
   }
-  app: { view: string; layoutMode: string }
+  app: { view: string }
   miniapp: { apps: number }
 }
 

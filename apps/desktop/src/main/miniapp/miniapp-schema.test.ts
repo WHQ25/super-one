@@ -123,16 +123,6 @@ describe('parseManifest', () => {
     }
   })
 
-  it('should accept fullscreen flag', () => {
-    const result = parseManifest({ ...validManifest, fullscreen: true })
-    expect(result.ok).toBe(true)
-  })
-
-  it('should reject non-boolean fullscreen', () => {
-    const result = parseManifest({ ...validManifest, fullscreen: 'yes' })
-    expect(result.ok).toBe(false)
-  })
-
   it('should accept preferWidth in valid range', () => {
     const result = parseManifest({ ...validManifest, preferWidth: 480 })
     expect(result.ok).toBe(true)

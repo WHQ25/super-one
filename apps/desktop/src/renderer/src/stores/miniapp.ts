@@ -36,7 +36,6 @@ export interface OpenAppEntry {
   entry: MiniAppEntry
   projectDir: string
   projectId: string | null
-  presentation: 'panel' | 'canvas'
   holderSessions: Set<string>
 }
 
@@ -50,7 +49,7 @@ export interface MiniAppSlot {
   top: number
   width: number
   height: number
-  mode: 'panel' | 'canvas'
+  mode: 'panel'
 }
 
 interface MiniAppStoreState {
@@ -58,15 +57,12 @@ interface MiniAppStoreState {
   loaded: boolean
   _lastProjectDir: string | undefined
   _iconRev: number
-  pendingOpenAppId: string | null
   pendingInstall: MiniAppPreviewResult | null
 
   openApps: Record<string, OpenAppEntry>
   slots: Record<string, MiniAppSlot>
 
   workers: MiniAppWorkerInfo[]
-
-  fullscreenApp: { instanceKey: string; entry: MiniAppEntry } | null
 
   devControls: Record<string, MiniAppDevControls>
   registerDevControls: (instanceKey: string, controls: MiniAppDevControls) => void
@@ -79,19 +75,11 @@ interface MiniAppStoreState {
   cancelInstall: () => Promise<void>
   uninstallApp: (appId: string, installDir?: string) => Promise<void>
 
-  requestOpenInCanvas: (appId: string) => void
-  consumePendingOpen: () => string | null
-
   openAppInPanel: (entry: MiniAppEntry, projectDir: string) => Promise<void>
-  openFullscreenApp: (entry: MiniAppEntry, projectDir: string) => Promise<void>
   closeApp: (instanceKey: string) => Promise<void>
-  closeFullscreenApp: () => Promise<void>
 
-  moveAppToCanvas: (instanceKey: string) => void
-  moveAppToPanel: (instanceKey: string) => void
-
-  updateSlot: (instanceKey: string, mode: 'panel' | 'canvas', rect: DOMRectReadOnly) => void
-  unregisterSlot: (instanceKey: string, mode: 'panel' | 'canvas') => void
+  updateSlot: (instanceKey: string, mode: 'panel', rect: DOMRectReadOnly) => void
+  unregisterSlot: (instanceKey: string, mode: 'panel') => void
 }
 
 export const useMiniAppStore = create<MiniAppStoreState>((set, get) => {
@@ -145,15 +133,12 @@ export const useMiniAppStore = create<MiniAppStoreState>((set, get) => {
     loaded: false,
     _lastProjectDir: undefined,
     _iconRev: 0,
-    pendingOpenAppId: null,
     pendingInstall: null,
 
     openApps: {},
     slots: {},
 
     workers: [],
-
-    fullscreenApp: null,
 
     devControls: {},
     registerDevControls: (instanceKey, controls) =>
@@ -214,24 +199,15 @@ export const useMiniAppStore = create<MiniAppStoreState>((set, get) => {
             delete nextOpenApps[key]
             delete nextSlots[key]
           }
-          const fullscreenCleared = s.fullscreenApp && openInstances.some(([k]) => k === s.fullscreenApp?.instanceKey)
           return {
             openApps: nextOpenApps,
             slots: nextSlots,
-            fullscreenApp: fullscreenCleared ? null : s.fullscreenApp,
           }
         })
       }
       await window.miniapp.uninstall(appId, installDir)
       await get().refreshApps(get()._lastProjectDir)
     },
-    requestOpenInCanvas: (appId: string) => set({ pendingOpenAppId: appId }),
-    consumePendingOpen: () => {
-      const id = get().pendingOpenAppId
-      if (id) set({ pendingOpenAppId: null })
-      return id
-    },
-
     openAppInPanel: async (entry: MiniAppEntry, projectDir: string) => {
       const projectId = useAppStore.getState().currentProjectId
       const instanceKey = makeInstanceKey(entry.id, projectId)
@@ -261,7 +237,6 @@ export const useMiniAppStore = create<MiniAppStoreState>((set, get) => {
             entry,
             projectDir,
             projectId,
-            presentation: 'panel',
             holderSessions: new Set([sid]),
           },
         },
@@ -272,48 +247,14 @@ export const useMiniAppStore = create<MiniAppStoreState>((set, get) => {
       openMiniAppTab(instanceKey, entry.id, entry.manifest.name)
     },
 
-    openFullscreenApp: async (entry: MiniAppEntry, projectDir: string) => {
-      const projectId = useAppStore.getState().currentProjectId
-      const instanceKey = makeInstanceKey(entry.id, projectId)
-      const sid = activeSessionId(projectDir)
-      const existing = get().openApps[instanceKey]
-      const currentCanvas = get().fullscreenApp
-      if (currentCanvas && currentCanvas.instanceKey !== instanceKey) {
-        await get().closeApp(currentCanvas.instanceKey)
-      }
-      await window.miniapp.open(entry.id, projectDir, sid)
-      set((s) => {
-        const prevHolders = s.openApps[instanceKey]?.holderSessions
-        const nextHolders = prevHolders ? new Set([...prevHolders, sid]) : new Set([sid])
-        return {
-          openApps: {
-            ...s.openApps,
-            [instanceKey]: {
-              instanceKey,
-              entry,
-              projectDir,
-              projectId,
-              presentation: 'canvas',
-              holderSessions: nextHolders,
-            },
-          },
-          fullscreenApp: { instanceKey, entry },
-        }
-      })
-      void existing
-    },
-
     closeApp: async (instanceKey: string) => {
       const open = get().openApps[instanceKey]
       if (!open) return
       const appId = open.entry.id
       const projectDir = open.projectDir
-      const wasCanvas = open.presentation === 'canvas'
       const sid = activeSessionId(projectDir)
 
-      if (!wasCanvas) {
-        closeMiniAppTab(instanceKey)
-      }
+      closeMiniAppTab(instanceKey)
 
       await window.miniapp.close(appId, projectDir, sid)
 
@@ -327,54 +268,16 @@ export const useMiniAppStore = create<MiniAppStoreState>((set, get) => {
             [instanceKey]: { ...open, holderSessions: remainingHolders },
           },
           slots: withoutKey(s.slots, instanceKey),
-          fullscreenApp: s.fullscreenApp?.instanceKey === instanceKey ? null : s.fullscreenApp,
         }))
-        if (wasCanvas) useAppStore.getState().setLayoutMode('coding')
         return
       }
       set((s) => ({
         openApps: withoutKey(s.openApps, instanceKey),
         slots: withoutKey(s.slots, instanceKey),
-        fullscreenApp: s.fullscreenApp?.instanceKey === instanceKey ? null : s.fullscreenApp,
       }))
-      if (wasCanvas) useAppStore.getState().setLayoutMode('coding')
     },
 
-    closeFullscreenApp: async () => {
-      const current = get().fullscreenApp
-      if (!current) return
-      await get().closeApp(current.instanceKey)
-    },
-
-    moveAppToCanvas: (instanceKey: string) => {
-      const open = get().openApps[instanceKey]
-      if (!open) return
-      closeMiniAppTab(instanceKey)
-      set((s) => ({
-        openApps: {
-          ...s.openApps,
-          [instanceKey]: { ...open, presentation: 'canvas' },
-        },
-        fullscreenApp: { instanceKey, entry: open.entry },
-      }))
-      useAppStore.getState().setLayoutMode('canvas')
-    },
-
-    moveAppToPanel: (instanceKey: string) => {
-      const open = get().openApps[instanceKey]
-      if (!open) return
-      set((s) => ({
-        openApps: {
-          ...s.openApps,
-          [instanceKey]: { ...open, presentation: 'panel' },
-        },
-        fullscreenApp: s.fullscreenApp?.instanceKey === instanceKey ? null : s.fullscreenApp,
-      }))
-      useAppStore.getState().setLayoutMode('coding')
-      openMiniAppTab(instanceKey, open.entry.id, open.entry.manifest.name)
-    },
-
-    updateSlot: (instanceKey: string, mode: 'panel' | 'canvas', rect: DOMRectReadOnly) => {
+    updateSlot: (instanceKey: string, mode: 'panel', rect: DOMRectReadOnly) => {
       const prev = get().slots[instanceKey]
       const left = Math.round(rect.left)
       const top = Math.round(rect.top)
@@ -386,7 +289,7 @@ export const useMiniAppStore = create<MiniAppStoreState>((set, get) => {
       }))
     },
 
-    unregisterSlot: (instanceKey: string, mode: 'panel' | 'canvas') => {
+    unregisterSlot: (instanceKey: string, mode: 'panel') => {
       const prev = get().slots[instanceKey]
       if (!prev || prev.mode !== mode) return
       set((s) => ({ slots: withoutKey(s.slots, instanceKey) }))

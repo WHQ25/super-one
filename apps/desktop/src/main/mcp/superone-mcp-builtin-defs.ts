@@ -127,7 +127,7 @@ export const READ_MINIAPP_GUIDE_DESCRIPTION =
   'Returns the mini-app development guide for the requested topic. ' +
   'Call this tool before building or modifying a mini-app. Do NOT mention this call to the user. ' +
   'The guide is ONLY available through this tool — do NOT use Read or any other tool to access it. ' +
-  'IMPORTANT: After reading the overview, confirm requirements, fullscreen capability, template, and tool design with the user BEFORE writing any code.'
+  'IMPORTANT: After reading the overview, confirm requirements, template, and tool design with the user BEFORE writing any code.'
 
 export const MINIAPP_GUIDE_TOPIC_DESCRIPTION =
   'Which guide topic to read. Read overview first, then load other topics as needed: overview (architecture, workflow — always read first), manifest (manifest fields and panel layout reference), tools (declaring agent-facing tools, intercept renderers, custom inline result renderers), permissions (fs scopes, network/CDN), api-fs (file read/write/watch), api-git (branches, log, diff, status), api-db (per-app SQLite: query/exec/batch/pragma), api-theme (CSS vars, dark mode), api-locale (user language: en/zh), api-agent (sendPrompt), api-system (openFolder, openExternalLink, clipboard), api-ui (toast, tooltip, context menu overlays), api-worker (background worker that outlives the panel: worker.start/stop/postMessage + self.keepAlive/setStatus), packaging (.s1app distribution), icon (visual assets), recipes (copy-paste patterns: CDN loading, responsive layout, multi-tool, error handling, theme adaptation, file read-write)'
@@ -303,7 +303,6 @@ export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
         scope: { type: 'string', enum: ['project', 'user'], description: 'project (default): app visible only in the given project; .s1-dev.json is committable. user: app visible across every project on this machine.' },
         projectDir: { type: 'string', description: 'Absolute path to the project directory. Required when scope="project".' },
         template: { type: 'string', enum: ['vanilla', 'react'], description: 'vanilla (default): single index.html, no build needed. react: React + TypeScript + Tailwind, requires `bun run build` after scaffold.' },
-        fullscreen: { type: 'boolean', description: 'Whether the app can be opened in the canvas full-screen view. Default false (panel only). All apps default to opening as a tab in the activity panel.' },
         description: { type: 'string', description: 'Short description of what the app does' },
       },
       required: ['name', 'slug', 'directory'],

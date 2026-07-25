@@ -113,7 +113,6 @@ interface SetupMiniAppDevArgs {
   scope?: 'project' | 'user'
   projectDir?: string
   template?: 'vanilla' | 'react'
-  fullscreen?: boolean
   description?: string
 }
 
@@ -144,7 +143,6 @@ async function setupMiniAppDev(args: SetupMiniAppDevArgs, deps: BuiltInSuperoneT
       scope: args.scope,
       projectDir: args.projectDir,
       template: args.template,
-      fullscreen: args.fullscreen,
       description: args.description,
     })
     cacheAppEntry(result.entry)
@@ -320,11 +318,10 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
       scope: z.enum(['project', 'user']).optional().describe('project (default): app visible only in the given project; .s1-dev.json is committable. user: app visible across every project on this machine.'),
       projectDir: z.string().optional().describe('Absolute path to the project directory. Required when scope="project".'),
       template: z.enum(['vanilla', 'react']).optional().describe('vanilla (default): single index.html, no build needed. react: React + TypeScript + Tailwind, requires `bun run build` after scaffold.'),
-      fullscreen: z.boolean().optional().describe('Whether the app can be opened in the canvas full-screen view. Default false (panel only). All apps default to opening as a tab in the activity panel.'),
       description: z.string().optional().describe('Short description of what the app does'),
     },
-    ({ name, slug, directory, scope, projectDir, template, fullscreen, description }) =>
-      setupMiniAppDev({ name, slug, directory, scope, projectDir, template, fullscreen, description }, deps),
+    ({ name, slug, directory, scope, projectDir, template, description }) =>
+      setupMiniAppDev({ name, slug, directory, scope, projectDir, template, description }, deps),
   )
 
   server.tool(

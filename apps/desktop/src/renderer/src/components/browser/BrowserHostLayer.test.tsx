@@ -3,18 +3,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, act } from '@testing-library/react'
 
-const { appStateRef } = vi.hoisted(() => ({
-  appStateRef: { layoutMode: 'coding' as 'coding' | 'canvas' },
-}))
-
-vi.mock('@/stores/app', () => {
-  const getState = () => ({ layoutMode: appStateRef.layoutMode })
-  const useAppStore = ((selector?: (s: ReturnType<typeof getState>) => unknown) =>
-    selector ? selector(getState()) : getState()) as unknown as { getState: typeof getState } & ((selector?: (s: ReturnType<typeof getState>) => unknown) => unknown)
-  useAppStore.getState = getState
-  return { useAppStore }
-})
-
 vi.mock('@/hooks/useSashResizing', () => ({ useSashResizing: () => false }))
 vi.mock('@/hooks/useGlobalDragging', () => ({ useGlobalDragging: () => false }))
 vi.mock('./browser-automation-runtime', () => ({ useBrowserAutomationHost: () => {} }))
@@ -49,7 +37,6 @@ const RECT = { left: 120, top: 44, width: 560, height: 800 } as DOMRectReadOnly
 
 beforeEach(async () => {
   vi.clearAllMocks()
-  appStateRef.layoutMode = 'coding'
   vi.resetModules()
   ;({ useBrowserStore } = await import('@/stores/browser'))
   ;({ useActivityPanelStore } = await import('@/stores/activity-panel'))
@@ -122,19 +109,6 @@ describe('BrowserHostLayer mosaic visibility', () => {
     expect(host.style.display).toBe('none')
   })
 
-  it('hides panel-mode browser when layoutMode is canvas', () => {
-    appStateRef.layoutMode = 'canvas'
-    const { container } = render(<BrowserHostLayer />)
-    act(() => {
-      useBrowserStore.getState().ensure('browser-a', 'https://example.com')
-      useBrowserStore.getState().updateSlot('browser-a', 'panel', RECT)
-    })
-
-    const host = container.querySelector('[data-browser-id="browser-a"]') as HTMLElement
-    expect(host).not.toBeNull()
-    expect(host.style.display).toBe('none')
-  })
-
   it('parks the webview off-screen when the tab has a certificate error so the interstitial shows', () => {
     const { container } = render(<BrowserHostLayer />)
     act(() => {
@@ -151,23 +125,6 @@ describe('BrowserHostLayer mosaic visibility', () => {
     expect(host.style.pointerEvents).toBe('none')
 
     act(() => useBrowserStore.getState().patch('browser-a', { certError: null }))
-    expect(host.style.left).toBe('120px')
-  })
-
-  it('keeps a canvas-mode (fullscreen) browser visible regardless of activity panel state', () => {
-    appStateRef.layoutMode = 'canvas'
-    const { container } = render(<BrowserHostLayer />)
-    act(() => {
-      useBrowserStore.getState().ensure('browser-a', 'https://example.com')
-      useBrowserStore.getState().updateSlot('browser-a', 'canvas', RECT)
-    })
-
-    const host = container.querySelector('[data-browser-id="browser-a"]') as HTMLElement
-    expect(host.style.display).toBe('block')
-    expect(host.style.left).toBe('120px')
-
-    act(() => useActivityPanelStore.getState().setShowPanel(false))
-    expect(host.style.display).toBe('block')
     expect(host.style.left).toBe('120px')
   })
 

@@ -173,6 +173,10 @@ body[data-scroll-locked] {
   box-shadow: none;
 }
 
+.canvas-chat-panel {
+  -webkit-app-region: no-drag;
+}
+
 /* The canvas floating chat window hovers directly over the editor canvas, so
    the global 0.72 card alpha lets the canvas content bleed through and hurts
    readability. Inline message/tool cards stay light on purpose (they sit on an

@@ -104,7 +104,6 @@ export interface MockApp {
   name: string
   description?: string
   isDev?: boolean
-  fullscreen?: boolean
 }
 
 export interface DesktopShellProps {
@@ -133,7 +132,7 @@ const DEFAULT_PINNED: MockPinnedSession[] = [
 ]
 
 const DEFAULT_APPS: MockApp[] = [
-  { id: "design-canvas", name: "Design Canvas", description: "Sketch UI with the agent", fullscreen: true },
+  { id: "design-canvas", name: "Design Canvas", description: "Sketch UI with the agent" },
   { id: "db-explorer", name: "DB Explorer", description: "Browse the session SQLite DB" },
   { id: "relay-inspector", name: "Relay Inspector", description: "Live mobile↔desktop frames", isDev: true },
   { id: "todo-board", name: "Todo Board", description: "Kanban over agent todos" },
@@ -847,11 +846,9 @@ function AppsDrawer({ apps, expanded }: { apps: MockApp[]; expanded: boolean }) 
                       <span className="truncate text-[11px] text-sidebar-foreground/50">{app.description}</span>
                     )}
                   </div>
-                  {app.fullscreen && (
-                    <button className="ml-1 shrink-0 rounded p-1 text-sidebar-foreground/40 opacity-0 transition-opacity hover:bg-sidebar-accent-foreground/10 hover:text-sidebar-foreground/80 group-hover/sapp:opacity-100">
-                      <Maximize className="size-3.5" />
-                    </button>
-                  )}
+                  <button className="ml-1 shrink-0 rounded p-1 text-sidebar-foreground/40 opacity-0 transition-opacity hover:bg-sidebar-accent-foreground/10 hover:text-sidebar-foreground/80 group-hover/sapp:opacity-100">
+                    <Maximize className="size-3.5" />
+                  </button>
                 </div>
               ))}
             </div>

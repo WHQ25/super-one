@@ -29,10 +29,11 @@ interface ActivityPanelProps {
 function ActivityPrefixActions() {
   const showSidebar = useAppStore((s) => s.showSidebar)
   const side = useActivityPanelStore((s) => s.side)
+  const maximized = useActivityPanelStore((s) => s.maximized)
   const isFullscreen = useFullscreen()
   const isMac = window.app.platform === 'darwin'
-  const hostsLayoutToggle = side === 'left' && !(isMac && showSidebar)
-  const needsTrafficLightPadding = isMac && !isFullscreen && !showSidebar && side === 'left'
+  const hostsLayoutToggle = (maximized || side === 'left') && !(isMac && showSidebar)
+  const needsTrafficLightPadding = isMac && !isFullscreen && !showSidebar && (maximized || side === 'left')
 
   if (!hostsLayoutToggle) return null
   return (
@@ -82,7 +83,7 @@ function ActivityNewTabAction() {
 }
 
 export function ActivityPanel({ getMaxWidth, hidden }: ActivityPanelProps) {
-  const { showPanel, side, panelWidth, setPanelWidthByUser } = useActivityPanelStore()
+  const { showPanel, side, panelWidth, setPanelWidthByUser, maximized } = useActivityPanelStore()
   const visible = showPanel && !hidden
   const outerRef = useRef<HTMLDivElement>(null)
   const innerRef = useRef<HTMLDivElement>(null)
@@ -134,6 +135,11 @@ export function ActivityPanel({ getMaxWidth, hidden }: ActivityPanelProps) {
     })
 
     const d2 = event.api.onWillShowOverlay((e) => {
+      if (useActivityPanelStore.getState().maximized) {
+        useActivityDropStore.getState().setIndicator(null)
+        e.preventDefault()
+        return
+      }
       const data = e.options.getData()
       if (!data) return
 
@@ -182,9 +188,17 @@ export function ActivityPanel({ getMaxWidth, hidden }: ActivityPanelProps) {
     updateSingleGroupClass()
     const d3 = event.api.onDidAddGroup(updateSingleGroupClass)
     const d4 = event.api.onDidRemoveGroup(updateSingleGroupClass)
+    const d5 = event.api.onDidMaximizedGroupChange(({ group, isMaximized }) => {
+      useActivityPanelStore.getState().setMaximizedGroup(isMaximized ? group.id : null)
+    })
 
-    return () => { dAdd.dispose(); d1.dispose(); d2.dispose(); d3.dispose(); d4.dispose() }
+    return () => { dAdd.dispose(); d1.dispose(); d2.dispose(); d3.dispose(); d4.dispose(); d5.dispose() }
   }, [observeDockview])
+
+  useEffect(() => {
+    const api = apiRef.current
+    if (!visible && api?.hasMaximizedGroup()) api.exitMaximizedGroup()
+  }, [visible])
 
   useEffect(() => {
     const vs = useActivityViewStateStore.getState()
@@ -206,13 +220,15 @@ export function ActivityPanel({ getMaxWidth, hidden }: ActivityPanelProps) {
         ref={outerRef}
         data-activity-outer=""
         className={cn('relative shrink-0 overflow-hidden transition-[width] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]')}
-        style={{ width: visible ? panelWidth : 0, order: side === 'left' ? 0 : 2 }}
+        style={{ width: visible ? (maximized ? '100%' : panelWidth) : 0, order: side === 'left' ? 0 : 2 }}
       >
-        <div ref={innerRef} data-activity-inner="" className="flex h-full flex-col overflow-hidden" style={{ width: panelWidth }}>
+        <div ref={innerRef} data-activity-inner="" className="flex h-full flex-col overflow-hidden" style={{ width: maximized ? '100%' : panelWidth }}>
           <div className="min-h-0 flex-1">
             <DockviewReact
               className="dockview-theme-superone"
               disableAutoResizing
+              disableDnd={maximized}
+              disableFloatingGroups={maximized}
               tabAnimation="smooth"
               onReady={onReady}
               components={activityPanelComponents}
@@ -225,7 +241,7 @@ export function ActivityPanel({ getMaxWidth, hidden }: ActivityPanelProps) {
         </div>
       </div>
 
-      {visible && (
+      {visible && !maximized && (
         <div
           onMouseDown={onResizeStart}
           className="group absolute inset-y-0 z-30 w-2 cursor-col-resize"

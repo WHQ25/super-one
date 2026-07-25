@@ -29,9 +29,9 @@ window.addEventListener('load', function() {
 })
 ```
 
-## Responsive Layout (Panel vs Fullscreen)
+## Responsive Activity Layout
 
-Apps run in the activity panel by default (~400–800px wide, resizable). Apps with `fullscreen: true` may also open at the full window width. Use CSS to adapt:
+Apps run in a resizable activity panel and users may maximize the entire Activity workspace. Use CSS to adapt from the narrow panel to the full main-area width:
 
 ```css
 .container { padding: 16px; }

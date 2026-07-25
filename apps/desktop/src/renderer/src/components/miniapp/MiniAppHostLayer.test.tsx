@@ -5,18 +5,15 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, act } from '@testing-library/react'
 import type { MiniAppEntry } from '@superone/shared/miniapp-types'
 
-const { mockSetLayoutMode, mockOpenMiniAppTab, mockCloseMiniAppTab, appStateRef } = vi.hoisted(() => ({
-  mockSetLayoutMode: vi.fn(),
+const { mockOpenMiniAppTab, mockCloseMiniAppTab, appStateRef } = vi.hoisted(() => ({
   mockOpenMiniAppTab: vi.fn(),
   mockCloseMiniAppTab: vi.fn(),
-  appStateRef: { currentProjectId: 'proj-1' as string | null, layoutMode: 'coding' as 'coding' | 'canvas' },
+  appStateRef: { currentProjectId: 'proj-1' as string | null },
 }))
 
 vi.mock('@/stores/app', () => {
   const getState = () => ({
-    setLayoutMode: mockSetLayoutMode,
     currentProjectId: appStateRef.currentProjectId,
-    layoutMode: appStateRef.layoutMode,
   })
   const useAppStore = ((selector?: (s: ReturnType<typeof getState>) => unknown) =>
     selector ? selector(getState()) : getState()) as unknown as { getState: typeof getState } & ((selector?: (s: ReturnType<typeof getState>) => unknown) => unknown)
@@ -64,7 +61,7 @@ function makeEntry(id: string): MiniAppEntry {
   return {
     id,
     installDir: `/install/${id}`,
-    manifest: { appId: id, name: `App ${id}`, fullscreen: true },
+    manifest: { appId: id, name: `App ${id}` },
   }
 }
 
@@ -117,31 +114,6 @@ describe('MiniAppHostLayer persistence', () => {
     expect(getByTestId(`view-${keyA}`)).not.toBe(getByTestId(`view-${keyB}`))
   })
 
-  it('keeps MiniAppView DOM identity stable across panel→canvas→panel migration', async () => {
-    const { getByTestId } = render(<MiniAppHostLayer />)
-    const key = makeInstanceKey('app-a', 'proj-1')
-
-    await act(async () => {
-      await useMiniAppStore.getState().openAppInPanel(makeEntry('app-a'), '/proj')
-    })
-
-    const initialNode = getByTestId(`view-${key}`)
-    const initialMountId = initialNode.getAttribute('data-mount-id')
-    expect(initialMountId).toBe('1')
-
-    act(() => {
-      useMiniAppStore.getState().moveAppToCanvas(key)
-    })
-    act(() => {
-      useMiniAppStore.getState().moveAppToPanel(key)
-    })
-
-    const afterMigrationNode = getByTestId(`view-${key}`)
-    expect(afterMigrationNode).toBe(initialNode)
-    expect(afterMigrationNode.getAttribute('data-mount-id')).toBe('1')
-    expect(viewMountCount[key]).toBe(1)
-  })
-
   it('unmounts MiniAppView only when the app is actually closed', async () => {
     const { getByTestId, queryByTestId } = render(<MiniAppHostLayer />)
     const key = makeInstanceKey('app-a', 'proj-1')
@@ -151,38 +123,10 @@ describe('MiniAppHostLayer persistence', () => {
     })
     expect(getByTestId(`view-${key}`)).toBeInTheDocument()
 
-    act(() => {
-      useMiniAppStore.getState().moveAppToCanvas(key)
-    })
-    expect(getByTestId(`view-${key}`)).toBeInTheDocument()
-
     await act(async () => {
       await useMiniAppStore.getState().closeApp(key)
     })
     expect(queryByTestId(`view-${key}`)).toBeNull()
-  })
-
-  it('hides panel-mode miniapps when layoutMode is canvas (no slot leak through hidden activity panel)', async () => {
-    appStateRef.layoutMode = 'canvas'
-    const { container } = render(<MiniAppHostLayer />)
-    const key = makeInstanceKey('app-a', 'proj-1')
-
-    await act(async () => {
-      await useMiniAppStore.getState().openAppInPanel(makeEntry('app-a'), '/proj')
-    })
-
-    act(() => {
-      useMiniAppStore.getState().updateSlot(
-        key,
-        'panel',
-        { left: 0, top: 44, width: 560, height: 800 } as DOMRectReadOnly,
-      )
-    })
-
-    const host = container.querySelector(`[data-instance-key="${key}"]`) as HTMLElement
-    expect(host).not.toBeNull()
-    expect(host.style.display).toBe('none')
-    appStateRef.layoutMode = 'coding'
   })
 
   it('parks panel-mode miniapps off-screen but keeps them sized while the activity panel is collapsed (mosaic keep-alive)', async () => {

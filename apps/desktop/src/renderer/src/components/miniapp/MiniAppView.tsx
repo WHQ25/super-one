@@ -21,7 +21,6 @@ export const MiniAppView = forwardRef<MiniAppViewHandle, MiniAppViewProps>(
   function MiniAppView({ instanceKey, appId, className }, ref) {
     const app = useMiniAppStore((s) => s.apps.find((a) => a.id === appId))
     const projectDir = useMiniAppStore((s) => s.openApps[instanceKey]?.projectDir ?? '')
-    const isFullscreenActive = useMiniAppStore((s) => s.fullscreenApp?.instanceKey === instanceKey)
     const registerDevControls = useMiniAppStore((s) => s.registerDevControls)
     const unregisterDevControls = useMiniAppStore((s) => s.unregisterDevControls)
     const isDev = app?.manifest.isDev
@@ -47,25 +46,6 @@ export const MiniAppView = forwardRef<MiniAppViewHandle, MiniAppViewProps>(
       registerDevControls(instanceKey, { reload, openDevTools })
       return () => unregisterDevControls(instanceKey)
     }, [isDev, instanceKey, reload, openDevTools, registerDevControls, unregisterDevControls])
-
-    useEffect(() => {
-      if (!isFullscreenActive) return
-      const handleKeyDown = (e: KeyboardEvent) => {
-        const isMod = e.metaKey || e.ctrlKey
-        if (isMod && e.key === 'r') {
-          e.preventDefault()
-          e.stopPropagation()
-          reload()
-        }
-        if (isMod && e.shiftKey && e.key === 'i') {
-          e.preventDefault()
-          e.stopPropagation()
-          openDevTools()
-        }
-      }
-      window.addEventListener('keydown', handleKeyDown, true)
-      return () => window.removeEventListener('keydown', handleKeyDown, true)
-    }, [isFullscreenActive, reload, openDevTools])
 
     return (
       <div ref={containerRef} className={cn('relative', className)}>

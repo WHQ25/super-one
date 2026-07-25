@@ -1,15 +1,13 @@
 import { useEffect, useLayoutEffect, useCallback, useRef, useState, lazy, Suspense } from 'react'
 import { flushSync } from 'react-dom'
-import { X, Smartphone, Minimize2, SquareTerminal, RotateCw, Bug, LayoutGrid, Globe, PanelLeft, PanelRight, PanelLeftDashed, PanelRightDashed } from 'lucide-react'
+import { Smartphone, SquareTerminal, LayoutGrid, PanelLeft, PanelRight, PanelLeftDashed, PanelRightDashed } from 'lucide-react'
 import { toast } from 'sonner'
 import { useTranslation } from 'react-i18next'
 import { LayoutToggle } from '@/components/coding/LayoutToggle'
 import { ChatPanel } from '@/components/chat/ChatPanel'
 import { CodingWorkspace } from '@/components/coding/CodingWorkspace'
-import { CanvasPanel } from '@/components/canvas/CanvasPanel'
 import { ActivityPanel } from '@/components/activity/ActivityPanel'
-import { openBrowserTab, restoreBrowserToPanel, closeFullscreenBrowser, beginMosaicRecording, replayMosaicOpenedPanels } from '@/components/activity/activity-panel-api'
-import { BrowserFavicon } from '@/components/browser/BrowserFavicon'
+import { openBrowserTab, beginMosaicRecording, replayMosaicOpenedPanels } from '@/components/activity/activity-panel-api'
 import { useMosaicStore } from '@/components/mosaic/mosaic-store'
 import { MosaicDropZone } from '@/components/mosaic/MosaicDropZone'
 import { MosaicDropPreview } from '@/components/mosaic/MosaicDropPreview'
@@ -22,7 +20,6 @@ import { UpdateNotification } from '@/components/UpdateNotification'
 import { ExternalLinkConfirm } from '@/components/ExternalLinkConfirm'
 import { MiniAppClipboardGuard } from '@/components/MiniAppClipboardGuard'
 import { MiniAppMediaIndicator } from '@/components/miniapp/MiniAppMediaIndicator'
-import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
 import { MiniAppHostLayer } from '@/components/miniapp/MiniAppHostLayer'
 import { BrowserHostLayer } from '@/components/browser/BrowserHostLayer'
 import { DebugPanel } from '@/components/DebugPanel'
@@ -39,8 +36,6 @@ import { useMobileUploadToasts } from '@/hooks/useMobileUploadToasts'
 import { useAppStore, startProjectMirror } from '@/stores/app'
 import { useDevToolsStore } from '@/stores/dev-tools'
 import { useActivityPanelStore } from '@/stores/activity-panel'
-import { useMiniAppStore } from '@/stores/miniapp'
-import { useBrowserStore } from '@/stores/browser'
 import { useActivityViewStateStore } from '@/stores/activity-view-state'
 import { useTerminalPanel } from '@/hooks/useTerminalPanel'
 import { useTerminalStore } from '@/stores/terminal'
@@ -72,7 +67,7 @@ function App(): React.JSX.Element {
   useReactScan(devReactScan)
   useTheme()
   const { t } = useTranslation()
-  const { view, currentFolder, showSidebar, sidebarWidth, setSidebarWidth, layoutMode } = useAppStore(useShallow((s) => ({ view: s.view, currentFolder: s.currentFolder, showSidebar: s.showSidebar, sidebarWidth: s.sidebarWidth, setSidebarWidth: s.setSidebarWidth, layoutMode: s.layoutMode })))
+  const { view, currentFolder, showSidebar, sidebarWidth, setSidebarWidth } = useAppStore(useShallow((s) => ({ view: s.view, currentFolder: s.currentFolder, showSidebar: s.showSidebar, sidebarWidth: s.sidebarWidth, setSidebarWidth: s.setSidebarWidth })))
   const liquidGlass = useAppStore((s) => s.liquidGlass)
   const { open: terminalOpen, toggle: toggleTerminal, setOpen: setTerminalOpen } = useTerminalPanel()
   const hasTerminals = useTerminalStore(
@@ -81,12 +76,11 @@ function App(): React.JSX.Element {
   const showActivityPanel = useActivityPanelStore((s) => s.showPanel)
   const activitySide = useActivityPanelStore((s) => s.side)
   const hasActivityPanels = useActivityPanelStore((s) => s.hasPanels)
+  const activityMaximized = useActivityPanelStore((s) => s.maximized)
   const mosaicMode = useMosaicStore((s) => s.mode)
   const mosaicRoot = useMosaicStore((s) => s.root)
   const canRestoreMosaic = useMosaicStore((s) => s.lastLayout !== null)
   const draggingSession = useMosaicStore((s) => s.draggingSession)
-  const fullscreenApp = useMiniAppStore((s) => s.fullscreenApp)
-  const fullscreenBrowserId = useBrowserStore((s) => s.fullscreenId)
   const isFullscreen = useFullscreen()
   const isMac = window.app.platform === 'darwin'
   const isWindows = window.app.platform === 'win32'
@@ -274,15 +268,13 @@ function App(): React.JSX.Element {
     useActivityPanelStore.getState().setShowPanel(false)
   }, [mosaicMode, showActivityPanel])
 
-  const mosaicMin = layoutMode === 'coding' && mosaicMode === 'mosaic' && mosaicRoot ? measureMin(mosaicRoot) : null
+  const mosaicMin = mosaicMode === 'mosaic' && mosaicRoot ? measureMin(mosaicRoot) : null
   const mosaicMinW = mosaicMin?.w ?? 0
   const mosaicMinH = mosaicMin?.h ?? 0
   useEffect(() => {
-    const isCoding = view === 'main' && layoutMode === 'coding'
-    let minW = isCoding
-      ? LAYOUT.MIN_MAIN
+    let minW = view === 'main'
+      ? (activityMaximized ? LAYOUT.MIN_AP : LAYOUT.MIN_MAIN + (showActivityPanel ? LAYOUT.MIN_AP : 0))
         + (showSidebar ? LAYOUT.MIN_SIDEBAR : 0)
-        + (showActivityPanel ? LAYOUT.MIN_AP : 0)
         + (showSidebar || showActivityPanel ? LAYOUT.CARD_GUTTER : 0)
       : LAYOUT.MIN_MAIN + LAYOUT.MIN_SIDEBAR + LAYOUT.MIN_AP
     let minH = 700
@@ -293,7 +285,7 @@ function App(): React.JSX.Element {
       minH = Math.max(minH, mosaicMinH + 10)
     }
     window.app.setMinWindowSize(minW, minH)
-  }, [view, layoutMode, showSidebar, showActivityPanel, mosaicMinW, mosaicMinH])
+  }, [view, showSidebar, showActivityPanel, activityMaximized, mosaicMinW, mosaicMinH])
 
   const { MIN_MAIN, MIN_SIDEBAR, MAX_SIDEBAR, MIN_AP, CARD_GUTTER } = LAYOUT
   // In mosaic mode the main area can't shrink below what the current split needs,
@@ -308,7 +300,7 @@ function App(): React.JSX.Element {
 
   const getLinkedPanel = useCallback((newW: number, prevW: number) => {
     const ap = useActivityPanelStore.getState()
-    if (!ap.showPanel || ap.side !== 'left') return null
+    if (!ap.showPanel || ap.maximized || ap.side !== 'left') return null
     const outer = document.querySelector<HTMLElement>('[data-activity-outer]')
     const inner = document.querySelector<HTMLElement>('[data-activity-inner]')
     if (!outer || !inner) return null
@@ -329,6 +321,7 @@ function App(): React.JSX.Element {
 
   const onSidebarDragEnd = useCallback(() => {
     setSidebarResizing(false)
+    if (useActivityPanelStore.getState().maximized) return
     const outer = document.querySelector<HTMLElement>('[data-activity-outer]')
     if (!outer) return
     const w = parseFloat(outer.style.width)
@@ -370,20 +363,22 @@ function App(): React.JSX.Element {
       prevWidth = curWidth
 
       const mainMin = mainMinWRef.current
-      if (delta !== 0 && ap.showPanel) {
+      if (delta !== 0 && ap.showPanel && !ap.maximized) {
         const maxAp = curWidth - (sb ? sw : 0) - mainMin - CARD_GUTTER
         ap.setPanelWidth(Math.max(MIN_AP, Math.min(ap.panelWidth + delta, maxAp)))
       }
 
       if (sb) {
-        const maxSw = maxSidebarWidth(curWidth, mainMin, ap.showPanel ? ap.panelWidth : 0)
+        const maxSw = maxSidebarWidth(curWidth, ap.maximized ? MIN_AP : mainMin, ap.showPanel && !ap.maximized ? ap.panelWidth : 0)
         if (sw > maxSw) setSW(Math.max(MIN_SIDEBAR, maxSw))
       }
 
-      const totalPanels = (sb ? Math.min(sw, MAX_SIDEBAR) : 0) + (ap.showPanel ? ap.panelWidth : 0)
-      let overflow = totalPanels + mainMin + CARD_GUTTER - curWidth
+      const activityWidth = ap.showPanel && !ap.maximized ? ap.panelWidth : 0
+      const contentMin = ap.maximized ? MIN_AP : mainMin
+      const totalPanels = (sb ? Math.min(sw, MAX_SIDEBAR) : 0) + activityWidth
+      let overflow = totalPanels + contentMin + CARD_GUTTER - curWidth
       if (overflow <= 0) return
-      if (ap.showPanel) {
+      if (ap.showPanel && !ap.maximized) {
         const shrink = Math.min(overflow, ap.panelWidth - MIN_AP)
         if (shrink > 0) { ap.setPanelWidth(ap.panelWidth - shrink); overflow -= shrink }
       }
@@ -437,14 +432,12 @@ function App(): React.JSX.Element {
 
 
   const hasLeftPanel = showSidebar || (showActivityPanel && activitySide === 'left')
-  const canvasCard = layoutMode === 'canvas' && (!!fullscreenApp || !!fullscreenBrowserId)
 
   const getActivityMaxWidth = useCallback(() => {
     const sb = useAppStore.getState()
     return window.innerWidth - (sb.showSidebar ? sb.sidebarWidth : 0) - MIN_MAIN - CARD_GUTTER
   }, [])
 
-  const folderName = currentFolder?.split('/').pop() ?? null
   const sessionId = useActiveSession((s) => s._activeSessionId ?? s.session?.sessionId ?? '')
   const sessionFallback = useActiveSession((s) => s._title ?? extractSessionTitle(s.messages))
 
@@ -501,8 +494,7 @@ function App(): React.JSX.Element {
       <div className="group/coding flex min-h-0 flex-1 overflow-hidden">
       <GitAutoRefresh />
       <>
-      {/* Sidebar — hidden in canvas mode */}
-      <div className={cn('relative flex shrink-0', layoutMode !== 'coding' && 'hidden')}>
+      <div className="relative flex shrink-0">
       <div
         ref={sidebarRef}
         data-sidebar-outer=""
@@ -526,41 +518,39 @@ function App(): React.JSX.Element {
 
       {/* Main area wrapper */}
       <div ref={mainWrapperRef} className={cn(
-        'flex min-w-0 flex-1',
-        (layoutMode === 'coding' || canvasCard) && cardTopMargin,
-        layoutMode === 'coding' && mosaicMode === 'mosaic' && 'relative z-20 mb-[5px] mr-[5px] overflow-hidden rounded-xl border border-border/50 bg-card',
-        layoutMode === 'coding' && mosaicMode === 'mosaic' && !showSidebar && 'ml-[5px]',
-        layoutMode === 'coding' && mosaicMode !== 'mosaic' && 'relative z-20 mb-[5px] mr-[5px] overflow-hidden rounded-xl border border-border/50 bg-card transition-shadow duration-200',
-        layoutMode === 'coding' && mosaicMode !== 'mosaic' && !showSidebar && 'ml-[5px]',
-        layoutMode === 'coding' && mosaicMode !== 'mosaic' && (sidebarResizing
+        'relative z-20 flex min-w-0 flex-1 overflow-hidden rounded-xl border border-border/50 bg-card',
+        cardTopMargin,
+        'mb-[5px] mr-[5px]',
+        !showSidebar && 'ml-[5px]',
+        mosaicMode !== 'mosaic' && 'transition-shadow duration-200',
+        mosaicMode !== 'mosaic' && (sidebarResizing
           ? 'border-border shadow-[0_10px_30px_rgba(0,0,0,0.16)]'
           : 'shadow-[0_2px_12px_rgba(0,0,0,0.06)] group-has-[[data-resize-handle]:hover]/coding:border-border group-has-[[data-resize-handle]:hover]/coding:shadow-[0_10px_30px_rgba(0,0,0,0.16)]'),
-        canvasCard && 'mb-[5px] mr-[5px] ml-[5px] overflow-hidden rounded-xl border border-border/50 bg-card shadow-[0_2px_12px_rgba(0,0,0,0.06)]'
       )}>
-        {/* Activity Panel — always mounted, hidden in canvas mode */}
-        <ActivityPanel getMaxWidth={getActivityMaxWidth} hidden={layoutMode !== 'coding' || mosaicMode === 'mosaic'} />
+        <ActivityPanel getMaxWidth={getActivityMaxWidth} hidden={mosaicMode === 'mosaic'} />
 
         {/* Main area */}
-        <div data-main-area="" className={cn('relative z-10 flex min-w-[400px] flex-1 flex-col', layoutMode === 'coding' && 'overflow-hidden', layoutMode === 'coding' && showActivityPanel && (activitySide === 'left' ? 'border-l border-border' : 'border-r border-border'))} style={{ order: 1 }}>
+        <div data-main-area="" className={cn(
+          'relative z-10 min-w-[400px] flex-1 flex-col overflow-hidden',
+          activityMaximized ? 'hidden' : 'flex',
+          showActivityPanel && (activitySide === 'left' ? 'border-l border-border' : 'border-r border-border'),
+        )} style={{ order: 1 }}>
         {/* Main header — drag region (hidden in mosaic; each tile carries its own) */}
         {mosaicMode !== 'mosaic' && (
         <div
-          className={cn('flex h-[34px] shrink-0 items-center transition-[padding-left] duration-300 ease-in-out', !isMac || (isFullscreen && !(layoutMode === 'coding' && hasLeftPanel)) ? 'pl-2' : 'pl-[18px]')}
+          className={cn('flex h-[34px] shrink-0 items-center transition-[padding-left] duration-300 ease-in-out', !isMac || (isFullscreen && !hasLeftPanel) ? 'pl-2' : 'pl-[18px]')}
           style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
         >
-          {isMac && <div className={cn('shrink-0 transition-[width] duration-300 ease-in-out', isFullscreen || (layoutMode === 'coding' && hasLeftPanel) ? 'w-0' : layoutMode === 'coding' ? 'w-[60px]' : 'w-[66px]')} />}
-          {layoutMode === 'coding' && (!isMac || !showSidebar) && !(showActivityPanel && activitySide === 'left') && <LayoutToggle />}
-          <HeaderTitle layoutMode={layoutMode} sessionId={sessionId} sessionFallback={sessionFallback} folderName={folderName} folderPath={currentFolder} />
+          {isMac && <div className={cn('shrink-0 transition-[width] duration-300 ease-in-out', isFullscreen || hasLeftPanel ? 'w-0' : 'w-[60px]')} />}
+          {(!isMac || !showSidebar) && !(showActivityPanel && activitySide === 'left') && <LayoutToggle />}
+          <HeaderTitle sessionId={sessionId} sessionFallback={sessionFallback} folderPath={currentFolder} />
 
           <div className="flex-1" />
 
           {/* Mini-app controls */}
           <div className="mr-3 flex items-center gap-1.5" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
             <MiniAppMediaIndicator />
-            <CanvasDevControls />
-            <CanvasReturnToPanelButton />
-            <CanvasCloseButton />
-            {layoutMode === 'coding' && (() => {
+            {(() => {
               const terminalButton = (
                 <TooltipProvider delayDuration={300}>
                   <Tooltip>
@@ -606,7 +596,7 @@ function App(): React.JSX.Element {
                 ? <>{activityButton}{terminalButton}</>
                 : <>{terminalButton}{activityButton}</>
             })()}
-            {layoutMode === 'coding' && canRestoreMosaic && (
+            {canRestoreMosaic && (
               <TooltipProvider delayDuration={300}>
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -626,21 +616,15 @@ function App(): React.JSX.Element {
         )}
 
         {/* Content */}
-        {layoutMode === 'coding' ? (
-          <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-            {!liquidGlass && mosaicMode !== 'mosaic' && <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-6 bg-linear-to-b from-card to-transparent" />}
-            <CodingWorkspace mosaicMode={mosaicMode} />
-          </div>
-        ) : (
-          <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-            <CanvasPanel />
-          </div>
-        )}
-        {layoutMode === 'coding' && draggingSession && mosaicMode === 'mosaic' && <MosaicDropPreview />}
+        <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+          {!liquidGlass && mosaicMode !== 'mosaic' && <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-6 bg-linear-to-b from-card to-transparent" />}
+          <CodingWorkspace mosaicMode={mosaicMode} />
+        </div>
+        {draggingSession && mosaicMode === 'mosaic' && <MosaicDropPreview />}
       </div>
       </div>
       </>
-      {layoutMode === 'canvas' && <ChatPanel />}
+      {activityMaximized && <ChatPanel anchorBoundaryRef={mainWrapperRef} />}
       <UpdateNotification />
       <ExternalLinkConfirm />
       <MiniAppClipboardGuard />
@@ -649,7 +633,7 @@ function App(): React.JSX.Element {
     </div>
     <MiniAppHostLayer />
     <BrowserHostLayer />
-    {layoutMode === 'coding' && draggingSession && mosaicMode !== 'mosaic' && (
+    {draggingSession && mosaicMode !== 'mosaic' && (
       <MosaicSingleDropOverlay wrapperRef={mainWrapperRef} canRestoreMosaic={canRestoreMosaic} />
     )}
     </>
@@ -681,134 +665,19 @@ function MosaicSingleDropOverlay({ wrapperRef, canRestoreMosaic }: { wrapperRef:
   )
 }
 
-function CanvasCloseButton() {
-  const layoutMode = useAppStore((s) => s.layoutMode)
-  const fullscreenApp = useMiniAppStore((s) => s.fullscreenApp)
-  const fullscreenBrowserId = useBrowserStore((s) => s.fullscreenId)
-  const closeFullscreenApp = useMiniAppStore((s) => s.closeFullscreenApp)
-  const { t } = useTranslation()
-  if (layoutMode !== 'canvas') return null
-  if (fullscreenBrowserId) {
-    return (
-      <button
-        onClick={() => closeFullscreenBrowser()}
-        className="rounded-md p-1.5 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground"
-        title={t('tooltips.closeBrowser')}
-      >
-        <X className="size-3.5" />
-      </button>
-    )
-  }
-  if (!fullscreenApp) return null
+function HeaderTitle({ sessionId, sessionFallback, folderPath }: { sessionId: string; sessionFallback: string | null | undefined; folderPath: string | null }) {
   return (
-    <button
-      onClick={() => closeFullscreenApp()}
-      className="rounded-md p-1.5 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground"
-      title={t('tooltips.closeMiniApp')}
+    <div
+      className="group/htitle flex min-w-0 items-center gap-1"
+      style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
     >
-      <X className="size-3.5" />
-    </button>
-  )
-}
-
-function CanvasDevControls() {
-  const layoutMode = useAppStore((s) => s.layoutMode)
-  const fullscreenApp = useMiniAppStore((s) => s.fullscreenApp)
-  const devControls = useMiniAppStore((s) => (fullscreenApp ? s.devControls[fullscreenApp.instanceKey] : undefined))
-  const { t } = useTranslation()
-  if (layoutMode !== 'canvas' || !fullscreenApp || !devControls) return null
-  return (
-    <>
-      <button
-        onClick={() => devControls.reload()}
-        className="rounded-md p-1.5 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground"
-        title={t('tooltips.reload')}
-      >
-        <RotateCw className="size-3.5" />
-      </button>
-      <button
-        onClick={() => devControls.openDevTools()}
-        className="rounded-md p-1.5 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground"
-        title={t('tooltips.openDevTools')}
-      >
-        <Bug className="size-3.5" />
-      </button>
-    </>
-  )
-}
-
-function CanvasReturnToPanelButton() {
-  const layoutMode = useAppStore((s) => s.layoutMode)
-  const fullscreenApp = useMiniAppStore((s) => s.fullscreenApp)
-  const fullscreenBrowserId = useBrowserStore((s) => s.fullscreenId)
-  const moveAppToPanel = useMiniAppStore((s) => s.moveAppToPanel)
-  const { t } = useTranslation()
-  if (layoutMode !== 'canvas') return null
-  if (fullscreenBrowserId) {
-    return (
-      <button
-        onClick={() => restoreBrowserToPanel()}
-        className="rounded-md p-1.5 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground"
-        title={t('tooltips.returnToPanel')}
-      >
-        <Minimize2 className="size-3.5" />
-      </button>
-    )
-  }
-  if (!fullscreenApp) return null
-  return (
-    <button
-      onClick={() => moveAppToPanel(fullscreenApp.instanceKey)}
-      className="rounded-md p-1.5 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground"
-      title={t('tooltips.returnToPanel')}
-    >
-      <Minimize2 className="size-3.5" />
-    </button>
-  )
-}
-
-function HeaderTitle({ layoutMode, sessionId, sessionFallback, folderName, folderPath }: { layoutMode: 'canvas' | 'coding'; sessionId: string; sessionFallback: string | null | undefined; folderName: string | null | undefined; folderPath: string | null }) {
-  const fullscreenApp = useMiniAppStore((s) => s.fullscreenApp)
-  const fullscreenBrowser = useBrowserStore((s) => (s.fullscreenId ? s.tabs[s.fullscreenId] : null))
-  if (layoutMode === 'canvas' && fullscreenBrowser) {
-    return (
-      <span className="flex max-w-[220px] items-center gap-1.5 text-xs text-muted-foreground">
-        <BrowserFavicon
-          src={fullscreenBrowser.favicon}
-          url={fullscreenBrowser.url}
-          preferSrc
-          className="size-3.5 shrink-0"
-          fallback={<Globe className="size-3.5 shrink-0" />}
-        />
-        <span className="truncate">{fullscreenBrowser.title || 'New Tab'}</span>
-      </span>
-    )
-  }
-  if (layoutMode === 'canvas' && fullscreenApp) {
-    return (
-      <span className="flex max-w-[220px] items-center gap-1.5 text-xs text-muted-foreground">
-        <MiniAppIcon appId={fullscreenApp.entry.id} className="size-3.5 shrink-0" />
-        <span className="truncate">{fullscreenApp.entry.manifest.name}</span>
-      </span>
-    )
-  }
-  if (layoutMode === 'coding') {
-    return (
-      <div
-        className="group/htitle flex min-w-0 items-center gap-1"
-        style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-      >
-        <SessionTitleAnimated
-          sessionId={sessionId}
-          fallback={sessionFallback ?? 'New Session'}
-          className="max-w-[300px] text-xs text-muted-foreground"
-        />
-        {sessionId && folderPath ? <HeaderSessionMenu sessionId={sessionId} folderPath={folderPath} /> : null}
-      </div>
-    )
-  }
-  return (
-    <span className="max-w-[200px] truncate text-xs text-muted-foreground">{folderName ?? ''}</span>
+      <SessionTitleAnimated
+        sessionId={sessionId}
+        fallback={sessionFallback ?? 'New Session'}
+        className="max-w-[300px] text-xs text-muted-foreground"
+      />
+      {sessionId && folderPath ? <HeaderSessionMenu sessionId={sessionId} folderPath={folderPath} /> : null}
+    </div>
   )
 }
 

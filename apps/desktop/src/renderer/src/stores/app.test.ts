@@ -108,7 +108,6 @@ function resetStore(overrides: Record<string, unknown> = {}) {
     view: 'loading',
     currentFolder: null,
     recentFolders: [],
-    layoutMode: 'coding',
     _worktrees: {},
     ...overrides,
   })
@@ -209,7 +208,7 @@ describe('removeRecentFolder', () => {
 describe('continueToMain', () => {
   it('should show startup page when no projects exist', async () => {
     mockWindowApp.getRecentFolders.mockResolvedValue([])
-    resetStore({ recentFolders: [], layoutMode: 'coding' })
+    resetStore({ recentFolders: [] })
 
     await useAppStore.getState().continueToMain()
 
@@ -218,7 +217,7 @@ describe('continueToMain', () => {
 
   it('should still initialize claude harness when no projects exist (first install)', async () => {
     mockWindowApp.getRecentFolders.mockResolvedValue([])
-    resetStore({ recentFolders: [], layoutMode: 'coding' })
+    resetStore({ recentFolders: [] })
 
     await useAppStore.getState().continueToMain()
     await vi.dynamicImportSettled()
@@ -231,7 +230,7 @@ describe('continueToMain', () => {
     mockWindowApp.openFolder.mockResolvedValue(true)
     mockWindowApp.getRecentFolders.mockResolvedValue(folders)
 
-    resetStore({ recentFolders: folders, layoutMode: 'coding' })
+    resetStore({ recentFolders: folders })
 
     await useAppStore.getState().continueToMain()
 
@@ -270,7 +269,7 @@ describe('currentFolder subscription', () => {
     await vi.dynamicImportSettled()
     mockSourceControlReset.mockClear()
 
-    useAppStore.setState({ layoutMode: 'canvas' })
+    useAppStore.setState({ showSidebar: false })
     await vi.dynamicImportSettled()
 
     expect(mockSourceControlReset).not.toHaveBeenCalled()

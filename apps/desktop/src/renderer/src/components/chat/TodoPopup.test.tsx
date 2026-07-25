@@ -26,10 +26,6 @@ vi.mock('@/stores/chat', () => ({
   useActiveSession: (selector: (state: typeof activeSessionState) => unknown) => selector(activeSessionState),
 }))
 
-vi.mock('@/stores/app', () => ({
-  useAppStore: (selector: (state: { layoutMode: 'coding' | 'canvas' }) => unknown) => selector({ layoutMode: 'coding' }),
-}))
-
 vi.mock('@/components/ui/kbd', () => ({
   Kbd: ({ children }: { children?: ReactNode }) => <span>{children}</span>,
 }))

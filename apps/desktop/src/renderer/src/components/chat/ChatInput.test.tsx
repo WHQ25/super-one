@@ -253,12 +253,6 @@ vi.mock('@/stores/chat', () => ({
 }))
 
 vi.mock('@/stores/app', () => ({
-  useAppStore: Object.assign(
-    (selector: (state: { layoutMode: 'coding' | 'canvas' }) => unknown) => selector({ layoutMode: 'coding' }),
-    {
-      getState: () => ({ layoutMode: 'coding' as const }),
-    },
-  ),
   useEffectiveProjectRoot: () => null,
   selectEffectiveProjectRoot: () => null,
 }))

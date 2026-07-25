@@ -97,7 +97,6 @@ export const manifestSchema = z.object({
   description: z.string().optional(),
   logo: z.string().optional(),
   isDev: z.boolean().optional(),
-  fullscreen: z.boolean().optional(),
   preferWidth: z.number().int().min(360).max(2000).optional(),
   permissions: permissionsSchema.optional(),
   background: backgroundSchema.optional(),

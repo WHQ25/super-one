@@ -3,17 +3,29 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   openFileTab,
+  openNewFileTab,
   openBrowserTab,
   openMiniAppTab,
   closeBrowserTab,
   beginMosaicRecording,
   replayMosaicOpenedPanels,
   materializeOwnedBrowserTabs,
+  maximizeActivityPanel,
+  toggleMaximizedActivityGroup,
   setCurrentSessionIdGetter,
   setDockApi,
 } from './activity-panel-api'
 import { useActivityPanelStore } from '@/stores/activity-panel'
 import { useBrowserStore } from '@/stores/browser'
+
+afterEach(() => {
+  setDockApi(null)
+  useActivityPanelStore.setState({
+    showPanel: false,
+    maximized: false,
+    maximizedGroupId: null,
+  })
+})
 
 describe('openFileTab', () => {
   beforeEach(() => {
@@ -36,6 +48,100 @@ describe('openFileTab', () => {
       title: 'app.ts',
       params: { filePath: 'src/app.ts' },
     }))
+  })
+})
+
+describe('maximizeActivityPanel', () => {
+  beforeEach(() => {
+    useActivityPanelStore.setState({ showPanel: false, hasPanels: true, maximized: false, maximizedGroupId: null })
+  })
+
+  it('shows the activity area and maximizes the active Dockview group', () => {
+    const maximize = vi.fn()
+    const group = { id: 'group-a', panels: [] }
+    const panel = {
+      id: 'browser-a',
+      group,
+      api: { isMaximized: () => false, maximize, exitMaximized: vi.fn() },
+    }
+    setDockApi({ panels: [panel], groups: [group], activePanel: panel } as never)
+
+    maximizeActivityPanel()
+
+    expect(maximize).toHaveBeenCalledOnce()
+    expect(useActivityPanelStore.getState()).toMatchObject({
+      showPanel: true,
+      hasPanels: true,
+      maximized: true,
+      maximizedGroupId: 'group-a',
+    })
+  })
+
+  it('toggles the maximized group from the tab action', () => {
+    let maximized = false
+    const maximize = vi.fn(() => { maximized = true })
+    const exitMaximized = vi.fn(() => { maximized = false })
+    const group = { id: 'group-a', panels: [] }
+    const panel = {
+      id: 'browser-a',
+      group,
+      api: { isMaximized: () => maximized, maximize, exitMaximized },
+    }
+    setDockApi({ panels: [panel], groups: [group], activePanel: panel } as never)
+
+    toggleMaximizedActivityGroup('browser-a')
+    expect(useActivityPanelStore.getState().maximizedGroupId).toBe('group-a')
+
+    toggleMaximizedActivityGroup('browser-a')
+
+    expect(exitMaximized).toHaveBeenCalledOnce()
+    expect(useActivityPanelStore.getState().maximizedGroupId).toBeNull()
+  })
+})
+
+describe('opening tabs while a group is maximized', () => {
+  const targetGroup = { id: 'group-target', panels: [] as unknown[] }
+
+  beforeEach(() => {
+    useActivityPanelStore.setState({
+      showPanel: true,
+      side: 'left',
+      panelWidth: 560,
+      maximized: true,
+      maximizedGroupId: targetGroup.id,
+    })
+    useBrowserStore.setState({ tabs: {}, slots: {} })
+  })
+
+  it('adds new tabs inside the maximized group even when a split was requested', () => {
+    const addPanel = vi.fn()
+    setDockApi({ panels: [], groups: [targetGroup], activePanel: undefined, addPanel } as never)
+
+    openNewFileTab('src/new.ts', { direction: 'right' })
+    openBrowserTab('example.com', 'browser-new')
+    openMiniAppTab('app-a::proj', 'app-a', 'App A')
+
+    expect(addPanel).toHaveBeenCalledTimes(3)
+    for (const [options] of addPanel.mock.calls) {
+      expect(options.position).toEqual({ referenceGroup: targetGroup, direction: 'within' })
+    }
+  })
+
+  it('moves an existing duplicate tab out of a hidden group', () => {
+    const moveTo = vi.fn()
+    const setActive = vi.fn()
+    const sourceGroup = { id: 'group-hidden', panels: [] }
+    const panel = {
+      id: 'file:src/existing.ts',
+      group: sourceGroup,
+      api: { moveTo, setActive },
+    }
+    setDockApi({ panels: [panel], groups: [targetGroup], activePanel: panel, addPanel: vi.fn() } as never)
+
+    openFileTab('src/existing.ts')
+
+    expect(moveTo).toHaveBeenCalledWith({ group: targetGroup, index: 0, skipSetActive: false })
+    expect(setActive).toHaveBeenCalledOnce()
   })
 })
 
@@ -122,7 +228,7 @@ describe('Cmd/Ctrl+click opens a browser tab in the background', () => {
 
   beforeEach(() => {
     useActivityPanelStore.setState({ showPanel: false, side: 'left', panelWidth: 560 })
-    useBrowserStore.setState({ tabs: {}, slots: {}, fullscreenId: null })
+    useBrowserStore.setState({ tabs: {}, slots: {} })
   })
 
   it('adds the new panel inactive so focus stays on the current tab', () => {
@@ -157,7 +263,7 @@ describe('browser tabs stay confined to their owner session', () => {
 
   beforeEach(() => {
     useActivityPanelStore.setState({ showPanel: false, side: 'left', panelWidth: 560 })
-    useBrowserStore.setState({ tabs: {}, slots: {}, fullscreenId: null })
+    useBrowserStore.setState({ tabs: {}, slots: {} })
     setCurrentSessionIdGetter(() => 'sess-visible')
   })
 

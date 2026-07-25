@@ -1756,6 +1756,8 @@ export type Messages = {
     moveChatLeft: string
     moveChatRight: string
     toggleActivityPanel: string
+    maximizeActivityPanel: string
+    restoreActivityPanel: string
     toggleTerminal: string
     closeBrowser: string
     closeMiniApp: string
@@ -3614,6 +3616,8 @@ export const en: Messages = {
     moveChatLeft: 'Move Chat to Left',
     moveChatRight: 'Move Chat to Right',
     toggleActivityPanel: 'Toggle Activity Panel',
+    maximizeActivityPanel: 'Maximize Activity Panel',
+    restoreActivityPanel: 'Restore Activity Panel',
     toggleTerminal: 'Toggle Terminal',
     closeBrowser: 'Close browser',
     closeMiniApp: 'Close mini-app',

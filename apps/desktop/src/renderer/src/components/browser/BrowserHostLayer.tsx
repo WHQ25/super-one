@@ -2,7 +2,6 @@ import { useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useShallow } from 'zustand/react/shallow'
 import { useBrowserStore } from '@/stores/browser'
-import { useAppStore } from '@/stores/app'
 import { useActivityPanelStore } from '@/stores/activity-panel'
 import { useSashResizing } from '@/hooks/useSashResizing'
 import { useGlobalDragging } from '@/hooks/useGlobalDragging'
@@ -20,7 +19,6 @@ const CAPTURE_VIEWPORT = { width: 1280, height: 800 }
 
 export function BrowserHostLayer() {
   const ids = useBrowserStore(useShallow((s) => Object.keys(s.tabs)))
-  const layoutMode = useAppStore((s) => s.layoutMode)
   const sashResizing = useSashResizing()
   const globalDragging = useGlobalDragging()
   const resizing = sashResizing || globalDragging
@@ -57,13 +55,13 @@ export function BrowserHostLayer() {
   return (
     <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 20 }}>
       {ids.map((id) => (
-        <PersistentBrowser key={id} browserId={id} layoutMode={layoutMode} resizing={resizing} />
+        <PersistentBrowser key={id} browserId={id} resizing={resizing} />
       ))}
     </div>
   )
 }
 
-function PersistentBrowser({ browserId, layoutMode, resizing }: { browserId: string; layoutMode: 'canvas' | 'coding'; resizing: boolean }) {
+function PersistentBrowser({ browserId, resizing }: { browserId: string; resizing: boolean }) {
   const slot = useBrowserStore((s) => s.slots[browserId])
   const emulation = useBrowserStore((s) => s.emulations[browserId])
   const capturing = useBrowserStore((s) => (s.captureRefs[browserId] ?? 0) > 0)
@@ -198,14 +196,9 @@ function PersistentBrowser({ browserId, layoutMode, resizing }: { browserId: str
     }
   }, [browserId])
 
-  const presentationMatches = slot != null && (
-    (slot.mode === 'panel' && layoutMode === 'coding') ||
-    (slot.mode === 'canvas' && layoutMode === 'canvas')
-  )
   const hasSlot = slot != null && slot.width > 0 && slot.height > 0
-  const mounted = presentationMatches && hasSlot
-  const hostShown = slot?.mode !== 'panel' || activityShown
-  const visible = mounted && hostShown && !home && !certErrored
+  const mounted = hasSlot
+  const visible = mounted && activityShown && !home && !certErrored
   // A screenshot transiently pulls a hidden/background tab into the viewport and
   // masks it with opacity:0 — Chromium won't rasterize a layer parked off-screen,
   // so capturePage would hang otherwise. Outside capture, hidden tabs keep their
@@ -232,8 +225,8 @@ function PersistentBrowser({ browserId, layoutMode, resizing }: { browserId: str
         opacity: visible ? 1 : 0,
         pointerEvents: visible && !resizing ? 'auto' : 'none',
         overflow: 'hidden',
-        borderBottomLeftRadius: (layoutMode === 'coding' && activitySide === 'left') || (layoutMode === 'canvas' && slot?.mode === 'canvas') ? 'var(--radius-xl)' : undefined,
-        borderBottomRightRadius: (layoutMode === 'coding' && activitySide === 'right') || (layoutMode === 'canvas' && slot?.mode === 'canvas') ? 'var(--radius-xl)' : undefined,
+        borderBottomLeftRadius: activitySide === 'left' ? 'var(--radius-xl)' : undefined,
+        borderBottomRightRadius: activitySide === 'right' ? 'var(--radius-xl)' : undefined,
       }}
     >
       <webview

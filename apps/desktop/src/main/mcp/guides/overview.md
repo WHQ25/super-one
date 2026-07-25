@@ -2,7 +2,7 @@
 
 A mini-app is a sandboxed web application (HTML/CSS/JS) that runs in an iframe and can be controlled by any AI agent through MCP tools.
 
-Every app opens as a tab in the activity panel by default. Set `fullscreen: true` in the manifest if it should also be openable in the canvas full-screen view (the user can switch between panel and canvas at runtime). Apps can declare `tools[]` so the agent can drive them, and any tool can attach a custom result renderer (`tools[].renderer.result`) to render its output inline in the chat — read the `tools` topic for both. Tools come in two flavors: **panel-bound** tools whose handler lives in the open panel, and **standalone** tools (`tools[].standalone: true`) whose handler and UI both live in the chat-block iframe (no panel needed). Read the `manifest` topic for the full list of manifest fields and panel layout guidance.
+Every app opens as a tab in the activity Dockview. Users can maximize the entire Activity workspace when they need more room; all tabs and split groups remain available while chat becomes a floating panel. Apps can declare `tools[]` so the agent can drive them, and any tool can attach a custom result renderer (`tools[].renderer.result`) to render its output inline in the chat — read the `tools` topic for both. Tools come in two flavors: **panel-bound** tools whose handler lives in the open panel, and **standalone** tools (`tools[].standalone: true`) whose handler and UI both live in the chat-block iframe (no panel needed). Read the `manifest` topic for the full list of manifest fields and responsive layout guidance.
 
 ## Architecture
 
@@ -19,16 +19,15 @@ Every app opens as a tab in the activity panel by default. Set `fullscreen: true
 **Before writing any code, confirm the following with the user:**
 
 1. **Clarify requirements** — Ask the user what the app should do. Confirm the core features and scope. Don't assume — ask.
-2. **Confirm fullscreen** — Should the app also be openable in the canvas full-screen view (`fullscreen: true`), or panel-only (default)? Get user approval.
-3. **Suggest template** — Recommend `vanilla` or `react` with reasoning (see "Choosing a Template" below). Get user approval.
-4. **Design tools carefully** — Tools are called by the agent, not the user. Only declare tools when the app genuinely needs the agent to push data or trigger actions. Consider whether the app can achieve the functionality on its own using bridge APIs (`superone.git.*`, `superone.fs.*`, etc.) before adding agent-facing tools. If a tool's output should render inline in chat with a custom UI, declare `renderer.result.template` for that tool. Present any proposed tool design to the user and get approval before implementing. See the `tools` topic for details.
+2. **Suggest template** — Recommend `vanilla` or `react` with reasoning (see "Choosing a Template" below). Get user approval.
+3. **Design tools carefully** — Tools are called by the agent, not the user. Only declare tools when the app genuinely needs the agent to push data or trigger actions. Consider whether the app can achieve the functionality on its own using bridge APIs (`superone.git.*`, `superone.fs.*`, etc.) before adding agent-facing tools. If a tool's output should render inline in chat with a custom UI, declare `renderer.result.template` for that tool. Present any proposed tool design to the user and get approval before implementing. See the `tools` topic for details.
 
 Do NOT skip these steps. Do NOT start coding before the user confirms the plan.
 
 **After confirmation, build the app:**
 
 1. Confirm with the user **where** the mini-app source should live (`directory`) and **who** should see it (`scope`: `project` or `user`). See "Where the App Lives" below.
-2. Call `miniapp_dev_setup` with the confirmed info (name, slug, directory, scope, projectDir if scope=project, template, fullscreen, description). It scaffolds files at `directory`, adds an entry to the global dev-registry, and writes a `.s1-dev.json` pointer so SuperOne can discover the app.
+2. Call `miniapp_dev_setup` with the confirmed info (name, slug, directory, scope, projectDir if scope=project, template, description). It scaffolds files at `directory`, adds an entry to the global dev-registry, and writes a `.s1-dev.json` pointer so SuperOne can discover the app.
 3. Read **`manifest`** for manifest fields and panel layout, then **`tools`** for declaring agent-facing tools and custom inline renderers.
 4. Edit `manifest.json` to add tools, permissions, etc.
 5. Write app code
@@ -166,5 +165,4 @@ After `miniapp_dev_pack` + drag-drop install, the slot also contains the packed 
 ## Updating Type Definitions
 
 If a mini-app was created with an older version of SuperOne and needs access to newly added APIs, call `miniapp_dev_update_types` with the app directory path. This regenerates `superone.d.ts` with the latest API definitions.
-
 

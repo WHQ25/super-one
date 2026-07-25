@@ -381,7 +381,6 @@ export interface CreateMiniAppOptions {
   scope?: CreateMiniAppScope
   projectDir?: string
   template?: CreateMiniAppTemplate
-  fullscreen?: boolean
   description?: string
 }
 
@@ -433,7 +432,6 @@ export async function createMiniApp(opts: CreateMiniAppOptions): Promise<CreateM
     appId,
     name: opts.name,
     isDev: true,
-    ...(opts.fullscreen && { fullscreen: true }),
     ...(opts.description && { description: opts.description }),
   }
 
@@ -1030,4 +1028,3 @@ export async function handleGitRequest(
       throw new Error(`Unknown git operation: ${op}`)
   }
 }
-

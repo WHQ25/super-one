@@ -1,6 +1,5 @@
-import type { DockviewApi, AddPanelPositionOptions, SerializedDockview } from 'dockview-core'
+import type { DockviewApi, AddPanelPositionOptions, IDockviewPanel, SerializedDockview } from 'dockview-core'
 import { useActivityPanelStore } from '@/stores/activity-panel'
-import { useAppStore } from '@/stores/app'
 import { useBrowserStore } from '@/stores/browser'
 import { normalizeUrl } from '@/components/browser/browser-url'
 import { normalizeFileLinkTarget } from '@/lib/file-link'
@@ -48,6 +47,7 @@ export function setCurrentSessionIdGetter(getter: (() => string | null) | null) 
 
 export function setDockApi(api: DockviewApi | null) {
   dockApi = api
+  if (!api) useActivityPanelStore.getState().setMaximizedGroup(null)
   if (api && pendingAction) {
     const action = pendingAction
     pendingAction = null
@@ -70,6 +70,7 @@ export function getDockSnapshot(): SerializedDockview | null {
 
 export function applyDockSnapshot(json: SerializedDockview | null): boolean {
   if (!dockApi) return false
+  useActivityPanelStore.getState().setMaximizedGroup(null)
   if (json) dockApi.fromJSON(json)
   else dockApi.clear()
   return true
@@ -101,6 +102,24 @@ function execOrDefer(fn: () => void) {
   }
 }
 
+function getMaximizedGroup() {
+  const groupId = useActivityPanelStore.getState().maximizedGroupId
+  return groupId ? dockApi?.groups.find((group) => group.id === groupId) : undefined
+}
+
+function positionInMaximizedGroup(fallback?: AddPanelPositionOptions): AddPanelPositionOptions | undefined {
+  const group = getMaximizedGroup()
+  return group ? { referenceGroup: group, direction: 'within' } : fallback
+}
+
+function activateInMaximizedGroup(panel: IDockviewPanel, inactive = false) {
+  const group = getMaximizedGroup()
+  if (group && panel.group.id !== group.id) {
+    panel.api.moveTo({ group, index: group.panels.length, skipSetActive: inactive })
+  }
+  if (!inactive) panel.api.setActive()
+}
+
 function addFilePanel(filePath: string, position?: AddPanelPositionOptions) {
   if (!dockApi) return
   const normalizedPath = normalizeFileLinkTarget(filePath)
@@ -123,17 +142,17 @@ export function openFileTab(filePath: string) {
     const panelId = `file:${normalizedPath}`
     const existing = dockApi.panels.find((p) => p.id === panelId)
     if (existing) {
-      existing.api.setActive()
+      activateInMaximizedGroup(existing)
       return
     }
     const activePanel = dockApi.activePanel
     if (activePanel?.id.startsWith('file:')) {
       const group = activePanel.group
-      addFilePanel(normalizedPath, group ? { referenceGroup: group, direction: 'within' } : undefined)
+      addFilePanel(normalizedPath, positionInMaximizedGroup(group ? { referenceGroup: group, direction: 'within' } : undefined))
       activePanel.api.close()
       return
     }
-    addFilePanel(normalizedPath)
+    addFilePanel(normalizedPath, positionInMaximizedGroup())
   })
 }
 
@@ -145,7 +164,7 @@ export function openNewFileTab(filePath: string, options?: { direction?: 'within
     const panelId = `file:${normalizedPath}`
     const existing = dockApi.panels.find((p) => p.id === panelId)
     if (existing) {
-      existing.api.setActive()
+      activateInMaximizedGroup(existing)
       return
     }
     const position = options?.referencePanel
@@ -153,7 +172,7 @@ export function openNewFileTab(filePath: string, options?: { direction?: 'within
       : options?.direction && options.direction !== 'within'
         ? { direction: options.direction }
         : undefined
-    addFilePanel(normalizedPath, position)
+    addFilePanel(normalizedPath, positionInMaximizedGroup(position))
   })
 }
 
@@ -165,15 +184,17 @@ export function openMiniAppTab(instanceKey: string, appId: string, label: string
     const panelId = `miniapp-${instanceKey}`
     const existing = dockApi.panels.find((p) => p.id === panelId)
     if (existing) {
-      existing.api.setActive()
+      activateInMaximizedGroup(existing)
       return
     }
+    const position = positionInMaximizedGroup()
     dockApi.addPanel({
       id: panelId,
       component: 'miniapp',
       tabComponent: 'miniapp-tab',
       title: label,
       params: { instanceKey, appId },
+      ...(position ? { position } : {}),
     })
   })
 }
@@ -201,22 +222,25 @@ export function openBrowserTab(url = 'about:blank', reuseId?: string, owner?: st
   const currentSession = currentSessionIdGetter?.() ?? null
   if (resolvedOwner != null && resolvedOwner !== currentSession) return
 
-  const app = useAppStore.getState()
-  if (app.layoutMode !== 'coding' && app.currentFolder) app.setLayoutMode('coding')
   ensureVisible()
   recordMosaicOpen(browserId, () => openBrowserTab(url, browserId, resolvedOwner))
   execOrDefer(() => {
     if (!dockApi) return
     const existing = dockApi.panels.find((p) => p.id === browserId)
-    if (existing) { if (!opts?.background) existing.api.setActive() }
-    else dockApi.addPanel({
-      id: browserId,
-      component: 'browser',
-      tabComponent: 'browser-tab',
-      title: 'New Tab',
-      params: { browserId, url },
-      ...(opts?.background ? { inactive: true } : {}),
-    })
+    if (existing) {
+      activateInMaximizedGroup(existing, opts?.background)
+    } else {
+      const position = positionInMaximizedGroup()
+      dockApi.addPanel({
+        id: browserId,
+        component: 'browser',
+        tabComponent: 'browser-tab',
+        title: 'New Tab',
+        params: { browserId, url },
+        ...(opts?.background ? { inactive: true } : {}),
+        ...(position ? { position } : {}),
+      })
+    }
   })
 }
 
@@ -225,23 +249,23 @@ export function openBrowserTab(url = 'about:blank', reuseId?: string, owner?: st
 // agent-opened tabs confined to that session's activity panel.
 export function materializeOwnedBrowserTabs(sessionId: string) {
   if (!dockApi) return
-  const { tabs, fullscreenId } = useBrowserStore.getState()
+  const { tabs } = useBrowserStore.getState()
   let added = false
   for (const [id, tab] of Object.entries(tabs)) {
-    if (tab.owner !== sessionId || id === fullscreenId) continue
+    if (tab.owner !== sessionId) continue
     if (dockApi.panels.find((p) => p.id === id)) continue
+    const position = positionInMaximizedGroup()
     dockApi.addPanel({
       id,
       component: 'browser',
       tabComponent: 'browser-tab',
       title: tab.title || 'New Tab',
       params: { browserId: id, url: tab.url },
+      ...(position ? { position } : {}),
     })
     added = true
   }
   if (added) {
-    const app = useAppStore.getState()
-    if (app.layoutMode !== 'coding' && app.currentFolder) app.setLayoutMode('coding')
     ensureVisible()
   }
 }
@@ -253,14 +277,19 @@ export async function openTerminalTab(projectPath: string, sessionId?: string) {
   execOrDefer(() => {
     if (!dockApi) return
     const existing = dockApi.panels.find((p) => p.id === panelId)
-    if (existing) existing.api.setActive()
-    else dockApi.addPanel({
-      id: panelId,
-      component: 'terminal',
-      tabComponent: 'terminal-tab',
-      title: item.title || 'Terminal',
-      params: { terminalId: item.terminalId },
-    })
+    if (existing) {
+      activateInMaximizedGroup(existing)
+    } else {
+      const position = positionInMaximizedGroup()
+      dockApi.addPanel({
+        id: panelId,
+        component: 'terminal',
+        tabComponent: 'terminal-tab',
+        title: item.title || 'Terminal',
+        params: { terminalId: item.terminalId },
+        ...(position ? { position } : {}),
+      })
+    }
   })
 }
 
@@ -278,24 +307,23 @@ export function closeBrowserTab(browserId: string) {
   useBrowserStore.getState().remove(browserId)
 }
 
-export function maximizeBrowserTab(browserId: string) {
-  useBrowserStore.getState().setFullscreen(browserId)
-  dockApi?.panels.find((p) => p.id === browserId)?.api.close()
-  useAppStore.getState().setLayoutMode('canvas')
+export function maximizeActivityPanel() {
+  ensureVisible()
+  const panel = dockApi?.activePanel
+  if (!panel || panel.api.isMaximized()) return
+  panel.api.maximize()
+  useActivityPanelStore.getState().setMaximizedGroup(panel.group.id)
 }
 
-export function restoreBrowserToPanel() {
-  const store = useBrowserStore.getState()
-  const id = store.fullscreenId
-  store.setFullscreen(null)
-  if (id) openBrowserTab(store.tabs[id]?.url ?? 'about:blank', id)
-  else useAppStore.getState().setLayoutMode('coding')
-}
-
-export function closeFullscreenBrowser() {
-  const store = useBrowserStore.getState()
-  const id = store.fullscreenId
-  store.setFullscreen(null)
-  if (id) store.remove(id)
-  useAppStore.getState().setLayoutMode('coding')
+export function toggleMaximizedActivityGroup(panelId: string) {
+  ensureVisible()
+  const panel = dockApi?.panels.find((candidate) => candidate.id === panelId)
+  if (!panel) return
+  if (panel.api.isMaximized()) {
+    panel.api.exitMaximized()
+    useActivityPanelStore.getState().setMaximizedGroup(null)
+  } else {
+    panel.api.maximize()
+    useActivityPanelStore.getState().setMaximizedGroup(panel.group.id)
+  }
 }

@@ -37,7 +37,6 @@ export interface MiniAppManifest {
   description?: string
   logo?: string
   isDev?: boolean
-  fullscreen?: boolean
   preferWidth?: number
   permissions?: MiniAppPermissions
   background?: MiniAppBackground

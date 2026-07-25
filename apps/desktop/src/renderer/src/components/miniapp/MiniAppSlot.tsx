@@ -4,7 +4,7 @@ import { useSlotBounds } from '@/hooks/useSlotBounds'
 
 interface MiniAppSlotProps {
   instanceKey: string
-  mode: 'panel' | 'canvas'
+  mode: 'panel'
   className?: string
 }
 

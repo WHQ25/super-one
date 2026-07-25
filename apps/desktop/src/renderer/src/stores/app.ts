@@ -26,7 +26,6 @@ export type SettingsTab = 'providers' | 'agents' | 'skills' | 'mcp' | 'plugins' 
 const PROVIDER_SETTINGS_TABS: SettingsTab[] = ['agents', 'skills', 'mcp', 'hooks', 'plugins', 'preferences']
 const FIRST_SETTINGS_SECTION: SettingsTab = 'providers'
 const FIRST_PROVIDER_TAB: SettingsTab = 'agents'
-export type LayoutMode = 'canvas' | 'coding'
 export type SidebarTab = 'sessions' | 'files'
 
 interface WorktreeState {
@@ -90,9 +89,6 @@ interface AppState {
   settingsProviderTabs: Record<SettingsProvider, SettingsTab>
   setSettingsProvider: (provider: SettingsProvider) => void
 
-  // Layout mode
-  layoutMode: LayoutMode
-  setLayoutMode: (mode: LayoutMode) => void
   sidebarTab: SidebarTab
   setSidebarTab: (tab: SidebarTab) => void
   showSidebar: boolean
@@ -219,18 +215,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   settingsProvider: 'claude',
   settingsTab: FIRST_SETTINGS_SECTION,
   settingsProviderTabs: { claude: FIRST_PROVIDER_TAB, codex: FIRST_PROVIDER_TAB },
-  layoutMode: 'coding',
-  setLayoutMode: async (mode) => {
-    set({ layoutMode: mode })
-    if (mode === 'coding' && !get().currentFolder) {
-      const folders = get().recentFolders
-      if (folders.length > 0) {
-        await applyProjectSelection(folders[0].path, set)
-      } else {
-        get().openTmpFolder()
-      }
-    }
-  },
   sidebarTab: 'sessions',
   setSidebarTab: (tab) => set({ sidebarTab: tab }),
   showSidebar: true,
@@ -378,7 +362,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     void useChatStore.getState().initializeHarness('claude')
 
-    if (get().layoutMode === 'coding' && !get().currentFolder) {
+    if (!get().currentFolder) {
       let opened = false
       for (const folder of folders) {
         if (await applyProjectSelection(folder.path, set)) {

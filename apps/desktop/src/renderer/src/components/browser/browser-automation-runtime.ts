@@ -61,7 +61,6 @@ function resolveBrowserId(tab: string | undefined, sessionId: string): string {
     if (!owned.includes(tab)) throw new Error(`Browser tab not found in this session: ${tab}`)
     return tab
   }
-  if (state.fullscreenId && owned.includes(state.fullscreenId)) return state.fullscreenId
   if (owned.length === 1) return owned[0]
   if (owned.length === 0) throw new Error('No browser is open in this session. Use browser_open first.')
   throw new Error(`Multiple browser tabs are open; specify "tab". Open tabs: ${owned.join(', ')}`)
@@ -633,7 +632,6 @@ export async function runBrowserOp(sessionId: string, op: string, rawInput: unkn
       url: state.tabs[id].url,
       title: state.tabs[id].title,
       loading: state.tabs[id].loading,
-      fullscreen: state.fullscreenId === id,
     }))
     return { tabs, count: tabs.length }
   }

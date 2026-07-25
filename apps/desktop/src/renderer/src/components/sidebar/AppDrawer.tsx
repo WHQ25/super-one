@@ -4,6 +4,7 @@ import { Blocks, ChevronDown, ChevronRight, Maximize, PackagePlus, Plus, Store }
 import { ScrollArea } from '@superone/ui/components/ui/scroll-area'
 import { useAppStore } from '@/stores/app'
 import { useMiniAppStore } from '@/stores/miniapp'
+import { maximizeActivityPanel } from '@/components/activity/activity-panel-api'
 import { useChatStore } from '@/stores/chat'
 import { useShallow } from 'zustand/react/shallow'
 import { cn } from '@superone/ui/lib/utils'
@@ -37,7 +38,7 @@ function getS1AppPaths(e: DragEvent): string[] {
   return paths
 }
 
-function SortableAppRow({ app, index, onClick, onOpenFullscreen }: { app: MiniAppEntry; index: number; onClick: () => void; onOpenFullscreen?: () => void }) {
+function SortableAppRow({ app, index, onClick, onOpenMaximized }: { app: MiniAppEntry; index: number; onClick: () => void; onOpenMaximized?: () => void }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: app.id })
   const style = { transform: CSS.Transform.toString(transform ? { ...transform, x: 0 } : null), transition }
   const [hovered, setHovered] = useState(false)
@@ -67,17 +68,17 @@ function SortableAppRow({ app, index, onClick, onOpenFullscreen }: { app: MiniAp
           <MarqueeText className="text-[11px] text-sidebar-foreground/50" hovered={hovered}>{app.manifest.description}</MarqueeText>
         )}
       </div>
-      {onOpenFullscreen && (
+      {onOpenMaximized && (
         <IconButton
           size="sm"
           variant="nested"
           className="ml-1 opacity-0 transition-all group-hover/sapp:opacity-100"
           onClick={(e) => {
             e.stopPropagation()
-            onOpenFullscreen()
+            onOpenMaximized()
           }}
           onPointerDown={(e) => e.stopPropagation()}
-          tooltip="Open in canvas"
+          tooltip="Open maximized"
         >
           <Maximize />
         </IconButton>
@@ -91,12 +92,10 @@ export function AppDrawer() {
   const [expanded, setExpanded] = useState(false)
   const currentFolder = useAppStore((s) => s.currentFolder)
   const currentProjectId = useAppStore((s) => s.currentProjectId)
-  const setLayoutMode = useAppStore((s) => s.setLayoutMode)
   const projectKey = currentProjectId ?? NO_PROJECT_KEY
 
   const refreshApps = useMiniAppStore((s) => s.refreshApps)
   const allApps = useMiniAppStore(useShallow((s) => s.apps))
-  const requestOpenInCanvas = useMiniAppStore((s) => s.requestOpenInCanvas)
   const openAppInPanel = useMiniAppStore((s) => s.openAppInPanel)
   const previewInstall = useMiniAppStore((s) => s.previewInstall)
   const setDraftText = useChatStore((s) => s.setDraftText)
@@ -137,11 +136,11 @@ export function AppDrawer() {
     openAppInPanel(app, currentFolder ?? '')
   }, [currentFolder, openAppInPanel])
 
-  const openAppFullscreen = useCallback((app: MiniAppEntry) => {
+  const openAppMaximized = useCallback(async (app: MiniAppEntry) => {
     setExpanded(false)
-    setLayoutMode('canvas')
-    requestOpenInCanvas(app.id)
-  }, [setLayoutMode, requestOpenInCanvas])
+    await openAppInPanel(app, currentFolder ?? '')
+    maximizeActivityPanel()
+  }, [currentFolder, openAppInPanel])
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -312,7 +311,7 @@ export function AppDrawer() {
                             app={app}
                             index={i}
                             onClick={() => openApp(app)}
-                            onOpenFullscreen={app.manifest.fullscreen ? () => openAppFullscreen(app) : undefined}
+                            onOpenMaximized={() => { void openAppMaximized(app) }}
                           />
                         ))}
                       </SortableContext>

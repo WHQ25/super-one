@@ -289,7 +289,6 @@ function ActiveProviderHint() {
 
 export function ChatSuggestions() {
   const { t } = useTranslation()
-  const layoutMode = useAppStore((s) => s.layoutMode)
   const selectProject = useAppStore((s) => s.selectProject)
   const recentFolders = useAppStore((s) => s.recentFolders)
   const hasRealProject = useHasRealProject()
@@ -298,9 +297,7 @@ export function ChatSuggestions() {
 
   const resetSession = useChatStore((s) => s.resetSession)
 
-  const isCoding = layoutMode === 'coding'
-
-  if (isCoding && !hasRealProject) {
+  if (!hasRealProject) {
     const hasRecent = recentFolders.length > 0
     return (
       <div className="flex h-full flex-col items-center justify-center gap-4 px-4" style={{ animation: 'fade-in 400ms ease-out' }}>
@@ -345,7 +342,7 @@ export function ChatSuggestions() {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-4 px-4" style={{ animation: 'fade-in 400ms ease-out' }}>
       <ProviderSelector />
-      {isCoding && <ProjectSelector align="center" onOpened={() => void resetSession()} />}
+      <ProjectSelector align="center" onOpened={() => void resetSession()} />
     </div>
   )
 }

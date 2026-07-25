@@ -10,9 +10,7 @@ import { getPendingReason } from '@/components/sidebar/session-state-utils'
 import { SessionTitleAnimated } from '@/components/sidebar/AnimatedSessionTitle'
 import { cn } from '@superone/ui/lib/utils'
 
-const OFFSET = 16
-const TITLEBAR_H = 44
-const TOP_OFFSET = TITLEBAR_H + 8
+const OFFSET = 8
 const DEFAULT_PANEL_W = 360
 const MIN_PANEL_W = 360
 const MAX_PANEL_W = 800
@@ -22,39 +20,42 @@ const MIN_EXPANDED_H = 580
 const COLLAPSED_PENDING_PADDING = 54
 const SIZE_ANIMATION_DURATION = 0.24
 const SIZE_EASE = [0.32, 0.72, 0, 1] as const
-const maxExpandedH = () => Math.floor(window.innerHeight * 0.9)
+const maxExpandedH = (availableHeight = window.innerHeight) => Math.floor(availableHeight * 0.9)
 
 type Anchor = 'br' | 'bl' | 'tr' | 'tl' | 'tm' | 'rm' | 'bm' | 'lm'
+export interface ChatPanelBounds { left: number; top: number; width: number; height: number }
 
-/** Compute panel top-left position for a given anchor + size + viewport. */
-function anchorPosition(anchor: Anchor, panelW: number, panelH: number, winW: number, winH: number): { x: number; y: number } {
+/** Compute panel top-left position for a given anchor within the main workspace. */
+export function anchorPosition(anchor: Anchor, panelW: number, panelH: number, bounds: ChatPanelBounds): { x: number; y: number } {
+  const left = bounds.left + OFFSET
+  const right = bounds.left + bounds.width - OFFSET - panelW
+  const top = bounds.top + OFFSET
+  const bottom = bounds.top + bounds.height - OFFSET - panelH
   switch (anchor) {
-    case 'tl': return { x: OFFSET, y: TOP_OFFSET }
-    case 'tr': return { x: winW - OFFSET - panelW, y: TOP_OFFSET }
-    case 'bl': return { x: OFFSET, y: winH - OFFSET - panelH }
-    case 'br': return { x: winW - OFFSET - panelW, y: winH - OFFSET - panelH }
-    case 'tm': return { x: (winW - panelW) / 2, y: TOP_OFFSET }
-    case 'bm': return { x: (winW - panelW) / 2, y: winH - OFFSET - panelH }
-    case 'lm': return { x: OFFSET, y: (winH - panelH) / 2 }
-    case 'rm': return { x: winW - OFFSET - panelW, y: (winH - panelH) / 2 }
+    case 'tl': return { x: left, y: top }
+    case 'tr': return { x: right, y: top }
+    case 'bl': return { x: left, y: bottom }
+    case 'br': return { x: right, y: bottom }
+    case 'tm': return { x: bounds.left + (bounds.width - panelW) / 2, y: top }
+    case 'bm': return { x: bounds.left + (bounds.width - panelW) / 2, y: bottom }
+    case 'lm': return { x: left, y: bounds.top + (bounds.height - panelH) / 2 }
+    case 'rm': return { x: right, y: bounds.top + (bounds.height - panelH) / 2 }
   }
 }
 
 /** Pick nearest anchor by Euclidean distance from panel center to where panel center would sit at each anchor. */
-function nearestAnchor(panelCenterX: number, panelCenterY: number, panelW: number, panelH: number): Anchor {
-  const w = window.innerWidth
-  const h = window.innerHeight
+export function nearestAnchor(panelCenterX: number, panelCenterY: number, panelW: number, panelH: number, bounds: ChatPanelBounds): Anchor {
   const halfW = panelW / 2
   const halfH = panelH / 2
   const targets: Array<[Anchor, number, number]> = [
-    ['tl', OFFSET + halfW, TOP_OFFSET + halfH],
-    ['tr', w - OFFSET - halfW, TOP_OFFSET + halfH],
-    ['bl', OFFSET + halfW, h - OFFSET - halfH],
-    ['br', w - OFFSET - halfW, h - OFFSET - halfH],
-    ['tm', w / 2, TOP_OFFSET + halfH],
-    ['bm', w / 2, h - OFFSET - halfH],
-    ['lm', OFFSET + halfW, h / 2],
-    ['rm', w - OFFSET - halfW, h / 2],
+    ['tl', bounds.left + OFFSET + halfW, bounds.top + OFFSET + halfH],
+    ['tr', bounds.left + bounds.width - OFFSET - halfW, bounds.top + OFFSET + halfH],
+    ['bl', bounds.left + OFFSET + halfW, bounds.top + bounds.height - OFFSET - halfH],
+    ['br', bounds.left + bounds.width - OFFSET - halfW, bounds.top + bounds.height - OFFSET - halfH],
+    ['tm', bounds.left + bounds.width / 2, bounds.top + OFFSET + halfH],
+    ['bm', bounds.left + bounds.width / 2, bounds.top + bounds.height - OFFSET - halfH],
+    ['lm', bounds.left + OFFSET + halfW, bounds.top + bounds.height / 2],
+    ['rm', bounds.left + bounds.width - OFFSET - halfW, bounds.top + bounds.height / 2],
   ]
   let best: Anchor = 'br'
   let bestDist = Infinity
@@ -96,7 +97,7 @@ function createDragCapture(cursor: string) {
   }
 }
 
-export const ChatPanel = memo(function ChatPanel() {
+export const ChatPanel = memo(function ChatPanel({ anchorBoundaryRef }: { anchorBoundaryRef: React.RefObject<HTMLElement | null> }) {
   const isOpen = useChatStore((s) => s.isOpen)
   const corner = useChatStore((s) => s.corner) as Anchor
   const setCorner = useChatStore((s) => s.setCorner)
@@ -145,22 +146,41 @@ export const ChatPanel = memo(function ChatPanel() {
   const measureRef = useRef<HTMLSpanElement>(null)
 
   const { showScrollButton, scrollToBottom, stopAutoScroll } = useChatScroll({ scrollViewportRef })
-  useChatKeyboardShortcuts()
+  // CodingLayout remains mounted behind the maximized Activity workspace and owns
+  // global chat shortcuts. Avoid registering a duplicate set for the floating view.
+  useChatKeyboardShortcuts(false)
 
   // Panel dimensions
   const [expandedH, setExpandedH] = useState(() => Math.min(DEFAULT_EXPANDED_H, maxExpandedH()))
   const [panelW, setPanelW] = useState(DEFAULT_PANEL_W)
 
-  // Window size — drives anchor position re-computation
-  const [winSize, setWinSize] = useState(() => ({ w: window.innerWidth, h: window.innerHeight }))
-  useEffect(() => {
-    const handler = () => {
-      setWinSize({ w: window.innerWidth, h: window.innerHeight })
-      setExpandedH((h) => clamp(h, MIN_EXPANDED_H, maxExpandedH()))
+  // The floating chat belongs to the main workspace, not the full viewport. Observe
+  // that card so sidebar transitions and window resizes both move the snap targets.
+  const [anchorBounds, setAnchorBounds] = useState<ChatPanelBounds>(() => ({
+    left: 0,
+    top: 0,
+    width: window.innerWidth,
+    height: window.innerHeight,
+  }))
+  useLayoutEffect(() => {
+    const element = anchorBoundaryRef.current
+    if (!element) return
+    const measure = () => {
+      const rect = element.getBoundingClientRect()
+      const next = { left: rect.left, top: rect.top, width: rect.width, height: rect.height }
+      setAnchorBounds(next)
+      setExpandedH((height) => clamp(height, MIN_EXPANDED_H, maxExpandedH(next.height)))
+      setPanelW((width) => clamp(width, MIN_PANEL_W, Math.min(MAX_PANEL_W, next.width - OFFSET * 2)))
     }
-    window.addEventListener('resize', handler)
-    return () => window.removeEventListener('resize', handler)
-  }, [])
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(element)
+    window.addEventListener('resize', measure)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', measure)
+    }
+  }, [anchorBoundaryRef])
 
   // Measure pending reason text natural width
   const [pendingTextW, setPendingTextW] = useState(0)
@@ -200,7 +220,7 @@ export const ChatPanel = memo(function ChatPanel() {
   // when the user releases — corner changes during drag, then isDragging flips false.
   useLayoutEffect(() => {
     if (isDragging || isResizing) return
-    const rest = anchorPosition(corner, targetW, targetH, winSize.w, winSize.h)
+    const rest = anchorPosition(corner, targetW, targetH, anchorBounds)
     positionAnimRef.current?.stop()
     if (!hasInitPosRef.current) {
       hasInitPosRef.current = true
@@ -211,7 +231,7 @@ export const ChatPanel = memo(function ChatPanel() {
     const ax = animate(mvX, rest.x, { duration: SIZE_ANIMATION_DURATION, ease: SIZE_EASE })
     const ay = animate(mvY, rest.y, { duration: SIZE_ANIMATION_DURATION, ease: SIZE_EASE })
     positionAnimRef.current = { stop: () => { ax.stop(); ay.stop() } }
-  }, [corner, targetW, targetH, winSize.w, winSize.h, isDragging, isResizing, mvX, mvY])
+  }, [corner, targetW, targetH, anchorBounds, isDragging, isResizing, mvX, mvY])
 
   // Which edges are anchored (cannot be resized) — affects which resize handles render
   const topAnchored = corner === 'tl' || corner === 'tr' || corner === 'tm'
@@ -257,7 +277,7 @@ export const ChatPanel = memo(function ChatPanel() {
         if (dragging) {
           const cx = startX + (ev.clientX - startMouseX) + w / 2
           const cy = startY + (ev.clientY - startMouseY) + h / 2
-          setCorner(nearestAnchor(cx, cy, w, h))
+          setCorner(nearestAnchor(cx, cy, w, h, anchorBounds))
         }
         setIsDragging(false)
         // dragRef stays true for one frame so the synthetic click after mouseup doesn't toggle
@@ -269,7 +289,7 @@ export const ChatPanel = memo(function ChatPanel() {
       window.addEventListener('mousemove', handleMove)
       window.addEventListener('mouseup', handleUp)
     },
-    [setCorner, mvX, mvY]
+    [anchorBounds, setCorner, mvX, mvY]
   )
 
   const handleToggle = useCallback(
@@ -321,18 +341,18 @@ export const ChatPanel = memo(function ChatPanel() {
         const dy = ev.clientY - startMouseY
         switch (edge) {
           case 'top':
-            nextH = clamp(startH - dy, MIN_EXPANDED_H, maxExpandedH())
+            nextH = clamp(startH - dy, MIN_EXPANDED_H, maxExpandedH(anchorBounds.height))
             nextY = startY + (startH - nextH)
             break
           case 'bottom':
-            nextH = clamp(startH + dy, MIN_EXPANDED_H, maxExpandedH())
+            nextH = clamp(startH + dy, MIN_EXPANDED_H, maxExpandedH(anchorBounds.height))
             break
           case 'left':
-            nextW = clamp(startW - dx, MIN_PANEL_W, MAX_PANEL_W)
+            nextW = clamp(startW - dx, MIN_PANEL_W, Math.min(MAX_PANEL_W, anchorBounds.width - OFFSET * 2))
             nextX = startX + (startW - nextW)
             break
           case 'right':
-            nextW = clamp(startW + dx, MIN_PANEL_W, MAX_PANEL_W)
+            nextW = clamp(startW + dx, MIN_PANEL_W, Math.min(MAX_PANEL_W, anchorBounds.width - OFFSET * 2))
             break
         }
         if (raf === 0) raf = requestAnimationFrame(flush)
@@ -352,7 +372,7 @@ export const ChatPanel = memo(function ChatPanel() {
       window.addEventListener('mousemove', handleMove)
       window.addEventListener('mouseup', handleUp)
     },
-    [mvX, mvY]
+    [anchorBounds.height, anchorBounds.width, mvX, mvY]
   )
 
   const noTransitionForFreeze = isDragging || isResizing

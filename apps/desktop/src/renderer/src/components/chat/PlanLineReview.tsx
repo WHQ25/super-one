@@ -262,22 +262,33 @@ export function PlanLineReview({
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      if (e.ctrlKey || e.metaKey || e.altKey) return
+      if (!note) return
       const active = document.activeElement
       const isNote =
         active instanceof HTMLTextAreaElement && active.dataset.planDraft !== undefined
-      if (!isNote && !note) return
+
+      // While a sticky is open, keep plan-approval host shortcuts from stealing keys.
+      if (e.key === 'Enter') {
+        // Plain Enter → newline in the note (do not submit / do not Approve).
+        // ⌘/Ctrl+Enter → save note.
+        if (isNote && (e.metaKey || e.ctrlKey) && !e.isComposing) {
+          e.preventDefault()
+          e.stopPropagation()
+          saveNote(note)
+          return
+        }
+        if (isNote) {
+          e.stopPropagation()
+          return
+        }
+        e.stopPropagation()
+        return
+      }
 
       if (e.key === 'Escape') {
         e.preventDefault()
         e.stopPropagation()
-        // discard unsaved create; edit keeps previous via not saving
         closeNote()
-        return
-      }
-      if (isNote && e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
-        e.preventDefault()
-        if (note) saveNote(note)
       }
     }
     window.addEventListener('keydown', onKeyDown, true)
@@ -313,7 +324,7 @@ export function PlanLineReview({
               key={c.id}
               type="button"
               data-plan-sticky-ui
-              title={c.text}
+              aria-label={t('chat.plan.comments')}
               className={cn(
                 'absolute z-20 size-6 cursor-pointer rounded-[2px]',
                 'bg-[#fde047] shadow-[1px_2px_5px_rgba(0,0,0,0.2)]',

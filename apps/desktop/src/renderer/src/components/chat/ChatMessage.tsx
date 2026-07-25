@@ -426,10 +426,10 @@ function MentionInlineChip({ kind, value, displayName }: { kind: UserMentionKind
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-xs align-middle whitespace-nowrap',
+        'inline-flex items-center align-middle whitespace-nowrap',
         kind === 'agent'
-          ? 'border-primary/40 bg-primary/15 text-primary'
-          : 'border-foreground/15 bg-foreground/10 text-foreground/90'
+          ? 'gap-1 rounded-md border border-primary/40 bg-primary/15 px-1.5 py-0.5 text-xs text-primary'
+          : 'gap-0.5 text-sm text-foreground'
       )}
     >
       {kind === 'agent' ? (

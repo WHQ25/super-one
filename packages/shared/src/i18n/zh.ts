@@ -533,7 +533,7 @@ export const zh: Messages = {
       comments: '评论',
       commentOn: '评论 {{range}}',
       addComment: '添加评论',
-      commentPlaceholder: '写便签…',
+      commentPlaceholder: '添加评论...',
       saveComment: '保存',
       cancelComment: '取消',
       removeComment: '删除',

@@ -2343,7 +2343,7 @@ export const en: Messages = {
       comments: 'Comments',
       commentOn: 'Comment on {{range}}',
       addComment: 'Add comment',
-      commentPlaceholder: 'Add a note…',
+      commentPlaceholder: 'Add a comment...',
       saveComment: 'Save',
       cancelComment: 'Cancel',
       removeComment: 'Delete',

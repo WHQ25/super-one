@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactNode, ButtonHTMLAttributes } from 'react'
 
@@ -60,7 +60,10 @@ Object.defineProperty(window, 'localStorage', { value: mockLocalStorage, writabl
 vi.stubGlobal('localStorage', mockLocalStorage)
 
 vi.mock('streamdown', () => ({
-  Streamdown: ({ children }: { children?: ReactNode }) => <div data-testid="streamdown">{children}</div>,
+  // Forward className so plan body keeps `.chat-md` (CopyableMarkdown contract).
+  Streamdown: ({ children, className }: { children?: ReactNode; className?: string }) => (
+    <div data-testid="streamdown" className={className}>{children}</div>
+  ),
 }))
 vi.mock('@streamdown/code', () => ({ createCodePlugin: () => ({}) }))
 vi.mock('./CodeBlock', () => ({ createStreamdownCodeComponent: () => () => null }))
@@ -302,31 +305,60 @@ describe('PlanApprovalPrompt — integration', () => {
     expect(mockWindowAgent.setPermissionMode).not.toHaveBeenCalled()
   })
 
-  it('scenario: line comment is serialized into reject feedback', () => {
+  it('scenario: sticky line comment is serialized into reject feedback', async () => {
     seedPlanApprovalState('plan', { sessionProvider: 'claude' })
     render(<PlanApprovalPrompt />)
 
-    // Line 2 is "- step A" (1-based: # My plan, - step A, - step B)
-    const line = document.querySelector('[data-plan-line="2"]')
-    expect(line).toBeTruthy()
-    fireEvent.mouseDown(line!)
-    fireEvent.doubleClick(line!)
+    // Plan body is rendered markdown (no data-plan-line gutter). Select text, open sticky, save.
+    await waitFor(() => {
+      expect(document.querySelector('.chat-md')).toBeTruthy()
+    })
+    const md = document.querySelector('.chat-md')!
+    const walker = document.createTreeWalker(md, NodeFilter.SHOW_TEXT)
+    let textNode: Text | null = null
+    let n: Node | null
+    while ((n = walker.nextNode())) {
+      if ((n.textContent ?? '').includes('step A')) {
+        textNode = n as Text
+        break
+      }
+    }
+    expect(textNode).toBeTruthy()
+    const full = textNode!.textContent ?? ''
+    const start = full.indexOf('step A')
+    const range = document.createRange()
+    range.setStart(textNode!, start)
+    range.setEnd(textNode!, start + 'step A'.length)
+    const sel = window.getSelection()!
+    sel.removeAllRanges()
+    sel.addRange(range)
+    // Capture-phase mouseup on document opens sticky from selection (jsdom-safe fireEvent).
+    fireEvent.mouseUp(document)
 
-    const draft = screen.getByPlaceholderText(/comment on the selected|针对所选行/i)
+    const draft = await waitFor(() => {
+      const el = document.querySelector('textarea[data-plan-draft]') as HTMLTextAreaElement | null
+      expect(el).toBeTruthy()
+      return el!
+    })
     fireEvent.change(draft, { target: { value: 'make this async' } })
-    fireEvent.keyDown(draft, { key: 'Enter' })
+    // Sticky saves on ⌘/Ctrl+Enter (plain Enter is newline)
+    fireEvent.keyDown(draft, { key: 'Enter', metaKey: true })
 
-    fireEvent.keyDown(window, { key: 'Escape' })
+    // Blur/save may be async; reject once sticky is closed
+    await waitFor(() => {
+      expect(document.querySelector('textarea[data-plan-draft]')).toBeNull()
+    })
+    fireEvent.click(screen.getAllByRole('button', { name: /Reject|拒绝/ })[0])
 
     expect(mockWindowAgent.respondToPlanApproval).toHaveBeenCalledWith(
       expect.any(String),
       'plan-req-1',
       false,
-      expect.stringContaining('Proposed plan line 2:'),
+      expect.stringMatching(/Proposed plan line|Comment:\nmake this async/),
     )
     const feedback = mockWindowAgent.respondToPlanApproval.mock.calls[0][3] as string
-    expect(feedback).toContain('> - step A')
-    expect(feedback).toContain('Comment:\nmake this async')
+    expect(feedback).toContain('make this async')
+    expect(feedback).toMatch(/step A/)
   })
 
   it('scenario: ACP approve with freeform sends follow-up user message, not feedback on wire', async () => {

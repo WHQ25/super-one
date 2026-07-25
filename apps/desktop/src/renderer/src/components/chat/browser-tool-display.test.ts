@@ -17,6 +17,9 @@ describe('getBrowserOp', () => {
     expect(getBrowserOp('browser_list_downloads')).toBe('list_downloads')
     expect(getBrowserOp('browser_emulate')).toBe('emulate')
     expect(getBrowserOp('browser_mock')).toBe('mock')
+    expect(getBrowserOp('browser_action_list')).toBe('action_list')
+    expect(getBrowserOp('browser_action_save')).toBe('action_save')
+    expect(getBrowserOp('browser_action_do')).toBe('action_do')
   })
 
   it('returns null for non-browser superone tools and unknown ops', () => {
@@ -36,6 +39,9 @@ describe('browserVerbKey', () => {
     expect(browserVerbKey('list_downloads')).toBe('listDownloads')
     expect(browserVerbKey('download')).toBe('download')
     expect(browserVerbKey('snapshot')).toBe('snapshot')
+    expect(browserVerbKey('action_list')).toBe('actionList')
+    expect(browserVerbKey('action_save')).toBe('actionSave')
+    expect(browserVerbKey('action_do')).toBe('actionDo')
   })
 
   it('returns progressive keys when streaming', () => {
@@ -45,6 +51,9 @@ describe('browserVerbKey', () => {
     expect(browserVerbKey('network_start', true)).toBe('recordingNetwork')
     expect(browserVerbKey('list_downloads', true)).toBe('listingDownloads')
     expect(browserVerbKey('download', true)).toBe('downloading')
+    expect(browserVerbKey('action_list', true)).toBe('listingActions')
+    expect(browserVerbKey('action_save', true)).toBe('savingAction')
+    expect(browserVerbKey('action_do', true)).toBe('doingAction')
   })
 })
 
@@ -57,6 +66,9 @@ describe('isReadBrowserOp', () => {
     expect(isReadBrowserOp('cookies')).toBe(true)
     expect(isReadBrowserOp('click')).toBe(false)
     expect(isReadBrowserOp('emulate')).toBe(false)
+    expect(isReadBrowserOp('action_list')).toBe(true)
+    expect(isReadBrowserOp('action_save')).toBe(false)
+    expect(isReadBrowserOp('action_do')).toBe(false)
   })
 })
 
@@ -97,6 +109,12 @@ describe('browserInputSummary', () => {
 
   it('returns empty for tabs', () => {
     expect(browserInputSummary('tabs', {})).toBe('')
+  })
+
+  it('summarizes semantic actions by domain and name', () => {
+    expect(browserInputSummary('action_list', { domain: 'github.com' })).toBe('github.com')
+    expect(browserInputSummary('action_save', { domain: 'github.com', name: 'create_issue' })).toBe('github.com/create_issue')
+    expect(browserInputSummary('action_do', { domain: 'github.com', name: 'create_issue' })).toBe('github.com/create_issue')
   })
 
   it('summarizes network_start by match and resource types', () => {
@@ -155,6 +173,12 @@ describe('parseBrowserResult', () => {
     expect(parseBrowserResult('snapshot', 'elements[3]{selector}:\n  a\n  b\n  c', false).count).toBeUndefined()
     expect(parseBrowserResult('query', 'matches[1]{selector}:\n  a\ntotal: 7', false).count).toEqual({ kind: 'matches', n: 7 })
     expect(parseBrowserResult('tabs', 'tabs[2]{tab,url}:\n  t0,x\n  t1,y\ncount: 2', false).count).toEqual({ kind: 'tabs', n: 2 })
+  })
+
+  it('counts saved semantic actions from list results', () => {
+    expect(parseBrowserResult('action_list', JSON.stringify({ count: 3, actions: [] }), false).count).toEqual({ kind: 'actions', n: 3 })
+    expect(parseBrowserResult('action_save', JSON.stringify({ ok: true }), false).status).toBe('ok')
+    expect(parseBrowserResult('action_do', JSON.stringify({ ok: true, stepsExecuted: 2 }), false).status).toBe('ok')
   })
 
   it('extracts the saved path for a screenshot and marks it ok', () => {

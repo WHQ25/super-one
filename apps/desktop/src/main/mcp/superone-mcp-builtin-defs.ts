@@ -33,7 +33,7 @@ export const MINIAPP_GUIDE_TOPICS = [
 // Single source of truth for the browser tool surface: registerBrowserTools()
 // registers exactly these, and they are spread into the permission-bypass list
 // below. Keeping one list means a new tool cannot silently miss the bypass.
-export const BROWSER_TOOL_NAMES = [
+export const BROWSER_PRIMITIVE_TOOL_NAMES = [
   'browser_snapshot',
   'browser_query',
   'browser_inspect',
@@ -61,6 +61,17 @@ export const BROWSER_TOOL_NAMES = [
   'browser_list_downloads',
   'browser_emulate',
   'browser_mock',
+] as const
+
+export const BROWSER_ACTION_TOOL_NAMES = [
+  'browser_action_list',
+  'browser_action_save',
+  'browser_action_do',
+] as const
+
+export const BROWSER_TOOL_NAMES = [
+  ...BROWSER_PRIMITIVE_TOOL_NAMES,
+  ...BROWSER_ACTION_TOOL_NAMES,
 ] as const
 
 export const BUILT_IN_SUPERONE_TOOL_NAMES = [

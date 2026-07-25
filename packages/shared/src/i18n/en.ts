@@ -889,6 +889,12 @@ export type Messages = {
         emulating: string
         mock: string
         mocking: string
+        actionList: string
+        listingActions: string
+        actionSave: string
+        savingAction: string
+        actionDo: string
+        doingAction: string
         elements_one: string
         elements_other: string
         matches_one: string
@@ -901,6 +907,8 @@ export type Messages = {
         cookiesCount_other: string
         downloads_one: string
         downloads_other: string
+        actions_one: string
+        actions_other: string
         notFound: string
         viewport: string
         screenshotUnavailable: string
@@ -2735,6 +2743,12 @@ export const en: Messages = {
         emulating: 'Emulating',
         mock: 'Mock',
         mocking: 'Mocking',
+        actionList: 'Browser Actions',
+        listingActions: 'Listing Browser Actions',
+        actionSave: 'Save Browser Action',
+        savingAction: 'Saving Browser Action',
+        actionDo: 'Run Browser Action',
+        doingAction: 'Running Browser Action',
         elements_one: '{{count}} element',
         elements_other: '{{count}} elements',
         matches_one: '{{count}} match',
@@ -2747,6 +2761,8 @@ export const en: Messages = {
         cookiesCount_other: '{{count}} cookies',
         downloads_one: '{{count}} download',
         downloads_other: '{{count}} downloads',
+        actions_one: '{{count}} action',
+        actions_other: '{{count}} actions',
         notFound: 'Not Found',
         viewport: 'Viewport',
         screenshotUnavailable: 'Screenshot No Longer Available',

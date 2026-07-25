@@ -201,6 +201,9 @@ describe('superone-mcp-stdio-ipc', () => {
     expect(names).toContain('myapp__do_thing')
     expect(names).toContain('browser_snapshot')
     expect(names).toContain('browser_navigate')
+    expect(names).toContain('browser_action_list')
+    expect(names).toContain('browser_action_save')
+    expect(names).toContain('browser_action_do')
     client.close()
   })
 

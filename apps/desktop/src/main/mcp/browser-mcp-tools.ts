@@ -10,6 +10,14 @@ import { raceDownloadTask, startUrlDownloadTask } from '../browser/browser-downl
 import { listDownloads } from '../browser/browser-downloads'
 import { persistTextArtifact } from '../agent/browser-artifact-store'
 import type { SuperoneMcpToolDescriptor } from './superone-mcp-types'
+import { registerBrowserActionTools } from './browser-action-mcp-tools'
+import { ARTIFACT_PREVIEW_CHARS, INLINE_ARTIFACT_LIMIT, spillLargeBrowserField } from './browser-mcp-artifacts'
+import {
+  browserErrorReply as errorReply,
+  browserTextReply as textReply,
+  browserToonReply,
+  type BrowserToolReply as ToolReply,
+} from './browser-mcp-replies'
 
 import { BROWSER_TOOL_NAMES } from './superone-mcp-builtin-defs'
 export { BROWSER_TOOL_NAMES }
@@ -21,31 +29,12 @@ interface ScreenshotResult {
   height: number
 }
 
-type ToolReply = {
-  content: Array<
-    | { type: 'text'; text: string }
-    | { type: 'image'; data: string; mimeType: string }
-  >
-  isError?: boolean
-}
-
-function textReply(data: unknown): ToolReply {
-  return { content: [{ type: 'text', text: JSON.stringify(data) }] }
-}
-
 // Network tools return TOON instead of JSON: a recording's request manifest is a
 // uniform array of flat rows, where TOON's tabular encoding (header once + CSV
 // rows) is far cheaper than JSON's per-row repeated keys. TOON only wins on
 // uniform/flat data — that is why the manifest is kept flat (see toManifest).
 function toonReply(data: unknown): ToolReply {
-  return { content: [{ type: 'text', text: toonEncode(data) }] }
-}
-
-function errorReply(err: unknown): ToolReply {
-  return {
-    content: [{ type: 'text', text: `[Error] ${err instanceof Error ? err.message : String(err)}` }],
-    isError: true,
-  }
+  return browserToonReply(toonEncode, data)
 }
 
 async function dataTool(
@@ -59,28 +48,6 @@ async function dataTool(
   } catch (err) {
     return errorReply(err)
   }
-}
-
-const INLINE_ARTIFACT_LIMIT = 32_000
-const ARTIFACT_PREVIEW_CHARS = 600
-
-// Spill a large text/JSON result to disk instead of dumping it into context.
-// Returns the original payload untouched when it fits inline (or on write
-// failure); otherwise replaces the heavy `field` with a { path, bytes, preview }
-// so the model can Read/grep the artifact on demand. Inert, one-shot results
-// only (evaluate output, an HTTP response body) — never live DOM, which is
-// cheaper to re-query at the source than to jq over a stale dump.
-function spillLargeField(
-  payload: Record<string, unknown>,
-  field: string,
-  ext: string,
-): Record<string, unknown> {
-  const content = String(payload[field] ?? '')
-  if (content.length <= INLINE_ARTIFACT_LIMIT) return payload
-  const path = persistTextArtifact(content, ext)
-  const { [field]: _omitted, ...rest } = payload
-  if (!path) return { ...rest, [field]: content.slice(0, INLINE_ARTIFACT_LIMIT), bytes: content.length, spilled: false }
-  return { ...rest, spilled: true, path, bytes: content.length, preview: content.slice(0, ARTIFACT_PREVIEW_CHARS) }
 }
 
 const REQUEST_BODY_CAP = 8192
@@ -253,6 +220,8 @@ export function isBrowserToolName(name: string): boolean {
 }
 
 export function registerBrowserTools(server: McpServer, sessionId: string): void {
+  registerBrowserActionTools(server, sessionId, executeBrowserTool)
+
   server.registerTool(
     'browser_snapshot',
     {
@@ -816,7 +785,7 @@ export function registerBrowserTools(server: McpServer, sessionId: string): void
         detail.bodyOmitted = e.bodyOmitted ?? 'not-captured'
         return Promise.resolve(toonReply(detail))
       }
-      return Promise.resolve(toonReply(spillLargeField({ ...detail, body: e.body, bodyTruncated: e.bodyTruncated }, 'body', 'txt')))
+      return Promise.resolve(toonReply(spillLargeBrowserField({ ...detail, body: e.body, bodyTruncated: e.bodyTruncated }, 'body', 'txt')))
     },
   )
 

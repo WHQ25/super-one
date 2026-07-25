@@ -26,19 +26,22 @@ export type BrowserOp =
   | 'list_downloads'
   | 'emulate'
   | 'mock'
+  | 'action_list'
+  | 'action_save'
+  | 'action_do'
 
 const BROWSER_OPS = new Set<BrowserOp>([
   'snapshot', 'query', 'inspect', 'screenshot', 'click', 'hover', 'type', 'navigate',
   'wait_for', 'press', 'scroll', 'drag', 'select', 'open', 'evaluate', 'tabs', 'resize',
   'network_start', 'network_stop', 'network_wait', 'network_body', 'cookies', 'upload_file',
-  'download', 'list_downloads', 'emulate', 'mock',
+  'download', 'list_downloads', 'emulate', 'mock', 'action_list', 'action_save', 'action_do',
 ])
 
 /** Read-only ops whose JSON result is worth expanding; the rest are lean actions. */
-const READ_OPS = new Set<BrowserOp>(['snapshot', 'query', 'inspect', 'tabs', 'evaluate', 'network_stop', 'network_wait', 'network_body', 'cookies', 'list_downloads'])
+const READ_OPS = new Set<BrowserOp>(['snapshot', 'query', 'inspect', 'tabs', 'evaluate', 'network_stop', 'network_wait', 'network_body', 'cookies', 'list_downloads', 'action_list'])
 
 /** Ops that report success/failure via an `ok` field (or an error). */
-const ACTION_OPS = new Set<BrowserOp>(['click', 'hover', 'type', 'press', 'scroll', 'drag', 'select', 'navigate', 'wait_for', 'open', 'resize', 'network_start', 'upload_file', 'download', 'emulate', 'mock'])
+const ACTION_OPS = new Set<BrowserOp>(['click', 'hover', 'type', 'press', 'scroll', 'drag', 'select', 'navigate', 'wait_for', 'open', 'resize', 'network_start', 'upload_file', 'download', 'emulate', 'mock', 'action_save', 'action_do'])
 
 /** Strip the `browser_` prefix; return the op if this is a known browser tool. */
 export function getBrowserOp(mcpToolName: string): BrowserOp | null {
@@ -75,6 +78,9 @@ const VERB_BASE: Record<BrowserOp, string> = {
   list_downloads: 'listDownloads',
   emulate: 'emulate',
   mock: 'mock',
+  action_list: 'actionList',
+  action_save: 'actionSave',
+  action_do: 'actionDo',
 }
 
 const VERB_STREAMING: Record<BrowserOp, string> = {
@@ -105,6 +111,9 @@ const VERB_STREAMING: Record<BrowserOp, string> = {
   list_downloads: 'listingDownloads',
   emulate: 'emulating',
   mock: 'mocking',
+  action_list: 'listingActions',
+  action_save: 'savingAction',
+  action_do: 'doingAction',
 }
 
 /** i18n key suffix (under chat.toolBlock.browser) for the op's verb label. */
@@ -242,6 +251,11 @@ export function browserInputSummary(op: BrowserOp, p: Record<string, unknown>): 
     case 'mock':
       if (p.clear) return 'clear'
       return p.url != null ? s(p.url) : ''
+    case 'action_list':
+      return s(p.domain)
+    case 'action_save':
+    case 'action_do':
+      return [s(p.domain), s(p.name)].filter(Boolean).join('/')
   }
 }
 
@@ -260,7 +274,7 @@ export interface BrowserDownloadInfo {
 export interface BrowserResultInfo {
   status: 'ok' | 'error' | 'neutral'
   errorText?: string
-  count?: { kind: 'elements' | 'matches' | 'tabs' | 'requests' | 'cookies' | 'downloads'; n: number }
+  count?: { kind: 'elements' | 'matches' | 'tabs' | 'requests' | 'cookies' | 'downloads' | 'actions'; n: number }
   notFound?: boolean
   imagePath?: string
   download?: BrowserDownloadInfo
@@ -368,6 +382,10 @@ export function parseBrowserResult(op: BrowserOp, result: string | undefined, is
     case 'list_downloads': {
       const n = typeof obj?.count === 'number' ? obj.count : (Array.isArray(obj?.downloads) ? obj.downloads.length : undefined)
       return n != null ? { status: 'neutral', count: { kind: 'downloads', n } } : { status: 'neutral' }
+    }
+    case 'action_list': {
+      const n = typeof obj?.count === 'number' ? obj.count : (Array.isArray(obj?.actions) ? obj.actions.length : undefined)
+      return n != null ? { status: 'neutral', count: { kind: 'actions', n } } : { status: 'neutral' }
     }
     default:
       return { status: ACTION_OPS.has(op) ? 'ok' : 'neutral' }

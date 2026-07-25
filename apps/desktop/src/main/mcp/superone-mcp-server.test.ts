@@ -443,6 +443,9 @@ describe('stdio SuperOne MCP tool surface', () => {
     expect(names).not.toContain('other__b_tool')
     expect(names).toContain('browser_snapshot')
     expect(names).toContain('browser_click')
+    expect(names).toContain('browser_action_list')
+    expect(names).toContain('browser_action_save')
+    expect(names).toContain('browser_action_do')
   })
 
   it('notifies stdio clients when project tools change', () => {

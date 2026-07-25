@@ -12,8 +12,10 @@ import {
   getDraftMarks,
   getMarkByCommentId,
   getMarksByCommentId,
+  highlightBandsFromMarks,
   quoteFromLines,
   selectionTopRightViewport,
+  type HighlightBand,
   type ViewportCorner,
 } from './plan-annotation-dom'
 import { CopyableMarkdown } from './CopyableMarkdown'
@@ -56,6 +58,8 @@ export function PlanLineReview({
   /** commentId → viewport pin corner */
   const [pinPos, setPinPos] = useState<Record<string, ViewportCorner>>({})
   const [notePos, setNotePos] = useState<ViewportCorner | null>(null)
+  /** Continuous pen strokes (saved + draft) */
+  const [strokeBands, setStrokeBands] = useState<Array<{ key: string; bands: HighlightBand[] }>>([])
   const [mdTick, setMdTick] = useState(0)
   const noteRef = useRef<OpenNote | null>(null)
   noteRef.current = note
@@ -69,20 +73,28 @@ export function PlanLineReview({
   const recomputePins = useCallback(() => {
     const root = contentRef.current
     const next: Record<string, ViewportCorner> = {}
+    const strokes: Array<{ key: string; bands: HighlightBand[] }> = []
+
     if (root) {
       for (const c of comments) {
         const fragments = getMarksByCommentId(root, c.id)
         const corner = selectionTopRightViewport(fragments, PIN)
         if (corner) next[c.id] = corner
+        const bands = highlightBandsFromMarks(fragments)
+        if (bands.length) strokes.push({ key: c.id, bands })
+      }
+      const draftFragments = getDraftMarks(root)
+      if (draftFragments.length) {
+        strokes.push({ key: '__draft__', bands: highlightBandsFromMarks(draftFragments) })
       }
     }
-    // Fallback to cached first fragment if DOM not ready
     for (const [id, mark] of Object.entries(markElsRef.current)) {
       if (next[id]) continue
       const corner = selectionTopRightViewport([mark], PIN)
       if (corner) next[id] = corner
     }
     setPinPos(next)
+    setStrokeBands(strokes)
 
     const open = noteRef.current
     if (!open || !root) {
@@ -94,7 +106,6 @@ export function PlanLineReview({
         ? getMarksByCommentId(root, open.commentId)
         : getDraftMarks(root)
     const corner = selectionTopRightViewport(fragments, PIN)
-    // Open note hangs under the overall selection top-right
     setNotePos(corner ? { top: corner.top + PIN + 14, left: corner.left - 12 } : null)
   }, [comments])
 
@@ -321,6 +332,31 @@ export function PlanLineReview({
   // Classic 3M canary yellow (approx. Post-it® #FEF6A5 / #FFEB3B family)
   const postItYellow = '#FEF6A5'
   const postItYellowDeep = '#F5E66B'
+  /** One shared highlighter ink for every stroke band */
+  const penInk = 'rgb(255 225 40 / 0.34)'
+
+  const strokeLayers = portalTarget
+    ? strokeBands.flatMap(({ key, bands }) =>
+        bands.map((b, i) =>
+          createPortal(
+            <div
+              key={`stroke-${key}-${i}`}
+              aria-hidden
+              className="pointer-events-none fixed z-[198]"
+              style={{
+                top: b.top,
+                left: b.left,
+                width: b.width,
+                height: b.height,
+                backgroundColor: penInk,
+                borderRadius: 1,
+              }}
+            />,
+            portalTarget,
+          ),
+        ),
+      )
+    : null
 
   const pins = comments.map((c, index) => {
     if (note?.commentId === c.id) return null
@@ -469,6 +505,7 @@ export function PlanLineReview({
           </div>
         )}
       </div>
+      {strokeLayers}
       {pins}
       {openNoteUi}
     </div>

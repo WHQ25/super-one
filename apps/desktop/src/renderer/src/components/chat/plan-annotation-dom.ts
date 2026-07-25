@@ -278,6 +278,72 @@ export function selectionTopRightViewport(
   }
 }
 
+/** Viewport band for continuous pen-stroke painting (fixed position). */
+export interface HighlightBand {
+  top: number
+  left: number
+  width: number
+  height: number
+}
+
+/**
+ * Build uniform pen strokes from mark fragments.
+ * - Same stroke height for every band
+ * - Same-line bands with small gaps (e.g. over inline code chips) are merged
+ *   so the highlight looks continuous
+ */
+export function highlightBandsFromMarks(
+  marks: HTMLElement[],
+  opts?: { lineSlack?: number; gapMerge?: number; strokeRatio?: number },
+): HighlightBand[] {
+  const lineSlack = opts?.lineSlack ?? 4
+  const gapMerge = opts?.gapMerge ?? 20
+  const strokeRatio = opts?.strokeRatio ?? 0.72
+
+  const rects = collectMarkRects(marks)
+  if (rects.length === 0) return []
+
+  const heights = rects.map((r) => r.height).sort((a, b) => a - b)
+  const lineH = heights[Math.floor(heights.length / 2)] || 16
+  const strokeH = Math.max(8, lineH * strokeRatio)
+
+  type Band = HighlightBand & { mid: number }
+  const raw: Band[] = rects.map((r) => {
+    const top = r.top + (r.height - strokeH) / 2
+    return {
+      top,
+      left: r.left,
+      width: r.width,
+      height: strokeH,
+      mid: top + strokeH / 2,
+    }
+  })
+
+  raw.sort((a, b) => a.mid - b.mid || a.left - b.left)
+
+  const merged: Band[] = []
+  for (const band of raw) {
+    const last = merged[merged.length - 1]
+    if (
+      last
+      && Math.abs(last.mid - band.mid) <= lineSlack
+      && band.left <= last.left + last.width + gapMerge
+    ) {
+      const right = Math.max(last.left + last.width, band.left + band.width)
+      last.left = Math.min(last.left, band.left)
+      last.width = right - last.left
+      // Keep shared stroke height + vertical center of the line cluster
+      last.height = strokeH
+      last.top = (last.mid + band.mid) / 2 - strokeH / 2
+      last.mid = last.top + strokeH / 2
+    } else {
+      merged.push({ ...band })
+    }
+  }
+
+  return merged.map(({ top, left, width, height }) => ({ top, left, width, height }))
+}
+
 /** @deprecated use selectionTopRightViewport on all fragments */
 export function markTopRightViewport(mark: HTMLElement, pinSize = 18): ViewportCorner | null {
   return selectionTopRightViewport([mark], pinSize)

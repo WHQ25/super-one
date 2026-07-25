@@ -4,6 +4,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   clearStickyMarks,
+  highlightBandsFromMarks,
   quoteFromLines,
   STICKY_DRAFT_ATTR,
   STICKY_ID_ATTR,
@@ -76,5 +77,25 @@ describe('wrapRangeAsMarks (multi-line lists)', () => {
     expect(marks).toHaveLength(1)
     expect(marks[0]!.hasAttribute(STICKY_DRAFT_ATTR)).toBe(true)
     root.remove()
+  })
+})
+
+describe('highlightBandsFromMarks', () => {
+  it('merges same-line bands with a small gap (code-chip bridge)', () => {
+    // jsdom getClientRects is empty — stub via mock elements with rects
+    const a = document.createElement('mark')
+    const b = document.createElement('mark')
+    // Patch getClientRects
+    a.getClientRects = () =>
+      [{ top: 100, left: 10, width: 40, height: 16, bottom: 116, right: 50, x: 10, y: 100, toJSON: () => ({}) }] as unknown as DOMRectList
+    b.getClientRects = () =>
+      [{ top: 101, left: 58, width: 50, height: 16, bottom: 117, right: 108, x: 58, y: 101, toJSON: () => ({}) }] as unknown as DOMRectList
+
+    const bands = highlightBandsFromMarks([a, b], { gapMerge: 20, lineSlack: 4 })
+    expect(bands).toHaveLength(1)
+    expect(bands[0]!.left).toBe(10)
+    expect(bands[0]!.width).toBe(98) // 10..108
+    // uniform height
+    expect(bands[0]!.height).toBeCloseTo(16 * 0.72, 5)
   })
 })

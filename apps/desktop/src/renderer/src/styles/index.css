@@ -9,30 +9,17 @@
 @source "../../../../../../packages/desktop-mocks/src/**/*.{ts,tsx}";
 @source "../../../../../../packages/video-compositions/src/**/*.{ts,tsx}";
 
-/* Plan sticky: uniform highlighter-pen stroke (same thickness + color) */
+/* Plan sticky marks: invisible anchors only — visible stroke is painted as overlay bands */
 .plan-sticky-mark,
 .plan-sticky-mark.plan-sticky-draft {
   color: inherit;
-  /* Solid band, fixed height — no end fade / no variable opacity */
-  background-color: transparent;
-  background-image: linear-gradient(
-    to bottom,
-    transparent 0%,
-    transparent 22%,
-    rgb(255 230 50 / 0.38) 22%,
-    rgb(255 230 50 / 0.38) 88%,
-    transparent 88%,
-    transparent 100%
-  );
-  background-size: 100% 1em;
-  background-repeat: no-repeat;
-  background-position: 0 0;
+  background: transparent !important;
+  background-image: none !important;
   padding: 0;
   border-radius: 0;
+  box-shadow: none;
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
-  /* Avoid nested code chips looking like a different highlight */
-  box-shadow: none;
 }
 
 @keyframes fade-in {

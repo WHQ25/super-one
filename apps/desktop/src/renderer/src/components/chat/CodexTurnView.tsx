@@ -34,7 +34,7 @@ function codexMcpItemResultText(item: CodexMcpToolCallItem): string | undefined 
   return text.length > 0 ? text : undefined
 }
 
-function isHiddenCodexMcpItem(item: CodexThreadItem): item is CodexMcpToolCallItem {
+function isHiddenCodexMcpItem(item: CodexThreadItem): boolean {
   return item.type === 'mcp_tool_call'
     && isHiddenToolBlock(`mcp__${item.server}__${item.tool}`, codexMcpItemResultText(item))
 }
@@ -257,12 +257,13 @@ export function CodexTurnView({ message, isStreaming, isLastAssistant }: CodexTu
     if (isHiddenCodexMcpItem(item)) {
       continue
     }
-    const appIdForItem = item.type === 'mcp_tool_call' ? groupableAppForMcpItem(item) : null
-    if (appIdForItem) {
+    const mcpItem = item.type === 'mcp_tool_call' ? item : null
+    const appIdForItem = mcpItem ? groupableAppForMcpItem(mcpItem) : null
+    if (appIdForItem && mcpItem) {
       flushCmd()
       if (appGroupId !== appIdForItem) flushAppGroup()
       appGroupId = appIdForItem
-      appGroup.push(item as CodexMcpToolCallItem)
+      appGroup.push(mcpItem)
     } else if (item.type === 'collab_tool_call' && item.tool === 'spawnAgent') {
       if (!isSpawnReady(item)) {
         continue

@@ -68,6 +68,12 @@ vi.mock('./chat-shared', () => ({
   streamdownLinkSafety: undefined,
   streamdownRehypePlugins: [],
   mathPlugin: {},
+  // CopyableMarkdown — rendered by PlanLineReview — pulls these too
+  streamdownPlugins: {},
+  streamdownControls: {},
+  streamdownComponents: {},
+  getMathPluginSync: () => null,
+  loadMathPlugin: () => Promise.resolve(null),
 }))
 vi.mock('@/components/ui/button', () => ({
   Button: ({ children, ...props }: ButtonHTMLAttributes<HTMLButtonElement>) => <button {...props}>{children}</button>,

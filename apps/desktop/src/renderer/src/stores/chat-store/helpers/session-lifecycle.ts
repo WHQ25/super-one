@@ -32,7 +32,7 @@ import {
 import { resolveProvider } from './provider-routing'
 import { createDefaultPerSessionState, createDefaultProjectState, createSessionId, freshSubagentColorPool } from '../defaults'
 import { isRemoteSession, removeRemoteSession } from '../index'
-import type { ChatProvider, ChatStore } from '../types'
+import type { ChatProvider, ChatStore, PerSessionState } from '../types'
 
 export async function focusProjectImpl(
   set: ChatStoreSet,
@@ -224,6 +224,45 @@ export function clearMessagesImpl(set: ChatStoreSet, get: () => ChatStore): void
   }))
 }
 
+/**
+ * Seed a fresh ACP session from harness_resource_cache so model/effort selectors
+ * paint immediately (same path as setPreferredProvider / setAcpAgentId / restore).
+ * Without this, resetSession leaves acpAgentId=null and acpModels=[] until the
+ * runtime emits acp_models — Grok "new session" looks broken.
+ */
+function seedAcpSessionFromCache(
+  s: ChatStore,
+  newSession: PerSessionState,
+  previousSession?: PerSessionState | null,
+): void {
+  const agentId =
+    previousSession?.acpAgentId
+    ?? s.harnessResources.acp?.selectedAgentId
+    ?? 'grok-build'
+  newSession.acpAgentId = agentId
+  const catalog = getCachedAcpCatalog(s.harnessResources.acp, agentId)
+  if (catalog) {
+    Object.assign(
+      newSession,
+      sessionPatchFromAcpCatalog(catalog, {
+        preferSelected: previousSession?.selectedModel ?? null,
+      }),
+    )
+    // Prefer previous effort when still in the catalog (Grok modeConfigId is null).
+    const prevMode = previousSession?.selectedAcpModeId
+    if (prevMode && catalog.modes.some((m) => m.id === prevMode)) {
+      newSession.selectedAcpModeId = prevMode
+    }
+  } else {
+    newSession.acpModels = []
+    newSession.acpModelConfigId = null
+    newSession.acpModelsStatus = 'loading'
+    newSession.acpModelsError = null
+    newSession.selectedModel = ''
+    newSession.modelUserChosen = false
+  }
+}
+
 export function resetSessionForWorktreeSwitchImpl(
   set: ChatStoreSet,
   get: () => ChatStore,
@@ -243,12 +282,13 @@ export function resetSessionForWorktreeSwitchImpl(
     newSession.sessionProvider = nextProvider
     newSession._worktreePath = opts?.wtPath ?? null
     newSession._gitBranch = opts?.gitBranch ?? null
-    // Keep ACP agent selection across worktree switches (otherwise defaults drop).
-    if (nextProvider === 'acp' && previousSession?.acpAgentId) {
-      newSession.acpAgentId = previousSession.acpAgentId
+    if (nextProvider === 'acp') {
+      seedAcpSessionFromCache(s, newSession, previousSession)
+    } else if (nextProvider !== 'codex') {
+      // Claude (and default) only — must not clobber ACP selectedModel with a Claude id.
+      applyDefaultModel(newSession, s.harnessResources.claude?.models ?? [])
     }
     if (defaultPrefsCache.permissionMode) newSession.permissionMode = defaultPrefsCache.permissionMode
-    applyDefaultModel(newSession, s.harnessResources.claude?.models ?? [])
     const codexSelection = resolveDefaultCodexSelection(proj.codexModels)
     newSession.selectedCodexModel = codexSelection.modelId
     newSession.selectedCodexReasoningEffort = codexSelection.reasoningEffort
@@ -300,13 +340,21 @@ export async function resetSessionImpl(set: ChatStoreSet, get: () => ChatStore):
     knownSids: Object.keys(project._sessions),
   })
 
+  // Capture before set() — activeSession is the old Grok/ACP session we seed from.
+  const previousAcpSession = nextProvider === 'acp' ? activeSession : null
+
   set((s) => {
     const proj = getProject(s, activeProject)
     const newSession = applyCachedCodexPermissionPreset(createDefaultPerSessionState())
     newSession.cwd = activeProject
     newSession.preferredProvider = nextProvider
     newSession.sessionProvider = nextProvider
-    applyDefaultModel(newSession, s.harnessResources.claude?.models ?? [])
+    if (nextProvider === 'acp') {
+      seedAcpSessionFromCache(s, newSession, previousAcpSession)
+    } else if (nextProvider !== 'codex') {
+      // Claude (and default) only — must not clobber ACP selectedModel with a Claude id.
+      applyDefaultModel(newSession, s.harnessResources.claude?.models ?? [])
+    }
     const codexSelection = resolveDefaultCodexSelection(proj.codexModels)
     newSession.selectedCodexModel = codexSelection.modelId
     newSession.selectedCodexReasoningEffort = codexSelection.reasoningEffort

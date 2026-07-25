@@ -115,6 +115,40 @@ function setClaudeResources(partial: Partial<ClaudeResources>) {
   })
 }
 
+/** Seed harness ACP cache with Grok models + effort modes (configByAgentId path). */
+function seedGrokAcpCache(opts?: { selectedAgentId?: string | null }) {
+  useChatStore.setState((s) => ({
+    harnessResources: {
+      ...s.harnessResources,
+      acp: {
+        agents: [
+          { id: 'grok-build', name: 'Grok Build', installed: true, commandPreview: 'grok agent stdio' },
+        ],
+        selectedAgentId: opts?.selectedAgentId ?? 'grok-build',
+        modelsByAgentId: {},
+        configByAgentId: {
+          'grok-build': {
+            configOptions: [],
+            extraModels: [
+              { id: 'grok-4.5', name: 'Grok 4.5', description: '' },
+              { id: 'grok-4.20', name: 'Grok 4.20', description: '' },
+            ],
+            selectedModelId: 'grok-4.5',
+            modelConfigId: null,
+            extraModes: [
+              { id: 'low', name: 'Low', description: '' },
+              { id: 'high', name: 'High', description: '' },
+            ],
+            selectedModeId: 'high',
+            modeConfigId: null,
+            updatedAt: '2026-01-01T00:00:00.000Z',
+          },
+        },
+      },
+    },
+  }))
+}
+
 function setupProject(path: string = PATH) {
   useChatStore.getState().ensureSession(path)
   useChatStore.setState({ activeProject: path })
@@ -206,6 +240,74 @@ describe('resetSessionImpl', () => {
     expect(mockWindowAgent.resetSession).toHaveBeenCalledWith(oldSid, newSid)
     expect(mockClearWorktree).toHaveBeenCalledWith(PATH)
   })
+
+  it('hydrates Grok models from ACP cache when creating a new session from an old Grok session', async () => {
+    setupProject()
+    seedGrokAcpCache()
+    // Claude catalog is usually warm; ensure it cannot overwrite the Grok selection.
+    setClaudeResources({
+      models: [
+        { id: 'claude-sonnet-4', name: 'Sonnet', description: '', isDefault: true } as ModelOption,
+      ],
+    })
+    patchSession({
+      sessionProvider: 'acp',
+      preferredProvider: 'acp',
+      acpAgentId: 'grok-build',
+      selectedModel: 'grok-4.5',
+      acpModels: [{ id: 'grok-4.5', name: 'Grok 4.5', description: '' }],
+      acpModelsStatus: 'ready',
+      acpModes: [
+        { id: 'low', name: 'Low', description: '' },
+        { id: 'high', name: 'High', description: '' },
+      ],
+      acpModeConfigId: null,
+      selectedAcpModeId: 'high',
+      acpModesStatus: 'ready',
+      messages: [userMsg('u1', 'claude')],
+    })
+    const oldSid = activeProjectState()._activeSessionId
+
+    await useChatStore.getState().resetSession()
+
+    const newSid = activeProjectState()._activeSessionId
+    expect(newSid).not.toBe(oldSid)
+    const sess = activeSession()
+    expect(sess.sessionProvider).toBe('acp')
+    expect(sess.preferredProvider).toBe('acp')
+    expect(sess.acpAgentId).toBe('grok-build')
+    expect(sess.acpModels.map((m) => m.id)).toEqual(['grok-4.5', 'grok-4.20'])
+    expect(sess.selectedModel).toBe('grok-4.5')
+    expect(sess.selectedModel).not.toBe('claude-sonnet-4')
+    expect(sess.acpModelsStatus).toBe('ready')
+    expect(sess.acpModes.map((m) => m.id)).toEqual(['low', 'high'])
+    expect(sess.acpModeConfigId).toBeNull()
+    expect(sess.selectedAcpModeId).toBe('high')
+    expect(sess.acpModesStatus).toBe('ready')
+    expect(sess.messages).toEqual([])
+  })
+
+  it('falls back to harness selectedAgentId when previous ACP session has no acpAgentId', async () => {
+    setupProject()
+    seedGrokAcpCache({ selectedAgentId: 'grok-build' })
+    patchSession({
+      sessionProvider: 'acp',
+      preferredProvider: 'acp',
+      acpAgentId: null,
+      selectedModel: '',
+      acpModels: [],
+      acpModelsStatus: 'idle',
+      messages: [userMsg('u1', 'claude')],
+    })
+
+    await useChatStore.getState().resetSession()
+
+    const sess = activeSession()
+    expect(sess.acpAgentId).toBe('grok-build')
+    expect(sess.acpModels.map((m) => m.id)).toEqual(['grok-4.5', 'grok-4.20'])
+    expect(sess.selectedModel).toBe('grok-4.5')
+    expect(sess.acpModelsStatus).toBe('ready')
+  })
 })
 
 describe('resetSessionForWorktreeSwitchImpl', () => {
@@ -252,6 +354,30 @@ describe('resetSessionForWorktreeSwitchImpl', () => {
     const sess = activeSession()
     expect(sess.preferredProvider).toBe('claude')
     expect(activeProjectState()._activeSessionId?.startsWith('codex_local_')).toBe(false)
+  })
+
+  it('hydrates Grok models from ACP cache when switching worktree from a Grok session', () => {
+    setupProject()
+    seedGrokAcpCache()
+    patchSession({
+      sessionProvider: 'acp',
+      preferredProvider: 'acp',
+      acpAgentId: 'grok-build',
+      selectedModel: 'grok-4.20',
+      acpModels: [{ id: 'grok-4.20', name: 'Grok 4.20', description: '' }],
+      acpModelsStatus: 'ready',
+      messages: [userMsg('u1', 'claude')],
+    })
+
+    useChatStore.getState().resetSessionForWorktreeSwitch(PATH, { wtPath: '/wt', gitBranch: 'feat' })
+
+    const sess = activeSession()
+    expect(sess.sessionProvider).toBe('acp')
+    expect(sess.acpAgentId).toBe('grok-build')
+    expect(sess.acpModels.map((m) => m.id)).toEqual(['grok-4.5', 'grok-4.20'])
+    expect(sess.selectedModel).toBe('grok-4.20')
+    expect(sess.acpModelsStatus).toBe('ready')
+    expect(sess._worktreePath).toBe('/wt')
   })
 })
 

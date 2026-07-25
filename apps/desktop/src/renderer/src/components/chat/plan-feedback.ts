@@ -14,6 +14,8 @@ export interface PlanLineComment {
   /** 1-based inclusive end line in planContent. */
   endLine: number
   text: string
+  /** Original selected text (for sticky highlight in rendered markdown). */
+  quote?: string
 }
 
 /** Split plan body into display lines (keeps empty trailing line if present). */

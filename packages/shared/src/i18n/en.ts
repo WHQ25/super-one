@@ -501,6 +501,7 @@ export type Messages = {
       saveComment: string
       cancelComment: string
       removeComment: string
+      editComment: string
       switchTo: string
       acceptEdits: string
       auto: string
@@ -2337,15 +2338,16 @@ export const en: Messages = {
       reject: 'Reject',
       feedbackPlaceholder: 'Reject feedback (optional, Enter to submit)',
       feedbackPlaceholderBoth: 'Overall feedback (optional — sent on approve or reject)',
-      commentHint: 'Select text to add a comment',
+      commentHint: 'Select text to add a sticky comment',
       emptyPlan: 'No plan content to review.',
       comments: 'Comments',
       commentOn: 'Comment on {{range}}',
       addComment: 'Add comment',
-      commentPlaceholder: 'Write a comment on the selection…',
+      commentPlaceholder: 'Add a note…',
       saveComment: 'Save',
       cancelComment: 'Cancel',
-      removeComment: 'Remove comment',
+      removeComment: 'Delete',
+      editComment: 'Edit',
       switchTo: 'Switch to',
       acceptEdits: 'Accept Edits',
       auto: 'Auto',

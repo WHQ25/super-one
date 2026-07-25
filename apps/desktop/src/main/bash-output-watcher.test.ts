@@ -1,4 +1,4 @@
-import { vi, describe, it, expect, beforeEach } from 'vitest'
+import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest'
 
 vi.mock('fs/promises', () => ({
   readFile: vi.fn(),
@@ -12,8 +12,15 @@ vi.mock('../shared/agent-types', () => ({
   AgentIpcChannels: { BASH_OUTPUT_EVENT: 'bash-output-event' },
 }))
 
-import { readFile } from 'fs/promises'
-import { tailLines, readBashOutputTail } from './bash-output-watcher'
+import { readFile, stat } from 'fs/promises'
+import { watch as fsWatch } from 'fs'
+import {
+  readBashOutputTail,
+  setBashOutputWindow,
+  tailLines,
+  unwatchAll,
+  watchBashOutput,
+} from './bash-output-watcher'
 
 describe('tailLines', () => {
   it('should return all lines when fewer than max', () => {
@@ -90,5 +97,113 @@ describe('readBashOutputTail', () => {
     mockedReadFile.mockResolvedValue('')
     const result = await readBashOutputTail('/tmp/test.txt', 5)
     expect(result).toBe('')
+  })
+})
+
+function mockWatcher() {
+  let errorHandler: ((error: Error) => void) | null = null
+  let changeHandler: ((eventType: string) => void) | null = null
+  const watcher = {
+    close: vi.fn(),
+    on: vi.fn((event: string, handler: (error: Error) => void) => {
+      if (event === 'error') errorHandler = handler
+      return watcher
+    }),
+    emitError: (error: Error) => errorHandler?.(error),
+    setChangeHandler: (handler: (eventType: string) => void) => { changeHandler = handler },
+    emitChange: (eventType: string) => changeHandler?.(eventType),
+  }
+  return watcher
+}
+
+describe('watchBashOutput polling fallback', () => {
+  const mockedReadFile = vi.mocked(readFile)
+  const mockedStat = vi.mocked(stat)
+  const mockedFsWatch = vi.mocked(fsWatch)
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.clearAllMocks()
+    mockedStat.mockResolvedValue({ size: 3 } as Awaited<ReturnType<typeof stat>>)
+    mockedReadFile.mockResolvedValue('abc')
+    setBashOutputWindow({
+      isDestroyed: () => false,
+      webContents: { send: vi.fn() },
+    } as never)
+  })
+
+  afterEach(() => {
+    unwatchAll()
+    vi.useRealTimers()
+  })
+
+  it('does not keep polling after fs.watch starts successfully', async () => {
+    mockedFsWatch.mockReturnValue(mockWatcher() as never)
+
+    watchBashOutput('tool-1', '/tmp/tool-1.output')
+    await vi.advanceTimersByTimeAsync(0)
+    const statCalls = mockedStat.mock.calls.length
+    await vi.advanceTimersByTimeAsync(1500)
+
+    expect(statCalls).toBe(1)
+    expect(mockedStat).toHaveBeenCalledTimes(statCalls)
+  })
+
+  it('falls back to polling after fs.watch emits an error', async () => {
+    const firstWatcher = mockWatcher()
+    const recoveredWatcher = mockWatcher()
+    mockedFsWatch
+      .mockReturnValueOnce(firstWatcher as never)
+      .mockReturnValueOnce(recoveredWatcher as never)
+
+    watchBashOutput('tool-1', '/tmp/tool-1.output')
+    await vi.advanceTimersByTimeAsync(0)
+    firstWatcher.emitError(new Error('watch failed'))
+    await vi.advanceTimersByTimeAsync(500)
+
+    expect(mockedFsWatch).toHaveBeenCalledTimes(2)
+    const statCallsAfterRecovery = mockedStat.mock.calls.length
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(mockedStat).toHaveBeenCalledTimes(statCallsAfterRecovery)
+  })
+
+  it('re-establishes fs.watch when the output file is renamed', async () => {
+    const firstWatcher = mockWatcher()
+    const recoveredWatcher = mockWatcher()
+    mockedFsWatch
+      .mockImplementationOnce((_path, handler) => {
+        firstWatcher.setChangeHandler(handler as (eventType: string) => void)
+        return firstWatcher as never
+      })
+      .mockReturnValueOnce(recoveredWatcher as never)
+
+    watchBashOutput('tool-1', '/tmp/tool-1.output')
+    await vi.advanceTimersByTimeAsync(0)
+    firstWatcher.emitChange('rename')
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(firstWatcher.close).toHaveBeenCalledTimes(1)
+    expect(mockedFsWatch).toHaveBeenCalledTimes(2)
+    const statCallsAfterRecovery = mockedStat.mock.calls.length
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(mockedStat).toHaveBeenCalledTimes(statCallsAfterRecovery)
+  })
+
+  it('polls until a missing output file can be watched', async () => {
+    const recoveredWatcher = mockWatcher()
+    mockedFsWatch
+      .mockImplementationOnce(() => { throw new Error('ENOENT') })
+      .mockReturnValueOnce(recoveredWatcher as never)
+    mockedStat
+      .mockRejectedValueOnce(new Error('ENOENT'))
+      .mockResolvedValue({ size: 3 } as Awaited<ReturnType<typeof stat>>)
+
+    watchBashOutput('tool-1', '/tmp/tool-1.output')
+    await vi.advanceTimersByTimeAsync(500)
+
+    expect(mockedFsWatch).toHaveBeenCalledTimes(2)
+    const statCallsAfterRecovery = mockedStat.mock.calls.length
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(mockedStat).toHaveBeenCalledTimes(statCallsAfterRecovery)
   })
 })

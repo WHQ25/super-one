@@ -44,11 +44,52 @@ export function watchBashOutput(toolUseId: string, filePath: string, tailLinesCo
     pollTimer: null,
   }
 
+  const stopPolling = (): void => {
+    if (!entry.pollTimer) return
+    clearInterval(entry.pollTimer)
+    entry.pollTimer = null
+  }
+
+  const startPolling = (): void => {
+    if (entry.pollTimer || !watchers.has(toolUseId)) return
+    entry.pollTimer = setInterval(() => { void readAndEmit() }, 500)
+  }
+
+  const ensureWatcher = (): boolean => {
+    if (entry.watcher) {
+      stopPolling()
+      return true
+    }
+    try {
+      const watcher = fsWatch(filePath, (eventType) => {
+        if (eventType === 'rename' && watchers.has(toolUseId) && entry.watcher === watcher) {
+          watcher.close()
+          entry.watcher = null
+          startPolling()
+        }
+        void readAndEmit()
+      })
+      entry.watcher = watcher
+      watcher.on('error', (err) => {
+        if (!watchers.has(toolUseId) || entry.watcher !== watcher) return
+        log.warn('[bash-output] file watcher failed, falling back to polling:', err)
+        watcher.close()
+        entry.watcher = null
+        startPolling()
+      })
+      stopPolling()
+      return true
+    } catch {
+      return false
+    }
+  }
+
   const readAndEmit = async (): Promise<void> => {
     if (!watchers.has(toolUseId)) return
     try {
       const info = await stat(filePath)
       if (!watchers.has(toolUseId)) return
+      ensureWatcher()
       if (info.size === entry.lastSize) return
       entry.lastSize = info.size
       const raw = await readFile(filePath, 'utf-8')
@@ -56,14 +97,6 @@ export function watchBashOutput(toolUseId: string, filePath: string, tailLinesCo
       const content = tailLines(raw, entry.tailLines)
       entry.finished = false
       send(toolUseId, content, false)
-
-      if (!entry.watcher) {
-        try {
-          entry.watcher = fsWatch(filePath, () => { readAndEmit() })
-          entry.watcher.on('error', () => {})
-        } catch (err) { log.warn('[bash-output] failed to watch file:', err) }
-      }
-
       if (entry.stableTimer) clearTimeout(entry.stableTimer)
       entry.stableTimer = setTimeout(() => {
         if (!watchers.has(toolUseId)) return
@@ -72,21 +105,15 @@ export function watchBashOutput(toolUseId: string, filePath: string, tailLinesCo
         send(toolUseId, content, true)
       }, STABLE_TIMEOUT_MS)
     } catch {
-      // file may not exist yet
+      // The file may be temporarily unavailable; keep retrying until it can be watched again.
+      startPolling()
     }
   }
 
-  try {
-    entry.watcher = fsWatch(filePath, () => { readAndEmit() })
-    entry.watcher.on('error', () => {})
-  } catch {
-    // file may not exist yet, polling will retry
-  }
-
-  entry.pollTimer = setInterval(() => { readAndEmit() }, 500)
   watchers.set(toolUseId, entry)
   filePaths.set(toolUseId, filePath)
-  readAndEmit()
+  if (!ensureWatcher()) startPolling()
+  void readAndEmit()
 
   log.debug(`[bash-output-watcher] watching ${filePath} for ${toolUseId}`)
 }

@@ -560,6 +560,20 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
     }
   })()
 
+  const setAcpSessionMode: AcpRuntime['setAcpSessionMode'] = async (modeId) => {
+    const id = modeId.trim() || 'default'
+    try {
+      await activeConnection.agent.request(methods.agent.session.setMode, {
+        sessionId: activeSession.sessionId,
+        modeId: id,
+      })
+      log.info('[acp-runtime] session/set_mode agent=%s modeId=%s', launch.agentId, id)
+    } catch (err) {
+      log.warn('[acp-runtime] session/set_mode failed agent=%s modeId=%s:', launch.agentId, id, err)
+      throw err
+    }
+  }
+
   return {
     sessionId: activeSession.sessionId,
     launch,
@@ -618,24 +632,12 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
         setOpts?.reasoningEffort ?? '',
       )
     },
-    async setAcpSessionMode(modeId) {
-      const id = modeId.trim() || 'default'
-      try {
-        await activeConnection.agent.request(methods.agent.session.setMode, {
-          sessionId: activeSession.sessionId,
-          modeId: id,
-        })
-        log.info('[acp-runtime] session/set_mode agent=%s modeId=%s', launch.agentId, id)
-      } catch (err) {
-        log.warn('[acp-runtime] session/set_mode failed agent=%s modeId=%s:', launch.agentId, id, err)
-        throw err
-      }
-    },
+    setAcpSessionMode,
     async setPermissionMode(mode) {
       // Plan is ACP session mode, not Grok yolo/auto permission baseline.
       if (mode === 'plan') {
         try {
-          await this.setAcpSessionMode('plan')
+          await setAcpSessionMode('plan')
         } catch (err) {
           log.warn('[acp-runtime] enter plan mode failed agent=%s:', launch.agentId, err)
         }
@@ -643,7 +645,7 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       }
       // Leaving plan (or switching permission): restore agent mode then yolo baseline.
       try {
-        await this.setAcpSessionMode('default')
+        await setAcpSessionMode('default')
       } catch (err) {
         log.debug('[acp-runtime] set_mode default before yolo (may be unsupported):', err)
       }

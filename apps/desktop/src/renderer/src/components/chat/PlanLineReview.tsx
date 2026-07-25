@@ -18,6 +18,11 @@ import {
   type HighlightBand,
   type ViewportCorner,
 } from './plan-annotation-dom'
+import {
+  highlighterForComment,
+  highlighterForDraft,
+  type HighlighterSwatch,
+} from './plan-highlighter-colors'
 import { CopyableMarkdown } from './CopyableMarkdown'
 
 export interface PlanLineReviewProps {
@@ -58,8 +63,10 @@ export function PlanLineReview({
   /** commentId → viewport pin corner */
   const [pinPos, setPinPos] = useState<Record<string, ViewportCorner>>({})
   const [notePos, setNotePos] = useState<ViewportCorner | null>(null)
-  /** Continuous pen strokes (saved + draft) */
-  const [strokeBands, setStrokeBands] = useState<Array<{ key: string; bands: HighlightBand[] }>>([])
+  /** Continuous pen strokes (saved + draft) with per-comment highlighter color */
+  const [strokeBands, setStrokeBands] = useState<
+    Array<{ key: string; bands: HighlightBand[]; swatch: HighlighterSwatch }>
+  >([])
   const [mdTick, setMdTick] = useState(0)
   const noteRef = useRef<OpenNote | null>(null)
   noteRef.current = note
@@ -73,7 +80,7 @@ export function PlanLineReview({
   const recomputePins = useCallback(() => {
     const root = contentRef.current
     const next: Record<string, ViewportCorner> = {}
-    const strokes: Array<{ key: string; bands: HighlightBand[] }> = []
+    const strokes: Array<{ key: string; bands: HighlightBand[]; swatch: HighlighterSwatch }> = []
 
     if (root) {
       for (const c of comments) {
@@ -81,11 +88,21 @@ export function PlanLineReview({
         const corner = selectionTopRightViewport(fragments, PIN)
         if (corner) next[c.id] = corner
         const bands = highlightBandsFromMarks(fragments)
-        if (bands.length) strokes.push({ key: c.id, bands })
+        if (bands.length) {
+          strokes.push({
+            key: c.id,
+            bands,
+            swatch: highlighterForComment(c.id, comments),
+          })
+        }
       }
       const draftFragments = getDraftMarks(root)
       if (draftFragments.length) {
-        strokes.push({ key: '__draft__', bands: highlightBandsFromMarks(draftFragments) })
+        strokes.push({
+          key: '__draft__',
+          bands: highlightBandsFromMarks(draftFragments),
+          swatch: highlighterForDraft(comments.length),
+        })
       }
     }
     for (const [id, mark] of Object.entries(markElsRef.current)) {
@@ -329,17 +346,11 @@ export function PlanLineReview({
 
   const portalTarget = typeof document !== 'undefined' ? document.body : null
 
-  // Classic 3M canary yellow (approx. Post-it® #FEF6A5 / #FFEB3B family)
-  const postItYellow = '#FEF6A5'
-  const postItYellowDeep = '#F5E66B'
-  // Fluorescent highlighter ink (neon yellow-green, soft outer glow)
-  const penInkCore = 'rgb(220 255 40 / 0.42)'
-  const penInkGlow = 'rgb(200 255 0 / 0.28)'
   // Trapezoid pen tip: slight slant on both ends (like a real marker stroke)
   const penTrapezoid = 'polygon(6px 0%, 100% 0%, calc(100% - 6px) 100%, 0% 100%)'
 
   const strokeLayers = portalTarget
-    ? strokeBands.flatMap(({ key, bands }) =>
+    ? strokeBands.flatMap(({ key, bands, swatch }) =>
         bands.map((b, i) =>
           createPortal(
             <div
@@ -353,18 +364,17 @@ export function PlanLineReview({
                 height: b.height,
                 clipPath: penTrapezoid,
                 WebkitClipPath: penTrapezoid,
-                // Core fluorescent band + soft bloom (highlighter on dark UI)
                 background: `linear-gradient(
                   180deg,
-                  rgb(235 255 90 / 0.55) 0%,
-                  ${penInkCore} 35%,
-                  ${penInkCore} 70%,
-                  rgb(180 255 30 / 0.4) 100%
+                  ${swatch.coreTop} 0%,
+                  ${swatch.core} 35%,
+                  ${swatch.core} 70%,
+                  ${swatch.coreBottom} 100%
                 )`,
                 boxShadow: `
-                  0 0 0 0.5px rgb(255 255 120 / 0.25),
-                  0 0 6px 1px ${penInkGlow},
-                  0 0 12px 2px rgb(200 255 0 / 0.12)
+                  0 0 0 0.5px ${swatch.edge},
+                  0 0 6px 1px ${swatch.glow},
+                  0 0 12px 2px ${swatch.bloom}
                 `,
                 mixBlendMode: 'screen',
               }}
@@ -379,23 +389,24 @@ export function PlanLineReview({
     if (note?.commentId === c.id) return null
     const pos = pinPos[c.id]
     if (!pos || !portalTarget) return null
+    const swatch = highlighterForComment(c.id, comments)
     return createPortal(
       <button
         key={c.id}
         type="button"
         data-plan-sticky-ui
-        aria-label={t('chat.plan.comments')}
+        aria-label={`${t('chat.plan.comments')} · ${swatch.label}`}
         className={cn(
           'fixed z-[200] flex cursor-pointer items-center justify-center',
-          'text-[9px] font-semibold text-[#6B5B1A]/70',
-          'hover:brightness-[1.03]',
+          'text-[9px] font-semibold hover:brightness-[1.03]',
         )}
         style={{
           top: pos.top,
           left: pos.left,
           width: PIN,
           height: PIN,
-          background: `linear-gradient(180deg, ${postItYellow} 0%, ${postItYellowDeep} 100%)`,
+          color: `${swatch.ink}b3`,
+          background: `linear-gradient(180deg, ${swatch.paper} 0%, ${swatch.paperDeep} 100%)`,
           boxShadow: '1px 1px 2px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.45)',
           borderRadius: 1,
         }}
@@ -406,6 +417,11 @@ export function PlanLineReview({
       portalTarget,
     )
   })
+
+  const openSwatch =
+    note?.mode === 'edit' && note.commentId
+      ? highlighterForComment(note.commentId, comments)
+      : highlighterForDraft(comments.length)
 
   const openNoteUi = note && portalTarget
     ? createPortal(
@@ -418,7 +434,7 @@ export function PlanLineReview({
           }}
           onMouseDown={(e) => e.stopPropagation()}
         >
-          {/* 3M-style square Post-it */}
+          {/* Paper sticky matching the highlighter color */}
           <div
             className="relative"
             style={{
@@ -428,31 +444,27 @@ export function PlanLineReview({
               background: `linear-gradient(
                 165deg,
                 #FFFEF0 0%,
-                ${postItYellow} 18%,
-                ${postItYellow} 78%,
-                ${postItYellowDeep} 100%
+                ${openSwatch.paper} 18%,
+                ${openSwatch.paper} 78%,
+                ${openSwatch.paperDeep} 100%
               )`,
-              // Soft paper stack + lift
               boxShadow: `
                 1px 1px 0 rgba(0,0,0,0.04),
                 2px 3px 2px rgba(0,0,0,0.06),
                 3px 8px 18px rgba(0,0,0,0.14)
               `,
-              // Slight peel rotation like a real sticky
               transform: 'rotate(1.25deg)',
               borderRadius: 1,
             }}
           >
-            {/* Top adhesive band (matte strip) */}
             <div
               aria-hidden
               className="pointer-events-none absolute inset-x-0 top-0 h-3"
               style={{
                 background: 'linear-gradient(180deg, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0.08) 100%)',
-                borderBottom: '1px solid rgba(180,160,40,0.12)',
+                borderBottom: '1px solid rgba(0,0,0,0.06)',
               }}
             />
-            {/* Dog-eared top-right corner */}
             <div
               aria-hidden
               className="pointer-events-none absolute right-0 top-0"
@@ -461,13 +473,14 @@ export function PlanLineReview({
                 height: 0,
                 borderStyle: 'solid',
                 borderWidth: '0 18px 18px 0',
-                borderColor: 'transparent #F3E27A transparent transparent',
+                borderColor: `transparent ${openSwatch.paperDeep} transparent transparent`,
                 filter: 'drop-shadow(-1px 1px 0 rgba(0,0,0,0.06))',
               }}
             />
             <button
               type="button"
-              className="absolute right-1 top-1 z-[1] flex size-5 items-center justify-center text-[#6B5B1A]/40 hover:text-[#6B5B1A]/80"
+              className="absolute right-1 top-1 z-[1] flex size-5 items-center justify-center opacity-40 hover:opacity-80"
+              style={{ color: openSwatch.ink }}
               aria-label={
                 note.mode === 'edit'
                   ? t('chat.plan.removeComment')
@@ -496,9 +509,10 @@ export function PlanLineReview({
                 if (current) saveNoteRef.current(current)
               }}
               placeholder={t('chat.plan.commentPlaceholder')}
-              className="relative z-0 w-full resize-none bg-transparent text-[13px] leading-relaxed text-[#3D3410] placeholder:text-[#6B5B1A]/35 focus:outline-none"
+              className="relative z-0 w-full resize-none bg-transparent text-[13px] leading-relaxed placeholder:opacity-40 focus:outline-none"
               style={{
                 minHeight: 112,
+                color: openSwatch.ink,
                 fontFamily: 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif',
               }}
             />

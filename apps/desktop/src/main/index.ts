@@ -113,6 +113,9 @@ import { notifyWidgetReady, clearAllGates } from './generative-ui/widget-gate'
 import { setBashOutputWindow, watchBashOutput, unwatchBashOutput, unwatchAll as unwatchAllBashOutputs, readBashOutputTail, getWatchedFilePath } from './bash-output-watcher'
 import { setUnsavedBuffer } from './acp/acp-unsaved-buffer'
 import { closeAllOpenCodeServers, probeOpenCodeResources, reapOrphanOpenCodeServers } from './opencode/opencode-client'
+import { probeCursorResources } from './cursor/cursor-client'
+import { encryptCursorApiKey, readCursorConfig } from './cursor/cursor-auth'
+import { getBaseProvider, updateBaseProviderConfig } from './session/session-provider-repo'
 import { listWorkflowAgents, readWorkflowOutput, readWorkflowScript } from './workflow-transcripts'
 import { discoverGrokWorkflows } from './workflow-discovery'
 import { readSubagentTranscript } from './agent/subagent-transcript'
@@ -218,7 +221,7 @@ bindAutomationService(automationService)
 // `apiProviderId` carries the session's chosen credential id (dynamic-follow: null follows the global binding).
 function resolveBaseProviderConfig(provider: SessionProvider, apiProviderId: string | null = null): unknown {
   if (!provider.isBase) return provider.config
-  if (provider.harnessId === 'opencode') return provider.config
+  if (provider.harnessId === 'opencode' || provider.harnessId === 'cursor') return provider.config
   if (provider.harnessId === 'acp') {
     const base = (provider.config && typeof provider.config === 'object')
       ? provider.config as Record<string, unknown>
@@ -343,13 +346,13 @@ const sessionManager = new SessionManagerImpl({
     }
   },
   getActiveProvider: (harnessId, apiProviderId) => {
-    if (harnessId === 'acp' || harnessId === 'opencode') return null
+    if (harnessId === 'acp' || harnessId === 'opencode' || harnessId === 'cursor') return null
     return buildRemoteActiveService(resolveChatService(harnessId, apiProviderId ?? null, {
       experimentalClaudeOpenAiChatEnabled: readAppSettings().experimentalClaudeOpenAiChatEnabled,
     }), harnessId)
   },
   getActiveDefaultApiProviderId: (harnessId) => {
-    if (harnessId === 'acp' || harnessId === 'opencode') return null
+    if (harnessId === 'acp' || harnessId === 'opencode' || harnessId === 'cursor') return null
     return getBinding(harnessId === 'codex' ? 'chat:codex' : 'chat:claude')?.credentialId ?? null
   },
   onBeforeInterrupt: (sessionId) => {
@@ -3855,6 +3858,43 @@ function registerIpcHandlers(): void {
       log.warn('[CONNECT_OPENCODE] failed: %s', error instanceof Error ? error.message : String(error))
       return cached ?? { models: [], agents: [] }
     }
+  })
+
+  ipcMain.handle(AgentIpcChannels.CONNECT_CURSOR, async () => {
+    const cached = getCachedHarnessResources('cursor')
+    try {
+      let config: unknown = {}
+      try {
+        config = getBaseProvider('cursor').config
+      } catch {
+        // base provider may not exist until migrations run
+      }
+      const resources = await probeCursorResources({ config })
+      setCachedHarnessResources('cursor', resources)
+      log.info('[CONNECT_CURSOR] %d models', resources.models.length)
+      return resources
+    } catch (error) {
+      log.warn('[CONNECT_CURSOR] failed: %s', error instanceof Error ? error.message : String(error))
+      if (cached) return { ...cached, probing: false }
+      throw error
+    }
+  })
+
+  ipcMain.handle(AgentIpcChannels.SET_CURSOR_API_KEY, async (_e, apiKey: string) => {
+    const plain = typeof apiKey === 'string' ? apiKey.trim() : ''
+    if (!plain) throw new Error('API key is empty')
+    const existing = (() => {
+      try {
+        return readCursorConfig(getBaseProvider('cursor').config)
+      } catch {
+        return {}
+      }
+    })()
+    const provider = updateBaseProviderConfig('cursor', {
+      ...existing,
+      apiKey: encryptCursorApiKey(plain),
+    })
+    return { ok: true as const, providerId: provider.id }
   })
 
   ipcMain.handle(AgentIpcChannels.WIDGET_IFRAME_READY, (_e, widgetId: string) => {

@@ -20,5 +20,6 @@ export function inferProviderFromHarnessId(harnessId: string | null | undefined)
   if (harnessId === 'claude') return 'claude'
   if (harnessId === 'acp') return 'acp'
   if (harnessId === 'opencode') return 'opencode'
+  if (harnessId === 'cursor') return 'cursor'
   return null
 }

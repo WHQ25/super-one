@@ -355,6 +355,7 @@ import { applyAcpResources, connectAcpResources, getCachedAcpCatalog, refreshAcp
 import { applyClaudeResources } from './harness/claude-handler'
 import { applyCodexResources } from './harness/codex-handler'
 import { applyOpenCodeResources, resolveDefaultOpenCodeAgent, resolveDefaultOpenCodeSelection } from './harness/opencode-handler'
+import { applyCursorResources } from './harness/cursor-handler'
 
 const harnessHandlers: HarnessHandlerMap = {
   claude: {
@@ -373,6 +374,10 @@ const harnessHandlers: HarnessHandlerMap = {
   opencode: {
     connect: () => window.app.connectOpenCode(),
     apply: (s, r) => applyOpenCodeResources(s, r),
+  },
+  cursor: {
+    connect: () => window.app.connectCursor(),
+    apply: (s, r) => applyCursorResources(s, r),
   },
 }
 

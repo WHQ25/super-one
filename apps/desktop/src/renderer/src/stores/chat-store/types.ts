@@ -12,6 +12,7 @@ import type {
   CodexReasoningEffort,
   CodexResources,
   CodexTodoListItem,
+  CursorResources,
   OpenCodeResources,
   CodexReviewTarget,
   CodexUsageInfo,
@@ -332,6 +333,7 @@ export interface ChatStore {
     codex: CodexResources | null
     acp: AcpResources | null
     opencode?: OpenCodeResources | null
+    cursor?: CursorResources | null
   }
   initializedHarnesses: Set<HarnessId>
   /** True while a manual `refreshClaudeResources` round-trip is in flight. */

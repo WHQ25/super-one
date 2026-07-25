@@ -100,6 +100,20 @@ export function updateSessionProvider(id: string, patch: UpdateSessionProviderIn
   return getSessionProvider(id)!
 }
 
+/** Allow config-only updates on base providers (e.g. Cursor User API Key on cursor-base). */
+export function updateBaseProviderConfig(harnessId: HarnessId, config: unknown): SessionProvider {
+  const existing = getBaseProvider(harnessId)
+  const validated = validateConfig(harnessId, {
+    ...(typeof existing.config === 'object' && existing.config ? existing.config : {}),
+    ...(typeof config === 'object' && config ? config : {}),
+  })
+  const now = new Date().toISOString()
+  getDb()
+    .prepare('UPDATE session_providers SET config_json = ?, updated_at = ? WHERE id = ?')
+    .run(JSON.stringify(validated), now, existing.id)
+  return getSessionProvider(existing.id)!
+}
+
 export function deleteSessionProvider(id: string): boolean {
   const existing = getSessionProvider(id)
   if (!existing) return false

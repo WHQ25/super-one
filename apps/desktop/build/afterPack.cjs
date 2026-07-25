@@ -105,10 +105,12 @@ function cloneNamedHelperRuntimes(appOutDir, productFilename) {
 const PRUNE_PARENTS = [
   'node_modules/@anthropic-ai',
   'node_modules/@openai',
+  'node_modules/@cursor',
 ]
 const PRUNE_PREFIXES = [
   'claude-agent-sdk-',
   'codex-',
+  'sdk-',
 ]
 
 module.exports = async function afterPack(context) {

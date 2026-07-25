@@ -2536,6 +2536,8 @@ export const AgentIpcChannels = {
   CONNECT_CLAUDE: 'app:connect-claude',
   CONNECT_CODEX: 'app:connect-codex',
   CONNECT_OPENCODE: 'app:connect-opencode',
+  CONNECT_CURSOR: 'app:connect-cursor',
+  SET_CURSOR_API_KEY: 'app:set-cursor-api-key',
   GET_STARTUP_DATA: 'app:get-startup-data',
   GET_APP_METRICS: 'app:get-app-metrics',
   SELECT_FOLDER: 'app:select-folder',

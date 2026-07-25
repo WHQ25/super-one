@@ -3,6 +3,7 @@ import { Check, ChevronDown, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 import { useTranslation } from 'react-i18next'
 import { Switch } from '@superone/ui/components/ui/switch'
+import { Input } from '@superone/ui/components/ui/input'
 import { Button } from '@superone/ui/components/ui/button'
 import { cn } from '@superone/ui/lib/utils'
 import {
@@ -14,12 +15,65 @@ import {
 import { initAnalytics, shutdownAnalytics } from '@/lib/analytics'
 import { changeLocale } from '@/i18n'
 import { useAppStore } from '@/stores/app'
+import { useChatStore } from '@/stores/chat'
 import { DefaultProviderRow } from '@/components/providers/DefaultProviderRow'
 import type {
   Locale,
   UpdateChannel,
 } from '@superone/shared/agent-types'
 import { AVAILABLE_UPDATE_CHANNELS, channelFromVersion } from '@superone/shared/update-channels'
+
+function CursorApiKeySettingsRow() {
+  const [apiKey, setApiKey] = useState('')
+  const [saving, setSaving] = useState(false)
+  const initializeHarness = useChatStore((s) => s.initializeHarness)
+
+  async function save() {
+    if (!apiKey.trim() || saving) return
+    setSaving(true)
+    try {
+      await window.app.setCursorApiKey(apiKey.trim())
+      setApiKey('')
+      toast.success('Cursor API key saved')
+      void initializeHarness('cursor')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="space-y-2 border-t border-border p-4">
+      <p className="text-sm font-medium">Cursor User API Key</p>
+      <p className="text-xs text-muted-foreground">
+        Create a key at{' '}
+        <a
+          className="underline underline-offset-2"
+          href="https://cursor.com/dashboard/api"
+          target="_blank"
+          rel="noreferrer"
+        >
+          cursor.com/dashboard/api
+        </a>
+        . Desktop login alone is not enough for the SDK.
+      </p>
+      <div className="flex gap-2">
+        <Input
+          type="password"
+          value={apiKey}
+          onChange={(e) => setApiKey(e.target.value)}
+          placeholder="cursor_…"
+          className="font-mono text-xs"
+          autoComplete="off"
+        />
+        <Button type="button" size="sm" disabled={!apiKey.trim() || saving} onClick={() => void save()}>
+          Save
+        </Button>
+      </div>
+    </div>
+  )
+}
 
 export function AppSettingsPage() {
   const { t, i18n } = useTranslation()
@@ -260,6 +314,9 @@ export function AppSettingsPage() {
               disabled={loading}
             />
           </div>
+          {experimentalAgentsEnabled && (
+            <CursorApiKeySettingsRow />
+          )}
         </div>
       </div>
     </div>

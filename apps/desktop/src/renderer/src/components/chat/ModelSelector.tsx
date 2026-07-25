@@ -2,6 +2,7 @@ import { useActiveSession } from '@/stores/chat'
 import { AcpModelSelector } from './model-selector/AcpModelSelector'
 import { ClaudeModelSelector } from './model-selector/ClaudeModelSelector'
 import { CodexModelSelector } from './model-selector/CodexModelSelector'
+import { CursorModelSelector } from './model-selector/CursorModelSelector'
 import { OpenCodeModelSelector } from './model-selector/OpenCodeModelSelector'
 
 export function ModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?: (e: Event) => void } = {}) {
@@ -17,6 +18,9 @@ export function ModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?: (e: Eve
   }
   if (activeProvider === 'opencode') {
     return <OpenCodeModelSelector onCloseAutoFocus={onCloseAutoFocus} />
+  }
+  if (activeProvider === 'cursor') {
+    return <CursorModelSelector onCloseAutoFocus={onCloseAutoFocus} />
   }
   return <ClaudeModelSelector onCloseAutoFocus={onCloseAutoFocus} />
 }

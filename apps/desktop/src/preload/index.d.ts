@@ -70,6 +70,8 @@ interface AppAPI {
   connectClaude(force?: boolean): Promise<ClaudeResources>
   connectCodex(): Promise<CodexResources>
   connectOpenCode(): Promise<OpenCodeResources>
+  connectCursor(): Promise<import('@superone/shared/agent-types').CursorResources>
+  setCursorApiKey(apiKey: string): Promise<{ ok: true; providerId: string }>
   getStartupData(): Promise<StartupData>
   getAppMetrics(): Promise<AppMetricsSnapshot>
   probeSandbox(): Promise<SandboxProbeResult>

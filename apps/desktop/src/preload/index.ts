@@ -705,6 +705,12 @@ const appAPI = {
   connectOpenCode: () =>
     ipcRenderer.invoke(AgentIpcChannels.CONNECT_OPENCODE),
 
+  connectCursor: () =>
+    ipcRenderer.invoke(AgentIpcChannels.CONNECT_CURSOR),
+
+  setCursorApiKey: (apiKey: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.SET_CURSOR_API_KEY, apiKey),
+
   getStartupData: () =>
     ipcRenderer.invoke(AgentIpcChannels.GET_STARTUP_DATA),
 

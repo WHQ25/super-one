@@ -1541,7 +1541,7 @@ export class AgentService {
       worktreePath?: string | null
       gitBranch?: string | null
       apiProviderId?: string | null
-      provider?: 'claude' | 'codex' | 'acp' | 'opencode'
+      provider?: 'claude' | 'codex' | 'acp' | 'opencode' | 'cursor'
     },
   ): Promise<import('../session/types').Session> {
     const mgr = this.requireSessionManager()

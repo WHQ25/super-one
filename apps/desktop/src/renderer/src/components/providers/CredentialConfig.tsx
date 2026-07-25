@@ -32,6 +32,8 @@ import {
 import { useModelCatalog } from '@/hooks/useModelCatalog'
 import { useSettingsStore } from '@/stores/settings'
 import { collectOneMillionIds, ONE_M_SUFFIX, stripOneM } from '@/lib/model-id'
+import { singleTestEndpoint, useEndpointTest } from './test-endpoints'
+import { TestConnectionButton, TestConnectionStatus } from './TestConnection'
 
 const RESERVED_ENV_KEYS = new Set([
   'ANTHROPIC_API_KEY',
@@ -326,6 +328,14 @@ function pruneOverride(o: EndpointOverride): EndpointOverride {
   return out
 }
 
+/** Optional key context so each endpoint can be probed in isolation without siblings. */
+export interface EndpointTestContext {
+  apiKey: string
+  credentialId?: string
+  /** When false, hide the per-endpoint test control (e.g. no key typed yet). */
+  canTest?: boolean
+}
+
 function EndpointOverrideFields({
   platform,
   plan,
@@ -333,6 +343,7 @@ function EndpointOverrideFields({
   showLabel,
   value,
   onChange,
+  testContext,
 }: {
   platform: Platform
   plan: Plan
@@ -340,9 +351,11 @@ function EndpointOverrideFields({
   showLabel: boolean
   value: EndpointOverride
   onChange: (v: EndpointOverride) => void
+  testContext?: EndpointTestContext
 }) {
   const { t } = useTranslation()
   const { catalog } = useModelCatalog()
+  const { state: testState, run: runTest } = useEndpointTest()
   const suggestions = useMemo(
     () => resolveEndpointModels(platform, plan, endpoint, catalog ?? undefined),
     [platform, plan, endpoint, catalog],
@@ -363,6 +376,16 @@ function EndpointOverrideFields({
   const planHasAnthropic = plan.endpoints.some((e) => e.protocols.includes('anthropic-messages'))
   const supportsModelMapping = isAnthropic || (endpoint.protocols.includes('openai-chat') && !planHasAnthropic)
   const isCustom = isCustomPlatform(platform)
+  const canTest = !!testContext && (testContext.canTest !== false)
+
+  const testThisEndpoint = useCallback(() => {
+    if (!testContext) return
+    void runTest(
+      [singleTestEndpoint(endpoint, value)],
+      testContext.apiKey,
+      testContext.credentialId,
+    )
+  }, [testContext, runTest, endpoint, value])
 
   return (
     <div className="flex flex-col gap-3">
@@ -371,14 +394,25 @@ function EndpointOverrideFields({
       )}
 
       {!isFirstPartyAnthropic && (
-        <label className="flex flex-col gap-1">
+        <div className="flex flex-col gap-1">
           <span className="text-xs font-medium text-muted-foreground">{isAnthropic ? t('resources.providers.claudeBaseUrl') : t('resources.providers.baseUrl')}</span>
-          <Input
-            value={value.baseUrl ?? ''}
-            onChange={(e) => onChange({ ...value, baseUrl: e.target.value })}
-            placeholder={endpoint.baseUrl}
-          />
-        </label>
+          <div className="flex items-center gap-1.5">
+            <Input
+              className="min-w-0 flex-1"
+              value={value.baseUrl ?? ''}
+              onChange={(e) => onChange({ ...value, baseUrl: e.target.value })}
+              placeholder={endpoint.baseUrl}
+            />
+            {canTest && (
+              <TestConnectionButton
+                state={testState}
+                onTest={testThisEndpoint}
+                label={t('resources.providerDialog.testEndpoint')}
+              />
+            )}
+          </div>
+          {canTest && <TestConnectionStatus state={testState} />}
+        </div>
       )}
 
       {supportsModelMapping && !isFirstPartyAnthropic && (
@@ -424,11 +458,13 @@ export function OverridesEditor({
   plan,
   value,
   onChange,
+  testContext,
 }: {
   platform: Platform
   plan: Plan
   value: Record<string, EndpointOverride>
   onChange: (v: Record<string, EndpointOverride>) => void
+  testContext?: EndpointTestContext
 }) {
   return (
     <div className="flex flex-col gap-4">
@@ -441,27 +477,77 @@ export function OverridesEditor({
           showLabel={plan.endpoints.length > 1}
           value={value[endpoint.id] ?? {}}
           onChange={(next) => onChange({ ...value, [endpoint.id]: next })}
+          testContext={testContext}
         />
       ))}
     </div>
   )
 }
 
+function endpointsAsOverrideMap(endpoints: ServiceEndpoint[]): Record<string, EndpointOverride> {
+  const out: Record<string, EndpointOverride> = {}
+  for (const e of endpoints) {
+    const ov: EndpointOverride = {}
+    if (e.baseUrl) ov.baseUrl = e.baseUrl
+    if (e.models?.length) ov.models = e.models
+    if (e.defaults?.extraEnv && Object.keys(e.defaults.extraEnv).length > 0) ov.extraEnv = e.defaults.extraEnv
+    if (e.defaults?.modelMapping && Object.keys(e.defaults.modelMapping).length > 0) {
+      ov.modelMapping = e.defaults.modelMapping
+    }
+    if (Object.keys(ov).length > 0) out[e.id] = ov
+  }
+  return out
+}
+
 export function CredentialConfig({ platform, plan, credential }: { platform: Platform; plan: Plan; credential: Credential }) {
   const updateCredential = useSettingsStore((s) => s.updateCredential)
-  const [draft, setDraft] = useState<Record<string, EndpointOverride>>(() =>
-    credential.overrides && Object.keys(credential.overrides).length > 0
-      ? credential.overrides
-      : defaultOverridesForPlan(plan),
-  )
+  const isCustom = isCustomPlatform(platform)
+  const editPlan = useMemo(() => {
+    if (isCustom && credential.endpoints?.length) return { ...plan, endpoints: credential.endpoints }
+    return plan
+  }, [isCustom, credential.endpoints, plan])
+
+  const [draft, setDraft] = useState<Record<string, EndpointOverride>>(() => {
+    if (isCustom && credential.endpoints?.length) return endpointsAsOverrideMap(credential.endpoints)
+    if (credential.overrides && Object.keys(credential.overrides).length > 0) return credential.overrides
+    return defaultOverridesForPlan(plan)
+  })
 
   const commit = useCallback(() => {
+    if (isCustom) {
+      const base = credential.endpoints?.length ? credential.endpoints : plan.endpoints
+      // Re-apply editor fields onto the key's endpoint list (protocols stay on the key).
+      const next = base.map((e) => {
+        const ov = draft[e.id]
+        if (!ov) return e
+        const merged = {
+          ...e,
+          baseUrl: ov.baseUrl?.trim() || e.baseUrl,
+          models: ov.models ?? e.models,
+          defaults: {
+            ...(e.defaults ?? {}),
+            ...(ov.extraEnv ? { extraEnv: ov.extraEnv } : {}),
+            ...(ov.modelMapping ? { modelMapping: ov.modelMapping } : {}),
+          },
+        }
+        if (!merged.defaults?.extraEnv && !merged.defaults?.modelMapping) delete merged.defaults
+        return merged
+      })
+      void updateCredential(credential.id, { endpoints: next, overrides: {} })
+      return
+    }
     void updateCredential(credential.id, { overrides: pruneOverrides(draft) })
-  }, [draft, credential.id, updateCredential])
+  }, [draft, credential, plan.endpoints, isCustom, updateCredential])
+
+  // Stored key resolves via credentialId in main; empty apiKey means "use stored secret".
+  const testContext = useMemo<EndpointTestContext>(
+    () => ({ apiKey: '', credentialId: credential.id, canTest: true }),
+    [credential.id],
+  )
 
   return (
     <div className="flex flex-col gap-4 rounded-md border border-border bg-muted/30 p-3" onBlur={commit}>
-      <OverridesEditor platform={platform} plan={plan} value={draft} onChange={setDraft} />
+      <OverridesEditor platform={platform} plan={editPlan} value={draft} onChange={setDraft} testContext={testContext} />
     </div>
   )
 }

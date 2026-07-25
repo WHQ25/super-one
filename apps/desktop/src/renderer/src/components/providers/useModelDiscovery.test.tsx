@@ -83,7 +83,7 @@ describe('useModelDiscovery', () => {
     expect(result.current.state).toEqual({ status: 'error', message: 'network down' })
   })
 
-  it('does not call updateCustomPlatform when the endpoint already serves the enabled models', async () => {
+  it('writes enabled models onto credential.endpoints for custom platforms (not the plan)', async () => {
     const openaiEp: ServiceEndpoint = { id: 'openai', baseUrl: 'https://relay.com/v1', protocols: ['openai-chat'] }
     const { platform, plan } = makePlatform([openaiEp])
     const credential = makeCredential()
@@ -100,11 +100,19 @@ describe('useModelDiscovery', () => {
 
     expect(updateCustomPlatform).not.toHaveBeenCalled()
     expect(updateCredential).toHaveBeenCalledWith('cred-1', {
-      overrides: { openai: { models: [{ id: 'gpt-5', name: undefined, tasks: ['chat'] }] } },
+      endpoints: [
+        {
+          id: 'openai',
+          baseUrl: 'https://relay.com/v1',
+          protocols: ['openai-chat'],
+          models: [{ id: 'gpt-5', name: undefined, tasks: ['chat'] }],
+        },
+      ],
+      overrides: {},
     })
   })
 
-  it('silently widens the endpoint protocols before writing models when a task is unserved', async () => {
+  it('widens protocols on the key endpoints when a discovered task is unserved', async () => {
     const openaiEp: ServiceEndpoint = { id: 'openai', baseUrl: 'https://relay.com/v1', protocols: ['openai-chat'] }
     const { platform, plan } = makePlatform([openaiEp])
     const credential = makeCredential()
@@ -119,18 +127,13 @@ describe('useModelDiscovery', () => {
       await result.current.enableModels([{ id: 'gpt-image-1', tasks: ['image'], byFamily: { openai: ['image'] } }])
     })
 
-    expect(updateCustomPlatform).toHaveBeenCalledTimes(1)
-    const widenedPlatform: Platform = updateCustomPlatform.mock.calls[0][0]
-    expect(widenedPlatform.plans[0].endpoints[0].protocols).toEqual(
-      expect.arrayContaining(['openai-chat', 'openai-images']),
-    )
-
-    expect(updateCredential).toHaveBeenCalledWith('cred-1', {
-      overrides: { openai: { models: [{ id: 'gpt-image-1', name: undefined, tasks: ['image'] }] } },
-    })
+    expect(updateCustomPlatform).not.toHaveBeenCalled()
+    const patch = updateCredential.mock.calls[0][1]
+    expect(patch.endpoints[0].protocols).toEqual(expect.arrayContaining(['openai-chat', 'openai-images']))
+    expect(patch.endpoints[0].models).toEqual([{ id: 'gpt-image-1', name: undefined, tasks: ['image'] }])
   })
 
-  it('synthesizes missing family endpoints when enabling anthropic/gemini models', async () => {
+  it('synthesizes missing family endpoints on the key when enabling anthropic/gemini models', async () => {
     const openaiEp: ServiceEndpoint = { id: 'openai', baseUrl: 'https://relay.com/v1', protocols: ['openai-chat'] }
     const { platform, plan } = makePlatform([openaiEp])
     const credential = makeCredential()
@@ -148,17 +151,16 @@ describe('useModelDiscovery', () => {
       ])
     })
 
-    expect(updateCustomPlatform).toHaveBeenCalledTimes(1)
-    const widenedPlatform: Platform = updateCustomPlatform.mock.calls[0][0]
-    const ids = widenedPlatform.plans[0].endpoints.map((e) => e.id).sort()
+    expect(updateCustomPlatform).not.toHaveBeenCalled()
+    const patch = updateCredential.mock.calls[0][1]
+    const ids = patch.endpoints.map((e: ServiceEndpoint) => e.id).sort()
     expect(ids).toEqual(['anthropic', 'google', 'openai'])
-
-    expect(updateCredential).toHaveBeenCalledWith('cred-1', {
-      overrides: {
-        anthropic: { models: [{ id: 'claude-opus', name: undefined, tasks: ['chat'] }] },
-        google: { models: [{ id: 'gemini-pro', name: undefined, tasks: ['chat'] }] },
-      },
-    })
+    expect(patch.endpoints.find((e: ServiceEndpoint) => e.id === 'anthropic')?.models).toEqual([
+      { id: 'claude-opus', name: undefined, tasks: ['chat'] },
+    ])
+    expect(patch.endpoints.find((e: ServiceEndpoint) => e.id === 'google')?.models).toEqual([
+      { id: 'gemini-pro', name: undefined, tasks: ['chat'] },
+    ])
   })
 
   it('can discover when the plan has only an anthropic endpoint (synthesized openai probe)', async () => {

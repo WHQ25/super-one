@@ -66,11 +66,15 @@ export function capabilityEndpoints(caps: PlanCapabilities, baseUrl: string): Se
   return customPlatformEndpoints(tasksByFamily, baseUrl, extraByFamily)
 }
 
-/** Rebuild a plan's endpoints from a capability selection, preserving each endpoint's defaults by id. */
+/** Rebuild a plan's endpoints from a capability selection, preserving defaults + models by id. */
 export function applyCapabilitiesToPlan(plan: Plan, caps: PlanCapabilities, baseUrl: string): ServiceEndpoint[] {
   const prevById = new Map(plan.endpoints.map((e) => [e.id, e]))
   return capabilityEndpoints(caps, baseUrl).map((endpoint) => {
-    const defaults = prevById.get(endpoint.id)?.defaults
-    return defaults ? { ...endpoint, defaults } : endpoint
+    const prev = prevById.get(endpoint.id)
+    if (!prev) return endpoint
+    const next = { ...endpoint }
+    if (prev.defaults) next.defaults = prev.defaults
+    if (prev.models) next.models = prev.models
+    return next
   })
 }

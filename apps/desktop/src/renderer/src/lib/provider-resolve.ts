@@ -1,6 +1,7 @@
 import type { HarnessId, ProviderModelEnv } from '@superone/shared/agent-types'
 import {
   CONSUMER_IDS,
+  effectiveEndpoints,
   findPlan,
   findPlatform,
   mergeEndpoint,
@@ -9,6 +10,7 @@ import {
   type ConsumerId,
   type Credential,
   type Platform,
+  type ServiceEndpoint,
 } from '@superone/shared/platform-registry'
 
 export function consumerForHarness(harness: HarnessId): ConsumerId {
@@ -25,17 +27,21 @@ export interface EffectiveService {
   baseUrl: string
   modelMapping: ProviderModelEnv
   extraEnv: Record<string, string>
+  endpoints: ServiceEndpoint[]
 }
 
-/** Credentials whose plan can serve the given consumer (i.e. has a matching endpoint). */
+/** Credentials whose plan/key can serve the given consumer (i.e. has a matching endpoint). */
 export function credentialsForConsumer(
   platforms: Platform[],
   credentials: Credential[],
   consumer: ConsumerId,
 ): Credential[] {
   return credentials.filter((c) => {
-    const plan = findPlan(findPlatform(platforms, c.platformId), c.planId)
-    return !!plan && !!selectEndpoint(plan, consumer, undefined, c)
+    const platform = findPlatform(platforms, c.platformId)
+    const plan = findPlan(platform, c.planId)
+    if (!platform || !plan) return false
+    const endpoints = effectiveEndpoints(platform, plan, c)
+    return !!selectEndpoint(plan, consumer, undefined, c, endpoints)
   })
 }
 
@@ -59,7 +65,8 @@ export function resolveEffective(
   const plan = findPlan(platform, cred.planId)
   if (!platform || !plan) return null
   const usingBound = cred.id === binding?.credentialId
-  const selected = selectEndpoint(plan, consumer, usingBound ? binding?.endpointId : undefined, cred)
+  const endpoints = effectiveEndpoints(platform, plan, cred)
+  const selected = selectEndpoint(plan, consumer, usingBound ? binding?.endpointId : undefined, cred, endpoints)
   if (!selected) return null
   const { endpoint } = selected
   const merged = mergeEndpoint(endpoint, cred.overrides?.[endpoint.id], usingBound ? binding?.config : undefined)
@@ -72,6 +79,7 @@ export function resolveEffective(
     baseUrl: merged.baseUrl,
     modelMapping: merged.modelMapping,
     extraEnv: merged.extraEnv,
+    endpoints,
   }
 }
 

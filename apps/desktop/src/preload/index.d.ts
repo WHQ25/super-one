@@ -189,8 +189,8 @@ interface AppAPI {
   updateCustomPlatform(def: Platform): Promise<Platform>
   deleteCustomPlatform(id: string): Promise<boolean>
   listCredentials(): Promise<Credential[]>
-  createCredential(input: { platformId: string; planId: string; name: string; secret?: string; secretEnv?: string; overrides?: Record<string, EndpointOverride>; notes?: string }): Promise<Credential>
-  updateCredential(id: string, patch: { name?: string; secret?: string; secretEnv?: string; overrides?: Record<string, EndpointOverride>; notes?: string; sortOrder?: number }): Promise<Credential | undefined>
+  createCredential(input: { platformId: string; planId: string; name: string; secret?: string; secretEnv?: string; overrides?: Record<string, EndpointOverride>; endpoints?: ServiceEndpoint[]; notes?: string }): Promise<Credential>
+  updateCredential(id: string, patch: { name?: string; secret?: string; secretEnv?: string; overrides?: Record<string, EndpointOverride>; endpoints?: ServiceEndpoint[] | null; notes?: string; sortOrder?: number }): Promise<Credential | undefined>
   deleteCredential(id: string): Promise<boolean>
   listBindings(): Promise<ConsumerBinding[]>
   setBinding(binding: ConsumerBinding): Promise<void>

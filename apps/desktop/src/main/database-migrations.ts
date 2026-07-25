@@ -1,5 +1,6 @@
 import { parseProviderModelEnv, type ProviderModelEnv } from '@superone/shared/agent-types'
 import {
+  foldOverridesIntoEndpoints,
   mergeExtraEnv,
   mergeModelMapping,
   PROTOCOL_FAMILIES,
@@ -162,6 +163,7 @@ export function runDatabaseMigrations(db: Database.Database): void {
   migrateLegacyApiProviders(db)
   migrateEndpointProtocols(db)
   migrateKimiMoonshotPlatforms(db)
+  migrateCredentialEndpoints(db)
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS harness_resource_cache (
@@ -831,5 +833,69 @@ function migrateKimiMoonshotPlatforms(db: Database.Database): void {
   ]
   for (const r of remaps) {
     update.run(r.toPlatform, r.toPlan, now, r.fromPlatform, r.fromPlan)
+  }
+}
+
+/**
+ * Custom platforms: promote plan.endpoints (+ per-key overrides) into credentials.endpoints_json
+ * so each key owns its full endpoint list. Idempotent.
+ */
+function migrateCredentialEndpoints(db: Database.Database): void {
+  const credCols = db.prepare('PRAGMA table_info(credentials)').all() as Array<{ name: string }>
+  if (!credCols.some((c) => c.name === 'endpoints_json')) {
+    db.exec('ALTER TABLE credentials ADD COLUMN endpoints_json TEXT')
+  }
+
+  const platforms = db.prepare('SELECT id, definition_json FROM custom_platforms').all() as Array<{
+    id: string
+    definition_json: string
+  }>
+  const platformById = new Map<string, Platform>()
+  for (const row of platforms) {
+    try {
+      const p = JSON.parse(row.definition_json) as Platform
+      platformById.set(row.id, p)
+    } catch {
+      // skip corrupt rows
+    }
+  }
+
+  const creds = db
+    .prepare(
+      `SELECT id, platform_id, plan_id, overrides_json, endpoints_json FROM credentials WHERE platform_id LIKE 'custom:%'`,
+    )
+    .all() as Array<{
+    id: string
+    platform_id: string
+    plan_id: string
+    overrides_json: string
+    endpoints_json: string | null
+  }>
+
+  const update = db.prepare(
+    `UPDATE credentials SET endpoints_json = ?, updated_at = ? WHERE id = ?`,
+  )
+  const now = new Date().toISOString()
+
+  for (const row of creds) {
+    if (row.endpoints_json) {
+      try {
+        const existing = JSON.parse(row.endpoints_json) as unknown
+        if (Array.isArray(existing) && existing.length > 0) continue
+      } catch {
+        // rewrite below
+      }
+    }
+    const platform = platformById.get(row.platform_id)
+    const plan = platform?.plans.find((p) => p.id === row.plan_id) ?? platform?.plans[0]
+    if (!plan?.endpoints?.length) continue
+    let overrides: Record<string, EndpointOverride> = {}
+    try {
+      overrides = JSON.parse(row.overrides_json || '{}') as Record<string, EndpointOverride>
+    } catch {
+      overrides = {}
+    }
+    const endpoints = foldOverridesIntoEndpoints(plan.endpoints, overrides)
+    update.run(JSON.stringify(endpoints), now, row.id)
   }
 }

@@ -1,6 +1,16 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import type { DiscoveredOpenAiModel } from '@superone/shared/agent-types'
-import { familyBaseUrl, mergeEndpoint, type Credential, type EndpointOverride, type Plan, type Platform } from '@superone/shared/platform-registry'
+import {
+  effectiveEndpoints,
+  familyBaseUrl,
+  isCustomPlatform,
+  mergeEndpoint,
+  type Credential,
+  type EndpointOverride,
+  type Plan,
+  type Platform,
+  type ServiceEndpoint,
+} from '@superone/shared/platform-registry'
 import { applyDiscoveredModels, discoveryEndpoint, widenedPlanEndpoints } from './discovery-apply'
 
 export type DiscoverState =
@@ -13,18 +23,15 @@ function siteRootFrom(baseUrl: string): string {
   return baseUrl.replace(/\/+$/, '').replace(/\/v\d+$/, '')
 }
 
-/** Site root for synthesizing family base URLs when widening endpoints. */
-function planSiteRoot(plan: Plan, probeBaseUrl?: string): string {
+function endpointsSiteRoot(endpoints: ServiceEndpoint[], probeBaseUrl?: string): string {
   if (probeBaseUrl) return siteRootFrom(probeBaseUrl)
-  const first = plan.endpoints[0]
+  const first = endpoints[0]
   return first ? siteRootFrom(first.baseUrl) : ''
 }
 
 /**
- * Relay model discovery for a custom platform's plan: one OpenAI-format `/v1/models` probe (via
- * `providers:discover-models`) tags models with per-family capabilities. Enabling silently widens
- * endpoints for openai/anthropic/google as needed (additive only) via `updateCustomPlatform` before
- * writing models onto the matching family endpoint via `updateCredential`.
+ * Relay model discovery: one OpenAI-format `/v1/models` probe. For custom platforms, enabling
+ * models widens/writes `credential.endpoints` (per-key). Builtin still uses plan + overrides.
  */
 export function useModelDiscovery({
   platform,
@@ -36,19 +43,28 @@ export function useModelDiscovery({
   platform: Platform
   plan: Plan
   credential: Credential | undefined
-  updateCredential: (id: string, patch: { overrides?: Record<string, EndpointOverride> }) => Promise<void>
+  updateCredential: (
+    id: string,
+    patch: { overrides?: Record<string, EndpointOverride>; endpoints?: ServiceEndpoint[] },
+  ) => Promise<void>
   updateCustomPlatform: (def: Platform) => Promise<void>
 }) {
   const [discovered, setDiscovered] = useState<DiscoveredOpenAiModel[]>([])
   const [state, setState] = useState<DiscoverState>({ status: 'idle' })
+  const custom = isCustomPlatform(platform)
 
-  const endpoint = discoveryEndpoint(plan)
+  const liveEndpoints = useMemo(
+    () => effectiveEndpoints(platform, plan, credential),
+    [platform, plan, credential],
+  )
+  const livePlan = useMemo(() => ({ ...plan, endpoints: liveEndpoints }), [plan, liveEndpoints])
+  const endpoint = discoveryEndpoint(livePlan)
 
   const discover = useCallback(async () => {
     if (!endpoint || !credential) return
     setState({ status: 'loading' })
     try {
-      const existing = plan.endpoints.find((e) => e.id === endpoint.id)
+      const existing = liveEndpoints.find((e) => e.id === endpoint.id)
       const effectiveBaseUrl = existing
         ? mergeEndpoint(existing, credential.overrides?.[existing.id]).baseUrl
         : endpoint.baseUrl
@@ -62,21 +78,35 @@ export function useModelDiscovery({
     } catch (err) {
       setState({ status: 'error', message: err instanceof Error ? err.message : String(err) })
     }
-  }, [endpoint, credential, plan.endpoints])
+  }, [endpoint, credential, liveEndpoints])
 
   const enableModels = useCallback(
     async (models: DiscoveredOpenAiModel[]) => {
       if (!credential || models.length === 0) return
       const probeBase = endpoint
-        ? (plan.endpoints.find((e) => e.id === endpoint.id)
+        ? (liveEndpoints.find((e) => e.id === endpoint.id)
             ? mergeEndpoint(
-                plan.endpoints.find((e) => e.id === endpoint.id)!,
+                liveEndpoints.find((e) => e.id === endpoint.id)!,
                 credential.overrides?.[endpoint.id],
               ).baseUrl
             : endpoint.baseUrl)
-        : familyBaseUrl('openai', planSiteRoot(plan))
-      const siteRoot = planSiteRoot(plan, probeBase)
-      const widenedEndpoints = widenedPlanEndpoints(plan, siteRoot, models)
+        : familyBaseUrl('openai', endpointsSiteRoot(liveEndpoints))
+      const siteRoot = endpointsSiteRoot(liveEndpoints, probeBase)
+      const widenedEndpoints = widenedPlanEndpoints(livePlan, siteRoot, models)
+
+      if (custom) {
+        const nextEndpoints = widenedEndpoints ?? liveEndpoints
+        const nextPlan = { ...plan, endpoints: nextEndpoints }
+        const overrides = applyDiscoveredModels(credential.overrides, nextPlan, models)
+        // Fold enabled models into the key's endpoint list.
+        const folded = nextEndpoints.map((e) => {
+          const ov = overrides[e.id]
+          if (!ov?.models) return e
+          return { ...e, models: ov.models }
+        })
+        await updateCredential(credential.id, { endpoints: folded, overrides: {} })
+        return
+      }
 
       let effectivePlan = plan
       if (widenedEndpoints) {
@@ -91,7 +121,7 @@ export function useModelDiscovery({
       const overrides = applyDiscoveredModels(credential.overrides, effectivePlan, models)
       await updateCredential(credential.id, { overrides })
     },
-    [credential, endpoint, plan, platform, updateCredential, updateCustomPlatform],
+    [credential, endpoint, liveEndpoints, livePlan, plan, platform, custom, updateCredential, updateCustomPlatform],
   )
 
   return { endpoint, discovered, state, discover, enableModels }

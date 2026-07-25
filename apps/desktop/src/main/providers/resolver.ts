@@ -1,6 +1,7 @@
 import { expandProviderModelEnv, type EffortLevel, type RemoteActiveProvider } from '@superone/shared/agent-types'
 import {
   CONSUMER_TASK,
+  effectiveEndpoints,
   familyBaseUrl,
   findPlan,
   findPlatform,
@@ -48,16 +49,24 @@ export function resolveService(consumer: ConsumerId, override?: ResolveOverride)
 
   // Only honor the binding's endpointId when this credential is the bound one.
   const usingBoundCredential = cred.id === binding?.credentialId
-  const selected = selectEndpoint(plan, consumer, usingBoundCredential ? binding?.endpointId : undefined, cred)
+  const endpoints = effectiveEndpoints(platform, plan, cred)
+  const selected = selectEndpoint(
+    plan,
+    consumer,
+    usingBoundCredential ? binding?.endpointId : undefined,
+    cred,
+    endpoints,
+  )
   if (!selected) return null
   const { endpoint, protocol } = selected
 
+  // Custom keys with credential.endpoints already folded overrides in; still allow binding.config merge.
   const merged = mergeEndpoint(endpoint, cred.overrides?.[endpoint.id], usingBoundCredential ? binding?.config : undefined)
 
   const modelMapping = Object.keys(merged.modelMapping).length > 0
     ? merged.modelMapping
     : protocol === 'openai-chat'
-      ? plan.endpoints
+      ? endpoints
           .filter((e) => e.protocols.includes('anthropic-messages'))
           .map((e) => mergeEndpoint(e, cred.overrides?.[e.id], usingBoundCredential ? binding?.config : undefined).modelMapping)
           .find((m) => Object.keys(m).length > 0)

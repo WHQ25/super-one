@@ -611,6 +611,7 @@ const appAPI = {
     secret?: string
     secretEnv?: string
     overrides?: Record<string, EndpointOverride>
+    endpoints?: ServiceEndpoint[]
     notes?: string
   }): Promise<Credential> => ipcRenderer.invoke(AgentIpcChannels.CREDENTIALS_CREATE, input),
   updateCredential: (
@@ -620,6 +621,7 @@ const appAPI = {
       secret?: string
       secretEnv?: string
       overrides?: Record<string, EndpointOverride>
+      endpoints?: ServiceEndpoint[] | null
       notes?: string
       sortOrder?: number
     },

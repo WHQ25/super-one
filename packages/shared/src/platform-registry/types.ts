@@ -70,6 +70,11 @@ export interface Credential {
   secret: string // enc:v1: via crypto/secret-store; '' for oauth/aws/gcp
   secretEnv?: string // read key from env var instead
   overrides?: Record<string /* endpointId */, EndpointOverride>
+  /**
+   * Custom platforms only. When non-empty, this key's full endpoint list (baseUrl, protocols,
+   * models, defaults) replaces plan.endpoints for resolve/UI. Builtin credentials leave this unset.
+   */
+  endpoints?: ServiceEndpoint[]
   notes: string
   sortOrder: number
 }

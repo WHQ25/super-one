@@ -9,18 +9,21 @@ export function TestConnectionButton({
   onTest,
   disabled,
   size = 'sm',
+  label,
 }: {
   state: EndpointTestState
   onTest: () => void
   disabled?: boolean
   size?: ComponentProps<typeof Button>['size']
+  /** Override default "Connection Test" label (e.g. per-endpoint). */
+  label?: string
 }) {
   const { t } = useTranslation()
   const testing = state.status === 'testing'
   return (
     <Button variant="outline" size={size} disabled={disabled || testing} onClick={onTest}>
       {testing ? <Loader2 className="size-4 animate-spin" /> : <Zap className="size-4" />}
-      {testing ? t('resources.providerDialog.testing') : t('resources.providerDialog.test')}
+      {testing ? t('resources.providerDialog.testing') : (label ?? t('resources.providerDialog.test'))}
     </Button>
   )
 }
@@ -28,11 +31,18 @@ export function TestConnectionButton({
 export function TestConnectionStatus({ state }: { state: EndpointTestState }) {
   const { t } = useTranslation()
   if (state.status === 'success') {
-    return <span className="text-[11px] text-success">{t('resources.providerDialog.connected')}</span>
+    const n = state.results.length
+    return (
+      <span className="text-[11px] text-success">
+        {n > 1
+          ? t('resources.providerDialog.connectedAll', { count: n })
+          : t('resources.providerDialog.connected')}
+      </span>
+    )
   }
   if (state.status === 'error') {
     return (
-      <span className="text-[11px] text-destructive">
+      <span className="min-w-0 break-words text-[11px] text-destructive">
         {t('resources.providerDialog.connectionFailed')}{state.message ? `: ${state.message}` : ''}
       </span>
     )

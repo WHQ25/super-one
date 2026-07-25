@@ -1208,6 +1208,8 @@ export type Messages = {
       defaultKeyName: string
       advanced: string
       claudeBaseUrl: string
+      capabilitiesNeedKey: string
+      capabilitiesPerKeyHint: string
       selectModel: string
       modelNone: string
       oneMillionHint: string
@@ -1243,10 +1245,12 @@ export type Messages = {
       fetchingModels: string
       chatProbing: string
       connected: string
+      connectedAll: string
       connectionFailed: string
       unknownError: string
       noAgentConfig: string
       test: string
+      testEndpoint: string
       save: string
       delete: string
       sync: string
@@ -3062,6 +3066,8 @@ export const en: Messages = {
       defaultKeyName: 'Key',
       advanced: 'Advanced Settings',
       claudeBaseUrl: 'Base URL (Claude Compatible)',
+      capabilitiesNeedKey: 'Select or add an API key to edit formats for that key.',
+      capabilitiesPerKeyHint: 'Formats and capabilities are saved on the selected key, not shared across keys.',
       selectModel: 'Select a Model',
       modelNone: 'None',
       oneMillionHint: 'Enable the 1M-token context window (adds the [1m] suffix).',
@@ -3097,10 +3103,12 @@ export const en: Messages = {
       fetchingModels: 'Fetching model list...',
       chatProbing: 'Model list OK, testing a real conversation...',
       connected: 'Connected ✓',
+      connectedAll: 'All {{count}} endpoints connected ✓',
       connectionFailed: 'Connection failed',
       unknownError: 'Unknown error',
       noAgentConfig: 'No config for this agent',
       test: 'Connection Test',
+      testEndpoint: 'Test',
       save: 'Save',
       delete: 'Delete',
       sync: 'Sync from Preset',

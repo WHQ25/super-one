@@ -10,7 +10,9 @@ import { cn } from '@superone/ui/lib/utils'
 import {
   applyCapabilitiesToPlan,
   capabilityEndpoints,
+  cloneEndpoints,
   defaultOverridesForPlan,
+  foldOverridesIntoEndpoints,
   isCustomPlatform,
   planCapabilities,
   type CapabilityTask,
@@ -120,6 +122,7 @@ function PlanSection({
     <>
       <CredentialTabs
         platformId={platform.id}
+        platform={platform}
         plan={plan}
         planCreds={planCreds}
         takenNames={takenNames}
@@ -179,7 +182,14 @@ function AdvancedConfigSection({
       </button>
       {open && (
         <>
-          {isCustom && <CustomCapabilitiesSection platform={platform} plan={plan} />}
+          {isCustom && (
+            <CustomCapabilitiesSection
+              key={selected?.id ?? 'no-key'}
+              platform={platform}
+              plan={plan}
+              credential={selected}
+            />
+          )}
           {pending ? (
             <div className="flex flex-col gap-4 rounded-md border border-border bg-muted/30 p-3">
               <OverridesEditor platform={platform} plan={plan} value={pendingOverrides} onChange={onPendingOverridesChange} />
@@ -271,36 +281,49 @@ function PlatformDetail({ platform }: { platform: Platform }) {
 
 // --- custom platform dialog --------------------------------------------------
 
-// Post-create capability editor (a subsection of Advanced Settings): re-pick formats/tasks for an existing
-// custom platform and persist the rebuilt endpoints, preserving each endpoint's defaults (extraEnv / claude
-// model mapping) by id.
-function CustomCapabilitiesSection({ platform, plan }: { platform: Platform; plan: Plan }) {
+// Per-key capability editor: formats/tasks live on the selected credential.endpoints for custom platforms.
+function CustomCapabilitiesSection({
+  platform,
+  plan,
+  credential,
+}: {
+  platform: Platform
+  plan: Plan
+  credential?: Credential
+}) {
   const { t } = useTranslation()
-  const updateCustomPlatform = useSettingsStore((s) => s.updateCustomPlatform)
-  const initial = useMemo(() => planCapabilities(plan), [plan])
+  const updateCredential = useSettingsStore((s) => s.updateCredential)
+  const keyEndpoints = credential?.endpoints?.length ? credential.endpoints : plan.endpoints
+  const seedPlan = useMemo(() => ({ ...plan, endpoints: keyEndpoints }), [plan, keyEndpoints])
+  const initial = useMemo(() => planCapabilities(seedPlan), [seedPlan])
   const baseUrl = initial.baseUrl
   const { families, familyTasks, familyExtras, selection, toggleFamily, toggleTask, toggleExtra } = useCapabilityState(initial)
   const [busy, setBusy] = useState(false)
 
-  const endpoints = applyCapabilitiesToPlan(plan, toPlanCapabilities(selection), baseUrl)
-  const dirty = JSON.stringify(plan.endpoints) !== JSON.stringify(endpoints)
-  const canSave = endpoints.length > 0 && dirty
+  const endpoints = applyCapabilitiesToPlan(seedPlan, toPlanCapabilities(selection), baseUrl)
+  const dirty = JSON.stringify(keyEndpoints) !== JSON.stringify(endpoints)
+  const canSave = !!credential && endpoints.length > 0 && dirty
 
   const save = useCallback(async () => {
-    if (!canSave) return
+    if (!canSave || !credential) return
     setBusy(true)
     try {
-      const nextPlan: Plan = { ...plan, endpoints }
-      const next: Platform = { ...platform, plans: platform.plans.map((p) => (p.id === plan.id ? nextPlan : p)) }
-      await updateCustomPlatform(next)
+      await updateCredential(credential.id, { endpoints })
     } finally {
       setBusy(false)
     }
-  }, [canSave, endpoints, plan, platform, updateCustomPlatform])
+  }, [canSave, credential, endpoints, updateCredential])
+
+  if (!credential) {
+    return (
+      <p className="text-xs text-muted-foreground">{t('resources.providers.capabilitiesNeedKey')}</p>
+    )
+  }
 
   return (
     <div className="flex flex-col gap-2.5">
       <span className="text-xs font-medium text-muted-foreground">{t('resources.providers.capabilities')}</span>
+      <span className="text-[11px] text-muted-foreground">{t('resources.providers.capabilitiesPerKeyHint')}</span>
       <CapabilityPicker
         families={families}
         familyTasks={familyTasks}
@@ -347,7 +370,8 @@ function CustomPlatformForm({ onDone }: { onDone: (createdId?: string) => void }
   const supportedTasks = useMemo(() => endpointsSupportedTasks(endpoints), [endpoints])
   const canSubmit = !!name.trim() && !!baseUrl.trim() && endpoints.length > 0
   const { state: testState, run: runTest } = useEndpointTest()
-  const test = useCallback(() => void runTest(endpoints.slice(0, 1), secret.trim()), [runTest, endpoints, secret])
+  // Probe every selected family endpoint independently; overall success requires all to pass.
+  const test = useCallback(() => void runTest(endpoints, secret.trim()), [runTest, endpoints, secret])
 
   const [discoverState, setDiscoverState] = useState<DiscoverState>({ status: 'idle' })
   const runDiscover = useCallback(async () => {
@@ -376,17 +400,19 @@ function CustomPlatformForm({ onDone }: { onDone: (createdId?: string) => void }
     setBusy(true)
     try {
       const id = `custom:${crypto.randomUUID()}`
-      const plan: Plan = { id: 'api', name: 'API', auth: 'api-key', endpoints }
+      // Plan keeps a seed template for "Add key"; the first credential owns the live endpoints.
+      const plan: Plan = { id: 'api', name: 'API', auth: 'api-key', endpoints: cloneEndpoints(endpoints) }
       const platform: Platform = { id, brand: 'custom', name: name.trim(), plans: [plan] }
       let overrides: Record<string, EndpointOverride> = {}
       for (const m of customModels) overrides = upsertCustomModel(overrides, plan, m)
+      const keyEndpoints = foldOverridesIntoEndpoints(cloneEndpoints(endpoints), overrides)
       await createCustomPlatform(platform)
       await createCredential({
         platformId: id,
         planId: 'api',
         name: keyName.trim() || t('resources.providers.defaultKeyName'),
         secret: secret.trim(),
-        overrides: Object.keys(overrides).length > 0 ? overrides : undefined,
+        endpoints: keyEndpoints,
       })
       onDone(id)
     } finally {

@@ -27,6 +27,7 @@ import type { CapabilityTask, DiscoveredOpenAiModel } from '@superone/shared/age
 import {
   buildCatalogModelIndex,
   catalogProviderIdFor,
+  effectiveEndpoints,
   endpointServes,
   isCustomPlatform,
   mergeModelMapping,
@@ -216,6 +217,13 @@ export function PlatformModelsPanel({
   )
   const selectedCred: Credential | undefined = planCreds.find((c) => c.id === selectedKeyId) ?? planCreds[0]
 
+  // Custom keys own their endpoint list; builtin still uses plan.endpoints (+ overrides).
+  const liveEndpoints = useMemo(
+    () => effectiveEndpoints(platform, plan, selectedCred),
+    [platform, plan, selectedCred],
+  )
+  const livePlan = useMemo(() => ({ ...plan, endpoints: liveEndpoints }), [plan, liveEndpoints])
+
   const catProvider = useMemo(
     () => (catalog ? matchCatalogProvider(catalog.providers, platform, plan) : null),
     [catalog, platform, plan],
@@ -249,24 +257,24 @@ export function PlatformModelsPanel({
   const annotated = useMemo(
     () =>
       (catProvider?.models ?? [])
-        .map((m) => ({ m, endpoints: endpointsForTasks(plan, modelTasks(m)), iconMatched: hasModelIcon(m.id) }))
+        .map((m) => ({ m, endpoints: endpointsForTasks(livePlan, modelTasks(m)), iconMatched: hasModelIcon(m.id) }))
         .filter((x) => x.endpoints.length > 0)
         .sort((a, b) => (b.m.releaseDate ?? '').localeCompare(a.m.releaseDate ?? '')),
-    [catProvider, plan],
+    [catProvider, livePlan],
   )
 
   // Resolved model pool per endpoint — the "all on" baseline the enabled subset is measured against.
   const endpointPools = useMemo(() => {
     const map = new Map<string, EndpointModel[]>()
-    for (const e of plan.endpoints) map.set(e.id, resolveEndpointModels(platform, plan, e, catalog ?? undefined))
+    for (const e of liveEndpoints) map.set(e.id, resolveEndpointModels(platform, livePlan, e, catalog ?? undefined))
     return map
-  }, [platform, plan, catalog])
+  }, [platform, livePlan, liveEndpoints, catalog])
 
   // Model ids referenced by each endpoint's effective model mapping (defaults ← credential override).
   // These are always-on and cannot be disabled — the harness routes to them.
   const mappedByEndpoint = useMemo(() => {
     const map = new Map<string, Set<string>>()
-    for (const e of plan.endpoints) {
+    for (const e of liveEndpoints) {
       const mapping = mergeModelMapping(e.defaults?.modelMapping, selectedCred?.overrides?.[e.id]?.modelMapping)
       const ids = new Set<string>()
       // Mapping ids may carry the `[1m]` context suffix (e.g. glm-5.2[1m]); catalog ids don't — match on the base id.
@@ -274,22 +282,47 @@ export function PlatformModelsPanel({
       map.set(e.id, ids)
     }
     return map
-  }, [plan, selectedCred])
+  }, [liveEndpoints, selectedCred])
+
+  const modelsOnEndpoint = useCallback(
+    (epId: string): EndpointModel[] => {
+      if (isCustom) {
+        return liveEndpoints.find((e) => e.id === epId)?.models ?? []
+      }
+      return selectedCred?.overrides?.[epId]?.models ?? []
+    },
+    [isCustom, liveEndpoints, selectedCred],
+  )
 
   // Enabling is opt-in: a model is off unless the user explicitly enabled it, or the mapping locks it on.
   const modelState = useCallback(
     (endpoints: ServiceEndpoint[], modelId: string): { enabled: boolean; locked: boolean } => {
       const locked = endpoints.some((ep) => mappedByEndpoint.get(ep.id)?.has(modelId))
       if (locked) return { enabled: true, locked: true }
-      const enabled = endpoints.some((ep) => (selectedCred?.overrides?.[ep.id]?.models ?? []).some((x) => x.id === modelId))
+      const enabled = endpoints.some((ep) => modelsOnEndpoint(ep.id).some((x) => x.id === modelId))
       return { enabled, locked: false }
     },
-    [mappedByEndpoint, selectedCred],
+    [mappedByEndpoint, modelsOnEndpoint],
   )
 
   const toggle = useCallback(
     (endpoints: ServiceEndpoint[], model: EndpointModel, next: boolean) => {
       if (!selectedCred || endpoints.length === 0) return
+      if (isCustom) {
+        const nextEndpoints = liveEndpoints.map((e) => {
+          if (!endpoints.some((x) => x.id === e.id)) return e
+          const pool = endpointPools.get(e.id) ?? []
+          const existing = e.models ?? []
+          const enabledIds = new Set(existing.map((m) => m.id))
+          if (next) enabledIds.add(model.id)
+          else enabledIds.delete(model.id)
+          const custom = existing.filter((m) => !pool.some((p) => p.id === m.id))
+          const nextModels = [...pool.filter((m) => enabledIds.has(m.id)), ...custom]
+          return { ...e, models: nextModels.length > 0 ? nextModels : undefined }
+        })
+        void updateCredential(selectedCred.id, { endpoints: nextEndpoints })
+        return
+      }
       const overrides = { ...selectedCred.overrides }
       for (const ep of endpoints) {
         const pool = endpointPools.get(ep.id) ?? []
@@ -308,7 +341,7 @@ export function PlatformModelsPanel({
       }
       void updateCredential(selectedCred.id, { overrides })
     },
-    [selectedCred, endpointPools, updateCredential],
+    [selectedCred, endpointPools, updateCredential, isCustom, liveEndpoints],
   )
 
   // A model id belongs to the catalog if the endpoint's resolved pool contains it; anything else in
@@ -317,25 +350,49 @@ export function PlatformModelsPanel({
     (endpointId: string, modelId: string) => (endpointPools.get(endpointId) ?? []).some((m) => m.id === modelId),
     [endpointPools],
   )
-  const customModels = useMemo(
-    () => excludeDiscoveredIds(listCustomModels(selectedCred?.overrides, isCatalogModel), discovered),
-    [selectedCred, isCatalogModel, discovered],
-  )
-  const supportedTasks = useMemo(() => planSupportedTasks(plan), [plan])
+  const customModels = useMemo(() => {
+    if (isCustom) {
+      const fakeOverrides: Record<string, { models?: EndpointModel[] }> = {}
+      for (const e of liveEndpoints) {
+        if (e.models?.length) fakeOverrides[e.id] = { models: e.models }
+      }
+      return excludeDiscoveredIds(listCustomModels(fakeOverrides, isCatalogModel), discovered)
+    }
+    return excludeDiscoveredIds(listCustomModels(selectedCred?.overrides, isCatalogModel), discovered)
+  }, [isCustom, liveEndpoints, selectedCred, isCatalogModel, discovered])
+  const supportedTasks = useMemo(() => planSupportedTasks(livePlan), [livePlan])
 
   const addCustom = useCallback(
     (model: CustomModel) => {
       if (!selectedCred) return
-      void updateCredential(selectedCred.id, { overrides: upsertCustomModel(selectedCred.overrides, plan, model) })
+      if (isCustom) {
+        const overrides = upsertCustomModel({}, livePlan, model)
+        const nextEndpoints = liveEndpoints.map((e) => {
+          const models = overrides[e.id]?.models
+          if (!models) return e
+          return { ...e, models: [...(e.models ?? []), ...models.filter((m) => !(e.models ?? []).some((x) => x.id === m.id))] }
+        })
+        void updateCredential(selectedCred.id, { endpoints: nextEndpoints })
+        return
+      }
+      void updateCredential(selectedCred.id, { overrides: upsertCustomModel(selectedCred.overrides, livePlan, model) })
     },
-    [selectedCred, plan, updateCredential],
+    [selectedCred, livePlan, updateCredential, isCustom, liveEndpoints],
   )
   const removeCustom = useCallback(
     (id: string) => {
       if (!selectedCred) return
+      if (isCustom) {
+        const nextEndpoints = liveEndpoints.map((e) => ({
+          ...e,
+          models: e.models?.filter((m) => m.id !== id),
+        }))
+        void updateCredential(selectedCred.id, { endpoints: nextEndpoints })
+        return
+      }
       void updateCredential(selectedCred.id, { overrides: removeCustomModel(selectedCred.overrides, id) })
     },
-    [selectedCred, updateCredential],
+    [selectedCred, updateCredential, isCustom, liveEndpoints],
   )
 
   // Enabling may synthesize/widen family endpoints (openai/anthropic/google) before writing. Disabling

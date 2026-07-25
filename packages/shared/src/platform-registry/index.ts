@@ -16,17 +16,13 @@ export * from './types'
 export * from './capabilities'
 export * from './merge'
 export * from './relay-discovery'
+export * from './effective-endpoints'
 export { BUILTIN_PLATFORMS } from './builtin'
 
 // --- lookups -----------------------------------------------------------------
 
 export function findPlatform(platforms: Platform[], platformId: string): Platform | undefined {
   return platforms.find((p) => p.id === platformId)
-}
-
-/** A user-created platform (id `custom:<uuid>`) — no catalog, capabilities editable, manual model mapping. */
-export function isCustomPlatform(platform: Platform): boolean {
-  return platform.id.startsWith('custom:')
 }
 
 export function findPlan(platform: Platform | undefined, planId: string): Plan | undefined {
@@ -70,7 +66,9 @@ export function selectProtocol(
 }
 
 /**
- * Pick the endpoint + protocol that satisfies a consumer within a plan.
+ * Pick the endpoint + protocol that satisfies a consumer.
+ * `endpoints` defaults to `plan.endpoints`; callers that support per-key custom endpoints
+ * should pass `effectiveEndpoints(platform, plan, credential)` instead.
  * chat:claude/chat:codex additionally require a harness-compatible protocol.
  * An explicit endpointId wins when present and valid.
  */
@@ -78,7 +76,8 @@ export function selectEndpoint(
   plan: Plan,
   consumer: ConsumerId,
   endpointId?: string,
-  credential?: Pick<Credential, 'overrides'>,
+  credential?: Pick<Credential, 'overrides' | 'endpoints'>,
+  endpoints: ServiceEndpoint[] = plan.endpoints,
 ): SelectedEndpoint | undefined {
   const task = CONSUMER_TASK[consumer]
   const harness = consumer === 'chat:claude' ? 'claude' : consumer === 'chat:codex' ? 'codex' : undefined
@@ -86,15 +85,21 @@ export function selectEndpoint(
     const protocol = selectProtocol(e, task, harness)
     if (!protocol) return undefined
     if (harness) return protocol
-    // Media consumers derive capability from the credential's enabled models (each tagged with the
-    // tasks it serves) — a provider serves image/video/tts/asr only once such a model is enabled.
-    // No credential context → protocol capability only.
+    // Media: require an explicit enable list. Builtin uses overrides[ep].models; custom keys with
+    // credential.endpoints store enables on endpoint.models. No credential → protocol only.
     if (!credential) return protocol
-    const enabled = (credential.overrides?.[e.id]?.models ?? []).some((m) => !m.tasks || m.tasks.includes(task))
-    return enabled ? protocol : undefined
+    const overrideModels = credential.overrides?.[e.id]?.models
+    if (overrideModels !== undefined) {
+      return overrideModels.some((m) => !m.tasks || m.tasks.includes(task)) ? protocol : undefined
+    }
+    if (credential.endpoints && credential.endpoints.length > 0) {
+      const models = e.models ?? []
+      return models.some((m) => !m.tasks || m.tasks.includes(task)) ? protocol : undefined
+    }
+    return undefined
   }
   if (endpointId) {
-    const explicit = plan.endpoints.find((e) => e.id === endpointId)
+    const explicit = endpoints.find((e) => e.id === endpointId)
     if (explicit) {
       const protocol = pick(explicit)
       if (protocol) return { endpoint: explicit, protocol }
@@ -102,12 +107,12 @@ export function selectEndpoint(
   }
   if (harness) {
     for (const proto of HARNESS_CHAT_PROTOCOLS[harness]) {
-      const endpoint = plan.endpoints.find((e) => e.protocols.includes(proto) && protocolServes(proto, task))
+      const endpoint = endpoints.find((e) => e.protocols.includes(proto) && protocolServes(proto, task))
       if (endpoint) return { endpoint, protocol: proto }
     }
     return undefined
   }
-  for (const e of plan.endpoints) {
+  for (const e of endpoints) {
     const protocol = pick(e)
     if (protocol) return { endpoint: e, protocol }
   }

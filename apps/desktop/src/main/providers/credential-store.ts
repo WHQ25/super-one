@@ -6,6 +6,7 @@ import type {
   Credential,
   EndpointOverride,
   Platform,
+  ServiceEndpoint,
 } from '@superone/shared/platform-registry'
 import { getDb, maskApiKey } from '../database'
 import { decryptSecret, encryptSecret, isEncryptedSecret } from '../crypto/secret-store'
@@ -29,11 +30,13 @@ interface CredentialRow {
   secret: string
   secret_env: string
   overrides_json: string
+  endpoints_json?: string | null
   notes: string
   sort_order: number
 }
 
 function rowToCredential(row: CredentialRow): Credential {
+  const endpoints = safeParse<ServiceEndpoint[] | null>(row.endpoints_json ?? null, null)
   return {
     id: row.id,
     platformId: row.platform_id,
@@ -42,6 +45,7 @@ function rowToCredential(row: CredentialRow): Credential {
     secret: row.secret,
     secretEnv: row.secret_env || undefined,
     overrides: safeParse<Record<string, EndpointOverride>>(row.overrides_json, {}),
+    endpoints: endpoints && endpoints.length > 0 ? endpoints : undefined,
     notes: row.notes,
     sortOrder: row.sort_order,
   }
@@ -59,6 +63,8 @@ export interface CreateCredentialInput {
   secret?: string
   secretEnv?: string
   overrides?: Record<string, EndpointOverride>
+  /** Custom platforms: full per-key endpoint list. */
+  endpoints?: ServiceEndpoint[]
   notes?: string
 }
 
@@ -67,6 +73,7 @@ export interface UpdateCredentialInput {
   secret?: string
   secretEnv?: string
   overrides?: Record<string, EndpointOverride>
+  endpoints?: ServiceEndpoint[] | null
   notes?: string
   sortOrder?: number
 }
@@ -89,6 +96,12 @@ export function getCredentialDecrypted(id: string): Credential | undefined {
   return { ...cred, secret: decryptSecret(cred.secret) }
 }
 
+function serializeEndpoints(endpoints: ServiceEndpoint[] | null | undefined): string | null {
+  if (endpoints === null) return null
+  if (!endpoints || endpoints.length === 0) return null
+  return JSON.stringify(endpoints)
+}
+
 export function createCredential(input: CreateCredentialInput): Credential {
   const now = new Date().toISOString()
   const id = randomUUID()
@@ -97,8 +110,8 @@ export function createCredential(input: CreateCredentialInput): Credential {
   getDb()
     .prepare(
       `INSERT INTO credentials
-        (id, platform_id, plan_id, name, secret, secret_env, overrides_json, notes, sort_order, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (id, platform_id, plan_id, name, secret, secret_env, overrides_json, endpoints_json, notes, sort_order, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       id,
@@ -108,6 +121,7 @@ export function createCredential(input: CreateCredentialInput): Credential {
       encryptSecret(input.secret ?? ''),
       input.secretEnv ?? '',
       JSON.stringify(input.overrides ?? {}),
+      serializeEndpoints(input.endpoints),
       input.notes ?? '',
       maxOrder + 1,
       now,
@@ -124,10 +138,12 @@ export function updateCredential(id: string, patch: UpdateCredentialInput): Cred
   const nextSecret = skipSecret
     ? existing.secret
     : encryptSecret(patch.secret ?? decryptSecret(existing.secret))
+  const nextEndpoints =
+    patch.endpoints !== undefined ? serializeEndpoints(patch.endpoints) : existing.endpoints_json
   getDb()
     .prepare(
       `UPDATE credentials SET
-        name = ?, secret = ?, secret_env = ?, overrides_json = ?, notes = ?, sort_order = ?, updated_at = ?
+        name = ?, secret = ?, secret_env = ?, overrides_json = ?, endpoints_json = ?, notes = ?, sort_order = ?, updated_at = ?
        WHERE id = ?`,
     )
     .run(
@@ -135,6 +151,7 @@ export function updateCredential(id: string, patch: UpdateCredentialInput): Cred
       nextSecret,
       patch.secretEnv ?? existing.secret_env,
       patch.overrides ? JSON.stringify(patch.overrides) : existing.overrides_json,
+      nextEndpoints,
       patch.notes ?? existing.notes,
       patch.sortOrder ?? existing.sort_order,
       new Date().toISOString(),

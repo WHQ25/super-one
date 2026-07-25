@@ -5,7 +5,15 @@ import { Button } from '@superone/ui/components/ui/button'
 import { Input } from '@superone/ui/components/ui/input'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { cn } from '@superone/ui/lib/utils'
-import type { Credential, EndpointOverride, Plan } from '@superone/shared/platform-registry'
+import {
+  cloneEndpoints,
+  foldOverridesIntoEndpoints,
+  isCustomPlatformId,
+  type Credential,
+  type EndpointOverride,
+  type Plan,
+  type Platform,
+} from '@superone/shared/platform-registry'
 import { useSettingsStore } from '@/stores/settings'
 import { pruneOverrides } from './CredentialConfig'
 import { planTestEndpoints, useEndpointTest } from './test-endpoints'
@@ -35,7 +43,9 @@ function KeyForm({
   platformId,
   planId,
   plan,
+  platform,
   credential,
+  seedFromCredential,
   pendingOverrides,
   takenNames,
   onCancel,
@@ -44,7 +54,10 @@ function KeyForm({
   platformId: string
   planId: string
   plan: Plan
+  platform?: Platform
   credential?: Credential
+  /** When adding a key on a custom platform, clone endpoints from this key (else plan template). */
+  seedFromCredential?: Credential
   pendingOverrides: Record<string, EndpointOverride>
   takenNames: string[]
   onCancel: () => void
@@ -61,8 +74,16 @@ function KeyForm({
 
   const overrides = credential?.overrides ?? pendingOverrides
   const test = useCallback(
-    () => void runTest(planTestEndpoints(plan, overrides), secret.trim(), credential?.id),
-    [runTest, plan, overrides, secret, credential?.id],
+    () =>
+      void runTest(
+        planTestEndpoints(plan, overrides, {
+          platform,
+          credential: credential ?? { overrides, endpoints: seedFromCredential?.endpoints },
+        }),
+        secret.trim(),
+        credential?.id,
+      ),
+    [runTest, plan, overrides, secret, credential, platform, seedFromCredential?.endpoints],
   )
 
   const effectiveName = name.trim() || credential?.name || 'Key'
@@ -89,12 +110,24 @@ function KeyForm({
         setSecret('')
       } else {
         const pruned = pruneOverrides(pendingOverrides)
+        const isCustom = isCustomPlatformId(platformId)
+        const seedEndpoints =
+          seedFromCredential?.endpoints?.length
+            ? cloneEndpoints(seedFromCredential.endpoints)
+            : cloneEndpoints(plan.endpoints)
+        const keyEndpoints = isCustom
+          ? foldOverridesIntoEndpoints(seedEndpoints, pruned)
+          : undefined
         const created = await createCredential({
           platformId,
           planId,
           name: effectiveName,
           secret: secret.trim(),
-          ...(Object.keys(pruned).length > 0 ? { overrides: pruned } : {}),
+          ...(isCustom
+            ? { endpoints: keyEndpoints }
+            : Object.keys(pruned).length > 0
+              ? { overrides: pruned }
+              : {}),
         })
         onCreated(created.id)
       }
@@ -111,6 +144,8 @@ function KeyForm({
     pendingOverrides,
     platformId,
     planId,
+    plan.endpoints,
+    seedFromCredential,
     createCredential,
     onCreated,
   ])
@@ -184,6 +219,7 @@ function KeyForm({
  */
 export function CredentialTabs({
   platformId,
+  platform,
   plan,
   planCreds,
   takenNames,
@@ -195,6 +231,7 @@ export function CredentialTabs({
   pendingOverrides,
 }: {
   platformId: string
+  platform?: Platform
   plan: Plan
   planCreds: Credential[]
   takenNames: string[]
@@ -207,6 +244,8 @@ export function CredentialTabs({
 }) {
   const { t } = useTranslation()
   const selected = adding ? undefined : planCreds.find((c) => c.id === selectedKeyId)
+  // When adding, seed from the previously selected key if any.
+  const seedFrom = planCreds.find((c) => c.id === selectedKeyId) ?? planCreds[0]
 
   const created = useCallback(
     (id: string) => {
@@ -248,8 +287,10 @@ export function CredentialTabs({
       {adding || !selected ? (
         <KeyForm
           platformId={platformId}
+          platform={platform}
           planId={plan.id}
           plan={plan}
+          seedFromCredential={seedFrom}
           pendingOverrides={pendingOverrides}
           takenNames={takenNames}
           onCancel={onDoneAdd}
@@ -259,6 +300,7 @@ export function CredentialTabs({
         <KeyForm
           key={selected.id}
           platformId={platformId}
+          platform={platform}
           planId={plan.id}
           plan={plan}
           credential={selected}

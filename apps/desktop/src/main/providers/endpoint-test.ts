@@ -1,5 +1,10 @@
 import type { EndpointTestResult } from '@superone/shared/agent-types'
-import { PROTOCOL_FAMILY, type ProtocolFamily, type ServiceEndpoint } from '@superone/shared/platform-registry'
+import {
+  familyBaseUrl,
+  PROTOCOL_FAMILY,
+  type ProtocolFamily,
+  type ServiceEndpoint,
+} from '@superone/shared/platform-registry'
 
 const DEFAULT_BASE_URL: Record<ProtocolFamily, string> = {
   anthropic: 'https://api.anthropic.com',
@@ -10,6 +15,16 @@ const DEFAULT_BASE_URL: Record<ProtocolFamily, string> = {
 
 const TEST_TIMEOUT_MS = 10000
 
+/** Family of a single endpoint — never borrowed from siblings. */
+export function endpointFamily(endpoint: ServiceEndpoint): ProtocolFamily {
+  return PROTOCOL_FAMILY[endpoint.protocols[0]]
+}
+
+/**
+ * Models-list URL for one endpoint. Uses only that endpoint's baseUrl + family
+ * (via familyBaseUrl, matching resolveService) so dual anthropic+openai plans
+ * never probe one wire with the other's path or auth.
+ */
 export function modelsUrl(family: ProtocolFamily, baseUrl: string): string {
   const root = (baseUrl || DEFAULT_BASE_URL[family]).replace(/\/+$/, '')
   if (family === 'google') return `${root.replace(/\/v1(beta)?$/, '')}/v1beta/models`
@@ -22,10 +37,15 @@ export function authHeaders(family: ProtocolFamily, apiKey: string): Record<stri
   return { Authorization: `Bearer ${apiKey}` }
 }
 
+export function testEndpointModelsUrl(endpoint: ServiceEndpoint): string {
+  const family = endpointFamily(endpoint)
+  return modelsUrl(family, familyBaseUrl(family, endpoint.baseUrl))
+}
+
 /** Tests one addressable service by GETing its models-list endpoint; 2xx = success. */
 export async function testServiceEndpoint(endpoint: ServiceEndpoint, apiKey: string): Promise<EndpointTestResult> {
-  const family = PROTOCOL_FAMILY[endpoint.protocols[0]]
-  const url = modelsUrl(family, endpoint.baseUrl)
+  const family = endpointFamily(endpoint)
+  const url = testEndpointModelsUrl(endpoint)
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), TEST_TIMEOUT_MS)
   try {
@@ -47,8 +67,11 @@ export async function testServiceEndpoint(endpoint: ServiceEndpoint, apiKey: str
   }
 }
 
+/**
+ * Test every endpoint independently (parallel). Each keeps its own baseUrl, family,
+ * and auth headers — no first-endpoint-only shortcut that mixed dual-protocol plans.
+ */
 export async function testServiceEndpoints(endpoints: ServiceEndpoint[], apiKey: string): Promise<EndpointTestResult[]> {
-  const first = endpoints[0]
-  if (!first) return []
-  return [await testServiceEndpoint(first, apiKey)]
+  if (endpoints.length === 0) return []
+  return Promise.all(endpoints.map((endpoint) => testServiceEndpoint(endpoint, apiKey)))
 }

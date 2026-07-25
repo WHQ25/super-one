@@ -9,10 +9,11 @@ import {
 } from './plan-feedback'
 import {
   applyStickyMarks,
-  getDraftMark,
+  getDraftMarks,
   getMarkByCommentId,
-  markTopRightViewport,
+  getMarksByCommentId,
   quoteFromLines,
+  selectionTopRightViewport,
   type ViewportCorner,
 } from './plan-annotation-dom'
 import { CopyableMarkdown } from './CopyableMarkdown'
@@ -66,32 +67,36 @@ export function PlanLineReview({
   }, [note, onSelectionChange])
 
   const recomputePins = useCallback(() => {
+    const root = contentRef.current
     const next: Record<string, ViewportCorner> = {}
+    if (root) {
+      for (const c of comments) {
+        const fragments = getMarksByCommentId(root, c.id)
+        const corner = selectionTopRightViewport(fragments, PIN)
+        if (corner) next[c.id] = corner
+      }
+    }
+    // Fallback to cached first fragment if DOM not ready
     for (const [id, mark] of Object.entries(markElsRef.current)) {
-      const corner = markTopRightViewport(mark, PIN)
+      if (next[id]) continue
+      const corner = selectionTopRightViewport([mark], PIN)
       if (corner) next[id] = corner
     }
     setPinPos(next)
 
     const open = noteRef.current
-    if (!open) {
+    if (!open || !root) {
       setNotePos(null)
       return
     }
-    let mark: HTMLElement | null = null
-    if (open.mode === 'edit' && open.commentId) {
-      mark = markElsRef.current[open.commentId] ?? null
-    } else {
-      mark = contentRef.current ? getDraftMark(contentRef.current) : null
-    }
-    if (mark) {
-      const corner = markTopRightViewport(mark, PIN)
-      // Open note sits a bit further below the selection / pin
-      setNotePos(corner ? { top: corner.top + PIN + 14, left: corner.left - 12 } : null)
-    } else {
-      setNotePos(null)
-    }
-  }, [])
+    const fragments =
+      open.mode === 'edit' && open.commentId
+        ? getMarksByCommentId(root, open.commentId)
+        : getDraftMarks(root)
+    const corner = selectionTopRightViewport(fragments, PIN)
+    // Open note hangs under the overall selection top-right
+    setNotePos(corner ? { top: corner.top + PIN + 14, left: corner.left - 12 } : null)
+  }, [comments])
 
   const reapplyMarksAndPins = useCallback(() => {
     const root = contentRef.current

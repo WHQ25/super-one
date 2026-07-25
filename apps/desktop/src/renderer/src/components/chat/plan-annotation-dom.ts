@@ -3,11 +3,9 @@
 export const STICKY_ID_ATTR = 'data-plan-sticky-id'
 export const STICKY_DRAFT_ATTR = 'data-plan-sticky-draft'
 
-export const STICKY_MARK_CLASS =
-  'plan-sticky-mark rounded-[2px] bg-yellow-300/55 text-inherit dark:bg-yellow-400/25 [box-decoration-break:clone] [-webkit-box-decoration-break:clone]'
-
-export const STICKY_DRAFT_CLASS =
-  'plan-sticky-draft rounded-[2px] bg-amber-300/70 text-inherit ring-1 ring-amber-400/50 dark:bg-amber-400/30 [box-decoration-break:clone] [-webkit-box-decoration-break:clone]'
+/** Classes only — pen-stroke look lives in styles/index.css (.plan-sticky-mark). */
+export const STICKY_MARK_CLASS = 'plan-sticky-mark'
+export const STICKY_DRAFT_CLASS = 'plan-sticky-mark plan-sticky-draft'
 
 type TextPart = { node: Text; start: number; text: string }
 
@@ -239,46 +237,54 @@ export function wrapQuoteAsMark(
   return wrapQuoteAsMarks(root, quote, attrs)[0] ?? null
 }
 
-/** Viewport (fixed) coordinates for the top-right of a mark's first line. */
+/** Viewport (fixed) coordinates for pin / note placement. */
 export interface ViewportCorner {
   top: number
   left: number
 }
 
-/**
- * Top-right corner of the **first line** of the highlight, in viewport coords.
- */
-export function markTopRightViewport(mark: HTMLElement, pinSize = 18): ViewportCorner | null {
-  const rects = [...mark.getClientRects()].filter((r) => r.width > 0 && r.height > 0)
-  const first = rects[0]
-  if (!first) {
-    const m = mark.getBoundingClientRect()
-    if (m.width <= 0 && m.height <= 0) return null
-    return {
-      top: m.top - pinSize / 2,
-      left: m.right - pinSize / 2,
+function collectMarkRects(marks: HTMLElement[]): DOMRect[] {
+  const out: DOMRect[] = []
+  for (const mark of marks) {
+    const rects = [...mark.getClientRects()].filter((r) => r.width > 0 && r.height > 0)
+    if (rects.length > 0) out.push(...rects)
+    else {
+      const m = mark.getBoundingClientRect()
+      if (m.width > 0 || m.height > 0) out.push(m)
     }
   }
+  return out
+}
+
+/**
+ * Top-right of the **entire selection** (union of all mark fragments):
+ * min(top) + max(right) — so multi-line highlights pin to the overall NE corner.
+ */
+export function selectionTopRightViewport(
+  marks: HTMLElement[],
+  pinSize = 18,
+): ViewportCorner | null {
+  const rects = collectMarkRects(marks)
+  if (rects.length === 0) return null
+  let minTop = Infinity
+  let maxRight = -Infinity
+  for (const r of rects) {
+    minTop = Math.min(minTop, r.top)
+    maxRight = Math.max(maxRight, r.right)
+  }
   return {
-    top: first.top - pinSize / 2,
-    left: first.right - pinSize / 2,
+    top: minTop - pinSize / 2,
+    left: maxRight - pinSize / 2,
   }
 }
 
-/** Prefer the topmost mark fragment for pin placement. */
+/** @deprecated use selectionTopRightViewport on all fragments */
+export function markTopRightViewport(mark: HTMLElement, pinSize = 18): ViewportCorner | null {
+  return selectionTopRightViewport([mark], pinSize)
+}
+
 export function markTopRightFromMarks(marks: HTMLElement[], pinSize = 18): ViewportCorner | null {
-  if (marks.length === 0) return null
-  let best: ViewportCorner | null = null
-  let bestTop = Infinity
-  for (const mark of marks) {
-    const corner = markTopRightViewport(mark, pinSize)
-    if (!corner) continue
-    if (corner.top < bestTop) {
-      bestTop = corner.top
-      best = corner
-    }
-  }
-  return best
+  return selectionTopRightViewport(marks, pinSize)
 }
 
 export function getMarkByCommentId(root: HTMLElement, id: string): HTMLElement | null {

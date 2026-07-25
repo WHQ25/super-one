@@ -68,5 +68,8 @@ skills-lock.json
 # WorkBuddy 
 .workbuddy
 
+# Grok
+.grok
+
 # Temp Docs
 docs/temp

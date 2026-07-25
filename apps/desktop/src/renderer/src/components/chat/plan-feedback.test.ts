@@ -4,7 +4,9 @@ import {
   formatPlanFeedback,
   inlinePlanSnippets,
   normalizeLineRange,
+  selectionTextToLineRange,
   splitPlanLines,
+  stripMdDecorations,
 } from './plan-feedback'
 
 const PLAN = '# Title\n\n- step A\n- step B\n- step C'
@@ -72,6 +74,31 @@ describe('formatPlanFeedback', () => {
     expect(out.split('\n\n').length).toBeGreaterThanOrEqual(3)
     expect(out).toContain('Comment:\na')
     expect(out).toContain('Comment:\nb')
+  })
+})
+
+describe('selectionTextToLineRange', () => {
+  it('maps exact selected source text to line numbers', () => {
+    expect(selectionTextToLineRange(PLAN, '- step A\n- step B')).toEqual({
+      startLine: 3,
+      endLine: 4,
+    })
+  })
+
+  it('maps soft markdown selection (rendered bold/heading text)', () => {
+    const md = '# Title\n\nDo **important** work\n\n- next'
+    // Rendered selection often drops `#` / `**`
+    expect(selectionTextToLineRange(md, 'Title')).toEqual({ startLine: 1, endLine: 1 })
+    expect(selectionTextToLineRange(md, 'important')).toEqual({ startLine: 3, endLine: 3 })
+  })
+
+  it('returns null for empty / unmatched selection', () => {
+    expect(selectionTextToLineRange(PLAN, '   ')).toBeNull()
+    expect(selectionTextToLineRange(PLAN, 'totally missing')).toBeNull()
+  })
+
+  it('stripMdDecorations collapses markdown noise', () => {
+    expect(stripMdDecorations('**Hello** [x](y)')).toBe('hello x')
   })
 })
 

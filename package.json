@@ -16,6 +16,7 @@
     "postinstall": "bun --filter @superone/desktop postinstall",
     "check-deps-lock": "node scripts/check-deps-lock.mjs",
     "dev": "bun --filter @superone/desktop dev",
+    "dev:cdp": "bun --filter @superone/desktop dev:cdp",
     "bench": "bun --filter @superone/desktop bench",
     "dev:web": "bun --filter @superone/web dev",
     "dev:relay": "bun --filter @superone/relay dev",

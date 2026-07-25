@@ -1,4 +1,4 @@
-import { trace } from '../agent/event-trace'
+import { trace } from '../../agent/event-trace'
 import { claudeMessagesToChatCompletions } from './request'
 import { chatCompletionToMessage, chatErrorToMessageError } from './response'
 import { createMessagesSseStreamFromChat } from './stream'

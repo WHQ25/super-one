@@ -81,21 +81,31 @@ describe('wrapRangeAsMarks (multi-line lists)', () => {
 })
 
 describe('highlightBandsFromMarks', () => {
-  it('merges same-line bands with a small gap (code-chip bridge)', () => {
-    // jsdom getClientRects is empty — stub via mock elements with rects
+  it('always spans min-left to max-right on the same line (fills code-chip gaps)', () => {
     const a = document.createElement('mark')
     const b = document.createElement('mark')
-    // Patch getClientRects
+    // Wide gap (50px) between fragments — still must merge on same line
     a.getClientRects = () =>
       [{ top: 100, left: 10, width: 40, height: 16, bottom: 116, right: 50, x: 10, y: 100, toJSON: () => ({}) }] as unknown as DOMRectList
     b.getClientRects = () =>
-      [{ top: 101, left: 58, width: 50, height: 16, bottom: 117, right: 108, x: 58, y: 101, toJSON: () => ({}) }] as unknown as DOMRectList
+      [{ top: 101, left: 100, width: 40, height: 16, bottom: 117, right: 140, x: 100, y: 101, toJSON: () => ({}) }] as unknown as DOMRectList
 
-    const bands = highlightBandsFromMarks([a, b], { gapMerge: 30, lineSlack: 4 })
+    const bands = highlightBandsFromMarks([a, b], { lineSlack: 6 })
     expect(bands).toHaveLength(1)
     expect(bands[0]!.left).toBe(10)
-    expect(bands[0]!.width).toBe(98) // 10..108
-    // uniform height (default strokeRatio 0.9)
+    expect(bands[0]!.width).toBe(130) // 10 → 140
     expect(bands[0]!.height).toBeCloseTo(16 * 0.9, 5)
+  })
+
+  it('keeps separate bands for different visual lines', () => {
+    const a = document.createElement('mark')
+    const b = document.createElement('mark')
+    a.getClientRects = () =>
+      [{ top: 100, left: 10, width: 40, height: 16, bottom: 116, right: 50, x: 10, y: 100, toJSON: () => ({}) }] as unknown as DOMRectList
+    b.getClientRects = () =>
+      [{ top: 130, left: 10, width: 40, height: 16, bottom: 146, right: 50, x: 10, y: 130, toJSON: () => ({}) }] as unknown as DOMRectList
+
+    const bands = highlightBandsFromMarks([a, b])
+    expect(bands).toHaveLength(2)
   })
 })

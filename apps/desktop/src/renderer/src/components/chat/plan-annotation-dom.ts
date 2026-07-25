@@ -288,18 +288,17 @@ export interface HighlightBand {
 
 /**
  * Build uniform pen strokes from mark fragments.
- * - Same stroke height for every band
- * - Same-line bands with small gaps (e.g. over inline code chips) are merged
- *   so the highlight looks continuous
+ *
+ * **Reliable continuity:** every fragment on the same visual line is always
+ * collapsed to ONE band from min(left) → max(right). Gaps over inline code
+ * chips, links, etc. are filled — no gap-threshold heuristics.
  */
 export function highlightBandsFromMarks(
   marks: HTMLElement[],
-  opts?: { lineSlack?: number; gapMerge?: number; strokeRatio?: number },
+  opts?: { lineSlack?: number; strokeRatio?: number },
 ): HighlightBand[] {
-  const lineSlack = opts?.lineSlack ?? 4
-  /** Same-line fragments closer than this (px) merge into one continuous stroke. */
-  const gapMerge = opts?.gapMerge ?? 30
-  /** Stroke thickness as a fraction of line box height (thicker pen). */
+  const lineSlack = opts?.lineSlack ?? 6
+  /** Stroke thickness as a fraction of line box height. */
   const strokeRatio = opts?.strokeRatio ?? 0.9
 
   const rects = collectMarkRects(marks)
@@ -309,41 +308,45 @@ export function highlightBandsFromMarks(
   const lineH = heights[Math.floor(heights.length / 2)] || 16
   const strokeH = Math.max(8, lineH * strokeRatio)
 
-  type Band = HighlightBand & { mid: number }
-  const raw: Band[] = rects.map((r) => {
-    const top = r.top + (r.height - strokeH) / 2
-    return {
-      top,
-      left: r.left,
-      width: r.width,
-      height: strokeH,
-      mid: top + strokeH / 2,
-    }
-  })
-
+  type Raw = { mid: number; top: number; left: number; right: number; boxH: number }
+  const raw: Raw[] = rects.map((r) => ({
+    mid: r.top + r.height / 2,
+    top: r.top,
+    left: r.left,
+    right: r.right,
+    boxH: r.height,
+  }))
   raw.sort((a, b) => a.mid - b.mid || a.left - b.left)
 
-  const merged: Band[] = []
-  for (const band of raw) {
-    const last = merged[merged.length - 1]
-    if (
-      last
-      && Math.abs(last.mid - band.mid) <= lineSlack
-      && band.left <= last.left + last.width + gapMerge
-    ) {
-      const right = Math.max(last.left + last.width, band.left + band.width)
-      last.left = Math.min(last.left, band.left)
-      last.width = right - last.left
-      // Keep shared stroke height + vertical center of the line cluster
-      last.height = strokeH
-      last.top = (last.mid + band.mid) / 2 - strokeH / 2
-      last.mid = last.top + strokeH / 2
+  // Cluster by visual line (similar vertical midpoints).
+  type LineCluster = { mids: number[]; left: number; right: number; boxH: number }
+  const lines: LineCluster[] = []
+  for (const r of raw) {
+    const line = lines.find((L) => {
+      const lineMid = L.mids.reduce((s, x) => s + x, 0) / L.mids.length
+      return Math.abs(lineMid - r.mid) <= lineSlack
+    })
+    if (line) {
+      line.mids.push(r.mid)
+      line.left = Math.min(line.left, r.left)
+      line.right = Math.max(line.right, r.right)
+      line.boxH = Math.max(line.boxH, r.boxH)
     } else {
-      merged.push({ ...band })
+      lines.push({ mids: [r.mid], left: r.left, right: r.right, boxH: r.boxH })
     }
   }
 
-  return merged.map(({ top, left, width, height }) => ({ top, left, width, height }))
+  return lines.map((L) => {
+    const mid = L.mids.reduce((s, x) => s + x, 0) / L.mids.length
+    // Prefer line box height when available for stable stroke centering
+    const h = Math.max(strokeH, Math.min(L.boxH * strokeRatio, L.boxH))
+    return {
+      top: mid - h / 2,
+      left: L.left,
+      width: Math.max(1, L.right - L.left),
+      height: h,
+    }
+  })
 }
 
 /** @deprecated use selectionTopRightViewport on all fragments */

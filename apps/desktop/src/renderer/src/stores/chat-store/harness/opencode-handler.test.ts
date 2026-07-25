@@ -42,7 +42,7 @@ describe('opencode-handler', () => {
       commands: [],
     }
     const state = {
-      harnessResources: { claude: null, codex: null, acp: null, opencode: null },
+      harnessResources: { claude: null, codex: null, acp: null, opencode: null, cursor: null },
       projectSessions: {
         '/project': {
           _activeSessionId: 'session',

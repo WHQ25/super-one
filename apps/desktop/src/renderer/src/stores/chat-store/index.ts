@@ -402,7 +402,7 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
 
   isOpen: false,
   corner: 'br',
-  harnessResources: { claude: null, codex: null, acp: null, opencode: null },
+  harnessResources: { claude: null, codex: null, acp: null, opencode: null, cursor: null },
   initializedHarnesses: new Set<HarnessId>(),
   claudeResourcesLoading: false,
   disabledSkills: [],

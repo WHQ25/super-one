@@ -22,6 +22,7 @@ export function providerLabelFor(session: SessionHistoryEntry): string {
     return session.acpAgentId?.toLowerCase().includes('grok') ? 'Grok (ACP)' : 'ACP'
   }
   if (session.provider === 'opencode') return 'OpenCode'
+  if (session.provider === 'cursor') return 'Cursor'
   return 'Claude Code'
 }
 

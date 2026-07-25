@@ -95,7 +95,7 @@ const mockWindowApp = {
   selectFolder: vi.fn(),
   getRecentFolders: vi.fn().mockResolvedValue([]),
   getProjectId: vi.fn().mockResolvedValue(null),
-  getStartupData: vi.fn().mockResolvedValue({ cached: { claude: null, codex: null, acp: null } }),
+  getStartupData: vi.fn().mockResolvedValue({ cached: { claude: null, codex: null, acp: null, opencode: null, cursor: null } }),
   getAppSettings: vi.fn().mockResolvedValue({ onboardingCompletedAt: 1, onboardingEpoch: 1 }),
   saveAppSettings: vi.fn().mockResolvedValue({ onboardingCompletedAt: Date.now(), onboardingEpoch: 1 }),
   alignEnabledHarnesses: vi.fn().mockResolvedValue({ aligned: [], failed: [] }),

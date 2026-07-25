@@ -103,7 +103,7 @@ beforeEach(() => {
     activeProject: null,
     remoteSessions: {},
     _previousFocusedSession: null,
-    harnessResources: { claude: null, codex: null, acp: null },
+    harnessResources: { claude: null, codex: null, acp: null, opencode: null, cursor: null },
     initializedHarnesses: new Set(),
   })
 })

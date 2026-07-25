@@ -968,8 +968,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     window.app.saveRemoteConfig(config)
   },
 
-  brandHues: { claude: null, codex: null, acp: null, opencode: null },
-  tokenOverrides: { claude: {}, codex: {}, acp: {}, opencode: {} },
+  brandHues: { claude: null, codex: null, acp: null, opencode: null, cursor: null },
+  tokenOverrides: { claude: {}, codex: {}, acp: {}, opencode: {}, cursor: {} },
   experimentalAgentsEnabled: false,
   enabledExperimentalAgents: [],
   experimentalClaudeOpenAiChatEnabled: false,
@@ -994,12 +994,14 @@ export const useAppStore = create<AppState>((set, get) => ({
           codex: settings.agentPreference.codex.brandHue,
           acp: settings.agentPreference.acp?.brandHue ?? null,
           opencode: null,
+          cursor: null,
         },
         tokenOverrides: {
           claude: settings.agentPreference.claude.tokenOverrides ?? {},
           codex: settings.agentPreference.codex.tokenOverrides ?? {},
           acp: settings.agentPreference.acp?.tokenOverrides ?? {},
           opencode: {},
+          cursor: {},
         },
         experimentalAgentsEnabled: settings.experimentalAgentsEnabled,
         enabledExperimentalAgents: settings.enabledExperimentalAgents ?? [],
@@ -1224,12 +1226,19 @@ if (typeof window !== 'undefined') {
     const codex = settings.agentPreference.codex
     const acp = settings.agentPreference.acp
     useAppStore.setState({
-      brandHues: { claude: claude.brandHue, codex: codex.brandHue, acp: acp?.brandHue ?? null, opencode: null },
+      brandHues: {
+        claude: claude.brandHue,
+        codex: codex.brandHue,
+        acp: acp?.brandHue ?? null,
+        opencode: null,
+        cursor: null,
+      },
       tokenOverrides: {
         claude: claude.tokenOverrides ?? {},
         codex: codex.tokenOverrides ?? {},
         acp: acp?.tokenOverrides ?? {},
         opencode: {},
+        cursor: {},
       },
       experimentalAgentsEnabled: settings.experimentalAgentsEnabled,
       enabledExperimentalAgents: settings.enabledExperimentalAgents ?? [],

@@ -144,6 +144,7 @@ function inferLegacyProviderId(row: { provider?: string | null }): string {
   if (row.provider === 'codex') return 'codex-base'
   if (row.provider === 'acp') return 'acp-base'
   if (row.provider === 'opencode') return 'opencode-base'
+  if (row.provider === 'cursor') return 'cursor-base'
   return 'claude-base'
 }
 
@@ -152,6 +153,7 @@ export function harnessIdFromProviderId(providerId: string): HarnessId {
   if (providerId.startsWith('codex')) return 'codex'
   if (providerId.startsWith('acp')) return 'acp'
   if (providerId.startsWith('opencode')) return 'opencode'
+  if (providerId.startsWith('cursor')) return 'cursor'
   return 'claude'
 }
 

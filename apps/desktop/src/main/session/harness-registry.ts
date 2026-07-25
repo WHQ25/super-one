@@ -2,10 +2,12 @@ import { z } from 'zod'
 import { AcpBackend } from './backends/acp-backend'
 import { ClaudeBackend } from './backends/claude-backend'
 import { CodexBackend } from './backends/codex-backend'
+import { CursorBackend } from './backends/cursor-backend'
 import { OpenCodeBackend } from './backends/opencode-backend'
 import { forkAcpTranscript } from './backends/acp-fork'
 import { forkClaudeTranscript } from './backends/claude-fork'
 import { forkCodexThread } from './backends/codex-fork'
+import { forkCursorTranscript } from './backends/cursor-fork'
 import { forkOpenCodeSession } from './backends/opencode-fork'
 import type { Harness, HarnessId } from './types'
 
@@ -43,6 +45,20 @@ const openCodeConfigSchema = z.object({
   startupTimeoutMs: z.number().positive().optional(),
 }).passthrough()
 
+const cursorConfigSchema = z.object({
+  apiKey: z.string().optional(),
+  credentialId: z.string().optional(),
+  model: z.string().optional(),
+  mode: z.enum(['agent', 'plan']).optional(),
+  runtime: z.enum(['local', 'cloud']).optional(),
+  settingSources: z.array(z.enum(['project', 'user', 'team', 'mdm', 'plugins', 'all'])).optional(),
+  sandboxEnabled: z.boolean().optional(),
+  autoReview: z.boolean().optional(),
+  enableAgentRetries: z.boolean().optional(),
+  useHttp1ForAgent: z.boolean().optional(),
+  storeKind: z.enum(['better-sqlite3', 'jsonl']).optional(),
+}).passthrough()
+
 const claudeHarness: Harness = {
   id: 'claude',
   name: 'Claude (Anthropic)',
@@ -75,11 +91,20 @@ const openCodeHarness: Harness = {
   forkTranscript: forkOpenCodeSession,
 }
 
+const cursorHarness: Harness = {
+  id: 'cursor',
+  name: 'Cursor',
+  configSchema: cursorConfigSchema,
+  createBackend: () => new CursorBackend(),
+  forkTranscript: forkCursorTranscript,
+}
+
 const registry = new Map<HarnessId, Harness>([
   ['claude', claudeHarness],
   ['codex', codexHarness],
   ['acp', acpHarness],
   ['opencode', openCodeHarness],
+  ['cursor', cursorHarness],
 ])
 
 export const harnessRegistry = {

@@ -1450,7 +1450,12 @@ export class Session implements SessionContract {
   }
 
   private applyReducer(event: AgentEvent): void {
-    if (this.harnessId === 'claude' || this.harnessId === 'acp' || this.harnessId === 'opencode') {
+    if (
+      this.harnessId === 'claude'
+      || this.harnessId === 'acp'
+      || this.harnessId === 'opencode'
+      || this.harnessId === 'cursor'
+    ) {
       const runtime: ClaudeSessionRuntime = {
         projectPath: this.projectPath,
         sessionId: this.id,

@@ -69,4 +69,14 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     supportsStreamingToolInput: false,
     displayName: 'OpenCode',
   },
+  cursor: {
+    supportsMcp: true,
+    supportsPlanMode: true,
+    // updateTodos / task tool deltas when event map lands (PR5+)
+    supportsTodos: true,
+    supportsSubagents: true,
+    supportsCompact: false,
+    supportsStreamingToolInput: true,
+    displayName: 'Cursor',
+  },
 }

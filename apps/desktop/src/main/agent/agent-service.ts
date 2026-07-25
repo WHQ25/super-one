@@ -1502,10 +1502,11 @@ export class AgentService {
     return this.sessionManager
   }
 
-  private baseProviderIdForHarness(harnessId: 'claude' | 'codex' | 'acp' | 'opencode' | undefined): string {
+  private baseProviderIdForHarness(harnessId: 'claude' | 'codex' | 'acp' | 'opencode' | 'cursor' | undefined): string {
     if (harnessId === 'codex') return 'codex-base'
     if (harnessId === 'acp') return 'acp-base'
     if (harnessId === 'opencode') return 'opencode-base'
+    if (harnessId === 'cursor') return 'cursor-base'
     return 'claude-base'
   }
 

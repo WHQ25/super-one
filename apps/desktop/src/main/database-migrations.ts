@@ -535,6 +535,7 @@ function seedBaseSessionProviders(db: Database.Database): void {
   stmt.run('codex-base', 'codex', 'Codex (Base)', '{}', now, now)
   stmt.run('acp-base', 'acp', 'Others (ACP)', JSON.stringify({ agentId: 'grok-build' }), now, now)
   stmt.run('opencode-base', 'opencode', 'OpenCode (Base)', '{}', now, now)
+  stmt.run('cursor-base', 'cursor', 'Cursor (Base)', '{}', now, now)
 }
 
 function migrateGlobalResourceCacheToHarness(db: Database.Database): void {

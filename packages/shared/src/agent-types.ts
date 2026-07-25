@@ -1966,6 +1966,21 @@ export interface OpenCodeResources {
   commands: SlashCommandInfo[]
 }
 
+/** Cached CONNECT payload for the Cursor harness (`@cursor/sdk`). */
+export interface CursorResources {
+  models: ModelOption[]
+  /** From `Cursor.me` when probe succeeds. */
+  user?: {
+    apiKeyName?: string
+    userEmail?: string | null
+    userId?: number | null
+  } | null
+  /** Optional `Cursor.repositories.list` for cloud create. */
+  repositories?: Array<{ url: string }>
+  /** True while a background re-probe is in flight. */
+  probing?: boolean
+}
+
 export interface AcpAgentDescriptor {
   id: string
   name: string
@@ -2059,6 +2074,7 @@ export interface HarnessResourcesMap {
   codex: CodexResources
   acp: AcpResources
   opencode: OpenCodeResources
+  cursor: CursorResources
 }
 
 export type HarnessId = keyof HarnessResourcesMap
@@ -2071,6 +2087,7 @@ export interface StartupData {
     codex: CodexResources | null
     acp: AcpResources | null
     opencode?: OpenCodeResources | null
+    cursor?: CursorResources | null
   }
   sandboxCapability: SandboxCapability
   appVersion: string

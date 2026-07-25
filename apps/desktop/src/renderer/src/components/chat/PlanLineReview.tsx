@@ -332,8 +332,9 @@ export function PlanLineReview({
   // Classic 3M canary yellow (approx. Post-it® #FEF6A5 / #FFEB3B family)
   const postItYellow = '#FEF6A5'
   const postItYellowDeep = '#F5E66B'
-  /** One shared highlighter ink for every stroke band */
-  const penInk = 'rgb(255 238 70 / 0.16)'
+  // Fluorescent highlighter ink (neon yellow-green, soft outer glow)
+  const penInkCore = 'rgb(220 255 40 / 0.42)'
+  const penInkGlow = 'rgb(200 255 0 / 0.28)'
   // Trapezoid pen tip: slight slant on both ends (like a real marker stroke)
   const penTrapezoid = 'polygon(6px 0%, 100% 0%, calc(100% - 6px) 100%, 0% 100%)'
 
@@ -350,9 +351,22 @@ export function PlanLineReview({
                 left: b.left,
                 width: Math.max(b.width, 8),
                 height: b.height,
-                backgroundColor: penInk,
                 clipPath: penTrapezoid,
                 WebkitClipPath: penTrapezoid,
+                // Core fluorescent band + soft bloom (highlighter on dark UI)
+                background: `linear-gradient(
+                  180deg,
+                  rgb(235 255 90 / 0.55) 0%,
+                  ${penInkCore} 35%,
+                  ${penInkCore} 70%,
+                  rgb(180 255 30 / 0.4) 100%
+                )`,
+                boxShadow: `
+                  0 0 0 0.5px rgb(255 255 120 / 0.25),
+                  0 0 6px 1px ${penInkGlow},
+                  0 0 12px 2px rgb(200 255 0 / 0.12)
+                `,
+                mixBlendMode: 'screen',
               }}
             />,
             portalTarget,

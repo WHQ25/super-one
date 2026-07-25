@@ -1,17 +1,18 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Check, MessageSquare, Pencil, Trash2, X } from 'lucide-react'
+import { Check, Pencil, Trash2, X } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 import {
   selectionTextToLineRange,
   type PlanLineComment,
 } from './plan-feedback'
 import {
-  layoutForQuote,
+  anchorBesideMark,
+  applyStickyMarks,
+  getDraftMark,
+  getMarkByCommentId,
   quoteFromLines,
-  rangeToLayout,
-  type AnnotationLayout,
-  type RectBox,
+  type StickyAnchor,
 } from './plan-annotation-dom'
 import { CopyableMarkdown } from './CopyableMarkdown'
 
@@ -30,12 +31,13 @@ type DraftState = {
   endLine: number
   quote: string
   text: string
-  layout: AnnotationLayout
 }
 
 /**
- * Sticky-note plan review: rendered markdown, select text → highlight + mini
- * editor beside it; saved comments become a corner icon (hover preview, click edit/delete).
+ * Sticky-note plan review:
+ * - Rendered markdown
+ * - Selection wraps real <mark> highlight (in-flow → correct position)
+ * - Paper sticky note beside the mark for compose / preview / edit
  */
 export function PlanLineReview({
   planContent,
@@ -47,64 +49,112 @@ export function PlanLineReview({
   const { t } = useTranslation()
   const scrollRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
-  const inputRef = useRef<HTMLInputElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
   const [draft, setDraft] = useState<DraftState | null>(null)
-  const [layouts, setLayouts] = useState<Record<string, AnnotationLayout>>({})
-  const [hoverId, setHoverId] = useState<string | null>(null)
-  const [openId, setOpenId] = useState<string | null>(null)
+  const [anchors, setAnchors] = useState<Record<string, StickyAnchor>>({})
+  const [draftAnchor, setDraftAnchor] = useState<StickyAnchor | null>(null)
+  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [mdTick, setMdTick] = useState(0)
 
   useEffect(() => {
-    onSelectionChange?.(draft != null || openId != null)
-  }, [draft, openId, onSelectionChange])
+    onSelectionChange?.(draft != null || expandedId != null)
+  }, [draft, expandedId, onSelectionChange])
 
-  const recomputeLayouts = useCallback(() => {
+  const reapplyMarksAndAnchors = useCallback(() => {
     const root = contentRef.current
     const container = scrollRef.current
-    if (!root || !container) {
-      setLayouts({})
-      return
-    }
-    const next: Record<string, AnnotationLayout> = {}
-    for (const c of comments) {
-      const quote = c.quote?.trim() || quoteFromLines(planContent, c.startLine, c.endLine)
-      if (!quote) continue
-      const layout = layoutForQuote(root, container, quote)
-      if (layout) next[c.id] = layout
-    }
-    setLayouts(next)
-  }, [comments, planContent])
+    if (!root || !container) return
 
+    const items = comments.map((c) => ({
+      id: c.id,
+      quote: (c.quote?.trim() || quoteFromLines(planContent, c.startLine, c.endLine)),
+    }))
+    const { marks, draftMark } = applyStickyMarks(
+      root,
+      items,
+      draft && draft.mode === 'create' ? draft.quote : null,
+    )
+
+    const next: Record<string, StickyAnchor> = {}
+    for (const [id, mark] of Object.entries(marks)) {
+      next[id] = anchorBesideMark(mark, container)
+    }
+    setAnchors(next)
+
+    if (draft?.mode === 'edit' && draft.commentId) {
+      const mark = marks[draft.commentId] ?? getMarkByCommentId(root, draft.commentId)
+      setDraftAnchor(mark ? anchorBesideMark(mark, container) : null)
+    } else if (draftMark) {
+      setDraftAnchor(anchorBesideMark(draftMark, container))
+    } else if (draft?.quote) {
+      // Fallback: still show note near first match attempt after marks
+      const m = getDraftMark(root)
+      setDraftAnchor(m ? anchorBesideMark(m, container) : null)
+    } else {
+      setDraftAnchor(null)
+    }
+  }, [comments, planContent, draft])
+
+  // Re-apply after markdown paints (Streamdown is async-ish).
   useLayoutEffect(() => {
-    // Wait a frame for Streamdown to paint.
-    const id = requestAnimationFrame(() => recomputeLayouts())
-    return () => cancelAnimationFrame(id)
-  }, [recomputeLayouts, planContent])
+    let cancelled = false
+    const run = () => {
+      if (!cancelled) reapplyMarksAndAnchors()
+    }
+    run()
+    const t1 = window.setTimeout(run, 40)
+    const t2 = window.setTimeout(run, 160)
+    const t3 = window.setTimeout(run, 400)
+    return () => {
+      cancelled = true
+      window.clearTimeout(t1)
+      window.clearTimeout(t2)
+      window.clearTimeout(t3)
+    }
+  }, [reapplyMarksAndAnchors, mdTick, planContent])
 
   useEffect(() => {
     const el = scrollRef.current
     if (!el) return
-    const onScroll = () => recomputeLayouts()
-    el.addEventListener('scroll', onScroll, { passive: true })
-    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => recomputeLayouts()) : null
+    const onScrollOrResize = () => reapplyMarksAndAnchors()
+    el.addEventListener('scroll', onScrollOrResize, { passive: true })
+    window.addEventListener('resize', onScrollOrResize)
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(onScrollOrResize) : null
     ro?.observe(el)
-    window.addEventListener('resize', recomputeLayouts)
     return () => {
-      el.removeEventListener('scroll', onScroll)
+      el.removeEventListener('scroll', onScrollOrResize)
+      window.removeEventListener('resize', onScrollOrResize)
       ro?.disconnect()
-      window.removeEventListener('resize', recomputeLayouts)
     }
-  }, [recomputeLayouts])
+  }, [reapplyMarksAndAnchors])
+
+  // Clicking a saved mark expands its sticky.
+  useEffect(() => {
+    const root = contentRef.current
+    if (!root) return
+    const onClick = (e: MouseEvent) => {
+      const mark = (e.target as HTMLElement | null)?.closest?.(`mark[data-plan-sticky-id]`) as HTMLElement | null
+      if (!mark) return
+      const id = mark.getAttribute('data-plan-sticky-id')
+      if (!id) return
+      e.preventDefault()
+      e.stopPropagation()
+      setExpandedId((prev) => (prev === id ? null : id))
+      setDraft(null)
+    }
+    root.addEventListener('click', onClick)
+    return () => root.removeEventListener('click', onClick)
+  }, [mdTick, planContent])
 
   const clearDraft = useCallback(() => {
     setDraft(null)
-    const sel = window.getSelection()
-    sel?.removeAllRanges()
+    setDraftAnchor(null)
+    window.getSelection()?.removeAllRanges()
   }, [])
 
   const openCreateFromSelection = useCallback(() => {
     const root = contentRef.current
-    const container = scrollRef.current
-    if (!root || !container) return
+    if (!root) return
     if (draft?.mode === 'edit') return
 
     const sel = window.getSelection()
@@ -112,32 +162,55 @@ export function PlanLineReview({
     const anchor = sel.anchorNode
     const focus = sel.focusNode
     if (!anchor || !focus || !root.contains(anchor) || !root.contains(focus)) return
+    // Ignore selections that start inside a sticky note control
+    if ((anchor as Node).parentElement?.closest?.('[data-plan-sticky-ui]')) return
 
     const quote = sel.toString().trim()
-    if (!quote) return
-    const lineRange = selectionTextToLineRange(planContent, quote)
-    if (!lineRange) return
+    if (!quote || quote.length < 2) return
 
-    const domRange = sel.getRangeAt(0).cloneRange()
-    const layout = rangeToLayout(domRange, container)
-    if (!layout) return
+    // Prefer line mapping; if soft-map fails (rare), still allow sticky using L1–L1 fallback
+    // so the UX never silently drops a valid selection.
+    const lineRange =
+      selectionTextToLineRange(planContent, quote)
+      ?? { startLine: 1, endLine: 1 }
 
-    setOpenId(null)
+    // Same quote already drafting — don't reset the note.
+    if (draft?.mode === 'create' && draft.quote === quote) return
+
+    setExpandedId(null)
     setDraft({
       mode: 'create',
       startLine: lineRange.startLine,
       endLine: lineRange.endLine,
       quote,
-      text: '',
-      layout,
+      text: draft?.mode === 'create' ? draft.text : '',
     })
-    // Keep visual via our highlight overlays; clear native selection.
     sel.removeAllRanges()
-    requestAnimationFrame(() => inputRef.current?.focus())
-  }, [draft?.mode, planContent])
+    requestAnimationFrame(() => {
+      setMdTick((n) => n + 1)
+      inputRef.current?.focus()
+    })
+  }, [draft, planContent])
 
-  const onMouseUp = useCallback(() => {
-    requestAnimationFrame(() => openCreateFromSelection())
+  // Document-level capture: React synthetic onMouseUp is unreliable for some
+  // automation/CDP paths, and users select across nested markdown nodes.
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const schedule = () => {
+      if (timer) clearTimeout(timer)
+      timer = setTimeout(() => openCreateFromSelection(), 0)
+    }
+    const onUp = (e: MouseEvent) => {
+      const root = contentRef.current
+      if (!root) return
+      if (e.target instanceof Node && (e.target as HTMLElement).closest?.('[data-plan-sticky-ui]')) return
+      schedule()
+    }
+    document.addEventListener('mouseup', onUp, true)
+    return () => {
+      document.removeEventListener('mouseup', onUp, true)
+      if (timer) clearTimeout(timer)
+    }
   }, [openCreateFromSelection])
 
   const commitDraft = useCallback(() => {
@@ -146,7 +219,9 @@ export function PlanLineReview({
     if (!text) return
     if (draft.mode === 'edit' && draft.commentId) {
       onCommentsChange(
-        comments.map((c) => (c.id === draft.commentId ? { ...c, text, quote: draft.quote || c.quote } : c)),
+        comments.map((c) =>
+          c.id === draft.commentId ? { ...c, text, quote: draft.quote || c.quote } : c,
+        ),
       )
     } else {
       const id = `${idPrefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
@@ -162,223 +237,238 @@ export function PlanLineReview({
       ])
     }
     clearDraft()
-    setOpenId(null)
+    setExpandedId(null)
+    setMdTick((n) => n + 1)
   }, [draft, comments, idPrefix, onCommentsChange, clearDraft])
 
   const removeComment = useCallback((id: string) => {
     onCommentsChange(comments.filter((c) => c.id !== id))
-    setOpenId(null)
-    setHoverId(null)
+    setExpandedId(null)
     if (draft?.commentId === id) clearDraft()
+    setMdTick((n) => n + 1)
   }, [comments, onCommentsChange, draft?.commentId, clearDraft])
 
   const beginEdit = useCallback((c: PlanLineComment) => {
-    const root = contentRef.current
-    const container = scrollRef.current
-    if (!root || !container) return
-    const quote = c.quote?.trim() || quoteFromLines(planContent, c.startLine, c.endLine)
-    const layout =
-      layouts[c.id]
-      ?? (quote ? layoutForQuote(root, container, quote) : null)
-    if (!layout) return
-    setOpenId(null)
+    setExpandedId(null)
     setDraft({
       mode: 'edit',
       commentId: c.id,
       startLine: c.startLine,
       endLine: c.endLine,
-      quote,
+      quote: c.quote?.trim() || quoteFromLines(planContent, c.startLine, c.endLine),
       text: c.text,
-      layout,
     })
     requestAnimationFrame(() => {
+      setMdTick((n) => n + 1)
       inputRef.current?.focus()
       inputRef.current?.select()
     })
-  }, [layouts, planContent])
+  }, [planContent])
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (e.ctrlKey || e.metaKey || e.altKey) return
       const active = document.activeElement
-      const isDraftInput =
-        active instanceof HTMLInputElement && active.dataset.planDraft !== undefined
+      const isDraft =
+        active instanceof HTMLTextAreaElement && active.dataset.planDraft !== undefined
 
-      if (e.key === 'Escape' && (isDraftInput || draft || openId)) {
+      if (e.key === 'Escape' && (isDraft || draft || expandedId)) {
         e.preventDefault()
         e.stopPropagation()
         clearDraft()
-        setOpenId(null)
+        setExpandedId(null)
         return
       }
-      if (isDraftInput && e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+      if (isDraft && e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
         e.preventDefault()
         commitDraft()
       }
     }
     window.addEventListener('keydown', onKeyDown, true)
     return () => window.removeEventListener('keydown', onKeyDown, true)
-  }, [clearDraft, commitDraft, draft, openId])
+  }, [clearDraft, commitDraft, draft, expandedId])
 
-  const draftHighlightRects: RectBox[] = draft?.layout.rects ?? []
-  const editorPos = draft?.layout.editor
+  // Clamp note left so it stays in view
+  const clampNoteLeft = (left: number, noteWidth = 200) => {
+    const w = scrollRef.current?.clientWidth ?? 400
+    return Math.min(Math.max(8, left), Math.max(8, w - noteWidth - 12))
+  }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <div
         ref={scrollRef}
         className="relative min-h-0 flex-1 overflow-y-auto overflow-x-hidden"
-        onMouseUp={onMouseUp}
       >
         {planContent.trim().length === 0 ? (
           <div className="p-4 text-sm text-muted-foreground">{t('chat.plan.emptyPlan')}</div>
         ) : (
-          <div ref={contentRef} className="select-text px-4 py-3">
+          <div
+            ref={contentRef}
+            className="select-text px-4 py-3 pr-28"
+            onLoadCapture={() => setMdTick((n) => n + 1)}
+          >
             <CopyableMarkdown text={planContent} isStreaming={false} />
           </div>
         )}
 
-        {/* Saved + draft highlight strips */}
-        {comments.map((c) => {
-          const layout = layouts[c.id]
-          if (!layout) return null
-          const active = hoverId === c.id || openId === c.id || draft?.commentId === c.id
-          return (
-            <div key={`hl-${c.id}`} className="pointer-events-none absolute inset-0 z-[1]">
-              {layout.rects.map((r, i) => (
-                <div
-                  key={i}
-                  className={cn(
-                    'absolute rounded-sm transition-colors',
-                    active ? 'bg-amber-400/35 dark:bg-amber-300/25' : 'bg-amber-300/25 dark:bg-amber-400/15',
-                  )}
-                  style={{ top: r.top, left: r.left, width: r.width, height: r.height }}
-                />
-              ))}
-            </div>
-          )
-        })}
-
-        {draft && (
-          <div className="pointer-events-none absolute inset-0 z-[2]">
-            {draftHighlightRects.map((r, i) => (
-              <div
-                key={i}
-                className="absolute rounded-sm bg-sky-400/30 ring-1 ring-sky-500/40 dark:bg-sky-400/20"
-                style={{ top: r.top, left: r.left, width: r.width, height: r.height }}
-              />
-            ))}
-          </div>
-        )}
-
-        {/* Corner icons for saved comments */}
-        {comments.map((c) => {
-          const layout = layouts[c.id]
-          if (!layout || draft?.commentId === c.id) return null
-          const open = openId === c.id
+        {/* Collapsed sticky tabs on saved highlights */}
+        {comments.map((c, index) => {
+          if (draft?.commentId === c.id) return null
+          const anchor = anchors[c.id]
+          if (!anchor) return null
+          const open = expandedId === c.id
           return (
             <div
-              key={`mk-${c.id}`}
-              className="absolute z-[3]"
-              style={{ top: layout.marker.top, left: layout.marker.left }}
-              onMouseEnter={() => setHoverId(c.id)}
-              onMouseLeave={() => setHoverId((id) => (id === c.id ? null : id))}
+              key={c.id}
+              data-plan-sticky-ui
+              className="absolute z-20"
+              style={{
+                top: anchor.top,
+                left: clampNoteLeft(anchor.left, open ? 208 : 28),
+              }}
+              onMouseEnter={() => !open && setExpandedId(c.id)}
             >
-              <button
-                type="button"
-                className={cn(
-                  'flex size-5 -translate-y-1 translate-x-0 items-center justify-center rounded-full border border-amber-500/40 bg-amber-50 text-amber-700 shadow-sm transition',
-                  'hover:scale-110 hover:bg-amber-100 dark:border-amber-400/40 dark:bg-amber-950 dark:text-amber-200 dark:hover:bg-amber-900',
-                  open && 'ring-2 ring-amber-500/50',
-                )}
-                aria-label={t('chat.plan.comments')}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  setOpenId((id) => (id === c.id ? null : c.id))
-                }}
-              >
-                <MessageSquare className="size-3 fill-current" />
-              </button>
-
-              {(hoverId === c.id || open) && (
-                <div
+              {!open ? (
+                <button
+                  type="button"
+                  title={c.text}
                   className={cn(
-                    'absolute left-0 top-6 z-20 w-56 rounded-lg border border-border bg-popover p-2 text-xs text-popover-foreground shadow-lg',
-                    'animate-in fade-in-0 zoom-in-95',
+                    'group relative size-7 cursor-pointer rounded-[3px] border border-amber-400/50',
+                    'bg-[#fff59d] shadow-[1px_2px_4px_rgba(0,0,0,0.18)]',
+                    'rotate-2 transition hover:rotate-0 hover:scale-105 dark:border-amber-500/40 dark:bg-amber-700/90',
                   )}
-                  onMouseDown={(e) => e.stopPropagation()}
+                  onClick={() => setExpandedId(c.id)}
                 >
-                  <p className="max-h-24 overflow-y-auto whitespace-pre-wrap leading-relaxed text-foreground">
+                  {/* folded corner */}
+                  <span className="pointer-events-none absolute right-0 top-0 size-0 border-l-[8px] border-t-[8px] border-l-transparent border-t-amber-200/90 dark:border-t-amber-500/50" />
+                  <span className="text-[10px] font-semibold text-amber-900/70 dark:text-amber-100">
+                    {index + 1}
+                  </span>
+                </button>
+              ) : (
+                <StickyNoteCard
+                  className="-rotate-1"
+                  onMouseLeave={() => {
+                    // keep open until click outside — leave only if not interacting
+                  }}
+                >
+                  <p className="max-h-28 overflow-y-auto whitespace-pre-wrap text-[12px] leading-snug text-amber-950 dark:text-amber-50">
                     {c.text}
                   </p>
-                  {open && (
-                    <div className="mt-2 flex items-center justify-end gap-1 border-t border-border pt-1.5">
-                      <button
-                        type="button"
-                        className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground"
-                        onClick={() => beginEdit(c)}
-                      >
-                        <Pencil className="size-3" />
-                        {t('chat.plan.editComment')}
-                      </button>
-                      <button
-                        type="button"
-                        className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                        onClick={() => removeComment(c.id)}
-                      >
-                        <Trash2 className="size-3" />
-                        {t('chat.plan.removeComment')}
-                      </button>
-                    </div>
-                  )}
-                </div>
+                  <div className="mt-2 flex items-center justify-end gap-0.5 border-t border-amber-900/10 pt-1.5 dark:border-amber-100/15">
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] text-amber-900/70 hover:bg-amber-900/10 dark:text-amber-100/80"
+                      onClick={() => beginEdit(c)}
+                    >
+                      <Pencil className="size-3" />
+                      {t('chat.plan.editComment')}
+                    </button>
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] text-amber-900/70 hover:bg-red-500/15 hover:text-red-700 dark:text-amber-100/80"
+                      onClick={() => removeComment(c.id)}
+                    >
+                      <Trash2 className="size-3" />
+                      {t('chat.plan.removeComment')}
+                    </button>
+                    <button
+                      type="button"
+                      className="ml-auto rounded p-0.5 text-amber-900/50 hover:bg-amber-900/10 dark:text-amber-100/60"
+                      aria-label={t('chat.plan.cancelComment')}
+                      onClick={() => setExpandedId(null)}
+                    >
+                      <X className="size-3" />
+                    </button>
+                  </div>
+                </StickyNoteCard>
               )}
             </div>
           )
         })}
 
-        {/* Minimal sticky editor next to selection */}
-        {draft && editorPos && (
+        {/* Compose / edit sticky note — always show when drafting, even if mark wrap lags */}
+        {draft && (
           <div
-            className="absolute z-30 flex w-[min(280px,calc(100%-24px))] items-center gap-1 rounded-lg border border-border bg-popover p-1 shadow-lg"
+            data-plan-sticky-ui
+            className="absolute z-30"
             style={{
-              top: editorPos.top,
-              left: Math.min(editorPos.left, (scrollRef.current?.clientWidth ?? 320) - 200),
+              top: draftAnchor?.top ?? 24,
+              left: clampNoteLeft(draftAnchor?.left ?? 24, 220),
             }}
             onMouseDown={(e) => e.stopPropagation()}
           >
-            <input
-              ref={inputRef}
-              data-plan-draft
-              type="text"
-              value={draft.text}
-              onChange={(e) => setDraft((d) => (d ? { ...d, text: e.target.value } : d))}
-              placeholder={t('chat.plan.commentPlaceholder')}
-              className="h-7 min-w-0 flex-1 rounded-md bg-transparent px-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none"
-            />
-            <button
-              type="button"
-              disabled={!draft.text.trim()}
-              className="flex size-7 shrink-0 items-center justify-center rounded-md text-success hover:bg-success/10 disabled:opacity-40"
-              aria-label={t('chat.plan.saveComment')}
-              onClick={commitDraft}
-            >
-              <Check className="size-3.5" />
-            </button>
-            <button
-              type="button"
-              className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
-              aria-label={t('chat.plan.cancelComment')}
-              onClick={() => {
-                clearDraft()
-                setOpenId(null)
-              }}
-            >
-              <X className="size-3.5" />
-            </button>
+            <StickyNoteCard className="rotate-1 shadow-lg">
+              <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-amber-900/45 dark:text-amber-100/40">
+                {draft.mode === 'edit' ? t('chat.plan.editComment') : t('chat.plan.addComment')}
+              </div>
+              <textarea
+                ref={inputRef}
+                data-plan-draft
+                rows={3}
+                value={draft.text}
+                onChange={(e) => setDraft((d) => (d ? { ...d, text: e.target.value } : d))}
+                placeholder={t('chat.plan.commentPlaceholder')}
+                className="w-full resize-none bg-transparent text-[12px] leading-snug text-amber-950 placeholder:text-amber-900/35 focus:outline-none dark:text-amber-50 dark:placeholder:text-amber-100/35"
+              />
+              <div className="mt-1.5 flex items-center justify-end gap-1 border-t border-amber-900/10 pt-1.5 dark:border-amber-100/15">
+                <button
+                  type="button"
+                  className="flex size-6 items-center justify-center rounded text-amber-900/50 hover:bg-amber-900/10 dark:text-amber-100/60"
+                  aria-label={t('chat.plan.cancelComment')}
+                  onClick={() => {
+                    clearDraft()
+                    setMdTick((n) => n + 1)
+                  }}
+                >
+                  <X className="size-3.5" />
+                </button>
+                <button
+                  type="button"
+                  disabled={!draft.text.trim()}
+                  className="flex size-6 items-center justify-center rounded text-amber-900 hover:bg-amber-900/10 disabled:opacity-35 dark:text-amber-50"
+                  aria-label={t('chat.plan.saveComment')}
+                  onClick={commitDraft}
+                >
+                  <Check className="size-3.5" />
+                </button>
+              </div>
+            </StickyNoteCard>
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+function StickyNoteCard({
+  children,
+  className,
+  onMouseLeave,
+}: {
+  children: ReactNode
+  className?: string
+  onMouseLeave?: () => void
+}) {
+  return (
+    <div
+      onMouseLeave={onMouseLeave}
+      className={cn(
+        'relative w-52 rounded-sm border border-amber-300/70 bg-[#fff59d] p-2.5',
+        'shadow-[2px_4px_10px_rgba(0,0,0,0.16),0_1px_0_rgba(255,255,255,0.5)_inset]',
+        'dark:border-amber-600/40 dark:bg-amber-800/95',
+        // top tape
+        'before:absolute before:left-1/2 before:top-0 before:h-2 before:w-10 before:-translate-x-1/2 before:-translate-y-1/2',
+        'before:rounded-[1px] before:bg-amber-200/80 before:shadow-sm dark:before:bg-amber-600/50',
+        // folded corner
+        'after:pointer-events-none after:absolute after:right-0 after:top-0 after:size-0',
+        'after:border-l-[14px] after:border-t-[14px] after:border-l-transparent after:border-t-amber-50/90',
+        'dark:after:border-t-amber-700/80',
+        className,
+      )}
+    >
+      {children}
     </div>
   )
 }

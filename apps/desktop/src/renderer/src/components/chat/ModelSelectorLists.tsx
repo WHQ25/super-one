@@ -140,15 +140,25 @@ export function splitSlashModelId(id: string): { group: string; label: string } 
   return { group: id.slice(0, idx), label: id.slice(idx + 1) }
 }
 
-/** Prefer human label after `/` from name when present, else from id. */
+/**
+ * Prefer OpenCode/ACP display name for the row/trigger.
+ * - `"GPT-5"` → `GPT-5` (SDK display name)
+ * - `"OpenAI/GPT-5.4 Fast"` → `GPT-5.4 Fast` (strip provider prefix from name)
+ * - missing/empty name → id suffix after `/`
+ */
 export function resolveSlashModelLabel(model: ModelOption): string {
-  if (model.name.includes('/')) {
-    const { label } = splitSlashModelId(model.name)
-    if (label) return label
+  const name = model.name?.trim()
+  if (name) {
+    if (name.includes('/')) {
+      const { label } = splitSlashModelId(name)
+      if (label) return label
+    } else {
+      return name
+    }
   }
   const fromId = splitSlashModelId(model.id)
   if (fromId.group) return fromId.label
-  return model.name || model.id
+  return model.id
 }
 
 export function groupModelsBySlashPrefix(models: ModelOption[]): Array<{ group: string; items: Array<{ model: ModelOption; label: string }> }> {

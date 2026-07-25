@@ -91,14 +91,24 @@ describe('opencode-client', () => {
 
   it('keeps only visible primary agents and prefers no client-side mode coercion', () => {
     const agents = [
-      { name: 'build', mode: 'primary', hidden: false },
+      {
+        name: 'build',
+        mode: 'primary',
+        hidden: false,
+        model: { providerID: 'anthropic', modelID: 'claude-sonnet-4' },
+      },
       { name: 'general', mode: 'all', hidden: false },
       { name: 'explore', mode: 'subagent', hidden: false },
       { name: 'hidden', mode: 'primary', hidden: true },
     ] as Agent[]
     expect(parseOpenCodeAgents(agents)).toEqual([
-      { id: 'build', name: 'build', description: undefined },
-      { id: 'general', name: 'general', description: undefined },
+      {
+        id: 'build',
+        name: 'build',
+        description: undefined,
+        modelId: 'anthropic/claude-sonnet-4',
+      },
+      { id: 'general', name: 'general', description: undefined, modelId: undefined },
     ])
   })
 

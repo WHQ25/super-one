@@ -80,17 +80,40 @@ describe('splitSlashModelId / groupModelsBySlashPrefix', () => {
     })).toBe('GPT-5.4 Fast')
   })
 
+  it('prefers OpenCode SDK display name over the model id suffix', () => {
+    expect(resolveSlashModelLabel({
+      id: 'openai/gpt-5',
+      name: 'GPT-5',
+      description: 'OpenAI reasoning model',
+    })).toBe('GPT-5')
+    expect(resolveSlashModelLabel({
+      id: 'anthropic/claude-sonnet-4-20250514',
+      name: 'Claude Sonnet 4',
+      description: '',
+    })).toBe('Claude Sonnet 4')
+  })
+
+  it('falls back to id suffix when display name is missing', () => {
+    expect(resolveSlashModelLabel({
+      id: 'openai/gpt-5.4',
+      name: '',
+      description: '',
+    })).toBe('gpt-5.4')
+  })
+
   it('groups OpenCode-style models by provider prefix', () => {
     const models: ModelOption[] = [
       { id: 'openai/gpt-5.4', name: 'OpenAI/GPT-5.4', description: '' },
       { id: 'openai/gpt-5.4-mini', name: 'OpenAI/GPT-5.4 mini', description: '' },
       { id: 'opencode/big-pickle', name: 'OpenCode Zen/Big Pickle', description: '' },
       { id: 'google/gemini-3-flash', name: 'Google/Gemini 3 Flash', description: '' },
+      { id: 'anthropic/claude-sonnet-4', name: 'Claude Sonnet 4', description: '' },
     ]
     const groups = groupModelsBySlashPrefix(models)
-    expect(groups.map((g) => g.group)).toEqual(['openai', 'opencode', 'google'])
+    expect(groups.map((g) => g.group)).toEqual(['openai', 'opencode', 'google', 'anthropic'])
     expect(groups[0].items.map((i) => i.label)).toEqual(['GPT-5.4', 'GPT-5.4 mini'])
     expect(groups[1].items[0].label).toBe('Big Pickle')
+    expect(groups[3].items[0].label).toBe('Claude Sonnet 4')
   })
 })
 

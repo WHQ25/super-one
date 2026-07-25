@@ -84,7 +84,14 @@ export function parseOpenCodeCommands(commands: Command[]): SlashCommandInfo[] {
 export function parseOpenCodeAgents(agents: Agent[]): OpenCodeResources['agents'] {
   return agents
     .filter((agent) => !agent.hidden && agent.mode !== 'subagent')
-    .map((agent) => ({ id: agent.name, name: agent.name, description: agent.description }))
+    .map((agent) => ({
+      id: agent.name,
+      name: agent.name,
+      description: agent.description,
+      modelId: agent.model
+        ? `${agent.model.providerID}/${agent.model.modelID}`
+        : undefined,
+    }))
 }
 
 export function toOpenCodeMcpConfig(config: McpServerConfig): McpLocalConfig | McpRemoteConfig | null {

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import {
   GroupedModelEffortSelector,
+  type SelectorAgentOption,
   type SelectorEffortOption,
   type SelectorModelGroup,
   type SelectorModelOption,
@@ -38,10 +39,23 @@ const PROVIDERS: SelectorProviderOption[] = [
   { id: 'custom', name: 'Custom API', brand: null, keyName: 'endpoint' },
 ]
 
-function SelectorStory({ modelGroups }: { modelGroups?: SelectorModelGroup[] }) {
+const AGENTS: SelectorAgentOption[] = [
+  { id: 'build', name: 'build', description: 'Full-access coding agent' },
+  { id: 'plan', name: 'plan', description: 'Read-only planning agent' },
+  { id: 'general', name: 'general', description: 'General-purpose assistant' },
+]
+
+function SelectorStory({
+  modelGroups,
+  withAgents = false,
+}: {
+  modelGroups?: SelectorModelGroup[]
+  withAgents?: boolean
+}) {
   const [modelId, setModelId] = useState('gpt-5.3-codex')
   const [effort, setEffort] = useState('high')
   const [providerId, setProviderId] = useState<string | null>('openai')
+  const [agentId, setAgentId] = useState('build')
 
   return (
     <div className="flex min-h-80 items-end justify-center rounded-lg border bg-muted/20 p-6">
@@ -53,6 +67,9 @@ function SelectorStory({ modelGroups }: { modelGroups?: SelectorModelGroup[] }) 
         effortOptions={EFFORTS}
         selectedEffort={effort}
         onSelectEffort={setEffort}
+        agents={withAgents ? AGENTS : undefined}
+        selectedAgentId={withAgents ? agentId : undefined}
+        onSelectAgent={withAgents ? setAgentId : undefined}
         providers={PROVIDERS}
         selectedProviderId={providerId}
         onSelectProvider={setProviderId}
@@ -77,4 +94,8 @@ export const FlatModelList: Story = {
 
 export const GroupedModelList: Story = {
   render: () => <SelectorStory modelGroups={MODEL_GROUPS} />,
+}
+
+export const WithOpenCodeAgents: Story = {
+  render: () => <SelectorStory modelGroups={MODEL_GROUPS} withAgents />,
 }

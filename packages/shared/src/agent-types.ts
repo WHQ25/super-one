@@ -1483,9 +1483,17 @@ export interface CodexResources {
   prompts: SlashCommandInfo[]
 }
 
+export interface OpenCodeAgentOption {
+  id: string
+  name: string
+  description?: string
+  /** Optional default model slug (`provider/model`) configured on the agent. */
+  modelId?: string | null
+}
+
 export interface OpenCodeResources {
   models: ModelOption[]
-  agents: Array<{ id: string; name: string; description?: string }>
+  agents: OpenCodeAgentOption[]
   commands: SlashCommandInfo[]
 }
 
@@ -1534,6 +1542,17 @@ export interface AcpAgentConfigCatalog {
   extraModels?: ModelOption[]
   selectedModelId?: string | null
   modelConfigId?: string | null
+  /**
+   * Non-standard mode list when modes live outside configOptions
+   * (Grok x.ai sessionConfig effort options).
+   */
+  extraModes?: ModelOption[]
+  selectedModeId?: string | null
+  /**
+   * Session-mode config option id when modes use setConfigOption.
+   * Explicit `null` = Grok-style effort via session/set_model + `_meta.reasoningEffort`.
+   */
+  modeConfigId?: string | null
   /** Last known available_commands_update list for this agent. */
   slashCommands?: SlashCommandInfo[]
   updatedAt: string

@@ -39,6 +39,12 @@ export interface SelectorProviderOption {
   description?: string
 }
 
+export interface SelectorAgentOption {
+  id: string
+  name: string
+  description?: string
+}
+
 interface GroupedModelEffortSelectorProps {
   models?: SelectorModelOption[]
   modelGroups?: SelectorModelGroup[]
@@ -50,6 +56,13 @@ interface GroupedModelEffortSelectorProps {
   selectedEffort: string | null
   selectedEffortLabel?: string | null
   onSelectEffort: (value: string) => void
+  /** Optional primary-agent list (e.g. OpenCode build/plan/general). */
+  agents?: SelectorAgentOption[]
+  selectedAgentId?: string | null
+  selectedAgentLabel?: string | null
+  onSelectAgent?: (id: string) => void
+  /** Disable agent picking (e.g. OpenCode plan permission forces the plan agent). */
+  agentsDisabled?: boolean
   providers?: SelectorProviderOption[]
   selectedProviderId?: string | null
   onSelectProvider?: (id: string | null) => void
@@ -275,6 +288,11 @@ export function GroupedModelEffortSelector({
   selectedEffort,
   selectedEffortLabel,
   onSelectEffort,
+  agents = [],
+  selectedAgentId,
+  selectedAgentLabel,
+  onSelectAgent,
+  agentsDisabled = false,
   providers = [],
   selectedProviderId,
   onSelectProvider,
@@ -286,11 +304,13 @@ export function GroupedModelEffortSelector({
   className,
 }: GroupedModelEffortSelectorProps) {
   const [modelsExpanded, setModelsExpanded] = useState(false)
+  const [agentsExpanded, setAgentsExpanded] = useState(false)
   const [providersExpanded, setProvidersExpanded] = useState(false)
   const [modelSearchOpen, setModelSearchOpen] = useState(false)
   const [modelSearch, setModelSearch] = useState('')
   const collapseAll = () => {
     setModelsExpanded(false)
+    setAgentsExpanded(false)
     setProvidersExpanded(false)
     setModelSearchOpen(false)
     setModelSearch('')
@@ -305,9 +325,12 @@ export function GroupedModelEffortSelector({
   )
   const selectedEffortOption = effortOptions.find((option) => option.value === selectedEffort)
   const selectedProvider = providers.find((provider) => provider.id === selectedProviderId)
+  const selectedAgent = agents.find((agent) => agent.id === selectedAgentId)
+  const agentLabel = selectedAgentLabel ?? selectedAgent?.name ?? selectedAgentId ?? 'Agent'
   const modelLabel = selectedModelLabel ?? selectedModel?.name ?? selectedModelId ?? 'Model'
   const effortLabel = selectedEffortLabel ?? selectedEffortOption?.label ?? 'Effort'
   const canSelectEffort = hasSelectableEffort(effortOptions)
+  const hasAgents = agents.length > 0 && Boolean(onSelectAgent)
   const shouldCloseAfterSelect = (modelId: string): boolean =>
     shouldCloseAfterModelSelect?.(modelId) ?? !canSelectEffort
   const listOpen = modelsExpanded || !canSelectEffort
@@ -331,25 +354,117 @@ export function GroupedModelEffortSelector({
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          className={cn('group flex max-w-64 items-center gap-1 rounded-lg px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground', className)}
+          title={
+            triggerLabel
+              ? undefined
+              : [hasAgents ? agentLabel : null, modelLabel, canSelectEffort ? effortLabel : null]
+                  .filter(Boolean)
+                  .join(' · ')
+          }
+          className={cn(
+            // Prefer showing the full label when space allows; parent flex can still constrain.
+            'group flex min-w-0 max-w-xl items-center gap-1 rounded-lg px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground',
+            className,
+          )}
         >
           {triggerLabel ? (
-            <span className="min-w-0">{triggerLabel}</span>
+            <span className="min-w-0 truncate">{triggerLabel}</span>
           ) : (
-            <>
-              <span className="truncate">{modelLabel}</span>
-              {canSelectEffort && (
+            // Truncation priority via flex-shrink: model last, agent middle, effort first.
+            <span className="flex min-w-0 items-center gap-1 overflow-hidden">
+              {hasAgents && (
                 <>
-                  <span className="text-muted-foreground/70">·</span>
-                  <span className="shrink-0">{effortLabel}</span>
+                  <span className="min-w-0 shrink-[8] truncate">{agentLabel}</span>
+                  <span className="shrink-0 text-muted-foreground/70">·</span>
                 </>
               )}
-            </>
+              <span className="min-w-0 shrink truncate">{modelLabel}</span>
+              {canSelectEffort && (
+                <>
+                  <span className="shrink-0 text-muted-foreground/70">·</span>
+                  <span className="min-w-0 shrink-[64] truncate">{effortLabel}</span>
+                </>
+              )}
+            </span>
           )}
           <ChevronDown className="size-3 shrink-0 transition-transform duration-200 group-data-[state=open]:rotate-180" />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" side="top" className="max-h-[70vh] w-72 overflow-hidden p-1" onCloseAutoFocus={onCloseAutoFocus}>
+        {hasAgents && (
+          <>
+            <div className="px-2 pb-1 pt-1.5 text-xs text-muted-foreground">Agent</div>
+            <AnimatePresence initial={false}>
+              {agentsExpanded && !agentsDisabled ? (
+                <motion.div key="agent-list" {...MORPH} className="overflow-hidden">
+                  <div className="max-h-48 min-h-0 overflow-y-auto pr-1">
+                    {agents.map((agent) => {
+                      const selected = agent.id === selectedAgentId
+                      return (
+                        <DropdownMenuItem
+                          key={agent.id}
+                          onSelect={(event) => {
+                            event.preventDefault()
+                            onSelectAgent?.(agent.id)
+                            setAgentsExpanded(false)
+                          }}
+                          className={cn('items-start gap-2 px-2 py-1.5', ITEM_FOCUS, selected && 'bg-muted')}
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-xs font-medium leading-tight">{agent.name}</div>
+                            {agent.description && (
+                              <div className="line-clamp-2 text-[10px] leading-tight text-muted-foreground">
+                                {agent.description}
+                              </div>
+                            )}
+                          </div>
+                          {selected && <Check className="mt-0.5 size-3.5 shrink-0 self-start text-primary" />}
+                        </DropdownMenuItem>
+                      )
+                    })}
+                  </div>
+                </motion.div>
+              ) : (
+                <motion.div key="agent-row" {...MORPH} className="overflow-hidden">
+                  <button
+                    type="button"
+                    disabled={agentsDisabled}
+                    title={agentsDisabled ? 'Plan mode uses the plan agent' : undefined}
+                    onClick={() => {
+                      if (agentsDisabled) return
+                      setModelsExpanded(false)
+                      setProvidersExpanded(false)
+                      setAgentsExpanded(true)
+                    }}
+                    className={cn(
+                      'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors focus:outline-none',
+                      agentsDisabled
+                        ? 'cursor-default opacity-60'
+                        : 'hover:bg-muted focus:bg-muted',
+                    )}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm font-medium leading-tight">{agentLabel}</div>
+                      {selectedAgent?.description && !agentsDisabled && (
+                        <div className="line-clamp-2 text-[10px] leading-tight text-muted-foreground">
+                          {selectedAgent.description}
+                        </div>
+                      )}
+                      {agentsDisabled && (
+                        <div className="text-[10px] leading-tight text-muted-foreground">
+                          Forced by plan mode
+                        </div>
+                      )}
+                    </div>
+                    {!agentsDisabled && <ChevronRight className="size-4 shrink-0 text-muted-foreground" />}
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+            <DropdownMenuSeparator />
+          </>
+        )}
+
         {modelSearchAvailable && modelSearchOpen ? (
           <div className="flex items-center gap-1 border-b">
             <Command shouldFilter={false} className="min-w-0 flex-1 rounded-none [&_[data-slot=command-input-wrapper]]:border-b-0">
@@ -418,7 +533,11 @@ export function GroupedModelEffortSelector({
             <motion.div key="model-row" {...MORPH} className="overflow-hidden">
               <button
                 type="button"
-                onClick={() => setModelsExpanded(true)}
+                onClick={() => {
+                  setAgentsExpanded(false)
+                  setProvidersExpanded(false)
+                  setModelsExpanded(true)
+                }}
                 className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-muted focus:bg-muted focus:outline-none"
               >
                 <div className="min-w-0 flex-1">
@@ -434,7 +553,7 @@ export function GroupedModelEffortSelector({
         </AnimatePresence>
 
         <AnimatePresence initial={false}>
-          {!modelsExpanded && canSelectEffort && (
+          {!modelsExpanded && !agentsExpanded && canSelectEffort && (
             <motion.div key="effort" {...MORPH} className="overflow-hidden">
               <DropdownMenuSeparator />
               <EffortSlider
@@ -496,7 +615,10 @@ export function GroupedModelEffortSelector({
               <motion.div key="provider-row" {...MORPH} className="overflow-hidden">
                 <button
                   type="button"
-                  onClick={() => setProvidersExpanded(true)}
+                  onClick={() => {
+                    setAgentsExpanded(false)
+                    setProvidersExpanded(true)
+                  }}
                   className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-muted focus:bg-muted focus:outline-none"
                 >
                   {selectedProvider ? (

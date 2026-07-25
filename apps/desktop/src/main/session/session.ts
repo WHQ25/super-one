@@ -501,12 +501,9 @@ export class Session implements SessionContract {
     this.permissionMode = mode
     this.forwardEvent({ type: 'permission_mode_change', mode })
     this.forwardEvent({ type: 'agent_setting_change', patch: { permissionMode: mode } } as AgentEvent)
-    if (!this.backendStarted) {
-      trace('permission.flow', 'session_setMode_skip_backend', { sid: this.id, reason: 'backend_not_started' })
-      return
-    }
-
-    trace('permission.flow', 'session_setMode_fast_path', { sid: this.id, prev, next: mode })
+    // Always push to the backend: ACP/Claude may already have a prewarmed runtime
+    // before ensureStarted() flips backendStarted. Backends no-op when not ready.
+    trace('permission.flow', 'session_setMode_fast_path', { sid: this.id, prev, next: mode, backendStarted: this.backendStarted })
     try {
       await this.backend.setPermissionMode(mode)
       trace('permission.flow', 'session_setMode_fast_done', { sid: this.id, mode })

@@ -363,6 +363,15 @@ describe('Session state machine', () => {
     })
   })
 
+  it('setPermissionMode forwards to backend even when backendStarted is false (prewarm path)', async () => {
+    ;({ session, backend } = makeSession({ permissionMode: 'default' }))
+    // Prewarm can leave ACP/Claude runtime ready while ensureStarted has not flipped backendStarted.
+    session.prewarm()
+    await session.setPermissionMode('plan')
+    expect(backend.setPermissionModeCalls).toEqual(['plan'])
+    expect(session.permissionMode).toBe('plan')
+  })
+
   it('prewarm overrides effort/model/additionalDirs when hint is provided', () => {
     ;({ session, backend } = makeSession({ model: 'baseline', effort: 'low' }))
     session.prewarm({ effort: 'high', model: 'override', additionalDirs: ['/extra'] })

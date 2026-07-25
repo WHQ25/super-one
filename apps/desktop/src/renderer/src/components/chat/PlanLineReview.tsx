@@ -333,7 +333,7 @@ export function PlanLineReview({
   const postItYellow = '#FEF6A5'
   const postItYellowDeep = '#F5E66B'
   /** One shared highlighter ink for every stroke band */
-  const penInk = 'rgb(255 225 40 / 0.34)'
+  const penInk = 'rgb(255 225 40 / 0.22)'
   // Trapezoid pen tip: slight slant on both ends (like a real marker stroke)
   const penTrapezoid = 'polygon(6px 0%, 100% 0%, calc(100% - 6px) 100%, 0% 100%)'
 

@@ -293,6 +293,112 @@ function nameFromGrokMeta(tool: AcpToolLike): string | null {
   return nameFromToolId(name)
 }
 
+/** Canonical projection under `_meta["x.ai/tool"].input` (Grep has pattern; WebSearch omits). */
+function grokMetaInput(tool: AcpToolLike): Record<string, unknown> {
+  const meta = (tool as { _meta?: Record<string, unknown> | null })._meta
+  if (!meta || typeof meta !== 'object') return {}
+  const xai = meta['x.ai/tool']
+  if (!xai || typeof xai !== 'object') return {}
+  const input = (xai as { input?: unknown }).input
+  return asRecord(input)
+}
+
+/** Grok refine title: `Web search: "query"` or `Web search: query`. Bare `Web search:` → undefined. */
+function queryFromWebSearchTitle(title: string | undefined): string | undefined {
+  if (!title) return undefined
+  const m = title.match(/^Web\s+search:\s*(?:"([^"]*)"|(.*))$/i)
+  if (!m) return undefined
+  const q = (m[1] ?? m[2] ?? '').trim()
+  return q || undefined
+}
+
+/** Wire/function names that must not be treated as a Grep pattern when used as title. */
+const GREP_NON_PATTERN_TITLES = new Set([
+  'grep', 'Grep', 'search', 'Search', 'ripgrep', 'GrepSearch', 'code_search',
+])
+
+/** After refine, Grok sets Grep title to the pattern itself. Skip tool ids / empty. */
+function patternFromGrepTitle(title: string | undefined): string | undefined {
+  if (!title) return undefined
+  const t = title.trim()
+  if (!t || GREP_NON_PATTERN_TITLES.has(t)) return undefined
+  if (nameFromToolId(t)) return undefined
+  return t
+}
+
+/**
+ * Backend web_search completion puts query on raw_output
+ * (`{ query, sources }` or `{ action: { type: "search", query } }`), never on raw_input.
+ */
+function queryFromWebSearchRawOutput(raw: unknown): string | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined
+  const obj = raw as Record<string, unknown>
+  const action = obj.action
+  if (action && typeof action === 'object' && !Array.isArray(action)) {
+    const a = action as Record<string, unknown>
+    if (a.type === 'search' && typeof a.query === 'string' && a.query.trim()) {
+      return a.query.trim()
+    }
+  }
+  if (typeof obj.query === 'string' && obj.query.trim()) {
+    // Prefer shapes that look like search results, not arbitrary JSON with a query field.
+    if (
+      Array.isArray(obj.sources)
+      || obj.type === 'web_search_call'
+      || obj.type === 'WebSearch'
+      || typeof obj.status === 'string'
+    ) {
+      return obj.query.trim()
+    }
+  }
+  return undefined
+}
+
+function enrichSearchInput(
+  toolName: string,
+  input: Record<string, unknown>,
+  title: string | undefined,
+): Record<string, unknown> {
+  if (toolName === 'WebSearch') {
+    if (typeof input.query === 'string' && input.query.trim()) return input
+    const fromTitle = queryFromWebSearchTitle(title)
+    return fromTitle ? { ...input, query: fromTitle } : input
+  }
+  if (toolName === 'Grep') {
+    if (typeof input.pattern === 'string' && input.pattern.trim()) return input
+    const fromTitle = patternFromGrepTitle(title)
+    return fromTitle ? { ...input, pattern: fromTitle } : input
+  }
+  return input
+}
+
+/** Prefer query/pattern for UI chip over human titles like "Web search:". */
+function displayToolSummary(
+  toolName: string,
+  input: Record<string, unknown>,
+  title: string | undefined,
+): string | undefined {
+  if (toolName === 'WebSearch') {
+    const q = typeof input.query === 'string' ? input.query.trim() : ''
+    if (q) return q
+    return queryFromWebSearchTitle(title) ?? (title && title !== 'Web search:' ? title : undefined)
+  }
+  if (toolName === 'Grep') {
+    const p = typeof input.pattern === 'string' ? input.pattern.trim() : ''
+    if (p) {
+      const path = typeof input.path === 'string' ? input.path.trim() : ''
+      if (path) {
+        const base = path.split(/[/\\]/).filter(Boolean).pop() || path
+        return `${p} in ${base}`
+      }
+      return p
+    }
+    return patternFromGrepTitle(title)
+  }
+  if (title?.trim()) return title.trim()
+  return undefined
+}
+
 function resolveToolName(
   tool: AcpToolLike,
   raw: Record<string, unknown>,
@@ -523,21 +629,26 @@ export function normalizeAcpTool(
   tool: AcpToolLike,
   opts?: { terminalCommand?: string },
 ): NormalizedAcpTool | null {
-  const raw = asRecord(tool.rawInput)
-  const mcp = unwrapMcpEnvelope(tool, raw)
+  // Meta projection first; rawInput wins on key conflict (full args, not sparse projection).
+  const raw = { ...grokMetaInput(tool), ...asRecord(tool.rawInput) }
+  const mcp = unwrapMcpEnvelope(tool, asRecord(tool.rawInput))
   if (mcp) return mcp
   const diffs = extractDiffs(tool.content)
   const terminalId = extractEmbeddedTerminalId(tool.content)
   const toolName = resolveToolName(tool, raw, diffs, !!terminalId)
   if (!toolName) return null
   const filePath = extractFilePath(tool, raw, diffs)
-  const input = normalizeInput(toolName, tool.kind, raw, filePath, diffs, opts?.terminalCommand)
   const title = typeof tool.title === 'string' && tool.title.trim() ? tool.title.trim() : undefined
+  const input = enrichSearchInput(
+    toolName,
+    normalizeInput(toolName, tool.kind, raw, filePath, diffs, opts?.terminalCommand),
+    title,
+  )
   return {
     toolName,
     input,
     toolFilePath: filePath,
-    toolSummary: title,
+    toolSummary: displayToolSummary(toolName, input, title),
     terminalId,
   }
 }
@@ -1019,6 +1130,25 @@ export function mapSessionUpdate(
         }
       }
       if (update.sessionUpdate === 'tool_call_update') {
+        // Backend web_search never puts query on raw_input; backfill from raw_output on complete.
+        const webQuery = queryFromWebSearchRawOutput(update.rawOutput)
+        if (webQuery) {
+          events.push({
+            type: 'content_delta',
+            messageId: ctx.messageId,
+            delta: {
+              type: 'tool_use',
+              toolName: 'WebSearch',
+              toolUseId: update.toolCallId,
+              input: JSON.stringify({ query: webQuery }),
+              toolSummary: webQuery,
+              status:
+                update.status === 'completed' || update.status === 'failed'
+                  ? 'complete'
+                  : 'streaming',
+            },
+          })
+        }
         const result = toolResultFromUpdate(update, terminalOutput)
         if (result) {
           events.push({

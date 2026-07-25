@@ -922,3 +922,110 @@ describe('Grok full tool set mapping', () => {
   })
 })
 
+describe('Grok Grep / WebSearch summary wiring', () => {
+  it('extracts Grep pattern from refine title when raw_input is sparse', () => {
+    const events = mapSessionUpdate({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 'call_grep',
+      title: 'getToolDisplay',
+      kind: 'search',
+      rawInput: { variant: 'Grep' },
+      _meta: {
+        'x.ai/tool': {
+          version: 1,
+          name: 'grep',
+          kind: 'search',
+          namespace: 'grok_build',
+          label: 'Grep',
+          read_only: true,
+          input: { pattern: 'getToolDisplay' },
+        },
+      },
+    } as never, ctx)
+    const delta = toolUseDelta(events)
+    expect(delta.toolName).toBe('Grep')
+    expect(JSON.parse(delta.input as string)).toMatchObject({ pattern: 'getToolDisplay' })
+    expect(delta.toolSummary).toBe('getToolDisplay')
+  })
+
+  it('extracts WebSearch query from refine title Web search: "…"', () => {
+    const events = mapSessionUpdate({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 'call_ws',
+      title: 'Web search: "superone electron mcp"',
+      kind: 'search',
+      rawInput: { variant: 'WebSearch', query: 'superone electron mcp' },
+      _meta: {
+        'x.ai/tool': {
+          version: 1, name: 'web_search', kind: 'fetch', namespace: 'grok_build',
+          label: 'Web Search', read_only: true,
+        },
+      },
+    } as never, ctx)
+    const delta = toolUseDelta(events)
+    expect(delta.toolName).toBe('WebSearch')
+    expect(JSON.parse(delta.input as string)).toMatchObject({ query: 'superone electron mcp' })
+    expect(delta.toolSummary).toBe('superone electron mcp')
+  })
+
+  it('fills WebSearch query from title when raw_input has only backend flags', () => {
+    const events = mapSessionUpdate({
+      sessionUpdate: 'tool_call',
+      toolCallId: 'call_ws_title',
+      title: 'Web search: "from title only"',
+      kind: 'search',
+      rawInput: { variant: 'WebSearch', backend: true },
+    } as never, ctx)
+    const delta = toolUseDelta(events)
+    expect(delta.toolName).toBe('WebSearch')
+    expect(JSON.parse(delta.input as string)).toMatchObject({ query: 'from title only' })
+    expect(delta.toolSummary).toBe('from title only')
+  })
+
+  it('backfills WebSearch query from backend raw_output on complete', () => {
+    const events = mapSessionUpdate({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 'call_ws_be',
+      title: 'Web search:',
+      status: 'completed',
+      rawOutput: {
+        action: { type: 'search', query: 'agent client protocol', sources: [{ url: 'https://example.com' }] },
+      },
+    } as never, ctx)
+    const use = events.find((e) => e.type === 'content_delta' && e.delta.type === 'tool_use')
+    expect(use?.type).toBe('content_delta')
+    if (use?.type === 'content_delta' && use.delta.type === 'tool_use') {
+      expect(use.delta.toolName).toBe('WebSearch')
+      expect(JSON.parse(use.delta.input as string)).toEqual({ query: 'agent client protocol' })
+      expect(use.delta.toolSummary).toBe('agent client protocol')
+    }
+    const result = events.find((e) => e.type === 'content_delta' && e.delta.type === 'tool_result')
+    expect(result).toBeTruthy()
+  })
+
+  it('uses meta x.ai/tool.input.pattern for Grep when raw_input empty', () => {
+    const events = mapSessionUpdate({
+      sessionUpdate: 'tool_call',
+      toolCallId: 'call_grep_meta',
+      title: 'grep',
+      kind: 'search',
+      rawInput: {},
+      _meta: {
+        'x.ai/tool': {
+          version: 1,
+          name: 'grep',
+          kind: 'search',
+          namespace: 'grok_build',
+          label: 'Grep',
+          read_only: true,
+          input: { pattern: 'from-meta', path: '/proj' },
+        },
+      },
+    } as never, ctx)
+    const delta = toolUseDelta(events)
+    expect(delta.toolName).toBe('Grep')
+    expect(JSON.parse(delta.input as string)).toMatchObject({ pattern: 'from-meta', path: '/proj' })
+    expect(delta.toolSummary).toMatch(/from-meta/)
+  })
+})
+

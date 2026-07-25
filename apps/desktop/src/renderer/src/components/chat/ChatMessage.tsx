@@ -356,6 +356,7 @@ function renderBlock(
           toolName={block.toolName}
           toolUseId={block.toolUseId}
           input={block.input}
+          toolSummary={block.toolSummary}
           status={!isStreaming && block.status === 'streaming' ? undefined : block.status}
           elapsedSeconds={block.elapsedSeconds}
           result={toolResultMap?.get(block.toolUseId)}

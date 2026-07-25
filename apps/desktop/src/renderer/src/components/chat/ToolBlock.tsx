@@ -337,6 +337,8 @@ interface ToolBlockProps {
   toolName: string
   toolUseId?: string
   input: string
+  /** Precomputed summary from ACP/main (e.g. Grok title / raw_output query). */
+  toolSummary?: string
   status?: 'streaming' | 'complete'
   elapsedSeconds?: number
   result?: string
@@ -354,7 +356,7 @@ const FILE_PATH_TOOLS = new Set(['Read', 'Edit', 'Write', 'NotebookEdit', 'FileC
 
 
 
-export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, status, elapsedSeconds, result, isTimedOut, isError, resultOutputPath, autoExpand, backgroundActivity = false, grouped = false, trailingAction }: ToolBlockProps) {
+export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, toolSummary, status, elapsedSeconds, result, isTimedOut, isError, resultOutputPath, autoExpand, backgroundActivity = false, grouped = false, trailingAction }: ToolBlockProps) {
   const { t } = useTranslation()
   const nestedDefaults = useNestedToolDefaults()
   const effectiveAutoExpand = autoExpand ?? nestedDefaults?.defaultAutoExpand ?? true
@@ -484,10 +486,12 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, s
   const hasQA = toolName === 'AskUserQuestion' && !!cleanResult && !isStreaming && !isQuestionDismissed
   const expandable = hasDiff || hasResult || hasQA
 
-  // For unknown tools, show truncated raw input as fallback
-  const summary = display.summary || (!isMcp && display.icon === 'wrench' && input.length > 0
-    ? (input.length > 80 ? input.slice(0, 80) + '\u2026' : input)
-    : '')
+  // Prefer parsed input summary; fall back to ACP/main toolSummary (Grok title / raw_output).
+  const summary = display.summary
+    || (toolSummary?.trim() ?? '')
+    || (!isMcp && display.icon === 'wrench' && input.length > 0
+      ? (input.length > 80 ? input.slice(0, 80) + '\u2026' : input)
+      : '')
 
   const displayName = mcpInfo
     ? <>{mcpInfo.serverName}<span className="text-muted-foreground"> · </span>{mcpInfo.mcpToolName.replace(/_/g, ' ')}</>

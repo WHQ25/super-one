@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { ContentBlock } from './agent-types'
-import { applyContentDelta } from './content-delta'
+import { applyContentDelta, mergeToolUseInputJson } from './content-delta'
 
 const thinking = (text: string, parent?: string | null): ContentBlock =>
   ({ type: 'thinking', thinking: text, ...(parent !== undefined ? { parentToolUseId: parent } : {}) }) as ContentBlock
@@ -41,5 +41,70 @@ describe('applyContentDelta: never merges across parentToolUseId', () => {
     expect((a[0] as { thinking: string }).thinking).toBe('A reasoning continues')
     expect(b).toHaveLength(1)
     expect((b[0] as { thinking: string }).thinking).toBe('B reasoning ')
+  })
+})
+
+describe('applyContentDelta: tool_use input merge', () => {
+  it('preserves query when a later sparse update omits it', () => {
+    let content: ContentBlock[] = []
+    content = applyContentDelta(content, {
+      type: 'tool_use',
+      toolUseId: 'ws1',
+      toolName: 'WebSearch',
+      input: JSON.stringify({ query: 'agent client protocol', variant: 'WebSearch' }),
+      toolSummary: 'agent client protocol',
+      status: 'streaming',
+    } as ContentBlock)
+    content = applyContentDelta(content, {
+      type: 'tool_use',
+      toolUseId: 'ws1',
+      toolName: 'WebSearch',
+      input: JSON.stringify({ variant: 'WebSearch', backend: true }),
+      toolSummary: 'Web search:',
+      status: 'complete',
+    } as ContentBlock)
+    const block = content[0]
+    expect(block.type).toBe('tool_use')
+    if (block.type === 'tool_use') {
+      expect(JSON.parse(block.input)).toMatchObject({ query: 'agent client protocol', backend: true })
+      expect(block.toolSummary).toBe('agent client protocol')
+      expect(block.status).toBe('complete')
+    }
+  })
+
+  it('upgrades toolSummary from raw_output backfill query', () => {
+    let content: ContentBlock[] = []
+    content = applyContentDelta(content, {
+      type: 'tool_use',
+      toolUseId: 'ws2',
+      toolName: 'WebSearch',
+      input: JSON.stringify({ variant: 'WebSearch', backend: true }),
+      toolSummary: 'Web search:',
+      status: 'streaming',
+    } as ContentBlock)
+    content = applyContentDelta(content, {
+      type: 'tool_use',
+      toolUseId: 'ws2',
+      toolName: 'WebSearch',
+      input: JSON.stringify({ query: 'from raw_output' }),
+      toolSummary: 'from raw_output',
+      status: 'complete',
+    } as ContentBlock)
+    const block = content[0]
+    expect(block.type).toBe('tool_use')
+    if (block.type === 'tool_use') {
+      expect(JSON.parse(block.input)).toMatchObject({ query: 'from raw_output', backend: true })
+      expect(block.toolSummary).toBe('from raw_output')
+    }
+  })
+})
+
+describe('mergeToolUseInputJson', () => {
+  it('keeps pattern when next payload drops it', () => {
+    const merged = mergeToolUseInputJson(
+      JSON.stringify({ pattern: 'foo', path: 'src' }),
+      JSON.stringify({ path: 'src', head_limit: 10 }),
+    )
+    expect(JSON.parse(merged as string)).toEqual({ pattern: 'foo', path: 'src', head_limit: 10 })
   })
 })

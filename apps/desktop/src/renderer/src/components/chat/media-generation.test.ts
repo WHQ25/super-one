@@ -36,6 +36,13 @@ describe('media_generate_image tool identification', () => {
     expect(isMediaGenerateImageTool(TOOL)).toBe(true)
   })
 
+  it('matches Grok Build native ImageGen / ImageEdit tool names', () => {
+    expect(isMediaGenerateImageTool('ImageGen')).toBe(true)
+    expect(isMediaGenerateImageTool('ImageEdit')).toBe(true)
+    expect(isMediaGenerateImageTool('image_gen')).toBe(true)
+    expect(isMediaGenerateImageTool('image_edit')).toBe(true)
+  })
+
   it('rejects a same-named tool from a different mcp server', () => {
     expect(isMediaGenerateImageTool('mcp__other__media_generate_image')).toBe(false)
   })
@@ -94,6 +101,56 @@ describe('reference images used for a generation', () => {
   it('carries reference paths onto an in-progress item too', () => {
     const items = toImageGenerationItems('call-1', INPUT, undefined)
     expect(items[0].referenceImagePaths).toEqual(['/tmp/app-icon.png'])
+  })
+})
+
+describe('mapping Grok native image_gen results to gallery items', () => {
+  const GROK_TYPED = JSON.stringify({
+    type: 'ImageGen',
+    path: '/Users/me/.grok/sessions/s/images/1.jpg',
+    filename: '1.jpg',
+    session_folder: 'images',
+  })
+  const GROK_PROMPT_TEXT = JSON.stringify({
+    path: '/Users/me/.grok/sessions/s/images/2.jpg',
+    filename: '2.jpg',
+    session_folder: 'images',
+    message: 'Image generated and saved to /Users/me/.grok/sessions/s/images/2.jpg. Do not read or re-display it.',
+  })
+  const GROK_NORMALIZED = JSON.stringify({
+    status: 'generated',
+    savedPaths: ['/Users/me/.grok/sessions/s/images/3.jpg'],
+    provider: 'grok',
+  })
+
+  it('maps typed MediaGenOutput raw_output into a completed gallery item', () => {
+    const items = toImageGenerationItems('ig-1', { prompt: 'a test image' }, GROK_TYPED)
+    expect(items).toHaveLength(1)
+    expect(items[0]).toMatchObject({
+      type: 'image_generation',
+      status: 'completed',
+      savedPath: '/Users/me/.grok/sessions/s/images/1.jpg',
+      revisedPrompt: 'a test image',
+    })
+  })
+
+  it('maps Grok prompt_text JSON into a completed gallery item', () => {
+    const items = toImageGenerationItems('ig-2', { prompt: 'cat' }, GROK_PROMPT_TEXT)
+    expect(items[0]?.savedPath).toBe('/Users/me/.grok/sessions/s/images/2.jpg')
+  })
+
+  it('maps ACP-normalized superone-shaped Grok results', () => {
+    const items = toImageGenerationItems('ig-3', { prompt: 'dog' }, GROK_NORMALIZED)
+    expect(items[0]?.savedPath).toBe('/Users/me/.grok/sessions/s/images/3.jpg')
+  })
+
+  it('hides the ImageGen tool block when the gallery will show the image', () => {
+    expect(isHiddenToolBlock('ImageGen', GROK_TYPED)).toBe(true)
+    expect(isHiddenToolBlock('ImageGen', GROK_NORMALIZED)).toBe(true)
+  })
+
+  it('keeps the ImageGen tool block visible on plain error text', () => {
+    expect(isHiddenToolBlock('ImageGen', 'Image generation is a SuperGrok feature')).toBe(false)
   })
 })
 

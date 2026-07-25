@@ -777,13 +777,70 @@ export function formatAcpRawOutput(raw: unknown): string {
   }
 }
 
+/**
+ * Grok Imagine / video tools return a typed MediaGenOutput as raw_output:
+ * `{ type: "ImageGen"|"ImageEdit"|…, path, filename, session_folder }`.
+ * SuperOne's chat gallery expects the same shape as media_generate_image
+ * (`status` + `savedPaths`). Normalize here so the renderer can show the file
+ * without special-casing every agent.
+ */
+function mediaGenGallerySummary(raw: unknown): string | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
+  const obj = raw as Record<string, unknown>
+  const type = typeof obj.type === 'string' ? obj.type : ''
+  const isImage = type === 'ImageGen' || type === 'ImageEdit'
+  const isVideo = type === 'ImageToVideo' || type === 'ReferenceToVideo'
+  if (!isImage && !isVideo) {
+    // prompt_text JSON (no type tag): { path, filename, session_folder, message }
+    const path = typeof obj.path === 'string' ? obj.path.trim() : ''
+    const hasMediaKeys = typeof obj.filename === 'string' || typeof obj.session_folder === 'string'
+    if (!path || !hasMediaKeys) return null
+    return JSON.stringify({
+      status: 'generated',
+      savedPaths: [path],
+      provider: 'grok',
+    })
+  }
+  const path = typeof obj.path === 'string' ? obj.path.trim() : ''
+  if (!path) {
+    // ZDR upload-only or empty path — keep default text formatting.
+    return null
+  }
+  return JSON.stringify({
+    status: 'generated',
+    savedPaths: [path],
+    provider: 'grok',
+  })
+}
+
 function toolResultFromUpdate(update: ToolCallUpdate, terminalOutput?: string): ContentBlock | null {
   if (update.status !== 'completed' && update.status !== 'failed') return null
+
+  // Prefer structured gallery summary for Grok media tools before text unwrapping.
+  if (update.status === 'completed' && update.rawOutput != null) {
+    const gallery = mediaGenGallerySummary(update.rawOutput)
+    if (gallery) {
+      return {
+        type: 'tool_result',
+        toolUseId: update.toolCallId,
+        summary: gallery,
+        isError: false,
+      }
+    }
+  }
+
   const parts: string[] = []
   for (const item of update.content ?? []) {
     if (item.type === 'content' && item.content?.type === 'text') {
       // Agent may put ListDir JSON envelope in text content — unwrap it.
-      parts.push(formatAcpRawOutput(item.content.text))
+      // Also upgrade Grok prompt_text media JSON into gallery shape when present.
+      const text = item.content.text
+      const gallery = mediaGenGallerySummary(
+        (() => {
+          try { return JSON.parse(typeof text === 'string' ? text : '') } catch { return null }
+        })(),
+      )
+      parts.push(gallery ?? formatAcpRawOutput(text))
     } else if (item.type === 'diff') {
       const path = typeof item.path === 'string' ? item.path : ''
       const oldLen = typeof item.oldText === 'string' ? item.oldText.split('\n').length : 0

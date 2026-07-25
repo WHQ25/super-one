@@ -528,6 +528,59 @@ describe('tool mapping from real ACP agent traces', () => {
   })
 })
 
+describe('Grok ImageGen tool_result → media gallery summary', () => {
+  it('normalizes typed MediaGenOutput raw_output into status+savedPaths JSON', () => {
+    const events = mapSessionUpdate({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 'call_img',
+      title: 'image_gen',
+      status: 'completed',
+      rawInput: { variant: 'ImageGen', prompt: 'a test image' },
+      rawOutput: {
+        type: 'ImageGen',
+        path: '/Users/me/.grok/sessions/s/images/1.jpg',
+        filename: '1.jpg',
+        session_folder: 'images',
+      },
+    } as never, ctx)
+    const result = events.find((e) => e.type === 'content_delta' && e.delta.type === 'tool_result')
+    expect(result).toBeTruthy()
+    if (!result || result.type !== 'content_delta' || result.delta.type !== 'tool_result') {
+      throw new Error('expected tool_result')
+    }
+    expect(JSON.parse(result.delta.summary)).toEqual({
+      status: 'generated',
+      savedPaths: ['/Users/me/.grok/sessions/s/images/1.jpg'],
+      provider: 'grok',
+    })
+  })
+
+  it('does not force gallery JSON when path is empty (ZDR / upload-only)', () => {
+    const events = mapSessionUpdate({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 'call_vid',
+      title: 'image_to_video',
+      status: 'completed',
+      rawOutput: {
+        type: 'ImageToVideo',
+        path: '',
+        filename: '',
+        session_folder: '',
+        uploaded_url: 'https://bucket.example/v.mp4',
+      },
+    } as never, ctx)
+    const result = events.find((e) => e.type === 'content_delta' && e.delta.type === 'tool_result')
+    expect(result).toBeTruthy()
+    if (!result || result.type !== 'content_delta' || result.delta.type !== 'tool_result') {
+      throw new Error('expected tool_result')
+    }
+    // Falls back to stringified raw output / text — must NOT claim savedPaths.
+    expect(() => JSON.parse(result.delta.summary)).not.toThrow()
+    const parsed = JSON.parse(result.delta.summary) as { savedPaths?: string[] }
+    expect(parsed.savedPaths).toBeUndefined()
+  })
+})
+
 describe('formatAcpRawOutput', () => {
   it('unwraps the MCP result envelope to the tool payload', () => {
     // Real grok shape: the variant key (OkayOutput) is a serde tag around the payload.

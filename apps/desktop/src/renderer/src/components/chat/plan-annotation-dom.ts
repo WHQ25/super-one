@@ -169,18 +169,23 @@ export interface StickyAnchor {
   markWidth: number
 }
 
-/** Anchor a sticky note at the end of a mark (in-flow highlight → correct coords). */
+/**
+ * Anchor at the **top-right of the selected region**.
+ * Uses the first client rect (first line of the highlight) so multi-line
+ * selections pin to the top-right of the first line, not the bounding box.
+ */
 export function anchorBesideMark(mark: HTMLElement, container: HTMLElement): StickyAnchor {
-  const m = mark.getBoundingClientRect()
   const c = container.getBoundingClientRect()
-  const top = m.top - c.top + container.scrollTop
-  // Prefer just to the right of the last line of the mark; fall back below if cramped.
-  const left = m.right - c.left + container.scrollLeft + 8
+  const rects = [...mark.getClientRects()].filter((r) => r.width > 0 && r.height > 0)
+  const first = rects[0] ?? mark.getBoundingClientRect()
+  const top = first.top - c.top + container.scrollTop
+  const left = first.right - c.left + container.scrollLeft
   return {
-    top: Math.max(0, top - 4),
-    left: Math.max(8, left),
-    markHeight: m.height,
-    markWidth: m.width,
+    // Pin sits on the selection's top-right corner (slightly inset so it hugs the text).
+    top: Math.max(0, top - 2),
+    left: Math.max(0, left - 2),
+    markHeight: first.height,
+    markWidth: first.width,
   }
 }
 

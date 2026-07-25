@@ -295,9 +295,17 @@ export function PlanLineReview({
     return () => window.removeEventListener('keydown', onKeyDown, true)
   }, [closeNote, note, saveNote])
 
-  const clampLeft = (left: number, width = 196) => {
-    const w = scrollRef.current?.clientWidth ?? 400
-    return Math.min(Math.max(8, left), Math.max(8, w - width - 12))
+  /** Pin size — keep in sync with collapsed pin button. */
+  const PIN = 18
+
+  const clampPos = (top: number, left: number, w = PIN, h = PIN) => {
+    const box = scrollRef.current
+    const maxL = Math.max(0, (box?.clientWidth ?? 400) - w - 4)
+    const maxT = Math.max(0, (box?.scrollHeight ?? 400) - h - 4)
+    return {
+      top: Math.min(Math.max(0, top), maxT),
+      left: Math.min(Math.max(0, left), maxL),
+    }
   }
 
   return (
@@ -309,16 +317,18 @@ export function PlanLineReview({
         {planContent.trim().length === 0 ? (
           <div className="p-4 text-sm text-muted-foreground">{t('chat.plan.emptyPlan')}</div>
         ) : (
-          <div ref={contentRef} className="select-text px-4 py-3 pr-32">
+          <div ref={contentRef} className="select-text px-4 py-3">
             <CopyableMarkdown text={planContent} isStreaming={false} />
           </div>
         )}
 
-        {/* Collapsed pins for saved notes (not currently open) */}
+        {/* Collapsed pin: top-right of the first line of the selection */}
         {comments.map((c, index) => {
           if (note?.commentId === c.id) return null
           const anchor = anchors[c.id]
           if (!anchor) return null
+          // anchor is selection top-right; place pin so it sits on that corner
+          const pos = clampPos(anchor.top - 2, anchor.left - PIN + 2)
           return (
             <button
               key={c.id}
@@ -326,16 +336,12 @@ export function PlanLineReview({
               data-plan-sticky-ui
               aria-label={t('chat.plan.comments')}
               className={cn(
-                'absolute z-20 size-6 cursor-pointer rounded-[2px]',
-                'bg-[#fde047] shadow-[1px_2px_5px_rgba(0,0,0,0.2)]',
-                'border border-yellow-500/30',
-                'text-[10px] font-medium text-yellow-900/60',
-                'hover:brightness-105 dark:bg-yellow-600 dark:text-yellow-50',
+                'absolute z-20 flex size-[18px] cursor-pointer items-center justify-center',
+                'rounded-[1px] bg-[#facc15] text-[9px] font-semibold text-yellow-950/70',
+                'shadow-[1px_1px_3px_rgba(0,0,0,0.25)]',
+                'hover:brightness-105 dark:bg-yellow-500 dark:text-yellow-950',
               )}
-              style={{
-                top: anchor.top,
-                left: clampLeft(anchor.left, 28),
-              }}
+              style={{ top: pos.top, left: pos.left }}
               onClick={() => openExisting(c)}
             >
               {index + 1}
@@ -343,32 +349,34 @@ export function PlanLineReview({
           )
         })}
 
-        {/* Open sticky: always editable, X = delete (edit) or cancel (create) */}
+        {/* Open sticky: textarea + top-right X only */}
         {note && (
           <div
             data-plan-sticky-ui
             className="absolute z-30"
-            style={{
-              top: noteAnchor?.top ?? 20,
-              left: clampLeft(noteAnchor?.left ?? 20),
-            }}
+            style={(() => {
+              const a = noteAnchor
+              // Open note hangs from the selection top-right, slightly below the pin
+              const pos = clampPos(
+                (a?.top ?? 20) + 4,
+                (a?.left ?? 20) - 8,
+                192,
+                100,
+              )
+              return { top: pos.top, left: pos.left }
+            })()}
             onMouseDown={(e) => e.stopPropagation()}
           >
             <div
               className={cn(
-                'relative w-48 rounded-[2px] bg-[#fde047] p-3 pt-6',
-                'shadow-[2px_3px_8px_rgba(0,0,0,0.18)]',
-                'dark:bg-yellow-600',
+                'relative w-48 rounded-[1px] bg-[#facc15] p-2.5 pt-5',
+                'shadow-[2px_3px_0_rgba(0,0,0,0.12),0_1px_4px_rgba(0,0,0,0.15)]',
+                'dark:bg-yellow-500',
               )}
             >
-              {/* soft folded corner */}
-              <span
-                aria-hidden
-                className="pointer-events-none absolute right-0 top-0 size-0 border-b-[12px] border-l-[12px] border-b-transparent border-l-yellow-200/90 dark:border-l-yellow-500/60"
-              />
               <button
                 type="button"
-                className="absolute right-1 top-1 flex size-5 items-center justify-center rounded-sm text-yellow-900/45 hover:bg-black/5 hover:text-yellow-950 dark:text-yellow-50/70 dark:hover:bg-black/20"
+                className="absolute right-0.5 top-0.5 flex size-5 items-center justify-center text-yellow-950/40 hover:text-yellow-950 dark:text-yellow-950/50"
                 aria-label={
                   note.mode === 'edit'
                     ? t('chat.plan.removeComment')
@@ -391,14 +399,13 @@ export function PlanLineReview({
                 value={note.text}
                 onChange={(e) => setNote((n) => (n ? { ...n, text: e.target.value } : n))}
                 onBlur={(e) => {
-                  // Don't save when clicking the delete/close control on this note
                   const related = e.relatedTarget as HTMLElement | null
                   if (related?.closest?.('[data-plan-sticky-ui]')) return
                   const current = noteRef.current
                   if (current) saveNoteRef.current(current)
                 }}
                 placeholder={t('chat.plan.commentPlaceholder')}
-                className="w-full resize-none bg-transparent text-[13px] leading-snug text-yellow-950 placeholder:text-yellow-900/35 focus:outline-none dark:text-yellow-50 dark:placeholder:text-yellow-100/40"
+                className="w-full resize-none bg-transparent text-[13px] leading-snug text-yellow-950 placeholder:text-yellow-950/35 focus:outline-none"
               />
             </div>
           </div>

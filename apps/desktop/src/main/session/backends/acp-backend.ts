@@ -101,6 +101,11 @@ export class AcpBackend implements SessionBackend {
   private runtimeAgentKey: string | null = null
   /** Cwd the live ACP process was started with (session/new). */
   private runtimeCwd: string | null = null
+  /**
+   * Provider session ids we already forced a cold restart for (wanted resume ≠ live id).
+   * Prevents an infinite teardown loop when session/load keeps failing.
+   */
+  private resumeForceAttempted = new Set<string>()
 
   private agentKey(cfg: AcpBackendConfig = this.config): string {
     return `${cfg.agentId ?? ''}\0${cfg.command ?? ''}`
@@ -354,17 +359,59 @@ export class AcpBackend implements SessionBackend {
   private async ensureRuntime(): Promise<AcpRuntime> {
     if (!this.startOpts) throw new Error('AcpBackend missing startOpts')
     const desiredCwd = this.effectiveCwd(this.startOpts)
+    const wantedResume = this.startOpts.providerSessionId?.trim() || ''
     if (
       this.runtime
       && this.runtimeAgentKey === this.agentKey()
       && this.runtimeCwd === desiredCwd
     ) {
-      return this.runtime
+      // Live runtime but cold-started without the stored provider session id (or after a
+      // failed load that minted a new id). Force one session/load attempt when we know
+      // the wanted resume id and have not already retried it.
+      if (
+        wantedResume
+        && this.runtime.sessionId !== wantedResume
+        && !this.resumeForceAttempted.has(wantedResume)
+      ) {
+        log.warn(
+          '[AcpBackend] live runtime id=%s ≠ wanted resume=%s — restarting for session/load sid=%s',
+          this.runtime.sessionId,
+          wantedResume,
+          this.startOpts.sessionId,
+        )
+        this.resumeForceAttempted.add(wantedResume)
+        await this.teardownRuntime()
+      } else {
+        return this.runtime
+      }
     }
     if (this.runtime) {
       await this.teardownRuntime()
     }
-    if (this.ensureRuntimePromise) return this.ensureRuntimePromise
+    if (this.ensureRuntimePromise) {
+      const pending = this.ensureRuntimePromise
+      const runtime = await pending
+      // If a concurrent start/prewarm filled providerSessionId after this spawn began
+      // without a resume id, tear down once and respawn so session/load can run.
+      const wantedAfter = this.startOpts?.providerSessionId?.trim() || ''
+      if (
+        wantedAfter
+        && runtime.sessionId !== wantedAfter
+        && !this.resumeForceAttempted.has(wantedAfter)
+        && this.runtime === runtime
+      ) {
+        log.warn(
+          '[AcpBackend] in-flight runtime id=%s ≠ wanted resume=%s — restarting for session/load sid=%s',
+          runtime.sessionId,
+          wantedAfter,
+          this.startOpts?.sessionId,
+        )
+        this.resumeForceAttempted.add(wantedAfter)
+        await this.teardownRuntime()
+      } else {
+        return runtime
+      }
+    }
     if (!this.config.agentId && !this.config.command) {
       throw new Error('No ACP agent configured. Pick an agent under Others, then try again.')
     }
@@ -396,13 +443,26 @@ export class AcpBackend implements SessionBackend {
       status: 'loading',
       agentId,
     })
+    // Re-read startOpts at spawn time (start/prewarm may refresh providerSessionId
+    // after an earlier ensureRuntimePromise was scheduled with a stale empty resume).
+    const resumeSessionId = this.startOpts?.providerSessionId?.trim() || undefined
+    log.info(
+      '[AcpBackend] ensureRuntime sid=%s agent=%s resume=%s cwd=%s',
+      this.startOpts?.sessionId,
+      agentId ?? '(none)',
+      resumeSessionId ?? '(none)',
+      desiredCwd,
+    )
     const promise = (async () => {
+      // Prefer the latest startOpts at the moment we actually call the factory —
+      // a concurrent start() may have filled providerSessionId after prewarm queued us.
+      const resumeAtSpawn = this.startOpts?.providerSessionId?.trim() || resumeSessionId
       const runtime = await runtimeFactory({
         launch,
         superoneSessionId: this.startOpts?.sessionId,
         permissionMode: this.startOpts?.permissionMode,
         // Resume Grok/ACP agent memory when we have a stored provider session id.
-        resumeSessionId: this.startOpts?.providerSessionId ?? undefined,
+        resumeSessionId: resumeAtSpawn,
         permission: {
           request: (params) => this.handlePermissionRequest(params),
         },
@@ -433,9 +493,10 @@ export class AcpBackend implements SessionBackend {
       this.runtimeAgentKey = launchKey
       this.runtimeCwd = runtime.launch.cwd || desiredCwd
       log.info(
-        '[AcpBackend] runtime ready sid=%s agent=%s cwd=%s',
+        '[AcpBackend] runtime ready sid=%s agent=%s providerSessionId=%s cwd=%s',
         this.startOpts?.sessionId,
         agentId ?? '(none)',
+        runtime.sessionId,
         this.runtimeCwd,
       )
       for (const cb of this.providerSessionIdListeners) {
@@ -687,10 +748,12 @@ export class AcpBackend implements SessionBackend {
     }
   }
 
+  /** Clear one-shot resume retry markers when the host intentionally starts a brand-new agent thread. */
   async close(): Promise<void> {
     this.disposed = true
     this.started = false
     await this.teardownRuntime()
+    this.resumeForceAttempted.clear()
     this.startOpts = null
     this.eventListeners.clear()
     this.providerSessionIdListeners.clear()

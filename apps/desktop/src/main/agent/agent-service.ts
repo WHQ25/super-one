@@ -1553,6 +1553,38 @@ export class AgentService {
           return null
         }
         await mgr.disposeSession(hint.sessionId)
+        // Harness switch on an empty draft: create fresh (do not resume old provider session).
+        return mgr.createSession({ ...createOpts, id: hint.sessionId })
+      }
+      // Session not in memory — resume from DB so provider_session_id is restored for
+      // ACP session/load (Grok). createSession alone used to drop that id and force session/new.
+      try {
+        const resumed = mgr.resumeSession(hint.sessionId, { passive: true })
+        if (resumed.snapshot.harnessId === harnessId) {
+          mgr.setActiveSession(projectPath, hint.sessionId)
+          await this.applyWorktreeCwdHint(resumed, {
+            worktreePath: hint.worktreePath,
+          })
+          log.debug(
+            '[agent-service] prewarm resumed sid=%s harness=%s providerSessionId=%s',
+            hint.sessionId,
+            harnessId,
+            resumed.snapshot.providerSessionId ?? '(none)',
+          )
+          return resumed
+        }
+        if (resumed.snapshot.messages.length > 0 || resumed.isStreaming()) {
+          log.debug(
+            '[agent-service] prewarm skipped resumed sid=%s harness=%s expected=%s',
+            hint.sessionId,
+            resumed.snapshot.harnessId,
+            harnessId,
+          )
+          return null
+        }
+        await mgr.disposeSession(hint.sessionId)
+      } catch {
+        // Not in DB yet (true draft) — fall through to create.
       }
       return mgr.createSession({ ...createOpts, id: hint.sessionId })
     }

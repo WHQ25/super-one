@@ -156,6 +156,26 @@ export class SessionManagerImpl implements SessionManagerContract {
     const sandboxInfo = opts.sandboxMode !== undefined
       ? { enabled: opts.sandboxMode !== 'off', autoAllowBash: opts.sandboxMode === 'auto' }
       : undefined
+    // Cold create with a known SuperOne session id (prewarm / send fallback) must
+    // still carry the stored provider session id so ACP agents can session/load.
+    // Only hydrate when the DB row is the same provider — harness switches must not
+    // resume a Claude/Codex thread id into Grok (or vice versa).
+    let resumedProviderSessionId = opts.providerSessionId?.trim() || null
+    if (!resumedProviderSessionId && opts.id && this.persistence.loadSession) {
+      try {
+        const prior = this.persistence.loadSession(opts.id)
+        if (prior?.providerId === opts.providerId && prior.providerSessionId?.trim()) {
+          resumedProviderSessionId = prior.providerSessionId.trim()
+          log.info(
+            '[SessionManager] createSession hydrated providerSessionId sid=%s provider=%s',
+            opts.id,
+            opts.providerId,
+          )
+        }
+      } catch (err) {
+        log.debug('[SessionManager] createSession loadSession hydrate skipped:', err)
+      }
+    }
     const session = new Session({
       id: sessionId,
       projectPath: opts.projectPath,
@@ -172,6 +192,7 @@ export class SessionManagerImpl implements SessionManagerContract {
       gitBranch: opts.gitBranch ?? null,
       apiProviderId,
       acpAgentId: opts.acpAgentId ?? null,
+      resumedProviderSessionId: resumedProviderSessionId ?? undefined,
       homedir: homedir(),
       getProjectResources: (c) => this.projectResources.get(c),
       invalidateProjectResources: (c) => this.projectResources.invalidate(c),

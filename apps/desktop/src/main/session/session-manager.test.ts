@@ -147,6 +147,45 @@ describe('SessionManager', () => {
       expect(hoisted.backendsCreated).toHaveLength(2)
       expect(hoisted.backendsCreated[0]).not.toBe(hoisted.backendsCreated[1])
     })
+
+    it('hydrates providerSessionId from DB when creating with a known session id', () => {
+      seedProvider('acp-base', 'acp')
+      const loadSession = vi.fn(() => ({
+        projectPath: '/p',
+        providerId: 'acp-base',
+        providerSessionId: 'prior-grok-session',
+        messages: [] as ChatMessage[],
+        totalCostUsd: 0,
+        contextTokens: 0,
+      }))
+      const mgrWithLoad = new SessionManagerImpl({ loadSession })
+      const session = mgrWithLoad.createSession({
+        projectPath: '/p',
+        providerId: 'acp-base',
+        id: 'sid-known',
+      })
+      expect(loadSession).toHaveBeenCalledWith('sid-known')
+      expect(session.snapshot.providerSessionId).toBe('prior-grok-session')
+    })
+
+    it('does not hydrate providerSessionId from a different provider row', () => {
+      seedProvider('acp-base', 'acp')
+      const loadSession = vi.fn(() => ({
+        projectPath: '/p',
+        providerId: 'claude-base',
+        providerSessionId: 'claude-sdk-id',
+        messages: [] as ChatMessage[],
+        totalCostUsd: 0,
+        contextTokens: 0,
+      }))
+      const mgrWithLoad = new SessionManagerImpl({ loadSession })
+      const session = mgrWithLoad.createSession({
+        projectPath: '/p',
+        providerId: 'acp-base',
+        id: 'sid-known',
+      })
+      expect(session.snapshot.providerSessionId).toBeNull()
+    })
   })
 
   describe('getSession / listProjectSessions / disposeSession', () => {

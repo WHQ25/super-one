@@ -163,6 +163,46 @@ describe('AcpBackend', () => {
     await backend.close()
   })
 
+  it('passes providerSessionId as resumeSessionId so Grok can session/load', async () => {
+    let resume: string | undefined = 'unset'
+    setAcpRuntimeFactory(async (opts) => {
+      resume = opts.resumeSessionId
+      return mockRuntime({ sessionId: 'prior-grok-session' })
+    })
+    const backend = new AcpBackend()
+    await backend.start({
+      ...startOpts({ agentId: 'grok-build' }),
+      providerSessionId: 'prior-grok-session',
+    })
+    await new Promise((r) => setTimeout(r, 10))
+    expect(resume).toBe('prior-grok-session')
+    await backend.close()
+  })
+
+  it('restarts once when live runtime id does not match wanted resume id', async () => {
+    const factories: string[] = []
+    setAcpRuntimeFactory(async (opts) => {
+      factories.push(opts.resumeSessionId ?? '(none)')
+      // First spawn ignores resume (simulates a stale cold start); second honors it.
+      if (factories.length === 1) {
+        return mockRuntime({ sessionId: 'stale-new-id' })
+      }
+      return mockRuntime({ sessionId: opts.resumeSessionId ?? 'loaded' })
+    })
+    const backend = new AcpBackend()
+    await backend.start({
+      ...startOpts({ agentId: 'grok-build' }),
+      providerSessionId: 'prior-grok-session',
+    })
+    await new Promise((r) => setTimeout(r, 10))
+    // Trigger ensureRuntime again via send — mismatch should force one reload.
+    await backend.send({ content: 'hello', assistantMessageId: 'a1' })
+    expect(factories[0]).toBe('prior-grok-session')
+    expect(factories.length).toBeGreaterThanOrEqual(2)
+    expect(factories[factories.length - 1]).toBe('prior-grok-session')
+    await backend.close()
+  })
+
   it('emits acp_modes from configOptions and setSessionMode updates selection', async () => {
     const setConfigOption = vi.fn(async (_id: string, value: string) => [
       {

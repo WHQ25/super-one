@@ -351,7 +351,8 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
 
     let sessionVia: 'new' | 'load' = 'new'
     const resumeId = opts.resumeSessionId?.trim() || ''
-    if (resumeId && agentCapabilities?.loadSession) {
+    const loadSessionCap = agentCapabilities?.loadSession === true
+    if (resumeId && loadSessionCap) {
       try {
         // Attach routing *before* load so replayed session/update is not dropped.
         const sessionResponse: {
@@ -398,6 +399,18 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
         try { session?.dispose() } catch { /* ignore */ }
         session = null
       }
+    } else if (resumeId && !loadSessionCap) {
+      log.info(
+        '[acp-runtime] session/new (agent loadSession=false) resume=%s agent=%s',
+        resumeId,
+        launch.agentId,
+      )
+    } else {
+      log.info(
+        '[acp-runtime] session/new (no resumeSessionId) agent=%s superone=%s',
+        launch.agentId,
+        opts.superoneSessionId ?? '(none)',
+      )
     }
 
     if (!session) {
@@ -408,6 +421,16 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       }
       session = await builder.start()
       sessionVia = 'new'
+      if (resumeId && loadSessionCap) {
+        // Load was attempted and failed — new id will overwrite the stored provider
+        // session id via onProviderSessionIdChange. Call out explicitly for ops.
+        log.warn(
+          '[acp-runtime] session/new after failed load; prior resume id=%s will be replaced by id=%s agent=%s',
+          resumeId,
+          session.sessionId,
+          launch.agentId,
+        )
+      }
     }
     if (!session) throw new Error('ACP session not established')
 

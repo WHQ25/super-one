@@ -334,12 +334,16 @@ describe('AgentService prewarm', () => {
       prewarm: vi.fn(),
     })
     const createSession = vi.fn(() => newSession)
+    const resumeSession = vi.fn(() => {
+      throw new Error('Session not found: sid-new')
+    })
     ;(service as { sessionManager: unknown }).sessionManager = {
       getActiveSession: vi.fn(() => otherActive),
       getSession: vi.fn(() => undefined),
       setActiveSession: vi.fn(),
       disposeSession: vi.fn().mockResolvedValue(undefined),
       createSession,
+      resumeSession,
     }
     service.setup()
     const handler = getRegisteredIpcHandler(AgentIpcChannels.PREWARM)!
@@ -350,6 +354,7 @@ describe('AgentService prewarm', () => {
       worktreePath: '/repo/feat',
     })
 
+    expect(resumeSession).toHaveBeenCalledWith('sid-new', { passive: true })
     expect(createSession).toHaveBeenCalledWith(expect.objectContaining({
       projectPath: '/repo/main',
       providerId: 'claude-base',
@@ -358,6 +363,45 @@ describe('AgentService prewarm', () => {
     }))
     expect(newSession.prewarm).toHaveBeenCalled()
     expect(otherActive.prewarm).not.toHaveBeenCalled()
+  })
+
+  it('resumes a disposed session from DB so providerSessionId is restored for ACP load', async () => {
+    const service = new AgentService()
+    const resumed = makeMockSession({
+      id: 'sid-grok',
+      cwd: '/p',
+      snapshot: {
+        harnessId: 'acp',
+        messages: [{ id: 'm1', role: 'user', content: [] }],
+        providerSessionId: 'prior-grok-session',
+      },
+      isStreaming: vi.fn(() => false),
+      prewarm: vi.fn(),
+    })
+    const resumeSession = vi.fn(() => resumed)
+    const createSession = vi.fn()
+    const setActiveSession = vi.fn()
+    ;(service as { sessionManager: unknown }).sessionManager = {
+      getActiveSession: vi.fn(() => null),
+      getSession: vi.fn(() => undefined),
+      setActiveSession,
+      disposeSession: vi.fn().mockResolvedValue(undefined),
+      createSession,
+      resumeSession,
+    }
+    service.setup()
+    const handler = getRegisteredIpcHandler(AgentIpcChannels.PREWARM)!
+
+    await handler(null, '/p', { provider: 'acp', sessionId: 'sid-grok', acpAgentId: 'grok-build' })
+
+    expect(resumeSession).toHaveBeenCalledWith('sid-grok', { passive: true })
+    expect(setActiveSession).toHaveBeenCalledWith('/p', 'sid-grok')
+    expect(createSession).not.toHaveBeenCalled()
+    expect(resumed.prewarm).toHaveBeenCalledWith(expect.objectContaining({
+      provider: 'acp',
+      sessionId: 'sid-grok',
+      acpAgentId: 'grok-build',
+    }))
   })
 })
 

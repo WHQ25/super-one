@@ -66,6 +66,12 @@ export interface SessionCreateOptions {
   gitBranch?: string | null
   apiProviderId?: string | null
   acpAgentId?: string | null
+  /**
+   * Provider/agent session id to resume (e.g. Grok ACP session/load).
+   * When omitted but `id` matches a DB row for the same provider, SessionManager
+   * hydrates this from the stored `provider_session_id`.
+   */
+  providerSessionId?: string | null
 }
 
 export interface SessionStateChange {

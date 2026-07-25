@@ -353,11 +353,15 @@ export function saveSessionStateBySid(input: SaveSessionStateInput): void {
 
   const deleteMsgById = db.prepare('DELETE FROM chat_messages WHERE session_id = ? AND id = ?')
 
-  const harness: HarnessKind | null = legacyProvider === 'codex' || legacyProvider === 'claude'
-    ? legacyProvider
-    : legacyProvider === 'acp' && isGrokAcpAgent(input.acpAgentId)
-      ? 'grok'
-      : null
+  const harness: HarnessKind | null =
+    legacyProvider === 'codex'
+    || legacyProvider === 'claude'
+    || legacyProvider === 'cursor'
+    || legacyProvider === 'opencode'
+      ? legacyProvider
+      : legacyProvider === 'acp' && isGrokAcpAgent(input.acpAgentId)
+        ? 'grok'
+        : null
   const newlyCountedMessages: Array<{ role: string; createdAt: string }> = []
   let countSessionStarted = false
   let sessionCreatedAt = now

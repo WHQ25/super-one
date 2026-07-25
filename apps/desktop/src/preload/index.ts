@@ -711,6 +711,43 @@ const appAPI = {
   setCursorApiKey: (apiKey: string) =>
     ipcRenderer.invoke(AgentIpcChannels.SET_CURSOR_API_KEY, apiKey),
 
+  updateCursorBaseConfig: (patch: Record<string, unknown>) =>
+    ipcRenderer.invoke(AgentIpcChannels.CURSOR_UPDATE_BASE_CONFIG, patch),
+
+  cursorListAgents: (opts?: { runtime?: 'local' | 'cloud'; cwd?: string; limit?: number; cursor?: string; includeArchived?: boolean }) =>
+    ipcRenderer.invoke(AgentIpcChannels.CURSOR_LIST_AGENTS, opts),
+
+  cursorListRuns: (agentId: string, opts?: { runtime?: 'local' | 'cloud'; cwd?: string; limit?: number; cursor?: string }) =>
+    ipcRenderer.invoke(AgentIpcChannels.CURSOR_LIST_RUNS, agentId, opts),
+
+  cursorArchiveAgent: (agentId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.CURSOR_ARCHIVE_AGENT, agentId),
+
+  cursorUnarchiveAgent: (agentId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.CURSOR_UNARCHIVE_AGENT, agentId),
+
+  cursorDeleteAgent: (agentId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.CURSOR_DELETE_AGENT, agentId),
+
+  cursorListArtifacts: (agentId: string, opts?: { cwd?: string; model?: string }) =>
+    ipcRenderer.invoke(AgentIpcChannels.CURSOR_LIST_ARTIFACTS, agentId, opts),
+
+  cursorDownloadArtifact: (agentId: string, path: string, opts?: { cwd?: string; model?: string }) =>
+    ipcRenderer.invoke(AgentIpcChannels.CURSOR_DOWNLOAD_ARTIFACT, agentId, path, opts),
+
+  cursorListRepositories: () =>
+    ipcRenderer.invoke(AgentIpcChannels.CURSOR_LIST_REPOSITORIES),
+  cursorGetAgent: (agentId: string, opts?: { cwd?: string }) =>
+    ipcRenderer.invoke(AgentIpcChannels.CURSOR_GET_AGENT, agentId, opts),
+  cursorListMessages: (agentId: string, opts?: { cwd?: string; limit?: number; offset?: number }) =>
+    ipcRenderer.invoke(AgentIpcChannels.CURSOR_LIST_MESSAGES, agentId, opts),
+  cursorGetRun: (runId: string, opts?: { agentId?: string; cwd?: string; runtime?: 'local' | 'cloud' }) =>
+    ipcRenderer.invoke(AgentIpcChannels.CURSOR_GET_RUN, runId, opts),
+  cursorCancelRun: (runId: string, opts?: { agentId?: string; cwd?: string; runtime?: 'local' | 'cloud' }) =>
+    ipcRenderer.invoke(AgentIpcChannels.CURSOR_CANCEL_RUN, runId, opts),
+  cursorForceRecover: (sessionId: string, message?: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.CURSOR_FORCE_RECOVER, sessionId, message),
+
   getStartupData: () =>
     ipcRenderer.invoke(AgentIpcChannels.GET_STARTUP_DATA),
 
@@ -1528,7 +1565,7 @@ const appAPI = {
         cache_creation_tokens: number
       }>
     }>,
-  queryUsageCounts: (range?: { from?: string; to?: string; harness?: 'claude' | 'codex' | 'grok' }) =>
+  queryUsageCounts: (range?: { from?: string; to?: string; harness?: 'claude' | 'codex' | 'grok' | 'cursor' | 'opencode' }) =>
     ipcRenderer.invoke(AgentIpcChannels.USAGE_COUNTS_QUERY, range ?? {}) as Promise<{
       sessions: number
       messages: number

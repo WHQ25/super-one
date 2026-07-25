@@ -2,7 +2,7 @@ import type { CatalogModel } from '@superone/shared/model-catalog-types'
 import { normalizeModelId } from '@superone/shared/platform-registry'
 import { stripOneM } from '@/lib/model-id'
 
-export type UsageHarness = 'claude' | 'codex' | 'grok'
+export type UsageHarness = 'claude' | 'codex' | 'grok' | 'cursor' | 'opencode'
 
 export interface UsageModelPresentation {
   displayName: string
@@ -28,6 +28,8 @@ const DEFAULT_PROVIDER_BRAND: Record<UsageHarness, string> = {
   claude: 'anthropic',
   codex: 'openai',
   grok: 'xai',
+  cursor: 'cursor',
+  opencode: 'opencode',
 }
 
 export function resolveUsageModelPresentation(

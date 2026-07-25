@@ -137,8 +137,13 @@ export class CursorBackend implements SessionBackend {
         ?.map((img) => ({ data: img.base64, mimeType: img.mimeType || 'image/png' }))
         .filter((img) => img.data) ?? []
 
+      const force = Boolean(
+        (request as { force?: boolean }).force
+        || (request as { cursor?: { force?: boolean } }).cursor?.force,
+      )
       await runtime.send(messageId, request.content, {
         images: images.length ? images : undefined,
+        force: force || undefined,
       })
 
       if (this.interrupted) this.complete(messageId, true)
@@ -232,18 +237,56 @@ export class CursorBackend implements SessionBackend {
   }
 
   async getMcpServerStatus(): Promise<McpServerInfo[]> {
-    return []
+    try {
+      return await (await this.ensureRuntime()).getMcpServerStatus()
+    } catch {
+      return []
+    }
   }
 
   async rewindFiles(_userMessageId: string, _opts?: { dryRun?: boolean }): Promise<RewindFilesResult> {
-    return { canRewind: false, filesChanged: [], insertions: 0, deletions: 0 }
+    return {
+      canRewind: false,
+      filesChanged: [],
+      insertions: 0,
+      deletions: 0,
+      error: 'Cursor SDK does not expose host rewindFiles; use SuperOne transcript fork instead.',
+    }
   }
 
-  async reconnectMcp(_serverName: string): Promise<void> {}
-  async toggleMcpServer(_serverName: string, _enabled: boolean): Promise<void> {}
-  async reloadMcpServers(): Promise<void> {}
+  async reconnectMcp(_serverName: string): Promise<void> {
+    await this.reloadMcpServers()
+  }
+
+  async toggleMcpServer(_serverName: string, _enabled: boolean): Promise<void> {
+    // SuperOne config files own enable/disable; reload picks up disk state.
+    await this.reloadMcpServers()
+  }
+
+  async reloadMcpServers(): Promise<void> {
+    const runtime = await this.ensureRuntime()
+    await runtime.reload()
+  }
+
   async reloadPlugins(): Promise<boolean> {
-    return false
+    try {
+      await (await this.ensureRuntime()).reload()
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  /**
+   * Expire a wedged local run (AgentBusyError recovery) by sending a no-op
+   * follow-up with LocalSendOptions.force. Preferred path is automatic force
+   * retry inside runtime.send; this is an explicit host recovery hook.
+   */
+  async forceRecover(message = 'Continue.'): Promise<void> {
+    if (!this.started || this.disposed) throw new Error('CursorBackend not started')
+    const messageId = `cursor_force_${Date.now()}`
+    const runtime = await this.ensureRuntime()
+    await runtime.send(messageId, message, { force: true })
   }
 
   dequeueMessage(_clientMessageId: string): boolean {

@@ -879,6 +879,18 @@ export class Session implements SessionContract {
     return this.backend.reloadPlugins()
   }
 
+  /** Cursor local: expire wedged run via LocalSendOptions.force. */
+  async forceRecoverRun(message?: string): Promise<void> {
+    this.assertStarted()
+    const backend = this.backend as SessionBackend & {
+      forceRecover?: (msg?: string) => Promise<void>
+    }
+    if (typeof backend.forceRecover !== 'function') {
+      throw new Error(`forceRecover is not supported by ${this.harnessId}`)
+    }
+    await backend.forceRecover(message)
+  }
+
   prewarm(hint?: PrewarmHint): void {
     this.touchRuntimeActivity()
     if (this.harnessId === 'acp' && this.resolveProviderConfigForApiProvider) {

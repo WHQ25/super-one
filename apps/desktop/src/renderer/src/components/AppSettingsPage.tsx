@@ -26,15 +26,51 @@ import { AVAILABLE_UPDATE_CHANNELS, channelFromVersion } from '@superone/shared/
 function CursorApiKeySettingsRow() {
   const [apiKey, setApiKey] = useState('')
   const [saving, setSaving] = useState(false)
+  const [cloud, setCloud] = useState(false)
+  const [autoCreatePR, setAutoCreatePR] = useState(false)
+  const [workOnCurrentBranch, setWorkOnCurrentBranch] = useState(false)
+  const [cloudEnvType, setCloudEnvType] = useState<'cloud' | 'pool' | 'machine'>('cloud')
+  const [repoUrl, setRepoUrl] = useState('')
+  const [repos, setRepos] = useState<Array<{ url: string }>>([])
   const initializeHarness = useChatStore((s) => s.initializeHarness)
 
-  async function save() {
+  useEffect(() => {
+    void window.app.cursorListRepositories()
+      .then((list) => setRepos(list))
+      .catch(() => setRepos([]))
+  }, [])
+
+  async function saveKey() {
     if (!apiKey.trim() || saving) return
     setSaving(true)
     try {
       await window.app.setCursorApiKey(apiKey.trim())
       setApiKey('')
       toast.success('Cursor API key saved')
+      void initializeHarness('cursor')
+      void window.app.cursorListRepositories()
+        .then((list) => setRepos(list))
+        .catch(() => undefined)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function saveRuntime() {
+    setSaving(true)
+    try {
+      await window.app.updateCursorBaseConfig({
+        runtime: cloud ? 'cloud' : 'local',
+        autoCreatePR: cloud ? autoCreatePR : false,
+        workOnCurrentBranch: cloud ? workOnCurrentBranch : false,
+        cloudEnvType: cloud ? cloudEnvType : 'cloud',
+        ...(cloud && repoUrl.trim()
+          ? { repos: [{ url: repoUrl.trim() }] }
+          : { repos: [] }),
+      })
+      toast.success(cloud ? 'Cursor cloud runtime enabled' : 'Cursor local runtime enabled')
       void initializeHarness('cursor')
     } catch (error) {
       toast.error(error instanceof Error ? error.message : String(error))
@@ -44,7 +80,7 @@ function CursorApiKeySettingsRow() {
   }
 
   return (
-    <div className="space-y-2 border-t border-border p-4">
+    <div className="space-y-3 border-t border-border p-4">
       <p className="text-sm font-medium">Cursor User API Key</p>
       <p className="text-xs text-muted-foreground">
         Create a key at{' '}
@@ -67,10 +103,65 @@ function CursorApiKeySettingsRow() {
           className="font-mono text-xs"
           autoComplete="off"
         />
-        <Button type="button" size="sm" disabled={!apiKey.trim() || saving} onClick={() => void save()}>
+        <Button type="button" size="sm" disabled={!apiKey.trim() || saving} onClick={() => void saveKey()}>
           Save
         </Button>
       </div>
+      <div className="flex items-center justify-between gap-4 pt-2">
+        <div className="min-w-0">
+          <p className="text-sm font-medium">Cursor Cloud Agents</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Secondary runtime (bc-*). Local project chat remains the default when off.
+          </p>
+        </div>
+        <Switch checked={cloud} onCheckedChange={setCloud} disabled={saving} />
+      </div>
+      {cloud && (
+        <div className="space-y-2">
+          <div className="flex flex-wrap gap-1">
+            {(['cloud', 'pool', 'machine'] as const).map((env) => (
+              <button
+                key={env}
+                type="button"
+                disabled={saving}
+                onClick={() => setCloudEnvType(env)}
+                className={
+                  cloudEnvType === env
+                    ? 'rounded-md bg-accent px-2 py-1 text-xs font-medium text-accent-foreground'
+                    : 'rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted'
+                }
+              >
+                {env}
+              </button>
+            ))}
+          </div>
+          <Input
+            value={repoUrl}
+            onChange={(e) => setRepoUrl(e.target.value)}
+            placeholder="https://github.com/org/repo"
+            className="font-mono text-xs"
+            list="cursor-repo-suggestions"
+          />
+          {repos.length > 0 && (
+            <datalist id="cursor-repo-suggestions">
+              {repos.map((r) => (
+                <option key={r.url} value={r.url} />
+              ))}
+            </datalist>
+          )}
+          <div className="flex items-center justify-between gap-4">
+            <p className="text-xs text-muted-foreground">Auto-create PR when cloud agent finishes</p>
+            <Switch checked={autoCreatePR} onCheckedChange={setAutoCreatePR} disabled={saving} />
+          </div>
+          <div className="flex items-center justify-between gap-4">
+            <p className="text-xs text-muted-foreground">Work on current branch</p>
+            <Switch checked={workOnCurrentBranch} onCheckedChange={setWorkOnCurrentBranch} disabled={saving} />
+          </div>
+        </div>
+      )}
+      <Button type="button" size="sm" variant="outline" disabled={saving} onClick={() => void saveRuntime()}>
+        Save Cursor runtime
+      </Button>
     </div>
   )
 }

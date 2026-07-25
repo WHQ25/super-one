@@ -129,8 +129,76 @@ export function mapInteractionUpdate(
       events.push({ type: 'status_change', status: 'idle' })
       break
     }
-    default:
+    case 'shell-output-delta': {
+      const text = strField(update, 'text') || strField(update, 'stdout') || strField(update, 'chunk')
+      if (text) {
+        events.push({
+          type: 'content_delta',
+          messageId,
+          delta: { type: 'text', text },
+        })
+      }
       break
+    }
+    case 'nested-task':
+    case 'task-started':
+    case 'task-completed': {
+      const taskId = idField(update, 'taskId', 'id', 'callId')
+      const description = strField(update, 'description') || strField(update, 'text') || 'Task'
+      if (type === 'task-started' || type === 'nested-task') {
+        events.push({
+          type: 'task_started',
+          taskId,
+          description,
+        })
+      } else {
+        events.push({
+          type: 'task_notification',
+          taskId,
+          taskStatus: 'completed',
+          outputFile: '',
+          summary: description,
+        })
+      }
+      break
+    }
+    case 'summary':
+    case 'summary-started':
+    case 'summary-completed': {
+      const text = strField(update, 'text') || strField(update, 'summary')
+      if (text && type === 'summary-completed') {
+        events.push({
+          type: 'content_delta',
+          messageId,
+          delta: { type: 'text', text: `\n${text}\n` },
+        })
+      }
+      break
+    }
+    default: {
+      // Best-effort: updateTodos-style payloads → todos UI
+      const todos = (update as { todos?: unknown }).todos
+      if (Array.isArray(todos)) {
+        events.push({
+          type: 'todos_updated',
+          todos: todos.map((todo, index) => {
+            const row = (todo && typeof todo === 'object') ? todo as Record<string, unknown> : {}
+            const statusRaw = String(row.status ?? 'pending')
+            return {
+              id: String(row.id ?? index + 1),
+              subject: String(row.content ?? row.subject ?? row.text ?? ''),
+              description: String(row.description ?? ''),
+              status: statusRaw === 'in_progress' || statusRaw === 'in-progress'
+                ? 'in_progress' as const
+                : statusRaw === 'completed' || statusRaw === 'cancelled'
+                  ? 'completed' as const
+                  : 'pending' as const,
+            }
+          }),
+        })
+      }
+      break
+    }
   }
   return events
 }

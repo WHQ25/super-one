@@ -193,7 +193,13 @@ export function saveSessionState(
 
   const provider = data.provider ?? 'claude'
   const harness: HarnessKind | null =
-    provider === 'codex' || provider === 'claude' ? provider : null
+    provider === 'codex'
+    || provider === 'claude'
+    || provider === 'cursor'
+    || provider === 'opencode'
+    || provider === 'acp'
+      ? provider as HarnessKind
+      : null
 
   const newlyCountedMessages: Array<{ role: string; createdAt: string }> = []
   let countSessionStarted = false

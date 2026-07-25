@@ -8,7 +8,7 @@ import type {
 import { isGrokAcpAgent } from '@superone/shared/acp-brand'
 import { getDb } from './database'
 
-export type HarnessKind = 'claude' | 'codex' | 'grok'
+export type HarnessKind = 'claude' | 'codex' | 'grok' | 'cursor' | 'opencode'
 
 export interface UsageDailyRow {
   day: string
@@ -245,7 +245,7 @@ export function queryUsage(range: UsageQueryRange = {}): UsageQueryResult {
   return { rows }
 }
 
-const HARNESS_PROVIDERS = new Set<HarnessId>(['claude', 'codex', 'acp', 'opencode'])
+const HARNESS_PROVIDERS = new Set<HarnessId>(['claude', 'codex', 'acp', 'opencode', 'cursor'])
 
 function normalizeSessionProvider(raw: string | null | undefined): HarnessId {
   const value = (raw ?? '').trim().toLowerCase()
@@ -349,11 +349,16 @@ export interface BackfillSummary {
 }
 
 function harnessOf(providerId: string, metadata: MessageMetadata | null): HarnessKind {
-  return providerId === 'codex' || metadata?.codex ? 'codex' : 'claude'
+  if (providerId.startsWith('codex') || providerId === 'codex' || metadata?.codex) return 'codex'
+  if (providerId.startsWith('cursor') || providerId === 'cursor') return 'cursor'
+  if (providerId.startsWith('opencode') || providerId === 'opencode') return 'opencode'
+  return 'claude'
 }
 
 function sessionHarness(provider: string | null, acpAgentId: string | null): HarnessKind {
   if (provider === 'codex') return 'codex'
+  if (provider === 'cursor') return 'cursor'
+  if (provider === 'opencode') return 'opencode'
   if (provider === 'acp' && isGrokAcpAgent(acpAgentId)) return 'grok'
   return 'claude'
 }

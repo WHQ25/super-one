@@ -57,6 +57,17 @@ const cursorConfigSchema = z.object({
   enableAgentRetries: z.boolean().optional(),
   useHttp1ForAgent: z.boolean().optional(),
   storeKind: z.enum(['better-sqlite3', 'jsonl']).optional(),
+  cloudEnvType: z.enum(['cloud', 'pool', 'machine']).optional(),
+  cloudEnvName: z.string().optional(),
+  repos: z.array(z.object({
+    url: z.string(),
+    startingRef: z.string().optional(),
+    prUrl: z.string().optional(),
+  })).optional(),
+  workOnCurrentBranch: z.boolean().optional(),
+  autoCreatePR: z.boolean().optional(),
+  skipReviewerRequest: z.boolean().optional(),
+  cloudEnvVars: z.record(z.string(), z.string()).optional(),
 }).passthrough()
 
 const claudeHarness: Harness = {

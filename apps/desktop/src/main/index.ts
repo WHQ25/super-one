@@ -115,6 +115,21 @@ import { setUnsavedBuffer } from './acp/acp-unsaved-buffer'
 import { closeAllOpenCodeServers, probeOpenCodeResources, reapOrphanOpenCodeServers } from './opencode/opencode-client'
 import { probeCursorResources } from './cursor/cursor-client'
 import { encryptCursorApiKey, readCursorConfig } from './cursor/cursor-auth'
+import {
+  archiveCursorAgent,
+  cancelCursorRun,
+  deleteCursorAgent,
+  downloadCursorArtifact,
+  getCursorAgent,
+  getCursorRun,
+  listCursorAgentMessages,
+  listCursorArtifacts,
+  listCursorCloudAgents,
+  listCursorLocalAgents,
+  listCursorRepositories,
+  listCursorRuns,
+  unarchiveCursorAgent,
+} from './cursor/cursor-cloud'
 import { getBaseProvider, updateBaseProviderConfig } from './session/session-provider-repo'
 import { listWorkflowAgents, readWorkflowOutput, readWorkflowScript } from './workflow-transcripts'
 import { discoverGrokWorkflows } from './workflow-discovery'
@@ -3895,6 +3910,158 @@ function registerIpcHandlers(): void {
       apiKey: encryptCursorApiKey(plain),
     })
     return { ok: true as const, providerId: provider.id }
+  })
+
+  ipcMain.handle(AgentIpcChannels.CURSOR_UPDATE_BASE_CONFIG, async (_e, patch: Record<string, unknown>) => {
+    const existing = (() => {
+      try {
+        return readCursorConfig(getBaseProvider('cursor').config)
+      } catch {
+        return {}
+      }
+    })()
+    const next = { ...existing, ...patch }
+    if (typeof patch.apiKey === 'string' && patch.apiKey && !String(patch.apiKey).startsWith('enc:')) {
+      next.apiKey = encryptCursorApiKey(String(patch.apiKey))
+    }
+    const provider = updateBaseProviderConfig('cursor', next)
+    return { ok: true as const, config: readCursorConfig(provider.config) }
+  })
+
+  ipcMain.handle(AgentIpcChannels.CURSOR_LIST_AGENTS, async (_e, opts?: {
+    runtime?: 'local' | 'cloud'
+    cwd?: string
+    limit?: number
+    cursor?: string
+    includeArchived?: boolean
+  }) => {
+    let config: unknown = {}
+    try { config = getBaseProvider('cursor').config } catch { /* */ }
+    if (opts?.runtime === 'local') {
+      return listCursorLocalAgents({ cwd: opts.cwd ?? resolveProbeCwd(), limit: opts.limit, cursor: opts.cursor })
+    }
+    return listCursorCloudAgents({
+      config,
+      limit: opts?.limit,
+      cursor: opts?.cursor,
+      includeArchived: opts?.includeArchived,
+    })
+  })
+
+  ipcMain.handle(AgentIpcChannels.CURSOR_LIST_RUNS, async (_e, agentId: string, opts?: {
+    runtime?: 'local' | 'cloud'
+    cwd?: string
+    limit?: number
+    cursor?: string
+  }) => {
+    let config: unknown = {}
+    try { config = getBaseProvider('cursor').config } catch { /* */ }
+    return listCursorRuns(agentId, { config, ...opts })
+  })
+
+  ipcMain.handle(AgentIpcChannels.CURSOR_ARCHIVE_AGENT, async (_e, agentId: string) => {
+    let config: unknown = {}
+    try { config = getBaseProvider('cursor').config } catch { /* */ }
+    await archiveCursorAgent(agentId, { config })
+    return { ok: true as const }
+  })
+
+  ipcMain.handle(AgentIpcChannels.CURSOR_UNARCHIVE_AGENT, async (_e, agentId: string) => {
+    let config: unknown = {}
+    try { config = getBaseProvider('cursor').config } catch { /* */ }
+    await unarchiveCursorAgent(agentId, { config })
+    return { ok: true as const }
+  })
+
+  ipcMain.handle(AgentIpcChannels.CURSOR_DELETE_AGENT, async (_e, agentId: string) => {
+    let config: unknown = {}
+    try { config = getBaseProvider('cursor').config } catch { /* */ }
+    await deleteCursorAgent(agentId, { config })
+    return { ok: true as const }
+  })
+
+  ipcMain.handle(AgentIpcChannels.CURSOR_LIST_ARTIFACTS, async (_e, agentId: string, opts?: { cwd?: string; model?: string }) => {
+    let config: unknown = {}
+    try { config = getBaseProvider('cursor').config } catch { /* */ }
+    return listCursorArtifacts(agentId, { config, cwd: opts?.cwd, model: opts?.model })
+  })
+
+  ipcMain.handle(AgentIpcChannels.CURSOR_DOWNLOAD_ARTIFACT, async (_e, agentId: string, path: string, opts?: { cwd?: string; model?: string }) => {
+    let config: unknown = {}
+    try { config = getBaseProvider('cursor').config } catch { /* */ }
+    const buf = await downloadCursorArtifact(agentId, path, { config, cwd: opts?.cwd, model: opts?.model })
+    return { path, base64: buf.toString('base64'), size: buf.length }
+  })
+
+  ipcMain.handle(AgentIpcChannels.CURSOR_LIST_REPOSITORIES, async () => {
+    let config: unknown = {}
+    try { config = getBaseProvider('cursor').config } catch { /* */ }
+    return listCursorRepositories({ config })
+  })
+
+  ipcMain.handle(AgentIpcChannels.CURSOR_GET_AGENT, async (_e, agentId: string, opts?: { cwd?: string }) => {
+    let config: unknown = {}
+    try { config = getBaseProvider('cursor').config } catch { /* */ }
+    return getCursorAgent(agentId, { config, cwd: opts?.cwd ?? resolveProbeCwd() })
+  })
+
+  ipcMain.handle(AgentIpcChannels.CURSOR_LIST_MESSAGES, async (_e, agentId: string, opts?: {
+    cwd?: string
+    limit?: number
+    offset?: number
+  }) => {
+    let config: unknown = {}
+    try { config = getBaseProvider('cursor').config } catch { /* */ }
+    return listCursorAgentMessages(agentId, {
+      config,
+      cwd: opts?.cwd ?? resolveProbeCwd(),
+      limit: opts?.limit,
+      offset: opts?.offset,
+    })
+  })
+
+  ipcMain.handle(AgentIpcChannels.CURSOR_GET_RUN, async (_e, runId: string, opts?: {
+    agentId?: string
+    cwd?: string
+    runtime?: 'local' | 'cloud'
+  }) => {
+    let config: unknown = {}
+    try { config = getBaseProvider('cursor').config } catch { /* */ }
+    return getCursorRun(runId, {
+      config,
+      agentId: opts?.agentId,
+      cwd: opts?.cwd ?? resolveProbeCwd(),
+      runtime: opts?.runtime,
+    })
+  })
+
+  ipcMain.handle(AgentIpcChannels.CURSOR_CANCEL_RUN, async (_e, runId: string, opts?: {
+    agentId?: string
+    cwd?: string
+    runtime?: 'local' | 'cloud'
+  }) => {
+    let config: unknown = {}
+    try { config = getBaseProvider('cursor').config } catch { /* */ }
+    await cancelCursorRun(runId, {
+      config,
+      agentId: opts?.agentId,
+      cwd: opts?.cwd ?? resolveProbeCwd(),
+      runtime: opts?.runtime,
+    })
+    return { ok: true as const }
+  })
+
+  ipcMain.handle(AgentIpcChannels.CURSOR_FORCE_RECOVER, async (_e, sessionId: string, message?: string) => {
+    const session = sessionManager.getSession(sessionId)
+    if (!session) throw new Error('Session not found')
+    if (session.snapshot.harnessId !== 'cursor') {
+      throw new Error('Force recover is only available for Cursor local sessions')
+    }
+    if (typeof session.forceRecoverRun !== 'function') {
+      throw new Error('Force recover is not supported on this session')
+    }
+    await session.forceRecoverRun(message)
+    return { ok: true as const }
   })
 
   ipcMain.handle(AgentIpcChannels.WIDGET_IFRAME_READY, (_e, widgetId: string) => {

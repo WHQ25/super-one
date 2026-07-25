@@ -801,6 +801,8 @@ export type Messages = {
         claude: string
         codex: string
         grok: string
+        cursor: string
+        opencode: string
       }
       summary: {
         totalTokens: string
@@ -3441,6 +3443,8 @@ export const en: Messages = {
         claude: 'Claude',
         codex: 'Codex',
         grok: 'Grok',
+        cursor: 'Cursor',
+        opencode: 'OpenCode',
       },
       summary: {
         totalTokens: 'Total Tokens',

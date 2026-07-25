@@ -846,6 +846,8 @@ export const zh: Messages = {
         claude: 'Claude',
         codex: 'Codex',
         grok: 'Grok',
+        cursor: 'Cursor',
+        opencode: 'OpenCode',
       },
       summary: {
         totalTokens: '总 Token',

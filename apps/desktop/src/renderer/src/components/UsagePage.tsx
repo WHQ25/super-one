@@ -86,7 +86,7 @@ const PRESETS: { id: RangePreset; days: number | null }[] = [
   { id: 'all', days: null },
 ]
 
-const HARNESS_FILTERS: HarnessFilter[] = ['all', 'claude', 'codex', 'grok']
+const HARNESS_FILTERS: HarnessFilter[] = ['all', 'claude', 'codex', 'grok', 'cursor', 'opencode']
 
 const TOKEN_TYPE_KEYS = ['input', 'output', 'cacheRead', 'cacheCreation'] as const
 type TokenTypeKey = typeof TOKEN_TYPE_KEYS[number]
@@ -235,13 +235,13 @@ export function UsagePage() {
 
   const dailyByHarness = useMemo(() => {
     const byDay = new Map<string, {
-      claude: number; codex: number; grok: number
-      claudeCost: number; codexCost: number; grokCost: number
+      claude: number; codex: number; grok: number; cursor: number; opencode: number
+      claudeCost: number; codexCost: number; grokCost: number; cursorCost: number; opencodeCost: number
     }>()
     for (const r of rows) {
       const cur = byDay.get(r.day) ?? {
-        claude: 0, codex: 0, grok: 0,
-        claudeCost: 0, codexCost: 0, grokCost: 0,
+        claude: 0, codex: 0, grok: 0, cursor: 0, opencode: 0,
+        claudeCost: 0, codexCost: 0, grokCost: 0, cursorCost: 0, opencodeCost: 0,
       }
       const tokens = rowTotal(r)
       const cost = rowCostBreakdown(r, catalogModels)?.total ?? 0
@@ -251,6 +251,12 @@ export function UsagePage() {
       } else if (r.harness === 'codex') {
         cur.codex += tokens
         cur.codexCost += cost
+      } else if (r.harness === 'cursor') {
+        cur.cursor += tokens
+        cur.cursorCost += cost
+      } else if (r.harness === 'opencode') {
+        cur.opencode += tokens
+        cur.opencodeCost += cost
       } else {
         cur.grok += tokens
         cur.grokCost += cost
@@ -684,9 +690,13 @@ interface DailyHarnessRow {
   claude: number
   codex: number
   grok: number
+  cursor: number
+  opencode: number
   claudeCost: number
   codexCost: number
   grokCost: number
+  cursorCost: number
+  opencodeCost: number
 }
 interface DailyTokenTypeRow {
   day: string
@@ -725,6 +735,14 @@ function DailyHarnessAreaChart({ data, t }: { data: DailyHarnessRow[]; t: (key: 
               <stop offset="0%" stopColor="var(--warning)" stopOpacity={0.55} />
               <stop offset="100%" stopColor="var(--warning)" stopOpacity={0.08} />
             </linearGradient>
+            <linearGradient id="cursorFill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="var(--chart-4)" stopOpacity={0.55} />
+              <stop offset="100%" stopColor="var(--chart-4)" stopOpacity={0.08} />
+            </linearGradient>
+            <linearGradient id="opencodeFill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="var(--chart-5)" stopOpacity={0.55} />
+              <stop offset="100%" stopColor="var(--chart-5)" stopOpacity={0.08} />
+            </linearGradient>
           </defs>
           <XAxis
             dataKey="day"
@@ -743,17 +761,21 @@ function DailyHarnessAreaChart({ data, t }: { data: DailyHarnessRow[]; t: (key: 
               const claude = row?.claude ?? 0
               const codex = row?.codex ?? 0
               const grok = row?.grok ?? 0
+              const cursor = row?.cursor ?? 0
+              const opencode = row?.opencode ?? 0
               return (
                 <div className="rounded-md border border-border bg-popover px-3 py-2 text-xs text-popover-foreground shadow-md">
                   <div className="mb-1 font-medium">{label}</div>
                   <TooltipRow color="var(--primary)" label="Claude" tokens={claude} cost={row?.claudeCost ?? 0} />
                   <TooltipRow color="var(--foreground)" opacity={0.4} label="Codex" tokens={codex} cost={row?.codexCost ?? 0} />
                   <TooltipRow color="var(--warning)" opacity={0.75} label="Grok" tokens={grok} cost={row?.grokCost ?? 0} />
+                  <TooltipRow color="var(--chart-4)" opacity={0.75} label="Cursor" tokens={cursor} cost={row?.cursorCost ?? 0} />
+                  <TooltipRow color="var(--chart-5)" opacity={0.75} label="OpenCode" tokens={opencode} cost={row?.opencodeCost ?? 0} />
                   <TooltipRow
                     color="transparent"
                     label={t('settings.usage.tooltip.total')}
-                    tokens={claude + codex + grok}
-                    cost={(row?.claudeCost ?? 0) + (row?.codexCost ?? 0) + (row?.grokCost ?? 0)}
+                    tokens={claude + codex + grok + cursor + opencode}
+                    cost={(row?.claudeCost ?? 0) + (row?.codexCost ?? 0) + (row?.grokCost ?? 0) + (row?.cursorCost ?? 0) + (row?.opencodeCost ?? 0)}
                     bold
                   />
                 </div>
@@ -762,6 +784,8 @@ function DailyHarnessAreaChart({ data, t }: { data: DailyHarnessRow[]; t: (key: 
           />
           <Area type="monotone" dataKey="codex" stackId="usage" stroke="var(--foreground)" strokeOpacity={0.4} strokeWidth={1.5} fill="url(#codexFill)" />
           <Area type="monotone" dataKey="grok" stackId="usage" stroke="var(--warning)" strokeOpacity={0.75} strokeWidth={1.5} fill="url(#grokFill)" />
+          <Area type="monotone" dataKey="cursor" stackId="usage" stroke="var(--chart-4)" strokeOpacity={0.75} strokeWidth={1.5} fill="url(#cursorFill)" />
+          <Area type="monotone" dataKey="opencode" stackId="usage" stroke="var(--chart-5)" strokeOpacity={0.75} strokeWidth={1.5} fill="url(#opencodeFill)" />
           <Area type="monotone" dataKey="claude" stackId="usage" stroke="var(--primary)" strokeWidth={1.5} fill="url(#claudeFill)" />
         </AreaChart>
       )}

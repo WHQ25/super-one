@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { mapPermissionToCursorLocal, readCursorConfig, resolveCursorApiKey } from './cursor-auth'
+import {
+  buildCloudOptions,
+  mapPermissionToCursorLocal,
+  readCursorConfig,
+  resolveCursorApiKey,
+} from './cursor-auth'
 
 describe('cursor-auth', () => {
   it('maps plan and auto-review modes honestly', () => {
@@ -31,10 +36,35 @@ describe('cursor-auth', () => {
   })
 
   it('reads cursor config fields', () => {
-    expect(readCursorConfig({ model: 'composer-2', mode: 'plan', sandboxEnabled: true })).toMatchObject({
+    expect(readCursorConfig({
       model: 'composer-2',
       mode: 'plan',
       sandboxEnabled: true,
+      runtime: 'cloud',
+      autoCreatePR: true,
+      repos: [{ url: 'https://github.com/a/b' }],
+    })).toMatchObject({
+      model: 'composer-2',
+      mode: 'plan',
+      sandboxEnabled: true,
+      runtime: 'cloud',
+      autoCreatePR: true,
+      repos: [{ url: 'https://github.com/a/b' }],
+    })
+  })
+
+  it('builds cloud options from config', () => {
+    expect(buildCloudOptions({
+      cloudEnvType: 'pool',
+      cloudEnvName: 'my-pool',
+      repos: [{ url: 'https://github.com/a/b', startingRef: 'main' }],
+      autoCreatePR: true,
+      workOnCurrentBranch: true,
+    })).toEqual({
+      env: { type: 'pool', name: 'my-pool' },
+      repos: [{ url: 'https://github.com/a/b', startingRef: 'main' }],
+      autoCreatePR: true,
+      workOnCurrentBranch: true,
     })
   })
 })

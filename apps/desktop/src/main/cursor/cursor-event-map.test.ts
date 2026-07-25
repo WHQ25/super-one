@@ -27,4 +27,19 @@ describe('mapInteractionUpdate', () => {
       delta: { type: 'tool_result', toolUseId: 'c1', summary: 'ok' },
     })
   })
+
+  it('maps todos payloads and task-started', () => {
+    const todos = mapInteractionUpdate('m1', {
+      type: 'unknown-todos',
+      todos: [{ id: '1', content: 'A', status: 'pending' }],
+    } as never)
+    expect(todos[0]).toMatchObject({ type: 'todos_updated' })
+
+    const task = mapInteractionUpdate('m1', {
+      type: 'task-started',
+      taskId: 't1',
+      description: 'Explore',
+    } as never)
+    expect(task[0]).toMatchObject({ type: 'task_started', taskId: 't1' })
+  })
 })

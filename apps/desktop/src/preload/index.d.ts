@@ -72,6 +72,20 @@ interface AppAPI {
   connectOpenCode(): Promise<OpenCodeResources>
   connectCursor(): Promise<import('@superone/shared/agent-types').CursorResources>
   setCursorApiKey(apiKey: string): Promise<{ ok: true; providerId: string }>
+  updateCursorBaseConfig(patch: Record<string, unknown>): Promise<{ ok: true; config: Record<string, unknown> }>
+  cursorListAgents(opts?: { runtime?: 'local' | 'cloud'; cwd?: string; limit?: number; cursor?: string; includeArchived?: boolean }): Promise<unknown>
+  cursorListRuns(agentId: string, opts?: { runtime?: 'local' | 'cloud'; cwd?: string; limit?: number; cursor?: string }): Promise<unknown>
+  cursorArchiveAgent(agentId: string): Promise<{ ok: true }>
+  cursorUnarchiveAgent(agentId: string): Promise<{ ok: true }>
+  cursorDeleteAgent(agentId: string): Promise<{ ok: true }>
+  cursorListArtifacts(agentId: string, opts?: { cwd?: string; model?: string }): Promise<Array<{ path: string; sizeBytes: number; updatedAt: string }>>
+  cursorDownloadArtifact(agentId: string, path: string, opts?: { cwd?: string; model?: string }): Promise<{ path: string; base64: string; size: number }>
+  cursorListRepositories(): Promise<Array<{ url: string }>>
+  cursorGetAgent(agentId: string, opts?: { cwd?: string }): Promise<unknown>
+  cursorListMessages(agentId: string, opts?: { cwd?: string; limit?: number; offset?: number }): Promise<unknown>
+  cursorGetRun(runId: string, opts?: { agentId?: string; cwd?: string; runtime?: 'local' | 'cloud' }): Promise<unknown>
+  cursorCancelRun(runId: string, opts?: { agentId?: string; cwd?: string; runtime?: 'local' | 'cloud' }): Promise<{ ok: true }>
+  cursorForceRecover(sessionId: string, message?: string): Promise<{ ok: true }>
   getStartupData(): Promise<StartupData>
   getAppMetrics(): Promise<AppMetricsSnapshot>
   probeSandbox(): Promise<SandboxProbeResult>
@@ -459,7 +473,7 @@ interface AppAPI {
       cache_creation_tokens: number
     }>
   }>
-  queryUsageCounts(range?: { from?: string; to?: string; harness?: 'claude' | 'codex' | 'grok' }): Promise<{
+  queryUsageCounts(range?: { from?: string; to?: string; harness?: 'claude' | 'codex' | 'grok' | 'cursor' | 'opencode' }): Promise<{
     sessions: number
     messages: number
   }>

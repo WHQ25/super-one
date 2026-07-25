@@ -363,6 +363,8 @@ export interface Session {
   toggleMcpServer(serverName: string, enabled: boolean): Promise<void>
   reloadMcpServers(): Promise<void>
   reloadPlugins(): Promise<boolean>
+  /** Cursor local: expire wedged run via LocalSendOptions.force. Optional on other harnesses. */
+  forceRecoverRun?(message?: string): Promise<void>
   prewarm(hint?: PrewarmHint): void
   dequeueMessage(clientMessageId: string): boolean
   getPendingInteractions(): AgentEvent[]

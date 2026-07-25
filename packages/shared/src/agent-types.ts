@@ -1262,7 +1262,7 @@ export type AgentEventBase =
   | { type: 'permission_request'; request: PermissionRequest }
   | { type: 'permission_mode_change'; mode: PermissionMode }
   | { type: 'agent_setting_change'; selectedModel?: string | null; selectedEffort?: EffortLevel | null; patch?: SessionSettingsPatch }
-  | { type: 'provider_changed'; harnessId: 'claude' | 'codex'; provider: RemoteActiveProvider | null }
+  | { type: 'provider_changed'; harnessId: HarnessId; provider: RemoteActiveProvider | null }
   | { type: 'session_init'; session: SessionInfo }
   /** Provider-side session id for harnesses that have no SessionInfo to report (ACP). */
   | { type: 'provider_session_id'; providerSessionId: string }
@@ -1443,6 +1443,12 @@ export interface SendMessageRequest {
   /** Transcript provenance for non-human or collab-originated user bubbles. */
   source?: ChatMessageSource
   collaboration?: CollaborationMessageMeta
+  /** Cursor local: expire wedged run before this send (LocalSendOptions.force). */
+  force?: boolean
+  /** Cursor-specific send extras. */
+  cursor?: {
+    force?: boolean
+  }
 }
 
 export interface CodexSendExtras {
@@ -2538,6 +2544,20 @@ export const AgentIpcChannels = {
   CONNECT_OPENCODE: 'app:connect-opencode',
   CONNECT_CURSOR: 'app:connect-cursor',
   SET_CURSOR_API_KEY: 'app:set-cursor-api-key',
+  CURSOR_LIST_AGENTS: 'app:cursor-list-agents',
+  CURSOR_LIST_RUNS: 'app:cursor-list-runs',
+  CURSOR_ARCHIVE_AGENT: 'app:cursor-archive-agent',
+  CURSOR_UNARCHIVE_AGENT: 'app:cursor-unarchive-agent',
+  CURSOR_DELETE_AGENT: 'app:cursor-delete-agent',
+  CURSOR_LIST_ARTIFACTS: 'app:cursor-list-artifacts',
+  CURSOR_DOWNLOAD_ARTIFACT: 'app:cursor-download-artifact',
+  CURSOR_LIST_REPOSITORIES: 'app:cursor-list-repositories',
+  CURSOR_UPDATE_BASE_CONFIG: 'app:cursor-update-base-config',
+  CURSOR_GET_AGENT: 'app:cursor-get-agent',
+  CURSOR_LIST_MESSAGES: 'app:cursor-list-messages',
+  CURSOR_GET_RUN: 'app:cursor-get-run',
+  CURSOR_CANCEL_RUN: 'app:cursor-cancel-run',
+  CURSOR_FORCE_RECOVER: 'app:cursor-force-recover',
   GET_STARTUP_DATA: 'app:get-startup-data',
   GET_APP_METRICS: 'app:get-app-metrics',
   SELECT_FOLDER: 'app:select-folder',
@@ -3209,8 +3229,8 @@ export type TerminalEvent =
   | { type: 'terminal_error'; terminalId: string; code: TerminalErrorCode; message: string }
 
 export type RemoteCommand =
-  | { type: 'create_session'; requestId: string; sessionId: string; projectPath: string; provider?: 'claude' | 'codex'; permissionMode?: string; effort?: string; model?: string; gitBranch?: string; worktreePath?: string; worktreeBranch?: string; worktreeMode?: WorktreeMode; worktreeBranchName?: string; worktreeCarryLocalChanges?: boolean; additionalDirectories?: string[] }
-  | { type: 'send_message'; sessionId: string; projectPath: string; content: string; provider?: 'claude' | 'codex'; model?: string; effort?: string; images?: ImageAttachment[]; permissionPreset?: string; collaborationMode?: string; threadId?: string; clientMessageId?: string; priority?: 'now' | 'next' | 'later' }
+  | { type: 'create_session'; requestId: string; sessionId: string; projectPath: string; provider?: HarnessId; permissionMode?: string; effort?: string; model?: string; gitBranch?: string; worktreePath?: string; worktreeBranch?: string; worktreeMode?: WorktreeMode; worktreeBranchName?: string; worktreeCarryLocalChanges?: boolean; additionalDirectories?: string[] }
+  | { type: 'send_message'; sessionId: string; projectPath: string; content: string; provider?: HarnessId; model?: string; effort?: string; images?: ImageAttachment[]; permissionPreset?: string; collaborationMode?: string; threadId?: string; clientMessageId?: string; priority?: 'now' | 'next' | 'later' }
   | { type: 'dequeue_message'; clientMessageId: string; projectPath?: string; sessionId: string }
   | { type: 'interrupt'; projectPath?: string; sessionId: string }
   | { type: 'respond_permission'; requestId: string; decision: boolean; reason?: string; selectedSuggestions?: number[]; projectPath?: string; sessionId: string }
@@ -3229,8 +3249,8 @@ export type RemoteCommand =
   | { type: 'list_projects'; requestId: string }
   | { type: 'list_sessions'; requestId: string; projectPath: string; limit?: number; offset?: number }
   | { type: 'list_models'; requestId: string; projectPath: string }
-  | { type: 'get_system_info'; requestId: string; projectPath: string; provider: 'claude' | 'codex' }
-  | { type: 'get_project_resources'; requestId: string; projectPath: string; provider: 'claude' | 'codex' }
+  | { type: 'get_system_info'; requestId: string; projectPath: string; provider: HarnessId }
+  | { type: 'get_project_resources'; requestId: string; projectPath: string; provider: HarnessId }
   | { type: 'get_git_info'; requestId: string; projectPath: string }
   | { type: 'get_git_branches'; requestId: string; projectPath: string }
   | { type: 'switch_git_branch'; requestId: string; projectPath: string; branch: string }

@@ -8,15 +8,25 @@ import {
   resolveSlashModelLabel,
   splitSlashModelId,
 } from '../ModelSelectorLists'
-import { GroupedModelEffortSelector, type SelectorModelGroup, type SelectorModelOption } from './GroupedModelEffortSelector'
+import {
+  GroupedModelEffortSelector,
+  type SelectorEffortOption,
+  type SelectorModelGroup,
+  type SelectorModelOption,
+} from './GroupedModelEffortSelector'
 
 const EMPTY_ACP_AGENTS: AcpAgentDescriptor[] = []
-const NO_EFFORT: never[] = []
+const NO_EFFORT: SelectorEffortOption[] = []
 
 function useGroupedSlashList(agentId: string | null): boolean {
   // OpenCode catalogs use `provider/model` ids; group by provider.
   if (agentId === 'opencode') return true
   return false
+}
+
+/** Compact trigger label: "High Effort" → "High" (matches Claude/Codex style). */
+function compactEffortLabel(name: string): string {
+  return name.replace(/\s+Effort$/i, '').trim() || name
 }
 
 export function AcpModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?: (e: Event) => void } = {}) {
@@ -27,8 +37,14 @@ export function AcpModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?: (e: 
   const acpModelsStatus = useActiveSession((s) => s.acpModelsStatus)
   const acpModelsError = useActiveSession((s) => s.acpModelsError)
   const selectedModel = useActiveSession((s) => s.selectedModel)
+  // Grok: category=mode options with configId null are reasoning effort (not session mode).
+  // Real session modes keep acpModeConfigId set and stay in AcpModeSelector (status bar).
+  const acpModes = useActiveSession((s) => s.acpModes)
+  const acpModeConfigId = useActiveSession((s) => s.acpModeConfigId)
+  const selectedAcpModeId = useActiveSession((s) => s.selectedAcpModeId)
   const agents = useChatStore((s) => s.harnessResources.acp?.agents ?? EMPTY_ACP_AGENTS)
   const setSelectedModel = useChatStore((s) => s.setSelectedModel)
+  const setSelectedAcpMode = useChatStore((s) => s.setSelectedAcpMode)
 
   const agent = agents.find((a) => a.id === acpAgentId)
   const grouped = useGroupedSlashList(acpAgentId)
@@ -53,6 +69,29 @@ export function AcpModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?: (e: 
       : undefined,
     [grouped, acpModels],
   )
+
+  // Grok effort lives next to the model (GroupedModelEffortSelector), same as Claude/Codex.
+  const effortIsAcpModeCatalog = acpModeConfigId == null && acpModes.length > 0
+  const effortOptions = useMemo<SelectorEffortOption[]>(
+    () => effortIsAcpModeCatalog
+      ? acpModes.map((m) => ({
+          value: m.id,
+          label: compactEffortLabel(m.name || m.id),
+          description: m.description || undefined,
+        }))
+      : NO_EFFORT,
+    [effortIsAcpModeCatalog, acpModes],
+  )
+  const selectedEffort = effortIsAcpModeCatalog
+    ? (selectedAcpModeId ?? acpModes[0]?.id ?? null)
+    : null
+  const selectedEffortLabel = effortIsAcpModeCatalog
+    ? compactEffortLabel(
+      acpModes.find((m) => m.id === selectedEffort)?.name
+        ?? selectedEffort
+        ?? '',
+    ) || null
+    : null
 
   if (acpModelsStatus === 'loading' || (acpModelsStatus === 'idle' && agent?.installed)) {
     return (
@@ -88,9 +127,10 @@ export function AcpModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?: (e: 
         selectedModelId={selectedModel}
         selectedModelLabel={currentLabel}
         onSelectModel={setSelectedModel}
-        effortOptions={NO_EFFORT}
-        selectedEffort={null}
-        onSelectEffort={() => undefined}
+        effortOptions={effortOptions}
+        selectedEffort={selectedEffort}
+        selectedEffortLabel={selectedEffortLabel}
+        onSelectEffort={setSelectedAcpMode}
         onCloseAutoFocus={onCloseAutoFocus}
       />
     </div>

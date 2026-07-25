@@ -16,7 +16,8 @@ export function StatusBarPermission({
     return <CodexPermissionSelector compact={compactIndicators} />
   }
   if (activeProvider === 'acp') {
-    // Permission baseline (ask / auto / bypass) + agent session modes (effort etc.).
+    // Permission baseline (ask / plan / auto / always).
+    // True ACP session modes (configId set) live here; Grok effort is on the model selector.
     return (
       <>
         <AcpPermissionSelector compact={compactIndicators} />

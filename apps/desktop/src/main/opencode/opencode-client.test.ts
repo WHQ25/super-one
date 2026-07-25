@@ -1,11 +1,18 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { Agent, Command, McpStatus, ProviderListResponse } from '@opencode-ai/sdk/v2'
+
+vi.mock('../logger', () => ({
+  default: { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() },
+}))
+
 import {
+  OPENCODE_SERVE_ARGS,
   parseModels,
   parseOpenCodeAgents,
   parseOpenCodeCommands,
   parseOpenCodeMcpStatus,
   parseOpenCodeModelSlug,
+  reapOrphanOpenCodeServers,
   toOpenCodeMcpConfig,
   withOpenCodeLocalCommands,
 } from './opencode-client'
@@ -137,5 +144,16 @@ describe('opencode-client', () => {
       { name: 'oauth', status: 'needs-auth', scope: 'project' },
       { name: 'registration', status: 'needs-auth', error: 'register first', scope: 'project' },
     ])
+  })
+
+  it('uses a stable serve argv that the orphan reaper can match exactly', () => {
+    expect(OPENCODE_SERVE_ARGS).toEqual(['serve', '--hostname=127.0.0.1', '--port=0'])
+  })
+
+  it('orphan reaper is a no-op when no matching PPID=1 serve exists', () => {
+    // Should not throw; typically 0 unless a prior SuperOne leak is present.
+    const killed = reapOrphanOpenCodeServers()
+    expect(typeof killed).toBe('number')
+    expect(killed).toBeGreaterThanOrEqual(0)
   })
 })

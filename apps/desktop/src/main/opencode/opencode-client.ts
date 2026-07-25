@@ -1,7 +1,8 @@
-import { spawn, type ChildProcessWithoutNullStreams } from 'child_process'
+import { execFileSync, spawn, type ChildProcessWithoutNullStreams } from 'child_process'
 import { existsSync } from 'fs'
 import { homedir } from 'os'
 import { delimiter, join } from 'path'
+import log from '../logger'
 import {
   createOpencodeClient,
   type Agent,
@@ -412,6 +413,11 @@ export interface OpenCodeServerHandle {
   close(): Promise<void>
 }
 
+/** Exact argv SuperOne uses — orphan reaper only matches this pattern. */
+export const OPENCODE_SERVE_ARGS = ['serve', '--hostname=127.0.0.1', '--port=0'] as const
+
+const liveServers = new Set<OpenCodeServerHandle>()
+
 const maxServerOutput = 64 * 1024
 
 function appendOutput(current: string, chunk: Buffer | string): string {
@@ -439,10 +445,10 @@ function openCodePath(pathEnv: string | undefined): string {
 }
 
 function signalChild(child: ChildProcessWithoutNullStreams, signal: NodeJS.Signals): void {
+  // Do not kill process groups: child is not detached, so -pid would hit SuperOne.
   try {
-    if (process.platform !== 'win32' && child.pid) process.kill(-child.pid, signal)
-    else child.kill(signal)
-  } catch {}
+    if (child.exitCode === null && child.signalCode === null) child.kill(signal)
+  } catch { /* already gone */ }
 }
 
 async function stopChild(
@@ -490,6 +496,56 @@ async function waitForServer(
   })
 }
 
+/**
+ * Close every OpenCode serve process this main process still owns.
+ * Safe to call on quit even when no native OpenCode session is open.
+ */
+export async function closeAllOpenCodeServers(): Promise<void> {
+  const handles = [...liveServers]
+  liveServers.clear()
+  await Promise.allSettled(handles.map((h) => h.close()))
+}
+
+/**
+ * Kill orphaned SuperOne-spawned `opencode serve` processes (PPID 1) left behind
+ * by older builds that used detached:true. Matches only our exact argv so a
+ * user-started OpenCode TUI is never touched.
+ */
+export function reapOrphanOpenCodeServers(): number {
+  if (process.platform === 'win32') return 0
+  const marker = OPENCODE_SERVE_ARGS.join(' ')
+  let killed = 0
+  try {
+    const out = execFileSync('ps', ['-axo', 'pid=,ppid=,command='], {
+      encoding: 'utf8',
+      maxBuffer: 4 * 1024 * 1024,
+    })
+    for (const line of out.split('\n')) {
+      const match = line.trim().match(/^(\d+)\s+(\d+)\s+(.+)$/)
+      if (!match) continue
+      const pid = Number(match[1])
+      const ppid = Number(match[2])
+      const command = match[3]
+      if (!Number.isFinite(pid) || pid <= 0) continue
+      // Orphaned (init) or reparented leftovers from a dead SuperOne instance.
+      if (ppid !== 1) continue
+      if (!command.includes(marker)) continue
+      // Avoid matching unrelated tools that merely mention the same flags in args.
+      if (!/(?:^|\/)opencode(?:\.exe)?\s+serve\b/.test(command)) continue
+      try {
+        process.kill(pid, 'SIGTERM')
+        killed += 1
+        log.info('[opencode] reaped orphan serve pid=%d', pid)
+      } catch {
+        /* gone */
+      }
+    }
+  } catch (err) {
+    log.debug('[opencode] orphan reaper failed: %s', err instanceof Error ? err.message : String(err))
+  }
+  return killed
+}
+
 export async function startOpenCodeServer(opts: {
   binaryPath?: string
   cwd: string
@@ -500,7 +556,9 @@ export async function startOpenCodeServer(opts: {
   if (opts.serverUrl?.trim()) {
     return { url: opts.serverUrl.trim().replace(/\/$/, ''), exited: null, close: async () => undefined }
   }
-  const child = spawn(opts.binaryPath?.trim() || defaultBinaryPath(), ['serve', '--hostname=127.0.0.1', '--port=0'], {
+  // Not detached: serve must die with SuperOne. Older builds used detached:true
+  // and leaked multi-hour ~1GB orphans under PPID 1 after force-quit.
+  const child = spawn(opts.binaryPath?.trim() || defaultBinaryPath(), [...OPENCODE_SERVE_ARGS], {
     cwd: opts.cwd,
     env: buildSafeEnv({
       ...opts.env,
@@ -508,7 +566,6 @@ export async function startOpenCodeServer(opts: {
       OPENCODE_CONFIG_CONTENT: opts.env?.OPENCODE_CONFIG_CONTENT ?? '{}',
     }),
     stdio: 'pipe',
-    detached: process.platform !== 'win32',
   })
   const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => {
     let settled = false
@@ -523,14 +580,22 @@ export async function startOpenCodeServer(opts: {
   try {
     const url = await waitForServer(child, exited, opts.timeoutMs ?? 10000)
     let closePromise: Promise<void> | null = null
-    return {
+    const handle: OpenCodeServerHandle = {
       url: url.replace(/\/$/, ''),
       exited,
       close: () => {
-        closePromise ??= stopChild(child, exited)
+        closePromise ??= (async () => {
+          try {
+            await stopChild(child, exited)
+          } finally {
+            liveServers.delete(handle)
+          }
+        })()
         return closePromise
       },
     }
+    liveServers.add(handle)
+    return handle
   } catch (error) {
     await stopChild(child, exited)
     throw new OpenCodeApiError(error instanceof Error ? error.message : String(error), error)

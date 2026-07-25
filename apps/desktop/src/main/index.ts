@@ -86,7 +86,7 @@ import { startWatching, stopWatching } from './file-watcher'
 import { notifyWidgetReady, clearAllGates } from './generative-ui/widget-gate'
 import { setBashOutputWindow, watchBashOutput, unwatchBashOutput, unwatchAll as unwatchAllBashOutputs, readBashOutputTail, getWatchedFilePath } from './bash-output-watcher'
 import { setUnsavedBuffer } from './acp/acp-unsaved-buffer'
-import { probeOpenCodeResources } from './opencode/opencode-client'
+import { closeAllOpenCodeServers, probeOpenCodeResources, reapOrphanOpenCodeServers } from './opencode/opencode-client'
 import { listWorkflowAgents, readWorkflowOutput, readWorkflowScript } from './workflow-transcripts'
 import { readSubagentTranscript } from './agent/subagent-transcript'
 import { parseGitStatusOutput, parseGitStatusFiles, type GitStatusPair } from './git-status-utils'
@@ -2952,6 +2952,10 @@ app.whenReady().then(async () => {
     log.transports.file.getFile().path,
   )
 
+  // Older builds spawned detached `opencode serve` processes that survived force-quit.
+  const reaped = reapOrphanOpenCodeServers()
+  if (reaped > 0) log.info('[startup] reaped %d orphan opencode serve process(es)', reaped)
+
   currentThemeMode = readAppSettings().themeMode
   syncNativeAppearance()
   currentDarkTheme = nativeTheme.shouldUseDarkColors
@@ -3198,7 +3202,11 @@ function performQuit(): void {
     remoteControlService.stop(),
     new Promise<void>((r) => setTimeout(r, 1500)),
   ]).catch(() => {})
-  Promise.allSettled([remoteStop, disposeAgentSessions()]).finally(() => {
+  Promise.allSettled([
+    remoteStop,
+    disposeAgentSessions(),
+    closeAllOpenCodeServers(),
+  ]).finally(() => {
     codexService.dispose()
     disposeGlobalWarmupManager()
     closeAllDbConnections()
@@ -3219,6 +3227,7 @@ const handleSignalQuit = (sig: NodeJS.Signals): void => {
   Promise.allSettled([
     remoteControlService.stop(),
     disposeAgentSessions(),
+    closeAllOpenCodeServers(),
   ]).finally(() => process.exit(0))
   setTimeout(() => process.exit(0), 3000).unref()
 }

@@ -6,11 +6,38 @@ import log from '../logger'
 import { buildSafeEnv } from '../spawn-env'
 import type { ResolvedAcpLaunch } from './agent-catalog'
 
+const KILL_ESCALATE_MS = 1500
+
 export interface AcpProcessHandle {
   child: ChildProcess
   stream: Stream
-  kill: () => void
+  /** SIGTERM, then SIGKILL if still alive after a short grace period. */
+  kill: () => Promise<void>
   closed: Promise<{ code: number | null; signal: NodeJS.Signals | null; stderr: string }>
+}
+
+function signalProcess(child: ChildProcess, signal: NodeJS.Signals): void {
+  if (child.exitCode !== null || child.signalCode !== null) return
+  try {
+    child.kill(signal)
+  } catch {
+    /* already gone */
+  }
+}
+
+async function stopProcess(
+  child: ChildProcess,
+  closed: Promise<unknown>,
+): Promise<void> {
+  if (child.exitCode !== null || child.signalCode !== null) return
+  signalProcess(child, 'SIGTERM')
+  const stopped = await Promise.race([
+    closed.then(() => true),
+    new Promise<false>((resolve) => setTimeout(() => resolve(false), KILL_ESCALATE_MS)),
+  ])
+  if (stopped) return
+  signalProcess(child, 'SIGKILL')
+  await closed.catch(() => undefined)
 }
 
 export function spawnAcpProcess(launch: ResolvedAcpLaunch): AcpProcessHandle {
@@ -26,7 +53,7 @@ export function spawnAcpProcess(launch: ResolvedAcpLaunch): AcpProcessHandle {
   const stdin = child.stdin
   const stdout = child.stdout
   if (!stdin || !stdout) {
-    child.kill()
+    void stopProcess(child, Promise.resolve())
     throw new Error(`Failed to open stdio for ACP agent: ${launch.command}`)
   }
 
@@ -51,13 +78,14 @@ export function spawnAcpProcess(launch: ResolvedAcpLaunch): AcpProcessHandle {
     log.warn('[acp-process] spawn error:', err)
   })
 
+  let killPromise: Promise<void> | null = null
+
   return {
     child,
     stream,
     kill: () => {
-      if (!child.killed) {
-        try { child.kill() } catch { /* ignore */ }
-      }
+      killPromise ??= stopProcess(child, closed)
+      return killPromise
     },
     closed,
   }

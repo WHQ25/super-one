@@ -305,6 +305,24 @@ function mergeAgentCatalog(
   }
 }
 
+/** Skip re-spawning agents whose model/mode catalog was written recently. */
+const ACP_CATALOG_FRESH_MS = 24 * 60 * 60 * 1000
+
+function catalogHasContent(cat: AcpAgentConfigCatalog | undefined): boolean {
+  if (!cat) return false
+  return (
+    (cat.configOptions?.length ?? 0) > 0
+    || (cat.extraModels?.length ?? 0) > 0
+    || (cat.extraModes?.length ?? 0) > 0
+  )
+}
+
+function isCatalogFresh(cat: AcpAgentConfigCatalog | undefined): boolean {
+  if (!catalogHasContent(cat) || !cat?.updatedAt) return false
+  const age = Date.now() - Date.parse(cat.updatedAt)
+  return Number.isFinite(age) && age >= 0 && age < ACP_CATALOG_FRESH_MS
+}
+
 /**
  * Startup probe for models/modes only. Slash commands are intentionally not
  * waited on here — they load when the user first opens the ACP / popup.
@@ -357,8 +375,33 @@ async function probeAgentConfig(agentId: string): Promise<AcpAgentConfigCatalog 
 }
 
 /**
- * Refresh model/mode catalogs for installed agents once per app open.
+ * Resolve which installed agents should be spawned for a catalog refresh.
+ *
+ * Default (startup): only the selected ACP agent — never spawn every installed
+ * agent (e.g. OpenCode) just because it happens to be on PATH.
+ * Explicit `agentIds` still probes those agents (used when the user switches).
+ */
+export function resolveAcpProbeTargets(
+  resources: AcpResources,
+  opts?: { agentIds?: string[] },
+): Array<{ id: string; name: string; installed: boolean; commandPreview: string }> {
+  const installed = resources.agents.filter((a) => a.installed)
+  if (opts?.agentIds?.length) {
+    const want = new Set(opts.agentIds)
+    return installed.filter((a) => want.has(a.id))
+  }
+  const selected = resources.selectedAgentId
+  if (!selected) return []
+  return installed.filter((a) => a.id === selected)
+}
+
+/**
+ * Refresh model/mode catalogs once per app open (or on demand).
  * Does not probe slash commands (lazy, on first / popup open).
+ *
+ * By default only probes the selected ACP agent, and skips agents whose cache
+ * is still fresh — so installing OpenCode must not cost a ~1GB background
+ * process on every SuperOne launch.
  */
 export async function refreshAcpModelsOnce(opts?: {
   agentIds?: string[]
@@ -366,13 +409,15 @@ export async function refreshAcpModelsOnce(opts?: {
 }): Promise<AcpResources> {
   const current = readAcpResourcesCache()
   const configByAgentId = { ...(current.configByAgentId ?? {}) }
-  const targets = (opts?.agentIds?.length
-    ? current.agents.filter((a) => opts.agentIds!.includes(a.id))
-    : current.agents
-  ).filter((a) => a.installed)
+  const targets = resolveAcpProbeTargets(current, opts)
 
   await Promise.all(targets.map(async (agent) => {
     if (!opts?.force && probedThisLaunch.has(agent.id)) return
+    if (!opts?.force && isCatalogFresh(configByAgentId[agent.id])) {
+      probedThisLaunch.add(agent.id)
+      log.info('[acp-model-cache] skip fresh cache agent=%s', agent.id)
+      return
+    }
     probedThisLaunch.add(agent.id)
     try {
       const catalog = await probeAgentConfig(agent.id)

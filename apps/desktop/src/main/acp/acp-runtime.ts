@@ -464,7 +464,7 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       }
     }
   } catch (err) {
-    processHandle?.kill()
+    await processHandle?.kill().catch(() => undefined)
     disposeStream?.()
     connection?.close(err)
     const base = err instanceof Error ? err.message : String(err)
@@ -787,7 +787,9 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
           new Promise((r) => setTimeout(r, 50)),
         ])
       } catch { /* ignore */ }
-      processHandle?.kill()
+      // Escalate to SIGKILL if the agent ignores SIGTERM (OpenCode acp has been
+      // observed to linger for hours after a bare child.kill()).
+      await processHandle?.kill().catch(() => undefined)
       try { disposeStream?.() } catch { /* ignore */ }
     },
   }

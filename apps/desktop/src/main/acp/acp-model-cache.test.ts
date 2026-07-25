@@ -62,6 +62,7 @@ import {
   readAcpResourcesCache,
   writeAcpResourcesCache,
   refreshAcpModelsOnce,
+  resolveAcpProbeTargets,
   upsertAcpAgentModels,
   upsertAcpAgentModes,
   upsertAcpAgentConfig,
@@ -69,6 +70,7 @@ import {
   resetAcpModelProbeStateForTests,
   getCachedSessionCatalog,
 } from './acp-model-cache'
+import { createAcpRuntime } from './acp-runtime'
 
 describe('acp-model-cache', () => {
   beforeEach(() => {
@@ -191,13 +193,67 @@ describe('acp-model-cache', () => {
     expect(getCachedSessionCatalog('opencode')?.models[0]?.id).toBe('a')
   })
 
+  it('default probe targets only the selected installed agent', () => {
+    const resources = {
+      agents: [
+        { id: 'opencode', name: 'OpenCode', installed: true, commandPreview: 'opencode acp' },
+        { id: 'grok-build', name: 'Grok Build', installed: true, commandPreview: 'grok agent stdio' },
+      ],
+      selectedAgentId: 'grok-build' as string | null,
+      modelsByAgentId: {},
+      configByAgentId: {},
+    }
+    expect(resolveAcpProbeTargets(resources).map((a) => a.id)).toEqual(['grok-build'])
+    expect(resolveAcpProbeTargets({ ...resources, selectedAgentId: null })).toEqual([])
+    expect(resolveAcpProbeTargets(resources, { agentIds: ['opencode'] }).map((a) => a.id)).toEqual(['opencode'])
+  })
+
+  it('does not spawn non-selected agents (e.g. OpenCode) on default refresh', async () => {
+    writeAcpResourcesCache({
+      agents: [
+        { id: 'opencode', name: 'OpenCode', installed: true, commandPreview: 'opencode acp' },
+        { id: 'grok-build', name: 'Grok Build', installed: true, commandPreview: 'grok agent stdio' },
+      ],
+      selectedAgentId: 'grok-build',
+      modelsByAgentId: {},
+      configByAgentId: {},
+    })
+    await refreshAcpModelsOnce()
+    const calls = vi.mocked(createAcpRuntime).mock.calls
+    expect(calls.every((c) => c[0]?.launch?.agentId === 'grok-build')).toBe(true)
+    expect(calls.some((c) => c[0]?.launch?.agentId === 'opencode')).toBe(false)
+  })
+
+  it('skips probe when catalog cache is still fresh', async () => {
+    writeAcpResourcesCache({
+      agents: [{ id: 'grok-build', name: 'Grok', installed: true, commandPreview: 'grok agent stdio' }],
+      selectedAgentId: 'grok-build',
+      configByAgentId: {
+        'grok-build': {
+          configOptions: [{
+            id: 'model',
+            name: 'Model',
+            category: 'model',
+            type: 'select',
+            currentValue: 'g',
+            options: [{ value: 'g', name: 'G' }],
+          }],
+          updatedAt: new Date().toISOString(),
+        },
+      },
+    })
+    vi.mocked(createAcpRuntime).mockClear()
+    await refreshAcpModelsOnce()
+    expect(createAcpRuntime).not.toHaveBeenCalled()
+  })
+
   it('probes models/modes only — does not collect slash commands at startup', async () => {
     writeAcpResourcesCache({
       agents: [
         { id: 'opencode', name: 'OpenCode', installed: true, commandPreview: 'opencode acp' },
         { id: 'grok-build', name: 'Grok Build', installed: false, commandPreview: 'grok agent stdio' },
       ],
-      selectedAgentId: null,
+      selectedAgentId: 'opencode',
       modelsByAgentId: {},
       configByAgentId: {
         opencode: {
@@ -205,6 +261,7 @@ describe('acp-model-cache', () => {
           slashCommands: [
             { name: 'cached-web', description: 'From previous session', argumentHint: '', isSkill: false },
           ],
+          // Stale enough to force a real probe
           updatedAt: '2026-01-01T00:00:00.000Z',
         },
       },

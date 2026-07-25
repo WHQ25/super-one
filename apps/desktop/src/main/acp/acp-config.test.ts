@@ -254,6 +254,20 @@ describe('extractModesFromXaiSessionConfig (Grok effort)', () => {
     expect(modes?.selectedModeId).toBe('high')
   })
 
+  it('sorts agent high→low emission into ascending slider order', () => {
+    const modes = extractModesFromXaiSessionConfig({
+      'x.ai/sessionConfig': {
+        options: [
+          { id: 'high', category: 'mode', label: 'High Effort', selected: true },
+          { id: 'medium', category: 'mode', label: 'Medium Effort', selected: false },
+          { id: 'low', category: 'mode', label: 'Low Effort', selected: false },
+        ],
+      },
+    })
+    expect(modes?.modes.map((m) => m.id)).toEqual(['low', 'medium', 'high'])
+    expect(modes?.selectedModeId).toBe('high')
+  })
+
   it('extractModesFromNewSessionResult prefers standard configOptions', () => {
     const result = extractModesFromNewSessionResult({
       configOptions: [

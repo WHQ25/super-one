@@ -302,6 +302,38 @@ export function extractModelsFromXaiSessionConfig(meta: unknown): AcpModelConfig
 }
 
 /**
+ * Grok agent often emits effort options high→low; the host slider is left→right
+ * ascending (same as Claude/Codex: low … high). Unknown ids keep relative order at the end.
+ */
+const EFFORT_ASC_RANK: Record<string, number> = {
+  minimal: 0,
+  low: 1,
+  medium: 2,
+  high: 3,
+  xhigh: 4,
+  max: 5,
+}
+
+function effortRankKey(id: string, name: string): string {
+  const fromId = id.trim().toLowerCase()
+  if (fromId in EFFORT_ASC_RANK) return fromId
+  return name.trim().toLowerCase().replace(/\s+effort$/, '')
+}
+
+/** Sort reasoning-effort options ascending for slider/list UIs (low → high). */
+export function sortEffortModesAscending(modes: ModelOption[]): ModelOption[] {
+  return modes
+    .map((mode, index) => ({ mode, index, rank: EFFORT_ASC_RANK[effortRankKey(mode.id, mode.name)] }))
+    .sort((a, b) => {
+      if (a.rank != null && b.rank != null) return a.rank - b.rank
+      if (a.rank != null) return -1
+      if (b.rank != null) return 1
+      return a.index - b.index
+    })
+    .map(({ mode }) => mode)
+}
+
+/**
  * Grok: `_meta["x.ai/sessionConfig"].options` with category mode = reasoning effort.
  * These are NOT plan/permission modes — switching uses session/set_model + _meta.reasoningEffort.
  */
@@ -326,10 +358,11 @@ export function extractModesFromXaiSessionConfig(meta: unknown): AcpModeConfig |
     if (o.selected === true) selected = id
   }
   if (modes.length === 0) return null
+  const ordered = sortEffortModesAscending(modes)
   return {
     configId: null,
-    modes,
-    selectedModeId: selected && modes.some((m) => m.id === selected) ? selected : (modes[0]?.id ?? null),
+    modes: ordered,
+    selectedModeId: selected && ordered.some((m) => m.id === selected) ? selected : (ordered[0]?.id ?? null),
   }
 }
 

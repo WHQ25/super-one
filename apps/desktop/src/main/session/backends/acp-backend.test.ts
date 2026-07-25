@@ -231,7 +231,8 @@ describe('AcpBackend', () => {
 
     events.length = 0
     await backend.setModel('composer')
-    expect(setModel).toHaveBeenCalledWith('composer')
+    // Grok effort (lastModeConfig selectedModeId=high) must ride along set_model
+    expect(setModel).toHaveBeenCalledWith('composer', { reasoningEffort: 'high' })
     expect(setConfigOption).not.toHaveBeenCalled()
     const modelEvt = events.find((e): e is Extract<AgentEvent, { type: 'acp_models' }> =>
       e.type === 'acp_models' && e.selectedModelId === 'composer')
@@ -273,6 +274,39 @@ describe('AcpBackend', () => {
       e.type === 'acp_modes' && e.selectedModeId === 'high')
     expect(modeEvt?.configId).toBeNull()
     expect(modeEvt?.modes.map((m) => m.id)).toEqual(['low', 'medium', 'high'])
+    await backend.close()
+  })
+
+  it('send applies request.effort as set_model reasoningEffort when modeConfigId is null', async () => {
+    const setModel = vi.fn(async () => {})
+    setAcpRuntimeFactory(async () => mockRuntime({
+      getModelConfig: () => ({
+        configId: null,
+        selectedModelId: 'grok-4.5',
+        models: [{ id: 'grok-4.5', name: 'Grok 4.5', description: '' }],
+      }),
+      getModeConfig: () => ({
+        configId: null,
+        // Agent default selection empty — turn effort must still win
+        selectedModeId: '',
+        modes: [
+          { id: 'low', name: 'Low', description: '' },
+          { id: 'high', name: 'High', description: '' },
+        ],
+      }),
+      getConfigOptions: () => [],
+      setModel,
+    }))
+    const backend = new AcpBackend()
+    await backend.start(startOpts({ agentId: 'grok-build' }))
+    await new Promise((r) => setTimeout(r, 10))
+
+    await backend.send({
+      content: 'ping',
+      model: 'grok-4.5',
+      effort: 'high',
+    })
+    expect(setModel).toHaveBeenCalledWith('grok-4.5', { reasoningEffort: 'high' })
     await backend.close()
   })
 

@@ -372,6 +372,14 @@ describe('Session state machine', () => {
     expect(session.permissionMode).toBe('plan')
   })
 
+  it('setSessionMode forwards to backend even when backendStarted is false (Grok effort prewarm path)', async () => {
+    ;({ session, backend } = makeSession({ permissionMode: 'default' }))
+    session.prewarm()
+    expect(backend.setSessionModeCalls).toEqual([])
+    await session.setSessionMode('high')
+    expect(backend.setSessionModeCalls).toEqual(['high'])
+  })
+
   it('prewarm overrides effort/model/additionalDirs when hint is provided', () => {
     ;({ session, backend } = makeSession({ model: 'baseline', effort: 'low' }))
     session.prewarm({ effort: 'high', model: 'override', additionalDirs: ['/extra'] })

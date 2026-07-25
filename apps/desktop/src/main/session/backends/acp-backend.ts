@@ -606,7 +606,12 @@ export class AcpBackend implements SessionBackend {
       const runtime = await this.ensureRuntime()
       if (request.model) {
         try {
-          await this.applyModel(runtime, request.model)
+          // Prefer turn-level effort (Claude field / Grok mode id string) then lastModeConfig.
+          const turnEffort =
+            typeof request.effort === 'string' ? request.effort.trim() : ''
+          await this.applyModel(runtime, request.model, {
+            reasoningEffort: turnEffort || undefined,
+          })
         } catch (err) {
           log.debug('[AcpBackend] set model before prompt failed:', err)
         }
@@ -683,8 +688,15 @@ export class AcpBackend implements SessionBackend {
   /**
    * Apply model selection: standard set_config_option when configId is known,
    * otherwise ACP session/set_model (Grok and similar).
+   * Grok effort lives in lastModeConfig (configId null) — re-attach it on
+   * set_model so pre-prompt model apply does not drop the user's effort pick.
+   * Explicit `opts.reasoningEffort` (e.g. send turn) wins over lastModeConfig.
    */
-  private async applyModel(runtime: AcpRuntime, model: string): Promise<void> {
+  private async applyModel(
+    runtime: AcpRuntime,
+    model: string,
+    opts?: { reasoningEffort?: string },
+  ): Promise<void> {
     const epoch = this.runtimeEpoch
     const agentId = this.config.agentId ?? null
     if (this.modelConfigId) {
@@ -700,7 +712,16 @@ export class AcpBackend implements SessionBackend {
       this.emitConfigFromOptions(next, agentId, epoch, fallback)
       return
     }
-    await runtime.setModel(model)
+    const effort =
+      !this.modeConfigId
+        ? (opts?.reasoningEffort?.trim()
+          || this.lastModeConfig?.selectedModeId?.trim()
+          || undefined)
+        : undefined
+    await runtime.setModel(model, effort ? { reasoningEffort: effort } : undefined)
+    if (effort && this.lastModeConfig) {
+      this.lastModeConfig = { ...this.lastModeConfig, selectedModeId: effort }
+    }
     const cfg: AcpModelConfig = runtime.getModelConfig() ?? {
       configId: null,
       models: [{ id: model, name: model, description: '' }],

@@ -546,12 +546,23 @@ export class Session implements SessionContract {
   async setModel(model: string): Promise<void> {
     this.assertNotDisposed()
     this.model = model
-    if (this.backendStarted) await this.backend.setModel(model)
+    // Always push: ACP may already have a prewarmed runtime before backendStarted flips.
+    try {
+      await this.backend.setModel(model)
+    } catch (err) {
+      log.warn('[Session] backend.setModel failed:', err)
+    }
   }
 
   async setSessionMode(modeId: string): Promise<void> {
     this.assertNotDisposed()
-    if (this.backendStarted) await this.backend.setSessionMode(modeId)
+    // Always push: Grok effort (session/set_model + reasoningEffort) must apply on
+    // prewarmed runtimes even when ensureStarted has not flipped backendStarted yet.
+    try {
+      await this.backend.setSessionMode(modeId)
+    } catch (err) {
+      log.warn('[Session] backend.setSessionMode failed mode=%s:', modeId, err)
+    }
   }
 
   /**

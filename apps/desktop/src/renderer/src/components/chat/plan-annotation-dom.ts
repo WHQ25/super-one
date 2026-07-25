@@ -116,7 +116,19 @@ export function clearStickyMarks(root: HTMLElement): void {
   root.normalize()
 }
 
-function wrapRange(range: Range, mark: HTMLElement): HTMLElement | null {
+function createMarkEl(attrs: { id?: string; draft?: boolean }): HTMLElement {
+  const mark = document.createElement('mark')
+  if (attrs.draft) {
+    mark.setAttribute(STICKY_DRAFT_ATTR, '1')
+    mark.className = STICKY_DRAFT_CLASS
+  } else {
+    mark.setAttribute(STICKY_ID_ATTR, attrs.id ?? '')
+    mark.className = STICKY_MARK_CLASS
+  }
+  return mark
+}
+
+function wrapSingleTextRange(range: Range, mark: HTMLElement): HTMLElement | null {
   try {
     range.surroundContents(mark)
     return mark
@@ -132,35 +144,109 @@ function wrapRange(range: Range, mark: HTMLElement): HTMLElement | null {
   }
 }
 
+/**
+ * Wrap a selection/range as one or more <mark>s — **one per text node**.
+ * Never spans block boundaries, so multi-line list selections don't explode <ul>/<li>.
+ */
+export function wrapRangeAsMarks(
+  range: Range,
+  attrs: { id?: string; draft?: boolean },
+): HTMLElement[] {
+  if (range.collapsed) return []
+
+  // Fast path: entirely within one text node.
+  if (
+    range.startContainer === range.endContainer
+    && range.startContainer.nodeType === Node.TEXT_NODE
+  ) {
+    const mark = createMarkEl(attrs)
+    const el = wrapSingleTextRange(range.cloneRange(), mark)
+    return el ? [el] : []
+  }
+
+  const ancestor =
+    range.commonAncestorContainer.nodeType === Node.ELEMENT_NODE
+      ? (range.commonAncestorContainer as Element)
+      : range.commonAncestorContainer.parentElement
+  if (!ancestor) return []
+
+  const textNodes: Text[] = []
+  const walker = document.createTreeWalker(ancestor, NodeFilter.SHOW_TEXT)
+  let n: Node | null
+  while ((n = walker.nextNode())) {
+    if (!range.intersectsNode(n)) continue
+    const text = n as Text
+    if (!text.length) continue
+    if (text.parentElement?.closest(`mark[${STICKY_ID_ATTR}], mark[${STICKY_DRAFT_ATTR}]`)) {
+      continue
+    }
+    textNodes.push(text)
+  }
+
+  const marks: HTMLElement[] = []
+  // End → start so earlier text node offsets stay stable while wrapping.
+  for (let i = textNodes.length - 1; i >= 0; i--) {
+    const textNode = textNodes[i]!
+    let start = 0
+    let end = textNode.length
+
+    if (range.startContainer === textNode) start = range.startOffset
+    if (range.endContainer === textNode) end = range.endOffset
+
+    // Fully interior text nodes (between start/end containers)
+    if (range.startContainer !== textNode && range.endContainer !== textNode) {
+      start = 0
+      end = textNode.length
+    } else if (range.startContainer === textNode && range.endContainer !== textNode) {
+      start = range.startOffset
+      end = textNode.length
+    } else if (range.startContainer !== textNode && range.endContainer === textNode) {
+      start = 0
+      end = range.endOffset
+    }
+
+    if (start >= end) continue
+    // Skip pure inter-element whitespace so we don't paint empty list bullets.
+    if (!textNode.data.slice(start, end).trim()) continue
+
+    const r = document.createRange()
+    r.setStart(textNode, start)
+    r.setEnd(textNode, end)
+    const mark = createMarkEl(attrs)
+    const el = wrapSingleTextRange(r, mark)
+    if (el) marks.unshift(el)
+  }
+  return marks
+}
+
+/** Find quote text and wrap safely across lines/blocks. Returns marks in document order. */
+export function wrapQuoteAsMarks(
+  root: HTMLElement,
+  quote: string,
+  attrs: { id?: string; draft?: boolean },
+): HTMLElement[] {
+  const range = findTextRange(root, quote)
+  if (!range || range.collapsed) return []
+  return wrapRangeAsMarks(range, attrs)
+}
+
+/** @deprecated use wrapQuoteAsMarks — kept as first-mark helper */
 export function wrapQuoteAsMark(
   root: HTMLElement,
   quote: string,
   attrs: { id?: string; draft?: boolean },
 ): HTMLElement | null {
-  const range = findTextRange(root, quote)
-  if (!range || range.collapsed) return null
-  const mark = document.createElement('mark')
-  if (attrs.draft) {
-    mark.setAttribute(STICKY_DRAFT_ATTR, '1')
-    mark.className = STICKY_DRAFT_CLASS
-  } else {
-    mark.setAttribute(STICKY_ID_ATTR, attrs.id ?? '')
-    mark.className = STICKY_MARK_CLASS
-  }
-  return wrapRange(range, mark)
+  return wrapQuoteAsMarks(root, quote, attrs)[0] ?? null
 }
 
 /** Viewport (fixed) coordinates for the top-right of a mark's first line. */
 export interface ViewportCorner {
-  /** CSS `top` for position:fixed */
   top: number
-  /** CSS `left` for position:fixed — pin's top-left should land near selection top-right */
   left: number
 }
 
 /**
  * Top-right corner of the **first line** of the highlight, in viewport coords.
- * `pinSize` is used so the pin can be centered on that corner.
  */
 export function markTopRightViewport(mark: HTMLElement, pinSize = 18): ViewportCorner | null {
   const rects = [...mark.getClientRects()].filter((r) => r.width > 0 && r.height > 0)
@@ -173,24 +259,47 @@ export function markTopRightViewport(mark: HTMLElement, pinSize = 18): ViewportC
       left: m.right - pinSize / 2,
     }
   }
-  // Pin centered on the top-right corner of the first highlighted line.
   return {
     top: first.top - pinSize / 2,
     left: first.right - pinSize / 2,
   }
 }
 
+/** Prefer the topmost mark fragment for pin placement. */
+export function markTopRightFromMarks(marks: HTMLElement[], pinSize = 18): ViewportCorner | null {
+  if (marks.length === 0) return null
+  let best: ViewportCorner | null = null
+  let bestTop = Infinity
+  for (const mark of marks) {
+    const corner = markTopRightViewport(mark, pinSize)
+    if (!corner) continue
+    if (corner.top < bestTop) {
+      bestTop = corner.top
+      best = corner
+    }
+  }
+  return best
+}
+
 export function getMarkByCommentId(root: HTMLElement, id: string): HTMLElement | null {
   return root.querySelector(`mark[${STICKY_ID_ATTR}="${CSS.escape(id)}"]`)
+}
+
+export function getMarksByCommentId(root: HTMLElement, id: string): HTMLElement[] {
+  return [...root.querySelectorAll(`mark[${STICKY_ID_ATTR}="${CSS.escape(id)}"]`)] as HTMLElement[]
 }
 
 export function getDraftMark(root: HTMLElement): HTMLElement | null {
   return root.querySelector(`mark[${STICKY_DRAFT_ATTR}]`)
 }
 
+export function getDraftMarks(root: HTMLElement): HTMLElement[] {
+  return [...root.querySelectorAll(`mark[${STICKY_DRAFT_ATTR}]`)] as HTMLElement[]
+}
+
 /**
  * Re-apply marks for saved comments + optional draft quote.
- * Call after markdown paint. Returns map of commentId → mark element.
+ * Returns first mark per id (document-order first fragment) for pin anchoring.
  */
 export function applyStickyMarks(
   root: HTMLElement,
@@ -203,12 +312,13 @@ export function applyStickyMarks(
     .filter((i) => i.quote.trim())
     .sort((a, b) => b.quote.length - a.quote.length)
   for (const item of sorted) {
-    const el = wrapQuoteAsMark(root, item.quote, { id: item.id })
-    if (el) marks[item.id] = el
+    const els = wrapQuoteAsMarks(root, item.quote, { id: item.id })
+    if (els[0]) marks[item.id] = els[0]
   }
   let draftMark: HTMLElement | null = null
   if (draftQuote?.trim()) {
-    draftMark = wrapQuoteAsMark(root, draftQuote, { draft: true })
+    const els = wrapQuoteAsMarks(root, draftQuote, { draft: true })
+    draftMark = els[0] ?? null
   }
   return { marks, draftMark }
 }

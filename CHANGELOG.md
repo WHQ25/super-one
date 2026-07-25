@@ -4,6 +4,45 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.47.2-alpha] - 2026-07-25
+
+### Added
+
+- Integrate OpenCode agent selection into the model selector (agent · model · effort)
+- Use the official Grok brand icon for Grok Build in chat suggestions
+- Sticky-note plan comments with multi-color pen highlights and a theme-aware palette
+- Structured semantic browser actions with flow control
+- Host UI entry into Grok plan mode
+- ACP set_model, session/load resume, user MCP attach, and SuperOne MCP → ACP mapping
+- Grok permission modes and worktree-aware cwd
+- Line-comment plan review via exit_plan_mode
+- Manual refresh for Claude models
+
+### Fixed
+
+- Prevent stale model labels after switching harness (ACP prewarm / OpenCode init races)
+- Show Grok effort immediately by caching modes with null modeConfigId
+- Move Grok effort into the model selector and sort options low → high
+- Keep Grok reasoning effort across set_model and prewarm
+- Always forward permission mode after prewarm
+- Dispose session runtimes on app shutdown
+- Preserve MCP item type narrowing after the hidden filter
+- Correct Claude transformer event-trace import
+- Fix ACP runtime method this inference
+- Disable glass-mode backdrop filters that caused visual glitches
+- Plan sticky notes: click-to-edit, viewport pinning, multi-line selection, continuous pen strokes
+- Safely disable node_repl for third-party Codex providers
+- Reduce builtin MCP prompts and align ACP client version parity
+- Enable ACP harness capabilities for MCP, plan, and todos
+
+### Changed
+
+- Bump Claude Agent SDK to 0.3.220
+
+### Performance
+
+- Stop redundant idle polling
+
 ## [0.47.1-alpha] - 2026-07-25
 
 ### Fixed

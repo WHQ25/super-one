@@ -12,16 +12,6 @@ export const STICKY_DRAFT_CLASS =
 type TextPart = { node: Text; start: number; text: string }
 
 function collectTextParts(root: HTMLElement): { parts: TextPart[]; full: string } {
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
-    acceptNode(node) {
-      // Skip text already inside our marks when rebuilding? We clear first.
-      return node.parentElement?.closest(`mark[${STICKY_ID_ATTR}], mark[${STICKY_DRAFT_ATTR}]`)
-        ? NodeFilter.FILTER_REJECT
-        : NodeFilter.FILTER_ACCEPT
-    },
-  })
-  // FILTER_REJECT on parent mark - walker may not work that way on acceptNode for parent.
-  // Simpler: collect all text, clear marks first before find.
   const parts: TextPart[] = []
   let full = ''
   const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
@@ -160,32 +150,33 @@ export function wrapQuoteAsMark(
   return wrapRange(range, mark)
 }
 
-export interface StickyAnchor {
-  /** Position relative to `container` (for absolute notes). */
+/** Viewport (fixed) coordinates for the top-right of a mark's first line. */
+export interface ViewportCorner {
+  /** CSS `top` for position:fixed */
   top: number
+  /** CSS `left` for position:fixed — pin's top-left should land near selection top-right */
   left: number
-  /** Mark height — useful for stacking. */
-  markHeight: number
-  markWidth: number
 }
 
 /**
- * Anchor at the **top-right of the selected region**.
- * Uses the first client rect (first line of the highlight) so multi-line
- * selections pin to the top-right of the first line, not the bounding box.
+ * Top-right corner of the **first line** of the highlight, in viewport coords.
+ * `pinSize` is used so the pin can be centered on that corner.
  */
-export function anchorBesideMark(mark: HTMLElement, container: HTMLElement): StickyAnchor {
-  const c = container.getBoundingClientRect()
+export function markTopRightViewport(mark: HTMLElement, pinSize = 18): ViewportCorner | null {
   const rects = [...mark.getClientRects()].filter((r) => r.width > 0 && r.height > 0)
-  const first = rects[0] ?? mark.getBoundingClientRect()
-  const top = first.top - c.top + container.scrollTop
-  const left = first.right - c.left + container.scrollLeft
+  const first = rects[0]
+  if (!first) {
+    const m = mark.getBoundingClientRect()
+    if (m.width <= 0 && m.height <= 0) return null
+    return {
+      top: m.top - pinSize / 2,
+      left: m.right - pinSize / 2,
+    }
+  }
+  // Pin centered on the top-right corner of the first highlighted line.
   return {
-    // Pin sits on the selection's top-right corner (slightly inset so it hugs the text).
-    top: Math.max(0, top - 2),
-    left: Math.max(0, left - 2),
-    markHeight: first.height,
-    markWidth: first.width,
+    top: first.top - pinSize / 2,
+    left: first.right - pinSize / 2,
   }
 }
 
@@ -208,7 +199,6 @@ export function applyStickyMarks(
 ): { marks: Record<string, HTMLElement>; draftMark: HTMLElement | null } {
   clearStickyMarks(root)
   const marks: Record<string, HTMLElement> = {}
-  // Longer quotes first so short quotes don't steal a prefix of a longer one.
   const sorted = [...items]
     .filter((i) => i.quote.trim())
     .sort((a, b) => b.quote.length - a.quote.length)

@@ -334,6 +334,8 @@ export function PlanLineReview({
   const postItYellowDeep = '#F5E66B'
   /** One shared highlighter ink for every stroke band */
   const penInk = 'rgb(255 225 40 / 0.34)'
+  // Trapezoid pen tip: slight slant on both ends (like a real marker stroke)
+  const penTrapezoid = 'polygon(6px 0%, 100% 0%, calc(100% - 6px) 100%, 0% 100%)'
 
   const strokeLayers = portalTarget
     ? strokeBands.flatMap(({ key, bands }) =>
@@ -346,10 +348,11 @@ export function PlanLineReview({
               style={{
                 top: b.top,
                 left: b.left,
-                width: b.width,
+                width: Math.max(b.width, 8),
                 height: b.height,
                 backgroundColor: penInk,
-                borderRadius: 1,
+                clipPath: penTrapezoid,
+                WebkitClipPath: penTrapezoid,
               }}
             />,
             portalTarget,

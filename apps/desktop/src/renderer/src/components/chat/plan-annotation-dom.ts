@@ -297,8 +297,10 @@ export function highlightBandsFromMarks(
   opts?: { lineSlack?: number; gapMerge?: number; strokeRatio?: number },
 ): HighlightBand[] {
   const lineSlack = opts?.lineSlack ?? 4
-  const gapMerge = opts?.gapMerge ?? 20
-  const strokeRatio = opts?.strokeRatio ?? 0.72
+  /** Same-line fragments closer than this (px) merge into one continuous stroke. */
+  const gapMerge = opts?.gapMerge ?? 30
+  /** Stroke thickness as a fraction of line box height (thicker pen). */
+  const strokeRatio = opts?.strokeRatio ?? 0.9
 
   const rects = collectMarkRects(marks)
   if (rects.length === 0) return []

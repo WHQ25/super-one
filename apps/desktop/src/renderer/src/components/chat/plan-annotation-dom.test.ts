@@ -91,11 +91,11 @@ describe('highlightBandsFromMarks', () => {
     b.getClientRects = () =>
       [{ top: 101, left: 58, width: 50, height: 16, bottom: 117, right: 108, x: 58, y: 101, toJSON: () => ({}) }] as unknown as DOMRectList
 
-    const bands = highlightBandsFromMarks([a, b], { gapMerge: 20, lineSlack: 4 })
+    const bands = highlightBandsFromMarks([a, b], { gapMerge: 30, lineSlack: 4 })
     expect(bands).toHaveLength(1)
     expect(bands[0]!.left).toBe(10)
     expect(bands[0]!.width).toBe(98) // 10..108
-    // uniform height
-    expect(bands[0]!.height).toBeCloseTo(16 * 0.72, 5)
+    // uniform height (default strokeRatio 0.9)
+    expect(bands[0]!.height).toBeCloseTo(16 * 0.9, 5)
   })
 })

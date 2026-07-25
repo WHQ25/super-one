@@ -185,6 +185,25 @@ describe('serializeConfigOptions + deriveSessionCatalog', () => {
     expect(session.models[0]?.id).toBe('grok-4.5')
     expect(session.modes[0]?.id).toBe('ask')
   })
+
+  it('uses extraModes with null modeConfigId for Grok effort', () => {
+    const session = deriveSessionCatalog({
+      configOptions: [],
+      extraModels: [{ id: 'grok-4.5', name: 'Grok 4.5', description: '' }],
+      selectedModelId: 'grok-4.5',
+      modelConfigId: null,
+      extraModes: [
+        { id: 'low', name: 'Low', description: '' },
+        { id: 'high', name: 'High', description: '' },
+      ],
+      selectedModeId: 'high',
+      modeConfigId: null,
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    })
+    expect(session.modes.map((m) => m.id)).toEqual(['low', 'high'])
+    expect(session.selectedModeId).toBe('high')
+    expect(session.modeConfigId).toBeNull()
+  })
 })
 
 describe('extractModelsFromInitializeResult (Grok)', () => {

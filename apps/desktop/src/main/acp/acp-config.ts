@@ -206,6 +206,18 @@ export function deriveSessionCatalog(catalog: AcpAgentConfigCatalog): AcpSession
       ?? null)
   const modelConfigId = fromOptions?.configId ?? catalog.modelConfigId ?? null
   const modesCfg = extractModeConfig(catalog.configOptions)
+  // Prefer standard configOptions modes; else Grok-style extraModes (modeConfigId may be null).
+  const modes = modesCfg?.modes.length
+    ? modesCfg.modes
+    : (catalog.extraModes ?? [])
+  const selectedModeId = modesCfg?.selectedModeId
+    ?? (catalog.selectedModeId && modes.some((m) => m.id === catalog.selectedModeId)
+      ? catalog.selectedModeId
+      : null)
+    ?? modes[0]?.id
+    ?? null
+  const modeConfigId = modesCfg?.configId
+    ?? (modes.length > 0 ? (catalog.modeConfigId ?? null) : null)
   return {
     configOptions: catalog.configOptions,
     models,
@@ -214,9 +226,12 @@ export function deriveSessionCatalog(catalog: AcpAgentConfigCatalog): AcpSession
         ? selectedModelId
         : (models[0]?.id ?? null),
     modelConfigId,
-    modes: modesCfg?.modes ?? [],
-    selectedModeId: modesCfg?.selectedModeId ?? null,
-    modeConfigId: modesCfg?.configId ?? null,
+    modes,
+    selectedModeId:
+      selectedModeId && modes.some((m) => m.id === selectedModeId)
+        ? selectedModeId
+        : (modes[0]?.id ?? null),
+    modeConfigId,
     slashCommands: catalog.slashCommands ?? [],
     updatedAt: catalog.updatedAt,
   }

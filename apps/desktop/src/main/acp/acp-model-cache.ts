@@ -16,6 +16,7 @@ import {
   deriveSessionCatalog,
   modelCatalogFromSession,
   serializeConfigOptions,
+  type AcpModeConfig,
   type AcpModelConfig,
   type ConfigOptionLike,
 } from './acp-config'
@@ -124,9 +125,12 @@ export function catalogFromModelConfig(cfg: AcpModelConfig): AcpAgentModelCatalo
 export function catalogFromConfigOptions(
   configOptions: Array<ConfigOptionLike | SessionConfigOption> | null | undefined,
   modelFallback?: AcpModelConfig | null,
+  modeFallback?: AcpModeConfig | null,
 ): AcpAgentConfigCatalog {
   const serialized = serializeConfigOptions(configOptions)
   const hasModelInOptions = serialized.some((o) => o.category === 'model' || o.id === 'model')
+  const hasModeInOptions = serialized.some((o) => o.category === 'mode' || o.id === 'mode')
+  const useExtraModes = Boolean(modeFallback?.modes.length) && !hasModeInOptions
   return {
     configOptions: serialized,
     extraModels:
@@ -135,6 +139,10 @@ export function catalogFromConfigOptions(
         : undefined,
     selectedModelId: modelFallback?.selectedModelId ?? null,
     modelConfigId: modelFallback?.configId ?? null,
+    // Grok effort options live outside configOptions (configId null).
+    extraModes: useExtraModes ? modeFallback!.modes : undefined,
+    selectedModeId: useExtraModes ? (modeFallback!.selectedModeId ?? null) : undefined,
+    modeConfigId: useExtraModes ? (modeFallback!.configId ?? null) : undefined,
     updatedAt: new Date().toISOString(),
   }
 }
@@ -144,17 +152,21 @@ export function upsertAcpAgentConfig(
   agentId: string,
   configOptions: Array<ConfigOptionLike | SessionConfigOption> | null | undefined,
   modelFallback?: AcpModelConfig | null,
+  modeFallback?: AcpModeConfig | null,
 ): AcpResources {
   const current = readAcpResourcesCache()
-  const catalog = catalogFromConfigOptions(configOptions, modelFallback)
+  const catalog = catalogFromConfigOptions(configOptions, modelFallback, modeFallback)
   // Keep previous modes/commands if new payload has empty options but we only got a model-only update.
   const prev = current.configByAgentId?.[agentId]
-  if (prev && catalog.configOptions.length === 0 && catalog.extraModels?.length) {
+  if (prev && catalog.configOptions.length === 0 && catalog.extraModels?.length && !catalog.extraModes?.length) {
     const merged: AcpAgentConfigCatalog = {
       configOptions: prev.configOptions,
       extraModels: catalog.extraModels,
       selectedModelId: catalog.selectedModelId ?? prev.selectedModelId,
       modelConfigId: catalog.modelConfigId ?? prev.modelConfigId,
+      extraModes: prev.extraModes,
+      selectedModeId: prev.selectedModeId,
+      modeConfigId: prev.modeConfigId,
       slashCommands: prev.slashCommands,
       updatedAt: catalog.updatedAt,
     }
@@ -164,14 +176,61 @@ export function upsertAcpAgentConfig(
     probedThisLaunch.add(agentId)
     return next
   }
-  // Preserve slash commands across config-only upserts.
-  const withCommands: AcpAgentConfigCatalog = prev?.slashCommands?.length && !catalog.slashCommands?.length
-    ? { ...catalog, slashCommands: prev.slashCommands }
-    : catalog
+  // Preserve slash commands (and Grok extraModes when this upsert is options-only).
+  const withCommands: AcpAgentConfigCatalog = mergeAgentCatalog(catalog, prev)
   const configByAgentId = { ...(current.configByAgentId ?? {}), [agentId]: withCommands }
   const next = normalizeResources({ ...current, configByAgentId })
   writeAcpResourcesCache(next)
   probedThisLaunch.add(agentId)
+  return next
+}
+
+/** Persist Grok-style effort modes (modeConfigId null) without wiping models. */
+export function upsertAcpAgentModes(agentId: string, mode: AcpModeConfig): AcpResources {
+  const current = readAcpResourcesCache()
+  const prev = current.configByAgentId?.[agentId]
+  const nextCatalog: AcpAgentConfigCatalog = {
+    configOptions: prev?.configOptions ?? [],
+    extraModels: prev?.extraModels,
+    selectedModelId: prev?.selectedModelId ?? null,
+    modelConfigId: prev?.modelConfigId ?? null,
+    extraModes: mode.modes,
+    selectedModeId: mode.selectedModeId,
+    modeConfigId: mode.configId,
+    slashCommands: prev?.slashCommands,
+    updatedAt: new Date().toISOString(),
+  }
+  // When modes use a real setConfigOption id, prefer configOptions form.
+  if (mode.configId) {
+    const withoutMode = (prev?.configOptions ?? []).filter(
+      (o) => o.category !== 'mode' && o.id !== 'mode' && o.id !== mode.configId,
+    )
+    nextCatalog.configOptions = [
+      ...withoutMode,
+      {
+        id: mode.configId,
+        name: 'Session Mode',
+        category: 'mode',
+        type: 'select',
+        currentValue: mode.selectedModeId,
+        options: mode.modes.map((m) => ({
+          value: m.id,
+          name: m.name,
+          description: m.description || null,
+        })),
+      },
+    ]
+    nextCatalog.extraModes = undefined
+    nextCatalog.modeConfigId = mode.configId
+  } else {
+    // Strip any previously faked mode configOptions so derive keeps modeConfigId null.
+    nextCatalog.configOptions = (prev?.configOptions ?? []).filter(
+      (o) => o.category !== 'mode' && o.id !== 'mode',
+    )
+  }
+  const configByAgentId = { ...(current.configByAgentId ?? {}), [agentId]: nextCatalog }
+  const next = normalizeResources({ ...current, configByAgentId })
+  writeAcpResourcesCache(next)
   return next
 }
 
@@ -206,6 +265,9 @@ export function upsertAcpAgentSlashCommands(
     extraModels: prev?.extraModels,
     selectedModelId: prev?.selectedModelId ?? null,
     modelConfigId: prev?.modelConfigId ?? null,
+    extraModes: prev?.extraModes,
+    selectedModeId: prev?.selectedModeId,
+    modeConfigId: prev?.modeConfigId,
     slashCommands: commands,
     updatedAt: new Date().toISOString(),
   }
@@ -220,11 +282,22 @@ function mergeAgentCatalog(
   prev: AcpAgentConfigCatalog | undefined,
 ): AcpAgentConfigCatalog {
   if (!prev) return next
+  const nextHasModes = Boolean(next.extraModes?.length)
+    || next.configOptions.some((o) => o.category === 'mode' || o.id === 'mode')
   return {
     configOptions: next.configOptions.length ? next.configOptions : prev.configOptions,
     extraModels: next.extraModels?.length ? next.extraModels : prev.extraModels,
     selectedModelId: next.selectedModelId ?? prev.selectedModelId ?? null,
     modelConfigId: next.modelConfigId ?? prev.modelConfigId ?? null,
+    // Preserve Grok effort modes across model-only / empty probes.
+    extraModes: next.extraModes?.length ? next.extraModes : prev.extraModes,
+    selectedModeId: nextHasModes
+      ? (next.selectedModeId ?? prev.selectedModeId ?? null)
+      : (prev.selectedModeId ?? null),
+    // null is meaningful (Grok effort); only fall back when next has no mode signal.
+    modeConfigId: nextHasModes
+      ? (next.modeConfigId ?? null)
+      : (prev.modeConfigId ?? null),
     // Slash commands are loaded lazily when the user opens the / popup — never
     // collected during startup model/config probe. Always preserve cached ones.
     slashCommands: prev.slashCommands,
@@ -256,19 +329,26 @@ async function probeAgentConfig(agentId: string): Promise<AcpAgentConfigCatalog 
   try {
     const options = runtime.getConfigOptions()
     const modelCfg = runtime.getModelConfig()
+    const modeCfg = runtime.getModeConfig()
     const prev = readAcpResourcesCache().configByAgentId?.[agentId]
-    const hasConfig = (options?.length ?? 0) > 0 || (modelCfg?.models.length ?? 0) > 0
+    const hasConfig =
+      (options?.length ?? 0) > 0
+      || (modelCfg?.models.length ?? 0) > 0
+      || (modeCfg?.modes.length ?? 0) > 0
     if (!hasConfig && !prev) {
       log.info('[acp-model-cache] probe empty agent=%s', agentId)
       return null
     }
 
-    const catalog = mergeAgentCatalog(catalogFromConfigOptions(options, modelCfg), prev)
+    const catalog = mergeAgentCatalog(catalogFromConfigOptions(options, modelCfg, modeCfg), prev)
+    const session = deriveSessionCatalog(catalog)
     log.info(
-      '[acp-model-cache] probe ok agent=%s configOptions=%d models=%d',
+      '[acp-model-cache] probe ok agent=%s configOptions=%d models=%d modes=%d modeConfigId=%s',
       agentId,
       catalog.configOptions.length,
-      deriveSessionCatalog(catalog).models.length,
+      session.models.length,
+      session.modes.length,
+      session.modeConfigId ?? 'null',
     )
     return catalog
   } finally {

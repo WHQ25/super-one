@@ -64,6 +64,36 @@ describe('getCachedAcpCatalog', () => {
     expect(catalog?.modes).toEqual([])
   })
 
+  it('hydrates Grok effort modes from extraModes with null modeConfigId', () => {
+    const withEffort: AcpResources = {
+      ...resources,
+      configByAgentId: {
+        ...resources.configByAgentId,
+        'grok-build': {
+          configOptions: [],
+          extraModels: [{ id: 'grok-4.5', name: 'Grok 4.5', description: '' }],
+          selectedModelId: 'grok-4.5',
+          modelConfigId: null,
+          extraModes: [
+            { id: 'low', name: 'Low', description: '' },
+            { id: 'high', name: 'High', description: '' },
+          ],
+          selectedModeId: 'high',
+          modeConfigId: null,
+          updatedAt: '2026-01-01T00:00:00.000Z',
+        },
+      },
+    }
+    const catalog = getCachedAcpCatalog(withEffort, 'grok-build')
+    expect(catalog?.modes.map((m) => m.id)).toEqual(['low', 'high'])
+    expect(catalog?.selectedModeId).toBe('high')
+    expect(catalog?.modeConfigId).toBeNull()
+    const patch = sessionPatchFromAcpCatalog(catalog!)
+    expect(patch.acpModes?.map((m) => m.id)).toEqual(['low', 'high'])
+    expect(patch.acpModeConfigId).toBeNull()
+    expect(patch.selectedAcpModeId).toBe('high')
+  })
+
   it('returns null for missing agent or empty models', () => {
     expect(getCachedAcpCatalog(resources, 'missing')).toBeNull()
     expect(getCachedAcpCatalog(null, 'opencode')).toBeNull()

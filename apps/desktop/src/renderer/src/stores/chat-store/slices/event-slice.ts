@@ -486,6 +486,9 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
                       extraModels: event.configId ? prevConfig?.extraModels : event.models,
                       selectedModelId: event.selectedModelId,
                       modelConfigId: event.configId,
+                      extraModes: prevConfig?.extraModes,
+                      selectedModeId: prevConfig?.selectedModeId,
+                      modeConfigId: prevConfig?.modeConfigId,
                       slashCommands: prevConfig?.slashCommands,
                       updatedAt: now,
                     },
@@ -494,38 +497,75 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
               },
             }
           } else if (event.type === 'acp_modes') {
-            const modeId = event.configId ?? 'mode'
-            const modeOpt = {
-              id: modeId,
-              name: 'Session Mode',
-              category: 'mode' as const,
-              type: 'select' as const,
-              currentValue: event.selectedModeId,
-              options: event.modes.map((m) => ({
-                value: m.id,
-                name: m.name,
-                description: m.description || null,
-              })),
-            }
-            const withoutMode = prevOptions.filter((o) => o.category !== 'mode' && o.id !== 'mode' && o.id !== modeId)
-            harnessUpdate = {
-              harnessResources: {
-                ...s.harnessResources,
-                acp: {
-                  ...acp,
-                  configByAgentId: {
-                    ...(acp.configByAgentId ?? {}),
-                    [agentId]: {
-                      configOptions: [...withoutMode, modeOpt],
-                      extraModels: prevConfig?.extraModels,
-                      selectedModelId: prevConfig?.selectedModelId ?? null,
-                      modelConfigId: prevConfig?.modelConfigId ?? null,
-                      slashCommands: prevConfig?.slashCommands,
-                      updatedAt: now,
+            // Grok effort: configId is null → store as extraModes so UI keeps
+            // modeConfigId null (effort slider next to model, not status-bar mode).
+            // Real session modes: configId set → configOptions category=mode.
+            if (event.configId == null) {
+              const withoutMode = prevOptions.filter(
+                (o) => o.category !== 'mode' && o.id !== 'mode',
+              )
+              harnessUpdate = {
+                harnessResources: {
+                  ...s.harnessResources,
+                  acp: {
+                    ...acp,
+                    configByAgentId: {
+                      ...(acp.configByAgentId ?? {}),
+                      [agentId]: {
+                        configOptions: withoutMode,
+                        extraModels: prevConfig?.extraModels,
+                        selectedModelId: prevConfig?.selectedModelId ?? null,
+                        modelConfigId: prevConfig?.modelConfigId ?? null,
+                        extraModes: event.modes,
+                        selectedModeId: event.selectedModeId,
+                        modeConfigId: null,
+                        slashCommands: prevConfig?.slashCommands,
+                        updatedAt: now,
+                      },
                     },
                   },
                 },
-              },
+              }
+            } else {
+              const modeId = event.configId
+              const modeOpt = {
+                id: modeId,
+                name: 'Session Mode',
+                category: 'mode' as const,
+                type: 'select' as const,
+                currentValue: event.selectedModeId,
+                options: event.modes.map((m) => ({
+                  value: m.id,
+                  name: m.name,
+                  description: m.description || null,
+                })),
+              }
+              const withoutMode = prevOptions.filter(
+                (o) => o.category !== 'mode' && o.id !== 'mode' && o.id !== modeId,
+              )
+              harnessUpdate = {
+                harnessResources: {
+                  ...s.harnessResources,
+                  acp: {
+                    ...acp,
+                    configByAgentId: {
+                      ...(acp.configByAgentId ?? {}),
+                      [agentId]: {
+                        configOptions: [...withoutMode, modeOpt],
+                        extraModels: prevConfig?.extraModels,
+                        selectedModelId: prevConfig?.selectedModelId ?? null,
+                        modelConfigId: prevConfig?.modelConfigId ?? null,
+                        // Drop stale Grok effort extras when real session modes arrive.
+                        extraModes: undefined,
+                        selectedModeId: event.selectedModeId,
+                        modeConfigId: modeId,
+                        slashCommands: prevConfig?.slashCommands,
+                        updatedAt: now,
+                      },
+                    },
+                  },
+                },
+              }
             }
           } else {
             harnessUpdate = {
@@ -540,6 +580,9 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
                       extraModels: prevConfig?.extraModels,
                       selectedModelId: prevConfig?.selectedModelId ?? null,
                       modelConfigId: prevConfig?.modelConfigId ?? null,
+                      extraModes: prevConfig?.extraModes,
+                      selectedModeId: prevConfig?.selectedModeId,
+                      modeConfigId: prevConfig?.modeConfigId,
                       slashCommands: event.commands,
                       updatedAt: now,
                     },

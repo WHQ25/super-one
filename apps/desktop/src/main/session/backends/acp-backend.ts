@@ -16,7 +16,12 @@ import {
   type AcpModeConfig,
   type AcpModelConfig,
 } from '../../acp/acp-config'
-import { upsertAcpAgentConfig, upsertAcpAgentModels, upsertAcpAgentSlashCommands } from '../../acp/acp-model-cache'
+import {
+  upsertAcpAgentConfig,
+  upsertAcpAgentModels,
+  upsertAcpAgentModes,
+  upsertAcpAgentSlashCommands,
+} from '../../acp/acp-model-cache'
 import { createAcpRuntime, type AcpRuntime, type AcpRuntimeOptions } from '../../acp/acp-runtime'
 import { mapPermissionDecision, mapPermissionRequest, type PendingPermissionOptions } from '../../acp/acp-permission-map'
 import { shouldAutoAllowAcpPermission } from '../../acp/acp-permission-preapprove'
@@ -247,6 +252,13 @@ export class AcpBackend implements SessionBackend {
     }
     this.modeConfigId = extracted.configId
     this.lastModeConfig = extracted
+    if (agentId) {
+      try {
+        upsertAcpAgentModes(agentId, extracted)
+      } catch (err) {
+        log.debug('[AcpBackend] upsert mode cache failed:', err)
+      }
+    }
     this.emit({
       type: 'acp_modes',
       modes: extracted.modes,

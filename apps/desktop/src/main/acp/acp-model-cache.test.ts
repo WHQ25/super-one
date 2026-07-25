@@ -63,6 +63,7 @@ import {
   writeAcpResourcesCache,
   refreshAcpModelsOnce,
   upsertAcpAgentModels,
+  upsertAcpAgentModes,
   upsertAcpAgentConfig,
   upsertAcpAgentSlashCommands,
   resetAcpModelProbeStateForTests,
@@ -140,6 +141,36 @@ describe('acp-model-cache', () => {
     expect(cached.configByAgentId?.['grok-build']?.configOptions[0]?.id).toBe('mode')
     expect(cached.configByAgentId?.['grok-build']?.extraModels?.[0]?.id).toBe('grok-4.5')
     expect(getCachedSessionCatalog('grok-build')?.modes[0]?.id).toBe('ask')
+  })
+
+  it('upserts Grok effort modes as extraModes with null modeConfigId', () => {
+    writeAcpResourcesCache({
+      agents: [{ id: 'grok-build', name: 'Grok', installed: true, commandPreview: 'grok' }],
+      selectedAgentId: 'grok-build',
+      configByAgentId: {
+        'grok-build': {
+          configOptions: [],
+          extraModels: [{ id: 'grok-4.5', name: 'Grok 4.5', description: '' }],
+          selectedModelId: 'grok-4.5',
+          modelConfigId: null,
+          updatedAt: '2026-01-01T00:00:00.000Z',
+        },
+      },
+    })
+    upsertAcpAgentModes('grok-build', {
+      configId: null,
+      selectedModeId: 'high',
+      modes: [
+        { id: 'low', name: 'Low', description: '' },
+        { id: 'high', name: 'High', description: '' },
+      ],
+    })
+    const session = getCachedSessionCatalog('grok-build')
+    expect(session?.models[0]?.id).toBe('grok-4.5')
+    expect(session?.modes.map((m) => m.id)).toEqual(['low', 'high'])
+    expect(session?.selectedModeId).toBe('high')
+    expect(session?.modeConfigId).toBeNull()
+    expect(readAcpResourcesCache().configByAgentId?.['grok-build']?.extraModes?.[1]?.id).toBe('high')
   })
 
   it('migrates legacy modelsByAgentId into configByAgentId on read', () => {

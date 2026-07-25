@@ -95,6 +95,16 @@ function sessionCatalogFromConfig(catalog: AcpAgentConfigCatalog): AcpSessionCat
       ?? models[0]?.id
       ?? null)
   const mode = extractSelectCategory(catalog.configOptions, 'mode', 'mode')
+  // Prefer standard configOptions modes; else Grok-style extraModes (modeConfigId may be null).
+  const modes = mode?.options.length ? mode.options : (catalog.extraModes ?? [])
+  const selectedModeId = mode?.selectedId
+    ?? (catalog.selectedModeId && modes.some((m) => m.id === catalog.selectedModeId)
+      ? catalog.selectedModeId
+      : null)
+    ?? modes[0]?.id
+    ?? null
+  const modeConfigId = mode?.configId
+    ?? (modes.length > 0 ? (catalog.modeConfigId ?? null) : null)
   return {
     configOptions: catalog.configOptions,
     models,
@@ -103,9 +113,12 @@ function sessionCatalogFromConfig(catalog: AcpAgentConfigCatalog): AcpSessionCat
         ? selectedModelId
         : (models[0]?.id ?? null),
     modelConfigId: modelFromOptions?.configId ?? catalog.modelConfigId ?? null,
-    modes: mode?.options ?? [],
-    selectedModeId: mode?.selectedId ?? null,
-    modeConfigId: mode?.configId ?? null,
+    modes,
+    selectedModeId:
+      selectedModeId && modes.some((m) => m.id === selectedModeId)
+        ? selectedModeId
+        : (modes[0]?.id ?? null),
+    modeConfigId,
     slashCommands: catalog.slashCommands ?? [],
     updatedAt: catalog.updatedAt,
   }
@@ -179,7 +192,15 @@ export function getCachedAcpCatalog(
 ): AcpSessionCatalog | null {
   if (!acp || !agentId) return null
   const full = acp.configByAgentId?.[agentId]
-  if (full && (full.configOptions?.length || full.extraModels?.length || full.slashCommands?.length)) {
+  if (
+    full
+    && (
+      full.configOptions?.length
+      || full.extraModels?.length
+      || full.extraModes?.length
+      || full.slashCommands?.length
+    )
+  ) {
     const session = sessionCatalogFromConfig(full)
     if (session.models.length || session.modes.length || session.slashCommands.length) return session
   }

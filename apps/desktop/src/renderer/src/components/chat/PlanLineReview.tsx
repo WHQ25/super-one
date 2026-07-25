@@ -86,8 +86,8 @@ export function PlanLineReview({
     }
     if (mark) {
       const corner = markTopRightViewport(mark, PIN)
-      // Open note hangs just under the pin
-      setNotePos(corner ? { top: corner.top + PIN + 4, left: corner.left - 8 } : null)
+      // Open note sits a bit further below the selection / pin
+      setNotePos(corner ? { top: corner.top + PIN + 14, left: corner.left - 12 } : null)
     } else {
       setNotePos(null)
     }
@@ -313,6 +313,10 @@ export function PlanLineReview({
 
   const portalTarget = typeof document !== 'undefined' ? document.body : null
 
+  // Classic 3M canary yellow (approx. Post-it® #FEF6A5 / #FFEB3B family)
+  const postItYellow = '#FEF6A5'
+  const postItYellowDeep = '#F5E66B'
+
   const pins = comments.map((c, index) => {
     if (note?.commentId === c.id) return null
     const pos = pinPos[c.id]
@@ -325,15 +329,17 @@ export function PlanLineReview({
         aria-label={t('chat.plan.comments')}
         className={cn(
           'fixed z-[200] flex cursor-pointer items-center justify-center',
-          'rounded-[2px] bg-[#facc15] text-[9px] font-semibold text-yellow-950/70',
-          'shadow-[1px_1px_3px_rgba(0,0,0,0.28)]',
-          'hover:brightness-105 dark:bg-yellow-500',
+          'text-[9px] font-semibold text-[#6B5B1A]/70',
+          'hover:brightness-[1.03]',
         )}
         style={{
           top: pos.top,
           left: pos.left,
           width: PIN,
           height: PIN,
+          background: `linear-gradient(180deg, ${postItYellow} 0%, ${postItYellowDeep} 100%)`,
+          boxShadow: '1px 1px 2px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.45)',
+          borderRadius: 1,
         }}
         onClick={() => openExisting(c)}
       >
@@ -350,20 +356,60 @@ export function PlanLineReview({
           className="fixed z-[210]"
           style={{
             top: notePos?.top ?? 80,
-            left: Math.max(8, Math.min(notePos?.left ?? 80, window.innerWidth - 200)),
+            left: Math.max(8, Math.min(notePos?.left ?? 80, window.innerWidth - 220)),
           }}
           onMouseDown={(e) => e.stopPropagation()}
         >
+          {/* 3M-style square Post-it */}
           <div
-            className={cn(
-              'relative w-48 rounded-[2px] bg-[#facc15] p-2.5 pt-5',
-              'shadow-[2px_3px_8px_rgba(0,0,0,0.2)]',
-              'dark:bg-yellow-500',
-            )}
+            className="relative"
+            style={{
+              width: 200,
+              minHeight: 168,
+              padding: '22px 14px 14px',
+              background: `linear-gradient(
+                165deg,
+                #FFFEF0 0%,
+                ${postItYellow} 18%,
+                ${postItYellow} 78%,
+                ${postItYellowDeep} 100%
+              )`,
+              // Soft paper stack + lift
+              boxShadow: `
+                1px 1px 0 rgba(0,0,0,0.04),
+                2px 3px 2px rgba(0,0,0,0.06),
+                3px 8px 18px rgba(0,0,0,0.14)
+              `,
+              // Slight peel rotation like a real sticky
+              transform: 'rotate(1.25deg)',
+              borderRadius: 1,
+            }}
           >
+            {/* Top adhesive band (matte strip) */}
+            <div
+              aria-hidden
+              className="pointer-events-none absolute inset-x-0 top-0 h-3"
+              style={{
+                background: 'linear-gradient(180deg, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0.08) 100%)',
+                borderBottom: '1px solid rgba(180,160,40,0.12)',
+              }}
+            />
+            {/* Dog-eared top-right corner */}
+            <div
+              aria-hidden
+              className="pointer-events-none absolute right-0 top-0"
+              style={{
+                width: 0,
+                height: 0,
+                borderStyle: 'solid',
+                borderWidth: '0 18px 18px 0',
+                borderColor: 'transparent #F3E27A transparent transparent',
+                filter: 'drop-shadow(-1px 1px 0 rgba(0,0,0,0.06))',
+              }}
+            />
             <button
               type="button"
-              className="absolute right-0.5 top-0.5 flex size-5 items-center justify-center text-yellow-950/40 hover:text-yellow-950"
+              className="absolute right-1 top-1 z-[1] flex size-5 items-center justify-center text-[#6B5B1A]/40 hover:text-[#6B5B1A]/80"
               aria-label={
                 note.mode === 'edit'
                   ? t('chat.plan.removeComment')
@@ -382,7 +428,7 @@ export function PlanLineReview({
             <textarea
               ref={inputRef}
               data-plan-draft
-              rows={3}
+              rows={5}
               value={note.text}
               onChange={(e) => setNote((n) => (n ? { ...n, text: e.target.value } : n))}
               onBlur={(e) => {
@@ -392,7 +438,11 @@ export function PlanLineReview({
                 if (current) saveNoteRef.current(current)
               }}
               placeholder={t('chat.plan.commentPlaceholder')}
-              className="w-full resize-none bg-transparent text-[13px] leading-snug text-yellow-950 placeholder:text-yellow-950/35 focus:outline-none"
+              className="relative z-0 w-full resize-none bg-transparent text-[13px] leading-relaxed text-[#3D3410] placeholder:text-[#6B5B1A]/35 focus:outline-none"
+              style={{
+                minHeight: 112,
+                fontFamily: 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif',
+              }}
             />
           </div>
         </div>,

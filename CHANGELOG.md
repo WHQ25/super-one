@@ -4,6 +4,22 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.47.5-alpha] - 2026-07-27
+
+### Fixed
+
+- Stop new sessions from inheriting the previous activity dock layout
+- Flush main card edges when entering fullscreen
+- Keep host overlays aligned when the activity panel swaps sides
+
+### Performance
+
+- Drop continuous idle motion on compact session icons
+- Keep content-visibility working under liquid glass
+- Use CSS zoom instead of transform scale in chat
+- Stop re-rendering session rows when only lastEventAt changes
+- Batch content_delta agent events to reduce chat re-renders
+
 ## [0.47.4-alpha] - 2026-07-26
 
 ### Added

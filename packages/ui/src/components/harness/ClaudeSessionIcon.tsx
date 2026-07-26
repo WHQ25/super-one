@@ -63,6 +63,13 @@ function idleLegClass(side: 'left' | 'right', renderLevel: SessionIconRenderLeve
   return `claude-session-idle-leg${renderLevel === 'rich' ? ` claude-session-idle-leg-${side}` : ''}`
 }
 
+/** Resting states (`default`/`automation`) drop the continuous float at `compact`
+ *  — their motion is decorative, and a sidebar renders many of them at once. The
+ *  eye blink is sparse-keyframed, so it stays on at every level. */
+function idleMotionClass(renderLevel: SessionIconRenderLevel): string {
+  return renderLevel === 'rich' ? 'claude-session-idle-motion' : 'claude-session-inline'
+}
+
 export function ClaudeSessionIcon({ status, size, renderLevel = 'rich' }: SessionIconProps) {
   const wrapStyle = iconWrapStyle(size)
   const svgStyle = iconSvgStyle(size)
@@ -78,7 +85,7 @@ export function ClaudeSessionIcon({ status, size, renderLevel = 'rich' }: Sessio
   if (status === 'default' || status === 'background') {
     return (
       <span className="inline-flex items-center justify-center w-3.5 h-3.5" style={wrapStyle}>
-        <span className={status === 'background' ? 'claude-session-bg-motion' : 'claude-session-idle-motion'}>
+        <span className={status === 'background' ? 'claude-session-bg-motion' : idleMotionClass(renderLevel)}>
           <span className="claude-session-idle-stage" style={idleStageStyle(size)}>
             <svg viewBox="-3 -3 116 90" className="w-3 h-3 overflow-visible" style={svgStyle} aria-hidden>
               <g fill={BODY_COLOR}>
@@ -178,7 +185,7 @@ export function ClaudeSessionIcon({ status, size, renderLevel = 'rich' }: Sessio
 
   return (
     <span className="inline-flex items-center justify-center w-3.5 h-3.5" style={wrapStyle}>
-      <span className="claude-session-idle-motion">
+      <span className={idleMotionClass(renderLevel)}>
         <svg viewBox="-3 -3 116 115" className="w-3 h-3 overflow-visible" style={svgStyle} aria-hidden>
           <g fill={BODY_COLOR}>
             <rect x="17" y="0" width="76" height="51" />

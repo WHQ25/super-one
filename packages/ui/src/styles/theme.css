@@ -200,6 +200,15 @@
   50% { opacity: 0.95; }
 }
 
+/* Layout-only stage wrapper. Split out of the motion classes below so a
+   `compact` render level (sidebar lists, where N icons animate at once) can drop
+   the continuous float without changing layout. Sparse-keyframe animations like
+   `claude-session-blink` stay on at every level — they idle between blinks,
+   whereas an interpolating transform pins the compositor at full frame rate. */
+.claude-session-inline {
+  display: inline-flex;
+}
+
 .claude-session-idle-motion {
   display: inline-flex;
   animation: claude-session-float 2.5s ease-in-out infinite;

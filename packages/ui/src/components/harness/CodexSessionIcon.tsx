@@ -84,15 +84,17 @@ function CloudBody({
 function ScaledCodex({
   status,
   size,
+  animated = true,
   children,
 }: {
   status: SessionIconProps['status']
   size?: number
+  animated?: boolean
   children: React.ReactNode
 }) {
   return (
     <span className="inline-flex items-center justify-center w-3.5 h-3.5" style={wrapStyle(size)}>
-      <span className="codex-session-motion codex-session-scale">
+      <span className={`codex-session-motion${animated ? ' codex-session-scale' : ''}`}>
         <svg viewBox="1 1 22 22" className="w-3 h-3 overflow-visible" style={svgStyle(size)} aria-hidden>
           <Defs status={status} />
           {children}
@@ -102,7 +104,12 @@ function ScaledCodex({
   )
 }
 
-export function CodexSessionIcon({ status, size }: SessionIconProps) {
+export function CodexSessionIcon({ status, size, renderLevel = 'rich' }: SessionIconProps) {
+  // Mirrors ClaudeSessionIcon: resting states drop their interpolating animations
+  // (`codex-session-scale` ≈ float, `warm`/`spec` ≈ the leg wiggle) at `compact`.
+  // The step-end `codex-session-cursor` is this icon's blink — it stays on.
+  const restingAnimated = renderLevel === 'rich'
+
   if (DEBUG_SOLID_BLOCK) {
     return (
       <span className="inline-flex items-center justify-center w-3.5 h-3.5" style={wrapStyle(size)}>
@@ -162,8 +169,8 @@ export function CodexSessionIcon({ status, size }: SessionIconProps) {
 
   if (status === 'automation') {
     return (
-      <ScaledCodex status="automation" size={size}>
-        <CloudBody status="automation" />
+      <ScaledCodex status="automation" size={size} animated={restingAnimated}>
+        <CloudBody status="automation" shimmer={restingAnimated} />
         <rect x="11.3" y="5.4" width="1.4" height="6.8" fill="#ffffff" />
         <rect x="12" y="11.3" width="4.6" height="1.4" fill="#ffffff" />
         <circle cx="12" cy="12" r="1.0" fill="#ffffff" />
@@ -172,8 +179,8 @@ export function CodexSessionIcon({ status, size }: SessionIconProps) {
   }
 
   return (
-    <ScaledCodex status={status} size={size}>
-      <CloudBody status={status} />
+    <ScaledCodex status={status} size={size} animated={restingAnimated}>
+      <CloudBody status={status} shimmer={restingAnimated} />
       <path d={SLASH} fill="#fff" />
       <path className="codex-session-cursor" d={UNDERSCORE} fill="#fff" />
     </ScaledCodex>

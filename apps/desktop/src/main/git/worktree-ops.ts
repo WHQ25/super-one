@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, rmSync, writeFileSync } from 'fs'
 import { homedir, tmpdir } from 'os'
 import { basename, dirname, join, resolve, sep } from 'path'
 import { gitRun } from '../git-run'
+import { logGitFailure } from '../git-diagnostics'
 import { sanitizeGitRef } from '../path-security'
 import type {
   WorktreeMode,
@@ -32,9 +33,12 @@ export function gitErrorMessage(err: unknown): string {
   return (err as Error)?.message ?? 'Unknown git error'
 }
 
+/** Read-only, feeds the status bar — see GIT_READ_OPTS in main/index.ts. */
+const WORKTREE_READ_OPTS = { timeoutMs: 20_000 }
+
 export async function getWorktreeInfo(folderPath: string): Promise<WorktreeInfo | null> {
   try {
-    const raw = await gitRun(folderPath, ['worktree', 'list', '--porcelain'])
+    const raw = await gitRun(folderPath, ['worktree', 'list', '--porcelain'], undefined, WORKTREE_READ_OPTS)
     const entries: WorktreeEntry[] = []
     let first = true
     for (const block of raw.split('\n\n').filter(Boolean)) {
@@ -56,14 +60,17 @@ export async function getWorktreeInfo(folderPath: string): Promise<WorktreeInfo 
     return { isWorktree, currentBranch, entries }
   } catch {
     try {
-      const ref = await gitRun(folderPath, ['symbolic-ref', 'HEAD'])
+      const ref = await gitRun(folderPath, ['symbolic-ref', 'HEAD'], undefined, WORKTREE_READ_OPTS)
       const branch = ref.replace('refs/heads/', '')
       return {
         isWorktree: false,
         currentBranch: branch,
         entries: [{ path: folderPath, branch, head: '', isMain: true, isCurrent: true }],
       }
-    } catch {
+    } catch (err) {
+      // `WorkDirIndicator` renders nothing at all on null, so both git reads
+      // failing means the left half of the status bar silently disappears.
+      logGitFailure('WORKTREE_INFO', folderPath, err, existsSync(join(folderPath, '.git')))
       return null
     }
   }

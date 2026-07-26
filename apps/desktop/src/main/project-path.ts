@@ -24,6 +24,8 @@ export function resolveProjectPath(inputPath: string): string {
       cwd: normalized,
       encoding: 'utf-8',
       stdio: ['ignore', 'pipe', 'ignore'],
+      // Synchronous on the main thread — cap it so a stuck git cannot freeze the app.
+      timeout: 5000,
     }).trim()
     return normalizePath(topLevel)
   } catch {

@@ -1,8 +1,13 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+// worktree-ops → git-diagnostics → logger pulls in electron, unavailable here.
+vi.mock('../logger', () => ({
+  default: { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() },
+}))
+
 import { assignBranch, carryUncommittedChanges, getHandoffPreview, handoffToLocal } from './worktree-ops'
 
 function git(cwd: string, ...args: string[]): string {

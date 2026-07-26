@@ -1,7 +1,8 @@
 import { randomUUID } from 'crypto'
-import { execFile, execFileSync } from 'child_process'
+import { execFileSync } from 'child_process'
 import { statSync } from 'fs'
 import log from '../logger'
+import { gitRun } from '../git-run'
 import { resolve, join, basename, dirname, sep } from 'path'
 import { ipcMain, type BrowserWindow } from 'electron'
 import { addProjectAdditionalDir, readScopedAdditionalDirs, removeProjectAdditionalDir } from './project-additional-dirs'
@@ -47,7 +48,9 @@ import { SessionClaimConflictError, SessionLockedError } from '../session/types'
 /** Resolve a path to its git common directory (shared across worktrees). */
 function getGitRoot(cwd: string): string {
   try {
-    const raw = execFileSync('git', ['rev-parse', '--git-common-dir'], { cwd, encoding: 'utf-8' }).trim()
+    // Synchronous on the main thread — a git that never returns would freeze
+    // the whole app, so this one is capped.
+    const raw = execFileSync('git', ['rev-parse', '--git-common-dir'], { cwd, encoding: 'utf-8', timeout: 5000 }).trim()
     // --git-common-dir returns relative or absolute; resolve relative to cwd
     return resolve(cwd, raw)
   } catch {
@@ -503,9 +506,9 @@ export class AgentService {
             recordedGitBranch = result.recordedBranch
           } else if (command.gitBranch) {
             try {
-              const currentBranch = (await this.gitRun(projectPath, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim()
+              const currentBranch = (await gitRun(projectPath, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim()
               if (currentBranch !== command.gitBranch) {
-                await this.gitRun(projectPath, ['checkout', sanitizeGitRef(command.gitBranch)])
+                await gitRun(projectPath, ['checkout', sanitizeGitRef(command.gitBranch)])
               }
             } catch { /* branch may already be correct */ }
           }
@@ -1079,15 +1082,15 @@ export class AgentService {
       }
       case 'get_git_info': {
         try {
-          const branch = await this.gitRun(command.projectPath, ['rev-parse', '--abbrev-ref', 'HEAD'])
-            .catch(() => this.gitRun(command.projectPath, ['symbolic-ref', 'HEAD']).then((r) => r.replace('refs/heads/', '')))
-          const status = await this.gitRun(command.projectPath, ['status', '--porcelain'])
+          const branch = await gitRun(command.projectPath, ['rev-parse', '--abbrev-ref', 'HEAD'])
+            .catch(() => gitRun(command.projectPath, ['symbolic-ref', 'HEAD']).then((r) => r.replace('refs/heads/', '')))
+          const status = await gitRun(command.projectPath, ['status', '--porcelain'])
           const files = status ? status.split('\n').filter(Boolean).length : 0
           let insertions = 0
           let deletions = 0
           if (files > 0) {
             try {
-              const shortstat = await this.gitRun(command.projectPath, ['diff', 'HEAD', '--shortstat'])
+              const shortstat = await gitRun(command.projectPath, ['diff', 'HEAD', '--shortstat'])
               const insMatch = shortstat.match(/(\d+) insertion/)
               const delMatch = shortstat.match(/(\d+) deletion/)
               if (insMatch) insertions = parseInt(insMatch[1])
@@ -1105,7 +1108,7 @@ export class AgentService {
       }
       case 'get_git_branches': {
         try {
-          const raw = await this.gitRun(command.projectPath, ['branch', '--format=%(refname:short)'])
+          const raw = await gitRun(command.projectPath, ['branch', '--format=%(refname:short)'])
           await respond?.(command.requestId, { branches: raw.split('\n').filter(Boolean) })
         } catch {
           await respond?.(command.requestId, { branches: [] })
@@ -1114,7 +1117,7 @@ export class AgentService {
       }
       case 'switch_git_branch': {
         try {
-          await this.gitRun(command.projectPath, ['checkout', sanitizeGitRef(command.branch)])
+          await gitRun(command.projectPath, ['checkout', sanitizeGitRef(command.branch)])
           await respond?.(command.requestId, { ok: true })
         } catch (err) {
           const stderr = (err as { stderr?: string })?.stderr?.trim()
@@ -1124,13 +1127,13 @@ export class AgentService {
       }
       case 'create_git_branch': {
         try {
-          await this.gitRun(command.projectPath, ['rev-parse', '--verify', 'HEAD'])
+          await gitRun(command.projectPath, ['rev-parse', '--verify', 'HEAD'])
         } catch {
           await respond?.(command.requestId, { ok: false, error: 'Cannot create branch before the first commit.' })
           break
         }
         try {
-          await this.gitRun(command.projectPath, ['checkout', '-b', sanitizeGitRef(command.branch)])
+          await gitRun(command.projectPath, ['checkout', '-b', sanitizeGitRef(command.branch)])
           await respond?.(command.requestId, { ok: true })
         } catch (err) {
           const stderr = (err as { stderr?: string })?.stderr?.trim()
@@ -1359,15 +1362,6 @@ export class AgentService {
       log.error('[AgentService] read_desktop_file failed:', err)
       await respond(command.requestId, { ok: false, error: 'upload_failed', message: (err as Error).message })
     }
-  }
-
-  private gitRun(cwd: string, args: string[]): Promise<string> {
-    return new Promise((resolve, reject) => {
-      execFile('git', args, { cwd }, (err, stdout) => {
-        if (err) reject(err)
-        else resolve(stdout.trimEnd())
-      })
-    })
   }
 
   markAllNeedsRebuild(harnessId?: 'claude' | 'codex'): void {

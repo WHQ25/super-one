@@ -25,7 +25,6 @@ import { SelectionContextMenuZone } from './SelectionContextMenu'
 import { ChatScrollIndicator } from './ChatScrollIndicator'
 import { extractTurnOutline } from './turn-outline'
 import type { CodexPlanApprovalState } from '@superone/shared/agent-types'
-import { cn } from '@superone/ui/lib/utils'
 
 interface ChatContentProps {
   scrollViewportRef: React.RefObject<HTMLDivElement | null>
@@ -262,7 +261,13 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
     <SubagentNavigationContext.Provider value={subagentNav}>
     <ForkNavigationContext.Provider value={forkNav}>
     <PlanFullscreenContext.Provider value={planFullscreenCtx}>
-    <div ref={containerRef} className={cn('relative flex min-h-0 min-w-0 flex-col', zoom <= 1 && 'w-full flex-1')} style={zoom > 1 ? { transform: `scale(${zoom})`, transformOrigin: 'top left', width: `${100 / zoom}%`, height: `${100 / zoom}%` } : zoom < 1 ? { zoom } : undefined}>
+    {/* `zoom`, not `transform: scale()` — a transform makes the whole chat one
+        scaled composited layer that re-rasterizes on every streaming update,
+        while `zoom` is a layout-level scale that paints text natively. Safe here
+        because every floating layer inside (selection menu, plan review, mermaid
+        / table fullscreen) portals to body, so none of them relied on the
+        transform's `position: fixed` containing block. */}
+    <div ref={containerRef} className="relative flex min-h-0 w-full min-w-0 flex-1 flex-col" style={zoom !== 1 ? { zoom } : undefined}>
       {workflowView ? (
         <Suspense fallback={null}>
           <WorkflowFullView view={workflowView} />

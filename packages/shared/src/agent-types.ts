@@ -826,7 +826,7 @@ export type GitResult = { ok: true } | { ok: false; error: string }
 
 export type FileOpResult = { ok: true } | { ok: false; error: string }
 
-export type GitFileStatus = 'M' | 'A' | 'D' | 'R' | 'C' | 'U' | '?' | '!'
+export type GitFileStatus = 'M' | 'A' | 'D' | 'R' | 'C' | 'U' | 'T' | '?' | '!'
 
 export interface FileTreeEntry {
   name: string

@@ -5,7 +5,7 @@ import { FileIcon, FolderIcon } from "@superone/ui/components/ui/FileIcon"
 import { cn } from "@superone/ui/lib/utils"
 import { useMockT } from "./i18n"
 
-export type FileTreeGitStatus = "M" | "A" | "D" | "R" | "C" | "U" | "?" | "!"
+export type FileTreeGitStatus = "M" | "A" | "D" | "R" | "C" | "U" | "T" | "?" | "!"
 
 export interface FileTreeNode {
   name: string
@@ -32,6 +32,7 @@ const STATUS_COLOR: Record<FileTreeGitStatus, string> = {
   R: "text-cyan-700 dark:text-cyan-400",
   C: "text-cyan-700 dark:text-cyan-400",
   U: "text-orange-700 dark:text-orange-400",
+  T: "text-amber-700 dark:text-amber-400",
   "?": "text-emerald-700 dark:text-emerald-400",
   "!": "text-sidebar-foreground/30",
 }

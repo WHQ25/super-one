@@ -80,7 +80,6 @@ import {
   type CodexResources,
   type StartupData,
   type FileTreeEntry,
-  type GitFileStatus,
   type FileOpResult,
   type NativeContextMenuItemSpec,
 } from '@superone/shared/agent-types'
@@ -92,7 +91,13 @@ import { setUnsavedBuffer } from './acp/acp-unsaved-buffer'
 import { closeAllOpenCodeServers, probeOpenCodeResources, reapOrphanOpenCodeServers } from './opencode/opencode-client'
 import { listWorkflowAgents, readWorkflowOutput, readWorkflowScript } from './workflow-transcripts'
 import { readSubagentTranscript } from './agent/subagent-transcript'
-import { parseGitStatusOutput, parseGitStatusFiles, type GitStatusPair } from './git-status-utils'
+import {
+  parseGitStatusOutput,
+  parseGitStatusFiles,
+  resolveEntryStatusPair,
+  type GitStatusPair,
+  type ParsedGitStatus,
+} from './git-status-utils'
 import { mapModelInfo } from './agent/claude-models'
 import { getClaudeRateLimits } from './agent/claude-usage-service'
 import { getProviderRateLimits } from './agent/provider-usage-service'
@@ -1564,15 +1569,6 @@ function registerIpcHandlers(): void {
 
   const SKIP_DIRS = new Set(['.git'])
 
-  const GIT_STATUS_PRIORITY: Record<string, number> = { U: 6, D: 5, R: 4, C: 4, M: 3, A: 2, '?': 1 }
-
-  const IGNORED_PAIR: GitStatusPair = { index: null, worktree: '!' }
-  const EMPTY_PAIR: GitStatusPair = { index: null, worktree: null }
-
-  function isPairIgnored(p: GitStatusPair | undefined): boolean {
-    return p?.index === '!' || p?.worktree === '!'
-  }
-
   async function entryIsDirectory(
     dir: string,
     entry: { name: string; isDirectory(): boolean; isSymbolicLink(): boolean },
@@ -1601,59 +1597,21 @@ function registerIpcHandlers(): void {
     })
   }
 
-  function worstColumn(values: (GitFileStatus | null | undefined)[]): GitFileStatus | null {
-    let worst: GitFileStatus | null = null
-    let worstPri = 0
-    for (const s of values) {
-      if (!s || s === '!') continue
-      const pri = GIT_STATUS_PRIORITY[s] ?? 0
-      if (pri > worstPri) { worst = s; worstPri = pri }
-    }
-    return worst
-  }
-
-  function worstChildPair(children: FileTreeEntry[]): GitStatusPair {
-    return {
-      index: worstColumn(children.map((c) => c.gitIndex ?? null)),
-      worktree: worstColumn(children.map((c) => c.gitWorktree ?? null)),
-    }
-  }
-
-  function dirStatusPair(statusMap: Map<string, GitStatusPair>, dirRelPath: string): GitStatusPair {
-    const prefix = dirRelPath + '/'
-    let worstIdx: GitFileStatus | null = null
-    let worstIdxPri = 0
-    let worstWt: GitFileStatus | null = null
-    let worstWtPri = 0
-    for (const [path, pair] of statusMap) {
-      if (!path.startsWith(prefix)) continue
-      if (isPairIgnored(pair)) continue
-      if (pair.index) {
-        const pri = GIT_STATUS_PRIORITY[pair.index] ?? 0
-        if (pri > worstIdxPri) { worstIdx = pair.index; worstIdxPri = pri }
-      }
-      if (pair.worktree) {
-        const pri = GIT_STATUS_PRIORITY[pair.worktree] ?? 0
-        if (pri > worstWtPri) { worstWt = pair.worktree; worstWtPri = pri }
-      }
-    }
-    return { index: worstIdx, worktree: worstWt }
+  const EMPTY_PARSED_STATUS: ParsedGitStatus = {
+    statusMap: new Map(),
+    ignoredDirs: new Set(),
+    untrackedDirs: new Set(),
   }
 
   ipcMain.handle(AgentIpcChannels.GIT_FILE_TREE, async (_event, folderPath: string) => {
     try {
-      let statusMap = new Map<string, GitStatusPair>()
-      let ignoredDirs = new Set<string>()
+      let parsed: ParsedGitStatus = EMPTY_PARSED_STATUS
       try {
         const raw = await gitRun(folderPath, ['status', '--porcelain=v1', '--ignored'])
-        if (raw) {
-          const parsed = parseGitStatusOutput(raw)
-          statusMap = parsed.statusMap
-          ignoredDirs = parsed.ignoredDirs
-        }
+        if (raw) parsed = parseGitStatusOutput(raw)
       } catch { /* not a git repo or no commits */ }
 
-      async function walk(dir: string, parentIgnored = false): Promise<FileTreeEntry[]> {
+      async function walk(dir: string): Promise<FileTreeEntry[]> {
         const entries = await readdir(dir, { withFileTypes: true })
         const result: FileTreeEntry[] = []
 
@@ -1664,12 +1622,11 @@ function registerIpcHandlers(): void {
           if (entry.name === '.DS_Store') continue
 
           const fullPath = join(dir, entry.name)
-          const relPath = relative(folderPath, fullPath)
-          const isIgnored = parentIgnored || ignoredDirs.has(relPath) || isPairIgnored(statusMap.get(relPath))
+          const relPath = relative(folderPath, fullPath).split(/[/\\]/).join('/')
 
+          const pair = resolveEntryStatusPair(relPath, isDir, parsed)
           if (isDir) {
-            const children = await walk(fullPath, isIgnored)
-            const pair = isIgnored ? IGNORED_PAIR : worstChildPair(children)
+            const children = await walk(fullPath)
             result.push({
               name: entry.name,
               path: relPath,
@@ -1679,7 +1636,6 @@ function registerIpcHandlers(): void {
               gitWorktree: pair.worktree,
             })
           } else {
-            const pair = isIgnored ? IGNORED_PAIR : (statusMap.get(relPath) ?? EMPTY_PAIR)
             result.push({
               name: entry.name,
               path: relPath,
@@ -1701,29 +1657,27 @@ function registerIpcHandlers(): void {
   // Read once per directory listing, so a short TTL is what keeps a deep tree
   // expansion from re-running `git status --ignored` for every folder.
   const GIT_STATUS_CACHE_TTL_MS = 1500
-  const gitStatusSnapshot = new AsyncCoalescer<{ statusMap: Map<string, GitStatusPair>; ignoredDirs: Set<string> }>(GIT_STATUS_CACHE_TTL_MS)
+  const gitStatusSnapshot = new AsyncCoalescer<ParsedGitStatus>(GIT_STATUS_CACHE_TTL_MS)
 
   function getGitStatusMap(folderPath: string) {
     return gitStatusSnapshot.get(folderPath, async () => {
-      let statusMap = new Map<string, GitStatusPair>()
-      let ignoredDirs = new Set<string>()
       try {
         const raw = await gitRun(folderPath, ['status', '--porcelain=v1', '--ignored'], undefined, GIT_READ_OPTS)
-        if (raw) {
-          const parsed = parseGitStatusOutput(raw)
-          statusMap = parsed.statusMap
-          ignoredDirs = parsed.ignoredDirs
-        }
+        if (raw) return parseGitStatusOutput(raw)
       } catch (err) {
         logGitFailure('GIT_STATUS_MAP', folderPath, err, existsSync(join(folderPath, '.git')))
       }
-      return { statusMap, ignoredDirs }
+      return {
+        statusMap: new Map<string, GitStatusPair>(),
+        ignoredDirs: new Set<string>(),
+        untrackedDirs: new Set<string>(),
+      }
     })
   }
 
   ipcMain.handle(AgentIpcChannels.GIT_LIST_DIR, async (_event, folderPath: string, dirRelPath: string) => {
     try {
-      const { statusMap, ignoredDirs } = await getGitStatusMap(folderPath)
+      const parsed = await getGitStatusMap(folderPath)
       const targetDir = dirRelPath ? join(folderPath, dirRelPath) : folderPath
       const entries = await readdir(targetDir, { withFileTypes: true })
 
@@ -1733,28 +1687,15 @@ function registerIpcHandlers(): void {
       for (const { entry, isDir } of sorted) {
         if (SKIP_DIRS.has(entry.name) || entry.name === '.DS_Store') continue
         const relPath = dirRelPath ? dirRelPath + '/' + entry.name : entry.name
-        const isIgnored = ignoredDirs.has(relPath) || isPairIgnored(statusMap.get(relPath))
-
-        if (isDir) {
-          const pair = isIgnored ? IGNORED_PAIR : dirStatusPair(statusMap, relPath)
-          result.push({
-            name: entry.name,
-            path: relPath,
-            isDirectory: true,
-            children: undefined,
-            gitIndex: pair.index,
-            gitWorktree: pair.worktree,
-          })
-        } else {
-          const pair = isIgnored ? IGNORED_PAIR : (statusMap.get(relPath) ?? EMPTY_PAIR)
-          result.push({
-            name: entry.name,
-            path: relPath,
-            isDirectory: false,
-            gitIndex: pair.index,
-            gitWorktree: pair.worktree,
-          })
-        }
+        const pair = resolveEntryStatusPair(relPath, isDir, parsed)
+        result.push({
+          name: entry.name,
+          path: relPath,
+          isDirectory: isDir,
+          children: undefined,
+          gitIndex: pair.index,
+          gitWorktree: pair.worktree,
+        })
       }
       return result
     } catch (err) {

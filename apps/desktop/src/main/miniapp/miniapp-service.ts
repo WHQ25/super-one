@@ -840,6 +840,13 @@ export function getGitDirectory(projectDir: string, appId: string): string | und
   return dirs?.[0]?.path
 }
 
+/** `-${limit}` is interpolated into an argv slot, so it must be a plain positive integer. */
+function gitLogLimit(raw: unknown): number {
+  const n = Math.floor(Number(raw))
+  if (!Number.isFinite(n) || n <= 0) return 50
+  return Math.min(n, 1000)
+}
+
 export async function handleGitRequest(
   projectDir: string,
   appId: string,
@@ -874,10 +881,12 @@ export async function handleGitRequest(
       return raw ? raw.split('\n').filter(Boolean) : []
     }
     case 'log': {
-      const limit = (args.limit as number) || 50
+      const limit = gitLogLimit(args.limit)
       const gitArgs = ['log', '--format=%H%x00%P%x00%s%x00%an%x00%ai', `-${limit}`]
       if (args.all) gitArgs.push('--all')
-      if (args.ref && typeof args.ref === 'string') gitArgs.push(args.ref)
+      // Must be sanitized: an unchecked ref is just another argv slot, and
+      // `git log --output=<path>` writes to an arbitrary file.
+      if (args.ref && typeof args.ref === 'string') gitArgs.push(sanitizeGitRef(args.ref))
       const raw = await gitRun(workingDir, gitArgs)
       if (!raw) return []
       return raw.split('\n').filter(Boolean).map((line) => {
@@ -1014,7 +1023,7 @@ export async function handleGitRequest(
     case 'logFile': {
       const filePath = args.path as string
       if (!filePath || filePath.includes('\0')) throw new Error('Invalid path')
-      const limit = (args.limit as number) || 50
+      const limit = gitLogLimit(args.limit)
       const raw = await gitRun(workingDir, [
         'log', '--format=%H%x00%P%x00%s%x00%an%x00%ai', `-${limit}`, '--follow', '--', filePath,
       ])

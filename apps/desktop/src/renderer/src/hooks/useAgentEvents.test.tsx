@@ -3,6 +3,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import type { AgentEvent } from '@superone/shared/agent-types'
+import { AGENT_EVENT_BATCH_MS } from '@/lib/agent-event-batcher'
 
 const handleAgentEvent = vi.fn()
 const syncLiveSnapshots = vi.fn<() => Promise<void>>()
@@ -69,7 +70,33 @@ describe('useAgentEvents', () => {
     expect(handleAgentEvent.mock.calls[1][0].delta.text).toBe('B')
   })
 
-  it('forwards events directly after hydration completes', async () => {
+  it('coalesces post-hydration deltas into one batch instead of dispatching each', async () => {
+    handleAgentEvent.mockReset()
+    syncLiveSnapshots.mockResolvedValue(undefined)
+    vi.useFakeTimers()
+
+    try {
+      renderHook(() => useAgentEvents())
+      await act(async () => { await Promise.resolve() })
+
+      const subscriber = onAgentEventSubscribers[onAgentEventSubscribers.length - 1]
+      subscriber({ type: 'content_delta', messageId: 'm1', delta: { type: 'text', text: 'Y' } } as AgentEvent)
+      subscriber({ type: 'content_delta', messageId: 'm1', delta: { type: 'text', text: 'Z' } } as AgentEvent)
+
+      // Held so React can collapse the burst into a single render.
+      expect(handleAgentEvent).not.toHaveBeenCalled()
+
+      act(() => { vi.advanceTimersByTime(AGENT_EVENT_BATCH_MS) })
+
+      expect(handleAgentEvent).toHaveBeenCalledTimes(2)
+      expect(handleAgentEvent.mock.calls[0][0].delta.text).toBe('Y')
+      expect(handleAgentEvent.mock.calls[1][0].delta.text).toBe('Z')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('forwards a non-delta event immediately so interaction is never delayed', async () => {
     handleAgentEvent.mockReset()
     syncLiveSnapshots.mockResolvedValue(undefined)
 
@@ -77,7 +104,7 @@ describe('useAgentEvents', () => {
     await act(async () => { await Promise.resolve() })
 
     const subscriber = onAgentEventSubscribers[onAgentEventSubscribers.length - 1]
-    subscriber({ type: 'content_delta', messageId: 'm1', delta: { type: 'text', text: 'Z' } } as AgentEvent)
+    subscriber({ type: 'permission_request', messageId: 'm1' } as unknown as AgentEvent)
 
     expect(handleAgentEvent).toHaveBeenCalledTimes(1)
   })

@@ -1,5 +1,11 @@
-import { beforeEach, describe, expect, it } from 'vitest'
-import { clearBrowserConsole, pushBrowserConsole, readBrowserConsole } from './browser-host-api'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  clearBrowserConsole,
+  focusBrowserWebview,
+  pushBrowserConsole,
+  readBrowserConsole,
+  registerBrowserWebview,
+} from './browser-host-api'
 
 const ID = 'test-tab'
 
@@ -53,5 +59,16 @@ describe('readBrowserConsole filtering', () => {
 
   it('throws a clear error on an invalid regex', () => {
     expect(() => readBrowserConsole(ID, { grep: '(', regex: true })).toThrow(/Invalid console grep regex/)
+  })
+})
+
+describe('focusBrowserWebview', () => {
+  it('never calls focus on the webview host element (agent must not steal caret)', () => {
+    const el = { focus: vi.fn() } as unknown as Electron.WebviewTag
+    const unregister = registerBrowserWebview('tab-1', el)
+    expect(focusBrowserWebview('tab-1')).toBe(true)
+    expect(el.focus).not.toHaveBeenCalled()
+    expect(focusBrowserWebview('missing')).toBe(false)
+    unregister()
   })
 })

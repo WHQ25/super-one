@@ -278,7 +278,10 @@ export async function cdpPress(webContentsId: number, key: string, modifiers: st
 }
 
 export async function cdpType(webContentsId: number, text: string, selector?: string, clear?: boolean): Promise<void> {
-  webContents.fromId(webContentsId)?.focus()
+  // Do not call webContents.focus() — it steals keyboard focus from the host
+  // composer when a background session types into a browser tab. Input is
+  // routed through the guest debugger; setFocusEmulationEnabled (on attach)
+  // keeps page-level focus semantics without host focus.
   if (selector && !(await clickToFocus(webContentsId, selector))) {
     throw new Error(`No element matches selector: ${selector}`)
   }

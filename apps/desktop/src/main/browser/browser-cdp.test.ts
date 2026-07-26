@@ -41,7 +41,7 @@ vi.mock('./browser-automation-bridge', () => ({ browserAutomationCall: vi.fn() }
 
 vi.mock('../logger', () => ({ default: { info: vi.fn(), warn: vi.fn() } }))
 
-const { cdpPress } = await import('./browser-cdp')
+const { cdpPress, cdpType } = await import('./browser-cdp')
 
 beforeEach(() => {
   sent.length = 0
@@ -73,5 +73,33 @@ describe('cdpPress focus routing', () => {
     expect(keyEvents).toHaveLength(2)
     expect(keyEvents[0]).toMatchObject({ type: 'keyDown', key: 'r', code: 'KeyR', text: 'r' })
     expect(keyEvents[1]).toMatchObject({ type: 'keyUp', key: 'r', code: 'KeyR' })
+  })
+})
+
+describe('cdpType focus routing', () => {
+  it('does not call webContents.focus() (would steal host composer focus)', async () => {
+    fakeDebugger.sendCommand.mockImplementation((method: string, params?: object) => {
+      sent.push({ method, params })
+      if (method === 'Runtime.evaluate') return Promise.resolve({ result: { value: true } })
+      return Promise.resolve({})
+    })
+    await cdpType(42, 'hello')
+    expect(fakeWc.focus).not.toHaveBeenCalled()
+  })
+
+  it('inserts text via CDP after page-level focus emulation attach', async () => {
+    fakeDebugger.sendCommand.mockImplementation((method: string, params?: object) => {
+      sent.push({ method, params })
+      if (method === 'Runtime.evaluate') return Promise.resolve({ result: { value: true } })
+      return Promise.resolve({})
+    })
+    await cdpType(42, 'hello')
+    const focusEmu = sent.findIndex(
+      (c) => c.method === 'Emulation.setFocusEmulationEnabled' && (c.params as { enabled?: boolean })?.enabled === true,
+    )
+    const insertIdx = sent.findIndex((c) => c.method === 'Input.insertText')
+    expect(focusEmu).toBeGreaterThanOrEqual(0)
+    expect(insertIdx).toBeGreaterThan(focusEmu)
+    expect(sent[insertIdx]?.params).toMatchObject({ text: 'hello' })
   })
 })

@@ -431,7 +431,8 @@ export function registerBrowserTools(server: McpServer, sessionId: string): void
         args,
         async () => {
           const webContentsId = await resolveCdpTarget(sessionId, args.tab)
-          await browserAutomationCall(sessionId, 'focusView', { tab: args.tab })
+          // No focusView: host <webview>.focus() steals the user's composer focus
+          // across sessions. CDP type uses guest debugger + focus emulation.
           await cdpType(webContentsId, args.text, args.selector, args.clear)
           return { ok: true, selector: args.selector }
         },
@@ -513,7 +514,8 @@ export function registerBrowserTools(server: McpServer, sessionId: string): void
         args,
         async () => {
           const webContentsId = await resolveCdpTarget(sessionId, args.tab)
-          await browserAutomationCall(sessionId, 'focusView', { tab: args.tab })
+          // No focusView — see browser_type CDP path. Host focus isolation is
+          // also enforced in the renderer around every automation call.
           await cdpPress(webContentsId, args.key, args.modifiers, args.selector)
           return { ok: true, key: args.key }
         },

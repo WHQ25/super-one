@@ -13,6 +13,7 @@ import {
   focusBrowserWebview,
   type ConsoleQuery,
 } from './browser-host-api'
+import { withBrowserFocusIsolation } from './browser-focus-isolation'
 import { openBrowserTab } from '@/components/activity/activity-panel-api'
 
 const MAX_SCREENSHOT_WIDTH = 1280
@@ -760,7 +761,10 @@ export function useBrowserAutomationHost(): void {
     if (!window.browserHost) return
     return window.browserHost.onAutomationCall(async ({ callId, sessionId, op, input }) => {
       try {
-        const result = await runBrowserOp(sessionId, op, input)
+        // Every automation op (including focusView no-op / guest el.focus side
+        // effects) runs under host focus isolation so background browser work
+        // cannot steal the user's composer caret.
+        const result = await withBrowserFocusIsolation(() => runBrowserOp(sessionId, op, input))
         window.browserHost!.sendAutomationResult(callId, true, result)
       } catch (err) {
         window.browserHost!.sendAutomationResult(callId, false, undefined, err instanceof Error ? err.message : String(err))

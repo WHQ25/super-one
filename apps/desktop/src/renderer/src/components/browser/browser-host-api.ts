@@ -91,15 +91,18 @@ export function webContentsIdForBrowser(id: string): number | null {
   }
 }
 
+/**
+ * Host-focus no-op for agent automation.
+ *
+ * Historically this called `el.focus()` so CDP key/text events reached the
+ * <webview> guest. That steals keyboard focus from the chat composer whenever
+ * a (background) session drives the browser — multi-session focus loss.
+ *
+ * CDP input is delivered via the guest's debugger + Emulation.setFocusEmulationEnabled
+ * (see browser-cdp.ts). Do not reintroduce host focus here.
+ */
 export function focusBrowserWebview(id: string): boolean {
-  const el = registry.get(id)
-  if (!el) return false
-  try {
-    el.focus()
-    return true
-  } catch {
-    return false
-  }
+  return registry.has(id)
 }
 
 export function browserIdByWebContentsId(webContentsId: number): string | null {

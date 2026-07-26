@@ -216,6 +216,25 @@ function PersistentBrowser({ browserId, resizing }: { browserId: string; resizin
   const width = hasSlot ? slot!.width : CAPTURE_VIEWPORT.width
   const height = hasSlot ? slot!.height : CAPTURE_VIEWPORT.height
 
+  // Agent (and guest-page) focus must never stick on a webview the user is not
+  // looking at — otherwise a background session's type/click steals the caret.
+  // Visible panels keep normal click-to-focus; isolation still covers steals
+  // while automation runs on a visible tab.
+  useEffect(() => {
+    if (visible) return
+    const wv = webviewRef.current
+    if (!wv) return
+    const rejectFocus = () => {
+      try {
+        wv.blur()
+      } catch {
+        // webview may be mid-teardown
+      }
+    }
+    wv.addEventListener('focus', rejectFocus)
+    return () => wv.removeEventListener('focus', rejectFocus)
+  }, [visible, browserId])
+
   return (
     <>
     <div

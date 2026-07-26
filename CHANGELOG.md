@@ -4,6 +4,24 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.47.4-alpha] - 2026-07-26
+
+### Added
+
+- Replace canvas mode with activity group maximize
+
+### Fixed
+
+- Inherit untracked and ignored git status onto file-tree descendants
+- Sanitize the ref argument of the mini-app git log bridge op
+- Stop read-only git commands from taking `.git/index.lock`
+- Show Grep and WebSearch tool summaries for Grok
+- Stop leaking idle OpenCode background processes
+
+### Performance
+
+- Drive git status off turn completion instead of a 5s poll
+
 ## [0.47.3-alpha] - 2026-07-26
 
 ### Added

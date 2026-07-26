@@ -1342,7 +1342,7 @@ describe('tool_result error classification', () => {
       .map((e) => e.delta as Record<string, unknown> | undefined)
       .find((d) => d?.type === 'tool_result' && d.toolUseId === toolUseId)
 
-  it('does not flag isError for a Bash non-zero exit (command ran, structured output)', async () => {
+  it('does not flag isError for a Bash non-zero exit with structured BashOutput', async () => {
     const events = await runWith([
       { type: 'assistant', message: { content: [{ type: 'tool_use', id: 'bash-fail', name: 'Bash', input: 'exit 1' }] } },
       {
@@ -1355,17 +1355,53 @@ describe('tool_result error classification', () => {
     expect(resultFor(events, 'bash-fail')?.isError).toBeUndefined()
   })
 
-  it('keeps isError for a genuine Bash tool-layer failure (string "Error:" result)', async () => {
+  it('does not flag isError for Bash "Exit code N" (CLI throw path, no tool_use_error tag)', async () => {
+    // Real SDK shape for `false` / empty non-zero: is_error + string tool_use_result,
+    // content "Exit code 1" — never wrapped in <tool_use_error>.
     const events = await runWith([
-      { type: 'assistant', message: { content: [{ type: 'tool_use', id: 'bash-broken', name: 'Bash', input: '' }] } },
+      { type: 'assistant', message: { content: [{ type: 'tool_use', id: 'bash-false', name: 'Bash', input: { command: 'false' } }] } },
       {
         type: 'user',
-        message: { content: [{ type: 'tool_result', tool_use_id: 'bash-broken', content: 'Error: bad input', is_error: true }] },
+        message: { content: [{ type: 'tool_result', tool_use_id: 'bash-false', content: 'Exit code 1', is_error: true }] },
+        tool_use_result: 'Error: Exit code 1',
+      },
+      { type: 'result', subtype: 'success', usage: {} },
+    ])
+    expect(resultFor(events, 'bash-false')?.isError).toBeUndefined()
+    expect(resultFor(events, 'bash-false')?.summary).toBe('Exit code 1')
+  })
+
+  it('flags isError for Bash only when content has <tool_use_error>', async () => {
+    const events = await runWith([
+      { type: 'assistant', message: { content: [{ type: 'tool_use', id: 'bash-blocked', name: 'Bash', input: { command: 'sleep 10' } }] } },
+      {
+        type: 'user',
+        message: {
+          content: [{
+            type: 'tool_result',
+            tool_use_id: 'bash-blocked',
+            content: '<tool_use_error>Blocked: sleep 10 followed by: true</tool_use_error>',
+            is_error: true,
+          }],
+        },
+        tool_use_result: 'Error: Blocked: sleep 10 followed by: true',
+      },
+      { type: 'result', subtype: 'success', usage: {} },
+    ])
+    expect(resultFor(events, 'bash-blocked')?.isError).toBe(true)
+  })
+
+  it('does not flag isError for Bash string "Error: …" without the tool_use_error tag', async () => {
+    const events = await runWith([
+      { type: 'assistant', message: { content: [{ type: 'tool_use', id: 'bash-plain', name: 'Bash', input: '' }] } },
+      {
+        type: 'user',
+        message: { content: [{ type: 'tool_result', tool_use_id: 'bash-plain', content: 'Error: bad input', is_error: true }] },
         tool_use_result: 'Error: bad input',
       },
       { type: 'result', subtype: 'success', usage: {} },
     ])
-    expect(resultFor(events, 'bash-broken')?.isError).toBe(true)
+    expect(resultFor(events, 'bash-plain')?.isError).toBeUndefined()
   })
 
   it('leaves non-Bash tool errors flagged (Read token overflow)', async () => {
@@ -1379,5 +1415,23 @@ describe('tool_result error classification', () => {
       { type: 'result', subtype: 'success', usage: {} },
     ])
     expect(resultFor(events, 'read-1')?.isError).toBe(true)
+  })
+
+  it('flags non-Bash tool_use_error tag even without is_error', async () => {
+    const events = await runWith([
+      { type: 'assistant', message: { content: [{ type: 'tool_use', id: 'edit-1', name: 'Edit', input: {} }] } },
+      {
+        type: 'user',
+        message: {
+          content: [{
+            type: 'tool_result',
+            tool_use_id: 'edit-1',
+            content: '<tool_use_error>File has not been read yet. Read it first before writing to it.</tool_use_error>',
+          }],
+        },
+      },
+      { type: 'result', subtype: 'success', usage: {} },
+    ])
+    expect(resultFor(events, 'edit-1')?.isError).toBe(true)
   })
 })

@@ -378,8 +378,9 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
               const outputPath = isBash ? extractBashOutputPath(text) : undefined
               const isTimedOut = isBash ? extractBashKilled(userMsg.tool_use_result) : undefined
               const taskCreateTodo = extractTaskCreateTodo(toolName, userMsg.tool_use_result, text)
-              const rawIsError = block.is_error || text.includes('<tool_use_error>')
-              const isError = rawIsError && !(isBash && isBashCommandOutput(userMsg.tool_use_result))
+              // Bash: CLI sets is_error for non-zero exits too; only <tool_use_error>
+              // marks a true tool-layer failure (validation, blocked, cancelled, …).
+              const isError = isToolLayerError(toolName, block.is_error === true, text)
               emit({
                 type: 'content_delta',
                 messageId,
@@ -896,7 +897,7 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
             const outputPath = isBash ? extractBashOutputPath(summaryText) : undefined
             const isTimedOut = isBash ? extractBashKilled(raw.tool_use_result) : undefined
             const taskCreateTodo = extractTaskCreateTodo(toolName, raw.tool_use_result, summaryText)
-            const isError = raw.is_error && !(isBash && isBashCommandOutput(raw.tool_use_result))
+            const isError = isToolLayerError(toolName, raw.is_error === true, summaryText)
             emit({
               type: 'content_delta',
               messageId,
@@ -1108,9 +1109,20 @@ function extractBashKilled(toolUseResult?: unknown): boolean | undefined {
   return tur?.killed === true ? true : undefined
 }
 
-function isBashCommandOutput(toolUseResult?: unknown): boolean {
-  const tur = toolUseResult as any
-  return !!tur && typeof tur === 'object' && (typeof tur.stdout === 'string' || typeof tur.stderr === 'string')
+/**
+ * Whether a tool_result should render as a tool-layer error in the UI.
+ *
+ * Bash is special: the CLI marks non-zero command exits with is_error=true and
+ * content like "Exit code 1", but those are command results, not tool failures.
+ * Production transcripts show <tool_use_error> only on tool-layer paths
+ * (validation, blocked, cancelled parallel call, permission, …) and never on
+ * plain "Exit code N" results — so for Bash we key solely off that marker.
+ * Other tools keep the SDK is_error flag (plus the marker as a fallback).
+ */
+function isToolLayerError(toolName: string | undefined, sdkIsError: boolean, resultText: string): boolean {
+  const hasToolUseErrorTag = resultText.includes('<tool_use_error>')
+  if (toolName === 'Bash') return hasToolUseErrorTag
+  return sdkIsError || hasToolUseErrorTag
 }
 
 /**

@@ -109,6 +109,28 @@ export const LargeOutput: Story = {
     input: JSON.stringify({ command: 'find node_modules -name "index.js" | head -80' }),
     status: 'complete',
     result: LARGE_OUTPUT,
+    autoExpand: true,
+  },
+}
+
+const LONG_COMMAND = [
+  'find apps/desktop/src -type f \\( -name "*.ts" -o -name "*.tsx" \\)',
+  '  | xargs rg -n "isError|tool_use_error|Exit code"',
+  '  | sort -t: -k1,1 -k2,2n',
+  '  | head -n 200',
+  '  | tee /tmp/bash-error-scan.txt',
+].join(' \\\n')
+
+export const LongCommand: Story = {
+  args: {
+    toolName: 'Bash',
+    input: JSON.stringify({
+      command: LONG_COMMAND,
+      description: 'Scan for tool error markers',
+    }),
+    status: 'complete',
+    result: LARGE_OUTPUT,
+    autoExpand: true,
   },
 }
 
@@ -119,5 +141,6 @@ export const AnsiColored: Story = {
     status: 'complete',
     result: ANSI_OUTPUT,
     isError: true,
+    autoExpand: true,
   },
 }

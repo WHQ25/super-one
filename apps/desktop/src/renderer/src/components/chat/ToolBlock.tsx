@@ -997,6 +997,10 @@ function MobileShareFileBlock({ params, result, isStreaming }: {
 }
 
 const BASH_LOAD_CHUNK = 50
+/** Default command preview: at most 3 visual lines before expand. */
+const BASH_COMMAND_CLAMP = 'line-clamp-3'
+/** Constrained output height (was max-h-24 / 6rem). */
+const BASH_OUTPUT_MAX_H = 'max-h-72'
 
 function BashTerminalView({
   toolUseId,
@@ -1033,6 +1037,7 @@ function BashTerminalView({
   const { t } = useTranslation()
   const outputExpired = !!resultOutputPath && !bashOutput && !isStreaming
   const scrollRef = useRef<HTMLDivElement>(null)
+  const commandRef = useRef<HTMLDivElement>(null)
   const sentinelRef = useRef<HTMLDivElement>(null)
   const isLiveRunning = !!bashOutput && !bashOutput.finished
   const taskProgress = useActiveSession((s) => s.taskProgress[toolUseId])
@@ -1049,6 +1054,10 @@ function BashTerminalView({
     : false
   const autoExpanded = holdOpenForBackgroundTask
   const [expanded, setExpanded] = useState(autoExpand ? autoExpanded : false)
+  const [commandExpanded, setCommandExpanded] = useState(false)
+  const [outputFull, setOutputFull] = useState(false)
+  const [commandClippable, setCommandClippable] = useState(false)
+  const [outputOverflows, setOutputOverflows] = useState(false)
   const [extraContent, setExtraContent] = useState('')
   const [loadedLines, setLoadedLines] = useState(BASH_LOAD_CHUNK)
   const [hasMore, setHasMore] = useState(true)
@@ -1062,6 +1071,13 @@ function BashTerminalView({
     if (autoExpand) setExpanded(autoExpanded)
     else setExpanded(false)
   }, [autoExpand, autoExpanded])
+
+  useEffect(() => {
+    if (!expanded) {
+      setCommandExpanded(false)
+      setOutputFull(false)
+    }
+  }, [expanded])
 
   useEffect(() => {
     if (!outputExpired || !resultOutputPath || restoredRef.current) return
@@ -1098,18 +1114,45 @@ function BashTerminalView({
   }, [timerActive])
 
   useEffect(() => {
-    if (isLive && scrollRef.current) {
+    if (isLive && !outputFull && scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight
     }
-  }, [liveContent, isLive])
+  }, [liveContent, isLive, outputFull])
 
   useLayoutEffect(() => {
     if (extraContent && extraContent !== prevExtraRef.current) {
       const el = scrollRef.current
-      if (el) el.scrollTop = el.scrollHeight - prevScrollHeightRef.current
+      if (el && !outputFull) el.scrollTop = el.scrollHeight - prevScrollHeightRef.current
       prevExtraRef.current = extraContent
     }
-  }, [extraContent])
+  }, [extraContent, outputFull])
+
+  // Detect whether the clamped command would overflow 3 lines (or expanded needs a collapse control).
+  useLayoutEffect(() => {
+    if (!expanded || !command) {
+      setCommandClippable(false)
+      return
+    }
+    const el = commandRef.current
+    if (!el) return
+    if (commandExpanded) {
+      // Keep toggle visible after expand if content is multi-line / long.
+      setCommandClippable(command.includes('\n') || command.length > 80 || el.scrollHeight > el.clientHeight + 1)
+      return
+    }
+    setCommandClippable(el.scrollHeight > el.clientHeight + 1)
+  }, [expanded, command, commandExpanded])
+
+  // Detect whether constrained output is scroll-clipped (show "full output" toggle).
+  useLayoutEffect(() => {
+    if (!expanded || outputFull || !content) {
+      if (!content) setOutputOverflows(false)
+      return
+    }
+    const el = scrollRef.current
+    if (!el) return
+    setOutputOverflows(el.scrollHeight > el.clientHeight + 1)
+  }, [expanded, outputFull, content, isLive])
 
   const loadMore = useCallback(async () => {
     if (!outputPath || isLive || loadingRef.current || !hasMore) return
@@ -1138,11 +1181,11 @@ function BashTerminalView({
     if (!el || !sentinel) return
     const observer = new IntersectionObserver(
       (entries) => { if (entries[0].isIntersecting) loadMore() },
-      { root: el, threshold: 0.1 }
+      { root: outputFull ? null : el, threshold: 0.1 }
     )
     observer.observe(sentinel)
     return () => observer.disconnect()
-  }, [isLive, expanded, hasMore, outputPath, loadMore])
+  }, [isLive, expanded, hasMore, outputPath, loadMore, outputFull])
 
   return (
     <div className={cn(
@@ -1184,15 +1227,63 @@ function BashTerminalView({
           {t('chat.toolBlock.outputFileExpired', { path: resultOutputPath!.split('/').pop() })}
         </div>
       ) : (
-        <div className="bg-terminal-bg font-mono text-[12px] leading-relaxed whitespace-pre-wrap">
+        <div
+          className="bg-terminal-bg font-mono text-[12px] leading-relaxed"
+          onClick={(e) => e.stopPropagation()}
+        >
           {command && (
-            <div className="px-3 pt-2 text-terminal-fg">
-              <span className="text-terminal-prompt">$ </span>{command}
+            <div className="px-3 pt-2">
+              <div
+                ref={commandRef}
+                role={commandClippable || commandExpanded ? 'button' : undefined}
+                tabIndex={commandClippable || commandExpanded ? 0 : undefined}
+                title={
+                  commandClippable || commandExpanded
+                    ? (commandExpanded ? t('chat.toolBlock.collapseCommand') : t('chat.toolBlock.showFullCommand'))
+                    : undefined
+                }
+                className={cn(
+                  'text-terminal-fg whitespace-pre-wrap break-all',
+                  !commandExpanded && BASH_COMMAND_CLAMP,
+                  (commandClippable || commandExpanded) && 'cursor-pointer',
+                )}
+                onClick={() => {
+                  if (commandClippable || commandExpanded) setCommandExpanded((v) => !v)
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    if (commandClippable || commandExpanded) setCommandExpanded((v) => !v)
+                  }
+                }}
+              >
+                <span className="text-terminal-prompt">$ </span>{command}
+              </div>
             </div>
           )}
           <div
             ref={scrollRef}
-            className="max-h-24 overflow-y-auto overflow-x-auto px-3 py-1.5"
+            role={(outputOverflows || outputFull) && content ? 'button' : undefined}
+            tabIndex={(outputOverflows || outputFull) && content ? 0 : undefined}
+            title={
+              (outputOverflows || outputFull) && content
+                ? (outputFull ? t('chat.toolBlock.collapseOutput') : t('chat.toolBlock.showFullOutput'))
+                : undefined
+            }
+            className={cn(
+              'overflow-x-auto px-3 py-1.5 whitespace-pre-wrap',
+              outputFull ? 'overflow-y-visible' : cn(BASH_OUTPUT_MAX_H, 'overflow-y-auto'),
+              (outputOverflows || outputFull) && content && 'cursor-pointer',
+            )}
+            onClick={() => {
+              if ((outputOverflows || outputFull) && content) setOutputFull((v) => !v)
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                if ((outputOverflows || outputFull) && content) setOutputFull((v) => !v)
+              }
+            }}
           >
             {!isLive && hasMore && outputPath && <div ref={sentinelRef} className="h-px" />}
             {outputExpired && restoredContent === null ? (

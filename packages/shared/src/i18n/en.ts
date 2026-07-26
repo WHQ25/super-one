@@ -818,6 +818,10 @@ export type Messages = {
       collapse: string
       moreLines_one: string
       moreLines_other: string
+      showFullCommand: string
+      collapseCommand: string
+      showFullOutput: string
+      collapseOutput: string
       browser: {
         navigate: string
         navigating: string
@@ -2678,6 +2682,10 @@ export const en: Messages = {
       collapse: 'Collapse',
       moreLines_one: '{{count}} more line',
       moreLines_other: '{{count}} more lines',
+      showFullCommand: 'Show full command',
+      collapseCommand: 'Collapse command',
+      showFullOutput: 'Show full output',
+      collapseOutput: 'Collapse output',
       browser: {
         navigate: 'Navigate',
         navigating: 'Navigating',

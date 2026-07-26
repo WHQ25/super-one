@@ -854,6 +854,10 @@ export const zh: Messages = {
       collapse: '折叠',
       moreLines_one: '还有 {{count}} 行',
       moreLines_other: '还有 {{count}} 行',
+      showFullCommand: '显示完整命令',
+      collapseCommand: '收起命令',
+      showFullOutput: '显示完整输出',
+      collapseOutput: '收起输出',
       browser: {
         navigate: '导航',
         navigating: '正在导航',

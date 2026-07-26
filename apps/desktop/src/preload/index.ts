@@ -4,12 +4,13 @@ import { AgentIpcChannels, type NativeContextMenuItemSpec, type AgentPrewarmHint
 import type { McpbInstallRequest } from '@superone/shared/mcpb-types'
 import type { ConsumerBinding, ConsumerId, Credential, EndpointOverride, Platform, ServiceEndpoint } from '@superone/shared/platform-registry'
 
-try {
-  const ROLE_PREFIX = '--superone-role='
-  const role = process.argv.find((a) => a.startsWith(ROLE_PREFIX))?.slice(ROLE_PREFIX.length)
-  const title = role === 'main' ? 'SuperOne Main Window' : role === 'mini' ? 'SuperOne Mini Window' : null
-  if (title) process.title = title
-} catch { /* process.title not writable in some sandboxed contexts */ }
+// Do not try to name this renderer via `process.title` here — it cannot work.
+// Under `sandbox: true` preload's `process` is an Electron shim, so the assignment
+// is a silent no-op; and even unsandboxed, the LaunchServices call libuv makes
+// (the part Activity Monitor actually reads) is denied inside the renderer's
+// seatbelt sandbox. Verified: renderer PIDs report LSDisplayName = NULL.
+// Per-renderer attribution belongs in an in-app task manager built on
+// `app.getAppMetrics()` + `webContents.getOSProcessId()`. See main/process-titles.ts.
 
 if (process.argv.includes('--superone-liquid-glass')) {
   const stamp = (): void => document.documentElement.classList.add('liquid-glass')

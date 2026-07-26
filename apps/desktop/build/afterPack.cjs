@@ -1,10 +1,50 @@
 'use strict'
 
-const { readdirSync, statSync, rmSync } = require('node:fs')
+const { readdirSync, statSync, rmSync, existsSync, cpSync, renameSync } = require('node:fs')
 const { join } = require('node:path')
+const { execFileSync } = require('node:child_process')
 
 const ARCH_NAMES = { 0: 'ia32', 1: 'x64', 2: 'armv7l', 3: 'arm64', 4: 'universal' }
 const PLATFORM_MAP = { darwin: 'darwin', mac: 'darwin', win32: 'win32', windows: 'win32', linux: 'linux' }
+
+// Gives the two node-runtime child processes we own (MCP stdio bridge, LLM proxy
+// sidecar) a distinct name in Activity Monitor, by cloning the plain Helper.app
+// bundle under a new name — the same trick Electron itself uses for its own
+// Helper (Renderer)/(GPU)/(Plugin) variants. Must run before electron-builder's
+// codesign pass (afterPack always precedes it) so the clones get properly signed
+// like everything else — see apps/desktop/src/main/agent/resolve-cli.ts for the
+// runtime lookup, and superone-mcp-stdio-state.ts / llm-proxy-manager.ts for the
+// two consumers. Keep these names in sync with resolve-cli.ts's variant map.
+const HELPER_VARIANTS = [
+  { suffix: 'MCP Bridge', bundleIdSuffix: 'mcpbridge' },
+  { suffix: 'LLM Proxy', bundleIdSuffix: 'llmproxy' },
+]
+
+function cloneHelperVariants(appOutDir, productFilename) {
+  const frameworksDir = join(appOutDir, `${productFilename}.app`, 'Contents', 'Frameworks')
+  const baseName = `${productFilename} Helper`
+  const baseDir = join(frameworksDir, `${baseName}.app`)
+  if (!existsSync(baseDir)) {
+    console.warn(`[afterPack] base helper bundle not found at ${baseDir}, skipping variant clone`)
+    return
+  }
+  for (const { suffix, bundleIdSuffix } of HELPER_VARIANTS) {
+    const variantName = `${productFilename} ${suffix}`
+    const variantDir = join(frameworksDir, `${variantName}.app`)
+    rmSync(variantDir, { recursive: true, force: true })
+    cpSync(baseDir, variantDir, { recursive: true })
+    renameSync(join(variantDir, 'Contents', 'MacOS', baseName), join(variantDir, 'Contents', 'MacOS', variantName))
+
+    const plistPath = join(variantDir, 'Contents', 'Info.plist')
+    const setPlist = (key, value) => execFileSync('/usr/libexec/PlistBuddy', ['-c', `Set :${key} ${value}`, plistPath])
+    setPlist('CFBundleExecutable', variantName)
+    setPlist('CFBundleDisplayName', variantName)
+    setPlist('CFBundleName', `Electron Helper (${suffix})`)
+    setPlist('CFBundleIdentifier', `com.superone.app.helper.${bundleIdSuffix}`)
+
+    console.log(`[afterPack] cloned helper variant: ${variantName}`)
+  }
+}
 
 const PRUNE_PARENTS = [
   'node_modules/@anthropic-ai',
@@ -26,6 +66,10 @@ module.exports = async function afterPack(context) {
   const resourcesRoot = osName === 'darwin'
     ? join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`, 'Contents', 'Resources', 'app.asar.unpacked')
     : join(context.appOutDir, 'resources', 'app.asar.unpacked')
+
+  if (osName === 'darwin') {
+    cloneHelperVariants(context.appOutDir, context.packager.appInfo.productFilename)
+  }
 
   const keepSuffix = `${osName}-${archName}`
 

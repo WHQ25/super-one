@@ -1,9 +1,10 @@
-import { fork, type ChildProcess } from 'child_process'
+import { fork, type ChildProcess, type ForkOptions } from 'child_process'
 import { createHash } from 'crypto'
 import net from 'net'
 import { join } from 'path'
 import log from '../logger'
 import { getNodeRuntime } from '../agent/resolve-cli'
+import { ProcessTitle } from '../process-titles'
 import { resolveCodexChatReasoning, type CodexChatReasoningConfig } from './codex-responses/reasoning'
 import { resolveChatService } from './resolver'
 
@@ -94,20 +95,22 @@ function startSweepIfNeeded(): void {
   }, SWEEP_INTERVAL_MS)
 }
 
+// `argv0` is forwarded to the underlying `spawn()` at runtime (fork() just spreads
+// its options through), but @types/node's `ForkOptions` omits it — cast to add it.
+type ForkOptionsWithArgv0 = ForkOptions & { argv0?: string }
+
 function spawnChild(port: number, upstream: ProxyUpstream): ChildProcess {
   const entryPath = resolveEntryPath()
-  const runtime = getNodeRuntime()
+  const runtime = getNodeRuntime('llm-proxy')
   const config = buildProxyConfig(port, upstream)
   const env = buildProxyEnv(config, runtime.env)
-  if (runtime.executable) {
-    const proc = fork(entryPath, [], {
-      execPath: runtime.executable,
-      env,
-      stdio: ['pipe', 'pipe', 'pipe', 'ipc'],
-    })
-    return proc
+  const opts: ForkOptionsWithArgv0 = {
+    argv0: ProcessTitle.LlmProxy,
+    env,
+    stdio: ['pipe', 'pipe', 'pipe', 'ipc'],
+    ...(runtime.executable ? { execPath: runtime.executable } : {}),
   }
-  return fork(entryPath, [], { env, stdio: ['pipe', 'pipe', 'pipe', 'ipc'] })
+  return fork(entryPath, [], opts)
 }
 
 function waitForReady(proc: ChildProcess, port: number): Promise<void> {

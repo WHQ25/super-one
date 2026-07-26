@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
-try { process.title = 'SuperOne Worker Host' } catch { /* not writable in some sandboxed contexts */ }
+// No `process.title` here: renderer processes cannot be renamed. See main/process-titles.ts.
 
 const CH = {
   TOOL_RESULT: 'miniapp:tool-result',

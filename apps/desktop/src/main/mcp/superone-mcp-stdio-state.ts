@@ -36,7 +36,7 @@ export function setSuperoneMcpBridgeRuntime(runtime: SuperoneMcpBridgeRuntime | 
 
 export function getSuperoneMcpStdioConfig(sessionId: string): SuperoneMcpStdioConfig | null {
   if (!bridgeRuntime) return null
-  const nodeRuntime = getNodeRuntime()
+  const nodeRuntime = getNodeRuntime('mcp-bridge')
   const command = nodeRuntime.executable ?? process.execPath
   const env: Record<string, string> = {
     ...nodeRuntime.env,

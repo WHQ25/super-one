@@ -7,7 +7,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { createSuperoneApi, startSuperoneResize, startSuperoneReady, type MiniAppTransport } from '@superone/shared/miniapp-api-runtime'
 import { parseMiniAppHost } from '@superone/shared/miniapp-host'
 
-try { process.title = 'SuperOne MiniApp Dev' } catch { /* process.title not writable in some sandboxed contexts */ }
+// No `process.title` here: renderer processes cannot be renamed. See main/process-titles.ts.
 
 const pending = new Map<string, { resolve: (v: unknown) => void; reject: (e: Error) => void; resultKey?: string }>()
 let reqId = 0

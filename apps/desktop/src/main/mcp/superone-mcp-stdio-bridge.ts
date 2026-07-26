@@ -160,6 +160,21 @@ function toolSignature(tool: SuperoneMcpToolDescriptor): string {
 
 async function main(): Promise<void> {
   const sessionId = requiredEnv(SUPERONE_MCP_SESSION_ID_ENV)
+  // Do NOT set `process.title` here. On macOS it calls into LaunchServices to
+  // register the process as an app, which is safe when we control the spawn, but
+  // this process is exec'd by Codex's/ACP's/OpenCode's own process launcher — a
+  // path we don't control. Observed regression: it caused a perpetually bouncing
+  // Dock icon (each backend tears down/respawns this bridge per turn, and each
+  // spawn re-registers). Known upstream pattern, no clean fix exists:
+  // https://github.com/anthropics/claude-code/issues/1912
+  // https://forum.cursor.com/t/floating-node-exec-icon-shows-in-dock-when-running-cursor-on-macos-15-beta/102931
+  //
+  // Activity Monitor naming is instead solved at the exec level: in packaged mode,
+  // superone-mcp-stdio-state.ts hands these backends the path to a dedicated
+  // "SuperOne MCP Bridge" Helper.app clone (built by build/afterPack.cjs) rather
+  // than the generic Helper — same static-name-baked-into-the-binary trick Electron
+  // itself uses for Helper (Renderer)/(GPU)/(Plugin). Zero LaunchServices calls,
+  // zero Dock risk, but the name can't carry per-session dynamic data.
   const ipc = new SuperoneIpcClient(
     requiredEnv(SUPERONE_MCP_IPC_ENDPOINT_ENV),
     requiredEnv(SUPERONE_MCP_IPC_TOKEN_ENV),

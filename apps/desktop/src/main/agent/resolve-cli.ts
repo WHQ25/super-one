@@ -55,30 +55,48 @@ export interface NodeRuntime {
   env?: Record<string, string>
 }
 
-let cachedRuntime: NodeRuntime | undefined
+// 'mcp-bridge' and 'llm-proxy' each resolve to a dedicated Helper.app clone (built
+// by build/afterPack.cjs — keep the suffix strings in sync with HELPER_VARIANTS
+// there) so the process shows a real name in Activity Monitor instead of the
+// generic "SuperOne Helper" shared by GPU/network/renderer subprocesses. Only
+// exists in packaged mode; dev falls back to 'default' behavior (see is.dev below).
+export type NodeRuntimeVariant = 'default' | 'mcp-bridge' | 'llm-proxy'
 
-function findElectronHelper(): string | undefined {
+const VARIANT_HELPER_SUFFIX: Record<Exclude<NodeRuntimeVariant, 'default'>, string> = {
+  'mcp-bridge': 'MCP Bridge',
+  'llm-proxy': 'LLM Proxy',
+}
+
+const cachedRuntimeByVariant = new Map<NodeRuntimeVariant, NodeRuntime>()
+
+function findElectronHelper(variant: NodeRuntimeVariant): string | undefined {
   if (process.platform !== 'darwin') return undefined
   const appName = basename(process.execPath)
+  const helperName = variant === 'default' ? `${appName} Helper` : `${appName} ${VARIANT_HELPER_SUFFIX[variant]}`
   const contentsDir = dirname(dirname(process.execPath))
-  const helperPath = join(contentsDir, 'Frameworks', `${appName} Helper.app`, 'Contents', 'MacOS', `${appName} Helper`)
+  const helperPath = join(contentsDir, 'Frameworks', `${helperName}.app`, 'Contents', 'MacOS', helperName)
   if (existsSync(helperPath)) return helperPath
   return undefined
 }
 
-export function getNodeRuntime(): NodeRuntime {
-  if (cachedRuntime) return cachedRuntime
+export function getNodeRuntime(variant: NodeRuntimeVariant = 'default'): NodeRuntime {
+  const cached = cachedRuntimeByVariant.get(variant)
+  if (cached) return cached
   if (is.dev) {
-    cachedRuntime = {}
-    return cachedRuntime
+    cachedRuntimeByVariant.set(variant, {})
+    return {}
   }
-  const helper = findElectronHelper()
+  // Fall back to the plain Helper (still Dock-safe, just unnamed) if the named
+  // variant's bundle wasn't found — e.g. afterPack didn't run for this build.
+  const helper = findElectronHelper(variant) ?? findElectronHelper('default')
+  const runtime: NodeRuntime = helper
+    ? { executable: helper, env: { ELECTRON_RUN_AS_NODE: '1' } }
+    : { executable: process.execPath, env: { ELECTRON_RUN_AS_NODE: '1' } }
   if (helper) {
-    cachedRuntime = { executable: helper, env: { ELECTRON_RUN_AS_NODE: '1' } }
-    log.info('[resolve-cli] packaged mode: using Electron Helper (no dock icon) executable=%s', helper)
+    log.info('[resolve-cli] packaged mode: using Electron Helper variant=%s executable=%s', variant, helper)
   } else {
-    cachedRuntime = { executable: process.execPath, env: { ELECTRON_RUN_AS_NODE: '1' } }
     log.info('[resolve-cli] packaged mode: using Electron as Node runtime executable=%s', process.execPath)
   }
-  return cachedRuntime
+  cachedRuntimeByVariant.set(variant, runtime)
+  return runtime
 }

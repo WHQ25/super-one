@@ -23,6 +23,15 @@ try {
   process.exit(1)
 }
 
+// Naming is done via spawn-time `argv0` in llm-proxy-manager.ts, not `process.title`
+// here — see the comment in process-titles.ts for why (Dock-bounce risk on macOS).
+
+// This sidecar is forked without a process-group link to the main process, so a
+// crashed or SIGKILL'd parent used to leave it running indefinitely (observed:
+// several 3-day-old orphans from dev runs). The IPC channel is torn down by the
+// kernel the moment the parent's fds are reclaimed, so treat it as a quit signal.
+process.on('disconnect', () => process.exit(0))
+
 const reasoningConfig = cfg.superoneReasoningConfig as CodexChatReasoningConfig | undefined
 
 const server = new Server({ initialConfig: cfg as Record<string, unknown> })

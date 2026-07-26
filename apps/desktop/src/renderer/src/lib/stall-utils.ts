@@ -27,7 +27,13 @@ function readActiveLastEventAt(): number {
   return session?.lastEventAt ?? 0
 }
 
-export function useStallLevel(active: boolean, lastEventAt?: number): StallLevel {
+/**
+ * `lastEventAt` may be a plain number or a getter. Prefer the getter when the
+ * caller renders per session (e.g. a sidebar row): `lastEventAt` is rewritten on
+ * every content delta, so *subscribing* to it re-renders the caller at stream
+ * frequency, while this hook only needs the value once per second.
+ */
+export function useStallLevel(active: boolean, lastEventAt?: number | (() => number)): StallLevel {
   const [level, setLevel] = useState<StallLevel>('normal')
   const lastEventAtRef = useRef(lastEventAt)
   lastEventAtRef.current = lastEventAt
@@ -38,7 +44,12 @@ export function useStallLevel(active: boolean, lastEventAt?: number): StallLevel
       return
     }
     const tick = (): void => {
-      const ts = lastEventAtRef.current !== undefined ? lastEventAtRef.current : readActiveLastEventAt()
+      const source = lastEventAtRef.current
+      const ts = typeof source === 'function'
+        ? source()
+        : source !== undefined
+          ? source
+          : readActiveLastEventAt()
       setLevel(getStallLevel(ts))
     }
     tick()

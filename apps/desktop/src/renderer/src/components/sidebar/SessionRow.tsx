@@ -19,8 +19,15 @@ import { SessionTitleAnimated, useSessionTitleByAgent } from './AnimatedSessionT
 
 const EMPTY_REMOTE_SESSION_IDS: string[] = []
 
-function SessionStatusSpinner({ lastEventAt }: { lastEventAt: number }) {
-  const level = useStallLevel(true, lastEventAt)
+/** Reads `lastEventAt` lazily instead of subscribing: the store rewrites it on
+ *  every content delta, so a subscription would re-render every session row at
+ *  stream frequency just to drive a spinner that only repaints once a second. */
+function SessionStatusSpinner({ folderPath, sessionId }: { folderPath: string; sessionId: string }) {
+  const readLastEventAt = useCallback(
+    () => useChatStore.getState().projectSessions[folderPath]?._sessions?.[sessionId]?.lastEventAt ?? 0,
+    [folderPath, sessionId],
+  )
+  const level = useStallLevel(true, readLastEventAt)
   return <Loader2 className={cn('size-3 animate-spin', getStallColor(level, 'text-sidebar-foreground/70'))} />
 }
 
@@ -57,13 +64,14 @@ export const SessionRow = memo(function SessionRow({
   const currentFolder = useAppStore((s) => s.currentFolder)
   const hasRealProject = useHasRealProject()
   const remoteSessionIds = useChatStore((s) => s.remoteSessions[folderPath] ?? EMPTY_REMOTE_SESSION_IDS)
-  const { activeSid, status, lastEventAt, isUnseen, pendingReason } = useChatStore(useShallow((s) => {
+  // Deliberately does NOT select `lastEventAt` — it changes on every content
+  // delta, and the only consumer (SessionStatusSpinner) reads it lazily.
+  const { activeSid, status, isUnseen, pendingReason } = useChatStore(useShallow((s) => {
     const proj = s.projectSessions[folderPath]
     const entry = proj?._sessions?.[session.sessionId]
     return {
       activeSid: proj?._activeSessionId ?? null,
       status: entry?.status,
-      lastEventAt: entry?.lastEventAt ?? 0,
       isUnseen: proj?.unseenCompletedSessions?.has(session.sessionId) ?? false,
       pendingReason: getPendingReason(entry?.pendingPermissions, entry?.pendingQuestion, entry?.pendingPlanApproval),
     }
@@ -152,7 +160,7 @@ export const SessionRow = memo(function SessionRow({
                   : HarnessIcon && harnessStatus !== 'default'
                     ? <HarnessIcon status={harnessStatus} active={isSessionActive} renderLevel="compact" />
                     : isRunning
-                      ? <SessionStatusSpinner lastEventAt={lastEventAt} />
+                      ? <SessionStatusSpinner folderPath={folderPath} sessionId={session.sessionId} />
                       : <MessageSquare className="size-3 text-sidebar-foreground/70" />
                 }
               </span>

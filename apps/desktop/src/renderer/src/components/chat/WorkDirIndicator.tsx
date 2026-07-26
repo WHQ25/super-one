@@ -4,6 +4,7 @@ import { GitBranch, ChevronDown, Check, Monitor, GitCommit, Circle } from 'lucid
 import { Popover, PopoverContent, PopoverTrigger } from '@superone/ui/components/ui/popover'
 import { useActiveSession, useSessionScope } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
+import { useOnTurnCompleted } from '@/hooks/useOnTurnCompleted'
 import type { GitDirtyStatus, WorktreeEntry, WorktreeInfo, WorktreeMode } from '@superone/shared/agent-types'
 import { WorktreeHandoffSection } from './WorktreeHandoffSection'
 import { WorktreeAssignBranchSection } from './WorktreeAssignBranchSection'
@@ -60,21 +61,28 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
     return () => { cancelled = true }
   }, [currentFolder, isGitRepo, activePath])
 
+  const refreshActiveDirty = useCallback(() => {
+    if (!activePath) return
+    window.app.getGitInfo(activePath).then((info) => {
+      setActiveDirty((prev) => (sameDirty(prev, info?.dirty) ? prev : info?.dirty))
+    }).catch(() => {})
+  }, [activePath])
+
+  // Event-driven, like the branch chip: read once for the worktree, then only
+  // when a turn ends or the repo's HEAD moves.
   useEffect(() => {
     if (!activePath) { setActiveDirty(undefined); return }
     let cancelled = false
-    const fetch = () => {
-      window.app.getGitInfo(activePath).then((info) => {
-        if (!cancelled) setActiveDirty((prev) => (sameDirty(prev, info?.dirty) ? prev : info?.dirty))
-      }).catch(() => {})
-    }
-    fetch()
-    const interval = setInterval(fetch, 5000)
+    window.app.getGitInfo(activePath).then((info) => {
+      if (!cancelled) setActiveDirty((prev) => (sameDirty(prev, info?.dirty) ? prev : info?.dirty))
+    }).catch(() => {})
     const unsub = window.app.onGitHeadChange((evt) => {
-      if (evt.folderPath === activePath) fetch()
+      if (evt.folderPath === activePath) refreshActiveDirty()
     })
-    return () => { cancelled = true; clearInterval(interval); unsub() }
-  }, [activePath])
+    return () => { cancelled = true; unsub() }
+  }, [activePath, refreshActiveDirty])
+
+  useOnTurnCompleted(refreshActiveDirty)
 
   const loadPopoverData = useCallback(async () => {
     if (!currentFolder) return

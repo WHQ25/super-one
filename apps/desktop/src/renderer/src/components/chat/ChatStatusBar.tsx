@@ -27,6 +27,7 @@ import { useAppStore } from '@/stores/app'
 import { StatusBarPermission } from './chat-status-bar/StatusBarPermission'
 import { StatusBarSandbox } from './chat-status-bar/StatusBarSandbox'
 import { WorkDirIndicator } from './WorkDirIndicator'
+import { useOnTurnCompleted } from '@/hooks/useOnTurnCompleted'
 import { parseToolInput } from './tool-display'
 import { ToolBlock } from './ToolBlock'
 import { SubagentBlock } from './SubagentBlock'
@@ -189,22 +190,25 @@ export function ChatStatusBar() {
     setIsGitRepo(repo)
   }, [currentFolder])
 
+  // Initial read for the project. Everything after this is event-driven — git
+  // state only changes when someone acts on the repo, and every actor that can
+  // do so already gives us a signal.
   useEffect(() => {
     if (!currentFolder) { setGitInfo(null); setIsGitRepo(null); return }
 
     let cancelled = false
-    const fetch = () => {
-      window.app.getGitInfo(currentFolder).then((info) => {
-        if (!cancelled) setGitInfo(info)
-      })
-      window.app.getGitIsRepo(currentFolder).then((repo) => {
-        if (!cancelled) setIsGitRepo(repo)
-      })
-    }
-    fetch()
-    const interval = setInterval(fetch, 5000)
-    return () => { cancelled = true; clearInterval(interval) }
+    Promise.all([
+      window.app.getGitInfo(currentFolder),
+      window.app.getGitIsRepo(currentFolder),
+    ]).then(([info, repo]) => {
+      if (cancelled) return
+      setGitInfo(info)
+      setIsGitRepo(repo)
+    }).catch(() => { /* handlers already fall back to null/false */ })
+    return () => { cancelled = true }
   }, [currentFolder])
+
+  useOnTurnCompleted(refreshGitInfo)
 
   useEffect(() => {
     const unsub = window.app.onGitHeadChange(() => refreshGitInfo())

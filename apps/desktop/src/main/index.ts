@@ -5,7 +5,10 @@ import { readFile, writeFile, readdir, rename, cp, rm, access, stat, mkdir, open
 import { cpus, homedir, hostname } from 'os'
 import { resolveRealPath, isPathWithinAllowed, sanitizeGitRef, getReadableAssetRoots } from './path-security'
 import { spawn } from 'child_process'
-import { gitRun } from './git-run'
+import { gitRun, type GitRunOptions } from './git-run'
+import { logGitFailure, logSlowGit } from './git-diagnostics'
+import { AsyncCoalescer } from './async-cache'
+import { countAddedLines } from './git-added-lines'
 import { activateWorktree, assignBranch, getCheckedOutBranches, getHandoffPreview, getWorktreeInfo, gitErrorMessage, handoffToLocal } from './git/worktree-ops'
 import { is } from '@electron-toolkit/utils'
 import log from './logger'
@@ -111,7 +114,7 @@ import { trace, closeTraceDb } from './agent/event-trace'
 import { RemoteControlService } from './remote-control-service'
 import { readProjectPreferences, saveProjectPreferences } from './claude-preferences-service'
 import { readAppSettings, saveAppSettings } from './app-settings-service'
-import type { AppSettings, AppSettingsPatch, ThemeMode } from '@superone/shared/agent-types'
+import type { AppSettings, AppSettingsPatch, GitInfo, ThemeMode } from '@superone/shared/agent-types'
 import { recordBrowserHistory, suggestBrowserHistory, deleteBrowserHistory } from './browser-history-service'
 import { getSandboxCapability, probeSandboxDependencies } from './sandbox-platform'
 import { ProcessTitle, WindowRole, roleArg, glassBootArgs } from './process-titles'
@@ -164,6 +167,14 @@ if (is.dev) {
     ? join(baseUserData, `instance-${process.env.SUPERONE_INSTANCE}`)
     : baseUserData)
 }
+
+/**
+ * Read-only git calls behind the polling status bar. Without a timeout a git
+ * that never exits (hung `core.fsmonitor`, stalled network filesystem) leaves
+ * the renderer's promise unsettled forever, and the branch chip never appears.
+ */
+const GIT_READ_OPTS: GitRunOptions = { timeoutMs: 20_000 }
+const GIT_INFO_SLOW_MS = 3_000
 
 const agentService = new AgentService()
 const codexService = new CodexExperimentService()
@@ -953,7 +964,7 @@ function registerIpcHandlers(): void {
   ipcMain.handle(AgentIpcChannels.CLOSE_PROJECT, async (_event, folderPath: string) => {
     await agentService.closeProject(folderPath)
     codexService.closeProject(folderPath)
-    gitStatusSnapshotCache.delete(folderPath)
+    gitStatusSnapshot.invalidate(folderPath)
   })
 
   ipcMain.handle(
@@ -1274,61 +1285,66 @@ function registerIpcHandlers(): void {
     },
   )
 
-  ipcMain.handle(AgentIpcChannels.GIT_INFO, async (_event, folderPath: string) => {
-    try {
-      let branch: string
+  // Every session pane refreshes on the same signal (its turn going idle), so
+  // the requests arrive together and want the same snapshot. No TTL: a refresh
+  // often follows a checkout the user just made, and must not read a stale one.
+  const gitInfoCoalescer = new AsyncCoalescer<GitInfo | null>()
+
+  ipcMain.handle(AgentIpcChannels.GIT_INFO, (_event, folderPath: string) =>
+    gitInfoCoalescer.get(folderPath, async () => {
+      const startedAt = Date.now()
       try {
-        branch = await gitRun(folderPath, ['rev-parse', '--abbrev-ref', 'HEAD'])
-      } catch {
-        const ref = await gitRun(folderPath, ['symbolic-ref', 'HEAD'])
-        branch = ref.replace('refs/heads/', '')
-      }
-      const status = await gitRun(folderPath, ['status', '--porcelain', '-uall'])
-      const files = status ? status.split('\n').filter(Boolean).length : 0
-      let insertions = 0
-      let deletions = 0
-      if (files > 0) {
+        let branch: string
         try {
-          const shortstat = await gitRun(folderPath, ['diff', 'HEAD', '--shortstat'])
-          const insMatch = shortstat.match(/(\d+) insertion/)
-          const delMatch = shortstat.match(/(\d+) deletion/)
-          if (insMatch) insertions = parseInt(insMatch[1])
-          if (delMatch) deletions = parseInt(delMatch[1])
+          branch = await gitRun(folderPath, ['rev-parse', '--abbrev-ref', 'HEAD'], undefined, GIT_READ_OPTS)
         } catch {
-          /* no HEAD yet or no tracked changes */
+          const ref = await gitRun(folderPath, ['symbolic-ref', 'HEAD'], undefined, GIT_READ_OPTS)
+          branch = ref.replace('refs/heads/', '')
         }
-        try {
-          const untrackedRaw = await gitRun(folderPath, ['ls-files', '--others', '--exclude-standard', '-z'])
-          const untracked = untrackedRaw ? untrackedRaw.split('\0').filter(Boolean) : []
-          for (const rel of untracked) {
-            try {
-              const abs = join(folderPath, rel)
-              const fileStat = await stat(abs)
-              if (!fileStat.isFile()) continue
-              const buf = await readFile(abs)
-              if (buf.includes(0)) continue
-              let count = 0
-              for (let i = 0; i < buf.length; i++) {
-                if (buf[i] === 0x0a) count++
-              }
-              if (buf.length > 0 && buf[buf.length - 1] !== 0x0a) count++
-              insertions += count
-            } catch {
-              /* skip unreadable */
-            }
+        const status = await gitRun(folderPath, ['status', '--porcelain', '-uall'], undefined, GIT_READ_OPTS)
+        const files = status ? status.split('\n').filter(Boolean).length : 0
+        let insertions = 0
+        let deletions = 0
+        if (files > 0) {
+          try {
+            const shortstat = await gitRun(folderPath, ['diff', 'HEAD', '--shortstat'], undefined, GIT_READ_OPTS)
+            const insMatch = shortstat.match(/(\d+) insertion/)
+            const delMatch = shortstat.match(/(\d+) deletion/)
+            if (insMatch) insertions = parseInt(insMatch[1])
+            if (delMatch) deletions = parseInt(delMatch[1])
+          } catch {
+            /* no HEAD yet or no tracked changes */
           }
-        } catch {
-          /* no untracked or git unavailable */
+          try {
+            const untrackedRaw = await gitRun(folderPath, ['ls-files', '--others', '--exclude-standard', '-z'], undefined, GIT_READ_OPTS)
+            const untracked = untrackedRaw ? untrackedRaw.split('\0').filter(Boolean) : []
+            for (const rel of untracked) {
+              try {
+                insertions += await countAddedLines(join(folderPath, rel))
+              } catch {
+                /* skip unreadable */
+              }
+            }
+          } catch {
+            /* no untracked or git unavailable */
+          }
         }
+        const elapsed = Date.now() - startedAt
+        if (elapsed > GIT_INFO_SLOW_MS) logSlowGit('GIT_INFO', folderPath, elapsed, `changedFiles=${files}`)
+        return {
+          branch,
+          ...(files > 0 ? { dirty: { files, insertions, deletions } } : {}),
+        }
+      } catch (err) {
+        // Returning null here hides the whole branch chip (ChatStatusBar renders
+        // it only when gitInfo is non-null, and the "Git init" fallback only when
+        // `.git` is absent) — so a repo git refuses to read leaves the status bar
+        // blank with no other trace. Log it.
+        logGitFailure('GIT_INFO', folderPath, err, existsSync(join(folderPath, '.git')))
+        return null
       }
-      return {
-        branch,
-        ...(files > 0 ? { dirty: { files, insertions, deletions } } : {}),
-      }
-    } catch {
-      return null
-    }
-  })
+    }),
+  )
 
   ipcMain.handle(AgentIpcChannels.GIT_IS_REPO, (_event, folderPath: string) => {
     return existsSync(join(folderPath, '.git'))
@@ -1682,42 +1698,27 @@ function registerIpcHandlers(): void {
     }
   })
 
+  // Read once per directory listing, so a short TTL is what keeps a deep tree
+  // expansion from re-running `git status --ignored` for every folder.
   const GIT_STATUS_CACHE_TTL_MS = 1500
-  const gitStatusSnapshotCache = new Map<string, { at: number; statusMap: Map<string, GitStatusPair>; ignoredDirs: Set<string> }>()
-  const gitStatusInFlight = new Map<string, Promise<{ statusMap: Map<string, GitStatusPair>; ignoredDirs: Set<string> }>>()
+  const gitStatusSnapshot = new AsyncCoalescer<{ statusMap: Map<string, GitStatusPair>; ignoredDirs: Set<string> }>(GIT_STATUS_CACHE_TTL_MS)
 
-  async function getGitStatusMap(folderPath: string) {
-    const now = Date.now()
-    const cached = gitStatusSnapshotCache.get(folderPath)
-    if (cached && now - cached.at < GIT_STATUS_CACHE_TTL_MS) {
-      return { statusMap: cached.statusMap, ignoredDirs: cached.ignoredDirs }
-    }
-    const inFlight = gitStatusInFlight.get(folderPath)
-    if (inFlight) return inFlight
-
-    const promise = (async () => {
+  function getGitStatusMap(folderPath: string) {
+    return gitStatusSnapshot.get(folderPath, async () => {
       let statusMap = new Map<string, GitStatusPair>()
       let ignoredDirs = new Set<string>()
       try {
-        const raw = await gitRun(folderPath, ['status', '--porcelain=v1', '--ignored'])
+        const raw = await gitRun(folderPath, ['status', '--porcelain=v1', '--ignored'], undefined, GIT_READ_OPTS)
         if (raw) {
           const parsed = parseGitStatusOutput(raw)
           statusMap = parsed.statusMap
           ignoredDirs = parsed.ignoredDirs
         }
-      } catch { /* not a git repo or no commits */ }
-      gitStatusSnapshotCache.set(folderPath, { at: Date.now(), statusMap, ignoredDirs })
-      return { statusMap, ignoredDirs }
-    })()
-
-    gitStatusInFlight.set(folderPath, promise)
-    try {
-      return await promise
-    } finally {
-      if (gitStatusInFlight.get(folderPath) === promise) {
-        gitStatusInFlight.delete(folderPath)
+      } catch (err) {
+        logGitFailure('GIT_STATUS_MAP', folderPath, err, existsSync(join(folderPath, '.git')))
       }
-    }
+      return { statusMap, ignoredDirs }
+    })
   }
 
   ipcMain.handle(AgentIpcChannels.GIT_LIST_DIR, async (_event, folderPath: string, dirRelPath: string) => {
@@ -2210,7 +2211,7 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(AgentIpcChannels.FILE_WATCH_START, (_e, folderPath: string) => {
     startWatching(getMainWindow(), folderPath, () => {
-      gitStatusSnapshotCache.delete(folderPath)
+      gitStatusSnapshot.invalidate(folderPath)
     })
   })
 

@@ -12,7 +12,10 @@ export function LayoutToggle() {
   const { t } = useTranslation()
   const showSidebar = useAppStore((s) => s.showSidebar)
   const showPanel = useActivityPanelStore((s) => s.showPanel)
+  const maximized = useActivityPanelStore((s) => s.maximized)
   const side = useActivityPanelStore((s) => s.side)
+  // When maximized, chat is a floating overlay — side swap is meaningless.
+  const showSideToggle = showPanel && !maximized
 
   return (
     <div className="mr-2 flex items-center gap-0.5" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
@@ -32,7 +35,7 @@ export function LayoutToggle() {
         </Tooltip>
       </TooltipProvider>
 
-      {showPanel && (
+      {showSideToggle && (
         <TooltipProvider>
           <Tooltip>
             <TooltipTrigger asChild>

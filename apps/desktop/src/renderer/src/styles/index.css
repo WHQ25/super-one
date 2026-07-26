@@ -241,14 +241,14 @@ body[data-scroll-locked] {
   background-color: transparent;
 }
 
+/* Off-screen messages skip style/layout/paint. This stays on in liquid glass
+   too: the glass smear it was once disabled for is a first-paint
+   `contents_opaque` latch race, fixed at the root by the `--superone-liquid-glass`
+   preload boot arg (first frame is already transparent), not by forcing every
+   message to render. */
 .chat-message-wrapper {
   content-visibility: auto;
   contain-intrinsic-size: auto 200px;
-}
-
-.liquid-glass.dark .chat-message-wrapper {
-  content-visibility: visible;
-  contain-intrinsic-size: auto;
 }
 
 /* Neutral tool-call cards read as bg-muted/20, which is nearly invisible over

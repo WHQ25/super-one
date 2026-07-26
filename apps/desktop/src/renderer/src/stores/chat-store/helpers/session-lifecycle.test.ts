@@ -239,6 +239,8 @@ describe('resetSessionImpl', () => {
     expect(newSid).toMatch(/^[0-9a-f-]{36}$/)
     expect(mockWindowAgent.resetSession).toHaveBeenCalledWith(oldSid, newSid)
     expect(mockClearWorktree).toHaveBeenCalledWith(PATH)
+    // Do not fork activity dock layout (shared terminal/browser panel ids).
+    expect(mockSeedFromCurrent).not.toHaveBeenCalled()
   })
 
   it('hydrates Grok models from ACP cache when creating a new session from an old Grok session', async () => {
@@ -319,7 +321,8 @@ describe('resetSessionForWorktreeSwitchImpl', () => {
     expect(sess.cwd).toBe('/wt')
     expect(sess._worktreePath).toBe('/wt')
     expect(sess._gitBranch).toBe('feat')
-    expect(mockSeedFromCurrent).toHaveBeenCalledTimes(1)
+    // New sessions must not inherit activity dock layout (shared terminal ids).
+    expect(mockSeedFromCurrent).not.toHaveBeenCalled()
   })
 
   it('applies defaultPrefsCache.permissionMode when set', () => {

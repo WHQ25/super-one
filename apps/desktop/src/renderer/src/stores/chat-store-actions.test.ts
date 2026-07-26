@@ -323,14 +323,14 @@ describe('resetSession', () => {
 })
 
 describe('resetSessionForWorktreeSwitch', () => {
-  it('seeds a new session with worktree info + notifies activity-view-state', () => {
+  it('seeds a new session with worktree info without inheriting activity dock layout', () => {
     setupProject()
     useChatStore.getState().resetSessionForWorktreeSwitch(PATH, { wtPath: '/wt', gitBranch: 'feature' })
 
     expect(activeSession().cwd).toBe('/wt')
     expect(activeSession()._worktreePath).toBe('/wt')
     expect(activeSession()._gitBranch).toBe('feature')
-    expect(mockSeedFromCurrent).toHaveBeenCalledTimes(1)
+    expect(mockSeedFromCurrent).not.toHaveBeenCalled()
   })
 })
 

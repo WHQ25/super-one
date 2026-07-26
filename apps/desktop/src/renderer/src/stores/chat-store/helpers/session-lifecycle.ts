@@ -303,7 +303,9 @@ export function resetSessionForWorktreeSwitchImpl(
       },
     }
   })
-  useActivityViewStateStore.getState().seedFromCurrent(draftId)
+  // Do not seed activity dock layout into the new session. Forked sessions that
+  // share panel ids (e.g. terminal-*) can kill the underlying process from the
+  // child while the parent layout still references it, leaving a stuck panel.
   void inheritMiniAppToolsForNewSession(projectPath, previousSid)
 }
 
@@ -372,7 +374,9 @@ export async function resetSessionImpl(set: ChatStoreSet, get: () => ChatStore):
       },
     }
   })
-  useActivityViewStateStore.getState().seedFromCurrent(newSessionId)
+  // Fresh session starts with an empty activity view (no dock layout inherit).
+  // See resetSessionForWorktreeSwitchImpl — shared terminal/browser panel ids
+  // are not safe to fork across sessions.
 
   let unlock!: () => void
   resetLock.current = new Promise<void>((r) => { unlock = r })

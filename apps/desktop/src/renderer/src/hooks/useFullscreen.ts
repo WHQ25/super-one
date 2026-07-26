@@ -4,8 +4,11 @@ export function useFullscreen() {
   const [isFullscreen, setIsFullscreen] = useState(false)
 
   useEffect(() => {
-    window.app.getFullscreen().then(setIsFullscreen)
-    return window.app.onFullscreenChanged(setIsFullscreen)
+    void window.app.getFullscreen?.().then(setIsFullscreen)
+    const unsub = window.app.onFullscreenChanged?.(setIsFullscreen)
+    return () => {
+      if (typeof unsub === 'function') unsub()
+    }
   }, [])
 
   return isFullscreen

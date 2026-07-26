@@ -84,7 +84,9 @@ function App(): React.JSX.Element {
   const isFullscreen = useFullscreen()
   const isMac = window.app.platform === 'darwin'
   const isWindows = window.app.platform === 'win32'
-  const cardTopMargin = isWindows ? 'mt-0' : 'mt-[5px]'
+  // Windowed mode floats the main card a few px off the chrome for a glass
+  // inset. Fullscreen drops the inset so the card flushes to the screen edges.
+  const cardTopMargin = isFullscreen || isWindows ? 'mt-0' : 'mt-[5px]'
   const initialTransition = useRef(true)
 
   // Collapse/expand the activity panel while keeping browsers & mini-apps mounted
@@ -516,16 +518,25 @@ function App(): React.JSX.Element {
         )}
       </div>
 
-      {/* Main area wrapper */}
+      {/* Main area wrapper — windowed: floating glass card; fullscreen: edge-flush
+          (keep left radius only while the sidebar is open to soften that seam). */}
       <div ref={mainWrapperRef} className={cn(
-        'relative z-20 flex min-w-0 flex-1 overflow-hidden rounded-xl border border-border/50 bg-card',
-        cardTopMargin,
-        'mb-[5px] mr-[5px]',
-        !showSidebar && 'ml-[5px]',
-        mosaicMode !== 'mosaic' && 'transition-shadow duration-200',
-        mosaicMode !== 'mosaic' && (sidebarResizing
-          ? 'border-border shadow-[0_10px_30px_rgba(0,0,0,0.16)]'
-          : 'shadow-[0_2px_12px_rgba(0,0,0,0.06)] group-has-[[data-resize-handle]:hover]/coding:border-border group-has-[[data-resize-handle]:hover]/coding:shadow-[0_10px_30px_rgba(0,0,0,0.16)]'),
+        'relative z-20 flex min-w-0 flex-1 overflow-hidden bg-card',
+        isFullscreen
+          ? cn(
+              'rounded-r-none border-0 shadow-none',
+              showSidebar ? 'rounded-l-xl' : 'rounded-none',
+            )
+          : cn(
+              'rounded-xl border border-border/50',
+              cardTopMargin,
+              'mb-[5px] mr-[5px]',
+              !showSidebar && 'ml-[5px]',
+              mosaicMode !== 'mosaic' && 'transition-shadow duration-200',
+              mosaicMode !== 'mosaic' && (sidebarResizing
+                ? 'border-border shadow-[0_10px_30px_rgba(0,0,0,0.16)]'
+                : 'shadow-[0_2px_12px_rgba(0,0,0,0.06)] group-has-[[data-resize-handle]:hover]/coding:border-border group-has-[[data-resize-handle]:hover]/coding:shadow-[0_10px_30px_rgba(0,0,0,0.16)]'),
+            ),
       )}>
         <ActivityPanel getMaxWidth={getActivityMaxWidth} hidden={mosaicMode === 'mosaic'} />
 

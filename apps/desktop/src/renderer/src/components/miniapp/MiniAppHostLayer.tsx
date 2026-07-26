@@ -4,8 +4,10 @@ import { PanelLeft, PanelRight, PanelTop, PanelBottom, SquarePlus } from 'lucide
 import { useMiniAppStore } from '@/stores/miniapp'
 import { useActivityDropStore, type DropPosition } from '@/stores/activity-drop'
 import { useActivityPanelStore } from '@/stores/activity-panel'
+import { useAppStore } from '@/stores/app'
 import { useSashResizing } from '@/hooks/useSashResizing'
 import { useGlobalDragging } from '@/hooks/useGlobalDragging'
+import { useFullscreen } from '@/hooks/useFullscreen'
 import { useShallow } from 'zustand/react/shallow'
 import { MiniAppView } from './MiniAppView'
 
@@ -85,6 +87,12 @@ function PersistentMiniAppContainer({ instanceKey, dragging }: { instanceKey: st
   const appId = open?.entry.id
   const mounted = slot != null && slot.width > 0 && slot.height > 0
   const visible = mounted && activityShown
+  // Match the main card corners: fullscreen drops outer radii that sit on the
+  // screen edge (right always; left when the sidebar is collapsed).
+  const isFullscreen = useFullscreen()
+  const showSidebar = useAppStore((s) => s.showSidebar)
+  const roundLeft = !isFullscreen || showSidebar
+  const roundRight = !isFullscreen
 
   if (!appId) return null
 
@@ -103,8 +111,8 @@ function PersistentMiniAppContainer({ instanceKey, dragging }: { instanceKey: st
         display: mounted ? 'block' : 'none',
         pointerEvents: visible && !dragging ? 'auto' : 'none',
         overflow: 'hidden',
-        borderBottomLeftRadius: activitySide === 'left' ? 'var(--radius-xl)' : undefined,
-        borderBottomRightRadius: activitySide === 'right' ? 'var(--radius-xl)' : undefined,
+        borderBottomLeftRadius: roundLeft && activitySide === 'left' ? 'var(--radius-xl)' : undefined,
+        borderBottomRightRadius: roundRight && activitySide === 'right' ? 'var(--radius-xl)' : undefined,
       }}
     >
       <MiniAppView instanceKey={instanceKey} appId={appId} className="h-full w-full" />

@@ -3,8 +3,10 @@ import { useTranslation } from 'react-i18next'
 import { useShallow } from 'zustand/react/shallow'
 import { useBrowserStore } from '@/stores/browser'
 import { useActivityPanelStore } from '@/stores/activity-panel'
+import { useAppStore } from '@/stores/app'
 import { useSashResizing } from '@/hooks/useSashResizing'
 import { useGlobalDragging } from '@/hooks/useGlobalDragging'
+import { useFullscreen } from '@/hooks/useFullscreen'
 import { registerBrowserWebview, browserExecJs, pushBrowserConsole, clearBrowserConsole, browserIdByWebContentsId } from './browser-host-api'
 import { useBrowserAutomationHost } from './browser-automation-runtime'
 import { buildSessionScript, handleAnnotationMessage } from './browser-annotate-flow'
@@ -67,6 +69,11 @@ function PersistentBrowser({ browserId, resizing }: { browserId: string; resizin
   const capturing = useBrowserStore((s) => (s.captureRefs[browserId] ?? 0) > 0)
   const activityShown = useActivityPanelStore((s) => s.showPanel)
   const activitySide = useActivityPanelStore((s) => s.side)
+  // Match the main card corners: fullscreen drops outer radii on screen edges.
+  const isFullscreen = useFullscreen()
+  const showSidebar = useAppStore((s) => s.showSidebar)
+  const roundLeft = !isFullscreen || showSidebar
+  const roundRight = !isFullscreen
   const annotating = useBrowserStore((s) => s.annotatingId === browserId)
   const home = useBrowserStore((s) => isBlankUrl(s.tabs[browserId]?.url ?? ''))
   const certErrored = useBrowserStore((s) => s.tabs[browserId]?.certError != null)
@@ -225,8 +232,8 @@ function PersistentBrowser({ browserId, resizing }: { browserId: string; resizin
         opacity: visible ? 1 : 0,
         pointerEvents: visible && !resizing ? 'auto' : 'none',
         overflow: 'hidden',
-        borderBottomLeftRadius: activitySide === 'left' ? 'var(--radius-xl)' : undefined,
-        borderBottomRightRadius: activitySide === 'right' ? 'var(--radius-xl)' : undefined,
+        borderBottomLeftRadius: roundLeft && activitySide === 'left' ? 'var(--radius-xl)' : undefined,
+        borderBottomRightRadius: roundRight && activitySide === 'right' ? 'var(--radius-xl)' : undefined,
       }}
     >
       <webview

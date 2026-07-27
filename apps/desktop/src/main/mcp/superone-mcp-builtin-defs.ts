@@ -399,7 +399,11 @@ export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
         provider: { type: 'string', description: 'Which configured image provider id to use. Call media_list_providers to discover ids. Defaults to the first usable provider.' },
         model: { type: 'string', description: "Model id override. Defaults to the provider's default model." },
         aspect_ratio: { type: 'string', description: 'Aspect ratio like "16:9" or "1:1". Preferred for google models.' },
-        size: { type: 'string', description: 'Pixel size like "1024x1024". Preferred for openai / openai-compatible models.' },
+        size: {
+          type: 'string',
+          description:
+            'Size for the image. OpenAI: pixel size like "1024x1024". Ark: "2K"/"4K" or "WxH". Google Gemini image models: resolution tier "1K"/"2K"/"4K" (or "512"); pair with aspect_ratio. Check media_list_providers sizeNote.',
+        },
         reference_image_paths: { type: 'array', items: { type: 'string' }, description: 'Absolute paths to input images for editing / image-to-image / iterating on a prior result. Omit for pure text-to-image.' },
       },
       required: ['prompt'],

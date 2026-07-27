@@ -1,4 +1,5 @@
 import { generateImage } from 'ai'
+import { resolveGoogleImageGenerateOptions } from './google-image-options'
 import { resolveImageModel } from './registry'
 import { persistImages } from './storage'
 import type { GenerateMediaCoreParams, MediaCoreResult } from './types'
@@ -17,14 +18,18 @@ export async function generateMedia(
       }
     : params.prompt
 
+  // Google Gemini image models take resolution tiers via imageConfig.imageSize, not pixel `size`.
+  const resolved =
+    params.provider.kind === 'google' ? resolveGoogleImageGenerateOptions(params) : params
+
   const result = await generateImage({
     model,
     prompt,
-    ...(params.size ? { size: params.size as `${number}x${number}` } : {}),
-    ...(params.aspectRatio ? { aspectRatio: params.aspectRatio as `${number}:${number}` } : {}),
+    ...(resolved.size ? { size: resolved.size as `${number}x${number}` } : {}),
+    ...(resolved.aspectRatio ? { aspectRatio: resolved.aspectRatio as `${number}:${number}` } : {}),
     ...(params.n != null ? { n: params.n } : {}),
     ...(params.seed != null ? { seed: params.seed } : {}),
-    ...(params.providerOptions ? { providerOptions: params.providerOptions } : {}),
+    ...(resolved.providerOptions ? { providerOptions: resolved.providerOptions } : {}),
     ...(params.abortSignal ? { abortSignal: params.abortSignal } : {}),
   })
 

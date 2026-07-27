@@ -10,7 +10,7 @@
 | `ark-video` | Volcengine/BytePlus Seedance video generation | Hand-written in this repo |
 | `openai-image` | Dall-E / gpt-image image generation | Official `@ai-sdk/openai` provider, unmodified |
 | `openai-video` | Sora video generation | Hand-written in this repo (no first-party SDK video model exists for Sora) |
-| `google-image` | Imagen image generation | Official `@ai-sdk/google` provider, unmodified |
+| `google-image` | Imagen / Gemini image generation | Official `@ai-sdk/google` provider; SuperOne maps `size` tiers (`1K`/`2K`/`4K`) onto `imageConfig.imageSize` for Gemini image models |
 | `google-video` | Veo video generation | Official `@ai-sdk/google` provider, unmodified |
 | `newapi-video` | Doubao/Kling video generation **via a NewAPI-style relay** | Hand-written in this repo — a completely different wire from `openai-video`, even though both serve video |
 

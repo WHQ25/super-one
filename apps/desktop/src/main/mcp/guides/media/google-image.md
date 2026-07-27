@@ -1,12 +1,12 @@
-# Google image (Imagen) — official AI SDK provider, `google.image(modelId)`
+# Google image (Imagen / Gemini image) — official AI SDK provider, `google.image(modelId)`
 
-No custom adapter in this repo — `@ai-sdk/google` is used unmodified. If something behaves unexpectedly, check the `warnings` in the tool result first, then consult Google's own docs — don't assume this repo's other providers' quirks carry over here.
+Uses `@ai-sdk/google` unmodified for the HTTP call. SuperOne only translates the tool's `size` tier onto `providerOptions.google.imageConfig.imageSize` for Gemini image models (see below). If something behaves unexpectedly, check the `warnings` in the tool result first, then consult Google's own docs — don't assume this repo's other providers' quirks carry over here.
 
 | Tool arg | Behavior |
 |---|---|
-| `aspect_ratio` | The knob Imagen actually reads (`media_list_providers` reports `sizing: "aspectRatio"` for this provider). One of `1:1`, `3:4`, `4:3`, `9:16`, `16:9`. |
-| `size` | **Not supported.** Imagen has no pixel-size parameter — use `aspect_ratio`. |
-| `reference_image_paths` | **Likely doesn't do anything.** The AI SDK's own Imagen documentation only shows text-to-image usage; it does not document image editing / reference-image input for the `.image()` factory. This repo passes `reference_image_paths` through the same generic `{ text, images }` prompt shape used for every image provider, but nothing confirms Imagen's model implementation actually reads the `images` part of that shape rather than ignoring or erroring on it. If you need image-to-image, prefer Ark or OpenAI, which are confirmed to support it — and if you do try it on Google, check `warnings` (and the raw error, if any) rather than assuming it worked. |
-| `seed` | Not confirmed either way for Imagen — treat as best-effort. |
+| `aspect_ratio` | Primary framing knob (`media_list_providers` reports `sizing: "aspectRatio"`). One of `1:1`, `3:4`, `4:3`, `9:16`, `16:9` (Gemini image models may accept a wider set; stick to these unless you know the model). |
+| `size` | **Gemini image models** (`gemini-*-image*`): pass a resolution **tier** — `"1K"`, `"2K"`, `"4K"`, or `"512"`. SuperOne maps this to `providerOptions.google.imageConfig.imageSize` and co-locates `aspect_ratio` on the same `imageConfig` so the SDK does not drop the ratio. **Imagen models** ignore `size` (no pixel-size or tier parameter on the predict path) — use `aspect_ratio` only. Pixel sizes like `"1024x1024"` are not supported on either family and produce an `unsupported` warning. |
+| `reference_image_paths` | Works on **Gemini image** models (image editing / image-to-image via the generateContent path). **Likely doesn't do anything useful on Imagen** — the AI SDK's Imagen path is text-to-image only and errors if files are supplied. Prefer Ark or OpenAI when you need editing on non-Gemini Google models; check `warnings` / the raw error rather than assuming it worked. |
+| `seed` | Not confirmed either way for Imagen — treat as best-effort. Gemini image models may honor it via the language-model path. |
 
-Extra knobs exist under `providerOptions.google.imageConfig` (e.g. `imageSize: "1K"/"2K"/"4K"` on some models) and `providerOptions.google.personGeneration`, but neither is threaded through `media_generate_image`'s schema — they're only reachable if calling the underlying SDK function directly.
+Other Google knobs (`personGeneration`, grounding, etc.) exist under `providerOptions.google` on the underlying SDK call but are **not** threaded through `media_generate_image`'s schema.

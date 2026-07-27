@@ -72,11 +72,15 @@ function sizingForKind(kind: string): 'size' | 'aspectRatio' {
   return kind === 'google' ? 'aspectRatio' : 'size'
 }
 
-/** Ark's valid sizes differ per model, so state the constraint rather than enumerate a list that would lie. */
+/** Provider-specific size constraints — honor these over the generic size description. */
 function sizeNoteForKind(kind: string): string | undefined {
-  return kind === 'ark'
-    ? 'Accepts "2K" / "4K" or an explicit "WxH". Seedream models reject anything under ~3.7MP, so "1024x1024" fails — omit `size` to use the 2K default.'
-    : undefined
+  if (kind === 'ark') {
+    return 'Accepts "2K" / "4K" or an explicit "WxH". Seedream models reject anything under ~3.7MP, so "1024x1024" fails — omit `size` to use the 2K default.'
+  }
+  if (kind === 'google') {
+    return 'Prefer aspect_ratio for framing. For Gemini image models (gemini-*-image*), also pass size as "1K" / "2K" / "4K" (or "512") for resolution; Imagen models ignore size.'
+  }
+  return undefined
 }
 
 export interface ListMediaProvidersArgs {
@@ -507,7 +511,12 @@ export function registerMediaTools(server: McpServer, deps: BuiltInSuperoneToolD
         provider: z.string().optional().describe('Which configured image provider id to use. Call media_list_providers to discover ids. Defaults to the first usable provider.'),
         model: z.string().optional().describe("Model id override. Defaults to the provider's default model."),
         aspect_ratio: z.string().optional().describe('Aspect ratio like "16:9" or "1:1". Preferred for google models.'),
-        size: z.string().optional().describe('Pixel size like "1024x1024". Preferred for openai / openai-compatible models.'),
+        size: z
+          .string()
+          .optional()
+          .describe(
+            'Size for the image. OpenAI: pixel size like "1024x1024". Ark: "2K"/"4K" or "WxH". Google Gemini image models: resolution tier "1K"/"2K"/"4K" (or "512"); pair with aspect_ratio. Check media_list_providers sizeNote.',
+          ),
         reference_image_paths: z
           .array(z.string())
           .optional()

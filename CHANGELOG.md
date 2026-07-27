@@ -4,6 +4,13 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.48.1-alpha] - 2026-07-28
+
+### Fixed
+
+- Restore the packaged ACP SuperOne MCP handshake by cloning the main MacOS stub (Helper.app clones with custom basenames SIGTRAP under ELECTRON_RUN_AS_NODE), while keeping MCP Bridge / LLM Proxy process titles
+- Preview large image outputs for gallery and agent Read via downscaled JPEG sidecars (4K originals no longer break thumbs or Read limits); open full-res through the media server
+
 ## [0.48.0-alpha] - 2026-07-28
 
 ### Added

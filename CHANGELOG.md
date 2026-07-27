@@ -4,11 +4,17 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
-## [Unreleased]
+## [0.48.2-alpha] - 2026-07-28
+
+### Added
+
+- Consolidate MCP manuals under a single `read_manual` tool, replacing `miniapp_dev_read_guide`, `media_read_guide`, `widget_read_guide`, and `config_read_guide`; static manuals are now split from dynamic widget-template state (`widget_list_templates`) and config reads (`config_read`) to keep the always-loaded tool surface compact
 
 ### Fixed
 
-- Rewrite LC_RPATH on Resources/node-runtime-stubs clones to `@executable_path/../../Frameworks` so packaged SuperOne MCP Bridge / LLM Proxy can load Electron Framework (0.48.1 stubs kept the MacOS-depth rpath and dyld-aborted → Grok/Codex MCP handshake Broken pipe); refuse unstamped Resources stubs and fall back to Helper/main
+- Run packaged SuperOne MCP Bridge / LLM Proxy sidecars as named Electron Helper.app clones instead of main-executable stubs — Electron only resolves ICU / MainApplicationBundlePath through helper-suffixed basenames, so the main-stub clones SIGTRAP'd under ELECTRON_RUN_AS_NODE and broke Grok/Codex MCP handshakes; falls back to the stock Helper, then the main executable, when a named clone is unavailable
+- Require non-empty `name` and `role` on `session_collab_request` launch entries instead of silently deriving fallbacks, so each child session identity is explicitly owned by the requesting agent
+- Keep media tool prompts and provider labels on one line instead of wrapping and crowding compact rows; titles still wrap when space is tight
 
 ## [0.48.1-alpha] - 2026-07-28
 

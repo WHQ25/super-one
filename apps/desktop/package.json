@@ -1,6 +1,6 @@
 {
   "name": "@superone/desktop",
-  "version": "0.48.1-alpha",
+  "version": "0.48.2-alpha",
   "main": "./out/main/index.js",
   "type": "module",
   "license": "BUSL-1.1",

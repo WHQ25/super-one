@@ -41,8 +41,8 @@ const SUPERONE_SERVER = 'superone'
 
 function CompactToolRow({ icon, children }: { icon: React.ReactNode; children: React.ReactNode }) {
   return (
-    <div className="tool-node my-0.5 rounded bg-muted/20">
-      <div className="flex items-center gap-1.5 px-2 py-1.5 text-xs">
+    <div className="tool-node my-0.5 min-w-0 rounded bg-muted/20">
+      <div className="flex min-w-0 items-center gap-1.5 px-2 py-1.5 text-xs">
         {icon}
         {children}
       </div>
@@ -1007,10 +1007,18 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, t
     }
     const d = superoneToolDisplay[mcpInfo.mcpToolName]
     if (d) {
-      const summaryValue = d.summaryField ? String(params[d.summaryField] ?? '') : ''
+      const summaryValue = d.summaryField ? String(params[d.summaryField] ?? '').replace(/\s+/g, ' ').trim() : ''
       return (
         <CompactToolRow icon={<ToolIcon icon={d.icon} className="size-3 shrink-0 text-muted-foreground" />}>
-          <span className="font-medium text-foreground">{isStreaming ? <>{d.streaming}…</> : d.done}{summaryValue && <>: <span className="text-muted-foreground">{summaryValue}</span></>}</span>
+          <span className="shrink-0 whitespace-nowrap font-medium text-foreground">
+            {isStreaming ? <>{d.streaming}…</> : d.done}
+            {summaryValue ? ':' : ''}
+          </span>
+          {summaryValue && (
+            <span className="min-w-0 truncate text-muted-foreground" title={summaryValue}>
+              {summaryValue}
+            </span>
+          )}
         </CompactToolRow>
       )
     }

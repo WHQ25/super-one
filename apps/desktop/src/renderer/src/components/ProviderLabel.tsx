@@ -73,11 +73,16 @@ export function ProviderLabel({ brandKey, fallback, size = 44, iconOnly = false,
   }
   if (compactFallback) {
     return (
-      <span className="inline-flex items-center gap-1.5">
-        <Globe className="text-muted-foreground" style={{ width: size, height: size }} />
-        <span className="leading-none" style={{ fontSize: size * 0.75 }}>{fallback}</span>
+      <span className="inline-flex min-w-0 items-center gap-1.5">
+        <Globe className="shrink-0 text-muted-foreground" style={{ width: size, height: size }} />
+        <span className="truncate leading-none" style={{ fontSize: size * 0.75 }}>{fallback}</span>
       </span>
     )
   }
-  return <span className="flex items-center gap-2 text-sm font-medium"><Globe className="size-5 text-muted-foreground" />{fallback}</span>
+  return (
+    <span className="flex min-w-0 items-center gap-2 text-sm font-medium">
+      <Globe className="size-5 shrink-0 text-muted-foreground" />
+      <span className="truncate">{fallback}</span>
+    </span>
+  )
 }

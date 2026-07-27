@@ -17,11 +17,11 @@ import { ProviderLabel } from '@/components/ProviderLabel'
 
 export function ProviderOptionLabel({ brandKey, name, keyName }: { brandKey: string; name?: string; keyName?: string }) {
   return (
-    <span className="flex min-w-0 items-center gap-2 [&_svg]:!size-auto">
-      <span className="flex min-w-0 shrink items-center">
+    <span className="flex min-w-0 items-center gap-2 whitespace-nowrap [&_svg]:!size-auto">
+      <span className="flex min-w-0 shrink items-center overflow-hidden">
         <ProviderLabel brandKey={brandKey} fallback={name} combine size={20} />
       </span>
-      {keyName && <Badge variant="secondary" className="min-w-0 truncate font-normal">{keyName}</Badge>}
+      {keyName && <Badge variant="secondary" className="max-w-24 shrink-0 truncate font-normal">{keyName}</Badge>}
     </span>
   )
 }
@@ -73,14 +73,16 @@ export function DefaultProviderRow({
 
   return (
     <div className="flex items-center justify-between gap-4 border-b border-border p-4 last:border-b-0">
-      <div className="min-w-0">
-        <p className="text-sm font-medium">{title}</p>
-        <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium break-words">{title}</p>
+        <p className="mt-0.5 text-xs text-muted-foreground break-words">{description}</p>
       </div>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <button className="flex max-w-64 items-center gap-2 rounded-md border border-border bg-background px-3 py-1.5 text-sm transition-colors hover:bg-muted">
-            {current ? <ProviderOptionLabel brandKey={brandFor(current)} name={nameFor(current)} keyName={current.name} /> : fallback}
+          <button className="flex min-w-0 max-w-64 shrink-0 items-center gap-2 overflow-hidden rounded-md border border-border bg-background px-3 py-1.5 text-sm transition-colors hover:bg-muted">
+            <span className="min-w-0 flex-1 overflow-hidden">
+              {current ? <ProviderOptionLabel brandKey={brandFor(current)} name={nameFor(current)} keyName={current.name} /> : fallback}
+            </span>
             <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
           </button>
         </DropdownMenuTrigger>

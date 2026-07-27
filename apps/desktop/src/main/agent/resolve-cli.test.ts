@@ -91,14 +91,10 @@ describe('getNodeRuntime', () => {
   it('prefers the Resources node-runtime-stubs clone for the packaged MCP bridge', async () => {
     mocks.electronToolkitIs.dev = false
     const { basename, dirname, join } = await import('node:path')
-    const named = join(
-      dirname(process.execPath),
-      '..',
-      'Resources',
-      'node-runtime-stubs',
-      `${basename(process.execPath)} MCP Bridge`,
-    )
-    mocks.existsSync.mockImplementation((p: string) => p === named)
+    const stubsDir = join(dirname(process.execPath), '..', 'Resources', 'node-runtime-stubs')
+    const named = join(stubsDir, `${basename(process.execPath)} MCP Bridge`)
+    const stamp = join(stubsDir, '.rpath-ok')
+    mocks.existsSync.mockImplementation((p: string) => p === named || p === stamp)
     vi.resetModules()
 
     const { getNodeRuntime } = await import('./resolve-cli')
@@ -112,6 +108,31 @@ describe('getNodeRuntime', () => {
       'mcp-bridge',
       named,
     )
+  })
+
+  it('skips Resources stubs that lack the afterPack rpath stamp (0.48.1 broken clones)', async () => {
+    mocks.electronToolkitIs.dev = false
+    const { basename, dirname, join } = await import('node:path')
+    const stubsDir = join(dirname(process.execPath), '..', 'Resources', 'node-runtime-stubs')
+    const named = join(stubsDir, `${basename(process.execPath)} MCP Bridge`)
+    const helper = join(
+      dirname(dirname(process.execPath)),
+      'Frameworks',
+      `${basename(process.execPath)} Helper.app`,
+      'Contents',
+      'MacOS',
+      `${basename(process.execPath)} Helper`,
+    )
+    // Stub binary present, but no .rpath-ok stamp → treat as unusable.
+    mocks.existsSync.mockImplementation((p: string) => p === named || p === helper)
+    vi.resetModules()
+
+    const { getNodeRuntime } = await import('./resolve-cli')
+
+    expect(getNodeRuntime('mcp-bridge')).toEqual({
+      executable: helper,
+      env: { ELECTRON_RUN_AS_NODE: '1' },
+    })
   })
 
   it('falls back to a legacy MacOS sibling stub when Resources stubs are missing', async () => {
@@ -129,7 +150,34 @@ describe('getNodeRuntime', () => {
     })
   })
 
-  it('falls back to the main Electron executable when the named stub is missing', async () => {
+  it('falls back to the plain Helper when the named stub is missing', async () => {
+    mocks.electronToolkitIs.dev = false
+    const { basename, dirname, join } = await import('node:path')
+    const helper = join(
+      dirname(dirname(process.execPath)),
+      'Frameworks',
+      `${basename(process.execPath)} Helper.app`,
+      'Contents',
+      'MacOS',
+      `${basename(process.execPath)} Helper`,
+    )
+    mocks.existsSync.mockImplementation((p: string) => p === helper)
+    vi.resetModules()
+
+    const { getNodeRuntime } = await import('./resolve-cli')
+
+    expect(getNodeRuntime('mcp-bridge')).toEqual({
+      executable: helper,
+      env: { ELECTRON_RUN_AS_NODE: '1' },
+    })
+    expect(mocks.info).toHaveBeenCalledWith(
+      '[resolve-cli] packaged mode: named node runtime missing/unusable for variant=%s, falling back to executable=%s',
+      'mcp-bridge',
+      helper,
+    )
+  })
+
+  it('falls back to the main Electron executable when named stub and Helper are missing', async () => {
     mocks.electronToolkitIs.dev = false
     mocks.existsSync.mockReturnValue(false)
     vi.resetModules()
@@ -141,7 +189,7 @@ describe('getNodeRuntime', () => {
       env: { ELECTRON_RUN_AS_NODE: '1' },
     })
     expect(mocks.info).toHaveBeenCalledWith(
-      '[resolve-cli] packaged mode: named node runtime missing for variant=%s, falling back to Electron executable=%s',
+      '[resolve-cli] packaged mode: named node runtime missing/unusable for variant=%s, falling back to executable=%s',
       'mcp-bridge',
       process.execPath,
     )
@@ -150,14 +198,10 @@ describe('getNodeRuntime', () => {
   it('prefers the Resources node-runtime-stubs clone for the packaged LLM proxy', async () => {
     mocks.electronToolkitIs.dev = false
     const { basename, dirname, join } = await import('node:path')
-    const named = join(
-      dirname(process.execPath),
-      '..',
-      'Resources',
-      'node-runtime-stubs',
-      `${basename(process.execPath)} LLM Proxy`,
-    )
-    mocks.existsSync.mockImplementation((p: string) => p === named)
+    const stubsDir = join(dirname(process.execPath), '..', 'Resources', 'node-runtime-stubs')
+    const named = join(stubsDir, `${basename(process.execPath)} LLM Proxy`)
+    const stamp = join(stubsDir, '.rpath-ok')
+    mocks.existsSync.mockImplementation((p: string) => p === named || p === stamp)
     vi.resetModules()
 
     const { getNodeRuntime } = await import('./resolve-cli')

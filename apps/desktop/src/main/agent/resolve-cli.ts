@@ -74,6 +74,8 @@ const VARIANT_MAIN_SUFFIX: Record<NamedRuntimeVariant, string> = {
 
 /** Keep in sync with afterPack.cjs NODE_RUNTIME_STUBS_DIR. */
 const NODE_RUNTIME_STUBS_DIR = 'node-runtime-stubs'
+/** Keep in sync with afterPack.cjs NODE_RUNTIME_RPATH_STAMP. */
+const NODE_RUNTIME_RPATH_STAMP = '.rpath-ok'
 
 const cachedRuntimeByVariant = new Map<NodeRuntimeVariant, NodeRuntime>()
 
@@ -90,7 +92,9 @@ function findPlainHelper(): string | undefined {
 /**
  * Main-stub clone written by afterPack.
  * Preferred: `.../Resources/node-runtime-stubs/SuperOne MCP Bridge` (deeper than
- * MacOS so osx-sign signs it before the CFBundleExecutable).
+ * MacOS so osx-sign signs it before the CFBundleExecutable). Requires the
+ * afterPack `.rpath-ok` stamp — 0.48.1 shipped Resources clones still carrying
+ * the MacOS-depth LC_RPATH, which dyld-aborts before the MCP handshake.
  * Legacy: `.../MacOS/SuperOne MCP Bridge` sibling from pre-0.48.1 layouts.
  */
 function findNamedMainStub(variant: NamedRuntimeVariant): string | undefined {
@@ -99,8 +103,11 @@ function findNamedMainStub(variant: NamedRuntimeVariant): string | undefined {
   const fileName = `${appName} ${VARIANT_MAIN_SUFFIX[variant]}`
   const macosDir = dirname(process.execPath)
   const contentsDir = dirname(macosDir)
-  const preferred = join(contentsDir, 'Resources', NODE_RUNTIME_STUBS_DIR, fileName)
-  if (existsSync(preferred)) return preferred
+  const stubsDir = join(contentsDir, 'Resources', NODE_RUNTIME_STUBS_DIR)
+  const preferred = join(stubsDir, fileName)
+  if (existsSync(preferred) && existsSync(join(stubsDir, NODE_RUNTIME_RPATH_STAMP))) {
+    return preferred
+  }
   const legacySibling = join(macosDir, fileName)
   if (existsSync(legacySibling)) return legacySibling
   return undefined
@@ -116,15 +123,18 @@ export function getNodeRuntime(variant: NodeRuntimeVariant = 'default'): NodeRun
 
   if (variant !== 'default') {
     const named = findNamedMainStub(variant)
-    const executable = named ?? process.execPath
+    // Prefer a loadable runtime over a broken named stub: plain Helper is
+    // Dock-safe and works under ELECTRON_RUN_AS_NODE; main exec is last resort.
+    const fallback = findPlainHelper() ?? process.execPath
+    const executable = named ?? fallback
     const runtime = { executable, env: { ELECTRON_RUN_AS_NODE: '1' } }
     if (named) {
       log.info('[resolve-cli] packaged mode: using named node runtime variant=%s executable=%s', variant, named)
     } else {
       log.info(
-        '[resolve-cli] packaged mode: named node runtime missing for variant=%s, falling back to Electron executable=%s',
+        '[resolve-cli] packaged mode: named node runtime missing/unusable for variant=%s, falling back to executable=%s',
         variant,
-        process.execPath,
+        executable,
       )
     }
     cachedRuntimeByVariant.set(variant, runtime)

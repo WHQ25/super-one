@@ -1,6 +1,6 @@
 'use strict'
 
-const { readdirSync, statSync, rmSync, existsSync, cpSync, mkdirSync } = require('node:fs')
+const { readdirSync, statSync, rmSync, existsSync, cpSync, mkdirSync, writeFileSync } = require('node:fs')
 const { join } = require('node:path')
 const { execFileSync } = require('node:child_process')
 
@@ -26,12 +26,34 @@ const PLATFORM_MAP = { darwin: 'darwin', mac: 'darwin', win32: 'win32', windows:
 // be signed — so sibling stubs fail codesign with
 // "code object is not signed at all / In subcomponent: … MCP Bridge". A deeper
 // Resources path is signed first, then SuperOne succeeds.
+//
+// The main executable's LC_RPATH is `@executable_path/../Frameworks` (MacOS →
+// Contents/Frameworks). From Resources/node-runtime-stubs that resolves to the
+// non-existent Resources/Frameworks and dyld aborts at launch with
+// "Library not loaded: Electron Framework" — which surfaces as Grok/Codex MCP
+// handshake Broken pipe. Rewrite LC_RPATH to `@executable_path/../../Frameworks`
+// after cloning, then ad-hoc re-sign; osx-sign later applies the real identity.
 // Keep these suffixes in sync with resolve-cli.ts's VARIANT_MAIN_SUFFIX.
 const NODE_RUNTIME_VARIANTS = [
   { suffix: 'MCP Bridge' },
   { suffix: 'LLM Proxy' },
 ]
 const NODE_RUNTIME_STUBS_DIR = 'node-runtime-stubs'
+// Written next to the stubs so resolve-cli can refuse 0.48.1-era clones that
+// still carry the MacOS-depth rpath (no stamp → fall back to Helper/main).
+const NODE_RUNTIME_RPATH_STAMP = '.rpath-ok'
+const MAIN_RPATH = '@executable_path/../Frameworks'
+const STUB_RPATH = '@executable_path/../../Frameworks'
+
+function rewriteStubRpath(dest) {
+  execFileSync('install_name_tool', ['-rpath', MAIN_RPATH, STUB_RPATH, dest], { stdio: 'pipe' })
+}
+
+function adHocSign(dest) {
+  execFileSync('codesign', ['--force', '--sign', '-', '--timestamp=none', '--options', 'runtime', dest], {
+    stdio: 'pipe',
+  })
+}
 
 function cloneNamedNodeRuntimes(appOutDir, productFilename) {
   const contentsDir = join(appOutDir, `${productFilename}.app`, 'Contents')
@@ -50,17 +72,24 @@ function cloneNamedNodeRuntimes(appOutDir, productFilename) {
     const dest = join(stubsDir, variantName)
     rmSync(dest, { force: true })
     cpSync(mainExec, dest)
+    try {
+      rewriteStubRpath(dest)
+    } catch (err) {
+      console.warn(`[afterPack] install_name_tool rpath rewrite failed for ${variantName}:`, err.message)
+    }
     // Ad-hoc sign so SuperOne can still codesign if discovery order ever
     // interleaves; osx-sign later re-signs with the real Developer ID identity.
     try {
-      execFileSync('codesign', ['--force', '--sign', '-', '--timestamp=none', '--options', 'runtime', dest], {
-        stdio: 'pipe',
-      })
+      adHocSign(dest)
     } catch (err) {
       console.warn(`[afterPack] ad-hoc codesign failed for ${variantName}:`, err.message)
     }
     console.log(`[afterPack] cloned named node runtime: Resources/${NODE_RUNTIME_STUBS_DIR}/${variantName}`)
   }
+
+  // Stamp that rpath was rewritten for Resources depth. resolve-cli skips
+  // Resources stubs without this file (0.48.1 shipped broken clones).
+  writeFileSync(join(stubsDir, NODE_RUNTIME_RPATH_STAMP), '2\n', 'utf8')
 
   // Drop legacy MacOS-sibling stubs and Helper.app clones from older builds that
   // may still be present when iterating packaging scripts against a non-clean

@@ -4,11 +4,17 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+### Fixed
+
+- Rewrite LC_RPATH on Resources/node-runtime-stubs clones to `@executable_path/../../Frameworks` so packaged SuperOne MCP Bridge / LLM Proxy can load Electron Framework (0.48.1 stubs kept the MacOS-depth rpath and dyld-aborted → Grok/Codex MCP handshake Broken pipe); refuse unstamped Resources stubs and fall back to Helper/main
+
 ## [0.48.1-alpha] - 2026-07-28
 
 ### Fixed
 
-- Restore the packaged ACP SuperOne MCP handshake by cloning the main MacOS stub into Resources/node-runtime-stubs (Helper.app clones with custom basenames SIGTRAP under ELECTRON_RUN_AS_NODE; MacOS siblings break codesign order), while keeping MCP Bridge / LLM Proxy process titles
+- Place named node-runtime stubs under Resources/node-runtime-stubs for codesign order (Helper.app clones with custom basenames SIGTRAP under ELECTRON_RUN_AS_NODE; MacOS siblings break codesign). Note: 0.48.1 still left LC_RPATH at MacOS depth — fixed in Unreleased
 - Preview large image outputs for gallery and agent Read via downscaled JPEG sidecars (4K originals no longer break thumbs or Read limits); open full-res through the media server
 
 ## [0.48.0-alpha] - 2026-07-28

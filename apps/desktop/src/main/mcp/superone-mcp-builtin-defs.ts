@@ -229,11 +229,13 @@ export const VIDEO_STATUS_DESCRIPTION =
 
 export const SESSION_LIST_AGENTS_DESCRIPTION =
   'List the built-in agent profiles (harness + config) available for user-approved child sessions. ' +
+  'Each profile includes defaultConfig with the model/effort inherited when a request omits them. ' +
   'Call this before session_collab_request. The same profile may be requested more than once.'
 
 export const SESSION_REQUEST_AGENTS_DESCRIPTION =
   'Request user approval for one or more child-agent launches. Each launches[] item is independent, so repeat an agentId to request multiple sessions. ' +
   'Required-ish fields: name (human label YOU invent for this child, e.g. "Alice" or "DiffBot" — not the harness name) and role (e.g. "Reviewer"). ' +
+  'config is optional; omitted model/effort fields inherit the selected profile defaultConfig, while explicit values override it. ' +
   'Session title becomes "Name - Role". The user reviews and may edit model/effort/AI provider/permission/sandbox (task, name, role, agent profile, cwd, worktree stay as requested). ' +
   'On approval each launch returns a bearer credential. Each credential can create exactly one session and must be kept private.'
 

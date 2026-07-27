@@ -14,10 +14,21 @@ const state = vi.hoisted(() => ({
       models: [{ id: 'test-model', name: 'Test Model', supportedEffortLevels: ['low', 'high'] }],
     },
   } as Record<string, unknown>,
+  providers: [{
+    id: 'claude-base', harnessId: 'claude', name: 'Claude', isBase: true, config: {}, createdAt: 0, updatedAt: 0,
+  }],
+  agentPreference: {
+    claude: { defaultModel: 'test-model', defaultEffort: 'high' },
+    codex: { defaultModel: '', defaultReasoningEffort: '' },
+    acp: { selectedAgentId: null as string | null },
+  },
 }))
 
 vi.mock('../app-settings-service', () => ({
-  readAppSettings: () => ({ experimentalAgentCollaborationEnabled: state.enabled }),
+  readAppSettings: () => ({
+    experimentalAgentCollaborationEnabled: state.enabled,
+    agentPreference: state.agentPreference,
+  }),
 }))
 vi.mock('../logger', () => ({ default: { warn: vi.fn(), debug: vi.fn(), info: vi.fn() } }))
 vi.mock('../database', () => ({
@@ -35,9 +46,7 @@ vi.mock('../providers/resolver', () => ({
   resolveChatService: (_harness: string, credentialId: string) => ({ credentialId }),
 }))
 vi.mock('./session-provider-repo', () => ({
-  listSessionProviders: () => [{
-    id: 'claude-base', harnessId: 'claude', name: 'Claude', isBase: true, config: {}, createdAt: 0, updatedAt: 0,
-  }],
+  listSessionProviders: () => state.providers,
 }))
 vi.mock('../git/worktree-ops', () => ({
   activateWorktree: state.activateWorktree,
@@ -195,8 +204,19 @@ beforeEach(() => {
   state.activateWorktree.mockReset()
   state.resourceCache = {
     claude: {
-      models: [{ id: 'test-model', name: 'Test Model', supportedEffortLevels: ['low', 'high'] }],
+      models: [
+        { id: 'test-model', name: 'Test Model', supportedEffortLevels: ['low', 'high'] },
+        { id: 'alternate-model', name: 'Alternate Model', supportedEffortLevels: ['low', 'high'] },
+      ],
     },
+  }
+  state.providers = [{
+    id: 'claude-base', harnessId: 'claude', name: 'Claude', isBase: true, config: {}, createdAt: 0, updatedAt: 0,
+  }]
+  state.agentPreference = {
+    claude: { defaultModel: 'test-model', defaultEffort: 'high' },
+    codex: { defaultModel: '', defaultReasoningEffort: '' },
+    acp: { selectedAgentId: null },
   }
 })
 
@@ -208,6 +228,93 @@ describe('session collaboration', () => {
     state.db!.prepare('UPDATE sessions SET provider_id = ?').run('claude-base')
     state.resourceCache = {}
     expect(listSessionAgentProfiles()).toEqual([])
+  })
+
+  it('exposes the selected Grok model and effort as profile defaults', () => {
+    state.db!.prepare('UPDATE sessions SET provider_id = ?').run('acp-base')
+    state.providers = [{
+      id: 'acp-base', harnessId: 'acp', name: 'Others (ACP)', isBase: true,
+      config: { agentId: 'grok-build' }, createdAt: 0, updatedAt: 0,
+    }]
+    state.resourceCache = {
+      acp: {
+        selectedAgentId: 'grok-build',
+        agents: [{ id: 'grok-build', name: 'Grok', installed: true, commandPreview: 'grok' }],
+        configByAgentId: {
+          'grok-build': {
+            configOptions: [],
+            extraModels: [{ id: 'grok-4.5', name: 'Grok 4.5', description: '' }],
+            selectedModelId: 'grok-4.5',
+            modelConfigId: null,
+            extraModes: [
+              { id: 'low', name: 'Low', description: '' },
+              { id: 'high', name: 'High', description: '' },
+            ],
+            selectedModeId: 'high',
+            modeConfigId: null,
+            updatedAt: new Date().toISOString(),
+          },
+        },
+      },
+    }
+
+    expect(listSessionAgentProfiles()).toEqual([
+      expect.objectContaining({
+        id: 'acp-base',
+        acpAgentId: 'grok-build',
+        defaultConfig: { model: 'grok-4.5', effort: 'high' },
+      }),
+    ])
+  })
+
+  it('inherits profile defaults through approval and applies them to the initial task', async () => {
+    const parent = fakeSession('parent')
+    const { host, createSession } = fakeHost(parent)
+    const promise = requestSessionAgents(parent.id, {
+      launches: [{ launchId: 'defaulted', agentId: 'claude-base', task: 'Use profile defaults' }],
+    }, host)
+    const event = (parent.emitHostEvent as ReturnType<typeof vi.fn>).mock.calls[0][0] as AgentEvent
+    if (event.type !== 'permission_request') throw new Error('Expected permission request')
+    const launches = event.request.sessionAgentsConfirm!.launches
+    expect(launches[0].config).toMatchObject({ model: 'test-model', effort: 'high' })
+    resolveSessionAgentsConfirm(event.request.requestId, 'accept', {
+      [SESSION_AGENT_LAUNCHES_FIELD]: JSON.stringify(launches),
+    })
+
+    const grants = resultJson(await promise).launches as Array<{ credential: string }>
+    await startSessionAgent('parent', grants[0].credential, host)
+
+    expect(createSession).toHaveBeenCalledWith(expect.objectContaining({
+      model: 'test-model',
+      effort: 'high',
+    }))
+    const child = createSession.mock.results[0]?.value as Session
+    expect(child.send).toHaveBeenCalledWith(expect.objectContaining({
+      content: 'Use profile defaults',
+      model: 'test-model',
+      effort: 'high',
+    }))
+  })
+
+  it('keeps an explicit agent model and effort ahead of profile defaults', async () => {
+    const parent = fakeSession('parent')
+    const { host } = fakeHost(parent)
+    const promise = requestSessionAgents(parent.id, {
+      launches: [{
+        launchId: 'explicit',
+        agentId: 'claude-base',
+        task: 'Use explicit settings',
+        config: { model: 'alternate-model', effort: 'low' },
+      }],
+    }, host)
+    const event = (parent.emitHostEvent as ReturnType<typeof vi.fn>).mock.calls[0][0] as AgentEvent
+    if (event.type !== 'permission_request') throw new Error('Expected permission request')
+    const launches = event.request.sessionAgentsConfirm!.launches
+    expect(launches[0].config).toMatchObject({ model: 'alternate-model', effort: 'low' })
+    resolveSessionAgentsConfirm(event.request.requestId, 'accept', {
+      [SESSION_AGENT_LAUNCHES_FIELD]: JSON.stringify(launches),
+    })
+    await promise
   })
 
   it('issues independent credentials for repeated profiles and starts each credential once', async () => {

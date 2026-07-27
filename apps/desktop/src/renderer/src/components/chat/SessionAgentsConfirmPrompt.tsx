@@ -220,11 +220,18 @@ export function SessionAgentsConfirmPrompt({ payload, onConfirm, onReject }: Pro
   const activeLaunch = launches[activeIndex]
 
   const resolved = useMemo(
-    () => launches.map((launch) => ({
-      ...launch,
-      config: { ...launch.config, ...overrides[launch.launchId] },
-    })),
-    [launches, overrides],
+    () => launches.map((launch) => {
+      const profile = profiles.find((item) => item.id === launch.agentId)
+      return {
+        ...launch,
+        config: {
+          ...profile?.defaultConfig,
+          ...launch.config,
+          ...overrides[launch.launchId],
+        },
+      }
+    }),
+    [launches, overrides, profiles],
   )
 
   const handleConfirm = useCallback(() => onConfirm(resolved), [onConfirm, resolved])

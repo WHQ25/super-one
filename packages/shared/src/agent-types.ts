@@ -571,6 +571,8 @@ export interface SessionAgentProfile {
   /** Stable UI brand identity, e.g. `claude` / `codex` / `acp-grok` / `acp`. */
   brandKey?: string
   description?: string
+  /** Effective defaults inherited when a launch omits the corresponding fields. */
+  defaultConfig: SessionAgentLaunchConfig
   models: Array<{ id: string; name: string; description?: string }>
   efforts: string[]
   apiProviders: Array<{ id: string; name: string }>

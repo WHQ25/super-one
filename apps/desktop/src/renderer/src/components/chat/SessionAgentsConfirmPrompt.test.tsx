@@ -12,6 +12,7 @@ function payload(): SessionAgentRequestPayload {
         id: 'claude-base',
         name: 'Claude',
         harnessId: 'claude',
+        defaultConfig: { model: 'claude-sonnet', effort: 'high' },
         models: [{ id: 'claude-sonnet', name: 'Claude Sonnet' }],
         efforts: ['low', 'high'],
         apiProviders: [{ id: 'anthropic', name: 'Anthropic' }],
@@ -20,6 +21,7 @@ function payload(): SessionAgentRequestPayload {
         id: 'codex-base',
         name: 'Codex',
         harnessId: 'codex',
+        defaultConfig: { model: 'gpt-5.4', effort: 'medium' },
         models: [{ id: 'gpt-5.4', name: 'GPT-5.4' }],
         efforts: ['medium', 'high'],
         apiProviders: [],
@@ -84,6 +86,22 @@ describe('session agents confirm prompt', () => {
     // Model/effort/provider and permission mode remain user-tunable.
     expect(screen.getByRole('button', { name: /Claude Sonnet/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Normal' })).toBeInTheDocument()
+  })
+
+  it('shows and confirms profile defaults when the requesting agent omits model and effort', () => {
+    const value = payload()
+    delete value.launches[0].config.model
+    delete value.launches[0].config.effort
+    const onConfirm = vi.fn()
+
+    render(<SessionAgentsConfirmPrompt payload={value} onConfirm={onConfirm} onReject={vi.fn()} />)
+
+    expect(screen.getByRole('button', { name: /Claude Sonnet.*high/ })).toBeInTheDocument()
+    fireEvent.keyDown(window, { key: 'Enter' })
+    expect(onConfirm.mock.calls[0][0][0].config).toMatchObject({
+      model: 'claude-sonnet',
+      effort: 'high',
+    })
   })
 
   it('offers the sandbox switch only to harnesses that honour one', () => {

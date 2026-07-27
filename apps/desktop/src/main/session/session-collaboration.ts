@@ -115,31 +115,73 @@ function profileResources(
 ): {
   models: ModelOption[]
   efforts: string[]
+  defaultConfig: SessionAgentLaunchConfig
 } {
   let models: ModelOption[]
   const efforts = new Set<string>()
+  let defaultModel: ModelOption | undefined
+  let defaultEffort: string | undefined
   if (provider.harnessId === 'acp') {
     const cached = getCachedHarnessResources('acp')
-    if (!cached) return { models: [], efforts: [] }
+    if (!cached) return { models: [], efforts: [], defaultConfig: {} }
     const agentId = acpAgentId ?? resolveAcpAgentId(provider) ?? cached.selectedAgentId
     const catalog = agentId ? cached.configByAgentId?.[agentId] : undefined
     const sessionCatalog = catalog ? deriveSessionCatalog(catalog) : null
     models = sessionCatalog?.models ?? []
     for (const mode of sessionCatalog?.modes ?? []) efforts.add(mode.id)
+    defaultModel = models.find((model) => model.id === sessionCatalog?.selectedModelId)
+      ?? models.find((model) => model.isDefault)
+      ?? models[0]
+    defaultEffort = sessionCatalog?.selectedModeId
+      ?? sessionCatalog?.modes.find((mode) => mode.isDefault)?.id
+      ?? sessionCatalog?.modes[0]?.id
   } else {
     const cached = provider.harnessId === 'claude'
       ? getCachedHarnessResources('claude')
       : provider.harnessId === 'codex'
         ? getCachedHarnessResources('codex')
         : getCachedHarnessResources('opencode')
-    if (!cached) return { models: [], efforts: [] }
+    if (!cached) return { models: [], efforts: [], defaultConfig: {} }
     models = cached.models
+    const preferences = readAppSettings().agentPreference
+    if (provider.harnessId === 'claude') {
+      defaultModel = models.find((model) => model.id === preferences.claude.defaultModel) ?? models[0]
+      const supported = defaultModel?.supportedEffortLevels ?? []
+      defaultEffort = supported.includes(preferences.claude.defaultEffort as EffortLevel)
+        ? preferences.claude.defaultEffort
+        : supported.includes('high')
+          ? 'high'
+          : supported.includes('medium')
+            ? 'medium'
+            : supported[0]
+    } else if (provider.harnessId === 'codex') {
+      defaultModel = models.find((model) => model.id === preferences.codex.defaultModel)
+        ?? models.find((model) => model.isDefault)
+        ?? models[0]
+      const supported = defaultModel?.supportedReasoningEfforts?.map((effort) => effort.value) ?? []
+      defaultEffort = supported.includes(preferences.codex.defaultReasoningEffort as typeof supported[number])
+        ? preferences.codex.defaultReasoningEffort
+        : defaultModel?.defaultReasoningEffort && supported.includes(defaultModel.defaultReasoningEffort)
+          ? defaultModel.defaultReasoningEffort
+          : supported[supported.length - 1]
+    } else {
+      defaultModel = models.find((model) => model.isDefault) ?? models[0]
+      const supported = defaultModel?.supportedEffortLevels ?? []
+      defaultEffort = supported.includes('medium') ? 'medium' : supported[0]
+    }
   }
   for (const model of models) {
     for (const effort of model.supportedEffortLevels ?? []) efforts.add(effort)
     for (const effort of model.supportedReasoningEfforts ?? []) efforts.add(effort.value)
   }
-  return { models, efforts: [...efforts] }
+  return {
+    models,
+    efforts: [...efforts],
+    defaultConfig: {
+      ...(defaultModel ? { model: defaultModel.id } : {}),
+      ...(defaultEffort ? { effort: defaultEffort } : {}),
+    },
+  }
 }
 
 function hasUsedProfile(
@@ -248,6 +290,7 @@ export function listSessionAgentProfiles(): SessionAgentProfile[] {
         description: provider.harnessId === 'acp'
           ? `ACP agent ${acpAgentId ?? 'unknown'} (${brandKey})`
           : `${provider.harnessId} harness with the built-in configuration`,
+        defaultConfig: resources.defaultConfig,
         models,
         efforts: resources.efforts,
         apiProviders: provider.harnessId === 'claude' || provider.harnessId === 'codex'
@@ -266,7 +309,8 @@ function normalizeLaunches(args: RequestSessionAgentsArgs, parent: Session): Ses
   if (args.launches.length > 16) throw new Error('A single request may contain at most 16 launches')
   const profiles = new Map(listSessionAgentProfiles().map((profile) => [profile.id, profile]))
   return args.launches.map((launch) => {
-    if (!profiles.has(launch.agentId)) throw new Error(`Unknown agent profile: ${launch.agentId}`)
+    const profile = profiles.get(launch.agentId)
+    if (!profile) throw new Error(`Unknown agent profile: ${launch.agentId}`)
     const task = launch.task?.trim()
     if (!task) throw new Error('Every launch must include a non-empty task')
     if (task.length > 100_000) throw new Error('A launch task may contain at most 100,000 characters')
@@ -287,6 +331,7 @@ function normalizeLaunches(args: RequestSessionAgentsArgs, parent: Session): Ses
       name,
       role,
       config: {
+        ...profile.defaultConfig,
         permissionMode: 'default',
         sandboxMode: 'off',
         cwd: parent.cwd,
@@ -553,6 +598,7 @@ function resolveCwd(config: SessionAgentLaunchConfig, parent: Session): string {
  */
 async function deliverInitialTask(grant: GrantRow, child: Session): Promise<void> {
   if (grant.task_sent === 1) return
+  const config = parseConfig(grant.config_json)
 
   // Use a box so TS control-flow does not treat the cleanup as always-null
   // (assignment happens inside the Promise executor, which CFA does not track).
@@ -576,6 +622,8 @@ async function deliverInitialTask(grant: GrantRow, child: Session): Promise<void
 
   const sendPromise = child.send({
     content: grant.task,
+    model: config.model,
+    effort: config.effort as EffortLevel | undefined,
     clientMessageId: `collaboration-task-${grant.credential_hash.slice(0, 16)}`,
     source: 'collaboration',
     collaboration: {

@@ -581,15 +581,15 @@ export function ChatStatusBar() {
       </div>
 
       <Dialog open={!!failedCheckout} onOpenChange={(open) => { if (!open) setFailedCheckout(null) }}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
+        <DialogContent className="sm:max-w-md overflow-hidden">
+          <DialogHeader className="min-w-0">
             <DialogTitle>Checkout Failed</DialogTitle>
             <DialogDescription asChild>
-              <div className="space-y-3 pt-1">
+              <div className="min-w-0 space-y-3 pt-1">
                 <p>
                   Failed to switch to <strong>{failedCheckout?.branch}</strong>.
                 </p>
-                <pre className="max-w-full overflow-x-auto whitespace-pre rounded-md bg-muted p-3 text-xs text-muted-foreground">
+                <pre className="min-w-0 max-w-full whitespace-pre-wrap break-all rounded-md bg-muted p-3 text-xs text-muted-foreground">
                   {failedCheckout?.error}
                 </pre>
                 {dirty && (

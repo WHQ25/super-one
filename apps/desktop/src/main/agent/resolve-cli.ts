@@ -55,62 +55,47 @@ export interface NodeRuntime {
   env?: Record<string, string>
 }
 
-// Named sidecars (mcp-bridge, llm-proxy) resolve to a main-executable clone
-// written by build/afterPack.cjs under Contents/Resources/node-runtime-stubs/
-// (preferred) or a legacy Contents/MacOS sibling. Keep VARIANT_MAIN_SUFFIX in
-// sync with NODE_RUNTIME_VARIANTS there. That gives a distinct Activity Monitor
-// name without using Helper.app clones, which Electron rejects under
-// ELECTRON_RUN_AS_NODE when the basename is not a known helper suffix.
+// Packaged sidecars use dedicated Helper.app clones for semantic Activity
+// Monitor names. Their executable basenames must end in " Helper" so Electron
+// resolves MainApplicationBundlePath and ICU as a helper under RUN_AS_NODE.
+// Fall back to the stock Helper (then main) when a named clone is unavailable.
 // Dev mode falls back to the caller's default runtime (see is.dev below).
 export type NodeRuntimeVariant = 'default' | 'mcp-bridge' | 'llm-proxy'
 
 type NamedRuntimeVariant = Exclude<NodeRuntimeVariant, 'default'>
 
-/** Keep in sync with afterPack.cjs NODE_RUNTIME_VARIANTS suffixes. */
-const VARIANT_MAIN_SUFFIX: Record<NamedRuntimeVariant, string> = {
-  'mcp-bridge': 'MCP Bridge',
-  'llm-proxy': 'LLM Proxy',
+/** Keep in sync with afterPack.cjs HELPER_VARIANTS nameSuffix values. */
+const VARIANT_HELPER_SUFFIX: Record<NamedRuntimeVariant, string> = {
+  'mcp-bridge': 'MCP Helper',
+  'llm-proxy': 'LLM Proxy Helper',
 }
-
-/** Keep in sync with afterPack.cjs NODE_RUNTIME_STUBS_DIR. */
-const NODE_RUNTIME_STUBS_DIR = 'node-runtime-stubs'
-/** Keep in sync with afterPack.cjs NODE_RUNTIME_RPATH_STAMP. */
-const NODE_RUNTIME_RPATH_STAMP = '.rpath-ok'
 
 const cachedRuntimeByVariant = new Map<NodeRuntimeVariant, NodeRuntime>()
 
-function findPlainHelper(): string | undefined {
+function findHelper(variant: NodeRuntimeVariant): string | undefined {
   if (process.platform !== 'darwin') return undefined
   const appName = basename(process.execPath)
-  const helperName = `${appName} Helper`
+  const helperName = variant === 'default'
+    ? `${appName} Helper`
+    : `${appName} ${VARIANT_HELPER_SUFFIX[variant]}`
   const contentsDir = dirname(dirname(process.execPath))
   const helperPath = join(contentsDir, 'Frameworks', `${helperName}.app`, 'Contents', 'MacOS', helperName)
   if (existsSync(helperPath)) return helperPath
   return undefined
 }
 
-/**
- * Main-stub clone written by afterPack.
- * Preferred: `.../Resources/node-runtime-stubs/SuperOne MCP Bridge` (deeper than
- * MacOS so osx-sign signs it before the CFBundleExecutable). Requires the
- * afterPack `.rpath-ok` stamp — 0.48.1 shipped Resources clones still carrying
- * the MacOS-depth LC_RPATH, which dyld-aborts before the MCP handshake.
- * Legacy: `.../MacOS/SuperOne MCP Bridge` sibling from pre-0.48.1 layouts.
- */
-function findNamedMainStub(variant: NamedRuntimeVariant): string | undefined {
-  if (process.platform !== 'darwin') return undefined
-  const appName = basename(process.execPath)
-  const fileName = `${appName} ${VARIANT_MAIN_SUFFIX[variant]}`
-  const macosDir = dirname(process.execPath)
-  const contentsDir = dirname(macosDir)
-  const stubsDir = join(contentsDir, 'Resources', NODE_RUNTIME_STUBS_DIR)
-  const preferred = join(stubsDir, fileName)
-  if (existsSync(preferred) && existsSync(join(stubsDir, NODE_RUNTIME_RPATH_STAMP))) {
-    return preferred
+function packagedNodeRuntime(variant: NodeRuntimeVariant): NodeRuntime {
+  const namedHelper = variant === 'default' ? undefined : findHelper(variant)
+  const helper = namedHelper ?? findHelper('default')
+  const executable = helper ?? process.execPath
+  if (namedHelper) {
+    log.info('[resolve-cli] packaged mode: using named Electron Helper variant=%s executable=%s', variant, namedHelper)
+  } else if (helper) {
+    log.info('[resolve-cli] packaged mode: using Electron Helper variant=%s executable=%s', variant, helper)
+  } else {
+    log.info('[resolve-cli] packaged mode: using Electron as Node runtime variant=%s executable=%s', variant, process.execPath)
   }
-  const legacySibling = join(macosDir, fileName)
-  if (existsSync(legacySibling)) return legacySibling
-  return undefined
+  return { executable, env: { ELECTRON_RUN_AS_NODE: '1' } }
 }
 
 export function getNodeRuntime(variant: NodeRuntimeVariant = 'default'): NodeRuntime {
@@ -121,37 +106,7 @@ export function getNodeRuntime(variant: NodeRuntimeVariant = 'default'): NodeRun
     return {}
   }
 
-  if (variant !== 'default') {
-    const named = findNamedMainStub(variant)
-    // Prefer a loadable runtime over a broken named stub: plain Helper is
-    // Dock-safe and works under ELECTRON_RUN_AS_NODE; main exec is last resort.
-    const fallback = findPlainHelper() ?? process.execPath
-    const executable = named ?? fallback
-    const runtime = { executable, env: { ELECTRON_RUN_AS_NODE: '1' } }
-    if (named) {
-      log.info('[resolve-cli] packaged mode: using named node runtime variant=%s executable=%s', variant, named)
-    } else {
-      log.info(
-        '[resolve-cli] packaged mode: named node runtime missing/unusable for variant=%s, falling back to executable=%s',
-        variant,
-        executable,
-      )
-    }
-    cachedRuntimeByVariant.set(variant, runtime)
-    return runtime
-  }
-
-  // Unnamed default: prefer plain Helper (Dock-safe process name "SuperOne Helper")
-  // when available; otherwise the main executable.
-  const helper = findPlainHelper()
-  const runtime: NodeRuntime = helper
-    ? { executable: helper, env: { ELECTRON_RUN_AS_NODE: '1' } }
-    : { executable: process.execPath, env: { ELECTRON_RUN_AS_NODE: '1' } }
-  if (helper) {
-    log.info('[resolve-cli] packaged mode: using Electron Helper executable=%s', helper)
-  } else {
-    log.info('[resolve-cli] packaged mode: using Electron as Node runtime executable=%s', process.execPath)
-  }
+  const runtime = packagedNodeRuntime(variant)
   cachedRuntimeByVariant.set(variant, runtime)
   return runtime
 }

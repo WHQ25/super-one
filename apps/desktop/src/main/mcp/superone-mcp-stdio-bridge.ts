@@ -169,13 +169,9 @@ async function main(): Promise<void> {
   // https://github.com/anthropics/claude-code/issues/1912
   // https://forum.cursor.com/t/floating-node-exec-icon-shows-in-dock-when-running-cursor-on-macos-15-beta/102931
   //
-  // In packaged mode, superone-mcp-stdio-state.ts hands backends a main-stub
-  // clone named "SuperOne MCP Bridge" under Resources/node-runtime-stubs
-  // (cloned by afterPack) with ELECTRON_RUN_AS_NODE. A Helper.app clone cannot
-  // be used: Electron only treats basenames ending in " Helper" /
-  // " Helper (GPU|Plugin|Renderer)" as helpers when resolving
-  // MainApplicationBundlePath, so a custom-named helper aborts under RUN_AS_NODE
-  // with SIGTRAP before this script starts.
+  // In packaged mode, resolve-cli spawns "SuperOne MCP Helper" with
+  // ELECTRON_RUN_AS_NODE. Its executable basename intentionally retains the
+  // required " Helper" suffix so Electron resolves ICU through the helper path.
   const ipc = new SuperoneIpcClient(
     requiredEnv(SUPERONE_MCP_IPC_ENDPOINT_ENV),
     requiredEnv(SUPERONE_MCP_IPC_TOKEN_ENV),

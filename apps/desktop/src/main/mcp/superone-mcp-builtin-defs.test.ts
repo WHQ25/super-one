@@ -42,7 +42,7 @@ describe('built-in superone tool registration surfaces', () => {
   })
 
   it('keeps widget tools on their own descriptor path rather than silently dropping them', () => {
-    expect(widgetTools.length).toBeGreaterThan(0)
+    expect(widgetTools).toEqual(['widget_list_templates', 'widget_show'])
     expect(widgetTools.every((name) => !describedNames.has(name))).toBe(true)
   })
 
@@ -50,6 +50,15 @@ describe('built-in superone tool registration surfaces', () => {
     for (const def of BUILT_IN_SUPERONE_TOOL_DEFS) {
       expect(def.description, `${def.name} description`).toBeTruthy()
       expect(def.inputSchema.type, `${def.name} schema type`).toBe('object')
+    }
+  })
+
+  it('keeps always-visible built-in descriptions concise', () => {
+    for (const def of BUILT_IN_SUPERONE_TOOL_DEFS) {
+      expect(def.description.length, `${def.name} description length`).toBeLessThanOrEqual(700)
+      expect(def.description, `${def.name} stale tool name`).not.toMatch(
+        /miniapp_dev_read_guide|media_read_guide|widget_read_guide|config_read_guide/,
+      )
     }
   })
 
@@ -63,5 +72,23 @@ describe('built-in superone tool registration surfaces', () => {
     expect(status.inputSchema.required).toEqual(['generation_id'])
     // The submit tool returns an id, not a file, so its description must send the model to poll.
     expect(submit.description).toMatch(/media_video_status/)
+  })
+
+  it('marks read_manual as alwaysLoad so Claude Tool Search does not hide it', () => {
+    const def = BUILT_IN_SUPERONE_TOOL_DEFS.find((d) => d.name === 'read_manual')
+    expect(def?._meta?.['anthropic/alwaysLoad']).toBe(true)
+  })
+
+  it('keeps read_manual module validation identical on the stdio descriptor', () => {
+    const def = BUILT_IN_SUPERONE_TOOL_DEFS.find((d) => d.name === 'read_manual')!
+    const modules = (def.inputSchema.properties as Record<string, Record<string, unknown>>).modules
+    expect(modules).toMatchObject({ minItems: 1, uniqueItems: true })
+    expect(modules.items).toMatchObject({ enum: ['diagram', 'mockup', 'interactive', 'chart', 'art'] })
+  })
+
+  it('restricts media provider category to supported values', () => {
+    const def = BUILT_IN_SUPERONE_TOOL_DEFS.find((d) => d.name === 'media_list_providers')!
+    const category = (def.inputSchema.properties as Record<string, Record<string, unknown>>).category
+    expect(category.enum).toEqual(['image', 'video'])
   })
 })

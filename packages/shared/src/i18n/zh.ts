@@ -112,7 +112,7 @@ export const zh: Messages = {
     appDrawer: {
       buildYourOwn: '专属定制',
       marketplace: '小程序市场',
-      buildAppPrompt: '帮我构建一个 SuperOne 小程序。请先调用 `miniapp_dev_read_guide` 工具(通过 `superone` MCP 服务器)读取开发指南,然后一步步引导我完成整个流程。',
+      buildAppPrompt: '帮我构建一个 SuperOne 小程序。请先调用 `read_manual({ domain: "miniapp", topic: "overview" })`（通过 `superone` MCP 服务器）读取开发指南，然后一步步引导我完成整个流程。',
     },
   },
   shell: {
@@ -838,8 +838,10 @@ export const zh: Messages = {
       readMiniAppGuide: '已读取小程序指南',
       readingMediaGuide: '正在读取媒体指南',
       readMediaGuide: '已读取媒体指南',
-      readingConfigGuide: '正在读取设置指南',
-      readConfigGuide: '已读取设置指南',
+      readingConfig: '正在读取设置',
+      readConfig: '已读取设置',
+      readingManual: '正在读取手册',
+      readManual: '已读取手册',
       guideOverview: '概览',
       applyingSettings: '正在更新设置',
       appliedSettings: '已更新设置',

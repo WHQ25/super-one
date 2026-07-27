@@ -802,8 +802,10 @@ export type Messages = {
       readMiniAppGuide: string
       readingMediaGuide: string
       readMediaGuide: string
-      readingConfigGuide: string
-      readConfigGuide: string
+      readingConfig: string
+      readConfig: string
+      readingManual: string
+      readManual: string
       guideOverview: string
       applyingSettings: string
       appliedSettings: string
@@ -1991,7 +1993,7 @@ export const en: Messages = {
     appDrawer: {
       buildYourOwn: 'Build Your Own',
       marketplace: 'Marketplace',
-      buildAppPrompt: 'Help me build a mini app for SuperOne. First call the `miniapp_dev_read_guide` tool (via the `superone` MCP server) to load the development guide, then guide me through the process step by step.',
+      buildAppPrompt: 'Help me build a mini app for SuperOne. First call `read_manual({ domain: "miniapp", topic: "overview" })` (via the `superone` MCP server) to load the development guide, then guide me through the process step by step.',
     },
   },
   shell: {
@@ -2717,8 +2719,10 @@ export const en: Messages = {
       readMiniAppGuide: 'Read mini-app guide',
       readingMediaGuide: 'Reading media guide',
       readMediaGuide: 'Read media guide',
-      readingConfigGuide: 'Reading settings guide',
-      readConfigGuide: 'Read settings guide',
+      readingConfig: 'Reading settings',
+      readConfig: 'Read settings',
+      readingManual: 'Reading manual',
+      readManual: 'Read manual',
       guideOverview: 'Overview',
       applyingSettings: 'Updating settings',
       appliedSettings: 'Updated settings',

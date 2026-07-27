@@ -9,13 +9,13 @@ vi.mock('fs', () => ({ readFileSync: mockReadFileSync }))
 vi.mock('os', () => ({ homedir: mockHomedir }))
 vi.mock('../logger', () => ({ default: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }))
 const BUILT_IN_QUALIFIED = new Set([
-  'mcp__superone__miniapp_dev_read_guide',
+  'mcp__superone__read_manual',
   'mcp__superone__miniapp_dev_setup',
   'mcp__superone__miniapp_dev_pack',
   'mcp__superone__miniapp_dev_update_types',
   'mcp__superone__widget_show',
-  'mcp__superone__widget_read_guide',
   'mcp__superone__session_rename',
+  'mcp__superone__config_read',
 ])
 vi.mock('../mcp/superone-mcp-server', () => ({
   isToolPreapproved: vi.fn(() => false),
@@ -183,11 +183,11 @@ describe('createCanUseTool', () => {
     expect(perms.size).toBe(0)
   })
 
-  it('should auto-approve mcp__superone__miniapp_dev_read_guide without permission prompt', async () => {
+  it('should auto-approve mcp__superone__read_manual without permission prompt', async () => {
     const { canUseTool } = createCanUseTool(perms, questions, plans, emit)
-    const result = await canUseTool('mcp__superone__miniapp_dev_read_guide', { topic: 'overview' }, makeContext())
+    const result = await canUseTool('mcp__superone__read_manual', { domain: 'miniapp', topic: 'overview' }, makeContext())
     expect(result.behavior).toBe('allow')
-    expect(result.updatedInput).toEqual({ topic: 'overview' })
+    expect(result.updatedInput).toEqual({ domain: 'miniapp', topic: 'overview' })
     expect(events).toHaveLength(0)
     expect(perms.size).toBe(0)
   })

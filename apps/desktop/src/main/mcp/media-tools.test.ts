@@ -27,13 +27,13 @@ vi.mock('../image-cache', () => ({ detectImageMime: vi.fn(() => 'image/png') }))
 import type { AgentEvent, PermissionRequest } from '@superone/shared/agent-types'
 import { VIDEO_GEN_PARAMS_FIELD } from '@superone/shared/agent-types'
 import {
-  readMediaGuideHandler,
   generateVideoToolHandler,
   resolveVideoConfirm,
   rejectVideoConfirm,
   type GenerateVideoArgs,
 } from './media-tools'
 import { MEDIA_GUIDE_TOPICS } from './superone-mcp-builtin-defs'
+import { readMediaGuideHandler } from './manual-tools'
 
 function makeProviderStatuses() {
   return [

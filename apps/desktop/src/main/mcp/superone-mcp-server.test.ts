@@ -459,7 +459,10 @@ describe('stdio SuperOne MCP tool surface', () => {
 
     const names = listSuperoneMcpTools(PROJ_A).map((tool) => tool.name)
 
-    expect(names).toContain('miniapp_dev_read_guide')
+    expect(names).toContain('read_manual')
+    expect(names).toContain('config_read')
+    expect(names).not.toContain('miniapp_dev_read_guide')
+    expect(names).not.toContain('config_read_guide')
     expect(names).toContain('myapp__a_tool')
     expect(names).not.toContain('other__b_tool')
     expect(names).toContain('browser_snapshot')

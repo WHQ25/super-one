@@ -16,7 +16,7 @@ vi.mock('../logger', () => ({
 vi.mock('electron', () => ({ safeStorage: { isEncryptionAvailable: () => false } }))
 
 import { CONFIG_APPLY_FIELD, type AgentEvent } from '@superone/shared/agent-types'
-import { configApplyHandler, configReadGuideHandler, resolveConfigConfirm } from './config-tools'
+import { configApplyHandler, configReadHandler, resolveConfigConfirm } from './config-tools'
 import type { BuiltInSuperoneToolDeps } from './superone-mcp-builtins'
 
 function createMockDb() {
@@ -255,7 +255,7 @@ describe('config_apply — ai-provider / custom-platform resources (global, not 
     allMock.mockReturnValue([])
     const deps = makeDepsNoProject(vi.fn())
 
-    const result = parseResult(configReadGuideHandler({ domain: 'ai-provider' }, deps))
+    const result = parseResult(configReadHandler({ domain: 'ai-provider' }, deps))
     expect(result.resource).toBe('ai-provider')
     expect(result.records).toEqual([])
     expect(String(result.hint)).toContain('recordId')

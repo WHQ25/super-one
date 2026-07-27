@@ -39,7 +39,7 @@ export function buildWidgetPayload(roots: TemplateRoots, input: BuildWidgetPaylo
   if (template) {
     const found = readTemplate(roots, template)
     if (!found) {
-      return { error: `No widget template named "${template}". Call widget_read_guide to see the available templates.` }
+      return { error: `No widget template named "${template}". Call widget_list_templates to see the available templates.` }
     }
     source = found.code
     templateId = found.id

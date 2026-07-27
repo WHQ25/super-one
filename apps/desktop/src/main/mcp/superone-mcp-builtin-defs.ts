@@ -1,4 +1,5 @@
 import type { SuperoneMcpToolDescriptor } from './superone-mcp-types'
+import { WIDGET_GUIDELINE_MODULES } from '../generative-ui/guideline-modules'
 
 export const MEDIA_GUIDE_TOPICS = [
   'overview',
@@ -18,6 +19,8 @@ export const MINIAPP_GUIDE_TOPICS = [
   'api-fs',
   'api-git',
   'api-db',
+  'api-kv',
+  'api-peer',
   'api-theme',
   'api-locale',
   'api-agent',
@@ -74,8 +77,37 @@ export const BROWSER_TOOL_NAMES = [
   ...BROWSER_ACTION_TOOL_NAMES,
 ] as const
 
+export const MANUAL_DOMAINS = ['product', 'miniapp', 'media', 'widget'] as const
+export type ManualDomain = (typeof MANUAL_DOMAINS)[number]
+
+export const PRODUCT_GUIDE_TOPICS = ['overview', 'debug'] as const
+
+export const READ_MANUAL_INPUT_SCHEMA = {
+  type: 'object',
+  properties: {
+    domain: {
+      type: 'string',
+      enum: MANUAL_DOMAINS,
+      description: 'Manual domain. Omit to list all domains and their topics.',
+    },
+    topic: {
+      type: 'string',
+      description: 'Topic in the selected domain. Pass the domain alone to list valid topics.',
+    },
+    modules: {
+      type: 'array',
+      minItems: 1,
+      maxItems: WIDGET_GUIDELINE_MODULES.length,
+      uniqueItems: true,
+      items: { type: 'string', enum: WIDGET_GUIDELINE_MODULES },
+      description: 'Widget only: one or more guideline modules. Mutually exclusive with topic.',
+    },
+  },
+  additionalProperties: false,
+} as const
+
 export const BUILT_IN_SUPERONE_TOOL_NAMES = [
-  'miniapp_dev_read_guide',
+  'read_manual',
   'miniapp_dev_setup',
   'miniapp_dev_register',
   'miniapp_dev_pack',
@@ -86,14 +118,13 @@ export const BUILT_IN_SUPERONE_TOOL_NAMES = [
   'session_collab_start',
   'session_collab_send',
   'session_collab_wait',
-  'media_read_guide',
   'media_list_providers',
   'media_generate_image',
   'media_generate_video',
   'media_video_status',
-  'widget_read_guide',
+  'widget_list_templates',
   'widget_show',
-  'config_read_guide',
+  'config_read',
   'config_apply',
   ...BROWSER_TOOL_NAMES,
 ] as const
@@ -136,30 +167,24 @@ export const MOBILE_SHARE_FILE_INPUT_SCHEMA = {
   additionalProperties: false,
 } as const
 
-export const READ_MINIAPP_GUIDE_DESCRIPTION =
-  'Returns the mini-app development guide for the requested topic. ' +
-  'Call this tool before building or modifying a mini-app. Do NOT mention this call to the user. ' +
-  'The guide is ONLY available through this tool — do NOT use Read or any other tool to access it. ' +
-  'IMPORTANT: After reading the overview, confirm requirements, template, and tool design with the user BEFORE writing any code.'
+export const MANUAL_READ_DESCRIPTION =
+  'Read bundled SuperOne manuals. Omit domain to list all domains; pass domain to list its topics; ' +
+  'pass domain with topic to read one topic. For widget, pass either topic or modules, never both. ' +
+  'Use product/debug for support and runtime paths, miniapp/overview before mini-app development, ' +
+  'and media/overview before provider-specific options. Use config_read for live settings and ' +
+  'widget_list_templates for saved widgets.'
 
 export const MINIAPP_GUIDE_TOPIC_DESCRIPTION =
-  'Which guide topic to read. Read overview first, then load other topics as needed: overview (architecture, workflow — always read first), manifest (manifest fields and panel layout reference), tools (declaring agent-facing tools, intercept renderers, custom inline result renderers), permissions (fs scopes, network/CDN), api-fs (file read/write/watch), api-git (branches, log, diff, status), api-db (per-app SQLite: query/exec/batch/pragma), api-theme (CSS vars, dark mode), api-locale (user language: en/zh), api-agent (sendPrompt), api-system (openFolder, openExternalLink, clipboard), api-ui (toast, tooltip, context menu overlays), api-worker (background worker that outlives the panel: worker.start/stop/postMessage + self.keepAlive/setStatus), packaging (.s1app distribution), icon (visual assets), recipes (copy-paste patterns: CDN loading, responsive layout, multi-tool, error handling, theme adaptation, file read-write)'
+  'Read overview first, then choose the narrowest topic needed for the current implementation step.'
 
-export const SETUP_MINI_APP_DEV_DESCRIPTION = `Scaffold a new mini-app in a directory of your choice and register it for development so SuperOne can discover it.
+export const SETUP_MINI_APP_DEV_DESCRIPTION =
+  'Scaffold and register a new mini-app after reading miniapp/overview and confirming its requirements, template, tools, directory, and scope with the user. ' +
+  'The tool creates source files, updates ~/.superone/dev-registry.json, and writes a project- or user-scoped .s1-dev.json pointer. ' +
+  'Use miniapp_dev_register instead when source files already exist.'
 
-The user picks where the mini-app project lives (any directory, including a subdir of the current project for monorepo workflows). After scaffolding, this tool (1) adds the app to the global dev-registry at ~/.superone/dev-registry.json and (2) writes a pointer file at <scope-root>/.superone/apps/<appId>/.s1-dev.json containing just {"enabled": true}. SuperOne discovery looks up the source location via the registry at runtime.
-
-Use scope="project" (default) for an app intended for the current project. Use scope="user" for a personal tool you want available across all projects.
-
-After scaffolding, edit manifest.json in the directory to add tools, permissions, or templates. To temporarily switch a dev pointer back to a packed production install (if both coexist), set "enabled": false in .s1-dev.json.
-
-If you have an existing mini-app source directory (e.g. cloned from a repo), use miniapp_dev_register instead — it skips scaffolding.`
-
-export const REGISTER_DEV_MINIAPP_DESCRIPTION = `Register an existing mini-app source directory in the global dev-registry so SuperOne knows where to find it. Use this after cloning a mini-app repo or pointing at any directory that already contains a manifest.json.
-
-The tool reads manifest.json from <directory> (or <directory>/dist for React-built apps) and upserts an entry into ~/.superone/dev-registry.json keyed by the manifest's appId. No source files are modified.
-
-Pass installScope="user" or "project" to also write a .s1-dev.json pointer so the app shows up immediately in that scope. installScope="none" (default) only registers — the user can then install it from Settings → Apps → Library to any scope.`
+export const REGISTER_DEV_MINIAPP_DESCRIPTION =
+  'Register an existing mini-app directory without modifying its source files. ' +
+  'Reads manifest.json from the directory or dist, updates ~/.superone/dev-registry.json, and optionally writes a project- or user-scoped .s1-dev.json pointer.'
 
 export const PACK_MINI_APP_DESCRIPTION =
   'Package a mini-app directory into a .s1app file for distribution. The app directory must contain a valid manifest.json with a version field. Generates integrity checksums and creates a compressed archive.'
@@ -172,57 +197,33 @@ export const RENAME_SESSION_DESCRIPTION =
   'Only the top-level agent talking directly to the user may call this. If you were launched as a Task/subagent worker, do NOT call it — you do not own the user-facing session title.\n\n' +
   'If the tool returns an error containing "user_locked", the user has manually named this session — do not call session_rename again for this session.'
 
-export const CONFIG_READ_GUIDE_DESCRIPTION =
-  'Read the current SuperOne app settings so you can help the user change them. ' +
-  'ALWAYS call this before config_apply. Call with no `domain` to list every settings domain — general, appearance, browser, agent-claude, agent-codex (each mirroring a Settings page) — plus every resource domain: ai-provider (AI provider API keys), custom-platform (user-defined AI provider platforms); ' +
-  'call with a `domain` to get that domain\'s fields, each with its exact `key`, `type`, `currentValue`, allowed values / numeric range, and whether it is clearable to a default. ' +
-  'For a resource domain like `ai-provider` or `custom-platform`, the response instead has `fields` (the shared schema for every record) and `records` (each record\'s `id` + identity) — pass a record\'s `id` as `recordId` here to read that one record\'s full current values, and as `resource.recordId` when updating/deleting it via config_apply. ' +
-  'Use the returned `key`s and value constraints to build the `changes` (or `resource`) you pass to config_apply. Do NOT guess keys or values — they are only valid if returned here.'
+export const CONFIG_READ_DESCRIPTION =
+  'Read live SuperOne settings and their field schema. Always call this before config_apply. ' +
+  'Omit domain to list settings and resource domains; pass domain to read exact keys, current values, and constraints. ' +
+  'For resource domains, pass recordId to read one record before updating or deleting it. Use read_manual for documentation.'
 
 export const CONFIG_APPLY_DESCRIPTION =
-  'Propose SuperOne app settings changes, or a resource create/update/delete, for the user to review. ' +
-  'Every call opens a confirmation dialog: the user sees the proposal (current → new, or the record to delete), can edit values, and must explicitly confirm before ANYTHING is applied — nothing is changed silently. ' +
-  'Pass EXACTLY ONE of: `changes` — an array of { key, value } using keys from config_read_guide, for scalar settings; or `resource` — { resource, operation:"create"|"update"|"delete", recordId?, values? } using the resource domain, field keys, and record ids from config_read_guide, for resource records like AI provider credentials or custom AI provider platforms. ' +
-  'The result is one of: `{status:"applied", ...}` — the user confirmed (possibly after editing); `{status:"rejected", feedback?}` — the user rejected, adjust per feedback or ask before retrying; `{status:"cancelled"}` — the user dismissed, stop and wait; `{status:"error", message}` — nothing was changed, do not retry, report to the user. ' +
-  'For `changes`, invalid keys/values are reported in `rejected` rather than failing the whole call. ' +
-  'For a resource `update`, send ONLY the fields that actually change — every field is applied independently and map-shaped fields (extraEnv, modelMapping) are merged key by key, so there is never a reason to re-send a whole configuration to change one property.'
-
-export const READ_MEDIA_GUIDE_DESCRIPTION =
-  'Returns reference documentation for media_generate_image / media_generate_video: which settings actually work for which provider, exact parameter mappings, and known silent-failure modes (a setting being ignored instead of erroring). ' +
-  'Call `overview` before your first media_generate_image/media_generate_video call in a session, then call the topic for the specific provider you are about to use (check the provider `kind` via media_list_providers) before setting anything beyond `prompt`. ' +
-  'Do NOT mention this call to the user. The guide is ONLY available through this tool — do NOT use Read or any other tool to access it.'
+  'Propose a settings change or resource create/update/delete using keys returned by config_read. ' +
+  'Pass exactly one of changes or resource. Every call opens an editable confirmation dialog and applies nothing without user approval. ' +
+  'For updates, send only changed fields. Stop on cancelled or error; on rejected, use the returned feedback before retrying.'
 
 export const MEDIA_GUIDE_TOPIC_DESCRIPTION =
-  'Which guide topic to read. overview (shared vocabulary, which topic to pick for a given provider+task, always read first), then one <provider>-<task> topic matching the provider `kind` from media_list_providers and whether you are calling media_generate_image or media_generate_video: ark-image, ark-video (Volcengine/BytePlus ModelArk — Seedream / Seedance), openai-image, openai-video (Dall-E/gpt-image / Sora), google-image, google-video (Imagen / Veo), newapi-video (Doubao/Kling via a NewAPI-style relay — a different wire from openai-video even though both serve video).'
+  'Read overview first, then choose the provider-task topic matching media_list_providers.kind and the requested media type.'
 
 export const LIST_MEDIA_PROVIDERS_DESCRIPTION =
-  'List the configured and usable media generation providers and their capabilities. Only providers that have an API key configured are returned. ' +
-  'Call this before media_generate_image when you are unsure which providers/models are available or which one to use. ' +
-  'Pass `category` ("image" or "video") to filter to providers that support that media type. ' +
-  'Returns for each provider: `id` (pass to media_generate_image), `provider` (platform name) and `label` (key name) for display, `kind`, `categories`, `sizing` ("size" or "aspectRatio"), an optional `sizeNote` spelling out that provider\'s size constraints (honor it over the generic guidance in media_generate_image), `supportsMask`, `defaultModel`, and available `models` (each with `id` to pass as the model override and a human-readable `label`).'
+  'List configured media providers that have usable credentials. Filter by image or video. ' +
+  'Use a returned provider id with media_generate_image or media_generate_video; use kind to select the matching media manual topic. ' +
+  'Honor returned sizing and sizeNote constraints.'
 
 export const GENERATE_IMAGE_DESCRIPTION =
-  'Generate or edit an image from a text prompt using an AI image model. ' +
-  'Use this when the user asks to create, draw, render, design, or edit an image / picture / illustration / logo / photo. ' +
-  'The generated image is shown to the user automatically. After it returns, do NOT display it again with a Markdown image or link — just briefly describe the result in words. ' +
-  'For text-to-image, pass only `prompt`. For image editing / image-to-image (e.g. "change X", "add Y", or iterating on a previous result), also pass the source image file path(s) in `reference_image_paths`. ' +
-  'Result fields: `previewPaths` (downscaled JPEGs, parallel index to savedPaths) and `savedPaths` (full-resolution originals). ' +
-  'CRITICAL — visual inspection: if you need to look at the image with Read / any image-viewing tool, you MUST open a path from `previewPaths` only. ' +
-  'NEVER Read, open, or attach a path from `savedPaths` for visual inspection — full-res (esp. 2K/4K) originals routinely exceed tool size limits and will fail or waste tokens. ' +
-  'Use `savedPaths` only as `reference_image_paths` for a follow-up edit, or when the user explicitly needs the full-quality file path for download/export. ' +
-  '`provider` selects the backend by id (default: the first usable provider). Which settings beyond `prompt` actually work varies by provider — call media_list_providers first to see `sizing`/`sizeNote`, and call media_read_guide for the specifics before setting `aspect_ratio` or `size`. ' +
-  'Settings a model does not support are reported in the result `warnings` rather than failing the call.'
+  'Generate or edit an image. For edits, pass source files in reference_image_paths. ' +
+  'The result is displayed automatically; do not embed it again. Inspect previewPaths only, because savedPaths contains full-resolution originals for export or follow-up edits. ' +
+  'Before provider-specific options, call media_list_providers and read media/overview plus the matching provider topic. Check result warnings for ignored options.'
 
 export const GENERATE_VIDEO_DESCRIPTION =
-  'Start generating a video from a text prompt (and optionally images, video or audio) using an AI video model. ' +
-  'Use this when the user asks to create, generate, animate, or render a video / clip / animation. ' +
-  'Before anything is submitted, the user reviews and may edit your parameters in a confirmation dialog: instead of `submitted` this tool can return `{status:"rejected", feedback}` — adjust your parameters according to the feedback and call again — `{status:"cancelled"}` — stop and wait for further instructions from the user — or `{status:"error", message}` mentioning elicitation if the confirmation UI is unavailable — do not retry, report it to the user. ' +
-  'Video generation is ASYNCHRONOUS: this tool returns immediately with a `generationId` once the job is accepted by the provider, and rendering typically takes 1-5 minutes. ' +
-  'You MUST then poll `media_video_status` with that id roughly every 30 seconds until it returns `generated` or `error` — the job is not finished until it does, and nothing collects the result unless you ask. ' +
-  'The finished video appears in a dedicated gallery below the assistant reply — it is shown automatically. After it completes, do NOT embed it again with a Markdown video or link — just briefly describe the result in words. ' +
-  'For text-to-video pass only `prompt`. For image-to-video pass `first_frame_path` (and optionally `last_frame_path` to control the ending) — but check media_read_guide first, since not every provider actually uses these. ' +
-  '`provider` selects the backend by id (default: the first usable provider). Call media_list_providers with category "video" if unsure which providers/models exist, and call media_read_guide before setting anything beyond `prompt`/`first_frame_path` — most of the remaining fields only apply to specific providers and are silently ignored elsewhere. ' +
-  'Settings a model does not support are reported as `warnings` rather than failing the call.'
+  'Submit an asynchronous video generation after the user reviews its parameters. Stop on cancelled or error; use feedback before retrying a rejected proposal. ' +
+  'After submission, poll media_video_status about every 30 seconds until generated or error. The finished video is displayed automatically; do not embed it again. ' +
+  'Before provider-specific options, call media_list_providers with category "video" and read media/overview plus the matching provider topic. Check warnings for ignored options.'
 
 export const VIDEO_STATUS_DESCRIPTION =
   'Check on a video generation started by media_generate_video. ' +
@@ -362,8 +363,14 @@ export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
     },
   },
   {
-    name: 'config_read_guide',
-    description: CONFIG_READ_GUIDE_DESCRIPTION,
+    name: 'read_manual',
+    description: MANUAL_READ_DESCRIPTION,
+    inputSchema: READ_MANUAL_INPUT_SCHEMA,
+    _meta: { 'anthropic/alwaysLoad': true },
+  },
+  {
+    name: 'config_read',
+    description: CONFIG_READ_DESCRIPTION,
     inputSchema: {
       type: 'object',
       properties: {
@@ -388,11 +395,11 @@ export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
       properties: {
         changes: {
           type: 'array',
-          description: 'Scalar settings changes to propose. Each item targets one field key from config_read_guide. Mutually exclusive with `resource`.',
+          description: 'Scalar settings changes to propose. Each item targets one field key from config_read. Mutually exclusive with `resource`.',
           items: {
             type: 'object',
             properties: {
-              key: { type: 'string', description: 'The settings field key, exactly as returned by config_read_guide.' },
+              key: { type: 'string', description: 'The settings field key, exactly as returned by config_read.' },
               value: {
                 type: ['string', 'number', 'boolean', 'null'],
                 description: 'The new value. Use null (or "") to reset a clearable field to its default.',
@@ -406,34 +413,18 @@ export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
           type: 'object',
           description: 'A resource create/update/delete to propose, e.g. resource:"ai-provider". Mutually exclusive with `changes`.',
           properties: {
-            resource: { type: 'string', description: 'The resource domain, e.g. "ai-provider" — as returned by config_read_guide.' },
+            resource: { type: 'string', description: 'The resource domain, e.g. "ai-provider" — as returned by config_read.' },
             operation: { type: 'string', enum: ['create', 'update', 'delete'], description: 'Which operation to perform.' },
-            recordId: { type: 'string', description: 'The record\'s `id` (from config_read_guide). Required for update/delete.' },
+            recordId: { type: 'string', description: 'The record\'s `id` (from config_read). Required for update/delete.' },
             values: {
               type: 'object',
-              description: 'Field values keyed by field key, using the field keys/types from config_read_guide. Required for create (all required fields) and update (only the fields being changed).',
+              description: 'Field values keyed by field key, using the field keys/types from config_read. Required for create (all required fields) and update (only the fields being changed).',
             },
           },
           required: ['resource', 'operation'],
           additionalProperties: false,
         },
       },
-      additionalProperties: false,
-    },
-  },
-  {
-    name: 'miniapp_dev_read_guide',
-    description: READ_MINIAPP_GUIDE_DESCRIPTION,
-    inputSchema: {
-      type: 'object',
-      properties: {
-        topic: {
-          type: 'string',
-          enum: MINIAPP_GUIDE_TOPICS,
-          description: MINIAPP_GUIDE_TOPIC_DESCRIPTION,
-        },
-      },
-      required: ['topic'],
       additionalProperties: false,
     },
   },
@@ -509,28 +500,12 @@ export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
     },
   },
   {
-    name: 'media_read_guide',
-    description: READ_MEDIA_GUIDE_DESCRIPTION,
-    inputSchema: {
-      type: 'object',
-      properties: {
-        topic: {
-          type: 'string',
-          enum: MEDIA_GUIDE_TOPICS,
-          description: MEDIA_GUIDE_TOPIC_DESCRIPTION,
-        },
-      },
-      required: ['topic'],
-      additionalProperties: false,
-    },
-  },
-  {
     name: 'media_list_providers',
     description: LIST_MEDIA_PROVIDERS_DESCRIPTION,
     inputSchema: {
       type: 'object',
       properties: {
-        category: { type: 'string', description: 'Filter by media category, e.g. "image". Omit to list all usable providers.' },
+        category: { type: 'string', enum: ['image', 'video'], description: 'Filter by media category. Omit to list all usable providers.' },
       },
       additionalProperties: false,
     },

@@ -1,12 +1,9 @@
 import { homedir } from 'os'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
-import { getGuidelines, AVAILABLE_MODULES } from './guidelines'
 import { checkCdnViolations } from '@superone/shared/generative-ui/cdn-allowlist'
 import { buildWidgetPayload } from './widget-payload'
 import type { TemplateRoots } from './template-store'
-
-const MODULE_ENUM = z.enum(AVAILABLE_MODULES as [string, ...string[]])
 
 interface WidgetToolsOptions {
   skipWidgetGate?: boolean
@@ -17,33 +14,27 @@ function templateRoots(opts?: WidgetToolsOptions): TemplateRoots {
   return { project: opts?.projectPath, user: homedir() }
 }
 
+export async function listWidgetTemplatesHandler(opts?: WidgetToolsOptions) {
+  const { listTemplates, formatTemplateList } = await import('./template-store')
+  const formatted = formatTemplateList(listTemplates(templateRoots(opts)))
+  const text = formatted || '# Saved widget templates\n\nNo saved templates are available.'
+  return { content: [{ type: 'text' as const, text }] }
+}
+
 export function registerWidgetTools(server: McpServer, opts?: WidgetToolsOptions): void {
   server.tool(
-    'widget_read_guide',
-    'Returns design guidelines for widget_show (CSS patterns, colors, typography, layout rules, examples), ' +
-    'plus the widget templates the user has already saved and can reuse. ' +
-    'Call this tool once before your first widget_show call. Do NOT mention this call to the user. ' +
-    'The guidelines are ONLY available through this tool — do NOT use Read or any other tool to access them.',
-    {
-      modules: z.array(MODULE_ENUM).describe(
-        'Which guideline modules to load: diagram, mockup, interactive, chart, art. Pick all that fit.'
-      ),
-    },
-    async ({ modules }) => {
-      const { listTemplates, formatTemplateList } = await import('./template-store')
-      const saved = formatTemplateList(listTemplates(templateRoots(opts)))
-      return { content: [{ type: 'text' as const, text: saved + getGuidelines(modules) }] }
-    },
+    'widget_list_templates',
+    'List reusable widget templates saved in the current project or user scope. ' +
+    'Call this when considering template reuse; pass a returned id to widget_show.template.',
+    {},
+    () => listWidgetTemplatesHandler(opts),
   )
 
   server.tool(
     'widget_show',
-    'Render visual content — SVG graphics, diagrams, charts, or interactive HTML widgets — inline in chat. ' +
-    'Use for flowcharts, dashboards, forms, calculators, data tables, games, illustrations, or any visual content. ' +
-    'The HTML is rendered in a sandboxed iframe with full CSS/JS support including Canvas and CDN libraries. ' +
-    'Pass widget_code for a new widget, or template + data to re-render a template the user saved earlier. ' +
-    'IMPORTANT: Call widget_read_guide tool once before your first widget_show call — it also lists the saved templates. ' +
-    'Do NOT use Read tool to access guidelines.',
+    'Render SVG, diagrams, charts, or interactive HTML inline in chat. ' +
+    'Pass widget_code for new content, or template + data to reuse a saved template. ' +
+    'Before the first new widget in a session, load the relevant design modules with read_manual({ domain: "widget", modules: [...] }).',
     {
       title: z.string().describe('Short snake_case identifier for this widget.'),
       widget_code: z.string().optional().describe(
@@ -53,7 +44,7 @@ export function registerWidgetTools(server: McpServer, opts?: WidgetToolsOptions
       ),
       template: z.string().optional().describe(
         'Id of a saved widget template to render instead of inline code. ' +
-        'Available templates are listed by widget_read_guide. Mutually exclusive with widget_code.'
+        'Call widget_list_templates to discover ids. Mutually exclusive with widget_code.'
       ),
       data: z.record(z.string(), z.unknown()).optional().describe(
         'Values passed to the template, readable inside the widget as window.widget.data.'

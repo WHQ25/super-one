@@ -91,7 +91,7 @@ export const credentialResourceDef: ResourceDef<Credential> = {
     'API keys bound to a provider platform + plan, plus that key\'s per-endpoint overrides (Settings → AI Provider). The `secret` is masked on read as "***last6" — send a new value to replace it, or omit it to keep the stored one. Override fields (baseUrl / models / modelMapping / extraEnv) target one endpoint via `endpointId` and are merged, so send only what changes.',
   projectScoped: false,
   fields: [
-    { key: 'platformId', label: 'Platform', type: 'string', required: true, note: 'Platform id, e.g. "zhipu-cn" or "custom:<uuid>". Call config_read_guide first to list them.' },
+    { key: 'platformId', label: 'Platform', type: 'string', required: true, note: 'Platform id, e.g. "zhipu-cn" or "custom:<uuid>". Call config_read first to list them.' },
     { key: 'planId', label: 'Plan', type: 'string', required: true },
     { key: 'name', label: 'Name', type: 'string', required: true, note: 'Key label, unique within the platform.' },
     { key: 'secret', label: 'Secret / API Key', type: 'string', secret: true },

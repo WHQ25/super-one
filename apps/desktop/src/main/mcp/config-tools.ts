@@ -306,7 +306,7 @@ async function applyResourceChange(req: NonNullable<ConfigApplyArgs['resource']>
   }
 }
 
-export function configReadGuideHandler(args: { domain?: string; recordId?: string }, deps: BuiltInSuperoneToolDeps) {
+export function configReadHandler(args: { domain?: string; recordId?: string }, deps: BuiltInSuperoneToolDeps) {
   if (!args.domain) {
     return toolResult({ domains: [...listDomainSummaries(), ...listResourceSummaries()] })
   }
@@ -348,7 +348,7 @@ export function configReadGuideHandler(args: { domain?: string; recordId?: strin
       description: resourceDef.description,
       fields: resourceDef.fields,
       records: records.map((r) => ({ id: (r as { id?: string }).id, ...resourceDef.identifyBy(r) })),
-      hint: 'Call config_read_guide again with `recordId` to read one record\'s current values. When updating, send only the fields that change.',
+      hint: 'Call config_read again with `recordId` to read one record\'s current values. When updating, send only the fields that change.',
     })
   }
 
@@ -377,7 +377,7 @@ export async function configApplyHandler(args: ConfigApplyArgs, deps: BuiltInSup
   if (valid.length === 0) {
     return toolResult({
       status: 'error',
-      message: 'None of the proposed changes are valid. Call config_read_guide for valid keys and values.',
+      message: 'None of the proposed changes are valid. Call config_read for valid keys and values.',
       rejected,
     })
   }

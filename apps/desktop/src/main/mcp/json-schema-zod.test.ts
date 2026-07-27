@@ -69,4 +69,54 @@ describe('jsonSchemaToZodShape', () => {
     })
     expect(shape.scope.description).toBe('scope desc')
   })
+
+  it('validates nested array items and object fields', () => {
+    const shape = jsonSchemaToZodShape({
+      type: 'object',
+      properties: {
+        modules: {
+          type: 'array',
+          minItems: 1,
+          maxItems: 2,
+          items: { type: 'string', enum: ['diagram', 'chart'] },
+        },
+        request: {
+          type: 'object',
+          properties: {
+            name: { type: 'string', minLength: 2 },
+          },
+          required: ['name'],
+          additionalProperties: false,
+        },
+      },
+      required: ['modules', 'request'],
+    })
+
+    expect(shape.modules.safeParse(['diagram']).success).toBe(true)
+    expect(shape.modules.safeParse(['unknown']).success).toBe(false)
+    expect(shape.modules.safeParse([]).success).toBe(false)
+    expect(shape.modules.safeParse(['diagram', 'chart', 'diagram']).success).toBe(false)
+    expect(shape.request.safeParse({ name: 'ok' }).success).toBe(true)
+    expect(shape.request.safeParse({ name: 'x' }).success).toBe(false)
+    expect(shape.request.safeParse({ name: 'ok', extra: true }).success).toBe(false)
+  })
+
+  it('validates primitive unions and numeric constraints', () => {
+    const shape = jsonSchemaToZodShape({
+      type: 'object',
+      properties: {
+        value: { type: ['string', 'number', 'boolean', 'null'] },
+        count: { type: 'integer', minimum: 1, maximum: 3 },
+      },
+      required: ['value', 'count'],
+    })
+
+    for (const value of ['x', 1, true, null]) {
+      expect(shape.value.safeParse(value).success).toBe(true)
+    }
+    expect(shape.value.safeParse({}).success).toBe(false)
+    expect(shape.count.safeParse(2).success).toBe(true)
+    expect(shape.count.safeParse(2.5).success).toBe(false)
+    expect(shape.count.safeParse(4).success).toBe(false)
+  })
 })

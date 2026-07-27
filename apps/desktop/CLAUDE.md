@@ -288,7 +288,7 @@ sqlite3 event-trace.db "SELECT ts, type, data FROM events WHERE source='agent.sd
 
 In development mode, `electron-log` writes to `apps/desktop/dev.log` (relative to the dev cwd; configured in `apps/desktop/src/main/logger.ts`). The dev script auto-deletes the previous `dev.log` on each run to keep it small. When debugging main process issues, read this file to inspect logs instead of guessing. The log format is `[date time] [level] text`.
 
-For packaged builds (`build:mac-dev`), logs are written to `~/Library/Logs/super-one/main.log` (macOS default `electron-log` location).
+For packaged builds (`build:mac-dev`), logs are written to `~/Library/Logs/SuperOne/main.log` (macOS `electron-log` path from `app.setName('SuperOne')`). Note userData is still `…/super-one/`, separate from the Logs folder name.
 
 ## Testing
 
@@ -342,7 +342,7 @@ Mini-apps are sandboxed web apps (HTML/CSS/JS) that run in iframes and are contr
 
 | Module | Path | Purpose |
 |--------|------|---------|
-| MCP Server | `apps/desktop/src/main/mcp/superone-mcp-server.ts` | Built-in MCP tools (`miniapp_dev_read_guide`, `miniapp_dev_setup`, `miniapp_dev_register`, `miniapp_dev_pack`, `miniapp_dev_update_types`, `session_rename`) + dynamic tool registration per app. Guide content in `apps/desktop/src/main/mcp/guides/`. Naming convention: `<category>_<subcategory>_<verb>` — `miniapp_dev_*` for mini-app development workflow, `session_*` for chat session management. Built-in tool entries live in `BUILT_IN_SUPERONE_TOOL_NAMES` (`superone-mcp-builtins.ts`); they auto-bypass permission prompts via `isBuiltInSuperoneTool` |
+| MCP Server | `apps/desktop/src/main/mcp/superone-mcp-server.ts` | Built-in MCP tools (`read_manual`, `miniapp_dev_setup`, `miniapp_dev_register`, `miniapp_dev_pack`, `miniapp_dev_update_types`, `session_rename`, `config_read`, `config_apply`, media/browser/widget tools) + dynamic tool registration per app. Manuals via `read_manual` (domains: product/miniapp/media/widget; product/debug covers repo + log paths); guide markdown in `apps/desktop/src/main/mcp/guides/`. Live settings via `config_read` (not docs). Built-in tool entries live in `BUILT_IN_SUPERONE_TOOL_NAMES`; they auto-bypass permission prompts via `isBuiltInSuperoneTool` |
 | Service | `apps/desktop/src/main/miniapp/miniapp-service.ts` | App discovery, manifest parsing (Zod validated), filesystem operations |
 | Schema | `apps/desktop/src/main/miniapp/miniapp-schema.ts` | Zod v4 manifest validation schema |
 | Packager | `apps/desktop/src/main/miniapp/miniapp-packager.ts` | `.s1app` packaging (zip + integrity), install/uninstall, SHA-256 verification |

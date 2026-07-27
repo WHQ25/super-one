@@ -414,8 +414,8 @@ describe('extractSuperoneMiniAppToolName', () => {
 
   it('extracts built-in superone tool name even without namespace separator', () => {
     expect(
-      extractSuperoneMiniAppToolName('Allow the superone MCP server to run tool "miniapp_dev_read_guide"?'),
-    ).toBe('mcp__superone__miniapp_dev_read_guide')
+      extractSuperoneMiniAppToolName('Allow the superone MCP server to run tool "read_manual"?'),
+    ).toBe('mcp__superone__read_manual')
     expect(
       extractSuperoneMiniAppToolName('Allow the superone MCP server to run tool "session_rename"?'),
     ).toBe('mcp__superone__session_rename')
@@ -463,13 +463,13 @@ describe('mapApprovalRequest superone mini-app tool elicitation', () => {
       method: 'mcpServer/elicitation/request',
       params: {
         serverName: 'superone',
-        message: 'Allow the superone MCP server to run tool "miniapp_dev_read_guide"?',
+        message: 'Allow the superone MCP server to run tool "read_manual"?',
         requestedSchema: { type: 'object', properties: {} },
       },
     })
 
     if (parsed?.responseKind !== 'elicitation') throw new Error('expected elicitation')
-    expect(parsed.request.toolName).toBe('mcp__superone__miniapp_dev_read_guide')
+    expect(parsed.request.toolName).toBe('mcp__superone__read_manual')
     expect(parsed.request.requestKind).toBeUndefined()
   })
 

@@ -586,7 +586,7 @@ describe('formatAcpRawOutput', () => {
     // Real grok shape: the variant key (OkayOutput) is a serde tag around the payload.
     expect(formatAcpRawOutput({
       type: 'MCP',
-      tool_name: 'widget_read_guide',
+      tool_name: 'read_manual',
       server_name: 'superone',
       output: { OkayOutput: '# Widget — Visual creation suite' },
     })).toBe('# Widget — Visual creation suite')

@@ -882,18 +882,6 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, t
     ? <>{mcpInfo.serverName}<span className="text-muted-foreground"> · </span>{mcpInfo.mcpToolName.replace(/_/g, ' ')}</>
     : getToolLabel(toolName)
 
-  if (mcpInfo?.mcpToolName === 'widget_read_guide') {
-    const modules = Array.isArray(params.modules) ? (params.modules as string[]).join(', ') : ''
-    return (
-      <CompactToolRow icon={<ToolIcon icon="book-open" className="size-3 shrink-0 text-muted-foreground" />}>
-        <span className="font-medium text-foreground">
-          {isStreaming ? <>{t('chat.toolBlock.readingWidgetGuidelines')}</> : t('chat.toolBlock.readWidgetGuidelines')}
-          {modules && <>: <span className="text-muted-foreground">{modules}</span></>}
-        </span>
-      </CompactToolRow>
-    )
-  }
-
   if (mcpInfo?.serverName === SUPERONE_SERVER) {
     const browserOp = getBrowserOp(mcpInfo.mcpToolName)
     if (browserOp) {
@@ -911,8 +899,6 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, t
       )
     }
     const superoneToolDisplay: Record<string, { icon: ToolIconType; streaming: string; done: string; summaryField?: string }> = {
-      miniapp_dev_read_guide: { icon: 'book-open', streaming: t('chat.toolBlock.readingMiniAppGuide'), done: t('chat.toolBlock.readMiniAppGuide'), summaryField: 'topic' },
-      media_read_guide: { icon: 'book-open', streaming: t('chat.toolBlock.readingMediaGuide'), done: t('chat.toolBlock.readMediaGuide'), summaryField: 'topic' },
       media_list_providers: { icon: 'image', streaming: t('chat.toolBlock.listingMediaProviders'), done: t('chat.toolBlock.listedMediaProviders') },
       media_generate_image: { icon: 'image', streaming: t('chat.toolBlock.generatingImage'), done: t('chat.toolBlock.generatedImage'), summaryField: 'prompt' },
     }
@@ -955,7 +941,7 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, t
         />
       )
     }
-    if (mcpInfo.mcpToolName === 'config_read_guide') {
+    if (mcpInfo.mcpToolName === 'config_read') {
       const hasDomain = typeof params.domain === 'string' && params.domain.length > 0
       let domainLabel = ''
       if (!isStreaming && result) {
@@ -968,8 +954,21 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, t
       return (
         <CompactToolRow icon={<ToolIcon icon="book-open" className="size-3 shrink-0 text-muted-foreground" />}>
           <span className="font-medium text-foreground">
-            {isStreaming ? <>{t('chat.toolBlock.readingConfigGuide')}…</> : t('chat.toolBlock.readConfigGuide')}
+            {isStreaming ? <>{t('chat.toolBlock.readingConfig')}…</> : t('chat.toolBlock.readConfig')}
             {summaryValue && <>: <span className="text-muted-foreground">{summaryValue}</span></>}
+          </span>
+        </CompactToolRow>
+      )
+    }
+    if (mcpInfo.mcpToolName === 'read_manual') {
+      const domain = typeof params.domain === 'string' ? params.domain : ''
+      const topic = typeof params.topic === 'string' ? params.topic : ''
+      const summary = [domain, topic].filter(Boolean).join('/')
+      return (
+        <CompactToolRow icon={<ToolIcon icon="book-open" className="size-3 shrink-0 text-muted-foreground" />}>
+          <span className="font-medium text-foreground">
+            {isStreaming ? <>{t('chat.toolBlock.readingManual')}…</> : t('chat.toolBlock.readManual')}
+            {summary && <>: <span className="text-muted-foreground">{summary}</span></>}
           </span>
         </CompactToolRow>
       )

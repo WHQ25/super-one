@@ -155,7 +155,7 @@ function requiredEnv(name: string): string {
 }
 
 function toolSignature(tool: SuperoneMcpToolDescriptor): string {
-  return JSON.stringify([tool.description, tool.inputSchema])
+  return JSON.stringify([tool.description, tool.inputSchema, tool._meta ?? null])
 }
 
 async function main(): Promise<void> {
@@ -192,7 +192,11 @@ async function main(): Promise<void> {
   const registerTool = (tool: SuperoneMcpToolDescriptor) => {
     const registered = server.registerTool(
       tool.name,
-      { description: tool.description, inputSchema: jsonSchemaToZodShape(tool.inputSchema) },
+      {
+        description: tool.description,
+        inputSchema: jsonSchemaToZodShape(tool.inputSchema),
+        ...(tool._meta ? { _meta: tool._meta } : {}),
+      },
       async (args: Record<string, unknown>) => {
         try {
           return await ipc.callTool(tool.name, args)

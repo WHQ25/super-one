@@ -14,38 +14,19 @@ import {
   generateImageToolHandler,
   generateVideoToolHandler,
   listMediaProvidersHandler,
-  readMediaGuideHandler,
   videoStatusToolHandler,
   type GenerateImageArgs,
   type GenerateVideoArgs,
   type ListMediaProvidersArgs,
   type VideoStatusArgs,
 } from './media-tools'
-import overviewMd from './guides/overview.md?raw'
-import manifestMd from './guides/manifest.md?raw'
-import permissionsMd from './guides/permissions.md?raw'
-import apiFsMd from './guides/api/fs.md?raw'
-import apiGitMd from './guides/api/git.md?raw'
-import apiDbMd from './guides/api/db.md?raw'
-import apiThemeMd from './guides/api/theme.md?raw'
-import apiLocaleMd from './guides/api/locale.md?raw'
-import apiAgentMd from './guides/api/agent.md?raw'
-import apiSystemMd from './guides/api/system.md?raw'
-import apiUiMd from './guides/api/ui.md?raw'
-import apiWorkerMd from './guides/api/worker.md?raw'
-import packagingMd from './guides/packaging.md?raw'
-import iconMd from './guides/icon.md?raw'
-import recipesMd from './guides/recipes.md?raw'
-import toolsMd from './guides/tools.md?raw'
+import { manualReadHandler, registerManualTools } from './manual-tools'
 import {
   BUILT_IN_SUPERONE_TOOL_DEFS,
   BUILT_IN_SUPERONE_TOOL_NAMES,
   CONFIG_SETTINGS_DOMAINS,
-  CONFIG_READ_GUIDE_DESCRIPTION,
+  CONFIG_READ_DESCRIPTION,
   CONFIG_APPLY_DESCRIPTION,
-  MINIAPP_GUIDE_TOPICS,
-  READ_MINIAPP_GUIDE_DESCRIPTION,
-  MINIAPP_GUIDE_TOPIC_DESCRIPTION,
   SETUP_MINI_APP_DEV_DESCRIPTION,
   REGISTER_DEV_MINIAPP_DESCRIPTION,
   PACK_MINI_APP_DESCRIPTION,
@@ -58,7 +39,7 @@ import {
   SESSION_WAIT_DESCRIPTION,
   type BuiltInSuperoneToolName,
 } from './superone-mcp-builtin-defs'
-import { configApplyHandler, configReadGuideHandler, type ConfigApplyArgs } from './config-tools'
+import { configApplyHandler, configReadHandler, type ConfigApplyArgs } from './config-tools'
 import { readAppSettings } from '../app-settings-service'
 import type { SessionManager } from '../session/types'
 import type {
@@ -71,25 +52,6 @@ export {
   BUILT_IN_SUPERONE_TOOL_DEFS,
   BUILT_IN_SUPERONE_TOOL_NAMES,
   type BuiltInSuperoneToolName,
-}
-
-const MINIAPP_GUIDES: Record<string, string> = {
-  overview: overviewMd,
-  manifest: manifestMd,
-  permissions: permissionsMd,
-  'api-fs': apiFsMd,
-  'api-git': apiGitMd,
-  'api-db': apiDbMd,
-  'api-theme': apiThemeMd,
-  'api-locale': apiLocaleMd,
-  'api-agent': apiAgentMd,
-  'api-system': apiSystemMd,
-  'api-ui': apiUiMd,
-  'api-worker': apiWorkerMd,
-  packaging: packagingMd,
-  icon: iconMd,
-  recipes: recipesMd,
-  tools: toolsMd,
 }
 
 export interface SessionTitleSetter {
@@ -140,16 +102,6 @@ interface RegisterDevMiniAppArgs {
   projectDir?: string
   force?: boolean
   name?: string
-}
-
-function readMiniappGuide(args: { topic: string }) {
-  const text = MINIAPP_GUIDES[args.topic]
-  if (!text) {
-    throw new Error(`Unknown mini-app guide topic: ${args.topic}`)
-  }
-  return {
-    content: [{ type: 'text' as const, text }],
-  }
 }
 
 async function setupMiniAppDev(args: SetupMiniAppDevArgs, deps: BuiltInSuperoneToolDeps) {
@@ -287,8 +239,8 @@ export async function executeBuiltInSuperoneTool(
   deps: BuiltInSuperoneToolDeps,
 ) {
   switch (toolName) {
-    case 'miniapp_dev_read_guide':
-      return readMiniappGuide(args as { topic: string })
+    case 'read_manual':
+      return manualReadHandler(args as { domain?: string; topic?: string; modules?: string[] })
     case 'miniapp_dev_setup':
       return setupMiniAppDev(args as unknown as SetupMiniAppDevArgs, deps)
     case 'miniapp_dev_register':
@@ -315,12 +267,10 @@ export async function executeBuiltInSuperoneTool(
     case 'session_collab_wait':
       return import('../session/session-collaboration').then(({ waitForSessionMessages }) =>
         waitForSessionMessages(deps.sessionId, args as unknown as SessionWaitArgs))
-    case 'config_read_guide':
-      return configReadGuideHandler(args as { domain?: string; recordId?: string }, deps)
+    case 'config_read':
+      return configReadHandler(args as { domain?: string; recordId?: string }, deps)
     case 'config_apply':
       return configApplyHandler(args as ConfigApplyArgs, deps)
-    case 'media_read_guide':
-      return readMediaGuideHandler(args as { topic: string })
     case 'media_list_providers':
       return listMediaProvidersHandler(args as ListMediaProvidersArgs)
     case 'media_generate_image':
@@ -411,14 +361,7 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
     )
   }
 
-  server.tool(
-    'miniapp_dev_read_guide',
-    READ_MINIAPP_GUIDE_DESCRIPTION,
-    {
-      topic: z.enum(MINIAPP_GUIDE_TOPICS).describe(MINIAPP_GUIDE_TOPIC_DESCRIPTION),
-    },
-    readMiniappGuide,
-  )
+  registerManualTools(server)
 
   server.tool(
     'miniapp_dev_setup',
@@ -469,15 +412,15 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
   )
 
   server.registerTool(
-    'config_read_guide',
+    'config_read',
     {
-      description: CONFIG_READ_GUIDE_DESCRIPTION,
+      description: CONFIG_READ_DESCRIPTION,
       inputSchema: {
         domain: z.enum(CONFIG_SETTINGS_DOMAINS).optional().describe('Which settings domain to read. Omit to list all domains.'),
         recordId: z.string().optional().describe('Resource domains only: read one record\'s full current values instead of the record list.'),
       },
     },
-    (args) => configReadGuideHandler(args, deps),
+    (args) => configReadHandler(args, deps),
   )
 
   server.registerTool(
@@ -486,13 +429,13 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
       description: CONFIG_APPLY_DESCRIPTION,
       inputSchema: {
         changes: z.array(z.object({
-          key: z.string().describe('The settings field key, exactly as returned by config_read_guide.'),
+          key: z.string().describe('The settings field key, exactly as returned by config_read.'),
           value: z.union([z.string(), z.number(), z.boolean(), z.null()]).describe('The new value. Use null or "" to reset a clearable field to its default.'),
         })).optional().describe('Scalar settings changes to propose. Mutually exclusive with `resource`.'),
         resource: z.object({
-          resource: z.string().describe('The resource domain, e.g. "credential" — as returned by config_read_guide.'),
+          resource: z.string().describe('The resource domain, e.g. "credential" — as returned by config_read.'),
           operation: z.enum(['create', 'update', 'delete']).describe('Which operation to perform.'),
-          recordId: z.string().optional().describe('The record\'s `id` (from config_read_guide). Required for update/delete.'),
+          recordId: z.string().optional().describe('The record\'s `id` (from config_read). Required for update/delete.'),
           values: z.record(z.string(), z.unknown()).optional().describe('Field values keyed by field key. Required for create (all required fields) and update (only the fields being changed).'),
         }).optional().describe('A resource create/update/delete to propose. Mutually exclusive with `changes`.'),
       },

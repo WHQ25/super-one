@@ -9,6 +9,7 @@ import uiComponents from './guidelines/sections/ui_components.md?raw'
 import chartsChartJs from './guidelines/sections/charts_chart_js.md?raw'
 import artAndIllustration from './guidelines/sections/art_and_illustration.md?raw'
 import mapping from './guidelines/sections/mapping.json'
+import { WIDGET_GUIDELINE_MODULES } from './guideline-modules'
 
 const SECTION_MAP: Record<string, string> = {
   '_preamble': preamble,
@@ -23,7 +24,7 @@ const SECTION_MAP: Record<string, string> = {
   'Art and illustration': artAndIllustration,
 }
 
-export const AVAILABLE_MODULES = Object.keys(mapping) as readonly string[]
+export const AVAILABLE_MODULES = WIDGET_GUIDELINE_MODULES
 
 export function getGuidelines(requestedModules: string[]): string {
   const seen = new Set<string>()

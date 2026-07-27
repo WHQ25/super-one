@@ -20,37 +20,37 @@ const meta: Meta<typeof ToolBlock> = {
 export default meta
 type Story = StoryObj<typeof ToolBlock>
 
-export const WidgetReadGuidelinesStreaming: Story = {
+export const ManualReadWidgetStreaming: Story = {
   args: {
-    toolName: 'mcp__superone__widget_read_guide',
-    input: JSON.stringify({ modules: ['layout', 'colors', 'typography'] }),
+    toolName: 'mcp__superone__read_manual',
+    input: JSON.stringify({ domain: 'widget', modules: ['diagram', 'chart'] }),
     status: 'streaming',
     elapsedSeconds: 1,
   },
 }
 
-export const WidgetReadGuidelinesComplete: Story = {
+export const ManualReadWidgetComplete: Story = {
   args: {
-    toolName: 'mcp__superone__widget_read_guide',
-    input: JSON.stringify({ modules: ['layout', 'colors'] }),
+    toolName: 'mcp__superone__read_manual',
+    input: JSON.stringify({ domain: 'widget', modules: ['diagram'] }),
     status: 'complete',
-    result: 'Loaded 3 guideline modules',
+    result: 'Loaded widget guidelines',
   },
 }
 
-export const SuperoneReadMiniAppGuideStreaming: Story = {
+export const ManualReadMiniappStreaming: Story = {
   args: {
-    toolName: 'mcp__superone__miniapp_dev_read_guide',
-    input: JSON.stringify({ topic: 'iframe-bridge' }),
+    toolName: 'mcp__superone__read_manual',
+    input: JSON.stringify({ domain: 'miniapp', topic: 'overview' }),
     status: 'streaming',
     elapsedSeconds: 1,
   },
 }
 
-export const SuperoneReadMiniAppGuideComplete: Story = {
+export const ManualReadMiniappComplete: Story = {
   args: {
-    toolName: 'mcp__superone__miniapp_dev_read_guide',
-    input: JSON.stringify({ topic: 'state-persistence' }),
+    toolName: 'mcp__superone__read_manual',
+    input: JSON.stringify({ domain: 'miniapp', topic: 'manifest' }),
     status: 'complete',
     result: 'Guide content delivered',
   },

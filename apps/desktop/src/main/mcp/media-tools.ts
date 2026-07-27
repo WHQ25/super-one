@@ -21,43 +21,13 @@ import {
 import { getMediaProviderStatuses } from '../media-gen/settings-service'
 import { readVideoGeneration, submitVideoGeneration } from '../media-gen/video/history'
 import type { VideoFrameInput } from '../media-gen/video/service'
-import mediaOverviewMd from './guides/media/overview.md?raw'
-import mediaArkImageMd from './guides/media/ark-image.md?raw'
-import mediaArkVideoMd from './guides/media/ark-video.md?raw'
-import mediaOpenaiImageMd from './guides/media/openai-image.md?raw'
-import mediaOpenaiVideoMd from './guides/media/openai-video.md?raw'
-import mediaGoogleImageMd from './guides/media/google-image.md?raw'
-import mediaGoogleVideoMd from './guides/media/google-video.md?raw'
-import mediaNewapiVideoMd from './guides/media/newapi-video.md?raw'
 import {
   GENERATE_IMAGE_DESCRIPTION,
   GENERATE_VIDEO_DESCRIPTION,
   LIST_MEDIA_PROVIDERS_DESCRIPTION,
-  MEDIA_GUIDE_TOPICS,
-  MEDIA_GUIDE_TOPIC_DESCRIPTION,
-  READ_MEDIA_GUIDE_DESCRIPTION,
   VIDEO_STATUS_DESCRIPTION,
 } from './superone-mcp-builtin-defs'
 import type { BuiltInSuperoneToolDeps } from './superone-mcp-builtins'
-
-const MEDIA_GUIDES: Record<string, string> = {
-  overview: mediaOverviewMd,
-  'ark-image': mediaArkImageMd,
-  'ark-video': mediaArkVideoMd,
-  'openai-image': mediaOpenaiImageMd,
-  'openai-video': mediaOpenaiVideoMd,
-  'google-image': mediaGoogleImageMd,
-  'google-video': mediaGoogleVideoMd,
-  'newapi-video': mediaNewapiVideoMd,
-}
-
-export function readMediaGuideHandler(args: { topic: string }) {
-  const text = MEDIA_GUIDES[args.topic]
-  if (!text) {
-    throw new Error(`Unknown media guide topic: ${args.topic}`)
-  }
-  return { content: [{ type: 'text' as const, text }] }
-}
 
 export interface GenerateImageArgs {
   prompt: string
@@ -84,7 +54,7 @@ function sizeNoteForKind(kind: string): string | undefined {
 }
 
 export interface ListMediaProvidersArgs {
-  category?: string
+  category?: 'image' | 'video'
 }
 
 export async function listMediaProvidersHandler(args: ListMediaProvidersArgs = {}) {
@@ -490,22 +460,11 @@ export async function videoStatusToolHandler(args: VideoStatusArgs) {
 
 export function registerMediaTools(server: McpServer, deps: BuiltInSuperoneToolDeps): void {
   server.registerTool(
-    'media_read_guide',
-    {
-      description: READ_MEDIA_GUIDE_DESCRIPTION,
-      inputSchema: {
-        topic: z.enum(MEDIA_GUIDE_TOPICS).describe(MEDIA_GUIDE_TOPIC_DESCRIPTION),
-      },
-    },
-    (args) => readMediaGuideHandler(args),
-  )
-
-  server.registerTool(
     'media_list_providers',
     {
       description: LIST_MEDIA_PROVIDERS_DESCRIPTION,
       inputSchema: {
-        category: z.string().optional().describe('Filter by media category, e.g. "image". Omit to list all usable providers.'),
+        category: z.enum(['image', 'video']).optional().describe('Filter by media category. Omit to list all usable providers.'),
       },
     },
     (args) => listMediaProvidersHandler(args),

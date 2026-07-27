@@ -119,12 +119,13 @@ export const resetLock: { current: Promise<void> | null } = { current: null }
 export async function _ensureClaudeSessionReadyForSend(
   get: () => ChatStore,
   projectPath: string,
+  sessionId?: string | null,
 ): Promise<void> {
   const project = get().projectSessions[projectPath]
   if (!project) return
-  const sessionId = resolveActiveSessionId(project)
-  if (!sessionId) return
-  const session = project._sessions[sessionId]
+  const sid = sessionId ?? resolveActiveSessionId(project)
+  if (!sid) return
+  const session = project._sessions[sid]
   if (!session || session.sessionProvider === 'codex' || session.sessionProvider === 'acp' || session.sessionProvider === 'opencode') return
-  await window.app.resumeSession(projectPath, sessionId, _getSessionCwd(projectPath, session))
+  await window.app.resumeSession(projectPath, sid, _getSessionCwd(projectPath, session))
 }

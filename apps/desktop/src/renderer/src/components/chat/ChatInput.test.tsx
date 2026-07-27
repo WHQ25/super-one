@@ -422,6 +422,27 @@ describe('ChatInput', () => {
     })
     expect(screen.getByTestId('codex-goal-indicator')).toHaveTextContent('Ship the goal UX')
   })
+
+  it('passes the mosaic session scope as the sendMessage target', () => {
+    sessionScope.value = { projectPath: '/project', sessionId: 'sid-new' }
+    activeSessionState.draftText = 'hello from tile'
+    editorState.text = 'hello from tile'
+
+    render(<ChatInput />)
+
+    // Footer send control is the ArrowUp icon button (last icon-button in the composer).
+    const send = document.querySelector('button .lucide-arrow-up')?.closest('button')
+    expect(send).toBeTruthy()
+    fireEvent.click(send!)
+
+    expect(chatActions.sendMessage).toHaveBeenCalledWith(
+      'hello from tile',
+      expect.any(Array),
+      expect.any(Array),
+      expect.any(Array),
+      { projectPath: '/project', sessionId: 'sid-new' },
+    )
+  })
 })
 
 describe('ChatInput @-mention no-match suppression', () => {

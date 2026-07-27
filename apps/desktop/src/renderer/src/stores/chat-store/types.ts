@@ -280,7 +280,7 @@ export interface ChatStore {
   focusProject: (projectPath: string) => Promise<void>
   ensureSession: (projectPath: string) => void
 
-  sendMessage: (content: string, segments?: InputSegment[], explicitMentions?: Mention[], attachments?: ImageAttachment[]) => Promise<void>
+  sendMessage: (content: string, segments?: InputSegment[], explicitMentions?: Mention[], attachments?: ImageAttachment[], target?: SessionWriteTarget) => Promise<void>
   approveCodexPlan: () => Promise<void>
   rejectCodexPlan: (feedback?: string) => Promise<void>
   interrupt: () => Promise<void>

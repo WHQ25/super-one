@@ -10,7 +10,6 @@ import {
   createLocalTextUserMessage,
   formatCodexAuthStatus,
   getCodexHelpText,
-  getLatestCodexThreadId,
   isRunnableCodexCommand,
   parseCodexCommand,
   resolveSessionCodexSelection,
@@ -20,13 +19,13 @@ import { _ensureClaudeSessionReadyForSend, resetLock, type ChatStoreSet } from '
 import { _createLocalCodexSessionId, _getEffectiveSessionId } from './persistence'
 import { applyCachedCodexPermissionPreset } from './prefs-cache'
 import {
-  getActivePerSession,
+  commitPerSession,
   getProject,
+  getScopedPerSession,
   mergeProjectAndSessionDirs,
-  updateActivePerSession,
 } from './store-helpers'
-import { CLAUDE_INTERCEPTED_COMMANDS, isRemoteSession, useChatStore } from '../index'
-import type { ChatProvider, ChatStore, InputSegment, Mention } from '../types'
+import { CLAUDE_INTERCEPTED_COMMANDS, isRemoteSession } from '../index'
+import type { ChatProvider, ChatStore, InputSegment, Mention, SessionWriteTarget } from '../types'
 
 /**
  * Body of useChatStore.sendMessage extracted as a free-standing helper so
@@ -40,6 +39,9 @@ import type { ChatProvider, ChatStore, InputSegment, Mention } from '../types'
  * - user message appended (or queued during a claude streaming turn)
  * - dispatch: codex → runCodexCommand, claude → window.agent.sendMessage
  *
+ * Optional `target` pins the send to a mosaic-tile (or other scoped) session so a
+ * project-active pointer that has not yet flipped cannot steal the turn.
+ *
  * Returns void; failures inside the IPC call are re-thrown after rolling back
  * the awaitingAssistantReply flag (when not in queued mode).
  */
@@ -50,16 +52,33 @@ export async function sendMessageImpl(
   segments?: InputSegment[],
   explicitMentions?: Mention[],
   explicitAttachments?: ImageAttachment[],
+  target?: SessionWriteTarget,
 ): Promise<void> {
-  const { activeProject } = get()
-  if (!activeProject) return
-  if (isRemoteSession(get(), activeProject, get().projectSessions[activeProject]?._activeSessionId)) return
+  const projectPath = target?.projectPath ?? get().activeProject
+  if (!projectPath) return
+
+  // Mutable write target: codex first-turn may rotate the session id under us.
+  let writeTarget: SessionWriteTarget | undefined = target
+    ? { projectPath: target.projectPath, sessionId: target.sessionId }
+    : undefined
+
+  const resolveWriteSid = (): string | null => {
+    if (writeTarget) return writeTarget.sessionId
+    return getProject(get(), projectPath)._activeSessionId
+  }
+
+  const patchSession = (updater: (s: ReturnType<typeof getScopedPerSession>) => Partial<ReturnType<typeof getScopedPerSession>>) => {
+    set((s) => commitPerSession(s, writeTarget, updater))
+  }
+
+  if (isRemoteSession(get(), projectPath, resolveWriteSid())) return
 
   {
-    const project = getProject(get())
-    const session = getActivePerSession(get())
+    const project = getProject(get(), projectPath)
+    const session = getScopedPerSession(get(), writeTarget)
     window.app.trace?.('session.lifecycle', 'sendMessage', {
       activeSid: project._activeSessionId,
+      writeSid: resolveWriteSid(),
       status: session.status,
       provider: session.sessionProvider,
       msgCount: session.messages.length,
@@ -68,7 +87,7 @@ export async function sendMessageImpl(
   }
 
   const { useAppStore } = await import('../../app')
-  const wtState = useAppStore.getState().getWorktreeState(activeProject)
+  const wtState = useAppStore.getState().getWorktreeState(projectPath)
   if (wtState.pendingBaseBranch) {
     const baseBranch = wtState.pendingBaseBranch
     const mode = wtState.pendingMode
@@ -77,7 +96,7 @@ export async function sendMessageImpl(
       console.error('[sendMessage] Branch mode requires a branch name')
       return
     }
-    const result = await window.app.activateWorktree(activeProject, {
+    const result = await window.app.activateWorktree(projectPath, {
       baseBranch,
       mode,
       branchName: mode === 'branch' ? branchName : undefined,
@@ -87,9 +106,9 @@ export async function sendMessageImpl(
       console.error('[sendMessage] Failed to activate worktree:', result.error)
       return
     }
-    useAppStore.getState().setActiveWorktree(activeProject, result.path)
+    useAppStore.getState().setActiveWorktree(projectPath, result.path)
     const recordedBranch = mode === 'branch' ? branchName : baseBranch
-    set((s) => updateActivePerSession(s, () => ({
+    patchSession(() => ({
       cwd: result.path,
       messages: [],
       totalCostUsd: 0,
@@ -105,11 +124,11 @@ export async function sendMessageImpl(
       subagentTokens: {},
       subagentColors: {},
       _subagentColorsFree: freshSubagentColorPool(),
-    })))
+    }))
   }
 
-  const session = getActivePerSession(get())
-  const project = getProject(get())
+  const session = getScopedPerSession(get(), writeTarget)
+  const project = getProject(get(), projectPath)
   const {
     preferredProvider,
     selectedModel,
@@ -194,17 +213,18 @@ export async function sendMessageImpl(
   const isQueuedSend = (effectiveProvider === 'claude' || effectiveProvider === 'acp' || effectiveProvider === 'opencode') && session.status === 'streaming'
 
   if (!session.sessionProvider) {
-    set((s) => updateActivePerSession(s, () => ({
+    patchSession(() => ({
       sessionProvider: effectiveProvider,
       preferredProvider: effectiveProvider,
-    })))
+    }))
   }
 
   if (effectiveProvider === 'codex' && session.sessionProvider !== 'codex') {
     const localSid = _createLocalCodexSessionId()
+    const previousSid = resolveWriteSid()
     set((s) => {
-      const proj = getProject(s, activeProject)
-      const currentSid = proj._activeSessionId
+      const proj = getProject(s, projectPath)
+      const currentSid = previousSid
       const currentSess = currentSid ? proj._sessions[currentSid] : null
       const shouldCarryState = currentSess != null && currentSess.messages.length === 0
       const nextSessions = { ...proj._sessions }
@@ -219,29 +239,44 @@ export async function sendMessageImpl(
           preferredProvider: 'codex',
         }
       }
+      const nextActive = currentSid && proj._activeSessionId === currentSid
+        ? localSid
+        : proj._activeSessionId
       return {
         projectSessions: {
           ...s.projectSessions,
-          [activeProject]: {
+          [projectPath]: {
             ...proj,
-            _activeSessionId: localSid,
+            _activeSessionId: nextActive,
             _sessions: nextSessions,
           },
         },
       }
     })
+    if (writeTarget && previousSid) {
+      writeTarget = { projectPath, sessionId: localSid }
+      // Keep mosaic tiles pinned to the live session id when a first-turn codex
+      // switch rotates the draft id under a scoped pane.
+      void import('@/components/mosaic/mosaic-store').then(({ useMosaicStore }) => {
+        useMosaicStore.getState().replaceTileSession(projectPath, previousSid, localSid)
+      }).catch(() => {})
+    } else if (writeTarget) {
+      writeTarget = { projectPath, sessionId: localSid }
+    }
   }
 
   const slashMatch = finalContent.match(/^\/(\S+)/)
-  set((s) => updateActivePerSession(s, () => ({ _pendingSlashCommand: slashMatch ? slashMatch[1] : '' })))
+  patchSession(() => ({ _pendingSlashCommand: slashMatch ? slashMatch[1] : '' }))
 
-  const codexSessionId = resolvedCodexCommand ? _getEffectiveSessionId(getProject(get(), activeProject)) : null
+  const codexSessionId = resolvedCodexCommand
+    ? (writeTarget?.sessionId ?? _getEffectiveSessionId(getProject(get(), projectPath)))
+    : null
 
   // Utility codex commands → popup (no chat messages); errors fall through to in-chat assistant error message
   if (resolvedCodexCommand) {
     const utilityKind = resolvedCodexCommand.kind
     if (utilityKind === 'help' || utilityKind === 'reset' || utilityKind === 'auth-status' || utilityKind === 'auth-set' || utilityKind === 'plan' || utilityKind === 'review-picker') {
-      set((s) => updateActivePerSession(s, () => ({ _pendingSlashCommand: '' })))
+      patchSession(() => ({ _pendingSlashCommand: '' }))
       try {
         let popupContent: string
         if (utilityKind === 'review-picker') {
@@ -253,21 +288,21 @@ export async function sendMessageImpl(
           if (codexSessionId) await window.agent.resetSession(codexSessionId)
           popupContent = 'Codex thread has been reset.'
         } else if (utilityKind === 'auth-status') {
-          const status = await window.app.codexGetAuthStatus(activeProject)
+          const status = await window.app.codexGetAuthStatus(projectPath)
           popupContent = formatCodexAuthStatus(status)
         } else if (utilityKind === 'plan') {
           get().setSelectedCodexCollaborationMode('plan')
           return
         } else {
-          const status = await window.app.codexSetAuth(activeProject, {
+          const status = await window.app.codexSetAuth(projectPath, {
             mode: resolvedCodexCommand.mode,
             apiKey: resolvedCodexCommand.apiKey,
           })
           popupContent = `Auth mode updated.\n\n${formatCodexAuthStatus(status)}`
         }
-        set((s) => updateActivePerSession(s, () => ({
+        patchSession(() => ({
           slashCommandOutput: { command: utilityKind, content: popupContent },
-        })))
+        }))
       } catch (error) {
         const msg = error instanceof Error ? error.message : String(error)
         const errorMsg: ChatMessage = {
@@ -278,9 +313,9 @@ export async function sendMessageImpl(
           createdAt: new Date().toISOString(),
           providerId: 'codex',
         }
-        set((s) => updateActivePerSession(s, (sess) => ({
+        patchSession((sess) => ({
           messages: [...sess.messages, errorMsg],
-        })))
+        }))
       }
       return
     }
@@ -290,7 +325,7 @@ export async function sendMessageImpl(
   // {
   //   const providerMatch = rawContent.match(/^\/provider$/)
   //   if (providerMatch) {
-  //     set((s) => updateActivePerSession(s, () => ({ _pendingSlashCommand: '' })))
+  //     patchSession(() => ({ _pendingSlashCommand: '' }))
   //     useChatStore.getState().openProviderPopup()
   //     return
   //   }
@@ -299,7 +334,7 @@ export async function sendMessageImpl(
   if (effectiveProvider === 'claude') {
     const m = rawContent.match(/^\/(\S+)$/)
     if (m && CLAUDE_INTERCEPTED_COMMANDS[m[1]]) {
-      set((s) => updateActivePerSession(s, () => ({ _pendingSlashCommand: '' })))
+      patchSession(() => ({ _pendingSlashCommand: '' }))
       await CLAUDE_INTERCEPTED_COMMANDS[m[1]]()
       return
     }
@@ -346,7 +381,7 @@ export async function sendMessageImpl(
   const isCompactSlash = (effectiveProvider === 'claude' || effectiveProvider === 'opencode')
     && finalContent.trim() === '/compact'
   set((s) => ({
-    ...updateActivePerSession(s, (sess) => ({
+    ...commitPerSession(s, writeTarget, (sess) => ({
       ...(!isQueuedSend ? { messages: [...sess.messages, userMessage] } : {}),
       ...(isQueuedSend ? { queuedMessages: [...sess.queuedMessages, userMessage] } : {}),
       attachments: [],
@@ -371,11 +406,14 @@ export async function sendMessageImpl(
 
   if (resetLock.current) await resetLock.current
 
-  // Re-read the active session id from the live store. A first-turn codex switch above
-  // assigns a fresh _activeSessionId via set(), which the `project` snapshot captured at
-  // the top of this function does NOT reflect — using that stale (null) value here
-  // silently skipped mini-app tool authorization on the very first codex @-mention.
-  const resolvedSessionId = getProject(get(), activeProject)._activeSessionId ?? undefined
+  // Re-read the write session id from the live store when unscoped. A first-turn
+  // codex switch above assigns a fresh _activeSessionId via set(), which the
+  // snapshot at the top of this function does NOT reflect — using that stale
+  // value here silently skipped mini-app tool authorization on the very first
+  // codex @-mention. Scoped sends track rotations on writeTarget instead.
+  const resolvedSessionId = writeTarget?.sessionId
+    ?? getProject(get(), projectPath)._activeSessionId
+    ?? undefined
 
   // Authorize @-mentioned mini-app tools for this session BEFORE dispatching the turn.
   // Codex dispatches via runCodexCommand and returns below, so authorizing after that
@@ -385,7 +423,7 @@ export async function sendMessageImpl(
     .map((m) => m.value)
   if (miniAppAuthorizations.length > 0 && resolvedSessionId) {
     try {
-      await window.miniapp.authorize(miniAppAuthorizations, activeProject, resolvedSessionId)
+      await window.miniapp.authorize(miniAppAuthorizations, projectPath, resolvedSessionId)
     } catch (err) {
       console.error('[sendMessage] miniapp authorize failed:', err)
     }
@@ -394,7 +432,7 @@ export async function sendMessageImpl(
   if (resolvedCodexCommand) {
     if (!isRunnableCodexCommand(resolvedCodexCommand) || !codexSessionId) return
     await runCodexCommand(set, get, {
-      activeProject,
+      activeProject: projectPath,
       codexSessionId,
       session,
       codexCommand: resolvedCodexCommand,
@@ -413,35 +451,36 @@ export async function sendMessageImpl(
   }
 
   if (effectiveProvider === 'claude') {
-    await _ensureClaudeSessionReadyForSend(get, activeProject)
+    await _ensureClaudeSessionReadyForSend(get, projectPath, resolvedSessionId)
   }
 
-  const mergedDirs = mergeProjectAndSessionDirs(project, session)
+  const liveSession = getScopedPerSession(get(), writeTarget)
+  const mergedDirs = mergeProjectAndSessionDirs(project, liveSession)
 
   try {
-    await window.agent.sendMessage(activeProject, {
+    await window.agent.sendMessage(projectPath, {
       content: finalContent,
       model: selectedModel || undefined,
       effort: selectedEffort,
-      ...(effectiveProvider === 'opencode' && session.openCodeAgentId
-        ? { agent: session.openCodeAgentId }
+      ...(effectiveProvider === 'opencode' && liveSession.openCodeAgentId
+        ? { agent: liveSession.openCodeAgentId }
         : {}),
       images: attachments.length > 0 ? attachments : undefined,
       additionalDirs: mergedDirs.length > 0 ? mergedDirs : undefined,
       clientMessageId: userMessageId,
       sessionId: resolvedSessionId,
-      gitBranch: session._gitBranch ?? undefined,
-      worktreePath: session._worktreePath ?? undefined,
+      gitBranch: liveSession._gitBranch ?? undefined,
+      worktreePath: liveSession._worktreePath ?? undefined,
       userMessageContent: userContent,
       contexts: messageContexts,
       userSelections: userSelections.length > 0 ? [...userSelections] : undefined,
       provider: effectiveProvider,
-      ...(session.apiProviderId ? { apiProviderId: session.apiProviderId } : {}),
+      ...(liveSession.apiProviderId ? { apiProviderId: liveSession.apiProviderId } : {}),
       ...(isQueuedSend ? { priority: 'next' as const } : {}),
     })
   } catch (err) {
     if (!isQueuedSend) {
-      set((s) => updateActivePerSession(s, () => ({ awaitingAssistantReply: false })))
+      patchSession(() => ({ awaitingAssistantReply: false }))
     }
     throw err
   }

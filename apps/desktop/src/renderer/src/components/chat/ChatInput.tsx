@@ -630,8 +630,10 @@ export function ChatInput() {
       }
       const { segments, mentions: editorMentions, attachments: sentAttachments } = serializeAndClear()
       const fullText = segments.flatMap((s) => ('attachmentId' in s ? [] : [s.text])).join('\n')
-      sendMessage(fullText, segments, editorMentions, sentAttachments)
-    }, [activeProviderForResources, canSend, sendMessage, serializeAndClear, text])
+      // Pass the mosaic tile (or mini-window) scope so the turn lands on this pane's
+      // session even when project-active still points at a sibling tile mid-switch.
+      sendMessage(fullText, segments, editorMentions, sentAttachments, sessionScope ?? undefined)
+    }, [activeProviderForResources, canSend, sendMessage, serializeAndClear, sessionScope, text])
 
     const handleKeyDownCore = useCallback(
       (e: KeyboardEvent | React.KeyboardEvent): boolean => {

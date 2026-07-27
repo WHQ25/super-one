@@ -224,6 +224,97 @@ describe('sendMessageImpl: intercepted commands', () => {
   })
 })
 
+describe('sendMessageImpl: mosaic session scope', () => {
+  function seedTwoSessions(
+    activeSid: string,
+    scopedSid: string,
+    patches: {
+      active?: Partial<ReturnType<typeof createDefaultPerSessionState>>
+      scoped?: Partial<ReturnType<typeof createDefaultPerSessionState>>
+    } = {},
+  ) {
+    const proj = createDefaultProjectState()
+    proj._activeSessionId = activeSid
+    proj._sessions = {
+      [activeSid]: {
+        ...createDefaultPerSessionState(),
+        messages: [{ id: 'old', role: 'user', content: [{ type: 'text', text: 'from-old' }], status: 'complete', createdAt: '', providerId: 'claude' }],
+        ...patches.active,
+      },
+      [scopedSid]: {
+        ...createDefaultPerSessionState(),
+        messages: [],
+        ...patches.scoped,
+      },
+    }
+    useChatStore.setState({
+      projectSessions: { '/proj': proj },
+      activeProject: '/proj',
+      remoteSessions: {},
+    })
+  }
+
+  it('routes the user message and IPC sessionId to the scoped tile, not the project-active session', async () => {
+    // Mosaic: tile shows draft "sid-new" while project-active is still "sid-old" (focus switch in flight).
+    seedTwoSessions('sid-old', 'sid-new')
+
+    await useChatStore.getState().sendMessage(
+      'hello from new tile',
+      undefined,
+      undefined,
+      undefined,
+      { projectPath: '/proj', sessionId: 'sid-new' },
+    )
+
+    const proj = useChatStore.getState().projectSessions['/proj']
+    expect(proj._sessions['sid-old'].messages).toHaveLength(1)
+    expect(proj._sessions['sid-old'].messages[0]).toMatchObject({
+      role: 'user',
+      content: [{ type: 'text', text: 'from-old' }],
+    })
+    expect(proj._sessions['sid-new'].messages).toHaveLength(1)
+    expect(proj._sessions['sid-new'].messages[0]).toMatchObject({
+      role: 'user',
+    })
+    expect(proj._sessions['sid-new'].messages[0].content).toEqual(
+      expect.arrayContaining([expect.objectContaining({ type: 'text', text: 'hello from new tile' })]),
+    )
+    expect(mockSendMessage).toHaveBeenCalledWith('/proj', expect.objectContaining({
+      content: 'hello from new tile',
+      sessionId: 'sid-new',
+    }))
+    // Active pointer may still be the old session — scoped send must not require it to have flipped first.
+    expect(proj._activeSessionId).toBe('sid-old')
+  })
+
+  it('queues a scoped send onto the scoped session while the active session is streaming', async () => {
+    seedTwoSessions('sid-old', 'sid-new', {
+      scoped: {
+        status: 'streaming',
+        awaitingAssistantReply: true,
+        sessionProvider: 'claude',
+        preferredProvider: 'claude',
+      },
+    })
+
+    await useChatStore.getState().sendMessage(
+      'queued on new',
+      undefined,
+      undefined,
+      undefined,
+      { projectPath: '/proj', sessionId: 'sid-new' },
+    )
+
+    const proj = useChatStore.getState().projectSessions['/proj']
+    expect(proj._sessions['sid-old'].queuedMessages).toHaveLength(0)
+    expect(proj._sessions['sid-new'].queuedMessages).toHaveLength(1)
+    expect(mockSendMessage).toHaveBeenCalledWith('/proj', expect.objectContaining({
+      sessionId: 'sid-new',
+      priority: 'next',
+    }))
+  })
+})
+
 describe('sendMessageImpl: IPC dispatch + rollback', () => {
   it('sends the per-session OpenCode agent selection', async () => {
     seedProject('/proj', 'sid-opencode', {

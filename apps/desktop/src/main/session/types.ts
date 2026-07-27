@@ -74,6 +74,15 @@ export interface SessionCreateOptions {
   providerSessionId?: string | null
 }
 
+/**
+ * How chat_messages should be written on this state change.
+ * - `full`: upsert every in-memory message (hydrate / repair).
+ * - `incremental`: upsert only dirty ids (+ any ids missing from DB); always stale-delete.
+ */
+export type MessagePersistMode =
+  | { kind: 'full' }
+  | { kind: 'incremental'; dirtyMessageIds: readonly string[] }
+
 export interface SessionStateChange {
   sid: string
   projectPath: string
@@ -88,6 +97,7 @@ export interface SessionStateChange {
   worktreeMissing: boolean
   apiProviderId: string | null
   acpAgentId: string | null
+  messagePersistMode: MessagePersistMode
 }
 
 export type ActiveApiProviderIdGetter = (harnessId: HarnessId) => string | null

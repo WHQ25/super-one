@@ -1424,6 +1424,75 @@ describe('Session persist hook', () => {
     expect(first.sid).toBe('sess-1')
     expect(first.messages.some((m) => m.id === 'u1')).toBe(true)
     expect(first.title).toBe('first')
+    expect(first.messagePersistMode.kind).toBe('incremental')
+    if (first.messagePersistMode.kind === 'incremental') {
+      expect(first.messagePersistMode.dirtyMessageIds).toContain('u1')
+    }
+
+    backend.resolveSend?.()
+    await promise
+  })
+
+  it('persists empty transcript when truncating at the first checkpoint (index 0)', () => {
+    const calls: SessionStateChange[] = []
+    const { session } = makeSession({
+      onStateChange: (s) => calls.push(s),
+      initialMessages: [
+        {
+          id: 'u0',
+          role: 'user',
+          status: 'complete',
+          content: [{ type: 'text', text: 'first' }],
+          createdAt: '2026-01-01T00:00:00Z',
+          providerId: 'local',
+          checkpointId: 'cp-0',
+        },
+        {
+          id: 'a0',
+          role: 'assistant',
+          status: 'complete',
+          content: [{ type: 'text', text: 'reply' }],
+          createdAt: '2026-01-01T00:00:01Z',
+          providerId: 'claude',
+        },
+      ],
+    })
+    calls.length = 0
+    session.truncateMessagesAt('cp-0')
+    expect(session.snapshot.messages).toHaveLength(0)
+    expect(calls).toHaveLength(1)
+    expect(calls[0].messages).toEqual([])
+    expect(calls[0].messagePersistMode.kind).toBe('incremental')
+  })
+
+  it('retains dirty ids when onStateChange throws and resubmits them next save', async () => {
+    let failOnce = true
+    const modes: SessionStateChange['messagePersistMode'][] = []
+    const { session, backend } = makeSession({
+      onStateChange: (s) => {
+        modes.push(s.messagePersistMode)
+        if (failOnce) {
+          failOnce = false
+          throw new Error('db down')
+        }
+      },
+    })
+    const promise = session.send({ content: 'first', clientMessageId: 'u1' })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(modes[0]?.kind).toBe('incremental')
+
+    // Complete assistant → second persist should still include u1 if first failed
+    backend.emit({
+      type: 'message_start',
+      message: { id: 'a1', role: 'assistant', status: 'streaming', content: [], createdAt: '', providerId: 'claude' },
+    })
+    backend.emit({ type: 'message_complete', messageId: 'a1' })
+    const last = modes[modes.length - 1]
+    expect(last.kind).toBe('incremental')
+    if (last.kind === 'incremental') {
+      expect(last.dirtyMessageIds).toContain('u1')
+      expect(last.dirtyMessageIds).toContain('a1')
+    }
 
     backend.resolveSend?.()
     await promise
@@ -1876,9 +1945,64 @@ describe('Session persist hook', () => {
     const calls: SessionStateChange[] = []
     const { backend } = makeSession({ onStateChange: (s) => calls.push(s) })
     // message_complete referring to a message that was never started: reducer
-    // leaves messages empty, so nothing to persist.
+    // leaves messages empty, so nothing to persist (no stale-reconcile flag).
     backend.emit({ type: 'message_complete', messageId: 'ghost', metadata: {} })
     expect(calls).toHaveLength(0)
+  })
+
+  it('still fires onStateChange for empty transcript after truncate (stale reconcile)', () => {
+    const calls: SessionStateChange[] = []
+    const { session } = makeSession({
+      onStateChange: (s) => calls.push(s),
+      initialMessages: [
+        {
+          id: 'u0',
+          role: 'user',
+          status: 'complete',
+          content: [{ type: 'text', text: 'first' }],
+          createdAt: '',
+          providerId: 'local',
+          checkpointId: 'cp-0',
+        },
+      ],
+    })
+    calls.length = 0
+    session.truncateMessagesAt('cp-0')
+    expect(session.snapshot.messages).toHaveLength(0)
+    expect(calls).toHaveLength(1)
+    expect(calls[0].messages).toEqual([])
+  })
+
+  it('retains stale-reconcile flag when empty-transcript persist fails', () => {
+    let failOnce = true
+    const calls: SessionStateChange[] = []
+    const { session } = makeSession({
+      onStateChange: (s) => {
+        calls.push(s)
+        if (failOnce) {
+          failOnce = false
+          throw new Error('db down')
+        }
+      },
+      initialMessages: [
+        {
+          id: 'u0',
+          role: 'user',
+          status: 'complete',
+          content: [{ type: 'text', text: 'first' }],
+          createdAt: '',
+          providerId: 'local',
+          checkpointId: 'cp-0',
+        },
+      ],
+    })
+    calls.length = 0
+    session.truncateMessagesAt('cp-0')
+    expect(calls).toHaveLength(1)
+    // Metadata-only notify with empty messages should retry empty persist.
+    session.setApiProviderId('retry-provider')
+    expect(calls).toHaveLength(2)
+    expect(calls[1].messages).toEqual([])
   })
 })
 

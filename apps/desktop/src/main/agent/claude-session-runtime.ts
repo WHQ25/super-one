@@ -198,14 +198,23 @@ export function readOutputFile(outputFile: string, projectPath?: string): { resu
 }
 
 export function patchAgentBlock(messages: ChatMessage[], tid: string, patch: Record<string, unknown>): ChatMessage[] {
-  return messages.map((msg) => ({
-    ...msg,
-    content: msg.content.map((block) =>
-      block.type === 'tool_use' && block.toolName === 'Agent' && block.toolUseId === tid
-        ? { ...block, ...patch }
-        : block,
-    ),
-  }))
+  // Preserve object identity for unchanged messages so Session can derive dirty
+  // ids via reference comparison after the reducer.
+  let anyChanged = false
+  const next = messages.map((msg) => {
+    let blockChanged = false
+    const content = msg.content.map((block) => {
+      if (block.type === 'tool_use' && block.toolName === 'Agent' && block.toolUseId === tid) {
+        blockChanged = true
+        return { ...block, ...patch }
+      }
+      return block
+    })
+    if (!blockChanged) return msg
+    anyChanged = true
+    return { ...msg, content }
+  })
+  return anyChanged ? next : messages
 }
 
 export function applyClaudeEventToRuntime(
@@ -392,12 +401,23 @@ export function applyClaudeEventToRuntime(
         ...(taskResultText ? { taskResultText } : {}),
       })
       if (event.outputFile) {
-        msgs = msgs.map((msg) => ({
-          ...msg,
-          content: msg.content.map((block) =>
-            block.type === 'tool_result' && block.toolUseId === tid ? { ...block, outputPath: event.outputFile } : block,
-          ),
-        }))
+        // Preserve object identity for messages that do not own this tool_result,
+        // so Session dirty tracking does not rewrite the entire transcript.
+        let outputPathChanged = false
+        const withOutputPath = msgs.map((msg) => {
+          let blockChanged = false
+          const content = msg.content.map((block) => {
+            if (block.type === 'tool_result' && block.toolUseId === tid) {
+              blockChanged = true
+              return { ...block, outputPath: event.outputFile }
+            }
+            return block
+          })
+          if (!blockChanged) return msg
+          outputPathChanged = true
+          return { ...msg, content }
+        })
+        if (outputPathChanged) msgs = withOutputPath
       }
       return {
         ...runtime,

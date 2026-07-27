@@ -8,6 +8,9 @@ const { getDbMock, getProjectIdMock } = vi.hoisted(() => ({
 
 vi.mock('../database', () => ({ getDb: getDbMock }))
 vi.mock('../recent-folders', () => ({ getProjectId: getProjectIdMock }))
+vi.mock('../logger', () => ({
+  default: { warn: vi.fn(), info: vi.fn(), error: vi.fn(), debug: vi.fn() },
+}))
 
 import {
   insertSessionRecord,
@@ -184,6 +187,13 @@ function makeFakeDb() {
           },
         }
       }
+      if (/^SELECT id, usage_counted_at FROM chat_messages WHERE session_id/.test(sql)) {
+        return {
+          all: (sessionId: string) => Array.from(messagesRows.values())
+            .filter((r) => r.session_id === sessionId)
+            .map((r) => ({ id: r.id, usage_counted_at: null as string | null })),
+        }
+      }
       if (/^SELECT id FROM chat_messages WHERE session_id = \? AND usage_counted_at IS NOT NULL/.test(sql)) {
         return { all: () => [] as Array<{ id: string }> }
       }
@@ -210,6 +220,14 @@ function makeFakeDb() {
           all: (sessionId: string) => Array.from(messagesRows.values())
             .filter((r) => r.session_id === sessionId)
             .sort((a, b) => a.sort_order - b.sort_order),
+        }
+      }
+      if (/DELETE FROM chat_messages WHERE session_id = \? AND id = \?/.test(sql)) {
+        return {
+          run: (sessionId: string, id: string) => {
+            const row = messagesRows.get(id)
+            if (row && row.session_id === sessionId) messagesRows.delete(id)
+          },
         }
       }
       if (/DELETE FROM chat_messages WHERE session_id/.test(sql)) {
@@ -382,6 +400,96 @@ describe('session-repo', () => {
       expect(loaded!.messages).toHaveLength(2)
       expect(loaded!.messages[0]?.id).toBe('u1')
       expect(loaded!.messages[1]?.id).toBe('a1')
+    })
+
+    it('incremental mode only upserts dirty ids and leaves others untouched', () => {
+      insertSessionRecord({ id: 's-incr', projectPath: '/tmp/proj', providerId: 'claude-base' })
+      const first: ChatMessage[] = [
+        { id: 'u1', role: 'user', status: 'complete', content: [{ type: 'text', text: 'hi' }], createdAt: '2026-04-18T00:00:00Z', providerId: 'claude' },
+        { id: 'a1', role: 'assistant', status: 'complete', content: [{ type: 'text', text: 'hello' }], createdAt: '2026-04-18T00:00:01Z', providerId: 'claude' },
+      ]
+      saveSessionStateBySid({
+        sid: 's-incr', projectPath: '/tmp/proj', providerId: 'claude-base',
+        messages: first, totalCostUsd: 0, contextTokens: 0,
+        messagePersistMode: { kind: 'full' },
+      })
+      const originalA1 = fake.messagesRows.get('a1')!.content_json
+
+      const second: ChatMessage[] = [
+        { ...first[0], content: [{ type: 'text', text: 'CHANGED_OLD' }] }, // should NOT write without dirty
+        first[1],
+        { id: 'u2', role: 'user', status: 'complete', content: [{ type: 'text', text: 'again' }], createdAt: '2026-04-18T00:01:00Z', providerId: 'claude' },
+      ]
+      saveSessionStateBySid({
+        sid: 's-incr', projectPath: '/tmp/proj', providerId: 'claude-base',
+        messages: second, totalCostUsd: 0, contextTokens: 0,
+        messagePersistMode: { kind: 'incremental', dirtyMessageIds: ['u2'] },
+      })
+
+      expect(fake.messagesRows.get('u1')!.content_json).not.toContain('CHANGED_OLD')
+      expect(fake.messagesRows.get('a1')!.content_json).toBe(originalA1)
+      expect(fake.messagesRows.get('u2')).toBeDefined()
+      expect(loadSessionStateBySid('s-incr')!.messages.map((m) => m.id)).toEqual(['u1', 'a1', 'u2'])
+    })
+
+    it('incremental empty dirty still deletes stale ids', () => {
+      insertSessionRecord({ id: 's-stale', projectPath: '/tmp/proj', providerId: 'claude-base' })
+      const full: ChatMessage[] = [
+        { id: 'u1', role: 'user', status: 'complete', content: [{ type: 'text', text: 'hi' }], createdAt: '2026-04-18T00:00:00Z', providerId: 'claude' },
+        { id: 'a1', role: 'assistant', status: 'complete', content: [{ type: 'text', text: 'hello' }], createdAt: '2026-04-18T00:00:01Z', providerId: 'claude' },
+      ]
+      saveSessionStateBySid({
+        sid: 's-stale', projectPath: '/tmp/proj', providerId: 'claude-base',
+        messages: full, totalCostUsd: 0, contextTokens: 0,
+        messagePersistMode: { kind: 'full' },
+      })
+      saveSessionStateBySid({
+        sid: 's-stale', projectPath: '/tmp/proj', providerId: 'claude-base',
+        messages: [full[0]], totalCostUsd: 0, contextTokens: 0,
+        messagePersistMode: { kind: 'incremental', dirtyMessageIds: [] },
+      })
+      expect(fake.messagesRows.has('a1')).toBe(false)
+      expect(loadSessionStateBySid('s-stale')!.messages.map((m) => m.id)).toEqual(['u1'])
+    })
+
+    it('empty messages array clears all chat_messages for the session (first-checkpoint rewind)', () => {
+      insertSessionRecord({ id: 's-empty', projectPath: '/tmp/proj', providerId: 'claude-base' })
+      const full: ChatMessage[] = [
+        { id: 'u1', role: 'user', status: 'complete', content: [{ type: 'text', text: 'hi' }], createdAt: '2026-04-18T00:00:00Z', providerId: 'claude' },
+        { id: 'a1', role: 'assistant', status: 'complete', content: [{ type: 'text', text: 'hello' }], createdAt: '2026-04-18T00:00:01Z', providerId: 'claude' },
+      ]
+      saveSessionStateBySid({
+        sid: 's-empty', projectPath: '/tmp/proj', providerId: 'claude-base',
+        messages: full, totalCostUsd: 0, contextTokens: 0,
+        messagePersistMode: { kind: 'full' },
+      })
+      saveSessionStateBySid({
+        sid: 's-empty', projectPath: '/tmp/proj', providerId: 'claude-base',
+        messages: [], totalCostUsd: 0, contextTokens: 0,
+        messagePersistMode: { kind: 'incremental', dirtyMessageIds: [] },
+      })
+      expect(fake.messagesRows.size).toBe(0)
+      expect(loadSessionStateBySid('s-empty')!.messages).toEqual([])
+    })
+
+    it('conflict update persists created_at (message_timestamp)', () => {
+      insertSessionRecord({ id: 's-ts', projectPath: '/tmp/proj', providerId: 'claude-base' })
+      const msg: ChatMessage = {
+        id: 'a1', role: 'assistant', status: 'complete',
+        content: [{ type: 'text', text: 'hi' }],
+        createdAt: '2026-04-18T00:00:00Z', providerId: 'claude',
+      }
+      saveSessionStateBySid({
+        sid: 's-ts', projectPath: '/tmp/proj', providerId: 'claude-base',
+        messages: [msg], totalCostUsd: 0, contextTokens: 0,
+        messagePersistMode: { kind: 'full' },
+      })
+      saveSessionStateBySid({
+        sid: 's-ts', projectPath: '/tmp/proj', providerId: 'claude-base',
+        messages: [{ ...msg, createdAt: '2026-04-18T12:34:56Z' }], totalCostUsd: 0, contextTokens: 0,
+        messagePersistMode: { kind: 'incremental', dirtyMessageIds: ['a1'] },
+      })
+      expect(fake.messagesRows.get('a1')!.created_at).toBe('2026-04-18T12:34:56Z')
     })
 
     it('loadSessionStateBySid returns null for unknown sid', () => {

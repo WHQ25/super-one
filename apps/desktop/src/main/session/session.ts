@@ -33,6 +33,7 @@ import {
 import { renameSession as dbRenameSession } from '../db-sessions'
 import { updateAcpAgentId as dbUpdateAcpAgentId } from './session-repo'
 import { nextEventSeq } from './event-seq'
+import { collectChangedMessageIds } from './message-dirty'
 import {
   LOCAL_OWNER,
   SessionClaimConflictError,
@@ -146,6 +147,16 @@ export class Session implements SessionContract {
   get lastEventAt(): number { return this._lastEventAt }
 
   private _messages: ChatMessage[] = []
+  /** Message ids mutated since last successful persist. */
+  private _dirtyMessageIds = new Set<string>()
+  /** When true, next persist upserts all messages (still no DELETE-all). */
+  private _forceFullPersist = false
+  /**
+   * Set when messages are removed (truncate/rewind). Allows empty-transcript
+   * persist so session-repo can stale-delete orphans. Cleared only after a
+   * successful save; retained on failure for retry.
+   */
+  private _needsStaleReconcile = false
   private _title: string | null = null
   private _totalCostUsd = 0
   private _contextTokens = 0
@@ -821,7 +832,7 @@ export class Session implements SessionContract {
       createdAt: new Date().toISOString(),
       providerId: this.harnessId,
     }
-    this._messages = [...this._messages, userMsg]
+    this.replaceMessages([...this._messages, userMsg])
     this._lastUserMessageAt = Date.now()
     this.notifyStateChange()
   }
@@ -842,7 +853,7 @@ export class Session implements SessionContract {
         codex: { ...existingCodexMeta, planApproval: approval },
       },
     }
-    this._messages = this._messages.map((m, i) => (i === msgIdx ? updated : m))
+    this.replaceMessages(this._messages.map((m, i) => (i === msgIdx ? updated : m)))
     this.notifyStateChange()
   }
 
@@ -853,12 +864,15 @@ export class Session implements SessionContract {
   truncateMessagesAt(checkpointId: string): void {
     const idx = this._messages.findIndex((m) => m.checkpointId === checkpointId)
     if (idx < 0) return
+    // Prefix slice: remaining message objects keep identity; stale-id delete removes the rest.
     this._messages = this._messages.slice(0, idx)
     this._totalCostUsd = 0
     this._contextTokens = 0
     this._taskProgress = {}
     this._streamingTokensByMessageId = {}
     this._lastUsageByMessageId = {}
+    // Allow empty-transcript persist (e.g. rewind to first checkpoint at index 0).
+    this._needsStaleReconcile = true
     this.notifyStateChange()
   }
 
@@ -1078,6 +1092,19 @@ export class Session implements SessionContract {
     }
   }
 
+  private noteMessageDiff(prev: readonly ChatMessage[], next: readonly ChatMessage[]): void {
+    for (const id of collectChangedMessageIds(prev, next)) {
+      this._dirtyMessageIds.add(id)
+    }
+  }
+
+  private replaceMessages(next: ChatMessage[], opts?: { fullPersist?: boolean }): void {
+    const prev = this._messages
+    this.noteMessageDiff(prev, next)
+    this._messages = next
+    if (opts?.fullPersist) this._forceFullPersist = true
+  }
+
   private applyReducer(event: AgentEvent): void {
     if (this.harnessId === 'claude' || this.harnessId === 'acp' || this.harnessId === 'opencode') {
       const runtime: ClaudeSessionRuntime = {
@@ -1092,7 +1119,7 @@ export class Session implements SessionContract {
         taskProgress: this._taskProgress,
       }
       const next = applyClaudeEventToRuntime(runtime, event)
-      this._messages = next.messages
+      this.replaceMessages(next.messages)
       this._totalCostUsd = next.totalCostUsd
       this._contextTokens = next.contextTokens
       this._taskProgress = next.taskProgress
@@ -1110,7 +1137,7 @@ export class Session implements SessionContract {
       }
       if (event.type === 'message_start') {
         const existing = this._messages.find((m) => m.id === event.message.id)
-        this._messages = existing ? this._messages : [...this._messages, event.message]
+        if (!existing) this.replaceMessages([...this._messages, event.message])
         return
       }
       if (
@@ -1140,7 +1167,7 @@ export class Session implements SessionContract {
           durationMs: codexMeta?.durationMs as number | undefined,
           model: codexMeta?.model as string | undefined,
         })
-        this._messages = next.messages
+        this.replaceMessages(next.messages)
         this._totalCostUsd = next.totalCostUsd
         this._contextTokens = next.contextTokens
         this._streamingTokensByMessageId = next.streamingTokensByMessageId
@@ -1148,7 +1175,7 @@ export class Session implements SessionContract {
         return
       }
       const next = applyCodexEventToRuntime(runtime, event)
-      this._messages = next.messages
+      this.replaceMessages(next.messages)
       this._totalCostUsd = next.totalCostUsd
       this._contextTokens = next.contextTokens
       this._streamingTokensByMessageId = next.streamingTokensByMessageId
@@ -1160,7 +1187,7 @@ export class Session implements SessionContract {
     const userMsg = buildClaudeUserMessage(request, providerOrigin)
     const wasNew = !this._messages.some((m) => m.id === userMsg.id)
     if (wasNew) {
-      this._messages = [...this._messages, userMsg]
+      this.replaceMessages([...this._messages, userMsg])
     }
     this._lastUserMessageAt = Date.now()
     this.notifyStateChange()
@@ -1171,12 +1198,21 @@ export class Session implements SessionContract {
 
   private notifyStateChange(): void {
     if (!this.onStateChange) return
-    if (this._messages.length === 0) return
+    // Empty transcript is only persisted after an explicit removal (truncate).
+    // Avoid creating DB rows / sessions_started for never-messaged sessions
+    // (api provider switch, ghost message_complete, etc.).
+    if (this._messages.length === 0 && !this._needsStaleReconcile) return
+    const isWorktree = this._cwd !== this.projectPath
+    if (this.harnessId === 'acp' && !this._acpAgentId) {
+      this._acpAgentId = agentIdFromConfig(this.providerConfig)
+    }
+    const submittedDirty = [...this._dirtyMessageIds]
+    const forceFull = this._forceFullPersist
+    const submittedStaleReconcile = this._needsStaleReconcile
+    const messagePersistMode = forceFull
+      ? ({ kind: 'full' } as const)
+      : ({ kind: 'incremental', dirtyMessageIds: submittedDirty } as const)
     try {
-      const isWorktree = this._cwd !== this.projectPath
-      if (this.harnessId === 'acp' && !this._acpAgentId) {
-        this._acpAgentId = agentIdFromConfig(this.providerConfig)
-      }
       this.onStateChange({
         sid: this.id,
         projectPath: this.projectPath,
@@ -1191,8 +1227,17 @@ export class Session implements SessionContract {
         worktreeMissing: this._missingWorktreePath !== null,
         apiProviderId: this._apiProviderId,
         acpAgentId: this._acpAgentId,
+        messagePersistMode,
       })
+      if (forceFull) {
+        this._dirtyMessageIds.clear()
+        this._forceFullPersist = false
+      } else {
+        for (const id of submittedDirty) this._dirtyMessageIds.delete(id)
+      }
+      if (submittedStaleReconcile) this._needsStaleReconcile = false
     } catch (err) {
+      // Retain dirty ids / full / stale-reconcile flags for retry on the next notify.
       log.warn('[Session] onStateChange hook error:', err)
     }
   }

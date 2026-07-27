@@ -246,24 +246,23 @@ function resolveBaseProviderConfig(provider: SessionProvider, apiProviderId: str
 const sessionManager = new SessionManagerImpl({
   resolveProviderConfig: resolveBaseProviderConfig,
   onSessionStateChange: (snapshot) => {
-    try {
-      saveSessionStateBySid({
-        sid: snapshot.sid,
-        projectPath: snapshot.projectPath,
-        providerId: snapshot.providerId,
-        messages: snapshot.messages,
-        totalCostUsd: snapshot.totalCostUsd,
-        contextTokens: snapshot.contextTokens,
-        title: snapshot.title ?? undefined,
-        isWorktree: snapshot.isWorktree,
-        worktreePath: snapshot.worktreePath,
-        gitBranch: snapshot.gitBranch,
-        apiProviderId: snapshot.apiProviderId,
-        acpAgentId: snapshot.acpAgentId,
-      })
-    } catch (err) {
-      log.warn('[sessionManager] saveSessionStateBySid failed:', err)
-    }
+    // Do not swallow errors: Session clears dirty ids only after a successful
+    // return from this hook. Rethrow so notifyStateChange retains dirty state.
+    saveSessionStateBySid({
+      sid: snapshot.sid,
+      projectPath: snapshot.projectPath,
+      providerId: snapshot.providerId,
+      messages: snapshot.messages,
+      totalCostUsd: snapshot.totalCostUsd,
+      contextTokens: snapshot.contextTokens,
+      title: snapshot.title ?? undefined,
+      isWorktree: snapshot.isWorktree,
+      worktreePath: snapshot.worktreePath,
+      gitBranch: snapshot.gitBranch,
+      apiProviderId: snapshot.apiProviderId,
+      acpAgentId: snapshot.acpAgentId,
+      messagePersistMode: snapshot.messagePersistMode,
+    })
   },
   onProviderSessionIdChange: (sid, providerSessionId) => {
     try {

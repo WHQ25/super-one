@@ -170,6 +170,43 @@ describe('applyClaudeEventToRuntime task events', () => {
     }
   })
 
+  it('task_notification with outputFile preserves identity of unrelated messages', () => {
+    const other: ChatMessage = {
+      id: 'msg-other',
+      role: 'user',
+      status: 'complete',
+      content: [{ type: 'text', text: 'hello' }],
+      createdAt: '',
+      providerId: 'local',
+    }
+    const owner: ChatMessage = {
+      id: 'msg-agent',
+      role: 'assistant',
+      status: 'streaming',
+      content: [
+        { type: 'tool_use', toolName: 'Agent', toolUseId: TID, input: '' },
+        { type: 'tool_result', toolUseId: TID, summary: 'done' },
+      ],
+      createdAt: '',
+      providerId: 'claude',
+    }
+    let rt = makeRuntime([other, owner])
+    const otherRef = rt.messages[0]
+    rt = applyClaudeEventToRuntime(rt, {
+      type: 'task_notification', taskId: 't1', toolUseId: TID,
+      taskStatus: 'completed', summary: 'done',
+      outputFile: '/tmp/output.md',
+      usage: { totalTokens: 100, toolUses: 1, durationMs: 500 },
+    } as AgentEvent)
+
+    expect(rt.messages[0]).toBe(otherRef)
+    expect(rt.messages[1]).not.toBe(owner)
+    const resultBlock = rt.messages[1].content.find(
+      (b) => b.type === 'tool_result' && b.toolUseId === TID,
+    )
+    expect(resultBlock && resultBlock.type === 'tool_result' && resultBlock.outputPath).toBe('/tmp/output.md')
+  })
+
   it('task_notification reads outputFile and persists taskResultText', () => {
     const { writeFileSync, mkdtempSync, rmSync } = require('node:fs')
     const { join } = require('node:path')

@@ -1,9 +1,10 @@
 import { randomUUID } from 'node:crypto'
 import { getDb } from '../database'
+import log from '../logger'
 import { getProjectId } from '../recent-folders'
 import { recordSessionStarted, recordMessageCounts, type HarnessKind } from '../usage-stats-service'
 import type { ChatMessage, ContentBlock, ImageAttachment, ChatMessageContext } from '@superone/shared/agent-types'
-import type { HarnessId } from './types'
+import type { HarnessId, MessagePersistMode } from './types'
 
 export function serializeMessageContent(msg: ChatMessage): string {
   return JSON.stringify({
@@ -233,6 +234,11 @@ export interface SaveSessionStateInput {
   gitBranch?: string | null
   apiProviderId?: string | null
   acpAgentId?: string | null
+  /**
+   * Defaults to `{ kind: 'full' }` so legacy callers remain correct.
+   * Session always passes an explicit mode.
+   */
+  messagePersistMode?: MessagePersistMode
 }
 
 export function saveSessionStateBySid(input: SaveSessionStateInput): void {
@@ -242,6 +248,7 @@ export function saveSessionStateBySid(input: SaveSessionStateInput): void {
   const lastUserMessageAt = [...input.messages].reverse().find((m) => m.role === 'user')?.createdAt ?? null
   const legacyProvider = harnessIdFromProviderId(input.providerId)
   const now = new Date().toISOString()
+  const persistMode: MessagePersistMode = input.messagePersistMode ?? { kind: 'full' }
 
   const upsertSession = db.prepare(`
     INSERT INTO sessions (
@@ -263,8 +270,12 @@ export function saveSessionStateBySid(input: SaveSessionStateInput): void {
     INSERT INTO chat_messages (id, session_id, sort_order, role, status, content_json, created_at, provider_id, metadata_json, checkpoint_id, resume_point_id, usage_counted_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
+      sort_order = excluded.sort_order,
+      role = excluded.role,
       status = excluded.status,
       content_json = excluded.content_json,
+      created_at = excluded.created_at,
+      provider_id = excluded.provider_id,
       metadata_json = excluded.metadata_json,
       checkpoint_id = excluded.checkpoint_id,
       resume_point_id = excluded.resume_point_id,
@@ -287,24 +298,19 @@ export function saveSessionStateBySid(input: SaveSessionStateInput): void {
         WHERE id = ?
       `)
 
-  const deleteStale = db.prepare('DELETE FROM chat_messages WHERE session_id = ?')
-
-  const sessionRow = db.prepare(`
-    SELECT created_at, usage_counted_at FROM sessions WHERE id = ?
-  `).get(input.sid) as { created_at: string; usage_counted_at: string | null } | undefined
-
-  const priorCounted = db.prepare(`
-    SELECT id FROM chat_messages WHERE session_id = ? AND usage_counted_at IS NOT NULL
-  `).all(input.sid) as Array<{ id: string }>
-  const priorCountedIds = new Set(priorCounted.map((r) => r.id))
+  const deleteMsgById = db.prepare('DELETE FROM chat_messages WHERE session_id = ? AND id = ?')
 
   const harness: HarnessKind | null =
     legacyProvider === 'codex' || legacyProvider === 'claude' ? legacyProvider : null
   const newlyCountedMessages: Array<{ role: string; createdAt: string }> = []
   let countSessionStarted = false
-  let sessionCreatedAt = sessionRow?.created_at ?? now
+  let sessionCreatedAt = now
 
   const tx = db.transaction(() => {
+    const sessionRow = db.prepare(`
+      SELECT created_at, usage_counted_at FROM sessions WHERE id = ?
+    `).get(input.sid) as { created_at: string; usage_counted_at: string | null } | undefined
+
     upsertSession.run(
       input.sid,
       projectId,
@@ -319,10 +325,37 @@ export function saveSessionStateBySid(input: SaveSessionStateInput): void {
       input.apiProviderId ?? null,
       input.acpAgentId ?? null,
     )
-    if (!sessionRow) sessionCreatedAt = now
-    deleteStale.run(input.sid)
-    for (let i = 0; i < input.messages.length; i++) {
-      const msg = input.messages[i]
+    sessionCreatedAt = sessionRow?.created_at ?? now
+
+    const existingRows = db.prepare(`
+      SELECT id, usage_counted_at FROM chat_messages WHERE session_id = ?
+    `).all(input.sid) as Array<{ id: string; usage_counted_at: string | null }>
+    const existingIds = new Set(existingRows.map((r) => r.id))
+    const priorCountedIds = new Set(
+      existingRows.filter((r) => r.usage_counted_at != null).map((r) => r.id),
+    )
+
+    const memoryIds = new Set(input.messages.map((m) => m.id))
+    for (const id of existingIds) {
+      if (!memoryIds.has(id)) deleteMsgById.run(input.sid, id)
+    }
+
+    const toWrite = new Set<string>()
+    if (persistMode.kind === 'full') {
+      for (const id of memoryIds) toWrite.add(id)
+    } else {
+      for (const id of persistMode.dirtyMessageIds) {
+        if (memoryIds.has(id)) toWrite.add(id)
+      }
+      for (const id of memoryIds) {
+        if (!existingIds.has(id)) toWrite.add(id)
+      }
+    }
+
+    const indexById = new Map(input.messages.map((m, i) => [m.id, i]))
+    for (const msg of input.messages) {
+      if (!toWrite.has(msg.id)) continue
+      const i = indexById.get(msg.id) ?? 0
       const isAssistantComplete = msg.role === 'assistant' && msg.status === 'complete'
       const isUser = msg.role === 'user'
       const wasAlreadyCounted = priorCountedIds.has(msg.id)
@@ -344,6 +377,7 @@ export function saveSessionStateBySid(input: SaveSessionStateInput): void {
       )
       if (shouldCount) newlyCountedMessages.push({ role: msg.role, createdAt: msg.createdAt })
     }
+
     if (input.title) {
       updateSession.run(input.totalCostUsd, input.contextTokens, lastUserMessageAt, input.title, input.sid)
     } else {
@@ -357,26 +391,35 @@ export function saveSessionStateBySid(input: SaveSessionStateInput): void {
 
   tx()
 
+  // Activity stats are best-effort and must not fail the message persist
+  // acknowledgement: usage_counted_at is already committed above, so a throw
+  // here would leave dirty ids stuck while never re-counting those messages.
   if (harness) {
-    if (countSessionStarted) {
-      recordSessionStarted(harness, sessionCreatedAt)
-    }
-    if (newlyCountedMessages.length > 0) {
-      const userByDay = new Map<string, number>()
-      const assistantByDay = new Map<string, number>()
-      for (const m of newlyCountedMessages) {
-        if (m.role === 'user') {
-          userByDay.set(m.createdAt, (userByDay.get(m.createdAt) ?? 0) + 1)
-        } else if (m.role === 'assistant') {
-          assistantByDay.set(m.createdAt, (assistantByDay.get(m.createdAt) ?? 0) + 1)
+    try {
+      if (countSessionStarted) {
+        recordSessionStarted(harness, sessionCreatedAt)
+      }
+      if (newlyCountedMessages.length > 0) {
+        const userByDay = new Map<string, number>()
+        const assistantByDay = new Map<string, number>()
+        for (const m of newlyCountedMessages) {
+          if (m.role === 'user') {
+            userByDay.set(m.createdAt, (userByDay.get(m.createdAt) ?? 0) + 1)
+          } else if (m.role === 'assistant') {
+            assistantByDay.set(m.createdAt, (assistantByDay.get(m.createdAt) ?? 0) + 1)
+          }
+        }
+        for (const [createdAt, n] of userByDay) {
+          recordMessageCounts(harness, createdAt, { userMessages: n })
+        }
+        for (const [createdAt, n] of assistantByDay) {
+          recordMessageCounts(harness, createdAt, { assistantMessages: n })
         }
       }
-      for (const [createdAt, n] of userByDay) {
-        recordMessageCounts(harness, createdAt, { userMessages: n })
-      }
-      for (const [createdAt, n] of assistantByDay) {
-        recordMessageCounts(harness, createdAt, { assistantMessages: n })
-      }
+    } catch (err) {
+      // Best-effort only; message rows already committed. Do not rethrow —
+      // Session would retain dirty ids while usage_counted_at is already set.
+      log.warn('[session-repo] activity_daily update failed after message persist:', err)
     }
   }
 }

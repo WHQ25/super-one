@@ -8,6 +8,9 @@ const { getDbMock, getProjectIdMock } = vi.hoisted(() => ({
 
 vi.mock('../database', () => ({ getDb: getDbMock }))
 vi.mock('../recent-folders', () => ({ getProjectId: getProjectIdMock }))
+vi.mock('../logger', () => ({
+  default: { warn: vi.fn(), info: vi.fn(), error: vi.fn(), debug: vi.fn() },
+}))
 
 interface SessionRow {
   id: string
@@ -115,6 +118,14 @@ function makeFakeDb() {
         }
       }
 
+      if (/SELECT id, usage_counted_at FROM chat_messages WHERE session_id/.test(sql)) {
+        return {
+          all: (sessionId: string) => Array.from(messages.values())
+            .filter((m) => m.session_id === sessionId)
+            .map((m) => ({ id: m.id, usage_counted_at: m.usage_counted_at })),
+        }
+      }
+
       if (/SELECT id FROM chat_messages WHERE session_id = \? AND usage_counted_at IS NOT NULL/.test(sql)) {
         return {
           all: (sessionId: string) => Array.from(messages.values())
@@ -128,6 +139,15 @@ function makeFakeDb() {
           run: (now: string, id: string) => {
             const row = sessions.get(id)
             if (row) row.usage_counted_at = now
+          },
+        }
+      }
+
+      if (/DELETE FROM chat_messages WHERE session_id = \? AND id = \?/.test(sql)) {
+        return {
+          run: (sessionId: string, id: string) => {
+            const row = messages.get(id)
+            if (row && row.session_id === sessionId) messages.delete(id)
           },
         }
       }
@@ -149,13 +169,14 @@ function makeFakeDb() {
               providerId, metadataJson, checkpointId, resumePointId,
             ] = args as [string, string, number, string, string, string, string, string, string | null, string | null, string | null]
             const usageCountedAt = includesUsageCounted ? (args[11] as string | null) : null
+            const prev = messages.get(msgId)
             messages.set(msgId, {
               id: msgId, session_id: sessionId, sort_order: sortOrder,
               role, status, content_json: contentJson,
               created_at: createdAt, provider_id: providerId,
               metadata_json: metadataJson,
               checkpoint_id: checkpointId, resume_point_id: resumePointId,
-              usage_counted_at: usageCountedAt,
+              usage_counted_at: prev?.usage_counted_at ?? usageCountedAt,
             })
           },
         }
@@ -304,6 +325,36 @@ describe('saveSessionStateBySid records activity stats', () => {
     ]
     saveSessionStateBySid({ sid: 's-stream', projectPath: '/tmp/proj', providerId: 'claude-base', messages: completed, totalCostUsd: 0, contextTokens: 0 })
     expect(queryCounts({})).toEqual({ sessions: 1, messages: 2 })
+  })
+
+  it('does not throw when activity_daily write fails after messages commit', async () => {
+    const { saveSessionStateBySid } = await import('./session-repo')
+    const origPrepare = fake.db.prepare
+    fake.db.prepare = (rawSql: string) => {
+      const sql = rawSql.replace(/\s+/g, ' ').trim()
+      if (/^INSERT INTO activity_daily/.test(sql)) {
+        return {
+          run: () => {
+            throw new Error('stats down')
+          },
+        }
+      }
+      return origPrepare(rawSql)
+    }
+
+    const messages: ChatMessage[] = [
+      { id: 'u1', role: 'user', status: 'complete', content: [{ type: 'text', text: 'hi' }], createdAt: '2026-05-11T00:00:00Z', providerId: 'claude' },
+    ]
+    expect(() => saveSessionStateBySid({
+      sid: 's-stats-fail',
+      projectPath: '/tmp/proj',
+      providerId: 'claude-base',
+      messages,
+      totalCostUsd: 0,
+      contextTokens: 0,
+    })).not.toThrow()
+    expect(fake.messages.get('u1')).toBeDefined()
+    fake.db.prepare = origPrepare
   })
 
   it('attributes harness=codex when providerId starts with codex', async () => {

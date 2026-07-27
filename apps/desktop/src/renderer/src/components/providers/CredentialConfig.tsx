@@ -520,7 +520,7 @@ export function CredentialConfig({ platform, plan, credential }: { platform: Pla
       const next = base.map((e) => {
         const ov = draft[e.id]
         if (!ov) return e
-        const merged = {
+        const merged: ServiceEndpoint = {
           ...e,
           baseUrl: ov.baseUrl?.trim() || e.baseUrl,
           models: ov.models ?? e.models,

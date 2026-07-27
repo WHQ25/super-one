@@ -32,6 +32,8 @@ function payload(): SessionAgentRequestPayload {
         launchId: 'review-tests',
         agentId: 'claude-base',
         task: 'Review the failing tests and report the root cause.',
+        name: 'DiffBot',
+        role: 'Reviewer',
         config: {
           cwd: '/Users/me/projects/super-one',
           model: 'claude-sonnet',
@@ -44,6 +46,8 @@ function payload(): SessionAgentRequestPayload {
         launchId: 'inspect-types',
         agentId: 'codex-base',
         task: 'Classify the current typecheck errors.',
+        name: 'TypeBot',
+        role: 'Analyst',
         config: {
           cwd: '/Users/me/projects/super-one',
           model: 'gpt-5.4',

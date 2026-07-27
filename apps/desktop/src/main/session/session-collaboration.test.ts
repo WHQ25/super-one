@@ -182,6 +182,8 @@ async function approveLaunches(parent: Session, host: SessionManager, count = 1)
       launchId: `launch-${index}`,
       agentId: 'claude-base',
       task: `Task ${index}`,
+      name: `Agent ${index}`,
+      role: 'Worker',
       config: { cwd: TEST_CWD, model: 'test-model', effort: 'high' },
     })),
   }, host)
@@ -271,7 +273,13 @@ describe('session collaboration', () => {
     const parent = fakeSession('parent')
     const { host, createSession } = fakeHost(parent)
     const promise = requestSessionAgents(parent.id, {
-      launches: [{ launchId: 'defaulted', agentId: 'claude-base', task: 'Use profile defaults' }],
+      launches: [{
+        launchId: 'defaulted',
+        agentId: 'claude-base',
+        task: 'Use profile defaults',
+        name: 'Defaults',
+        role: 'Worker',
+      }],
     }, host)
     const event = (parent.emitHostEvent as ReturnType<typeof vi.fn>).mock.calls[0][0] as AgentEvent
     if (event.type !== 'permission_request') throw new Error('Expected permission request')
@@ -304,6 +312,8 @@ describe('session collaboration', () => {
         launchId: 'explicit',
         agentId: 'claude-base',
         task: 'Use explicit settings',
+        name: 'Explicit',
+        role: 'Worker',
         config: { model: 'alternate-model', effort: 'low' },
       }],
     }, host)
@@ -495,6 +505,20 @@ describe('session collaboration', () => {
     await expect(requestSessionAgents('parent', { launches: [] }, host)).rejects.toThrow(/disabled/i)
   })
 
+  it('requires non-empty names and roles before requesting approval', async () => {
+    const parent = fakeSession('parent')
+    const { host } = fakeHost(parent)
+    const base = { agentId: 'claude-base', task: 'Review the change' }
+
+    await expect(requestSessionAgents(parent.id, {
+      launches: [{ ...base, name: '', role: 'Reviewer' }],
+    }, host)).rejects.toThrow(/non-empty name/)
+    await expect(requestSessionAgents(parent.id, {
+      launches: [{ ...base, name: 'Alice', role: '   ' }],
+    }, host)).rejects.toThrow(/non-empty role/)
+    expect(parent.emitHostEvent).not.toHaveBeenCalled()
+  })
+
   it('merges only editable confirm fields and ignores tampered agentId/task/cwd', async () => {
     const parent = fakeSession('parent')
     const { host, createSession } = fakeHost(parent)
@@ -503,6 +527,8 @@ describe('session collaboration', () => {
         launchId: 'launch-0',
         agentId: 'claude-base',
         task: 'Original task',
+        name: 'Original',
+        role: 'Worker',
         config: { cwd: TEST_CWD, model: 'test-model', permissionMode: 'default', sandboxMode: 'off' },
       }],
     }, host)

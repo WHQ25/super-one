@@ -37,9 +37,9 @@ export interface RequestSessionAgentsArgs {
     agentId: string
     task: string
     /** Agent-chosen human label (not harness name). Used in `Name - Role`. */
-    name?: string
+    name: string
     /** Temporary role for child title: `Name - Role`. */
-    role?: string
+    role: string
     config?: SessionAgentLaunchConfig
   }>
 }
@@ -314,16 +314,13 @@ function normalizeLaunches(args: RequestSessionAgentsArgs, parent: Session): Ses
     const task = launch.task?.trim()
     if (!task) throw new Error('Every launch must include a non-empty task')
     if (task.length > 100_000) throw new Error('A launch task may contain at most 100,000 characters')
+    const name = launch.name?.trim()
+    if (!name) throw new Error('Every launch must include a non-empty name')
+    if (name.length > 64) throw new Error('A launch name may contain at most 64 characters')
+    const role = launch.role?.trim()
+    if (!role) throw new Error('Every launch must include a non-empty role')
+    if (role.length > 64) throw new Error('A launch role may contain at most 64 characters')
     const launchId = launch.launchId?.trim() || randomUUID()
-    const name = deriveCollaborationName({
-      name: launch.name ?? launch.config?.name,
-      launchId,
-    })
-    const role = deriveCollaborationRole({
-      role: launch.role ?? launch.config?.role,
-      launchId,
-      task,
-    })
     return {
       launchId,
       agentId: launch.agentId,
@@ -484,14 +481,11 @@ function createGrants(parentSessionId: string, launches: SessionAgentLaunchPropo
   return getDb().transaction(() => launches.map((launch) => {
     if (!profiles.has(launch.agentId)) throw new Error(`Unknown agent profile: ${launch.agentId}`)
     if (!launch.task?.trim()) throw new Error('Every launch must include a non-empty task')
+    const name = launch.name?.trim()
+    if (!name) throw new Error('Every launch must include a non-empty name')
+    const role = launch.role?.trim()
+    if (!role) throw new Error('Every launch must include a non-empty role')
     const credential = `s1sc_${randomBytes(32).toString('base64url')}`
-    const name = deriveCollaborationName({
-      name: launch.name ?? launch.config?.name,
-      launchId: launch.launchId,
-    })
-    const role = launch.role
-      ?? launch.config?.role
-      ?? deriveCollaborationRole({ launchId: launch.launchId, task: launch.task })
     const config = {
       ...launch.config,
       name,

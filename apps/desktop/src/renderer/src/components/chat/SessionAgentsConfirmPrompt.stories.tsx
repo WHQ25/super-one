@@ -64,22 +64,21 @@ function launch(
   agentId: string,
   task: string,
   config: SessionAgentLaunchProposal['config'],
-  opts?: { name?: string; role?: string },
+  opts: { name: string; role: string },
 ): SessionAgentLaunchProposal {
-  const name = opts?.name
-  const role = opts?.role
+  const { name, role } = opts
   return {
     launchId,
     agentId,
     task,
-    ...(name ? { name } : {}),
-    ...(role ? { role } : {}),
+    name,
+    role,
     config: {
       cwd: PARENT_CWD,
       sandboxMode: 'off',
       permissionMode: 'default',
-      ...(name ? { name } : {}),
-      ...(role ? { role } : {}),
+      name,
+      role,
       ...config,
     },
   }
@@ -92,13 +91,13 @@ const payload: SessionAgentRequestPayload = {
       model: 'claude-sonnet',
       effort: 'medium',
       sandboxMode: 'on',
-    }),
+    }, { name: 'DiffBot', role: 'Reviewer' }),
     launch('inspect-types', 'codex-base', 'Inspect the current typecheck errors and classify existing versus new failures.', {
       model: 'gpt-5.4',
       effort: 'high',
       permissionMode: 'bypassPermissions',
       worktree: { enabled: true, baseBranch: 'main', mode: 'branch', branchName: 'agent/typecheck-review' },
-    }),
+    }, { name: 'TypeBot', role: 'Analyst' }),
   ],
 }
 
@@ -138,7 +137,7 @@ export const NarrowManyAgents: Story = {
       launches: Array.from({ length: 5 }, (_, index) =>
         launch(`narrow-${index}`, index % 2 ? 'codex-base' : 'claude-base', `Task number ${index + 1}.`, {
           model: index % 2 ? 'gpt-5.4' : 'claude-sonnet',
-        }),
+        }, { name: `Agent ${index + 1}`, role: 'Worker' }),
       ),
     },
   },
@@ -190,23 +189,23 @@ export const WorkingLocations: Story = {
       launches: [
         launch('loc-parent', 'claude-base', 'Runs in the parent session\'s own working directory — no worktree.', {
           model: 'claude-sonnet',
-        }),
+        }, { name: 'ParentBot', role: 'Worker' }),
         launch('loc-branch', 'claude-base', 'Runs in a fresh worktree on a newly created branch.', {
           model: 'claude-sonnet',
           worktree: { enabled: true, baseBranch: 'main', mode: 'branch', branchName: 'agent/refactor', carryLocalChanges: true },
-        }),
+        }, { name: 'BranchBot', role: 'Worker' }),
         launch('loc-detach', 'claude-base', 'Runs in a detached worktree — no branch of its own.', {
           model: 'claude-sonnet',
           worktree: { enabled: true, baseBranch: 'main', mode: 'detach' },
-        }),
+        }, { name: 'DetachBot', role: 'Worker' }),
         launch('loc-attach', 'claude-base', 'Runs in a worktree attached to an existing branch.', {
           model: 'claude-sonnet',
           worktree: { enabled: true, baseBranch: 'main', mode: 'attach', branchName: 'feat/multi-agents-collab' },
-        }),
+        }, { name: 'AttachBot', role: 'Worker' }),
         launch('loc-nested', 'codex-base', 'Runs in a nested sub-package directory.', {
           model: 'gpt-5.4',
           cwd: '/Users/me/projects/super-one/apps/desktop',
-        }),
+        }, { name: 'NestedBot', role: 'Worker' }),
       ],
     },
   },
@@ -220,7 +219,7 @@ export const ManyAgents: Story = {
       launches: Array.from({ length: 6 }, (_, index) =>
         launch(`launch-${index}`, index % 2 ? 'codex-base' : 'claude-base', `${payload.launches[index % 2].task} (#${index + 1})`, {
           model: index % 2 ? 'gpt-5.4' : 'claude-sonnet',
-        }),
+        }, { name: `Agent ${index + 1}`, role: 'Worker' }),
       ),
     },
   },

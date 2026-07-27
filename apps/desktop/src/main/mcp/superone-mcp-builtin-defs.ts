@@ -237,8 +237,8 @@ export const SESSION_LIST_AGENTS_DESCRIPTION =
   'Call this before session_collab_request. The same profile may be requested more than once.'
 
 export const SESSION_REQUEST_AGENTS_DESCRIPTION =
-  'Request user approval for one or more child-agent launches. Each launches[] item is independent, so repeat an agentId to request multiple sessions. ' +
-  'Required-ish fields: name (human label YOU invent for this child, e.g. "Alice" or "DiffBot" — not the harness name) and role (e.g. "Reviewer"). ' +
+  'Request approval for one or more child-agent launches. Repeat an agentId to launch multiple sessions from one profile. ' +
+  'Every launch must include name (an agent-chosen human label, not the harness name) and role (for example, Reviewer or Implementer). ' +
   'config is optional; omitted model/effort fields inherit the selected profile defaultConfig, while explicit values override it. ' +
   'Session title becomes "Name - Role". The user reviews and may edit model/effort/AI provider/permission/sandbox (task, name, role, agent profile, cwd, worktree stay as requested). ' +
   'On approval each launch returns a bearer credential. Each credential can create exactly one session and must be kept private.'
@@ -280,11 +280,13 @@ export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
               task: { type: 'string', maxLength: 100000, description: 'The task shown to the user and delivered to this child session.' },
               name: {
                 type: 'string',
+                minLength: 1,
                 maxLength: 64,
                 description: 'Human-friendly label YOU invent for this child (e.g. "Alice", "DiffBot"). Not the harness name. Used in "Name - Role".',
               },
               role: {
                 type: 'string',
+                minLength: 1,
                 maxLength: 64,
                 description: 'Temporary role label for the child session title: "Name - Role" (e.g. "Reviewer", "Implementer").',
               },
@@ -297,8 +299,6 @@ export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
                   permissionMode: { type: 'string', enum: ['default', 'acceptEdits', 'bypassPermissions', 'plan', 'dontAsk', 'auto'] },
                   sandboxMode: { type: 'string', enum: ['off', 'on', 'auto'] },
                   cwd: { type: 'string' },
-                  name: { type: 'string', maxLength: 64 },
-                  role: { type: 'string', maxLength: 64 },
                   worktree: {
                     type: 'object',
                     properties: {
@@ -316,7 +316,7 @@ export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
                 additionalProperties: false,
               },
             },
-            required: ['agentId', 'task'],
+            required: ['agentId', 'task', 'name', 'role'],
             additionalProperties: false,
           },
         },

@@ -301,8 +301,8 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
             launchId: z.string().optional(),
             agentId: z.string(),
             task: z.string().min(1).max(100_000),
-            name: z.string().max(64).optional(),
-            role: z.string().max(64).optional(),
+            name: z.string().trim().min(1).max(64),
+            role: z.string().trim().min(1).max(64),
             config: z.object({
               model: z.string().optional(),
               effort: z.string().optional(),
@@ -310,8 +310,6 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
               permissionMode: z.enum(['default', 'acceptEdits', 'bypassPermissions', 'plan', 'dontAsk', 'auto']).optional(),
               sandboxMode: z.enum(['off', 'on', 'auto']).optional(),
               cwd: z.string().optional(),
-              name: z.string().max(64).optional(),
-              role: z.string().max(64).optional(),
               worktree: z.object({
                 enabled: z.boolean(),
                 baseBranch: z.string(),

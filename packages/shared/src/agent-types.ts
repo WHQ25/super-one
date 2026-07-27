@@ -621,9 +621,9 @@ export interface SessionAgentLaunchProposal {
    * Agent-chosen human label (e.g. "Alice", "Diff Reviewer") — not the harness
    * name. Used for session title and tool summaries: `Name - Role`.
    */
-  name?: string
+  name: string
   /** Temporary role label used for child session title: `Name - Role`. */
-  role?: string
+  role: string
   config: SessionAgentLaunchConfig
 }
 

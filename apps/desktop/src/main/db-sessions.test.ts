@@ -13,6 +13,15 @@ vi.mock('./recent-folders', () => ({
   getProjectId: getProjectIdMock,
 }))
 
+vi.mock('./logger', () => ({
+  default: {
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+  },
+}))
+
 import { deleteSessionsOlderThan, listPinnedSessions, listSessionsForFolder, saveSessionState } from './db-sessions'
 
 describe('db-sessions session query + mapping', () => {

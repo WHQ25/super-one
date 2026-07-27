@@ -34,6 +34,7 @@ vi.mock('./backends/opencode-fork', () => ({ forkOpenCodeSession: forkOpenCodeSe
 vi.mock('./backends/claude-backend', () => ({ ClaudeBackend: class {} }))
 vi.mock('./backends/codex-backend', () => ({ CodexBackend: class {} }))
 vi.mock('./backends/acp-backend', () => ({ AcpBackend: class {} }))
+vi.mock('./backends/opencode-backend', () => ({ OpenCodeBackend: class {} }))
 
 import { forkSession } from './session-fork'
 

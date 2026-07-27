@@ -84,7 +84,7 @@ describe('widenedPlanEndpoints', () => {
     })
     expect(next?.find((e) => e.id === 'google')).toEqual({
       id: 'google',
-      baseUrl: 'https://relay.com',
+      baseUrl: 'https://relay.com/v1beta',
       protocols: ['google-generative'],
     })
   })

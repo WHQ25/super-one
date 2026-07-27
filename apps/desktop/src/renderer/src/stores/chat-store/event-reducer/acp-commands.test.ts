@@ -39,6 +39,8 @@ describe('applyEventToSession: acp_commands', () => {
   it('drops commands from a different ACP agent', () => {
     const session = {
       ...createDefaultPerSessionState(),
+      preferredProvider: 'acp' as const,
+      sessionProvider: 'acp' as const,
       acpAgentId: 'opencode',
       acpSlashCommands: commands,
     }
@@ -53,6 +55,8 @@ describe('applyEventToSession: acp_commands', () => {
   it('replaces the full command list on update', () => {
     const session = {
       ...createDefaultPerSessionState(),
+      preferredProvider: 'acp' as const,
+      sessionProvider: 'acp' as const,
       acpAgentId: 'opencode',
       acpSlashCommands: commands,
     }

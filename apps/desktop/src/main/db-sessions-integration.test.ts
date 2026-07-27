@@ -7,6 +7,14 @@ const { getDbMock, getProjectIdMock } = vi.hoisted(() => ({
 
 vi.mock('./database', () => ({ getDb: getDbMock }))
 vi.mock('./recent-folders', () => ({ getProjectId: getProjectIdMock }))
+vi.mock('./logger', () => ({
+  default: {
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+  },
+}))
 
 import { createSession, renameSession, saveSessionState, loadSessionState } from './db-sessions'
 

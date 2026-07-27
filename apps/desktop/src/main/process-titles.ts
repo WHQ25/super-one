@@ -24,6 +24,7 @@ export const ProcessTitle = {
   SleepBlocker: 'SuperOne Sleep Blocker',
   Installer: 'SuperOne Installer',
   LlmProxy: 'SuperOne LLM Proxy',
+  McpBridge: 'SuperOne MCP Bridge',
 } as const
 
 export const SUPERONE_ROLE_ARG_PREFIX = '--superone-role='

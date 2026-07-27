@@ -1,48 +1,52 @@
 'use strict'
 
-const { readdirSync, statSync, rmSync, existsSync, cpSync, renameSync } = require('node:fs')
+const { readdirSync, statSync, rmSync, existsSync, cpSync } = require('node:fs')
 const { join } = require('node:path')
-const { execFileSync } = require('node:child_process')
 
 const ARCH_NAMES = { 0: 'ia32', 1: 'x64', 2: 'armv7l', 3: 'arm64', 4: 'universal' }
 const PLATFORM_MAP = { darwin: 'darwin', mac: 'darwin', win32: 'win32', windows: 'win32', linux: 'linux' }
 
-// Gives the two node-runtime child processes we own (MCP stdio bridge, LLM proxy
-// sidecar) a distinct name in Activity Monitor, by cloning the plain Helper.app
-// bundle under a new name — the same trick Electron itself uses for its own
-// Helper (Renderer)/(GPU)/(Plugin) variants. Must run before electron-builder's
-// codesign pass (afterPack always precedes it) so the clones get properly signed
-// like everything else — see apps/desktop/src/main/agent/resolve-cli.ts for the
-// runtime lookup, and superone-mcp-stdio-state.ts / llm-proxy-manager.ts for the
-// two consumers. Keep these names in sync with resolve-cli.ts's variant map.
-const HELPER_VARIANTS = [
-  { suffix: 'MCP Bridge', bundleIdSuffix: 'mcpbridge' },
-  { suffix: 'LLM Proxy', bundleIdSuffix: 'llmproxy' },
+// Named ELECTRON_RUN_AS_NODE sidecars (MCP stdio bridge, LLM proxy). Must run
+// before electron-builder's codesign pass so the clones get signed with the rest
+// of the app.
+//
+// Clone the MAIN app executable into Contents/MacOS under a distinct name — NOT
+// a Helper.app clone. Electron's MainApplicationBundlePath only treats paths
+// ending in " Helper" / " Helper (GPU|Plugin|Renderer)" as helpers; a custom
+// name like "SuperOne MCP Bridge" takes the main-app path walk, resolves ICU
+// against the nested Frameworks clone, and aborts with SIGTRAP (exit 133) under
+// ELECTRON_RUN_AS_NODE. A MacOS sibling of the main stub walks up to
+// SuperOne.app correctly and still shows a distinct name in Activity Monitor.
+// Keep these suffixes in sync with resolve-cli.ts's VARIANT_MAIN_SUFFIX.
+const NODE_RUNTIME_VARIANTS = [
+  { suffix: 'MCP Bridge' },
+  { suffix: 'LLM Proxy' },
 ]
 
-function cloneHelperVariants(appOutDir, productFilename) {
-  const frameworksDir = join(appOutDir, `${productFilename}.app`, 'Contents', 'Frameworks')
-  const baseName = `${productFilename} Helper`
-  const baseDir = join(frameworksDir, `${baseName}.app`)
-  if (!existsSync(baseDir)) {
-    console.warn(`[afterPack] base helper bundle not found at ${baseDir}, skipping variant clone`)
+function cloneNamedNodeRuntimes(appOutDir, productFilename) {
+  const macosDir = join(appOutDir, `${productFilename}.app`, 'Contents', 'MacOS')
+  const mainExec = join(macosDir, productFilename)
+  if (!existsSync(mainExec)) {
+    console.warn(`[afterPack] main executable not found at ${mainExec}, skipping named node runtimes`)
     return
   }
-  for (const { suffix, bundleIdSuffix } of HELPER_VARIANTS) {
+  for (const { suffix } of NODE_RUNTIME_VARIANTS) {
     const variantName = `${productFilename} ${suffix}`
-    const variantDir = join(frameworksDir, `${variantName}.app`)
-    rmSync(variantDir, { recursive: true, force: true })
-    cpSync(baseDir, variantDir, { recursive: true })
-    renameSync(join(variantDir, 'Contents', 'MacOS', baseName), join(variantDir, 'Contents', 'MacOS', variantName))
+    const dest = join(macosDir, variantName)
+    rmSync(dest, { force: true })
+    cpSync(mainExec, dest)
+    console.log(`[afterPack] cloned named node runtime: ${variantName}`)
+  }
 
-    const plistPath = join(variantDir, 'Contents', 'Info.plist')
-    const setPlist = (key, value) => execFileSync('/usr/libexec/PlistBuddy', ['-c', `Set :${key} ${value}`, plistPath])
-    setPlist('CFBundleExecutable', variantName)
-    setPlist('CFBundleDisplayName', variantName)
-    setPlist('CFBundleName', `Electron Helper (${suffix})`)
-    setPlist('CFBundleIdentifier', `com.superone.app.helper.${bundleIdSuffix}`)
-
-    console.log(`[afterPack] cloned helper variant: ${variantName}`)
+  // Drop legacy Helper.app clones from older builds that may still be present
+  // when iterating packaging scripts against a non-clean output dir.
+  const frameworksDir = join(appOutDir, `${productFilename}.app`, 'Contents', 'Frameworks')
+  for (const { suffix } of NODE_RUNTIME_VARIANTS) {
+    const legacy = join(frameworksDir, `${productFilename} ${suffix}.app`)
+    if (existsSync(legacy)) {
+      rmSync(legacy, { recursive: true, force: true })
+      console.log(`[afterPack] removed legacy helper clone: ${productFilename} ${suffix}.app`)
+    }
   }
 }
 
@@ -68,7 +72,7 @@ module.exports = async function afterPack(context) {
     : join(context.appOutDir, 'resources', 'app.asar.unpacked')
 
   if (osName === 'darwin') {
-    cloneHelperVariants(context.appOutDir, context.packager.appInfo.productFilename)
+    cloneNamedNodeRuntimes(context.appOutDir, context.packager.appInfo.productFilename)
   }
 
   const keepSuffix = `${osName}-${archName}`

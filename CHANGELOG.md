@@ -10,12 +10,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 - User-approved agent collaboration: launch isolated peer sessions behind confirmation and an experimental setting, with credential-scoped persistent mailboxes
 - Clamp Bash command and output with click-to-expand for long shell blocks
-- Name MCP Bridge and LLM Proxy sidecar processes distinctly in Activity Monitor (macOS helper clones)
+- Name MCP Bridge and LLM Proxy sidecar processes distinctly in Activity Monitor (macOS main-stub clones)
 - Map Google image generation size tiers (1K/2K/4K) through imageConfig
 
 ### Fixed
 
 - Inherit agent defaults (model, effort) when launching collaboration sessions
+- Restore the built-in SuperOne MCP handshake for packaged ACP/Grok sessions (stop using Helper.app clones that SIGTRAP under ELECTRON_RUN_AS_NODE)
 - Preserve optional defaults when editing custom provider endpoints
 - Route mosaic composer send to the tile session instead of the project-active session
 - Wrap long paths in checkout failure dialogs

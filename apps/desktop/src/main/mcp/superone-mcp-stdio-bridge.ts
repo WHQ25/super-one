@@ -169,12 +169,12 @@ async function main(): Promise<void> {
   // https://github.com/anthropics/claude-code/issues/1912
   // https://forum.cursor.com/t/floating-node-exec-icon-shows-in-dock-when-running-cursor-on-macos-15-beta/102931
   //
-  // Activity Monitor naming is instead solved at the exec level: in packaged mode,
-  // superone-mcp-stdio-state.ts hands these backends the path to a dedicated
-  // "SuperOne MCP Bridge" Helper.app clone (built by build/afterPack.cjs) rather
-  // than the generic Helper — same static-name-baked-into-the-binary trick Electron
-  // itself uses for Helper (Renderer)/(GPU)/(Plugin). Zero LaunchServices calls,
-  // zero Dock risk, but the name can't carry per-session dynamic data.
+  // In packaged mode, superone-mcp-stdio-state.ts hands backends a MacOS sibling
+  // of the main Electron binary named "SuperOne MCP Bridge" (cloned by afterPack)
+  // with ELECTRON_RUN_AS_NODE. A Helper.app clone cannot be used: Electron only
+  // treats basenames ending in " Helper" / " Helper (GPU|Plugin|Renderer)" as
+  // helpers when resolving MainApplicationBundlePath, so a custom-named helper
+  // aborts under RUN_AS_NODE with SIGTRAP before this script starts.
   const ipc = new SuperoneIpcClient(
     requiredEnv(SUPERONE_MCP_IPC_ENDPOINT_ENV),
     requiredEnv(SUPERONE_MCP_IPC_TOKEN_ENV),

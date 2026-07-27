@@ -2,12 +2,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   execFileSync: vi.fn(),
+  existsSync: vi.fn(),
+  electronToolkitIs: { dev: true },
   info: vi.fn(),
   warn: vi.fn(),
 }))
 
-vi.mock('@electron-toolkit/utils', () => ({ is: { dev: true } }))
+vi.mock('@electron-toolkit/utils', () => ({ is: mocks.electronToolkitIs }))
 vi.mock('child_process', () => ({ execFileSync: mocks.execFileSync }))
+vi.mock('node:fs', () => ({ existsSync: mocks.existsSync }))
 vi.mock('../logger', () => ({
   default: { info: mocks.info, warn: mocks.warn },
 }))
@@ -19,6 +22,7 @@ const originalShell = process.env.SHELL
 
 beforeEach(() => {
   vi.clearAllMocks()
+  mocks.electronToolkitIs.dev = true
   process.env.PATH = '/original/bin'
   process.env.SHELL = '/bin/zsh'
 })
@@ -80,5 +84,58 @@ describe('fixPath', () => {
 
     expect(process.env.PATH).toBe('/original/bin')
     expect(mocks.warn).toHaveBeenCalledWith('[fixPath] Failed to get PATH from login shell')
+  })
+})
+
+describe('getNodeRuntime', () => {
+  it('prefers the named main-stub sibling for the packaged MCP bridge', async () => {
+    mocks.electronToolkitIs.dev = false
+    const named = `${process.execPath} MCP Bridge`
+    mocks.existsSync.mockImplementation((p: string) => p === named)
+    vi.resetModules()
+
+    const { getNodeRuntime } = await import('./resolve-cli')
+
+    expect(getNodeRuntime('mcp-bridge')).toEqual({
+      executable: named,
+      env: { ELECTRON_RUN_AS_NODE: '1' },
+    })
+    expect(mocks.info).toHaveBeenCalledWith(
+      '[resolve-cli] packaged mode: using named node runtime variant=%s executable=%s',
+      'mcp-bridge',
+      named,
+    )
+  })
+
+  it('falls back to the main Electron executable when the named stub is missing', async () => {
+    mocks.electronToolkitIs.dev = false
+    mocks.existsSync.mockReturnValue(false)
+    vi.resetModules()
+
+    const { getNodeRuntime } = await import('./resolve-cli')
+
+    expect(getNodeRuntime('mcp-bridge')).toEqual({
+      executable: process.execPath,
+      env: { ELECTRON_RUN_AS_NODE: '1' },
+    })
+    expect(mocks.info).toHaveBeenCalledWith(
+      '[resolve-cli] packaged mode: named node runtime missing for variant=%s, falling back to Electron executable=%s',
+      'mcp-bridge',
+      process.execPath,
+    )
+  })
+
+  it('prefers the named main-stub sibling for the packaged LLM proxy', async () => {
+    mocks.electronToolkitIs.dev = false
+    const named = `${process.execPath} LLM Proxy`
+    mocks.existsSync.mockImplementation((p: string) => p === named)
+    vi.resetModules()
+
+    const { getNodeRuntime } = await import('./resolve-cli')
+
+    expect(getNodeRuntime('llm-proxy')).toEqual({
+      executable: named,
+      env: { ELECTRON_RUN_AS_NODE: '1' },
+    })
   })
 })

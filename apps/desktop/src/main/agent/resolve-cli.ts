@@ -55,27 +55,40 @@ export interface NodeRuntime {
   env?: Record<string, string>
 }
 
-// 'mcp-bridge' and 'llm-proxy' each resolve to a dedicated Helper.app clone (built
-// by build/afterPack.cjs — keep the suffix strings in sync with HELPER_VARIANTS
-// there) so the process shows a real name in Activity Monitor instead of the
-// generic "SuperOne Helper" shared by GPU/network/renderer subprocesses. Only
-// exists in packaged mode; dev falls back to 'default' behavior (see is.dev below).
+// Named sidecars (mcp-bridge, llm-proxy) resolve to a MacOS sibling of the main
+// Electron executable, cloned by build/afterPack.cjs — keep VARIANT_MAIN_SUFFIX
+// in sync with NODE_RUNTIME_VARIANTS there. That gives a distinct Activity
+// Monitor name without using Helper.app clones, which Electron rejects under
+// ELECTRON_RUN_AS_NODE when the basename is not a known helper suffix.
+// Dev mode falls back to the caller's default runtime (see is.dev below).
 export type NodeRuntimeVariant = 'default' | 'mcp-bridge' | 'llm-proxy'
 
-const VARIANT_HELPER_SUFFIX: Record<Exclude<NodeRuntimeVariant, 'default'>, string> = {
+type NamedRuntimeVariant = Exclude<NodeRuntimeVariant, 'default'>
+
+/** Keep in sync with afterPack.cjs NODE_RUNTIME_VARIANTS suffixes. */
+const VARIANT_MAIN_SUFFIX: Record<NamedRuntimeVariant, string> = {
   'mcp-bridge': 'MCP Bridge',
   'llm-proxy': 'LLM Proxy',
 }
 
 const cachedRuntimeByVariant = new Map<NodeRuntimeVariant, NodeRuntime>()
 
-function findElectronHelper(variant: NodeRuntimeVariant): string | undefined {
+function findPlainHelper(): string | undefined {
   if (process.platform !== 'darwin') return undefined
   const appName = basename(process.execPath)
-  const helperName = variant === 'default' ? `${appName} Helper` : `${appName} ${VARIANT_HELPER_SUFFIX[variant]}`
+  const helperName = `${appName} Helper`
   const contentsDir = dirname(dirname(process.execPath))
   const helperPath = join(contentsDir, 'Frameworks', `${helperName}.app`, 'Contents', 'MacOS', helperName)
   if (existsSync(helperPath)) return helperPath
+  return undefined
+}
+
+/** Main-stub sibling written by afterPack, e.g. `.../MacOS/SuperOne MCP Bridge`. */
+function findNamedMainStub(variant: NamedRuntimeVariant): string | undefined {
+  if (process.platform !== 'darwin') return undefined
+  const appName = basename(process.execPath)
+  const named = join(dirname(process.execPath), `${appName} ${VARIANT_MAIN_SUFFIX[variant]}`)
+  if (existsSync(named)) return named
   return undefined
 }
 
@@ -86,14 +99,32 @@ export function getNodeRuntime(variant: NodeRuntimeVariant = 'default'): NodeRun
     cachedRuntimeByVariant.set(variant, {})
     return {}
   }
-  // Fall back to the plain Helper (still Dock-safe, just unnamed) if the named
-  // variant's bundle wasn't found — e.g. afterPack didn't run for this build.
-  const helper = findElectronHelper(variant) ?? findElectronHelper('default')
+
+  if (variant !== 'default') {
+    const named = findNamedMainStub(variant)
+    const executable = named ?? process.execPath
+    const runtime = { executable, env: { ELECTRON_RUN_AS_NODE: '1' } }
+    if (named) {
+      log.info('[resolve-cli] packaged mode: using named node runtime variant=%s executable=%s', variant, named)
+    } else {
+      log.info(
+        '[resolve-cli] packaged mode: named node runtime missing for variant=%s, falling back to Electron executable=%s',
+        variant,
+        process.execPath,
+      )
+    }
+    cachedRuntimeByVariant.set(variant, runtime)
+    return runtime
+  }
+
+  // Unnamed default: prefer plain Helper (Dock-safe process name "SuperOne Helper")
+  // when available; otherwise the main executable.
+  const helper = findPlainHelper()
   const runtime: NodeRuntime = helper
     ? { executable: helper, env: { ELECTRON_RUN_AS_NODE: '1' } }
     : { executable: process.execPath, env: { ELECTRON_RUN_AS_NODE: '1' } }
   if (helper) {
-    log.info('[resolve-cli] packaged mode: using Electron Helper variant=%s executable=%s', variant, helper)
+    log.info('[resolve-cli] packaged mode: using Electron Helper executable=%s', helper)
   } else {
     log.info('[resolve-cli] packaged mode: using Electron as Node runtime executable=%s', process.execPath)
   }

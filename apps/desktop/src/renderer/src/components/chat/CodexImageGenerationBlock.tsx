@@ -2,7 +2,14 @@ import { useState } from 'react'
 import { AlertCircle } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 import type { ImageGenerationItem } from '@superone/shared/agent-types'
-import { ImageInteractive, ImageSkeleton, ImageViewer, useImageDataUri } from './image-shared'
+import {
+  ImageInteractive,
+  ImageSkeleton,
+  ImageViewer,
+  imageFullPath,
+  imageThumbPath,
+  useImageMediaSrc,
+} from './image-shared'
 
 interface Props {
   item: ImageGenerationItem
@@ -12,9 +19,10 @@ export function CodexImageGenerationBlock({ item }: Props) {
   const [viewerOpen, setViewerOpen] = useState(false)
 
   const isFailed = item.status === 'failed'
-  const savedPath = item.savedPath
-  const isWaiting = !savedPath && !isFailed
-  const { dataUri, loadError } = useImageDataUri(savedPath, isFailed)
+  const thumbPath = imageThumbPath(item)
+  const fullPath = imageFullPath(item)
+  const isWaiting = !thumbPath && !isFailed
+  const { src, loadError, onError, onLoad } = useImageMediaSrc(thumbPath, isFailed)
 
   if (isFailed) {
     return (
@@ -33,19 +41,19 @@ export function CodexImageGenerationBlock({ item }: Props) {
     return (
       <div className="my-2 flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
         <AlertCircle className="size-3.5 shrink-0" />
-        <span>Failed to load image: {loadError}</span>
+        <span>Failed to load image</span>
       </div>
     )
   }
 
-  if (!dataUri) {
+  if (!src) {
     return <ImageSkeleton className="my-2 h-40 w-40 rounded-md border border-border" />
   }
 
   return (
     <>
       <ImageInteractive
-        savedPath={savedPath!}
+        savedPath={fullPath ?? thumbPath!}
         onOpen={() => setViewerOpen(true)}
         ariaLabel={item.revisedPrompt ?? 'Generated image'}
         prompt={item.revisedPrompt}
@@ -56,8 +64,10 @@ export function CodexImageGenerationBlock({ item }: Props) {
         )}
       >
         <img
-          src={dataUri}
+          src={src}
           alt={item.revisedPrompt ?? 'Generated image'}
+          onError={onError}
+          onLoad={onLoad}
           className="block h-40 w-auto max-w-full object-contain"
         />
       </ImageInteractive>

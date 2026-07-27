@@ -206,7 +206,10 @@ export const GENERATE_IMAGE_DESCRIPTION =
   'Use this when the user asks to create, draw, render, design, or edit an image / picture / illustration / logo / photo. ' +
   'The generated image is shown to the user automatically. After it returns, do NOT display it again with a Markdown image or link — just briefly describe the result in words. ' +
   'For text-to-image, pass only `prompt`. For image editing / image-to-image (e.g. "change X", "add Y", or iterating on a previous result), also pass the source image file path(s) in `reference_image_paths`. ' +
-  'The result JSON returns the saved file path(s) in `savedPaths` for your own reference only. If you need to visually inspect the output to verify or iterate on it, use the Read tool on a saved path. ' +
+  'Result fields: `previewPaths` (downscaled JPEGs, parallel index to savedPaths) and `savedPaths` (full-resolution originals). ' +
+  'CRITICAL — visual inspection: if you need to look at the image with Read / any image-viewing tool, you MUST open a path from `previewPaths` only. ' +
+  'NEVER Read, open, or attach a path from `savedPaths` for visual inspection — full-res (esp. 2K/4K) originals routinely exceed tool size limits and will fail or waste tokens. ' +
+  'Use `savedPaths` only as `reference_image_paths` for a follow-up edit, or when the user explicitly needs the full-quality file path for download/export. ' +
   '`provider` selects the backend by id (default: the first usable provider). Which settings beyond `prompt` actually work varies by provider — call media_list_providers first to see `sizing`/`sizeNote`, and call media_read_guide for the specifics before setting `aspect_ratio` or `size`. ' +
   'Settings a model does not support are reported in the result `warnings` rather than failing the call.'
 

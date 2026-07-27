@@ -1,5 +1,6 @@
 import { generateImage } from 'ai'
 import { resolveGoogleImageGenerateOptions } from './google-image-options'
+import { attachImagePreviews } from './image-preview'
 import { resolveImageModel } from './registry'
 import { persistImages } from './storage'
 import type { GenerateMediaCoreParams, MediaCoreResult } from './types'
@@ -33,6 +34,7 @@ export async function generateMedia(
     ...(params.abortSignal ? { abortSignal: params.abortSignal } : {}),
   })
 
-  const images = persistImages(result.images, opts.outputDir, opts.generationId)
+  // Persist full-res originals, then attach a cheap preview for chat thumbs + agent Read.
+  const images = attachImagePreviews(persistImages(result.images, opts.outputDir, opts.generationId))
   return { images, warnings: result.warnings, providerMetadata: result.providerMetadata }
 }

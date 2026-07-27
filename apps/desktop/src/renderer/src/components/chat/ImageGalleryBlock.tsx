@@ -2,15 +2,23 @@ import { useState } from 'react'
 import { ImageIcon, AlertCircle } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 import type { ImageGenerationItem } from '@superone/shared/agent-types'
-import { ImageInteractive, ImageSkeleton, ImageViewer, useImageDataUri } from './image-shared'
+import {
+  ImageInteractive,
+  ImageSkeleton,
+  ImageViewer,
+  imageFullPath,
+  imageThumbPath,
+  useImageMediaSrc,
+} from './image-shared'
 
 const TILE = 'h-40 flex-none overflow-hidden rounded-md border border-border'
 
 function GalleryThumb({ item, onOpen }: { item: ImageGenerationItem; onOpen: () => void }) {
   const isFailed = item.status === 'failed'
-  const savedPath = item.savedPath
-  const isWaiting = !savedPath && !isFailed
-  const { dataUri, loadError } = useImageDataUri(savedPath, isFailed)
+  const thumbPath = imageThumbPath(item)
+  const fullPath = imageFullPath(item)
+  const isWaiting = !thumbPath && !isFailed
+  const { src, loadError, onError, onLoad } = useImageMediaSrc(thumbPath, isFailed)
 
   if (isFailed || loadError) {
     return (
@@ -20,13 +28,13 @@ function GalleryThumb({ item, onOpen }: { item: ImageGenerationItem; onOpen: () 
     )
   }
 
-  if (isWaiting || !dataUri) {
+  if (isWaiting || !src) {
     return <ImageSkeleton className={cn(TILE, 'w-40')} />
   }
 
   return (
     <ImageInteractive
-      savedPath={savedPath!}
+      savedPath={fullPath ?? thumbPath!}
       onOpen={onOpen}
       ariaLabel={item.revisedPrompt ?? 'Generated image'}
       prompt={item.revisedPrompt}
@@ -34,8 +42,10 @@ function GalleryThumb({ item, onOpen }: { item: ImageGenerationItem; onOpen: () 
       className={cn(TILE, 'cursor-pointer bg-muted/30 transition-shadow hover:shadow-sm')}
     >
       <img
-        src={dataUri}
+        src={src}
         alt={item.revisedPrompt ?? 'Generated image'}
+        onError={onError}
+        onLoad={onLoad}
         className="block h-40 w-auto object-contain"
       />
     </ImageInteractive>

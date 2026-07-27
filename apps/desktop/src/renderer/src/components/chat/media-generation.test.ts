@@ -182,6 +182,34 @@ describe('mapping a media_generate_image call to gallery items', () => {
     expect(items.map((i) => i.id)).toEqual(['call-1-0', 'call-1-1'])
   })
 
+  it('carries distinct previewPaths onto gallery items for large outputs', () => {
+    const result = JSON.stringify({
+      status: 'generated',
+      savedPaths: ['/tmp/a.png', '/tmp/b.png'],
+      previewPaths: ['/tmp/a.preview.jpg', '/tmp/b.preview.jpg'],
+    })
+    const items = toImageGenerationItems('call-1', INPUT, result)
+    expect(items.map((i) => i.savedPath)).toEqual(['/tmp/a.png', '/tmp/b.png'])
+    expect(items.map((i) => i.previewPath)).toEqual(['/tmp/a.preview.jpg', '/tmp/b.preview.jpg'])
+  })
+
+  it('omits previewPath when it equals the original (small images)', () => {
+    const result = JSON.stringify({
+      status: 'generated',
+      savedPaths: ['/tmp/a.jpg'],
+      previewPaths: ['/tmp/a.jpg'],
+    })
+    const items = toImageGenerationItems('call-1', INPUT, result)
+    expect(items[0].savedPath).toBe('/tmp/a.jpg')
+    expect(items[0].previewPath).toBeUndefined()
+  })
+
+  it('tolerates missing previewPaths for older tool results', () => {
+    const items = toImageGenerationItems('call-1', INPUT, RESULT)
+    expect(items[0].savedPath).toBe('/tmp/out/36bd5ca1-0.jpg')
+    expect(items[0].previewPath).toBeUndefined()
+  })
+
   it('shows an in-progress placeholder while the result has not arrived', () => {
     const items = toImageGenerationItems('call-1', INPUT, undefined)
     expect(items).toHaveLength(1)

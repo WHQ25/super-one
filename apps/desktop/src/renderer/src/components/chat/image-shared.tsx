@@ -9,10 +9,21 @@ import { Dialog, DialogClose, DialogContent, DialogTitle } from '@superone/ui/co
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@superone/ui/components/ui/hover-card'
 import { toast } from 'sonner'
 import { ImagePreview } from '@/components/coding/ImagePreview'
+import { toMediaUrl } from '@/lib/path-utils'
 import { SelectionContextMenuZone } from './SelectionContextMenu'
 import { chatInputAPI } from './ChatInput'
 import { useAppStore } from '@/stores/app'
 import type { ImageGenerationItem, MediaProviderStatus } from '@superone/shared/agent-types'
+
+/** Path used for gallery thumbs — prefers the downscaled preview when present. */
+export function imageThumbPath(item: ImageGenerationItem): string | undefined {
+  return item.previewPath ?? item.savedPath
+}
+
+/** Path used for the fullscreen viewer / download / drag — always the original when available. */
+export function imageFullPath(item: ImageGenerationItem): string | undefined {
+  return item.savedPath ?? item.previewPath
+}
 
 const isWindows = window.app.platform === 'win32'
 
@@ -60,6 +71,26 @@ export function useImageDataUri(savedPath: string | undefined, isFailed: boolean
   }, [savedPath, isFailed])
 
   return { dataUri, loadError }
+}
+
+/**
+ * Stream the image from the local media server (no 10MB data-URI cap).
+ * Prefer this for generated gallery images — originals can be multi-MB 4K files.
+ */
+export function useImageMediaSrc(filePath: string | undefined, isFailed: boolean) {
+  const [loadError, setLoadError] = useState(false)
+  const src = filePath && !isFailed ? toMediaUrl(filePath) : null
+
+  useEffect(() => {
+    setLoadError(false)
+  }, [filePath, isFailed])
+
+  return {
+    src,
+    loadError,
+    onError: () => setLoadError(true),
+    onLoad: () => setLoadError(false),
+  }
 }
 
 function basename(path: string): string {
@@ -294,7 +325,9 @@ function ReferenceImageThumb({ path }: { path: string }) {
 export function ImageViewer({ items, index, open, onOpenChange, onIndexChange }: ViewerProps) {
   const { t } = useTranslation()
   const item = items[index]
-  const { dataUri } = useImageDataUri(item?.savedPath, item?.status === 'failed')
+  // Fullscreen always prefers the original; stream via media server so 4K files load.
+  const fullPath = item ? imageFullPath(item) : undefined
+  const fullSrc = fullPath && item?.status !== 'failed' ? toMediaUrl(fullPath) : null
   const [downloading, setDownloading] = useState(false)
   const [downloadStatus, setDownloadStatus] = useState<string | null>(null)
   const [dims, setDims] = useState<{ width: number; height: number } | null>(null)
@@ -302,18 +335,18 @@ export function ImageViewer({ items, index, open, onOpenChange, onIndexChange }:
   const providerMap = useMediaProviderMap(infoOpen)
   const providerParamId = item?.params?.find((p) => p.key === 'provider')?.value
 
-  const menuItems = useImageMenuItems({ savedPath: item?.savedPath ?? '', prompt: item?.revisedPrompt, downloadable: true })
+  const menuItems = useImageMenuItems({ savedPath: fullPath ?? '', prompt: item?.revisedPrompt, downloadable: true })
   const multi = items.length > 1
   const hasPrev = index > 0
   const hasNext = index < items.length - 1
 
   useEffect(() => {
     setDims(null)
-    if (!dataUri) return
+    if (!fullSrc) return
     const img = new Image()
     img.onload = () => setDims({ width: img.naturalWidth, height: img.naturalHeight })
-    img.src = dataUri
-  }, [dataUri])
+    img.src = fullSrc
+  }, [fullSrc])
 
   useEffect(() => {
     if (!open || !multi) return
@@ -326,12 +359,12 @@ export function ImageViewer({ items, index, open, onOpenChange, onIndexChange }:
   }, [open, multi, index, hasPrev, hasNext, onIndexChange])
 
   const handleDownload = async () => {
-    if (!item?.savedPath || downloading) return
+    if (!fullPath || downloading) return
     setDownloading(true)
     setDownloadStatus(null)
     try {
       const defaultDir = useAppStore.getState().currentFolder ?? undefined
-      const res = await window.app.saveFileAs(item.savedPath, buildImageFileName(item), defaultDir)
+      const res = await window.app.saveFileAs(fullPath, buildImageFileName(item), defaultDir)
       if (res.ok) setDownloadStatus(`Saved to ${res.savedPath}`)
       else if (!res.canceled) setDownloadStatus(`Failed: ${res.error ?? 'unknown error'}`)
       setDownloading(false)
@@ -354,10 +387,10 @@ export function ImageViewer({ items, index, open, onOpenChange, onIndexChange }:
         {(() => {
           const imageArea = (
             <div className="absolute inset-0 px-[5vw] py-[5vh]">
-              {dataUri && <ImagePreview src={dataUri} alt={item.revisedPrompt ?? 'Generated image'} />}
+              {fullSrc && <ImagePreview src={fullSrc} alt={item.revisedPrompt ?? 'Generated image'} />}
             </div>
           )
-          if (!item.savedPath) return imageArea
+          if (!fullPath) return imageArea
           return (
             <AdaptiveContextMenu items={menuItems}>{imageArea}</AdaptiveContextMenu>
           )

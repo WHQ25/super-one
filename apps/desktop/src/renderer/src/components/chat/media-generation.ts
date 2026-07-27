@@ -11,6 +11,8 @@ const GROK_MEDIA_OUTPUT_TYPES = new Set(['ImageGen', 'ImageEdit', 'ImageToVideo'
 interface GenerationResult {
   status?: string
   savedPaths?: unknown
+  /** Parallel to savedPaths — downscaled previews for thumbs / agent Read. */
+  previewPaths?: unknown
   provider?: unknown
   model?: unknown
   warnings?: unknown
@@ -85,6 +87,13 @@ function toSavedPaths(parsed: GenerationResult): string[] {
   return Array.isArray(parsed.savedPaths)
     ? parsed.savedPaths.filter((p): p is string => typeof p === 'string')
     : []
+}
+
+function toPreviewPaths(parsed: GenerationResult, savedPaths: string[]): (string | undefined)[] {
+  const raw = Array.isArray(parsed.previewPaths)
+    ? parsed.previewPaths.filter((p): p is string => typeof p === 'string')
+    : []
+  return savedPaths.map((_, idx) => raw[idx])
 }
 
 export function isSuccessfulGenerationResult(resultText: string | undefined): boolean {
@@ -169,16 +178,23 @@ export function toImageGenerationItems(
     ? parsed.warnings.map((w) => (typeof w === 'string' ? w : JSON.stringify(w))).filter(Boolean)
     : undefined
 
-  return toSavedPaths(parsed).map((savedPath, idx) => ({
-    id: `${id}-${idx}`,
-    type: 'image_generation',
-    status: 'completed',
-    savedPath,
-    revisedPrompt,
-    ...(referenceImagePaths ? { referenceImagePaths } : {}),
-    ...(params.length > 0 ? { params } : {}),
-    ...(warnings && warnings.length > 0 ? { warnings } : {}),
-  }))
+  const savedPaths = toSavedPaths(parsed)
+  const previewPaths = toPreviewPaths(parsed, savedPaths)
+
+  return savedPaths.map((savedPath, idx) => {
+    const previewPath = previewPaths[idx]
+    return {
+      id: `${id}-${idx}`,
+      type: 'image_generation',
+      status: 'completed' as const,
+      savedPath,
+      ...(previewPath && previewPath !== savedPath ? { previewPath } : {}),
+      revisedPrompt,
+      ...(referenceImagePaths ? { referenceImagePaths } : {}),
+      ...(params.length > 0 ? { params } : {}),
+      ...(warnings && warnings.length > 0 ? { warnings } : {}),
+    }
+  })
 }
 
 /**

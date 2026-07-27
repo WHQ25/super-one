@@ -133,7 +133,16 @@ export async function generateImageToolHandler(args: GenerateImageArgs, deps: Bu
       generationId: result.generationId,
       provider: providerId,
       model,
+      // Full-resolution originals (download / reference edits only).
       savedPaths: result.images.map((image) => image.path),
+      // Downscaled JPEGs for visual inspection and chat gallery thumbs.
+      // Same as savedPaths when the original is already small enough.
+      previewPaths: result.images.map((image) => image.previewPath ?? image.path),
+      // Inline instruction — models follow per-result hints more reliably than tool prose alone.
+      hint:
+        'To visually inspect an image, Read a path from previewPaths ONLY. ' +
+        'Do NOT Read savedPaths for viewing — full-res originals can exceed size limits. ' +
+        'Use savedPaths only as reference_image_paths for edits, or when the user needs the full-quality file path.',
       ...(result.warnings.length > 0 ? { warnings: result.warnings } : {}),
     }
 

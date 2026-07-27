@@ -266,7 +266,13 @@ export interface ImageGenerationItem {
   type: 'image_generation'
   status: 'in_progress' | 'completed' | 'failed' | string
   revisedPrompt?: string
+  /** Full-resolution original path (viewer / download / drag). */
   savedPath?: string
+  /**
+   * Downscaled preview path for gallery thumbs.
+   * Falls back to `savedPath` when absent (older tool results / small images).
+   */
+  previewPath?: string
   referenceImagePaths?: string[]
   generationMs?: number
   params?: { key: string; value: string }[]

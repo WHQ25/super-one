@@ -4,6 +4,29 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.48.0-alpha] - 2026-07-28
+
+### Added
+
+- User-approved agent collaboration: launch isolated peer sessions behind confirmation and an experimental setting, with credential-scoped persistent mailboxes
+- Clamp Bash command and output with click-to-expand for long shell blocks
+- Name MCP Bridge and LLM Proxy sidecar processes distinctly in Activity Monitor (macOS helper clones)
+- Map Google image generation size tiers (1K/2K/4K) through imageConfig
+
+### Fixed
+
+- Inherit agent defaults (model, effort) when launching collaboration sessions
+- Preserve optional defaults when editing custom provider endpoints
+- Route mosaic composer send to the tile session instead of the project-active session
+- Wrap long paths in checkout failure dialogs
+- Stop agent browser automation from stealing host composer focus
+- Key Bash tool-error UI on tool_use_error tag so non-zero exits don't show as tool failures
+- Stop LLM proxy sidecars from surviving after a crashed parent
+
+### Performance
+
+- Incrementally persist chat_messages instead of rewriting the full transcript each turn
+
 ## [0.47.5-alpha] - 2026-07-27
 
 ### Fixed

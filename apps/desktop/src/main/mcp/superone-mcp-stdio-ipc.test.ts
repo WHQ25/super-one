@@ -13,6 +13,9 @@ vi.mock('electron', () => ({
 vi.mock('../logger', () => ({
   default: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }))
+vi.mock('../app-settings-service', () => ({
+  readAppSettings: () => ({ experimentalAgentCollaborationEnabled: false }),
+}))
 vi.mock('../agent/resolve-cli', () => ({
   getNodeRuntime: vi.fn(() => ({ executable: '/mock/node', env: {} })),
 }))

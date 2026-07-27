@@ -130,6 +130,8 @@ interface AppState {
 
   experimentalAgentsEnabled: boolean
   setExperimentalAgentsEnabled: (enabled: boolean) => Promise<void>
+  experimentalAgentCollaborationEnabled: boolean
+  setExperimentalAgentCollaborationEnabled: (enabled: boolean) => Promise<void>
 
   // Terminal display settings
   terminalLightPalette: string | null
@@ -547,6 +549,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   brandHues: { claude: null, codex: null, acp: null, opencode: null },
   tokenOverrides: { claude: {}, codex: {}, acp: {}, opencode: {} },
   experimentalAgentsEnabled: false,
+  experimentalAgentCollaborationEnabled: false,
   terminalLightPalette: null,
   terminalDarkPalette: null,
   terminalFontSize: 14,
@@ -571,6 +574,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           opencode: {},
         },
         experimentalAgentsEnabled: settings.experimentalAgentsEnabled,
+        experimentalAgentCollaborationEnabled: settings.experimentalAgentCollaborationEnabled,
         terminalLightPalette: settings.terminalLightPalette,
         terminalDarkPalette: settings.terminalDarkPalette,
         terminalFontSize: settings.terminalFontSize,
@@ -590,6 +594,17 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ experimentalAgentsEnabled: result.experimentalAgentsEnabled })
     } catch (err) {
       console.error('[experimental-agents] persist enabled failed:', err)
+      throw err
+    }
+  },
+
+  setExperimentalAgentCollaborationEnabled: async (enabled) => {
+    set({ experimentalAgentCollaborationEnabled: enabled })
+    try {
+      const result = await window.app.saveAppSettings({ experimentalAgentCollaborationEnabled: enabled })
+      set({ experimentalAgentCollaborationEnabled: result.experimentalAgentCollaborationEnabled })
+    } catch (err) {
+      console.error('[agent-collaboration] persist enabled failed:', err)
       throw err
     }
   },
@@ -729,6 +744,7 @@ if (typeof window !== 'undefined') {
         opencode: {},
       },
       experimentalAgentsEnabled: settings.experimentalAgentsEnabled,
+      experimentalAgentCollaborationEnabled: settings.experimentalAgentCollaborationEnabled,
       terminalLightPalette: settings.terminalLightPalette,
       terminalDarkPalette: settings.terminalDarkPalette,
       terminalFontSize: settings.terminalFontSize,

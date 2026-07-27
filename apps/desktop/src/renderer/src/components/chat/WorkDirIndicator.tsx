@@ -6,6 +6,7 @@ import { useActiveSession, useSessionScope } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 import { useOnTurnCompleted } from '@/hooks/useOnTurnCompleted'
 import type { GitDirtyStatus, WorktreeEntry, WorktreeInfo, WorktreeMode } from '@superone/shared/agent-types'
+import { WorkDirLabel, workDirIcon, workDirTitle, type WorkDirState } from './work-dir-label'
 import { WorktreeHandoffSection } from './WorktreeHandoffSection'
 import { WorktreeAssignBranchSection } from './WorktreeAssignBranchSection'
 import { WorktreeForkSection } from './WorktreeForkSection'
@@ -237,81 +238,20 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
     return t('chat.worktree.attachUnavailableOther')
   }
 
-  const CompactIcon = isActive
-    ? (activeIsDetached ? GitCommit : GitBranch)
+  const workDirState: WorkDirState = isActive
+    ? (activeIsDetached
+        ? { kind: 'activeDetached', hash: activeShortHead }
+        : { kind: 'activeBranch', name: activeEntry?.branch ?? activeGitBranch ?? '' })
     : isPending
-      ? (pendingMode === 'detach' ? GitCommit : GitBranch)
-      : Monitor
-
-  const titleText = (() => {
-    if (isActive) {
-      if (activeIsDetached) return `Worktree ${activeShortHead}`
-      return `Worktree ${activeEntry?.branch ?? activeGitBranch ?? ''}`
-    }
-    if (isPending) {
-      if (pendingMode === 'detach') return `Create worktree from ${pendingBase}`
-      if (pendingMode === 'attach') return `Attach worktree to ${pendingBase}`
-      return `Create worktree branch ${pendingBranchName || '…'}`
-    }
-    return t('tooltips.local')
-  })()
-
-  const inlineBranch = <GitBranch className="inline size-3 align-middle" />
-  const inlineCommit = <GitCommit className="inline size-3 align-middle" />
-
-  const renderFullLabel = () => {
-    if (isActive) {
-      if (activeIsDetached) {
-        return (
-          <Trans
-            i18nKey="chat.worktree.triggerActiveDetached"
-            values={{ hash: activeShortHead }}
-            components={{ commit: inlineCommit }}
-          />
-        )
-      }
-      return (
-        <Trans
-          i18nKey="chat.worktree.triggerActiveBranch"
-          values={{ name: activeEntry?.branch ?? activeGitBranch ?? '' }}
-          components={{ branch: inlineBranch }}
-        />
-      )
-    }
-    if (isPending) {
-      if (pendingMode === 'detach') {
-        return (
-          <Trans
-            i18nKey="chat.worktree.triggerCreateFrom"
-            values={{ base: pendingBase }}
-            components={{ branch: inlineBranch }}
-          />
-        )
-      }
-      if (pendingMode === 'attach') {
-        return (
-          <Trans
-            i18nKey="chat.worktree.triggerAttachTo"
-            values={{ base: pendingBase }}
-            components={{ branch: inlineBranch }}
-          />
-        )
-      }
-      return (
-        <Trans
-          i18nKey="chat.worktree.triggerCreateBranch"
-          values={{ name: pendingBranchName || '…' }}
-          components={{ branch: inlineBranch }}
-        />
-      )
-    }
-    return (
-      <>
-        <Monitor className="inline size-3 align-middle" />
-        <span className="ml-1">{t('tooltips.local')}</span>
-      </>
-    )
-  }
+      ? (pendingMode === 'detach'
+          ? { kind: 'createFrom', base: pendingBase }
+          : pendingMode === 'attach'
+            ? { kind: 'attachTo', base: pendingBase }
+            : { kind: 'createBranch', name: pendingBranchName })
+      : { kind: 'local' }
+  const CompactIcon = workDirIcon(workDirState)
+  const titleText = workDirTitle(workDirState, t)
+  const renderFullLabel = () => <WorkDirLabel state={workDirState} />
 
   const headingText = !isPending
     ? t('chat.worktree.createFromHeading')

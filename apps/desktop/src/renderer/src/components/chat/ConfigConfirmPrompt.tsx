@@ -7,6 +7,7 @@ import type { ConfigConfirmPayload } from '@superone/shared/agent-types'
 import { SettingField, type SettingFieldValue } from '../settings/SettingField'
 import { isStructuredFieldType, StructuredSettingField } from '../settings/StructuredSettingField'
 import { diffConfigFieldValue, formatConfigFieldValue } from '@/lib/config-field-summary'
+import { hasOpenRadixOverlay } from '@/lib/radix-overlay'
 
 type ConfigValue = unknown
 
@@ -24,9 +25,7 @@ function isEditableElement(el: Element | null): boolean {
 
 // Modal layers lock scroll; non-modal ones (the add-model Popover) only mount a popper wrapper — both
 // must swallow Escape/Tab so dismissing a picker never reaches the reject shortcut.
-function hasOpenPopover(): boolean {
-  return document.body.hasAttribute('data-scroll-locked') || !!document.querySelector('[data-radix-popper-content-wrapper]')
-}
+const hasOpenPopover = hasOpenRadixOverlay
 
 export function ConfigConfirmPrompt({ payload, onConfirm, onReject }: ConfigConfirmPromptProps) {
   const { t } = useTranslation()

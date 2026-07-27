@@ -67,6 +67,7 @@ export interface CodexSession {
   notificationDispatcher: NotificationDispatcher | null
   forkListeners: Map<string, ForkListenerHandle>
   forkCallbacks: CodexRunStreamCallbacks | null
+  systemPromptAppend?: string
 }
 
 function resolvePermissionPreset(preset?: CodexPermissionPreset): CodexPermissionPreset {
@@ -83,6 +84,7 @@ export function createCodexSession(
   modelReasoningEffort?: CodexReasoningEffort,
   permissionPreset?: CodexPermissionPreset,
   apiProviderId?: string | null,
+  systemPromptAppend?: string,
 ): CodexSession {
   return {
     superoneSessionId,
@@ -104,6 +106,7 @@ export function createCodexSession(
     notificationDispatcher: null,
     forkListeners: new Map(),
     forkCallbacks: null,
+    systemPromptAppend,
   }
 }
 

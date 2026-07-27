@@ -12,6 +12,7 @@ function makeSettings(overrides: Partial<AppSettings> = {}): AppSettings {
   return {
     analyticsEnabled: true,
     experimentalAgentsEnabled: false,
+    experimentalAgentCollaborationEnabled: false,
     crispText: true,
     locale: '',
     updateChannel: null,
@@ -137,13 +138,19 @@ describe('settings registry — new field groups', () => {
     expect(patch.agentPreference?.claude?.askUserQuestionPreviewFormat).toBe('html')
   })
 
-  it('applies experimental agent and ACP selection fields under general settings', () => {
-    const { patch, applied } = buildPatchFromValues({ experimentalAgentsEnabled: true, acpSelectedAgentId: 'gemini-cli' }, makeSettings())
+  it('applies experimental agent, collaboration, and ACP selection fields under general settings', () => {
+    const { patch, applied } = buildPatchFromValues({
+      experimentalAgentsEnabled: true,
+      experimentalAgentCollaborationEnabled: true,
+      acpSelectedAgentId: 'gemini-cli',
+    }, makeSettings())
     expect(applied).toEqual([
       { key: 'experimentalAgentsEnabled', label: 'Enable Experimental Agents', oldValue: false, newValue: true },
+      { key: 'experimentalAgentCollaborationEnabled', label: 'Enable Agent Session Collaboration', oldValue: false, newValue: true },
       { key: 'acpSelectedAgentId', label: 'Selected ACP Agent', oldValue: null, newValue: 'gemini-cli' },
     ])
     expect(patch.experimentalAgentsEnabled).toBe(true)
+    expect(patch.experimentalAgentCollaborationEnabled).toBe(true)
     expect(patch.agentPreference?.acp).toMatchObject({ selectedAgentId: 'gemini-cli' })
   })
 
@@ -153,6 +160,7 @@ describe('settings registry — new field groups', () => {
     expect(domains.find((d) => d.domain === 'agent-acp')).toBeFalsy()
     const guide = buildDomainGuide('general', makeSettings({
       experimentalAgentsEnabled: true,
+      experimentalAgentCollaborationEnabled: true,
       agentPreference: { ...makeSettings().agentPreference, acp: { enabled: true, brandHue: null, tokenOverrides: {}, selectedAgentId: 'gemini-cli' } },
     }))
     expect(guide?.fields).toMatchObject([
@@ -160,6 +168,7 @@ describe('settings registry — new field groups', () => {
       { key: 'updateChannel' },
       { key: 'analyticsEnabled' },
       { key: 'experimentalAgentsEnabled', currentValue: true },
+      { key: 'experimentalAgentCollaborationEnabled', currentValue: true },
       { key: 'acpSelectedAgentId', currentValue: 'gemini-cli' },
     ])
   })

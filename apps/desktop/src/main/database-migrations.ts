@@ -427,6 +427,53 @@ export function runDatabaseMigrations(db: Database.Database): void {
   if (!mediaGenCols.some((c) => c.name === 'upstream_task_id')) {
     db.exec('ALTER TABLE media_generations ADD COLUMN upstream_task_id TEXT')
   }
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS session_collaboration_grants (
+      credential_hash TEXT PRIMARY KEY,
+      credential_secret TEXT,
+      credential_hint TEXT NOT NULL,
+      parent_session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+      child_session_id TEXT UNIQUE REFERENCES sessions(id) ON DELETE CASCADE,
+      agent_id TEXT NOT NULL,
+      task TEXT NOT NULL,
+      config_json TEXT NOT NULL,
+      task_sent INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      started_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_session_collaboration_parent
+      ON session_collaboration_grants(parent_session_id);
+    CREATE INDEX IF NOT EXISTS idx_session_collaboration_child
+      ON session_collaboration_grants(child_session_id);
+
+    CREATE TABLE IF NOT EXISTS session_collaboration_messages (
+      id TEXT PRIMARY KEY,
+      credential_hash TEXT NOT NULL REFERENCES session_collaboration_grants(credential_hash) ON DELETE CASCADE,
+      sequence INTEGER NOT NULL,
+      sender_session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+      recipient_session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+      client_message_id TEXT,
+      content TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      delivered_at TEXT,
+      UNIQUE(credential_hash, sequence),
+      UNIQUE(credential_hash, sender_session_id, client_message_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_session_collaboration_mailbox
+      ON session_collaboration_messages(credential_hash, recipient_session_id, sequence);
+
+    CREATE TABLE IF NOT EXISTS session_collaboration_cursors (
+      credential_hash TEXT NOT NULL REFERENCES session_collaboration_grants(credential_hash) ON DELETE CASCADE,
+      session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+      last_sequence INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY(credential_hash, session_id)
+    );
+  `)
+  const collaborationGrantCols = db.prepare('PRAGMA table_info(session_collaboration_grants)').all() as Array<{ name: string }>
+  if (!collaborationGrantCols.some((column) => column.name === 'credential_secret')) {
+    db.exec('ALTER TABLE session_collaboration_grants ADD COLUMN credential_secret TEXT')
+  }
 }
 
 function seedBaseSessionProviders(db: Database.Database): void {

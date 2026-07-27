@@ -240,6 +240,12 @@ export type Messages = {
         enabled: string
         disabled: string
       }
+      experimentalAgentCollaboration: {
+        label: string
+        description: string
+        enabled: string
+        disabled: string
+      }
       crispText: {
         label: string
         description: string
@@ -761,6 +767,23 @@ export type Messages = {
       emptyValue: string
       modelCount: string
     }
+    sessionAgentsConfirm: {
+      title: string
+      subtitle: string
+      defaultProvider: string
+      workingDirectory: string
+      expandTask: string
+      collapseTask: string
+      hintSwitch: string
+      reject: string
+      approve: string
+    }
+    collaboration: {
+      initialTask: string
+      fromAgent: string
+      toAgent: string
+      taskNotification: string
+    }
     askUser: {
       otherOption: string
       selectOptionPreview: string
@@ -808,6 +831,34 @@ export type Messages = {
       miniAppPacked: string
       generatingWidget: string
       generateWidget: string
+      collab: {
+        requestingCollaboration: string
+        collaborationRequested: string
+        startingCollaborationSession: string
+        collaborationSessionStarted: string
+        sendingMessageTo: string
+        messageSent: string
+        waitingFor: string
+        messageReceived: string
+        waitTimeout: string
+        agentCount: string
+        messageCount: string
+        agentSession: string
+        reused: string
+        fields: {
+          name: string
+          model: string
+          effort: string
+          permission: string
+          sandbox: string
+          cwd: string
+          role: string
+          sessionId: string
+          to: string
+          from: string
+          message: string
+        }
+      }
       dismissed: string
       denied: string
       error: string
@@ -2091,6 +2142,12 @@ export const en: Messages = {
         enabled: 'Experimental agents enabled',
         disabled: 'Experimental agents disabled',
       },
+      experimentalAgentCollaboration: {
+        label: 'Agent session collaboration',
+        description: 'Allow agents to request user-approved child sessions and communicate through a persistent mailbox. This feature is experimental.',
+        enabled: 'Agent session collaboration enabled',
+        disabled: 'Agent session collaboration disabled',
+      },
       crispText: {
         label: 'Crisp Text',
         description: 'Use grayscale font smoothing so text renders thinner and sharper. macOS only.',
@@ -2625,6 +2682,23 @@ export const en: Messages = {
       emptyValue: 'Not set',
       modelCount: '{{count}} model(s)',
     },
+    sessionAgentsConfirm: {
+      title: 'Request Agents Collaboration',
+      subtitle: '{{count}} requested launch(es)',
+      defaultProvider: 'Default AI provider',
+      workingDirectory: 'Working directory',
+      expandTask: 'Show the full task',
+      collapseTask: 'Collapse the task',
+      hintSwitch: 'switch agent',
+      reject: 'Reject',
+      approve: 'Approve',
+    },
+    collaboration: {
+      initialTask: 'Agent task',
+      fromAgent: 'From agent',
+      toAgent: 'To agent',
+      taskNotification: 'System wake',
+    },
     askUser: {
       otherOption: 'Other...',
       selectOptionPreview: 'Select an option to preview',
@@ -2672,6 +2746,34 @@ export const en: Messages = {
       miniAppPacked: 'Mini-app packed',
       generatingWidget: 'Generating widget…',
       generateWidget: 'Generate widget',
+      collab: {
+        requestingCollaboration: 'Requesting collaboration…',
+        collaborationRequested: 'Collaboration Requested',
+        startingCollaborationSession: 'Starting session',
+        collaborationSessionStarted: 'Session Started',
+        sendingMessageTo: 'Sending message to',
+        messageSent: 'Message Sent',
+        waitingFor: 'Waiting for',
+        messageReceived: 'Message Received',
+        waitTimeout: 'No messages yet',
+        agentCount: '{{count}} agents',
+        messageCount: '{{count}} messages',
+        agentSession: 'Agent session',
+        reused: 'reused',
+        fields: {
+          name: 'Name',
+          model: 'Model',
+          effort: 'Effort',
+          permission: 'Permission',
+          sandbox: 'Sandbox',
+          cwd: 'Working dir',
+          role: 'Role',
+          sessionId: 'Session',
+          to: 'To',
+          from: 'From',
+          message: 'Message',
+        },
+      },
       dismissed: 'Dismissed',
       denied: 'Denied',
       error: 'Error',

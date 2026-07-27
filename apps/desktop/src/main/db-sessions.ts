@@ -34,16 +34,29 @@ export function listSessionsForFolder(folderPath: string, limit?: number, offset
 
   const db = getDb()
   const baseSql = `
-    SELECT s.id, s.title, s.created_at, s.is_worktree, s.is_pinned, s.is_hidden, s.git_branch, s.worktree_path,
-           s.is_automation, s.automation_id, s.provider_session_id, s.provider_id, s.provider,
-           COALESCE(s.last_user_message_at, s.created_at) AS last_user_msg_at
-    FROM sessions s
-    WHERE s.project_id = ?
-    ORDER BY last_user_msg_at DESC`
+    WITH related_sessions AS (
+      SELECT s.id, s.title, s.created_at, s.is_worktree, s.is_pinned, s.is_hidden, s.git_branch, s.worktree_path,
+             s.is_automation, s.automation_id, s.provider_session_id, s.provider_id, s.provider, s.acp_agent_id,
+             g.parent_session_id,
+             COALESCE(g.parent_session_id, s.id) AS root_session_id,
+             COALESCE(s.last_user_message_at, s.created_at) AS last_user_msg_at
+      FROM sessions s
+      LEFT JOIN session_collaboration_grants g ON g.child_session_id = s.id
+      WHERE s.project_id = ?
+    ), grouped_sessions AS (
+      SELECT related_sessions.*,
+             MAX(last_user_msg_at) OVER (PARTITION BY root_session_id) AS group_last_active_at
+      FROM related_sessions
+    )
+    SELECT *
+    FROM grouped_sessions
+    ORDER BY group_last_active_at DESC,
+             CASE WHEN parent_session_id IS NULL THEN 0 ELSE 1 END,
+             last_user_msg_at DESC`
   const rows = (limit != null
     ? db.prepare(`${baseSql} LIMIT ? OFFSET ?`).all(projectId, limit, offset ?? 0)
     : db.prepare(baseSql).all(projectId)
-  ) as Array<{ id: string; title: string | null; created_at: string; last_user_msg_at: string; is_worktree: number | null; is_pinned: number | null; is_hidden: number | null; git_branch: string | null; worktree_path: string | null; is_automation: number | null; automation_id: string | null; provider_session_id: string | null; provider_id: string | null; provider: string | null }>
+  ) as Array<{ id: string; title: string | null; created_at: string; last_user_msg_at: string; is_worktree: number | null; is_pinned: number | null; is_hidden: number | null; git_branch: string | null; worktree_path: string | null; is_automation: number | null; automation_id: string | null; provider_session_id: string | null; provider_id: string | null; provider: string | null; acp_agent_id: string | null; parent_session_id: string | null }>
 
   return rows.map((r) => ({
     sessionId: r.id,
@@ -59,6 +72,8 @@ export function listSessionsForFolder(folderPath: string, limit?: number, offset
     ...(r.is_automation ? { isAutomation: true } : {}),
     ...(r.automation_id ? { automationId: r.automation_id } : {}),
     ...(r.provider_session_id ? { providerSessionId: r.provider_session_id } : {}),
+    ...(r.acp_agent_id ? { acpAgentId: r.acp_agent_id } : {}),
+    ...(r.parent_session_id ? { parentSessionId: r.parent_session_id } : {}),
   }))
 }
 

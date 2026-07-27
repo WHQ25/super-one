@@ -2,7 +2,7 @@ import type { ChatMessage as ChatMessageType, ContentBlock, AgentStatus, ImageGe
 import { useState, useEffect, useRef, useMemo, useCallback, memo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@superone/ui/lib/utils'
-import { Loader2, ImageIcon, OctagonX, Folder, ChevronRight, Clock, Minimize2, ArrowUp, ArrowDown, Copy, Check, AlertTriangle, X, Shuffle } from 'lucide-react'
+import { Loader2, ImageIcon, OctagonX, Folder, ChevronRight, Clock, Minimize2, ArrowUp, ArrowDown, Copy, Check, AlertTriangle, X, Shuffle, Bot } from 'lucide-react'
 import { ToolBlock } from './ToolBlock'
 import { ToolGroup } from './ToolGroup'
 import { AppToolGroup } from './AppToolGroup'
@@ -764,11 +764,24 @@ function collectGeneratedVideos(content: ContentBlock[], toolResultMap: Map<stri
   return [...byId.values()]
 }
 
+function collaborationLabelKey(message: ChatMessageType): string | null {
+  const source = message.metadata?.source
+  if (source === 'task-notification') return 'chat.collaboration.taskNotification'
+  if (source !== 'collaboration') return null
+  const collab = message.metadata?.collaboration
+  if (collab?.kind === 'initial_task') return 'chat.collaboration.initialTask'
+  if (collab?.direction === 'outbound') return 'chat.collaboration.toAgent'
+  return 'chat.collaboration.fromAgent'
+}
+
 export const ChatMessage = memo(function ChatMessage({ message, sessionStatus, isLastAssistant, hideUserActions }: ChatMessageProps) {
+  const { t } = useTranslation()
   const projectPath = useChatStore((s) => s.activeProject)
   const isUser = message.role === 'user'
   const isStreaming = message.status === 'streaming' && sessionStatus === 'streaming' && isLastAssistant
   const isCodexMessage = !isUser && message.providerId === 'codex'
+  const collabLabelKey = isUser ? collaborationLabelKey(message) : null
+  const isCollab = collabLabelKey != null
   // Copy text is only needed once the turn settles (the copy button is hidden while streaming),
   // so skip deriving the full concatenated text on every delta of the live message.
   const assistantCopyText = isStreaming ? undefined : getAssistantCopyText(message)
@@ -803,13 +816,24 @@ export const ChatMessage = memo(function ChatMessage({ message, sessionStatus, i
   )
   const { copied: userCopied, copy: copyUserText } = useCopyText()
   return (
-    <div className={cn('w-0 min-w-full flex', isUser ? 'justify-end' : 'mb-2 justify-start')}>
-      <div className={cn(isUser ? 'group/copy relative mb-0 flex min-w-0 max-w-[90%] flex-col items-end' : 'w-full')}>
+    <div className={cn('w-0 min-w-full flex', isUser ? (isCollab ? 'justify-start' : 'justify-end') : 'mb-2 justify-start')}>
+      <div className={cn(isUser ? 'group/copy relative mb-0 flex min-w-0 max-w-[90%] flex-col' : 'w-full', isUser && !isCollab && 'items-end', isUser && isCollab && 'items-start')}>
+        {isCollab && collabLabelKey && (
+          <div className="mb-1 flex items-center gap-1 px-0.5 text-[10px] font-medium text-primary/80">
+            <Bot className="size-3 shrink-0" />
+            <span>{t(collabLabelKey)}</span>
+          </div>
+        )}
         <div
           className={cn(
             'min-w-0 text-sm',
             isUser
-              ? 'max-w-full overflow-hidden rounded-xl bg-muted/80 px-3 py-2 text-foreground break-all'
+              ? cn(
+                  'max-w-full overflow-hidden rounded-xl px-3 py-2 text-foreground break-all',
+                  isCollab
+                    ? 'border border-primary/25 bg-primary/5'
+                    : 'bg-muted/80',
+                )
               : 'assistant-reply w-full text-foreground'
           )}
         >
@@ -922,10 +946,15 @@ export const ChatMessage = memo(function ChatMessage({ message, sessionStatus, i
           <MessageContextChips contexts={message.contexts} />
         </div>
       )}
-      {isUser && !hideUserActions && (
+      {isUser && !hideUserActions && !isCollab && (
         <div className="relative mt-1 flex items-center gap-1 opacity-0 group-hover/copy:opacity-100">
           {message.checkpointId && <RewindButton checkpointId={message.checkpointId} rewound={message.rewound} className="opacity-100" />}
           {userText.length > 0 && <CopyButton copied={userCopied} onClick={() => copyUserText(userText)} className="opacity-100" />}
+        </div>
+      )}
+      {isUser && isCollab && userText.length > 0 && (
+        <div className="relative mt-1 flex items-center gap-1 opacity-0 group-hover/copy:opacity-100">
+          <CopyButton copied={userCopied} onClick={() => copyUserText(userText)} className="opacity-100" />
         </div>
       )}
       </div>

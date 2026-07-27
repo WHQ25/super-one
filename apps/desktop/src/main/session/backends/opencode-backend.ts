@@ -112,6 +112,7 @@ export class OpenCodeBackend implements SessionBackend {
       providerSessionId: opts.providerSessionId,
       permissionMode: this.permissionMode,
       config: this.config,
+      systemPromptAppend: opts.systemPromptAppend,
       onEvent: (event) => this.routeEvent(event),
     }).then(async (runtime) => {
       if (this.disposed || epoch !== this.runtimeEpoch) {

@@ -356,6 +356,18 @@ export interface PermissionDenialInfo {
   toolInput: Record<string, unknown>
 }
 
+/** How a user-role transcript bubble entered the session (omitted = human composer). */
+export type ChatMessageSource = 'user' | 'collaboration' | 'task-notification'
+
+export interface CollaborationMessageMeta {
+  /** initial_task = parent-approved launch task; mailbox = session_send content shown in UI. */
+  kind: 'initial_task' | 'mailbox'
+  fromSessionId?: string
+  /** inbound = received from peer; outbound = this session sent it. */
+  direction?: 'inbound' | 'outbound'
+  messageId?: string
+}
+
 export interface MessageMetadata {
   model?: string
   /** Harness-native agent used for the turn (for example an OpenCode primary agent). */
@@ -379,6 +391,13 @@ export interface MessageMetadata {
   apiErrorStatus?: number | null
   /** SDK assistant message UUID of this turn — anchor for forking at this message. */
   forkAnchorId?: string
+  /**
+   * Transcript provenance. Omitted / `'user'` = human composer.
+   * `'collaboration'` = multi-agent collab (task or mailbox).
+   * `'task-notification'` = synthetic host wake (not human).
+   */
+  source?: ChatMessageSource
+  collaboration?: CollaborationMessageMeta
 }
 
 // --- Todo items (derived from TaskCreate/TaskUpdate tool calls) ---
@@ -538,6 +557,72 @@ export interface ConfigConfirmPayload {
  * `config_confirm` request, mirroring the video-gen confirm flow's response shape.
  */
 export const CONFIG_APPLY_FIELD = 'configJson'
+export const SESSION_AGENT_LAUNCHES_FIELD = 'sessionAgentLaunchesJson'
+
+export interface SessionAgentProfile {
+  id: string
+  name: string
+  harnessId: HarnessId
+  /**
+   * ACP protocol agent id (e.g. `grok-build`). Only set when harnessId is `acp`.
+   * UI brand key is derived as `acp-<short>` (e.g. `acp-grok`).
+   */
+  acpAgentId?: string
+  /** Stable UI brand identity, e.g. `claude` / `codex` / `acp-grok` / `acp`. */
+  brandKey?: string
+  description?: string
+  models: Array<{ id: string; name: string; description?: string }>
+  efforts: string[]
+  apiProviders: Array<{ id: string; name: string }>
+}
+
+export interface SessionAgentWorktreeConfig {
+  enabled: boolean
+  baseBranch: string
+  mode: WorktreeMode
+  branchName?: string
+  carryLocalChanges?: boolean
+}
+
+export interface SessionAgentLaunchConfig {
+  model?: string
+  effort?: string
+  apiProviderId?: string | null
+  permissionMode?: PermissionMode
+  sandboxMode?: SandboxMode
+  cwd?: string
+  worktree?: SessionAgentWorktreeConfig
+  harnessConfig?: Record<string, unknown>
+  /**
+   * Agent-chosen human display name (not harness brand). Combined with role for
+   * titles: `Name - Role`. Not user-editable in the confirm UI.
+   */
+  name?: string
+  /**
+   * Temporary collaboration role for sidebar title (`Name - Role`).
+   * Set by the requesting agent; not user-editable in the confirm UI.
+   */
+  role?: string
+}
+
+export interface SessionAgentLaunchProposal {
+  launchId: string
+  agentId: string
+  task: string
+  /**
+   * Agent-chosen human label (e.g. "Alice", "Diff Reviewer") — not the harness
+   * name. Used for session title and tool summaries: `Name - Role`.
+   */
+  name?: string
+  /** Temporary role label used for child session title: `Name - Role`. */
+  role?: string
+  config: SessionAgentLaunchConfig
+}
+
+export interface SessionAgentRequestPayload {
+  launches: SessionAgentLaunchProposal[]
+  profiles: SessionAgentProfile[]
+}
 
 // --- Permission request ---
 
@@ -565,7 +650,7 @@ export interface PermissionRequest {
   toolDiff?: string
   toolDiffTokens?: { added?: DiffTokenLine[]; removed?: DiffTokenLine[] }
   toolLineDelta?: { added: number; removed: number }
-  requestKind?: 'mcp_elicitation' | 'video_gen_confirm' | 'config_confirm'
+  requestKind?: 'mcp_elicitation' | 'video_gen_confirm' | 'config_confirm' | 'session_agents_confirm'
   serverName?: string
   message?: string
   subtitle?: string
@@ -576,6 +661,8 @@ export interface PermissionRequest {
   videoGenConfirm?: VideoGenConfirmPayload
   /** Present only when requestKind === 'config_confirm'. */
   configConfirm?: ConfigConfirmPayload
+  /** Present only when requestKind === 'session_agents_confirm'. */
+  sessionAgentsConfirm?: SessionAgentRequestPayload
 }
 
 export type PermissionMode = 'default' | 'acceptEdits' | 'bypassPermissions' | 'plan' | 'dontAsk' | 'auto'
@@ -1069,6 +1156,9 @@ export interface SendMessageRequest {
   apiProviderId?: string | null
   /** Harness used when creating a new session for this send. */
   provider?: HarnessId
+  /** Transcript provenance for non-human or collab-originated user bubbles. */
+  source?: ChatMessageSource
+  collaboration?: CollaborationMessageMeta
 }
 
 export interface CodexSendExtras {
@@ -1444,6 +1534,8 @@ export interface SessionHistoryEntry {
   title: string        // First user message, truncated
   lastActiveAt: string // File modification time
   provider?: HarnessId
+  /** ACP agent id when provider is `acp` (e.g. `grok-build`) — drives brand icon. */
+  acpAgentId?: string | null
   providerSessionId?: string // Claude Code SDK session UUID / Codex thread id
   gitBranch?: string
   messageCount: number // Total user + assistant messages
@@ -1453,6 +1545,8 @@ export interface SessionHistoryEntry {
   isHidden?: boolean   // true if session is hidden by user
   isAutomation?: boolean
   automationId?: string
+  /** Parent SuperOne session when this entry was created through session_start. */
+  parentSessionId?: string
 }
 
 export interface PinnedSessionEntry extends SessionHistoryEntry {
@@ -2702,6 +2796,7 @@ export interface BrowserOpenTabRequest {
 export interface AppSettings {
   analyticsEnabled: boolean
   experimentalAgentsEnabled: boolean
+  experimentalAgentCollaborationEnabled: boolean
   crispText: boolean
   locale: Locale | ''
   updateChannel: UpdateChannel | null
@@ -2750,6 +2845,7 @@ export interface AppSettings {
 export interface AppSettingsPatch {
   analyticsEnabled?: boolean
   experimentalAgentsEnabled?: boolean
+  experimentalAgentCollaborationEnabled?: boolean
   crispText?: boolean
   locale?: Locale | ''
   updateChannel?: UpdateChannel | null

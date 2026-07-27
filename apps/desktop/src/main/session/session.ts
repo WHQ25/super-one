@@ -32,6 +32,7 @@ import {
 } from '../agent/codex-session-runtime'
 import { renameSession as dbRenameSession } from '../db-sessions'
 import { updateAcpAgentId as dbUpdateAcpAgentId } from './session-repo'
+import { rejectSessionAgentsConfirm, resolveSessionAgentsConfirm } from './session-collaboration-confirm'
 import { nextEventSeq } from './event-seq'
 import { collectChangedMessageIds } from './message-dirty'
 import {
@@ -76,6 +77,7 @@ export interface SessionConstructorOptions {
   initialContextTokens?: number
   apiProviderId?: string | null
   acpAgentId?: string | null
+  systemPromptAppend?: string
   homedir?: string
   getProjectResources?: (cwd: string) => ProjectResources
   invalidateProjectResources?: (cwd: string) => void
@@ -171,6 +173,7 @@ export class Session implements SessionContract {
   private additionalDirectories: string[]
   private _apiProviderId: string | null = null
   private _acpAgentId: string | null = null
+  private systemPromptAppend: string | undefined
 
   private homedir: string
   private getProjectResources?: (cwd: string) => ProjectResources
@@ -302,6 +305,7 @@ export class Session implements SessionContract {
     this._missingWorktreePath = opts.missingWorktreePath ?? null
     this._apiProviderId = opts.apiProviderId ?? null
     this._acpAgentId = opts.acpAgentId ?? agentIdFromConfig(opts.providerConfig)
+    this.systemPromptAppend = opts.systemPromptAppend
     if (this.harnessId === 'acp' && this._acpAgentId) {
       this.providerConfig = withAgentId(this.providerConfig, this._acpAgentId)
     }
@@ -620,6 +624,11 @@ export class Session implements SessionContract {
 
   respondToPermission(requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[], decision?: 'cancel', formAnswers?: Record<string, unknown>): boolean {
     this.assertNotDisposed()
+    if (decision === 'cancel') {
+      if (rejectSessionAgentsConfirm(requestId, 'User cancelled')) return true
+    } else if (resolveSessionAgentsConfirm(requestId, allow ? 'accept' : 'decline', formAnswers)) {
+      return true
+    }
     return this.backend.respondToPermission(requestId, allow, alwaysAllow, reason, selectedSuggestions, decision, formAnswers)
   }
 
@@ -707,6 +716,7 @@ export class Session implements SessionContract {
       abortController: new AbortController(),
       providerSessionId: this._providerSessionId ?? undefined,
       apiProviderId: this._apiProviderId,
+      systemPromptAppend: this.systemPromptAppend,
     }
     this.backend.prewarm(opts)
   }
@@ -1011,6 +1021,7 @@ export class Session implements SessionContract {
       abortController: this.abortController,
       providerSessionId: this._providerSessionId ?? undefined,
       apiProviderId: this._apiProviderId,
+      systemPromptAppend: this.systemPromptAppend,
     }
   }
 
@@ -1265,6 +1276,18 @@ export class Session implements SessionContract {
   }
 
   /**
+   * Append a user-role bubble to the transcript without forwarding it to the model.
+   * Used for multi-agent mailbox traffic so humans can see peer messages.
+   */
+  appendTranscriptMessage(message: ChatMessage): void {
+    if (this._status === 'disposed') return
+    if (this._messages.some((m) => m.id === message.id)) return
+    this._messages = [...this._messages, message]
+    this.notifyStateChange()
+    this.forwardEvent({ type: 'user_message_appended', message } as AgentEvent)
+  }
+
+  /**
    * Wake the agent after a host background task settles. Prefer Claude SDK
    * `origin: { kind: 'task-notification' }`; other harnesses fall back to a
    * queued synthetic user send.
@@ -1291,6 +1314,7 @@ export class Session implements SessionContract {
         content,
         priority: this.isStreaming() ? 'next' : 'now',
         clientMessageId,
+        source: 'task-notification',
       })
     } catch (err) {
       log.warn('[Session] injectTaskNotification fallback send failed sid=%s: %s', this.id, err instanceof Error ? err.message : String(err))

@@ -94,6 +94,18 @@ describe('database migration', () => {
     expect(normalized).toContain('updated_at TEXT NOT NULL')
   })
 
+  it('creates persistent collaboration grants, mailbox messages, and cursors', async () => {
+    const { getDb } = await import('./database')
+    getDb()
+
+    const execSql = dbMock.exec.mock.calls.map((call) => call[0] as string).join('\n')
+    expect(execSql).toContain('CREATE TABLE IF NOT EXISTS session_collaboration_grants')
+    expect(execSql).toContain('CREATE TABLE IF NOT EXISTS session_collaboration_messages')
+    expect(execSql).toContain('CREATE TABLE IF NOT EXISTS session_collaboration_cursors')
+    expect(execSql).toContain('credential_secret TEXT')
+    expect(execSql).toContain('UNIQUE(credential_hash, sender_session_id, client_message_id)')
+  })
+
   it('seeds base providers (claude-base, codex-base, acp-base)', async () => {
     const { getDb } = await import('./database')
     getDb()

@@ -13,6 +13,7 @@ type AcpPref = AppSettings['agentPreference']['acp']
 const defaults: AppSettings = {
   analyticsEnabled: true,
   experimentalAgentsEnabled: false,
+  experimentalAgentCollaborationEnabled: false,
   crispText: true,
   locale: '',
   updateChannel: null,
@@ -242,6 +243,9 @@ export function readAppSettings(): AppSettings {
       experimentalAgentsEnabled: typeof data.experimentalAgentsEnabled === 'boolean'
         ? data.experimentalAgentsEnabled
         : readAcpPreference(data).enabled,
+      experimentalAgentCollaborationEnabled: typeof data.experimentalAgentCollaborationEnabled === 'boolean'
+        ? data.experimentalAgentCollaborationEnabled
+        : defaults.experimentalAgentCollaborationEnabled,
       crispText: typeof data.crispText === 'boolean' ? data.crispText : defaults.crispText,
       locale: data.locale === '' || isLocale(data.locale) ? data.locale : defaults.locale,
       updateChannel: data.updateChannel === null || isUpdateChannel(data.updateChannel) ? data.updateChannel : defaults.updateChannel,
@@ -270,6 +274,7 @@ export function readAppSettings(): AppSettings {
     return {
       analyticsEnabled: defaults.analyticsEnabled,
       experimentalAgentsEnabled: defaults.experimentalAgentsEnabled,
+      experimentalAgentCollaborationEnabled: defaults.experimentalAgentCollaborationEnabled,
       crispText: defaults.crispText,
       locale: defaults.locale,
       updateChannel: defaults.updateChannel,
@@ -304,6 +309,8 @@ export function saveAppSettings(patch: AppSettingsPatch): AppSettings {
     experimentalAgentsEnabled: patch.experimentalAgentsEnabled
       ?? patch.agentPreference?.acp?.enabled
       ?? current.experimentalAgentsEnabled,
+    experimentalAgentCollaborationEnabled: patch.experimentalAgentCollaborationEnabled
+      ?? current.experimentalAgentCollaborationEnabled,
     crispText: patch.crispText ?? current.crispText,
     locale: patch.locale ?? current.locale,
     updateChannel: patch.updateChannel === undefined ? current.updateChannel : patch.updateChannel,

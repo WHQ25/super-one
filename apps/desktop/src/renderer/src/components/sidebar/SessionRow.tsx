@@ -2,10 +2,9 @@ import { memo, useCallback } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { toast } from 'sonner'
 import { useTranslation } from 'react-i18next'
-import { Bot, Eye, EyeOff, GitFork, Loader2, MessageSquare, Pin, Smartphone } from 'lucide-react'
-import { ClaudeSessionIcon } from '@superone/ui/components/harness/ClaudeSessionIcon'
-import { CodexSessionIcon } from '@superone/ui/components/harness/CodexSessionIcon'
+import { Bot, CornerDownRight, Eye, EyeOff, GitFork, Loader2, MessageSquare, Pin, Smartphone } from 'lucide-react'
 import type { SessionIconProps } from '@superone/ui/components/harness/ClaudeSessionIcon'
+import { resolveSessionIcon } from '@/components/harness/resolve-session-icon'
 import { cn } from '@superone/ui/lib/utils'
 import { useChatStore } from '@/stores/chat'
 import { useAppStore, useHasRealProject } from '@/stores/app'
@@ -48,12 +47,14 @@ interface SessionRowProps extends SessionRowCallbacks {
   session: SessionHistoryEntry
   folderPath: string
   animateTitle?: boolean
+  childSession?: boolean
 }
 
 export const SessionRow = memo(function SessionRow({
   session,
   folderPath,
   animateTitle = true,
+  childSession = false,
   onSwitchSession,
   onPinSession,
   onHideSession,
@@ -90,11 +91,7 @@ export const SessionRow = memo(function SessionRow({
         : session.isAutomation
           ? 'automation'
           : 'default'
-  const HarnessIcon = session.provider === 'codex'
-    ? CodexSessionIcon
-    : session.provider === 'claude'
-      ? ClaudeSessionIcon
-      : null
+  const HarnessIcon = resolveSessionIcon(session.provider, session.acpAgentId)
 
   const handleForkSession = useCallback(async (mode: SessionForkMode) => {
     const toastId = toast.loading(t('sidebar.contextMenu.forkingToast'))
@@ -144,7 +141,8 @@ export const SessionRow = memo(function SessionRow({
               session.isHidden && 'opacity-50',
             )}
           >
-            <div className="relative flex shrink-0 items-center justify-center size-3">
+            {childSession && <CornerDownRight className="size-3 shrink-0 text-sidebar-foreground/45" />}
+            <div className="relative flex size-3 shrink-0 items-center justify-center">
               <button
                 onClick={(e) => {
                   e.stopPropagation()

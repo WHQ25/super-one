@@ -294,6 +294,7 @@ export class CodexBackend implements SessionBackend {
       undefined,
       undefined,
       opts.apiProviderId ?? null,
+      opts.systemPromptAppend,
     )
     await this.adoptWarmHandle()
     this.authChangedUnsub = this.service.onAuthChanged(opts.projectPath, () => {
@@ -433,6 +434,7 @@ export class CodexBackend implements SessionBackend {
       warm.reasoningEffort,
       warm.permissionPreset,
       opts.apiProviderId ?? null,
+      opts.systemPromptAppend,
     )
     try {
       const threadId = await prewarmCodexSession(handle, warmSession, warm.cwd)
@@ -566,6 +568,7 @@ export class CodexBackend implements SessionBackend {
         requestedReasoningEffort,
         requestedPermissionPreset,
         startOpts.apiProviderId ?? null,
+        startOpts.systemPromptAppend,
       )
       this.session = created
       return created

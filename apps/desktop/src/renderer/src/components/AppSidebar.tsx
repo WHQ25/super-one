@@ -50,6 +50,9 @@ type SortMode = 'recent' | 'added'
 
 const MAX_DISPLAY_SESSIONS = 12
 const SESSIONS_FETCH_LIMIT = MAX_DISPLAY_SESSIONS + 1
+// Read through the next root so children belonging to the overflow root cannot
+// be stranded on the following row-based database page.
+const SESSIONS_FETCH_ROOT_TARGET = SESSIONS_FETCH_LIMIT + 1
 const EMPTY_SESSIONS: SessionHistoryEntry[] = []
 
 export const AppSidebar = memo(function AppSidebar() {
@@ -128,9 +131,9 @@ export const AppSidebar = memo(function AppSidebar() {
       const startedAt = performance.now()
       traceSidebar('sessions_load:start', { folderPath, reason, pageSize: SESSIONS_FETCH_LIMIT }, folderPath)
       try {
-        while (sessions.filter((session) => !session.isHidden).length < SESSIONS_FETCH_LIMIT) {
+        while (sessions.filter((session) => !session.isHidden && !session.parentSessionId).length < SESSIONS_FETCH_ROOT_TARGET) {
           const page = await window.app.listSessionsForFolderPage(folderPath, SESSIONS_FETCH_LIMIT, offset)
-          visibleCount += page.filter((session) => !session.isHidden).length
+          visibleCount += page.filter((session) => !session.isHidden && !session.parentSessionId).length
           traceSidebar('sessions_load:page', {
             folderPath,
             reason,

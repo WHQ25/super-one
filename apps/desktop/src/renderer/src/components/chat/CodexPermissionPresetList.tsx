@@ -51,18 +51,27 @@ export const codexPermissionPresetOptions: CodexPermissionPresetOption[] = [
   },
 ]
 
+export function codexPermissionPresetOption(preset: CodexPermissionPreset): CodexPermissionPresetOption {
+  return codexPermissionPresetOptions.find((option) => option.id === preset) ?? codexPermissionPresetOptions[1]
+}
+
 interface CodexPermissionPresetListProps {
   activePreset: CodexPermissionPreset
+  /** Restrict the offered presets — callers that cannot carry every preset pass the reachable subset. */
+  availablePresets?: CodexPermissionPreset[]
   onSelect: (preset: CodexPermissionPreset) => void
 }
 
-export function CodexPermissionPresetList({ activePreset, onSelect }: CodexPermissionPresetListProps) {
+export function CodexPermissionPresetList({ activePreset, availablePresets, onSelect }: CodexPermissionPresetListProps) {
   const { t } = useTranslation()
+  const visibleOptions = availablePresets
+    ? codexPermissionPresetOptions.filter((option) => availablePresets.includes(option.id))
+    : codexPermissionPresetOptions
 
   return (
     <>
       <div className="px-2 py-1.5 text-xs text-muted-foreground">{t('chat.codex.permissionPreset')}</div>
-      {codexPermissionPresetOptions.map((option) => (
+      {visibleOptions.map((option) => (
         <button
           key={option.id}
           onClick={() => onSelect(option.id)}

@@ -139,6 +139,8 @@ export interface AcpRuntimeOptions {
    * advertises loadSession. Falls back to session/new on failure.
    */
   resumeSessionId?: string
+  /** Extra SuperOne instructions hidden inside the first ACP prompt (ACP has no system channel). */
+  systemPromptAppend?: string
 }
 
 /**
@@ -715,7 +717,10 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       // mcpAttached — without the tools it names, the text would be instructions to nowhere.
       if (!systemPromptSent && mcpAttached) {
         systemPromptSent = true
-        promptBlocks.unshift({ type: 'text', text: ACP_SYSTEM_PROMPT_BLOCK })
+        promptBlocks.unshift({
+          type: 'text',
+          text: [ACP_SYSTEM_PROMPT_BLOCK, opts.systemPromptAppend].filter(Boolean).join('\n\n'),
+        })
       }
       const promptPromise = activeSession.prompt(promptBlocks as never)
       try {

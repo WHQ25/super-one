@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
 import { Bot, Loader2, MessageSquare, Smartphone } from 'lucide-react'
-import { AcpSessionIcon } from '@superone/ui/components/harness/AcpSessionIcon'
-import { ClaudeSessionIcon, type SessionIconProps } from '@superone/ui/components/harness/ClaudeSessionIcon'
-import { CodexSessionIcon } from '@superone/ui/components/harness/CodexSessionIcon'
+import type { SessionIconProps } from '@superone/ui/components/harness/ClaudeSessionIcon'
+import { resolveSessionIcon } from '@/components/harness/resolve-session-icon'
 import { useChatStore, type PerSessionState, type ProjectState } from '@/stores/chat'
 import { useCtrlTabSwitcher } from '@/hooks/useCtrlTabSwitcher'
 import { getPendingReason, isLiveSession, resolveSessionTitle } from '@/components/sidebar/session-state-utils'
@@ -41,6 +40,7 @@ export interface SwitcherRow {
   isAutomation: boolean
   isWorktree: boolean
   provider?: HarnessId
+  acpAgentId?: string | null
   pendingReason: string | null
 }
 
@@ -163,7 +163,8 @@ function toSwitcherRow(row: ActiveRow): SwitcherRow {
     isRemote: row.isRemote,
     isAutomation: !!row.dbEntry?.isAutomation,
     isWorktree: !!row.dbEntry?.isWorktree || !!row.liveSession._gitBranch,
-    provider: row.dbEntry?.provider,
+    provider: row.dbEntry?.provider ?? row.liveSession.preferredProvider,
+    acpAgentId: row.dbEntry?.acpAgentId ?? row.liveSession.acpAgentId ?? null,
     pendingReason: getPendingReason(
       row.liveSession.pendingPermissions,
       row.liveSession.pendingQuestion,
@@ -334,6 +335,7 @@ function SessionRow({ row, idx, isSelected }: { row: SwitcherRow; idx: number; i
           isAutomation={row.isAutomation}
           isRemote={row.isRemote}
           provider={row.provider}
+          acpAgentId={row.acpAgentId}
         />
         <span className="min-w-0 flex-1 truncate text-[13px]">{row.title}</span>
         {row.isCurrent ? (
@@ -359,9 +361,10 @@ interface SessionStatusIconProps {
   isAutomation: boolean
   isRemote: boolean
   provider?: HarnessId
+  acpAgentId?: string | null
 }
 
-function SessionStatusIcon({ status, lastEventAt, isUnseen, isAutomation, isRemote, provider }: SessionStatusIconProps) {
+function SessionStatusIcon({ status, lastEventAt, isUnseen, isAutomation, isRemote, provider, acpAgentId }: SessionStatusIconProps) {
   const stallLevel = useStallLevel(status === 'streaming', lastEventAt)
   const isRunning = status === 'streaming'
   const isBackground = status === 'background'
@@ -377,13 +380,7 @@ function SessionStatusIcon({ status, lastEventAt, isUnseen, isAutomation, isRemo
         : isAutomation
           ? 'automation'
           : 'default'
-  const HarnessIcon = provider === 'codex'
-    ? CodexSessionIcon
-    : provider === 'acp' || provider === 'opencode'
-      ? AcpSessionIcon
-      : provider === 'claude'
-        ? ClaudeSessionIcon
-        : null
+  const HarnessIcon = resolveSessionIcon(provider, acpAgentId)
   if (HarnessIcon && harnessStatus !== 'default') {
     return <HarnessIcon status={harnessStatus} renderLevel="compact" />
   }

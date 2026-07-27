@@ -231,6 +231,7 @@ export class OpenCodeClient {
     variant?: string
     agent?: string
     images?: ImageAttachment[]
+    system?: string
   }): Promise<void> {
     const parts: TextPartInput[] = input.text ? [{ type: 'text', text: input.text }] : []
     const fileParts = imageParts(input.images)
@@ -241,6 +242,7 @@ export class OpenCodeClient {
       model: model ?? undefined,
       variant: input.variant,
       agent: input.agent,
+      ...(input.system ? { system: input.system } : {}),
       parts: [...parts, ...fileParts],
     })
   }

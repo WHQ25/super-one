@@ -457,6 +457,13 @@ export function buildUserMessage(
     { type: 'text' as const, text: request.content },
   ]
 
+  const metadata = (request.source && request.source !== 'user') || request.collaboration
+    ? {
+        ...(request.source && request.source !== 'user' ? { source: request.source } : {}),
+        ...(request.collaboration ? { collaboration: request.collaboration } : {}),
+      }
+    : undefined
+
   return {
     id: request.clientMessageId ?? `user_${Date.now()}`,
     role: 'user',
@@ -467,6 +474,7 @@ export function buildUserMessage(
     userSelections: request.userSelections && request.userSelections.length > 0 ? request.userSelections : undefined,
     createdAt: new Date().toISOString(),
     providerId,
+    ...(metadata ? { metadata } : {}),
   }
 }
 

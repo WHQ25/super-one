@@ -85,7 +85,10 @@ export function isHiddenToolBlock(toolName: string, result?: string): boolean {
     return !result || isVideoStatusStillRunning(result) || isSuccessfulGenerationResult(result)
   }
   const mcp = parseMcpToolName(toolName)
-  return mcp?.serverName === 'superone' && mcp.mcpToolName === 'session_rename'
+  return mcp?.serverName === 'superone'
+    && (mcp.mcpToolName === 'session_rename'
+      || mcp.mcpToolName === 'session_collab_list_agents'
+      || mcp.mcpToolName === 'session_list_agents')
 }
 
 

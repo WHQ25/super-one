@@ -1,25 +1,10 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ChevronDown, ListTodo, MessageCircle, Unlock, Zap } from 'lucide-react'
+import { ChevronDown } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@superone/ui/components/ui/popover'
 import { useActiveSession, useChatStore } from '@/stores/chat'
-import {
-  ACP_PERMISSION_MODES,
-  ACP_PERMISSION_MODE_META,
-  type AcpPermissionModeId,
-  type AcpPermissionModeMeta,
-} from './acpPermissionModes'
-
-type Option = AcpPermissionModeMeta & { icon: ReactNode }
-
-const OPTIONS: Option[] = ACP_PERMISSION_MODE_META.map((meta) => ({
-  ...meta,
-  icon:
-    meta.id === 'plan' ? <ListTodo className="size-3" />
-    : meta.id === 'auto' ? <Zap className="size-3" />
-    : meta.id === 'bypassPermissions' ? <Unlock className="size-3" />
-    : <MessageCircle className="size-3" />,
-}))
+import { AcpPermissionModeList, acpPermissionModeOption } from './AcpPermissionModeList'
+import { ACP_PERMISSION_MODES, type AcpPermissionModeId } from './acpPermissionModes'
 
 /**
  * Grok Build permission baseline selector.
@@ -37,7 +22,7 @@ export function AcpPermissionSelector({ compact = false }: { compact?: boolean }
     }
   }, [permissionMode, setPermissionMode])
 
-  const active = OPTIONS.find((o) => o.id === permissionMode) ?? OPTIONS[0]
+  const active = acpPermissionModeOption(permissionMode)
   const activeLabel = t(`chat.acpPermissionModes.${active.labelKey}.label`)
 
   return (
@@ -56,35 +41,13 @@ export function AcpPermissionSelector({ compact = false }: { compact?: boolean }
         </button>
       </PopoverTrigger>
       <PopoverContent align="start" side="top" className="w-56 border-border bg-popover p-1">
-        <div className="px-2 py-1.5 text-xs text-muted-foreground">
-          {t('chat.acpPermissionModes.title')}
-        </div>
-        {OPTIONS.map((option) => {
-          const selected = option.id === active.id
-          return (
-            <button
-              key={option.id}
-              type="button"
-              onClick={() => {
-                setPermissionMode(option.id)
-                setOpen(false)
-              }}
-              className={`w-full rounded px-2 py-1.5 text-left text-xs transition-colors ${
-                selected
-                  ? `${option.activeBg} text-foreground`
-                  : `text-foreground ${option.hoverBg}`
-              }`}
-            >
-              <div className={`flex items-center gap-1.5 font-medium ${option.color}`}>
-                {option.icon}
-                {t(`chat.acpPermissionModes.${option.labelKey}.label`)}
-              </div>
-              <div className="mt-0.5 text-[10px] text-muted-foreground">
-                {t(`chat.acpPermissionModes.${option.labelKey}.description`)}
-              </div>
-            </button>
-          )
-        })}
+        <AcpPermissionModeList
+          activeMode={active.id}
+          onSelect={(mode) => {
+            setPermissionMode(mode)
+            setOpen(false)
+          }}
+        />
       </PopoverContent>
     </Popover>
   )

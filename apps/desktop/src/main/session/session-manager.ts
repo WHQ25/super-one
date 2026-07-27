@@ -34,6 +34,7 @@ export interface LoadedSessionData {
   gitBranch?: string | null
   apiProviderId?: string | null
   acpAgentId?: string | null
+  systemPromptAppend?: string
 }
 
 export interface SessionManagerPersistence {
@@ -192,6 +193,7 @@ export class SessionManagerImpl implements SessionManagerContract {
       gitBranch: opts.gitBranch ?? null,
       apiProviderId,
       acpAgentId: opts.acpAgentId ?? null,
+      systemPromptAppend: opts.systemPromptAppend,
       resumedProviderSessionId: resumedProviderSessionId ?? undefined,
       homedir: homedir(),
       getProjectResources: (c) => this.projectResources.get(c),
@@ -287,6 +289,7 @@ export class SessionManagerImpl implements SessionManagerContract {
       missingWorktreePath,
       apiProviderId,
       acpAgentId: data.acpAgentId ?? null,
+      systemPromptAppend: data.systemPromptAppend,
       homedir: homedir(),
       getProjectResources: (c) => this.projectResources.get(c),
       invalidateProjectResources: (c) => this.projectResources.invalidate(c),

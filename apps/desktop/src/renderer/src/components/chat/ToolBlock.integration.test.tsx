@@ -80,7 +80,9 @@ vi.mock('./tool-display', async (importOriginal) => ({
   getToolVerb: (name: string) => name,
   parseToolInput: (input: string) => JSON.parse(input),
   extractPartialToolInput: () => ({}),
-  parseMcpToolName: () => null,
+  parseMcpToolName: (name: string) => name.startsWith('mcp__superone__')
+    ? { serverName: 'superone', mcpToolName: name.slice('mcp__superone__'.length) }
+    : null,
   isHiddenToolBlock: (name: string) => ['TodoWrite', 'TaskCreate', 'TaskUpdate'].includes(name),
   formatReadMeta: () => '',
 }))
@@ -207,5 +209,25 @@ describe('ToolBlock error auto-collapse', () => {
     await waitFor(() => {
       expect(screen.queryByText('Patch failed: file changed on disk')).not.toBeNull()
     })
+  })
+
+  it('uses the generic tool error UI for failed collaboration tools', async () => {
+    const result = JSON.stringify({ status: 'error', message: 'Invalid collaboration credential' })
+    render(
+      <ToolBlock
+        toolName="mcp__superone__session_collab_start"
+        input={JSON.stringify({ credential: 'invalid' })}
+        status="complete"
+        result={result}
+        isError
+      />,
+    )
+
+    expect(screen.getByText(/session collab start/i)).not.toBeNull()
+    expect(screen.getByText(/error/i)).not.toBeNull()
+    expect(screen.queryByText(/collaboration session started/i)).toBeNull()
+
+    fireEvent.click(screen.getByText(/session collab start/i))
+    await waitFor(() => expect(screen.getByText(result)).not.toBeNull())
   })
 })

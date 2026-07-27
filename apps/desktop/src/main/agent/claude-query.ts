@@ -35,6 +35,7 @@ export interface SessionQueryOptions {
   warmupManager?: WarmupManager
   enabledSkills?: string[]
   askUserQuestionPreviewFormat?: QuestionPreviewFormat
+  systemPromptAppend?: string
 }
 
 export const denySubagentSessionRename: HookCallback = async (input) => {
@@ -92,7 +93,11 @@ export function buildClaudeOptions(opts: SessionQueryOptions): Options {
         }
       },
     }),
-    systemPrompt: { type: 'preset', preset: 'claude_code', append: SUPERONE_SYSTEM_PROMPT_APPEND },
+    systemPrompt: {
+      type: 'preset',
+      preset: 'claude_code',
+      append: [SUPERONE_SYSTEM_PROMPT_APPEND, opts.systemPromptAppend].filter(Boolean).join('\n\n'),
+    },
     hooks: { PreToolUse: [{ hooks: [denySubagentSessionRename] }] },
     mcpServers: { 'superone': createSuperoneMcpServer(opts.superoneSessionId, opts.projectPath) },
     ...(opts.enabledSkills ? { skills: opts.enabledSkills } : {}),

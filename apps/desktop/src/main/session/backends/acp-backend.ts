@@ -461,6 +461,7 @@ export class AcpBackend implements SessionBackend {
         launch,
         superoneSessionId: this.startOpts?.sessionId,
         permissionMode: this.startOpts?.permissionMode,
+        systemPromptAppend: this.startOpts?.systemPromptAppend,
         // Resume Grok/ACP agent memory when we have a stored provider session id.
         resumeSessionId: resumeAtSpawn,
         permission: {

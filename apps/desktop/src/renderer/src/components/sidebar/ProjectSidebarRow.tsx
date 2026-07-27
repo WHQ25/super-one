@@ -49,6 +49,25 @@ function MorphHeight({ children, morphKey }: { children: React.ReactNode; morphK
   )
 }
 
+interface SidebarSessionGroup {
+  parent: SessionHistoryEntry
+  children: SessionHistoryEntry[]
+}
+
+export function groupSidebarSessions(sessions: SessionHistoryEntry[]): SidebarSessionGroup[] {
+  const byId = new Map(sessions.map((session) => [session.sessionId, session]))
+  const children = new Map<string, SessionHistoryEntry[]>()
+  for (const session of sessions) {
+    if (!session.parentSessionId || !byId.has(session.parentSessionId)) continue
+    const current = children.get(session.parentSessionId) ?? []
+    current.push(session)
+    children.set(session.parentSessionId, current)
+  }
+  return sessions
+    .filter((session) => !session.parentSessionId || !byId.has(session.parentSessionId))
+    .map((parent) => ({ parent, children: children.get(parent.sessionId) ?? [] }))
+}
+
 interface ProjectSidebarRowProps extends SessionRowCallbacks {
   folder: RecentFolder
   isExpanded: boolean
@@ -145,21 +164,25 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
       if (live.length > 0) sessions = [...live, ...sessions]
     }
 
-    const liveSessions = isExpanded ? [] : sessions.filter((session) => {
+    const groups = groupSidebarSessions(sessions)
+    const isLive = (session: SessionHistoryEntry) => {
       const entry = projectSession?._sessions?.[session.sessionId]
       const isUnseen = projectSession?.unseenCompletedSessions?.has(session.sessionId)
       if (!entry && !isUnseen) return false
       return isLiveSession(entry, isUnseen)
-    })
+    }
+    const liveGroups = isExpanded ? [] : groups.filter((group) =>
+      isLive(group.parent) || group.children.some(isLive),
+    )
 
     const displayLimit = Math.min(expandLevel, maxSessions)
     return {
       displayPath: homePath(folder.path),
-      sessionsToShow: isExpanded ? sessions.slice(0, displayLimit) : liveSessions,
-      showSessions: isExpanded || liveSessions.length > 0,
-      totalCount: sessions.length,
-      hasMoreThanInitial: sessions.length > expandLevel,
-      hasOverflow: sessions.length > maxSessions,
+      groupsToShow: isExpanded ? groups.slice(0, displayLimit) : liveGroups,
+      showSessions: isExpanded || liveGroups.length > 0,
+      totalCount: groups.length,
+      hasMoreThanInitial: groups.length > expandLevel,
+      hasOverflow: groups.length > maxSessions,
     }
   }, [allSessions, folder.path, isExpanded, maxSessions, liveSessionSig, expandLevel])
 
@@ -355,20 +378,34 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
           />
         ) : derived.showSessions ? (
           <div className="flex flex-col py-0.5 pl-2.5">
-            {derived.sessionsToShow.length === 0 ? (
+            {derived.groupsToShow.length === 0 ? (
               <div className="px-2.5 py-1.5 text-[11px] text-sidebar-foreground/70">{t('sidebar.contextMenu.noSessions')}</div>
             ) : (
-              derived.sessionsToShow.map((session) => (
-                <SessionRow
-                  key={session.sessionId}
-                  session={session}
-                  folderPath={folder.path}
-                  onSwitchSession={onSwitchSession}
-                  onPinSession={onPinSession}
-                  onHideSession={onHideSession}
-                  onRenameSession={onRenameSession}
-                  onDeleteSession={onDeleteSession}
-                />
+              derived.groupsToShow.map(({ parent, children }) => (
+                <div key={parent.sessionId}>
+                  <SessionRow
+                    session={parent}
+                    folderPath={folder.path}
+                    onSwitchSession={onSwitchSession}
+                    onPinSession={onPinSession}
+                    onHideSession={onHideSession}
+                    onRenameSession={onRenameSession}
+                    onDeleteSession={onDeleteSession}
+                  />
+                  {children.map((child) => (
+                    <SessionRow
+                      key={child.sessionId}
+                      session={child}
+                      folderPath={folder.path}
+                      childSession
+                      onSwitchSession={onSwitchSession}
+                      onPinSession={onPinSession}
+                      onHideSession={onHideSession}
+                      onRenameSession={onRenameSession}
+                      onDeleteSession={onDeleteSession}
+                    />
+                  ))}
+                </div>
               ))
             )}
             {isExpanded && expandLevel < maxSessions && derived.hasMoreThanInitial && (

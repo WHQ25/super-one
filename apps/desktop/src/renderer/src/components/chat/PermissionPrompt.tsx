@@ -1,6 +1,5 @@
 import { useRef, useState, useEffect, useCallback, useMemo } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
-import { Button } from '@superone/ui/components/ui/button'
 import { Kbd } from '@superone/ui/components/ui/kbd'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@superone/ui/components/ui/tooltip'
 import { useChatStore, useActiveSession, selectClaudeModels, selectClaudeAccount } from '@/stores/chat'
@@ -17,6 +16,8 @@ import { ElicitationForm, isElicitationFormValid } from './ElicitationForm'
 import { getPermissionPromptConfig } from './permission-prompt/permission-prompt-config'
 import { VideoGenConfirmPromptContainer } from './VideoGenConfirmPromptContainer'
 import { ConfigConfirmPromptContainer } from './ConfigConfirmPromptContainer'
+import { SessionAgentsConfirmPromptContainer } from './SessionAgentsConfirmPromptContainer'
+import { ApproveRejectBar, PermissionActionButton } from './PermissionActionBar'
 
 interface MiniAppToolInfo {
   appId: string
@@ -130,7 +131,8 @@ export function PermissionPrompt() {
   const isElicitation = pendingPermission?.requestKind === 'mcp_elicitation'
   const isVideoGenConfirm = pendingPermission?.requestKind === 'video_gen_confirm'
   const isConfigConfirm = pendingPermission?.requestKind === 'config_confirm'
-  const isSelfManagedConfirm = isVideoGenConfirm || isConfigConfirm
+  const isSessionAgentsConfirm = pendingPermission?.requestKind === 'session_agents_confirm'
+  const isSelfManagedConfirm = isVideoGenConfirm || isConfigConfirm || isSessionAgentsConfirm
   const elicitationForm = pendingPermission?.elicitationForm ?? []
   const supportsAlwaysPersist = pendingPermission?.supportsAlwaysPersist ?? false
   useRestoreChatInputFocus(!!requestId)
@@ -353,6 +355,10 @@ export function PermissionPrompt() {
     return <ConfigConfirmPromptContainer request={pendingPermission} />
   }
 
+  if (isSessionAgentsConfirm) {
+    return <SessionAgentsConfirmPromptContainer request={pendingPermission} />
+  }
+
   if (isElicitation) {
     const message = pendingPermission.message ?? `Allow ${pendingPermission.serverName ?? 'tool'}?`
     const subtitle = pendingPermission.subtitle
@@ -398,38 +404,20 @@ export function PermissionPrompt() {
               <ElicitationForm fields={elicitationForm} value={formValues} onChange={setFormValues} />
             )}
             <div className="grid grid-cols-2 gap-2 @xl:grid-cols-4">
-              <Button
-                size="sm"
-                disabled={!formValid}
-                className="h-7 cursor-pointer bg-success px-3 text-xs text-success-foreground hover:bg-success/90 disabled:cursor-not-allowed disabled:opacity-50 focus:ring-2 focus:ring-success focus:outline-none"
-                onClick={handleAllow}
-              >
+              <PermissionActionButton tone="approve" disabled={!formValid} onClick={handleAllow}>
                 {t('chat.permission.allow')}
-              </Button>
+              </PermissionActionButton>
               {supportsAlwaysPersist && (
-                <Button
-                  size="sm"
-                  disabled={!formValid}
-                  className="h-7 cursor-pointer bg-primary px-3 text-[11px] text-white hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50 focus:ring-2 focus:ring-ring focus:outline-none"
-                  onClick={handleElicitationAlwaysAllow}
-                >
+                <PermissionActionButton tone="primary" disabled={!formValid} onClick={handleElicitationAlwaysAllow}>
                   {t('chat.permission.alwaysAllow')}
-                </Button>
+                </PermissionActionButton>
               )}
-              <Button
-                size="sm"
-                className="h-7 cursor-pointer bg-destructive px-3 text-xs text-destructive-foreground hover:bg-destructive/90 focus:ring-2 focus:ring-destructive focus:outline-none"
-                onClick={handleElicitationDecline}
-              >
+              <PermissionActionButton tone="reject" onClick={handleElicitationDecline}>
                 {t('chat.permission.decline')}
-              </Button>
-              <Button
-                size="sm"
-                className="h-7 cursor-pointer border border-border bg-background/70 px-3 text-xs text-muted-foreground hover:bg-accent hover:text-foreground focus:ring-2 focus:ring-ring focus:outline-none"
-                onClick={handleCancel}
-              >
+              </PermissionActionButton>
+              <PermissionActionButton tone="neutral" onClick={handleCancel}>
                 {t('common.cancel')}
-              </Button>
+              </PermissionActionButton>
             </div>
           </div>
         )}
@@ -588,82 +576,55 @@ export function PermissionPrompt() {
               <div className="flex flex-col gap-2">
                 {isCodexDecisionPrompt ? (
                   <div className="grid grid-cols-2 gap-2 @xl:grid-cols-4">
-                    <Button
+                    <PermissionActionButton
                       ref={(el) => { btnRefs.current[0] = el }}
-                      size="sm"
-                      className="h-7 cursor-pointer bg-success px-3 text-xs text-success-foreground hover:bg-success/90 focus:ring-2 focus:ring-success focus:outline-none"
+                      tone="approve"
+                      kbd="⏎"
                       onClick={handleAllow}
                     >
                       {t('chat.permission.allow')}
-                      <Kbd variant="inline" className="ml-1 text-success-foreground/70">⏎</Kbd>
-                    </Button>
-                    <Button
+                    </PermissionActionButton>
+                    <PermissionActionButton
                       ref={(el) => { btnRefs.current[1] = el }}
-                      size="sm"
-                      className="h-7 cursor-pointer bg-primary px-3 text-[11px] text-white hover:bg-primary/90 focus:ring-2 focus:ring-ring focus:outline-none"
+                      tone="primary"
+                      kbd="⇧↵"
                       onClick={handleAlwaysAllow}
                     >
                       {t('chat.permission.allowForSession')}
-                      <Kbd variant="inline" className="ml-1 text-primary-foreground/80">⇧↵</Kbd>
-                    </Button>
-                    <Button
+                    </PermissionActionButton>
+                    <PermissionActionButton
                       ref={(el) => { btnRefs.current[2] = el }}
-                      size="sm"
-                      className="h-7 cursor-pointer bg-destructive px-3 text-xs text-destructive-foreground hover:bg-destructive/90 focus:ring-2 focus:ring-destructive focus:outline-none"
+                      tone="reject"
+                      kbd="esc"
                       onClick={handleDeny}
                     >
                       {t('chat.permission.decline')}
-                      <Kbd variant="inline" className="ml-1 text-destructive-foreground/70">esc</Kbd>
-                    </Button>
-                    <Button
+                    </PermissionActionButton>
+                    <PermissionActionButton
                       ref={(el) => { btnRefs.current[3] = el }}
-                      size="sm"
-                      className="h-7 cursor-pointer border border-border bg-background/70 px-3 text-xs text-muted-foreground hover:bg-accent hover:text-foreground focus:ring-2 focus:ring-ring focus:outline-none"
+                      tone="neutral"
                       onClick={handleCancel}
                     >
                       {t('common.cancel')}
-                    </Button>
+                    </PermissionActionButton>
                   </div>
                 ) : (
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Button
-                      ref={(el) => { btnRefs.current[0] = el }}
-                      size="sm"
-                      className="h-7 cursor-pointer bg-success px-3 text-xs text-success-foreground hover:bg-success/90 focus:ring-2 focus:ring-success focus:outline-none"
-                      onClick={handleAllow}
-                    >
-                      {t('chat.permission.allow')}
-                      {selectedSuggestions.size > 0 && (
-                        <span className="ml-1 text-[10px] text-success-foreground/70">+{selectedSuggestions.size}</span>
-                      )}
-                      {!isFeedbackFocused && (
-                        <Kbd variant="inline" className="ml-1 text-success-foreground/70">⏎</Kbd>
-                      )}
-                    </Button>
-                    <Button
-                      ref={(el) => { btnRefs.current[1] = el }}
-                      size="sm"
-                      className="h-7 cursor-pointer bg-destructive px-3 text-xs text-destructive-foreground hover:bg-destructive/90 focus:ring-2 focus:ring-destructive focus:outline-none"
-                      onClick={handleDeny}
-                    >
-                      {t('chat.permission.deny')}
-                      <Kbd variant="inline" className="ml-1 text-destructive-foreground/70">{isFeedbackFocused ? '↵' : 'esc'}</Kbd>
-                    </Button>
-                    <div className="relative flex min-w-0 basis-full items-center @lg:basis-0 @lg:flex-1">
-                      <input
-                        ref={feedbackRef}
-                        data-feedback
-                        type="text"
-                        value={feedback}
-                        onChange={(e) => setFeedback(e.target.value)}
-                        onFocus={() => setIsFeedbackFocused(true)}
-                        onBlur={() => setIsFeedbackFocused(false)}
-                        placeholder={t('chat.permission.denyReasonPlaceholder')}
-                        className="h-7 w-full rounded bg-muted px-2 pr-12 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-                      />
-                      <Kbd className="pointer-events-none absolute right-2">{isFeedbackFocused ? '↵' : '⇥'}</Kbd>
-                    </div>
-                  </div>
+                  <ApproveRejectBar
+                    approveRef={(el) => { btnRefs.current[0] = el }}
+                    rejectRef={(el) => { btnRefs.current[1] = el }}
+                    feedbackRef={feedbackRef}
+                    onApprove={handleAllow}
+                    onReject={handleDeny}
+                    approveSuffix={selectedSuggestions.size > 0 && (
+                      <span className="ml-1 text-[10px] text-success-foreground/70">+{selectedSuggestions.size}</span>
+                    )}
+                    feedback={{
+                      value: feedback,
+                      onChange: setFeedback,
+                      focused: isFeedbackFocused,
+                      onFocusChange: setIsFeedbackFocused,
+                    }}
+                  />
                 )}
                 {hasSuggestionRow && (
                   <div className="grid grid-cols-1 gap-1.5">

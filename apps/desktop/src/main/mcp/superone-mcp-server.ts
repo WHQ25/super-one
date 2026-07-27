@@ -140,6 +140,30 @@ function emitToolsChanged(sessionId: string): void {
   }
 }
 
+/**
+ * Push a tools/list_changed notification for a session's SuperOne MCP surface
+ * (stdio bridge for ACP/Codex + in-process listeners). Used when experimental
+ * collaboration tools are toggled so existing runtimes re-list without restart.
+ */
+export function notifySessionToolsChanged(sessionId: string): void {
+  emitToolsChanged(sessionId)
+  const states = sessionServers.get(sessionId)
+  if (!states) return
+  for (const state of states) {
+    if (state.server.isConnected()) {
+      try {
+        state.server.sendToolListChanged()
+      } catch (err) {
+        log.debug(
+          '[superone-mcp] sendToolListChanged failed sid=%s: %s',
+          sessionId,
+          err instanceof Error ? err.message : String(err),
+        )
+      }
+    }
+  }
+}
+
 export function initSuperoneMcpServer(windowGetter: () => BrowserWindow | null): void {
   getMainWindow = windowGetter
 }

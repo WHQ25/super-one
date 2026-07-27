@@ -74,6 +74,14 @@ export const SETTINGS_DOMAINS: SettingsDomainDef[] = [
         toPatch: (v) => ({ experimentalAgentsEnabled: v as boolean }),
       },
       {
+        key: 'experimentalAgentCollaborationEnabled',
+        label: 'Enable Agent Session Collaboration',
+        type: 'boolean',
+        note: 'Allow agents to request user-approved child sessions and communicate through a persistent mailbox.',
+        read: (s) => s.experimentalAgentCollaborationEnabled,
+        toPatch: (v) => ({ experimentalAgentCollaborationEnabled: v as boolean }),
+      },
+      {
         key: 'acpSelectedAgentId',
         label: 'Selected ACP Agent',
         type: 'string',

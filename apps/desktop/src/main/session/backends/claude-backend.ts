@@ -173,6 +173,7 @@ export class ClaudeBackend implements SessionBackend {
       env: Object.keys(custom).length > 0 ? buildSafeEnv(custom) : undefined,
       enabledSkills,
       askUserQuestionPreviewFormat: claudePref.askUserQuestionPreviewFormat,
+      systemPromptAppend: opts.systemPromptAppend,
     }
   }
 

@@ -66,6 +66,8 @@ export interface SessionCreateOptions {
   gitBranch?: string | null
   apiProviderId?: string | null
   acpAgentId?: string | null
+  /** Harness-specific system/developer instructions appended by SuperOne. */
+  systemPromptAppend?: string
   /**
    * Provider/agent session id to resume (e.g. Grok ACP session/load).
    * When omitted but `id` matches a DB row for the same provider, SessionManager
@@ -115,6 +117,7 @@ export interface BackendStartOptions {
   abortController: AbortController
   providerSessionId?: string
   apiProviderId?: string | null
+  systemPromptAppend?: string
 }
 
 export interface PrewarmHint {
@@ -292,6 +295,11 @@ export interface Session {
   getApiProviderId(): string | null
   setTitle(title: string, source: 'user' | 'agent'): void
   emitHostEvent(event: import('@superone/shared/agent-types').AgentEvent): void
+  /**
+   * Append a transcript bubble without sending it to the model (e.g. collab mailbox
+   * content for human observers). Dedupes by message id.
+   */
+  appendTranscriptMessage(message: import('@superone/shared/agent-types').ChatMessage): void
   injectTaskNotification(content: string): Promise<void>
   respondToPermission(
     requestId: string,
@@ -361,6 +369,9 @@ export interface SessionManager {
   createSession(opts: SessionCreateOptions): Session
   resumeSession(sessionId: string, opts?: { permissionMode?: PermissionMode; sandboxMode?: SandboxMode; passive?: boolean }): Session
   getSession(sessionId: string): Session | null
+  getActiveSession(projectPath: string): Session | null
+  setActiveSession(projectPath: string, sessionId: string): void
+  clearActiveSession(projectPath: string): void
   disposeSession(sessionId: string): Promise<void>
   disposeAllSessions(): Promise<void>
   forEachSession(fn: (session: Session) => void): void

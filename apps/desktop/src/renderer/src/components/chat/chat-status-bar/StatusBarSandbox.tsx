@@ -1,5 +1,5 @@
 import type { ChatProvider } from '@/stores/chat'
-import { SandboxModeSelector } from '../SandboxModeSelector'
+import { harnessSupportsSandbox, SandboxModeSelector } from '../SandboxModeSelector'
 
 /**
  * Sandbox-mode chip. Claude only — Codex covers this via permission presets;
@@ -14,7 +14,7 @@ export function StatusBarSandbox({
   compactIndicators: boolean
   showDivider: boolean
 }) {
-  if (activeProvider === 'codex' || activeProvider === 'acp') return null
+  if (!harnessSupportsSandbox(activeProvider)) return null
   return (
     <>
       {showDivider && <div className="h-3 w-px bg-border" />}

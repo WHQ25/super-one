@@ -1072,9 +1072,10 @@ function buildThreadConfig(
     networkAccessEnabled: boolean
   },
   providerOverride: CodexProviderOverride | null,
+  systemPromptAppend?: string,
 ): Record<string, unknown> | undefined {
   const config: Record<string, unknown> = {}
-  config.developer_instructions = CODEX_SYSTEM_PROMPT_APPEND
+  config.developer_instructions = [CODEX_SYSTEM_PROMPT_APPEND, systemPromptAppend].filter(Boolean).join('\n\n')
   if (permissionProfile.sandboxMode === 'workspace-write') {
     config.sandbox_workspace_write = {
       network_access: permissionProfile.networkAccessEnabled,
@@ -1130,7 +1131,12 @@ export async function resolveThread(
   if (proxyUrl && providerOverride) {
     providerOverride = { ...providerOverride, info: { ...providerOverride.info, base_url: proxyUrl } }
   }
-  const threadConfig = buildThreadConfig(session.superoneSessionId, permissionProfile, providerOverride)
+  const threadConfig = buildThreadConfig(
+    session.superoneSessionId,
+    permissionProfile,
+    providerOverride,
+    session.systemPromptAppend,
+  )
   const modelProvider = providerOverride?.id
   if (session.threadId && session.threadReady) {
     trace('codex.thread', 'reuse_ready', {

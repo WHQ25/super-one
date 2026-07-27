@@ -4,7 +4,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@superone/ui/components
 import { useChatStore, useActiveSession } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 import { useState } from 'react'
-import type { SandboxMode } from '@superone/shared/agent-types'
+import type { HarnessId, SandboxMode } from '@superone/shared/agent-types'
 
 export const sandboxModes: { id: SandboxMode; label: string; triggerLabel: string; description: string; icon: React.ReactNode; color: string; hoverBg: string; activeBg: string }[] = [
   {
@@ -39,32 +39,42 @@ export const sandboxModes: { id: SandboxMode; label: string; triggerLabel: strin
   },
 ]
 
+/**
+ * Only Claude actually honours a sandbox mode: Codex expresses the same thing through its
+ * permission presets, ACP has no sandbox surface, and `OpenCodeBackend.setSandbox` is a no-op.
+ * Every sandbox affordance in the UI must agree on this, so it lives in exactly one place.
+ */
+export function harnessSupportsSandbox(harnessId: HarnessId): boolean {
+  return harnessId === 'claude'
+}
+
 function getSandboxMode(info: { enabled: boolean; autoAllowBash: boolean }): SandboxMode {
   if (!info.enabled) return 'off'
   return info.autoAllowBash ? 'auto' : 'on'
 }
 
-interface SandboxModeSelectorProps {
+interface SandboxModePopoverProps {
   compact?: boolean
+  value: SandboxMode
+  onValueChange: (mode: SandboxMode) => void
+  supportLevel?: 'always' | 'conditional' | 'unsupported'
+  showNotReadyHint?: boolean
+  onOpenSettings?: () => void
 }
 
-export function SandboxModeSelector({ compact = false }: SandboxModeSelectorProps) {
+export function SandboxModePopover({
+  compact = false,
+  value,
+  onValueChange,
+  supportLevel = 'always',
+  showNotReadyHint = false,
+  onOpenSettings,
+}: SandboxModePopoverProps) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
-  const sandboxInfo = useActiveSession((s) => s.sandboxInfo)
-  const setSandboxMode = useChatStore((s) => s.setSandboxMode)
-  const sandboxCapability = useAppStore((s) => s.sandboxCapability)
-  const sandboxProbe = useAppStore((s) => s.sandboxProbe)
-  const navigateTo = useAppStore((s) => s.navigateTo)
-  const setSettingsTab = useAppStore((s) => s.setSettingsTab)
-
-  const currentMode = getSandboxMode(sandboxInfo)
-  const current = sandboxModes.find((m) => m.id === currentMode) ?? sandboxModes[1]
+  const current = sandboxModes.find((m) => m.id === value) ?? sandboxModes[1]
   const currentLabel = t(`chat.sandboxModes.${current.id}.label`)
 
-  const supportLevel = sandboxCapability?.supportLevel ?? 'always'
-  const showNotReadyHint =
-    supportLevel === 'conditional' && sandboxProbe !== null && !sandboxProbe.ok
   const triggerTitle =
     supportLevel === 'unsupported'
       ? t('chat.sandboxUnsupportedTooltip')
@@ -79,13 +89,12 @@ export function SandboxModeSelector({ compact = false }: SandboxModeSelectorProp
   const handleSelect = (id: SandboxMode): void => {
     if (optionDisabled(id)) return
     setOpen(false)
-    void setSandboxMode(id)
+    onValueChange(id)
   }
 
   const handleOpenSettings = (): void => {
     setOpen(false)
-    setSettingsTab('preferences')
-    navigateTo('settings')
+    onOpenSettings?.()
   }
 
   return (
@@ -116,7 +125,7 @@ export function SandboxModeSelector({ compact = false }: SandboxModeSelectorProp
               title={isDisabled ? t('chat.sandboxUnsupportedTooltip') : undefined}
               onClick={() => handleSelect(mode.id)}
               className={`w-full rounded px-2 py-1.5 text-left text-xs transition-colors ${
-                mode.id === currentMode
+                mode.id === value
                   ? `${mode.activeBg} text-foreground`
                   : `text-foreground ${mode.hoverBg}`
               } ${isDisabled ? 'cursor-not-allowed opacity-50 hover:bg-transparent' : ''}`}
@@ -129,7 +138,7 @@ export function SandboxModeSelector({ compact = false }: SandboxModeSelectorProp
             </button>
           )
         })}
-        {showNotReadyHint && (
+        {showNotReadyHint && onOpenSettings && (
           <button
             onClick={handleOpenSettings}
             className="mt-1 w-full rounded border-t border-border px-2 py-1.5 text-left text-[10px] text-muted-foreground hover:bg-muted/50 hover:text-foreground"
@@ -139,5 +148,33 @@ export function SandboxModeSelector({ compact = false }: SandboxModeSelectorProp
         )}
       </PopoverContent>
     </Popover>
+  )
+}
+
+interface SandboxModeSelectorProps {
+  compact?: boolean
+}
+
+export function SandboxModeSelector({ compact = false }: SandboxModeSelectorProps) {
+  const sandboxInfo = useActiveSession((s) => s.sandboxInfo)
+  const setSandboxMode = useChatStore((s) => s.setSandboxMode)
+  const sandboxCapability = useAppStore((s) => s.sandboxCapability)
+  const sandboxProbe = useAppStore((s) => s.sandboxProbe)
+  const navigateTo = useAppStore((s) => s.navigateTo)
+  const setSettingsTab = useAppStore((s) => s.setSettingsTab)
+  const currentMode = getSandboxMode(sandboxInfo)
+
+  return (
+    <SandboxModePopover
+      compact={compact}
+      value={currentMode}
+      onValueChange={(mode) => { void setSandboxMode(mode) }}
+      supportLevel={sandboxCapability?.supportLevel ?? 'always'}
+      showNotReadyHint={sandboxCapability?.supportLevel === 'conditional' && sandboxProbe !== null && !sandboxProbe.ok}
+      onOpenSettings={() => {
+        setSettingsTab('preferences')
+        navigateTo('settings')
+      }}
+    />
   )
 }

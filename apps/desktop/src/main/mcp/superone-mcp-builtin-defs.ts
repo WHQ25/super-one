@@ -81,6 +81,11 @@ export const BUILT_IN_SUPERONE_TOOL_NAMES = [
   'miniapp_dev_pack',
   'miniapp_dev_update_types',
   'session_rename',
+  'session_collab_list_agents',
+  'session_collab_request',
+  'session_collab_start',
+  'session_collab_send',
+  'session_collab_wait',
   'media_read_guide',
   'media_list_providers',
   'media_generate_image',
@@ -91,6 +96,14 @@ export const BUILT_IN_SUPERONE_TOOL_NAMES = [
   'config_read_guide',
   'config_apply',
   ...BROWSER_TOOL_NAMES,
+] as const
+
+export const SESSION_COLLABORATION_TOOL_NAMES = [
+  'session_collab_list_agents',
+  'session_collab_request',
+  'session_collab_start',
+  'session_collab_send',
+  'session_collab_wait',
 ] as const
 
 export const CONFIG_SETTINGS_DOMAINS = [
@@ -214,7 +227,135 @@ export const VIDEO_STATUS_DESCRIPTION =
   'Each call asks the provider directly and is what advances the job, so polling is required rather than cosmetic: without it the video is never downloaded or saved. ' +
   'Poll roughly every 30 seconds while it is running. Do not tell the user the video is ready until this returns `generated`.'
 
+export const SESSION_LIST_AGENTS_DESCRIPTION =
+  'List the built-in agent profiles (harness + config) available for user-approved child sessions. ' +
+  'Call this before session_collab_request. The same profile may be requested more than once.'
+
+export const SESSION_REQUEST_AGENTS_DESCRIPTION =
+  'Request user approval for one or more child-agent launches. Each launches[] item is independent, so repeat an agentId to request multiple sessions. ' +
+  'Required-ish fields: name (human label YOU invent for this child, e.g. "Alice" or "DiffBot" — not the harness name) and role (e.g. "Reviewer"). ' +
+  'Session title becomes "Name - Role". The user reviews and may edit model/effort/AI provider/permission/sandbox (task, name, role, agent profile, cwd, worktree stay as requested). ' +
+  'On approval each launch returns a bearer credential. Each credential can create exactly one session and must be kept private.'
+
+export const SESSION_START_DESCRIPTION =
+  'Create the real, user-visible collaboration child session authorized by one credential and deliver the approved launch task. ' +
+  'Returns as soon as the child agent begins replying (does not wait for the full first turn). ' +
+  'A credential creates at most one session; repeated calls are idempotent and return the same session id.'
+
+export const SESSION_SEND_DESCRIPTION =
+  'Send a persistent mailbox message between the parent and child sessions authorized by a credential. Direction is derived from the calling session. ' +
+  'Use clientMessageId for retry-safe idempotency. The peer is woken (even mid-turn) and must call session_collab_wait to receive the payload.'
+
+export const SESSION_WAIT_DESCRIPTION =
+  'Wait for persistent mailbox messages addressed to this session. Pass multiple credentials to wait for any child/parent concurrently. ' +
+  'Returned messages advance only this agent endpoint cursor. Prefer waiting after session_collab_start or session_collab_send so mailbox traffic is not missed.'
+
 export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
+  {
+    name: 'session_collab_list_agents',
+    description: SESSION_LIST_AGENTS_DESCRIPTION,
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+  },
+  {
+    name: 'session_collab_request',
+    description: SESSION_REQUEST_AGENTS_DESCRIPTION,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        launches: {
+          type: 'array',
+          minItems: 1,
+          maxItems: 16,
+          items: {
+            type: 'object',
+            properties: {
+              launchId: { type: 'string', description: 'Optional caller correlation id.' },
+              agentId: { type: 'string', description: 'Agent profile id from session_collab_list_agents.' },
+              task: { type: 'string', maxLength: 100000, description: 'The task shown to the user and delivered to this child session.' },
+              name: {
+                type: 'string',
+                maxLength: 64,
+                description: 'Human-friendly label YOU invent for this child (e.g. "Alice", "DiffBot"). Not the harness name. Used in "Name - Role".',
+              },
+              role: {
+                type: 'string',
+                maxLength: 64,
+                description: 'Temporary role label for the child session title: "Name - Role" (e.g. "Reviewer", "Implementer").',
+              },
+              config: {
+                type: 'object',
+                properties: {
+                  model: { type: 'string' },
+                  effort: { type: 'string' },
+                  apiProviderId: { type: ['string', 'null'] },
+                  permissionMode: { type: 'string', enum: ['default', 'acceptEdits', 'bypassPermissions', 'plan', 'dontAsk', 'auto'] },
+                  sandboxMode: { type: 'string', enum: ['off', 'on', 'auto'] },
+                  cwd: { type: 'string' },
+                  name: { type: 'string', maxLength: 64 },
+                  role: { type: 'string', maxLength: 64 },
+                  worktree: {
+                    type: 'object',
+                    properties: {
+                      enabled: { type: 'boolean' },
+                      baseBranch: { type: 'string' },
+                      mode: { type: 'string', enum: ['branch', 'attach', 'detach'] },
+                      branchName: { type: 'string' },
+                      carryLocalChanges: { type: 'boolean' },
+                    },
+                    required: ['enabled', 'baseBranch', 'mode'],
+                    additionalProperties: false,
+                  },
+                  harnessConfig: { type: 'object' },
+                },
+                additionalProperties: false,
+              },
+            },
+            required: ['agentId', 'task'],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ['launches'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'session_collab_start',
+    description: SESSION_START_DESCRIPTION,
+    inputSchema: {
+      type: 'object',
+      properties: { credential: { type: 'string' } },
+      required: ['credential'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'session_collab_send',
+    description: SESSION_SEND_DESCRIPTION,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        credential: { type: 'string' },
+        content: { type: 'string', maxLength: 100000 },
+        clientMessageId: { type: 'string' },
+      },
+      required: ['credential', 'content'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'session_collab_wait',
+    description: SESSION_WAIT_DESCRIPTION,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        credentials: { type: 'array', minItems: 1, maxItems: 32, items: { type: 'string' } },
+        timeoutMs: { type: 'number', minimum: 0, maximum: 60000 },
+      },
+      required: ['credentials'],
+      additionalProperties: false,
+    },
+  },
   {
     name: 'config_read_guide',
     description: CONFIG_READ_GUIDE_DESCRIPTION,

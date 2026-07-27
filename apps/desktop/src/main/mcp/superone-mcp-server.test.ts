@@ -11,6 +11,7 @@ const { mockRemove, mockRegisterTool, mockBuiltInTool, mockSendToolListChanged, 
   const mockIsConnected = vi.fn(() => true)
   return { mockRemove, mockRegisterTool, mockBuiltInTool, mockSendToolListChanged, mockIsConnected }
 })
+const collaborationSettings = vi.hoisted(() => ({ enabled: false }))
 
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({}))
 vi.mock('@modelcontextprotocol/sdk/server/mcp.js', () => ({
@@ -25,6 +26,9 @@ vi.mock('electron', () => ({
   BrowserWindow: vi.fn(),
 }))
 vi.mock('../logger', () => ({ default: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }))
+vi.mock('../app-settings-service', () => ({
+  readAppSettings: () => ({ experimentalAgentCollaborationEnabled: collaborationSettings.enabled }),
+}))
 const { mockCreateMiniApp, mockCacheAppEntry } = vi.hoisted(() => ({
   mockCreateMiniApp: vi.fn(),
   mockCacheAppEntry: vi.fn(),
@@ -95,6 +99,7 @@ function getLastHandler(toolName: string): Function {
 }
 
 beforeEach(() => {
+  collaborationSettings.enabled = false
   vi.clearAllMocks()
   unregisterAppTools(PROJ_A, 'test-app')
   unregisterAppTools(PROJ_A, 'other-app')
@@ -105,6 +110,22 @@ beforeEach(() => {
   disposeSuperoneMcpServer(PROJ_A)
   disposeSuperoneMcpServer(PROJ_B)
   createSuperoneMcpServer(PROJ_A)
+})
+
+describe('experimental session collaboration tools', () => {
+  it('hides the tools until the experiment is enabled', () => {
+    expect(listSuperoneMcpTools(PROJ_A).map((tool) => tool.name)).not.toContain('session_collab_list_agents')
+
+    collaborationSettings.enabled = true
+    const names = listSuperoneMcpTools(PROJ_A).map((tool) => tool.name)
+    expect(names).toEqual(expect.arrayContaining([
+      'session_collab_list_agents',
+      'session_collab_request',
+      'session_collab_start',
+      'session_collab_send',
+      'session_collab_wait',
+    ]))
+  })
 })
 
 describe('registerAppTools / unregisterAppTools', () => {

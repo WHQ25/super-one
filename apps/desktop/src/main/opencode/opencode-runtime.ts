@@ -46,6 +46,7 @@ export interface OpenCodeRuntimeOptions {
   providerSessionId?: string
   permissionMode: PermissionMode
   onEvent: (event: OpenCodeRuntimeEvent) => void
+  systemPromptAppend?: string
 }
 
 export interface OpenCodeRuntime {
@@ -234,6 +235,7 @@ export async function createOpenCodeRuntime(opts: OpenCodeRuntimeOptions): Promi
         variant: effort,
         images,
         agent: permissionMode === 'plan' ? 'plan' : agent,
+        system: opts.systemPromptAppend,
       }),
       command: (name, args, model, effort, images, agent) => client.command(session.id, {
         command: name,

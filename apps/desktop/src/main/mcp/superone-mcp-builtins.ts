@@ -51,9 +51,21 @@ import {
   PACK_MINI_APP_DESCRIPTION,
   UPDATE_SUPERONE_TYPES_DESCRIPTION,
   RENAME_SESSION_DESCRIPTION,
+  SESSION_LIST_AGENTS_DESCRIPTION,
+  SESSION_REQUEST_AGENTS_DESCRIPTION,
+  SESSION_SEND_DESCRIPTION,
+  SESSION_START_DESCRIPTION,
+  SESSION_WAIT_DESCRIPTION,
   type BuiltInSuperoneToolName,
 } from './superone-mcp-builtin-defs'
 import { configApplyHandler, configReadGuideHandler, type ConfigApplyArgs } from './config-tools'
+import { readAppSettings } from '../app-settings-service'
+import type { SessionManager } from '../session/types'
+import type {
+  RequestSessionAgentsArgs,
+  SessionSendArgs,
+  SessionWaitArgs,
+} from '../session/session-collaboration'
 
 export {
   BUILT_IN_SUPERONE_TOOL_DEFS,
@@ -96,6 +108,12 @@ export interface SessionTitleSetter {
 
 export interface SessionTitleHost {
   getSession(sessionId: string): SessionTitleSetter | null
+}
+
+function collaborationHost(deps: BuiltInSuperoneToolDeps): SessionManager {
+  const host = deps.sessionHost as SessionManager | null
+  if (!host?.createSession || !host?.disposeSession) throw new Error('Session collaboration host is unavailable')
+  return host
 }
 
 export interface BuiltInSuperoneToolDeps {
@@ -281,6 +299,22 @@ export async function executeBuiltInSuperoneTool(
       return updateSuperoneTypes(args as { appDir: string })
     case 'session_rename':
       return renameSessionTool(args as { title: string }, deps)
+    case 'session_collab_list_agents':
+      return import('../session/session-collaboration').then(({ listSessionAgentProfiles }) => ({
+        content: [{ type: 'text' as const, text: JSON.stringify({ agents: listSessionAgentProfiles() }) }],
+      }))
+    case 'session_collab_request':
+      return import('../session/session-collaboration').then(({ requestSessionAgents }) =>
+        requestSessionAgents(deps.sessionId, args as unknown as RequestSessionAgentsArgs, collaborationHost(deps)))
+    case 'session_collab_start':
+      return import('../session/session-collaboration').then(({ startSessionAgent }) =>
+        startSessionAgent(deps.sessionId, String(args.credential ?? ''), collaborationHost(deps)))
+    case 'session_collab_send':
+      return import('../session/session-collaboration').then(({ sendSessionMessage }) =>
+        sendSessionMessage(deps.sessionId, args as unknown as SessionSendArgs, collaborationHost(deps)))
+    case 'session_collab_wait':
+      return import('../session/session-collaboration').then(({ waitForSessionMessages }) =>
+        waitForSessionMessages(deps.sessionId, args as unknown as SessionWaitArgs))
     case 'config_read_guide':
       return configReadGuideHandler(args as { domain?: string; recordId?: string }, deps)
     case 'config_apply':
@@ -299,6 +333,84 @@ export async function executeBuiltInSuperoneTool(
 }
 
 export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneToolDeps): void {
+  if (readAppSettings().experimentalAgentCollaborationEnabled) {
+    server.registerTool(
+      'session_collab_list_agents',
+      { description: SESSION_LIST_AGENTS_DESCRIPTION, inputSchema: {} },
+      async () => {
+        const { listSessionAgentProfiles } = await import('../session/session-collaboration')
+        return { content: [{ type: 'text' as const, text: JSON.stringify({ agents: listSessionAgentProfiles() }) }] }
+      },
+    )
+    server.registerTool(
+      'session_collab_request',
+      {
+        description: SESSION_REQUEST_AGENTS_DESCRIPTION,
+        inputSchema: {
+          launches: z.array(z.object({
+            launchId: z.string().optional(),
+            agentId: z.string(),
+            task: z.string().min(1).max(100_000),
+            name: z.string().max(64).optional(),
+            role: z.string().max(64).optional(),
+            config: z.object({
+              model: z.string().optional(),
+              effort: z.string().optional(),
+              apiProviderId: z.string().nullable().optional(),
+              permissionMode: z.enum(['default', 'acceptEdits', 'bypassPermissions', 'plan', 'dontAsk', 'auto']).optional(),
+              sandboxMode: z.enum(['off', 'on', 'auto']).optional(),
+              cwd: z.string().optional(),
+              name: z.string().max(64).optional(),
+              role: z.string().max(64).optional(),
+              worktree: z.object({
+                enabled: z.boolean(),
+                baseBranch: z.string(),
+                mode: z.enum(['branch', 'attach', 'detach']),
+                branchName: z.string().optional(),
+                carryLocalChanges: z.boolean().optional(),
+              }).optional(),
+              harnessConfig: z.record(z.string(), z.unknown()).optional(),
+            }).optional(),
+          })).min(1).max(16),
+        },
+      },
+      async (args) => {
+        const { requestSessionAgents } = await import('../session/session-collaboration')
+        return requestSessionAgents(deps.sessionId, args, collaborationHost(deps))
+      },
+    )
+    server.registerTool(
+      'session_collab_start',
+      { description: SESSION_START_DESCRIPTION, inputSchema: { credential: z.string().min(1) } },
+      async ({ credential }) => {
+        const { startSessionAgent } = await import('../session/session-collaboration')
+        return startSessionAgent(deps.sessionId, credential, collaborationHost(deps))
+      },
+    )
+    server.registerTool(
+      'session_collab_send',
+      {
+        description: SESSION_SEND_DESCRIPTION,
+        inputSchema: { credential: z.string().min(1), content: z.string().min(1).max(100_000), clientMessageId: z.string().optional() },
+      },
+      async (args) => {
+        const { sendSessionMessage } = await import('../session/session-collaboration')
+        return sendSessionMessage(deps.sessionId, args, collaborationHost(deps))
+      },
+    )
+    server.registerTool(
+      'session_collab_wait',
+      {
+        description: SESSION_WAIT_DESCRIPTION,
+        inputSchema: { credentials: z.array(z.string().min(1)).min(1).max(32), timeoutMs: z.number().min(0).max(60_000).optional() },
+      },
+      async (args) => {
+        const { waitForSessionMessages } = await import('../session/session-collaboration')
+        return waitForSessionMessages(deps.sessionId, args)
+      },
+    )
+  }
+
   server.tool(
     'miniapp_dev_read_guide',
     READ_MINIAPP_GUIDE_DESCRIPTION,

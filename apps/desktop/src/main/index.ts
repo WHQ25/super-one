@@ -51,6 +51,7 @@ import { DeviceRegistry } from './remote/device-registry'
 import { MobileBroadcaster } from './remote/mobile-broadcaster'
 import { PresenceCoordinator } from './remote/presence-coordinator'
 import { listWorktreePaths, loadSessionStateBySid, saveSessionStateBySid, updateProviderSessionId } from './session/session-repo'
+import { getSessionCollaborationSystemPrompt, setSessionCollaborationCallbacks } from './session/session-collaboration'
 import { buildClaudeEnv, buildRemoteActiveService, resolveChatService } from './providers/resolver'
 import type { ProxyUpstream } from './providers/llm-proxy-manager'
 import { shutdownAll as shutdownAllProxies } from './providers/llm-proxy-manager'
@@ -286,6 +287,7 @@ const sessionManager = new SessionManagerImpl({
       gitBranch: loaded.record.gitBranch,
       apiProviderId: loaded.record.apiProviderId,
       acpAgentId: loaded.record.acpAgentId,
+      systemPromptAppend: getSessionCollaborationSystemPrompt(sessionId),
     }
   },
   getActiveProvider: (harnessId, apiProviderId) => {
@@ -484,6 +486,20 @@ async function applyAppSettingsPatch(patch: AppSettingsPatch): Promise<AppSettin
   }
   if (patch?.cdpEnabled === false) {
     detachAllCdp()
+  }
+  if (patch?.experimentalAgentCollaborationEnabled !== undefined) {
+    // Dynamically re-surface collab tools on already-running sessions:
+    // - stdio SuperOne MCP bridges (ACP/Grok, Codex) re-list via tools/changed
+    // - Claude in-process MCP is recreated on next turn via markNeedsRebuild
+    //   (tools are registered once at createSuperoneMcpServer time)
+    // - the existing tools-changed listener schedules the one required backend reload
+    const { notifySessionToolsChanged } = await import('./mcp/superone-mcp-server')
+    sessionManager.forEachSession((session) => {
+      if (session.snapshot.harnessId === 'claude' || session.snapshot.harnessId === 'opencode') {
+        session.markNeedsRebuild()
+      }
+      notifySessionToolsChanged(session.id)
+    })
   }
   safeSend(AgentIpcChannels.APP_SETTINGS_CHANGED, result)
   return result
@@ -2533,6 +2549,9 @@ function registerIpcHandlers(): void {
   initSuperoneMcpServer(() => mainWindow)
   initBrowserAutomation(() => mainWindow)
   setSessionHostProvider(() => sessionManager)
+  setSessionCollaborationCallbacks({
+    sessionsChanged: () => safeSend(AgentIpcChannels.SESSIONS_CHANGED),
+  })
   setAppSettingsApplier(applyAppSettingsPatch)
   setBrowserDownloadTaskHost({
     emitHostEvent(sessionId, event) {

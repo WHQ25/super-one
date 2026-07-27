@@ -1,6 +1,6 @@
 import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback, memo, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ChevronRight, PenLine, Check, X, Ban, TriangleAlert, Upload, Smartphone, SlidersHorizontal } from 'lucide-react'
+import { ChevronRight, PenLine, Check, X, Ban, TriangleAlert, Upload, Smartphone, SlidersHorizontal, Users, Send, Hourglass } from 'lucide-react'
 import { diffLines } from 'diff'
 import { cn } from '@superone/ui/lib/utils'
 import type { ConfigFieldType } from '@superone/shared/agent-types'
@@ -45,6 +45,391 @@ function CompactToolRow({ icon, children }: { icon: React.ReactNode; children: R
       <div className="flex items-center gap-1.5 px-2 py-1.5 text-xs">
         {icon}
         {children}
+      </div>
+    </div>
+  )
+}
+
+const COLLAB_TOOLS = new Set([
+  'session_collab_request',
+  'session_collab_start',
+  'session_collab_send',
+  'session_collab_wait',
+  // Legacy names (in case older transcripts still reference them)
+  'session_request_agents_collab',
+  'session_start',
+  'session_send',
+  'session_wait',
+])
+
+function truncateOneLine(text: string, max = 72): string {
+  const one = text.replace(/\s+/g, ' ').trim()
+  if (!one) return ''
+  return one.length > max ? `${one.slice(0, max)}…` : one
+}
+
+function parseCollabResult(result: string | null | undefined): Record<string, unknown> | null {
+  if (!result) return null
+  try {
+    const parsed = JSON.parse(result) as unknown
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : null
+  } catch {
+    return null
+  }
+}
+
+function nameRoleLabel(name: string, role: string): string {
+  const n = name.trim() || 'Agent'
+  const r = role.trim()
+  return r ? `${n} - ${r}` : n
+}
+
+function peerTitleFromRecord(rec: Record<string, unknown> | null | undefined): string {
+  if (!rec) return ''
+  if (typeof rec.title === 'string' && rec.title.trim()) return rec.title.trim()
+  const name = typeof rec.name === 'string' ? rec.name : ''
+  const role = typeof rec.role === 'string' ? rec.role : ''
+  return nameRoleLabel(name, role)
+}
+
+function peerSessionIdFromRecord(rec: Record<string, unknown> | null | undefined): string | undefined {
+  if (!rec) return undefined
+  return typeof rec.sessionId === 'string' && rec.sessionId.trim()
+    ? rec.sessionId.trim()
+    : undefined
+}
+
+/** Clickable session title — navigates via chat store switchSession. */
+function SessionTitleLink({
+  sessionId,
+  children,
+  className,
+}: {
+  sessionId?: string
+  children: ReactNode
+  className?: string
+}) {
+  const switchSession = useChatStore((s) => s.switchSession)
+  if (!sessionId) {
+    return <span className={className}>{children}</span>
+  }
+  return (
+    <button
+      type="button"
+      className={cn(
+        'min-w-0 truncate text-left hover:text-primary hover:underline',
+        className,
+      )}
+      title={typeof children === 'string' ? children : undefined}
+      onClick={(e) => {
+        e.stopPropagation()
+        e.preventDefault()
+        void switchSession(sessionId)
+      }}
+    >
+      {children}
+    </button>
+  )
+}
+
+/** Prefer agent-chosen `name` (never harness brand). */
+function launchNameRole(launch: Record<string, unknown>): string {
+  const config = launch.config && typeof launch.config === 'object'
+    ? launch.config as Record<string, unknown>
+    : null
+  const name = typeof launch.name === 'string' && launch.name.trim()
+    ? launch.name.trim()
+    : typeof config?.name === 'string' && config.name.trim()
+      ? config.name.trim()
+      : typeof launch.launchId === 'string' && launch.launchId.length <= 32
+        ? launch.launchId
+        : 'Agent'
+  const role = typeof launch.role === 'string'
+    ? launch.role.trim()
+    : typeof config?.role === 'string'
+      ? String(config.role).trim()
+      : 'Agent'
+  return nameRoleLabel(name, role)
+}
+
+function requestSummary(
+  launches: unknown[],
+  resultLaunches: unknown[] | null,
+  agentCountLabel: (count: number) => string,
+): string {
+  const source = (resultLaunches && resultLaunches.length > 0 ? resultLaunches : launches)
+    .filter((item): item is Record<string, unknown> => !!item && typeof item === 'object')
+  if (source.length === 0) return ''
+  if (source.length === 1) return launchNameRole(source[0])
+  return agentCountLabel(source.length)
+}
+
+function SessionCollabToolBlock({
+  toolName,
+  params,
+  result,
+  isStreaming,
+}: {
+  toolName: string
+  params: Record<string, unknown>
+  result: string | null | undefined
+  isStreaming: boolean
+}) {
+  const { t } = useTranslation()
+  const [expanded, setExpanded] = useState(false)
+  const parsed = parseCollabResult(result)
+  const status = typeof parsed?.status === 'string' ? parsed.status : ''
+
+  let Icon: typeof Users | typeof Send | typeof Hourglass = Users
+  let label = toolName
+  /** Plain summary when no session link is available. */
+  let summary = ''
+  /** Optional peer title + session id for clickable navigation in the header. */
+  let summaryPeer: { title: string; sessionId?: string } | null = null
+  /** Optional trailing text after the peer title (e.g. send prompt). */
+  let summarySuffix = ''
+  let detailRows: Array<{ label: string; value: string; sessionId?: string }> = []
+  let expandable = false
+  /** When start succeeds, header title can jump to the new session. */
+  let headerSessionId: string | undefined
+
+  const isRequest = toolName === 'session_collab_request' || toolName === 'session_request_agents_collab'
+  const isStart = toolName === 'session_collab_start' || toolName === 'session_start'
+  const isSend = toolName === 'session_collab_send' || toolName === 'session_send'
+  const isWait = toolName === 'session_collab_wait' || toolName === 'session_wait'
+
+  if (isRequest) {
+    Icon = Users
+    const inputLaunches = Array.isArray(params.launches) ? params.launches : []
+    const resultLaunches = Array.isArray(parsed?.launches) ? parsed.launches : null
+    summary = requestSummary(
+      inputLaunches,
+      resultLaunches,
+      (count) => t('chat.toolBlock.collab.agentCount', { count }),
+    )
+    if (isStreaming) {
+      label = t('chat.toolBlock.collab.requestingCollaboration')
+    } else if (status === 'cancelled') {
+      label = t('chat.toolBlock.settingsChangeCancelled')
+    } else if (status === 'rejected') {
+      label = t('chat.toolBlock.settingsChangeRejected')
+    } else {
+      label = t('chat.toolBlock.collab.collaborationRequested')
+    }
+  } else if (isStart) {
+    Icon = Users
+    const name = typeof parsed?.name === 'string' ? parsed.name : ''
+    const role = typeof parsed?.role === 'string' ? parsed.role : ''
+    const title = typeof parsed?.title === 'string' && parsed.title.trim()
+      ? parsed.title.trim()
+      : nameRoleLabel(name, role)
+    const sid = typeof parsed?.sessionId === 'string' ? parsed.sessionId : undefined
+    if (title) {
+      summaryPeer = { title, sessionId: sid }
+      headerSessionId = sid
+    } else {
+      summary = t('chat.toolBlock.collab.agentSession')
+    }
+    label = isStreaming
+      ? t('chat.toolBlock.collab.startingCollaborationSession')
+      : t('chat.toolBlock.collab.collaborationSessionStarted')
+    if (parsed?.reused === true) {
+      summarySuffix = t('chat.toolBlock.collab.reused')
+    }
+    const config = parsed?.config && typeof parsed.config === 'object' && !Array.isArray(parsed.config)
+      ? parsed.config as Record<string, unknown>
+      : null
+    if (config && !isStreaming) {
+      expandable = true
+      if (typeof config.name === 'string' && config.name) {
+        detailRows.push({ label: t('chat.toolBlock.collab.fields.name'), value: config.name })
+      }
+      if (typeof config.role === 'string' && config.role) {
+        detailRows.push({ label: t('chat.toolBlock.collab.fields.role'), value: config.role })
+      }
+      if (typeof config.model === 'string' && config.model) {
+        detailRows.push({ label: t('chat.toolBlock.collab.fields.model'), value: config.model })
+      }
+      if (typeof config.effort === 'string' && config.effort) {
+        detailRows.push({ label: t('chat.toolBlock.collab.fields.effort'), value: config.effort })
+      }
+      if (typeof config.permissionMode === 'string' && config.permissionMode) {
+        detailRows.push({ label: t('chat.toolBlock.collab.fields.permission'), value: config.permissionMode })
+      }
+      if (typeof config.sandboxMode === 'string' && config.sandboxMode) {
+        detailRows.push({ label: t('chat.toolBlock.collab.fields.sandbox'), value: config.sandboxMode })
+      }
+      if (typeof config.cwd === 'string' && config.cwd) {
+        detailRows.push({ label: t('chat.toolBlock.collab.fields.cwd'), value: config.cwd })
+      }
+      if (sid) {
+        detailRows.push({
+          label: t('chat.toolBlock.collab.fields.sessionId'),
+          value: sid,
+          sessionId: sid,
+        })
+      }
+    }
+  } else if (isSend) {
+    Icon = Send
+    const to = parsed?.to && typeof parsed.to === 'object' && !Array.isArray(parsed.to)
+      ? parsed.to as Record<string, unknown>
+      : null
+    const peer = peerTitleFromRecord(to)
+    const peerSid = peerSessionIdFromRecord(to)
+      ?? (typeof parsed?.peerSessionId === 'string' ? parsed.peerSessionId : undefined)
+    const prompt = truncateOneLine(String(params.content ?? ''))
+    if (peer) {
+      summaryPeer = { title: peer, sessionId: peerSid }
+      summarySuffix = prompt
+    } else {
+      summary = prompt
+    }
+    label = isStreaming
+      ? t('chat.toolBlock.collab.sendingMessageTo')
+      : t('chat.toolBlock.collab.messageSent')
+    if (String(params.content ?? '') && !isStreaming) {
+      expandable = true
+      detailRows = [
+        ...(peer
+          ? [{ label: t('chat.toolBlock.collab.fields.to'), value: peer, sessionId: peerSid }]
+          : []),
+        { label: t('chat.toolBlock.collab.fields.message'), value: String(params.content ?? '') },
+      ]
+    }
+  } else if (isWait) {
+    Icon = Hourglass
+    const messages = Array.isArray(parsed?.messages) ? parsed.messages : []
+    const peers = Array.isArray(parsed?.peers) ? parsed.peers : []
+    const singlePeer = peers.length === 1 && typeof peers[0] === 'object'
+      ? peers[0] as Record<string, unknown>
+      : null
+    const peerSummary = (() => {
+      if (singlePeer) return peerTitleFromRecord(singlePeer)
+      if (peers.length > 1) return t('chat.toolBlock.collab.agentCount', { count: peers.length })
+      const n = Array.isArray(params.credentials) ? params.credentials.length : 0
+      return n > 0 ? t('chat.toolBlock.collab.agentCount', { count: n }) : ''
+    })()
+    const singlePeerSid = peerSessionIdFromRecord(singlePeer)
+    if (isStreaming) {
+      label = t('chat.toolBlock.collab.waitingFor')
+      if (singlePeer && peerSummary) {
+        summaryPeer = { title: peerSummary, sessionId: singlePeerSid }
+      } else {
+        summary = peerSummary
+      }
+    } else if (status === 'timeout' || messages.length === 0) {
+      label = t('chat.toolBlock.collab.waitTimeout')
+      if (singlePeer && peerSummary) {
+        summaryPeer = { title: peerSummary, sessionId: singlePeerSid }
+      } else {
+        summary = peerSummary
+      }
+    } else {
+      label = t('chat.toolBlock.collab.messageReceived')
+      // Prefer message sender for jump target when a single reply arrived.
+      const first = messages[0] as Record<string, unknown> | undefined
+      const firstFrom = first?.from && typeof first.from === 'object'
+        ? first.from as Record<string, unknown>
+        : null
+      if (messages.length === 1 && firstFrom) {
+        const fromTitle = peerTitleFromRecord(firstFrom)
+        summaryPeer = {
+          title: fromTitle || peerSummary,
+          sessionId: peerSessionIdFromRecord(firstFrom) ?? singlePeerSid,
+        }
+      } else if (singlePeer && peerSummary) {
+        summaryPeer = { title: peerSummary, sessionId: singlePeerSid }
+      } else {
+        summary = peerSummary || t('chat.toolBlock.collab.messageCount', { count: messages.length })
+      }
+      expandable = true
+      detailRows = messages.flatMap((raw, index) => {
+        const msg = raw as Record<string, unknown>
+        const fromRec = msg.from && typeof msg.from === 'object'
+          ? msg.from as Record<string, unknown>
+          : null
+        const who = peerTitleFromRecord(fromRec)
+        const whoSid = peerSessionIdFromRecord(fromRec)
+          ?? (typeof msg.fromSessionId === 'string' ? msg.fromSessionId : undefined)
+        const content = typeof msg.content === 'string' ? msg.content : ''
+        const suffix = messages.length > 1 ? ` (${index + 1})` : ''
+        return [
+          ...(who
+            ? [{ label: `${t('chat.toolBlock.collab.fields.from')}${suffix}`, value: who, sessionId: whoSid }]
+            : []),
+          { label: `${t('chat.toolBlock.collab.fields.message')}${suffix}`, value: content },
+        ]
+      })
+    }
+  }
+
+  const streamingDots = isStreaming && !/[.…]$/.test(label) ? '…' : ''
+  const header = (
+    <>
+      <Icon className="size-3 shrink-0 text-muted-foreground" />
+      <span className="shrink-0 font-medium text-foreground">
+        {label}{streamingDots}
+      </span>
+      {summaryPeer && (
+        <SessionTitleLink
+          sessionId={summaryPeer.sessionId ?? headerSessionId}
+          className="min-w-0 shrink truncate text-muted-foreground"
+        >
+          {summaryPeer.title}
+        </SessionTitleLink>
+      )}
+      {summary && !summaryPeer && (
+        <span className="min-w-0 truncate text-muted-foreground">{summary}</span>
+      )}
+      {summarySuffix && (
+        <span className="min-w-0 truncate text-muted-foreground">{summarySuffix}</span>
+      )}
+    </>
+  )
+
+  if (!expandable || detailRows.length === 0) {
+    return (
+      <div className="tool-node my-0.5 rounded bg-muted/20">
+        <div className="flex items-center gap-1.5 px-2 py-1.5 text-xs">{header}</div>
+      </div>
+    )
+  }
+
+  return (
+    <div className={cn('tool-node my-0.5 rounded bg-muted/20', 'cursor-pointer hover:bg-muted/40')}>
+      <div
+        className="flex items-center gap-1.5 px-2 py-1.5 text-xs"
+        onClick={() => setExpanded((value) => !value)}
+      >
+        {header}
+        <ChevronRight className={cn('ml-auto size-3 shrink-0 text-muted-foreground transition-transform duration-200', expanded && 'rotate-90')} />
+      </div>
+      <div
+        className="grid transition-[grid-template-rows] duration-200 ease-out"
+        style={{ gridTemplateRows: expanded ? '1fr' : '0fr' }}
+      >
+        <div className="overflow-hidden">
+          <div className="space-y-1 border-t border-border/40 px-2 py-2 text-xs">
+            {detailRows.map((row) => (
+              <div key={`${row.label}:${row.value.slice(0, 24)}`} className="flex items-baseline gap-2">
+                <span className="w-24 shrink-0 text-muted-foreground">{row.label}</span>
+                {row.sessionId ? (
+                  <SessionTitleLink
+                    sessionId={row.sessionId}
+                    className="min-w-0 flex-1 break-words text-foreground"
+                  >
+                    {row.value}
+                  </SessionTitleLink>
+                ) : (
+                  <span className="min-w-0 flex-1 whitespace-pre-wrap break-words text-foreground">{row.value}</span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   )
@@ -594,6 +979,16 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, t
     }
     if (mcpInfo.mcpToolName === 'media_generate_video') {
       return <VideoGenToolBlock params={params} result={cleanResult} isStreaming={isStreaming} />
+    }
+    if (COLLAB_TOOLS.has(mcpInfo.mcpToolName) && !isError && !isDenied) {
+      return (
+        <SessionCollabToolBlock
+          toolName={mcpInfo.mcpToolName}
+          params={params}
+          result={cleanResult}
+          isStreaming={isStreaming}
+        />
+      )
     }
     if (mcpInfo.mcpToolName === 'miniapp_dev_setup') {
       const appName = String(params.name ?? '')

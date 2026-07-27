@@ -4,7 +4,7 @@ import { createEvent, fireEvent, render, screen, waitFor } from '@testing-librar
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ButtonHTMLAttributes, HTMLAttributes, ReactNode } from 'react'
 
-let sessionsByFolder: Record<string, Array<{ sessionId: string; title: string; lastActiveAt: string; messageCount: number; isHidden?: boolean }>> = {}
+let sessionsByFolder: Record<string, Array<{ sessionId: string; title: string; lastActiveAt: string; messageCount: number; isHidden?: boolean; parentSessionId?: string }>> = {}
 
 const appState = {
   sidebarTab: 'sessions',
@@ -272,6 +272,34 @@ describe('AppSidebar interactions', () => {
       expect(mockWindowApp.listSessionsForFolderPage).toHaveBeenCalledWith('/project-a', 13, 0)
     })
     expect(screen.queryByText('New session')).toBeNull()
+  })
+
+  it('loads the page after the overflow root so its child group is complete', async () => {
+    const roots = Array.from({ length: 13 }, (_, index) => ({
+      sessionId: `parent-${index}`,
+      title: `Parent ${index}`,
+      lastActiveAt: new Date(2026, 3, 7, 13 - index).toISOString(),
+      messageCount: 1,
+    }))
+    sessionsByFolder = {
+      '/project-a': [
+        ...roots,
+        {
+          sessionId: 'boundary-child',
+          parentSessionId: 'parent-12',
+          title: 'Boundary child',
+          lastActiveAt: '2026-04-07T00:00:00.000Z',
+          messageCount: 1,
+        },
+      ],
+    }
+
+    const { AppSidebar } = await import('./AppSidebar')
+    render(<AppSidebar />)
+
+    await waitFor(() => {
+      expect(mockWindowApp.listSessionsForFolderPage).toHaveBeenCalledWith('/project-a', 13, 13)
+    })
   })
 
   it('keeps session order after clicking another session in the same project', async () => {

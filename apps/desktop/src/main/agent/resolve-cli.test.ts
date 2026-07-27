@@ -88,9 +88,16 @@ describe('fixPath', () => {
 })
 
 describe('getNodeRuntime', () => {
-  it('prefers the named main-stub sibling for the packaged MCP bridge', async () => {
+  it('prefers the Resources node-runtime-stubs clone for the packaged MCP bridge', async () => {
     mocks.electronToolkitIs.dev = false
-    const named = `${process.execPath} MCP Bridge`
+    const { basename, dirname, join } = await import('node:path')
+    const named = join(
+      dirname(process.execPath),
+      '..',
+      'Resources',
+      'node-runtime-stubs',
+      `${basename(process.execPath)} MCP Bridge`,
+    )
     mocks.existsSync.mockImplementation((p: string) => p === named)
     vi.resetModules()
 
@@ -105,6 +112,21 @@ describe('getNodeRuntime', () => {
       'mcp-bridge',
       named,
     )
+  })
+
+  it('falls back to a legacy MacOS sibling stub when Resources stubs are missing', async () => {
+    mocks.electronToolkitIs.dev = false
+    const { basename, dirname, join } = await import('node:path')
+    const legacy = join(dirname(process.execPath), `${basename(process.execPath)} MCP Bridge`)
+    mocks.existsSync.mockImplementation((p: string) => p === legacy)
+    vi.resetModules()
+
+    const { getNodeRuntime } = await import('./resolve-cli')
+
+    expect(getNodeRuntime('mcp-bridge')).toEqual({
+      executable: legacy,
+      env: { ELECTRON_RUN_AS_NODE: '1' },
+    })
   })
 
   it('falls back to the main Electron executable when the named stub is missing', async () => {
@@ -125,9 +147,16 @@ describe('getNodeRuntime', () => {
     )
   })
 
-  it('prefers the named main-stub sibling for the packaged LLM proxy', async () => {
+  it('prefers the Resources node-runtime-stubs clone for the packaged LLM proxy', async () => {
     mocks.electronToolkitIs.dev = false
-    const named = `${process.execPath} LLM Proxy`
+    const { basename, dirname, join } = await import('node:path')
+    const named = join(
+      dirname(process.execPath),
+      '..',
+      'Resources',
+      'node-runtime-stubs',
+      `${basename(process.execPath)} LLM Proxy`,
+    )
     mocks.existsSync.mockImplementation((p: string) => p === named)
     vi.resetModules()
 

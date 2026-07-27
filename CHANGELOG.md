@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
-- Restore the packaged ACP SuperOne MCP handshake by cloning the main MacOS stub (Helper.app clones with custom basenames SIGTRAP under ELECTRON_RUN_AS_NODE), while keeping MCP Bridge / LLM Proxy process titles
+- Restore the packaged ACP SuperOne MCP handshake by cloning the main MacOS stub into Resources/node-runtime-stubs (Helper.app clones with custom basenames SIGTRAP under ELECTRON_RUN_AS_NODE; MacOS siblings break codesign order), while keeping MCP Bridge / LLM Proxy process titles
 - Preview large image outputs for gallery and agent Read via downscaled JPEG sidecars (4K originals no longer break thumbs or Read limits); open full-res through the media server
 
 ## [0.48.0-alpha] - 2026-07-28

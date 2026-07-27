@@ -1,7 +1,8 @@
 'use strict'
 
-const { readdirSync, statSync, rmSync, existsSync, cpSync } = require('node:fs')
+const { readdirSync, statSync, rmSync, existsSync, cpSync, mkdirSync } = require('node:fs')
 const { join } = require('node:path')
+const { execFileSync } = require('node:child_process')
 
 const ARCH_NAMES = { 0: 'ia32', 1: 'x64', 2: 'armv7l', 3: 'arm64', 4: 'universal' }
 const PLATFORM_MAP = { darwin: 'darwin', mac: 'darwin', win32: 'win32', windows: 'win32', linux: 'linux' }
@@ -10,41 +11,69 @@ const PLATFORM_MAP = { darwin: 'darwin', mac: 'darwin', win32: 'win32', windows:
 // before electron-builder's codesign pass so the clones get signed with the rest
 // of the app.
 //
-// Clone the MAIN app executable into Contents/MacOS under a distinct name — NOT
-// a Helper.app clone. Electron's MainApplicationBundlePath only treats paths
-// ending in " Helper" / " Helper (GPU|Plugin|Renderer)" as helpers; a custom
-// name like "SuperOne MCP Bridge" takes the main-app path walk, resolves ICU
-// against the nested Frameworks clone, and aborts with SIGTRAP (exit 133) under
-// ELECTRON_RUN_AS_NODE. A MacOS sibling of the main stub walks up to
-// SuperOne.app correctly and still shows a distinct name in Activity Monitor.
+// Clone the MAIN app executable — NOT a Helper.app clone. Electron's
+// MainApplicationBundlePath only treats paths ending in " Helper" /
+// " Helper (GPU|Plugin|Renderer)" as helpers; a custom-named Helper.app takes
+// the main-app path walk, resolves ICU against the nested Frameworks clone, and
+// aborts with SIGTRAP (exit 133) under ELECTRON_RUN_AS_NODE. A main-stub clone
+// placed under Contents/Resources walks up to SuperOne.app correctly and still
+// shows a distinct name in Activity Monitor.
+//
+// Placement is Contents/Resources/node-runtime-stubs/ (NOT Contents/MacOS
+// siblings). osx-sign sorts by path depth and only then preserves walk order;
+// MacOS/SuperOne is always listed before MacOS/"SuperOne MCP Bridge", and
+// signing the CFBundleExecutable requires every other MacOS binary to already
+// be signed — so sibling stubs fail codesign with
+// "code object is not signed at all / In subcomponent: … MCP Bridge". A deeper
+// Resources path is signed first, then SuperOne succeeds.
 // Keep these suffixes in sync with resolve-cli.ts's VARIANT_MAIN_SUFFIX.
 const NODE_RUNTIME_VARIANTS = [
   { suffix: 'MCP Bridge' },
   { suffix: 'LLM Proxy' },
 ]
+const NODE_RUNTIME_STUBS_DIR = 'node-runtime-stubs'
 
 function cloneNamedNodeRuntimes(appOutDir, productFilename) {
-  const macosDir = join(appOutDir, `${productFilename}.app`, 'Contents', 'MacOS')
+  const contentsDir = join(appOutDir, `${productFilename}.app`, 'Contents')
+  const macosDir = join(contentsDir, 'MacOS')
   const mainExec = join(macosDir, productFilename)
   if (!existsSync(mainExec)) {
     console.warn(`[afterPack] main executable not found at ${mainExec}, skipping named node runtimes`)
     return
   }
+
+  const stubsDir = join(contentsDir, 'Resources', NODE_RUNTIME_STUBS_DIR)
+  mkdirSync(stubsDir, { recursive: true })
+
   for (const { suffix } of NODE_RUNTIME_VARIANTS) {
     const variantName = `${productFilename} ${suffix}`
-    const dest = join(macosDir, variantName)
+    const dest = join(stubsDir, variantName)
     rmSync(dest, { force: true })
     cpSync(mainExec, dest)
-    console.log(`[afterPack] cloned named node runtime: ${variantName}`)
+    // Ad-hoc sign so SuperOne can still codesign if discovery order ever
+    // interleaves; osx-sign later re-signs with the real Developer ID identity.
+    try {
+      execFileSync('codesign', ['--force', '--sign', '-', '--timestamp=none', '--options', 'runtime', dest], {
+        stdio: 'pipe',
+      })
+    } catch (err) {
+      console.warn(`[afterPack] ad-hoc codesign failed for ${variantName}:`, err.message)
+    }
+    console.log(`[afterPack] cloned named node runtime: Resources/${NODE_RUNTIME_STUBS_DIR}/${variantName}`)
   }
 
-  // Drop legacy Helper.app clones from older builds that may still be present
-  // when iterating packaging scripts against a non-clean output dir.
-  const frameworksDir = join(appOutDir, `${productFilename}.app`, 'Contents', 'Frameworks')
+  // Drop legacy MacOS-sibling stubs and Helper.app clones from older builds that
+  // may still be present when iterating packaging scripts against a non-clean
+  // output dir.
   for (const { suffix } of NODE_RUNTIME_VARIANTS) {
-    const legacy = join(frameworksDir, `${productFilename} ${suffix}.app`)
-    if (existsSync(legacy)) {
-      rmSync(legacy, { recursive: true, force: true })
+    const legacySibling = join(macosDir, `${productFilename} ${suffix}`)
+    if (existsSync(legacySibling)) {
+      rmSync(legacySibling, { force: true })
+      console.log(`[afterPack] removed legacy MacOS sibling stub: ${productFilename} ${suffix}`)
+    }
+    const legacyHelper = join(contentsDir, 'Frameworks', `${productFilename} ${suffix}.app`)
+    if (existsSync(legacyHelper)) {
+      rmSync(legacyHelper, { recursive: true, force: true })
       console.log(`[afterPack] removed legacy helper clone: ${productFilename} ${suffix}.app`)
     }
   }

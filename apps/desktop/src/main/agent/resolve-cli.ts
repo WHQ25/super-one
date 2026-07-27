@@ -55,10 +55,11 @@ export interface NodeRuntime {
   env?: Record<string, string>
 }
 
-// Named sidecars (mcp-bridge, llm-proxy) resolve to a MacOS sibling of the main
-// Electron executable, cloned by build/afterPack.cjs — keep VARIANT_MAIN_SUFFIX
-// in sync with NODE_RUNTIME_VARIANTS there. That gives a distinct Activity
-// Monitor name without using Helper.app clones, which Electron rejects under
+// Named sidecars (mcp-bridge, llm-proxy) resolve to a main-executable clone
+// written by build/afterPack.cjs under Contents/Resources/node-runtime-stubs/
+// (preferred) or a legacy Contents/MacOS sibling. Keep VARIANT_MAIN_SUFFIX in
+// sync with NODE_RUNTIME_VARIANTS there. That gives a distinct Activity Monitor
+// name without using Helper.app clones, which Electron rejects under
 // ELECTRON_RUN_AS_NODE when the basename is not a known helper suffix.
 // Dev mode falls back to the caller's default runtime (see is.dev below).
 export type NodeRuntimeVariant = 'default' | 'mcp-bridge' | 'llm-proxy'
@@ -70,6 +71,9 @@ const VARIANT_MAIN_SUFFIX: Record<NamedRuntimeVariant, string> = {
   'mcp-bridge': 'MCP Bridge',
   'llm-proxy': 'LLM Proxy',
 }
+
+/** Keep in sync with afterPack.cjs NODE_RUNTIME_STUBS_DIR. */
+const NODE_RUNTIME_STUBS_DIR = 'node-runtime-stubs'
 
 const cachedRuntimeByVariant = new Map<NodeRuntimeVariant, NodeRuntime>()
 
@@ -83,12 +87,22 @@ function findPlainHelper(): string | undefined {
   return undefined
 }
 
-/** Main-stub sibling written by afterPack, e.g. `.../MacOS/SuperOne MCP Bridge`. */
+/**
+ * Main-stub clone written by afterPack.
+ * Preferred: `.../Resources/node-runtime-stubs/SuperOne MCP Bridge` (deeper than
+ * MacOS so osx-sign signs it before the CFBundleExecutable).
+ * Legacy: `.../MacOS/SuperOne MCP Bridge` sibling from pre-0.48.1 layouts.
+ */
 function findNamedMainStub(variant: NamedRuntimeVariant): string | undefined {
   if (process.platform !== 'darwin') return undefined
   const appName = basename(process.execPath)
-  const named = join(dirname(process.execPath), `${appName} ${VARIANT_MAIN_SUFFIX[variant]}`)
-  if (existsSync(named)) return named
+  const fileName = `${appName} ${VARIANT_MAIN_SUFFIX[variant]}`
+  const macosDir = dirname(process.execPath)
+  const contentsDir = dirname(macosDir)
+  const preferred = join(contentsDir, 'Resources', NODE_RUNTIME_STUBS_DIR, fileName)
+  if (existsSync(preferred)) return preferred
+  const legacySibling = join(macosDir, fileName)
+  if (existsSync(legacySibling)) return legacySibling
   return undefined
 }
 

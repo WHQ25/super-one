@@ -371,8 +371,13 @@ body[data-scroll-locked] {
   margin: 0;
 }
 
+/* TipTap ReactNodeView outer shell for inline mention atoms.
+   Must be inline-flex (not bare `inline`) so the chip shares a vertical box
+   with surrounding text instead of sitting on a mismatched baseline. */
 .mention-chip-wrapper {
-  display: inline;
+  display: inline-flex;
+  vertical-align: middle;
+  line-height: 1;
 }
 
 .paste-chip-wrapper {

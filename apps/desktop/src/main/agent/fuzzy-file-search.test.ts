@@ -208,4 +208,76 @@ describe('searchMentions', () => {
       expect('rootPath' in r).toBe(false)
     }
   })
+
+  it('matches gitignored direct children of the current scope when the user types', () => {
+    // Browse mode lists via readdir (no gitignore). Typing switches to searchMentions;
+    // gitignored entries must still match so the user can select what they already saw.
+    const r = mkdtempSync(join(tmpdir(), 's1-mention-ignore-'))
+    try {
+      mkdirSync(join(r, 'src'), { recursive: true })
+      writeFileSync(join(r, 'src', 'app.ts'), '// app\n')
+      mkdirSync(join(r, 'computer-use-comparison'))
+      writeFileSync(join(r, 'computer-use-comparison', 'secret.ts'), '// secret\n')
+      writeFileSync(join(r, '.gitignore'), 'computer-use-comparison\n')
+
+      // Deep crawl still skips the ignored subtree (performance).
+      const crawled = collectFiles([r])
+      expect(crawled.some((f) => f.path === 'computer-use-comparison')).toBe(false)
+      expect(crawled.some((f) => f.path.startsWith('computer-use-comparison/'))).toBe(false)
+
+      // But typing @computer… must still surface the gitignored folder at root.
+      const results = searchMentions([r], 'computer', [], 20)
+      const hit = results.find((x) => x.kind === 'file' && x.path === 'computer-use-comparison')
+      expect(hit).toBeDefined()
+      expect(hit && hit.kind === 'file' && hit.isDirectory).toBe(true)
+
+      // Deep file under the ignored dir is still not in unscoped search.
+      expect(results.some((x) => x.kind === 'file' && x.path.includes('secret'))).toBe(false)
+
+      // Once the user scopes into that dir (browse @computer-use-comparison/),
+      // its direct children must match even though the dir is gitignored.
+      const nested = searchMentions([r], 'secret', [], 20, 'computer-use-comparison/')
+      expect(nested.some((x) => x.kind === 'file' && x.path === 'computer-use-comparison/secret.ts')).toBe(true)
+    } finally {
+      rmSync(r, { recursive: true, force: true })
+    }
+  })
+
+  it('deep fuzzy-matches inside a hand-typed gitignored path (docs/temp/…)', () => {
+    // User types @docs/temp/… — scopeDir is docs/temp/. The whole subtree must be
+    // fuzzy-matchable even though docs/temp is gitignored (one-level readdir is not enough).
+    const r = mkdtempSync(join(tmpdir(), 's1-mention-docs-temp-'))
+    try {
+      mkdirSync(join(r, 'docs', 'temp', 'plans', 'nested'), { recursive: true })
+      mkdirSync(join(r, 'docs', 'temp', 'research'), { recursive: true })
+      writeFileSync(join(r, 'docs', 'temp', 'plans', 'nested', 'ship-plan.md'), '# plan\n')
+      writeFileSync(join(r, 'docs', 'temp', 'research', 'notes.md'), '# notes\n')
+      writeFileSync(join(r, '.gitignore'), 'docs/temp\n')
+
+      expect(collectFiles([r]).some((f) => f.path.startsWith('docs/temp'))).toBe(false)
+
+      // @docs/temp → scope docs/, needle temp — folder itself still matches
+      const folderHit = searchMentions([r], 'temp', [], 20, 'docs/')
+      expect(folderHit.some((x) => x.kind === 'file' && x.path === 'docs/temp' && x.isDirectory)).toBe(true)
+
+      // Nested content under the gitignored tree is reachable once scoped into docs/
+      // (typed path prefix opens the tree without gitignore).
+      const fromDocs = searchMentions([r], 'ship', [], 20, 'docs/')
+      expect(fromDocs.some((x) => x.kind === 'file' && x.path === 'docs/temp/plans/nested/ship-plan.md')).toBe(true)
+
+      // Deeper scope @docs/temp/… also deep-matches grandchildren.
+      const fromTemp = searchMentions([r], 'ship', [], 20, 'docs/temp/')
+      expect(fromTemp.some((x) => x.kind === 'file' && x.path === 'docs/temp/plans/nested/ship-plan.md')).toBe(true)
+
+      const notes = searchMentions([r], 'notes', [], 20, 'docs/temp/')
+      expect(notes.some((x) => x.kind === 'file' && x.path === 'docs/temp/research/notes.md')).toBe(true)
+    } finally {
+      rmSync(r, { recursive: true, force: true })
+    }
+  })
+
+  it('still skips hard-excluded dirs (node_modules) as scope children', () => {
+    const results = searchMentions([root], 'junk', [], 20)
+    expect(results.some((x) => x.kind === 'file' && x.path.includes('node_modules'))).toBe(false)
+  })
 })

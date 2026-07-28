@@ -69,6 +69,21 @@ describe('parseUserMentions', () => {
     ])
   })
 
+  it('classifies a root-level directory mention with trailing slash', () => {
+    expect(parseUserMentions('@computer-use-comparison/ 看一下这个文件夹')).toEqual([
+      { type: 'mention', kind: 'directory', value: 'computer-use-comparison/' },
+      { type: 'text', text: ' 看一下这个文件夹' },
+    ])
+  })
+
+  it('classifies extensionless path without slash as agent (not directory)', () => {
+    // Trailing slash is the durable directory marker after plain-text round-trip.
+    expect(parseUserMentions('@computer-use-comparison 看一下')).toEqual([
+      { type: 'mention', kind: 'agent', value: 'computer-use-comparison' },
+      { type: 'text', text: ' 看一下' },
+    ])
+  })
+
   it('classifies a file mention containing a slash', () => {
     expect(parseUserMentions('@src/main.ts')).toEqual([
       { type: 'mention', kind: 'file', value: 'src/main.ts' },

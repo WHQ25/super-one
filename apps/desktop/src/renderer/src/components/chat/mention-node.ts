@@ -33,7 +33,12 @@ export const MentionNode = Node.create({
   },
 
   renderText({ node }) {
-    return ` @${(node.attrs as MentionNodeAttrs).value} `
+    const attrs = node.attrs as MentionNodeAttrs
+    let value = attrs.value
+    // Keep directory marker in plain-text serialization so re-parse after send
+    // can recover kind:directory (trailing slash is the only durable signal).
+    if (attrs.kind === 'directory' && value && !value.endsWith('/')) value += '/'
+    return ` @${value} `
   },
 
   addNodeView() {

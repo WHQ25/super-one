@@ -22,7 +22,7 @@ export function MentionChip({ node, getPos, editor }: NodeViewProps) {
       as="span"
       contentEditable={false}
       data-mention=""
-      className="inline-flex items-center gap-1 rounded bg-muted mx-0.5 px-1.5 py-0.5 text-xs text-foreground select-none whitespace-nowrap align-baseline"
+      className="inline-flex items-center gap-1 rounded bg-muted mx-0.5 px-1.5 py-0.5 text-xs leading-none text-foreground select-none whitespace-nowrap align-middle"
     >
       {kind === 'agent' ? (
         <Bot className="size-3 shrink-0 text-purple-600 dark:text-purple-400" />

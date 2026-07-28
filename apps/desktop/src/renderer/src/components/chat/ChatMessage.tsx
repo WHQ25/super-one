@@ -24,6 +24,7 @@ import { PasteChipPreview } from './PasteChipPreview'
 import { PASTE_CHIP_LINE_THRESHOLD, PASTE_CHIP_CHAR_THRESHOLD } from './paste-chip-node'
 import { toast } from 'sonner'
 import { useActiveSession, useChatStore } from '@/stores/chat'
+import { useAppStore, selectEffectiveProjectRoot } from '@/stores/app'
 import { useShallow } from 'zustand/react/shallow'
 import { getAssistantCopyText } from './chat-message/getAssistantCopyText'
 import {
@@ -421,26 +422,48 @@ function RestContent({ rest, forcePlain }: { rest: string; forcePlain?: boolean 
 }
 
 function MentionInlineChip({ kind, value, displayName }: { kind: UserMentionKind; value: string; displayName?: string }) {
-  const display = kind === 'miniapp'
+  // Mentions re-parsed from plain text only know directory via trailing `/`.
+  // Older inserts (and some drop paths) lost that marker and rendered folders
+  // as files. Stat extensionless file mentions once so real directories recover.
+  const [resolvedKind, setResolvedKind] = useState<UserMentionKind>(kind)
+  useEffect(() => {
+    setResolvedKind(kind)
+    if (kind !== 'file') return
+    const bare = value.replace(/\/$/, '')
+    const baseName = bare.split(/[/\\]/).pop() || bare
+    if (!bare || baseName.includes('.')) return
+    let cancelled = false
+    const projectRoot = selectEffectiveProjectRoot(useAppStore.getState())
+    const abs = bare.startsWith('/') ? bare : projectRoot ? `${projectRoot}/${bare}` : null
+    if (!abs) return
+    void window.app.pathStat(abs).then((stat) => {
+      if (!cancelled && stat?.isDirectory) setResolvedKind('directory')
+    })
+    return () => { cancelled = true }
+  }, [kind, value])
+
+  const display = resolvedKind === 'miniapp'
     ? (displayName ?? value)
     : (value.replace(/\/$/, '').split('/').pop() || value)
   return (
     <span
       className={cn(
-        'inline-flex items-center align-middle whitespace-nowrap',
-        kind === 'agent'
-          ? 'gap-1 rounded-md border border-primary/40 bg-primary/15 px-1.5 py-0.5 text-xs text-primary'
-          : 'gap-0.5 text-sm text-foreground'
+        // Match surrounding user-bubble text-sm line box: middle-align the
+        // icon+label flex so it doesn't sit above/below RestContent text.
+        'inline-flex items-center whitespace-nowrap align-middle',
+        resolvedKind === 'agent'
+          ? 'gap-1 rounded-md border border-primary/40 bg-primary/15 px-1.5 py-0.5 text-xs leading-5 text-primary'
+          : 'gap-0.5 text-sm leading-5 text-foreground'
       )}
     >
-      {kind === 'agent' ? (
+      {resolvedKind === 'agent' ? (
         <span className="font-medium">@{display}</span>
-      ) : kind === 'directory' ? (
+      ) : resolvedKind === 'directory' ? (
         <>
           <Folder className="size-3.5 shrink-0 text-primary" />
           <span>{display}</span>
         </>
-      ) : kind === 'miniapp' ? (
+      ) : resolvedKind === 'miniapp' ? (
         <>
           <MiniAppIcon appId={value} className="size-3.5 shrink-0" />
           <span>{display}</span>

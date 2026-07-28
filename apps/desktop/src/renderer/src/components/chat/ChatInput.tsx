@@ -526,22 +526,26 @@ export function ChatInput() {
 
         let kind: MentionKind
         let displayName: string
+        let mentionValue = value
         if (kindHint === 'miniapp') {
           kind = 'miniapp'
           displayName = displayNameHint || value
         } else {
           const isAgent = showAgentMentions && agents.some((a) => a.name === value)
           kind = isAgent ? 'agent' : value.endsWith('/') ? 'directory' : 'file'
-          displayName = value.split('/').filter(Boolean).pop() || value
+          // Defensive: directory values must keep the trailing slash so message
+          // re-parse (parseUserMentions) recovers kind:directory after send.
+          if (kind === 'directory' && mentionValue && !mentionValue.endsWith('/')) mentionValue += '/'
+          displayName = mentionValue.split('/').filter(Boolean).pop() || mentionValue
         }
 
-        addMention({ kind, value, displayName })
+        addMention({ kind, value: mentionValue, displayName })
 
         ed.chain()
           .focus()
           .deleteRange({ from: info.atPos, to: info.atPos + 1 + info.query.length })
           .insertContentAt(info.atPos, [
-            { type: 'mention', attrs: { kind, value, displayName } },
+            { type: 'mention', attrs: { kind, value: mentionValue, displayName } },
           ])
           .run()
 
@@ -556,6 +560,8 @@ export function ChatInput() {
     const handleMentionResultState = useCallback((q: string, isEmpty: boolean) => {
       const info = mentionInfoRef.current
       if (!info || !q) return
+      // Ignore stale reports from a previous keystroke (query already moved on).
+      if (q !== info.query) return
       if (editorRef.current?.view.composing) return
       const map = mentionEmptyByAtRef.current
       const cur = map.get(info.atPos)
@@ -581,7 +587,11 @@ export function ChatInput() {
             if (attrs.kind === 'miniapp') {
               current += ` <superone-miniapp><appname>${attrs.displayName}</appname><appid>${attrs.value}</appid></superone-miniapp> `
             } else {
-              current += ` @${attrs.value} `
+              // Directory kind must survive plain-text round-trip via trailing `/`
+              // (parseUserMentions re-classifies solely from the serialized value).
+              let value = attrs.value
+              if (attrs.kind === 'directory' && value && !value.endsWith('/')) value += '/'
+              current += ` @${value} `
             }
           } else if (node.type.name === 'attachment') {
             if (current.trim()) segments.push({ text: current.trim(), isPaste: false })
@@ -807,10 +817,17 @@ export function ChatInput() {
     chatInputAPI.insertMention = insertMention
 
     const insertFileMention = useCallback(
-      (rawPath: string) => {
-        const mentionValue = toMentionPath(rawPath, fileRoot)
+      async (rawPath: string) => {
+        // Drop / file-picker paths always arrived as kind:file even for folders
+        // (getPathForFile works for directories on macOS). Stat first so folder
+        // mentions keep kind:directory + trailing slash for display round-trip.
+        const stat = await window.app.pathStat(rawPath)
+        const isDir = stat?.isDirectory ?? false
+        const absForMention = isDir && !rawPath.endsWith('/') ? `${rawPath}/` : rawPath
+        let mentionValue = toMentionPath(absForMention, fileRoot)
+        if (isDir && mentionValue !== '.' && !mentionValue.endsWith('/')) mentionValue += '/'
         const displayName = mentionValue.split('/').filter(Boolean).pop() || mentionValue
-        insertMention('file', mentionValue, displayName)
+        insertMention(isDir ? 'directory' : 'file', mentionValue, displayName)
       },
       [fileRoot, insertMention]
     )
@@ -850,7 +867,7 @@ export function ChatInput() {
 
           const filePath = window.app.getPathForFile(file)
           if (!filePath) continue
-          insertFileMention(filePath)
+          void insertFileMention(filePath)
         }
       },
       [attachFile, insertFileMention]

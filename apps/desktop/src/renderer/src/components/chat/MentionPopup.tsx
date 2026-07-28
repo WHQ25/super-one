@@ -89,9 +89,14 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
     const additionalDirs = useActiveSession((s) => s.additionalDirs)
     const [dirEntries, setDirEntries] = useState<ListDirEntry[]>([])
     const [searchResults, setSearchResults] = useState<MentionSearchItem[]>([])
+    // Only true when results were produced for `completedQuery` (guards empty-suppression races).
     const [searchCompleted, setSearchCompleted] = useState(false)
+    const [completedQuery, setCompletedQuery] = useState<string | null>(null)
     const itemRefs = useRef<Map<number, HTMLButtonElement>>(new Map())
     const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined)
+    // Bumps on every query/root change so in-flight listDirectory/searchMentions
+    // responses from a previous keystroke cannot clobber newer state.
+    const requestIdRef = useRef(0)
 
     const agentEntries = useMemo(
       () => showAgents ? agents.map((a) => ({ name: a.name, model: a.model || '' })) : [],
@@ -104,24 +109,43 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
     const scopeDir = !isBrowseMode && lastSlash >= 0 ? query.slice(0, lastSlash + 1) : undefined
 
     useEffect(() => {
+      const requestId = ++requestIdRef.current
       setSearchCompleted(false)
+      setCompletedQuery(null)
       if (debounceRef.current) clearTimeout(debounceRef.current)
+
+      const finish = (forQuery: string, apply: () => void) => {
+        if (requestId !== requestIdRef.current) return
+        apply()
+        setCompletedQuery(forQuery)
+        setSearchCompleted(true)
+      }
 
       if (isBrowseMode) {
         setSearchResults([])
-        if (!fileRoot) { setSearchCompleted(true); return }
-        window.agent.listDirectory(fileRoot, query)
-          .then((entries) => { setDirEntries(entries); setSearchCompleted(true) })
-          .catch(() => { setDirEntries([]); setSearchCompleted(true) })
+        if (!fileRoot) {
+          finish(query, () => setDirEntries([]))
+          return
+        }
+        const browseQuery = query
+        window.agent.listDirectory(fileRoot, browseQuery)
+          .then((entries) => { finish(browseQuery, () => setDirEntries(entries)) })
+          .catch(() => { finish(browseQuery, () => setDirEntries([])) })
         return
       }
 
+      const searchForQuery = query
+      const searchScope = scopeDir
+      const searchNeedle = scopeDir ? query.slice(scopeDir.length) : query
       debounceRef.current = setTimeout(() => {
-        if (!fileRoot) { setSearchCompleted(true); return }
-        const searchQuery = scopeDir ? query.slice(scopeDir.length) : query
-        window.agent.searchMentions(fileRoot, searchQuery, agentEntries, additionalDirs, scopeDir)
-          .then((results) => { setSearchResults(results); setSearchCompleted(true) })
-          .catch(() => { setSearchResults([]); setSearchCompleted(true) })
+        if (requestId !== requestIdRef.current) return
+        if (!fileRoot) {
+          finish(searchForQuery, () => setSearchResults([]))
+          return
+        }
+        window.agent.searchMentions(fileRoot, searchNeedle, agentEntries, additionalDirs, searchScope)
+          .then((results) => { finish(searchForQuery, () => setSearchResults(results)) })
+          .catch(() => { finish(searchForQuery, () => setSearchResults([])) })
       }, 150)
       return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
     }, [query, fileRoot, additionalDirs, agentEntries, isBrowseMode, scopeDir])
@@ -185,9 +209,13 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
     const orderedItems = useMemo(() => mentionGroups.flatMap((g) => g.items), [mentionGroups])
 
     useEffect(() => {
-      if (!searchCompleted) return
+      // Only report emptiness for the query we actually finished fetching.
+      // Without this, a fast "@docs/temp" can briefly pair the new query with
+      // still-true searchCompleted + empty/stale items and permanently suppress
+      // the popup via ChatInput's mentionEmptyByAtRef prefix lock.
+      if (!searchCompleted || completedQuery !== query) return
       onResultState?.(query, orderedItems.length === 0)
-    }, [searchCompleted, orderedItems.length, query, onResultState])
+    }, [searchCompleted, completedQuery, orderedItems.length, query, onResultState])
 
     const handleItemClick = useCallback(
       (item: FlatItem, action: 'navigate' | 'select') => {
@@ -322,7 +350,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
       )
     }
 
-    if (searchCompleted && orderedItems.length === 0) return null
+    if (searchCompleted && completedQuery === query && orderedItems.length === 0) return null
 
     return (
       <div className="absolute bottom-full left-0 right-0 z-10 mb-1 max-h-72 overflow-hidden rounded-xl border border-border bg-popover flex flex-col">

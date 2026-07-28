@@ -10,7 +10,6 @@ import type {
   PermissionRequest,
 } from '@superone/shared/agent-types'
 import type { BackendStartOptions } from '../types'
-import { registerActiveRuntime } from '../active-runtime-registry'
 
 vi.mock('../../logger', () => ({
   default: { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() },
@@ -224,7 +223,6 @@ describe('CodexBackend lifecycle', () => {
   let backend: CodexBackend
 
   beforeEach(() => {
-    CodexBackend._resetActiveRuntimesForTests()
     service = makeFakeService()
     backend = new CodexBackend(service)
   })
@@ -324,38 +322,61 @@ describe('CodexBackend lifecycle', () => {
     expect(close).not.toHaveBeenCalled()
   })
 
-  it('extends the warm-handle idle window on keepalive re-prewarm (aligns with Claude expiry)', async () => {
-    vi.useFakeTimers()
-    try {
-      const close = vi.fn(async () => {})
-      const handle = {
-        connection: {},
-        close,
-        getStderr: () => '',
-        onClosed: vi.fn(() => () => {}),
-      }
-      turnMocks.prewarmCodexConnection.mockResolvedValueOnce(handle as never)
-
-      backend.prewarm(makeStartOpts())
-      await vi.advanceTimersByTimeAsync(0)
-
-      // Keepalive ping just before the original deadline resets the window.
-      await vi.advanceTimersByTimeAsync(CodexBackend.WARM_IDLE_TIMEOUT_MS - 1000)
-      backend.prewarm(makeStartOpts())
-
-      // Past the ORIGINAL deadline but within the reset window → still warm.
-      await vi.advanceTimersByTimeAsync(2000)
-      expect(close).not.toHaveBeenCalled()
-
-      // No further pings → expires WARM_IDLE_TIMEOUT_MS after the last ping.
-      await vi.advanceTimersByTimeAsync(CodexBackend.WARM_IDLE_TIMEOUT_MS)
-      expect(close).toHaveBeenCalled()
-    } finally {
-      vi.useRealTimers()
+  it('reports and releases a prewarmed handle through the shared runtime contract', async () => {
+    const close = vi.fn(async () => {})
+    const handle = {
+      connection: {},
+      close,
+      getStderr: () => '',
+      onClosed: vi.fn(() => () => {}),
     }
+    turnMocks.prewarmCodexConnection.mockResolvedValueOnce(handle as never)
+
+    backend.prewarm(makeStartOpts())
+    await vi.waitFor(() => expect(backend.hasActiveRuntime()).toBe(true))
+    await backend.releaseRuntime('idle')
+
+    expect(close).toHaveBeenCalledOnce()
+    expect(backend.hasActiveRuntime()).toBe(false)
   })
 
-  it('returns an idle app-server connection to the shared project pool on close', async () => {
+  it('does not close a connection created while an old prewarm release is pending', async () => {
+    const oldClose = vi.fn(async () => {})
+    const newClose = vi.fn(async () => {})
+    const oldHandle = {
+      connection: {},
+      close: oldClose,
+      getStderr: () => '',
+      onClosed: vi.fn(() => () => {}),
+    }
+    let resolveOld!: (handle: typeof oldHandle) => void
+    turnMocks.prewarmCodexConnection.mockReturnValueOnce(new Promise((resolve) => { resolveOld = resolve }))
+
+    backend.prewarm(makeStartOpts())
+    const release = backend.releaseRuntime('idle')
+    await backend.start(makeStartOpts())
+    const session = (backend as unknown as {
+      session: { connectionHandle: unknown; connectionAuth: unknown }
+    }).session
+    const newHandle = {
+      connection: {},
+      close: newClose,
+      getStderr: () => '',
+      onClosed: vi.fn(() => () => {}),
+    }
+    session.connectionHandle = newHandle
+    session.connectionAuth = { mode: 'auto' }
+
+    resolveOld(oldHandle)
+    await release
+
+    expect(oldClose).toHaveBeenCalledOnce()
+    expect(newClose).not.toHaveBeenCalled()
+    expect(session.connectionHandle).toBe(newHandle)
+    expect(backend.hasActiveRuntime()).toBe(true)
+  })
+
+  it('closes an app-server connection on close instead of retaining it in the project pool', async () => {
     const close = vi.fn(async () => {})
     const handle = {
       connection: {},
@@ -376,8 +397,8 @@ describe('CodexBackend lifecycle', () => {
 
     await backend.close()
 
-    expect(releaseAppServerConnection).toHaveBeenCalledWith('/tmp/proj', { mode: 'auto' }, handle, null)
-    expect(close).not.toHaveBeenCalled()
+    expect(releaseAppServerConnection).not.toHaveBeenCalled()
+    expect(close).toHaveBeenCalled()
   })
 
   it('rebuild() closes the stale codex connection so new auth takes effect next send', async () => {
@@ -965,16 +986,10 @@ describe('CodexBackend event listeners', () => {
 })
 
 describe('CodexBackend idle dispose', () => {
-  let service: ReturnType<typeof makeFakeService>
   let backend: CodexBackend
-  let releaseAppServerSpy: ReturnType<typeof vi.fn>
 
   beforeEach(() => {
-    CodexBackend._resetActiveRuntimesForTests()
-    service = makeFakeService()
-    releaseAppServerSpy = vi.fn()
-    service.releaseAppServerConnection = releaseAppServerSpy
-    backend = new CodexBackend(service)
+    backend = new CodexBackend(makeFakeService())
   })
 
   function makeFakeHandle() {
@@ -990,125 +1005,45 @@ describe('CodexBackend idle dispose', () => {
     return (backend as unknown as { session: { connectionHandle: unknown; connectionAuth: unknown; runningController: AbortController | null } }).session
   }
 
-  it('isRuntimeIdle returns false when not started', () => {
-    expect(backend.isRuntimeIdle(60_000)).toBe(false)
-  })
-
-  it('isRuntimeIdle returns false when session has no connection handle', async () => {
+  it('reports no runtime before a connection is attached', async () => {
+    expect(backend.hasActiveRuntime()).toBe(false)
     await backend.start(makeStartOpts())
-    expect(backend.isRuntimeIdle(0)).toBe(false)
+    expect(backend.hasActiveRuntime()).toBe(false)
   })
 
-  it('isRuntimeIdle returns true when connection alive, no in-flight, and timeout elapsed', async () => {
+  it('reports an attached app-server connection as active', async () => {
     await backend.start(makeStartOpts())
     const session = getSession()
     session.connectionHandle = makeFakeHandle()
     session.connectionAuth = { mode: 'auto' }
-    expect(backend.isRuntimeIdle(0)).toBe(true)
+    expect(backend.hasActiveRuntime()).toBe(true)
   })
 
-  it('isRuntimeIdle returns false while foreground', async () => {
+  it('releaseRuntime closes the connection instead of returning it to a pool', async () => {
     await backend.start(makeStartOpts())
     const session = getSession()
-    session.connectionHandle = makeFakeHandle()
+    const handle = makeFakeHandle()
+    session.connectionHandle = handle
     session.connectionAuth = { mode: 'auto' }
-    backend.setForeground(true)
 
-    expect(backend.isRuntimeIdle(0)).toBe(false)
+    await backend.releaseRuntime('idle')
+
+    expect(handle.close).toHaveBeenCalledOnce()
+    expect(session.connectionHandle).toBeNull()
+    expect(backend.hasActiveRuntime()).toBe(false)
   })
 
-  it('isRuntimeIdle returns false within timeout window', async () => {
+  it('does not release while a turn owns the connection', async () => {
     await backend.start(makeStartOpts())
     const session = getSession()
-    session.connectionHandle = makeFakeHandle()
-    session.connectionAuth = { mode: 'auto' }
-    expect(backend.isRuntimeIdle(60_000)).toBe(false)
-  })
-
-  it('isRuntimeIdle returns false when runningController is set (in-flight turn)', async () => {
-    await backend.start(makeStartOpts())
-    const session = getSession()
-    session.connectionHandle = makeFakeHandle()
+    const handle = makeFakeHandle()
+    session.connectionHandle = handle
     session.connectionAuth = { mode: 'auto' }
     session.runningController = new AbortController()
-    expect(backend.isRuntimeIdle(0)).toBe(false)
-  })
 
-  it('timer fires release after timeout when the global active runtime threshold is met', async () => {
-    vi.useFakeTimers()
-    try {
-      await backend.start(makeStartOpts())
-      const session = getSession()
-      session.connectionHandle = makeFakeHandle()
-      session.connectionAuth = { mode: 'auto' }
-      registerActiveRuntime({}, () => true)
-      registerActiveRuntime({}, () => true)
-      registerActiveRuntime({}, () => true)
-      registerActiveRuntime({}, () => true)
+    await backend.releaseRuntime('idle')
 
-      expect(CodexBackend.activeRuntimeCount).toBe(CodexBackend.MIN_ACTIVE_SESSIONS_FOR_IDLE_RELEASE)
-
-      await vi.advanceTimersByTimeAsync(CodexBackend.IDLE_TIMEOUT_MS + CodexBackend.IDLE_CHECK_INTERVAL_MS + 100)
-
-      expect(releaseAppServerSpy).toHaveBeenCalled()
-      expect(session.connectionHandle).toBeNull()
-    } finally {
-      vi.useRealTimers()
-    }
-  })
-
-  it('timer does not release while global active runtimes are below the threshold', async () => {
-    vi.useFakeTimers()
-    try {
-      await backend.start(makeStartOpts())
-      const session = getSession()
-      session.connectionHandle = makeFakeHandle()
-      session.connectionAuth = { mode: 'auto' }
-
-      expect(CodexBackend.activeRuntimeCount).toBeLessThan(CodexBackend.MIN_ACTIVE_SESSIONS_FOR_IDLE_RELEASE)
-
-      await vi.advanceTimersByTimeAsync(CodexBackend.IDLE_TIMEOUT_MS + CodexBackend.IDLE_CHECK_INTERVAL_MS + 100)
-
-      expect(releaseAppServerSpy).not.toHaveBeenCalled()
-      expect(session.connectionHandle).not.toBeNull()
-    } finally {
-      vi.useRealTimers()
-    }
-  })
-
-  it('timer does not release while runningController is set', async () => {
-    vi.useFakeTimers()
-    try {
-      await backend.start(makeStartOpts())
-      const session = getSession()
-      session.connectionHandle = makeFakeHandle()
-      session.connectionAuth = { mode: 'auto' }
-      session.runningController = new AbortController()
-
-      await vi.advanceTimersByTimeAsync(CodexBackend.IDLE_TIMEOUT_MS + CodexBackend.IDLE_CHECK_INTERVAL_MS + 100)
-
-      expect(releaseAppServerSpy).not.toHaveBeenCalled()
-      expect(session.connectionHandle).not.toBeNull()
-    } finally {
-      vi.useRealTimers()
-    }
-  })
-
-  it('close() stops idle timer so it no longer fires', async () => {
-    vi.useFakeTimers()
-    try {
-      await backend.start(makeStartOpts())
-      const session = getSession()
-      session.connectionHandle = makeFakeHandle()
-      session.connectionAuth = { mode: 'auto' }
-
-      await backend.close()
-      releaseAppServerSpy.mockClear()
-
-      await vi.advanceTimersByTimeAsync(CodexBackend.IDLE_TIMEOUT_MS * 5)
-      expect(releaseAppServerSpy).not.toHaveBeenCalled()
-    } finally {
-      vi.useRealTimers()
-    }
+    expect(handle.close).not.toHaveBeenCalled()
+    expect(session.connectionHandle).toBe(handle)
   })
 })

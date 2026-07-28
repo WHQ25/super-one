@@ -133,6 +133,65 @@ describe('AcpBackend', () => {
     await backend.close()
   })
 
+  it('releases an idle runtime through the shared runtime contract', async () => {
+    const close = vi.fn(async () => {})
+    setAcpRuntimeFactory(async () => mockRuntime({ close }))
+    const backend = new AcpBackend()
+
+    await backend.start(startOpts({ agentId: 'grok-build' }))
+    await vi.waitFor(() => expect(backend.hasActiveRuntime()).toBe(true))
+    await backend.releaseRuntime('idle')
+
+    expect(close).toHaveBeenCalledOnce()
+    expect(backend.hasActiveRuntime()).toBe(false)
+  })
+
+  it('waits for an old pending runtime to close without clearing a concurrent new runtime', async () => {
+    const oldClose = vi.fn(async () => {})
+    const newClose = vi.fn(async () => {})
+    const oldRuntime = mockRuntime({ close: oldClose })
+    const newRuntime = mockRuntime({ sessionId: 'acp-sess-2', close: newClose })
+    let resolveOld!: (value: AcpRuntime) => void
+    let callCount = 0
+    setAcpRuntimeFactory(async () => {
+      callCount += 1
+      if (callCount === 1) return new Promise<AcpRuntime>((resolve) => { resolveOld = resolve })
+      return newRuntime
+    })
+    const backend = new AcpBackend()
+
+    await backend.start(startOpts({ agentId: 'grok-build' }))
+    let releaseFinished = false
+    const release = backend.releaseRuntime('idle').then(() => { releaseFinished = true })
+    await backend.start(startOpts({ agentId: 'grok-build' }))
+    await vi.waitFor(() => expect(callCount).toBe(2))
+    expect(releaseFinished).toBe(false)
+
+    resolveOld(oldRuntime)
+    await release
+
+    expect(oldClose).toHaveBeenCalledOnce()
+    expect(newClose).not.toHaveBeenCalled()
+    expect(backend.hasActiveRuntime()).toBe(true)
+  })
+
+  it('aborts a runtime initialization that never settles on its own', async () => {
+    let aborted = false
+    setAcpRuntimeFactory(async (opts) => new Promise<AcpRuntime>((_resolve, reject) => {
+      opts.signal?.addEventListener('abort', () => {
+        aborted = true
+        reject(new Error('aborted'))
+      }, { once: true })
+    }))
+    const backend = new AcpBackend()
+
+    await backend.start(startOpts({ agentId: 'grok-build' }))
+    await backend.releaseRuntime('idle')
+
+    expect(aborted).toBe(true)
+    expect(backend.hasActiveRuntime()).toBe(false)
+  })
+
   it('emits provider_session_id so the renderer can copy the real agent id', async () => {
     const backend = new AcpBackend()
     const events: AgentEvent[] = []

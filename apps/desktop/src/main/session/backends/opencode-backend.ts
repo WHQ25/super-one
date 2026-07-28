@@ -47,6 +47,7 @@ export class OpenCodeBackend implements SessionBackend {
   readonly kind: HarnessId = 'opencode'
   private runtime: OpenCodeRuntime | null = null
   private runtimePromise: Promise<OpenCodeRuntime> | null = null
+  private runtimeAbortController: AbortController | null = null
   private runtimeEpoch = 0
   private opts: BackendStartOptions | null = null
   private config: OpenCodeRuntimeConfig = {}
@@ -70,6 +71,15 @@ export class OpenCodeBackend implements SessionBackend {
   private listeners = new Set<(event: AgentEvent) => void>()
   private providerSessionListeners = new Set<(id: string) => void>()
   private permissionModeListeners = new Set<(mode: PermissionMode) => void>()
+
+  hasActiveRuntime(): boolean {
+    return Boolean(this.runtime || this.runtimePromise)
+  }
+
+  async releaseRuntime(_reason: 'idle'): Promise<void> {
+    if (this.activeTurn || this.getPendingInteractions().length > 0) return
+    await this.closeRuntime()
+  }
 
   async start(opts: BackendStartOptions): Promise<void> {
     if (this.disposed) throw new Error('OpenCodeBackend already disposed')
@@ -105,8 +115,11 @@ export class OpenCodeBackend implements SessionBackend {
     if (this.runtimePromise) return this.runtimePromise
     if (!this.opts) throw new Error('OpenCodeBackend not configured')
     const epoch = this.runtimeEpoch
+    const abortController = new AbortController()
+    this.runtimeAbortController = abortController
     const opts = this.opts
     const promise = runtimeFactory({
+      signal: abortController.signal,
       sessionId: opts.sessionId,
       cwd: opts.cwd,
       providerSessionId: opts.providerSessionId,
@@ -133,6 +146,7 @@ export class OpenCodeBackend implements SessionBackend {
       return runtime
     }).finally(() => {
       if (this.runtimePromise === promise) this.runtimePromise = null
+      if (this.runtimeAbortController === abortController) this.runtimeAbortController = null
     })
     this.runtimePromise = promise
     return promise
@@ -202,12 +216,16 @@ export class OpenCodeBackend implements SessionBackend {
   private async closeRuntime(): Promise<void> {
     this.runtimeEpoch += 1
     const pending = this.runtimePromise
+    const abortController = this.runtimeAbortController
+    const runtime = this.runtime
     this.runtimePromise = null
-    const runtime = this.runtime ?? await pending?.catch(() => null) ?? null
+    this.runtimeAbortController = null
     this.runtime = null
-    if (runtime) await runtime.close().catch((error) => log.debug('[OpenCodeBackend] runtime close failed:', error))
     this.pendingPermissions.clear()
     this.pendingQuestions.clear()
+    abortController?.abort()
+    if (runtime) await runtime.close().catch((error) => log.debug('[OpenCodeBackend] runtime close failed:', error))
+    if (pending) await pending.catch(() => null)
   }
 
   private invalidateRuntime(): void {

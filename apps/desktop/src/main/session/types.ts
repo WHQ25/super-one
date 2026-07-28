@@ -208,6 +208,8 @@ export type SessionLifecycleEvent =
 
 export interface SessionBackend {
   readonly kind: HarnessId
+  hasActiveRuntime(): boolean
+  releaseRuntime(reason: 'idle'): Promise<void>
   start(opts: BackendStartOptions): Promise<void>
   rebuild(opts: BackendStartOptions): Promise<void>
   prewarm(opts: BackendStartOptions): void
@@ -227,8 +229,6 @@ export interface SessionBackend {
   setCodexGoal?(threadId: string, objective: string, status?: CodexGoalStatus): Promise<CodexGoal | null>
   clearCodexGoal?(threadId: string): Promise<boolean>
   stopTask?(taskId: string): Promise<void>
-  /** Foreground-visible sessions are exempt from idle-triggered runtime release. */
-  setForeground?(visible: boolean): void
   /**
    * Claude: push an SDK user message with origin `{ kind: 'task-notification' }`.
    * Other harnesses omit this and Session falls back to a normal send.
@@ -276,6 +276,9 @@ export interface Session {
   claim(owner: Extract<SessionOwner, { kind: 'remote' }>): void
   release(deviceId: string, reason?: SessionLeaveReason): void
   setForeground(visible: boolean): void
+  hasActiveRuntime(): boolean
+  isRuntimeIdle(now: number, timeoutMs: number): boolean
+  releaseRuntime(reason: 'idle'): Promise<void>
   subscribe(deviceId: string): void
   unsubscribe(deviceId: string, reason?: SessionLeaveReason): void
   onLifecycle(handler: (event: SessionLifecycleEvent) => void): () => void

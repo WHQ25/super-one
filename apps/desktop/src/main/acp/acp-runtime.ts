@@ -113,6 +113,7 @@ export interface AcpRuntime {
 }
 
 export interface AcpRuntimeOptions {
+  signal?: AbortSignal
   launch: AcpRuntimeLaunchConfig
   permission: AcpPermissionGate
   askUserQuestion?: AcpAskUserQuestionGate
@@ -185,6 +186,7 @@ function formatProcessExit(
 }
 
 export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRuntime> {
+  if (opts.signal?.aborted) throw new Error('ACP runtime initialization aborted')
   const launch = resolveAcpLaunch(opts.launch)
   const fsRoots = [launch.cwd, ...(opts.additionalRoots ?? [])].filter(Boolean)
   const terminalManager = new AcpTerminalManager({
@@ -225,6 +227,16 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
   let sessionModels: AcpModelConfig | null = null
   let agentCapabilities: AcpAgentCapabilities | null = null
   let mcpAttached = false
+
+  const abortError = new Error('ACP runtime initialization aborted')
+  const abortInitialization = () => {
+    try { terminalManager.dispose() } catch { /* ignore */ }
+    try { connection?.close(abortError) } catch { /* ignore */ }
+    try { disposeStream?.() } catch { /* ignore */ }
+    void processHandle?.kill().catch(() => undefined)
+  }
+  opts.signal?.addEventListener('abort', abortInitialization, { once: true })
+  if (opts.signal?.aborted) abortInitialization()
 
   try {
     // Custom (non-spec) methods require the 3-arg onRequest form with a params
@@ -466,6 +478,7 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       }
     }
   } catch (err) {
+    opts.signal?.removeEventListener('abort', abortInitialization)
     await processHandle?.kill().catch(() => undefined)
     disposeStream?.()
     connection?.close(err)
@@ -473,6 +486,8 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
     if (exitInfo) throw new Error(`${base}. ${formatProcessExit(exitInfo)}`)
     throw err
   }
+
+  opts.signal?.removeEventListener('abort', abortInitialization)
 
   const activeSession = session
   const activeConnection = connection

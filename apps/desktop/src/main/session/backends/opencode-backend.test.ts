@@ -123,6 +123,59 @@ describe('OpenCodeBackend', () => {
     setOpenCodeRuntimeFactory(null)
   })
 
+  it('releases an idle runtime through the shared runtime contract', async () => {
+    const backend = new OpenCodeBackend()
+    await backend.start(startOptions())
+    expect(backend.hasActiveRuntime()).toBe(true)
+
+    await backend.releaseRuntime('idle')
+
+    expect(close).toHaveBeenCalledOnce()
+    expect(backend.hasActiveRuntime()).toBe(false)
+  })
+
+  it('preserves a new runtime created while an old pending runtime is released', async () => {
+    const oldClose = vi.fn(async () => undefined)
+    const oldRuntime = { ...runtime, close: oldClose }
+    const newRuntime = runtime
+    let resolveOld!: (value: OpenCodeRuntime) => void
+    let callCount = 0
+    setOpenCodeRuntimeFactory(async (opts: OpenCodeRuntimeOptions) => {
+      route = opts.onEvent
+      callCount += 1
+      if (callCount === 1) return new Promise<OpenCodeRuntime>((resolve) => { resolveOld = resolve })
+      return newRuntime
+    })
+    const backend = new OpenCodeBackend()
+
+    backend.prewarm(startOptions())
+    const release = backend.releaseRuntime('idle')
+    await backend.start(startOptions())
+    resolveOld(oldRuntime)
+    await release
+
+    expect(oldClose).toHaveBeenCalledOnce()
+    expect(close).not.toHaveBeenCalled()
+    expect(backend.hasActiveRuntime()).toBe(true)
+  })
+
+  it('aborts a runtime initialization that never settles on its own', async () => {
+    let aborted = false
+    setOpenCodeRuntimeFactory(async (opts) => new Promise<OpenCodeRuntime>((_resolve, reject) => {
+      opts.signal?.addEventListener('abort', () => {
+        aborted = true
+        reject(new Error('aborted'))
+      }, { once: true })
+    }))
+    const backend = new OpenCodeBackend()
+
+    backend.prewarm(startOptions())
+    await backend.releaseRuntime('idle')
+
+    expect(aborted).toBe(true)
+    expect(backend.hasActiveRuntime()).toBe(false)
+  })
+
   it('maps assistant text, reasoning, tools and terminal metadata', async () => {
     const backend = new OpenCodeBackend()
     const events: AgentEvent[] = []

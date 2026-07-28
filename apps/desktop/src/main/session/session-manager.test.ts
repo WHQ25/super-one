@@ -52,8 +52,27 @@ class FakeBackend implements SessionBackend {
 
   constructor(kind: HarnessId) { this.kind = kind }
 
-  async start(_opts: BackendStartOptions): Promise<void> { this.started = true }
-  async send(_req: SendMessageRequest): Promise<void> {}
+  activeRuntime = false
+  releaseRuntimeCalls = 0
+  pendingInteractions: AgentEvent[] = []
+  activeBackgroundTasks = false
+  blockSend = false
+  resolveSend: (() => void) | null = null
+  hasActiveRuntime(): boolean { return this.activeRuntime }
+  async releaseRuntime(): Promise<void> {
+    this.releaseRuntimeCalls += 1
+    this.activeRuntime = false
+  }
+
+  async start(_opts: BackendStartOptions): Promise<void> {
+    this.started = true
+    this.activeRuntime = true
+  }
+  prewarm(): void { this.activeRuntime = true }
+  async rebuild(): Promise<void> { this.activeRuntime = true }
+  async send(_req: SendMessageRequest): Promise<void> {
+    if (this.blockSend) await new Promise<void>((resolve) => { this.resolveSend = resolve })
+  }
   async interrupt(): Promise<void> {}
   async close(): Promise<void> { this.disposed = true }
   async setModel(): Promise<void> {}
@@ -71,6 +90,9 @@ class FakeBackend implements SessionBackend {
   async toggleMcpServer(): Promise<void> {}
   async reloadMcpServers(): Promise<void> {}
   async reloadPlugins() { return false }
+  dequeueMessage(): boolean { return false }
+  getPendingInteractions(): AgentEvent[] { return this.pendingInteractions }
+  hasActiveBackgroundTasks(): boolean { return this.activeBackgroundTasks }
   onEvent(h: (e: AgentEvent) => void) { this.eventListeners.add(h); return () => { this.eventListeners.delete(h) } }
   onProviderSessionId(h: (id: string) => void) { this.providerSessionIdListeners.add(h); return () => { this.providerSessionIdListeners.delete(h) } }
   onPermissionModeApplied() { return () => {} }
@@ -94,6 +116,7 @@ vi.mock('./harness-registry', () => ({
 }))
 
 import { SessionManagerImpl } from './session-manager'
+import { getRuntimeIdleTimeoutMs } from './session-runtime-policy'
 
 function seedProvider(id: string, harnessId: HarnessId = 'claude'): SessionProvider {
   const provider: SessionProvider = {
@@ -120,6 +143,98 @@ describe('SessionManager', () => {
     seedProvider('claude-base', 'claude')
     seedProvider('codex-base', 'codex')
     mgr = new SessionManagerImpl()
+  })
+
+  describe('runtime idle release', () => {
+    it.each([
+      [0, 20],
+      [1, 20],
+      [4, 20],
+      [5, 10],
+      [8, 10],
+      [9, 5],
+    ])('uses %i active runtimes => %i minute timeout', (activeCount, minutes) => {
+      expect(getRuntimeIdleTimeoutMs(activeCount)).toBe(minutes * 60_000)
+    })
+
+    it.each([
+      [4, 20],
+      [5, 10],
+      [8, 10],
+      [9, 5],
+    ])('releases %i idle runtimes after %i minutes', async (runtimeCount, minutes) => {
+      const sessions = Array.from({ length: runtimeCount }, (_, index) => {
+        const session = mgr.createSession({
+          id: `runtime-${runtimeCount}-${index}`,
+          projectPath: `/p-${index}`,
+          providerId: 'claude-base',
+        })
+        session.prewarm()
+        return session
+      })
+      const now = Date.now()
+
+      await mgr.reapIdleRuntimes(now + (minutes - 1) * 60_000)
+      expect(hoisted.backendsCreated.every((backend) => (backend as FakeBackend).releaseRuntimeCalls === 0)).toBe(true)
+
+      await mgr.reapIdleRuntimes(now + minutes * 60_000)
+      expect(hoisted.backendsCreated.every((backend) => (backend as FakeBackend).releaseRuntimeCalls === 1)).toBe(true)
+      expect(sessions.every((session) => !session.hasActiveRuntime())).toBe(true)
+    })
+
+    it('counts only sessions that currently hold a runtime', async () => {
+      const sessions = Array.from({ length: 5 }, (_, index) => mgr.createSession({
+        id: `mixed-${index}`,
+        projectPath: `/mixed-${index}`,
+        providerId: 'claude-base',
+      }))
+      sessions.slice(0, 4).forEach((session) => session.prewarm())
+      const now = Date.now()
+
+      await mgr.reapIdleRuntimes(now + 10 * 60_000)
+      expect(hoisted.backendsCreated.every((backend) => (backend as FakeBackend).releaseRuntimeCalls === 0)).toBe(true)
+
+      await mgr.reapIdleRuntimes(now + 20 * 60_000)
+      expect(hoisted.backendsCreated.slice(0, 4).every((backend) => (backend as FakeBackend).releaseRuntimeCalls === 1)).toBe(true)
+      expect((hoisted.backendsCreated[4] as FakeBackend).releaseRuntimeCalls).toBe(0)
+    })
+
+    it('never releases a foreground session', async () => {
+      const session = mgr.createSession({ id: 'foreground', projectPath: '/foreground', providerId: 'claude-base' })
+      session.prewarm()
+      session.setForeground(true)
+
+      await mgr.reapIdleRuntimes(Date.now() + 60 * 60_000)
+      expect((hoisted.backendsCreated[0] as FakeBackend).releaseRuntimeCalls).toBe(0)
+
+      session.setForeground(false)
+      await mgr.reapIdleRuntimes(Date.now() + 60 * 60_000)
+      expect((hoisted.backendsCreated[0] as FakeBackend).releaseRuntimeCalls).toBe(1)
+    })
+
+    it('does not release streaming, pending-interaction, or background-task sessions', async () => {
+      const streaming = mgr.createSession({ id: 'streaming', projectPath: '/streaming', providerId: 'claude-base' })
+      const pending = mgr.createSession({ id: 'pending', projectPath: '/pending', providerId: 'claude-base' })
+      const background = mgr.createSession({ id: 'background', projectPath: '/background', providerId: 'claude-base' })
+      pending.prewarm()
+      background.prewarm()
+      const streamingBackend = hoisted.backendsCreated[0] as FakeBackend
+      const pendingBackend = hoisted.backendsCreated[1] as FakeBackend
+      const backgroundBackend = hoisted.backendsCreated[2] as FakeBackend
+      pendingBackend.pendingInteractions = [{ type: 'status_change', status: 'idle' } as AgentEvent]
+      streamingBackend.blockSend = true
+      backgroundBackend.activeBackgroundTasks = true
+
+      const send = streaming.send({ content: 'still running' })
+      await vi.waitFor(() => expect(streamingBackend.resolveSend).not.toBeNull())
+      await mgr.reapIdleRuntimes(Date.now() + 60 * 60_000)
+
+      expect(streamingBackend.releaseRuntimeCalls).toBe(0)
+      expect(pendingBackend.releaseRuntimeCalls).toBe(0)
+      expect(backgroundBackend.releaseRuntimeCalls).toBe(0)
+      streamingBackend.resolveSend?.()
+      await send
+    })
   })
 
   describe('createSession', () => {

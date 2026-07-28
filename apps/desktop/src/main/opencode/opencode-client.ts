@@ -472,6 +472,7 @@ async function waitForServer(
   child: ChildProcessWithoutNullStreams,
   exited: Promise<{ code: number | null; signal: NodeJS.Signals | null }>,
   timeoutMs: number,
+  signal?: AbortSignal,
 ): Promise<string> {
   let output = ''
   return new Promise<string>((resolve, reject) => {
@@ -482,6 +483,7 @@ async function waitForServer(
       clearTimeout(timer)
       child.stdout.off('data', onData)
       child.stderr.off('data', onData)
+      signal?.removeEventListener('abort', onAbort)
       if (error) reject(error)
       else resolve(url!)
     }
@@ -490,11 +492,14 @@ async function waitForServer(
       const match = output.match(/^opencode server listening.*?\s+(https?:\/\/[^\s]+)/im)
       if (match?.[1]) finish(undefined, match[1])
     }
+    const onAbort = () => finish(new Error('OpenCode server startup aborted'))
     const timer = setTimeout(() => finish(new Error(`Timed out waiting for OpenCode server: ${output.trim()}`)), timeoutMs)
     child.stdout.on('data', onData)
     child.stderr.on('data', onData)
     child.once('error', (error) => finish(error))
     void exited.then(({ code, signal }) => finish(new Error(`OpenCode server exited (${code ?? signal ?? 'unknown'}): ${output.trim()}`)))
+    signal?.addEventListener('abort', onAbort, { once: true })
+    if (signal?.aborted) onAbort()
   })
 }
 
@@ -554,6 +559,7 @@ export async function startOpenCodeServer(opts: {
   env?: Record<string, string>
   serverUrl?: string | null
   timeoutMs?: number
+  signal?: AbortSignal
 }): Promise<OpenCodeServerHandle> {
   if (opts.serverUrl?.trim()) {
     return { url: opts.serverUrl.trim().replace(/\/$/, ''), exited: null, close: async () => undefined }
@@ -580,7 +586,7 @@ export async function startOpenCodeServer(opts: {
     child.once('close', finish)
   })
   try {
-    const url = await waitForServer(child, exited, opts.timeoutMs ?? 10000)
+    const url = await waitForServer(child, exited, opts.timeoutMs ?? 10000, opts.signal)
     let closePromise: Promise<void> | null = null
     const handle: OpenCodeServerHandle = {
       url: url.replace(/\/$/, ''),

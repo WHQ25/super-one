@@ -37,14 +37,6 @@ import { ensureProxy, type ProxyUpstream } from '../../providers/llm-proxy-manag
 import { getSandboxCapability } from '../../sandbox-platform'
 import { listSkills } from '../../skills-service'
 import { hasRunningDownloadTasks } from '../../browser/browser-download-tasks'
-import {
-  getActiveRuntimeCount,
-  IDLE_RUNTIME_TIMEOUT_MS,
-  MIN_ACTIVE_RUNTIMES_FOR_IDLE_RELEASE,
-  registerActiveRuntime,
-  resetActiveRuntimeRegistryForTests,
-  unregisterActiveRuntime,
-} from '../active-runtime-registry'
 
 interface ClaudeConfig {
   apiKey?: string
@@ -84,31 +76,14 @@ export class ClaudeBackend implements SessionBackend {
 
   private get warmupManager() { return getGlobalWarmupManager() }
 
-  private _lastActiveAt: number | null = null
   private _lastStartOpts: BackendStartOptions | null = null
   private _spawnedAdditionalDirs: string[] = []
   private activeBackgroundTasks: Map<string, BackgroundTaskInfo> | null = null
-  private _idleTimer: ReturnType<typeof setInterval> | null = null
   private _proxyBaseUrl: string | null = null
   private _activeRuntimeKey: string | null = null
 
-  static IDLE_TIMEOUT_MS = IDLE_RUNTIME_TIMEOUT_MS
-  static IDLE_CHECK_INTERVAL_MS = 30_000
-  static MIN_ACTIVE_SESSIONS_FOR_IDLE_RELEASE = MIN_ACTIVE_RUNTIMES_FOR_IDLE_RELEASE
-
-  static get activeRuntimeCount(): number {
-    return getActiveRuntimeCount()
-  }
-
-  static _resetActiveRuntimesForTests(): void {
-    resetActiveRuntimeRegistryForTests()
-  }
-
-  private _foreground = false
-
-  /** Foreground-visible sessions (mosaic tile, mini window, or the active single-mode pane) never idle-release. */
-  setForeground(visible: boolean): void {
-    this._foreground = visible
+  hasActiveRuntime(): boolean {
+    return Boolean(this.bridge && this.query)
   }
 
   private ensurePermissionHandles(): { canUseTool: CanUseTool; trackPlanFile: (filePath: string) => void } {
@@ -229,33 +204,6 @@ export class ClaudeBackend implements SessionBackend {
     this.spawnAbortController = handle.spawnAbortController
     this.activeBackgroundTasks = handle.activeBackgroundTasks ?? null
     this._activeRuntimeKey = WarmupManager.keyOf(buildClaudeOptions(queryOptions))
-    this._lastActiveAt = Date.now()
-    registerActiveRuntime(this, () => Boolean(this.bridge && this.query))
-    this.startIdleTimer()
-  }
-
-  private startIdleTimer(): void {
-    this.stopIdleTimer()
-    log.info('[ClaudeBackend.idle-diag] timer start sid=%s timeoutMs=%d intervalMs=%d', this._lastStartOpts?.sessionId, ClaudeBackend.IDLE_TIMEOUT_MS, ClaudeBackend.IDLE_CHECK_INTERVAL_MS)
-    this._idleTimer = setInterval(() => {
-      if (!this.isRuntimeIdle(ClaudeBackend.IDLE_TIMEOUT_MS)) return
-      const activeCount = ClaudeBackend.activeRuntimeCount
-      if (activeCount < ClaudeBackend.MIN_ACTIVE_SESSIONS_FOR_IDLE_RELEASE) {
-        log.info('[ClaudeBackend.idle-diag] skip release, active sessions below threshold sid=%s activeCount=%d', this._lastStartOpts?.sessionId, activeCount)
-        return
-      }
-      log.info('[ClaudeBackend.idle-diag] eligible sid=%s elapsedMs=%d activeCount=%d', this._lastStartOpts?.sessionId, this._lastActiveAt ? Date.now() - this._lastActiveAt : -1, activeCount)
-      void this.releaseRuntime('idle').catch((err) => {
-        log.debug('[ClaudeBackend] idle release error:', err)
-      })
-    }, ClaudeBackend.IDLE_CHECK_INTERVAL_MS)
-  }
-
-  private stopIdleTimer(): void {
-    if (this._idleTimer) {
-      clearInterval(this._idleTimer)
-      this._idleTimer = null
-    }
   }
 
   /**
@@ -266,7 +214,6 @@ export class ClaudeBackend implements SessionBackend {
   async injectTaskNotification(content: string): Promise<void> {
     await this.ensureRuntime()
     if (!this.bridge) throw new Error('ClaudeBackend not started')
-    this._lastActiveAt = Date.now()
     const userMsg: SDKUserMessage = {
       type: 'user',
       message: { role: 'user', content },
@@ -287,7 +234,6 @@ export class ClaudeBackend implements SessionBackend {
   async send(request: SendMessageRequest): Promise<void> {
     await this.ensureRuntime()
     if (!this.bridge || !this.query) throw new Error('ClaudeBackend not started')
-    this._lastActiveAt = Date.now()
 
     const isQueued = request.priority === 'next'
     if (isQueued) {
@@ -350,7 +296,6 @@ export class ClaudeBackend implements SessionBackend {
 
   async interrupt(): Promise<void> {
     this.interrupted = true
-    this._lastActiveAt = Date.now()
     this.pendingQueued = []
     rejectAllPending(this.pendingPermissions, this.pendingQuestions, this.pendingPlanApprovals, this.pendingElicitations, 'backend.interrupt')
     if (this.query) {
@@ -362,14 +307,22 @@ export class ClaudeBackend implements SessionBackend {
 
   async close(): Promise<void> {
     await this.releaseRuntime('close')
-    unregisterActiveRuntime(this)
     this.eventListeners.clear()
     this.providerSessionIdListeners.clear()
     this.permissionModeAppliedListeners.clear()
   }
 
-  private async releaseRuntime(reason: 'idle' | 'rebuild' | 'close'): Promise<void> {
+  async releaseRuntime(reason: 'idle' | 'rebuild' | 'close'): Promise<void> {
     if (!this.bridge && !this.query) return
+    if (reason === 'idle' && (
+      this.pendingPermissions.size > 0
+      || this.pendingQuestions.size > 0
+      || this.pendingPlanApprovals.size > 0
+      || this.pendingElicitations.size > 0
+      || this.turnResolves.size > 0
+      || this.pendingQueued.length > 0
+      || this.hasActiveBackgroundTasks()
+    )) return
     const liveTasks = this.activeBackgroundTasks
     this.activeBackgroundTasks = null
     if (reason !== 'close' && liveTasks && liveTasks.size > 0) {
@@ -398,8 +351,6 @@ export class ClaudeBackend implements SessionBackend {
     this.iterationDone = null
     this.spawnAbortController = null
     this._activeRuntimeKey = null
-    this._lastActiveAt = null
-    this.stopIdleTimer()
     for (const resolve of this.turnResolves.values()) resolve()
     this.turnResolves.clear()
     this.pendingQueued = []
@@ -668,21 +619,6 @@ export class ClaudeBackend implements SessionBackend {
     return this.providerSessionId
   }
 
-  isRuntimeIdle(timeoutMs: number): boolean {
-    if (this._foreground) return false
-    if (!this.bridge || !this.query) return false
-    if (this._lastActiveAt == null) return false
-    if (Date.now() - this._lastActiveAt < timeoutMs) return false
-    if (this.pendingPermissions.size > 0) return false
-    if (this.pendingQuestions.size > 0) return false
-    if (this.pendingPlanApprovals.size > 0) return false
-    if (this.pendingElicitations.size > 0) return false
-    if (this.turnResolves.size > 0) return false
-    if (this.pendingQueued.length > 0) return false
-    if (this.hasActiveBackgroundTasks()) return false
-    return true
-  }
-
   hasActiveBackgroundTasks(): boolean {
     if ((this.activeBackgroundTasks?.size ?? 0) > 0) return true
     const sid = this._lastStartOpts?.sessionId
@@ -690,7 +626,6 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   private emit(event: AgentEvent): void {
-    this._lastActiveAt = Date.now()
     if (event.type === 'permission_request') {
       log.info('[ClaudeBackend.emit] permission_request listeners=%d requestId=%s', this.eventListeners.size, event.request.requestId)
     }

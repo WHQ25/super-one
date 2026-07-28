@@ -32,17 +32,27 @@ class FakeBackend implements SessionBackend {
   async start(opts: BackendStartOptions): Promise<void> {
     if (this.startShouldFail) throw this.startShouldFail
     this.started = true
+    this.activeRuntime = true
     this.startOpts = opts
   }
 
   prewarmCalls: BackendStartOptions[] = []
+  activeRuntime = false
+  releaseRuntimeCalls = 0
+  hasActiveRuntime(): boolean { return this.activeRuntime }
+  async releaseRuntime(): Promise<void> {
+    this.releaseRuntimeCalls += 1
+    this.activeRuntime = false
+  }
   prewarm(opts: BackendStartOptions): void {
     this.prewarmCalls.push(opts)
+    this.activeRuntime = true
   }
 
   rebuildCalls: BackendStartOptions[] = []
   async rebuild(opts: BackendStartOptions): Promise<void> {
     this.rebuildCalls.push(opts)
+    this.activeRuntime = true
     this.startOpts = opts
   }
 
@@ -97,10 +107,6 @@ class FakeBackend implements SessionBackend {
   stopTaskCalls: string[] = []
   async stopTask(taskId: string): Promise<void> {
     this.stopTaskCalls.push(taskId)
-  }
-  setForegroundCalls: boolean[] = []
-  setForeground(visible: boolean): void {
-    this.setForegroundCalls.push(visible)
   }
   respondToPermission(): boolean { return true }
   respondToQuestion(): void {}
@@ -572,31 +578,33 @@ describe('Session state machine', () => {
   })
 
   describe('setForeground', () => {
-    it('forwards true/false to backend on the first mount and last unmount', () => {
+    it('keeps a visible runtime out of idle release', () => {
+      backend.activeRuntime = true
       session.setForeground(true)
+      expect(session.isRuntimeIdle(Date.now() + 60_000, 0)).toBe(false)
       session.setForeground(false)
-      expect(backend.setForegroundCalls).toEqual([true, false])
+      expect(session.isRuntimeIdle(Date.now() + 60_000, 0)).toBe(true)
     })
 
     it('ref-counts across multiple simultaneous viewers (e.g. mosaic tile + mini window)', () => {
-      session.setForeground(true) // first viewer mounts
-      session.setForeground(true) // second viewer mounts
-      expect(backend.setForegroundCalls).toEqual([true]) // only one transition so far
+      backend.activeRuntime = true
+      session.setForeground(true)
+      session.setForeground(true)
+      session.setForeground(false)
+      expect(session.isRuntimeIdle(Date.now() + 60_000, 0)).toBe(false)
 
-      session.setForeground(false) // first viewer unmounts — second still visible
-      expect(backend.setForegroundCalls).toEqual([true]) // no change forwarded
-
-      session.setForeground(false) // second viewer unmounts — now truly hidden
-      expect(backend.setForegroundCalls).toEqual([true, false])
+      session.setForeground(false)
+      expect(session.isRuntimeIdle(Date.now() + 60_000, 0)).toBe(true)
     })
 
     it('does not go negative when unmounted more times than mounted', () => {
+      backend.activeRuntime = true
       session.setForeground(false)
       session.setForeground(false)
-      expect(backend.setForegroundCalls).toEqual([])
+      expect(session.isRuntimeIdle(Date.now() + 60_000, 0)).toBe(true)
 
       session.setForeground(true)
-      expect(backend.setForegroundCalls).toEqual([true])
+      expect(session.isRuntimeIdle(Date.now() + 60_000, 0)).toBe(false)
     })
   })
 

@@ -40,6 +40,7 @@ export type OpenCodeRuntimeEvent = OpenCodeEvent | {
 }
 
 export interface OpenCodeRuntimeOptions {
+  signal?: AbortSignal
   sessionId: string
   cwd: string
   config: OpenCodeRuntimeConfig
@@ -131,6 +132,28 @@ async function closeServer(server: OpenCodeServerHandle): Promise<void> {
   await server.close().catch(() => undefined)
 }
 
+function withAbortSignal<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return promise
+  if (signal.aborted) return Promise.reject(new Error('OpenCode runtime initialization aborted'))
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => {
+      signal.removeEventListener('abort', onAbort)
+      reject(new Error('OpenCode runtime initialization aborted'))
+    }
+    signal.addEventListener('abort', onAbort, { once: true })
+    promise.then(
+      (value) => {
+        signal.removeEventListener('abort', onAbort)
+        resolve(value)
+      },
+      (error) => {
+        signal.removeEventListener('abort', onAbort)
+        reject(error)
+      },
+    )
+  })
+}
+
 async function syncMcpServers(
   client: OpenCodeClient,
   cwd: string,
@@ -167,24 +190,31 @@ export async function createOpenCodeRuntime(opts: OpenCodeRuntimeOptions): Promi
     env: opts.config.env,
     serverUrl: opts.config.serverUrl,
     timeoutMs: opts.config.startupTimeoutMs,
+    signal: opts.signal,
   })
   let closing = false
   try {
     const client = new OpenCodeClient({ baseUrl: server.url, directory: opts.cwd, password: opts.config.serverPassword })
-    let mcpNames = await syncMcpServers(client, opts.cwd, opts.sessionId, new Set())
-    const [providers, agents, commands] = await Promise.all([client.providerList(), client.agents(), client.commands()])
+    let mcpNames = await withAbortSignal(syncMcpServers(client, opts.cwd, opts.sessionId, new Set()), opts.signal)
+    const [providers, agents, commands] = await withAbortSignal(
+      Promise.all([client.providerList(), client.agents(), client.commands()]),
+      opts.signal,
+    )
     const permission = buildOpenCodePermissionRules(opts.permissionMode)
     const session = opts.providerSessionId
       ? { id: opts.providerSessionId }
-      : await client.createSession(permission)
-    if (opts.providerSessionId) await client.updatePermission(session.id, permission)
+      : await withAbortSignal(client.createSession(permission), opts.signal)
+    if (opts.providerSessionId) await withAbortSignal(client.updatePermission(session.id, permission), opts.signal)
 
     const abortController = new AbortController()
-    const [stream, initialTodos, pendingInteractions] = await Promise.all([
-      client.eventStream(abortController.signal),
-      client.todos(session.id).catch(() => []),
-      client.pendingInteractions(session.id).catch(() => ({ permissions: [], questions: [] })),
-    ])
+    const [stream, initialTodos, pendingInteractions] = await withAbortSignal(
+      Promise.all([
+        client.eventStream(abortController.signal),
+        client.todos(session.id).catch(() => []),
+        client.pendingInteractions(session.id).catch(() => ({ permissions: [], questions: [] })),
+      ]),
+      opts.signal,
+    )
     const subscriptionPromise = (async () => {
       try {
         for await (const event of stream) {

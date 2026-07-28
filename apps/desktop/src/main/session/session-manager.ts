@@ -11,6 +11,10 @@ import { getSessionProvider } from './session-provider-repo'
 import { ProjectResourceCache } from './project-resource-cache'
 import { cancelMcpReload } from '../mcp/mcp-reload-scheduler'
 import { Session } from './session'
+import {
+  getRuntimeIdleTimeoutMs,
+  SESSION_RUNTIME_REAPER_INTERVAL_MS,
+} from './session-runtime-policy'
 import type {
   LiveSessionSnapshot,
   ProjectResources,
@@ -65,6 +69,8 @@ export class SessionManagerImpl implements SessionManagerContract {
   private sessionListeners = new Set<(session: SessionContract) => void>()
   private perSessionUnsub = new Map<string, () => void>()
   private persistence: SessionManagerPersistence
+  private runtimeReleases = new Set<string>()
+  private runtimeReaperTimer: ReturnType<typeof setInterval> | null = null
 
   constructor(persistence: SessionManagerPersistence = {}) {
     this.persistence = persistence
@@ -381,6 +387,7 @@ export class SessionManagerImpl implements SessionManagerContract {
     }
     const projectPath = this.sessionProjects.get(sessionId)
     this.sessions.delete(sessionId)
+    this.runtimeReleases.delete(sessionId)
     this.sessionProjects.delete(sessionId)
     this.scopedListeners.delete(sessionId)
     if (projectPath && this.activeByProject.get(projectPath) === sessionId) {
@@ -412,6 +419,7 @@ export class SessionManagerImpl implements SessionManagerContract {
     // unregisterSessionAllApps above emits tools-changed, which re-arms the debounced
     // MCP reload for this (now-disposed) session — cancel it last so it never fires.
     cancelMcpReload(sessionId)
+    if (this.sessions.size === 0) this.stopRuntimeReaper()
   }
 
   async disposeAllSessions(): Promise<void> {
@@ -457,9 +465,56 @@ export class SessionManagerImpl implements SessionManagerContract {
     this.sessionProjects.set(session.id, projectPath)
     const unsub = session.on((event) => this.dispatch(session.id, event))
     this.perSessionUnsub.set(session.id, unsub)
+    this.startRuntimeReaper()
     for (const cb of this.sessionListeners) {
       try { cb(session) } catch (err) { log.warn('[SessionManager] sessionCreated handler error:', err) }
     }
+  }
+
+  async reapIdleRuntimes(now = Date.now()): Promise<void> {
+    const activeRuntimeCount = Array.from(this.sessions.values())
+      .filter((session) => session.hasActiveRuntime())
+      .length
+    if (activeRuntimeCount === 0) return
+
+    const timeoutMs = getRuntimeIdleTimeoutMs(activeRuntimeCount)
+    const releases: Promise<void>[] = []
+    for (const session of this.sessions.values()) {
+      if (this.runtimeReleases.has(session.id)) continue
+      if (!session.isRuntimeIdle(now, timeoutMs)) continue
+      this.runtimeReleases.add(session.id)
+      releases.push(session.releaseRuntime('idle')
+        .then(() => {
+          log.info(
+            '[SessionManager] released idle runtime sid=%s harness=%s activeRuntimeCount=%d timeoutMs=%d',
+            session.id,
+            session.snapshot.harnessId,
+            activeRuntimeCount,
+            timeoutMs,
+          )
+        })
+        .catch((err) => {
+          log.debug('[SessionManager] idle runtime release failed sid=%s:', session.id, err)
+        })
+        .finally(() => {
+          this.runtimeReleases.delete(session.id)
+        }))
+    }
+    await Promise.all(releases)
+  }
+
+  private startRuntimeReaper(): void {
+    if (this.runtimeReaperTimer) return
+    this.runtimeReaperTimer = setInterval(() => {
+      void this.reapIdleRuntimes()
+    }, SESSION_RUNTIME_REAPER_INTERVAL_MS)
+    ;(this.runtimeReaperTimer as { unref?: () => void }).unref?.()
+  }
+
+  private stopRuntimeReaper(): void {
+    if (!this.runtimeReaperTimer) return
+    clearInterval(this.runtimeReaperTimer)
+    this.runtimeReaperTimer = null
   }
 
   private dispatch(sessionId: string, event: AgentEvent): void {

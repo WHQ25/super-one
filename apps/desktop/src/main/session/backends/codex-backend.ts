@@ -46,14 +46,6 @@ import {
 } from '../../codex/codex-turn'
 import { CodexGoalController } from '../../codex/codex-goal-controller'
 import type { BackendCommand, BackendStartOptions, HarnessId, SessionBackend } from '../types'
-import {
-  getActiveRuntimeCount,
-  IDLE_RUNTIME_TIMEOUT_MS,
-  MIN_ACTIVE_RUNTIMES_FOR_IDLE_RELEASE,
-  registerActiveRuntime,
-  resetActiveRuntimeRegistryForTests,
-  unregisterActiveRuntime,
-} from '../active-runtime-registry'
 
 export interface CodexRunStreamCallbacksDeps {
   onThreadStarted?: (threadId: string) => void
@@ -68,7 +60,6 @@ export interface CodexServiceDeps {
   onAuthChanged(projectPath: string, cb: () => void): () => void
   prewarmAppServerConnection?(projectPath: string): void
   takeAppServerConnection?(projectPath: string, auth: CodexProjectAuth, apiProviderId?: string | null): Promise<AppServerConnectionHandle | null>
-  releaseAppServerConnection?(projectPath: string, auth: CodexProjectAuth, handle: AppServerConnectionHandle, apiProviderId?: string | null): void
 }
 
 interface CodexBackendConfig {
@@ -197,26 +188,13 @@ export class CodexBackend implements SessionBackend {
   private authChangedUnsub: (() => void) | null = null
 
   private warmHandlePromise: Promise<WarmCodexHandle | null> | null = null
-  private warmIdleTimer: ReturnType<typeof setTimeout> | null = null
-  static WARM_IDLE_TIMEOUT_MS = 10 * 60 * 1000
 
   private eventListeners = new Set<(e: AgentEvent) => void>()
   private providerSessionIdListeners = new Set<(id: string) => void>()
 
-  private _lastActiveAt: number | null = null
-  private _idleTimer: ReturnType<typeof setInterval> | null = null
-  private _foreground = false
 
-  static IDLE_TIMEOUT_MS = IDLE_RUNTIME_TIMEOUT_MS
-  static IDLE_CHECK_INTERVAL_MS = 30_000
-  static MIN_ACTIVE_SESSIONS_FOR_IDLE_RELEASE = MIN_ACTIVE_RUNTIMES_FOR_IDLE_RELEASE
-
-  static get activeRuntimeCount(): number {
-    return getActiveRuntimeCount()
-  }
-
-  static _resetActiveRuntimesForTests(): void {
-    resetActiveRuntimeRegistryForTests()
+  hasActiveRuntime(): boolean {
+    return Boolean(this.session?.connectionHandle || this.warmHandlePromise)
   }
 
   constructor(service?: CodexServiceDeps) {
@@ -301,57 +279,11 @@ export class CodexBackend implements SessionBackend {
       this.handleAuthChanged()
     })
     this.started = true
-    this._lastActiveAt = Date.now()
-    registerActiveRuntime(this, () => Boolean(this.session?.connectionHandle))
-    this.startIdleTimer()
-  }
-
-  setForeground(visible: boolean): void {
-    this._foreground = visible
-  }
-
-  isRuntimeIdle(timeoutMs: number): boolean {
-    if (this._foreground) return false
-    if (!this.started || this.disposed) return false
-    const session = this.session
-    if (!session) return false
-    if (!session.connectionHandle) return false
-    if (session.runningController) return false
-    if (this.activeRun) return false
-    if (session.forkListeners && session.forkListeners.size > 0) return false
-    if (this._lastActiveAt == null) return false
-    if (Date.now() - this._lastActiveAt < timeoutMs) return false
-    return true
-  }
-
-  private startIdleTimer(): void {
-    this.stopIdleTimer()
-    this._idleTimer = setInterval(() => {
-      if (!this.isRuntimeIdle(CodexBackend.IDLE_TIMEOUT_MS)) return
-      if (CodexBackend.activeRuntimeCount < CodexBackend.MIN_ACTIVE_SESSIONS_FOR_IDLE_RELEASE) return
-      const released = this.releaseIdleConnectionToProjectPool()
-      if (released) {
-        this._lastActiveAt = null
-        trace('backend.lifecycle', 'runtime_released', { reason: 'idle', backend: 'codex' })
-      }
-    }, CodexBackend.IDLE_CHECK_INTERVAL_MS)
-  }
-
-  private stopIdleTimer(): void {
-    if (this._idleTimer) {
-      clearInterval(this._idleTimer)
-      this._idleTimer = null
-    }
   }
 
   prewarm(opts: BackendStartOptions): void {
     if (this.started || this.disposed) return
     if (this.warmHandlePromise) {
-      // Keepalive re-entry: extend the idle window on continued typing so the
-      // warm handle expires WARM_IDLE_TIMEOUT_MS after the LAST input, mirroring
-      // the Claude WarmupManager. Only re-arm once the handle is actually ready
-      // (warmIdleTimer is null while still warming — it gets armed on resolve).
-      if (this.warmIdleTimer) this.armWarmIdleTimer(this.warmHandlePromise)
       return
     }
     const auth = this.service.getProjectAuth(opts.projectPath)
@@ -363,34 +295,12 @@ export class CodexBackend implements SessionBackend {
       return null
     })
     this.warmHandlePromise = promise
-    void promise.then((warm) => {
-      if (!warm) return
-      if (this.warmHandlePromise !== promise) return
-      this.armWarmIdleTimer(promise)
-    })
-  }
-
-  private armWarmIdleTimer(promise: Promise<WarmCodexHandle | null>): void {
-    this.clearWarmIdleTimer()
-    this.warmIdleTimer = setTimeout(() => {
-      if (this.warmHandlePromise !== promise) return
-      log.info('[CodexBackend] warm handle idle timeout, discarding')
-      void this.discardWarmHandle('idle_timeout')
-    }, CodexBackend.WARM_IDLE_TIMEOUT_MS)
-  }
-
-  private clearWarmIdleTimer(): void {
-    if (this.warmIdleTimer) {
-      clearTimeout(this.warmIdleTimer)
-      this.warmIdleTimer = null
-    }
   }
 
   private async discardWarmHandle(_reason: string): Promise<void> {
     const promise = this.warmHandlePromise
     if (!promise) return
     this.warmHandlePromise = null
-    this.clearWarmIdleTimer()
     try {
       const warm = await promise
       if (warm) await warm.handle.close()
@@ -472,7 +382,6 @@ export class CodexBackend implements SessionBackend {
     const currentAuth = this.service.getProjectAuth(startOpts.projectPath)
     let warm: WarmCodexHandle | null = null
     if (this.warmHandlePromise) {
-      this.clearWarmIdleTimer()
       warm = await this.warmHandlePromise.catch(() => null)
     } else if (this.service.takeAppServerConnection) {
       const handle = await this.service.takeAppServerConnection(startOpts.projectPath, currentAuth, startOpts.apiProviderId ?? null).catch(() => null)
@@ -513,16 +422,31 @@ export class CodexBackend implements SessionBackend {
     }, startOpts.sessionId)
   }
 
-  private releaseIdleConnectionToProjectPool(): boolean {
+  async releaseRuntime(_reason: 'idle'): Promise<void> {
     const session = this.session
-    const startOpts = this.startOpts
-    if (!session || !startOpts || session.runningController || this.goalController.active) return false
-    const handle = session.connectionHandle
-    const auth = session.connectionAuth
-    if (!handle || !auth || !this.service.releaseAppServerConnection) return false
-    tearDownForkRuntime(session, 'connection released to pool')
-    this.service.releaseAppServerConnection(startOpts.projectPath, auth, handle, startOpts.apiProviderId ?? null)
-    return true
+    if (this.activeRun || this.goalController.active || session?.runningController) return
+    if (session?.forkListeners && session.forkListeners.size > 0) return
+    const handle = session?.connectionHandle ?? null
+    await this.discardWarmHandle('idle')
+    if (handle && session?.connectionHandle === handle && (
+      this.activeRun || this.goalController.active || session.runningController
+    )) return
+    await this.closeRuntimeConnection('idle release', handle)
+    trace('backend.lifecycle', 'runtime_released', { reason: 'idle', backend: 'codex' })
+  }
+
+  private async closeRuntimeConnection(
+    reason: string,
+    handle: AppServerConnectionHandle | null = this.session?.connectionHandle ?? null,
+  ): Promise<void> {
+    const session = this.session
+    if (!handle) return
+    if (session?.connectionHandle === handle) tearDownForkRuntime(session, reason)
+    try {
+      await handle.close()
+    } catch (err) {
+      log.warn('[CodexBackend] close connection during %s failed: %s', reason, err instanceof Error ? err.message : String(err))
+    }
   }
 
   async rebuild(opts: BackendStartOptions): Promise<void> {
@@ -599,7 +523,6 @@ export class CodexBackend implements SessionBackend {
     }
     if (this.goalController.active) throw new Error('Codex goal is active')
     const resumePausedGoal = this.goalController.goal?.status === 'paused'
-    this._lastActiveAt = Date.now()
     const startOpts = this.startOpts
     if (!startOpts) throw new Error('CodexBackend missing startOpts')
 
@@ -751,7 +674,6 @@ export class CodexBackend implements SessionBackend {
 
   async interrupt(): Promise<void> {
     if (!this.started) return
-    this._lastActiveAt = Date.now()
     if (this.goalController.goal?.status === 'active' || this.goalController.active) {
       try {
         await this.goalController.pause()
@@ -764,17 +686,15 @@ export class CodexBackend implements SessionBackend {
 
   async close(): Promise<void> {
     if (this.disposed) return
-    this.stopIdleTimer()
-    this._lastActiveAt = null
     this.goalController.stop()
     const session = this.session
     try {
-      if (session && !this.releaseIdleConnectionToProjectPool()) resetCodexSession(session)
+      if (session && (session.runningController || this.activeRun)) resetCodexSession(session)
+      else await this.closeRuntimeConnection('backend close')
     } catch { /* ignore */ }
     if (this.warmHandlePromise) {
       const warmPromise = this.warmHandlePromise
       this.warmHandlePromise = null
-      this.clearWarmIdleTimer()
       try {
         const warm = await warmPromise
         if (warm) await warm.handle.close()
@@ -782,6 +702,8 @@ export class CodexBackend implements SessionBackend {
     }
     if (this.activeRun) { try { await this.activeRun } catch { /* ignore */ } }
     await this.goalController.wait()
+    await this.closeRuntimeConnection('backend close')
+    if (session) resetCodexSession(session)
     if (this.authChangedUnsub) {
       try { this.authChangedUnsub() } catch { /* ignore */ }
       this.authChangedUnsub = null
@@ -790,7 +712,6 @@ export class CodexBackend implements SessionBackend {
     this.disposed = true
     this.started = false
     this.startOpts = null
-    unregisterActiveRuntime(this)
     this.eventListeners.clear()
     this.providerSessionIdListeners.clear()
   }
@@ -988,7 +909,6 @@ export class CodexBackend implements SessionBackend {
   }
 
   private emit(event: AgentEvent): void {
-    this._lastActiveAt = Date.now()
     for (const cb of this.eventListeners) {
       try { cb(event) } catch (err) { log.warn('[CodexBackend] event listener error:', err) }
     }

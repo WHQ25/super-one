@@ -144,6 +144,7 @@ export class Session implements SessionContract {
   private _providerSessionId: string | null = null
   private _lastUserMessageAt: number | null = null
   private _lastEventAt = 0
+  private _lastRuntimeActivityAt = Date.now()
   private _needsRebuild = false
 
   get lastEventAt(): number { return this._lastEventAt }
@@ -201,11 +202,29 @@ export class Session implements SessionContract {
    * doesn't drop foreground status while another is still visible.
    */
   setForeground(visible: boolean): void {
-    const wasForeground = this._foregroundRefCount > 0
     this._foregroundRefCount = Math.max(0, this._foregroundRefCount + (visible ? 1 : -1))
-    const isForeground = this._foregroundRefCount > 0
-    if (isForeground === wasForeground) return
-    this.backend.setForeground?.(isForeground)
+  }
+
+  hasActiveRuntime(): boolean {
+    return this.backend.hasActiveRuntime()
+  }
+
+  isRuntimeIdle(now: number, timeoutMs: number): boolean {
+    if (!this.hasActiveRuntime()) return false
+    if (this._foregroundRefCount > 0) return false
+    if (this.isStreaming()) return false
+    if (this._pendingQueuedRequests.size > 0) return false
+    if (this.backend.hasActiveBackgroundTasks?.()) return false
+    if (this.backend.getPendingInteractions().length > 0) return false
+    return now - this._lastRuntimeActivityAt >= timeoutMs
+  }
+
+  async releaseRuntime(reason: 'idle'): Promise<void> {
+    await this.backend.releaseRuntime(reason)
+  }
+
+  private touchRuntimeActivity(): void {
+    this._lastRuntimeActivityAt = Date.now()
   }
 
   private _owner: SessionOwner = LOCAL_OWNER
@@ -419,6 +438,7 @@ export class Session implements SessionContract {
   async send(request: SendMessageRequest, opts?: { providerOrigin?: 'local' | 'remote' }): Promise<void> {
     const providerOrigin = opts?.providerOrigin ?? 'local'
     this.assertCanSend(providerOrigin)
+    this.touchRuntimeActivity()
     const isQueued = request.priority === 'next' && this.isStreaming()
     if (isQueued) {
       this.assertNotDisposed()
@@ -485,6 +505,7 @@ export class Session implements SessionContract {
     if (this._status === 'disposed') return false
     if (this._status === 'interrupting') return true
     if (this._status !== 'streaming' && this._status !== 'starting') return false
+    this.touchRuntimeActivity()
     const prev = this._status
     this._status = 'interrupting'
     this._pendingQueuedRequests.clear()
@@ -507,6 +528,7 @@ export class Session implements SessionContract {
 
   async setPermissionMode(mode: PermissionMode): Promise<void> {
     this.assertNotDisposed()
+    this.touchRuntimeActivity()
     const prev = this.permissionMode
     trace('permission.flow', 'session_setMode_in', { sid: this.id, prev, next: mode, status: this._status, backendStarted: this.backendStarted })
     if (prev === mode) {
@@ -530,6 +552,7 @@ export class Session implements SessionContract {
 
   async setSandboxMode(mode: SandboxMode): Promise<SandboxInfo> {
     this.assertNotDisposed()
+    this.touchRuntimeActivity()
     if (mode !== 'off') {
       const capability = getSandboxCapability()
       if (capability.supportLevel === 'unsupported') {
@@ -560,6 +583,7 @@ export class Session implements SessionContract {
 
   async setModel(model: string): Promise<void> {
     this.assertNotDisposed()
+    this.touchRuntimeActivity()
     this.model = model
     // Always push: ACP may already have a prewarmed runtime before backendStarted flips.
     try {
@@ -571,6 +595,7 @@ export class Session implements SessionContract {
 
   async setSessionMode(modeId: string): Promise<void> {
     this.assertNotDisposed()
+    this.touchRuntimeActivity()
     // Always push: Grok effort (session/set_model + reasoningEffort) must apply on
     // prewarmed runtimes even when ensureStarted has not flipped backendStarted yet.
     try {
@@ -624,6 +649,7 @@ export class Session implements SessionContract {
 
   respondToPermission(requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[], decision?: 'cancel', formAnswers?: Record<string, unknown>): boolean {
     this.assertNotDisposed()
+    this.touchRuntimeActivity()
     if (decision === 'cancel') {
       if (rejectSessionAgentsConfirm(requestId, 'User cancelled')) return true
     } else if (resolveSessionAgentsConfirm(requestId, allow ? 'accept' : 'decline', formAnswers)) {
@@ -634,47 +660,56 @@ export class Session implements SessionContract {
 
   respondToQuestion(requestId: string, answers: Record<string, string>, annotations?: QuestionAnnotations): void {
     this.assertNotDisposed()
+    this.touchRuntimeActivity()
     this.backend.respondToQuestion(requestId, answers, annotations)
   }
 
   dismissQuestion(requestId: string): void {
     this.assertNotDisposed()
+    this.touchRuntimeActivity()
     this.backend.dismissQuestion(requestId)
   }
 
   respondToPlanApproval(requestId: string, approved: boolean, feedback?: string): void {
     this.assertNotDisposed()
+    this.touchRuntimeActivity()
     this.backend.respondToPlanApproval(requestId, approved, feedback)
   }
 
   async getContextUsage(): Promise<ContextUsageInfo | null> {
     if (!this.backendStarted) return null
+    this.touchRuntimeActivity()
     return this.backend.getContextUsage()
   }
 
   async getMcpServerStatus(): Promise<McpServerInfo[]> {
     if (!this.backendStarted) return []
+    this.touchRuntimeActivity()
     return this.backend.getMcpServerStatus()
   }
 
   async authenticateMcp(serverName: string): Promise<void> {
     this.assertStarted()
+    this.touchRuntimeActivity()
     if (!this.backend.authenticateMcp) throw new Error(`MCP authentication is not supported by ${this.harnessId}`)
     return this.backend.authenticateMcp(serverName)
   }
 
   async rewindFiles(userMessageId: string, opts?: { dryRun?: boolean }): Promise<RewindFilesResult> {
     if (!this.backendStarted) return { canRewind: false, error: 'No active session' }
+    this.touchRuntimeActivity()
     return this.backend.rewindFiles(userMessageId, opts)
   }
 
   async reconnectMcp(serverName: string): Promise<void> {
     this.assertStarted()
+    this.touchRuntimeActivity()
     return this.backend.reconnectMcp(serverName)
   }
 
   async reloadMcpServers(): Promise<void> {
     if (!this.backendStarted) return
+    this.touchRuntimeActivity()
     // A pending rebuild already discards the connection and re-snapshots tools on the
     // next send, so an explicit reload now is redundant — and for codex it is a heavy
     // process-wide MCP reconnect. Let the rebuild carry the tool change instead.
@@ -684,15 +719,18 @@ export class Session implements SessionContract {
 
   async toggleMcpServer(serverName: string, enabled: boolean): Promise<void> {
     this.assertStarted()
+    this.touchRuntimeActivity()
     return this.backend.toggleMcpServer(serverName, enabled)
   }
 
   async reloadPlugins(): Promise<boolean> {
     if (!this.backendStarted) return false
+    this.touchRuntimeActivity()
     return this.backend.reloadPlugins()
   }
 
   prewarm(hint?: PrewarmHint): void {
+    this.touchRuntimeActivity()
     if (this.harnessId === 'acp' && this.resolveProviderConfigForApiProvider) {
       try {
         this.providerConfig = this.resolveProviderConfigForApiProvider(this._apiProviderId)
@@ -757,6 +795,7 @@ export class Session implements SessionContract {
 
   async getCodexGoal(threadId: string): Promise<CodexGoal | null> {
     this.assertNotDisposed()
+    this.touchRuntimeActivity()
     if (this.harnessId !== 'codex') throw new Error(`Session ${this.id} is not a Codex session`)
     await this.ensureStarted()
     if (!this.backend.getCodexGoal) throw new Error('Codex goal operations are unavailable')
@@ -765,6 +804,7 @@ export class Session implements SessionContract {
 
   async setCodexGoal(threadId: string, objective: string, status?: CodexGoalStatus): Promise<CodexGoal | null> {
     this.assertNotDisposed()
+    this.touchRuntimeActivity()
     if (this.harnessId !== 'codex') throw new Error(`Session ${this.id} is not a Codex session`)
     await this.ensureStarted()
     if (!this.backend.setCodexGoal) throw new Error('Codex goal operations are unavailable')
@@ -773,6 +813,7 @@ export class Session implements SessionContract {
 
   async clearCodexGoal(threadId: string): Promise<boolean> {
     this.assertNotDisposed()
+    this.touchRuntimeActivity()
     if (this.harnessId !== 'codex') throw new Error(`Session ${this.id} is not a Codex session`)
     await this.ensureStarted()
     if (!this.backend.clearCodexGoal) throw new Error('Codex goal operations are unavailable')
@@ -781,6 +822,7 @@ export class Session implements SessionContract {
 
   async dispatchBackendCommand(cmd: BackendCommand): Promise<void> {
     this.assertNotDisposed()
+    this.touchRuntimeActivity()
     switch (cmd.kind) {
       case 'codex.steer': {
         if (cmd.newUserMessageId && cmd.newUserText) this.appendSideChannelUserMessage(cmd.newUserMessageId, cmd.newUserText)
@@ -991,6 +1033,7 @@ export class Session implements SessionContract {
 
   async switchCwd(nextCwd: string, gitBranch?: string | null): Promise<void> {
     this.assertNotDisposed()
+    this.touchRuntimeActivity()
     const branchChanged = gitBranch !== undefined && gitBranch !== this._gitBranch
     if (this._cwd === nextCwd && !branchChanged) return
     this._cwd = nextCwd
@@ -1043,6 +1086,7 @@ export class Session implements SessionContract {
 
   private forwardEvent(event: AgentEvent): AgentEvent {
     this._lastEventAt = Date.now()
+    this.touchRuntimeActivity()
     if (event.type === 'permission_request') {
       log.info('[Session.forwardEvent] permission_request sessionId=%s listeners=%d requestId=%s', this.id, this.eventListeners.size, event.request.requestId)
     }
@@ -1294,6 +1338,7 @@ export class Session implements SessionContract {
    */
   async injectTaskNotification(content: string): Promise<void> {
     if (this._status === 'disposed') return
+    this.touchRuntimeActivity()
     try {
       await this.ensureStarted()
     } catch (err) {

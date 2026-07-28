@@ -171,7 +171,6 @@ describe('ClaudeBackend', () => {
     permissionHoisted.createCanUseToolMock.mockClear()
     permissionHoisted.createCanUseToolMock.mockImplementation(() => ({ canUseTool: vi.fn(), trackPlanFile: vi.fn() }))
     permissionHoisted.rejectAllPendingMock.mockClear()
-    ClaudeBackend._resetActiveRuntimesForTests()
   })
 
   describe('lifecycle', () => {
@@ -569,38 +568,11 @@ describe('ClaudeBackend', () => {
   })
 
   describe('idle dispose', () => {
-    it('isRuntimeIdle returns false when backend not started', () => {
+    it('reports whether it owns an active runtime', async () => {
       const backend = new ClaudeBackend()
-      expect(backend.isRuntimeIdle(60_000)).toBe(false)
-    })
-
-    it('isRuntimeIdle returns true after start when timeoutMs=0 with no pending state', async () => {
-      const backend = new ClaudeBackend()
+      expect(backend.hasActiveRuntime()).toBe(false)
       await backend.start(makeStartOpts())
-      expect(backend.isRuntimeIdle(0)).toBe(true)
-    })
-
-    it('isRuntimeIdle returns false within timeout window even with no activity', async () => {
-      const backend = new ClaudeBackend()
-      await backend.start(makeStartOpts())
-      expect(backend.isRuntimeIdle(60_000)).toBe(false)
-    })
-
-    it('isRuntimeIdle returns false when foreground, even past the timeout window', async () => {
-      const backend = new ClaudeBackend()
-      await backend.start(makeStartOpts())
-      backend.setForeground(true)
-      expect(backend.isRuntimeIdle(0)).toBe(false)
-      backend.setForeground(false)
-      expect(backend.isRuntimeIdle(0)).toBe(true)
-    })
-
-    it('isRuntimeIdle returns false while a turn is in-flight', async () => {
-      const backend = new ClaudeBackend()
-      await backend.start(makeStartOpts())
-      void backend.send({ content: 'hi' })
-      await new Promise((r) => setTimeout(r, 0))
-      expect(backend.isRuntimeIdle(0)).toBe(false)
+      expect(backend.hasActiveRuntime()).toBe(true)
     })
 
     it('send() lazy-revives runtime after idle release', async () => {
@@ -611,7 +583,7 @@ describe('ClaudeBackend', () => {
       hoisted.captured.iterationDone?.resolve()
       await (backend as unknown as { releaseRuntime: (r: 'idle') => Promise<void> }).releaseRuntime('idle')
 
-      expect(backend.isRuntimeIdle(0)).toBe(false)
+      expect(backend.hasActiveRuntime()).toBe(false)
 
       void backend.send({ content: 'hi again' })
       await new Promise((r) => setTimeout(r, 0))
@@ -637,14 +609,17 @@ describe('ClaudeBackend', () => {
       expect((opts as { resume?: string }).resume).toBe('sdk-sid-resume')
     })
 
-    it('isRuntimeIdle returns false while background tasks are active, true again once they finish', async () => {
+    it('does not release while background tasks are active', async () => {
       const backend = new ClaudeBackend()
       await backend.start(makeStartOpts())
       hoisted.captured.activeBackgroundTasks!.set('task-1', { toolUseId: 'tu-1', description: 'dev server' })
-      expect(backend.isRuntimeIdle(0)).toBe(false)
+      await backend.releaseRuntime('idle')
+      expect(backend.hasActiveRuntime()).toBe(true)
 
       hoisted.captured.activeBackgroundTasks!.delete('task-1')
-      expect(backend.isRuntimeIdle(0)).toBe(true)
+      hoisted.captured.iterationDone?.resolve()
+      await backend.releaseRuntime('idle')
+      expect(backend.hasActiveRuntime()).toBe(false)
     })
 
     it('releaseRuntime(rebuild) emits a stopped task_notification for each live background task', async () => {
@@ -678,36 +653,13 @@ describe('ClaudeBackend', () => {
       expect(events.filter((e) => e.type === 'task_notification')).toHaveLength(0)
     })
 
-    it('isRuntimeIdle returns false when pendingPermissions has entries', async () => {
+    it('does not release while an interaction is pending', async () => {
       const backend = new ClaudeBackend()
       await backend.start(makeStartOpts())
       const pp = (backend as unknown as { pendingPermissions: Map<string, unknown> }).pendingPermissions
       pp.set('req-1', {})
-      expect(backend.isRuntimeIdle(0)).toBe(false)
-    })
-
-    it('isRuntimeIdle returns false when pendingQuestions has entries', async () => {
-      const backend = new ClaudeBackend()
-      await backend.start(makeStartOpts())
-      const pq = (backend as unknown as { pendingQuestions: Map<string, unknown> }).pendingQuestions
-      pq.set('q-1', {})
-      expect(backend.isRuntimeIdle(0)).toBe(false)
-    })
-
-    it('isRuntimeIdle returns false when pendingPlanApprovals has entries', async () => {
-      const backend = new ClaudeBackend()
-      await backend.start(makeStartOpts())
-      const pa = (backend as unknown as { pendingPlanApprovals: Map<string, unknown> }).pendingPlanApprovals
-      pa.set('plan-1', {})
-      expect(backend.isRuntimeIdle(0)).toBe(false)
-    })
-
-    it('isRuntimeIdle returns false when pendingQueued is non-empty', async () => {
-      const backend = new ClaudeBackend()
-      await backend.start(makeStartOpts())
-      const pq = (backend as unknown as { pendingQueued: Array<unknown> }).pendingQueued
-      pq.push({ msg: {}, clientMessageId: 'cmid-1' })
-      expect(backend.isRuntimeIdle(0)).toBe(false)
+      await backend.releaseRuntime('idle')
+      expect(backend.hasActiveRuntime()).toBe(true)
     })
 
     it('releaseRuntime tags rejectAllPending with backend.idle', async () => {
@@ -829,86 +781,6 @@ describe('ClaudeBackend', () => {
 
       const [, opts] = hoisted.captured.createSessionQueryMock.mock.calls[1]!
       expect((opts as { model?: string }).model).toBe('claude-opus-4-8')
-    })
-  })
-
-  describe('idle timer (fake timers)', () => {
-    it('timer fires releaseRuntime after IDLE_TIMEOUT_MS + IDLE_CHECK_INTERVAL_MS elapse, once active sessions meet the threshold', async () => {
-      vi.useFakeTimers()
-      try {
-        const backend = new ClaudeBackend()
-        await backend.start(makeStartOpts())
-        expect((backend as unknown as { bridge: unknown }).bridge).not.toBeNull()
-
-        const fillers = [new ClaudeBackend(), new ClaudeBackend(), new ClaudeBackend(), new ClaudeBackend()]
-        for (const filler of fillers) {
-          await filler.start(makeStartOpts())
-          filler.setForeground(true)
-        }
-
-        hoisted.captured.iterationDone?.resolve()
-
-        await vi.advanceTimersByTimeAsync(ClaudeBackend.IDLE_TIMEOUT_MS + ClaudeBackend.IDLE_CHECK_INTERVAL_MS + 100)
-
-        expect((backend as unknown as { bridge: unknown }).bridge).toBeNull()
-        expect((backend as unknown as { query: unknown }).query).toBeNull()
-      } finally {
-        vi.useRealTimers()
-      }
-    })
-
-    it('timer does not release while active sessions are below MIN_ACTIVE_SESSIONS_FOR_IDLE_RELEASE', async () => {
-      vi.useFakeTimers()
-      try {
-        const backend = new ClaudeBackend()
-        await backend.start(makeStartOpts())
-        hoisted.captured.iterationDone?.resolve()
-
-        expect(ClaudeBackend.activeRuntimeCount).toBeLessThan(ClaudeBackend.MIN_ACTIVE_SESSIONS_FOR_IDLE_RELEASE)
-
-        await vi.advanceTimersByTimeAsync(ClaudeBackend.IDLE_TIMEOUT_MS + ClaudeBackend.IDLE_CHECK_INTERVAL_MS + 100)
-
-        expect((backend as unknown as { bridge: unknown }).bridge).not.toBeNull()
-        expect((backend as unknown as { query: unknown }).query).not.toBeNull()
-      } finally {
-        vi.useRealTimers()
-      }
-    })
-
-    it('timer does not release while a turn is in-flight (turnResolves guard)', async () => {
-      vi.useFakeTimers()
-      try {
-        const backend = new ClaudeBackend()
-        await backend.start(makeStartOpts())
-
-        void backend.send({ content: 'hi' })
-        await Promise.resolve()
-
-        await vi.advanceTimersByTimeAsync(ClaudeBackend.IDLE_TIMEOUT_MS + ClaudeBackend.IDLE_CHECK_INTERVAL_MS + 100)
-
-        expect((backend as unknown as { bridge: unknown }).bridge).not.toBeNull()
-        expect((backend as unknown as { query: unknown }).query).not.toBeNull()
-      } finally {
-        vi.useRealTimers()
-      }
-    })
-
-    it('close() stops the idle timer so it no longer fires', async () => {
-      vi.useFakeTimers()
-      try {
-        const backend = new ClaudeBackend()
-        await backend.start(makeStartOpts())
-        hoisted.captured.iterationDone?.resolve()
-
-        await backend.close()
-        hoisted.captured.createSessionQueryMock.mockClear()
-
-        await vi.advanceTimersByTimeAsync(ClaudeBackend.IDLE_TIMEOUT_MS * 5)
-
-        expect(hoisted.captured.createSessionQueryMock).not.toHaveBeenCalled()
-      } finally {
-        vi.useRealTimers()
-      }
     })
   })
 

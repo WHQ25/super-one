@@ -61,6 +61,15 @@ export function setAcpRuntimeFactory(factory: AcpRuntimeFactory | null): void {
 export class AcpBackend implements SessionBackend {
   readonly kind: HarnessId = 'acp'
 
+  hasActiveRuntime(): boolean {
+    return Boolean(this.runtime || this.ensureRuntimePromise)
+  }
+
+  async releaseRuntime(_reason: 'idle'): Promise<void> {
+    if (this.activePrompt || this.getPendingInteractions().length > 0) return
+    await this.teardownRuntime()
+  }
+
   private started = false
   private disposed = false
   private startOpts: BackendStartOptions | null = null
@@ -97,6 +106,7 @@ export class AcpBackend implements SessionBackend {
   /** Last known mode/effort options when configId is null (Grok reasoning effort). */
   private lastModeConfig: AcpModeConfig | null = null
   private ensureRuntimePromise: Promise<AcpRuntime> | null = null
+  private runtimeAbortController: AbortController | null = null
   private runtimeEpoch = 0
   private runtimeAgentKey: string | null = null
   /** Cwd the live ACP process was started with (session/new). */
@@ -416,6 +426,8 @@ export class AcpBackend implements SessionBackend {
       throw new Error('No ACP agent configured. Pick an agent under Others, then try again.')
     }
     const epoch = this.runtimeEpoch
+    const abortController = new AbortController()
+    this.runtimeAbortController = abortController
     const agentId = this.config.agentId ?? null
     const launchKey = this.agentKey()
     // Prefer startOpts.cwd (session/worktree) over provider config cwd overrides.
@@ -458,6 +470,7 @@ export class AcpBackend implements SessionBackend {
       // a concurrent start() may have filled providerSessionId after prewarm queued us.
       const resumeAtSpawn = this.startOpts?.providerSessionId?.trim() || resumeSessionId
       const runtime = await runtimeFactory({
+        signal: abortController.signal,
         launch,
         superoneSessionId: this.startOpts?.sessionId,
         permissionMode: this.startOpts?.permissionMode,
@@ -519,6 +532,7 @@ export class AcpBackend implements SessionBackend {
       throw err
     } finally {
       if (this.ensureRuntimePromise === promise) this.ensureRuntimePromise = null
+      if (this.runtimeAbortController === abortController) this.runtimeAbortController = null
     }
   }
 
@@ -734,8 +748,12 @@ export class AcpBackend implements SessionBackend {
     }
     this.rejectPendingQuestions()
     this.rejectPendingPlanApprovals('abandoned')
+    const pending = this.ensureRuntimePromise
+    const abortController = this.runtimeAbortController
     this.runtimeEpoch += 1
     this.ensureRuntimePromise = null
+    this.runtimeAbortController = null
+    abortController?.abort()
     this.modelConfigId = null
     this.modeConfigId = null
     this.selectedModelId = null
@@ -746,6 +764,9 @@ export class AcpBackend implements SessionBackend {
     this.runtime = null
     if (runtime) {
       try { await runtime.close() } catch (err) { log.debug('[AcpBackend] runtime close error:', err) }
+    }
+    if (pending) {
+      try { await pending } catch { /* superseded pending runtime closes itself */ }
     }
   }
 

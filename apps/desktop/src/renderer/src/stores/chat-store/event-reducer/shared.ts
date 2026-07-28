@@ -1,4 +1,4 @@
-import type { ChatMessage } from '@superone/shared/agent-types'
+import type { ChatMessage, ContentBlock } from '@superone/shared/agent-types'
 
 /**
  * Tool names that we accumulate partial JSON for across `tool_input_delta`
@@ -18,6 +18,70 @@ export const STREAMING_PREVIEW_THROTTLE_MS = 100
 export const streamingToolInputRaw = new Map<string, string>()
 export const streamingPreviewLastUpdate = new Map<string, number>()
 
+/** Ownership of global Map entries — never clear by session without filtering on these keys. */
+export const streamingToolInputOwners = new Map<string, { projectPath: string; sessionId: string }>()
+
+export function noteStreamingToolInputOwner(
+  toolUseId: string,
+  projectPath: string | undefined,
+  sessionId: string | undefined,
+): void {
+  if (!projectPath || !sessionId) return
+  streamingToolInputOwners.set(toolUseId, { projectPath, sessionId })
+}
+
+/** Drop one tool's global streaming accumulators (safe for multi-session). */
+export function clearStreamingToolInput(toolUseId: string): void {
+  streamingToolInputRaw.delete(toolUseId)
+  streamingPreviewLastUpdate.delete(toolUseId)
+  streamingToolInputOwners.delete(toolUseId)
+}
+
+/** Drop global accumulators owned by one resolved session only. */
+export function clearStreamingToolInputsForSession(projectPath: string, sessionId: string): void {
+  for (const [toolUseId, owner] of streamingToolInputOwners) {
+    if (owner.projectPath === projectPath && owner.sessionId === sessionId) {
+      clearStreamingToolInput(toolUseId)
+    }
+  }
+}
+
+export function dropStreamingToolInputPreview(
+  previews: Record<string, Record<string, unknown>>,
+  toolUseId: string,
+): Record<string, Record<string, unknown>> | undefined {
+  if (!previews[toolUseId]) return undefined
+  const { [toolUseId]: _, ...rest } = previews
+  return rest
+}
+
+/**
+ * Map messages with structural sharing: only clone a message when one of its
+ * content blocks is replaced (by reference); only allocate a new messages array
+ * when any message changed. Returns the original `messages` ref when nothing
+ * matched — keeps React.memo(ChatMessage) working for non-target rows.
+ *
+ * `mapBlock` must return the same block reference when it does not change.
+ */
+export function mapMessagesStructural(
+  messages: ChatMessage[],
+  mapBlock: (block: ContentBlock, msg: ChatMessage) => ContentBlock,
+): ChatMessage[] {
+  let anyMsgChanged = false
+  const next = messages.map((msg) => {
+    let anyBlockChanged = false
+    const content = msg.content.map((block) => {
+      const nextBlock = mapBlock(block, msg)
+      if (nextBlock !== block) anyBlockChanged = true
+      return nextBlock
+    })
+    if (!anyBlockChanged) return msg
+    anyMsgChanged = true
+    return { ...msg, content }
+  })
+  return anyMsgChanged ? next : messages
+}
+
 /**
  * Patch the per-message `tool_use` block whose toolName is 'Agent' and whose
  * `toolUseId === tid`. Used by task_progress / task_notification reducers to
@@ -28,12 +92,10 @@ export function _patchAgentBlock(
   tid: string,
   patch: Record<string, unknown>,
 ): ChatMessage[] {
-  return messages.map((msg) => ({
-    ...msg,
-    content: msg.content.map((block) =>
-      block.type === 'tool_use' && block.toolName === 'Agent' && block.toolUseId === tid
-        ? { ...block, ...patch }
-        : block,
-    ),
-  }))
+  return mapMessagesStructural(messages, (block) => {
+    if (block.type === 'tool_use' && block.toolName === 'Agent' && block.toolUseId === tid) {
+      return { ...block, ...patch }
+    }
+    return block
+  })
 }

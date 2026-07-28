@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useChatStore, useBashOutput } from '@/stores/chat'
+import { mapMessagesStructural } from '@/stores/chat-store/event-reducer/shared'
 import { parseJsonlOutput, entriesFromRecords, type JsonlEntry } from './subagent-utils'
 
 const SUBAGENT_OUTPUT_TAIL_LINES = 400
@@ -13,6 +14,13 @@ function persistTaskResultText(toolUseId: string, resultText: string): void {
     if (!sid) return s
     const session = project._sessions[sid]
     if (!session) return s
+    const nextMessages = mapMessagesStructural(session.messages, (block) => {
+      if (block.type !== 'tool_use' || block.toolUseId !== toolUseId) return block
+      if (block.taskResultText === resultText) return block
+      return { ...block, taskResultText: resultText }
+    })
+    // Avoid projectSessions identity churn when the result text is unchanged.
+    if (nextMessages === session.messages) return s
     return {
       projectSessions: {
         ...s.projectSessions,
@@ -22,14 +30,7 @@ function persistTaskResultText(toolUseId: string, resultText: string): void {
             ...project._sessions,
             [sid]: {
               ...session,
-              messages: session.messages.map((msg) => ({
-                ...msg,
-                content: msg.content.map((block) =>
-                  block.type === 'tool_use' && block.toolUseId === toolUseId
-                    ? { ...block, taskResultText: resultText }
-                    : block,
-                ),
-              })),
+              messages: nextMessages,
             },
           },
         },

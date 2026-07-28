@@ -5,7 +5,7 @@ import { isMediaGenerateVideoTool, isMediaVideoStatusTool } from '@/components/c
 import { applyDelta } from '../helpers/event-helpers'
 import { persistStreamingToolInput } from '../index'
 import type { PerSessionState } from '../types'
-import { streamingPreviewLastUpdate, streamingToolInputRaw } from './shared'
+import { clearStreamingToolInput, dropStreamingToolInputPreview, streamingToolInputRaw } from './shared'
 
 type ContentDeltaEvent = Extract<AgentEvent, { type: 'content_delta' }>
 
@@ -47,24 +47,18 @@ export function reduceContentDelta(session: PerSessionState, event: ContentDelta
   }
 
   if (event.delta.type === 'tool_use' && event.delta.toolUseId && event.delta.input) {
-    streamingToolInputRaw.delete(event.delta.toolUseId)
-    streamingPreviewLastUpdate.delete(event.delta.toolUseId)
-    if (session._streamingToolInputPreviews[event.delta.toolUseId]) {
-      const { [event.delta.toolUseId]: _, ...rest } = session._streamingToolInputPreviews
-      extraUpdates._streamingToolInputPreviews = rest
-    }
+    clearStreamingToolInput(event.delta.toolUseId)
+    const restPreviews = dropStreamingToolInputPreview(session._streamingToolInputPreviews, event.delta.toolUseId)
+    if (restPreviews) extraUpdates._streamingToolInputPreviews = restPreviews
   }
 
   if (event.delta.type === 'tool_result') {
     const resultDelta = event.delta
     const streamingInput = streamingToolInputRaw.get(resultDelta.toolUseId)
     updatedMessages = persistStreamingToolInput(updatedMessages, event.messageId, resultDelta.toolUseId, streamingInput)
-    streamingToolInputRaw.delete(resultDelta.toolUseId)
-    streamingPreviewLastUpdate.delete(resultDelta.toolUseId)
-    if (session._streamingToolInputPreviews[resultDelta.toolUseId]) {
-      const { [resultDelta.toolUseId]: _, ...rest } = session._streamingToolInputPreviews
-      extraUpdates._streamingToolInputPreviews = rest
-    }
+    clearStreamingToolInput(resultDelta.toolUseId)
+    const restPreviews = dropStreamingToolInputPreview(session._streamingToolInputPreviews, resultDelta.toolUseId)
+    if (restPreviews) extraUpdates._streamingToolInputPreviews = restPreviews
     const msg = updatedMessages.find((m) => m.id === event.messageId)
     const toolBlock = msg?.content.find(
       (b) => b.type === 'tool_use' && b.toolUseId === resultDelta.toolUseId

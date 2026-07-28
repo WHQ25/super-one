@@ -15,7 +15,13 @@ vi.stubGlobal('window', {
 await import('../index')
 const { createDefaultPerSessionState } = await import('../defaults')
 const { reduceTool } = await import('./tool')
-const { streamingToolInputRaw, streamingPreviewLastUpdate } = await import('./shared')
+const {
+  streamingToolInputRaw,
+  streamingPreviewLastUpdate,
+  streamingToolInputOwners,
+  clearStreamingToolInput,
+  clearStreamingToolInputsForSession,
+} = await import('./shared')
 
 function toolUseBlock(toolUseId: string, toolName: string, input = ''): ContentBlock {
   return { type: 'tool_use', toolUseId, toolName, input } as ContentBlock
@@ -26,6 +32,23 @@ function makeAssistant(id: string, blocks: ContentBlock[] = []): ChatMessage {
     id, role: 'assistant', status: 'streaming', content: blocks, createdAt: '', providerId: 'claude',
   }
 }
+
+describe('streaming tool input ownership cleanup', () => {
+  it('clears only the matching session ownership entries', () => {
+    streamingToolInputRaw.clear()
+    streamingPreviewLastUpdate.clear()
+    streamingToolInputOwners.clear()
+    streamingToolInputRaw.set('a', '{"x":')
+    streamingToolInputRaw.set('b', '{"y":')
+    streamingToolInputOwners.set('a', { projectPath: '/p1', sessionId: 's1' })
+    streamingToolInputOwners.set('b', { projectPath: '/p1', sessionId: 's2' })
+    clearStreamingToolInputsForSession('/p1', 's1')
+    expect(streamingToolInputRaw.has('a')).toBe(false)
+    expect(streamingToolInputRaw.has('b')).toBe(true)
+    clearStreamingToolInput('b')
+    expect(streamingToolInputRaw.has('b')).toBe(false)
+  })
+})
 
 describe('reduceTool: tool_input_delta', () => {
   it('is a tick-only patch for a non-streamable tool', () => {
@@ -143,6 +166,96 @@ describe('reduceTool: tool_progress', () => {
       type: 'tool_progress', messageId: 'm1', toolUseId: 't1', elapsedSeconds: 3,
     } as never)
     expect(patch.taskProgress).toBeUndefined()
+  })
+})
+
+describe('reduceTool: task_progress identity share', () => {
+  it('preserves non-home message refs when patching an Agent block', () => {
+    const otherMsg = makeAssistant('m0', [toolUseBlock('other', 'Read')])
+    const homeMsg = makeAssistant('m1', [toolUseBlock('agent-1', 'Agent')])
+    const session = createDefaultPerSessionState()
+    session.messages = [otherMsg, homeMsg]
+    session.taskProgress = {
+      'agent-1': { description: 'sub', totalTokens: 0, toolUses: 0, durationMs: 0, toolHistory: [] },
+    }
+
+    const patch = reduceTool(session, {
+      type: 'task_progress',
+      toolUseId: 'agent-1',
+      description: 'reading files',
+      lastToolName: 'Read',
+      usage: { totalTokens: 42, toolUses: 3, durationMs: 900 },
+    } as never)
+
+    expect(patch.messages?.[0]).toBe(otherMsg)
+    expect(patch.messages?.[0].content[0]).toBe(otherMsg.content[0])
+    expect(patch.messages?.[1]).not.toBe(homeMsg)
+    const agent = patch.messages?.[1].content[0] as { taskUsage?: { totalTokens: number }; taskSummary?: string }
+    expect(agent.taskUsage?.totalTokens).toBe(42)
+  })
+})
+
+describe('reduceTool: task_notification identity share', () => {
+  it('preserves non-home message refs and patches Agent + optional tool_result', () => {
+    const otherMsg = makeAssistant('m0', [toolUseBlock('other', 'Bash')])
+    const homeBlocks = [
+      toolUseBlock('agent-1', 'Agent'),
+      { type: 'tool_result', toolUseId: 'agent-1', summary: 'done' } as ContentBlock,
+    ]
+    const homeMsg = makeAssistant('m1', homeBlocks)
+    const session = createDefaultPerSessionState()
+    session.messages = [otherMsg, homeMsg]
+    session.taskProgress = {
+      'agent-1': { description: 'sub', totalTokens: 1, toolUses: 1, durationMs: 10, toolHistory: [], taskId: 'task-1' },
+    }
+
+    const patch = reduceTool(session, {
+      type: 'task_notification',
+      toolUseId: 'agent-1',
+      taskId: 'task-1',
+      taskStatus: 'completed',
+      summary: 'finished',
+      outputFile: '/tmp/out.jsonl',
+      usage: { totalTokens: 99, toolUses: 5, durationMs: 1200 },
+    } as never)
+
+    expect(patch.messages?.[0]).toBe(otherMsg)
+    expect(patch.messages?.[1]).not.toBe(homeMsg)
+    const agent = patch.messages?.[1].content[0] as { taskSummary?: string; taskUsage?: { totalTokens: number } }
+    const result = patch.messages?.[1].content[1] as { outputPath?: string }
+    expect(agent.taskSummary).toBe('finished')
+    expect(agent.taskUsage?.totalTokens).toBe(99)
+    expect(result.outputPath).toBe('/tmp/out.jsonl')
+  })
+})
+
+describe('reduceTool: browser_download_update identity share', () => {
+  it('preserves non-target message refs when patching a download tool_result', () => {
+    const otherMsg = makeAssistant('m0', [toolUseBlock('t0', 'Read')])
+    const summary = JSON.stringify({ taskId: 'bdl_1', status: 'progressing' })
+    const targetBlock = { type: 'tool_result', toolUseId: 'tu-dl', summary } as ContentBlock
+    const targetMsg = makeAssistant('m1', [targetBlock])
+    const session = createDefaultPerSessionState()
+    session.messages = [otherMsg, targetMsg]
+
+    const patch = reduceTool(session, {
+      type: 'browser_download_update',
+      taskId: 'bdl_1',
+      status: 'completed',
+      path: '/tmp/file.bin',
+      filename: 'file.bin',
+      bytes: 12,
+    } as never)
+
+    expect(patch.messages?.[0]).toBe(otherMsg)
+    expect(patch.messages?.[0].content[0]).toBe(otherMsg.content[0])
+    expect(patch.messages?.[1]).not.toBe(targetMsg)
+    const nextSummary = JSON.parse((patch.messages?.[1].content[0] as { summary: string }).summary) as {
+      status: string
+      path?: string
+    }
+    expect(nextSummary.status).toBe('completed')
+    expect(nextSummary.path).toBe('/tmp/file.bin')
   })
 })
 

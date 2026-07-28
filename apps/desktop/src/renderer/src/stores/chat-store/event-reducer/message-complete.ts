@@ -1,6 +1,7 @@
 import type { AgentEvent } from '@superone/shared/agent-types'
 import { getCodexCompletionEventMeta, getCodexContextTokens } from '../helpers/codex-helpers'
 import type { PerSessionState } from '../types'
+import { clearStreamingToolInput } from './shared'
 
 type MessageCompleteEvent = Extract<AgentEvent, { type: 'message_complete' }>
 
@@ -15,9 +16,20 @@ export function reduceMessageComplete(session: PerSessionState, event: MessageCo
   const codexCompletionMeta = getCodexCompletionEventMeta(event.metadata)
   const completingMsg = session.messages.find((m) => m.id === event.messageId)
   const agentToolIds = new Set<string>()
+  let nextPreviews = session._streamingToolInputPreviews
+  let previewsChanged = false
   if (completingMsg) {
     for (const b of completingMsg.content) {
-      if (b.type === 'tool_use' && b.toolName === 'Agent') agentToolIds.add(b.toolUseId)
+      if (b.type === 'tool_use') {
+        if (b.toolName === 'Agent') agentToolIds.add(b.toolUseId)
+        // Drop any leftover partial Edit/Write buffers for tools on this message.
+        clearStreamingToolInput(b.toolUseId)
+        if (nextPreviews[b.toolUseId]) {
+          const { [b.toolUseId]: _, ...rest } = nextPreviews
+          nextPreviews = rest
+          previewsChanged = true
+        }
+      }
     }
   }
   const codexUsage = codexCompletionMeta?.usage ?? event.metadata?.codex?.usage ?? null
@@ -31,6 +43,7 @@ export function reduceMessageComplete(session: PerSessionState, event: MessageCo
   const settleStatusIdle = isCurrentTurn && !hasUncompletedAgents && session.status === 'streaming'
   return {
     ...(settleStatusIdle ? { status: 'idle' as const } : {}),
+    ...(previewsChanged ? { _streamingToolInputPreviews: nextPreviews } : {}),
     messages: session.messages.map((msg) => {
       if (msg.id !== event.messageId) return msg
       const prevCodex = msg.metadata?.codex

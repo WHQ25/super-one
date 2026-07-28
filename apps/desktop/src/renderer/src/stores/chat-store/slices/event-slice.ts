@@ -7,6 +7,7 @@ import { accumulateCodexFooterTokens, getCodexUsageStepTokens } from '../helpers
 import { mergeMessagesByMaxSeq } from '../helpers/event-helpers'
 import { inferProviderFromHarnessId } from '../helpers/provider-routing'
 import { createDefaultPerSessionState, createDefaultProjectState, getDefaultEffortForModel } from '../defaults'
+import { clearStreamingToolInputsForSession } from '../event-reducer/shared'
 import { applyCachedCodexPermissionPreset } from '../helpers/prefs-cache'
 import {
   _computeHasPendingInteraction,
@@ -396,6 +397,8 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
                     if (_isLiveSession(proj._sessions[evictSid])) return {}
                     if (isMountedSession(s2, evictProjectPath, evictSid)) return {}
                     const { [evictSid]: _, ...rest } = proj._sessions
+                    // Scoped global Map cleanup — only this session's tool ids (not Map.clear()).
+                    clearStreamingToolInputsForSession(evictProjectPath, evictSid)
                     return { projectSessions: { ...s2.projectSessions, [evictProjectPath]: { ...proj, _sessions: rest } } }
                   })
                 })
@@ -403,10 +406,12 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
             } else {
               const { [targetSid]: _, ...restSessions } = updatedProject._sessions
               updatedProject._sessions = restSessions
+              clearStreamingToolInputsForSession(projectPath, targetSid)
             }
           } else if (!isProtected) {
             const { [targetSid]: _, ...restSessions } = updatedProject._sessions
             updatedProject._sessions = restSessions
+            clearStreamingToolInputsForSession(projectPath, targetSid)
           }
         }
       }

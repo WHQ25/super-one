@@ -6,6 +6,8 @@ import { markMessageEventApplied } from '../index'
 import type { PerSessionState } from '../types'
 import {
   _patchAgentBlock,
+  mapMessagesStructural,
+  noteStreamingToolInputOwner,
   STREAMING_INPUT_TOOLS,
   STREAMING_PREVIEW_THROTTLE_MS,
   streamingPreviewLastUpdate,
@@ -28,24 +30,18 @@ function patchBrowserDownloadToolResult(
   taskId: string,
   patch: Record<string, unknown>,
 ): PerSessionState['messages'] {
-  let changed = false
-  const next = messages.map((msg) => ({
-    ...msg,
-    content: msg.content.map((block) => {
-      if (block.type !== 'tool_result') return block
-      const summary = block.summary
-      if (typeof summary !== 'string' || !summary.includes(taskId)) return block
-      try {
-        const data = JSON.parse(summary) as Record<string, unknown>
-        if (data.taskId !== taskId) return block
-        changed = true
-        return { ...block, summary: JSON.stringify({ ...data, ...patch }) }
-      } catch {
-        return block
-      }
-    }),
-  }))
-  return changed ? next : messages
+  return mapMessagesStructural(messages, (block) => {
+    if (block.type !== 'tool_result') return block
+    const summary = block.summary
+    if (typeof summary !== 'string' || !summary.includes(taskId)) return block
+    try {
+      const data = JSON.parse(summary) as Record<string, unknown>
+      if (data.taskId !== taskId) return block
+      return { ...block, summary: JSON.stringify({ ...data, ...patch }) }
+    } catch {
+      return block
+    }
+  })
 }
 
 export function reduceTool(session: PerSessionState, event: ToolEvent): Partial<PerSessionState> {
@@ -72,6 +68,7 @@ export function reduceTool(session: PerSessionState, event: ToolEvent): Partial<
         if (targetBlock?.type === 'tool_use' && STREAMING_INPUT_TOOLS.has(targetBlock.toolName)) {
           const nextRaw = (streamingToolInputRaw.get(event.toolUseId) ?? '') + event.partialJson
           streamingToolInputRaw.set(event.toolUseId, nextRaw)
+          noteStreamingToolInputOwner(event.toolUseId, event.projectPath, event.sessionId)
           const now = Date.now()
           const hasPrev = !!session._streamingToolInputPreviews[event.toolUseId]
           const lastUpdate = streamingPreviewLastUpdate.get(event.toolUseId) ?? 0
@@ -257,14 +254,18 @@ export function reduceTool(session: PerSessionState, event: ToolEvent): Partial<
         taskToolHistory: finalToolHistory,
         taskSummary: finalSummary,
       }
-      msgs = msgs.map((msg) => ({
-        ...msg,
-        content: msg.content.map((block) => {
-          if (block.type === 'tool_use' && block.toolName === 'Agent' && block.toolUseId === tid) return { ...block, ...agentPatch }
-          if (file && block.type === 'tool_result' && block.toolUseId === tid) return { ...block, outputPath: file }
-          return block
-        }),
-      }))
+      // Structural share: only the home Agent (and optional tool_result) message
+      // identity changes so memo'd ChatMessage rows keep stable props.
+      msgs = mapMessagesStructural(msgs, (block) => {
+        if (block.type === 'tool_use' && block.toolName === 'Agent' && block.toolUseId === tid) {
+          return { ...block, ...agentPatch }
+        }
+        if (file && block.type === 'tool_result' && block.toolUseId === tid) {
+          if (block.outputPath === file) return block
+          return { ...block, outputPath: file }
+        }
+        return block
+      })
       return {
         messages: msgs,
         browserDownloads,

@@ -119,6 +119,56 @@ describe('ChatMessage token footer', () => {
   })
 })
 
+describe('ChatMessage MCP startup footer', () => {
+  it('hides the startup state after every MCP server has settled', () => {
+    render(
+      <ChatMessage
+        message={createCodexMessage({
+          metadata: {
+            codex: {
+              threadId: 'thread-1',
+              usage: null,
+              items: [],
+              mcpStartup: [
+                { name: 'superone', status: 'ready' },
+                { name: 'github', status: 'ready' },
+              ],
+            },
+          },
+        })}
+        sessionStatus="streaming"
+        isLastAssistant
+      />,
+    )
+
+    expect(screen.queryByText(/Starting MCP servers/)).toBeNull()
+  })
+
+  it('shows the startup state while an MCP server is still starting', () => {
+    render(
+      <ChatMessage
+        message={createCodexMessage({
+          metadata: {
+            codex: {
+              threadId: 'thread-1',
+              usage: null,
+              items: [],
+              mcpStartup: [
+                { name: 'superone', status: 'ready' },
+                { name: 'github', status: 'starting' },
+              ],
+            },
+          },
+        })}
+        sessionStatus="streaming"
+        isLastAssistant
+      />,
+    )
+
+    expect(screen.getByText('Starting MCP servers 1/2')).toBeTruthy()
+  })
+})
+
 describe('ChatMessage reasoning grouping', () => {
   it('merges two thinking blocks straddling a hidden tool into one reasoning card', () => {
     const { container } = render(

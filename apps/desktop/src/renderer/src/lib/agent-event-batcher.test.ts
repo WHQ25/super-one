@@ -6,6 +6,15 @@ function delta(text: string): AgentEvent {
   return { type: 'content_delta', messageId: 'm1', delta: { type: 'text', text } } as unknown as AgentEvent
 }
 
+function codexDelta(text: string): AgentEvent {
+  return {
+    type: 'codex_item_delta',
+    messageId: 'm1',
+    phase: 'updated',
+    item: { id: 'reasoning-1', type: 'reasoning', text },
+  } as AgentEvent
+}
+
 function lifecycle(type: string): AgentEvent {
   return { type, messageId: 'm1' } as unknown as AgentEvent
 }
@@ -29,6 +38,18 @@ describe('agent event batching', () => {
 
     vi.advanceTimersByTime(AGENT_EVENT_BATCH_MS)
     expect(seen).toHaveLength(3)
+  })
+
+  it('coalesces codex item updates instead of rendering every IPC event', () => {
+    const seen: AgentEvent[] = []
+    const batcher = createAgentEventBatcher((e) => seen.push(e))
+
+    batcher.push(codexDelta('first'))
+    batcher.push(codexDelta('first second'))
+    expect(seen).toHaveLength(0)
+
+    vi.advanceTimersByTime(AGENT_EVENT_BATCH_MS)
+    expect(seen).toHaveLength(2)
   })
 
   it('dispatches an interactive event immediately without waiting for the window', () => {

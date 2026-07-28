@@ -1,10 +1,11 @@
 import type { AgentEvent } from '@superone/shared/agent-types'
 
 /**
- * Streaming text arrives as one `content_delta` per token, and each one crosses
- * IPC as its own macrotask — so each becomes its own store write and its own
- * React render. Coalescing a window's worth into a single callback lets React's
- * automatic batching collapse them into one render.
+ * Streaming text arrives as one `content_delta` (Claude/ACP) or
+ * `codex_item_delta` (Codex) per update, and each one crosses IPC as its own
+ * macrotask — so each becomes its own store write and its own React render.
+ * Coalescing a window's worth into a single callback lets React's automatic
+ * batching collapse them into one render.
  *
  * `setTimeout`, not `requestAnimationFrame`: under render pressure rAF starves
  * on paint and the stream visibly freezes.
@@ -50,7 +51,7 @@ export function createAgentEventBatcher(
 
   return {
     push(event) {
-      if (event.type === 'content_delta') {
+      if (event.type === 'content_delta' || event.type === 'codex_item_delta') {
         queue.push(event)
         if (timer == null) timer = setTimeout(flush, batchMs)
         return

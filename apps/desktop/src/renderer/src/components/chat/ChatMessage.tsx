@@ -1110,10 +1110,12 @@ function DurationFooter({ message, copyText, parentIsStreaming }: { message: Cha
   const terminalReason = message.metadata?.terminalReason
   const showTerminalReason = !isStreaming && !!terminalReason && terminalReason !== 'completed' && message.status !== 'interrupted'
   const mcpStartup = message.metadata?.codex?.mcpStartup
+  const mcpServers = mcpStartup ?? []
   const hasCodexItems = (message.metadata?.codex?.items?.length ?? 0) > 0
-  const showMcpStartup = isStreaming && !!mcpStartup && mcpStartup.length > 0 && !hasCodexItems
-  const mcpReadyCount = showMcpStartup ? mcpStartup.filter((s) => s.status === 'ready').length : 0
-  const failedMcp = mcpStartup?.filter((s) => s.status === 'failed') ?? []
+  const hasStartingMcp = mcpServers.some((server) => server.status === 'starting')
+  const showMcpStartup = isStreaming && hasStartingMcp && !hasCodexItems
+  const mcpReadyCount = showMcpStartup ? mcpServers.filter((s) => s.status === 'ready').length : 0
+  const failedMcp = mcpServers.filter((s) => s.status === 'failed')
   const showMcpFailure = !isStreaming && failedMcp.length > 0
   if (!showDuration && !hasTokens && !showCopy && !showTerminalReason && !showMcpStartup && !showMcpFailure) return null
 
@@ -1150,7 +1152,7 @@ function DurationFooter({ message, copyText, parentIsStreaming }: { message: Cha
         <>
           {!showDuration && <Loader2 className="size-3 animate-spin" />}
           {showDuration && <span>·</span>}
-          <span>{t('chat.codex.startingMcpServers', { ready: mcpReadyCount, total: mcpStartup.length })}</span>
+          <span>{t('chat.codex.startingMcpServers', { ready: mcpReadyCount, total: mcpServers.length })}</span>
         </>
       )}
       {hasTokens && (

@@ -65,9 +65,9 @@ describe('useAgentEvents', () => {
       await Promise.resolve()
     })
 
-    expect(handleAgentEvent).toHaveBeenCalledTimes(2)
-    expect(handleAgentEvent.mock.calls[0][0].delta.text).toBe('A')
-    expect(handleAgentEvent.mock.calls[1][0].delta.text).toBe('B')
+    // Unsequenced deltas in one flush window fold to a single dispatch.
+    expect(handleAgentEvent).toHaveBeenCalledTimes(1)
+    expect(handleAgentEvent.mock.calls[0][0].delta.text).toBe('AB')
   })
 
   it('coalesces post-hydration deltas into one batch instead of dispatching each', async () => {
@@ -88,9 +88,8 @@ describe('useAgentEvents', () => {
 
       act(() => { vi.advanceTimersByTime(AGENT_EVENT_BATCH_MS) })
 
-      expect(handleAgentEvent).toHaveBeenCalledTimes(2)
-      expect(handleAgentEvent.mock.calls[0][0].delta.text).toBe('Y')
-      expect(handleAgentEvent.mock.calls[1][0].delta.text).toBe('Z')
+      expect(handleAgentEvent).toHaveBeenCalledTimes(1)
+      expect(handleAgentEvent.mock.calls[0][0].delta.text).toBe('YZ')
     } finally {
       vi.useRealTimers()
     }

@@ -29,6 +29,7 @@ export function reducePermission(session: PerSessionState, event: PermissionEven
         selectedCodexPermissionPreset: eventPatch.selectedCodexPermissionPreset,
         selectedCodexCollaborationMode: eventPatch.selectedCodexCollaborationMode,
         openCodeAgentId: eventPatch.openCodeAgentId,
+        selectedAcpModeId: eventPatch.selectedAcpModeId,
         permissionMode: eventPatch.permissionMode,
         apiProviderId: eventPatch.apiProviderId,
       }
@@ -57,6 +58,9 @@ export function reducePermission(session: PerSessionState, event: PermissionEven
       }
       if (merged.openCodeAgentId !== undefined) {
         patch.openCodeAgentId = merged.openCodeAgentId
+      }
+      if (merged.selectedAcpModeId !== undefined) {
+        patch.selectedAcpModeId = merged.selectedAcpModeId
       }
       if (merged.permissionMode !== undefined) {
         patch.permissionMode = merged.permissionMode

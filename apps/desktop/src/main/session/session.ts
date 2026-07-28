@@ -198,6 +198,15 @@ export class Session implements SessionContract {
   private unsubs: Array<() => void> = []
   private _cachedInitReady: AgentEvent | null = null
   private _cachedWorktreeMissing: AgentEvent | null = null
+  /** Last ACP catalog events — replayed for mini-window / late subscribers. */
+  private _cachedAcpModels: AgentEvent | null = null
+  private _cachedAcpModes: AgentEvent | null = null
+  private _cachedAcpCommands: AgentEvent | null = null
+  /**
+   * Accumulated composer/status-bar settings. Replayed as agent_setting_change
+   * and exposed on LiveSessionSnapshot.uiSettings so mini-window paints correctly.
+   */
+  private _uiSettings: import('@superone/shared/agent-types').SessionSettingsPatch = {}
   private _pendingQueuedRequests = new Map<string, { request: SendMessageRequest; providerOrigin: SendProviderOrigin }>()
   /** Shared so concurrent ensureStarted callers await the same backend.start(). */
   private _startPromise: Promise<void> | null = null
@@ -355,6 +364,13 @@ export class Session implements SessionContract {
     this._missingWorktreePath = opts.missingWorktreePath ?? null
     this._apiProviderId = opts.apiProviderId ?? null
     this._acpAgentId = opts.acpAgentId ?? agentIdFromConfig(opts.providerConfig)
+    this._uiSettings = {
+      permissionMode: this.permissionMode,
+      sandboxInfo: this.sandboxInfo,
+      selectedModel: this.model ?? null,
+      selectedEffort: this.effort ?? null,
+      apiProviderId: this._apiProviderId,
+    }
     this.systemPromptAppend = opts.systemPromptAppend
     if (this.harnessId === 'acp' && this._acpAgentId) {
       this.providerConfig = withAgentId(this.providerConfig, this._acpAgentId)
@@ -384,7 +400,9 @@ export class Session implements SessionContract {
       if (this.permissionMode === mode) return
       trace('permission.flow', 'session_mode_synced_from_backend', { sid: this.id, prev: this.permissionMode, next: mode })
       this.permissionMode = mode
+      this.mergeUiSettings({ permissionMode: mode })
       this.forwardEvent({ type: 'permission_mode_change', mode })
+      this.forwardEvent({ type: 'agent_setting_change', patch: { permissionMode: mode } } as AgentEvent)
     }))
     this.emitInitReady()
     if (this._missingWorktreePath) {
@@ -420,6 +438,8 @@ export class Session implements SessionContract {
       worktreeMissing: this._missingWorktreePath !== null,
       apiProviderId: this._apiProviderId,
       acpAgentId: this._acpAgentId,
+      selectedModel: this.model ?? null,
+      selectedEffort: this.effort ?? null,
     }
   }
 
@@ -437,6 +457,7 @@ export class Session implements SessionContract {
     this._needsRebuild = true
     this.notifyStateChange()
     const resolvedProvider = this.getActiveProvider?.(this.harnessId, apiProviderId) ?? null
+    this.mergeUiSettings({ apiProviderId, apiProvider: resolvedProvider })
     this.forwardEvent({
       type: 'agent_setting_change',
       patch: { apiProviderId, apiProvider: resolvedProvider },
@@ -572,6 +593,7 @@ export class Session implements SessionContract {
       return
     }
     this.permissionMode = mode
+    this.mergeUiSettings({ permissionMode: mode })
     this.forwardEvent({ type: 'permission_mode_change', mode })
     this.forwardEvent({ type: 'agent_setting_change', patch: { permissionMode: mode } } as AgentEvent)
     // Always push to the backend: ACP/Claude may already have a prewarmed runtime
@@ -606,6 +628,7 @@ export class Session implements SessionContract {
       return this.sandboxInfo
     }
     this.sandboxInfo = next
+    this.mergeUiSettings({ sandboxInfo: next })
     if (this.backendStarted) {
       try {
         await this.backend.setSandbox(next)
@@ -650,6 +673,7 @@ export class Session implements SessionContract {
    */
   broadcastSettingsPatch(patch: import('@superone/shared/agent-types').SessionSettingsPatch): void {
     if (!patch || Object.keys(patch).length === 0) return
+    this.mergeUiSettings(patch)
     this.forwardEvent({ type: 'agent_setting_change', patch } as AgentEvent)
   }
 
@@ -669,14 +693,21 @@ export class Session implements SessionContract {
       }
     }
     if (opts.mode !== undefined && opts.mode) {
+      this.mergeUiSettings({ selectedAcpModeId: opts.mode })
       void this.setSessionMode(opts.mode)
     }
-    if (!changed) return
+    if (!changed && opts.mode === undefined) return
+    const patch: import('@superone/shared/agent-types').SessionSettingsPatch = {
+      selectedModel: this.model ?? null,
+      selectedEffort: this.effort ?? null,
+      ...(opts.mode ? { selectedAcpModeId: opts.mode } : {}),
+    }
+    this.mergeUiSettings(patch)
     this.forwardEvent({
       type: 'agent_setting_change',
       selectedModel: this.model ?? null,
       selectedEffort: this.effort ?? null,
-      patch: { selectedModel: this.model ?? null, selectedEffort: this.effort ?? null },
+      patch,
     })
   }
 
@@ -1011,6 +1042,25 @@ export class Session implements SessionContract {
     const out: AgentEvent[] = []
     if (this._cachedInitReady) out.push(this._cachedInitReady)
     if (this._cachedWorktreeMissing) out.push(this._cachedWorktreeMissing)
+    // Full composer UI state when it diverges from defaults. Live snapshots also
+    // carry uiSettings for mini-window cold paint; this covers Session.on() late
+    // subscribers without flooding every listener with empty defaults.
+    if (this.hasMeaningfulUiSettings()) {
+      const ui = this.getUiSettings()
+      out.push({
+        type: 'agent_setting_change',
+        selectedModel: ui.selectedModel ?? null,
+        selectedEffort: ui.selectedEffort ?? null,
+        patch: ui,
+        sessionId: this.id,
+        projectPath: this.projectPath,
+      } as AgentEvent)
+    }
+    // ACP model/mode/command catalogs are one-shot at runtime start — cache them
+    // so mini-window live sync can show model names without re-probing the agent.
+    if (this._cachedAcpModels) out.push(this._cachedAcpModels)
+    if (this._cachedAcpModes) out.push(this._cachedAcpModes)
+    if (this._cachedAcpCommands) out.push(this._cachedAcpCommands)
     return out
   }
 
@@ -1055,6 +1105,49 @@ export class Session implements SessionContract {
 
   getCurrentSandboxInfo(): SandboxInfo {
     return this.sandboxInfo
+  }
+
+  /** Accumulated composer/status-bar settings for live snapshot + multi-window paint. */
+  getUiSettings(): import('@superone/shared/agent-types').SessionSettingsPatch {
+    return {
+      ...this._uiSettings,
+      permissionMode: this.permissionMode,
+      sandboxInfo: this.sandboxInfo,
+      selectedModel: this.model ?? this._uiSettings.selectedModel ?? null,
+      selectedEffort: this.effort ?? this._uiSettings.selectedEffort ?? null,
+      apiProviderId: this._apiProviderId,
+    }
+  }
+
+  private mergeUiSettings(patch: import('@superone/shared/agent-types').SessionSettingsPatch): void {
+    this._uiSettings = { ...this._uiSettings, ...patch }
+  }
+
+  /** Whether UI settings differ enough from fresh-session defaults to warrant event replay. */
+  private hasMeaningfulUiSettings(): boolean {
+    const ui = this.getUiSettings()
+    if (ui.permissionMode && ui.permissionMode !== 'default') return true
+    if (ui.selectedModel) return true
+    if (ui.selectedEffort) return true
+    if (ui.selectedAcpModeId) return true
+    if (ui.selectedCodexModel) return true
+    if (ui.selectedCodexReasoningEffort) return true
+    if (ui.selectedCodexPermissionPreset && ui.selectedCodexPermissionPreset !== 'default') return true
+    if (ui.selectedCodexCollaborationMode && ui.selectedCodexCollaborationMode !== 'default') return true
+    if (ui.openCodeAgentId) return true
+    if (ui.apiProviderId) return true
+    if (ui.sandboxInfo) {
+      try {
+        const def = coerceSandboxInfo(getDefaultSandbox())
+        if (
+          ui.sandboxInfo.enabled !== def.enabled
+          || ui.sandboxInfo.autoAllowBash !== def.autoAllowBash
+        ) return true
+      } catch {
+        return true
+      }
+    }
+    return false
   }
 
   updateProviderConfig(nextConfig: unknown): void {
@@ -1173,6 +1266,23 @@ export class Session implements SessionContract {
     }
     for (const cb of this.eventListeners) {
       try { cb(tagged) } catch (err) { log.warn('[Session] event listener error:', err) }
+    }
+    if (tagged.type === 'acp_models') {
+      this._cachedAcpModels = tagged
+      // Keep Session.model aligned with agent-advertised selection for snapshots.
+      if (tagged.selectedModelId) {
+        this.model = tagged.selectedModelId
+        this.mergeUiSettings({ selectedModel: tagged.selectedModelId })
+      }
+    } else if (tagged.type === 'acp_modes') {
+      this._cachedAcpModes = tagged
+      if (tagged.selectedModeId) {
+        this.mergeUiSettings({ selectedAcpModeId: tagged.selectedModeId })
+      }
+    } else if (tagged.type === 'acp_commands') {
+      this._cachedAcpCommands = tagged
+    } else if (tagged.type === 'permission_mode_change') {
+      this.mergeUiSettings({ permissionMode: tagged.mode })
     }
     if (
       event.type === 'message_complete' ||

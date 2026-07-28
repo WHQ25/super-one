@@ -27,6 +27,7 @@ import {
   resolveActiveSessionId,
   triggerPrewarm,
   updateActivePerSession,
+  updatePerSession,
   updateProjectState,
 } from './store-helpers'
 import { resolveProvider } from './provider-routing'
@@ -653,6 +654,59 @@ export function setPreferredProviderImpl(
   } else {
     void get().initializeHarness(provider)
   }
+}
+
+/**
+ * Fill ACP model/mode catalog when a session is opened without live acp_models
+ * events (mini-window cold path, or Case A after live sync that only carried ids).
+ * Prefers disk/startup cache; falls back to initializeHarness + refresh.
+ */
+export function hydrateAcpCatalogForSession(
+  set: ChatStoreSet,
+  get: () => ChatStore,
+  projectPath: string,
+  sessionId: string,
+): void {
+  const session = get().projectSessions[projectPath]?._sessions[sessionId]
+  if (!session) return
+  if (resolveProvider(session) !== 'acp' || !session.acpAgentId) return
+  // Live replay already populated a ready catalog — don't clobber.
+  if (session.acpModels.length > 0 && session.acpModelsStatus === 'ready') return
+
+  const agentId = session.acpAgentId
+  const preferSelected = session.selectedModel || null
+
+  const applyCatalog = (): void => {
+    const current = get().projectSessions[projectPath]?._sessions[sessionId]
+    if (!current || resolveProvider(current) !== 'acp') return
+    if (current.acpAgentId !== agentId) return
+    if (current.acpModels.length > 0 && current.acpModelsStatus === 'ready') return
+    const catalog = getCachedAcpCatalog(get().harnessResources.acp, agentId)
+    if (!catalog) return
+    set((s) => updatePerSession(s, projectPath, sessionId, () =>
+      sessionPatchFromAcpCatalog(catalog, {
+        preferSelected: current.selectedModel || preferSelected,
+      }),
+    ))
+  }
+
+  const cached = getCachedAcpCatalog(get().harnessResources.acp, agentId)
+  if (cached) {
+    applyCatalog()
+    return
+  }
+
+  void get().initializeHarness('acp').then(() => {
+    applyCatalog()
+    if (get().projectSessions[projectPath]?._sessions[sessionId]?.acpModels.length) return
+    void window.app.refreshAcpModels?.(agentId).then((fresh) => {
+      if (!fresh) return
+      get().setHarnessResources('acp', fresh)
+      applyCatalog()
+    }).catch((err) => {
+      console.warn('[acp] hydrate catalog refresh failed:', err)
+    })
+  })
 }
 
 export function setAcpAgentIdImpl(

@@ -1135,6 +1135,8 @@ export interface SessionSettingsPatch {
   selectedCodexCollaborationMode?: CodexCollaborationMode | null
   // OpenCode
   openCodeAgentId?: string | null
+  // ACP session mode / Grok effort selection (replayed for mini-window)
+  selectedAcpModeId?: string | null
   // Shared
   permissionMode?: PermissionMode
   sandboxInfo?: SandboxInfo

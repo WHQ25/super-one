@@ -1,5 +1,14 @@
 import type { StateCreator } from 'zustand'
-import type { AgentEvent, AgentStatus, ChatMessage } from '@superone/shared/agent-types'
+import type {
+  AgentEvent,
+  AgentStatus,
+  ChatMessage,
+  CodexCollaborationMode,
+  CodexPermissionPreset,
+  CodexReasoningEffort,
+  EffortLevel,
+  SessionSettingsPatch,
+} from '@superone/shared/agent-types'
 import { useAppStore } from '../../app'
 import type { ChatProvider, ChatStore, PerSessionState } from '../types'
 import { buildSlashCommands } from '../helpers/chat-helpers'
@@ -25,6 +34,46 @@ import {
   summarizeCodexTraceItem,
   updateProjectState,
 } from '../index'
+
+/** Map live-snapshot UI settings into PerSessionState (composer / status bar). */
+function sessionPatchFromUiSettings(
+  ui: SessionSettingsPatch | undefined,
+  prev: PerSessionState,
+): Partial<PerSessionState> {
+  if (!ui) return {}
+  const patch: Partial<PerSessionState> = {}
+  if (ui.permissionMode !== undefined) patch.permissionMode = ui.permissionMode
+  if (ui.selectedModel !== undefined && ui.selectedModel !== null) {
+    patch.selectedModel = ui.selectedModel
+  }
+  if (ui.selectedEffort !== undefined) {
+    patch.selectedEffort = (ui.selectedEffort ?? undefined) as EffortLevel | undefined
+  }
+  if (ui.selectedCodexModel !== undefined && ui.selectedCodexModel !== null) {
+    patch.selectedCodexModel = ui.selectedCodexModel
+  }
+  if (ui.selectedCodexReasoningEffort !== undefined) {
+    patch.selectedCodexReasoningEffort = (ui.selectedCodexReasoningEffort ?? undefined) as CodexReasoningEffort | undefined
+  }
+  if (ui.selectedCodexPermissionPreset != null) {
+    patch.selectedCodexPermissionPreset = ui.selectedCodexPermissionPreset as CodexPermissionPreset
+  }
+  if (ui.selectedCodexCollaborationMode != null) {
+    patch.selectedCodexCollaborationMode = ui.selectedCodexCollaborationMode as CodexCollaborationMode
+  }
+  if (ui.openCodeAgentId !== undefined) {
+    patch.openCodeAgentId = ui.openCodeAgentId
+  }
+  if (ui.selectedAcpModeId !== undefined) {
+    patch.selectedAcpModeId = ui.selectedAcpModeId
+  }
+  if (ui.apiProviderId !== undefined) {
+    patch.apiProviderId = ui.apiProviderId
+  }
+  // Prefer explicit ui values; fall back to prev only when field absent.
+  void prev
+  return patch
+}
 
 /**
  * Event-related actions. Both implementations now live here.
@@ -648,6 +697,7 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
         const mergedMessages = mergeMessagesByMaxSeq(entry.snapshot.messages as ChatMessage[], prevSession.messages)
         const provider: ChatProvider = inferProviderFromHarnessId(entry.snapshot.harnessId) ?? 'claude'
         const inferredStatus: AgentStatus = entry.isStreaming ? 'streaming' : prevSession.status === 'error' ? 'error' : 'idle'
+        const fromUi = sessionPatchFromUiSettings(entry.uiSettings, prevSession)
         const mergedSession: PerSessionState = {
           ...prevSession,
           cwd: entry.snapshot.cwd,
@@ -660,15 +710,30 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
             : false,
           sessionProvider: provider,
           preferredProvider: provider,
-          permissionMode: entry.permissionMode,
+          // Live UI settings first (permission / codex presets / effort / …), then
+          // explicit snapshot fields as authoritative fallbacks.
+          ...fromUi,
+          permissionMode: fromUi.permissionMode ?? entry.permissionMode ?? prevSession.permissionMode,
           lastAssistantMessageId: entry.snapshot.currentMessageId ?? prevSession.lastAssistantMessageId,
           _worktreePath: entry.snapshot.worktreePath ?? prevSession._worktreePath,
           _gitBranch: entry.snapshot.gitBranch ?? prevSession._gitBranch,
           _worktreeRemoved: entry.snapshot.worktreeMissing,
-          apiProviderId: entry.snapshot.apiProviderId ?? prevSession.apiProviderId ?? null,
+          apiProviderId: fromUi.apiProviderId
+            ?? entry.snapshot.apiProviderId
+            ?? prevSession.apiProviderId
+            ?? null,
           // Live snapshot must carry ACP agent identity — without it mini-window
           // brands every ACP session as generic "ACP Agent" after syncLiveSnapshots.
           acpAgentId: entry.snapshot.acpAgentId ?? prevSession.acpAgentId ?? null,
+          // Model id from main session (agent_setting_change / acp_models). Full
+          // catalog names arrive via replayed acp_models events just below.
+          selectedModel: fromUi.selectedModel
+            || entry.snapshot.selectedModel
+            || prevSession.selectedModel
+            || '',
+          selectedEffort: fromUi.selectedEffort
+            ?? (entry.snapshot.selectedEffort as EffortLevel | null | undefined)
+            ?? prevSession.selectedEffort,
           _historyHydrated: true,
         }
         const nextSessions = { ...prevProject._sessions, [entry.sid]: mergedSession }

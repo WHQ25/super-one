@@ -128,6 +128,7 @@ export class SessionManagerImpl implements SessionManagerContract {
         isStreaming: session.isStreaming(),
         permissionMode: session.getCurrentPermissionMode(),
         sandboxInfo: session.getCurrentSandboxInfo(),
+        uiSettings: session.getUiSettings(),
         snapshot: session.snapshot,
         pendingInteractions: session.getPendingInteractions(),
         replayEvents: session.getReplayEvents(),

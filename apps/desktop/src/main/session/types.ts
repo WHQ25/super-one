@@ -309,6 +309,7 @@ export interface Session {
   setSandboxMode(mode: SandboxMode): Promise<SandboxInfo>
   getCurrentPermissionMode(): PermissionMode
   getCurrentSandboxInfo(): SandboxInfo
+  getUiSettings(): import('@superone/shared/agent-types').SessionSettingsPatch
   setModel(model: string): Promise<void>
   setSessionMode(modeId: string): Promise<void>
   setSelectedSettings(opts: { model?: string | null; effort?: SendMessageRequest['effort'] | null; mode?: string | null }): void

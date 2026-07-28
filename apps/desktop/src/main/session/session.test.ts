@@ -2272,9 +2272,11 @@ describe('Session ownership', () => {
     const { session } = makeSession()
     const events: import('@superone/shared/agent-types').AgentEvent[] = []
     session.on((e) => events.push(e))
+    const afterSubscribe = events.length
     await session.setPermissionMode('plan')
-    const legacyEvent = events.find((e) => e.type === 'permission_mode_change')
-    const patchEvent = events.find((e) => e.type === 'agent_setting_change')
+    const fresh = events.slice(afterSubscribe)
+    const legacyEvent = fresh.find((e) => e.type === 'permission_mode_change')
+    const patchEvent = fresh.find((e) => e.type === 'agent_setting_change')
     expect(legacyEvent).toBeDefined()
     expect(patchEvent).toBeDefined()
     if (patchEvent && patchEvent.type === 'agent_setting_change') {
@@ -2286,8 +2288,9 @@ describe('Session ownership', () => {
     const { session } = makeSession()
     const events: import('@superone/shared/agent-types').AgentEvent[] = []
     session.on((e) => events.push(e))
+    const afterSubscribe = events.length
     session.setSelectedSettings({ model: 'claude-opus-4-8', effort: 'high' })
-    const settingEvent = events.find((e) => e.type === 'agent_setting_change')
+    const settingEvent = events.slice(afterSubscribe).find((e) => e.type === 'agent_setting_change')
     expect(settingEvent).toBeDefined()
     if (settingEvent && settingEvent.type === 'agent_setting_change') {
       expect(settingEvent.selectedModel).toBe('claude-opus-4-8')
@@ -2301,8 +2304,9 @@ describe('Session ownership', () => {
     const { session } = makeSession()
     const events: import('@superone/shared/agent-types').AgentEvent[] = []
     session.on((e) => events.push(e))
+    const afterSubscribe = events.length
     await session.setSandboxMode('off')
-    const patchEvent = events.find((e) => e.type === 'agent_setting_change')
+    const patchEvent = events.slice(afterSubscribe).find((e) => e.type === 'agent_setting_change')
     expect(patchEvent).toBeDefined()
     if (patchEvent && patchEvent.type === 'agent_setting_change') {
       expect(patchEvent.patch?.sandboxInfo).toEqual({ enabled: false, autoAllowBash: false })
@@ -2313,8 +2317,10 @@ describe('Session ownership', () => {
     const { session } = makeSession()
     const events: import('@superone/shared/agent-types').AgentEvent[] = []
     session.on((e) => events.push(e))
+    // on() replays cached UI settings as agent_setting_change — only count post-subscribe emits.
+    const afterSubscribe = events.length
     session.broadcastSettingsPatch({ selectedCodexModel: 'gpt-5', selectedCodexCollaborationMode: 'plan' })
-    const patchEvent = events.find((e) => e.type === 'agent_setting_change')
+    const patchEvent = events.slice(afterSubscribe).find((e) => e.type === 'agent_setting_change')
     expect(patchEvent).toBeDefined()
     if (patchEvent && patchEvent.type === 'agent_setting_change') {
       expect(patchEvent.patch?.selectedCodexModel).toBe('gpt-5')
@@ -2326,8 +2332,21 @@ describe('Session ownership', () => {
     const { session } = makeSession()
     const events: import('@superone/shared/agent-types').AgentEvent[] = []
     session.on((e) => events.push(e))
+    const afterSubscribe = events.length
     session.broadcastSettingsPatch({})
-    expect(events.find((e) => e.type === 'agent_setting_change')).toBeUndefined()
+    expect(events.slice(afterSubscribe).find((e) => e.type === 'agent_setting_change')).toBeUndefined()
+  })
+
+  it('getUiSettings accumulates permission/model and is exposed for live snapshots', async () => {
+    const { session } = makeSession()
+    await session.setPermissionMode('plan')
+    session.setSelectedSettings({ model: 'grok-4.5', effort: 'high' })
+    session.broadcastSettingsPatch({ selectedCodexPermissionPreset: 'full-access' })
+    const ui = session.getUiSettings()
+    expect(ui.permissionMode).toBe('plan')
+    expect(ui.selectedModel).toBe('grok-4.5')
+    expect(ui.selectedEffort).toBe('high')
+    expect(ui.selectedCodexPermissionPreset).toBe('full-access')
   })
 
   it('dispose clears subscribers, releases owner, emits closed event', async () => {

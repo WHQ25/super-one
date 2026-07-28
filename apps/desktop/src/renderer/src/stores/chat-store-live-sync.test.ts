@@ -201,6 +201,9 @@ function makeSnapshotEntry(overrides: Partial<{
   replayEvents: AgentEvent[]
   apiProviderId: string | null
   acpAgentId: string | null
+  selectedModel: string | null
+  selectedEffort: string | null
+  uiSettings: Record<string, unknown>
 }> = {}) {
   return {
     sid: overrides.sid ?? 'sid-1',
@@ -209,6 +212,14 @@ function makeSnapshotEntry(overrides: Partial<{
     isStreaming: overrides.isStreaming ?? true,
     permissionMode: overrides.permissionMode ?? 'acceptEdits',
     sandboxInfo: { enabled: true, autoAllowBash: false },
+    uiSettings: {
+      permissionMode: overrides.permissionMode ?? 'acceptEdits',
+      sandboxInfo: { enabled: true, autoAllowBash: false },
+      selectedModel: overrides.selectedModel ?? null,
+      selectedEffort: overrides.selectedEffort ?? null,
+      selectedAcpModeId: null,
+      ...(overrides.uiSettings ?? {}),
+    },
     snapshot: {
       id: overrides.sid ?? 'sid-1',
       projectPath: overrides.projectPath ?? '/p',
@@ -231,6 +242,8 @@ function makeSnapshotEntry(overrides: Partial<{
       worktreeMissing: false,
       apiProviderId: overrides.apiProviderId ?? null,
       acpAgentId: overrides.acpAgentId ?? null,
+      selectedModel: overrides.selectedModel ?? null,
+      selectedEffort: overrides.selectedEffort ?? null,
     },
     pendingInteractions: overrides.pendingInteractions ?? [],
     replayEvents: overrides.replayEvents ?? [],
@@ -383,6 +396,65 @@ describe('syncLiveSnapshots', () => {
     expect(session.sessionProvider).toBe('acp')
     expect(session.preferredProvider).toBe('acp')
     expect(session.acpAgentId).toBe('grok-build')
+  })
+
+  it('carries snapshot selectedModel and replays acp_models for mini-window model labels', async () => {
+    mockGetLiveSnapshots.mockResolvedValueOnce([
+      makeSnapshotEntry({
+        harnessId: 'acp',
+        messages: [makeMessage('m1', 'hi', 1)],
+        acpAgentId: 'grok-build',
+        selectedModel: 'grok-4.5',
+        isStreaming: false,
+        currentMessageId: null,
+        replayEvents: [{
+          type: 'acp_models',
+          models: [{ id: 'grok-4.5', name: 'Grok 4.5', description: '' }],
+          selectedModelId: 'grok-4.5',
+          configId: 'model',
+          status: 'ready',
+          agentId: 'grok-build',
+          projectPath: '/p',
+          sessionId: 'sid-1',
+        } as AgentEvent],
+      }),
+    ])
+
+    await useChatStore.getState().syncLiveSnapshots()
+    const session = useChatStore.getState().projectSessions['/p']._sessions['sid-1']
+    expect(session.selectedModel).toBe('grok-4.5')
+    expect(session.acpModels).toEqual([
+      expect.objectContaining({ id: 'grok-4.5', name: 'Grok 4.5' }),
+    ])
+    expect(session.acpModelsStatus).toBe('ready')
+  })
+
+  it('applies uiSettings for permission mode, effort, and codex presets', async () => {
+    mockGetLiveSnapshots.mockResolvedValueOnce([
+      makeSnapshotEntry({
+        harnessId: 'acp',
+        messages: [makeMessage('m1', 'hi', 1)],
+        acpAgentId: 'grok-build',
+        permissionMode: 'plan',
+        selectedModel: 'grok-4.5',
+        isStreaming: false,
+        currentMessageId: null,
+        uiSettings: {
+          permissionMode: 'bypassPermissions',
+          selectedModel: 'grok-4.5',
+          selectedAcpModeId: 'high',
+          selectedCodexPermissionPreset: 'full-access',
+          selectedCodexCollaborationMode: 'plan',
+        },
+      }),
+    ])
+
+    await useChatStore.getState().syncLiveSnapshots()
+    const session = useChatStore.getState().projectSessions['/p']._sessions['sid-1']
+    // uiSettings.permissionMode wins over top-level entry.permissionMode when both set.
+    expect(session.permissionMode).toBe('bypassPermissions')
+    expect(session.selectedAcpModeId).toBe('high')
+    expect(session.selectedModel).toBe('grok-4.5')
   })
 
   it('preserves prior acpAgentId when a live snapshot omits agent id', async () => {

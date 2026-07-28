@@ -51,10 +51,12 @@ export function AcpModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?: (e: 
   const agentLabel = agent?.name ?? (acpAgentId ? acpAgentDisplayName(acpAgentId) : null)
   const grouped = useGroupedSlashList(acpAgentId)
   const currentModel = acpModels.find((m) => m.id === selectedModel)
-  // Only show selectedModel when it exists in this agent's catalog (avoids Claude/OpenCode ids after switch).
-  const currentLabel = currentModel
+  // Prefer catalog display name; fall back to raw selectedModel id (live sync may
+  // have the id before acp_models replay fills names).
+  const modelLabel = currentModel
     ? (grouped ? resolveSlashModelLabel(currentModel) : (currentModel.name || currentModel.id))
-    : (agentLabel ?? t('chat.suggestions.acpLabel'))
+    : (selectedModel || null)
+  const currentLabel = modelLabel ?? agentLabel ?? t('chat.suggestions.acpLabel')
 
   const models = useMemo<SelectorModelOption[] | undefined>(
     () => grouped ? undefined : acpModels.map((m) => ({ id: m.id, name: m.name || m.id, description: m.description })),
@@ -107,18 +109,31 @@ export function AcpModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?: (e: 
     ) || null
     : null
 
-  if (acpModelsStatus === 'loading' || (acpModelsStatus === 'idle' && agent?.installed)) {
+  if (acpModelsStatus === 'loading' || (acpModelsStatus === 'idle' && agent?.installed && !selectedModel)) {
     return (
       <div className="flex items-center gap-1">
         <span className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-muted-foreground">
           <Loader2 className="size-3 animate-spin" />
-          <span className="max-w-35 truncate">{agentLabel ?? t('chat.suggestions.selectAgent')}</span>
+          <span className="max-w-35 truncate">{modelLabel ?? agentLabel ?? t('chat.suggestions.selectAgent')}</span>
         </span>
       </div>
     )
   }
 
   if (acpModels.length === 0) {
+    // Show known model id even when catalog hasn't arrived (mini-window cold paint).
+    if (selectedModel) {
+      return (
+        <div className="flex items-center gap-1">
+          <span
+            className="max-w-45 truncate rounded-lg px-2 py-1 text-xs text-muted-foreground"
+            title={acpModelsError ?? selectedModel}
+          >
+            {selectedModel}
+          </span>
+        </div>
+      )
+    }
     const hint = acpModelsError
       ?? (!agent?.installed ? t('chat.suggestions.agentNotInstalled') : t('chat.suggestions.acpLabel'))
     return (

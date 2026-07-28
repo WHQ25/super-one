@@ -298,6 +298,7 @@ import {
   setPreferredProviderImpl,
   setAcpAgentIdImpl,
   ensureAcpSlashCommandsImpl,
+  hydrateAcpCatalogForSession,
 } from './helpers/session-lifecycle'
 import {
   answerQuestionImpl,
@@ -705,6 +706,8 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
       if (Object.keys(defaultsPatch).length > 0) {
         set((s) => updatePerSession(s, activeProject, sessionId, () => defaultsPatch))
       }
+      // Mini-window / multi-window: live sync may leave acpModels empty until catalog hydrate.
+      hydrateAcpCatalogForSession(set, get, activeProject, sessionId)
 
       try {
         await _syncAndResumeSession(activeProject, sessionId, set, _getSessionCwd(activeProject, runtimeSession))
@@ -820,6 +823,7 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
       console.warn('[chat] resumeSession failed:', err)
     }
     if (restoredProvider === 'acp') {
+      hydrateAcpCatalogForSession(set, get, activeProject, sessionId)
       triggerPrewarm(get(), activeProject)
     }
   },

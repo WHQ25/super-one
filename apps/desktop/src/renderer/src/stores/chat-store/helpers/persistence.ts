@@ -1,5 +1,6 @@
 import type { ChatMessage } from '@superone/shared/agent-types'
 import type { ChatStore, PerSessionState, PersistedSessionState, ProjectState } from '../types'
+import { latestCodexTodoListFromMessages } from './codex-todo'
 import { resolveActiveSessionId } from './store-helpers'
 
 const CODEX_LOCAL_SESSION_PREFIX = 'codex_local_'
@@ -66,6 +67,8 @@ export function _mergePersistedSessionState(session: PerSessionState, saved: Per
     openCodeAgentId: session.openCodeAgentId
       ?? saved.messages.findLast((message) => message.role === 'assistant')?.metadata?.agent
       ?? null,
+    // Rebuild derived UI field — not persisted; cold restore must not leave todos blank.
+    _latestCodexTodoList: latestCodexTodoListFromMessages(mergedMessages),
     _historyHydrated: true,
   }
 }
@@ -91,6 +94,9 @@ export function _mergeHydratedSessionState(
     apiProviderId: session.apiProviderId ?? hydrated.apiProviderId,
     acpAgentId: session.acpAgentId ?? hydrated.acpAgentId,
     openCodeAgentId: session.openCodeAgentId ?? hydrated.openCodeAgentId,
+    // Always re-derive: null means "cleared / all completed", not "unset".
+    // `?? hydrated` would resurrect a finished list after a live clear.
+    _latestCodexTodoList: latestCodexTodoListFromMessages(mergedMessages),
     _historyHydrated: true,
   }
 }

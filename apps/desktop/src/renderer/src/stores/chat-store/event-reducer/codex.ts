@@ -1,5 +1,6 @@
 import type { AgentEvent } from '@superone/shared/agent-types'
 import { applySeqToMessage, isReplayedEventForMessage } from '@superone/shared/event-seq-utils'
+import { codexTodoListFromItem } from '../helpers/codex-todo'
 import { upsertCodexItem } from '../helpers/codex-helpers'
 import type { PerSessionState } from '../types'
 
@@ -51,8 +52,10 @@ export function reduceCodex(session: PerSessionState, event: CodexEvent): Partia
       if (target && isReplayedEventForMessage(event, target)) {
         return { lastEventAt: Date.now() }
       }
+      const todoUpdate = codexTodoListFromItem(event.item)
       return {
         lastEventAt: Date.now(),
+        ...(todoUpdate !== undefined ? { _latestCodexTodoList: todoUpdate } : {}),
         messages: session.messages.map((msg) => {
           if (msg.id !== event.messageId) return msg
           const prevCodex = msg.metadata?.codex ?? { threadId: null, usage: null, items: [] }

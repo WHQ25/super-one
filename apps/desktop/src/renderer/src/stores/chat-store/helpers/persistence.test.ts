@@ -25,6 +25,7 @@ const {
   _getSessionCwd,
   _getSessionGitBranch,
   _hydrateSessionState,
+  _mergeHydratedSessionState,
   _mergePersistedMessages,
   _mergePersistedSessionState,
 } = await import('./persistence')
@@ -142,6 +143,44 @@ describe('_mergePersistedSessionState', () => {
     }
     const merged = _mergePersistedSessionState(sess, saved as never)
     expect(merged.lastAssistantMessageId).toBe('a2')
+  })
+})
+
+describe('_mergeHydratedSessionState', () => {
+  it('re-derives todo list from merged messages instead of resurrecting a live null clear', () => {
+    const openTodo = {
+      id: 'todo-old',
+      type: 'todo_list' as const,
+      items: [{ text: 'open', completed: false }],
+    }
+    const completedOnly = {
+      id: 'todo-done',
+      type: 'todo_list' as const,
+      items: [{ text: 'done', completed: true }],
+    }
+    // Live stream already cleared the open list (all completed → null).
+    const liveMsg = {
+      ...makeMessage('a-live', 'assistant'),
+      metadata: { codex: { threadId: null, usage: null, items: [completedOnly] } },
+    }
+    const hydratedMsg = {
+      ...makeMessage('a-hydrated', 'assistant'),
+      metadata: { codex: { threadId: null, usage: null, items: [openTodo] } },
+    }
+    const session = {
+      ...createDefaultPerSessionState(),
+      messages: [liveMsg],
+      _latestCodexTodoList: null,
+    }
+    const hydrated = {
+      ...createDefaultPerSessionState(),
+      messages: [hydratedMsg],
+      _latestCodexTodoList: openTodo,
+      _historyHydrated: true,
+    }
+    const merged = _mergeHydratedSessionState(session, hydrated)
+    // Newest message is live completed-only → derived null, not the hydrated open list.
+    expect(merged._latestCodexTodoList).toBeNull()
   })
 })
 

@@ -79,6 +79,7 @@ export function createDefaultPerSessionState(): PerSessionState {
     planApprovalOutcome: null,
     slashCommandOutput: null,
     _streamingToolInputPreviews: {},
+    _latestCodexTodoList: null,
     _pendingSlashCommand: '',
     _pendingCompactUserId: '',
     todos: {},

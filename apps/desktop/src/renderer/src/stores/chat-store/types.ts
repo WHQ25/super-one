@@ -11,6 +11,7 @@ import type {
   CodexPermissionPreset,
   CodexReasoningEffort,
   CodexResources,
+  CodexTodoListItem,
   OpenCodeResources,
   CodexReviewTarget,
   CodexUsageInfo,
@@ -153,6 +154,11 @@ export interface PerSessionState {
   planApprovalOutcome: { approved: boolean; feedback?: string } | null
   slashCommandOutput: { command: string; content: string } | null
   _streamingToolInputPreviews: Record<string, Record<string, unknown>>
+  /**
+   * Latest open Codex todo_list item for the session (null when none / all done).
+   * Updated on codex_item_delta so TodoPopup need not select full messages.
+   */
+  _latestCodexTodoList: CodexTodoListItem | null
   _pendingSlashCommand: string
   _pendingCompactUserId: string
   todos: Record<string, TodoItem>

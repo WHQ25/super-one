@@ -1,30 +1,17 @@
-import { useEffect, useCallback, useMemo } from 'react'
-import type { ChatMessage, CodexTodoListItem } from '@superone/shared/agent-types'
+import { useEffect, useCallback } from 'react'
 import { useChatStore, useActiveSession } from '@/stores/chat'
+import { useShallow } from 'zustand/react/shallow'
 import { Kbd } from '@superone/ui/components/ui/kbd'
 import { TodoListPanel } from './TodoListPanel'
 
-function findLatestCodexTodoList(messages: ChatMessage[]): CodexTodoListItem | null {
-  for (let messageIndex = messages.length - 1; messageIndex >= 0; messageIndex--) {
-    const message = messages[messageIndex]
-    const items = message.metadata?.codex?.items
-    if (!items) continue
-    for (let itemIndex = items.length - 1; itemIndex >= 0; itemIndex--) {
-      const item = items[itemIndex]
-      if (item.type === 'todo_list') {
-        if (item.items.length > 0 && item.items.every((i) => i.completed)) return null
-        return item
-      }
-    }
-  }
-  return null
-}
-
 export function TodoPopup() {
-  const todos = useActiveSession((s) => s.todos)
-  const messages = useActiveSession((s) => s.messages)
-  const showTodos = useActiveSession((s) => s.showTodos)
-  const todosUserDismissed = useActiveSession((s) => s._todosUserDismissed)
+  // Narrow selectors only — never subscribe to full messages (stream hot path).
+  const { todos, showTodos, todosUserDismissed, codexTodoList } = useActiveSession(useShallow((s) => ({
+    todos: s.todos,
+    showTodos: s.showTodos,
+    todosUserDismissed: s._todosUserDismissed,
+    codexTodoList: s._latestCodexTodoList,
+  })))
   const toggleTodos = useChatStore((s) => s.toggleTodos)
 
   const handleKeyDown = useCallback(
@@ -44,7 +31,6 @@ export function TodoPopup() {
   }, [showTodos, handleKeyDown])
 
   const sessionTodoList = Object.values(todos)
-  const codexTodoList = useMemo(() => findLatestCodexTodoList(messages), [messages])
   const usingSessionTodos = sessionTodoList.length > 0
   const usingCodexTodos = !usingSessionTodos && codexTodoList !== null
 

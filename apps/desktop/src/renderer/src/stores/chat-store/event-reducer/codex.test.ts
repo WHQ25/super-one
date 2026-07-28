@@ -93,6 +93,36 @@ describe('reduceCodex: codex_thread_started', () => {
   })
 })
 
+describe('reduceCodex: _latestCodexTodoList', () => {
+  it('stores the latest open todo_list item for TodoPopup without message scans', async () => {
+    const session = createDefaultPerSessionState()
+    session.messages = [makeMessage('m1')]
+    const patch = reduceCodex(session, {
+      type: 'codex_item_delta',
+      messageId: 'm1',
+      item: {
+        id: 'todo-1',
+        type: 'todo_list',
+        items: [{ text: 'A', completed: false }, { text: 'B', completed: false }],
+      },
+    } as never)
+    expect(patch._latestCodexTodoList?.id).toBe('todo-1')
+    expect(patch._latestCodexTodoList?.items).toHaveLength(2)
+
+    const next = { ...session, ...patch, messages: patch.messages ?? session.messages }
+    const done = reduceCodex(next as typeof session, {
+      type: 'codex_item_delta',
+      messageId: 'm1',
+      item: {
+        id: 'todo-1',
+        type: 'todo_list',
+        items: [{ text: 'A', completed: true }, { text: 'B', completed: true }],
+      },
+    } as never)
+    expect(done._latestCodexTodoList).toBeNull()
+  })
+})
+
 describe('reduceCodex: codex_item_delta', () => {
   it('appends a new codex thread item via upsertCodexItem', () => {
     const session = createDefaultPerSessionState()

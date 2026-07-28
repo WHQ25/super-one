@@ -215,6 +215,7 @@ export function clearMessagesImpl(set: ChatStoreSet, get: () => ChatStore): void
       planApprovalOutcome: null, mentions: [], subagentTokens: {},
       subagentColors: {}, _subagentColorsFree: freshSubagentColorPool(),
       todos: {}, _nextTodoId: 1, showTodos: false, _todosUserDismissed: false,
+      _latestCodexTodoList: null,
       awaitingAssistantReply: false,
       codexPlanRejectHintActive: false,
       chatInputFocusNonce: 0,

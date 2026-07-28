@@ -581,7 +581,12 @@ export interface SessionAgentProfile {
   defaultConfig: SessionAgentLaunchConfig
   models: Array<{ id: string; name: string; description?: string }>
   efforts: string[]
-  apiProviders: Array<{ id: string; name: string }>
+  /**
+   * Third-party AI keys usable for this harness. `name` is the platform label
+   * shown elsewhere in the app; `keyName` is the user-defined credential entry
+   * name (secondary), and `brand` drives the provider glyph.
+   */
+  apiProviders: Array<{ id: string; name: string; brand?: string; keyName?: string }>
 }
 
 export interface SessionAgentWorktreeConfig {

@@ -12,6 +12,8 @@ import type {
 } from '@superone/shared/agent-types'
 import { SESSION_AGENT_LAUNCHES_FIELD } from '@superone/shared/agent-types'
 import { acpAgentDisplayName, resolveHarnessBrandKey } from '@superone/shared/acp-brand'
+import { formatCodexModelName } from '@superone/shared/codex-model-label'
+import { findPlatform, type Credential } from '@superone/shared/platform-registry'
 import { activateWorktree } from '../git/worktree-ops'
 import { deriveSessionCatalog } from '../acp/acp-config'
 import { readAppSettings } from '../app-settings-service'
@@ -19,6 +21,7 @@ import { decryptSecret, encryptSecret } from '../crypto/secret-store'
 import { getCachedHarnessResources, getDb } from '../database'
 import { createSession as createSessionRecord } from '../db-sessions'
 import { listCredentials } from '../providers/credential-store'
+import { getPlatforms } from '../providers/registry'
 import { resolveChatService } from '../providers/resolver'
 import log from '../logger'
 import { listSessionProviders } from './session-provider-repo'
@@ -216,6 +219,25 @@ function profileDisplayName(
   return acpAgentDisplayName(acpAgentId, catalogName)
 }
 
+/**
+ * Match the chat model selector: platform registry name as the primary label,
+ * user-defined credential name as the secondary key label.
+ */
+function apiProviderOption(credential: Credential): {
+  id: string
+  name: string
+  brand?: string
+  keyName?: string
+} {
+  const platform = findPlatform(getPlatforms(), credential.platformId)
+  return {
+    id: credential.id,
+    name: platform?.name ?? credential.name,
+    ...(platform?.brand ? { brand: platform.brand } : {}),
+    ...(credential.name ? { keyName: credential.name } : {}),
+  }
+}
+
 /** Prefer explicit role, then human launchId, then a short task-derived label. */
 export function deriveCollaborationRole(input: {
   role?: string
@@ -275,7 +297,9 @@ export function listSessionAgentProfiles(): SessionAgentProfile[] {
       const resources = profileResources(provider, acpAgentId)
       const models = resources.models.map((model) => ({
         id: model.id,
-        name: model.name || model.id,
+        name: provider.harnessId === 'codex'
+          ? formatCodexModelName(model.name, model.id)
+          : (model.name || model.id),
         ...(model.description ? { description: model.description } : {}),
       }))
       if (models.length === 0) return []
@@ -296,7 +320,7 @@ export function listSessionAgentProfiles(): SessionAgentProfile[] {
         apiProviders: provider.harnessId === 'claude' || provider.harnessId === 'codex'
           ? credentials
               .filter((credential) => resolveChatService(provider.harnessId as 'claude' | 'codex', credential.id)?.credentialId === credential.id)
-              .map((credential) => ({ id: credential.id, name: credential.name }))
+              .map(apiProviderOption)
           : [],
       }]
     })

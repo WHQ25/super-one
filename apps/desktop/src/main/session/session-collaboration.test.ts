@@ -17,6 +17,8 @@ const state = vi.hoisted(() => ({
   providers: [{
     id: 'claude-base', harnessId: 'claude', name: 'Claude', isBase: true, config: {}, createdAt: 0, updatedAt: 0,
   }],
+  credentials: [{ id: 'api-1', name: 'Seed-lei', platformId: 'openai' }],
+  platforms: [{ id: 'openai', name: 'OpenAI', brand: 'openai', plans: [] }],
   agentPreference: {
     claude: { defaultModel: 'test-model', defaultEffort: 'high' },
     codex: { defaultModel: '', defaultReasoningEffort: '' },
@@ -40,10 +42,16 @@ vi.mock('../crypto/secret-store', () => ({
   decryptSecret: (value: string) => value.replace(/^encrypted:/, ''),
 }))
 vi.mock('../providers/credential-store', () => ({
-  listCredentials: () => [{ id: 'api-1', name: 'Test API' }],
+  listCredentials: () => state.credentials,
+}))
+vi.mock('../providers/registry', () => ({
+  getPlatforms: () => state.platforms,
 }))
 vi.mock('../providers/resolver', () => ({
-  resolveChatService: (_harness: string, credentialId: string) => ({ credentialId }),
+  resolveChatService: (_harness: string, credentialId: string) =>
+    state.credentials.some((credential) => credential.id === credentialId)
+      ? { credentialId }
+      : null,
 }))
 vi.mock('./session-provider-repo', () => ({
   listSessionProviders: () => state.providers,
@@ -215,6 +223,8 @@ beforeEach(() => {
   state.providers = [{
     id: 'claude-base', harnessId: 'claude', name: 'Claude', isBase: true, config: {}, createdAt: 0, updatedAt: 0,
   }]
+  state.credentials = [{ id: 'api-1', name: 'Seed-lei', platformId: 'openai' }]
+  state.platforms = [{ id: 'openai', name: 'OpenAI', brand: 'openai', plans: [] }]
   state.agentPreference = {
     claude: { defaultModel: 'test-model', defaultEffort: 'high' },
     codex: { defaultModel: '', defaultReasoningEffort: '' },
@@ -230,6 +240,49 @@ describe('session collaboration', () => {
     state.db!.prepare('UPDATE sessions SET provider_id = ?').run('claude-base')
     state.resourceCache = {}
     expect(listSessionAgentProfiles()).toEqual([])
+  })
+
+  it('labels API providers with the platform name and key entry metadata', () => {
+    expect(listSessionAgentProfiles()).toEqual([
+      expect.objectContaining({
+        id: 'claude-base',
+        apiProviders: [{
+          id: 'api-1',
+          name: 'OpenAI',
+          brand: 'openai',
+          keyName: 'Seed-lei',
+        }],
+      }),
+    ])
+  })
+
+  it('formats Codex model ids into the same display names as the chat selector', () => {
+    state.db!.prepare('UPDATE sessions SET provider_id = ?').run('codex-base')
+    state.providers = [{
+      id: 'codex-base', harnessId: 'codex', name: 'Codex', isBase: true, config: {}, createdAt: 0, updatedAt: 0,
+    }]
+    state.resourceCache = {
+      codex: {
+        models: [
+          { id: 'gpt-5.6-sol', name: 'gpt-5.6-sol', supportedReasoningEfforts: [{ value: 'medium' }] },
+          { id: 'custom-model', name: 'My Custom Model', supportedReasoningEfforts: [{ value: 'high' }] },
+        ],
+      },
+    }
+    state.agentPreference = {
+      ...state.agentPreference,
+      codex: { defaultModel: 'gpt-5.6-sol', defaultReasoningEffort: 'medium' },
+    }
+
+    expect(listSessionAgentProfiles()).toEqual([
+      expect.objectContaining({
+        id: 'codex-base',
+        models: [
+          expect.objectContaining({ id: 'gpt-5.6-sol', name: 'GPT5.6 Sol' }),
+          expect.objectContaining({ id: 'custom-model', name: 'My Custom Model' }),
+        ],
+      }),
+    ])
   })
 
   it('exposes the selected Grok model and effort as profile defaults', () => {

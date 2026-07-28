@@ -131,10 +131,19 @@ function LaunchPanel({
   )
   const providers = useMemo(
     () => [
-      { id: null, name: t('chat.sessionAgentsConfirm.defaultProvider') },
-      ...(profile?.apiProviders ?? []).map((provider) => ({ id: provider.id, name: provider.name })),
+      {
+        id: null,
+        brand: harnessId === 'codex' ? 'openai' : harnessId === 'claude' ? 'claude' : undefined,
+        name: t('chat.sessionAgentsConfirm.defaultProvider'),
+      },
+      ...(profile?.apiProviders ?? []).map((provider) => ({
+        id: provider.id,
+        name: provider.name,
+        brand: provider.brand,
+        keyName: provider.keyName,
+      })),
     ],
-    [profile, t],
+    [profile, harnessId, t],
   )
   const workDirState = workDirStateOf(config.worktree?.enabled ? config.worktree : null)
 

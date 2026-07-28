@@ -22,9 +22,9 @@ function payload(): SessionAgentRequestPayload {
         name: 'Codex',
         harnessId: 'codex',
         defaultConfig: { model: 'gpt-5.4', effort: 'medium' },
-        models: [{ id: 'gpt-5.4', name: 'GPT-5.4' }],
+        models: [{ id: 'gpt-5.4', name: 'GPT5.4' }],
         efforts: ['medium', 'high'],
-        apiProviders: [],
+        apiProviders: [{ id: 'openai-key', name: 'OpenAI', brand: 'openai', keyName: 'codex2' }],
       },
     ],
     launches: [
@@ -117,6 +117,18 @@ describe('session agents confirm prompt', () => {
     // Codex expresses isolation through its permission presets — no sandbox chip.
     fireEvent.keyDown(window, { key: 'Tab' })
     expect(screen.queryByRole('button', { name: /^(On|Off|Auto)$/ })).toBeNull()
+  })
+
+  it('uses profile display names for Codex models (not raw model ids)', () => {
+    const value = payload()
+    // Raw id would be `gpt-5.4`; the profile already carries the formatted label.
+    value.profiles[1].models = [{ id: 'gpt-5.4', name: 'GPT5.4' }]
+    value.launches[1].config.model = 'gpt-5.4'
+    render(<SessionAgentsConfirmPrompt payload={value} onConfirm={vi.fn()} onReject={vi.fn()} />)
+
+    fireEvent.keyDown(window, { key: 'Tab' })
+    expect(screen.getByRole('button', { name: /GPT5\.4/ })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /gpt-5\.4/ })).toBeNull()
   })
 
   it('gives each agent the permission vocabulary of its own harness', () => {

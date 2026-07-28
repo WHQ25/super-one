@@ -33,6 +33,11 @@ import {
   type OpenCodeRuntimeEvent,
   type OpenCodeRuntimeOptions,
 } from '../../opencode/opencode-runtime'
+import {
+  TaskNotificationFlush,
+  TaskNotificationQueue,
+  taskNotificationRequest,
+} from '../task-notification-queue'
 import type { BackendStartOptions, HarnessId, SessionBackend } from '../types'
 
 type OpenCodeRuntimeFactory = (opts: OpenCodeRuntimeOptions) => Promise<OpenCodeRuntime>
@@ -57,6 +62,22 @@ export class OpenCodeBackend implements SessionBackend {
   private interrupted = false
   private currentMessageId: string | null = null
   private activeTurn: { messageId: string; resolve: () => void } | null = null
+  private readonly pendingTaskNotifications = new TaskNotificationQueue()
+  /** Overridden by Session → Session.send / _sendChain for idle flushes. */
+  private taskNotificationSender: (content: string) => Promise<void> = (content) =>
+    this.send(taskNotificationRequest(content))
+  private readonly taskNotificationFlush = new TaskNotificationFlush(
+    this.pendingTaskNotifications,
+    {
+      isBusy: () => Boolean(this.activeTurn),
+      isAlive: () => this.started && !this.disposed,
+      send: (content) => this.taskNotificationSender(content),
+    },
+    {
+      logLabel: 'OpenCodeBackend',
+      warn: (message) => log.warn(message),
+    },
+  )
   private terminalMessageId: string | null = null
   private messageRoleById = new Map<string, 'user' | 'assistant'>()
   private partById = new Map<string, Part>()
@@ -152,6 +173,29 @@ export class OpenCodeBackend implements SessionBackend {
     return promise
   }
 
+  bindTaskNotificationSend(send: (content: string) => Promise<void>): void {
+    this.taskNotificationSender = send
+  }
+
+  /**
+   * Mid-turn queue only. Idle synthetic turns are owned by Session.send.
+   * OpenCode has no mid-turn inject API.
+   */
+  async injectTaskNotification(content: string): Promise<boolean> {
+    if (!this.started || this.disposed) return true
+    const text = content.trim()
+    if (!text) return true
+    if (this.activeTurn) {
+      this.pendingTaskNotifications.enqueue(text)
+      return true
+    }
+    return false
+  }
+
+  private flushPendingTaskNotifications(): void {
+    this.taskNotificationFlush.flush()
+  }
+
   async send(request: SendMessageRequest): Promise<void> {
     if (!this.started || this.disposed) throw new Error('OpenCodeBackend not started')
     if (this.activeTurn) throw new Error('OpenCodeBackend already has an active turn')
@@ -202,6 +246,7 @@ export class OpenCodeBackend implements SessionBackend {
       if (activeTurn?.messageId === messageId) this.activeTurn = null
       this.currentMessageId = null
       this.resetTurnState()
+      this.flushPendingTaskNotifications()
     }
   }
 
@@ -238,6 +283,7 @@ export class OpenCodeBackend implements SessionBackend {
   async close(): Promise<void> {
     this.disposed = true
     this.started = false
+    this.taskNotificationFlush.dispose()
     if (this.currentMessageId) this.complete(this.currentMessageId, true)
     await this.closeRuntime()
     this.listeners.clear()

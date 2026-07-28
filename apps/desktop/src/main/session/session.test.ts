@@ -2114,6 +2114,89 @@ describe('Session ownership', () => {
     await expect(session.send({ content: 'hi' }, { providerOrigin: 'local' })).rejects.toThrow(/being viewed/)
   })
 
+  it('host-origin task notification bypasses remote ownership locks', async () => {
+    const { session, backend } = makeSession()
+    session.claim({ kind: 'remote', deviceId: 'dev-A' })
+    session.subscribe('dev-A')
+    const sendPromise = session.send(
+      { content: 'mailbox ready', source: 'task-notification' },
+      { providerOrigin: 'host' },
+    )
+    await new Promise((r) => setTimeout(r, 0))
+    backend.resolveSend?.()
+    await sendPromise
+    expect(backend.sendCalls).toHaveLength(1)
+    expect(backend.sendCalls[0].content).toBe('mailbox ready')
+  })
+
+  it('injectTaskNotification reaches backend while remote-owned', async () => {
+    const { session, backend } = makeSession()
+    session.claim({ kind: 'remote', deviceId: 'dev-A' })
+    const injectPromise = session.injectTaskNotification('mailbox ready')
+    await new Promise((r) => setTimeout(r, 0))
+    backend.resolveSend?.()
+    await injectPromise
+    expect(backend.sendCalls).toHaveLength(1)
+    expect(backend.sendCalls[0].source).toBe('task-notification')
+  })
+
+  it('task-notification transcript redacts collaboration credential', async () => {
+    const { session, backend } = makeSession()
+    const secret = 's1sc_abcdefghijklmnopqrstuvwxyz0123456789'
+    const prompt = `A collaboration mailbox message is ready. Call session_collab_retrieve with credential ${JSON.stringify(secret)} to receive it.`
+    const events: import('@superone/shared/agent-types').AgentEvent[] = []
+    session.on((e) => events.push(e))
+    const sendPromise = session.send(
+      { content: prompt, source: 'task-notification', clientMessageId: 'tn-1' },
+      { providerOrigin: 'host' },
+    )
+    await new Promise((r) => setTimeout(r, 0))
+    backend.resolveSend?.()
+    await sendPromise
+    // Agent still receives full prompt
+    expect(backend.sendCalls[0].content).toContain(secret)
+    const userEvent = events.find((e) => e.type === 'user_message_appended')
+    expect(userEvent?.type).toBe('user_message_appended')
+    if (userEvent && userEvent.type === 'user_message_appended') {
+      const text = userEvent.message.content
+        .filter((b): b is { type: 'text'; text: string } => b.type === 'text')
+        .map((b) => b.text)
+        .join('')
+      expect(text).not.toContain(secret)
+      expect(text).not.toContain('s1sc_')
+      expect(userEvent.message.metadata?.source).toBe('task-notification')
+    }
+  })
+
+  it('concurrent ensureStarted shares one backend.start (notification + user send)', async () => {
+    const { session, backend } = makeSession()
+    let releaseStart!: () => void
+    const startGate = new Promise<void>((r) => { releaseStart = r })
+    let startCalls = 0
+    backend.start = async (opts) => {
+      startCalls += 1
+      await startGate
+      backend.started = true
+      backend.activeRuntime = true
+      backend.startOpts = opts
+    }
+    // Auto-resolve sends so the test focuses on start coalescing.
+    backend.send = async (request) => {
+      backend.sendCalls.push(request)
+    }
+
+    const notify = session.injectTaskNotification('wake')
+    const user = session.send({ content: 'hello' })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(startCalls).toBe(1)
+    expect(backend.sendCalls).toHaveLength(0)
+
+    releaseStart()
+    await Promise.all([notify, user])
+    expect(startCalls).toBe(1)
+    expect(backend.sendCalls.length).toBeGreaterThanOrEqual(1)
+  })
+
   it('remote-origin send bypasses both locks (so the device that owns/subscribes can act)', async () => {
     const { session, backend } = makeSession()
     session.claim({ kind: 'remote', deviceId: 'dev-A' })

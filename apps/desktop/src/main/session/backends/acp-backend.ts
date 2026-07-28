@@ -35,6 +35,11 @@ import {
   type GrokExitPlanModeAnswer,
   type GrokExitPlanModeParams,
 } from '../../acp/acp-xai-extensions'
+import {
+  TaskNotificationFlush,
+  TaskNotificationQueue,
+  taskNotificationRequest,
+} from '../task-notification-queue'
 import type { BackendStartOptions, HarnessId, SessionBackend } from '../types'
 
 export interface AcpBackendConfig {
@@ -76,6 +81,22 @@ export class AcpBackend implements SessionBackend {
   private config: AcpBackendConfig = {}
   private runtime: AcpRuntime | null = null
   private activePrompt: Promise<void> | null = null
+  private readonly pendingTaskNotifications = new TaskNotificationQueue()
+  /** Overridden by Session → Session.send / _sendChain for idle flushes. */
+  private taskNotificationSender: (content: string) => Promise<void> = (content) =>
+    this.send(taskNotificationRequest(content))
+  private readonly taskNotificationFlush = new TaskNotificationFlush(
+    this.pendingTaskNotifications,
+    {
+      isBusy: () => Boolean(this.activePrompt),
+      isAlive: () => this.started && !this.disposed,
+      send: (content) => this.taskNotificationSender(content),
+    },
+    {
+      logLabel: 'AcpBackend',
+      warn: (message) => log.warn(message),
+    },
+  )
   private interrupted = false
   private currentMessageId: string | null = null
 
@@ -658,6 +679,29 @@ export class AcpBackend implements SessionBackend {
     this.pendingPlanApprovals.clear()
   }
 
+  bindTaskNotificationSend(send: (content: string) => Promise<void>): void {
+    this.taskNotificationSender = send
+  }
+
+  /**
+   * Mid-turn queue only. Idle synthetic turns are owned by Session.send.
+   * ACP has no mid-turn inject / priority queue.
+   */
+  async injectTaskNotification(content: string): Promise<boolean> {
+    if (!this.started || this.disposed) return true
+    const text = content.trim()
+    if (!text) return true
+    if (this.activePrompt) {
+      this.pendingTaskNotifications.enqueue(text)
+      return true
+    }
+    return false
+  }
+
+  private flushPendingTaskNotifications(): void {
+    this.taskNotificationFlush.flush()
+  }
+
   async send(request: SendMessageRequest): Promise<void> {
     if (!this.started || this.disposed) throw new Error('AcpBackend not started')
     const messageId = request.assistantMessageId
@@ -723,6 +767,7 @@ export class AcpBackend implements SessionBackend {
     } finally {
       this.activePrompt = null
       this.currentMessageId = null
+      this.flushPendingTaskNotifications()
     }
   }
 
@@ -774,6 +819,7 @@ export class AcpBackend implements SessionBackend {
   async close(): Promise<void> {
     this.disposed = true
     this.started = false
+    this.taskNotificationFlush.dispose()
     await this.teardownRuntime()
     this.resumeForceAttempted.clear()
     this.startOpts = null

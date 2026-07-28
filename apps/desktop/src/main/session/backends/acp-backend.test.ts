@@ -916,6 +916,54 @@ describe('AcpBackend', () => {
     await backend.close()
   })
 
+  it('injectTaskNotification queues while a prompt is active and flushes after it ends', async () => {
+    let resolvePrompt!: () => void
+    const promptTexts: string[] = []
+    setAcpRuntimeFactory(async () => mockRuntime({
+      prompt: async (text, messageId, onEvent) => {
+        promptTexts.push(text)
+        if (promptTexts.length === 1) {
+          await new Promise<void>((resolve) => { resolvePrompt = resolve })
+        }
+        onEvent({ type: 'message_complete', messageId })
+        onEvent({ type: 'status_change', status: 'idle' })
+      },
+    }))
+
+    const backend = new AcpBackend()
+    await backend.start(startOpts({ agentId: 'custom', command: 'mock' }))
+
+    const first = backend.send({ content: 'first', assistantMessageId: 'asst-1' })
+    await vi.waitFor(() => expect(promptTexts).toEqual(['first']))
+
+    await backend.injectTaskNotification('wake once')
+    await backend.injectTaskNotification('wake once')
+    expect(promptTexts).toEqual(['first'])
+
+    resolvePrompt()
+    await first
+    await vi.waitFor(() => expect(promptTexts).toEqual(['first', 'wake once']))
+    await backend.close()
+  })
+
+  it('injectTaskNotification returns false when idle so Session.send owns the turn', async () => {
+    const promptTexts: string[] = []
+    setAcpRuntimeFactory(async () => mockRuntime({
+      prompt: async (text, messageId, onEvent) => {
+        promptTexts.push(text)
+        onEvent({ type: 'message_complete', messageId })
+        onEvent({ type: 'status_change', status: 'idle' })
+      },
+    }))
+
+    const backend = new AcpBackend()
+    await backend.start(startOpts({ agentId: 'custom', command: 'mock' }))
+    const handled = await backend.injectTaskNotification('idle wake')
+    expect(handled).toBe(false)
+    expect(promptTexts).toEqual([])
+    await backend.close()
+  })
+
   it('does not publish models from a superseded agent when switching mid-prewarm', async () => {
     let resolveGrok!: (r: AcpRuntime) => void
     const grokGate = new Promise<AcpRuntime>((r) => { resolveGrok = r })

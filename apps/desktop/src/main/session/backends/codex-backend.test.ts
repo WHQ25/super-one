@@ -725,6 +725,48 @@ describe('CodexBackend interrupt / approval forwarding', () => {
     expect(service.steerMock).toHaveBeenCalledWith(expect.objectContaining({ projectPath: '/tmp/proj' }), 'stop')
   })
 
+  it('injectTaskNotification steers when a turn is active', async () => {
+    const pending = backend.send({ content: 'first', assistantMessageId: 'asst-1' })
+    await Promise.resolve()
+    const session = (backend as unknown as { session: { steerFn: ((text: string) => Promise<void>) | null } }).session
+    session.steerFn = async () => {}
+
+    await backend.injectTaskNotification('mailbox ready')
+
+    expect(service.steerMock).toHaveBeenCalledWith(expect.any(Object), 'mailbox ready')
+    expect(service.runMock).toHaveBeenCalledTimes(1)
+
+    service.resolveRun(makeResult())
+    await pending
+  })
+
+  it('injectTaskNotification queues while busy without steerFn and flushes after turn ends', async () => {
+    const pending = backend.send({ content: 'first', assistantMessageId: 'asst-1' })
+    await Promise.resolve()
+    expect(service.runMock).toHaveBeenCalledTimes(1)
+
+    await backend.injectTaskNotification('wake once')
+    await backend.injectTaskNotification('wake once')
+    await backend.injectTaskNotification('wake twice')
+    expect(service.runMock).toHaveBeenCalledTimes(1)
+    expect(service.steerMock).not.toHaveBeenCalled()
+
+    service.resolveRun(makeResult({ finalResponse: 'done' }))
+    await pending
+    await vi.waitFor(() => expect(service.runMock).toHaveBeenCalledTimes(2))
+
+    const secondRequest = service.runMock.mock.calls[1]?.[3] as CodexRunRequest
+    expect(secondRequest.prompt).toBe('wake once\n\nwake twice')
+    service.resolveRun(makeResult({ finalResponse: 'woke' }))
+    await vi.waitFor(() => expect(service.runMock.mock.results[1]?.type).toBe('return'))
+  })
+
+  it('injectTaskNotification returns false when idle so Session.send owns the turn', async () => {
+    const handled = await backend.injectTaskNotification('idle wake')
+    expect(handled).toBe(false)
+    expect(service.runMock).not.toHaveBeenCalled()
+  })
+
   it('handleCommand(codex.steer) with newAssistantMessageId emits message_start + swaps current messageId for subsequent events', async () => {
     const events: AgentEvent[] = []
     backend.onEvent((e) => events.push(e))

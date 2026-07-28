@@ -36,6 +36,10 @@ import { rejectSessionAgentsConfirm, resolveSessionAgentsConfirm } from './sessi
 import { nextEventSeq } from './event-seq'
 import { collectChangedMessageIds } from './message-dirty'
 import {
+  redactTaskNotificationForDisplay,
+  taskNotificationRequest,
+} from './task-notification-queue'
+import {
   LOCAL_OWNER,
   SessionClaimConflictError,
   SessionLockedError,
@@ -44,6 +48,7 @@ import {
   type HarnessId,
   type PrewarmHint,
   type ProjectResources,
+  type SendProviderOrigin,
   type Session as SessionContract,
   type SessionBackend,
   type SessionLeaveReason,
@@ -193,7 +198,9 @@ export class Session implements SessionContract {
   private unsubs: Array<() => void> = []
   private _cachedInitReady: AgentEvent | null = null
   private _cachedWorktreeMissing: AgentEvent | null = null
-  private _pendingQueuedRequests = new Map<string, { request: SendMessageRequest; providerOrigin: 'local' | 'remote' }>()
+  private _pendingQueuedRequests = new Map<string, { request: SendMessageRequest; providerOrigin: SendProviderOrigin }>()
+  /** Shared so concurrent ensureStarted callers await the same backend.start(). */
+  private _startPromise: Promise<void> | null = null
 
   private _foregroundRefCount = 0
 
@@ -308,8 +315,10 @@ export class Session implements SessionContract {
     this.emitLifecycle({ type: 'subscriber_removed', sessionId: this.id, deviceId, reason })
   }
 
-  private assertCanSend(providerOrigin: 'local' | 'remote'): void {
-    if (providerOrigin === 'remote') return
+  private assertCanSend(providerOrigin: SendProviderOrigin): void {
+    // remote: device that owns/subscribes the session
+    // host: trusted main-process wakes (mailbox, download settle) — not UI ownership
+    if (providerOrigin === 'remote' || providerOrigin === 'host') return
     if (this._owner.kind === 'remote') {
       throw new SessionLockedError(this.id, 'remote-owned', this._owner.deviceId)
     }
@@ -326,6 +335,11 @@ export class Session implements SessionContract {
     this.harnessId = opts.harnessId
     this.providerConfig = opts.providerConfig
     this.backend = opts.backend
+    // Idle task-notification flushes must take Session.send / _sendChain — never
+    // backend.send alone (races status machine and concurrent user sends).
+    this.backend.bindTaskNotificationSend?.((content) =>
+      this.send(taskNotificationRequest(content), { providerOrigin: 'host' }),
+    )
     this.permissionMode = opts.permissionMode ?? 'default'
     this.sandboxInfo = coerceSandboxInfo(opts.sandboxInfo ?? getDefaultSandbox())
     this.effort = opts.effort
@@ -452,7 +466,7 @@ export class Session implements SessionContract {
     } as AgentEvent)
   }
 
-  async send(request: SendMessageRequest, opts?: { providerOrigin?: 'local' | 'remote' }): Promise<void> {
+  async send(request: SendMessageRequest, opts?: { providerOrigin?: SendProviderOrigin }): Promise<void> {
     const providerOrigin = opts?.providerOrigin ?? 'local'
     this.assertCanSend(providerOrigin)
     this.touchRuntimeActivity()
@@ -1099,18 +1113,23 @@ export class Session implements SessionContract {
 
   private async ensureStarted(): Promise<void> {
     if (this.backendStarted) return
-    if (this._status === 'starting') return
+    if (this._startPromise) return this._startPromise
     this._status = 'starting'
     const startOpts = this.buildBackendStartOpts()
-    try {
-      await this.backend.start(startOpts)
-      this.backendStarted = true
-      this._status = 'ended'
-    } catch (err) {
-      this._status = 'idle'
-      this.backendStarted = false
-      throw err
-    }
+    this._startPromise = (async () => {
+      try {
+        await this.backend.start(startOpts)
+        this.backendStarted = true
+        if ((this._status as SessionStatus) === 'starting') this._status = 'ended'
+      } catch (err) {
+        if ((this._status as SessionStatus) === 'starting') this._status = 'idle'
+        this.backendStarted = false
+        throw err
+      } finally {
+        this._startPromise = null
+      }
+    })()
+    return this._startPromise
   }
 
   private forwardEvent(event: AgentEvent): AgentEvent {
@@ -1267,8 +1286,18 @@ export class Session implements SessionContract {
     }
   }
 
-  private appendUserMessage(request: SendMessageRequest, providerOrigin: 'local' | 'remote'): void {
-    const userMsg = buildClaudeUserMessage(request, providerOrigin)
+  private appendUserMessage(request: SendMessageRequest, providerOrigin: SendProviderOrigin): void {
+    // Transcript providerId is local|remote only; host wakes are local-origin bubbles.
+    const messageOrigin = providerOrigin === 'remote' ? 'remote' : 'local'
+    // Provider still receives request.content (may include collab credential);
+    // persist a redacted bubble so DB / remote snapshot / export never leak it.
+    const displayRequest = request.source === 'task-notification' && !request.userMessageContent
+      ? {
+          ...request,
+          userMessageContent: [{ type: 'text' as const, text: redactTaskNotificationForDisplay(request.content) }],
+        }
+      : request
+    const userMsg = buildClaudeUserMessage(displayRequest, messageOrigin)
     const wasNew = !this._messages.some((m) => m.id === userMsg.id)
     if (wasNew) {
       this.replaceMessages([...this._messages, userMsg])
@@ -1361,12 +1390,14 @@ export class Session implements SessionContract {
   }
 
   /**
-   * Wake the agent after a host background task settles. Prefer Claude SDK
-   * `origin: { kind: 'task-notification' }`; other harnesses fall back to a
-   * queued synthetic user send.
+   * Wake the agent after a host background task settles.
+   * Mid-turn: backend hook (Claude SDK push, Codex steer, or queue).
+   * Idle: always Session.send so synthetic turns take `_sendChain` / status machine.
    */
   async injectTaskNotification(content: string): Promise<void> {
     if (this._status === 'disposed') return
+    const text = content.trim()
+    if (!text) return
     this.touchRuntimeActivity()
     try {
       await this.ensureStarted()
@@ -1376,20 +1407,20 @@ export class Session implements SessionContract {
     }
     if (this.backend.injectTaskNotification) {
       try {
-        await this.backend.injectTaskNotification(content)
-        return
+        const handled = await this.backend.injectTaskNotification(text)
+        if (handled) return
       } catch (err) {
         log.warn('[Session] injectTaskNotification harness path failed, falling back sid=%s: %s', this.id, err instanceof Error ? err.message : String(err))
       }
     }
-    const clientMessageId = `task-notify-${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
     try {
-      await this.send({
-        content,
-        priority: this.isStreaming() ? 'next' : 'now',
-        clientMessageId,
-        source: 'task-notification',
-      })
+      await this.send(
+        {
+          ...taskNotificationRequest(text),
+          priority: this.isStreaming() ? 'next' : 'now',
+        },
+        { providerOrigin: 'host' },
+      )
     } catch (err) {
       log.warn('[Session] injectTaskNotification fallback send failed sid=%s: %s', this.id, err instanceof Error ? err.message : String(err))
     }

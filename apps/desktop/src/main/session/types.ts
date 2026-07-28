@@ -165,6 +165,14 @@ export const LOCAL_OWNER: SessionOwner = { kind: 'local' }
 
 export type SessionLockReason = 'remote-owned' | 'remote-subscribed'
 
+/**
+ * Who initiated a Session.send:
+ * - local: desktop UI / local IPC (blocked while remote-owned or subscribed)
+ * - remote: mobile remote-control owner/subscriber
+ * - host: trusted main-process background work (task notifications, mailbox wakes)
+ */
+export type SendProviderOrigin = 'local' | 'remote' | 'host'
+
 export class SessionLockedError extends Error {
   readonly sessionId: string
   readonly reason: SessionLockReason
@@ -230,10 +238,18 @@ export interface SessionBackend {
   clearCodexGoal?(threadId: string): Promise<boolean>
   stopTask?(taskId: string): Promise<void>
   /**
-   * Claude: push an SDK user message with origin `{ kind: 'task-notification' }`.
-   * Other harnesses omit this and Session falls back to a normal send.
+   * Mid-turn host wake only. Return true if the notification was fully handled
+   * (steered, queued into an in-flight turn, or SDK-pushed). Return false when
+   * idle so Session can start a synthetic turn via Session.send / _sendChain.
+   * Never call backend.send() for a new turn from this hook — that races the
+   * Session state machine.
    */
-  injectTaskNotification?(content: string): Promise<void>
+  injectTaskNotification?(content: string): Promise<boolean>
+  /**
+   * Redirect idle flushes of queued task notifications through Session.send
+   * (so they take `_sendChain` / status machine) instead of backend.send.
+   */
+  bindTaskNotificationSend?(send: (content: string) => Promise<void>): void
   respondToPermission(
     requestId: string,
     allow: boolean,
@@ -282,7 +298,7 @@ export interface Session {
   subscribe(deviceId: string): void
   unsubscribe(deviceId: string, reason?: SessionLeaveReason): void
   onLifecycle(handler: (event: SessionLifecycleEvent) => void): () => void
-  send(request: SendMessageRequest, opts?: { providerOrigin?: 'local' | 'remote' }): Promise<void>
+  send(request: SendMessageRequest, opts?: { providerOrigin?: SendProviderOrigin }): Promise<void>
   interrupt(): Promise<boolean>
   setPermissionMode(mode: PermissionMode): Promise<void>
   setSandboxMode(mode: SandboxMode): Promise<SandboxInfo>

@@ -211,7 +211,7 @@ export class ClaudeBackend implements SessionBackend {
    * `origin: { kind: 'task-notification' }` (not a human composer message).
    * Uses priority `next` so an in-flight turn is not interrupted.
    */
-  async injectTaskNotification(content: string): Promise<void> {
+  async injectTaskNotification(content: string): Promise<boolean> {
     await this.ensureRuntime()
     if (!this.bridge) throw new Error('ClaudeBackend not started')
     const userMsg: SDKUserMessage = {
@@ -224,11 +224,13 @@ export class ClaudeBackend implements SessionBackend {
       priority: 'next',
     }
     const tag = `task-notify-${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+    // Always handled in-process (queue or push) — never starts a Session-level turn.
     if (this.turnResolves.size > 0) {
       this.pendingQueued.push({ msg: userMsg, clientMessageId: tag })
     } else {
       this.bridge.push(userMsg, tag)
     }
+    return true
   }
 
   async send(request: SendMessageRequest): Promise<void> {

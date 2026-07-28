@@ -466,6 +466,37 @@ describe('OpenCodeBackend', () => {
     await backend.close()
   })
 
+  it('injectTaskNotification queues while busy and flushes after the turn ends', async () => {
+    const backend = new OpenCodeBackend()
+    await backend.start(startOptions())
+
+    const first = backend.send({ content: 'first', model: 'openai/gpt-5', assistantMessageId: 'asst-1' })
+    await vi.waitFor(() => expect(prompt).toHaveBeenCalledTimes(1))
+
+    await backend.injectTaskNotification('wake once')
+    await backend.injectTaskNotification('wake once')
+    expect(prompt).toHaveBeenCalledTimes(1)
+
+    route({ id: 'idle-1', type: 'session.idle', properties: { sessionID: 'oc-session' } } as OpenCodeRuntimeEvent)
+    await first
+    await vi.waitFor(() => expect(prompt).toHaveBeenCalledTimes(2))
+    expect(prompt).toHaveBeenLastCalledWith('wake once', undefined, undefined, undefined, undefined)
+
+    route({ id: 'idle-2', type: 'session.idle', properties: { sessionID: 'oc-session' } } as OpenCodeRuntimeEvent)
+    await vi.waitFor(() => expect(backend.hasActiveRuntime()).toBe(true))
+    await backend.close()
+  })
+
+  it('injectTaskNotification returns false when idle so Session.send owns the turn', async () => {
+    const backend = new OpenCodeBackend()
+    await backend.start(startOptions())
+
+    const handled = await backend.injectTaskNotification('idle wake')
+    expect(handled).toBe(false)
+    expect(prompt).not.toHaveBeenCalled()
+    await backend.close()
+  })
+
   it('dispatches known slash commands through the SDK and keeps unknown commands as prompts', async () => {
     const backend = new OpenCodeBackend()
     await backend.start(startOptions())

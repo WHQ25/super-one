@@ -45,6 +45,11 @@ import {
   type CodexRunStreamCallbacks,
 } from '../../codex/codex-turn'
 import { CodexGoalController } from '../../codex/codex-goal-controller'
+import {
+  TaskNotificationFlush,
+  TaskNotificationQueue,
+  taskNotificationRequest,
+} from '../task-notification-queue'
 import type { BackendCommand, BackendStartOptions, HarnessId, SessionBackend } from '../types'
 
 export interface CodexRunStreamCallbacksDeps {
@@ -172,6 +177,22 @@ export class CodexBackend implements SessionBackend {
   private currentMessageId: string | null = null
   private activeRun: Promise<void> | null = null
   private swapRunAssistantId: ((nextId: string) => void) | null = null
+  private readonly pendingTaskNotifications = new TaskNotificationQueue()
+  /** Overridden by Session.bindTaskNotificationSend → Session.send / _sendChain. */
+  private taskNotificationSender: (content: string) => Promise<void> = (content) =>
+    this.send(taskNotificationRequest(content))
+  private readonly taskNotificationFlush = new TaskNotificationFlush(
+    this.pendingTaskNotifications,
+    {
+      isBusy: () => this.isTurnBusy(),
+      isAlive: () => this.started && !this.disposed,
+      send: (content) => this.taskNotificationSender(content),
+    },
+    {
+      logLabel: 'CodexBackend',
+      warn: (message) => log.warn(message),
+    },
+  )
 
   // Per-bubble item segmentation. A single Codex turn can be split into
   // multiple assistant bubbles via steer; each item belongs to the bubble
@@ -253,8 +274,48 @@ export class CodexBackend implements SessionBackend {
       onIdle: () => {
         this.emit({ type: 'status_change', status: 'idle' })
         this.currentMessageId = null
+        this.flushPendingTaskNotifications()
       },
     })
+  }
+
+  bindTaskNotificationSend(send: (content: string) => Promise<void>): void {
+    this.taskNotificationSender = send
+  }
+
+  /**
+   * Mid-turn wake only. Idle synthetic turns are owned by Session.send.
+   * Prefer mid-turn `turn/steer` when a run is live; otherwise queue until idle.
+   */
+  async injectTaskNotification(content: string): Promise<boolean> {
+    this.assertStarted()
+    const text = content.trim()
+    if (!text) return true
+
+    if (this.session?.steerFn) {
+      await steerCodex(this.session, text)
+      return true
+    }
+
+    if (this.isTurnBusy()) {
+      this.pendingTaskNotifications.enqueue(text)
+      return true
+    }
+
+    return false
+  }
+
+  private isTurnBusy(): boolean {
+    return Boolean(
+      this.activeRun
+      || this.goalController.active
+      || this.session?.runningController
+      || this.session?.steerFn,
+    )
+  }
+
+  private flushPendingTaskNotifications(): void {
+    this.taskNotificationFlush.flush()
   }
 
   async start(opts: BackendStartOptions): Promise<void> {
@@ -668,7 +729,10 @@ export class CodexBackend implements SessionBackend {
       }
     })()
 
-    this.activeRun = task.catch(() => undefined).then(() => { this.activeRun = null })
+    this.activeRun = task.catch(() => undefined).finally(() => {
+      this.activeRun = null
+      this.flushPendingTaskNotifications()
+    })
     await task
   }
 
@@ -687,6 +751,7 @@ export class CodexBackend implements SessionBackend {
   async close(): Promise<void> {
     if (this.disposed) return
     this.goalController.stop()
+    this.taskNotificationFlush.dispose()
     const session = this.session
     try {
       if (session && (session.runningController || this.activeRun)) resetCodexSession(session)

@@ -117,7 +117,7 @@ export const BUILT_IN_SUPERONE_TOOL_NAMES = [
   'session_collab_request',
   'session_collab_start',
   'session_collab_send',
-  'session_collab_wait',
+  'session_collab_retrieve',
   'media_list_providers',
   'media_generate_image',
   'media_generate_video',
@@ -134,7 +134,7 @@ export const SESSION_COLLABORATION_TOOL_NAMES = [
   'session_collab_request',
   'session_collab_start',
   'session_collab_send',
-  'session_collab_wait',
+  'session_collab_retrieve',
 ] as const
 
 export const CONFIG_SETTINGS_DOMAINS = [
@@ -250,11 +250,12 @@ export const SESSION_START_DESCRIPTION =
 
 export const SESSION_SEND_DESCRIPTION =
   'Send a persistent mailbox message between the parent and child sessions authorized by a credential. Direction is derived from the calling session. ' +
-  'Use clientMessageId for retry-safe idempotency. The peer is woken (even mid-turn) and must call session_collab_wait to receive the payload.'
+  'Use clientMessageId for retry-safe idempotency. The peer is woken with a task notification (even mid-turn) and should call session_collab_retrieve to receive the payload.'
 
-export const SESSION_WAIT_DESCRIPTION =
-  'Wait for persistent mailbox messages addressed to this session. Pass multiple credentials to wait for any child/parent concurrently. ' +
-  'Returned messages advance only this agent endpoint cursor. Prefer waiting after session_collab_start or session_collab_send so mailbox traffic is not missed.'
+export const SESSION_RETRIEVE_DESCRIPTION =
+  'Retrieve persistent mailbox messages addressed to this session. Non-blocking: returns currently available messages (status "messages") or empty (status "empty"). ' +
+  'Pass multiple credentials to drain several parent/child mailboxes in one call. Returned messages advance only this agent endpoint cursor. ' +
+  'Call after a collaboration wake notification, or whenever you want to drain the inbox — do not poll in a tight loop.'
 
 export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
   {
@@ -350,13 +351,12 @@ export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
     },
   },
   {
-    name: 'session_collab_wait',
-    description: SESSION_WAIT_DESCRIPTION,
+    name: 'session_collab_retrieve',
+    description: SESSION_RETRIEVE_DESCRIPTION,
     inputSchema: {
       type: 'object',
       properties: {
         credentials: { type: 'array', minItems: 1, maxItems: 32, items: { type: 'string' } },
-        timeoutMs: { type: 'number', minimum: 0, maximum: 60000 },
       },
       required: ['credentials'],
       additionalProperties: false,

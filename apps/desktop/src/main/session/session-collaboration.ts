@@ -31,8 +31,7 @@ import {
   type SessionAgentsConfirmOutcome,
 } from './session-collaboration-confirm'
 
-const MAX_WAIT_MS = 60_000
-const MAX_MESSAGES_PER_WAIT = 100
+const MAX_MESSAGES_PER_RETRIEVE = 100
 
 export interface RequestSessionAgentsArgs {
   launches: Array<{
@@ -70,9 +69,6 @@ interface MessageRow {
 }
 
 type AuthorizedGrant = GrantRow & { credential: string }
-
-let mailboxVersion = 0
-const mailboxWaiters = new Set<() => void>()
 
 let notifySessionsChanged: (() => void) | null = null
 
@@ -583,7 +579,7 @@ function grantForCredential(credential: string): GrantRow | null {
 }
 
 function collaborationSystemPrompt(credential: string, parentSessionId: string): string {
-  return `<superone-session-collaboration>\nYou are running as a user-approved child session of SuperOne session ${parentSessionId}.\nUse session_collab_send and session_collab_wait with credential ${JSON.stringify(credential)} to communicate with your parent session. This credential is already authorized for this parent-child pair. Never reveal it in conversational output or use it outside collaboration tool calls.\n</superone-session-collaboration>`
+  return `<superone-session-collaboration>\nYou are running as a user-approved child session of SuperOne session ${parentSessionId}.\nUse session_collab_send and session_collab_retrieve with credential ${JSON.stringify(credential)} to communicate with your parent session. This credential is already authorized for this parent-child pair. Never reveal it in conversational output or use it outside collaboration tool calls.\n</superone-session-collaboration>`
 }
 
 export function getSessionCollaborationSystemPrompt(sessionId: string): string | undefined {
@@ -710,7 +706,7 @@ async function wakeCollaborationPeer(
   // Always wake — injectTaskNotification already queues behind an in-flight turn.
   try {
     await session.injectTaskNotification(
-      `A collaboration mailbox message is ready. Call session_collab_wait with credential ${JSON.stringify(credential)} to receive it.`,
+      `A collaboration mailbox message is ready. Call session_collab_retrieve with credential ${JSON.stringify(credential)} to receive it.`,
     )
   } catch (error) {
     log.warn(
@@ -858,12 +854,6 @@ export async function startSessionAgent(
   })
 }
 
-function notifyMailbox(): void {
-  mailboxVersion += 1
-  for (const wake of mailboxWaiters) wake()
-  mailboxWaiters.clear()
-}
-
 function nextSequence(credentialHash: string): number {
   const row = getDb().prepare(`
     SELECT COALESCE(MAX(sequence), 0) + 1 AS next_sequence
@@ -922,9 +912,8 @@ export async function sendSessionMessage(
   })()
 
   if (!insert.reused) {
-    // Mailbox traffic is already visible via session_send / session_wait tool UI.
+    // Mailbox traffic is already visible via session_send / session_retrieve tool UI.
     // Do not also inject collab transcript bubbles (that doubled the UI).
-    notifyMailbox()
     void wakeCollaborationPeer(host, recipientSessionId, args.credential)
   }
   const peer = describePeerForCaller(grant, callerSessionId)
@@ -940,7 +929,7 @@ export async function sendSessionMessage(
 
 function readMailbox(callerSessionId: string, grants: AuthorizedGrant[]) {
   return getDb().transaction(() => {
-    const perGrantLimit = Math.max(1, Math.floor(MAX_MESSAGES_PER_WAIT / grants.length))
+    const perGrantLimit = Math.max(1, Math.floor(MAX_MESSAGES_PER_RETRIEVE / grants.length))
     const messages: Array<{
       credential: string
       messageId: string
@@ -988,40 +977,29 @@ function readMailbox(callerSessionId: string, grants: AuthorizedGrant[]) {
         })
       }
     }
-    return messages.sort((a, b) => a.createdAt.localeCompare(b.createdAt)).slice(0, MAX_MESSAGES_PER_WAIT)
+    return messages.sort((a, b) => a.createdAt.localeCompare(b.createdAt)).slice(0, MAX_MESSAGES_PER_RETRIEVE)
   })()
 }
 
-function waitForMailbox(version: number, timeoutMs: number): Promise<void> {
-  if (mailboxVersion !== version || timeoutMs <= 0) return Promise.resolve()
-  return new Promise((resolveWait) => {
-    let timer: ReturnType<typeof setTimeout>
-    const wake = () => {
-      clearTimeout(timer)
-      mailboxWaiters.delete(wake)
-      resolveWait()
-    }
-    mailboxWaiters.add(wake)
-    timer = setTimeout(wake, timeoutMs)
-    if (mailboxVersion !== version) wake()
-  })
-}
-
-export interface SessionWaitArgs {
+export interface SessionRetrieveArgs {
   credentials: string[]
-  timeoutMs?: number
 }
 
-export async function waitForSessionMessages(
+/**
+ * Non-blocking mailbox read. Advances this endpoint's cursor for any messages
+ * currently available. Peers are woken via task notification on send; the agent
+ * should call this after a wake (or when it otherwise wants to drain the inbox).
+ */
+export async function retrieveSessionMessages(
   callerSessionId: string,
-  args: SessionWaitArgs,
+  args: SessionRetrieveArgs,
 ) {
   assertEnabled()
   if (!Array.isArray(args.credentials) || args.credentials.length === 0) {
     return toolResult({ status: 'error', message: 'credentials must not be empty' }, true)
   }
   if (args.credentials.length > 32) {
-    return toolResult({ status: 'error', message: 'At most 32 credentials may be waited at once' }, true)
+    return toolResult({ status: 'error', message: 'At most 32 credentials may be retrieved at once' }, true)
   }
 
   let grants: AuthorizedGrant[]
@@ -1044,16 +1022,7 @@ export async function waitForSessionMessages(
     ...describePeerForCaller(grant, callerSessionId),
   }))
 
-  const timeoutMs = Math.max(0, Math.min(args.timeoutMs ?? 30_000, MAX_WAIT_MS))
-  const deadline = Date.now() + timeoutMs
-  while (true) {
-    const version = mailboxVersion
-    const messages = readMailbox(callerSessionId, grants)
-    if (messages.length > 0) return toolResult({ status: 'messages', messages, peers })
-    const remaining = deadline - Date.now()
-    if (remaining <= 0) return toolResult({ status: 'timeout', messages: [], peers })
-    await waitForMailbox(version, remaining)
-    // Re-read immediately after wake so a burst of messages is not lost between
-    // notify and the next loop iteration under load.
-  }
+  const messages = readMailbox(callerSessionId, grants)
+  if (messages.length > 0) return toolResult({ status: 'messages', messages, peers })
+  return toolResult({ status: 'empty', messages: [], peers })
 }

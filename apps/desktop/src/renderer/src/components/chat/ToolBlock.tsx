@@ -1,6 +1,6 @@
 import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback, memo, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ChevronRight, PenLine, Check, X, Ban, TriangleAlert, Upload, Smartphone, SlidersHorizontal, Users, Send, Hourglass } from 'lucide-react'
+import { ChevronRight, PenLine, Check, X, Ban, TriangleAlert, Upload, Smartphone, SlidersHorizontal, Users, Send, Inbox } from 'lucide-react'
 import { diffLines } from 'diff'
 import { cn } from '@superone/ui/lib/utils'
 import type { ConfigFieldType } from '@superone/shared/agent-types'
@@ -54,12 +54,13 @@ const COLLAB_TOOLS = new Set([
   'session_collab_request',
   'session_collab_start',
   'session_collab_send',
-  'session_collab_wait',
+  'session_collab_retrieve',
   // Legacy names (in case older transcripts still reference them)
   'session_request_agents_collab',
   'session_start',
   'session_send',
   'session_wait',
+  'session_collab_wait',
 ])
 
 function truncateOneLine(text: string, max = 72): string {
@@ -182,7 +183,7 @@ function SessionCollabToolBlock({
   const parsed = parseCollabResult(result)
   const status = typeof parsed?.status === 'string' ? parsed.status : ''
 
-  let Icon: typeof Users | typeof Send | typeof Hourglass = Users
+  let Icon: typeof Users | typeof Send | typeof Inbox = Users
   let label = toolName
   /** Plain summary when no session link is available. */
   let summary = ''
@@ -198,7 +199,9 @@ function SessionCollabToolBlock({
   const isRequest = toolName === 'session_collab_request' || toolName === 'session_request_agents_collab'
   const isStart = toolName === 'session_collab_start' || toolName === 'session_start'
   const isSend = toolName === 'session_collab_send' || toolName === 'session_send'
-  const isWait = toolName === 'session_collab_wait' || toolName === 'session_wait'
+  const isRetrieve = toolName === 'session_collab_retrieve'
+    || toolName === 'session_collab_wait'
+    || toolName === 'session_wait'
 
   if (isRequest) {
     Icon = Users
@@ -299,8 +302,8 @@ function SessionCollabToolBlock({
         { label: t('chat.toolBlock.collab.fields.message'), value: String(params.content ?? '') },
       ]
     }
-  } else if (isWait) {
-    Icon = Hourglass
+  } else if (isRetrieve) {
+    Icon = Inbox
     const messages = Array.isArray(parsed?.messages) ? parsed.messages : []
     const peers = Array.isArray(parsed?.peers) ? parsed.peers : []
     const singlePeer = peers.length === 1 && typeof peers[0] === 'object'
@@ -314,14 +317,15 @@ function SessionCollabToolBlock({
     })()
     const singlePeerSid = peerSessionIdFromRecord(singlePeer)
     if (isStreaming) {
-      label = t('chat.toolBlock.collab.waitingFor')
+      label = t('chat.toolBlock.collab.retrievingMessages')
       if (singlePeer && peerSummary) {
         summaryPeer = { title: peerSummary, sessionId: singlePeerSid }
       } else {
         summary = peerSummary
       }
-    } else if (status === 'timeout' || messages.length === 0) {
-      label = t('chat.toolBlock.collab.waitTimeout')
+    } else if (status === 'empty' || status === 'timeout' || messages.length === 0) {
+      // `timeout` kept for legacy session_collab_wait transcripts
+      label = t('chat.toolBlock.collab.noMessages')
       if (singlePeer && peerSummary) {
         summaryPeer = { title: peerSummary, sessionId: singlePeerSid }
       } else {

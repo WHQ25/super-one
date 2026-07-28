@@ -36,7 +36,7 @@ import {
   SESSION_REQUEST_AGENTS_DESCRIPTION,
   SESSION_SEND_DESCRIPTION,
   SESSION_START_DESCRIPTION,
-  SESSION_WAIT_DESCRIPTION,
+  SESSION_RETRIEVE_DESCRIPTION,
   type BuiltInSuperoneToolName,
 } from './superone-mcp-builtin-defs'
 import { configApplyHandler, configReadHandler, type ConfigApplyArgs } from './config-tools'
@@ -45,7 +45,7 @@ import type { SessionManager } from '../session/types'
 import type {
   RequestSessionAgentsArgs,
   SessionSendArgs,
-  SessionWaitArgs,
+  SessionRetrieveArgs,
 } from '../session/session-collaboration'
 
 export {
@@ -264,9 +264,9 @@ export async function executeBuiltInSuperoneTool(
     case 'session_collab_send':
       return import('../session/session-collaboration').then(({ sendSessionMessage }) =>
         sendSessionMessage(deps.sessionId, args as unknown as SessionSendArgs, collaborationHost(deps)))
-    case 'session_collab_wait':
-      return import('../session/session-collaboration').then(({ waitForSessionMessages }) =>
-        waitForSessionMessages(deps.sessionId, args as unknown as SessionWaitArgs))
+    case 'session_collab_retrieve':
+      return import('../session/session-collaboration').then(({ retrieveSessionMessages }) =>
+        retrieveSessionMessages(deps.sessionId, args as unknown as SessionRetrieveArgs))
     case 'config_read':
       return configReadHandler(args as { domain?: string; recordId?: string }, deps)
     case 'config_apply':
@@ -347,14 +347,14 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
       },
     )
     server.registerTool(
-      'session_collab_wait',
+      'session_collab_retrieve',
       {
-        description: SESSION_WAIT_DESCRIPTION,
-        inputSchema: { credentials: z.array(z.string().min(1)).min(1).max(32), timeoutMs: z.number().min(0).max(60_000).optional() },
+        description: SESSION_RETRIEVE_DESCRIPTION,
+        inputSchema: { credentials: z.array(z.string().min(1)).min(1).max(32) },
       },
       async (args) => {
-        const { waitForSessionMessages } = await import('../session/session-collaboration')
-        return waitForSessionMessages(deps.sessionId, args)
+        const { retrieveSessionMessages } = await import('../session/session-collaboration')
+        return retrieveSessionMessages(deps.sessionId, args)
       },
     )
   }

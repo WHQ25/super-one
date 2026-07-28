@@ -840,9 +840,9 @@ export type Messages = {
         collaborationSessionStarted: string
         sendingMessageTo: string
         messageSent: string
-        waitingFor: string
+        retrievingMessages: string
         messageReceived: string
-        waitTimeout: string
+        noMessages: string
         agentCount: string
         messageCount: string
         agentSession: string
@@ -2757,9 +2757,9 @@ export const en: Messages = {
         collaborationSessionStarted: 'Session Started',
         sendingMessageTo: 'Sending message to',
         messageSent: 'Message Sent',
-        waitingFor: 'Waiting for',
+        retrievingMessages: 'Retrieving messages',
         messageReceived: 'Message Received',
-        waitTimeout: 'No messages yet',
+        noMessages: 'No messages',
         agentCount: '{{count}} agents',
         messageCount: '{{count}} messages',
         agentSession: 'Agent session',

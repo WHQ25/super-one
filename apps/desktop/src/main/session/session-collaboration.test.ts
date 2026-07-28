@@ -72,7 +72,7 @@ import {
   getSessionCollaborationSystemPrompt,
   sendSessionMessage,
   startSessionAgent,
-  waitForSessionMessages,
+  retrieveSessionMessages,
 } from './session-collaboration'
 import { resolveSessionAgentsConfirm } from './session-collaboration-confirm'
 
@@ -504,9 +504,8 @@ describe('session collaboration', () => {
     expect(retried).toMatchObject({ messageId: sent.messageId, reused: true })
     expect(sessions.get(childId)?.injectTaskNotification).toHaveBeenCalledTimes(1)
 
-    const childInbox = resultJson(await waitForSessionMessages(childId, {
+    const childInbox = resultJson(await retrieveSessionMessages(childId, {
       credentials: [grant.credential],
-      timeoutMs: 0,
     }))
     expect(childInbox.messages).toMatchObject([{ credential: grant.credential, content: 'from parent' }])
     expect(childInbox.peers).toMatchObject([{
@@ -515,13 +514,13 @@ describe('session collaboration', () => {
       title: 'Parent',
       sessionId: 'parent',
     }])
-    expect(resultJson(await waitForSessionMessages(childId, {
-      credentials: [grant.credential], timeoutMs: 0,
-    }))).toMatchObject({ status: 'timeout', messages: [] })
+    expect(resultJson(await retrieveSessionMessages(childId, {
+      credentials: [grant.credential],
+    }))).toMatchObject({ status: 'empty', messages: [] })
 
     await sendSessionMessage(childId, { credential: grant.credential, content: 'from child' }, host)
-    const parentInbox = resultJson(await waitForSessionMessages('parent', {
-      credentials: [grant.credential], timeoutMs: 0,
+    const parentInbox = resultJson(await retrieveSessionMessages('parent', {
+      credentials: [grant.credential],
     }))
     expect(parentInbox.messages).toMatchObject([{ credential: grant.credential, content: 'from child' }])
     expect(parentInbox.peers).toMatchObject([{
@@ -530,7 +529,7 @@ describe('session collaboration', () => {
     }])
   })
 
-  it('waits for messages from multiple child sessions without sequential blocking', async () => {
+  it('retrieves messages from multiple child sessions in one call', async () => {
     const parent = fakeSession('parent')
     const { host } = fakeHost(parent)
     const grants = await approveLaunches(parent, host, 2)
@@ -539,9 +538,8 @@ describe('session collaboration', () => {
 
     await sendSessionMessage(first.sessionId, { credential: grants[0].credential, content: 'first' }, host)
     await sendSessionMessage(second.sessionId, { credential: grants[1].credential, content: 'second' }, host)
-    const inbox = resultJson(await waitForSessionMessages('parent', {
+    const inbox = resultJson(await retrieveSessionMessages('parent', {
       credentials: [grants[0].credential, grants[1].credential],
-      timeoutMs: 0,
     }))
 
     expect(inbox.messages).toHaveLength(2)
@@ -701,11 +699,10 @@ describe('session collaboration', () => {
     expect(child.setTitle).toHaveBeenCalledWith('Alice - Reviewer', 'agent')
   })
 
-  it('returns a tool error for invalid wait credentials instead of throwing', async () => {
+  it('returns a tool error for invalid retrieve credentials instead of throwing', async () => {
     const parent = fakeSession('parent')
-    const result = resultJson(await waitForSessionMessages(parent.id, {
+    const result = resultJson(await retrieveSessionMessages(parent.id, {
       credentials: ['not-a-real-credential'],
-      timeoutMs: 0,
     }))
     expect(result).toMatchObject({ status: 'error' })
     expect(String(result.message)).toMatch(/invalid/i)

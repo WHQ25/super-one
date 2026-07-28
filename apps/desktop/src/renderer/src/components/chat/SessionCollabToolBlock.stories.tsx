@@ -4,7 +4,7 @@ import { ToolBlock } from './ToolBlock'
 
 /**
  * SuperOne session_collab_* MCP tool UI
- * (`session_collab_request` / `session_collab_start` / `session_collab_send` / `session_collab_wait`).
+ * (`session_collab_request` / `session_collab_start` / `session_collab_send` / `session_collab_retrieve`).
  */
 
 const PREFIX = 'mcp__superone__'
@@ -170,14 +170,12 @@ export const Gallery: Story = {
         })}
       </Section>
 
-      <Section title="session_collab_wait (Hourglass icon)">
-        {block('session_collab_wait', {
+      <Section title="session_collab_retrieve (Inbox icon)">
+        {block('session_collab_retrieve', {
           credentials: [CRED_A],
-          timeoutMs: 30000,
-        }, { status: 'streaming', elapsedSeconds: 12 })}
-        {block('session_collab_wait', {
+        }, { status: 'streaming', elapsedSeconds: 1 })}
+        {block('session_collab_retrieve', {
           credentials: [CRED_A],
-          timeoutMs: 30000,
         }, {
           result: JSON.stringify({
             status: 'messages',
@@ -200,9 +198,20 @@ export const Gallery: Story = {
             }],
           }),
         })}
-        {block('session_collab_wait', {
+        {block('session_collab_retrieve', {
           credentials: [CRED_A, CRED_B],
-          timeoutMs: 30000,
+        }, {
+          result: JSON.stringify({
+            status: 'empty',
+            peers: [
+              { name: 'Alice', role: 'Reviewer', title: 'Alice - Reviewer', sessionId: 'child-alice' },
+              { name: 'Bob', role: 'Implementer', title: 'Bob - Implementer', sessionId: 'child-bob' },
+            ],
+            messages: [],
+          }),
+        })}
+        {block('session_collab_retrieve', {
+          credentials: [CRED_A, CRED_B],
         }, {
           result: JSON.stringify({
             status: 'messages',
@@ -273,8 +282,8 @@ export const ParentTurnFlow: Story = {
           }),
         })}
       </Section>
-      <Section title="4. Wait">
-        {block('session_collab_wait', { credentials: [CRED_A, CRED_B], timeoutMs: 60000 }, {
+      <Section title="4. Retrieve (after wake)">
+        {block('session_collab_retrieve', { credentials: [CRED_A, CRED_B] }, {
           result: JSON.stringify({
             status: 'messages',
             peers: [

@@ -123,7 +123,7 @@ describe('experimental session collaboration tools', () => {
       'session_collab_request',
       'session_collab_start',
       'session_collab_send',
-      'session_collab_wait',
+      'session_collab_retrieve',
     ]))
   })
 })

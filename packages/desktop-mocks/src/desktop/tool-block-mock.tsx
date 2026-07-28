@@ -766,7 +766,7 @@ function DiffRows({
       })()
     : -1
   return (
-    <div className="overflow-auto rounded bg-background/70 py-2 text-[11px] font-mono leading-relaxed text-foreground max-h-[300px]">
+    <div className="overflow-auto rounded bg-background/70 py-2 text-sm font-mono leading-relaxed text-foreground max-h-[300px]">
       {rows.map((row, i) => {
         const hlTokens =
           row.kind === "removed"

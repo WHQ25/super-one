@@ -10,6 +10,7 @@ import { harnessRegistry } from './harness-registry'
 import { getSessionProvider } from './session-provider-repo'
 import { ProjectResourceCache } from './project-resource-cache'
 import { cancelMcpReload } from '../mcp/mcp-reload-scheduler'
+import { closeSuperoneMcpHttpSessions } from '../mcp/superone-mcp-http-state'
 import { Session } from './session'
 import {
   getRuntimeIdleTimeoutMs,
@@ -385,6 +386,7 @@ export class SessionManagerImpl implements SessionManagerContract {
     try { await session.dispose() } catch (err) {
       log.debug('[SessionManager] dispose error:', err)
     }
+    await closeSuperoneMcpHttpSessions(sessionId)
     const projectPath = this.sessionProjects.get(sessionId)
     this.sessions.delete(sessionId)
     this.runtimeReleases.delete(sessionId)
@@ -483,8 +485,12 @@ export class SessionManagerImpl implements SessionManagerContract {
       if (this.runtimeReleases.has(session.id)) continue
       if (!session.isRuntimeIdle(now, timeoutMs)) continue
       this.runtimeReleases.add(session.id)
-      releases.push(session.releaseRuntime('idle')
-        .then(() => {
+      releases.push(session.releaseRuntime(
+        'idle',
+        () => closeSuperoneMcpHttpSessions(session.id),
+      )
+        .then((released) => {
+          if (!released) return
           log.info(
             '[SessionManager] released idle runtime sid=%s harness=%s activeRuntimeCount=%d timeoutMs=%d',
             session.id,

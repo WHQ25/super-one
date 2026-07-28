@@ -2,6 +2,13 @@ import { describe, it, expect, vi } from 'vitest'
 import type { McpServerConfig } from '@superone/shared/agent-types'
 
 vi.mock('../mcp/superone-mcp-stdio-state', () => ({
+  getSuperoneMcpHttpConfig: (sessionId: string) => ({
+    url: 'http://127.0.0.1:3210/mcp',
+    headers: {
+      Authorization: 'Bearer tok',
+      'X-SuperOne-Session-Id': sessionId,
+    },
+  }),
   getSuperoneMcpStdioConfig: (sessionId: string) => ({
     command: '/node',
     args: ['/bridge.js'],
@@ -105,9 +112,33 @@ describe('buildAcpSessionMcpServers', () => {
     })
 
     expect(servers.map((s) => s.name)).toEqual(['superone', 'github', 'remote'])
-    expect(servers[0]).toMatchObject({ command: '/node' })
+    expect(servers[0]).toEqual({
+      type: 'http',
+      name: 'superone',
+      url: 'http://127.0.0.1:3210/mcp',
+      headers: [
+        { name: 'Authorization', value: 'Bearer tok' },
+        { name: 'X-SuperOne-Session-Id', value: 'sid-1' },
+      ],
+    })
     expect(servers[1]).toMatchObject({ name: 'github', command: 'npx' })
     expect(servers[2]).toMatchObject({ type: 'http', name: 'remote' })
+  })
+
+  it('falls back to stdio when the agent does not advertise HTTP', () => {
+    const servers = buildAcpSessionMcpServers({
+      cwd: '/proj',
+      superoneSessionId: 'sid-stdio',
+      listConfigs: () => [],
+    })
+
+    expect(servers[0]).toMatchObject({
+      name: 'superone',
+      command: '/node',
+      env: expect.arrayContaining([
+        { name: 'SUPERONE_MCP_SESSION_ID', value: 'sid-stdio' },
+      ]),
+    })
   })
 
   it('works without superone session id', () => {

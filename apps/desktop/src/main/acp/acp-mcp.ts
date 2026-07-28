@@ -1,12 +1,30 @@
 import type { McpServer } from '@agentclientprotocol/sdk'
 import type { McpServerConfig } from '@superone/shared/agent-types'
 import { listMcpConfigs } from '../mcp-config-service'
-import { getSuperoneMcpStdioConfig } from '../mcp/superone-mcp-stdio-state'
+import {
+  getSuperoneMcpHttpConfig,
+  getSuperoneMcpStdioConfig,
+} from '../mcp/superone-mcp-stdio-state'
 import type { AcpAgentCapabilities } from './acp-config'
 
 export const SUPERONE_ACP_MCP_NAME = 'superone'
 
-export function buildSuperoneAcpMcpServer(superoneSessionId: string): McpServer | null {
+export function buildSuperoneAcpMcpServer(
+  superoneSessionId: string,
+  caps: AcpMcpTransportCaps = { http: false, sse: false },
+): McpServer | null {
+  if (caps.http) {
+    const config = getSuperoneMcpHttpConfig(superoneSessionId)
+    if (config) {
+      return {
+        type: 'http',
+        name: SUPERONE_ACP_MCP_NAME,
+        url: config.url,
+        headers: Object.entries(config.headers).map(([name, value]) => ({ name, value })),
+      }
+    }
+  }
+
   const config = getSuperoneMcpStdioConfig(superoneSessionId)
   if (!config) return null
   return {
@@ -92,16 +110,16 @@ export function buildAcpSessionMcpServers(opts: {
 }): McpServer[] {
   const servers: McpServer[] = []
   const reserved = new Set<string>()
+  const caps = mcpTransportCapsFromAgent(opts.agentCapabilities)
 
   if (opts.superoneSessionId) {
-    const superone = buildSuperoneAcpMcpServer(opts.superoneSessionId)
+    const superone = buildSuperoneAcpMcpServer(opts.superoneSessionId, caps)
     if (superone) {
       servers.push(superone)
       reserved.add(SUPERONE_ACP_MCP_NAME)
     }
   }
 
-  const caps = mcpTransportCapsFromAgent(opts.agentCapabilities)
   const list = opts.listConfigs ?? listMcpConfigs
   for (const cfg of list(opts.cwd)) {
     if (reserved.has(cfg.name)) continue

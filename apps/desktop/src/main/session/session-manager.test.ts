@@ -6,6 +6,7 @@ const hoisted = vi.hoisted(() => ({
   providers: new Map<string, SessionProvider>(),
   backendsCreated: [] as SessionBackend[],
   existsSyncMock: vi.fn<(path: string) => boolean>(() => true),
+  closeMcpHttpSessions: vi.fn(async (_sessionId: string) => undefined),
 }))
 
 vi.mock('../logger', () => ({
@@ -19,6 +20,10 @@ vi.mock('fs', async (importActual) => {
 
 vi.mock('./session-provider-repo', () => ({
   getSessionProvider: (id: string) => hoisted.providers.get(id) ?? null,
+}))
+
+vi.mock('../mcp/superone-mcp-http-state', () => ({
+  closeSuperoneMcpHttpSessions: hoisted.closeMcpHttpSessions,
 }))
 
 vi.mock('../agent/discover-resources', () => ({
@@ -58,9 +63,13 @@ class FakeBackend implements SessionBackend {
   activeBackgroundTasks = false
   blockSend = false
   resolveSend: (() => void) | null = null
+  blockRelease = false
+  resolveRelease: (() => void) | null = null
+  sendCalls = 0
   hasActiveRuntime(): boolean { return this.activeRuntime }
   async releaseRuntime(): Promise<void> {
     this.releaseRuntimeCalls += 1
+    if (this.blockRelease) await new Promise<void>((resolve) => { this.resolveRelease = resolve })
     this.activeRuntime = false
   }
 
@@ -71,6 +80,7 @@ class FakeBackend implements SessionBackend {
   prewarm(): void { this.activeRuntime = true }
   async rebuild(): Promise<void> { this.activeRuntime = true }
   async send(_req: SendMessageRequest): Promise<void> {
+    this.sendCalls += 1
     if (this.blockSend) await new Promise<void>((resolve) => { this.resolveSend = resolve })
   }
   async interrupt(): Promise<void> {}
@@ -140,6 +150,7 @@ describe('SessionManager', () => {
     hoisted.backendsCreated.length = 0
     hoisted.existsSyncMock.mockReset()
     hoisted.existsSyncMock.mockReturnValue(true)
+    hoisted.closeMcpHttpSessions.mockClear()
     seedProvider('claude-base', 'claude')
     seedProvider('codex-base', 'codex')
     mgr = new SessionManagerImpl()
@@ -180,6 +191,7 @@ describe('SessionManager', () => {
       await mgr.reapIdleRuntimes(now + minutes * 60_000)
       expect(hoisted.backendsCreated.every((backend) => (backend as FakeBackend).releaseRuntimeCalls === 1)).toBe(true)
       expect(sessions.every((session) => !session.hasActiveRuntime())).toBe(true)
+      expect(hoisted.closeMcpHttpSessions).toHaveBeenCalledTimes(runtimeCount)
     })
 
     it('counts only sessions that currently hold a runtime', async () => {
@@ -233,6 +245,28 @@ describe('SessionManager', () => {
       expect(pendingBackend.releaseRuntimeCalls).toBe(0)
       expect(backgroundBackend.releaseRuntimeCalls).toBe(0)
       streamingBackend.resolveSend?.()
+      await send
+    })
+
+    it('finishes idle cleanup before a concurrent send starts a new runtime', async () => {
+      const session = mgr.createSession({ id: 'release-race', projectPath: '/release-race', providerId: 'claude-base' })
+      session.prewarm()
+      const backend = hoisted.backendsCreated[0] as FakeBackend
+      backend.blockRelease = true
+
+      const reap = mgr.reapIdleRuntimes(Date.now() + 60 * 60_000)
+      await vi.waitFor(() => expect(backend.resolveRelease).not.toBeNull())
+      const send = session.send({ content: 'resume after release' })
+
+      await Promise.resolve()
+      expect(backend.sendCalls).toBe(0)
+      expect(hoisted.closeMcpHttpSessions).not.toHaveBeenCalled()
+
+      backend.resolveRelease?.()
+      await reap
+      await vi.waitFor(() => expect(backend.sendCalls).toBe(1))
+      expect(hoisted.closeMcpHttpSessions).toHaveBeenCalledWith('release-race')
+      backend.resolveSend?.()
       await send
     })
   })

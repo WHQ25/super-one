@@ -21,7 +21,11 @@ import {
 } from './opencode-client'
 import type { SnapshotFileDiff } from '@opencode-ai/sdk/v2'
 import { listMcpConfigs } from '../mcp-config-service'
-import { getSuperoneMcpStdioConfig } from '../mcp/superone-mcp-stdio-state'
+import log from '../logger'
+import {
+  getSuperoneMcpHttpConfig,
+  getSuperoneMcpStdioConfig,
+} from '../mcp/superone-mcp-stdio-state'
 import { BUILT_IN_SUPERONE_TOOL_NAMES } from '../mcp/superone-mcp-builtin-defs'
 
 const SUPERONE_MCP_NAME = 'superone'
@@ -162,25 +166,48 @@ async function syncMcpServers(
 ): Promise<Set<string>> {
   const configs = new Map(
     listMcpConfigs(cwd).flatMap((config) => {
+      if (config.name === SUPERONE_MCP_NAME) return []
       const mapped = toOpenCodeMcpConfig(config)
       return mapped ? [[config.name, mapped] as const] : []
     }),
   )
-  const superone = getSuperoneMcpStdioConfig(sessionId)
-  if (superone) {
-    configs.set(SUPERONE_MCP_NAME, {
+  const superoneHttp = getSuperoneMcpHttpConfig(sessionId)
+  const superoneStdio = getSuperoneMcpStdioConfig(sessionId)
+  const hasSuperone = Boolean(superoneHttp || superoneStdio)
+  const nextNames = new Set(configs.keys())
+  if (hasSuperone) nextNames.add(SUPERONE_MCP_NAME)
+
+  for (const name of previousNames) {
+    if (!nextNames.has(name)) await client.disconnectMcp(name).catch(() => undefined)
+  }
+  await Promise.all([...configs].map(([name, config]) => client.addMcp(name, config)))
+
+  if (superoneHttp) {
+    try {
+      await client.addMcp(SUPERONE_MCP_NAME, {
+        type: 'remote',
+        url: superoneHttp.url,
+        headers: superoneHttp.headers,
+        enabled: true,
+      })
+      return nextNames
+    } catch (err) {
+      if (!superoneStdio) throw err
+      log.warn('[opencode] shared HTTP MCP registration failed; falling back to stdio:', err)
+      await client.disconnectMcp(SUPERONE_MCP_NAME).catch(() => undefined)
+    }
+  }
+
+  if (superoneStdio) {
+    await client.addMcp(SUPERONE_MCP_NAME, {
       type: 'local',
-      command: [superone.command, ...superone.args],
-      environment: superone.env,
+      command: [superoneStdio.command, ...superoneStdio.args],
+      environment: superoneStdio.env,
       enabled: true,
       timeout: 60_000,
     })
   }
-  for (const name of previousNames) {
-    if (!configs.has(name)) await client.disconnectMcp(name).catch(() => undefined)
-  }
-  await Promise.all([...configs].map(([name, config]) => client.addMcp(name, config)))
-  return new Set(configs.keys())
+  return nextNames
 }
 
 export async function createOpenCodeRuntime(opts: OpenCodeRuntimeOptions): Promise<OpenCodeRuntime> {

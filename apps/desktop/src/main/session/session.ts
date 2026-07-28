@@ -145,6 +145,7 @@ export class Session implements SessionContract {
   private _lastUserMessageAt: number | null = null
   private _lastEventAt = 0
   private _lastRuntimeActivityAt = Date.now()
+  private _runtimeRelease: Promise<boolean> | null = null
   private _needsRebuild = false
 
   get lastEventAt(): number { return this._lastEventAt }
@@ -219,8 +220,24 @@ export class Session implements SessionContract {
     return now - this._lastRuntimeActivityAt >= timeoutMs
   }
 
-  async releaseRuntime(reason: 'idle'): Promise<void> {
-    await this.backend.releaseRuntime(reason)
+  async releaseRuntime(reason: 'idle', afterRelease?: () => Promise<void>): Promise<boolean> {
+    if (this._runtimeRelease) return this._runtimeRelease
+    const release = (async () => {
+      await this.backend.releaseRuntime(reason)
+      if (this.backend.hasActiveRuntime()) return false
+      await afterRelease?.()
+      return true
+    })()
+    this._runtimeRelease = release
+    try {
+      return await release
+    } finally {
+      if (this._runtimeRelease === release) this._runtimeRelease = null
+    }
+  }
+
+  private async waitForRuntimeRelease(): Promise<void> {
+    await this._runtimeRelease
   }
 
   private touchRuntimeActivity(): void {
@@ -459,6 +476,7 @@ export class Session implements SessionContract {
     this._sendChain = new Promise<void>((r) => { release = r })
     try {
       await prev.catch(() => {})
+      await this.waitForRuntimeRelease()
       this.assertNotDisposed()
       const effortChanged = request.effort !== undefined && request.effort !== this.effort
       const dirsChanged = request.additionalDirs !== undefined
@@ -756,6 +774,14 @@ export class Session implements SessionContract {
       apiProviderId: this._apiProviderId,
       systemPromptAppend: this.systemPromptAppend,
     }
+    if (this._runtimeRelease) {
+      void this.waitForRuntimeRelease()
+        .then(() => {
+          if (this._status !== 'disposed') this.backend.prewarm(opts)
+        })
+        .catch((err) => log.debug('[Session] prewarm after runtime release failed:', err))
+      return
+    }
     this.backend.prewarm(opts)
   }
 
@@ -933,6 +959,7 @@ export class Session implements SessionContract {
     trace('session.lifecycle', 'dispose', { sid: this.id, owner: this._owner.kind === 'remote' ? this._owner.deviceId : 'local', subscribers: [...this._subscribers] })
     this._status = 'disposed'
     this._pendingQueuedRequests.clear()
+    try { await this.waitForRuntimeRelease() } catch { /* backend close still needs to run */ }
     try { await this.backend.close() } catch (err) { log.debug('[Session] backend.close error:', err) }
     if (this._owner.kind === 'remote') {
       const previous = this._owner
@@ -1045,6 +1072,8 @@ export class Session implements SessionContract {
       this._needsRebuild = true
       return
     }
+    await this.waitForRuntimeRelease()
+    this.assertNotDisposed()
     await this.backend.rebuild(this.buildBackendStartOpts())
   }
 

@@ -278,7 +278,7 @@ export interface Session {
   setForeground(visible: boolean): void
   hasActiveRuntime(): boolean
   isRuntimeIdle(now: number, timeoutMs: number): boolean
-  releaseRuntime(reason: 'idle'): Promise<void>
+  releaseRuntime(reason: 'idle', afterRelease?: () => Promise<void>): Promise<boolean>
   subscribe(deviceId: string): void
   unsubscribe(deviceId: string, reason?: SessionLeaveReason): void
   onLifecycle(handler: (event: SessionLifecycleEvent) => void): () => void

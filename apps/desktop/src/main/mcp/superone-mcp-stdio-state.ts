@@ -1,5 +1,9 @@
 import { getNodeRuntime } from '../agent/resolve-cli'
 import {
+  deriveSuperoneMcpSessionToken,
+  SUPERONE_MCP_SESSION_HEADER,
+} from './superone-mcp-auth'
+import {
   SUPERONE_MCP_IPC_ENDPOINT_ENV,
   SUPERONE_MCP_IPC_TOKEN_ENV,
   SUPERONE_MCP_SESSION_ID_ENV,
@@ -14,6 +18,7 @@ export {
 
 interface SuperoneMcpBridgeRuntime {
   endpoint: string
+  httpUrl: string
   token: string
   bridgeScriptPath: string
 }
@@ -24,7 +29,14 @@ export interface SuperoneMcpStdioConfig {
   env: Record<string, string>
 }
 
-export interface CodexSuperoneMcpConfig extends SuperoneMcpStdioConfig {
+export interface SuperoneMcpHttpConfig {
+  url: string
+  headers: Record<string, string>
+}
+
+export interface CodexSuperoneMcpConfig {
+  url: string
+  http_headers: Record<string, string>
   startup_timeout_sec: number
 }
 
@@ -36,12 +48,13 @@ export function setSuperoneMcpBridgeRuntime(runtime: SuperoneMcpBridgeRuntime | 
 
 export function getSuperoneMcpStdioConfig(sessionId: string): SuperoneMcpStdioConfig | null {
   if (!bridgeRuntime) return null
+  const sessionToken = deriveSuperoneMcpSessionToken(bridgeRuntime.token, sessionId)
   const nodeRuntime = getNodeRuntime('mcp-bridge')
   const command = nodeRuntime.executable ?? process.execPath
   const env: Record<string, string> = {
     ...nodeRuntime.env,
     [SUPERONE_MCP_IPC_ENDPOINT_ENV]: bridgeRuntime.endpoint,
-    [SUPERONE_MCP_IPC_TOKEN_ENV]: bridgeRuntime.token,
+    [SUPERONE_MCP_IPC_TOKEN_ENV]: sessionToken,
     [SUPERONE_MCP_SESSION_ID_ENV]: sessionId,
   }
   if (!nodeRuntime.executable && process.versions.electron) {
@@ -50,8 +63,24 @@ export function getSuperoneMcpStdioConfig(sessionId: string): SuperoneMcpStdioCo
   return { command, args: [bridgeRuntime.bridgeScriptPath], env }
 }
 
+export function getSuperoneMcpHttpConfig(sessionId: string): SuperoneMcpHttpConfig | null {
+  if (!bridgeRuntime) return null
+  const sessionToken = deriveSuperoneMcpSessionToken(bridgeRuntime.token, sessionId)
+  return {
+    url: bridgeRuntime.httpUrl,
+    headers: {
+      Authorization: `Bearer ${sessionToken}`,
+      [SUPERONE_MCP_SESSION_HEADER]: sessionId,
+    },
+  }
+}
+
 export function getCodexSuperoneMcpConfig(sessionId: string): CodexSuperoneMcpConfig | null {
-  const base = getSuperoneMcpStdioConfig(sessionId)
+  const base = getSuperoneMcpHttpConfig(sessionId)
   if (!base) return null
-  return { ...base, startup_timeout_sec: SUPERONE_MCP_STARTUP_TIMEOUT_SEC }
+  return {
+    url: base.url,
+    http_headers: base.headers,
+    startup_timeout_sec: SUPERONE_MCP_STARTUP_TIMEOUT_SEC,
+  }
 }

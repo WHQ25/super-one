@@ -187,6 +187,37 @@ describe('resolveThread fallback', () => {
     }))
   })
 
+  it('passes the shared HTTP MCP config into thread/start', async () => {
+    const { setSuperoneMcpBridgeRuntime } = await import('../mcp/superone-mcp-stdio-state')
+    const { deriveSuperoneMcpSessionToken } = await import('../mcp/superone-mcp-auth')
+    setSuperoneMcpBridgeRuntime({
+      endpoint: '/tmp/superone.sock',
+      httpUrl: 'http://127.0.0.1:3210/mcp',
+      token: 'token-1',
+      bridgeScriptPath: '/app/superone-mcp-stdio-bridge.js',
+    })
+    try {
+      const session = makeSession({ model: 'gpt-5' })
+      const mockConnection = {
+        request: vi.fn().mockResolvedValueOnce({ thread: { id: 'fresh-thread' } }),
+      } as never
+
+      await resolveThread(mockConnection, session, '/project', '/project', permissionProfile as never)
+
+      const payload = (mockConnection as { request: ReturnType<typeof vi.fn> }).request.mock.calls[0][1]
+      expect(payload.config.mcp_servers.superone).toEqual({
+        url: 'http://127.0.0.1:3210/mcp',
+        http_headers: {
+          Authorization: `Bearer ${deriveSuperoneMcpSessionToken('token-1', session.superoneSessionId)}`,
+          'X-SuperOne-Session-Id': session.superoneSessionId,
+        },
+        startup_timeout_sec: 60,
+      })
+    } finally {
+      setSuperoneMcpBridgeRuntime(null)
+    }
+  })
+
   it('reuses a ready thread on the current app-server connection', async () => {
     const session = makeSession({ model: 'gpt-5', threadId: 'ready-thread' })
     session.threadReady = true

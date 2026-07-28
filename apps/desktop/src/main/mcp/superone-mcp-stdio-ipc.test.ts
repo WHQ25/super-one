@@ -56,7 +56,7 @@ const {
   startSuperoneMcpStdioBridge,
   stopSuperoneMcpStdioBridge,
 } = await import('./superone-mcp-stdio-ipc')
-const { getCodexSuperoneMcpConfig } = await import('./superone-mcp-stdio-state')
+const { getCodexSuperoneMcpConfig, getSuperoneMcpStdioConfig } = await import('./superone-mcp-stdio-state')
 const {
   createSuperoneMcpServer,
   disposeSuperoneMcpServer,
@@ -142,13 +142,13 @@ class TestClient {
   }
 }
 
-function getToken(): string {
-  const cfg = getCodexSuperoneMcpConfig('/x')
+function getToken(sessionId = PROJ): string {
+  const cfg = getSuperoneMcpStdioConfig(sessionId)
   return cfg?.env.SUPERONE_MCP_IPC_TOKEN ?? ''
 }
 
 function getEndpoint(): string {
-  const cfg = getCodexSuperoneMcpConfig('/x')
+  const cfg = getSuperoneMcpStdioConfig('/x')
   return cfg?.env.SUPERONE_MCP_IPC_ENDPOINT ?? ''
 }
 
@@ -166,16 +166,17 @@ describe('superone-mcp-stdio-ipc', () => {
   })
 
   it('registers a config with endpoint + token after start', () => {
-    const cfg = getCodexSuperoneMcpConfig(PROJ)
+    const cfg = getSuperoneMcpStdioConfig(PROJ)
     expect(cfg).not.toBeNull()
     expect(cfg!.env.SUPERONE_MCP_SESSION_ID).toBe(PROJ)
-    expect(cfg!.env.SUPERONE_MCP_IPC_TOKEN).toMatch(/^[0-9a-f-]{36}$/)
+    expect(cfg!.env.SUPERONE_MCP_IPC_TOKEN).toMatch(/^[A-Za-z0-9_-]{43}$/)
     expect(cfg!.env.SUPERONE_MCP_IPC_ENDPOINT).toBeTruthy()
   })
 
   it('returns null config after stop', () => {
     stopSuperoneMcpStdioBridge()
     expect(getCodexSuperoneMcpConfig(PROJ)).toBeNull()
+    expect(getSuperoneMcpStdioConfig(PROJ)).toBeNull()
   })
 
   it('chmods the unix socket to 0600 on non-Windows platforms', () => {
@@ -226,7 +227,7 @@ describe('superone-mcp-stdio-ipc', () => {
 
     const clientB = new TestClient(getEndpoint())
     await clientB.ready()
-    await clientB.send('tools/list', getToken(), { sessionId: '/other-proj' })
+    await clientB.send('tools/list', getToken('/other-proj'), { sessionId: '/other-proj' })
 
     registerAppTools(PROJ, PROJ, 'test-app', 'myapp', makeTools('do_thing'))
     await new Promise((r) => setTimeout(r, 30))

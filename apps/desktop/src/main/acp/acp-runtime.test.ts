@@ -8,6 +8,7 @@ import {
 } from '@agentclientprotocol/sdk'
 import { createAcpRuntime } from './acp-runtime'
 import { setSuperoneMcpBridgeRuntime } from '../mcp/superone-mcp-stdio-state'
+import { deriveSuperoneMcpSessionToken } from '../mcp/superone-mcp-auth'
 import { ACP_SYSTEM_PROMPT_BLOCK } from '../agent/superone-system-prompt'
 import type { AgentEvent } from '@superone/shared/agent-types'
 
@@ -355,6 +356,7 @@ describe('createAcpRuntime (in-process agent)', () => {
 describe('ACP host integration (MCP + system prompt)', () => {
   const bridge = {
     endpoint: 'http://127.0.0.1:9999/mcp',
+    httpUrl: 'http://127.0.0.1:9998/mcp',
     token: 'tok-abc',
     bridgeScriptPath: '/fake/bridge.js',
   }
@@ -396,7 +398,7 @@ describe('ACP host integration (MCP + system prompt)', () => {
     expect(servers[0].env).toEqual(
       expect.arrayContaining([
         { name: 'SUPERONE_MCP_SESSION_ID', value: 'sid-42' },
-        { name: 'SUPERONE_MCP_IPC_TOKEN', value: 'tok-abc' },
+        { name: 'SUPERONE_MCP_IPC_TOKEN', value: deriveSuperoneMcpSessionToken('tok-abc', 'sid-42') },
         { name: 'SUPERONE_MCP_IPC_ENDPOINT', value: bridge.endpoint },
       ]),
     )

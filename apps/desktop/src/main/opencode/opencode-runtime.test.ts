@@ -36,6 +36,11 @@ const mocks = vi.hoisted(() => ({
   questionReject: vi.fn(async () => undefined),
   closeServer: vi.fn(async () => undefined),
   events: [] as unknown[],
+  mcpConfigs: [{ name: 'project-tools', type: 'stdio', command: 'tools-server' }],
+}))
+
+vi.mock('../logger', () => ({
+  default: { warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() },
 }))
 
 vi.mock('./opencode-client', () => ({
@@ -95,12 +100,21 @@ vi.mock('./opencode-client', () => ({
 }))
 
 vi.mock('../mcp-config-service', () => ({
-  listMcpConfigs: () => [{ name: 'project-tools', type: 'stdio', command: 'tools-server' }],
+  listMcpConfigs: () => mocks.mcpConfigs,
 }))
 
 vi.mock('../mcp/superone-mcp-stdio-state', () => ({
+  getSuperoneMcpHttpConfig: () => ({
+    url: 'http://127.0.0.1:3210/mcp',
+    headers: {
+      Authorization: 'Bearer tok',
+      'X-SuperOne-Session-Id': 'superone-session',
+    },
+  }),
   getSuperoneMcpStdioConfig: () => ({
-    command: 'node', args: ['/bridge.js'], env: { SUPERONE_MCP_SESSION_ID: 'superone-session' },
+    command: 'node',
+    args: ['/bridge.js'],
+    env: { SUPERONE_MCP_SESSION_ID: 'superone-session' },
   }),
 }))
 
@@ -109,7 +123,9 @@ import { buildOpenCodePermissionRules, createOpenCodeRuntime } from './opencode-
 describe('opencode-runtime', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mocks.addMcp.mockResolvedValue(undefined)
     mocks.events = []
+    mocks.mcpConfigs = [{ name: 'project-tools', type: 'stdio', command: 'tools-server' }]
   })
 
   afterEach(() => {
@@ -134,11 +150,13 @@ describe('opencode-runtime', () => {
       agent: 'plan',
     })
     expect(mocks.addMcp).toHaveBeenCalledWith('superone', {
-      type: 'local',
-      command: ['node', '/bridge.js'],
-      environment: { SUPERONE_MCP_SESSION_ID: 'superone-session' },
+      type: 'remote',
+      url: 'http://127.0.0.1:3210/mcp',
+      headers: {
+        Authorization: 'Bearer tok',
+        'X-SuperOne-Session-Id': 'superone-session',
+      },
       enabled: true,
-      timeout: 60_000,
     })
 
     await runtime.setPermissionMode('bypassPermissions')
@@ -219,6 +237,51 @@ describe('opencode-runtime', () => {
 
     await expect(runtime.authenticateMcp('github')).rejects.toThrow(/local OpenCode runtime/)
     expect(mocks.authenticateMcp).not.toHaveBeenCalled()
+    await runtime.close()
+  })
+
+  it('falls back to stdio when shared HTTP MCP registration fails', async () => {
+    mocks.addMcp.mockImplementation(async (name: string, config: { type?: string }) => {
+      if (name === 'superone' && config.type === 'remote') throw new Error('remote MCP unsupported')
+    })
+
+    const runtime = await createOpenCodeRuntime({
+      sessionId: 'superone-session',
+      cwd: '/project',
+      config: {},
+      permissionMode: 'default',
+      onEvent: vi.fn(),
+    })
+
+    expect(mocks.addMcp).toHaveBeenCalledWith('superone', expect.objectContaining({ type: 'remote' }))
+    expect(mocks.addMcp).toHaveBeenCalledWith('superone', {
+      type: 'local',
+      command: ['node', '/bridge.js'],
+      environment: { SUPERONE_MCP_SESSION_ID: 'superone-session' },
+      enabled: true,
+      timeout: 60_000,
+    })
+    await runtime.close()
+  })
+
+  it('reserves the superone MCP name for the built-in server', async () => {
+    mocks.mcpConfigs = [
+      { name: 'superone', type: 'stdio', command: 'user-superone' },
+      { name: 'project-tools', type: 'stdio', command: 'tools-server' },
+    ]
+
+    const runtime = await createOpenCodeRuntime({
+      sessionId: 'superone-session',
+      cwd: '/project',
+      config: {},
+      permissionMode: 'default',
+      onEvent: vi.fn(),
+    })
+
+    expect(mocks.addMcp).not.toHaveBeenCalledWith('superone', expect.objectContaining({
+      command: ['user-superone'],
+    }))
+    expect(mocks.addMcp).toHaveBeenCalledWith('superone', expect.objectContaining({ type: 'remote' }))
     await runtime.close()
   })
 

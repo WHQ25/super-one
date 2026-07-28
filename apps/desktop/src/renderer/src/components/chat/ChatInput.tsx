@@ -22,6 +22,7 @@ import { PromptSuggestion } from './prompt-suggestion'
 import { addBrowserImageToChat, extractDraggedImageUrl } from '../browser/browser-image'
 import type { MentionNodeAttrs } from './mention-node'
 import type { CodexGoal, SlashCommandInfo, ImageAttachment } from '@superone/shared/agent-types'
+import { acpAgentDisplayName } from '@superone/shared/acp-brand'
 import type { InputSegment } from '@/stores/chat-store/types'
 import { fuzzyMatch } from '@/lib/fuzzy-match'
 import { HighlightedText } from '@superone/ui/components/ui/HighlightedText'
@@ -265,7 +266,9 @@ export function ChatInput() {
     const acpAgentId = useActiveSession((s) => s.acpAgentId)
     const acpAgents = useChatStore((s) => s.harnessResources?.acp?.agents)
     const ensureAcpSlashCommands = useChatStore((s) => s.ensureAcpSlashCommands)
+    // Catalog may be empty in a fresh mini-window; fall back to id-derived brand name.
     const acpAgentName = acpAgents?.find((a) => a.id === acpAgentId)?.name
+      ?? (acpAgentId ? acpAgentDisplayName(acpAgentId) : null)
     const acpSlashCommands = useMemo<SlashCommandInfo[]>(() => {
       const local: SlashCommandInfo[] = [
         { name: 'clear', description: t('chat.acpCommands.clearDesc'), argumentHint: '', isSkill: false },

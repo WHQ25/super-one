@@ -191,7 +191,7 @@ function makeSnapshotEntry(overrides: Partial<{
   projectPath: string
   isActive: boolean
   isStreaming: boolean
-  harnessId: 'claude' | 'codex'
+  harnessId: 'claude' | 'codex' | 'acp' | 'opencode'
   permissionMode: string
   messages: ChatMessage[]
   currentMessageId: string | null
@@ -200,6 +200,7 @@ function makeSnapshotEntry(overrides: Partial<{
   pendingInteractions: AgentEvent[]
   replayEvents: AgentEvent[]
   apiProviderId: string | null
+  acpAgentId: string | null
 }> = {}) {
   return {
     sid: overrides.sid ?? 'sid-1',
@@ -219,6 +220,7 @@ function makeSnapshotEntry(overrides: Partial<{
       currentMessageId: overrides.currentMessageId ?? 'm1',
       createdAt: 0,
       lastUserMessageAt: null,
+      lastEventAt: 0,
       messages: overrides.messages ?? [],
       totalCostUsd: overrides.totalCostUsd ?? 0,
       contextTokens: overrides.contextTokens ?? 0,
@@ -228,6 +230,7 @@ function makeSnapshotEntry(overrides: Partial<{
       gitBranch: null,
       worktreeMissing: false,
       apiProviderId: overrides.apiProviderId ?? null,
+      acpAgentId: overrides.acpAgentId ?? null,
     },
     pendingInteractions: overrides.pendingInteractions ?? [],
     replayEvents: overrides.replayEvents ?? [],
@@ -362,6 +365,74 @@ describe('syncLiveSnapshots', () => {
     await useChatStore.getState().syncLiveSnapshots()
     const session = useChatStore.getState().projectSessions['/p']._sessions['sid-1']
     expect(session.apiProviderId).toBeNull()
+  })
+
+  it('carries snapshot acpAgentId so mini-window brands Grok/ACP sessions correctly', async () => {
+    mockGetLiveSnapshots.mockResolvedValueOnce([
+      makeSnapshotEntry({
+        harnessId: 'acp',
+        messages: [makeMessage('m1', 'hi', 1)],
+        acpAgentId: 'grok-build',
+        isStreaming: false,
+        currentMessageId: null,
+      }),
+    ])
+
+    await useChatStore.getState().syncLiveSnapshots()
+    const session = useChatStore.getState().projectSessions['/p']._sessions['sid-1']
+    expect(session.sessionProvider).toBe('acp')
+    expect(session.preferredProvider).toBe('acp')
+    expect(session.acpAgentId).toBe('grok-build')
+  })
+
+  it('preserves prior acpAgentId when a live snapshot omits agent id', async () => {
+    const { createDefaultPerSessionState } = await import('./chat-store/defaults')
+    useChatStore.setState({
+      projectSessions: {
+        '/p': {
+          _activeSessionId: 'sid-1',
+          _sessions: {
+            'sid-1': {
+              ...createDefaultPerSessionState(),
+              acpAgentId: 'grok-build',
+              preferredProvider: 'acp',
+              sessionProvider: 'acp',
+            },
+          },
+        } as never,
+      },
+    })
+
+    mockGetLiveSnapshots.mockResolvedValueOnce([
+      makeSnapshotEntry({
+        harnessId: 'acp',
+        messages: [makeMessage('m1', 'hi', 1)],
+        acpAgentId: null,
+        isStreaming: false,
+        currentMessageId: null,
+      }),
+    ])
+
+    await useChatStore.getState().syncLiveSnapshots()
+    const session = useChatStore.getState().projectSessions['/p']._sessions['sid-1']
+    expect(session.acpAgentId).toBe('grok-build')
+  })
+
+  it('infers OpenCode provider from harnessId without requiring acpAgentId', async () => {
+    mockGetLiveSnapshots.mockResolvedValueOnce([
+      makeSnapshotEntry({
+        harnessId: 'opencode',
+        messages: [makeMessage('m1', 'hi', 1)],
+        isStreaming: false,
+        currentMessageId: null,
+      }),
+    ])
+
+    await useChatStore.getState().syncLiveSnapshots()
+    const session = useChatStore.getState().projectSessions['/p']._sessions['sid-1']
+    expect(session.sessionProvider).toBe('opencode')
+    expect(session.preferredProvider).toBe('opencode')
+    expect(session.acpAgentId).toBeNull()
   })
 })
 

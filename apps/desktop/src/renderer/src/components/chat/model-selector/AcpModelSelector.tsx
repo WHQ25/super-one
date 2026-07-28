@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Loader2 } from 'lucide-react'
 import { useActiveSession, useChatStore } from '@/stores/chat'
 import type { AcpAgentDescriptor } from '@superone/shared/agent-types'
+import { acpAgentDisplayName } from '@superone/shared/acp-brand'
 import {
   groupModelsBySlashPrefix,
   resolveSlashModelLabel,
@@ -46,12 +47,14 @@ export function AcpModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?: (e: 
   const setSelectedAcpMode = useChatStore((s) => s.setSelectedAcpMode)
 
   const agent = agents.find((a) => a.id === acpAgentId)
+  // Prefer catalog name; if agents aren't loaded yet (mini-window cold start), derive from id.
+  const agentLabel = agent?.name ?? (acpAgentId ? acpAgentDisplayName(acpAgentId) : null)
   const grouped = useGroupedSlashList(acpAgentId)
   const currentModel = acpModels.find((m) => m.id === selectedModel)
   // Only show selectedModel when it exists in this agent's catalog (avoids Claude/OpenCode ids after switch).
   const currentLabel = currentModel
     ? (grouped ? resolveSlashModelLabel(currentModel) : (currentModel.name || currentModel.id))
-    : (agent?.name ?? t('chat.suggestions.acpLabel'))
+    : (agentLabel ?? t('chat.suggestions.acpLabel'))
 
   const models = useMemo<SelectorModelOption[] | undefined>(
     () => grouped ? undefined : acpModels.map((m) => ({ id: m.id, name: m.name || m.id, description: m.description })),
@@ -109,7 +112,7 @@ export function AcpModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?: (e: 
       <div className="flex items-center gap-1">
         <span className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-muted-foreground">
           <Loader2 className="size-3 animate-spin" />
-          <span className="max-w-35 truncate">{agent?.name ?? t('chat.suggestions.selectAgent')}</span>
+          <span className="max-w-35 truncate">{agentLabel ?? t('chat.suggestions.selectAgent')}</span>
         </span>
       </div>
     )
@@ -124,7 +127,7 @@ export function AcpModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?: (e: 
           className="max-w-45 truncate rounded-lg px-2 py-1 text-xs text-muted-foreground"
           title={acpModelsError ?? agent?.commandPreview ?? hint}
         >
-          {agent?.name ?? t('chat.suggestions.acpLabel')}
+          {agentLabel ?? t('chat.suggestions.acpLabel')}
         </span>
       </div>
     )

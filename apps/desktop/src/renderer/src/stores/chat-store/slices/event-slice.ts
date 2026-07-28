@@ -666,6 +666,9 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
           _gitBranch: entry.snapshot.gitBranch ?? prevSession._gitBranch,
           _worktreeRemoved: entry.snapshot.worktreeMissing,
           apiProviderId: entry.snapshot.apiProviderId ?? prevSession.apiProviderId ?? null,
+          // Live snapshot must carry ACP agent identity — without it mini-window
+          // brands every ACP session as generic "ACP Agent" after syncLiveSnapshots.
+          acpAgentId: entry.snapshot.acpAgentId ?? prevSession.acpAgentId ?? null,
           _historyHydrated: true,
         }
         const nextSessions = { ...prevProject._sessions, [entry.sid]: mergedSession }

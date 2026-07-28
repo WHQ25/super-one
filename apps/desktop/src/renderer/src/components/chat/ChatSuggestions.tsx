@@ -25,6 +25,7 @@ import { homePath } from '@/lib/path-utils'
 import { useMosaicStore } from '@/components/mosaic/mosaic-store'
 import { isExperimentalAgentProvider } from '@/stores/chat-store/helpers/provider-routing'
 import type { AcpAgentDescriptor } from '@superone/shared/agent-types'
+import { acpAgentDisplayName, isGrokAcpAgent } from '@superone/shared/acp-brand'
 
 const EMPTY_ACP_AGENTS: AcpAgentDescriptor[] = []
 const DEFAULT_ACP_AGENT_ID = 'grok-build'
@@ -44,7 +45,7 @@ function ProviderIcon({
   if (provider === 'codex') return <CodexSessionIcon status="default" size={size} />
   if (provider === 'acp') {
     // Default / Grok Build → official Grok mark; other ACP agents keep the generic ACP glyph.
-    if (!acpAgentId || acpAgentId === DEFAULT_ACP_AGENT_ID) {
+    if (!acpAgentId || isGrokAcpAgent(acpAgentId)) {
       return <Grok size={size} className="text-foreground" />
     }
     return <AcpSessionIcon status="default" size={size} />
@@ -120,7 +121,9 @@ function ProviderSelector() {
   )
   const agentTabLabel = showAcpLabel
     ? (selectedAcpAgent?.name
-      ?? (effectiveAcpAgentId === DEFAULT_ACP_AGENT_ID ? 'Grok' : t('chat.suggestions.selectAgent')))
+      ?? (acpAgentId || effectiveAcpAgentId === DEFAULT_ACP_AGENT_ID
+        ? acpAgentDisplayName(effectiveAcpAgentId)
+        : t('chat.suggestions.selectAgent')))
     : experimentalAgentsEnabled && (preferredProvider === 'opencode' || (preferredProvider === 'claude' && lastAgentGroup === 'opencode'))
       ? 'OpenCode'
       : 'Codex'

@@ -419,6 +419,7 @@ export class Session implements SessionContract {
       gitBranch: this._gitBranch,
       worktreeMissing: this._missingWorktreePath !== null,
       apiProviderId: this._apiProviderId,
+      acpAgentId: this._acpAgentId,
     }
   }
 

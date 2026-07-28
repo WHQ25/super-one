@@ -31,6 +31,8 @@ export interface SessionSnapshot {
   readonly gitBranch: string | null
   readonly worktreeMissing: boolean
   readonly apiProviderId: string | null
+  /** ACP agent id when harnessId is `acp` (e.g. `grok-build`). Required so mini-window live sync can brand correctly. */
+  readonly acpAgentId: string | null
 }
 
 export interface LiveSessionSnapshot {

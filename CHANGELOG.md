@@ -4,6 +4,34 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.48.3-alpha] - 2026-07-28
+
+### Added
+
+- Compact collab send/retrieve tool bodies with expand-in-place, and show host mailbox wakes as a short inbox status row instead of a full user bubble
+
+### Fixed
+
+- Persist the Grok provider session id after draft prewarm / first message so cold resume no longer always starts a new ACP session
+- Prevent Codex streams from freezing when MCP startup races the turn
+- Align collab child provider and Codex model labels with the host session defaults
+- Queue mid-turn host task notifications (mailbox / download settle) and flush idle wakes through Session.send so they no longer race the session state machine
+
+### Changed
+
+- Collaboration retrieve is non-blocking: agents pull mailbox messages when ready instead of waiting on a blocking collab wait
+- Upgrade Electron to 43.2.0
+
+### Performance
+
+- Isolate the chat composer from transcript stream ticks so TipTap / status chrome do not re-render every content delta
+- Fold consecutive unsequenced content and Codex item deltas inside the agent-event batch window
+- Structural-share message maps and scope streaming tool-input cleanup to the owning session
+- Derive the latest open Codex todo list on session state so TodoPopup no longer scans full messages on the stream hot path
+- Share the SuperOne MCP server over HTTP across sessions in one process
+- Centralize idle session runtime release after the retention window
+- Trim reverse-window retention when returning to the bottom of chat, and drop detached scroll-indicator element refs on outline changes
+
 ## [0.48.2-alpha] - 2026-07-28
 
 ### Added

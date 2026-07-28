@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { render, screen } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 interface FakeSessionState {
@@ -40,13 +40,14 @@ const hoisted = vi.hoisted(() => {
   // to unmount the old node and mount a new one, so a fresh node = a remount.
   const seenScrollNodes = new WeakSet<object>()
   const scrollMounts = { count: 0 }
+  const contentZoom: { callback: ((action: 'in' | 'out' | 'reset') => void) | null } = { callback: null }
   const onScrollMount = (el: HTMLElement | null): void => {
     if (el && !seenScrollNodes.has(el)) {
       seenScrollNodes.add(el)
       scrollMounts.count++
     }
   }
-  return { sessionState, isRemoteLocked: { value: false }, scope, scrollMounts, onScrollMount }
+  return { sessionState, isRemoteLocked: { value: false }, scope, scrollMounts, contentZoom, onScrollMount }
 })
 
 vi.mock('@/stores/chat', () => ({
@@ -122,7 +123,12 @@ globalThis.IntersectionObserver = MockIntersectionObserver as unknown as typeof 
 
 window.app = {
   ...(window.app ?? {}),
-  onContentZoom: vi.fn(() => () => {}),
+  onContentZoom: vi.fn((callback) => {
+    hoisted.contentZoom.callback = callback
+    return () => {
+      if (hoisted.contentZoom.callback === callback) hoisted.contentZoom.callback = null
+    }
+  }),
   trace: vi.fn(),
 } as never
 
@@ -303,5 +309,75 @@ describe('ChatContent foreground visibility', () => {
     expect(setSessionForeground).toHaveBeenCalledTimes(2)
     expect(setSessionForeground).toHaveBeenNthCalledWith(1, 'sid-1', true)
     expect(setSessionForeground).toHaveBeenNthCalledWith(2, 'sid-1', false)
+  })
+})
+
+describe('ChatContent transcript density', () => {
+  it('uses native layout tokens for wide transcripts without CSS scaling', () => {
+    const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+      width: 800,
+      height: 600,
+      top: 0,
+      right: 800,
+      bottom: 600,
+      left: 0,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    })
+    try {
+      hoisted.scope.value = null
+      hoisted.sessionState._activeSessionId = 'sid-1'
+      hoisted.sessionState.messages = []
+
+      const { container } = renderContent()
+      const contentRoot = container.firstElementChild as HTMLElement
+
+      expect(contentRoot.style.transform).toBe('')
+      expect(contentRoot.style.zoom).toBe('')
+      expect(contentRoot.style.getPropertyValue('--spacing')).toBe('0.2875rem')
+      expect(contentRoot.style.getPropertyValue('--text-sm')).toBe('1.00625rem')
+      expect(contentRoot.style.getPropertyValue('--container-3xl')).toBe('55.2rem')
+    } finally {
+      rectSpy.mockRestore()
+    }
+  })
+
+  it('keeps content zoom shortcuts by adjusting native layout tokens', () => {
+    const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+      width: 800,
+      height: 600,
+      top: 0,
+      right: 800,
+      bottom: 600,
+      left: 0,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    })
+    try {
+      hoisted.scope.value = null
+      hoisted.sessionState._activeSessionId = 'sid-1'
+      hoisted.sessionState.messages = []
+
+      const { container } = renderContent()
+      const contentRoot = container.firstElementChild as HTMLElement
+      const matchesSpy = vi.spyOn(contentRoot, 'matches').mockReturnValue(true)
+      expect(contentRoot.style.getPropertyValue('--spacing')).toBe('0.2875rem')
+
+      try {
+        act(() => hoisted.contentZoom.callback?.('out'))
+        expect(contentRoot.style.getPropertyValue('--spacing')).toBe('0.275rem')
+        expect(contentRoot.style.transform).toBe('')
+        expect(contentRoot.style.zoom).toBe('')
+
+        act(() => hoisted.contentZoom.callback?.('reset'))
+        expect(contentRoot.style.getPropertyValue('--spacing')).toBe('0.2875rem')
+      } finally {
+        matchesSpy.mockRestore()
+      }
+    } finally {
+      rectSpy.mockRestore()
+    }
   })
 })

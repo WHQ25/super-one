@@ -222,7 +222,7 @@ export function WorkflowDagCanvas({
 
   return (
     <div className="relative h-full w-full overflow-hidden bg-muted/10">
-      <div className="pointer-events-none absolute right-3 top-3 z-20 flex items-center gap-1 text-[10px] text-muted-foreground/70">
+      <div className="pointer-events-none absolute right-3 top-3 z-20 flex items-center gap-1 text-xs text-muted-foreground/70">
         <span className="tabular-nums">{Math.round(effectiveScale * 100)}%</span>
         <span>·</span>
         <Kbd variant="square">+</Kbd><Kbd variant="square">-</Kbd> zoom

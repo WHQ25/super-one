@@ -112,7 +112,7 @@ export function ClaudeModelList({
             <div className="min-w-0 flex-1">
               <div className="truncate font-medium">{displayName}</div>
               {description && (
-                <div className="mt-0.5 text-[10px] text-muted-foreground">{description}</div>
+                <div className="mt-0.5 text-xs text-muted-foreground">{description}</div>
               )}
             </div>
             {active && <Check className="mt-0.5 size-3.5 shrink-0 text-primary" />}
@@ -199,7 +199,7 @@ export function GroupedSlashModelList({
       {groups.map(({ group, items }) => (
         <div key={group}>
           {group && group !== 'other' && (
-            <div className="px-2 pb-0.5 pt-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+            <div className="px-2 pb-0.5 pt-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
               {group}
             </div>
           )}
@@ -310,9 +310,9 @@ export function CodexModelList({
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5">
                 <span className="truncate font-medium">{formatCodexModelName(model.name, model.id)}</span>
-                {model.isDefault && <span className="shrink-0 rounded bg-primary/10 px-1 py-0.5 text-[9px] font-medium text-primary">Default</span>}
+                {model.isDefault && <span className="shrink-0 rounded bg-primary/10 px-1 py-0.5 text-xs font-medium text-primary">Default</span>}
               </div>
-              {model.description && <div className="mt-0.5 line-clamp-2 text-[10px] leading-4 text-muted-foreground">{model.description}</div>}
+              {model.description && <div className="mt-0.5 line-clamp-2 text-xs leading-4 text-muted-foreground">{model.description}</div>}
             </div>
             {active && <Check className="mt-0.5 size-3.5 shrink-0 text-primary" />}
           </button>
@@ -363,7 +363,7 @@ export function CodexReasoningEffortList({
           >
             <div className="min-w-0 flex-1">
               <div className="font-medium">{formatReasoningEffortLabel(option.value)}</div>
-              {option.description && <div className="mt-0.5 line-clamp-2 text-[10px] leading-4 text-muted-foreground">{option.description}</div>}
+              {option.description && <div className="mt-0.5 line-clamp-2 text-xs leading-4 text-muted-foreground">{option.description}</div>}
             </div>
             {active && <Check className="mt-0.5 size-3.5 shrink-0 text-primary" />}
           </button>

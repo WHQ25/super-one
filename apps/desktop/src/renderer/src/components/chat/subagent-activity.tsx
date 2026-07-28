@@ -7,7 +7,7 @@ import type { SubagentColorClasses } from './subagent-colors'
 import type { JsonlEntry } from './subagent-utils'
 
 /** Scrollable container that auto-scrolls to bottom on new content, unless user scrolled up. */
-export function SubagentScrollArea({ children, borderClass, maxHeightClass = 'max-h-[100px]' }: {
+export function SubagentScrollArea({ children, borderClass, maxHeightClass = 'max-h-25' }: {
   children: React.ReactNode
   borderClass: string
   maxHeightClass?: string

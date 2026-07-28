@@ -488,7 +488,7 @@ export function AskUserQuestionPrompt() {
             >
               {q.header}
               {isAnswered(q, selections, otherTexts) && (
-                <span className="ml-1 text-[10px] text-green-500">&#10003;</span>
+                <span className="ml-1 text-xs text-green-500">&#10003;</span>
               )}
             </button>
           ))}
@@ -505,7 +505,7 @@ export function AskUserQuestionPrompt() {
           {t('chat.askUser.submit')}
           <Kbd variant="inline" className="ml-1 text-primary-foreground/70 dark:text-white/70">↵</Kbd>
         </Button>
-        <span className="text-[10px] text-muted-foreground">
+        <span className="text-xs text-muted-foreground">
           {!singleQuestion && <><Kbd>⇥</Kbd><span className="ml-0.5">{t('chat.askUser.hintSwitch')}</span><span className="mx-1 opacity-40">·</span></>}
           {isPreview && selections[questionKey(activeQuestion)] && <><Kbd>n</Kbd><span className="ml-0.5">{t('chat.askUser.hintNote')}</span><span className="mx-1 opacity-40">·</span></>}
           {otherFocused || noteFocused

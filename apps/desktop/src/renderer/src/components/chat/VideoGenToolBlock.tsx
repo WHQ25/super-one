@@ -59,7 +59,7 @@ function ImageRefThumb({ path, label }: { path: string; label: string }) {
           </div>
         )}
       </div>
-      <span className="truncate text-center text-[10px] text-muted-foreground">{label}</span>
+      <span className="truncate text-center text-xs text-muted-foreground">{label}</span>
     </div>
   )
 }
@@ -68,7 +68,7 @@ function FileRefChip({ path, label, icon: Icon }: { path: string; label: string;
   return (
     <div className="flex items-center gap-1.5">
       <Icon className="size-3 shrink-0 text-muted-foreground" />
-      <span className="text-[11px] text-muted-foreground">{label}</span>
+      <span className="text-xs text-muted-foreground">{label}</span>
       <FileChip name={path.split('/').pop() || path} title={path} filePath={path} />
     </div>
   )
@@ -144,7 +144,7 @@ export function VideoGenToolBlock({ params, result, isStreaming }: VideoGenToolB
         {title && <span className="min-w-0 truncate text-muted-foreground">{title}</span>}
         {badgeLabel && (
           <span className={cn(
-            'shrink-0 rounded px-1 py-px text-[10px]',
+            'shrink-0 rounded px-1 py-px text-xs',
             isFailed ? 'bg-warning/20 text-warning' : 'bg-muted text-muted-foreground',
           )}>
             {badgeLabel}
@@ -166,7 +166,7 @@ export function VideoGenToolBlock({ params, result, isStreaming }: VideoGenToolB
                 <>
                   {hasRefs && (
                     <div className="space-y-2">
-                      <span className="text-[11px] font-medium text-foreground">{t('chat.videoGenToolBlock.referenceMaterials')}</span>
+                      <span className="text-xs font-medium text-foreground">{t('chat.videoGenToolBlock.referenceMaterials')}</span>
                       {(firstFramePath || lastFramePath) && (
                         <div className="flex flex-wrap gap-2">
                           {firstFramePath && <ImageRefThumb path={firstFramePath} label={t('chat.videoGenToolBlock.firstFrame')} />}

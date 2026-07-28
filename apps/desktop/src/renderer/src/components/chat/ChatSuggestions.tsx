@@ -35,7 +35,7 @@ const tabsTriggerClass =
 function ProviderIcon({
   provider,
   acpAgentId,
-  size = 64,
+  size = 72,
 }: {
   provider: ChatProvider
   acpAgentId?: string | null
@@ -234,7 +234,7 @@ function ProviderSelector() {
                   return (
                     <DropdownMenuItem key={agent.id} onClick={() => selectAcpAgent(agent.id)} className="gap-2 focus-visible:shadow-none">
                       <span className="min-w-0 flex-1 truncate">{agent.name}</span>
-                      {!agent.installed && <span className="shrink-0 text-[10px] text-muted-foreground">{t('chat.suggestions.agentNotInstalled')}</span>}
+                      {!agent.installed && <span className="shrink-0 text-xs text-muted-foreground">{t('chat.suggestions.agentNotInstalled')}</span>}
                       {selected && <Check className="size-4 shrink-0 text-primary" />}
                     </DropdownMenuItem>
                   )
@@ -247,7 +247,7 @@ function ProviderSelector() {
         </TabsList>
       </Tabs>
       {experimentalAgentsEnabled && preferredProvider === 'acp' && selectedAcpAgent && !selectedAcpAgent.installed && (
-        <p className="max-w-xs text-center text-[11px] text-muted-foreground">
+        <p className="max-w-xs text-center text-xs text-muted-foreground">
           {t('chat.suggestions.agentInstallHint')}
         </p>
       )}

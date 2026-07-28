@@ -100,7 +100,7 @@ export function CodexCommandBlock({ item, isStreaming }: { item: CodexCommandExe
         <ChevronRight className={cn('ml-auto size-3 shrink-0 text-muted-foreground transition-transform duration-200', expanded && 'rotate-90')} />
       </div>
       {expanded && (
-        <div className="bg-terminal-bg font-mono text-[12px] leading-relaxed whitespace-pre-wrap">
+        <div className="bg-terminal-bg font-mono text-xs leading-relaxed whitespace-pre-wrap">
           {item.command && (
             <div className="px-3 pt-2 text-terminal-fg">
               <span className="text-terminal-prompt">$ </span>{item.command}
@@ -164,7 +164,7 @@ function CollabSendInputBlock({ item }: { item: CodexCollabToolCallItem }) {
         <ChevronRight className={cn('ml-auto size-3 shrink-0 text-muted-foreground transition-transform duration-200', expanded && 'rotate-90')} />
       </div>
       {expanded && prompt && (
-        <div className="bg-terminal-bg px-3 py-2 font-mono text-[12px] leading-relaxed whitespace-pre-wrap text-terminal-fg max-h-48 overflow-y-auto">
+        <div className="bg-terminal-bg px-3 py-2 font-mono text-xs leading-relaxed whitespace-pre-wrap text-terminal-fg max-h-48 overflow-y-auto">
           {prompt}
         </div>
       )}
@@ -185,7 +185,7 @@ function PlanApprovalBadge({ planApproval }: { planApproval: CodexPlanApprovalSt
   return (
     <span
       className={cn(
-        'inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium',
+        'inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium',
         planApproval.status === 'approved'
           ? 'bg-success/10 text-success'
           : 'bg-error/10 text-error',
@@ -442,7 +442,7 @@ function CodexErrorBlock({ message }: { message: string }) {
         <TriangleAlert className="size-3.5" />
         <span>{t('chat.codex.codexError')}</span>
       </div>
-      <div className="text-[11px] leading-relaxed text-red-200">{message}</div>
+      <div className="text-xs leading-relaxed text-red-200">{message}</div>
     </div>
   )
 }

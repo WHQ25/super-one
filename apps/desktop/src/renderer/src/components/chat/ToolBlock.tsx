@@ -1151,7 +1151,7 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, t
           {isStreaming ? <>{getToolVerb(toolName)}…</> : toolName === 'AskUserQuestion' ? `Asked${display.summary ? ` ${display.summary}` : ''}` : displayName}
         </span>
         {isQuestionDismissed ? (
-          <span className="shrink-0 rounded bg-muted px-1 py-px text-[10px] text-muted-foreground">{t('chat.toolBlock.dismissed')}</span>
+          <span className="shrink-0 rounded bg-muted px-1 py-px text-xs text-muted-foreground">{t('chat.toolBlock.dismissed')}</span>
         ) : isDenied ? (
           <>
             {fileToolName ? (
@@ -1159,7 +1159,7 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, t
             ) : summary ? (
               <span className="min-w-0 truncate text-muted-foreground">{summary}</span>
             ) : null}
-            <span className="shrink-0 rounded bg-error/20 px-1 py-px text-[10px] text-error">{t('chat.toolBlock.denied')}</span>
+            <span className="shrink-0 rounded bg-error/20 px-1 py-px text-xs text-error">{t('chat.toolBlock.denied')}</span>
             {deniedFeedback && !feedbackIsBlock && (
               <span ref={feedbackRef} className="min-w-0 truncate text-error/70">{deniedFeedback}</span>
             )}
@@ -1171,7 +1171,7 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, t
             ) : summary ? (
               <span className="min-w-0 truncate text-muted-foreground">{summary}</span>
             ) : null}
-            <span className="shrink-0 rounded bg-warning/20 px-1 py-px text-[10px] text-warning">{t('chat.toolBlock.error')}</span>
+            <span className="shrink-0 rounded bg-warning/20 px-1 py-px text-xs text-warning">{t('chat.toolBlock.error')}</span>
           </>
         ) : fileToolName ? (
           <>
@@ -1187,7 +1187,7 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, t
           <span className="min-w-0 truncate text-muted-foreground">{summary}</span>
         ) : null}
         {lineDelta && (lineDelta.added > 0 || lineDelta.removed > 0) && (
-          <span className="shrink-0 font-mono text-[11px]">
+          <span className="shrink-0 font-mono text-xs">
             {lineDelta.added > 0 && (
               <span className="inline-flex items-baseline text-success">
                 +<RollingNumber value={lineDelta.added} />
@@ -1286,7 +1286,7 @@ export function FileChip({ name, title, filePath, lineNumber, className }: { nam
     >
       <DraggableFileIcon name={name} filePath={targetPath} dragEndRef={dragEndRef} className="shrink-0" />
       <span className={cn('truncate', className)}>{name}</span>
-      {targetLineNumber != null && <span className="text-muted-foreground text-[10px]">#L{targetLineNumber}</span>}
+      {targetLineNumber != null && <span className="text-muted-foreground text-xs">#L{targetLineNumber}</span>}
     </span>
   )
 }
@@ -1327,7 +1327,7 @@ function MobileShareFileBlock({ params, result, isStreaming }: {
   const failed = !isStreaming && !done
   const errorText = failed ? (result ?? '').replace(/^\[Error\]\s*/, '').trim() : ''
 
-  const fileChip = <FileChip name={fileName} title={path} filePath={path} className="max-w-[180px]" />
+  const fileChip = <FileChip name={fileName} title={path} filePath={path} className="max-w-45" />
 
   const header = (
     <div
@@ -1368,7 +1368,7 @@ function MobileShareFileBlock({ params, result, isStreaming }: {
   const sentAt = parsed?.sentAt ? new Date(parsed.sentAt) : null
   const rows: Array<{ label: string; value: React.ReactNode }> = []
   if (sentAt) rows.push({ label: 'Sent at', value: <span className="tabular-nums">{sentAt.toLocaleString()}</span> })
-  rows.push({ label: 'Path', value: <span className="font-mono text-[11px] text-primary break-all">{parsed?.path ?? path}</span> })
+  rows.push({ label: 'Path', value: <span className="font-mono text-xs text-primary break-all">{parsed?.path ?? path}</span> })
   if (parsed?.size != null) rows.push({ label: 'Size', value: `${formatBytes(parsed.size)}${parsed.mimeType ? ` · ${parsed.mimeType}` : ''}` })
   rows.push({
     label: 'Delivery',
@@ -1383,7 +1383,7 @@ function MobileShareFileBlock({ params, result, isStreaming }: {
       <div className="grid transition-[grid-template-rows] duration-200 ease-out" style={{ gridTemplateRows: expanded ? '1fr' : '0fr' }}>
         <div className="overflow-hidden">
           <div className="border-t border-border/60 px-2 py-2">
-            <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-[11px]">
+            <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs">
               {rows.map((r) => (
                 <div key={r.label} className="contents">
                   <span className="text-muted-foreground">{r.label}</span>
@@ -1614,11 +1614,11 @@ function BashTerminalView({
           ? <span className="min-w-0 truncate text-muted-foreground">{description}</span>
           : (!expanded || fileExpired) && <span className="min-w-0 truncate text-muted-foreground">{command}</span>
         }
-        {timeoutMs && <span className="rounded bg-muted px-1 py-px text-[10px] text-muted-foreground">{Math.round(timeoutMs / 1000)}s</span>}
-        {isDenied && <span className="rounded bg-error/20 px-1 py-px text-[10px] text-error">Denied</span>}
-        {showError && <span className="rounded bg-warning/20 px-1 py-px text-[10px] text-warning">{t('chat.toolBlock.error')}</span>}
-        {bgStopped && !showError && <span className="rounded bg-muted px-1 py-px text-[10px] text-muted-foreground">{t('chat.subagent.stopped')}</span>}
-        {isTimedOut && <span className="rounded bg-error/20 px-1 py-px text-[10px] text-error">{t('chat.toolBlock.timedOut')}</span>}
+        {timeoutMs && <span className="rounded bg-muted px-1 py-px text-xs text-muted-foreground">{Math.round(timeoutMs / 1000)}s</span>}
+        {isDenied && <span className="rounded bg-error/20 px-1 py-px text-xs text-error">Denied</span>}
+        {showError && <span className="rounded bg-warning/20 px-1 py-px text-xs text-warning">{t('chat.toolBlock.error')}</span>}
+        {bgStopped && !showError && <span className="rounded bg-muted px-1 py-px text-xs text-muted-foreground">{t('chat.subagent.stopped')}</span>}
+        {isTimedOut && <span className="rounded bg-error/20 px-1 py-px text-xs text-error">{t('chat.toolBlock.timedOut')}</span>}
         <div className="ml-auto flex shrink-0 items-center gap-1.5">
           {trailingAction}
           <ChevronRight className={cn('size-3 shrink-0 text-muted-foreground transition-transform duration-200', expanded && 'rotate-90')} />
@@ -1630,7 +1630,7 @@ function BashTerminalView({
         </div>
       ) : (
         <div
-          className="bg-terminal-bg font-mono text-[12px] leading-relaxed"
+          className="bg-terminal-bg font-mono text-xs leading-relaxed"
           onClick={(e) => e.stopPropagation()}
         >
           {command && (
@@ -1712,7 +1712,7 @@ function ScrollableToolResult({ text }: { text: string }) {
   return (
     <div
       className={cn(
-        'overflow-auto rounded bg-background/70 px-2 py-1.5 font-mono text-[11px] leading-relaxed text-muted-foreground whitespace-pre-wrap',
+        'overflow-auto rounded bg-background/70 px-2 py-1.5 font-mono text-xs leading-relaxed text-muted-foreground whitespace-pre-wrap',
         SCROLLABLE_RESULT_MAX_H,
       )}
     >
@@ -1733,13 +1733,13 @@ function ToolResult({ text }: { text: string }) {
 
   return (
     <div>
-      <div className="overflow-x-auto rounded bg-background/70 px-2 py-1.5 font-mono text-[11px] leading-relaxed text-muted-foreground whitespace-pre-wrap">
+      <div className="overflow-x-auto rounded bg-background/70 px-2 py-1.5 font-mono text-xs leading-relaxed text-muted-foreground whitespace-pre-wrap">
         {visibleText}
       </div>
       {isLong && (
         <button
           onClick={(e) => { e.stopPropagation(); setShowAll((s) => !s) }}
-          className="mt-0.5 flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+          className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
         >
           <ChevronRight className={cn('size-3 shrink-0 transition-transform duration-200', showAll && 'rotate-90')} />
           {showAll ? t('chat.toolBlock.collapse') : t('chat.toolBlock.moreLines', { count: hiddenCount })}
@@ -2030,22 +2030,22 @@ export function DebugToolBlock({
         <span className="font-medium text-warning">
           {isStreaming ? <>{getToolVerb(toolName)}…</> : toolName}
         </span>
-        <span className="rounded bg-warning/20 px-1 py-px text-[10px] text-warning">debug</span>
+        <span className="rounded bg-warning/20 px-1 py-px text-xs text-warning">debug</span>
         {isStreaming && elapsedSeconds != null && elapsedSeconds >= 1 && (
           <span className="ml-auto shrink-0 text-muted-foreground">{Math.round(elapsedSeconds)}s</span>
         )}
       </div>
       <div className="px-2 pb-1.5 space-y-1.5">
         <div>
-          <div className="mb-0.5 text-[10px] font-medium uppercase text-muted-foreground">Input</div>
-          <div className="max-h-48 overflow-auto rounded bg-background/70 px-2 py-1.5 font-mono text-[11px] leading-relaxed text-foreground whitespace-pre-wrap break-all">
+          <div className="mb-0.5 text-xs font-medium uppercase text-muted-foreground">Input</div>
+          <div className="max-h-48 overflow-auto rounded bg-background/70 px-2 py-1.5 font-mono text-xs leading-relaxed text-foreground whitespace-pre-wrap break-all">
             {prettyInput || <span className="text-muted-foreground italic">empty</span>}
           </div>
         </div>
         {result && !isStreaming && (
           <div>
-            <div className="mb-0.5 text-[10px] font-medium uppercase text-muted-foreground">Output</div>
-            <div className="max-h-48 overflow-auto rounded bg-background/70 px-2 py-1.5 font-mono text-[11px] leading-relaxed text-muted-foreground whitespace-pre-wrap break-all">
+            <div className="mb-0.5 text-xs font-medium uppercase text-muted-foreground">Output</div>
+            <div className="max-h-48 overflow-auto rounded bg-background/70 px-2 py-1.5 font-mono text-xs leading-relaxed text-muted-foreground whitespace-pre-wrap break-all">
               {result}
             </div>
           </div>

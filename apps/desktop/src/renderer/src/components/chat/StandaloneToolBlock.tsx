@@ -214,7 +214,7 @@ export function StandaloneToolBlock(props: Props) {
           <span className="font-medium text-foreground/80">{appName}</span>
           <span className="text-muted-foreground/70">·</span>
           <span>{toolReadableName}</span>
-          <span className="ml-auto text-[10px] text-muted-foreground/50">cached</span>
+          <span className="ml-auto text-xs text-muted-foreground/50">cached</span>
         </div>
       )}
     </div>

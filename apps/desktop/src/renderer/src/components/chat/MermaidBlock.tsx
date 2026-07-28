@@ -54,7 +54,7 @@ export function MermaidPreview({ svg, isThemeSwitching }: {
         ref={outerRef}
         className={overflow
           ? 'overflow-auto p-4'
-          : 'p-4 [&_svg]:mx-auto [&_svg]:block [&_svg]:h-auto [&_svg]:max-h-[500px]'
+          : 'p-4 [&_svg]:mx-auto [&_svg]:block [&_svg]:h-auto [&_svg]:max-h-125'
         }
         style={overflow ? { maxHeight: MAX_H } : undefined}
       >
@@ -147,7 +147,7 @@ export function MermaidBlock({ code, isComplete, codePlugin }: MermaidBlockProps
   }
 
   const toolbar = (
-    <div className="flex items-center justify-between px-3 py-1.5 text-[11px] text-muted-foreground">
+    <div className="flex items-center justify-between px-3 py-1.5 text-xs text-muted-foreground">
       <span className="opacity-50">Mermaid</span>
       <div className="flex items-center gap-1">
         {svg && (

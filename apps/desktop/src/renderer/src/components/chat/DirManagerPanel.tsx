@@ -80,7 +80,7 @@ export function DirManagerPanel({ isCoding }: DirManagerPanelProps) {
       isCoding ? 'mb-1 rounded-xl' : 'mb-0.5 rounded-t-lg'
     )}>
       <div className="flex items-center justify-between px-3 py-1.5">
-        <span className="text-[11px] font-medium text-muted-foreground">/add-dir</span>
+        <span className="text-xs font-medium text-muted-foreground">/add-dir</span>
         <button
           onMouseDown={(e) => { e.preventDefault(); setShowDirManager(false) }}
           className="rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground"

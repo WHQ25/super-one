@@ -99,7 +99,7 @@ export function HighlightedCodeBlock({ code, language, codePlugin, isComplete = 
 
   return (
     <div data-chat-codeblock className="my-1.5 overflow-hidden rounded-md bg-muted/20">
-      <div className="flex items-center justify-between px-3 py-1.5 text-[11px] text-muted-foreground">
+      <div className="flex items-center justify-between px-3 py-1.5 text-xs text-muted-foreground">
         <span className="opacity-50">{language}</span>
         <button
           onClick={handleCopy}

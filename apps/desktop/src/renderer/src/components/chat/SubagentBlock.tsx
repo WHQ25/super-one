@@ -216,20 +216,20 @@ export function SubagentBlock({ taskBlock, childBlocks: childBlocksProp, resultB
       >
         <Bot className={cn('size-3.5 shrink-0', isFailed ? 'text-amber-600 dark:text-amber-400' : isStopped ? 'text-muted-foreground' : colors.text, isRunning && !isExpanded && 'animate-pulse')} />
         {taskInput.name && taskInput.teamName ? (
-          <span className={cn('shrink-0 rounded px-1 py-px text-[10px] font-medium', colors.tagBg, colors.tagText)}>
+          <span className={cn('shrink-0 rounded px-1 py-px text-xs font-medium', colors.tagBg, colors.tagText)}>
             {taskInput.name}@{taskInput.teamName}
           </span>
         ) : taskInput.name ? (
           <>
-            <span className={cn('shrink-0 rounded px-1 py-px text-[10px] font-medium', colors.tagBg, colors.tagText)}>
+            <span className={cn('shrink-0 rounded px-1 py-px text-xs font-medium', colors.tagBg, colors.tagText)}>
               {taskInput.name}
             </span>
             {taskInput.subagentType && taskInput.subagentType !== taskInput.name && (
-              <span className="shrink-0 text-[10px] text-muted-foreground">{taskInput.subagentType}</span>
+              <span className="shrink-0 text-xs text-muted-foreground">{taskInput.subagentType}</span>
             )}
           </>
         ) : taskInput.subagentType ? (
-          <span className={cn('shrink-0 rounded px-1 py-px text-[10px]', colors.tagBg, colors.tagText)}>
+          <span className={cn('shrink-0 rounded px-1 py-px text-xs', colors.tagBg, colors.tagText)}>
             {taskInput.subagentType}
           </span>
         ) : null}
@@ -241,7 +241,7 @@ export function SubagentBlock({ taskBlock, childBlocks: childBlocksProp, resultB
         )}
         {isRunning && progress?.retry && <SubagentRetryBadge retry={progress.retry} className="ml-1" />}
         {isExpandable && (
-          <span className="ml-auto flex shrink-0 items-center gap-1.5 text-[11px] text-muted-foreground">
+          <span className="ml-auto flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
             {!isExpanded && isFailed && (
               <span className="inline-flex items-center gap-0.5 text-amber-600 dark:text-amber-400">
                 <TriangleAlert className="size-3" />{t('chat.subagent.failed')}
@@ -316,7 +316,7 @@ export function SubagentBlock({ taskBlock, childBlocks: childBlocksProp, resultB
         </div>
       )}
 
-      {isExpanded && (isRunning || isComplete) && <div className="flex items-center gap-1.5 border-t border-border/30 px-2.5 py-1.5 text-[11px] text-muted-foreground">
+      {isExpanded && (isRunning || isComplete) && <div className="flex items-center gap-1.5 border-t border-border/30 px-2.5 py-1.5 text-xs text-muted-foreground">
         {isRunning ? (
           <>
             <span>{isAsync ? t('chat.subagent.runningInBackground') : t('chat.subagent.running')}</span>
@@ -353,13 +353,13 @@ function OutputPreview({ text }: { text: string }) {
     <div className="border-t border-border/30 px-3 py-1.5">
       <button
         onClick={(e) => { e.stopPropagation(); setShowOutput((s) => !s) }}
-        className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+        className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
       >
         <ChevronRight className={cn('size-2.5 shrink-0 transition-transform duration-200', showOutput && 'rotate-90')} />
         <span className="font-medium">{t('chat.subagent.output')}</span>
       </button>
       {showOutput && (
-        <div className="mt-1 max-h-[200px] overflow-y-auto text-xs">
+        <div className="mt-1 max-h-50 overflow-y-auto text-xs">
           <Streamdown
             className="chat-md"
             plugins={streamdownPlugins}
@@ -382,17 +382,17 @@ function PromptPreview({ prompt, model }: { prompt: string; model?: string }) {
   const [showPrompt, setShowPrompt] = useState(false)
 
   return (
-    <div className="px-3 py-1.5 text-[11px]">
+    <div className="px-3 py-1.5 text-xs">
       <button
         onClick={(e) => { e.stopPropagation(); setShowPrompt((s) => !s) }}
         className="flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors"
       >
         <ChevronRight className={cn('size-2.5 shrink-0 transition-transform duration-200', showPrompt && 'rotate-90')} />
         <span>{t('chat.subagent.prompt')}</span>
-        {model && <span className="ml-1 rounded bg-muted px-1 py-px text-[10px]">{model}</span>}
+        {model && <span className="ml-1 rounded bg-muted px-1 py-px text-xs">{model}</span>}
       </button>
       {showPrompt && (
-        <div className="mt-1 max-h-[100px] overflow-y-auto whitespace-pre-wrap rounded bg-background/50 px-2 py-1.5 text-muted-foreground leading-relaxed">
+        <div className="mt-1 max-h-25 overflow-y-auto whitespace-pre-wrap rounded bg-background/50 px-2 py-1.5 text-muted-foreground leading-relaxed">
           {prompt}
         </div>
       )}
@@ -427,7 +427,7 @@ function renderChildBlock(
       if (toolResultMap.has(block.toolUseId)) return null
       if (!block.summary) return null
       return (
-        <div key={index} className="my-0.5 overflow-x-auto rounded bg-muted/50 px-2 py-1.5 font-mono text-[11px] leading-relaxed text-muted-foreground whitespace-pre-wrap">
+        <div key={index} className="my-0.5 overflow-x-auto rounded bg-muted/50 px-2 py-1.5 font-mono text-xs leading-relaxed text-muted-foreground whitespace-pre-wrap">
           {block.summary}
         </div>
       )

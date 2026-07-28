@@ -96,7 +96,7 @@ export function HarnessPermissionPopover({
       <PopoverTrigger asChild>
         <button
           type="button"
-          className={`flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] transition-colors ${trigger.toneClass}`}
+          className={`flex items-center gap-1 rounded-lg px-2 py-1 text-xs transition-colors ${trigger.toneClass}`}
           title={trigger.label}
         >
           {trigger.icon}

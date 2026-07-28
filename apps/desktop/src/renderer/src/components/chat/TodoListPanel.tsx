@@ -71,7 +71,7 @@ export function TodoListPanel({
       </div>
 
       {expanded && (
-        <div className={cn('max-h-[140px] overflow-y-auto border-t border-border p-1', listClassName)}>
+        <div className={cn('max-h-35 overflow-y-auto border-t border-border p-1', listClassName)}>
           {items.map((item) => {
             const blockers = item.blockedBy ?? []
             const autoDesc = item.status === 'in_progress' && item.description
@@ -102,13 +102,13 @@ export function TodoListPanel({
                     {showItemIds && <span className="mr-1 text-muted-foreground">#{item.id}</span>}
                     {item.text}
                     {item.owner && (
-                      <span className="ml-2 inline-flex items-center gap-1 align-middle text-[11px] text-muted-foreground">
+                      <span className="ml-2 inline-flex items-center gap-1 align-middle text-xs text-muted-foreground">
                         <Bot className="size-3 shrink-0" />
-                        <span className="max-w-[110px] truncate">{item.owner}</span>
+                        <span className="max-w-27.5 truncate">{item.owner}</span>
                       </span>
                     )}
                     {blockers.length > 0 && (
-                      <span className="ml-1.5 inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-1.5 py-px align-middle text-[10px] font-medium text-amber-700 dark:text-amber-400">
+                      <span className="ml-1.5 inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-1.5 py-px align-middle text-xs font-medium text-amber-700 dark:text-amber-400">
                         <Lock className="size-2.5" />
                         {blockers.map((b) => `#${b}`).join(' ')}
                       </span>
@@ -120,13 +120,13 @@ export function TodoListPanel({
                 </div>
 
                 {autoDesc && (
-                  <div className="ml-[15px] border-l border-border pl-3 pb-1 pr-2 text-[11px] leading-relaxed text-muted-foreground">
+                  <div className="ml-[15px] border-l border-border pl-3 pb-1 pr-2 text-xs leading-relaxed text-muted-foreground">
                     {item.description}
                   </div>
                 )}
 
                 {detail && isOpen && (
-                  <div className="ml-[15px] border-l border-border pl-3 pb-1 pr-2 text-[11px] leading-relaxed text-muted-foreground">
+                  <div className="ml-[15px] border-l border-border pl-3 pb-1 pr-2 text-xs leading-relaxed text-muted-foreground">
                     {item.description}
                   </div>
                 )}

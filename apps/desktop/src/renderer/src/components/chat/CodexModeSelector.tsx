@@ -15,7 +15,7 @@ export function CodexModeSelector() {
 
   return (
     <div className="group/plan-mode inline-flex items-center gap-0.5">
-      <div className={cn('inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px]', planMode.color)}>
+      <div className={cn('inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs', planMode.color)}>
         <ClipboardList className="size-3.5" />
         <span>{t('chat.plan.label')}</span>
       </div>

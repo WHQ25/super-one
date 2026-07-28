@@ -31,7 +31,7 @@ function ReferenceThumb({ image, label }: { image: VideoGenReferenceImage; label
       <div className="h-20 w-20 overflow-hidden rounded-md border border-border bg-muted/30">
         <img src={image.dataUri} alt={label} className="h-full w-full object-cover" />
       </div>
-      <span className="truncate text-center text-[10px] text-muted-foreground">{label}</span>
+      <span className="truncate text-center text-xs text-muted-foreground">{label}</span>
     </div>
   )
 }
@@ -39,7 +39,7 @@ function ReferenceThumb({ image, label }: { image: VideoGenReferenceImage; label
 function FormField({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex flex-col gap-1">
-      <label className="text-[11px] font-medium text-foreground">{label}</label>
+      <label className="text-xs font-medium text-foreground">{label}</label>
       {children}
     </div>
   )
@@ -171,7 +171,7 @@ export function VideoGenConfirmPrompt({ params, providers, referenceImages = [],
         )}
 
         <div className="mb-2 flex flex-col gap-1">
-          <label className="text-[11px] font-medium text-foreground">{t('chat.videoGenConfirm.promptLabel')}</label>
+          <label className="text-xs font-medium text-foreground">{t('chat.videoGenConfirm.promptLabel')}</label>
           <Textarea
             value={form.prompt}
             onChange={(e) => setField('prompt', e.target.value)}
@@ -238,7 +238,7 @@ export function VideoGenConfirmPrompt({ params, providers, referenceImages = [],
         <button
           type="button"
           onClick={() => setShowAdvanced((v) => !v)}
-          className="mb-2 flex cursor-pointer items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
+          className="mb-2 flex cursor-pointer items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
         >
           <Settings2 className="size-3 shrink-0" />
           {t('chat.videoGenConfirm.advancedOptions')}
@@ -268,15 +268,15 @@ export function VideoGenConfirmPrompt({ params, providers, referenceImages = [],
               </FormField>
             </div>
             <div className="flex items-center justify-between gap-2 rounded border border-border bg-background/40 px-2 py-1.5">
-              <span className="text-[11px] font-medium text-foreground">{t('chat.videoGenConfirm.generateAudio')}</span>
+              <span className="text-xs font-medium text-foreground">{t('chat.videoGenConfirm.generateAudio')}</span>
               <Switch checked={form.generateAudio} onCheckedChange={(v) => setField('generateAudio', v)} />
             </div>
             <div className="flex items-center justify-between gap-2 rounded border border-border bg-background/40 px-2 py-1.5">
-              <span className="text-[11px] font-medium text-foreground">{t('chat.videoGenConfirm.watermark')}</span>
+              <span className="text-xs font-medium text-foreground">{t('chat.videoGenConfirm.watermark')}</span>
               <Switch checked={form.watermark} onCheckedChange={(v) => setField('watermark', v)} />
             </div>
             <div className="flex items-center justify-between gap-2 rounded border border-border bg-background/40 px-2 py-1.5">
-              <span className="text-[11px] font-medium text-foreground">{t('chat.videoGenConfirm.lockCamera')}</span>
+              <span className="text-xs font-medium text-foreground">{t('chat.videoGenConfirm.lockCamera')}</span>
               <Switch checked={form.cameraFixed} onCheckedChange={(v) => setField('cameraFixed', v)} />
             </div>
           </div>

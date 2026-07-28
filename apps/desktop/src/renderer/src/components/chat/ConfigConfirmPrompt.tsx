@@ -121,7 +121,7 @@ export function ConfigConfirmPrompt({ payload, onConfirm, onReject }: ConfigConf
           <div className={`mb-3 rounded border px-2.5 py-2 ${isDelete ? 'border-destructive/40 bg-destructive/10' : 'border-border/60 bg-muted/20'}`}>
             <p className={`truncate text-xs font-medium ${isDelete ? 'text-destructive' : 'text-foreground'}`}>{resource.title}</p>
             {(resource.subtitle || resource.context?.endpointId) && (
-              <p className={`truncate text-[10px] ${isDelete ? 'text-destructive/80' : 'text-muted-foreground'}`}>
+              <p className={`truncate text-xs ${isDelete ? 'text-destructive/80' : 'text-muted-foreground'}`}>
                 {[resource.subtitle, resource.context?.endpointId].filter(Boolean).join(' · ')}
               </p>
             )}
@@ -135,11 +135,11 @@ export function ConfigConfirmPrompt({ payload, onConfirm, onReject }: ConfigConf
               const diff = diffConfigFieldValue(field.type, field.currentValue, values[field.key])
               const meta = (
                 <div className="flex min-w-0 flex-col gap-0.5">
-                  <span className="truncate text-[11px] font-medium text-foreground">{field.label}</span>
-                  <span className="truncate text-[10px] text-muted-foreground">
+                  <span className="truncate text-xs font-medium text-foreground">{field.label}</span>
+                  <span className="truncate text-xs text-muted-foreground">
                     {diff ?? t('chat.configConfirm.currentValue', { value: formatConfigFieldValue(field.type, field.currentValue, emptyLabel) })}
                   </span>
-                  {field.note && !structured && <span className="truncate text-[10px] text-muted-foreground/70">{field.note}</span>}
+                  {field.note && !structured && <span className="truncate text-xs text-muted-foreground/70">{field.note}</span>}
                 </div>
               )
               return structured ? (

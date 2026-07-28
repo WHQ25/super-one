@@ -114,7 +114,7 @@ export function CodexGoalDialog({ open, onOpenChange, sessionId, threadId, prefi
         />
 
         {goal && (
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-xs text-muted-foreground">
             {t('chat.codex.goal.status', { status: goal.status })}
           </p>
         )}

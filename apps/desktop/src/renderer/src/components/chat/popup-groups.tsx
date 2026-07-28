@@ -28,7 +28,7 @@ export function PopupSectionHeader({ label, count }: { label: string; count: num
   return (
     <div
       onMouseDown={(e) => e.preventDefault()}
-      className="flex select-none items-baseline gap-1 px-2 pb-0.5 pt-2 text-[10px] font-medium text-muted-foreground"
+      className="flex select-none items-baseline gap-1 px-2 pb-0.5 pt-2 text-xs font-medium text-muted-foreground"
     >
       <span>{label}</span>
       <span className="text-muted-foreground/60">· {count}</span>

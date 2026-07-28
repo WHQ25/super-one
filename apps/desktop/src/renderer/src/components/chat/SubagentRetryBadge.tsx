@@ -12,7 +12,7 @@ export function SubagentRetryBadge({ retry, className }: { retry: SubagentRetryI
   const { t } = useTranslation()
   return (
     <span
-      className={cn('inline-flex shrink-0 items-center gap-1 text-[11px] text-amber-600 dark:text-amber-400', className)}
+      className={cn('inline-flex shrink-0 items-center gap-1 text-xs text-amber-600 dark:text-amber-400', className)}
       title={retry.errorStatus ? String(retry.errorStatus) : retry.errorCategory}
     >
       <RotateCw className="size-3 animate-spin [animation-duration:2s]" />

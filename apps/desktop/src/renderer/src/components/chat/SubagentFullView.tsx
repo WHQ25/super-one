@@ -149,25 +149,25 @@ export function SubagentFullView({ view }: { view: SubagentViewState }) {
         </button>
         <Bot className={cn('size-3.5 shrink-0', colors.text)} />
         {taskInput.name && taskInput.teamName ? (
-          <span className={cn('shrink-0 rounded px-1 py-px text-[10px] font-medium', colors.tagBg, colors.tagText)}>
+          <span className={cn('shrink-0 rounded px-1 py-px text-xs font-medium', colors.tagBg, colors.tagText)}>
             {taskInput.name}@{taskInput.teamName}
           </span>
         ) : taskInput.name ? (
           <>
-            <span className={cn('shrink-0 rounded px-1 py-px text-[10px] font-medium', colors.tagBg, colors.tagText)}>
+            <span className={cn('shrink-0 rounded px-1 py-px text-xs font-medium', colors.tagBg, colors.tagText)}>
               {taskInput.name}
             </span>
             {taskInput.subagentType && taskInput.subagentType !== taskInput.name && (
-              <span className="shrink-0 text-[10px] text-muted-foreground">{taskInput.subagentType}</span>
+              <span className="shrink-0 text-xs text-muted-foreground">{taskInput.subagentType}</span>
             )}
           </>
         ) : taskInput.subagentType ? (
-          <span className={cn('shrink-0 rounded px-1 py-px text-[10px]', colors.tagBg, colors.tagText)}>
+          <span className={cn('shrink-0 rounded px-1 py-px text-xs', colors.tagBg, colors.tagText)}>
             {taskInput.subagentType}
           </span>
         ) : null}
         <span className="min-w-0 truncate font-medium text-foreground">{headerTitle}</span>
-        <span className="ml-auto flex shrink-0 items-center gap-1.5 text-[11px] text-muted-foreground">
+        <span className="ml-auto flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
           {isRunning ? (
             <Loader2 className="size-3 animate-spin" />
           ) : isFailed ? (
@@ -214,10 +214,10 @@ export function SubagentFullView({ view }: { view: SubagentViewState }) {
         <div className="chat-md mx-auto w-full min-w-0 max-w-3xl px-3 py-3">
           {taskInput.prompt && (
             <div className="mb-3">
-              <div className="mb-1 flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+              <div className="mb-1 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 <span>{t('chat.subagent.prompt')}</span>
                 {taskInput.model && (
-                  <span className="rounded bg-muted px-1 py-px text-[10px] normal-case">{taskInput.model}</span>
+                  <span className="rounded bg-muted px-1 py-px text-xs normal-case">{taskInput.model}</span>
                 )}
               </div>
               <div className={cn('whitespace-pre-wrap rounded border-l-2 bg-muted/30 px-3 py-2 text-xs leading-relaxed text-foreground', colors.borderL)}>
@@ -258,7 +258,7 @@ export function SubagentFullView({ view }: { view: SubagentViewState }) {
 
           {outputText && !(isAsync && isRunning) && (
             <div className="mt-4 border-t border-border/30 pt-3">
-              <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+              <div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 {t('chat.subagent.output')}
               </div>
               <Streamdown
@@ -356,8 +356,8 @@ function renderFullViewBlock(
       )
     case 'thinking':
       return (
-        <div key={index} className="rounded border border-border/30 bg-muted/20 px-2 py-1.5 text-[11px] leading-relaxed text-muted-foreground">
-          <div className="mb-1 text-[10px] font-medium uppercase tracking-wide">thinking</div>
+        <div key={index} className="rounded border border-border/30 bg-muted/20 px-2 py-1.5 text-xs leading-relaxed text-muted-foreground">
+          <div className="mb-1 text-xs font-medium uppercase tracking-wide">thinking</div>
           <div className="whitespace-pre-wrap">{block.thinking}</div>
         </div>
       )
@@ -379,7 +379,7 @@ function renderFullViewBlock(
       if (toolResultMap.has(block.toolUseId)) return null
       if (!block.summary) return null
       return (
-        <div key={index} className="my-0.5 overflow-x-auto rounded bg-muted/50 px-2 py-1.5 font-mono text-[11px] leading-relaxed text-muted-foreground whitespace-pre-wrap">
+        <div key={index} className="my-0.5 overflow-x-auto rounded bg-muted/50 px-2 py-1.5 font-mono text-xs leading-relaxed text-muted-foreground whitespace-pre-wrap">
           {block.summary}
         </div>
       )

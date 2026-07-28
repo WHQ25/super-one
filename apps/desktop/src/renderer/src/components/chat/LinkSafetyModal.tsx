@@ -100,7 +100,7 @@ export function LinkSafetyModal({ url, isOpen, onClose, onConfirm, onOpenInApp }
         </div>
 
         {onOpenInApp && (
-          <p className="text-center text-[11px] text-muted-foreground">
+          <p className="text-center text-xs text-muted-foreground">
             <Trans
               i18nKey="chat.linkSafety.openInAppHint"
               components={{ key: <Kbd>{window.app.platform === 'darwin' ? '⌘' : 'Ctrl'}</Kbd> }}

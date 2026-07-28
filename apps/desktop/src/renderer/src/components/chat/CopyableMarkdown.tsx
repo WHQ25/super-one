@@ -233,7 +233,7 @@ const InsightBlock = memo(function InsightBlock({ title, content, isStreaming, c
 
   return (
     <div className="group/insight my-3 border-l-[3px] border-insight-border bg-insight-bg pt-2.5 pb-1 pl-3 pr-2">
-      <div className="mb-1 flex items-center text-[13px] font-semibold text-insight-fg">
+      <div className="mb-1 flex items-center text-xs font-semibold text-insight-fg">
         <span className="flex items-center gap-1.5">
           <span>★</span>
           <span>{title}</span>

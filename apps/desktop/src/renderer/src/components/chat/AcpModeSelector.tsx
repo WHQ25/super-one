@@ -32,11 +32,11 @@ export function AcpModeSelector({ compact = false }: { compact?: boolean }) {
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button
-          className="flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           title={current?.description || label}
         >
           <Layers className="size-3" />
-          {!compact && <span className="max-w-[120px] truncate">{label}</span>}
+          {!compact && <span className="max-w-30 truncate">{label}</span>}
           {!compact && <ChevronDown className={`size-3 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />}
         </button>
       </PopoverTrigger>
@@ -45,7 +45,7 @@ export function AcpModeSelector({ compact = false }: { compact?: boolean }) {
         side="top"
         className="w-56 border-border bg-popover p-1"
       >
-        <div className="px-2 py-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+        <div className="px-2 py-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
           {t('chat.sessionModeTitle')}
         </div>
         {acpModes.map((mode) => {
@@ -64,7 +64,7 @@ export function AcpModeSelector({ compact = false }: { compact?: boolean }) {
             >
               <span className="text-xs font-medium text-foreground">{mode.name || mode.id}</span>
               {mode.description ? (
-                <span className="mt-0.5 text-[10px] text-muted-foreground">{mode.description}</span>
+                <span className="mt-0.5 text-xs text-muted-foreground">{mode.description}</span>
               ) : null}
             </button>
           )

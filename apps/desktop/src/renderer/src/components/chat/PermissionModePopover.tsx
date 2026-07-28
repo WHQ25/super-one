@@ -28,7 +28,7 @@ export function PermissionModePopover({
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button
-          className={`flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] transition-colors ${current.color} ${current.hoverBg}`}
+          className={`flex items-center gap-1 rounded-lg px-2 py-1 text-xs transition-colors ${current.color} ${current.hoverBg}`}
           title={currentLabel}
         >
           {current.icon}

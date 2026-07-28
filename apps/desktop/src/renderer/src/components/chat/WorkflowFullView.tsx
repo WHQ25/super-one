@@ -42,11 +42,11 @@ function AgentTranscript({ agent, colors, phase }: { agent: WorkflowAgentInfo; c
     <div className="space-y-2">
       {agent.prompt && (
         <div className="mb-3">
-          <div className="mb-1 flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+          <div className="mb-1 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
             <span>{t('chat.subagent.prompt')}</span>
-            {phase && <span className="rounded bg-muted px-1 py-px text-[10px] normal-case">{phase}</span>}
+            {phase && <span className="rounded bg-muted px-1 py-px text-xs normal-case">{phase}</span>}
             {agent.tokens != null && agent.tokens > 0 && (
-              <span className="rounded bg-muted px-1 py-px text-[10px] normal-case tabular-nums">{formatTokens(agent.tokens)}</span>
+              <span className="rounded bg-muted px-1 py-px text-xs normal-case tabular-nums">{formatTokens(agent.tokens)}</span>
             )}
           </div>
           <div className={cn('whitespace-pre-wrap rounded border-l-2 bg-muted/30 px-3 py-2 text-xs leading-relaxed text-foreground', colors.borderL)}>
@@ -103,7 +103,7 @@ function TranscriptHeader({ agent, colors }: { agent: WorkflowAgentInfo; colors:
     <div className="flex min-w-0 items-center gap-1.5 text-xs">
       <Bot className={cn('size-3.5 shrink-0', colors.text)} />
       <span className="min-w-0 truncate font-medium text-foreground">{agent.label}</span>
-      <span className="ml-auto flex shrink-0 items-center gap-1.5 text-[11px] text-muted-foreground">
+      <span className="ml-auto flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
         {agent.toolCount > 0 && (
           <span className="inline-flex items-center gap-0.5">
             <Wrench className="size-2.5" />
@@ -129,7 +129,7 @@ function WorkflowOutputFooter({ output }: { output: unknown }) {
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center gap-1.5 px-3 py-1.5 text-left text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+        className="flex w-full items-center gap-1.5 px-3 py-1.5 text-left text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
       >
         <ChevronRight className={cn('size-3 transition-transform', open && 'rotate-90')} />
         {t('chat.workflow.output', 'Output')}
@@ -147,8 +147,8 @@ function ScriptSection({ label, path, code }: { label: string; path?: string; co
   return (
     <div className="mb-3 last:mb-0">
       <div className="mb-1 flex items-baseline gap-1.5">
-        <span className="shrink-0 text-[11px] font-medium text-foreground">{label}</span>
-        {path && <span className="min-w-0 truncate text-[10px] text-muted-foreground opacity-70">{path}</span>}
+        <span className="shrink-0 text-xs font-medium text-foreground">{label}</span>
+        {path && <span className="min-w-0 truncate text-xs text-muted-foreground opacity-70">{path}</span>}
       </div>
       <HighlightedCodeBlock code={code} language="javascript" codePlugin={codePlugin} />
     </div>
@@ -277,7 +277,7 @@ export function WorkflowFullView({ view }: { view: WorkflowViewState }) {
               <button
                 type="button"
                 onClick={() => setTab('graph')}
-                className={cn('inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] transition-colors', activeTab === 'graph' ? 'bg-background text-foreground' : 'text-muted-foreground hover:text-foreground')}
+                className={cn('inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs transition-colors', activeTab === 'graph' ? 'bg-background text-foreground' : 'text-muted-foreground hover:text-foreground')}
               >
                 <Network className="size-3" />{t('chat.workflow.graph', 'Graph')}
               </button>
@@ -286,7 +286,7 @@ export function WorkflowFullView({ view }: { view: WorkflowViewState }) {
               <button
                 type="button"
                 onClick={() => setTab('list')}
-                className={cn('inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] transition-colors', activeTab === 'list' ? 'bg-background text-foreground' : 'text-muted-foreground hover:text-foreground')}
+                className={cn('inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs transition-colors', activeTab === 'list' ? 'bg-background text-foreground' : 'text-muted-foreground hover:text-foreground')}
               >
                 <List className="size-3" />{t('chat.workflow.list', 'List')}
               </button>
@@ -295,7 +295,7 @@ export function WorkflowFullView({ view }: { view: WorkflowViewState }) {
               <button
                 type="button"
                 onClick={() => setTab('script')}
-                className={cn('inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] transition-colors', activeTab === 'script' ? 'bg-background text-foreground' : 'text-muted-foreground hover:text-foreground')}
+                className={cn('inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs transition-colors', activeTab === 'script' ? 'bg-background text-foreground' : 'text-muted-foreground hover:text-foreground')}
               >
                 <Code className="size-3" />{t('chat.workflow.script', 'Script')}
               </button>
@@ -311,7 +311,7 @@ export function WorkflowFullView({ view }: { view: WorkflowViewState }) {
               {agentGroups.map((group, gi) => (
                 <div key={group.phase ?? `__nophase_${gi}`} className="mb-1 last:mb-0">
                   {group.phase && (
-                    <div className="px-2.5 pb-0.5 pt-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                    <div className="px-2.5 pb-0.5 pt-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                       {group.phase}
                     </div>
                   )}
@@ -328,7 +328,7 @@ export function WorkflowFullView({ view }: { view: WorkflowViewState }) {
                       <Bot className={cn('size-3 shrink-0', colors.text)} />
                       <span className="min-w-0 truncate">{a.label}</span>
                       {a.tokens != null && a.tokens > 0 && (
-                        <span className="ml-auto shrink-0 tabular-nums text-[10px] text-muted-foreground">{formatTokens(a.tokens)}</span>
+                        <span className="ml-auto shrink-0 tabular-nums text-xs text-muted-foreground">{formatTokens(a.tokens)}</span>
                       )}
                     </button>
                   ))}

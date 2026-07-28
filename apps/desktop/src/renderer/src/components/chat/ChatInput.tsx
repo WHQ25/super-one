@@ -975,7 +975,7 @@ export function ChatInput() {
       content: '',
       editorProps: {
         attributes: {
-          class: 'w-full min-h-[36px] max-h-[120px] overflow-y-auto text-[15px] leading-6 outline-none text-foreground',
+          class: 'w-full min-h-9 max-h-30 overflow-y-auto text-sm leading-6 outline-none text-foreground',
           'data-chat-input-editor': 'true',
         },
         handleKeyDown: (_view, event) => {
@@ -1295,7 +1295,7 @@ export function ChatInput() {
                 </div>
               ))}
               {acpSlashInitialLoading && matchingCommands.length === 0 && (
-                <div className="px-2 py-3 text-center text-[11px] text-muted-foreground">
+                <div className="px-2 py-3 text-center text-xs text-muted-foreground">
                   {t('chat.acpCommands.loadingHint')}
                 </div>
               )}
@@ -1319,7 +1319,7 @@ export function ChatInput() {
         {commandPopup && commandPopup.command !== 'provider' && commandPopup.command !== 'mcp' && (
           <div className="absolute bottom-full left-0 right-0 z-10 mb-1 flex max-h-96 flex-col overflow-hidden rounded-xl border border-border bg-popover">
             <div className="flex items-center justify-between px-3 py-1.5">
-              <span className="text-[11px] font-medium text-muted-foreground">/{commandPopup.command}</span>
+              <span className="text-xs font-medium text-muted-foreground">/{commandPopup.command}</span>
               <button
                 onMouseDown={(e) => { e.preventDefault(); dismissCommandPopup() }}
                 className="rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground"

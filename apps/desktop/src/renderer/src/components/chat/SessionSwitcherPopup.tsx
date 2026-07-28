@@ -281,15 +281,15 @@ export function SessionSwitcherView({ rows, selectedIndex, isOpen, openDelayMs =
             animate={{ scale: 1, opacity: 1 }}
             exit={{ scale: 0.96, opacity: 0 }}
             transition={{ duration: 0.14, ease: 'easeOut' }}
-            className="w-[420px] max-w-[80vw] max-h-[70vh] overflow-hidden rounded-xl border border-border bg-popover text-popover-foreground shadow-2xl"
+            className="w-105 max-w-[80vw] max-h-[70vh] overflow-hidden rounded-xl border border-border bg-popover text-popover-foreground shadow-2xl"
           >
             <div className="flex items-center justify-between gap-3 border-b border-border/60 px-4 py-2.5">
-              <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+              <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 Switch Between working sessions
               </span>
               <div className="flex shrink-0 items-center gap-1">
                 <Kbd>ctrl</Kbd>
-                <span className="text-[11px] text-muted-foreground">+</span>
+                <span className="text-xs text-muted-foreground">+</span>
                 <Kbd>tab</Kbd>
               </div>
             </div>
@@ -337,17 +337,17 @@ function SessionRow({ row, idx, isSelected }: { row: SwitcherRow; idx: number; i
           provider={row.provider}
           acpAgentId={row.acpAgentId}
         />
-        <span className="min-w-0 flex-1 truncate text-[13px]">{row.title}</span>
+        <span className="min-w-0 flex-1 truncate text-xs">{row.title}</span>
         {row.isCurrent ? (
-          <span className="shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground">Current</span>
+          <span className="shrink-0 text-xs uppercase tracking-wide text-muted-foreground">Current</span>
         ) : row.isPrevious ? (
-          <span className="shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground">Previous</span>
+          <span className="shrink-0 text-xs uppercase tracking-wide text-muted-foreground">Previous</span>
         ) : null}
       </div>
       {row.pendingReason ? (
         <div className="ml-5 flex items-center gap-1 rounded-md bg-green-500/15 px-2 py-1">
           <Bot className="size-3 shrink-0 text-green-600 dark:text-green-400" />
-          <span className="min-w-0 truncate text-[11px] text-green-600 dark:text-green-400">{row.pendingReason}</span>
+          <span className="min-w-0 truncate text-xs text-green-600 dark:text-green-400">{row.pendingReason}</span>
         </div>
       ) : null}
     </div>

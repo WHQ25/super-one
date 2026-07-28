@@ -203,9 +203,9 @@ export const AddDirPopup = forwardRef<AddDirPopupHandle, AddDirPopupProps>(
     return (
       <div className="absolute bottom-full left-0 right-0 z-10 mb-1 max-h-72 overflow-hidden rounded-xl border border-border bg-popover flex flex-col">
         <div className="flex items-center justify-between px-3 py-1.5 border-b border-border shrink-0">
-          <span className="text-[11px] font-medium text-muted-foreground">/add-dir</span>
+          <span className="text-xs font-medium text-muted-foreground">/add-dir</span>
           {phase.kind === 'path' && absolutePath && (
-            <span className="text-[10px] text-muted-foreground/70 truncate ml-2 max-w-[60%]">{absolutePath}</span>
+            <span className="text-xs text-muted-foreground/70 truncate ml-2 max-w-[60%]">{absolutePath}</span>
           )}
         </div>
 
@@ -247,7 +247,7 @@ export const AddDirPopup = forwardRef<AddDirPopupHandle, AddDirPopupProps>(
           )}
         </div>
 
-        <div className="border-t border-border px-2 py-1 text-[10px] text-muted-foreground shrink-0">
+        <div className="border-t border-border px-2 py-1 text-xs text-muted-foreground shrink-0">
           {phase.kind === 'overview' && (
             <>continue typing <Kbd>project</Kbd> or <Kbd>session</Kbd></>
           )}
@@ -326,7 +326,7 @@ function DirGroup({ label, empty, onAdd, children }: { label: string; empty?: bo
   return (
     <div>
       <div className="mb-0.5 flex items-center gap-1.5">
-        <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</span>
+        <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{label}</span>
         {onAdd && (
           <button
             onMouseDown={(e) => { e.preventDefault(); onAdd() }}
@@ -338,7 +338,7 @@ function DirGroup({ label, empty, onAdd, children }: { label: string; empty?: bo
         )}
       </div>
       {empty ? (
-        <div className="px-1.5 text-[11px] italic text-muted-foreground/60">none</div>
+        <div className="px-1.5 text-xs italic text-muted-foreground/60">none</div>
       ) : (
         <div className="space-y-0.5">{children}</div>
       )}
@@ -362,7 +362,7 @@ function DirRow({ dir, onRemove }: { dir: string; onRemove?: () => void }) {
           </button>
         )}
       </div>
-      <div className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap text-right font-mono text-[11px] text-muted-foreground/70 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap text-right font-mono text-xs text-muted-foreground/70 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {dir}
       </div>
     </div>
@@ -418,7 +418,7 @@ function ScopeView({
           <span className="font-medium">
             <HighlightedText text={c.scope} indices={c.matchIndices} className="" />
           </span>
-          <span className="text-[10px] text-muted-foreground">
+          <span className="text-xs text-muted-foreground">
             {c.scope === 'project' ? 'persisted in this project' : 'this session only'}
           </span>
         </button>

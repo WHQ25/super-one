@@ -49,14 +49,14 @@ function DownloadListRow({ item }: { item: BrowserDownloadListItem }) {
     <div className="rounded border border-border/50 bg-muted/20 px-2 py-1.5">
       <div className="flex items-center gap-1.5">
         {completed && item.path ? (
-          <FileChip name={item.filename} title={item.path} filePath={item.path} className="max-w-[180px]" />
+          <FileChip name={item.filename} title={item.path} filePath={item.path} className="max-w-45" />
         ) : (
           <span className="min-w-0 truncate font-medium text-foreground">{item.filename}</span>
         )}
         {stateLabel && (
           <span
             className={cn(
-              'ml-auto shrink-0 rounded px-1 py-px text-[10px]',
+              'ml-auto shrink-0 rounded px-1 py-px text-xs',
               completed && 'bg-muted text-muted-foreground',
               inFlight && 'animate-shimmer bg-primary/10 text-foreground',
               failed && 'bg-warning/20 text-warning',
@@ -68,7 +68,7 @@ function DownloadListRow({ item }: { item: BrowserDownloadListItem }) {
         )}
       </div>
       {(item.bytes != null || urlDisplay) && (
-        <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[10px] text-muted-foreground/70">
+        <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground/70">
           {item.bytes != null && (
             <span className="shrink-0 tabular-nums">{formatBytes(item.bytes)}</span>
           )}
@@ -84,7 +84,7 @@ function DownloadListRow({ item }: { item: BrowserDownloadListItem }) {
             type="button"
             variant="outline"
             size="sm"
-            className="h-6 gap-1 px-1.5 text-[10px]"
+            className="h-6 gap-1 px-1.5 text-xs"
             disabled={saveState === 'saving'}
             onClick={handleSave}
           >
@@ -94,7 +94,7 @@ function DownloadListRow({ item }: { item: BrowserDownloadListItem }) {
               : t('chat.toolBlock.browser.downloadSaveTo')}
           </Button>
           {saveState === 'error' && (
-            <span className="text-[10px] text-warning">{t('chat.toolBlock.browser.downloadSaveFailed')}</span>
+            <span className="text-xs text-warning">{t('chat.toolBlock.browser.downloadSaveFailed')}</span>
           )}
         </div>
       )}
@@ -108,7 +108,7 @@ export function BrowserListDownloadsView({ result }: { result: string }) {
 
   if (items.length === 0) {
     return (
-      <div className="px-0.5 py-1 text-[11px] italic text-muted-foreground/80">
+      <div className="px-0.5 py-1 text-xs italic text-muted-foreground/80">
         {t('chat.toolBlock.browser.listDownloadsEmpty')}
       </div>
     )

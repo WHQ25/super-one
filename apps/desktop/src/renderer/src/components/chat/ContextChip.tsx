@@ -91,7 +91,7 @@ export function ContextChip({ slot, onToggle, onDismiss, onClick }: ContextChipP
       <MiniAppIcon appId={slot.appId} className="size-3 shrink-0" />
       <button
         type="button"
-        className="max-w-[140px] truncate font-medium cursor-pointer"
+        className="max-w-35 truncate font-medium cursor-pointer"
         style={{ color: colors.color }}
         onClick={onClick}
       >
@@ -102,7 +102,7 @@ export function ContextChip({ slot, onToggle, onDismiss, onClick }: ContextChipP
           <span style={{ color: colors.labelColor, fontSize: 10 }}>·</span>
           <button
             type="button"
-            className="max-w-[140px] truncate cursor-pointer"
+            className="max-w-35 truncate cursor-pointer"
             style={{ color: colors.labelColor, fontSize: 11 }}
             onClick={onClick}
           >

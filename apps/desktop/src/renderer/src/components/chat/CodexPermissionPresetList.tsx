@@ -86,7 +86,7 @@ export function CodexPermissionPresetList({ activePreset, availablePresets, onSe
                 {option.icon}
                 {t(option.labelKey)}
               </span>
-              <span className="text-[11px] text-muted-foreground">{t(option.descriptionKey)}</span>
+              <span className="text-xs text-muted-foreground">{t(option.descriptionKey)}</span>
             </div>
             {option.id === activePreset && <Check className="mt-0.5 size-3.5 shrink-0" />}
           </div>

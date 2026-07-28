@@ -90,7 +90,7 @@ function MetaChip({
   return (
     <span
       title={title ?? label}
-      className="inline-flex min-w-0 max-w-full items-center gap-1 text-[10px] leading-none text-muted-foreground"
+      className="inline-flex min-w-0 max-w-full items-center gap-1 text-xs leading-none text-muted-foreground"
     >
       <Icon className="size-3 shrink-0" />
       <span className="truncate">{label}</span>
@@ -174,7 +174,7 @@ function LaunchPanel({
         )}
         <span
           title={workDirTitle(workDirState, t)}
-          className="inline-flex min-w-0 max-w-full items-center gap-0.5 truncate text-[10px] leading-none text-muted-foreground"
+          className="inline-flex min-w-0 max-w-full items-center gap-0.5 truncate text-xs leading-none text-muted-foreground"
         >
           <WorkDirLabel state={workDirState} />
         </span>
@@ -302,7 +302,7 @@ export function SessionAgentsConfirmPrompt({ payload, onConfirm, onReject }: Pro
           {t('chat.sessionAgentsConfirm.title')}
         </span>
         <span
-          className="ml-auto inline-flex shrink-0 items-center gap-0.5 text-[10px] tabular-nums text-muted-foreground"
+          className="ml-auto inline-flex shrink-0 items-center gap-0.5 text-xs tabular-nums text-muted-foreground"
           title={t('chat.sessionAgentsConfirm.subtitle', { count: launches.length })}
         >
           <Bot className="size-3 shrink-0" />
@@ -325,7 +325,7 @@ export function SessionAgentsConfirmPrompt({ payload, onConfirm, onReject }: Pro
           )
           if (!multiple) {
             return (
-              <span key={launch.launchId} className="flex min-w-0 items-center gap-1.5 px-1 py-1 text-[11px] font-medium text-foreground">
+              <span key={launch.launchId} className="flex min-w-0 items-center gap-1.5 px-1 py-1 text-xs font-medium text-foreground">
                 {body}
               </span>
             )
@@ -338,7 +338,7 @@ export function SessionAgentsConfirmPrompt({ payload, onConfirm, onReject }: Pro
               aria-selected={selected}
               onClick={() => setActiveTab(index)}
               className={cn(
-                'flex min-w-0 shrink-0 cursor-pointer items-center gap-1.5 rounded-t-md border-b-2 px-2 py-1 text-[11px] font-medium transition-colors',
+                'flex min-w-0 shrink-0 cursor-pointer items-center gap-1.5 rounded-t-md border-b-2 px-2 py-1 text-xs font-medium transition-colors',
                 selected ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground',
               )}
             >
@@ -348,7 +348,7 @@ export function SessionAgentsConfirmPrompt({ payload, onConfirm, onReject }: Pro
         })}
         </div>
         {multiple && (
-          <span className="flex shrink-0 items-center self-center pl-1 text-[10px] text-muted-foreground">
+          <span className="flex shrink-0 items-center self-center pl-1 text-xs text-muted-foreground">
             <Kbd>⇥</Kbd>
             <span className="ml-0.5 hidden @[380px]:inline">{t('chat.sessionAgentsConfirm.hintSwitch')}</span>
           </span>

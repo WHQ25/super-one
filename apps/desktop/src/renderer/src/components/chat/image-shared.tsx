@@ -256,7 +256,7 @@ function ProviderParamValue({ id, providerMap }: { id: string; providerMap: Map<
     <dd className="flex flex-wrap items-center justify-end gap-1.5">
       <span className="text-foreground">{info.providerLabel ?? info.label}</span>
       {info.providerLabel && (
-        <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{info.label}</span>
+        <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">{info.label}</span>
       )}
     </dd>
   )
@@ -314,7 +314,7 @@ function ReferenceImageThumb({ path }: { path: string }) {
           alt={name}
           className="max-h-[60vh] w-auto max-w-full rounded object-contain"
         />
-        <div className="truncate px-1 pb-0.5 pt-1.5 text-[10px] text-muted-foreground" title={path}>
+        <div className="truncate px-1 pb-0.5 pt-1.5 text-xs text-muted-foreground" title={path}>
           {name}
         </div>
       </HoverCardContent>
@@ -490,7 +490,7 @@ export function ImageViewer({ items, index, open, onOpenChange, onIndexChange }:
                 <dl className="flex flex-col gap-1 border-t pt-2">
                   {item.params.map((p) => (
                     <div key={p.key} className="flex items-baseline justify-between gap-3">
-                      <dt className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                      <dt className="shrink-0 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                         {PARAM_LABEL_KEYS[p.key] ? t(PARAM_LABEL_KEYS[p.key]) : p.key}
                       </dt>
                       {p.key === 'provider' ? (
@@ -506,7 +506,7 @@ export function ImageViewer({ items, index, open, onOpenChange, onIndexChange }:
               )}
               {item.referenceImagePaths && item.referenceImagePaths.length > 0 && (
                 <div className="border-t pt-2">
-                  <div className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                  <div className="mb-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                     {t('chat.image.paramReferenceImages')}
                   </div>
                   <div className="grid grid-cols-3 gap-1.5">
@@ -518,7 +518,7 @@ export function ImageViewer({ items, index, open, onOpenChange, onIndexChange }:
               )}
               {item.warnings && item.warnings.length > 0 && (
                 <div className="border-t pt-2">
-                  <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-amber-600 dark:text-amber-500">
+                  <div className="mb-1 text-xs font-medium uppercase tracking-wide text-amber-600 dark:text-amber-500">
                     {t('chat.image.warnings')}
                   </div>
                   <ul className="flex list-disc flex-col gap-1 pl-4 leading-relaxed text-muted-foreground">
@@ -530,7 +530,7 @@ export function ImageViewer({ items, index, open, onOpenChange, onIndexChange }:
               )}
               {item.revisedPrompt && (
                 <SelectionContextMenuZone className="border-t pt-2">
-                  <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                  <div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                     {t('chat.image.prompt')}
                   </div>
                   <div className="max-h-48 overflow-y-auto leading-relaxed">
@@ -544,7 +544,7 @@ export function ImageViewer({ items, index, open, onOpenChange, onIndexChange }:
 
         {downloadStatus && (
           <div className={cn(
-            "absolute right-3 z-20 max-w-[280px] truncate rounded-md border border-border/50 bg-background/90 px-3 py-1.5 text-[11px] text-muted-foreground shadow-sm backdrop-blur-sm",
+            "absolute right-3 z-20 max-w-70 truncate rounded-md border border-border/50 bg-background/90 px-3 py-1.5 text-xs text-muted-foreground shadow-sm backdrop-blur-sm",
             isWindows ? "top-[84px]" : "top-14"
           )}>
             {downloadStatus}

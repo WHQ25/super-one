@@ -49,19 +49,19 @@ export function WorktreeForkSection({ sessionId, cwd, onForked }: WorktreeForkSe
 
   return (
     <div className="border-t p-3">
-      <div className="mb-1.5 flex items-center gap-1.5 text-[10px] uppercase text-muted-foreground">
+      <div className="mb-1.5 flex items-center gap-1.5 text-xs uppercase text-muted-foreground">
         <GitFork className="size-3" />
         {t('chat.worktree.forkHeading')}
       </div>
-      <p className="mb-2 text-[11px] text-muted-foreground">{t('chat.worktree.forkInfo')}</p>
+      <p className="mb-2 text-xs text-muted-foreground">{t('chat.worktree.forkInfo')}</p>
       {dirty && dirty.files > 0 && (
-        <p className="mb-2 text-[10px] text-muted-foreground">
+        <p className="mb-2 text-xs text-muted-foreground">
           {t('chat.worktree.forkIncludesChanges')}{' '}
           <DiffStat stat={dirty} />
         </p>
       )}
       {error && (
-        <div className="mb-2 rounded-md border border-red-500/30 bg-red-500/10 px-2 py-1.5 text-[11px] text-red-600 dark:text-red-400">
+        <div className="mb-2 rounded-md border border-red-500/30 bg-red-500/10 px-2 py-1.5 text-xs text-red-600 dark:text-red-400">
           {error}
         </div>
       )}

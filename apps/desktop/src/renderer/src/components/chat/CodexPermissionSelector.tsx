@@ -23,7 +23,7 @@ export function CodexPermissionSelector({ compact = false }: CodexPermissionSele
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button
-          className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] transition-colors ${activeOption.triggerToneClass}`}
+          className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs transition-colors ${activeOption.triggerToneClass}`}
           title={activeLabel}
         >
           {activeOption.triggerIcon}

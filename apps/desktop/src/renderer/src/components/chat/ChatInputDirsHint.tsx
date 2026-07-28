@@ -41,17 +41,17 @@ export function ChatInputDirsHint() {
           inFlow ? 'relative' : 'absolute inset-x-0 bottom-full'
         )}
       >
-        <span className="ml-1 mr-0.5 shrink-0 text-[11px] text-muted-foreground/70">{t('chat.additionalDirs.label')}</span>
+        <span className="ml-1 mr-0.5 shrink-0 text-xs text-muted-foreground/70">{t('chat.additionalDirs.label')}</span>
         {entries.map(({ dir, scope }) => (
           <Tooltip key={dir}>
             <TooltipTrigger asChild>
-              <span className="inline-flex shrink-0 items-center gap-1 rounded-md border border-border bg-muted/40 px-1.5 py-0.5 text-[11px] text-muted-foreground">
+              <span className="inline-flex shrink-0 items-center gap-1 rounded-md border border-border bg-muted/40 px-1.5 py-0.5 text-xs text-muted-foreground">
                 <Folder className="size-3 shrink-0 text-blue-500" />
                 <span>{basename(dir)}</span>
               </span>
             </TooltipTrigger>
             <TooltipContent side="top" className="flex flex-col gap-0.5">
-              <span className="text-[10px] uppercase tracking-wide text-muted-foreground">{t(`chat.additionalDirs.scopes.${scope}`)}</span>
+              <span className="text-xs uppercase tracking-wide text-muted-foreground">{t(`chat.additionalDirs.scopes.${scope}`)}</span>
               <span className="font-mono text-xs">{shortenPath(dir, cwd, homedir)}</span>
             </TooltipContent>
           </Tooltip>

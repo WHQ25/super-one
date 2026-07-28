@@ -96,7 +96,7 @@ function ModelRow({
       <div className="min-w-0 flex-1">
         <div className="truncate text-xs font-medium leading-tight">{model.name}</div>
         {model.description && (
-          <div className="line-clamp-2 text-[10px] leading-tight text-muted-foreground">{model.description}</div>
+          <div className="line-clamp-2 text-xs leading-tight text-muted-foreground">{model.description}</div>
         )}
       </div>
       {selected && <Check className="mt-0.5 size-3.5 shrink-0 self-start text-primary" />}
@@ -261,7 +261,7 @@ function EffortSlider({
         />
       </div>
       {selectedOption?.description && (
-        <div className="mt-2 text-[10px] leading-tight text-muted-foreground">{selectedOption.description}</div>
+        <div className="mt-2 text-xs leading-tight text-muted-foreground">{selectedOption.description}</div>
       )}
     </div>
   )
@@ -413,7 +413,7 @@ export function GroupedModelEffortSelector({
                           <div className="min-w-0 flex-1">
                             <div className="truncate text-xs font-medium leading-tight">{agent.name}</div>
                             {agent.description && (
-                              <div className="line-clamp-2 text-[10px] leading-tight text-muted-foreground">
+                              <div className="line-clamp-2 text-xs leading-tight text-muted-foreground">
                                 {agent.description}
                               </div>
                             )}
@@ -446,12 +446,12 @@ export function GroupedModelEffortSelector({
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-sm font-medium leading-tight">{agentLabel}</div>
                       {selectedAgent?.description && !agentsDisabled && (
-                        <div className="line-clamp-2 text-[10px] leading-tight text-muted-foreground">
+                        <div className="line-clamp-2 text-xs leading-tight text-muted-foreground">
                           {selectedAgent.description}
                         </div>
                       )}
                       {agentsDisabled && (
-                        <div className="text-[10px] leading-tight text-muted-foreground">
+                        <div className="text-xs leading-tight text-muted-foreground">
                           Forced by plan mode
                         </div>
                       )}
@@ -543,7 +543,7 @@ export function GroupedModelEffortSelector({
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm font-medium leading-tight">{modelLabel}</div>
                   {selectedModel?.description && (
-                    <div className="line-clamp-2 text-[10px] leading-tight text-muted-foreground">{selectedModel.description}</div>
+                    <div className="line-clamp-2 text-xs leading-tight text-muted-foreground">{selectedModel.description}</div>
                   )}
                 </div>
                 <ChevronRight className="size-4 shrink-0 text-muted-foreground" />

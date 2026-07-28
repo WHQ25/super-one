@@ -63,7 +63,7 @@ export function CodexPlanFullscreenView({
         {planApproval && (
           <span
             className={cn(
-              'inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium',
+              'inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium',
               planApproval.status === 'approved'
                 ? 'bg-success/10 text-success'
                 : 'bg-error/10 text-error',

@@ -54,7 +54,7 @@ function LogOutputPanel({ logs, resultText }: { logs: string[]; resultText?: str
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
-          className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground transition-colors hover:text-foreground"
+          className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground transition-colors hover:text-foreground"
         >
           <ChevronRight className={cn('size-3 transition-transform', open && 'rotate-90')} />
           {title}
@@ -64,14 +64,14 @@ function LogOutputPanel({ logs, resultText }: { logs: string[]; resultText?: str
             <button
               type="button"
               onClick={() => setTab('output')}
-              className={cn('rounded px-1.5 py-0.5 text-[10px]', active === 'output' ? 'bg-background text-foreground' : 'text-muted-foreground hover:text-foreground')}
+              className={cn('rounded px-1.5 py-0.5 text-xs', active === 'output' ? 'bg-background text-foreground' : 'text-muted-foreground hover:text-foreground')}
             >
               {t('chat.workflow.output', 'Output')}
             </button>
             <button
               type="button"
               onClick={() => setTab('log')}
-              className={cn('rounded px-1.5 py-0.5 text-[10px]', active === 'log' ? 'bg-background text-foreground' : 'text-muted-foreground hover:text-foreground')}
+              className={cn('rounded px-1.5 py-0.5 text-xs', active === 'log' ? 'bg-background text-foreground' : 'text-muted-foreground hover:text-foreground')}
             >
               {t('chat.workflow.log', 'Log')}
             </button>
@@ -83,7 +83,7 @@ function LogOutputPanel({ logs, resultText }: { logs: string[]; resultText?: str
           {active === 'output' && resultText ? (
             <StructuredOutputView data={resultText} fill />
           ) : hasLog ? (
-            <div className="max-h-32 space-y-0.5 overflow-y-auto font-mono text-[11px] leading-relaxed text-muted-foreground">
+            <div className="max-h-32 space-y-0.5 overflow-y-auto font-mono text-xs leading-relaxed text-muted-foreground">
               {logs.map((line, i) => <div key={i} className="whitespace-pre-wrap break-words">{line}</div>)}
             </div>
           ) : null}
@@ -155,7 +155,7 @@ export function WorkflowBlock({ toolBlock, resultBlock, isStreaming, defaultExpa
         className="flex w-full items-center gap-2 px-2.5 py-2 text-xs transition-colors hover:bg-muted/40"
       >
         <Workflow className={cn('size-3.5 shrink-0', colors.text, isRunning && !expanded && 'animate-pulse')} />
-        <span className={cn('shrink-0 rounded px-1 py-px text-[10px] font-medium', colors.tagBg, colors.tagText)}>
+        <span className={cn('shrink-0 rounded px-1 py-px text-xs font-medium', colors.tagBg, colors.tagText)}>
           {meta.name ? `Workflow: ${meta.name}` : t('chat.workflow.title', 'Workflow')}
         </span>
         {meta.description && (
@@ -165,7 +165,7 @@ export function WorkflowBlock({ toolBlock, resultBlock, isStreaming, defaultExpa
           <span className="min-w-0 text-left text-muted-foreground">{t('chat.workflow.spawning', 'Starting workflow…')}</span>
         )}
         {isRunning && progress?.retry && <SubagentRetryBadge retry={progress.retry} className="ml-1" />}
-        <span className="ml-auto flex shrink-0 items-center gap-1.5 text-[11px] text-muted-foreground">
+        <span className="ml-auto flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
           {!expanded && activePhase && <span className="text-primary">{activePhase}</span>}
           {!expanded && stats}
           {expanded && launch.transcriptDir && (
@@ -188,14 +188,14 @@ export function WorkflowBlock({ toolBlock, resultBlock, isStreaming, defaultExpa
         <div className="border-t border-border/30">
           {meta.phases.length > 0 && (
             <div className="px-3 py-1.5">
-              <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+              <div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 {t('chat.workflow.phases', 'Phases')}
               </div>
               <div className="space-y-0.5">
                 {meta.phases.map((phase, i) => {
                   const active = activePhase === phase.title
                   return (
-                    <div key={i} className="flex items-baseline gap-1.5 text-[11px]">
+                    <div key={i} className="flex items-baseline gap-1.5 text-xs">
                       <span className={cn('shrink-0 font-medium', active ? 'text-primary' : 'text-foreground')}>
                         {active && <Loader2 className="mr-1 inline size-2.5 animate-spin" />}
                         {phase.title}
@@ -210,7 +210,7 @@ export function WorkflowBlock({ toolBlock, resultBlock, isStreaming, defaultExpa
 
           {agents.length > 0 && (
             <div className="border-t border-border/30 px-3 py-1.5">
-              <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+              <div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 {t('chat.workflow.agents', 'Agents')} ({agents.length})
               </div>
               <div className="max-h-32 space-y-0.5 overflow-y-auto">
@@ -219,7 +219,7 @@ export function WorkflowBlock({ toolBlock, resultBlock, isStreaming, defaultExpa
                     key={agent.agentId}
                     type="button"
                     onClick={() => nav.open({ toolUseId: toolBlock.toolUseId, transcriptDir: launch.transcriptDir, name: meta.name, script })}
-                    className="flex w-full items-center gap-1.5 rounded px-1 py-0.5 text-left text-[11px] hover:bg-muted/60"
+                    className="flex w-full items-center gap-1.5 rounded px-1 py-0.5 text-left text-xs hover:bg-muted/60"
                   >
                     <Bot className="size-3 shrink-0 text-muted-foreground" />
                     <span className="min-w-0 truncate text-foreground">{agent.label}</span>
@@ -245,7 +245,7 @@ export function WorkflowBlock({ toolBlock, resultBlock, isStreaming, defaultExpa
 
           <LogOutputPanel logs={output?.logs ?? []} resultText={resultText} />
 
-          <div className="flex items-center gap-1.5 border-t border-border/30 px-2.5 py-1.5 text-[11px] text-muted-foreground">
+          <div className="flex items-center gap-1.5 border-t border-border/30 px-2.5 py-1.5 text-xs text-muted-foreground">
             {isRunning ? (
               <>
                 <Loader2 className="size-3 animate-spin" />

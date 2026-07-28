@@ -63,7 +63,7 @@ export function ToolGroup({ blocks, sealed = false }: ToolGroupProps) {
       </button>
 
       {expanded && (
-        <div ref={scrollRef} className="mt-0.5 max-h-[120px] space-y-0.5 overflow-y-auto pl-2">
+        <div ref={scrollRef} className="mt-0.5 max-h-30 space-y-0.5 overflow-y-auto pl-2">
           {blocks.map((block, i) => {
             if (block.type === 'tool_use') {
               return (

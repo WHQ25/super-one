@@ -455,7 +455,7 @@ export function PlanLineReview({
                 if (current) saveNoteRef.current(current)
               }}
               placeholder={t('chat.plan.commentPlaceholder')}
-              className="relative z-0 w-full resize-none bg-transparent text-[13px] leading-relaxed placeholder:opacity-40 focus:outline-none"
+              className="relative z-0 w-full resize-none bg-transparent text-xs leading-relaxed placeholder:opacity-40 focus:outline-none"
               style={{
                 minHeight: 128,
                 padding: '24px 16px 20px',

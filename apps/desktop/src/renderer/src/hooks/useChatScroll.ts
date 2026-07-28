@@ -13,6 +13,39 @@ interface UseChatScrollReturn {
 
 const RESUME_AT_BOTTOM_PX = 24
 
+/**
+ * `scrollHeight` / `clientHeight` are rounded to integers while `scrollTop` keeps
+ * sub-pixels, so the max scroll offset derived from them can be off by up to 1px
+ * in either direction. Fractional layouts are the norm here because responsive
+ * chat sizing and non-integer DPRs both produce sub-pixels. Without this slack,
+ * the guard below could never hold on a viewport whose metrics rounded up,
+ * silently degrading the dedup back to "write on every frame". This 1px slack is
+ * far tighter than the 24px band `RESUME_AT_BOTTOM_PX` already treats as "at the
+ * bottom".
+ */
+const AT_BOTTOM_EPSILON_PX = 1
+
+/**
+ * Pin the viewport to the bottom, skipping the write when it is already there.
+ *
+ * A redundant `scrollTop` write is not free. It fires a `scroll` event, and each
+ * of those cascades into `handleScroll` plus ChatScrollIndicator's rAF +
+ * `getBoundingClientRect` — every one of them a forced synchronous layout over
+ * the full message list.
+ *
+ * That matters because during streaming *two* paths pin on the same frame: the
+ * `messages` layout effect (content changed) and the ResizeObserver (height
+ * changed — caused by the very same content change). Whichever runs second
+ * lands on a viewport that is already at the bottom, so its write moves nothing
+ * and buys nothing. Guarding here keeps both paths intact — the ResizeObserver
+ * still catches late growth like image decode or font swap, where the layout
+ * effect never runs because `messages` did not change.
+ */
+function pinToBottom(el: HTMLElement): void {
+  if (el.scrollTop >= el.scrollHeight - el.clientHeight - AT_BOTTOM_EPSILON_PX) return
+  el.scrollTop = el.scrollHeight
+}
+
 export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseChatScrollReturn {
   const scope = useSessionScope()
   const messages = useActiveSession((s) => s.messages)
@@ -43,8 +76,10 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
     clearTimeout(sessionSwitchTimerRef.current)
     const el = scrollViewportRef.current
     if (el) {
-      el.scrollTop = el.scrollHeight
-      window.app.trace?.('scroll', 'session_switch', { sessionId, scrollHeight: el.scrollHeight, scrollTop: el.scrollTop, clientHeight: el.clientHeight, msgCount: messages.length })
+      pinToBottom(el)
+      if (import.meta.env.DEV) {
+        window.app.trace?.('scroll', 'session_switch', { sessionId, scrollHeight: el.scrollHeight, scrollTop: el.scrollTop, clientHeight: el.clientHeight, msgCount: messages.length })
+      }
     }
   }, [sessionKey, scrollViewportRef])
 
@@ -129,9 +164,16 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
     const el = scrollViewportRef.current
     if (!el) return
     const shouldScroll = followRef.current || lastMsgIsUser
-    window.app.trace?.('scroll', 'msg_change', { msgLen: messages.length, shouldScroll, follow: followRef.current, lastMsgIsUser, sessionSwitch: sessionSwitchRef.current, scrollHeight: el.scrollHeight, scrollTop: el.scrollTop, clientHeight: el.clientHeight })
+    // DEV-only: `messages` churns on every streaming delta, so this effect runs
+    // ~30x/s. Reading scrollHeight from a layout effect forces a synchronous
+    // full-list reflow — O(messages) — and it would run even when we are not
+    // scrolling. `?.` alone does not save us: preload always defines `trace`,
+    // so the argument object (and its layout reads) would still be evaluated.
+    if (import.meta.env.DEV) {
+      window.app.trace?.('scroll', 'msg_change', { msgLen: messages.length, shouldScroll, follow: followRef.current, lastMsgIsUser, sessionSwitch: sessionSwitchRef.current, scrollHeight: el.scrollHeight, scrollTop: el.scrollTop, clientHeight: el.clientHeight })
+    }
     if (shouldScroll) {
-      el.scrollTop = el.scrollHeight
+      pinToBottom(el)
       followRef.current = true
       allowStationaryBottomResumeRef.current = false
       setShowScrollButton(false)
@@ -144,12 +186,12 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
     const content = viewport.firstElementChild as HTMLElement | null
     if (!content) return
     if (sessionSwitchRef.current && followRef.current) {
-      viewport.scrollTop = viewport.scrollHeight
+      pinToBottom(viewport)
       setShowScrollButton(false)
     }
     const observer = new ResizeObserver(() => {
       if (followRef.current && (statusRef.current === 'streaming' || sessionSwitchRef.current)) {
-        viewport.scrollTop = viewport.scrollHeight
+        pinToBottom(viewport)
         setShowScrollButton(false)
       }
       if (sessionSwitchRef.current) {

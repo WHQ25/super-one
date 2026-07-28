@@ -306,7 +306,7 @@ export function MermaidFullscreen({ svg, open, onOpenChange }: MermaidFullscreen
   return (
     <FullscreenGlassDialog open={open} onOpenChange={onOpenChange} title="Mermaid Fullscreen">
         <div className="relative h-full w-full">
-          <div className="absolute right-3 top-3 z-20 flex items-center gap-1 text-[10px] text-muted-foreground/70">
+          <div className="absolute right-3 top-3 z-20 flex items-center gap-1 text-xs text-muted-foreground/70">
             <span className="tabular-nums">{Math.round(zoom * 100)}%</span>
             <span className="mx-0.1">·</span>
             <Kbd variant="square">+</Kbd><Kbd variant="square">-</Kbd> zoom

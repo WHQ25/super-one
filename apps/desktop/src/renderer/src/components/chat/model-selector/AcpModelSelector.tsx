@@ -109,7 +109,7 @@ export function AcpModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?: (e: 
       <div className="flex items-center gap-1">
         <span className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-muted-foreground">
           <Loader2 className="size-3 animate-spin" />
-          <span className="max-w-[140px] truncate">{agent?.name ?? t('chat.suggestions.selectAgent')}</span>
+          <span className="max-w-35 truncate">{agent?.name ?? t('chat.suggestions.selectAgent')}</span>
         </span>
       </div>
     )
@@ -121,7 +121,7 @@ export function AcpModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?: (e: 
     return (
       <div className="flex items-center gap-1">
         <span
-          className="max-w-[180px] truncate rounded-lg px-2 py-1 text-xs text-muted-foreground"
+          className="max-w-45 truncate rounded-lg px-2 py-1 text-xs text-muted-foreground"
           title={acpModelsError ?? agent?.commandPreview ?? hint}
         >
           {agent?.name ?? t('chat.suggestions.acpLabel')}

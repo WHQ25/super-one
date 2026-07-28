@@ -30,7 +30,7 @@ export function AcpPermissionSelector({ compact = false }: { compact?: boolean }
       <PopoverTrigger asChild>
         <button
           type="button"
-          className={`flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] transition-colors ${active.color} ${active.hoverBg}`}
+          className={`flex items-center gap-1 rounded-lg px-2 py-1 text-xs transition-colors ${active.color} ${active.hoverBg}`}
           title={activeLabel}
         >
           {active.icon}

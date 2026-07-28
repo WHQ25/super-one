@@ -99,7 +99,7 @@ function MarkdownImageLightbox({ src, alt, savedPath, open, onOpenChange }: Ligh
 
         {downloadStatus && (
           <div className={cn(
-            "absolute right-3 z-20 max-w-[280px] truncate rounded-md border border-border/50 bg-background/90 px-3 py-1.5 text-[11px] text-muted-foreground shadow-sm backdrop-blur-sm",
+            "absolute right-3 z-20 max-w-70 truncate rounded-md border border-border/50 bg-background/90 px-3 py-1.5 text-xs text-muted-foreground shadow-sm backdrop-blur-sm",
             isWindows ? "top-[84px]" : "top-14"
           )}>
             {downloadStatus}

@@ -300,7 +300,7 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
                     : (activeEntry?.branch ?? activeGitBranch ?? '')}
               </span>
               {activeDirty && (
-                <span className="text-[10px] text-muted-foreground">
+                <span className="text-xs text-muted-foreground">
                   {activeDirty.files > 0 ? (
                     <>uncommitted: <DiffStat stat={activeDirty} /></>
                   ) : (
@@ -382,7 +382,7 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
             {filteredExisting.length > 0 && (
               <>
                 <div className="border-t" />
-                <div className="px-3 pt-2 text-[10px] uppercase text-muted-foreground">{t('chat.worktree.existingHeading')}</div>
+                <div className="px-3 pt-2 text-xs uppercase text-muted-foreground">{t('chat.worktree.existingHeading')}</div>
                 {filteredExisting.map((e) => {
                   const meta = wtMetas[e.path]
                   const detached = !e.branch
@@ -401,11 +401,11 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
                         <span className={`truncate ${detached ? 'text-muted-foreground' : ''}`}>
                           {detached ? t('chat.worktree.detachedLabel') : e.branch}
                         </span>
-                        <span className="truncate text-[10px] text-muted-foreground">
+                        <span className="truncate text-xs text-muted-foreground">
                           {meta?.shortHead || ''}
                         </span>
                       </div>
-                      <span className={`shrink-0 text-[10px] ${filesCount > 0 ? 'text-amber-500' : 'text-muted-foreground'}`}>
+                      <span className={`shrink-0 text-xs ${filesCount > 0 ? 'text-amber-500' : 'text-muted-foreground'}`}>
                         {filesCount > 0 ? t('chat.worktree.filesCount', { count: filesCount }) : t('chat.worktree.cleanLabel')}
                       </span>
                       {isCurrent && <Check className="mt-0.5 size-3 shrink-0 text-primary" />}
@@ -418,7 +418,7 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
             {filteredBranches.length > 0 && (
               <>
                 <div className="border-t" />
-                <div className="px-3 pt-2 text-[10px] uppercase text-muted-foreground">{headingText}</div>
+                <div className="px-3 pt-2 text-xs uppercase text-muted-foreground">{headingText}</div>
                 {filteredBranches.map((b) => {
                   const reason = pendingMode === 'attach' ? attachUnavailableReason(b) : null
                   const disabled = pendingMode === 'attach' && !!reason
@@ -434,7 +434,7 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
                       <GitBranch className="mt-0.5 size-3 shrink-0 text-muted-foreground" />
                       <div className="flex flex-1 flex-col items-start min-w-0">
                         <span className="truncate">{b}</span>
-                        {reason && <span className="truncate text-[10px] text-muted-foreground">{reason}</span>}
+                        {reason && <span className="truncate text-xs text-muted-foreground">{reason}</span>}
                       </div>
                       {isSelected && <Check className="mt-0.5 size-3 shrink-0 text-primary" />}
                     </button>
@@ -450,7 +450,7 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
 
           {isPending && (
             <div className="border-t p-3">
-              <div className="mb-2 text-[10px] text-muted-foreground">
+              <div className="mb-2 text-xs text-muted-foreground">
                 {t('chat.worktree.baseBranchLabel')}: <span className="font-mono text-foreground">{pendingBase}</span>
               </div>
               <div className="mb-3 flex gap-1 rounded-md bg-muted p-0.5">
@@ -463,7 +463,7 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
 
               {pendingMode === 'branch' && (
                 <>
-                  <label className="mb-1 block text-[11px] text-muted-foreground">{t('chat.worktree.branchNameLabel')}</label>
+                  <label className="mb-1 block text-xs text-muted-foreground">{t('chat.worktree.branchNameLabel')}</label>
                   <input
                     type="text"
                     placeholder={t('chat.worktree.branchNamePlaceholder')}
@@ -472,12 +472,12 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
                     className={`mb-2 w-full rounded-md border bg-background px-2 py-1.5 text-xs outline-none focus:ring-1 ${branchExists ? 'border-red-500 focus:ring-red-500' : 'border-input focus:ring-ring'}`}
                   />
                   {branchExists && (
-                    <div className="mb-3 flex items-center justify-between rounded-md border border-red-500/30 bg-red-500/10 px-2 py-1.5 text-[11px] text-red-600 dark:text-red-400">
+                    <div className="mb-3 flex items-center justify-between rounded-md border border-red-500/30 bg-red-500/10 px-2 py-1.5 text-xs text-red-600 dark:text-red-400">
                       <span>{t('chat.worktree.branchExists', { name: pendingBranchName.trim() })}</span>
                       <button
                         type="button"
                         onClick={() => handleSetMode('attach')}
-                        className="ml-2 rounded border border-current px-1.5 py-0.5 text-[10px] hover:bg-red-500/20"
+                        className="ml-2 rounded border border-current px-1.5 py-0.5 text-xs hover:bg-red-500/20"
                       >
                         {t('chat.worktree.switchToAttach')}
                       </button>
@@ -487,7 +487,7 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
               )}
 
               {pendingMode === 'attach' && (
-                <div className="mb-3 rounded-md bg-muted px-2 py-2 text-[11px] text-muted-foreground">
+                <div className="mb-3 rounded-md bg-muted px-2 py-2 text-xs text-muted-foreground">
                   {(() => {
                     const reason = attachUnavailableReason(pendingBase)
                     if (reason) return reason
@@ -497,7 +497,7 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
               )}
 
               {pendingMode === 'detach' && (
-                <div className="mb-3 rounded-md bg-muted px-2 py-2 text-[11px] text-muted-foreground">
+                <div className="mb-3 rounded-md bg-muted px-2 py-2 text-xs text-muted-foreground">
                   {t('chat.worktree.detachInfo', {
                     branch: pendingBase,
                     hash: '...',
@@ -515,13 +515,13 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
                     {pendingCarry && <Check className="size-2.5 text-background" />}
                   </div>
                   <span>{t('chat.worktree.carryLocalChanges')}</span>
-                  <span className="ml-auto text-[10px] text-muted-foreground">
+                  <span className="ml-auto text-xs text-muted-foreground">
                     <DiffStat stat={mainDirty} />
                   </span>
                 </button>
               )}
 
-              <div className="mt-2 text-[10px] text-muted-foreground">{t('chat.worktree.lazyHint')}</div>
+              <div className="mt-2 text-xs text-muted-foreground">{t('chat.worktree.lazyHint')}</div>
             </div>
           )}
         </div>
@@ -545,7 +545,7 @@ function ModeButton({ active, onClick, disabled, title, children }: ModeButtonPr
       onClick={onClick}
       disabled={disabled}
       title={title}
-      className={`flex-1 rounded px-2 py-1 text-[11px] transition-colors ${
+      className={`flex-1 rounded px-2 py-1 text-xs transition-colors ${
         disabled
           ? 'cursor-not-allowed text-muted-foreground/40'
           : active

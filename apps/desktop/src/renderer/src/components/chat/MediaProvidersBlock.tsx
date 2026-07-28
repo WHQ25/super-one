@@ -57,11 +57,11 @@ export function MediaProvidersBlock({ result, isStreaming }: { result: string | 
               <div className="flex items-center gap-1.5 text-xs">
                 <span className="font-medium text-foreground">{p.provider ?? p.label}</span>
                 {p.provider && (
-                  <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{p.label}</span>
+                  <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">{p.label}</span>
                 )}
               </div>
               {p.models && p.models.length > 0 && (
-                <div className="text-[11px] text-muted-foreground">
+                <div className="text-xs text-muted-foreground">
                   {p.models.map((m) => (
                     <span key={m.id} className={cn('mr-1.5', m.id === p.defaultModel && 'text-foreground')} title={m.id}>{m.label}</span>
                   ))}

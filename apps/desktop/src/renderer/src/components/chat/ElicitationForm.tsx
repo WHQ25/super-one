@@ -38,13 +38,13 @@ export function ElicitationForm({ fields, value, onChange }: ElicitationFormProp
       {fields.map((field) => {
         const current = value[field.name]
         const labelEl = (
-          <div className="flex items-center gap-1 text-[11px] font-medium text-foreground">
+          <div className="flex items-center gap-1 text-xs font-medium text-foreground">
             <span>{field.label}</span>
             {field.required && <span className="text-destructive">*</span>}
           </div>
         )
         const descriptionEl = field.description ? (
-          <p className="text-[10px] text-muted-foreground">{field.description}</p>
+          <p className="text-xs text-muted-foreground">{field.description}</p>
         ) : null
 
         if (field.type === 'boolean') {

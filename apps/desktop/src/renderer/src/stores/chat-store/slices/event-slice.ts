@@ -174,22 +174,29 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
         targetSid = project._activeSessionId
         matchType = 'fallback_active'
       } else {
-        window.app.trace?.('session.route.dropped', event.type, {
-          reason: 'no_route',
+        if (import.meta.env.DEV) {
+          window.app.trace?.('session.route.dropped', event.type, {
+            reason: 'no_route',
+            eventSessionId,
+            activeSid: project._activeSessionId,
+            knownSids: Object.keys(project._sessions),
+          })
+        }
+        return {}
+      }
+
+      // DEV-only: this runs for *every* agent event, including one per streaming
+      // delta batch. `Object.keys` + the structured clone for the IPC send are
+      // pure waste in production, where the main-process handler drops it anyway.
+      if (import.meta.env.DEV) {
+        window.app.trace?.('session.route', event.type, {
+          matchType,
+          targetSid,
           eventSessionId,
           activeSid: project._activeSessionId,
           knownSids: Object.keys(project._sessions),
         })
-        return {}
       }
-
-      window.app.trace?.('session.route', event.type, {
-        matchType,
-        targetSid,
-        eventSessionId,
-        activeSid: project._activeSessionId,
-        knownSids: Object.keys(project._sessions),
-      })
 
       if (event.type === 'permission_request') {
         window.app.trace?.('permission.flow', 'renderer_route', {

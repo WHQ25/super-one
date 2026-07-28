@@ -116,7 +116,7 @@ export function PermissionModeList({ activeMode, availableModes, autoEligibility
                 {mode.icon}
                 {label}
               </div>
-              <div className="mt-0.5 text-[10px] text-muted-foreground">{description}</div>
+              <div className="mt-0.5 text-xs text-muted-foreground">{description}</div>
             </button>
           </div>
         )

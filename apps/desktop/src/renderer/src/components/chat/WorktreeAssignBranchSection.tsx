@@ -69,11 +69,11 @@ export function WorktreeAssignBranchSection({ folderPath, worktreePath, onAssign
 
   return (
     <div className="border-t p-3">
-      <div className="mb-1.5 flex items-center gap-1.5 text-[10px] uppercase text-muted-foreground">
+      <div className="mb-1.5 flex items-center gap-1.5 text-xs uppercase text-muted-foreground">
         <GitBranch className="size-3" />
         {t('chat.worktree.assignHeading')}
       </div>
-      <p className="mb-2 text-[11px] text-muted-foreground">{t('chat.worktree.assignInfo')}</p>
+      <p className="mb-2 text-xs text-muted-foreground">{t('chat.worktree.assignInfo')}</p>
       <input
         type="text"
         placeholder={t('chat.worktree.assignPlaceholder')}
@@ -83,7 +83,7 @@ export function WorktreeAssignBranchSection({ folderPath, worktreePath, onAssign
         className={`mb-2 w-full rounded-md border bg-background px-2 py-1.5 font-mono text-xs outline-none focus:ring-1 ${conflict ? 'border-red-500 focus:ring-red-500' : 'border-input focus:ring-ring'}`}
       />
       {conflict && (
-        <div className="mb-2 rounded-md border border-red-500/30 bg-red-500/10 px-2 py-1.5 text-[11px] text-red-600 dark:text-red-400">
+        <div className="mb-2 rounded-md border border-red-500/30 bg-red-500/10 px-2 py-1.5 text-xs text-red-600 dark:text-red-400">
           {conflict}
         </div>
       )}

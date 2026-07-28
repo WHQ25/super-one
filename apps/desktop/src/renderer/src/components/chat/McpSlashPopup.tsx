@@ -20,7 +20,7 @@ function ServerIcon({ name, meta, bundle }: { name: string; meta?: McpServerMeta
     )
   }
   return (
-    <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-medium uppercase text-muted-foreground ring-1 ring-border">
+    <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium uppercase text-muted-foreground ring-1 ring-border">
       {name[0]}
     </div>
   )
@@ -237,9 +237,9 @@ export function McpSlashPopup({ onClose }: { onClose: () => void }) {
     <div className="flex max-h-96 flex-col overflow-hidden">
       <div className="flex items-center justify-between border-b border-border px-3 py-2">
         <div className="flex min-w-0 items-center gap-2">
-          <span className="text-[11px] font-medium text-muted-foreground">{t('chat.mcpPopup.title')}</span>
+          <span className="text-xs font-medium text-muted-foreground">{t('chat.mcpPopup.title')}</span>
           {banner && (
-            <span className={cn('truncate text-[10px]', bannerTone)}>{banner}</span>
+            <span className={cn('truncate text-xs', bannerTone)}>{banner}</span>
           )}
         </div>
         <div className="flex items-center gap-0.5">
@@ -283,7 +283,7 @@ export function McpSlashPopup({ onClose }: { onClose: () => void }) {
         ) : state.servers.length === 0 ? (
           <div className="px-3 py-6 text-center">
             <p className="text-xs text-muted-foreground">{t('chat.mcpPopup.empty')}</p>
-            <p className="mt-1 text-[10px] text-muted-foreground/70">{t('chat.mcpPopup.emptyHint')}</p>
+            <p className="mt-1 text-xs text-muted-foreground/70">{t('chat.mcpPopup.emptyHint')}</p>
           </div>
         ) : (
           state.servers.map((server) => {
@@ -309,12 +309,12 @@ export function McpSlashPopup({ onClose }: { onClose: () => void }) {
                     <div className="flex min-w-0 flex-1 items-center gap-2">
                       <span className="truncate text-sm font-medium">{server.name}</span>
                       {server.scope && server.scope !== 'user' && server.scope !== 'project' && (
-                        <span className="rounded bg-muted px-1 py-px text-[9px] uppercase text-muted-foreground">{server.scope}</span>
+                        <span className="rounded bg-muted px-1 py-px text-xs uppercase text-muted-foreground">{server.scope}</span>
                       )}
                       {isError && (
                         <span
                           className={cn(
-                            'shrink-0 rounded px-1 py-px text-[9px] font-medium uppercase',
+                            'shrink-0 rounded px-1 py-px text-xs font-medium uppercase',
                             server.status === 'needs-auth'
                               ? 'bg-warning/15 text-warning'
                               : 'bg-error/15 text-error',
@@ -359,15 +359,15 @@ export function McpSlashPopup({ onClose }: { onClose: () => void }) {
                   // ml aligns the guide line with the icon center: button px-2 (8px) + size-7 icon half (14px) = 22px
                   <div className="ml-[22px] mb-1 space-y-0.5 border-l border-border pl-2">
                     {hasErrorDetail && (
-                      <p className="whitespace-pre-wrap break-words rounded px-2 py-1 font-mono text-[10px] text-error">
+                      <p className="whitespace-pre-wrap break-words rounded px-2 py-1 font-mono text-xs text-error">
                         {server.error}
                       </p>
                     )}
                     {tools.map((tool) => (
                       <div key={tool.name} className="rounded px-2 py-1 hover:bg-muted/30">
-                        <p className="font-mono text-[11px] text-foreground">{tool.name}</p>
+                        <p className="font-mono text-xs text-foreground">{tool.name}</p>
                         {tool.description && (
-                          <p className="mt-0.5 line-clamp-2 text-[10px] text-muted-foreground">{tool.description}</p>
+                          <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{tool.description}</p>
                         )}
                       </div>
                     ))}

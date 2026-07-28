@@ -277,7 +277,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
             <span className="shrink-0">
               <HighlightedPath path={item.name} indices={item.matchIndices} />
             </span>
-            <span className="shrink-0 rounded bg-muted/60 px-1 py-px text-[10px] text-muted-foreground">
+            <span className="shrink-0 rounded bg-muted/60 px-1 py-px text-xs text-muted-foreground">
               {item.model || 'inherit'}
             </span>
           </button>
@@ -328,7 +328,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
       <div className="absolute bottom-full left-0 right-0 z-10 mb-1 max-h-72 overflow-hidden rounded-xl border border-border bg-popover flex flex-col">
         <div className="overflow-y-auto p-1 flex-1 min-h-0">
           {(breadcrumbs.length > 0 || (isBrowseMode && projectName)) && (
-            <div className="flex items-center gap-0.5 px-2 py-1 text-[10px] text-muted-foreground">
+            <div className="flex items-center gap-0.5 px-2 py-1 text-xs text-muted-foreground">
               <button
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => onSelect('', 'navigate')}
@@ -359,7 +359,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
           ))}
         </div>
 
-        <div className="border-t border-border px-2 py-1 text-[10px] text-muted-foreground shrink-0">
+        <div className="border-t border-border px-2 py-1 text-xs text-muted-foreground shrink-0">
           <Kbd>tab</Kbd> autocomplete
           <span className="mx-1.5">&middot;</span>
           <Kbd>↵</Kbd> select

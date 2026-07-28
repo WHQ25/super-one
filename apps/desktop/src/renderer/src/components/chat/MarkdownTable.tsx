@@ -12,7 +12,7 @@ function TableFullscreen({ open, onOpenChange, children }: {
   return (
     <FullscreenGlassDialog open={open} onOpenChange={onOpenChange} title="Table">
       <div className="flex h-full flex-col">
-        <div className="flex items-center justify-end gap-1 px-4 py-2 text-[10px] text-muted-foreground/70">
+        <div className="flex items-center justify-end gap-1 px-4 py-2 text-xs text-muted-foreground/70">
           <Kbd>esc</Kbd> exit
         </div>
         <div className="md-table-full flex-1 overflow-auto">

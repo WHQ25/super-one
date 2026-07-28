@@ -116,7 +116,7 @@ export function ContextUsage() {
 
       {open && (
         <div className="absolute bottom-full right-0 z-50 pb-2">
-          <div className="whitespace-nowrap rounded-lg bg-popover px-2.5 py-2 text-[10px] leading-relaxed text-popover-foreground shadow-lg ring-1 ring-border">
+          <div className="whitespace-nowrap rounded-lg bg-popover px-2.5 py-2 text-xs leading-relaxed text-popover-foreground shadow-lg ring-1 ring-border">
             <div>
               Context: {formatTokens(effectiveTokens)}
               {contextWindow ? ` / ${formatTokens(contextWindow)} (${(pct * 100).toFixed(0)}%)` : ''}

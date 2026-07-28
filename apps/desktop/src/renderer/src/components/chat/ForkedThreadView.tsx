@@ -81,11 +81,11 @@ export function ForkedThreadView({ fork }: { fork: ForkViewState }) {
         <Bot className={cn('size-3.5 shrink-0', colors.text)} />
         <span className="min-w-0 truncate font-medium text-foreground">{name}</span>
         {badge && (
-          <span className={cn('shrink-0 rounded px-1 py-px text-[10px]', colors.tagBg, colors.tagText)}>
+          <span className={cn('shrink-0 rounded px-1 py-px text-xs', colors.tagBg, colors.tagText)}>
             {badge}
           </span>
         )}
-        <span className="ml-auto inline-flex shrink-0 items-center text-[11px] text-muted-foreground tabular-nums">
+        <span className="ml-auto inline-flex shrink-0 items-center text-xs text-muted-foreground tabular-nums">
           {t('chat.codexCollab.turnCount', { count: turns.length })}
         </span>
       </div>
@@ -99,7 +99,7 @@ export function ForkedThreadView({ fork }: { fork: ForkViewState }) {
               <div key={turn.collabId} className={cn(ti > 0 && 'mt-4 border-t border-border/30 pt-4')}>
                 {turn.prompt && (
                   <div className="mb-3">
-                    <div className="mb-1 flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                    <div className="mb-1 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                       <span>{t(`chat.codexCollab.turnLabels.${turn.tool}`)}</span>
                     </div>
                     <div className={cn('whitespace-pre-wrap rounded border-l-2 bg-muted/30 px-3 py-2 text-xs leading-relaxed text-foreground', colors.borderL)}>
@@ -108,7 +108,7 @@ export function ForkedThreadView({ fork }: { fork: ForkViewState }) {
                   </div>
                 )}
                 {turn.items.length === 0 ? (
-                  <div className="text-[11px] text-muted-foreground">{t('chat.codexCollab.noOutput')}</div>
+                  <div className="text-xs text-muted-foreground">{t('chat.codexCollab.noOutput')}</div>
                 ) : (
                   turn.items.map((item, i) => renderCodexItem(item, i, false, turn.items[i + 1]))
                 )}

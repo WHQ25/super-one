@@ -45,7 +45,7 @@ export function AcpPermissionModeList({
               {option.icon}
               {t(`chat.acpPermissionModes.${option.labelKey}.label`)}
             </div>
-            <div className="mt-0.5 text-[10px] text-muted-foreground">
+            <div className="mt-0.5 text-xs text-muted-foreground">
               {t(`chat.acpPermissionModes.${option.labelKey}.description`)}
             </div>
           </button>

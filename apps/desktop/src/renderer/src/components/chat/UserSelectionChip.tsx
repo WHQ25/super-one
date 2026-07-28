@@ -125,7 +125,7 @@ function QuoteItem({ text, index, onRemoveAt, readOnly }: QuoteItemProps) {
     <div className="group/quote relative rounded-md bg-muted p-2.5 pr-7">
       {parsed ? (
         <>
-          <div className="mb-1.5 flex min-w-0 items-center gap-1 text-[11px] text-muted-foreground">
+          <div className="mb-1.5 flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
             <FileChipLabel
               filePath={parsed.filePath}
               rangeText={parsed.rangeText}
@@ -165,7 +165,7 @@ export function UserSelectionChip({ selections, onRemoveAt, onClear, readOnly = 
     triggerContent = (
       <>
         <Quote className="size-2.5 shrink-0 text-primary/50 transition-colors group-hover:text-primary/80" />
-        <span className="max-w-[220px] truncate">
+        <span className="max-w-55 truncate">
           {t('chat.userSelectionChip.title', { count: selections.length })}
         </span>
       </>
@@ -175,14 +175,14 @@ export function UserSelectionChip({ selections, onRemoveAt, onClear, readOnly = 
       <FileChipLabel
         filePath={firstParsed.filePath}
         rangeText={firstParsed.rangeText}
-        className="max-w-[240px]"
+        className="max-w-60"
       />
     )
   } else {
     triggerContent = (
       <>
         <Quote className="size-2.5 shrink-0 text-primary/50 transition-colors group-hover:text-primary/80" />
-        <span className="max-w-[220px] truncate">{previewOf(selections[0])}</span>
+        <span className="max-w-55 truncate">{previewOf(selections[0])}</span>
       </>
     )
   }

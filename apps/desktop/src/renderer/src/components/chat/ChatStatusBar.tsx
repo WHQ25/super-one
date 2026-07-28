@@ -361,7 +361,7 @@ export function ChatStatusBar() {
 
   return (
     <>
-      <div ref={barRef} className="relative flex items-center gap-2 whitespace-nowrap px-3 pb-1 pt-0.5 @lg:px-7 text-[11px] text-muted-foreground">
+      <div ref={barRef} className="relative flex items-center gap-2 whitespace-nowrap px-3 pb-1 pt-0.5 @lg:px-7 text-xs text-muted-foreground">
         <div className="pointer-events-none absolute bottom-full left-3 right-3 z-10 flex flex-col gap-1 pb-1">
           <AnimatePresence>
             {bashOpen && bashActivities.length > 0 && (
@@ -468,7 +468,7 @@ export function ChatStatusBar() {
                           <div className="flex min-w-0 flex-1 flex-col">
                             <span className="truncate">{gitInfo.branch}</span>
                             {dirty && (
-                              <span className="text-[10px] text-muted-foreground">
+                              <span className="text-xs text-muted-foreground">
                                 uncommitted: {fmt(dirty.files)} {dirty.files === 1 ? 'file' : 'files'}
                                 {(dirty.insertions > 0 || dirty.deletions > 0) && (
                                   <>

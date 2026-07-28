@@ -102,7 +102,7 @@ function MiniToolChip({ item }: { item: CodexThreadItem }) {
   const { t } = useTranslation()
   if (item.type === 'command_execution') {
     return (
-      <div className="tool-node my-0.5 flex items-center gap-1.5 rounded bg-muted/50 px-2 py-1 text-[11px]">
+      <div className="tool-node my-0.5 flex items-center gap-1.5 rounded bg-muted/50 px-2 py-1 text-xs">
         <Terminal className="size-3 shrink-0 text-muted-foreground" />
         <span className="shrink-0 font-medium text-foreground">{t('chat.codexCollab.miniTool.bash')}</span>
         <span className="min-w-0 truncate text-muted-foreground">{item.command}</span>
@@ -112,7 +112,7 @@ function MiniToolChip({ item }: { item: CodexThreadItem }) {
   if (item.type === 'file_change') {
     const first = item.changes[0]
     return (
-      <div className="tool-node my-0.5 flex items-center gap-1.5 rounded bg-muted/50 px-2 py-1 text-[11px]">
+      <div className="tool-node my-0.5 flex items-center gap-1.5 rounded bg-muted/50 px-2 py-1 text-xs">
         <FileEdit className="size-3 shrink-0 text-muted-foreground" />
         <span className="shrink-0 font-medium text-foreground">{t('chat.codexCollab.miniTool.edit')}</span>
         <span className="min-w-0 truncate text-muted-foreground">{first?.path ?? t('chat.codexCollab.miniTool.filesFallback', { count: item.changes.length })}</span>
@@ -121,7 +121,7 @@ function MiniToolChip({ item }: { item: CodexThreadItem }) {
   }
   if (item.type === 'mcp_tool_call') {
     return (
-      <div className="tool-node my-0.5 flex items-center gap-1.5 rounded bg-muted/50 px-2 py-1 text-[11px]">
+      <div className="tool-node my-0.5 flex items-center gap-1.5 rounded bg-muted/50 px-2 py-1 text-xs">
         <Wrench className="size-3 shrink-0 text-muted-foreground" />
         <span className="shrink-0 font-medium text-foreground">
           {item.server} · {item.tool}
@@ -131,7 +131,7 @@ function MiniToolChip({ item }: { item: CodexThreadItem }) {
   }
   if (item.type === 'web_search') {
     return (
-      <div className="tool-node my-0.5 flex items-center gap-1.5 rounded bg-muted/50 px-2 py-1 text-[11px]">
+      <div className="tool-node my-0.5 flex items-center gap-1.5 rounded bg-muted/50 px-2 py-1 text-xs">
         <Search className="size-3 shrink-0 text-muted-foreground" />
         <span className="shrink-0 font-medium text-foreground">{t('chat.codexCollab.miniTool.webSearch')}</span>
         <span className="min-w-0 truncate text-muted-foreground">{item.query}</span>
@@ -144,7 +144,7 @@ function MiniToolChip({ item }: { item: CodexThreadItem }) {
 function PromptPreview({ prompt, label }: { prompt: string; label: string }) {
   const [open, setOpen] = useState(false)
   return (
-    <div className="px-3 py-1.5 text-[11px]">
+    <div className="px-3 py-1.5 text-xs">
       <button
         onClick={(e) => { e.stopPropagation(); setOpen((s) => !s) }}
         className="flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors"
@@ -153,7 +153,7 @@ function PromptPreview({ prompt, label }: { prompt: string; label: string }) {
         <span>{label}</span>
       </button>
       {open && (
-        <div className="mt-1 max-h-[100px] overflow-y-auto whitespace-pre-wrap rounded bg-background/50 px-2 py-1.5 text-muted-foreground leading-relaxed">
+        <div className="mt-1 max-h-25 overflow-y-auto whitespace-pre-wrap rounded bg-background/50 px-2 py-1.5 text-muted-foreground leading-relaxed">
           {prompt}
         </div>
       )}
@@ -214,7 +214,7 @@ function CollabScrollArea({ children, borderClass }: { children: React.ReactNode
   return (
     <div
       ref={scrollRef}
-      className={cn('max-h-[100px] overflow-y-auto border-l-2 ml-3 pl-2.5 py-1', borderClass)}
+      className={cn('max-h-25 overflow-y-auto border-l-2 ml-3 pl-2.5 py-1', borderClass)}
     >
       {children}
     </div>
@@ -228,13 +228,13 @@ function OutputPreview({ text }: { text: string }) {
     <div className="border-t border-border/30 px-3 py-1.5">
       <button
         onClick={(e) => { e.stopPropagation(); setOpen((s) => !s) }}
-        className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+        className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
       >
         <ChevronRight className={cn('size-2.5 shrink-0 transition-transform duration-200', open && 'rotate-90')} />
         <span className="font-medium">{t('chat.subagent.output')}</span>
       </button>
       {open && (
-        <div className="mt-1 max-h-[200px] overflow-y-auto text-xs">
+        <div className="mt-1 max-h-50 overflow-y-auto text-xs">
           <Streamdown
             className="chat-md"
             plugins={streamdownPlugins}
@@ -291,7 +291,7 @@ export function CodexCollabBlock({ items, isStreaming }: { items: CodexCollabToo
         <Bot className={cn('mt-0.5 size-3.5 shrink-0', colors.text, isRunning && !expanded && 'animate-pulse')} />
         <span className="font-medium text-foreground">{name}</span>
         {role && (
-          <span className={cn('mt-px shrink-0 rounded px-1 py-px text-[10px]', colors.tagBg, colors.tagText)}>
+          <span className={cn('mt-px shrink-0 rounded px-1 py-px text-xs', colors.tagBg, colors.tagText)}>
             {role}
           </span>
         )}
@@ -303,10 +303,10 @@ export function CodexCollabBlock({ items, isStreaming }: { items: CodexCollabToo
         {isErrored && (
           <span className="ml-1 inline-flex shrink-0 items-center gap-1 text-red-600 dark:text-red-400">
             <span className="size-2 rounded-full bg-red-600 dark:bg-red-400" />
-            <span className="text-[11px] font-medium">{t('chat.codexCollab.failed')}</span>
+            <span className="text-xs font-medium">{t('chat.codexCollab.failed')}</span>
           </span>
         )}
-        <span className="ml-auto flex shrink-0 items-center gap-1.5 text-[11px] text-muted-foreground">
+        <span className="ml-auto flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
           {!expanded && <StatsCluster itemCount={itemCount} tokens={tokens} hasTokens={hasTokens} />}
           <ChevronRight className={cn('mt-px size-3 shrink-0 transition-transform duration-200', expanded && 'rotate-90')} />
         </span>
@@ -327,7 +327,7 @@ export function CodexCollabBlock({ items, isStreaming }: { items: CodexCollabToo
               {turns.map((turn, ti) => (
                 <div key={ti}>
                   {ti > 0 && turn.prompt && (
-                    <div className="my-1 flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                    <div className="my-1 flex items-center gap-1.5 text-xs text-muted-foreground">
                       <span className="font-medium">{t(`chat.codexCollab.toolLabels.${turn.tool}`)}</span>
                       <span className="min-w-0 truncate">{turn.prompt.slice(0, 80)}{turn.prompt.length > 80 ? '…' : ''}</span>
                     </div>
@@ -345,7 +345,7 @@ export function CodexCollabBlock({ items, isStreaming }: { items: CodexCollabToo
       </AnimatePresence>
 
       {expanded && (isRunning || isComplete || status === 'errored') && (
-        <div className="flex items-center gap-1.5 border-t border-border/30 px-2.5 py-1.5 text-[11px] text-muted-foreground">
+        <div className="flex items-center gap-1.5 border-t border-border/30 px-2.5 py-1.5 text-xs text-muted-foreground">
           {isRunning ? (
             <>
               <Loader2 className="size-3 animate-spin" />
@@ -437,12 +437,12 @@ export function CodexSubagentMarker({ item }: { item: CodexCollabToolCallItem })
           <TriangleAlert className="mt-0.5 size-3 shrink-0 text-amber-600 dark:text-amber-400" />
           <span className="shrink-0 font-medium text-amber-600 dark:text-amber-400">{name}</span>
           {badge && (
-            <span className={cn('mt-px shrink-0 rounded px-1 py-px text-[10px]', colors.tagBg, colors.tagText)}>
+            <span className={cn('mt-px shrink-0 rounded px-1 py-px text-xs', colors.tagBg, colors.tagText)}>
               {badge}
             </span>
           )}
           <span className="min-w-0 flex-1 break-words text-muted-foreground">{summary}</span>
-          <span className="mt-px shrink-0 rounded bg-amber-500/20 px-1 py-px text-[10px] text-amber-600 dark:text-amber-400">{t('chat.toolBlock.error')}</span>
+          <span className="mt-px shrink-0 rounded bg-amber-500/20 px-1 py-px text-xs text-amber-600 dark:text-amber-400">{t('chat.toolBlock.error')}</span>
         </div>
       </div>
     )
@@ -459,17 +459,17 @@ export function CodexSubagentMarker({ item }: { item: CodexCollabToolCallItem })
         <Bot className={cn('mt-0.5 size-3.5 shrink-0', colors.text, isRunning && !expanded && 'animate-pulse')} />
         <span className="font-medium text-foreground">{name}</span>
         {badge && (
-          <span className={cn('mt-px shrink-0 rounded px-1 py-px text-[10px]', colors.tagBg, colors.tagText)}>
+          <span className={cn('mt-px shrink-0 rounded px-1 py-px text-xs', colors.tagBg, colors.tagText)}>
             {badge}
           </span>
         )}
         {isErrored && (
           <span className="ml-1 inline-flex shrink-0 items-center gap-1 text-red-600 dark:text-red-400">
             <span className="size-2 rounded-full bg-red-600 dark:bg-red-400" />
-            <span className="text-[11px] font-medium">{t('chat.codexCollab.failed')}</span>
+            <span className="text-xs font-medium">{t('chat.codexCollab.failed')}</span>
           </span>
         )}
-        <span className="ml-auto flex shrink-0 items-center gap-1.5 text-[11px] text-muted-foreground">
+        <span className="ml-auto flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
           {!expanded && <StatsCluster itemCount={itemCount} tokens={tokens} hasTokens={hasTokens} />}
           {expanded && (
             <span
@@ -508,7 +508,7 @@ export function CodexSubagentMarker({ item }: { item: CodexCollabToolCallItem })
       </AnimatePresence>
 
       {expanded && (isRunning || isComplete || isErrored) && (
-        <div className="flex items-center gap-1.5 border-t border-border/30 px-2.5 py-1.5 text-[11px] text-muted-foreground">
+        <div className="flex items-center gap-1.5 border-t border-border/30 px-2.5 py-1.5 text-xs text-muted-foreground">
           {isRunning ? (
             <>
               <Loader2 className="size-3 animate-spin" />

@@ -37,6 +37,25 @@ interface ChatContentProps {
 const INITIAL_RENDER_COUNT = 12
 const LOAD_MORE_COUNT = 4
 
+// Preserve the old responsive visual scale through native layout tokens. A
+// zoomed or transformed transcript can force Chromium to repaint a giant layer.
+const CHAT_SCALABLE_REM_TOKENS = {
+  '--spacing': 0.25,
+  '--text-xs': 0.75,
+  '--text-sm': 0.875,
+  '--text-base': 1,
+  '--container-3xl': 48,
+} as const
+
+function createChatDensityStyle(scale: number): React.CSSProperties {
+  return Object.fromEntries(
+    Object.entries(CHAT_SCALABLE_REM_TOKENS).map(([token, rem]) => [
+      token,
+      `${Math.round(rem * scale * 100000) / 100000}rem`,
+    ]),
+  ) as React.CSSProperties
+}
+
 export function ChatContent({ scrollViewportRef, showScrollButton = false, scrollToBottom, stopAutoScroll, foreground = true }: ChatContentProps) {
   const scope = useSessionScope()
   const {
@@ -198,32 +217,33 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
     return () => cancelAnimationFrame(raf)
   }, [jumpNonce, scrollViewportRef])
 
-  const computeAutoZoom = useCallback((w: number) => w >= 672 ? 1.15 : w >= 512 ? 1.1 : 1, [])
-  const [autoZoom, setAutoZoom] = useState(1)
-  const [manualZoom, setManualZoom] = useState(0)
-  const zoom = autoZoom + manualZoom
+  const computeAutoScale = useCallback((w: number) => w >= 672 ? 1.15 : w >= 512 ? 1.1 : 1, [])
+  const [autoScale, setAutoScale] = useState(1)
+  const [manualScaleOffset, setManualScaleOffset] = useState(0)
+  const uiScale = autoScale + manualScaleOffset
+  const densityStyle = useMemo(() => createChatDensityStyle(uiScale), [uiScale])
   useLayoutEffect(() => {
     const parent = containerRef.current?.parentElement
     if (!parent) return
-    setAutoZoom(computeAutoZoom(parent.getBoundingClientRect().width))
+    setAutoScale(computeAutoScale(parent.getBoundingClientRect().width))
     let rafId = 0
     const observer = new ResizeObserver((entries) => {
       cancelAnimationFrame(rafId)
       rafId = requestAnimationFrame(() => {
-        const next = computeAutoZoom(entries[0]?.contentRect.width ?? 0)
-        setAutoZoom((prev) => prev === next ? prev : next)
+        const next = computeAutoScale(entries[0]?.contentRect.width ?? 0)
+        setAutoScale((prev) => prev === next ? prev : next)
       })
     })
     observer.observe(parent)
     return () => { cancelAnimationFrame(rafId); observer.disconnect() }
-  }, [computeAutoZoom])
+  }, [computeAutoScale])
 
   useEffect(() => {
     return window.app.onContentZoom((action) => {
       if (!containerRef.current?.matches(':hover')) return
-      if (action === 'reset') setManualZoom(0)
-      else if (action === 'in') setManualZoom((v) => Math.min(v + 0.05, 0.5))
-      else setManualZoom((v) => Math.max(v - 0.05, -0.5))
+      if (action === 'reset') setManualScaleOffset(0)
+      else if (action === 'in') setManualScaleOffset((v) => Math.min(v + 0.05, 0.5))
+      else setManualScaleOffset((v) => Math.max(v - 0.05, -0.5))
     })
   }, [])
 
@@ -261,13 +281,11 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
     <SubagentNavigationContext.Provider value={subagentNav}>
     <ForkNavigationContext.Provider value={forkNav}>
     <PlanFullscreenContext.Provider value={planFullscreenCtx}>
-    {/* `zoom`, not `transform: scale()` — a transform makes the whole chat one
-        scaled composited layer that re-rasterizes on every streaming update,
-        while `zoom` is a layout-level scale that paints text natively. Safe here
-        because every floating layer inside (selection menu, plan review, mermaid
-        / table fullscreen) portals to body, so none of them relied on the
-        transform's `position: fixed` containing block. */}
-    <div ref={containerRef} className="relative flex min-h-0 w-full min-w-0 flex-1 flex-col" style={zoom !== 1 ? { zoom } : undefined}>
+    <div
+      ref={containerRef}
+      className="relative flex min-h-0 w-full min-w-0 flex-1 flex-col"
+      style={densityStyle}
+    >
       {workflowView ? (
         <Suspense fallback={null}>
           <WorkflowFullView view={workflowView} />

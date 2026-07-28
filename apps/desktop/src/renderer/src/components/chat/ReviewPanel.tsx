@@ -229,7 +229,7 @@ export function ReviewPanel() {
       onKeyDown={handleKeyDown}
     >
       <div className="flex items-center justify-between px-3 py-1.5">
-        <span className="text-[11px] font-medium text-muted-foreground">/review</span>
+        <span className="text-xs font-medium text-muted-foreground">/review</span>
         <button
           onMouseDown={(e) => { e.preventDefault(); setShowReviewPanel(false) }}
           className="rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground"
@@ -329,7 +329,7 @@ export function ReviewPanel() {
         )}
       </div>
 
-      <div className="flex items-center gap-3 border-t border-border px-3 py-1 text-[10px] text-muted-foreground/60">
+      <div className="flex items-center gap-3 border-t border-border px-3 py-1 text-xs text-muted-foreground/60">
         <span><kbd className="rounded border border-border px-1">↵</kbd> confirm</span>
         <span><kbd className="rounded border border-border px-1">↑↓</kbd> navigate</span>
         <span><kbd className="rounded border border-border px-1">esc</kbd> close</span>

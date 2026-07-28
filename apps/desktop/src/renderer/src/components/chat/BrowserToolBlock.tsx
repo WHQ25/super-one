@@ -120,10 +120,10 @@ export function BrowserToolBlock({ op, params, result, isStreaming, isError, isD
             <span className={cn('transition-colors duration-500', getStallColor(stallLevel))}>{Math.round(elapsedSeconds)}s</span>
           )}
           {!isStreaming && isDenied && (
-            <span className="rounded bg-error/20 px-1 py-px text-[10px] text-error">{t('chat.toolBlock.denied')}</span>
+            <span className="rounded bg-error/20 px-1 py-px text-xs text-error">{t('chat.toolBlock.denied')}</span>
           )}
           {!isStreaming && !isDenied && info.status === 'error' && (
-            <span className="rounded bg-warning/20 px-1 py-px text-[10px] text-warning">{t('chat.toolBlock.error')}</span>
+            <span className="rounded bg-warning/20 px-1 py-px text-xs text-warning">{t('chat.toolBlock.error')}</span>
           )}
           {expandable && (
             <ChevronRight className={cn('size-3 text-muted-foreground transition-transform duration-200', expanded && 'rotate-90')} />
@@ -265,7 +265,7 @@ function BrowserDownloadBlock({
         </span>
 
         {completed && path && filename ? (
-          <FileChip name={filename} title={path} filePath={path} className="max-w-[200px]" />
+          <FileChip name={filename} title={path} filePath={path} className="max-w-50" />
         ) : inFlight && filename ? (
           <span className="min-w-0 truncate text-muted-foreground">{filename}</span>
         ) : url ? (
@@ -282,10 +282,10 @@ function BrowserDownloadBlock({
             <span className={cn('transition-colors duration-500', getStallColor(stallLevel))}>{Math.round(elapsedSeconds)}s</span>
           )}
           {!inFlight && isDenied && (
-            <span className="rounded bg-error/20 px-1 py-px text-[10px] text-error">{t('chat.toolBlock.denied')}</span>
+            <span className="rounded bg-error/20 px-1 py-px text-xs text-error">{t('chat.toolBlock.denied')}</span>
           )}
           {!inFlight && !isDenied && failed && (
-            <span className="rounded bg-warning/20 px-1 py-px text-[10px] text-warning">{t('chat.toolBlock.error')}</span>
+            <span className="rounded bg-warning/20 px-1 py-px text-xs text-warning">{t('chat.toolBlock.error')}</span>
           )}
           {expandable && (
             <ChevronRight className={cn('size-3 text-muted-foreground transition-transform duration-200', expanded && 'rotate-90')} />
@@ -299,7 +299,7 @@ function BrowserDownloadBlock({
           style={{ gridTemplateRows: expanded ? '1fr' : '0fr' }}
         >
           <div className="overflow-hidden">
-            <div className="space-y-2 px-2 pb-2 pt-0.5 text-[11px]">
+            <div className="space-y-2 px-2 pb-2 pt-0.5 text-xs">
               {phase === 'background' && (
                 <div className="text-muted-foreground">
                   <span className="animate-shimmer font-medium text-foreground">{t('chat.toolBlock.browser.downloadBackground')}…</span>
@@ -335,7 +335,7 @@ function BrowserDownloadBlock({
                 {path && (
                   <>
                     <dt className="text-muted-foreground/70">{t('chat.toolBlock.browser.downloadPath')}</dt>
-                    <dd className="min-w-0 break-all font-mono text-[10px] text-foreground/90">{path}</dd>
+                    <dd className="min-w-0 break-all font-mono text-xs text-foreground/90">{path}</dd>
                   </>
                 )}
                 {bytes != null && (
@@ -370,7 +370,7 @@ function BrowserDownloadBlock({
                     type="button"
                     variant="outline"
                     size="sm"
-                    className="h-7 gap-1.5 px-2 text-[11px]"
+                    className="h-7 gap-1.5 px-2 text-xs"
                     disabled={saveState === 'saving'}
                     onClick={handleSave}
                   >
@@ -421,7 +421,7 @@ function BrowserScreenshotView({ path }: { path: string }) {
   }
 
   if (loadError) {
-    return <div className="text-[11px] text-muted-foreground/60 italic">{t('chat.toolBlock.browser.screenshotUnavailable')}</div>
+    return <div className="text-xs text-muted-foreground/60 italic">{t('chat.toolBlock.browser.screenshotUnavailable')}</div>
   }
   if (!dataUri) return null
 
@@ -481,7 +481,7 @@ function BrowserScreenshotView({ path }: { path: string }) {
 
           {downloadStatus && (
             <div className={cn(
-              "absolute right-3 z-20 max-w-[280px] truncate rounded-md border border-border/50 bg-background/90 px-3 py-1.5 text-[11px] text-muted-foreground shadow-sm backdrop-blur-sm",
+              "absolute right-3 z-20 max-w-70 truncate rounded-md border border-border/50 bg-background/90 px-3 py-1.5 text-xs text-muted-foreground shadow-sm backdrop-blur-sm",
               isWindows ? "top-[84px]" : "top-14"
             )}>
               {downloadStatus}

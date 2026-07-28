@@ -385,7 +385,7 @@ function renderBlock(
       if (toolResultMap?.has(block.toolUseId)) return null
       if (!block.summary) return null
       return (
-        <div key={index} className="my-0.5 overflow-x-auto rounded bg-muted/50 px-2 py-1.5 font-mono text-[11px] leading-relaxed text-muted-foreground whitespace-pre-wrap">
+        <div key={index} className="my-0.5 overflow-x-auto rounded bg-muted/50 px-2 py-1.5 font-mono text-xs leading-relaxed text-muted-foreground whitespace-pre-wrap">
           {block.summary}
         </div>
       )
@@ -558,7 +558,7 @@ export function CompactIndicator({
   expanded?: boolean
   onToggle?: () => void
 }) {
-  const pillClass = 'inline-flex items-center whitespace-nowrap rounded bg-primary/15 px-1.5 py-px text-[11px] text-primary/80'
+  const pillClass = 'inline-flex items-center whitespace-nowrap rounded bg-primary/15 px-1.5 py-px text-xs text-primary/80'
   return (
     <div className="my-0.5 flex items-start gap-1.5 rounded bg-primary/10 px-2 py-1.5 text-xs">
       <Minimize2 className="mt-0.5 size-3 shrink-0 text-primary" />
@@ -819,7 +819,7 @@ export const ChatMessage = memo(function ChatMessage({ message, sessionStatus, i
     <div className={cn('w-0 min-w-full flex', isUser ? (isCollab ? 'justify-start' : 'justify-end') : 'mb-2 justify-start')}>
       <div className={cn(isUser ? 'group/copy relative mb-0 flex min-w-0 max-w-[90%] flex-col' : 'w-full', isUser && !isCollab && 'items-end', isUser && isCollab && 'items-start')}>
         {isCollab && collabLabelKey && (
-          <div className="mb-1 flex items-center gap-1 px-0.5 text-[10px] font-medium text-primary/80">
+          <div className="mb-1 flex items-center gap-1 px-0.5 text-xs font-medium text-primary/80">
             <Bot className="size-3 shrink-0" />
             <span>{t(collabLabelKey)}</span>
           </div>
@@ -1127,7 +1127,7 @@ function DurationFooter({ message, copyText, parentIsStreaming }: { message: Cha
   const stallColor = isStreaming ? getStallColor(stallLevel) : 'text-muted-foreground'
 
   return (
-    <div className={cn('group/footer mt-2 flex items-center gap-1.5 text-[11px] transition-colors duration-500', stallColor)}>
+    <div className={cn('group/footer mt-2 flex items-center gap-1.5 text-xs transition-colors duration-500', stallColor)}>
       {showCopy && (
         <button
           onClick={handleCopy}

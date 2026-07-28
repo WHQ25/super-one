@@ -213,7 +213,7 @@ export function PlanApprovalPrompt() {
         {fileName && (
           <span className="text-sm text-muted-foreground">{fileName}</span>
         )}
-        <span className="ml-auto text-[11px] text-muted-foreground">
+        <span className="ml-auto text-xs text-muted-foreground">
           {t('chat.plan.commentHint')}
         </span>
       </div>
@@ -228,14 +228,14 @@ export function PlanApprovalPrompt() {
       <div className="shrink-0 space-y-2 border-t border-border px-4 py-3">
         {allowedPrompts.length > 0 && (
           <div>
-            <div className="mb-1 text-[10px] font-medium uppercase text-muted-foreground">
+            <div className="mb-1 text-xs font-medium uppercase text-muted-foreground">
               {t('chat.plan.requestedPermissions')}
             </div>
             <div className="flex flex-wrap gap-1.5">
               {allowedPrompts.map((p, i) => (
                 <span
                   key={i}
-                  className="inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground"
+                  className="inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground"
                 >
                   <span className="font-medium">{p.tool}</span>
                   <span>{p.prompt}</span>
@@ -297,7 +297,7 @@ export function PlanApprovalPrompt() {
         {showPostApprovalModeToggle && (
           <button
             type="button"
-            className={`flex h-7 w-full cursor-pointer items-center gap-1.5 rounded border px-2.5 text-[11px] transition-colors ${
+            className={`flex h-7 w-full cursor-pointer items-center gap-1.5 rounded border px-2.5 text-xs transition-colors ${
               switchAfterApproval
                 ? isAutoTarget
                   ? 'border-amber-500/50 bg-amber-500/10 text-amber-600 hover:bg-amber-500/20 dark:text-amber-500'

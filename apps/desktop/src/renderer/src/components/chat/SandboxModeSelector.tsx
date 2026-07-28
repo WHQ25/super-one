@@ -101,7 +101,7 @@ export function SandboxModePopover({
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button
-          className={`flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] transition-colors ${current.color} ${current.hoverBg}`}
+          className={`flex items-center gap-1 rounded-lg px-2 py-1 text-xs transition-colors ${current.color} ${current.hoverBg}`}
           title={triggerTitle}
         >
           {current.icon}
@@ -134,14 +134,14 @@ export function SandboxModePopover({
                 {mode.icon}
                 {t(`chat.sandboxModes.${mode.id}.label`)}
               </div>
-              <div className="mt-0.5 text-[10px] text-muted-foreground">{t(`chat.sandboxModes.${mode.id}.description`)}</div>
+              <div className="mt-0.5 text-xs text-muted-foreground">{t(`chat.sandboxModes.${mode.id}.description`)}</div>
             </button>
           )
         })}
         {showNotReadyHint && onOpenSettings && (
           <button
             onClick={handleOpenSettings}
-            className="mt-1 w-full rounded border-t border-border px-2 py-1.5 text-left text-[10px] text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+            className="mt-1 w-full rounded border-t border-border px-2 py-1.5 text-left text-xs text-muted-foreground hover:bg-muted/50 hover:text-foreground"
           >
             {t('chat.sandboxConditionalNotReady')}
           </button>

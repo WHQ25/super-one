@@ -46,7 +46,7 @@ export function PdfThumbnail({ base64, className }: { base64: string; className?
   }, [base64])
 
   if (error) {
-    return <div className={`flex items-center justify-center bg-muted/50 text-[8px] text-muted-foreground ${className ?? ''}`}>PDF</div>
+    return <div className={`flex items-center justify-center bg-muted/50 text-xs text-muted-foreground ${className ?? ''}`}>PDF</div>
   }
 
   return (

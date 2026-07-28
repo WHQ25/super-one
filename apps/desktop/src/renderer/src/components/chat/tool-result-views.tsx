@@ -10,7 +10,7 @@ import { tryPrettifyJson, parseQAPairs } from './tool-block-utils'
 import type { QuestionAnnotations, QuestionPreviewFormat, UserQuestion } from '@superone/shared/agent-types'
 
 function SectionLabel({ children }: { children: string }) {
-  return <div className="mb-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground/70">{children}</div>
+  return <div className="mb-0.5 text-xs font-medium uppercase tracking-wide text-muted-foreground/70">{children}</div>
 }
 
 /** Lazily prettify a JS snippet with Prettier (loaded on demand). Falls back to the raw source. */
@@ -66,7 +66,7 @@ export function BrowserEvaluateView({ expression, result }: { expression: string
 
 function MockRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex gap-2 text-[11px]">
+    <div className="flex gap-2 text-xs">
       <span className="shrink-0 text-muted-foreground/70">{label}</span>
       <span className="min-w-0 break-all text-foreground">{value}</span>
     </div>
@@ -120,7 +120,7 @@ export function PrettyJSONCodeBlock({ text }: { text: string }) {
       {isLong && (
         <button
           onClick={(e) => { e.stopPropagation(); setShowAll((s) => !s) }}
-          className="mt-0.5 ml-2 flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+          className="mt-0.5 ml-2 flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
         >
           <ChevronRight className={cn('size-3 shrink-0 transition-transform duration-200', showAll && 'rotate-90')} />
           {showAll ? t('chat.toolBlock.collapse') : t('chat.toolBlock.moreLines', { count: hiddenCount })}
@@ -183,7 +183,7 @@ export function AskUserQuestionResult({ text, params }: { text: string; params: 
   return (
     <div className="space-y-1">
       {answered.map((qa, i) => (
-        <div key={i} className="rounded bg-background/70 px-2 py-1.5 text-[11px] leading-relaxed">
+        <div key={i} className="rounded bg-background/70 px-2 py-1.5 text-xs leading-relaxed">
           <div className="text-muted-foreground">{qa.question}</div>
           <div className="text-success">{qa.answer}</div>
           {qa.preview && (

@@ -101,9 +101,9 @@ export function ProviderSlashPopup({ onClose }: { onClose: () => void }) {
   return (
     <div className="flex max-h-72 flex-col overflow-hidden">
       <div className="flex items-center justify-between border-b border-border px-3 py-2">
-        <span className="text-[11px] font-medium text-muted-foreground">{t('chat.providerPopup.title')}</span>
+        <span className="text-xs font-medium text-muted-foreground">{t('chat.providerPopup.title')}</span>
         {isStreaming && (
-          <span className="text-[10px] text-amber-600 dark:text-amber-400">
+          <span className="text-xs text-amber-600 dark:text-amber-400">
             {t('chat.providerPopup.willSwitchAfterStreaming')}
           </span>
         )}
@@ -126,7 +126,7 @@ export function ProviderSlashPopup({ onClose }: { onClose: () => void }) {
               <ProviderLabel brandKey={item.brand} fallback={item.label} size={20} />
               <span className="flex min-w-0 shrink-0 items-center gap-1.5">
                 {item.id && item.keyName && (
-                  <span className="truncate text-[11px] text-muted-foreground">{item.keyName}</span>
+                  <span className="truncate text-xs text-muted-foreground">{item.keyName}</span>
                 )}
                 {isCurrent && <Check className="size-3.5 shrink-0 text-primary" />}
               </span>

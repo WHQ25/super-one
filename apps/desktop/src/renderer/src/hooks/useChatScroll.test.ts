@@ -20,7 +20,19 @@ let mockSessionState: Record<string, unknown> = {
 
 function createMockViewport() {
   const el = document.createElement('div')
-  const state = { scrollTop: 0, scrollHeight: 500, clientHeight: 300 }
+  // `scrollTopWrites` counts *writes*, not position changes: a redundant write
+  // that lands on the same offset still fires a `scroll` event and still drags
+  // the whole handleScroll / scroll-indicator cascade behind it.
+  // `maxScrollTopOverride` models a fractional layout: the browser rounds
+  // scrollHeight/clientHeight to integers, but clamps scrollTop against the real
+  // (sub-pixel) bottom. Leave it null for the integer-metrics default.
+  const state = {
+    scrollTop: 0,
+    scrollHeight: 500,
+    clientHeight: 300,
+    scrollTopWrites: 0,
+    maxScrollTopOverride: null as number | null,
+  }
   const contentChild = document.createElement('div')
   el.appendChild(contentChild)
   Object.defineProperty(el, 'scrollHeight', {
@@ -29,7 +41,10 @@ function createMockViewport() {
   })
   Object.defineProperty(el, 'scrollTop', {
     get: () => state.scrollTop,
-    set: (v: number) => { state.scrollTop = Math.min(v, state.scrollHeight - state.clientHeight) },
+    set: (v: number) => {
+      state.scrollTopWrites++
+      state.scrollTop = Math.min(v, state.maxScrollTopOverride ?? (state.scrollHeight - state.clientHeight))
+    },
     configurable: true,
   })
   Object.defineProperty(el, 'clientHeight', {
@@ -440,6 +455,76 @@ describe('useChatScroll', () => {
       ],
     }
     rerender()
+    expect(state.scrollTop).toBe(600)
+  })
+
+  it('skips the redundant scrollTop write when a resize lands on an already-pinned viewport', () => {
+    const { el, state } = createMockViewport()
+    const ref = { current: el }
+
+    const { rerender } = renderHook(() => useChatScroll({ scrollViewportRef: ref }))
+
+    // One streaming frame: content grows and `messages` churns, so the layout
+    // effect pins to the bottom.
+    state.scrollHeight = 800
+    mockSessionState = {
+      ...mockSessionState,
+      messages: [{ id: '1', role: 'assistant', status: 'streaming', content: [{ type: 'text', text: 'updated' }] }],
+    }
+    rerender()
+    expect(state.scrollTop).toBe(500)
+
+    const writesAfterMessagePin = state.scrollTopWrites
+
+    // Same frame: the ResizeObserver fires for the very same height change. We
+    // are already at the bottom, so this must not write again — every extra
+    // write costs another scroll-event cascade (handleScroll + indicator rAF +
+    // getBoundingClientRect), which is O(messages) of forced layout.
+    act(() => { fireResize() })
+
+    expect(state.scrollTop).toBe(500)
+    expect(state.scrollTopWrites).toBe(writesAfterMessagePin)
+  })
+
+  it('treats a sub-pixel gap as already pinned so fractional layouts keep the dedup', () => {
+    const { el, state } = createMockViewport()
+    const ref = { current: el }
+
+    const { rerender } = renderHook(() => useChatScroll({ scrollViewportRef: ref }))
+
+    // Fractional layout — routine here because responsive chat sizing and a
+    // non-integer DPR both produce sub-pixels. Reported metrics round *up* to
+    // 801/300 (computed max 501) while the real bottom sits at 500.2. A strict
+    // `scrollTop >= scrollHeight - clientHeight` can never hold in this shape,
+    // which would silently degrade the dedup back to "write every frame".
+    state.scrollHeight = 801
+    state.maxScrollTopOverride = 500.2
+    mockSessionState = {
+      ...mockSessionState,
+      messages: [{ id: '1', role: 'assistant', status: 'streaming', content: [{ type: 'text', text: 'updated' }] }],
+    }
+    rerender()
+    expect(state.scrollTop).toBe(500.2)
+
+    const writesAfterMessagePin = state.scrollTopWrites
+
+    act(() => { fireResize() })
+
+    expect(state.scrollTop).toBe(500.2)
+    expect(state.scrollTopWrites).toBe(writesAfterMessagePin)
+  })
+
+  it('still pins on resize when content grew after the layout effect ran', () => {
+    const { el, state } = createMockViewport()
+    const ref = { current: el }
+
+    renderHook(() => useChatScroll({ scrollViewportRef: ref }))
+
+    // Late growth (image decode, font swap) with no `messages` change: the
+    // ResizeObserver is the only path that can catch this, so it must write.
+    state.scrollHeight = 900
+    act(() => { fireResize() })
+
     expect(state.scrollTop).toBe(600)
   })
 

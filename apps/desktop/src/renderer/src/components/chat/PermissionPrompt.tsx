@@ -394,7 +394,7 @@ export function PermissionPrompt() {
                 <div className="min-w-0">
                   <div className="text-xs font-medium text-foreground">{message}</div>
                   {subtitle && (
-                    <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">{subtitle}</p>
+                    <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{subtitle}</p>
                   )}
                 </div>
               </div>
@@ -558,15 +558,15 @@ export function PermissionPrompt() {
               {isDebug && (
                 <div className="mb-2 space-y-1">
                   <div>
-                    <div className="mb-0.5 text-[10px] font-medium uppercase text-muted-foreground">{t('chat.permission.inputHeading')}</div>
-                    <div className="max-h-32 overflow-auto rounded bg-background/70 px-2 py-1.5 font-mono text-[11px] leading-relaxed text-foreground whitespace-pre-wrap break-all">
+                    <div className="mb-0.5 text-xs font-medium uppercase text-muted-foreground">{t('chat.permission.inputHeading')}</div>
+                    <div className="max-h-32 overflow-auto rounded bg-background/70 px-2 py-1.5 font-mono text-xs leading-relaxed text-foreground whitespace-pre-wrap break-all">
                       {JSON.stringify(input, null, 2)}
                     </div>
                   </div>
                   {suggestions && suggestions.length > 0 && (
                     <div>
-                      <div className="mb-0.5 text-[10px] font-medium uppercase text-muted-foreground">{t('chat.permission.suggestionsHeading')}</div>
-                      <div className="max-h-32 overflow-auto rounded bg-background/70 px-2 py-1.5 font-mono text-[11px] leading-relaxed text-foreground whitespace-pre-wrap break-all">
+                      <div className="mb-0.5 text-xs font-medium uppercase text-muted-foreground">{t('chat.permission.suggestionsHeading')}</div>
+                      <div className="max-h-32 overflow-auto rounded bg-background/70 px-2 py-1.5 font-mono text-xs leading-relaxed text-foreground whitespace-pre-wrap break-all">
                         {JSON.stringify(suggestions, null, 2)}
                       </div>
                     </div>
@@ -616,7 +616,7 @@ export function PermissionPrompt() {
                     onApprove={handleAllow}
                     onReject={handleDeny}
                     approveSuffix={selectedSuggestions.size > 0 && (
-                      <span className="ml-1 text-[10px] text-success-foreground/70">+{selectedSuggestions.size}</span>
+                      <span className="ml-1 text-xs text-success-foreground/70">+{selectedSuggestions.size}</span>
                     )}
                     feedback={{
                       value: feedback,
@@ -635,7 +635,7 @@ export function PermissionPrompt() {
                         <button
                           key={i}
                           type="button"
-                          className={`flex h-7 w-full cursor-pointer items-center gap-1.5 rounded border px-2.5 text-[11px] transition-colors ${
+                          className={`flex h-7 w-full cursor-pointer items-center gap-1.5 rounded border px-2.5 text-xs transition-colors ${
                             isSelected
                               ? (mode
                                   ? `border-transparent ${mode.activeBg} ${mode.color}`

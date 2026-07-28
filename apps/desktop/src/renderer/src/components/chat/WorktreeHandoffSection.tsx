@@ -60,13 +60,13 @@ export function WorktreeHandoffSection({ worktreePath, onDone }: WorktreeHandoff
 
   return (
     <div className="border-t p-3">
-      <div className="mb-1.5 flex items-center gap-1.5 text-[10px] uppercase text-muted-foreground">
+      <div className="mb-1.5 flex items-center gap-1.5 text-xs uppercase text-muted-foreground">
         <ArrowDownToLine className="size-3" />
         {t('chat.worktree.handoffHeading')}
       </div>
-      <p className="mb-2 text-[11px] text-muted-foreground">{t('chat.worktree.handoffInfo')}</p>
+      <p className="mb-2 text-xs text-muted-foreground">{t('chat.worktree.handoffInfo')}</p>
       {(loading || hasChanges) && (
-        <p className="mb-2 flex items-center gap-1.5 text-[10px] text-muted-foreground">
+        <p className="mb-2 flex items-center gap-1.5 text-xs text-muted-foreground">
           {loading ? <Loader2 className="size-3 animate-spin" /> : <DiffStat stat={stat!} />}
         </p>
       )}

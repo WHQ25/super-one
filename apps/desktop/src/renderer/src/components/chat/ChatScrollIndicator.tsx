@@ -112,6 +112,20 @@ function ChatScrollIndicatorImpl({ entries, hasCompact, compactExpanded, compact
     }
   }, [computeActive, viewportRef])
 
+  // Drop detached / out-of-set element refs when the outline changes (session switch,
+  // compact expand, lazy mount). Prevents strong-retaining unmounted message DOM.
+  useEffect(() => {
+    const cache = elCacheRef.current
+    const live = new Set(entries.map((e) => e.id))
+    for (const id of cache.keys()) {
+      if (!live.has(id)) cache.delete(id)
+      else {
+        const el = cache.get(id)
+        if (el && !el.isConnected) cache.delete(id)
+      }
+    }
+  }, [entries])
+
   // Recompute the active tick when a turn is added/removed (entries identity is stable during
   // streaming after the outline memo fix, so this no longer fires on every content delta).
   useEffect(() => {

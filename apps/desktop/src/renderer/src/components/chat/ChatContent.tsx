@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect, useLayoutEffect, useMemo, useCallback, lazy, Suspense } from 'react'
+import { useRef, useState, useEffect, useLayoutEffect, useMemo, useCallback, lazy, Suspense, memo } from 'react'
 import { useChatStore, useActiveSession, useIsRemoteLocked, useSessionScope } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 import { useShallow } from 'zustand/react/shallow'
@@ -56,11 +56,71 @@ function createChatDensityStyle(scale: number): React.CSSProperties {
   ) as React.CSSProperties
 }
 
-export function ChatContent({ scrollViewportRef, showScrollButton = false, scrollToBottom, stopAutoScroll, foreground = true }: ChatContentProps) {
+/**
+ * Composer stack — owns NO messages subscription. Stream ticks that only update
+ * transcript text should not re-render TipTap / status chrome.
+ */
+const ChatComposerShell = memo(function ChatComposerShell() {
+  const worktreeRemoved = useActiveSession((s) => s._worktreeRemoved)
+  const disconnectRemoteSessionAction = useChatStore((s) => s.disconnectRemoteSession)
+  const isRemoteLocked = useIsRemoteLocked()
+
+  if (worktreeRemoved) {
+    return (
+      <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-0.5 px-4 py-3 text-sm text-muted-foreground">
+        <GitFork className="size-3.5 shrink-0" />
+        <span>Worktree has been removed.</span>
+        <span>This session is now <em>READ ONLY</em>.</span>
+      </div>
+    )
+  }
+  if (isRemoteLocked) {
+    return (
+      <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-0.5 px-4 py-3 text-sm text-muted-foreground">
+        <Smartphone className="size-3.5 shrink-0" />
+        <span>Remote session active — observation mode.</span>
+        <button
+          onClick={disconnectRemoteSessionAction}
+          className="text-foreground underline underline-offset-2 hover:opacity-80"
+        >
+          Disconnect
+        </button>
+      </div>
+    )
+  }
+  return (
+    <>
+      <PermissionPrompt />
+      <AskUserQuestionPrompt />
+      <TodoPopup />
+      <ChatInput />
+      <ChatStatusBar />
+    </>
+  )
+})
+
+interface ChatTranscriptProps {
+  scrollViewportRef: React.RefObject<HTMLDivElement | null>
+  showScrollButton?: boolean
+  scrollToBottom?: () => void
+  stopAutoScroll?: () => void
+  liquidGlass: boolean
+}
+
+/**
+ * Transcript list — sole owner of the messages subscription for the chat pane.
+ */
+function ChatTranscript({
+  scrollViewportRef,
+  showScrollButton = false,
+  scrollToBottom,
+  stopAutoScroll,
+  liquidGlass,
+}: ChatTranscriptProps) {
   const scope = useSessionScope()
   const {
-    messages, isCompacting, compactError, rateLimitInfo, apiRetry, modelFallback, pendingPlanApproval,
-    displayedSessionId, historyHydrated, worktreeRemoved,
+    messages, isCompacting, compactError, rateLimitInfo, apiRetry, modelFallback,
+    displayedSessionId, historyHydrated,
     sessionStatus, lastAssistantMessageId, queuedMessages, awaitingAssistantReply,
   } = useActiveSession(useShallow((s) => ({
     messages: s.messages,
@@ -69,52 +129,20 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
     rateLimitInfo: s.rateLimitInfo,
     apiRetry: s.apiRetry,
     modelFallback: s.modelFallback,
-    pendingPlanApproval: s.pendingPlanApproval,
     displayedSessionId: scope?.sessionId ?? s._activeSessionId,
     historyHydrated: s._historyHydrated,
-    worktreeRemoved: s._worktreeRemoved,
     sessionStatus: s.status,
     lastAssistantMessageId: s.lastAssistantMessageId,
     queuedMessages: s.queuedMessages,
     awaitingAssistantReply: s.awaitingAssistantReply,
   })))
 
-  // ChatContent is the single render root for a visible session — mounted once per
-  // single-mode pane, per mosaic tile, and per mini window. Reporting foreground here
-  // (rather than in mosaic/mini-window-specific code) covers all three for free.
-  useEffect(() => {
-    if (!displayedSessionId || !foreground) return
-    void window.agent.setSessionForeground(displayedSessionId, true)
-    return () => {
-      void window.agent.setSessionForeground(displayedSessionId, false)
-    }
-  }, [displayedSessionId, foreground])
-
-  const liquidGlass = useAppStore((s) => s.liquidGlass)
-  const { editQueuedMessage, deleteQueuedMessage, disconnectRemoteSession, dismissCompactError } = useChatStore(useShallow((s) => ({
+  const { editQueuedMessage, deleteQueuedMessage, dismissCompactError } = useChatStore(useShallow((s) => ({
     editQueuedMessage: s.editQueuedMessage,
     deleteQueuedMessage: s.deleteQueuedMessage,
-    disconnectRemoteSession: s.disconnectRemoteSession,
     dismissCompactError: s.dismissCompactError,
   })))
-  const isRemoteLocked = useIsRemoteLocked()
-  const [fullscreenPlan, setFullscreenPlan] = useState<{
-    text: string
-    onApprovePlan?: () => void
-    onRejectPlan?: (feedback?: string) => void
-    planApproval?: CodexPlanApprovalState
-  } | null>(null)
-  const planFullscreenCtx = useMemo(() => ({
-    open: (
-      text: string,
-      actions?: { onApprove?: () => void; onReject?: (feedback?: string) => void; planApproval?: CodexPlanApprovalState },
-    ) => setFullscreenPlan({
-      text,
-      onApprovePlan: actions?.onApprove,
-      onRejectPlan: actions?.onReject,
-      planApproval: actions?.planApproval,
-    }),
-  }), [])
+
   const [dismissedRateLimitKey, setDismissedRateLimitKey] = useState<string | null>(null)
   const rateLimitInfoKey = useMemo(
     () => rateLimitInfo
@@ -124,7 +152,6 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
   )
   const showRateLimitIndicator = !!rateLimitInfo && rateLimitInfoKey !== dismissedRateLimitKey
 
-  const containerRef = useRef<HTMLDivElement>(null)
   const prevScrollHeightRef = useRef(0)
   const [expandLevel, setExpandLevel] = useState(0)
   const messagesLen = messages.length
@@ -164,6 +191,29 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
     return () => observer.disconnect()
   }, [hasMore, visibleMessages.length, scrollViewportRef])
 
+  // Memory: when user returns to bottom after scroll-up load-more, shrink the
+  // reverse window so off-screen history unmounts (not full virtualization).
+  useEffect(() => {
+    const viewport = scrollViewportRef.current
+    if (!viewport) return
+    let raf = 0
+    const onScroll = (): void => {
+      if (raf) return
+      raf = requestAnimationFrame(() => {
+        raf = 0
+        if (sessionStatus === 'streaming') return
+        const nearBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 96
+        if (!nearBottom) return
+        setRenderCount((c) => (c > INITIAL_RENDER_COUNT ? INITIAL_RENDER_COUNT : c))
+      })
+    }
+    viewport.addEventListener('scroll', onScroll, { passive: true })
+    return () => {
+      viewport.removeEventListener('scroll', onScroll)
+      if (raf) cancelAnimationFrame(raf)
+    }
+  }, [scrollViewportRef, sessionStatus, displayedSessionId])
+
   const outline = useMemo(
     () => extractTurnOutline(visibleMessages),
     // Recompute only when the visible set changes (add/remove/compact expand) or the turn
@@ -185,8 +235,6 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
   }, [compactIndices.length, scrollViewportRef])
   const [jumpNonce, setJumpNonce] = useState(0)
   const pendingScrollIdRef = useRef<string | null>(null)
-  // Read messages/compactIndices through refs so jumpToMessage keeps a stable identity across
-  // streaming deltas — otherwise it would bust the memoized ChatScrollIndicator every delta.
   const messagesRef = useRef(messages)
   messagesRef.current = messages
   const compactIndicesRef = useRef(compactIndices)
@@ -217,6 +265,139 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
     return () => cancelAnimationFrame(raf)
   }, [jumpNonce, scrollViewportRef])
 
+  useLayoutEffect(() => {
+    const viewport = scrollViewportRef.current
+    if (!viewport || prevScrollHeightRef.current === 0) return
+    const delta = viewport.scrollHeight - prevScrollHeightRef.current
+    viewport.scrollTop += delta
+    prevScrollHeightRef.current = 0
+  }, [expandLevel, scrollViewportRef])
+
+  return (
+    <div className="relative min-w-0 flex-1 overflow-hidden">
+      {messages.length === 0 && historyHydrated && sessionStatus !== 'streaming' && sessionStatus !== 'background' && !awaitingAssistantReply ? (
+        <ChatSuggestions />
+      ) : (
+        <ScrollArea key={displayedSessionId ?? 'default'} className="chat-scroll-area h-full min-w-0 animate-[fade-in_150ms_ease-out]" viewportRef={scrollViewportRef}>
+          <SelectionContextMenuZone className="mx-auto flex w-full min-w-0 max-w-3xl flex-col gap-1 p-3 @lg:gap-1.5 @lg:p-3.5 @2xl:gap-1.5 @2xl:p-4">
+            {hasMore && <div ref={sentinelRef} className="h-px" style={{ overflowAnchor: 'none' }} />}
+            {renderedMessages.map((msg) => {
+              const compactInfo = parseCompactMarker(msg)
+              if (compactInfo) {
+                const origIdx = messages.indexOf(msg)
+                const rank = compactIndices.length - 1 - compactIndices.indexOf(origIdx)
+                const isExpanded = rank < expandLevel
+                return (
+                  <CompactIndicator
+                    key={msg.id}
+                    trigger={compactInfo.trigger}
+                    preTokens={compactInfo.preTokens}
+                    postTokens={compactInfo.postTokens}
+                    durationMs={compactInfo.durationMs}
+                    expanded={isExpanded}
+                    onToggle={() => {
+                      prevScrollHeightRef.current = scrollViewportRef.current?.scrollHeight ?? 0
+                      setExpandLevel(isExpanded ? rank : rank + 1)
+                    }}
+                  />
+                )
+              }
+              return (
+                <div key={msg.id} data-message-id={msg.id} className="chat-message-wrapper">
+                  <ChatMessage message={msg} sessionStatus={sessionStatus} isLastAssistant={msg.id === lastAssistantMessageId} />
+                </div>
+              )
+            })}
+            {queuedMessages.map((msg) => (
+              <div key={msg.id} className="group/queued chat-message-wrapper opacity-50">
+                <ChatMessage message={msg} sessionStatus={sessionStatus} isLastAssistant={false} hideUserActions />
+                <div className="flex justify-end pr-1">
+                  <div className="-mt-0.5 flex items-center gap-1 opacity-0 transition-opacity group-hover/queued:opacity-100">
+                    <button onClick={() => editQueuedMessage(msg.id)} className="cursor-pointer rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground">
+                      <PenLine className="size-3" />
+                    </button>
+                    <button onClick={() => deleteQueuedMessage(msg.id)} className="cursor-pointer rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground">
+                      <Trash2 className="size-3" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+            {isCompacting && <CompactingIndicator />}
+            {!isCompacting && compactError && <CompactErrorIndicator error={compactError} onDismiss={dismissCompactError} />}
+            {apiRetry && <ApiRetryIndicator info={apiRetry} />}
+            {modelFallback && <ModelFallbackIndicator info={modelFallback} />}
+            {showRateLimitIndicator && rateLimitInfo && (
+              <RateLimitIndicator
+                info={rateLimitInfo}
+                onDismiss={() => {
+                  if (rateLimitInfoKey) setDismissedRateLimitKey(rateLimitInfoKey)
+                }}
+              />
+            )}
+          </SelectionContextMenuZone>
+        </ScrollArea>
+      )}
+      {messages.length > 0 && (
+        <ChatScrollIndicator entries={outline} hasCompact={hasCompact} compactExpanded={compactExpanded} compactSplit={compactSplit} viewportRef={scrollViewportRef} onJump={jumpToMessage} onToggleCompact={toggleCompact} />
+      )}
+      {!liquidGlass && <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-6 bg-linear-to-t from-card to-transparent" />}
+      <AnimatePresence>
+        {showScrollButton && scrollToBottom && messages.length > 0 && (
+          <motion.button
+            onClick={scrollToBottom}
+            className="absolute bottom-3 left-1/2 z-10 flex size-7 -translate-x-1/2 cursor-pointer items-center justify-center rounded-full border border-border bg-background text-muted-foreground shadow-sm transition-colors hover:text-foreground"
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.8 }}
+            transition={{ duration: 0.15 }}
+          >
+            <ArrowDown className="size-3.5" />
+          </motion.button>
+        )}
+      </AnimatePresence>
+    </div>
+  )
+}
+
+export function ChatContent({ scrollViewportRef, showScrollButton = false, scrollToBottom, stopAutoScroll, foreground = true }: ChatContentProps) {
+  const scope = useSessionScope()
+  const { pendingPlanApproval, displayedSessionId } = useActiveSession(useShallow((s) => ({
+    pendingPlanApproval: s.pendingPlanApproval,
+    displayedSessionId: scope?.sessionId ?? s._activeSessionId,
+  })))
+
+  // ChatContent is the single render root for a visible session — mounted once per
+  // single-mode pane, per mosaic tile, and per mini window. Reporting foreground here
+  // (rather than in mosaic/mini-window-specific code) covers all three for free.
+  useEffect(() => {
+    if (!displayedSessionId || !foreground) return
+    void window.agent.setSessionForeground(displayedSessionId, true)
+    return () => {
+      void window.agent.setSessionForeground(displayedSessionId, false)
+    }
+  }, [displayedSessionId, foreground])
+
+  const liquidGlass = useAppStore((s) => s.liquidGlass)
+  const [fullscreenPlan, setFullscreenPlan] = useState<{
+    text: string
+    onApprovePlan?: () => void
+    onRejectPlan?: (feedback?: string) => void
+    planApproval?: CodexPlanApprovalState
+  } | null>(null)
+  const planFullscreenCtx = useMemo(() => ({
+    open: (
+      text: string,
+      actions?: { onApprove?: () => void; onReject?: (feedback?: string) => void; planApproval?: CodexPlanApprovalState },
+    ) => setFullscreenPlan({
+      text,
+      onApprovePlan: actions?.onApprove,
+      onRejectPlan: actions?.onReject,
+      planApproval: actions?.planApproval,
+    }),
+  }), [])
+
+  const containerRef = useRef<HTMLDivElement>(null)
   const computeAutoScale = useCallback((w: number) => w >= 672 ? 1.15 : w >= 512 ? 1.1 : 1, [])
   const [autoScale, setAutoScale] = useState(1)
   const [manualScaleOffset, setManualScaleOffset] = useState(0)
@@ -246,14 +427,6 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
       else setManualScaleOffset((v) => Math.max(v - 0.05, -0.5))
     })
   }, [])
-
-  useLayoutEffect(() => {
-    const viewport = scrollViewportRef.current
-    if (!viewport || prevScrollHeightRef.current === 0) return
-    const delta = viewport.scrollHeight - prevScrollHeightRef.current
-    viewport.scrollTop += delta
-    prevScrollHeightRef.current = 0
-  }, [expandLevel])
 
   const [fork, setFork] = useState<ForkViewState | null>(null)
   const forkNav = useMemo(() => ({
@@ -311,116 +484,15 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
         <PlanApprovalPrompt />
       ) : (
         <>
-          <div className="relative min-w-0 flex-1 overflow-hidden">
-            {messages.length === 0 && historyHydrated && sessionStatus !== 'streaming' && sessionStatus !== 'background' && !awaitingAssistantReply ? (
-              <ChatSuggestions />
-            ) : (
-              <ScrollArea key={displayedSessionId ?? 'default'} className="chat-scroll-area h-full min-w-0 animate-[fade-in_150ms_ease-out]" viewportRef={scrollViewportRef}>
-                <SelectionContextMenuZone className="mx-auto flex w-full min-w-0 max-w-3xl flex-col gap-1 p-3 @lg:gap-1.5 @lg:p-3.5 @2xl:gap-1.5 @2xl:p-4">
-                  {hasMore && <div ref={sentinelRef} className="h-px" style={{ overflowAnchor: 'none' }} />}
-                  {renderedMessages.map((msg) => {
-                    const compactInfo = parseCompactMarker(msg)
-                    if (compactInfo) {
-                      const origIdx = messages.indexOf(msg)
-                      const rank = compactIndices.length - 1 - compactIndices.indexOf(origIdx)
-                      const isExpanded = rank < expandLevel
-                      return (
-                        <CompactIndicator
-                          key={msg.id}
-                          trigger={compactInfo.trigger}
-                          preTokens={compactInfo.preTokens}
-                          postTokens={compactInfo.postTokens}
-                          durationMs={compactInfo.durationMs}
-                          expanded={isExpanded}
-                          onToggle={() => {
-                            prevScrollHeightRef.current = scrollViewportRef.current?.scrollHeight ?? 0
-                            setExpandLevel(isExpanded ? rank : rank + 1)
-                          }}
-                        />
-                      )
-                    }
-                    return (
-                      <div key={msg.id} data-message-id={msg.id} className="chat-message-wrapper">
-                        <ChatMessage message={msg} sessionStatus={sessionStatus} isLastAssistant={msg.id === lastAssistantMessageId} />
-                      </div>
-                    )
-                  })}
-                  {queuedMessages.map((msg) => (
-                    <div key={msg.id} className="group/queued chat-message-wrapper opacity-50">
-                      <ChatMessage message={msg} sessionStatus={sessionStatus} isLastAssistant={false} hideUserActions />
-                      <div className="flex justify-end pr-1">
-                        <div className="-mt-0.5 flex items-center gap-1 opacity-0 transition-opacity group-hover/queued:opacity-100">
-                          <button onClick={() => editQueuedMessage(msg.id)} className="cursor-pointer rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground">
-                            <PenLine className="size-3" />
-                          </button>
-                          <button onClick={() => deleteQueuedMessage(msg.id)} className="cursor-pointer rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground">
-                            <Trash2 className="size-3" />
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                  {isCompacting && <CompactingIndicator />}
-                  {!isCompacting && compactError && <CompactErrorIndicator error={compactError} onDismiss={dismissCompactError} />}
-                  {apiRetry && <ApiRetryIndicator info={apiRetry} />}
-                  {modelFallback && <ModelFallbackIndicator info={modelFallback} />}
-                  {showRateLimitIndicator && rateLimitInfo && (
-                    <RateLimitIndicator
-                      info={rateLimitInfo}
-                      onDismiss={() => {
-                        if (rateLimitInfoKey) setDismissedRateLimitKey(rateLimitInfoKey)
-                      }}
-                    />
-                  )}
-                </SelectionContextMenuZone>
-              </ScrollArea>
-            )}
-            {messages.length > 0 && (
-              <ChatScrollIndicator entries={outline} hasCompact={hasCompact} compactExpanded={compactExpanded} compactSplit={compactSplit} viewportRef={scrollViewportRef} onJump={jumpToMessage} onToggleCompact={toggleCompact} />
-            )}
-            {!liquidGlass && <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-6 bg-linear-to-t from-card to-transparent" />}
-            <AnimatePresence>
-              {showScrollButton && scrollToBottom && messages.length > 0 && (
-                <motion.button
-                  onClick={scrollToBottom}
-                  className="absolute bottom-3 left-1/2 z-10 flex size-7 -translate-x-1/2 cursor-pointer items-center justify-center rounded-full border border-border bg-background text-muted-foreground shadow-sm transition-colors hover:text-foreground"
-                  initial={{ opacity: 0, scale: 0.8 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.8 }}
-                  transition={{ duration: 0.15 }}
-                >
-                  <ArrowDown className="size-3.5" />
-                </motion.button>
-              )}
-            </AnimatePresence>
-          </div>
+          <ChatTranscript
+            scrollViewportRef={scrollViewportRef}
+            showScrollButton={showScrollButton}
+            scrollToBottom={scrollToBottom}
+            stopAutoScroll={stopAutoScroll}
+            liquidGlass={liquidGlass}
+          />
           <div className="mx-auto w-full min-w-0 max-w-3xl">
-            {worktreeRemoved ? (
-              <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-0.5 px-4 py-3 text-sm text-muted-foreground">
-                <GitFork className="size-3.5 shrink-0" />
-                <span>Worktree has been removed.</span>
-                <span>This session is now <em>READ ONLY</em>.</span>
-              </div>
-            ) : isRemoteLocked ? (
-              <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-0.5 px-4 py-3 text-sm text-muted-foreground">
-                <Smartphone className="size-3.5 shrink-0" />
-                <span>Remote session active — observation mode.</span>
-                <button
-                  onClick={disconnectRemoteSession}
-                  className="text-foreground underline underline-offset-2 hover:opacity-80"
-                >
-                  Disconnect
-                </button>
-              </div>
-            ) : (
-              <>
-                <PermissionPrompt />
-                <AskUserQuestionPrompt />
-                <TodoPopup />
-                <ChatInput />
-                <ChatStatusBar />
-              </>
-            )}
+            <ChatComposerShell />
           </div>
         </>
       )}

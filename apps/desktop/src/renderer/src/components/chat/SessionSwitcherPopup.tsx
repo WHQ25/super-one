@@ -219,14 +219,22 @@ export function SessionSwitcherPopup({ scopeRef }: SessionSwitcherPopupProps) {
     if (!isOpen) frozenOrderRef.current = null
   }, [isOpen])
 
-  const projectSessions = useChatStore((s) => s.projectSessions)
-  const remoteSessions = useChatStore((s) => s.remoteSessions)
-  const activeProject = useChatStore((s) => s.activeProject)
-  const previousFocusedSession = useChatStore((s) => s._previousFocusedSession)
-  const agentTitles = useChatStore((s) => s.agentTitles)
+  // When closed, selectors return stable sentinels so stream-driven projectSessions
+  // identity churn does not re-render this always-mounted host (getItems still uses getState).
+  const projectSessions = useChatStore((s) => (isOpen ? s.projectSessions : null))
+  const remoteSessions = useChatStore((s) => (isOpen ? s.remoteSessions : null))
+  const activeProject = useChatStore((s) => (isOpen ? s.activeProject : null))
+  const previousFocusedSession = useChatStore((s) => (isOpen ? s._previousFocusedSession : null))
+  const agentTitles = useChatStore((s) => (isOpen ? s.agentTitles : null))
   const internalRows = useMemo<ActiveRow[]>(() => {
-    if (!isOpen) return EMPTY_ROWS
-    const fresh = collectAllActiveRows({ projectSessions, remoteSessions, activeProject, previousFocusedSession, agentTitles })
+    if (!isOpen || !projectSessions || !remoteSessions) return EMPTY_ROWS
+    const fresh = collectAllActiveRows({
+      projectSessions,
+      remoteSessions,
+      activeProject,
+      previousFocusedSession,
+      agentTitles: agentTitles ?? {},
+    })
     const order = frozenOrderRef.current
     if (!order) return fresh
     const byKey = new Map(fresh.map((r) => [rowKey(r), r]))

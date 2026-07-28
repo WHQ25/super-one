@@ -63,12 +63,6 @@ const COLLAB_TOOLS = new Set([
   'session_collab_wait',
 ])
 
-function truncateOneLine(text: string, max = 72): string {
-  const one = text.replace(/\s+/g, ' ').trim()
-  if (!one) return ''
-  return one.length > max ? `${one.slice(0, max)}…` : one
-}
-
 function parseCollabResult(result: string | null | undefined): Record<string, unknown> | null {
   if (!result) return null
   try {
@@ -167,6 +161,76 @@ function requestSummary(
   return agentCountLabel(source.length)
 }
 
+/** Collapsed to 3 lines; click the body to reveal full message text. */
+function CollabMessageBody({ content }: { content: string }) {
+  const { t } = useTranslation()
+  const [open, setOpen] = useState(false)
+  const textRef = useRef<HTMLDivElement>(null)
+  const [clamped, setClamped] = useState(false)
+
+  useLayoutEffect(() => {
+    if (open) {
+      setClamped(false)
+      return
+    }
+    const el = textRef.current
+    if (!el) return
+    // line-clamp is active; overflow means expand control is useful
+    setClamped(el.scrollHeight > el.clientHeight + 1)
+  }, [content, open])
+
+  return (
+    <div className="min-w-0 flex-1">
+      <div
+        ref={textRef}
+        role={clamped || open ? 'button' : undefined}
+        tabIndex={clamped || open ? 0 : undefined}
+        className={cn(
+          'whitespace-pre-wrap break-words text-foreground',
+          !open && 'line-clamp-3',
+          (clamped || open) && 'cursor-pointer',
+        )}
+        onClick={(e) => {
+          if (!clamped && !open) return
+          e.stopPropagation()
+          setOpen((v) => !v)
+        }}
+        onKeyDown={(e) => {
+          if ((!clamped && !open) || (e.key !== 'Enter' && e.key !== ' ')) return
+          e.preventDefault()
+          e.stopPropagation()
+          setOpen((v) => !v)
+        }}
+      >
+        {content}
+      </div>
+      {(clamped || open) && (
+        <button
+          type="button"
+          className="mt-0.5 text-xs text-muted-foreground hover:text-foreground"
+          onClick={(e) => {
+            e.stopPropagation()
+            setOpen((v) => !v)
+          }}
+        >
+          {open
+            ? t('chat.toolBlock.collab.showLessMessage')
+            : t('chat.toolBlock.collab.showFullMessage')}
+        </button>
+      )}
+    </div>
+  )
+}
+
+type CollabDetailRow = { label: string; value: string; sessionId?: string }
+type CollabInboxMessage = {
+  from?: string
+  fromSessionId?: string
+  to?: string
+  toSessionId?: string
+  content: string
+}
+
 function SessionCollabToolBlock({
   toolName,
   params,
@@ -191,7 +255,9 @@ function SessionCollabToolBlock({
   let summaryPeer: { title: string; sessionId?: string } | null = null
   /** Optional trailing text after the peer title (e.g. send prompt). */
   let summarySuffix = ''
-  let detailRows: Array<{ label: string; value: string; sessionId?: string }> = []
+  let detailRows: CollabDetailRow[] = []
+  /** Retrieve success: message cards with clampable bodies. */
+  let inboxMessages: CollabInboxMessage[] = []
   let expandable = false
   /** When start succeeds, header title can jump to the new session. */
   let headerSessionId: string | undefined
@@ -283,89 +349,59 @@ function SessionCollabToolBlock({
     const peer = peerTitleFromRecord(to)
     const peerSid = peerSessionIdFromRecord(to)
       ?? (typeof parsed?.peerSessionId === 'string' ? parsed.peerSessionId : undefined)
-    const prompt = truncateOneLine(String(params.content ?? ''))
+    // Header: label + peer only — message body lives in the expandable panel.
     if (peer) {
       summaryPeer = { title: peer, sessionId: peerSid }
-      summarySuffix = prompt
-    } else {
-      summary = prompt
     }
     label = isStreaming
       ? t('chat.toolBlock.collab.sendingMessageTo')
       : t('chat.toolBlock.collab.messageSent')
-    if (String(params.content ?? '') && !isStreaming) {
+    const content = String(params.content ?? '')
+    if (content && !isStreaming) {
       expandable = true
-      detailRows = [
-        ...(peer
-          ? [{ label: t('chat.toolBlock.collab.fields.to'), value: peer, sessionId: peerSid }]
-          : []),
-        { label: t('chat.toolBlock.collab.fields.message'), value: String(params.content ?? '') },
-      ]
+      inboxMessages = [{
+        to: peer || undefined,
+        toSessionId: peerSid,
+        content,
+      }]
     }
   } else if (isRetrieve) {
     Icon = Inbox
     const messages = Array.isArray(parsed?.messages) ? parsed.messages : []
-    const peers = Array.isArray(parsed?.peers) ? parsed.peers : []
-    const singlePeer = peers.length === 1 && typeof peers[0] === 'object'
-      ? peers[0] as Record<string, unknown>
+    // Optional remaining-in-mailbox count (legacy wait / future fields). Hide when 0.
+    const remainingRaw = parsed?.remaining
+    const remaining = typeof remainingRaw === 'number' && Number.isFinite(remainingRaw)
+      ? Math.max(0, Math.floor(remainingRaw))
       : null
-    const peerSummary = (() => {
-      if (singlePeer) return peerTitleFromRecord(singlePeer)
-      if (peers.length > 1) return t('chat.toolBlock.collab.agentCount', { count: peers.length })
-      const n = Array.isArray(params.credentials) ? params.credentials.length : 0
-      return n > 0 ? t('chat.toolBlock.collab.agentCount', { count: n }) : ''
-    })()
-    const singlePeerSid = peerSessionIdFromRecord(singlePeer)
+
     if (isStreaming) {
       label = t('chat.toolBlock.collab.retrievingMessages')
-      if (singlePeer && peerSummary) {
-        summaryPeer = { title: peerSummary, sessionId: singlePeerSid }
-      } else {
-        summary = peerSummary
-      }
+      summary = ''
     } else if (status === 'empty' || status === 'timeout' || messages.length === 0) {
       // `timeout` kept for legacy session_collab_wait transcripts
       label = t('chat.toolBlock.collab.noMessages')
-      if (singlePeer && peerSummary) {
-        summaryPeer = { title: peerSummary, sessionId: singlePeerSid }
-      } else {
-        summary = peerSummary
-      }
+      // Don't surface "0 remaining" — empty inbox is already the label.
+      summary = remaining != null && remaining > 0
+        ? t('chat.toolBlock.collab.remainingCount', { count: remaining })
+        : ''
     } else {
-      label = t('chat.toolBlock.collab.messageReceived')
-      // Prefer message sender for jump target when a single reply arrived.
-      const first = messages[0] as Record<string, unknown> | undefined
-      const firstFrom = first?.from && typeof first.from === 'object'
-        ? first.from as Record<string, unknown>
-        : null
-      if (messages.length === 1 && firstFrom) {
-        const fromTitle = peerTitleFromRecord(firstFrom)
-        summaryPeer = {
-          title: fromTitle || peerSummary,
-          sessionId: peerSessionIdFromRecord(firstFrom) ?? singlePeerSid,
-        }
-      } else if (singlePeer && peerSummary) {
-        summaryPeer = { title: peerSummary, sessionId: singlePeerSid }
-      } else {
-        summary = peerSummary || t('chat.toolBlock.collab.messageCount', { count: messages.length })
-      }
+      // Lead with how many messages arrived this retrieve — not peer count / remaining.
+      label = t('chat.toolBlock.collab.receivedMessageCount', { count: messages.length })
+      summary = remaining != null && remaining > 0
+        ? t('chat.toolBlock.collab.remainingCount', { count: remaining })
+        : ''
       expandable = true
-      detailRows = messages.flatMap((raw, index) => {
+      inboxMessages = messages.map((raw) => {
         const msg = raw as Record<string, unknown>
         const fromRec = msg.from && typeof msg.from === 'object'
           ? msg.from as Record<string, unknown>
           : null
-        const who = peerTitleFromRecord(fromRec)
-        const whoSid = peerSessionIdFromRecord(fromRec)
-          ?? (typeof msg.fromSessionId === 'string' ? msg.fromSessionId : undefined)
-        const content = typeof msg.content === 'string' ? msg.content : ''
-        const suffix = messages.length > 1 ? ` (${index + 1})` : ''
-        return [
-          ...(who
-            ? [{ label: `${t('chat.toolBlock.collab.fields.from')}${suffix}`, value: who, sessionId: whoSid }]
-            : []),
-          { label: `${t('chat.toolBlock.collab.fields.message')}${suffix}`, value: content },
-        ]
+        return {
+          from: peerTitleFromRecord(fromRec) || undefined,
+          fromSessionId: peerSessionIdFromRecord(fromRec)
+            ?? (typeof msg.fromSessionId === 'string' ? msg.fromSessionId : undefined),
+          content: typeof msg.content === 'string' ? msg.content : '',
+        }
       })
     }
   }
@@ -394,7 +430,8 @@ function SessionCollabToolBlock({
     </>
   )
 
-  if (!expandable || detailRows.length === 0) {
+  const hasExpandBody = expandable && (detailRows.length > 0 || inboxMessages.length > 0)
+  if (!hasExpandBody) {
     return (
       <div className="tool-node my-0.5 rounded bg-muted/20">
         <div className="flex items-center gap-1.5 px-2 py-1.5 text-xs">{header}</div>
@@ -416,23 +453,70 @@ function SessionCollabToolBlock({
         style={{ gridTemplateRows: expanded ? '1fr' : '0fr' }}
       >
         <div className="overflow-hidden">
-          <div className="space-y-1 border-t border-border/40 px-2 py-2 text-xs">
-            {detailRows.map((row) => (
-              <div key={`${row.label}:${row.value.slice(0, 24)}`} className="flex items-baseline gap-2">
-                <span className="w-24 shrink-0 text-muted-foreground">{row.label}</span>
-                {row.sessionId ? (
-                  <SessionTitleLink
-                    sessionId={row.sessionId}
-                    className="min-w-0 flex-1 break-words text-foreground"
-                  >
-                    {row.value}
-                  </SessionTitleLink>
-                ) : (
-                  <span className="min-w-0 flex-1 whitespace-pre-wrap break-words text-foreground">{row.value}</span>
-                )}
-              </div>
-            ))}
-          </div>
+          {inboxMessages.length > 0 ? (
+            <div className="space-y-2 border-t border-border/40 px-2 py-2 text-xs">
+              {inboxMessages.map((msg, index) => (
+                <div
+                  key={`${msg.fromSessionId ?? msg.toSessionId ?? msg.from ?? msg.to ?? 'msg'}-${index}`}
+                  className={cn(
+                    'space-y-1',
+                    index > 0 && 'border-t border-border/30 pt-2',
+                  )}
+                >
+                  {msg.to && (
+                    <div className="flex items-baseline gap-2">
+                      <span className="w-12 shrink-0 text-muted-foreground">
+                        {t('chat.toolBlock.collab.fields.to')}
+                      </span>
+                      <SessionTitleLink
+                        sessionId={msg.toSessionId}
+                        className="min-w-0 flex-1 break-words font-medium text-foreground"
+                      >
+                        {msg.to}
+                      </SessionTitleLink>
+                    </div>
+                  )}
+                  {msg.from && (
+                    <div className="flex items-baseline gap-2">
+                      <span className="w-12 shrink-0 text-muted-foreground">
+                        {t('chat.toolBlock.collab.fields.from')}
+                      </span>
+                      <SessionTitleLink
+                        sessionId={msg.fromSessionId}
+                        className="min-w-0 flex-1 break-words font-medium text-foreground"
+                      >
+                        {msg.from}
+                      </SessionTitleLink>
+                    </div>
+                  )}
+                  <div className="flex items-start gap-2">
+                    <span className="w-12 shrink-0 pt-0.5 text-muted-foreground">
+                      {t('chat.toolBlock.collab.fields.message')}
+                    </span>
+                    <CollabMessageBody content={msg.content} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="space-y-1 border-t border-border/40 px-2 py-2 text-xs">
+              {detailRows.map((row) => (
+                <div key={`${row.label}:${row.value.slice(0, 24)}`} className="flex items-baseline gap-2">
+                  <span className="w-24 shrink-0 text-muted-foreground">{row.label}</span>
+                  {row.sessionId ? (
+                    <SessionTitleLink
+                      sessionId={row.sessionId}
+                      className="min-w-0 flex-1 break-words text-foreground"
+                    >
+                      {row.value}
+                    </SessionTitleLink>
+                  ) : (
+                    <span className="min-w-0 flex-1 whitespace-pre-wrap break-words text-foreground">{row.value}</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>

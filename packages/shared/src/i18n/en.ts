@@ -783,6 +783,7 @@ export type Messages = {
       fromAgent: string
       toAgent: string
       taskNotification: string
+      mailboxReady: string
     }
     askUser: {
       otherOption: string
@@ -841,12 +842,19 @@ export type Messages = {
         sendingMessageTo: string
         messageSent: string
         retrievingMessages: string
+        messagesRetrieved: string
         messageReceived: string
+        /** Primary retrieve header: how many messages arrived this call. */
+        receivedMessageCount: string
         noMessages: string
         agentCount: string
         messageCount: string
+        /** Only shown when remaining > 0 (omit the usual zero). */
+        remainingCount: string
         agentSession: string
         reused: string
+        showFullMessage: string
+        showLessMessage: string
         fields: {
           name: string
           model: string
@@ -2700,6 +2708,7 @@ export const en: Messages = {
       fromAgent: 'From agent',
       toAgent: 'To agent',
       taskNotification: 'System wake',
+      mailboxReady: 'Inbox has messages',
     },
     askUser: {
       otherOption: 'Other...',
@@ -2758,12 +2767,17 @@ export const en: Messages = {
         sendingMessageTo: 'Sending message to',
         messageSent: 'Message Sent',
         retrievingMessages: 'Retrieving messages',
+        messagesRetrieved: 'Messages Retrieved',
         messageReceived: 'Message Received',
+        receivedMessageCount: 'Received {{count}} messages',
         noMessages: 'No messages',
         agentCount: '{{count}} agents',
         messageCount: '{{count}} messages',
+        remainingCount: '{{count}} remaining',
         agentSession: 'Agent session',
         reused: 'reused',
+        showFullMessage: 'Show full message',
+        showLessMessage: 'Show less',
         fields: {
           name: 'Name',
           model: 'Model',

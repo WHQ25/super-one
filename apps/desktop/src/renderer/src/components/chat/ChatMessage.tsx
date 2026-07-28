@@ -2,7 +2,7 @@ import type { ChatMessage as ChatMessageType, ContentBlock, AgentStatus, ImageGe
 import { useState, useEffect, useRef, useMemo, useCallback, memo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@superone/ui/lib/utils'
-import { Loader2, ImageIcon, OctagonX, Folder, ChevronRight, Clock, Minimize2, ArrowUp, ArrowDown, Copy, Check, AlertTriangle, X, Shuffle, Bot } from 'lucide-react'
+import { Loader2, ImageIcon, OctagonX, Folder, ChevronRight, Clock, Minimize2, ArrowUp, ArrowDown, Copy, Check, AlertTriangle, X, Shuffle, Bot, Inbox } from 'lucide-react'
 import { ToolBlock } from './ToolBlock'
 import { ToolGroup } from './ToolGroup'
 import { AppToolGroup } from './AppToolGroup'
@@ -774,6 +774,12 @@ function collaborationLabelKey(message: ChatMessageType): string | null {
   return 'chat.collaboration.fromAgent'
 }
 
+/** Host wake for session_collab mailbox — agent sees full prompt; UI shows a compact inbox row. */
+function isCollabMailboxWakeText(text: string): boolean {
+  // Prefer the host template phrase; tool names alone must not hide normal user questions.
+  return /collaboration mailbox message is ready/i.test(text)
+}
+
 export const ChatMessage = memo(function ChatMessage({ message, sessionStatus, isLastAssistant, hideUserActions }: ChatMessageProps) {
   const { t } = useTranslation()
   const projectPath = useChatStore((s) => s.activeProject)
@@ -782,6 +788,16 @@ export const ChatMessage = memo(function ChatMessage({ message, sessionStatus, i
   const isCodexMessage = !isUser && message.providerId === 'codex'
   const collabLabelKey = isUser ? collaborationLabelKey(message) : null
   const isCollab = collabLabelKey != null
+  // Require task-notification provenance so asking about session_collab_* tools
+  // in a normal user bubble is never rewritten as a mailbox row.
+  const isMailboxWake = isUser
+    && message.metadata?.source === 'task-notification'
+    && isCollabMailboxWakeText(
+      message.content
+        .filter((b): b is Extract<ContentBlock, { type: 'text' }> => b.type === 'text')
+        .map((b) => b.text)
+        .join('\n'),
+    )
   // Copy text is only needed once the turn settles (the copy button is hidden while streaming),
   // so skip deriving the full concatenated text on every delta of the live message.
   const assistantCopyText = isStreaming ? undefined : getAssistantCopyText(message)
@@ -815,6 +831,18 @@ export const ChatMessage = memo(function ChatMessage({ message, sessionStatus, i
     [isUser, message.content],
   )
   const { copied: userCopied, copy: copyUserText } = useCopyText()
+  // Host mailbox wake: right-aligned like a user turn, but plain status text (no bubble / tool row).
+  if (isMailboxWake) {
+    return (
+      <div className="mb-0.5 flex w-0 min-w-full justify-end">
+        <div className="flex max-w-[90%] items-center gap-1.5 px-0.5 text-xs text-muted-foreground">
+          <Inbox className="size-3 shrink-0 opacity-80" />
+          <span className="shrink-0">{t('chat.collaboration.mailboxReady')}</span>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className={cn('w-0 min-w-full flex', isUser ? (isCollab ? 'justify-start' : 'justify-end') : 'mb-2 justify-start')}>
       <div className={cn(isUser ? 'group/copy relative mb-0 flex min-w-0 max-w-[90%] flex-col' : 'w-full', isUser && !isCollab && 'items-end', isUser && isCollab && 'items-start')}>

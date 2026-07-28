@@ -146,14 +146,20 @@ export const Gallery: Story = {
         })}
       </Section>
 
-      <Section title="session_collab_send (Send icon)">
+      <Section title="session_collab_send (Send icon) — header peer only; body clamped">
         {block('session_collab_send', {
           credential: CRED_A,
           content: 'ping-1 — please reply with status.',
         }, { status: 'streaming', elapsedSeconds: 1 })}
         {block('session_collab_send', {
           credential: CRED_A,
-          content: 'ping-1 — please reply with status.',
+          content: [
+            'Please review the auth changes and report issues only.',
+            'Focus on: permission checks, token expiry, and CSRF.',
+            'Ignore style nits.',
+            'Return a short verdict plus file:line bullets when you find problems.',
+            'This fifth line should be clamped until expanded.',
+          ].join('\n'),
         }, {
           result: JSON.stringify({
             status: 'sent',
@@ -178,6 +184,21 @@ export const Gallery: Story = {
           credentials: [CRED_A],
         }, {
           result: JSON.stringify({
+            status: 'empty',
+            peers: [{
+              credential: CRED_A,
+              name: 'DiffBot',
+              role: 'Reviewer',
+              title: 'DiffBot - Reviewer',
+              sessionId: 'child-diffbot',
+            }],
+            messages: [],
+          }),
+        })}
+        {block('session_collab_retrieve', {
+          credentials: [CRED_A],
+        }, {
+          result: JSON.stringify({
             status: 'messages',
             peers: [{
               credential: CRED_A,
@@ -187,7 +208,7 @@ export const Gallery: Story = {
               sessionId: 'child-diffbot',
             }],
             messages: [{
-              content: 'REVIEW-OK 2026-07-27T14:57:08.000Z',
+              content: 'REVIEW-OK 2026-07-27T14:57:08.000Z\nLine 2 of findings.\nLine 3 of findings.\nLine 4 should be clamped until expanded.\nLine 5 keeps going with more detail for the reviewer.',
               fromSessionId: 'child-diffbot',
               from: {
                 name: 'DiffBot',
@@ -202,18 +223,6 @@ export const Gallery: Story = {
           credentials: [CRED_A, CRED_B],
         }, {
           result: JSON.stringify({
-            status: 'empty',
-            peers: [
-              { name: 'Alice', role: 'Reviewer', title: 'Alice - Reviewer', sessionId: 'child-alice' },
-              { name: 'Bob', role: 'Implementer', title: 'Bob - Implementer', sessionId: 'child-bob' },
-            ],
-            messages: [],
-          }),
-        })}
-        {block('session_collab_retrieve', {
-          credentials: [CRED_A, CRED_B],
-        }, {
-          result: JSON.stringify({
             status: 'messages',
             peers: [
               { name: 'Alice', role: 'Reviewer', title: 'Alice - Reviewer', sessionId: 'child-alice' },
@@ -221,7 +230,7 @@ export const Gallery: Story = {
             ],
             messages: [
               {
-                content: 'alpha-pong-1',
+                content: 'alpha-pong-1\nFindings:\n1. auth path\n2. missing test\n3. n+1 query',
                 fromSessionId: 'child-alice',
                 from: { name: 'Alice', role: 'Reviewer', title: 'Alice - Reviewer', sessionId: 'child-alice' },
               },
@@ -275,14 +284,18 @@ export const ParentTurnFlow: Story = {
         })}
       </Section>
       <Section title="3. Send">
-        {block('session_collab_send', { credential: CRED_A, content: 'ping-1' }, {
+        {block('session_collab_send', {
+          credential: CRED_A,
+          content: 'ping-1\nPlease acknowledge and continue.\nExtra context line 3.\nExtra context line 4.',
+        }, {
           result: JSON.stringify({
             status: 'sent',
-            to: { name: 'Alice', role: 'Reviewer', title: 'Alice - Reviewer' },
+            to: { name: 'Alice', role: 'Reviewer', title: 'Alice - Reviewer', sessionId: 'child-alice' },
+            peerSessionId: 'child-alice',
           }),
         })}
       </Section>
-      <Section title="4. Retrieve (after wake)">
+      <Section title="4. Retrieve (after wake) — Received N messages">
         {block('session_collab_retrieve', { credentials: [CRED_A, CRED_B] }, {
           result: JSON.stringify({
             status: 'messages',

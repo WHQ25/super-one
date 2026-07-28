@@ -262,12 +262,23 @@ const sessionManager = new SessionManagerImpl({
       gitBranch: snapshot.gitBranch,
       apiProviderId: snapshot.apiProviderId,
       acpAgentId: snapshot.acpAgentId,
+      providerSessionId: snapshot.providerSessionId,
       messagePersistMode: snapshot.messagePersistMode,
     })
   },
   onProviderSessionIdChange: (sid, providerSessionId) => {
     try {
-      updateProviderSessionId(sid, providerSessionId)
+      const updated = updateProviderSessionId(sid, providerSessionId)
+      if (!updated) {
+        // Common for draft sessions: prewarm resolves the Grok id before the
+        // first message creates the sessions row. saveSessionStateBySid will
+        // write it on the next state change.
+        log.debug(
+          '[sessionManager] updateProviderSessionId no row yet sid=%s providerSessionId=%s',
+          sid,
+          providerSessionId,
+        )
+      }
     } catch (err) {
       log.warn('[sessionManager] updateProviderSessionId failed:', err)
     }

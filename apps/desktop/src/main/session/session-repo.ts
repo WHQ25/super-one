@@ -205,8 +205,12 @@ export function listSessionRecordsByProject(projectPath: string): SessionRecord[
   return rows.map((r) => rowToRecord(r, projectPath))
 }
 
-export function updateProviderSessionId(sid: string, providerSessionId: string): void {
-  getDb().prepare('UPDATE sessions SET provider_session_id = ? WHERE id = ?').run(providerSessionId, sid)
+/** @returns true when a sessions row was updated (false if the draft row does not exist yet). */
+export function updateProviderSessionId(sid: string, providerSessionId: string): boolean {
+  const result = getDb()
+    .prepare('UPDATE sessions SET provider_session_id = ? WHERE id = ?')
+    .run(providerSessionId, sid)
+  return result.changes > 0
 }
 
 export function updateAcpAgentId(sid: string, acpAgentId: string | null): void {
@@ -235,6 +239,12 @@ export interface SaveSessionStateInput {
   apiProviderId?: string | null
   acpAgentId?: string | null
   /**
+   * Provider/agent session id for cold resume (Grok ACP session/load).
+   * Written on insert and on conflict when non-null so draft→first-message
+   * does not drop an id that was only known in memory during prewarm.
+   */
+  providerSessionId?: string | null
+  /**
    * Defaults to `{ kind: 'full' }` so legacy callers remain correct.
    * Session always passes an explicit mode.
    */
@@ -249,16 +259,18 @@ export function saveSessionStateBySid(input: SaveSessionStateInput): void {
   const legacyProvider = harnessIdFromProviderId(input.providerId)
   const now = new Date().toISOString()
   const persistMode: MessagePersistMode = input.messagePersistMode ?? { kind: 'full' }
+  const providerSessionId = input.providerSessionId?.trim() || null
 
   const upsertSession = db.prepare(`
     INSERT INTO sessions (
-      id, project_id, provider_id, provider, title, created_at, last_user_message_at,
+      id, project_id, provider_id, provider, provider_session_id, title, created_at, last_user_message_at,
       is_worktree, git_branch, worktree_path, api_provider_id, acp_agent_id
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       provider_id = excluded.provider_id,
       provider = excluded.provider,
+      provider_session_id = COALESCE(excluded.provider_session_id, sessions.provider_session_id),
       is_worktree = excluded.is_worktree,
       git_branch = excluded.git_branch,
       worktree_path = excluded.worktree_path,
@@ -316,6 +328,7 @@ export function saveSessionStateBySid(input: SaveSessionStateInput): void {
       projectId,
       input.providerId,
       legacyProvider,
+      providerSessionId,
       input.title ?? null,
       now,
       lastUserMessageAt ?? now,

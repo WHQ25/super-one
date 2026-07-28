@@ -99,6 +99,11 @@ export interface SessionStateChange {
   worktreeMissing: boolean
   apiProviderId: string | null
   acpAgentId: string | null
+  /**
+   * Provider/agent session id (e.g. Grok ACP). Persisted with the SuperOne
+   * session row so cold resume can session/load after app restart.
+   */
+  providerSessionId: string | null
   messagePersistMode: MessagePersistMode
 }
 

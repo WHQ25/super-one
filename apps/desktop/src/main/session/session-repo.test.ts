@@ -83,9 +83,15 @@ function makeFakeDb() {
           },
         }
       }
-      if (/^INSERT INTO sessions \( id, project_id, provider_id, provider, provider_session_id/.test(sql)) {
+      // forkSessionRecord insert (no ON CONFLICT; includes usage_counted_at).
+      if (/^INSERT INTO sessions \( id, project_id, provider_id, provider, provider_session_id, title, created_at, last_user_message_at, total_cost_usd/.test(sql)) {
         return {
-          run: (id: string, projectId: string, providerId: string, provider: string, providerSessionId: string, title: string | null, createdAt: string, lastUserMsg: string, contextTokens: number, isWorktree: number, gitBranch: string | null, worktreePath: string | null) => {
+          run: (
+            id: string, projectId: string, providerId: string, provider: string,
+            providerSessionId: string, title: string | null, createdAt: string, lastUserMsg: string,
+            contextTokens: number, isWorktree: number, gitBranch: string | null, worktreePath: string | null,
+            apiProviderId?: string | null, acpAgentId?: string | null,
+          ) => {
             sessionsRows.set(id, {
               id, project_id: projectId, provider_id: providerId, provider,
               provider_session_id: providerSessionId, title,
@@ -93,6 +99,32 @@ function makeFakeDb() {
               total_cost_usd: 0, context_tokens: contextTokens ?? 0,
               is_worktree: isWorktree, git_branch: gitBranch, worktree_path: worktreePath,
               is_pinned: 0, is_hidden: 0,
+              api_provider_id: apiProviderId ?? null,
+              acp_agent_id: acpAgentId ?? null,
+            })
+          },
+        }
+      }
+      // saveSessionStateBySid upsert (includes provider_session_id + ON CONFLICT).
+      if (/INSERT INTO sessions/.test(sql) && /provider_session_id/.test(sql) && /api_provider_id/.test(sql) && /ON CONFLICT/.test(sql)) {
+        return {
+          run: (
+            id: string, projectId: string, providerId: string, provider: string,
+            providerSessionId: string | null,
+            title: string | null, createdAt: string, lastUserMsg: string,
+            isWorktree: number, gitBranch: string | null, worktreePath: string | null,
+            apiProviderId?: string | null, acpAgentId?: string | null,
+          ) => {
+            const prev = sessionsRows.get(id)
+            sessionsRows.set(id, {
+              id, project_id: projectId, provider_id: providerId, provider, title,
+              created_at: prev?.created_at ?? createdAt, last_user_message_at: lastUserMsg,
+              provider_session_id: providerSessionId ?? prev?.provider_session_id ?? null,
+              total_cost_usd: prev?.total_cost_usd ?? 0, context_tokens: prev?.context_tokens ?? 0,
+              is_worktree: isWorktree, git_branch: gitBranch, worktree_path: worktreePath,
+              is_pinned: prev?.is_pinned ?? 0, is_hidden: prev?.is_hidden ?? 0,
+              api_provider_id: apiProviderId ?? null,
+              acp_agent_id: acpAgentId ?? null,
             })
           },
         }
@@ -156,7 +188,11 @@ function makeFakeDb() {
         return {
           run: (psid: string, id: string) => {
             const row = sessionsRows.get(id)
-            if (row) sessionsRows.set(id, { ...row, provider_session_id: psid })
+            if (row) {
+              sessionsRows.set(id, { ...row, provider_session_id: psid })
+              return { changes: 1 }
+            }
+            return { changes: 0 }
           },
         }
       }
@@ -369,8 +405,12 @@ describe('session-repo', () => {
   describe('updateProviderSessionId / updateSessionTitle / deleteSessionRecord', () => {
     it('updates provider_session_id', () => {
       insertSessionRecord({ id: 'u1', projectPath: '/tmp/proj', providerId: 'claude-base' })
-      updateProviderSessionId('u1', 'sdk-xyz')
+      expect(updateProviderSessionId('u1', 'sdk-xyz')).toBe(true)
       expect(getSessionRecord('u1')?.providerSessionId).toBe('sdk-xyz')
+    })
+
+    it('returns false when the sessions row does not exist yet', () => {
+      expect(updateProviderSessionId('missing-draft', 'sdk-xyz')).toBe(false)
     })
 
     it('updates title', () => {
@@ -400,6 +440,27 @@ describe('session-repo', () => {
       expect(loaded!.messages).toHaveLength(2)
       expect(loaded!.messages[0]?.id).toBe('u1')
       expect(loaded!.messages[1]?.id).toBe('a1')
+    })
+
+    it('persists providerSessionId on first message so Grok can cold-resume', () => {
+      const messages: ChatMessage[] = [
+        { id: 'u1', role: 'user', status: 'complete', content: [{ type: 'text', text: 'hi' }], createdAt: '2026-04-18T00:00:00Z', providerId: 'acp' },
+      ]
+      // Draft path: prewarm resolved the Grok id before any sessions row existed.
+      expect(updateProviderSessionId('s-grok-draft', '019fa-prior')).toBe(false)
+      saveSessionStateBySid({
+        sid: 's-grok-draft',
+        projectPath: '/tmp/proj',
+        providerId: 'acp-base',
+        messages,
+        totalCostUsd: 0,
+        contextTokens: 0,
+        providerSessionId: '019fa-prior',
+        acpAgentId: 'grok-build',
+      })
+      expect(getSessionRecord('s-grok-draft')?.providerSessionId).toBe('019fa-prior')
+      const loaded = loadSessionStateBySid('s-grok-draft')
+      expect(loaded?.record.providerSessionId).toBe('019fa-prior')
     })
 
     it('incremental mode only upserts dirty ids and leaves others untouched', () => {

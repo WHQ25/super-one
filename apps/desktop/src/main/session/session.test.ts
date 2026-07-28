@@ -1949,6 +1949,35 @@ describe('Session persist hook', () => {
     expect(calls).toEqual([['sess-1', 'prov-abc'], ['sess-1', 'prov-xyz']])
   })
 
+  it('includes providerSessionId in onStateChange so first-message save can cold-resume', async () => {
+    const calls: SessionStateChange[] = []
+    const { session, backend } = makeSession({
+      onStateChange: (s) => calls.push(s),
+    })
+    // Prewarm resolves Grok id before any messages exist.
+    backend.fireProviderSessionId('019fa-grok')
+    expect(session.snapshot.providerSessionId).toBe('019fa-grok')
+    expect(calls).toHaveLength(0)
+    const p = session.send({ content: 'hi', clientMessageId: 'u1' })
+    await new Promise((r) => setTimeout(r, 0))
+    backend.emit({
+      type: 'message_start',
+      message: {
+        id: 'a1',
+        role: 'assistant',
+        status: 'streaming',
+        content: [],
+        createdAt: '',
+        providerId: 'acp',
+      },
+    })
+    backend.emit({ type: 'message_complete', messageId: 'a1', metadata: {} })
+    backend.resolveSend?.()
+    await p
+    expect(calls.length).toBeGreaterThan(0)
+    expect(calls.some((c) => c.providerSessionId === '019fa-grok')).toBe(true)
+  })
+
   it('does not fire onStateChange when accumulated message list is empty', () => {
     const calls: SessionStateChange[] = []
     const { backend } = makeSession({ onStateChange: (s) => calls.push(s) })

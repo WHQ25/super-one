@@ -238,27 +238,48 @@ describe('AcpBackend', () => {
     await backend.close()
   })
 
-  it('restarts once when live runtime id does not match wanted resume id', async () => {
+  it('restarts once when a cold prewarm lacked resume and start later supplies it', async () => {
     const factories: string[] = []
     setAcpRuntimeFactory(async (opts) => {
       factories.push(opts.resumeSessionId ?? '(none)')
-      // First spawn ignores resume (simulates a stale cold start); second honors it.
-      if (factories.length === 1) {
+      if (!opts.resumeSessionId) {
         return mockRuntime({ sessionId: 'stale-new-id' })
       }
-      return mockRuntime({ sessionId: opts.resumeSessionId ?? 'loaded' })
+      return mockRuntime({ sessionId: opts.resumeSessionId })
     })
     const backend = new AcpBackend()
+    // Cold prewarm without provider session id (draft / race before DB hydrate).
+    await backend.start(startOpts({ agentId: 'grok-build' }))
+    await new Promise((r) => setTimeout(r, 10))
+    expect(factories[0]).toBe('(none)')
+    // Later start with the stored resume id must force one session/load restart.
     await backend.start({
       ...startOpts({ agentId: 'grok-build' }),
       providerSessionId: 'prior-grok-session',
     })
-    await new Promise((r) => setTimeout(r, 10))
-    // Trigger ensureRuntime again via send — mismatch should force one reload.
     await backend.send({ content: 'hello', assistantMessageId: 'a1' })
-    expect(factories[0]).toBe('prior-grok-session')
     expect(factories.length).toBeGreaterThanOrEqual(2)
     expect(factories[factories.length - 1]).toBe('prior-grok-session')
+    await backend.close()
+  })
+
+  it('does not re-spawn when session/load already failed for the wanted resume id', async () => {
+    const factories: string[] = []
+    setAcpRuntimeFactory(async (opts) => {
+      factories.push(opts.resumeSessionId ?? '(none)')
+      // Simulate load failure: agent was asked to resume but minted a new id.
+      return mockRuntime({ sessionId: `new-${factories.length}` })
+    })
+    const backend = new AcpBackend()
+    await backend.start({
+      ...startOpts({ agentId: 'grok-build' }),
+      providerSessionId: 'unloadable-prior',
+    })
+    await new Promise((r) => setTimeout(r, 10))
+    expect(factories).toEqual(['unloadable-prior'])
+    // Second ensureRuntime (send) must accept the live id — not mint another session.
+    await backend.send({ content: 'hello', assistantMessageId: 'a1' })
+    expect(factories).toEqual(['unloadable-prior'])
     await backend.close()
   })
 

@@ -376,6 +376,9 @@ export class Session implements SessionContract {
       try { this.onProviderSessionIdChange?.(this.id, id) } catch (err) {
         log.warn('[Session] onProviderSessionIdChange hook error:', err)
       }
+      // Draft sessions are not in DB until the first message; re-persist when we
+      // already have transcript so a late-arriving provider id is not lost.
+      if (this._messages.length > 0) this.notifyStateChange()
     }))
     this.unsubs.push(this.backend.onPermissionModeApplied((mode) => {
       if (this.permissionMode === mode) return
@@ -1340,6 +1343,7 @@ export class Session implements SessionContract {
         worktreeMissing: this._missingWorktreePath !== null,
         apiProviderId: this._apiProviderId,
         acpAgentId: this._acpAgentId,
+        providerSessionId: this._providerSessionId,
         messagePersistMode,
       })
       if (forceFull) {

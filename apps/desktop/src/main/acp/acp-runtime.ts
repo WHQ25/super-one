@@ -338,12 +338,17 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
     connection = clientBuilder.connect(stream)
 
     const clientVersion = resolveAcpClientVersion()
+    // Grok runs locally and its read_file supports binary images. Advertising
+    // ACP's text-only filesystem would route every read through UTF-8 and corrupt
+    // PNG/JPEG bytes. Let Grok use its local filesystem, as we already do for its
+    // terminal; retain the host filesystem bridge for other ACP agents.
+    const useHostDelegation = launch.agentId !== 'grok-build'
     const initResult = await connection.agent.request(methods.agent.initialize, {
       protocolVersion: PROTOCOL_VERSION,
       clientInfo: { name: 'superone', version: clientVersion },
       clientCapabilities: {
-        fs: { readTextFile: true, writeTextFile: true },
-        terminal: launch.agentId !== 'grok-build',
+        fs: { readTextFile: useHostDelegation, writeTextFile: useHostDelegation },
+        terminal: useHostDelegation,
       },
       _meta: {
         askUserQuestion: true,

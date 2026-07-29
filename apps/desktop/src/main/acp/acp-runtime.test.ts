@@ -140,9 +140,9 @@ function makeEchoAgentStream(
 
 describe('createAcpRuntime (in-process agent)', () => {
   it.each([
-    ['grok-build', false],
-    ['custom', true],
-  ])('advertises terminal capability for %s as %s', async (agentId, terminal) => {
+    ['grok-build', false, false],
+    ['custom', true, true],
+  ])('advertises local delegation capabilities for %s', async (agentId, terminal, hostFs) => {
     const captured: CapturedRequests = { newSession: null, prompts: [] }
     const runtime = await createAcpRuntime({
       launch: {
@@ -159,7 +159,10 @@ describe('createAcpRuntime (in-process agent)', () => {
     await runtime.close()
     await new Promise((r) => setTimeout(r, 0))
 
-    expect(captured.initialize?.clientCapabilities).toMatchObject({ terminal })
+    expect(captured.initialize?.clientCapabilities).toMatchObject({
+      terminal,
+      fs: { readTextFile: hostFs, writeTextFile: hostFs },
+    })
     expect(captured.initialize?._meta).toMatchObject({
       askUserQuestion: true,
       exitPlanMode: true,

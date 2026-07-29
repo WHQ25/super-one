@@ -52,6 +52,28 @@ export interface SessionRecord {
   acpAgentId: string | null
 }
 
+function normalizeCodexThreadId(value: string | null | undefined): string | null {
+  const threadId = value?.trim() || null
+  if (threadId?.startsWith('codex_local_') || threadId?.startsWith('codex-remote-')) return null
+  return threadId
+}
+
+export function resolveProviderSessionIdForResume(
+  record: Pick<SessionRecord, 'harnessId' | 'providerSessionId'>,
+  messages: readonly ChatMessage[],
+): string | null {
+  if (record.harnessId !== 'codex') return record.providerSessionId?.trim() || null
+
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]
+    if (message.role !== 'assistant' || message.providerId !== 'codex') continue
+    const threadId = normalizeCodexThreadId(message.metadata?.codex?.threadId)
+    if (threadId) return threadId
+  }
+
+  return normalizeCodexThreadId(record.providerSessionId)
+}
+
 interface SessionRow {
   id: string
   project_id: string

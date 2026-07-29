@@ -3,16 +3,26 @@ import type { CodexGoalStatus } from '@superone/shared/agent-types'
 import type { CodexSession } from './codex-session'
 
 const turnMocks = vi.hoisted(() => ({
-  resolveThread: vi.fn(async (_connection: unknown, session: { threadId: string | null }) => session.threadId ?? 'thread-1'),
   streamTurnEvents: vi.fn(),
-  withSessionConnection: vi.fn(async (session: { connectionHandle: { connection: unknown } }, _auth: unknown, _signal: unknown, fn: (connection: unknown) => unknown) => fn(session.connectionHandle.connection)),
+  withThreadConnection: vi.fn(async (
+    session: { connectionHandle: { connection: unknown }; threadId: string | null },
+    _auth: unknown,
+    _signal: unknown,
+    _projectPath: string,
+    _cwd: string,
+    _permissionProfile: unknown,
+    fn: (context: { connection: unknown; threadId: string; markMutationStarted: () => void }) => unknown,
+  ) => fn({
+    connection: session.connectionHandle.connection,
+    threadId: session.threadId ?? 'thread-1',
+    markMutationStarted: vi.fn(),
+  })),
 }))
 
 vi.mock('./codex-turn', () => ({
   deriveFinalResponse: (items: Array<{ type: string; text?: string }>) => items.findLast((item) => item.type === 'agent_message')?.text ?? '',
-  resolveThread: turnMocks.resolveThread,
   streamTurnEvents: turnMocks.streamTurnEvents,
-  withSessionConnection: turnMocks.withSessionConnection,
+  withThreadConnection: turnMocks.withThreadConnection,
 }))
 
 vi.mock('./app-server-connection', () => ({
@@ -72,9 +82,8 @@ function makeHarness(request: (method: string, params?: Record<string, unknown>)
 
 describe('CodexGoalController', () => {
   beforeEach(() => {
-    turnMocks.resolveThread.mockClear()
     turnMocks.streamTurnEvents.mockReset()
-    turnMocks.withSessionConnection.mockClear()
+    turnMocks.withThreadConnection.mockClear()
   })
 
   it('sets the goal on the live session connection and consumes automatic turns until completion', async () => {
@@ -100,7 +109,7 @@ describe('CodexGoalController', () => {
     await expect(harness.controller.set('thread-1', '  Finish it  ')).resolves.toEqual(goal())
     await harness.controller.wait()
 
-    expect(turnMocks.withSessionConnection).toHaveBeenCalledOnce()
+    expect(turnMocks.withThreadConnection).toHaveBeenCalledOnce()
     expect(turnMocks.streamTurnEvents).toHaveBeenCalledOnce()
     expect(harness.onRunStart).toHaveBeenCalledOnce()
     expect(harness.onRunComplete).toHaveBeenCalledWith(

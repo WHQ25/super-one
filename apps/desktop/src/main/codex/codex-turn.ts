@@ -10,6 +10,7 @@ import {
   compactRecord,
   createAppServerConnection,
   getCodexProviderOverrideFor,
+  isCodexAppServerConnectionError,
   normalizeApiKey,
   readString,
   resolvePermissionProfile,
@@ -986,10 +987,21 @@ export async function processServerRequest(
 
 export async function closeSessionConnection(session: CodexSession): Promise<void> {
   const handle = session.connectionHandle
+  const dispatcher = session.notificationDispatcher
   tearDownForkRuntime(session, 'connection closed')
   if (handle) {
     try { await handle.close() } catch (err) {
       log.warn('[codex] close connection error:', err instanceof Error ? err.message : String(err))
+    }
+  }
+  if (session.connectionHandle === handle) {
+    session.connectionHandle = null
+    session.connectionAuth = null
+    session.threadId = null
+    session.threadReady = false
+    session.notificationDispatcher = null
+    if (dispatcher) {
+      try { dispatcher.close('connection closed') } catch {}
     }
   }
 }
@@ -1042,7 +1054,8 @@ export async function withSessionConnection<T>(
   } catch (error) {
     const stderr = handle.getStderr().trim()
     const childExited = session.connectionHandle !== handle
-    if (stderr || childExited) {
+    const connectionFailed = isCodexAppServerConnectionError(error)
+    if (stderr || childExited || connectionFailed) {
       log.error('[codex] app-server error:', error instanceof Error ? error.message : String(error))
       if (stderr) log.error('[codex] app-server stderr:', stderr)
       await closeSessionConnection(session)
@@ -1054,6 +1067,64 @@ export async function withSessionConnection<T>(
     }
     throw error
   }
+}
+
+interface ThreadConnectionContext {
+  connection: AppServerConnection
+  threadId: string
+  wasThreadReady: boolean
+  markMutationStarted(): void
+}
+
+export async function withThreadConnection<T>(
+  session: CodexSession,
+  auth: CodexProjectAuth,
+  signal: AbortSignal | undefined,
+  projectPath: string,
+  cwd: string,
+  permissionProfile: ReturnType<typeof resolvePermissionProfile>,
+  operation: (context: ThreadConnectionContext) => Promise<T>,
+): Promise<T> {
+  const resumableThreadId = session.threadId
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    let mutationStarted = false
+    let attemptedHandle = session.connectionHandle
+    try {
+      return await withSessionConnection(session, auth, signal, async (connection) => {
+        attemptedHandle = session.connectionHandle
+        const wasThreadReady = session.threadReady
+        const threadId = await resolveThread(connection, session, projectPath, cwd, permissionProfile, {
+          onStartingNewThread: () => { mutationStarted = true },
+        })
+        return operation({
+          connection,
+          threadId,
+          wasThreadReady,
+          markMutationStarted: () => { mutationStarted = true },
+        })
+      })
+    } catch (error) {
+      const canRetryResume = attempt === 0
+        && !mutationStarted
+        && Boolean(resumableThreadId)
+        && !signal?.aborted
+        && isCodexAppServerConnectionError(error)
+      if (!canRetryResume) throw error
+
+      log.warn(
+        '[codex] thread/resume connection failed; retrying on fresh app-server thread=%s: %s',
+        resumableThreadId,
+        error instanceof Error ? error.message : String(error),
+      )
+      if (session.connectionHandle === attemptedHandle) {
+        await closeSessionConnection(session)
+      }
+      session.threadId = resumableThreadId
+      session.threadReady = false
+      session.effectiveCwd = cwd
+    }
+  }
+  throw new Error('Failed to establish Codex thread connection')
 }
 
 export function resolveCwd(session: CodexSession, projectPath: string, requestedCwd?: string): string {
@@ -1126,6 +1197,7 @@ export async function resolveThread(
   projectPath: string,
   cwd: string,
   permissionProfile: ReturnType<typeof resolvePermissionProfile>,
+  options?: { onStartingNewThread?: () => void },
 ): Promise<string> {
   let providerOverride = getCodexProviderOverrideFor(session.apiProviderId)
   const proxyUrl = await ensureCodexProxyUrl(session.apiProviderId)
@@ -1150,6 +1222,7 @@ export async function resolveThread(
   }
 
   const startNewThread = async () => {
+    options?.onStartingNewThread?.()
     const startedAt = Date.now()
     const result = await connection.request(
       'thread/start',
@@ -1187,6 +1260,7 @@ export async function resolveThread(
       ).catch((err) => {
         const failedThreadId = session.threadId
         const message = err instanceof Error ? err.message : String(err)
+        if (!isCodexThreadNotFoundError(err)) throw err
         log.info('[codex] thread/resume failed thread=%s: %s', failedThreadId ?? 'unknown', message)
         trace('codex.thread', 'resume_failed', {
           threadId: failedThreadId,
@@ -1210,6 +1284,11 @@ export async function resolveThread(
   session.threadId = resolvedThreadId
   session.threadReady = true
   return resolvedThreadId
+}
+
+export function isCodexThreadNotFoundError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+  return /(?:thread|rollout|conversation).*(?:not found|does not exist)|(?:no|missing) rollout/i.test(message)
 }
 
 async function respondToPrewarmRequest(connection: AppServerConnection, notification: AppServerNotification): Promise<void> {
@@ -2051,68 +2130,74 @@ export async function runCodexTurn(
       session.modelReasoningEffort,
     )
 
-    const streamed = await withSessionConnection(session, auth, controller.signal, async (connection) => {
-      const wasThreadReady = session.threadReady
-      const resolvedThreadId = await resolveThread(connection, session, projectPath, effectiveCwd, permissionProfile)
+    const streamed = await withThreadConnection(
+      session,
+      auth,
+      controller.signal,
+      projectPath,
+      effectiveCwd,
+      permissionProfile,
+      async ({ connection, threadId: resolvedThreadId, wasThreadReady, markMutationStarted }) => {
+        // A freshly-started thread connects its MCP servers asynchronously after thread/start.
+        // turn/start snapshots the available tools once, so wait for the superone bridge to
+        // finish starting first — otherwise the first turn after an @-mention (which registers
+        // mini-app tools then forces a rebuild→fresh thread) races the bridge and sees none.
+        if (!wasThreadReady) {
+          await waitForCodexMcpServerReady(connection, session, 'superone')
+        }
 
-      // A freshly-started thread connects its MCP servers asynchronously after thread/start.
-      // turn/start snapshots the available tools once, so wait for the superone bridge to
-      // finish starting first — otherwise the first turn after an @-mention (which registers
-      // mini-app tools then forces a rebuild→fresh thread) races the bridge and sees none.
-      if (!wasThreadReady) {
-        await waitForCodexMcpServerReady(connection, session, 'superone')
-      }
+        markMutationStarted()
+        const turnStartResult = await connection.request(
+          'turn/start',
+          compactRecord({
+            threadId: resolvedThreadId,
+            input: [
+              {
+                type: 'text',
+                text: normalizedPrompt,
+                text_elements: [],
+              },
+            ],
+            model: session.model,
+            effort: session.modelReasoningEffort,
+            ...(session.modelReasoningEffort ? { summary: 'concise' } : {}),
+            approvalPolicy: permissionProfile.approvalPolicy,
+            sandboxPolicy: buildTurnSandboxPolicy(effectiveCwd, permissionProfile),
+            ...(collaborationMode ? { collaborationMode } : {}),
+          }),
+        )
 
-      const turnStartResult = await connection.request(
-        'turn/start',
-        compactRecord({
-          threadId: resolvedThreadId,
-          input: [
-            {
-              type: 'text',
-              text: normalizedPrompt,
-              text_elements: [],
-            },
-          ],
-          model: session.model,
-          effort: session.modelReasoningEffort,
-          ...(session.modelReasoningEffort ? { summary: 'concise' } : {}),
-          approvalPolicy: permissionProfile.approvalPolicy,
-          sandboxPolicy: buildTurnSandboxPolicy(effectiveCwd, permissionProfile),
-          ...(collaborationMode ? { collaborationMode } : {}),
-        }),
-      )
+        const turn = asRecord(turnStartResult.turn)
+        const activeTurnId = readString(turn?.id)
 
-      const turn = asRecord(turnStartResult.turn)
-      const activeTurnId = readString(turn?.id)
+        session.activeTurnId = activeTurnId
+        let steerSeq = 9000
+        session.steerFn = async (text: string) => {
+          steerSeq += 1
+          await connection.request('turn/steer', {
+            threadId: resolvedThreadId,
+            input: [{ type: 'text', text }],
+            expectedTurnId: activeTurnId,
+          })
+        }
+        session.interruptFn = activeTurnId
+          ? async () => {
+              await connection.request('turn/interrupt', {
+                threadId: resolvedThreadId,
+                turnId: activeTurnId,
+              })
+            }
+          : null
 
-      session.activeTurnId = activeTurnId
-      let steerSeq = 9000
-      session.steerFn = async (text: string) => {
-        steerSeq += 1
-        await connection.request('turn/steer', {
-          threadId: resolvedThreadId,
-          input: [{ type: 'text', text }],
-          expectedTurnId: activeTurnId,
-        })
-      }
-      session.interruptFn = activeTurnId
-        ? async () => {
-            await connection.request('turn/interrupt', {
-              threadId: resolvedThreadId,
-              turnId: activeTurnId,
-            })
-          }
-        : null
-
-      try {
-        return await streamTurnEvents(connection, session, activeTurnId, controller, callbacks)
-      } finally {
-        session.activeTurnId = null
-        session.steerFn = null
-        session.interruptFn = null
-      }
-    })
+        try {
+          return await streamTurnEvents(connection, session, activeTurnId, controller, callbacks)
+        } finally {
+          session.activeTurnId = null
+          session.steerFn = null
+          session.interruptFn = null
+        }
+      },
+    )
 
     return {
       threadId: streamed.threadId,
@@ -2159,17 +2244,24 @@ export async function reviewCodexTurn(
     const permissionProfile = resolvePermissionProfile(session.permissionPreset)
     const effectiveCwd = resolveCwd(session, projectPath, request.cwd)
 
-    const streamed = await withSessionConnection(session, auth, controller.signal, async (connection) => {
-      const resolvedThreadId = await resolveThread(connection, session, projectPath, effectiveCwd, permissionProfile)
+    const streamed = await withThreadConnection(
+      session,
+      auth,
+      controller.signal,
+      projectPath,
+      effectiveCwd,
+      permissionProfile,
+      async ({ connection, threadId: resolvedThreadId, markMutationStarted }) => {
+        markMutationStarted()
+        await connection.request('review/start', compactRecord({
+          threadId: resolvedThreadId,
+          delivery: 'inline',
+          target: request.target,
+        }))
 
-      await connection.request('review/start', compactRecord({
-        threadId: resolvedThreadId,
-        delivery: 'inline',
-        target: request.target,
-      }))
-
-      return streamTurnEvents(connection, session, null, controller, callbacks)
-    })
+        return streamTurnEvents(connection, session, null, controller, callbacks)
+      },
+    )
 
     return {
       threadId: streamed.threadId,
@@ -2209,13 +2301,20 @@ export async function compactCodexTurn(
     const permissionProfile = resolvePermissionProfile(session.permissionPreset)
     const effectiveCwd = resolveCwd(session, projectPath, request.cwd)
 
-    const streamed = await withSessionConnection(session, auth, controller.signal, async (connection) => {
-      const resolvedThreadId = await resolveThread(connection, session, projectPath, effectiveCwd, permissionProfile)
+    const streamed = await withThreadConnection(
+      session,
+      auth,
+      controller.signal,
+      projectPath,
+      effectiveCwd,
+      permissionProfile,
+      async ({ connection, threadId: resolvedThreadId, markMutationStarted }) => {
+        markMutationStarted()
+        await connection.request('thread/compact/start', { threadId: resolvedThreadId })
 
-      await connection.request('thread/compact/start', { threadId: resolvedThreadId })
-
-      return streamTurnEvents(connection, session, null, controller, callbacks)
-    })
+        return streamTurnEvents(connection, session, null, controller, callbacks)
+      },
+    )
 
     return {
       threadId: streamed.threadId,

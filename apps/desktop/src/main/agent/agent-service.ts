@@ -2265,7 +2265,17 @@ export class AgentService {
       const effectiveMode = permissionMode ?? defaults.permissionMode
       let session = mgr.getSession(sessionId)
       if (!session) {
-        try { session = mgr.resumeSession(sessionId, { permissionMode: effectiveMode, sandboxMode: defaults.sandboxMode }) } catch { return }
+        try {
+          session = mgr.resumeSession(sessionId, { permissionMode: effectiveMode, sandboxMode: defaults.sandboxMode })
+        } catch (error) {
+          log.warn(
+            '[AgentService] resume session failed sid=%s project=%s: %s',
+            sessionId,
+            projectPath,
+            error instanceof Error ? error.message : String(error),
+          )
+          throw error
+        }
       } else if (permissionMode) {
         await session.setPermissionMode(permissionMode)
       }

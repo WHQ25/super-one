@@ -97,6 +97,7 @@ const {
   buildCodexProviderCliOverrides,
   buildCodexProviderCliOverridesFor,
   buildNodeReplDisableCliOverrides,
+  isCodexAppServerConnectionError,
 } = await import('./app-server-connection')
 const { resolveChatService } = await import('../providers/resolver')
 
@@ -340,6 +341,23 @@ describe('buildCodexProviderCliOverrides', () => {
 
     child.emit('exit', 0, null)
     expect(closedCb).toHaveBeenCalledWith(expect.objectContaining({ code: 0 }))
+  })
+
+  it('captures stdin EPIPE and rejects later requests without an uncaught stream error', async () => {
+    const child = createFakeChild()
+    spawnMock.mockReturnValueOnce(child)
+
+    const handlePromise = createAppServerConnection({ mode: 'apiKey' })
+    await nextTick()
+    writeLineToChild(child, { id: 1, result: {} })
+    const handle = await handlePromise
+    const writeError = Object.assign(new Error('write EPIPE'), { code: 'EPIPE' })
+
+    child.stdin.emit('error', writeError)
+
+    await expect(handle.connection.request('thread/read')).rejects.toBe(writeError)
+    expect(isCodexAppServerConnectionError(writeError)).toBe(true)
+    await handle.close()
   })
 
   it('supports multiple sequential requests on one connection', async () => {

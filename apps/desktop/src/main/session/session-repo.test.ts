@@ -23,7 +23,48 @@ import {
   saveSessionStateBySid,
   loadSessionStateBySid,
   forkSessionRecord,
+  resolveProviderSessionIdForResume,
 } from './session-repo'
+
+describe('resolveProviderSessionIdForResume', () => {
+  const message = (threadId: string): ChatMessage => ({
+    id: `assistant-${threadId}`,
+    role: 'assistant',
+    status: 'complete',
+    content: [],
+    createdAt: '2026-04-18T00:00:01Z',
+    providerId: 'codex',
+    metadata: { codex: { threadId, usage: null, items: [] } },
+  })
+
+  it('prefers the latest persisted Codex message thread over a stale row value', () => {
+    expect(resolveProviderSessionIdForResume(
+      { harnessId: 'codex', providerSessionId: 'codex-remote-123' },
+      [message('thread-old'), message('thread-current')],
+    )).toBe('thread-current')
+  })
+
+  it('rejects legacy SuperOne draft ids when no Codex thread was persisted', () => {
+    expect(resolveProviderSessionIdForResume(
+      { harnessId: 'codex', providerSessionId: 'codex-remote-123' },
+      [],
+    )).toBeNull()
+  })
+
+  it('ignores legacy draft ids persisted in Codex message metadata', () => {
+    expect(resolveProviderSessionIdForResume(
+      { harnessId: 'codex', providerSessionId: null },
+      [message('codex_local_stale'), message('codex-remote-123')],
+    )).toBeNull()
+  })
+
+  it('preserves non-Codex provider session ids', () => {
+    expect(resolveProviderSessionIdForResume(
+      { harnessId: 'acp', providerSessionId: 'grok-session' },
+      [message('codex-thread')],
+    )).toBe('grok-session')
+  })
+})
 
 interface SessionRow {
   id: string

@@ -5,9 +5,8 @@ import { resolvePermissionProfile } from './app-server-connection'
 import { mapCodexGoal } from './codex-goal-service'
 import {
   deriveFinalResponse,
-  resolveThread,
   streamTurnEvents,
-  withSessionConnection,
+  withThreadConnection,
   type CodexRunStreamCallbacks,
 } from './codex-turn'
 
@@ -108,16 +107,18 @@ export class CodexGoalController {
       throw new Error(`Codex goal thread mismatch: expected ${session.threadId}, received ${threadId}`)
     }
     session.threadId = threadId
-    return withSessionConnection(session, this.options.getAuth(), undefined, async (connection) => {
-      const resolvedThreadId = await resolveThread(
-        connection,
-        session,
-        session.projectPath,
-        this.options.getCwd(),
-        resolvePermissionProfile(session.permissionPreset),
-      )
-      return request(connection, resolvedThreadId)
-    })
+    return withThreadConnection(
+      session,
+      this.options.getAuth(),
+      undefined,
+      session.projectPath,
+      this.options.getCwd(),
+      resolvePermissionProfile(session.permissionPreset),
+      ({ connection, threadId: resolvedThreadId, markMutationStarted }) => {
+        markMutationStarted()
+        return request(connection, resolvedThreadId)
+      },
+    )
   }
 
   private schedule(): void {

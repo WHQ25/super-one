@@ -43,6 +43,9 @@ vi.mock('../mcp/superone-mcp-server', () => ({
 
 const {
   resolveThread,
+  withSessionConnection,
+  withThreadConnection,
+  closeSessionConnection,
   streamTurnEvents,
   respondToCodexPermission,
   respondToCodexElicitation,
@@ -126,7 +129,56 @@ describe('resolveThread fallback', () => {
     networkAccessEnabled: true,
   }
 
-  it('falls back to thread/start when thread/resume fails', async () => {
+  it('detaches a closed handle synchronously before a reconnect', async () => {
+    const session = makeSession({ model: 'gpt-5', threadId: 'existing-thread' })
+    const dispatcher = { close: vi.fn() }
+    const handle = {
+      connection: {},
+      close: vi.fn(async () => {}),
+      getStderr: () => '',
+      onClosed: () => () => {},
+    }
+    session.connectionHandle = handle as never
+    session.connectionAuth = { mode: 'auto' }
+    session.notificationDispatcher = dispatcher as never
+    session.threadReady = true
+
+    await closeSessionConnection(session)
+
+    expect(handle.close).toHaveBeenCalledOnce()
+    expect(dispatcher.close).toHaveBeenCalledWith('connection closed')
+    expect(session.connectionHandle).toBeNull()
+    expect(session.connectionAuth).toBeNull()
+    expect(session.threadId).toBeNull()
+    expect(session.threadReady).toBe(false)
+    expect(session.notificationDispatcher).toBeNull()
+  })
+
+  it('discards a dead connection even after a mutation may have started', async () => {
+    const session = makeSession({ model: 'gpt-5', threadId: 'existing-thread' })
+    const handle = {
+      connection: {},
+      close: vi.fn(async () => {}),
+      getStderr: () => '',
+      onClosed: () => () => {},
+    }
+    session.connectionHandle = handle as never
+    session.connectionAuth = { mode: 'auto' }
+    session.notificationDispatcher = { close: vi.fn() } as never
+    const writeError = Object.assign(new Error('write EPIPE'), { code: 'EPIPE' })
+
+    await expect(withSessionConnection(
+      session,
+      { mode: 'auto' },
+      undefined,
+      async () => { throw writeError },
+    )).rejects.toBe(writeError)
+
+    expect(handle.close).toHaveBeenCalledOnce()
+    expect(session.connectionHandle).toBeNull()
+  })
+
+  it('falls back to thread/start when the stored thread does not exist', async () => {
     const session = makeSession({ model: 'gpt-5', threadId: 'stale-thread' })
     const mockConnection = {
       request: vi.fn()
@@ -146,6 +198,69 @@ describe('resolveThread fallback', () => {
       config: expect.objectContaining({
         developer_instructions: CODEX_SYSTEM_PROMPT_APPEND,
       }),
+    }))
+  })
+
+  it('preserves the stored thread when resume fails because the connection closed', async () => {
+    const session = makeSession({ model: 'gpt-5', threadId: 'existing-thread' })
+    const mockConnection = {
+      request: vi.fn().mockRejectedValue(new Error('Codex app-server closed unexpectedly')),
+    } as never
+
+    await expect(
+      resolveThread(mockConnection, session, '/project', '/project', permissionProfile as never),
+    ).rejects.toThrow(/closed unexpectedly/)
+
+    expect(session.threadId).toBe('existing-thread')
+    expect((mockConnection as { request: ReturnType<typeof vi.fn> }).request).toHaveBeenCalledTimes(1)
+    expect((mockConnection as { request: ReturnType<typeof vi.fn> }).request).not.toHaveBeenCalledWith(
+      'thread/start',
+      expect.anything(),
+    )
+  })
+
+  it('retries thread/resume once on a fresh app-server connection', async () => {
+    const session = makeSession({ model: 'gpt-5', threadId: 'existing-thread' })
+    const auth = { mode: 'auto' as const }
+    const secondConnection = {
+      request: vi.fn().mockResolvedValue({ thread: { id: 'existing-thread' } }),
+    }
+    const secondHandle = {
+      connection: secondConnection,
+      close: vi.fn(async () => {}),
+      getStderr: () => '',
+      onClosed: () => () => {},
+    }
+    const firstHandle = {
+      connection: {
+        request: vi.fn().mockRejectedValue(new Error('Codex app-server closed unexpectedly')),
+      },
+      close: vi.fn(async () => {
+        session.connectionHandle = secondHandle as never
+        session.connectionAuth = auth
+        session.notificationDispatcher = {} as never
+      }),
+      getStderr: () => '',
+      onClosed: () => () => {},
+    }
+    session.connectionHandle = firstHandle as never
+    session.connectionAuth = auth
+    session.notificationDispatcher = {} as never
+
+    const result = await withThreadConnection(
+      session,
+      auth,
+      undefined,
+      '/project',
+      '/project',
+      permissionProfile as never,
+      async ({ threadId }) => threadId,
+    )
+
+    expect(result).toBe('existing-thread')
+    expect(firstHandle.close).toHaveBeenCalledTimes(1)
+    expect(secondConnection.request).toHaveBeenCalledWith('thread/resume', expect.objectContaining({
+      threadId: 'existing-thread',
     }))
   })
 

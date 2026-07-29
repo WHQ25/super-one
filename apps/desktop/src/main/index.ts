@@ -55,7 +55,7 @@ import { nodePtySpawner } from './terminal/pty'
 import { DeviceRegistry } from './remote/device-registry'
 import { MobileBroadcaster } from './remote/mobile-broadcaster'
 import { PresenceCoordinator } from './remote/presence-coordinator'
-import { listWorktreePaths, loadSessionStateBySid, saveSessionStateBySid, updateProviderSessionId } from './session/session-repo'
+import { listWorktreePaths, loadSessionStateBySid, resolveProviderSessionIdForResume, saveSessionStateBySid, updateProviderSessionId } from './session/session-repo'
 import { getSessionCollaborationSystemPrompt, setSessionCollaborationCallbacks } from './session/session-collaboration'
 import { buildClaudeEnv, buildRemoteActiveService, resolveChatService } from './providers/resolver'
 import type { ProxyUpstream } from './providers/llm-proxy-manager'
@@ -291,10 +291,19 @@ const sessionManager = new SessionManagerImpl({
   loadSession: (sessionId) => {
     const loaded = loadSessionStateBySid(sessionId)
     if (!loaded) return null
+    const providerSessionId = resolveProviderSessionIdForResume(loaded.record, loaded.messages)
+    if (providerSessionId && providerSessionId !== loaded.record.providerSessionId) {
+      updateProviderSessionId(sessionId, providerSessionId)
+      log.info(
+        '[sessionManager] repaired providerSessionId from message metadata sid=%s providerSessionId=%s',
+        sessionId,
+        providerSessionId,
+      )
+    }
     return {
       projectPath: loaded.record.projectPath,
       providerId: loaded.record.providerId,
-      providerSessionId: loaded.record.providerSessionId,
+      providerSessionId,
       messages: loaded.messages,
       totalCostUsd: loaded.record.totalCostUsd,
       contextTokens: loaded.record.contextTokens,

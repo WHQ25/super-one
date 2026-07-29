@@ -69,6 +69,15 @@ export class JsonRpcError extends Error {
   }
 }
 
+export function isCodexAppServerConnectionError(error: unknown): boolean {
+  const code = error && typeof error === 'object' && 'code' in error
+    ? String((error as { code?: unknown }).code ?? '')
+    : ''
+  if (['EPIPE', 'ECONNRESET', 'ERR_STREAM_WRITE_AFTER_END'].includes(code)) return true
+  const message = error instanceof Error ? error.message : String(error)
+  return /app-server (?:closed unexpectedly|connection closed|thread\/resume timed out)|broken pipe|write after end|\bEPIPE\b|\bECONNRESET\b/i.test(message)
+}
+
 const moduleRequire = createRequire(import.meta.url)
 let cachedCodexCliScriptPath: string | null = null
 
@@ -523,15 +532,6 @@ export async function createAppServerConnection(
     }
   })
 
-  const sendMessage = async (payload: Record<string, unknown>): Promise<void> => {
-    await new Promise<void>((resolve, reject) => {
-      stdin.write(`${JSON.stringify(payload)}\n`, (error) => {
-        if (error) reject(error)
-        else resolve()
-      })
-    })
-  }
-
   const readMessage = async (): Promise<Record<string, unknown>> => {
     // eslint-disable-next-line no-constant-condition
     while (true) {
@@ -578,6 +578,30 @@ export async function createAppServerConnection(
     }
   }
 
+  const setConnectionError = (error: unknown): Error => {
+    const nextError = error instanceof Error ? error : new Error(String(error))
+    if (!readerError) readerError = nextError
+    rejectAllWaiters(readerError)
+    return readerError
+  }
+
+  stdin.on('error', (error) => {
+    setConnectionError(error)
+  })
+
+  const sendMessage = async (payload: Record<string, unknown>): Promise<void> => {
+    if (readerError) throw readerError
+    if (stdin.destroyed || stdin.writableEnded) {
+      throw setConnectionError(new Error('Codex app-server connection closed'))
+    }
+    await new Promise<void>((resolve, reject) => {
+      stdin.write(`${JSON.stringify(payload)}\n`, (error) => {
+        if (error) reject(setConnectionError(error))
+        else resolve()
+      })
+    })
+  }
+
   const dispatchNotification = (notif: AppServerNotification): void => {
     const waiter = notificationWaiters.shift()
     if (waiter) waiter(notif)
@@ -588,8 +612,7 @@ export async function createAppServerConnection(
     const spawnError = err instanceof Error ? err : new Error(String(err))
     stderrChunks.push(`spawn error: ${spawnError.message}`)
     log.error('[codex] app-server spawn error:', spawnError.message)
-    readerError = spawnError
-    rejectAllWaiters(spawnError)
+    setConnectionError(spawnError)
   })
 
   void (async () => {
@@ -637,8 +660,7 @@ export async function createAppServerConnection(
         }
       }
     } catch (err) {
-      readerError = err instanceof Error ? err : new Error(String(err))
-      rejectAllWaiters(readerError)
+      setConnectionError(err)
     }
   })()
 

@@ -406,6 +406,18 @@ describe('AgentService prewarm', () => {
 })
 
 describe('AgentService SESSIONS_RESUME (cwd sync)', () => {
+  it('surfaces cold resume failures to the renderer', async () => {
+    const service = new AgentService()
+    ;(service as { sessionManager: unknown }).sessionManager = {
+      getSession: vi.fn(() => null),
+      resumeSession: vi.fn(() => { throw new Error('Session not found: missing') }),
+    }
+    service.setup()
+    const handler = getRegisteredIpcHandler(AgentIpcChannels.SESSIONS_RESUME)!
+
+    await expect(handler(null, '/repo/main', 'missing')).rejects.toThrow('Session not found: missing')
+  })
+
   it('switches the existing session cwd to the worktree cwd when the renderer resumes with a worktreePath that differs from the live session cwd', async () => {
     const service = new AgentService()
     const switchCwd = vi.fn().mockResolvedValue(undefined)

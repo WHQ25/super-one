@@ -18,6 +18,40 @@ const HELPER_VARIANTS = [
   { nameSuffix: 'LLM Proxy Helper', bundleName: 'Electron Helper (LLM Proxy)', bundleIdSuffix: 'llmproxy' },
 ]
 
+const COMPUTER_USE_HELPER_NAME = 'SuperOne Computer Use'
+
+function bundleComputerUseHelper(appOutDir, productFilename, archName) {
+  const frameworksDir = join(appOutDir, `${productFilename}.app`, 'Contents', 'Frameworks')
+  const buildScript = join(__dirname, '..', 'native', 'computer-use-helper', 'scripts', 'build.sh')
+
+  execFileSync('/bin/bash', [buildScript, 'release', archName], {
+    env: {
+      ...process.env,
+      SUPERONE_CU_HELPER_DIST: frameworksDir,
+      SUPERONE_CU_SKIP_CODESIGN: '1',
+    },
+    stdio: 'inherit',
+  })
+
+  const helperDir = join(frameworksDir, `${COMPUTER_USE_HELPER_NAME}.app`)
+  const helperBinary = join(helperDir, 'Contents', 'MacOS', COMPUTER_USE_HELPER_NAME)
+  if (!existsSync(helperBinary)) {
+    throw new Error(`[afterPack] Computer Use helper binary missing at ${helperBinary}`)
+  }
+
+  const expectedArch = archName === 'x64' ? 'x86_64' : archName
+  const binaryArchs = execFileSync('/usr/bin/lipo', ['-archs', helperBinary], { encoding: 'utf8' })
+    .trim()
+    .split(/\s+/)
+  if (!binaryArchs.includes(expectedArch)) {
+    throw new Error(
+      `[afterPack] Computer Use helper architecture mismatch: expected ${expectedArch}, got ${binaryArchs.join(', ')}`,
+    )
+  }
+
+  console.log(`[afterPack] bundled Computer Use helper for ${archName}: ${helperDir}`)
+}
+
 function cloneNamedHelperRuntimes(appOutDir, productFilename) {
   const contentsDir = join(appOutDir, `${productFilename}.app`, 'Contents')
   const frameworksDir = join(contentsDir, 'Frameworks')
@@ -90,6 +124,7 @@ module.exports = async function afterPack(context) {
     : join(context.appOutDir, 'resources', 'app.asar.unpacked')
 
   if (osName === 'darwin') {
+    bundleComputerUseHelper(context.appOutDir, context.packager.appInfo.productFilename, archName)
     cloneNamedHelperRuntimes(context.appOutDir, context.packager.appInfo.productFilename)
   }
 

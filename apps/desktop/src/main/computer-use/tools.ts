@@ -468,8 +468,13 @@ export async function hideComputerUseVisuals(sessionId?: string): Promise<void> 
 let enabledOverride: boolean | null = null
 let allowAllOverride: boolean | null = null
 
+export function isComputerUseSupportedPlatform(platform: NodeJS.Platform = process.platform): boolean {
+  return platform === 'darwin'
+}
+
 export function isComputerUseEnabled(): boolean {
   if (enabledOverride !== null) return enabledOverride
+  if (!isComputerUseSupportedPlatform()) return false
   try {
     return readAppSettings().computerUseEnabled === true
   } catch {
@@ -479,6 +484,7 @@ export function isComputerUseEnabled(): boolean {
 
 export function isComputerUseAllowAllApps(): boolean {
   if (allowAllOverride !== null) return allowAllOverride
+  if (!isComputerUseSupportedPlatform()) return false
   try {
     return readAppSettings().computerUseAllowAllApps === true
   } catch {
@@ -605,7 +611,12 @@ export async function executeComputerUseTool(
     )
   }
 
-  const service = context.host?.getService(sessionId) ?? getOrCreateComputerUseService(sessionId)
+  let service: ComputerUseService
+  try {
+    service = context.host?.getService(sessionId) ?? getOrCreateComputerUseService(sessionId)
+  } catch (err) {
+    return errorReply(err)
+  }
   const screenshotDir = COMPUTER_USE_SCREENSHOT_DIR
 
   // Keep policy in sync with settings for default host path.

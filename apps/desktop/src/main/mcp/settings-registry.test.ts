@@ -4,6 +4,7 @@ import {
   buildDomainGuide,
   buildPatchFromValues,
   listDomainSummaries,
+  settingsDomainsForPlatform,
   toConfirmFields,
   validateChanges,
 } from './settings-registry'
@@ -46,6 +47,12 @@ function makeSettings(overrides: Partial<AppSettings> = {}): AppSettings {
 }
 
 describe('settings registry validation', () => {
+  it('hides Computer Use configuration outside macOS', () => {
+    expect(settingsDomainsForPlatform('darwin').some((domain) => domain.domain === 'computer-use')).toBe(true)
+    expect(settingsDomainsForPlatform('win32').some((domain) => domain.domain === 'computer-use')).toBe(false)
+    expect(settingsDomainsForPlatform('linux').some((domain) => domain.domain === 'computer-use')).toBe(false)
+  })
+
   it('rejects an unknown key while keeping valid ones', () => {
     const { valid, rejected } = validateChanges(
       [{ key: 'liquidGlass', value: true }, { key: 'nonexistent', value: 1 }],

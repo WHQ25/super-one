@@ -19,7 +19,7 @@ export interface CreateComputerUseServiceOptions extends ComputerUseServiceOptio
  * Create a ComputerUseService with the appropriate platform adapter.
  * - fake: deterministic tests / CI
  * - macos: native helper (requires SuperOne Computer Use.app)
- * - auto: macos when helper app is present on darwin, else fake
+ * - auto: fake only in tests; otherwise require the packaged macOS helper
  */
 export function createComputerUseService(
   options: CreateComputerUseServiceOptions = {},
@@ -42,7 +42,7 @@ export function createComputerUseService(
     return new ComputerUseService({ ...options, policy })
   }
 
-  const backend = resolveBackend(options.backend ?? 'auto')
+  const backend = resolveComputerUseBackend(options.backend ?? 'auto')
   const adapter: PlatformAdapter =
     backend === 'macos'
       ? new MacosPlatformAdapter({
@@ -63,11 +63,31 @@ export function createComputerUseService(
   })
 }
 
-function resolveBackend(backend: ComputerUseBackendKind): 'fake' | 'macos' {
+export interface ResolveComputerUseBackendOptions {
+  platform?: NodeJS.Platform
+  allowTestFake?: boolean
+  helperAvailable?: boolean
+}
+
+export function resolveComputerUseBackend(
+  backend: ComputerUseBackendKind,
+  options: ResolveComputerUseBackendOptions = {},
+): 'fake' | 'macos' {
   if (backend === 'fake') return 'fake'
-  if (backend === 'macos') return 'macos'
-  // Vitest / CI: never auto-launch the native helper (would hang on TCC / socket).
-  if (process.env.VITEST || process.env.SUPERONE_CU_FORCE_FAKE === '1') return 'fake'
-  if (process.platform === 'darwin' && resolveHelperAppPath()) return 'macos'
-  return 'fake'
+  const platform = options.platform ?? process.platform
+  const allowTestFake = options.allowTestFake
+    ?? Boolean(process.env.VITEST || process.env.SUPERONE_CU_FORCE_FAKE === '1')
+
+  // Tests may opt into the deterministic backend, but shipped builds must fail
+  // closed instead of reporting fake desktop state as a successful tool result.
+  if (backend === 'auto' && allowTestFake) return 'fake'
+  if (platform !== 'darwin') {
+    throw new Error('Computer Use is only available on macOS')
+  }
+
+  const helperAvailable = options.helperAvailable ?? resolveHelperAppPath() != null
+  if (!helperAvailable) {
+    throw new Error('Computer Use helper is not available in this SuperOne build')
+  }
+  return 'macos'
 }

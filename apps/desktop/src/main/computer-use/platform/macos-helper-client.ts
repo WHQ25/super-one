@@ -15,6 +15,12 @@ export const RELEASE_HELPER_APP_NAME = 'SuperOne Computer Use'
 export const DEV_HELPER_BUNDLE_ID = 'com.superone.computer-use.dev'
 export const RELEASE_HELPER_BUNDLE_ID = 'com.superone.computer-use'
 
+export interface ResolveHelperAppPathOptions {
+  preferDev?: boolean
+  /** Injectable for packaged-path regression tests. null skips packaged lookup. */
+  resourcesPath?: string | null
+}
+
 /** Default socket under TMPDIR — user-only after helper chmod. */
 export function defaultHelperSocketPath(): string {
   return join(tmpdir(), 'superone-computer-use.sock')
@@ -34,7 +40,7 @@ function nativeHelperRootCandidates(): string[] {
  * - prefer Dev app when SUPERONE_CU_HELPER_VARIANT=dev or when not packaged
  * - prefer Release when SUPERONE_CU_HELPER_VARIANT=release
  */
-export function resolveHelperAppPath(opts?: { preferDev?: boolean }): string | null {
+export function resolveHelperAppPath(opts?: ResolveHelperAppPathOptions): string | null {
   if (process.env.SUPERONE_CU_HELPER_APP) {
     return process.env.SUPERONE_CU_HELPER_APP
   }
@@ -48,6 +54,17 @@ export function resolveHelperAppPath(opts?: { preferDev?: boolean }): string | n
   const names = preferDev
     ? [DEV_HELPER_APP_NAME, RELEASE_HELPER_APP_NAME]
     : [RELEASE_HELPER_APP_NAME, DEV_HELPER_APP_NAME]
+
+  const resourcesPath = opts?.resourcesPath === undefined
+    ? (typeof process.resourcesPath === 'string' ? process.resourcesPath : null)
+    : opts.resourcesPath
+  if (resourcesPath) {
+    const frameworksDir = join(resourcesPath, '..', 'Frameworks')
+    for (const name of names) {
+      const packagedPath = join(frameworksDir, `${name}.app`)
+      if (existsSync(packagedPath)) return packagedPath
+    }
+  }
 
   for (const root of nativeHelperRootCandidates()) {
     for (const name of names) {

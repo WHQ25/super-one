@@ -7,6 +7,7 @@ import { HighlightedText } from '@superone/ui/components/ui/HighlightedText'
 import { useChatStore, useActiveSession, type MentionKind } from '@/stores/chat'
 import { useEffectiveProjectRoot } from '@/stores/app'
 import { useMiniAppStore } from '@/stores/miniapp'
+import { isComputerUseSupportedPlatform } from '@/lib/computer-use-platform'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
 import { DesktopAppIcon } from './DesktopAppIcon'
 import { useTranslation } from 'react-i18next'
@@ -227,7 +228,9 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
         if (cancelled || !settings) return
         setCapabilityEnabled({
           collab: settings.experimentalAgentCollaborationEnabled === true,
-          computer: settings.computerUseEnabled === true,
+          computer:
+            isComputerUseSupportedPlatform(window.app.platform)
+            && settings.computerUseEnabled === true,
           browser: settings.cdpEnabled === true,
         })
       }

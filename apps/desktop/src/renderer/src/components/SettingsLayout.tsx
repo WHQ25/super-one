@@ -19,6 +19,7 @@ import { ComputerUseSettingsPage } from './ComputerUseSettingsPage'
 import { Tabs, TabsList, TabsTrigger } from '@superone/ui/components/ui/tabs'
 import { cn } from '@superone/ui/lib/utils'
 import type { SettingsProvider } from '@superone/shared/agent-types'
+import { isComputerUseSupportedPlatform } from '@/lib/computer-use-platform'
 
 const UsagePage = lazy(() => import('./UsagePage').then((m) => ({ default: m.UsagePage })))
 
@@ -56,6 +57,13 @@ export function SettingsLayout() {
   const settingsProvider = useAppStore((s) => s.settingsProvider)
   const setSettingsProvider = useAppStore((s) => s.setSettingsProvider)
   const navigateTo = useAppStore((s) => s.navigateTo)
+  const computerUseSupported = isComputerUseSupportedPlatform(window.app.platform)
+  const visibleGlobalTabs = computerUseSupported
+    ? globalTabs
+    : globalTabs.filter((tab) => tab.id !== 'computer-use')
+  const activeSettingsTab = !computerUseSupported && settingsTab === 'computer-use'
+    ? 'app-settings'
+    : settingsTab
 
   const visibleProviderTabs = settingsProvider === 'codex'
     ? providerTabs.filter((t) => codexTabs.has(t.id))
@@ -76,13 +84,13 @@ export function SettingsLayout() {
         </Button>
 
         <nav className="flex flex-col gap-1 mb-3">
-          {globalTabs.map((tab) => (
+          {visibleGlobalTabs.map((tab) => (
             <button
               key={tab.id}
               onClick={() => setSettingsTab(tab.id)}
               className={cn(
                 'flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors',
-                settingsTab === tab.id
+                activeSettingsTab === tab.id
                   ? 'bg-accent text-accent-foreground'
                   : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
               )}
@@ -112,7 +120,7 @@ export function SettingsLayout() {
               onClick={() => setSettingsTab(tab.id)}
               className={cn(
                 'flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors',
-                settingsTab === tab.id
+                activeSettingsTab === tab.id
                   ? 'bg-accent text-accent-foreground'
                   : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
               )}
@@ -126,20 +134,20 @@ export function SettingsLayout() {
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-3 [scrollbar-gutter:stable]">
-        {settingsTab === 'providers' && <ProvidersPage />}
-        {settingsTab === 'agents' && <AgentsPage />}
-        {settingsTab === 'skills' && <SkillsPage />}
-        {settingsTab === 'mcp' && <McpPage />}
-        {settingsTab === 'hooks' && <HooksPage />}
-        {settingsTab === 'plugins' && <PluginsPage />}
-        {settingsTab === 'app-settings' && <AppSettingsPage />}
-        {settingsTab === 'appearance' && <AppearancePage />}
-        {settingsTab === 'browser' && <BrowserSettingsPage />}
-        {settingsTab === 'computer-use' && <ComputerUseSettingsPage />}
-        {settingsTab === 'apps' && <AppsSettingsPage />}
-        {settingsTab === 'preferences' && <PreferencesPage />}
-        {settingsTab === 'remote' && <RemotePage />}
-        {settingsTab === 'usage' && (
+        {activeSettingsTab === 'providers' && <ProvidersPage />}
+        {activeSettingsTab === 'agents' && <AgentsPage />}
+        {activeSettingsTab === 'skills' && <SkillsPage />}
+        {activeSettingsTab === 'mcp' && <McpPage />}
+        {activeSettingsTab === 'hooks' && <HooksPage />}
+        {activeSettingsTab === 'plugins' && <PluginsPage />}
+        {activeSettingsTab === 'app-settings' && <AppSettingsPage />}
+        {activeSettingsTab === 'appearance' && <AppearancePage />}
+        {activeSettingsTab === 'browser' && <BrowserSettingsPage />}
+        {activeSettingsTab === 'computer-use' && <ComputerUseSettingsPage />}
+        {activeSettingsTab === 'apps' && <AppsSettingsPage />}
+        {activeSettingsTab === 'preferences' && <PreferencesPage />}
+        {activeSettingsTab === 'remote' && <RemotePage />}
+        {activeSettingsTab === 'usage' && (
           <Suspense fallback={<div className="flex h-full items-center justify-center"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>}>
             <UsagePage />
           </Suspense>

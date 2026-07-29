@@ -32,7 +32,7 @@ const QUESTION_PREVIEW_FORMAT_VALUES = ['markdown', 'html'] as const
 const TERMINAL_LIGHT_PALETTE_VALUES = ['catppuccin-latte', 'github-light', 'atom-one-light', 'ayu-light', 'dayfox', 'bluloco-light'] as const
 const TERMINAL_DARK_PALETTE_VALUES = ['monokai-remastered', 'catppuccin-mocha', 'tokyo-night', 'dracula', 'gruvbox-dark', 'nord', 'rose-pine'] as const
 
-export const SETTINGS_DOMAINS: SettingsDomainDef[] = [
+const ALL_SETTINGS_DOMAINS: SettingsDomainDef[] = [
   {
     domain: 'general',
     label: 'General',
@@ -342,6 +342,14 @@ export const SETTINGS_DOMAINS: SettingsDomainDef[] = [
     ],
   },
 ]
+
+export function settingsDomainsForPlatform(platform: NodeJS.Platform): SettingsDomainDef[] {
+  return platform === 'darwin'
+    ? ALL_SETTINGS_DOMAINS
+    : ALL_SETTINGS_DOMAINS.filter((domain) => domain.domain !== 'computer-use')
+}
+
+export const SETTINGS_DOMAINS = settingsDomainsForPlatform(process.platform)
 
 export const SETTINGS_DOMAIN_IDS = SETTINGS_DOMAINS.map((d) => d.domain)
 

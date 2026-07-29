@@ -2371,6 +2371,7 @@ function registerIpcHandlers(): void {
     continueComputerUsePermissionStep()
   })
   ipcMain.handle(AgentIpcChannels.COMPUTER_USE_LIST_RUNNING_APPS, async () => {
+    if (process.platform !== 'darwin') return []
     try {
       const { getOrCreateComputerUseService } = await import('./computer-use/tools')
       // Settings UI is not session-scoped; use a dedicated service id for listing.
@@ -2385,6 +2386,7 @@ function registerIpcHandlers(): void {
     }
   })
   ipcMain.handle(AgentIpcChannels.COMPUTER_USE_LIST_INSTALLED_APPS, async () => {
+    if (process.platform !== 'darwin') return []
     try {
       const { listInstalledApps } = await import('./computer-use/resolve-installed-app')
       return listInstalledApps().map((a) => ({
@@ -2407,6 +2409,7 @@ function registerIpcHandlers(): void {
       sessionId: string,
       apps: Array<{ app: string; bundleId: string }>,
     ) => {
+      if (process.platform !== 'darwin') return false
       if (typeof sessionId !== 'string' || !sessionId.trim()) return false
       if (!Array.isArray(apps) || apps.length === 0 || apps.length > 16) return false
       // Only main-window / known app renderers may grant (not arbitrary web contents).
@@ -2448,6 +2451,7 @@ function registerIpcHandlers(): void {
   ipcMain.handle(
     AgentIpcChannels.COMPUTER_USE_RESOLVE_APP_ICON,
     async (_event, bundleId: string) => {
+      if (process.platform !== 'darwin') return null
       if (typeof bundleId !== 'string' || !bundleId.trim()) return null
       const id = bundleId.trim()
       try {

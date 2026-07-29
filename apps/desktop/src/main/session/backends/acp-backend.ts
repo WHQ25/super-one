@@ -1063,7 +1063,12 @@ export class AcpBackend implements SessionBackend {
   }
 
   async getContextUsage(): Promise<ContextUsageInfo | null> {
-    return null
+    if (!this.runtime) return null
+    try {
+      return await this.runtime.getContextUsage()
+    } catch {
+      return null
+    }
   }
 
   async getMcpServerStatus(): Promise<McpServerInfo[]> {

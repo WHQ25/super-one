@@ -52,11 +52,19 @@ import {
   type GrokExitPlanModeParams,
 } from './acp-xai-extensions'
 import {
+  XAI_EXT_NOTIFICATION_METHODS,
+  createXaiCorrelationState,
+  mapXaiStandaloneNotification,
+  noteToolCorrelationFromAgentEvents,
+  parseXaiExtParams,
+  type XaiCorrelationState,
+} from './acp-xai-session-notify'
+import {
   grokSessionPermissionMeta,
   grokYoloModeNotificationParams,
 } from './acp-permission-preapprove'
 import { pushBashOutput } from '../bash-output-watcher'
-import type { AgentEvent, ImageAttachment, PermissionMode } from '@superone/shared/agent-types'
+import type { AgentEvent, ContextUsageInfo, ImageAttachment, PermissionMode } from '@superone/shared/agent-types'
 
 export interface AcpRuntimeLaunchConfig {
   agentId?: string
@@ -102,6 +110,8 @@ export interface AcpRuntime {
   setPermissionMode(mode: PermissionMode): Promise<void>
   /** ACP session/set_mode (plan | ask | default). */
   setAcpSessionMode(modeId: string): Promise<void>
+  /** Context usage from x.ai turn_completed / subagent progress (null until first sample). */
+  getContextUsage(): Promise<ContextUsageInfo | null>
   prompt(
     text: string,
     messageId: string,
@@ -228,6 +238,36 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
   let agentCapabilities: AcpAgentCapabilities | null = null
   let mcpAttached = false
 
+  // xAI progressive bus — handlers bind before session is ready; deliver is wired later.
+  const xaiCorrelation: XaiCorrelationState = createXaiCorrelationState()
+  let xaiDeliver: ((event: AgentEvent) => void) | null = null
+  let xaiMessageId: (() => string | null) | null = null
+
+  const handleXaiExtNotification = async (
+    method: string,
+    ctx: { params: Record<string, unknown> },
+  ): Promise<void> => {
+    try {
+      const events = mapXaiStandaloneNotification(
+        method,
+        ctx.params,
+        xaiCorrelation,
+        { messageId: xaiMessageId?.() ?? null },
+      )
+      if (events.length === 0) return
+      log.debug(
+        '[acp-runtime] x.ai ext method=%s events=%d',
+        method,
+        events.length,
+      )
+      for (const event of events) {
+        xaiDeliver?.(event)
+      }
+    } catch (err) {
+      log.warn('[acp-runtime] x.ai ext handler error method=%s:', method, err)
+    }
+  }
+
   const abortError = new Error('ACP runtime initialization aborted')
   const abortInitialization = () => {
     try { terminalManager.dispose() } catch { /* ignore */ }
@@ -259,7 +299,7 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       return opts.exitPlanMode.request(ctx.params)
     }
 
-    connection = client({ name: 'superone' })
+    let clientBuilder = client({ name: 'superone' })
       .onRequest(methods.client.session.requestPermission, async (ctx) => {
         return opts.permission.request(ctx.params)
       })
@@ -282,7 +322,20 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       .onRequest(`_${XAI_ASK_USER_QUESTION}`, askUserParams, askUserHandler)
       .onRequest(XAI_EXIT_PLAN_MODE, exitPlanParams, exitPlanHandler)
       .onRequest(`_${XAI_EXIT_PLAN_MODE}`, exitPlanParams, exitPlanHandler)
-      .connect(stream)
+
+    // Grok progressive ExtNotification bus (workflow / subagent / bg / usage / …)
+    for (const method of XAI_EXT_NOTIFICATION_METHODS) {
+      const m = method
+      clientBuilder = clientBuilder.onNotification(
+        m,
+        parseXaiExtParams,
+        async (ctx) => {
+          await handleXaiExtNotification(m, ctx)
+        },
+      )
+    }
+
+    connection = clientBuilder.connect(stream)
 
     const clientVersion = resolveAcpClientVersion()
     const initResult = await connection.agent.request(methods.agent.initialize, {
@@ -532,6 +585,11 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
     else opts.onSessionEvent?.(event)
   }
 
+  // Wire xAI ExtNotification delivery (handlers registered above close over these).
+  // progressive events often arrive after session/prompt returns → onSessionEvent path.
+  xaiDeliver = deliver
+  xaiMessageId = () => promptMessageId ?? primaryPromptMessageId
+
   void (async () => {
     while (pumping && !closed) {
       try {
@@ -590,6 +648,7 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
           },
         })
         trackOpenTools(openToolIds, mapped)
+        noteToolCorrelationFromAgentEvents(mapped, xaiCorrelation)
         for (const event of mapped) {
           deliver(event)
         }
@@ -673,6 +732,9 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       )
     },
     setAcpSessionMode,
+    async getContextUsage() {
+      return xaiCorrelation.lastUsage
+    },
     async setPermissionMode(mode) {
       // Plan is ACP session mode, not Grok yolo/auto permission baseline.
       if (mode === 'plan') {
@@ -722,6 +784,7 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       promptOnEvent = onEvent
       agentMsgToLocal.clear()
       openToolIds = new Set()
+      xaiCorrelation.lastMessageId = messageId
 
       const promptBlocks = await buildAcpPromptContentAsync(text, {
         images,

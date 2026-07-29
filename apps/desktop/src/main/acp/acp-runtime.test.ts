@@ -351,6 +351,112 @@ describe('createAcpRuntime (in-process agent)', () => {
     expect(events.some((e) => e.type === 'message_complete')).toBe(true)
     expect(events.some((e) => e.type === 'status_change' && e.status === 'idle')).toBe(true)
   })
+
+  it('maps x.ai/session_notification workflow progress after prompt returns', async () => {
+    const sessionEvents: AgentEvent[] = []
+    let agentNotifyClient: {
+      notify: (method: string, params: unknown) => Promise<void>
+    } | null = null
+
+    const agentApp = agent({ name: 'workflow-agent' })
+      .onRequest(methods.agent.initialize, async () => ({
+        protocolVersion: PROTOCOL_VERSION,
+        agentCapabilities: {},
+      }))
+      .onRequest(methods.agent.session.new, async () => ({ sessionId: 'sess-wf' }))
+      .onRequest(methods.agent.session.prompt, async (ctx) => {
+        agentNotifyClient = ctx.client
+        // Launch tool complete with run_id for correlation
+        await ctx.client.notify(methods.client.session.update, {
+          sessionId: ctx.params.sessionId,
+          update: {
+            sessionUpdate: 'tool_call',
+            toolCallId: 'tc_wf',
+            title: 'workflow',
+            kind: 'other',
+            status: 'pending',
+          },
+        })
+        await ctx.client.notify(methods.client.session.update, {
+          sessionId: ctx.params.sessionId,
+          update: {
+            sessionUpdate: 'tool_call_update',
+            toolCallId: 'tc_wf',
+            status: 'completed',
+            rawOutput: { run_id: 'wf_live', name: 'review-changes' },
+          },
+        })
+        return { stopReason: 'end_turn' as const }
+      })
+      .onNotification(methods.agent.session.cancel, async () => {})
+      .onRequest(methods.agent.session.setMode, async () => ({}))
+
+    const clientToAgent = new TransformStream<Uint8Array>()
+    const agentToClient = new TransformStream<Uint8Array>()
+    agentApp.connect(ndJsonStream(agentToClient.writable, clientToAgent.readable))
+    const clientStream = ndJsonStream(clientToAgent.writable, agentToClient.readable)
+    const dispose = () => {
+      try {
+        if (!clientToAgent.writable.locked) void clientToAgent.writable.close().catch(() => undefined)
+      } catch { /* ignore */ }
+      try {
+        if (!agentToClient.writable.locked) void agentToClient.writable.close().catch(() => undefined)
+      } catch { /* ignore */ }
+    }
+
+    const runtime = await createAcpRuntime({
+      launch: { agentId: 'grok-build', command: 'unused', defaultCwd: '/tmp/proj' },
+      permission: { request: async () => ({ outcome: { outcome: 'cancelled' } }) },
+      onSessionEvent: (e) => sessionEvents.push(e),
+      streamFactory: async () => ({ stream: clientStream, dispose }),
+    })
+
+    const promptEvents: AgentEvent[] = []
+    await runtime.prompt('run workflow', 'msg-wf', (e) => promptEvents.push(e))
+    // After prompt, progressive bus continues via onSessionEvent
+    expect(agentNotifyClient).toBeTruthy()
+    await agentNotifyClient!.notify('x.ai/session_notification', {
+      sessionId: 'sess-wf',
+      update: {
+        sessionUpdate: 'workflow_updated',
+        run_id: 'wf_live',
+        revision: 1,
+        name: 'review-changes',
+        objective: 'Review',
+        status: 'active',
+        current_phase: 'Execute',
+        elapsed_ms: 100,
+        agents: [{ agent_id: 'a1', label: 'Worker', state: 'running', tokens_used: 10 }],
+      },
+    })
+    await agentNotifyClient!.notify('x.ai/session_notification', {
+      sessionId: 'sess-wf',
+      update: {
+        sessionUpdate: 'workflow_updated',
+        run_id: 'wf_live',
+        revision: 2,
+        name: 'review-changes',
+        objective: 'Review',
+        status: 'complete',
+        elapsed_ms: 500,
+        result_summary: 'Done reviewing',
+      },
+    })
+    await new Promise((r) => setTimeout(r, 50))
+
+    const all = [...promptEvents, ...sessionEvents]
+    const started = all.filter((e) => e.type === 'task_started' && e.taskId === 'wf_live')
+    const progress = all.filter((e) => e.type === 'task_progress' && e.taskId === 'wf_live')
+    const done = all.filter((e) => e.type === 'task_notification' && e.taskId === 'wf_live')
+    expect(started.length).toBeGreaterThanOrEqual(1)
+    expect(progress.length).toBeGreaterThanOrEqual(1)
+    expect(done.some((e) => e.type === 'task_notification' && e.resultText === 'Done reviewing')).toBe(true)
+    // Correlation from tool_result
+    expect(started[0]).toMatchObject({ toolUseId: 'tc_wf' })
+
+    await runtime.close()
+    await new Promise((r) => setTimeout(r, 0))
+  })
 })
 
 describe('ACP host integration (MCP + system prompt)', () => {

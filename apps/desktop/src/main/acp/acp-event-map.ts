@@ -148,6 +148,8 @@ const TOOL_ID_TO_NAME: Record<string, string> = {
   spawn_agent: 'Task',
   task: 'Task',
   agent: 'Task',
+  workflow: 'Workflow',
+  run_workflow: 'Workflow',
   memory_search: 'MemorySearch',
   memorysearch: 'MemorySearch',
   search_memory: 'MemorySearch',

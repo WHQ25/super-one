@@ -4,6 +4,37 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.49.0-alpha] - 2026-07-30
+
+### Added
+
+- Add native Computer Use for macOS with window capture, accessibility actions, multi-window modal handling, transient UI support, and guided permission setup
+- Add Computer Use app mentions, tool results, app-icon grants, and configurable always-allow permissions to chat
+- Add compact chat mode and optional automatic expansion for file diffs
+- Add progressive x.ai ACP notifications and built-in collaboration, Computer Use, and browser mentions
+
+### Fixed
+
+- Package the architecture-matched Computer Use helper inside macOS builds and hide unsupported Computer Use paths on Windows and Linux
+- Keep Grok binary image reads on the local filesystem
+- Resolve macOS app icons reliably on case-sensitive APFS volumes
+- Stabilize Computer Use wait conditions, cursor visibility, localized control highlighting, and transient accessibility actions
+- Preserve Codex sessions across app-server disconnects
+- Keep mini-window session state and provider branding synchronized
+- Restore directory mentions and ignored-path search
+- Share Bash expansion behavior across ACP and Codex tools
+- Tag ACP question replies with their outcome
+
+### Changed
+
+- Redesign Computer Use permissions and the always-allow app workflow
+- Compact the Computer Use app catalog and rename snapshot tooling
+- Soft-cancel active turns from the stop control and collapse completed collaboration children
+
+### Performance
+
+- Batch renderer agent events and emit incremental Codex patches
+
 ## [0.48.3-alpha] - 2026-07-28
 
 ### Added

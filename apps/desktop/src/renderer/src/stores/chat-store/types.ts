@@ -45,7 +45,16 @@ export interface SessionWriteTarget {
   sessionId: string
 }
 
-export type MentionKind = 'file' | 'directory' | 'agent' | 'miniapp' | 'collab' | 'computer' | 'browser'
+export type MentionKind =
+  | 'file'
+  | 'directory'
+  | 'agent'
+  | 'miniapp'
+  | 'collab'
+  | 'computer'
+  | 'browser'
+  /** Installed desktop app — value is reverse-DNS bundleId. */
+  | 'desktop-app'
 export interface Mention {
   kind: MentionKind
   value: string

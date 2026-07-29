@@ -199,10 +199,12 @@ export async function sendMessageImpl(
     miniAppReminderSuffix = `\n\n<superone-miniapp-reminder>\n${lines.join('\n')}\n</superone-miniapp-reminder>`
   }
   let capabilityReminderSuffix = ''
+  let desktopAppReminderSuffix = ''
   let agentContent = rawContent
   const capabilityMentions = mentions.filter(
     (m) => m.kind === 'collab' || m.kind === 'computer' || m.kind === 'browser',
   )
+  const desktopAppMentions = mentions.filter((m) => m.kind === 'desktop-app')
   if (capabilityMentions.length > 0) {
     const {
       CAPABILITY_TAG_REGEX,
@@ -214,7 +216,7 @@ export async function sendMessageImpl(
     } = await import('@superone/shared/capability-prompt-tags')
     // Agent-facing payload always uses English capability labels, even when the
     // user bubble keeps a localized chip name in the stored user message.
-    agentContent = rawContent.replace(CAPABILITY_TAG_REGEX, (full, _name, id) => {
+    agentContent = agentContent.replace(CAPABILITY_TAG_REGEX, (full, _name, id) => {
       const capId = String(id).trim()
       if (!isBuiltinCapabilityId(capId)) return full
       return wrapCapabilityMention(capId)
@@ -236,9 +238,37 @@ export async function sendMessageImpl(
     }
     capabilityReminderSuffix = `\n\n<superone-capability-reminder>\n${lines.join('\n')}\n</superone-capability-reminder>`
   }
-  const finalContent = agentContent + contextSuffix + quoteSuffix + miniAppReminderSuffix + capabilityReminderSuffix + annotationSuffix
+  // Reminder is filled only after grant IPC succeeds (see below near authorize).
+  let pendingDesktopAppReminder = ''
+  if (desktopAppMentions.length > 0) {
+    const lines: string[] = [
+      'User @-mentioned these installed desktop apps. Computer Use is temporarily authorized for them for this session — do NOT request another grant for these bundle ids.',
+      'Prefer computer_* tools when interacting with them:',
+    ]
+    const seen = new Set<string>()
+    for (const m of desktopAppMentions) {
+      if (!m.value || seen.has(m.value)) continue
+      seen.add(m.value)
+      lines.push(`- "${m.displayName || m.value}" (bundleId: ${m.value})`)
+    }
+    if (!capabilityMentions.some((m) => m.kind === 'computer')) {
+      lines.push(
+        'Tools start with "mcp__superone__computer_" (Claude) or "mcp__superone.computer_" (Codex).',
+      )
+    }
+    pendingDesktopAppReminder = `\n\n<superone-desktop-app-reminder>\n${lines.join('\n')}\n</superone-desktop-app-reminder>`
+  }
+  // desktop-app reminder is appended only after grant IPC succeeds (below).
+  let finalContent =
+    agentContent +
+    contextSuffix +
+    quoteSuffix +
+    miniAppReminderSuffix +
+    capabilityReminderSuffix +
+    annotationSuffix
   const codexCommand = parseCodexCommand(rawContent)
-  const resolvedCodexCommand: CodexCommand | null = effectiveProvider === 'codex'
+  // Note: codex command is re-built after grant if desktop-app reminder is added.
+  let resolvedCodexCommand: CodexCommand | null = effectiveProvider === 'codex'
     ? (codexCommand ?? { kind: 'run', prompt: finalContent })
     : null
   const resolvedCodexSelection = resolveSessionCodexSelection(
@@ -464,6 +494,27 @@ export async function sendMessageImpl(
       await window.miniapp.authorize(miniAppAuthorizations, projectPath, resolvedSessionId)
     } catch (err) {
       console.error('[sendMessage] miniapp authorize failed:', err)
+    }
+  }
+
+  // Temporary Computer Use grants from @ desktop-app mentions (session-scoped, no HITL).
+  const desktopAppGrants = mentions
+    .filter((m) => m.kind === 'desktop-app' && m.value)
+    .map((m) => ({ app: m.displayName || m.value, bundleId: m.value }))
+  if (desktopAppGrants.length > 0 && resolvedSessionId && window.app?.grantComputerUseSessionApps) {
+    try {
+      const ok = await window.app.grantComputerUseSessionApps(
+        resolvedSessionId,
+        desktopAppGrants,
+      )
+      if (ok && pendingDesktopAppReminder) {
+        finalContent += pendingDesktopAppReminder
+        if (effectiveProvider === 'codex' && resolvedCodexCommand?.kind === 'run') {
+          resolvedCodexCommand = { kind: 'run', prompt: finalContent }
+        }
+      }
+    } catch (err) {
+      console.error('[sendMessage] computer-use session grant failed:', err)
     }
   }
 

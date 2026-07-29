@@ -533,6 +533,10 @@ export function ChatInput() {
         if (kindHint === 'miniapp') {
           kind = 'miniapp'
           displayName = displayNameHint || value
+        } else if (kindHint === 'desktop-app') {
+          kind = 'desktop-app'
+          mentionValue = value
+          displayName = displayNameHint || value
         } else if (kindHint === 'collab' || kindHint === 'computer' || kindHint === 'browser') {
           kind = kindHint
           mentionValue = kindHint
@@ -593,6 +597,8 @@ export function ChatInput() {
             collectedMentions.push(attrs)
             if (attrs.kind === 'miniapp') {
               current += ` <superone-miniapp><appname>${attrs.displayName}</appname><appid>${attrs.value}</appid></superone-miniapp> `
+            } else if (attrs.kind === 'desktop-app') {
+              current += ` <superone-desktop-app><name>${attrs.displayName}</name><bundleId>${attrs.value}</bundleId></superone-desktop-app> `
             } else if (attrs.kind === 'collab' || attrs.kind === 'computer' || attrs.kind === 'browser') {
               current += ` <superone-capability><name>${attrs.displayName}</name><id>${attrs.kind}</id></superone-capability> `
             } else {

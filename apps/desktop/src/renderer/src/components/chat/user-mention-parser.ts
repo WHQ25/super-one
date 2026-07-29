@@ -5,7 +5,13 @@ import {
   type BuiltinCapabilityId,
 } from '@superone/shared/capability-prompt-tags'
 
-export type UserMentionKind = 'file' | 'directory' | 'agent' | 'miniapp' | BuiltinCapabilityId
+export type UserMentionKind =
+  | 'file'
+  | 'directory'
+  | 'agent'
+  | 'miniapp'
+  | 'desktop-app'
+  | BuiltinCapabilityId
 
 export type UserTextSegment =
   | { type: 'text'; text: string }
@@ -14,6 +20,10 @@ export type UserTextSegment =
 const MENTION_REGEX = /(^|\s)@(\S+)/g
 const MINIAPP_TAG_REGEX = /<superone-miniapp>\s*<appname>([\s\S]*?)<\/appname>\s*<appid>([\s\S]*?)<\/appid>\s*<\/superone-miniapp>/g
 const MINIAPP_REMINDER_REGEX = /\n*<superone-miniapp-reminder>[\s\S]*?<\/superone-miniapp-reminder>\n*/g
+const DESKTOP_APP_TAG_REGEX =
+  /<superone-desktop-app>\s*<name>([\s\S]*?)<\/name>\s*<bundleId>([\s\S]*?)<\/bundleId>\s*<\/superone-desktop-app>/g
+const DESKTOP_APP_REMINDER_REGEX =
+  /\n*<superone-desktop-app-reminder>[\s\S]*?<\/superone-desktop-app-reminder>\n*/g
 
 function classify(value: string): UserMentionKind {
   if (isBuiltinCapabilityId(value)) return value
@@ -64,6 +74,22 @@ function findCapabilityTags(text: string): TagMatch[] {
   return out
 }
 
+function findDesktopAppTags(text: string): TagMatch[] {
+  const out: TagMatch[] = []
+  const re = new RegExp(DESKTOP_APP_TAG_REGEX)
+  let m: RegExpExecArray | null
+  while ((m = re.exec(text)) !== null) {
+    out.push({
+      start: m.index,
+      end: m.index + m[0].length,
+      kind: 'desktop-app',
+      displayName: m[1].trim(),
+      value: m[2].trim(),
+    })
+  }
+  return out
+}
+
 export function parseUserMentions(text: string): UserTextSegment[] {
   if (text.length === 0) return []
 
@@ -71,10 +97,14 @@ export function parseUserMentions(text: string): UserTextSegment[] {
   const withoutReminder = text
     .replace(MINIAPP_REMINDER_REGEX, '')
     .replace(CAPABILITY_REMINDER_REGEX, '')
+    .replace(DESKTOP_APP_REMINDER_REGEX, '')
 
-  // 2. Extract structured tags (miniapp + built-in capabilities) and interleave with @-mentions.
-  const tagMatches = [...findMiniAppTags(withoutReminder), ...findCapabilityTags(withoutReminder)]
-    .sort((a, b) => a.start - b.start)
+  // 2. Extract structured tags (miniapp + capabilities + desktop apps) and interleave with @-mentions.
+  const tagMatches = [
+    ...findMiniAppTags(withoutReminder),
+    ...findCapabilityTags(withoutReminder),
+    ...findDesktopAppTags(withoutReminder),
+  ].sort((a, b) => a.start - b.start)
 
   const segments: UserTextSegment[] = []
   let cursor = 0

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback, useImperativeHandle, forwardRef, useMemo } from 'react'
-import { Bot, Folder, Globe, Monitor, Users } from 'lucide-react'
+import { Bot, Folder, Globe, MousePointer2, Users } from 'lucide-react'
 import { FileIcon } from '@superone/ui/components/ui/FileIcon'
 import { cn } from '@superone/ui/lib/utils'
 import { Kbd } from '@superone/ui/components/ui/kbd'
@@ -8,6 +8,7 @@ import { useChatStore, useActiveSession, type MentionKind } from '@/stores/chat'
 import { useEffectiveProjectRoot } from '@/stores/app'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
+import { DesktopAppIcon } from './DesktopAppIcon'
 import { useTranslation } from 'react-i18next'
 import type { ListDirEntry, MentionSearchItem } from '@superone/shared/agent-types'
 import { BUILTIN_CAPABILITIES, type BuiltinCapabilityId } from '@superone/shared/capability-prompt-tags'
@@ -34,7 +35,23 @@ type FlatItem =
   | { kind: 'dir-entry'; entry: ListDirEntry; prefix: string }
   | { kind: 'agent'; name: string; model: string; matchIndices: number[] }
   | { kind: 'miniapp'; appId: string; displayName: string; matchIndices: number[] }
-  | { kind: 'capability'; id: BuiltinCapabilityId; displayName: string; matchIndices: number[] }
+  | {
+      kind: 'capability'
+      id: BuiltinCapabilityId
+      displayName: string
+      matchIndices: number[]
+      disabled?: boolean
+    }
+  | {
+      kind: 'desktop-app'
+      bundleId: string
+      displayName: string
+      matchIndices: number[]
+    }
+
+type InstalledDesktopApp = { app: string; bundleId: string; aliases: string[] }
+
+const DESKTOP_APP_MENTION_LIMIT = 12
 
 function fuzzyMatchIndices(text: string, query: string): number[] | null {
   if (!query) return []
@@ -72,22 +89,50 @@ function getSelectPath(item: FlatItem): string {
   if (item.kind === 'agent') return item.name
   if (item.kind === 'miniapp') return item.appId
   if (item.kind === 'capability') return item.id
+  if (item.kind === 'desktop-app') return item.bundleId
   return ''
 }
 
-const MENTION_GROUP_ORDER = ['capability', 'agent', 'miniapp', 'file'] as const
+const MENTION_GROUP_ORDER = ['capability', 'desktop-app', 'agent', 'miniapp', 'file'] as const
 
 function mentionGroupKey(item: FlatItem): string {
   if (item.kind === 'capability') return 'capability'
+  if (item.kind === 'desktop-app') return 'desktop-app'
   if (item.kind === 'agent') return 'agent'
   if (item.kind === 'miniapp') return 'miniapp'
   return 'file'
 }
 
-function capabilityIcon(id: BuiltinCapabilityId) {
-  if (id === 'collab') return <Users className="size-3.5 shrink-0 text-violet-600 dark:text-violet-400" />
-  if (id === 'computer') return <Monitor className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
-  return <Globe className="size-3.5 shrink-0 text-sky-600 dark:text-sky-400" />
+function capabilityIcon(id: BuiltinCapabilityId, disabled?: boolean) {
+  const muted = disabled ? 'text-muted-foreground' : undefined
+  if (id === 'collab') {
+    return (
+      <Users
+        className={cn(
+          'size-3.5 shrink-0',
+          muted ?? 'text-violet-600 dark:text-violet-400',
+        )}
+      />
+    )
+  }
+  if (id === 'computer') {
+    return (
+      <MousePointer2
+        className={cn(
+          'size-3.5 shrink-0',
+          muted ?? 'text-emerald-600 dark:text-emerald-400',
+        )}
+      />
+    )
+  }
+  return (
+    <Globe
+      className={cn(
+        'size-3.5 shrink-0',
+        muted ?? 'text-sky-600 dark:text-sky-400',
+      )}
+    />
+  )
 }
 
 export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
@@ -166,6 +211,68 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
       }
     }, [selectedIndex])
 
+    /** Feature gates for built-in @-capability chips (settings toggles). */
+    const [capabilityEnabled, setCapabilityEnabled] = useState({
+      collab: false,
+      computer: false,
+      browser: false,
+    })
+    useEffect(() => {
+      let cancelled = false
+      const apply = (settings: {
+        experimentalAgentCollaborationEnabled?: boolean
+        computerUseEnabled?: boolean
+        cdpEnabled?: boolean
+      } | null | undefined) => {
+        if (cancelled || !settings) return
+        setCapabilityEnabled({
+          collab: settings.experimentalAgentCollaborationEnabled === true,
+          computer: settings.computerUseEnabled === true,
+          browser: settings.cdpEnabled === true,
+        })
+      }
+      void window.app?.getAppSettings?.()
+        .then((settings) => apply(settings))
+        .catch(() => {
+          if (!cancelled) setCapabilityEnabled({ collab: false, computer: false, browser: false })
+        })
+      const unsub = window.app?.onAppSettingsChange?.((settings) => {
+        apply(settings as {
+          experimentalAgentCollaborationEnabled?: boolean
+          computerUseEnabled?: boolean
+          cdpEnabled?: boolean
+        } | null)
+      })
+      return () => {
+        cancelled = true
+        unsub?.()
+      }
+    }, [])
+
+    const computerUseEnabled = capabilityEnabled.computer
+
+    const [installedDesktopApps, setInstalledDesktopApps] = useState<InstalledDesktopApp[]>([])
+    useEffect(() => {
+      let cancelled = false
+      // Skip catalog load when Computer Use is off — popup must not match desktop apps.
+      if (!computerUseEnabled) {
+        setInstalledDesktopApps([])
+        return
+      }
+      const list = window.app?.listComputerUseInstalledApps
+      if (!list) return
+      void list()
+        .then((apps) => {
+          if (!cancelled && Array.isArray(apps)) setInstalledDesktopApps(apps)
+        })
+        .catch(() => {
+          if (!cancelled) setInstalledDesktopApps([])
+        })
+      return () => {
+        cancelled = true
+      }
+    }, [computerUseEnabled])
+
     const miniApps = useMiniAppStore((s) => s.apps)
     const matchedMiniApps = useMemo<FlatItem[]>(() => {
       if (!miniApps || miniApps.length === 0) return []
@@ -207,14 +314,48 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
           id: cap.id,
           displayName: label,
           matchIndices: nameMatch ?? enMatch ?? idMatch ?? [],
+          // Stay visible but not selectable when the matching settings toggle is off.
+          disabled: !capabilityEnabled[cap.id],
         })
       }
       return matches
-    }, [capabilityLabel, query, isBrowseMode])
+    }, [capabilityLabel, query, isBrowseMode, capabilityEnabled])
+
+    const matchedDesktopApps = useMemo<FlatItem[]>(() => {
+      // Only when Computer Use is enabled.
+      if (!computerUseEnabled) return []
+      // Hide when browsing into a subdirectory; require a query so empty `@`
+      // is not flooded with every installed app (capabilities stay visible).
+      if (isBrowseMode && query) return []
+      if (!query.trim()) return []
+      const matches: FlatItem[] = []
+      for (const app of installedDesktopApps) {
+        const nameMatch = fuzzyMatchIndices(app.app, query)
+        const idMatch = fuzzyMatchIndices(app.bundleId, query)
+        let aliasMatch: number[] | null = null
+        for (const alias of app.aliases ?? []) {
+          aliasMatch = fuzzyMatchIndices(alias, query)
+          if (aliasMatch !== null) break
+        }
+        if (nameMatch === null && idMatch === null && aliasMatch === null) continue
+        matches.push({
+          kind: 'desktop-app',
+          bundleId: app.bundleId,
+          displayName: app.app,
+          matchIndices: nameMatch ?? aliasMatch ?? idMatch ?? [],
+        })
+        if (matches.length >= DESKTOP_APP_MENTION_LIMIT) break
+      }
+      return matches
+    }, [computerUseEnabled, installedDesktopApps, query, isBrowseMode])
 
     const flatItems: FlatItem[] = useMemo(() => {
       if (isBrowseMode) {
-        const items: FlatItem[] = [...matchedCapabilities, ...matchedMiniApps]
+        const items: FlatItem[] = [
+          ...matchedCapabilities,
+          ...matchedDesktopApps,
+          ...matchedMiniApps,
+        ]
         for (const entry of dirEntries) items.push({ kind: 'dir-entry', entry, prefix: browseDir })
         if (!query) {
           for (const a of agentEntries) {
@@ -225,7 +366,11 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
       }
 
       const prefixLen = scopeDir?.length ?? 0
-      const items: FlatItem[] = [...matchedCapabilities, ...matchedMiniApps]
+      const items: FlatItem[] = [
+        ...matchedCapabilities,
+        ...matchedDesktopApps,
+        ...matchedMiniApps,
+      ]
       for (const item of searchResults) {
         if (item.kind === 'agent') {
           items.push({ kind: 'agent', name: item.name, model: item.model, matchIndices: item.matchIndices })
@@ -236,7 +381,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
         }
       }
       return items
-    }, [isBrowseMode, browseDir, query, searchResults, dirEntries, agentEntries, scopeDir, matchedCapabilities, matchedMiniApps])
+    }, [isBrowseMode, browseDir, query, searchResults, dirEntries, agentEntries, scopeDir, matchedCapabilities, matchedDesktopApps, matchedMiniApps])
 
     const mentionGroups = useMemo(
       () => groupItems(flatItems, mentionGroupKey, MENTION_GROUP_ORDER),
@@ -255,10 +400,13 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
 
     const handleItemClick = useCallback(
       (item: FlatItem, action: 'navigate' | 'select') => {
+        if (item.kind === 'capability' && item.disabled) return
         if (action === 'navigate' && isDirItem(item)) {
           onSelect(getNavigatePath(item), 'navigate')
         } else if (item.kind === 'miniapp') {
           onSelect(item.appId, 'select', 'miniapp', item.displayName)
+        } else if (item.kind === 'desktop-app') {
+          onSelect(item.bundleId, 'select', 'desktop-app', item.displayName)
         } else if (item.kind === 'capability') {
           onSelect(item.id, 'select', item.id, item.displayName)
         } else {
@@ -298,6 +446,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
 
     const groupLabel = (key: string): string => {
       if (key === 'capability') return t('chat.mentionPopup.groupCapabilities')
+      if (key === 'desktop-app') return t('chat.mentionPopup.groupDesktopApps')
       if (key === 'agent') return t('chat.mentionPopup.groupAgents')
       if (key === 'miniapp') return t('chat.mentionPopup.groupMiniApps')
       return t('chat.mentionPopup.groupFiles')
@@ -314,20 +463,72 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
         i === selectedIndex ? 'bg-accent text-accent-foreground' : 'text-foreground hover:bg-accent/40'
       )
       if (item.kind === 'capability') {
+        const disabled = !!item.disabled
+        const disabledHint =
+          item.id === 'computer'
+            ? t('chat.mentionPopup.computerUseDisabledHint')
+            : item.id === 'collab'
+              ? t('chat.mentionPopup.collabDisabledHint')
+              : t('chat.mentionPopup.browserDisabledHint')
         return (
           <button
             key={`c-${item.id}`}
             ref={setItemRef(i)}
+            type="button"
+            disabled={disabled}
             onMouseDown={(e) => e.preventDefault()}
-            onClick={() => onSelect(item.id, 'select', item.id, item.displayName)}
+            onClick={() => {
+              if (disabled) return
+              onSelect(item.id, 'select', item.id, item.displayName)
+            }}
+            onMouseEnter={() => onSetSelectedIndex(i)}
+            className={cn(
+              rowClass,
+              disabled &&
+                'cursor-not-allowed opacity-55 hover:bg-transparent data-[disabled]:pointer-events-auto',
+            )}
+          >
+            {capabilityIcon(item.id, disabled)}
+            <span className="min-w-0 flex-1 truncate">
+              <span className="font-medium">
+                <HighlightedPath path={item.displayName} indices={item.matchIndices} />
+              </span>
+              {disabled ? (
+                <span className="mt-0.5 block truncate text-[10px] font-normal text-muted-foreground">
+                  {disabledHint}
+                </span>
+              ) : (
+                <span className="ml-1.5 text-xs font-normal text-muted-foreground">
+                  @{item.id}
+                </span>
+              )}
+            </span>
+            {disabled && (
+              <span className="shrink-0 rounded bg-muted px-1 py-px text-[10px] text-muted-foreground">
+                {t('chat.mentionPopup.disabled')}
+              </span>
+            )}
+          </button>
+        )
+      }
+      if (item.kind === 'desktop-app') {
+        return (
+          <button
+            key={`d-${item.bundleId}`}
+            ref={setItemRef(i)}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => onSelect(item.bundleId, 'select', 'desktop-app', item.displayName)}
             onMouseEnter={() => onSetSelectedIndex(i)}
             className={rowClass}
           >
-            {capabilityIcon(item.id)}
-            <span className="shrink-0 font-medium">
+            <DesktopAppIcon bundleId={item.bundleId} className="size-3.5" />
+            <span className="min-w-0 flex-1 truncate font-medium">
               <HighlightedPath path={item.displayName} indices={item.matchIndices} />
             </span>
-            <span className="shrink-0 text-xs text-muted-foreground">@{item.id}</span>
+            <span className="inline-flex shrink-0 items-center gap-0.5 rounded bg-emerald-500/10 px-1 py-px text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
+              <MousePointer2 className="size-2.5 shrink-0" />
+              {t('chat.mentionPopup.capabilityComputer')}
+            </span>
           </button>
         )
       }

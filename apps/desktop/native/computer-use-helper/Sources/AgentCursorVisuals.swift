@@ -413,7 +413,7 @@ enum AgentCursorGlyph {
     /// Main-axis span in points, inside the 126pt overlay window.
     static let overlaySize: CGFloat = 24
     /// Main-axis span for the menu-bar badge.
-    static let badgeSize: CGFloat = 15
+    static let badgeSize: CGFloat = 18
 
     /// Symmetric swallowtail. The shipped artwork was slightly lopsided
     /// (31°/0.887 vs -24°/1.00); at vector sharpness that reads as a defect

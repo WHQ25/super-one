@@ -1,0 +1,6 @@
+"status.menu.empty" = "SuperOne is not controlling an app";
+"status.menu.header" = "SuperOne is controlling";
+"status.menu.stop" = "Stop Current Turn";
+"status.summary.generic" = "SuperOne is controlling an app";
+"status.summary.single" = "SuperOne is controlling %@";
+"status.summary.multiple" = "SuperOne is controlling %ld apps";

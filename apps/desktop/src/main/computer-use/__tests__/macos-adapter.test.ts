@@ -27,13 +27,16 @@ describe('MacosPlatformAdapter (mocked client)', () => {
   const call = vi.fn()
   let adapter: MacosPlatformAdapter
   let granted: string[]
+  let locale: 'en' | 'zh'
 
   beforeEach(() => {
     call.mockReset()
     granted = ['com.apple.TextEdit']
+    locale = 'en'
     adapter = new MacosPlatformAdapter({
       client: { call, ensureConnected: vi.fn(), request: vi.fn(), close: vi.fn(), path: '/tmp/x.sock' } as never,
       getGrantedBundleIds: () => granted,
+      getLocale: () => locale,
       maxCaptureWidth: 800,
     })
   })
@@ -151,6 +154,7 @@ describe('MacosPlatformAdapter (mocked client)', () => {
       app: 'TextEdit',
       bundleId: 'com.apple.TextEdit',
       hideCursor: true,
+      locale: 'en',
     }))
     expect(look.image?.data).toBe('abc')
     expect(look.coordinateSpace.fullScreen).toBe(false)
@@ -569,6 +573,7 @@ describe('MacosPlatformAdapter (mocked client)', () => {
     windowApp: 'TextEdit',
     windowBundleId: 'com.apple.TextEdit',
     targetBundleId: 'com.apple.TextEdit',
+    locale: 'en',
     windowX: 0,
     windowY: 0,
     windowWidth: 800,
@@ -576,6 +581,24 @@ describe('MacosPlatformAdapter (mocked client)', () => {
     windowId: 12345,
     windowLayer: 0,
   }
+
+  it('forwards the current SuperOne locale to native visual indicators', async () => {
+    locale = 'zh'
+    call.mockResolvedValue({ ok: true, unknown: true })
+
+    await adapter.act({
+      root: root(),
+      actions: [{ type: 'click', x: 100, y: 200 }],
+      delivery: 'app-directed',
+    })
+
+    expect(call).toHaveBeenCalledWith('overlay_show_target', expect.objectContaining({
+      locale: 'zh',
+    }))
+    expect(call).toHaveBeenCalledWith('click', expect.objectContaining({
+      locale: 'zh',
+    }))
+  })
 
   it('act click defaults path uses app_post with target pid (background)', async () => {
     call.mockResolvedValue({ ok: true, unknown: true })

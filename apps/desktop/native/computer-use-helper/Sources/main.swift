@@ -198,7 +198,8 @@ func maybeShowOverlayFromParams(
         appName: app,
         bundleId: bundleId,
         windowId: windowId,
-        windowLayer: windowLayer
+        windowLayer: windowLayer,
+        locale: AnyCodable.string(params, "locale")
     )
     AgentOverlayController.shared.setWatchedTarget(bundleId: bundleId, pid: targetPid)
     if let cursor {
@@ -652,6 +653,7 @@ func handle(request: HelperRequest) async -> HelperResponse {
                 windowId: windowId,
                 windowLayer: windowLayer,
                 sessionId: AnyCodable.string(params, "sessionId"),
+                locale: AnyCodable.string(params, "locale"),
                 hideCursor: ((params["hideCursor"] as? Bool) ?? false) && !hasCursor
             )
             if let cx = cursorX, let cy = cursorY {
@@ -673,7 +675,11 @@ func handle(request: HelperRequest) async -> HelperResponse {
             let bundleId = AnyCodable.string(params, "bundleId")
                 ?? AnyCodable.string(params, "targetBundleId")
             if !app.isEmpty || bundleId != nil {
-                AgentOverlayController.shared.showActive(appName: app, bundleId: bundleId)
+                AgentOverlayController.shared.showActive(
+                    appName: app,
+                    bundleId: bundleId,
+                    locale: AnyCodable.string(params, "locale")
+                )
             }
             AgentOverlayController.shared.moveCursor(
                 quartz: CGPoint(x: x, y: y),

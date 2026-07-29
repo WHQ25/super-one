@@ -1,3 +1,4 @@
+import type { Locale } from '@superone/shared/agent-types'
 import type {
   CapturedImage,
   CaptureScope,
@@ -56,6 +57,8 @@ export interface MacosAdapterOptions {
    * Default true when unset.
    */
   getVisualIndicators?: () => boolean
+  /** Current SuperOne UI locale for native status-item copy. */
+  getLocale?: () => Locale
 }
 
 /**
@@ -70,6 +73,7 @@ export class MacosPlatformAdapter implements PlatformAdapter {
   private readonly getGrantedBundleIds: () => string[]
   private readonly getAllowAllApps: () => boolean
   private readonly getVisualIndicators: () => boolean
+  private readonly getLocale: () => Locale
   private readonly sessionId: string
   private lookSeq = 0
   private indicatorsSynced: boolean | null = null
@@ -80,6 +84,7 @@ export class MacosPlatformAdapter implements PlatformAdapter {
     this.getGrantedBundleIds = options.getGrantedBundleIds ?? (() => [])
     this.getAllowAllApps = options.getAllowAllApps ?? (() => false)
     this.getVisualIndicators = options.getVisualIndicators ?? (() => true)
+    this.getLocale = options.getLocale ?? (() => 'en')
     this.sessionId = options.sessionId ?? ''
   }
 
@@ -105,6 +110,7 @@ export class MacosPlatformAdapter implements PlatformAdapter {
       windowApp: root.app,
       windowBundleId: root.bundleId,
       targetBundleId: root.bundleId,
+      locale: this.getLocale(),
       // Bounds still sent for helpers that want them; status-item mode ignores geometry.
       windowX: b.x,
       windowY: b.y,
@@ -133,6 +139,7 @@ export class MacosPlatformAdapter implements PlatformAdapter {
         bundleId: root.bundleId,
         sessionId: this.sessionId,
         targetBundleId: root.bundleId,
+        locale: this.getLocale(),
         windowApp: root.app,
         windowBundleId: root.bundleId,
         x: root.bounds.x,

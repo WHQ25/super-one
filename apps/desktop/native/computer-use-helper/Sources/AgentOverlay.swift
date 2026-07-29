@@ -15,13 +15,66 @@ struct ControlledTarget {
     let bundleId: String
 }
 
+private final class OverlayLocalizer {
+    private var localeIdentifier: String
+    private var bundle: Bundle
+
+    init() {
+        let preferred = Locale.preferredLanguages.first ?? "en"
+        localeIdentifier = preferred.lowercased().hasPrefix("zh") ? "zh-Hans" : "en"
+        bundle = Self.bundle(for: localeIdentifier)
+    }
+
+    @discardableResult
+    func setLocale(_ value: String?) -> Bool {
+        guard let value else { return false }
+        let next = value.lowercased().hasPrefix("zh") ? "zh-Hans" : "en"
+        guard next != localeIdentifier else { return false }
+        localeIdentifier = next
+        bundle = Self.bundle(for: next)
+        return true
+    }
+
+    func text(_ key: String) -> String {
+        bundle.localizedString(forKey: key, value: key, table: nil)
+    }
+
+    func format(_ key: String, _ arguments: CVarArg...) -> String {
+        String(
+            format: text(key),
+            locale: Locale(identifier: localeIdentifier),
+            arguments: arguments
+        )
+    }
+
+    private static func bundle(for locale: String) -> Bundle {
+        guard let path = Bundle.main.path(forResource: locale, ofType: "lproj"),
+              let localized = Bundle(path: path)
+        else {
+            return .main
+        }
+        return localized
+    }
+}
+
 /// `AgentOverlayController` is not an NSObject, so menu items need a separate
 /// `@objc` target rather than changing the controller's inheritance.
-final class StatusMenuTarget: NSObject {
+final class StatusMenuTarget: NSObject, NSMenuDelegate {
     var onStop: (() -> Void)?
+    var onMenuOpenChanged: ((Bool) -> Void)?
 
     @objc func stopCurrentTurn(_ sender: Any?) {
         onStop?()
+    }
+
+    func menuWillOpen(_ menu: NSMenu) {
+        onMenuOpenChanged?(true)
+    }
+
+    func menuDidClose(_ menu: NSMenu) {
+        DispatchQueue.main.async { [weak self] in
+            self?.onMenuOpenChanged?(false)
+        }
     }
 }
 
@@ -43,6 +96,8 @@ final class AgentOverlayController {
     /// Apps under control, pushed by the host via `overlay_set_targets`.
     private var controlledTargets: [ControlledTarget] = []
     private let menuTarget = StatusMenuTarget()
+    private let localizer = OverlayLocalizer()
+    private var statusMenuOpen = false
     /// Stack virtual cursor with the target window when we know its CGWindowNumber.
     private var anchorWindowId: Int = 0
     private var anchorLayer: Int = 0
@@ -99,11 +154,13 @@ final class AgentOverlayController {
         windowId: Int? = nil,
         windowLayer: Int? = nil,
         sessionId: String? = nil,
+        locale: String? = nil,
         hideCursor: Bool = false
     ) {
         DispatchQueue.main.async {
             guard self.enabled else { return }
             self.cancelScheduledHide()
+            let localeChanged = self.localizer.setLocale(locale)
             self.lastAppName = appName
             if let bundleId, !bundleId.isEmpty {
                 self.lastBundleId = bundleId
@@ -121,6 +178,9 @@ final class AgentOverlayController {
             }
             self.beginWatchingControlTarget(bundleId: self.lastBundleId, pid: nil)
             self.ensureStatusItem()
+            if localeChanged {
+                self.rebuildStatusMenu()
+            }
             self.refreshStatusItem()
             if hideCursor {
                 self.hideCursorNow()
@@ -459,6 +519,7 @@ final class AgentOverlayController {
             NSStatusBar.system.removeStatusItem(item)
         }
         statusItem = nil
+        statusMenuOpen = false
         hideCursorNow()
         anchorWindowId = 0
         anchorLayer = 0
@@ -536,6 +597,11 @@ final class AgentOverlayController {
         menuTarget.onStop = { [weak self] in
             self?.requestStopCurrentTurn()
         }
+        menuTarget.onMenuOpenChanged = { [weak self] isOpen in
+            guard let self else { return }
+            self.statusMenuOpen = isOpen
+            self.refreshStatusItem()
+        }
         statusItem = item
         rebuildStatusMenu()
     }
@@ -580,21 +646,29 @@ final class AgentOverlayController {
         guard let item = statusItem else { return }
         let menu = NSMenu()
         menu.autoenablesItems = false
+        menu.delegate = menuTarget
 
         if controlledTargets.isEmpty {
-            let empty = NSMenuItem(title: "No app under control", action: nil, keyEquivalent: "")
+            let empty = NSMenuItem(
+                title: localizer.text("status.menu.empty"),
+                action: nil,
+                keyEquivalent: ""
+            )
             empty.isEnabled = false
             menu.addItem(empty)
         } else {
-            let header = NSMenuItem(title: "Controlling", action: nil, keyEquivalent: "")
+            let header = NSMenuItem(
+                title: localizer.text("status.menu.header"),
+                action: nil,
+                keyEquivalent: ""
+            )
             header.isEnabled = false
             menu.addItem(header)
             for target in controlledTargets {
                 let row = NSMenuItem(title: target.app, action: nil, keyEquivalent: "")
                 row.isEnabled = false
                 row.indentationLevel = 1
-                // Menu items render full colour, so the app icon stays recognisable
-                // here even though the status bar glyph is a template.
+                // Keep the target recognisable in both the status group and menu.
                 let icon = appIconImage(appName: target.app, bundleId: target.bundleId)
                 icon.size = NSSize(width: 16, height: 16)
                 row.image = icon
@@ -604,7 +678,7 @@ final class AgentOverlayController {
 
         menu.addItem(.separator())
         let stop = NSMenuItem(
-            title: "Stop Current Turn",
+            title: localizer.text("status.menu.stop"),
             action: #selector(StatusMenuTarget.stopCurrentTurn(_:)),
             keyEquivalent: ""
         )
@@ -617,7 +691,7 @@ final class AgentOverlayController {
 
     private func refreshStatusItem() {
         guard let button = statusItem?.button else { return }
-        let image = statusItemImage()
+        let image = statusItemImage(drawGroupBackground: !statusMenuOpen && !button.isHighlighted)
         image.accessibilityDescription = statusSummary()
         button.image = image
         button.toolTip = statusSummary()
@@ -627,22 +701,24 @@ final class AgentOverlayController {
     private func statusSummary() -> String {
         switch controlledTargets.count {
         case 0:
-            let name = lastAppName.isEmpty ? "an app" : lastAppName
-            return "Computer Use controlling \(name)"
+            guard !lastAppName.isEmpty else {
+                return localizer.text("status.summary.generic")
+            }
+            return localizer.format("status.summary.single", lastAppName)
         case 1:
-            return "Computer Use controlling \(controlledTargets[0].app)"
+            return localizer.format("status.summary.single", controlledTargets[0].app)
         default:
-            return "Computer Use controlling \(controlledTargets.count) apps"
+            return localizer.format("status.summary.multiple", controlledTargets.count)
         }
     }
 
     /// Menu-bar group: software cursor + current app icon on one borderless surface.
-    private func statusItemImage() -> NSImage {
+    private func statusItemImage(drawGroupBackground: Bool) -> NSImage {
         let cursorSize = AgentCursorGlyph.badgeSize
         let cursorProbe = AgentCursorGlyph.path(size: cursorSize, tip: .zero).bounds
         let height = NSStatusBar.system.thickness
-        let groupHeight = min(20, height - 2)
-        let appSize: CGFloat = 16
+        let groupHeight = min(22, height - 2)
+        let appSize: CGFloat = 18
         let horizontalPadding: CGFloat = 5
         let iconGap: CGFloat = 4
         let width = ceil(horizontalPadding * 2 + cursorProbe.width + iconGap + appSize)
@@ -659,8 +735,10 @@ final class AgentOverlayController {
                 width: rect.width,
                 height: groupHeight
             )
-            NSColor.labelColor.withAlphaComponent(0.11).setFill()
-            NSBezierPath(roundedRect: groupRect, xRadius: 6, yRadius: 6).fill()
+            if drawGroupBackground {
+                NSColor.labelColor.withAlphaComponent(0.11).setFill()
+                NSBezierPath(roundedRect: groupRect, xRadius: 6, yRadius: 6).fill()
+            }
 
             let appRect = NSRect(
                 x: horizontalPadding,

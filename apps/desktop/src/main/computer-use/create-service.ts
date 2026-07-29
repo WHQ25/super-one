@@ -5,6 +5,7 @@ import { MacosPlatformAdapter } from './platform/macos-adapter'
 import { resolveHelperAppPath } from './platform/macos-helper-client'
 import type { PlatformAdapter } from './platform/types'
 import { readAppSettings } from '../app-settings-service'
+import { getCurrentLocale } from '../i18n'
 
 export type ComputerUseBackendKind = 'fake' | 'macos' | 'auto'
 
@@ -58,6 +59,7 @@ export function createComputerUseService(
               return true
             }
           },
+          getLocale: getCurrentLocale,
         })
       : new FakePlatformBackend()
 

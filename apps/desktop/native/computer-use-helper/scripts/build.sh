@@ -64,6 +64,8 @@ SOURCES=(
   "$ROOT/Sources/CursorMotionHeading.swift"
   "$ROOT/Sources/CursorVisualDynamics.swift"
   "$ROOT/Sources/CursorMotionGeometry.swift"
+  "$ROOT/Resources/en.lproj/Localizable.strings"
+  "$ROOT/Resources/zh-Hans.lproj/Localizable.strings"
   "$PLIST_SRC"
   "$ROOT/scripts/build.sh"
 )
@@ -131,6 +133,8 @@ cp "$PLIST_SRC" "$ROOT/Info.plist"
 # The cursor glyph is drawn procedurally (AgentCursorGlyph) — no bitmap to ship.
 # NOTICE.md still must go in the bundle: CursorMotionModel.swift is vendored MIT.
 cp "$ROOT/Resources/NOTICE.md" "$APP/Contents/Resources/"
+ditto "$ROOT/Resources/en.lproj" "$APP/Contents/Resources/en.lproj"
+ditto "$ROOT/Resources/zh-Hans.lproj" "$APP/Contents/Resources/zh-Hans.lproj"
 
 export TMPDIR="${TMPDIR:-$ROOT/tmp}"
 mkdir -p "$TMPDIR" "$ROOT/modcache"

@@ -1,0 +1,6 @@
+"status.menu.empty" = "SuperOne 当前未控制任何 App";
+"status.menu.header" = "SuperOne 正在控制";
+"status.menu.stop" = "停止当前任务";
+"status.summary.generic" = "SuperOne 正在控制某个 App";
+"status.summary.single" = "SuperOne 正在控制 %@";
+"status.summary.multiple" = "SuperOne 正在控制 %ld 个 App";

@@ -36,6 +36,8 @@ export interface CoordinateSpace {
   kind?: CaptureScope
   /** Stable macOS CGWindowNumber for window-local coordinates. */
   windowId?: number
+  /** Helper-owned identity for AX-only transient roots. */
+  axRootId?: string
   /** Global logical bounds sampled when this coordinate system was captured. */
   capturedBounds?: Bounds
   /** Global logical bounds of the display containing the capture. */
@@ -77,6 +79,8 @@ export interface UiRootIdentity {
    * z-order as this window (not always-on-top).
    */
   windowId?: number
+  /** Helper-owned identity for sheets, menus, and popovers without a CGWindowNumber. */
+  axRootId?: string
   /** macOS kCGWindowLayer (0 = normal app window). */
   windowLayer?: number
 }
@@ -157,6 +161,8 @@ export interface ActResult {
   grounding: DeliveryMode
   stoppedAt?: number
   successorStateId: string
+  /** Root observed after the action; may change when a transient root closes. */
+  successorRoot: UiRootIdentity
   /** Fresh visual evidence for the successor, when the observe mode includes pixels. */
   successorImage?: CapturedImage
   successorCoordinateSpace: CoordinateSpace

@@ -89,6 +89,8 @@ export interface HelperWindowInfo {
   resourceKey: string
   /** CGWindowNumber for z-order relative placement of overlays. */
   windowId?: number
+  /** Helper-owned identity for AX-only transient roots. */
+  axRootId?: string
   /** kCGWindowLayer (0 = normal). */
   windowLayer?: number
 }
@@ -105,6 +107,7 @@ export interface HelperCaptureResult {
     fullScreen: boolean
     kind?: 'window' | 'display'
     windowId?: number
+    axRootId?: string
     capturedBounds?: { x: number; y: number; width: number; height: number }
     displayBounds?: { x: number; y: number; width: number; height: number }
   }

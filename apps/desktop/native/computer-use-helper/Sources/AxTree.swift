@@ -233,6 +233,74 @@ struct AxWindowMetadata {
     let focused: Bool
 }
 
+struct AxTransientRoot {
+    let id: String
+    let metadata: AxWindowMetadata
+    let bounds: CGRect
+    let title: String
+}
+
+private final class AxRootRegistry: @unchecked Sendable {
+    static let shared = AxRootRegistry()
+
+    private struct Entry {
+        let pid: pid_t
+        let element: AXUIElement
+    }
+
+    private let lock = NSLock()
+    private var sequence = 0
+    private var entries: [String: Entry] = [:]
+
+    func sync(pid: pid_t, elements: [AXUIElement]) -> [(id: String, element: AXUIElement)] {
+        lock.lock()
+        defer { lock.unlock() }
+
+        let previous = entries.filter { $0.value.pid == pid }
+        var nextForPid: [String: Entry] = [:]
+        var result: [(id: String, element: AXUIElement)] = []
+        var used = Set<String>()
+        for element in elements {
+            let existing = previous.first { id, entry in
+                !used.contains(id) && CFEqual(entry.element, element)
+            }
+            let id: String
+            if let existing {
+                id = existing.key
+            } else {
+                sequence += 1
+                id = "axr:\(sequence)"
+            }
+            used.insert(id)
+            let entry = Entry(pid: pid, element: element)
+            nextForPid[id] = entry
+            result.append((id: id, element: element))
+        }
+
+        entries = entries.filter { $0.value.pid != pid }
+        for (id, entry) in nextForPid { entries[id] = entry }
+        return result
+    }
+
+    func resolve(id: String, pid: pid_t) throws -> AXUIElement {
+        lock.lock()
+        let entry = entries[id]
+        lock.unlock()
+        guard let entry, entry.pid == pid else {
+            throw HelperError(code: "AX_ROOT_NOT_FOUND", message: "AX root \(id) is no longer available")
+        }
+        var role: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(
+            entry.element,
+            kAXRoleAttribute as CFString,
+            &role
+        ) == .success else {
+            throw HelperError(code: "AX_ROOT_NOT_FOUND", message: "AX root \(id) is stale")
+        }
+        return entry.element
+    }
+}
+
 func classifyAxWindow(_ metadata: AxWindowMetadata) -> (kind: String, modal: Bool) {
     let role = metadata.role.lowercased()
     let subrole = metadata.subrole?.lowercased() ?? ""
@@ -241,14 +309,14 @@ func classifyAxWindow(_ metadata: AxWindowMetadata) -> (kind: String, modal: Boo
         kind = "sheet"
     } else if role.contains("dialog") || subrole.contains("dialog") {
         kind = "dialog"
-    } else if role.contains("menu") || subrole.contains("menu") {
+    } else if role == "axmenu" || subrole == "axmenu" {
         kind = "menu"
     } else if role.contains("popover") || subrole.contains("popover") {
         kind = "popover"
     } else {
         kind = "window"
     }
-    return (kind: kind, modal: metadata.modal || kind == "sheet")
+    return (kind: kind, modal: metadata.modal || kind == "sheet" || kind == "menu")
 }
 
 private func axWindows(app: AXUIElement) -> [AXUIElement] {
@@ -258,13 +326,13 @@ private func axWindows(app: AXUIElement) -> [AXUIElement] {
     return windows
 }
 
-private func axFrame(_ element: AXUIElement) -> CGRect? {
+func axFrame(_ element: AXUIElement) -> CGRect? {
     guard let position = axCGPoint(element, kAXPositionAttribute as String),
           let size = axCGSize(element, kAXSizeAttribute as String) else { return nil }
     return CGRect(origin: position, size: size)
 }
 
-private func sameWindowFrame(_ lhs: CGRect, _ rhs: CGRect) -> Bool {
+func axFramesMatch(_ lhs: CGRect, _ rhs: CGRect) -> Bool {
     let positionDelta = max(abs(lhs.minX - rhs.minX), abs(lhs.minY - rhs.minY))
     let sizeDelta = max(abs(lhs.width - rhs.width), abs(lhs.height - rhs.height))
     return positionDelta <= 12 && sizeDelta <= 12
@@ -288,6 +356,90 @@ private func windowMetadata(_ element: AXUIElement) -> AxWindowMetadata {
     )
 }
 
+private func axAttributeElement(_ element: AXUIElement, _ attribute: String) -> AXUIElement? {
+    var raw: CFTypeRef?
+    guard AXUIElementCopyAttributeValue(element, attribute as CFString, &raw) == .success,
+          let raw else { return nil }
+    return (raw as! AXUIElement)
+}
+
+private func axRootTitle(_ element: AXUIElement, metadata: AxWindowMetadata) -> String {
+    let candidates = [
+        axString(element, kAXTitleAttribute as String),
+        axString(element, kAXDescriptionAttribute as String),
+        axString(element, kAXValueAttribute as String),
+        metadata.subrole,
+        metadata.role,
+    ]
+    return candidates.compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+        .first(where: { !$0.isEmpty }) ?? metadata.role
+}
+
+func discoverAxTransientRoots(
+    pid: pid_t,
+    includeDescendants: Bool
+) -> [AxTransientRoot] {
+    guard axTrusted() else { return [] }
+    let app = AXUIElementCreateApplication(pid)
+    var elements: [AXUIElement] = []
+
+    func appendCandidate(_ element: AXUIElement) {
+        if elements.contains(where: { CFEqual($0, element) }) { return }
+        let metadata = windowMetadata(element)
+        guard classifyAxWindow(metadata).kind != "window",
+              axBool(element, "AXVisible") != false,
+              let frame = axFrame(element),
+              frame.width > 1, frame.height > 1 else { return }
+        elements.append(element)
+    }
+
+    for window in axWindows(app: app) { appendCandidate(window) }
+
+    if includeDescendants {
+        var visited = 0
+        func walk(_ element: AXUIElement, depth: Int) {
+            guard depth <= 8, visited < 800 else { return }
+            visited += 1
+            appendCandidate(element)
+            for child in axChildren(element) { walk(child, depth: depth + 1) }
+        }
+        if let menuBar = axAttributeElement(app, kAXMenuBarAttribute as String) {
+            walk(menuBar, depth: 0)
+        }
+        for window in axWindows(app: app) { walk(window, depth: 0) }
+    }
+
+    let registered = AxRootRegistry.shared.sync(pid: pid, elements: elements)
+    return registered.compactMap { registered in
+        let metadata = windowMetadata(registered.element)
+        guard let bounds = axFrame(registered.element) else { return nil }
+        return AxTransientRoot(
+            id: registered.id,
+            metadata: metadata,
+            bounds: bounds,
+            title: axRootTitle(registered.element, metadata: metadata)
+        )
+    }
+}
+
+func resolveRegisteredAxRoot(id: String, pid: pid_t) throws -> AXUIElement {
+    try AxRootRegistry.shared.resolve(id: id, pid: pid)
+}
+
+func liveAxRootGeometry(id: String, pid: pid_t) throws -> LiveWindowGeometry {
+    let element = try resolveRegisteredAxRoot(id: id, pid: pid)
+    guard let bounds = axFrame(element), bounds.width > 1, bounds.height > 1 else {
+        throw HelperError(code: "AX_ROOT_NOT_FOUND", message: "AX root \(id) has no visible bounds")
+    }
+    let bundleId = NSRunningApplication(processIdentifier: pid)?.bundleIdentifier ?? ""
+    return LiveWindowGeometry(
+        bounds: bounds,
+        pid: Int(pid),
+        bundleId: bundleId,
+        backingScale: activeDisplay(for: bounds)?.scale ?? 1
+    )
+}
+
 /// Bind a CGWindowNumber to one AXWindow. The PID and live CG bounds are both
 /// checked so same-title windows cannot be observed or acted on by mistake.
 func resolveAxWindow(
@@ -306,7 +458,7 @@ func resolveAxWindow(
     let windows = axWindows(app: AXUIElementCreateApplication(pid))
     let boundsMatches = windows.filter {
         guard let frame = axFrame($0) else { return false }
-        return sameWindowFrame(frame, geometry.bounds)
+        return axFramesMatch(frame, geometry.bounds)
     }
     if boundsMatches.count == 1 {
         return windowMetadata(boundsMatches[0])
@@ -334,9 +486,13 @@ func resolveAxWindow(
 private func resolveAxRoot(
     app: AXUIElement,
     pid: pid_t,
+    axRootId: String?,
     windowId: Int?,
     windowTitle: String?
 ) throws -> AXUIElement {
+    if let axRootId {
+        return try resolveRegisteredAxRoot(id: axRootId, pid: pid)
+    }
     if let windowId {
         return try resolveAxWindow(
             pid: pid,
@@ -369,6 +525,7 @@ func axTreeSnapshot(
     captureSourceWidth: Double? = nil,
     captureSourceHeight: Double? = nil,
     windowTitle: String? = nil,
+    axRootId: String? = nil,
     windowId: Int? = nil
 ) throws -> [String: Any] {
     guard axTrusted() else {
@@ -378,6 +535,7 @@ func axTreeSnapshot(
     let rootEl = try resolveAxRoot(
         app: app,
         pid: pid,
+        axRootId: axRootId,
         windowId: windowId,
         windowTitle: windowTitle
     )
@@ -531,6 +689,7 @@ func axPerform(
     action: String,
     value: String? = nil,
     windowTitle: String? = nil,
+    axRootId: String? = nil,
     windowId: Int? = nil,
     targetHint: AxTargetHint? = nil
 ) throws -> [String: Any] {
@@ -544,6 +703,7 @@ func axPerform(
     let rootEl = try resolveAxRoot(
         app: app,
         pid: pid,
+        axRootId: axRootId,
         windowId: windowId,
         windowTitle: windowTitle
     )

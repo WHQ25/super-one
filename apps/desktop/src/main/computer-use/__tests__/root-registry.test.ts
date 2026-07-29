@@ -71,4 +71,24 @@ describe('RootRegistry', () => {
     expect(same?.rootId).toBe('@r1')
     expect(renamed?.rootId).toBe('@r2')
   })
+
+  it('keeps AX-only transient roots bound to helper identity', () => {
+    const registry = new RootRegistry()
+    const [sheet] = registry.sync([
+      root(undefined, { kind: 'sheet', title: 'Sheet', axRootId: 'axr:7', modal: true }),
+    ])
+
+    const [moved] = registry.sync([
+      root(undefined, {
+        kind: 'sheet',
+        title: 'Renamed Sheet',
+        axRootId: 'axr:7',
+        bounds: { x: 50, y: 60, width: 420, height: 280 },
+        modal: true,
+      }),
+    ])
+
+    expect(sheet?.rootId).toBe('@r1')
+    expect(moved?.rootId).toBe('@r1')
+  })
 })

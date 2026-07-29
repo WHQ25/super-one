@@ -56,6 +56,7 @@ describe('MacosPlatformAdapter (mocked client)', () => {
               kind: 'dialog',
               resourceKey: 'pid:42',
               windowId: 456,
+              axRootId: 'axr:4',
               windowLayer: 0,
             },
           ],
@@ -73,8 +74,44 @@ describe('MacosPlatformAdapter (mocked client)', () => {
         modal: true,
         focused: true,
         windowId: 456,
+        axRootId: 'axr:4',
       }),
     ])
+    expect(call).toHaveBeenCalledWith('list_windows', {
+      scanBundleIds: ['com.apple.TextEdit'],
+    })
+  })
+
+  it('selects the frontmost modal as the active root', async () => {
+    call.mockImplementation(async (method: string) => {
+      if (method === 'list_windows') {
+        return {
+          windows: [
+            {
+              app: 'TextEdit', bundleId: 'com.apple.TextEdit', pid: 42,
+              title: 'Document', bounds: { x: 0, y: 0, width: 800, height: 600 },
+              focused: true, visible: true, minimized: false, modal: false,
+              kind: 'window', resourceKey: 'pid:42', windowId: 123,
+            },
+            {
+              app: 'TextEdit', bundleId: 'com.apple.TextEdit', pid: 42,
+              title: 'Save', bounds: { x: 200, y: 100, width: 400, height: 240 },
+              focused: false, visible: true, minimized: false, modal: true,
+              kind: 'sheet', resourceKey: 'pid:42', axRootId: 'axr:8',
+            },
+          ],
+        }
+      }
+      if (method === 'frontmost') {
+        return { app: 'TextEdit', bundleId: 'com.apple.TextEdit', pid: 42, frontmost: true }
+      }
+      return { ok: true }
+    })
+
+    const roots = await adapter.listRoots()
+
+    expect(roots.find((candidate) => candidate.kind === 'sheet')?.focused).toBe(true)
+    expect(roots.find((candidate) => candidate.kind === 'window')?.focused).toBe(false)
   })
 
   it('look visual captures with grantedBundleIds and returns picture-only outline', async () => {
@@ -107,6 +144,7 @@ describe('MacosPlatformAdapter (mocked client)', () => {
       grantedBundleIds: ['com.apple.TextEdit'],
       maxWidth: 800,
       capture: 'window',
+      pid: 42,
       windowId: 12345,
     })
     expect(call).toHaveBeenCalledWith('overlay_show_target', expect.objectContaining({
@@ -120,6 +158,50 @@ describe('MacosPlatformAdapter (mocked client)', () => {
     expect(look.outline.ref).toBe('@e1')
     // visual mode must not call ax_tree
     expect(call.mock.calls.some((c) => c[0] === 'ax_tree')).toBe(false)
+  })
+
+  it('captures an AX-only sheet by helper root identity', async () => {
+    call.mockImplementation(async (method: string) => {
+      if (method === 'capture') {
+        return {
+          mimeType: 'image/png',
+          data: 'sheet',
+          width: 640,
+          height: 360,
+          coordinateSpace: {
+            width: 640,
+            height: 360,
+            scale: 2,
+            fullScreen: false,
+            kind: 'window',
+            axRootId: 'axr:7',
+            capturedBounds: { x: 120, y: 80, width: 320, height: 180 },
+            displayBounds: { x: 0, y: 0, width: 1512, height: 982 },
+          },
+        }
+      }
+      return { ok: true }
+    })
+
+    const look = await adapter.look(root({
+      kind: 'sheet',
+      modal: true,
+      windowId: undefined,
+      windowLayer: undefined,
+      axRootId: 'axr:7',
+      bounds: { x: 120, y: 80, width: 320, height: 180 },
+    }), 'visual')
+
+    expect(call).toHaveBeenCalledWith('capture', expect.objectContaining({
+      capture: 'window',
+      pid: 42,
+      axRootId: 'axr:7',
+    }))
+    expect(look.coordinateSpace).toMatchObject({
+      kind: 'window',
+      fullScreen: false,
+      axRootId: 'axr:7',
+    })
   })
 
   it('look fused captures + builds AX outline', async () => {
@@ -208,6 +290,35 @@ describe('MacosPlatformAdapter (mocked client)', () => {
     expect(call.mock.calls.some((c) => c[0] === 'capture')).toBe(false)
   })
 
+  it('scopes semantic observe to an AX-only root', async () => {
+    call.mockImplementation(async (method: string) => {
+      if (method === 'ax_tree') {
+        return {
+          tree: { index: 1, role: 'AXSheet', name: 'Save', actions: [] },
+          nodeCount: 1,
+          maxNodes: 400,
+          maxDepth: 24,
+          display: { width: 1000, height: 800 },
+          pid: 42,
+        }
+      }
+      return { ok: true }
+    })
+    const look = await adapter.look(root({
+      kind: 'sheet',
+      modal: true,
+      windowId: undefined,
+      axRootId: 'axr:9',
+      bounds: { x: 100, y: 100, width: 400, height: 240 },
+    }), 'semantic')
+
+    expect(look.outline.role).toBe('sheet')
+    expect(call).toHaveBeenCalledWith('ax_tree', expect.objectContaining({
+      pid: 42,
+      axRootId: 'axr:9',
+    }))
+  })
+
   it('look fails when allowlist empty', async () => {
     granted = []
     await expect(adapter.look(root(), 'visual')).rejects.toBeInstanceOf(ComputerUseError)
@@ -248,6 +359,7 @@ describe('MacosPlatformAdapter (mocked client)', () => {
       grantedBundleIds: [],
       maxWidth: 800,
       capture: 'window',
+      pid: 42,
       windowId: 12345,
     })
   })
@@ -321,6 +433,46 @@ describe('MacosPlatformAdapter (mocked client)', () => {
     )
     expect(res.steps[0]?.applied).toBe(true)
     expect(res.steps[0]?.unknown).toBe(false)
+  })
+
+  it('acts semantically within an AX-only root', async () => {
+    call.mockImplementation(async (method: string) => {
+      if (method === 'ax_action') {
+        return { ok: true, index: 2, action: 'press', beforeName: 'Save', afterName: 'Save' }
+      }
+      return { ok: true }
+    })
+    await adapter.act({
+      root: root({
+        kind: 'sheet',
+        modal: true,
+        windowId: undefined,
+        axRootId: 'axr:11',
+      }),
+      actions: [{ type: 'press', ref: '@e2' }],
+      delivery: 'semantic',
+      coordinateSpace: {
+        width: 400,
+        height: 240,
+        scale: 2,
+        fullScreen: false,
+        kind: 'window',
+        axRootId: 'axr:11',
+        capturedBounds: { x: 100, y: 100, width: 400, height: 240 },
+      },
+      outline: {
+        ref: '@e1',
+        role: 'sheet',
+        children: [{ ref: '@e2', role: 'button', name: 'Save', capabilities: { press: true } }],
+      },
+    })
+
+    expect(call).toHaveBeenCalledWith('ax_action', expect.objectContaining({
+      pid: 42,
+      index: 2,
+      axRootId: 'axr:11',
+      coordinateAxRootId: 'axr:11',
+    }))
   })
 
   it('act setText via AX confirms when afterValue matches', async () => {

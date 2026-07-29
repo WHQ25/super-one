@@ -56,6 +56,7 @@ SOURCES=(
   "$ROOT/Sources/CoordinateSpace.swift"
   "$ROOT/Sources/Input.swift"
   "$ROOT/Sources/AxTree.swift"
+  "$ROOT/Sources/RootDiscovery.swift"
   "$ROOT/Sources/PermissionOnboarding.swift"
   "$ROOT/Sources/AgentCursorVisuals.swift"
   "$ROOT/Sources/AgentOverlay.swift"
@@ -149,6 +150,7 @@ swiftc -O \
   "$ROOT/Sources/CoordinateSpace.swift" \
   "$ROOT/Sources/Input.swift" \
   "$ROOT/Sources/AxTree.swift" \
+  "$ROOT/Sources/RootDiscovery.swift" \
   "$ROOT/Sources/PermissionOnboarding.swift" \
   "$ROOT/Sources/AgentCursorVisuals.swift" \
   "$ROOT/Sources/AgentOverlay.swift" \

@@ -9,7 +9,7 @@ struct LiveWindowGeometry {
     let backingScale: Double
 }
 
-private func activeDisplay(for rect: CGRect) -> (bounds: CGRect, scale: Double)? {
+func activeDisplay(for rect: CGRect) -> (bounds: CGRect, scale: Double)? {
     var count: UInt32 = 0
     guard CGGetActiveDisplayList(0, nil, &count) == .success, count > 0 else { return nil }
     var ids = [CGDirectDisplayID](repeating: 0, count: Int(count))
@@ -57,19 +57,30 @@ func liveWindowGeometry(windowId: Int) throws -> LiveWindowGeometry {
 
 func validateCoordinateGeometry(_ params: [String: Any]) throws -> LiveWindowGeometry? {
     guard AnyCodable.string(params, "coordinateKind") == "window" else { return nil }
-    guard let windowId = AnyCodable.int(params, "coordinateWindowId")
-        ?? AnyCodable.int(params, "windowId"),
+    let axRootId = AnyCodable.string(params, "coordinateAxRootId")
+        ?? AnyCodable.string(params, "axRootId")
+    let windowId = AnyCodable.int(params, "coordinateWindowId")
+        ?? AnyCodable.int(params, "windowId")
+    guard windowId != nil || axRootId != nil,
           let expectedWidth = AnyCodable.double(params, "capturedWidth"),
           let expectedHeight = AnyCodable.double(params, "capturedHeight") else {
         throw HelperError(code: "INVALID", message: "Window coordinate metadata is incomplete")
     }
-    let current = try liveWindowGeometry(windowId: windowId)
+    let current: LiveWindowGeometry
+    if let axRootId {
+        guard let targetPid = AnyCodable.int(params, "targetPid") else {
+            throw HelperError(code: "INVALID", message: "AX root coordinates require targetPid")
+        }
+        current = try liveAxRootGeometry(id: axRootId, pid: pid_t(targetPid))
+    } else {
+        current = try liveWindowGeometry(windowId: windowId!)
+    }
     if let targetPid = AnyCodable.int(params, "targetPid"), targetPid != current.pid {
-        throw HelperError(code: "WINDOW_UNAVAILABLE", message: "Window \(windowId) changed owner")
+        throw HelperError(code: "WINDOW_UNAVAILABLE", message: "Target changed owner")
     }
     if let targetBundleId = AnyCodable.string(params, "targetBundleId"),
        !targetBundleId.isEmpty, targetBundleId != current.bundleId {
-        throw HelperError(code: "WINDOW_UNAVAILABLE", message: "Window \(windowId) changed app")
+        throw HelperError(code: "WINDOW_UNAVAILABLE", message: "Target changed app")
     }
     let resized = abs(Double(current.bounds.width) - expectedWidth) > 0.5
         || abs(Double(current.bounds.height) - expectedHeight) > 0.5
@@ -79,7 +90,7 @@ func validateCoordinateGeometry(_ params: [String: Any]) throws -> LiveWindowGeo
     if resized || scaleChanged {
         throw HelperError(
             code: "WINDOW_GEOMETRY_CHANGED",
-            message: "Window \(windowId) size or display scale changed; use the successor observation before sending more input"
+            message: "Target size or display scale changed; use the successor observation before sending more input"
         )
     }
     return current

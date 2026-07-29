@@ -44,6 +44,8 @@ private func encodeCapture(
     display: SCDisplay,
     kind: String,
     windowId: Int?,
+    axRootId: String? = nil,
+    sourceRect: CGRect? = nil,
     maxWidth: Int?,
     grantedBundleIds: [String],
     allowAllApps: Bool,
@@ -58,6 +60,7 @@ private func encodeCapture(
     cfg.height = size.height
     cfg.showsCursor = false
     cfg.captureResolution = .best
+    if let sourceRect { cfg.sourceRect = sourceRect }
     if kind == "window" {
         cfg.ignoreShadowsSingleWindow = true
     }
@@ -76,6 +79,7 @@ private func encodeCapture(
         "displayBounds": rectDict(display.frame),
     ]
     if let windowId { coordinateSpace["windowId"] = windowId }
+    if let axRootId { coordinateSpace["axRootId"] = axRootId }
 
     return [
         "mimeType": "image/png",
@@ -87,6 +91,58 @@ private func encodeCapture(
         "allowAllApps": allowAllApps,
         "excludedAppCount": excludedAppCount,
     ]
+}
+
+func captureAxRoot(
+    axRootId: String,
+    pid: pid_t,
+    grantedBundleIds: [String],
+    maxWidth: Int?,
+    allowAllApps: Bool
+) async throws -> [String: Any] {
+    if !screenRecordingTrusted() {
+        throw HelperError(code: "SCREEN_MISSING", message: "Screen Recording is not granted for Computer Use helper")
+    }
+    let geometry = try liveAxRootGeometry(id: axRootId, pid: pid)
+    if !allowAllApps && !grantedBundleIds.contains(geometry.bundleId) {
+        throw HelperError(code: "NOT_GRANTED", message: "AX root \(axRootId) does not belong to a granted app")
+    }
+
+    let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+    guard let display = bestDisplay(for: geometry.bounds, in: content.displays) else {
+        throw HelperError(code: "NO_DISPLAY", message: "No display contains AX root \(axRootId)")
+    }
+    let bounds = geometry.bounds.intersection(display.frame)
+    guard bounds.width > 1, bounds.height > 1 else {
+        throw HelperError(code: "AX_ROOT_NOT_FOUND", message: "AX root \(axRootId) has no capturable area")
+    }
+    let exclusion: [SCRunningApplication]
+    if allowAllApps {
+        exclusion = []
+    } else {
+        let granted = Set(grantedBundleIds)
+        exclusion = content.applications.filter { !granted.contains($0.bundleIdentifier) }
+    }
+    let filter = SCContentFilter(display: display, excludingApplications: exclusion, exceptingWindows: [])
+    let localBounds = CGRect(
+        x: bounds.minX - display.frame.minX,
+        y: bounds.minY - display.frame.minY,
+        width: bounds.width,
+        height: bounds.height
+    )
+    return try await encodeCapture(
+        filter: filter,
+        bounds: bounds,
+        display: display,
+        kind: "window",
+        windowId: nil,
+        axRootId: axRootId,
+        sourceRect: localBounds,
+        maxWidth: maxWidth,
+        grantedBundleIds: grantedBundleIds,
+        allowAllApps: allowAllApps,
+        excludedAppCount: exclusion.count
+    )
 }
 
 func captureDisplay(
@@ -178,22 +234,33 @@ func captureZoom(
     allowAllApps: Bool,
     maxWidth: Int?,
     capture: String,
-    windowId: Int?
+    windowId: Int?,
+    axRootId: String? = nil,
+    pid: pid_t? = nil
 ) async throws -> [String: Any] {
     guard region.count == 4 else {
         throw HelperError(code: "INVALID", message: "region must be [x0,y0,x1,y1]")
     }
     let full: [String: Any]
     if capture == "window" {
-        guard let windowId else {
-            throw HelperError(code: "INVALID", message: "window capture requires windowId")
+        if let windowId {
+            full = try await captureWindow(
+                windowId: windowId,
+                grantedBundleIds: grantedBundleIds,
+                maxWidth: maxWidth,
+                allowAllApps: allowAllApps
+            )
+        } else if let axRootId, let pid {
+            full = try await captureAxRoot(
+                axRootId: axRootId,
+                pid: pid,
+                grantedBundleIds: grantedBundleIds,
+                maxWidth: maxWidth,
+                allowAllApps: allowAllApps
+            )
+        } else {
+            throw HelperError(code: "INVALID", message: "window capture requires windowId or axRootId")
         }
-        full = try await captureWindow(
-            windowId: windowId,
-            grantedBundleIds: grantedBundleIds,
-            maxWidth: maxWidth,
-            allowAllApps: allowAllApps
-        )
     } else {
         full = try await captureDisplay(
             grantedBundleIds: grantedBundleIds,

@@ -222,10 +222,16 @@ export class MacosPlatformAdapter implements PlatformAdapter {
   }
 
   async listRoots(): Promise<Array<Omit<UiRootIdentity, 'rootId'>>> {
-    const res = await this.client.call<{ windows: HelperWindowInfo[] }>('list_windows')
+    const res = await this.client.call<{ windows: HelperWindowInfo[] }>('list_windows', {
+      scanBundleIds: this.getGrantedBundleIds(),
+    })
     const windows = res.windows ?? []
     const front = await this.client.call<HelperAppInfo | null>('frontmost').catch(() => null)
-    const firstFrontWindow = windows.findIndex((w) => w.pid === front?.pid)
+    const activeRootIndex = [
+      windows.findIndex((w) => w.pid === front?.pid && w.modal),
+      windows.findIndex((w) => w.pid === front?.pid && w.focused),
+      windows.findIndex((w) => w.pid === front?.pid),
+    ].find((index) => index >= 0) ?? -1
     return windows.map((w, index) => ({
       kind: (w.kind as UiRootIdentity['kind']) || 'window',
       app: w.app,
@@ -233,12 +239,13 @@ export class MacosPlatformAdapter implements PlatformAdapter {
       pid: w.pid,
       title: w.title || w.app,
       bounds: w.bounds,
-      focused: front?.pid === w.pid && (w.focused || index === firstFrontWindow),
+      focused: index === activeRootIndex,
       visible: w.visible,
       minimized: w.minimized,
       modal: w.modal,
       resourceKey: w.resourceKey || `pid:${w.pid}`,
       ...(typeof w.windowId === 'number' ? { windowId: w.windowId } : {}),
+      ...(w.axRootId ? { axRootId: w.axRootId } : {}),
       ...(typeof w.windowLayer === 'number' ? { windowLayer: w.windowLayer } : {}),
     }))
   }
@@ -271,6 +278,7 @@ export class MacosPlatformAdapter implements PlatformAdapter {
             fullScreen: false,
             kind: 'window',
             ...(typeof root.windowId === 'number' ? { windowId: root.windowId } : {}),
+            ...(root.axRootId ? { axRootId: root.axRootId } : {}),
             capturedBounds: { ...root.bounds },
           }
         : undefined
@@ -294,7 +302,9 @@ export class MacosPlatformAdapter implements PlatformAdapter {
       grantedBundleIds: allowAll ? [] : granted,
       maxWidth: this.maxCaptureWidth,
       capture: captureScope,
+      pid: root.pid,
       ...(typeof root.windowId === 'number' ? { windowId: root.windowId } : {}),
+      ...(root.axRootId ? { axRootId: root.axRootId } : {}),
     })
 
     // After capture: show which window the agent is watching.
@@ -370,6 +380,7 @@ export class MacosPlatformAdapter implements PlatformAdapter {
         : {}),
       ...(root.title ? { windowTitle: root.title } : {}),
       ...(typeof root.windowId === 'number' ? { windowId: root.windowId } : {}),
+      ...(root.axRootId ? { axRootId: root.axRootId } : {}),
     })
     const outline = axTreeToOutline(res.tree)
     const coordinateSpace: CoordinateSpace = {
@@ -463,7 +474,9 @@ export class MacosPlatformAdapter implements PlatformAdapter {
       // Same width budget as full observe — avoid full-retina intermediate captures.
       maxWidth: this.maxCaptureWidth,
       capture: coordinateSpace.kind ?? (coordinateSpace.fullScreen ? 'display' : 'window'),
+      pid: root.pid,
       ...(typeof root.windowId === 'number' ? { windowId: root.windowId } : {}),
+      ...(root.axRootId ? { axRootId: root.axRootId } : {}),
       ...this.coordinatePayload(coordinateSpace),
     })
     return {
@@ -597,6 +610,7 @@ export class MacosPlatformAdapter implements PlatformAdapter {
                 ...(typeof target.root.windowId === 'number'
                   ? { windowId: target.root.windowId }
                   : {}),
+                ...(target.root.axRootId ? { axRootId: target.root.axRootId } : {}),
                 ...this.axTargetHintFields(node, target.coordinateSpace),
                 ...this.coordinatePayload(target.coordinateSpace),
               })
@@ -858,6 +872,7 @@ export class MacosPlatformAdapter implements PlatformAdapter {
         ...(typeof target.root.windowId === 'number'
           ? { windowId: target.root.windowId }
           : {}),
+        ...(target.root.axRootId ? { axRootId: target.root.axRootId } : {}),
         ...this.axTargetHintFields(node, target.coordinateSpace),
         ...this.coordinatePayload(target.coordinateSpace),
       })
@@ -951,6 +966,7 @@ export class MacosPlatformAdapter implements PlatformAdapter {
       ...(typeof coordinateSpace.windowId === 'number'
         ? { coordinateWindowId: coordinateSpace.windowId }
         : {}),
+      ...(coordinateSpace.axRootId ? { coordinateAxRootId: coordinateSpace.axRootId } : {}),
       ...(coordinateSpace.capturedBounds
         ? {
             capturedX: coordinateSpace.capturedBounds.x,

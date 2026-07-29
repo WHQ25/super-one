@@ -59,10 +59,13 @@ export class RootRegistry {
 }
 
 function identityKey(
-  r: Pick<UiRootIdentity, 'resourceKey' | 'title' | 'kind' | 'pid' | 'windowId'>,
+  r: Pick<UiRootIdentity, 'resourceKey' | 'title' | 'kind' | 'pid' | 'windowId' | 'axRootId'>,
 ): string {
   if (typeof r.windowId === 'number') {
     return `window|${r.pid}|${r.windowId}`
+  }
+  if (r.axRootId) {
+    return `ax|${r.pid}|${r.axRootId}`
   }
   return `${r.resourceKey}|${r.kind}|${r.pid}|${r.title}`
 }

@@ -156,125 +156,6 @@ func doctor() -> [String: Any] {
     ]
 }
 
-// MARK: - Apps
-
-func listRunningApps() -> [[String: Any]] {
-    let front = NSWorkspace.shared.frontmostApplication
-    return NSWorkspace.shared.runningApplications
-        .filter { $0.activationPolicy == .regular }
-        .compactMap { app -> [String: Any]? in
-            guard let name = app.localizedName else { return nil }
-            return [
-                "app": name,
-                "bundleId": app.bundleIdentifier ?? "",
-                "pid": app.processIdentifier,
-                "frontmost": app.processIdentifier == front?.processIdentifier,
-            ]
-        }
-}
-
-func frontmostApp() -> [String: Any]? {
-    guard let app = NSWorkspace.shared.frontmostApplication,
-          let name = app.localizedName else { return nil }
-    return [
-        "app": name,
-        "bundleId": app.bundleIdentifier ?? "",
-        "pid": app.processIdentifier,
-        "frontmost": true,
-    ]
-}
-
-func listWindows() -> [[String: Any]] {
-    let opts: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
-    guard let info = CGWindowListCopyWindowInfo(opts, kCGNullWindowID) as? [[String: Any]] else {
-        return []
-    }
-    let selfPid = Int(ProcessInfo.processInfo.processIdentifier)
-    return info.compactMap { w -> [String: Any]? in
-        let layer = w[kCGWindowLayer as String] as? Int ?? -1
-        guard layer == 0 else { return nil }
-        let owner = w[kCGWindowOwnerName as String] as? String ?? ""
-        let title = w[kCGWindowName as String] as? String ?? ""
-        let pid = w[kCGWindowOwnerPID as String] as? Int ?? 0
-        // Never expose our own overlay / helper chrome as an operable root.
-        if pid == selfPid { return nil }
-        let bounds = w[kCGWindowBounds as String] as? [String: Any]
-        let x = bounds?["X"] as? CGFloat ?? 0
-        let y = bounds?["Y"] as? CGFloat ?? 0
-        let width = bounds?["Width"] as? CGFloat ?? 0
-        let height = bounds?["Height"] as? CGFloat ?? 0
-        let windowId = w[kCGWindowNumber as String] as? Int ?? 0
-        let bundleId = NSRunningApplication(processIdentifier: pid_t(pid))?.bundleIdentifier ?? ""
-        let axMetadata = axTrusted() && windowId > 0
-            ? try? resolveAxWindow(pid: pid_t(pid), windowId: windowId, windowTitle: title)
-            : nil
-        let classification = axMetadata.map(classifyAxWindow)
-        return [
-            "app": owner,
-            "bundleId": bundleId,
-            "pid": pid,
-            "title": title,
-            "bounds": ["x": Double(x), "y": Double(y), "width": Double(width), "height": Double(height)],
-            "focused": axMetadata?.focused ?? false,
-            "visible": true,
-            "minimized": false,
-            "modal": classification?.modal ?? false,
-            "kind": classification?.kind ?? "window",
-            "resourceKey": "pid:\(pid)",
-            "windowId": windowId,
-            "windowLayer": layer,
-        ]
-    }
-}
-
-/// Bring target app into a usable (non-hidden) state without stealing the user's frontmost app.
-/// Set `activate=true` only when the agent explicitly needs key-window frontmost (rare / global HID).
-func focusApp(query: String, activate: Bool = false) throws {
-    let apps = NSWorkspace.shared.runningApplications.filter { $0.activationPolicy == .regular }
-    guard let match = apps.first(where: {
-        $0.bundleIdentifier == query
-            || $0.localizedName?.caseInsensitiveCompare(query) == .orderedSame
-    }) else {
-        throw HelperError(code: "APP_NOT_FOUND", message: "App not found: \(query)")
-    }
-    if match.isHidden {
-        match.unhide()
-    }
-    if activate {
-        match.activate()
-    }
-}
-
-/// Launch without frontmost activation so Computer Use can work in the background.
-func launchApp(query: String, activate: Bool = false) throws {
-    if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: query) {
-        let cfg = NSWorkspace.OpenConfiguration()
-        cfg.activates = activate
-        NSWorkspace.shared.openApplication(at: url, configuration: cfg)
-        return
-    }
-    // Fall back to name
-    let cfg = NSWorkspace.OpenConfiguration()
-    cfg.activates = activate
-    if let url = NSWorkspace.shared.urlForApplication(toOpen: URL(fileURLWithPath: "/Applications/\(query).app")) {
-        NSWorkspace.shared.openApplication(at: url, configuration: cfg)
-        return
-    }
-    // last resort: open -a style (always activates via LaunchServices)
-    let task = Process()
-    task.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-    task.arguments = activate ? ["-a", query] : ["-a", query, "-g"]
-    try task.run()
-}
-
-func resolvePid(bundleId: String?, pid: Int?) -> pid_t? {
-    if let pid, pid > 0 { return pid_t(pid) }
-    guard let bundleId, !bundleId.isEmpty else { return nil }
-    return NSWorkspace.shared.runningApplications
-        .first(where: { $0.bundleIdentifier == bundleId })?
-        .processIdentifier
-}
-
 // MARK: - Input
 
 struct HelperError: Error {
@@ -370,7 +251,12 @@ func handle(request: HelperRequest) async -> HelperResponse {
         case "frontmost":
             return .success(id: request.id, result: frontmostApp() as Any)
         case "list_windows":
-            return .success(id: request.id, result: ["windows": listWindows()])
+            return .success(
+                id: request.id,
+                result: ["windows": listWindows(
+                    scanBundleIds: AnyCodable.stringArray(params, "scanBundleIds")
+                )]
+            )
         case "ax_tree":
             guard let pid = AnyCodable.int(params, "pid").map({ pid_t($0) }) else {
                 throw HelperError(code: "INVALID", message: "pid required")
@@ -384,6 +270,7 @@ func handle(request: HelperRequest) async -> HelperResponse {
             let captureSourceWidth = AnyCodable.double(params, "captureSourceWidth")
             let captureSourceHeight = AnyCodable.double(params, "captureSourceHeight")
             let windowTitle = AnyCodable.string(params, "windowTitle")
+            let axRootId = AnyCodable.string(params, "axRootId")
             let windowId = AnyCodable.int(params, "windowId")
             let result = try axTreeSnapshot(
                 pid: pid,
@@ -396,6 +283,7 @@ func handle(request: HelperRequest) async -> HelperResponse {
                 captureSourceWidth: captureSourceWidth,
                 captureSourceHeight: captureSourceHeight,
                 windowTitle: windowTitle,
+                axRootId: axRootId,
                 windowId: windowId
             )
             return .success(id: request.id, result: result)
@@ -411,6 +299,7 @@ func handle(request: HelperRequest) async -> HelperResponse {
             }
             let value = AnyCodable.string(params, "value")
             let windowTitle = AnyCodable.string(params, "windowTitle")
+            let axRootId = AnyCodable.string(params, "axRootId")
             let windowId = AnyCodable.int(params, "windowId")
             let expectedBoundsValues = AnyCodable.doubleArray(params, "expectedBounds")
             let expectedBounds: CGRect? = {
@@ -445,6 +334,7 @@ func handle(request: HelperRequest) async -> HelperResponse {
                 action: action,
                 value: value,
                 windowTitle: windowTitle,
+                axRootId: axRootId,
                 windowId: windowId,
                 targetHint: targetHint.isEmpty ? nil : targetHint
             )
@@ -478,17 +368,28 @@ func handle(request: HelperRequest) async -> HelperResponse {
             let allowAll = (params["allowAllApps"] as? Bool) ?? false
             let capture = AnyCodable.string(params, "capture") ?? "window"
             let windowId = AnyCodable.int(params, "windowId")
+            let axRootId = AnyCodable.string(params, "axRootId")
+            let pid = AnyCodable.int(params, "pid").map(pid_t.init)
             let result: [String: Any]
             if capture == "window" {
-                guard let windowId else {
-                    throw HelperError(code: "INVALID", message: "window capture requires windowId")
+                if let windowId {
+                    result = try await captureWindow(
+                        windowId: windowId,
+                        grantedBundleIds: granted,
+                        maxWidth: maxWidth,
+                        allowAllApps: allowAll
+                    )
+                } else if let axRootId, let pid {
+                    result = try await captureAxRoot(
+                        axRootId: axRootId,
+                        pid: pid,
+                        grantedBundleIds: granted,
+                        maxWidth: maxWidth,
+                        allowAllApps: allowAll
+                    )
+                } else {
+                    throw HelperError(code: "INVALID", message: "window capture requires windowId or axRootId")
                 }
-                result = try await captureWindow(
-                    windowId: windowId,
-                    grantedBundleIds: granted,
-                    maxWidth: maxWidth,
-                    allowAllApps: allowAll
-                )
             } else if capture == "display" {
                 result = try await captureDisplay(
                     grantedBundleIds: granted,
@@ -509,6 +410,8 @@ func handle(request: HelperRequest) async -> HelperResponse {
             let maxWidth = AnyCodable.int(params, "maxWidth")
             let capture = AnyCodable.string(params, "capture") ?? "window"
             let windowId = AnyCodable.int(params, "windowId")
+            let axRootId = AnyCodable.string(params, "axRootId")
+            let pid = AnyCodable.int(params, "pid").map(pid_t.init)
             _ = try validateCoordinateGeometry(params)
             let result = try await captureZoom(
                 grantedBundleIds: granted,
@@ -516,7 +419,9 @@ func handle(request: HelperRequest) async -> HelperResponse {
                 allowAllApps: allowAll,
                 maxWidth: maxWidth,
                 capture: capture,
-                windowId: windowId
+                windowId: windowId,
+                axRootId: axRootId,
+                pid: pid
             )
             return .success(id: request.id, result: result)
         case "click":

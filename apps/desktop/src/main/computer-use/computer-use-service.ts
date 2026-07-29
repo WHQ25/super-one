@@ -10,6 +10,7 @@ import {
 import { ComputerUsePolicy } from './policy'
 import { FakePlatformBackend } from './platform/fake-backend'
 import type { PlatformAdapter } from './platform/types'
+import type { PlatformLook } from './platform/types'
 import { ResourceScheduler } from './resource-scheduler'
 import { boundText, clearContinuations } from './result-view'
 import { RootRegistry } from './root-registry'
@@ -398,6 +399,7 @@ export class ComputerUseService {
         || currentRoot.pid !== base.root.pid
         || currentRoot.resourceKey !== base.root.resourceKey
         || currentRoot.windowId !== base.root.windowId
+        || currentRoot.axRootId !== base.root.axRootId
       if (nativeIdentityChanged) {
         throw new ComputerUseError(
           'STALE_STATE',
@@ -469,8 +471,28 @@ export class ComputerUseService {
       // Re-observe successor (same resource). Prefer fused/semantic so outcome
       // heuristics can read AX values; visual-only stays picture-only.
       const reobserveMode = base.mode === 'visual' ? 'visual' : base.mode
-      const look = await this.adapter.look(base.root, reobserveMode, base.capture)
-      const identity: UiRootIdentity = { ...look.root, rootId: base.root.rootId }
+      let successorRoot = base.root
+      let look: PlatformLook
+      try {
+        look = await this.adapter.look(base.root, reobserveMode, base.capture)
+      } catch (error) {
+        if (!base.root.axRootId) throw error
+        await this.refreshRoots()
+        const refreshedTarget = this.roots.get(base.root.rootId)
+        if (refreshedTarget?.axRootId === base.root.axRootId) throw error
+        const candidates = this.roots.list().filter(
+          (root) => root.resourceKey === base.resourceKey && root.rootId !== base.root.rootId,
+        )
+        const replacement = refreshedTarget
+          ?? candidates.find((root) => root.focused)
+          ?? candidates.find((root) => root.modal)
+          ?? candidates.find((root) => root.kind === 'window')
+          ?? candidates[0]
+        if (!replacement) throw error
+        successorRoot = replacement
+        look = await this.adapter.look(successorRoot, reobserveMode, base.capture)
+      }
+      const identity: UiRootIdentity = { ...look.root, rootId: successorRoot.rootId }
       this.roots.register(identity)
 
       const successorEpoch = this.scheduler.epoch(base.resourceKey)
@@ -533,6 +555,7 @@ export class ComputerUseService {
         grounding: delivery,
         stoppedAt: platformResult.stoppedAt,
         successorStateId,
+        successorRoot: identity,
         successorImage: successor.image,
         successorCoordinateSpace: successor.coordinateSpace,
         diff,

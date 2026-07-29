@@ -22,7 +22,7 @@ jobs:
           ref: ${{ inputs.ref }}
           fetch-depth: 1
       - uses: oven-sh/setup-bun@v2
-      - run: bun install --frozen-lockfile
+      - run: bun install --frozen-lockfile --concurrent-scripts=1
       - run: bun run check-deps-lock
       - run: bun run build:win -- --publish never
         env:

@@ -35,6 +35,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 - Batch renderer agent events and emit incremental Codex patches
 
+### CI
+
+- Serialize native module lifecycle scripts during desktop builds to prevent electron-rebuild races
+
 ## [0.48.3-alpha] - 2026-07-28
 
 ### Added

@@ -286,7 +286,7 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
     const askUserHandler = async (ctx: { params: GrokAskUserQuestionParams }) => {
       if (!opts.askUserQuestion) {
         log.warn('[acp-runtime] x.ai/ask_user_question with no gate — cancelling')
-        return { cancelled: {} }
+        return { outcome: 'cancelled' }
       }
       return opts.askUserQuestion.request(ctx.params)
     }

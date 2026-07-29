@@ -43,35 +43,32 @@ describe('normalizeGrokQuestions', () => {
 })
 
 describe('formatGrokAskUserResponse', () => {
-  it('formats accepted answers as string arrays', () => {
+  it('formats accepted answers with outcome tag (Grok wire)', () => {
     expect(formatGrokAskUserResponse({
       kind: 'accepted',
       answers: { 'Which one?': 'Alpha' },
       annotations: { 'Which one?': { notes: 'n1' } },
     })).toEqual({
-      accepted: {
-        answers: { 'Which one?': ['Alpha'] },
-        partial_answers: {},
-        annotations: { 'Which one?': { notes: 'n1' } },
-      },
+      outcome: 'accepted',
+      answers: { 'Which one?': ['Alpha'] },
+      annotations: { 'Which one?': { notes: 'n1' } },
     })
   })
 
-  it('splits multi-select comma-joined answers', () => {
+  it('splits multi-select comma-joined answers and omits empty annotations', () => {
     const res = formatGrokAskUserResponse({
       kind: 'accepted',
       answers: { 'Pick many': 'A, B' },
     })
     expect(res).toEqual({
-      accepted: {
-        answers: { 'Pick many': ['A', 'B'] },
-        partial_answers: {},
-      },
+      outcome: 'accepted',
+      answers: { 'Pick many': ['A', 'B'] },
     })
+    expect(res).not.toHaveProperty('annotations')
   })
 
-  it('formats cancelled', () => {
-    expect(formatGrokAskUserResponse({ kind: 'cancelled' })).toEqual({ cancelled: {} })
+  it('formats cancelled as outcome=cancelled', () => {
+    expect(formatGrokAskUserResponse({ kind: 'cancelled' })).toEqual({ outcome: 'cancelled' })
   })
 })
 

@@ -78,12 +78,18 @@ export function buildAskUserQuestionRequest(
 }
 
 /**
- * Grok expects externally-tagged ExtResponse.
- * Accepted carries answers as map question → string[] (multi-select / single as one-element list).
+ * Grok AskUserQuestionExtResponse — internally tagged on `outcome` (snake_case):
+ *   `{ "outcome": "accepted", "answers": { "Q?": ["A"] }, "annotations"?: { ... } }`
+ *   `{ "outcome": "cancelled" }`
+ *   `{ "outcome": "chat_about_this", "partial_answers"?: { ... } }`  (plan mode)
+ *   `{ "outcome": "skip_interview", "partial_answers"?: { ... } }`   (plan mode)
+ *
+ * Accepted answers: map question text → string[] (multi-select / single as one-element list).
+ * Grok also accepts a bare string per key and normalizes to a 1-element vec.
  */
 export function formatGrokAskUserResponse(answer: GrokAskUserAnswer): Record<string, unknown> {
   if (answer.kind === 'cancelled') {
-    return { cancelled: {} }
+    return { outcome: 'cancelled' }
   }
   const answers: Record<string, string[]> = {}
   for (const [key, value] of Object.entries(answer.answers)) {
@@ -103,11 +109,9 @@ export function formatGrokAskUserResponse(answer: GrokAskUserAnswer): Record<str
     }
   }
   return {
-    accepted: {
-      answers,
-      partial_answers: {},
-      ...(Object.keys(annotations).length > 0 ? { annotations } : {}),
-    },
+    outcome: 'accepted',
+    answers,
+    ...(Object.keys(annotations).length > 0 ? { annotations } : {}),
   }
 }
 

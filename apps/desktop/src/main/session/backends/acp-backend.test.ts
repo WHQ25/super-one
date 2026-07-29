@@ -635,10 +635,9 @@ describe('AcpBackend', () => {
       .filter((d): d is { type: 'text'; text: string } => d.type === 'text')
       .map((d) => d.text)
       .join('')
-    expect(JSON.parse(text)).toMatchObject({
-      accepted: {
-        answers: { 'Pick?': ['One'] },
-      },
+    expect(JSON.parse(text)).toEqual({
+      outcome: 'accepted',
+      answers: { 'Pick?': ['One'] },
     })
     expect(events.some((e) => e.type === 'ask_user_question')).toBe(true)
     expect(backend.getPendingInteractions()).toEqual([])
@@ -678,7 +677,7 @@ describe('AcpBackend', () => {
       .filter((d): d is { type: 'text'; text: string } => d.type === 'text')
       .map((d) => d.text)
       .join('')
-    expect(JSON.parse(text)).toEqual({ cancelled: {} })
+    expect(JSON.parse(text)).toEqual({ outcome: 'cancelled' })
     await backend.close()
   })
 

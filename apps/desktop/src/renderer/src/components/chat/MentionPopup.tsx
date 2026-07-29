@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback, useImperativeHandle, forwardRef, useMemo } from 'react'
-import { Bot, Folder } from 'lucide-react'
+import { Bot, Folder, Globe, Monitor, Users } from 'lucide-react'
 import { FileIcon } from '@superone/ui/components/ui/FileIcon'
 import { cn } from '@superone/ui/lib/utils'
 import { Kbd } from '@superone/ui/components/ui/kbd'
@@ -10,6 +10,7 @@ import { useMiniAppStore } from '@/stores/miniapp'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
 import { useTranslation } from 'react-i18next'
 import type { ListDirEntry, MentionSearchItem } from '@superone/shared/agent-types'
+import { BUILTIN_CAPABILITIES, type BuiltinCapabilityId } from '@superone/shared/capability-prompt-tags'
 import { groupItems, PopupSectionHeader } from './popup-groups'
 
 export interface MentionPopupHandle {
@@ -33,6 +34,7 @@ type FlatItem =
   | { kind: 'dir-entry'; entry: ListDirEntry; prefix: string }
   | { kind: 'agent'; name: string; model: string; matchIndices: number[] }
   | { kind: 'miniapp'; appId: string; displayName: string; matchIndices: number[] }
+  | { kind: 'capability'; id: BuiltinCapabilityId; displayName: string; matchIndices: number[] }
 
 function fuzzyMatchIndices(text: string, query: string): number[] | null {
   if (!query) return []
@@ -69,15 +71,23 @@ function getSelectPath(item: FlatItem): string {
   if (item.kind === 'file') return item.isDirectory ? item.path + '/' : item.path
   if (item.kind === 'agent') return item.name
   if (item.kind === 'miniapp') return item.appId
+  if (item.kind === 'capability') return item.id
   return ''
 }
 
-const MENTION_GROUP_ORDER = ['agent', 'miniapp', 'file'] as const
+const MENTION_GROUP_ORDER = ['capability', 'agent', 'miniapp', 'file'] as const
 
 function mentionGroupKey(item: FlatItem): string {
+  if (item.kind === 'capability') return 'capability'
   if (item.kind === 'agent') return 'agent'
   if (item.kind === 'miniapp') return 'miniapp'
   return 'file'
+}
+
+function capabilityIcon(id: BuiltinCapabilityId) {
+  if (id === 'collab') return <Users className="size-3.5 shrink-0 text-violet-600 dark:text-violet-400" />
+  if (id === 'computer') return <Monitor className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+  return <Globe className="size-3.5 shrink-0 text-sky-600 dark:text-sky-400" />
 }
 
 export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
@@ -176,9 +186,35 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
       return matches
     }, [miniApps, query, isBrowseMode])
 
+    const capabilityLabel = useCallback((id: BuiltinCapabilityId): string => {
+      if (id === 'collab') return t('chat.mentionPopup.capabilityCollab')
+      if (id === 'computer') return t('chat.mentionPopup.capabilityComputer')
+      return t('chat.mentionPopup.capabilityBrowser')
+    }, [t])
+
+    const matchedCapabilities = useMemo<FlatItem[]>(() => {
+      // Hide when browsing into a subdirectory (`@src/`), but keep on empty `@`.
+      if (isBrowseMode && query) return []
+      const matches: FlatItem[] = []
+      for (const cap of BUILTIN_CAPABILITIES) {
+        const label = capabilityLabel(cap.id)
+        const idMatch = fuzzyMatchIndices(cap.id, query)
+        const nameMatch = fuzzyMatchIndices(label, query)
+        const enMatch = fuzzyMatchIndices(cap.displayName, query)
+        if (idMatch === null && nameMatch === null && enMatch === null) continue
+        matches.push({
+          kind: 'capability',
+          id: cap.id,
+          displayName: label,
+          matchIndices: nameMatch ?? enMatch ?? idMatch ?? [],
+        })
+      }
+      return matches
+    }, [capabilityLabel, query, isBrowseMode])
+
     const flatItems: FlatItem[] = useMemo(() => {
       if (isBrowseMode) {
-        const items: FlatItem[] = [...matchedMiniApps]
+        const items: FlatItem[] = [...matchedCapabilities, ...matchedMiniApps]
         for (const entry of dirEntries) items.push({ kind: 'dir-entry', entry, prefix: browseDir })
         if (!query) {
           for (const a of agentEntries) {
@@ -189,7 +225,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
       }
 
       const prefixLen = scopeDir?.length ?? 0
-      const items: FlatItem[] = [...matchedMiniApps]
+      const items: FlatItem[] = [...matchedCapabilities, ...matchedMiniApps]
       for (const item of searchResults) {
         if (item.kind === 'agent') {
           items.push({ kind: 'agent', name: item.name, model: item.model, matchIndices: item.matchIndices })
@@ -200,7 +236,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
         }
       }
       return items
-    }, [isBrowseMode, browseDir, query, searchResults, dirEntries, agentEntries, scopeDir, matchedMiniApps])
+    }, [isBrowseMode, browseDir, query, searchResults, dirEntries, agentEntries, scopeDir, matchedCapabilities, matchedMiniApps])
 
     const mentionGroups = useMemo(
       () => groupItems(flatItems, mentionGroupKey, MENTION_GROUP_ORDER),
@@ -223,6 +259,8 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
           onSelect(getNavigatePath(item), 'navigate')
         } else if (item.kind === 'miniapp') {
           onSelect(item.appId, 'select', 'miniapp', item.displayName)
+        } else if (item.kind === 'capability') {
+          onSelect(item.id, 'select', item.id, item.displayName)
         } else {
           onSelect(getSelectPath(item), 'select')
         }
@@ -259,6 +297,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
     const projectName = activeProject?.split('/').pop() || ''
 
     const groupLabel = (key: string): string => {
+      if (key === 'capability') return t('chat.mentionPopup.groupCapabilities')
       if (key === 'agent') return t('chat.mentionPopup.groupAgents')
       if (key === 'miniapp') return t('chat.mentionPopup.groupMiniApps')
       return t('chat.mentionPopup.groupFiles')
@@ -274,6 +313,24 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
         'flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs transition-colors',
         i === selectedIndex ? 'bg-accent text-accent-foreground' : 'text-foreground hover:bg-accent/40'
       )
+      if (item.kind === 'capability') {
+        return (
+          <button
+            key={`c-${item.id}`}
+            ref={setItemRef(i)}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => onSelect(item.id, 'select', item.id, item.displayName)}
+            onMouseEnter={() => onSetSelectedIndex(i)}
+            className={rowClass}
+          >
+            {capabilityIcon(item.id)}
+            <span className="shrink-0 font-medium">
+              <HighlightedPath path={item.displayName} indices={item.matchIndices} />
+            </span>
+            <span className="shrink-0 text-xs text-muted-foreground">@{item.id}</span>
+          </button>
+        )
+      }
       if (item.kind === 'miniapp') {
         return (
           <button

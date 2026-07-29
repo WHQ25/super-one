@@ -2,7 +2,7 @@ import type { ChatMessage as ChatMessageType, ContentBlock, AgentStatus, ImageGe
 import { useState, useEffect, useRef, useMemo, useCallback, memo, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@superone/ui/lib/utils'
-import { Loader2, ImageIcon, OctagonX, Folder, ChevronRight, Clock, Minimize2, ArrowUp, ArrowDown, Copy, Check, AlertTriangle, X, Shuffle, Bot, Inbox } from 'lucide-react'
+import { Loader2, ImageIcon, OctagonX, Folder, ChevronRight, Clock, Minimize2, ArrowUp, ArrowDown, Copy, Check, AlertTriangle, X, Shuffle, Bot, Inbox, Globe, Monitor, Users } from 'lucide-react'
 import { ToolBlock } from './ToolBlock'
 import { ToolGroup } from './ToolGroup'
 import { AppToolGroup } from './AppToolGroup'
@@ -444,7 +444,9 @@ function MentionInlineChip({ kind, value, displayName }: { kind: UserMentionKind
     return () => { cancelled = true }
   }, [kind, value])
 
-  const display = resolvedKind === 'miniapp'
+  const isCapability =
+    resolvedKind === 'collab' || resolvedKind === 'computer' || resolvedKind === 'browser'
+  const display = resolvedKind === 'miniapp' || isCapability
     ? (displayName ?? value)
     : (value.replace(/\/$/, '').split('/').pop() || value)
   return (
@@ -468,6 +470,21 @@ function MentionInlineChip({ kind, value, displayName }: { kind: UserMentionKind
       ) : resolvedKind === 'miniapp' ? (
         <>
           <MiniAppIcon appId={value} className="size-3.5 shrink-0" />
+          <span>{display}</span>
+        </>
+      ) : resolvedKind === 'collab' ? (
+        <>
+          <Users className="size-3.5 shrink-0 text-violet-600 dark:text-violet-400" />
+          <span>{display}</span>
+        </>
+      ) : resolvedKind === 'computer' ? (
+        <>
+          <Monitor className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+          <span>{display}</span>
+        </>
+      ) : resolvedKind === 'browser' ? (
+        <>
+          <Globe className="size-3.5 shrink-0 text-sky-600 dark:text-sky-400" />
           <span>{display}</span>
         </>
       ) : (

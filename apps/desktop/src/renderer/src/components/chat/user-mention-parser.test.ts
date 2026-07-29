@@ -165,4 +165,63 @@ describe('parseUserMentions', () => {
       expect(result).toEqual([{ type: 'text', text: input }])
     })
   })
+
+  describe('built-in capability tags', () => {
+    it('parses a capability tag into a mention segment', () => {
+      const input = '<superone-capability><name>Super Browser</name><id>browser</id></superone-capability> open docs'
+      expect(parseUserMentions(input)).toEqual([
+        { type: 'mention', kind: 'browser', value: 'browser', displayName: 'Super Browser' },
+        { type: 'text', text: ' open docs' },
+      ])
+    })
+
+    it('parses all three capability kinds', () => {
+      const input =
+        '<superone-capability><name>Agents Collaboration</name><id>collab</id></superone-capability> ' +
+        '<superone-capability><name>Computer Use</name><id>computer</id></superone-capability> ' +
+        '<superone-capability><name>Super Browser</name><id>browser</id></superone-capability>'
+      expect(parseUserMentions(input)).toEqual([
+        { type: 'mention', kind: 'collab', value: 'collab', displayName: 'Agents Collaboration' },
+        { type: 'text', text: ' ' },
+        { type: 'mention', kind: 'computer', value: 'computer', displayName: 'Computer Use' },
+        { type: 'text', text: ' ' },
+        { type: 'mention', kind: 'browser', value: 'browser', displayName: 'Super Browser' },
+      ])
+    })
+
+    it('strips capability reminder block entirely', () => {
+      const input = 'use browser\n\n<superone-capability-reminder>\ntools\n</superone-capability-reminder>'
+      expect(parseUserMentions(input)).toEqual([
+        { type: 'text', text: 'use browser' },
+      ])
+    })
+
+    it('classifies plain @browser / @collab / @computer as capability kinds', () => {
+      expect(parseUserMentions('@browser go')).toEqual([
+        { type: 'mention', kind: 'browser', value: 'browser' },
+        { type: 'text', text: ' go' },
+      ])
+      expect(parseUserMentions('@collab help')).toEqual([
+        { type: 'mention', kind: 'collab', value: 'collab' },
+        { type: 'text', text: ' help' },
+      ])
+      expect(parseUserMentions('@computer click')).toEqual([
+        { type: 'mention', kind: 'computer', value: 'computer' },
+        { type: 'text', text: ' click' },
+      ])
+    })
+
+    it('coexists with miniapp tags and file mentions', () => {
+      const input =
+        '<superone-capability><name>Super Browser</name><id>browser</id></superone-capability> ' +
+        '<superone-miniapp><appname>App</appname><appid>app</appid></superone-miniapp> see @file.ts'
+      expect(parseUserMentions(input)).toEqual([
+        { type: 'mention', kind: 'browser', value: 'browser', displayName: 'Super Browser' },
+        { type: 'text', text: ' ' },
+        { type: 'mention', kind: 'miniapp', value: 'app', displayName: 'App' },
+        { type: 'text', text: ' see ' },
+        { type: 'mention', kind: 'file', value: 'file.ts' },
+      ])
+    })
+  })
 })

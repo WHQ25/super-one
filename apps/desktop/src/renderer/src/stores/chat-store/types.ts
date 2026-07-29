@@ -45,7 +45,7 @@ export interface SessionWriteTarget {
   sessionId: string
 }
 
-export type MentionKind = 'file' | 'directory' | 'agent' | 'miniapp'
+export type MentionKind = 'file' | 'directory' | 'agent' | 'miniapp' | 'collab' | 'computer' | 'browser'
 export interface Mention {
   kind: MentionKind
   value: string

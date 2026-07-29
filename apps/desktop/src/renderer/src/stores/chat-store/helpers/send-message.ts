@@ -198,7 +198,45 @@ export async function sendMessageImpl(
     }
     miniAppReminderSuffix = `\n\n<superone-miniapp-reminder>\n${lines.join('\n')}\n</superone-miniapp-reminder>`
   }
-  const finalContent = rawContent + contextSuffix + quoteSuffix + miniAppReminderSuffix + annotationSuffix
+  let capabilityReminderSuffix = ''
+  let agentContent = rawContent
+  const capabilityMentions = mentions.filter(
+    (m) => m.kind === 'collab' || m.kind === 'computer' || m.kind === 'browser',
+  )
+  if (capabilityMentions.length > 0) {
+    const {
+      CAPABILITY_TAG_REGEX,
+      getBuiltinCapability,
+      wrapCapabilityMention,
+      capabilityToolPrefixClaude,
+      capabilityToolPrefixCodex,
+      isBuiltinCapabilityId,
+    } = await import('@superone/shared/capability-prompt-tags')
+    // Agent-facing payload always uses English capability labels, even when the
+    // user bubble keeps a localized chip name in the stored user message.
+    agentContent = rawContent.replace(CAPABILITY_TAG_REGEX, (full, _name, id) => {
+      const capId = String(id).trim()
+      if (!isBuiltinCapabilityId(capId)) return full
+      return wrapCapabilityMention(capId)
+    })
+    const lines: string[] = [
+      'User mentioned built-in capabilities; prefer these MCP tools when relevant:',
+    ]
+    // Dedupe by kind — selecting the same chip twice should not double the hint.
+    const seen = new Set<string>()
+    for (const m of capabilityMentions) {
+      if (seen.has(m.kind)) continue
+      seen.add(m.kind)
+      const cap = getBuiltinCapability(m.kind)
+      if (!cap) continue
+      const prefix = effectiveProvider === 'codex'
+        ? capabilityToolPrefixCodex(cap)
+        : capabilityToolPrefixClaude(cap)
+      lines.push(`- "${cap.displayName}" (${cap.intent}): tools start with "${prefix}"`)
+    }
+    capabilityReminderSuffix = `\n\n<superone-capability-reminder>\n${lines.join('\n')}\n</superone-capability-reminder>`
+  }
+  const finalContent = agentContent + contextSuffix + quoteSuffix + miniAppReminderSuffix + capabilityReminderSuffix + annotationSuffix
   const codexCommand = parseCodexCommand(rawContent)
   const resolvedCodexCommand: CodexCommand | null = effectiveProvider === 'codex'
     ? (codexCommand ?? { kind: 'run', prompt: finalContent })

@@ -1166,9 +1166,13 @@ export const zh: Messages = {
       groupSkills: '技能',
     },
     mentionPopup: {
+      groupCapabilities: '内置能力',
       groupAgents: '智能体',
       groupMiniApps: '小程序',
       groupFiles: '文件',
+      capabilityCollab: '智能体协作',
+      capabilityComputer: '控制电脑',
+      capabilityBrowser: 'Super浏览器',
     },
     linkSafety: {
       openExternal: '打开链接',

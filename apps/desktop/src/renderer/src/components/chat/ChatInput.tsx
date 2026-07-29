@@ -533,6 +533,10 @@ export function ChatInput() {
         if (kindHint === 'miniapp') {
           kind = 'miniapp'
           displayName = displayNameHint || value
+        } else if (kindHint === 'collab' || kindHint === 'computer' || kindHint === 'browser') {
+          kind = kindHint
+          mentionValue = kindHint
+          displayName = displayNameHint || kindHint
         } else {
           const isAgent = showAgentMentions && agents.some((a) => a.name === value)
           kind = isAgent ? 'agent' : value.endsWith('/') ? 'directory' : 'file'
@@ -589,6 +593,8 @@ export function ChatInput() {
             collectedMentions.push(attrs)
             if (attrs.kind === 'miniapp') {
               current += ` <superone-miniapp><appname>${attrs.displayName}</appname><appid>${attrs.value}</appid></superone-miniapp> `
+            } else if (attrs.kind === 'collab' || attrs.kind === 'computer' || attrs.kind === 'browser') {
+              current += ` <superone-capability><name>${attrs.displayName}</name><id>${attrs.kind}</id></superone-capability> `
             } else {
               // Directory kind must survive plain-text round-trip via trailing `/`
               // (parseUserMentions re-classifies solely from the serialized value).
@@ -1256,7 +1262,7 @@ export function ChatInput() {
         {activeProviderForResources === 'claude' && <ChatInputDirsHint />}
         <div
           className={cn(
-            'relative mx-3 mb-1 rounded-xl border border-border px-4 py-3',
+            'relative mx-3 mb-1 rounded-xl border border-border px-3 py-2',
             isDragging && 'ring-2 ring-inset ring-primary/50'
           )}
           onDragEnter={handleDragEnter}
@@ -1394,7 +1400,7 @@ export function ChatInput() {
 
         <EditorContent editor={editor} />
 
-        <div className="mt-2 flex items-center justify-between">
+        <div className="mt-1.5 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <input
               ref={fileInputRef}

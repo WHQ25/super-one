@@ -420,6 +420,67 @@ describe('sendMessageImpl: miniapp tool reminder', () => {
   })
 })
 
+describe('sendMessageImpl: built-in capability reminder', () => {
+  it('injects English-only intent + Claude tool prefix even when chips were localized', async () => {
+    seedProject('/proj', 'sid-1', {
+      mentions: [
+        { kind: 'browser', value: 'browser', displayName: 'Super浏览器' },
+        { kind: 'collab', value: 'collab', displayName: '智能体协作' },
+        { kind: 'computer', value: 'computer', displayName: '控制电脑' },
+      ],
+    })
+
+    await useChatStore.getState().sendMessage(
+      '<superone-capability><name>Super浏览器</name><id>browser</id></superone-capability> use these',
+    )
+
+    const content = mockSendMessage.mock.calls[0][1].content as string
+    expect(content).toContain('<superone-capability-reminder>')
+    expect(content).toContain('tools start with "mcp__superone__browser_"')
+    expect(content).toContain('tools start with "mcp__superone__session_collab_"')
+    expect(content).toContain('tools start with "mcp__superone__computer_"')
+    expect(content).toContain('"Super Browser"')
+    expect(content).toContain('"Agents Collaboration"')
+    expect(content).toContain('"Computer Use"')
+    expect(content).toContain('<name>Super Browser</name>')
+    expect(content).not.toContain('Super浏览器')
+    expect(content).not.toContain('智能体协作')
+    expect(content).not.toContain('控制电脑')
+    expect(content).toContain('automate the built-in browser')
+    expect(content).toContain('spawn and coordinate child agent sessions')
+    expect(content).toContain('control the desktop UI')
+  })
+
+  it('uses Codex-style tool prefixes (dot after server) for codex', async () => {
+    seedProject('/proj', 'sid-1', {
+      preferredProvider: 'codex',
+      sessionProvider: 'codex',
+      mentions: [{ kind: 'browser', value: 'browser', displayName: 'Super Browser' }],
+    })
+
+    await useChatStore.getState().sendMessage('browse it')
+
+    const { finalContent } = mockRunCodexCommand.mock.calls[0][2]
+    expect(finalContent).toContain('tools start with "mcp__superone.browser_"')
+    expect(finalContent).not.toContain('mcp__superone__browser_')
+  })
+
+  it('dedupes repeated capability kinds in the reminder', async () => {
+    seedProject('/proj', 'sid-1', {
+      mentions: [
+        { kind: 'browser', value: 'browser', displayName: 'Super Browser' },
+        { kind: 'browser', value: 'browser', displayName: 'Super Browser' },
+      ],
+    })
+
+    await useChatStore.getState().sendMessage('twice')
+
+    const content = mockSendMessage.mock.calls[0][1].content as string
+    const matches = content.match(/mcp__superone__browser_/g) ?? []
+    expect(matches).toHaveLength(1)
+  })
+})
+
 describe('sendMessageImpl: miniapp authorize', () => {
   it('does not abort the send when miniapp authorize rejects', async () => {
     seedProject('/proj', 'sid-1', {

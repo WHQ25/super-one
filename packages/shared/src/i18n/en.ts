@@ -1132,9 +1132,13 @@ export type Messages = {
       groupSkills: string
     }
     mentionPopup: {
+      groupCapabilities: string
       groupAgents: string
       groupMiniApps: string
       groupFiles: string
+      capabilityCollab: string
+      capabilityComputer: string
+      capabilityBrowser: string
     }
     linkSafety: {
       openExternal: string
@@ -3112,9 +3116,13 @@ export const en: Messages = {
       groupSkills: 'Skills',
     },
     mentionPopup: {
+      groupCapabilities: 'Built-in',
       groupAgents: 'Agents',
       groupMiniApps: 'Mini apps',
       groupFiles: 'Files',
+      capabilityCollab: 'Agents Collaboration',
+      capabilityComputer: 'Computer Use',
+      capabilityBrowser: 'Super Browser',
     },
     linkSafety: {
       openExternal: 'Open link',

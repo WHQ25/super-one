@@ -1,4 +1,11 @@
-export type UserMentionKind = 'file' | 'directory' | 'agent' | 'miniapp'
+import {
+  CAPABILITY_REMINDER_REGEX,
+  CAPABILITY_TAG_REGEX,
+  isBuiltinCapabilityId,
+  type BuiltinCapabilityId,
+} from '@superone/shared/capability-prompt-tags'
+
+export type UserMentionKind = 'file' | 'directory' | 'agent' | 'miniapp' | BuiltinCapabilityId
 
 export type UserTextSegment =
   | { type: 'text'; text: string }
@@ -9,28 +16,49 @@ const MINIAPP_TAG_REGEX = /<superone-miniapp>\s*<appname>([\s\S]*?)<\/appname>\s
 const MINIAPP_REMINDER_REGEX = /\n*<superone-miniapp-reminder>[\s\S]*?<\/superone-miniapp-reminder>\n*/g
 
 function classify(value: string): UserMentionKind {
+  if (isBuiltinCapabilityId(value)) return value
   if (value.endsWith('/')) return 'directory'
   if (value.includes('/') || value.includes('.')) return 'file'
   return 'agent'
 }
 
-interface MiniAppMatch {
+interface TagMatch {
   start: number
   end: number
-  appId: string
-  appName: string
+  kind: UserMentionKind
+  value: string
+  displayName: string
 }
 
-function findMiniAppTags(text: string): MiniAppMatch[] {
-  const out: MiniAppMatch[] = []
+function findMiniAppTags(text: string): TagMatch[] {
+  const out: TagMatch[] = []
   const re = new RegExp(MINIAPP_TAG_REGEX)
   let m: RegExpExecArray | null
   while ((m = re.exec(text)) !== null) {
     out.push({
       start: m.index,
       end: m.index + m[0].length,
-      appName: m[1].trim(),
-      appId: m[2].trim(),
+      kind: 'miniapp',
+      displayName: m[1].trim(),
+      value: m[2].trim(),
+    })
+  }
+  return out
+}
+
+function findCapabilityTags(text: string): TagMatch[] {
+  const out: TagMatch[] = []
+  const re = new RegExp(CAPABILITY_TAG_REGEX)
+  let m: RegExpExecArray | null
+  while ((m = re.exec(text)) !== null) {
+    const id = m[2].trim()
+    if (!isBuiltinCapabilityId(id)) continue
+    out.push({
+      start: m.index,
+      end: m.index + m[0].length,
+      kind: id,
+      displayName: m[1].trim(),
+      value: id,
     })
   }
   return out
@@ -39,11 +67,14 @@ function findMiniAppTags(text: string): MiniAppMatch[] {
 export function parseUserMentions(text: string): UserTextSegment[] {
   if (text.length === 0) return []
 
-  // 1. Strip miniapp reminder blocks entirely — they're for the agent, not the user.
-  const withoutReminder = text.replace(MINIAPP_REMINDER_REGEX, '')
+  // 1. Strip agent-only reminder blocks — they're not for the user bubble.
+  const withoutReminder = text
+    .replace(MINIAPP_REMINDER_REGEX, '')
+    .replace(CAPABILITY_REMINDER_REGEX, '')
 
-  // 2. Extract miniapp tag positions so we can interleave them with @-mentions.
-  const miniAppMatches = findMiniAppTags(withoutReminder)
+  // 2. Extract structured tags (miniapp + built-in capabilities) and interleave with @-mentions.
+  const tagMatches = [...findMiniAppTags(withoutReminder), ...findCapabilityTags(withoutReminder)]
+    .sort((a, b) => a.start - b.start)
 
   const segments: UserTextSegment[] = []
   let cursor = 0
@@ -68,11 +99,12 @@ export function parseUserMentions(text: string): UserTextSegment[] {
     }
   }
 
-  for (const m of miniAppMatches) {
+  for (const m of tagMatches) {
+    if (m.start < cursor) continue
     if (m.start > cursor) {
       pushText(withoutReminder.slice(cursor, m.start))
     }
-    segments.push({ type: 'mention', kind: 'miniapp', value: m.appId, displayName: m.appName })
+    segments.push({ type: 'mention', kind: m.kind, value: m.value, displayName: m.displayName })
     cursor = m.end
   }
   if (cursor < withoutReminder.length) {

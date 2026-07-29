@@ -28,6 +28,7 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 .cache
 *.tsbuildinfo
 .wrangler/
+apps/desktop/native/computer-use-helper/.build/
 
 # IntelliJ based IDEs
 .idea

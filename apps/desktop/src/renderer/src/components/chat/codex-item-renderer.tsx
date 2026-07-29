@@ -20,6 +20,7 @@ import { fileLinkComponents } from './chat-markdown-components'
 import { createContext, useContext, useState, useEffect, useRef } from 'react'
 import { ChevronRight } from 'lucide-react'
 import type { CodexCollabToolCallItem } from '@superone/shared/agent-types'
+import { TerminalCommandOutput } from './TerminalCommandOutput'
 
 interface PlanFooterActions {
   onApprove?: () => void
@@ -100,20 +101,13 @@ export function CodexCommandBlock({ item, isStreaming }: { item: CodexCommandExe
         <ChevronRight className={cn('ml-auto size-3 shrink-0 text-muted-foreground transition-transform duration-200', expanded && 'rotate-90')} />
       </div>
       {expanded && (
-        <div className="bg-terminal-bg font-mono text-xs leading-relaxed whitespace-pre-wrap">
-          {item.command && (
-            <div className="px-3 pt-2 text-terminal-fg">
-              <span className="text-terminal-prompt">$ </span>{item.command}
-            </div>
-          )}
-          <div className="max-h-24 overflow-y-auto overflow-x-auto px-3 py-1.5">
-            {output ? (
-              <div className="text-terminal-muted"><AnsiText text={output} /></div>
-            ) : isRunning ? (
-              <div className="text-terminal-muted"><span className="animate-shimmer">{t('chat.codex.runningInline')}</span></div>
-            ) : null}
-          </div>
-        </div>
+        <TerminalCommandOutput command={item.command} hasOutput={!!output} outputVersion={output}>
+          {output ? (
+            <div className="text-terminal-muted"><AnsiText text={output} /></div>
+          ) : isRunning ? (
+            <div className="text-terminal-muted"><span className="animate-shimmer">{t('chat.codex.runningInline')}</span></div>
+          ) : null}
+        </TerminalCommandOutput>
       )}
     </div>
   )

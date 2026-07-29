@@ -33,6 +33,7 @@ import { StandaloneToolBlock } from './StandaloneToolBlock'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { clickReleasedOnSelection, parseFileLinkTarget } from '@/lib/file-link'
+import { TerminalCommandOutput } from './TerminalCommandOutput'
 
 function isCompleteJson(s: string): boolean {
   try { JSON.parse(s); return true } catch { return false }
@@ -1489,10 +1490,6 @@ function MobileShareFileBlock({ params, result, isStreaming }: {
 }
 
 const BASH_LOAD_CHUNK = 50
-/** Default command preview: at most 3 visual lines before expand. */
-const BASH_COMMAND_CLAMP = 'line-clamp-3'
-/** Constrained output height (was max-h-24 / 6rem). */
-const BASH_OUTPUT_MAX_H = 'max-h-72'
 
 function BashTerminalView({
   toolUseId,
@@ -1529,7 +1526,6 @@ function BashTerminalView({
   const { t } = useTranslation()
   const outputExpired = !!resultOutputPath && !bashOutput && !isStreaming
   const scrollRef = useRef<HTMLDivElement>(null)
-  const commandRef = useRef<HTMLDivElement>(null)
   const sentinelRef = useRef<HTMLDivElement>(null)
   const isLiveRunning = !!bashOutput && !bashOutput.finished
   const taskProgress = useActiveSession((s) => s.taskProgress[toolUseId])
@@ -1546,10 +1542,7 @@ function BashTerminalView({
     : false
   const autoExpanded = holdOpenForBackgroundTask
   const [expanded, setExpanded] = useState(autoExpand ? autoExpanded : false)
-  const [commandExpanded, setCommandExpanded] = useState(false)
   const [outputFull, setOutputFull] = useState(false)
-  const [commandClippable, setCommandClippable] = useState(false)
-  const [outputOverflows, setOutputOverflows] = useState(false)
   const [extraContent, setExtraContent] = useState('')
   const [loadedLines, setLoadedLines] = useState(BASH_LOAD_CHUNK)
   const [hasMore, setHasMore] = useState(true)
@@ -1565,10 +1558,7 @@ function BashTerminalView({
   }, [autoExpand, autoExpanded])
 
   useEffect(() => {
-    if (!expanded) {
-      setCommandExpanded(false)
-      setOutputFull(false)
-    }
+    if (!expanded) setOutputFull(false)
   }, [expanded])
 
   useEffect(() => {
@@ -1618,33 +1608,6 @@ function BashTerminalView({
       prevExtraRef.current = extraContent
     }
   }, [extraContent, outputFull])
-
-  // Detect whether the clamped command would overflow 3 lines (or expanded needs a collapse control).
-  useLayoutEffect(() => {
-    if (!expanded || !command) {
-      setCommandClippable(false)
-      return
-    }
-    const el = commandRef.current
-    if (!el) return
-    if (commandExpanded) {
-      // Keep toggle visible after expand if content is multi-line / long.
-      setCommandClippable(command.includes('\n') || command.length > 80 || el.scrollHeight > el.clientHeight + 1)
-      return
-    }
-    setCommandClippable(el.scrollHeight > el.clientHeight + 1)
-  }, [expanded, command, commandExpanded])
-
-  // Detect whether constrained output is scroll-clipped (show "full output" toggle).
-  useLayoutEffect(() => {
-    if (!expanded || outputFull || !content) {
-      if (!content) setOutputOverflows(false)
-      return
-    }
-    const el = scrollRef.current
-    if (!el) return
-    setOutputOverflows(el.scrollHeight > el.clientHeight + 1)
-  }, [expanded, outputFull, content, isLive])
 
   const loadMore = useCallback(async () => {
     if (!outputPath || isLive || loadingRef.current || !hasMore) return
@@ -1719,76 +1682,25 @@ function BashTerminalView({
           {t('chat.toolBlock.outputFileExpired', { path: resultOutputPath!.split('/').pop() })}
         </div>
       ) : (
-        <div
-          className="bg-terminal-bg font-mono text-xs leading-relaxed"
-          onClick={(e) => e.stopPropagation()}
+        <TerminalCommandOutput
+          command={command}
+          hasOutput={!!content}
+          outputRef={scrollRef}
+          outputVersion={content}
+          outputFull={outputFull}
+          onOutputFullChange={setOutputFull}
+          outputPrefix={!isLive && hasMore && outputPath ? <div ref={sentinelRef} className="h-px" /> : undefined}
         >
-          {command && (
-            <div className="px-3 pt-2">
-              <div
-                ref={commandRef}
-                role={commandClippable || commandExpanded ? 'button' : undefined}
-                tabIndex={commandClippable || commandExpanded ? 0 : undefined}
-                title={
-                  commandClippable || commandExpanded
-                    ? (commandExpanded ? t('chat.toolBlock.collapseCommand') : t('chat.toolBlock.showFullCommand'))
-                    : undefined
-                }
-                className={cn(
-                  'text-terminal-fg whitespace-pre-wrap break-all',
-                  !commandExpanded && BASH_COMMAND_CLAMP,
-                  (commandClippable || commandExpanded) && 'cursor-pointer',
-                )}
-                onClick={() => {
-                  if (commandClippable || commandExpanded) setCommandExpanded((v) => !v)
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault()
-                    if (commandClippable || commandExpanded) setCommandExpanded((v) => !v)
-                  }
-                }}
-              >
-                <span className="text-terminal-prompt">$ </span>{command}
-              </div>
+          {outputExpired && restoredContent === null ? (
+            <div className="animate-shimmer text-terminal-dim">{t('common.loading')}</div>
+          ) : content ? (
+            <div className={showError ? 'text-amber-300' : 'text-terminal-muted'}><AnsiText text={showError ? extractToolError(content) : content} /></div>
+          ) : isStreaming ? (
+            <div className="text-terminal-muted">
+              <span className="animate-shimmer">{t('chat.toolBlock.runningInline')}</span>{localElapsed >= 1 && <span className="text-terminal-dim"> {localElapsed}s{timeoutMs && !isLive ? ` · timeout ${Math.round(timeoutMs / 1000)}s` : ''}</span>}
             </div>
-          )}
-          <div
-            ref={scrollRef}
-            role={(outputOverflows || outputFull) && content ? 'button' : undefined}
-            tabIndex={(outputOverflows || outputFull) && content ? 0 : undefined}
-            title={
-              (outputOverflows || outputFull) && content
-                ? (outputFull ? t('chat.toolBlock.collapseOutput') : t('chat.toolBlock.showFullOutput'))
-                : undefined
-            }
-            className={cn(
-              'overflow-x-auto px-3 py-1.5 whitespace-pre-wrap',
-              outputFull ? 'overflow-y-visible' : cn(BASH_OUTPUT_MAX_H, 'overflow-y-auto'),
-              (outputOverflows || outputFull) && content && 'cursor-pointer',
-            )}
-            onClick={() => {
-              if ((outputOverflows || outputFull) && content) setOutputFull((v) => !v)
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault()
-                if ((outputOverflows || outputFull) && content) setOutputFull((v) => !v)
-              }
-            }}
-          >
-            {!isLive && hasMore && outputPath && <div ref={sentinelRef} className="h-px" />}
-            {outputExpired && restoredContent === null ? (
-              <div className="animate-shimmer text-terminal-dim">{t('common.loading')}</div>
-            ) : content ? (
-              <div className={showError ? 'text-amber-300' : 'text-terminal-muted'}><AnsiText text={showError ? extractToolError(content) : content} /></div>
-            ) : isStreaming ? (
-              <div className="text-terminal-muted">
-                <span className="animate-shimmer">{t('chat.toolBlock.runningInline')}</span>{localElapsed >= 1 && <span className="text-terminal-dim"> {localElapsed}s{timeoutMs && !isLive ? ` · timeout ${Math.round(timeoutMs / 1000)}s` : ''}</span>}
-              </div>
-            ) : null}
-          </div>
-        </div>
+          ) : null}
+        </TerminalCommandOutput>
       ))}
     </div>
   )

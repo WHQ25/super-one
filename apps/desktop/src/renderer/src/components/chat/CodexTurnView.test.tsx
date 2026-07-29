@@ -357,6 +357,37 @@ describe('CodexTurnView', () => {
     expect(screen.getByText(/cat src\/file\.ts/)).toBeTruthy()
   })
 
+  it('uses the shared terminal spacing for expanded Bash commands', () => {
+    render(
+      <CodexTurnView
+        message={createMessage({
+          metadata: {
+            codex: {
+              threadId: 'thread-1',
+              usage: null,
+              items: [
+                {
+                  id: 'cmd-1',
+                  type: 'command_execution',
+                  command: 'bun run test',
+                  aggregatedOutput: 'line one\nline two',
+                  status: 'completed',
+                },
+              ],
+            },
+          },
+        })}
+        isStreaming={false}
+        isLastAssistant
+      />,
+    )
+
+    fireEvent.click(screen.getByText('Bash'))
+
+    expect(screen.getByText(/line one/).parentElement).toHaveClass('max-h-72', 'overflow-y-auto')
+    expect(screen.getByText(/bun run test/)).toHaveClass('line-clamp-3')
+  })
+
   it('auto expands grouped streaming read and search blocks and collapses after completion', () => {
     const message = createMessage({
       metadata: {

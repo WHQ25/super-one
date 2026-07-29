@@ -41,7 +41,7 @@ import { AddDirPopup, type AddDirPopupHandle } from './AddDirPopup'
 import { McpSlashPopup } from './McpSlashPopup'
 import { ReviewPanel } from './ReviewPanel'
 import { SlashCommandContent } from './SlashCommandContent'
-import { StopButton } from './StopButton'
+import { StopButton, harnessUsesSoftCancel } from './StopButton'
 import { groupItems, PopupSectionHeader } from './popup-groups'
 import { computeMatchingSlashCommands } from './chat-input/computeMatchingSlashCommands'
 import { resolveSlashCommandsForProvider } from './chat-input/resolveSlashCommandsForProvider'
@@ -1429,7 +1429,10 @@ export function ChatInput() {
           <div className="flex items-center gap-1.5">
             <ContextUsage />
             {isStreaming && (
-              <StopButton onInterrupt={interrupt} />
+              <StopButton
+                onInterrupt={interrupt}
+                softCancel={harnessUsesSoftCancel(activeProviderForResources)}
+              />
             )}
             <IconButton
               variant="ghost"

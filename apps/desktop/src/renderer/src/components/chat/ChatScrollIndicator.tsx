@@ -233,7 +233,7 @@ function ChatScrollIndicatorImpl({ entries, hasCompact, compactExpanded, compact
         ref={stripRef}
         onScroll={measure}
         className={cn(
-          'hide-scrollbar flex h-full flex-col items-end gap-0.5 overflow-y-auto overscroll-contain',
+          'hide-scrollbar flex h-full flex-col items-end gap-px overflow-y-auto overscroll-contain',
           overflowing ? 'justify-start' : 'justify-center',
         )}
       >

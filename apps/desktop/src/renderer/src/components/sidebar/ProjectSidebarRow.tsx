@@ -122,6 +122,17 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
   const INITIAL_EXPAND_LEVEL = 6
   const [expandLevel, setExpandLevel] = useState<number>(INITIAL_EXPAND_LEVEL)
   const [historyMode, setHistoryMode] = useState(false)
+  /** Parent session ids whose collab children are collapsed in the sidebar. */
+  const [collapsedChildrenIds, setCollapsedChildrenIds] = useState<Set<string>>(() => new Set())
+
+  const toggleChildrenCollapsed = useCallback((sessionId: string) => {
+    setCollapsedChildrenIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(sessionId)) next.delete(sessionId)
+      else next.add(sessionId)
+      return next
+    })
+  }, [])
 
   useEffect(() => {
     if (!isExpanded) setExpandLevel(INITIAL_EXPAND_LEVEL)
@@ -381,18 +392,24 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
             {derived.groupsToShow.length === 0 ? (
               <div className="px-2.5 py-1.5 text-[11px] text-sidebar-foreground/70">{t('sidebar.contextMenu.noSessions')}</div>
             ) : (
-              derived.groupsToShow.map(({ parent, children }) => (
+              derived.groupsToShow.map(({ parent, children }) => {
+                const hasChildren = children.length > 0
+                const childrenCollapsed = hasChildren && collapsedChildrenIds.has(parent.sessionId)
+                return (
                 <div key={parent.sessionId}>
                   <SessionRow
                     session={parent}
                     folderPath={folder.path}
+                    hasChildren={hasChildren}
+                    childrenCollapsed={childrenCollapsed}
+                    onToggleChildren={hasChildren ? () => toggleChildrenCollapsed(parent.sessionId) : undefined}
                     onSwitchSession={onSwitchSession}
                     onPinSession={onPinSession}
                     onHideSession={onHideSession}
                     onRenameSession={onRenameSession}
                     onDeleteSession={onDeleteSession}
                   />
-                  {children.map((child) => (
+                  {!childrenCollapsed && children.map((child) => (
                     <SessionRow
                       key={child.sessionId}
                       session={child}
@@ -406,7 +423,8 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
                     />
                   ))}
                 </div>
-              ))
+                )
+              })
             )}
             {isExpanded && expandLevel < maxSessions && derived.hasMoreThanInitial && (
               <button

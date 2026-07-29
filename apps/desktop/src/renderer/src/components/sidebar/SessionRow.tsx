@@ -2,7 +2,7 @@ import { memo, useCallback } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { toast } from 'sonner'
 import { useTranslation } from 'react-i18next'
-import { Bot, CornerDownRight, Eye, EyeOff, GitFork, Loader2, MessageSquare, Pin, Smartphone } from 'lucide-react'
+import { Bot, ChevronDown, ChevronRight, CornerDownRight, Eye, EyeOff, GitFork, Loader2, MessageSquare, Pin, Smartphone } from 'lucide-react'
 import type { SessionIconProps } from '@superone/ui/components/harness/ClaudeSessionIcon'
 import { resolveSessionIcon } from '@/components/harness/resolve-session-icon'
 import { cn } from '@superone/ui/lib/utils'
@@ -48,6 +48,10 @@ interface SessionRowProps extends SessionRowCallbacks {
   folderPath: string
   animateTitle?: boolean
   childSession?: boolean
+  /** Parent rows with nested collab sessions can expose a hover toggle. */
+  hasChildren?: boolean
+  childrenCollapsed?: boolean
+  onToggleChildren?: () => void
 }
 
 export const SessionRow = memo(function SessionRow({
@@ -55,6 +59,9 @@ export const SessionRow = memo(function SessionRow({
   folderPath,
   animateTitle = true,
   childSession = false,
+  hasChildren = false,
+  childrenCollapsed = false,
+  onToggleChildren,
   onSwitchSession,
   onPinSession,
   onHideSession,
@@ -175,6 +182,20 @@ export const SessionRow = memo(function SessionRow({
                 >
                   <GitFork className="size-3" />
                 </span>
+              )}
+              {hasChildren && onToggleChildren && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onToggleChildren()
+                  }}
+                  title={childrenCollapsed ? t('sidebar.contextMenu.expandChildren') : t('sidebar.contextMenu.collapseChildren')}
+                  className="box-content w-0 overflow-hidden rounded p-0.5 text-sidebar-foreground/70 opacity-0 transition-all hover:text-sidebar-accent-foreground group-hover/session:w-3 group-hover/session:opacity-100"
+                >
+                  {childrenCollapsed
+                    ? <ChevronRight className="size-3" />
+                    : <ChevronDown className="size-3" />}
+                </button>
               )}
               <button
                 onClick={(e) => {

@@ -477,20 +477,23 @@ export class ComputerUseService {
         look = await this.adapter.look(base.root, reobserveMode, base.capture)
       } catch (error) {
         if (!base.root.axRootId) throw error
-        await this.refreshRoots()
-        const refreshedTarget = this.roots.get(base.root.rootId)
-        if (refreshedTarget?.axRootId === base.root.axRootId) throw error
-        const candidates = this.roots.list().filter(
-          (root) => root.resourceKey === base.resourceKey && root.rootId !== base.root.rootId,
-        )
-        const replacement = refreshedTarget
-          ?? candidates.find((root) => root.focused)
-          ?? candidates.find((root) => root.modal)
-          ?? candidates.find((root) => root.kind === 'window')
-          ?? candidates[0]
+        const replacement = await this.waitForTransientSuccessor(base.root)
         if (!replacement) throw error
         successorRoot = replacement
         look = await this.adapter.look(successorRoot, reobserveMode, base.capture)
+      }
+
+      const mayCloseTransient = base.root.axRootId && actions.some(
+        (action) => action.type === 'press'
+          || action.type === 'click'
+          || action.type === 'keypress',
+      )
+      if (mayCloseTransient && successorRoot.rootId === base.root.rootId) {
+        const replacement = await this.waitForTransientSuccessor(base.root)
+        if (replacement) {
+          successorRoot = replacement
+          look = await this.adapter.look(successorRoot, reobserveMode, base.capture)
+        }
       }
       const identity: UiRootIdentity = { ...look.root, rootId: successorRoot.rootId }
       this.roots.register(identity)
@@ -702,6 +705,27 @@ export class ComputerUseService {
   private async refreshRoots(): Promise<void> {
     const discovered = await this.adapter.listRoots()
     this.roots.sync(discovered)
+  }
+
+  private async waitForTransientSuccessor(
+    transient: UiRootIdentity,
+  ): Promise<UiRootIdentity | undefined> {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      if (attempt > 0) await sleep(40)
+      await this.refreshRoots()
+      const refreshedTarget = this.roots.get(transient.rootId)
+      if (refreshedTarget?.axRootId === transient.axRootId) continue
+
+      const candidates = this.roots.list().filter(
+        (root) => root.resourceKey === transient.resourceKey && root.rootId !== transient.rootId,
+      )
+      const replacement = candidates.find((root) => root.focused)
+        ?? candidates.find((root) => root.modal)
+        ?? candidates.find((root) => root.kind === 'window')
+        ?? candidates[0]
+      if (replacement) return replacement
+    }
+    return undefined
   }
 
   private resolveRoot(rootId?: string): UiRootIdentity {

@@ -243,17 +243,17 @@ func captureZoom(
     }
     let full: [String: Any]
     if capture == "window" {
-        if let windowId {
-            full = try await captureWindow(
-                windowId: windowId,
+        if let axRootId, let pid {
+            full = try await captureAxRoot(
+                axRootId: axRootId,
+                pid: pid,
                 grantedBundleIds: grantedBundleIds,
                 maxWidth: maxWidth,
                 allowAllApps: allowAllApps
             )
-        } else if let axRootId, let pid {
-            full = try await captureAxRoot(
-                axRootId: axRootId,
-                pid: pid,
+        } else if let windowId {
+            full = try await captureWindow(
+                windowId: windowId,
                 grantedBundleIds: grantedBundleIds,
                 maxWidth: maxWidth,
                 allowAllApps: allowAllApps

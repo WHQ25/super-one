@@ -604,6 +604,7 @@ export class MacosPlatformAdapter implements PlatformAdapter {
             try {
               await this.client.call('ax_action', {
                 pid: target.pid,
+                targetPid: target.pid,
                 index: idx,
                 action: 'focus',
                 windowTitle: target.root.title,
@@ -865,6 +866,7 @@ export class MacosPlatformAdapter implements PlatformAdapter {
       })
       const res = await this.client.call<HelperAxActionResult>('ax_action', {
         pid: target.pid,
+        targetPid: target.pid,
         index: idx,
         action,
         ...(value != null ? { value } : {}),

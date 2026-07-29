@@ -29,6 +29,11 @@ const SHEET: Omit<UiRootIdentity, 'rootId'> = {
   axRootId: 'axr:1',
 }
 
+const CG_SHEET: Omit<UiRootIdentity, 'rootId'> = {
+  ...SHEET,
+  windowId: 202,
+}
+
 class ClosingTransientAdapter implements PlatformAdapter {
   sheetOpen = true
   failWhileOpen = false
@@ -71,6 +76,41 @@ class ClosingTransientAdapter implements PlatformAdapter {
   }
 }
 
+class DelayedClosingTransientAdapter extends ClosingTransientAdapter {
+  override async act(_request: PlatformActRequest) {
+    setTimeout(() => {
+      this.sheetOpen = false
+    }, 20)
+    return {
+      steps: [{ applied: true, unknown: true, description: 'close sheet asynchronously' }],
+    }
+  }
+}
+
+class GhostingCgTransientAdapter extends ClosingTransientAdapter {
+  private ghostScans = 0
+
+  override async listRoots(): Promise<Array<Omit<UiRootIdentity, 'rootId'>>> {
+    if (this.sheetOpen) return [PARENT, CG_SHEET]
+    if (this.ghostScans > 0) {
+      this.ghostScans -= 1
+      return [
+        PARENT,
+        { ...CG_SHEET, kind: 'window', modal: false, axRootId: undefined },
+      ]
+    }
+    return [PARENT]
+  }
+
+  override async act(_request: PlatformActRequest) {
+    this.sheetOpen = false
+    this.ghostScans = 1
+    return {
+      steps: [{ applied: true, unknown: true, description: 'close CG-backed sheet' }],
+    }
+  }
+}
+
 describe('transient root lifecycle', () => {
   beforeEach(() => resetComputerUseIds())
 
@@ -106,5 +146,37 @@ describe('transient root lifecycle', () => {
     await expect(service.act(observed.stateId, [{ type: 'press', ref: '@e2' }], {
       delivery: 'semantic',
     })).rejects.toThrow('capture failed')
+  })
+
+  it('waits for an asynchronously closing transient before choosing the successor', async () => {
+    const adapter = new DelayedClosingTransientAdapter()
+    const service = new ComputerUseService({ adapter })
+    service.policy.setEnabled(true)
+    service.policy.grant({ app: 'Fixture', bundleId: 'dev.superone.fixture', tier: 'full' })
+    const sheet = (await service.apps()).roots.find((root) => root.kind === 'sheet')!
+    const observed = await service.observe(sheet.rootId, 'semantic')
+
+    const result = await service.act(observed.stateId, [{ type: 'press', ref: '@e2' }], {
+      delivery: 'semantic',
+    })
+
+    expect(result.successorRoot).toMatchObject({ kind: 'window', windowId: 101 })
+    expect(service.getStateStore().get(result.successorStateId)?.root.rootId).toBe('@r1')
+  })
+
+  it('ignores a closing transient CGWindow that briefly outlives its AX root', async () => {
+    const adapter = new GhostingCgTransientAdapter()
+    const service = new ComputerUseService({ adapter })
+    service.policy.setEnabled(true)
+    service.policy.grant({ app: 'Fixture', bundleId: 'dev.superone.fixture', tier: 'full' })
+    const sheet = (await service.apps()).roots.find((root) => root.kind === 'sheet')!
+    const observed = await service.observe(sheet.rootId, 'semantic')
+
+    const result = await service.act(observed.stateId, [{ type: 'press', ref: '@e2' }], {
+      delivery: 'semantic',
+    })
+
+    expect(result.successorRoot).toMatchObject({ kind: 'window', windowId: 101 })
+    expect(result.successorRoot.rootId).toBe('@r1')
   })
 })

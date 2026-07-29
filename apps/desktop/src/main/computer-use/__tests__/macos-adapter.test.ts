@@ -469,6 +469,7 @@ describe('MacosPlatformAdapter (mocked client)', () => {
 
     expect(call).toHaveBeenCalledWith('ax_action', expect.objectContaining({
       pid: 42,
+      targetPid: 42,
       index: 2,
       axRootId: 'axr:11',
       coordinateAxRootId: 'axr:11',

@@ -372,17 +372,19 @@ func handle(request: HelperRequest) async -> HelperResponse {
             let pid = AnyCodable.int(params, "pid").map(pid_t.init)
             let result: [String: Any]
             if capture == "window" {
-                if let windowId {
-                    result = try await captureWindow(
-                        windowId: windowId,
+                // Transient CGWindow captures can include their parent composite;
+                // registered AX bounds are the canonical transient capture region.
+                if let axRootId, let pid {
+                    result = try await captureAxRoot(
+                        axRootId: axRootId,
+                        pid: pid,
                         grantedBundleIds: granted,
                         maxWidth: maxWidth,
                         allowAllApps: allowAll
                     )
-                } else if let axRootId, let pid {
-                    result = try await captureAxRoot(
-                        axRootId: axRootId,
-                        pid: pid,
+                } else if let windowId {
+                    result = try await captureWindow(
+                        windowId: windowId,
                         grantedBundleIds: granted,
                         maxWidth: maxWidth,
                         allowAllApps: allowAll

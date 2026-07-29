@@ -5,7 +5,7 @@ import { useMiniAppStore } from '@/stores/miniapp'
 import type { AgentEvent } from '@superone/shared/agent-types'
 import { buildToolRendererUrl } from '@superone/shared/miniapp-types'
 import { buildMiniAppHost } from '@superone/shared/miniapp-host'
-import { createAgentEventBatcher } from '@/lib/agent-event-batcher'
+import { coalesceAgentEventBatch } from '@/lib/agent-event-batcher'
 
 export function useAgentEvents(): void {
   const handleAgentEvent = useChatStore((s) => s.handleAgentEvent)
@@ -14,28 +14,23 @@ export function useAgentEvents(): void {
     let hydrated = false
     let disposed = false
     const buffer: AgentEvent[] = []
-    const batcher = createAgentEventBatcher(handleAgentEvent)
     const cleanup = window.agent.onAgentEvent((event) => {
       if (disposed) return
       if (!hydrated) {
         buffer.push(event as AgentEvent)
         return
       }
-      batcher.push(event as AgentEvent)
+      handleAgentEvent(event as AgentEvent)
     })
     void _loadDefaultSessionPrefs().then(() => useChatStore.getState().syncLiveSnapshots()).finally(() => {
       hydrated = true
       if (disposed) return
-      for (const ev of buffer) batcher.push(ev)
+      for (const ev of coalesceAgentEventBatch(buffer)) handleAgentEvent(ev)
       buffer.length = 0
-      // The pre-hydration backlog is already stale; land it in one go rather
-      // than trickling it out a batch window at a time.
-      batcher.flush()
     })
     return () => {
       disposed = true
       cleanup()
-      batcher.dispose()
     }
   }, [handleAgentEvent])
 

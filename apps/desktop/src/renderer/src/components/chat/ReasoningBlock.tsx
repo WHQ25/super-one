@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
+import { memo, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Brain, ChevronRight } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 
-export function ReasoningBlock({
+export const ReasoningBlock = memo(function ReasoningBlock({
   text,
   blockDone,
   startedAt,
@@ -105,4 +105,4 @@ export function ReasoningBlock({
       )}
     </div>
   )
-}
+})

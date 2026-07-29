@@ -180,6 +180,69 @@ describe('reduceCodex: codex_item_delta', () => {
   })
 })
 
+describe('reduceCodex: codex_item_patch', () => {
+  it('reconstructs text and timing to the same state as a full snapshot', () => {
+    const session = createDefaultPerSessionState()
+    session.messages = [makeMessage('m1', {
+      items: [{ id: 'i1', type: 'reasoning', text: 'first', startedAt: 10 }],
+    })]
+
+    const patch = reduceCodex(session, {
+      type: 'codex_item_patch',
+      messageId: 'm1',
+      phase: 'updated',
+      itemId: 'i1',
+      patch: { type: 'reasoning', textDelta: ' second', startedAt: 10, endedAt: 20 },
+    })
+
+    expect(patch.messages?.[0].metadata?.codex?.items[0]).toEqual({
+      id: 'i1', type: 'reasoning', text: 'first second', startedAt: 10, endedAt: 20,
+    })
+  })
+
+  it('appends command output without replacing unrelated references', () => {
+    const session = createDefaultPerSessionState()
+    const unrelatedMessage = makeMessage('m0')
+    const unchangedItem: CodexThreadItem = { id: 'i0', type: 'error', message: 'keep' }
+    const command: CodexThreadItem = {
+      id: 'c1', type: 'command_execution', command: 'pwd', aggregatedOutput: '/a', status: 'in_progress',
+    }
+    session.messages = [unrelatedMessage, makeMessage('m1', { items: [unchangedItem, command] })]
+
+    const patch = reduceCodex(session, {
+      type: 'codex_item_patch',
+      messageId: 'm1',
+      phase: 'updated',
+      itemId: 'c1',
+      patch: { type: 'command_execution', aggregatedOutputDelta: '/b' },
+    })
+
+    expect(patch.messages?.[0]).toBe(unrelatedMessage)
+    expect(patch.messages?.[1].metadata?.codex?.items[0]).toBe(unchangedItem)
+    expect(patch.messages?.[1].metadata?.codex?.items[1]).toEqual({ ...command, aggregatedOutput: '/a/b' })
+  })
+
+  it('ignores a patch when its baseline is missing or has a different type', () => {
+    const session = createDefaultPerSessionState()
+    const message = makeMessage('m1', {
+      items: [{ id: 'i1', type: 'agent_message', text: 'first' }],
+    })
+    session.messages = [message]
+
+    const missing = reduceCodex(session, {
+      type: 'codex_item_patch', messageId: 'm1', phase: 'updated', itemId: 'missing',
+      patch: { type: 'agent_message', textDelta: 'x' },
+    })
+    const mismatch = reduceCodex(session, {
+      type: 'codex_item_patch', messageId: 'm1', phase: 'updated', itemId: 'i1',
+      patch: { type: 'command_execution', aggregatedOutputDelta: 'x' },
+    })
+
+    expect(missing.messages).toBeUndefined()
+    expect(mismatch.messages).toBeUndefined()
+  })
+})
+
 describe('reduceCodex: codex_mcp_startup', () => {
   it('writes the MCP server startup snapshot onto the target message, creating codex metadata if absent', () => {
     const session = createDefaultPerSessionState()

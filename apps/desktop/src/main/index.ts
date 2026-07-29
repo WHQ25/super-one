@@ -48,6 +48,7 @@ import { resolveProbeCwd } from './agent/probe-cwd'
 import { fixPath } from './agent/resolve-cli'
 import { buildSafeEnv } from './spawn-env'
 import { AgentService } from './agent/agent-service'
+import { createRendererAgentEventTransport } from './agent/renderer-agent-event-transport'
 import { SessionManagerImpl } from './session/session-manager'
 import { TerminalManager } from './terminal/terminal-manager'
 import { TerminalBroadcaster } from './remote/terminal-broadcaster'
@@ -335,7 +336,7 @@ sessionManager.onAny((_sid, event) => {
       _sid, event.sessionId ?? '(none)', event.projectPath ?? '(none)', alive, event.request.requestId)
   }
   agentService.notifyEventSubscribers(event)
-  safeSend(AgentIpcChannels.EVENT, event)
+  rendererAgentEventTransport.push(event)
 })
 const deviceRegistry = new DeviceRegistry(sessionManager)
 const remoteCallbacks: RemoteControlCallbacks = {
@@ -399,6 +400,11 @@ function safeSend(channel: string, ...args: unknown[]): void {
     if (!win.isDestroyed()) win.webContents.send(channel, ...args)
   }
 }
+
+const rendererAgentEventTransport = createRendererAgentEventTransport((events) => {
+  safeSend(AgentIpcChannels.EVENT, events)
+})
+
 
 new PresenceCoordinator(sessionManager, {
   broadcastToRenderer: (event) => safeSend(AgentIpcChannels.EVENT, event),
@@ -671,7 +677,7 @@ function createWindow(): void {
   agentService.setMainWindow(mainWindow)
   setCodexSkillsWatcherWindow(mainWindow)
   initWorkerHost(() => mainWindow)
-  agentService.setBroadcastFn((event) => safeSend(AgentIpcChannels.EVENT, event))
+  agentService.setBroadcastFn((event) => rendererAgentEventTransport.push(event))
   agentService.setSessionManager(sessionManager)
   automationService.setMainWindow(mainWindow)
   automationService.setAgentService(agentService)
@@ -679,8 +685,10 @@ function createWindow(): void {
   setBashOutputWindow(mainWindow)
 
   allWindows.add(mainWindow)
+  rendererAgentEventTransport.resetCodexBaselines()
   mainWindow.on('closed', () => {
     if (mainWindow) allWindows.delete(mainWindow)
+    rendererAgentEventTransport.resetCodexBaselines()
     mainWindow = null
     destroyDragPreviewWindow()
     unwatchAllBashOutputs()
@@ -749,9 +757,11 @@ function createSessionWindow(projectPath: string, sessionId: string, title?: str
   })
 
   allWindows.add(win)
+  rendererAgentEventTransport.resetCodexBaselines()
   sessionWindows.set(key, win)
   win.on('closed', () => {
     allWindows.delete(win)
+    rendererAgentEventTransport.resetCodexBaselines()
     if (sessionWindows.get(key) === win) sessionWindows.delete(key)
   })
 
@@ -884,8 +894,10 @@ function createBenchWindow(): void {
     return { action: 'deny' }
   })
   allWindows.add(benchWindow)
+  rendererAgentEventTransport.resetCodexBaselines()
   benchWindow.on('closed', () => {
     if (benchWindow) allWindows.delete(benchWindow)
+    rendererAgentEventTransport.resetCodexBaselines()
     benchWindow = null
   })
   if (process.env['ELECTRON_RENDERER_URL']) {
@@ -3259,6 +3271,7 @@ function disposeAgentSessions(): Promise<void> {
 
 function performQuit(): void {
   quitting = true
+  rendererAgentEventTransport.dispose()
   if (terminalSweepTimer) clearInterval(terminalSweepTimer)
   stopDevComputerUseHelper()
   shutdownAllProxies()
@@ -3290,6 +3303,7 @@ let signalQuitting = false
 const handleSignalQuit = (sig: NodeJS.Signals): void => {
   if (signalQuitting) return
   signalQuitting = true
+  rendererAgentEventTransport.dispose()
   log.info(`[main] received ${sig}, shutting down`)
   if (terminalSweepTimer) clearInterval(terminalSweepTimer)
   stopDevComputerUseHelper()

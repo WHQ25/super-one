@@ -69,6 +69,7 @@ export function applyEventToSession(session: PerSessionState, event: AgentEvent)
 
     case 'codex_thread_started':
     case 'codex_item_delta':
+    case 'codex_item_patch':
     case 'codex_mcp_startup':
       return reduceCodex(session, event)
 

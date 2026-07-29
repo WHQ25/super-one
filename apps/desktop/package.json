@@ -16,6 +16,7 @@
     "dev": "bash ./native/computer-use-helper/scripts/build.sh dev && rm -f dev.log event-trace.db && sqlite3 ~/Library/Application\\ Support/super-one/superone.db 'DELETE FROM global_resource_cache' 2>/dev/null; electron-vite dev",
     "dev:cdp": "SUPERONE_E2E=1 electron-vite dev --remoteDebuggingPort ${SUPERONE_CDP_PORT:-9222}",
     "bench": "SUPERONE_BENCH=1 electron-vite dev",
+    "bench:agent-events": "bun scripts/bench-agent-event-transport.ts",
     "prepare:mac-optional-deps": "bun install --frozen-lockfile --os=darwin --cpu=x64 && bun install --frozen-lockfile --os=darwin --cpu=arm64",
     "prepare:win-optional-deps": "bun install --frozen-lockfile --os=win32 --cpu=x64 && bun install --frozen-lockfile --os=win32 --cpu=arm64",
     "prepare:linux-optional-deps": "bun install --frozen-lockfile --os=linux --cpu=x64 && bun install --frozen-lockfile --os=linux --cpu=arm64",

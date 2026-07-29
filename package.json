@@ -19,6 +19,7 @@
     "dev": "bun --filter @superone/desktop dev",
     "dev:cdp": "bun --filter @superone/desktop dev:cdp",
     "bench": "bun --filter @superone/desktop bench",
+    "bench:agent-events": "bun --filter @superone/desktop bench:agent-events",
     "dev:web": "bun --filter @superone/web dev",
     "dev:relay": "bun --filter @superone/relay dev",
     "dev:video": "bun --filter @superone/video dev",

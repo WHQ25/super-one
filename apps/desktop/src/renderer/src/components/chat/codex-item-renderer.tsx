@@ -17,7 +17,7 @@ import { FileChip } from './ToolBlock'
 import { CodexPlanImplementFooter } from './CodexPlanImplementFooter'
 import { CodexImageGenerationBlock } from './CodexImageGenerationBlock'
 import { fileLinkComponents } from './chat-markdown-components'
-import { createContext, useContext, useState, useEffect, useRef } from 'react'
+import { createContext, memo, useContext, useState, useEffect, useRef } from 'react'
 import { ChevronRight } from 'lucide-react'
 import type { CodexCollabToolCallItem } from '@superone/shared/agent-types'
 import { TerminalCommandOutput } from './TerminalCommandOutput'
@@ -66,7 +66,7 @@ export function getCommandDisplay(item: CodexCommandExecutionItem, cwd?: string,
   }
 }
 
-export function CodexCommandBlock({ item, isStreaming }: { item: CodexCommandExecutionItem; isStreaming: boolean }) {
+export const CodexCommandBlock = memo(function CodexCommandBlock({ item, isStreaming }: { item: CodexCommandExecutionItem; isStreaming: boolean }) {
   const { t } = useTranslation()
   const cwd = useActiveSession((s) => s.cwd)
   const homedir = useActiveSession((s) => s.homedir)
@@ -86,7 +86,6 @@ export function CodexCommandBlock({ item, isStreaming }: { item: CodexCommandExe
 
   const isRunning = isStreaming && showRunning
   const [expanded, setExpanded] = useState(false)
-  const output = `${item.aggregatedOutput ?? ''}${item.exitCode !== undefined ? `\n\nExit code ${item.exitCode}` : ''}`.trim()
 
   return (
     <div className={cn('tool-node my-0.5 min-w-0 rounded transition-colors cursor-pointer hover:bg-muted/70 bg-muted/50', expanded && 'overflow-hidden')}>
@@ -101,15 +100,23 @@ export function CodexCommandBlock({ item, isStreaming }: { item: CodexCommandExe
         <ChevronRight className={cn('ml-auto size-3 shrink-0 text-muted-foreground transition-transform duration-200', expanded && 'rotate-90')} />
       </div>
       {expanded && (
-        <TerminalCommandOutput command={item.command} hasOutput={!!output} outputVersion={output}>
-          {output ? (
-            <div className="text-terminal-muted"><AnsiText text={output} /></div>
-          ) : isRunning ? (
-            <div className="text-terminal-muted"><span className="animate-shimmer">{t('chat.codex.runningInline')}</span></div>
-          ) : null}
-        </TerminalCommandOutput>
+        <CodexCommandOutput item={item} isRunning={isRunning} />
       )}
     </div>
+  )
+})
+
+function CodexCommandOutput({ item, isRunning }: { item: CodexCommandExecutionItem; isRunning: boolean }) {
+  const { t } = useTranslation()
+  const output = `${item.aggregatedOutput ?? ''}${item.exitCode !== undefined ? `\n\nExit code ${item.exitCode}` : ''}`.trim()
+  return (
+    <TerminalCommandOutput command={item.command} hasOutput={!!output} outputVersion={output}>
+      {output ? (
+        <div className="text-terminal-muted"><AnsiText text={output} /></div>
+      ) : isRunning ? (
+        <div className="text-terminal-muted"><span className="animate-shimmer">{t('chat.codex.runningInline')}</span></div>
+      ) : null}
+    </TerminalCommandOutput>
   )
 }
 

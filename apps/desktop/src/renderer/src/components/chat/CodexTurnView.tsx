@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import type { ChatMessage as ChatMessageType, CodexCollabToolCallItem, CodexCommandExecutionItem, ImageGenerationItem, CodexMcpToolCallItem, CodexReasoningItem, CodexThreadItem } from '@superone/shared/agent-types'
+import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import type { ChatMessage as ChatMessageType, CodexCollabToolCallItem, CodexCommandExecutionItem, CodexPlanApprovalState, ImageGenerationItem, CodexMcpToolCallItem, CodexReasoningItem, CodexThreadItem } from '@superone/shared/agent-types'
 import { ChevronRight, BookOpenText } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 import { CopyableMarkdown } from './CopyableMarkdown'
@@ -8,11 +8,15 @@ import { fileLinkComponents } from './chat-markdown-components'
 import { CodexSubagentMarker, isSpawnReady, isSubagentFollowUp } from './CodexCollabBlock'
 import { ImageGalleryBlock } from './ImageGalleryBlock'
 import { useActiveSession, useChatStore } from '@/stores/chat'
+import { useAppStore } from '@/stores/app'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
 import { ToolBlock } from './ToolBlock'
 import { ReasoningBlock } from './ReasoningBlock'
-import { isHiddenToolBlock } from './tool-display'
+import { isAlwaysHiddenToolBlock, isHiddenToolBlock } from './tool-display'
+import { isMediaGenerateImageTool, isMediaVideoStatusTool } from './media-generation'
+import { countCodexProcessTools, isCodexConclusionSegment, splitTurnForCompactMode } from './compact-chat-mode'
+import { TurnDetailSection } from './TurnDetailSection'
 
 function safeStringify(value: unknown): string {
   try { return JSON.stringify(value) } catch { return String(value) }
@@ -35,8 +39,11 @@ function codexMcpItemResultText(item: CodexMcpToolCallItem): string | undefined 
 }
 
 function isHiddenCodexMcpItem(item: CodexThreadItem): boolean {
-  return item.type === 'mcp_tool_call'
-    && isHiddenToolBlock(`mcp__${item.server}__${item.tool}`, codexMcpItemResultText(item))
+  if (item.type !== 'mcp_tool_call') return false
+  const toolName = `mcp__${item.server}__${item.tool}`
+  if (isAlwaysHiddenToolBlock(toolName)) return true
+  if (!isMediaGenerateImageTool(toolName) && !isMediaVideoStatusTool(toolName)) return false
+  return isHiddenToolBlock(toolName, codexMcpItemResultText(item))
 }
 
 interface CodexAppToolGroupProps {
@@ -46,7 +53,13 @@ interface CodexAppToolGroupProps {
   sealed: boolean
 }
 
-function CodexAppToolGroup({ appId, items, isStreaming, sealed }: CodexAppToolGroupProps) {
+function sameItemReferences<T>(previous: T[], current: T[]): boolean {
+  return previous.length === current.length && previous.every((item, index) => item === current[index])
+}
+
+const MemoCodexSubagentMarker = memo(CodexSubagentMarker)
+
+const CodexAppToolGroup = memo(function CodexAppToolGroup({ appId, items, isStreaming, sealed }: CodexAppToolGroupProps) {
   const app = useMiniAppStore((s) => s.apps.find((a) => a.id === appId))
   const appName = app?.manifest.name ?? appId
   const runningItem = useMemo(() => (isStreaming ? items.find((i) => i.status === 'in_progress') ?? null : null), [isStreaming, items])
@@ -115,7 +128,10 @@ function CodexAppToolGroup({ appId, items, isStreaming, sealed }: CodexAppToolGr
       )}
     </div>
   )
-}
+}, (previous, current) => previous.appId === current.appId
+  && previous.isStreaming === current.isStreaming
+  && previous.sealed === current.sealed
+  && sameItemReferences(previous.items, current.items))
 
 interface CodexTurnViewProps {
   message: ChatMessageType
@@ -123,10 +139,128 @@ interface CodexTurnViewProps {
   isLastAssistant: boolean
 }
 
+type CodexSegment =
+  | { kind: 'item'; index: number }
+  | { kind: 'group'; indices: number[] }
+  | { kind: 'reasoning'; indices: number[]; startIndex: number }
+  | { kind: 'subagent'; index: number }
+  | { kind: 'app-tools'; appId: string; indices: number[] }
+
+interface CodexTopology {
+  segments: CodexSegment[]
+  imageIndices: number[]
+  hasAssistantMessage: boolean
+  lastPlanItemId?: string
+}
+
+const EMPTY_CODEX_ITEMS: CodexThreadItem[] = []
+
 const COLLAPSIBLE_COMMAND_TYPES = new Set(['read', 'search'])
 
 function isCollapsibleCommand(item: CodexThreadItem): item is CodexCommandExecutionItem {
   return item.type === 'command_execution' && COLLAPSIBLE_COMMAND_TYPES.has(item.commandActions?.[0]?.type ?? '')
+}
+
+function groupableAppIdForItem(
+  item: CodexMcpToolCallItem,
+  groupableAppByTool: ReadonlyMap<string, string>,
+): string | null {
+  if (item.server !== 'superone') return null
+  const match = item.tool.match(/^(.+?)__(.+)$/)
+  if (!match) return null
+  return groupableAppByTool.get(`${match[1]}\0${match[2]}`) ?? null
+}
+
+function codexTopologyToken(
+  item: CodexThreadItem,
+  groupableAppByTool: ReadonlyMap<string, string>,
+): string {
+  if (item.type === 'command_execution') {
+    return `${item.id}\0command_execution\0${item.commandActions?.[0]?.type ?? ''}`
+  }
+  if (item.type === 'mcp_tool_call') {
+    return `${item.id}\0mcp_tool_call\0${isHiddenCodexMcpItem(item) ? 'hidden' : groupableAppIdForItem(item, groupableAppByTool) ?? ''}`
+  }
+  if (item.type === 'collab_tool_call') {
+    return `${item.id}\0collab_tool_call\0${item.tool}\0${item.status}\0${item.receiverThreadIds.length}`
+  }
+  return `${item.id}\0${item.type}`
+}
+
+function buildCodexTopology(
+  items: CodexThreadItem[],
+  groupableAppByTool: ReadonlyMap<string, string>,
+): CodexTopology {
+  const segments: CodexSegment[] = []
+  const imageIndices: number[] = []
+  let hasAssistantMessage = false
+  let lastPlanItemId: string | undefined
+  let cmdGroup: number[] = []
+  let appGroup: number[] = []
+  let appGroupId: string | null = null
+  const flushCmd = (): void => {
+    if (cmdGroup.length > 0) segments.push({ kind: 'group', indices: cmdGroup })
+    cmdGroup = []
+  }
+  const flushAppGroup = (): void => {
+    if (appGroup.length > 0 && appGroupId) {
+      segments.push({ kind: 'app-tools', appId: appGroupId, indices: appGroup })
+    }
+    appGroup = []
+    appGroupId = null
+  }
+
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i]
+    if (item.type === 'agent_message' || item.type === 'plan') hasAssistantMessage = true
+    if (item.type === 'plan') lastPlanItemId = item.id
+    if (item.type === 'image_generation') {
+      imageIndices.push(i)
+      continue
+    }
+    if (item.type === 'todo_list' || item.type === 'video_generation') continue
+    if (isHiddenCodexMcpItem(item)) continue
+
+    const mcpItem = item.type === 'mcp_tool_call' ? item : null
+    const appIdForItem = mcpItem ? groupableAppIdForItem(mcpItem, groupableAppByTool) : null
+    if (appIdForItem && mcpItem) {
+      flushCmd()
+      if (appGroupId !== appIdForItem) flushAppGroup()
+      appGroupId = appIdForItem
+      appGroup.push(i)
+    } else if (item.type === 'collab_tool_call' && item.tool === 'spawnAgent') {
+      if (!isSpawnReady(item)) continue
+      flushCmd()
+      flushAppGroup()
+      segments.push({ kind: 'subagent', index: i })
+    } else if (item.type === 'collab_tool_call' && isSubagentFollowUp(item)) {
+      flushCmd()
+      flushAppGroup()
+      segments.push({ kind: 'subagent', index: i })
+    } else if (item.type === 'collab_tool_call') {
+      if (item.tool === 'wait' && item.status !== 'in_progress') continue
+      if (item.tool === 'closeAgent' || item.tool === 'resumeAgent') continue
+      flushCmd()
+      flushAppGroup()
+      segments.push({ kind: 'item', index: i })
+    } else if (isCollapsibleCommand(item)) {
+      flushAppGroup()
+      cmdGroup.push(i)
+    } else if (item.type === 'reasoning') {
+      flushCmd()
+      flushAppGroup()
+      const previous = segments[segments.length - 1]
+      if (previous?.kind === 'reasoning') previous.indices.push(i)
+      else segments.push({ kind: 'reasoning', indices: [i], startIndex: i })
+    } else {
+      flushCmd()
+      flushAppGroup()
+      segments.push({ kind: 'item', index: i })
+    }
+  }
+  flushCmd()
+  flushAppGroup()
+  return { segments, imageIndices, hasAssistantMessage, lastPlanItemId }
 }
 
 function generateCommandGroupSummary(items: CodexCommandExecutionItem[]): string {
@@ -144,7 +278,7 @@ function generateCommandGroupSummary(items: CodexCommandExecutionItem[]): string
   return text.charAt(0).toUpperCase() + text.slice(1)
 }
 
-function CodexCommandGroup({ items, isStreaming, sealed }: { items: CodexCommandExecutionItem[]; isStreaming: boolean; sealed: boolean }) {
+const CodexCommandGroup = memo(function CodexCommandGroup({ items, isStreaming, sealed }: { items: CodexCommandExecutionItem[]; isStreaming: boolean; sealed: boolean }) {
   const hasRunning = items.some((item) => isStreaming && item.status === 'in_progress')
   const runningItem = hasRunning ? items.find((item) => item.status === 'in_progress') : null
   const [expanded, setExpanded] = useState(hasRunning && !sealed)
@@ -180,16 +314,101 @@ function CodexCommandGroup({ items, isStreaming, sealed }: { items: CodexCommand
       )}
     </div>
   )
+}, (previous, current) => previous.isStreaming === current.isStreaming
+  && previous.sealed === current.sealed
+  && sameItemReferences(previous.items, current.items))
+
+interface CodexReasoningSegmentProps {
+  items: CodexReasoningItem[]
+  isStreaming: boolean
+  blockDone: boolean
+  isFirst: boolean
 }
+
+const CodexReasoningSegment = memo(function CodexReasoningSegment({
+  items,
+  isStreaming,
+  blockDone,
+  isFirst,
+}: CodexReasoningSegmentProps) {
+  const text = items.map((item) => item.text).join('\n\n')
+  const first = items[0]
+  const last = items[items.length - 1]
+  return (
+    <ReasoningBlock
+      text={text}
+      startedAt={first.startedAt}
+      endedAt={last.endedAt}
+      blockDone={!isStreaming || blockDone}
+      showContent={text.trim().length > 0}
+      isFirst={isFirst}
+    />
+  )
+}, (previous, current) => previous.isStreaming === current.isStreaming
+  && previous.blockDone === current.blockDone
+  && previous.isFirst === current.isFirst
+  && sameItemReferences(previous.items, current.items))
+
+interface CodexItemSegmentProps {
+  item: CodexThreadItem
+  index: number
+  isStreaming: boolean
+  nextItem?: CodexThreadItem
+  onApprovePlan?: () => void
+  onRejectPlan?: (feedback?: string) => void
+  planApproval?: CodexPlanApprovalState
+}
+
+const CodexItemSegment = memo(function CodexItemSegment(props: CodexItemSegmentProps) {
+  return renderCodexItem(
+    props.item,
+    props.index,
+    props.isStreaming,
+    props.nextItem,
+    props.onApprovePlan,
+    props.onRejectPlan,
+    props.planApproval,
+  )
+})
 
 
 export function CodexTurnView({ message, isStreaming, isLastAssistant }: CodexTurnViewProps) {
   const codex = message.metadata?.codex
+  const detailChatMode = useAppStore((s) => s.detailChatMode)
   const selectedCodexCollaborationMode = useActiveSession((s) => s.selectedCodexCollaborationMode)
   const hasPendingInteraction = useActiveSession((s) => s.hasPendingInteraction)
   const approveCodexPlan = useChatStore((s) => s.approveCodexPlan)
   const rejectCodexPlan = useChatStore((s) => s.rejectCodexPlan)
   const apps = useMiniAppStore((s) => s.apps)
+  const groupableAppByTool = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const app of apps) {
+      const slug = app.manifest.toolSlug ?? app.id
+      for (const tool of app.manifest.tools ?? []) {
+        if (tool.groupable) map.set(`${slug}\0${tool.name}`, app.id)
+      }
+    }
+    return map
+  }, [apps])
+  const codexItems = codex?.items ?? EMPTY_CODEX_ITEMS
+  const topologyKey = codexItems.map((item) => codexTopologyToken(item, groupableAppByTool)).join('\x01')
+  const topologyCache = useRef<{
+    key: string
+    groupableAppByTool: ReadonlyMap<string, string>
+    value: CodexTopology
+  } | null>(null)
+  if (
+    !topologyCache.current
+    || topologyCache.current.key !== topologyKey
+    || topologyCache.current.groupableAppByTool !== groupableAppByTool
+  ) {
+    topologyCache.current = {
+      key: topologyKey,
+      groupableAppByTool,
+      value: buildCodexTopology(codexItems, groupableAppByTool),
+    }
+  }
+  const topology = topologyCache.current.value
 
   if (!codex) {
     if (isStreaming) return null
@@ -208,8 +427,7 @@ export function CodexTurnView({ message, isStreaming, isLastAssistant }: CodexTu
     )
   }
 
-  const hasAssistantMessage = codex.items.some((i) => i.type === 'agent_message' || i.type === 'plan')
-  const lastPlanItemId = [...codex.items].reverse().find((item) => item.type === 'plan')?.id
+  const { segments, imageIndices, hasAssistantMessage, lastPlanItemId } = topology
   const planApproval = codex.planApproval
   const canRespondToPlan = !planApproval && !isStreaming && isLastAssistant && selectedCodexCollaborationMode === 'plan' && !hasPendingInteraction
   const fallbackText = message.content
@@ -217,160 +435,130 @@ export function CodexTurnView({ message, isStreaming, isLastAssistant }: CodexTu
     .map((b) => (b.type === 'text' ? b.text : ''))
     .join('\n')
 
-  const groupableAppForMcpItem = (item: CodexMcpToolCallItem): string | null => {
-    if (item.server !== 'superone') return null
-    const match = item.tool.match(/^(.+?)__(.+)$/)
-    if (!match) return null
-    const [, slug, toolNamePart] = match
-    const app = apps.find((a) => (a.manifest.toolSlug ?? a.id) === slug)
-    if (!app) return null
-    const toolDef = app.manifest.tools?.find((t) => t.name === toolNamePart)
-    return toolDef?.groupable ? app.id : null
-  }
+  const imageItems = imageIndices.map((index) => codex.items[index] as ImageGenerationItem)
 
-  type Segment =
-    | { kind: 'item'; item: CodexThreadItem; index: number }
-    | { kind: 'group'; items: CodexCommandExecutionItem[] }
-    | { kind: 'reasoning'; items: CodexReasoningItem[]; startIndex: number }
-    | { kind: 'subagent'; item: CodexCollabToolCallItem }
-    | { kind: 'app-tools'; appId: string; items: CodexMcpToolCallItem[] }
-  const segments: Segment[] = []
-  const imageItems: ImageGenerationItem[] = []
-  let cmdGroup: CodexCommandExecutionItem[] = []
-  let appGroup: CodexMcpToolCallItem[] = []
-  let appGroupId: string | null = null
-  const flushCmd = () => { if (cmdGroup.length > 0) { segments.push({ kind: 'group', items: cmdGroup }); cmdGroup = [] } }
-  const flushAppGroup = () => {
-    if (appGroup.length > 0 && appGroupId) { segments.push({ kind: 'app-tools', appId: appGroupId, items: appGroup }) }
-    appGroup = []
-    appGroupId = null
-  }
-  for (let i = 0; i < codex.items.length; i++) {
-    const item = codex.items[i]
-    if (item.type === 'image_generation') {
-      imageItems.push(item)
-      continue
-    }
-    if (item.type === 'todo_list' || item.type === 'video_generation') {
-      continue
-    }
-    if (isHiddenCodexMcpItem(item)) {
-      continue
-    }
-    const mcpItem = item.type === 'mcp_tool_call' ? item : null
-    const appIdForItem = mcpItem ? groupableAppForMcpItem(mcpItem) : null
-    if (appIdForItem && mcpItem) {
-      flushCmd()
-      if (appGroupId !== appIdForItem) flushAppGroup()
-      appGroupId = appIdForItem
-      appGroup.push(mcpItem)
-    } else if (item.type === 'collab_tool_call' && item.tool === 'spawnAgent') {
-      if (!isSpawnReady(item)) {
-        continue
+  const renderSegments = (segs: CodexSegment[], forceSealed: boolean): ReactNode[] =>
+    segs.map((seg, segIdx) => {
+      const sealed = forceSealed || !isStreaming || segIdx < segs.length - 1
+      if (seg.kind === 'subagent') {
+        const item = codex.items[seg.index] as CodexCollabToolCallItem
+        return <MemoCodexSubagentMarker key={`sa-${item.id}`} item={item} />
       }
-      flushCmd()
-      flushAppGroup()
-      segments.push({ kind: 'subagent', item })
-    } else if (item.type === 'collab_tool_call' && isSubagentFollowUp(item)) {
-      flushCmd()
-      flushAppGroup()
-      segments.push({ kind: 'subagent', item })
-    } else if (item.type === 'collab_tool_call') {
-      if (item.tool === 'wait' && item.status !== 'in_progress') {
-        continue
+      if (seg.kind === 'group') {
+        const items = seg.indices.map((index) => codex.items[index] as CodexCommandExecutionItem)
+        if (items.length === 1) {
+          return <CodexCommandBlock key={items[0].id} item={items[0]} isStreaming={isStreaming} />
+        }
+        return <CodexCommandGroup key={`cg-${seg.indices[0]}`} items={items} isStreaming={isStreaming} sealed={sealed} />
       }
-      if (item.tool === 'closeAgent' || item.tool === 'resumeAgent') {
-        continue
+      if (seg.kind === 'app-tools') {
+        const items = seg.indices.map((index) => codex.items[index] as CodexMcpToolCallItem)
+        if (items.length === 1) {
+          return renderCodexItem(items[0], segIdx, isStreaming, codex.items[seg.indices[0] + 1])
+        }
+        return (
+          <CodexAppToolGroup
+            key={`atg-${seg.indices[0]}`}
+            appId={seg.appId}
+            items={items}
+            isStreaming={isStreaming}
+            sealed={sealed}
+          />
+        )
       }
-      flushCmd()
-      flushAppGroup()
-      segments.push({ kind: 'item', item, index: i })
-    } else if (isCollapsibleCommand(item)) {
-      flushAppGroup()
-      cmdGroup.push(item)
-    } else if (item.type === 'reasoning') {
-      flushCmd()
-      flushAppGroup()
-      const previous = segments[segments.length - 1]
-      if (previous?.kind === 'reasoning') previous.items.push(item)
-      else segments.push({ kind: 'reasoning', items: [item], startIndex: i })
-    } else {
-      flushCmd()
-      flushAppGroup()
-      segments.push({ kind: 'item', item, index: i })
+      if (seg.kind === 'reasoning') {
+        const items = seg.indices.map((index) => codex.items[index] as CodexReasoningItem)
+        return (
+          <CodexReasoningSegment
+            key={`reasoning-${seg.startIndex}`}
+            items={items}
+            isStreaming={isStreaming}
+            blockDone={sealed}
+            isFirst={segIdx === 0}
+          />
+        )
+      }
+      if (seg.kind === 'item') {
+        const item = codex.items[seg.index]
+        return (
+          <CodexItemSegment
+            key={`${item.id}-${seg.index}`}
+            item={item}
+            index={seg.index}
+            isStreaming={isStreaming}
+            nextItem={codex.items[seg.index + 1]}
+            onApprovePlan={item.type === 'plan' && item.id === lastPlanItemId && canRespondToPlan
+              ? approveCodexPlan
+              : undefined}
+            onRejectPlan={item.type === 'plan' && item.id === lastPlanItemId && canRespondToPlan
+              ? rejectCodexPlan
+              : undefined}
+            planApproval={item.type === 'plan' && item.id === lastPlanItemId
+              ? planApproval
+              : undefined}
+          />
+        )
+      }
+      return null
+    })
+
+  const body = (() => {
+    if (!detailChatMode && !isStreaming) {
+      const { process, conclusion } = splitTurnForCompactMode(
+        segments,
+        (seg) => isCodexConclusionSegment(seg, (index) => codex.items[index]?.type),
+      )
+      const showFallback = !hasAssistantMessage && !!fallbackText
+      return (
+        <>
+          {process.length === 1
+            ? (
+              <div className="turn-process">
+                {renderSegments(process, true)}
+              </div>
+            )
+            : process.length > 1
+              ? (
+                <TurnDetailSection
+                  toolCount={countCodexProcessTools(
+                    process,
+                    (index) => codex.items[index]?.type,
+                  )}
+                >
+                  {renderSegments(process, true)}
+                </TurnDetailSection>
+              )
+              : null}
+          {renderSegments(conclusion, true)}
+          {showFallback && (
+            <div className="my-0.5">
+              <CopyableMarkdown text={fallbackText} isStreaming={false} components={fileLinkComponents} />
+            </div>
+          )}
+        </>
+      )
     }
-  }
-  flushCmd()
-  flushAppGroup()
+    return (
+      <>
+        {renderSegments(segments, false)}
+        {!isStreaming && !hasAssistantMessage && fallbackText && (
+          <div className="my-0.5">
+            <CopyableMarkdown text={fallbackText} isStreaming={isStreaming} components={fileLinkComponents} />
+          </div>
+        )}
+      </>
+    )
+  })()
 
   return (
-    <div className="codex-turn min-w-0 w-full space-y-2">
-      {segments.map((seg, segIdx) => {
-        if (seg.kind === 'subagent') {
-          return <CodexSubagentMarker key={`sa-${seg.item.id}`} item={seg.item} />
-        }
-        if (seg.kind === 'group') {
-          if (seg.items.length === 1) {
-            return <CodexCommandBlock key={seg.items[0].id} item={seg.items[0]} isStreaming={isStreaming} />
-          }
-          return <CodexCommandGroup key={`cg-${segIdx}`} items={seg.items} isStreaming={isStreaming} sealed={!isStreaming || segIdx < segments.length - 1} />
-        }
-        if (seg.kind === 'app-tools') {
-          if (seg.items.length === 1) {
-            return renderCodexItem(seg.items[0], segIdx, isStreaming, codex.items[codex.items.indexOf(seg.items[0]) + 1])
-          }
-          return (
-            <CodexAppToolGroup
-              key={`atg-${segIdx}`}
-              appId={seg.appId}
-              items={seg.items}
-              isStreaming={isStreaming}
-              sealed={!isStreaming || segIdx < segments.length - 1}
-            />
-          )
-        }
-        if (seg.kind === 'reasoning') {
-          const text = seg.items.map((item) => item.text).join('\n\n')
-          const first = seg.items[0]
-          const last = seg.items[seg.items.length - 1]
-          return (
-            <ReasoningBlock
-              key={`reasoning-${seg.startIndex}`}
-              text={text}
-              startedAt={first.startedAt}
-              endedAt={last.endedAt}
-              blockDone={!isStreaming || segIdx < segments.length - 1}
-              showContent={text.trim().length > 0}
-              isFirst={segIdx === 0}
-            />
-          )
-        }
-        if (seg.kind === 'item') {
-          return renderCodexItem(
-            seg.item,
-            seg.index,
-            isStreaming,
-            codex.items[seg.index + 1],
-            seg.item.type === 'plan' && seg.item.id === lastPlanItemId && canRespondToPlan
-              ? approveCodexPlan
-              : undefined,
-            seg.item.type === 'plan' && seg.item.id === lastPlanItemId && canRespondToPlan
-              ? rejectCodexPlan
-              : undefined,
-            seg.item.type === 'plan' && seg.item.id === lastPlanItemId
-              ? planApproval
-              : undefined,
-          )
-        }
-        return null
-      })}
-
-      {!isStreaming && !hasAssistantMessage && fallbackText && (
-        <div className="my-0.5">
-          <CopyableMarkdown text={fallbackText} isStreaming={isStreaming} components={fileLinkComponents} />
-        </div>
+    <div
+      className={cn(
+        'codex-turn min-w-0 w-full',
+        // Compact mode: no large gap between Detail disclosure and conclusion.
+        !detailChatMode && !isStreaming ? 'space-y-1' : 'space-y-2',
       )}
-
+    >
+      {body}
       {imageItems.length > 0 && <ImageGalleryBlock items={imageItems} />}
     </div>
   )

@@ -11,6 +11,7 @@ import { useChatStore, useActiveSession, useBashOutput, useShareProgress } from 
 import { openFileTab } from '@/components/activity/activity-panel-api'
 import { useSettingsStore } from '@/stores/settings'
 import { useSourceControlStore } from '@/stores/source-control'
+import { useAppStore } from '@/stores/app'
 import { ToolIcon } from './ToolIcon'
 import { DraggableFileIcon } from './DraggableFileIcon'
 import { getToolDisplay, getToolLabel, getToolVerb, parseToolInput, parseMcpToolName, isHiddenToolBlock, formatReadMeta, type ToolIcon as ToolIconType } from './tool-display'
@@ -832,7 +833,11 @@ const FILE_PATH_TOOLS = new Set(['Read', 'Edit', 'Write', 'NotebookEdit', 'FileC
 export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, toolSummary, status, elapsedSeconds, result, isTimedOut, isError, resultOutputPath, autoExpand, backgroundActivity = false, grouped = false, trailingAction }: ToolBlockProps) {
   const { t } = useTranslation()
   const nestedDefaults = useNestedToolDefaults()
+  const autoExpandFileDiffs = useAppStore((s) => s.autoExpandFileDiffs)
+  // Bash and other non-diff tools keep the historical default of auto-expand.
+  // File diffs (Edit/Write/FileChange) honor the user setting (default: off).
   const effectiveAutoExpand = autoExpand ?? nestedDefaults?.defaultAutoExpand ?? true
+  const shouldAutoExpandDiff = autoExpand ?? nestedDefaults?.defaultAutoExpand ?? autoExpandFileDiffs
   const cwd = useActiveSession((s) => s.cwd)
   const homedir = useActiveSession((s) => s.homedir)
   const streamingInputPreview = useActiveSession((s) => toolUseId ? s._streamingToolInputPreviews[toolUseId] : undefined)
@@ -894,7 +899,7 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, t
   const gridRef = useRef<HTMLDivElement>(null)
 
   useLayoutEffect(() => {
-    if (DIFF_TOOLS.has(toolName) && hasDiff && effectiveAutoExpand) {
+    if (DIFF_TOOLS.has(toolName) && hasDiff && shouldAutoExpandDiff) {
       setExpanded(true)
       const grid = gridRef.current
       if (grid && !isStreaming) {
@@ -902,7 +907,7 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, t
         requestAnimationFrame(() => { grid.style.transition = '' })
       }
     }
-  }, [isStreaming, hasDiff, toolName, effectiveAutoExpand])
+  }, [isStreaming, hasDiff, toolName, shouldAutoExpandDiff])
 
   useLayoutEffect(() => {
     if (isError) setExpanded(false)
@@ -1264,9 +1269,6 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, t
         ) : fileToolName ? (
           <>
             <FileChip name={fileToolName} title={display.summary} filePath={fileToolPath} />
-            {toolName === 'FileChange' && params.kind && (
-              <span className="shrink-0 whitespace-nowrap text-muted-foreground">{String(params.kind)}</span>
-            )}
             {toolName === 'Read' && formatReadMeta(params) && (
               <span className="shrink-0 whitespace-nowrap text-muted-foreground">{formatReadMeta(params)}</span>
             )}

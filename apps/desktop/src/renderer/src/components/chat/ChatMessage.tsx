@@ -1,5 +1,5 @@
 import type { ChatMessage as ChatMessageType, ContentBlock, AgentStatus, ImageGenerationItem, VideoGenerationItem, ImageAttachment } from '@superone/shared/agent-types'
-import { useState, useEffect, useRef, useMemo, useCallback, memo } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback, memo, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@superone/ui/lib/utils'
 import { Loader2, ImageIcon, OctagonX, Folder, ChevronRight, Clock, Minimize2, ArrowUp, ArrowDown, Copy, Check, AlertTriangle, X, Shuffle, Bot, Inbox } from 'lucide-react'
@@ -7,6 +7,8 @@ import { ToolBlock } from './ToolBlock'
 import { ToolGroup } from './ToolGroup'
 import { AppToolGroup } from './AppToolGroup'
 import { parseToolInput, parseMcpToolName, isHiddenToolBlock } from './tool-display'
+import { countClaudeProcessTools, isClaudeConclusionSegment, splitTurnForCompactMode } from './compact-chat-mode'
+import { TurnDetailSection } from './TurnDetailSection'
 import { toImageGenerationItems, toVideoStatusItems, isMediaGenerateImageTool, isMediaVideoStatusTool, collectCodexGeneratedImages, collectCodexGeneratedVideos } from './media-generation'
 import { useMiniAppStore } from '@/stores/miniapp'
 import type { MiniAppEntry } from '@superone/shared/miniapp-types'
@@ -803,9 +805,110 @@ function isCollabMailboxWakeText(text: string): boolean {
   return /collaboration mailbox message is ready/i.test(text)
 }
 
+function renderClaudeSegments(
+  segs: RenderSegment[],
+  opts: {
+    isStreaming: boolean
+    forceSealed: boolean
+    toolResultMap: Map<string, string>
+    timedOutToolIds: Set<string>
+    errorToolIds: Set<string>
+    outputPathMap: Map<string, string>
+    projectPath: string | null
+  },
+): ReactNode[] {
+  const {
+    isStreaming,
+    forceSealed,
+    toolResultMap,
+    timedOutToolIds,
+    errorToolIds,
+    outputPathMap,
+    projectPath,
+  } = opts
+
+  return segs.map((seg, segIdx) => {
+    const sealed = forceSealed || !isStreaming || segIdx < segs.length - 1
+    if (seg.kind === 'subagent') {
+      return (
+        <SubagentBlock
+          key={`sa-${seg.startIndex}`}
+          taskBlock={seg.taskBlock}
+          childBlocks={seg.childBlocks}
+          resultBlock={seg.resultBlock}
+          isStreaming={isStreaming}
+        />
+      )
+    }
+    if (seg.kind === 'workflow') {
+      return (
+        <WorkflowBlock
+          key={`wf-${seg.startIndex}`}
+          toolBlock={seg.toolBlock}
+          resultBlock={seg.resultBlock}
+          isStreaming={isStreaming}
+        />
+      )
+    }
+    if (seg.kind === 'app-tools') {
+      const appToolUseCount = seg.blocks.filter((b) => b.type === 'tool_use').length
+      if (appToolUseCount <= 1) {
+        return seg.blocks.map((block, i) =>
+          renderBlock(block, seg.startIndex + i, isStreaming, toolResultMap, timedOutToolIds, errorToolIds, outputPathMap, seg.blocks[i + 1]?.type, seg.blocks[i - 1]?.type, projectPath),
+        )
+      }
+      return (
+        <AppToolGroup
+          key={`atg-${seg.startIndex}`}
+          appId={seg.appId}
+          blocks={seg.blocks}
+          sealed={sealed}
+        />
+      )
+    }
+    if (seg.kind === 'thinking') {
+      const text = seg.blocks.map((b) => b.type === 'thinking' ? b.thinking : '').join('\n\n')
+      const first = seg.blocks[0]
+      const last = seg.blocks[seg.blocks.length - 1]
+      return (
+        <ReasoningBlock
+          key={`th-${seg.startIndex}`}
+          text={text}
+          startedAt={first.type === 'thinking' ? first.startedAt : undefined}
+          endedAt={last.type === 'thinking' ? last.endedAt : undefined}
+          blockDone={sealed}
+          showContent={text.trim().length > 0}
+          isFirst={segIdx === 0}
+        />
+      )
+    }
+    if (seg.kind === 'block') {
+      const nextSeg = segs[segIdx + 1]
+      const prevSeg = segs[segIdx - 1]
+      const nextType = nextSeg?.kind === 'block' ? nextSeg.block.type : nextSeg?.kind === 'thinking' ? 'thinking' : nextSeg?.kind === 'tools' ? nextSeg.blocks[0]?.type : nextSeg?.kind === 'subagent' ? 'tool_use' : undefined
+      const prevType = prevSeg?.kind === 'block' ? prevSeg.block.type : prevSeg?.kind === 'thinking' ? 'thinking' : undefined
+      return renderBlock(seg.block, seg.index, isStreaming, toolResultMap, timedOutToolIds, errorToolIds, outputPathMap, nextType, prevType, projectPath)
+    }
+    const toolUseCount = seg.blocks.filter((b) => b.type === 'tool_use').length
+    if (toolUseCount <= 1) {
+      return seg.blocks.map((block, i) =>
+        renderBlock(block, seg.startIndex + i, isStreaming, toolResultMap, timedOutToolIds, errorToolIds, outputPathMap, seg.blocks[i + 1]?.type, seg.blocks[i - 1]?.type, projectPath),
+      )
+    }
+    return (
+      <ToolGroup
+        key={`tg-${seg.startIndex}`}
+        blocks={seg.blocks}
+        sealed={sealed}
+      />
+    )
+  })
+}
+
 export const ChatMessage = memo(function ChatMessage({ message, sessionStatus, isLastAssistant, hideUserActions }: ChatMessageProps) {
   const { t } = useTranslation()
   const projectPath = useChatStore((s) => s.activeProject)
+  const detailChatMode = useAppStore((s) => s.detailChatMode)
   const isUser = message.role === 'user'
   const isStreaming = message.status === 'streaming' && sessionStatus === 'streaming' && isLastAssistant
   const isCodexMessage = !isUser && message.providerId === 'codex'
@@ -906,81 +1009,40 @@ export const ChatMessage = memo(function ChatMessage({ message, sessionStatus, i
               </TooltipProvider>
           : isCodexMessage
             ? <CodexTurnView message={message} isStreaming={isStreaming} isLastAssistant={isLastAssistant} />
-            : grouped!.segments.map((seg, segIdx, segs) => {
-              if (seg.kind === 'subagent') {
+            : (() => {
+              const segs = grouped!.segments
+              const segOpts = {
+                isStreaming,
+                forceSealed: false as boolean,
+                toolResultMap: grouped!.toolResultMap,
+                timedOutToolIds: grouped!.timedOutToolIds,
+                errorToolIds: grouped!.errorToolIds,
+                outputPathMap: grouped!.outputPathMap,
+                projectPath,
+              }
+              if (!detailChatMode && !isStreaming) {
+                const { process, conclusion } = splitTurnForCompactMode(segs, isClaudeConclusionSegment)
                 return (
-                  <SubagentBlock
-                    key={`sa-${seg.startIndex}`}
-                    taskBlock={seg.taskBlock}
-                    childBlocks={seg.childBlocks}
-                    resultBlock={seg.resultBlock}
-                    isStreaming={isStreaming}
-                  />
+                  <>
+                    {process.length === 1
+                      ? (
+                        <div className="turn-process">
+                          {renderClaudeSegments(process, { ...segOpts, forceSealed: true })}
+                        </div>
+                      )
+                      : process.length > 1
+                        ? (
+                          <TurnDetailSection toolCount={countClaudeProcessTools(process)}>
+                            {renderClaudeSegments(process, { ...segOpts, forceSealed: true })}
+                          </TurnDetailSection>
+                        )
+                        : null}
+                    {renderClaudeSegments(conclusion, { ...segOpts, forceSealed: true })}
+                  </>
                 )
               }
-              if (seg.kind === 'workflow') {
-                return (
-                  <WorkflowBlock
-                    key={`wf-${seg.startIndex}`}
-                    toolBlock={seg.toolBlock}
-                    resultBlock={seg.resultBlock}
-                    isStreaming={isStreaming}
-                  />
-                )
-              }
-              if (seg.kind === 'app-tools') {
-                const appToolUseCount = seg.blocks.filter((b) => b.type === 'tool_use').length
-                if (appToolUseCount <= 1) {
-                  return seg.blocks.map((block, i) =>
-                    renderBlock(block, seg.startIndex + i, isStreaming, grouped!.toolResultMap, grouped!.timedOutToolIds, grouped!.errorToolIds, grouped!.outputPathMap, seg.blocks[i + 1]?.type, seg.blocks[i - 1]?.type, projectPath)
-                  )
-                }
-                return (
-                  <AppToolGroup
-                    key={`atg-${seg.startIndex}`}
-                    appId={seg.appId}
-                    blocks={seg.blocks}
-                    sealed={!isStreaming || segIdx < segs.length - 1}
-                  />
-                )
-              }
-              if (seg.kind === 'thinking') {
-                const text = seg.blocks.map((b) => b.type === 'thinking' ? b.thinking : '').join('\n\n')
-                const first = seg.blocks[0]
-                const last = seg.blocks[seg.blocks.length - 1]
-                return (
-                  <ReasoningBlock
-                    key={`th-${seg.startIndex}`}
-                    text={text}
-                    startedAt={first.type === 'thinking' ? first.startedAt : undefined}
-                    endedAt={last.type === 'thinking' ? last.endedAt : undefined}
-                    blockDone={!isStreaming || segIdx < segs.length - 1}
-                    showContent={text.trim().length > 0}
-                    isFirst={segIdx === 0}
-                  />
-                )
-              }
-              if (seg.kind === 'block') {
-                const nextSeg = segs[segIdx + 1]
-                const prevSeg = segs[segIdx - 1]
-                const nextType = nextSeg?.kind === 'block' ? nextSeg.block.type : nextSeg?.kind === 'thinking' ? 'thinking' : nextSeg?.kind === 'tools' ? nextSeg.blocks[0]?.type : nextSeg?.kind === 'subagent' ? 'tool_use' : undefined
-                const prevType = prevSeg?.kind === 'block' ? prevSeg.block.type : prevSeg?.kind === 'thinking' ? 'thinking' : undefined
-                return renderBlock(seg.block, seg.index, isStreaming, grouped!.toolResultMap, grouped!.timedOutToolIds, grouped!.errorToolIds, grouped!.outputPathMap, nextType, prevType, projectPath)
-              }
-              const toolUseCount = seg.blocks.filter((b) => b.type === 'tool_use').length
-              if (toolUseCount <= 1) {
-                return seg.blocks.map((block, i) =>
-                  renderBlock(block, seg.startIndex + i, isStreaming, grouped!.toolResultMap, grouped!.timedOutToolIds, grouped!.errorToolIds, grouped!.outputPathMap, seg.blocks[i + 1]?.type, seg.blocks[i - 1]?.type, projectPath)
-                )
-              }
-              return (
-                <ToolGroup
-                  key={`tg-${seg.startIndex}`}
-                  blocks={seg.blocks}
-                  sealed={!isStreaming || segIdx < segs.length - 1}
-                />
-              )
-            })
+              return renderClaudeSegments(segs, segOpts)
+            })()
         }
         {!isUser && generatedImages.length > 0 && <ImageGalleryBlock items={generatedImages} />}
         {!isUser && generatedVideos.length > 0 && <VideoGalleryBlock items={generatedVideos} />}

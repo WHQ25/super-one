@@ -15,6 +15,8 @@ const defaults: AppSettings = {
   experimentalAgentsEnabled: false,
   experimentalAgentCollaborationEnabled: false,
   crispText: true,
+  autoExpandFileDiffs: false,
+  detailChatMode: false,
   locale: '',
   updateChannel: null,
   themeMode: 'system',
@@ -31,7 +33,6 @@ const defaults: AppSettings = {
   computerUseEnabled: false,
   computerUseAllowAllApps: false,
   computerUseAlwaysAllowApps: [],
-  computerUseVisualIndicators: true,
   miniAppOrder: {},
   customAppIconPath: null,
   browserBookmarks: [],
@@ -270,6 +271,13 @@ export function readAppSettings(): AppSettings {
         ? data.experimentalAgentCollaborationEnabled
         : defaults.experimentalAgentCollaborationEnabled,
       crispText: typeof data.crispText === 'boolean' ? data.crispText : defaults.crispText,
+      autoExpandFileDiffs: typeof data.autoExpandFileDiffs === 'boolean' ? data.autoExpandFileDiffs : defaults.autoExpandFileDiffs,
+      detailChatMode: typeof data.detailChatMode === 'boolean'
+        ? data.detailChatMode
+        // Migrate inverted legacy key (compactChatMode true meant collapsed process).
+        : typeof data.compactChatMode === 'boolean'
+          ? !data.compactChatMode
+          : defaults.detailChatMode,
       locale: data.locale === '' || isLocale(data.locale) ? data.locale : defaults.locale,
       updateChannel: data.updateChannel === null || isUpdateChannel(data.updateChannel) ? data.updateChannel : defaults.updateChannel,
       themeMode: isThemeMode(data.themeMode) ? data.themeMode : defaults.themeMode,
@@ -286,9 +294,6 @@ export function readAppSettings(): AppSettings {
       computerUseEnabled: typeof data.computerUseEnabled === 'boolean' ? data.computerUseEnabled : defaults.computerUseEnabled,
       computerUseAllowAllApps: typeof data.computerUseAllowAllApps === 'boolean' ? data.computerUseAllowAllApps : defaults.computerUseAllowAllApps,
       computerUseAlwaysAllowApps: readComputerUseAlwaysAllowApps(data.computerUseAlwaysAllowApps),
-      computerUseVisualIndicators: typeof data.computerUseVisualIndicators === 'boolean'
-        ? data.computerUseVisualIndicators
-        : defaults.computerUseVisualIndicators,
       miniAppOrder: readMiniAppOrder(data.miniAppOrder),
       customAppIconPath: typeof data.customAppIconPath === 'string' ? data.customAppIconPath : defaults.customAppIconPath,
       browserBookmarks: readBookmarks(data.browserBookmarks),
@@ -305,6 +310,8 @@ export function readAppSettings(): AppSettings {
       experimentalAgentsEnabled: defaults.experimentalAgentsEnabled,
       experimentalAgentCollaborationEnabled: defaults.experimentalAgentCollaborationEnabled,
       crispText: defaults.crispText,
+      autoExpandFileDiffs: defaults.autoExpandFileDiffs,
+      detailChatMode: defaults.detailChatMode,
       locale: defaults.locale,
       updateChannel: defaults.updateChannel,
       themeMode: defaults.themeMode,
@@ -321,7 +328,6 @@ export function readAppSettings(): AppSettings {
       computerUseEnabled: defaults.computerUseEnabled,
       computerUseAllowAllApps: defaults.computerUseAllowAllApps,
       computerUseAlwaysAllowApps: [],
-      computerUseVisualIndicators: defaults.computerUseVisualIndicators,
       miniAppOrder: {},
       customAppIconPath: defaults.customAppIconPath,
       browserBookmarks: [],
@@ -345,6 +351,8 @@ export function saveAppSettings(patch: AppSettingsPatch): AppSettings {
     experimentalAgentCollaborationEnabled: patch.experimentalAgentCollaborationEnabled
       ?? current.experimentalAgentCollaborationEnabled,
     crispText: patch.crispText ?? current.crispText,
+    autoExpandFileDiffs: patch.autoExpandFileDiffs ?? current.autoExpandFileDiffs,
+    detailChatMode: patch.detailChatMode ?? current.detailChatMode,
     locale: patch.locale ?? current.locale,
     updateChannel: patch.updateChannel === undefined ? current.updateChannel : patch.updateChannel,
     themeMode: patch.themeMode === undefined ? current.themeMode : patch.themeMode,
@@ -363,9 +371,6 @@ export function saveAppSettings(patch: AppSettingsPatch): AppSettings {
     computerUseAlwaysAllowApps: patch.computerUseAlwaysAllowApps === undefined
       ? current.computerUseAlwaysAllowApps
       : readComputerUseAlwaysAllowApps(patch.computerUseAlwaysAllowApps),
-    computerUseVisualIndicators: patch.computerUseVisualIndicators === undefined
-      ? current.computerUseVisualIndicators
-      : patch.computerUseVisualIndicators,
     miniAppOrder: patch.miniAppOrder
       ? { ...current.miniAppOrder, ...patch.miniAppOrder }
       : current.miniAppOrder,

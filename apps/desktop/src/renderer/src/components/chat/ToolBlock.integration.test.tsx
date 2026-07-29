@@ -139,7 +139,7 @@ Object.defineProperty(window, 'app', {
 const { ToolBlock } = await import('./ToolBlock')
 
 describe('ToolBlock diff content lifecycle', () => {
-  it('unmounts the streaming edit preview after collapse', async () => {
+  it('keeps streaming edit collapsed by default and expands on click', async () => {
     render(
       <ToolBlock
         toolName="Edit"
@@ -149,6 +149,30 @@ describe('ToolBlock diff content lifecycle', () => {
           new_string: 'const a = 2\n',
         })}
         status="streaming"
+      />,
+    )
+
+    expect(screen.queryByText('canvas-edit-diff')).toBeNull()
+    expect(screen.getByText(/^Edit/)).not.toBeNull()
+
+    fireEvent.click(screen.getByText(/^Edit/))
+    await waitFor(() => expect(screen.queryByText('canvas-edit-diff')).not.toBeNull())
+
+    fireEvent.click(screen.getByText(/^Edit/))
+    expect(screen.queryByText('canvas-edit-diff')).toBeNull()
+  })
+
+  it('auto-expands streaming edit when autoExpand is forced on', async () => {
+    render(
+      <ToolBlock
+        toolName="Edit"
+        input={JSON.stringify({
+          file_path: '/proj/foo.ts',
+          old_string: 'const a = 1\n',
+          new_string: 'const a = 2\n',
+        })}
+        status="streaming"
+        autoExpand
       />,
     )
 
@@ -182,6 +206,7 @@ describe('ToolBlock error auto-collapse', () => {
           new_string: 'const a = 2\n',
         })}
         status="streaming"
+        autoExpand
       />,
     )
 
@@ -198,6 +223,7 @@ describe('ToolBlock error auto-collapse', () => {
         status="complete"
         result="Patch failed: file changed on disk"
         isError
+        autoExpand
       />,
     )
 

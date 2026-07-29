@@ -140,11 +140,15 @@ interface AppState {
   terminalFontFamily: string | null
   uiFontFamily: string | null
   liquidGlass: boolean
+  autoExpandFileDiffs: boolean
+  detailChatMode: boolean
   setTerminalPalette: (scheme: 'light' | 'dark', id: string | null) => Promise<void>
   setTerminalFontSize: (size: number) => Promise<void>
   setTerminalFontFamily: (family: string | null) => Promise<void>
   setUiFontFamily: (family: string | null) => Promise<void>
   setLiquidGlass: (enabled: boolean) => Promise<void>
+  setAutoExpandFileDiffs: (enabled: boolean) => Promise<void>
+  setDetailChatMode: (enabled: boolean) => Promise<void>
 
   // Per-token LCH overrides (per-harness, light mode only)
   tokenOverrides: Record<HarnessId, TokenOverrides>
@@ -556,6 +560,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   terminalFontFamily: null,
   uiFontFamily: null,
   liquidGlass: false,
+  autoExpandFileDiffs: false,
+  detailChatMode: false,
 
   loadBrandHues: async () => {
     try {
@@ -581,6 +587,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         terminalFontFamily: settings.terminalFontFamily,
         uiFontFamily: settings.uiFontFamily,
         liquidGlass: settings.liquidGlass,
+        autoExpandFileDiffs: settings.autoExpandFileDiffs,
+        detailChatMode: settings.detailChatMode,
       })
     } catch (err) {
       console.error('[brand-hue] loadBrandHues failed:', err)
@@ -628,6 +636,20 @@ export const useAppStore = create<AppState>((set, get) => ({
     void window.app
       .saveAppSettings({ liquidGlass: enabled })
       .catch((err) => console.error('[liquid-glass] persist failed:', err))
+  },
+
+  setAutoExpandFileDiffs: async (enabled) => {
+    set({ autoExpandFileDiffs: enabled })
+    void window.app
+      .saveAppSettings({ autoExpandFileDiffs: enabled })
+      .catch((err) => console.error('[auto-expand-file-diffs] persist failed:', err))
+  },
+
+  setDetailChatMode: async (enabled) => {
+    set({ detailChatMode: enabled })
+    void window.app
+      .saveAppSettings({ detailChatMode: enabled })
+      .catch((err) => console.error('[detail-chat-mode] persist failed:', err))
   },
 
   setTerminalPalette: async (scheme, id) => {
@@ -751,6 +773,8 @@ if (typeof window !== 'undefined') {
       terminalFontFamily: settings.terminalFontFamily,
       uiFontFamily: settings.uiFontFamily,
       liquidGlass: settings.liquidGlass,
+      autoExpandFileDiffs: settings.autoExpandFileDiffs,
+      detailChatMode: settings.detailChatMode,
     })
   })
 }

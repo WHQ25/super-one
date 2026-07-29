@@ -85,6 +85,8 @@ export const zh: Messages = {
       noSessions: '无会话',
       showMore: '显示更多',
       showLess: '收起',
+      expandChildren: '展开子会话',
+      collapseChildren: '收起子会话',
       searchSessions: '搜索会话…',
       rename: '重命名会话',
       renameFile: '重命名',
@@ -222,7 +224,7 @@ export const zh: Messages = {
       },
       allowAll: {
         label: '允许所有应用',
-        description: '跳过按应用授权，截图与操控覆盖整个桌面。仅建议测试使用——正式场景请用下方「始终允许」列表。开启期间 agent 可观察并控制任意应用。',
+        description: '跳过按应用授权，截图与操控覆盖整个桌面。开启期间，智能体可以观察并控制任意应用。',
       },
       alwaysAllow: {
         title: '始终允许',
@@ -234,20 +236,18 @@ export const zh: Messages = {
         loadingApps: '正在加载运行中的应用…',
         emptyRunning: '没有匹配的运行中应用。请先启动目标应用再添加。',
       },
-      visualIndicators: {
-        label: '显示 Computer Use 指示（仅 macOS）',
-        description: 'Computer Use 运行时：菜单栏显示目标应用图标 + 鼠标标记，并在点击位置显示虚拟光标。不移动真实鼠标、不抢前台。仅 macOS 有效。',
-      },
       permissions: {
         title: 'macOS 权限',
-        description: '打开 SuperOne Dev Computer Use 的授权窗口（与 Open Computer Use 相同：可拖拽的应用图标）。把它拖进「系统设置 → 隐私」的辅助功能 / 屏幕录制列表即可。打开屏幕录制后请在窗口内点「Relaunch」，或退出 SuperOne 再开，权限才会对 helper 生效。',
-        button: '打开授权引导…',
-        opening: '正在打开…',
-        opened: '已打开授权窗口 — 把应用图标拖进系统设置列表。',
+        description: 'SuperOne 会先请求辅助功能，再请求屏幕录制。macOS 会直接显示对应的系统授权，不再打开单独的 helper 窗口。',
+        button: '请求权限…',
+        opening: '正在请求…',
+        requested: '权限请求已完成，请在系统设置中启用仍缺少的项目。',
         alreadyGranted: '辅助功能与屏幕录制均已授权。',
+        accessibility: '辅助功能',
+        screenRecording: '屏幕录制',
+        helperName: 'SuperOne Computer Use',
+        dragHint: '如果 macOS 没有自动加入，请把这个 App 拖进已打开的「隐私与安全性」列表。',
       },
-      helperNote: '开发版辅助进程：SuperOne Dev Computer Use.app（bundle com.superone.computer-use.dev）。随 SuperOne dev 一起启停。请在「系统设置 → 隐私与安全性」里给该名字勾选「辅助功能」和「屏幕录制」——不是 SuperOne 主程序，也不是 Open Computer Use。授予屏幕录制后请完全退出 SuperOne 再开，helper 会重启后权限才生效。',
-      fallbackNote: '能用 browser_* 处理网页、或用 Bash / 文件工具完成的任务，请优先走那些路径。Computer Use 是原生桌面 UI 的最后手段。',
     },
     general: {
       title: '通用',
@@ -305,6 +305,14 @@ export const zh: Messages = {
         description: '允许 Agent 在用户确认后创建真实子 Session，并通过持久化 mailbox 通信。此功能仍处于实验阶段。',
         enabled: '已开启 Agent Session 协作',
         disabled: '已关闭 Agent Session 协作',
+      },
+      autoExpandFileDiffs: {
+        label: '自动展开文件 diff',
+        description: '流式输出时自动展开 Edit、Write、FileChange 工具以实时显示 diff。关闭后默认只显示带行数变化的 header，点击后再展开。',
+      },
+      detailChatMode: {
+        label: '详细模式',
+        description: '轮次结束后仍完整展示工具调用、推理与中间过程。关闭时默认只显示结论，过程折叠在「详细过程」中。流式输出过程中始终展示完整过程。',
       },
       crispText: {
         label: '锐利文本',
@@ -486,6 +494,9 @@ export const zh: Messages = {
     },
   },
   chat: {
+    compactMode: {
+      detail: '详细过程',
+    },
     placeholder: {
       addInstructions: '补充说明...',
       codexPlan: '一起来做个计划吧！你有什么想法？',

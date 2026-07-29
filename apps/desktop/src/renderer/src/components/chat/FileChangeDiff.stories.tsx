@@ -58,6 +58,7 @@ export const AddFile: Story = {
       diff: ADD_DIFF,
     }),
     status: 'complete',
+    autoExpand: true,
   },
 }
 
@@ -70,6 +71,7 @@ export const DeleteFile: Story = {
       diff: DELETE_DIFF,
     }),
     status: 'complete',
+    autoExpand: true,
   },
 }
 
@@ -82,5 +84,6 @@ export const ModifyFile: Story = {
       diff: MODIFY_UNIFIED,
     }),
     status: 'complete',
+    autoExpand: true,
   },
 }

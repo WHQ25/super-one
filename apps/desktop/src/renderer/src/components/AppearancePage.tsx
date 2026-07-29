@@ -165,6 +165,10 @@ export function AppearancePage() {
   const setUiFontFamily = useAppStore((s) => s.setUiFontFamily)
   const liquidGlass = useAppStore((s) => s.liquidGlass)
   const setLiquidGlass = useAppStore((s) => s.setLiquidGlass)
+  const autoExpandFileDiffs = useAppStore((s) => s.autoExpandFileDiffs)
+  const setAutoExpandFileDiffs = useAppStore((s) => s.setAutoExpandFileDiffs)
+  const detailChatMode = useAppStore((s) => s.detailChatMode)
+  const setDetailChatMode = useAppStore((s) => s.setDetailChatMode)
   const { mode: themeMode, setMode: setThemeMode } = useTheme()
   const isMac = window.app.platform === 'darwin'
 
@@ -297,6 +301,32 @@ export function AppearancePage() {
               systemLabel={systemFontLabel}
               onOpen={loadFonts}
               onSelect={setUiFontFamily}
+            />
+          </div>
+          <div className="flex items-center justify-between gap-4 border-t border-border p-4">
+            <div className="min-w-0">
+              <p className="text-sm font-medium">{t('settings.general.autoExpandFileDiffs.label')}</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {t('settings.general.autoExpandFileDiffs.description')}
+              </p>
+            </div>
+            <Switch
+              checked={autoExpandFileDiffs}
+              onCheckedChange={setAutoExpandFileDiffs}
+              disabled={loading}
+            />
+          </div>
+          <div className="flex items-center justify-between gap-4 border-t border-border p-4">
+            <div className="min-w-0">
+              <p className="text-sm font-medium">{t('settings.general.detailChatMode.label')}</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {t('settings.general.detailChatMode.description')}
+              </p>
+            </div>
+            <Switch
+              checked={detailChatMode}
+              onCheckedChange={setDetailChatMode}
+              disabled={loading}
             />
           </div>
           {isMac && (

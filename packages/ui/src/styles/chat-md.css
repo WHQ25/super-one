@@ -226,3 +226,40 @@
     margin-top: 0;
   }
 }
+
+/* Compact mode: conclusion under process (Detail disclosure or single item).
+   Cap the usual .chat-md first-block margin so it isn't a full 1–1.5rem gap. */
+.assistant-reply > .turn-detail-section + * .chat-md,
+.assistant-reply > .turn-process + * .chat-md,
+.assistant-reply .codex-turn > .turn-detail-section + * .chat-md,
+.assistant-reply .codex-turn > .turn-process + * .chat-md {
+  margin-top: 0.5rem;
+}
+
+@container (min-width: 512px) {
+  .assistant-reply > .turn-detail-section + * .chat-md,
+  .assistant-reply > .turn-process + * .chat-md,
+  .assistant-reply .codex-turn > .turn-detail-section + * .chat-md,
+  .assistant-reply .codex-turn > .turn-process + * .chat-md {
+    margin-top: 0.5rem;
+  }
+}
+
+@container (min-width: 672px) {
+  .assistant-reply > .turn-detail-section + * .chat-md,
+  .assistant-reply > .turn-process + * .chat-md,
+  .assistant-reply .codex-turn > .turn-detail-section + * .chat-md,
+  .assistant-reply .codex-turn > .turn-process + * .chat-md {
+    margin-top: 0.5rem;
+  }
+}
+
+/* Single process item (e.g. Thought) before conclusion — keep a small gap only. */
+.assistant-reply .turn-process > .thinking-node {
+  margin-bottom: 0.25rem;
+}
+
+.codex-turn > .turn-detail-section,
+.codex-turn > .turn-process {
+  margin-bottom: 0.25rem;
+}

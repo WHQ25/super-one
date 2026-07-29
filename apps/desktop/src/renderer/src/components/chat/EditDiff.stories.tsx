@@ -72,6 +72,7 @@ export const SmallEdit: Story = {
       new_string: SMALL_NEW,
     }),
     status: 'complete',
+    autoExpand: true,
   },
 }
 
@@ -84,6 +85,7 @@ export const MultiHunkEdit: Story = {
       new_string: MULTI_NEW,
     }),
     status: 'complete',
+    autoExpand: true,
   },
 }
 

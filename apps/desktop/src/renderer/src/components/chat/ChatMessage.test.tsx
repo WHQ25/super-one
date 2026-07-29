@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ChatMessage as ChatMessageType } from '@superone/shared/agent-types'
 import { ChatMessage } from './ChatMessage'
 import { createDefaultPerSessionState, createDefaultProjectState, useChatStore } from '@/stores/chat'
+import { useAppStore } from '@/stores/app'
 
 vi.mock('./CodexTurnView', () => ({
   CodexTurnView: () => <div data-testid="codex-turn" />,
@@ -60,6 +61,8 @@ function setupSession(streamingTokens: { input: number; output: number }) {
 
 beforeEach(() => {
   vi.useFakeTimers()
+  // Tests assert full process content; opt into Detail Mode so compact default doesn't hide it.
+  useAppStore.setState({ detailChatMode: true })
   setupSession({ input: 100, output: 50 })
 })
 

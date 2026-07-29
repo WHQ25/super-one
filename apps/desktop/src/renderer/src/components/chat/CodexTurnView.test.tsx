@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ChatMessage } from '@superone/shared/agent-types'
 import { CodexTurnView } from './CodexTurnView'
 import { createDefaultPerSessionState, createDefaultProjectState, useChatStore } from '@/stores/chat'
+import { useAppStore } from '@/stores/app'
 import { PlanFullscreenContext } from './codex-item-renderer'
 
 vi.mock('./CopyableMarkdown', () => ({
@@ -70,6 +71,8 @@ function setupActiveSession(overrides: Partial<ReturnType<typeof createDefaultPe
 beforeEach(() => {
   mockApproveCodexPlan.mockReset()
   mockRejectCodexPlan.mockReset()
+  // Tests assert full process content; opt into Detail Mode so compact default doesn't hide it.
+  useAppStore.setState({ detailChatMode: true })
   useChatStore.setState({
     activeProject: null,
     projectSessions: {},

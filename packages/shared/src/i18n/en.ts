@@ -83,6 +83,8 @@ export type Messages = {
       noSessions: string
       showMore: string
       showLess: string
+      expandChildren: string
+      collapseChildren: string
       searchSessions: string
       rename: string
       renameFile: string
@@ -211,20 +213,18 @@ export type Messages = {
         loadingApps: string
         emptyRunning: string
       }
-      visualIndicators: {
-        label: string
-        description: string
-      }
       permissions: {
         title: string
         description: string
         button: string
         opening: string
-        opened: string
+        requested: string
         alreadyGranted: string
+        accessibility: string
+        screenRecording: string
+        helperName: string
+        dragHint: string
       }
-      helperNote: string
-      fallbackNote: string
     }
     general: {
       title: string
@@ -282,6 +282,14 @@ export type Messages = {
         description: string
         enabled: string
         disabled: string
+      }
+      autoExpandFileDiffs: {
+        label: string
+        description: string
+      }
+      detailChatMode: {
+        label: string
+        description: string
       }
       crispText: {
         label: string
@@ -460,6 +468,9 @@ export type Messages = {
     }
   }
   chat: {
+    compactMode: {
+      detail: string
+    }
     placeholder: {
       addInstructions: string
       codexPlan: string
@@ -2020,6 +2031,8 @@ export const en: Messages = {
       noSessions: 'No sessions',
       showMore: 'Show more',
       showLess: 'Show less',
+      expandChildren: 'Expand sub-sessions',
+      collapseChildren: 'Collapse sub-sessions',
       searchSessions: 'Search sessions…',
       rename: 'Rename Session',
       renameFile: 'Rename',
@@ -2157,7 +2170,7 @@ export const en: Messages = {
       },
       allowAll: {
         label: 'Allow all apps',
-        description: 'Skip per-app grants and capture the full desktop. Testing only — prefer Always allow list below for real use. Any app can be observed and controlled while this is on.',
+        description: 'Skip per-app grants and capture the full desktop. Any app can be observed and controlled while this is on.',
       },
       alwaysAllow: {
         title: 'Always allow',
@@ -2169,20 +2182,18 @@ export const en: Messages = {
         loadingApps: 'Loading running apps…',
         emptyRunning: 'No matching running apps. Launch the app first, then add it here.',
       },
-      visualIndicators: {
-        label: 'Show Computer Use indicators (macOS)',
-        description: 'While Computer Use is active: menu-bar chip (target app icon + mouse) and an on-screen virtual cursor at click points. Does not move your real mouse or steal focus. macOS only.',
-      },
       permissions: {
         title: 'macOS permissions',
-        description: 'Opens SuperOne Dev Computer Use with a draggable app icon (same UX as Open Computer Use). Drag it into System Settings → Privacy for Accessibility and Screen Recording. After Screen Recording is toggled, use Relaunch in that window (or quit SuperOne) so the grant applies.',
-        button: 'Open permission guide…',
-        opening: 'Opening…',
-        opened: 'Permission window opened — drag the app icon into System Settings.',
+        description: 'SuperOne requests Accessibility first, then Screen Recording. macOS opens the matching system prompts without a separate helper window.',
+        button: 'Request permissions…',
+        opening: 'Requesting…',
+        requested: 'Permission requests completed. Enable any missing items in System Settings.',
         alreadyGranted: 'Accessibility and Screen Recording are already granted.',
+        accessibility: 'Accessibility',
+        screenRecording: 'Screen Recording',
+        helperName: 'SuperOne Computer Use',
+        dragHint: 'If macOS does not add it automatically, drag this app into the open Privacy & Security list.',
       },
-      helperNote: 'Dev helper: SuperOne Dev Computer Use.app (bundle com.superone.computer-use.dev). SuperOne dev starts/stops it with the app. Grant Accessibility + Screen Recording to that name — not SuperOne main, not Open Computer Use. After granting Screen Recording, fully quit SuperOne so the helper restarts.',
-      fallbackNote: 'Prefer browser_* for web pages and Bash/file tools when possible. Computer Use is a last-resort tier for native desktop UI.',
     },
     general: {
       title: 'General',
@@ -2240,6 +2251,14 @@ export const en: Messages = {
         description: 'Allow agents to request user-approved child sessions and communicate through a persistent mailbox. This feature is experimental.',
         enabled: 'Agent session collaboration enabled',
         disabled: 'Agent session collaboration disabled',
+      },
+      autoExpandFileDiffs: {
+        label: 'Auto-expand file diffs',
+        description: 'Automatically expand Edit, Write, and FileChange tools while streaming. When off, only the header with line counts is shown until you expand.',
+      },
+      detailChatMode: {
+        label: 'Detail mode',
+        description: 'Show the full process for each completed turn (tools, reasoning, intermediate steps). When off, only the final conclusion is shown and the process is collapsed under a disclosure.',
       },
       crispText: {
         label: 'Crisp Text',
@@ -2421,6 +2440,9 @@ export const en: Messages = {
     },
   },
   chat: {
+    compactMode: {
+      detail: 'Detail',
+    },
     placeholder: {
       addInstructions: 'Add instructions...',
       codexPlan: "Let's make a plan! What's in your mind?",

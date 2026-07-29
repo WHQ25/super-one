@@ -52,6 +52,7 @@ export const NewSmallFile: Story = {
       content: SMALL_FILE,
     }),
     status: 'complete',
+    autoExpand: true,
   },
 }
 
@@ -64,6 +65,7 @@ export const StreamingPartial: Story = {
     }),
     status: 'streaming',
     elapsedSeconds: 1,
+    autoExpand: true,
   },
 }
 
@@ -75,5 +77,6 @@ export const BigFile: Story = {
       content: BIG_FILE,
     }),
     status: 'complete',
+    autoExpand: true,
   },
 }

@@ -340,6 +340,11 @@ export type CodexThreadItem =
   | ImageGenerationItem
   | VideoGenerationItem
 
+export type CodexItemPatch =
+  | { type: 'agent_message' | 'plan' | 'review'; textDelta: string }
+  | { type: 'reasoning'; textDelta: string; startedAt?: number; endedAt?: number }
+  | { type: 'command_execution'; aggregatedOutputDelta: string }
+
 export interface CodexMcpServerStartup {
   name: string
   status: 'starting' | 'ready' | 'failed' | 'cancelled'
@@ -1073,6 +1078,7 @@ export type AgentEventBase =
   | { type: 'todos_updated'; todos: TodoItem[] }
   | { type: 'codex_thread_started'; messageId: string; threadId: string }
   | { type: 'codex_item_delta'; messageId: string; phase: 'started' | 'updated' | 'completed'; item: CodexThreadItem }
+  | { type: 'codex_item_patch'; messageId: string; phase: 'updated'; itemId: string; patch: CodexItemPatch }
   | { type: 'codex_mcp_startup'; messageId: string; servers: CodexMcpServerStartup[] }
   | { type: 'checkpoint_captured'; messageId: string; checkpointId: string; resumePointId: string }
   | { type: 'init_ready'; skills: SlashCommandInfo[]; projectCommands: SlashCommandInfo[]; projectAgents: AgentInfo[]; additionalDirectories: string[]; additionalDirsScoped: { user: string[]; projectShared: string[]; projectLocal: string[] }; cwd: string; homedir: string; sandboxInfo: SandboxInfo; permissionMode: PermissionMode; selectedModel?: string | null; selectedEffort?: EffortLevel | null; activeProvider?: RemoteActiveProvider | null }
@@ -2833,6 +2839,19 @@ export interface AppSettings {
   experimentalAgentsEnabled: boolean
   experimentalAgentCollaborationEnabled: boolean
   crispText: boolean
+  /**
+   * When true, Edit / Write / FileChange tool blocks auto-expand to show the
+   * live diff while streaming (and stay expanded when complete). When false
+   * (default), only the header with line counts is shown until the user expands.
+   */
+  autoExpandFileDiffs: boolean
+  /**
+   * When true (Detail Mode), completed assistant turns show the full process
+   * (tools, reasoning, intermediate narration). When false (default / compact),
+   * process is collapsed under a disclosure and only the trailing conclusion
+   * is shown. Streaming turns always render fully.
+   */
+  detailChatMode: boolean
   locale: Locale | ''
   updateChannel: UpdateChannel | null
   themeMode: ThemeMode
@@ -2848,22 +2867,13 @@ export interface AppSettings {
   cdpEmulateEnabled: boolean
   /** Opt-in Computer Use (desktop GUI automation). Default off. */
   computerUseEnabled: boolean
-  /**
-   * Temporary: skip per-app session allowlist and capture all apps.
-   * For local testing; prefer always-allow list + session HITL in production.
-   * Default off.
-   */
+  /** Skip the per-app session allowlist and permit capture of all apps. Default off. */
   computerUseAllowAllApps: boolean
   /**
    * Apps permanently allowed for Computer Use across sessions.
    * Session-scoped grants live only in memory (ComputerUsePolicy).
    */
   computerUseAlwaysAllowApps: ComputerUseAlwaysAllowApp[]
-  /**
-   * macOS only: show target-window ring + virtual agent cursor while Computer Use runs.
-   * Default on. No effect on Windows/Linux until those helpers land.
-   */
-  computerUseVisualIndicators: boolean
   miniAppOrder: Record<string, string[]>
   customAppIconPath: string | null
   browserBookmarks: BrowserBookmark[]
@@ -2900,6 +2910,8 @@ export interface AppSettingsPatch {
   experimentalAgentsEnabled?: boolean
   experimentalAgentCollaborationEnabled?: boolean
   crispText?: boolean
+  autoExpandFileDiffs?: boolean
+  detailChatMode?: boolean
   locale?: Locale | ''
   updateChannel?: UpdateChannel | null
   themeMode?: ThemeMode
@@ -2916,7 +2928,6 @@ export interface AppSettingsPatch {
   computerUseEnabled?: boolean
   computerUseAllowAllApps?: boolean
   computerUseAlwaysAllowApps?: ComputerUseAlwaysAllowApp[]
-  computerUseVisualIndicators?: boolean
   miniAppOrder?: Record<string, string[]>
   customAppIconPath?: string | null
   browserBookmarks?: BrowserBookmark[]

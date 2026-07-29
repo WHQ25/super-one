@@ -122,6 +122,22 @@ export const SETTINGS_DOMAINS: SettingsDomainDef[] = [
         toPatch: (v) => ({ crispText: v as boolean }),
       },
       {
+        key: 'autoExpandFileDiffs',
+        label: 'Auto-expand File Diffs',
+        type: 'boolean',
+        note: 'When true, Edit/Write/FileChange tools expand to show the live diff while streaming. Default off: header with line counts only until expanded.',
+        read: (s) => s.autoExpandFileDiffs,
+        toPatch: (v) => ({ autoExpandFileDiffs: v as boolean }),
+      },
+      {
+        key: 'detailChatMode',
+        label: 'Detail Mode',
+        type: 'boolean',
+        note: 'When true, completed turns show the full process (tools, reasoning, intermediate narration). When false (default), process is collapsed under a disclosure. Streaming turns always render fully.',
+        read: (s) => s.detailChatMode,
+        toPatch: (v) => ({ detailChatMode: v as boolean }),
+      },
+      {
         key: 'terminalFontSize',
         label: 'Terminal Font Size',
         type: 'number',

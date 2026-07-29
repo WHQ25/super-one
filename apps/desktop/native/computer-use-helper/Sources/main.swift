@@ -643,15 +643,18 @@ func handle(request: HelperRequest) async -> HelperResponse {
             }
             let windowId = AnyCodable.int(params, "windowId")
             let windowLayer = AnyCodable.int(params, "windowLayer")
+            let cursorX = AnyCodable.double(params, "cursorX")
+            let cursorY = AnyCodable.double(params, "cursorY")
+            let hasCursor = cursorX != nil && cursorY != nil
             AgentOverlayController.shared.showActive(
                 appName: app,
                 bundleId: bundleId,
                 windowId: windowId,
                 windowLayer: windowLayer,
-                sessionId: AnyCodable.string(params, "sessionId")
+                sessionId: AnyCodable.string(params, "sessionId"),
+                hideCursor: ((params["hideCursor"] as? Bool) ?? false) && !hasCursor
             )
-            if let cx = AnyCodable.double(params, "cursorX"),
-               let cy = AnyCodable.double(params, "cursorY") {
+            if let cx = cursorX, let cy = cursorY {
                 let pulse = (params["pulseRing"] as? Bool) ?? false
                 let cursor = try resolveCoordinatePoint(params, x: cx, y: cy)
                 AgentOverlayController.shared.moveCursor(

@@ -98,7 +98,8 @@ final class AgentOverlayController {
         bundleId: String?,
         windowId: Int? = nil,
         windowLayer: Int? = nil,
-        sessionId: String? = nil
+        sessionId: String? = nil,
+        hideCursor: Bool = false
     ) {
         DispatchQueue.main.async {
             guard self.enabled else { return }
@@ -121,8 +122,12 @@ final class AgentOverlayController {
             self.beginWatchingControlTarget(bundleId: self.lastBundleId, pid: nil)
             self.ensureStatusItem()
             self.refreshStatusItem()
-            // Re-stack chip/cursor under the newly targeted app window.
-            self.configureOrdering(forceReorder: true)
+            if hideCursor {
+                self.hideCursorNow()
+            } else {
+                // Re-stack the cursor under the newly targeted app window.
+                self.configureOrdering(forceReorder: true)
+            }
         }
     }
 
@@ -449,14 +454,25 @@ final class AgentOverlayController {
     }
 
     private func hideNow() {
-        cancelAnimation()
         stopWatchingControlTarget()
         if let item = statusItem {
             NSStatusBar.system.removeStatusItem(item)
         }
         statusItem = nil
+        hideCursorNow()
+        anchorWindowId = 0
+        anchorLayer = 0
+        lastAppName = ""
+        lastBundleId = ""
+        // Control is over — the menu must not keep listing apps as controlled.
+        controlledTargets = []
+    }
+
+    /// Hide only the software pointer while keeping the active-control status item.
+    private func hideCursorNow() {
+        cancelAnimation()
         cursorPanel?.orderOut(nil)
-        // OCU reset: clear displayed tip so next show uses defaultInitialTipPosition.
+        // Reset so the next explicit action starts from the standard initial position.
         displayedTipAppKit = nil
         pendingTargetAppKit = nil
         lastForward = AgentCursorMotion.restingForwardVector()
@@ -464,12 +480,6 @@ final class AgentOverlayController {
         lastClickProgress = 0
         activeOrderWindowId = 0
         activeOrderLayer = 0
-        anchorWindowId = 0
-        anchorLayer = 0
-        lastAppName = ""
-        lastBundleId = ""
-        // Control is over — the menu must not keep listing apps as controlled.
-        controlledTargets = []
     }
 
     // MARK: Control-target lifecycle (app quit only — no window poll)
@@ -626,37 +636,59 @@ final class AgentOverlayController {
         }
     }
 
-    /// Menu-bar glyph: the cursor silhouette as a **template** image.
-    ///
-    /// Template means the system owns the colour — black on a light menu bar,
-    /// white on a dark one, inverted while the menu is open, dimmed under Reduce
-    /// Transparency. That is why the app icon moved into the menu instead: a
-    /// template image keeps only alpha, so a colour app icon would flatten into
-    /// an unrecognisable blob here.
+    /// Menu-bar group: software cursor + current app icon on one borderless surface.
     private func statusItemImage() -> NSImage {
-        let size = AgentCursorGlyph.badgeSize
-        let probe = AgentCursorGlyph.path(size: size, tip: .zero).bounds
-        // `thickness` is the hard ceiling — NSStatusBarButton uses `.scaleNone`,
-        // so an oversized image overflows rather than shrinking to fit.
+        let cursorSize = AgentCursorGlyph.badgeSize
+        let cursorProbe = AgentCursorGlyph.path(size: cursorSize, tip: .zero).bounds
         let height = NSStatusBar.system.thickness
-        let width = ceil(probe.width + size * 0.30)
+        let groupHeight = min(20, height - 2)
+        let appSize: CGFloat = 16
+        let horizontalPadding: CGFloat = 5
+        let iconGap: CGFloat = 4
+        let width = ceil(horizontalPadding * 2 + cursorProbe.width + iconGap + appSize)
+
+        let target = controlledTargets.last
+        let appName = lastAppName.isEmpty ? (target?.app ?? "") : lastAppName
+        let bundleId = lastBundleId.isEmpty ? (target?.bundleId ?? "") : lastBundleId
+        let appIcon = appIconImage(appName: appName, bundleId: bundleId)
 
         let image = NSImage(size: NSSize(width: width, height: height), flipped: false) { rect in
+            let groupRect = NSRect(
+                x: 0,
+                y: rect.midY - groupHeight / 2,
+                width: rect.width,
+                height: groupHeight
+            )
+            NSColor.labelColor.withAlphaComponent(0.11).setFill()
+            NSBezierPath(roundedRect: groupRect, xRadius: 6, yRadius: 6).fill()
+
+            let appRect = NSRect(
+                x: horizontalPadding,
+                y: rect.midY - appSize / 2,
+                width: appSize,
+                height: appSize
+            )
+            appIcon.draw(in: appRect)
+
+            let cursorCenterX = horizontalPadding + appSize + iconGap + cursorProbe.width / 2
             let path = AgentCursorGlyph.path(
-                size: size,
-                tip: CGPoint(x: rect.midX - probe.midX, y: rect.midY - probe.midY)
+                size: cursorSize,
+                tip: CGPoint(
+                    x: cursorCenterX - cursorProbe.midX,
+                    y: rect.midY - cursorProbe.midY
+                )
             )
             // Widen slightly: without the white keyline and gradient of the
             // overlay version, a bare fill reads thinner than it measures.
             path.lineJoinStyle = .round
-            path.lineWidth = size * 0.06
-            NSColor.black.setFill()
-            NSColor.black.setStroke()
+            path.lineWidth = cursorSize * 0.06
+            NSColor.labelColor.setFill()
+            NSColor.labelColor.setStroke()
             path.fill()
             path.stroke()
             return true
         }
-        image.isTemplate = true
+        image.isTemplate = false
         return image
     }
 

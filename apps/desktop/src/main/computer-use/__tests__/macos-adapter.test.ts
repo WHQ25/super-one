@@ -150,6 +150,7 @@ describe('MacosPlatformAdapter (mocked client)', () => {
     expect(call).toHaveBeenCalledWith('overlay_show_target', expect.objectContaining({
       app: 'TextEdit',
       bundleId: 'com.apple.TextEdit',
+      hideCursor: true,
     }))
     expect(look.image?.data).toBe('abc')
     expect(look.coordinateSpace.fullScreen).toBe(false)
@@ -288,6 +289,9 @@ describe('MacosPlatformAdapter (mocked client)', () => {
     expect(look.image).toBeUndefined()
     expect(look.outline.role).toBe('window')
     expect(call.mock.calls.some((c) => c[0] === 'capture')).toBe(false)
+    expect(call).toHaveBeenCalledWith('overlay_show_target', expect.objectContaining({
+      hideCursor: true,
+    }))
   })
 
   it('scopes semantic observe to an AX-only root', async () => {

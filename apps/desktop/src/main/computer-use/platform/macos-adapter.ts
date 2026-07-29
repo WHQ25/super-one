@@ -122,6 +122,7 @@ export class MacosPlatformAdapter implements PlatformAdapter {
     cursorX?: number
     cursorY?: number
     pulseRing?: boolean
+    hideCursor?: boolean
     coordinateSpace?: CoordinateSpace
   }): Promise<void> {
     if (!this.visualOn()) return
@@ -143,6 +144,7 @@ export class MacosPlatformAdapter implements PlatformAdapter {
         ...(opts?.cursorX != null && opts?.cursorY != null
           ? { cursorX: opts.cursorX, cursorY: opts.cursorY, pulseRing: opts.pulseRing ?? false }
           : {}),
+        ...(opts?.hideCursor ? { hideCursor: true } : {}),
         ...this.coordinatePayload(opts?.coordinateSpace),
       })
     } catch {
@@ -285,7 +287,7 @@ export class MacosPlatformAdapter implements PlatformAdapter {
       const axBootstrap = await this.fetchAxOutline(root, semanticSpace)
       coordinateSpace = axBootstrap.coordinateSpace
       image = undefined
-      await this.showTargetOverlay(root, { pulseRing: true })
+      await this.showTargetOverlay(root, { pulseRing: true, hideCursor: true })
       this.lookSeq += 1
       return {
         root: { ...root, focused: true },
@@ -308,7 +310,7 @@ export class MacosPlatformAdapter implements PlatformAdapter {
     })
 
     // After capture: show which window the agent is watching.
-    await this.showTargetOverlay(root, { pulseRing: true })
+    await this.showTargetOverlay(root, { pulseRing: true, hideCursor: true })
 
     this.lookSeq += 1
     coordinateSpace = { ...capture.coordinateSpace }

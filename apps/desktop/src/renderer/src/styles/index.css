@@ -159,6 +159,14 @@ body {
   color: var(--foreground);
 }
 
+/* Frameless transparent shells (permission float / drag preview) */
+html.cu-transparent-shell,
+html.cu-transparent-shell body,
+html.cu-transparent-shell #root {
+  background: transparent !important;
+  background-color: transparent !important;
+}
+
 body[data-scroll-locked] {
   padding-right: 0 !important;
 }

@@ -47,8 +47,12 @@ describe('Computer Use P0 contract', () => {
     for (const d of getComputerUseToolDescriptors()) {
       expect(d.inputSchema).toBeTypeOf('object')
       expect(d.description.length).toBeGreaterThan(20)
+      expect((d.inputSchema as any).required).toContain('description')
+      expect((d.inputSchema as any).properties.description.description).toContain(
+        'human-friendly',
+      )
     }
-    const observe = getComputerUseToolDescriptors().find((d) => d.name === 'computer_observe')!
+    const observe = getComputerUseToolDescriptors().find((d) => d.name === 'computer_snapshot')!
     expect((observe.inputSchema as any).properties.capture.enum).toEqual(['window', 'display'])
   })
 
@@ -269,8 +273,10 @@ describe('Computer Use P0 contract', () => {
 
   it('apps lists granted, running, and frontmost', async () => {
     const snap = await service.apps()
-    expect(snap.granted.some((g) => g.bundleId === 'com.apple.Notes')).toBe(true)
-    expect(snap.running.some((r) => r.app === 'Notes')).toBe(true)
+    expect(snap.action).toBe('list')
+    if (snap.action !== 'list') return
+    expect(snap.apps.some((a) => a.bundleId === 'com.apple.Notes' && a.granted)).toBe(true)
+    expect(snap.apps.some((a) => a.app === 'Notes' && a.running)).toBe(true)
     expect(snap.frontmost).toBeTruthy()
   })
 
@@ -357,7 +363,10 @@ describe('Computer Use P0 contract', () => {
     const snap = await service.apps()
     const roots = await service.getFake().listRoots()
     expect(roots.some((r) => r.kind === 'dialog' && r.title === 'Share Note')).toBe(true)
-    expect(snap.running.some((r) => r.app === 'Notes')).toBe(true)
+    expect(snap.action).toBe('list')
+    if (snap.action === 'list') {
+      expect(snap.apps.some((a) => a.app === 'Notes' && a.running)).toBe(true)
+    }
   })
 
   it('blocks parent-window actions while a modal root is open', async () => {
@@ -377,7 +386,7 @@ describe('Computer Use P0 contract', () => {
       },
     })
 
-    const modal = (await service.apps()).roots.find((root) => root.title === 'Share Note')
+    const modal = (await service.listUiRoots()).find((root) => root.title === 'Share Note')
     expect(modal).toMatchObject({ kind: 'dialog', modal: true })
     const modalObs = await service.observe(modal!.rootId)
     const confirm = searchOutline(
@@ -397,21 +406,27 @@ describe('Computer Use P0 contract', () => {
     s.policy.setEnabled(true)
     s.policy.grant({ app: 'Notes', bundleId: 'com.apple.Notes', tier: 'full' })
 
-    const appsReply = await executeComputerUseTool('sess-1', 'computer_apps', {})
+    const appsReply = await executeComputerUseTool('sess-1', 'computer_apps', {
+      description: 'Check available desktop apps',
+    })
     expect(appsReply.isError).toBeFalsy()
-    const apps = JSON.parse(appsReply.content[0]!.text!)
-    expect(apps.running.length).toBeGreaterThan(0)
-    expect(Array.isArray(apps.roots)).toBe(true)
-    expect(apps.roots.length).toBeGreaterThan(0)
-    expect(apps.roots[0].rootId).toMatch(/^@r\d+$/)
+    const text = appsReply.content[0]!.text!
+    // TOON catalog: apps[N]{...}: table + scalar fields
+    expect(text).toMatch(/apps\[\d+\]/)
+    expect(text).toMatch(/action:\s*list/)
+    expect(text).toMatch(/bundleId/)
 
-    const obsReply = await executeComputerUseTool('sess-1', 'computer_observe', { mode: 'semantic' })
+    const obsReply = await executeComputerUseTool('sess-1', 'computer_snapshot', {
+      description: 'Inspect the Notes window',
+      mode: 'semantic',
+    })
     const obs = JSON.parse(obsReply.content[0]!.text!)
     expect(obs.stateId).toBeTruthy()
     expect(obs.capture).toBe('window')
     expect(obs.image).toBeUndefined() // semantic mode
 
     const qReply = await executeComputerUseTool('sess-1', 'computer_query', {
+      description: 'Find the Save button',
       stateId: obs.stateId,
       op: 'search',
       text: 'Save',
@@ -428,8 +443,8 @@ describe('Computer Use P0 contract', () => {
 
     const obsReply = await executeComputerUseTool(
       'sess-shot',
-      'computer_observe',
-      { mode: 'visual' },
+      'computer_snapshot',
+      { description: 'Capture the Notes window', mode: 'visual' },
     )
     const obs = JSON.parse(obsReply.content[0]!.text!)
     expect(obs.image?.path).toBeTruthy()
@@ -440,7 +455,11 @@ describe('Computer Use P0 contract', () => {
     const zReply = await executeComputerUseTool(
       'sess-shot',
       'computer_zoom',
-      { stateId: obs.stateId, region: [10, 10, 100, 100] },
+      {
+        description: 'Inspect the document controls more closely',
+        stateId: obs.stateId,
+        region: [10, 10, 100, 100],
+      },
     )
     const z = JSON.parse(zReply.content[0]!.text!)
     expect(z.image?.path.startsWith(COMPUTER_USE_SCREENSHOT_DIR)).toBe(true)
@@ -450,12 +469,30 @@ describe('Computer Use P0 contract', () => {
     const actReply = await executeComputerUseTool(
       'sess-shot',
       'computer_act',
-      { stateId: obs.stateId, actions: [{ type: 'click', x: 10, y: 10 }] },
+      {
+        description: 'Activate the document control',
+        stateId: obs.stateId,
+        actions: [{ type: 'click', x: 10, y: 10 }],
+      },
     )
     const act = JSON.parse(actReply.content[0]!.text!)
     expect(act.successorImage?.path.startsWith(COMPUTER_USE_SCREENSHOT_DIR)).toBe(true)
     expect(act.successorImage?.data).toBeUndefined()
     expect(existsSync(act.successorImage.path)).toBe(true)
+  })
+
+  it('rejects missing or blank human-readable descriptions', async () => {
+    setComputerUseEnabledForTests(true)
+
+    const missing = await executeComputerUseTool('sess-summary', 'computer_apps', {})
+    expect(missing.isError).toBe(true)
+    expect(missing.content[0]?.text).toContain('description is required')
+
+    const blank = await executeComputerUseTool('sess-summary', 'computer_apps', {
+      description: '   ',
+    })
+    expect(blank.isError).toBe(true)
+    expect(blank.content[0]?.text).toContain('description is required')
   })
 
   it('registerComputerUseTools is a no-op when disabled and registers when enabled', () => {
@@ -473,6 +510,7 @@ describe('Computer Use P0 contract', () => {
 
     setComputerUseEnabledForTests(true)
     registerComputerUseTools(server as never, 'sess-reg')
-    expect(registered).toEqual([...COMPUTER_USE_TOOL_NAMES])
+    // Stable surface + one-release deprecated alias computer_observe → computer_snapshot.
+    expect(registered).toEqual([...COMPUTER_USE_TOOL_NAMES, 'computer_observe'])
   })
 })

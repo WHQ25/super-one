@@ -12,7 +12,7 @@ import { ComputerUseError } from './types'
  */
 export class ComputerUsePolicy {
   private enabled = false
-  /** Settings flag: skip per-app allowlist (temporary testing). */
+  /** Settings flag: skip the per-app allowlist. */
   private allowAllApps = false
   private readonly sessionGrants = new Map<string, GrantedApp>()
   private readonly alwaysGrants = new Map<string, GrantedApp>()

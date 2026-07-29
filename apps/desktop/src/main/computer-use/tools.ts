@@ -11,10 +11,11 @@ import type { SuperoneMcpToolDescriptor } from '../mcp/superone-mcp-types'
 import { readAppSettings } from '../app-settings-service'
 import { persistComputerUseScreenshot, COMPUTER_USE_SCREENSHOT_DIR } from './screenshot-store'
 import type { CapturedImage } from './types'
+import { encode as toonEncode } from '@toon-format/toon'
 
 export const COMPUTER_USE_TOOL_NAMES = [
   'computer_apps',
-  'computer_observe',
+  'computer_snapshot',
   'computer_zoom',
   'computer_query',
   'computer_act',
@@ -23,8 +24,18 @@ export const COMPUTER_USE_TOOL_NAMES = [
 
 export type ComputerUseToolName = (typeof COMPUTER_USE_TOOL_NAMES)[number]
 
+/** Deprecated MCP names → current. Keep for one release so old agent transcripts still work. */
+const COMPUTER_USE_TOOL_ALIASES: Record<string, ComputerUseToolName> = {
+  computer_observe: 'computer_snapshot',
+}
+
 export function isComputerUseToolName(name: string): name is ComputerUseToolName {
   return (COMPUTER_USE_TOOL_NAMES as readonly string[]).includes(name)
+}
+
+export function normalizeComputerUseToolName(name: string): ComputerUseToolName | null {
+  if (isComputerUseToolName(name)) return name
+  return COMPUTER_USE_TOOL_ALIASES[name] ?? null
 }
 
 export type ComputerUseToolReply = {
@@ -34,6 +45,11 @@ export type ComputerUseToolReply = {
 
 function textReply(data: unknown): ComputerUseToolReply {
   return { content: [{ type: 'text', text: JSON.stringify(data) }] }
+}
+
+/** Uniform flat rows → TOON table (header once + CSV rows). */
+function toonReply(data: unknown): ComputerUseToolReply {
+  return { content: [{ type: 'text', text: toonEncode(data) }] }
 }
 
 /**
@@ -139,6 +155,17 @@ const conditionSchema = z.object({
   value: z.string().optional(),
 })
 
+const descriptionField = {
+  description: z
+    .string()
+    .trim()
+    .min(1)
+    .max(160)
+    .describe(
+      "A short, human-friendly explanation of what this action accomplishes, phrased for the end user watching (e.g. 'Inspect the meeting notes window', 'Save the edited document'). Shown in the UI in place of raw state ids, element refs, and coordinates. Write it in the conversation's language.",
+    ),
+}
+
 const toolDefs: Array<{
   name: ComputerUseToolName
   description: string
@@ -147,21 +174,54 @@ const toolDefs: Array<{
   {
     name: 'computer_apps',
     description:
-      'List granted apps, running desktop apps, frontmost app, and discoverable UI roots (`roots[].rootId` like @r1). '
-      + 'Pass rootId to computer_observe to target a specific window (not just frontmost). '
-      + 'Optionally unhide/launch an app without stealing the user\'s frontmost app. '
-      + 'Prefer observe+act with delivery=app-directed over focus — background control is the default. '
-      + 'Use this first to learn what Computer Use is allowed to touch. '
-      + 'Prefer browser_* for web pages and Bash/file tools when a non-GUI path exists — Computer Use is a fallback tier.',
+      'Discover and open desktop apps. '
+      + 'action=list (default) returns a compact TOON app catalog: one row per app with app, bundleId, running, frontmost, granted, grantScope, pid, windows. '
+      + 'Use query to keyword-filter by display name / bundle id / localized aliases (e.g. query=Notes or com.apple.TextEdit). '
+      + 'Paginate with offset + limit (default limit 25, max 100); hasMore means call again with offset+=limit. '
+      + 'Rows are sorted running/frontmost/granted first. '
+      + 'Do NOT dump every window by default — pass includeRoots=true only when you need @rN roots for multi-window targeting. '
+      + 'action=focus|launch accepts display name (any locale) or reverse-DNS bundleId; host resolves to a stable bundleId before the permission grant so one allow covers later snapshot/act. '
+      + 'Launch/focus returns a slim {target} confirmation. If the user only asks to open an app, launch once and stop when target is returned. '
+      + 'Prefer snapshot+act with delivery=app-directed over focus. Prefer browser_* / shell when a non-GUI path exists.',
     shape: {
+      ...descriptionField,
       action: z.enum(['list', 'focus', 'launch']).optional().describe('Default list'),
-      app: z.string().optional().describe('App name or bundle id for focus/launch'),
+      app: z
+        .string()
+        .optional()
+        .describe(
+          'Display name (any locale) or reverse-DNS bundle id for focus/launch. Prefer bundleId from a prior list when known.',
+        ),
+      query: z
+        .string()
+        .optional()
+        .describe('list only: keyword filter on app name / bundleId / aliases'),
+      offset: z
+        .number()
+        .int()
+        .min(0)
+        .optional()
+        .describe('list only: pagination offset (default 0)'),
+      limit: z
+        .number()
+        .int()
+        .min(1)
+        .max(100)
+        .optional()
+        .describe('list only: page size (default 25, max 100)'),
+      includeRoots: z
+        .boolean()
+        .optional()
+        .describe(
+          'list only: also attach discoverable UI roots (@rN). Token-heavy; default false.',
+        ),
     },
   },
   {
-    name: 'computer_observe',
+    name: 'computer_snapshot',
     description:
-      'Capture an immutable UI observation and return stateId. All subsequent query/act/wait_for calls must reference this stateId. '
+      'Capture an immutable UI snapshot and return stateId (analogous to browser_snapshot for desktop apps). '
+      + 'All subsequent query/act/wait_for calls must reference this stateId. '
       + 'mode=visual (and fused) saves the image to a temporary file and returns image.path (not base64). '
       + 'The image is NOT loaded into your context automatically; call Read on image.path if you need to look at pixels, or leave the path as a record for the user. '
       + 'mode=semantic returns accessibility outline with @eN refs (no image). mode=fused = screenshot + AX. '
@@ -169,7 +229,8 @@ const toolDefs: Array<{
       + 'capture=window (default) captures only the selected window; coordinates are local to that image and remain valid if the window moves. '
       + 'Use capture=display explicitly when the whole display is required. If the window is resized or moves to a different display scale, input fails closed and a successor observation is created.',
     shape: {
-      root: z.string().optional().describe('Root id from computer_apps / prior observe (@rN). Defaults to focused root.'),
+      ...descriptionField,
+      root: z.string().optional().describe('Root id from computer_apps / prior snapshot (@rN). Defaults to focused root.'),
       mode: z.enum(['visual', 'semantic', 'fused']).optional().describe('Default fused'),
       capture: z.enum(['window', 'display']).optional().describe('Default window; use display for the full target display'),
     },
@@ -181,6 +242,7 @@ const toolDefs: Array<{
       + 'Saves the image to a temporary file and returns image.path (not base64); Read the path if you need pixels. '
       + 'Does NOT create a new coordinate space — click coordinates still use the parent stateId space.',
     shape: {
+      ...descriptionField,
       stateId: z.string().describe('Parent observation stateId'),
       region: z
         .tuple([z.number(), z.number(), z.number(), z.number()])
@@ -193,6 +255,7 @@ const toolDefs: Array<{
       'Search / expand / inspect the cached outline for a stateId without recapturing the desktop. '
       + 'Use this for progressive disclosure of deep accessibility trees.',
     shape: {
+      ...descriptionField,
       stateId: z.string(),
       op: z.enum(['search', 'expand', 'inspect']),
       text: z.string().optional().describe('For search'),
@@ -212,9 +275,10 @@ const toolDefs: Array<{
       + 'Use delivery=physical only for global HID when app-directed fails (requires frontmost; disruptive). '
       + 'Returns outcome worked|didnt|unknown based on re-observation, not API success codes. '
       + 'When the successor has pixels, successorImage.path contains the fresh screenshot. '
-      + 'Stale stateId (UI changed since observe) is rejected before side effects. '
+      + 'Stale stateId (UI changed since snapshot) is rejected before side effects. '
       + 'delivery=semantic never silently upgrades to app-directed/physical input.',
     shape: {
+      ...descriptionField,
       stateId: z.string(),
       actions: z.array(actionSchema).min(1).max(20),
       expect: conditionSchema.optional().describe('Postcondition checked after actions'),
@@ -230,8 +294,9 @@ const toolDefs: Array<{
     name: 'computer_wait_for',
     description:
       'Wait until a UI condition holds. Distinguishes preexisting (already true) from verified (became true). '
-      + 'Do not sleep+poll with observe yourself.',
+      + 'Do not sleep+poll with snapshot yourself.',
     shape: {
+      ...descriptionField,
       stateId: z.string(),
       condition: conditionSchema,
       timeoutMs: z.number().int().min(100).max(60_000).optional().describe('Default 5000'),
@@ -296,6 +361,28 @@ export function registerComputerUseTools(
       },
     )
   }
+
+  // Deprecated alias: computer_observe → computer_snapshot (one release).
+  const snapshotDef = toolDefs.find((d) => d.name === 'computer_snapshot')
+  if (snapshotDef) {
+    const schema = z.object(snapshotDef.shape)
+    server.registerTool(
+      'computer_observe',
+      {
+        description:
+          '[Deprecated: use computer_snapshot] ' + snapshotDef.description,
+        inputSchema: snapshotDef.shape,
+      },
+      async (args: Record<string, unknown>) => {
+        try {
+          const parsed = schema.parse(args ?? {}) as Record<string, unknown>
+          return await executeComputerUseTool(sessionId, 'computer_snapshot', parsed)
+        } catch (err) {
+          return errorReply(err)
+        }
+      },
+    )
+  }
 }
 
 export interface ComputerUseToolHost {
@@ -318,6 +405,18 @@ export function getOrCreateComputerUseService(
     defaultServices.set(sessionId, s)
   }
   return s
+}
+
+/** Drop session grants + state when the chat session is disposed. */
+export function disposeComputerUseService(sessionId: string): void {
+  const s = defaultServices.get(sessionId)
+  if (!s) return
+  try {
+    s.reset()
+  } catch {
+    // ignore
+  }
+  defaultServices.delete(sessionId)
 }
 
 export function clearComputerUseServices(): void {
@@ -422,6 +521,34 @@ export function syncAllComputerUseServicesFromSettings(): void {
   }
 }
 
+const MAX_SESSION_GRANT_APPS = 16
+
+/**
+ * Temporary session grants from @ desktop-app mentions — no HITL prompt.
+ * Applies to the chat session's Computer Use service (creates it if needed).
+ * Returns how many apps were granted (0 if disabled / invalid).
+ */
+export function grantComputerUseSessionApps(
+  sessionId: string,
+  apps: Array<{ app: string; bundleId: string }>,
+): number {
+  if (!sessionId || apps.length === 0) return 0
+  if (!isComputerUseEnabled()) return 0
+  const service = getOrCreateComputerUseService(sessionId)
+  syncPolicyFromSettings(service)
+  let granted = 0
+  for (const a of apps.slice(0, MAX_SESSION_GRANT_APPS)) {
+    const bundleId = typeof a.bundleId === 'string' ? a.bundleId.trim() : ''
+    if (!bundleId || bundleId === '*') continue
+    // Same safe pattern as icon resolver (reverse-DNS only).
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,253}$/.test(bundleId)) continue
+    const app = (typeof a.app === 'string' && a.app.trim()) || bundleId
+    service.policy.grantSession({ app, bundleId, tier: 'full' })
+    granted += 1
+  }
+  return granted
+}
+
 async function ensureGrantForRoot(
   sessionId: string,
   service: ComputerUseService,
@@ -463,8 +590,19 @@ export async function executeComputerUseTool(
   args: Record<string, unknown>,
   context: ComputerUseToolExecutionContext = {},
 ): Promise<ComputerUseToolReply> {
-  if (!isComputerUseToolName(toolName)) {
+  const normalized = normalizeComputerUseToolName(toolName)
+  if (!normalized) {
     throw new Error(`Unknown computer use tool: ${toolName}`)
+  }
+
+  const description = typeof args.description === 'string' ? args.description.trim() : ''
+  if (!description || description.length > 160) {
+    return errorReply(
+      new ComputerUseError(
+        'INVALID_ACTION',
+        'description is required and must be between 1 and 160 characters',
+      ),
+    )
   }
 
   const service = context.host?.getService(sessionId) ?? getOrCreateComputerUseService(sessionId)
@@ -474,7 +612,7 @@ export async function executeComputerUseTool(
   syncPolicyFromSettings(service)
 
   try {
-    switch (toolName) {
+    switch (normalized) {
       case 'computer_apps': {
         const action = (args.action as 'list' | 'focus' | 'launch' | undefined) ?? 'list'
         if (action === 'focus' || action === 'launch') {
@@ -482,38 +620,35 @@ export async function executeComputerUseTool(
           if (!appArg) {
             throw new ComputerUseError('INVALID_ACTION', `${action} requires app`)
           }
+          // Resolve BEFORE grant so HITL keys on the real reverse-DNS bundle id
+          // (not a raw display name that would re-prompt on snapshot).
           const identity = await service.resolveAppIdentity(appArg)
           await ensureComputerUseAppGrant({
             sessionId,
             service,
             app: identity.app,
             bundleId: identity.bundleId,
-            toolName,
+            toolName: normalized,
           })
+          // Pass the stable bundle id into apps() so launch/focus matching is locale-safe.
+          // Never auto-grant a different bundleId than the user-approved identity.
+          const result = await service.apps(action, identity.bundleId)
+          // Slim launch/focus payload — still TOON for consistency.
+          return toonReply(result)
         }
-        const result = await service.apps(action, args.app as string | undefined)
-        // After focus/launch, promote grant to the real running bundle id if we learned it.
-        if ((action === 'focus' || action === 'launch') && typeof args.app === 'string') {
-          try {
-            const resolved = await service.resolveAppIdentity(args.app)
-            if (!service.policy.isGranted(resolved.bundleId)) {
-              service.policy.grantSession({
-                app: resolved.app,
-                bundleId: resolved.bundleId,
-                tier: 'full',
-              })
-            }
-          } catch {
-            // ignore re-resolve failures
-          }
-        }
-        return textReply(result)
+        const result = await service.apps('list', undefined, {
+          query: typeof args.query === 'string' ? args.query : undefined,
+          offset: typeof args.offset === 'number' ? args.offset : undefined,
+          limit: typeof args.limit === 'number' ? args.limit : undefined,
+          includeRoots: args.includeRoots === true,
+        })
+        return toonReply(result)
       }
-      case 'computer_observe': {
+      case 'computer_snapshot': {
         await ensureGrantForRoot(
           sessionId,
           service,
-          toolName,
+          normalized,
           args.root as string | undefined,
         )
         const result = await service.observe(
@@ -533,7 +668,7 @@ export async function executeComputerUseTool(
         if (!Array.isArray(region) || region.length !== 4) {
           throw new ComputerUseError('INVALID_ACTION', 'region must be [x0,y0,x1,y1]')
         }
-        await ensureGrantForState(sessionId, service, toolName, String(args.stateId))
+        await ensureGrantForState(sessionId, service, normalized, String(args.stateId))
         const result = await service.zoom(String(args.stateId), region)
         return textReply(withAgentImages(result, screenshotDir))
       }
@@ -551,7 +686,7 @@ export async function executeComputerUseTool(
         return textReply(result)
       }
       case 'computer_act': {
-        await ensureGrantForState(sessionId, service, toolName, String(args.stateId))
+        await ensureGrantForState(sessionId, service, normalized, String(args.stateId))
         const result = await service.act(String(args.stateId), args.actions, {
           expect: parseCondition(args.expect),
           delivery: args.delivery as 'semantic' | 'app-directed' | 'physical' | undefined,
@@ -567,7 +702,7 @@ export async function executeComputerUseTool(
         if (!condition) {
           throw new ComputerUseError('INVALID_ACTION', 'condition is required')
         }
-        await ensureGrantForState(sessionId, service, toolName, String(args.stateId))
+        await ensureGrantForState(sessionId, service, normalized, String(args.stateId))
         const result = await service.waitFor(
           String(args.stateId),
           condition,
@@ -576,7 +711,7 @@ export async function executeComputerUseTool(
         return textReply(result)
       }
       default: {
-        const _n: never = toolName
+        const _n: never = normalized
         throw new Error(`Unhandled tool: ${_n}`)
       }
     }

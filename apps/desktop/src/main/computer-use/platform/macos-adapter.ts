@@ -45,18 +45,13 @@ export interface MacosAdapterOptions {
    * exclusion filter unless allowAllApps is true.
    */
   getGrantedBundleIds?: () => string[]
-  /** When true, capture excludes no applications (testing flag). */
+  /** When true, capture excludes no applications. */
   getAllowAllApps?: () => boolean
   /**
    * Session driving this adapter. Sent with overlay updates so the helper's
    * status menu can tell the host which turn to interrupt on Stop.
    */
   sessionId?: string
-  /**
-   * macOS-only visual indicators (window ring + virtual cursor).
-   * Default true when unset.
-   */
-  getVisualIndicators?: () => boolean
   /** Current SuperOne UI locale for native status-item copy. */
   getLocale?: () => Locale
 }
@@ -72,7 +67,6 @@ export class MacosPlatformAdapter implements PlatformAdapter {
   private readonly maxCaptureWidth: number
   private readonly getGrantedBundleIds: () => string[]
   private readonly getAllowAllApps: () => boolean
-  private readonly getVisualIndicators: () => boolean
   private readonly getLocale: () => Locale
   private readonly sessionId: string
   private lookSeq = 0
@@ -83,13 +77,12 @@ export class MacosPlatformAdapter implements PlatformAdapter {
     this.maxCaptureWidth = options.maxCaptureWidth ?? 1440
     this.getGrantedBundleIds = options.getGrantedBundleIds ?? (() => [])
     this.getAllowAllApps = options.getAllowAllApps ?? (() => false)
-    this.getVisualIndicators = options.getVisualIndicators ?? (() => true)
     this.getLocale = options.getLocale ?? (() => 'en')
     this.sessionId = options.sessionId ?? ''
   }
 
   private visualOn(): boolean {
-    return this.getVisualIndicators() !== false
+    return true
   }
 
   private async syncIndicatorPref(): Promise<void> {
@@ -269,7 +262,7 @@ export class MacosPlatformAdapter implements PlatformAdapter {
     if (!allowAll && granted.length === 0) {
       throw new ComputerUseError(
         'NOT_GRANTED',
-        'No apps on the Computer Use allowlist — grant an app when prompted, add it under Settings → Computer Use → Always allow, or enable "Allow all apps" for testing.',
+        'No apps on the Computer Use allowlist — grant an app when prompted, add it under Settings → Computer Use → Always allow, or enable "Allow all apps".',
       )
     }
 

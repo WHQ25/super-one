@@ -61,6 +61,7 @@ describe('P2 service policy + foreground gate', () => {
         pid: 7,
       })),
       focusApp: vi.fn(async () => {}),
+      launchApp: vi.fn(async () => {}),
       zoom: vi.fn(async () => ({
         mimeType: 'image/png',
         data: 'zoom',
@@ -144,10 +145,158 @@ describe('P2 service policy + foreground gate', () => {
     expect(locked.grantedBundleIds()).toEqual([])
   })
 
-  it('apps returns grant + running from adapter', async () => {
+  it('apps list returns a paginated catalog from adapter', async () => {
     const snap = await service.apps()
-    expect(snap.granted[0]?.bundleId).toBe('com.apple.TextEdit')
-    expect(snap.running[0]?.app).toBe('TextEdit')
+    expect(snap.action).toBe('list')
+    if (snap.action !== 'list') return
+    expect(snap.apps.some((a) => a.bundleId === 'com.apple.TextEdit')).toBe(true)
+    expect(snap.apps.find((a) => a.bundleId === 'com.apple.TextEdit')?.running).toBe(true)
     expect(snap.frontmost).toBe('TextEdit')
+    expect(snap.total).toBeGreaterThan(0)
+  })
+
+  it('returns the explicit app affected by launch', async () => {
+    const snap = await service.apps('launch', 'textedit')
+
+    // Launch is re-keyed to the reverse-DNS bundle id once identity is resolved.
+    expect(adapter.launchApp).toHaveBeenCalledWith('com.apple.TextEdit')
+    expect(snap.action).toBe('launch')
+    expect(snap.target).toEqual({
+      app: 'TextEdit',
+      bundleId: 'com.apple.TextEdit',
+      pid: 7,
+      rootId: '@r1',
+    })
+  })
+
+  it('waits for a cold-launched app to appear in the running list', async () => {
+    const { setResolveInstalledAppForTests, clearInstalledAppCacheForTests } =
+      await import('../resolve-installed-app')
+    setResolveInstalledAppForTests(async (q) => {
+      if (q === 'Doubao' || q === '豆包' || q === 'com.bot.pc.doubao') {
+        return {
+          app: 'Doubao',
+          bundleId: 'com.bot.pc.doubao',
+          path: '/Applications/Doubao.app',
+          aliases: ['Doubao', '豆包', 'com.bot.pc.doubao'],
+        }
+      }
+      return null
+    })
+
+    vi.useFakeTimers()
+    const baseRoot = makeRoot()
+    const doubaoRoot = {
+      kind: 'window' as const,
+      app: 'Doubao',
+      bundleId: 'com.bot.pc.doubao',
+      pid: 42,
+      title: '豆包',
+      bounds: { x: 0, y: 0, width: 800, height: 600 },
+      focused: false,
+      visible: true,
+      minimized: false,
+      modal: false,
+      resourceKey: 'pid:42',
+    }
+    let launched = false
+    let launchPolls = 0
+    vi.mocked(adapter.listRoots).mockImplementation(async () => {
+      // Window appears once the process has been observed at least once.
+      if (launched && launchPolls > 0) return [baseRoot, doubaoRoot]
+      return [baseRoot]
+    })
+    vi.mocked(adapter.listApps!).mockImplementation(async () => {
+      const running = [
+        { app: 'TextEdit', bundleId: 'com.apple.TextEdit', pid: 7, frontmost: true },
+      ]
+      if (launched && launchPolls++ > 0) {
+        running.push({
+          app: 'Doubao',
+          bundleId: 'com.bot.pc.doubao',
+          pid: 42,
+          frontmost: false,
+        })
+      }
+      return running
+    })
+    vi.mocked(adapter.launchApp!).mockImplementation(async () => {
+      launched = true
+    })
+
+    try {
+      const resultPromise = service.apps('launch', 'Doubao')
+      // Process poll (100ms) + optional root poll (100ms) under fake timers.
+      await vi.advanceTimersByTimeAsync(2000)
+      await expect(resultPromise).resolves.toMatchObject({
+        target: {
+          app: 'Doubao',
+          bundleId: 'com.bot.pc.doubao',
+          pid: 42,
+          rootId: expect.stringMatching(/^@r\d+$/),
+        },
+      })
+      expect(adapter.launchApp).toHaveBeenCalledWith('com.bot.pc.doubao')
+    } finally {
+      vi.useRealTimers()
+      clearInstalledAppCacheForTests()
+    }
+  })
+
+  it('resolves Chinese display name 豆包 to the real bundle id before launch', async () => {
+    const { setResolveInstalledAppForTests, clearInstalledAppCacheForTests } =
+      await import('../resolve-installed-app')
+    setResolveInstalledAppForTests(async () => ({
+      app: '豆包',
+      bundleId: 'com.bot.pc.doubao',
+      path: '/Applications/Doubao.app',
+      aliases: ['豆包', 'Doubao', 'com.bot.pc.doubao'],
+    }))
+    const doubaoRoot = {
+      kind: 'window' as const,
+      app: 'Doubao',
+      bundleId: 'com.bot.pc.doubao',
+      pid: 42,
+      title: '豆包',
+      bounds: { x: 0, y: 0, width: 800, height: 600 },
+      focused: false,
+      visible: true,
+      minimized: false,
+      modal: false,
+      resourceKey: 'pid:42',
+    }
+    vi.mocked(adapter.listRoots).mockResolvedValue([doubaoRoot])
+    vi.mocked(adapter.listApps!).mockResolvedValue([
+      { app: 'Doubao', bundleId: 'com.bot.pc.doubao', pid: 42, frontmost: false },
+    ])
+
+    try {
+      const identity = await service.resolveAppIdentity('豆包')
+      expect(identity).toEqual({ app: 'Doubao', bundleId: 'com.bot.pc.doubao' })
+
+      const snap = await service.apps('launch', '豆包')
+      expect(adapter.launchApp).toHaveBeenCalledWith('com.bot.pc.doubao')
+      expect(snap.target?.bundleId).toBe('com.bot.pc.doubao')
+      expect(snap.target?.rootId).toMatch(/^@r\d+$/)
+    } finally {
+      clearInstalledAppCacheForTests()
+    }
+  })
+
+  it('returns cached target identity from query and wait', async () => {
+    const observation = await service.observe()
+    const query = await service.query(observation.stateId, 'inspect', { ref: '@e1' })
+    const wait = await service.waitFor(
+      observation.stateId,
+      { kind: 'exists', ref: '@e1' },
+      100,
+    )
+
+    expect(query.root).toEqual({
+      app: 'TextEdit',
+      bundleId: 'com.apple.TextEdit',
+      title: 'Untitled',
+    })
+    expect(wait.successorRoot).toEqual(query.root)
   })
 })

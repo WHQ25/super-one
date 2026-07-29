@@ -1,5 +1,11 @@
 import { parseActions } from './actions'
 import {
+  looksLikeBundleId,
+  matchRunningApp,
+  targetIdentity,
+  uniqueApps,
+} from './app-identity'
+import {
   collectRefs,
   diffOutlines,
   expandSubtree,
@@ -19,7 +25,11 @@ import {
   ComputerUseError,
   type ActionOutcome,
   type ActResult,
+  type AppsActionResult,
+  type AppsListOptions,
+  type AppsListResult,
   type AppsSnapshot,
+  type AppCatalogEntry,
   type CaptureScope,
   type Condition,
   type DeliveryMode,
@@ -32,6 +42,13 @@ import {
   type WaitResult,
   type ZoomResult,
 } from './types'
+
+type RunningAppMeta = {
+  app: string
+  bundleId: string
+  pid: number
+  frontmost: boolean
+}
 
 export interface ComputerUseServiceOptions {
   adapter?: PlatformAdapter
@@ -68,6 +85,11 @@ export class ComputerUseService {
   private readonly bypassPolicy: boolean
   private readonly clock: () => number
   private readonly fake: FakePlatformBackend | null
+  /**
+   * Last launch/focus target — used when computer_snapshot omits root so we
+   * do not fall back to SuperOne (still frontmost after background launch).
+   */
+  private preferredBundleId: string | null = null
 
   constructor(options: ComputerUseServiceOptions = {}) {
     this.policy = options.policy ?? new ComputerUsePolicy()
@@ -121,6 +143,7 @@ export class ComputerUseService {
     this.scheduler.reset()
     this.roots.clear()
     this.policy.clearGrants()
+    this.preferredBundleId = null
     this.fake?.reset()
     resetComputerUseIds()
   }
@@ -128,12 +151,41 @@ export class ComputerUseService {
   /**
    * List running apps without the feature-enabled gate (Settings picker).
    */
-  async listRunningApps(): Promise<AppsSnapshot['running']> {
+  async listRunningApps(): Promise<RunningAppMeta[]> {
     const discovered = await this.adapter.listRoots().catch(() => [])
     this.roots.sync(discovered)
     if (this.fake) return this.fake.listAppsMeta()
     if (this.adapter.listApps) return this.adapter.listApps()
     return uniqueApps(discovered)
+  }
+
+  /**
+   * Discoverable UI roots (`@rN`) after a refresh — for multi-window targeting
+   * and tests. Prefer computer_apps list (catalog) for finding apps.
+   */
+  async listUiRoots(): Promise<
+    Array<{
+      rootId: string
+      kind: UiRootIdentity['kind']
+      app: string
+      bundleId: string
+      pid: number
+      title: string
+      focused: boolean
+      modal: boolean
+    }>
+  > {
+    await this.refreshRoots()
+    return this.roots.list().map((r) => ({
+      rootId: r.rootId,
+      kind: r.kind,
+      app: r.app,
+      bundleId: r.bundleId,
+      pid: r.pid,
+      title: r.title,
+      focused: r.focused,
+      modal: r.modal,
+    }))
   }
 
   /**
@@ -146,8 +198,9 @@ export class ComputerUseService {
   }
 
   /**
-   * Map a user/agent app name or bundle id to a concrete identity via running apps.
-   * Falls back to treating the string as both display name and bundle id.
+   * Map a user/agent app name (any locale) or reverse-DNS bundle id to a concrete
+   * identity. Prefer running apps; fall back to installed-app LaunchServices /
+   * localized Info.plist scan. Never returns a display name as a fake bundleId.
    */
   async resolveAppIdentity(appQuery: string): Promise<{ app: string; bundleId: string }> {
     const q = appQuery.trim()
@@ -157,7 +210,7 @@ export class ComputerUseService {
     const discovered = await this.adapter.listRoots()
     this.roots.sync(discovered)
 
-    let running: AppsSnapshot['running']
+    let running: RunningAppMeta[]
     if (this.fake) {
       running = this.fake.listAppsMeta()
     } else if (this.adapter.listApps) {
@@ -166,15 +219,38 @@ export class ComputerUseService {
       running = uniqueApps(discovered)
     }
 
-    const lower = q.toLowerCase()
-    const hit =
-      running.find((r) => r.bundleId.toLowerCase() === lower)
-      ?? running.find((r) => r.app.toLowerCase() === lower)
-      ?? running.find((r) => r.app.toLowerCase().includes(lower))
-    if (hit) return { app: hit.app, bundleId: hit.bundleId }
+    // Resolve installed identity first so Chinese names (豆包) map to real
+    // bundle ids even when the process is already running under "Doubao".
+    const { resolveInstalledApp } = await import('./resolve-installed-app')
+    const installed = this.fake ? null : await resolveInstalledApp(q)
+    const aliases = installed?.aliases ?? []
 
-    // Not running — still allow grant by treating query as app name (launch path).
-    return { app: q, bundleId: q.includes('.') ? q : q }
+    const hit = matchRunningApp(running, q, aliases)
+      ?? (installed
+        ? matchRunningApp(running, installed.bundleId, installed.aliases)
+        : undefined)
+    if (hit) {
+      return {
+        app: hit.app || installed?.app || q,
+        bundleId: hit.bundleId,
+      }
+    }
+
+    if (installed) {
+      return { app: installed.app, bundleId: installed.bundleId }
+    }
+
+    // Fake backend / tests: allow bare names that match running entries only
+    // was already tried; if query looks like a bundle id, accept it for launch.
+    if (looksLikeBundleId(q)) {
+      return { app: q, bundleId: q }
+    }
+
+    throw new ComputerUseError(
+      'APP_NOT_FOUND',
+      `Cannot resolve app "${q}" to an installed bundle id. Pass a name/bundleId from computer_apps list (use query=), or a reverse-DNS bundle id (e.g. com.apple.TextEdit).`,
+      { query: q },
+    )
   }
 
   // ── computer_apps ────────────────────────────────────────
@@ -182,20 +258,33 @@ export class ComputerUseService {
   async apps(
     action: 'list' | 'focus' | 'launch' = 'list',
     app?: string,
+    listOptions: AppsListOptions = {},
   ): Promise<AppsSnapshot> {
     this.requireEnabled()
+
+    if (action === 'list') {
+      return this.listAppCatalog(listOptions)
+    }
+
+    if (!app) {
+      throw new ComputerUseError('INVALID_ACTION', `${action} requires app`)
+    }
+
+    // Resolve to a real bundle id before focus/launch so grants and matching
+    // stay stable across locale names (豆包 vs Doubao vs com.bot.pc.doubao).
+    const identity = await this.resolveAppIdentity(app)
+    const resolvedQuery = identity.bundleId
+    const resolveAliases = [app, identity.app, identity.bundleId]
     if (action === 'focus') {
-      if (!app) throw new ComputerUseError('INVALID_ACTION', 'focus requires app')
-      await this.adapter.focusApp?.(app)
-    } else if (action === 'launch') {
-      if (!app) throw new ComputerUseError('INVALID_ACTION', 'launch requires app')
-      await this.adapter.launchApp?.(app)
+      await this.adapter.focusApp?.(identity.bundleId)
+    } else {
+      await this.adapter.launchApp?.(identity.bundleId)
     }
 
     const discovered = await this.adapter.listRoots()
     this.roots.sync(discovered)
 
-    let running: AppsSnapshot['running']
+    let running: RunningAppMeta[]
     if (this.fake) {
       running = this.fake.listAppsMeta()
     } else if (this.adapter.listApps) {
@@ -204,11 +293,187 @@ export class ComputerUseService {
       running = uniqueApps(discovered)
     }
 
-    const rootList = this.roots.list()
-    return {
-      granted: this.policy.listGranted(),
-      running,
-      roots: rootList.map((r) => ({
+    // Only match the resolved identity — never adopt an unrelated newly-running
+    // process (would escalate grants / wrong app).
+    let target = matchRunningApp(running, resolvedQuery, resolveAliases)
+
+    // NSWorkspace launch completion is asynchronous. Keep that race inside the
+    // launch tool so callers do not need a follow-up snapshot just to confirm it.
+    for (let attempt = 0; action === 'launch' && !target && attempt < 10; attempt += 1) {
+      await sleep(100)
+      running = await this.listRunningApps()
+      target = matchRunningApp(running, resolvedQuery, resolveAliases)
+    }
+
+    // Wait for a discoverable window root so launch can return rootId for snapshot.
+    let targetRootId: string | undefined
+    if (target) {
+      this.preferredBundleId = target.bundleId
+      for (let attempt = 0; attempt < 10; attempt += 1) {
+        if (attempt > 0) {
+          await sleep(100)
+          const discoveredAgain = await this.adapter.listRoots()
+          this.roots.sync(discoveredAgain)
+        }
+        const root = this.roots
+          .list()
+          .find((r) => r.bundleId === target!.bundleId)
+        if (root) {
+          targetRootId = root.rootId
+          break
+        }
+      }
+    }
+
+    const result: AppsActionResult = {
+      action,
+      frontmost: running.find((r) => r.frontmost)?.app ?? null,
+      clipboardGrant: this.policy.hasClipboardGrant(),
+      ...(target
+        ? {
+            target: {
+              app: target.app,
+              bundleId: target.bundleId,
+              pid: target.pid,
+              ...(targetRootId ? { rootId: targetRootId } : {}),
+            },
+          }
+        : {}),
+    }
+    return result
+  }
+
+  private async listAppCatalog(options: AppsListOptions): Promise<AppsListResult> {
+    const query = options.query?.trim() || null
+    const offset = Math.max(0, Math.floor(options.offset ?? 0))
+    const limit = Math.min(100, Math.max(1, Math.floor(options.limit ?? 25)))
+
+    const discovered = await this.adapter.listRoots()
+    this.roots.sync(discovered)
+
+    let running: RunningAppMeta[]
+    if (this.fake) {
+      running = this.fake.listAppsMeta()
+    } else if (this.adapter.listApps) {
+      running = await this.adapter.listApps()
+    } else {
+      running = uniqueApps(discovered)
+    }
+
+    const windowCountByBundle = new Map<string, number>()
+    for (const root of this.roots.list()) {
+      if (!root.bundleId) continue
+      windowCountByBundle.set(
+        root.bundleId,
+        (windowCountByBundle.get(root.bundleId) ?? 0) + 1,
+      )
+    }
+
+    const runningByBundle = new Map(running.map((r) => [r.bundleId, r]))
+    const grantByBundle = new Map(
+      this.policy.listGranted()
+        .filter((g) => g.bundleId !== '*')
+        .map((g) => [g.bundleId, g]),
+    )
+    const allowAll = this.policy.isAllowAllApps()
+
+    // Seed catalog from installed apps (macOS) + always include running processes
+    // even if not under /Applications (e.g. dev Electron builds).
+    const byBundle = new Map<string, {
+      app: string
+      bundleId: string
+      aliases: string[]
+    }>()
+
+    if (!this.fake) {
+      try {
+        const { listInstalledApps } = await import('./resolve-installed-app')
+        for (const installed of listInstalledApps()) {
+          byBundle.set(installed.bundleId, {
+            app: installed.app,
+            bundleId: installed.bundleId,
+            aliases: installed.aliases,
+          })
+        }
+      } catch {
+        // ignore scan failures — fall back to running only
+      }
+    }
+
+    for (const r of running) {
+      const existing = byBundle.get(r.bundleId)
+      if (existing) {
+        if (r.app && !existing.aliases.includes(r.app)) existing.aliases.push(r.app)
+        // Prefer live process display name when present.
+        if (r.app) existing.app = r.app
+      } else {
+        byBundle.set(r.bundleId, {
+          app: r.app || r.bundleId,
+          bundleId: r.bundleId,
+          aliases: [r.app, r.bundleId].filter(Boolean),
+        })
+      }
+    }
+
+    // Also surface always-allow entries that aren't installed/running yet.
+    for (const g of grantByBundle.values()) {
+      if (byBundle.has(g.bundleId)) continue
+      byBundle.set(g.bundleId, {
+        app: g.app || g.bundleId,
+        bundleId: g.bundleId,
+        aliases: [g.app, g.bundleId].filter(Boolean),
+      })
+    }
+
+    const qLower = query?.toLowerCase() ?? null
+    let entries: AppCatalogEntry[] = []
+    for (const meta of byBundle.values()) {
+      if (qLower) {
+        const hay = [meta.app, meta.bundleId, ...meta.aliases]
+          .join('\0')
+          .toLowerCase()
+        if (!hay.includes(qLower)) continue
+      }
+      const live = runningByBundle.get(meta.bundleId)
+      const grant = grantByBundle.get(meta.bundleId)
+      const granted = allowAll || !!grant
+      entries.push({
+        app: meta.app,
+        bundleId: meta.bundleId,
+        running: !!live,
+        frontmost: live?.frontmost ?? false,
+        granted,
+        grantScope: grant?.scope ?? null,
+        pid: live?.pid ?? null,
+        windows: windowCountByBundle.get(meta.bundleId) ?? 0,
+      })
+    }
+
+    // Running / frontmost / granted first, then alpha — so page 0 is useful.
+    entries.sort((a, b) => {
+      if (a.frontmost !== b.frontmost) return a.frontmost ? -1 : 1
+      if (a.running !== b.running) return a.running ? -1 : 1
+      if (a.granted !== b.granted) return a.granted ? -1 : 1
+      return a.app.localeCompare(b.app)
+    })
+
+    const total = entries.length
+    const page = entries.slice(offset, offset + limit)
+
+    const result: AppsListResult = {
+      action: 'list',
+      frontmost: running.find((r) => r.frontmost)?.app ?? null,
+      clipboardGrant: this.policy.hasClipboardGrant(),
+      query,
+      total,
+      offset,
+      limit,
+      hasMore: offset + page.length < total,
+      apps: page,
+    }
+
+    if (options.includeRoots) {
+      result.roots = this.roots.list().map((r) => ({
         rootId: r.rootId,
         kind: r.kind,
         app: r.app,
@@ -217,13 +482,13 @@ export class ComputerUseService {
         title: r.title,
         focused: r.focused,
         modal: r.modal,
-      })),
-      frontmost: running.find((r) => r.frontmost)?.app ?? null,
-      clipboardGrant: this.policy.hasClipboardGrant(),
+      }))
     }
+
+    return result
   }
 
-  // ── computer_observe ─────────────────────────────────────
+  // ── computer_snapshot ─────────────────────────────────────
 
   async observe(
     rootId?: string,
@@ -303,6 +568,12 @@ export class ComputerUseService {
       // Critical invariant: zoom never establishes a new coordinate space.
       coordinateSpace: { ...state.coordinateSpace },
       stateId,
+      // Surface target identity so chat UI can show the app icon without a second lookup.
+      root: {
+        app: state.root.app,
+        bundleId: state.root.bundleId,
+        title: state.root.title,
+      },
     }
   }
 
@@ -315,6 +586,7 @@ export class ComputerUseService {
   ): Promise<QueryResult> {
     this.requireEnabled()
     const state = this.requireState(stateId)
+    const root = targetIdentity(state.root)
     // Query is read-only on cached state — no grant re-check beyond existence,
     // but still require the feature be enabled. Refs are state-scoped.
 
@@ -322,7 +594,7 @@ export class ComputerUseService {
       if (!args.text) {
         throw new ComputerUseError('INVALID_ACTION', 'search requires text')
       }
-      return { matches: searchOutline(state.outline, args.text) }
+      return { matches: searchOutline(state.outline, args.text), root }
     }
     if (op === 'expand') {
       if (!args.ref) {
@@ -335,7 +607,7 @@ export class ComputerUseService {
           stateId,
         })
       }
-      return { subtree }
+      return { subtree, root }
     }
     // inspect
     if (!args.ref) {
@@ -350,7 +622,7 @@ export class ComputerUseService {
     }
     // Return node without children for a compact inspect.
     const { children: _c, ...rest } = element
-    return { element: rest }
+    return { element: rest, root }
   }
 
   // ── computer_act ─────────────────────────────────────────
@@ -582,7 +854,11 @@ export class ComputerUseService {
     if (evaluateBoundCondition(binding, base.outline)) {
       // Still produce a successor observation for a stable stateId contract.
       const obs = await this.observe(base.root.rootId, base.mode, base.capture)
-      return { status: 'preexisting', successorStateId: obs.stateId }
+      return {
+        status: 'preexisting',
+        successorStateId: obs.stateId,
+        successorRoot: targetIdentity(obs.root),
+      }
     }
 
     const interval = 50
@@ -594,12 +870,20 @@ export class ComputerUseService {
       const obs = await this.observe(base.root.rootId, base.mode, base.capture)
       const state = this.requireState(obs.stateId)
       if (evaluateBoundCondition(binding, state.outline)) {
-        return { status: 'verified', successorStateId: obs.stateId }
+        return {
+          status: 'verified',
+          successorStateId: obs.stateId,
+          successorRoot: targetIdentity(obs.root),
+        }
       }
     }
 
     const last = await this.observe(base.root.rootId, base.mode, base.capture)
-    return { status: 'failed', successorStateId: last.stateId }
+    return {
+      status: 'failed',
+      successorStateId: last.stateId,
+      successorRoot: targetIdentity(last.root),
+    }
   }
 
   /**
@@ -737,31 +1021,19 @@ export class ComputerUseService {
       return r
     }
     const list = this.roots.list()
+    // Prefer last launch/focus target over OS frontmost (often SuperOne).
+    if (this.preferredBundleId) {
+      const preferred =
+        list.find((r) => r.bundleId === this.preferredBundleId && r.focused)
+        ?? list.find((r) => r.bundleId === this.preferredBundleId)
+      if (preferred) return preferred
+    }
     const focused = list.find((r) => r.focused) ?? list[0]
     if (!focused) {
       throw new ComputerUseError('UNKNOWN_ROOT', 'No UI roots available')
     }
     return focused
   }
-}
-
-function uniqueApps(
-  roots: Array<Omit<UiRootIdentity, 'rootId'> | UiRootIdentity>,
-): AppsSnapshot['running'] {
-  const map = new Map<string, AppsSnapshot['running'][number]>()
-  for (const r of roots) {
-    if (!map.has(r.bundleId)) {
-      map.set(r.bundleId, {
-        app: r.app,
-        bundleId: r.bundleId,
-        pid: r.pid,
-        frontmost: r.focused,
-      })
-    } else if (r.focused) {
-      map.get(r.bundleId)!.frontmost = true
-    }
-  }
-  return [...map.values()]
 }
 
 function deriveOutcome(

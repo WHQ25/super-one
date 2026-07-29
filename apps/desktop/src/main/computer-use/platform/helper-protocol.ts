@@ -65,7 +65,9 @@ export interface HelperDoctor {
   accessibility: 'granted' | 'missing' | string
   screenRecording: 'granted' | 'missing' | string
   bundleId: string
+  bundlePath: string
   pid: number
+  screenRecordingNeedsRelaunch: boolean
 }
 
 export interface HelperAppInfo {

@@ -1312,8 +1312,13 @@ export class Session implements SessionContract {
    */
   private async clearComputerUseVisuals(reason: string): Promise<void> {
     try {
-      const { hideComputerUseVisuals } = await import('../computer-use/tools')
+      const { hideComputerUseVisuals, disposeComputerUseService } = await import(
+        '../computer-use/tools'
+      )
       await hideComputerUseVisuals(this.id)
+      if (reason === 'dispose') {
+        disposeComputerUseService(this.id)
+      }
       log.debug('[Session] cleared computer-use visuals reason=%s sid=%s', reason, this.id)
     } catch (err) {
       log.debug('[Session] clear computer-use visuals failed: %s', err)

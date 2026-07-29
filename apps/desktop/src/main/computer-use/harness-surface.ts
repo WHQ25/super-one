@@ -15,7 +15,7 @@
  * 3. notifySessionToolsChanged (stdio re-list + codex reload / next-turn rebuild)
  */
 
-import { COMPUTER_USE_TOOL_NAMES } from './tools'
+import { COMPUTER_USE_TOOL_NAMES, normalizeComputerUseToolName } from './tools'
 
 export const COMPUTER_USE_HARNESS_IDS = ['claude', 'codex', 'acp', 'opencode'] as const
 export type ComputerUseHarnessId = (typeof COMPUTER_USE_HARNESS_IDS)[number]
@@ -28,7 +28,7 @@ export function computerUseQualifiedNames(): string[] {
 export function isComputerUseQualifiedName(name: string): boolean {
   if (!name.startsWith('mcp__superone__')) return false
   const bare = name.slice('mcp__superone__'.length)
-  return (COMPUTER_USE_TOOL_NAMES as readonly string[]).includes(bare)
+  return normalizeComputerUseToolName(bare) != null
 }
 
 export function bareComputerUseToolNames(): readonly string[] {

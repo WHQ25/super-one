@@ -30,7 +30,7 @@ describe('Computer Use harness surface', () => {
     expect(q).toContain('mcp__superone__computer_act')
     expect(q).toHaveLength(6)
     expect(q.every((n) => n.startsWith('mcp__superone__computer_'))).toBe(true)
-    expect(isComputerUseQualifiedName('mcp__superone__computer_observe')).toBe(true)
+    expect(isComputerUseQualifiedName('mcp__superone__computer_snapshot')).toBe(true)
     expect(isComputerUseQualifiedName('mcp__superone__browser_click')).toBe(false)
   })
 

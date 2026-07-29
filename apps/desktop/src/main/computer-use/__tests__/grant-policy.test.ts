@@ -133,7 +133,7 @@ describe('ensureComputerUseAppGrant HITL', () => {
       service,
       app: 'TextEdit',
       bundleId: 'com.apple.TextEdit',
-      toolName: 'computer_observe',
+      toolName: 'computer_snapshot',
     })
     expect(emitted).toHaveLength(0)
   })
@@ -147,24 +147,29 @@ describe('ensureComputerUseAppGrant HITL', () => {
       service,
       app: 'TextEdit',
       bundleId: 'com.apple.TextEdit',
-      toolName: 'computer_observe',
+      toolName: 'computer_snapshot',
     })
     expect(emitted).toHaveLength(0)
     expect(service.policy.isGranted('com.apple.TextEdit')).toBe(true)
   })
 
+  // Real-timer polling, not pure microtask draining: ensureComputerUseAppGrant
+  // now awaits the icon lookup (a real mdfind subprocess, bounded by
+  // app-icon-resolver's own LOOKUP_TIMEOUT_MS) before emitting the prompt,
+  // so this needs to survive an actual macrotask hop, not just N Promise ticks.
   async function waitForPrompt(): Promise<{
     type: string
     request: { requestId: string; requestKind: string; computerUseGrant: { bundleId: string } }
   }> {
-    for (let i = 0; i < 20; i++) {
+    const deadline = Date.now() + 3000
+    while (Date.now() < deadline) {
       if (emitted.length > 0) {
         return emitted[0] as {
           type: string
           request: { requestId: string; requestKind: string; computerUseGrant: { bundleId: string } }
         }
       }
-      await Promise.resolve()
+      await new Promise((resolve) => setTimeout(resolve, 10))
     }
     throw new Error(`permission_request was not emitted (emitted=${emitted.length})`)
   }
@@ -175,7 +180,7 @@ describe('ensureComputerUseAppGrant HITL', () => {
       service,
       app: 'TextEdit',
       bundleId: 'com.apple.TextEdit',
-      toolName: 'computer_observe',
+      toolName: 'computer_snapshot',
     })
     const event = await waitForPrompt()
     expect(event.type).toBe('permission_request')
@@ -212,7 +217,7 @@ describe('ensureComputerUseAppGrant HITL', () => {
       service,
       app: 'TextEdit',
       bundleId: 'com.apple.TextEdit',
-      toolName: 'computer_observe',
+      toolName: 'computer_snapshot',
     })
     const event = await waitForPrompt()
     expect(resolveComputerUseGrant(event.request.requestId, false)).toBe(true)
@@ -226,7 +231,7 @@ describe('ensureComputerUseAppGrant HITL', () => {
       service,
       app: 'TextEdit',
       bundleId: 'com.apple.TextEdit',
-      toolName: 'computer_observe',
+      toolName: 'computer_snapshot',
     })
     const event = await waitForPrompt()
     expect(rejectComputerUseGrant(event.request.requestId, 'User cancelled')).toBe(true)

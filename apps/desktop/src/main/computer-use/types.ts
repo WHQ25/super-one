@@ -172,6 +172,8 @@ export interface ActResult {
 export interface WaitResult {
   status: WaitStatus
   successorStateId: string
+  /** Target observed by the wait result, for stable app identity in chat UI. */
+  successorRoot: Pick<UiRootIdentity, 'app' | 'bundleId' | 'title'>
 }
 
 export type GrantScope = 'session' | 'always'
@@ -184,19 +186,41 @@ export interface GrantedApp {
   scope?: GrantScope
 }
 
-export interface AppsSnapshot {
-  granted: GrantedApp[]
-  running: Array<{
-    app: string
-    bundleId: string
-    pid: number
-    frontmost: boolean
-  }>
+/** One row in the computer_apps catalog (uniform keys → TOON table). */
+export interface AppCatalogEntry {
+  app: string
+  bundleId: string
+  /** True when a regular process with this bundle id is running. */
+  running: boolean
+  frontmost: boolean
+  /** Session or always grant (allow-all counts as granted). */
+  granted: boolean
+  /** Present only when granted and not via allow-all wildcard alone. */
+  grantScope: GrantScope | null
+  pid: number | null
+  /** Count of discoverable UI roots (windows/sheets) for this app. */
+  windows: number
+}
+
+/**
+ * computer_apps list result — app catalog with search + pagination.
+ * Uniform `apps[]` rows encode compactly as a TOON table.
+ */
+export interface AppsListResult {
+  action: 'list'
+  frontmost: string | null
+  clipboardGrant: boolean
+  query: string | null
+  total: number
+  offset: number
+  limit: number
+  hasMore: boolean
+  apps: AppCatalogEntry[]
   /**
-   * Discoverable UI roots (`@rN`) for observe/act targeting.
-   * Prefer these over guessing frontmost when multiple windows exist.
+   * Optional window roots when includeRoots=true.
+   * Prefer targeting a known app via launch/focus; use roots only for multi-window pick.
    */
-  roots: Array<{
+  roots?: Array<{
     rootId: string
     kind: RootKind
     app: string
@@ -206,8 +230,31 @@ export interface AppsSnapshot {
     focused: boolean
     modal: boolean
   }>
+}
+
+/** computer_apps focus/launch result — slim identity confirmation. */
+export interface AppsActionResult {
+  action: 'focus' | 'launch'
   frontmost: string | null
   clipboardGrant: boolean
+  target?: {
+    app: string
+    bundleId: string
+    pid: number
+    /** Prefer this root for the next computer_snapshot when present. */
+    rootId?: string
+  }
+}
+
+/** @deprecated Prefer AppsListResult | AppsActionResult; kept for gradual call-site migration. */
+export type AppsSnapshot = AppsListResult | AppsActionResult
+
+export interface AppsListOptions {
+  query?: string
+  offset?: number
+  limit?: number
+  /** When true, also attach discoverable UI roots (token-heavy). Default false. */
+  includeRoots?: boolean
 }
 
 export interface ObserveResult {
@@ -226,6 +273,8 @@ export interface QueryResult {
   matches?: Array<{ ref: string; role: string; name?: string; value?: string; path: string[] }>
   subtree?: UiOutlineNode
   element?: UiOutlineNode
+  /** Cached state's target identity, for app-icon rendering without recapture. */
+  root: Pick<UiRootIdentity, 'app' | 'bundleId' | 'title'>
 }
 
 export interface ZoomResult {
@@ -235,10 +284,13 @@ export interface ZoomResult {
   /** Always the same coordinateSpace as the parent state — never a new one. */
   coordinateSpace: CoordinateSpace
   stateId: string
+  /** Target app identity for chat UI (icon); not a new coordinate space. */
+  root: Pick<UiRootIdentity, 'app' | 'bundleId' | 'title'>
 }
 
 /** Errors that are part of the public contract (stable codes). */
 export type ComputerUseErrorCode =
+  | 'APP_NOT_FOUND'
   | 'STALE_STATE'
   | 'MODAL_BLOCKED'
   | 'UNKNOWN_STATE'

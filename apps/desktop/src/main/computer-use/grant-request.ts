@@ -1,4 +1,5 @@
 import type { AgentEvent, ComputerUseAlwaysAllowApp, ComputerUseGrantPayload } from '@superone/shared/agent-types'
+import { resolveAppIconDataUri } from './app-icon-resolver'
 import type { ComputerUseService } from './computer-use-service'
 import { ComputerUseError } from './types'
 
@@ -207,10 +208,31 @@ async function requestGrantFromUser(payload: {
   }
 
   const requestId = `cugrant_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+  // Best-effort icon for first paint; renderer still resolves via IPC if missing.
+  let iconDataUri: string | undefined
+  try {
+    iconDataUri = (await resolveAppIconDataUri(payload.bundleId)) ?? undefined
+  } catch {
+    iconDataUri = undefined
+  }
+  // Dynamic import: keep this module loadable in unit tests without electron-log.
+  void import('../logger')
+    .then(({ default: log }) => {
+      log.info(
+        '[computer-use] grant prompt icon for %s (%s): %s',
+        payload.app,
+        payload.bundleId,
+        iconDataUri ? `attached (${iconDataUri.length} chars)` : 'missing — UI will retry via IPC',
+      )
+    })
+    .catch(() => {
+      // ignore logger load failures in tests
+    })
   const grantPayload: ComputerUseGrantPayload = {
     app: payload.app,
     bundleId: payload.bundleId,
     toolName: payload.toolName,
+    ...(iconDataUri ? { iconDataUri } : {}),
   }
 
   return new Promise<ComputerUseGrantDecision>((resolve, reject) => {

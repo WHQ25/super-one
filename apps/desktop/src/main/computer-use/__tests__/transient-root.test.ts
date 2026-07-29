@@ -119,7 +119,7 @@ describe('transient root lifecycle', () => {
     const service = new ComputerUseService({ adapter })
     service.policy.setEnabled(true)
     service.policy.grant({ app: 'Fixture', bundleId: 'dev.superone.fixture', tier: 'full' })
-    const sheet = (await service.apps()).roots.find((root) => root.kind === 'sheet')!
+    const sheet = (await service.listUiRoots()).find((root) => root.kind === 'sheet')!
     const observed = await service.observe(sheet.rootId, 'semantic')
 
     const result = await service.act(observed.stateId, [{ type: 'press', ref: '@e2' }], {
@@ -136,7 +136,7 @@ describe('transient root lifecycle', () => {
     const service = new ComputerUseService({ adapter })
     service.policy.setEnabled(true)
     service.policy.grant({ app: 'Fixture', bundleId: 'dev.superone.fixture', tier: 'full' })
-    const sheet = (await service.apps()).roots.find((root) => root.kind === 'sheet')!
+    const sheet = (await service.listUiRoots()).find((root) => root.kind === 'sheet')!
     const observed = await service.observe(sheet.rootId, 'semantic')
     adapter.failWhileOpen = true
     adapter.act = async () => ({
@@ -153,7 +153,7 @@ describe('transient root lifecycle', () => {
     const service = new ComputerUseService({ adapter })
     service.policy.setEnabled(true)
     service.policy.grant({ app: 'Fixture', bundleId: 'dev.superone.fixture', tier: 'full' })
-    const sheet = (await service.apps()).roots.find((root) => root.kind === 'sheet')!
+    const sheet = (await service.listUiRoots()).find((root) => root.kind === 'sheet')!
     const observed = await service.observe(sheet.rootId, 'semantic')
 
     const result = await service.act(observed.stateId, [{ type: 'press', ref: '@e2' }], {
@@ -169,7 +169,7 @@ describe('transient root lifecycle', () => {
     const service = new ComputerUseService({ adapter })
     service.policy.setEnabled(true)
     service.policy.grant({ app: 'Fixture', bundleId: 'dev.superone.fixture', tier: 'full' })
-    const sheet = (await service.apps()).roots.find((root) => root.kind === 'sheet')!
+    const sheet = (await service.listUiRoots()).find((root) => root.kind === 'sheet')!
     const observed = await service.observe(sheet.rootId, 'semantic')
 
     const result = await service.act(observed.stateId, [{ type: 'press', ref: '@e2' }], {

@@ -31,8 +31,18 @@ export {
 export {
   startDevComputerUseHelper,
   stopDevComputerUseHelper,
-  openComputerUsePermissionOnboarding,
+  getComputerUsePermissionStatus,
 } from './computer-use-helper-lifecycle'
+export type { ComputerUsePermissionStatus } from './computer-use-helper-lifecycle'
+export {
+  showComputerUsePermissionFloat,
+  closeComputerUsePermissionFloat,
+  destroyComputerUsePermissionFloat,
+  continueComputerUsePermissionStep,
+  resizeComputerUsePermissionFloat,
+  openComputerUsePrivacyPane,
+} from './computer-use-permission-window'
+export type { PrivacyPane, PermissionFloatFlow } from './computer-use-permission-window'
 export type { PlatformAdapter } from './platform/types'
 export {
   COMPUTER_USE_TOOL_NAMES,
@@ -43,9 +53,12 @@ export {
   registerComputerUseTools,
   executeComputerUseTool,
   getOrCreateComputerUseService,
+  disposeComputerUseService,
   clearComputerUseServices,
   syncAllComputerUseServicesFromSettings,
   hideComputerUseVisuals,
+  grantComputerUseSessionApps,
+  normalizeComputerUseToolName,
 } from './tools'
 export {
   persistComputerUseScreenshot,
@@ -60,6 +73,10 @@ export {
   ComputerUseError,
   type ActionOutcome,
   type ActResult,
+  type AppCatalogEntry,
+  type AppsActionResult,
+  type AppsListResult,
+  type AppsListOptions,
   type AppsSnapshot,
   type CaptureScope,
   type Condition,

@@ -52,13 +52,6 @@ export function createComputerUseService(
             return policy.listGranted().map((g) => g.bundleId).filter((id) => id !== '*')
           },
           getAllowAllApps: () => policy.isAllowAllApps(),
-          getVisualIndicators: () => {
-            try {
-              return readAppSettings().computerUseVisualIndicators !== false
-            } catch {
-              return true
-            }
-          },
           getLocale: getCurrentLocale,
         })
       : new FakePlatformBackend()

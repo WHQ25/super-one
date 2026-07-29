@@ -788,11 +788,63 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.APP_SETTINGS_GET),
   saveAppSettings: (patch: Record<string, unknown>) =>
     ipcRenderer.invoke(AgentIpcChannels.APP_SETTINGS_SAVE, patch),
-  openComputerUsePermissions: () =>
-    ipcRenderer.invoke(AgentIpcChannels.COMPUTER_USE_OPEN_PERMISSIONS),
+  openComputerUsePermissions: (
+    request: boolean | 'guided' | 'accessibility' | 'screenRecording' = true,
+  ) => ipcRenderer.invoke(AgentIpcChannels.COMPUTER_USE_OPEN_PERMISSIONS, request),
+  closeComputerUsePermissionFloat: () =>
+    ipcRenderer.invoke(AgentIpcChannels.COMPUTER_USE_CLOSE_PERMISSION_FLOAT),
+  resizeComputerUsePermissionFloat: (width: number, height: number) =>
+    ipcRenderer.invoke(AgentIpcChannels.COMPUTER_USE_RESIZE_PERMISSION_FLOAT, width, height),
+  continueComputerUsePermissionStep: () =>
+    ipcRenderer.invoke(AgentIpcChannels.COMPUTER_USE_CONTINUE_PERMISSION_STEP),
+  onComputerUsePermissionStatus: (
+    callback: (status: {
+      accessibility?: string
+      screenRecording?: string
+      helperPath?: string
+      screenRecordingNeedsRelaunch?: boolean
+      pane?: 'accessibility' | 'screenRecording'
+      flow?: 'guided' | 'single'
+    }) => void,
+  ) => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      status: {
+        accessibility?: string
+        screenRecording?: string
+        helperPath?: string
+        screenRecordingNeedsRelaunch?: boolean
+        pane?: 'accessibility' | 'screenRecording'
+        flow?: 'guided' | 'single'
+      },
+    ): void => {
+      callback(status)
+    }
+    ipcRenderer.on(AgentIpcChannels.COMPUTER_USE_PERMISSION_STATUS, handler)
+    return () => {
+      ipcRenderer.removeListener(AgentIpcChannels.COMPUTER_USE_PERMISSION_STATUS, handler)
+    }
+  },
   listComputerUseRunningApps: () =>
     ipcRenderer.invoke(AgentIpcChannels.COMPUTER_USE_LIST_RUNNING_APPS) as Promise<
       Array<{ app: string; bundleId: string; pid: number; frontmost: boolean }>
+    >,
+  listComputerUseInstalledApps: () =>
+    ipcRenderer.invoke(AgentIpcChannels.COMPUTER_USE_LIST_INSTALLED_APPS) as Promise<
+      Array<{ app: string; bundleId: string; aliases: string[] }>
+    >,
+  grantComputerUseSessionApps: (
+    sessionId: string,
+    apps: Array<{ app: string; bundleId: string }>,
+  ) =>
+    ipcRenderer.invoke(
+      AgentIpcChannels.COMPUTER_USE_GRANT_SESSION_APPS,
+      sessionId,
+      apps,
+    ) as Promise<boolean>,
+  resolveComputerUseAppIcon: (bundleId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.COMPUTER_USE_RESOLVE_APP_ICON, bundleId) as Promise<
+      string | null
     >,
   recordBrowserHistory: (url: string, title: string, titleOnly?: boolean) =>
     ipcRenderer.invoke(AgentIpcChannels.BROWSER_HISTORY_RECORD, url, title, titleOnly),

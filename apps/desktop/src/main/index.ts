@@ -36,10 +36,18 @@ import { MobileReceiveService, type MobileReceiveTarget } from './remote/mobile-
 import { MobileShareToolCoordinator } from './remote/mobile-share-tool-coordinator'
 import { startSuperoneMcpStdioBridge, stopSuperoneMcpStdioBridge } from './mcp/superone-mcp-stdio-ipc'
 import {
-  openComputerUsePermissionOnboarding,
+  getComputerUsePermissionStatus,
   startDevComputerUseHelper,
   stopDevComputerUseHelper,
 } from './computer-use/computer-use-helper-lifecycle'
+import {
+  closeComputerUsePermissionFloat,
+  continueComputerUsePermissionStep,
+  destroyComputerUsePermissionFloat,
+  resizeComputerUsePermissionFloat,
+  showComputerUsePermissionFloat,
+  type PrivacyPane,
+} from './computer-use/computer-use-permission-window'
 import { scheduleMcpReload } from './mcp/mcp-reload-scheduler'
 import { query, type SDKResultMessage } from '@anthropic-ai/claude-agent-sdk'
 import { resolveSdkClaudeBinary } from './agent/claude-binary'
@@ -405,7 +413,6 @@ const rendererAgentEventTransport = createRendererAgentEventTransport((events) =
   safeSend(AgentIpcChannels.EVENT, events)
 })
 
-
 new PresenceCoordinator(sessionManager, {
   broadcastToRenderer: (event) => safeSend(AgentIpcChannels.EVENT, event),
   sendToMobile: (event, targetDeviceIds) => remoteControlService.sendEventToMobile(event, targetDeviceIds),
@@ -570,29 +577,12 @@ async function applyAppSettingsPatch(patch: AppSettingsPatch): Promise<AppSettin
   if (
     patch?.computerUseAlwaysAllowApps !== undefined
     || patch?.computerUseAllowAllApps !== undefined
-    || patch?.computerUseVisualIndicators !== undefined
   ) {
     try {
       const { syncAllComputerUseServicesFromSettings } = await import('./computer-use/tools')
       syncAllComputerUseServicesFromSettings()
     } catch {
       // ignore if computer-use module not loaded
-    }
-    // Best-effort: push overlay on/off to the live helper immediately (macOS only).
-    if (patch?.computerUseVisualIndicators !== undefined) {
-      try {
-        const { getSharedHelperClient } = await import('./computer-use/platform/macos-helper-client')
-        const enabled = result.computerUseVisualIndicators !== false
-        await getSharedHelperClient().call('overlay_set_enabled', {
-          enabled,
-        }).catch(() => {})
-        if (!enabled) {
-          const { hideComputerUseVisuals } = await import('./computer-use/tools')
-          await hideComputerUseVisuals()
-        }
-      } catch {
-        // helper offline is fine
-      }
     }
   }
   safeSend(AgentIpcChannels.APP_SETTINGS_CHANGED, result)
@@ -691,6 +681,7 @@ function createWindow(): void {
     rendererAgentEventTransport.resetCodexBaselines()
     mainWindow = null
     destroyDragPreviewWindow()
+    destroyComputerUsePermissionFloat()
     unwatchAllBashOutputs()
   })
 
@@ -1958,20 +1949,39 @@ function registerIpcHandlers(): void {
     event.sender.startDrag({ files, file: files[0], icon })
   }
 
-  ipcMain.on(AgentIpcChannels.START_DRAG, async (event, paths: string[], iconOpts?: { png: ArrayBuffer; scaleFactor?: number }) => {
+  ipcMain.on(AgentIpcChannels.START_DRAG, (event, paths: string[], iconOpts?: { png: ArrayBuffer; scaleFactor?: number }) => {
+    // startDrag must stay on the dragstart turn. Prefer a fully-sync path when
+    // the renderer already supplied a PNG (Computer Use float / file chips).
     try {
-      const { existsSync } = await import('node:fs')
-      const { nativeImage } = await import('electron')
-      const plan = await planStartDrag(paths, iconOpts, {
-        exists: existsSync,
-        createFromBuffer: (buf, opts) => nativeImage.createFromBuffer(buf, opts),
-        getFileIcon: (filePath) => app.getFileIcon(filePath, { size: 'small' }),
-      })
-      if (!plan) {
-        log.warn('[start-drag] skipped: no draggable files/icon for %o', paths)
+      const files = Array.isArray(paths)
+        ? paths.filter((p): p is string => typeof p === 'string' && existsSync(p))
+        : []
+      if (files.length === 0) {
+        log.warn('[start-drag] skipped: no draggable files for %o', paths)
         return
       }
-      event.sender.startDrag({ files: plan.files, file: plan.files[0], icon: plan.icon })
+      if (iconOpts?.png) {
+        const icon = nativeImage.createFromBuffer(Buffer.from(iconOpts.png), {
+          scaleFactor: iconOpts.scaleFactor ?? 1,
+        })
+        if (icon.isEmpty()) {
+          log.warn('[start-drag] skipped: empty supplied icon for %s', files[0])
+          return
+        }
+        event.sender.startDrag({ files, file: files[0], icon })
+        return
+      }
+      void app.getFileIcon(files[0], {
+        size: files[0].endsWith('.app') ? 'normal' : 'small',
+      }).then((icon) => {
+        if (icon.isEmpty()) {
+          log.warn('[start-drag] skipped: empty file icon for %s', files[0])
+          return
+        }
+        event.sender.startDrag({ files, file: files[0], icon })
+      }).catch((err) => {
+        log.warn('[start-drag] failed:', err)
+      })
     } catch (err) {
       log.warn('[start-drag] failed:', err)
     }
@@ -2310,7 +2320,56 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(AgentIpcChannels.APP_SETTINGS_GET, () => readAppSettings())
   ipcMain.handle(AgentIpcChannels.APP_SETTINGS_SAVE, (_e, patch) => applyAppSettingsPatch(patch))
-  ipcMain.handle(AgentIpcChannels.COMPUTER_USE_OPEN_PERMISSIONS, () => openComputerUsePermissionOnboarding())
+  ipcMain.handle(
+    AgentIpcChannels.COMPUTER_USE_OPEN_PERMISSIONS,
+    async (
+      _event,
+      /**
+       * false — status only.
+       * true | 'guided' — two-step onboarding float (first enable).
+       * 'accessibility' | 'screenRecording' — single-permission float.
+       */
+      request: boolean | 'guided' | PrivacyPane = true,
+    ) => {
+      const status = await getComputerUsePermissionStatus(false)
+      if (process.platform !== 'darwin') return status
+
+      const pollStatus = () => getComputerUsePermissionStatus(false)
+
+      if (request === false) {
+        return status
+      }
+
+      if (request === 'accessibility' || request === 'screenRecording') {
+        showComputerUsePermissionFloat(status, {
+          flow: 'single',
+          pane: request,
+          pollStatus,
+        })
+        return status
+      }
+
+      // true | 'guided' — full two-step onboarding
+      if (status.reason === 'already_granted') return status
+      showComputerUsePermissionFloat(status, {
+        flow: 'guided',
+        pollStatus,
+      })
+      return status
+    },
+  )
+  ipcMain.handle(AgentIpcChannels.COMPUTER_USE_CLOSE_PERMISSION_FLOAT, () => {
+    closeComputerUsePermissionFloat()
+  })
+  ipcMain.handle(
+    AgentIpcChannels.COMPUTER_USE_RESIZE_PERMISSION_FLOAT,
+    (_event, width: number, height: number) => {
+      resizeComputerUsePermissionFloat(width, height)
+    },
+  )
+  ipcMain.handle(AgentIpcChannels.COMPUTER_USE_CONTINUE_PERMISSION_STEP, () => {
+    continueComputerUsePermissionStep()
+  })
   ipcMain.handle(AgentIpcChannels.COMPUTER_USE_LIST_RUNNING_APPS, async () => {
     try {
       const { getOrCreateComputerUseService } = await import('./computer-use/tools')
@@ -2325,6 +2384,94 @@ function registerIpcHandlers(): void {
       return []
     }
   })
+  ipcMain.handle(AgentIpcChannels.COMPUTER_USE_LIST_INSTALLED_APPS, async () => {
+    try {
+      const { listInstalledApps } = await import('./computer-use/resolve-installed-app')
+      return listInstalledApps().map((a) => ({
+        app: a.app,
+        bundleId: a.bundleId,
+        aliases: a.aliases,
+      }))
+    } catch (err) {
+      log.warn(
+        '[computer-use] list installed apps failed: %s',
+        err instanceof Error ? err.message : String(err),
+      )
+      return []
+    }
+  })
+  ipcMain.handle(
+    AgentIpcChannels.COMPUTER_USE_GRANT_SESSION_APPS,
+    async (
+      event,
+      sessionId: string,
+      apps: Array<{ app: string; bundleId: string }>,
+    ) => {
+      if (typeof sessionId !== 'string' || !sessionId.trim()) return false
+      if (!Array.isArray(apps) || apps.length === 0 || apps.length > 16) return false
+      // Only main-window / known app renderers may grant (not arbitrary web contents).
+      const senderUrl = event.sender.getURL?.() ?? ''
+      if (
+        senderUrl
+        && !senderUrl.startsWith('file:')
+        && !senderUrl.includes('localhost')
+        && !senderUrl.startsWith('app:')
+      ) {
+        log.warn('[computer-use] grant session apps rejected sender url=%s', senderUrl)
+        return false
+      }
+      try {
+        const {
+          grantComputerUseSessionApps,
+          isComputerUseEnabled,
+        } = await import('./computer-use/tools')
+        if (!isComputerUseEnabled()) return false
+        const n = grantComputerUseSessionApps(
+          sessionId.trim(),
+          apps
+            .filter((a) => a && typeof a.bundleId === 'string')
+            .map((a) => ({
+              app: typeof a.app === 'string' ? a.app : a.bundleId,
+              bundleId: String(a.bundleId).trim(),
+            })),
+        )
+        return n > 0
+      } catch (err) {
+        log.warn(
+          '[computer-use] grant session apps failed: %s',
+          err instanceof Error ? err.message : String(err),
+        )
+        return false
+      }
+    },
+  )
+  ipcMain.handle(
+    AgentIpcChannels.COMPUTER_USE_RESOLVE_APP_ICON,
+    async (_event, bundleId: string) => {
+      if (typeof bundleId !== 'string' || !bundleId.trim()) return null
+      const id = bundleId.trim()
+      try {
+        const { resolveAppIconDataUri, isSafeBundleId } = await import(
+          './computer-use/app-icon-resolver'
+        )
+        if (!isSafeBundleId(id)) return null
+        const uri = await resolveAppIconDataUri(id)
+        log.info(
+          '[computer-use] IPC resolve-app-icon %s → %s',
+          id,
+          uri ? `ok (${uri.length} chars)` : 'null',
+        )
+        return uri
+      } catch (err) {
+        log.warn(
+          '[computer-use] resolve app icon failed for %s: %s',
+          id,
+          err instanceof Error ? err.message : String(err),
+        )
+        return null
+      }
+    },
+  )
   ipcMain.handle(AgentIpcChannels.APP_SYSTEM_LOCALE, () => getSystemLocale())
 
   ipcMain.handle(AgentIpcChannels.BROWSER_HISTORY_RECORD, (_e, url: string, title: string, titleOnly?: boolean) => recordBrowserHistory(url, title, titleOnly))
@@ -3046,9 +3193,9 @@ app.whenReady().then(async () => {
   registerBrowserDownloadCapture()
 
   // Dev: keep SuperOne Dev Computer Use.app alive for the whole SuperOne session
-  // so TCC identity stays stable and Screen Recording applies after relaunch.
+  // so TCC identity stays stable. Permission prompts require explicit user action.
   if (is.dev && process.platform === 'darwin') {
-    void startDevComputerUseHelper()
+    void startDevComputerUseHelper({ requestPermissions: false })
   }
 
   if (is.dev && process.env.SUPERONE_BENCH) {
@@ -3272,6 +3419,7 @@ function disposeAgentSessions(): Promise<void> {
 function performQuit(): void {
   quitting = true
   rendererAgentEventTransport.dispose()
+  destroyComputerUsePermissionFloat()
   if (terminalSweepTimer) clearInterval(terminalSweepTimer)
   stopDevComputerUseHelper()
   shutdownAllProxies()
@@ -3304,6 +3452,7 @@ const handleSignalQuit = (sig: NodeJS.Signals): void => {
   if (signalQuitting) return
   signalQuitting = true
   rendererAgentEventTransport.dispose()
+  destroyComputerUsePermissionFloat()
   log.info(`[main] received ${sig}, shutting down`)
   if (terminalSweepTimer) clearInterval(terminalSweepTimer)
   stopDevComputerUseHelper()

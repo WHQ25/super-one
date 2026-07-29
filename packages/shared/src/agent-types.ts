@@ -689,8 +689,10 @@ export interface PermissionRequest {
 export interface ComputerUseGrantPayload {
   app: string
   bundleId: string
-  /** Tool that triggered the request (e.g. computer_observe). */
+  /** Tool that triggered the request (e.g. computer_snapshot). */
   toolName: string
+  /** Best-effort app icon as a data: URI PNG; absent when lookup failed. */
+  iconDataUri?: string
 }
 
 /** Persistent always-allow entry for Computer Use (Settings + AppSettings). */
@@ -2434,10 +2436,29 @@ export const AgentIpcChannels = {
   APP_SETTINGS_GET: 'app:settings-get',
   APP_SETTINGS_SAVE: 'app:settings-save',
   APP_SETTINGS_CHANGED: 'app:settings-changed',
-  /** Open SuperOne Dev Computer Use native permission onboarding (drag icon into System Settings). */
+  /**
+   * Read Computer Use TCC status / open permission float.
+   * false — status only
+   * true | 'guided' — two-step onboarding float
+   * 'accessibility' | 'screenRecording' — single-pane float
+   */
   COMPUTER_USE_OPEN_PERMISSIONS: 'computer-use:open-permissions',
+  /** Dismiss the Computer Use permission drag float. */
+  COMPUTER_USE_CLOSE_PERMISSION_FLOAT: 'computer-use:close-permission-float',
+  /** Resize the permission float to match measured content size. */
+  COMPUTER_USE_RESIZE_PERMISSION_FLOAT: 'computer-use:resize-permission-float',
+  /** Push live permission status into the drag float. */
+  COMPUTER_USE_PERMISSION_STATUS: 'computer-use:permission-status',
+  /** Guided float: continue from Accessibility to Screen Recording. */
+  COMPUTER_USE_CONTINUE_PERMISSION_STEP: 'computer-use:continue-permission-step',
   /** List currently running apps (for Computer Use always-allow picker). */
   COMPUTER_USE_LIST_RUNNING_APPS: 'computer-use:list-running-apps',
+  /** Installed desktop apps catalog (mention popup / search). */
+  COMPUTER_USE_LIST_INSTALLED_APPS: 'computer-use:list-installed-apps',
+  /** Session-scoped temporary grants from @ desktop-app mentions. */
+  COMPUTER_USE_GRANT_SESSION_APPS: 'computer-use:grant-session-apps',
+  /** Best-effort app icon data URI for a bundle id (UI only; cached in main). */
+  COMPUTER_USE_RESOLVE_APP_ICON: 'computer-use:resolve-app-icon',
   BROWSER_HISTORY_RECORD: 'app:browser-history-record',
   BROWSER_HISTORY_SUGGEST: 'app:browser-history-suggest',
   BROWSER_HISTORY_DELETE: 'app:browser-history-delete',

@@ -266,16 +266,47 @@ interface AppAPI {
   setFastMode(enabled: boolean): Promise<void>
   getAppSettings(): Promise<AppSettings>
   saveAppSettings(patch: AppSettingsPatch): Promise<AppSettings>
-  openComputerUsePermissions(): Promise<{
-    presented: boolean
+  /**
+   * false — status only.
+   * true | 'guided' — two-step onboarding float (first enable).
+   * 'accessibility' | 'screenRecording' — single-permission float.
+   */
+  openComputerUsePermissions(
+    request?: boolean | 'guided' | 'accessibility' | 'screenRecording',
+  ): Promise<{
+    requested: boolean
     accessibility?: string
     screenRecording?: string
+    helperPath?: string
+    screenRecordingNeedsRelaunch?: boolean
     reason?: string
     error?: string
   }>
+  closeComputerUsePermissionFloat(): Promise<void>
+  resizeComputerUsePermissionFloat(width: number, height: number): Promise<void>
+  continueComputerUsePermissionStep(): Promise<void>
+  onComputerUsePermissionStatus(
+    callback: (status: {
+      accessibility?: string
+      screenRecording?: string
+      helperPath?: string
+      screenRecordingNeedsRelaunch?: boolean
+      pane?: 'accessibility' | 'screenRecording'
+      flow?: 'guided' | 'single'
+    }) => void,
+  ): () => void
   listComputerUseRunningApps(): Promise<
     Array<{ app: string; bundleId: string; pid: number; frontmost: boolean }>
   >
+  /** Best-effort PNG data URI for a macOS app bundle id; null when lookup fails. */
+  listComputerUseInstalledApps(): Promise<
+    Array<{ app: string; bundleId: string; aliases: string[] }>
+  >
+  grantComputerUseSessionApps(
+    sessionId: string,
+    apps: Array<{ app: string; bundleId: string }>,
+  ): Promise<boolean>
+  resolveComputerUseAppIcon(bundleId: string): Promise<string | null>
   recordBrowserHistory(url: string, title: string, titleOnly?: boolean): Promise<void>
   suggestBrowserHistory(query: string, limit?: number): Promise<BrowserHistoryEntry[]>
   deleteBrowserHistory(url: string | null): Promise<void>

@@ -205,7 +205,7 @@ describe('resetSessionImpl', () => {
     expect(mockClearWorktree).not.toHaveBeenCalled()
   })
 
-  it('mints a codex_local_ prefixed sid when the session provider is codex', async () => {
+  it('mints a uuid-style sid when the session provider is codex', async () => {
     setupProject()
     patchSession({
       sessionProvider: 'codex',
@@ -218,7 +218,7 @@ describe('resetSessionImpl', () => {
 
     const newSid = activeProjectState()._activeSessionId
     expect(newSid).not.toBe(oldSid)
-    expect(newSid?.startsWith('codex_local_')).toBe(true)
+    expect(newSid).toMatch(/^[0-9a-f-]{36}$/)
     expect(activeSession().sessionProvider).toBe('codex')
   })
 
@@ -235,7 +235,6 @@ describe('resetSessionImpl', () => {
 
     const newSid = activeProjectState()._activeSessionId!
     expect(newSid).not.toBe(oldSid)
-    expect(newSid.startsWith('codex_local_')).toBe(false)
     expect(newSid).toMatch(/^[0-9a-f-]{36}$/)
     expect(mockWindowAgent.resetSession).toHaveBeenCalledWith(oldSid, newSid)
     expect(mockClearWorktree).toHaveBeenCalledWith(PATH)
@@ -345,7 +344,7 @@ describe('resetSessionForWorktreeSwitchImpl', () => {
     const sess = activeSession()
     expect(sess.preferredProvider).toBe('codex')
     expect(sess.sessionProvider).toBe('codex')
-    expect(activeProjectState()._activeSessionId?.startsWith('codex_local_')).toBe(true)
+    expect(activeProjectState()._activeSessionId).toMatch(/^[0-9a-f-]{36}$/)
   })
 
   it('keeps claude for a claude-provider session', () => {
@@ -356,7 +355,7 @@ describe('resetSessionForWorktreeSwitchImpl', () => {
 
     const sess = activeSession()
     expect(sess.preferredProvider).toBe('claude')
-    expect(activeProjectState()._activeSessionId?.startsWith('codex_local_')).toBe(false)
+    expect(activeProjectState()._activeSessionId).toMatch(/^[0-9a-f-]{36}$/)
   })
 
   it('hydrates Grok models from ACP cache when switching worktree from a Grok session', () => {
@@ -416,7 +415,7 @@ describe('setPreferredProviderImpl', () => {
     expect(mockSeedFromCurrent).not.toHaveBeenCalled()
   })
 
-  it('switches to codex by rotating to a fresh codex_local_ sid on an empty draft', () => {
+  it('switches to codex by rotating to a fresh uuid sid on an empty draft', () => {
     setupProject()
     setCodexResources({
       models: [{ id: 'gpt-5-high', name: 'GPT-5', description: '', isDefault: true } as ModelOption],
@@ -427,7 +426,7 @@ describe('setPreferredProviderImpl', () => {
 
     const newSid = activeProjectState()._activeSessionId
     expect(newSid).not.toBe(oldSid)
-    expect(newSid?.startsWith('codex_local_')).toBe(true)
+    expect(newSid).toMatch(/^[0-9a-f-]{36}$/)
     expect(activeSession().sessionProvider).toBe('codex')
     expect(activeSession().preferredProvider).toBe('codex')
     expect(mockSeedFromCurrent).toHaveBeenCalledWith(newSid)

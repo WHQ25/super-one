@@ -5,7 +5,7 @@ import type {
 } from '@superone/shared/agent-types'
 import { buildBrowserAnnotationText } from './browser-annotation'
 import { runCodexCommand } from '../codex/runner'
-import { createDefaultPerSessionState, freshSubagentColorPool } from '../defaults'
+import { createDefaultPerSessionState, createSessionId, freshSubagentColorPool } from '../defaults'
 import {
   createLocalTextUserMessage,
   formatCodexAuthStatus,
@@ -16,7 +16,7 @@ import {
   type CodexCommand,
 } from './codex-helpers'
 import { _ensureClaudeSessionReadyForSend, resetLock, type ChatStoreSet } from './lifecycle'
-import { _createLocalCodexSessionId, _getEffectiveSessionId } from './persistence'
+import { _getEffectiveSessionId } from './persistence'
 import { applyCachedCodexPermissionPreset } from './prefs-cache'
 import {
   commitPerSession,
@@ -33,7 +33,7 @@ import type { ChatProvider, ChatStore, InputSegment, Mention, SessionWriteTarget
  * - worktree activation when a pending base-branch is queued
  * - context/quote/miniapp-reminder suffix assembly
  * - provider resolution (claude vs codex) + codex slash-command parsing
- * - on-the-fly local codex session id when first switching to codex
+ * - rotate SuperOne session id when first switching an empty draft to codex
  * - utility codex commands (help/reset/auth-status/auth-set/plan) routed to the popup
  * - intercepted slash commands (/provider, /clear, /mcp)
  * - user message appended (or queued during a claude streaming turn)
@@ -220,7 +220,7 @@ export async function sendMessageImpl(
   }
 
   if (effectiveProvider === 'codex' && session.sessionProvider !== 'codex') {
-    const localSid = _createLocalCodexSessionId()
+    const nextSid = createSessionId()
     const previousSid = resolveWriteSid()
     set((s) => {
       const proj = getProject(s, projectPath)
@@ -230,9 +230,9 @@ export async function sendMessageImpl(
       const nextSessions = { ...proj._sessions }
       if (shouldCarryState && currentSid) {
         delete nextSessions[currentSid]
-        nextSessions[localSid] = { ...currentSess, sessionProvider: 'codex', preferredProvider: 'codex' }
+        nextSessions[nextSid] = { ...currentSess, sessionProvider: 'codex', preferredProvider: 'codex' }
       } else {
-        nextSessions[localSid] = {
+        nextSessions[nextSid] = {
           ...applyCachedCodexPermissionPreset(createDefaultPerSessionState()),
           cwd: currentSess?.cwd ?? '',
           sessionProvider: 'codex',
@@ -240,7 +240,7 @@ export async function sendMessageImpl(
         }
       }
       const nextActive = currentSid && proj._activeSessionId === currentSid
-        ? localSid
+        ? nextSid
         : proj._activeSessionId
       return {
         projectSessions: {
@@ -254,14 +254,14 @@ export async function sendMessageImpl(
       }
     })
     if (writeTarget && previousSid) {
-      writeTarget = { projectPath, sessionId: localSid }
+      writeTarget = { projectPath, sessionId: nextSid }
       // Keep mosaic tiles pinned to the live session id when a first-turn codex
       // switch rotates the draft id under a scoped pane.
       void import('@/components/mosaic/mosaic-store').then(({ useMosaicStore }) => {
-        useMosaicStore.getState().replaceTileSession(projectPath, previousSid, localSid)
+        useMosaicStore.getState().replaceTileSession(projectPath, previousSid, nextSid)
       }).catch(() => {})
     } else if (writeTarget) {
-      writeTarget = { projectPath, sessionId: localSid }
+      writeTarget = { projectPath, sessionId: nextSid }
     }
   }
 

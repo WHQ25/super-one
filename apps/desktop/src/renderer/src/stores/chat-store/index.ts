@@ -202,7 +202,6 @@ import {
 
 export {
   _getEffectiveSessionId,
-  _createLocalCodexSessionId,
   _isLocalCodexSessionId,
   _getSessionGitBranch,
   _getSessionCwd,
@@ -214,7 +213,6 @@ export {
 } from './helpers/persistence'
 
 import {
-  _createLocalCodexSessionId,
   _ensureSessionHydrated,
   _getEffectiveSessionId,
   _getSessionCwd,
@@ -635,6 +633,7 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
         // An explicit history selection must not trust a provider-less empty cache.
         // This state can be produced by an earlier load that raced the first DB save;
         // mark it pending so Case A retries the persisted transcript below.
+        // Also force rehydrate for legacy codex_local_* keys cached under the wrong provider.
         const providerMismatched = _isLocalCodexSessionId(sessionId)
           && cwdPatched.sessionProvider !== null
           && cwdPatched.sessionProvider !== 'codex'

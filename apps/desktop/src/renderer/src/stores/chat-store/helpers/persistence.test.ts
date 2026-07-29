@@ -19,12 +19,12 @@ vi.stubGlobal('window', {
 await import('../index')
 const { createDefaultPerSessionState, createDefaultProjectState } = await import('../defaults')
 const {
-  _createLocalCodexSessionId,
   _ensureSessionHydrated,
   _getEffectiveSessionId,
   _getSessionCwd,
   _getSessionGitBranch,
   _hydrateSessionState,
+  _isLocalCodexSessionId,
   _mergeHydratedSessionState,
   _mergePersistedMessages,
   _mergePersistedSessionState,
@@ -45,12 +45,10 @@ describe('small pure helpers', () => {
     expect(_getEffectiveSessionId(proj)).toBe('sid-1')
   })
 
-  it('_createLocalCodexSessionId is prefixed with codex_local_ and reasonably unique', () => {
-    const a = _createLocalCodexSessionId()
-    const b = _createLocalCodexSessionId()
-    expect(a).toMatch(/^codex_local_/)
-    expect(b).toMatch(/^codex_local_/)
-    expect(a).not.toBe(b)
+  it('_isLocalCodexSessionId only matches legacy codex_local_ session keys', () => {
+    expect(_isLocalCodexSessionId('codex_local_abc_def')).toBe(true)
+    expect(_isLocalCodexSessionId(crypto.randomUUID())).toBe(false)
+    expect(_isLocalCodexSessionId('codex-remote-123')).toBe(false)
   })
 
   it('_getSessionGitBranch returns the session git branch or undefined', () => {

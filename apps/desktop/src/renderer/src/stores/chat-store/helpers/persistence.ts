@@ -3,20 +3,16 @@ import type { ChatStore, PerSessionState, PersistedSessionState, ProjectState } 
 import { latestCodexTodoListFromMessages } from './codex-todo'
 import { resolveActiveSessionId } from './store-helpers'
 
-const CODEX_LOCAL_SESSION_PREFIX = 'codex_local_'
+/** Legacy SuperOne session ids minted with a codex_local_ prefix (pre-UUID unification). */
+const LEGACY_CODEX_LOCAL_SESSION_PREFIX = 'codex_local_'
 
+/** True for historical codex_local_* session keys still present in DB / cache. */
 export function _isLocalCodexSessionId(sessionId: string): boolean {
-  return sessionId.startsWith(CODEX_LOCAL_SESSION_PREFIX)
+  return sessionId.startsWith(LEGACY_CODEX_LOCAL_SESSION_PREFIX)
 }
 
 export function _getEffectiveSessionId(project: ProjectState): string | null {
   return resolveActiveSessionId(project)
-}
-
-export function _createLocalCodexSessionId(): string {
-  const ts = Date.now().toString(36)
-  const rand = Math.random().toString(36).slice(2, 10)
-  return `${CODEX_LOCAL_SESSION_PREFIX}${ts}_${rand}`
 }
 
 export function _getSessionGitBranch(session: PerSessionState): string | undefined {

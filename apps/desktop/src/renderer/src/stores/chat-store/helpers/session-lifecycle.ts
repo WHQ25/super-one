@@ -14,7 +14,6 @@ import {
   resetLock,
 } from './lifecycle'
 import {
-  _createLocalCodexSessionId,
   _getSessionCwd,
   _getSessionWorktreePath,
   _hydrateSessionState,
@@ -275,7 +274,7 @@ export function resetSessionForWorktreeSwitchImpl(
   const previousSid = prevProject?._activeSessionId ?? null
   const previousSession = previousSid ? prevProject?._sessions[previousSid] : undefined
   const nextProvider = previousSession?.sessionProvider ?? previousSession?.preferredProvider ?? 'claude'
-  const draftId = nextProvider === 'codex' ? _createLocalCodexSessionId() : createSessionId()
+  const draftId = createSessionId()
   set((s) => {
     const proj = getProject(s, projectPath)
     const newSession = applyCachedCodexPermissionPreset(createDefaultPerSessionState())
@@ -333,7 +332,7 @@ export async function resetSessionImpl(set: ChatStoreSet, get: () => ChatStore):
     return
   }
 
-  const newSessionId = nextProvider === 'codex' ? _createLocalCodexSessionId() : createSessionId()
+  const newSessionId = createSessionId()
   window.app.trace?.('session.lifecycle', 'resetSession', {
     activeProject,
     oldSid: currentSid,
@@ -446,9 +445,7 @@ export function setPreferredProviderImpl(
   const currentSid0 = proj0._activeSessionId
   const currentSess0 = currentSid0 ? proj0._sessions[currentSid0] : null
   const willReplaceSid = !!currentSess0 && currentSess0.messages.length === 0
-  const nextSid = willReplaceSid
-    ? (provider === 'codex' ? _createLocalCodexSessionId() : createSessionId())
-    : null
+  const nextSid = willReplaceSid ? createSessionId() : null
 
   // ACP model ids (e.g. grok-4.5 / opencode/…) must not stick on Claude/Codex selectors.
   const acpModeReset = {

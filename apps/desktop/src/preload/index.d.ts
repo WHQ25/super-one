@@ -266,6 +266,16 @@ interface AppAPI {
   setFastMode(enabled: boolean): Promise<void>
   getAppSettings(): Promise<AppSettings>
   saveAppSettings(patch: AppSettingsPatch): Promise<AppSettings>
+  openComputerUsePermissions(): Promise<{
+    presented: boolean
+    accessibility?: string
+    screenRecording?: string
+    reason?: string
+    error?: string
+  }>
+  listComputerUseRunningApps(): Promise<
+    Array<{ app: string; bundleId: string; pid: number; frontmost: boolean }>
+  >
   recordBrowserHistory(url: string, title: string, titleOnly?: boolean): Promise<void>
   suggestBrowserHistory(query: string, limit?: number): Promise<BrowserHistoryEntry[]>
   deleteBrowserHistory(url: string | null): Promise<void>

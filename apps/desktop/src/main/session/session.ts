@@ -579,6 +579,8 @@ export class Session implements SessionContract {
       if ((this._status as SessionStatus) !== 'disposed') {
         this._status = prev === 'starting' ? 'idle' : 'ended'
       }
+      // Agent no longer controlling — drop software cursor + menu-bar chip.
+      void this.clearComputerUseVisuals('interrupt')
     }
     return true
   }
@@ -1008,6 +1010,7 @@ export class Session implements SessionContract {
     trace('session.lifecycle', 'dispose', { sid: this.id, owner: this._owner.kind === 'remote' ? this._owner.deviceId : 'local', subscribers: [...this._subscribers] })
     this._status = 'disposed'
     this._pendingQueuedRequests.clear()
+    void this.clearComputerUseVisuals('dispose')
     try { await this.waitForRuntimeRelease() } catch { /* backend close still needs to run */ }
     try { await this.backend.close() } catch (err) { log.debug('[Session] backend.close error:', err) }
     if (this._owner.kind === 'remote') {
@@ -1292,7 +1295,29 @@ export class Session implements SessionContract {
     ) {
       this.notifyStateChange()
     }
+    // Turn finished / aborted / errored → agent is idle; hide CU control chrome.
+    if (
+      event.type === 'message_complete'
+      || event.type === 'message_interrupted'
+      || event.type === 'message_error'
+    ) {
+      void this.clearComputerUseVisuals(event.type)
+    }
     return tagged
+  }
+
+  /**
+   * Best-effort: hide Computer Use software cursor + menu-bar chip when this
+   * session is no longer actively controlling the desktop.
+   */
+  private async clearComputerUseVisuals(reason: string): Promise<void> {
+    try {
+      const { hideComputerUseVisuals } = await import('../computer-use/tools')
+      await hideComputerUseVisuals(this.id)
+      log.debug('[Session] cleared computer-use visuals reason=%s sid=%s', reason, this.id)
+    } catch (err) {
+      log.debug('[Session] clear computer-use visuals failed: %s', err)
+    }
   }
 
   private enrichOutboundEvent(event: AgentEvent): AgentEvent {

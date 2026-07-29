@@ -141,6 +141,7 @@ export const CONFIG_SETTINGS_DOMAINS = [
   'general',
   'appearance',
   'browser',
+  'computer-use',
   'agent-claude',
   'agent-codex',
   'ai-provider',

@@ -17,6 +17,7 @@ import { getPermissionPromptConfig } from './permission-prompt/permission-prompt
 import { VideoGenConfirmPromptContainer } from './VideoGenConfirmPromptContainer'
 import { ConfigConfirmPromptContainer } from './ConfigConfirmPromptContainer'
 import { SessionAgentsConfirmPromptContainer } from './SessionAgentsConfirmPromptContainer'
+import { ComputerUseGrantPrompt } from './ComputerUseGrantPrompt'
 import { ApproveRejectBar, PermissionActionButton } from './PermissionActionBar'
 
 interface MiniAppToolInfo {
@@ -132,7 +133,8 @@ export function PermissionPrompt() {
   const isVideoGenConfirm = pendingPermission?.requestKind === 'video_gen_confirm'
   const isConfigConfirm = pendingPermission?.requestKind === 'config_confirm'
   const isSessionAgentsConfirm = pendingPermission?.requestKind === 'session_agents_confirm'
-  const isSelfManagedConfirm = isVideoGenConfirm || isConfigConfirm || isSessionAgentsConfirm
+  const isComputerUseGrant = pendingPermission?.requestKind === 'computer_use_grant'
+  const isSelfManagedConfirm = isVideoGenConfirm || isConfigConfirm || isSessionAgentsConfirm || isComputerUseGrant
   const elicitationForm = pendingPermission?.elicitationForm ?? []
   const supportsAlwaysPersist = pendingPermission?.supportsAlwaysPersist ?? false
   useRestoreChatInputFocus(!!requestId)
@@ -357,6 +359,26 @@ export function PermissionPrompt() {
 
   if (isSessionAgentsConfirm) {
     return <SessionAgentsConfirmPromptContainer request={pendingPermission} />
+  }
+
+  if (isComputerUseGrant && pendingPermission) {
+    return (
+      <ComputerUseGrantPrompt
+        request={pendingPermission}
+        onSessionAllow={() => {
+          if (!requestId) return
+          respondToPermission(requestId, true, false)
+        }}
+        onAlwaysAllow={() => {
+          if (!requestId) return
+          respondToPermission(requestId, true, true)
+        }}
+        onDeny={() => {
+          if (!requestId) return
+          respondToPermission(requestId, false)
+        }}
+      />
+    )
   }
 
   if (isElicitation) {

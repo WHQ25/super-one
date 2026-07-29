@@ -21,6 +21,11 @@ import {
 } from './superone-mcp-builtin-defs'
 import { registerWidgetTools } from '../generative-ui/mcp-server'
 import { clearBrowserToolHandlers, registerBrowserTools } from './browser-mcp-tools'
+import {
+  isComputerUseEnabled,
+  registerComputerUseTools,
+} from '../computer-use/tools'
+import { computerUseQualifiedNames, isComputerUseQualifiedName } from '../computer-use/harness-surface'
 
 export interface MobileShareToolResult {
   ok: boolean
@@ -203,7 +208,17 @@ const BUILT_IN_QUALIFIED_NAMES = new Set([
 ])
 
 export function isBuiltInSuperoneTool(qualifiedName: string): boolean {
-  return BUILT_IN_QUALIFIED_NAMES.has(qualifiedName)
+  if (BUILT_IN_QUALIFIED_NAMES.has(qualifiedName)) return true
+  // Computer Use is SuperOne-owned; when the feature is on, treat like other
+  // built-in SuperOne tools for permission auto-allow (same as media/config).
+  // When off, tools are not registered — this branch never runs.
+  if (isComputerUseEnabled() && isComputerUseQualifiedName(qualifiedName)) return true
+  return false
+}
+
+/** Test/debug: full set of SuperOne-owned computer tool qualified names. */
+export function listComputerUseQualifiedNames(): string[] {
+  return computerUseQualifiedNames()
 }
 
 export function createSuperoneMcpServer(sessionId: string, projectPath?: string): McpSdkServerConfigWithInstance {
@@ -216,6 +231,8 @@ export function createSuperoneMcpServer(sessionId: string, projectPath?: string)
   })
   registerWidgetTools(server, { projectPath })
   registerBrowserTools(server, sessionId)
+  // Opt-in desktop Computer Use (coordinate/AX fallback tier). Gated by settings.
+  registerComputerUseTools(server, sessionId)
   const state: ProjectServerState = { server, registeredTools: new Map() }
 
   let set = sessionServers.get(sessionId)

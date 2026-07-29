@@ -787,6 +787,12 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.APP_SETTINGS_GET),
   saveAppSettings: (patch: Record<string, unknown>) =>
     ipcRenderer.invoke(AgentIpcChannels.APP_SETTINGS_SAVE, patch),
+  openComputerUsePermissions: () =>
+    ipcRenderer.invoke(AgentIpcChannels.COMPUTER_USE_OPEN_PERMISSIONS),
+  listComputerUseRunningApps: () =>
+    ipcRenderer.invoke(AgentIpcChannels.COMPUTER_USE_LIST_RUNNING_APPS) as Promise<
+      Array<{ app: string; bundleId: string; pid: number; frontmost: boolean }>
+    >,
   recordBrowserHistory: (url: string, title: string, titleOnly?: boolean) =>
     ipcRenderer.invoke(AgentIpcChannels.BROWSER_HISTORY_RECORD, url, title, titleOnly),
   suggestBrowserHistory: (query: string, limit?: number) =>

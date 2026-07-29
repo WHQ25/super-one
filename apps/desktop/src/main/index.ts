@@ -35,6 +35,11 @@ import { MobileShareService, type MobileShareTarget } from './remote/mobile-shar
 import { MobileReceiveService, type MobileReceiveTarget } from './remote/mobile-receive-service'
 import { MobileShareToolCoordinator } from './remote/mobile-share-tool-coordinator'
 import { startSuperoneMcpStdioBridge, stopSuperoneMcpStdioBridge } from './mcp/superone-mcp-stdio-ipc'
+import {
+  openComputerUsePermissionOnboarding,
+  startDevComputerUseHelper,
+  stopDevComputerUseHelper,
+} from './computer-use/computer-use-helper-lifecycle'
 import { scheduleMcpReload } from './mcp/mcp-reload-scheduler'
 import { query, type SDKResultMessage } from '@anthropic-ai/claude-agent-sdk'
 import { resolveSdkClaudeBinary } from './agent/claude-binary'
@@ -499,11 +504,7 @@ async function applyAppSettingsPatch(patch: AppSettingsPatch): Promise<AppSettin
     detachAllCdp()
   }
   if (patch?.experimentalAgentCollaborationEnabled !== undefined) {
-    // Dynamically re-surface collab tools on already-running sessions:
-    // - stdio SuperOne MCP bridges (ACP/Grok, Codex) re-list via tools/changed
-    // - Claude in-process MCP is recreated on next turn via markNeedsRebuild
-    //   (tools are registered once at createSuperoneMcpServer time)
-    // - the existing tools-changed listener schedules the one required backend reload
+    // Collab tools: Claude/OpenCode bake at createSuperoneMcpServer; Codex reloads MCP.
     const { notifySessionToolsChanged } = await import('./mcp/superone-mcp-server')
     sessionManager.forEachSession((session) => {
       if (session.snapshot.harnessId === 'claude' || session.snapshot.harnessId === 'opencode') {
@@ -511,6 +512,73 @@ async function applyAppSettingsPatch(patch: AppSettingsPatch): Promise<AppSettin
       }
       notifySessionToolsChanged(session.id)
     })
+  }
+  if (patch?.computerUseEnabled === false) {
+    // Feature off → immediately drop any lingering control chrome.
+    try {
+      const { hideComputerUseVisuals } = await import('./computer-use/tools')
+      await hideComputerUseVisuals()
+    } catch {
+      // ignore
+    }
+  }
+  if (patch?.computerUseEnabled !== undefined) {
+    // Computer Use must reach every harness that injects SuperOne MCP:
+    // - Claude / OpenCode: in-process createSuperoneMcpServer (+ registerComputerUseTools)
+    // - Codex: HTTP initialize → createSuperoneMcpServer; also snapshots once per thread
+    // - ACP: HTTP or stdio → listSuperoneMcpTools / createSuperoneMcpServer
+    // Close HTTP sessions so the next MCP initialize re-registers the tool set.
+    // markNeedsRebuild on ALL harnesses so the next turn re-snapshots (Codex/ACP
+    // ignore tools/list_changed for the thread tool list).
+    const { notifySessionToolsChanged, disposeSuperoneMcpServer } = await import('./mcp/superone-mcp-server')
+    const { closeSuperoneMcpHttpSessions } = await import('./mcp/superone-mcp-http-state')
+    const { harnessRecoveryForComputerUseToggle } = await import('./computer-use/harness-surface')
+    sessionManager.forEachSession((session) => {
+      const recovery = harnessRecoveryForComputerUseToggle(session.snapshot.harnessId)
+      if (recovery.closeHttpSessions) {
+        void closeSuperoneMcpHttpSessions(session.id)
+      }
+      // Drop in-process MCP instances so Claude rebuild picks up a fresh server.
+      try {
+        disposeSuperoneMcpServer(session.id)
+      } catch {
+        // ignore
+      }
+      if (recovery.markNeedsRebuild) {
+        session.markNeedsRebuild()
+      }
+      if (recovery.notifyToolsChanged) {
+        notifySessionToolsChanged(session.id)
+      }
+    })
+  }
+  if (
+    patch?.computerUseAlwaysAllowApps !== undefined
+    || patch?.computerUseAllowAllApps !== undefined
+    || patch?.computerUseVisualIndicators !== undefined
+  ) {
+    try {
+      const { syncAllComputerUseServicesFromSettings } = await import('./computer-use/tools')
+      syncAllComputerUseServicesFromSettings()
+    } catch {
+      // ignore if computer-use module not loaded
+    }
+    // Best-effort: push overlay on/off to the live helper immediately (macOS only).
+    if (patch?.computerUseVisualIndicators !== undefined) {
+      try {
+        const { getSharedHelperClient } = await import('./computer-use/platform/macos-helper-client')
+        const enabled = result.computerUseVisualIndicators !== false
+        await getSharedHelperClient().call('overlay_set_enabled', {
+          enabled,
+        }).catch(() => {})
+        if (!enabled) {
+          const { hideComputerUseVisuals } = await import('./computer-use/tools')
+          await hideComputerUseVisuals()
+        }
+      } catch {
+        // helper offline is fine
+      }
+    }
   }
   safeSend(AgentIpcChannels.APP_SETTINGS_CHANGED, result)
   return result
@@ -2221,6 +2289,21 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(AgentIpcChannels.APP_SETTINGS_GET, () => readAppSettings())
   ipcMain.handle(AgentIpcChannels.APP_SETTINGS_SAVE, (_e, patch) => applyAppSettingsPatch(patch))
+  ipcMain.handle(AgentIpcChannels.COMPUTER_USE_OPEN_PERMISSIONS, () => openComputerUsePermissionOnboarding())
+  ipcMain.handle(AgentIpcChannels.COMPUTER_USE_LIST_RUNNING_APPS, async () => {
+    try {
+      const { getOrCreateComputerUseService } = await import('./computer-use/tools')
+      // Settings UI is not session-scoped; use a dedicated service id for listing.
+      const service = getOrCreateComputerUseService('__settings__')
+      return await service.listRunningApps()
+    } catch (err) {
+      log.warn(
+        '[computer-use] list running apps failed: %s',
+        err instanceof Error ? err.message : String(err),
+      )
+      return []
+    }
+  })
   ipcMain.handle(AgentIpcChannels.APP_SYSTEM_LOCALE, () => getSystemLocale())
 
   ipcMain.handle(AgentIpcChannels.BROWSER_HISTORY_RECORD, (_e, url: string, title: string, titleOnly?: boolean) => recordBrowserHistory(url, title, titleOnly))
@@ -2941,6 +3024,12 @@ app.whenReady().then(async () => {
   registerBrowserPopupRedirect()
   registerBrowserDownloadCapture()
 
+  // Dev: keep SuperOne Dev Computer Use.app alive for the whole SuperOne session
+  // so TCC identity stays stable and Screen Recording applies after relaunch.
+  if (is.dev && process.platform === 'darwin') {
+    void startDevComputerUseHelper()
+  }
+
   if (is.dev && process.env.SUPERONE_BENCH) {
     ipcMain.handle(AgentIpcChannels.GET_APP_METRICS, (event) => ({
       selfPid: event.sender.getOSProcessId(),
@@ -3162,6 +3251,7 @@ function disposeAgentSessions(): Promise<void> {
 function performQuit(): void {
   quitting = true
   if (terminalSweepTimer) clearInterval(terminalSweepTimer)
+  stopDevComputerUseHelper()
   shutdownAllProxies()
   terminalManager.killAll()
   automationService.stop()
@@ -3193,6 +3283,7 @@ const handleSignalQuit = (sig: NodeJS.Signals): void => {
   signalQuitting = true
   log.info(`[main] received ${sig}, shutting down`)
   if (terminalSweepTimer) clearInterval(terminalSweepTimer)
+  stopDevComputerUseHelper()
   terminalManager.killAll()
   closeAllDbConnections()
   Promise.allSettled([

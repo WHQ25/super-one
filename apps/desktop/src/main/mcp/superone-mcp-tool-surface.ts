@@ -17,6 +17,12 @@ import {
   isBrowserToolName,
 } from './browser-mcp-tools'
 import {
+  executeComputerUseTool,
+  getComputerUseToolDescriptors,
+  isComputerUseEnabled,
+  isComputerUseToolName,
+} from '../computer-use/tools'
+import {
   dispatchAppToolCall,
   executeMobileShareFileTool,
   getAppToolDefs,
@@ -34,6 +40,10 @@ export function listSuperoneMcpTools(sessionId: string): SuperoneMcpToolDescript
       || !(SESSION_COLLABORATION_TOOL_NAMES as readonly string[]).includes(tool.name)),
     ...getBrowserToolDescriptors(),
   ]
+  // Computer Use is opt-in (default off). P0 exposes the 6-tool contract only when enabled.
+  if (isComputerUseEnabled()) {
+    tools.push(...getComputerUseToolDescriptors())
+  }
   // Match in-process MCP: only advertise mobile share while a phone is subscribed.
   if (isMobileShareToolEnabled(sessionId)) {
     tools.push({
@@ -62,6 +72,16 @@ export async function executeSuperoneMcpTool(
 ) {
   if (isBrowserToolName(toolName)) {
     return executeBrowserTool(sessionId, toolName, args)
+  }
+
+  if (isComputerUseToolName(toolName)) {
+    if (!isComputerUseEnabled()) {
+      return {
+        content: [{ type: 'text' as const, text: '[Error] Computer Use is disabled. Enable it before calling computer_* tools.' }],
+        isError: true,
+      }
+    }
+    return executeComputerUseTool(sessionId, toolName, args)
   }
 
   if (toolName === MOBILE_SHARE_FILE_TOOL_NAME) {

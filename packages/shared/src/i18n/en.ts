@@ -145,6 +145,7 @@ export type Messages = {
         general: string
         appearance: string
         browser: string
+        computerUse: string
         apps: string
         remote: string
         usage: string
@@ -188,6 +189,42 @@ export type Messages = {
         emulate: { label: string; description: string }
         mock: { label: string; description: string }
       }
+    }
+    computerUse: {
+      title: string
+      subtitle: string
+      enable: {
+        label: string
+        description: string
+      }
+      allowAll: {
+        label: string
+        description: string
+      }
+      alwaysAllow: {
+        title: string
+        description: string
+        add: string
+        empty: string
+        remove: string
+        searchPlaceholder: string
+        loadingApps: string
+        emptyRunning: string
+      }
+      visualIndicators: {
+        label: string
+        description: string
+      }
+      permissions: {
+        title: string
+        description: string
+        button: string
+        opening: string
+        opened: string
+        alreadyGranted: string
+      }
+      helperNote: string
+      fallbackNote: string
     }
     general: {
       title: string
@@ -702,6 +739,15 @@ export type Messages = {
       deny: string
       denyReasonPlaceholder: string
       alwaysAllow: string
+    }
+    computerUseGrant: {
+      title: string
+      description: string
+      collapsed: string
+      viaTool: string
+      allowSession: string
+      alwaysAllow: string
+      deny: string
     }
     videoGenConfirm: {
       title: string
@@ -2048,6 +2094,7 @@ export const en: Messages = {
         general: 'General',
         appearance: 'Appearance',
         browser: 'Browser',
+        computerUse: 'Computer Use',
         apps: 'Mini Apps',
         remote: 'Remote Control',
         usage: 'Usage Stats',
@@ -2100,6 +2147,42 @@ export const en: Messages = {
           description: 'Let the agent intercept and modify requests and responses — including login credentials and cookies. Only enable in trusted scenarios; misuse can hang pages (reload the tab to recover).',
         },
       },
+    },
+    computerUse: {
+      title: 'Computer Use',
+      subtitle: 'Let the agent observe and control native desktop apps (fallback when browser/Bash tools are not enough)',
+      enable: {
+        label: 'Enable Computer Use',
+        description: 'Expose computer_* tools to the agent. Off by default. Requires the SuperOne Computer Use helper app and macOS Accessibility + Screen Recording permissions.',
+      },
+      allowAll: {
+        label: 'Allow all apps',
+        description: 'Skip per-app grants and capture the full desktop. Testing only — prefer Always allow list below for real use. Any app can be observed and controlled while this is on.',
+      },
+      alwaysAllow: {
+        title: 'Always allow',
+        description: 'These apps can be used by Computer Use without a prompt. Session-only grants from chat do not appear here.',
+        add: 'Add app',
+        empty: 'No always-allowed apps yet. Add from running apps, or choose Always allow when the agent asks.',
+        remove: 'Remove {{app}}',
+        searchPlaceholder: 'Filter running apps…',
+        loadingApps: 'Loading running apps…',
+        emptyRunning: 'No matching running apps. Launch the app first, then add it here.',
+      },
+      visualIndicators: {
+        label: 'Show Computer Use indicators (macOS)',
+        description: 'While Computer Use is active: menu-bar chip (target app icon + mouse) and an on-screen virtual cursor at click points. Does not move your real mouse or steal focus. macOS only.',
+      },
+      permissions: {
+        title: 'macOS permissions',
+        description: 'Opens SuperOne Dev Computer Use with a draggable app icon (same UX as Open Computer Use). Drag it into System Settings → Privacy for Accessibility and Screen Recording. After Screen Recording is toggled, use Relaunch in that window (or quit SuperOne) so the grant applies.',
+        button: 'Open permission guide…',
+        opening: 'Opening…',
+        opened: 'Permission window opened — drag the app icon into System Settings.',
+        alreadyGranted: 'Accessibility and Screen Recording are already granted.',
+      },
+      helperNote: 'Dev helper: SuperOne Dev Computer Use.app (bundle com.superone.computer-use.dev). SuperOne dev starts/stops it with the app. Grant Accessibility + Screen Recording to that name — not SuperOne main, not Open Computer Use. After granting Screen Recording, fully quit SuperOne so the helper restarts.',
+      fallbackNote: 'Prefer browser_* for web pages and Bash/file tools when possible. Computer Use is a last-resort tier for native desktop UI.',
     },
     general: {
       title: 'General',
@@ -2627,6 +2710,15 @@ export const en: Messages = {
       deny: 'Deny',
       denyReasonPlaceholder: 'Deny reason (optional, Enter to submit)',
       alwaysAllow: 'Always Allow',
+    },
+    computerUseGrant: {
+      title: 'Allow Computer Use for {{app}}?',
+      description: 'The agent wants to observe or control this app. Session allow lasts for this chat only; Always allow is saved in Settings.',
+      collapsed: 'Computer Use: {{app}}',
+      viaTool: 'Requested by {{tool}}',
+      allowSession: 'Allow this session',
+      alwaysAllow: 'Always allow',
+      deny: 'Deny',
     },
     videoGenConfirm: {
       title: 'Confirm Video Generation',

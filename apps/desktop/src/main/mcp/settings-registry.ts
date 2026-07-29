@@ -162,6 +162,27 @@ export const SETTINGS_DOMAINS: SettingsDomainDef[] = [
     ],
   },
   {
+    domain: 'computer-use',
+    label: 'Computer Use',
+    description: 'Desktop GUI automation (fallback tier). Opt-in; requires a signed helper and per-session app grants.',
+    fields: [
+      {
+        key: 'computerUseEnabled',
+        label: 'Enable Computer Use',
+        type: 'boolean',
+        read: (s) => s.computerUseEnabled,
+        toPatch: (v) => ({ computerUseEnabled: v as boolean }),
+      },
+      {
+        key: 'computerUseAllowAllApps',
+        label: 'Allow all apps',
+        type: 'boolean',
+        read: (s) => s.computerUseAllowAllApps,
+        toPatch: (v) => ({ computerUseAllowAllApps: v as boolean }),
+      },
+    ],
+  },
+  {
     domain: 'browser',
     label: 'Browser',
     description: 'Built-in browser Chrome DevTools Protocol (CDP) automation toggles.',

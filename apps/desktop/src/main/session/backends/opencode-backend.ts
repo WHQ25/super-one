@@ -13,6 +13,7 @@ import type {
   SendMessageRequest,
 } from '@superone/shared/agent-types'
 import log from '../../logger'
+import { resolveComputerUseGrant, rejectComputerUseGrant } from '../../computer-use/grant-request'
 import { dispatchOpenCodeRequest } from '../../opencode/opencode-command'
 import {
   commonPrefixLength,
@@ -319,6 +320,10 @@ export class OpenCodeBackend implements SessionBackend {
     _selectedSuggestions?: number[],
     decision?: 'cancel',
   ): boolean {
+    if (decision === 'cancel') {
+      if (rejectComputerUseGrant(requestId, 'User cancelled')) return true
+    }
+    if (resolveComputerUseGrant(requestId, allow, alwaysAllow)) return true
     const pending = this.pendingPermissions.get(requestId)
     if (!pending) return false
     this.pendingPermissions.delete(requestId)

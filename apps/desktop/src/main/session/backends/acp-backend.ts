@@ -10,6 +10,7 @@ import type {
 } from '@superone/shared/agent-types'
 import type { RequestPermissionRequest, RequestPermissionResponse } from '@agentclientprotocol/sdk'
 import log from '../../logger'
+import { resolveComputerUseGrant, rejectComputerUseGrant } from '../../computer-use/grant-request'
 import {
   extractModeConfig,
   extractModelConfig,
@@ -1018,6 +1019,10 @@ export class AcpBackend implements SessionBackend {
     _selectedSuggestions?: number[],
     decision?: 'cancel',
   ): boolean {
+    if (decision === 'cancel') {
+      if (rejectComputerUseGrant(requestId, 'User cancelled')) return true
+    }
+    if (resolveComputerUseGrant(requestId, allow, alwaysAllow)) return true
     const pending = this.pendingPermissions.get(requestId)
     if (!pending) return false
     this.pendingPermissions.delete(requestId)

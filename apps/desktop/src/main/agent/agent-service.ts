@@ -1406,6 +1406,26 @@ export class AgentService {
 
   setSessionManager(sessionManager: import('../session/session-manager').SessionManagerImpl): void {
     this.sessionManager = sessionManager
+    this.wireComputerUseStop()
+  }
+
+  /**
+   * Stop in the Computer Use helper's status menu interrupts the driving turn.
+   * macOS-only: the helper is the only thing that emits this event.
+   */
+  private wireComputerUseStop(): void {
+    if (process.platform !== 'darwin') return
+    void import('../computer-use/stop-bridge')
+      .then(({ wireComputerUseStopBridge }) => {
+        wireComputerUseStopBridge((sessionId) => {
+          const session = this.sessionManager?.getSession(sessionId)
+          if (!session) return
+          void session.interrupt()
+        })
+      })
+      .catch((err) => {
+        log.debug('[agent-service] computer-use stop bridge unavailable: %s', String(err))
+      })
   }
 
   private requireSessionManager(): import('../session/session-manager').SessionManagerImpl {

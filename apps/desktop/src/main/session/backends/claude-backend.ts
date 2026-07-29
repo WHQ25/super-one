@@ -18,6 +18,7 @@ import {
 } from '../../agent/claude-permissions'
 import { resolveVideoConfirm, rejectVideoConfirm } from '../../mcp/media-tools'
 import { resolveConfigConfirm, rejectConfigConfirm } from '../../mcp/config-tools'
+import { resolveComputerUseGrant, rejectComputerUseGrant } from '../../computer-use/grant-request'
 import { buildSafeEnv } from '../../spawn-env'
 import type {
   AgentEvent,
@@ -479,9 +480,11 @@ export class ClaudeBackend implements SessionBackend {
     if (decision === 'cancel') {
       if (rejectVideoConfirm(requestId, 'User cancelled')) return true
       if (rejectConfigConfirm(requestId, 'User cancelled')) return true
+      if (rejectComputerUseGrant(requestId, 'User cancelled')) return true
     }
     if (resolveVideoConfirm(requestId, allow ? 'accept' : 'decline', formAnswers)) return true
     if (resolveConfigConfirm(requestId, allow ? 'accept' : 'decline', formAnswers)) return true
+    if (resolveComputerUseGrant(requestId, allow, alwaysAllow)) return true
     if (this.pendingElicitations.has(requestId)) {
       return respondToElicitationInternal(this.pendingElicitations, requestId, allow, decision, formAnswers)
     }

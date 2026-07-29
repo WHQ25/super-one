@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { app } from 'electron'
-import type { AppSettings, AppSettingsPatch, BrowserBookmark, BrowserBookmarkGroup, CodexPermissionPreset, EffortLevel, Locale, PermissionMode, QuestionPreviewFormat, SandboxMode, ThemeMode, UpdateChannel } from '@superone/shared/agent-types'
+import type { AppSettings, AppSettingsPatch, BrowserBookmark, BrowserBookmarkGroup, CodexPermissionPreset, ComputerUseAlwaysAllowApp, EffortLevel, Locale, PermissionMode, QuestionPreviewFormat, SandboxMode, ThemeMode, UpdateChannel } from '@superone/shared/agent-types'
 import { sanitizeOverrides } from '@superone/shared/harness-brand'
 
 export type { AppSettings, AppSettingsPatch }
@@ -28,6 +28,10 @@ const defaults: AppSettings = {
   cdpCookiesEnabled: false,
   cdpMockEnabled: false,
   cdpEmulateEnabled: false,
+  computerUseEnabled: false,
+  computerUseAllowAllApps: false,
+  computerUseAlwaysAllowApps: [],
+  computerUseVisualIndicators: true,
   miniAppOrder: {},
   customAppIconPath: null,
   browserBookmarks: [],
@@ -104,6 +108,25 @@ function readMiniAppOrder(value: unknown): Record<string, string[]> {
   const out: Record<string, string[]> = {}
   for (const [key, list] of Object.entries(value as Record<string, unknown>)) {
     if (Array.isArray(list)) out[key] = list.filter((x): x is string => typeof x === 'string')
+  }
+  return out
+}
+
+function readComputerUseAlwaysAllowApps(value: unknown): ComputerUseAlwaysAllowApp[] {
+  if (!Array.isArray(value)) return []
+  const out: ComputerUseAlwaysAllowApp[] = []
+  const seen = new Set<string>()
+  for (const item of value) {
+    if (!item || typeof item !== 'object') continue
+    const a = item as Record<string, unknown>
+    if (typeof a.bundleId !== 'string' || !a.bundleId.trim()) continue
+    const bundleId = a.bundleId.trim()
+    if (seen.has(bundleId)) continue
+    seen.add(bundleId)
+    out.push({
+      app: typeof a.app === 'string' && a.app.trim() ? a.app.trim() : bundleId,
+      bundleId,
+    })
   }
   return out
 }
@@ -260,6 +283,12 @@ export function readAppSettings(): AppSettings {
       cdpCookiesEnabled: typeof data.cdpCookiesEnabled === 'boolean' ? data.cdpCookiesEnabled : defaults.cdpCookiesEnabled,
       cdpMockEnabled: typeof data.cdpMockEnabled === 'boolean' ? data.cdpMockEnabled : defaults.cdpMockEnabled,
       cdpEmulateEnabled: typeof data.cdpEmulateEnabled === 'boolean' ? data.cdpEmulateEnabled : defaults.cdpEmulateEnabled,
+      computerUseEnabled: typeof data.computerUseEnabled === 'boolean' ? data.computerUseEnabled : defaults.computerUseEnabled,
+      computerUseAllowAllApps: typeof data.computerUseAllowAllApps === 'boolean' ? data.computerUseAllowAllApps : defaults.computerUseAllowAllApps,
+      computerUseAlwaysAllowApps: readComputerUseAlwaysAllowApps(data.computerUseAlwaysAllowApps),
+      computerUseVisualIndicators: typeof data.computerUseVisualIndicators === 'boolean'
+        ? data.computerUseVisualIndicators
+        : defaults.computerUseVisualIndicators,
       miniAppOrder: readMiniAppOrder(data.miniAppOrder),
       customAppIconPath: typeof data.customAppIconPath === 'string' ? data.customAppIconPath : defaults.customAppIconPath,
       browserBookmarks: readBookmarks(data.browserBookmarks),
@@ -289,6 +318,10 @@ export function readAppSettings(): AppSettings {
       cdpCookiesEnabled: defaults.cdpCookiesEnabled,
       cdpMockEnabled: defaults.cdpMockEnabled,
       cdpEmulateEnabled: defaults.cdpEmulateEnabled,
+      computerUseEnabled: defaults.computerUseEnabled,
+      computerUseAllowAllApps: defaults.computerUseAllowAllApps,
+      computerUseAlwaysAllowApps: [],
+      computerUseVisualIndicators: defaults.computerUseVisualIndicators,
       miniAppOrder: {},
       customAppIconPath: defaults.customAppIconPath,
       browserBookmarks: [],
@@ -325,6 +358,14 @@ export function saveAppSettings(patch: AppSettingsPatch): AppSettings {
     cdpCookiesEnabled: patch.cdpCookiesEnabled === undefined ? current.cdpCookiesEnabled : patch.cdpCookiesEnabled,
     cdpMockEnabled: patch.cdpMockEnabled === undefined ? current.cdpMockEnabled : patch.cdpMockEnabled,
     cdpEmulateEnabled: patch.cdpEmulateEnabled === undefined ? current.cdpEmulateEnabled : patch.cdpEmulateEnabled,
+    computerUseEnabled: patch.computerUseEnabled === undefined ? current.computerUseEnabled : patch.computerUseEnabled,
+    computerUseAllowAllApps: patch.computerUseAllowAllApps === undefined ? current.computerUseAllowAllApps : patch.computerUseAllowAllApps,
+    computerUseAlwaysAllowApps: patch.computerUseAlwaysAllowApps === undefined
+      ? current.computerUseAlwaysAllowApps
+      : readComputerUseAlwaysAllowApps(patch.computerUseAlwaysAllowApps),
+    computerUseVisualIndicators: patch.computerUseVisualIndicators === undefined
+      ? current.computerUseVisualIndicators
+      : patch.computerUseVisualIndicators,
     miniAppOrder: patch.miniAppOrder
       ? { ...current.miniAppOrder, ...patch.miniAppOrder }
       : current.miniAppOrder,

@@ -663,7 +663,7 @@ export interface PermissionRequest {
   toolDiff?: string
   toolDiffTokens?: { added?: DiffTokenLine[]; removed?: DiffTokenLine[] }
   toolLineDelta?: { added: number; removed: number }
-  requestKind?: 'mcp_elicitation' | 'video_gen_confirm' | 'config_confirm' | 'session_agents_confirm'
+  requestKind?: 'mcp_elicitation' | 'video_gen_confirm' | 'config_confirm' | 'session_agents_confirm' | 'computer_use_grant'
   serverName?: string
   message?: string
   subtitle?: string
@@ -676,6 +676,22 @@ export interface PermissionRequest {
   configConfirm?: ConfigConfirmPayload
   /** Present only when requestKind === 'session_agents_confirm'. */
   sessionAgentsConfirm?: SessionAgentRequestPayload
+  /** Present only when requestKind === 'computer_use_grant'. */
+  computerUseGrant?: ComputerUseGrantPayload
+}
+
+/** HITL payload when Computer Use needs permission to touch a desktop app. */
+export interface ComputerUseGrantPayload {
+  app: string
+  bundleId: string
+  /** Tool that triggered the request (e.g. computer_observe). */
+  toolName: string
+}
+
+/** Persistent always-allow entry for Computer Use (Settings + AppSettings). */
+export interface ComputerUseAlwaysAllowApp {
+  app: string
+  bundleId: string
 }
 
 export type PermissionMode = 'default' | 'acceptEdits' | 'bypassPermissions' | 'plan' | 'dontAsk' | 'auto'
@@ -2412,6 +2428,10 @@ export const AgentIpcChannels = {
   APP_SETTINGS_GET: 'app:settings-get',
   APP_SETTINGS_SAVE: 'app:settings-save',
   APP_SETTINGS_CHANGED: 'app:settings-changed',
+  /** Open SuperOne Dev Computer Use native permission onboarding (drag icon into System Settings). */
+  COMPUTER_USE_OPEN_PERMISSIONS: 'computer-use:open-permissions',
+  /** List currently running apps (for Computer Use always-allow picker). */
+  COMPUTER_USE_LIST_RUNNING_APPS: 'computer-use:list-running-apps',
   BROWSER_HISTORY_RECORD: 'app:browser-history-record',
   BROWSER_HISTORY_SUGGEST: 'app:browser-history-suggest',
   BROWSER_HISTORY_DELETE: 'app:browser-history-delete',
@@ -2826,6 +2846,24 @@ export interface AppSettings {
   cdpCookiesEnabled: boolean
   cdpMockEnabled: boolean
   cdpEmulateEnabled: boolean
+  /** Opt-in Computer Use (desktop GUI automation). Default off. */
+  computerUseEnabled: boolean
+  /**
+   * Temporary: skip per-app session allowlist and capture all apps.
+   * For local testing; prefer always-allow list + session HITL in production.
+   * Default off.
+   */
+  computerUseAllowAllApps: boolean
+  /**
+   * Apps permanently allowed for Computer Use across sessions.
+   * Session-scoped grants live only in memory (ComputerUsePolicy).
+   */
+  computerUseAlwaysAllowApps: ComputerUseAlwaysAllowApp[]
+  /**
+   * macOS only: show target-window ring + virtual agent cursor while Computer Use runs.
+   * Default on. No effect on Windows/Linux until those helpers land.
+   */
+  computerUseVisualIndicators: boolean
   miniAppOrder: Record<string, string[]>
   customAppIconPath: string | null
   browserBookmarks: BrowserBookmark[]
@@ -2875,6 +2913,10 @@ export interface AppSettingsPatch {
   cdpCookiesEnabled?: boolean
   cdpMockEnabled?: boolean
   cdpEmulateEnabled?: boolean
+  computerUseEnabled?: boolean
+  computerUseAllowAllApps?: boolean
+  computerUseAlwaysAllowApps?: ComputerUseAlwaysAllowApp[]
+  computerUseVisualIndicators?: boolean
   miniAppOrder?: Record<string, string[]>
   customAppIconPath?: string | null
   browserBookmarks?: BrowserBookmark[]

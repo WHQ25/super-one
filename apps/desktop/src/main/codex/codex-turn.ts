@@ -60,6 +60,7 @@ import { isToolPreapproved, isBuiltInSuperoneTool } from '../mcp/superone-mcp-se
 import { BUILT_IN_SUPERONE_TOOL_NAMES } from '../mcp/superone-mcp-builtins'
 import { resolveConfigConfirm, rejectConfigConfirm } from '../mcp/config-tools'
 import { resolveVideoConfirm, rejectVideoConfirm } from '../mcp/media-tools'
+import { resolveComputerUseGrant, rejectComputerUseGrant } from '../computer-use/grant-request'
 import { CODEX_SYSTEM_PROMPT_APPEND } from '../agent/superone-system-prompt'
 import { buildAttachmentPathNote } from '../agent/attachment-store'
 
@@ -2263,9 +2264,11 @@ export function respondToCodexPermission(
   if (decision === 'cancel') {
     if (rejectVideoConfirm(requestId, 'User cancelled')) return true
     if (rejectConfigConfirm(requestId, 'User cancelled')) return true
+    if (rejectComputerUseGrant(requestId, 'User cancelled')) return true
   }
   if (resolveVideoConfirm(requestId, allow ? 'accept' : 'decline', formAnswers)) return true
   if (resolveConfigConfirm(requestId, allow ? 'accept' : 'decline', formAnswers)) return true
+  if (resolveComputerUseGrant(requestId, allow, alwaysAllow)) return true
 
   const pending = session.pendingApprovals.get(requestId)
   if (!pending) return false

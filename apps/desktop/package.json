@@ -11,7 +11,9 @@
   },
   "scripts": {
     "postinstall": "electron-rebuild -f -w better-sqlite3,node-pty --module-dir ../.. && node ./scripts/chmod-agent-bins.mjs",
-    "dev": "rm -f dev.log event-trace.db && sqlite3 ~/Library/Application\\ Support/super-one/superone.db 'DELETE FROM global_resource_cache' 2>/dev/null; electron-vite dev",
+    "build:cu-helper": "bash ./native/computer-use-helper/scripts/build.sh dev",
+    "build:cu-helper:release": "bash ./native/computer-use-helper/scripts/build.sh release",
+    "dev": "bash ./native/computer-use-helper/scripts/build.sh dev && rm -f dev.log event-trace.db && sqlite3 ~/Library/Application\\ Support/super-one/superone.db 'DELETE FROM global_resource_cache' 2>/dev/null; electron-vite dev",
     "dev:cdp": "SUPERONE_E2E=1 electron-vite dev --remoteDebuggingPort ${SUPERONE_CDP_PORT:-9222}",
     "bench": "SUPERONE_BENCH=1 electron-vite dev",
     "prepare:mac-optional-deps": "bun install --frozen-lockfile --os=darwin --cpu=x64 && bun install --frozen-lockfile --os=darwin --cpu=arm64",

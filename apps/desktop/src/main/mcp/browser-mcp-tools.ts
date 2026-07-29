@@ -306,7 +306,7 @@ export function registerBrowserTools(server: McpServer, sessionId: string): void
     'browser_screenshot',
     {
       description:
-        'Capture a PNG screenshot of the visible viewport (or one element when a selector is given), save it to disk, and return its file path plus width/height. To capture content below the fold, scroll to it first (browser_scroll) and screenshot again. The image is NOT loaded into your context automatically — if you actually need to look at it, call Read on the returned path. Prefer the text tools (snapshot/query/inspect) first; use a screenshot when pixels matter or to leave a visual record for the user.',
+        'Capture a PNG screenshot of the visible viewport (or one element when a selector is given), save it to disk, and return its file path plus width/height. Oversized files are JPEG-re-encoded (same dimensions) for cheaper Read. To capture content below the fold, scroll to it first (browser_scroll) and screenshot again. The image is NOT loaded into your context automatically — if you actually need to look at it, call Read on the returned path. Prefer the text tools (snapshot/query/inspect) first; use a screenshot when pixels matter or to leave a visual record for the user.',
       inputSchema: {
         ...tabField,
         ...descriptionField,

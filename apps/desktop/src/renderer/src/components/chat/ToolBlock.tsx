@@ -17,9 +17,11 @@ import { DraggableFileIcon } from './DraggableFileIcon'
 import { getToolDisplay, getToolLabel, getToolVerb, parseToolInput, parseMcpToolName, isHiddenToolBlock, formatReadMeta, type ToolIcon as ToolIconType } from './tool-display'
 import { PrettyJSONCodeBlock, AskUserQuestionResult } from './tool-result-views'
 import { BrowserToolBlock } from './BrowserToolBlock'
+import { ComputerUseToolBlock } from './ComputerUseToolBlock'
 import { MediaProvidersBlock } from './MediaProvidersBlock'
 import { VideoGenToolBlock } from './VideoGenToolBlock'
 import { getBrowserOp } from './browser-tool-display'
+import { getComputerOp } from './computer-tool-display'
 import { useStallLevel, getStallColor } from '@/lib/stall-utils'
 import { AnsiText } from '@/lib/ansi'
 import { countUnifiedDiffDelta, countPrefixedDiffDelta, computeLineDelta, computeStreamingEditDelta, tryPrettifyJson, extractToolError } from './tool-block-utils'
@@ -982,6 +984,21 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, t
       return (
         <BrowserToolBlock
           op={browserOp}
+          params={params}
+          result={cleanResult}
+          isStreaming={isStreaming}
+          isError={isError}
+          isDenied={isDenied}
+          elapsedSeconds={elapsedSeconds}
+          stallLevel={stallLevel}
+        />
+      )
+    }
+    const computerOp = getComputerOp(mcpInfo.mcpToolName)
+    if (computerOp) {
+      return (
+        <ComputerUseToolBlock
+          op={computerOp}
           params={params}
           result={cleanResult}
           isStreaming={isStreaming}

@@ -2,7 +2,7 @@ import type { ChatMessage as ChatMessageType, ContentBlock, AgentStatus, ImageGe
 import { useState, useEffect, useRef, useMemo, useCallback, memo, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@superone/ui/lib/utils'
-import { Loader2, ImageIcon, OctagonX, Folder, ChevronRight, Clock, Minimize2, ArrowUp, ArrowDown, Copy, Check, AlertTriangle, X, Shuffle, Bot, Inbox, Globe, Monitor, Users } from 'lucide-react'
+import { Loader2, ImageIcon, OctagonX, Folder, ChevronRight, Clock, Minimize2, ArrowUp, ArrowDown, Copy, Check, AlertTriangle, X, Shuffle, Bot, Inbox, Globe, MousePointer2, Users } from 'lucide-react'
 import { ToolBlock } from './ToolBlock'
 import { ToolGroup } from './ToolGroup'
 import { AppToolGroup } from './AppToolGroup'
@@ -45,6 +45,7 @@ import { replaceMiniAppTagsWithMention } from '@superone/shared/miniapp-prompt-t
 import { deriveColors, ContextPreviewContent } from './ContextChip'
 import { Popover, PopoverContent, PopoverTrigger } from '@superone/ui/components/ui/popover'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
+import { DesktopAppIcon } from './DesktopAppIcon'
 import { useIsDark } from '@/hooks/use-is-dark'
 import type { ChatMessageContext } from '@superone/shared/agent-types'
 
@@ -446,18 +447,25 @@ function MentionInlineChip({ kind, value, displayName }: { kind: UserMentionKind
 
   const isCapability =
     resolvedKind === 'collab' || resolvedKind === 'computer' || resolvedKind === 'browser'
-  const display = resolvedKind === 'miniapp' || isCapability
-    ? (displayName ?? value)
-    : (value.replace(/\/$/, '').split('/').pop() || value)
+  const isBlendedChip = isCapability || resolvedKind === 'desktop-app'
+  const display =
+    resolvedKind === 'miniapp' || isBlendedChip
+      ? (displayName ?? value)
+      : (value.replace(/\/$/, '').split('/').pop() || value)
   return (
     <span
       className={cn(
         // Match surrounding user-bubble text-sm line box: middle-align the
         // icon+label flex so it doesn't sit above/below RestContent text.
-        'inline-flex items-center whitespace-nowrap align-middle',
+        // break-normal resists the bubble's break-all so multi-word labels
+        // (e.g. "Computer Use") stay on one line with following text.
+        'inline-flex max-w-full items-center whitespace-nowrap break-normal align-middle',
         resolvedKind === 'agent'
           ? 'gap-1 rounded-md border border-primary/40 bg-primary/15 px-1.5 py-0.5 text-xs leading-5 text-primary'
-          : 'gap-0.5 text-sm leading-5 text-foreground'
+          : isBlendedChip
+            // Capability / desktop-app chips blend into surrounding text.
+            ? 'mx-1 gap-0.5 text-[0.875rem] leading-none text-muted-foreground'
+            : 'gap-0.5 text-sm leading-5 text-foreground'
       )}
     >
       {resolvedKind === 'agent' ? (
@@ -472,6 +480,11 @@ function MentionInlineChip({ kind, value, displayName }: { kind: UserMentionKind
           <MiniAppIcon appId={value} className="size-3.5 shrink-0" />
           <span>{display}</span>
         </>
+      ) : resolvedKind === 'desktop-app' ? (
+        <>
+          <DesktopAppIcon bundleId={value} className="size-3.5" />
+          <span>{display}</span>
+        </>
       ) : resolvedKind === 'collab' ? (
         <>
           <Users className="size-3.5 shrink-0 text-violet-600 dark:text-violet-400" />
@@ -479,7 +492,7 @@ function MentionInlineChip({ kind, value, displayName }: { kind: UserMentionKind
         </>
       ) : resolvedKind === 'computer' ? (
         <>
-          <Monitor className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+          <MousePointer2 className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
           <span>{display}</span>
         </>
       ) : resolvedKind === 'browser' ? (

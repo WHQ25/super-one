@@ -74,8 +74,17 @@ export function parseMcpToolName(toolName: string): { serverName: string; mcpToo
  * groupContent (emits no segment, so surrounding thinking blocks stay adjacent). */
 const HIDDEN_TASK_TOOLS = new Set(['TodoWrite', 'TaskCreate', 'TaskUpdate'])
 
-export function isHiddenToolBlock(toolName: string, result?: string): boolean {
+export function isAlwaysHiddenToolBlock(toolName: string): boolean {
   if (HIDDEN_TASK_TOOLS.has(toolName)) return true
+  const mcp = parseMcpToolName(toolName)
+  return mcp?.serverName === 'superone'
+    && (mcp.mcpToolName === 'session_rename'
+      || mcp.mcpToolName === 'session_collab_list_agents'
+      || mcp.mcpToolName === 'session_list_agents')
+}
+
+export function isHiddenToolBlock(toolName: string, result?: string): boolean {
+  if (isAlwaysHiddenToolBlock(toolName)) return true
   if (isMediaGenerateImageTool(toolName)) return !result || isSuccessfulGenerationResult(result)
   // The submit block stays visible: it is the only progress affordance during the minutes a video
   // renders, and the gallery card cannot stand in for it because the completing poll usually lands
@@ -84,11 +93,7 @@ export function isHiddenToolBlock(toolName: string, result?: string): boolean {
   if (isMediaVideoStatusTool(toolName)) {
     return !result || isVideoStatusStillRunning(result) || isSuccessfulGenerationResult(result)
   }
-  const mcp = parseMcpToolName(toolName)
-  return mcp?.serverName === 'superone'
-    && (mcp.mcpToolName === 'session_rename'
-      || mcp.mcpToolName === 'session_collab_list_agents'
-      || mcp.mcpToolName === 'session_list_agents')
+  return false
 }
 
 

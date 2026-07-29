@@ -195,6 +195,48 @@ describe('ToolBlock hidden tools', () => {
   })
 })
 
+describe('ToolBlock Computer Use routing', () => {
+  it('uses the dedicated card and redacts typed text', () => {
+    render(
+      <ToolBlock
+        toolName="mcp__superone__computer_act"
+        input={JSON.stringify({
+          description: 'Fill in the account name',
+          stateId: '@s1',
+          actions: [{ type: 'typeText', ref: '@e2', text: 'private-value' }],
+        })}
+        status="streaming"
+      />,
+    )
+
+    expect(screen.getByText('Fill in the account name')).not.toBeNull()
+    expect(screen.queryByText(/@e2 ← ••••••/)).toBeNull()
+    expect(screen.queryByText(/private-value/)).toBeNull()
+    expect(screen.queryByText(/superone · computer act/i)).toBeNull()
+  })
+
+  it('shows semantic descriptions and human-readable results without state ids', () => {
+    render(
+      <ToolBlock
+        toolName="mcp__superone__computer_snapshot"
+        input={JSON.stringify({
+          description: 'Inspect the meeting notes window',
+          root: '@r1',
+        })}
+        result={JSON.stringify({
+          stateId: '@s1',
+          root: { app: 'TextEdit', title: 'Meeting notes' },
+        })}
+        status="complete"
+      />,
+    )
+
+    expect(screen.getByText('Inspect the meeting notes window')).not.toBeNull()
+    expect(screen.queryByText('@s1')).toBeNull()
+    expect(screen.queryByText('@r1')).toBeNull()
+  })
+})
+
 describe('ToolBlock error auto-collapse', () => {
   it('collapses an expanded edit tool when the result arrives with isError=true', async () => {
     const { rerender } = render(

@@ -217,13 +217,31 @@ export type Messages = {
         title: string
         description: string
         button: string
+        buttonGranted: string
+        requestAccessibility: string
+        requestScreenRecording: string
         opening: string
+        checking: string
         requested: string
         alreadyGranted: string
         accessibility: string
         screenRecording: string
+        accessibilityGrantedShort: string
+        accessibilityMissing: string
+        screenRecordingGrantedShort: string
+        screenRecordingMissing: string
         helperName: string
         dragHint: string
+        stepAccessibility: string
+        stepScreenRecording: string
+        dragHintAccessibility: string
+        dragHintScreenRecording: string
+        accessibilityGranted: string
+        accessibilityGrantedHint: string
+        continueToScreenRecording: string
+        screenRecordingGranted: string
+        allGrantedHint: string
+        done: string
       }
     }
     general: {
@@ -752,6 +770,7 @@ export type Messages = {
       alwaysAllow: string
     }
     computerUseGrant: {
+      badge: string
       title: string
       description: string
       collapsed: string
@@ -1041,6 +1060,61 @@ export type Messages = {
         mockContentType: string
         mockBody: string
       }
+      computer: {
+        apps: string
+        listingApps: string
+        focus: string
+        focusing: string
+        launch: string
+        launching: string
+        snapshot: string
+        snapshotting: string
+        zoom: string
+        zooming: string
+        query: string
+        querying: string
+        search: string
+        searching: string
+        expand: string
+        expanding: string
+        inspect: string
+        inspecting: string
+        act: string
+        acting: string
+        click: string
+        clicking: string
+        type: string
+        typing: string
+        press: string
+        pressing: string
+        scroll: string
+        scrolling: string
+        drag: string
+        dragging: string
+        movePointer: string
+        movingPointer: string
+        waitFor: string
+        waitingFor: string
+        screenshot: string
+        screenshotUnavailable: string
+        json: string
+        appsCount_one: string
+        appsCount_other: string
+        windowsCount_one: string
+        windowsCount_other: string
+        matchesCount_one: string
+        matchesCount_other: string
+        outcome: {
+          worked: string
+          didnt: string
+          unknown: string
+        }
+        waitStatus: {
+          preexisting: string
+          verified: string
+          failed: string
+        }
+      }
     }
     subagent: {
       spawning: string
@@ -1133,12 +1207,17 @@ export type Messages = {
     }
     mentionPopup: {
       groupCapabilities: string
+      groupDesktopApps: string
       groupAgents: string
       groupMiniApps: string
       groupFiles: string
       capabilityCollab: string
       capabilityComputer: string
       capabilityBrowser: string
+      disabled: string
+      computerUseDisabledHint: string
+      collabDisabledHint: string
+      browserDisabledHint: string
     }
     linkSafety: {
       openExternal: string
@@ -2188,15 +2267,33 @@ export const en: Messages = {
       },
       permissions: {
         title: 'macOS permissions',
-        description: 'SuperOne requests Accessibility first, then Screen Recording. macOS opens the matching system prompts without a separate helper window.',
+        description: 'First enable walks through Accessibility then Screen Recording. You can also request each permission again later.',
         button: 'Request permissions…',
+        buttonGranted: 'Granted',
+        requestAccessibility: 'Request…',
+        requestScreenRecording: 'Request…',
         opening: 'Requesting…',
-        requested: 'Permission requests completed. Enable any missing items in System Settings.',
+        checking: 'Checking…',
+        requested: 'Permission guide opened. Drag the floating helper icon into the Privacy list.',
         alreadyGranted: 'Accessibility and Screen Recording are already granted.',
         accessibility: 'Accessibility',
         screenRecording: 'Screen Recording',
+        accessibilityGrantedShort: 'Accessibility · granted',
+        accessibilityMissing: 'Accessibility · missing',
+        screenRecordingGrantedShort: 'Screen Recording · granted',
+        screenRecordingMissing: 'Screen Recording · missing',
         helperName: 'SuperOne Computer Use',
-        dragHint: 'If macOS does not add it automatically, drag this app into the open Privacy & Security list.',
+        dragHint: 'Drag into System Settings → Privacy',
+        stepAccessibility: 'Grant Accessibility',
+        stepScreenRecording: 'Grant Screen Recording',
+        dragHintAccessibility: 'Drag this icon into the Accessibility list',
+        dragHintScreenRecording: 'Drag this icon into the Screen Recording list',
+        accessibilityGranted: 'Accessibility granted',
+        accessibilityGrantedHint: 'Step 1 is done. Continue to grant Screen Recording.',
+        continueToScreenRecording: 'Continue to Screen Recording',
+        screenRecordingGranted: 'Screen Recording granted',
+        allGrantedHint: 'Both permissions are ready. Computer Use can run.',
+        done: 'Done',
       },
     },
     general: {
@@ -2738,10 +2835,11 @@ export const en: Messages = {
       alwaysAllow: 'Always Allow',
     },
     computerUseGrant: {
-      title: 'Allow Computer Use for {{app}}?',
-      description: 'The agent wants to observe or control this app. Session allow lasts for this chat only; Always allow is saved in Settings.',
-      collapsed: 'Computer Use: {{app}}',
-      viaTool: 'Requested by {{tool}}',
+      badge: 'Computer Use',
+      title: 'Allow access to {{app}}?',
+      description: 'The agent wants to control this app.',
+      collapsed: 'Allow {{app}}?',
+      viaTool: '{{tool}}',
       allowSession: 'Allow this session',
       alwaysAllow: 'Always allow',
       deny: 'Deny',
@@ -3025,6 +3123,61 @@ export const en: Messages = {
         mockContentType: 'Content-Type',
         mockBody: 'Body',
       },
+      computer: {
+        apps: 'Apps',
+        listingApps: 'Listing Apps',
+        focus: 'Focus App',
+        focusing: 'Focusing App',
+        launch: 'Launch App',
+        launching: 'Launching App',
+        snapshot: 'Snapshot',
+        snapshotting: 'Taking snapshot…',
+        zoom: 'Zoom',
+        zooming: 'Zooming',
+        query: 'Query',
+        querying: 'Querying',
+        search: 'Search',
+        searching: 'Searching',
+        expand: 'Expand',
+        expanding: 'Expanding',
+        inspect: 'Inspect',
+        inspecting: 'Inspecting',
+        act: 'Control',
+        acting: 'Controlling',
+        click: 'Click',
+        clicking: 'Clicking',
+        type: 'Type',
+        typing: 'Typing',
+        press: 'Press',
+        pressing: 'Pressing',
+        scroll: 'Scroll',
+        scrolling: 'Scrolling',
+        drag: 'Drag',
+        dragging: 'Dragging',
+        movePointer: 'Move Pointer',
+        movingPointer: 'Moving Pointer',
+        waitFor: 'Wait For',
+        waitingFor: 'Waiting For',
+        screenshot: 'Desktop Screenshot',
+        screenshotUnavailable: 'Screenshot No Longer Available',
+        json: 'JSON',
+        appsCount_one: '{{count}} running app',
+        appsCount_other: '{{count}} running apps',
+        windowsCount_one: '{{count}} window',
+        windowsCount_other: '{{count}} windows',
+        matchesCount_one: '{{count}} match',
+        matchesCount_other: '{{count}} matches',
+        outcome: {
+          worked: 'Worked',
+          didnt: 'No Effect',
+          unknown: 'Unverified',
+        },
+        waitStatus: {
+          preexisting: 'Already Matched',
+          verified: 'Matched',
+          failed: 'Not Matched',
+        },
+      },
     },
     subagent: {
       spawning: 'Spawning subagent...',
@@ -3117,12 +3270,17 @@ export const en: Messages = {
     },
     mentionPopup: {
       groupCapabilities: 'Built-in',
+      groupDesktopApps: 'Desktop Apps',
       groupAgents: 'Agents',
       groupMiniApps: 'Mini apps',
       groupFiles: 'Files',
       capabilityCollab: 'Agents Collaboration',
       capabilityComputer: 'Computer Use',
       capabilityBrowser: 'Super Browser',
+      disabled: 'Off',
+      computerUseDisabledHint: 'Enable Computer Use in Settings first',
+      collabDisabledHint: 'Enable Agent Session Collaboration in Settings first',
+      browserDisabledHint: 'Enable Browser CDP in Settings first',
     },
     linkSafety: {
       openExternal: 'Open link',

@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react'
-import { ArrowLeft, BarChart3, Blocks, Bot, Brain, Globe, LayoutGrid, Loader2, MonitorSmartphone, Paintbrush, Palette, Puzzle, Server, Settings, Smartphone, Webhook } from 'lucide-react'
+import { ArrowLeft, BarChart3, Blocks, Bot, Brain, Globe, LayoutGrid, Loader2, MousePointer2, Paintbrush, Palette, Puzzle, Server, Settings, Smartphone, Webhook } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@superone/ui/components/ui/button'
 import { useAppStore } from '@/stores/app'
@@ -27,7 +27,7 @@ const globalTabs = [
   { id: 'appearance' as const, labelKey: 'settings.layout.tabs.appearance', icon: Paintbrush },
   { id: 'providers' as const, labelKey: 'settings.layout.tabs.providers', icon: Brain },
   { id: 'browser' as const, labelKey: 'settings.layout.tabs.browser', icon: Globe },
-  { id: 'computer-use' as const, labelKey: 'settings.layout.tabs.computerUse', icon: MonitorSmartphone },
+  { id: 'computer-use' as const, labelKey: 'settings.layout.tabs.computerUse', icon: MousePointer2 },
   { id: 'apps' as const, labelKey: 'settings.layout.tabs.apps', icon: LayoutGrid },
   { id: 'remote' as const, labelKey: 'settings.layout.tabs.remote', icon: Smartphone },
   { id: 'usage' as const, labelKey: 'settings.layout.tabs.usage', icon: BarChart3 },

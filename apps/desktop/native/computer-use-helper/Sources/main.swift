@@ -205,17 +205,21 @@ func listWindows() -> [[String: Any]] {
         let height = bounds?["Height"] as? CGFloat ?? 0
         let windowId = w[kCGWindowNumber as String] as? Int ?? 0
         let bundleId = NSRunningApplication(processIdentifier: pid_t(pid))?.bundleIdentifier ?? ""
+        let axMetadata = axTrusted() && windowId > 0
+            ? try? resolveAxWindow(pid: pid_t(pid), windowId: windowId, windowTitle: title)
+            : nil
+        let classification = axMetadata.map(classifyAxWindow)
         return [
             "app": owner,
             "bundleId": bundleId,
             "pid": pid,
             "title": title,
             "bounds": ["x": Double(x), "y": Double(y), "width": Double(width), "height": Double(height)],
-            "focused": false,
+            "focused": axMetadata?.focused ?? false,
             "visible": true,
             "minimized": false,
-            "modal": false,
-            "kind": "window",
+            "modal": classification?.modal ?? false,
+            "kind": classification?.kind ?? "window",
             "resourceKey": "pid:\(pid)",
             "windowId": windowId,
             "windowLayer": layer,
@@ -380,6 +384,7 @@ func handle(request: HelperRequest) async -> HelperResponse {
             let captureSourceWidth = AnyCodable.double(params, "captureSourceWidth")
             let captureSourceHeight = AnyCodable.double(params, "captureSourceHeight")
             let windowTitle = AnyCodable.string(params, "windowTitle")
+            let windowId = AnyCodable.int(params, "windowId")
             let result = try axTreeSnapshot(
                 pid: pid,
                 maxNodes: maxNodes,
@@ -390,7 +395,8 @@ func handle(request: HelperRequest) async -> HelperResponse {
                 captureY: captureY,
                 captureSourceWidth: captureSourceWidth,
                 captureSourceHeight: captureSourceHeight,
-                windowTitle: windowTitle
+                windowTitle: windowTitle,
+                windowId: windowId
             )
             return .success(id: request.id, result: result)
         case "ax_action":
@@ -405,6 +411,7 @@ func handle(request: HelperRequest) async -> HelperResponse {
             }
             let value = AnyCodable.string(params, "value")
             let windowTitle = AnyCodable.string(params, "windowTitle")
+            let windowId = AnyCodable.int(params, "windowId")
             let expectedBoundsValues = AnyCodable.doubleArray(params, "expectedBounds")
             let expectedBounds: CGRect? = {
                 guard let values = expectedBoundsValues, values.count == 4 else { return nil }
@@ -438,6 +445,7 @@ func handle(request: HelperRequest) async -> HelperResponse {
                 action: action,
                 value: value,
                 windowTitle: windowTitle,
+                windowId: windowId,
                 targetHint: targetHint.isEmpty ? nil : targetHint
             )
             return .success(id: request.id, result: result)

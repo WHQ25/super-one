@@ -391,6 +391,50 @@ export class ComputerUseService {
     }
 
     return this.scheduler.runExclusive(base.resourceKey, async () => {
+      await this.refreshRoots()
+      const currentRoot = this.roots.get(base.root.rootId)
+      const nativeIdentityChanged =
+        !currentRoot
+        || currentRoot.pid !== base.root.pid
+        || currentRoot.resourceKey !== base.root.resourceKey
+        || currentRoot.windowId !== base.root.windowId
+      if (nativeIdentityChanged) {
+        throw new ComputerUseError(
+          'STALE_STATE',
+          `Stale state ${stateId}: target window is no longer available`,
+          {
+            stateId,
+            rootId: base.root.rootId,
+            expectedWindowId: base.root.windowId,
+            currentWindowId: currentRoot?.windowId,
+          },
+        )
+      }
+
+      const blockingModals = this.roots.list().filter(
+        (root) => root.rootId !== currentRoot.rootId
+          && root.resourceKey === currentRoot.resourceKey
+          && root.pid === currentRoot.pid
+          && root.modal
+          && root.visible
+          && !root.minimized,
+      )
+      if (blockingModals.length > 0) {
+        throw new ComputerUseError(
+          'MODAL_BLOCKED',
+          `Window ${currentRoot.rootId} is blocked by modal ${blockingModals[0]!.rootId}`,
+          {
+            stateId,
+            rootId: currentRoot.rootId,
+            modalRoots: blockingModals.map((root) => ({
+              rootId: root.rootId,
+              kind: root.kind,
+              title: root.title,
+            })),
+          },
+        )
+      }
+
       let claimedEpoch: number
       try {
         claimedEpoch = this.scheduler.claimWrite(base.resourceKey, base.epoch)

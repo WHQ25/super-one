@@ -24,7 +24,7 @@ private func activeDisplay(for rect: CGRect) -> (bounds: CGRect, scale: Double)?
     }
 }
 
-private func liveWindowGeometry(windowId: Int) throws -> LiveWindowGeometry {
+func liveWindowGeometry(windowId: Int) throws -> LiveWindowGeometry {
     let options: CGWindowListOption = [.optionIncludingWindow, .excludeDesktopElements]
     guard let rows = CGWindowListCopyWindowInfo(options, CGWindowID(windowId)) as? [[String: Any]],
           let row = rows.first,

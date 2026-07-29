@@ -44,6 +44,7 @@ export interface FakeElementSpec {
 
 export interface FakeWindowSpec {
   title: string
+  windowId?: number
   kind?: UiRootIdentity['kind']
   bounds?: Bounds
   focused?: boolean
@@ -76,6 +77,7 @@ interface LiveElement {
 
 interface LiveWindow {
   key: string
+  windowId?: number
   title: string
   kind: UiRootIdentity['kind']
   bounds: Bounds
@@ -151,6 +153,15 @@ export class FakePlatformBackend implements PlatformAdapter {
 
   advanceTime(ms: number): void {
     this.nowMs += ms
+  }
+
+  /** Test helper: remove a native window between observe and act. */
+  removeWindow(pid: number, target: number | string): void {
+    const app = this.apps.find((candidate) => candidate.pid === pid)
+    if (!app) throw new Error(`fake: unknown pid ${pid}`)
+    app.windows = app.windows.filter((window) =>
+      typeof target === 'number' ? window.windowId !== target : window.title !== target,
+    )
   }
 
   async listRoots(): Promise<Array<Omit<UiRootIdentity, 'rootId'>>> {
@@ -308,6 +319,7 @@ export class FakePlatformBackend implements PlatformAdapter {
       pid: spec.pid,
       windows: spec.windows.map((w, i) => ({
         key: `${spec.pid}:${w.title}`,
+        windowId: w.windowId,
         title: w.title,
         kind: w.kind ?? 'window',
         bounds: w.bounds ?? { x: 40 + i * 20, y: 40, width: 800, height: 600 },
@@ -352,6 +364,7 @@ export class FakePlatformBackend implements PlatformAdapter {
       minimized: win.minimized,
       modal: win.modal,
       resourceKey: `pid:${app.pid}`,
+      ...(typeof win.windowId === 'number' ? { windowId: win.windowId } : {}),
     }
   }
 
@@ -359,7 +372,10 @@ export class FakePlatformBackend implements PlatformAdapter {
     const app = this.apps.find((a) => a.pid === root.pid)
     if (!app) throw new Error(`fake: unknown pid ${root.pid}`)
     const win =
-      app.windows.find((w) => w.title === root.title)
+      (typeof root.windowId === 'number'
+        ? app.windows.find((w) => w.windowId === root.windowId)
+        : undefined)
+      ?? app.windows.find((w) => w.title === root.title)
       ?? app.windows.find((w) => w.focused)
       ?? app.windows[0]
     if (!win) throw new Error(`fake: no window for ${root.app}`)

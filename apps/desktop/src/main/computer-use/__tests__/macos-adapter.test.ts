@@ -38,6 +38,45 @@ describe('MacosPlatformAdapter (mocked client)', () => {
     })
   })
 
+  it('listRoots preserves native dialog and modal metadata', async () => {
+    call.mockImplementation(async (method: string) => {
+      if (method === 'list_windows') {
+        return {
+          windows: [
+            {
+              app: 'TextEdit',
+              bundleId: 'com.apple.TextEdit',
+              pid: 42,
+              title: 'Save',
+              bounds: { x: 100, y: 100, width: 400, height: 240 },
+              focused: true,
+              visible: true,
+              minimized: false,
+              modal: true,
+              kind: 'dialog',
+              resourceKey: 'pid:42',
+              windowId: 456,
+              windowLayer: 0,
+            },
+          ],
+        }
+      }
+      if (method === 'frontmost') {
+        return { app: 'TextEdit', bundleId: 'com.apple.TextEdit', pid: 42, frontmost: true }
+      }
+      return { ok: true }
+    })
+
+    await expect(adapter.listRoots()).resolves.toEqual([
+      expect.objectContaining({
+        kind: 'dialog',
+        modal: true,
+        focused: true,
+        windowId: 456,
+      }),
+    ])
+  })
+
   it('look visual captures with grantedBundleIds and returns picture-only outline', async () => {
     call.mockImplementation(async (method: string) => {
       if (method === 'capture') {
@@ -144,6 +183,7 @@ describe('MacosPlatformAdapter (mocked client)', () => {
         captureY: 30,
         captureSourceWidth: 800,
         captureSourceHeight: 600,
+        windowId: 12345,
       }),
     )
   })
@@ -277,7 +317,7 @@ describe('MacosPlatformAdapter (mocked client)', () => {
     })
     expect(call).toHaveBeenCalledWith(
       'ax_action',
-      expect.objectContaining({ pid: 42, index: 3, action: 'press' }),
+      expect.objectContaining({ pid: 42, index: 3, action: 'press', windowId: 12345 }),
     )
     expect(res.steps[0]?.applied).toBe(true)
     expect(res.steps[0]?.unknown).toBe(false)
@@ -320,6 +360,7 @@ describe('MacosPlatformAdapter (mocked client)', () => {
       index: 2,
       action: 'set_value',
       value: 'hello',
+      windowId: 12345,
       expectedRole: 'textField',
       expectedName: 'Message',
       expectedValue: '',

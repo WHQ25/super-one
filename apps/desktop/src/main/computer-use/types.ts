@@ -234,6 +234,7 @@ export interface ZoomResult {
 /** Errors that are part of the public contract (stable codes). */
 export type ComputerUseErrorCode =
   | 'STALE_STATE'
+  | 'MODAL_BLOCKED'
   | 'UNKNOWN_STATE'
   | 'UNKNOWN_ROOT'
   | 'UNKNOWN_REF'

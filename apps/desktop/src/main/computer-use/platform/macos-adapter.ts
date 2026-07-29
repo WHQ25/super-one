@@ -225,14 +225,15 @@ export class MacosPlatformAdapter implements PlatformAdapter {
     const res = await this.client.call<{ windows: HelperWindowInfo[] }>('list_windows')
     const windows = res.windows ?? []
     const front = await this.client.call<HelperAppInfo | null>('frontmost').catch(() => null)
-    return windows.map((w) => ({
+    const firstFrontWindow = windows.findIndex((w) => w.pid === front?.pid)
+    return windows.map((w, index) => ({
       kind: (w.kind as UiRootIdentity['kind']) || 'window',
       app: w.app,
       bundleId: w.bundleId,
       pid: w.pid,
       title: w.title || w.app,
       bounds: w.bounds,
-      focused: front?.pid === w.pid,
+      focused: front?.pid === w.pid && (w.focused || index === firstFrontWindow),
       visible: w.visible,
       minimized: w.minimized,
       modal: w.modal,
@@ -368,6 +369,7 @@ export class MacosPlatformAdapter implements PlatformAdapter {
           }
         : {}),
       ...(root.title ? { windowTitle: root.title } : {}),
+      ...(typeof root.windowId === 'number' ? { windowId: root.windowId } : {}),
     })
     const outline = axTreeToOutline(res.tree)
     const coordinateSpace: CoordinateSpace = {
@@ -592,6 +594,9 @@ export class MacosPlatformAdapter implements PlatformAdapter {
                 index: idx,
                 action: 'focus',
                 windowTitle: target.root.title,
+                ...(typeof target.root.windowId === 'number'
+                  ? { windowId: target.root.windowId }
+                  : {}),
                 ...this.axTargetHintFields(node, target.coordinateSpace),
                 ...this.coordinatePayload(target.coordinateSpace),
               })
@@ -850,6 +855,9 @@ export class MacosPlatformAdapter implements PlatformAdapter {
         action,
         ...(value != null ? { value } : {}),
         windowTitle: target.root.title,
+        ...(typeof target.root.windowId === 'number'
+          ? { windowId: target.root.windowId }
+          : {}),
         ...this.axTargetHintFields(node, target.coordinateSpace),
         ...this.coordinatePayload(target.coordinateSpace),
       })

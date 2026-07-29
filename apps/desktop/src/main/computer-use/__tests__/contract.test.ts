@@ -217,6 +217,17 @@ describe('Computer Use P0 contract', () => {
     ).rejects.toMatchObject({ code: 'STALE_STATE' })
   })
 
+  it('rejects act before side effects when the target window disappeared', async () => {
+    const obs = await service.observe()
+    const save = searchOutline(service.getStateStore().get(obs.stateId)!.outline, 'Save')[0]
+    service.getFake().removeWindow(1001, 'Notes')
+
+    await expect(
+      service.act(obs.stateId, [{ type: 'press', ref: save.ref }]),
+    ).rejects.toMatchObject({ code: 'STALE_STATE' })
+    expect(service.getScheduler().epoch('pid:1001')).toBe(0)
+  })
+
   // ── wait_for ─────────────────────────────────────────────
 
   it('wait_for reports preexisting when condition already holds', async () => {
@@ -347,6 +358,34 @@ describe('Computer Use P0 contract', () => {
     const roots = await service.getFake().listRoots()
     expect(roots.some((r) => r.kind === 'dialog' && r.title === 'Share Note')).toBe(true)
     expect(snap.running.some((r) => r.app === 'Notes')).toBe(true)
+  })
+
+  it('blocks parent-window actions while a modal root is open', async () => {
+    const obs = await service.observe()
+    const share = searchOutline(service.getStateStore().get(obs.stateId)!.outline, 'Share')[0]
+    const opened = await service.act(obs.stateId, [{ type: 'press', ref: share.ref }])
+    const parentState = service.getStateStore().get(opened.successorStateId)!
+    const save = searchOutline(parentState.outline, 'Save')[0]
+
+    await expect(
+      service.act(opened.successorStateId, [{ type: 'press', ref: save.ref }]),
+    ).rejects.toMatchObject({
+      code: 'MODAL_BLOCKED',
+      details: {
+        rootId: parentState.root.rootId,
+        modalRoots: [expect.objectContaining({ kind: 'dialog', title: 'Share Note' })],
+      },
+    })
+
+    const modal = (await service.apps()).roots.find((root) => root.title === 'Share Note')
+    expect(modal).toMatchObject({ kind: 'dialog', modal: true })
+    const modalObs = await service.observe(modal!.rootId)
+    const confirm = searchOutline(
+      service.getStateStore().get(modalObs.stateId)!.outline,
+      'Share',
+    )[0]
+    const result = await service.act(modalObs.stateId, [{ type: 'press', ref: confirm.ref }])
+    expect(result.outcome).not.toBe('didnt')
   })
 
   // ── tool execute path ────────────────────────────────────

@@ -225,7 +225,139 @@ private func focusedOrFirstWindow(app: AXUIElement) -> AXUIElement? {
     return nil
 }
 
-/// Snapshot AX tree for a process. Optional windowTitle soft-match for multi-window apps.
+struct AxWindowMetadata {
+    let element: AXUIElement
+    let role: String
+    let subrole: String?
+    let modal: Bool
+    let focused: Bool
+}
+
+func classifyAxWindow(_ metadata: AxWindowMetadata) -> (kind: String, modal: Bool) {
+    let role = metadata.role.lowercased()
+    let subrole = metadata.subrole?.lowercased() ?? ""
+    let kind: String
+    if role.contains("sheet") || subrole.contains("sheet") {
+        kind = "sheet"
+    } else if role.contains("dialog") || subrole.contains("dialog") {
+        kind = "dialog"
+    } else if role.contains("menu") || subrole.contains("menu") {
+        kind = "menu"
+    } else if role.contains("popover") || subrole.contains("popover") {
+        kind = "popover"
+    } else {
+        kind = "window"
+    }
+    return (kind: kind, modal: metadata.modal || kind == "sheet")
+}
+
+private func axWindows(app: AXUIElement) -> [AXUIElement] {
+    var raw: CFTypeRef?
+    guard AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &raw) == .success,
+          let windows = raw as? [AXUIElement] else { return [] }
+    return windows
+}
+
+private func axFrame(_ element: AXUIElement) -> CGRect? {
+    guard let position = axCGPoint(element, kAXPositionAttribute as String),
+          let size = axCGSize(element, kAXSizeAttribute as String) else { return nil }
+    return CGRect(origin: position, size: size)
+}
+
+private func sameWindowFrame(_ lhs: CGRect, _ rhs: CGRect) -> Bool {
+    let positionDelta = max(abs(lhs.minX - rhs.minX), abs(lhs.minY - rhs.minY))
+    let sizeDelta = max(abs(lhs.width - rhs.width), abs(lhs.height - rhs.height))
+    return positionDelta <= 12 && sizeDelta <= 12
+}
+
+private func titleMatches(_ element: AXUIElement, _ expected: String) -> Bool {
+    let actual = axString(element, kAXTitleAttribute as String) ?? ""
+    guard !actual.isEmpty else { return false }
+    return actual.caseInsensitiveCompare(expected) == .orderedSame
+        || actual.localizedCaseInsensitiveContains(expected)
+        || expected.localizedCaseInsensitiveContains(actual)
+}
+
+private func windowMetadata(_ element: AXUIElement) -> AxWindowMetadata {
+    AxWindowMetadata(
+        element: element,
+        role: axRole(element),
+        subrole: axString(element, kAXSubroleAttribute as String),
+        modal: axBool(element, kAXModalAttribute as String) ?? false,
+        focused: axBool(element, kAXFocusedAttribute as String) ?? false
+    )
+}
+
+/// Bind a CGWindowNumber to one AXWindow. The PID and live CG bounds are both
+/// checked so same-title windows cannot be observed or acted on by mistake.
+func resolveAxWindow(
+    pid: pid_t,
+    windowId: Int,
+    windowTitle: String? = nil
+) throws -> AxWindowMetadata {
+    let geometry = try liveWindowGeometry(windowId: windowId)
+    guard geometry.pid == Int(pid) else {
+        throw HelperError(
+            code: "AX_WINDOW_NOT_FOUND",
+            message: "Window \(windowId) does not belong to pid \(pid)"
+        )
+    }
+
+    let windows = axWindows(app: AXUIElementCreateApplication(pid))
+    let boundsMatches = windows.filter {
+        guard let frame = axFrame($0) else { return false }
+        return sameWindowFrame(frame, geometry.bounds)
+    }
+    if boundsMatches.count == 1 {
+        return windowMetadata(boundsMatches[0])
+    }
+
+    if boundsMatches.count > 1, let title = windowTitle, !title.isEmpty {
+        let titleCandidates = boundsMatches.filter { titleMatches($0, title) }
+        if titleCandidates.count == 1 {
+            return windowMetadata(titleCandidates[0])
+        }
+    }
+
+    if boundsMatches.isEmpty {
+        throw HelperError(
+            code: "AX_WINDOW_NOT_FOUND",
+            message: "No AXWindow matches CG window \(windowId) for pid \(pid)"
+        )
+    }
+    throw HelperError(
+        code: "AX_WINDOW_AMBIGUOUS",
+        message: "Multiple AXWindows match CG window \(windowId) for pid \(pid)"
+    )
+}
+
+private func resolveAxRoot(
+    app: AXUIElement,
+    pid: pid_t,
+    windowId: Int?,
+    windowTitle: String?
+) throws -> AXUIElement {
+    if let windowId {
+        return try resolveAxWindow(
+            pid: pid,
+            windowId: windowId,
+            windowTitle: windowTitle
+        ).element
+    }
+    if let title = windowTitle, !title.isEmpty {
+        let matches = axWindows(app: app).filter { titleMatches($0, title) }
+        if matches.count == 1 { return matches[0] }
+        if matches.count > 1 {
+            throw HelperError(
+                code: "AX_WINDOW_AMBIGUOUS",
+                message: "Multiple AXWindows match title \(title) for pid \(pid)"
+            )
+        }
+    }
+    return focusedOrFirstWindow(app: app) ?? app
+}
+
+/// Snapshot AX tree for a process, scoped to a validated native window when available.
 func axTreeSnapshot(
     pid: pid_t,
     maxNodes: Int = 400,
@@ -236,26 +368,19 @@ func axTreeSnapshot(
     captureY: Double? = nil,
     captureSourceWidth: Double? = nil,
     captureSourceHeight: Double? = nil,
-    windowTitle: String? = nil
+    windowTitle: String? = nil,
+    windowId: Int? = nil
 ) throws -> [String: Any] {
     guard axTrusted() else {
         throw HelperError(code: "AX_MISSING", message: "Accessibility permission not granted for Computer Use helper")
     }
     let app = AXUIElementCreateApplication(pid)
-    let rootEl: AXUIElement = {
-        if let title = windowTitle, !title.isEmpty {
-            var raw: CFTypeRef?
-            if AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &raw) == .success,
-               let wins = raw as? [AXUIElement] {
-                if let match = wins.first(where: {
-                    (axString($0, kAXTitleAttribute as String) ?? "").localizedCaseInsensitiveContains(title)
-                }) {
-                    return match
-                }
-            }
-        }
-        return focusedOrFirstWindow(app: app) ?? app
-    }()
+    let rootEl = try resolveAxRoot(
+        app: app,
+        pid: pid,
+        windowId: windowId,
+        windowTitle: windowTitle
+    )
 
     let state = AxWalkState(limits: AxWalkLimits(maxNodes: max(1, maxNodes), maxDepth: max(1, maxDepth)))
     let display = mainDisplaySizePoints()
@@ -406,6 +531,7 @@ func axPerform(
     action: String,
     value: String? = nil,
     windowTitle: String? = nil,
+    windowId: Int? = nil,
     targetHint: AxTargetHint? = nil
 ) throws -> [String: Any] {
     guard axTrusted() else {
@@ -415,19 +541,12 @@ func axPerform(
         throw HelperError(code: "INVALID", message: "index must be >= 1")
     }
     let app = AXUIElementCreateApplication(pid)
-    let rootEl = {
-        if let title = windowTitle, !title.isEmpty {
-            var raw: CFTypeRef?
-            if AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &raw) == .success,
-               let wins = raw as? [AXUIElement],
-               let match = wins.first(where: {
-                   (axString($0, kAXTitleAttribute as String) ?? "").localizedCaseInsensitiveContains(title)
-               }) {
-                return match
-            }
-        }
-        return focusedOrFirstWindow(app: app) ?? app
-    }()
+    let rootEl = try resolveAxRoot(
+        app: app,
+        pid: pid,
+        windowId: windowId,
+        windowTitle: windowTitle
+    )
 
     let resolved = try resolveTarget(root: rootEl, requestedIndex: index, hint: targetHint)
     let el = resolved.element

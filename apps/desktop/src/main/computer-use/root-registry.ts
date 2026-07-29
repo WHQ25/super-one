@@ -23,7 +23,7 @@ export class RootRegistry {
 
   /**
    * Upsert roots from a platform scan. Reuses existing rootIds when the same
-   * native identity (resourceKey + title + kind) matches; otherwise allocates `@rN`.
+   * native identity matches; otherwise allocates `@rN`.
    */
   sync(discovered: Omit<UiRootIdentity, 'rootId'>[]): UiRootIdentity[] {
     const next = new Map<string, UiRootIdentity>()
@@ -58,7 +58,12 @@ export class RootRegistry {
   }
 }
 
-function identityKey(r: Pick<UiRootIdentity, 'resourceKey' | 'title' | 'kind' | 'pid'>): string {
+function identityKey(
+  r: Pick<UiRootIdentity, 'resourceKey' | 'title' | 'kind' | 'pid' | 'windowId'>,
+): string {
+  if (typeof r.windowId === 'number') {
+    return `window|${r.pid}|${r.windowId}`
+  }
   return `${r.resourceKey}|${r.kind}|${r.pid}|${r.title}`
 }
 

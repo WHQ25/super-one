@@ -10,6 +10,8 @@
 	<string>SuperOne Computer Use</string>
 	<key>CFBundleIdentifier</key>
 	<string>com.superone.computer-use</string>
+	<key>CFBundleIconFile</key>
+	<string>ComputerUseIcon</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>

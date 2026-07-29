@@ -133,6 +133,15 @@ func axTrusted() -> Bool {
     AXIsProcessTrusted()
 }
 
+/// Ask macOS to add this helper to Accessibility and open the matching
+/// System Settings pane when approval is still missing.
+func requestAccessibilityAccess() -> Bool {
+    let options = [
+        kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true,
+    ] as CFDictionary
+    return AXIsProcessTrustedWithOptions(options)
+}
+
 /// Non-prompting screen-recording check (same primitive as Open Computer Use).
 func screenRecordingTrusted() -> Bool {
     CGPreflightScreenCaptureAccess()
@@ -221,31 +230,17 @@ func handle(request: HelperRequest) async -> HelperResponse {
             return .success(id: request.id, result: ["pong": true])
         case "doctor":
             return .success(id: request.id, result: doctor())
+        case "request_accessibility":
+            let granted = requestAccessibilityAccess()
+            return .success(id: request.id, result: [
+                "accessibility": granted ? "granted" : "missing",
+            ])
         case "request_screen_recording":
             // One-shot TCC prompt; client should restart helper after user grants.
             let granted = requestScreenRecordingAccess()
             return .success(id: request.id, result: [
                 "screenRecording": granted ? "granted" : "missing",
                 "needsRelaunch": !granted,
-            ])
-        case "open_permission_onboarding":
-            // OCU-style drag-to-Settings UX (runs on main thread).
-            let already = axTrusted() && screenRecordingTrusted()
-            if already {
-                return .success(id: request.id, result: [
-                    "presented": false,
-                    "reason": "already_granted",
-                    "accessibility": "granted",
-                    "screenRecording": "granted",
-                ])
-            }
-            DispatchQueue.main.async {
-                PermissionOnboarding.present()
-            }
-            return .success(id: request.id, result: [
-                "presented": true,
-                "accessibility": axTrusted() ? "granted" : "missing",
-                "screenRecording": screenRecordingTrusted() ? "granted" : "missing",
             ])
         case "list_apps":
             return .success(id: request.id, result: ["apps": listRunningApps()])

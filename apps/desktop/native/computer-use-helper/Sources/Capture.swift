@@ -154,7 +154,7 @@ func captureDisplay(
     if !screenRecordingTrusted() {
         throw HelperError(
             code: "SCREEN_MISSING",
-            message: "Screen Recording is not granted for \(Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? Bundle.main.bundleIdentifier ?? "this helper") (pid \(ProcessInfo.processInfo.processIdentifier)). Enable it under System Settings → Privacy → Screen Recording for this exact app name, then fully quit SuperOne (dev restarts the helper). Grants do not apply to the process that was already running when you toggled the switch."
+            message: "Screen Recording is not granted for \(Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? Bundle.main.bundleIdentifier ?? "this helper") (pid \(ProcessInfo.processInfo.processIdentifier)). Enable it under System Settings → Privacy → Screen Recording for this exact app name, then request permissions again in SuperOne Settings so the helper restarts. Grants do not apply to the process that was already running when you toggled the switch."
         )
     }
 

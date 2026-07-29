@@ -26,6 +26,9 @@ fi
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DIST="$ROOT/dist"
+BUILD_DIR="$ROOT/.build"
+BUILD_TMP_DIR="$BUILD_DIR/tmp"
+MODULE_CACHE_DIR="$BUILD_DIR/modcache"
 
 if [[ "$VARIANT" == "dev" ]]; then
   APP_NAME="SuperOne Dev Computer Use"
@@ -57,7 +60,6 @@ SOURCES=(
   "$ROOT/Sources/Input.swift"
   "$ROOT/Sources/AxTree.swift"
   "$ROOT/Sources/RootDiscovery.swift"
-  "$ROOT/Sources/PermissionOnboarding.swift"
   "$ROOT/Sources/AgentCursorVisuals.swift"
   "$ROOT/Sources/AgentOverlay.swift"
   "$ROOT/Sources/CursorMotionModel.swift"
@@ -66,6 +68,7 @@ SOURCES=(
   "$ROOT/Sources/CursorMotionGeometry.swift"
   "$ROOT/Resources/en.lproj/Localizable.strings"
   "$ROOT/Resources/zh-Hans.lproj/Localizable.strings"
+  "$ROOT/../../src/renderer/src/assets/computer-use-icon.png"
   "$PLIST_SRC"
   "$ROOT/scripts/build.sh"
 )
@@ -126,7 +129,7 @@ if [[ "$need_build" == "0" ]]; then
   exit 0
 fi
 
-mkdir -p "$MACOS_DIR" "$APP/Contents/Resources"
+mkdir -p "$MACOS_DIR" "$APP/Contents/Resources" "$BUILD_TMP_DIR" "$MODULE_CACHE_DIR"
 cp "$PLIST_SRC" "$APP/Contents/Info.plist"
 # Keep legacy name for tooling that still copies Info.plist
 cp "$PLIST_SRC" "$ROOT/Info.plist"
@@ -136,8 +139,19 @@ cp "$ROOT/Resources/NOTICE.md" "$APP/Contents/Resources/"
 ditto "$ROOT/Resources/en.lproj" "$APP/Contents/Resources/en.lproj"
 ditto "$ROOT/Resources/zh-Hans.lproj" "$APP/Contents/Resources/zh-Hans.lproj"
 
-export TMPDIR="${TMPDIR:-$ROOT/tmp}"
-mkdir -p "$TMPDIR" "$ROOT/modcache"
+ICON_SOURCE="$ROOT/../../src/renderer/src/assets/computer-use-icon.png"
+ICONSET="$BUILD_TMP_DIR/ComputerUseIcon.iconset"
+rm -rf "$ICONSET"
+mkdir -p "$ICONSET"
+for size in 16 32 128 256 512; do
+  sips -z "$size" "$size" "$ICON_SOURCE" --out "$ICONSET/icon_${size}x${size}.png" >/dev/null
+  retina=$((size * 2))
+  sips -z "$retina" "$retina" "$ICON_SOURCE" --out "$ICONSET/icon_${size}x${size}@2x.png" >/dev/null
+done
+iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/ComputerUseIcon.icns"
+rm -rf "$ICONSET"
+
+export TMPDIR="$BUILD_TMP_DIR"
 export SDKROOT="${SDKROOT:-/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk}"
 if [[ ! -d "$SDKROOT" ]]; then
   SDKROOT="$(xcrun --show-sdk-path 2>/dev/null || true)"
@@ -146,7 +160,7 @@ fi
 echo "[build] variant=$VARIANT bundleId=$BUNDLE_ID"
 echo "[build] compiling helper → $OUT"
 swiftc -O \
-  -module-cache-path "$ROOT/modcache" \
+  -module-cache-path "$MODULE_CACHE_DIR" \
   ${SDKROOT:+-sdk "$SDKROOT"} \
   -o "$OUT" \
   "$ROOT/Sources/main.swift" \
@@ -155,7 +169,6 @@ swiftc -O \
   "$ROOT/Sources/Input.swift" \
   "$ROOT/Sources/AxTree.swift" \
   "$ROOT/Sources/RootDiscovery.swift" \
-  "$ROOT/Sources/PermissionOnboarding.swift" \
   "$ROOT/Sources/AgentCursorVisuals.swift" \
   "$ROOT/Sources/AgentOverlay.swift" \
   "$ROOT/Sources/CursorMotionModel.swift" \
@@ -185,7 +198,7 @@ echo "[build] bundle id: $BUNDLE_ID"
 echo "[build] CDHash: $(codesign -dv --verbose=4 "$APP" 2>&1 | awk -F= '/^CDHash=/{print $2; exit}')"
 echo "[build] Team: $(codesign -dv --verbose=4 "$APP" 2>&1 | awk -F= '/^TeamIdentifier=/{print $2; exit}')"
 echo "[build] Grant Accessibility + Screen Recording for: **${APP_NAME}** (not SuperOne main app)."
-echo "[build] After granting Screen Recording, fully quit SuperOne so the helper restarts with the grant."
+echo "[build] SuperOne restarts the helper automatically after a new Screen Recording grant."
 if [[ "$VARIANT" == "dev" ]]; then
   echo "[build] Dev: SuperOne electron-vite will start/stop this app with the host process."
   echo "[build] Subsequent \`bun run dev\` skips rebuild when Sources/ are unchanged."

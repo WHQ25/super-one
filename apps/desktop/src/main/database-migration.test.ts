@@ -77,6 +77,15 @@ describe('database migration', () => {
     expect(createIndex).toBeGreaterThan(alterIndex)
   })
 
+  it('adds per-session model and effort columns on legacy databases', async () => {
+    const { getDb } = await import('./database')
+    getDb()
+
+    const execSql = dbMock.exec.mock.calls.map((call) => call[0] as string)
+    expect(execSql.some((sql) => sql.includes('ALTER TABLE sessions ADD COLUMN selected_model TEXT'))).toBe(true)
+    expect(execSql.some((sql) => sql.includes('ALTER TABLE sessions ADD COLUMN selected_effort TEXT'))).toBe(true)
+  })
+
   it('creates session_providers table with expected columns', async () => {
     const { getDb } = await import('./database')
     getDb()
@@ -187,6 +196,8 @@ describe('database migration', () => {
     expect(newSchema).not.toMatch(/claude_session_id/)
     const newSessionSchema = execSql.find((sql) => sql.includes('CREATE TABLE sessions_new')) as string
     expect(newSessionSchema).not.toMatch(/claude_session_id/)
+    expect(newSessionSchema).toContain('selected_model TEXT')
+    expect(newSessionSchema).toContain('selected_effort TEXT')
   })
 
   it('migrates a legacy resource cache that predates the codex_models_json column without reading it', async () => {

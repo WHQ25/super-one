@@ -48,7 +48,7 @@ function makeRecord(over: Partial<SessionRecord>): SessionRecord {
     harnessId: 'claude', providerSessionId: 'provider-src', title: 'Source',
     isWorktree: false, gitBranch: null, worktreePath: null, isPinned: false,
     isHidden: false, totalCostUsd: 0, contextTokens: 0, createdAt: '', lastUserMessageAt: null,
-    apiProviderId: null, ...over,
+    apiProviderId: null, acpAgentId: null, selectedModel: null, selectedEffort: null, ...over,
   }
 }
 

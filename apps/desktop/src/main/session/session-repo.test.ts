@@ -84,6 +84,8 @@ interface SessionRow {
   is_hidden: number | null
   api_provider_id?: string | null
   acp_agent_id?: string | null
+  selected_model?: string | null
+  selected_effort?: string | null
 }
 
 interface MessageRow {
@@ -132,6 +134,7 @@ function makeFakeDb() {
             providerSessionId: string, title: string | null, createdAt: string, lastUserMsg: string,
             contextTokens: number, isWorktree: number, gitBranch: string | null, worktreePath: string | null,
             apiProviderId?: string | null, acpAgentId?: string | null,
+            selectedModel?: string | null, selectedEffort?: string | null,
           ) => {
             sessionsRows.set(id, {
               id, project_id: projectId, provider_id: providerId, provider,
@@ -142,6 +145,8 @@ function makeFakeDb() {
               is_pinned: 0, is_hidden: 0,
               api_provider_id: apiProviderId ?? null,
               acp_agent_id: acpAgentId ?? null,
+              selected_model: selectedModel ?? null,
+              selected_effort: selectedEffort ?? null,
             })
           },
         }
@@ -155,6 +160,7 @@ function makeFakeDb() {
             title: string | null, createdAt: string, lastUserMsg: string,
             isWorktree: number, gitBranch: string | null, worktreePath: string | null,
             apiProviderId?: string | null, acpAgentId?: string | null,
+            selectedModel?: string | null, selectedEffort?: string | null,
           ) => {
             const prev = sessionsRows.get(id)
             sessionsRows.set(id, {
@@ -166,6 +172,8 @@ function makeFakeDb() {
               is_pinned: prev?.is_pinned ?? 0, is_hidden: prev?.is_hidden ?? 0,
               api_provider_id: apiProviderId ?? null,
               acp_agent_id: acpAgentId ?? null,
+              selected_model: selectedModel ?? null,
+              selected_effort: selectedEffort ?? null,
             })
           },
         }
@@ -481,6 +489,26 @@ describe('session-repo', () => {
       expect(loaded!.messages).toHaveLength(2)
       expect(loaded!.messages[0]?.id).toBe('u1')
       expect(loaded!.messages[1]?.id).toBe('a1')
+    })
+
+    it('persists the selected model and effort with the session', () => {
+      const messages: ChatMessage[] = [
+        { id: 'u-model', role: 'user', status: 'complete', content: [{ type: 'text', text: 'hi' }], createdAt: '2026-04-18T00:00:00Z', providerId: 'claude' },
+      ]
+      saveSessionStateBySid({
+        sid: 's-model',
+        projectPath: '/tmp/proj',
+        providerId: 'claude-base',
+        messages,
+        totalCostUsd: 0,
+        contextTokens: 0,
+        selectedModel: 'claude-opus-4-8',
+        selectedEffort: 'high',
+      })
+
+      const loaded = loadSessionStateBySid('s-model')
+      expect(loaded?.record.selectedModel).toBe('claude-opus-4-8')
+      expect(loaded?.record.selectedEffort).toBe('high')
     })
 
     it('persists providerSessionId on first message so Grok can cold-resume', () => {

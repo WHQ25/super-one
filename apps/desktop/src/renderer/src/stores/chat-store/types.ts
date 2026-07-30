@@ -247,6 +247,8 @@ export type PersistedSessionState = {
   provider: ChatProvider
   apiProviderId?: string | null
   acpAgentId?: string | null
+  selectedModel?: string | null
+  selectedEffort?: EffortLevel | null
   title?: string | null
 }
 

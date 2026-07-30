@@ -635,6 +635,26 @@ describe('SessionManager', () => {
       expect(session.snapshot.contextTokens).toBe(777)
     })
 
+    it('restores the per-session model and effort', () => {
+      const mgr2 = new SessionManagerImpl({
+        loadSession: () => ({
+          projectPath: '/proj-resume',
+          providerId: 'claude-base',
+          providerSessionId: 'sdk-prior',
+          messages: sampleMessages,
+          totalCostUsd: 0,
+          contextTokens: 0,
+          selectedModel: 'claude-opus-4-8',
+          selectedEffort: 'high',
+        }),
+      })
+
+      const session = mgr2.resumeSession('sid-model')
+
+      expect(session.snapshot.selectedModel).toBe('claude-opus-4-8')
+      expect(session.snapshot.selectedEffort).toBe('high')
+    })
+
     it('sets the resumed session as active for its project', () => {
       const loadSession = vi.fn(() => ({
         projectPath: '/proj-resume',

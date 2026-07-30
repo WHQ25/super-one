@@ -711,6 +711,7 @@ export class Session implements SessionContract {
       selectedEffort: this.effort ?? null,
       patch,
     })
+    if (changed) this.notifyStateChange()
   }
 
   getSelectedModel(): string | undefined { return this.model }
@@ -1492,6 +1493,8 @@ export class Session implements SessionContract {
         worktreeMissing: this._missingWorktreePath !== null,
         apiProviderId: this._apiProviderId,
         acpAgentId: this._acpAgentId,
+        selectedModel: this.model ?? null,
+        selectedEffort: this.effort ?? null,
         providerSessionId: this._providerSessionId,
         messagePersistMode,
       })

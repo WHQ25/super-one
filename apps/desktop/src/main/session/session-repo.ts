@@ -3,7 +3,7 @@ import { getDb } from '../database'
 import log from '../logger'
 import { getProjectId } from '../recent-folders'
 import { recordSessionStarted, recordMessageCounts, type HarnessKind } from '../usage-stats-service'
-import type { ChatMessage, ContentBlock, ImageAttachment, ChatMessageContext } from '@superone/shared/agent-types'
+import type { ChatMessage, ContentBlock, EffortLevel, ImageAttachment, ChatMessageContext } from '@superone/shared/agent-types'
 import type { HarnessId, MessagePersistMode } from './types'
 
 export function serializeMessageContent(msg: ChatMessage): string {
@@ -50,6 +50,8 @@ export interface SessionRecord {
   lastUserMessageAt: string | null
   apiProviderId: string | null
   acpAgentId: string | null
+  selectedModel: string | null
+  selectedEffort: EffortLevel | null
 }
 
 function normalizeCodexThreadId(value: string | null | undefined): string | null {
@@ -92,6 +94,8 @@ interface SessionRow {
   is_hidden: number | null
   api_provider_id: string | null
   acp_agent_id: string | null
+  selected_model: string | null
+  selected_effort: string | null
 }
 
 interface MessageRow {
@@ -130,6 +134,8 @@ function rowToRecord(row: SessionRow, projectPath: string): SessionRecord {
     lastUserMessageAt: row.last_user_message_at,
     apiProviderId: row.api_provider_id ?? null,
     acpAgentId: row.acp_agent_id ?? null,
+    selectedModel: row.selected_model ?? null,
+    selectedEffort: (row.selected_effort as EffortLevel | null) ?? null,
   }
 }
 
@@ -260,6 +266,8 @@ export interface SaveSessionStateInput {
   gitBranch?: string | null
   apiProviderId?: string | null
   acpAgentId?: string | null
+  selectedModel?: string | null
+  selectedEffort?: EffortLevel | null
   /**
    * Provider/agent session id for cold resume (Grok ACP session/load).
    * Written on insert and on conflict when non-null so draft→first-message
@@ -286,9 +294,9 @@ export function saveSessionStateBySid(input: SaveSessionStateInput): void {
   const upsertSession = db.prepare(`
     INSERT INTO sessions (
       id, project_id, provider_id, provider, provider_session_id, title, created_at, last_user_message_at,
-      is_worktree, git_branch, worktree_path, api_provider_id, acp_agent_id
+      is_worktree, git_branch, worktree_path, api_provider_id, acp_agent_id, selected_model, selected_effort
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       provider_id = excluded.provider_id,
       provider = excluded.provider,
@@ -297,7 +305,9 @@ export function saveSessionStateBySid(input: SaveSessionStateInput): void {
       git_branch = excluded.git_branch,
       worktree_path = excluded.worktree_path,
       api_provider_id = excluded.api_provider_id,
-      acp_agent_id = excluded.acp_agent_id
+      acp_agent_id = excluded.acp_agent_id,
+      selected_model = excluded.selected_model,
+      selected_effort = excluded.selected_effort
   `)
 
   const upsertMsg = db.prepare(`
@@ -359,6 +369,8 @@ export function saveSessionStateBySid(input: SaveSessionStateInput): void {
       input.worktreePath ?? null,
       input.apiProviderId ?? null,
       input.acpAgentId ?? null,
+      input.selectedModel ?? null,
+      input.selectedEffort ?? null,
     )
     sessionCreatedAt = sessionRow?.created_at ?? now
 
@@ -510,8 +522,9 @@ export function forkSessionRecord(input: ForkSessionRecordInput): void {
     INSERT INTO sessions (
       id, project_id, provider_id, provider, provider_session_id, title,
       created_at, last_user_message_at, total_cost_usd, context_tokens,
-      is_worktree, git_branch, worktree_path, api_provider_id, acp_agent_id, usage_counted_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)
+      is_worktree, git_branch, worktree_path, api_provider_id, acp_agent_id,
+      selected_model, selected_effort, usage_counted_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `)
   const insMsg = db.prepare(`
     INSERT INTO chat_messages (id, session_id, sort_order, role, status, content_json, created_at, provider_id, metadata_json, usage_counted_at)
@@ -523,7 +536,7 @@ export function forkSessionRecord(input: ForkSessionRecordInput): void {
       input.newId, source.projectId, source.providerId, legacyProvider,
       input.providerSessionId, input.title, now, lastUserAt, source.contextTokens,
       input.worktreePath ? 1 : 0, input.gitBranch, input.worktreePath, source.apiProviderId,
-      source.acpAgentId, now,
+      source.acpAgentId, source.selectedModel, source.selectedEffort, now,
     )
     srcMsgs.forEach((m, i) => {
       insMsg.run(

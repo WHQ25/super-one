@@ -280,6 +280,8 @@ const sessionManager = new SessionManagerImpl({
       gitBranch: snapshot.gitBranch,
       apiProviderId: snapshot.apiProviderId,
       acpAgentId: snapshot.acpAgentId,
+      selectedModel: snapshot.selectedModel,
+      selectedEffort: snapshot.selectedEffort,
       providerSessionId: snapshot.providerSessionId,
       messagePersistMode: snapshot.messagePersistMode,
     })
@@ -325,6 +327,8 @@ const sessionManager = new SessionManagerImpl({
       gitBranch: loaded.record.gitBranch,
       apiProviderId: loaded.record.apiProviderId,
       acpAgentId: loaded.record.acpAgentId,
+      selectedModel: loaded.record.selectedModel,
+      selectedEffort: loaded.record.selectedEffort,
       systemPromptAppend: getSessionCollaborationSystemPrompt(sessionId),
     }
   },

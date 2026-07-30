@@ -2,7 +2,7 @@ import { getDb } from './database'
 import { getProjectId } from './recent-folders'
 import { serializeMessageContent, parseMessageContent, deriveHarnessId } from './session/session-repo'
 import { recordSessionStarted, recordMessageCounts, type HarnessKind } from './usage-stats-service'
-import type { ChatMessage, SessionHistoryEntry, PinnedSessionEntry } from '@superone/shared/agent-types'
+import type { ChatMessage, EffortLevel, SessionHistoryEntry, PinnedSessionEntry } from '@superone/shared/agent-types'
 
 interface DbSession {
   id: string
@@ -246,12 +246,12 @@ export function saveSessionState(
 /** Load session state from DB */
 export function loadSessionState(
   sessionId: string,
-): { messages: ChatMessage[]; totalCostUsd: number; contextTokens: number; isWorktree: boolean; gitBranch: string | null; worktreePath: string | null; provider: string; apiProviderId: string | null; acpAgentId: string | null; title: string | null } | null {
+): { messages: ChatMessage[]; totalCostUsd: number; contextTokens: number; isWorktree: boolean; gitBranch: string | null; worktreePath: string | null; provider: string; apiProviderId: string | null; acpAgentId: string | null; selectedModel: string | null; selectedEffort: EffortLevel | null; title: string | null } | null {
   const db = getDb()
 
   const session = db.prepare(`
-    SELECT title, total_cost_usd, context_tokens, is_worktree, git_branch, worktree_path, provider, provider_id, api_provider_id, acp_agent_id FROM sessions WHERE id = ?
-  `).get(sessionId) as (DbSession & { is_worktree: number | null; git_branch: string | null; worktree_path: string | null; provider: string | null; provider_id: string | null; api_provider_id: string | null; acp_agent_id: string | null }) | undefined
+    SELECT title, total_cost_usd, context_tokens, is_worktree, git_branch, worktree_path, provider, provider_id, api_provider_id, acp_agent_id, selected_model, selected_effort FROM sessions WHERE id = ?
+  `).get(sessionId) as (DbSession & { is_worktree: number | null; git_branch: string | null; worktree_path: string | null; provider: string | null; provider_id: string | null; api_provider_id: string | null; acp_agent_id: string | null; selected_model: string | null; selected_effort: string | null }) | undefined
 
   if (!session) return null
 
@@ -292,6 +292,8 @@ export function loadSessionState(
     provider: deriveHarnessId(session),
     apiProviderId: session.api_provider_id ?? null,
     acpAgentId: session.acp_agent_id ?? null,
+    selectedModel: session.selected_model ?? null,
+    selectedEffort: (session.selected_effort as EffortLevel | null) ?? null,
     title: session.title ?? null,
   }
 }

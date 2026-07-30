@@ -2096,6 +2096,33 @@ describe('switchSession Case B (from DB)', () => {
     expect(mockWindowApp.resumeSession).toHaveBeenCalledWith('/test', 'db-session', '/test')
   })
 
+  it('restores a worktree session model and effort instead of applying Claude defaults', async () => {
+    setupProject('/test')
+    useChatStore.setState({
+      harnessResources: { claude: { models: [
+        { id: 'claude-sonnet-4-6', name: 'Sonnet', supportedEffortLevels: ['low', 'medium', 'high'] },
+        { id: 'claude-opus-4-8', name: 'Opus', supportedEffortLevels: ['low', 'medium', 'high'] },
+      ] as never[], account: {}, slashCommands: [], skills: [], commands: [], agents: [], outputStyles: [] }, codex: null, acp: null },
+    })
+    mockWindowApp.loadSessionState.mockResolvedValue({
+      messages: [{ id: 'db-msg-opus', role: 'assistant', content: [], status: 'complete', createdAt: '', providerId: 'claude' }],
+      totalCostUsd: 0,
+      contextTokens: 0,
+      gitBranch: 'feature/model',
+      worktreePath: '/test/.worktrees/model',
+      provider: 'claude',
+      selectedModel: 'claude-opus-4-8',
+      selectedEffort: 'high',
+    })
+
+    await useChatStore.getState().switchSession('db-worktree-opus')
+
+    const session = useChatStore.getState().projectSessions['/test']._sessions['db-worktree-opus']
+    expect(session.selectedModel).toBe('claude-opus-4-8')
+    expect(session.selectedEffort).toBe('high')
+    expect(session.modelUserChosen).toBe(true)
+  })
+
   it('handles null loadSessionState gracefully', async () => {
     setupProject('/test')
     mockWindowApp.loadSessionState.mockResolvedValue(null)
@@ -4742,6 +4769,22 @@ describe('cyclePermissionMode', () => {
 })
 
 describe('setSelectedModel auto-mode downgrade', () => {
+  it('immediately replaces a stale prewarm when the draft already has text', () => {
+    setupProject('/test')
+    setClaude({
+      models: [
+        { id: 'claude-sonnet-4-6', name: 'Sonnet 4.6', description: '' },
+        { id: 'claude-opus-4-8', name: 'Opus 4.8', description: '' },
+      ] as never[],
+    })
+    patchDraftSession('/test', { selectedModel: 'claude-sonnet-4-6', draftText: 'ship it' })
+    mockWindowAgent.prewarm.mockClear()
+
+    useChatStore.getState().setSelectedModel('claude-opus-4-8')
+
+    expect(mockWindowAgent.prewarm).toHaveBeenCalledWith('/test', expect.objectContaining({ model: 'claude-opus-4-8' }))
+  })
+
   it('downgrades permissionMode from auto to default when new model does not support auto mode', () => {
     setupProject('/test')
     setClaude({

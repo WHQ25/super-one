@@ -49,10 +49,10 @@ describe('WarmupManager.keyOf', () => {
     expect(k0).not.toBe(WarmupManager.keyOf(baseOpts({ effort: 'high' as Options['effort'] })))
   })
 
-  it('ignores model field (model is runtime-switchable via setModel)', () => {
+  it('differs when model changes so the first turn never inherits a stale warm model', () => {
     const k0 = WarmupManager.keyOf(baseOpts({ model: 'claude-sonnet-4-6' }))
     const k1 = WarmupManager.keyOf(baseOpts({ model: 'claude-opus-4-8' }))
-    expect(k0).toBe(k1)
+    expect(k0).not.toBe(k1)
   })
 
   it('differs when env value changes', () => {

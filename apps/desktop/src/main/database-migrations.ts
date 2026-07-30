@@ -91,6 +91,12 @@ export function runDatabaseMigrations(db: Database.Database): void {
   if (!cols.some((c) => c.name === 'last_user_message_at')) {
     db.exec('ALTER TABLE sessions ADD COLUMN last_user_message_at TEXT')
   }
+  if (!cols.some((c) => c.name === 'selected_model')) {
+    db.exec('ALTER TABLE sessions ADD COLUMN selected_model TEXT')
+  }
+  if (!cols.some((c) => c.name === 'selected_effort')) {
+    db.exec('ALTER TABLE sessions ADD COLUMN selected_effort TEXT')
+  }
   db.exec('CREATE INDEX IF NOT EXISTS idx_sessions_project_last_user ON sessions(project_id, last_user_message_at DESC)')
 
   const msgCols = db.prepare("PRAGMA table_info(chat_messages)").all() as Array<{ name: string }>
@@ -337,12 +343,14 @@ export function runDatabaseMigrations(db: Database.Database): void {
         automation_id TEXT,
         provider_id TEXT,
         provider_session_id TEXT,
-        api_provider_id TEXT
+        api_provider_id TEXT,
+        selected_model TEXT,
+        selected_effort TEXT
       );
     `)
     db.exec(`
-      INSERT INTO sessions_new (id, project_id, title, created_at, last_user_message_at, total_cost_usd, context_tokens, is_worktree, git_branch, is_pinned, provider, worktree_path, is_hidden, is_automation, automation_id, provider_id, provider_session_id, api_provider_id)
-      SELECT id, project_id, title, created_at, last_user_message_at, total_cost_usd, context_tokens, is_worktree, git_branch, is_pinned, provider, worktree_path, is_hidden, is_automation, automation_id, provider_id, provider_session_id, api_provider_id
+      INSERT INTO sessions_new (id, project_id, title, created_at, last_user_message_at, total_cost_usd, context_tokens, is_worktree, git_branch, is_pinned, provider, worktree_path, is_hidden, is_automation, automation_id, provider_id, provider_session_id, api_provider_id, selected_model, selected_effort)
+      SELECT id, project_id, title, created_at, last_user_message_at, total_cost_usd, context_tokens, is_worktree, git_branch, is_pinned, provider, worktree_path, is_hidden, is_automation, automation_id, provider_id, provider_session_id, api_provider_id, selected_model, selected_effort
       FROM sessions
     `)
     db.exec('DROP TABLE sessions')

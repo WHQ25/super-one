@@ -39,6 +39,8 @@ export interface LoadedSessionData {
   gitBranch?: string | null
   apiProviderId?: string | null
   acpAgentId?: string | null
+  selectedModel?: string | null
+  selectedEffort?: import('@superone/shared/agent-types').EffortLevel | null
   systemPromptAppend?: string
 }
 
@@ -170,16 +172,22 @@ export class SessionManagerImpl implements SessionManagerContract {
     // Only hydrate when the DB row is the same provider — harness switches must not
     // resume a Claude/Codex thread id into Grok (or vice versa).
     let resumedProviderSessionId = opts.providerSessionId?.trim() || null
-    if (!resumedProviderSessionId && opts.id && this.persistence.loadSession) {
+    let selectedModel = opts.model
+    let selectedEffort = opts.effort
+    if (opts.id && this.persistence.loadSession) {
       try {
         const prior = this.persistence.loadSession(opts.id)
-        if (prior?.providerId === opts.providerId && prior.providerSessionId?.trim()) {
-          resumedProviderSessionId = prior.providerSessionId.trim()
-          log.info(
-            '[SessionManager] createSession hydrated providerSessionId sid=%s provider=%s',
-            opts.id,
-            opts.providerId,
-          )
+        if (prior?.providerId === opts.providerId) {
+          if (!resumedProviderSessionId && prior.providerSessionId?.trim()) {
+            resumedProviderSessionId = prior.providerSessionId.trim()
+            log.info(
+              '[SessionManager] createSession hydrated providerSessionId sid=%s provider=%s',
+              opts.id,
+              opts.providerId,
+            )
+          }
+          selectedModel ??= prior.selectedModel ?? undefined
+          selectedEffort ??= prior.selectedEffort ?? undefined
         }
       } catch (err) {
         log.debug('[SessionManager] createSession loadSession hydrate skipped:', err)
@@ -195,8 +203,8 @@ export class SessionManagerImpl implements SessionManagerContract {
       backend,
       permissionMode: opts.permissionMode,
       sandboxInfo,
-      effort: opts.effort,
-      model: opts.model ?? undefined,
+      effort: selectedEffort,
+      model: selectedModel,
       additionalDirectories: opts.additionalDirectories,
       gitBranch: opts.gitBranch ?? null,
       apiProviderId,
@@ -297,6 +305,8 @@ export class SessionManagerImpl implements SessionManagerContract {
       missingWorktreePath,
       apiProviderId,
       acpAgentId: data.acpAgentId ?? null,
+      effort: data.selectedEffort ?? undefined,
+      model: data.selectedModel ?? undefined,
       systemPromptAppend: data.systemPromptAppend,
       homedir: homedir(),
       getProjectResources: (c) => this.projectResources.get(c),

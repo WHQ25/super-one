@@ -76,6 +76,7 @@ export class WarmupManager {
       : []
     return JSON.stringify({
       cwd: opts.cwd ?? '',
+      model: opts.model ?? '',
       effort: opts.effort ?? '',
       permissionMode: opts.permissionMode ?? 'default',
       bypass: opts.allowDangerouslySkipPermissions ?? false,

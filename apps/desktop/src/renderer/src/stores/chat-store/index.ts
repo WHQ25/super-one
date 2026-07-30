@@ -725,6 +725,8 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
     let savedProvider: string | null = null
     let savedApiProviderId: string | null = null
     let savedAcpAgentId: string | null = null
+    let savedSelectedModel: string | null = null
+    let savedSelectedEffort: import('@superone/shared/agent-types').EffortLevel | null = null
     let savedOpenCodeAgentId: string | null = null
     let savedTitle: string | null = null
     try {
@@ -738,6 +740,8 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
         savedWorktreePath = saved.worktreePath ?? undefined
         savedApiProviderId = saved.apiProviderId ?? null
         savedAcpAgentId = saved.acpAgentId ?? null
+        savedSelectedModel = saved.selectedModel ?? null
+        savedSelectedEffort = saved.selectedEffort ?? null
         savedOpenCodeAgentId = saved.messages.findLast((message) => message.role === 'assistant')?.metadata?.agent ?? null
         savedTitle = saved.title ?? null
       }
@@ -776,6 +780,8 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
       _title: savedTitle,
       _historyHydrated: true,
       permissionMode: defaultPermissionMode,
+      ...(savedSelectedModel ? { selectedModel: savedSelectedModel, modelUserChosen: true } : {}),
+      ...(savedSelectedEffort ? { selectedEffort: savedSelectedEffort, effortUserChosen: true } : {}),
     }
     if (restoredProvider === 'acp' && savedAcpAgentId) {
       const catalog = getCachedAcpCatalog(get().harnessResources.acp, savedAcpAgentId)

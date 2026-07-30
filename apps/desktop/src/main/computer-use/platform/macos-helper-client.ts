@@ -15,15 +15,27 @@ export const RELEASE_HELPER_APP_NAME = 'SuperOne Computer Use'
 export const DEV_HELPER_BUNDLE_ID = 'com.superone.computer-use.dev'
 export const RELEASE_HELPER_BUNDLE_ID = 'com.superone.computer-use'
 
+export type ComputerUseHelperVariant = 'dev' | 'release'
+
 export interface ResolveHelperAppPathOptions {
   preferDev?: boolean
   /** Injectable for packaged-path regression tests. null skips packaged lookup. */
   resourcesPath?: string | null
 }
 
-/** Default socket under TMPDIR — user-only after helper chmod. */
-export function defaultHelperSocketPath(): string {
-  return join(tmpdir(), 'superone-computer-use.sock')
+export function resolveHelperVariant(): ComputerUseHelperVariant {
+  const envVariant = process.env.SUPERONE_CU_HELPER_VARIANT
+  if (envVariant === 'dev' || envVariant === 'release') return envVariant
+  return process.env.ELECTRON_RENDERER_URL != null || process.env.NODE_ENV === 'development'
+    ? 'dev'
+    : 'release'
+}
+
+/** Variant-specific socket under TMPDIR — user-only after helper chmod. */
+export function defaultHelperSocketPath(
+  variant: ComputerUseHelperVariant = resolveHelperVariant(),
+): string {
+  return join(tmpdir(), `superone-computer-use-${variant}.sock`)
 }
 
 function nativeHelperRootCandidates(): string[] {
@@ -45,11 +57,7 @@ export function resolveHelperAppPath(opts?: ResolveHelperAppPathOptions): string
     return process.env.SUPERONE_CU_HELPER_APP
   }
 
-  const envVariant = process.env.SUPERONE_CU_HELPER_VARIANT
-  const preferDev =
-    opts?.preferDev
-    ?? (envVariant === 'dev' || (envVariant !== 'release' && process.env.ELECTRON_RENDERER_URL != null)
-      || process.env.NODE_ENV === 'development')
+  const preferDev = opts?.preferDev ?? resolveHelperVariant() === 'dev'
 
   const names = preferDev
     ? [DEV_HELPER_APP_NAME, RELEASE_HELPER_APP_NAME]
@@ -75,11 +83,14 @@ export function resolveHelperAppPath(opts?: ResolveHelperAppPathOptions): string
   return null
 }
 
-export function helperProcessMatchPatterns(): string[] {
-  return [
-    `${DEV_HELPER_APP_NAME}.app/Contents/MacOS/${DEV_HELPER_APP_NAME}`,
-    `${RELEASE_HELPER_APP_NAME}.app/Contents/MacOS/${RELEASE_HELPER_APP_NAME}`,
-  ]
+export function helperProcessMatchPatterns(
+  variant?: ComputerUseHelperVariant,
+): string[] {
+  const dev = `${DEV_HELPER_APP_NAME}.app/Contents/MacOS/${DEV_HELPER_APP_NAME}`
+  const release = `${RELEASE_HELPER_APP_NAME}.app/Contents/MacOS/${RELEASE_HELPER_APP_NAME}`
+  if (variant === 'dev') return [dev]
+  if (variant === 'release') return [release]
+  return [dev, release]
 }
 
 export class MacosHelperClient {
@@ -97,6 +108,7 @@ export class MacosHelperClient {
   constructor(
     private readonly socketPath: string = defaultHelperSocketPath(),
     private readonly appPath: string | null = resolveHelperAppPath(),
+    private readonly variant: ComputerUseHelperVariant = resolveHelperVariant(),
   ) {}
 
   get path(): string {
@@ -173,7 +185,7 @@ export class MacosHelperClient {
       // ignore
     }
     this.close()
-    killHelperProcesses()
+    killHelperProcesses(this.variant)
     await sleep(400)
     try {
       if (existsSync(this.socketPath)) unlinkSync(this.socketPath)
@@ -186,7 +198,7 @@ export class MacosHelperClient {
     while (Date.now() < deadline) {
       try {
         await this.connectOnce(500)
-        await this.request('ping', {}, 2_000)
+        await this.validateConnectedHelper()
         return
       } catch (e) {
         lastErr = e
@@ -210,7 +222,7 @@ export class MacosHelperClient {
   async tryConnectOnly(timeoutMs = 2_000): Promise<boolean> {
     try {
       await this.connectOnce(timeoutMs)
-      await this.request('ping', {}, 2_000)
+      await this.validateConnectedHelper()
       return true
     } catch {
       this.close()
@@ -219,19 +231,24 @@ export class MacosHelperClient {
   }
 
   private async connectOrLaunch(timeoutMs: number): Promise<void> {
+    let connectError: unknown
     try {
       await this.connectOnce(800)
-      await this.request('ping', {}, 2_000)
+      await this.validateConnectedHelper()
       return
-    } catch {
-      // launch
+    } catch (err) {
+      connectError = err
+      this.close()
     }
     if (!this.appPath) {
+      if (connectError instanceof Error && connectError.message.includes('identity mismatch')) {
+        throw connectError
+      }
       throw new Error(
         'Computer Use helper .app not found. Run: bash apps/desktop/native/computer-use-helper/scripts/build.sh dev',
       )
     }
-    killHelperProcesses()
+    killHelperProcesses(this.variant)
     await sleep(200)
     try {
       if (existsSync(this.socketPath)) unlinkSync(this.socketPath)
@@ -245,7 +262,7 @@ export class MacosHelperClient {
     while (Date.now() < deadline) {
       try {
         await this.connectOnce(500)
-        await this.request('ping', {}, 2_000)
+        await this.validateConnectedHelper()
         return
       } catch (e) {
         lastErr = e
@@ -257,10 +274,40 @@ export class MacosHelperClient {
 
   private launchHelper(): void {
     if (!this.appPath) return
-    spawn('open', ['-g', '-a', this.appPath, '--args', '--socket', this.socketPath], {
+    spawn('open', [
+      '-g',
+      '-a',
+      this.appPath,
+      '--args',
+      '--socket',
+      this.socketPath,
+      '--parent-pid',
+      String(process.pid),
+    ], {
       detached: true,
       stdio: 'ignore',
     }).unref()
+  }
+
+  private async validateConnectedHelper(): Promise<void> {
+    const doctorResponse = await this.request('doctor', {}, 2_000)
+    if (!doctorResponse.ok) {
+      throw new Error(doctorResponse.error?.message ?? 'Computer Use helper doctor failed')
+    }
+    const doctor = doctorResponse.result as HelperDoctor
+    const expectedBundleId = this.variant === 'dev'
+      ? DEV_HELPER_BUNDLE_ID
+      : RELEASE_HELPER_BUNDLE_ID
+    if (doctor.bundleId !== expectedBundleId) {
+      throw new Error(
+        `Computer Use helper identity mismatch: expected ${expectedBundleId}, got ${doctor.bundleId || 'unknown'}`,
+      )
+    }
+
+    const hostResponse = await this.request('set_host', { pid: process.pid }, 2_000)
+    if (!hostResponse.ok) {
+      throw new Error(hostResponse.error?.message ?? 'Computer Use helper host registration failed')
+    }
   }
 
   private connectOnce(timeoutMs: number): Promise<void> {
@@ -338,8 +385,8 @@ export class MacosHelperClient {
   }
 }
 
-export function killHelperProcesses(): void {
-  for (const pattern of helperProcessMatchPatterns()) {
+export function killHelperProcesses(variant?: ComputerUseHelperVariant): void {
+  for (const pattern of helperProcessMatchPatterns(variant)) {
     try {
       execFileSync('pkill', ['-f', pattern], { stdio: 'ignore' })
     } catch {
@@ -353,13 +400,25 @@ function sleep(ms: number): Promise<void> {
 }
 
 let shared: MacosHelperClient | null = null
+let sharedVariant: ComputerUseHelperVariant | null = null
 
-export function getSharedHelperClient(): MacosHelperClient {
-  if (!shared) shared = new MacosHelperClient()
+export function getSharedHelperClient(
+  variant: ComputerUseHelperVariant = resolveHelperVariant(),
+): MacosHelperClient {
+  if (!shared || sharedVariant !== variant) {
+    shared?.close()
+    shared = new MacosHelperClient(
+      defaultHelperSocketPath(variant),
+      resolveHelperAppPath({ preferDev: variant === 'dev' }),
+      variant,
+    )
+    sharedVariant = variant
+  }
   return shared
 }
 
 export function resetSharedHelperClient(): void {
   shared?.close()
   shared = null
+  sharedVariant = null
 }

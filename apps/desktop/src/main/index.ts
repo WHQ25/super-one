@@ -37,8 +37,8 @@ import { MobileShareToolCoordinator } from './remote/mobile-share-tool-coordinat
 import { startSuperoneMcpStdioBridge, stopSuperoneMcpStdioBridge } from './mcp/superone-mcp-stdio-ipc'
 import {
   getComputerUsePermissionStatus,
-  startDevComputerUseHelper,
-  stopDevComputerUseHelper,
+  startComputerUseHelper,
+  stopComputerUseHelper,
 } from './computer-use/computer-use-helper-lifecycle'
 import {
   closeComputerUsePermissionFloat,
@@ -3199,7 +3199,7 @@ app.whenReady().then(async () => {
   // Dev: keep SuperOne Dev Computer Use.app alive for the whole SuperOne session
   // so TCC identity stays stable. Permission prompts require explicit user action.
   if (is.dev && process.platform === 'darwin') {
-    void startDevComputerUseHelper({ requestPermissions: false })
+    void startComputerUseHelper({ requestPermissions: false })
   }
 
   if (is.dev && process.env.SUPERONE_BENCH) {
@@ -3425,7 +3425,7 @@ function performQuit(): void {
   rendererAgentEventTransport.dispose()
   destroyComputerUsePermissionFloat()
   if (terminalSweepTimer) clearInterval(terminalSweepTimer)
-  stopDevComputerUseHelper()
+  stopComputerUseHelper()
   shutdownAllProxies()
   terminalManager.killAll()
   automationService.stop()
@@ -3459,7 +3459,7 @@ const handleSignalQuit = (sig: NodeJS.Signals): void => {
   destroyComputerUsePermissionFloat()
   log.info(`[main] received ${sig}, shutting down`)
   if (terminalSweepTimer) clearInterval(terminalSweepTimer)
-  stopDevComputerUseHelper()
+  stopComputerUseHelper()
   terminalManager.killAll()
   closeAllDbConnections()
   Promise.allSettled([

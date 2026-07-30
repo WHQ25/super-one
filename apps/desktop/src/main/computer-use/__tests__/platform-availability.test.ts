@@ -4,7 +4,12 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { resolveComputerUseBackend } from '../create-service'
 import { isComputerUseSupportedPlatform } from '../tools'
-import { RELEASE_HELPER_APP_NAME, resolveHelperAppPath } from '../platform/macos-helper-client'
+import {
+  defaultHelperSocketPath,
+  helperProcessMatchPatterns,
+  RELEASE_HELPER_APP_NAME,
+  resolveHelperAppPath,
+} from '../platform/macos-helper-client'
 
 const tempRoots: string[] = []
 
@@ -57,5 +62,17 @@ describe('Computer Use platform availability', () => {
     mkdirSync(helperPath, { recursive: true })
 
     expect(resolveHelperAppPath({ preferDev: false, resourcesPath })).toBe(helperPath)
+  })
+
+  it('isolates development and release helper sockets and process matching', () => {
+    expect(defaultHelperSocketPath('dev')).not.toBe(defaultHelperSocketPath('release'))
+    expect(defaultHelperSocketPath('dev')).toContain('-dev.sock')
+    expect(defaultHelperSocketPath('release')).toContain('-release.sock')
+    expect(helperProcessMatchPatterns('dev')).toEqual([
+      'SuperOne Dev Computer Use.app/Contents/MacOS/SuperOne Dev Computer Use',
+    ])
+    expect(helperProcessMatchPatterns('release')).toEqual([
+      'SuperOne Computer Use.app/Contents/MacOS/SuperOne Computer Use',
+    ])
   })
 })

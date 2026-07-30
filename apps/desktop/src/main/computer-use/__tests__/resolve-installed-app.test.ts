@@ -23,7 +23,7 @@ describe('matchRunningApp', () => {
   })
 })
 
-describe('resolveInstalledApp (macOS live)', () => {
+describe('resolveInstalledApp (macOS filesystem)', () => {
   it('resolves TextEdit by English name and bundle id', async () => {
     if (process.platform !== 'darwin') return
     clearInstalledAppCacheForTests()

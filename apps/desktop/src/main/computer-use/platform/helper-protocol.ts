@@ -3,6 +3,7 @@
 export type HelperMethod =
   | 'ping'
   | 'doctor'
+  | 'set_host'
   | 'list_apps'
   | 'frontmost'
   | 'list_windows'

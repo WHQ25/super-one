@@ -1,6 +1,10 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { ComputerUseService } from '../computer-use-service'
 import { ComputerUsePolicy } from '../policy'
+import {
+  clearInstalledAppCacheForTests,
+  setResolveInstalledAppForTests,
+} from '../resolve-installed-app'
 import type { PlatformAdapter, PlatformLook } from '../platform/types'
 import type { UiRootIdentity } from '../types'
 
@@ -44,6 +48,18 @@ describe('P2 service policy + foreground gate', () => {
   let frontmostBundle: string
 
   beforeEach(() => {
+    setResolveInstalledAppForTests(async (query) => {
+      const normalized = query.toLowerCase()
+      if (normalized === 'textedit' || normalized === 'com.apple.textedit') {
+        return {
+          app: 'TextEdit',
+          bundleId: 'com.apple.TextEdit',
+          path: '/System/Applications/TextEdit.app',
+          aliases: ['TextEdit', 'com.apple.TextEdit'],
+        }
+      }
+      return null
+    })
     frontmostBundle = 'com.apple.TextEdit'
     const root = makeRoot()
     adapter = {
@@ -73,6 +89,10 @@ describe('P2 service policy + foreground gate', () => {
     policy.setEnabled(true)
     policy.grant({ app: 'TextEdit', bundleId: 'com.apple.TextEdit', tier: 'full' })
     service = new ComputerUseService({ adapter, policy })
+  })
+
+  afterEach(() => {
+    clearInstalledAppCacheForTests()
   })
 
   it('default delivery is app-directed and does not require frontmost', async () => {
@@ -170,8 +190,6 @@ describe('P2 service policy + foreground gate', () => {
   })
 
   it('waits for a cold-launched app to appear in the running list', async () => {
-    const { setResolveInstalledAppForTests, clearInstalledAppCacheForTests } =
-      await import('../resolve-installed-app')
     setResolveInstalledAppForTests(async (q) => {
       if (q === 'Doubao' || q === '豆包' || q === 'com.bot.pc.doubao') {
         return {
@@ -244,8 +262,6 @@ describe('P2 service policy + foreground gate', () => {
   })
 
   it('resolves Chinese display name 豆包 to the real bundle id before launch', async () => {
-    const { setResolveInstalledAppForTests, clearInstalledAppCacheForTests } =
-      await import('../resolve-installed-app')
     setResolveInstalledAppForTests(async () => ({
       app: '豆包',
       bundleId: 'com.bot.pc.doubao',

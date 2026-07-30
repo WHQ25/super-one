@@ -29,8 +29,8 @@ export {
   RELEASE_HELPER_BUNDLE_ID,
 } from './platform/macos-helper-client'
 export {
-  startDevComputerUseHelper,
-  stopDevComputerUseHelper,
+  startComputerUseHelper,
+  stopComputerUseHelper,
   getComputerUsePermissionStatus,
 } from './computer-use-helper-lifecycle'
 export type { ComputerUsePermissionStatus } from './computer-use-helper-lifecycle'

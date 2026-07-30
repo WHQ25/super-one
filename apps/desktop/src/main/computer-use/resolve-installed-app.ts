@@ -58,11 +58,9 @@ export async function resolveInstalledApp(
     if (byId) return byId
   }
 
-  // English / LaunchServices name (e.g. "Doubao", "TextEdit") — fast path.
-  const byOsascript = await resolveByOsascriptName(q)
-  if (byOsascript) return byOsascript
-
-  // Full install scan with localized CFBundleDisplayName (e.g. "豆包" → Doubao).
+  // Filesystem-only scan with localized CFBundleDisplayName. AppleScript
+  // application references are intentionally avoided because resolving an
+  // application's id can launch it as a side effect.
   const apps = listInstalledAppsSync()
   const lower = q.toLowerCase()
   const exact =
@@ -102,48 +100,7 @@ async function resolveByBundleId(bundleId: string): Promise<ResolvedInstalledApp
     // fall through
   }
 
-  try {
-    const { stdout } = await execFileAsync(
-      'osascript',
-      ['-e', `POSIX path of (path to application id "${bundleId}")`],
-      { timeout: 2000 },
-    )
-    const path = stdout.trim().replace(/\/$/, '')
-    if (path && existsSync(path)) {
-      return readAppAtPath(path) ?? synthetic(path, bundleId)
-    }
-  } catch {
-    // fall through
-  }
   return null
-}
-
-async function resolveByOsascriptName(name: string): Promise<ResolvedInstalledApp | null> {
-  try {
-    const { stdout } = await execFileAsync(
-      'osascript',
-      [
-        '-e',
-        `set theId to id of application "${name.replace(/"/g, '\\"')}"\n` +
-          `set thePath to POSIX path of (path to application id theId)\n` +
-          `return theId & linefeed & thePath`,
-      ],
-      { timeout: 2500 },
-    )
-    const lines = stdout.trim().split('\n').map((l) => l.trim()).filter(Boolean)
-    if (lines.length < 2) return null
-    const bundleId = lines[0]
-    const path = lines[1].replace(/\/$/, '')
-    if (!bundleId || !path) return null
-    return readAppAtPath(path) ?? {
-      app: basename(path, '.app'),
-      bundleId,
-      path,
-      aliases: [name, basename(path, '.app'), bundleId],
-    }
-  } catch {
-    return null
-  }
 }
 
 function synthetic(path: string, bundleId: string): ResolvedInstalledApp {

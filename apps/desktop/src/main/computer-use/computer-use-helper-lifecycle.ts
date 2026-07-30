@@ -1,24 +1,16 @@
-/**
- * Dev lifecycle for SuperOne Dev Computer Use.app
- *
- * - Started when SuperOne dev (electron-vite) becomes ready
- * - Stopped when SuperOne quits
- * - Stable TCC identity: com.superone.computer-use.dev
- *
- * Release helper (com.superone.computer-use) is packaged separately and not
- * managed by this module.
- */
+/** Computer Use helper lifecycle for the active desktop variant. */
 
 import { existsSync } from 'node:fs'
 import log from '../logger'
 import {
   DEV_HELPER_APP_NAME,
-  DEV_HELPER_BUNDLE_ID,
+  RELEASE_HELPER_APP_NAME,
   defaultHelperSocketPath,
   getSharedHelperClient,
   killHelperProcesses,
   resetSharedHelperClient,
   resolveHelperAppPath,
+  resolveHelperVariant,
 } from './platform/macos-helper-client'
 import type { HelperDoctor } from './platform/helper-protocol'
 
@@ -82,40 +74,43 @@ export async function requestMissingComputerUsePermissions(
   return statusFromDoctor(await client.doctor(), true)
 }
 
-export function isDevComputerUseHelperManaged(): boolean {
+export function isComputerUseHelperManaged(): boolean {
   return process.platform === 'darwin' && process.env.SUPERONE_CU_MANAGE_HELPER !== '0'
 }
 
 /**
- * Launch SuperOne Dev Computer Use and keep it warm for the SuperOne session.
+ * Launch the matching Computer Use helper and keep it warm for the desktop session.
  * No-op on non-macOS or when the .app is missing (log once).
  */
-export async function startDevComputerUseHelper(
+export async function startComputerUseHelper(
   options: { requestPermissions?: boolean } = { requestPermissions: false },
 ): Promise<ComputerUsePermissionStatus | undefined> {
-  if (!isDevComputerUseHelperManaged()) return
+  if (!isComputerUseHelperManaged()) return
   if (started) return
 
-  const appPath = resolveHelperAppPath({ preferDev: true })
+  const variant = resolveHelperVariant()
+  const appName = variant === 'dev' ? DEV_HELPER_APP_NAME : RELEASE_HELPER_APP_NAME
+  const appPath = resolveHelperAppPath({ preferDev: variant === 'dev' })
   if (!appPath || !existsSync(appPath)) {
     log.warn(
-      '[computer-use] Dev helper not found. Build with: bash apps/desktop/native/computer-use-helper/scripts/build.sh dev',
+      '[computer-use] %s helper not found',
+      variant,
     )
     return
   }
 
-  // Only manage the Dev app name; never kill a production helper if present.
   log.info(
     '[computer-use] starting %s (%s) path=%s socket=%s',
-    DEV_HELPER_APP_NAME,
-    DEV_HELPER_BUNDLE_ID,
+    appName,
+    variant,
     appPath,
-    defaultHelperSocketPath(),
+    defaultHelperSocketPath(variant),
   )
 
   try {
-    const client = getSharedHelperClient()
-    // Prefer reconnecting to an already-running helper (same SuperOne session restart).
+    const client = getSharedHelperClient(variant)
+    // Reconnect only when the helper identity matches; set_host transfers ownership
+    // to this desktop process after a development server restart.
     const ok = await client.tryConnectOnly(800)
     if (!ok) {
       await client.restartHelper(12_000)
@@ -131,13 +126,13 @@ export async function startDevComputerUseHelper(
       if (doctor.screenRecording !== 'granted' || doctor.accessibility !== 'granted') {
         log.warn(
           '[computer-use] Missing TCC for **%s**.',
-          DEV_HELPER_APP_NAME,
+          appName,
         )
         started = true
         if (options.requestPermissions !== false) {
           log.info(
             '[computer-use] requesting Accessibility then Screen Recording for %s',
-            DEV_HELPER_APP_NAME,
+            appName,
           )
           const status = await requestMissingComputerUsePermissions(client, doctor)
           return status
@@ -147,7 +142,8 @@ export async function startDevComputerUseHelper(
     started = true
   } catch (err) {
     log.warn(
-      '[computer-use] failed to start dev helper: %s',
+      '[computer-use] failed to start %s helper: %s',
+      resolveHelperVariant(),
       err instanceof Error ? err.message : String(err),
     )
   }
@@ -161,7 +157,7 @@ export async function getComputerUsePermissionStatus(
     return { requested: false, error: 'Computer Use permissions are macOS-only' }
   }
   try {
-    const startupStatus = await startDevComputerUseHelper({ requestPermissions })
+    const startupStatus = await startComputerUseHelper({ requestPermissions })
     if (startupStatus) return startupStatus
 
     const client = getSharedHelperClient()
@@ -176,17 +172,15 @@ export async function getComputerUsePermissionStatus(
   }
 }
 
-/** Kill SuperOne Dev Computer Use when SuperOne exits. */
-export function stopDevComputerUseHelper(): void {
-  if (!isDevComputerUseHelperManaged()) return
-  log.info('[computer-use] stopping %s', DEV_HELPER_APP_NAME)
-  try {
-    const client = getSharedHelperClient()
-    void client.request('terminate', {}, 800).catch(() => {})
-  } catch {
-    // ignore
-  }
+/** Stop only the helper variant owned by this desktop process. */
+export function stopComputerUseHelper(): void {
+  if (!isComputerUseHelperManaged()) return
+  const variant = resolveHelperVariant()
+  const appName = variant === 'dev' ? DEV_HELPER_APP_NAME : RELEASE_HELPER_APP_NAME
+  log.info('[computer-use] stopping %s', appName)
+  // Do not create or asynchronously reconnect a client during shutdown. The old
+  // fire-and-forget terminate request could launch a helper after pkill ran.
   resetSharedHelperClient()
-  killHelperProcesses()
+  killHelperProcesses(variant)
   started = false
 }

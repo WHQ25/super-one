@@ -12,6 +12,7 @@
 import AppKit
 import ApplicationServices
 import CoreGraphics
+import Darwin
 import Foundation
 
 // MARK: - Protocol
@@ -222,6 +223,56 @@ func maybeShowOverlayFromParams(
 
 // MARK: - Dispatch
 
+final class HostLifecycle {
+    static let shared = HostLifecycle()
+
+    private let queue = DispatchQueue(label: "dev.superone.computer-use.host-lifecycle")
+    private var hostPid: pid_t = 0
+    private var processSource: DispatchSourceProcess?
+
+    func watch(pid: Int) {
+        guard pid > 1 else { return }
+        queue.async {
+            self.processSource?.cancel()
+            self.processSource = nil
+            self.hostPid = pid_t(pid)
+
+            // Close the race where the host exits just before the process
+            // source is registered. The source handles all later exits.
+            guard self.isHostAlive() else {
+                self.handleHostExit()
+                return
+            }
+
+            let source = DispatchSource.makeProcessSource(
+                identifier: self.hostPid,
+                eventMask: .exit,
+                queue: self.queue,
+            )
+            source.setEventHandler { [weak self] in
+                self?.handleHostExit()
+            }
+            self.processSource = source
+            source.resume()
+        }
+    }
+
+    private func isHostAlive() -> Bool {
+        guard hostPid > 1 else { return false }
+        errno = 0
+        if Darwin.kill(hostPid, 0) == 0 { return true }
+        return errno == EPERM
+    }
+
+    private func handleHostExit() {
+        processSource?.cancel()
+        processSource = nil
+        hostPid = 0
+        AgentOverlayController.shared.hideImmediately()
+        exit(0)
+    }
+}
+
 func handle(request: HelperRequest) async -> HelperResponse {
     let params = request.params?.mapValues { $0.value } ?? [:]
     do {
@@ -230,6 +281,12 @@ func handle(request: HelperRequest) async -> HelperResponse {
             return .success(id: request.id, result: ["pong": true])
         case "doctor":
             return .success(id: request.id, result: doctor())
+        case "set_host":
+            guard let pid = AnyCodable.int(params, "pid"), pid > 1 else {
+                throw HelperError(code: "INVALID", message: "valid host pid required")
+            }
+            HostLifecycle.shared.watch(pid: pid)
+            return .success(id: request.id, result: ["ok": true, "pid": pid])
         case "request_accessibility":
             let granted = requestAccessibilityAccess()
             return .success(id: request.id, result: [
@@ -860,13 +917,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let args = CommandLine.arguments
         // Expected: <exec> --socket <path>
         var socketPath: String?
+        var parentPid: Int?
         if let idx = args.firstIndex(of: "--socket"), idx + 1 < args.count {
             socketPath = args[idx + 1]
         } else if args.count >= 2, args[1].hasSuffix(".sock") {
             socketPath = args[1]
         } else {
             socketPath = FileManager.default.temporaryDirectory
-                .appendingPathComponent("superone-computer-use.sock").path
+                .appendingPathComponent("superone-computer-use-release.sock").path
+        }
+        if let idx = args.firstIndex(of: "--parent-pid"), idx + 1 < args.count {
+            parentPid = Int(args[idx + 1])
+        }
+        if let parentPid {
+            HostLifecycle.shared.watch(pid: parentPid)
         }
 
         do {

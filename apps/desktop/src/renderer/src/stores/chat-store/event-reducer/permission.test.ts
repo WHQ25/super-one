@@ -111,6 +111,19 @@ describe('reducePermission: agent_setting_change', () => {
     } as never).apiProviderId).toBeNull()
   })
 
+  it('keeps the current model when selectedModel is null (main does not know it — never a clear)', () => {
+    const session = createDefaultPerSessionState()
+    session.selectedModel = 'opus-4-8'
+    const patch = reducePermission(session, {
+      type: 'agent_setting_change',
+      selectedModel: null,
+      patch: { selectedModel: null, permissionMode: 'acceptEdits' },
+    } as never)
+    expect(patch.selectedModel).toBeUndefined()
+    expect(patch.modelUserChosen).toBeUndefined()
+    expect(patch.permissionMode).toBe('acceptEdits')
+  })
+
   it('emits an empty patch when no fields are specified', () => {
     expect(reducePermission(createDefaultPerSessionState(), {
       type: 'agent_setting_change',

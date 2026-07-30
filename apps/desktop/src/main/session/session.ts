@@ -1049,12 +1049,20 @@ export class Session implements SessionContract {
     // carry uiSettings for mini-window cold paint; this covers Session.on() late
     // subscribers without flooding every listener with empty defaults.
     if (this.hasMeaningfulUiSettings()) {
-      const ui = this.getUiSettings()
+      // A replay paints what this session KNOWS. A session created by the first send
+      // (or by setPermissionMode on a draft) has no model/effort yet — replaying those
+      // as null would be read as "clear", wiping the composer's model label.
+      const { selectedModel, selectedEffort, ...rest } = this.getUiSettings()
+      const known = {
+        ...rest,
+        ...(selectedModel != null ? { selectedModel } : {}),
+        ...(selectedEffort != null ? { selectedEffort } : {}),
+      }
       out.push({
         type: 'agent_setting_change',
-        selectedModel: ui.selectedModel ?? null,
-        selectedEffort: ui.selectedEffort ?? null,
-        patch: ui,
+        ...(selectedModel != null ? { selectedModel } : {}),
+        ...(selectedEffort != null ? { selectedEffort } : {}),
+        patch: known,
         sessionId: this.id,
         projectPath: this.projectPath,
       } as AgentEvent)

@@ -33,8 +33,10 @@ export function reducePermission(session: PerSessionState, event: PermissionEven
         permissionMode: eventPatch.permissionMode,
         apiProviderId: eventPatch.apiProviderId,
       }
-      if (merged.selectedModel !== undefined) {
-        patch.selectedModel = merged.selectedModel ?? ''
+      // `null` means the emitter has no model (a session created before its first send
+      // never learned one) — no caller ever means "clear the selection", so keep ours.
+      if (merged.selectedModel != null) {
+        patch.selectedModel = merged.selectedModel
         patch.modelUserChosen = true
       }
       if (merged.selectedEffort !== undefined) {

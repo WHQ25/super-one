@@ -2349,6 +2349,37 @@ describe('Session ownership', () => {
     expect(ui.selectedCodexPermissionPreset).toBe('full-access')
   })
 
+  it('replaying a session that has no model yet omits selectedModel instead of advertising null', () => {
+    // The first send on a renderer draft creates this Session *before* send() learns the
+    // model, so the replay ran with model=undefined. Emitting selectedModel: null there
+    // made the renderer clear the composer label ("?? ''") — the model name vanished.
+    const { session } = makeSession({ permissionMode: 'acceptEdits' })
+
+    const replayed = session.getReplayEvents().filter((e) => e.type === 'agent_setting_change')
+
+    expect(replayed).toHaveLength(1)
+    const event = replayed[0]
+    if (event.type !== 'agent_setting_change') throw new Error('unreachable')
+    expect(event.patch?.permissionMode).toBe('acceptEdits')
+    expect(event.selectedModel).toBeUndefined()
+    expect(event.selectedEffort).toBeUndefined()
+    expect(event.patch && 'selectedModel' in event.patch).toBe(false)
+    expect(event.patch && 'selectedEffort' in event.patch).toBe(false)
+  })
+
+  it('replays selectedModel/selectedEffort once the session knows them', () => {
+    const { session } = makeSession({ model: 'opus', effort: 'max' })
+
+    const event = session.getReplayEvents().find((e) => e.type === 'agent_setting_change')
+
+    expect(event).toBeDefined()
+    if (!event || event.type !== 'agent_setting_change') throw new Error('unreachable')
+    expect(event.selectedModel).toBe('opus')
+    expect(event.selectedEffort).toBe('max')
+    expect(event.patch?.selectedModel).toBe('opus')
+    expect(event.patch?.selectedEffort).toBe('max')
+  })
+
   it('dispose clears subscribers, releases owner, emits closed event', async () => {
     const { session } = makeSession()
     session.claim({ kind: 'remote', deviceId: 'dev-A' })

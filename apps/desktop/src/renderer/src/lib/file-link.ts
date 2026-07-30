@@ -35,23 +35,22 @@ export function resolveProjectFileHref(
     href = rawHref
   }
 
-  let forcedProjectRelative = false
-
   try {
     const url = new URL(href)
+    // Network URLs are never project files — not even localhost.
     if (url.protocol === 'http:' || url.protocol === 'https:') {
-      if (url.hostname === 'localhost' || url.hostname === '127.0.0.1') {
-        href = url.pathname + url.search + url.hash
-        forcedProjectRelative = true
-      } else {
-        return null
-      }
-    } else if (url.protocol === 'file:') {
+      return null
+    }
+    if (url.protocol === 'file:') {
       href = decodeURIComponent(url.pathname)
+      // Windows file URLs look like file:///C:/Users/... → pathname /C:/Users/...
+      if (/^\/[A-Za-z]:\//.test(href)) href = href.slice(1)
     } else {
+      // mailto:, javascript:, data:, etc.
       return null
     }
   } catch {
+    // Not an absolute URL — treat as a filesystem path (absolute or project-relative).
   }
 
   const { filePath, lineNumber } = parseFileLinkTarget(href)
@@ -60,8 +59,11 @@ export function resolveProjectFileHref(
     return { filePath, lineNumber }
   }
 
-  if (!filePath.startsWith('/') || forcedProjectRelative) {
-    const relative = filePath.replace(/^\//, '').replace(/^\.\//, '')
+  // Project-relative (including ./prefix). Absolute paths outside the project root
+  // are rejected above/below — never invent a project path from an http origin.
+  const isWindowsAbs = /^[A-Za-z]:[\\/]/.test(filePath)
+  if (!filePath.startsWith('/') && !isWindowsAbs) {
+    const relative = filePath.replace(/^\.\//, '')
     if (!relative) return null
     return { filePath: `${projectRoot}/${relative}`, lineNumber }
   }

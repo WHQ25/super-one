@@ -127,7 +127,9 @@ export const streamdownRehypePlugins: PluggableList = Object.values({
     allowedImagePrefixes: ['*'],
     allowedProtocols: ['*'],
     allowDataImages: true,
-    defaultOrigin: 'https://localhost',
+    // No defaultOrigin: with wildcard prefixes, relative URLs stay as-is
+    // (pathname form). Project file links are pre-resolved to absolute filesystem
+    // paths by resolveMarkdownFileLinks — never via a fake https://localhost origin.
     linkBlockPolicy: BlockPolicy.textOnly,
   }],
 }) as PluggableList

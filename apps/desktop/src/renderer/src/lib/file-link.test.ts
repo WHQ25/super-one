@@ -53,16 +53,30 @@ describe('resolveProjectFileHref', () => {
     })
   })
 
-  it('maps rehype-harden defaultOrigin artifacts to project files', () => {
+  it('never treats http(s) URLs as project files — including localhost', () => {
     expect(
       resolveProjectFileHref('https://localhost/apps/desktop/src/main/mcp/superone-mcp-server.ts', PROJECT),
-    ).toEqual({
-      filePath: `${PROJECT}/apps/desktop/src/main/mcp/superone-mcp-server.ts`,
-    })
+    ).toBeNull()
+    expect(
+      resolveProjectFileHref('https://localhost/apps/desktop/src/x.ts#L42', PROJECT),
+    ).toBeNull()
+    expect(
+      resolveProjectFileHref(
+        'http://localhost:6006/?path=/story/agentcollaboration-toolui--gallery',
+        PROJECT,
+      ),
+    ).toBeNull()
+    expect(resolveProjectFileHref('http://localhost:3000/', PROJECT)).toBeNull()
+    expect(resolveProjectFileHref('http://127.0.0.1:5173/src/main.ts', PROJECT)).toBeNull()
+    expect(resolveProjectFileHref('https://example.com/docs', PROJECT)).toBeNull()
   })
 
-  it('rejects real external http links', () => {
-    expect(resolveProjectFileHref('https://example.com/docs', PROJECT)).toBeNull()
+  it('maps file: URLs under the project root', () => {
+    expect(
+      resolveProjectFileHref(`file://${PROJECT}/apps/desktop/src/x.ts`, PROJECT),
+    ).toEqual({
+      filePath: `${PROJECT}/apps/desktop/src/x.ts`,
+    })
   })
 
   it('rejects absolute paths outside the project', () => {

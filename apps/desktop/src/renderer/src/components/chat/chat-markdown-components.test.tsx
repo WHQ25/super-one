@@ -55,10 +55,34 @@ describe('FileLink chip rendering', () => {
     expect(screen.queryByRole('link')).toBeNull()
   })
 
-  it('renders rehype-harden localhost artifacts as a file chip', () => {
+  it('never maps http(s) localhost hrefs to file chips — always plain anchors', () => {
     useAppStore.setState({ currentFolder: PROJECT, _worktrees: {} })
+    // Historical harden defaultOrigin artifact — must not become a file chip.
     render(
       <FileLink href="https://localhost/apps/desktop/src/main/mcp/superone-mcp-server.ts">
+        superone-mcp-server.ts
+      </FileLink>,
+    )
+    expect(screen.getByRole('link')).toHaveAttribute(
+      'href',
+      'https://localhost/apps/desktop/src/main/mcp/superone-mcp-server.ts',
+    )
+    expect(screen.queryByRole('button')).toBeNull()
+  })
+
+  it('renders Storybook loopback URLs as plain anchors, not file chips', () => {
+    useAppStore.setState({ currentFolder: PROJECT, _worktrees: {} })
+    const href = 'http://localhost:6006/?path=/story/agentcollaboration-toolui--gallery'
+    render(<FileLink href={href}>{href}</FileLink>)
+    const link = screen.getByRole('link')
+    expect(link).toHaveAttribute('href', href)
+    expect(screen.queryByRole('button')).toBeNull()
+  })
+
+  it('renders absolute project filesystem paths as file chips', () => {
+    useAppStore.setState({ currentFolder: PROJECT, _worktrees: {} })
+    render(
+      <FileLink href={`${PROJECT}/apps/desktop/src/main/mcp/superone-mcp-server.ts`}>
         superone-mcp-server.ts
       </FileLink>,
     )

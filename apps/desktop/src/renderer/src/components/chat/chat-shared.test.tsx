@@ -5,7 +5,7 @@ import { unified } from 'unified'
 import remarkParse from 'remark-parse'
 import remarkRehype from 'remark-rehype'
 import rehypeStringify from 'rehype-stringify'
-import { streamdownRehypePlugins } from './chat-shared'
+import { resolveMarkdownFileLinks, streamdownRehypePlugins } from './chat-shared'
 
 function renderMarkdown(md: string): string {
   let processor = unified().use(remarkParse).use(remarkRehype, { allowDangerousHtml: true })
@@ -18,15 +18,25 @@ function renderMarkdown(md: string): string {
 }
 
 describe('chat markdown link hardening', () => {
-  it('renders a bare relative-path link as a clickable anchor, not a [blocked] indicator', () => {
-    const html = renderMarkdown('see [claude-query.ts](apps/desktop/src/x.ts)')
+  it('renders project-relative file links after absolute pre-resolve (chat pipeline)', () => {
+    // Chat always runs resolveMarkdownFileLinks first so bare relative targets become
+    // absolute filesystem paths — never https://localhost.
+    const project = '/Users/me/proj'
+    const pre = resolveMarkdownFileLinks('see [claude-query.ts](apps/desktop/src/x.ts)', project)
+    expect(pre).toContain(`](${project}/apps/desktop/src/x.ts)`)
+    const html = renderMarkdown(pre)
     expect(html).not.toContain('[blocked]')
+    expect(html).not.toContain('https://localhost')
     expect(html).toContain('<a')
+    expect(html).toContain(`href="${project}/apps/desktop/src/x.ts"`)
   })
 
-  it('rewrites bare relative paths to https://localhost via defaultOrigin (pre-resolve target)', () => {
-    const html = renderMarkdown('see [superone-mcp-server.ts](apps/desktop/src/main/mcp/superone-mcp-server.ts)')
-    expect(html).toContain('href="https://localhost/apps/desktop/src/main/mcp/superone-mcp-server.ts"')
+  it('preserves path-style relative links without inventing an https://localhost origin', () => {
+    // Leading ./ is path-relative for rehype-harden; bare "apps/..." is pre-resolved
+    // to an absolute filesystem path by resolveMarkdownFileLinks before render.
+    const html = renderMarkdown('see [superone-mcp-server.ts](./apps/desktop/src/main/mcp/superone-mcp-server.ts)')
+    expect(html).not.toContain('https://localhost')
+    expect(html).toContain('href="/apps/desktop/src/main/mcp/superone-mcp-server.ts"')
   })
 
   it('preserves an absolute project-style path as an anchor', () => {

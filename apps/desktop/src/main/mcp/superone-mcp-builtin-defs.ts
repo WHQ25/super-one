@@ -247,16 +247,19 @@ export const SESSION_REQUEST_AGENTS_DESCRIPTION =
 export const SESSION_START_DESCRIPTION =
   'Create the real, user-visible collaboration child session authorized by one credential and deliver the approved launch task. ' +
   'Returns as soon as the child agent begins replying (does not wait for the full first turn). ' +
-  'A credential creates at most one session; repeated calls are idempotent and return the same session id.'
+  'A credential creates at most one session; repeated calls are idempotent and return the same session id. ' +
+  'The child then works asynchronously — start every child you need back to back, and never block on one before starting the next.'
 
 export const SESSION_SEND_DESCRIPTION =
   'Send a persistent mailbox message between the parent and child sessions authorized by a credential. Direction is derived from the calling session. ' +
-  'Use clientMessageId for retry-safe idempotency. The peer is woken with a task notification (even mid-turn) and should call session_collab_retrieve to receive the payload.'
+  'Use clientMessageId for retry-safe idempotency. Delivery is push-based both ways: the peer is woken by a task notification (even mid-turn), and when it replies the host wakes you the same way — a fresh turn starts, telling you to call session_collab_retrieve. ' +
+  'So after sending, move on to other work or end your turn; ending the turn IS how you wait here, and no reply is missed. Never sleep, re-send, or poll session_collab_retrieve while waiting.'
 
 export const SESSION_RETRIEVE_DESCRIPTION =
-  'Retrieve persistent mailbox messages addressed to this session. Non-blocking: returns currently available messages (status "messages") or empty (status "empty"). ' +
+  'Retrieve persistent mailbox messages addressed to this session. Non-blocking single read: returns the messages already waiting (status "messages") or nothing (status "empty"). ' +
   'Pass multiple credentials to drain several parent/child mailboxes in one call. Returned messages advance only this agent endpoint cursor. ' +
-  'Call after a collaboration wake notification, or whenever you want to drain the inbox — do not poll in a tight loop.'
+  'Call it when a collaboration wake notification arrives, or once to drain the inbox before you act on peer input. ' +
+  'Status "empty" means no peer has replied yet — it is NOT a retry signal: do not call again, do not sleep, do not spin. End your turn and the wake notification will start a new one the moment a message actually arrives.'
 
 export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
   {

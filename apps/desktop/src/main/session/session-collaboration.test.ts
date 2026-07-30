@@ -514,9 +514,12 @@ describe('session collaboration', () => {
       title: 'Parent',
       sessionId: 'parent',
     }])
-    expect(resultJson(await retrieveSessionMessages(childId, {
+    const drained = resultJson(await retrieveSessionMessages(childId, {
       credentials: [grant.credential],
-    }))).toMatchObject({ status: 'empty', messages: [] })
+    }))
+    expect(drained).toMatchObject({ status: 'empty', messages: [] })
+    // An empty mailbox must talk the agent out of re-polling, not just report nothing.
+    expect(drained.hint).toMatch(/do not sleep|end your turn/i)
 
     await sendSessionMessage(childId, { credential: grant.credential, content: 'from child' }, host)
     const parentInbox = resultJson(await retrieveSessionMessages('parent', {

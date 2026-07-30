@@ -706,7 +706,8 @@ async function wakeCollaborationPeer(
   // Always wake — injectTaskNotification already queues behind an in-flight turn.
   try {
     await session.injectTaskNotification(
-      `A collaboration mailbox message is ready. Call session_collab_retrieve with credential ${JSON.stringify(credential)} to receive it.`,
+      `A collaboration mailbox message is ready. Call session_collab_retrieve with credential ${JSON.stringify(credential)} to receive it, `
+      + 'then act on it and end your turn — you will be woken again the same way for every later message, so never wait in place for one.',
     )
   } catch (error) {
     log.warn(
@@ -985,6 +986,10 @@ export interface SessionRetrieveArgs {
   credentials: string[]
 }
 
+const EMPTY_MAILBOX_HINT =
+  'No peer has replied yet. Do not retrieve again, do not sleep, do not wait in place — end your turn or do unrelated work. '
+  + 'A task notification will start a new turn for you as soon as a message arrives.'
+
 /**
  * Non-blocking mailbox read. Advances this endpoint's cursor for any messages
  * currently available. Peers are woken via task notification on send; the agent
@@ -1024,5 +1029,7 @@ export async function retrieveSessionMessages(
 
   const messages = readMailbox(callerSessionId, grants)
   if (messages.length > 0) return toolResult({ status: 'messages', messages, peers })
-  return toolResult({ status: 'empty', messages: [], peers })
+  // Static tool descriptions decay in long contexts; repeat the "stop waiting"
+  // rule in the payload the agent reads at the exact moment it wants to re-poll.
+  return toolResult({ status: 'empty', messages: [], peers, hint: EMPTY_MAILBOX_HINT })
 }

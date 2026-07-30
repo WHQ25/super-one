@@ -3,8 +3,12 @@
  * trailing conclusion. Process is collapsed under a "Detail" disclosure;
  * conclusion stays visible.
  *
- * Conclusion = trailing contiguous text-like segments from the end.
- * Intermediate narration between tools is process, not conclusion.
+ * Conclusion starts at the last contiguous block of text-like segments and
+ * includes everything after it. That way a normal turn ending in markdown
+ * only shows the trailing answer, while an interrupted turn that ends mid-
+ * tool still surfaces the last answer plus the incomplete tail.
+ *
+ * Intermediate narration between earlier tools stays in process.
  */
 
 export interface CompactTurnSplit<T> {
@@ -12,15 +16,35 @@ export interface CompactTurnSplit<T> {
   conclusion: T[]
 }
 
-/** Split items so trailing contiguous "conclusion" items are visible. */
+/**
+ * Split items so the final answer (and any tail after it) stays visible.
+ *
+ * - Finds the last conclusion item, then expands left through contiguous
+ *   conclusion items — that block is the start of the visible conclusion.
+ * - Everything after that block is also visible (e.g. tools after the last
+ *   markdown when the turn was interrupted).
+ * - If there is no conclusion item, the whole turn is process.
+ */
 export function splitTurnForCompactMode<T>(
   items: readonly T[],
   isConclusion: (item: T) => boolean,
 ): CompactTurnSplit<T> {
-  let splitAt = items.length
+  let lastConclusion = -1
   for (let i = items.length - 1; i >= 0; i--) {
-    if (isConclusion(items[i])) splitAt = i
-    else break
+    if (isConclusion(items[i])) {
+      lastConclusion = i
+      break
+    }
+  }
+  if (lastConclusion < 0) {
+    return {
+      process: items.slice() as T[],
+      conclusion: [],
+    }
+  }
+  let splitAt = lastConclusion
+  while (splitAt > 0 && isConclusion(items[splitAt - 1])) {
+    splitAt--
   }
   return {
     process: items.slice(0, splitAt) as T[],

@@ -293,12 +293,43 @@ struct HelperError: Error {
 
 // MARK: - Overlay helpers (params from Electron)
 
+/// Map capture-space (or already-global) cursor coords to screen-state points.
+/// Prefer live geometry via `resolveCoordinatePoint`; fall back to window bounds
+/// on the payload so a stale window never leaves the tip at raw local (0…W)
+/// coordinates near the display origin.
+func resolveCursorQuartzPoint(params: [String: Any], x: Double, y: Double) -> CGPoint {
+    if let mapped = try? resolveCoordinatePoint(params, x: x, y: y) {
+        return mapped
+    }
+    let wx = AnyCodable.double(params, "windowX")
+        ?? AnyCodable.double(params, "capturedX")
+        ?? 0
+    let wy = AnyCodable.double(params, "windowY")
+        ?? AnyCodable.double(params, "capturedY")
+        ?? 0
+    let ww = AnyCodable.double(params, "capturedWidth")
+        ?? AnyCodable.double(params, "windowWidth")
+        ?? 0
+    let wh = AnyCodable.double(params, "capturedHeight")
+        ?? AnyCodable.double(params, "windowHeight")
+        ?? 0
+    let cw = AnyCodable.double(params, "coordinateWidth") ?? ww
+    let ch = AnyCodable.double(params, "coordinateHeight") ?? wh
+    if cw > 1, ch > 1, ww > 1, wh > 1 {
+        return CGPoint(x: wx + x * ww / cw, y: wy + y * wh / ch)
+    }
+    // Last resort: treat as already-global screen-state.
+    return CGPoint(x: x, y: y)
+}
+
 /// Optional window bounds + app name on act payloads for the visual ring.
 func maybeShowOverlayFromParams(
     _ params: [String: Any],
     cursor: CGPoint?,
     pulseCursor: Bool,
-    pulseRing: Bool
+    pulseRing: Bool,
+    /// Wait for the hop so sequential actions don't cancel mid-flight.
+    waitForCursor: Bool = true
 ) {
     // Allow host to disable per-call without a separate RPC.
     if let enabled = params["visualIndicators"] as? Bool, !enabled {
@@ -311,7 +342,9 @@ func maybeShowOverlayFromParams(
           bw > 1, bh > 1 else {
         // Cursor-only if we have a point.
         if let cursor {
-            AgentOverlayController.shared.moveCursor(quartz: cursor, pulse: pulseCursor)
+            AgentOverlayController.shared.moveCursor(
+                quartz: cursor, pulse: pulseCursor, wait: waitForCursor
+            )
         }
         return
     }
@@ -331,7 +364,9 @@ func maybeShowOverlayFromParams(
     )
     AgentOverlayController.shared.setWatchedTarget(bundleId: bundleId, pid: targetPid)
     if let cursor {
-        AgentOverlayController.shared.moveCursor(quartz: cursor, pulse: pulseCursor || pulseRing)
+        AgentOverlayController.shared.moveCursor(
+            quartz: cursor, pulse: pulseCursor || pulseRing, wait: waitForCursor
+        )
     }
     _ = bx
     _ = by
@@ -612,6 +647,7 @@ func handle(request: HelperRequest) async -> HelperResponse {
             )
             let point = try resolveCoordinatePoint(params, x: x, y: y)
             // Paint software cursor BEFORE HID so spring hop is visible during the click.
+            // Host owns visibility duration — do not auto-hide after this action.
             maybeShowOverlayFromParams(params, cursor: point, pulseCursor: true, pulseRing: true)
             try postClick(
                 x: point.x,
@@ -622,7 +658,6 @@ func handle(request: HelperRequest) async -> HelperResponse {
                 targetPid: pid,
                 requireFrontmostBundleId: front
             )
-            AgentOverlayController.shared.scheduleHide(afterMs: 3500)
             return .success(id: request.id, result: [
                 "ok": true,
                 "unknown": true,
@@ -647,7 +682,6 @@ func handle(request: HelperRequest) async -> HelperResponse {
                 targetPid: pid,
                 requireFrontmostBundleId: front
             )
-            AgentOverlayController.shared.scheduleHide(afterMs: 2500)
             return .success(id: request.id, result: [
                 "ok": true,
                 "unknown": true,
@@ -671,7 +705,6 @@ func handle(request: HelperRequest) async -> HelperResponse {
                 targetPid: pid,
                 requireFrontmostBundleId: front
             )
-            AgentOverlayController.shared.scheduleHide(afterMs: 2500)
             return .success(id: request.id, result: [
                 "ok": true,
                 "unknown": true,
@@ -699,8 +732,6 @@ func handle(request: HelperRequest) async -> HelperResponse {
                 targetPid: pid,
                 requireFrontmostBundleId: front
             )
-            // Keep software cursor visible long enough for a human to notice.
-            AgentOverlayController.shared.scheduleHide(afterMs: 5000)
             return .success(id: request.id, result: [
                 "ok": true,
                 "unknown": true,
@@ -755,7 +786,6 @@ func handle(request: HelperRequest) async -> HelperResponse {
                 targetPid: pid,
                 requireFrontmostBundleId: front
             )
-            AgentOverlayController.shared.scheduleHide(afterMs: 5000)
             return .success(id: request.id, result: [
                 "ok": true,
                 "unknown": true,
@@ -775,9 +805,8 @@ func handle(request: HelperRequest) async -> HelperResponse {
             )
             let point = try resolveCoordinatePoint(params, x: x, y: y)
             // Always paint the software cursor first — visibility must not depend on HID.
+            // maybeShowOverlay already waits for the hop; do not double-moveCursor.
             maybeShowOverlayFromParams(params, cursor: point, pulseCursor: true, pulseRing: false)
-            AgentOverlayController.shared.moveCursor(quartz: point, pulse: true)
-            AgentOverlayController.shared.scheduleHide(afterMs: 8000)
             if delivery == .global {
                 try requireFrontmost(bundleId: front)
             }
@@ -828,10 +857,12 @@ func handle(request: HelperRequest) async -> HelperResponse {
             )
             if let cx = cursorX, let cy = cursorY {
                 let pulse = (params["pulseRing"] as? Bool) ?? false
-                let cursor = try resolveCoordinatePoint(params, x: cx, y: cy)
+                let cursor = resolveCursorQuartzPoint(params: params, x: cx, y: cy)
+                // Wait so host-side showActionCursor finishes the hop before HID.
                 AgentOverlayController.shared.moveCursor(
                     quartz: cursor,
-                    pulse: pulse
+                    pulse: pulse,
+                    wait: true
                 )
             }
             return .success(id: request.id, result: ["ok": true, "mode": "status_item+cursor"])
@@ -851,11 +882,19 @@ func handle(request: HelperRequest) async -> HelperResponse {
                     locale: AnyCodable.string(params, "locale")
                 )
             }
+            let cursor = resolveCursorQuartzPoint(params: params, x: x, y: y)
             AgentOverlayController.shared.moveCursor(
-                quartz: CGPoint(x: x, y: y),
-                pulse: pulse
+                quartz: cursor,
+                pulse: pulse,
+                wait: true
             )
             return .success(id: request.id, result: ["ok": true, "mode": "status_item+cursor"])
+        case "overlay_cursor_visible":
+            // Suspend/resume software cursor around screenshots without clearing
+            // tip state. Status chip is unaffected.
+            let visible = (params["visible"] as? Bool) ?? true
+            AgentOverlayController.shared.setCursorSuspended(!visible)
+            return .success(id: request.id, result: ["ok": true, "visible": visible])
         case "overlay_hide":
             let delayMs = AnyCodable.int(params, "delayMs") ?? 0
             if delayMs > 0 {

@@ -9,8 +9,8 @@
  *    — OCU heading-driven cubic path + official progress spring (CursorMotionModel)
  *    — OCU visual dynamics: tip spring lag, heading rotation, body/fog offsets
  *    — OCU z-order: same window level as target app + order(.above, relativeTo: windowId)
- *      (never screenSaver / never covers unrelated apps)
- *    — path animation for drag; click pulse; idle auto-hide
+ *    — Visibility policy (host-driven): stay painted for the whole control turn;
+ *      suspend only around screenshots; full hide on turn end / interrupt
  *
  * Does NOT move the system pointer unless the helper posts global HID separately.
  *

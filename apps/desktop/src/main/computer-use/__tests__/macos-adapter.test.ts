@@ -142,6 +142,8 @@ describe('MacosPlatformAdapter (mocked client)', () => {
       return { ok: true }
     })
     const look = await adapter.look(root(), 'visual')
+    // Software cursor is suspended only for the capture itself, then restored.
+    expect(call).toHaveBeenCalledWith('overlay_cursor_visible', { visible: false })
     expect(call).toHaveBeenCalledWith('capture', {
       allowAllApps: false,
       grantedBundleIds: ['com.apple.TextEdit'],
@@ -150,12 +152,17 @@ describe('MacosPlatformAdapter (mocked client)', () => {
       pid: 42,
       windowId: 12345,
     })
+    expect(call).toHaveBeenCalledWith('overlay_cursor_visible', { visible: true })
     expect(call).toHaveBeenCalledWith('overlay_show_target', expect.objectContaining({
       app: 'TextEdit',
       bundleId: 'com.apple.TextEdit',
-      hideCursor: true,
       locale: 'en',
     }))
+    // Must not permanently hide the cursor after observe.
+    const showCalls = call.mock.calls.filter((c) => c[0] === 'overlay_show_target')
+    for (const c of showCalls) {
+      expect(c[1]).not.toEqual(expect.objectContaining({ hideCursor: true }))
+    }
     expect(look.image?.data).toBe('abc')
     expect(look.coordinateSpace.fullScreen).toBe(false)
     expect(look.coordinateSpace.kind).toBe('window')
@@ -293,9 +300,15 @@ describe('MacosPlatformAdapter (mocked client)', () => {
     expect(look.image).toBeUndefined()
     expect(look.outline.role).toBe('window')
     expect(call.mock.calls.some((c) => c[0] === 'capture')).toBe(false)
+    // Semantic has no screenshot — do not suspend or force-hide the cursor.
+    expect(call.mock.calls.some((c) => c[0] === 'overlay_cursor_visible')).toBe(false)
     expect(call).toHaveBeenCalledWith('overlay_show_target', expect.objectContaining({
-      hideCursor: true,
+      app: 'TextEdit',
     }))
+    const showCalls = call.mock.calls.filter((c) => c[0] === 'overlay_show_target')
+    for (const c of showCalls) {
+      expect(c[1]).not.toEqual(expect.objectContaining({ hideCursor: true }))
+    }
   })
 
   it('scopes semantic observe to an AX-only root', async () => {

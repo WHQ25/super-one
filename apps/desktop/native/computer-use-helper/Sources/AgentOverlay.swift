@@ -200,23 +200,58 @@ final class AgentOverlayController {
 
     /// Move software cursor to a capture/HID (screen-state) point.
     /// Matches OCU: start = last displayed tip, or defaultInitialTipPosition on first show.
-    func moveCursor(quartz: CGPoint, pulse: Bool) {
-        DispatchQueue.main.async {
-            guard self.enabled else { return }
-            self.cancelScheduledHide()
-            self.ensureStatusItem()
-            self.refreshStatusItem()
-            self.ensureCursor()
-
-            let end = AgentCursorMotion.clampTipPosition(screenStatePointToAppKitGlobalPoint(quartz))
-            // Skip duplicate hop when adapter + helper both request the same tip.
-            if let pending = self.pendingTargetAppKit,
-               hypot(pending.x - end.x, pending.y - end.y) < AgentCursorStyle.snapDistance {
-                if pulse { self.cursorView?.pulseClick() }
-                return
+    ///
+    /// - Parameter wait: When true (action RPCs), block the caller until the hop
+    ///   settles so sequential click/moveMouse actually *show* each tip instead of
+    ///   cancelling mid-flight and freezing the cursor in one place.
+    func moveCursor(quartz: CGPoint, pulse: Bool, wait: Bool = false) {
+        if wait && !Thread.isMainThread {
+            let sem = DispatchSemaphore(value: 0)
+            DispatchQueue.main.async {
+                self.moveCursorOnMain(quartz: quartz, pulse: pulse) {
+                    sem.signal()
+                }
             }
-            self.moveCursorAppKit(to: end, pulseAtEnd: pulse)
+            // Cap wait — hard-snap happens inside on timeout via generation settle.
+            _ = sem.wait(timeout: .now() + .milliseconds(1600))
+            return
         }
+        if Thread.isMainThread {
+            moveCursorOnMain(quartz: quartz, pulse: pulse, completion: nil)
+        } else {
+            DispatchQueue.main.async {
+                self.moveCursorOnMain(quartz: quartz, pulse: pulse, completion: nil)
+            }
+        }
+    }
+
+    private func moveCursorOnMain(
+        quartz: CGPoint,
+        pulse: Bool,
+        completion: (() -> Void)?
+    ) {
+        guard enabled else {
+            completion?()
+            return
+        }
+        cancelScheduledHide()
+        ensureStatusItem()
+        refreshStatusItem()
+        ensureCursor()
+
+        let end = AgentCursorMotion.clampTipPosition(screenStatePointToAppKitGlobalPoint(quartz))
+        // Skip duplicate hop when adapter + helper both request the same tip.
+        if let pending = pendingTargetAppKit,
+           hypot(pending.x - end.x, pending.y - end.y) < AgentCursorStyle.snapDistance {
+            // Still force the tip onto the target — a cancelled prior hop may have
+            // left displayedTip mid-path while pending already matched.
+            placeCursorAppKit(end, hardSnap: true)
+            displayedTipAppKit = end
+            if pulse { cursorView?.pulseClick() }
+            completion?()
+            return
+        }
+        moveCursorAppKit(to: end, pulseAtEnd: pulse, completion: completion)
     }
 
     /// Snap along densified HID path (screen-state points). No path re-plan —
@@ -270,37 +305,57 @@ final class AgentOverlayController {
 
     // MARK: Spring motion (main-queue, AppKit tip space — OCU)
 
-    private func cancelAnimation() {
+    /// - Parameter snapToPending: complete the in-flight hop instantly so the tip
+    ///   never freezes mid-path when a new hop or screenshot interrupt arrives.
+    private func cancelAnimation(snapToPending: Bool = false) {
         animWorkItem?.cancel()
         animWorkItem = nil
         animGeneration &+= 1
+        if snapToPending, let pending = pendingTargetAppKit {
+            placeCursorAppKit(pending, hardSnap: true)
+            displayedTipAppKit = pending
+        }
     }
 
-    /// OCU `SoftwareCursorOverlay.moveCursor` start/end rules.
-    private func moveCursorAppKit(to end: CGPoint, pulseAtEnd: Bool) {
-        cancelAnimation()
+    /// Move the software tip from its last position to `end`.
+    ///
+    /// Do **not** tour through OCU `defaultInitialTipPosition` (tipAnchor near the
+    /// primary display's bottom-left). That made every "fresh" hop look like:
+    /// current control → corner → next control.
+    private func moveCursorAppKit(
+        to end: CGPoint,
+        pulseAtEnd: Bool,
+        completion: (() -> Void)? = nil
+    ) {
+        // Finish prior hop first — sequential act steps cancel each other otherwise.
+        cancelAnimation(snapToPending: true)
         let generation = animGeneration
-        let isFreshStart = displayedTipAppKit == nil
-        let start = displayedTipAppKit ?? AgentCursorMotion.defaultInitialTipPosition()
         pendingTargetAppKit = end
 
-        let now = CACurrentMediaTime()
-        if isFreshStart {
-            // First paint at defaultInitial (tipAnchor), then spring to end — OCU.
+        // First appearance in this control session: materialize on the target
+        // (no scenic entrance from the screen corner).
+        guard let start = displayedTipAppKit else {
+            let now = CACurrentMediaTime()
             visualDynamicsState = CursorVisualDynamicsAnimator.state(
-                at: start,
+                at: end,
                 time: CGFloat(now)
             )
-            placeCursorAppKit(start, hardSnap: true)
-        } else {
-            placeCursorAppKit(start, hardSnap: false)
+            placeCursorAppKit(end, hardSnap: true)
+            displayedTipAppKit = end
+            if pulseAtEnd { cursorView?.pulseClick() }
+            completion?()
+            return
         }
+
+        placeCursorAppKit(start, hardSnap: false)
 
         let dist = hypot(end.x - start.x, end.y - start.y)
         if dist <= 2 {
-            placeCursorAppKit(end, hardSnap: false)
+            placeCursorAppKit(end, hardSnap: true)
+            displayedTipAppKit = end
             pendingTargetAppKit = end
             if pulseAtEnd { cursorView?.pulseClick() }
+            completion?()
             return
         }
 
@@ -309,7 +364,8 @@ final class AgentOverlayController {
             to: end,
             startForward: lastForward,
             pulseAtEnd: pulseAtEnd,
-            generation: generation
+            generation: generation,
+            completion: completion
         )
     }
 
@@ -318,21 +374,37 @@ final class AgentOverlayController {
         to end: CGPoint,
         startForward: CGVector?,
         pulseAtEnd: Bool,
-        generation: UInt64
+        generation: UInt64,
+        completion: (() -> Void)? = nil
     ) {
+        // Keep OCU heading-driven curves; only the tipAnchor entrance was wrong.
         let candidate = AgentCursorMotion.chooseCandidate(
             from: start,
             to: end,
             startForward: startForward
         )
-        let duration = AgentCursorMotion.travelDuration(for: candidate, from: start, to: end)
+        // Cap travel so sequential actions remain watchable (~0.35s max hop).
+        let natural = AgentCursorMotion.travelDuration(for: candidate, from: start, to: end)
+        let duration = min(max(natural, 0.08), 0.35)
         let springTarget = OfficialCursorMotionModel.closeEnoughTime
         let startTime = CACurrentMediaTime()
         var progress: CGFloat = 0
         var springState = CursorMotionSpringState()
 
+        func finish() {
+            self.placeCursorAppKit(end, hardSnap: true)
+            self.displayedTipAppKit = end
+            self.pendingTargetAppKit = end
+            if pulseAtEnd { self.cursorView?.pulseClick() }
+            self.animWorkItem = nil
+            completion?()
+        }
+
         func tick() {
-            guard self.enabled, generation == self.animGeneration else { return }
+            guard self.enabled, generation == self.animGeneration else {
+                // Superseded — completion is owned by the newer hop.
+                return
+            }
             let elapsed = CGFloat(CACurrentMediaTime() - startTime)
             let normalizedElapsed = min(elapsed / max(duration, 0.001), 1)
             let springTime = normalizedElapsed * springTarget
@@ -351,12 +423,7 @@ final class AgentOverlayController {
             }
 
             if normalizedElapsed >= 1 || CursorMotionProgressAnimator.isCloseEnough(progress: progress) {
-                // OCU final settle: advance dynamics toward exact end, then record tip.
-                self.placeCursorAppKit(end, hardSnap: false)
-                self.displayedTipAppKit = end
-                self.pendingTargetAppKit = end
-                if pulseAtEnd { self.cursorView?.pulseClick() }
-                self.animWorkItem = nil
+                finish()
                 return
             }
 
@@ -430,8 +497,8 @@ final class AgentOverlayController {
         )
     }
 
-    /// OCU uses ~30s idle cleanup; we default shorter so the chip doesn't linger,
-    /// but allow longer when explicitly requested.
+    /// Full teardown (status chip + cursor). Host calls this on turn end /
+    /// interrupt / dispose — not after each action.
     func scheduleHide(afterMs: Int = 1600) {
         DispatchQueue.main.async {
             self.cancelScheduledHide()
@@ -452,6 +519,26 @@ final class AgentOverlayController {
             self.animWorkItem?.cancel()
             self.animWorkItem = nil
             self.hideNow()
+        }
+    }
+
+    /// Temporarily hide the software cursor for a screenshot without losing tip
+    /// state, so the hop continues after capture. Status chip stays up.
+    /// - Parameter suspended: true = orderOut for capture; false = restore tip.
+    func setCursorSuspended(_ suspended: Bool) {
+        DispatchQueue.main.async {
+            guard self.enabled else { return }
+            self.cancelScheduledHide()
+            if suspended {
+                // Finish any in-flight hop first — otherwise capture-hide freezes
+                // the tip mid-path and the next act looks "stuck in one place".
+                self.cancelAnimation(snapToPending: true)
+                self.cursorPanel?.orderOut(nil)
+            } else if let tip = self.pendingTargetAppKit ?? self.displayedTipAppKit {
+                self.ensureCursor()
+                self.placeCursorAppKit(tip, hardSnap: true)
+                self.displayedTipAppKit = tip
+            }
         }
     }
 
@@ -529,9 +616,11 @@ final class AgentOverlayController {
         controlledTargets = []
     }
 
-    /// Hide only the software pointer while keeping the active-control status item.
+    /// Fully clear the software pointer (and tip state). Used when control ends
+    /// or the host explicitly wants no cursor — not for screenshot suspend.
     private func hideCursorNow() {
-        cancelAnimation()
+        // Drop tip state — do not snap-to-pending (control is ending).
+        cancelAnimation(snapToPending: false)
         cursorPanel?.orderOut(nil)
         // Reset so the next explicit action starts from the standard initial position.
         displayedTipAppKit = nil

@@ -23,6 +23,8 @@ export type HelperMethod =
   | 'overlay_set_enabled'
   | 'overlay_show_target'
   | 'overlay_cursor'
+  /** Suspend/resume software cursor around screenshots (keeps tip state). */
+  | 'overlay_cursor_visible'
   | 'overlay_hide'
   | 'terminate'
 

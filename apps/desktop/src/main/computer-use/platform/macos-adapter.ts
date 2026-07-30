@@ -252,6 +252,28 @@ export class MacosPlatformAdapter implements PlatformAdapter {
     }))
   }
 
+  /**
+   * Hide software cursor only for the duration of a screenshot, then restore.
+   * Keeps tip state so the hop continues after capture; status chip stays up.
+   */
+  private async withCursorSuspendedForCapture<T>(fn: () => Promise<T>): Promise<T> {
+    if (!this.visualOn()) return fn()
+    try {
+      await this.client.call('overlay_cursor_visible', { visible: false })
+    } catch {
+      // helper offline / tests
+    }
+    try {
+      return await fn()
+    } finally {
+      try {
+        await this.client.call('overlay_cursor_visible', { visible: true })
+      } catch {
+        // ignore
+      }
+    }
+  }
+
   async look(
     root: UiRootIdentity,
     mode: ObserveMode,
@@ -287,7 +309,8 @@ export class MacosPlatformAdapter implements PlatformAdapter {
       const axBootstrap = await this.fetchAxOutline(root, semanticSpace)
       coordinateSpace = axBootstrap.coordinateSpace
       image = undefined
-      await this.showTargetOverlay(root, { pulseRing: true, hideCursor: true })
+      // No screenshot — keep cursor if a control turn is in progress.
+      await this.showTargetOverlay(root, { pulseRing: true })
       this.lookSeq += 1
       return {
         root: { ...root, focused: true },
@@ -298,19 +321,21 @@ export class MacosPlatformAdapter implements PlatformAdapter {
       }
     }
 
-    // Capture first so the ring is not painted into the screenshot (helper is excluded).
-    const capture = await this.client.call<HelperCaptureResult>('capture', {
-      allowAllApps: allowAll,
-      grantedBundleIds: allowAll ? [] : granted,
-      maxWidth: this.maxCaptureWidth,
-      capture: captureScope,
-      pid: root.pid,
-      ...(typeof root.windowId === 'number' ? { windowId: root.windowId } : {}),
-      ...(root.axRootId ? { axRootId: root.axRootId } : {}),
-    })
+    // Suspend software cursor only while capturing; restore immediately after.
+    const capture = await this.withCursorSuspendedForCapture(() =>
+      this.client.call<HelperCaptureResult>('capture', {
+        allowAllApps: allowAll,
+        grantedBundleIds: allowAll ? [] : granted,
+        maxWidth: this.maxCaptureWidth,
+        capture: captureScope,
+        pid: root.pid,
+        ...(typeof root.windowId === 'number' ? { windowId: root.windowId } : {}),
+        ...(root.axRootId ? { axRootId: root.axRootId } : {}),
+      }),
+    )
 
-    // After capture: show which window the agent is watching.
-    await this.showTargetOverlay(root, { pulseRing: true, hideCursor: true })
+    // Chip + restore last tip (if any). Do not force-hide cursor after observe.
+    await this.showTargetOverlay(root, { pulseRing: true })
 
     this.lookSeq += 1
     coordinateSpace = { ...capture.coordinateSpace }
@@ -416,7 +441,8 @@ export class MacosPlatformAdapter implements PlatformAdapter {
         }
       }
     }
-    // Menu-bar chip only at transaction start; per-action showActionCursor paints the tip.
+    // Menu-bar chip at transaction start; per-action showActionCursor paints/moves the tip.
+    // Cursor stays visible for the whole control turn — only screenshots suspend it.
     await this.showTargetOverlay(req.root, { pulseRing: false })
 
     const steps: PlatformActStepResult[] = []
@@ -450,15 +476,7 @@ export class MacosPlatformAdapter implements PlatformAdapter {
       }
     }
 
-    // Brief linger so the last hop is still visible, then hide unless the agent
-    // issues another act. Session idle / interrupt also force-hides immediately.
-    if (this.visualOn()) {
-      try {
-        await this.client.call('overlay_hide', { delayMs: 2500 })
-      } catch {
-        // ignore
-      }
-    }
+    // Do not auto-hide after act — session idle / interrupt / dispose clears visuals.
     return { steps, stoppedAt }
   }
 
@@ -469,18 +487,20 @@ export class MacosPlatformAdapter implements PlatformAdapter {
   ): Promise<CapturedImage> {
     const allowAll = this.getAllowAllApps()
     const granted = this.getGrantedBundleIds()
-    const res = await this.client.call<HelperCaptureResult>('zoom', {
-      allowAllApps: allowAll,
-      grantedBundleIds: allowAll ? [] : granted,
-      region,
-      // Same width budget as full observe — avoid full-retina intermediate captures.
-      maxWidth: this.maxCaptureWidth,
-      capture: coordinateSpace.kind ?? (coordinateSpace.fullScreen ? 'display' : 'window'),
-      pid: root.pid,
-      ...(typeof root.windowId === 'number' ? { windowId: root.windowId } : {}),
-      ...(root.axRootId ? { axRootId: root.axRootId } : {}),
-      ...this.coordinatePayload(coordinateSpace),
-    })
+    const res = await this.withCursorSuspendedForCapture(() =>
+      this.client.call<HelperCaptureResult>('zoom', {
+        allowAllApps: allowAll,
+        grantedBundleIds: allowAll ? [] : granted,
+        region,
+        // Same width budget as full observe — avoid full-retina intermediate captures.
+        maxWidth: this.maxCaptureWidth,
+        capture: coordinateSpace.kind ?? (coordinateSpace.fullScreen ? 'display' : 'window'),
+        pid: root.pid,
+        ...(typeof root.windowId === 'number' ? { windowId: root.windowId } : {}),
+        ...(root.axRootId ? { axRootId: root.axRootId } : {}),
+        ...this.coordinatePayload(coordinateSpace),
+      }),
+    )
     return {
       mimeType: 'image/png',
       data: res.data,

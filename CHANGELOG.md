@@ -4,6 +4,18 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.49.2-alpha] - 2026-07-30
+
+### Fixed
+
+- Aim Computer Use scroll at explicit capture-space coordinates instead of always the window center
+- Avoid repeating the app name in Computer Use tool rows when it matches the window title
+- Prefer accessibility delivery for labeled Computer Use controls and mark navigation presses successful when the UI outline rewrites
+- Show the target app icon on streaming Computer Use tool rows
+- Serialize Codex cold-resume app-server connections
+- Send the first Claude message from unpersisted drafts without losing the turn
+- Keep the composer model label after the first send from an unpersisted draft
+
 ## [0.49.1-alpha] - 2026-07-30
 
 ### Fixed

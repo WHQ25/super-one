@@ -110,11 +110,14 @@ export interface AppServerExitInfo {
 }
 
 export interface AppServerConnectionHandle {
+  readonly id?: string
   connection: AppServerConnection
   close(): Promise<void>
   getStderr(): string
   onClosed(cb: (info: AppServerExitInfo) => void): () => void
 }
+
+let nextAppServerConnectionId = 0
 
 export interface CodexAppServerModel {
   id: string
@@ -470,8 +473,10 @@ export async function createAppServerConnection(
   const hasBundledPackage = expectedPackage ? hasCodexPlatformPackage(expectedPackage) : false
   const bundledBinary = hasBundledPackage && expectedPackage ? resolveCodexNativeBinary(expectedPackage) : null
   const systemCodexCli = !bundledBinary ? findSystemCodexCli() : null
+  const connectionId = `codex-${process.pid}-${++nextAppServerConnectionId}`
   log.info(
-    '[codex] app-server launch platform=%s arch=%s mode=%s expectedPackage=%s bundledBinary=%s systemCodex=%s',
+    '[codex] app-server launch conn=%s platform=%s arch=%s mode=%s expectedPackage=%s bundledBinary=%s systemCodex=%s',
+    connectionId,
     process.platform,
     process.arch,
     auth.mode,
@@ -497,6 +502,13 @@ export async function createAppServerConnection(
     windowsHide: true,
     argv0: ProcessTitle.Codex,
   })
+  trace('codex.connection', 'launch', {
+    connectionId,
+    pid: child.pid ?? null,
+    platform: process.platform,
+    arch: process.arch,
+    authMode: auth.mode,
+  }, connectionId)
 
   const stdout = child.stdout
   const stdin = child.stdin
@@ -527,6 +539,13 @@ export async function createAppServerConnection(
   let exitInfo: AppServerExitInfo | null = null
   child.on('exit', (code, sigName) => {
     exitInfo = { code, signal: sigName, stderr: stderrChunks.join('') }
+    log.info('[codex] app-server process exited conn=%s pid=%s code=%s signal=%s', connectionId, child.pid ?? 'unknown', code, sigName)
+    trace('codex.connection', 'exit', {
+      connectionId,
+      pid: child.pid ?? null,
+      code,
+      signal: sigName,
+    }, connectionId)
     for (const cb of closedListeners) {
       try { cb(exitInfo) } catch (err) { log.warn('[codex] onClosed listener error:', err) }
     }
@@ -766,6 +785,8 @@ export async function createAppServerConnection(
   const close = async (): Promise<void> => {
     if (closed) return
     closed = true
+    log.info('[codex] app-server close requested conn=%s pid=%s', connectionId, child.pid ?? 'unknown')
+    trace('codex.connection', 'close', { connectionId, pid: child.pid ?? null }, connectionId)
     signal?.removeEventListener('abort', onAbort)
     rl.close()
     try {
@@ -791,12 +812,20 @@ export async function createAppServerConnection(
       }),
     })
     log.info(
-      '[codex] app-server initialized userAgent=%s codexHome=%s platform=%s/%s',
+      '[codex] app-server initialized conn=%s userAgent=%s codexHome=%s platform=%s/%s',
+      connectionId,
       readString(initResult.userAgent) ?? 'unknown',
       readString(initResult.codexHome) ?? 'unknown',
       readString(initResult.platformFamily) ?? 'unknown',
       readString(initResult.platformOs) ?? 'unknown',
     )
+    trace('codex.connection', 'initialized', {
+      connectionId,
+      pid: child.pid ?? null,
+      userAgent: readString(initResult.userAgent) ?? 'unknown',
+      platformFamily: readString(initResult.platformFamily) ?? 'unknown',
+      platformOs: readString(initResult.platformOs) ?? 'unknown',
+    }, connectionId)
     await connection.notify('initialized')
   } catch (error) {
     const stderr = stderrChunks.join('').trim()
@@ -820,6 +849,7 @@ export async function createAppServerConnection(
   }
 
   return {
+    id: connectionId,
     connection,
     close,
     getStderr: () => stderrChunks.join(''),

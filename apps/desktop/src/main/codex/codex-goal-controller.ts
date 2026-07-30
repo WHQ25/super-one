@@ -172,6 +172,10 @@ export class CodexGoalController {
           null,
           controller,
           this.options.getCallbacks(),
+          {
+            notificationInbox: session.notificationDispatcher?.mainInbox ?? null,
+            connectionId: session.connectionHandle?.id ?? null,
+          },
         )
         this.options.onRunComplete(messageId, {
           threadId: streamed.threadId,

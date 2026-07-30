@@ -41,6 +41,7 @@ vi.mock('../mcp/superone-mcp-server', () => ({
   isBuiltInSuperoneTool: vi.fn(() => false),
 }))
 
+const appServerConnection = await import('./app-server-connection')
 const {
   resolveThread,
   withSessionConnection,
@@ -128,6 +129,40 @@ describe('resolveThread fallback', () => {
     sandboxMode: 'permissive' as const,
     networkAccessEnabled: true,
   }
+
+  it('shares one app-server connection across concurrent cold-resume callers', async () => {
+    const session = makeSession({ model: 'gpt-5', threadId: 'existing-thread' })
+    const connection = {
+      request: vi.fn(async () => ({})),
+      respond: vi.fn(async () => {}),
+      notify: vi.fn(async () => {}),
+      nextNotification: vi.fn(() => new Promise<never>(() => {})),
+    }
+    const handle = {
+      id: 'conn-shared',
+      connection,
+      close: vi.fn(async () => {}),
+      getStderr: () => '',
+      onClosed: vi.fn(() => () => {}),
+    }
+    const createConnection = vi.spyOn(appServerConnection, 'createAppServerConnection')
+      .mockResolvedValue(handle)
+
+    try {
+      const [first, second] = await Promise.all([
+        withSessionConnection(session, { mode: 'auto' }, undefined, async (conn) => conn),
+        withSessionConnection(session, { mode: 'auto' }, undefined, async (conn) => conn),
+      ])
+
+      expect(createConnection).toHaveBeenCalledTimes(1)
+      expect(first).toBe(connection)
+      expect(second).toBe(connection)
+      expect(session.connectionHandle).toBe(handle)
+    } finally {
+      createConnection.mockRestore()
+      await closeSessionConnection(session)
+    }
+  })
 
   it('detaches a closed handle synchronously before a reconnect', async () => {
     const session = makeSession({ model: 'gpt-5', threadId: 'existing-thread' })
@@ -1763,6 +1798,37 @@ describe('streamTurnEvents finalizes stale in_progress items on turn/completed',
       }),
     } as never
   }
+
+  it('consumes the inbox bound to the turn connection', async () => {
+    const session = { ...makeSession(), threadId: 'main-thread' }
+    const wrongInbox = {
+      next: vi.fn(async () => { throw new Error('read from replacement dispatcher') }),
+      poll: vi.fn(async () => null),
+    }
+    session.notificationDispatcher = { mainInbox: wrongInbox } as never
+    const mockConnection = makeStreamingConnection([])
+    const boundInbox = {
+      next: vi.fn(async () => ({
+        method: 'turn/completed',
+        params: { threadId: 'main-thread', turn: { id: 'bound-turn', status: 'completed' } },
+      })),
+      poll: vi.fn(async () => null),
+    }
+
+    const result = await streamTurnEvents(
+      mockConnection,
+      session,
+      'bound-turn',
+      new AbortController(),
+      undefined,
+      { notificationInbox: boundInbox, connectionId: 'conn-bound' },
+    )
+
+    expect(result.turnId).toBe('bound-turn')
+    expect(boundInbox.next).toHaveBeenCalledOnce()
+    expect(wrongInbox.next).not.toHaveBeenCalled()
+    expect(mockConnection.nextNotification).not.toHaveBeenCalled()
+  })
 
   it('captures an automatic turn id and installs turn controls from turn/started', async () => {
     const session = { ...makeSession(), threadId: 'main-thread' }

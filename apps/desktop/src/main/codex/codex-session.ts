@@ -63,6 +63,8 @@ export interface CodexSession {
   interruptFn: (() => Promise<void>) | null
   connectionHandle: AppServerConnectionHandle | null
   connectionAuth: CodexProjectAuth | null
+  connectionPromise: Promise<AppServerConnectionHandle> | null
+  connectionPromiseAuth: CodexProjectAuth | null
   apiProviderId: string | null
   notificationDispatcher: NotificationDispatcher | null
   forkListeners: Map<string, ForkListenerHandle>
@@ -102,6 +104,8 @@ export function createCodexSession(
     interruptFn: null,
     connectionHandle: null,
     connectionAuth: null,
+    connectionPromise: null,
+    connectionPromiseAuth: null,
     apiProviderId: apiProviderId ?? null,
     notificationDispatcher: null,
     forkListeners: new Map(),
@@ -117,6 +121,8 @@ export function tearDownForkRuntime(session: CodexSession, reason: string): void
   session.forkCallbacks = null
   session.connectionHandle = null
   session.connectionAuth = null
+  session.connectionPromise = null
+  session.connectionPromiseAuth = null
   session.threadId = null
   session.threadReady = false
   session.effectiveCwd = null

@@ -986,22 +986,27 @@ export async function processServerRequest(
 }
 
 export async function closeSessionConnection(session: CodexSession): Promise<void> {
+  if (!session.connectionHandle && session.connectionPromise) {
+    try { await session.connectionPromise } catch { /* creation already failed or was discarded */ }
+  }
   const handle = session.connectionHandle
-  const dispatcher = session.notificationDispatcher
+  const threadId = session.threadId
   tearDownForkRuntime(session, 'connection closed')
   if (handle) {
+    log.info(
+      '[codex] connection detached sid=%s thread=%s conn=%s reason=close',
+      session.superoneSessionId,
+      threadId ?? 'none',
+      handle.id ?? 'unknown',
+    )
+    trace('codex.connection', 'detached', {
+      sessionId: session.superoneSessionId,
+      threadId,
+      connectionId: handle.id ?? null,
+      reason: 'close',
+    }, session.superoneSessionId)
     try { await handle.close() } catch (err) {
       log.warn('[codex] close connection error:', err instanceof Error ? err.message : String(err))
-    }
-  }
-  if (session.connectionHandle === handle) {
-    session.connectionHandle = null
-    session.connectionAuth = null
-    session.threadId = null
-    session.threadReady = false
-    session.notificationDispatcher = null
-    if (dispatcher) {
-      try { dispatcher.close('connection closed') } catch {}
     }
   }
 }
@@ -1014,34 +1019,108 @@ export async function withSessionConnection<T>(
   session: CodexSession,
   auth: CodexProjectAuth,
   signal: AbortSignal | undefined,
-  fn: (connection: AppServerConnection) => Promise<T>,
+  fn: (
+    connection: AppServerConnection,
+    dispatcher: NonNullable<CodexSession['notificationDispatcher']>,
+    handle: AppServerConnectionHandle,
+  ) => Promise<T>,
 ): Promise<T> {
+  if (session.connectionPromise) {
+    const pendingMatches = Boolean(
+      session.connectionPromiseAuth && authsMatch(session.connectionPromiseAuth, auth),
+    )
+    log.info(
+      '[codex] connection wait sid=%s thread=%s pendingAuth=%s requestedAuth=%s shared=%s',
+      session.superoneSessionId,
+      session.threadId ?? 'none',
+      session.connectionPromiseAuth?.mode ?? 'unknown',
+      auth.mode,
+      pendingMatches,
+    )
+    trace('codex.connection', 'wait', {
+      sessionId: session.superoneSessionId,
+      threadId: session.threadId,
+      pendingAuthMode: session.connectionPromiseAuth?.mode ?? null,
+      requestedAuthMode: auth.mode,
+      shared: pendingMatches,
+    }, session.superoneSessionId)
+    try { await session.connectionPromise } catch { /* retry below */ }
+    if (signal?.aborted) throw new Error('Codex run interrupted')
+  }
+
   if (session.connectionHandle && session.connectionAuth && !authsMatch(session.connectionAuth, auth)) {
     await closeSessionConnection(session)
   }
 
   if (!session.connectionHandle) {
-    const handle = await createAppServerConnection(auth, signal, undefined, undefined, session.apiProviderId)
-    handle.onClosed((info) => {
-      if (session.connectionHandle === handle) {
-        const dispatcher = session.notificationDispatcher
-        session.connectionHandle = null
-        session.connectionAuth = null
-        session.threadId = null
-        session.threadReady = false
-        session.notificationDispatcher = null
-        if (dispatcher) {
-          try { dispatcher.close('app-server exited') } catch {}
+    const pendingAuth = { mode: auth.mode, apiKey: auth.apiKey }
+    let connectionPromise!: Promise<AppServerConnectionHandle>
+    connectionPromise = createAppServerConnection(
+      auth,
+      signal,
+      undefined,
+      undefined,
+      session.apiProviderId,
+    ).then(async (handle) => {
+      if (session.connectionPromise !== connectionPromise) {
+        try { await handle.close() } catch { /* ignore discarded connection close */ }
+        throw new Error('Codex app-server connection discarded while starting')
+      }
+      handle.onClosed((info) => {
+        if (session.connectionHandle === handle) {
+          const dispatcher = session.notificationDispatcher
+          const threadId = session.threadId
+          session.connectionHandle = null
+          session.connectionAuth = null
+          session.threadId = null
+          session.threadReady = false
+          session.notificationDispatcher = null
+          if (dispatcher) {
+            try { dispatcher.close('app-server exited') } catch {}
+          }
+          log.info(
+            '[codex] connection exited sid=%s thread=%s conn=%s code=%s signal=%s',
+            session.superoneSessionId,
+            threadId ?? 'none',
+            handle.id ?? 'unknown',
+            info.code,
+            info.signal,
+          )
+          trace('codex.connection', 'session_exit', {
+            sessionId: session.superoneSessionId,
+            threadId,
+            connectionId: handle.id ?? null,
+            code: info.code,
+            signal: info.signal,
+          }, session.superoneSessionId)
         }
-        log.info('[codex] app-server exited code=%s signal=%s', info.code, info.signal)
+      })
+      session.connectionHandle = handle
+      session.connectionAuth = pendingAuth
+      session.notificationDispatcher = createNotificationDispatcher(handle.connection, {
+        onSkillsChanged: () => notifyCodexSkillsChanged(session.projectPath),
+      })
+      log.info(
+        '[codex] connection attached sid=%s thread=%s conn=%s',
+        session.superoneSessionId,
+        session.threadId ?? 'none',
+        handle.id ?? 'unknown',
+      )
+      trace('codex.connection', 'attached', {
+        sessionId: session.superoneSessionId,
+        threadId: session.threadId,
+        connectionId: handle.id ?? null,
+      }, session.superoneSessionId)
+      return handle
+    }).finally(() => {
+      if (session.connectionPromise === connectionPromise) {
+        session.connectionPromise = null
+        session.connectionPromiseAuth = null
       }
     })
-    session.connectionHandle = handle
-    session.connectionAuth = { mode: auth.mode, apiKey: auth.apiKey }
-    const dispatcherOptions = {
-      onSkillsChanged: () => notifyCodexSkillsChanged(session.projectPath),
-    }
-    session.notificationDispatcher = createNotificationDispatcher(handle.connection, dispatcherOptions)
+    session.connectionPromise = connectionPromise
+    session.connectionPromiseAuth = pendingAuth
+    await connectionPromise
   } else if (!session.notificationDispatcher) {
     session.notificationDispatcher = createNotificationDispatcher(session.connectionHandle.connection, {
       onSkillsChanged: () => notifyCodexSkillsChanged(session.projectPath),
@@ -1049,8 +1128,21 @@ export async function withSessionConnection<T>(
   }
 
   const handle = session.connectionHandle
+  const dispatcher = session.notificationDispatcher
+  if (!handle || !dispatcher) throw new Error('Codex app-server connection unavailable')
+  log.debug(
+    '[codex] connection reuse sid=%s thread=%s conn=%s',
+    session.superoneSessionId,
+    session.threadId ?? 'none',
+    handle.id ?? 'unknown',
+  )
+  trace('codex.connection', 'reuse', {
+    sessionId: session.superoneSessionId,
+    threadId: session.threadId,
+    connectionId: handle.id ?? null,
+  }, session.superoneSessionId)
   try {
-    return await fn(handle.connection)
+    return await fn(handle.connection, dispatcher, handle)
   } catch (error) {
     const stderr = handle.getStderr().trim()
     const childExited = session.connectionHandle !== handle
@@ -1071,6 +1163,8 @@ export async function withSessionConnection<T>(
 
 interface ThreadConnectionContext {
   connection: AppServerConnection
+  notificationInbox: NotificationInbox
+  connectionId: string | null
   threadId: string
   wasThreadReady: boolean
   markMutationStarted(): void
@@ -1090,14 +1184,16 @@ export async function withThreadConnection<T>(
     let mutationStarted = false
     let attemptedHandle = session.connectionHandle
     try {
-      return await withSessionConnection(session, auth, signal, async (connection) => {
-        attemptedHandle = session.connectionHandle
+      return await withSessionConnection(session, auth, signal, async (connection, dispatcher, handle) => {
+        attemptedHandle = handle
         const wasThreadReady = session.threadReady
         const threadId = await resolveThread(connection, session, projectPath, cwd, permissionProfile, {
           onStartingNewThread: () => { mutationStarted = true },
         })
         return operation({
           connection,
+          notificationInbox: dispatcher.mainInbox,
+          connectionId: handle.id ?? null,
           threadId,
           wasThreadReady,
           markMutationStarted: () => { mutationStarted = true },
@@ -1422,7 +1518,12 @@ export async function streamTurnEvents(
   activeTurnId: string | null,
   controller: AbortController,
   callbacks?: CodexRunStreamCallbacks,
+  runtime?: {
+    notificationInbox?: NotificationInbox | null
+    connectionId?: string | null
+  },
 ): Promise<{ threadId: string | null; turnId?: string; usage: CodexUsageInfo | null; items: CodexThreadItem[] }> {
+  const streamStartedAt = Date.now()
   let observedTurnId = activeTurnId
   let threadStartedEmitted = false
   const emitThreadStarted = (threadId: string) => {
@@ -1646,7 +1747,24 @@ export async function streamTurnEvents(
     return !turnId || turnId === observedTurnId
   }
 
-  const mainInbox: NotificationInbox | null = session.notificationDispatcher?.mainInbox ?? null
+  const mainInbox: NotificationInbox | null = runtime?.notificationInbox
+    ?? session.notificationDispatcher?.mainInbox
+    ?? null
+  log.info(
+    '[codex] turn stream started sid=%s thread=%s turn=%s conn=%s inbox=%s',
+    session.superoneSessionId,
+    session.threadId ?? 'none',
+    activeTurnId ?? 'pending',
+    runtime?.connectionId ?? session.connectionHandle?.id ?? 'unknown',
+    mainInbox ? 'dispatcher' : 'connection',
+  )
+  trace('codex.turn', 'stream_started', {
+    sessionId: session.superoneSessionId,
+    threadId: session.threadId,
+    turnId: activeTurnId,
+    connectionId: runtime?.connectionId ?? session.connectionHandle?.id ?? null,
+    inbox: mainInbox ? 'dispatcher' : 'connection',
+  }, activeTurnId ?? session.superoneSessionId)
   const nextNotification = mainInbox
     ? () => mainInbox.next()
     : () => connection.nextNotification()
@@ -2080,6 +2198,24 @@ export async function streamTurnEvents(
     .map((id) => itemMap.get(id))
     .filter((item): item is CodexThreadItem => Boolean(item))
 
+  log.info(
+    '[codex] turn stream completed sid=%s thread=%s turn=%s conn=%s items=%d durMs=%d',
+    session.superoneSessionId,
+    session.threadId ?? 'none',
+    observedTurnId ?? 'unknown',
+    runtime?.connectionId ?? session.connectionHandle?.id ?? 'unknown',
+    items.length,
+    Date.now() - streamStartedAt,
+  )
+  trace('codex.turn', 'stream_completed', {
+    sessionId: session.superoneSessionId,
+    threadId: session.threadId,
+    turnId: observedTurnId,
+    connectionId: runtime?.connectionId ?? session.connectionHandle?.id ?? null,
+    itemCount: items.length,
+    durMs: Date.now() - streamStartedAt,
+  }, observedTurnId ?? session.superoneSessionId)
+
   return {
     threadId: session.threadId,
     ...(observedTurnId ? { turnId: observedTurnId } : {}),
@@ -2137,7 +2273,7 @@ export async function runCodexTurn(
       projectPath,
       effectiveCwd,
       permissionProfile,
-      async ({ connection, threadId: resolvedThreadId, wasThreadReady, markMutationStarted }) => {
+      async ({ connection, notificationInbox, connectionId, threadId: resolvedThreadId, wasThreadReady, markMutationStarted }) => {
         // A freshly-started thread connects its MCP servers asynchronously after thread/start.
         // turn/start snapshots the available tools once, so wait for the superone bridge to
         // finish starting first — otherwise the first turn after an @-mention (which registers
@@ -2190,7 +2326,10 @@ export async function runCodexTurn(
           : null
 
         try {
-          return await streamTurnEvents(connection, session, activeTurnId, controller, callbacks)
+          return await streamTurnEvents(connection, session, activeTurnId, controller, callbacks, {
+            notificationInbox,
+            connectionId,
+          })
         } finally {
           session.activeTurnId = null
           session.steerFn = null
@@ -2251,7 +2390,7 @@ export async function reviewCodexTurn(
       projectPath,
       effectiveCwd,
       permissionProfile,
-      async ({ connection, threadId: resolvedThreadId, markMutationStarted }) => {
+      async ({ connection, notificationInbox, connectionId, threadId: resolvedThreadId, markMutationStarted }) => {
         markMutationStarted()
         await connection.request('review/start', compactRecord({
           threadId: resolvedThreadId,
@@ -2259,7 +2398,10 @@ export async function reviewCodexTurn(
           target: request.target,
         }))
 
-        return streamTurnEvents(connection, session, null, controller, callbacks)
+        return streamTurnEvents(connection, session, null, controller, callbacks, {
+          notificationInbox,
+          connectionId,
+        })
       },
     )
 
@@ -2308,11 +2450,14 @@ export async function compactCodexTurn(
       projectPath,
       effectiveCwd,
       permissionProfile,
-      async ({ connection, threadId: resolvedThreadId, markMutationStarted }) => {
+      async ({ connection, notificationInbox, connectionId, threadId: resolvedThreadId, markMutationStarted }) => {
         markMutationStarted()
         await connection.request('thread/compact/start', { threadId: resolvedThreadId })
 
-        return streamTurnEvents(connection, session, null, controller, callbacks)
+        return streamTurnEvents(connection, session, null, controller, callbacks, {
+          notificationInbox,
+          connectionId,
+        })
       },
     )
 

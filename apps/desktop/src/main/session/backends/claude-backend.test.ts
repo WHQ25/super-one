@@ -15,6 +15,7 @@ const hoisted = vi.hoisted(() => {
     warmupPrewarm: ReturnType<typeof vi.fn>
     warmupDispose: ReturnType<typeof vi.fn>
     mockQueryInterrupt: ReturnType<typeof vi.fn>
+    mockQueryCancelAsyncMessage: ReturnType<typeof vi.fn>
     mockQueryClose: ReturnType<typeof vi.fn>
     mockQuerySetModel: ReturnType<typeof vi.fn>
     mockQueryRewindFiles: ReturnType<typeof vi.fn>
@@ -36,7 +37,8 @@ const hoisted = vi.hoisted(() => {
     buildClaudeOptionsMock: vi.fn((opts: unknown) => ({ __built: opts })),
     warmupPrewarm: vi.fn(),
     warmupDispose: vi.fn(),
-    mockQueryInterrupt: vi.fn(async () => {}),
+    mockQueryInterrupt: vi.fn(async () => ({ still_queued: [] })),
+    mockQueryCancelAsyncMessage: vi.fn(async () => true),
     mockQueryClose: vi.fn(),
     mockQuerySetModel: vi.fn(async () => {}),
     mockQueryRewindFiles: vi.fn(async () => ({ canRewind: true, filesChanged: ['a.ts'], insertions: 1, deletions: 0 })),
@@ -61,6 +63,7 @@ const hoisted = vi.hoisted(() => {
         activeBackgroundTasks: captured.activeBackgroundTasks,
         query: {
           interrupt: captured.mockQueryInterrupt,
+          cancelAsyncMessage: captured.mockQueryCancelAsyncMessage,
           close: captured.mockQueryClose,
           setModel: captured.mockQuerySetModel,
           rewindFiles: captured.mockQueryRewindFiles,
@@ -160,6 +163,7 @@ describe('ClaudeBackend', () => {
     hoisted.captured.warmupPrewarm.mockClear()
     hoisted.captured.warmupDispose.mockClear()
     hoisted.captured.mockQueryInterrupt.mockClear()
+    hoisted.captured.mockQueryCancelAsyncMessage.mockClear()
     hoisted.captured.mockQueryClose.mockClear()
     hoisted.captured.mockQuerySetModel.mockClear()
     hoisted.captured.mockQueryRewindFiles.mockClear()
@@ -333,6 +337,18 @@ describe('ClaudeBackend', () => {
       await backend.start(makeStartOpts())
       await backend.interrupt()
       expect(hoisted.captured.mockQueryInterrupt).toHaveBeenCalledOnce()
+    })
+
+    it('cancels SDK messages that survived the interrupted turn', async () => {
+      hoisted.captured.mockQueryInterrupt.mockResolvedValueOnce({ still_queued: ['queued-1', 'queued-2'] })
+      const backend = new ClaudeBackend()
+      await backend.start(makeStartOpts())
+
+      await backend.interrupt()
+
+      expect(hoisted.captured.mockQueryCancelAsyncMessage).toHaveBeenCalledTimes(2)
+      expect(hoisted.captured.mockQueryCancelAsyncMessage).toHaveBeenCalledWith('queued-1')
+      expect(hoisted.captured.mockQueryCancelAsyncMessage).toHaveBeenCalledWith('queued-2')
     })
   })
 

@@ -1,4 +1,5 @@
 import type { CanUseTool, OnElicitation, Query, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
+import { randomUUID } from 'node:crypto'
 import { MessageBridge } from '../../agent/message-bridge'
 import { buildClaudeOptions, createSessionQuery, buildUserMessage, type SessionQueryOptions, type BackgroundTaskInfo } from '../../agent/claude-query'
 import { getGlobalWarmupManager, WarmupManager } from '../../agent/warmup-manager'
@@ -219,6 +220,7 @@ export class ClaudeBackend implements SessionBackend {
       type: 'user',
       message: { role: 'user', content },
       parent_tool_use_id: null,
+      uuid: randomUUID(),
       session_id: this.providerSessionId ?? '',
       origin: { kind: 'task-notification' },
       isSynthetic: true,
@@ -302,8 +304,32 @@ export class ClaudeBackend implements SessionBackend {
     this.pendingQueued = []
     rejectAllPending(this.pendingPermissions, this.pendingQuestions, this.pendingPlanApprovals, this.pendingElicitations, 'backend.interrupt')
     if (this.query) {
-      try { await this.query.interrupt() } catch (err) {
+      try {
+        const query = this.query as Query & {
+          cancelAsyncMessage?: (uuid: string) => Promise<boolean>
+        }
+        const receipt = await query.interrupt()
+        if (!receipt) {
+          log.warn('[ClaudeBackend] interrupt receipt unavailable; rebuilding runtime to guarantee stop')
+          await this.releaseRuntime('rebuild')
+          return
+        }
+        const queued = receipt?.still_queued ?? []
+        if (queued.length > 0) {
+          if (!query.cancelAsyncMessage) {
+            log.warn('[ClaudeBackend] interrupt left %d queued message(s), but SDK cancellation is unavailable', queued.length)
+            await this.releaseRuntime('rebuild')
+          } else {
+            const cancelled = await Promise.allSettled(queued.map((uuid) => query.cancelAsyncMessage!(uuid)))
+            if (cancelled.some((result) => result.status === 'rejected' || result.value !== true)) {
+              log.warn('[ClaudeBackend] interrupt could not cancel every queued message; rebuilding runtime')
+              await this.releaseRuntime('rebuild')
+            }
+          }
+        }
+      } catch (err) {
         log.debug('[ClaudeBackend] interrupt error:', err)
+        await this.releaseRuntime('rebuild')
       }
     }
   }

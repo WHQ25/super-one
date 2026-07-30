@@ -106,6 +106,7 @@ describe('buildUserMessage', () => {
     expect(message.type).toBe('user')
     expect(message.session_id).toBe('session-1')
     expect(message.parent_tool_use_id).toBeNull()
+    expect(message.uuid).toMatch(/^[0-9a-f-]{36}$/)
     expect(message.message.role).toBe('user')
     expect(message.message.content).toBe('Hello Claude')
   })
@@ -644,6 +645,28 @@ describe('createSessionQuery', () => {
 
     expect(events.some((e) => e.type === 'message_interrupted')).toBe(true)
     expect(events).toContainEqual({ type: 'status_change', status: 'idle' })
+  })
+
+  it('drops late stream output after interruption while still consuming the final result', async () => {
+    state.messages = [
+      { type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'late text' } } },
+      { type: 'assistant', message: { content: [{ type: 'text', text: 'late assistant' }] } },
+      { type: 'result', subtype: 'success', usage: {} },
+    ]
+
+    const events: Array<Record<string, unknown>> = []
+    const handle = createSessionQuery(
+      { consumedTags: [], drainConsumedTag: () => undefined } as unknown as MessageBridge,
+      { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
+      (event) => events.push(event as unknown as Record<string, unknown>),
+      () => 'msg-interrupted-late',
+      () => Date.now() - 20,
+      () => true,
+    )
+    await handle.iterationDone
+
+    expect(events.some((event) => event.type === 'text_delta')).toBe(false)
+    expect(events.some((event) => event.type === 'message_interrupted')).toBe(true)
   })
 
   it('recovers to idle when background_tasks_changed clears a task whose completion bookend was missed', async () => {

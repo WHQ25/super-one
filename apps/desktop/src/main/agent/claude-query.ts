@@ -1,4 +1,5 @@
 import { query, type CanUseTool, type HookCallback, type OnElicitation, type Options, type Query, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
+import { randomUUID } from 'node:crypto'
 import type { AgentEvent, MessageMetadata, PermissionMode, QuestionPreviewFormat, SandboxInfo, SendMessageRequest } from '@superone/shared/agent-types'
 import type { MessageBridge } from './message-bridge'
 import log from '../logger'
@@ -210,6 +211,7 @@ export function buildUserMessage(request: SendMessageRequest, sessionId: string)
     type: 'user' as const,
     message: { role: 'user' as const, content },
     parent_tool_use_id: null,
+    uuid: randomUUID(),
     session_id: sessionId,
     ...(request.priority ? { priority: request.priority } : {}),
   } as SDKUserMessage
@@ -293,6 +295,11 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
   try {
     for await (const msg of q) {
       let messageId = turnMessageId
+
+      if (getInterrupted() && msg.type !== 'result') {
+        trace('agent.sdk', `${msg.type}_ignored_after_interrupt`, msg, messageId)
+        continue
+      }
 
       if (!turnActive) {
         const latestId = getCurrentMessageId()

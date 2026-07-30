@@ -4,6 +4,16 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.49.1-alpha] - 2026-07-30
+
+### Fixed
+
+- Isolate and reap Computer Use helper processes so stale helpers do not linger across sessions
+- Detect Computer Use permission grants via TCC dual-channel checks
+- Keep the Computer Use software cursor painted for the whole control turn, suspending it only around screenshots
+- Keep the last answer visible after interrupt in compact chat mode
+- Pin tool DiffView font size to 12px
+
 ## [0.49.0-alpha] - 2026-07-30
 
 ### Added

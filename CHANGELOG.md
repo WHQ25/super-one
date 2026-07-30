@@ -4,6 +4,21 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.49.3-alpha] - 2026-07-31
+
+### Added
+
+- Render session collab send/retrieve message bodies as Markdown in the tool UI, and instruct agents to use Markdown for mailbox handoffs
+
+### Fixed
+
+- Stop streaming queued Claude output after the user interrupts a turn
+- Preserve the selected Claude model across prewarm and session resume
+- Align mention chips with chat body text metrics
+- Exempt collab tool results (`session_collab_*`) from the 4000-char ACP tool output cap
+- Stop collab agents from idling instead of properly ending their turn
+- Never treat http(s) URLs (including localhost) as project file chips in chat markdown
+
 ## [0.49.2-alpha] - 2026-07-30
 
 ### Fixed

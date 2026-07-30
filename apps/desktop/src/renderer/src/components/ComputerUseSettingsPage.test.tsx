@@ -103,11 +103,12 @@ describe('ComputerUseSettingsPage permissions', () => {
     })
     render(<ComputerUseSettingsPage />)
     await waitFor(() => {
-      const grantedButtons = screen.getAllByRole('button', {
+      const grantedBadges = screen.getAllByText('settings.computerUse.permissions.buttonGranted')
+      expect(grantedBadges).toHaveLength(2)
+      // Granted is a status badge, not an actionable button
+      expect(screen.queryByRole('button', {
         name: 'settings.computerUse.permissions.buttonGranted',
-      })
-      expect(grantedButtons).toHaveLength(2)
-      expect(grantedButtons.every((b) => (b as HTMLButtonElement).disabled)).toBe(true)
+      })).toBeNull()
     })
     openComputerUsePermissions.mockClear()
 

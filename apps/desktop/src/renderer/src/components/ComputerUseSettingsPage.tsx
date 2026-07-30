@@ -234,199 +234,201 @@ export function ComputerUseSettingsPage() {
         <p className="text-sm text-muted-foreground">{t('settings.computerUse.subtitle')}</p>
       </div>
 
-      <div className="rounded-lg border border-border bg-muted/10">
-        <div className="flex items-start justify-between gap-4 p-4">
-          <div className="min-w-0">
-            <p className="text-sm font-medium">{t('settings.computerUse.enable.label')}</p>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              {t('settings.computerUse.enable.description')}
-            </p>
-          </div>
-          <Switch
-            checked={enabled}
-            onCheckedChange={handleEnableToggle}
-            disabled={loading || permBusy}
-          />
-        </div>
-
-        <div className="flex items-start justify-between gap-4 border-t border-border p-4">
-          <div className="min-w-0">
-            <p className="text-sm font-medium">{t('settings.computerUse.allowAll.label')}</p>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              {t('settings.computerUse.allowAll.description')}
-            </p>
-          </div>
-          <Switch
-            checked={enabled && allowAll}
-            onCheckedChange={handleAllowAllToggle}
-            disabled={loading || !enabled}
-          />
-        </div>
-      </div>
-
-      {!(enabled && allowAll) && (
-        <div className="mt-4 rounded-lg border border-border p-4">
-          <div className="flex items-start justify-between gap-3">
+      <div className="space-y-4">
+        <div className="rounded-lg border border-border">
+          <div className="flex items-start justify-between gap-4 p-4">
             <div className="min-w-0">
-              <p className="text-sm font-medium">{t('settings.computerUse.alwaysAllow.title')}</p>
+              <p className="text-sm font-medium">{t('settings.computerUse.enable.label')}</p>
               <p className="mt-0.5 text-xs text-muted-foreground">
-                {t('settings.computerUse.alwaysAllow.description')}
+                {t('settings.computerUse.enable.description')}
               </p>
+            </div>
+            <Switch
+              checked={enabled}
+              onCheckedChange={handleEnableToggle}
+              disabled={loading || permBusy}
+            />
+          </div>
+
+          <div className="flex items-start justify-between gap-4 border-t border-border p-4">
+            <div className="min-w-0">
+              <p className="text-sm font-medium">{t('settings.computerUse.allowAll.label')}</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {t('settings.computerUse.allowAll.description')}
+              </p>
+            </div>
+            <Switch
+              checked={enabled && allowAll}
+              onCheckedChange={handleAllowAllToggle}
+              disabled={loading || !enabled}
+            />
+          </div>
+        </div>
+
+        {!(enabled && allowAll) && (
+          <div className="rounded-lg border border-border">
+            <div className="flex items-start justify-between gap-3 p-4">
+              <div className="min-w-0">
+                <p className="text-sm font-medium">{t('settings.computerUse.alwaysAllow.title')}</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  {t('settings.computerUse.alwaysAllow.description')}
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={loading || !enabled}
+                onClick={() => setAddOpen((v) => !v)}
+              >
+                <Plus data-icon="inline-start" />
+                {t('settings.computerUse.alwaysAllow.add')}
+              </Button>
+            </div>
+
+            {addOpen && (
+              <div className="border-t border-border px-4 py-3">
+                <Input
+                  type="search"
+                  value={addQuery}
+                  onChange={(e) => setAddQuery(e.target.value)}
+                  placeholder={t('settings.computerUse.alwaysAllow.searchPlaceholder')}
+                />
+                <div className="mt-2 flex max-h-48 flex-col gap-0.5 overflow-y-auto">
+                  {runningBusy && (
+                    <p className="px-1 py-2 text-xs text-muted-foreground">
+                      {t('settings.computerUse.alwaysAllow.loadingApps')}
+                    </p>
+                  )}
+                  {!runningBusy && filteredRunning.length === 0 && (
+                    <p className="px-1 py-2 text-xs text-muted-foreground">
+                      {t('settings.computerUse.alwaysAllow.emptyRunning')}
+                    </p>
+                  )}
+                  {filteredRunning.map((app) => (
+                    <button
+                      key={app.bundleId}
+                      type="button"
+                      className="flex w-full cursor-pointer items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left hover:bg-accent"
+                      onClick={() => void handleAddAlways({ app: app.app, bundleId: app.bundleId })}
+                    >
+                      <span className="min-w-0 truncate text-xs font-medium text-foreground">{app.app}</span>
+                      <span className="shrink-0 font-mono text-[10px] text-muted-foreground">{app.bundleId}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <ul className="divide-y divide-border border-t border-border">
+              {alwaysAllow.length === 0 ? (
+                <li className="px-4 py-3 text-xs text-muted-foreground">
+                  {t('settings.computerUse.alwaysAllow.empty')}
+                </li>
+              ) : (
+                alwaysAllow.map((app) => (
+                  <li key={app.bundleId} className="flex items-center justify-between gap-3 px-4 py-2.5">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm text-foreground">{app.app}</p>
+                      <p className="truncate font-mono text-[11px] text-muted-foreground">{app.bundleId}</p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-xs"
+                      className="shrink-0 text-muted-foreground hover:text-destructive"
+                      onClick={() => void handleRemoveAlways(app.bundleId)}
+                      aria-label={t('settings.computerUse.alwaysAllow.remove', { app: app.app })}
+                    >
+                      <Trash2 />
+                    </Button>
+                  </li>
+                ))
+              )}
+            </ul>
+          </div>
+        )}
+
+        <div className="rounded-lg border border-border">
+          <div className="flex items-start justify-between gap-3 p-4">
+            <div className="min-w-0">
+              <p className="text-sm font-medium">{t('settings.computerUse.permissions.title')}</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {t('settings.computerUse.permissions.description')}
+              </p>
+              {(permissionStatus.helperName || permissionStatus.helperPath) && (
+                <div className="mt-2 min-w-0 text-xs text-muted-foreground">
+                  <p className="truncate font-medium text-foreground">
+                    {permissionStatus.helperName ?? t('settings.computerUse.permissions.helperName')}
+                  </p>
+                  {permissionStatus.helperBundleId && (
+                    <p className="truncate font-mono text-[11px]" title={permissionStatus.helperBundleId}>
+                      {permissionStatus.helperBundleId}
+                    </p>
+                  )}
+                  {permissionStatus.helperPath && (
+                    <p className="truncate font-mono text-[11px]" title={permissionStatus.helperPath}>
+                      {permissionStatus.helperPath}
+                    </p>
+                  )}
+                </div>
+              )}
+              {!permissionStatus.helperName && !permissionStatus.helperPath && !permChecking && (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  {t('settings.computerUse.permissions.helperName')}
+                </p>
+              )}
             </div>
             <Button
               type="button"
-              variant="secondary"
+              variant="outline"
               size="sm"
-              disabled={loading || !enabled}
-              onClick={() => setAddOpen((v) => !v)}
+              className="shrink-0"
+              disabled={permBusy || permChecking || recheckBusy}
+              onClick={() => void handleRecheckPermissions()}
             >
-              <Plus data-icon="inline-start" />
-              {t('settings.computerUse.alwaysAllow.add')}
+              {recheckBusy
+                ? t('settings.computerUse.permissions.rechecking')
+                : t('settings.computerUse.permissions.recheck')}
             </Button>
           </div>
 
-          {addOpen && (
-            <div className="mt-3 rounded-md bg-muted/30 p-3">
-              <Input
-                type="search"
-                value={addQuery}
-                onChange={(e) => setAddQuery(e.target.value)}
-                placeholder={t('settings.computerUse.alwaysAllow.searchPlaceholder')}
+          {permChecking ? (
+            <div className="border-t border-border px-4 py-3">
+              <Badge variant="outline" className="gap-1 text-muted-foreground">
+                <Loader2 className="size-3 animate-spin" aria-hidden="true" />
+                {t('settings.computerUse.permissions.checking')}
+              </Badge>
+            </div>
+          ) : (
+            <div className="divide-y divide-border border-t border-border">
+              <PermissionRow
+                label={t('settings.computerUse.permissions.accessibility')}
+                granted={accessibilityGranted}
+                busy={permBusy}
+                checking={permChecking}
+                onRequest={() => void requestPermission('accessibility')}
+                requestLabel={t('settings.computerUse.permissions.requestAccessibility')}
+                grantedLabel={t('settings.computerUse.permissions.buttonGranted')}
+                openingLabel={t('settings.computerUse.permissions.opening')}
               />
-              <div className="mt-2 flex max-h-48 flex-col gap-0.5 overflow-y-auto">
-                {runningBusy && (
-                  <p className="px-1 py-2 text-xs text-muted-foreground">
-                    {t('settings.computerUse.alwaysAllow.loadingApps')}
-                  </p>
-                )}
-                {!runningBusy && filteredRunning.length === 0 && (
-                  <p className="px-1 py-2 text-xs text-muted-foreground">
-                    {t('settings.computerUse.alwaysAllow.emptyRunning')}
-                  </p>
-                )}
-                {filteredRunning.map((app) => (
-                  <button
-                    key={app.bundleId}
-                    type="button"
-                    className="flex w-full cursor-pointer items-center justify-between gap-2 rounded px-2 py-1.5 text-left hover:bg-accent"
-                    onClick={() => void handleAddAlways({ app: app.app, bundleId: app.bundleId })}
-                  >
-                    <span className="min-w-0 truncate text-xs font-medium text-foreground">{app.app}</span>
-                    <span className="shrink-0 font-mono text-[10px] text-muted-foreground">{app.bundleId}</span>
-                  </button>
-                ))}
-              </div>
+              <PermissionRow
+                label={t('settings.computerUse.permissions.screenRecording')}
+                granted={screenRecordingGranted}
+                busy={permBusy}
+                checking={permChecking}
+                onRequest={() => void requestPermission('screenRecording')}
+                requestLabel={t('settings.computerUse.permissions.requestScreenRecording')}
+                grantedLabel={t('settings.computerUse.permissions.buttonGranted')}
+                openingLabel={t('settings.computerUse.permissions.opening')}
+              />
             </div>
           )}
 
-          <ul className="mt-3 divide-y divide-border rounded-md border border-border">
-            {alwaysAllow.length === 0 ? (
-              <li className="px-3 py-3 text-xs text-muted-foreground">
-                {t('settings.computerUse.alwaysAllow.empty')}
-              </li>
-            ) : (
-              alwaysAllow.map((app) => (
-                <li key={app.bundleId} className="flex items-center justify-between gap-3 px-3 py-2">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm text-foreground">{app.app}</p>
-                    <p className="truncate font-mono text-[11px] text-muted-foreground">{app.bundleId}</p>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-xs"
-                    className="shrink-0"
-                    onClick={() => void handleRemoveAlways(app.bundleId)}
-                    aria-label={t('settings.computerUse.alwaysAllow.remove', { app: app.app })}
-                  >
-                    <Trash2 />
-                  </Button>
-                </li>
-              ))
-            )}
-          </ul>
+          {permMessage && (
+            <p className="border-t border-border px-4 py-3 text-xs text-muted-foreground">{permMessage}</p>
+          )}
         </div>
-      )}
-
-      <div className="mt-4 rounded-lg border border-border bg-muted/10 p-4">
-        <p className="text-sm font-medium">{t('settings.computerUse.permissions.title')}</p>
-        <p className="mt-0.5 text-xs text-muted-foreground">
-          {t('settings.computerUse.permissions.description')}
-        </p>
-
-        <div className="mt-2 flex items-start justify-between gap-3">
-          <div className="min-w-0 text-xs text-muted-foreground">
-            {(permissionStatus.helperName || permissionStatus.helperPath) ? (
-              <>
-                <p className="truncate font-medium text-foreground">
-                  {permissionStatus.helperName ?? t('settings.computerUse.permissions.helperName')}
-                </p>
-                {permissionStatus.helperBundleId && (
-                  <p className="truncate font-mono text-[11px]" title={permissionStatus.helperBundleId}>
-                    {permissionStatus.helperBundleId}
-                  </p>
-                )}
-                {permissionStatus.helperPath && (
-                  <p className="truncate font-mono text-[11px]" title={permissionStatus.helperPath}>
-                    {permissionStatus.helperPath}
-                  </p>
-                )}
-              </>
-            ) : (
-              <p className="text-muted-foreground">
-                {t('settings.computerUse.permissions.helperName')}
-              </p>
-            )}
-          </div>
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            className="shrink-0"
-            disabled={permBusy || permChecking || recheckBusy}
-            onClick={() => void handleRecheckPermissions()}
-          >
-            {recheckBusy
-              ? t('settings.computerUse.permissions.rechecking')
-              : t('settings.computerUse.permissions.recheck')}
-          </Button>
-        </div>
-
-        {permChecking ? (
-          <div className="mt-3">
-            <Badge variant="outline" className="gap-1 text-muted-foreground">
-              <Loader2 className="size-3 animate-spin" aria-hidden="true" />
-              {t('settings.computerUse.permissions.checking')}
-            </Badge>
-          </div>
-        ) : (
-          <div className="mt-3 divide-y divide-border rounded-md border border-border">
-            <PermissionRow
-              label={t('settings.computerUse.permissions.accessibility')}
-              granted={accessibilityGranted}
-              busy={permBusy}
-              checking={permChecking}
-              onRequest={() => void requestPermission('accessibility')}
-              requestLabel={t('settings.computerUse.permissions.requestAccessibility')}
-              grantedLabel={t('settings.computerUse.permissions.buttonGranted')}
-              openingLabel={t('settings.computerUse.permissions.opening')}
-            />
-            <PermissionRow
-              label={t('settings.computerUse.permissions.screenRecording')}
-              granted={screenRecordingGranted}
-              busy={permBusy}
-              checking={permChecking}
-              onRequest={() => void requestPermission('screenRecording')}
-              requestLabel={t('settings.computerUse.permissions.requestScreenRecording')}
-              grantedLabel={t('settings.computerUse.permissions.buttonGranted')}
-              openingLabel={t('settings.computerUse.permissions.opening')}
-            />
-          </div>
-        )}
-
-        {permMessage && (
-          <p className="mt-3 text-xs text-muted-foreground">{permMessage}</p>
-        )}
       </div>
     </div>
   )
@@ -453,7 +455,7 @@ function PermissionRow({
 }) {
   const Icon = granted ? CheckCircle2 : CircleAlert
   return (
-    <div className="flex items-center justify-between gap-3 px-3 py-2.5">
+    <div className="flex items-center justify-between gap-3 px-4 py-2.5">
       <div className="flex min-w-0 items-center gap-2">
         <Icon
           className={cn('size-4 shrink-0', granted ? 'text-emerald-500' : 'text-muted-foreground')}
@@ -461,16 +463,24 @@ function PermissionRow({
         />
         <span className="text-sm text-foreground">{label}</span>
       </div>
-      <Button
-        type="button"
-        variant="secondary"
-        size="sm"
-        disabled={busy || checking || granted}
-        onClick={onRequest}
-      >
-        {busy ? openingLabel : granted ? grantedLabel : requestLabel}
-      </Button>
+      {granted ? (
+        <Badge
+          variant="outline"
+          className="border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+        >
+          {grantedLabel}
+        </Badge>
+      ) : (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={busy || checking}
+          onClick={onRequest}
+        >
+          {busy ? openingLabel : requestLabel}
+        </Button>
+      )}
     </div>
   )
 }
-

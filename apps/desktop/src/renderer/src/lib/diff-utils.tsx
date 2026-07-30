@@ -492,7 +492,7 @@ const MARKER_CLASS: Record<DiffLine['kind'], string> = {
   unchanged: 'inline-block w-[1ch] select-none text-center mr-1 text-transparent',
 }
 
-const ESTIMATED_LINE_HEIGHT = 23
+const ESTIMATED_LINE_HEIGHT = 20
 const DIFF_LINE_HEIGHT_RATIO = 1.625
 const DIFF_OVERSCAN = 8
 const DIFF_SCROLLBAR_SIZE = 6
@@ -581,7 +581,7 @@ export const DiffView = forwardRef<HTMLDivElement, {
     const el = scrollRef.current
     if (!el) return
     const styles = window.getComputedStyle(el)
-    const fontSize = Number.parseFloat(styles.fontSize) || 14
+    const fontSize = Number.parseFloat(styles.fontSize) || 12
     const parsedLineHeight = Number.parseFloat(styles.lineHeight)
     const nextLineHeight = Number.isFinite(parsedLineHeight) && parsedLineHeight > 0
       ? parsedLineHeight
@@ -653,7 +653,7 @@ export const DiffView = forwardRef<HTMLDivElement, {
 
   const outerClassName = useMemo(() =>
     cn(
-      'flex rounded bg-background/70 py-2 text-sm font-mono leading-relaxed text-foreground',
+      'flex rounded bg-background/70 py-2 text-[12px] font-mono leading-relaxed text-foreground',
       autoScrollBottom ? 'overflow-hidden' : 'overflow-x-hidden overflow-y-auto',
       maxHeight ?? 'max-h-[300px]',
       hideScrollbar && 'hide-scrollbar',

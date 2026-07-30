@@ -41,6 +41,47 @@ export interface ComputerResultInfo {
   }
 }
 
+/**
+ * Session-local cache so streaming act/query/wait can show the target app icon
+ * before the tool result (with successorRoot.bundleId) arrives.
+ * Populated from prior launch/focus/snapshot/act/query/wait results.
+ */
+const stateIdToBundleId = new Map<string, string>()
+let lastTargetBundleId: string | undefined
+
+/** @internal vitest only */
+export function resetComputerUseTargetCacheForTests(): void {
+  stateIdToBundleId.clear()
+  lastTargetBundleId = undefined
+}
+
+function rememberComputerUseTarget(
+  info: ComputerResultInfo,
+  params?: Record<string, unknown>,
+): void {
+  if (!info.bundleId) return
+  lastTargetBundleId = info.bundleId
+  if (info.stateId) stateIdToBundleId.set(info.stateId, info.bundleId)
+  // act/query/zoom/wait_for take a base stateId — map it so the next streaming
+  // call with the same state still resolves the icon.
+  const inputState =
+    typeof params?.stateId === 'string' ? params.stateId.trim() : ''
+  if (inputState) stateIdToBundleId.set(inputState, info.bundleId)
+}
+
+/** Best-effort extract when full JSON parse fails (e.g. truncated huge diffs). */
+function scrapeBundleId(raw: string): string | undefined {
+  // Prefer the first reverse-DNS-looking bundle id in the payload.
+  const matches = raw.matchAll(
+    /"bundleId"\s*:\s*"([A-Za-z0-9][A-Za-z0-9._-]{0,253})"/g,
+  )
+  for (const m of matches) {
+    const id = m[1]
+    if (id && id.includes('.')) return id
+  }
+  return undefined
+}
+
 export function getComputerOp(mcpToolName: string): ComputerOp | null {
   if (!mcpToolName.startsWith('computer_')) return null
   let bare = mcpToolName.slice('computer_'.length)
@@ -360,7 +401,9 @@ function matchRunningBundleId(
  * Best-effort target app for the leading tool-row icon.
  * - list: never (caller uses Computer Use glyph)
  * - launch/focus: the app being launched/focused — never frontmost
- * - other ops: result root identity
+ * - other ops: result root / successorRoot identity
+ * - streaming act/query/…: fall back to stateId cache or last Computer Use target
+ *   so the row shows the app icon instead of the default pointer glyph
  */
 export function computerTargetBundleId(
   op: ComputerOp,
@@ -373,13 +416,28 @@ export function computerTargetBundleId(
       : 'list'
     if (action === 'list') return undefined
     // Prefer explicit launch/focus result target, then the app argument.
-    if (info.bundleId) return info.bundleId
+    if (info.bundleId) {
+      rememberComputerUseTarget(info, params)
+      return info.bundleId
+    }
     const appArg = typeof params.app === 'string' ? params.app.trim() : ''
-    if (appArg.includes('.')) return appArg
+    if (appArg.includes('.')) {
+      lastTargetBundleId = appArg
+      return appArg
+    }
     return undefined
   }
-  if (info.bundleId) return info.bundleId
-  return undefined
+  if (info.bundleId) {
+    rememberComputerUseTarget(info, params)
+    return info.bundleId
+  }
+  const stateId =
+    typeof params.stateId === 'string' ? params.stateId.trim() : ''
+  if (stateId) {
+    const cached = stateIdToBundleId.get(stateId)
+    if (cached) return cached
+  }
+  return lastTargetBundleId
 }
 
 /** Pull a count from a TOON tabular array header `name[N]{...}:`. */
@@ -526,7 +584,18 @@ export function parseComputerResult(
 
   // computer_apps returns TOON (not JSON). Fall back to lightweight TOON scrape.
   if (!parsedJson) {
-    if (op === 'apps') return parseAppsResult(null, params, result)
+    if (op === 'apps') {
+      const appsInfo = parseAppsResult(null, params, result)
+      rememberComputerUseTarget(appsInfo, params)
+      return appsInfo
+    }
+    // Huge act diffs can truncate mid-JSON in some transports; still recover icon.
+    const scraped = scrapeBundleId(result)
+    if (scraped) {
+      const info: ComputerResultInfo = { status: 'neutral', bundleId: scraped }
+      rememberComputerUseTarget(info, params)
+      return info
+    }
     return { status: 'neutral' }
   }
 
@@ -540,13 +609,13 @@ export function parseComputerResult(
     }
   }
 
+  let info: ComputerResultInfo
+
   if (op === 'apps') {
-    return parseAppsResult(obj, params)
-  }
-
-  if (op === 'snapshot') {
+    info = parseAppsResult(obj, params)
+  } else if (op === 'snapshot') {
     const root = rootIdentity(obj.root)
-    return {
+    info = {
       status: 'ok',
       imagePath: imagePath(obj.image),
       app: root.app,
@@ -554,11 +623,9 @@ export function parseComputerResult(
       title: root.title,
       stateId: typeof obj.stateId === 'string' ? obj.stateId : undefined,
     }
-  }
-
-  if (op === 'zoom') {
+  } else if (op === 'zoom') {
     const root = rootIdentity(obj.root)
-    return {
+    info = {
       status: 'ok',
       imagePath: imagePath(obj.image),
       app: root.app,
@@ -566,11 +633,9 @@ export function parseComputerResult(
       title: root.title,
       stateId: typeof obj.stateId === 'string' ? obj.stateId : undefined,
     }
-  }
-
-  if (op === 'query') {
+  } else if (op === 'query') {
     const root = rootIdentity(obj.root)
-    return {
+    info = {
       status: 'ok',
       app: root.app,
       bundleId: root.bundleId,
@@ -579,9 +644,7 @@ export function parseComputerResult(
         matches: Array.isArray(obj.matches) ? obj.matches.length : undefined,
       },
     }
-  }
-
-  if (op === 'act') {
+  } else if (op === 'act') {
     const root = rootIdentity(obj.successorRoot)
     const outcome =
       obj.outcome === 'worked' ||
@@ -589,12 +652,12 @@ export function parseComputerResult(
       obj.outcome === 'unknown'
         ? obj.outcome
         : undefined
-    return {
+    info = {
       status: 'ok',
       outcome,
       imagePath: imagePath(obj.successorImage),
       app: root.app,
-      bundleId: root.bundleId,
+      bundleId: root.bundleId ?? scrapeBundleId(result),
       title: root.title,
       stateId:
         typeof obj.successorStateId === 'string'
@@ -604,24 +667,27 @@ export function parseComputerResult(
         evidence: Array.isArray(obj.evidence) ? obj.evidence.length : undefined,
       },
     }
+  } else {
+    const waitStatus =
+      obj.status === 'preexisting' ||
+      obj.status === 'verified' ||
+      obj.status === 'failed'
+        ? obj.status
+        : undefined
+    const root = rootIdentity(obj.successorRoot ?? obj.root)
+    info = {
+      status: 'ok',
+      waitStatus,
+      app: root.app,
+      bundleId: root.bundleId,
+      title: root.title,
+      stateId:
+        typeof obj.successorStateId === 'string'
+          ? obj.successorStateId
+          : undefined,
+    }
   }
 
-  const waitStatus =
-    obj.status === 'preexisting' ||
-    obj.status === 'verified' ||
-    obj.status === 'failed'
-      ? obj.status
-      : undefined
-  const root = rootIdentity(obj.successorRoot ?? obj.root)
-  return {
-    status: 'ok',
-    waitStatus,
-    app: root.app,
-    bundleId: root.bundleId,
-    title: root.title,
-    stateId:
-      typeof obj.successorStateId === 'string'
-        ? obj.successorStateId
-        : undefined,
-  }
+  rememberComputerUseTarget(info, params)
+  return info
 }

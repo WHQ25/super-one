@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 import {
   computerInputSummary,
   computerTargetBundleId,
@@ -6,7 +6,12 @@ import {
   getComputerOp,
   isReadComputerOp,
   parseComputerResult,
+  resetComputerUseTargetCacheForTests,
 } from './computer-tool-display'
+
+beforeEach(() => {
+  resetComputerUseTargetCacheForTests()
+})
 
 describe('getComputerOp', () => {
   it('recognizes the complete Computer Use surface', () => {
@@ -361,5 +366,71 @@ describe('parseComputerResult', () => {
     expect(parseComputerResult('query', 'not json', false)).toEqual({
       status: 'neutral',
     })
+  })
+
+  it('resolves act icon from successorRoot even when outcome is unknown', () => {
+    const info = parseComputerResult(
+      'act',
+      JSON.stringify({
+        outcome: 'unknown',
+        grounding: 'semantic',
+        successorStateId: 'S2',
+        successorRoot: {
+          app: '爱奇艺',
+          bundleId: 'com.iqiyi.player',
+          title: '爱奇艺',
+        },
+        evidence: [{ description: 'ax press @e32' }],
+      }),
+      false,
+      { stateId: 'S1', delivery: 'semantic' },
+    )
+    expect(info).toMatchObject({
+      outcome: 'unknown',
+      bundleId: 'com.iqiyi.player',
+      stateId: 'S2',
+    })
+    expect(
+      computerTargetBundleId(
+        'act',
+        { stateId: 'S1', delivery: 'semantic' },
+        info,
+      ),
+    ).toBe('com.iqiyi.player')
+  })
+
+  it('uses prior snapshot/act target so streaming act shows the app icon', () => {
+    parseComputerResult(
+      'snapshot',
+      JSON.stringify({
+        stateId: 'S1',
+        root: {
+          app: '爱奇艺',
+          bundleId: 'com.iqiyi.player',
+          title: '爱奇艺',
+        },
+      }),
+      false,
+    )
+    // No result yet (streaming) — should still resolve via stateId cache.
+    expect(
+      computerTargetBundleId(
+        'act',
+        { stateId: 'S1', actions: [{ type: 'press', ref: '@e32' }] },
+        { status: 'neutral' },
+      ),
+    ).toBe('com.iqiyi.player')
+  })
+
+  it('scrapes bundleId from truncated act JSON for the leading icon', () => {
+    const truncated =
+      '{"outcome":"unknown","successorRoot":{"app":"爱奇艺","bundleId":"com.iqiyi.player","title":"爱奇艺"},"diff":{"removed":["@e1"'
+    const info = parseComputerResult('act', truncated, false, {
+      stateId: 'S1',
+    })
+    expect(info.bundleId).toBe('com.iqiyi.player')
+    expect(
+      computerTargetBundleId('act', { stateId: 'S1' }, info),
+    ).toBe('com.iqiyi.player')
   })
 })

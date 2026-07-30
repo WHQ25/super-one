@@ -99,12 +99,78 @@ describe('P2 service policy + foreground gate', () => {
     frontmostBundle = 'com.google.Chrome' // user is elsewhere
     const obs = await service.observe()
     const result = await service.act(obs.stateId, [{ type: 'click', x: 10, y: 20 }])
-    expect(result.outcome).toBe('unknown') // no AX verify yet
+    // Same visual outline before/after → still unknown (no AX/diff proof).
+    expect(result.outcome).toBe('unknown')
     expect(result.grounding).toBe('app-directed')
     expect(adapter.act).toHaveBeenCalledWith(
       expect.objectContaining({ delivery: 'app-directed' }),
     )
     expect(adapter.frontmost).not.toHaveBeenCalled()
+  })
+
+  it('promotes unknown press to worked when re-observe shows a structural outline diff', async () => {
+    const root = makeRoot()
+    let lookCount = 0
+    adapter.look = vi.fn(async (r) => {
+      lookCount += 1
+      // First look = observe; second = act successor with a rewritten tree.
+      if (lookCount === 1) {
+        return {
+          root: r,
+          outline: {
+            ref: '@e1',
+            role: 'window',
+            name: 'Home',
+            children: [
+              { ref: '@e2', role: 'button', name: '历史', pictureOnly: false },
+              { ref: '@e3', role: 'staticText', value: 'feed-a', pictureOnly: false },
+              { ref: '@e4', role: 'staticText', value: 'feed-b', pictureOnly: false },
+              { ref: '@e5', role: 'staticText', value: 'feed-c', pictureOnly: false },
+            ],
+          },
+          image: { mimeType: 'image/png', data: 'xx', width: 800, height: 600 },
+          coordinateSpace: { width: 800, height: 600, scale: 1, fullScreen: false },
+          nativeLookId: 'before',
+        }
+      }
+      return {
+        root: r,
+        outline: {
+          ref: '@e1',
+          role: 'window',
+          name: 'History',
+          children: [
+            { ref: '@e2', role: 'button', name: '历史', pictureOnly: false },
+            { ref: '@e10', role: 'staticText', value: '观看历史', pictureOnly: false },
+            { ref: '@e11', role: 'staticText', value: '清空历史', pictureOnly: false },
+          ],
+        },
+        image: { mimeType: 'image/png', data: 'yy', width: 800, height: 600 },
+        coordinateSpace: { width: 800, height: 600, scale: 1, fullScreen: false },
+        nativeLookId: 'after',
+      }
+    })
+    adapter.act = vi.fn(async () => ({
+      steps: [
+        {
+          applied: true,
+          unknown: true,
+          description: 'ax press @e2',
+          before: { value: '历史', name: '' },
+          after: { value: '历史', name: '' },
+        },
+      ],
+    }))
+    adapter.listRoots = vi.fn(async () => [root])
+
+    const obs = await service.observe(undefined, 'fused')
+    const result = await service.act(
+      obs.stateId,
+      [{ type: 'press', ref: '@e2' }],
+      { delivery: 'semantic' },
+    )
+    expect(result.outcome).toBe('worked')
+    expect(result.diff?.removed.length ?? 0).toBeGreaterThanOrEqual(3)
   })
 
   it('defaults to window capture and preserves explicit display scope', async () => {

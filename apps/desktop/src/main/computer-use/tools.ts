@@ -182,7 +182,7 @@ const toolDefs: Array<{
       + 'Do NOT dump every window by default — pass includeRoots=true only when you need @rN roots for multi-window targeting. '
       + 'action=focus|launch accepts display name (any locale) or reverse-DNS bundleId; host resolves to a stable bundleId before the permission grant so one allow covers later snapshot/act. '
       + 'Launch/focus returns a slim {target} confirmation. If the user only asks to open an app, launch once and stop when target is returned. '
-      + 'Prefer snapshot+act with delivery=app-directed over focus. Prefer browser_* / shell when a non-GUI path exists.',
+      + 'Prefer snapshot+act over focus. When actions target @eN refs, prefer delivery=semantic; otherwise delivery=app-directed. Prefer browser_* / shell when a non-GUI path exists.',
     shape: {
       ...descriptionField,
       action: z.enum(['list', 'focus', 'launch']).optional().describe('Default list'),
@@ -267,13 +267,16 @@ const toolDefs: Array<{
     name: 'computer_act',
     description:
       'Submit 1–20 related UI actions as a checked transaction against a stateId. '
-      + 'Default delivery=app-directed posts input to the target app PID in the background '
-      + '(does not steal the user\'s frontmost app or require computer_apps focus). '
+      + 'Delivery policy (pick explicitly when possible): '
+      + '(1) Prefer delivery=semantic whenever actions use @eN refs and the action is press/setText/click(ref)/typeText(ref) — pure AX, most reliable for labeled controls. '
+      + '(2) Use delivery=app-directed (runtime default if omitted) for coordinate click/type/scroll/drag/keypress or when no usable AX ref exists — posts CGEvent to the target app PID in the background without stealing frontmost. '
+      + '(3) Use delivery=physical only when app-directed fails and global HID is required (requires frontmost; disruptive). '
       + 'Actions: click, typeText, keypress, scroll(dx,dy), drag(path≥2 points), moveMouse, press/setText (AX). '
       + 'scroll: positive dy scrolls content down; optional ref uses element center. '
       + 'drag: path is capture-space points; virtual cursor animates along the path. '
-      + 'Use delivery=physical only for global HID when app-directed fails (requires frontmost; disruptive). '
-      + 'Returns outcome worked|didnt|unknown based on re-observation, not API success codes. '
+      + 'Returns outcome worked|didnt|unknown based on re-observation (not API success codes): '
+      + 'worked when AX readback, expect, typed text, or a meaningful successor outline diff confirms effect; '
+      + 'unknown only when applied but unprovable; didnt on hard failure or failed expect. '
       + 'When the successor has pixels, successorImage.path contains the fresh screenshot. '
       + 'Stale stateId (UI changed since snapshot) is rejected before side effects. '
       + 'delivery=semantic never silently upgrades to app-directed/physical input.',
@@ -286,7 +289,9 @@ const toolDefs: Array<{
         .enum(['semantic', 'app-directed', 'physical'])
         .optional()
         .describe(
-          'Default app-directed (background postToPid). physical=global HID+frontmost. semantic requires AX (P3).',
+          'Prefer semantic when actions target @eN refs (press/setText/click/typeText). '
+            + 'Omit or app-directed = background postToPid (default). '
+            + 'physical = global HID + frontmost only as last resort.',
         ),
     },
   },

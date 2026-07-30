@@ -5,6 +5,7 @@ import {
   targetIdentity,
   uniqueApps,
 } from './app-identity'
+import { refineActOutcome } from './outcome'
 import {
   collectRefs,
   diffOutlines,
@@ -23,7 +24,6 @@ import { RootRegistry } from './root-registry'
 import { StateStore } from './state-store'
 import {
   ComputerUseError,
-  type ActionOutcome,
   type ActResult,
   type AppsActionResult,
   type AppsListOptions,
@@ -793,36 +793,21 @@ export class ComputerUseService {
         after: s.after,
       }))
 
-      let finalOutcome = deriveOutcome(platformResult.steps, options.expect, successor.outline)
       const diff = buildDiff(base.outline, successor.outline)
 
-      // Optional postcondition check adjusts outcome.
+      let expectHolds: boolean | null = null
       if (options.expect) {
         const binding = bindCondition(options.expect, base.outline)
-        const ok = evaluateBoundCondition(binding, successor.outline)
-        if (ok && finalOutcome === 'unknown') finalOutcome = 'worked'
-        if (!ok && finalOutcome === 'worked') finalOutcome = 'didnt'
+        expectHolds = evaluateBoundCondition(binding, successor.outline)
       }
 
-      // Heuristic: typed/set text appears in successor outline → worked.
-      if (finalOutcome === 'unknown') {
-        for (const a of actions) {
-          if ((a.type === 'typeText' || a.type === 'setText') && a.text) {
-            if (outlineContainsText(successor.outline, a.text)) {
-              finalOutcome = 'worked'
-              break
-            }
-          }
-        }
-      }
-
-      // Heuristic: step-level before/after confirms setText.
-      if (finalOutcome === 'unknown') {
-        const confirmed = platformResult.steps.some(
-          (s) => s.applied && !s.unknown && !s.confirmedNoEffect,
-        )
-        if (confirmed) finalOutcome = 'worked'
-      }
+      const finalOutcome = refineActOutcome({
+        steps: platformResult.steps,
+        actions,
+        successorOutline: successor.outline,
+        diff,
+        expectHolds,
+      })
 
       return {
         outcome: finalOutcome,
@@ -1034,33 +1019,6 @@ export class ComputerUseService {
     }
     return focused
   }
-}
-
-function deriveOutcome(
-  steps: Array<{ applied: boolean; confirmedNoEffect?: boolean; unknown?: boolean }>,
-  _expect: Condition | undefined,
-  _outline: import('./types').UiOutlineNode,
-): ActionOutcome {
-  if (steps.length === 0) return 'didnt'
-  // Any hard failure → didnt (even if other steps claimed unknown).
-  if (steps.some((s) => s.confirmedNoEffect || !s.applied)) {
-    if (steps.every((s) => !s.applied || s.confirmedNoEffect)) return 'didnt'
-  }
-  if (steps.some((s) => s.unknown)) return 'unknown'
-  if (steps.every((s) => s.applied && !s.confirmedNoEffect)) return 'worked'
-  if (steps.some((s) => s.confirmedNoEffect || !s.applied)) return 'didnt'
-  return 'unknown'
-}
-
-function outlineContainsText(outline: import('./types').UiOutlineNode, text: string): boolean {
-  if (!text) return false
-  const stack = [outline]
-  while (stack.length) {
-    const n = stack.pop()!
-    if ((n.name ?? '').includes(text) || (n.value ?? '').includes(text)) return true
-    if (n.children) stack.push(...n.children)
-  }
-  return false
 }
 
 function buildDiff(

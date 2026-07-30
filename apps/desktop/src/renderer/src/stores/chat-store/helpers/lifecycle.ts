@@ -127,5 +127,10 @@ export async function _ensureClaudeSessionReadyForSend(
   if (!sid) return
   const session = project._sessions[sid]
   if (!session || session.sessionProvider === 'codex' || session.sessionProvider === 'acp' || session.sessionProvider === 'opencode') return
-  await window.app.resumeSession(projectPath, sid, _getSessionCwd(projectPath, session))
+  try {
+    await window.app.resumeSession(projectPath, sid, _getSessionCwd(projectPath, session))
+  } catch {
+    // A renderer-created draft does not exist in SessionManager or SQLite yet.
+    // SEND_MESSAGE will resume it or create it with the same stable session id.
+  }
 }

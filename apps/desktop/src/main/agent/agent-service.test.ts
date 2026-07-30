@@ -471,7 +471,42 @@ describe('AgentService SESSIONS_RESUME (cwd sync)', () => {
   })
 })
 
-describe('AgentService SEND_MESSAGE (worktree cwd sync)', () => {
+describe('AgentService SEND_MESSAGE', () => {
+  it('creates a Claude session with the renderer draft id before the first send', async () => {
+    const service = new AgentService()
+    const send = vi.fn().mockResolvedValue(undefined)
+    const created = makeMockSession({
+      id: 'draft-sid',
+      cwd: '/repo/main',
+      snapshot: { harnessId: 'claude', messages: [] },
+      isStreaming: vi.fn(() => false),
+      send,
+    })
+    const createSession = vi.fn(() => created)
+    ;(service as { sessionManager: unknown }).sessionManager = {
+      getSession: vi.fn(() => null),
+      getActiveSession: vi.fn(() => null),
+      resumeSession: vi.fn(() => { throw new Error('Session not found: draft-sid') }),
+      createSession,
+    }
+    service.setup()
+    const handler = getRegisteredIpcHandler(AgentIpcChannels.SEND_MESSAGE)!
+    const request = {
+      content: 'first message',
+      sessionId: 'draft-sid',
+      provider: 'claude' as const,
+    }
+
+    await handler(null, '/repo/main', request)
+
+    expect(createSession).toHaveBeenCalledWith(expect.objectContaining({
+      projectPath: '/repo/main',
+      providerId: 'claude-base',
+      id: 'draft-sid',
+    }))
+    expect(send).toHaveBeenCalledWith(request)
+  })
+
   it('switches a prewarmed ACP session to the worktree cwd before send', async () => {
     const service = new AgentService()
     const switchCwd = vi.fn().mockResolvedValue(undefined)

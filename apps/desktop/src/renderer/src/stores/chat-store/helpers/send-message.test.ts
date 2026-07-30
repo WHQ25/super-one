@@ -316,6 +316,23 @@ describe('sendMessageImpl: mosaic session scope', () => {
 })
 
 describe('sendMessageImpl: IPC dispatch + rollback', () => {
+  it('sends the first Claude message when the draft session is not persisted yet', async () => {
+    seedProject('/proj', 'draft-sid', {
+      sessionProvider: 'claude',
+      preferredProvider: 'claude',
+    })
+    mockResumeSession.mockRejectedValueOnce(new Error('Session not found: draft-sid'))
+
+    await useChatStore.getState().sendMessage('first message')
+
+    expect(mockResumeSession).toHaveBeenCalledWith('/proj', 'draft-sid', '/proj')
+    expect(mockSendMessage).toHaveBeenCalledWith('/proj', expect.objectContaining({
+      content: 'first message',
+      sessionId: 'draft-sid',
+      provider: 'claude',
+    }))
+  })
+
   it('sends the per-session OpenCode agent selection', async () => {
     seedProject('/proj', 'sid-opencode', {
       sessionProvider: 'opencode',

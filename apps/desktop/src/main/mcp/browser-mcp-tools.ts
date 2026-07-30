@@ -122,7 +122,7 @@ async function cdpTool(
 }
 
 function assertExperimental(enabled: boolean, setting: string): void {
-  if (!enabled) throw new Error(`The '${setting}' experimental browser tool is disabled. Enable it in Settings → Browser → Experimental tools.`)
+  if (!enabled) throw new Error(`The '${setting}' experimental browser tool is disabled. Enable it in Settings → Browser → Experimental Tools.`)
 }
 
 const tabField = {

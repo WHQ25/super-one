@@ -123,7 +123,7 @@ const ALL_SETTINGS_DOMAINS: SettingsDomainDef[] = [
       },
       {
         key: 'autoExpandFileDiffs',
-        label: 'Auto-expand File Diffs',
+        label: 'Auto-Expand File Diffs',
         type: 'boolean',
         note: 'When true, Edit/Write/FileChange tools expand to show the live diff while streaming. Default off: header with line counts only until expanded.',
         read: (s) => s.autoExpandFileDiffs,
@@ -191,7 +191,7 @@ const ALL_SETTINGS_DOMAINS: SettingsDomainDef[] = [
       },
       {
         key: 'computerUseAllowAllApps',
-        label: 'Allow all apps',
+        label: 'Allow All Apps',
         type: 'boolean',
         read: (s) => s.computerUseAllowAllApps,
         toPatch: (v) => ({ computerUseAllowAllApps: v as boolean }),

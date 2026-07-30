@@ -284,7 +284,7 @@ export class MacosPlatformAdapter implements PlatformAdapter {
     if (!allowAll && granted.length === 0) {
       throw new ComputerUseError(
         'NOT_GRANTED',
-        'No apps on the Computer Use allowlist — grant an app when prompted, add it under Settings → Computer Use → Always allow, or enable "Allow all apps".',
+        'No apps on the Computer Use allowlist — grant an app when prompted, add it under Settings → Computer Use → Always Allow, or enable "Allow All Apps".',
       )
     }
 

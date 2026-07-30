@@ -202,7 +202,7 @@ async function requestGrantFromUser(payload: {
   if (!session?.emitHostEvent) {
     throw new ComputerUseError(
       'NOT_GRANTED',
-      `App ${payload.bundleId} is not allowed and no session is available to prompt the user. Add it under Settings → Computer Use → Always allow, or re-run from a chat session.`,
+      `App ${payload.bundleId} is not allowed and no session is available to prompt the user. Add it under Settings → Computer Use → Always Allow, or re-run from a chat session.`,
       { bundleId: payload.bundleId },
     )
   }

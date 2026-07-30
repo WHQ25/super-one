@@ -696,6 +696,77 @@ describe('formatAcpRawOutput', () => {
     const compact = '{"title":"w","widget_code":"<div/>","width":1,"height":1,"isSVG":false}'
     expect(formatAcpRawOutput(compact)).toBe(compact)
   })
+
+  it('keeps a large session_collab_retrieve JSON payload untruncated when the update carries the tool name', () => {
+    const payload = JSON.stringify({
+      status: 'messages',
+      messages: [{
+        content: `Codex review findings:\n${'issue detail line. '.repeat(300)}`,
+        fromSessionId: 'child-codex',
+        from: { name: 'Codex', role: 'Reviewer', title: 'Codex - Reviewer', sessionId: 'child-codex' },
+      }],
+      peers: [{ name: 'Codex', role: 'Reviewer', title: 'Codex - Reviewer', sessionId: 'child-codex' }],
+    })
+    expect(payload.length).toBeGreaterThan(4000)
+
+    const events = mapSessionUpdate({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 'call-collab-1',
+      kind: 'other',
+      title: 'superone__session_collab_retrieve',
+      rawInput: {
+        variant: 'UseTool',
+        tool_name: 'superone__session_collab_retrieve',
+        tool_input: { credentials: ['s1sc_demo'] },
+      },
+      status: 'completed',
+      rawOutput: {
+        type: 'MCP',
+        tool_name: 'session_collab_retrieve',
+        server_name: 'superone',
+        output: { OkayOutput: payload },
+      },
+    } as never, ctx)
+    const result = events.find((e) => e.type === 'content_delta' && e.delta.type === 'tool_result')
+    expect(result).toMatchObject({ delta: { summary: payload, isError: false } })
+    // A truncated JSON string would fail this parse — that's the bug being guarded against.
+    expect(() => JSON.parse((result as { delta: { summary: string } }).delta.summary)).not.toThrow()
+  })
+
+  it('keeps a large session_collab_retrieve payload untruncated even on a sparse completion update (no title/rawInput)', () => {
+    const payload = JSON.stringify({
+      status: 'messages',
+      messages: [{ content: 'x'.repeat(4200), fromSessionId: 'child-codex' }],
+      peers: [{ name: 'Codex', sessionId: 'child-codex' }],
+    })
+    expect(payload.length).toBeGreaterThan(4000)
+
+    const events = mapSessionUpdate({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 'call-collab-2',
+      status: 'completed',
+      content: [{ type: 'content', content: { type: 'text', text: payload } }],
+    } as never, ctx)
+    const result = events.find((e) => e.type === 'content_delta' && e.delta.type === 'tool_result')
+    expect(result).toMatchObject({ delta: { summary: payload, isError: false } })
+    expect(() => JSON.parse((result as { delta: { summary: string } }).delta.summary)).not.toThrow()
+  })
+
+  it('still truncates an unrelated large JSON tool result at 4000 chars', () => {
+    const payload = JSON.stringify({ status: 'ok', items: Array.from({ length: 400 }, (_, i) => `entry-${i}`) })
+    expect(payload.length).toBeGreaterThan(4000)
+
+    const events = mapSessionUpdate({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 'call-other-1',
+      status: 'completed',
+      content: [{ type: 'content', content: { type: 'text', text: payload } }],
+    } as never, ctx)
+    const result = events.find((e) => e.type === 'content_delta' && e.delta.type === 'tool_result')
+    const summary = (result as { delta: { summary: string } }).delta.summary
+    expect(summary.length).toBeLessThanOrEqual(4001)
+    expect(() => JSON.parse(summary)).toThrow()
+  })
 })
 
 describe('Grok Build tool meta mapping', () => {

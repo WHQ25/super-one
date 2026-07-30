@@ -1,5 +1,6 @@
 import type { AgentEvent, ContentBlock, SlashCommandInfo } from '@superone/shared/agent-types'
 import type { SessionConfigOption, SessionUpdate, ToolCall, ToolCallUpdate } from '@agentclientprotocol/sdk'
+import { getBuiltinCapability } from '@superone/shared/capability-prompt-tags'
 import { extractModeConfig, extractModelConfig } from './acp-config'
 import { isHiddenAcpPermissionSlashCommand } from './acp-slash-filter'
 
@@ -981,7 +982,8 @@ function toolResultFromUpdate(update: ToolCallUpdate, terminalOutput?: string): 
   const summary = parts
     .map((p) => formatAcpRawOutput(p))
     .join('\n')
-  const capped = shouldKeepFullToolResult(summary) ? summary : summary.slice(0, 4000)
+  const toolName = normalizeAcpTool(update)?.toolName
+  const capped = shouldKeepFullToolResult(summary, toolName) ? summary : summary.slice(0, 4000)
   return {
     type: 'tool_result',
     toolUseId: update.toolCallId,
@@ -990,13 +992,35 @@ function toolResultFromUpdate(update: ToolCallUpdate, terminalOutput?: string): 
   }
 }
 
-function shouldKeepFullToolResult(summary: string): boolean {
+/**
+ * session_collab_* results are structured JSON the renderer JSON.parse()s
+ * (status/messages/peers); slicing at 4000 chars truncates mid-object and
+ * makes it unparsable, so a real reply silently renders as "no messages".
+ */
+function isCollabToolName(toolName: string | undefined): boolean {
+  if (!toolName) return false
+  const prefix = getBuiltinCapability('collab')?.toolPrefix
+  return !!prefix && toolName.includes(prefix)
+}
+
+/**
+ * Completion-only ACP updates can be sparse (no title/rawInput to re-derive
+ * toolName from), so also recognize the collab envelope by shape — mirrors
+ * the same fallback already used below for widget_code.
+ */
+function looksLikeCollabResult(obj: Record<string, unknown>): boolean {
+  return typeof obj.status === 'string'
+    && (Array.isArray(obj.messages) || Array.isArray(obj.peers) || Array.isArray(obj.launches) || typeof obj.sessionId === 'string')
+}
+
+function shouldKeepFullToolResult(summary: string, toolName?: string): boolean {
   if (summary.length <= 4000) return true
+  if (isCollabToolName(toolName)) return true
   const trimmed = summary.trim()
   if (!trimmed.startsWith('{')) return false
   try {
     const obj = JSON.parse(trimmed) as Record<string, unknown>
-    return typeof obj.widget_code === 'string' && obj.widget_code.length > 0
+    return (typeof obj.widget_code === 'string' && obj.widget_code.length > 0) || looksLikeCollabResult(obj)
   } catch {
     return false
   }

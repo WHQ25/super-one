@@ -32,6 +32,7 @@ const BESIDE_SYSTEM_SETTINGS_GAP = 16
 
 export type PrivacyPane = 'accessibility' | 'screenRecording'
 export type PermissionFloatFlow = 'guided' | 'single'
+type PermissionStatusPoll = () => Promise<ComputerUsePermissionStatus>
 
 interface Rect {
   x: number
@@ -42,7 +43,9 @@ interface Rect {
 
 let floatWindow: BrowserWindow | null = null
 let pollTimer: ReturnType<typeof setInterval> | null = null
-let doctorPoll: (() => Promise<ComputerUsePermissionStatus>) | null = null
+let doctorPoll: PermissionStatusPoll | null = null
+let pollInFlight = false
+let pollGeneration = 0
 let activeFlow: PermissionFloatFlow | null = null
 /** Current target pane for single flow, or active step for guided. */
 let activePane: PrivacyPane | null = null
@@ -50,8 +53,11 @@ let activePane: PrivacyPane | null = null
 let systemSettingsAnchor: Rect | null = null
 /** Monotonic id so overlapping open sequences don't show a stale float. */
 let showGeneration = 0
-/** Remember helper path across guided step transitions. */
-let lastHelperPath: string | undefined
+/** Remember helper identity across guided step transitions. */
+let lastHelperIdentity: Pick<
+  ComputerUsePermissionStatus,
+  'helperName' | 'helperBundleId' | 'helperPath'
+> = {}
 
 const PRIVACY_PANE_URLS: Record<PrivacyPane, string[]> = {
   accessibility: [
@@ -72,6 +78,8 @@ export function openComputerUsePrivacyPane(pane: PrivacyPane): void {
 }
 
 function stopPoll(): void {
+  pollGeneration += 1
+  pollInFlight = false
   if (pollTimer) {
     clearInterval(pollTimer)
     pollTimer = null
@@ -184,6 +192,8 @@ function loadFloat(
 ): void {
   const qs = new URLSearchParams({
     mode: 'computer-use-permissions',
+    helperName: status.helperName ?? '',
+    helperBundleId: status.helperBundleId ?? '',
     helperPath: status.helperPath ?? '',
     accessibility: status.accessibility ?? 'missing',
     screenRecording: status.screenRecording ?? 'missing',
@@ -204,6 +214,8 @@ function broadcastPermissionStatus(status: Partial<ComputerUsePermissionStatus> 
   const payload = {
     accessibility: status.accessibility,
     screenRecording: status.screenRecording,
+    helperName: status.helperName,
+    helperBundleId: status.helperBundleId,
     helperPath: status.helperPath,
     screenRecordingNeedsRelaunch: status.screenRecordingNeedsRelaunch,
     flow: status.flow ?? activeFlow,
@@ -217,6 +229,12 @@ function broadcastPermissionStatus(status: Partial<ComputerUsePermissionStatus> 
       // window tearing down
     }
   }
+}
+
+function destroyCurrentFloatPreservingPoll(): void {
+  const win = floatWindow
+  floatWindow = null
+  if (win && !win.isDestroyed()) win.destroy()
 }
 
 function waitForContentReady(win: BrowserWindow): Promise<void> {
@@ -241,10 +259,7 @@ function createHiddenFloatAt(
   anchor: Rect | null,
 ): BrowserWindow {
   // Tear down any previous instance so we never flash an old on-screen chip.
-  if (floatWindow && !floatWindow.isDestroyed()) {
-    floatWindow.destroy()
-  }
-  floatWindow = null
+  destroyCurrentFloatPreservingPoll()
 
   // Pre-compute screen position so the window is born in the right place
   // (left-center of System Settings).
@@ -316,15 +331,21 @@ function createHiddenFloatAt(
 
   activeFlow = flow
   activePane = pane
-  if (status.helperPath) lastHelperPath = status.helperPath
+  lastHelperIdentity = {
+    helperName: status.helperName ?? lastHelperIdentity.helperName,
+    helperBundleId: status.helperBundleId ?? lastHelperIdentity.helperBundleId,
+    helperPath: status.helperPath ?? lastHelperIdentity.helperPath,
+  }
   loadFloat(win, status, flow, pane)
 
   win.on('closed', () => {
+    if (floatWindow !== win) return
     stopPoll()
     doctorPoll = null
     activeFlow = null
     activePane = null
     systemSettingsAnchor = null
+    lastHelperIdentity = {}
     if (floatWindow === win) floatWindow = null
   })
 
@@ -380,7 +401,7 @@ export function showComputerUsePermissionFloat(
     flow: PermissionFloatFlow
     /** Required for single; optional for guided (defaults to first missing). */
     pane?: PrivacyPane
-    pollStatus?: () => Promise<ComputerUsePermissionStatus>
+    pollStatus?: PermissionStatusPoll
   },
 ): void {
   if (process.platform !== 'darwin') return
@@ -406,10 +427,7 @@ export function showComputerUsePermissionFloat(
   // so we never leave a chip on screen while re-opening Settings.
   showGeneration += 1
   const generation = showGeneration
-  if (floatWindow && !floatWindow.isDestroyed()) {
-    floatWindow.destroy()
-    floatWindow = null
-  }
+  destroyCurrentFloatPreservingPoll()
   systemSettingsAnchor = null
 
   void openSettingsThenShowFloat(status, flow, pane, generation)
@@ -432,15 +450,12 @@ export function continueComputerUsePermissionStep(): void {
     requested: true,
     accessibility: 'granted',
     screenRecording: 'missing',
-    helperPath: lastHelperPath,
+    ...lastHelperIdentity,
   }
   showGeneration += 1
   const generation = showGeneration
   // Tear down current chip while we switch panes — recreate under Screen Recording.
-  if (floatWindow && !floatWindow.isDestroyed()) {
-    floatWindow.destroy()
-    floatWindow = null
-  }
+  destroyCurrentFloatPreservingPoll()
   systemSettingsAnchor = null
   void openSettingsThenShowFloat(status, 'guided', 'screenRecording', generation)
 }
@@ -490,23 +505,37 @@ async function openSettingsThenShowFloat(
 }
 
 function startGrantedPoll(
-  pollStatus?: () => Promise<ComputerUsePermissionStatus>,
+  pollStatus?: PermissionStatusPoll,
 ): void {
   stopPoll()
   doctorPoll = pollStatus ?? null
   if (!doctorPoll) return
+  const generation = pollGeneration
 
+  // Read-only doctor poll (~1s). No periodic helper kill — OCU-style.
+  // Host restarts once only when doctor reports missing → granted for Screen Recording.
   pollTimer = setInterval(() => {
     void (async () => {
-      if (!doctorPoll) return
+      if (!doctorPoll || pollInFlight) return
+      pollInFlight = true
       try {
         const next = await doctorPoll()
+        if (generation !== pollGeneration) return
         broadcastPermissionStatus(next)
       } catch {
-        // helper may be restarting
+        // helper may be restarting after a grant transition
+      } finally {
+        if (generation === pollGeneration) pollInFlight = false
       }
     })()
   }, 1000)
+}
+
+/** Push a status snapshot into the float + settings listeners (e.g. after recheck). */
+export function pushComputerUsePermissionStatus(
+  status: ComputerUsePermissionStatus,
+): void {
+  broadcastPermissionStatus(status)
 }
 
 export function closeComputerUsePermissionFloat(): void {
@@ -516,6 +545,7 @@ export function closeComputerUsePermissionFloat(): void {
   activeFlow = null
   activePane = null
   systemSettingsAnchor = null
+  lastHelperIdentity = {}
   const win = floatWindow
   floatWindow = null
   if (win && !win.isDestroyed()) {

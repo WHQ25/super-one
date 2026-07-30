@@ -2443,6 +2443,8 @@ export const AgentIpcChannels = {
    * 'accessibility' | 'screenRecording' — single-pane float
    */
   COMPUTER_USE_OPEN_PERMISSIONS: 'computer-use:open-permissions',
+  /** Restart helper once and re-read TCC / runtime permission status. */
+  COMPUTER_USE_RECHECK_PERMISSIONS: 'computer-use:recheck-permissions',
   /** Dismiss the Computer Use permission drag float. */
   COMPUTER_USE_CLOSE_PERMISSION_FLOAT: 'computer-use:close-permission-float',
   /** Resize the permission float to match measured content size. */

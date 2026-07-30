@@ -277,6 +277,20 @@ interface AppAPI {
     requested: boolean
     accessibility?: string
     screenRecording?: string
+    helperName?: string
+    helperBundleId?: string
+    helperPath?: string
+    screenRecordingNeedsRelaunch?: boolean
+    reason?: string
+    error?: string
+  }>
+  /** Restart helper once and re-read TCC / runtime permission status. */
+  recheckComputerUsePermissions(): Promise<{
+    requested: boolean
+    accessibility?: string
+    screenRecording?: string
+    helperName?: string
+    helperBundleId?: string
     helperPath?: string
     screenRecordingNeedsRelaunch?: boolean
     reason?: string
@@ -289,6 +303,8 @@ interface AppAPI {
     callback: (status: {
       accessibility?: string
       screenRecording?: string
+      helperName?: string
+      helperBundleId?: string
       helperPath?: string
       screenRecordingNeedsRelaunch?: boolean
       pane?: 'accessibility' | 'screenRecording'

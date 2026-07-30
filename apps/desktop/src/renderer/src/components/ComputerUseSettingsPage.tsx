@@ -12,6 +12,8 @@ type RunningApp = { app: string; bundleId: string; pid: number; frontmost: boole
 type PermissionStatus = {
   accessibility?: string
   screenRecording?: string
+  helperName?: string
+  helperBundleId?: string
   helperPath?: string
   screenRecordingNeedsRelaunch?: boolean
   reason?: string
@@ -30,6 +32,7 @@ export function ComputerUseSettingsPage() {
   const [loading, setLoading] = useState(true)
   const [permBusy, setPermBusy] = useState(false)
   const [permChecking, setPermChecking] = useState(true)
+  const [recheckBusy, setRecheckBusy] = useState(false)
   const [permMessage, setPermMessage] = useState<string | null>(null)
   const [permissionStatus, setPermissionStatus] = useState<PermissionStatus>({})
   const [runningApps, setRunningApps] = useState<RunningApp[]>([])
@@ -74,6 +77,8 @@ export function ComputerUseSettingsPage() {
         ...prev,
         ...(next.accessibility != null ? { accessibility: next.accessibility } : {}),
         ...(next.screenRecording != null ? { screenRecording: next.screenRecording } : {}),
+        ...(next.helperName != null ? { helperName: next.helperName } : {}),
+        ...(next.helperBundleId != null ? { helperBundleId: next.helperBundleId } : {}),
         ...(next.helperPath != null ? { helperPath: next.helperPath } : {}),
         ...(next.screenRecordingNeedsRelaunch != null
           ? { screenRecordingNeedsRelaunch: next.screenRecordingNeedsRelaunch }
@@ -140,6 +145,36 @@ export function ComputerUseSettingsPage() {
     await persistAlwaysAllow([...alwaysAllow, app])
     setAddOpen(false)
     setAddQuery('')
+  }
+
+  async function handleRecheckPermissions() {
+    setRecheckBusy(true)
+    setPermMessage(null)
+    try {
+      const result = await window.app.recheckComputerUsePermissions()
+      if (result.error) {
+        setPermMessage(result.error)
+        return
+      }
+      setPermissionStatus(result)
+      if (
+        isPermissionGranted(result.accessibility)
+        && isPermissionGranted(result.screenRecording)
+      ) {
+        setPermMessage(t('settings.computerUse.permissions.alreadyGranted'))
+      } else {
+        setPermMessage(
+          t('settings.computerUse.permissions.recheckStillMissing', {
+            helperName:
+              result.helperName ?? t('settings.computerUse.permissions.helperName'),
+          }),
+        )
+      }
+    } catch (err) {
+      setPermMessage(err instanceof Error ? err.message : String(err))
+    } finally {
+      setRecheckBusy(false)
+    }
   }
 
   async function requestPermission(
@@ -319,6 +354,44 @@ export function ComputerUseSettingsPage() {
           {t('settings.computerUse.permissions.description')}
         </p>
 
+        <div className="mt-2 flex items-start justify-between gap-3">
+          <div className="min-w-0 text-xs text-muted-foreground">
+            {(permissionStatus.helperName || permissionStatus.helperPath) ? (
+              <>
+                <p className="truncate font-medium text-foreground">
+                  {permissionStatus.helperName ?? t('settings.computerUse.permissions.helperName')}
+                </p>
+                {permissionStatus.helperBundleId && (
+                  <p className="truncate font-mono text-[11px]" title={permissionStatus.helperBundleId}>
+                    {permissionStatus.helperBundleId}
+                  </p>
+                )}
+                {permissionStatus.helperPath && (
+                  <p className="truncate font-mono text-[11px]" title={permissionStatus.helperPath}>
+                    {permissionStatus.helperPath}
+                  </p>
+                )}
+              </>
+            ) : (
+              <p className="text-muted-foreground">
+                {t('settings.computerUse.permissions.helperName')}
+              </p>
+            )}
+          </div>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            className="shrink-0"
+            disabled={permBusy || permChecking || recheckBusy}
+            onClick={() => void handleRecheckPermissions()}
+          >
+            {recheckBusy
+              ? t('settings.computerUse.permissions.rechecking')
+              : t('settings.computerUse.permissions.recheck')}
+          </Button>
+        </div>
+
         {permChecking ? (
           <div className="mt-3">
             <Badge variant="outline" className="gap-1 text-muted-foreground">
@@ -400,5 +473,4 @@ function PermissionRow({
     </div>
   )
 }
-
 

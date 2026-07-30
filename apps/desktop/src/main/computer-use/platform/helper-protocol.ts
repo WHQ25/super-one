@@ -68,7 +68,14 @@ export interface HelperDoctor {
   bundleId: string
   bundlePath: string
   pid: number
+  /**
+   * Combined grant is true but process preflight still denied — host should
+   * relaunch the helper once so ScreenCaptureKit can use the new TCC state.
+   */
   screenRecordingNeedsRelaunch: boolean
+  /** Optional runtime-only probe (CGPreflight / AX); diagnostics only. */
+  accessibilityRuntime?: 'granted' | 'missing' | string
+  screenRecordingRuntime?: 'granted' | 'missing' | string
 }
 
 export interface HelperAppInfo {

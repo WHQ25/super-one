@@ -32,6 +32,10 @@ export {
   startComputerUseHelper,
   stopComputerUseHelper,
   getComputerUsePermissionStatus,
+  pollComputerUsePermissionStatus,
+  recheckComputerUsePermissionStatus,
+  noteComputerUsePermissionBaseline,
+  getComputerUsePermissionBaseline,
 } from './computer-use-helper-lifecycle'
 export type { ComputerUsePermissionStatus } from './computer-use-helper-lifecycle'
 export {
@@ -41,6 +45,7 @@ export {
   continueComputerUsePermissionStep,
   resizeComputerUsePermissionFloat,
   openComputerUsePrivacyPane,
+  pushComputerUsePermissionStatus,
 } from './computer-use-permission-window'
 export type { PrivacyPane, PermissionFloatFlow } from './computer-use-permission-window'
 export type { PlatformAdapter } from './platform/types'

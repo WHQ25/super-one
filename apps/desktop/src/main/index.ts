@@ -37,6 +37,9 @@ import { MobileShareToolCoordinator } from './remote/mobile-share-tool-coordinat
 import { startSuperoneMcpStdioBridge, stopSuperoneMcpStdioBridge } from './mcp/superone-mcp-stdio-ipc'
 import {
   getComputerUsePermissionStatus,
+  noteComputerUsePermissionBaseline,
+  pollComputerUsePermissionStatus,
+  recheckComputerUsePermissionStatus,
   startComputerUseHelper,
   stopComputerUseHelper,
 } from './computer-use/computer-use-helper-lifecycle'
@@ -44,6 +47,7 @@ import {
   closeComputerUsePermissionFloat,
   continueComputerUsePermissionStep,
   destroyComputerUsePermissionFloat,
+  pushComputerUsePermissionStatus,
   resizeComputerUsePermissionFloat,
   showComputerUsePermissionFloat,
   type PrivacyPane,
@@ -2334,7 +2338,9 @@ function registerIpcHandlers(): void {
       const status = await getComputerUsePermissionStatus(false)
       if (process.platform !== 'darwin') return status
 
-      const pollStatus = () => getComputerUsePermissionStatus(false)
+      // Shared with Recheck so poll does not re-trigger missing→granted restarts.
+      noteComputerUsePermissionBaseline(status)
+      const pollStatus = () => pollComputerUsePermissionStatus()
 
       if (request === false) {
         return status
@@ -2358,6 +2364,14 @@ function registerIpcHandlers(): void {
       return status
     },
   )
+  ipcMain.handle(AgentIpcChannels.COMPUTER_USE_RECHECK_PERMISSIONS, async () => {
+    // recheckComputerUsePermissionStatus notes baseline before return.
+    const status = await recheckComputerUsePermissionStatus()
+    if (!status.error) {
+      pushComputerUsePermissionStatus(status)
+    }
+    return status
+  })
   ipcMain.handle(AgentIpcChannels.COMPUTER_USE_CLOSE_PERMISSION_FLOAT, () => {
     closeComputerUsePermissionFloat()
   })

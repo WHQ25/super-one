@@ -11,6 +11,8 @@ type Flow = 'guided' | 'single'
 type PermissionSnapshot = {
   accessibility?: string
   screenRecording?: string
+  helperName?: string
+  helperBundleId?: string
   helperPath?: string
 }
 
@@ -46,6 +48,8 @@ function readBoot(): {
     flow,
     pane,
     status: {
+      helperName: params.get('helperName') ?? '',
+      helperBundleId: params.get('helperBundleId') ?? '',
       helperPath: params.get('helperPath') ? decodeURIComponent(params.get('helperPath')!) : '',
       accessibility: params.get('accessibility') ?? 'missing',
       screenRecording: params.get('screenRecording') ?? 'missing',
@@ -118,8 +122,11 @@ export function ComputerUsePermissionFloat(): JSX.Element {
   )
   const dragIconRef = useRef<DragIconPayload | null>(null)
   const [dragEpoch, setDragEpoch] = useState(0)
+  const [recheckBusy, setRecheckBusy] = useState(false)
+  const [recheckHint, setRecheckHint] = useState<string | null>(null)
 
   const helperPath = status.helperPath ?? ''
+  const helperName = status.helperName || t('settings.computerUse.permissions.helperName')
 
   useEffect(() => {
     let cancelled = false
@@ -139,6 +146,8 @@ export function ComputerUsePermissionFloat(): JSX.Element {
         ...prev,
         accessibility: next.accessibility ?? prev.accessibility,
         screenRecording: next.screenRecording ?? prev.screenRecording,
+        helperName: next.helperName ?? prev.helperName,
+        helperBundleId: next.helperBundleId ?? prev.helperBundleId,
         helperPath: next.helperPath ?? prev.helperPath,
       }))
       // Main may push pane when Continue is clicked (guided).
@@ -219,6 +228,54 @@ export function ComputerUsePermissionFloat(): JSX.Element {
     event.stopPropagation()
     setPhase('screenRecording')
     void window.app.continueComputerUsePermissionStep()
+  }
+
+  async function handleRecheck(event: MouseEvent) {
+    event.preventDefault()
+    event.stopPropagation()
+    if (recheckBusy) return
+    setRecheckBusy(true)
+    setRecheckHint(null)
+    try {
+      const result = await window.app.recheckComputerUsePermissions()
+      if (result.error) {
+        setRecheckHint(result.error)
+        return
+      }
+      setStatus((prev) => ({
+        ...prev,
+        accessibility: result.accessibility ?? prev.accessibility,
+        screenRecording: result.screenRecording ?? prev.screenRecording,
+        helperName: result.helperName ?? prev.helperName,
+        helperBundleId: result.helperBundleId ?? prev.helperBundleId,
+        helperPath: result.helperPath ?? prev.helperPath,
+      }))
+      const axOk = result.accessibility === 'granted'
+      const screenOk = result.screenRecording === 'granted'
+      if (flow === 'single') {
+        const granted = boot.pane === 'accessibility' ? axOk : screenOk
+        if (granted) setPhase('done')
+        else {
+          setRecheckHint(
+            t('settings.computerUse.permissions.recheckStillMissing', { helperName }),
+          )
+        }
+        return
+      }
+      if (axOk && screenOk) {
+        setPhase('done')
+      } else if (axOk && phase === 'accessibility') {
+        setPhase('accessibility_done')
+      } else {
+        setRecheckHint(
+          t('settings.computerUse.permissions.recheckStillMissing', { helperName }),
+        )
+      }
+    } catch (err) {
+      setRecheckHint(err instanceof Error ? err.message : String(err))
+    } finally {
+      setRecheckBusy(false)
+    }
   }
 
   const stepLabel = useMemo(() => {
@@ -312,8 +369,13 @@ export function ComputerUsePermissionFloat(): JSX.Element {
       <div className="flex items-start gap-1.5" style={dragRegion}>
         <div className="min-w-0 flex-1" style={dragRegion}>
           <p className="truncate text-xs font-semibold tracking-tight text-white">
-            {t('settings.computerUse.permissions.helperName')}
+            {helperName}
           </p>
+          {status.helperBundleId && (
+            <p className="truncate font-mono text-[9px] text-white/55" title={status.helperBundleId}>
+              {status.helperBundleId}
+            </p>
+          )}
           <p
             className={cn(
               'mt-0.5 flex items-center gap-1 text-xs font-semibold uppercase tracking-wide',
@@ -375,6 +437,38 @@ export function ComputerUsePermissionFloat(): JSX.Element {
       <p className="text-center text-[10px] font-medium leading-snug text-white/85" style={dragRegion}>
         {hint}
       </p>
+
+      {helperPath && (
+        <p
+          className="truncate border-t border-white/10 pt-1.5 font-mono text-[9px] text-white/50"
+          title={helperPath}
+          style={dragRegion}
+        >
+          {helperPath}
+        </p>
+      )}
+
+      {recheckHint && phase !== 'done' && phase !== 'accessibility_done' && (
+        <p className="text-center text-[9px] leading-snug text-amber-200/90" style={dragRegion}>
+          {recheckHint}
+        </p>
+      )}
+
+      {/* Recheck restarts the helper — only useful for Screen Recording sticky TCC. */}
+      {phase === 'screenRecording' && (
+        <button
+          type="button"
+          onClick={(e) => void handleRecheck(e)}
+          onMouseDown={(e) => e.stopPropagation()}
+          disabled={recheckBusy}
+          className="w-full rounded-lg border border-white/20 bg-white/10 px-2 py-1 text-[10px] font-semibold text-white/90 shadow hover:bg-white/15 disabled:opacity-50"
+          style={noDragRegion}
+        >
+          {recheckBusy
+            ? t('settings.computerUse.permissions.rechecking')
+            : t('settings.computerUse.permissions.recheck')}
+        </button>
+      )}
 
       {phase === 'accessibility_done' && flow === 'guided' && (
         <button

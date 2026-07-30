@@ -242,6 +242,9 @@ export type Messages = {
         screenRecordingGranted: string
         allGrantedHint: string
         done: string
+        recheck: string
+        rechecking: string
+        recheckStillMissing: string
       }
     }
     general: {
@@ -2294,6 +2297,9 @@ export const en: Messages = {
         screenRecordingGranted: 'Screen Recording granted',
         allGrantedHint: 'Both permissions are ready. Computer Use can run.',
         done: 'Done',
+        recheck: 'Recheck permission',
+        rechecking: 'Rechecking…',
+        recheckStillMissing: 'Still not granted. Enable {{helperName}} in System Settings, then recheck.',
       },
     },
     general: {

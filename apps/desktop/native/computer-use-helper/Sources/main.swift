@@ -14,6 +14,7 @@ import ApplicationServices
 import CoreGraphics
 import Darwin
 import Foundation
+import SQLite3
 
 // MARK: - Protocol
 
@@ -125,10 +126,11 @@ struct AnyEncodable: Encodable {
 // MARK: - Permissions
 //
 // Match Open Computer Use (Permissions.swift):
-// - Check Screen Recording with CGPreflightScreenCaptureAccess() — does NOT prompt.
-// - Never use SCShareableContent just to probe permission (that re-triggers the dialog).
-// - After the user grants Screen Recording in System Settings, the *running* process
-//   still has the old denied state until it fully quits and relaunches (OCU kills + restarts).
+// - Runtime: AXIsProcessTrusted / CGPreflightScreenCaptureAccess (never SCShareableContent probe).
+// - Persisted: read TCC.db auth_value for this helper's bundle id + path (OCU dual-channel).
+// - UI "granted" = TCC OR runtime so System Settings toggles are visible without process death.
+// - Capture still gates on runtime preflight; host restarts helper once when combined flips
+//   granted while runtime is still sticky-denied.
 
 func axTrusted() -> Bool {
     AXIsProcessTrusted()
@@ -154,15 +156,131 @@ func requestScreenRecordingAccess() -> Bool {
     return CGPreflightScreenCaptureAccess()
 }
 
+/// OCU-style: either persisted TCC row or live runtime API.
+private func permissionGranted(persisted: Bool?, runtime: Bool) -> Bool {
+    (persisted == true) || runtime
+}
+
+private struct PermissionClientRecord: Hashable {
+    let identifier: String
+    let type: Int32 // 0 = bundle id, 1 = path
+}
+
+/// Candidates for TCC.db client matching (bundle id first, then path).
+private func currentPermissionClients() -> [PermissionClientRecord] {
+    var records: [PermissionClientRecord] = []
+    var seen = Set<PermissionClientRecord>()
+    func append(_ record: PermissionClientRecord) {
+        if seen.insert(record).inserted {
+            records.append(record)
+        }
+    }
+    if let bundleId = Bundle.main.bundleIdentifier, !bundleId.isEmpty {
+        append(PermissionClientRecord(identifier: bundleId, type: 0))
+    }
+    let path = Bundle.main.bundleURL.standardizedFileURL.path
+    if !path.isEmpty {
+        append(PermissionClientRecord(identifier: path, type: 1))
+    }
+    return records
+}
+
+/// auth_value 2 = allowed (same as Open Computer Use).
+private func tccAuthorizationGranted(authValues: [Int32]) -> Bool {
+    authValues.contains(2)
+}
+
+private func tccAuthorization(
+    service: String,
+    clients: [PermissionClientRecord],
+    databasePath: String
+) -> Bool? {
+    guard !clients.isEmpty else { return nil }
+    var database: OpaquePointer?
+    guard sqlite3_open_v2(databasePath, &database, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else {
+        if database != nil { sqlite3_close(database) }
+        return nil
+    }
+    defer { sqlite3_close(database) }
+
+    let query = """
+    SELECT auth_value
+    FROM access
+    WHERE service = ? AND client = ? AND client_type = ?
+    ORDER BY last_modified DESC
+    LIMIT 1;
+    """
+    let sqliteTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+    var authValues: [Int32] = []
+
+    for client in clients {
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, query, -1, &statement, nil) == SQLITE_OK else {
+            if statement != nil { sqlite3_finalize(statement) }
+            return nil
+        }
+        defer { sqlite3_finalize(statement) }
+
+        sqlite3_bind_text(statement, 1, service, -1, sqliteTransient)
+        sqlite3_bind_text(statement, 2, client.identifier, -1, sqliteTransient)
+        sqlite3_bind_int(statement, 3, client.type)
+
+        if sqlite3_step(statement) == SQLITE_ROW {
+            authValues.append(sqlite3_column_int(statement, 0))
+        }
+    }
+
+    if authValues.isEmpty { return nil }
+    return tccAuthorizationGranted(authValues: authValues)
+}
+
+/// Best-effort TCC.db read (system + user DBs). Returns nil when unreadable / no row.
+private func tccPersistedGrants() -> (accessibility: Bool?, screenRecording: Bool?) {
+    let clients = currentPermissionClients()
+    let paths = [
+        "/Library/Application Support/com.apple.TCC/TCC.db",
+        NSHomeDirectory() + "/Library/Application Support/com.apple.TCC/TCC.db",
+    ]
+    var accessibility: Bool?
+    var screenRecording: Bool?
+    for path in paths {
+        if accessibility != true,
+           let value = tccAuthorization(
+            service: "kTCCServiceAccessibility",
+            clients: clients,
+            databasePath: path
+           ) {
+            accessibility = (accessibility == true) || value
+        }
+        if screenRecording != true,
+           let value = tccAuthorization(
+            service: "kTCCServiceScreenCapture",
+            clients: clients,
+            databasePath: path
+           ) {
+            screenRecording = (screenRecording == true) || value
+        }
+    }
+    return (accessibility, screenRecording)
+}
+
 func doctor() -> [String: Any] {
-    [
-        "accessibility": axTrusted() ? "granted" : "missing",
-        "screenRecording": screenRecordingTrusted() ? "granted" : "missing",
+    let axRuntime = axTrusted()
+    let screenRuntime = screenRecordingTrusted()
+    let tcc = tccPersistedGrants()
+    let axGranted = permissionGranted(persisted: tcc.accessibility, runtime: axRuntime)
+    let screenGranted = permissionGranted(persisted: tcc.screenRecording, runtime: screenRuntime)
+    // Combined granted but process preflight still denied → host should relaunch once.
+    let screenNeedsRelaunch = screenGranted && !screenRuntime
+    return [
+        "accessibility": axGranted ? "granted" : "missing",
+        "screenRecording": screenGranted ? "granted" : "missing",
         "bundleId": Bundle.main.bundleIdentifier ?? "unknown",
         "bundlePath": Bundle.main.bundleURL.path,
         "pid": ProcessInfo.processInfo.processIdentifier,
-        // Hint for clients: Screen Recording grants only apply after full process restart.
-        "screenRecordingNeedsRelaunch": !screenRecordingTrusted(),
+        "screenRecordingNeedsRelaunch": screenNeedsRelaunch,
+        "accessibilityRuntime": axRuntime ? "granted" : "missing",
+        "screenRecordingRuntime": screenRuntime ? "granted" : "missing",
     ]
 }
 

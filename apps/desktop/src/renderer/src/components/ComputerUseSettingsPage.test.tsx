@@ -10,6 +10,7 @@ vi.mock('react-i18next', () => ({
 const getAppSettings = vi.fn()
 const saveAppSettings = vi.fn()
 const openComputerUsePermissions = vi.fn()
+const recheckComputerUsePermissions = vi.fn()
 const listComputerUseRunningApps = vi.fn()
 const startDrag = vi.fn()
 const onComputerUsePermissionStatus = vi.fn(() => () => {})
@@ -20,6 +21,7 @@ Object.defineProperty(window, 'app', {
     getAppSettings,
     saveAppSettings,
     openComputerUsePermissions,
+    recheckComputerUsePermissions,
     listComputerUseRunningApps,
     startDrag,
     onComputerUsePermissionStatus,
@@ -51,6 +53,18 @@ describe('ComputerUseSettingsPage permissions', () => {
       requested: false,
       accessibility: 'missing',
       screenRecording: 'missing',
+      helperName: 'SuperOne Dev Computer Use',
+      helperBundleId: 'com.superone.computer-use.dev',
+      helperPath: '/Applications/SuperOne Dev Computer Use.app',
+    })
+    recheckComputerUsePermissions.mockResolvedValue({
+      requested: false,
+      accessibility: 'granted',
+      screenRecording: 'granted',
+      helperName: 'SuperOne Dev Computer Use',
+      helperBundleId: 'com.superone.computer-use.dev',
+      helperPath: '/Applications/SuperOne Dev Computer Use.app',
+      reason: 'already_granted',
     })
     listComputerUseRunningApps.mockResolvedValue([])
   })
@@ -62,6 +76,9 @@ describe('ComputerUseSettingsPage permissions', () => {
       expect(openComputerUsePermissions).toHaveBeenCalledTimes(1)
     })
     expect(openComputerUsePermissions).toHaveBeenCalledWith(false)
+    expect(screen.getByText('SuperOne Dev Computer Use')).toBeInTheDocument()
+    expect(screen.getByText('com.superone.computer-use.dev')).toBeInTheDocument()
+    expect(screen.getByText('/Applications/SuperOne Dev Computer Use.app')).toBeInTheDocument()
   })
 
   it('opens guided float when Computer Use is enabled and grants are missing', async () => {

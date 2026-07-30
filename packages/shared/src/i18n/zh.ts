@@ -265,6 +265,9 @@ export const zh: Messages = {
         screenRecordingGranted: '屏幕录制已授权',
         allGrantedHint: '两项权限都已就绪，可以使用 Computer Use。',
         done: '完成',
+        recheck: '重新检查权限',
+        rechecking: '正在重新检查…',
+        recheckStillMissing: '仍未授权。请在系统设置中启用 {{helperName}}，然后重新检查。',
       },
     },
     general: {

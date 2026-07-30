@@ -791,6 +791,8 @@ const appAPI = {
   openComputerUsePermissions: (
     request: boolean | 'guided' | 'accessibility' | 'screenRecording' = true,
   ) => ipcRenderer.invoke(AgentIpcChannels.COMPUTER_USE_OPEN_PERMISSIONS, request),
+  recheckComputerUsePermissions: () =>
+    ipcRenderer.invoke(AgentIpcChannels.COMPUTER_USE_RECHECK_PERMISSIONS),
   closeComputerUsePermissionFloat: () =>
     ipcRenderer.invoke(AgentIpcChannels.COMPUTER_USE_CLOSE_PERMISSION_FLOAT),
   resizeComputerUsePermissionFloat: (width: number, height: number) =>
@@ -801,6 +803,8 @@ const appAPI = {
     callback: (status: {
       accessibility?: string
       screenRecording?: string
+      helperName?: string
+      helperBundleId?: string
       helperPath?: string
       screenRecordingNeedsRelaunch?: boolean
       pane?: 'accessibility' | 'screenRecording'
@@ -812,6 +816,8 @@ const appAPI = {
       status: {
         accessibility?: string
         screenRecording?: string
+        helperName?: string
+        helperBundleId?: string
         helperPath?: string
         screenRecordingNeedsRelaunch?: boolean
         pane?: 'accessibility' | 'screenRecording'

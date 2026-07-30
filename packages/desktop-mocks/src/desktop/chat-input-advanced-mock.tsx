@@ -354,7 +354,7 @@ function MentionChipView({ mention }: { mention: MentionChipMock }) {
   const { kind, displayName } = mention
   return (
     <span
-      className="inline-flex items-center gap-1 rounded bg-muted mx-0.5 px-1.5 py-0.5 text-xs text-foreground select-none whitespace-nowrap align-baseline"
+      className="inline-flex h-4 max-h-4 items-center gap-0.5 overflow-hidden rounded bg-muted mx-0.5 px-1.5 text-[0.875rem] leading-none text-foreground select-none whitespace-nowrap align-middle"
       data-mention=""
     >
       {kind === "agent" ? (
@@ -362,9 +362,9 @@ function MentionChipView({ mention }: { mention: MentionChipMock }) {
       ) : kind === "directory" ? (
         <Folder className="size-3 shrink-0 text-blue-600 dark:text-blue-400" />
       ) : (
-        <FileIcon name={displayName} size={12} />
+        <FileIcon name={displayName} size={12} className="size-3 shrink-0" />
       )}
-      <span className="max-w-[120px] truncate">
+      <span className="max-w-[120px] truncate leading-none">
         {kind === "agent" && displayName.includes(":") ? displayName.split(":").pop() : displayName}
       </span>
       <span className="ml-0.5 text-muted-foreground">

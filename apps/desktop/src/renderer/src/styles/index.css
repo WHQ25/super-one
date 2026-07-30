@@ -381,11 +381,23 @@ body[data-scroll-locked] {
 
 /* TipTap ReactNodeView outer shell for inline mention atoms.
    Must be inline-flex (not bare `inline`) so the chip shares a vertical box
-   with surrounding text instead of sitting on a mismatched baseline. */
+   with surrounding text instead of sitting on a mismatched baseline.
+   Height is NOT locked here — capability chips use free leading-none blend;
+   resource pills lock height on the inner NodeViewWrapper only. */
 .mention-chip-wrapper {
   display: inline-flex;
   vertical-align: middle;
   line-height: 1;
+}
+
+/* Resource file/dir/agent/miniapp pills only — lock height to 1rem. */
+.mention-chip-wrapper:has([data-mention-kind='file']),
+.mention-chip-wrapper:has([data-mention-kind='directory']),
+.mention-chip-wrapper:has([data-mention-kind='agent']),
+.mention-chip-wrapper:has([data-mention-kind='miniapp']) {
+  height: 1rem;
+  max-height: 1rem;
+  overflow: hidden;
 }
 
 .paste-chip-wrapper {

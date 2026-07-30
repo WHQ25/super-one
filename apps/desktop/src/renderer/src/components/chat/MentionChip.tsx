@@ -26,13 +26,16 @@ export function MentionChip({ node }: NodeViewProps) {
       as="span"
       contentEditable={false}
       data-mention=""
+      data-mention-kind={kind}
       className={cn(
-        'inline-flex items-center gap-1 select-none whitespace-nowrap align-middle',
-        // Capability / desktop-app chips blend into surrounding text: no pill
-        // background, same font-size as the editor body (matches the bubble).
+        'inline-flex items-center select-none whitespace-nowrap align-middle',
+        // Built-in capability / desktop-app: original blended style — do not
+        // share the resource pill height lock or it clips multi-word labels.
         isBlendedChip
-          ? 'mx-1 gap-0.5 text-[0.875rem] leading-none text-muted-foreground'
-          : 'rounded bg-muted mx-0.5 px-1.5 py-0.5 text-xs leading-none text-foreground'
+          ? 'mx-1 gap-1 text-[0.875rem] leading-none text-muted-foreground'
+          // Resource chips: same type metrics as capability (body text-sm),
+          // muted pill without vertical padding so height stays ~body glyphs.
+          : 'mx-0.5 h-4 max-h-4 gap-0.5 overflow-hidden rounded bg-muted px-1.5 text-[0.875rem] leading-none text-foreground',
       )}
     >
       {kind === 'agent' ? (
@@ -46,9 +49,9 @@ export function MentionChip({ node }: NodeViewProps) {
       ) : isCapability ? (
         <CapabilityIcon kind={kind} />
       ) : (
-        <FileIcon name={displayName} size={12} />
+        <FileIcon name={displayName} size={12} className="size-3 shrink-0" />
       )}
-      <span className="max-w-30 truncate">
+      <span className="max-w-30 truncate leading-none">
         {kind === 'agent' && displayName.includes(':') ? displayName.split(':').pop() : displayName}
       </span>
     </NodeViewWrapper>

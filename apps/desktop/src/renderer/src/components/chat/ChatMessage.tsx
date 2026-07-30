@@ -455,55 +455,55 @@ function MentionInlineChip({ kind, value, displayName }: { kind: UserMentionKind
   return (
     <span
       className={cn(
-        // Match surrounding user-bubble text-sm line box: middle-align the
-        // icon+label flex so it doesn't sit above/below RestContent text.
         // break-normal resists the bubble's break-all so multi-word labels
         // (e.g. "Computer Use") stay on one line with following text.
-        'inline-flex max-w-full items-center whitespace-nowrap break-normal align-middle',
+        'inline-flex max-w-full whitespace-nowrap break-normal align-middle',
         resolvedKind === 'agent'
           ? 'gap-1 rounded-md border border-primary/40 bg-primary/15 px-1.5 py-0.5 text-xs leading-5 text-primary'
           : isBlendedChip
-            // Capability / desktop-app chips blend into surrounding text.
-            ? 'mx-1 gap-0.5 text-[0.875rem] leading-none text-muted-foreground'
-            : 'gap-0.5 text-sm leading-5 text-foreground'
+            // Capability / desktop-app: match composer size-3 + 1rem height so
+            // they do not read larger than body text / resource pills.
+            ? 'mx-1 h-4 max-h-4 items-center gap-1 overflow-hidden text-[0.875rem] leading-none text-muted-foreground'
+            // Resource mentions: lock height to 1rem (same as composer pill).
+            : 'h-4 max-h-4 gap-0.5 overflow-hidden text-[0.875rem] leading-none text-foreground'
       )}
     >
       {resolvedKind === 'agent' ? (
         <span className="font-medium">@{display}</span>
       ) : resolvedKind === 'directory' ? (
         <>
-          <Folder className="size-3.5 shrink-0 text-primary" />
-          <span>{display}</span>
+          <Folder className="size-3 shrink-0 text-primary" />
+          <span className="leading-none">{display}</span>
         </>
       ) : resolvedKind === 'miniapp' ? (
         <>
-          <MiniAppIcon appId={value} className="size-3.5 shrink-0" />
-          <span>{display}</span>
+          <MiniAppIcon appId={value} className="size-3 shrink-0" />
+          <span className="leading-none">{display}</span>
         </>
       ) : resolvedKind === 'desktop-app' ? (
         <>
-          <DesktopAppIcon bundleId={value} className="size-3.5" />
-          <span>{display}</span>
+          <DesktopAppIcon bundleId={value} className="size-3" />
+          <span className="leading-none">{display}</span>
         </>
       ) : resolvedKind === 'collab' ? (
         <>
-          <Users className="size-3.5 shrink-0 text-violet-600 dark:text-violet-400" />
-          <span>{display}</span>
+          <Users className="size-3 shrink-0 text-violet-600 dark:text-violet-400" />
+          <span className="leading-none">{display}</span>
         </>
       ) : resolvedKind === 'computer' ? (
         <>
-          <MousePointer2 className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
-          <span>{display}</span>
+          <MousePointer2 className="size-3 shrink-0 text-emerald-600 dark:text-emerald-400" />
+          <span className="leading-none">{display}</span>
         </>
       ) : resolvedKind === 'browser' ? (
         <>
-          <Globe className="size-3.5 shrink-0 text-sky-600 dark:text-sky-400" />
-          <span>{display}</span>
+          <Globe className="size-3 shrink-0 text-sky-600 dark:text-sky-400" />
+          <span className="leading-none">{display}</span>
         </>
       ) : (
         <>
-          <FileIcon name={display} size={14} />
-          <span>{display}</span>
+          <FileIcon name={display} size={12} className="size-3 shrink-0" />
+          <span className="leading-none">{display}</span>
         </>
       )}
     </span>

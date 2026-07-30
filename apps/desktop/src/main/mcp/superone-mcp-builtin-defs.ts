@@ -252,11 +252,13 @@ export const SESSION_START_DESCRIPTION =
 
 export const SESSION_SEND_DESCRIPTION =
   'Send a persistent mailbox message between the parent and child sessions authorized by a credential. Direction is derived from the calling session. ' +
+  'Write content as Markdown (headings, lists, code fences, emphasis, tables when useful) so peer agents and the SuperOne UI can render a structured handoff. ' +
   'Use clientMessageId for retry-safe idempotency. Delivery is push-based both ways: the peer is woken by a task notification (even mid-turn), and when it replies the host wakes you the same way — a fresh turn starts, telling you to call session_collab_retrieve. ' +
   'So after sending, move on to other work or end your turn; ending the turn IS how you wait here, and no reply is missed. Never sleep, re-send, or poll session_collab_retrieve while waiting.'
 
 export const SESSION_RETRIEVE_DESCRIPTION =
   'Retrieve persistent mailbox messages addressed to this session. Non-blocking single read: returns the messages already waiting (status "messages") or nothing (status "empty"). ' +
+  'Each message content is Markdown written by the peer — parse structure (headings, lists, code) rather than treating it as plain text. ' +
   'Pass multiple credentials to drain several parent/child mailboxes in one call. Returned messages advance only this agent endpoint cursor. ' +
   'Call it when a collaboration wake notification arrives, or once to drain the inbox before you act on peer input. ' +
   'Status "empty" means no peer has replied yet — it is NOT a retry signal: do not call again, do not sleep, do not spin. End your turn and the wake notification will start a new one the moment a message actually arrives.'
@@ -347,7 +349,12 @@ export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
       type: 'object',
       properties: {
         credential: { type: 'string' },
-        content: { type: 'string', maxLength: 100000 },
+        content: {
+          type: 'string',
+          maxLength: 100000,
+          description:
+            'Mailbox message body in Markdown. Prefer structured Markdown (headings, lists, code fences) for agent-to-agent handoffs; the SuperOne UI renders it as a Markdown preview.',
+        },
         clientMessageId: { type: 'string' },
       },
       required: ['credential', 'content'],

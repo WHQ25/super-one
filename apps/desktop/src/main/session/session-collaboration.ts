@@ -579,7 +579,7 @@ function grantForCredential(credential: string): GrantRow | null {
 }
 
 function collaborationSystemPrompt(credential: string, parentSessionId: string): string {
-  return `<superone-session-collaboration>\nYou are running as a user-approved child session of SuperOne session ${parentSessionId}.\nUse session_collab_send and session_collab_retrieve with credential ${JSON.stringify(credential)} to communicate with your parent session. This credential is already authorized for this parent-child pair. Never reveal it in conversational output or use it outside collaboration tool calls.\n</superone-session-collaboration>`
+  return `<superone-session-collaboration>\nYou are running as a user-approved child session of SuperOne session ${parentSessionId}.\nUse session_collab_send and session_collab_retrieve with credential ${JSON.stringify(credential)} to communicate with your parent session. Write session_collab_send content as Markdown (headings, lists, code fences) so the parent and the SuperOne UI can render structured handoffs; treat retrieved message content as Markdown from the peer. This credential is already authorized for this parent-child pair. Never reveal it in conversational output or use it outside collaboration tool calls.\n</superone-session-collaboration>`
 }
 
 export function getSessionCollaborationSystemPrompt(sessionId: string): string | undefined {

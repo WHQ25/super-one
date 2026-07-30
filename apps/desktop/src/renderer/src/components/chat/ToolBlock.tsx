@@ -36,6 +36,7 @@ import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { clickReleasedOnSelection, parseFileLinkTarget } from '@/lib/file-link'
 import { TerminalCommandOutput } from './TerminalCommandOutput'
+import { MarkdownView } from '@/components/MarkdownPreview'
 
 function isCompleteJson(s: string): boolean {
   try { JSON.parse(s); return true } catch { return false }
@@ -165,7 +166,7 @@ function requestSummary(
   return agentCountLabel(source.length)
 }
 
-/** Collapsed to 3 lines; click the body to reveal full message text. */
+/** Markdown preview; collapsed by max-height (~3 lines), expand for full body. */
 function CollabMessageBody({ content }: { content: string }) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
@@ -179,23 +180,25 @@ function CollabMessageBody({ content }: { content: string }) {
     }
     const el = textRef.current
     if (!el) return
-    // line-clamp is active; overflow means expand control is useful
     setClamped(el.scrollHeight > el.clientHeight + 1)
   }, [content, open])
 
   return (
-    <div className="min-w-0 flex-1">
+    <div className="min-w-0">
       <div
         ref={textRef}
         role={clamped || open ? 'button' : undefined}
         tabIndex={clamped || open ? 0 : undefined}
         className={cn(
-          'whitespace-pre-wrap break-words text-foreground',
-          !open && 'line-clamp-3',
+          'min-w-0 break-words text-foreground',
+          // max-height clamps block Markdown (line-clamp fails on nested block elements)
+          !open && 'max-h-[10.5em] overflow-hidden',
           (clamped || open) && 'cursor-pointer',
         )}
         onClick={(e) => {
           if (!clamped && !open) return
+          // Keep link / code selection clicks from toggling collapse
+          if ((e.target as HTMLElement).closest('a, button, pre, code')) return
           e.stopPropagation()
           setOpen((v) => !v)
         }}
@@ -206,7 +209,10 @@ function CollabMessageBody({ content }: { content: string }) {
           setOpen((v) => !v)
         }}
       >
-        {content}
+        <MarkdownView
+          content={content}
+          className="!p-0 !py-0 text-xs leading-relaxed [&_h1]:text-sm [&_h2]:text-sm [&_h3]:text-xs [&_p]:my-1 [&_ul]:my-1 [&_ol]:my-1 [&_pre]:my-1.5 [&_blockquote]:my-1 first:[&>*]:mt-0 last:[&>*]:mb-0"
+        />
       </div>
       {(clamped || open) && (
         <button
@@ -493,12 +499,7 @@ function SessionCollabToolBlock({
                       </SessionTitleLink>
                     </div>
                   )}
-                  <div className="flex items-start gap-2">
-                    <span className="w-12 shrink-0 pt-0.5 text-muted-foreground">
-                      {t('chat.toolBlock.collab.fields.message')}
-                    </span>
-                    <CollabMessageBody content={msg.content} />
-                  </div>
+                  {msg.content ? <CollabMessageBody content={msg.content} /> : null}
                 </div>
               ))}
             </div>

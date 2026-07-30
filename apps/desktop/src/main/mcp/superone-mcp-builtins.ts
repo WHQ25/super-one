@@ -339,7 +339,13 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
       'session_collab_send',
       {
         description: SESSION_SEND_DESCRIPTION,
-        inputSchema: { credential: z.string().min(1), content: z.string().min(1).max(100_000), clientMessageId: z.string().optional() },
+        inputSchema: {
+          credential: z.string().min(1),
+          content: z.string().min(1).max(100_000).describe(
+            'Mailbox message body in Markdown. Prefer structured Markdown (headings, lists, code fences) for agent-to-agent handoffs; the SuperOne UI renders it as a Markdown preview.',
+          ),
+          clientMessageId: z.string().optional(),
+        },
       },
       async (args) => {
         const { sendSessionMessage } = await import('../session/session-collaboration')

@@ -146,7 +146,7 @@ export const Gallery: Story = {
         })}
       </Section>
 
-      <Section title="session_collab_send (Send icon) — header peer only; body clamped">
+      <Section title="session_collab_send (Send icon) — To + Markdown body">
         {block('session_collab_send', {
           credential: CRED_A,
           content: 'ping-1 — please reply with status.',
@@ -154,11 +154,18 @@ export const Gallery: Story = {
         {block('session_collab_send', {
           credential: CRED_A,
           content: [
-            'Please review the auth changes and report issues only.',
-            'Focus on: permission checks, token expiry, and CSRF.',
-            'Ignore style nits.',
-            'Return a short verdict plus file:line bullets when you find problems.',
-            'This fifth line should be clamped until expanded.',
+            '## Auth review brief',
+            '',
+            'Please review the auth changes and **report issues only**.',
+            '',
+            '### Focus',
+            '- permission checks',
+            '- token expiry',
+            '- CSRF',
+            '',
+            'Ignore style nits. Return a short verdict plus `file:line` bullets when you find problems.',
+            '',
+            'This trailing paragraph is long enough that the Markdown body should clamp until expanded in the tool UI.',
           ].join('\n'),
         }, {
           result: JSON.stringify({
@@ -176,7 +183,7 @@ export const Gallery: Story = {
         })}
       </Section>
 
-      <Section title="session_collab_retrieve (Inbox icon)">
+      <Section title="session_collab_retrieve (Inbox icon) — From + Markdown body">
         {block('session_collab_retrieve', {
           credentials: [CRED_A],
         }, { status: 'streaming', elapsedSeconds: 1 })}
@@ -208,7 +215,20 @@ export const Gallery: Story = {
               sessionId: 'child-diffbot',
             }],
             messages: [{
-              content: 'REVIEW-OK 2026-07-27T14:57:08.000Z\nLine 2 of findings.\nLine 3 of findings.\nLine 4 should be clamped until expanded.\nLine 5 keeps going with more detail for the reviewer.',
+              content: [
+                '## Verdict: **needs fix**',
+                '',
+                '| Area | Issue |',
+                '| --- | --- |',
+                '| Auth | missing CSRF on POST `/login` |',
+                '| Token | refresh path races logout |',
+                '',
+                '```ts',
+                'if (!csrf.valid(req)) return 403',
+                '```',
+                '',
+                'Line 4+ keeps going so clamp/expand is exerciseable in Storybook.',
+              ].join('\n'),
               fromSessionId: 'child-diffbot',
               from: {
                 name: 'DiffBot',
@@ -230,12 +250,17 @@ export const Gallery: Story = {
             ],
             messages: [
               {
-                content: 'alpha-pong-1\nFindings:\n1. auth path\n2. missing test\n3. n+1 query',
+                content: [
+                  '### Alice findings',
+                  '1. auth path',
+                  '2. missing test',
+                  '3. n+1 query',
+                ].join('\n'),
                 fromSessionId: 'child-alice',
                 from: { name: 'Alice', role: 'Reviewer', title: 'Alice - Reviewer', sessionId: 'child-alice' },
               },
               {
-                content: 'beta-pong-1',
+                content: '**beta-pong-1** — implementer ack, starting fix.',
                 fromSessionId: 'child-bob',
                 from: { name: 'Bob', role: 'Implementer', title: 'Bob - Implementer', sessionId: 'child-bob' },
               },
@@ -286,7 +311,13 @@ export const ParentTurnFlow: Story = {
       <Section title="3. Send">
         {block('session_collab_send', {
           credential: CRED_A,
-          content: 'ping-1\nPlease acknowledge and continue.\nExtra context line 3.\nExtra context line 4.',
+          content: [
+            '## ping-1',
+            'Please acknowledge and continue.',
+            '',
+            '- Extra context line 3',
+            '- Extra context line 4',
+          ].join('\n'),
         }, {
           result: JSON.stringify({
             status: 'sent',
@@ -304,8 +335,8 @@ export const ParentTurnFlow: Story = {
               { name: 'Bob', role: 'Implementer', title: 'Bob - Implementer' },
             ],
             messages: [
-              { content: 'alpha-pong-1', from: { name: 'Alice', role: 'Reviewer', title: 'Alice - Reviewer' } },
-              { content: 'beta-pong-1', from: { name: 'Bob', role: 'Implementer', title: 'Bob - Implementer' } },
+              { content: '**alpha-pong-1** — review queued.', from: { name: 'Alice', role: 'Reviewer', title: 'Alice - Reviewer' } },
+              { content: '**beta-pong-1** — implementer ready.', from: { name: 'Bob', role: 'Implementer', title: 'Bob - Implementer' } },
             ],
           }),
         })}

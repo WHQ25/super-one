@@ -163,9 +163,9 @@ function formatAction(value: unknown): string {
         : ''
     case 'scroll':
       return [
-        ref,
-        action.dx != null ? `x:${stringValue(action.dx)}` : '',
-        action.dy != null ? `y:${stringValue(action.dy)}` : '',
+        ref || formatPoint(action.x, action.y),
+        action.dx != null ? `dx:${stringValue(action.dx)}` : '',
+        action.dy != null ? `dy:${stringValue(action.dy)}` : '',
       ]
         .filter(Boolean)
         .join(' ')

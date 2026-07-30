@@ -690,9 +690,10 @@ export class MacosPlatformAdapter implements PlatformAdapter {
         }
       }
       case 'scroll': {
-        let x: number | undefined
-        let y: number | undefined
-        if (action.ref && target.outline) {
+        // Priority: explicit x,y → ref bounds center → outline/window center.
+        let x: number | undefined = action.x
+        let y: number | undefined = action.y
+        if ((x == null || y == null) && action.ref && target.outline) {
           const center = boundsCenter(findNode(target.outline, action.ref)?.bounds)
           if (center) {
             x = center.x

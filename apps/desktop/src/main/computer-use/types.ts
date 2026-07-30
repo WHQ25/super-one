@@ -130,7 +130,7 @@ export type UiAction =
   | { type: 'setText'; ref: string; text: string }
   | { type: 'typeText'; ref?: string; text: string }
   | { type: 'keypress'; keys: string[] }
-  | { type: 'scroll'; ref?: string; dx?: number; dy?: number }
+  | { type: 'scroll'; ref?: string; x?: number; y?: number; dx?: number; dy?: number }
   | { type: 'drag'; path: Array<{ x: number; y: number }> }
   | { type: 'moveMouse'; x: number; y: number }
 

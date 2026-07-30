@@ -825,6 +825,30 @@ describe('MacosPlatformAdapter (mocked client)', () => {
     expect(res.steps[0]?.applied).toBe(true)
   })
 
+  it('act scroll prefers explicit x,y over outline center', async () => {
+    call.mockResolvedValue({ ok: true, unknown: true })
+    await adapter.act({
+      root: root(),
+      actions: [{ type: 'scroll', x: 700, y: 380, dy: 200 }],
+      delivery: 'physical',
+      outline: {
+        ref: '@e1',
+        role: 'screen',
+        bounds: { x: 0, y: 0, width: 800, height: 600 },
+      },
+    })
+    expect(call).toHaveBeenCalledWith(
+      'scroll',
+      expect.objectContaining({
+        x: 700,
+        y: 380,
+        dy: 200,
+        delivery: 'global',
+        targetPid: 42,
+      }),
+    )
+  })
+
   it('act drag posts path points', async () => {
     call.mockResolvedValue({ ok: true, unknown: true })
     const res = await adapter.act({

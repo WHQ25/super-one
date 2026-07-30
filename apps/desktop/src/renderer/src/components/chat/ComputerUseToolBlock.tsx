@@ -82,10 +82,14 @@ function resultSummary(
       right: t(`chat.toolBlock.computer.waitStatus.${info.waitStatus}`),
     }
   }
-  return {
-    middle: [info.app, info.title].filter(Boolean).join(' \u00b7 '),
-    right: '',
-  }
+  // Avoid "SuperOne CU Lab · SuperOne CU Lab" when window title equals app name.
+  const app = info.app?.trim() ?? ''
+  const title = info.title?.trim() ?? ''
+  const middle =
+    app && title && app !== title
+      ? `${app} \u00b7 ${title}`
+      : app || title
+  return { middle, right: '' }
 }
 
 function LeadingIcon({

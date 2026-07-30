@@ -57,6 +57,10 @@ function parseOne(item: unknown, index: number): UiAction {
       return {
         type: 'scroll',
         ref: optString(a, 'ref'),
+        // Capture-space point under the wheel; preferred over ref/outline center
+        // so agents can aim chat panes (e.g. WeChat) without AX scroll targets.
+        x: optNumber(a, 'x'),
+        y: optNumber(a, 'y'),
         dx: optNumber(a, 'dx'),
         dy: optNumber(a, 'dy'),
       }

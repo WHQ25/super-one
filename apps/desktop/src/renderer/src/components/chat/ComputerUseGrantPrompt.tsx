@@ -5,6 +5,7 @@ import type { PermissionRequest } from '@superone/shared/agent-types'
 import { cn } from '@superone/ui/lib/utils'
 import { useAppIcon } from '@/hooks/use-app-icon'
 import { PermissionActionButton } from './PermissionActionBar'
+import { isFocusInChat } from './is-focus-in-chat'
 
 interface Props {
   request: PermissionRequest
@@ -98,6 +99,7 @@ export function ComputerUseGrantPrompt({
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
+      if (!isFocusInChat()) return
       if (isCollapsed) {
         if (e.key === ' ') {
           e.preventDefault()

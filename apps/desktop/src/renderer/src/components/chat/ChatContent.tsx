@@ -456,6 +456,7 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
     <PlanFullscreenContext.Provider value={planFullscreenCtx}>
     <div
       ref={containerRef}
+      data-chat-root=""
       className="relative flex min-h-0 w-full min-w-0 flex-1 flex-col"
       style={densityStyle}
     >

@@ -18,6 +18,7 @@ import {
   TooltipTrigger,
 } from '@superone/ui/components/ui/tooltip'
 import type { RewindFilesResult } from '@superone/shared/agent-types'
+import { isFocusInChat } from './is-focus-in-chat'
 
 type RewindMode = 'code' | 'conversation' | 'code_and_chat'
 
@@ -127,6 +128,7 @@ export function RewindButton({ checkpointId, rewound, className }: RewindButtonP
   useEffect(() => {
     if (!dialogOpen || !preview?.canRewind) return
     const handler = (e: KeyboardEvent) => {
+      if (!isFocusInChat()) return
       const num = parseInt(e.key)
       if (num >= 1 && num <= options.length) {
         e.preventDefault()

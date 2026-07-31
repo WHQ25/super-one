@@ -5,6 +5,7 @@ import { useChatStore, useActiveSession } from '@/stores/chat'
 import { Kbd } from '@superone/ui/components/ui/kbd'
 import { QuestionPreviewContent as PreviewContent } from './tool-result-views'
 import { useRestoreChatInputFocus } from '@/hooks/useRestoreChatInputFocus'
+import { isFocusInChat } from './is-focus-in-chat'
 import type { UserQuestion, QuestionAnnotations, QuestionPreviewFormat } from '@superone/shared/agent-types'
 
 function questionKey(q: UserQuestion): string {
@@ -318,6 +319,9 @@ export function AskUserQuestionPrompt() {
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     if (!pendingQuestion) return
+    // When the user is working in another panel (file editor, terminal, browser
+    // chrome, etc.), digit keys must type there — not select options here.
+    if (!isFocusInChat()) return
     const { questions } = pendingQuestion
     const typing = isTypingInInput()
 

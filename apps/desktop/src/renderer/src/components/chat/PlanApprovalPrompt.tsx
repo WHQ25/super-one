@@ -13,6 +13,7 @@ import {
   type PlanLineComment,
 } from './plan-feedback'
 import { PlanLineReview } from './PlanLineReview'
+import { isFocusInChat } from './is-focus-in-chat'
 
 export function PlanApprovalPrompt() {
   const { t } = useTranslation()
@@ -129,6 +130,7 @@ export function PlanApprovalPrompt() {
 
     function onKeyDown(e: KeyboardEvent) {
       if (e.ctrlKey || e.metaKey || e.altKey) return
+      if (!isFocusInChat()) return
 
       const active = document.activeElement
       const inPrompt = !!(active && containerRef.current?.contains(active))

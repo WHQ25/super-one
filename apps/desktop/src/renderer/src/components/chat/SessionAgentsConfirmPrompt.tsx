@@ -19,6 +19,7 @@ import { harnessSupportsSandbox, SandboxModePopover } from './SandboxModeSelecto
 import { ApproveRejectBar } from './PermissionActionBar'
 import { WorkDirLabel, workDirTitle, type WorkDirState } from './work-dir-label'
 import { GroupedModelEffortSelector } from './model-selector/GroupedModelEffortSelector'
+import { isFocusInChat } from './is-focus-in-chat'
 
 interface Props {
   payload: SessionAgentRequestPayload
@@ -248,6 +249,7 @@ export function SessionAgentsConfirmPrompt({ payload, onConfirm, onReject }: Pro
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent): void {
+      if (!isFocusInChat()) return
       if (hasOpenRadixOverlay()) return
       const typing = document.activeElement === feedbackRef.current
 

@@ -8,6 +8,7 @@ import { SettingField, type SettingFieldValue } from '../settings/SettingField'
 import { isStructuredFieldType, StructuredSettingField } from '../settings/StructuredSettingField'
 import { diffConfigFieldValue, formatConfigFieldValue } from '@/lib/config-field-summary'
 import { hasOpenRadixOverlay } from '@/lib/radix-overlay'
+import { isFocusInChat } from './is-focus-in-chat'
 
 type ConfigValue = unknown
 
@@ -55,6 +56,7 @@ export function ConfigConfirmPrompt({ payload, onConfirm, onReject }: ConfigConf
   useEffect(() => {
     if (isCollapsed) return
     function onKeyDown(e: KeyboardEvent): void {
+      if (!isFocusInChat()) return
       if (hasOpenPopover()) return
       if (isEditableElement(document.activeElement)) return
       if (e.key === 'Tab' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {

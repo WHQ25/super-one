@@ -2,8 +2,16 @@
 
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
+import type { ReactElement } from 'react'
 import type { SessionAgentRequestPayload } from '@superone/shared/agent-types'
 import { SessionAgentsConfirmPrompt } from './SessionAgentsConfirmPrompt'
+
+/** Shortcuts only fire while focus is inside [data-chat-root]. */
+function renderInChat(ui: ReactElement) {
+  const result = render(<div data-chat-root="" tabIndex={-1}>{ui}</div>)
+  ;(result.container.querySelector('[data-chat-root]') as HTMLElement).focus()
+  return result
+}
 
 function payload(): SessionAgentRequestPayload {
   return {
@@ -63,7 +71,7 @@ function payload(): SessionAgentRequestPayload {
 
 describe('session agents confirm prompt', () => {
   it('shows only the active agent and switches panels with Tab', () => {
-    render(<SessionAgentsConfirmPrompt payload={payload()} onConfirm={vi.fn()} onReject={vi.fn()} />)
+    renderInChat(<SessionAgentsConfirmPrompt payload={payload()} onConfirm={vi.fn()} onReject={vi.fn()} />)
 
     expect(screen.getByText(/Review the failing tests/)).toBeInTheDocument()
     expect(screen.queryByText(/Classify the current typecheck errors/)).toBeNull()
@@ -77,7 +85,7 @@ describe('session agents confirm prompt', () => {
   })
 
   it('keeps agent-owned fields read-only while exposing the permission mode picker', () => {
-    render(<SessionAgentsConfirmPrompt payload={payload()} onConfirm={vi.fn()} onReject={vi.fn()} />)
+    renderInChat(<SessionAgentsConfirmPrompt payload={payload()} onConfirm={vi.fn()} onReject={vi.fn()} />)
 
     // No editors for task / cwd / worktree / sandbox — those are the agent's decision.
     // The only text field on the prompt is the feedback box.
@@ -98,7 +106,7 @@ describe('session agents confirm prompt', () => {
     delete value.launches[0].config.effort
     const onConfirm = vi.fn()
 
-    render(<SessionAgentsConfirmPrompt payload={value} onConfirm={onConfirm} onReject={vi.fn()} />)
+    renderInChat(<SessionAgentsConfirmPrompt payload={value} onConfirm={onConfirm} onReject={vi.fn()} />)
 
     expect(screen.getByRole('button', { name: /Claude Sonnet.*high/ })).toBeInTheDocument()
     fireEvent.keyDown(window, { key: 'Enter' })
@@ -109,7 +117,7 @@ describe('session agents confirm prompt', () => {
   })
 
   it('offers the sandbox switch only to harnesses that honour one', () => {
-    render(<SessionAgentsConfirmPrompt payload={payload()} onConfirm={vi.fn()} onReject={vi.fn()} />)
+    renderInChat(<SessionAgentsConfirmPrompt payload={payload()} onConfirm={vi.fn()} onReject={vi.fn()} />)
 
     // Claude implements sandbox modes, so its launch gets the same chip as the status bar.
     expect(screen.getByRole('button', { name: 'On' })).toBeInTheDocument()
@@ -124,7 +132,7 @@ describe('session agents confirm prompt', () => {
     // Raw id would be `gpt-5.4`; the profile already carries the formatted label.
     value.profiles[1].models = [{ id: 'gpt-5.4', name: 'GPT5.4' }]
     value.launches[1].config.model = 'gpt-5.4'
-    render(<SessionAgentsConfirmPrompt payload={value} onConfirm={vi.fn()} onReject={vi.fn()} />)
+    renderInChat(<SessionAgentsConfirmPrompt payload={value} onConfirm={vi.fn()} onReject={vi.fn()} />)
 
     fireEvent.keyDown(window, { key: 'Tab' })
     expect(screen.getByRole('button', { name: /GPT5\.4/ })).toBeInTheDocument()
@@ -132,7 +140,7 @@ describe('session agents confirm prompt', () => {
   })
 
   it('gives each agent the permission vocabulary of its own harness', () => {
-    render(<SessionAgentsConfirmPrompt payload={payload()} onConfirm={vi.fn()} onReject={vi.fn()} />)
+    renderInChat(<SessionAgentsConfirmPrompt payload={payload()} onConfirm={vi.fn()} onReject={vi.fn()} />)
 
     // Claude tab: Claude's own mode names.
     expect(screen.getByRole('button', { name: 'Normal' })).toBeInTheDocument()
@@ -147,7 +155,7 @@ describe('session agents confirm prompt', () => {
   it('describes the working location with the same wording as the chat status bar', () => {
     const withDetach = payload()
     withDetach.launches[0].config.worktree = { enabled: true, baseBranch: 'main', mode: 'detach' }
-    const { unmount } = render(<SessionAgentsConfirmPrompt payload={withDetach} onConfirm={vi.fn()} onReject={vi.fn()} />)
+    const { unmount } = renderInChat(<SessionAgentsConfirmPrompt payload={withDetach} onConfirm={vi.fn()} onReject={vi.fn()} />)
 
     // detach → the status bar's "create from" phrasing; branch → its "create branch" phrasing.
     expect(screen.getByTitle('Create worktree from main')).toBeInTheDocument()
@@ -158,13 +166,13 @@ describe('session agents confirm prompt', () => {
     // No worktree at all reads as plain "Local", exactly like the status bar.
     const noWorktree = payload()
     delete noWorktree.launches[1].config.worktree
-    render(<SessionAgentsConfirmPrompt payload={noWorktree} onConfirm={vi.fn()} onReject={vi.fn()} />)
+    renderInChat(<SessionAgentsConfirmPrompt payload={noWorktree} onConfirm={vi.fn()} onReject={vi.fn()} />)
     expect(screen.getByTitle('Local')).toBeInTheDocument()
   })
 
   it('confirms every launch, carrying per-tab overrides and untouched agent config', () => {
     const onConfirm = vi.fn()
-    render(<SessionAgentsConfirmPrompt payload={payload()} onConfirm={onConfirm} onReject={vi.fn()} />)
+    renderInChat(<SessionAgentsConfirmPrompt payload={payload()} onConfirm={onConfirm} onReject={vi.fn()} />)
 
     fireEvent.keyDown(window, { key: 'Enter' })
 
@@ -182,7 +190,7 @@ describe('session agents confirm prompt', () => {
 
   it('rejects on Escape', () => {
     const onReject = vi.fn()
-    render(<SessionAgentsConfirmPrompt payload={payload()} onConfirm={vi.fn()} onReject={onReject} />)
+    renderInChat(<SessionAgentsConfirmPrompt payload={payload()} onConfirm={vi.fn()} onReject={onReject} />)
 
     fireEvent.keyDown(window, { key: 'Escape' })
     expect(onReject).toHaveBeenCalledTimes(1)
@@ -191,14 +199,14 @@ describe('session agents confirm prompt', () => {
   it('hands the typed reason back on reject only — approving ignores it', () => {
     const onReject = vi.fn()
     const onConfirm = vi.fn()
-    const { unmount } = render(<SessionAgentsConfirmPrompt payload={payload()} onConfirm={vi.fn()} onReject={onReject} />)
+    const { unmount } = renderInChat(<SessionAgentsConfirmPrompt payload={payload()} onConfirm={vi.fn()} onReject={onReject} />)
 
     fireEvent.change(screen.getByRole('textbox'), { target: { value: '  too many agents  ' } })
     fireEvent.click(screen.getByRole('button', { name: /Reject/ }))
     expect(onReject).toHaveBeenCalledWith('too many agents')
     unmount()
 
-    render(<SessionAgentsConfirmPrompt payload={payload()} onConfirm={onConfirm} onReject={vi.fn()} />)
+    renderInChat(<SessionAgentsConfirmPrompt payload={payload()} onConfirm={onConfirm} onReject={vi.fn()} />)
     fireEvent.change(screen.getByRole('textbox'), { target: { value: 'ignored on approve' } })
     fireEvent.click(screen.getByRole('button', { name: /Approve/ }))
     expect(onConfirm).toHaveBeenCalledWith(expect.any(Array))
@@ -207,7 +215,7 @@ describe('session agents confirm prompt', () => {
   it('submits a rejection when Enter is pressed inside the feedback box', () => {
     const onConfirm = vi.fn()
     const onReject = vi.fn()
-    render(<SessionAgentsConfirmPrompt payload={payload()} onConfirm={onConfirm} onReject={onReject} />)
+    renderInChat(<SessionAgentsConfirmPrompt payload={payload()} onConfirm={onConfirm} onReject={onReject} />)
 
     const input = screen.getByRole('textbox')
     fireEvent.change(input, { target: { value: 'not now' } })
@@ -219,7 +227,7 @@ describe('session agents confirm prompt', () => {
   })
 
   it('walks Tab past the last agent onto the feedback box', () => {
-    render(<SessionAgentsConfirmPrompt payload={payload()} onConfirm={vi.fn()} onReject={vi.fn()} />)
+    renderInChat(<SessionAgentsConfirmPrompt payload={payload()} onConfirm={vi.fn()} onReject={vi.fn()} />)
     const input = screen.getByRole('textbox')
 
     fireEvent.keyDown(window, { key: 'Tab' })   // agent 1 → agent 2

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Check, X } from 'lucide-react'
 import { Button } from '@superone/ui/components/ui/button'
 import { Kbd } from '@superone/ui/components/ui/kbd'
+import { isFocusInChat } from './is-focus-in-chat'
 
 interface CodexPlanImplementFooterProps {
   onApprove: () => void
@@ -21,22 +22,11 @@ export function CodexPlanImplementFooter({ onApprove, onReject }: CodexPlanImple
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (e.ctrlKey || e.metaKey || e.altKey) return
+      if (!isFocusInChat()) return
 
       const active = document.activeElement
       const feedbackInput = feedbackRef.current
       const isFeedbackInputFocused = !!feedbackInput && active === feedbackInput
-      const isInsideFooter = !!(active instanceof HTMLElement && containerRef.current?.contains(active))
-      const isEditable = active instanceof HTMLInputElement
-        || active instanceof HTMLTextAreaElement
-        || (active instanceof HTMLElement && active.isContentEditable)
-      const editableText = active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement
-        ? active.value
-        : active instanceof HTMLElement
-          ? active.textContent ?? ''
-          : ''
-      if (isEditable && !isInsideFooter && editableText.trim().length > 0) {
-        return
-      }
 
       if (e.key === 'Tab') {
         e.preventDefault()

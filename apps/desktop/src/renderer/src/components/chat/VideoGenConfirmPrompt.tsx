@@ -12,6 +12,7 @@ import type {
   VideoGenProviderOption,
   VideoGenReferenceImage,
 } from '@superone/shared/agent-types'
+import { isFocusInChat } from './is-focus-in-chat'
 
 // Canonical definitions live in @superone/shared/agent-types (main + renderer share them);
 // re-exported here so existing importers (Storybook stories) keep working unchanged.
@@ -97,6 +98,7 @@ export function VideoGenConfirmPrompt({ params, providers, referenceImages = [],
   useEffect(() => {
     if (isCollapsed) return
     function onKeyDown(e: KeyboardEvent): void {
+      if (!isFocusInChat()) return
       if (hasOpenPopover()) return
       if (isEditableElement(document.activeElement)) return
       if (e.key === 'Tab' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {

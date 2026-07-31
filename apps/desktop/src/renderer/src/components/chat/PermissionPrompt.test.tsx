@@ -2,7 +2,7 @@
 
 import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ButtonHTMLAttributes, ReactNode } from 'react'
+import type { ButtonHTMLAttributes, ReactElement, ReactNode } from 'react'
 
 const chatState = {
   respondToPermission: vi.fn(),
@@ -66,13 +66,20 @@ vi.mock('./PermissionModeSelector', () => ({
 
 import { PermissionPrompt } from './PermissionPrompt'
 
+/** Shortcuts only fire while focus is inside [data-chat-root]. */
+function renderInChat(ui: ReactElement) {
+  const result = render(<div data-chat-root="" tabIndex={-1}>{ui}</div>)
+  ;(result.container.querySelector('[data-chat-root]') as HTMLElement).focus()
+  return result
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
 })
 
 describe('PermissionPrompt', () => {
   it('shows four codex decision buttons without feedback input', () => {
-    render(<PermissionPrompt />)
+    renderInChat(<PermissionPrompt />)
 
     expect(screen.getByText('Allow').closest('button')).toBeTruthy()
     expect(screen.getByRole('button', { name: /allow for this session/i })).toBeTruthy()
@@ -82,7 +89,7 @@ describe('PermissionPrompt', () => {
   })
 
   it('sends decline when pressing Escape in the codex prompt', () => {
-    render(<PermissionPrompt />)
+    renderInChat(<PermissionPrompt />)
 
     fireEvent.keyDown(window, { key: 'Escape' })
 
@@ -90,15 +97,22 @@ describe('PermissionPrompt', () => {
   })
 
   it('sends allow for this session when pressing Shift+Enter in the codex prompt', () => {
-    render(<PermissionPrompt />)
+    renderInChat(<PermissionPrompt />)
 
     fireEvent.keyDown(window, { key: 'Enter', shiftKey: true })
 
     expect(chatState.respondToPermission).toHaveBeenCalledWith('req-1', true, true)
   })
 
-  it('sends cancel through the codex permission action', () => {
+  it('ignores Escape when focus is outside the chat pane', () => {
     render(<PermissionPrompt />)
+    // Default jsdom focus is body — outside [data-chat-root].
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(chatState.respondToPermission).not.toHaveBeenCalled()
+  })
+
+  it('sends cancel through the codex permission action', () => {
+    renderInChat(<PermissionPrompt />)
 
     fireEvent.click(screen.getByRole('button', { name: /cancel/i }))
 

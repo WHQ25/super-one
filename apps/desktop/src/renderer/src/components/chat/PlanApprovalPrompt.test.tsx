@@ -2,7 +2,7 @@
 
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ReactNode, ButtonHTMLAttributes } from 'react'
+import type { ReactElement, ReactNode, ButtonHTMLAttributes } from 'react'
 
 const localStorageState = new Map<string, string>()
 const mockLocalStorage = {
@@ -144,6 +144,13 @@ function activeSession() {
   return proj._sessions[proj._activeSessionId!]
 }
 
+/** Shortcuts only fire while focus is inside [data-chat-root]. */
+function renderInChat(ui: ReactElement) {
+  const result = render(<div data-chat-root="" tabIndex={-1}>{ui}</div>)
+  ;(result.container.querySelector('[data-chat-root]') as HTMLElement).focus()
+  return result
+}
+
 beforeEach(() => {
   resetStore()
   vi.clearAllMocks()
@@ -153,7 +160,7 @@ beforeEach(() => {
 describe('PlanApprovalPrompt — integration', () => {
   it('scenario: user in plan mode approves with Accept Edits toggle → both IPCs fire and store reflects acceptEdits', () => {
     seedPlanApprovalState('plan')
-    render(<PlanApprovalPrompt />)
+    renderInChat(<PlanApprovalPrompt />)
 
     fireEvent.keyDown(window, { key: '1' })
     fireEvent.keyDown(window, { key: 'Enter' })
@@ -171,7 +178,7 @@ describe('PlanApprovalPrompt — integration', () => {
 
   it('scenario: Shift+Tab shortcut approves with acceptEdits directly', () => {
     seedPlanApprovalState('plan')
-    render(<PlanApprovalPrompt />)
+    renderInChat(<PlanApprovalPrompt />)
 
     fireEvent.keyDown(window, { key: 'Tab', shiftKey: true })
 
@@ -184,7 +191,7 @@ describe('PlanApprovalPrompt — integration', () => {
 
   it('scenario: user approves without acceptEdits toggle → setPermissionMode falls back to default', () => {
     seedPlanApprovalState('plan')
-    render(<PlanApprovalPrompt />)
+    renderInChat(<PlanApprovalPrompt />)
 
     fireEvent.keyDown(window, { key: 'Enter' })
 
@@ -197,7 +204,7 @@ describe('PlanApprovalPrompt — integration', () => {
 
   it('scenario: user rejects plan → respondToPlanApproval(false) fires, setPermissionMode is NOT called, session stays in plan mode', () => {
     seedPlanApprovalState('plan')
-    render(<PlanApprovalPrompt />)
+    renderInChat(<PlanApprovalPrompt />)
 
     fireEvent.keyDown(window, { key: 'Escape' })
 
@@ -213,10 +220,11 @@ describe('PlanApprovalPrompt — integration', () => {
 
   it('scenario: toggle state persists across re-renders within one pending approval', () => {
     seedPlanApprovalState('plan')
-    const { rerender } = render(<PlanApprovalPrompt />)
+    const { rerender, container } = renderInChat(<PlanApprovalPrompt />)
 
     fireEvent.keyDown(window, { key: '1' })
-    rerender(<PlanApprovalPrompt />)
+    rerender(<div data-chat-root="" tabIndex={-1}><PlanApprovalPrompt /></div>)
+    ;(container.querySelector('[data-chat-root]') as HTMLElement).focus()
     fireEvent.keyDown(window, { key: 'Enter' })
 
     expect(mockWindowAgent.setPermissionMode).toHaveBeenCalledWith('/proj', 'acceptEdits')
@@ -246,7 +254,7 @@ describe('PlanApprovalPrompt — integration', () => {
       },
     })
     seedPlanApprovalState('plan', { selectedModel: 'claude-opus-4-7' })
-    render(<PlanApprovalPrompt />)
+    renderInChat(<PlanApprovalPrompt />)
 
     fireEvent.keyDown(window, { key: '1' })
     fireEvent.keyDown(window, { key: 'Enter' })
@@ -282,7 +290,7 @@ describe('PlanApprovalPrompt — integration', () => {
       },
     })
     seedPlanApprovalState('plan', { selectedModel: 'claude-opus-4-7' })
-    render(<PlanApprovalPrompt />)
+    renderInChat(<PlanApprovalPrompt />)
 
     fireEvent.keyDown(window, { key: 'Tab', shiftKey: true })
 
@@ -366,10 +374,12 @@ describe('PlanApprovalPrompt — integration', () => {
     const sendSpy = vi.fn().mockResolvedValue(undefined)
     useChatStore.setState({ sendMessage: sendSpy })
 
-    render(<PlanApprovalPrompt />)
+    renderInChat(<PlanApprovalPrompt />)
 
     const inputs = screen.getAllByPlaceholderText(/Overall feedback|总体反馈/)
     fireEvent.change(inputs[0], { target: { value: 'ship after tests' } })
+    // Approve path: focus must not stay on the feedback field (Enter there rejects).
+    ;(document.querySelector('[data-chat-root]') as HTMLElement).focus()
     fireEvent.keyDown(window, { key: 'Enter' })
 
     expect(mockWindowAgent.respondToPlanApproval).toHaveBeenCalledWith(
@@ -386,10 +396,11 @@ describe('PlanApprovalPrompt — integration', () => {
     const sendSpy = vi.fn().mockResolvedValue(undefined)
     useChatStore.setState({ sendMessage: sendSpy })
 
-    render(<PlanApprovalPrompt />)
+    renderInChat(<PlanApprovalPrompt />)
 
     const inputs = screen.getAllByPlaceholderText(/Reject feedback|拒绝反馈/)
     fireEvent.change(inputs[0], { target: { value: 'ignore on approve' } })
+    ;(document.querySelector('[data-chat-root]') as HTMLElement).focus()
     fireEvent.keyDown(window, { key: 'Enter' })
 
     expect(mockWindowAgent.respondToPlanApproval).toHaveBeenCalledWith(

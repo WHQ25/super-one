@@ -19,6 +19,7 @@ import { ConfigConfirmPromptContainer } from './ConfigConfirmPromptContainer'
 import { SessionAgentsConfirmPromptContainer } from './SessionAgentsConfirmPromptContainer'
 import { ComputerUseGrantPrompt } from './ComputerUseGrantPrompt'
 import { ApproveRejectBar, PermissionActionButton } from './PermissionActionBar'
+import { isFocusInChat } from './is-focus-in-chat'
 
 interface MiniAppToolInfo {
   appId: string
@@ -264,6 +265,9 @@ export function PermissionPrompt() {
     if (!requestId || isSelfManagedConfirm) return
 
     function onKeyDown(e: KeyboardEvent) {
+      // Enter/Esc/Space/digits must not fire while the user types in another panel.
+      if (!isFocusInChat()) return
+
       if (isCollapsed) {
         if (e.key === ' ') {
           e.preventDefault()

@@ -211,8 +211,8 @@ describe('mapXaiSessionUpdate — subagent', () => {
       taskId: 'sa1',
       activityText: 'read_file, grep',
     })
-    expect(state.lastUsage?.totalTokens).toBe(500)
-    expect(state.lastUsage?.maxTokens).toBe(200_000)
+    // Subagent occupancy must not pollute parent context ring cache.
+    expect(state.lastUsage).toBeNull()
 
     const finished = mapXaiSessionUpdate({
       sessionUpdate: 'subagent_finished',
@@ -255,12 +255,47 @@ describe('mapXaiSessionUpdate — session meta', () => {
     })
   })
 
-  it('maps turn_completed usage to message_usage + cache', () => {
+  it('maps turn_completed usage to uncached footer + context occupancy', () => {
+    const state = createXaiCorrelationState()
+    // Live context occupancy from session/update _meta.totalTokens
+    state.lastUsage = {
+      categories: [],
+      totalTokens: 42_000,
+      maxTokens: 200_000,
+      percentage: 21,
+      model: 'grok',
+    }
+    const events = mapXaiSessionUpdate({
+      sessionUpdate: 'turn_completed',
+      prompt_id: 'p1',
+      stop_reason: 'end_turn',
+      usage: {
+        // ACP identity: full input includes cache reads
+        inputTokens: 1200,
+        cachedReadTokens: 400,
+        outputTokens: 300,
+        totalTokens: 1500, // billing sum — must NOT become contextTokens
+        costUsdTicks: 1e10, // $1
+      },
+    }, state, { messageId: 'msg-1' })
+    expect(events).toEqual([{
+      type: 'message_usage',
+      messageId: 'msg-1',
+      inputTokens: 800, // 1200 - 400 uncached
+      outputTokens: 300,
+      contextTokens: 42_000, // live occupancy, not billing total
+      contextWindow: 200_000,
+      costUsd: 1,
+    }])
+    expect(state.lastUsage?.totalTokens).toBe(42_000)
+  })
+
+  it('falls back to fullInput+output for single-call turn without meta occupancy', () => {
     const state = createXaiCorrelationState()
     state.lastUsage = {
       categories: [],
       totalTokens: 0,
-      maxTokens: 200_000,
+      maxTokens: 500_000,
       percentage: 0,
       model: 'grok',
     }
@@ -269,22 +304,47 @@ describe('mapXaiSessionUpdate — session meta', () => {
       prompt_id: 'p1',
       stop_reason: 'end_turn',
       usage: {
-        inputTokens: 1200,
-        outputTokens: 300,
-        totalTokens: 1500,
-        costUsdTicks: 1e10, // $1
+        inputTokens: 1000,
+        cachedReadTokens: 200,
+        outputTokens: 100,
+        totalTokens: 1100,
+        modelCalls: 1,
       },
     }, state, { messageId: 'msg-1' })
-    expect(events).toEqual([{
+    expect(events[0]).toMatchObject({
+      type: 'message_usage',
+      inputTokens: 800,
+      outputTokens: 100,
+      contextTokens: 1100, // fullInput + output for single call
+      contextWindow: 500_000,
+    })
+  })
+
+  it('updates context ring after auto-compact completes', () => {
+    const state = createXaiCorrelationState()
+    state.lastUsage = {
+      categories: [],
+      totalTokens: 1000,
+      maxTokens: 200_000,
+      percentage: 1,
+      model: 'grok',
+    }
+    state.lastMessageId = 'msg-1'
+    const done = mapXaiSessionUpdate({
+      sessionUpdate: 'auto_compact_completed',
+      tokens_before: 1000,
+      tokens_after: 400,
+      elapsed_ms: 50,
+    }, state)
+    expect(done).toContainEqual({
       type: 'message_usage',
       messageId: 'msg-1',
-      inputTokens: 1200,
-      outputTokens: 300,
-      contextTokens: 1500,
+      inputTokens: 0,
+      outputTokens: 0,
+      contextTokens: 400,
       contextWindow: 200_000,
-      costUsd: 1,
-    }])
-    expect(state.lastUsage?.totalTokens).toBe(1500)
+    })
+    expect(state.lastUsage?.totalTokens).toBe(400)
   })
 
   it('maps model_changed and retry_state', () => {

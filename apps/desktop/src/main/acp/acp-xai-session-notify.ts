@@ -283,7 +283,7 @@ export function mapXaiSessionUpdate(
     case 'auto_compact_started':
       return mapAutoCompactStarted(update)
     case 'auto_compact_completed':
-      return mapAutoCompactCompleted(update)
+      return mapAutoCompactCompleted(update, state, ctx)
     case 'auto_compact_failed':
       return mapAutoCompactFailed(update)
     case 'auto_compact_cancelled':
@@ -559,18 +559,8 @@ function mapSubagentProgress(u: Record<string, unknown>, state: XaiCorrelationSt
     usage: { totalTokens: tokens, toolUses: toolCalls, durationMs },
     ...(activityText ? { activityText } : {}),
   })
-  // Cache context from progress when available.
-  const ctxTokens = numField(u, 'tokens_used', 'tokensUsed')
-  const ctxWindow = numField(u, 'context_window_tokens', 'contextWindowTokens')
-  if (ctxTokens != null && ctxWindow != null && ctxWindow > 0) {
-    state.lastUsage = {
-      categories: [],
-      totalTokens: ctxTokens,
-      maxTokens: ctxWindow,
-      percentage: Math.min(100, Math.round((ctxTokens / ctxWindow) * 100)),
-      model: '',
-    }
-  }
+  // Subagent tokens/window are child-session local — do not overwrite the parent
+  // context ring (lastUsage is for the main session / getContextUsage()).
   return events
 }
 
@@ -848,6 +838,51 @@ function mapScheduledTaskDeleted(u: Record<string, unknown>, _state: XaiCorrelat
 
 // ── Session meta ────────────────────────────────────────────────────────────
 
+/**
+ * Apply Grok session/update `_meta.totalTokens` (context occupancy estimate).
+ * This is NOT billing usage — it is the live context size for the context ring.
+ */
+export function noteContextTokensFromMeta(
+  state: XaiCorrelationState,
+  meta: Record<string, unknown> | null | undefined,
+): void {
+  if (!meta) return
+  const total = numField(meta, 'totalTokens', 'total_tokens')
+  if (total == null || total <= 0) return
+  const prev = state.lastUsage
+  const maxTokens = prev?.maxTokens && prev.maxTokens > 0 ? prev.maxTokens : 0
+  state.lastUsage = {
+    categories: prev?.categories ?? [],
+    totalTokens: total,
+    maxTokens,
+    percentage: maxTokens > 0
+      ? Math.min(100, Math.round((total / maxTokens) * 100))
+      : (prev?.percentage ?? 0),
+    model: prev?.model ?? '',
+  }
+}
+
+/** Seed / refresh context window size on the usage cache (does not clear occupancy). */
+export function noteContextWindow(state: XaiCorrelationState, maxTokens: number): void {
+  if (!(maxTokens > 0)) return
+  const prev = state.lastUsage
+  const total = prev?.totalTokens ?? 0
+  state.lastUsage = {
+    categories: prev?.categories ?? [],
+    totalTokens: total,
+    maxTokens,
+    percentage: total > 0
+      ? Math.min(100, Math.round((total / maxTokens) * 100))
+      : (prev?.percentage ?? 0),
+    model: prev?.model ?? '',
+  }
+}
+
+/** ACP PromptUsage: full input includes cache reads; footer wants uncached only. */
+export function uncachedPromptInputTokens(fullInput: number, cachedRead: number): number {
+  return Math.max(0, fullInput - cachedRead)
+}
+
 function mapTurnCompleted(
   u: Record<string, unknown>,
   state: XaiCorrelationState,
@@ -856,24 +891,37 @@ function mapTurnCompleted(
   const usageRaw = asRecord(u.usage)
   if (!usageRaw) return []
 
-  const inputTokens = numField(usageRaw, 'inputTokens', 'input_tokens') ?? 0
+  // ACP PromptUsage identity: inputTokens is FULL (includes cache reads).
+  const fullInput = numField(usageRaw, 'inputTokens', 'input_tokens') ?? 0
+  const cachedRead = numField(usageRaw, 'cachedReadTokens', 'cached_read_tokens') ?? 0
+  const uncachedInput = uncachedPromptInputTokens(fullInput, cachedRead)
   const outputTokens = numField(usageRaw, 'outputTokens', 'output_tokens') ?? 0
-  const totalTokens = numField(usageRaw, 'totalTokens', 'total_tokens')
-    ?? (inputTokens + outputTokens)
+  const modelCalls = numField(usageRaw, 'modelCalls', 'model_calls')
+  // Billing totalTokens is a sum across model calls — not context occupancy.
   const costTicks = numField(usageRaw, 'costUsdTicks', 'cost_usd_ticks')
   const costUsd = costTicks != null ? costTicks / 1e10 : undefined
 
-  // Prefer existing context window from progress; fall back to total as used.
   const prev = state.lastUsage
   const maxTokens = prev?.maxTokens && prev.maxTokens > 0 ? prev.maxTokens : 0
-  state.lastUsage = {
-    categories: prev?.categories ?? [],
-    totalTokens: totalTokens || inputTokens,
-    maxTokens,
-    percentage: maxTokens > 0
-      ? Math.min(100, Math.round(((totalTokens || inputTokens) / maxTokens) * 100))
-      : (prev?.percentage ?? 0),
-    model: prev?.model ?? '',
+
+  // Context ring: prefer live `_meta.totalTokens` snapshot (lastUsage).
+  // Single-call fallback: full prompt size + output ≈ occupancy after the call.
+  // Multi-call without meta would double-count if we used billing totals — leave occupancy as-is.
+  let contextTokens = prev?.totalTokens && prev.totalTokens > 0 ? prev.totalTokens : 0
+  if (contextTokens <= 0 && fullInput > 0 && (modelCalls == null || modelCalls <= 1)) {
+    contextTokens = fullInput + outputTokens
+  }
+
+  if (contextTokens > 0) {
+    state.lastUsage = {
+      categories: prev?.categories ?? [],
+      totalTokens: contextTokens,
+      maxTokens,
+      percentage: maxTokens > 0
+        ? Math.min(100, Math.round((contextTokens / maxTokens) * 100))
+        : (prev?.percentage ?? 0),
+      model: prev?.model ?? '',
+    }
   }
 
   const messageId = ctx.messageId ?? state.lastMessageId
@@ -881,9 +929,10 @@ function mapTurnCompleted(
   return [{
     type: 'message_usage',
     messageId,
-    inputTokens,
+    // Footer: this-turn new spend (exclude cache hits).
+    inputTokens: uncachedInput,
     outputTokens,
-    contextTokens: totalTokens || inputTokens,
+    ...(contextTokens > 0 ? { contextTokens } : {}),
     ...(maxTokens > 0 ? { contextWindow: maxTokens } : {}),
     ...(costUsd != null ? { costUsd } : {}),
   }]
@@ -894,11 +943,15 @@ function mapAutoCompactStarted(u: Record<string, unknown>): AgentEvent[] {
   return [{ type: 'status_indicator', indicator: 'compacting' }]
 }
 
-function mapAutoCompactCompleted(u: Record<string, unknown>): AgentEvent[] {
+function mapAutoCompactCompleted(
+  u: Record<string, unknown>,
+  state: XaiCorrelationState,
+  ctx: MapXaiNotifyContext,
+): AgentEvent[] {
   const before = numField(u, 'tokens_before', 'tokensBefore') ?? 0
   const after = numField(u, 'tokens_after', 'tokensAfter')
   const elapsed = numField(u, 'elapsed_ms', 'elapsedMs')
-  return [
+  const events: AgentEvent[] = [
     {
       type: 'status_indicator',
       indicator: null,
@@ -912,6 +965,31 @@ function mapAutoCompactCompleted(u: Record<string, unknown>): AgentEvent[] {
       ...(elapsed != null ? { durationMs: elapsed } : {}),
     },
   ]
+  if (after != null && after >= 0) {
+    const prev = state.lastUsage
+    const maxTokens = prev?.maxTokens && prev.maxTokens > 0 ? prev.maxTokens : 0
+    state.lastUsage = {
+      categories: prev?.categories ?? [],
+      totalTokens: after,
+      maxTokens,
+      percentage: maxTokens > 0
+        ? Math.min(100, Math.round((after / maxTokens) * 100))
+        : (prev?.percentage ?? 0),
+      model: prev?.model ?? '',
+    }
+    const messageId = ctx.messageId ?? state.lastMessageId
+    if (messageId) {
+      events.push({
+        type: 'message_usage',
+        messageId,
+        inputTokens: 0,
+        outputTokens: 0,
+        contextTokens: after,
+        ...(maxTokens > 0 ? { contextWindow: maxTokens } : {}),
+      })
+    }
+  }
+  return events
 }
 
 function mapAutoCompactFailed(u: Record<string, unknown>): AgentEvent[] {

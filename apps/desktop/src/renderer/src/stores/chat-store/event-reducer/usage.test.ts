@@ -43,6 +43,22 @@ describe('reduceUsage: message_usage', () => {
     expect(patch.codexUsageSnapshot).toBeUndefined()
   })
 
+  it('context-only message_usage updates ring without wiping footer tokens', () => {
+    const session = createDefaultPerSessionState()
+    session.streamingTokens = { input: 80, output: 20 }
+    const patch = reduceUsage(session, {
+      type: 'message_usage',
+      messageId: 'm1',
+      inputTokens: 0,
+      outputTokens: 0,
+      contextTokens: 50_000,
+      contextWindow: 500_000,
+    } as never)
+    expect(patch.streamingTokens).toBeUndefined()
+    expect(patch.contextTokens).toBe(50_000)
+    expect(patch.contextWindow).toBe(500_000)
+  })
+
   it('accumulates codex footer tokens + roll-up when codexUsage is present', () => {
     const session = createDefaultPerSessionState()
     session.streamingTokens = { input: 5, output: 5 }

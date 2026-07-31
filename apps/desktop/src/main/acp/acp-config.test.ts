@@ -224,6 +224,25 @@ describe('extractModelsFromInitializeResult (Grok)', () => {
     expect(result?.models.map((m) => m.id)).toEqual(['grok-4.5', 'composer'])
     expect(result?.configId).toBeNull()
   })
+
+  it('reads totalContextTokens from model meta for context window', () => {
+    const result = extractModelsFromInitializeResult({
+      protocolVersion: 1,
+      _meta: {
+        modelState: {
+          currentModelId: 'grok-4.5',
+          availableModels: [
+            {
+              modelId: 'grok-4.5',
+              name: 'Grok 4.5',
+              _meta: { totalContextTokens: 500_000 },
+            },
+          ],
+        },
+      },
+    })
+    expect(result?.models[0]?.contextWindow).toBe(500_000)
+  })
 })
 
 describe('extractModelsFromNewSessionResult (Grok)', () => {

@@ -1190,6 +1190,7 @@ export function mapSessionUpdate(
       return mapPlanToTodoEvents(ctx.messageId, update.entries ?? [])
     }
     case 'usage_update': {
+      // ACP usage_update is context occupancy (used/size), not turn billing in/out.
       const used = typeof (update as { used?: number }).used === 'number' ? (update as { used: number }).used : null
       const size = typeof (update as { size?: number }).size === 'number' ? (update as { size: number }).size : null
       if (used == null) return []
@@ -1201,7 +1202,7 @@ export function mapSessionUpdate(
       return [{
         type: 'message_usage',
         messageId: ctx.messageId,
-        inputTokens: used,
+        inputTokens: 0,
         outputTokens: 0,
         contextTokens: used,
         ...(size != null ? { contextWindow: size } : {}),

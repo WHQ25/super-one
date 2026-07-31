@@ -43,7 +43,8 @@ export function ContextUsage() {
     const wasStreaming = prevStatusRef.current === 'streaming'
     prevStatusRef.current = status
     if (!wasStreaming || status !== 'idle' || !activeProject || !activeSessionId) return
-    if (sessionProvider && sessionProvider !== 'claude' && sessionProvider !== 'opencode') return
+    // Claude / OpenCode / ACP(Grok) expose getContextUsage; Codex uses session snapshot only.
+    if (sessionProvider && sessionProvider !== 'claude' && sessionProvider !== 'opencode' && sessionProvider !== 'acp') return
     const sid = activeSessionId
     const project = activeProject
     window.agent.getContextUsage(project, sid).then((usage) => {
@@ -59,9 +60,11 @@ export function ContextUsage() {
     detailedUsage?.maxTokens ??
     (contextWindowFromSession && contextWindowFromSession > 0
       ? contextWindowFromSession
-      : activeProvider === 'claude'
-        ? resolveModelContextWindow({ id: selectedModel, resolvedModel: currentModel?.resolvedModel })
-        : null)
+      : currentModel?.contextWindow && currentModel.contextWindow > 0
+        ? currentModel.contextWindow
+        : activeProvider === 'claude'
+          ? resolveModelContextWindow({ id: selectedModel, resolvedModel: currentModel?.resolvedModel })
+          : null)
   const pct = contextWindow ? Math.min(effectiveTokens / contextWindow, 1) : 0
   const exceeded = contextWindow ? effectiveTokens > contextWindow : false
   const radius = 5

@@ -55,6 +55,8 @@ import {
   XAI_EXT_NOTIFICATION_METHODS,
   createXaiCorrelationState,
   mapXaiStandaloneNotification,
+  noteContextTokensFromMeta,
+  noteContextWindow,
   noteToolCorrelationFromAgentEvents,
   parseXaiExtParams,
   type XaiCorrelationState,
@@ -559,6 +561,12 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
     extractModesFromNewSessionResult(activeSession.newSessionResponse),
     extractModeConfig(configOptions),
   )
+  const seedContextWindowFromModels = (cfg: AcpModelConfig | null) => {
+    if (!cfg?.selectedModelId) return
+    const m = cfg.models.find((x) => x.id === cfg.selectedModelId)
+    if (m?.contextWindow && m.contextWindow > 0) noteContextWindow(xaiCorrelation, m.contextWindow)
+  }
+  seedContextWindowFromModels(modelConfig)
   let closed = false
   void activeConnection.closed.then(() => {
     closed = true
@@ -615,6 +623,12 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
           continue
         }
         const update = message.update
+        // Grok stamps live context occupancy on every session/update `_meta.totalTokens`.
+        const notifMeta = (message as { notification?: { _meta?: Record<string, unknown> | null } }).notification?._meta
+        const prevContextTokens = xaiCorrelation.lastUsage?.totalTokens ?? 0
+        if (notifMeta) noteContextTokensFromMeta(xaiCorrelation, notifMeta)
+        const nextContextTokens = xaiCorrelation.lastUsage?.totalTokens ?? 0
+        const contextChanged = nextContextTokens > 0 && nextContextTokens !== prevContextTokens
         trace('acp.session', update.sessionUpdate, update, promptMessageId ?? activeSession.sessionId)
         let messageId = promptMessageId ?? `acp_session_${activeSession.sessionId}`
         const agentMid = getAgentChunkMessageId(update)
@@ -652,6 +666,19 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
             terminalManager.bindTool(terminalId, toolUseId)
           },
         })
+        // When occupancy changes, push a context-only usage event so the ring
+        // updates mid-turn without clobbering footer in/out.
+        if (contextChanged && xaiCorrelation.lastUsage) {
+          const max = xaiCorrelation.lastUsage.maxTokens
+          mapped.push({
+            type: 'message_usage',
+            messageId,
+            inputTokens: 0,
+            outputTokens: 0,
+            contextTokens: xaiCorrelation.lastUsage.totalTokens,
+            ...(max > 0 ? { contextWindow: max } : {}),
+          })
+        }
         trackOpenTools(openToolIds, mapped)
         noteToolCorrelationFromAgentEvents(mapped, xaiCorrelation)
         for (const event of mapped) {
@@ -721,6 +748,7 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
           selectedModelId: modelId,
         }
       }
+      seedContextWindowFromModels(modelConfig)
       if (setOpts?.reasoningEffort && modeConfig) {
         const effort = setOpts.reasoningEffort.trim()
         if (effort && modeConfig.modes.some((m) => m.id === effort)) {

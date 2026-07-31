@@ -403,7 +403,7 @@ describe('usage_update and cancel helpers', () => {
     expect(events).toEqual([{
       type: 'message_usage',
       messageId: 'msg-1',
-      inputTokens: 53000,
+      inputTokens: 0,
       outputTokens: 0,
       contextTokens: 53000,
       contextWindow: 200000,

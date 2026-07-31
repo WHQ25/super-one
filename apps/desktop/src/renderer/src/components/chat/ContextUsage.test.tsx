@@ -179,4 +179,38 @@ describe('ContextUsage', () => {
     await vi.waitFor(() => expect(getContextUsageMock).toHaveBeenCalledWith('/test', 'sid-1'))
     expect(chatState.setDetailedUsage).toHaveBeenCalledWith('/test', 'sid-1', expect.objectContaining({ maxTokens: 400_000 }))
   })
+
+  it('refreshes detailed context usage after an ACP/Grok turn completes', async () => {
+    activeSessionState.preferredProvider = 'acp' as never
+    activeSessionState.sessionProvider = 'acp' as never
+    activeSessionState.contextTokens = 42_000
+    activeSessionState.status = 'streaming'
+    getContextUsageMock = vi.fn(async () => ({
+      categories: [],
+      totalTokens: 42_000,
+      maxTokens: 500_000,
+      percentage: 8,
+      model: 'grok-4.5',
+    }))
+
+    const { rerender } = render(<ContextUsage />)
+    act(() => { activeSessionState.status = 'idle' })
+    rerender(<ContextUsage />)
+
+    await vi.waitFor(() => expect(getContextUsageMock).toHaveBeenCalledWith('/test', 'sid-1'))
+    expect(chatState.setDetailedUsage).toHaveBeenCalledWith('/test', 'sid-1', expect.objectContaining({ maxTokens: 500_000 }))
+  })
+
+  it('uses model.contextWindow for acp when session window is missing', () => {
+    chatState.availableModels = [{ id: 'grok-4.5', name: 'Grok 4.5', description: '', contextWindow: 500_000 } as never]
+    activeSessionState.contextTokens = 50_000
+    activeSessionState.selectedModel = 'grok-4.5'
+    activeSessionState.preferredProvider = 'acp' as never
+    activeSessionState.sessionProvider = 'acp' as never
+
+    render(<ContextUsage />)
+    fireEvent.click(screen.getByRole('button'))
+
+    expect(screen.getByText('Context: 50.0k / 500.0k (10%)')).toBeTruthy()
+  })
 })

@@ -266,10 +266,23 @@ export function extractModelsFromAgentModelsField(raw: unknown): AcpModelConfig 
     const id = typeof m.modelId === 'string' ? m.modelId : typeof m.id === 'string' ? m.id : null
     const name = typeof m.name === 'string' ? m.name : id
     if (!id || !name) continue
+    // Grok stamps window on model meta as totalContextTokens; also accept common aliases.
+    const meta = (m._meta && typeof m._meta === 'object' && !Array.isArray(m._meta)
+      ? m._meta
+      : m.meta && typeof m.meta === 'object' && !Array.isArray(m.meta)
+        ? m.meta
+        : null) as Record<string, unknown> | null
+    const rawCw =
+      (typeof m.contextWindow === 'number' ? m.contextWindow : undefined)
+      ?? (meta && typeof meta.totalContextTokens === 'number' ? meta.totalContextTokens : undefined)
+      ?? (meta && typeof meta.context_window === 'number' ? meta.context_window : undefined)
+      ?? (meta && typeof meta.contextWindow === 'number' ? meta.contextWindow : undefined)
+    const contextWindow = typeof rawCw === 'number' && Number.isFinite(rawCw) && rawCw > 0 ? rawCw : undefined
     models.push({
       id,
       name,
       description: typeof m.description === 'string' ? m.description : '',
+      ...(contextWindow != null ? { contextWindow } : {}),
     })
   }
   if (models.length === 0) return null

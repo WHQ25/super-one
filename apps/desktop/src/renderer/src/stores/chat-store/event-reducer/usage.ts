@@ -34,8 +34,11 @@ export function reduceUsage(session: PerSessionState, event: UsageEvent): Partia
       }
       const patch: Partial<PerSessionState> = {
         lastEventAt: Date.now(),
-        streamingTokens: { input: event.inputTokens, output: event.outputTokens },
         messages: messagesWithSeq,
+      }
+      // Context-only updates (input/output both 0) must not wipe footer turn tokens.
+      if (event.inputTokens > 0 || event.outputTokens > 0) {
+        patch.streamingTokens = { input: event.inputTokens, output: event.outputTokens }
       }
       if (typeof event.contextTokens === 'number' && event.contextTokens > 0) {
         patch.contextTokens = event.contextTokens

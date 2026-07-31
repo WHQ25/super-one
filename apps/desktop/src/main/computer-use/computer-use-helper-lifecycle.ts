@@ -8,6 +8,7 @@ import {
   RELEASE_HELPER_APP_NAME,
   defaultHelperSocketPath,
   getSharedHelperClient,
+  installPackagedReleaseHelper,
   killHelperProcesses,
   resetSharedHelperClient,
   resolveHelperAppPath,
@@ -95,10 +96,9 @@ async function restartHelperSingleFlight(client: PermissionHelperClient): Promis
 
 /**
  * Poll path (OCU-aligned):
- * - doctor is dual-channel (TCC.db OR runtime) so System Settings grants appear
- *   without killing the process first.
- * - On missing → granted, restart only when runtime still sticky
- *   (`screenRecordingNeedsRelaunch`), so a prior Recheck does not double-restart.
+ * - doctor reports only runtime access as granted.
+ * - A newly observed persisted TCC grant requests one restart while runtime is
+ *   sticky-denied; the post-restart runtime result remains authoritative.
  * - Restarts are single-flight with explicit Recheck.
  */
 export async function refreshComputerUsePermissionStatusAfterScreenGrant(
@@ -106,12 +106,11 @@ export async function refreshComputerUsePermissionStatusAfterScreenGrant(
   previousStatus: ComputerUsePermissionStatus,
 ): Promise<ComputerUsePermissionStatus> {
   const doctor = await client.doctor()
-  const screenJustGranted =
-    previousStatus.screenRecording !== 'granted'
-    && doctor.screenRecording === 'granted'
-  const needsRelaunch = doctor.screenRecordingNeedsRelaunch === true
+  const needsRelaunch =
+    previousStatus.screenRecordingNeedsRelaunch !== true
+    && doctor.screenRecordingNeedsRelaunch === true
 
-  if (!(screenJustGranted && needsRelaunch)) {
+  if (!needsRelaunch) {
     return statusFromDoctor(doctor, false)
   }
 
@@ -181,6 +180,22 @@ export function isComputerUseHelperManaged(): boolean {
   return process.platform === 'darwin' && process.env.SUPERONE_CU_MANAGE_HELPER !== '0'
 }
 
+/** Install the packaged release helper outside SuperOne.app so TCC sees its own identity. */
+export function prepareComputerUseHelper(): string | null {
+  const variant = resolveHelperVariant()
+  if (variant === 'release') {
+    const installation = installPackagedReleaseHelper()
+    if (installation?.updated) {
+      log.info(
+        '[computer-use] installed release helper outside host bundle source=%s path=%s',
+        installation.sourcePath,
+        installation.appPath,
+      )
+    }
+  }
+  return resolveHelperAppPath({ preferDev: variant === 'dev' })
+}
+
 /**
  * Launch the matching Computer Use helper and keep it warm for the desktop session.
  * No-op on non-macOS or when the .app is missing (log once).
@@ -193,7 +208,14 @@ export async function startComputerUseHelper(
 
   const variant = resolveHelperVariant()
   const appName = variant === 'dev' ? DEV_HELPER_APP_NAME : RELEASE_HELPER_APP_NAME
-  const appPath = resolveHelperAppPath({ preferDev: variant === 'dev' })
+  let appPath: string | null
+  try {
+    appPath = prepareComputerUseHelper()
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    log.warn('[computer-use] failed to install %s helper: %s', variant, message)
+    return { requested: false, error: message }
+  }
   if (!appPath || !existsSync(appPath)) {
     log.warn(
       '[computer-use] %s helper not found',
@@ -221,9 +243,12 @@ export async function startComputerUseHelper(
     const doctor = await client.doctor().catch(() => null)
     if (doctor) {
       log.info(
-        '[computer-use] helper doctor accessibility=%s screenRecording=%s pid=%s',
+        '[computer-use] helper doctor accessibility=%s screenRecording=%s '
+          + 'screenRuntime=%s screenPersisted=%s pid=%s',
         doctor.accessibility,
         doctor.screenRecording,
+        doctor.screenRecordingRuntime ?? '?',
+        doctor.screenRecordingPersisted ?? '?',
         String((doctor as { pid?: number }).pid ?? '?'),
       )
       if (doctor.screenRecording !== 'granted' || doctor.accessibility !== 'granted') {

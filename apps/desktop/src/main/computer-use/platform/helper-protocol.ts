@@ -78,6 +78,9 @@ export interface HelperDoctor {
   /** Optional runtime-only probe (CGPreflight / AX); diagnostics only. */
   accessibilityRuntime?: 'granted' | 'missing' | string
   screenRecordingRuntime?: 'granted' | 'missing' | string
+  /** Best-effort TCC.db diagnostics; never sufficient to report usable access. */
+  accessibilityPersisted?: 'granted' | 'missing' | string
+  screenRecordingPersisted?: 'granted' | 'missing' | string
 }
 
 export interface HelperAppInfo {

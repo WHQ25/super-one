@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -7,6 +7,8 @@ import { isComputerUseSupportedPlatform } from '../tools'
 import {
   defaultHelperSocketPath,
   helperProcessMatchPatterns,
+  installPackagedReleaseHelper,
+  installedReleaseHelperAppPath,
   RELEASE_HELPER_APP_NAME,
   resolveHelperAppPath,
 } from '../platform/macos-helper-client'
@@ -47,21 +49,69 @@ describe('Computer Use platform availability', () => {
     })).toBe('fake')
   })
 
-  it('resolves the helper embedded beside packaged Resources', () => {
+  it('installs the packaged helper outside the host app before resolving it', () => {
     const root = mkdtempSync(join(tmpdir(), 'superone-cu-helper-'))
     tempRoots.push(root)
     const resourcesPath = join(root, 'SuperOne.app', 'Contents', 'Resources')
-    const helperPath = join(
+    const sourcePath = join(
       root,
       'SuperOne.app',
       'Contents',
       'Frameworks',
       `${RELEASE_HELPER_APP_NAME}.app`,
     )
+    const installRoot = join(root, 'Application Support', 'SuperOne', 'Computer Use')
+    const installedPath = installedReleaseHelperAppPath(installRoot)
+    const executable = join(sourcePath, 'Contents', 'MacOS', RELEASE_HELPER_APP_NAME)
+    const plist = join(sourcePath, 'Contents', 'Info.plist')
+    const codeResources = join(sourcePath, 'Contents', '_CodeSignature', 'CodeResources')
     mkdirSync(resourcesPath, { recursive: true })
-    mkdirSync(helperPath, { recursive: true })
+    mkdirSync(join(sourcePath, 'Contents', 'MacOS'), { recursive: true })
+    mkdirSync(join(sourcePath, 'Contents', '_CodeSignature'), { recursive: true })
+    writeFileSync(executable, 'release-v1')
+    writeFileSync(plist, '<plist>v1</plist>')
+    writeFileSync(codeResources, 'signature-v1')
 
-    expect(resolveHelperAppPath({ preferDev: false, resourcesPath })).toBe(helperPath)
+    // The nested app is an installation source, never a launchable fallback.
+    expect(resolveHelperAppPath({
+      preferDev: false,
+      resourcesPath,
+      installRoot,
+    })).toBeNull()
+
+    const first = installPackagedReleaseHelper({
+      resourcesPath,
+      installRoot,
+      stopRunningHelper: false,
+    })
+    expect(first).toEqual({ appPath: installedPath, sourcePath, updated: true })
+    expect(existsSync(installedPath)).toBe(true)
+    expect(resolveHelperAppPath({
+      preferDev: false,
+      resourcesPath,
+      installRoot,
+    })).toBe(installedPath)
+
+    const unchanged = installPackagedReleaseHelper({
+      resourcesPath,
+      installRoot,
+      stopRunningHelper: false,
+    })
+    expect(unchanged?.updated).toBe(false)
+
+    writeFileSync(executable, 'release-v2')
+    const upgraded = installPackagedReleaseHelper({
+      resourcesPath,
+      installRoot,
+      stopRunningHelper: false,
+    })
+    expect(upgraded?.updated).toBe(true)
+    expect(readFileSync(
+      join(installedPath, 'Contents', 'MacOS', RELEASE_HELPER_APP_NAME),
+      'utf8',
+    )).toBe('release-v2')
+
+    expect(installedPath.startsWith(join(root, 'SuperOne.app'))).toBe(false)
   })
 
   it('isolates development and release helper sockets and process matching', () => {

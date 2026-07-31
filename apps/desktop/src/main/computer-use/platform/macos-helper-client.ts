@@ -1,6 +1,15 @@
 import { createConnection, type Socket } from 'node:net'
-import { existsSync, unlinkSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  unlinkSync,
+} from 'node:fs'
+import { createHash } from 'node:crypto'
+import { homedir, tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { spawn, execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
@@ -19,8 +28,23 @@ export type ComputerUseHelperVariant = 'dev' | 'release'
 
 export interface ResolveHelperAppPathOptions {
   preferDev?: boolean
-  /** Injectable for packaged-path regression tests. null skips packaged lookup. */
+  /** Injectable for packaged-source regression tests. null skips packaged lookup. */
   resourcesPath?: string | null
+  /** Injectable user-level install root. null skips installed-helper lookup. */
+  installRoot?: string | null
+}
+
+export interface InstallPackagedHelperOptions {
+  resourcesPath?: string | null
+  installRoot?: string
+  /** Tests can disable process cleanup because no real helper is running. */
+  stopRunningHelper?: boolean
+}
+
+export interface PackagedHelperInstallation {
+  appPath: string
+  sourcePath: string
+  updated: boolean
 }
 
 export function resolveHelperVariant(): ComputerUseHelperVariant {
@@ -46,11 +70,105 @@ function nativeHelperRootCandidates(): string[] {
   ]
 }
 
+export function defaultReleaseHelperInstallRoot(): string {
+  return process.env.SUPERONE_CU_HELPER_INSTALL_ROOT
+    ?? join(homedir(), 'Library', 'Application Support', 'SuperOne', 'Computer Use')
+}
+
+export function installedReleaseHelperAppPath(
+  installRoot = defaultReleaseHelperInstallRoot(),
+): string {
+  return join(installRoot, `${RELEASE_HELPER_APP_NAME}.app`)
+}
+
+export function resolvePackagedReleaseHelperSource(
+  resourcesPath: string | null = typeof process.resourcesPath === 'string'
+    ? process.resourcesPath
+    : null,
+): string | null {
+  if (!resourcesPath) return null
+  const source = join(
+    resourcesPath,
+    '..',
+    'Frameworks',
+    `${RELEASE_HELPER_APP_NAME}.app`,
+  )
+  return existsSync(source) ? source : null
+}
+
+function helperBundleFingerprint(appPath: string): string | null {
+  const files = [
+    join(appPath, 'Contents', 'MacOS', RELEASE_HELPER_APP_NAME),
+    join(appPath, 'Contents', 'Info.plist'),
+    join(appPath, 'Contents', '_CodeSignature', 'CodeResources'),
+  ]
+  if (files.some((file) => !existsSync(file))) return null
+  const hash = createHash('sha256')
+  for (const file of files) hash.update(readFileSync(file))
+  return hash.digest('hex')
+}
+
+/**
+ * Copy the signed release helper out of SuperOne.app before launching it.
+ * macOS attributes nested apps under Contents/Frameworks to the outer app for
+ * Screen Recording, even when the nested bundle has its own identifier.
+ */
+export function installPackagedReleaseHelper(
+  options: InstallPackagedHelperOptions = {},
+): PackagedHelperInstallation | null {
+  const sourcePath = resolvePackagedReleaseHelperSource(
+    options.resourcesPath === undefined
+      ? (typeof process.resourcesPath === 'string' ? process.resourcesPath : null)
+      : options.resourcesPath,
+  )
+  if (!sourcePath) return null
+
+  const installRoot = options.installRoot ?? defaultReleaseHelperInstallRoot()
+  const appPath = installedReleaseHelperAppPath(installRoot)
+  const sourceFingerprint = helperBundleFingerprint(sourcePath)
+  if (!sourceFingerprint) {
+    throw new Error(`Packaged Computer Use helper is incomplete: ${sourcePath}`)
+  }
+  if (helperBundleFingerprint(appPath) === sourceFingerprint) {
+    return { appPath, sourcePath, updated: false }
+  }
+
+  mkdirSync(installRoot, { recursive: true, mode: 0o700 })
+  const suffix = `${process.pid}-${Date.now()}`
+  const stagingPath = `${appPath}.installing-${suffix}`
+  const backupPath = `${appPath}.previous-${suffix}`
+  rmSync(stagingPath, { recursive: true, force: true })
+  rmSync(backupPath, { recursive: true, force: true })
+
+  try {
+    cpSync(sourcePath, stagingPath, { recursive: true, preserveTimestamps: true })
+    if (helperBundleFingerprint(stagingPath) !== sourceFingerprint) {
+      throw new Error('Copied Computer Use helper failed integrity verification')
+    }
+
+    if (options.stopRunningHelper !== false) {
+      resetSharedHelperClient()
+      killHelperProcesses('release')
+    }
+    if (existsSync(appPath)) renameSync(appPath, backupPath)
+    try {
+      renameSync(stagingPath, appPath)
+    } catch (err) {
+      if (existsSync(backupPath) && !existsSync(appPath)) renameSync(backupPath, appPath)
+      throw err
+    }
+    rmSync(backupPath, { recursive: true, force: true })
+    return { appPath, sourcePath, updated: true }
+  } finally {
+    rmSync(stagingPath, { recursive: true, force: true })
+  }
+}
+
 /**
  * Resolve helper .app path.
  * - SUPERONE_CU_HELPER_APP overrides everything
- * - prefer Dev app when SUPERONE_CU_HELPER_VARIANT=dev or when not packaged
- * - prefer Release when SUPERONE_CU_HELPER_VARIANT=release
+ * - packaged release builds may launch only the user-level installed copy
+ * - development builds resolve their repo-local app directly
  */
 export function resolveHelperAppPath(opts?: ResolveHelperAppPathOptions): string | null {
   if (process.env.SUPERONE_CU_HELPER_APP) {
@@ -58,20 +176,25 @@ export function resolveHelperAppPath(opts?: ResolveHelperAppPathOptions): string
   }
 
   const preferDev = opts?.preferDev ?? resolveHelperVariant() === 'dev'
-
   const names = preferDev
     ? [DEV_HELPER_APP_NAME, RELEASE_HELPER_APP_NAME]
     : [RELEASE_HELPER_APP_NAME, DEV_HELPER_APP_NAME]
 
-  const resourcesPath = opts?.resourcesPath === undefined
-    ? (typeof process.resourcesPath === 'string' ? process.resourcesPath : null)
-    : opts.resourcesPath
-  if (resourcesPath) {
-    const frameworksDir = join(resourcesPath, '..', 'Frameworks')
-    for (const name of names) {
-      const packagedPath = join(frameworksDir, `${name}.app`)
-      if (existsSync(packagedPath)) return packagedPath
+  if (!preferDev) {
+    const installRoot = opts?.installRoot === undefined
+      ? defaultReleaseHelperInstallRoot()
+      : opts.installRoot
+    if (installRoot) {
+      const installedPath = installedReleaseHelperAppPath(installRoot)
+      if (existsSync(installedPath)) return installedPath
     }
+
+    const resourcesPath = opts?.resourcesPath === undefined
+      ? (typeof process.resourcesPath === 'string' ? process.resourcesPath : null)
+      : opts.resourcesPath
+    // A packaged helper is only an installation source. Never fall through to
+    // it (or another repo-local variant) when the installed copy is missing.
+    if (resolvePackagedReleaseHelperSource(resourcesPath)) return null
   }
 
   for (const root of nativeHelperRootCandidates()) {

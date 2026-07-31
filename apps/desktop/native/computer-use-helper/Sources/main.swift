@@ -128,9 +128,8 @@ struct AnyEncodable: Encodable {
 // Match Open Computer Use (Permissions.swift):
 // - Runtime: AXIsProcessTrusted / CGPreflightScreenCaptureAccess (never SCShareableContent probe).
 // - Persisted: read TCC.db auth_value for this helper's bundle id + path (OCU dual-channel).
-// - UI "granted" = TCC OR runtime so System Settings toggles are visible without process death.
-// - Capture still gates on runtime preflight; host restarts helper once when combined flips
-//   granted while runtime is still sticky-denied.
+// - UI "granted" = runtime only. A persisted TCC grant may request one relaunch,
+//   but it is never reported as usable until runtime preflight succeeds.
 
 func axTrusted() -> Bool {
     AXIsProcessTrusted()
@@ -154,11 +153,6 @@ func screenRecordingTrusted() -> Bool {
 func requestScreenRecordingAccess() -> Bool {
     _ = CGRequestScreenCaptureAccess()
     return CGPreflightScreenCaptureAccess()
-}
-
-/// OCU-style: either persisted TCC row or live runtime API.
-private func permissionGranted(persisted: Bool?, runtime: Bool) -> Bool {
-    (persisted == true) || runtime
 }
 
 private struct PermissionClientRecord: Hashable {
@@ -268,19 +262,20 @@ func doctor() -> [String: Any] {
     let axRuntime = axTrusted()
     let screenRuntime = screenRecordingTrusted()
     let tcc = tccPersistedGrants()
-    let axGranted = permissionGranted(persisted: tcc.accessibility, runtime: axRuntime)
-    let screenGranted = permissionGranted(persisted: tcc.screenRecording, runtime: screenRuntime)
-    // Combined granted but process preflight still denied → host should relaunch once.
-    let screenNeedsRelaunch = screenGranted && !screenRuntime
+    let screenPersisted = tcc.screenRecording == true
+    // A persisted grant can update before the running process sees it.
+    let screenNeedsRelaunch = screenPersisted && !screenRuntime
     return [
-        "accessibility": axGranted ? "granted" : "missing",
-        "screenRecording": screenGranted ? "granted" : "missing",
+        "accessibility": axRuntime ? "granted" : "missing",
+        "screenRecording": screenRuntime ? "granted" : "missing",
         "bundleId": Bundle.main.bundleIdentifier ?? "unknown",
         "bundlePath": Bundle.main.bundleURL.path,
         "pid": ProcessInfo.processInfo.processIdentifier,
         "screenRecordingNeedsRelaunch": screenNeedsRelaunch,
         "accessibilityRuntime": axRuntime ? "granted" : "missing",
         "screenRecordingRuntime": screenRuntime ? "granted" : "missing",
+        "accessibilityPersisted": tcc.accessibility == true ? "granted" : "missing",
+        "screenRecordingPersisted": screenPersisted ? "granted" : "missing",
     ]
 }
 

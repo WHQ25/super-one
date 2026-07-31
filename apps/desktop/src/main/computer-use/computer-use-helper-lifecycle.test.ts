@@ -116,7 +116,7 @@ describe('refreshComputerUsePermissionStatusAfterScreenGrant', () => {
     const doctors = [
       doctor({
         accessibility: 'granted',
-        screenRecording: 'granted',
+        screenRecording: 'missing',
         screenRecordingNeedsRelaunch: true,
       }),
       doctor({
@@ -201,6 +201,34 @@ describe('refreshComputerUsePermissionStatusAfterScreenGrant', () => {
     expect(result).toMatchObject({ accessibility: 'granted', screenRecording: 'missing' })
   })
 
+  it('keeps stale persisted grants missing and does not restart repeatedly', async () => {
+    const client = {
+      call: vi.fn(),
+      restartHelper: vi.fn(async () => {}),
+      doctor: vi.fn(async () => doctor({
+        accessibility: 'granted',
+        screenRecording: 'missing',
+        screenRecordingNeedsRelaunch: true,
+      })),
+    }
+
+    const afterRestart = await refreshComputerUsePermissionStatusAfterScreenGrant(
+      client,
+      { requested: false, screenRecording: 'missing', screenRecordingNeedsRelaunch: false },
+    )
+    const afterNextPoll = await refreshComputerUsePermissionStatusAfterScreenGrant(
+      client,
+      afterRestart,
+    )
+
+    expect(client.restartHelper).toHaveBeenCalledTimes(1)
+    expect(afterRestart).toMatchObject({
+      screenRecording: 'missing',
+      screenRecordingNeedsRelaunch: true,
+    })
+    expect(afterNextPoll.screenRecording).toBe('missing')
+  })
+
   it('does not restart for an Accessibility-only transition', async () => {
     const client = {
       call: vi.fn(),
@@ -281,7 +309,7 @@ describe('recheckComputerUsePermissionStatus', () => {
       doctor: vi.fn()
         .mockResolvedValueOnce(doctor({
           accessibility: 'granted',
-          screenRecording: 'granted',
+          screenRecording: 'missing',
           screenRecordingNeedsRelaunch: true,
         }))
         .mockResolvedValue(doctor({

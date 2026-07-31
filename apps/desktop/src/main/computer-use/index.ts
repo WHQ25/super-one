@@ -31,6 +31,7 @@ export {
 export {
   startComputerUseHelper,
   stopComputerUseHelper,
+  prepareComputerUseHelper,
   getComputerUsePermissionStatus,
   pollComputerUsePermissionStatus,
   recheckComputerUsePermissionStatus,

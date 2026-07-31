@@ -39,6 +39,7 @@ import {
   getComputerUsePermissionStatus,
   noteComputerUsePermissionBaseline,
   pollComputerUsePermissionStatus,
+  prepareComputerUseHelper,
   recheckComputerUsePermissionStatus,
   startComputerUseHelper,
   stopComputerUseHelper,
@@ -3224,10 +3225,22 @@ app.whenReady().then(async () => {
   registerBrowserPopupRedirect()
   registerBrowserDownloadCapture()
 
-  // Dev: keep SuperOne Dev Computer Use.app alive for the whole SuperOne session
-  // so TCC identity stays stable. Permission prompts require explicit user action.
-  if (is.dev && process.platform === 'darwin') {
-    void startComputerUseHelper({ requestPermissions: false })
+  if (process.platform === 'darwin') {
+    if (is.dev) {
+      // Dev keeps its repo-local helper warm; permission prompts remain explicit.
+      void startComputerUseHelper({ requestPermissions: false })
+    } else {
+      // Installation does not launch or request permissions. The nested signed
+      // bundle is only a source because TCC attributes nested apps to SuperOne.
+      try {
+        prepareComputerUseHelper()
+      } catch (err) {
+        log.warn(
+          '[computer-use] failed to prepare release helper: %s',
+          err instanceof Error ? err.message : String(err),
+        )
+      }
+    }
   }
 
   if (is.dev && process.env.SUPERONE_BENCH) {

@@ -1673,7 +1673,12 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(AgentIpcChannels.SAVE_FILE, async (_event, folderPath: string, filePath: string, content: string) => {
     try {
-      const fullPath = validatePathInProject(folderPath, isAbsolute(filePath) ? filePath : join(folderPath, filePath))
+      // Absolute paths (including outside the project) are writable — local files
+      // opened from chat chips. Relative paths stay sandboxed to the project.
+      const isAbs = isAbsolute(filePath) || /^[A-Za-z]:[\\/]/.test(filePath)
+      const fullPath = isAbs
+        ? resolveRealPath(filePath)
+        : validatePathInProject(folderPath, join(folderPath, filePath))
       await writeFile(fullPath, content, 'utf-8')
       return { ok: true }
     } catch (err) {
@@ -1915,7 +1920,12 @@ function registerIpcHandlers(): void {
   })
 
   ipcMain.handle(AgentIpcChannels.FILE_SHOW_IN_FOLDER, async (_event, folderPath: string, relPath: string) => {
-    const absPath = validatePathInProject(folderPath, relPath)
+    // Absolute relPath (or Windows drive path) is revealed as-is so out-of-project
+    // file chips can "Show in Folder". Relative paths stay inside the project.
+    const isAbs = !!relPath && (isAbsolute(relPath) || /^[A-Za-z]:[\\/]/.test(relPath))
+    const absPath = isAbs
+      ? resolveRealPath(relPath)
+      : validatePathInProject(folderPath, relPath)
     if (relPath === '') {
       await shell.openPath(absPath)
     } else {
@@ -3246,6 +3256,10 @@ app.whenReady().then(async () => {
     })
   }
   registerMiniAppProtocolHandlers(protocol)
+  // Built-in browser webviews use partition "persist:browser"; register the same
+  // local-file handler so HTML/CSS/asset previews work there (not only in the
+  // main renderer session used by in-app iframes).
+  registerMiniAppProtocolHandlers(session.fromPartition('persist:browser').protocol)
 
   fixPath()
   startMediaServer().catch((err) => log.error('[media-server] failed to start:', err))

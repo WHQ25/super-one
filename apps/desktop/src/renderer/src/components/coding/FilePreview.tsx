@@ -4,6 +4,7 @@ import { FileX2, ChevronRight } from 'lucide-react'
 import { FileIcon } from '@superone/ui/components/ui/FileIcon'
 import { Tabs, TabsList, TabsTrigger } from '@superone/ui/components/ui/tabs'
 import { useEffectiveProjectRoot } from '@/stores/app'
+import { isAbsoluteLocalPath } from '@/lib/file-link'
 import { toLocalFileUrl, toMediaUrl } from '@/lib/path-utils'
 import { PdfPreview } from '@/components/chat/PdfPreview'
 import type { GitFileDiff, GitFileContent } from '@superone/shared/agent-types'
@@ -12,7 +13,6 @@ import { FileWithDiffView } from './source-control/FileWithDiffView'
 import { ImagePreview } from './ImagePreview'
 import { MarkdownEditor } from './MarkdownEditor'
 import { TextFileEditor } from './TextFileEditor'
-import { HtmlPreview } from './HtmlPreview'
 import { FileSelectionContextMenuZone } from './FileSelectionContextMenuZone'
 
 const MARKDOWN_EXTS = new Set(['md', 'mdx', 'markdown'])
@@ -20,7 +20,6 @@ const BINARY_IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', '
 const PDF_EXTS = new Set(['pdf'])
 const VIDEO_EXTS = new Set(['mp4', 'webm', 'ogg', 'mov'])
 const AUDIO_EXTS = new Set(['mp3', 'wav', 'flac', 'aac', 'm4a', 'ogg'])
-const HTML_EXTS = new Set(['html', 'htm'])
 
 function getFileExt(fileName: string): string {
   return fileName.split('.').pop()?.toLowerCase() ?? ''
@@ -50,10 +49,10 @@ function useOwnFileData(filePath: string | undefined, refreshKey: number) {
       const isBin = c.language === 'image' || c.language === 'pdf' || c.language === 'video' || c.language === 'audio'
       const isSvg = c.language === 'svg'
       const ext = filePath.split('.').pop()?.toLowerCase() ?? ''
-      const isHtml = HTML_EXTS.has(ext)
-      // Default to File view; Changes when dirty in git; media stays on preview.
+      const isMd = MARKDOWN_EXTS.has(ext)
+      // Default: media + markdown → Preview; dirty git → Changes; else File.
       setTab(
-        isBin || isSvg || isHtml
+        isBin || isSvg || isMd
           ? 'preview'
           : d.diff
             ? 'changes'
@@ -89,20 +88,20 @@ export function FilePreview({ filePath }: FilePreviewProps) {
   const isSvgFile = ext === 'svg'
   const isVideoFile = VIDEO_EXTS.has(ext)
   const isAudioFile = AUDIO_EXTS.has(ext)
-  const isHtml = HTML_EXTS.has(ext)
   const hasDiff = !!fileDiff?.diff
   const isBinaryPreview = isBinImg || isPdfFile || isVideoFile || isAudioFile
   const isUnpreviewable = fileContent?.language === 'binary' || fileContent?.language === 'too-large'
-  const isTextEditable = !isBinaryPreview && !isUnpreviewable && !isSvgFile && !isHtml
-  const fullFilePath = selectedFile.startsWith('/') ? selectedFile : `${fileRoot}/${selectedFile}`
+  // Non-md text files still use Editor + File; markdown uses Preview + File only.
+  const isTextEditable = !isBinaryPreview && !isUnpreviewable && !isSvgFile && !isMd
+  const fullFilePath = isAbsoluteLocalPath(selectedFile) ? selectedFile : `${fileRoot}/${selectedFile}`
 
   const tabs = (() => {
     if (isUnpreviewable) return []
     if (isBinaryPreview) return [{ key: 'preview' as TabKey, label: 'Preview' }]
     const items: { key: TabKey; label: string }[] = []
     if (hasDiff) items.push({ key: 'changes', label: 'Changes' })
-    if (isSvgFile || isHtml) items.push({ key: 'preview', label: 'Preview' })
-    if (isTextEditable || isMd) items.push({ key: 'editor', label: 'Editor' })
+    if (isSvgFile || isMd) items.push({ key: 'preview', label: 'Preview' })
+    if (isTextEditable) items.push({ key: 'editor', label: 'Editor' })
     items.push({ key: 'file', label: 'File' })
     return items
   })()
@@ -168,18 +167,30 @@ export function FilePreview({ filePath }: FilePreviewProps) {
     )
   }
 
-  const pathSegments = selectedFile.split('/')
-  const editorBody = isMd ? (
-    <MarkdownEditor
-      content={fileContent?.content ?? ''}
+  // Keep leading root "/" as a segment; drop empty pieces from split.
+  const pathSegments = selectedFile.split(/[/\\]/).filter((s, i) => s.length > 0 || i === 0)
+  const breadcrumbRef = useRef<HTMLDivElement>(null)
+  // Prefer showing the filename when the path overflows — scroll to the end.
+  useEffect(() => {
+    const el = breadcrumbRef.current
+    if (!el) return
+    el.scrollLeft = el.scrollWidth
+  }, [selectedFile, pathSegments.length])
+
+  // Prefer in-memory draft when remounting markdown Preview so edits aren't lost.
+  const editorContent = liveContentRef.current ?? fileContent?.content ?? ''
+  const textEditorBody = (
+    <TextFileEditor
+      content={editorContent}
       filePath={selectedFile}
       onDirtyChange={handleDirtyChange}
       onContentChange={handleContentChange}
       onSaved={handleSaved}
     />
-  ) : (
-    <TextFileEditor
-      content={fileContent?.content ?? ''}
+  )
+  const markdownPreviewBody = (
+    <MarkdownEditor
+      content={editorContent}
       filePath={selectedFile}
       onDirtyChange={handleDirtyChange}
       onContentChange={handleContentChange}
@@ -190,17 +201,23 @@ export function FilePreview({ filePath }: FilePreviewProps) {
   return (
     <div ref={rootRef} className="flex h-full flex-col">
       <div className="flex h-8 shrink-0 items-center gap-1 px-2">
-        <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-hidden">
+        <div
+          ref={breadcrumbRef}
+          title={selectedFile}
+          className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto overflow-y-hidden hide-scrollbar"
+        >
           {pathSegments.map((segment, i) => (
             <span key={i} className="flex shrink-0 items-center gap-0.5">
               {i > 0 && <ChevronRight className="size-3 shrink-0 text-muted-foreground/50" />}
               {i === pathSegments.length - 1 ? (
-                <span className="flex items-center gap-1 truncate">
-                  <FileIcon name={segment} size={13} className="shrink-0" />
-                  <span className="truncate text-xs font-medium">{segment}</span>
+                <span className="flex items-center gap-1">
+                  <FileIcon name={segment || selectedFile} size={13} className="shrink-0" />
+                  <span className="text-xs font-medium whitespace-nowrap">{segment || selectedFile}</span>
                 </span>
               ) : (
-                <span className="text-xs text-muted-foreground">{segment}</span>
+                <span className="text-xs text-muted-foreground whitespace-nowrap">
+                  {segment || '/'}
+                </span>
               )}
             </span>
           ))}
@@ -229,13 +246,26 @@ export function FilePreview({ filePath }: FilePreviewProps) {
           </div>
         ) : (
           <>
-            {(isTextEditable || isMd) && (
+            {/* Markdown: Preview = editable WYSIWYG. File uses the same highlighted
+                source view as other files (FileWithDiffView). Editable highlighted
+                File for all types is a later unification. */}
+            {isMd && effectiveTab === 'preview' && (
+              <FileSelectionContextMenuZone
+                filePath={fullFilePath}
+                fileContent={editorContent}
+                className="size-full"
+              >
+                {markdownPreviewBody}
+              </FileSelectionContextMenuZone>
+            )}
+            {/* Non-markdown text: Editor tab = plain editable textarea. */}
+            {isTextEditable && (
               <FileSelectionContextMenuZone
                 filePath={fullFilePath}
                 fileContent={liveContentRef.current ?? fileContent?.content ?? null}
                 className={effectiveTab === 'editor' ? 'size-full' : 'hidden'}
               >
-                {editorBody}
+                {textEditorBody}
               </FileSelectionContextMenuZone>
             )}
             {effectiveTab === 'changes' && hasDiff ? (
@@ -256,8 +286,6 @@ export function FilePreview({ filePath }: FilePreviewProps) {
               </div>
             ) : effectiveTab === 'preview' && isSvgFile ? (
               <ImagePreview src={toLocalFileUrl(fullFilePath)} alt={fileName} />
-            ) : effectiveTab === 'preview' && isHtml ? (
-              <HtmlPreview src={toLocalFileUrl(fullFilePath)} />
             ) : effectiveTab === 'file' ? (
               <FileSelectionContextMenuZone filePath={fullFilePath} fileContent={fileContent?.content ?? null} className="size-full">
                 <FileWithDiffView filePath={selectedFile} content={fileContent?.content ?? ''} diff={fileDiff?.diff ?? ''} />

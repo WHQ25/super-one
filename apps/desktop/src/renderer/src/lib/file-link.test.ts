@@ -79,7 +79,45 @@ describe('resolveProjectFileHref', () => {
     })
   })
 
-  it('rejects absolute paths outside the project', () => {
-    expect(resolveProjectFileHref('/tmp/outside.ts', PROJECT)).toBeNull()
+  it('maps absolute paths outside the project to the editor (not browser)', () => {
+    expect(resolveProjectFileHref('/tmp/outside.ts', PROJECT)).toEqual({
+      filePath: '/tmp/outside.ts',
+    })
+    expect(resolveProjectFileHref('/tmp/outside.ts:284', PROJECT)).toEqual({
+      filePath: '/tmp/outside.ts',
+      lineNumber: 284,
+    })
+    expect(
+      resolveProjectFileHref(
+        '/Users/me/other-repo/src/marketplace_policy.rs:284',
+        PROJECT,
+      ),
+    ).toEqual({
+      filePath: '/Users/me/other-repo/src/marketplace_policy.rs',
+      lineNumber: 284,
+    })
+  })
+
+  it('maps file: URLs outside the project', () => {
+    expect(resolveProjectFileHref('file:///tmp/outside.ts', PROJECT)).toEqual({
+      filePath: '/tmp/outside.ts',
+    })
+  })
+
+  it('maps absolute paths without a project root', () => {
+    expect(resolveProjectFileHref('/tmp/outside.ts', '')).toEqual({
+      filePath: '/tmp/outside.ts',
+    })
+  })
+
+  it('rejects relative paths without a project root', () => {
+    expect(resolveProjectFileHref('src/x.ts', '')).toBeNull()
+  })
+
+  it('maps windows absolute paths outside the project', () => {
+    expect(resolveProjectFileHref('C:\\Users\\me\\other\\app.ts:7', PROJECT)).toEqual({
+      filePath: 'C:\\Users\\me\\other\\app.ts',
+      lineNumber: 7,
+    })
   })
 })

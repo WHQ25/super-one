@@ -108,6 +108,7 @@ export type Messages = {
       addToChat: string
       copyPath: string
       copyRelativePath: string
+      previewInBrowser: string
     }
     appDrawer: {
       buildYourOwn: string
@@ -2142,6 +2143,7 @@ export const en: Messages = {
       addToChat: 'Add to Chat',
       copyPath: 'Copy Path',
       copyRelativePath: 'Copy Relative Path',
+      previewInBrowser: 'Preview in Browser',
     },
     appDrawer: {
       buildYourOwn: 'Build Your Own',

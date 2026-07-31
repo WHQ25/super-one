@@ -1,6 +1,6 @@
 import { useCallback, useRef, useEffect, useState, memo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ChevronRight, Pencil, FolderOpen, Trash2, Copy, AtSign } from 'lucide-react'
+import { ChevronRight, Pencil, FolderOpen, Trash2, Copy, AtSign, Globe } from 'lucide-react'
 import { FileIcon, FolderIcon } from '@superone/ui/components/ui/FileIcon'
 import { AdaptiveContextMenu } from '@/components/AdaptiveContextMenu'
 import type { AdaptiveMenuEntry } from '@/lib/native-context-menu'
@@ -8,8 +8,11 @@ import { cn } from '@superone/ui/lib/utils'
 import { chatInputAPI } from '@/components/chat/ChatInput'
 import { useFileTreeStore, type VisibleItem } from '@/stores/file-tree'
 import { useSourceControlStore } from '@/stores/source-control'
-import { openFileTab, openNewFileTab } from '@/components/activity/activity-panel-api'
+import { openFileTab, openNewFileTab, openBrowserTab } from '@/components/activity/activity-panel-api'
+import { toLocalFileUrl } from '@/lib/path-utils'
 import type { GitFileStatus } from '@superone/shared/agent-types'
+
+const HTML_FILE_RE = /\.(?:html?)$/i
 
 const STATUS_COLOR: Record<GitFileStatus, string> = {
   M: 'text-amber-700 dark:text-amber-400',
@@ -310,6 +313,15 @@ export const TreeRow = memo(function TreeRow({
         item.name,
       )
     } },
+    ...(!item.isDirectory && HTML_FILE_RE.test(item.name)
+      ? [{
+          kind: 'item' as const,
+          id: 'previewInBrowser',
+          label: t('sidebar.contextMenu.previewInBrowser'),
+          icon: Globe,
+          onSelect: () => openBrowserTab(toLocalFileUrl(`${currentFolder}/${item.path}`)),
+        }]
+      : []),
     { kind: 'item', id: 'copyPath', label: t('sidebar.contextMenu.copyPath'), icon: Copy, onSelect: () => navigator.clipboard.writeText(`${currentFolder}/${item.path}`) },
     { kind: 'item', id: 'copyRelativePath', label: t('sidebar.contextMenu.copyRelativePath'), icon: Copy, onSelect: () => navigator.clipboard.writeText(item.path) },
     { kind: 'item', id: 'openFolder', label: t('sidebar.contextMenu.openFolder'), icon: FolderOpen, onSelect: () => window.app.showInFolder(currentFolder, item.path) },

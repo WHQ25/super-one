@@ -18,22 +18,36 @@ import { requestOpenExternalLink } from '@/lib/external-link'
 export function InlineFileChip({ name, filePath, lineNumber }: { name: string; filePath: string; lineNumber?: number }) {
   const { t } = useTranslation()
   const dragEndRef = useRef(0)
-  const relativeTo = (projectPath: string): string =>
-    filePath.startsWith(projectPath + '/') ? filePath.slice(projectPath.length + 1) : filePath
+  /** Path to open/select: project-relative when under root, otherwise absolute. */
+  const pathForOpen = (projectPath: string | null | undefined): string => {
+    if (projectPath && filePath.startsWith(projectPath + '/')) {
+      return filePath.slice(projectPath.length + 1)
+    }
+    return filePath
+  }
   const handleClick = (e: React.MouseEvent): void => {
     if (Date.now() - dragEndRef.current < 200) return
     if (clickReleasedOnSelection(e.currentTarget)) return
     e.stopPropagation()
     const projectRoot = selectEffectiveProjectRoot(useAppStore.getState())
-    if (!projectRoot) return
-    const relative = relativeTo(projectRoot)
-    useSourceControlStore.getState().selectFile(projectRoot, relative, lineNumber)
-    openFileTab(relative)
+    const openPath = pathForOpen(projectRoot)
+    // selectFile needs a project root for git/diff IPC; absolute external paths
+    // still read via readProjectFile when the path is absolute.
+    if (projectRoot) {
+      void useSourceControlStore.getState().selectFile(projectRoot, openPath, lineNumber)
+    }
+    openFileTab(openPath)
   }
   const handleOpenFolder = (): void => {
     const projectRoot = selectEffectiveProjectRoot(useAppStore.getState())
+    const openPath = pathForOpen(projectRoot)
+    // Absolute openPath is revealed as-is; relative paths still need project root.
+    if (openPath.startsWith('/') || /^[A-Za-z]:[\\/]/.test(openPath)) {
+      void window.app.showInFolder(projectRoot ?? openPath, openPath)
+      return
+    }
     if (!projectRoot) return
-    window.app.showInFolder(projectRoot, relativeTo(projectRoot))
+    void window.app.showInFolder(projectRoot, openPath)
   }
   const handleAddToChat = (): void => {
     const projectRoot = selectEffectiveProjectRoot(useAppStore.getState())
@@ -168,11 +182,11 @@ function LinkFavicon({ href }: { href: string }) {
 
 function FileLink(props: React.AnchorHTMLAttributes<HTMLAnchorElement>) {
   const { href: rawHref, children, className, ...rest } = props
-  const projectRoot = selectEffectiveProjectRoot(useAppStore.getState())
-  if (rawHref && projectRoot) {
+  const projectRoot = selectEffectiveProjectRoot(useAppStore.getState()) ?? ''
+  if (rawHref) {
     const resolved = resolveProjectFileHref(rawHref, projectRoot)
     if (resolved) {
-      const name = resolved.filePath.split('/').pop() || ''
+      const name = resolved.filePath.split(/[/\\]/).pop() || ''
       return <InlineFileChip name={name} filePath={resolved.filePath} lineNumber={resolved.lineNumber} />
     }
   }

@@ -22,11 +22,21 @@ export function normalizeFileLinkTarget(target: string): string {
   return parseFileLinkTarget(target).filePath
 }
 
+export function isAbsoluteLocalPath(filePath: string): boolean {
+  return filePath.startsWith('/') || /^[A-Za-z]:[\\/]/.test(filePath)
+}
+
+/**
+ * Resolve a markdown href into a local filesystem path (+ optional line).
+ * - http(s) / mailto / etc. → null (browser links)
+ * - absolute paths and file:// → always a file (in- or out-of-project)
+ * - relative paths → joined to projectRoot (requires projectRoot)
+ */
 export function resolveProjectFileHref(
   rawHref: string,
   projectRoot: string,
 ): { filePath: string; lineNumber?: number } | null {
-  if (!rawHref || !projectRoot) return null
+  if (!rawHref) return null
 
   let href: string
   try {
@@ -35,40 +45,40 @@ export function resolveProjectFileHref(
     href = rawHref
   }
 
-  try {
-    const url = new URL(href)
-    // Network URLs are never project files — not even localhost.
-    if (url.protocol === 'http:' || url.protocol === 'https:') {
-      return null
+  // Drive-letter paths must not go through URL() — "C:\foo" is parsed as scheme "c:".
+  if (!/^[A-Za-z]:[\\/]/.test(href)) {
+    try {
+      const url = new URL(href)
+      // Network URLs are never project files — not even localhost.
+      if (url.protocol === 'http:' || url.protocol === 'https:') {
+        return null
+      }
+      if (url.protocol === 'file:' || url.protocol === 'local-file:') {
+        href = decodeURIComponent(url.pathname)
+        // Windows file URLs look like file:///C:/Users/... → pathname /C:/Users/...
+        if (/^\/[A-Za-z]:\//.test(href)) href = href.slice(1)
+      } else {
+        // mailto:, javascript:, data:, etc.
+        return null
+      }
+    } catch {
+      // Not an absolute URL — treat as a filesystem path (absolute or project-relative).
     }
-    if (url.protocol === 'file:') {
-      href = decodeURIComponent(url.pathname)
-      // Windows file URLs look like file:///C:/Users/... → pathname /C:/Users/...
-      if (/^\/[A-Za-z]:\//.test(href)) href = href.slice(1)
-    } else {
-      // mailto:, javascript:, data:, etc.
-      return null
-    }
-  } catch {
-    // Not an absolute URL — treat as a filesystem path (absolute or project-relative).
   }
 
   const { filePath, lineNumber } = parseFileLinkTarget(href)
 
-  if (filePath === projectRoot || filePath.startsWith(projectRoot + '/')) {
+  // Absolute local paths open in the editor whether or not they sit under the
+  // current project (e.g. dependency source in another clone).
+  if (isAbsoluteLocalPath(filePath)) {
     return { filePath, lineNumber }
   }
 
-  // Project-relative (including ./prefix). Absolute paths outside the project root
-  // are rejected above/below — never invent a project path from an http origin.
-  const isWindowsAbs = /^[A-Za-z]:[\\/]/.test(filePath)
-  if (!filePath.startsWith('/') && !isWindowsAbs) {
-    const relative = filePath.replace(/^\.\//, '')
-    if (!relative) return null
-    return { filePath: `${projectRoot}/${relative}`, lineNumber }
-  }
-
-  return null
+  // Project-relative (including ./prefix). Never invent a path without a root.
+  if (!projectRoot) return null
+  const relative = filePath.replace(/^\.\//, '')
+  if (!relative) return null
+  return { filePath: `${projectRoot}/${relative}`, lineNumber }
 }
 
 export function clickReleasedOnSelection(target: EventTarget | null): boolean {

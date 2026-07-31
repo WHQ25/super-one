@@ -110,6 +110,7 @@ export const zh: Messages = {
       addToChat: '添加到对话',
       copyPath: '复制路径',
       copyRelativePath: '复制相对路径',
+      previewInBrowser: '在浏览器中预览',
     },
     appDrawer: {
       buildYourOwn: '专属定制',

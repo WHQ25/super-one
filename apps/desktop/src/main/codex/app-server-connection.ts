@@ -333,6 +333,20 @@ export function buildNodeReplDisableCliOverrides(): string[] {
   ]
 }
 
+/**
+ * Keep Codex's host-specific Browser and Computer Use capabilities from
+ * competing with SuperOne's built-in implementations. Plugin enablement does
+ * not honor app-server session overrides, so disable the contributed skills
+ * and shadow Computer Use's plugin MCP with a disabled config registration.
+ */
+export function buildCodexBundledCapabilityIsolationCliOverrides(): string[] {
+  return [
+    '-c', 'skills.config=[{name="computer-use:computer-use",enabled=false},{name="browser:control-in-app-browser",enabled=false}]',
+    '-c', 'mcp_servers.computer-use.command="superone-disabled-computer-use"',
+    '-c', 'mcp_servers.computer-use.enabled=false',
+  ]
+}
+
 export function buildCodexProviderCliOverrides(
   override: CodexProviderOverride | null,
   supportsReasoning = false,
@@ -468,7 +482,10 @@ export async function createAppServerConnection(
 
   const baseEnv = envOverride ?? buildAppServerEnv(auth, apiProviderId)
   await ensureCodexProxyUrl(apiProviderId)
-  const overrideArgs = cliOverrides ?? buildCodexProviderCliOverridesFor(apiProviderId)
+  const overrideArgs = [
+    ...(cliOverrides ?? buildCodexProviderCliOverridesFor(apiProviderId)),
+    ...buildCodexBundledCapabilityIsolationCliOverrides(),
+  ]
   const expectedPackage = resolveCodexPlatformPackage()
   const hasBundledPackage = expectedPackage ? hasCodexPlatformPackage(expectedPackage) : false
   const bundledBinary = hasBundledPackage && expectedPackage ? resolveCodexNativeBinary(expectedPackage) : null

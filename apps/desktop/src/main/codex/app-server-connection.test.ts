@@ -96,6 +96,7 @@ const {
   getCodexProviderOverrideFor,
   buildCodexProviderCliOverrides,
   buildCodexProviderCliOverridesFor,
+  buildCodexBundledCapabilityIsolationCliOverrides,
   buildNodeReplDisableCliOverrides,
   isCodexAppServerConnectionError,
 } = await import('./app-server-connection')
@@ -218,6 +219,8 @@ describe('createAppServerConnection', () => {
     expect(cIdx).toBeLessThan(appServerIdx)
     expect(args).toContain('model_provider=superone_custom')
     expect(args).toContain('model_providers.superone_custom.base_url="https://gw/v1"')
+    expect(args).toContain('skills.config=[{name="computer-use:computer-use",enabled=false},{name="browser:control-in-app-browser",enabled=false}]')
+    expect(args).toContain('mcp_servers.computer-use.enabled=false')
 
     await handle.close()
   })
@@ -241,6 +244,22 @@ describe('buildCodexProviderCliOverrides', () => {
       'mcp_servers.node_repl.command="superone-disabled-node-repl"',
       'mcp_servers.node_repl.enabled=false',
     ])
+  })
+
+  it('isolates only Codex Browser and Computer Use bundled capabilities', () => {
+    const args = buildCodexBundledCapabilityIsolationCliOverrides()
+    const pairs: string[] = []
+    for (let i = 0; i < args.length; i += 2) {
+      expect(args[i]).toBe('-c')
+      pairs.push(args[i + 1])
+    }
+
+    expect(pairs).toEqual([
+      'skills.config=[{name="computer-use:computer-use",enabled=false},{name="browser:control-in-app-browser",enabled=false}]',
+      'mcp_servers.computer-use.command="superone-disabled-computer-use"',
+      'mcp_servers.computer-use.enabled=false',
+    ])
+    expect(pairs.join(' ')).not.toContain('imagegen')
   })
 
   it('flattens the provider override into -c key=value pairs with TOML-quoted strings', () => {

@@ -58,7 +58,11 @@ import type {
 import { parseElicitationSchema } from '../agent/elicitation-schema'
 import { getCodexSuperoneMcpConfig } from '../mcp/superone-mcp-stdio-state'
 import { isToolPreapproved, isBuiltInSuperoneTool } from '../mcp/superone-mcp-server'
-import { BUILT_IN_SUPERONE_TOOL_NAMES } from '../mcp/superone-mcp-builtins'
+import {
+  isHostOwnedSuperoneBareName,
+  MCP_SUPERONE_TOOL_PREFIX,
+  toQualifiedSuperoneToolName,
+} from '../mcp/superone-host-owned-tools'
 import { resolveConfigConfirm, rejectConfigConfirm } from '../mcp/config-tools'
 import { resolveVideoConfirm, rejectVideoConfirm } from '../mcp/media-tools'
 import { resolveComputerUseGrant, rejectComputerUseGrant } from '../computer-use/grant-request'
@@ -66,18 +70,24 @@ import { CODEX_SYSTEM_PROMPT_APPEND } from '../agent/superone-system-prompt'
 import { buildAttachmentPathNote } from '../agent/attachment-store'
 
 const SUPERONE_MCP_TOOL_NAME_PATTERN = /run tool "([a-z0-9_]+)"/i
-const MCP_SUPERONE_TOOL_PREFIX = 'mcp__superone__'
 
 export const CHILD_THREAD_DISALLOWED_SUPERONE_TOOLS = new Set<string>(['session_rename'])
 
+/**
+ * Rewrite Codex MCP elicitation messages into Claude-style qualified names so
+ * processServerRequest can auto-accept SuperOne-owned tools.
+ *
+ * Host-owned names (static builtins, mobile_share_file, computer_*) come from
+ * superone-host-owned-tools. Mini-app tools (`slug__tool`) always rewrite so
+ * isToolPreapproved can match.
+ */
 export function extractSuperoneMiniAppToolName(message: string): string | null {
   const match = message.match(SUPERONE_MCP_TOOL_NAME_PATTERN)
   if (!match) return null
   const namespacedName = match[1]
   const isMiniAppTool = namespacedName.includes('__')
-  const isBuiltIn = (BUILT_IN_SUPERONE_TOOL_NAMES as readonly string[]).includes(namespacedName)
-  if (!isMiniAppTool && !isBuiltIn) return null
-  return `${MCP_SUPERONE_TOOL_PREFIX}${namespacedName}`
+  if (!isMiniAppTool && !isHostOwnedSuperoneBareName(namespacedName)) return null
+  return toQualifiedSuperoneToolName(namespacedName)
 }
 
 export interface CodexRunStreamCallbacks {

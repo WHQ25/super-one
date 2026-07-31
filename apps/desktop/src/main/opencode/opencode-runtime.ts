@@ -26,7 +26,7 @@ import {
   getSuperoneMcpHttpConfig,
   getSuperoneMcpStdioConfig,
 } from '../mcp/superone-mcp-stdio-state'
-import { BUILT_IN_SUPERONE_TOOL_NAMES } from '../mcp/superone-mcp-builtin-defs'
+import { listOpenCodeAutoAllowSuperoneBareNames } from '../mcp/superone-host-owned-tools'
 
 const SUPERONE_MCP_NAME = 'superone'
 
@@ -88,15 +88,23 @@ export interface OpenCodeRuntime {
   close(): Promise<void>
 }
 
+/**
+ * SuperOne-owned MCP tools that must not block OpenCode turns.
+ * Names come from superone-host-owned-tools (Claude/Codex/ACP parity).
+ */
+function builtInSuperoneAllowRules(): PermissionRuleset {
+  return listOpenCodeAutoAllowSuperoneBareNames().map((name) => ({
+    permission: `${SUPERONE_MCP_NAME}_${name}`,
+    pattern: '*',
+    action: 'allow' as const,
+  }))
+}
+
 export function buildOpenCodePermissionRules(mode: PermissionMode): PermissionRuleset {
   if (mode === 'bypassPermissions') {
     return [{ permission: '*', pattern: '*', action: 'allow' }]
   }
-  const builtInSuperoneRules: PermissionRuleset = BUILT_IN_SUPERONE_TOOL_NAMES.map((name) => ({
-    permission: `${SUPERONE_MCP_NAME}_${name}`,
-    pattern: '*',
-    action: 'allow',
-  }))
+  const builtInSuperoneRules = builtInSuperoneAllowRules()
   if (mode === 'dontAsk') {
     return [
       { permission: '*', pattern: '*', action: 'deny' },

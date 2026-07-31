@@ -118,14 +118,22 @@ vi.mock('../mcp/superone-mcp-stdio-state', () => ({
   }),
 }))
 
+import {
+  setComputerUseEnabledForTests,
+} from '../computer-use/tools'
 import { buildOpenCodePermissionRules, createOpenCodeRuntime } from './opencode-runtime'
 
 describe('opencode-runtime', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    setComputerUseEnabledForTests(null)
     mocks.addMcp.mockResolvedValue(undefined)
     mocks.events = []
     mocks.mcpConfigs = [{ name: 'project-tools', type: 'stdio', command: 'tools-server' }]
+  })
+
+  afterEach(() => {
+    setComputerUseEnabledForTests(null)
   })
 
   afterEach(() => {
@@ -311,6 +319,51 @@ describe('opencode-runtime', () => {
     expect(denyRules).toContainEqual({ permission: 'superone_session_rename', pattern: '*', action: 'allow' })
     expect(buildOpenCodePermissionRules('acceptEdits')).toContainEqual({
       permission: 'edit',
+      pattern: '*',
+      action: 'allow',
+    })
+  })
+
+  it('auto-allows SuperOne computer-use tools when the feature is enabled', () => {
+    setComputerUseEnabledForTests(true)
+    const rules = buildOpenCodePermissionRules('default')
+    for (const name of [
+      'computer_apps',
+      'computer_snapshot',
+      'computer_zoom',
+      'computer_query',
+      'computer_act',
+      'computer_wait_for',
+      'computer_observe',
+    ]) {
+      expect(rules).toContainEqual({
+        permission: `superone_${name}`,
+        pattern: '*',
+        action: 'allow',
+      })
+    }
+  })
+
+  it('does not auto-allow computer-use tools when the feature is disabled', () => {
+    setComputerUseEnabledForTests(false)
+    const rules = buildOpenCodePermissionRules('default')
+    expect(rules).not.toContainEqual({
+      permission: 'superone_computer_apps',
+      pattern: '*',
+      action: 'allow',
+    })
+    // Static host tools still allowed.
+    expect(rules).toContainEqual({
+      permission: 'superone_session_rename',
+      pattern: '*',
+      action: 'allow',
+    })
+  })
+
+  it('auto-allows mobile_share_file even when computer use is off', () => {
+    setComputerUseEnabledForTests(false)
+    expect(buildOpenCodePermissionRules('default')).toContainEqual({
+      permission: 'superone_mobile_share_file',
       pattern: '*',
       action: 'allow',
     })

@@ -602,7 +602,30 @@ describe('extractSuperoneMiniAppToolName', () => {
     ).toBe('mcp__superone__session_rename')
   })
 
+  it('extracts SuperOne computer-use tools (feature-gated, not in static builtin list)', () => {
+    expect(
+      extractSuperoneMiniAppToolName('Allow the superone MCP server to run tool "computer_apps"?'),
+    ).toBe('mcp__superone__computer_apps')
+    expect(
+      extractSuperoneMiniAppToolName('Allow the superone MCP server to run tool "computer_snapshot"?'),
+    ).toBe('mcp__superone__computer_snapshot')
+    expect(
+      extractSuperoneMiniAppToolName('Allow the superone MCP server to run tool "computer_act"?'),
+    ).toBe('mcp__superone__computer_act')
+    // Deprecated alias still rewrites so isBuiltInSuperoneTool / normalize can match.
+    expect(
+      extractSuperoneMiniAppToolName('Allow the superone MCP server to run tool "computer_observe"?'),
+    ).toBe('mcp__superone__computer_observe')
+  })
+
+  it('extracts mobile_share_file (session-gated host tool, not in static builtin list)', () => {
+    expect(
+      extractSuperoneMiniAppToolName('Allow the superone MCP server to run tool "mobile_share_file"?'),
+    ).toBe('mcp__superone__mobile_share_file')
+  })
+
   it('returns null when tool is neither a built-in nor a namespaced mini-app tool', () => {
+    // open-computer-use external tools (not SuperOne host tools)
     expect(
       extractSuperoneMiniAppToolName('Allow the superone MCP server to run tool "list_apps"?'),
     ).toBeNull()
@@ -652,6 +675,26 @@ describe('mapApprovalRequest superone mini-app tool elicitation', () => {
     if (parsed?.responseKind !== 'elicitation') throw new Error('expected elicitation')
     expect(parsed.request.toolName).toBe('mcp__superone__read_manual')
     expect(parsed.request.requestKind).toBeUndefined()
+  })
+
+  it('rewrites computer-use tool elicitation so built-in auto-approve can match', () => {
+    const parsed = mapApprovalRequest({
+      requestIdRaw: 22,
+      requestId: '22',
+      method: 'mcpServer/elicitation/request',
+      params: {
+        serverName: 'superone',
+        message: 'Allow the superone MCP server to run tool "computer_apps"?',
+        requestedSchema: { type: 'object', properties: {} },
+        _meta: { persist: ['always'] },
+      },
+    })
+
+    if (parsed?.responseKind !== 'elicitation') throw new Error('expected elicitation')
+    // Must be qualified — if this stays "superone", processServerRequest never auto-accepts.
+    expect(parsed.request.toolName).toBe('mcp__superone__computer_apps')
+    expect(parsed.request.requestKind).toBeUndefined()
+    expect(parsed.request.message).toBeUndefined()
   })
 
   it('keeps original elicitation shape for non-superone servers', () => {
@@ -1441,6 +1484,55 @@ describe('streamTurnEvents superone preapprove short-circuit', () => {
 
     expect(onPermissionRequest).not.toHaveBeenCalled()
     expect(respond).toHaveBeenCalledWith(99, { action: 'accept', content: null, _meta: null })
+  })
+
+  it('auto-accepts SuperOne computer-use tools without forwarding to UI', async () => {
+    const { isBuiltInSuperoneTool } = await import('../mcp/superone-mcp-server')
+    vi.mocked(isBuiltInSuperoneTool).mockImplementation(
+      (name: string) => name === 'mcp__superone__computer_apps',
+    )
+
+    const session = { ...makeSession(), threadId: 'main-thread' }
+    const notifications: Array<Record<string, unknown>> = [
+      {
+        requestIdRaw: 100,
+        requestId: '100',
+        method: 'mcpServer/elicitation/request',
+        params: {
+          serverName: 'superone',
+          message: 'Allow the superone MCP server to run tool "computer_apps"?',
+          requestedSchema: { type: 'object', properties: {} },
+          _meta: { persist: ['always'] },
+        },
+      },
+      {
+        method: 'turn/completed',
+        params: { turn: { status: 'completed' } },
+      },
+    ]
+    const respond = vi.fn().mockResolvedValue(undefined)
+    const mockConnection = {
+      request: vi.fn().mockResolvedValue({}),
+      respond,
+      notify: vi.fn().mockResolvedValue(undefined),
+      nextNotification: vi.fn().mockImplementation(async () => {
+        const next = notifications.shift()
+        if (!next) throw new Error('no notification')
+        return next
+      }),
+    } as never
+    const onPermissionRequest = vi.fn()
+
+    await streamTurnEvents(
+      mockConnection,
+      session,
+      null,
+      new AbortController(),
+      { onPermissionRequest },
+    )
+
+    expect(onPermissionRequest).not.toHaveBeenCalled()
+    expect(respond).toHaveBeenCalledWith(100, { action: 'accept', content: null, _meta: null })
   })
 
   it('falls through to UI for non-preapproved superone tools', async () => {

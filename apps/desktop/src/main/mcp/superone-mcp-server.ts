@@ -9,7 +9,6 @@ import { getPreapprovedByPath } from '../miniapp/miniapp-packager'
 import { trace } from '../agent/event-trace'
 import { jsonSchemaToZodShape } from './json-schema-zod'
 import {
-  BUILT_IN_SUPERONE_TOOL_NAMES,
   registerSuperoneTools,
   type BuiltInSuperoneToolDeps,
   type SessionTitleHost,
@@ -21,11 +20,9 @@ import {
 } from './superone-mcp-builtin-defs'
 import { registerWidgetTools } from '../generative-ui/mcp-server'
 import { clearBrowserToolHandlers, registerBrowserTools } from './browser-mcp-tools'
-import {
-  isComputerUseEnabled,
-  registerComputerUseTools,
-} from '../computer-use/tools'
-import { computerUseQualifiedNames, isComputerUseQualifiedName } from '../computer-use/harness-surface'
+import { registerComputerUseTools } from '../computer-use/tools'
+import { computerUseQualifiedNames } from '../computer-use/harness-surface'
+import { isBuiltInSuperoneToolQualified } from './superone-host-owned-tools'
 
 export interface MobileShareToolResult {
   ok: boolean
@@ -202,18 +199,9 @@ export function notifyDevAppReady(projectDir: string, appId: string): void {
   }
 }
 
-const BUILT_IN_QUALIFIED_NAMES = new Set([
-  ...BUILT_IN_SUPERONE_TOOL_NAMES.map((n) => `mcp__superone__${n}`),
-  `mcp__superone__${MOBILE_SHARE_FILE_TOOL_NAME}`,
-])
-
+/** Host-owned SuperOne tools — single source: superone-host-owned-tools.ts */
 export function isBuiltInSuperoneTool(qualifiedName: string): boolean {
-  if (BUILT_IN_QUALIFIED_NAMES.has(qualifiedName)) return true
-  // Computer Use is SuperOne-owned; when the feature is on, treat like other
-  // built-in SuperOne tools for permission auto-allow (same as media/config).
-  // When off, tools are not registered — this branch never runs.
-  if (isComputerUseEnabled() && isComputerUseQualifiedName(qualifiedName)) return true
-  return false
+  return isBuiltInSuperoneToolQualified(qualifiedName)
 }
 
 /** Test/debug: full set of SuperOne-owned computer tool qualified names. */

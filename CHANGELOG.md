@@ -4,6 +4,26 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.49.4-alpha] - 2026-07-31
+
+### Added
+
+- Open local paths in the editor and refine file previews
+
+### Fixed
+
+- Scope prompt shortcuts to chat focus
+- Isolate conflicting bundled Codex capabilities
+- Open the General tab by default in Settings
+- Isolate the Computer Use helper's screen recording permission
+- Auto-approve gated SuperOne tools across harnesses
+- Separate Grok footer tokens from the context usage ring
+- Align Computer Use settings page buttons with the outline style
+
+### Changed
+
+- Title-case non-sentence English UI labels in Settings
+
 ## [0.49.3-alpha] - 2026-07-31
 
 ### Added

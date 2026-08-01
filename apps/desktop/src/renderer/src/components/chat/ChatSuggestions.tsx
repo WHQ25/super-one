@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type MouseEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import { useTranslation } from 'react-i18next'
 import { useAppStore, useHasRealProject } from '@/stores/app'
@@ -7,6 +7,7 @@ import { useSettingsStore } from '@/stores/settings'
 import { ProviderLabel } from '@/components/ProviderLabel'
 import { consumerForHarness, resolveEffective } from '@/lib/provider-resolve'
 import { ProjectSelector } from '@/components/coding/ProjectSelector'
+import { AddProjectDialog } from '@/components/sidebar/add-project/AddProjectDialog'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -14,7 +15,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@superone/ui/components/ui/dropdown-menu'
-import { Check, ChevronDown, Plus } from 'lucide-react'
+import { Check, ChevronDown, Loader2, Plus } from 'lucide-react'
 import { Tabs, TabsList, TabsTrigger } from '@superone/ui/components/ui/tabs'
 import { AcpSessionIcon } from '@superone/ui/components/harness/AcpSessionIcon'
 import { ClaudeSessionIcon } from '@superone/ui/components/harness/ClaudeSessionIcon'
@@ -22,9 +23,11 @@ import { CodexSessionIcon } from '@superone/ui/components/harness/CodexSessionIc
 import { Grok, OpenCode } from '@lobehub/icons'
 import { cn } from '@superone/ui/lib/utils'
 import { homePath } from '@/lib/path-utils'
+import { displayHostPath, remoteProjectKey } from '@/lib/remote-project-key'
+import { useHostProjects } from '@/hooks/use-host-projects'
 import { useMosaicStore } from '@/components/mosaic/mosaic-store'
 import { isExperimentalAgentProvider } from '@/stores/chat-store/helpers/provider-routing'
-import type { AcpAgentDescriptor } from '@superone/shared/agent-types'
+import type { AcpAgentDescriptor, RecentFolder } from '@superone/shared/agent-types'
 import { acpAgentDisplayName, isGrokAcpAgent } from '@superone/shared/acp-brand'
 
 const EMPTY_ACP_AGENTS: AcpAgentDescriptor[] = []
@@ -293,38 +296,150 @@ function ActiveProviderHint() {
 export function ChatSuggestions() {
   const { t } = useTranslation()
   const selectProject = useAppStore((s) => s.selectProject)
-  const recentFolders = useAppStore((s) => s.recentFolders)
+  const fetchRecentFolders = useAppStore((s) => s.fetchRecentFolders)
+  const isSwitchingHostProject = useAppStore((s) => s.isSwitchingHostProject)
   const hasRealProject = useHasRealProject()
+  const { connectionId, isLocal, projects, loading, error, refresh } = useHostProjects()
 
-  const [addOpen, setAddOpen] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [addDialogOpen, setAddDialogOpen] = useState(false)
+  const [hostLabel, setHostLabel] = useState('')
+  /** Prevents re-entrant auto-open while selectProject is in flight for this host. */
+  const autoOpenAttemptRef = useRef<string | null>(null)
 
   const resetSession = useChatStore((s) => s.resetSession)
 
+  // Label for the add-project dialog (remote host name when available).
+  useEffect(() => {
+    if (isLocal) {
+      setHostLabel(window.app.platform === 'darwin' ? t('sidebar.thisMac') : t('sidebar.thisPc'))
+      return
+    }
+    let cancelled = false
+    void window.environment.listItems().then((items) => {
+      if (cancelled) return
+      const host = items.find((h) => h.connectionId === connectionId)
+      setHostLabel(host?.label ?? connectionId)
+    }).catch(() => {
+      if (!cancelled) setHostLabel(connectionId)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [connectionId, isLocal, t])
+
+  // Safety net for host default project: openDefaultProjectForHost already runs on
+  // host switch, but ChatSuggestions can still land empty if that raced connect /
+  // listProjects. Once the host project list is ready and nothing is open, pick
+  // the first non-missing project so the selector shows a real default.
+  useEffect(() => {
+    if (hasRealProject) {
+      autoOpenAttemptRef.current = null
+      return
+    }
+    if (isSwitchingHostProject || loading || error) return
+    const first = projects.find((folder) => !folder.missing)
+    if (!first) return
+    const attemptKey = `${connectionId}::${first.path}`
+    if (autoOpenAttemptRef.current === attemptKey) return
+    autoOpenAttemptRef.current = attemptKey
+    void selectProject(first.path, {
+      connectionId,
+      projectId: first.id || undefined,
+    })
+  }, [
+    hasRealProject,
+    isSwitchingHostProject,
+    loading,
+    error,
+    projects,
+    connectionId,
+    selectProject,
+  ])
+
+  const openExisting = useCallback(
+    (folder: RecentFolder) => {
+      void selectProject(folder.path, {
+        connectionId,
+        projectId: folder.id || undefined,
+      })
+    },
+    [connectionId, selectProject],
+  )
+
+  const startAddProject = useCallback(() => {
+    if (isLocal) {
+      void selectProject()
+      return
+    }
+    setAddDialogOpen(true)
+  }, [isLocal, selectProject])
+
+  const addDialog = (
+    <AddProjectDialog
+      open={addDialogOpen}
+      onOpenChange={setAddDialogOpen}
+      connectionId={connectionId}
+      hostLabel={hostLabel}
+      onOpened={(project) => {
+        if (isLocal) {
+          void fetchRecentFolders()
+          void selectProject(project.path)
+        } else {
+          refresh()
+          void selectProject(remoteProjectKey(connectionId, project.path), {
+            connectionId,
+            projectId: project.projectId,
+          })
+        }
+      }}
+    />
+  )
+
   if (!hasRealProject) {
-    const hasRecent = recentFolders.length > 0
+    const hasProjects = projects.length > 0
+    const isProjectLoading = isSwitchingHostProject || loading
     return (
       <div className="flex h-full flex-col items-center justify-center gap-4 px-4" style={{ animation: 'fade-in 400ms ease-out' }}>
         <ProviderSelector />
-        <p className="text-sm text-muted-foreground">{t('chat.suggestions.openProject')}</p>
-        {hasRecent ? (
-          <DropdownMenu onOpenChange={setAddOpen}>
+        {isProjectLoading ? (
+          <div role="status" className="flex h-10 items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 aria-hidden="true" className="size-4 animate-spin" />
+            <span>{t('common.loading')}</span>
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">{t('chat.suggestions.openProject')}</p>
+        )}
+        {!isProjectLoading && (error ? (
+          <div className="flex flex-col items-center gap-2">
+            <p className="max-w-xs text-center text-sm text-destructive">{error}</p>
+            <button
+              type="button"
+              onClick={refresh}
+              className="rounded-lg px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-accent"
+            >
+              {t('common.retry')}
+            </button>
+          </div>
+        ) : hasProjects ? (
+          <DropdownMenu onOpenChange={setMenuOpen}>
             <DropdownMenuTrigger asChild>
               <button className="flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-accent">
                 {t('chat.suggestions.addProject')}
-                <ChevronDown className={cn('size-4 text-muted-foreground transition-transform duration-200', addOpen && 'rotate-180')} />
+                <ChevronDown className={cn('size-4 text-muted-foreground transition-transform duration-200', menuOpen && 'rotate-180')} />
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="center" className="max-h-80 w-64 overflow-y-auto">
-              {recentFolders.map((folder) => (
-                <DropdownMenuItem key={folder.path} onClick={() => selectProject(folder.path)} className="gap-2">
+              {projects.map((folder) => (
+                <DropdownMenuItem key={folder.path} onClick={() => openExisting(folder)} className="gap-2">
                   <span className="truncate">{folder.name}</span>
                   <span className="ml-auto truncate text-xs text-muted-foreground">
-                    {homePath(folder.path)}
+                    {homePath(displayHostPath(folder.path))}
                   </span>
                 </DropdownMenuItem>
               ))}
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => selectProject()} className="gap-2">
+              <DropdownMenuItem onClick={startAddProject} className="gap-2">
                 <Plus className="size-4 shrink-0" />
                 <span>{t('chat.suggestions.addProject')}</span>
               </DropdownMenuItem>
@@ -332,12 +447,13 @@ export function ChatSuggestions() {
           </DropdownMenu>
         ) : (
           <button
-            onClick={() => selectProject()}
+            onClick={startAddProject}
             className="rounded-lg px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-accent"
           >
             {t('chat.suggestions.addProject')}
           </button>
-        )}
+        ))}
+        {addDialog}
       </div>
     )
   }
@@ -345,7 +461,12 @@ export function ChatSuggestions() {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-4 px-4" style={{ animation: 'fade-in 400ms ease-out' }}>
       <ProviderSelector />
-      <ProjectSelector align="center" onOpened={() => void resetSession()} />
+      <ProjectSelector
+        align="center"
+        onOpened={() => void resetSession()}
+        onAddProject={isLocal ? undefined : () => setAddDialogOpen(true)}
+      />
+      {addDialog}
     </div>
   )
 }

@@ -1,5 +1,5 @@
 import type { ComponentType } from 'react'
-import { GitBranch, GitCommit, Monitor } from 'lucide-react'
+import { GitBranch, GitCommit, Monitor, Server } from 'lucide-react'
 import { Trans, useTranslation } from 'react-i18next'
 
 /**
@@ -7,18 +7,23 @@ import { Trans, useTranslation } from 'react-i18next'
  * exists; the rest are worktrees that will be created when the session starts. This is the
  * single source for the status-bar chip (`WorkDirIndicator`) and for prompts that preview a
  * session before it exists (`SessionAgentsConfirmPrompt`) — keep them speaking one language.
+ *
+ * `local` = primary checkout (not a SuperOne worktree). Label is always “Local”;
+ * host kind is distinguished only by icon (Monitor = this machine, Server = remote node).
  */
 export type WorkDirState =
-  | { kind: 'local' }
+  | { kind: 'local'; host?: 'machine' | 'remote' }
   | { kind: 'activeBranch'; name: string }
   | { kind: 'activeDetached'; hash: string }
   | { kind: 'createBranch'; name: string }
   | { kind: 'attachTo'; base: string }
   | { kind: 'createFrom'; base: string }
 
-/** Detached HEAD is a commit, everything else on a worktree is a branch, no worktree is local. */
+/** Detached HEAD is a commit, everything else on a worktree is a branch, main checkout is host-scoped. */
 export function workDirIcon(state: WorkDirState): ComponentType<{ className?: string }> {
-  if (state.kind === 'local') return Monitor
+  if (state.kind === 'local') {
+    return state.host === 'remote' ? Server : Monitor
+  }
   if (state.kind === 'activeDetached' || state.kind === 'createFrom') return GitCommit
   return GitBranch
 }
@@ -51,12 +56,14 @@ export function WorkDirLabel({ state }: { state: WorkDirState }) {
       return <Trans i18nKey="chat.worktree.triggerAttachTo" values={{ base: state.base }} components={{ branch: inlineBranch }} />
     case 'createBranch':
       return <Trans i18nKey="chat.worktree.triggerCreateBranch" values={{ name: state.name || '…' }} components={{ branch: inlineBranch }} />
-    case 'local':
+    case 'local': {
+      const Icon = state.host === 'remote' ? Server : Monitor
       return (
         <>
-          <Monitor className="inline size-3 align-middle" />
+          <Icon className="inline size-3 align-middle" />
           <span className="ml-1">{t('tooltips.local')}</span>
         </>
       )
+    }
   }
 }

@@ -460,7 +460,7 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
 
   focusProject: async (projectPath) => focusProjectImpl(set, get, projectPath),
 
-  ensureSession: (projectPath) => ensureSessionImpl(set, projectPath),
+  ensureSession: (projectPath) => ensureSessionImpl(set, projectPath, get),
 
   sendMessage: async (content, segments, explicitMentions, attachments, target) => sendMessageImpl(set, get, content, segments, explicitMentions, attachments, target),
 
@@ -515,6 +515,20 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
     const { activeProject } = get()
     if (!activeProject) return
     try {
+      const { parseRemoteProjectKey } = await import('@/lib/remote-project-key')
+      const remote = parseRemoteProjectKey(activeProject)
+      if (remote) {
+        const projectId = useAppStore.getState().currentProjectId
+        if (!projectId) return
+        const { listRemoteSessionsForProject } = await import('@/lib/remote-session-ops')
+        const sessions = await listRemoteSessionsForProject(activeProject, projectId)
+        set((s) => updateProjectState(s, activeProject, () => ({
+          sessions,
+          sessionsPage: 1,
+          sessionsHasMore: false,
+        })))
+        return
+      }
       const sessions = await window.app.listSessionsForFolderPage(activeProject, SESSIONS_PAGE_SIZE, 0)
       set((s) => updateProjectState(s, activeProject, () => ({
         sessions,
@@ -529,6 +543,12 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
     if (!activeProject) return
     const project = getProject(get())
     if (!project.sessionsHasMore) return
+    const { parseRemoteProjectKey } = await import('@/lib/remote-project-key')
+    if (parseRemoteProjectKey(activeProject)) {
+      // Remote lists are returned in full by listSessions.
+      set((s) => updateProjectState(s, activeProject, () => ({ sessionsHasMore: false })))
+      return
+    }
     const pageToFetch = project.sessionsPage
     const offset = pageToFetch * SESSIONS_PAGE_SIZE
     try {
@@ -564,12 +584,33 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
   renameSession: async (sessionId, title) => {
     const { activeProject } = get()
     if (!activeProject) return
-    await window.app.renameSession(sessionId, title)
+    const { parseRemoteProjectKey } = await import('@/lib/remote-project-key')
+    const remote = parseRemoteProjectKey(activeProject)
+    if (remote) {
+      await window.environment.renameSession(remote.connectionId, sessionId, title)
+    } else {
+      await window.app.renameSession(sessionId, title)
+    }
     set((s) => updateProjectState(s, activeProject, (proj) => ({
       sessions: proj.sessions.map((entry) =>
         entry.sessionId === sessionId ? { ...entry, title } : entry
       ),
     })))
+    // Keep live title in sync when the session is open.
+    set((s) => {
+      const proj = s.projectSessions[activeProject]
+      const sess = proj?._sessions[sessionId]
+      if (!proj || !sess) return {}
+      return {
+        projectSessions: {
+          ...s.projectSessions,
+          [activeProject]: {
+            ...proj,
+            _sessions: { ...proj._sessions, [sessionId]: { ...sess, _title: title } },
+          },
+        },
+      }
+    })
   },
 
   switchSession: async (sessionId) => {
@@ -596,6 +637,28 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
         ...updateProjectState(s, activeProject, () => ({ _previousSessionId: prevSid })),
         _previousFocusedSession: { projectPath: activeProject, sessionId: prevSid },
       }))
+    }
+
+    // Remote node: hydrate from CLI session.get (no local SQLite / SessionManager).
+    const { parseRemoteProjectKey } = await import('@/lib/remote-project-key')
+    if (parseRemoteProjectKey(activeProject)) {
+      const { hydrateRemotePerSession } = await import('@/lib/remote-session-ops')
+      const prev = project._sessions[sessionId] ?? null
+      const hydrated = await hydrateRemotePerSession(activeProject, sessionId, prev)
+      set((s) => {
+        const proj = getProject(s, activeProject)
+        return {
+          projectSessions: {
+            ...s.projectSessions,
+            [activeProject]: {
+              ...proj,
+              _activeSessionId: sessionId,
+              _sessions: { ...proj._sessions, [sessionId]: hydrated },
+            },
+          },
+        }
+      })
+      return
     }
 
     if (project.unseenCompletedSessions.has(sessionId)) {

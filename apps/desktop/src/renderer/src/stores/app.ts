@@ -15,6 +15,17 @@ import { useFileTreeStore } from './file-tree'
 import { useActivityPanelStore } from './activity-panel'
 import { useSourceControlStore } from './source-control'
 import { disposeHighlightCache } from '@/lib/highlight-cache'
+import {
+  parseRemoteProjectKey,
+  projectBelongsToHost,
+  remoteProjectKey,
+} from '@/lib/remote-project-key'
+
+export {
+  parseRemoteProjectKey,
+  projectBelongsToHost,
+  remoteProjectKey,
+} from '@/lib/remote-project-key'
 
 export type { RemoteDeviceConfig }
 
@@ -63,6 +74,14 @@ interface AppState {
   tmpFolder: string | null
   recentFolders: RecentFolder[]
 
+  /**
+   * Sidebar host filter: `local` or a remote environment connectionId.
+   * Projects list reflects this host only.
+   */
+  selectedHostConnectionId: string
+  isSwitchingHostProject: boolean
+  setSelectedHostConnectionId: (connectionId: string) => void
+
   // Update
   updateStatus: UpdateStatus
   updateVersion: string | null
@@ -104,7 +123,11 @@ interface AppState {
   fetchRecentFolders: () => Promise<void>
   // Unified project-switch entry. Omit folderPath to prompt a system folder picker.
   // Aligns app-level currentFolder with chat-level activeProject.
-  selectProject: (folderPath?: string) => Promise<void>
+  // `connectionId` defaults to selectedHostConnectionId; remote skips local openFolder.
+  selectProject: (
+    folderPath?: string,
+    options?: { connectionId?: string; projectId?: string },
+  ) => Promise<void>
   openTmpFolder: () => Promise<void>
   removeRecentFolder: (folderPath: string) => Promise<void>
   startInstall: () => Promise<void>
@@ -172,7 +195,57 @@ function prefetchFileTree(folderPath: string): void {
   void useFileTreeStore.getState().fetchTree(folderPath)
 }
 
-async function applyProjectSelection(folderPath: string, set: (partial: Partial<AppState>) => void): Promise<boolean> {
+async function applyProjectSelection(
+  folderPath: string,
+  set: (partial: Partial<AppState>) => void,
+  options?: { connectionId?: string; projectId?: string },
+): Promise<boolean> {
+  const connectionId =
+    options?.connectionId ?? useAppStore.getState().selectedHostConnectionId ?? 'local'
+
+  if (connectionId !== 'local') {
+    // Remote host: do not call local openFolder (path is not on this machine).
+    // Ensure the project is registered on the node, then bind chat to a host-scoped key.
+    try {
+      const parsed = parseRemoteProjectKey(folderPath)
+      const hostPath = parsed?.path ?? folderPath
+      const project = await window.environment.openProject(connectionId, hostPath)
+      const { useChatStore } = await import('./chat')
+      const projectKey = remoteProjectKey(connectionId, project.path || hostPath)
+      const projectId = options?.projectId ?? project.projectId
+      useChatStore.getState().ensureSession(projectKey)
+      useChatStore.setState({ activeProject: projectKey })
+      set({
+        currentFolder: projectKey,
+        currentProjectId: projectId,
+        selectedHostConnectionId: connectionId,
+        view: useAppStore.getState().view === 'startup' ? 'main' : useAppStore.getState().view,
+      })
+      // Prefer the latest existing node session. Do not auto-create: empty
+      // remote projects stay session-less until New session / first send
+      // (resolveNodeSessionId materializes a real node session on send).
+      if (projectId) {
+        try {
+          const rows = await window.environment.listSessions(connectionId, projectId)
+          const sessionId = rows[0]?.sessionId
+          if (sessionId) {
+            await useChatStore.getState().switchSession(sessionId)
+          }
+        } catch (sessionErr) {
+          console.warn('[app] remote session hydrate failed (send will materialize)', sessionErr)
+        }
+      }
+      return true
+    } catch (error) {
+      console.error('[app] failed to select remote project', {
+        connectionId,
+        folderPath,
+        error,
+      })
+      return false
+    }
+  }
+
   const ok = await window.app.openFolder(folderPath)
   if (!ok) return false
   useAppStore.getState().fetchRecentFolders()
@@ -183,6 +256,60 @@ async function applyProjectSelection(folderPath: string, set: (partial: Partial<
   if (useAppStore.getState().view === 'startup') set({ view: 'main' })
   return true
 }
+
+/** Bumped on every host switch so stale auto-open work is dropped. */
+let hostSwitchGeneration = 0
+
+/**
+ * Open the host's default project (most recently active). Used after switching
+ * hosts so chat suggestions immediately show that project instead of an empty state.
+ */
+async function openDefaultProjectForHost(
+  connectionId: string,
+  set: (partial: Partial<AppState>) => void,
+  generation: number,
+): Promise<void> {
+  if (generation !== hostSwitchGeneration) return
+  if (useAppStore.getState().selectedHostConnectionId !== connectionId) return
+  // User (or another path) already picked something on this host.
+  if (projectBelongsToHost(useAppStore.getState().currentFolder, connectionId)
+    && useAppStore.getState().currentFolder) {
+    return
+  }
+
+  if (connectionId === 'local') {
+    const folders = useAppStore.getState().recentFolders.filter((f) => !f.missing)
+    const first = folders[0]
+    if (!first) return
+    if (generation !== hostSwitchGeneration) return
+    await applyProjectSelection(first.path, set, { connectionId: 'local', projectId: first.id })
+    return
+  }
+
+  try {
+    const items = await window.environment.listItems()
+    if (generation !== hostSwitchGeneration) return
+    const host = items.find((h) => h.connectionId === connectionId)
+    const live = host?.state === 'connected' || host?.state === 'synchronizing'
+    if (!live) {
+      await window.environment.connect(connectionId)
+    }
+    if (generation !== hostSwitchGeneration) return
+    const projects = await window.environment.listProjects(connectionId)
+    if (generation !== hostSwitchGeneration) return
+    // Node orders by last_active_at DESC; stale registry entries are not selectable.
+    const first = projects.find((project) => !project.missing)
+    if (!first) return
+    await applyProjectSelection(remoteProjectKey(connectionId, first.path), set, {
+      connectionId,
+      projectId: first.projectId,
+    })
+  } catch {
+    // Leave empty state; sidebar / Add Project still work.
+  }
+}
+
+
 
 
 const defaultWorktreeState: WorktreeState = {
@@ -199,6 +326,48 @@ export const useAppStore = create<AppState>((set, get) => ({
   currentProjectId: null,
   tmpFolder: null,
   recentFolders: [],
+  selectedHostConnectionId: 'local',
+  isSwitchingHostProject: false,
+  setSelectedHostConnectionId: (connectionId) => {
+    const next = connectionId || 'local'
+    const prev = get().selectedHostConnectionId
+    if (prev === next && (get().currentFolder || get().isSwitchingHostProject)) return
+
+    // Host filter changed: drop a project that lives on another host so chat
+    // suggestions / ProjectSelector don't keep showing the previous default.
+    const folder = get().currentFolder
+    if (folder && projectBelongsToHost(folder, next)) {
+      set({ selectedHostConnectionId: next, isSwitchingHostProject: false })
+      return
+    }
+
+    const generation = ++hostSwitchGeneration
+    // Keep the transition explicit until the target host's default project has
+    // opened or the host has been confirmed empty.
+    set({
+      selectedHostConnectionId: next,
+      isSwitchingHostProject: true,
+      currentFolder: null,
+      currentProjectId: null,
+    })
+    void (async () => {
+      try {
+        const { useChatStore } = await import('./chat')
+        if (generation !== hostSwitchGeneration) return
+        if (!projectBelongsToHost(useChatStore.getState().activeProject, next)) {
+          useChatStore.setState(() => ({ activeProject: null }))
+        }
+        await openDefaultProjectForHost(next, set, generation)
+      } finally {
+        if (
+          generation === hostSwitchGeneration
+          && useAppStore.getState().selectedHostConnectionId === next
+        ) {
+          set({ isSwitchingHostProject: false })
+        }
+      }
+    })()
+  },
   _worktrees: {},
   updateStatus: 'idle',
   updateVersion: null,
@@ -235,10 +404,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ recentFolders: folders })
   },
 
-  selectProject: async (folderPath?: string) => {
-    const path = folderPath ?? await window.app.selectFolder()
+  selectProject: async (folderPath?: string, options?: { connectionId?: string; projectId?: string }) => {
+    const connectionId = options?.connectionId ?? get().selectedHostConnectionId ?? 'local'
+    // System folder picker is local-only.
+    if (!folderPath && connectionId !== 'local') return
+    const path = folderPath ?? (await window.app.selectFolder())
     if (!path) return
-    await applyProjectSelection(path, set)
+    await applyProjectSelection(path, set, { ...options, connectionId })
   },
 
   openTmpFolder: async () => {
@@ -401,7 +573,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       settingsProviderTabs: nextTabs,
     })
   },
-  setSettingsTab: (tab) => set({ settingsTab: tab }),
+  setSettingsTab: (tab) =>
+    // Former standalone Environments tab lives under Remote Control → Other devices.
+    set({ settingsTab: tab === ('environments' as SettingsTab) ? 'remote' : tab }),
 
   // Worktree management
   setPendingWorktree: (projectPath, baseBranch) => {
@@ -474,7 +648,17 @@ export const useAppStore = create<AppState>((set, get) => ({
     const result = await window.app.switchToExistingWorktree(projectPath, wtPath, gitBranch)
     if (!result.ok) return result
     const { useChatStore } = await import('./chat')
-    useChatStore.getState().resetSessionForWorktreeSwitch(projectPath, { wtPath, gitBranch })
+    // Remote: store activePath as remote:<conn>:<hostWt> so git status IPC stays remote.
+    let uiWtPath = wtPath
+    const remoteProj = parseRemoteProjectKey(projectPath)
+    if (remoteProj && !parseRemoteProjectKey(wtPath)) {
+      const { remoteProjectKey } = await import('@/lib/remote-project-key')
+      uiWtPath = remoteProjectKey(remoteProj.connectionId, wtPath)
+    }
+    useChatStore.getState().resetSessionForWorktreeSwitch(projectPath, {
+      wtPath: uiWtPath,
+      gitBranch,
+    })
     set((s) => ({
       _worktrees: {
         ...s._worktrees,
@@ -483,7 +667,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           pendingMode: 'branch',
           pendingBranchName: '',
           pendingCarryLocalChanges: false,
-          activePath: wtPath,
+          activePath: uiWtPath,
         },
       },
     }))
@@ -813,6 +997,11 @@ export function startProjectMirror(chatStore: ChatStoreMirror): void {
     useAppStore.setState({ currentFolder: projectPath })
     if (!projectPath) {
       useAppStore.setState({ currentProjectId: null })
+      return
+    }
+    // Remote projects carry their own node projectId (set by applyProjectSelection).
+    // Local getProjectId only knows desktop recents — don't clobber remote ids.
+    if (parseRemoteProjectKey(projectPath)) {
       return
     }
     prefetchFileTree(projectPath)

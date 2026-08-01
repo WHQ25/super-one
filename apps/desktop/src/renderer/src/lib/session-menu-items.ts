@@ -18,34 +18,80 @@ export function buildSessionMenuItems(
   t: TFunction,
   handlers: SessionMenuHandlers,
 ): AdaptiveMenuEntry[] {
+  const isRemoteHost = folderPath.startsWith('remote:')
+  // Host absolute path for clipboard when project is keyed as remote:<conn>:<path>
+  const hostPath = isRemoteHost
+    ? folderPath.slice(folderPath.indexOf(':', 'remote:'.length) + 1) || folderPath
+    : folderPath
+
   const items: AdaptiveMenuEntry[] = [
     { kind: 'item', id: 'rename', label: t('sidebar.contextMenu.rename'), icon: Pencil, onSelect: handlers.onRename },
     { kind: 'item', id: 'pin', label: session.isPinned ? t('sidebar.contextMenu.unpin') : t('sidebar.contextMenu.pin'), icon: Pin, onSelect: handlers.onPin },
     { kind: 'item', id: 'hide', label: session.isHidden ? t('sidebar.contextMenu.unhide') : t('sidebar.contextMenu.hide'), icon: session.isHidden ? Eye : EyeOff, onSelect: handlers.onHide },
-    { kind: 'separator' },
-    { kind: 'item', id: 'mini', label: t('sidebar.contextMenu.openInMiniWindow'), icon: PictureInPicture2, onSelect: () => window.app.openSessionWindow(folderPath, session.sessionId, session.title) },
-    { kind: 'separator' },
-    { kind: 'item', id: 'copyId', label: t('sidebar.contextMenu.copySessionId'), icon: Copy, onSelect: () => {
-      const providerLabel = session.provider === 'codex'
-        ? 'Codex'
-        : session.provider === 'acp'
-          ? (session.acpAgentId?.toLowerCase().includes('grok') ? 'Grok (ACP)' : 'ACP')
-          : session.provider === 'opencode'
-            ? 'OpenCode'
-            : 'Claude Code'
-      if (session.providerSessionId) {
-        navigator.clipboard.writeText(session.providerSessionId)
-        toast.success(`${providerLabel} ${t('sidebar.contextMenu.sessionIdCopiedToast')}`)
-      } else {
-        navigator.clipboard.writeText(session.sessionId)
-        toast.success(`${providerLabel} ${t('sidebar.contextMenu.sessionIdNotReadyToast')}`)
-      }
-    } },
-    { kind: 'item', id: 'copyDir', label: t('sidebar.contextMenu.copyWorkingDirectory'), icon: Copy, onSelect: () => { const dir = session.worktreePath ?? folderPath; navigator.clipboard.writeText(dir); toast.success(t('sidebar.contextMenu.workingDirCopiedToast')) } },
-    { kind: 'item', id: 'openFolder', label: t('sidebar.contextMenu.openFolder'), icon: FolderOpen, onSelect: () => window.app.showInFolder(session.worktreePath ?? folderPath, '') },
   ]
 
-  if (!session.isWorktree) {
+  if (!isRemoteHost) {
+    items.push(
+      { kind: 'separator' },
+      {
+        kind: 'item',
+        id: 'mini',
+        label: t('sidebar.contextMenu.openInMiniWindow'),
+        icon: PictureInPicture2,
+        onSelect: () => window.app.openSessionWindow(folderPath, session.sessionId, session.title),
+      },
+    )
+  }
+
+  items.push(
+    { kind: 'separator' },
+    {
+      kind: 'item',
+      id: 'copyId',
+      label: t('sidebar.contextMenu.copySessionId'),
+      icon: Copy,
+      onSelect: () => {
+        const providerLabel = session.provider === 'codex'
+          ? 'Codex'
+          : session.provider === 'acp'
+            ? (session.acpAgentId?.toLowerCase().includes('grok') ? 'Grok (ACP)' : 'ACP')
+            : session.provider === 'opencode'
+              ? 'OpenCode'
+              : 'Claude Code'
+        if (session.providerSessionId) {
+          navigator.clipboard.writeText(session.providerSessionId)
+          toast.success(`${providerLabel} ${t('sidebar.contextMenu.sessionIdCopiedToast')}`)
+        } else {
+          navigator.clipboard.writeText(session.sessionId)
+          toast.success(`${providerLabel} ${t('sidebar.contextMenu.sessionIdNotReadyToast')}`)
+        }
+      },
+    },
+    {
+      kind: 'item',
+      id: 'copyDir',
+      label: t('sidebar.contextMenu.copyWorkingDirectory'),
+      icon: Copy,
+      onSelect: () => {
+        const dir = session.worktreePath ?? hostPath
+        navigator.clipboard.writeText(dir)
+        toast.success(t('sidebar.contextMenu.workingDirCopiedToast'))
+      },
+    },
+  )
+
+  if (!isRemoteHost) {
+    items.push({
+      kind: 'item',
+      id: 'openFolder',
+      label: t('sidebar.contextMenu.openFolder'),
+      icon: FolderOpen,
+      onSelect: () => window.app.showInFolder(session.worktreePath ?? folderPath, ''),
+    })
+  }
+
+  // Worktree fork is local-desktop only (needs local git + SessionManager).
+  if (!session.isWorktree && !isRemoteHost) {
     items.push(
       { kind: 'separator' },
       { kind: 'item', id: 'forkWorktree', label: t('sidebar.contextMenu.forkToWorktree'), icon: GitFork, onSelect: () => handlers.onFork('worktree') },

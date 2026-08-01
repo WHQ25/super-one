@@ -61,9 +61,13 @@ export function SettingsLayout() {
   const visibleGlobalTabs = computerUseSupported
     ? globalTabs
     : globalTabs.filter((tab) => tab.id !== 'computer-use')
-  const activeSettingsTab = !computerUseSupported && settingsTab === 'computer-use'
-    ? 'app-settings'
-    : settingsTab
+  // Map removed tabs (e.g. former Environments) onto their new homes.
+  const resolvedSettingsTab =
+    (settingsTab as string) === 'environments' ? 'remote' : settingsTab
+  const activeSettingsTab =
+    !computerUseSupported && resolvedSettingsTab === 'computer-use'
+      ? 'app-settings'
+      : resolvedSettingsTab
 
   const visibleProviderTabs = settingsProvider === 'codex'
     ? providerTabs.filter((t) => codexTabs.has(t.id))

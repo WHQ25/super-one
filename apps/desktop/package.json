@@ -61,6 +61,7 @@
     "@opencode-ai/models": "^0.0.2",
     "@opencode-ai/sdk": "^1.18.4",
     "@streamdown/math": "^1.0.2",
+    "@superone/runtime": "workspace:*",
     "@superone/shared": "workspace:*",
     "@superone/ui": "workspace:*",
     "@tiptap/extension-code-block-lowlight": "^3.23.6",

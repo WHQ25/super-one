@@ -6,6 +6,8 @@ import { AdaptiveContextMenu } from '@/components/AdaptiveContextMenu'
 import { Dialog, DialogClose, DialogContent, DialogTitle } from '@superone/ui/components/ui/dialog'
 import { ImagePreview } from '@/components/coding/ImagePreview'
 import { toMediaUrl } from '@/lib/path-utils'
+import { isRemoteMediaUrl } from '@/lib/remote-media-url'
+import { useResolvedMediaSrc } from '@/hooks/use-resolved-media-src'
 import { ImageInteractive, useImageMenuItems } from './image-shared'
 
 const isWindows = window.app.platform === 'win32'
@@ -113,17 +115,72 @@ function MarkdownImageLightbox({ src, alt, savedPath, open, onOpenChange }: Ligh
 export function MarkdownImage(props: ComponentProps<'img'>) {
   const [open, setOpen] = useState(false)
   const savedPath = srcToLocalPath(props.src)
-  const mediaSrc = savedPath ? toMediaUrl(savedPath) : props.src
+  const { displaySrc, loading, failed } = useResolvedMediaSrc(props.src)
   const alt = props.alt ?? ''
 
-  if (!savedPath || !mediaSrc) {
-    return <img {...props} src={mediaSrc} style={MEDIA_STYLE} />
+  // Local file path for context menu / download when available.
+  const localPath = savedPath
+  const mediaSrc =
+    displaySrc ?? (savedPath ? toMediaUrl(savedPath) : props.src && !isRemoteMediaUrl(props.src) ? props.src : undefined)
+
+  if (loading) {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+        <Loader2 className="size-3.5 animate-spin" />
+        Loading image…
+      </span>
+    )
+  }
+
+  if (failed || !mediaSrc) {
+    return <span className="text-xs text-muted-foreground">{alt || 'Image unavailable'}</span>
+  }
+
+  // Remote data: URI — preview + lightbox without host path download.
+  if (!localPath) {
+    return (
+      <>
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="inline-block max-w-full cursor-pointer border-0 bg-transparent p-0 align-top"
+          aria-label={alt || 'Image'}
+        >
+          <img {...props} src={mediaSrc} alt={alt} draggable={false} style={MEDIA_STYLE} />
+        </button>
+        <Dialog open={open} onOpenChange={setOpen} modal={false}>
+          <DialogContent
+            showCloseButton={false}
+            className="left-0 top-0 h-screen max-h-none w-screen max-w-none translate-x-0 translate-y-0 gap-0 overflow-hidden rounded-none border-0 bg-background/95 p-0 shadow-none sm:max-w-none"
+          >
+            <DialogTitle className="sr-only">{alt || 'Image'}</DialogTitle>
+            <div className="absolute inset-0 px-[5vw] py-[5vh]">
+              <ImagePreview src={mediaSrc} alt={alt || 'Image'} />
+            </div>
+            <DialogClose asChild>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+                className={cn(
+                  'absolute right-3 z-20 size-9 rounded-full border border-border/50 bg-background/80 text-muted-foreground shadow-sm backdrop-blur-sm hover:bg-muted hover:text-foreground',
+                  isWindows ? 'top-12' : 'top-3',
+                )}
+                aria-label="Close"
+              >
+                <X className="size-4" />
+              </Button>
+            </DialogClose>
+          </DialogContent>
+        </Dialog>
+      </>
+    )
   }
 
   return (
     <>
       <ImageInteractive
-        savedPath={savedPath}
+        savedPath={localPath}
         onOpen={() => setOpen(true)}
         ariaLabel={alt || 'Image'}
         className="inline-block max-w-full cursor-pointer border-0 bg-transparent p-0 align-top"
@@ -133,7 +190,7 @@ export function MarkdownImage(props: ComponentProps<'img'>) {
       <MarkdownImageLightbox
         src={mediaSrc}
         alt={alt}
-        savedPath={savedPath}
+        savedPath={localPath}
         open={open}
         onOpenChange={setOpen}
       />

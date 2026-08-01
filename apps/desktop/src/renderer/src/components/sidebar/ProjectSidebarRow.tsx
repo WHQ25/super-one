@@ -188,7 +188,12 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
 
     const displayLimit = Math.min(expandLevel, maxSessions)
     return {
-      displayPath: homePath(folder.path),
+      displayPath: homePath(
+        // Strip remote host-scoped keys for display (see remote-project-key.ts).
+        folder.path.startsWith('remote:')
+          ? folder.path.slice(folder.path.indexOf(':', 'remote:'.length) + 1) || folder.path
+          : folder.path,
+      ),
       groupsToShow: isExpanded ? groups.slice(0, displayLimit) : liveGroups,
       showSessions: isExpanded || liveGroups.length > 0,
       totalCount: groups.length,
@@ -292,7 +297,10 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
               </Tooltip>
             </TooltipProvider>
             {!folder.missing && (
-              <div className="ml-auto hidden shrink-0 items-center gap-0.5 group-hover:flex">
+              <div
+                data-slot="project-row-actions"
+                className="invisible ml-auto flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:visible group-hover:pointer-events-auto group-hover:opacity-100"
+              >
                 <IconButton
                   size="md"
                   variant="nested"

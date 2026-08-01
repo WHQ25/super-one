@@ -8,8 +8,12 @@ let sessionsByFolder: Record<string, Array<{ sessionId: string; title: string; l
 
 const appState = {
   sidebarTab: 'sessions',
-  currentFolder: '/project-a',
+  currentFolder: '/project-a' as string | null,
   recentFolders: [{ name: 'project-a', path: '/project-a', addedAt: '2026-03-02T00:00:00.000Z' }],
+  // The sidebar lists local projects only while this host is selected.
+  selectedHostConnectionId: 'local',
+  setSelectedHostConnectionId: vi.fn(),
+  fetchRecentFolders: vi.fn(async () => {}),
   setShowSidebar: vi.fn(),
   navigateTo: vi.fn(),
   selectProject: vi.fn(async () => {}),
@@ -46,6 +50,24 @@ const mockWindowApp = {
   renameSession: vi.fn(async () => {}),
   listAutomations: vi.fn(async () => []),
   getAppSettings: vi.fn(async () => ({ miniAppOrder: {} })),
+}
+
+const mockEnvironment = {
+  listItems: vi.fn(async (): Promise<Array<{
+    connectionId: string
+    state: string
+    label: string
+  }>> => []),
+  onStatusEvent: vi.fn(() => () => {}),
+  connect: vi.fn(async () => {}),
+  listProjects: vi.fn(async (): Promise<Array<{
+    projectId: string
+    path: string
+    name: string
+    lastActiveAt?: number
+    missing?: boolean
+  }>> => []),
+  listSessions: vi.fn(async () => []),
 }
 
 vi.mock('motion/react', () => ({
@@ -168,6 +190,7 @@ beforeEach(() => {
   appState.sidebarTab = 'sessions'
   appState.currentFolder = '/project-a'
   appState.recentFolders = [{ name: 'project-a', path: '/project-a', addedAt: '2026-03-02T00:00:00.000Z' }]
+  appState.selectedHostConnectionId = 'local'
   sessionsByFolder = {
     '/project-a': [
       { sessionId: 'sid-1', title: 'Old Session', lastActiveAt: '2026-03-02T00:00:00.000Z', messageCount: 2 },
@@ -192,9 +215,107 @@ beforeEach(() => {
     },
   }
   ;(window as unknown as { app: unknown }).app = mockWindowApp
+  ;(window as unknown as { environment: unknown }).environment = mockEnvironment
 })
 
 describe('AppSidebar interactions', () => {
+  it('keeps project action anchors measurable while the row is not hovered', async () => {
+    const { AppSidebar } = await import('./AppSidebar')
+    const { container } = render(<AppSidebar />)
+
+    const actions = container.querySelector('[data-slot="project-row-actions"]')
+    expect(actions).not.toBeNull()
+    expect(actions).toHaveClass('invisible', 'flex', 'opacity-0')
+    expect(actions).not.toHaveClass('hidden')
+  })
+
+  it('selects a remote project when clicking its sidebar row', async () => {
+    appState.currentFolder = null
+    appState.recentFolders = []
+    appState.selectedHostConnectionId = 'env-remote'
+    chatState.projectSessions = {}
+    mockEnvironment.listItems.mockResolvedValue([
+      { connectionId: 'env-remote', state: 'connected', label: 'remote lab' },
+    ])
+    mockEnvironment.listProjects.mockResolvedValue([
+      { projectId: 'project-1', path: '/work/remote-app', name: 'remote-app', lastActiveAt: 1 },
+    ])
+
+    const { AppSidebar } = await import('./AppSidebar')
+    render(<AppSidebar />)
+
+    fireEvent.click(await screen.findByText('remote-app'))
+
+    await waitFor(() => {
+      expect(appState.selectProject).toHaveBeenCalledWith(
+        'remote:env-remote:/work/remote-app',
+        { connectionId: 'env-remote', projectId: 'project-1' },
+      )
+    })
+  })
+
+  it('does not select a missing remote project', async () => {
+    appState.currentFolder = null
+    appState.recentFolders = []
+    appState.selectedHostConnectionId = 'env-remote'
+    chatState.projectSessions = {}
+    mockEnvironment.listItems.mockResolvedValue([
+      { connectionId: 'env-remote', state: 'connected', label: 'remote lab' },
+    ])
+    mockEnvironment.listProjects.mockResolvedValue([
+      {
+        projectId: 'stale-1',
+        path: '/old/project',
+        name: 'missing-app',
+        lastActiveAt: 1,
+        missing: true,
+      },
+    ])
+
+    const { AppSidebar } = await import('./AppSidebar')
+    render(<AppSidebar />)
+
+    fireEvent.click(await screen.findByText('missing-app'))
+
+    expect(appState.selectProject).not.toHaveBeenCalled()
+  })
+
+  it('manually refreshes the selected remote host project list', async () => {
+    appState.currentFolder = null
+    appState.recentFolders = []
+    appState.selectedHostConnectionId = 'env-remote'
+    chatState.projectSessions = {}
+    mockEnvironment.listItems.mockResolvedValue([
+      { connectionId: 'env-remote', state: 'connected', label: 'remote lab' },
+    ])
+    mockEnvironment.listProjects.mockResolvedValue([
+      { projectId: 'project-1', path: '/work/remote-app', name: 'remote-app', lastActiveAt: 1 },
+    ])
+
+    const { AppSidebar } = await import('./AppSidebar')
+    render(<AppSidebar />)
+    await screen.findByText('remote-app')
+    mockEnvironment.listProjects.mockClear()
+
+    const refreshButton = screen.getByRole('button', { name: 'Refresh' })
+    expect(screen.getByRole('button', { name: 'Add Project' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Sort Projects' })).toBeInTheDocument()
+    const actions = refreshButton.parentElement
+    expect(actions?.children).toHaveLength(3)
+    expect(actions?.children[0]?.querySelector('.lucide-plus')).not.toBeNull()
+    expect(actions?.children[1]?.querySelector('.lucide-arrow-down-up')).not.toBeNull()
+    expect(actions?.children[2]).toBe(refreshButton)
+
+    fireEvent.click(refreshButton)
+
+    await waitFor(() => {
+      expect(mockEnvironment.listProjects).toHaveBeenCalledWith(
+        'env-remote',
+        { refresh: true },
+      )
+    })
+  })
+
   it('hides a normal session when clicking hide icon', async () => {
     const { AppSidebar } = await import('./AppSidebar')
     render(<AppSidebar />)

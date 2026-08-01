@@ -24,6 +24,18 @@ if (typeof globalThis.window !== 'undefined' && !(globalThis.window as unknown a
   const w = globalThis.window as unknown as Record<string, unknown>
   w.app = new Proxy({}, { get: () => noop })
   w.agent = new Proxy({}, { get: () => noop })
+  // `window.environment` needs a shape-aware default: `on*` subscriptions hand
+  // back a synchronous unsubscribe, while every query resolves to an empty list
+  // so components can render their list state without a per-test stub.
+  w.environment = new Proxy(
+    {},
+    {
+      get: (_target, prop) =>
+        typeof prop === 'string' && prop.startsWith('on')
+          ? () => () => {}
+          : () => Promise.resolve([]),
+    },
+  )
 }
 
 if (typeof (globalThis as unknown as { ResizeObserver?: unknown }).ResizeObserver === 'undefined') {

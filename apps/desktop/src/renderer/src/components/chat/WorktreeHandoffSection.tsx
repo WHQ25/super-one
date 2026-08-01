@@ -7,6 +7,8 @@ import { DiffStat } from './DiffStat'
 
 interface WorktreeHandoffSectionProps {
   worktreePath: string
+  /** Project key (local path or remote:<conn>:<path>) for remote handoff routing. */
+  folderPath?: string
   onDone: () => void
 }
 
@@ -21,7 +23,7 @@ const HANDOFF_ERROR_KEY: Record<HandoffFailure['reason'], string> = {
 }
 
 /** One-click handoff section — non-destructive; renders nothing when there is nothing to hand off. */
-export function WorktreeHandoffSection({ worktreePath, onDone }: WorktreeHandoffSectionProps) {
+export function WorktreeHandoffSection({ worktreePath, folderPath, onDone }: WorktreeHandoffSectionProps) {
   const { t } = useTranslation()
   const [stat, setStat] = useState<GitDirtyStatus | null>(null)
   const [loading, setLoading] = useState(true)
@@ -30,19 +32,19 @@ export function WorktreeHandoffSection({ worktreePath, onDone }: WorktreeHandoff
   useEffect(() => {
     let cancelled = false
     setLoading(true)
-    window.app.getHandoffPreview(worktreePath).then((s) => {
+    window.app.getHandoffPreview(worktreePath, folderPath).then((s) => {
       if (cancelled) return
       setStat(s)
       setLoading(false)
     }).catch(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [worktreePath])
+  }, [worktreePath, folderPath])
 
   const submit = async () => {
     if (busy) return
     setBusy(true)
     try {
-      const result = await window.app.handoffToLocal(worktreePath)
+      const result = await window.app.handoffToLocal(worktreePath, folderPath)
       if (result.ok) {
         toast.success(t('chat.worktree.handoffSuccess'))
         onDone()

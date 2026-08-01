@@ -623,6 +623,94 @@ export async function getGithubStars(repoSlug: string): Promise<number | null> {
   }
 }
 
+export interface GithubRepoSearchHit {
+  owner: string
+  name: string
+  fullName: string
+  description: string | null
+  private: boolean
+}
+
+type GithubRepoJson = {
+  name?: string
+  full_name?: string
+  description?: string | null
+  private?: boolean
+  owner?: { login?: string }
+}
+
+function mapGithubRepoHits(rows: GithubRepoJson[]): GithubRepoSearchHit[] {
+  const hits: GithubRepoSearchHit[] = []
+  for (const row of rows) {
+    const fullName = typeof row.full_name === 'string' ? row.full_name : ''
+    const [ownerFromFull, nameFromFull] = fullName.split('/')
+    const owner = row.owner?.login || ownerFromFull
+    const name = typeof row.name === 'string' ? row.name : nameFromFull
+    if (!owner || !name) continue
+    hits.push({
+      owner,
+      name,
+      fullName: fullName || `${owner}/${name}`,
+      description: typeof row.description === 'string' ? row.description : null,
+      private: Boolean(row.private),
+    })
+  }
+  return hits
+}
+
+/**
+ * List repositories under a GitHub user/org for the add-project picker.
+ * Prefers `gh` (authenticated → includes private repos); falls back to the
+ * public REST API. Returns [] on any failure so the UI can keep typing.
+ */
+export async function listGithubReposForOwner(owner: string): Promise<GithubRepoSearchHit[]> {
+  const login = owner.trim()
+  if (!login || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(login)) return []
+
+  const viaGh = await new Promise<GithubRepoSearchHit[] | null>((resolve) => {
+    // user repos first; orgs share the same path via the users endpoint for listing
+    // when authenticated. `--paginate` is intentionally omitted to keep this snappy.
+    execFile(
+      'gh',
+      [
+        'api',
+        `users/${encodeURIComponent(login)}/repos?per_page=50&sort=updated&type=all`,
+        '--jq',
+        '[.[] | {name, full_name, description, private, owner: {login: .owner.login}}]',
+      ],
+      { timeout: 15000 },
+      (error, stdout) => {
+        if (error) {
+          resolve(null)
+          return
+        }
+        try {
+          const parsed = JSON.parse(stdout) as GithubRepoJson[]
+          resolve(Array.isArray(parsed) ? mapGithubRepoHits(parsed) : null)
+        } catch {
+          resolve(null)
+        }
+      },
+    )
+  })
+  if (viaGh) return viaGh
+
+  try {
+    const res = await fetch(
+      `https://api.github.com/users/${encodeURIComponent(login)}/repos?per_page=50&sort=updated&type=all`,
+      {
+        headers: { Accept: 'application/vnd.github+json' },
+        signal: AbortSignal.timeout(15000),
+      },
+    )
+    if (!res.ok) return []
+    const data = (await res.json()) as GithubRepoJson[]
+    return Array.isArray(data) ? mapGithubRepoHits(data) : []
+  } catch {
+    return []
+  }
+}
+
 export function installPlugin(pluginKey: string, scope: ResourceScope, cwd: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const args = ['plugin', 'install', pluginKey, '--scope', scope]

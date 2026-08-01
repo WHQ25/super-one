@@ -24,6 +24,7 @@ vi.mock('@/stores/app', () => ({
       setActiveWorktree: mockSetActiveWorktree,
       clearWorktree: vi.fn().mockResolvedValue(undefined),
       sandboxCapability: null,
+      currentProjectId: 'remote-project-1',
     }),
   },
 }))
@@ -42,6 +43,9 @@ const mockSendMessage = vi.fn().mockResolvedValue(undefined)
 const mockMiniAppAuthorize = vi.fn().mockResolvedValue(undefined)
 const mockResumeSession = vi.fn().mockResolvedValue(null)
 const mockCodexGetAuthStatus = vi.fn().mockResolvedValue({ mode: 'auto', signedIn: false })
+const mockEnvGetSession = vi.fn()
+const mockEnvCreateSession = vi.fn()
+const mockEnvSendSessionMessage = vi.fn()
 
 vi.stubGlobal('window', {
   agent: {
@@ -56,6 +60,11 @@ vi.stubGlobal('window', {
     trace: vi.fn(),
     getAppSettings: vi.fn().mockResolvedValue({ agentPreference: {} }),
     codexGetAuthStatus: mockCodexGetAuthStatus,
+  },
+  environment: {
+    getSession: mockEnvGetSession,
+    createSession: mockEnvCreateSession,
+    sendSessionMessage: mockEnvSendSessionMessage,
   },
   miniapp: { authorize: mockMiniAppAuthorize },
   dispatchEvent: vi.fn(),
@@ -104,8 +113,184 @@ beforeEach(() => {
   mockResumeSession.mockReset().mockResolvedValue(null)
   mockCodexGetAuthStatus.mockReset().mockResolvedValue({ mode: 'auto', signedIn: false })
   mockRunCodexCommand.mockReset().mockResolvedValue(undefined)
+  mockEnvGetSession.mockReset().mockResolvedValue(null)
+  mockEnvCreateSession.mockReset().mockResolvedValue({
+    sessionId: 'node-sid-1',
+    title: 'New session',
+    lastActiveAt: new Date().toISOString(),
+    messageCount: 0,
+  })
+  mockEnvSendSessionMessage.mockReset().mockResolvedValue({
+    sessionId: 'node-sid-1',
+    status: 'idle',
+    harnessId: 'codex',
+    transcript: [
+      { id: 'u1', role: 'user', text: 'hello', createdAt: Date.now() },
+      { id: 'a1', role: 'assistant', text: '[codex] done', createdAt: Date.now() },
+    ],
+  })
   mockMiniApps.length = 0
   vi.spyOn(console, 'error').mockImplementation(() => {})
+})
+
+describe('sendMessageImpl: remote node', () => {
+  const remotePath = 'remote:env-1:/work/app'
+
+  it('materializes a node session when the active id is only a local draft', async () => {
+    // Default preferredProvider is claude (Claude Code tab); must not force codex.
+    seedProject(remotePath, 'local-draft-sid', {
+      preferredProvider: 'claude',
+      sessionProvider: null,
+    })
+    mockEnvSendSessionMessage.mockResolvedValueOnce({
+      sessionId: 'node-sid-1',
+      status: 'idle',
+      harnessId: 'claude',
+      transcript: [
+        { id: 'u1', role: 'user', text: 'hello', createdAt: Date.now() },
+        { id: 'a1', role: 'assistant', text: '[claude] done', createdAt: Date.now() },
+      ],
+    })
+
+    await useChatStore.getState().sendMessage('hello')
+
+    expect(mockEnvGetSession).toHaveBeenCalledWith('env-1', 'local-draft-sid')
+    expect(mockEnvCreateSession).toHaveBeenCalledWith(
+      'env-1',
+      expect.objectContaining({ projectId: 'remote-project-1', harnessId: 'claude' }),
+    )
+    expect(mockEnvSendSessionMessage).toHaveBeenCalledWith(
+      'env-1',
+      expect.objectContaining({
+        sessionId: 'node-sid-1',
+        text: 'hello',
+        projectPath: remotePath,
+        providerId: 'claude',
+      }),
+    )
+    expect(mockSendMessage).not.toHaveBeenCalled()
+
+    const proj = useChatStore.getState().projectSessions[remotePath]
+    expect(proj._activeSessionId).toBe('node-sid-1')
+    const sess = proj._sessions['node-sid-1']
+    expect(sess.awaitingAssistantReply).toBe(false)
+    expect(sess.status).toBe('idle')
+    expect(sess.messages.some((m) => m.role === 'assistant')).toBe(true)
+  })
+
+  it('uses preferredProvider claude when sessionProvider is still null', async () => {
+    seedProject(remotePath, 'draft-claude', {
+      preferredProvider: 'claude',
+      sessionProvider: null,
+    })
+    mockEnvSendSessionMessage.mockResolvedValueOnce({
+      sessionId: 'node-sid-1',
+      status: 'idle',
+      harnessId: 'claude',
+      transcript: [],
+    })
+
+    await useChatStore.getState().sendMessage('hi claude')
+
+    expect(mockEnvCreateSession).toHaveBeenCalledWith(
+      'env-1',
+      expect.objectContaining({ harnessId: 'claude' }),
+    )
+    expect(mockEnvSendSessionMessage).toHaveBeenCalledWith(
+      'env-1',
+      expect.objectContaining({ providerId: 'claude' }),
+    )
+  })
+
+  it('passes selectedModel on remote claude send', async () => {
+    seedProject(remotePath, 'node-model-sid', {
+      preferredProvider: 'claude',
+      sessionProvider: 'claude',
+      selectedModel: 'claude-opus-4-1',
+    })
+    mockEnvGetSession.mockResolvedValueOnce({
+      sessionId: 'node-model-sid',
+      status: 'idle',
+      transcript: [],
+    })
+    mockEnvSendSessionMessage.mockResolvedValueOnce({
+      sessionId: 'node-model-sid',
+      status: 'idle',
+      harnessId: 'claude',
+      transcript: [],
+    })
+
+    await useChatStore.getState().sendMessage('use opus')
+
+    expect(mockEnvSendSessionMessage).toHaveBeenCalledWith(
+      'env-1',
+      expect.objectContaining({
+        sessionId: 'node-model-sid',
+        model: 'claude-opus-4-1',
+        providerId: 'claude',
+      }),
+    )
+  })
+
+  it('intercepts /clear on remote without session.send', async () => {
+    seedProject(remotePath, 'node-clear-sid', {
+      preferredProvider: 'claude',
+      sessionProvider: 'claude',
+    })
+    mockEnvGetSession.mockResolvedValueOnce({
+      sessionId: 'node-clear-sid',
+      status: 'idle',
+      transcript: [],
+    })
+
+    await useChatStore.getState().sendMessage('/clear')
+
+    expect(mockEnvSendSessionMessage).not.toHaveBeenCalled()
+  })
+
+  it('uses codex when the session is on the codex tab', async () => {
+    seedProject(remotePath, 'draft-codex', {
+      preferredProvider: 'codex',
+      sessionProvider: 'codex',
+    })
+
+    await useChatStore.getState().sendMessage('hi codex')
+
+    expect(mockEnvCreateSession).toHaveBeenCalledWith(
+      'env-1',
+      expect.objectContaining({ harnessId: 'codex' }),
+    )
+  })
+
+  it('reuses an existing node session without creating another', async () => {
+    seedProject(remotePath, 'node-sid-live')
+    mockEnvGetSession.mockResolvedValueOnce({
+      sessionId: 'node-sid-live',
+      status: 'idle',
+      transcript: [],
+    })
+    mockEnvSendSessionMessage.mockResolvedValueOnce({
+      sessionId: 'node-sid-live',
+      status: 'idle',
+      harnessId: 'codex',
+      transcript: [
+        { id: 'u1', role: 'user', text: 'hi', createdAt: Date.now() },
+        { id: 'a1', role: 'assistant', text: '[codex] done', createdAt: Date.now() },
+      ],
+    })
+
+    await useChatStore.getState().sendMessage('hi')
+
+    expect(mockEnvCreateSession).not.toHaveBeenCalled()
+    expect(mockEnvSendSessionMessage).toHaveBeenCalledWith(
+      'env-1',
+      expect.objectContaining({
+        sessionId: 'node-sid-live',
+        text: 'hi',
+        projectPath: remotePath,
+      }),
+    )
+  })
 })
 
 describe('sendMessageImpl: worktree activation', () => {

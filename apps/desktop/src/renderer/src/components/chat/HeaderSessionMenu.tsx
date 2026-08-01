@@ -74,8 +74,30 @@ export function HeaderSessionMenu({ sessionId, folderPath }: { sessionId: string
 
   const items = buildSessionMenuItems(entry, folderPath, t, {
     onRename: () => setRenameTarget({ sessionId: entry.sessionId, title: entry.title, folderPath }),
-    onPin: async () => { await window.app.pinSession(entry.sessionId, !entry.isPinned); await afterMutate() },
-    onHide: async () => { await window.app.hideSession(entry.sessionId, !entry.isHidden); await afterMutate() },
+    onPin: async () => {
+      const { parseRemoteProjectKey } = await import('@/lib/remote-project-key')
+      const remote = parseRemoteProjectKey(folderPath)
+      if (remote) {
+        await window.environment.setSessionUiFlags(remote.connectionId, entry.sessionId, {
+          isPinned: !entry.isPinned,
+        })
+      } else {
+        await window.app.pinSession(entry.sessionId, !entry.isPinned)
+      }
+      await afterMutate()
+    },
+    onHide: async () => {
+      const { parseRemoteProjectKey } = await import('@/lib/remote-project-key')
+      const remote = parseRemoteProjectKey(folderPath)
+      if (remote) {
+        await window.environment.setSessionUiFlags(remote.connectionId, entry.sessionId, {
+          isHidden: !entry.isHidden,
+        })
+      } else {
+        await window.app.hideSession(entry.sessionId, !entry.isHidden)
+      }
+      await afterMutate()
+    },
     onFork: handleFork,
   })
 

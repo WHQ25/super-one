@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef, memo } from 'react'
-import { Plus, Settings, FolderClosed, ArrowDownUp, SquarePen, MessageSquare, Copy, Check, Smartphone, Wifi, Cloud, Monitor } from 'lucide-react'
+import { Plus, Settings, FolderClosed, ArrowDownUp, SquarePen, MessageSquare, Copy, Check, Smartphone, Wifi, Cloud, Monitor, ChevronDown, RotateCw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@superone/ui/components/ui/button'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
@@ -21,6 +21,7 @@ import {
 } from '@superone/ui/components/ui/dialog'
 import { useChatStore } from '@/stores/chat'
 import { useAppStore, type SidebarTab } from '@/stores/app'
+import { parseRemoteProjectKey, remoteProjectKey } from '@/lib/remote-project-key'
 import { useShallow } from 'zustand/react/shallow'
 import { shallow } from 'zustand/shallow'
 import { useFullscreen } from '@/hooks/useFullscreen'
@@ -33,14 +34,17 @@ import { useMosaicStore } from '@/components/mosaic/mosaic-store'
 import { ProjectSidebarRow } from '@/components/sidebar/ProjectSidebarRow'
 import { PinnedSessionRow } from '@/components/sidebar/PinnedSessionRow'
 import { RenameSessionDialog } from '@/components/sidebar/RenameSessionDialog'
+import { AddProjectDialog } from '@/components/sidebar/add-project/AddProjectDialog'
 import { traceSidebar, useSidebarRenderTrace } from '@/components/sidebar/sidebar-trace'
 import type { RecentFolder, SessionHistoryEntry, PinnedSessionEntry } from '@superone/shared/agent-types'
+import type { EnvironmentListItem } from '@superone/shared/environment'
 import { getDeleteSessionRecovery, shouldSkipDeleteConfirm, setSkipDeleteConfirm } from './session-delete-helpers'
 import { LayoutToggle } from '@/components/coding/LayoutToggle'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { AppDrawer } from '@/components/sidebar/AppDrawer'
 import { BrandColorPopover } from '@/components/sidebar/BrandColorPopover'
 import { UsageStatusIcon } from '@/components/UsageStatusIcon'
+import { UpdateStatusIcon } from '@/components/UpdateStatusIcon'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@superone/ui/components/ui/tooltip'
 import { CommandShortcut } from '@superone/ui/components/ui/command'
 
@@ -57,12 +61,22 @@ const EMPTY_SESSIONS: SessionHistoryEntry[] = []
 
 export const AppSidebar = memo(function AppSidebar() {
   const { t } = useTranslation()
-  const { navigateTo, selectProject, removeRecentFolder, setSidebarTab } = useAppStore(useShallow((s) => ({ navigateTo: s.navigateTo, selectProject: s.selectProject, removeRecentFolder: s.removeRecentFolder, setSidebarTab: s.setSidebarTab })))
+  const { navigateTo, selectProject, removeRecentFolder, setSidebarTab, setSelectedHostConnectionId } = useAppStore(
+    useShallow((s) => ({
+      navigateTo: s.navigateTo,
+      selectProject: s.selectProject,
+      removeRecentFolder: s.removeRecentFolder,
+      setSidebarTab: s.setSidebarTab,
+      setSelectedHostConnectionId: s.setSelectedHostConnectionId,
+    })),
+  )
   const sidebarTab = useAppStore((s) => s.sidebarTab)
   const currentFolder = useAppStore((s) => s.currentFolder)
   const recentFolders = useAppStore((s) => s.recentFolders)
+  const selectedHostConnectionId = useAppStore((s) => s.selectedHostConnectionId)
   const isFullscreen = useFullscreen()
   const isMac = window.app.platform === 'darwin'
+  const localHostLabel = isMac ? t('sidebar.thisMac') : t('sidebar.thisPc')
   const resetSession = useChatStore((s) => s.resetSession)
   const removeSessionFromMemory = useChatStore((s) => s.removeSessionFromMemory)
   const switchSession = useChatStore((s) => s.switchSession)
@@ -103,11 +117,117 @@ export const AppSidebar = memo(function AppSidebar() {
   const [pinnedSessions, setPinnedSessions] = useState<PinnedSessionEntry[]>([])
   const [deleteTarget, setDeleteTarget] = useState<{ sessionId: string; title: string; folderPath: string; provider: import('@superone/shared/agent-types').HarnessId } | null>(null)
   const [copiedCmd, setCopiedCmd] = useState<'cd' | 'resume' | null>(null)
-  const [removeTarget, setRemoveTarget] = useState<{ name: string; path: string } | null>(null)
+  const [removeTarget, setRemoveTarget] = useState<{
+    name: string
+    path: string
+    id?: string
+  } | null>(null)
+  const [removeBusy, setRemoveBusy] = useState(false)
+  const [removeError, setRemoveError] = useState<string | null>(null)
   const [renameTarget, setRenameTarget] = useState<{ sessionId: string; title: string; folderPath: string } | null>(null)
+  const [hostItems, setHostItems] = useState<EnvironmentListItem[]>([])
+  const [hostProjects, setHostProjects] = useState<RecentFolder[]>([])
+  const [hostProjectsLoading, setHostProjectsLoading] = useState(false)
+  const [hostProjectsError, setHostProjectsError] = useState<string | null>(null)
+  /** Bump to re-run remote project load / auto-connect. */
+  const [hostProjectsRetryNonce, setHostProjectsRetryNonce] = useState(0)
+  const forceHostProjectsRefreshRef = useRef(false)
+  const [openProjectDialogOpen, setOpenProjectDialogOpen] = useState(false)
+  const fetchRecentFolders = useAppStore((s) => s.fetchRecentFolders)
   const inFlightFolderSessions = useRef(new Map<string, Promise<SessionHistoryEntry[]>>())
   const expandedFoldersRef = useRef(expandedFolders)
   const folderSessionsRef = useRef(folderSessions)
+
+  // Environments for the host switcher (local + paired remotes).
+  useEffect(() => {
+    let cancelled = false
+    const refresh = () => {
+      void window.environment.listItems().then((items) => {
+        if (!cancelled) setHostItems(items)
+      }).catch(() => {
+        if (!cancelled) setHostItems([])
+      })
+    }
+    refresh()
+    const unsub = window.environment.onStatusEvent(() => refresh())
+    return () => {
+      cancelled = true
+      unsub()
+    }
+  }, [])
+
+  // Load projects for the selected host. Local uses recentFolders; remote auto-connects then project.list.
+  useEffect(() => {
+    let cancelled = false
+    if (selectedHostConnectionId === 'local') {
+      setHostProjects([])
+      setHostProjectsError(null)
+      setHostProjectsLoading(false)
+      return () => {
+        cancelled = true
+      }
+    }
+
+    setHostProjectsLoading(true)
+    setHostProjectsError(null)
+
+    void (async () => {
+      try {
+        const refresh = forceHostProjectsRefreshRef.current
+        forceHostProjectsRefreshRef.current = false
+        const host = hostItems.find((h) => h.connectionId === selectedHostConnectionId)
+        const live = host?.state === 'connected' || host?.state === 'synchronizing'
+        // Selecting a remote host always ensures a live connection.
+        if (!live) {
+          await window.environment.connect(selectedHostConnectionId)
+        }
+        if (cancelled) return
+        const projects = await window.environment.listProjects(
+          selectedHostConnectionId,
+          refresh ? { refresh: true } : undefined,
+        )
+        if (cancelled) return
+        setHostProjects(
+          projects.map((p) => ({
+            id: p.projectId,
+            // Host-scoped key so chat-store / expand state never collides with local paths.
+            path: remoteProjectKey(selectedHostConnectionId, p.path),
+            name: p.name,
+            missing: p.missing,
+            addedAt: p.lastActiveAt ? new Date(p.lastActiveAt).toISOString() : new Date(0).toISOString(),
+            lastOpened: p.lastActiveAt
+              ? new Date(p.lastActiveAt).toISOString()
+              : new Date(0).toISOString(),
+          })),
+        )
+      } catch (err) {
+        if (cancelled) return
+        setHostProjects([])
+        setHostProjectsError(err instanceof Error ? err.message : String(err))
+      } finally {
+        if (!cancelled) setHostProjectsLoading(false)
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [selectedHostConnectionId, hostItems, hostProjectsRetryNonce])
+
+  const refreshHostProjects = useCallback(() => {
+    if (selectedHostConnectionId === 'local' || hostProjectsLoading) return
+    forceHostProjectsRefreshRef.current = true
+    setHostProjectsRetryNonce((nonce) => nonce + 1)
+  }, [selectedHostConnectionId, hostProjectsLoading])
+
+  // Drop selection if the remote host was forgotten.
+  useEffect(() => {
+    if (selectedHostConnectionId === 'local') return
+    if (hostItems.length === 0) return
+    if (!hostItems.some((h) => h.connectionId === selectedHostConnectionId)) {
+      setSelectedHostConnectionId('local')
+    }
+  }, [hostItems, selectedHostConnectionId, setSelectedHostConnectionId])
 
   useEffect(() => {
     expandedFoldersRef.current = expandedFolders
@@ -131,21 +251,46 @@ export const AppSidebar = memo(function AppSidebar() {
       const startedAt = performance.now()
       traceSidebar('sessions_load:start', { folderPath, reason, pageSize: SESSIONS_FETCH_LIMIT }, folderPath)
       try {
-        while (sessions.filter((session) => !session.isHidden && !session.parentSessionId).length < SESSIONS_FETCH_ROOT_TARGET) {
-          const page = await window.app.listSessionsForFolderPage(folderPath, SESSIONS_FETCH_LIMIT, offset)
-          visibleCount += page.filter((session) => !session.isHidden && !session.parentSessionId).length
-          traceSidebar('sessions_load:page', {
-            folderPath,
-            reason,
-            offset,
-            pageCount: page.length,
-            visibleCount,
-            elapsedMs: Math.round((performance.now() - startedAt) * 100) / 100,
-          }, folderPath)
-          if (page.length === 0) break
-          sessions.push(...page)
-          if (page.length < SESSIONS_FETCH_LIMIT) break
-          offset += page.length
+        const remote = parseRemoteProjectKey(folderPath)
+        if (remote) {
+          // Remote node sessions via EnvironmentGateway (project id from hostProjects).
+          const project = hostProjects.find((p) => p.path === folderPath)
+          const projectId = project?.id
+          if (!projectId) {
+            setFolderSessions((prev) => ({ ...prev, [folderPath]: [] }))
+            inFlightFolderSessions.current.delete(folderPath)
+            return []
+          }
+          const remoteRows = await window.environment.listSessions(remote.connectionId, projectId)
+          for (const row of remoteRows) {
+            sessions.push({
+              sessionId: row.sessionId,
+              title: row.title,
+              lastActiveAt: row.lastActiveAt,
+              provider: (row.provider as SessionHistoryEntry['provider']) ?? 'codex',
+              messageCount: row.messageCount,
+              isPinned: row.isPinned,
+              isHidden: row.isHidden,
+            })
+          }
+          visibleCount = sessions.length
+        } else {
+          while (sessions.filter((session) => !session.isHidden && !session.parentSessionId).length < SESSIONS_FETCH_ROOT_TARGET) {
+            const page = await window.app.listSessionsForFolderPage(folderPath, SESSIONS_FETCH_LIMIT, offset)
+            visibleCount += page.filter((session) => !session.isHidden && !session.parentSessionId).length
+            traceSidebar('sessions_load:page', {
+              folderPath,
+              reason,
+              offset,
+              pageCount: page.length,
+              visibleCount,
+              elapsedMs: Math.round((performance.now() - startedAt) * 100) / 100,
+            }, folderPath)
+            if (page.length === 0) break
+            sessions.push(...page)
+            if (page.length < SESSIONS_FETCH_LIMIT) break
+            offset += page.length
+          }
         }
         setFolderSessions((prev) => {
           const existing = prev[folderPath]
@@ -177,9 +322,17 @@ export const AppSidebar = memo(function AppSidebar() {
 
     inFlightFolderSessions.current.set(folderPath, promise)
     return promise
-  }, [])
+  }, [hostProjects])
 
   const toggleExpand = useCallback((folderPath: string) => {
+    const remote = parseRemoteProjectKey(folderPath)
+    if (remote) {
+      const project = hostProjects.find((item) => item.path === folderPath)
+      void selectProject(folderPath, {
+        connectionId: remote.connectionId,
+        projectId: project?.id,
+      })
+    }
     const isExpanded = expandedFoldersRef.current.has(folderPath)
     let willExpand = false
     setExpandedFolders((prev) => {
@@ -210,7 +363,7 @@ export const AppSidebar = memo(function AppSidebar() {
     } else {
       traceSidebar('project_expand:collapse', { folderPath, wasExpanded: isExpanded }, folderPath)
     }
-  }, [loadFolderSessions])
+  }, [hostProjects, loadFolderSessions, selectProject])
 
   const refreshPinned = useCallback(() => {
     window.app.listPinnedSessions().then(setPinnedSessions)
@@ -263,17 +416,37 @@ export const AppSidebar = memo(function AppSidebar() {
     if (!folderSessionsRef.current[folderPath]) {
       void loadFolderSessions(folderPath, 'switch')
     }
-    await selectProject(folderPath)
+    const remote = parseRemoteProjectKey(folderPath)
+    const project = remote
+      ? hostProjects.find((p) => p.path === folderPath)
+      : undefined
+    await selectProject(folderPath, {
+      connectionId: remote?.connectionId ?? 'local',
+      projectId: project?.id,
+    })
+    // switchSession handles remote hydrate (session.get) and local SQLite resume.
     await switchSession(sessionId)
-  }, [selectProject, switchSession, currentFolder, loadFolderSessions])
+  }, [selectProject, switchSession, currentFolder, loadFolderSessions, hostProjects])
 
   const handlePinSession = useCallback(async (sessionId: string, pinned: boolean, folderPath: string) => {
+    const remote = parseRemoteProjectKey(folderPath)
+    if (remote) {
+      await window.environment.setSessionUiFlags(remote.connectionId, sessionId, { isPinned: pinned })
+      refreshFolderSessions(folderPath)
+      return
+    }
     await window.app.pinSession(sessionId, pinned)
     refreshPinned()
     refreshFolderSessions(folderPath)
   }, [refreshPinned, refreshFolderSessions])
 
   const handleHideSession = useCallback(async (sessionId: string, hidden: boolean, folderPath: string) => {
+    const remote = parseRemoteProjectKey(folderPath)
+    if (remote) {
+      await window.environment.setSessionUiFlags(remote.connectionId, sessionId, { isHidden: hidden })
+      refreshFolderSessions(folderPath)
+      return
+    }
     await window.app.hideSession(sessionId, hidden)
     refreshFolderSessions(folderPath)
   }, [refreshFolderSessions])
@@ -281,13 +454,34 @@ export const AppSidebar = memo(function AppSidebar() {
   const [skipConfirm, setSkipConfirm] = useState(false)
 
   const executeDeleteSession = useCallback(async (target: { sessionId: string; folderPath: string }) => {
-    await window.app.deleteSession(target.sessionId)
+    const remote = parseRemoteProjectKey(target.folderPath)
+    if (remote) {
+      await window.environment.removeSession(remote.connectionId, target.sessionId)
+    } else {
+      await window.app.deleteSession(target.sessionId)
+    }
 
     const current = useChatStore.getState().projectSessions[target.folderPath]
     if (current?._activeSessionId === target.sessionId) {
-      resetSession()
+      if (remote) {
+        // Avoid local resetSession minting a desktop SessionManager session.
+        removeSessionFromMemory(target.folderPath, target.sessionId)
+        useChatStore.setState((s) => {
+          const proj = s.projectSessions[target.folderPath]
+          if (!proj) return s
+          return {
+            projectSessions: {
+              ...s.projectSessions,
+              [target.folderPath]: { ...proj, _activeSessionId: null },
+            },
+          }
+        })
+      } else {
+        resetSession()
+      }
+    } else {
+      removeSessionFromMemory(target.folderPath, target.sessionId)
     }
-    removeSessionFromMemory(target.folderPath, target.sessionId)
 
     setFolderSessions((prev) => ({
       ...prev,
@@ -297,7 +491,7 @@ export const AppSidebar = memo(function AppSidebar() {
     }))
     setPinnedSessions((prev) => prev.filter((s) => s.sessionId !== target.sessionId))
     refreshFolderSessions(target.folderPath)
-    refreshPinned()
+    if (!remote) refreshPinned()
   }, [refreshFolderSessions, refreshPinned, resetSession, removeSessionFromMemory])
 
   const handleDeleteSession = useCallback(async () => {
@@ -334,13 +528,20 @@ export const AppSidebar = memo(function AppSidebar() {
     prevSortModeRef.current = sortMode
   }, [sortMode])
 
+  const sourceFolders = selectedHostConnectionId === 'local' ? recentFolders : hostProjects
+
   const sortedFolders = useMemo(() => {
     if (sortMode === 'added') {
-      return [...recentFolders].sort((a, b) => new Date(b.addedAt).getTime() - new Date(a.addedAt).getTime())
+      return [...sourceFolders].sort((a, b) => new Date(b.addedAt).getTime() - new Date(a.addedAt).getTime())
     }
-    if (!frozenRecentOrder) return recentFolders
+    if (selectedHostConnectionId !== 'local') {
+      return [...sourceFolders].sort(
+        (a, b) => new Date(b.lastOpened).getTime() - new Date(a.lastOpened).getTime(),
+      )
+    }
+    if (!frozenRecentOrder) return sourceFolders
     const indexMap = new Map(frozenRecentOrder.map((p, i) => [p, i]))
-    return [...recentFolders].sort((a, b) => {
+    return [...sourceFolders].sort((a, b) => {
       const ai = indexMap.get(a.path) ?? -1
       const bi = indexMap.get(b.path) ?? -1
       if (ai === -1 && bi === -1) return 0
@@ -348,7 +549,19 @@ export const AppSidebar = memo(function AppSidebar() {
       if (bi === -1) return 1
       return ai - bi
     })
-  }, [recentFolders, sortMode, frozenRecentOrder])
+  }, [sourceFolders, sortMode, frozenRecentOrder, selectedHostConnectionId])
+
+  const remoteHosts = useMemo(
+    () => hostItems.filter((h) => h.kind === 'remote'),
+    [hostItems],
+  )
+
+  const selectedHostLabel = useMemo(() => {
+    if (selectedHostConnectionId === 'local') return localHostLabel
+    return (
+      remoteHosts.find((h) => h.connectionId === selectedHostConnectionId)?.label ?? localHostLabel
+    )
+  }, [selectedHostConnectionId, localHostLabel, remoteHosts])
 
   const expandedTraceState = useMemo(() => Array.from(expandedFolders).sort().map((folderPath) => {
     const cached = folderSessions[folderPath] ?? []
@@ -364,8 +577,55 @@ export const AppSidebar = memo(function AppSidebar() {
   }), [expandedFolders, folderSessions, currentFolder, currentActiveSid])
 
   const handleRemoveProject = useCallback((folder: RecentFolder) => {
-    setRemoveTarget({ name: folder.name, path: folder.path })
+    setRemoveError(null)
+    setRemoveTarget({ name: folder.name, path: folder.path, id: folder.id })
   }, [])
+
+  const confirmRemoveProject = useCallback(async () => {
+    if (!removeTarget || removeBusy) return
+    setRemoveBusy(true)
+    setRemoveError(null)
+    try {
+      if (selectedHostConnectionId === 'local') {
+        await removeRecentFolder(removeTarget.path)
+      } else {
+        await window.environment.removeProject(selectedHostConnectionId, {
+          projectId: removeTarget.id,
+          path: removeTarget.path,
+        })
+        setHostProjects((prev) =>
+          prev.filter(
+            (p) =>
+              p.path !== removeTarget.path &&
+              !(removeTarget.id && p.id === removeTarget.id),
+          ),
+        )
+        // Clear in-memory chat state if this path was active on the remote host.
+        const { useChatStore } = await import('@/stores/chat')
+        const wasActive = useAppStore.getState().currentFolder === removeTarget.path
+        useChatStore.setState((s) => {
+          const { [removeTarget.path]: _, ...projectSessions } = s.projectSessions
+          return {
+            projectSessions,
+            ...(wasActive ? { activeProject: null } : {}),
+          }
+        })
+        if (wasActive) {
+          useAppStore.setState({ currentFolder: null })
+        }
+      }
+      setExpandedFolders((prev) => {
+        const next = new Set(prev)
+        next.delete(removeTarget.path)
+        return next
+      })
+      setRemoveTarget(null)
+    } catch (err) {
+      setRemoveError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setRemoveBusy(false)
+    }
+  }, [removeTarget, removeBusy, selectedHostConnectionId, removeRecentFolder])
 
   const handleRequestRenameSession = useCallback((target: { sessionId: string; title: string; folderPath: string }) => {
     setRenameTarget(target)
@@ -392,8 +652,57 @@ export const AppSidebar = memo(function AppSidebar() {
   }, [resetSession])
 
   const handleNewSession = useCallback((folderPath: string) => {
+    const remote = parseRemoteProjectKey(folderPath)
+    if (remote) {
+      void (async () => {
+        const project = hostProjects.find((p) => p.path === folderPath)
+        if (!project?.id) return
+        try {
+          const created = await window.environment.createSession(remote.connectionId, {
+            projectId: project.id,
+          })
+          await selectProject(folderPath, {
+            connectionId: remote.connectionId,
+            projectId: project.id,
+          })
+          await loadFolderSessions(folderPath, 'refresh')
+          // Activate the new remote session without local SessionManager minting.
+          const { useChatStore: chat } = await import('@/stores/chat')
+          const { createDefaultPerSessionState } = await import('@/stores/chat-store/defaults')
+          chat.getState().ensureSession(folderPath)
+          chat.setState((s) => {
+            const proj = s.projectSessions[folderPath]
+            if (!proj) return s
+            const sessions = { ...proj._sessions }
+            sessions[created.sessionId] = {
+              ...createDefaultPerSessionState(),
+              sessionProvider: 'codex',
+              preferredProvider: 'codex',
+              _title: created.title || null,
+            }
+            return {
+              projectSessions: {
+                ...s.projectSessions,
+                [folderPath]: {
+                  ...proj,
+                  _activeSessionId: created.sessionId,
+                  _sessions: sessions,
+                },
+              },
+              activeProject: folderPath,
+            }
+          })
+          setExpandedFolders((prev) =>
+            prev.has(folderPath) ? prev : new Set([...prev, folderPath]),
+          )
+        } catch (err) {
+          console.error('[AppSidebar] remote createSession failed', err)
+        }
+      })()
+      return
+    }
     void selectProject(folderPath).then(createNewSession)
-  }, [selectProject, createNewSession])
+  }, [selectProject, createNewSession, hostProjects, loadFolderSessions])
 
   useSidebarRenderTrace({
     sidebarTab,
@@ -469,16 +778,54 @@ export const AppSidebar = memo(function AppSidebar() {
       )}
 
       <div className={cn('flex min-h-0 flex-1 flex-col', sidebarTab !== 'sessions' && 'hidden')}>
-      {/* Projects header */}
-      <div className="flex items-center justify-between pl-4 pr-3 pt-1.5 pb-0.5">
-        <span className="text-sm font-medium text-sidebar-foreground/40">{t('sidebar.projects')}</span>
+      {/* Host switcher (replaces static "Projects" label) */}
+      <div className="flex items-center justify-between pl-3 pr-3 pt-1.5 pb-0.5">
+        <div className="min-w-0 max-w-[70%]">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className="flex min-w-0 items-center gap-1 rounded-md px-1 py-0.5 text-sm font-medium text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
+              >
+                <span className="truncate">{selectedHostLabel}</span>
+                <ChevronDown className="size-3.5 shrink-0 opacity-70" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-48">
+              <DropdownMenuItem
+                className="text-xs"
+                onClick={() => setSelectedHostConnectionId('local')}
+              >
+                {localHostLabel}
+              </DropdownMenuItem>
+              {remoteHosts.map((host) => (
+                <DropdownMenuItem
+                  key={host.connectionId}
+                  className="text-xs"
+                  onClick={() => setSelectedHostConnectionId(host.connectionId)}
+                >
+                  <span className="truncate">{host.label}</span>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
         <div className="flex items-center gap-0.5">
-          <IconButton size="sm" onClick={() => selectProject()}>
+          <IconButton
+            size="sm"
+            tooltip={t('sidebar.addProject.title')}
+            aria-label={t('sidebar.addProject.title')}
+            onClick={() => setOpenProjectDialogOpen(true)}
+          >
             <Plus />
           </IconButton>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <IconButton size="sm">
+              <IconButton
+                size="sm"
+                tooltip={t('sidebar.sort.title')}
+                aria-label={t('sidebar.sort.title')}
+              >
                 <ArrowDownUp className="size-3" />
               </IconButton>
             </DropdownMenuTrigger>
@@ -491,12 +838,39 @@ export const AppSidebar = memo(function AppSidebar() {
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+          {selectedHostConnectionId !== 'local' && (
+            <IconButton
+              size="sm"
+              tooltip={t('common.refresh')}
+              aria-label={t('common.refresh')}
+              disabled={hostProjectsLoading}
+              onClick={refreshHostProjects}
+            >
+              <RotateCw className={cn('size-3', hostProjectsLoading && 'animate-spin')} />
+            </IconButton>
+          )}
         </div>
       </div>
 
-      {/* Project list */}
+      {/* Project list for the selected host */}
       <div className="min-h-0 flex-1">
-        {sortedFolders.length === 0 ? (
+        {selectedHostConnectionId !== 'local' && hostProjectsError ? (
+          <div className="flex flex-1 flex-col items-center justify-center gap-2 p-4 text-center text-xs text-sidebar-foreground/70">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 border-sidebar-border bg-sidebar text-sidebar-foreground hover:bg-sidebar-accent"
+              onClick={refreshHostProjects}
+            >
+              {t('common.retry')}
+            </Button>
+            <span className="break-words px-2">{hostProjectsError}</span>
+          </div>
+        ) : hostProjectsLoading ? (
+          <div className="flex flex-1 items-center justify-center p-4 text-xs text-sidebar-foreground/70">
+            {t('common.loading')}
+          </div>
+        ) : sortedFolders.length === 0 ? (
           <div className="flex flex-1 items-center justify-center p-4 text-xs text-sidebar-foreground/70">
             {t('sidebar.empty')}
           </div>
@@ -542,7 +916,28 @@ export const AppSidebar = memo(function AppSidebar() {
         <BrandColorPopover />
         <RemoteStatusIcon />
         <UsageStatusIcon />
+        <UpdateStatusIcon />
       </div>
+
+      <AddProjectDialog
+        open={openProjectDialogOpen}
+        onOpenChange={setOpenProjectDialogOpen}
+        connectionId={selectedHostConnectionId}
+        hostLabel={selectedHostLabel}
+        onOpened={(project) => {
+          if (selectedHostConnectionId === 'local') {
+            void fetchRecentFolders()
+            void selectProject(project.path)
+          } else {
+            // Refresh remote list and select the new project under a host-scoped key.
+            setHostProjectsRetryNonce((n) => n + 1)
+            void selectProject(remoteProjectKey(selectedHostConnectionId, project.path), {
+              connectionId: selectedHostConnectionId,
+              projectId: project.projectId,
+            })
+          }
+        }}
+      />
 
       {/* Delete session confirmation dialog */}
       <Dialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) { setDeleteTarget(null); setCopiedCmd(null) } }}>
@@ -589,7 +984,15 @@ export const AppSidebar = memo(function AppSidebar() {
       </Dialog>
 
       {/* Remove project confirmation dialog */}
-      <Dialog open={!!removeTarget} onOpenChange={(open) => { if (!open) setRemoveTarget(null) }}>
+      <Dialog
+        open={!!removeTarget}
+        onOpenChange={(open) => {
+          if (!open && !removeBusy) {
+            setRemoveTarget(null)
+            setRemoveError(null)
+          }
+        }}
+      >
         <DialogContent showCloseButton={false} className="max-w-sm">
           <DialogHeader>
             <DialogTitle>{t('sidebar.removeProject.title')}</DialogTitle>
@@ -597,14 +1000,29 @@ export const AppSidebar = memo(function AppSidebar() {
               <span className="font-medium text-foreground">{removeTarget?.name}</span> {t('sidebar.removeProject.description')}
             </DialogDescription>
           </DialogHeader>
+          {removeError ? (
+            <p className="text-sm text-destructive break-words">{removeError}</p>
+          ) : null}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setRemoveTarget(null)}>{t('common.cancel')}</Button>
-            <Button variant="destructive" onClick={() => {
-              if (!removeTarget) return
-              removeRecentFolder(removeTarget.path)
-              setExpandedFolders((prev) => { const next = new Set(prev); next.delete(removeTarget.path); return next })
-              setRemoveTarget(null)
-            }}>{t('sidebar.removeProject.remove')}</Button>
+            <Button
+              variant="outline"
+              disabled={removeBusy}
+              onClick={() => {
+                setRemoveTarget(null)
+                setRemoveError(null)
+              }}
+            >
+              {t('common.cancel')}
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={removeBusy}
+              onClick={() => {
+                void confirmRemoveProject()
+              }}
+            >
+              {t('sidebar.removeProject.remove')}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

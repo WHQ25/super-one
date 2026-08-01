@@ -11,6 +11,7 @@ import { AsyncCoalescer } from './async-cache'
 import { countAddedLines } from './git-added-lines'
 import { activateWorktree, assignBranch, getCheckedOutBranches, getHandoffPreview, getWorktreeInfo, gitErrorMessage, handoffToLocal } from './git/worktree-ops'
 import { is } from '@electron-toolkit/utils'
+import type { EnvironmentHost } from './environment/environment-host'
 import log from './logger'
 import { startMediaServer, getMediaServerPort } from './media-server'
 import { getMediaProviderStatuses } from './media-gen/settings-service'
@@ -64,6 +65,8 @@ import { AgentService } from './agent/agent-service'
 import { createRendererAgentEventTransport } from './agent/renderer-agent-event-transport'
 import { SessionManagerImpl } from './session/session-manager'
 import { TerminalManager } from './terminal/terminal-manager'
+import { RemoteTerminalController } from './environment/remote-terminal-controller'
+import { parseRemoteProjectKey } from '@superone/shared/remote-resource-key'
 import { TerminalBroadcaster } from './remote/terminal-broadcaster'
 import { nodePtySpawner } from './terminal/pty'
 import { DeviceRegistry } from './remote/device-registry'
@@ -103,7 +106,7 @@ import {
   type FileOpResult,
   type NativeContextMenuItemSpec,
 } from '@superone/shared/agent-types'
-import { initUpdater, installUpdate, checkForUpdates, simulateUpdate, simulateNotAvailable, getUpdaterState, getUpdateMenuState, setOnMenuChange, disposeUpdater, setUpdateChannel } from './updater'
+import { initUpdater, installUpdate, checkForUpdates, simulateUpdate, simulateNotAvailable, getUpdaterState, getUpdateMenuState, setOnMenuChange, setUpdateChannel } from './updater'
 import { startWatching, stopWatching } from './file-watcher'
 import { notifyWidgetReady, clearAllGates } from './generative-ui/widget-gate'
 import { setBashOutputWindow, watchBashOutput, unwatchBashOutput, unwatchAll as unwatchAllBashOutputs, readBashOutputTail, getWatchedFilePath } from './bash-output-watcher'
@@ -487,6 +490,13 @@ const terminalManager = new TerminalManager({
     safeSend(AgentIpcChannels.TERMINAL_EVENT, event)
     void terminalBroadcaster.broadcast(event)
   },
+})
+const remoteTerminalController = new RemoteTerminalController({
+  getHost: async () => {
+    const { getEnvironmentHost } = await import('./environment')
+    return getEnvironmentHost()
+  },
+  onEvent: (event) => safeSend(AgentIpcChannels.TERMINAL_EVENT, event),
 })
 const terminalBroadcaster = new TerminalBroadcaster(terminalManager, remoteControlService)
 deviceRegistry.setTerminalManager(terminalManager)
@@ -990,10 +1000,273 @@ async function runCodexTurnViaSessionManager(
   }
 }
 
+/**
+ * Forward supervisor state changes to the renderer once per host instance.
+ * Attached lazily so the environment subsystem stays unloaded until used.
+ */
+let environmentStatusBridgeAttached = false
+function attachEnvironmentStatusBridge(host: EnvironmentHost): void {
+  if (environmentStatusBridgeAttached) return
+  environmentStatusBridgeAttached = true
+  host.onStatusChange((snapshot) => {
+    safeSend(AgentIpcChannels.ENVIRONMENT_STATUS_EVENT, snapshot)
+  })
+  // Remote node turns: map session.events → AgentEvent and stream into chat.
+  host.setAgentEventSink((event) => {
+    safeSend(AgentIpcChannels.EVENT, event)
+  })
+}
+
 function registerIpcHandlers(): void {
+  // Environment / remote-node product path (gateway + workspace router).
+  // Lazy import keeps main boot light when environments unused.
+  // NOTE: full renderer Session/store migration is a follow-up; these channels
+  // make the Main path reachable without claiming UI Phase 0–3 complete.
+  ipcMain.handle(AgentIpcChannels.ENVIRONMENT_LIST, async () => {
+    const { getEnvironmentHost } = await import('./environment')
+    return getEnvironmentHost().registry.list()
+  })
+  ipcMain.handle(AgentIpcChannels.ENVIRONMENT_GET_LOCAL_ID, async () => {
+    const { getEnvironmentHost } = await import('./environment')
+    return getEnvironmentHost().registry.getLocal().getEnvironmentId()
+  })
+  ipcMain.handle(
+    AgentIpcChannels.ENVIRONMENT_WORKSPACE_LIST_DIR,
+    async (_e, project: { environmentId: string; projectId: string }, relativePath: string) => {
+      const { getEnvironmentHost } = await import('./environment')
+      return getEnvironmentHost().workspace().listDir({ project, relativePath })
+    },
+  )
+  ipcMain.handle(
+    AgentIpcChannels.ENVIRONMENT_WORKSPACE_READ_FILE,
+    async (_e, project: { environmentId: string; projectId: string }, relativePath: string) => {
+      const { getEnvironmentHost } = await import('./environment')
+      return getEnvironmentHost().workspace().readFile({ project, relativePath })
+    },
+  )
+  ipcMain.handle(
+    AgentIpcChannels.ENVIRONMENT_PAIR_REMOTE,
+    async (_e, input: { baseUrl: string; pairingToken: string; label: string }) => {
+      const { getEnvironmentHost } = await import('./environment')
+      return getEnvironmentHost().pairRemote(input)
+    },
+  )
+  ipcMain.handle(AgentIpcChannels.ENVIRONMENT_CONNECT_FAILOVER, async (_e, connectionId: string) => {
+    const { getEnvironmentHost } = await import('./environment')
+    return getEnvironmentHost().connectWithFailover(connectionId)
+  })
+  // Dev-only local remote-node lab (host process on loopback — not Docker SSH).
+  ipcMain.handle(AgentIpcChannels.ENVIRONMENT_LOCAL_LAB_STATUS, async () => {
+    const { getLocalLabStatus } = await import('./environment/local-lab')
+    return getLocalLabStatus()
+  })
+  ipcMain.handle(AgentIpcChannels.ENVIRONMENT_PAIR_LOCAL_LAB, async () => {
+    const { getEnvironmentHost } = await import('./environment')
+    const { pairLocalLab } = await import('./environment/local-lab')
+    const host = getEnvironmentHost()
+    attachEnvironmentStatusBridge(host)
+    return pairLocalLab(host)
+  })
+
+  // Environment management (Settings → Environments).
+  // The first listItems() call also attaches the supervisor → renderer status push.
+  ipcMain.handle(AgentIpcChannels.ENVIRONMENT_LIST_ITEMS, async () => {
+    const { getEnvironmentHost } = await import('./environment')
+    const host = getEnvironmentHost()
+    attachEnvironmentStatusBridge(host)
+    return host.listEnvironments()
+  })
+  ipcMain.handle(
+    AgentIpcChannels.ENVIRONMENT_ADD_OVER_SSH,
+    async (_e, input: Parameters<EnvironmentHost['addRemoteOverSsh']>[0]) => {
+      const { getEnvironmentHost } = await import('./environment')
+      const host = getEnvironmentHost()
+      attachEnvironmentStatusBridge(host)
+      const result = await host.addRemoteOverSsh(input, (progress) => {
+        safeSend(AgentIpcChannels.ENVIRONMENT_INSTALL_PROGRESS, progress)
+      })
+      // Descriptor is structured-clone safe, but drop it to keep the payload lean.
+      return {
+        connectionId: result.connectionId,
+        persisted: result.persisted,
+        warnings: result.warnings,
+        installed: result.installed,
+      }
+    },
+  )
+  ipcMain.handle(AgentIpcChannels.ENVIRONMENT_LIST_SSH_CONFIG_HOSTS, async () => {
+    const { listSshConfigHosts } = await import('./environment/ssh-config')
+    return listSshConfigHosts()
+  })
+  ipcMain.handle(AgentIpcChannels.ENVIRONMENT_LIST_PROJECTS, async (
+    _e,
+    connectionId: string,
+    options?: { refresh?: boolean },
+  ) => {
+    const { getEnvironmentHost } = await import('./environment')
+    return getEnvironmentHost().listProjects(connectionId, options)
+  })
+  ipcMain.handle(
+    AgentIpcChannels.ENVIRONMENT_OPEN_PROJECT,
+    async (
+      _e,
+      connectionId: string,
+      projectPath: string,
+      opts?: { createIfMissing?: boolean },
+    ) => {
+      const { getEnvironmentHost } = await import('./environment')
+      return getEnvironmentHost().openProject(connectionId, projectPath, opts)
+    },
+  )
+  ipcMain.handle(
+    AgentIpcChannels.ENVIRONMENT_REMOVE_PROJECT,
+    async (
+      _e,
+      connectionId: string,
+      input: { projectId?: string; path?: string },
+    ) => {
+      const { getEnvironmentHost } = await import('./environment')
+      return getEnvironmentHost().removeProject(connectionId, input)
+    },
+  )
+  ipcMain.handle(
+    AgentIpcChannels.ENVIRONMENT_LIST_SESSIONS,
+    async (_e, connectionId: string, projectId: string) => {
+      const { getEnvironmentHost } = await import('./environment')
+      return getEnvironmentHost().listSessions(connectionId, projectId)
+    },
+  )
+  ipcMain.handle(
+    AgentIpcChannels.ENVIRONMENT_CREATE_SESSION,
+    async (
+      _e,
+      connectionId: string,
+      input: { projectId: string; title?: string; providerId?: string; harnessId?: string },
+    ) => {
+      const { getEnvironmentHost } = await import('./environment')
+      return getEnvironmentHost().createSession(connectionId, input)
+    },
+  )
+  ipcMain.handle(
+    AgentIpcChannels.ENVIRONMENT_GET_SESSION,
+    async (_e, connectionId: string, sessionId: string) => {
+      const { getEnvironmentHost } = await import('./environment')
+      return getEnvironmentHost().getSession(connectionId, sessionId)
+    },
+  )
+  ipcMain.handle(
+    AgentIpcChannels.ENVIRONMENT_SEND_SESSION_MESSAGE,
+    async (
+      _e,
+      connectionId: string,
+      input: {
+        sessionId: string
+        text: string
+        clientMessageId?: string
+        projectPath?: string
+        providerId?: string
+        cwdHostPath?: string | null
+        model?: string | null
+      },
+    ) => {
+      const { getEnvironmentHost } = await import('./environment')
+      const host = getEnvironmentHost()
+      attachEnvironmentStatusBridge(host)
+      return host.sendSessionMessage(connectionId, input)
+    },
+  )
+  ipcMain.handle(
+    AgentIpcChannels.ENVIRONMENT_LIST_SESSION_EVENTS,
+    async (_e, connectionId: string, afterSequence?: string) => {
+      const { getEnvironmentHost } = await import('./environment')
+      return getEnvironmentHost().listSessionEvents(connectionId, afterSequence ?? '0')
+    },
+  )
+  ipcMain.handle(
+    AgentIpcChannels.ENVIRONMENT_INTERRUPT_SESSION,
+    async (_e, connectionId: string, sessionId: string) => {
+      const { getEnvironmentHost } = await import('./environment')
+      return getEnvironmentHost().interruptSession(connectionId, sessionId)
+    },
+  )
+  ipcMain.handle(
+    AgentIpcChannels.ENVIRONMENT_RENAME_SESSION,
+    async (_e, connectionId: string, sessionId: string, title: string) => {
+      const { getEnvironmentHost } = await import('./environment')
+      return getEnvironmentHost().renameSession(connectionId, sessionId, title)
+    },
+  )
+  ipcMain.handle(
+    AgentIpcChannels.ENVIRONMENT_REMOVE_SESSION,
+    async (_e, connectionId: string, sessionId: string) => {
+      const { getEnvironmentHost } = await import('./environment')
+      return getEnvironmentHost().removeSession(connectionId, sessionId)
+    },
+  )
+  ipcMain.handle(
+    AgentIpcChannels.ENVIRONMENT_SET_SESSION_UI_FLAGS,
+    async (
+      _e,
+      connectionId: string,
+      sessionId: string,
+      flags: { isPinned?: boolean; isHidden?: boolean },
+    ) => {
+      const { getEnvironmentHost } = await import('./environment')
+      return getEnvironmentHost().setSessionUiFlags(connectionId, sessionId, flags)
+    },
+  )
+  ipcMain.handle(
+    AgentIpcChannels.ENVIRONMENT_RESPOND_SESSION_PERMISSION,
+    async (
+      _e,
+      connectionId: string,
+      input: {
+        sessionId: string
+        interactionId: string
+        decision: 'allow' | 'deny' | 'allow_always'
+      },
+    ) => {
+      const { getEnvironmentHost } = await import('./environment')
+      return getEnvironmentHost().respondSessionPermission(connectionId, input)
+    },
+  )
+  ipcMain.handle(
+    AgentIpcChannels.ENVIRONMENT_BROWSE_PATH,
+    async (_e, connectionId: string, absolutePath: string) => {
+      const { getEnvironmentHost } = await import('./environment')
+      return getEnvironmentHost().browsePath(connectionId, absolutePath)
+    },
+  )
+  ipcMain.handle(
+    AgentIpcChannels.ENVIRONMENT_CLONE_REPOSITORY,
+    async (
+      _e,
+      connectionId: string,
+      input: { remoteUrl: string; parentPath: string; directoryName?: string },
+    ) => {
+      const { getEnvironmentHost } = await import('./environment')
+      return getEnvironmentHost().cloneRepository(connectionId, input)
+    },
+  )
+  ipcMain.handle(AgentIpcChannels.ENVIRONMENT_CONNECT, async (_e, connectionId: string) => {
+    const { getEnvironmentHost } = await import('./environment')
+    return getEnvironmentHost().connect(connectionId)
+  })
+  ipcMain.handle(AgentIpcChannels.ENVIRONMENT_DISCONNECT, async (_e, connectionId: string) => {
+    const { getEnvironmentHost } = await import('./environment')
+    getEnvironmentHost().disconnect(connectionId)
+  })
+  ipcMain.handle(AgentIpcChannels.ENVIRONMENT_FORGET, async (_e, connectionId: string) => {
+    const { getEnvironmentHost } = await import('./environment')
+    getEnvironmentHost().forget(connectionId)
+  })
+
   ipcMain.handle(
     AgentIpcChannels.TERMINAL_CREATE,
-    (_e, opts: { projectPath: string; sessionId?: string; title?: string; cols?: number; rows?: number }) => {
+    async (_e, opts: { projectPath: string; sessionId?: string; title?: string; cols?: number; rows?: number }) => {
+      if (parseRemoteProjectKey(opts.projectPath)) {
+        return remoteTerminalController.create(opts)
+      }
       const cwd = resolveTerminalCwd(opts.projectPath, opts.sessionId)
       const session = terminalManager.create({
         cwd,
@@ -1004,21 +1277,40 @@ function registerIpcHandlers(): void {
       return session.listItem()
     },
   )
-  ipcMain.handle(AgentIpcChannels.TERMINAL_LIST, (_e, cwd?: string) => terminalManager.list(cwd))
+  ipcMain.handle(AgentIpcChannels.TERMINAL_LIST, (_e, cwd?: string) => {
+    if (cwd && parseRemoteProjectKey(cwd)) return remoteTerminalController.list(cwd)
+    const local = terminalManager.list(cwd)
+    return cwd === undefined ? [...local, ...remoteTerminalController.list()] : local
+  })
   ipcMain.handle(AgentIpcChannels.TERMINAL_SNAPSHOT, async (_e, terminalId: string) => {
+    if (remoteTerminalController.has(terminalId)) {
+      return remoteTerminalController.snapshot(terminalId)
+    }
     const session = terminalManager.get(terminalId)
     if (!session) return null
     return session.snapshot('local')
   })
-  ipcMain.handle(AgentIpcChannels.TERMINAL_WRITE, (_e, terminalId: string, data: string) => {
+  ipcMain.handle(AgentIpcChannels.TERMINAL_WRITE, async (_e, terminalId: string, data: string) => {
+    if (remoteTerminalController.has(terminalId)) {
+      await remoteTerminalController.write(terminalId, data)
+      return
+    }
     const session = terminalManager.get(terminalId)
     if (session?.ownership.isWritableBy('local')) session.input(data)
   })
-  ipcMain.handle(AgentIpcChannels.TERMINAL_RESIZE, (_e, terminalId: string, cols: number, rows: number) => {
+  ipcMain.handle(AgentIpcChannels.TERMINAL_RESIZE, async (_e, terminalId: string, cols: number, rows: number) => {
+    if (remoteTerminalController.has(terminalId)) {
+      await remoteTerminalController.resize(terminalId, cols, rows)
+      return
+    }
     const session = terminalManager.get(terminalId)
     if (session?.ownership.isWritableBy('local')) session.resize(cols, rows)
   })
-  ipcMain.handle(AgentIpcChannels.TERMINAL_KILL, (_e, terminalId: string) => {
+  ipcMain.handle(AgentIpcChannels.TERMINAL_KILL, async (_e, terminalId: string) => {
+    if (remoteTerminalController.has(terminalId)) {
+      await remoteTerminalController.kill(terminalId)
+      return
+    }
     terminalManager.kill(terminalId)
   })
 
@@ -1414,6 +1706,11 @@ function registerIpcHandlers(): void {
     gitInfoCoalescer.get(folderPath, async () => {
       const startedAt = Date.now()
       try {
+        if (parseRemoteProjectKey(folderPath)) {
+          const { getEnvironmentHost } = await import('./environment')
+          const { getRemoteGitInfo } = await import('./environment/remote-file-tree')
+          return getRemoteGitInfo(getEnvironmentHost(), folderPath)
+        }
         let branch: string
         try {
           branch = await gitRun(folderPath, ['rev-parse', '--abbrev-ref', 'HEAD'], undefined, GIT_READ_OPTS)
@@ -1460,13 +1757,24 @@ function registerIpcHandlers(): void {
         // it only when gitInfo is non-null, and the "Git init" fallback only when
         // `.git` is absent) — so a repo git refuses to read leaves the status bar
         // blank with no other trace. Log it.
-        logGitFailure('GIT_INFO', folderPath, err, existsSync(join(folderPath, '.git')))
+        const isRemote = Boolean(parseRemoteProjectKey(folderPath))
+        logGitFailure(
+          'GIT_INFO',
+          folderPath,
+          err,
+          isRemote ? true : existsSync(join(folderPath, '.git')),
+        )
         return null
       }
     }),
   )
 
-  ipcMain.handle(AgentIpcChannels.GIT_IS_REPO, (_event, folderPath: string) => {
+  ipcMain.handle(AgentIpcChannels.GIT_IS_REPO, async (_event, folderPath: string) => {
+    if (parseRemoteProjectKey(folderPath)) {
+      const { getEnvironmentHost } = await import('./environment')
+      const { getRemoteGitIsRepo } = await import('./environment/remote-file-tree')
+      return (await getRemoteGitIsRepo(getEnvironmentHost(), folderPath)) === true
+    }
     return existsSync(join(folderPath, '.git'))
   })
 
@@ -1485,6 +1793,11 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(AgentIpcChannels.GIT_LIST_BRANCHES, async (_event, folderPath: string) => {
     try {
+      if (parseRemoteProjectKey(folderPath)) {
+        const { getEnvironmentHost } = await import('./environment')
+        const { getRemoteGitBranches } = await import('./environment/remote-file-tree')
+        return (await getRemoteGitBranches(getEnvironmentHost(), folderPath)) ?? []
+      }
       const raw = await gitRun(folderPath, ['branch', '--format=%(refname:short)'])
       return raw.split('\n').filter(Boolean)
     } catch {
@@ -1518,6 +1831,11 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(AgentIpcChannels.GIT_SWITCH_BRANCH, async (_event, folderPath: string, branch: string) => {
     try {
+      if (parseRemoteProjectKey(folderPath)) {
+        const { getEnvironmentHost } = await import('./environment')
+        const { remoteSwitchBranch } = await import('./environment/remote-worktree')
+        return remoteSwitchBranch(getEnvironmentHost(), folderPath, branch, false)
+      }
       await gitRun(folderPath, ['checkout', sanitizeGitRef(branch)])
       return { ok: true }
     } catch (err) {
@@ -1526,6 +1844,11 @@ function registerIpcHandlers(): void {
   })
 
   ipcMain.handle(AgentIpcChannels.GIT_CREATE_BRANCH, async (_event, folderPath: string, branch: string) => {
+    if (parseRemoteProjectKey(folderPath)) {
+      const { getEnvironmentHost } = await import('./environment')
+      const { remoteSwitchBranch } = await import('./environment/remote-worktree')
+      return remoteSwitchBranch(getEnvironmentHost(), folderPath, branch, true)
+    }
     const safeRef = sanitizeGitRef(branch)
     try {
       await gitRun(folderPath, ['rev-parse', '--verify', 'HEAD'])
@@ -1546,11 +1869,22 @@ function registerIpcHandlers(): void {
   })
 
   ipcMain.handle(AgentIpcChannels.GIT_WORKTREE_INFO, async (_event, folderPath: string) => {
+    if (parseRemoteProjectKey(folderPath)) {
+      const { getEnvironmentHost } = await import('./environment')
+      const { getRemoteWorktreeInfo } = await import('./environment/remote-file-tree')
+      return getRemoteWorktreeInfo(getEnvironmentHost(), folderPath)
+    }
     return getWorktreeInfo(folderPath)
   })
 
   ipcMain.handle(AgentIpcChannels.GIT_SWITCH_WORKTREE, async (_event, folderPath: string, wtPath: string, gitBranch: string | null) => {
     try {
+      if (parseRemoteProjectKey(folderPath)) {
+        // Remote: no local SessionManager cwd. Renderer stores activePath; next
+        // sendSessionMessage applies session.setCwd via cwdHostPath. Existence is on node.
+        void gitBranch
+        return { ok: true as const }
+      }
       if (!existsSync(wtPath)) return { ok: false as const, error: 'Worktree path not found' }
       await agentService.switchCwd(folderPath, wtPath, gitBranch)
       return { ok: true as const }
@@ -1560,11 +1894,21 @@ function registerIpcHandlers(): void {
   })
 
   ipcMain.handle(AgentIpcChannels.GIT_CHECKED_OUT_BRANCHES, async (_event, folderPath: string) => {
+    if (parseRemoteProjectKey(folderPath)) {
+      const { getEnvironmentHost } = await import('./environment')
+      const { remoteCheckedOutBranches } = await import('./environment/remote-worktree')
+      return (await remoteCheckedOutBranches(getEnvironmentHost(), folderPath)) ?? []
+    }
     return getCheckedOutBranches(folderPath)
   })
 
   ipcMain.handle(AgentIpcChannels.GIT_ACTIVATE_WORKTREE, async (_event, folderPath: string, request: WorktreeActivateRequest | null) => {
     try {
+      if (parseRemoteProjectKey(folderPath)) {
+        const { getEnvironmentHost } = await import('./environment')
+        const { remoteActivateWorktree } = await import('./environment/remote-worktree')
+        return remoteActivateWorktree(getEnvironmentHost(), folderPath, request)
+      }
       if (request === null) {
         await agentService.switchCwd(folderPath, folderPath, null)
         return { ok: true as const, path: folderPath }
@@ -1577,8 +1921,33 @@ function registerIpcHandlers(): void {
     }
   })
 
-  ipcMain.handle(AgentIpcChannels.GIT_HANDOFF_TO_LOCAL, async (_event, worktreePath: string) => {
+  ipcMain.handle(AgentIpcChannels.GIT_HANDOFF_TO_LOCAL, async (_event, worktreePath: string, folderPath?: string) => {
     try {
+      const projectKey =
+        folderPath && parseRemoteProjectKey(folderPath)
+          ? folderPath
+          : parseRemoteProjectKey(worktreePath)
+            ? worktreePath
+            : null
+      if (projectKey && parseRemoteProjectKey(projectKey)) {
+        // Prefer explicit project key when provided; otherwise derive connection from worktree remote key.
+        const remoteFolder =
+          folderPath && parseRemoteProjectKey(folderPath)
+            ? folderPath
+            : (() => {
+                const wt = parseRemoteProjectKey(worktreePath)
+                // Project key is unknown if only worktree remote path is given — use connection + path's project via open.
+                return wt ? worktreePath : null
+              })()
+        if (remoteFolder) {
+          const { getEnvironmentHost } = await import('./environment')
+          const { remoteHandoffToMain } = await import('./environment/remote-worktree')
+          // folderPath should be the project key; if worktreePath is remote, pass project via folderPath arg.
+          const proj =
+            folderPath && parseRemoteProjectKey(folderPath) ? folderPath : remoteFolder
+          return remoteHandoffToMain(getEnvironmentHost(), proj, worktreePath)
+        }
+      }
       return await handoffToLocal(worktreePath)
     } catch (err) {
       log.warn('[handoff] unexpected failure:', err)
@@ -1586,11 +1955,27 @@ function registerIpcHandlers(): void {
     }
   })
 
-  ipcMain.handle(AgentIpcChannels.GIT_HANDOFF_PREVIEW, async (_event, worktreePath: string) => {
+  ipcMain.handle(AgentIpcChannels.GIT_HANDOFF_PREVIEW, async (_event, worktreePath: string, folderPath?: string) => {
+    if (folderPath && parseRemoteProjectKey(folderPath)) {
+      const { getEnvironmentHost } = await import('./environment')
+      const { remoteHandoffPreview } = await import('./environment/remote-worktree')
+      return remoteHandoffPreview(getEnvironmentHost(), folderPath, worktreePath)
+    }
+    if (parseRemoteProjectKey(worktreePath)) {
+      const { getEnvironmentHost } = await import('./environment')
+      const { remoteHandoffPreview } = await import('./environment/remote-worktree')
+      // Need project key for projectId — use worktree remote path's connection + resolve via list
+      return remoteHandoffPreview(getEnvironmentHost(), worktreePath, worktreePath)
+    }
     return getHandoffPreview(worktreePath)
   })
 
   ipcMain.handle(AgentIpcChannels.GIT_ASSIGN_BRANCH, async (_event, folderPath: string, worktreePath: string, name: string) => {
+    if (parseRemoteProjectKey(folderPath)) {
+      const { getEnvironmentHost } = await import('./environment')
+      const { remoteAssignBranch } = await import('./environment/remote-worktree')
+      return remoteAssignBranch(getEnvironmentHost(), folderPath, worktreePath, name)
+    }
     const result = await assignBranch(worktreePath, name)
     if (result.ok) await agentService.switchCwd(folderPath, worktreePath, result.branch)
     return result
@@ -1617,6 +2002,16 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(AgentIpcChannels.GIT_DIFF_FILE, async (_event, folderPath: string, filePath: string, staged: boolean) => {
     try {
+      if (parseRemoteProjectKey(folderPath)) {
+        const { getEnvironmentHost } = await import('./environment')
+        const { getRemoteGitDiffFile } = await import('./environment/remote-file-tree')
+        return (
+          (await getRemoteGitDiffFile(getEnvironmentHost(), folderPath, filePath, staged)) ?? {
+            path: filePath,
+            diff: '',
+          }
+        )
+      }
       const args = staged
         ? ['diff', '--cached', '--', filePath]
         : ['diff', '--', filePath]
@@ -1632,7 +2027,7 @@ function registerIpcHandlers(): void {
   const VIDEO_EXTS = new Set(['.mp4', '.webm', '.ogg', '.mov'])
   const AUDIO_EXTS = new Set(['.mp3', '.wav', '.flac', '.aac', '.m4a', '.ogg'])
   const BINARY_SNIFF_BYTES = 8192
-  const MAX_TEXT_FILE_BYTES = 5 * 1024 * 1024
+  const MAX_TEXT_FILE_BYTES = 10 * 1024 * 1024
 
   async function detectTextOrBinary(fullPath: string): Promise<'text' | 'binary' | 'too-large'> {
     const st = await stat(fullPath)
@@ -1651,6 +2046,17 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(AgentIpcChannels.READ_PROJECT_FILE, async (_event, folderPath: string, filePath: string) => {
     try {
+      if (parseRemoteProjectKey(folderPath)) {
+        const { getEnvironmentHost } = await import('./environment')
+        const { readRemoteProjectFile } = await import('./environment/remote-file-tree')
+        return (
+          (await readRemoteProjectFile(getEnvironmentHost(), folderPath, filePath)) ?? {
+            path: filePath,
+            content: '',
+            language: 'text',
+          }
+        )
+      }
       const ext = extname(filePath).toLowerCase()
       if (BINARY_IMAGE_EXTS.has(ext)) return { path: filePath, content: '', language: 'image' }
       if (PDF_EXTS.has(ext)) return { path: filePath, content: '', language: 'pdf' }
@@ -1674,6 +2080,16 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(AgentIpcChannels.SAVE_FILE, async (_event, folderPath: string, filePath: string, content: string) => {
     try {
+      if (parseRemoteProjectKey(folderPath)) {
+        const { getEnvironmentHost } = await import('./environment')
+        const { saveRemoteProjectFile } = await import('./environment/remote-file-tree')
+        return (
+          (await saveRemoteProjectFile(getEnvironmentHost(), folderPath, filePath, content)) ?? {
+            ok: false,
+            error: 'remote save failed',
+          }
+        )
+      }
       // Absolute paths (including outside the project) are writable — local files
       // opened from chat chips. Relative paths stay sandboxed to the project.
       const isAbs = isAbsolute(filePath) || /^[A-Za-z]:[\\/]/.test(filePath)
@@ -1797,6 +2213,18 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(AgentIpcChannels.GIT_LIST_DIR, async (_event, folderPath: string, dirRelPath: string) => {
     try {
+      // Remote projects use workspace RPC (not local readdir on the remote: key).
+      if (parseRemoteProjectKey(folderPath)) {
+        const { getEnvironmentHost } = await import('./environment')
+        const { listRemoteFileTreeDir } = await import('./environment/remote-file-tree')
+        const remoteEntries = await listRemoteFileTreeDir(
+          getEnvironmentHost(),
+          folderPath,
+          dirRelPath ?? '',
+        )
+        return remoteEntries ?? []
+      }
+
       const parsed = await getGitStatusMap(folderPath)
       const targetDir = dirRelPath ? join(folderPath, dirRelPath) : folderPath
       const entries = await readdir(targetDir, { withFileTypes: true })
@@ -1835,6 +2263,16 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(AgentIpcChannels.FILE_MOVE, async (_event, folderPath: string, srcRelPath: string, destDirRelPath: string): Promise<FileOpResult> => {
     try {
+      if (parseRemoteProjectKey(folderPath)) {
+        const { getEnvironmentHost } = await import('./environment')
+        const { moveRemoteFile } = await import('./environment/remote-file-tree')
+        return (
+          (await moveRemoteFile(getEnvironmentHost(), folderPath, srcRelPath, destDirRelPath)) ?? {
+            ok: false,
+            error: 'remote move failed',
+          }
+        )
+      }
       const srcAbs = validatePathInProject(folderPath, srcRelPath)
       const destDirAbs = validatePathInProject(folderPath, destDirRelPath)
       const destAbs = join(destDirAbs, basename(srcAbs))
@@ -1851,6 +2289,18 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(AgentIpcChannels.FILE_COPY_IN, async (_event, folderPath: string, destDirRelPath: string, absolutePaths: string[]): Promise<FileOpResult> => {
     try {
+      if (parseRemoteProjectKey(folderPath)) {
+        const { getEnvironmentHost } = await import('./environment')
+        const { copyLocalPathsIntoRemote } = await import('./environment/remote-file-tree')
+        return (
+          (await copyLocalPathsIntoRemote(
+            getEnvironmentHost(),
+            folderPath,
+            destDirRelPath,
+            absolutePaths,
+          )) ?? { ok: false, error: 'remote copy failed' }
+        )
+      }
       const destDirAbs = validatePathInProject(folderPath, destDirRelPath)
       for (const srcPath of absolutePaths) {
         const name = basename(srcPath)
@@ -1869,6 +2319,18 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(AgentIpcChannels.FILE_MOVE_IN, async (_event, folderPath: string, destDirRelPath: string, absolutePaths: string[]): Promise<FileOpResult> => {
     try {
+      if (parseRemoteProjectKey(folderPath)) {
+        const { getEnvironmentHost } = await import('./environment')
+        const { movePathsIntoRemote } = await import('./environment/remote-file-tree')
+        return (
+          (await movePathsIntoRemote(
+            getEnvironmentHost(),
+            folderPath,
+            destDirRelPath,
+            absolutePaths,
+          )) ?? { ok: false, error: 'remote move failed' }
+        )
+      }
       const destDirAbs = validatePathInProject(folderPath, destDirRelPath)
       for (const srcPath of absolutePaths) {
         const name = basename(srcPath)
@@ -1888,6 +2350,16 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(AgentIpcChannels.FILE_DELETE, async (_event, folderPath: string, relPath: string): Promise<FileOpResult> => {
     try {
+      if (parseRemoteProjectKey(folderPath)) {
+        const { getEnvironmentHost } = await import('./environment')
+        const { deleteRemoteFile } = await import('./environment/remote-file-tree')
+        return (
+          (await deleteRemoteFile(getEnvironmentHost(), folderPath, relPath)) ?? {
+            ok: false,
+            error: 'remote delete failed',
+          }
+        )
+      }
       const absPath = validatePathInProject(folderPath, relPath)
       await shell.trashItem(absPath)
       return { ok: true }
@@ -1898,6 +2370,16 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(AgentIpcChannels.FILE_RENAME, async (_event, folderPath: string, relPath: string, newName: string): Promise<FileOpResult> => {
     try {
+      if (parseRemoteProjectKey(folderPath)) {
+        const { getEnvironmentHost } = await import('./environment')
+        const { renameRemoteFile } = await import('./environment/remote-file-tree')
+        return (
+          (await renameRemoteFile(getEnvironmentHost(), folderPath, relPath, newName)) ?? {
+            ok: false,
+            error: 'remote rename failed',
+          }
+        )
+      }
       if (newName.includes('/') || newName.includes('\\')) {
         return { ok: false, error: 'Name cannot contain path separators' }
       }
@@ -1921,6 +2403,10 @@ function registerIpcHandlers(): void {
   })
 
   ipcMain.handle(AgentIpcChannels.FILE_SHOW_IN_FOLDER, async (_event, folderPath: string, relPath: string) => {
+    // Remote project keys are not local paths — local shell reveal would open the wrong place.
+    if (typeof folderPath === 'string' && folderPath.startsWith('remote:')) {
+      return
+    }
     // Absolute relPath (or Windows drive path) is revealed as-is so out-of-project
     // file chips can "Show in Folder". Relative paths stay inside the project.
     const isAbs = !!relPath && (isAbsolute(relPath) || /^[A-Za-z]:[\\/]/.test(relPath))
@@ -1969,12 +2455,23 @@ function registerIpcHandlers(): void {
   }
 
   ipcMain.on(AgentIpcChannels.START_DRAG, (event, paths: string[], iconOpts?: { png: ArrayBuffer; scaleFactor?: number }) => {
-    // startDrag must stay on the dragstart turn. Prefer a fully-sync path when
-    // the renderer already supplied a PNG (Computer Use float / file chips).
-    try {
-      const files = Array.isArray(paths)
-        ? paths.filter((p): p is string => typeof p === 'string' && existsSync(p))
-        : []
+    // Prefer a fully-sync path when every path exists locally and a PNG icon was
+    // supplied. Remote project keys (`remote:…`) are materialized asynchronously
+    // via workspace RPC before Electron startDrag (same pattern as async icons).
+    const run = async (): Promise<void> => {
+      const input = Array.isArray(paths) ? paths.filter((p): p is string => typeof p === 'string') : []
+      let files = input.filter((p) => existsSync(p))
+      const needsRemote = input.some((p) => !existsSync(p) && p.startsWith('remote:'))
+      if (needsRemote) {
+        try {
+          const { getEnvironmentHost } = await import('./environment')
+          const { resolvePathsForNativeDrag } = await import('./environment/remote-file-tree')
+          files = await resolvePathsForNativeDrag(getEnvironmentHost(), input)
+        } catch (err) {
+          log.warn('[start-drag] remote materialize failed:', err)
+        }
+      }
+      files = files.filter((p) => existsSync(p))
       if (files.length === 0) {
         log.warn('[start-drag] skipped: no draggable files for %o', paths)
         return
@@ -1990,17 +2487,34 @@ function registerIpcHandlers(): void {
         event.sender.startDrag({ files, file: files[0], icon })
         return
       }
-      void app.getFileIcon(files[0], {
+      const icon = await app.getFileIcon(files[0], {
         size: files[0].endsWith('.app') ? 'normal' : 'small',
-      }).then((icon) => {
+      })
+      if (icon.isEmpty()) {
+        log.warn('[start-drag] skipped: empty file icon for %s', files[0])
+        return
+      }
+      event.sender.startDrag({ files, file: files[0], icon })
+    }
+    try {
+      // Sync fast-path: all local + PNG (Computer Use float / file chips).
+      if (
+        iconOpts?.png &&
+        Array.isArray(paths) &&
+        paths.every((p) => typeof p === 'string' && existsSync(p))
+      ) {
+        const files = paths as string[]
+        const icon = nativeImage.createFromBuffer(Buffer.from(iconOpts.png), {
+          scaleFactor: iconOpts.scaleFactor ?? 1,
+        })
         if (icon.isEmpty()) {
-          log.warn('[start-drag] skipped: empty file icon for %s', files[0])
+          log.warn('[start-drag] skipped: empty supplied icon for %s', files[0])
           return
         }
         event.sender.startDrag({ files, file: files[0], icon })
-      }).catch((err) => {
-        log.warn('[start-drag] failed:', err)
-      })
+        return
+      }
+      void run().catch((err) => log.warn('[start-drag] failed:', err))
     } catch (err) {
       log.warn('[start-drag] failed:', err)
     }
@@ -2594,6 +3108,8 @@ function registerIpcHandlers(): void {
       lastSeenAt: row.last_seen_at,
       online: online.has(row.id),
       transport: online.get(row.id)?.transport,
+      // QR pairing is phone-only today; desktop clients will set this explicitly later.
+      clientKind: 'mobile' as const,
     }))
   })
   ipcMain.handle(AgentIpcChannels.REMOTE_REMOVE_PAIRED, (_, id: string) => {
@@ -3473,11 +3989,11 @@ function performQuit(): void {
   stopComputerUseHelper()
   shutdownAllProxies()
   terminalManager.killAll()
+  remoteTerminalController.dispose()
   automationService.stop()
   stopAllWorkers()
   stopWatching()
   stopSuperoneMcpStdioBridge()
-  disposeUpdater()
   const remoteStop = Promise.race([
     remoteControlService.stop(),
     new Promise<void>((r) => setTimeout(r, 1500)),
@@ -3506,6 +4022,7 @@ const handleSignalQuit = (sig: NodeJS.Signals): void => {
   if (terminalSweepTimer) clearInterval(terminalSweepTimer)
   stopComputerUseHelper()
   terminalManager.killAll()
+  remoteTerminalController.dispose()
   closeAllDbConnections()
   Promise.allSettled([
     remoteControlService.stop(),

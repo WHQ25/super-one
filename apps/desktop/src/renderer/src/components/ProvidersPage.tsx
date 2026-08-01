@@ -370,7 +370,7 @@ function CustomPlatformForm({ onDone }: { onDone: (createdId?: string) => void }
   const supportedTasks = useMemo(() => endpointsSupportedTasks(endpoints), [endpoints])
   const canSubmit = !!name.trim() && !!baseUrl.trim() && endpoints.length > 0
   const { state: testState, run: runTest } = useEndpointTest()
-  // Probe every selected family endpoint independently; overall success requires all to pass.
+  // Connection Test: main process probes one preferred auth surface (openai → google → anthropic).
   const test = useCallback(() => void runTest(endpoints, secret.trim()), [runTest, endpoints, secret])
 
   const [discoverState, setDiscoverState] = useState<DiscoverState>({ status: 'idle' })

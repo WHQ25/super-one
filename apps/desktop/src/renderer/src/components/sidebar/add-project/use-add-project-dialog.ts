@@ -1,0 +1,672 @@
+import {
+  createElement,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react'
+import { useTranslation } from 'react-i18next'
+import {
+  buildGitHubCloneUrl,
+  githubOwnerAvatarUrl,
+  parseGitHubOwnerSearchQuery,
+} from '@superone/shared/git-remote'
+import { fuzzyMatch } from '@/lib/fuzzy-match'
+import {
+  appendBrowsePathSegment,
+  ensureBrowseDirectoryPath,
+  getBrowseDirectoryPath,
+  getBrowseLeafPathSegment,
+  getBrowseParentPath,
+  isBrowseablePathQuery,
+  joinBrowsePath,
+  normalizeHomePrefixInput,
+} from '@/lib/path-browse'
+import type { AddProjectListItem } from './AddProjectList'
+import {
+  ADD_PROJECT_SOURCES,
+  autoAdvanceFromSourceQuery,
+  describeDetectedSource,
+  detectAddProjectSource,
+  formatAddProjectError,
+  resolveBrowsePath,
+  resolveRepoInput,
+  type AddProjectSource,
+  type AddProjectStep,
+  type ResolvedBrowsePath,
+} from './add-project-flow'
+
+export type GithubRepoHit = {
+  owner: string
+  name: string
+  fullName: string
+  description: string | null
+  private: boolean
+}
+
+/** Sentinel key for the "go to parent directory" row that leads the path list. */
+export const PARENT_ROW_KEY = '..'
+
+type DirEntry = { name: string; path: string; type: 'directory' }
+
+interface UseAddProjectDialogInput {
+  open: boolean
+  connectionId: string
+  onOpenChange: (open: boolean) => void
+  onOpened: (project: { projectId: string; path: string; name: string }) => void
+  /** Per-source row icons, supplied by the view so this stays JSX-free. */
+  sourceIcons: Record<AddProjectSource, ReactNode>
+  parentIcon: ReactNode
+  directoryIcon: ReactNode
+}
+
+/**
+ * All state for the add-project dialog: the step machine, the debounced
+ * directory listing, and the actions each step commits.
+ *
+ * Kept apart from the view because a single input box means "what does the
+ * current text mean" depends entirely on the step — that branching is the part
+ * worth reading (and testing) on its own.
+ */
+export function useAddProjectDialog(input: UseAddProjectDialogInput) {
+  const { open, connectionId, onOpenChange, onOpened } = input
+  const { t } = useTranslation()
+  const isLocal = connectionId === 'local'
+  // Both local and remote accept shell-style `~/`; the node expands `~` to its own home.
+  const initialPath = '~/'
+
+  const [step, setStep] = useState<AddProjectStep>({ kind: 'source' })
+  const [query, setQuery] = useState('')
+  const [selectedIndex, setSelectedIndex] = useState(0)
+  const [entries, setEntries] = useState<DirEntry[]>([])
+  const [listedPath, setListedPath] = useState('')
+  const [browseError, setBrowseError] = useState<string | null>(null)
+  const [browseLoading, setBrowseLoading] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [submitError, setSubmitError] = useState('')
+  const [githubRepos, setGithubRepos] = useState<GithubRepoHit[]>([])
+  const [githubSearchOwner, setGithubSearchOwner] = useState('')
+  const [githubLoading, setGithubLoading] = useState(false)
+  const [githubError, setGithubError] = useState<string | null>(null)
+  const requestIdRef = useRef(0)
+  const githubRequestIdRef = useRef(0)
+  const githubCacheRef = useRef<Map<string, GithubRepoHit[]>>(new Map())
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  const isPathStep = step.kind === 'browse' || step.kind === 'destination'
+  const isGithubRepoStep = step.kind === 'repo' && step.source === 'github'
+
+  useEffect(() => {
+    if (!open) return
+    setStep({ kind: 'source' })
+    setQuery('')
+    setSelectedIndex(0)
+    setEntries([])
+    setListedPath('')
+    setBrowseError(null)
+    setSubmitError('')
+    setBusy(false)
+    setGithubRepos([])
+    setGithubSearchOwner('')
+    setGithubLoading(false)
+    setGithubError(null)
+    // Focus after paint so Tab completes the path instead of moving focus.
+    requestAnimationFrame(() => inputRef.current?.focus())
+  }, [open])
+
+  const browseDir = useMemo(
+    () => (isPathStep ? getBrowseDirectoryPath(query) : ''),
+    [isPathStep, query],
+  )
+  const leafPartial = useMemo(
+    () => (isPathStep ? getBrowseLeafPathSegment(query) : ''),
+    [isPathStep, query],
+  )
+
+  // Directory listing for the two path steps, debounced like MentionPopup.
+  useEffect(() => {
+    if (!open || !isPathStep) return
+    const pathToList = browseDir || query
+    if (!isBrowseablePathQuery(pathToList)) {
+      setEntries([])
+      setListedPath('')
+      setBrowseError(null)
+      return
+    }
+
+    const requestId = ++requestIdRef.current
+    setBrowseLoading(true)
+    setBrowseError(null)
+
+    const timer = window.setTimeout(() => {
+      void window.environment
+        .browsePath(connectionId, pathToList)
+        .then((res) => {
+          if (requestId !== requestIdRef.current) return
+          setListedPath(res.path)
+          setEntries(res.entries)
+        })
+        .catch((err) => {
+          if (requestId !== requestIdRef.current) return
+          setEntries([])
+          setListedPath('')
+          setBrowseError(err instanceof Error ? err.message : String(err))
+        })
+        .finally(() => {
+          if (requestId === requestIdRef.current) setBrowseLoading(false)
+        })
+    }, 100)
+
+    return () => window.clearTimeout(timer)
+  }, [open, isPathStep, connectionId, browseDir, query])
+
+  const githubSearch = useMemo(
+    () => (isGithubRepoStep ? parseGitHubOwnerSearchQuery(query) : null),
+    [isGithubRepoStep, query],
+  )
+
+  // Load that owner's repos once `owner/` is typed (cached per owner for the session).
+  useEffect(() => {
+    if (!open || !isGithubRepoStep) {
+      setGithubRepos([])
+      setGithubSearchOwner('')
+      setGithubLoading(false)
+      setGithubError(null)
+      return
+    }
+    if (!githubSearch) {
+      setGithubRepos([])
+      setGithubSearchOwner('')
+      setGithubLoading(false)
+      setGithubError(null)
+      return
+    }
+
+    const owner = githubSearch.owner
+    const cached = githubCacheRef.current.get(owner.toLowerCase())
+    if (cached) {
+      setGithubRepos(cached)
+      setGithubSearchOwner(owner)
+      setGithubLoading(false)
+      setGithubError(null)
+      return
+    }
+
+    const requestId = ++githubRequestIdRef.current
+    setGithubLoading(true)
+    setGithubError(null)
+    setGithubSearchOwner(owner)
+
+    const timer = window.setTimeout(() => {
+      void window.app
+        .searchGithubRepos(owner)
+        .then((rows) => {
+          if (requestId !== githubRequestIdRef.current) return
+          const hits = rows ?? []
+          githubCacheRef.current.set(owner.toLowerCase(), hits)
+          setGithubRepos(hits)
+        })
+        .catch((err) => {
+          if (requestId !== githubRequestIdRef.current) return
+          setGithubRepos([])
+          setGithubError(err instanceof Error ? err.message : String(err))
+        })
+        .finally(() => {
+          if (requestId === githubRequestIdRef.current) setGithubLoading(false)
+        })
+    }, 200)
+
+    return () => window.clearTimeout(timer)
+  }, [open, isGithubRepoStep, githubSearch?.owner])
+
+  /** What the typed text looks like, so the picker can pre-select its source. */
+  const detectedSource = useMemo(
+    () => (step.kind === 'source' ? detectAddProjectSource(query) : null),
+    [step.kind, query],
+  )
+
+  const sourceItems: AddProjectListItem[] = useMemo(() => {
+    const rows = ADD_PROJECT_SOURCES.map((source) => ({
+      source,
+      label: t(`sidebar.addProject.sources.${source}.label`),
+      hint: t(`sidebar.addProject.sources.${source}.hint`),
+    }))
+
+    // Recognised path content: put Local first with the others still reachable.
+    if (detectedSource) {
+      return rows
+        .sort((a, b) => Number(b.source === detectedSource) - Number(a.source === detectedSource))
+        .map((entry) => ({
+          key: entry.source,
+          icon: input.sourceIcons[entry.source],
+          label: entry.label,
+          matchIndices: [],
+          hint:
+            entry.source === detectedSource
+              ? (describeDetectedSource(entry.source, query) ?? entry.hint)
+              : entry.hint,
+        }))
+    }
+
+    const filter = query.trim().toLowerCase()
+    // Path/repo/url-shaped text is content for a later step, not a source-label
+    // search — keep every source visible so the user can still click GitHub/URL.
+    const looksLikeContent =
+      !filter ||
+      filter.includes('/') ||
+      filter.includes('\\') ||
+      filter.includes(':') ||
+      filter.includes('@') ||
+      filter.startsWith('~') ||
+      filter.startsWith('.')
+
+    if (looksLikeContent) {
+      return rows.map((entry) => ({
+        key: entry.source,
+        icon: input.sourceIcons[entry.source],
+        label: entry.label,
+        matchIndices: [],
+        hint: entry.hint,
+      }))
+    }
+
+    return rows
+      .map((entry) => ({ entry, match: fuzzyMatch(filter, entry.label) }))
+      .filter(({ match }) => match.match)
+      .sort((a, b) => (b.match?.score ?? 0) - (a.match?.score ?? 0))
+      .map(({ entry, match }) => ({
+        key: entry.source,
+        icon: input.sourceIcons[entry.source],
+        label: entry.label,
+        matchIndices: match?.indices ?? [],
+        hint: entry.hint,
+      }))
+  }, [query, detectedSource, t, input.sourceIcons])
+
+  const pathCandidates = useMemo(() => {
+    if (!isPathStep) return []
+    if (!leafPartial) return entries.map((entry) => ({ entry, matchIndices: [] as number[] }))
+    return entries
+      .map((entry) => {
+        const r = fuzzyMatch(leafPartial.toLowerCase(), entry.name)
+        return { entry, matchIndices: r.indices, score: r.score, matched: r.match }
+      })
+      .filter((c) => c.matched)
+      .sort((a, b) => b.score - a.score)
+      .map(({ entry, matchIndices }) => ({ entry, matchIndices }))
+  }, [isPathStep, entries, leafPartial])
+
+  /**
+   * Parent row only makes sense once a listing succeeded and a parent exists.
+   *
+   * Derived from what the user typed so `~/Dev/x/` goes up to `~/Dev/`; only
+   * when the typed prefix has no segment left to drop (`~/`, `./`) does it fall
+   * back to the absolute path the host reported, which can always go up.
+   */
+  const parentPath = useMemo(() => {
+    if (!isPathStep || !listedPath) return null
+    return getBrowseParentPath(getBrowseDirectoryPath(query)) ?? getBrowseParentPath(listedPath)
+  }, [isPathStep, listedPath, query])
+
+  const pathItems: AddProjectListItem[] = useMemo(() => {
+    const rows: AddProjectListItem[] = []
+    if (parentPath !== null && !leafPartial) {
+      rows.push({
+        key: PARENT_ROW_KEY,
+        icon: input.parentIcon,
+        label: '..',
+        hint: t('sidebar.addProject.goUp'),
+      })
+    }
+    for (const candidate of pathCandidates) {
+      // Keyed by name, not by absolute path: navigation appends this segment to
+      // whatever prefix the user typed. Names are unique within one directory.
+      rows.push({
+        key: candidate.entry.name,
+        icon: input.directoryIcon,
+        label: candidate.entry.name,
+        matchIndices: candidate.matchIndices,
+      })
+    }
+    return rows
+  }, [parentPath, leafPartial, pathCandidates, t, input.parentIcon, input.directoryIcon])
+
+  /** Repos under the typed owner, filtered by the partial name after `/`. */
+  const githubItems: AddProjectListItem[] = useMemo(() => {
+    if (!isGithubRepoStep || !githubSearch) return []
+    const prefix = githubSearch.repoPrefix.toLowerCase()
+    return githubRepos
+      .map((repo) => {
+        // Match against fullName so highlight indices line up with the label.
+        const match = prefix
+          ? fuzzyMatch(prefix, repo.fullName)
+          : { match: true, score: 0, indices: [] as number[] }
+        return { repo, match }
+      })
+      .filter(({ match }) => match.match)
+      .sort((a, b) => (b.match.score ?? 0) - (a.match.score ?? 0))
+      .slice(0, 50)
+      .map(({ repo, match }) => ({
+        key: repo.fullName,
+        // Same avatar URL marketplace uses for GitHub-hosted sources.
+        icon: createElement('img', {
+          src: githubOwnerAvatarUrl(repo.owner, 40),
+          alt: '',
+          className: 'size-4 rounded-sm object-cover',
+          loading: 'lazy',
+          referrerPolicy: 'no-referrer',
+        }),
+        label: repo.fullName,
+        matchIndices: match.indices,
+        hint: repo.private
+          ? t('sidebar.addProject.githubPrivate')
+          : (repo.description ?? undefined),
+      }))
+  }, [isGithubRepoStep, githubSearch, githubRepos, t])
+
+  const items =
+    step.kind === 'source' ? sourceItems : isPathStep ? pathItems : isGithubRepoStep ? githubItems : []
+  const itemCount = items.length
+  const safeSelectedIndex = itemCount === 0 ? 0 : Math.max(0, Math.min(selectedIndex, itemCount - 1))
+
+  const resolved = useMemo(
+    () => resolveBrowsePath({ query, listedPath, entries }),
+    [query, listedPath, entries],
+  )
+  const repoResolved = useMemo(
+    () => (step.kind === 'repo' ? resolveRepoInput(step.source, query) : null),
+    [step, query],
+  )
+  /**
+   * While a listing is in flight we do not yet know whether the path exists, so
+   * the button must not flash "Create & ..." on every keystroke.
+   */
+  const submitLabelPath: ResolvedBrowsePath = browseLoading
+    ? { ...resolved, exists: true }
+    : resolved
+  const clonePreviewPath =
+    step.kind === 'destination' && resolved.path ? joinBrowsePath(resolved.path, step.repoName) : ''
+
+  const goToStep = useCallback((next: AddProjectStep, nextQuery: string) => {
+    setStep(next)
+    setQuery(nextQuery)
+    setSelectedIndex(0)
+    setEntries([])
+    setListedPath('')
+    setBrowseError(null)
+    setSubmitError('')
+    if (next.kind !== 'repo' || next.source !== 'github') {
+      setGithubRepos([])
+      setGithubSearchOwner('')
+      setGithubLoading(false)
+      setGithubError(null)
+    }
+  }, [])
+
+  const continueWithRepo = useCallback(
+    (source: 'github' | 'url', repoInput: string, remoteUrl: string, repoName: string) => {
+      goToStep(
+        {
+          kind: 'destination',
+          source,
+          repoInput,
+          remoteUrl,
+          repoName,
+        },
+        initialPath,
+      )
+    },
+    [goToStep, initialPath],
+  )
+
+  /**
+   * Concrete path / repository text skips the source picker entirely.
+   * Debounced so a multi-character paste settles as one jump, and so mid-type
+   * fragments (e.g. a half-typed URL) do not thrash the step machine.
+   */
+  useEffect(() => {
+    if (!open || step.kind !== 'source') return
+    const advance = autoAdvanceFromSourceQuery(query, initialPath)
+    if (!advance) return
+
+    const timer = window.setTimeout(() => {
+      goToStep(advance.step, advance.query)
+    }, 120)
+    return () => window.clearTimeout(timer)
+  }, [open, step.kind, query, initialPath, goToStep])
+
+  const goBack = useCallback(() => {
+    if (step.kind === 'destination') {
+      goToStep({ kind: 'repo', source: step.source }, step.repoInput)
+      return
+    }
+    goToStep({ kind: 'source' }, '')
+  }, [step, goToStep])
+
+  /**
+   * `carry` is the already-typed text when it matched this source — it moves on
+   * verbatim (no separator fixups) so a half-typed leaf still resolves against
+   * the parent listing on the next step.
+   */
+  const pickSource = useCallback(
+    (source: AddProjectSource, carry = '') => {
+      const text = carry.trim()
+      if (source === 'local') {
+        goToStep({ kind: 'browse' }, text || initialPath)
+        return
+      }
+      goToStep({ kind: 'repo', source }, text)
+    },
+    [goToStep, initialPath],
+  )
+
+  /** Jump to a known directory path (parent row, native picker). */
+  const navigateTo = useCallback((dirPath: string) => {
+    setQuery(ensureBrowseDirectoryPath(dirPath))
+    setSelectedIndex(0)
+    setSubmitError('')
+  }, [])
+
+  /**
+   * Enter a directory: the same Tab-completion behaviour as MentionPopup.
+   *
+   * Appends the folder name to the typed prefix rather than jumping to the
+   * absolute path the host reported, so `~/Dev` stays `~/Dev` after completing.
+   */
+  const navigateIntoSegment = useCallback((segment: string) => {
+    setQuery((current) => appendBrowsePathSegment(current, segment))
+    setSelectedIndex(0)
+    setSubmitError('')
+  }, [])
+
+  const activateItem = useCallback(
+    (index: number) => {
+      const item = items[index]
+      if (!item) return
+      if (step.kind === 'source') {
+        const source = item.key as AddProjectSource
+        // Only a detected local path carries the typed text; other sources start clean.
+        pickSource(source, source === detectedSource ? query : '')
+        return
+      }
+      if (isGithubRepoStep) {
+        const [owner, name] = item.key.split('/')
+        if (!owner || !name) return
+        continueWithRepo(
+          'github',
+          item.key,
+          buildGitHubCloneUrl({ owner, repo: name }),
+          name,
+        )
+        return
+      }
+      if (item.key === PARENT_ROW_KEY) {
+        if (parentPath) navigateTo(parentPath)
+        return
+      }
+      navigateIntoSegment(item.key)
+    },
+    [
+      items,
+      step.kind,
+      isGithubRepoStep,
+      pickSource,
+      detectedSource,
+      query,
+      continueWithRepo,
+      parentPath,
+      navigateTo,
+      navigateIntoSegment,
+    ],
+  )
+
+  const addProject = useCallback(
+    async (path: string, createIfMissing: boolean) => {
+      if (!path) {
+        setSubmitError(t('sidebar.addProject.pathRequired'))
+        return
+      }
+      setBusy(true)
+      setSubmitError('')
+      try {
+        const project = await window.environment.openProject(connectionId, path, {
+          createIfMissing,
+        })
+        onOpened(project)
+        onOpenChange(false)
+      } catch (err) {
+        setSubmitError(formatAddProjectError(err, t))
+      } finally {
+        setBusy(false)
+      }
+    },
+    [connectionId, onOpened, onOpenChange, t],
+  )
+
+  const cloneProject = useCallback(async () => {
+    if (step.kind !== 'destination' || !resolved.path) return
+    setBusy(true)
+    setSubmitError('')
+    try {
+      const project = await window.environment.cloneRepository(connectionId, {
+        remoteUrl: step.remoteUrl,
+        parentPath: resolved.path,
+        directoryName: step.repoName,
+      })
+      onOpened(project)
+      onOpenChange(false)
+    } catch (err) {
+      setSubmitError(formatAddProjectError(err, t))
+    } finally {
+      setBusy(false)
+    }
+  }, [step, resolved.path, connectionId, onOpened, onOpenChange, t])
+
+  const submit = useCallback(() => {
+    switch (step.kind) {
+      case 'source':
+        activateItem(safeSelectedIndex)
+        return
+      case 'repo': {
+        // Prefer the highlighted GitHub search hit when the list is showing.
+        if (step.source === 'github' && itemCount > 0) {
+          activateItem(safeSelectedIndex)
+          return
+        }
+        if (!repoResolved) return
+        continueWithRepo(step.source, query.trim(), repoResolved.remoteUrl, repoResolved.repoName)
+        return
+      }
+      case 'browse':
+        void addProject(resolved.path, !resolved.exists)
+        return
+      case 'destination':
+        void cloneProject()
+    }
+  }, [
+    step,
+    activateItem,
+    safeSelectedIndex,
+    itemCount,
+    repoResolved,
+    query,
+    continueWithRepo,
+    addProject,
+    resolved,
+    cloneProject,
+  ])
+
+  /** Tab completes into the highlighted directory (never submits). */
+  const completePath = useCallback(() => {
+    const item = items[safeSelectedIndex]
+    if (!item) return
+    if (item.key === PARENT_ROW_KEY) {
+      if (parentPath) navigateTo(parentPath)
+      return
+    }
+    navigateIntoSegment(item.key)
+  }, [items, safeSelectedIndex, parentPath, navigateTo, navigateIntoSegment])
+
+  const pickNativeFolder = useCallback(async () => {
+    const picked = await window.app.selectFolder()
+    if (!picked) return
+    navigateTo(picked)
+  }, [navigateTo])
+
+  const moveSelection = useCallback(
+    (delta: number) => {
+      if (itemCount === 0) return
+      setSelectedIndex((i) => Math.max(0, Math.min(i + delta, itemCount - 1)))
+    },
+    [itemCount],
+  )
+
+  const canSubmit =
+    !busy &&
+    (step.kind === 'source'
+      ? itemCount > 0
+      : step.kind === 'repo'
+        ? step.source === 'github'
+          ? itemCount > 0 || repoResolved !== null
+          : repoResolved !== null
+        : resolved.path.length > 0)
+
+  return {
+    step,
+    query,
+    setQuery: (next: string) => {
+      // First keystroke `~` becomes `~/` so the user can keep typing a path.
+      setQuery((previous) => normalizeHomePrefixInput(previous, next))
+      setSelectedIndex(0)
+      setSubmitError('')
+    },
+    isLocal,
+    isPathStep,
+    isGithubRepoStep,
+    inputRef,
+    items,
+    itemCount,
+    selectedIndex: safeSelectedIndex,
+    setSelectedIndex,
+    moveSelection,
+    browseLoading,
+    browseError,
+    githubLoading,
+    githubError,
+    githubSearchOwner,
+    busy,
+    submitError,
+    resolved,
+    repoResolved,
+    submitLabelPath,
+    clonePreviewPath,
+    canSubmit,
+    activateItem,
+    completePath,
+    goBack,
+    submit,
+    pickNativeFolder,
+  }
+}

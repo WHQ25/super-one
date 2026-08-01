@@ -1,11 +1,12 @@
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import { useTranslation, Trans } from 'react-i18next'
-import { GitBranch, ChevronDown, Check, Monitor, GitCommit, Circle } from 'lucide-react'
+import { GitBranch, ChevronDown, Check, Monitor, Server, GitCommit, Circle } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@superone/ui/components/ui/popover'
 import { useActiveSession, useSessionScope } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 import { useOnTurnCompleted } from '@/hooks/useOnTurnCompleted'
 import type { GitDirtyStatus, WorktreeEntry, WorktreeInfo, WorktreeMode } from '@superone/shared/agent-types'
+import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 import { WorkDirLabel, workDirIcon, workDirTitle, type WorkDirState } from './work-dir-label'
 import { WorktreeHandoffSection } from './WorktreeHandoffSection'
 import { WorktreeAssignBranchSection } from './WorktreeAssignBranchSection'
@@ -14,6 +15,20 @@ import { DiffStat } from './DiffStat'
 
 const sameDirty = (a: GitDirtyStatus | undefined, b: GitDirtyStatus | undefined): boolean =>
   a?.files === b?.files && a?.insertions === b?.insertions && a?.deletions === b?.deletions
+
+/** Match host path to UI activePath (may be remote:<conn>:<hostPath>). */
+function sameWorktreePath(a: string | null | undefined, b: string | null | undefined): boolean {
+  if (!a || !b) return false
+  if (a === b) return true
+  const ra = parseRemoteProjectKey(a)
+  const rb = parseRemoteProjectKey(b)
+  if (ra && rb) {
+    return ra.connectionId === rb.connectionId && ra.path.replace(/\/$/, '') === rb.path.replace(/\/$/, '')
+  }
+  if (ra) return ra.path.replace(/\/$/, '') === b.replace(/\/$/, '')
+  if (rb) return a.replace(/\/$/, '') === rb.path.replace(/\/$/, '')
+  return a.replace(/\/$/, '') === b.replace(/\/$/, '')
+}
 
 interface WorkDirIndicatorProps {
   compact?: boolean
@@ -49,6 +64,14 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
   const [activeDirty, setActiveDirty] = useState<GitDirtyStatus | undefined>()
 
   const activePath = wtState?.activePath ?? null
+  /** Remote node project: same “Local” label, Server icon (vs Monitor on this machine). */
+  const isRemoteProject = Boolean(currentFolder && parseRemoteProjectKey(currentFolder))
+  const mainCheckoutState: WorkDirState = {
+    kind: 'local',
+    host: isRemoteProject ? 'remote' : 'machine',
+  }
+  const MainCheckoutIcon = isRemoteProject ? Server : Monitor
+  const mainCheckoutLabel = t('tooltips.local')
 
   // A freshly forked worktree must land in `entries` for `activeEntry` to
   // resolve and render the detached icon — so activePath is a dependency.
@@ -101,8 +124,17 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
     if (info?.entries?.length) {
       const nonMain = info.entries.filter((e) => !e.isMain)
       const metas: Record<string, WtMeta> = {}
+      const remote = currentFolder ? parseRemoteProjectKey(currentFolder) : null
       await Promise.all(nonMain.map(async (e) => {
-        const wtInfo = await window.app.getGitInfo(e.path).catch(() => null)
+        // Remote: wrap host path so getGitInfo routes to node (project key + wt path).
+        // getRemoteGitInfo resolves project by matching path — worktree path may not
+        // match registered project; use status via worktree remote key only if supported.
+        // Prefer project key for now and skip per-wt dirty when remote (list still works).
+        const gitPath =
+          remote && !parseRemoteProjectKey(e.path)
+            ? `remote:${remote.connectionId}:${e.path}`
+            : e.path
+        const wtInfo = await window.app.getGitInfo(gitPath).catch(() => null)
         metas[e.path] = {
           dirty: wtInfo?.dirty,
           shortHead: e.head ? e.head.slice(0, 7) : '',
@@ -198,13 +230,13 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
 
   if (isGitRepo === false) {
     return (
-      <div className="flex items-center gap-1 rounded-lg px-2 py-1" title={t('tooltips.local')}>
+      <div className="flex items-center gap-1 rounded-lg px-2 py-1" title={mainCheckoutLabel}>
         {compact ? (
-          <Monitor className="size-3" />
+          <MainCheckoutIcon className="size-3" />
         ) : (
           <span className="flex max-w-72 items-center gap-0.5 truncate">
-            <Monitor className="inline size-3 align-middle" />
-            <span className="ml-1">{t('tooltips.local')}</span>
+            <MainCheckoutIcon className="inline size-3 align-middle" />
+            <span className="ml-1">{mainCheckoutLabel}</span>
           </span>
         )}
       </div>
@@ -218,7 +250,7 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
   const isInWorktree = isPending || isActive
 
   const activeEntry = isActive
-    ? existingEntries.find((e) => e.path === wtState!.activePath)
+    ? existingEntries.find((e) => sameWorktreePath(e.path, wtState!.activePath))
     : undefined
   const activeIsDetached = activeEntry ? !activeEntry.branch : false
   const activeShortHead = activeEntry?.head ? activeEntry.head.slice(0, 7) : ''
@@ -248,7 +280,7 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
           : pendingMode === 'attach'
             ? { kind: 'attachTo', base: pendingBase }
             : { kind: 'createBranch', name: pendingBranchName })
-      : { kind: 'local' }
+      : mainCheckoutState
   const CompactIcon = workDirIcon(workDirState)
   const titleText = workDirTitle(workDirState, t)
   const renderFullLabel = () => <WorkDirLabel state={workDirState} />
@@ -285,7 +317,7 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
         <PopoverContent className="w-80 p-0" align="start">
           <div className="flex items-center gap-2 px-3 py-2 text-xs">
             {!isActive ? (
-              <Monitor className="size-3 shrink-0 text-muted-foreground" />
+              <MainCheckoutIcon className="size-3 shrink-0 text-muted-foreground" />
             ) : activeIsDetached ? (
               <GitCommit className="size-3 shrink-0 text-muted-foreground" />
             ) : (
@@ -294,7 +326,7 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
             <div className="flex min-w-0 flex-1 flex-col">
               <span className="truncate">
                 {!isActive
-                  ? t('tooltips.local')
+                  ? mainCheckoutLabel
                   : activeIsDetached
                     ? activeShortHead
                     : (activeEntry?.branch ?? activeGitBranch ?? '')}
@@ -325,6 +357,7 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
           {isActive && activePath && (
             <WorktreeHandoffSection
               worktreePath={activePath}
+              folderPath={currentFolder ?? undefined}
               onDone={() => setPopoverOpen(false)}
             />
           )}
@@ -374,8 +407,8 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
               disabled={!isInWorktree}
               className="flex w-full items-center gap-2 px-3 py-1.5 text-xs hover:bg-accent disabled:cursor-default disabled:hover:bg-transparent"
             >
-              <Monitor className="size-3 shrink-0 text-muted-foreground" />
-              <span className="flex-1 truncate text-left">{t('tooltips.local')}</span>
+              <MainCheckoutIcon className="size-3 shrink-0 text-muted-foreground" />
+              <span className="flex-1 truncate text-left">{mainCheckoutLabel}</span>
               {!isInWorktree && <Check className="size-3 shrink-0 text-primary" />}
             </button>
 
@@ -388,7 +421,7 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
                   const detached = !e.branch
                   const dirty = meta?.dirty
                   const filesCount = dirty?.files ?? 0
-                  const isCurrent = e.path === wtState?.activePath
+                  const isCurrent = sameWorktreePath(e.path, wtState?.activePath)
                   return (
                     <button
                       key={e.path}

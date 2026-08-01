@@ -3,7 +3,9 @@ import type { ServiceEndpoint } from '@superone/shared/platform-registry'
 import {
   authHeaders,
   endpointFamily,
+  messagesUrl,
   modelsUrl,
+  selectKeyAuthEndpoint,
   testEndpointModelsUrl,
   testServiceEndpoint,
   testServiceEndpoints,
@@ -13,6 +15,10 @@ vi.mock('../logger', () => ({ default: { info: vi.fn(), warn: vi.fn() } }))
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
+}
+
+function textResponse(body: string, status: number): Response {
+  return new Response(body, { status })
 }
 
 describe('endpoint-test isolation', () => {
@@ -65,37 +71,20 @@ describe('endpoint-test isolation', () => {
     expect(modelsUrl('openai', 'https://api.deepseek.com')).toBe('https://api.deepseek.com/v1/models')
   })
 
-  it('tests every endpoint with its own url and auth (no first-only shortcut)', async () => {
-    const calls: Array<{ url: string; auth?: string; xApiKey?: string }> = []
-    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
-      const headers = (init?.headers ?? {}) as Record<string, string>
-      calls.push({ url, auth: headers.Authorization, xApiKey: headers['x-api-key'] })
-      if (url.includes('/anthropic/')) return jsonResponse({ data: [] }, 404)
-      return jsonResponse({ data: [] }, 200)
-    })
-    vi.stubGlobal('fetch', fetchMock)
+  it('modelsUrl keeps non-v1 version segments (Zhipu v4, Ark v3)', () => {
+    expect(modelsUrl('openai', 'https://open.bigmodel.cn/api/coding/paas/v4')).toBe(
+      'https://open.bigmodel.cn/api/coding/paas/v4/models',
+    )
+    expect(modelsUrl('openai', 'https://ark.cn-beijing.volces.com/api/coding/v3')).toBe(
+      'https://ark.cn-beijing.volces.com/api/coding/v3/models',
+    )
+  })
 
-    const endpoints: ServiceEndpoint[] = [
-      { id: 'anthropic', baseUrl: 'https://api.moonshot.cn/anthropic', protocols: ['anthropic-messages'] },
-      { id: 'openai', baseUrl: 'https://api.moonshot.cn/v1', protocols: ['openai-chat'] },
-    ]
-    const results = await testServiceEndpoints(endpoints, 'sk-key')
-
-    expect(results).toHaveLength(2)
-    expect(results[0]).toMatchObject({ endpointId: 'anthropic', success: false, status: 404 })
-    expect(results[1]).toMatchObject({ endpointId: 'openai', success: true, status: 200 })
-
-    expect(calls).toHaveLength(2)
-    expect(calls).toContainEqual({
-      url: 'https://api.moonshot.cn/anthropic/v1/models',
-      auth: undefined,
-      xApiKey: 'sk-key',
-    })
-    expect(calls).toContainEqual({
-      url: 'https://api.moonshot.cn/v1/models',
-      auth: 'Bearer sk-key',
-      xApiKey: undefined,
-    })
+  it('messagesUrl builds anthropic messages path', () => {
+    expect(messagesUrl('https://api.deepseek.com/anthropic')).toBe(
+      'https://api.deepseek.com/anthropic/v1/messages',
+    )
+    expect(messagesUrl('https://api.anthropic.com')).toBe('https://api.anthropic.com/v1/messages')
   })
 
   it('returns empty results for an empty endpoint list', async () => {
@@ -111,5 +100,175 @@ describe('endpoint-test isolation', () => {
       'sk',
     )
     expect(result).toEqual({ endpointId: 'openai', success: false, error: 'ECONNREFUSED' })
+  })
+
+  it('maps 401/403 on models list to Invalid API key', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => textResponse('Unauthorized', 401)))
+    const result = await testServiceEndpoint(
+      { id: 'openai', baseUrl: 'https://api.deepseek.com', protocols: ['openai-chat'] },
+      'bad-key',
+    )
+    expect(result).toEqual({ endpointId: 'openai', success: false, status: 401, error: 'Invalid API key' })
+  })
+})
+
+describe('selectKeyAuthEndpoint', () => {
+  it('prefers openai-chat over anthropic on dual-protocol plans', () => {
+    const endpoints: ServiceEndpoint[] = [
+      { id: 'anthropic', baseUrl: 'https://api.deepseek.com/anthropic', protocols: ['anthropic-messages'] },
+      { id: 'openai', baseUrl: 'https://api.deepseek.com', protocols: ['openai-chat'] },
+    ]
+    expect(selectKeyAuthEndpoint(endpoints)?.id).toBe('openai')
+  })
+
+  it('prefers openai-responses over media-only openai endpoints', () => {
+    const endpoints: ServiceEndpoint[] = [
+      { id: 'sora', baseUrl: '', protocols: ['openai-video'] },
+      { id: 'openai', baseUrl: '', protocols: ['openai-responses', 'openai-images', 'openai-audio'] },
+    ]
+    expect(selectKeyAuthEndpoint(endpoints)?.id).toBe('openai')
+  })
+
+  it('falls back to anthropic when no openai endpoint exists', () => {
+    const endpoints: ServiceEndpoint[] = [
+      { id: 'anthropic', baseUrl: 'https://api.anthropic.com', protocols: ['anthropic-messages'] },
+    ]
+    expect(selectKeyAuthEndpoint(endpoints)?.id).toBe('anthropic')
+  })
+
+  it('prefers google-generative over google-video', () => {
+    const endpoints: ServiceEndpoint[] = [
+      { id: 'veo', baseUrl: '', protocols: ['google-video'] },
+      { id: 'generative', baseUrl: '', protocols: ['google-generative'] },
+    ]
+    expect(selectKeyAuthEndpoint(endpoints)?.id).toBe('generative')
+  })
+
+  it('returns null for empty list', () => {
+    expect(selectKeyAuthEndpoint([])).toBeNull()
+  })
+})
+
+describe('connection vs endpoint test semantics', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('connection test (multi endpoint) probes only preferred openai auth surface', async () => {
+    const calls: string[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        calls.push(url)
+        if (url.includes('/anthropic/')) return textResponse('Not Found', 404)
+        return jsonResponse({ data: [] }, 200)
+      }),
+    )
+
+    const endpoints: ServiceEndpoint[] = [
+      { id: 'anthropic', baseUrl: 'https://api.deepseek.com/anthropic', protocols: ['anthropic-messages'] },
+      { id: 'openai', baseUrl: 'https://api.deepseek.com', protocols: ['openai-chat'] },
+    ]
+    const results = await testServiceEndpoints(endpoints, 'sk-key')
+
+    expect(results).toHaveLength(1)
+    expect(results[0]).toMatchObject({ endpointId: 'openai', success: true, status: 200 })
+    expect(calls).toEqual(['https://api.deepseek.com/v1/models'])
+  })
+
+  it('endpoint test (single anthropic) keeps its own url and auth', async () => {
+    const calls: Array<{ url: string; method?: string; xApiKey?: string }> = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const headers = (init?.headers ?? {}) as Record<string, string>
+        calls.push({ url, method: init?.method, xApiKey: headers['x-api-key'] })
+        return textResponse('Not Found', 404)
+      }),
+    )
+
+    const anthropic: ServiceEndpoint = {
+      id: 'anthropic',
+      baseUrl: 'https://api.deepseek.com/anthropic',
+      protocols: ['anthropic-messages'],
+    }
+    const results = await testServiceEndpoints([anthropic], 'sk-key')
+
+    expect(results).toHaveLength(1)
+    // models 404 → messages fallback also 404 → failure (endpoint config issue)
+    expect(results[0]).toMatchObject({ endpointId: 'anthropic', success: false, status: 404 })
+    expect(calls).toEqual([
+      { url: 'https://api.deepseek.com/anthropic/v1/models', method: undefined, xApiKey: 'sk-key' },
+      {
+        url: 'https://api.deepseek.com/anthropic/v1/messages',
+        method: 'POST',
+        xApiKey: 'sk-key',
+      },
+    ])
+  })
+
+  it('anthropic endpoint falls back to messages on models 404 and accepts 2xx', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        if (url.endsWith('/v1/models')) return textResponse('', 404)
+        return jsonResponse({ id: 'msg_1', type: 'message', content: [] }, 200)
+      }),
+    )
+
+    const result = await testServiceEndpoint(
+      { id: 'anthropic', baseUrl: 'https://api.deepseek.com/anthropic', protocols: ['anthropic-messages'] },
+      'sk-key',
+    )
+    expect(result).toMatchObject({ endpointId: 'anthropic', success: true, status: 200 })
+  })
+
+  it('anthropic messages fallback treats 400 as auth accepted', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        if (url.endsWith('/v1/models')) return textResponse('Not Found', 404)
+        return jsonResponse({ type: 'error', error: { type: 'invalid_request_error', message: 'model' } }, 400)
+      }),
+    )
+
+    const result = await testServiceEndpoint(
+      { id: 'anthropic', baseUrl: 'https://open.bigmodel.cn/api/anthropic', protocols: ['anthropic-messages'] },
+      'sk-key',
+    )
+    expect(result).toMatchObject({ endpointId: 'anthropic', success: true, status: 400 })
+  })
+
+  it('anthropic messages fallback maps 401 to Invalid API key', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        if (url.endsWith('/v1/models')) return textResponse('Not Found', 404)
+        return textResponse('Unauthorized', 401)
+      }),
+    )
+
+    const result = await testServiceEndpoint(
+      { id: 'anthropic', baseUrl: 'https://api.deepseek.com/anthropic', protocols: ['anthropic-messages'] },
+      'bad',
+    )
+    expect(result).toEqual({
+      endpointId: 'anthropic',
+      success: false,
+      status: 401,
+      error: 'Invalid API key',
+    })
+  })
+
+  it('does not messages-fallback for openai on 404', async () => {
+    const fetchMock = vi.fn(async () => textResponse('Not Found', 404))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await testServiceEndpoint(
+      { id: 'openai', baseUrl: 'https://x.example/v1', protocols: ['openai-chat'] },
+      'sk',
+    )
+    expect(result).toMatchObject({ endpointId: 'openai', success: false, status: 404 })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 })

@@ -11,9 +11,10 @@ import {
 } from '@superone/shared/platform-registry'
 
 /**
- * Endpoints to probe for a key. Custom platforms use credential.endpoints when set;
- * otherwise plan endpoints with per-endpoint overrides. Dual anthropic+openai plans
- * must never collapse to endpoints[0].
+ * Endpoints for Connection Test. Custom platforms use credential.endpoints when set;
+ * otherwise plan endpoints with per-endpoint overrides. The main process selects one
+ * preferred auth surface (openai → google → anthropic) so dual-protocol plans are not
+ * failed by a sibling that lacks GET /v1/models.
  */
 export function planTestEndpoints(
   plan: Plan,

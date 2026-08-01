@@ -16,7 +16,6 @@ import { AppSidebar } from '@/components/AppSidebar'
 import { WindowsTitleBar } from '@/components/WindowsTitleBar'
 import { StartupPage } from '@/components/StartupPage'
 import { SetupPage } from '@/components/SetupPage'
-import { UpdateNotification } from '@/components/UpdateNotification'
 import { ExternalLinkConfirm } from '@/components/ExternalLinkConfirm'
 import { MiniAppClipboardGuard } from '@/components/MiniAppClipboardGuard'
 import { MiniAppMediaIndicator } from '@/components/miniapp/MiniAppMediaIndicator'
@@ -460,19 +459,24 @@ function App(): React.JSX.Element {
   const enterAnimation = initialTransition.current ? { animation: 'fade-in 300ms ease-out' } : undefined
   initialTransition.current = false
 
-  // Non-main views: keep simple titlebar layout
+  // Non-main views: keep simple titlebar layout.
+  // macOS: empty h-11 row clears traffic lights + hosts MiniAppMediaIndicator.
+  // Windows: WindowsTitleBar already owns the top chrome — do not stack another
+  // empty toolbar or settings/startup/setup sit ~44px too low under the header.
   if (view !== 'main') {
     return (
       <>
         <div className="flex h-screen flex-col bg-background text-foreground" style={enterAnimation}>
           <WindowsTitleBar />
-          <div className="flex h-11 shrink-0 items-center justify-between px-3" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
-            <div className="w-20" />
-            <div />
-            <div className="flex items-center gap-1.5" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
-              <MiniAppMediaIndicator />
+          {isMac && (
+            <div className="flex h-11 shrink-0 items-center justify-between px-3" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
+              <div className="w-20" />
+              <div />
+              <div className="flex items-center gap-1.5" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+                <MiniAppMediaIndicator />
+              </div>
             </div>
-          </div>
+          )}
           {view === 'startup' && <StartupPage />}
           {view === 'setup' && <SetupPage />}
           {view === 'settings' && (
@@ -480,7 +484,6 @@ function App(): React.JSX.Element {
               <SettingsLayout />
             </Suspense>
           )}
-          <UpdateNotification />
         </div>
         <MiniAppHostLayer />
         <BrowserHostLayer />
@@ -636,7 +639,6 @@ function App(): React.JSX.Element {
       </div>
       </>
       {activityMaximized && <ChatPanel anchorBoundaryRef={mainWrapperRef} />}
-      <UpdateNotification />
       <ExternalLinkConfirm />
       <MiniAppClipboardGuard />
       {import.meta.env.DEV && <DebugPanel />}

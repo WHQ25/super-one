@@ -7,10 +7,16 @@ import rehypeSanitize from 'rehype-sanitize'
 import { harden, BlockPolicy } from 'rehype-harden'
 import { createStreamdownCodeComponent } from './CodeBlock'
 import { codePlugin, codePluginLight } from './code-plugins'
-import { toMediaUrl, toLocalFileUrl } from '@/lib/path-utils'
+import { toMediaUrl } from '@/lib/path-utils'
+import {
+  resolveMediaSrcForProject,
+  isRemoteMediaUrl,
+  decodeRemoteMediaUrl,
+} from '@/lib/remote-media-url'
 import { LinkSafetyModal } from './LinkSafetyModal'
 import { MarkdownImage } from './markdown-image'
 import { MarkdownTable } from './MarkdownTable'
+import { MarkdownRemoteMedia } from './markdown-remote-media'
 import { openBrowserTab } from '@/components/activity/activity-panel-api'
 
 export { codePlugin, codePluginLight }
@@ -67,19 +73,40 @@ const AUDIO_EXTS = new Set(['.mp3', '.wav', '.flac', '.aac', '.m4a', '.opus', '.
 const MEDIA_STYLE = { maxHeight: '20rem', maxWidth: '100%', width: 'auto', height: 'auto', borderRadius: '8px', display: 'block' } as const
 
 function MediaVideo(props: ComponentProps<'video'>) {
-  return createElement('video', { ...props, src: localFileToMediaUrl(props.src), controls: true, preload: 'metadata', style: MEDIA_STYLE })
+  if (isRemoteMediaUrl(props.src)) {
+    return createElement(MarkdownRemoteMedia, { kind: 'video', src: props.src, style: MEDIA_STYLE })
+  }
+  return createElement('video', {
+    ...props,
+    src: localFileToMediaUrl(props.src),
+    controls: true,
+    preload: 'metadata',
+    style: MEDIA_STYLE,
+  })
 }
 
 function MediaAudio(props: ComponentProps<'audio'>) {
+  if (isRemoteMediaUrl(props.src)) {
+    return createElement(MarkdownRemoteMedia, { kind: 'audio', src: props.src })
+  }
   return createElement('audio', { ...props, src: localFileToMediaUrl(props.src), controls: true })
 }
 
 function getMediaExt(src: string | undefined): string | null {
   if (!src) return null
   try {
+    if (isRemoteMediaUrl(src)) {
+      const ref = decodeRemoteMediaUrl(src)
+      if (ref) {
+        const f = ref.relativePath
+        return f.slice(f.lastIndexOf('.')).toLowerCase()
+      }
+    }
     const pathname = src.startsWith('local-file:///') ? new URL(src).pathname : src
     return pathname.slice(pathname.lastIndexOf('.')).toLowerCase()
-  } catch { return null }
+  } catch {
+    return null
+  }
 }
 
 function MediaImage(props: ComponentProps<'img'>) {
@@ -115,7 +142,7 @@ const localFileSanitizeSchema = {
   },
   protocols: {
     ...defaultSchema.protocols,
-    src: [...(defaultSchema.protocols?.src ?? []), 'local-file'],
+    src: [...(defaultSchema.protocols?.src ?? []), 'local-file', 'remote-media'],
   },
 }
 
@@ -134,14 +161,13 @@ export const streamdownRehypePlugins: PluggableList = Object.values({
   }],
 }) as PluggableList
 
-const MD_IMAGE_RE = /!\[([^\]]*)\]\((?!https?:\/\/|data:|local-file:\/\/)([^)\s]+)([^)]*)\)/g
-const MD_FILE_LINK_RE = /(?<!!)\[([^\]]*)\]\((?!https?:\/\/|mailto:|data:|#|local-file:\/\/)([^)\s]+)([^)]*)\)/g
+const MD_IMAGE_RE =
+  /!\[([^\]]*)\]\((?!https?:\/\/|data:|local-file:\/\/|remote-media:\/\/)([^)\s]+)([^)]*)\)/g
+const MD_FILE_LINK_RE =
+  /(?<!!)\[([^\]]*)\]\((?!https?:\/\/|mailto:|data:|#|local-file:\/\/|remote-media:\/\/)([^)\s]+)([^)]*)\)/g
 
 function resolveLocalSrc(src: string, projectPath: string): string {
-  const cleanSrc = src.replace(/^\.\//, '')
-  return src.startsWith('/')
-    ? toLocalFileUrl(src)
-    : toLocalFileUrl(`${projectPath}/${cleanSrc}`)
+  return resolveMediaSrcForProject(src, projectPath)
 }
 
 export function resolveMarkdownFileLinks(text: string, projectPath: string): string {

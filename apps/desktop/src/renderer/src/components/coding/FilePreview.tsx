@@ -273,19 +273,57 @@ export function FilePreview({ filePath }: FilePreviewProps) {
                 <FileDiffView filePath={selectedFile} diff={fileDiff?.diff ?? ''} content={fileContent?.content ?? ''} />
               </FileSelectionContextMenuZone>
             ) : effectiveTab === 'preview' && isBinImg ? (
-              <ImagePreview src={toLocalFileUrl(fullFilePath)} alt={fileName} />
+              <ImagePreview
+                src={
+                  fileContent?.content?.startsWith('data:')
+                    ? fileContent.content
+                    : toLocalFileUrl(fullFilePath)
+                }
+                alt={fileName}
+              />
             ) : effectiveTab === 'preview' && isPdfFile ? (
-              <PdfPreview url={toLocalFileUrl(fullFilePath)} className="h-full" />
+              <PdfPreview
+                url={
+                  fileContent?.content?.startsWith('data:')
+                    ? fileContent.content
+                    : toLocalFileUrl(fullFilePath)
+                }
+                className="h-full"
+              />
             ) : effectiveTab === 'preview' && isVideoFile ? (
               <div className="flex h-full items-center justify-center p-4">
-                <video src={toMediaUrl(fullFilePath)} controls preload="auto" className="max-h-full max-w-full" />
+                <video
+                  src={
+                    fileContent?.content?.startsWith('data:')
+                      ? fileContent.content
+                      : toMediaUrl(fullFilePath)
+                  }
+                  controls
+                  preload="auto"
+                  className="max-h-full max-w-full"
+                />
               </div>
             ) : effectiveTab === 'preview' && isAudioFile ? (
               <div className="flex h-full items-center justify-center p-4">
-                <audio src={toMediaUrl(fullFilePath)} controls preload="auto" />
+                <audio
+                  src={
+                    fileContent?.content?.startsWith('data:')
+                      ? fileContent.content
+                      : toMediaUrl(fullFilePath)
+                  }
+                  controls
+                  preload="auto"
+                />
               </div>
             ) : effectiveTab === 'preview' && isSvgFile ? (
-              <ImagePreview src={toLocalFileUrl(fullFilePath)} alt={fileName} />
+              <ImagePreview
+                src={
+                  fileContent?.content
+                    ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(fileContent.content)}`
+                    : toLocalFileUrl(fullFilePath)
+                }
+                alt={fileName}
+              />
             ) : effectiveTab === 'file' ? (
               <FileSelectionContextMenuZone filePath={fullFilePath} fileContent={fileContent?.content ?? null} className="size-full">
                 <FileWithDiffView filePath={selectedFile} content={fileContent?.content ?? ''} diff={fileDiff?.diff ?? ''} />

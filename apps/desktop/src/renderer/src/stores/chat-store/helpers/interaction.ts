@@ -48,7 +48,70 @@ export async function respondToPermissionImpl(
   let handled = false
   try {
     const targetSid = _getEffectiveSessionId(getProject(get(), activeProject)) ?? activeSid
-    if (targetSid) handled = await window.agent.respondToPermission(targetSid, requestId, allow, alwaysAllow, reason, selectedSuggestions, decision, formAnswers)
+    const { parseRemoteProjectKey } = await import('@/lib/remote-project-key')
+    const remote = parseRemoteProjectKey(activeProject)
+    if (remote && targetSid) {
+      const decisionValue: 'allow' | 'deny' | 'allow_always' =
+        decision === 'cancel' ? 'deny' : alwaysAllow ? 'allow_always' : allow ? 'allow' : 'deny'
+      await window.environment.respondSessionPermission(remote.connectionId, {
+        sessionId: targetSid,
+        interactionId: requestId,
+        decision: decisionValue,
+      })
+      handled = true
+      // Stage 5-D: after responding, re-hydrate the node session so transcript /
+      // status catch up once the turn unblocks (sendSessionMessage already returned
+      // early while pendingInteraction was set).
+      void (async () => {
+        try {
+          const remoteMsgs = await import('@/lib/remote-session-messages')
+          // Poll for turn settle or a subsequent permission.
+          const deadline = Date.now() + 120_000
+          while (Date.now() < deadline) {
+            const snap = (await window.environment.getSession(
+              remote.connectionId,
+              targetSid,
+            )) as remoteMsgs.NodeSessionSnapshot | null
+            const pending = remoteMsgs.nodePendingToPermissionRequest(snap?.pendingInteraction)
+            const status = snap?.status
+            const settled =
+              (status && status !== 'streaming') ||
+              Boolean(pending && pending.requestId !== requestId)
+            if (!settled && status === 'streaming' && !pending) {
+              await new Promise((r) => setTimeout(r, 80))
+              continue
+            }
+            const providerId = snap?.harnessId || snap?.providerId || 'codex'
+            const messages = remoteMsgs.transcriptToChatMessages(snap?.transcript, providerId)
+            set((s) =>
+              updateActivePerSession(s, (sess) => ({
+                messages: messages.length > 0 ? messages : sess.messages,
+                awaitingAssistantReply: Boolean(pending) || status === 'streaming',
+                status: pending
+                  ? 'streaming'
+                  : remoteMsgs.nodeStatusToAgentStatus(status),
+                pendingPermissions: pending ? [pending] : [],
+                ...(snap?.title ? { _title: snap.title } : {}),
+              })),
+            )
+            break
+          }
+        } catch (err) {
+          console.warn('[chat] remote permission post-respond hydrate failed:', err)
+        }
+      })()
+    } else if (targetSid) {
+      handled = await window.agent.respondToPermission(
+        targetSid,
+        requestId,
+        allow,
+        alwaysAllow,
+        reason,
+        selectedSuggestions,
+        decision,
+        formAnswers,
+      )
+    }
   } catch (err) {
     console.warn('[chat] respondToPermission failed:', err)
     return false

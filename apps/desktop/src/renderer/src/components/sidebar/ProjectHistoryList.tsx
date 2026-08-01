@@ -47,28 +47,74 @@ export function ProjectHistoryList({
   useEffect(() => {
     let cancelled = false
     setLoading(true)
-    window.app
-      .listSessionsForFolderPage(folderPath, HISTORY_PAGE_SIZE, 0)
-      .then((page) => {
+    void (async () => {
+      try {
+        const { parseRemoteProjectKey } = await import('@/lib/remote-project-key')
+        const remote = parseRemoteProjectKey(folderPath)
+        if (remote) {
+          const { useAppStore } = await import('@/stores/app')
+          const projectId =
+            useAppStore.getState().currentProjectId ??
+            // Fallback: host projects list keys path as remote:... and id is projectId
+            null
+          // Prefer id from folderPath parent: AppSidebar stores id on RecentFolder; history may not have it.
+          // listSessions needs projectId — resolve via listProjects if needed.
+          let pid = projectId
+          if (!pid) {
+            const projects = await window.environment.listProjects(remote.connectionId)
+            const match = projects.find(
+              (p) => `remote:${remote.connectionId}:${p.path}` === folderPath || p.path === remote.path,
+            )
+            pid = match?.projectId ?? null
+          }
+          if (!pid) {
+            if (!cancelled) {
+              setBrowseSessions([])
+              setBrowseHasMore(false)
+            }
+            return
+          }
+          const { listRemoteSessionsForProject } = await import('@/lib/remote-session-ops')
+          const page = await listRemoteSessionsForProject(folderPath, pid)
+          if (cancelled) return
+          setBrowseSessions(page)
+          setBrowseHasMore(false)
+          pageRef.current = 1
+          return
+        }
+        const page = await window.app.listSessionsForFolderPage(folderPath, HISTORY_PAGE_SIZE, 0)
         if (cancelled) return
         setBrowseSessions(page)
         setBrowseHasMore(page.length >= HISTORY_PAGE_SIZE)
         pageRef.current = 1
-      })
-      .catch(() => {})
-      .finally(() => { if (!cancelled) setLoading(false) })
+      } catch {
+        if (!cancelled) setBrowseSessions([])
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    })()
     return () => { cancelled = true }
   }, [folderPath, reloadNonce])
 
   useEffect(() => {
     if (!trimmedQuery || allSessions !== null) return
     let cancelled = false
-    window.app
-      .listSessionsForFolder(folderPath)
-      .then((all) => { if (!cancelled) setAllSessions(all) })
-      .catch(() => { if (!cancelled) setAllSessions([]) })
+    void (async () => {
+      try {
+        const { parseRemoteProjectKey } = await import('@/lib/remote-project-key')
+        if (parseRemoteProjectKey(folderPath)) {
+          // Full remote list already in browseSessions.
+          if (!cancelled) setAllSessions(browseSessions)
+          return
+        }
+        const all = await window.app.listSessionsForFolder(folderPath)
+        if (!cancelled) setAllSessions(all)
+      } catch {
+        if (!cancelled) setAllSessions([])
+      }
+    })()
     return () => { cancelled = true }
-  }, [trimmedQuery, allSessions, folderPath])
+  }, [trimmedQuery, allSessions, folderPath, browseSessions])
 
   useEffect(() => {
     return window.app.onSessionChanged(() => {
@@ -81,6 +127,11 @@ export function ProjectHistoryList({
     if (loadingMoreRef.current) return
     loadingMoreRef.current = true
     try {
+      const { parseRemoteProjectKey } = await import('@/lib/remote-project-key')
+      if (parseRemoteProjectKey(folderPath)) {
+        setBrowseHasMore(false)
+        return
+      }
       const page = await window.app.listSessionsForFolderPage(folderPath, HISTORY_PAGE_SIZE, pageRef.current * HISTORY_PAGE_SIZE)
       setBrowseSessions((prev) => dedupeById([...prev, ...page]))
       setBrowseHasMore(page.length >= HISTORY_PAGE_SIZE)

@@ -35,6 +35,17 @@ export function ClaudeModelSelector({ onCloseAutoFocus }: Props) {
   const setSelectedEffort = useChatStore((s) => s.setSelectedEffort)
   const refreshClaudeResources = useChatStore((s) => s.refreshClaudeResources)
   const claudeResourcesLoading = useChatStore((s) => s.claudeResourcesLoading)
+  const initializeHarness = useChatStore((s) => s.initializeHarness)
+
+  // Remote empty-session + Claude tab often never re-triggers setPreferredProvider
+  // (already preferred=claude), so models stay empty if startup cache was null.
+  useEffect(() => {
+    if (availableModels.length > 0 || claudeResourcesLoading) return
+    void initializeHarness('claude').then(() => {
+      const models = useChatStore.getState().harnessResources.claude?.models ?? []
+      if (models.length === 0) void refreshClaudeResources(true)
+    })
+  }, [availableModels.length, claudeResourcesLoading, initializeHarness, refreshClaudeResources])
 
   const activeProvider = sessionProvider ?? preferredProvider
 
@@ -55,7 +66,27 @@ export function ClaudeModelSelector({ onCloseAutoFocus }: Props) {
   const fastModeState = useActiveSession((s) => s.session?.fastModeState)
   const providerProps = useSelectorProviders(activeProvider)
 
-  const currentModel = availableModels.find((m) => m.id === selectedModel)
+  // If selectedModel is empty but the catalog loaded (common on remote drafts),
+  // treat the default/first model as display selection until the user picks one.
+  const effectiveSelectedModelId =
+    selectedModel ||
+    availableModels.find((m) => m.isDefault)?.id ||
+    availableModels[0]?.id ||
+    ''
+
+  useEffect(() => {
+    if (selectedModel || !effectiveSelectedModelId) return
+    if ((sessionProvider ?? preferredProvider) !== 'claude') return
+    setSelectedModel(effectiveSelectedModelId)
+  }, [
+    selectedModel,
+    effectiveSelectedModelId,
+    sessionProvider,
+    preferredProvider,
+    setSelectedModel,
+  ])
+
+  const currentModel = availableModels.find((m) => m.id === (selectedModel || effectiveSelectedModelId))
   // Never surface a foreign harness model id (stale ACP/OpenCode race) as the label.
   const currentModelName = resolveClaudeDisplayName(currentModel, activeModelEnv)
 
@@ -89,7 +120,7 @@ export function ClaudeModelSelector({ onCloseAutoFocus }: Props) {
       )}
       <GroupedModelEffortSelector
         models={models}
-        selectedModelId={selectedModel}
+        selectedModelId={selectedModel || effectiveSelectedModelId}
         selectedModelLabel={currentModelName}
         onSelectModel={setSelectedModel}
         effortOptions={effortOptions}

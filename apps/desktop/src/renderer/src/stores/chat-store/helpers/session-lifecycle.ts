@@ -33,6 +33,7 @@ import { resolveProvider } from './provider-routing'
 import { createDefaultPerSessionState, createDefaultProjectState, createSessionId, freshSubagentColorPool } from '../defaults'
 import { isRemoteSession, removeRemoteSession } from '../index'
 import type { ChatProvider, ChatStore, PerSessionState } from '../types'
+import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 
 export async function focusProjectImpl(
   set: ChatStoreSet,
@@ -104,7 +105,7 @@ export async function focusProjectImpl(
   // focusProject must mirror activePath itself or the file tree shows the project root.
   const focusedSession = targetSid ? get().projectSessions[projectPath]?._sessions[targetSid] : null
   useAppStore.getState().setActiveWorktree(projectPath, _getSessionWorktreePath(focusedSession))
-  if (targetSid) {
+  if (targetSid && !parseRemoteProjectKey(projectPath)) {
     const targetSession = targetProject?._sessions[targetSid]
     try {
       await window.app.resumeSession(projectPath, targetSid, _getSessionCwd(projectPath, targetSession))
@@ -119,7 +120,11 @@ export async function focusProjectImpl(
   }
 }
 
-export function ensureSessionImpl(set: ChatStoreSet, projectPath: string): void {
+export function ensureSessionImpl(
+  set: ChatStoreSet,
+  projectPath: string,
+  get?: () => ChatStore,
+): void {
   set((s) => {
     if (s.projectSessions[projectPath]) return {}
     const project = createDefaultProjectState()
@@ -135,6 +140,12 @@ export function ensureSessionImpl(set: ChatStoreSet, projectPath: string): void 
     )
     project.codexModels = s.harnessResources.codex?.models ?? []
     if (defaultPrefsCache.sandboxMode) project.sandboxInfo = sandboxModeToInfo(defaultPrefsCache.sandboxMode)
+
+    // Remote and local both need a per-session UI row so model/provider prefs stick.
+    // Remote drafts use a renderer UUID that does not exist on the node yet;
+    // first send goes through resolveNodeSessionId → session.create (not session.send
+    // with a fake id). Without this row, updateActivePerSession no-ops (no sid) and
+    // Claude model selection / preferredProvider never persist on remote projects.
     const draftId = createSessionId()
     project._activeSessionId = draftId
     const newSession = applyCachedCodexPermissionPreset(createDefaultPerSessionState())
@@ -152,6 +163,83 @@ export function ensureSessionImpl(set: ChatStoreSet, projectPath: string): void 
       },
     }
   })
+  // Pull Claude models even when the user only opens a remote project (no local
+  // session_init). Safe if already initialized.
+  if (get && parseRemoteProjectKey(projectPath)) {
+    // Node-hosted skills/commands for the / popup (desktop harness list is local-only).
+    void (async () => {
+      try {
+        const listed = await window.app.listSlashResources(projectPath)
+        const skills = Array.isArray(listed?.skills) ? listed.skills : []
+        const commands = Array.isArray(listed?.commands) ? listed.commands : []
+        set((s) => {
+          if (!s.projectSessions[projectPath]) return {}
+          const claude = s.harnessResources.claude
+          const proj = s.projectSessions[projectPath]!
+          return {
+            projectSessions: {
+              ...s.projectSessions,
+              [projectPath]: {
+                ...proj,
+                _projectSkills: skills,
+                _projectCommands: commands,
+                slashCommands: buildSlashCommands(
+                  claude?.slashCommands ?? [],
+                  claude?.skills ?? [],
+                  claude?.commands ?? [],
+                  skills,
+                  commands,
+                  new Set(s.disabledSkills),
+                ),
+              },
+            },
+          }
+        })
+      } catch {
+        /* offline / not connected */
+      }
+    })()
+    void get().initializeHarness('claude').then(() => {
+      // Merge desktop harness slash catalog with any node skills already loaded.
+      set((s) => {
+        const claude = s.harnessResources.claude
+        const proj = s.projectSessions[projectPath]
+        if (!claude || !proj) return {}
+        return {
+          projectSessions: {
+            ...s.projectSessions,
+            [projectPath]: {
+              ...proj,
+              slashCommands: buildSlashCommands(
+                claude.slashCommands,
+                claude.skills,
+                claude.commands,
+                proj._projectSkills,
+                proj._projectCommands,
+                new Set(s.disabledSkills),
+              ),
+            },
+          },
+        }
+      })
+      const models = get().harnessResources.claude?.models ?? []
+      if (models.length === 0) return
+      const proj = get().projectSessions[projectPath]
+      const sid = proj?._activeSessionId
+      if (!sid) return
+      const sess = proj._sessions[sid]
+      if (!sess) return
+      if (sess.selectedModel && models.some((m) => m.id === sess.selectedModel)) return
+      const defaultModel = resolveDefaultClaudeModel(models)
+      if (!defaultModel) return
+      set((s) => updatePerSession(s, projectPath, sid, () => ({
+        selectedModel: defaultModel.id,
+        selectedEffort: resolveDefaultClaudeEffort(defaultModel),
+        modelUserChosen: false,
+        effortUserChosen: false,
+      })))
+    })
+  }
 }
 
 export function disconnectRemoteSessionImpl(set: ChatStoreSet, get: () => ChatStore): void {
@@ -172,6 +260,24 @@ export async function interruptImpl(set: ChatStoreSet, get: () => ChatStore): Pr
   const project = getProject(get(), activeProject)
   const sid = resolveActiveSessionId(project)
   set((s) => updateActivePerSession(s, () => ({ awaitingAssistantReply: false })))
+
+  // Remote node session: EnvironmentHost → CLI session.interrupt
+  const remote = parseRemoteProjectKey(activeProject)
+  if (remote && sid) {
+    try {
+      await window.environment.interruptSession(remote.connectionId, sid)
+    } catch {
+      /* fall through to idle reset */
+    }
+    set((s) => updateActivePerSession(s, () => ({
+      status: 'idle',
+      pendingPermissions: [],
+      pendingQuestion: null,
+      pendingPlanApproval: null,
+    })))
+    return
+  }
+
   let interrupted = false
   try {
     interrupted = sid ? await window.agent.interrupt(sid) : false
@@ -317,6 +423,56 @@ export async function resetSessionImpl(set: ChatStoreSet, get: () => ChatStore):
   const activeSession = getActivePerSession(get())
   const currentSid = resolveActiveSessionId(project)
   const nextProvider = activeSession.sessionProvider ?? activeSession.preferredProvider
+
+  // Remote node: create a real node session (same UX as "New session" on sidebar).
+  const remote = parseRemoteProjectKey(activeProject)
+  if (remote) {
+    if (
+      activeSession.messages.length === 0 &&
+      !_isLiveSession(activeSession) &&
+      currentSid
+    ) {
+      window.app.trace?.('session.lifecycle', 'resetSession:skip-pristine-remote', {
+        activeProject,
+        currentSid,
+      })
+      return
+    }
+    const projectId = useAppStore.getState().currentProjectId
+    if (!projectId) return
+    const { createRemoteSession } = await import('@/lib/remote-session-ops')
+    const { sessionId: newSessionId } = await createRemoteSession(activeProject, projectId)
+    const newSession = applyCachedCodexPermissionPreset(createDefaultPerSessionState())
+    newSession.cwd = activeProject
+    newSession.preferredProvider = 'codex'
+    newSession.sessionProvider = 'codex'
+    newSession._historyHydrated = true
+    set((s) => {
+      const proj = getProject(s, activeProject)
+      return {
+        projectSessions: {
+          ...s.projectSessions,
+          [activeProject]: {
+            ...proj,
+            _activeSessionId: newSessionId,
+            _sessions: { ...proj._sessions, [newSessionId]: newSession },
+            sessions: [
+              {
+                sessionId: newSessionId,
+                title: 'New session',
+                lastActiveAt: new Date().toISOString(),
+                provider: 'codex',
+                messageCount: 0,
+              },
+              ...proj.sessions.filter((e) => e.sessionId !== newSessionId),
+            ],
+          },
+        },
+      }
+    })
+    useAppStore.getState().bumpSessionListNonce()
+    return
+  }
 
   // Idempotent: a pristine current session (no messages, idle, not remote, no worktree)
   // is already "a fresh session". Creating another one just stacks empty drafts in

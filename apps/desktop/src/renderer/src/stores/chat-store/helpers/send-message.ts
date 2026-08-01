@@ -26,6 +26,13 @@ import {
 } from './store-helpers'
 import { CLAUDE_INTERCEPTED_COMMANDS, isRemoteSession } from '../index'
 import type { ChatProvider, ChatStore, InputSegment, Mention, SessionWriteTarget } from '../types'
+import { parseRemoteProjectKey } from '@/lib/remote-project-key'
+import {
+  nodeHarnessToProviderId,
+  nodeStatusToAgentStatus,
+  transcriptToChatMessages,
+  type NodeSessionSnapshot,
+} from '@/lib/remote-session-messages'
 
 /**
  * Body of useChatStore.sendMessage extracted as a free-standing helper so
@@ -71,6 +78,7 @@ export async function sendMessageImpl(
     set((s) => commitPerSession(s, writeTarget, updater))
   }
 
+  // Mobile remote-control lock (another device owns the desktop session) — not node env.
   if (isRemoteSession(get(), projectPath, resolveWriteSid())) return
 
   {
@@ -84,6 +92,207 @@ export async function sendMessageImpl(
       msgCount: session.messages.length,
       knownSids: Object.keys(project._sessions),
     })
+  }
+
+  // Remote node project: route through EnvironmentHost → CLI session.send (lease handled in Main).
+  const remoteKey = parseRemoteProjectKey(projectPath)
+  if (remoteKey) {
+    const text = content.trim()
+    if (!text) return
+
+    // SuperOne-local slash intercepts (same as local path) — never forward to node.
+    // Match bare `/clear` etc.; args form is not used by CLAUDE_INTERCEPTED_COMMANDS today.
+    {
+      const m = text.match(/^\/(\S+)$/)
+      if (m && CLAUDE_INTERCEPTED_COMMANDS[m[1]!]) {
+        patchSession(() => ({ _pendingSlashCommand: '' }))
+        await CLAUDE_INTERCEPTED_COMMANDS[m[1]!]!()
+        return
+      }
+    }
+
+    const { useAppStore } = await import('../../app')
+    let projectId = useAppStore.getState().currentProjectId
+    // Recover node projectId if mirror lost it (host switch race, HMR, etc.).
+    if (!projectId) {
+      try {
+        const listed = await window.environment.listProjects(remoteKey.connectionId)
+        const rows = Array.isArray(listed) ? listed : []
+        const match = rows.find(
+          (p: { path?: string; projectId?: string }) =>
+            (p.path || '').replace(/\/$/, '') === remoteKey.path.replace(/\/$/, ''),
+        )
+        projectId = match?.projectId ?? null
+        if (projectId) useAppStore.setState({ currentProjectId: projectId })
+      } catch {
+        /* fall through */
+      }
+    }
+    if (!projectId) {
+      throw new Error(
+        'Remote project is not registered (missing projectId). Re-open the project on this host.',
+      )
+    }
+
+    // Pending worktree create (branch/attach/detach) — same as local, but IPC hits node.
+    const wtState = useAppStore.getState().getWorktreeState(projectPath)
+    if (wtState.pendingBaseBranch) {
+      const baseBranch = wtState.pendingBaseBranch
+      const mode = wtState.pendingMode
+      const branchName = wtState.pendingBranchName.trim()
+      if (mode === 'branch' && !branchName) {
+        throw new Error('Branch mode requires a branch name')
+      }
+      const act = await window.app.activateWorktree(projectPath, {
+        baseBranch,
+        mode,
+        branchName: mode === 'branch' ? branchName : undefined,
+        carryLocalChanges: wtState.pendingCarryLocalChanges,
+      })
+      if (!act.ok) {
+        throw new Error(act.error || 'Failed to activate remote worktree')
+      }
+      useAppStore.getState().setActiveWorktree(projectPath, act.path)
+      const recordedBranch = mode === 'branch' ? branchName : baseBranch
+      patchSession(() => ({
+        messages: [],
+        _gitBranch: recordedBranch,
+        _worktreePath: act.path,
+        sessionProvider: null,
+      }))
+    }
+
+    // Local draft UUIDs from ensureSession never exist on the node — materialize first.
+    const candidateSid = resolveWriteSid()
+    const existingSess = candidateSid
+      ? getScopedPerSession(get(), writeTarget ?? { projectPath, sessionId: candidateSid })
+      : getScopedPerSession(get(), writeTarget)
+    // Node Stage 5: claude + codex. Honor UI tab (sessionProvider, else preferredProvider).
+    const uiProvider =
+      existingSess.sessionProvider ?? existingSess.preferredProvider ?? 'claude'
+    const preferredHarness: 'claude' | 'codex' =
+      uiProvider === 'claude' ? 'claude' : 'codex'
+    const { resolveNodeSessionId } = await import('@/lib/remote-session-ops')
+    const { createDefaultPerSessionState } = await import('../defaults')
+    const resolved = await resolveNodeSessionId(projectPath, projectId, candidateSid, {
+      harnessId: preferredHarness,
+      providerId: preferredHarness,
+    })
+    let sid = resolved.sessionId
+
+    // Worktree cwd for the node turn (host path). activePath is remote:<conn>:<host> or host abs.
+    const remoteWt = useAppStore.getState().getWorktreeState(projectPath)
+    const cwdHostPath = remoteWt.activePath
+      ? parseRemoteProjectKey(remoteWt.activePath)?.path ??
+        (remoteWt.activePath.startsWith('/') ? remoteWt.activePath : null)
+      : null
+
+    if (resolved.created || sid !== candidateSid) {
+      const prev = existingSess
+      writeTarget = { projectPath, sessionId: sid }
+      set((s) => {
+        const proj = getProject(s, projectPath)
+        const nextSessions = { ...proj._sessions }
+        if (candidateSid && candidateSid !== sid) {
+          delete nextSessions[candidateSid]
+        }
+        const base = prev ?? createDefaultPerSessionState()
+        // Keep UI model selection when swapping draft UUID → real node session id.
+        // If still empty (Claude resources loaded late), apply default now.
+        let selectedModel = base.selectedModel
+        let selectedEffort = base.selectedEffort
+        if (preferredHarness === 'claude' && !selectedModel) {
+          const models = s.harnessResources.claude?.models ?? []
+          const def = models.find((m) => m.isDefault) ?? models[0]
+          if (def) {
+            selectedModel = def.id
+            selectedEffort = def.supportedEffortLevels?.includes('medium')
+              ? 'medium'
+              : def.supportedEffortLevels?.[0]
+          }
+        }
+        nextSessions[sid] = {
+          ...base,
+          sessionProvider: preferredHarness,
+          preferredProvider: preferredHarness,
+          selectedModel,
+          selectedEffort,
+          _historyHydrated: true,
+        }
+        return {
+          projectSessions: {
+            ...s.projectSessions,
+            [projectPath]: {
+              ...proj,
+              _activeSessionId: sid,
+              _sessions: nextSessions,
+            },
+          },
+        }
+      })
+    } else {
+      writeTarget = { projectPath, sessionId: sid }
+    }
+
+    const userMessageId = crypto.randomUUID()
+    const userMsg = {
+      id: userMessageId,
+      role: 'user' as const,
+      status: 'complete' as const,
+      content: [{ type: 'text' as const, text }],
+      createdAt: new Date().toISOString(),
+      providerId: preferredHarness,
+    }
+    patchSession((sess) => ({
+      messages: [...sess.messages, userMsg],
+      awaitingAssistantReply: true,
+      status: 'streaming',
+    }))
+
+    // UI model selection → node turn (Claude slug or Codex model id).
+    const writeSess = getScopedPerSession(get(), writeTarget ?? { projectPath, sessionId: sid })
+    const modelForTurn =
+      preferredHarness === 'claude'
+        ? writeSess.selectedModel || undefined
+        : preferredHarness === 'codex'
+          ? writeSess.selectedCodexModel || undefined
+          : undefined
+
+    try {
+      // Main maps session.events → AgentEvent and pushes via agent:event while
+      // the turn is open; projectPath routes those events into this session.
+      const finalSnap = (await window.environment.sendSessionMessage(remoteKey.connectionId, {
+        sessionId: sid,
+        text,
+        clientMessageId: userMessageId,
+        projectPath,
+        providerId: preferredHarness,
+        cwdHostPath,
+        ...(modelForTurn ? { model: modelForTurn } : {}),
+      })) as NodeSessionSnapshot | null
+      const providerId = nodeHarnessToProviderId(
+        finalSnap?.harnessId || finalSnap?.providerId || preferredHarness,
+      )
+      // Transcript reconcile is the recovery authority if stream events were missed.
+      const messages = transcriptToChatMessages(finalSnap?.transcript, providerId)
+      const { nodePendingToPermissionRequest } = await import('@/lib/remote-session-messages')
+      const pendingPerm = nodePendingToPermissionRequest(finalSnap?.pendingInteraction)
+      const waitingOnPermission = Boolean(pendingPerm)
+      patchSession((sess) => ({
+        messages: messages.length > 0 ? messages : sess.messages,
+        // Stay "streaming" while a remote permission is pending so the prompt stays live.
+        awaitingAssistantReply: waitingOnPermission || finalSnap?.status === 'streaming',
+        status: waitingOnPermission
+          ? 'streaming'
+          : nodeStatusToAgentStatus(finalSnap?.status),
+        pendingPermissions: pendingPerm ? [pendingPerm] : [],
+        ...(finalSnap?.title ? { _title: finalSnap.title } : {}),
+      }))
+    } catch (err) {
+      patchSession(() => ({ awaitingAssistantReply: false, status: 'error' }))
+      throw err
+    }
+    return
   }
 
   const { useAppStore } = await import('../../app')

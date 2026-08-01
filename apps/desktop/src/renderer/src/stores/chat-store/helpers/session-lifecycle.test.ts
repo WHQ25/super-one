@@ -192,6 +192,39 @@ beforeEach(() => {
   defaultPrefsCache.codexSelection = null
 })
 
+describe('focusProjectImpl', () => {
+  it('does not resume a remote node session through the local SessionManager', async () => {
+    const remotePath = 'remote:env-1:/work/project'
+    useChatStore.getState().ensureSession(remotePath)
+
+    await useChatStore.getState().focusProject(remotePath)
+
+    expect(useChatStore.getState().activeProject).toBe(remotePath)
+    expect(mockWindowApp.resumeSession).not.toHaveBeenCalled()
+  })
+
+  it('mints a UI draft session for remote projects so model/provider prefs stick', () => {
+    const remotePath = 'remote:env-1:/work/project'
+    useChatStore.getState().ensureSession(remotePath)
+
+    const proj = useChatStore.getState().projectSessions[remotePath]
+    expect(proj).toBeTruthy()
+    // UI draft is required so model/provider prefs stick; first send materializes
+    // a real node session via resolveNodeSessionId (does not session.send the draft id).
+    expect(proj._activeSessionId).toBeTruthy()
+    expect(Object.keys(proj._sessions)).toHaveLength(1)
+  })
+
+  it('continues resuming local sessions when focusing a local project', async () => {
+    useChatStore.getState().ensureSession(PATH)
+    const sessionId = activeProjectState()._activeSessionId
+
+    await useChatStore.getState().focusProject(PATH)
+
+    expect(mockWindowApp.resumeSession).toHaveBeenCalledWith(PATH, sessionId, PATH)
+  })
+})
+
 describe('resetSessionImpl', () => {
   it('is a no-op on a pristine idle session (no messages, no worktree, not remote)', async () => {
     setupProject()

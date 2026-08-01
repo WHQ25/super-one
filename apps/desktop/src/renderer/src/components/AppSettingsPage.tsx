@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
-import { Check, ChevronDown } from 'lucide-react'
+import { Check, ChevronDown, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 import { useTranslation } from 'react-i18next'
 import { Switch } from '@superone/ui/components/ui/switch'
+import { Button } from '@superone/ui/components/ui/button'
+import { cn } from '@superone/ui/lib/utils'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -181,6 +183,7 @@ export function AppSettingsPage() {
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
+          <UpdateCheckRow version={appVersion} />
         </div>
 
         <div className="rounded-lg border border-border">
@@ -252,6 +255,79 @@ export function AppSettingsPage() {
           </div>
         </div>
       </div>
+    </div>
+  )
+}
+
+/**
+ * Manual update check plus the full download lifecycle. Auto-checking only
+ * happens once at launch, so this row is where the user drives it by hand and
+ * follows the download through to the restart.
+ */
+function UpdateCheckRow({ version }: { version: string }) {
+  const { t } = useTranslation()
+  const updateStatus = useAppStore((s) => s.updateStatus)
+  const updateVersion = useAppStore((s) => s.updateVersion)
+  const updateProgress = useAppStore((s) => s.updateProgress)
+  const installUpdate = useAppStore((s) => s.installUpdate)
+  const dismissUpdate = useAppStore((s) => s.dismissUpdate)
+
+  const checking = updateStatus === 'checking'
+  const downloading = updateStatus === 'preparing' || updateStatus === 'downloading'
+  const ready = updateStatus === 'ready'
+  const percent = Math.min(100, Math.max(0, Math.round(updateProgress)))
+  const targetVersion = updateVersion ? `v${updateVersion}` : ''
+
+  const description = ready
+    ? t('shell.update.ready', { version: updateVersion })
+    : updateStatus === 'downloading'
+      ? t('shell.update.downloadingWithProgress', { version: targetVersion, progress: percent })
+      : updateStatus === 'preparing'
+        ? t('shell.update.preparing', { version: targetVersion })
+        : updateStatus === 'checking'
+          ? t('shell.update.checking')
+          : updateStatus === 'up-to-date'
+            ? t('shell.update.upToDate')
+            : updateStatus === 'error'
+              ? t('settings.general.checkUpdates.failed')
+              : t('settings.general.checkUpdates.description', { version })
+
+  return (
+    <div className="border-t border-border p-4">
+      <div className="flex items-center justify-between gap-4">
+        <div className="min-w-0">
+          <p className="text-sm font-medium">{t('settings.general.checkUpdates.label')}</p>
+          <p className={cn('mt-0.5 text-xs', updateStatus === 'error' ? 'text-error' : 'text-muted-foreground')}>
+            {description}
+          </p>
+        </div>
+        {ready ? (
+          <Button
+            size="sm"
+            className="shrink-0"
+            onClick={import.meta.env.DEV ? dismissUpdate : installUpdate}
+          >
+            {t('shell.update.restart')}
+          </Button>
+        ) : (
+          <button
+            disabled={checking || downloading}
+            onClick={() => void window.app.checkForUpdates()}
+            className="flex shrink-0 items-center gap-2 rounded-md border border-border bg-background px-3 py-1.5 text-sm transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <RefreshCw className={cn('size-3.5 shrink-0 text-muted-foreground', checking && 'animate-spin')} />
+            <span>{t('settings.general.checkUpdates.action')}</span>
+          </button>
+        )}
+      </div>
+      {downloading && (
+        <div className="mt-3 h-1 overflow-hidden rounded-full bg-muted">
+          <div
+            className="h-full rounded-full bg-primary transition-[width] duration-300 ease-out"
+            style={{ width: `${percent}%` }}
+          />
+        </div>
+      )}
     </div>
   )
 }

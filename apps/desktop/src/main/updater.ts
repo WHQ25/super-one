@@ -7,7 +7,6 @@ import { AgentIpcChannels, type UpdateChannel, type UpdateEvent } from '@superon
 import { UPDATE_CHANNEL_TO_YML } from '@superone/shared/update-channels'
 
 let win: BrowserWindow | null = null
-let checkInterval: ReturnType<typeof setInterval> | null = null
 let updaterState: UpdateEvent['type'] = 'not-available'
 let menuLabel = 'Check for Updates...'
 let menuEnabled = true
@@ -89,15 +88,10 @@ export function initUpdater(mainWindow: BrowserWindow, channelPref?: UpdateChann
     send({ type: 'error', message: err.message })
   })
 
+  // Only check on startup — further checks are user-driven (app menu / settings).
   autoUpdater.checkForUpdates().catch((err) => {
     log.warn('[updater] Initial check failed:', err.message)
   })
-
-  checkInterval = setInterval(() => {
-    autoUpdater.checkForUpdates().catch((err) => {
-      log.warn('[updater] Periodic check failed:', err.message)
-    })
-  }, 4 * 60 * 60 * 1000)
 }
 
 export function installUpdate(): void {
@@ -143,11 +137,4 @@ export function simulateUpdate(): void {
 export function simulateNotAvailable(): void {
   send({ type: 'checking' })
   setTimeout(() => send({ type: 'not-available' }), 1000)
-}
-
-export function disposeUpdater(): void {
-  if (checkInterval) {
-    clearInterval(checkInterval)
-    checkInterval = null
-  }
 }

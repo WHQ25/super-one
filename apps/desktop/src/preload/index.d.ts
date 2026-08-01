@@ -1,12 +1,13 @@
 import type { ElectronAPI } from '@electron-toolkit/preload'
 import type { AppMetricsSnapshot } from '@superone/shared/agent-types'
 import type { OpenCodeResources } from '@superone/shared/agent-types'
-import type { AgentEvent, AgentInfo, AgentPrewarmHint, ApiProvider, AppSettings, AppSettingsPatch, Automation, AutomationRunStatus, BashOutputEvent, BrowserCertError, BrowserOpenTabRequest, BrowserHistoryEntry, ChatMessage, ChatMessageContext, ClaudePreferences, ClaudeResources, CodexAuthStatus, CodexCollaborationMode, CodexGoal, CodexGoalStatus, CodexHookGroup, CodexMarketplaceAddRequest, CodexMarketplaceAddResult, CodexMarketplaceUpgradeResult, CodexPermissionPreset, CodexRateLimits, CodexRateLimitResetOutcome, CodexMcpOauthLoginResult, CodexExternalAgentItem, CodexExternalAgentImportResult, CodexAccountUsage, ClaudeRateLimits, ProviderRateLimits, CodexReasoningEffort, CodexResources, CodexReviewTarget, CodexRunResult, CodexSetAuthRequest, ContentBlock, ContextUsageInfo, CreateAutomationRequest, CreateProviderRequest, DiscoverModelsResult, FileOpResult, FileSearchResult, FileTreeEntry, NativeContextMenuItemSpec, GitDirtyStatus, GitFileContent, GitFileDiff, GitInfo, GitLogEntry, GitResult, GitStatusFile, HarnessId, HookConfig, HookSavePayload, ImageAttachment, ListDirEntry, LoadSessionMessagesResult, Locale, MarketplacePlugin, MarketplacePluginDetail, MarketplaceScope, McpCheckResult, McpLibraryEntry, McpServerConfig, McpServerInfo, McpServerMeta, MediaProviderStatus, UpsertMediaProviderRequest, MentionSearchItem, ModelOption, PermissionMode, PinnedSessionEntry, PluginDetail, PluginInfo, ProviderEndpointTestResponse, QuestionAnnotations, RecentFolder, RemoteDeviceConfig, ResourceScope, RewindFilesResult, SandboxInfo, SandboxMode, SandboxProbeResult, SendMessageRequest, SessionHistoryEntry, SessionSettingsPatch, SetupEvent, SkillDetail, SkillInfo, StartupData, TerminalEvent, TerminalListItem, TerminalSnapshot, ThemeMode, UpdateAutomationRequest, UpdateEvent, UpdateProviderRequest, WorktreeActivateRequest, WorktreeInfo, WorktreeHandoffResult, WorktreeAssignResult, SessionForkRequest, SessionForkResult } from '@superone/shared/agent-types'
+import type { AgentEvent, AgentInfo, AgentPrewarmHint, ApiProvider, AppSettings, AppSettingsPatch, Automation, AutomationRunStatus, BashOutputEvent, BrowserCertError, BrowserOpenTabRequest, BrowserHistoryEntry, ChatMessage, ChatMessageContext, ClaudePreferences, ClaudeResources, CodexAuthStatus, CodexCollaborationMode, CodexGoal, CodexGoalStatus, CodexHookGroup, CodexMarketplaceAddRequest, CodexMarketplaceAddResult, CodexMarketplaceUpgradeResult, CodexPermissionPreset, CodexRateLimits, CodexRateLimitResetOutcome, CodexMcpOauthLoginResult, CodexExternalAgentItem, CodexExternalAgentImportResult, CodexAccountUsage, ClaudeRateLimits, ProviderRateLimits, CodexReasoningEffort, CodexResources, CodexReviewTarget, CodexRunResult, CodexSetAuthRequest, ContentBlock, ContextUsageInfo, CreateAutomationRequest, CreateProviderRequest, DiscoverModelsResult, FileOpResult, FileSearchResult, FileTreeEntry, NativeContextMenuItemSpec, GitDirtyStatus, GitFileContent, GitFileDiff, GitInfo, GitLogEntry, GitResult, GitStatusFile, HarnessId, HookConfig, HookSavePayload, ImageAttachment, ListDirEntry, LoadSessionMessagesResult, Locale, MarketplacePlugin, MarketplacePluginDetail, MarketplaceScope, McpCheckResult, McpLibraryEntry, McpServerConfig, McpServerInfo, McpServerMeta, MediaProviderStatus, UpsertMediaProviderRequest, MentionSearchItem, ModelOption, PermissionMode, PinnedSessionEntry, PluginDetail, PluginInfo, ProviderEndpointTestResponse, QuestionAnnotations, RecentFolder, RemoteDeviceConfig, ResourceScope, RewindFilesResult, SandboxInfo, SandboxMode, SandboxProbeResult, SendMessageRequest, SessionHistoryEntry, SessionSettingsPatch, SetupEvent, SkillDetail, SkillInfo, SlashCommandInfo, StartupData, TerminalEvent, TerminalListItem, TerminalSnapshot, ThemeMode, UpdateAutomationRequest, UpdateEvent, UpdateProviderRequest, WorktreeActivateRequest, WorktreeInfo, WorktreeHandoffResult, WorktreeAssignResult, SessionForkRequest, SessionForkResult } from '@superone/shared/agent-types'
 import type { MiniAppEntry, MiniAppInstallMeta, MiniAppInstallResult, MiniAppPackResult, MiniAppPreviewResult, MiniAppToolCallRequest, MiniAppFsWatchEvent, MiniAppToolInterceptOpenRequest, MiniAppWorkerInfo, DevRegistryEntry, DevRegistryView } from '@superone/shared/miniapp-types'
 import type { McpbInstallRequest, McpbInstalledEntry, McpbPreview } from '@superone/shared/mcpb-types'
 import type { LiveSessionSnapshot } from '@superone/shared/session-types'
 import type { ModelCatalog } from '@superone/shared/model-catalog-types'
 import type { ConsumerBinding, ConsumerId, Credential, EndpointOverride, Platform, ServiceEndpoint } from '@superone/shared/platform-registry'
+import type { EnvironmentListItem, ProjectSnapshot, SupervisorSnapshot } from '@superone/shared/environment'
 
 
 interface AgentAPI {
@@ -105,6 +106,16 @@ interface AppAPI {
   updatePlugins(projectPath: string, updates: Array<{ key: string; scope: ResourceScope }>): Promise<void>
   updateMarketplace(name: string): Promise<void>
   getGithubStars(repoSlug: string): Promise<number | null>
+  /** Repos under a GitHub user/org for the add-project picker (`owner/` search). */
+  searchGithubRepos(owner: string): Promise<
+    Array<{
+      owner: string
+      name: string
+      fullName: string
+      description: string | null
+      private: boolean
+    }>
+  >
   cacheRemoteImage(url: string): Promise<string | null>
   resolveFavicon(url: string, isDark: boolean): Promise<string | null>
   cacheFavicon(pageUrl: string, faviconUrl: string, isDark: boolean): Promise<void>
@@ -119,6 +130,11 @@ interface AppAPI {
 
   // Skills
   listSkills(projectPath: string): Promise<SkillInfo[]>
+  /** Project skills + slash commands (remote node or local project dirs). */
+  listSlashResources(projectPath: string): Promise<{
+    skills: SlashCommandInfo[]
+    commands: SlashCommandInfo[]
+  }>
   readSkill(projectPath: string, name: string, sourcePath?: string): Promise<SkillDetail | null>
   readSkillFile(projectPath: string, skillName: string, relativePath: string, sourcePath?: string): Promise<string | null>
   installSkill(sourcePath: string): Promise<SkillInfo>
@@ -396,8 +412,8 @@ interface AppAPI {
   getCheckedOutBranches(folderPath: string): Promise<string[]>
   activateWorktree(folderPath: string, request: WorktreeActivateRequest | null): Promise<{ ok: true; path: string } | { ok: false; error: string }>
   switchToExistingWorktree(folderPath: string, wtPath: string, gitBranch: string | null): Promise<{ ok: true } | { ok: false; error: string }>
-  handoffToLocal(worktreePath: string): Promise<WorktreeHandoffResult>
-  getHandoffPreview(worktreePath: string): Promise<GitDirtyStatus | null>
+  handoffToLocal(worktreePath: string, folderPath?: string): Promise<WorktreeHandoffResult>
+  getHandoffPreview(worktreePath: string, folderPath?: string): Promise<GitDirtyStatus | null>
   assignBranch(folderPath: string, worktreePath: string, name: string): Promise<WorktreeAssignResult>
   forkSession(request: SessionForkRequest): Promise<SessionForkResult>
   getGitStatusFiles(folderPath: string): Promise<GitStatusFile[]>
@@ -523,6 +539,177 @@ interface TerminalAPI {
   onTerminalEvent(callback: (event: TerminalEvent) => void): () => void
 }
 
+/** Multi-environment / remote node — Main EnvironmentHost product path. */
+export interface EnvironmentAPI {
+  list(): Promise<unknown[]>
+  getLocalId(): Promise<string>
+  workspaceListDir(
+    project: { environmentId: string; projectId: string },
+    relativePath: string,
+  ): Promise<unknown>
+  workspaceReadFile(
+    project: { environmentId: string; projectId: string },
+    relativePath: string,
+  ): Promise<unknown>
+  pairRemote(input: {
+    baseUrl: string
+    pairingToken: string
+    label: string
+  }): Promise<{ connectionId: string; descriptor: unknown; persisted: boolean }>
+  connectWithFailover(connectionId: string): Promise<unknown>
+  /** Dev-only: probe local remote-node lab on loopback. */
+  localLabStatus(): Promise<{
+    available: boolean
+    baseUrl: string
+    label: string
+    nodeHome: string
+    reachable: boolean
+    environmentId?: string
+    nodePublicKeyFingerprint?: string
+    error?: string
+    startHint: string
+  }>
+  /** Dev-only: mint token + pair/connect to local lab. */
+  pairLocalLab(): Promise<{
+    connectionId: string
+    alreadyPaired: boolean
+    persisted: boolean
+    baseUrl: string
+    label: string
+  }>
+
+  listItems(): Promise<EnvironmentListItem[]>
+  addOverSsh(input: {
+    destination: string
+    remoteExec?: string
+    installSource?: 'registry' | 'upload'
+    packageVersion?: string
+    remotePort?: number
+    remoteNodeHome?: string
+    sshPort?: number
+    identityFile?: string
+    label?: string
+  }): Promise<{
+    connectionId: string
+    persisted: boolean
+    warnings: string[]
+    installed?: {
+      version: string
+      target: string
+      sha256: string
+      remoteExec: string
+      source: 'registry' | 'upload'
+    }
+  }>
+  /** Host aliases from the local OpenSSH client config (~/.ssh/config). */
+  listSshConfigHosts(): Promise<SshConfigHostEntry[]>
+  /** Projects for sidebar: `local` or a remote connectionId (must be connected). */
+  listProjects(connectionId: string, options?: { refresh?: boolean }): Promise<ProjectSnapshot[]>
+  /** Open/register a project path on a host; `createIfMissing` backs "Create & Add". */
+  openProject(
+    connectionId: string,
+    projectPath: string,
+    opts?: { createIfMissing?: boolean },
+  ): Promise<ProjectSnapshot>
+  /** Unregister a project from a host list (does not delete disk files). */
+  removeProject(
+    connectionId: string,
+    input: { projectId?: string; path?: string },
+  ): Promise<{ projectId?: string; path: string; name?: string; lastActiveAt?: number }>
+  /** List sessions on a remote node project (local uses window.app.listSessions*). */
+  listSessions(
+    connectionId: string,
+    projectId: string,
+  ): Promise<
+    Array<{
+      sessionId: string
+      title: string
+      lastActiveAt: string
+      provider?: string
+      messageCount: number
+      isPinned?: boolean
+      isHidden?: boolean
+    }>
+  >
+  /** Create a session on a remote node project. */
+  createSession(
+    connectionId: string,
+    input: { projectId: string; title?: string; providerId?: string; harnessId?: string },
+  ): Promise<{
+    sessionId: string
+    title: string
+    lastActiveAt: string
+    provider?: string
+    messageCount: number
+  }>
+  getSession(connectionId: string, sessionId: string): Promise<unknown>
+  sendSessionMessage(
+    connectionId: string,
+    input: {
+      sessionId: string
+      text: string
+      clientMessageId?: string
+      projectPath?: string
+      providerId?: string
+      cwdHostPath?: string | null
+      model?: string | null
+    },
+  ): Promise<unknown>
+  /** Poll durable node `session.events` after sequence (exclusive). */
+  listSessionEvents(connectionId: string, afterSequence?: string): Promise<unknown[]>
+  interruptSession(connectionId: string, sessionId: string): Promise<void>
+  renameSession(connectionId: string, sessionId: string, title: string): Promise<unknown>
+  removeSession(connectionId: string, sessionId: string): Promise<unknown>
+  setSessionUiFlags(
+    connectionId: string,
+    sessionId: string,
+    flags: { isPinned?: boolean; isHidden?: boolean },
+  ): Promise<unknown>
+  respondSessionPermission(
+    connectionId: string,
+    input: {
+      sessionId: string
+      interactionId: string
+      decision: 'allow' | 'deny' | 'allow_always'
+    },
+  ): Promise<void>
+  /** Directory listing for the add-project path browser. */
+  browsePath(
+    connectionId: string,
+    absolutePath: string,
+  ): Promise<{ path: string; entries: Array<{ name: string; path: string; type: 'directory' }> }>
+  /** Clone a repository onto a host and register the clone as a project. */
+  cloneRepository(
+    connectionId: string,
+    input: { remoteUrl: string; parentPath: string; directoryName?: string },
+  ): Promise<{ projectId: string; path: string; name: string; lastActiveAt?: number }>
+  connect(connectionId: string): Promise<unknown>
+  disconnect(connectionId: string): Promise<void>
+  forget(connectionId: string): Promise<void>
+  onStatusEvent(callback: (snapshot: SupervisorSnapshot) => void): () => void
+  onInstallProgress(callback: (progress: EnvironmentInstallProgress) => void): () => void
+}
+
+/** SSH bootstrap progress pushed while an environment is being added. */
+export type EnvironmentInstallProgress =
+  | { phase: 'probing' }
+  | {
+      phase: 'installing'
+      step: 'npm' | 'upload' | 'verify' | 'extract' | 'activate'
+      detail?: string
+    }
+  | { phase: 'starting' }
+  | { phase: 'pairing' }
+
+/** Selectable Host from local ~/.ssh/config (see main environment/ssh-config). */
+export interface SshConfigHostEntry {
+  alias: string
+  hostName?: string
+  user?: string
+  port?: number
+  identityFile?: string
+  display: string
+}
 
 declare global {
   interface Window {
@@ -530,6 +717,7 @@ declare global {
     agent: AgentAPI
     terminal: TerminalAPI
     app: AppAPI
+    environment: EnvironmentAPI
     miniapp: MiniAppAPI
     browserHost: BrowserHostAPI
   }

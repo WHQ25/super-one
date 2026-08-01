@@ -25,7 +25,14 @@ export function RenameSessionDialog({ target, onClose, onRenamed }: RenameSessio
 
   const submit = async () => {
     if (!target || !value.trim()) return
-    await window.app.renameSession(target.sessionId, value.trim())
+    const title = value.trim()
+    const { parseRemoteProjectKey } = await import('@/lib/remote-project-key')
+    const remote = parseRemoteProjectKey(target.folderPath)
+    if (remote) {
+      await window.environment.renameSession(remote.connectionId, target.sessionId, title)
+    } else {
+      await window.app.renameSession(target.sessionId, title)
+    }
     onRenamed(target)
     onClose()
   }

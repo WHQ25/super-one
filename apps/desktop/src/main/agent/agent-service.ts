@@ -68,7 +68,7 @@ import { getSharedCodexSkillsService } from '../codex/codex-skills-rpc-singleton
 import { readAppSettings, saveAppSettings } from '../app-settings-service'
 import { listCodexMcpConfigs } from '../codex-config-service'
 import { discoverAllAgents, discoverProjectCommands, readAgentFile } from './discover-resources'
-import { listPlugins, readPluginContent, readPluginFile, deletePlugin, listMarketplacePlugins, installPlugin, updatePlugin, updateMarketplace, addMarketplace, removeMarketplace, readMarketplacePluginContent, readMarketplacePluginFile, getGithubStars } from '../plugins-service'
+import { listPlugins, readPluginContent, readPluginFile, deletePlugin, listMarketplacePlugins, installPlugin, updatePlugin, updateMarketplace, addMarketplace, removeMarketplace, readMarketplacePluginContent, readMarketplacePluginFile, getGithubStars, listGithubReposForOwner } from '../plugins-service'
 import { cacheRemoteImage } from '../image-cache'
 import { resolveFavicon, cacheCapturedFavicon } from '../favicon'
 import { backupMcpServers, listLibrary, deleteLibraryEntry, getLibraryEntry } from '../mcp-library-service'
@@ -1836,6 +1836,22 @@ export class AgentService {
     })
 
     ipcMain.handle(AgentIpcChannels.LIST_DIRECTORY, async (_event, projectPath: string, relativePath: string) => {
+      const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
+      if (parseRemoteProjectKey(projectPath)) {
+        try {
+          const { getEnvironmentHost } = await import('../environment')
+          const { listRemoteDirectoryForMentions } = await import('../environment/remote-mentions')
+          return (
+            (await listRemoteDirectoryForMentions(
+              getEnvironmentHost(),
+              projectPath,
+              relativePath ?? '',
+            )) ?? []
+          )
+        } catch {
+          return []
+        }
+      }
       const cwd = this.sessionManager?.getActiveSession(projectPath)?.snapshot.cwd ?? projectPath
       const target = resolve(cwd, relativePath)
       if (!target.startsWith(cwd)) return []
@@ -1874,12 +1890,41 @@ export class AgentService {
     })
 
     ipcMain.handle(AgentIpcChannels.SEARCH_FILES, async (_event, projectPath: string, query: string, additionalDirs?: string[]) => {
+      const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
+      if (parseRemoteProjectKey(projectPath)) {
+        try {
+          const { getEnvironmentHost } = await import('../environment')
+          const { searchRemoteFiles } = await import('../environment/remote-mentions')
+          return (await searchRemoteFiles(getEnvironmentHost(), projectPath, query, 20)) ?? []
+        } catch {
+          return []
+        }
+      }
       const cwd = this.sessionManager?.getActiveSession(projectPath)?.snapshot.cwd ?? projectPath
       const roots = [cwd, ...(additionalDirs || [])]
       return searchFiles(roots, query, 20)
     })
 
     ipcMain.handle(AgentIpcChannels.SEARCH_MENTIONS, async (_event, projectPath: string, query: string, agents: AgentEntry[], additionalDirs?: string[], scopeDir?: string) => {
+      const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
+      if (parseRemoteProjectKey(projectPath)) {
+        try {
+          const { getEnvironmentHost } = await import('../environment')
+          const { searchRemoteMentions } = await import('../environment/remote-mentions')
+          return (
+            (await searchRemoteMentions(
+              getEnvironmentHost(),
+              projectPath,
+              query,
+              agents ?? [],
+              scopeDir,
+              20,
+            )) ?? []
+          )
+        } catch {
+          return []
+        }
+      }
       const cwd = this.sessionManager?.getActiveSession(projectPath)?.snapshot.cwd ?? projectPath
       const roots = [cwd, ...(additionalDirs || [])]
       return searchMentions(roots, query, agents, 20, scopeDir)
@@ -1961,6 +2006,10 @@ export class AgentService {
       return getGithubStars(repoSlug)
     })
 
+    ipcMain.handle(AgentIpcChannels.PLUGINS_GITHUB_SEARCH_REPOS, async (_event, owner: string) => {
+      return listGithubReposForOwner(owner)
+    })
+
     ipcMain.handle(AgentIpcChannels.CACHE_IMAGE, async (_event, url: string) => {
       return cacheRemoteImage(url)
     })
@@ -1991,8 +2040,52 @@ export class AgentService {
 
     // --- Skills (session-scoped) ---
 
-    ipcMain.handle(AgentIpcChannels.SKILLS_LIST, (_event, projectPath: string) => {
+    ipcMain.handle(AgentIpcChannels.SKILLS_LIST, async (_event, projectPath: string) => {
+      const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
+      if (parseRemoteProjectKey(projectPath)) {
+        try {
+          const { getEnvironmentHost } = await import('../environment')
+          const { listRemoteSkillsAndCommands } = await import('../environment/remote-mentions')
+          const listed = await listRemoteSkillsAndCommands(getEnvironmentHost(), projectPath)
+          if (!listed) return []
+          // SkillInfo shape for settings UI — map slash entries.
+          return listed.skills.map((s) => ({
+            name: s.name,
+            description: s.description,
+            argumentHint: s.argumentHint,
+            scope: 'project' as const,
+            hasConfig: false,
+            sourcePath: '',
+          }))
+        } catch {
+          return []
+        }
+      }
       return listSkills(projectPath)
+    })
+
+    ipcMain.handle(AgentIpcChannels.SLASH_RESOURCES_LIST, async (_event, projectPath: string) => {
+      const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
+      if (parseRemoteProjectKey(projectPath)) {
+        try {
+          const { getEnvironmentHost } = await import('../environment')
+          const { listRemoteSkillsAndCommands } = await import('../environment/remote-mentions')
+          return (
+            (await listRemoteSkillsAndCommands(getEnvironmentHost(), projectPath)) ?? {
+              skills: [],
+              commands: [],
+            }
+          )
+        } catch {
+          return { skills: [], commands: [] }
+        }
+      }
+      // Local: project-scoped discovery only (user skills already in harnessResources).
+      const { discoverProjectSkills, discoverProjectCommands } = await import('./discover-resources')
+      return {
+        skills: discoverProjectSkills(projectPath),
+        commands: discoverProjectCommands(projectPath),
+      }
     })
 
     ipcMain.handle(AgentIpcChannels.SKILLS_READ, (_event, projectPath: string, name: string, sourcePath?: string) => {
@@ -2443,8 +2536,10 @@ export class AgentService {
     ipcMain.removeHandler(AgentIpcChannels.PLUGINS_UPDATE)
     ipcMain.removeHandler(AgentIpcChannels.PLUGINS_UPDATE_MARKETPLACE)
     ipcMain.removeHandler(AgentIpcChannels.PLUGINS_GITHUB_STARS)
+    ipcMain.removeHandler(AgentIpcChannels.PLUGINS_GITHUB_SEARCH_REPOS)
     ipcMain.removeHandler(AgentIpcChannels.CACHE_IMAGE)
     ipcMain.removeHandler(AgentIpcChannels.SKILLS_LIST)
+    ipcMain.removeHandler(AgentIpcChannels.SLASH_RESOURCES_LIST)
     ipcMain.removeHandler(AgentIpcChannels.SKILLS_READ)
     ipcMain.removeHandler(AgentIpcChannels.SKILLS_READ_FILE)
     ipcMain.removeHandler(AgentIpcChannels.SKILLS_INSTALL)

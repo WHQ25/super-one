@@ -3,6 +3,7 @@ import { electronAPI } from '@electron-toolkit/preload'
 import { AgentIpcChannels, type AgentEvent, type NativeContextMenuItemSpec, type AgentPrewarmHint, type BashOutputEvent, type CodexCollaborationMode, type CodexGoalStatus, type CodexPermissionPreset, type CodexReasoningEffort, type CodexReviewTarget, type CodexExternalAgentItem, type ProviderEndpointTestResponse, type DiscoverModelsResult, type RemoteDeviceConfig, type SandboxMode, type SendMessageRequest, type ContentBlock, type ChatMessageContext, type WorktreeActivateRequest, type WorktreeHandoffResult, type WorktreeAssignResult, type GitDirtyStatus, type SessionForkRequest, type SessionForkResult, type HookSavePayload, type TerminalEvent, type TerminalListItem, type TerminalSnapshot, type HarnessId, type BrowserCertError, type BrowserOpenTabRequest, type UpsertMediaProviderRequest, type ThemeMode } from '@superone/shared/agent-types'
 import type { McpbInstallRequest } from '@superone/shared/mcpb-types'
 import type { ConsumerBinding, ConsumerId, Credential, EndpointOverride, Platform, ServiceEndpoint } from '@superone/shared/platform-registry'
+import type { ProjectSnapshot } from '@superone/shared/environment'
 import { forEachAgentEventPayload } from './agent-event-payload'
 
 // Do not try to name this renderer via `process.title` here — it cannot work.
@@ -155,6 +156,219 @@ const agentAPI = {
     return () => {
       ipcRenderer.removeListener(AgentIpcChannels.EVENT, handler)
     }
+  },
+}
+
+/** Multi-environment / remote node — product path is Main EnvironmentHost. */
+const environmentAPI = {
+  list: () => ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_LIST),
+  getLocalId: () =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_GET_LOCAL_ID) as Promise<string>,
+  workspaceListDir: (
+    project: { environmentId: string; projectId: string },
+    relativePath: string,
+  ) => ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_WORKSPACE_LIST_DIR, project, relativePath),
+  workspaceReadFile: (
+    project: { environmentId: string; projectId: string },
+    relativePath: string,
+  ) => ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_WORKSPACE_READ_FILE, project, relativePath),
+  pairRemote: (input: { baseUrl: string; pairingToken: string; label: string }) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_PAIR_REMOTE, input),
+  connectWithFailover: (connectionId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_CONNECT_FAILOVER, connectionId),
+  /** Dev-only: status of local remote-node lab (`bun run dev:cli:lab`). */
+  localLabStatus: () =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_LOCAL_LAB_STATUS) as Promise<{
+      available: boolean
+      baseUrl: string
+      label: string
+      nodeHome: string
+      reachable: boolean
+      environmentId?: string
+      nodePublicKeyFingerprint?: string
+      error?: string
+      startHint: string
+    }>,
+  /** Dev-only: one-click pair/connect to local lab. */
+  pairLocalLab: () =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_PAIR_LOCAL_LAB) as Promise<{
+      connectionId: string
+      alreadyPaired: boolean
+      persisted: boolean
+      baseUrl: string
+      label: string
+    }>,
+
+  // Environment management (Settings → Environments)
+  listItems: () => ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_LIST_ITEMS),
+  addOverSsh: (input: {
+    destination: string
+    remoteExec?: string
+    /** Default registry (`@super-one/cli`); `upload` for local dist / debug. */
+    installSource?: 'registry' | 'upload'
+    packageVersion?: string
+    remotePort?: number
+    remoteNodeHome?: string
+    sshPort?: number
+    identityFile?: string
+    label?: string
+  }) => ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_ADD_OVER_SSH, input),
+  listSshConfigHosts: () =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_LIST_SSH_CONFIG_HOSTS) as Promise<
+      Array<{
+        alias: string
+        hostName?: string
+        user?: string
+        port?: number
+        identityFile?: string
+        display: string
+      }>
+    >,
+  listProjects: (connectionId: string, options?: { refresh?: boolean }) =>
+    ipcRenderer.invoke(
+      AgentIpcChannels.ENVIRONMENT_LIST_PROJECTS,
+      connectionId,
+      options,
+    ) as Promise<ProjectSnapshot[]>,
+  openProject: (
+    connectionId: string,
+    projectPath: string,
+    opts?: { createIfMissing?: boolean },
+  ) =>
+    ipcRenderer.invoke(
+      AgentIpcChannels.ENVIRONMENT_OPEN_PROJECT,
+      connectionId,
+      projectPath,
+      opts,
+    ) as Promise<ProjectSnapshot>,
+  removeProject: (connectionId: string, input: { projectId?: string; path?: string }) =>
+    ipcRenderer.invoke(
+      AgentIpcChannels.ENVIRONMENT_REMOVE_PROJECT,
+      connectionId,
+      input,
+    ) as Promise<{ projectId?: string; path: string; name?: string; lastActiveAt?: number }>,
+  listSessions: (connectionId: string, projectId: string) =>
+    ipcRenderer.invoke(
+      AgentIpcChannels.ENVIRONMENT_LIST_SESSIONS,
+      connectionId,
+      projectId,
+    ) as Promise<
+      Array<{
+        sessionId: string
+        title: string
+        lastActiveAt: string
+        provider?: string
+        messageCount: number
+      }>
+    >,
+  createSession: (
+    connectionId: string,
+    input: { projectId: string; title?: string; providerId?: string; harnessId?: string },
+  ) =>
+    ipcRenderer.invoke(
+      AgentIpcChannels.ENVIRONMENT_CREATE_SESSION,
+      connectionId,
+      input,
+    ) as Promise<{
+      sessionId: string
+      title: string
+      lastActiveAt: string
+      provider?: string
+      messageCount: number
+    }>,
+  getSession: (connectionId: string, sessionId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_GET_SESSION, connectionId, sessionId),
+  sendSessionMessage: (
+    connectionId: string,
+    input: {
+      sessionId: string
+      text: string
+      clientMessageId?: string
+      projectPath?: string
+      providerId?: string
+      cwdHostPath?: string | null
+      model?: string | null
+    },
+  ) =>
+    ipcRenderer.invoke(
+      AgentIpcChannels.ENVIRONMENT_SEND_SESSION_MESSAGE,
+      connectionId,
+      input,
+    ),
+  listSessionEvents: (connectionId: string, afterSequence?: string) =>
+    ipcRenderer.invoke(
+      AgentIpcChannels.ENVIRONMENT_LIST_SESSION_EVENTS,
+      connectionId,
+      afterSequence ?? '0',
+    ),
+  interruptSession: (connectionId: string, sessionId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_INTERRUPT_SESSION, connectionId, sessionId),
+  renameSession: (connectionId: string, sessionId: string, title: string) =>
+    ipcRenderer.invoke(
+      AgentIpcChannels.ENVIRONMENT_RENAME_SESSION,
+      connectionId,
+      sessionId,
+      title,
+    ),
+  removeSession: (connectionId: string, sessionId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_REMOVE_SESSION, connectionId, sessionId),
+  setSessionUiFlags: (
+    connectionId: string,
+    sessionId: string,
+    flags: { isPinned?: boolean; isHidden?: boolean },
+  ) =>
+    ipcRenderer.invoke(
+      AgentIpcChannels.ENVIRONMENT_SET_SESSION_UI_FLAGS,
+      connectionId,
+      sessionId,
+      flags,
+    ),
+  respondSessionPermission: (
+    connectionId: string,
+    input: {
+      sessionId: string
+      interactionId: string
+      decision: 'allow' | 'deny' | 'allow_always'
+    },
+  ) =>
+    ipcRenderer.invoke(
+      AgentIpcChannels.ENVIRONMENT_RESPOND_SESSION_PERMISSION,
+      connectionId,
+      input,
+    ),
+  browsePath: (connectionId: string, absolutePath: string) =>
+    ipcRenderer.invoke(
+      AgentIpcChannels.ENVIRONMENT_BROWSE_PATH,
+      connectionId,
+      absolutePath,
+    ) as Promise<{
+      path: string
+      entries: Array<{ name: string; path: string; type: 'directory' }>
+    }>,
+  cloneRepository: (
+    connectionId: string,
+    input: { remoteUrl: string; parentPath: string; directoryName?: string },
+  ) =>
+    ipcRenderer.invoke(
+      AgentIpcChannels.ENVIRONMENT_CLONE_REPOSITORY,
+      connectionId,
+      input,
+    ) as Promise<{ projectId: string; path: string; name: string; lastActiveAt?: number }>,
+  connect: (connectionId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_CONNECT, connectionId),
+  disconnect: (connectionId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_DISCONNECT, connectionId),
+  forget: (connectionId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_FORGET, connectionId),
+  onStatusEvent: (callback: (snapshot: unknown) => void) => {
+    const handler = (_e: unknown, snapshot: unknown): void => callback(snapshot)
+    ipcRenderer.on(AgentIpcChannels.ENVIRONMENT_STATUS_EVENT, handler)
+    return () => ipcRenderer.removeListener(AgentIpcChannels.ENVIRONMENT_STATUS_EVENT, handler)
+  },
+  onInstallProgress: (callback: (progress: unknown) => void) => {
+    const handler = (_e: unknown, progress: unknown): void => callback(progress)
+    ipcRenderer.on(AgentIpcChannels.ENVIRONMENT_INSTALL_PROGRESS, handler)
+    return () => ipcRenderer.removeListener(AgentIpcChannels.ENVIRONMENT_INSTALL_PROGRESS, handler)
   },
 }
 
@@ -439,6 +653,17 @@ const appAPI = {
   getGithubStars: (repoSlug: string) =>
     ipcRenderer.invoke(AgentIpcChannels.PLUGINS_GITHUB_STARS, repoSlug),
 
+  searchGithubRepos: (owner: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.PLUGINS_GITHUB_SEARCH_REPOS, owner) as Promise<
+      Array<{
+        owner: string
+        name: string
+        fullName: string
+        description: string | null
+        private: boolean
+      }>
+    >,
+
   cacheRemoteImage: (url: string) =>
     ipcRenderer.invoke(AgentIpcChannels.CACHE_IMAGE, url),
 
@@ -466,6 +691,11 @@ const appAPI = {
   // Skills
   listSkills: (projectPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.SKILLS_LIST, projectPath),
+  listSlashResources: (projectPath: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.SLASH_RESOURCES_LIST, projectPath) as Promise<{
+      skills: Array<{ name: string; description: string; argumentHint: string; isSkill: boolean }>
+      commands: Array<{ name: string; description: string; argumentHint: string; isSkill: boolean }>
+    }>,
   readSkill: (projectPath: string, name: string, sourcePath?: string) =>
     ipcRenderer.invoke(AgentIpcChannels.SKILLS_READ, projectPath, name, sourcePath),
   readSkillFile: (projectPath: string, skillName: string, relativePath: string, sourcePath?: string) =>
@@ -1062,10 +1292,10 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.GIT_ACTIVATE_WORKTREE, folderPath, request),
   switchToExistingWorktree: (folderPath: string, wtPath: string, gitBranch: string | null) =>
     ipcRenderer.invoke(AgentIpcChannels.GIT_SWITCH_WORKTREE, folderPath, wtPath, gitBranch) as Promise<{ ok: true } | { ok: false; error: string }>,
-  handoffToLocal: (worktreePath: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.GIT_HANDOFF_TO_LOCAL, worktreePath) as Promise<WorktreeHandoffResult>,
-  getHandoffPreview: (worktreePath: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.GIT_HANDOFF_PREVIEW, worktreePath) as Promise<GitDirtyStatus | null>,
+  handoffToLocal: (worktreePath: string, folderPath?: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.GIT_HANDOFF_TO_LOCAL, worktreePath, folderPath) as Promise<WorktreeHandoffResult>,
+  getHandoffPreview: (worktreePath: string, folderPath?: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.GIT_HANDOFF_PREVIEW, worktreePath, folderPath) as Promise<GitDirtyStatus | null>,
   assignBranch: (folderPath: string, worktreePath: string, name: string) =>
     ipcRenderer.invoke(AgentIpcChannels.GIT_ASSIGN_BRANCH, folderPath, worktreePath, name) as Promise<WorktreeAssignResult>,
   forkSession: (request: SessionForkRequest) =>
@@ -1444,6 +1674,7 @@ if (process.contextIsolated) {
     contextBridge.exposeInMainWorld('agent', agentAPI)
     contextBridge.exposeInMainWorld('terminal', terminalAPI)
     contextBridge.exposeInMainWorld('app', appAPI)
+    contextBridge.exposeInMainWorld('environment', environmentAPI)
     contextBridge.exposeInMainWorld('miniapp', miniappAPI)
     contextBridge.exposeInMainWorld('browserHost', browserHostAPI)
   } catch (error) {
@@ -1458,6 +1689,8 @@ if (process.contextIsolated) {
   window.terminal = terminalAPI
   // @ts-ignore
   window.app = appAPI
+  // @ts-ignore
+  window.environment = environmentAPI
   // @ts-ignore
   window.miniapp = miniappAPI
   // @ts-ignore

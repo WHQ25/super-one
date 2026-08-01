@@ -1,10 +1,15 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 let downgradeDuringCheck: boolean | undefined
 
 const autoUpdater = {
   channel: '',
   allowDowngrade: false,
+  autoDownload: false,
+  autoInstallOnAppQuit: false,
+  forceDevUpdateConfig: false,
+  logger: null as unknown,
+  on: vi.fn(),
   checkForUpdates: vi.fn(() => {
     downgradeDuringCheck = autoUpdater.allowDowngrade
     return Promise.resolve(null)
@@ -16,7 +21,32 @@ vi.mock('electron', () => ({ BrowserWindow: class {} }))
 vi.mock('@electron-toolkit/utils', () => ({ is: { dev: false } }))
 vi.mock('./logger', () => ({ default: { info: vi.fn(), warn: vi.fn() } }))
 
-const { setUpdateChannel } = await import('./updater')
+const { setUpdateChannel, initUpdater, checkForUpdates } = await import('./updater')
+
+describe('update check scheduling', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    autoUpdater.checkForUpdates.mockClear()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('checks once on startup and never again on a timer', () => {
+    initUpdater({ isDestroyed: () => true } as never)
+    expect(autoUpdater.checkForUpdates).toHaveBeenCalledOnce()
+
+    vi.advanceTimersByTime(24 * 60 * 60 * 1000)
+    expect(autoUpdater.checkForUpdates).toHaveBeenCalledOnce()
+  })
+
+  it('still checks on demand when the user asks manually', () => {
+    initUpdater({ isDestroyed: () => true } as never)
+    checkForUpdates()
+    expect(autoUpdater.checkForUpdates).toHaveBeenCalledTimes(2)
+  })
+})
 
 describe('manual update channel switching', () => {
   beforeEach(() => {

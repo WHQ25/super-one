@@ -69,6 +69,13 @@ describe('resolveMarkdownMedia', () => {
     expect(result).toBe('![alt](local-file:///Users/foo/project/image.png)')
   })
 
+  it('should resolve remote project images to remote-media refs', () => {
+    const remote = 'remote:conn-1:/Users/foo/project'
+    const result = resolveMarkdownMedia('![alt](./shot.png)', remote)
+    expect(result.startsWith('![alt](remote-media://ref/')).toBe(true)
+    expect(result.endsWith(')')).toBe(true)
+  })
+
   it('should resolve relative image path without ./', () => {
     const input = '![alt](image.png)'
     const result = resolveMarkdownMedia(input, project)

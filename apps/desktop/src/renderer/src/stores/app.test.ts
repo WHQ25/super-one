@@ -56,6 +56,11 @@ vi.mock('./chat', () => {
           setHarnessResources: mockSetHarnessResources,
           initializeHarness: mockInitializeHarness,
           ensureSession: vi.fn(),
+          switchSession: vi.fn(async (sessionId: string) => {
+            state.activeProject = state.activeProject
+            void sessionId
+            notify()
+          }),
           focusProject: vi.fn(async (projectPath: string) => {
             state.activeProject = projectPath
             notify()
@@ -63,8 +68,9 @@ vi.mock('./chat', () => {
           resetSessionForWorktreeSwitch,
           activeProject: state.activeProject,
         }),
-        setState: (fn: (s: typeof state) => Partial<typeof state>) => {
-          Object.assign(state, fn(state))
+        setState: (partial: Partial<typeof state> | ((s: typeof state) => Partial<typeof state>)) => {
+          const next = typeof partial === 'function' ? partial(state) : partial
+          Object.assign(state, next)
           notify()
         },
         subscribe: (listener: (s: typeof state) => void) => {
@@ -89,9 +95,25 @@ const mockWindowApp = {
   connectCodex: vi.fn().mockResolvedValue({ models: [] }),
 }
 
+const mockEnvironment = {
+  listItems: vi.fn().mockResolvedValue([]),
+  listProjects: vi.fn().mockResolvedValue([]),
+  connect: vi.fn().mockResolvedValue(undefined),
+  openProject: vi.fn(),
+  listSessions: vi.fn().mockResolvedValue([]),
+  createSession: vi.fn().mockResolvedValue({
+    sessionId: 'node-session-1',
+    title: 'New session',
+    lastActiveAt: new Date().toISOString(),
+    messageCount: 0,
+  }),
+  getSession: vi.fn().mockResolvedValue(null),
+}
+
 const storage: Record<string, string> = {}
 vi.stubGlobal('window', {
   app: mockWindowApp,
+  environment: mockEnvironment,
   localStorage: {
     getItem: (key: string) => storage[key] ?? null,
     setItem: (key: string, value: string) => { storage[key] = value },
@@ -108,6 +130,7 @@ function resetStore(overrides: Record<string, unknown> = {}) {
     view: 'loading',
     currentFolder: null,
     recentFolders: [],
+    isSwitchingHostProject: false,
     _worktrees: {},
     ...overrides,
   })
@@ -251,6 +274,236 @@ describe('selectProject', () => {
 
     expect(useAppStore.getState().view).toBe('main')
     expect(useAppStore.getState().currentFolder).toBe('/new')
+  })
+
+  it('opens an already-keyed remote project exactly once', async () => {
+    mockEnvironment.openProject.mockResolvedValue({
+      projectId: 'p1',
+      path: '/work/remote-app',
+      name: 'remote-app',
+    })
+    resetStore({ selectedHostConnectionId: 'env-remote' })
+
+    await useAppStore.getState().selectProject('remote:env-remote:/work/remote-app', {
+      connectionId: 'env-remote',
+      projectId: 'p1',
+    })
+
+    expect(mockEnvironment.openProject).toHaveBeenCalledWith('env-remote', '/work/remote-app')
+    expect(useAppStore.getState().currentFolder).toBe('remote:env-remote:/work/remote-app')
+    expect(useChatStore.getState().activeProject).toBe('remote:env-remote:/work/remote-app')
+  })
+})
+
+describe('setSelectedHostConnectionId', () => {
+  it('opens the default project when no project was selected before the host switch', async () => {
+    mockEnvironment.listItems.mockResolvedValue([
+      { connectionId: 'env-remote', state: 'connected', label: 'lab' },
+    ])
+    mockEnvironment.listProjects.mockResolvedValue([
+      { projectId: 'p1', path: '/work/remote-app', name: 'remote-app', lastActiveAt: 1 },
+    ])
+    mockEnvironment.openProject.mockResolvedValue({
+      projectId: 'p1',
+      path: '/work/remote-app',
+      name: 'remote-app',
+    })
+    resetStore({ selectedHostConnectionId: 'local', currentFolder: null })
+
+    useAppStore.getState().setSelectedHostConnectionId('env-remote')
+
+    await vi.waitFor(() => {
+      expect(useAppStore.getState().currentFolder).toBe('remote:env-remote:/work/remote-app')
+    })
+    expect(mockEnvironment.listProjects).toHaveBeenCalledWith('env-remote')
+  })
+
+  it('retries default selection when the selected host still has no active project', async () => {
+    mockEnvironment.listItems.mockResolvedValue([
+      { connectionId: 'env-remote', state: 'connected', label: 'lab' },
+    ])
+    mockEnvironment.listProjects.mockResolvedValue([
+      { projectId: 'p1', path: '/work/remote-app', name: 'remote-app', lastActiveAt: 1 },
+    ])
+    mockEnvironment.openProject.mockResolvedValue({
+      projectId: 'p1',
+      path: '/work/remote-app',
+      name: 'remote-app',
+    })
+    resetStore({ selectedHostConnectionId: 'env-remote', currentFolder: null })
+
+    useAppStore.getState().setSelectedHostConnectionId('env-remote')
+
+    await vi.waitFor(() => {
+      expect(useAppStore.getState().currentFolder).toBe('remote:env-remote:/work/remote-app')
+    })
+  })
+
+  it('opens the remote host default project after switching away from local', async () => {
+    mockEnvironment.listItems.mockResolvedValue([
+      { connectionId: 'env-remote', state: 'connected', label: 'lab' },
+    ])
+    mockEnvironment.listProjects.mockResolvedValue([
+      { projectId: 'p1', path: '/work/remote-app', name: 'remote-app', lastActiveAt: 2 },
+      { projectId: 'p2', path: '/work/older', name: 'older', lastActiveAt: 1 },
+    ])
+    mockEnvironment.openProject.mockResolvedValue({
+      projectId: 'p1',
+      path: '/work/remote-app',
+      name: 'remote-app',
+    })
+
+    resetStore({
+      selectedHostConnectionId: 'local',
+      currentFolder: '/Users/dev/local-app',
+      currentProjectId: 'pid-local',
+    })
+    await useChatStore.getState().focusProject('/Users/dev/local-app')
+
+    useAppStore.getState().setSelectedHostConnectionId('env-remote')
+    expect(useAppStore.getState().isSwitchingHostProject).toBe(true)
+    await vi.dynamicImportSettled()
+    await vi.waitFor(() => {
+      expect(useAppStore.getState().currentFolder).toBe('remote:env-remote:/work/remote-app')
+    })
+
+    expect(useAppStore.getState().selectedHostConnectionId).toBe('env-remote')
+    expect(useAppStore.getState().isSwitchingHostProject).toBe(false)
+    expect(useAppStore.getState().currentProjectId).toBe('p1')
+    expect(useChatStore.getState().activeProject).toBe('remote:env-remote:/work/remote-app')
+    expect(mockEnvironment.listProjects).toHaveBeenCalledWith('env-remote')
+    expect(mockEnvironment.openProject).toHaveBeenCalledWith('env-remote', '/work/remote-app')
+  })
+
+  it('skips missing projects when choosing the remote host default', async () => {
+    mockEnvironment.listItems.mockResolvedValue([
+      { connectionId: 'env-remote', state: 'connected', label: 'lab' },
+    ])
+    mockEnvironment.listProjects.mockResolvedValue([
+      { projectId: 'stale', path: '/old/project', name: 'old', lastActiveAt: 2, missing: true },
+      { projectId: 'valid', path: '/work/valid', name: 'valid', lastActiveAt: 1 },
+    ])
+    mockEnvironment.openProject.mockResolvedValue({
+      projectId: 'valid',
+      path: '/work/valid',
+      name: 'valid',
+    })
+    resetStore({ selectedHostConnectionId: 'local', currentFolder: null })
+
+    useAppStore.getState().setSelectedHostConnectionId('env-remote')
+
+    await vi.waitFor(() => {
+      expect(useAppStore.getState().currentFolder).toBe('remote:env-remote:/work/valid')
+    })
+    expect(mockEnvironment.openProject).toHaveBeenCalledTimes(1)
+    expect(mockEnvironment.openProject).toHaveBeenCalledWith('env-remote', '/work/valid')
+  })
+
+  it('keeps the active project when it already belongs to the target host', async () => {
+    const remoteKey = 'remote:env-1:/work/app'
+    resetStore({
+      selectedHostConnectionId: 'env-1',
+      currentFolder: remoteKey,
+      currentProjectId: 'pid-remote',
+    })
+    await useChatStore.getState().focusProject(remoteKey)
+
+    useAppStore.getState().setSelectedHostConnectionId('env-1')
+    await vi.dynamicImportSettled()
+
+    expect(useAppStore.getState().currentFolder).toBe(remoteKey)
+    expect(useChatStore.getState().activeProject).toBe(remoteKey)
+    expect(mockEnvironment.listProjects).not.toHaveBeenCalled()
+  })
+
+  it('opens the first local recent when switching back from a remote host', async () => {
+    mockWindowApp.openFolder.mockResolvedValue(true)
+    const remoteKey = 'remote:env-1:/work/app'
+    resetStore({
+      selectedHostConnectionId: 'env-1',
+      currentFolder: remoteKey,
+      currentProjectId: 'pid-remote',
+      recentFolders: [
+        {
+          id: 'local-1',
+          path: '/Users/dev/local-app',
+          name: 'local-app',
+          lastOpened: new Date().toISOString(),
+          addedAt: new Date().toISOString(),
+        },
+      ],
+    })
+    await useChatStore.getState().focusProject(remoteKey)
+
+    useAppStore.getState().setSelectedHostConnectionId('local')
+    await vi.dynamicImportSettled()
+    await vi.waitFor(() => {
+      expect(useAppStore.getState().currentFolder).toBe('/Users/dev/local-app')
+    })
+
+    expect(useChatStore.getState().activeProject).toBe('/Users/dev/local-app')
+    expect(mockWindowApp.openFolder).toHaveBeenCalledWith('/Users/dev/local-app')
+  })
+
+  it('stays empty when the new host has no projects', async () => {
+    mockEnvironment.listItems.mockResolvedValue([
+      { connectionId: 'env-empty', state: 'connected', label: 'empty' },
+    ])
+    mockEnvironment.listProjects.mockResolvedValue([])
+
+    resetStore({
+      selectedHostConnectionId: 'local',
+      currentFolder: '/Users/dev/local-app',
+    })
+    await useChatStore.getState().focusProject('/Users/dev/local-app')
+
+    useAppStore.getState().setSelectedHostConnectionId('env-empty')
+    await vi.dynamicImportSettled()
+    await vi.waitFor(() => {
+      expect(mockEnvironment.listProjects).toHaveBeenCalledWith('env-empty')
+    })
+
+    expect(useAppStore.getState().currentFolder).toBeNull()
+    expect(useChatStore.getState().activeProject).toBeNull()
+    expect(useAppStore.getState().isSwitchingHostProject).toBe(false)
+  })
+
+  it('keeps the host project transition loading until the default project opens', async () => {
+    let resolveOpenProject!: (project: {
+      projectId: string
+      path: string
+      name: string
+    }) => void
+    mockEnvironment.listItems.mockResolvedValue([
+      { connectionId: 'env-slow', state: 'connected', label: 'slow lab' },
+    ])
+    mockEnvironment.listProjects.mockResolvedValue([
+      { projectId: 'p-slow', path: '/work/slow-app', name: 'slow-app', lastActiveAt: 1 },
+    ])
+    mockEnvironment.openProject.mockReturnValue(new Promise((resolve) => {
+      resolveOpenProject = resolve
+    }))
+
+    resetStore({
+      selectedHostConnectionId: 'local',
+      currentFolder: '/Users/dev/local-app',
+      currentProjectId: 'pid-local',
+    })
+    await useChatStore.getState().focusProject('/Users/dev/local-app')
+
+    useAppStore.getState().setSelectedHostConnectionId('env-slow')
+
+    await vi.waitFor(() => {
+      expect(mockEnvironment.openProject).toHaveBeenCalledWith('env-slow', '/work/slow-app')
+    })
+    expect(useAppStore.getState().isSwitchingHostProject).toBe(true)
+    expect(useChatStore.getState().activeProject).toBeNull()
+
+    resolveOpenProject({ projectId: 'p-slow', path: '/work/slow-app', name: 'slow-app' })
+    await vi.waitFor(() => {
+      expect(useAppStore.getState().isSwitchingHostProject).toBe(false)
+    })
+    expect(useChatStore.getState().activeProject).toBe('remote:env-slow:/work/slow-app')
   })
 })
 

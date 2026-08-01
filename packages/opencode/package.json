@@ -1,0 +1,27 @@
+{
+  "name": "@superone/opencode",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "OpenCode harness core — serve + SDK turn (enable with node CLI harness opencode).",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@opencode-ai/sdk": "^1.18.4",
+    "@superone/runtime": "workspace:*",
+    "@superone/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3",
+    "vitest": "^4.0.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

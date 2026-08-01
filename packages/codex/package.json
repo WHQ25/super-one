@@ -1,0 +1,25 @@
+{
+  "name": "@superone/codex",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Codex harness core — App Server JSON-RPC client + turn (enable with node CLI harness codex).",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@superone/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3",
+    "vitest": "^4.0.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

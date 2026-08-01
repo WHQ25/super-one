@@ -1,0 +1,27 @@
+{
+  "name": "@superone/acp",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "ACP harness core — agent process + minimal turn (enable with node CLI harness acp).",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@agentclientprotocol/sdk": "^1.2.1",
+    "@superone/runtime": "workspace:*",
+    "@superone/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3",
+    "vitest": "^4.0.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

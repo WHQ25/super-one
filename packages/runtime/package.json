@@ -1,0 +1,37 @@
+{
+  "name": "@superone/runtime",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Electron-free host runtime (session, fs, git, lease, spawn-env, crypto). Always required; harness packages are optional.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./session": "./src/session/index.ts",
+    "./session/*": "./src/session/*.ts",
+    "./fs": "./src/fs/index.ts",
+    "./fs/*": "./src/fs/*.ts",
+    "./git": "./src/git/index.ts",
+    "./git/*": "./src/git/*.ts",
+    "./lease": "./src/lease/index.ts",
+    "./lease/*": "./src/lease/*.ts",
+    "./spawn-env": "./src/spawn-env.ts",
+    "./crypto": "./src/crypto/index.ts",
+    "./crypto/*": "./src/crypto/*.ts",
+    "./sqlite": "./src/sqlite.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@superone/shared": "workspace:*",
+    "fzf": "^0.5.2"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3",
+    "vitest": "^4.0.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

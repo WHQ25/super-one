@@ -87,6 +87,14 @@ export function parseWorkflowInput(input: string): WorkflowMeta {
   return { name, description: '', phases: [] }
 }
 
+function strField(o: Record<string, unknown>, ...keys: string[]): string | undefined {
+  for (const k of keys) {
+    const v = o[k]
+    if (typeof v === 'string' && v.trim()) return v
+  }
+  return undefined
+}
+
 export function parseWorkflowLaunch(summary?: string): WorkflowLaunchInfo {
   if (!summary) return {}
   const trimmed = summary.trim()
@@ -94,11 +102,12 @@ export function parseWorkflowLaunch(summary?: string): WorkflowLaunchInfo {
     try {
       const o = JSON.parse(trimmed) as Record<string, unknown>
       if (o && typeof o === 'object') {
+        // Claude: camelCase (+ transcriptDir). Grok WorkflowToolOutput: snake_case run_id/task_id.
         return {
-          transcriptDir: typeof o.transcriptDir === 'string' ? o.transcriptDir : undefined,
-          taskId: typeof o.taskId === 'string' ? o.taskId : undefined,
-          runId: typeof o.runId === 'string' ? o.runId : undefined,
-          scriptPath: typeof o.scriptPath === 'string' ? o.scriptPath : undefined,
+          transcriptDir: strField(o, 'transcriptDir', 'transcript_dir'),
+          taskId: strField(o, 'taskId', 'task_id'),
+          runId: strField(o, 'runId', 'run_id'),
+          scriptPath: strField(o, 'scriptPath', 'script_path'),
         }
       }
     } catch {

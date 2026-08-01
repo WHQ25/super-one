@@ -290,10 +290,18 @@ describe('reduceTool: task_started', () => {
     expect(patch.taskProgress?.['task-1']).toMatchObject({ description: 'Initial work', completed: false })
   })
 
-  it('is a no-op when toolUseId is missing', () => {
+  it('is a no-op when both toolUseId and taskId are missing', () => {
     expect(reduceTool(createDefaultPerSessionState(), {
       type: 'task_started', description: 'x',
     } as never)).toEqual({})
+  })
+
+  it('stores under provisional taskId when toolUseId is missing', () => {
+    const session = createDefaultPerSessionState()
+    const patch = reduceTool(session, {
+      type: 'task_started', taskId: 'wf_1', description: 'review',
+    } as never)
+    expect(patch.taskProgress?.['wf_1']).toMatchObject({ taskId: 'wf_1', description: 'review', completed: false })
   })
 
   it('stores taskId so the UI can stop the task manually', () => {
@@ -339,10 +347,44 @@ describe('reduceTool: task_progress', () => {
     expect(patch.taskProgress?.['task-1'].toolHistory).toEqual([])
   })
 
-  it('is a no-op when toolUseId is missing', () => {
+  it('is a no-op when both toolUseId and taskId are missing', () => {
     expect(reduceTool(createDefaultPerSessionState(), {
       type: 'task_progress', description: 'x', usage: { totalTokens: 0, toolUses: 0, durationMs: 0 },
     } as never)).toEqual({})
+  })
+
+  it('migrates provisional taskId key to toolUseId and stores workflowAgents', () => {
+    const session = createDefaultPerSessionState()
+    session.messages = [
+      makeAssistant('m1', [
+        { type: 'tool_use', toolUseId: 'tu_wf', toolName: 'Workflow', input: '{}' } as ContentBlock,
+      ]),
+    ]
+    session.taskProgress = {
+      wf_1: { description: 'r', taskId: 'wf_1', totalTokens: 0, toolUses: 0, durationMs: 0, toolHistory: [] },
+    }
+    const patch = reduceTool(session, {
+      type: 'task_progress',
+      taskId: 'wf_1',
+      toolUseId: 'tu_wf',
+      description: 'r: o',
+      summary: 'phase: Execute',
+      usage: { totalTokens: 50, toolUses: 1, durationMs: 1000 },
+      workflowAgents: [{ agentId: 'a1', label: 'Explore', toolCount: 0, tokens: 50, state: 'running' }],
+      workflowPhases: [{ title: 'Plan', state: 'done' }, { title: 'Execute', state: 'active' }],
+      currentPhase: 'Execute',
+    } as never)
+    expect(patch.taskProgress?.['tu_wf']).toMatchObject({
+      taskId: 'wf_1',
+      summary: 'phase: Execute',
+      currentPhase: 'Execute',
+      workflowAgents: [{ label: 'Explore', state: 'running' }],
+    })
+    expect(patch.taskProgress?.['wf_1']).toBeUndefined()
+    const block = patch.messages?.[0].content[0] as { taskSummary?: string; workflowAgents?: unknown[]; workflowCurrentPhase?: string }
+    expect(block.taskSummary).toBe('phase: Execute')
+    expect(block.workflowCurrentPhase).toBe('Execute')
+    expect(block.workflowAgents?.[0]).toMatchObject({ label: 'Explore' })
   })
 })
 
@@ -379,10 +421,119 @@ describe('reduceTool: task_notification', () => {
     expect(patch.taskProgress?.['task-1'].completed).toBe(true)
   })
 
-  it('is a no-op when toolUseId is missing', () => {
+  it('is a no-op when both toolUseId and taskId are missing', () => {
     expect(reduceTool(createDefaultPerSessionState(), {
       type: 'task_notification',
     } as never)).toEqual({})
+  })
+
+  it('completes a provisional taskId entry and preserves prior agents', () => {
+    const session = createDefaultPerSessionState()
+    session.taskProgress = {
+      wf_1: {
+        description: 'r',
+        taskId: 'wf_1',
+        totalTokens: 10,
+        toolUses: 1,
+        durationMs: 100,
+        toolHistory: [],
+        workflowAgents: [{ agentId: 'a1', label: 'Explore', toolCount: 0, tokens: 10 }],
+      },
+    }
+    const patch = reduceTool(session, {
+      type: 'task_notification',
+      taskId: 'wf_1',
+      taskStatus: 'completed',
+      outputFile: '',
+      summary: 'done',
+      resultText: 'All good',
+    } as never)
+    expect(patch.taskProgress?.['wf_1']).toMatchObject({
+      completed: true,
+      status: 'completed',
+      resultText: 'All good',
+      workflowAgents: [{ label: 'Explore' }],
+    })
+  })
+
+  it('keeps established Agent key on resume waker notification (no migrate to waker)', () => {
+    const session = createDefaultPerSessionState()
+    session.messages = [
+      makeAssistant('m1', [
+        { type: 'tool_use', toolUseId: 'agent-original', toolName: 'Agent', input: '' } as ContentBlock,
+        { type: 'tool_result', toolUseId: 'agent-original', summary: '' } as ContentBlock,
+      ]),
+    ]
+    session.taskProgress = {
+      'agent-original': {
+        description: 'search',
+        taskId: 'T1',
+        totalTokens: 10,
+        toolUses: 1,
+        durationMs: 100,
+        toolHistory: [],
+      },
+    }
+    const patch = reduceTool(session, {
+      type: 'task_notification',
+      toolUseId: 'waker',
+      taskId: 'T1',
+      taskStatus: 'completed',
+      outputFile: '/out.log',
+      summary: 'resumed done',
+      usage: { totalTokens: 99, toolUses: 3, durationMs: 500 },
+    } as never)
+    expect(patch.taskProgress?.['agent-original']).toMatchObject({
+      completed: true,
+      status: 'completed',
+      summary: 'resumed done',
+      taskId: 'T1',
+    })
+    expect(patch.taskProgress?.['waker']).toBeUndefined()
+    const agentBlock = patch.messages?.[0].content[0] as { taskSummary?: string; taskUsage?: { totalTokens: number } }
+    expect(agentBlock.taskSummary).toBe('resumed done')
+    expect(agentBlock.taskUsage?.totalTokens).toBe(99)
+    const resultBlock = patch.messages?.[0].content[1] as { outputPath?: string }
+    expect(resultBlock.outputPath).toBe('/out.log')
+  })
+
+  it('migrates provisional workflow key to launch toolUseId on terminal and patches Workflow block', () => {
+    const session = createDefaultPerSessionState()
+    session.messages = [
+      makeAssistant('m1', [
+        { type: 'tool_use', toolUseId: 'tc_wf', toolName: 'Workflow', input: '{}' } as ContentBlock,
+      ]),
+    ]
+    session.taskProgress = {
+      wf_1: {
+        description: 'review',
+        taskId: 'wf_1',
+        totalTokens: 5,
+        toolUses: 1,
+        durationMs: 50,
+        toolHistory: [],
+        workflowAgents: [{ agentId: 'a1', label: 'Explore', toolCount: 0 }],
+      },
+    }
+    const patch = reduceTool(session, {
+      type: 'task_notification',
+      toolUseId: 'tc_wf',
+      taskId: 'wf_1',
+      taskStatus: 'completed',
+      outputFile: '',
+      summary: 'done',
+      resultText: 'All good',
+    } as never)
+    expect(patch.taskProgress?.['tc_wf']).toMatchObject({
+      completed: true,
+      taskId: 'wf_1',
+      resultText: 'All good',
+      workflowAgents: [{ label: 'Explore' }],
+    })
+    expect(patch.taskProgress?.['wf_1']).toBeUndefined()
+    const wf = patch.messages?.[0].content[0] as { taskSummary?: string; taskResultText?: string }
+    expect(wf.taskSummary).toBe('done')
+    expect(wf.taskResultText).toBe('All good')
   })
 
   it('propagates the terminal taskStatus so a failed background task is distinguishable from a completed one', () => {

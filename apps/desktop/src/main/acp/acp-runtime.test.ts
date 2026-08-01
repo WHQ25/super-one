@@ -386,7 +386,12 @@ describe('createAcpRuntime (in-process agent)', () => {
             sessionUpdate: 'tool_call_update',
             toolCallId: 'tc_wf',
             status: 'completed',
-            rawOutput: { run_id: 'wf_live', name: 'review-changes' },
+            rawOutput: {
+              run_id: 'wf_live',
+              task_id: 'wf_live',
+              name: 'review-changes',
+              message: 'Workflow review-changes started. Progress appears under /workflows.',
+            },
           },
         })
         return { stopReason: 'end_turn' as const }

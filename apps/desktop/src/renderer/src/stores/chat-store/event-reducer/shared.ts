@@ -82,6 +82,9 @@ export function mapMessagesStructural(
   return anyMsgChanged ? next : messages
 }
 
+/** Tool names that host progressive task_* events (Agent subagents + Workflow). */
+const TASK_PROGRESS_TOOL_NAMES = new Set(['Agent', 'Workflow'])
+
 /**
  * Patch the per-message `tool_use` block whose toolName is 'Agent' and whose
  * `toolUseId === tid`. Used by task_progress / task_notification reducers to
@@ -92,8 +95,25 @@ export function _patchAgentBlock(
   tid: string,
   patch: Record<string, unknown>,
 ): ChatMessage[] {
+  return _patchTaskToolBlock(messages, tid, patch)
+}
+
+/**
+ * Patch Agent or Workflow tool_use blocks (and optional matching tool_result
+ * outputPath when present in patch as `_resultOutputPath` — not used; call
+ * sites patch tool_result separately).
+ */
+export function _patchTaskToolBlock(
+  messages: ChatMessage[],
+  tid: string,
+  patch: Record<string, unknown>,
+): ChatMessage[] {
   return mapMessagesStructural(messages, (block) => {
-    if (block.type === 'tool_use' && block.toolName === 'Agent' && block.toolUseId === tid) {
+    if (
+      block.type === 'tool_use'
+      && TASK_PROGRESS_TOOL_NAMES.has(block.toolName)
+      && block.toolUseId === tid
+    ) {
       return { ...block, ...patch }
     }
     return block

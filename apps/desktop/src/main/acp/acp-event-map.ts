@@ -872,6 +872,17 @@ export function formatAcpRawOutput(raw: unknown): string {
     }
   }
 
+  // Grok WorkflowToolOutput always includes a human `message` plus run_id/task_id.
+  // Prefer compact JSON so tool_result.summary keeps ids for progressive-bus
+  // correlation and WorkflowBlock launch parsing (message-only unwrap would drop them).
+  if (typeof obj.run_id === 'string' || typeof obj.runId === 'string') {
+    try {
+      return JSON.stringify(raw)
+    } catch {
+      return String(raw)
+    }
+  }
+
   // Generic nested result / output / text / stdout
   for (const key of ['result', 'output', 'text', 'stdout', 'message', 'summary']) {
     const v = obj[key]

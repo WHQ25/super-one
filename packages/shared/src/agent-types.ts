@@ -64,11 +64,29 @@ interface AgentTaskData {
   taskResultText?: string
 }
 
+/** Live or persisted agent row on a Workflow tool_use (Grok snapshot or Claude). */
+export interface WorkflowAgentRow {
+  agentId?: string
+  label: string
+  toolCount: number
+  tokens?: number
+  state?: string
+  phase?: string
+}
+
+export interface WorkflowPhaseRow {
+  title: string
+  detail?: string
+  /** Live state from Grok workflow_updated: done | active | pending */
+  state?: string
+}
+
 interface WorkflowData {
   workflowName?: string
   workflowDescription?: string
-  workflowPhases?: Array<{ title: string; detail?: string }>
-  workflowAgents?: Array<{ label: string; toolCount: number; tokens?: number }>
+  workflowPhases?: WorkflowPhaseRow[]
+  workflowCurrentPhase?: string
+  workflowAgents?: WorkflowAgentRow[]
 }
 
 interface ToolUseBase {
@@ -1069,8 +1087,34 @@ export type AgentEventBase =
   | { type: 'compact_boundary'; trigger: 'manual' | 'auto'; preTokens: number; postTokens?: number; durationMs?: number }
   | { type: 'status_indicator'; indicator: 'compacting' | null; permissionMode?: PermissionMode; compactResult?: 'success' | 'failed'; compactError?: string }
   | { type: 'task_started'; taskId: string; toolUseId?: string; description: string; taskType?: string }
-  | { type: 'task_progress'; taskId: string; toolUseId?: string; description: string; lastToolName?: string; summary?: string; usage: { totalTokens: number; toolUses: number; durationMs: number }; activityText?: string; toolEntries?: Array<{ toolName: string; description: string }>; workflowAgents?: Array<{ label: string; toolCount: number; tokens?: number }> }
-  | { type: 'task_notification'; taskId: string; toolUseId?: string; taskStatus: 'completed' | 'failed' | 'stopped'; outputFile: string; summary?: string; usage?: { totalTokens: number; toolUses: number; durationMs: number }; resultText?: string; toolEntries?: Array<{ toolName: string; description: string }>; workflowAgents?: Array<{ label: string; toolCount: number; tokens?: number }> }
+  | {
+    type: 'task_progress'
+    taskId: string
+    toolUseId?: string
+    description: string
+    lastToolName?: string
+    summary?: string
+    usage: { totalTokens: number; toolUses: number; durationMs: number }
+    activityText?: string
+    toolEntries?: Array<{ toolName: string; description: string }>
+    workflowAgents?: WorkflowAgentRow[]
+    workflowPhases?: WorkflowPhaseRow[]
+    currentPhase?: string
+  }
+  | {
+    type: 'task_notification'
+    taskId: string
+    toolUseId?: string
+    taskStatus: 'completed' | 'failed' | 'stopped'
+    outputFile: string
+    summary?: string
+    usage?: { totalTokens: number; toolUses: number; durationMs: number }
+    resultText?: string
+    toolEntries?: Array<{ toolName: string; description: string }>
+    workflowAgents?: WorkflowAgentRow[]
+    workflowPhases?: WorkflowPhaseRow[]
+    currentPhase?: string
+  }
   /** Host browser_download task progress / completion for chat tool UI (taskId is bdl_*). */
   | { type: 'browser_download_update'; taskId: string; status: 'progressing' | 'completed' | 'failed'; path?: string; filename?: string; bytes?: number; totalBytes?: number; mimeType?: string; url?: string; error?: string }
   | { type: 'auth_status'; isAuthenticating: boolean; output: string[]; error?: string }

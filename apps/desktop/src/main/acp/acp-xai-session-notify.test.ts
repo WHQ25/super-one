@@ -83,9 +83,16 @@ describe('mapXaiSessionUpdate — workflow', () => {
     })
     expect((events[1] as Extract<AgentEvent, { type: 'task_progress' }>).summary).toContain('Execute')
     expect((events[1] as Extract<AgentEvent, { type: 'task_progress' }>).workflowAgents?.[0]).toMatchObject({
+      agentId: 'a1',
       label: 'Explore',
       tokens: 100,
+      state: 'running',
     })
+    expect((events[1] as Extract<AgentEvent, { type: 'task_progress' }>).currentPhase).toBe('Execute')
+    expect((events[1] as Extract<AgentEvent, { type: 'task_progress' }>).workflowPhases).toEqual([
+      { title: 'Plan', state: 'done' },
+      { title: 'Execute', state: 'active' },
+    ])
   })
 
   it('maps complete with result_summary to task_notification', () => {
@@ -514,5 +521,27 @@ describe('noteToolCorrelationFromAgentEvents', () => {
       },
     ], state)
     expect(state.workflowToolByRunId.get('wf_corr')).toBe('tu_wf')
+  })
+
+  it('stashes run_id from real Grok WorkflowToolOutput (includes message)', () => {
+    const state = createXaiCorrelationState()
+    noteToolCorrelationFromAgentEvents([
+      {
+        type: 'content_delta',
+        messageId: 'm1',
+        delta: {
+          type: 'tool_result',
+          toolUseId: 'tu_wf',
+          summary: JSON.stringify({
+            run_id: 'wf_real',
+            task_id: 'wf_real',
+            name: 'review-changes',
+            message: 'Workflow review-changes started. Progress appears under /workflows.',
+          }),
+          isError: false,
+        },
+      },
+    ], state)
+    expect(state.workflowToolByRunId.get('wf_real')).toBe('tu_wf')
   })
 })

@@ -61,6 +61,20 @@ describe('parseWorkflowLaunch', () => {
     expect(info.runId).toBe('wf_x')
   })
 
+  it('reads Grok WorkflowToolOutput snake_case without transcriptDir', () => {
+    const info = parseWorkflowLaunch(JSON.stringify({
+      run_id: 'wf_live',
+      task_id: 'wf_live',
+      name: 'review-changes',
+      script_path: '/tmp/wf.rhai',
+      message: 'Workflow review-changes started.',
+    }))
+    expect(info.runId).toBe('wf_live')
+    expect(info.taskId).toBe('wf_live')
+    expect(info.scriptPath).toBe('/tmp/wf.rhai')
+    expect(info.transcriptDir).toBeUndefined()
+  })
+
   it('returns empty for undefined', () => {
     expect(parseWorkflowLaunch(undefined)).toEqual({})
   })

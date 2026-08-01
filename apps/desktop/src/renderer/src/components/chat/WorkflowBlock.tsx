@@ -1,6 +1,6 @@
 import { useMemo, useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Workflow, ChevronRight, Check, Maximize, Loader2, Wrench, Bot } from 'lucide-react'
+import { Workflow, ChevronRight, Check, Maximize, Loader2, Wrench, Bot, X, CircleStop } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 import type { ContentBlock } from '@superone/shared/agent-types'
 import { useActiveSession, useChatStore } from '@/stores/chat'
@@ -8,7 +8,7 @@ import { formatTokens } from './chat-shared'
 import { getSubagentColorClasses } from './subagent-colors'
 import { SubagentRetryBadge } from './SubagentRetryBadge'
 import { parseWorkflowInput, parseWorkflowLaunch, extractWorkflowScript } from './workflow-utils'
-import { useWorkflowAgents } from './use-workflow-agents'
+import { useWorkflowAgents, type WorkflowAgentInfo } from './use-workflow-agents'
 import { useWorkflowOutput } from './use-workflow-output'
 import { useWorkflowNavigation } from './workflow-navigation-context'
 import { StructuredOutputView } from './StructuredOutputView'
@@ -28,10 +28,10 @@ function formatElapsed(seconds: number): string {
   return secs > 0 ? `${mins}m ${secs}s` : `${mins}m`
 }
 
-function currentPhaseTitle(description?: string): string | undefined {
-  if (!description) return undefined
-  const idx = description.indexOf(':')
-  return idx > 0 ? description.slice(0, idx).trim() : undefined
+function phaseFromSummary(summary?: string): string | undefined {
+  if (!summary) return undefined
+  const m = summary.match(/(?:^|·\s*)phase:\s*([^·]+)/i)
+  return m?.[1]?.trim() || undefined
 }
 
 function LogOutputPanel({ logs, resultText }: { logs: string[]; resultText?: string }) {
@@ -95,7 +95,22 @@ function LogOutputPanel({ logs, resultText }: { logs: string[]; resultText?: str
 
 export function WorkflowBlock({ toolBlock, resultBlock, isStreaming, defaultExpanded }: WorkflowBlockProps) {
   const { t } = useTranslation()
-  const progress = useActiveSession((s) => s.taskProgress[toolBlock.toolUseId])
+  const launch = useMemo(
+    () => parseWorkflowLaunch(resultBlock?.type === 'tool_result' ? resultBlock.summary : undefined),
+    [resultBlock],
+  )
+  const runKey = launch.runId ?? launch.taskId
+  const progress = useActiveSession((s) => {
+    const byTool = s.taskProgress[toolBlock.toolUseId]
+    if (byTool) return byTool
+    if (runKey) {
+      if (s.taskProgress[runKey]) return s.taskProgress[runKey]
+      for (const entry of Object.values(s.taskProgress)) {
+        if (entry.taskId === runKey) return entry
+      }
+    }
+    return undefined
+  })
   const colorIdx = useActiveSession((s) => s.subagentColors[toolBlock.toolUseId])
   const colors = useMemo(() => getSubagentColorClasses(colorIdx), [colorIdx])
   useEffect(() => {
@@ -103,32 +118,76 @@ export function WorkflowBlock({ toolBlock, resultBlock, isStreaming, defaultExpa
   }, [toolBlock.toolUseId])
   const meta = useMemo(() => parseWorkflowInput(toolBlock.input), [toolBlock.input])
   const script = useMemo(() => extractWorkflowScript(toolBlock.input), [toolBlock.input])
-  const launch = useMemo(
-    () => parseWorkflowLaunch(resultBlock?.type === 'tool_result' ? resultBlock.summary : undefined),
-    [resultBlock],
-  )
   const nav = useWorkflowNavigation()
 
-  const launched = !!launch.transcriptDir
-  // taskProgress is in-memory only: a reloaded/historical workflow has no progress entry,
-  // so treat "launched but no live progress" as complete instead of running forever.
-  const isComplete = launched && (progress ? progress.completed === true : true)
+  const hasTranscript = !!launch.transcriptDir
+  // Claude: transcriptDir. Grok: run_id/task_id on launch JSON and/or live taskProgress.
+  const hasLaunchIdentity = hasTranscript || !!runKey || !!progress?.taskId
+  const launched = hasLaunchIdentity || !!progress
+  // taskProgress is in-memory only.
+  // - With live progress: honor completed flag.
+  // - Claude transcript without progress (reload/history): complete.
+  // - Grok launch JSON without progress yet: stay running while parent turn streams
+  //   (avoid complete→running flicker before first workflow_updated); when idle, treat as historical complete.
+  const isComplete = progress
+    ? progress.completed === true
+    : hasTranscript || (!!runKey && !isStreaming)
   const isRunning = launched ? !isComplete : isStreaming
   const isSpawning = !launched && !isComplete && !meta.name
+  const terminalStatus = progress?.status
 
   const [expanded, setExpanded] = useState(defaultExpanded ?? false)
-  const agents = useWorkflowAgents(launch.transcriptDir, true, isComplete)
+  const transcriptAgents = useWorkflowAgents(launch.transcriptDir, hasTranscript, isComplete)
+  const liveAgents: WorkflowAgentInfo[] = useMemo(() => {
+    const rows = progress?.workflowAgents ?? toolBlock.workflowAgents
+    if (!rows?.length) return []
+    return rows.map((a, i) => ({
+      agentId: a.agentId ?? `live-${a.label}-${i}`,
+      jsonlPath: '',
+      label: a.label,
+      toolCount: a.toolCount,
+      tokens: a.tokens,
+    }))
+  }, [progress?.workflowAgents, toolBlock.workflowAgents])
+  // Prefer Claude transcript agents when present; otherwise Grok snapshot rows (no jsonl).
+  const agents = transcriptAgents.length > 0 ? transcriptAgents : liveAgents
+  const canOpenFullView = hasTranscript
+
   const outputFile = progress?.outputFile ?? (resultBlock?.type === 'tool_result' ? resultBlock.outputPath : undefined)
-  const output = useWorkflowOutput(outputFile, expanded)
+  const output = useWorkflowOutput(outputFile, expanded && hasTranscript)
   const resultText = useMemo(() => {
+    if (progress?.resultText) return progress.resultText
+    if (typeof toolBlock.taskResultText === 'string' && toolBlock.taskResultText) return toolBlock.taskResultText
     if (!output || output.result === undefined) return undefined
     return typeof output.result === 'string' ? output.result : JSON.stringify(output.result, null, 2)
-  }, [output])
+  }, [progress?.resultText, toolBlock.taskResultText, output])
 
   const elapsed = progress?.durationMs ? Math.round(progress.durationMs / 1000) : 0
   const agentsTokens = useMemo(() => agents.reduce((sum, a) => sum + (a.tokens ?? 0), 0), [agents])
   const totalTokens = progress?.totalTokens || agentsTokens
-  const activePhase = isRunning ? currentPhaseTitle(progress?.description) : undefined
+  // Never surface a live phase chip/spinner after terminal (persisted currentPhase stays on the block).
+  const activePhase = isRunning
+    ? (progress?.currentPhase
+      ?? toolBlock.workflowCurrentPhase
+      ?? phaseFromSummary(progress?.summary ?? toolBlock.taskSummary))
+    : undefined
+
+  const livePhases = progress?.workflowPhases ?? toolBlock.workflowPhases
+  const phases = useMemo(() => {
+    if (livePhases?.length) {
+      return livePhases.map((p) => ({
+        title: p.title,
+        detail: p.detail,
+        state: p.state,
+      }))
+    }
+    return meta.phases.map((p) => ({ title: p.title, detail: p.detail, state: undefined as string | undefined }))
+  }, [livePhases, meta.phases])
+
+  const displayName = meta.name || launch.runId || t('chat.workflow.title', 'Workflow')
+  const displayDescription =
+    meta.description
+    || (progress?.description && !progress.description.startsWith(`${meta.name}:`) ? progress.description : undefined)
 
   const stats = (
     <>
@@ -156,10 +215,10 @@ export function WorkflowBlock({ toolBlock, resultBlock, isStreaming, defaultExpa
       >
         <Workflow className={cn('size-3.5 shrink-0', colors.text, isRunning && !expanded && 'animate-pulse')} />
         <span className={cn('shrink-0 rounded px-1 py-px text-xs font-medium', colors.tagBg, colors.tagText)}>
-          {meta.name ? `Workflow: ${meta.name}` : t('chat.workflow.title', 'Workflow')}
+          {meta.name || launch.runId ? `Workflow: ${displayName}` : t('chat.workflow.title', 'Workflow')}
         </span>
-        {meta.description && (
-          <span className="min-w-0 truncate text-left text-muted-foreground">{meta.description}</span>
+        {displayDescription && (
+          <span className="min-w-0 truncate text-left text-muted-foreground">{displayDescription}</span>
         )}
         {isSpawning && (
           <span className="min-w-0 text-left text-muted-foreground">{t('chat.workflow.spawning', 'Starting workflow…')}</span>
@@ -168,7 +227,7 @@ export function WorkflowBlock({ toolBlock, resultBlock, isStreaming, defaultExpa
         <span className="ml-auto flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
           {!expanded && activePhase && <span className="text-primary">{activePhase}</span>}
           {!expanded && stats}
-          {expanded && launch.transcriptDir && (
+          {expanded && canOpenFullView && (
             <span
               role="button"
               tabIndex={0}
@@ -186,21 +245,32 @@ export function WorkflowBlock({ toolBlock, resultBlock, isStreaming, defaultExpa
 
       {expanded && (
         <div className="border-t border-border/30">
-          {meta.phases.length > 0 && (
+          {phases.length > 0 && (
             <div className="px-3 py-1.5">
               <div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 {t('chat.workflow.phases', 'Phases')}
               </div>
               <div className="space-y-0.5">
-                {meta.phases.map((phase, i) => {
-                  const active = activePhase === phase.title
+                {phases.map((phase, i) => {
+                  const showActive = isRunning && (phase.state === 'active' || (!phase.state && activePhase === phase.title))
+                  // Only paint success checks on explicit done, or when the whole run completed successfully.
+                  // Failed/stopped must not mark pending/active phases as successful.
+                  const showDone = phase.state === 'done'
+                    || (!isRunning && isComplete && terminalStatus === 'completed' && !phase.state)
                   return (
                     <div key={i} className="flex items-baseline gap-1.5 text-xs">
-                      <span className={cn('shrink-0 font-medium', active ? 'text-primary' : 'text-foreground')}>
-                        {active && <Loader2 className="mr-1 inline size-2.5 animate-spin" />}
+                      <span className={cn(
+                        'shrink-0 font-medium',
+                        showActive ? 'text-primary' : showDone ? 'text-muted-foreground' : 'text-foreground',
+                      )}>
+                        {showActive && <Loader2 className="mr-1 inline size-2.5 animate-spin" />}
+                        {showDone && !showActive && <Check className="mr-1 inline size-2.5 text-success" />}
                         {phase.title}
                       </span>
                       {phase.detail && <span className="min-w-0 truncate text-muted-foreground">{phase.detail}</span>}
+                      {isRunning && phase.state && phase.state !== 'done' && phase.state !== 'active' && (
+                        <span className="text-muted-foreground/80">({phase.state})</span>
+                      )}
                     </div>
                   )
                 })}
@@ -214,31 +284,54 @@ export function WorkflowBlock({ toolBlock, resultBlock, isStreaming, defaultExpa
                 {t('chat.workflow.agents', 'Agents')} ({agents.length})
               </div>
               <div className="max-h-32 space-y-0.5 overflow-y-auto">
-                {agents.map((agent) => (
-                  <button
-                    key={agent.agentId}
-                    type="button"
-                    onClick={() => nav.open({ toolUseId: toolBlock.toolUseId, transcriptDir: launch.transcriptDir, name: meta.name, script })}
-                    className="flex w-full items-center gap-1.5 rounded px-1 py-0.5 text-left text-xs hover:bg-muted/60"
-                  >
-                    <Bot className="size-3 shrink-0 text-muted-foreground" />
-                    <span className="min-w-0 truncate text-foreground">{agent.label}</span>
-                    <span className="ml-auto flex shrink-0 items-center gap-1.5 text-muted-foreground">
-                      {agent.toolCount > 0 && (
-                        <span className="inline-flex items-center gap-0.5">
-                          <Wrench className="size-2.5" />
-                          {agent.toolCount}
-                        </span>
+                {agents.map((agent) => {
+                  const liveState = progress?.workflowAgents?.find(
+                    (a) => (a.agentId && a.agentId === agent.agentId) || a.label === agent.label,
+                  )?.state
+                  const row = (
+                    <>
+                      <Bot className="size-3 shrink-0 text-muted-foreground" />
+                      <span className="min-w-0 truncate text-foreground">{agent.label}</span>
+                      {liveState && (
+                        <span className="shrink-0 text-muted-foreground/80">{liveState}</span>
                       )}
-                      {agent.tokens != null && agent.tokens > 0 && (
-                        <>
-                          {agent.toolCount > 0 && <span>·</span>}
-                          <span className="tabular-nums">{formatTokens(agent.tokens)}</span>
-                        </>
-                      )}
-                    </span>
-                  </button>
-                ))}
+                      <span className="ml-auto flex shrink-0 items-center gap-1.5 text-muted-foreground">
+                        {agent.toolCount > 0 && (
+                          <span className="inline-flex items-center gap-0.5">
+                            <Wrench className="size-2.5" />
+                            {agent.toolCount}
+                          </span>
+                        )}
+                        {agent.tokens != null && agent.tokens > 0 && (
+                          <>
+                            {agent.toolCount > 0 && <span>·</span>}
+                            <span className="tabular-nums">{formatTokens(agent.tokens)}</span>
+                          </>
+                        )}
+                      </span>
+                    </>
+                  )
+                  if (!canOpenFullView) {
+                    return (
+                      <div
+                        key={agent.agentId}
+                        className="flex w-full items-center gap-1.5 rounded px-1 py-0.5 text-left text-xs"
+                      >
+                        {row}
+                      </div>
+                    )
+                  }
+                  return (
+                    <button
+                      key={agent.agentId}
+                      type="button"
+                      onClick={() => nav.open({ toolUseId: toolBlock.toolUseId, transcriptDir: launch.transcriptDir, name: meta.name, script })}
+                      className="flex w-full items-center gap-1.5 rounded px-1 py-0.5 text-left text-xs hover:bg-muted/60"
+                    >
+                      {row}
+                    </button>
+                  )
+                })}
               </div>
             </div>
           )}
@@ -249,12 +342,37 @@ export function WorkflowBlock({ toolBlock, resultBlock, isStreaming, defaultExpa
             {isRunning ? (
               <>
                 <Loader2 className="size-3 animate-spin" />
-                <span>{progress?.description || t('chat.workflow.running', 'Running…')}</span>
+                <span>
+                  {progress?.summary
+                    || progress?.description
+                    || toolBlock.taskSummary
+                    || t('chat.workflow.running', 'Running…')}
+                </span>
+              </>
+            ) : terminalStatus === 'failed' ? (
+              <>
+                <X className="size-3 shrink-0 text-destructive" />
+                <span>
+                  {t('chat.workflow.failed', 'Workflow failed')}
+                  {progress?.summary ? ` · ${progress.summary}` : ''}
+                  {elapsed > 0 ? ` · ${formatElapsed(elapsed)}` : ''}
+                </span>
+              </>
+            ) : terminalStatus === 'stopped' ? (
+              <>
+                <CircleStop className="size-3 shrink-0 text-muted-foreground" />
+                <span>
+                  {t('chat.workflow.stopped', 'Workflow stopped')}
+                  {elapsed > 0 ? ` · ${formatElapsed(elapsed)}` : ''}
+                </span>
               </>
             ) : (
               <>
                 <Check className="size-3 shrink-0 text-success" />
-                <span>{t('chat.workflow.done', 'Workflow complete')}{elapsed > 0 ? ` · ${formatElapsed(elapsed)}` : ''}</span>
+                <span>
+                  {t('chat.workflow.done', 'Workflow complete')}
+                  {elapsed > 0 ? ` · ${formatElapsed(elapsed)}` : ''}
+                </span>
               </>
             )}
             <span className="ml-auto flex items-center gap-1.5">{stats}</span>

@@ -91,7 +91,24 @@ export interface PerSessionState {
   subagentTokens: Record<string, { input: number; output: number }>
   subagentColors: Record<string, number>
   _subagentColorsFree: number[]
-  taskProgress: Record<string, { description: string; taskId?: string; lastToolName?: string; summary?: string; totalTokens: number; toolUses: number; durationMs: number; completed?: boolean; status?: 'completed' | 'failed' | 'stopped'; outputFile?: string; retry?: SubagentRetryInfo; toolHistory: Array<{ toolName: string; description: string }> }>
+  taskProgress: Record<string, {
+    description: string
+    taskId?: string
+    lastToolName?: string
+    summary?: string
+    totalTokens: number
+    toolUses: number
+    durationMs: number
+    completed?: boolean
+    status?: 'completed' | 'failed' | 'stopped'
+    outputFile?: string
+    resultText?: string
+    retry?: SubagentRetryInfo
+    toolHistory: Array<{ toolName: string; description: string }>
+    workflowAgents?: Array<{ agentId?: string; label: string; toolCount: number; tokens?: number; state?: string; phase?: string }>
+    workflowPhases?: Array<{ title: string; detail?: string; state?: string }>
+    currentPhase?: string
+  }>
   /** Live browser_download (URL) tasks keyed by taskId (bdl_*), for tool-block UI. */
   browserDownloads: Record<string, {
     status: 'progressing' | 'completed' | 'failed'

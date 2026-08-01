@@ -582,6 +582,21 @@ describe('Grok ImageGen tool_result → media gallery summary', () => {
 })
 
 describe('formatAcpRawOutput', () => {
+  it('preserves Grok WorkflowToolOutput JSON (run_id + message) for correlation', () => {
+    const raw = {
+      run_id: 'wf_live',
+      task_id: 'wf_live',
+      name: 'review-changes',
+      message: 'Workflow review-changes started. Progress appears under /workflows.',
+    }
+    const out = formatAcpRawOutput(raw)
+    expect(out).toContain('run_id')
+    expect(out).toContain('wf_live')
+    const parsed = JSON.parse(out) as typeof raw
+    expect(parsed.run_id).toBe('wf_live')
+    expect(parsed.message).toContain('started')
+  })
+
   it('unwraps the MCP result envelope to the tool payload', () => {
     // Real grok shape: the variant key (OkayOutput) is a serde tag around the payload.
     expect(formatAcpRawOutput({

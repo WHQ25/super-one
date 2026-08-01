@@ -404,11 +404,17 @@ function mapWorkflowUpdated(u: Record<string, unknown>, state: XaiCorrelationSta
   const lastEventDetail = strField(u, 'last_event_detail', 'lastEventDetail')
 
   const workflowAgents = mapWorkflowAgents(arrField(u, 'agents'))
+  const workflowPhases = mapWorkflowPhases(arrField(u, 'phases'))
   const phaseLine = buildWorkflowPhaseSummary(u, currentPhase, pauseMessage, lastEvent, lastEventDetail)
   const usage = {
     totalTokens: sumAgentTokens(workflowAgents),
     toolUses: agentsUsed,
     durationMs: elapsedMs,
+  }
+  const phaseFields = {
+    ...(workflowPhases.length ? { workflowPhases } : {}),
+    ...(currentPhase ? { currentPhase } : {}),
+    ...(workflowAgents.length ? { workflowAgents } : {}),
   }
 
   const events: AgentEvent[] = []
@@ -437,7 +443,7 @@ function mapWorkflowUpdated(u: Record<string, unknown>, state: XaiCorrelationSta
       summary: phaseLine || resultSummary || status,
       usage,
       ...(resultSummary ? { resultText: resultSummary } : {}),
-      ...(workflowAgents.length ? { workflowAgents } : {}),
+      ...phaseFields,
     })
     return events
   }
@@ -450,25 +456,47 @@ function mapWorkflowUpdated(u: Record<string, unknown>, state: XaiCorrelationSta
     summary: phaseLine || status,
     usage,
     ...(lastEventDetail || lastEvent ? { activityText: lastEventDetail ?? lastEvent } : {}),
-    ...(workflowAgents.length ? { workflowAgents } : {}),
+    ...phaseFields,
   })
   return events
 }
 
+function mapWorkflowPhases(
+  raw: unknown[] | undefined,
+): Array<{ title: string; state?: string }> {
+  if (!raw?.length) return []
+  const out: Array<{ title: string; state?: string }> = []
+  for (const item of raw) {
+    const p = asRecord(item)
+    if (!p) continue
+    const title = strField(p, 'title')
+    if (!title) continue
+    const state = strField(p, 'state')
+    out.push({ title, ...(state ? { state } : {}) })
+  }
+  return out
+}
+
 function mapWorkflowAgents(
   raw: unknown[] | undefined,
-): Array<{ label: string; toolCount: number; tokens?: number }> {
+): Array<{ agentId?: string; label: string; toolCount: number; tokens?: number; state?: string; phase?: string }> {
   if (!raw?.length) return []
-  const out: Array<{ label: string; toolCount: number; tokens?: number }> = []
+  const out: Array<{ agentId?: string; label: string; toolCount: number; tokens?: number; state?: string; phase?: string }> = []
   for (const item of raw) {
     const a = asRecord(item)
     if (!a) continue
-    const label = strField(a, 'label') ?? strField(a, 'agent_id', 'agentId') ?? 'agent'
+    const agentId = strField(a, 'agent_id', 'agentId')
+    const label = strField(a, 'label') ?? agentId ?? 'agent'
     const tokens = numField(a, 'tokens_used', 'tokensUsed')
+    const agentState = strField(a, 'state')
+    const phase = strField(a, 'phase')
     out.push({
       label,
       toolCount: 0,
+      ...(agentId ? { agentId } : {}),
       ...(tokens != null ? { tokens } : {}),
+      ...(agentState ? { state: agentState } : {}),
+      ...(phase ? { phase } : {}),
     })
   }
   return out

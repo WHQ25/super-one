@@ -1,11 +1,10 @@
 import type { AgentEvent } from '@superone/shared/agent-types'
 import { applySeqToMessage, isReplayedEventForMessage } from '@superone/shared/event-seq-utils'
-import { resolveTaskToolUseId } from '@superone/shared/subagent-routing'
 import { extractPartialToolInput } from '@/components/chat/tool-display'
 import { markMessageEventApplied } from '../index'
 import type { PerSessionState } from '../types'
 import {
-  _patchAgentBlock,
+  _patchTaskToolBlock,
   mapMessagesStructural,
   noteStreamingToolInputOwner,
   STREAMING_INPUT_TOOLS,
@@ -13,6 +12,77 @@ import {
   streamingPreviewLastUpdate,
   streamingToolInputRaw,
 } from './shared'
+
+type TaskProgressMap = PerSessionState['taskProgress']
+type TaskProgressEntry = TaskProgressMap[string]
+
+function emptyTaskProgress(): TaskProgressEntry {
+  return { description: '', totalTokens: 0, toolUses: 0, durationMs: 0, toolHistory: [] }
+}
+
+/**
+ * Resolve the taskProgress write key.
+ *
+ * Rules (Codex review):
+ * - Key equal to taskId is **provisional** and may migrate to a newly supplied toolUseId.
+ * - Key different from taskId is an **established** Agent/Workflow launch key; keep it even
+ *   when a resume notification carries a waker toolUseId (do not migrate to the waker).
+ * - When only toolUseId is known and no entry exists, create under toolUseId.
+ */
+function resolveTaskProgressWrite(
+  taskProgress: TaskProgressMap,
+  toolUseId: string | undefined,
+  taskId: string | undefined,
+): { key: string; dropKey?: string; prev: TaskProgressEntry | undefined } | null {
+  if (!toolUseId && !taskId) return null
+
+  let establishedKey: string | undefined
+  let provisionalKey: string | undefined
+
+  if (taskId) {
+    for (const key of Object.keys(taskProgress)) {
+      if (taskProgress[key].taskId !== taskId) continue
+      if (key === taskId) provisionalKey = key
+      else establishedKey = key
+    }
+    if (!provisionalKey && !establishedKey && taskProgress[taskId]) {
+      provisionalKey = taskId
+    }
+  }
+
+  // Established canonical Agent/Workflow key always wins over a resume waker.
+  if (establishedKey) {
+    return { key: establishedKey, prev: taskProgress[establishedKey] }
+  }
+
+  if (toolUseId && taskProgress[toolUseId]) {
+    return { key: toolUseId, prev: taskProgress[toolUseId] }
+  }
+
+  // Migrate provisional taskId key → launch toolUseId.
+  if (provisionalKey && toolUseId && toolUseId !== provisionalKey) {
+    return { key: toolUseId, dropKey: provisionalKey, prev: taskProgress[provisionalKey] }
+  }
+
+  if (provisionalKey) {
+    return { key: provisionalKey, prev: taskProgress[provisionalKey] }
+  }
+
+  if (toolUseId) return { key: toolUseId, prev: undefined }
+  return { key: taskId!, prev: undefined }
+}
+
+function commitTaskProgress(
+  taskProgress: TaskProgressMap,
+  write: { key: string; dropKey?: string; prev: TaskProgressEntry | undefined },
+  next: TaskProgressEntry,
+): TaskProgressMap {
+  const out: TaskProgressMap = { ...taskProgress, [write.key]: next }
+  if (write.dropKey && write.dropKey !== write.key) {
+    delete out[write.dropKey]
+  }
+  return out
+}
 
 type ToolEvent = Extract<AgentEvent, {
   type:
@@ -149,55 +219,70 @@ export function reduceTool(session: PerSessionState, event: ToolEvent): Partial<
       }
 
     case 'task_started': {
-      if (!event.toolUseId) return {}
-      const prev = session.taskProgress[event.toolUseId]
-      return {
-        taskProgress: {
-          ...session.taskProgress,
-          [event.toolUseId]: {
-            ...(prev ?? { description: '', totalTokens: 0, toolUses: 0, durationMs: 0, toolHistory: [] }),
-            description: event.description,
-            taskId: event.taskId,
-            completed: prev?.completed === true ? true : false,
-          },
-        },
+      const write = resolveTaskProgressWrite(session.taskProgress, event.toolUseId, event.taskId)
+      if (!write) return {}
+      const prev = write.prev
+      const next: TaskProgressEntry = {
+        ...(prev ?? emptyTaskProgress()),
+        description: event.description,
+        taskId: event.taskId ?? prev?.taskId,
+        completed: prev?.completed === true ? true : false,
       }
+      return { taskProgress: commitTaskProgress(session.taskProgress, write, next) }
     }
 
     case 'task_progress': {
-      if (!event.toolUseId) return {}
-      const prev = session.taskProgress[event.toolUseId]
+      const write = resolveTaskProgressWrite(session.taskProgress, event.toolUseId, event.taskId)
+      if (!write) return {}
+      const prev = write.prev
       const toolHistory = prev?.toolHistory ? [...prev.toolHistory] : []
       if (prev && prev.description && prev.description !== event.description) {
         toolHistory.push({ toolName: prev.lastToolName ?? '', description: prev.description })
       }
       const progressSummary = event.summary ?? prev?.summary
+      const workflowAgents = event.workflowAgents?.length
+        ? event.workflowAgents
+        : prev?.workflowAgents
+      const workflowPhases = event.workflowPhases?.length
+        ? event.workflowPhases
+        : prev?.workflowPhases
+      const currentPhase = event.currentPhase ?? prev?.currentPhase
+      const next: TaskProgressEntry = {
+        ...(prev ?? emptyTaskProgress()),
+        description: event.description,
+        taskId: event.taskId ?? prev?.taskId,
+        lastToolName: event.lastToolName,
+        summary: progressSummary,
+        totalTokens: event.usage.totalTokens,
+        toolUses: event.usage.toolUses,
+        durationMs: event.usage.durationMs,
+        toolHistory,
+        ...(workflowAgents ? { workflowAgents } : {}),
+        ...(workflowPhases ? { workflowPhases } : {}),
+        ...(currentPhase ? { currentPhase } : {}),
+      }
+      // Only patch tool blocks when we know the launch toolUseId (not provisional taskId key).
+      const messages = event.toolUseId
+        ? _patchTaskToolBlock(session.messages, event.toolUseId, {
+            taskUsage: {
+              totalTokens: event.usage.totalTokens,
+              toolUses: event.usage.toolUses,
+              durationMs: event.usage.durationMs,
+            },
+            taskToolHistory: toolHistory,
+            taskSummary: progressSummary,
+            ...(workflowAgents ? { workflowAgents } : {}),
+            ...(workflowPhases ? { workflowPhases } : {}),
+            ...(currentPhase ? { workflowCurrentPhase: currentPhase } : {}),
+          })
+        : session.messages
       return {
-        messages: _patchAgentBlock(session.messages, event.toolUseId, {
-          taskUsage: { totalTokens: event.usage.totalTokens, toolUses: event.usage.toolUses, durationMs: event.usage.durationMs },
-          taskToolHistory: toolHistory,
-          taskSummary: progressSummary,
-        }),
-        taskProgress: {
-          ...session.taskProgress,
-          [event.toolUseId]: {
-            ...(prev ?? { description: '', totalTokens: 0, toolUses: 0, durationMs: 0, toolHistory: [] }),
-            description: event.description,
-            lastToolName: event.lastToolName,
-            summary: progressSummary,
-            totalTokens: event.usage.totalTokens,
-            toolUses: event.usage.toolUses,
-            durationMs: event.usage.durationMs,
-            toolHistory,
-          },
-        },
+        messages,
+        taskProgress: commitTaskProgress(session.taskProgress, write, next),
       }
     }
 
     case 'task_notification': {
-      // A resume notification carries the waker's toolUseId; map it back to the
-      // original Agent block via the shared taskId so we close the right block.
-      const tid = resolveTaskToolUseId(session.taskProgress, event.toolUseId, event.taskId)
       let msgs = session.messages
       let browserDownloads = session.browserDownloads ?? {}
       // Host browser_download tasks (bdl_*) finish via task_notification — flip the tool block UI.
@@ -230,13 +315,17 @@ export function reduceTool(session: PerSessionState, event: ToolEvent): Partial<
           },
         }
       }
-      if (!tid) {
+
+      // Resolve final write key: keep established Agent keys on resume; migrate provisional workflow keys.
+      const write = resolveTaskProgressWrite(session.taskProgress, event.toolUseId, event.taskId)
+      if (!write) {
         return msgs !== session.messages || browserDownloads !== (session.browserDownloads ?? {})
           ? { messages: msgs, browserDownloads }
           : {}
       }
+
       const file = event.outputFile
-      const prevProgress = session.taskProgress[tid]
+      const prevProgress = write.prev
       const usageUpdate = event.usage ? {
         totalTokens: event.usage.totalTokens,
         toolUses: event.usage.toolUses,
@@ -247,39 +336,71 @@ export function reduceTool(session: PerSessionState, event: ToolEvent): Partial<
       const finalStatus = event.taskStatus === 'completed' && (prevStatus === 'failed' || prevStatus === 'stopped')
         ? prevStatus
         : event.taskStatus
-      const finalUsage = event.usage ?? { totalTokens: prevProgress?.totalTokens ?? 0, toolUses: prevProgress?.toolUses ?? 0, durationMs: prevProgress?.durationMs ?? 0 }
+      const finalUsage = event.usage ?? {
+        totalTokens: prevProgress?.totalTokens ?? 0,
+        toolUses: prevProgress?.toolUses ?? 0,
+        durationMs: prevProgress?.durationMs ?? 0,
+      }
       const finalToolHistory = prevProgress?.toolHistory ?? []
-      const agentPatch = {
-        taskUsage: { totalTokens: finalUsage.totalTokens, toolUses: finalUsage.toolUses, durationMs: finalUsage.durationMs },
+      // Preserve prior agents/phases when terminal snapshot omits them.
+      const workflowAgents = event.workflowAgents?.length
+        ? event.workflowAgents
+        : prevProgress?.workflowAgents
+      const workflowPhases = event.workflowPhases?.length
+        ? event.workflowPhases
+        : prevProgress?.workflowPhases
+      const currentPhase = event.currentPhase ?? prevProgress?.currentPhase
+      const resultText = event.resultText ?? prevProgress?.resultText
+      const toolPatch = {
+        taskUsage: {
+          totalTokens: finalUsage.totalTokens,
+          toolUses: finalUsage.toolUses,
+          durationMs: finalUsage.durationMs,
+        },
         taskToolHistory: finalToolHistory,
         taskSummary: finalSummary,
+        ...(resultText ? { taskResultText: resultText } : {}),
+        ...(workflowAgents ? { workflowAgents } : {}),
+        ...(workflowPhases ? { workflowPhases } : {}),
+        ...(currentPhase ? { workflowCurrentPhase: currentPhase } : {}),
       }
-      // Structural share: only the home Agent (and optional tool_result) message
-      // identity changes so memo'd ChatMessage rows keep stable props.
-      msgs = mapMessagesStructural(msgs, (block) => {
-        if (block.type === 'tool_use' && block.toolName === 'Agent' && block.toolUseId === tid) {
-          return { ...block, ...agentPatch }
-        }
-        if (file && block.type === 'tool_result' && block.toolUseId === tid) {
-          if (block.outputPath === file) return block
-          return { ...block, outputPath: file }
-        }
-        return block
-      })
+      // Patch under the resolved canonical write key (never provisional taskId-only key).
+      const patchToolId = event.taskId != null && write.key === event.taskId
+        ? undefined
+        : write.key
+      if (patchToolId) {
+        msgs = mapMessagesStructural(msgs, (block) => {
+          if (
+            block.type === 'tool_use'
+            && (block.toolName === 'Agent' || block.toolName === 'Workflow')
+            && block.toolUseId === patchToolId
+          ) {
+            return { ...block, ...toolPatch }
+          }
+          if (file && block.type === 'tool_result' && block.toolUseId === patchToolId) {
+            if (block.outputPath === file) return block
+            return { ...block, outputPath: file }
+          }
+          return block
+        })
+      }
+      const next: TaskProgressEntry = {
+        ...(prevProgress ?? emptyTaskProgress()),
+        ...usageUpdate,
+        taskId: event.taskId ?? prevProgress?.taskId,
+        completed: true,
+        status: finalStatus,
+        outputFile: file || prevProgress?.outputFile,
+        summary: finalSummary,
+        ...(resultText ? { resultText } : {}),
+        ...(workflowAgents ? { workflowAgents } : {}),
+        ...(workflowPhases ? { workflowPhases } : {}),
+        ...(currentPhase ? { currentPhase } : {}),
+      }
       return {
         messages: msgs,
         browserDownloads,
-        taskProgress: {
-          ...session.taskProgress,
-          [tid]: {
-            ...(prevProgress ?? { description: '', totalTokens: 0, toolUses: 0, durationMs: 0, toolHistory: [] }),
-            ...usageUpdate,
-            completed: true,
-            status: finalStatus,
-            outputFile: file || prevProgress?.outputFile,
-            summary: finalSummary,
-          },
-        },
+        taskProgress: commitTaskProgress(session.taskProgress, write, next),
       }
     }
 

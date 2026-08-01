@@ -23,7 +23,7 @@ import { createSession as createSessionRecord } from '../db-sessions'
 import { listCredentials } from '../providers/credential-store'
 import { getPlatforms } from '../providers/registry'
 import { resolveChatService } from '../providers/resolver'
-import { getRecentFolders } from '../recent-folders'
+import { addRecentFolder, getRecentFolders } from '../recent-folders'
 import log from '../logger'
 import { listSessionProviders } from './session-provider-repo'
 import type { Session, SessionManager } from './types'
@@ -614,30 +614,31 @@ function isWithin(root: string, target: string): boolean {
 /**
  * A launch may point the child at a directory outside the parent's project. File
  * it under the project that actually owns that directory, so it shows up in the
- * right sidebar entry instead of hiding under the parent's.
+ * right sidebar entry instead of hiding under the parent's. Nested projects
+ * resolve to the most specific match.
  *
- * Only projects the user has already opened are candidates: a session row needs a
- * `projects` row (createSessionRecord throws otherwise), and conjuring one would
- * make folders the user never opened appear in their sidebar. An unowned
- * directory — a worktree under ~/.worktrees, a scratch dir — keeps the parent's
- * project, which stays the only sensible home for it.
+ * When no open project covers the directory, register it as one: a session row
+ * requires a `projects` row, and filing the child under the parent instead would
+ * put it in a project that has nothing to do with where it works.
  *
- * Called with the *requested* cwd, before worktree activation: a worktree lives
- * outside every project but belongs to the project it was cut from.
+ * Call with the *requested* cwd, before worktree activation — a worktree lives
+ * outside every project but belongs to the project it was cut from, so resolving
+ * after activation would register `~/.worktrees/...` as its own project.
  */
-function resolveProjectPath(cwd: string, parentProjectPath: string): string {
-  let owner = parentProjectPath
-  let ownerDepth = isWithin(parentProjectPath, cwd) ? resolve(parentProjectPath).length : -1
+function ensureChildProject(cwd: string, parentProjectPath: string): string {
+  let owner: string | null = isWithin(parentProjectPath, cwd) ? parentProjectPath : null
+  let ownerDepth = owner ? resolve(owner).length : -1
   for (const project of getRecentFolders()) {
     if (project.missing || !isWithin(project.path, cwd)) continue
-    // Nested projects: the most specific one owns the directory.
     const depth = resolve(project.path).length
     if (depth > ownerDepth) {
       owner = project.path
       ownerDepth = depth
     }
   }
-  return owner
+  if (owner) return owner
+  addRecentFolder(cwd)
+  return cwd
 }
 
 /**
@@ -784,7 +785,7 @@ export async function startSessionAgent(
   if (!parent) return toolResult({ status: 'error', message: 'Parent session is not available' }, true)
   const config = parseConfig(grant.config_json)
   let cwd = resolveCwd(config, parent)
-  const projectPath = resolveProjectPath(cwd, parent.projectPath)
+  const projectPath = ensureChildProject(cwd, parent.projectPath)
   let gitBranch: string | null = null
   if (config.worktree?.enabled) {
     const worktree = await activateWorktree(cwd, {

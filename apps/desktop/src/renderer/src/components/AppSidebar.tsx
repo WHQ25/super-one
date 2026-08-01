@@ -397,6 +397,9 @@ export const AppSidebar = memo(function AppSidebar() {
     return window.app.onSessionChanged(() => {
       refreshFolderSessions(currentFolder)
       refreshPinned()
+      // A collaboration child pointed outside every open project registers its
+      // own — without this the new project row only appears after a restart.
+      void useAppStore.getState().fetchRecentFolders()
     })
   }, [currentFolder, refreshFolderSessions, refreshPinned])
   const sessionListNonce = useAppStore((s) => s.sessionListNonce)

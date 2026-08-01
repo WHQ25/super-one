@@ -1,6 +1,8 @@
 import Database from 'better-sqlite3'
-import { resolve } from 'path'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { mkdirSync, mkdtempSync, rmSync } from 'fs'
+import { tmpdir } from 'os'
+import { join } from 'path'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SESSION_AGENT_LAUNCHES_FIELD, type AgentEvent } from '@superone/shared/agent-types'
 import type { Session, SessionCreateOptions, SessionManager } from './types'
 
@@ -73,6 +75,11 @@ vi.mock('../db-sessions', () => ({
 }))
 vi.mock('../recent-folders', () => ({
   getRecentFolders: () => state.projects,
+  // Mirrors the real upsert, so a registered folder immediately satisfies the
+  // "project must exist" guard in createSession above.
+  addRecentFolder: (path: string) => {
+    if (!state.projects.some((project) => project.path === path)) state.projects.push({ path })
+  },
 }))
 
 import {
@@ -737,8 +744,18 @@ describe('session collaboration', () => {
 describe('child session project attribution', () => {
   // Real directories, since resolveCwd stats the path. OTHER_PROJECT sits inside
   // TEST_CWD, so it also covers "the more specific project wins".
-  const OTHER_PROJECT = resolve(TEST_CWD, 'apps/web')
-  const NESTED_IN_OTHER = resolve(OTHER_PROJECT, 'components')
+  // Real directories outside TEST_CWD — resolveCwd stats the path, and anchoring
+  // these to the repo layout would break as soon as vitest runs from another cwd.
+  let OTHER_PROJECT: string
+  let NESTED_IN_OTHER: string
+  beforeEach(() => {
+    OTHER_PROJECT = mkdtempSync(join(tmpdir(), 'collab-project-'))
+    NESTED_IN_OTHER = join(OTHER_PROJECT, 'packages')
+    mkdirSync(NESTED_IN_OTHER)
+  })
+  afterEach(() => {
+    rmSync(OTHER_PROJECT, { recursive: true, force: true })
+  })
 
   async function startChild(
     cwd: string,
@@ -773,18 +790,56 @@ describe('child session project attribution', () => {
     expect(createSession.mock.calls[0][0].cwd).toBe(NESTED_IN_OTHER)
   })
 
-  it('keeps the parent project for a directory no open project owns', async () => {
+  it('lets the most specific project win when projects are nested', async () => {
+    state.projects = [{ path: TEST_CWD }, { path: OTHER_PROJECT }, { path: NESTED_IN_OTHER }]
+    const parent = fakeSession('parent')
+    const { host, createSession } = fakeHost(parent)
+
+    await startChild(NESTED_IN_OTHER, host, parent)
+
+    expect(createSession.mock.calls[0][0].projectPath).toBe(NESTED_IN_OTHER)
+  })
+
+  it('registers a directory no open project owns rather than misfiling it under the parent', async () => {
     state.projects = [{ path: TEST_CWD }]
     const parent = fakeSession('parent')
     const { host, createSession } = fakeHost(parent)
 
     await startChild(OTHER_PROJECT, host, parent)
 
+    expect(state.projects.map((project) => project.path)).toContain(OTHER_PROJECT)
+    expect(createSession.mock.calls[0][0].projectPath).toBe(OTHER_PROJECT)
+  })
+
+  it('does not register a directory the parent project already covers', async () => {
+    state.projects = [{ path: TEST_CWD }]
+    const parent = fakeSession('parent')
+    const { host, createSession } = fakeHost(parent)
+
+    await startChild(TEST_CWD, host, parent)
+
+    expect(state.projects).toHaveLength(1)
     expect(createSession.mock.calls[0][0].projectPath).toBe(TEST_CWD)
   })
 
+  it('does not register the worktree path when a launch cuts a worktree', async () => {
+    const worktreePath = join(tmpdir(), 'collab-fake-worktree')
+    state.projects = [{ path: TEST_CWD }]
+    state.activateWorktree.mockResolvedValue({ ok: true, path: worktreePath, recordedBranch: 'feature' })
+    const parent = fakeSession('parent')
+    const { host, createSession } = fakeHost(parent)
+
+    await startChild(TEST_CWD, host, parent, {
+      worktree: { enabled: true, baseBranch: 'main', mode: 'branch', branchName: 'wt' },
+    })
+
+    expect(state.projects).toHaveLength(1)
+    expect(createSession.mock.calls[0][0].projectPath).toBe(TEST_CWD)
+    expect(createSession.mock.calls[0][0].cwd).toBe(worktreePath)
+  })
+
   it('attributes a worktree child by its requested cwd, not the worktree path', async () => {
-    const worktreePath = resolve(TEST_CWD, '../../.worktrees/fake')
+    const worktreePath = join(tmpdir(), 'collab-fake-worktree')
     state.projects = [{ path: TEST_CWD }, { path: OTHER_PROJECT }]
     state.activateWorktree.mockResolvedValue({ ok: true, path: worktreePath, recordedBranch: 'feature' })
     const parent = fakeSession('parent')

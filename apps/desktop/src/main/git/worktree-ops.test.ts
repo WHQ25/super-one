@@ -7,8 +7,14 @@ import { join } from 'node:path'
 vi.mock('../logger', () => ({
   default: { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() },
 }))
+// activateWorktree writes into `~/.worktrees` — redirect it into a temp home.
+const FAKE_HOME = join(tmpdir(), `wt-home-${process.pid}-${Date.now().toString(36)}`)
+vi.mock('os', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('os')>()
+  return { ...actual, homedir: () => FAKE_HOME }
+})
 
-import { assignBranch, carryUncommittedChanges, getHandoffPreview, handoffToLocal } from './worktree-ops'
+import { activateWorktree, assignBranch, carryUncommittedChanges, getHandoffPreview, handoffToLocal } from './worktree-ops'
 
 function git(cwd: string, ...args: string[]): string {
   return execFileSync('git', args, { cwd, encoding: 'utf8' }).trim()
@@ -46,6 +52,55 @@ afterEach(() => {
   while (trash.length) {
     try { rmSync(trash.pop()!, { recursive: true, force: true }) } catch { /* ignore */ }
   }
+  try { rmSync(FAKE_HOME, { recursive: true, force: true }) } catch { /* ignore */ }
+})
+
+describe('activateWorktree', () => {
+  it('gives every concurrent activation its own worktree instead of colliding on the same path', async () => {
+    const repo = makeRepo()
+
+    const results = await Promise.all([
+      activateWorktree(repo, { baseBranch: 'main', mode: 'detach' }),
+      activateWorktree(repo, { baseBranch: 'main', mode: 'detach' }),
+      activateWorktree(repo, { baseBranch: 'main', mode: 'detach' }),
+    ])
+
+    const paths = results.map((r) => r.path)
+    expect(new Set(paths).size).toBe(3)
+    for (const path of paths) expect(existsSync(join(path, 'README.md'))).toBe(true)
+    // git itself agrees all three are registered worktrees of this repo
+    const registered = git(repo, 'worktree', 'list', '--porcelain')
+    for (const path of paths) expect(registered).toContain(path)
+  })
+
+  it('keeps the source repo intact when concurrent activations carry local changes', async () => {
+    const repo = makeRepo()
+    writeFileSync(join(repo, 'README.md'), 'hello\nlocal edit\n')
+    writeFileSync(join(repo, 'scratch.txt'), 'untracked local\n')
+
+    const results = await Promise.all([
+      activateWorktree(repo, { baseBranch: 'main', mode: 'detach', carryLocalChanges: true }),
+      activateWorktree(repo, { baseBranch: 'main', mode: 'detach', carryLocalChanges: true }),
+    ])
+
+    // Interleaved stash push/pop would leave the source bare or the entry stuck.
+    expect(readFileSync(join(repo, 'README.md'), 'utf8')).toContain('local edit')
+    expect(readFileSync(join(repo, 'scratch.txt'), 'utf8')).toContain('untracked local')
+    expect(git(repo, 'stash', 'list')).toBe('')
+    for (const result of results) {
+      expect(readFileSync(join(result.path, 'README.md'), 'utf8')).toContain('local edit')
+    }
+  })
+
+  it('rejects a duplicate branch name instead of silently reusing another session worktree', async () => {
+    const repo = makeRepo()
+
+    const first = await activateWorktree(repo, { baseBranch: 'main', mode: 'branch', branchName: 'shared' })
+    expect(first.recordedBranch).toBe('shared')
+    await expect(
+      activateWorktree(repo, { baseBranch: 'main', mode: 'branch', branchName: 'shared' }),
+    ).rejects.toThrow()
+  })
 })
 
 describe('handoffToLocal', () => {

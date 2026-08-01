@@ -1,8 +1,9 @@
 import { randomUUID } from 'crypto'
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
-import { join, resolve } from 'path'
+import { basename, join, resolve } from 'path'
 import { gitRun } from '../git-run'
+import { withRepoLock } from './repo-lock'
 import { logGitFailure } from '../git-diagnostics'
 import { sanitizeGitRef } from '../path-security'
 import {
@@ -107,27 +108,47 @@ export async function activateWorktree(
 
   const mainDir = await resolveMainWorktreeDir(folderPath)
   const safeBase = sanitizeGitRef(baseBranch)
-  const commitHash = (await gitRun(folderPath, ['rev-parse', safeBase])).trim()
-  const { wtDir, wtPath } = planNewWorktreePaths({
-    mainDir,
-    shortHash: commitHash.slice(0, 7),
-  })
-
-  if (!existsSync(wtDir)) mkdirSync(wtDir, { recursive: true })
   const safeBranchName =
     mode === 'branch' ? sanitizeGitRef(branchName!.trim()) : undefined
-  const addArgs = worktreeAddArgs(mode, wtPath, safeBase, safeBranchName)
-  await gitRun(folderPath, ['worktree', ...addArgs])
 
-  if (carryLocalChanges) {
-    await carryUncommittedChanges(folderPath, wtPath)
-  }
+  // `worktree add` and the carry stash both take repo-wide git locks, and the
+  // second-resolution path stamp collides when two activations land in the same
+  // second. Both break parallel session_collab_start — queue per repo.
+  return withRepoLock(mainDir, async () => {
+    const commitHash = (await gitRun(folderPath, ['rev-parse', safeBase])).trim()
+    const planned = planNewWorktreePaths({
+      mainDir,
+      shortHash: commitHash.slice(0, 7),
+    })
+    if (!existsSync(planned.wtDir)) mkdirSync(planned.wtDir, { recursive: true })
+    // planNewWorktreePaths uses epoch-second uniqueness only; suffix until free.
+    const wtPath = allocateWorktreePath(planned.wtDir, basename(planned.wtPath))
+    const addArgs = worktreeAddArgs(mode, wtPath, safeBase, safeBranchName)
+    await gitRun(folderPath, ['worktree', ...addArgs])
 
-  return {
-    ok: true,
-    path: wtPath,
-    recordedBranch: recordedBranchForMode(mode, safeBase, safeBranchName ?? branchName),
+    if (carryLocalChanges) {
+      await carryUncommittedChanges(folderPath, wtPath)
+    }
+
+    return {
+      ok: true,
+      path: wtPath,
+      recordedBranch: recordedBranchForMode(mode, safeBase, safeBranchName ?? branchName),
+    }
+  })
+}
+
+/**
+ * `${epoch}-${shortHash}` is only unique per second, so sibling activations from
+ * the same base commit would target one directory. Suffix until the name is
+ * free — safe to probe because callers hold the repo lock.
+ */
+function allocateWorktreePath(wtDir: string, stem: string): string {
+  for (let n = 0; n < 100; n++) {
+    const candidate = join(wtDir, n === 0 ? stem : `${stem}-${n + 1}`)
+    if (!existsSync(candidate)) return candidate
   }
+  return join(wtDir, `${stem}-${randomUUID().slice(0, 8)}`)
 }
 
 async function writeWorkingTree(worktreePath: string): Promise<string> {

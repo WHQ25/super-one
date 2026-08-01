@@ -1,6 +1,6 @@
 import { createHash, randomBytes, randomUUID } from 'crypto'
 import { existsSync, statSync } from 'fs'
-import { resolve } from 'path'
+import { resolve, sep } from 'path'
 import type {
   EffortLevel,
   ModelOption,
@@ -23,6 +23,7 @@ import { createSession as createSessionRecord } from '../db-sessions'
 import { listCredentials } from '../providers/credential-store'
 import { getPlatforms } from '../providers/registry'
 import { resolveChatService } from '../providers/resolver'
+import { getRecentFolders } from '../recent-folders'
 import log from '../logger'
 import { listSessionProviders } from './session-provider-repo'
 import type { Session, SessionManager } from './types'
@@ -605,6 +606,40 @@ function resolveCwd(config: SessionAgentLaunchConfig, parent: Session): string {
   return cwd
 }
 
+function isWithin(root: string, target: string): boolean {
+  const normalizedRoot = resolve(root)
+  return target === normalizedRoot || target.startsWith(normalizedRoot + sep)
+}
+
+/**
+ * A launch may point the child at a directory outside the parent's project. File
+ * it under the project that actually owns that directory, so it shows up in the
+ * right sidebar entry instead of hiding under the parent's.
+ *
+ * Only projects the user has already opened are candidates: a session row needs a
+ * `projects` row (createSessionRecord throws otherwise), and conjuring one would
+ * make folders the user never opened appear in their sidebar. An unowned
+ * directory — a worktree under ~/.worktrees, a scratch dir — keeps the parent's
+ * project, which stays the only sensible home for it.
+ *
+ * Called with the *requested* cwd, before worktree activation: a worktree lives
+ * outside every project but belongs to the project it was cut from.
+ */
+function resolveProjectPath(cwd: string, parentProjectPath: string): string {
+  let owner = parentProjectPath
+  let ownerDepth = isWithin(parentProjectPath, cwd) ? resolve(parentProjectPath).length : -1
+  for (const project of getRecentFolders()) {
+    if (project.missing || !isWithin(project.path, cwd)) continue
+    // Nested projects: the most specific one owns the directory.
+    const depth = resolve(project.path).length
+    if (depth > ownerDepth) {
+      owner = project.path
+      ownerDepth = depth
+    }
+  }
+  return owner
+}
+
 /**
  * Deliver the approved launch task and resolve once the child agent has begun
  * replying (assistant message_start). The remainder of the turn continues in
@@ -749,6 +784,7 @@ export async function startSessionAgent(
   if (!parent) return toolResult({ status: 'error', message: 'Parent session is not available' }, true)
   const config = parseConfig(grant.config_json)
   let cwd = resolveCwd(config, parent)
+  const projectPath = resolveProjectPath(cwd, parent.projectPath)
   let gitBranch: string | null = null
   if (config.worktree?.enabled) {
     const worktree = await activateWorktree(cwd, {
@@ -770,15 +806,16 @@ export async function startSessionAgent(
     task: grant.task,
   })
   const title = collaborationSessionTitle(displayName, role)
-  createSessionRecord(parent.projectPath, childSessionId, title, !!config.worktree?.enabled, gitBranch ?? undefined, cwd !== parent.projectPath ? cwd : undefined)
+  createSessionRecord(projectPath, childSessionId, title, !!config.worktree?.enabled, gitBranch ?? undefined, cwd !== projectPath ? cwd : undefined)
   let child: Session
   // createSession always promotes the new session to project-active. Collaboration
   // children must not steal routing from the parent for unscoped main-process ops.
-  const previousActiveId = host.getActiveSession(parent.projectPath)?.id ?? null
+  // Scoped to the joined project, which is not always the parent's.
+  const previousActiveId = host.getActiveSession(projectPath)?.id ?? null
   try {
     child = host.createSession({
       id: childSessionId,
-      projectPath: parent.projectPath,
+      projectPath,
       cwd,
       gitBranch,
       providerId: grant.agent_id,
@@ -792,7 +829,7 @@ export async function startSessionAgent(
     })
     if (previousActiveId && previousActiveId !== childSessionId) {
       try {
-        host.setActiveSession(parent.projectPath, previousActiveId)
+        host.setActiveSession(projectPath, previousActiveId)
       } catch (err) {
         log.warn(
           '[session-collaboration] failed to restore previous active session sid=%s: %s',
@@ -801,10 +838,10 @@ export async function startSessionAgent(
         )
         // The previous target disappeared while the child was being created. Do
         // not leave the collaboration child as an accidental routing fallback.
-        host.clearActiveSession(parent.projectPath)
+        host.clearActiveSession(projectPath)
       }
     } else if (!previousActiveId) {
-      host.clearActiveSession(parent.projectPath)
+      host.clearActiveSession(projectPath)
     }
     child.setTitle(title, 'agent')
     // Persist provider + ACP agent immediately so sidebar brand icons work before first save.

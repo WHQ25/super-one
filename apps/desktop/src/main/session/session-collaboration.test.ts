@@ -1,4 +1,5 @@
 import Database from 'better-sqlite3'
+import { resolve } from 'path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { SESSION_AGENT_LAUNCHES_FIELD, type AgentEvent } from '@superone/shared/agent-types'
 import type { Session, SessionCreateOptions, SessionManager } from './types'
@@ -19,6 +20,7 @@ const state = vi.hoisted(() => ({
   }],
   credentials: [{ id: 'api-1', name: 'Seed-lei', platformId: 'openai' }],
   platforms: [{ id: 'openai', name: 'OpenAI', brand: 'openai', plans: [] }],
+  projects: [] as Array<{ path: string; missing?: boolean }>,
   agentPreference: {
     claude: { defaultModel: 'test-model', defaultEffort: 'high' },
     codex: { defaultModel: '', defaultReasoningEffort: '' },
@@ -61,9 +63,16 @@ vi.mock('../git/worktree-ops', () => ({
 }))
 vi.mock('../db-sessions', () => ({
   createSession: (projectPath: string, sessionId: string, title?: string) => {
+    // Mirrors the real guard: a session can only be filed under a known project.
+    if (!state.projects.some((project) => project.path === projectPath)) {
+      throw new Error(`Project not found for path: ${projectPath}`)
+    }
     state.db!.prepare('INSERT INTO sessions (id, project_path, title) VALUES (?, ?, ?)').run(sessionId, projectPath, title ?? null)
     return sessionId
   },
+}))
+vi.mock('../recent-folders', () => ({
+  getRecentFolders: () => state.projects,
 }))
 
 import {
@@ -153,25 +162,27 @@ function fakeHost(parent: Session, options: { activeSessionId?: string | null } 
     sessions.set(child.id, child)
     return child
   })
-  let activeId: string | null = options.activeSessionId === undefined ? parent.id : options.activeSessionId
+  // Active session is per project in the real manager — a child attributed to
+  // another project must not disturb the parent project's routing, and vice versa.
+  const activeByProject = new Map<string, string>()
+  const initialActive = options.activeSessionId === undefined ? parent.id : options.activeSessionId
+  if (initialActive) activeByProject.set(parent.projectPath, initialActive)
   const host = {
     getSession: (id: string) => sessions.get(id) ?? null,
     getActiveSession: (projectPath: string) => {
-      void projectPath
+      const activeId = activeByProject.get(projectPath)
       return activeId ? sessions.get(activeId) ?? null : null
     },
     setActiveSession: (projectPath: string, sessionId: string) => {
-      void projectPath
       if (!sessions.has(sessionId)) throw new Error(`Session not found: ${sessionId}`)
-      activeId = sessionId
+      activeByProject.set(projectPath, sessionId)
     },
     clearActiveSession: (projectPath: string) => {
-      void projectPath
-      activeId = null
+      activeByProject.delete(projectPath)
     },
     createSession: vi.fn((options: SessionCreateOptions) => {
       const child = createSession(options)
-      activeId = child.id
+      activeByProject.set(options.projectPath, child.id)
       return child
     }),
     disposeSession: vi.fn(async (id: string) => { sessions.delete(id) }),
@@ -181,10 +192,20 @@ function fakeHost(parent: Session, options: { activeSessionId?: string | null } 
       throw new Error(`Session ${id} not found`)
     }),
   } as unknown as SessionManager
-  return { host, sessions, createSession: host.createSession as ReturnType<typeof vi.fn> }
+  return {
+    host,
+    sessions,
+    createSession: host.createSession as ReturnType<typeof vi.fn>,
+    activeIn: (projectPath: string) => activeByProject.get(projectPath) ?? null,
+  }
 }
 
-async function approveLaunches(parent: Session, host: SessionManager, count = 1) {
+async function approveLaunches(
+  parent: Session,
+  host: SessionManager,
+  count = 1,
+  configPatch: Record<string, unknown> = {},
+) {
   const promise = requestSessionAgents(parent.id, {
     launches: Array.from({ length: count }, (_, index) => ({
       launchId: `launch-${index}`,
@@ -192,7 +213,7 @@ async function approveLaunches(parent: Session, host: SessionManager, count = 1)
       task: `Task ${index}`,
       name: `Agent ${index}`,
       role: 'Worker',
-      config: { cwd: TEST_CWD, model: 'test-model', effort: 'high' },
+      config: { cwd: TEST_CWD, model: 'test-model', effort: 'high', ...configPatch },
     })),
   }, host)
   const event = (parent.emitHostEvent as ReturnType<typeof vi.fn>).mock.calls[0][0] as AgentEvent
@@ -225,6 +246,7 @@ beforeEach(() => {
   }]
   state.credentials = [{ id: 'api-1', name: 'Seed-lei', platformId: 'openai' }]
   state.platforms = [{ id: 'openai', name: 'OpenAI', brand: 'openai', plans: [] }]
+  state.projects = [{ path: TEST_CWD }]
   state.agentPreference = {
     claude: { defaultModel: 'test-model', defaultEffort: 'high' },
     codex: { defaultModel: '', defaultReasoningEffort: '' },
@@ -709,5 +731,87 @@ describe('session collaboration', () => {
     }))
     expect(result).toMatchObject({ status: 'error' })
     expect(String(result.message)).toMatch(/invalid/i)
+  })
+})
+
+describe('child session project attribution', () => {
+  // Real directories, since resolveCwd stats the path. OTHER_PROJECT sits inside
+  // TEST_CWD, so it also covers "the more specific project wins".
+  const OTHER_PROJECT = resolve(TEST_CWD, 'apps/web')
+  const NESTED_IN_OTHER = resolve(OTHER_PROJECT, 'components')
+
+  async function startChild(
+    cwd: string,
+    host: SessionManager,
+    parent: Session,
+    configPatch: Record<string, unknown> = {},
+  ) {
+    const [launch] = await approveLaunches(parent, host, 1, { cwd, ...configPatch })
+    return resultJson(await startSessionAgent('parent', launch.credential, host))
+  }
+
+  it('files the child under the project owning its cwd, not the parent project', async () => {
+    state.projects = [{ path: TEST_CWD }, { path: OTHER_PROJECT }]
+    const parent = fakeSession('parent')
+    const { host, createSession } = fakeHost(parent)
+
+    await startChild(OTHER_PROJECT, host, parent)
+
+    expect(createSession.mock.calls[0][0].projectPath).toBe(OTHER_PROJECT)
+    const row = state.db!.prepare('SELECT project_path FROM sessions WHERE id != ?').get('parent') as { project_path: string }
+    expect(row.project_path).toBe(OTHER_PROJECT)
+  })
+
+  it('walks up to the owning project when the cwd is a subdirectory of it', async () => {
+    state.projects = [{ path: TEST_CWD }, { path: OTHER_PROJECT }]
+    const parent = fakeSession('parent')
+    const { host, createSession } = fakeHost(parent)
+
+    await startChild(NESTED_IN_OTHER, host, parent)
+
+    expect(createSession.mock.calls[0][0].projectPath).toBe(OTHER_PROJECT)
+    expect(createSession.mock.calls[0][0].cwd).toBe(NESTED_IN_OTHER)
+  })
+
+  it('keeps the parent project for a directory no open project owns', async () => {
+    state.projects = [{ path: TEST_CWD }]
+    const parent = fakeSession('parent')
+    const { host, createSession } = fakeHost(parent)
+
+    await startChild(OTHER_PROJECT, host, parent)
+
+    expect(createSession.mock.calls[0][0].projectPath).toBe(TEST_CWD)
+  })
+
+  it('attributes a worktree child by its requested cwd, not the worktree path', async () => {
+    const worktreePath = resolve(TEST_CWD, '../../.worktrees/fake')
+    state.projects = [{ path: TEST_CWD }, { path: OTHER_PROJECT }]
+    state.activateWorktree.mockResolvedValue({ ok: true, path: worktreePath, recordedBranch: 'feature' })
+    const parent = fakeSession('parent')
+    const { host, createSession } = fakeHost(parent)
+
+    await startChild(OTHER_PROJECT, host, parent, {
+      worktree: { enabled: true, baseBranch: 'main', mode: 'branch', branchName: 'wt' },
+    })
+
+    // The worktree lives outside every project, but it was cut from OTHER_PROJECT.
+    expect(state.activateWorktree).toHaveBeenCalledWith(OTHER_PROJECT, expect.anything())
+    expect(createSession.mock.calls[0][0].projectPath).toBe(OTHER_PROJECT)
+    expect(createSession.mock.calls[0][0].cwd).toBe(worktreePath)
+  })
+
+  it('restores the active session of the project it actually joined', async () => {
+    state.projects = [{ path: TEST_CWD }, { path: OTHER_PROJECT }]
+    const parent = fakeSession('parent')
+    const { host, activeIn, sessions } = fakeHost(parent)
+    // Another session already owns routing in the project the child will join.
+    const incumbent = fakeSession('incumbent')
+    sessions.set('incumbent', incumbent)
+    host.setActiveSession(OTHER_PROJECT, 'incumbent')
+
+    await startChild(OTHER_PROJECT, host, parent)
+
+    expect(activeIn(OTHER_PROJECT)).toBe('incumbent')
+    expect(activeIn(TEST_CWD)).toBe('parent')
   })
 })

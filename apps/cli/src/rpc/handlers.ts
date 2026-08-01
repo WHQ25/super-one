@@ -1,0 +1,1517 @@
+import {
+  DATABASE_SCHEMA_GENERATION,
+  PHASE1_NODE_CAPABILITIES,
+  PROTOCOL_GENERATION,
+  hasAllScopes,
+  isNodeHarnessId,
+  normalizeSessionHarnessId,
+  OPERATION_SCOPES,
+  type AuthScope,
+  type ExecutionEnvironmentDescriptor,
+  type RpcErrorCode,
+} from '@superone/shared/environment'
+import { isCodexBinaryOverrideRunnable } from '../session/codex-turn-runner'
+import { isClaudeBinaryOverrideRunnable } from '../session/claude-turn-runner'
+import { cloneRepository } from '@superone/shared/git-clone'
+import { existsSync, mkdirSync, readdirSync, statSync } from 'node:fs'
+import { join as pathJoin, resolve as pathResolve } from 'node:path'
+import { arch, cpus, freemem, homedir, hostname, platform, totalmem, uptime } from 'node:os'
+import type { AuthenticatedClient } from '../auth/auth-service'
+import type { NodeIdentity } from '../identity'
+import type { NodeTerminalManager } from '../terminal/manager'
+import type { ProjectRegistry } from '../workspace/project-registry'
+import type { WorkspaceFsService } from '../workspace/fs-service'
+import type { WorkspaceGitService } from '../workspace/git-service'
+import type { SessionRuntime } from '../session/session-runtime'
+import type { HarnessManager } from '../session/harness-manager'
+import type { ControlLeaseService } from '../session/control-lease'
+import type { EventLog } from '../session/event-log'
+import type { CollaborationMailbox } from '../session/collaboration'
+import type { WorkspaceWatchService } from '../workspace/watch-service'
+import type { IdempotencyService } from '../auth/idempotency'
+
+export interface RpcContext {
+  client: AuthenticatedClient
+  identity: NodeIdentity
+  terminals: NodeTerminalManager
+  projects: ProjectRegistry
+  workspaceFs: WorkspaceFsService
+  workspaceGit: WorkspaceGitService
+  workspaceWatch: WorkspaceWatchService
+  sessions: SessionRuntime
+  harnesses: HarnessManager
+  leases: ControlLeaseService
+  events: EventLog
+  collaboration: CollaborationMailbox
+  idempotency: IdempotencyService
+  startedAt: number
+  simulatedHarness?: boolean
+  requestId?: string
+  idempotencyKey?: string
+}
+
+export interface RpcResult {
+  result?: unknown
+  error?: { code: RpcErrorCode; message: string; details?: Record<string, unknown> }
+}
+
+function requireScopes(client: AuthenticatedClient, scopes: readonly AuthScope[]): RpcResult | null {
+  if (!hasAllScopes(client.scopes, scopes)) {
+    return { error: { code: 'forbidden', message: `missing scopes: ${scopes.join(', ')}` } }
+  }
+  return null
+}
+
+function mapOs(): ExecutionEnvironmentDescriptor['platform']['os'] {
+  const p = platform()
+  if (p === 'darwin' || p === 'linux') return p
+  if (p === 'win32') return 'windows'
+  return 'linux'
+}
+
+/** In-memory watch buffers keyed by watchId (per-process), owned by clientSessionId. */
+const watchBuffers = new Map<
+  string,
+  { events: Array<{ path: string; type: string }>; cancel: () => void; owner: string }
+>()
+
+/** Clear handler-side buffers when client disconnects/revokes. */
+export function clearWatchBuffersForClient(clientSessionId: string): void {
+  for (const [watchId, buf] of [...watchBuffers]) {
+    if (buf.owner !== clientSessionId) continue
+    buf.cancel()
+    watchBuffers.delete(watchId)
+  }
+}
+
+const MUTATING_METHODS = new Set([
+  'terminal.create',
+  'terminal.write',
+  'terminal.resize',
+  'terminal.kill',
+  'project.open',
+  'project.remove',
+  'workspace.writeFile',
+  'workspace.rename',
+  'workspace.move',
+  'workspace.delete',
+  'workspace.mkdir',
+  'workspace.watchStart',
+  'workspace.watchStop',
+  'git.clone',
+  'git.switchBranch',
+  'git.createBranch',
+  'git.worktreeActivate',
+  'git.worktreeAssignBranch',
+  'git.worktreeHandoff',
+  'session.create',
+  'session.setCwd',
+  'session.send',
+  'session.interrupt',
+  'session.respondPermission',
+  'session.acquireControl',
+  'session.renewControl',
+  'session.releaseControl',
+  'session.close',
+  'session.remove',
+  'session.rename',
+  'session.setUiFlags', // pin/hide
+  'terminal.acquireControl',
+  'terminal.renewControl',
+  'terminal.releaseControl',
+  'collaboration.send',
+])
+
+export async function dispatchRpc(method: string, payload: unknown, ctx: RpcContext): Promise<RpcResult> {
+  if (MUTATING_METHODS.has(method)) {
+    if (!ctx.idempotencyKey) {
+      return {
+        error: {
+          code: 'invalid_argument',
+          message: `idempotencyKey required for mutating method ${method}`,
+        },
+      }
+    }
+    const hash = ctx.idempotency.payloadHash(payload)
+    try {
+      // watchStart keeps durable receipts so lost-response retries replay the same
+      // watchId, but isReceiptLive discards dead ids after stop/disconnect/restart.
+      const result = await ctx.idempotency.runExclusive(
+        ctx.client.clientSessionId,
+        method,
+        ctx.idempotencyKey,
+        hash,
+        async () => {
+          const inner = await dispatchRpcInner(method, payload, ctx)
+          if (inner.error) {
+            throw Object.assign(new Error(inner.error.message), {
+              code: inner.error.code,
+              details: inner.error.details,
+              __rpcError: true,
+            })
+          }
+          return inner.result
+        },
+        {
+          durable: true,
+          isReceiptLive:
+            method === 'workspace.watchStart'
+              ? (receipt: unknown) => {
+                  const watchId = (receipt as { watchId?: string } | null)?.watchId
+                  if (!watchId) return false
+                  const buf = watchBuffers.get(watchId)
+                  return !!buf && buf.owner === ctx.client.clientSessionId
+                }
+              : undefined,
+        },
+      )
+      return { result }
+    } catch (err) {
+      const e = err as { __rpcError?: boolean; code?: string; message?: string; details?: Record<string, unknown> }
+      if (e.__rpcError) {
+        return {
+          error: {
+            code: (e.code as RpcErrorCode) || 'internal',
+            message: e.message || 'error',
+            details: e.details,
+          },
+        }
+      }
+      return mapThrown(err)
+    }
+  }
+
+  return dispatchRpcInner(method, payload, ctx)
+}
+
+/**
+ * Session RPC is always available: the node runs an injectable turn runner
+ * (multi-harness router with simulated adapters until real CLIs are wired).
+ * Collaboration stays opt-in behind simulatedHarness for now.
+ */
+function requireCollaborationCapability(ctx: RpcContext): RpcResult | null {
+  if (!ctx.simulatedHarness) {
+    return {
+      error: {
+        code: 'failed_precondition',
+        message:
+          'collaboration RPC disabled: set simulatedHarness only in tests until real collab adapters exist',
+      },
+    }
+  }
+  return null
+}
+
+async function dispatchRpcInner(method: string, payload: unknown, ctx: RpcContext): Promise<RpcResult> {
+  if (method.startsWith('collaboration.')) {
+    const blocked = requireCollaborationCapability(ctx)
+    if (blocked) return blocked
+  }
+
+  switch (method) {
+    case 'environment.descriptor':
+      return handleDescriptor(ctx)
+    case 'environment.health':
+      return handleHealth(ctx)
+    case 'environment.systemInfo':
+      return handleSystemInfo(ctx)
+    case 'harness.list':
+      return handleHarnessList(ctx)
+    case 'harness.show':
+      return handleHarnessShow(payload, ctx)
+    case 'terminal.create':
+      return handleTerminalCreate(payload, ctx)
+    case 'terminal.attach':
+      return handleTerminalAttach(payload, ctx)
+    case 'terminal.read':
+      return handleTerminalRead(payload, ctx)
+    case 'terminal.write':
+      return handleTerminalWrite(payload, ctx)
+    case 'terminal.resize':
+      return handleTerminalResize(payload, ctx)
+    case 'terminal.kill':
+      return handleTerminalKill(payload, ctx)
+    case 'project.list':
+      return handleProjectList(ctx)
+    case 'project.get':
+      return handleProjectGet(payload, ctx)
+    case 'project.open':
+      return handleProjectOpen(payload, ctx)
+    case 'project.remove':
+      return handleProjectRemove(payload, ctx)
+    case 'fs.listDir':
+      return handleFsListDir(payload, ctx)
+    case 'workspace.listDir':
+      return handleWorkspaceListDir(payload, ctx)
+    case 'workspace.listFiles':
+      return handleWorkspaceListFiles(payload, ctx)
+    case 'workspace.listSkills':
+      return handleWorkspaceListSkills(payload, ctx)
+    case 'workspace.readFile':
+      return handleWorkspaceReadFile(payload, ctx)
+    case 'workspace.writeFile':
+      return handleWorkspaceWriteFile(payload, ctx)
+    case 'workspace.rename':
+      return handleWorkspaceRename(payload, ctx)
+    case 'workspace.move':
+      return handleWorkspaceMove(payload, ctx)
+    case 'workspace.delete':
+      return handleWorkspaceDelete(payload, ctx)
+    case 'workspace.mkdir':
+      return handleWorkspaceMkdir(payload, ctx)
+    case 'workspace.search':
+      return handleWorkspaceSearch(payload, ctx)
+    case 'workspace.watchStart':
+      return handleWorkspaceWatchStart(payload, ctx)
+    case 'workspace.watchPoll':
+      return handleWorkspaceWatchPoll(payload, ctx)
+    case 'workspace.watchStop':
+      return handleWorkspaceWatchStop(payload, ctx)
+    case 'git.status':
+      return handleGitStatus(payload, ctx)
+    case 'git.diff':
+      return handleGitDiff(payload, ctx)
+    case 'git.branches':
+      return handleGitBranches(payload, ctx)
+    case 'git.switchBranch':
+      return handleGitSwitchBranch(payload, ctx)
+    case 'git.createBranch':
+      return handleGitCreateBranch(payload, ctx)
+    case 'git.worktrees':
+      return handleGitWorktrees(payload, ctx)
+    case 'git.worktreeActivate':
+      return handleGitWorktreeActivate(payload, ctx)
+    case 'git.worktreeCheckedOutBranches':
+      return handleGitWorktreeCheckedOutBranches(payload, ctx)
+    case 'git.worktreeAssignBranch':
+      return handleGitWorktreeAssignBranch(payload, ctx)
+    case 'git.worktreeHandoff':
+      return handleGitWorktreeHandoff(payload, ctx)
+    case 'git.worktreeHandoffPreview':
+      return handleGitWorktreeHandoffPreview(payload, ctx)
+    case 'git.clone':
+      return handleGitClone(payload, ctx)
+    case 'session.create':
+      return handleSessionCreate(payload, ctx)
+    case 'session.setCwd':
+      return handleSessionSetCwd(payload, ctx)
+    case 'session.get':
+      return handleSessionGet(payload, ctx)
+    case 'session.list':
+      return handleSessionList(payload, ctx)
+    case 'session.acquireControl':
+      return handleSessionAcquireControl(payload, ctx)
+    case 'session.renewControl':
+      return handleSessionRenewControl(payload, ctx)
+    case 'session.releaseControl':
+      return handleSessionReleaseControl(payload, ctx)
+    case 'terminal.acquireControl':
+      return handleTerminalAcquireControl(payload, ctx)
+    case 'terminal.renewControl':
+      return handleTerminalRenewControl(payload, ctx)
+    case 'terminal.releaseControl':
+      return handleTerminalReleaseControl(payload, ctx)
+    case 'session.send':
+      return handleSessionSend(payload, ctx)
+    case 'session.interrupt':
+      return handleSessionInterrupt(payload, ctx)
+    case 'session.respondPermission':
+      return handleSessionRespondPermission(payload, ctx)
+    case 'session.events':
+      return handleSessionEvents(payload, ctx)
+    case 'session.snapshot':
+      return handleSessionSnapshot(ctx)
+    case 'session.close':
+      return handleSessionClose(payload, ctx)
+    case 'session.remove':
+      return handleSessionRemove(payload, ctx)
+    case 'session.rename':
+      return handleSessionRename(payload, ctx)
+    case 'session.setUiFlags':
+      return handleSessionSetUiFlags(payload, ctx)
+    case 'collaboration.send':
+      return handleCollaborationSend(payload, ctx)
+    case 'collaboration.list':
+      return handleCollaborationList(payload, ctx)
+    default:
+      return { error: { code: 'not_found', message: `unknown method: ${method}` } }
+  }
+}
+
+function handleDescriptor(ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.readEnvironment)
+  if (denied) return denied
+  // Advertise only enabled + ready harnesses (design §13.4). Simulated test
+  // mode pre-marks the catalog ready; production defaults to [].
+  // Lab overrides: SUPERONE_*_BINARY make harnesses runnable without catalog ready.
+  const harnessIds = [...ctx.harnesses.readySessionHarnessIds()]
+  if (isCodexBinaryOverrideRunnable() && !harnessIds.includes('codex')) {
+    harnessIds.push('codex')
+  }
+  if (isClaudeBinaryOverrideRunnable() && !harnessIds.includes('claude')) {
+    harnessIds.push('claude')
+  }
+  const descriptor: ExecutionEnvironmentDescriptor = {
+    environmentId: ctx.identity.environmentId,
+    label: ctx.identity.label,
+    platform: { os: mapOs(), arch: arch() },
+    nodeVersion: process.version,
+    protocolVersion: PROTOCOL_GENERATION.current,
+    capabilities: {
+      ...PHASE1_NODE_CAPABILITIES,
+      harnessIds,
+      sessions: true,
+      workspaceFs: true,
+      git: true,
+      worktrees: true,
+      collaboration: Boolean(ctx.simulatedHarness),
+      coldSessionResume: false,
+      turnReattach: false,
+    },
+    generations: {
+      protocol: { ...PROTOCOL_GENERATION },
+      databaseSchema: { ...DATABASE_SCHEMA_GENERATION },
+    },
+    nodePublicKeyFingerprint: ctx.identity.publicKeyFingerprint,
+  }
+  return { result: descriptor }
+}
+
+function handleHarnessList(ctx: RpcContext): RpcResult {
+  // Administrative catalog (§13.6). Until a dedicated harness:read scope exists,
+  // require node:admin — not ordinary environment:read.
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.adminNode)
+  if (denied) return denied
+  // Secrets never appear on HarnessInstallationStatus (redacted at manager boundary).
+  return { result: ctx.harnesses.list() }
+}
+
+function handleHarnessShow(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.adminNode)
+  if (denied) return denied
+  const p = asRecord(payload)
+  const id = typeof p.harnessId === 'string' ? p.harnessId : typeof p.id === 'string' ? p.id : ''
+  if (!isNodeHarnessId(id)) {
+    return { error: { code: 'invalid_argument', message: `unknown harnessId: ${id}` } }
+  }
+  // Stage 1: same contract as list entry; show details (last probe, install path)
+  // land with the CLI surface in the next slice.
+  return { result: ctx.harnesses.get(id) }
+}
+
+function handleHealth(ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.readEnvironment)
+  if (denied) return denied
+  return {
+    result: {
+      ok: true,
+      environmentId: ctx.identity.environmentId,
+      uptimeMs: Date.now() - ctx.startedAt,
+      processUptimeSec: uptime(),
+    },
+  }
+}
+
+function handleSystemInfo(ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.readEnvironment)
+  if (denied) return denied
+  return {
+    result: {
+      environmentId: ctx.identity.environmentId,
+      hostname: hostname(),
+      platform: mapOs(),
+      arch: arch(),
+      nodeVersion: process.version,
+      cpus: cpus().length,
+      totalMemoryBytes: totalmem(),
+      freeMemoryBytes: freemem(),
+      bindingHash: ctx.identity.bindingHash,
+    },
+  }
+}
+
+function asRecord(payload: unknown): Record<string, unknown> {
+  return payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {}
+}
+
+function handleTerminalCreate(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateTerminal)
+  if (denied) return denied
+  const p = asRecord(payload)
+  const cwd = typeof p.cwd === 'string' ? p.cwd : process.cwd()
+  try {
+    const info = ctx.terminals.create({
+      cwd,
+      title: typeof p.title === 'string' ? p.title : undefined,
+      cols: typeof p.cols === 'number' ? p.cols : undefined,
+      rows: typeof p.rows === 'number' ? p.rows : undefined,
+    })
+    return {
+      result: {
+        terminalId: info.terminalId,
+        cwd: info.cwd,
+        title: info.title,
+        cols: info.cols,
+        rows: info.rows,
+      },
+    }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+function handleTerminalAttach(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateTerminal)
+  if (denied) return denied
+  const p = asRecord(payload)
+  const terminalId = String(p.terminalId ?? '')
+  try {
+    const attached = ctx.terminals.attach(terminalId)
+    return { result: attached }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+function handleTerminalRead(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateTerminal)
+  if (denied) return denied
+  const p = asRecord(payload)
+  try {
+    return {
+      result: ctx.terminals.readAfter(
+        String(p.terminalId ?? ''),
+        typeof p.afterSequence === 'string' ? p.afterSequence : '0',
+      ),
+    }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+function requireTerminalLease(payload: Record<string, unknown>, ctx: RpcContext, terminalId: string): RpcResult | null {
+  try {
+    ctx.leases.assertValid({
+      resource: { environmentId: ctx.identity.environmentId, terminalId },
+      leaseId: String(payload.leaseId ?? ''),
+      generation: String(payload.generation ?? ''),
+      holderClientId: ctx.client.clientSessionId,
+    })
+    return null
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+function handleTerminalWrite(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateTerminal)
+  if (denied) return denied
+  const p = asRecord(payload)
+  const terminalId = String(p.terminalId ?? '')
+  const leaseErr = requireTerminalLease(p, ctx, terminalId)
+  if (leaseErr) return leaseErr
+  const data = String(p.data ?? '')
+  if (data.length > 64 * 1024) {
+    return { error: { code: 'invalid_argument', message: 'terminal write payload too large' } }
+  }
+  try {
+    ctx.terminals.write(terminalId, data)
+    return { result: { ok: true } }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+function handleTerminalResize(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateTerminal)
+  if (denied) return denied
+  const p = asRecord(payload)
+  const terminalId = String(p.terminalId ?? '')
+  const leaseErr = requireTerminalLease(p, ctx, terminalId)
+  if (leaseErr) return leaseErr
+  const cols = Number(p.cols ?? 80)
+  const rows = Number(p.rows ?? 24)
+  try {
+    ctx.terminals.resize(terminalId, cols, rows)
+    return { result: { ok: true } }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+function handleTerminalKill(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateTerminal)
+  if (denied) return denied
+  const p = asRecord(payload)
+  const terminalId = String(p.terminalId ?? '')
+  const leaseErr = requireTerminalLease(p, ctx, terminalId)
+  if (leaseErr) return leaseErr
+  try {
+    ctx.terminals.kill(terminalId)
+    return { result: { ok: true } }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+function handleTerminalAcquireControl(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateTerminal)
+  if (denied) return denied
+  const p = asRecord(payload)
+  const terminalId = String(p.terminalId ?? '')
+  try {
+    return {
+      result: ctx.leases.acquire({
+        resource: { environmentId: ctx.identity.environmentId, terminalId },
+        holderClientId: ctx.client.clientSessionId,
+        ttlMs: typeof p.ttlMs === 'number' ? p.ttlMs : undefined,
+      }),
+    }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+function handleTerminalRenewControl(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateTerminal)
+  if (denied) return denied
+  const p = asRecord(payload)
+  try {
+    return {
+      result: ctx.leases.renew({
+        leaseId: String(p.leaseId ?? ''),
+        generation: String(p.generation ?? ''),
+        holderClientId: ctx.client.clientSessionId,
+        ttlMs: typeof p.ttlMs === 'number' ? p.ttlMs : undefined,
+      }),
+    }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+function handleTerminalReleaseControl(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateTerminal)
+  if (denied) return denied
+  const p = asRecord(payload)
+  try {
+    ctx.leases.release(
+      String(p.leaseId ?? ''),
+      String(p.generation ?? ''),
+      ctx.client.clientSessionId,
+    )
+    return { result: { ok: true } }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+function mapThrown(err: unknown): RpcResult {
+  const e = err as { code?: string; message?: string }
+  const code = (e.code as RpcErrorCode | undefined) ?? 'internal'
+  return { error: { code, message: e.message || 'internal error' } }
+}
+
+function handleProjectList(ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.readProject)
+  if (denied) return denied
+  return { result: ctx.projects.list() }
+}
+
+function handleProjectGet(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.readProject)
+  if (denied) return denied
+  const p = asRecord(payload)
+  const projectId = String(p.projectId ?? '')
+  return { result: ctx.projects.get(projectId) }
+}
+
+/**
+ * Normalize a host path on **this node**:
+ * - `~` / `~/…` → this principal's home (desktop must not expand remote `~`)
+ * - relative (`./…`, `../…`, bare segment) → absolute via `path.resolve` against
+ *   the node process cwd (shell-style)
+ * - absolute paths stay absolute
+ */
+function expandHostPath(path: string): string {
+  const trimmed = path.trim()
+  if (!trimmed) return trimmed
+  if (trimmed === '~') return homedir()
+  if (trimmed.startsWith('~/') || trimmed.startsWith('~\\')) {
+    return pathResolve(pathJoin(homedir(), trimmed.slice(2)))
+  }
+  // Relative and absolute both become a single absolute form the FS can use.
+  return pathResolve(trimmed)
+}
+
+function handleProjectOpen(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.manageProject)
+  if (denied) return denied
+  const p = asRecord(payload)
+  const path = expandHostPath(String(p.path ?? ''))
+  if (!path) {
+    return { error: { code: 'invalid_argument', message: 'path is required' } }
+  }
+  const name = typeof p.name === 'string' ? p.name : undefined
+  try {
+    // "Create & Add" in the desktop dialog: the user picked a path that does
+    // not exist yet and asked for it to be created on this host.
+    if (p.createIfMissing === true && !existsSync(path)) {
+      mkdirSync(path, { recursive: true })
+    }
+    return { result: ctx.projects.open(path, name) }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+/** Unregister a project on this node (sidebar remove — does not delete disk). */
+function handleProjectRemove(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.manageProject)
+  if (denied) return denied
+  const p = asRecord(payload)
+  const projectId = typeof p.projectId === 'string' && p.projectId ? p.projectId : undefined
+  const pathRaw = typeof p.path === 'string' && p.path ? expandHostPath(p.path) : undefined
+  if (!projectId && !pathRaw) {
+    return { error: { code: 'invalid_argument', message: 'projectId or path is required' } }
+  }
+  try {
+    const removed = ctx.projects.remove({ projectId, path: pathRaw })
+    if (!removed) {
+      return { error: { code: 'not_found', message: 'project not found' } }
+    }
+    return { result: removed }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+/** List a host directory for the add-project browser (`/…`, `~/…`, `./…`, …). */
+function handleFsListDir(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.readWorkspace)
+  if (denied) return denied
+  const p = asRecord(payload)
+  const raw = String(p.path ?? '')
+  if (!raw || raw.includes('\0')) {
+    return { error: { code: 'invalid_argument', message: 'path is required' } }
+  }
+  try {
+    const resolved = expandHostPath(raw)
+    if (!existsSync(resolved)) {
+      return { error: { code: 'not_found', message: 'path not found' } }
+    }
+    if (!statSync(resolved).isDirectory()) {
+      return { error: { code: 'invalid_argument', message: 'not a directory' } }
+    }
+    const entries = readdirSync(resolved, { withFileTypes: true })
+      .filter((ent) => ent.isDirectory() && !ent.name.startsWith('.'))
+      .map((ent) => ({
+        name: ent.name,
+        path: pathJoin(resolved, ent.name),
+        type: 'directory' as const,
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+    return { result: { path: resolved, entries } }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+function handleWorkspaceListDir(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.readWorkspace)
+  if (denied) return denied
+  const p = asRecord(payload)
+  try {
+    return {
+      result: ctx.workspaceFs.listDir(String(p.projectId ?? ''), String(p.relativePath ?? '.')),
+    }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+function handleWorkspaceListFiles(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.readWorkspace)
+  if (denied) return denied
+  const p = asRecord(payload)
+  try {
+    return {
+      result: {
+        files: ctx.workspaceFs.listFiles(String(p.projectId ?? ''), {
+          relativePath: typeof p.relativePath === 'string' ? p.relativePath : undefined,
+          maxDepth: typeof p.maxDepth === 'number' ? p.maxDepth : undefined,
+          maxFiles: typeof p.maxFiles === 'number' ? p.maxFiles : undefined,
+        }),
+      },
+    }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+function handleWorkspaceListSkills(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.readWorkspace)
+  if (denied) return denied
+  const p = asRecord(payload)
+  try {
+    return {
+      result: ctx.workspaceFs.listSkillsAndCommands(String(p.projectId ?? '')),
+    }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+function handleWorkspaceReadFile(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.readWorkspace)
+  if (denied) return denied
+  const p = asRecord(payload)
+  try {
+    return {
+      result: ctx.workspaceFs.readFile(String(p.projectId ?? ''), String(p.relativePath ?? ''), {
+        offset: typeof p.offset === 'number' ? p.offset : undefined,
+        limit: typeof p.limit === 'number' ? p.limit : undefined,
+      }),
+    }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+function handleWorkspaceWriteFile(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.writeWorkspace)
+  if (denied) return denied
+  const p = asRecord(payload)
+  const raw = typeof p.content === 'string' ? p.content : String(p.content ?? '')
+  const encoding = p.encoding === 'base64' ? 'base64' : 'utf8'
+  let content: string | Buffer = raw
+  if (encoding === 'base64') {
+    // Buffer.from is permissive; reject non-alphabet / bad padding first.
+    if (raw.length > 0 && !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(raw)) {
+      return { error: { code: 'invalid_argument', message: 'invalid base64 content' } }
+    }
+    content = Buffer.from(raw, 'base64')
+  }
+  const bytes = Buffer.isBuffer(content) ? content.length : Buffer.byteLength(content, 'utf8')
+  if (bytes > 10 * 1024 * 1024) {
+    return { error: { code: 'invalid_argument', message: 'write payload exceeds 10 MiB' } }
+  }
+  try {
+    return {
+      result: ctx.workspaceFs.writeFile(
+        String(p.projectId ?? ''),
+        String(p.relativePath ?? ''),
+        content,
+        typeof p.expectedHash === 'string' ? p.expectedHash : undefined,
+      ),
+    }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+function handleWorkspaceSearch(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.readWorkspace)
+  if (denied) return denied
+  const p = asRecord(payload)
+  try {
+    return {
+      result: ctx.workspaceFs.search(
+        String(p.projectId ?? ''),
+        String(p.query ?? ''),
+        typeof p.relativePath === 'string' ? p.relativePath : undefined,
+      ),
+    }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+function handleWorkspaceRename(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.writeWorkspace)
+  if (denied) return denied
+  const p = asRecord(payload)
+  try {
+    return {
+      result: ctx.workspaceFs.rename(
+        String(p.projectId ?? ''),
+        String(p.relativePath ?? ''),
+        String(p.newName ?? ''),
+      ),
+    }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+function handleWorkspaceMove(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.writeWorkspace)
+  if (denied) return denied
+  const p = asRecord(payload)
+  try {
+    return {
+      result: ctx.workspaceFs.move(
+        String(p.projectId ?? ''),
+        String(p.fromPath ?? p.srcRelativePath ?? ''),
+        String(p.destDirPath ?? p.destDirRelativePath ?? '.'),
+      ),
+    }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+function handleWorkspaceDelete(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.writeWorkspace)
+  if (denied) return denied
+  const p = asRecord(payload)
+  try {
+    return {
+      result: ctx.workspaceFs.delete(
+        String(p.projectId ?? ''),
+        String(p.relativePath ?? ''),
+      ),
+    }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+function handleWorkspaceMkdir(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.writeWorkspace)
+  if (denied) return denied
+  const p = asRecord(payload)
+  try {
+    return {
+      result: ctx.workspaceFs.mkdir(
+        String(p.projectId ?? ''),
+        String(p.relativePath ?? ''),
+      ),
+    }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+function handleWorkspaceWatchStart(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.readWorkspace)
+  if (denied) return denied
+  const p = asRecord(payload)
+  try {
+    const events: Array<{ path: string; type: string }> = []
+    const { watchId, cancel } = ctx.workspaceWatch.subscribe(
+      String(p.projectId ?? ''),
+      String(p.relativePath ?? '.'),
+      (ev) => {
+        events.push(ev)
+        if (events.length > 500) events.shift()
+      },
+      ctx.client.clientSessionId,
+    )
+    watchBuffers.set(watchId, { events, cancel, owner: ctx.client.clientSessionId })
+    return { result: { watchId } }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+function handleWorkspaceWatchPoll(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.readWorkspace)
+  if (denied) return denied
+  const p = asRecord(payload)
+  const watchId = String(p.watchId ?? '')
+  const buf = watchBuffers.get(watchId)
+  if (!buf || buf.owner !== ctx.client.clientSessionId) {
+    return { error: { code: 'not_found', message: 'watch not found' } }
+  }
+  const events = buf.events.splice(0, buf.events.length)
+  return { result: { events } }
+}
+
+function handleWorkspaceWatchStop(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.readWorkspace)
+  if (denied) return denied
+  const p = asRecord(payload)
+  const watchId = String(p.watchId ?? '')
+  const buf = watchBuffers.get(watchId)
+  if (buf && buf.owner === ctx.client.clientSessionId) {
+    buf.cancel()
+    watchBuffers.delete(watchId)
+  }
+  return { result: { ok: true } }
+}
+
+function handleGitStatus(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.readWorkspace)
+  if (denied) return denied
+  const p = asRecord(payload)
+  try {
+    const projectId = String(p.projectId ?? '')
+    const cwd = typeof p.cwd === 'string' ? p.cwd : null
+    return {
+      result: cwd
+        ? ctx.workspaceGit.statusAt(projectId, cwd)
+        : ctx.workspaceGit.status(projectId),
+    }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+function handleGitDiff(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.readWorkspace)
+  if (denied) return denied
+  const p = asRecord(payload)
+  try {
+    return {
+      result: ctx.workspaceGit.diff(String(p.projectId ?? ''), {
+        staged: p.staged === true,
+        path: typeof p.path === 'string' ? p.path : undefined,
+      }),
+    }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+function handleGitBranches(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.readWorkspace)
+  if (denied) return denied
+  const p = asRecord(payload)
+  try {
+    return {
+      result: ctx.workspaceGit.branches(
+        String(p.projectId ?? ''),
+        typeof p.cwd === 'string' ? p.cwd : null,
+      ),
+    }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+function handleGitSwitchBranch(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.writeWorkspace)
+  if (denied) return denied
+  const p = asRecord(payload)
+  try {
+    return {
+      result: ctx.workspaceGit.switchBranch(String(p.projectId ?? ''), String(p.branch ?? ''), {
+        create: false,
+        absolutePath: typeof p.cwd === 'string' ? p.cwd : null,
+      }),
+    }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+function handleGitCreateBranch(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.writeWorkspace)
+  if (denied) return denied
+  const p = asRecord(payload)
+  try {
+    return {
+      result: ctx.workspaceGit.switchBranch(String(p.projectId ?? ''), String(p.branch ?? ''), {
+        create: true,
+        absolutePath: typeof p.cwd === 'string' ? p.cwd : null,
+      }),
+    }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+function handleGitWorktrees(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.readWorkspace)
+  if (denied) return denied
+  const p = asRecord(payload)
+  try {
+    return { result: ctx.workspaceGit.worktrees(String(p.projectId ?? '')) }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+function handleGitWorktreeActivate(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.writeWorkspace)
+  if (denied) return denied
+  const p = asRecord(payload)
+  const mode = p.mode === 'attach' || p.mode === 'detach' || p.mode === 'branch' ? p.mode : null
+  if (!mode) {
+    return { error: { code: 'invalid_argument', message: 'mode must be branch|attach|detach' } }
+  }
+  try {
+    return {
+      result: ctx.workspaceGit.activateWorktree(String(p.projectId ?? ''), {
+        baseBranch: String(p.baseBranch ?? ''),
+        mode,
+        branchName: typeof p.branchName === 'string' ? p.branchName : undefined,
+        carryLocalChanges: p.carryLocalChanges === true,
+      }),
+    }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+function handleGitWorktreeCheckedOutBranches(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.readWorkspace)
+  if (denied) return denied
+  const p = asRecord(payload)
+  try {
+    return { result: { branches: ctx.workspaceGit.checkedOutBranches(String(p.projectId ?? '')) } }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+function handleGitWorktreeAssignBranch(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.writeWorkspace)
+  if (denied) return denied
+  const p = asRecord(payload)
+  try {
+    return {
+      result: ctx.workspaceGit.assignBranch(
+        String(p.projectId ?? ''),
+        String(p.worktreePath ?? ''),
+        String(p.name ?? ''),
+      ),
+    }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+function handleGitWorktreeHandoff(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.writeWorkspace)
+  if (denied) return denied
+  const p = asRecord(payload)
+  try {
+    return {
+      result: ctx.workspaceGit.handoffToMain(
+        String(p.projectId ?? ''),
+        String(p.worktreePath ?? ''),
+      ),
+    }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+function handleGitWorktreeHandoffPreview(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.readWorkspace)
+  if (denied) return denied
+  const p = asRecord(payload)
+  try {
+    return {
+      result: ctx.workspaceGit.handoffPreview(
+        String(p.projectId ?? ''),
+        String(p.worktreePath ?? ''),
+      ),
+    }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+function handleSessionSetCwd(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateSession)
+  if (denied) return denied
+  const p = asRecord(payload)
+  const sessionId = String(p.sessionId ?? '')
+  const cwdRaw = p.cwd
+  const cwd =
+    cwdRaw === null || cwdRaw === undefined || cwdRaw === ''
+      ? null
+      : String(cwdRaw)
+  if (!sessionId) {
+    return { error: { code: 'invalid_argument', message: 'sessionId required' } }
+  }
+  try {
+    ctx.leases.assertValid({
+      resource: { environmentId: ctx.identity.environmentId, sessionId },
+      leaseId: String(p.leaseId ?? ''),
+      generation: String(p.generation ?? ''),
+      holderClientId: ctx.client.clientSessionId,
+    })
+    const session = ctx.sessions.get(sessionId)
+    if (!session) {
+      return { error: { code: 'not_found', message: 'session not found' } }
+    }
+    if (cwd !== null && !ctx.workspaceGit.isAllowedSessionCwd(session.projectId, cwd)) {
+      return { error: { code: 'invalid_argument', message: 'cwd not allowed for this project' } }
+    }
+    return { result: ctx.sessions.setCwd(sessionId, cwd) }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+/**
+ * Clone a remote repository onto this host and register it as a project, so
+ * the desktop add-project dialog gets back a ready-to-open ProjectSnapshot.
+ */
+async function handleGitClone(payload: unknown, ctx: RpcContext): Promise<RpcResult> {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.manageProject)
+  if (denied) return denied
+  const p = asRecord(payload)
+  try {
+    const cloned = await cloneRepository({
+      remoteUrl: String(p.remoteUrl ?? ''),
+      parentPath: expandHostPath(String(p.parentPath ?? '')),
+      directoryName: typeof p.directoryName === 'string' ? p.directoryName : undefined,
+    })
+    return { result: ctx.projects.open(cloned.path, cloned.name) }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+function handleSessionCreate(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateSession)
+  if (denied) return denied
+  const p = asRecord(payload)
+  const rawHarnessId = typeof p.harnessId === 'string' ? p.harnessId : 'codex'
+  // Stage 1 wire contract: normalize catalog id acp-grok → session wire acp
+  // before persistence so the turn runner never sees an unknown harness id.
+  const harnessId = normalizeSessionHarnessId(rawHarnessId)
+  if (!harnessId) {
+    return {
+      error: {
+        code: 'invalid_argument',
+        message: `unknown harnessId: ${rawHarnessId}`,
+      },
+    }
+  }
+  // Catalog ready OR SUPERONE_*_BINARY lab override with a real file.
+  const catalogReady = ctx.harnesses.isSessionHarnessRunnable(harnessId)
+  const codexOverride =
+    harnessId === 'codex' && isCodexBinaryOverrideRunnable()
+  const claudeOverride =
+    harnessId === 'claude' && isClaudeBinaryOverrideRunnable()
+  if (!catalogReady && !codexOverride && !claudeOverride) {
+    return {
+      error: {
+        code: 'failed_precondition',
+        message: `harness not ready: ${harnessId}`,
+        details: {
+          harnessId,
+          requestedHarnessId: rawHarnessId,
+          readyHarnessIds: ctx.harnesses.readySessionHarnessIds(),
+        },
+      },
+    }
+  }
+  const projectId = String(p.projectId ?? '').trim()
+  if (!projectId) {
+    return { error: { code: 'invalid_argument', message: 'projectId is required' } }
+  }
+  if (!ctx.projects.get(projectId)) {
+    return { error: { code: 'not_found', message: `unknown projectId: ${projectId}` } }
+  }
+  try {
+    return {
+      result: ctx.sessions.create({
+        projectId,
+        harnessId,
+        providerId: typeof p.providerId === 'string' ? p.providerId : undefined,
+        title: typeof p.title === 'string' ? p.title : undefined,
+      }),
+    }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+function handleSessionGet(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.readSession)
+  if (denied) return denied
+  const p = asRecord(payload)
+  return { result: ctx.sessions.get(String(p.sessionId ?? '')) }
+}
+
+function handleSessionList(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.readSession)
+  if (denied) return denied
+  const p = asRecord(payload)
+  return {
+    result: ctx.sessions.list(typeof p.projectId === 'string' ? p.projectId : undefined),
+  }
+}
+
+function handleSessionAcquireControl(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateSession)
+  if (denied) return denied
+  const p = asRecord(payload)
+  const sessionId = String(p.sessionId ?? '')
+  if (!sessionId) {
+    return { error: { code: 'invalid_argument', message: 'sessionId required' } }
+  }
+  try {
+    const lease = ctx.leases.acquire({
+      resource: { environmentId: ctx.identity.environmentId, sessionId },
+      holderClientId: ctx.client.clientSessionId,
+      ttlMs: typeof p.ttlMs === 'number' ? p.ttlMs : undefined,
+    })
+    return { result: lease }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+function handleSessionRenewControl(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateSession)
+  if (denied) return denied
+  const p = asRecord(payload)
+  try {
+    return {
+      result: ctx.leases.renew({
+        leaseId: String(p.leaseId ?? ''),
+        generation: String(p.generation ?? ''),
+        holderClientId: ctx.client.clientSessionId,
+        ttlMs: typeof p.ttlMs === 'number' ? p.ttlMs : undefined,
+      }),
+    }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+function handleSessionReleaseControl(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateSession)
+  if (denied) return denied
+  const p = asRecord(payload)
+  try {
+    ctx.leases.release(
+      String(p.leaseId ?? ''),
+      String(p.generation ?? ''),
+      ctx.client.clientSessionId,
+    )
+    return { result: { ok: true } }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+function handleSessionClose(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateSession)
+  if (denied) return denied
+  const p = asRecord(payload)
+  const sessionId = String(p.sessionId ?? '')
+  try {
+    ctx.leases.assertValid({
+      resource: { environmentId: ctx.identity.environmentId, sessionId },
+      leaseId: String(p.leaseId ?? ''),
+      generation: String(p.generation ?? ''),
+      holderClientId: ctx.client.clientSessionId,
+    })
+    ctx.sessions.close(sessionId)
+    try {
+      ctx.leases.release(
+        String(p.leaseId ?? ''),
+        String(p.generation ?? ''),
+        ctx.client.clientSessionId,
+      )
+    } catch {
+      /* lease may already be released */
+    }
+    return { result: { ok: true } }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+/** Unregister session from node registry (sidebar delete). Lease optional if already closed. */
+function handleSessionRemove(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateSession)
+  if (denied) return denied
+  const p = asRecord(payload)
+  const sessionId = String(p.sessionId ?? '')
+  if (!sessionId) {
+    return { error: { code: 'invalid_argument', message: 'sessionId required' } }
+  }
+  try {
+    const existing = ctx.sessions.get(sessionId)
+    if (!existing) {
+      return { error: { code: 'not_found', message: 'session not found' } }
+    }
+    // Prefer lease when still open; allow force remove of ended sessions without lease.
+    if (!existing.closed && existing.status !== 'ended') {
+      ctx.leases.assertValid({
+        resource: { environmentId: ctx.identity.environmentId, sessionId },
+        leaseId: String(p.leaseId ?? ''),
+        generation: String(p.generation ?? ''),
+        holderClientId: ctx.client.clientSessionId,
+      })
+    }
+    const removed = ctx.sessions.remove(sessionId)
+    return { result: removed }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+function handleSessionRename(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateSession)
+  if (denied) return denied
+  const p = asRecord(payload)
+  const sessionId = String(p.sessionId ?? '')
+  const title = String(p.title ?? '')
+  if (!sessionId) {
+    return { error: { code: 'invalid_argument', message: 'sessionId required' } }
+  }
+  try {
+    return { result: ctx.sessions.rename(sessionId, title) }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+function handleSessionSetUiFlags(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateSession)
+  if (denied) return denied
+  const p = asRecord(payload)
+  const sessionId = String(p.sessionId ?? '')
+  if (!sessionId) {
+    return { error: { code: 'invalid_argument', message: 'sessionId required' } }
+  }
+  try {
+    return {
+      result: ctx.sessions.setUiFlags(sessionId, {
+        isPinned: typeof p.isPinned === 'boolean' ? p.isPinned : undefined,
+        isHidden: typeof p.isHidden === 'boolean' ? p.isHidden : undefined,
+      }),
+    }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+async function handleSessionSend(payload: unknown, ctx: RpcContext): Promise<RpcResult> {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateSession)
+  if (denied) return denied
+  const p = asRecord(payload)
+  try {
+    const options = asRecord(p.options)
+    const modelFromOptions =
+      typeof options.model === 'string' && options.model.trim() ? options.model.trim() : null
+    const modelTopLevel =
+      typeof p.model === 'string' && p.model.trim() ? p.model.trim() : null
+    const result = await ctx.sessions.send({
+      sessionId: String(p.sessionId ?? ''),
+      text: String(p.text ?? ''),
+      client: { clientSessionId: ctx.client.clientSessionId },
+      leaseId: String(p.leaseId ?? ''),
+      generation: String(p.generation ?? ''),
+      requestId: typeof p.requestId === 'string' ? p.requestId : undefined,
+      model: modelFromOptions ?? modelTopLevel,
+    })
+    return { result }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+function handleSessionInterrupt(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateSession)
+  if (denied) return denied
+  const p = asRecord(payload)
+  try {
+    ctx.sessions.interrupt(
+      String(p.sessionId ?? ''),
+      { clientSessionId: ctx.client.clientSessionId },
+      String(p.leaseId ?? ''),
+      String(p.generation ?? ''),
+    )
+    return { result: { ok: true } }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+function handleSessionRespondPermission(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateSession)
+  if (denied) return denied
+  const p = asRecord(payload)
+  try {
+    ctx.sessions.respondPermission({
+      sessionId: String(p.sessionId ?? ''),
+      interactionId: String(p.interactionId ?? ''),
+      decision: (p.decision as 'allow' | 'deny' | 'allow_always') || 'deny',
+      client: { clientSessionId: ctx.client.clientSessionId },
+      leaseId: String(p.leaseId ?? ''),
+      generation: String(p.generation ?? ''),
+    })
+    return { result: { ok: true } }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+function handleSessionEvents(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.readSession)
+  if (denied) return denied
+  const p = asRecord(payload)
+  const after = String(p.afterSequence ?? '0')
+  return { result: { events: ctx.sessions.listEventsAfter(after) } }
+}
+
+function handleSessionSnapshot(ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.readSession)
+  if (denied) return denied
+  return {
+    result: {
+      environmentId: ctx.identity.environmentId,
+      snapshotSequence: ctx.sessions.snapshotSequence(),
+      sessions: ctx.sessions.list(),
+      capturedAt: Date.now(),
+    },
+  }
+}
+
+function handleCollaborationSend(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateSession)
+  if (denied) return denied
+  const p = asRecord(payload)
+  const fromSessionId = String(p.fromSessionId ?? '')
+  const session = ctx.sessions.get(fromSessionId)
+  if (!session) {
+    return { error: { code: 'not_found', message: 'fromSessionId not found' } }
+  }
+  try {
+    // Require control lease on the sending session so messages cannot be spoofed.
+    ctx.leases.assertValid({
+      resource: { environmentId: ctx.identity.environmentId, sessionId: fromSessionId },
+      leaseId: String(p.leaseId ?? ''),
+      generation: String(p.generation ?? ''),
+      holderClientId: ctx.client.clientSessionId,
+    })
+    const toSessionId = typeof p.toSessionId === 'string' ? p.toSessionId : null
+    if (toSessionId && !ctx.sessions.get(toSessionId)) {
+      return { error: { code: 'not_found', message: 'toSessionId not found' } }
+    }
+    return {
+      result: ctx.collaboration.send({
+        fromSessionId,
+        toSessionId,
+        mailbox: String(p.mailbox ?? 'default'),
+        body: p.body,
+      }),
+    }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+function handleCollaborationList(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.readSession)
+  if (denied) return denied
+  const p = asRecord(payload)
+  return {
+    result: ctx.collaboration.list({
+      mailbox: typeof p.mailbox === 'string' ? p.mailbox : undefined,
+      sessionId: typeof p.sessionId === 'string' ? p.sessionId : undefined,
+    }),
+  }
+}

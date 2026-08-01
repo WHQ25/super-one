@@ -1,0 +1,85 @@
+import type { HarnessId } from '@superone/shared/session-types'
+import { createSimulatedTurnRunner, type TurnRunner } from '@superone/runtime/session'
+import { createAcpTurnRunner, createSimulatedAcpTurnRunner } from '@superone/acp'
+import {
+  createOpenCodeTurnRunner,
+  createSimulatedOpenCodeTurnRunner,
+} from '@superone/opencode'
+
+/**
+ * Phase 4 harness runners. Real provider CLIs may be absent in CI; each harness
+ * has a contract-compatible simulated runner so local/remote gateway parity
+ * tests exercise the same Session/event surface.
+ *
+ * Production multi-dispatch (createProductionTurnRunner) uses real Claude/Codex
+ * cores; ACP/OpenCode use @superone/acp|opencode (simulated until real clients).
+ */
+export function createHarnessRunner(harnessId: HarnessId, opts?: { delayMs?: number }): TurnRunner {
+  const delayMs = opts?.delayMs ?? 15
+  switch (harnessId) {
+    case 'codex':
+      return createSimulatedTurnRunner({
+        delayMs,
+        chunks: ['[codex] ', 'done'],
+      })
+    case 'claude':
+      return createSimulatedTurnRunner({
+        delayMs,
+        chunks: ['[claude] ', 'done'],
+      })
+    case 'acp':
+      return createSimulatedAcpTurnRunner({ delayMs })
+    case 'opencode':
+      return createSimulatedOpenCodeTurnRunner({ delayMs })
+    default: {
+      const _exhaustive: never = harnessId
+      throw new Error(`unsupported harness: ${_exhaustive}`)
+    }
+  }
+}
+
+export function createMultiHarnessRouter(
+  defaultHarness: HarnessId = 'codex',
+): TurnRunner {
+  return async (input) => {
+    const harness = (input.session.harnessId as HarnessId) || defaultHarness
+    const runner = createHarnessRunner(harness)
+    return runner(input)
+  }
+}
+
+/**
+ * Production multi-dispatch for ACP / OpenCode node adapters.
+ * Real process when SUPERONE_ACP_BINARY / SUPERONE_OPENCODE_BINARY (or opts) set;
+ * otherwise simulated unless allowSimulatedFallback is false.
+ */
+export function createAcpOpenCodeProductionRouter(opts?: {
+  allowSimulatedFallback?: boolean
+  resolveProjectPath?: (projectId: string) => string | null
+  acpBinaryPath?: string | null
+  openCodeBinaryPath?: string | null
+}): TurnRunner {
+  const acp = createAcpTurnRunner({
+    allowSimulatedFallback: opts?.allowSimulatedFallback !== false,
+    resolveProjectPath: opts?.resolveProjectPath,
+    binaryPath: opts?.acpBinaryPath,
+  })
+  const opencode = createOpenCodeTurnRunner({
+    allowSimulatedFallback: opts?.allowSimulatedFallback !== false,
+    resolveProjectPath: opts?.resolveProjectPath,
+    binaryPath: opts?.openCodeBinaryPath,
+  })
+  return async (input) => {
+    const harnessId = input.session.harnessId || 'codex'
+    if (harnessId === 'acp') return acp(input)
+    if (harnessId === 'opencode') return opencode(input)
+    throw new Error(`createAcpOpenCodeProductionRouter: unexpected harness ${harnessId}`)
+  }
+}
+
+/**
+ * Session wire harness ids advertised when the simulated catalog is fully ready.
+ * Order matches NODE_HARNESS_DEFINITIONS → sessionHarnessId mapping
+ * (acp-grok → acp).
+ */
+export const PHASE4_HARNESS_IDS: HarnessId[] = ['claude', 'codex', 'opencode', 'acp']

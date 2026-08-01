@@ -1,0 +1,23 @@
+Port 22
+Protocol 2
+HostKey /etc/ssh/ssh_host_rsa_key
+HostKey /etc/ssh/ssh_host_ecdsa_key
+HostKey /etc/ssh/ssh_host_ed25519_key
+
+# Local Docker lab only — do not reuse this config on a real host.
+PermitRootLogin no
+PasswordAuthentication yes
+PubkeyAuthentication yes
+AuthorizedKeysFile .ssh/authorized_keys
+ChallengeResponseAuthentication no
+UsePAM no
+X11Forwarding no
+AllowTcpForwarding yes
+GatewayPorts no
+PermitTunnel no
+AllowAgentForwarding yes
+ClientAliveInterval 30
+ClientAliveCountMax 3
+PrintMotd no
+Subsystem sftp /usr/lib/openssh/sftp-server
+AllowUsers superone

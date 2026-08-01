@@ -1,0 +1,55 @@
+# Scheme B: remote Linux lab for superone
+#
+# - SSH only published to the host (2222 → 22)
+# - Node binds 127.0.0.1:7788 *inside* the container (not published)
+# - Desktop reaches node via: ssh -L 7788:127.0.0.1:7788 ...
+#
+# From monorepo root:
+#   ./scripts/remote-cli-docker.sh up
+#   ./scripts/remote-cli-docker.sh smoke
+
+name: superone-remote-cli
+
+services:
+  remote-cli:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: superone-remote-cli
+    # Stable hostname so identity binding (host|uid|nodeHome) survives restarts.
+    hostname: superone-remote-cli
+    ports:
+      - "2222:22"
+    # Do NOT publish 7788 — forces SSH local-forward path.
+    volumes:
+      # Live monorepo source (node CLI + shared).
+      - ../../..:/work
+      # Linux-only deps — never overwrite the host (darwin) node_modules.
+      - remote-cli-modules:/work/node_modules
+      - remote-cli-bun-cache:/home/superone/.bun
+      # Persist identity / SQLite / secrets across restarts.
+      - superone-home:/home/superone/.superone/node
+      # Lab SSH public key (created by scripts/remote-cli-docker.sh up).
+      - ./lab-keys/authorized_keys:/authorized_keys:ro
+    environment:
+      SUPERONE_NODE_HOME: /home/superone/.superone/node
+      SUPERONE_NODE_HOST: 127.0.0.1
+      SUPERONE_NODE_PORT: "7788"
+      SUPERONE_NODE_LABEL: docker-ssh-linux
+      WORK_DIR: /work
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -fsS http://127.0.0.1:7788/health >/dev/null || exit 1",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 18
+      start_period: 90s
+    restart: unless-stopped
+
+volumes:
+  superone-home:
+  remote-cli-modules:
+  remote-cli-bun-cache:

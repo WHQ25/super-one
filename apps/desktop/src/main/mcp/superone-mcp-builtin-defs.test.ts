@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { BUILT_IN_SUPERONE_TOOL_DEFS, BUILT_IN_SUPERONE_TOOL_NAMES } from './superone-mcp-builtin-defs'
+import { BUILT_IN_SUPERONE_TOOL_DEFS, BUILT_IN_SUPERONE_TOOL_NAMES, LAUNCH_PERMISSION_MODE_DESCRIPTION } from './superone-mcp-builtin-defs'
 
 /**
  * A built-in tool has to be declared on two surfaces: the Zod `registerTool` calls the in-process
@@ -72,6 +72,15 @@ describe('built-in superone tool registration surfaces', () => {
     expect(status.inputSchema.required).toEqual(['generation_id'])
     // The submit tool returns an id, not a file, so its description must send the model to poll.
     expect(submit.description).toMatch(/media_video_status/)
+  })
+
+  it('puts the launch autonomy guidance on the permissionMode field, where the 700-char budget does not apply', () => {
+    const def = BUILT_IN_SUPERONE_TOOL_DEFS.find((d) => d.name === 'session_collab_request')!
+    const launch = (def.inputSchema.properties as Record<string, { items?: { properties?: Record<string, unknown> } }>)
+      .launches.items!.properties!
+    const config = (launch.config as { properties: Record<string, { description?: string }> }).properties
+    expect(config.permissionMode.description).toBe(LAUNCH_PERMISSION_MODE_DESCRIPTION)
+    expect(LAUNCH_PERMISSION_MODE_DESCRIPTION).toMatch(/bypassPermissions/)
   })
 
   it('marks read_manual as alwaysLoad so Claude Tool Search does not hide it', () => {

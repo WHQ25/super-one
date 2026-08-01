@@ -32,6 +32,8 @@ import {
   PACK_MINI_APP_DESCRIPTION,
   UPDATE_SUPERONE_TYPES_DESCRIPTION,
   RENAME_SESSION_DESCRIPTION,
+  LAUNCH_BRANCH_NAME_DESCRIPTION,
+  LAUNCH_PERMISSION_MODE_DESCRIPTION,
   SESSION_LIST_AGENTS_DESCRIPTION,
   SESSION_REQUEST_AGENTS_DESCRIPTION,
   SESSION_SEND_DESCRIPTION,
@@ -307,14 +309,16 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
               model: z.string().optional(),
               effort: z.string().optional(),
               apiProviderId: z.string().nullable().optional(),
-              permissionMode: z.enum(['default', 'acceptEdits', 'bypassPermissions', 'plan', 'dontAsk', 'auto']).optional(),
+              permissionMode: z.enum(['default', 'acceptEdits', 'bypassPermissions', 'plan', 'dontAsk', 'auto'])
+                .optional()
+                .describe(LAUNCH_PERMISSION_MODE_DESCRIPTION),
               sandboxMode: z.enum(['off', 'on', 'auto']).optional(),
               cwd: z.string().optional(),
               worktree: z.object({
                 enabled: z.boolean(),
                 baseBranch: z.string(),
                 mode: z.enum(['branch', 'attach', 'detach']),
-                branchName: z.string().optional(),
+                branchName: z.string().optional().describe(LAUNCH_BRANCH_NAME_DESCRIPTION),
                 carryLocalChanges: z.boolean().optional(),
               }).optional(),
               harnessConfig: z.record(z.string(), z.unknown()).optional(),

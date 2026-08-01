@@ -78,6 +78,8 @@ import {
   executeAppTool,
 } from './superone-mcp-server'
 import { executeSuperoneMcpTool, listSuperoneMcpTools } from './superone-mcp-tool-surface'
+import { LAUNCH_PERMISSION_MODE_DESCRIPTION } from './superone-mcp-builtin-defs'
+import type { ZodArray, ZodObject, ZodOptional, ZodRawShape, ZodTypeAny } from 'zod'
 import { AgentIpcChannels } from '@superone/shared/agent-types'
 import type { MiniAppToolDefinition, MiniAppToolCallRequest, MiniAppToolInterceptOpenRequest } from '@superone/shared/miniapp-types'
 
@@ -125,6 +127,23 @@ describe('experimental session collaboration tools', () => {
       'session_collab_send',
       'session_collab_retrieve',
     ]))
+  })
+
+  // The launch-autonomy guidance lives on the schema field, not the 700-char tool
+  // description, so it has to be repeated on the Zod surface the in-process Claude
+  // server registers — the JSON-Schema half alone would leave Claude without it.
+  it('describes launch permissionMode on the Zod surface, not just the stdio descriptors', () => {
+    collaborationSettings.enabled = true
+    disposeSuperoneMcpServer(PROJ_A)
+    mockRegisterTool.mockClear()
+    createSuperoneMcpServer(PROJ_A)
+
+    const call = mockRegisterTool.mock.calls.find(([name]) => name === 'session_collab_request')
+    expect(call, 'session_collab_request was never registered').toBeTruthy()
+    const inputSchema = (call![1] as { inputSchema: Record<string, ZodTypeAny> }).inputSchema
+    const launch = (inputSchema.launches as ZodArray<ZodObject<ZodRawShape>>).element
+    const config = (launch.shape.config as ZodOptional<ZodObject<ZodRawShape>>).unwrap()
+    expect(config.shape.permissionMode.description).toBe(LAUNCH_PERMISSION_MODE_DESCRIPTION)
   })
 })
 

@@ -244,6 +244,22 @@ export const SESSION_REQUEST_AGENTS_DESCRIPTION =
   'Session title becomes "Name - Role". The user reviews and may edit model/effort/AI provider/permission/sandbox (task, name, role, agent profile, cwd, worktree stay as requested). ' +
   'On approval each launch returns a bearer credential. Each credential can create exactly one session and must be kept private.'
 
+/**
+ * Field-level guidance, not part of the tool description: `session_collab_request`
+ * is an always-visible built-in and its description is on a 700-char budget, but
+ * the input schema is only read when the model actually fills the field in.
+ * Both registration surfaces (JSON Schema for the Codex stdio bridge, Zod for the
+ * in-process Claude server) must carry it — see superone-mcp-builtin-defs.test.ts.
+ */
+export const LAUNCH_PERMISSION_MODE_DESCRIPTION =
+  'How autonomous the child session is. Prefer the most autonomous mode it can finish the task under — "bypassPermissions" (shown as Bypass on Claude-family harnesses, Full Access on Codex), or "auto" for ACP agents. ' +
+  'Nobody watches a child session, so a conservative mode strands it on an approval prompt that is never answered. ' +
+  'Requesting an autonomous mode is safe by construction: nothing runs until the user approves this very request, and that approval dialog is where they downgrade permission or sandbox per launch. ' +
+  'Pick "plan" or "default" only when stopping for human review is the point of the launch.'
+
+export const LAUNCH_BRANCH_NAME_DESCRIPTION =
+  'Branch to create for this worktree. Must be unique across launches — git cannot check out one branch in two worktrees.'
+
 export const SESSION_START_DESCRIPTION =
   'Create the real, user-visible collaboration child session authorized by one credential and deliver the approved launch task. ' +
   'Returns as soon as the child agent begins replying (does not wait for the full first turn). ' +
@@ -303,7 +319,11 @@ export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
                   model: { type: 'string' },
                   effort: { type: 'string' },
                   apiProviderId: { type: ['string', 'null'] },
-                  permissionMode: { type: 'string', enum: ['default', 'acceptEdits', 'bypassPermissions', 'plan', 'dontAsk', 'auto'] },
+                  permissionMode: {
+                    type: 'string',
+                    enum: ['default', 'acceptEdits', 'bypassPermissions', 'plan', 'dontAsk', 'auto'],
+                    description: LAUNCH_PERMISSION_MODE_DESCRIPTION,
+                  },
                   sandboxMode: { type: 'string', enum: ['off', 'on', 'auto'] },
                   cwd: { type: 'string' },
                   worktree: {
@@ -312,7 +332,7 @@ export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
                       enabled: { type: 'boolean' },
                       baseBranch: { type: 'string' },
                       mode: { type: 'string', enum: ['branch', 'attach', 'detach'] },
-                      branchName: { type: 'string' },
+                      branchName: { type: 'string', description: LAUNCH_BRANCH_NAME_DESCRIPTION },
                       carryLocalChanges: { type: 'boolean' },
                     },
                     required: ['enabled', 'baseBranch', 'mode'],

@@ -1090,6 +1090,8 @@ export const zh: Messages = {
       toAgent: '发给 Agent',
       taskNotification: '系统唤醒',
       mailboxReady: '收件箱有新消息',
+      expandTask: '展开',
+      collapseTask: '收起',
     },
     askUser: {
       otherOption: '其他...',

@@ -1032,6 +1032,8 @@ export type Messages = {
       toAgent: string
       taskNotification: string
       mailboxReady: string
+      expandTask: string
+      collapseTask: string
     }
     askUser: {
       otherOption: string
@@ -3304,6 +3306,8 @@ export const en: Messages = {
       toAgent: 'To agent',
       taskNotification: 'System wake',
       mailboxReady: 'Inbox has messages',
+      expandTask: 'Expand',
+      collapseTask: 'Collapse',
     },
     askUser: {
       otherOption: 'Other...',

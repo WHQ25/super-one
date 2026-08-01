@@ -38,6 +38,8 @@ import { ForkButton } from './ForkButton'
 import { useStallLevel, getStallColor } from '@/lib/stall-utils'
 import { tryCopy } from '@/lib/clipboard'
 import { CopyableMarkdown } from './CopyableMarkdown'
+import { CollabTaskBubble } from './CollabTaskBubble'
+import { CopyButton, useCopyText } from './chat-message/copy-button'
 import { fileLinkComponents } from './chat-markdown-components'
 import { ReasoningBlock } from './ReasoningBlock'
 import { parseUserMentions, type UserMentionKind } from './user-mention-parser'
@@ -265,31 +267,6 @@ export function groupContent(content: ContentBlock[], apps: MiniAppEntry[]): Gro
   flush()
   flushAppGroup()
   return { segments, toolNameMap, toolResultMap, timedOutToolIds, errorToolIds, outputPathMap }
-}
-
-function CopyButton({ copied, onClick, className }: { copied: boolean; onClick: () => void; className?: string }) {
-  return (
-    <button
-      onClick={onClick}
-      className={cn('cursor-pointer rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover/copy:opacity-100', className ?? 'absolute right-0 top-0')}
-    >
-      {copied
-        ? <Check className="size-3 text-success" />
-        : <Copy className="size-3" />
-      }
-    </button>
-  )
-}
-
-function useCopyText() {
-  const [copied, setCopied] = useState(false)
-  const copy = useCallback(async (text: string) => {
-    if (window.getSelection()?.toString()) return
-    if (!(await tryCopy(text))) return
-    setCopied(true)
-    setTimeout(() => setCopied(false), 1500)
-  }, [])
-  return { copied, copy }
 }
 
 // Own component so the media-resolution regex is scoped to this block (memoized on text +
@@ -944,6 +921,9 @@ export const ChatMessage = memo(function ChatMessage({ message, sessionStatus, i
   const isCodexMessage = !isUser && message.providerId === 'codex'
   const collabLabelKey = isUser ? collaborationLabelKey(message) : null
   const isCollab = collabLabelKey != null
+  // Parent-handed launch task: right-aligned markdown bubble (see CollabTaskBubble).
+  // Mailbox traffic keeps the compact left-aligned label + plain-text bubble below.
+  const isInitialTask = isCollab && message.metadata?.collaboration?.kind === 'initial_task'
   // Require task-notification provenance so asking about session_collab_* tools
   // in a normal user bubble is never rewritten as a mailbox row.
   const isMailboxWake = isUser
@@ -998,6 +978,8 @@ export const ChatMessage = memo(function ChatMessage({ message, sessionStatus, i
       </div>
     )
   }
+
+  if (isInitialTask) return <CollabTaskBubble text={userText} />
 
   return (
     <div className={cn('w-0 min-w-full flex', isUser ? (isCollab ? 'justify-start' : 'justify-end') : 'mb-2 justify-start')}>

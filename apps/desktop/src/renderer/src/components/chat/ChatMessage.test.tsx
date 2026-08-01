@@ -204,3 +204,75 @@ describe('ChatMessage reasoning grouping', () => {
     expect(container.querySelectorAll('.thinking-node')).toHaveLength(2)
   })
 })
+
+function createCollabTaskMessage(text: string): ChatMessageType {
+  return {
+    id: 'msg-collab-1',
+    role: 'user',
+    status: 'complete',
+    content: [{ type: 'text', text }],
+    createdAt: new Date().toISOString(),
+    metadata: {
+      source: 'collaboration',
+      collaboration: { kind: 'initial_task', direction: 'inbound', fromSessionId: 'parent-1' },
+    },
+  }
+}
+
+/** jsdom reports every element as 0px tall, so the 50vh clamp never trips on its own. */
+function stubBodyHeight(px: number): () => void {
+  const original = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight')
+  Object.defineProperty(HTMLElement.prototype, 'offsetHeight', { configurable: true, get: () => px })
+  window.innerHeight = 800
+  return () => {
+    if (original) Object.defineProperty(HTMLElement.prototype, 'offsetHeight', original)
+  }
+}
+
+describe('ChatMessage collaboration initial task', () => {
+  it('renders the launch task as right-aligned markdown instead of a paste chip', () => {
+    const task = `## Review request\n\n${Array.from({ length: 40 }, (_, i) => `- step ${i}`).join('\n')}`
+    const { container } = render(
+      <ChatMessage message={createCollabTaskMessage(task)} sessionStatus="idle" isLastAssistant={false} />,
+    )
+
+    expect(screen.getByText('Agent task')).toBeInTheDocument()
+    // Markdown, not the `35 lines` LongTextChip the plain-text path would produce.
+    expect(container.querySelector('.chat-md')).not.toBeNull()
+    expect(screen.getByText('Review request').tagName).toBe('H2')
+    expect(container.querySelector('.justify-end')).not.toBeNull()
+  })
+
+  it('clamps a task taller than half the viewport until the expand toggle is clicked', () => {
+    const restore = stubBodyHeight(900)
+    try {
+      const { container } = render(
+        <ChatMessage message={createCollabTaskMessage('# Long task\n\nbody')} sessionStatus="idle" isLastAssistant={false} />,
+      )
+
+      const toggle = screen.getByRole('button', { name: 'Expand' })
+      expect(container.querySelector('.max-h-\\[50vh\\]')).not.toBeNull()
+
+      act(() => { toggle.click() })
+
+      expect(container.querySelector('.max-h-\\[50vh\\]')).toBeNull()
+      expect(screen.getByRole('button', { name: 'Collapse' })).toBeInTheDocument()
+    } finally {
+      restore()
+    }
+  })
+
+  it('leaves short tasks unclamped with no expand toggle', () => {
+    const restore = stubBodyHeight(120)
+    try {
+      const { container } = render(
+        <ChatMessage message={createCollabTaskMessage('Do the thing.')} sessionStatus="idle" isLastAssistant={false} />,
+      )
+
+      expect(screen.queryByRole('button', { name: 'Expand' })).toBeNull()
+      expect(container.querySelector('.max-h-\\[50vh\\]')).toBeNull()
+    } finally {
+      restore()
+    }
+  })
+})

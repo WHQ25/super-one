@@ -12,6 +12,8 @@
     "./i18n/*": "./src/i18n/*.ts",
     "./platform-registry": "./src/platform-registry/index.ts",
     "./platform-registry/*": "./src/platform-registry/*.ts",
+    "./environment": "./src/environment/index.ts",
+    "./environment/*": "./src/environment/*.ts",
     "./generative-ui/*": "./src/generative-ui/*.ts",
     "./*.js": "./src/*.js",
     "./*.d.ts": "./src/*.d.ts",

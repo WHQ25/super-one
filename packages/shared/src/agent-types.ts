@@ -2259,9 +2259,13 @@ export const AgentIpcChannels = {
   PLUGINS_READ_MARKETPLACE: 'plugins:read-marketplace',
   PLUGINS_READ_MARKETPLACE_FILE: 'plugins:read-marketplace-file',
   PLUGINS_GITHUB_STARS: 'plugins:github-stars',
+  /** List/search public (or authenticated) GitHub repos under an owner. */
+  PLUGINS_GITHUB_SEARCH_REPOS: 'plugins:github-search-repos',
 
   // Skills
   SKILLS_LIST: 'skills:list',
+  /** Project slash skills + commands (remote node or local discovery). */
+  SLASH_RESOURCES_LIST: 'skills:slash-resources',
   SKILLS_READ: 'skills:read',
   SKILLS_READ_FILE: 'skills:read-file',
   SKILLS_INSTALL: 'skills:install',
@@ -2637,6 +2641,53 @@ export const AgentIpcChannels = {
   TERMINAL_CLAIM: 'terminal:claim',
   TERMINAL_RELEASE: 'terminal:release',
   TERMINAL_EVENT: 'terminal:event',
+
+  // Multi-environment / remote node (Main environment host)
+  ENVIRONMENT_LIST: 'environment:list',
+  ENVIRONMENT_GET_LOCAL_ID: 'environment:getLocalId',
+  ENVIRONMENT_WORKSPACE_LIST_DIR: 'environment:workspaceListDir',
+  ENVIRONMENT_WORKSPACE_READ_FILE: 'environment:workspaceReadFile',
+  ENVIRONMENT_PAIR_REMOTE: 'environment:pairRemote',
+  ENVIRONMENT_CONNECT_FAILOVER: 'environment:connectWithFailover',
+  /** Dev-only: probe local remote-node lab (`bun run dev:cli:lab`). */
+  ENVIRONMENT_LOCAL_LAB_STATUS: 'environment:localLabStatus',
+  /** Dev-only: mint pairing token + pair/connect to local lab. */
+  ENVIRONMENT_PAIR_LOCAL_LAB: 'environment:pairLocalLab',
+  // Environment management UI (Settings → Environments)
+  ENVIRONMENT_LIST_ITEMS: 'environment:listItems',
+  ENVIRONMENT_ADD_OVER_SSH: 'environment:addOverSsh',
+  /** Read local ~/.ssh/config Host aliases for the add-device picker. */
+  ENVIRONMENT_LIST_SSH_CONFIG_HOSTS: 'environment:listSshConfigHosts',
+  /** Projects for a host (`local` or remote connectionId) — sidebar project list. */
+  ENVIRONMENT_LIST_PROJECTS: 'environment:listProjects',
+  /** Open/register a project path on a host (local disk or remote project.open). */
+  ENVIRONMENT_OPEN_PROJECT: 'environment:openProject',
+  /** Unregister a project from a host list (local recents or remote project.remove). */
+  ENVIRONMENT_REMOVE_PROJECT: 'environment:removeProject',
+  /** List sessions for a remote project (local uses sessions:* DB IPC). */
+  ENVIRONMENT_LIST_SESSIONS: 'environment:listSessions',
+  /** Create a session on a remote project (local uses agent:create-session). */
+  ENVIRONMENT_CREATE_SESSION: 'environment:createSession',
+  ENVIRONMENT_GET_SESSION: 'environment:getSession',
+  ENVIRONMENT_SEND_SESSION_MESSAGE: 'environment:sendSessionMessage',
+  /** Poll durable node session.events after a sequence (exclusive). */
+  ENVIRONMENT_LIST_SESSION_EVENTS: 'environment:listSessionEvents',
+  ENVIRONMENT_INTERRUPT_SESSION: 'environment:interruptSession',
+  ENVIRONMENT_RENAME_SESSION: 'environment:renameSession',
+  ENVIRONMENT_REMOVE_SESSION: 'environment:removeSession',
+  ENVIRONMENT_SET_SESSION_UI_FLAGS: 'environment:setSessionUiFlags',
+  ENVIRONMENT_RESPOND_SESSION_PERMISSION: 'environment:respondSessionPermission',
+  /** List directories at an absolute path for the add-project browser. */
+  ENVIRONMENT_BROWSE_PATH: 'environment:browsePath',
+  /** Clone a git repository onto a host and register it as a project. */
+  ENVIRONMENT_CLONE_REPOSITORY: 'environment:cloneRepository',
+  ENVIRONMENT_CONNECT: 'environment:connect',
+  ENVIRONMENT_DISCONNECT: 'environment:disconnect',
+  ENVIRONMENT_FORGET: 'environment:forget',
+  /** Main → renderer supervisor state push. */
+  ENVIRONMENT_STATUS_EVENT: 'environment:statusEvent',
+  /** Main → renderer SSH probe/install progress push. */
+  ENVIRONMENT_INSTALL_PROGRESS: 'environment:installProgress',
 } as const
 
 export interface NativeContextMenuItemSpec {
@@ -2778,6 +2829,9 @@ export type UploadFileCompleteResponse =
   | { ok: true; savedPath: string }
   | UploadFileError
 
+/** Who is allowed to remote-control this SuperOne host. */
+export type PairedDeviceClientKind = 'mobile' | 'desktop'
+
 export interface PairedDevice {
   id: string
   name: string
@@ -2785,6 +2839,11 @@ export interface PairedDevice {
   lastSeenAt: string | null
   online: boolean
   transport?: 'lan' | 'relay'
+  /**
+   * Defaults to `mobile` for legacy rows (QR phone pairing).
+   * `desktop` = another SuperOne desktop allowed to control this host.
+   */
+  clientKind?: PairedDeviceClientKind
 }
 
 export interface RemoteDeviceStatus {

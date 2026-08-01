@@ -47,6 +47,27 @@ describe('builtin registry', () => {
     expect(cn?.id).not.toBe(global?.id)
   })
 
+  it('registers dual anthropic+openai endpoints for major Chinese coding platforms', () => {
+    const dual: Array<{ id: string; planId: string; openaiBase: string }> = [
+      { id: 'zhipu-cn', planId: 'coding', openaiBase: 'https://open.bigmodel.cn/api/coding/paas/v4' },
+      { id: 'zhipu-cn', planId: 'api', openaiBase: 'https://open.bigmodel.cn/api/paas/v4' },
+      { id: 'zhipu-global', planId: 'coding', openaiBase: 'https://api.z.ai/api/coding/paas/v4' },
+      { id: 'minimax', planId: 'cn', openaiBase: 'https://api.minimaxi.com/v1' },
+      { id: 'minimax', planId: 'global', openaiBase: 'https://api.minimax.io/v1' },
+      { id: 'volcengine', planId: 'coding', openaiBase: 'https://ark.cn-beijing.volces.com/api/coding/v3' },
+      { id: 'volcengine', planId: 'agent', openaiBase: 'https://ark.cn-beijing.volces.com/api/plan/v3' },
+      { id: 'volcengine', planId: 'api', openaiBase: 'https://ark.cn-beijing.volces.com/api/v3' },
+      { id: 'bailian', planId: 'coding', openaiBase: 'https://coding.dashscope.aliyuncs.com/v1' },
+      { id: 'bailian', planId: 'api', openaiBase: 'https://dashscope.aliyuncs.com/compatible-mode/v1' },
+    ]
+    for (const row of dual) {
+      const plan = findPlan(findPlatform(BUILTIN_PLATFORMS, row.id), row.planId)
+      expect(plan?.endpoints.some((e) => e.protocols.includes('anthropic-messages')), `${row.id}/${row.planId} anthropic`).toBe(true)
+      const openai = plan?.endpoints.find((e) => e.protocols.includes('openai-chat'))
+      expect(openai?.baseUrl, `${row.id}/${row.planId} openai base`).toBe(row.openaiBase)
+    }
+  })
+
   it('splits Kimi Code membership tiers and Moonshot API regions into plans', () => {
     const kimi = findPlatform(BUILTIN_PLATFORMS, 'kimi')
     const moonshot = findPlatform(BUILTIN_PLATFORMS, 'moonshot')

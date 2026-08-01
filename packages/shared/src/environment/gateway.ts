@@ -1,0 +1,225 @@
+import type { ExecutionEnvironmentDescriptor } from './descriptor'
+import type {
+  EnvironmentEventEnvelope,
+  EnvironmentSnapshot,
+  PendingInteractionSnapshot,
+  ProjectSnapshot,
+  SubscribeEventsInput,
+} from './events'
+import type { ControlLease, LeaseAcquireInput, LeaseReleaseInput, LeaseRenewInput, MutatingControlContext } from './lease'
+import type { ProjectRef, SessionRef, TerminalRef } from './refs'
+
+/**
+ * Environment-scoped gateway — the only boundary desktop features should use
+ * for project, Session, terminal, and workspace operations.
+ *
+ * LocalEnvironmentGateway delegates to in-process services.
+ * RemoteEnvironmentGateway delegates to an authenticated node RPC session.
+ */
+
+export interface EnvironmentGateway {
+  getDescriptor(): Promise<ExecutionEnvironmentDescriptor>
+  listProjects(): Promise<ProjectSnapshot[]>
+  getProject(projectId: string): Promise<ProjectSnapshot | null>
+  /**
+   * Consistent snapshot for reconnect hydration. Remote gateways always
+   * implement this; local may return a lightweight in-memory projection.
+   */
+  getSnapshot?(): Promise<EnvironmentSnapshot>
+  subscribeEvents(input: SubscribeEventsInput): AsyncIterable<EnvironmentEventEnvelope>
+  readonly sessions: SessionGateway
+  readonly interactions: InteractionGateway
+  readonly terminals: TerminalGateway
+  readonly workspace: WorkspaceGateway
+}
+
+export interface CreateSessionInput {
+  project: ProjectRef
+  providerId: string
+  title?: string
+  cwd?: string
+  model?: string
+  /** Opaque harness-specific options. */
+  options?: Record<string, unknown>
+}
+
+export interface SendMessageInput extends MutatingControlContext {
+  session: SessionRef
+  text: string
+  /** Client-generated message id for idempotent display. */
+  clientMessageId?: string
+  attachments?: unknown[]
+  options?: Record<string, unknown>
+}
+
+export interface SessionGateway {
+  create(input: CreateSessionInput): Promise<{ sessionId: string }>
+  get(ref: SessionRef): Promise<unknown | null>
+  list(project: ProjectRef): Promise<unknown[]>
+  send(input: SendMessageInput): Promise<void>
+  interrupt(ref: SessionRef, control: MutatingControlContext): Promise<void>
+  close(ref: SessionRef, control?: MutatingControlContext): Promise<void>
+  acquireControl(input: LeaseAcquireInput & { resource: SessionRef }): Promise<ControlLease>
+  renewControl(input: LeaseRenewInput): Promise<ControlLease>
+  releaseControl(input: LeaseReleaseInput): Promise<void>
+}
+
+export interface PermissionResponseInput extends MutatingControlContext {
+  session: SessionRef
+  interactionId: string
+  decision: 'allow' | 'deny' | 'allow_always'
+  options?: Record<string, unknown>
+}
+
+export interface QuestionResponseInput extends MutatingControlContext {
+  session: SessionRef
+  interactionId: string
+  answers: unknown
+}
+
+export interface PlanResponseInput extends MutatingControlContext {
+  session: SessionRef
+  interactionId: string
+  decision: 'approve' | 'reject'
+  options?: Record<string, unknown>
+}
+
+export interface InteractionGateway {
+  listPending(session: SessionRef): Promise<PendingInteractionSnapshot[]>
+  respondPermission(input: PermissionResponseInput): Promise<void>
+  respondQuestion(input: QuestionResponseInput): Promise<void>
+  respondPlan(input: PlanResponseInput): Promise<void>
+}
+
+export interface CreateTerminalInput {
+  project?: ProjectRef
+  cwd?: string
+  cols?: number
+  rows?: number
+  title?: string
+}
+
+export interface TerminalWriteInput extends MutatingControlContext {
+  terminal: TerminalRef
+  data: string
+}
+
+export interface TerminalResizeInput extends MutatingControlContext {
+  terminal: TerminalRef
+  cols: number
+  rows: number
+}
+
+export interface TerminalReadResult {
+  data: string
+  fromSequence: string
+  sequence: string
+  reset: boolean
+  snapshot?: string
+  status: 'running' | 'exited'
+  exitCode: number | null
+}
+
+export interface TerminalGateway {
+  create(input: CreateTerminalInput): Promise<{ terminalId: string }>
+  attach(ref: TerminalRef): Promise<{ snapshot: string; sequence: string }>
+  read(ref: TerminalRef, afterSequence: string): Promise<TerminalReadResult>
+  write(input: TerminalWriteInput): Promise<void>
+  resize(input: TerminalResizeInput): Promise<void>
+  kill(ref: TerminalRef, control: MutatingControlContext): Promise<void>
+  acquireControl(input: LeaseAcquireInput & { resource: TerminalRef }): Promise<ControlLease>
+  renewControl(input: LeaseRenewInput): Promise<ControlLease>
+  releaseControl(input: LeaseReleaseInput): Promise<void>
+}
+
+export interface WorkspaceListInput {
+  project: ProjectRef
+  relativePath: string
+}
+
+export interface WorkspaceReadInput {
+  project: ProjectRef
+  relativePath: string
+  /** Optional byte range for large files. */
+  offset?: number
+  limit?: number
+}
+
+export interface WorkspaceWriteInput {
+  project: ProjectRef
+  relativePath: string
+  content: string | Uint8Array
+  /** Expected content hash for optimistic concurrency; optional. */
+  expectedHash?: string
+}
+
+export interface WorkspaceSearchInput {
+  project: ProjectRef
+  query: string
+  relativePath?: string
+}
+
+export interface WorkspaceWatchInput {
+  project: ProjectRef
+  relativePath?: string
+}
+
+export interface WorkspaceEntry {
+  name: string
+  path: string
+  type: 'file' | 'directory' | 'symlink' | 'other'
+  size?: number
+  mtimeMs?: number
+}
+
+export interface WorkspaceRenameInput {
+  project: ProjectRef
+  relativePath: string
+  /** Single path segment (no separators). */
+  newName: string
+}
+
+export interface WorkspaceMoveInput {
+  project: ProjectRef
+  /** Source path relative to project root. */
+  fromPath: string
+  /** Destination directory relative to project root (`.` = root). */
+  destDirPath: string
+}
+
+export interface WorkspaceDeleteInput {
+  project: ProjectRef
+  relativePath: string
+}
+
+export interface WorkspaceMkdirInput {
+  project: ProjectRef
+  relativePath: string
+}
+
+export interface WorkspaceGateway {
+  listDir(input: WorkspaceListInput): Promise<WorkspaceEntry[]>
+  readFile(input: WorkspaceReadInput): Promise<{ content: string | Uint8Array; hash?: string }>
+  writeFile(input: WorkspaceWriteInput): Promise<{ hash?: string }>
+  search(input: WorkspaceSearchInput): Promise<Array<{ path: string; line?: number; preview?: string }>>
+  /** Rename within the same directory. */
+  rename(input: WorkspaceRenameInput): Promise<{ from: string; to: string }>
+  /** Move into a destination directory (keeps basename). */
+  move(input: WorkspaceMoveInput): Promise<{ from: string; to: string }>
+  /** Hard-delete a file or directory tree. */
+  delete(input: WorkspaceDeleteInput): Promise<{ path: string }>
+  /** Create a directory (and parents). */
+  mkdir(input: WorkspaceMkdirInput): Promise<{ path: string }>
+  /** Cancel by returning / aborting the async iterable consumer. */
+  watch(input: WorkspaceWatchInput): AsyncIterable<{ path: string; type: string }>
+}
+
+/**
+ * Registry of environment gateways available to Electron Main.
+ * Renderer never holds sockets or credentials — only scoped refs and IPC.
+ */
+export interface EnvironmentRegistry {
+  getLocal(): EnvironmentGateway
+  get(environmentId: string): EnvironmentGateway | null
+  list(): Promise<ExecutionEnvironmentDescriptor[]>
+}

@@ -268,6 +268,10 @@ export const BUILTIN_PLATFORMS: Platform[] = [
             },
             modelMapping: GLM_MODELS,
           }),
+          // Coding Plan OpenAI Chat Completions — not the pay-as-you-go /paas/v4 path.
+          openaiChat('https://open.bigmodel.cn/api/coding/paas/v4', {
+            modelMapping: GLM_MODELS,
+          }),
         ],
       },
       {
@@ -284,6 +288,9 @@ export const BUILTIN_PLATFORMS: Platform[] = [
               ...DISABLE_NONESSENTIAL,
               ...EMPTY_AUTH_TOKEN,
             },
+            modelMapping: GLM_MODELS,
+          }),
+          openaiChat('https://open.bigmodel.cn/api/paas/v4', {
             modelMapping: GLM_MODELS,
           }),
         ],
@@ -313,6 +320,9 @@ export const BUILTIN_PLATFORMS: Platform[] = [
             },
             modelMapping: GLM_MODELS,
           }),
+          openaiChat('https://api.z.ai/api/coding/paas/v4', {
+            modelMapping: GLM_MODELS,
+          }),
         ],
       },
       {
@@ -329,6 +339,9 @@ export const BUILTIN_PLATFORMS: Platform[] = [
               ...DISABLE_NONESSENTIAL,
               ...EMPTY_AUTH_TOKEN,
             },
+            modelMapping: GLM_MODELS,
+          }),
+          openaiChat('https://api.z.ai/api/paas/v4', {
             modelMapping: GLM_MODELS,
           }),
         ],
@@ -458,6 +471,9 @@ export const BUILTIN_PLATFORMS: Platform[] = [
             extraEnv: { ...CODING_TIMEOUT, ...DISABLE_NONESSENTIAL, ...EMPTY_AUTH_TOKEN },
             modelMapping: MINIMAX_MODELS,
           }),
+          openaiChat('https://api.minimaxi.com/v1', {
+            modelMapping: MINIMAX_MODELS,
+          }),
         ],
       },
       {
@@ -469,6 +485,9 @@ export const BUILTIN_PLATFORMS: Platform[] = [
         endpoints: [
           anthropic('https://api.minimax.io/anthropic', {
             extraEnv: { ...CODING_TIMEOUT, ...DISABLE_NONESSENTIAL, ...EMPTY_AUTH_TOKEN },
+            modelMapping: MINIMAX_MODELS,
+          }),
+          openaiChat('https://api.minimax.io/v1', {
             modelMapping: MINIMAX_MODELS,
           }),
         ],
@@ -494,6 +513,10 @@ export const BUILTIN_PLATFORMS: Platform[] = [
             extraEnv: { ...CODING_TIMEOUT, ...EMPTY_AUTH_TOKEN },
             modelMapping: ARK_CODE_MODELS,
           }),
+          // Agent Plan OpenAI path — do not use /api/v3 (bypasses plan quota).
+          openaiChat('https://ark.cn-beijing.volces.com/api/plan/v3', {
+            modelMapping: ARK_CODE_MODELS,
+          }),
         ],
       },
       {
@@ -507,6 +530,10 @@ export const BUILTIN_PLATFORMS: Platform[] = [
             extraEnv: { ...CODING_TIMEOUT, ...EMPTY_AUTH_TOKEN },
             modelMapping: ARK_CODE_MODELS,
           }),
+          // Coding Plan OpenAI path — do not use /api/v3 (bypasses plan quota).
+          openaiChat('https://ark.cn-beijing.volces.com/api/coding/v3', {
+            modelMapping: ARK_CODE_MODELS,
+          }),
         ],
       },
       {
@@ -518,6 +545,9 @@ export const BUILTIN_PLATFORMS: Platform[] = [
         endpoints: [
           anthropic('https://ark.cn-beijing.volces.com/api/compatible', {
             extraEnv: { ...CODING_TIMEOUT, ...EMPTY_AUTH_TOKEN },
+            modelMapping: DOUBAO_MODELS,
+          }),
+          openaiChat('https://ark.cn-beijing.volces.com/api/v3', {
             modelMapping: DOUBAO_MODELS,
           }),
           {
@@ -585,6 +615,10 @@ export const BUILTIN_PLATFORMS: Platform[] = [
             extraEnv: { ...EMPTY_AUTH_TOKEN },
             modelMapping: BAILIAN_CODING_PLAN_MODELS,
           }),
+          // Coding Plan OpenAI path — requires Coding Plan key (sk-sp-…), not pay-as-you-go sk-.
+          openaiChat('https://coding.dashscope.aliyuncs.com/v1', {
+            modelMapping: BAILIAN_CODING_PLAN_MODELS,
+          }),
         ],
       },
       {
@@ -598,6 +632,9 @@ export const BUILTIN_PLATFORMS: Platform[] = [
             extraEnv: { ...EMPTY_AUTH_TOKEN },
             modelMapping: BAILIAN_TOKEN_PLAN_MODELS,
           }),
+          openaiChat('https://dashscope.aliyuncs.com/compatible-mode/v1', {
+            modelMapping: BAILIAN_TOKEN_PLAN_MODELS,
+          }),
         ],
       },
       {
@@ -609,6 +646,9 @@ export const BUILTIN_PLATFORMS: Platform[] = [
         endpoints: [
           anthropic('https://dashscope.aliyuncs.com/apps/anthropic', {
             extraEnv: { ...EMPTY_AUTH_TOKEN },
+            modelMapping: BAILIAN_API_MODELS,
+          }),
+          openaiChat('https://dashscope.aliyuncs.com/compatible-mode/v1', {
             modelMapping: BAILIAN_API_MODELS,
           }),
         ],

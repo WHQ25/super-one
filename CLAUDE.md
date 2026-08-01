@@ -14,15 +14,38 @@ This repo is a **bun workspaces monorepo** (no turborepo/nx). Linker is hoisted 
 super-one/
   apps/
     desktop/         — Electron app (was the entire repo pre-monorepo)
+    cli/             — `superone` headless environment CLI / remote backend (no Electron)
     web/             — Next.js 16 marketing/docs/demos site (App Router + Turbopack)
     relay/           — Cloudflare Workers (Durable Objects) — mobile↔desktop relay protocol
   packages/
-    ui/              — shadcn primitives + OKLch theme CSS, shared by desktop + web
     shared/          — Neutral types, harness-brand, i18n, miniapp runtime (no Electron deps)
+    ui/              — shadcn primitives + OKLch theme CSS, shared by desktop + web
+    runtime/         — @superone/runtime — session/fs/git/lease/spawn-env/crypto (always needed)
+    claude/          — @superone/claude — Claude harness (opt-in)
+    codex/           — @superone/codex — Codex harness (opt-in)
+    acp/             — @superone/acp — ACP harness (opt-in)
+    opencode/        — @superone/opencode — OpenCode harness (opt-in)
     tsconfig/        — Shared base/react-library/electron-{node,renderer}/nextjs configs
 ```
 
-Workspace package names: `@superone/desktop`, `@superone/web`, `@superone/relay`, `@superone/ui`, `@superone/shared`, `@superone/tsconfig`. All `private: true`.
+Workspace package names: `@superone/desktop`, `@superone/cli`, `@superone/web`,
+`@superone/relay`, `@superone/ui`, `@superone/shared`, `@superone/runtime`,
+`@superone/claude`, `@superone/codex`, `@superone/acp`, `@superone/opencode`,
+`@superone/tsconfig`. All `private: true`.
+
+### Node package layout (enable harness = depend on package)
+
+| Package | npm name | When to depend |
+|---------|----------|----------------|
+| Runtime (session/fs/git) | `@superone/runtime` | **Always** for CLI / remote node |
+| Claude | `@superone/claude` | Harness `claude` enabled |
+| Codex | `@superone/codex` | Harness `codex` enabled |
+| ACP | `@superone/acp` | Harness `acp` enabled |
+| OpenCode | `@superone/opencode` | Harness `opencode` enabled |
+
+Subpaths: `@superone/runtime/session`, `@superone/runtime/fs`, `@superone/runtime/git`.
+
+See `packages/runtime/README.md`. Desktop thin-wrap onto harness packages is deferred.
 
 **Self-host relay**: `apps/relay/` is intended to be self-hostable by users. Currently the repo is private; when going public the plan is to set up a `git subtree` mirror to a public repo via GitHub Action so self-hosters can clone just the relay subtree. Until then, distribute by sharing wrangler.toml + source bundle directly.
 
@@ -37,10 +60,11 @@ Each workspace carries its own `CLAUDE.md` with architecture, conventions, and r
 | Workspace | `CLAUDE.md` | Covers |
 |---|---|---|
 | `apps/desktop/` | `apps/desktop/CLAUDE.md` | Electron 3-process architecture, Zustand stores, IPC API, Remote Control (mobile), Codex, auto-update, build/release, styling/brand theming, debugging (event-trace), testing (TDD), **Mini-App platform** (⚠️ recurring two-runtime footgun) |
+| `apps/cli/` | `apps/cli/CLAUDE.md` | Headless node RPC, workspace/git, pairing; harness packages under `@superone/*`; **local lab UI test** (`dev:cli:lab` + Other Devices → Local lab); labs do not hot-reload |
 | `apps/web/` | `apps/web/CLAUDE.md` | Next.js 16 marketing/docs/demos site |
 | `apps/video/` | `apps/video/CLAUDE.md` | Remotion video compositions / offline render |
 
-`apps/relay/` and `packages/*` currently have no local `CLAUDE.md`; the relay protocol is summarized in `apps/desktop/CLAUDE.md` → "Remote Control (Mobile) Architecture".
+`apps/relay/` and most `packages/*` currently have no local `CLAUDE.md`; the relay protocol is summarized in `apps/desktop/CLAUDE.md` → "Remote Control (Mobile) Architecture".
 
 ## Commands
 
@@ -49,6 +73,12 @@ All root scripts proxy to a workspace via `bun --filter`. Run them from the repo
 ```bash
 bun run dev              # Start Electron app with hot reload (→ @superone/desktop)
 bun run dev:web          # Start Next.js dev server on :3000 (→ @superone/web)
+bun run dev:cli          # Start superone CLI in foreground (→ @superone/cli)
+bun run dev:cli:lab      # Local remote-node lab on :7789 (host process; prefer for harness/creds)
+# Manual UI test: Terminal A `dev:cli:lab` + Terminal B `dev` → Remote Control →
+# Control Other Devices → Local lab → Connect lab (see apps/cli/CLAUDE.md)
+# Docker SSH lab: bun run dev:cli:docker* — Linux/SSH fidelity only
+bun run test:cli         # Run CLI package tests
 bun run dev:relay        # Start wrangler dev for Cloudflare Worker relay (→ @superone/relay)
 bun run deploy:relay     # wrangler deploy the relay (→ @superone/relay)
 bun run test:relay       # Run relay vitest suite
@@ -75,7 +105,7 @@ To run a single test file: `bunx vitest run apps/desktop/src/path/to/file.test.t
 ### Path Alias
 
 - **Inside `apps/desktop`**: `@/*` maps to `apps/desktop/src/renderer/src/*` (configured in `electron.vite.config.ts`, `tsconfig.web.json`, `vitest.config.ts`, `.storybook/main.ts`).
-- **Cross-package**: code imports via package names — `@superone/shared/agent-types`, `@superone/ui/components/ui/button`, `@superone/ui/lib/utils`, etc. These resolve through `node_modules/@superone/*` workspace symlinks and each package's `exports` map.
+- **Cross-package**: code imports via package names — `@superone/shared/agent-types`, `@superone/ui/components/ui/button`, etc. These resolve through `node_modules/@superone/*` workspace symlinks and each package's `exports` map.
 - **Inside `packages/ui`** (and other packages): use relative paths only (`../lib/utils`, `./button`) — no `@/` alias.
 
 ### TypeScript Setup

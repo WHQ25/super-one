@@ -17,6 +17,7 @@ export type Messages = {
     systemDefault: string
     back: string
     retry: string
+    refresh: string
     continue: string
     terminal: string
   }
@@ -28,7 +29,55 @@ export type Messages = {
     }
     pinned: string
     projects: string
+    thisMac: string
+    thisPc: string
+    hostDisconnected: string
+    hostConnectHint: string
+    addProject: {
+      title: string
+      description: string
+      sources: {
+        title: string
+        searchPlaceholder: string
+        local: { label: string; hint: string }
+        github: { label: string; hint: string }
+        url: { label: string; hint: string }
+      }
+      pathPlaceholderLocal: string
+      pathPlaceholderRemote: string
+      repoPlaceholderGithub: string
+      repoPlaceholderUrl: string
+      destinationPlaceholder: string
+      repository: string
+      repoInvalidGithub: string
+      repoInvalidUrl: string
+      githubRepos: string
+      githubNoRepos: string
+      githubPrivate: string
+      clonesInto: string
+      cloning: string
+      pathRequired: string
+      /** Clone failed because `<parent>/<repo>` is already on disk. */
+      destinationExists: string
+      browse: string
+      directories: string
+      goUp: string
+      noDirectories: string
+      actions: {
+        select: string
+        continue: string
+        add: string
+        createAndAdd: string
+        clone: string
+        createAndClone: string
+      }
+      hintTab: string
+      hintEnter: string
+      hintNav: string
+      hintBack: string
+    }
     sort: {
+      title: string
       recent: string
       added: string
     }
@@ -131,6 +180,7 @@ export type Messages = {
     }
     update: {
       checking: string
+      available: string
       preparing: string
       upToDate: string
       downloading: string
@@ -164,6 +214,118 @@ export type Messages = {
       providers: {
         claude: string
         codex: string
+      }
+    }
+    remote: {
+      pageTitle: string
+      pageSubtitle: string
+      tabs: {
+        thisComputer: string
+        thisMac: string
+        otherDevices: string
+      }
+      thisDevice: {
+        mobile: { title: string; description: string; empty: string }
+        desktop: { title: string; description: string; empty: string }
+      }
+      otherDevices: {
+        title: string
+        subtitle: string
+      }
+      channels: {
+        addDevice: string
+        empty: string
+        desktop: { title: string; description: string }
+        ssh: { title: string; description: string }
+        tailscale: { title: string; description: string }
+        localLab: {
+          title: string
+          description: string
+          connect: string
+          reconnect: string
+          offline: string
+          online: string
+          startHint: string
+          connectSuccess: string
+          connectSuccessExisting: string
+          refreshStatus: string
+        }
+      }
+    }
+    environments: {
+      title: string
+      subtitle: string
+      connect: string
+      disconnect: string
+      forget: string
+      forgetConfirm: string
+      addSuccess: string
+      credentialInMemoryOnly: string
+      noSessionsCapability: string
+      state: {
+        available: string
+        connecting: string
+        synchronizing: string
+        connected: string
+        disconnected: string
+        backoff: string
+        blocked: string
+      }
+      blockReason: {
+        auth: string
+        protocol_incompatible: string
+        revoked: string
+        invalid_config: string
+        identity_conflict: string
+        user: string
+      }
+      add: {
+        trigger: string
+        title: string
+        description: string
+        titleSsh: string
+        descriptionSsh: string
+        sshTab: string
+        manualTab: string
+        knownHostsTab: string
+        addNewHostTab: string
+        sshHostsLabel: string
+        sshHostsHint: string
+        sshHostsEmpty: string
+        sshPickRequired: string
+        sshManualOption: string
+        manualSshSection: string
+        manualPairSection: string
+        destination: string
+        destinationHint: string
+        autoInstallHint: string
+        uploadInstallHint: string
+        useLocalUpload: string
+        useLocalUploadHint: string
+        advanced: string
+        autoDetected: string
+        remoteExec: string
+        remoteExecHint: string
+        remotePort: string
+        sshPort: string
+        identityFile: string
+        identityFileHint: string
+        label: string
+        progress: {
+          probing: string
+          npm: string
+          upload: string
+          verify: string
+          extract: string
+          activate: string
+          starting: string
+          pairing: string
+        }
+        baseUrl: string
+        baseUrlHint: string
+        pairingToken: string
+        pairingTokenHint: string
+        submit: string
       }
     }
     appearance: {
@@ -347,6 +509,12 @@ export type Messages = {
         betaDescription: string
         alphaDescription: string
         updated: string
+      }
+      checkUpdates: {
+        label: string
+        description: string
+        action: string
+        failed: string
       }
     }
     preferences: {
@@ -1846,6 +2014,8 @@ export type Messages = {
       preventSleepLabel: string
       preventSleepDescription: string
       pairNewDevice: string
+      pairNewPhone: string
+      pairNewDesktop: string
       pairTitle: string
       stepScan: string
       stepCode: string
@@ -2052,6 +2222,7 @@ export const en: Messages = {
     systemDefault: 'Default',
     back: 'Back',
     retry: 'Retry',
+    refresh: 'Refresh',
     continue: 'Continue',
     terminal: 'Terminal',
   },
@@ -2063,7 +2234,55 @@ export const en: Messages = {
     },
     pinned: 'Pinned',
     projects: 'Projects',
+    thisMac: 'This Mac',
+    thisPc: 'This PC',
+    hostDisconnected: 'Host offline',
+    hostConnectHint: 'Connect this host in Settings → Remote Control to browse its projects.',
+    addProject: {
+      title: 'Add Project',
+      description: 'on {{host}}',
+      sources: {
+        title: 'Sources',
+        searchPlaceholder: 'Type a path, or pick a source...',
+        local: { label: 'Local Folder', hint: 'Browse a folder that already exists' },
+        github: { label: 'GitHub Repository', hint: 'Search and clone owner/repo' },
+        url: { label: 'Git URL', hint: 'Clone from any remote URL' },
+      },
+      pathPlaceholderLocal: '~/Projects/',
+      pathPlaceholderRemote: '/home/superone/',
+      repoPlaceholderGithub: 'owner/repo',
+      repoPlaceholderUrl: 'https://github.com/owner/repo.git',
+      destinationPlaceholder: 'Where should it be cloned?',
+      repository: 'Repository',
+      repoInvalidGithub: 'Type owner/ to search repositories.',
+      repoInvalidUrl: 'Enter an https, ssh or git clone URL.',
+      githubRepos: 'Repositories',
+      githubNoRepos: 'No repositories matched.',
+      githubPrivate: 'Private',
+      clonesInto: 'Clones into {{path}}',
+      cloning: 'Cloning...',
+      pathRequired: 'Enter a project path.',
+      destinationExists:
+        '"{{path}}" already exists. Pick another folder, or add that project instead of cloning.',
+      browse: 'Browse',
+      directories: 'Directories',
+      goUp: 'Parent Directory',
+      noDirectories: 'No directories here.',
+      actions: {
+        select: 'Select',
+        continue: 'Continue',
+        add: 'Add',
+        createAndAdd: 'Create & Add',
+        clone: 'Clone',
+        createAndClone: 'Create & Clone',
+      },
+      hintTab: 'autocomplete',
+      hintEnter: 'confirm',
+      hintNav: 'navigate',
+      hintBack: 'back',
+    },
     sort: {
+      title: 'Sort Projects',
       recent: 'Recent Activity',
       added: 'Date Added',
     },
@@ -2178,6 +2397,7 @@ export const en: Messages = {
     },
     update: {
       checking: 'Checking for updates...',
+      available: 'Update',
       preparing: 'Preparing update {{version}}...',
       upToDate: "You're up to date",
       downloading: 'Downloading {{version}}...',
@@ -2211,6 +2431,151 @@ export const en: Messages = {
       providers: {
         claude: 'Claude Code',
         codex: 'Codex',
+      },
+    },
+    remote: {
+      pageTitle: 'Remote Control',
+      pageSubtitle:
+        'Let phones control this computer, or connect SuperOne to other machines as execution environments.',
+      tabs: {
+        thisComputer: 'Control This Computer',
+        thisMac: 'Control This Mac',
+        otherDevices: 'Control Other Devices',
+      },
+      thisDevice: {
+        mobile: {
+          title: 'Mobile',
+          description: 'Phones paired to monitor and control this SuperOne.',
+          empty: 'No phones paired yet.',
+        },
+        desktop: {
+          title: 'Desktop',
+          description: 'Other SuperOne desktops allowed to control this computer.',
+          empty: 'No desktop clients paired yet.',
+        },
+      },
+      otherDevices: {
+        title: 'Other devices',
+        subtitle:
+          'Run projects, terminals, and agents on remote machines. They keep running after you disconnect.',
+      },
+      channels: {
+        addDevice: 'Add Device',
+        empty: 'No devices yet',
+        desktop: {
+          title: 'Desktop',
+          description: 'Connect to another SuperOne desktop over the network.',
+        },
+        ssh: {
+          title: 'SSH',
+          description: 'Bootstrap or pair a headless superone node over SSH.',
+        },
+        tailscale: {
+          title: 'Tailscale',
+          description: 'Reach a node on your tailnet without opening ports.',
+        },
+        localLab: {
+          title: 'Local lab',
+          description:
+            'Dev-only: pair to a host-process superone node on loopback (remote protocol, host credentials).',
+          connect: 'Connect lab',
+          reconnect: 'Reconnect lab',
+          offline: 'Lab offline',
+          online: 'Lab online',
+          startHint: 'Start the lab first: {{cmd}}',
+          connectSuccess: 'Connected to local lab',
+          connectSuccessExisting: 'Reconnected to local lab',
+          refreshStatus: 'Refresh',
+        },
+      },
+    },
+    environments: {
+      title: 'Execution Environments',
+      subtitle:
+        'Each environment is a place where SuperOne runs projects, terminals, and agents. Remote nodes keep running after you disconnect.',
+      connect: 'Connect',
+      disconnect: 'Disconnect',
+      forget: 'Remove',
+      forgetConfirm:
+        'Remove "{{label}}" from this computer? The remote service keeps running; only local credentials are erased.',
+      addSuccess: 'Environment connected',
+      credentialInMemoryOnly:
+        'OS secure storage is unavailable, so this credential is kept in memory only and will be lost when SuperOne quits.',
+      noSessionsCapability:
+        'This node does not advertise agent sessions yet. Terminal and workspace operations still work.',
+      state: {
+        available: 'Not Connected',
+        connecting: 'Connecting',
+        synchronizing: 'Syncing',
+        connected: 'Connected',
+        disconnected: 'Disconnected',
+        backoff: 'Retrying',
+        blocked: 'Blocked',
+      },
+      blockReason: {
+        auth: 'Authentication failed',
+        protocol_incompatible: 'Incompatible protocol version',
+        revoked: 'Credential revoked',
+        invalid_config: 'Invalid configuration',
+        identity_conflict: 'Node identity mismatch',
+        user: 'Disconnected by user',
+      },
+      add: {
+        trigger: 'Add Environment',
+        title: 'Add Remote Environment',
+        description:
+          'Bootstrap a node over SSH, or pair with one that is already running using a token from `superone pair-create`.',
+        titleSsh: 'Add Device via SSH',
+        descriptionSsh:
+          'Pick a Host from your local SSH config, or add a new host manually.',
+        sshTab: 'Over SSH',
+        manualTab: 'Manual',
+        knownHostsTab: 'Known Hosts',
+        addNewHostTab: 'Add New Host',
+        sshHostsLabel: 'SSH Host',
+        sshHostsHint:
+          'Hosts from your local ~/.ssh/config. System OpenSSH resolves User, Port, and keys.',
+        sshHostsEmpty:
+          'No Host entries in ~/.ssh/config. Switch to Add New Host to enter a destination.',
+        sshPickRequired: 'Select an SSH host from the list.',
+        sshManualOption: 'Enter manually…',
+        manualSshSection: 'SSH connection',
+        manualPairSection: 'Or pair a running node',
+        destination: 'SSH Destination',
+        destinationHint: 'user@host, or a Host alias from ~/.ssh/config.',
+        autoInstallHint:
+          'If superone is missing, the desktop installs @super-one/cli from npm over SSH (pinned version). Key-based SSH or ssh-agent is required.',
+        uploadInstallHint:
+          'Development mode: upload a local superone dist tarball over SSH instead of using npm.',
+        useLocalUpload: 'Install From Local',
+        useLocalUploadHint:
+          'Requires apps/cli/dist (or a packaged resources/superone-dist) built for the remote OS/arch.',
+        advanced: 'Advanced',
+        autoDetected: 'Auto-detect / install',
+        remoteExec: 'Remote Executable',
+        remoteExecHint:
+          'Optional. Absolute path to superone on the remote host. Leave blank to probe PATH and install if missing.',
+        remotePort: 'Node Port',
+        sshPort: 'SSH Port',
+        identityFile: 'Identity File',
+        identityFileHint:
+          'Optional. Only needed when the key is not in ssh-agent or ~/.ssh/config.',
+        label: 'Label',
+        progress: {
+          probing: 'Probing remote host…',
+          npm: 'Installing @super-one/cli…',
+          upload: 'Uploading package…',
+          verify: 'Verifying package…',
+          extract: 'Extracting…',
+          activate: 'Activating install…',
+          starting: 'Starting node…',
+          pairing: 'Pairing…',
+        },
+        baseUrl: 'Base URL',
+        baseUrlHint: 'Where this desktop can reach the node, e.g. through an existing SSH forward.',
+        pairingToken: 'Pairing Token',
+        pairingTokenHint: 'Single-use and valid for 10 minutes. It is never saved to disk.',
+        submit: 'Connect',
       },
     },
     appearance: {
@@ -2403,6 +2768,12 @@ export const en: Messages = {
         betaDescription: 'Beta plus stable releases.',
         alphaDescription: 'Earliest builds — alpha, beta, and stable.',
         updated: 'Update channel changed',
+      },
+      checkUpdates: {
+        label: 'Check for Updates',
+        description: 'SuperOne checks once on launch. Currently on v{{version}}.',
+        action: 'Check Now',
+        failed: 'Update check failed',
       },
     },
     preferences: {
@@ -2803,13 +3174,13 @@ export const en: Messages = {
       forkInfo: 'Fork this conversation into an independent session running in a new worktree.',
       forkIncludesChanges: 'Includes local changes',
       forkButton: 'Fork session',
-      handoffHeading: 'Hand off changes to Local',
-      handoffInfo: "Copy this worktree's changes into the local folder.",
+      handoffHeading: 'Hand off changes to main checkout',
+      handoffInfo: "Copy this worktree's changes into the main checkout.",
       handoffButton: 'Hand off',
-      handoffSuccess: 'Changes handed off to Local',
+      handoffSuccess: 'Changes handed off to main checkout',
       handoffErrorNoChanges: 'Nothing to hand off',
-      handoffErrorLocalDirty: 'The local folder has uncommitted changes — commit or stash them first',
-      handoffErrorConflict: 'Changes conflict with the local folder — nothing was handed off',
+      handoffErrorLocalDirty: 'The main checkout has uncommitted changes — commit or stash them first',
+      handoffErrorConflict: 'Changes conflict with the main checkout — nothing was handed off',
       handoffErrorNotWorktree: 'Not running in a worktree',
       handoffErrorGeneric: 'Handoff failed',
       assignHeading: 'Assign to a branch',
@@ -3908,12 +4279,14 @@ export const en: Messages = {
     remote: {
       title: 'Remote Control',
       subtitle: 'Allow a mobile device to monitor and control this SuperOne instance.',
-      enableLabel: 'Enable Remote Control',
+      enableLabel: 'Allow Control',
       enableDescription: 'Expose this device for remote pairing',
       preventSleepLabel: 'Prevent System Sleep',
       preventSleepDescription: 'Prevent idle sleep when the screen is open. Does not apply when the lid is closed.',
       pairNewDevice: 'Pair New Device',
-      pairTitle: 'Pair a New Device',
+      pairNewPhone: 'Pair New Phone',
+      pairNewDesktop: 'Pair New Desktop',
+      pairTitle: 'Pair a New Phone',
       stepScan: 'Open SuperOne on your phone and scan this QR code',
       stepCode: 'Enter the 6-digit code shown on your phone',
       copyLink: 'Copy Pairing Link',

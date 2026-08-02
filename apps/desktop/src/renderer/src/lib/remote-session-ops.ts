@@ -15,7 +15,7 @@ import {
   nodeHarnessToProviderId,
   nodePendingToPermissionRequest,
   nodeStatusToAgentStatus,
-  transcriptToChatMessages,
+  reconcileTranscriptWithLocalMessages,
   type NodeSessionSnapshot,
 } from '@/lib/remote-session-messages'
 import { createDefaultPerSessionState } from '@/stores/chat-store/defaults'
@@ -80,8 +80,13 @@ export async function hydrateRemotePerSession(
     sessionId,
   )) as NodeSessionSnapshot | null
   const providerId = nodeHarnessToProviderId(snap?.harnessId || snap?.providerId)
-  const messages = transcriptToChatMessages(snap?.transcript, providerId)
   const base = previous ?? createDefaultPerSessionState()
+  // Prefer locally streamed rich content; transcript only fills stream gaps.
+  const messages = reconcileTranscriptWithLocalMessages(
+    base.messages,
+    snap?.transcript,
+    providerId,
+  )
   const pendingPerm = nodePendingToPermissionRequest(snap?.pendingInteraction)
   const chatProvider = (providerId === 'claude' || providerId === 'codex'
     ? providerId

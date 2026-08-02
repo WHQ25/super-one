@@ -70,6 +70,67 @@ export function transcriptToChatMessages(
   return out
 }
 
+/**
+ * Merge node transcript (text-only recovery) with locally streamed messages.
+ *
+ * Matching rule — role-index, not id equality:
+ * Walk transcript order; for the nth user / nth assistant row, if a local
+ * message of the same role exists at that role-index, keep the local message
+ * (rich tool_use / tool_result / thinking blocks win). Otherwise insert the
+ * transcript-derived row (stream missed it). Unmatched local messages (e.g.
+ * optimistic user not yet on the node) are appended in their original order.
+ *
+ * Why not id: the renderer echoes the user bubble under `clientMessageId`
+ * while the node uses its own blockId (`skipUserMessage: true`), and
+ * `createNodeSessionEventMapper` uses a sticky assistant id per turn that
+ * diverges from SessionRuntime transcript assistant ids.
+ */
+export function reconcileTranscriptWithLocalMessages(
+  localMessages: ChatMessage[],
+  transcript: NodeTranscriptBlock[] | undefined,
+  providerId = 'codex',
+): ChatMessage[] {
+  const recovery = transcriptToChatMessages(transcript, providerId)
+  if (recovery.length === 0) return localMessages
+  if (localMessages.length === 0) return recovery
+
+  const localByRole: { user: number[]; assistant: number[] } = {
+    user: [],
+    assistant: [],
+  }
+  for (let i = 0; i < localMessages.length; i++) {
+    const role = localMessages[i]!.role
+    if (role === 'user' || role === 'assistant') {
+      localByRole[role].push(i)
+    }
+  }
+
+  const roleCursor = { user: 0, assistant: 0 }
+  const usedLocal = new Set<number>()
+  const result: ChatMessage[] = []
+
+  for (const rec of recovery) {
+    const role = rec.role
+    const idxInRole = roleCursor[role]
+    const localIdx = localByRole[role][idxInRole]
+    if (localIdx !== undefined) {
+      roleCursor[role] = idxInRole + 1
+      usedLocal.add(localIdx)
+      result.push(localMessages[localIdx]!)
+    } else {
+      result.push(rec)
+    }
+  }
+
+  for (let i = 0; i < localMessages.length; i++) {
+    if (!usedLocal.has(i)) {
+      result.push(localMessages[i]!)
+    }
+  }
+
+  return result
+}
+
 export function nodeStatusToAgentStatus(
   status: string | undefined,
 ): 'idle' | 'streaming' | 'error' {

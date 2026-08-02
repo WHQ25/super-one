@@ -4,6 +4,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { startNodeRuntime, type NodeRuntime } from '../runtime'
+import { isCodexBinaryOverrideRunnable } from '../session/codex-turn-runner'
+import { isClaudeRuntimeRunnable } from '../session/claude-turn-runner'
 import { connectAuthedRpc } from '../test/ws-rpc'
 
 const dirs: string[] = []
@@ -242,15 +244,25 @@ describe('Phase 2 workspace integration', () => {
       capabilities: { sessions: boolean; harnessIds: string[] }
     }
     expect(desc.capabilities.sessions).toBe(true)
-    // Production fails closed: no harness advertised until enable+ready.
-    expect(desc.capabilities.harnessIds).toEqual([])
+    // Catalog entries fail closed, while directly runnable binary/SDK overrides are advertised.
+    const runtimeOverrides = [
+      ...(isCodexBinaryOverrideRunnable() ? ['codex'] : []),
+      ...(isClaudeRuntimeRunnable() ? ['claude'] : []),
+    ]
+    expect(desc.capabilities.harnessIds).toEqual(runtimeOverrides)
 
     const opened = (await rpc('project.open', { path: projectDir })) as { projectId: string }
-    await expect(rpc('session.create', { projectId: opened.projectId })).rejects.toThrow()
+    await expect(rpc('session.create', {
+      projectId: opened.projectId,
+      harnessId: 'opencode',
+    })).rejects.toThrow()
 
     // Enable codex as ready (admin path; Stage 1 uses in-process manager).
     rt.harnesses.update('codex', { enabled: true, state: 'ready', runtimeVersion: 'test' })
-    const created = (await rpc('session.create', { projectId: opened.projectId })) as {
+    const created = (await rpc('session.create', {
+      projectId: opened.projectId,
+      harnessId: 'codex',
+    })) as {
       sessionId: string
     }
     expect(created.sessionId).toBeTruthy()

@@ -23,6 +23,7 @@ import {
   updateProjectState,
 } from './store-helpers'
 import type { ChatStore, PerSessionState } from '../types'
+import type { NodeSessionSnapshot } from '@/lib/remote-session-messages'
 
 export async function respondToPermissionImpl(
   set: ChatStoreSet,
@@ -71,7 +72,7 @@ export async function respondToPermissionImpl(
             const snap = (await window.environment.getSession(
               remote.connectionId,
               targetSid,
-            )) as remoteMsgs.NodeSessionSnapshot | null
+            )) as NodeSessionSnapshot | null
             const pending = remoteMsgs.nodePendingToPermissionRequest(snap?.pendingInteraction)
             const status = snap?.status
             const settled =

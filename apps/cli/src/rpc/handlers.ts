@@ -537,9 +537,8 @@ function handleProviderImportBundle(payload: unknown, ctx: RpcContext): RpcResul
 function handleDescriptor(ctx: RpcContext): RpcResult {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.readEnvironment)
   if (denied) return denied
-  // Advertise only enabled + ready harnesses (design §13.4). Simulated test
-  // mode pre-marks the catalog ready; production defaults to [].
-  // Lab overrides: SUPERONE_*_BINARY make harnesses runnable without catalog ready.
+  // Advertise enabled + ready catalog entries plus directly runnable bundled/
+  // binary overrides. Simulated test mode pre-marks the catalog ready.
   const harnessIds = [...ctx.harnesses.readySessionHarnessIds()]
   if (isCodexBinaryOverrideRunnable() && !harnessIds.includes('codex')) {
     harnessIds.push('codex')
@@ -1491,7 +1490,7 @@ function handleSessionCreate(payload: unknown, ctx: RpcContext): RpcResult {
       },
     }
   }
-  // Catalog ready OR SUPERONE_*_BINARY lab override with a real file.
+  // Catalog ready OR a bundled/binary runtime that can launch without catalog install.
   const catalogReady = ctx.harnesses.isSessionHarnessRunnable(harnessId)
   const codexOverride =
     harnessId === 'codex' && isCodexBinaryOverrideRunnable()

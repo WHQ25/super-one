@@ -212,6 +212,7 @@ function createCollabTaskMessage(text: string): ChatMessageType {
     status: 'complete',
     content: [{ type: 'text', text }],
     createdAt: new Date().toISOString(),
+    providerId: 'claude',
     metadata: {
       source: 'collaboration',
       collaboration: { kind: 'initial_task', direction: 'inbound', fromSessionId: 'parent-1' },

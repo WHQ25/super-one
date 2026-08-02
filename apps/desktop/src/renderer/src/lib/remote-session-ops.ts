@@ -51,7 +51,7 @@ export function mapNodeRowToHistoryEntry(row: {
     messageCount: row.messageCount,
     isPinned: row.isPinned,
     isHidden: row.isHidden,
-    worktreePath: row.worktreePath ?? null,
+    worktreePath: row.worktreePath ?? undefined,
     isWorktree: row.isWorktree ?? Boolean(row.worktreePath),
   }
 }

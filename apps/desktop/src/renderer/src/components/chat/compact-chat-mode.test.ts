@@ -63,8 +63,8 @@ describe('splitTurnForCompactMode', () => {
       { kind: 'tools', id: 'interrupted-tools' },
     ]
     const split = splitTurnForCompactMode(items, isClaudeConclusionSegment)
-    expect(split.process.map((s) => ('id' in s ? s.id : s.kind))).toEqual(['early', 'mid', 'mid-tools'])
-    expect(split.conclusion.map((s) => ('id' in s ? s.id : s.kind))).toEqual([
+    expect(split.process.map((s) => s.id)).toEqual(['early', 'mid', 'mid-tools'])
+    expect(split.conclusion.map((s) => s.id)).toEqual([
       'final-1',
       'final-2',
       'interrupted-tools',

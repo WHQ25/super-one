@@ -584,7 +584,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       await get().fetchProviderData()
       return created
     }
-    const created = (await window.environment.upsertRemoteCustomPlatform(scope, def)) as Platform
+    const created = (await window.environment.upsertRemoteCustomPlatform(
+      scope,
+      def as unknown as Record<string, unknown>,
+    )) as Platform
     await get().fetchProviderData()
     return created
   },
@@ -594,7 +597,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     if (scope === 'local') {
       await window.app.updateCustomPlatform(def)
     } else {
-      await window.environment.upsertRemoteCustomPlatform(scope, def)
+      await window.environment.upsertRemoteCustomPlatform(
+        scope,
+        def as unknown as Record<string, unknown>,
+      )
     }
     await get().fetchProviderData()
   },

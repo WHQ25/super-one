@@ -4,6 +4,7 @@ import type { GenerateMediaCoreParams } from './types'
 /** Resolution tiers accepted by Gemini image models via `imageConfig.imageSize`. */
 export const GOOGLE_IMAGE_SIZE_TIERS = ['1K', '2K', '4K', '512'] as const
 export type GoogleImageSizeTier = (typeof GOOGLE_IMAGE_SIZE_TIERS)[number]
+type ProviderOptionObject = ProviderOptions[string]
 
 /**
  * Normalize a tool/core `size` value to a Google imageSize tier when it matches
@@ -45,13 +46,15 @@ export function resolveGoogleImageGenerateOptions(params: GenerateMediaCoreParam
     }
   }
 
-  const existingGoogle = (params.providerOptions?.google ?? {}) as Record<string, unknown>
+  const existingGoogle: ProviderOptionObject = params.providerOptions?.google ?? {}
   const existingImageConfig =
-    existingGoogle.imageConfig && typeof existingGoogle.imageConfig === 'object'
-      ? (existingGoogle.imageConfig as Record<string, unknown>)
+    existingGoogle.imageConfig
+      && typeof existingGoogle.imageConfig === 'object'
+      && !Array.isArray(existingGoogle.imageConfig)
+      ? (existingGoogle.imageConfig as ProviderOptionObject)
       : {}
 
-  const imageConfig: Record<string, unknown> = {
+  const imageConfig: ProviderOptionObject = {
     ...existingImageConfig,
     imageSize,
   }

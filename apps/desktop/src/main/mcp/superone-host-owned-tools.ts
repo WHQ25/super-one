@@ -2,7 +2,11 @@
  * Single source of truth for SuperOne **host-owned** MCP bare tool names
  * (auto-approve at the harness permission layer).
  *
- * Keep this in sync with tools registered on the SuperOne MCP surface
+ * Static names + judgement live in `@superone/shared/superone-host-owned-tools`
+ * so remote-node Claude can short-circuit without Electron. This module re-exports
+ * that core and layers desktop-only computer-use feature gating.
+ *
+ * Keep static names in sync with tools registered on the SuperOne MCP surface
  * (`listSuperoneMcpTools` / `createSuperoneMcpServer`). Mini-app tools
  * (`slug__tool`) are NOT host-owned — they use preapproved.json instead.
  *
@@ -13,40 +17,25 @@
 
 import {
   BUILT_IN_SUPERONE_TOOL_NAMES,
+  MCP_SUPERONE_TOOL_PREFIX,
+  MINIAPP_CALL_BARE_NAME,
+  MINIAPP_LIST_BARE_NAME,
   MOBILE_SHARE_FILE_TOOL_NAME,
-} from './superone-mcp-builtin-defs'
+  isStaticHostOwnedSuperoneBareName,
+} from '@superone/shared/superone-host-owned-tools'
 import {
   COMPUTER_USE_TOOL_NAMES,
   isComputerUseEnabled,
   normalizeComputerUseToolName,
 } from '../computer-use/tools'
 
-export const MCP_SUPERONE_TOOL_PREFIX = 'mcp__superone__' as const
-
-/**
- * Fixed mini-app MCP tools — both host-owned at the harness layer.
- * - miniapp_list: read-only catalog
- * - miniapp_call: statically admitted; args-aware allow/prompt runs in the executor
- *   (host permission_request), so Codex/OpenCode no longer need tool args at the
- *   harness permission gate.
- */
-const MINIAPP_LIST_BARE_NAME = 'miniapp_list' as const
-const MINIAPP_CALL_BARE_NAME = 'miniapp_call' as const
+export {
+  MCP_SUPERONE_TOOL_PREFIX,
+  isStaticHostOwnedSuperoneBareName,
+}
 
 /** Deprecated alias still registered on the MCP server for one release. */
 const COMPUTER_USE_REGISTERED_ALIASES = ['computer_observe'] as const
-
-/**
- * Bare names that are always SuperOne host system tools (static builtins + mobile share).
- * Does not include feature-gated computer_* (use {@link isHostOwnedSuperoneBareName}).
- */
-export function isStaticHostOwnedSuperoneBareName(bare: string): boolean {
-  if ((BUILT_IN_SUPERONE_TOOL_NAMES as readonly string[]).includes(bare)) return true
-  if (bare === MOBILE_SHARE_FILE_TOOL_NAME) return true
-  if (bare === MINIAPP_LIST_BARE_NAME) return true
-  if (bare === MINIAPP_CALL_BARE_NAME) return true
-  return false
-}
 
 /**
  * Whether a bare tool name (no mcp__superone__ prefix) is SuperOne host-owned.

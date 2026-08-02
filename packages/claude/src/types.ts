@@ -75,6 +75,12 @@ export interface RunClaudeSdkTurnOptions {
   messageId?: string
   /** Injectable SDK entry (tests). Default: real `query` from agent SDK. */
   queryFn?: ClaudeQueryFn
+  /**
+   * Extra text appended after the SuperOne host system-prompt block.
+   * Joined with SuperOne's append the same way desktop `claude-query` does.
+   * Overridden entirely when `options.systemPrompt` is set.
+   */
+  systemPromptAppend?: string
   /** Extra Options overrides (MCP, systemPrompt, permissionMode, …). */
   options?: Partial<Options>
 }

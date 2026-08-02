@@ -208,4 +208,226 @@ describe('runClaudeSdkTurn', () => {
 
     rmSync(dir, { recursive: true, force: true })
   })
+
+  it('injects SuperOne system-prompt append into preset options', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'claude-core-sp-'))
+    const bin = join(dir, 'claude')
+    writeFileSync(bin, '#!/bin/sh\n')
+    chmodSync(bin, 0o755)
+
+    const queryFn: ClaudeQueryFn = vi.fn(() =>
+      messages([
+        {
+          type: 'result',
+          subtype: 'success',
+          is_error: false,
+          session_id: 's',
+          result: 'ok',
+        } as unknown as SDKMessage,
+      ]),
+    )
+
+    await runClaudeSdkTurn({
+      binaryPath: bin,
+      prompt: 'hi',
+      cwd: dir,
+      queryFn,
+      systemPromptAppend: 'caller extra',
+      onEvent: () => {},
+      signal: new AbortController().signal,
+    })
+
+    const call = (queryFn as ReturnType<typeof vi.fn>).mock.calls[0]![0] as {
+      options?: Options
+    }
+    const sp = call.options?.systemPrompt
+    expect(sp).toMatchObject({ type: 'preset', preset: 'claude_code' })
+    expect(typeof sp === 'object' && sp && 'append' in sp ? sp.append : '').toContain(
+      'You are running inside SuperOne',
+    )
+    expect(typeof sp === 'object' && sp && 'append' in sp ? sp.append : '').toContain(
+      'caller extra',
+    )
+
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('lets options.systemPrompt override the SuperOne append default', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'claude-core-spo-'))
+    const bin = join(dir, 'claude')
+    writeFileSync(bin, '#!/bin/sh\n')
+    chmodSync(bin, 0o755)
+
+    const queryFn: ClaudeQueryFn = vi.fn(() =>
+      messages([
+        {
+          type: 'result',
+          subtype: 'success',
+          is_error: false,
+          session_id: 's',
+          result: 'ok',
+        } as unknown as SDKMessage,
+      ]),
+    )
+
+    const override = { type: 'preset' as const, preset: 'claude_code' as const, append: 'only-override' }
+    await runClaudeSdkTurn({
+      binaryPath: bin,
+      prompt: 'hi',
+      cwd: dir,
+      queryFn,
+      systemPromptAppend: 'should-not-appear',
+      options: { systemPrompt: override },
+      onEvent: () => {},
+      signal: new AbortController().signal,
+    })
+
+    const call = (queryFn as ReturnType<typeof vi.fn>).mock.calls[0]![0] as {
+      options?: Options
+    }
+    expect(call.options?.systemPrompt).toEqual(override)
+
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('auto-allows host-owned SuperOne tools without calling onPermission', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'claude-core-ho-'))
+    const bin = join(dir, 'claude')
+    writeFileSync(bin, '#!/bin/sh\n')
+    chmodSync(bin, 0o755)
+
+    let canUseTool: Options['canUseTool']
+    const queryFn: ClaudeQueryFn = vi.fn((params) => {
+      canUseTool = params.options?.canUseTool
+      return messages([
+        {
+          type: 'result',
+          subtype: 'success',
+          is_error: false,
+          session_id: 's',
+          result: 'done',
+        } as unknown as SDKMessage,
+      ])
+    })
+
+    const onPermission = vi.fn(async () => 'deny' as const)
+    await runClaudeSdkTurn({
+      binaryPath: bin,
+      prompt: 'x',
+      cwd: dir,
+      queryFn,
+      onPermission,
+      onEvent: () => {},
+      signal: new AbortController().signal,
+    })
+
+    const allow = await canUseTool!(
+      'mcp__superone__session_rename',
+      { title: 'test' },
+      {
+        signal: new AbortController().signal,
+        toolUseID: 'tu-rename',
+        requestId: 'req-rename',
+      },
+    )
+    expect(allow).toEqual({ behavior: 'allow' })
+    expect(onPermission).not.toHaveBeenCalled()
+
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('still routes normal tools through onPermission', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'claude-core-np-'))
+    const bin = join(dir, 'claude')
+    writeFileSync(bin, '#!/bin/sh\n')
+    chmodSync(bin, 0o755)
+
+    let canUseTool: Options['canUseTool']
+    const queryFn: ClaudeQueryFn = vi.fn((params) => {
+      canUseTool = params.options?.canUseTool
+      return messages([
+        {
+          type: 'result',
+          subtype: 'success',
+          is_error: false,
+          session_id: 's',
+          result: 'done',
+        } as unknown as SDKMessage,
+      ])
+    })
+
+    const onPermission = vi.fn(async () => 'allow' as const)
+    await runClaudeSdkTurn({
+      binaryPath: bin,
+      prompt: 'x',
+      cwd: dir,
+      queryFn,
+      onPermission,
+      onEvent: () => {},
+      signal: new AbortController().signal,
+    })
+
+    const allow = await canUseTool!('Bash', { command: 'ls' }, {
+      signal: new AbortController().signal,
+      toolUseID: 'tu-bash',
+      requestId: 'req-bash',
+    })
+    expect(allow).toEqual({ behavior: 'allow' })
+    expect(onPermission).toHaveBeenCalledWith(
+      expect.objectContaining({
+        toolName: 'Bash',
+        interactionId: 'req-bash',
+      }),
+    )
+
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('denies host-owned tools when the turn signal is already aborted', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'claude-core-ab-'))
+    const bin = join(dir, 'claude')
+    writeFileSync(bin, '#!/bin/sh\n')
+    chmodSync(bin, 0o755)
+
+    let canUseTool: Options['canUseTool']
+    const queryFn: ClaudeQueryFn = vi.fn((params) => {
+      canUseTool = params.options?.canUseTool
+      return messages([
+        {
+          type: 'result',
+          subtype: 'success',
+          is_error: false,
+          session_id: 's',
+          result: 'done',
+        } as unknown as SDKMessage,
+      ])
+    })
+
+    const ac = new AbortController()
+    const onPermission = vi.fn(async () => 'allow' as const)
+    await runClaudeSdkTurn({
+      binaryPath: bin,
+      prompt: 'x',
+      cwd: dir,
+      queryFn,
+      onPermission,
+      onEvent: () => {},
+      signal: ac.signal,
+    })
+
+    ac.abort()
+    const deny = await canUseTool!(
+      'mcp__superone__session_rename',
+      { title: 'x' },
+      {
+        signal: new AbortController().signal,
+        toolUseID: 'tu-ab',
+        requestId: 'req-ab',
+      },
+    )
+    expect(deny).toMatchObject({ behavior: 'deny' })
+    expect(onPermission).not.toHaveBeenCalled()
+
+    rmSync(dir, { recursive: true, force: true })
+  })
 })

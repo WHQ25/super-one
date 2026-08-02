@@ -38,6 +38,17 @@ export interface NodeCodexRunnerOptions {
   allowSimulatedFallback?: boolean
   /** Node provider store — injects API keys for this turn. */
   providers?: ProviderStore
+  /**
+   * Codex `config.mcp_servers.superone` for Host Action HTTP MCP.
+   * When set, attached on every thread/start and thread/resume.
+   */
+  getCodexHostActionMcp?: (
+    sessionId: string,
+  ) => {
+    url: string
+    http_headers: Record<string, string>
+    startup_timeout_sec: number
+  } | null
 }
 
 /** Production multi-dispatch options (Codex Stage 4 + Claude Stage 5-E + ACP/OpenCode). */
@@ -47,8 +58,14 @@ export interface NodeProductionRunnerOptions extends NodeCodexRunnerOptions {
   claudeQueryFn?: NodeClaudeRunnerOptions['queryFn']
   acpBinaryPath?: string | null
   openCodeBinaryPath?: string | null
-  /** Host Action MCP (browser_snapshot) for Claude turns only. */
-  getHostActionMcpServers?: NodeClaudeRunnerOptions['getHostActionMcpServers']
+  /** Host Action MCP for Claude (in-process SDK). */
+  createHostActionClaudeMcp?: NodeClaudeRunnerOptions['createHostActionClaudeMcp']
+  /** Host Action HTTP MCP for ACP session/new. */
+  getAcpHostActionMcpServers?: (sessionId: string) => unknown[] | null
+  /** Host Action HTTP MCP for OpenCode mcp.add. */
+  getOpenCodeHostActionMcp?: (
+    sessionId: string,
+  ) => { url: string; headers: Record<string, string> } | null
 }
 
 export function resolveCodexBinaryPath(opts: {
@@ -136,14 +153,22 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
           ? input.session.providerResume.slice('thread:'.length)
           : null
 
+      const hostActionMcp = opts.getCodexHostActionMcp?.(input.session.sessionId) ?? null
+      const threadConfig = hostActionMcp
+        ? { mcp_servers: { superone: hostActionMcp } }
+        : undefined
+
       const result = await runCodexAppServerTurn({
         client,
         prompt: input.text,
         cwd,
         threadId: priorThread,
         model: input.model && input.model.trim() ? input.model.trim() : undefined,
+        messageId: input.messageId,
+        onAgentEvent: input.onAgentEvent,
         onDelta: input.onDelta,
         signal: input.signal,
+        threadConfig,
       })
 
       return {
@@ -171,13 +196,15 @@ export function createProductionTurnRunner(opts: NodeProductionRunnerOptions): T
     queryFn: opts.claudeQueryFn,
     allowSimulatedFallback: opts.allowSimulatedFallback,
     providers: opts.providers,
-    getHostActionMcpServers: opts.getHostActionMcpServers,
+    createHostActionClaudeMcp: opts.createHostActionClaudeMcp,
   })
   const acpOpenCode = createAcpOpenCodeProductionRouter({
     allowSimulatedFallback: opts.allowSimulatedFallback,
     resolveProjectPath: opts.resolveProjectPath,
     acpBinaryPath: opts.acpBinaryPath,
     openCodeBinaryPath: opts.openCodeBinaryPath,
+    getAcpMcpServers: opts.getAcpHostActionMcpServers,
+    getOpenCodeSuperoneMcp: opts.getOpenCodeHostActionMcp,
   })
   const simulated = createMultiHarnessRouter('codex')
 

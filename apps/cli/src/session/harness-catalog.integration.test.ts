@@ -6,11 +6,24 @@ import type { AuthScope, HarnessInstallationStatus } from '@superone/shared/envi
 import { startNodeRuntime, type NodeRuntime } from '../runtime'
 import { connectAuthedRpc } from '../test/ws-rpc'
 import { PHASE4_HARNESS_IDS } from './harness-runners'
+import { isCodexBinaryOverrideRunnable } from './codex-turn-runner'
+import { isClaudeRuntimeRunnable } from './claude-turn-runner'
 import { generateEd25519KeyPair, signPayload } from '../crypto-util'
 import WebSocket from 'ws'
 
 const dirs: string[] = []
 const runtimes: NodeRuntime[] = []
+
+function withRunnableOverrides(catalogHarnessIds: string[]): string[] {
+  const harnessIds = [...catalogHarnessIds]
+  if (isCodexBinaryOverrideRunnable() && !harnessIds.includes('codex')) {
+    harnessIds.push('codex')
+  }
+  if (isClaudeRuntimeRunnable() && !harnessIds.includes('claude')) {
+    harnessIds.push('claude')
+  }
+  return harnessIds
+}
 
 afterEach(async () => {
   while (runtimes.length) {
@@ -152,14 +165,14 @@ async function connectWithScopes(rt: NodeRuntime, scopes: readonly AuthScope[]) 
 }
 
 describe('Harness catalog (Stage 1)', () => {
-  it('production descriptor starts with empty harnessIds and full admin catalog disabled', async () => {
+  it('production descriptor includes runnable overrides while the admin catalog stays disabled', async () => {
     const rt = await boot()
     const client = await connectAuthedRpc(rt)
     const desc = (await client.rpc('environment.descriptor')) as {
       capabilities: { harnessIds: string[]; sessions: boolean }
     }
     expect(desc.capabilities.sessions).toBe(true)
-    expect(desc.capabilities.harnessIds).toEqual([])
+    expect(desc.capabilities.harnessIds).toEqual(withRunnableOverrides([]))
 
     const list = (await client.rpc('harness.list')) as HarnessInstallationStatus[]
     expect(list).toHaveLength(4)
@@ -185,7 +198,7 @@ describe('Harness catalog (Stage 1)', () => {
     const desc = (await client.rpc('environment.descriptor')) as {
       capabilities: { harnessIds: string[] }
     }
-    expect(desc.capabilities.harnessIds).toEqual(['codex', 'acp'])
+    expect(desc.capabilities.harnessIds).toEqual(withRunnableOverrides(['codex', 'acp']))
     client.close()
   })
 
@@ -219,7 +232,7 @@ describe('Harness catalog (Stage 1)', () => {
     const prodDesc = (await prodClient.rpc('environment.descriptor')) as {
       capabilities: { harnessIds: string[] }
     }
-    expect(prodDesc.capabilities.harnessIds).toEqual([])
+    expect(prodDesc.capabilities.harnessIds).toEqual(withRunnableOverrides([]))
 
     const projectDir = mkdtempSync(join(tmpdir(), 'hm-restart-proj-'))
     dirs.push(projectDir)
@@ -313,7 +326,7 @@ describe('Harness catalog (Stage 1)', () => {
     const desc = (await limited.rpc('environment.descriptor')) as {
       capabilities: { harnessIds: string[] }
     }
-    expect(desc.capabilities.harnessIds).toEqual([])
+    expect(desc.capabilities.harnessIds).toEqual(withRunnableOverrides([]))
 
     await expect(limited.rpc('harness.list')).rejects.toMatchObject({ code: 'forbidden' })
     await expect(limited.rpc('harness.show', { harnessId: 'codex' })).rejects.toMatchObject({

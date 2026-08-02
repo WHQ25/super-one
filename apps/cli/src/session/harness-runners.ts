@@ -58,16 +58,26 @@ export function createAcpOpenCodeProductionRouter(opts?: {
   resolveProjectPath?: (projectId: string) => string | null
   acpBinaryPath?: string | null
   openCodeBinaryPath?: string | null
+  /** SuperOne Host Action MCP for ACP session/new. */
+  getAcpMcpServers?: (sessionId: string) => unknown[] | null
+  /** SuperOne Host Action HTTP MCP for OpenCode. */
+  getOpenCodeSuperoneMcp?: (
+    sessionId: string,
+  ) => { url: string; headers: Record<string, string> } | null
 }): TurnRunner {
   const acp = createAcpTurnRunner({
     allowSimulatedFallback: opts?.allowSimulatedFallback !== false,
     resolveProjectPath: opts?.resolveProjectPath,
     binaryPath: opts?.acpBinaryPath,
+    getMcpServers: opts?.getAcpMcpServers
+      ? (sessionId) => opts.getAcpMcpServers!(sessionId) ?? []
+      : undefined,
   })
   const opencode = createOpenCodeTurnRunner({
     allowSimulatedFallback: opts?.allowSimulatedFallback !== false,
     resolveProjectPath: opts?.resolveProjectPath,
     binaryPath: opts?.openCodeBinaryPath,
+    getSuperoneMcp: opts?.getOpenCodeSuperoneMcp ?? undefined,
   })
   return async (input) => {
     const harnessId = input.session.harnessId || 'codex'

@@ -12,6 +12,7 @@ import { EventEmitter } from 'node:events'
 import { PassThrough } from 'node:stream'
 import type { ChildProcessWithoutNullStreams } from 'node:child_process'
 import type { CodexSpawnFn } from '@superone/codex'
+import type { AgentEvent } from '@superone/shared/agent-types'
 
 function session(over: Partial<NodeSessionRecord> = {}): NodeSessionRecord {
   return {
@@ -140,10 +141,12 @@ describe('createNodeCodexTurnRunner', () => {
     })
 
     const deltas: string[] = []
+    const agentEvents: AgentEvent[] = []
     const turnP = runner({
       session: session(),
       text: 'ping',
       onDelta: (d) => deltas.push(d),
+      onAgentEvent: (event) => agentEvents.push(event),
       signal: new AbortController().signal,
     })
 
@@ -167,7 +170,7 @@ describe('createNodeCodexTurnRunner', () => {
       `${JSON.stringify({
         jsonrpc: '2.0',
         method: 'item/agentMessage/delta',
-        params: { delta: 'pong' },
+        params: { itemId: 'answer-1', delta: 'pong' },
       })}\n`,
     )
     child.stdout.write(
@@ -181,7 +184,15 @@ describe('createNodeCodexTurnRunner', () => {
     const result = await turnP
     expect(result.finalText).toBe('pong')
     expect(result.providerResume).toBe('thread:t-abc')
-    expect(deltas).toEqual(['pong'])
+    expect(deltas).toEqual([])
+    expect(agentEvents.map((event) => event.type)).toEqual([
+      'message_start',
+      'status_change',
+      'codex_thread_started',
+      'codex_item_delta',
+      'message_complete',
+      'status_change',
+    ])
 
     rmSync(dir, { recursive: true, force: true })
   })

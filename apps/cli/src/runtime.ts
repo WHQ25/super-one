@@ -117,7 +117,17 @@ export async function startNodeRuntime(partial: StartNodeRuntimeOptions = {}): P
           resolveProjectPath: (projectId) => projects.get(projectId)?.path ?? null,
           allowSimulatedFallback: allowSimulatedTurnFallback,
           providers,
-          getHostActionMcpServers: (sessionId) => hostActionMcp.getClaudeMcpServers(sessionId),
+          // Claude: in-process SDK MCP (same core tools as HTTP).
+          createHostActionClaudeMcp: (sessionId) => hostActionMcp.createClaudeSdkMcp(sessionId),
+          // Codex / ACP / OpenCode: loopback HTTP with per-session HMAC.
+          getCodexHostActionMcp: (sessionId) => hostActionMcp.getCodexMcpConfig(sessionId),
+          getAcpHostActionMcpServers: (sessionId) => [
+            hostActionMcp.getAcpMcpServer(sessionId),
+          ],
+          getOpenCodeHostActionMcp: (sessionId) => {
+            const cfg = hostActionMcp.getHttpConfig(sessionId)
+            return { url: cfg.url, headers: cfg.headers }
+          },
         }))
 
   const sessions = new SessionRuntime(

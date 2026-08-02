@@ -1,8 +1,13 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { SESSION_DURABLE_EVENT } from '@superone/shared/environment'
+import { mapNodeSessionEvents } from '@superone/shared/node-session-event-map'
+import type { ClaudeQueryFn } from '@superone/claude'
+import { createCodexAgentEventMapper } from '@superone/codex'
+import { createAcpAgentEventMapper } from '@superone/acp'
+import { createOpenCodeAgentEventMapper } from '@superone/opencode'
 import { openNodeDatabase } from '../db/database'
 import { EventLog } from './event-log'
 import { ControlLeaseService } from './control-lease'
@@ -11,6 +16,7 @@ import {
   SessionRuntime,
   type TurnRunner,
 } from './session-runtime'
+import { createNodeClaudeTurnRunner } from './claude-turn-runner'
 
 const dirs: string[] = []
 
@@ -40,6 +46,203 @@ async function waitForIdle(runtime: SessionRuntime, sessionId: string, ms = 4000
 }
 
 describe('SessionRuntime onEvent durable projection (Stage 5-A)', () => {
+  it('carries mocked Claude SDK AgentEvents losslessly to the desktop mapper', async () => {
+    const projectDir = mkdtempSync(join(tmpdir(), 'sroe-claude-pipeline-'))
+    dirs.push(projectDir)
+    const binary = join(projectDir, 'claude')
+    writeFileSync(binary, '#!/bin/sh\n')
+    chmodSync(binary, 0o755)
+    const queryFn = (() => (async function* () {
+      yield {
+        type: 'stream_event',
+        event: { type: 'content_block_delta', delta: { type: 'thinking_delta', thinking: 'reasoning' } },
+      }
+      yield { type: 'system', subtype: 'task_started', task_id: 'bg1', description: 'work' }
+      yield { type: 'prompt_suggestion', suggestion: 'continue' }
+      yield { type: 'result', subtype: 'success', session_id: 'sdk-1', result: 'done' }
+    })()) as unknown as ClaudeQueryFn
+    const runner = createNodeClaudeTurnRunner({
+      binaryPath: binary,
+      resolveProjectPath: () => projectDir,
+      queryFn,
+    })
+    const { db, events, leases, runtime, envId } = boot(runner)
+    const session = runtime.create({ projectId: 'p1', harnessId: 'claude' })
+    const lease = leases.acquire({
+      resource: { environmentId: envId, sessionId: session.sessionId },
+      holderClientId: 'c1',
+      ttlMs: 30_000,
+    })
+    await runtime.send({
+      sessionId: session.sessionId,
+      text: 'go',
+      client: { clientSessionId: 'c1' },
+      leaseId: lease.leaseId,
+      generation: lease.generation,
+    })
+    await waitForIdle(runtime, session.sessionId)
+
+    const mapped = mapNodeSessionEvents(events.listAfter('0'), {
+      projectPath: 'remote:env:/project',
+      sessionId: session.sessionId,
+      providerId: 'claude',
+    })
+    expect(mapped).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'content_delta', delta: expect.objectContaining({ type: 'thinking', thinking: 'reasoning' }) }),
+      expect.objectContaining({ type: 'task_started', taskId: 'bg1' }),
+      expect.objectContaining({ type: 'prompt_suggestion', suggestion: 'continue' }),
+      expect.objectContaining({ type: 'message_complete', metadata: expect.objectContaining({ resultText: 'done' }) }),
+    ]))
+    expect(mapped.filter((event) => event.type === 'message_complete')).toHaveLength(1)
+
+    await runtime.dispose()
+    db.close()
+  })
+
+  it('persists lossless AgentEvents with the runtime message id', async () => {
+    const runner: TurnRunner = async ({ messageId, onAgentEvent }) => {
+      onAgentEvent?.({
+        type: 'content_delta',
+        messageId: messageId!,
+        delta: { type: 'thinking', thinking: 'reasoning' },
+      })
+      onAgentEvent?.({ type: 'prompt_suggestion', suggestion: 'continue' })
+      onAgentEvent?.({ type: 'message_complete', messageId: messageId!, metadata: { costUsd: 0.2 } })
+      onAgentEvent?.({ type: 'status_change', status: 'idle' })
+      return { finalText: 'done' }
+    }
+    const { db, events, leases, runtime, envId } = boot(runner)
+    const session = runtime.create({ projectId: 'p1', harnessId: 'claude' })
+    const lease = leases.acquire({
+      resource: { environmentId: envId, sessionId: session.sessionId },
+      holderClientId: 'c1',
+      ttlMs: 30_000,
+    })
+    await runtime.send({
+      sessionId: session.sessionId,
+      text: 'go',
+      client: { clientSessionId: 'c1' },
+      leaseId: lease.leaseId,
+      generation: lease.generation,
+    })
+    await waitForIdle(runtime, session.sessionId)
+
+    const rawEvents = events.listAfter('0').filter(
+      (event) => event.eventType === SESSION_DURABLE_EVENT.agentEvent,
+    )
+    expect(rawEvents).toHaveLength(4)
+    const first = rawEvents[0]?.payload as { event?: { messageId?: string; delta?: { type?: string } } }
+    expect(first.event).toMatchObject({
+      messageId: expect.any(String),
+      delta: { type: 'thinking' },
+    })
+
+    await runtime.dispose()
+    db.close()
+  })
+
+  it.each([
+    {
+      harnessId: 'codex',
+      expectedType: 'codex_item_delta',
+      runner: (messageId: string, emit: NonNullable<Parameters<TurnRunner>[0]['onAgentEvent']>) => {
+        const mapper = createCodexAgentEventMapper({ messageId, emit })
+        mapper.start('thread-1')
+        mapper.apply({
+          method: 'item/agentMessage/delta',
+          params: { itemId: 'answer-1', delta: 'codex' },
+        })
+        mapper.apply({
+          method: 'turn/completed',
+          params: { turn: { id: 'turn-1', status: 'completed' } },
+        })
+        return 'codex'
+      },
+    },
+    {
+      harnessId: 'acp',
+      expectedType: 'task_progress',
+      runner: (messageId: string, emit: NonNullable<Parameters<TurnRunner>[0]['onAgentEvent']>) => {
+        const mapper = createAcpAgentEventMapper({ messageId, emit })
+        mapper.start('acp-1')
+        mapper.apply({
+          sessionUpdate: 'agent_thought_chunk',
+          content: { type: 'text', text: 'reasoning' },
+        } as never)
+        mapper.apply({
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: 'acp' },
+        } as never)
+        mapper.applyXaiNotification('x.ai/session_notification', {
+          sessionId: 'acp-1',
+          update: {
+            sessionUpdate: 'workflow_updated',
+            run_id: 'workflow-1',
+            revision: 1,
+            name: 'review',
+            objective: 'Review changes',
+            status: 'active',
+            current_phase: 'Inspect',
+          },
+        })
+        mapper.complete('end_turn')
+        return 'acp'
+      },
+    },
+    {
+      harnessId: 'opencode',
+      expectedType: 'todos_updated',
+      runner: (messageId: string, emit: NonNullable<Parameters<TurnRunner>[0]['onAgentEvent']>) => {
+        const mapper = createOpenCodeAgentEventMapper({ messageId, emit })
+        mapper.start('open-1')
+        mapper.apply({
+          type: 'todo.updated',
+          properties: {
+            sessionID: 'open-1',
+            todos: [{ content: 'verify', status: 'in_progress', priority: 'high' }],
+          },
+        } as never)
+        mapper.complete()
+        return 'opencode'
+      },
+    },
+  ])('carries $harnessId core AgentEvents through the durable desktop path', async ({
+    harnessId,
+    expectedType,
+    runner: project,
+  }) => {
+    const runner: TurnRunner = async ({ messageId, onAgentEvent }) => {
+      const finalText = project(messageId!, onAgentEvent!)
+      return { finalText }
+    }
+    const { db, events, leases, runtime, envId } = boot(runner)
+    const session = runtime.create({ projectId: 'p1', harnessId })
+    const lease = leases.acquire({
+      resource: { environmentId: envId, sessionId: session.sessionId },
+      holderClientId: 'c1',
+      ttlMs: 30_000,
+    })
+    await runtime.send({
+      sessionId: session.sessionId,
+      text: 'go',
+      client: { clientSessionId: 'c1' },
+      leaseId: lease.leaseId,
+      generation: lease.generation,
+    })
+    await waitForIdle(runtime, session.sessionId)
+
+    const mapped = mapNodeSessionEvents(events.listAfter('0'), {
+      projectPath: 'remote:env:/project',
+      sessionId: session.sessionId,
+      providerId: harnessId,
+    })
+    expect(mapped.some((event) => event.type === expectedType)).toBe(true)
+    expect(mapped.filter((event) => event.type === 'message_complete')).toHaveLength(1)
+
+    await runtime.dispose()
+    db.close()
+  })
+
   it('projects structured text/tool/status events into the durable log', async () => {
     const { db, events, leases, runtime, envId } = boot(
       createSimulatedCodexRunner({

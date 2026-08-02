@@ -13,6 +13,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import type { ClaudeQueryFn } from '@superone/claude'
 import type { Options } from '@anthropic-ai/claude-agent-sdk'
+import type { AgentEvent } from '@superone/shared/agent-types'
 
 function session(over: Partial<NodeSessionRecord> = {}): NodeSessionRecord {
   return {
@@ -168,6 +169,51 @@ describe('createNodeClaudeTurnRunner', () => {
     rmSync(dir, { recursive: true, force: true })
   })
 
+  it('prefers the lossless AgentEvent core when the runtime provides it', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cbr-claude-agent-events-'))
+    const bin = join(dir, 'claude')
+    writeFileSync(bin, '#!/bin/sh\n')
+    chmodSync(bin, 0o755)
+    const queryFn = vi.fn(() => messages([
+      {
+        type: 'stream_event',
+        event: { type: 'content_block_delta', delta: { type: 'thinking_delta', thinking: 'reason' } },
+      },
+      { type: 'system', subtype: 'task_started', task_id: 'bg1', description: 'work' },
+      { type: 'prompt_suggestion', suggestion: 'next' },
+      { type: 'result', subtype: 'success', session_id: 'sess-rich', result: 'done' },
+    ])) as unknown as ClaudeQueryFn
+    const runner = createNodeClaudeTurnRunner({
+      binaryPath: bin,
+      resolveProjectPath: () => dir,
+      queryFn,
+      allowSimulatedFallback: false,
+    })
+    const agentEvents: AgentEvent[] = []
+    const structuredEvents: unknown[] = []
+    const deltas: string[] = []
+
+    await runner({
+      session: session(),
+      messageId: 'assistant-1',
+      text: 'ping',
+      onAgentEvent: (event) => agentEvents.push(event),
+      onEvent: (event) => structuredEvents.push(event),
+      onDelta: (delta) => deltas.push(delta),
+      signal: new AbortController().signal,
+    })
+
+    expect(agentEvents).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'content_delta', messageId: 'assistant-1', delta: expect.objectContaining({ type: 'thinking' }) }),
+      expect.objectContaining({ type: 'task_started', taskId: 'bg1' }),
+      expect.objectContaining({ type: 'prompt_suggestion', suggestion: 'next' }),
+      expect.objectContaining({ type: 'message_complete', messageId: 'assistant-1' }),
+    ]))
+    expect(structuredEvents).toEqual([])
+    expect(deltas).toEqual([])
+    rmSync(dir, { recursive: true, force: true })
+  })
+
   it('forwards turn model to SDK options', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'cbr-claude-model-'))
     const bin = join(dir, 'claude')
@@ -209,7 +255,7 @@ describe('createNodeClaudeTurnRunner', () => {
     rmSync(dir, { recursive: true, force: true })
   })
 
-  it('passes Host Action MCP http config into SDK mcpServers', async () => {
+  it('passes Host Action SDK MCP into options.mcpServers and disposes after turn', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'cbr-claude-mcp-'))
     const bin = join(dir, 'claude')
     writeFileSync(bin, '#!/bin/sh\n')
@@ -227,21 +273,21 @@ describe('createNodeClaudeTurnRunner', () => {
       ]),
     ) as unknown as ClaudeQueryFn
 
+    const dispose = vi.fn(async () => {})
+    const sdkInstance = { type: 'sdk', name: 'superone', instance: { id: 'mcp-1' } }
+
     const runner = createNodeClaudeTurnRunner({
       binaryPath: bin,
       resolveProjectPath: () => dir,
       queryFn,
       allowSimulatedFallback: false,
-      getHostActionMcpServers: (sessionId) => ({
-        superone: {
-          type: 'http',
-          url: 'http://127.0.0.1:9/mcp',
-          headers: {
-            Authorization: 'Bearer t',
-            'X-SuperOne-Session-Id': sessionId,
-          },
-        },
-      }),
+      createHostActionClaudeMcp: (sessionId) => {
+        expect(sessionId).toBe('node-sid-42')
+        return {
+          mcpServers: { superone: sdkInstance as never },
+          dispose,
+        }
+      },
     })
 
     await runner({
@@ -255,18 +301,11 @@ describe('createNodeClaudeTurnRunner', () => {
       expect.objectContaining({
         options: expect.objectContaining({
           strictMcpConfig: true,
-          mcpServers: {
-            superone: {
-              type: 'http',
-              url: 'http://127.0.0.1:9/mcp',
-              headers: expect.objectContaining({
-                'X-SuperOne-Session-Id': 'node-sid-42',
-              }),
-            },
-          },
+          mcpServers: { superone: sdkInstance },
         }),
       }),
     )
+    expect(dispose).toHaveBeenCalledTimes(1)
 
     rmSync(dir, { recursive: true, force: true })
   })

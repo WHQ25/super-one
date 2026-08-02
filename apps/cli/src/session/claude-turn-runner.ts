@@ -21,6 +21,7 @@
  */
 
 import { existsSync } from 'node:fs'
+import type { Options } from '@anthropic-ai/claude-agent-sdk'
 import {
   runClaudeSdkTurn,
   resolveSdkClaudeBinary,
@@ -46,12 +47,13 @@ export interface NodeClaudeRunnerOptions {
   /** Node provider store — injects API keys for this turn. */
   providers?: ProviderStore
   /**
-   * Host Action MCP servers for this session (loopback HTTP).
-   * When set, Claude receives `options.mcpServers` so it can call browser_snapshot.
+   * Host Action MCP for this session.
+   * Prefer in-process SDK MCP (type: 'sdk'); dispose after the turn.
    */
-  getHostActionMcpServers?: (
-    sessionId: string,
-  ) => Record<string, { type: 'http'; url: string; headers: Record<string, string> }> | null
+  createHostActionClaudeMcp?: (sessionId: string) => {
+    mcpServers: NonNullable<Options['mcpServers']>
+    dispose: () => Promise<void>
+  } | null
 }
 
 export function resolveClaudeBinaryPath(opts: {
@@ -157,46 +159,52 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
 
     const priorSession = parseClaudeSessionResume(input.session.providerResume)
 
-    // Host Action channel: expose desktop-executed tools (browser_snapshot) over loopback MCP.
+    // Host Action channel: in-process SDK MCP → requestHostAction → desktop.
     const hostActionMcp =
-      opts.getHostActionMcpServers?.(input.session.sessionId) ?? null
+      opts.createHostActionClaudeMcp?.(input.session.sessionId) ?? null
 
-    const result = await runClaudeSdkTurn({
-      binaryPath: binary,
-      prompt: input.text,
-      cwd,
-      sessionId: priorSession,
-      model: input.model && input.model.trim() ? input.model.trim() : undefined,
-      env: authEnv,
-      queryFn: opts.queryFn,
-      onDelta: input.onDelta,
-      onEvent: input.onEvent,
-      onPermission: input.onPermission
-        ? async (req) => {
-            const decision = await input.onPermission!({
-              interactionId: req.interactionId,
-              kind: 'permission',
-              toolName: req.toolName,
-              toolUseId: req.toolUseId,
-              input: req.input,
-              createdAt: Date.now(),
-            })
-            return decision
-          }
-        : undefined,
-      signal: input.signal,
-      options: hostActionMcp
-        ? {
-            mcpServers: hostActionMcp,
-            // Prefer the host-action tool surface over project .mcp.json for this slice.
-            strictMcpConfig: true,
-          }
-        : undefined,
-    })
+    try {
+      const result = await runClaudeSdkTurn({
+        binaryPath: binary,
+        prompt: input.text,
+        cwd,
+        sessionId: priorSession,
+        model: input.model && input.model.trim() ? input.model.trim() : undefined,
+        env: authEnv,
+        queryFn: opts.queryFn,
+        messageId: input.messageId,
+        onAgentEvent: input.onAgentEvent,
+        onDelta: input.onDelta,
+        onEvent: input.onEvent,
+        onPermission: input.onPermission
+          ? async (req) => {
+              const decision = await input.onPermission!({
+                interactionId: req.interactionId,
+                kind: 'permission',
+                toolName: req.toolName,
+                toolUseId: req.toolUseId,
+                input: req.input,
+                createdAt: Date.now(),
+              })
+              return decision
+            }
+          : undefined,
+        signal: input.signal,
+        options: hostActionMcp
+          ? {
+              mcpServers: hostActionMcp.mcpServers,
+              // Prefer the host-action tool surface over project .mcp.json for this slice.
+              strictMcpConfig: true,
+            }
+          : undefined,
+      })
 
-    return {
-      finalText: result.finalText,
-      providerResume: formatClaudeSessionResume(result.sessionId),
+      return {
+        finalText: result.finalText,
+        providerResume: formatClaudeSessionResume(result.sessionId),
+      }
+    } finally {
+      await hostActionMcp?.dispose().catch(() => undefined)
     }
   }
 }

@@ -10,6 +10,8 @@
 import { existsSync } from 'node:fs'
 import { query as sdkQuery, type CanUseTool, type Options } from '@anthropic-ai/claude-agent-sdk'
 import type { SessionTurnEvent } from '@superone/shared/environment'
+import { SUPERONE_SYSTEM_PROMPT_APPEND } from '@superone/shared/superone-system-prompt'
+import { isStaticHostOwnedSuperoneToolQualified } from '@superone/shared/superone-host-owned-tools'
 import { applySdkMessage, createSdkMapState } from './map-sdk-message'
 import { createClaudeAgentEventMapper } from './agent-event-mapper'
 import { resolveSdkClaudeBinary } from './resolve-sdk-binary'
@@ -38,6 +40,10 @@ function buildCanUseTool(
         behavior: 'deny',
         message: 'Permission denied by SuperOne node (no permission handler)',
       }
+    }
+    // Host-owned SuperOne MCP tools (session_rename, widget_show, …) never prompt.
+    if (isStaticHostOwnedSuperoneToolQualified(toolName)) {
+      return { behavior: 'allow' }
     }
     const interactionId =
       (typeof options.requestId === 'string' && options.requestId) ||
@@ -98,6 +104,9 @@ function buildOptions(opts: RunClaudeSdkTurnOptions, timing: { pausedMs: number 
     systemPrompt: {
       type: 'preset',
       preset: 'claude_code',
+      append: [SUPERONE_SYSTEM_PROMPT_APPEND, opts.systemPromptAppend]
+        .filter(Boolean)
+        .join('\n\n'),
     },
     ...(opts.sessionId ? { resume: opts.sessionId } : {}),
     ...(env ? { env } : {}),

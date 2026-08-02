@@ -5,6 +5,7 @@ import type { EffortLevel } from '@superone/shared/agent-types'
 import { useActiveSession, useChatStore, selectClaudeModels } from '@/stores/chat'
 import { useSettingsStore } from '@/stores/settings'
 import { consumerForHarness, resolveEffective } from '@/lib/provider-resolve'
+import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 import { FireText } from '../FireText'
 import { resolveClaudeEntries, resolveClaudeDisplayName } from '../ModelSelectorLists'
 import { GroupedModelEffortSelector, type SelectorEffortOption, type SelectorModelOption } from './GroupedModelEffortSelector'
@@ -31,29 +32,49 @@ export function ClaudeModelSelector({ onCloseAutoFocus }: Props) {
   const sessionProvider = useActiveSession((s) => s.sessionProvider)
   const sessionApiProviderId = useActiveSession((s) => s.apiProviderId)
   const availableModels = useChatStore(selectClaudeModels)
+  const activeProject = useChatStore((s) => s.activeProject)
   const setSelectedModel = useChatStore((s) => s.setSelectedModel)
   const setSelectedEffort = useChatStore((s) => s.setSelectedEffort)
   const refreshClaudeResources = useChatStore((s) => s.refreshClaudeResources)
   const claudeResourcesLoading = useChatStore((s) => s.claudeResourcesLoading)
+  const claudeModelsLoading = useActiveSession((s) => s.claudeModelsLoading)
   const initializeHarness = useChatStore((s) => s.initializeHarness)
+  const isRemoteProject = !!activeProject && !!parseRemoteProjectKey(activeProject)
+  const modelsLoading = isRemoteProject ? claudeModelsLoading || claudeResourcesLoading : claudeResourcesLoading
 
-  // Remote empty-session + Claude tab often never re-triggers setPreferredProvider
-  // (already preferred=claude), so models stay empty if startup cache was null.
+  // Remote: load once per project / apiProvider — do NOT depend on loading flags
+  // or the effect re-fires when claudeResourcesLoading toggles (infinite IPC storm).
   useEffect(() => {
+    if (!isRemoteProject || !activeProject) return
+    void refreshClaudeResources(false)
+  }, [isRemoteProject, activeProject, sessionApiProviderId, refreshClaudeResources])
+
+  // Local: fill empty catalog via initializeHarness / refresh.
+  useEffect(() => {
+    if (isRemoteProject) return
     if (availableModels.length > 0 || claudeResourcesLoading) return
     void initializeHarness('claude').then(() => {
       const models = useChatStore.getState().harnessResources.claude?.models ?? []
       if (models.length === 0) void refreshClaudeResources(true)
     })
-  }, [availableModels.length, claudeResourcesLoading, initializeHarness, refreshClaudeResources])
+  }, [
+    isRemoteProject,
+    availableModels.length,
+    claudeResourcesLoading,
+    initializeHarness,
+    refreshClaudeResources,
+  ])
 
   const activeProvider = sessionProvider ?? preferredProvider
 
   const platforms = useSettingsStore((s) => s.platforms)
   const credentials = useSettingsStore((s) => s.credentials)
   const bindings = useSettingsStore((s) => s.bindings)
+  const providerScope = useSettingsStore((s) => s.providerScope)
   const fetchProviderData = useSettingsStore((s) => s.fetchProviderData)
-  useEffect(() => { void fetchProviderData() }, [fetchProviderData])
+  useEffect(() => {
+    void fetchProviderData()
+  }, [fetchProviderData, providerScope])
   const effective = useMemo(
     () => resolveEffective(platforms, credentials, bindings, consumerForHarness(activeProvider), sessionApiProviderId),
     [platforms, credentials, bindings, activeProvider, sessionApiProviderId],
@@ -127,7 +148,7 @@ export function ClaudeModelSelector({ onCloseAutoFocus }: Props) {
         selectedEffort={selectedEffort ?? null}
         onSelectEffort={(value) => setSelectedEffort(value as EffortLevel)}
         onRefreshModels={() => void refreshClaudeResources(true)}
-        modelsLoading={claudeResourcesLoading}
+        modelsLoading={modelsLoading}
         triggerLabel={triggerLabel}
         onCloseAutoFocus={onCloseAutoFocus}
         {...providerProps}

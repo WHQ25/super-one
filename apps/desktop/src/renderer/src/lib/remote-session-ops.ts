@@ -40,15 +40,19 @@ export function mapNodeRowToHistoryEntry(row: {
   messageCount: number
   isPinned?: boolean
   isHidden?: boolean
+  worktreePath?: string | null
+  isWorktree?: boolean
 }): SessionHistoryEntry {
   return {
     sessionId: row.sessionId,
     title: row.title,
     lastActiveAt: row.lastActiveAt,
-    provider: (row.provider as SessionHistoryEntry['provider']) ?? 'codex',
+    provider: (row.provider as SessionHistoryEntry['provider']) ?? 'claude',
     messageCount: row.messageCount,
     isPinned: row.isPinned,
     isHidden: row.isHidden,
+    worktreePath: row.worktreePath ?? null,
+    isWorktree: row.isWorktree ?? Boolean(row.worktreePath),
   }
 }
 
@@ -81,7 +85,7 @@ export async function hydrateRemotePerSession(
   const pendingPerm = nodePendingToPermissionRequest(snap?.pendingInteraction)
   const chatProvider = (providerId === 'claude' || providerId === 'codex'
     ? providerId
-    : 'codex') as ChatProvider
+    : 'claude') as ChatProvider
   return {
     ...base,
     // Preserve renderer model/effort selection across node re-hydrate (node has no model field yet).
@@ -98,6 +102,12 @@ export async function hydrateRemotePerSession(
   }
 }
 
+/**
+ * Default harness when the UI has not chosen one yet.
+ * Matches local `preferredProvider` default (`claude`) — not forced codex.
+ */
+const DEFAULT_NODE_HARNESS = 'claude'
+
 export async function createRemoteSession(
   projectKey: string,
   projectId: string,
@@ -106,7 +116,7 @@ export async function createRemoteSession(
 ): Promise<{ sessionId: string; entry: SessionHistoryEntry }> {
   const remote = parseRemoteProjectKey(projectKey)
   if (!remote) throw new Error('not a remote project key')
-  const harnessId = opts?.harnessId ?? 'codex'
+  const harnessId = opts?.harnessId ?? DEFAULT_NODE_HARNESS
   const created = await window.environment.createSession(remote.connectionId, {
     projectId,
     title,
@@ -125,10 +135,10 @@ export async function createRemoteSession(
 /**
  * Ensure `candidateSessionId` exists on the remote node.
  *
- * Opening a remote project used to mint a renderer-only draft UUID via
- * `ensureSession` / `createSessionId`. That id never hits the CLI session
- * registry, so `session.send` returns "session not found". Prefer the
- * candidate when `session.get` succeeds; otherwise create a real node session.
+ * Opening a remote project mints a renderer-only draft UUID via `ensureSession`
+ * (same as local) — that id is not on the node until first send. Prefer the
+ * candidate when `session.get` succeeds; otherwise create a real node session
+ * with the harness from the UI tab (caller should pass harnessId).
  */
 export async function resolveNodeSessionId(
   projectKey: string,
@@ -140,7 +150,7 @@ export async function resolveNodeSessionId(
   if (!remote) throw new Error('not a remote project key')
   if (!projectId) throw new Error('projectId is required')
 
-  const wantHarness = opts?.harnessId ?? 'codex'
+  const wantHarness = opts?.harnessId ?? DEFAULT_NODE_HARNESS
 
   if (candidateSessionId) {
     try {
@@ -148,12 +158,13 @@ export async function resolveNodeSessionId(
         remote.connectionId,
         candidateSessionId,
       )) as NodeSessionSnapshot | null
-      if (snap && (snap.sessionId === candidateSessionId || snap.sessionId)) {
+      // Draft UUIDs are not on the node — getSession returns null (not throw).
+      if (snap && snap.sessionId) {
         const snapHarness = String(snap.harnessId || snap.providerId || '').toLowerCase()
         // Reuse only when harness matches the UI tab (or snap has no harness field).
         // A prior codex node session must not swallow a Claude-tab send.
         if (!snapHarness || snapHarness === wantHarness) {
-          return { sessionId: candidateSessionId, created: false }
+          return { sessionId: String(snap.sessionId), created: false }
         }
         // Wrong harness — fall through to create.
       }
@@ -162,19 +173,32 @@ export async function resolveNodeSessionId(
     }
   }
 
-  const created = await window.environment.createSession(remote.connectionId, {
-    projectId,
-    harnessId: wantHarness,
-    providerId: opts?.providerId ?? wantHarness,
-  })
-  return { sessionId: created.sessionId, created: true }
+  try {
+    const created = await window.environment.createSession(remote.connectionId, {
+      projectId,
+      harnessId: wantHarness,
+      providerId: opts?.providerId ?? wantHarness,
+    })
+    return { sessionId: created.sessionId, created: true }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    // Clearer than raw RPC: common lab case is claude catalog not enabled.
+    if (/harness not ready/i.test(msg)) {
+      throw new Error(
+        `Remote harness "${wantHarness}" is not ready on the node. ` +
+          `Enable it (e.g. superone harness enable ${wantHarness}) or switch the chat tab to a ready harness. ` +
+          `(${msg})`,
+      )
+    }
+    throw err
+  }
 }
 
 /** Build a mapper scoped to a remote project key + node session id. */
 export function createRemoteSessionEventMapper(
   projectKey: string,
   sessionId: string,
-  providerId = 'codex',
+  providerId = 'claude',
 ): NodeSessionEventMapper {
   return createNodeSessionEventMapper({
     projectPath: projectKey,
@@ -192,7 +216,7 @@ export async function pollRemoteSessionAgentEvents(
   sessionId: string,
   afterSequence: string,
   mapper?: NodeSessionEventMapper,
-  providerId = 'codex',
+  providerId = 'claude',
 ): Promise<{ agentEvents: AgentEvent[]; nextSequence: string; raw: EnvironmentEventEnvelope[] }> {
   const remote = parseRemoteProjectKey(projectKey)
   if (!remote) throw new Error('not a remote project key')

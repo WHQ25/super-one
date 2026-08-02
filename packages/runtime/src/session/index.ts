@@ -8,6 +8,8 @@ export {
   SessionRuntime,
   createSimulatedTurnRunner,
   createSimulatedCodexRunner,
+  deriveSessionTitleFromUserText,
+  forkSessionTitle,
   DEFAULT_PERMISSION_TIMEOUT_MS,
   type NodeSessionRecord,
   type PendingInteraction,

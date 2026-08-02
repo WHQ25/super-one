@@ -83,5 +83,5 @@ export function nodeHarnessToProviderId(harnessId: string | undefined | null): s
   if (harnessId === 'claude' || harnessId === 'codex' || harnessId === 'acp' || harnessId === 'opencode') {
     return harnessId
   }
-  return harnessId || 'codex'
+  return harnessId || 'claude'
 }

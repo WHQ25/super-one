@@ -355,9 +355,14 @@ function SkillSection({ title, skills, readOnly }: { title: string; skills: Skil
   if (skills.length === 0) return null
 
   const expandedIdx = skillDetail
-    ? skills.findIndex((s) => s.sourcePath === skillDetail.sourcePath)
+    ? skills.findIndex(
+        (s) =>
+          (s.sourcePath && skillDetail.sourcePath && s.sourcePath === skillDetail.sourcePath) ||
+          (s.name === skillDetail.name && s.scope === skillDetail.scope),
+      )
     : -1
-  const cardKey = (s: SkillInfo) => `skill-${s.scope}:${s.sourcePath}`
+  // sourcePath is unique for local skills; remote maps include name. Append name as belt-and-suspenders.
+  const cardKey = (s: SkillInfo) => `skill-${s.scope}:${s.sourcePath || s.name || 'unnamed'}`
 
   const hasExpanded = expandedIdx !== -1
   const hasOrphan = hasExpanded && expandedIdx % 2 !== 0

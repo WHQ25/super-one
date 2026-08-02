@@ -128,45 +128,9 @@ export class WorkspaceGitService {
 
   status(projectId: string): GitStatusResult {
     const cwd = this.root(projectId)
-    if (!existsSync(join(cwd, '.git')) && !isGitWorktree(cwd)) {
-      return { isRepo: false, branch: null, dirty: false, ahead: 0, behind: 0, porcelain: '' }
-    }
-    try {
-      const porcelain = git(cwd, ['status', '--porcelain=v1', '--ignored'])
-      let branch: string | null = null
-      try {
-        branch = git(cwd, ['rev-parse', '--abbrev-ref', 'HEAD']).trim()
-      } catch {
-        branch = null
-      }
-      let ahead = 0
-      let behind = 0
-      try {
-        const counts = git(cwd, ['rev-list', '--left-right', '--count', '@{upstream}...HEAD']).trim()
-        const [b, a] = counts.split(/\s+/).map(Number)
-        behind = b || 0
-        ahead = a || 0
-      } catch {
-        /* no upstream */
-      }
-      const dirty = porcelain.trim().length > 0
-      const shortstat = dirty ? shortstatAt(cwd) : { insertions: 0, deletions: 0 }
-      this.projects.touch(projectId)
-      return {
-        isRepo: true,
-        branch,
-        dirty,
-        ahead,
-        behind,
-        porcelain,
-        insertions: shortstat.insertions,
-        deletions: shortstat.deletions,
-      }
-    } catch (err) {
-      throw Object.assign(new Error((err as Error).message || 'git status failed'), {
-        code: 'internal',
-      })
-    }
+    const result = this.statusForCwd(cwd)
+    if (result.isRepo) this.projects.touch(projectId)
+    return result
   }
 
   /** Status for an arbitrary allowed worktree path of this project (or project root). */
@@ -176,27 +140,28 @@ export class WorkspaceGitService {
     return this.statusForCwd(cwd)
   }
 
+  /**
+   * Fast path for status-bar / file-tree: one `git status -b --porcelain` (no --ignored).
+   * --ignored walks the whole tree of ignored paths and dominates remote latency.
+   */
   private statusForCwd(cwd: string): GitStatusResult {
     if (!existsSync(join(cwd, '.git')) && !isGitWorktree(cwd)) {
       return { isRepo: false, branch: null, dirty: false, ahead: 0, behind: 0, porcelain: '' }
     }
     try {
-      const porcelain = git(cwd, ['status', '--porcelain=v1', '--ignored'])
-      let branch: string | null = null
-      try {
-        branch = git(cwd, ['rev-parse', '--abbrev-ref', 'HEAD']).trim()
-      } catch {
-        branch = null
-      }
-      const dirty = porcelain.trim().length > 0
+      // Single process: branch header + file lines. No --ignored (expensive on large trees).
+      const raw = git(cwd, ['status', '--porcelain=v1', '-b'])
+      const parsed = parseBranchPorcelain(raw)
+      const dirty = parsed.porcelain.trim().length > 0
+      // shortstat only when dirty — clean trees skip the extra git invocation.
       const shortstat = dirty ? shortstatAt(cwd) : { insertions: 0, deletions: 0 }
       return {
         isRepo: true,
-        branch,
+        branch: parsed.branch,
         dirty,
-        ahead: 0,
-        behind: 0,
-        porcelain,
+        ahead: parsed.ahead,
+        behind: parsed.behind,
+        porcelain: parsed.porcelain,
         insertions: shortstat.insertions,
         deletions: shortstat.deletions,
       }
@@ -388,6 +353,16 @@ export class WorkspaceGitService {
     return { path: wtPath, recordedBranch }
   }
 
+  /** Best-effort cleanup after a failed session.fork worktree path. */
+  removeWorktree(projectId: string, worktreePath: string): void {
+    const folderPath = this.root(projectId)
+    try {
+      git(folderPath, ['worktree', 'remove', '--force', worktreePath])
+    } catch {
+      /* ignore — caller already failed for another reason */
+    }
+  }
+
   private carryUncommittedChanges(sourceDir: string, worktreePath: string): void {
     const stashTop = (): string => {
       try {
@@ -574,4 +549,38 @@ function shortstatAt(cwd: string): { insertions: number; deletions: number } {
   } catch {
     return { insertions: 0, deletions: 0 }
   }
+}
+
+/**
+ * Parse `git status --porcelain=v1 -b` output into branch metadata + file lines.
+ * Header examples:
+ *   ## main
+ *   ## main...origin/main [ahead 1, behind 2]
+ *   ## HEAD (no branch)
+ */
+export function parseBranchPorcelain(raw: string): {
+  branch: string | null
+  ahead: number
+  behind: number
+  porcelain: string
+} {
+  const lines = raw.length === 0 ? [] : raw.split('\n')
+  if (lines.length === 0 || !lines[0]!.startsWith('## ')) {
+    return { branch: null, ahead: 0, behind: 0, porcelain: raw }
+  }
+  const header = lines[0]!.slice(3).trim()
+  let branch: string | null = null
+  if (header.startsWith('HEAD') || header.includes('(no branch)')) {
+    branch = null
+  } else {
+    // Take the local ref before "..." (upstream) or first whitespace/bracket.
+    const cut = header.split('...')[0] ?? header
+    branch = cut.split(/\s+/)[0] || null
+  }
+  const aheadM = header.match(/ahead (\d+)/)
+  const behindM = header.match(/behind (\d+)/)
+  const ahead = aheadM ? Number(aheadM[1]) || 0 : 0
+  const behind = behindM ? Number(behindM[1]) || 0 : 0
+  const porcelain = lines.slice(1).join('\n')
+  return { branch, ahead, behind, porcelain }
 }

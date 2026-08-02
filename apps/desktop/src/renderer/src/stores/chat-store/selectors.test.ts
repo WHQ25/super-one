@@ -276,6 +276,33 @@ describe('Claude resource selectors', () => {
     expect(selectClaudeModels(state)).toBe(selectClaudeModels(state))
     expect(selectClaudeAgents(state)).toBe(selectClaudeAgents(state))
   })
+
+  it('uses project.claudeModels for remote projects and ignores desktop harness cache', () => {
+    setClaude({
+      models: [{ id: 'local-only', name: 'Local', description: '' }],
+      account: {},
+      slashCommands: [],
+      skills: [],
+      commands: [],
+      agents: [],
+      outputStyles: [],
+    })
+    const remotePath = 'remote:lab-1:/workspace/app'
+    act(() => {
+      useChatStore.setState({
+        activeProject: remotePath,
+        projectSessions: {
+          [remotePath]: {
+            ...createDefaultProjectState(),
+            claudeModels: [{ id: 'node-sonnet', name: 'Node Sonnet', description: '' }],
+          },
+        },
+      })
+    })
+    const state = useChatStore.getState()
+    expect(selectClaudeModels(state).map((m) => m.id)).toEqual(['node-sonnet'])
+    expect(state.harnessResources.claude?.models.map((m) => m.id)).toEqual(['local-only'])
+  })
 })
 
 describe('Codex resource selectors', () => {
@@ -294,6 +321,27 @@ describe('Codex resource selectors', () => {
     const state = useChatStore.getState()
     expect(selectCodexModels(state)[0]?.id).toBe('gpt-5-high')
     expect(selectCodexPrompts(state)[0]?.name).toBe('p1')
+  })
+
+  it('uses project.codexModels for remote projects and ignores desktop harness cache', () => {
+    useChatStore.getState().setHarnessResources('codex', {
+      models: [{ id: 'local-gpt', name: 'Local', description: '' }],
+      prompts: [],
+    })
+    const remotePath = 'remote:lab-1:/workspace/app'
+    act(() => {
+      useChatStore.setState({
+        activeProject: remotePath,
+        projectSessions: {
+          [remotePath]: {
+            ...createDefaultProjectState(),
+            codexModels: [{ id: 'node-gpt', name: 'Node GPT', description: '' }],
+          },
+        },
+      })
+    })
+    const state = useChatStore.getState()
+    expect(selectCodexModels(state).map((m) => m.id)).toEqual(['node-gpt'])
   })
 
   it('selectActiveCodexSkills returns [] when no project is active', () => {

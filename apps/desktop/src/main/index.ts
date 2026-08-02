@@ -1154,6 +1154,103 @@ function registerIpcHandlers(): void {
       return getEnvironmentHost().getSession(connectionId, sessionId)
     },
   )
+  // Node provider credentials (CRUD + push/pull)
+  ipcMain.handle(
+    AgentIpcChannels.ENVIRONMENT_PROVIDER_LIST_CREDENTIALS,
+    async (_e, connectionId: string) => {
+      const { getEnvironmentHost } = await import('./environment')
+      return getEnvironmentHost().listRemoteCredentials(connectionId)
+    },
+  )
+  ipcMain.handle(
+    AgentIpcChannels.ENVIRONMENT_PROVIDER_CREATE_CREDENTIAL,
+    async (_e, connectionId: string, input: Record<string, unknown>) => {
+      const { getEnvironmentHost } = await import('./environment')
+      return getEnvironmentHost().createRemoteCredential(connectionId, input)
+    },
+  )
+  ipcMain.handle(
+    AgentIpcChannels.ENVIRONMENT_PROVIDER_UPDATE_CREDENTIAL,
+    async (_e, connectionId: string, input: Record<string, unknown>) => {
+      const { getEnvironmentHost } = await import('./environment')
+      return getEnvironmentHost().updateRemoteCredential(connectionId, input)
+    },
+  )
+  ipcMain.handle(
+    AgentIpcChannels.ENVIRONMENT_PROVIDER_DELETE_CREDENTIAL,
+    async (_e, connectionId: string, id: string) => {
+      const { getEnvironmentHost } = await import('./environment')
+      return getEnvironmentHost().deleteRemoteCredential(connectionId, id)
+    },
+  )
+  ipcMain.handle(
+    AgentIpcChannels.ENVIRONMENT_PROVIDER_LIST_BINDINGS,
+    async (_e, connectionId: string) => {
+      const { getEnvironmentHost } = await import('./environment')
+      return getEnvironmentHost().listRemoteBindings(connectionId)
+    },
+  )
+  ipcMain.handle(
+    AgentIpcChannels.ENVIRONMENT_PROVIDER_SET_BINDING,
+    async (_e, connectionId: string, binding: Record<string, unknown>) => {
+      const { getEnvironmentHost } = await import('./environment')
+      return getEnvironmentHost().setRemoteBinding(connectionId, binding)
+    },
+  )
+  ipcMain.handle(
+    AgentIpcChannels.ENVIRONMENT_PROVIDER_CLEAR_BINDING,
+    async (_e, connectionId: string, consumer: string) => {
+      const { getEnvironmentHost } = await import('./environment')
+      return getEnvironmentHost().clearRemoteBinding(connectionId, consumer)
+    },
+  )
+  ipcMain.handle(
+    AgentIpcChannels.ENVIRONMENT_PROVIDER_LIST_CUSTOM_PLATFORMS,
+    async (_e, connectionId: string) => {
+      const { getEnvironmentHost } = await import('./environment')
+      return getEnvironmentHost().listRemoteCustomPlatforms(connectionId)
+    },
+  )
+  ipcMain.handle(
+    AgentIpcChannels.ENVIRONMENT_PROVIDER_UPSERT_CUSTOM_PLATFORM,
+    async (_e, connectionId: string, def: Record<string, unknown>) => {
+      const { getEnvironmentHost } = await import('./environment')
+      return getEnvironmentHost().upsertRemoteCustomPlatform(connectionId, def)
+    },
+  )
+  ipcMain.handle(
+    AgentIpcChannels.ENVIRONMENT_PROVIDER_DELETE_CUSTOM_PLATFORM,
+    async (_e, connectionId: string, id: string) => {
+      const { getEnvironmentHost } = await import('./environment')
+      return getEnvironmentHost().deleteRemoteCustomPlatform(connectionId, id)
+    },
+  )
+  ipcMain.handle(
+    AgentIpcChannels.ENVIRONMENT_PROVIDER_PUSH_LOCAL,
+    async (_e, connectionId: string, opts?: { replaceAll?: boolean }) => {
+      const { getEnvironmentHost } = await import('./environment')
+      return getEnvironmentHost().pushLocalProvidersToRemote(connectionId, opts)
+    },
+  )
+  ipcMain.handle(
+    AgentIpcChannels.ENVIRONMENT_PROVIDER_PULL_REMOTE,
+    async (_e, connectionId: string, opts?: { replaceAll?: boolean }) => {
+      const { getEnvironmentHost } = await import('./environment')
+      return getEnvironmentHost().pullRemoteProvidersToLocal(connectionId, opts)
+    },
+  )
+  ipcMain.handle(
+    AgentIpcChannels.ENVIRONMENT_PROVIDER_LIST_MODELS,
+    async (
+      _e,
+      connectionId: string,
+      harness: string,
+      apiProviderId?: string | null,
+    ) => {
+      const { getEnvironmentHost } = await import('./environment')
+      return getEnvironmentHost().listRemoteModels(connectionId, harness, apiProviderId)
+    },
+  )
   ipcMain.handle(
     AgentIpcChannels.ENVIRONMENT_SEND_SESSION_MESSAGE,
     async (
@@ -1167,6 +1264,7 @@ function registerIpcHandlers(): void {
         providerId?: string
         cwdHostPath?: string | null
         model?: string | null
+        apiProviderId?: string | null
       },
     ) => {
       const { getEnvironmentHost } = await import('./environment')
@@ -1213,6 +1311,17 @@ function registerIpcHandlers(): void {
     ) => {
       const { getEnvironmentHost } = await import('./environment')
       return getEnvironmentHost().setSessionUiFlags(connectionId, sessionId, flags)
+    },
+  )
+  ipcMain.handle(
+    AgentIpcChannels.ENVIRONMENT_FORK_SESSION,
+    async (
+      _e,
+      connectionId: string,
+      input: { sessionId: string; mode?: 'local' | 'worktree'; forkFromMessageId?: string },
+    ) => {
+      const { getEnvironmentHost } = await import('./environment')
+      return getEnvironmentHost().forkSession(connectionId, input)
     },
   )
   ipcMain.handle(
@@ -1428,6 +1537,23 @@ function registerIpcHandlers(): void {
   )
 
   ipcMain.handle(AgentIpcChannels.CODEX_LIST_MODELS, async (_event, projectPath: string, apiProviderId?: string | null, force?: boolean) => {
+    const remoteKey = parseRemoteProjectKey(projectPath)
+    // Remote: models come only from the node provider store (never local Codex/credentials).
+    if (remoteKey) {
+      try {
+        const { getEnvironmentHost } = await import('./environment')
+        const models = (await getEnvironmentHost().listRemoteModels(
+          remoteKey.connectionId,
+          'codex',
+          apiProviderId ?? null,
+        )) as ModelOption[]
+        return Array.isArray(models) ? models : []
+      } catch (err) {
+        log.warn('[CODEX_LIST_MODELS] remote listModels failed: %s', err)
+        return []
+      }
+    }
+
     let models = await codexService.listModels(projectPath, apiProviderId ?? null, force ?? false)
     const resolved = resolveChatService('codex', apiProviderId ?? null)
     log.debug('[CODEX_LIST_MODELS] raw=%d protocol=%s models=%d hasMapping=%s apiProvider=%s',

@@ -38,8 +38,26 @@ import {
   resolveEntryStatusPair,
   type ParsedGitStatus,
 } from '../git-status-utils'
+import { AsyncCoalescer } from '../async-cache'
 import type { EnvironmentHost } from './environment-host'
 import { RemoteEnvironmentGateway } from './remote-environment-gateway'
+
+/** Coalesce status-bar + file-tree git.status RPCs (same as local 1.5s window). */
+const REMOTE_GIT_STATUS_TTL_MS = 1_500
+const remoteGitStatusCoalescer = new AsyncCoalescer<{
+  isRepo?: boolean
+  branch?: string | null
+  dirty?: boolean
+  porcelain?: string
+  insertions?: number
+  deletions?: number
+}>(REMOTE_GIT_STATUS_TTL_MS)
+
+/** Drop cached remote git.status (after checkout / worktree switch, or tests). */
+export function invalidateRemoteGitStatusCache(key?: string): void {
+  if (key) remoteGitStatusCoalescer.invalidate(key)
+  else remoteGitStatusCoalescer.clear()
+}
 
 const SKIP_NAMES = new Set(['.git', '.DS_Store'])
 /** Match node workspace.writeFile / readFile payload cap. */
@@ -147,6 +165,14 @@ export function mapWorkspaceEntriesToFileTree(
 export async function resolveRemoteProjectContext(
   host: EnvironmentHost,
   folderPath: string,
+  opts?: {
+    /**
+     * When true (default for file-tree open), register the path on the node if
+     * missing. Git status / worktree probes must pass false so worktree host
+     * paths are not permanently added to project.list as ghost projects.
+     */
+    registerIfMissing?: boolean
+  },
 ): Promise<RemoteProjectContext | null> {
   const remote = parseRemoteProjectKey(folderPath)
   if (!remote) return null
@@ -159,6 +185,7 @@ export async function resolveRemoteProjectContext(
   const projects = await host.listProjects(remote.connectionId)
   let project = projects.find((p) => hostPathsEqual(p.path, remote.path))
   if (!project) {
+    if (opts?.registerIfMissing === false) return null
     project = await host.openProject(remote.connectionId, remote.path)
   }
 
@@ -170,14 +197,42 @@ export async function resolveRemoteProjectContext(
   }
 }
 
+async function fetchRemoteGitStatusRaw(
+  host: EnvironmentHost,
+  ctx: RemoteProjectContext,
+  statusCwd?: string,
+): Promise<{
+  isRepo?: boolean
+  branch?: string | null
+  dirty?: boolean
+  porcelain?: string
+  insertions?: number
+  deletions?: number
+} | null> {
+  const gw = asRemoteGitGateway(host.getGateway(ctx.environmentId))
+  if (!gw) return null
+  const cacheKey = `${ctx.connectionId}:${ctx.projectId}:${statusCwd ?? ''}`
+  return remoteGitStatusCoalescer.get(cacheKey, async () => {
+    return (await gw.gitStatus(
+      ctx.projectId,
+      statusCwd ? { cwd: statusCwd } : undefined,
+    )) as {
+      isRepo?: boolean
+      branch?: string | null
+      dirty?: boolean
+      porcelain?: string
+      insertions?: number
+      deletions?: number
+    }
+  })
+}
+
 async function fetchRemoteGitParsed(
   host: EnvironmentHost,
   ctx: RemoteProjectContext,
 ): Promise<ParsedGitStatus | null> {
   try {
-    const gw = host.getGateway(ctx.environmentId)
-    if (!(gw instanceof RemoteEnvironmentGateway)) return null
-    const status = (await gw.gitStatus(ctx.projectId)) as { porcelain?: string; isRepo?: boolean }
+    const status = await fetchRemoteGitStatusRaw(host, ctx)
     if (!status?.isRepo || typeof status.porcelain !== 'string') return null
     return parseGitStatusOutput(status.porcelain)
   } catch {
@@ -618,7 +673,7 @@ export async function saveRemoteProjectFile(
  * Insertions/deletions are not computed remotely (no shortstat RPC yet) — 0 when dirty.
  */
 type RemoteGitGateway = {
-  gitStatus: (projectId: string) => Promise<unknown>
+  gitStatus: (projectId: string, opts?: { cwd?: string }) => Promise<unknown>
   gitBranches?: (projectId: string) => Promise<unknown>
   gitWorktrees?: (projectId: string) => Promise<unknown>
 }
@@ -635,79 +690,71 @@ function asRemoteGitGateway(gw: unknown): RemoteGitGateway | null {
   return null
 }
 
+function mapStatusToGitInfo(status: {
+  isRepo?: boolean
+  branch?: string | null
+  dirty?: boolean
+  porcelain?: string
+  insertions?: number
+  deletions?: number
+} | null): GitInfo | null {
+  if (!status?.isRepo) return null
+  const branch =
+    (typeof status.branch === 'string' && status.branch.trim()) || 'HEAD'
+  const porcelain = typeof status.porcelain === 'string' ? status.porcelain : ''
+  const files = porcelain
+    ? porcelain.split('\n').filter((line) => line.trim().length > 0).length
+    : status.dirty
+      ? 1
+      : 0
+  const insertions =
+    typeof status.insertions === 'number' && Number.isFinite(status.insertions)
+      ? Math.max(0, status.insertions)
+      : 0
+  const deletions =
+    typeof status.deletions === 'number' && Number.isFinite(status.deletions)
+      ? Math.max(0, status.deletions)
+      : 0
+  return {
+    branch,
+    ...(files > 0 ? { dirty: { files, insertions, deletions } } : {}),
+  }
+}
+
 export async function getRemoteGitInfo(
   host: EnvironmentHost,
   folderPath: string,
 ): Promise<GitInfo | null> {
-  const remote = parseRemoteProjectKey(folderPath)
-  if (!remote) return null
+  if (!parseRemoteProjectKey(folderPath)) return null
   try {
+    // Never registerIfMissing — git probes must not pollute project.list with worktree paths.
+    const ctx = await resolveRemoteProjectContext(host, folderPath, { registerIfMissing: false })
+    if (ctx) {
+      return mapStatusToGitInfo(await fetchRemoteGitStatusRaw(host, ctx))
+    }
+    // Worktree host path under a registered project: status with cwd, no openProject.
+    const remote = parseRemoteProjectKey(folderPath)!
     const known = host.connections.listKnown().find((k) => k.connectionId === remote.connectionId)
     if (!known) return null
     const gw = asRemoteGitGateway(host.getGateway(known.environmentId))
-    if (!gw || typeof (gw as RemoteEnvironmentGateway).gitStatus !== 'function') return null
-    const remoteGw = gw as RemoteEnvironmentGateway
-
+    if (!gw) return null
     const projects = await host.listProjects(remote.connectionId)
-    let projectId: string | null = null
-    let statusCwd: string | undefined
-
-    const matched = projects.find((p) => hostPathsEqual(p.path, remote.path))
-    if (matched) {
-      projectId = matched.projectId
-    } else {
-      // Worktree host path — find owning project via worktree list
-      for (const p of projects) {
-        try {
-          const wts = (await remoteGw.gitWorktrees(p.projectId)) as Array<{ path?: string }>
-          if (Array.isArray(wts) && wts.some((w) => w.path && hostPathsEqual(w.path, remote.path))) {
-            projectId = p.projectId
-            statusCwd = remote.path
-            break
-          }
-        } catch {
-          /* next */
+    for (const p of projects) {
+      try {
+        const status = (await gw.gitStatus(p.projectId, { cwd: remote.path })) as {
+          isRepo?: boolean
+          branch?: string | null
+          dirty?: boolean
+          porcelain?: string
+          insertions?: number
+          deletions?: number
         }
+        if (status?.isRepo) return mapStatusToGitInfo(status)
+      } catch {
+        /* not a worktree of this project */
       }
     }
-    if (!projectId) {
-      // Last resort: open as project (main checkout only)
-      const opened = await host.openProject(remote.connectionId, remote.path)
-      projectId = opened.projectId
-    }
-
-    const status = (await remoteGw.gitStatus(
-      projectId,
-      statusCwd ? { cwd: statusCwd } : undefined,
-    )) as {
-      isRepo?: boolean
-      branch?: string | null
-      dirty?: boolean
-      porcelain?: string
-      insertions?: number
-      deletions?: number
-    }
-    if (!status?.isRepo) return null
-    const branch =
-      (typeof status.branch === 'string' && status.branch.trim()) || 'HEAD'
-    const porcelain = typeof status.porcelain === 'string' ? status.porcelain : ''
-    const files = porcelain
-      ? porcelain.split('\n').filter((line) => line.trim().length > 0).length
-      : status.dirty
-        ? 1
-        : 0
-    const insertions =
-      typeof status.insertions === 'number' && Number.isFinite(status.insertions)
-        ? Math.max(0, status.insertions)
-        : 0
-    const deletions =
-      typeof status.deletions === 'number' && Number.isFinite(status.deletions)
-        ? Math.max(0, status.deletions)
-        : 0
-    return {
-      branch,
-      ...(files > 0 ? { dirty: { files, insertions, deletions } } : {}),
-    }
+    return null
   } catch {
     return null
   }
@@ -717,23 +764,17 @@ export async function getRemoteGitIsRepo(
   host: EnvironmentHost,
   folderPath: string,
 ): Promise<boolean | null> {
-  const ctx = await resolveRemoteProjectContext(host, folderPath)
-  if (!ctx) return null
-  try {
-    const gw = asRemoteGitGateway(host.getGateway(ctx.environmentId))
-    if (!gw) return null
-    const status = (await gw.gitStatus(ctx.projectId)) as { isRepo?: boolean }
-    return status?.isRepo === true
-  } catch {
-    return false
-  }
+  const info = await getRemoteGitInfo(host, folderPath)
+  if (info) return true
+  if (!parseRemoteProjectKey(folderPath)) return null
+  return false
 }
 
 export async function getRemoteGitBranches(
   host: EnvironmentHost,
   folderPath: string,
 ): Promise<string[] | null> {
-  const ctx = await resolveRemoteProjectContext(host, folderPath)
+  const ctx = await resolveRemoteProjectContext(host, folderPath, { registerIfMissing: false })
   if (!ctx) return null
   try {
     const gw = asRemoteGitGateway(host.getGateway(ctx.environmentId))
@@ -758,23 +799,25 @@ export async function getRemoteWorktreeInfo(
   host: EnvironmentHost,
   folderPath: string,
 ): Promise<WorktreeInfo | null> {
-  const ctx = await resolveRemoteProjectContext(host, folderPath)
+  // Only for already-registered projects — never openProject here.
+  const ctx = await resolveRemoteProjectContext(host, folderPath, { registerIfMissing: false })
   if (!ctx) return null
   try {
     const gw = asRemoteGitGateway(host.getGateway(ctx.environmentId))
     if (!gw) return null
-    const status = (await gw.gitStatus(ctx.projectId)) as {
-      isRepo?: boolean
-      branch?: string | null
-    }
+    // Parallel: status (coalesced with status-bar) + worktree list.
+    const [status, rawWts] = await Promise.all([
+      fetchRemoteGitStatusRaw(host, ctx),
+      typeof gw.gitWorktrees === 'function'
+        ? gw.gitWorktrees(ctx.projectId).catch(() => [])
+        : Promise.resolve([]),
+    ])
     if (!status?.isRepo) return null
 
     const hostPath = normalizeHostPath(ctx.hostPath)
-    let remoteWts: Array<{ path?: string; branch?: string | null; bare?: boolean }> = []
-    if (typeof gw.gitWorktrees === 'function') {
-      const raw = await gw.gitWorktrees(ctx.projectId)
-      remoteWts = Array.isArray(raw) ? raw : []
-    }
+    const remoteWts = Array.isArray(rawWts)
+      ? (rawWts as Array<{ path?: string; branch?: string | null; bare?: boolean }>)
+      : []
 
     const entries: WorktreeEntry[] = []
     for (let i = 0; i < remoteWts.length; i++) {

@@ -20,6 +20,7 @@ import type { EventLog } from '../session/event-log'
 import type { CollaborationMailbox } from '../session/collaboration'
 import type { WorkspaceWatchService } from '../workspace/watch-service'
 import { IdempotencyService } from '../auth/idempotency'
+import type { ProviderStore } from '../provider/provider-store'
 import { clearWatchBuffersForClient } from '../rpc/handlers'
 
 const MAX_JSON_BYTES = {
@@ -86,6 +87,7 @@ export interface NodeServerOptions {
   events: EventLog
   collaboration: CollaborationMailbox
   idempotency: IdempotencyService
+  providers: ProviderStore
   bindHost: string
   bindPort: number
   startedAt?: number
@@ -217,6 +219,7 @@ export async function startNodeServer(opts: NodeServerOptions): Promise<NodeServ
       events: opts.events,
       collaboration: opts.collaboration,
       idempotency: opts.idempotency,
+      providers: opts.providers,
       startedAt,
       simulatedHarness: opts.simulatedHarness === true,
     }

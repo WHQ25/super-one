@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { RecentFolder } from '@superone/shared/agent-types'
 import type { SupervisorSnapshot } from '@superone/shared/environment'
 import { remoteProjectKey } from '@/lib/remote-project-key'
+import { onHostProjectsChanged } from '@/lib/host-projects-bus'
 import { useAppStore } from '@/stores/app'
 
 /**
@@ -88,6 +89,12 @@ export function useHostProjects() {
       }
     })
   }, [isLocal, selectedHostConnectionId])
+
+  // Sidebar remove/add project must refresh ChatSuggestions (separate hook instance).
+  useEffect(() => {
+    if (isLocal) return
+    return onHostProjectsChanged(() => setRetryNonce((n) => n + 1))
+  }, [isLocal])
 
   const refresh = useCallback(() => setRetryNonce((n) => n + 1), [])
 

@@ -5,11 +5,14 @@
  * own platform binary via optionalDependencies; hosts do **not** need a global
  * `claude` install for turns.
  *
- * Binary resolution order:
- * 1. explicit `binaryPath` (tests / managed pin)
- * 2. `SUPERONE_CLAUDE_BINARY` (optional lab override)
- * 3. harness catalog `command` when claude is enabled
- * 4. Agent SDK bundled binary (`resolveSdkClaudeBinary`)
+ * Binary resolution order (do **not** prefer host `claude` CLI):
+ * 1. explicit `binaryPath` (tests / pin)
+ * 2. harness catalog `command` when SuperOne managed-enable installed a package
+ * 3. Agent SDK bundled platform binary (`resolveSdkClaudeBinary`) — default
+ * 4. `SUPERONE_CLAUDE_BINARY` last-resort escape hatch only
+ *
+ * Auth: reuse node-host login state under `$HOME` (e.g. `~/.claude`) and/or
+ * node ProviderStore API keys — never require the remote/host `claude` binary.
  *
  * Session create is allowed when any of the above resolves (see
  * `isClaudeRuntimeRunnable`).
@@ -25,6 +28,8 @@ import {
 } from '@superone/claude'
 import { createSimulatedCodexRunner, type TurnRunner } from '@superone/runtime/session'
 import type { HarnessManager } from './harness-manager'
+import type { ProviderStore } from '../provider/provider-store'
+import { buildHarnessEnv, resolveHarnessService } from '../provider/resolve-service'
 
 export const CLAUDE_SESSION_RESUME_PREFIX = 'claude-session:'
 
@@ -38,6 +43,8 @@ export interface NodeClaudeRunnerOptions {
   allowSimulatedFallback?: boolean
   /** Tests only: do not fall back to Agent SDK bundled binary. */
   skipSdkBinary?: boolean
+  /** Node provider store — injects API keys for this turn. */
+  providers?: ProviderStore
 }
 
 export function resolveClaudeBinaryPath(opts: {
@@ -46,8 +53,7 @@ export function resolveClaudeBinaryPath(opts: {
   skipSdkBinary?: boolean
 }): string | null {
   if (opts.binaryPath && existsSync(opts.binaryPath)) return opts.binaryPath
-  const fromEnv = process.env.SUPERONE_CLAUDE_BINARY?.trim()
-  if (fromEnv && existsSync(fromEnv)) return fromEnv
+  // SuperOne managed package from `harness enable claude` (node home releases/).
   const status = opts.harnesses?.get('claude')
   if (
     status?.enabled &&
@@ -57,14 +63,20 @@ export function resolveClaudeBinaryPath(opts: {
   ) {
     return status.command
   }
-  if (opts.skipSdkBinary) return null
-  // Default: Agent SDK optional platform package (same as desktop).
-  return resolveSdkClaudeBinary()
+  // Default: Agent SDK optional platform package (same family as desktop).
+  if (!opts.skipSdkBinary) {
+    const sdk = resolveSdkClaudeBinary()
+    if (sdk) return sdk
+  }
+  // Escape hatch only — not auto-set from host `which claude` in lab.
+  const fromEnv = process.env.SUPERONE_CLAUDE_BINARY?.trim()
+  if (fromEnv && existsSync(fromEnv)) return fromEnv
+  return null
 }
 
 /**
- * Whether session.create may target claude without a catalog-ready install.
- * True when an override path exists **or** the Agent SDK ships a binary.
+ * Whether session.create may target claude without catalog-ready install.
+ * True when managed package, Agent SDK bundle, or explicit env pin resolves.
  */
 export function isClaudeRuntimeRunnable(): boolean {
   return resolveClaudeBinaryPath({}) != null
@@ -123,9 +135,17 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
         ? input.session.cwd.trim()
         : projectRoot
 
+    const providerEnv =
+      opts.providers
+        ? buildHarnessEnv(
+            'claude',
+            resolveHarnessService(opts.providers, 'claude', input.apiProviderId),
+          )
+        : {}
     const authEnv: NodeJS.ProcessEnv = {
       ...process.env,
       ...opts.env,
+      ...providerEnv,
     }
 
     const priorSession = parseClaudeSessionResume(input.session.providerResume)

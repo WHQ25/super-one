@@ -14,3 +14,8 @@ export {
   type CodexAppServerHandle,
   type CodexSpawnFn,
 } from './app-server-client'
+export {
+  forkCodexThread,
+  type CodexRpcRequest,
+  type ForkCodexThreadInput,
+} from './fork-thread'

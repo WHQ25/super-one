@@ -27,16 +27,16 @@ export SUPERONE_NODE_HOME="${LAB_HOME}"
 export SUPERONE_NODE_HOST="${LAB_HOST}"
 export SUPERONE_NODE_PORT="${LAB_PORT}"
 
-# Lab harness overrides: pick host CLIs when present so Claude/Codex turns work
-# without managed install (inherits $HOME credentials). Only set when unset so
-# callers can still pin an explicit path.
-if [[ -z "${SUPERONE_CLAUDE_BINARY:-}" ]]; then
-  if command -v claude >/dev/null 2>&1; then
-    export SUPERONE_CLAUDE_BINARY="$(command -v claude)"
-  fi
-fi
+# Harness binaries (do NOT steal host global CLIs by default):
+# - Claude: @superone/claude → Agent SDK optional platform package; only reuses
+#   host $HOME login (~/.claude). SUPERONE_CLAUDE_BINARY is an escape hatch only.
+# - Codex: managed `harness enable codex` package command, or optional
+#   SUPERONE_CODEX_BINARY pin for lab. Do not auto-export host `which claude`.
+# Callers may still export SUPERONE_*_BINARY explicitly before start/restart.
 if [[ -z "${SUPERONE_CODEX_BINARY:-}" ]]; then
   if command -v codex >/dev/null 2>&1; then
+    # Codex App Server still needs a codex executable (managed package or host).
+    # Prefer host codex only as lab convenience when managed install is absent.
     export SUPERONE_CODEX_BINARY="$(command -v codex)"
   fi
 fi
@@ -122,12 +122,14 @@ cmd_start() {
   echo "  url=$(base_url)"
   echo "  log=${LOG_FILE}"
   if [[ -n "${SUPERONE_CLAUDE_BINARY:-}" ]]; then
-    echo "  SUPERONE_CLAUDE_BINARY=${SUPERONE_CLAUDE_BINARY}"
+    echo "  SUPERONE_CLAUDE_BINARY=${SUPERONE_CLAUDE_BINARY} (escape hatch; SDK package preferred)"
   else
-    echo "  SUPERONE_CLAUDE_BINARY=(unset — Claude turns fail until set or harness enable)"
+    echo "  Claude binary=Agent SDK package (default; reuses host ~/.claude login)"
   fi
   if [[ -n "${SUPERONE_CODEX_BINARY:-}" ]]; then
     echo "  SUPERONE_CODEX_BINARY=${SUPERONE_CODEX_BINARY}"
+  else
+    echo "  SUPERONE_CODEX_BINARY=(unset — enable harness codex or pin binary for Codex turns)"
   fi
 
   # Background: same entry as package "dev" but detached + isolated home/port.

@@ -167,11 +167,11 @@ export async function sendMessageImpl(
     const existingSess = candidateSid
       ? getScopedPerSession(get(), writeTarget ?? { projectPath, sessionId: candidateSid })
       : getScopedPerSession(get(), writeTarget)
-    // Node Stage 5: claude + codex. Honor UI tab (sessionProvider, else preferredProvider).
+    // Node Stage 5: claude + codex. Honor UI tab; default claude (never force codex).
     const uiProvider =
       existingSess.sessionProvider ?? existingSess.preferredProvider ?? 'claude'
     const preferredHarness: 'claude' | 'codex' =
-      uiProvider === 'claude' ? 'claude' : 'codex'
+      uiProvider === 'codex' ? 'codex' : 'claude'
     const { resolveNodeSessionId } = await import('@/lib/remote-session-ops')
     const { createDefaultPerSessionState } = await import('../defaults')
     const resolved = await resolveNodeSessionId(projectPath, projectId, candidateSid, {
@@ -201,16 +201,7 @@ export async function sendMessageImpl(
         // If still empty (Claude resources loaded late), apply default now.
         let selectedModel = base.selectedModel
         let selectedEffort = base.selectedEffort
-        if (preferredHarness === 'claude' && !selectedModel) {
-          const models = s.harnessResources.claude?.models ?? []
-          const def = models.find((m) => m.isDefault) ?? models[0]
-          if (def) {
-            selectedModel = def.id
-            selectedEffort = def.supportedEffortLevels?.includes('medium')
-              ? 'medium'
-              : def.supportedEffortLevels?.[0]
-          }
-        }
+        // Remote models come from the node catalog — do not fill from local harnessResources.
         nextSessions[sid] = {
           ...base,
           sessionProvider: preferredHarness,
@@ -257,6 +248,8 @@ export async function sendMessageImpl(
         : preferredHarness === 'codex'
           ? writeSess.selectedCodexModel || undefined
           : undefined
+    // Node-local API credential (not desktop credential store).
+    const apiProviderIdForTurn = writeSess.apiProviderId ?? null
 
     try {
       // Main maps session.events → AgentEvent and pushes via agent:event while
@@ -269,6 +262,7 @@ export async function sendMessageImpl(
         providerId: preferredHarness,
         cwdHostPath,
         ...(modelForTurn ? { model: modelForTurn } : {}),
+        ...(apiProviderIdForTurn ? { apiProviderId: apiProviderIdForTurn } : {}),
       })) as NodeSessionSnapshot | null
       const providerId = nodeHarnessToProviderId(
         finalSnap?.harnessId || finalSnap?.providerId || preferredHarness,
@@ -278,6 +272,14 @@ export async function sendMessageImpl(
       const { nodePendingToPermissionRequest } = await import('@/lib/remote-session-messages')
       const pendingPerm = nodePendingToPermissionRequest(finalSnap?.pendingInteraction)
       const waitingOnPermission = Boolean(pendingPerm)
+      const snapTitle =
+        typeof finalSnap?.title === 'string' && finalSnap.title.trim()
+          ? finalSnap.title.trim()
+          : null
+      // Prefer node title (auto first-message / rename); fall back to first-user slice.
+      const derivedTitle =
+        snapTitle ||
+        (text.length > 100 ? `${text.slice(0, 100)}…` : text)
       patchSession((sess) => ({
         messages: messages.length > 0 ? messages : sess.messages,
         // Stay "streaming" while a remote permission is pending so the prompt stays live.
@@ -286,8 +288,36 @@ export async function sendMessageImpl(
           ? 'streaming'
           : nodeStatusToAgentStatus(finalSnap?.status),
         pendingPermissions: pendingPerm ? [pendingPerm] : [],
-        ...(finalSnap?.title ? { _title: finalSnap.title } : {}),
+        ...(derivedTitle ? { _title: derivedTitle } : {}),
       }))
+      // Sidebar SessionTitleAnimated reads agentTitles — keep it in sync without a list re-fetch.
+      if (derivedTitle) {
+        set((s) => {
+          const project = s.projectSessions[projectPath]
+          let sessions = project?.sessions
+          let sessionsChanged = false
+          if (project && Array.isArray(sessions)) {
+            sessions = sessions.map((entry) => {
+              if (entry.sessionId === sid && entry.title !== derivedTitle) {
+                sessionsChanged = true
+                return { ...entry, title: derivedTitle }
+              }
+              return entry
+            })
+          }
+          return {
+            agentTitles: { ...s.agentTitles, [sid]: derivedTitle },
+            ...(project && sessionsChanged
+              ? {
+                  projectSessions: {
+                    ...s.projectSessions,
+                    [projectPath]: { ...project, sessions: sessions! },
+                  },
+                }
+              : {}),
+          }
+        })
+      }
     } catch (err) {
       patchSession(() => ({ awaitingAssistantReply: false, status: 'error' }))
       throw err

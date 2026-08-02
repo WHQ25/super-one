@@ -267,7 +267,7 @@ export const AppSidebar = memo(function AppSidebar() {
               sessionId: row.sessionId,
               title: row.title,
               lastActiveAt: row.lastActiveAt,
-              provider: (row.provider as SessionHistoryEntry['provider']) ?? 'codex',
+              provider: (row.provider as SessionHistoryEntry['provider']) ?? 'claude',
               messageCount: row.messageCount,
               isPinned: row.isPinned,
               isHidden: row.isHidden,
@@ -603,18 +603,23 @@ export const AppSidebar = memo(function AppSidebar() {
               !(removeTarget.id && p.id === removeTarget.id),
           ),
         )
-        // Clear in-memory chat state if this path was active on the remote host.
+        // ChatSuggestions uses a separate useHostProjects() instance — force refresh.
+        const { notifyHostProjectsChanged } = await import('@/lib/host-projects-bus')
+        notifyHostProjectsChanged()
+        // Clear in-memory chat state for this remote project key (always, not only when active).
         const { useChatStore } = await import('@/stores/chat')
         const wasActive = useAppStore.getState().currentFolder === removeTarget.path
         useChatStore.setState((s) => {
           const { [removeTarget.path]: _, ...projectSessions } = s.projectSessions
           return {
             projectSessions,
-            ...(wasActive ? { activeProject: null } : {}),
+            ...(wasActive || s.activeProject === removeTarget.path
+              ? { activeProject: null }
+              : {}),
           }
         })
         if (wasActive) {
-          useAppStore.setState({ currentFolder: null })
+          useAppStore.setState({ currentFolder: null, currentProjectId: null })
         }
       }
       setExpandedFolders((prev) => {
@@ -657,55 +662,23 @@ export const AppSidebar = memo(function AppSidebar() {
   const handleNewSession = useCallback((folderPath: string) => {
     const remote = parseRemoteProjectKey(folderPath)
     if (remote) {
+      // Same lifecycle as local: open project → mint renderer draft only.
+      // Node session.create happens on first send (resolveNodeSessionId) with UI harness.
       void (async () => {
         const project = hostProjects.find((p) => p.path === folderPath)
-        if (!project?.id) return
-        try {
-          const created = await window.environment.createSession(remote.connectionId, {
-            projectId: project.id,
-          })
-          await selectProject(folderPath, {
-            connectionId: remote.connectionId,
-            projectId: project.id,
-          })
-          await loadFolderSessions(folderPath, 'refresh')
-          // Activate the new remote session without local SessionManager minting.
-          const { useChatStore: chat } = await import('@/stores/chat')
-          const { createDefaultPerSessionState } = await import('@/stores/chat-store/defaults')
-          chat.getState().ensureSession(folderPath)
-          chat.setState((s) => {
-            const proj = s.projectSessions[folderPath]
-            if (!proj) return s
-            const sessions = { ...proj._sessions }
-            sessions[created.sessionId] = {
-              ...createDefaultPerSessionState(),
-              sessionProvider: 'codex',
-              preferredProvider: 'codex',
-              _title: created.title || null,
-            }
-            return {
-              projectSessions: {
-                ...s.projectSessions,
-                [folderPath]: {
-                  ...proj,
-                  _activeSessionId: created.sessionId,
-                  _sessions: sessions,
-                },
-              },
-              activeProject: folderPath,
-            }
-          })
-          setExpandedFolders((prev) =>
-            prev.has(folderPath) ? prev : new Set([...prev, folderPath]),
-          )
-        } catch (err) {
-          console.error('[AppSidebar] remote createSession failed', err)
-        }
+        await selectProject(folderPath, {
+          connectionId: remote.connectionId,
+          projectId: project?.id,
+        })
+        await createNewSession()
+        setExpandedFolders((prev) =>
+          prev.has(folderPath) ? prev : new Set([...prev, folderPath]),
+        )
       })()
       return
     }
     void selectProject(folderPath).then(createNewSession)
-  }, [selectProject, createNewSession, hostProjects, loadFolderSessions])
+  }, [selectProject, createNewSession, hostProjects])
 
   useSidebarRenderTrace({
     sidebarTab,
@@ -932,8 +905,11 @@ export const AppSidebar = memo(function AppSidebar() {
             void fetchRecentFolders()
             void selectProject(project.path)
           } else {
-            // Refresh remote list and select the new project under a host-scoped key.
+            // Refresh remote list (sidebar + ChatSuggestions) and select the new project.
             setHostProjectsRetryNonce((n) => n + 1)
+            void import('@/lib/host-projects-bus').then(({ notifyHostProjectsChanged }) => {
+              notifyHostProjectsChanged()
+            })
             void selectProject(remoteProjectKey(selectedHostConnectionId, project.path), {
               connectionId: selectedHostConnectionId,
               projectId: project.projectId,

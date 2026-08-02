@@ -103,7 +103,14 @@ export const SessionRow = memo(function SessionRow({
   const handleForkSession = useCallback(async (mode: SessionForkMode) => {
     const toastId = toast.loading(t('sidebar.contextMenu.forkingToast'))
     try {
-      const result = await window.app.forkSession({ sessionId: session.sessionId, mode })
+      const { parseRemoteProjectKey } = await import('@/lib/remote-project-key')
+      const remote = parseRemoteProjectKey(folderPath)
+      const result = remote
+        ? await window.environment.forkSession(remote.connectionId, {
+            sessionId: session.sessionId,
+            mode,
+          })
+        : await window.app.forkSession({ sessionId: session.sessionId, mode })
       if (result.ok) {
         onSwitchSession(folderPath, result.sessionId)
         toast.success(

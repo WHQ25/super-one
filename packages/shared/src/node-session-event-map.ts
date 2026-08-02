@@ -371,11 +371,13 @@ export function createNodeSessionEventMapper(ctx: NodeSessionEventMapContext): N
       case SESSION_DURABLE_EVENT.renamed: {
         const title = asString(payload.title)
         if (title != null) {
+          const sourceRaw = asString(payload.source)
+          const source = sourceRaw === 'agent' || sourceRaw === 'user' ? sourceRaw : 'user'
           push({
             type: 'session_title_changed',
             sessionId: ctx.sessionId,
             title,
-            source: 'user',
+            source,
           })
         }
         break

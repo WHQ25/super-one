@@ -5,8 +5,11 @@ import { resolve } from 'path'
 import { readFileSync } from 'fs'
 
 const pkg = JSON.parse(readFileSync(resolve('package.json'), 'utf-8'))
+// Workspace packages ship TypeScript source via package exports. Bundle them
+// into main (same as @superone/shared) — do not externalize, or Electron/Node
+// ESM fails on extensionless relative imports inside those packages.
 const mainExternalDeps = [
-  ...Object.keys(pkg.dependencies ?? {}).filter((dep) => dep !== '@superone/shared'),
+  ...Object.keys(pkg.dependencies ?? {}).filter((dep) => !dep.startsWith('@superone/')),
   'electron',
 ]
 const mainExternal = [

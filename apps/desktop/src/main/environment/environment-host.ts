@@ -221,6 +221,8 @@ export class EnvironmentHost {
     messageCount: number
     isPinned?: boolean
     isHidden?: boolean
+    worktreePath?: string | null
+    isWorktree?: boolean
   } {
     const s = (raw ?? {}) as {
       sessionId?: string
@@ -233,17 +235,23 @@ export class EnvironmentHost {
       status?: string
       isPinned?: boolean
       isHidden?: boolean
+      /** Absolute host cwd when session is bound to a worktree (or explicit root). */
+      cwd?: string | null
     }
     const sessionId = String(s.sessionId ?? '')
     const ts = s.updatedAt ?? s.createdAt ?? Date.now()
+    const cwd = typeof s.cwd === 'string' && s.cwd.trim() ? s.cwd.trim() : null
     return {
       sessionId,
       title: (s.title && String(s.title).trim()) || 'New session',
       lastActiveAt: new Date(ts).toISOString(),
-      provider: s.harnessId || s.providerId || 'codex',
+      provider: s.harnessId || s.providerId || 'claude',
       messageCount: Array.isArray(s.transcript) ? s.transcript.length : 0,
       isPinned: Boolean(s.isPinned),
       isHidden: Boolean(s.isHidden),
+      // Node sessions use cwd for worktree isolation; surface as desktop worktree fields.
+      worktreePath: cwd,
+      isWorktree: Boolean(cwd),
     }
   }
 
@@ -302,7 +310,8 @@ export class EnvironmentHost {
       throw Object.assign(new Error('projectId is required'), { code: 'invalid_argument' })
     }
     const { gateway, environmentId } = this.resolveRemote(connectionId)
-    const harnessId = input.harnessId ?? 'codex'
+    // Match desktop default preferredProvider — not codex.
+    const harnessId = input.harnessId ?? 'claude'
     const providerId = input.providerId ?? harnessId
     const { sessionId } = await gateway.sessions.create({
       project: { environmentId, projectId: input.projectId },
@@ -515,6 +524,192 @@ export class EnvironmentHost {
     return gateway.sessions.get({ environmentId, sessionId })
   }
 
+  private asRemoteProviderGw(connectionId: string): RemoteEnvironmentGateway {
+    const { gateway } = this.resolveRemote(connectionId)
+    if (!(gateway instanceof RemoteEnvironmentGateway)) {
+      throw Object.assign(new Error('environment is not connected'), { code: 'failed_precondition' })
+    }
+    return gateway
+  }
+
+  async listRemoteCredentials(connectionId: string): Promise<unknown> {
+    return this.asRemoteProviderGw(connectionId).providerListCredentials()
+  }
+
+  async getRemoteCredentialDecrypted(connectionId: string, id: string): Promise<unknown> {
+    return this.asRemoteProviderGw(connectionId).providerGetCredentialDecrypted(id)
+  }
+
+  async listRemoteModels(
+    connectionId: string,
+    harness: string,
+    apiProviderId?: string | null,
+  ): Promise<unknown> {
+    return this.asRemoteProviderGw(connectionId).providerListModels({ harness, apiProviderId })
+  }
+
+  async createRemoteCredential(connectionId: string, input: Record<string, unknown>): Promise<unknown> {
+    return this.asRemoteProviderGw(connectionId).providerCreateCredential(input)
+  }
+
+  async updateRemoteCredential(connectionId: string, input: Record<string, unknown>): Promise<unknown> {
+    return this.asRemoteProviderGw(connectionId).providerUpdateCredential(input)
+  }
+
+  async deleteRemoteCredential(connectionId: string, id: string): Promise<unknown> {
+    return this.asRemoteProviderGw(connectionId).providerDeleteCredential(id)
+  }
+
+  async listRemoteBindings(connectionId: string): Promise<unknown> {
+    return this.asRemoteProviderGw(connectionId).providerListBindings()
+  }
+
+  async setRemoteBinding(connectionId: string, binding: Record<string, unknown>): Promise<unknown> {
+    return this.asRemoteProviderGw(connectionId).providerSetBinding(binding)
+  }
+
+  async clearRemoteBinding(connectionId: string, consumer: string): Promise<unknown> {
+    return this.asRemoteProviderGw(connectionId).providerClearBinding(consumer)
+  }
+
+  async listRemoteCustomPlatforms(connectionId: string): Promise<unknown> {
+    return this.asRemoteProviderGw(connectionId).providerListCustomPlatforms()
+  }
+
+  async upsertRemoteCustomPlatform(connectionId: string, def: Record<string, unknown>): Promise<unknown> {
+    return this.asRemoteProviderGw(connectionId).providerUpsertCustomPlatform(def)
+  }
+
+  async deleteRemoteCustomPlatform(connectionId: string, id: string): Promise<unknown> {
+    return this.asRemoteProviderGw(connectionId).providerDeleteCustomPlatform(id)
+  }
+
+  /**
+   * Push desktop provider credentials (+ bindings + custom platforms) to a node.
+   * Secrets are decrypted only in Main and re-encrypted on the node.
+   */
+  async pushLocalProvidersToRemote(
+    connectionId: string,
+    opts?: { replaceAll?: boolean },
+  ): Promise<{ credentials: number; bindings: number }> {
+    const {
+      listCredentials,
+      getCredentialDecrypted,
+      listBindings,
+      listCustomPlatforms,
+    } = await import('../providers/credential-store')
+    const masked = listCredentials()
+    const credentials = masked.map((c) => {
+      const full = getCredentialDecrypted(c.id)
+      return full ?? { ...c, secret: '' }
+    })
+    const bundle = {
+      credentials,
+      bindings: listBindings(),
+      customPlatforms: listCustomPlatforms(),
+    }
+    const result = (await this.asRemoteProviderGw(connectionId).providerImportBundle(bundle, {
+      replaceAll: opts?.replaceAll === true,
+    })) as { credentials?: number; bindings?: number }
+    return {
+      credentials: Number(result?.credentials ?? 0),
+      bindings: Number(result?.bindings ?? 0),
+    }
+  }
+
+  /**
+   * Pull node provider credentials onto this desktop (overwrites by id).
+   */
+  async pullRemoteProvidersToLocal(
+    connectionId: string,
+    opts?: { replaceAll?: boolean },
+  ): Promise<{ credentials: number; bindings: number }> {
+    const bundle = (await this.asRemoteProviderGw(connectionId).providerExportBundle()) as {
+      credentials?: Array<{
+        id: string
+        platformId: string
+        planId: string
+        name: string
+        secret: string
+        secretEnv?: string
+        overrides?: Record<string, unknown>
+        endpoints?: unknown[]
+        notes?: string
+        sortOrder?: number
+      }>
+      bindings?: Array<{
+        consumer: string
+        credentialId: string
+        endpointId?: string
+        config?: unknown
+      }>
+      customPlatforms?: Array<{ id: string }>
+    }
+    const {
+      createCredential,
+      updateCredential,
+      deleteCredential,
+      listCredentials,
+      setBinding,
+      deleteBinding,
+      listBindings,
+      upsertCustomPlatform,
+      deleteCustomPlatform,
+      listCustomPlatforms,
+    } = await import('../providers/credential-store')
+    if (opts?.replaceAll) {
+      for (const b of listBindings()) deleteBinding(b.consumer)
+      for (const c of listCredentials()) deleteCredential(c.id)
+      for (const p of listCustomPlatforms()) deleteCustomPlatform(p.id)
+    }
+    for (const plat of bundle.customPlatforms ?? []) {
+      if (plat && typeof plat === 'object' && 'id' in plat) {
+        upsertCustomPlatform(plat as never)
+      }
+    }
+    let creds = 0
+    for (const c of bundle.credentials ?? []) {
+      if (!c?.id || !c.platformId || !c.planId || !c.name) continue
+      const existing = listCredentials().find((x) => x.id === c.id)
+      if (existing) {
+        updateCredential(c.id, {
+          name: c.name,
+          secret: c.secret,
+          secretEnv: c.secretEnv,
+          overrides: c.overrides as never,
+          endpoints: (c.endpoints as never) ?? null,
+          notes: c.notes,
+          sortOrder: c.sortOrder,
+        })
+      } else {
+        createCredential({
+          id: c.id,
+          platformId: c.platformId,
+          planId: c.planId,
+          name: c.name,
+          secret: c.secret,
+          secretEnv: c.secretEnv,
+          overrides: c.overrides as never,
+          endpoints: c.endpoints as never,
+          notes: c.notes,
+        })
+      }
+      creds += 1
+    }
+    let binds = 0
+    for (const b of bundle.bindings ?? []) {
+      if (!b?.consumer || !b.credentialId) continue
+      setBinding({
+        consumer: b.consumer as never,
+        credentialId: b.credentialId,
+        endpointId: b.endpointId,
+        config: b.config as never,
+      })
+      binds += 1
+    }
+    return { credentials: creds, bindings: binds }
+  }
+
   /**
    * Set agent cwd on a node session (project root or worktree host path).
    * `cwdHostPath` null clears to the project registry path.
@@ -559,6 +754,8 @@ export class EnvironmentHost {
       cwdHostPath?: string | null
       /** UI-selected model id for this turn (Claude slug / Codex model). */
       model?: string | null
+      /** Node provider credential id for this turn. */
+      apiProviderId?: string | null
     },
   ): Promise<unknown> {
     const { gateway, environmentId } = this.resolveRemote(connectionId)
@@ -590,13 +787,20 @@ export class EnvironmentHost {
 
     const model =
       typeof input.model === 'string' && input.model.trim() ? input.model.trim() : undefined
+    const apiProviderId =
+      typeof input.apiProviderId === 'string' && input.apiProviderId.trim()
+        ? input.apiProviderId.trim()
+        : undefined
+    const options: Record<string, string> = {}
+    if (model) options.model = model
+    if (apiProviderId) options.apiProviderId = apiProviderId
     await gateway.sessions.send({
       session: { environmentId, sessionId: input.sessionId },
       text: input.text,
       leaseId: control.leaseId,
       generation: control.generation,
       clientMessageId: input.clientMessageId,
-      ...(model ? { options: { model } } : {}),
+      ...(Object.keys(options).length > 0 ? { options } : {}),
     })
     const { createNodeSessionEventMapper } = await import('@superone/shared/node-session-event-map')
     const mapper = createNodeSessionEventMapper({
@@ -708,6 +912,25 @@ export class EnvironmentHost {
   ): Promise<unknown> {
     const { gateway } = this.resolveRemote(connectionId)
     return gateway.setSessionUiFlags(sessionId, flags)
+  }
+
+  /**
+   * Fork a session on a remote node (remote worktree or remote same-dir local).
+   */
+  async forkSession(
+    connectionId: string,
+    input: { sessionId: string; mode?: 'local' | 'worktree'; forkFromMessageId?: string },
+  ): Promise<{ ok: true; sessionId: string; worktreePath?: string } | { ok: false; error: string }> {
+    if (connectionId === 'local') {
+      throw Object.assign(new Error('forkSession via environment host is remote-only'), {
+        code: 'invalid_argument',
+      })
+    }
+    if (!input.sessionId) {
+      return { ok: false, error: 'sessionId is required' }
+    }
+    const { gateway } = this.resolveRemote(connectionId)
+    return gateway.forkSession(input)
   }
 
   async respondSessionPermission(

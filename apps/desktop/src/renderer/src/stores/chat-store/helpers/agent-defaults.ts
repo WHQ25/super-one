@@ -107,16 +107,18 @@ export function _computeCodexDefaultPatch(sess: PerSessionState, models: ModelOp
 
 export function _reapplyAgentDefaultsToSessions(kind: 'claude' | 'codex'): void {
   const state = useChatStore.getState()
-  const availableModels = state.harnessResources.claude?.models ?? []
+  const localClaudeModels = state.harnessResources.claude?.models ?? []
   const nextProjects: Record<string, ProjectState> = { ...state.projectSessions }
   let changed = false
   for (const [projectPath, project] of Object.entries(state.projectSessions)) {
+    // Remote projects use node catalogs only — never re-seed from desktop harness.
+    if (projectPath.startsWith('remote:')) continue
     const codexModels = project.codexModels
     let projectChanged = false
     const nextSessions: Record<string, PerSessionState> = { ...project._sessions }
     for (const [sid, sess] of Object.entries(project._sessions)) {
       if (kind === 'claude') {
-        const patch = _computeClaudeDefaultPatch(sess, availableModels)
+        const patch = _computeClaudeDefaultPatch(sess, localClaudeModels)
         if (patch) {
           nextSessions[sid] = { ...sess, ...patch }
           projectChanged = true

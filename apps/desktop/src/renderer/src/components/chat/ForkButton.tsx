@@ -37,7 +37,15 @@ export function ForkButton({ message, className }: ForkButtonProps) {
     setBusy(true)
     const toastId = toast.loading(t('sidebar.contextMenu.forkingToast'))
     try {
-      const result = await window.app.forkSession({ sessionId, mode, forkFromMessageId: message.id })
+      const { parseRemoteProjectKey } = await import('@/lib/remote-project-key')
+      const remote = projectPath ? parseRemoteProjectKey(projectPath) : null
+      const result = remote
+        ? await window.environment.forkSession(remote.connectionId, {
+            sessionId,
+            mode,
+            forkFromMessageId: message.id,
+          })
+        : await window.app.forkSession({ sessionId, mode, forkFromMessageId: message.id })
       if (result.ok) {
         await useChatStore.getState().switchSession(result.sessionId)
         toast.success(

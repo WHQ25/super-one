@@ -274,6 +274,73 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
     return this.client.rpc('session.setCwd', input)
   }
 
+  // --- Provider credentials (node-local store) ---
+
+  async providerListCredentials(): Promise<unknown> {
+    return this.client.rpc('provider.listCredentials', {})
+  }
+
+  async providerGetCredentialDecrypted(id: string): Promise<unknown> {
+    return this.client.rpc('provider.getCredentialDecrypted', { id })
+  }
+
+  async providerCreateCredential(input: Record<string, unknown>): Promise<unknown> {
+    return this.client.rpc('provider.createCredential', input)
+  }
+
+  async providerUpdateCredential(input: Record<string, unknown>): Promise<unknown> {
+    return this.client.rpc('provider.updateCredential', input)
+  }
+
+  async providerDeleteCredential(id: string): Promise<unknown> {
+    return this.client.rpc('provider.deleteCredential', { id })
+  }
+
+  async providerListBindings(): Promise<unknown> {
+    return this.client.rpc('provider.listBindings', {})
+  }
+
+  async providerSetBinding(binding: Record<string, unknown>): Promise<unknown> {
+    return this.client.rpc('provider.setBinding', binding)
+  }
+
+  async providerClearBinding(consumer: string): Promise<unknown> {
+    return this.client.rpc('provider.clearBinding', { consumer })
+  }
+
+  async providerListCustomPlatforms(): Promise<unknown> {
+    return this.client.rpc('provider.listCustomPlatforms', {})
+  }
+
+  async providerUpsertCustomPlatform(def: Record<string, unknown>): Promise<unknown> {
+    return this.client.rpc('provider.upsertCustomPlatform', def)
+  }
+
+  async providerDeleteCustomPlatform(id: string): Promise<unknown> {
+    return this.client.rpc('provider.deleteCustomPlatform', { id })
+  }
+
+  async providerExportBundle(): Promise<unknown> {
+    return this.client.rpc('provider.exportBundle', {})
+  }
+
+  async providerImportBundle(
+    bundle: unknown,
+    opts?: { replaceAll?: boolean },
+  ): Promise<unknown> {
+    return this.client.rpc('provider.importBundle', { bundle, replaceAll: opts?.replaceAll === true })
+  }
+
+  async providerListModels(input: {
+    harness: string
+    apiProviderId?: string | null
+  }): Promise<unknown> {
+    return this.client.rpc('provider.listModels', {
+      harness: input.harness,
+      apiProviderId: input.apiProviderId ?? null,
+    })
+  }
+
   private createSessionGateway(): SessionGateway {
     return {
       create: async (input: CreateSessionInput) => {
@@ -378,6 +445,38 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
     flags: { isPinned?: boolean; isHidden?: boolean },
   ): Promise<unknown> {
     return this.client.rpc('session.setUiFlags', { sessionId, ...flags })
+  }
+
+  /**
+   * Fork a remote session on the node (worktree = new detached wt + cwd;
+   * local = same cwd). Returns SessionForkResult shape.
+   */
+  async forkSession(input: {
+    sessionId: string
+    mode?: 'local' | 'worktree'
+    forkFromMessageId?: string
+  }): Promise<{ ok: true; sessionId: string; worktreePath?: string } | { ok: false; error: string }> {
+    const result = await this.client.rpc<{
+      ok?: boolean
+      sessionId?: string
+      worktreePath?: string
+      error?: string
+    }>('session.fork', {
+      sessionId: input.sessionId,
+      mode: input.mode ?? 'worktree',
+      ...(input.forkFromMessageId ? { forkFromMessageId: input.forkFromMessageId } : {}),
+    })
+    if (result && result.ok === true && result.sessionId) {
+      return {
+        ok: true,
+        sessionId: result.sessionId,
+        worktreePath: result.worktreePath,
+      }
+    }
+    if (result && result.ok === false && result.error) {
+      return { ok: false, error: result.error }
+    }
+    return { ok: false, error: 'Fork failed on remote node' }
   }
 
   private createInteractionGateway(): InteractionGateway {

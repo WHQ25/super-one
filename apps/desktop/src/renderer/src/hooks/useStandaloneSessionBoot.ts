@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { useChatStore } from '@/stores/chat'
 import { useAppStore, startProjectMirror } from '@/stores/app'
+import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 import { useAgentEvents } from './useAgentEvents'
 import { useTheme } from './useTheme'
 import { useHarnessTheme } from './useHarnessTheme'
@@ -32,7 +33,15 @@ export function useStandaloneSessionBoot(projectPath: string, sessionId: string)
         await useChatStore.getState().syncLiveSnapshots()
         if (cancelled) return
 
-        await focusProject(projectPath)
+        // Remote mini window: must bind host connection + projectId (not only focusProject).
+        const remote = parseRemoteProjectKey(projectPath)
+        if (remote) {
+          await useAppStore.getState().selectProject(projectPath, {
+            connectionId: remote.connectionId,
+          })
+        } else {
+          await focusProject(projectPath)
+        }
         if (cancelled) return
         if (useChatStore.getState().projectSessions[projectPath]?._activeSessionId !== sessionId) {
           await switchSession(sessionId)

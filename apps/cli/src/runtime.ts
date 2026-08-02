@@ -21,6 +21,7 @@ import { HarnessManager } from './session/harness-manager'
 import { CollaborationMailbox } from './session/collaboration'
 import { WorkspaceWatchService } from './workspace/watch-service'
 import { IdempotencyService } from './auth/idempotency'
+import { ProviderStore } from './provider/provider-store'
 
 export interface NodeRuntime {
   config: NodeRuntimeConfig
@@ -38,6 +39,7 @@ export interface NodeRuntime {
   leases: ControlLeaseService
   collaboration: CollaborationMailbox
   idempotency: IdempotencyService
+  providers: ProviderStore
   server: NodeServerHandle
   startedAt: number
   stop(): Promise<void>
@@ -85,6 +87,8 @@ export async function startNodeRuntime(partial: StartNodeRuntimeOptions = {}): P
   const allowSimulatedTurnFallback =
     partial.allowSimulatedTurnFallback ?? simulatedHarness
 
+  const providers = new ProviderStore(db, paths.providerSecretsKey)
+
   const turnRunner =
     partial.turnRunner ??
     (simulatedHarness
@@ -93,6 +97,7 @@ export async function startNodeRuntime(partial: StartNodeRuntimeOptions = {}): P
           harnesses,
           resolveProjectPath: (projectId) => projects.get(projectId)?.path ?? null,
           allowSimulatedFallback: allowSimulatedTurnFallback,
+          providers,
         }))
 
   const sessions = new SessionRuntime(
@@ -120,6 +125,7 @@ export async function startNodeRuntime(partial: StartNodeRuntimeOptions = {}): P
     events,
     collaboration,
     idempotency,
+    providers,
     bindHost: config.bindHost,
     bindPort: config.bindPort,
     startedAt,
@@ -160,6 +166,7 @@ export async function startNodeRuntime(partial: StartNodeRuntimeOptions = {}): P
     leases,
     collaboration,
     idempotency,
+    providers,
     server,
     startedAt,
     async stop() {

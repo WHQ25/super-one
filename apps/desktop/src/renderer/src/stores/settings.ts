@@ -70,6 +70,12 @@ interface SettingsState {
   platforms: Platform[]
   credentials: Credential[]
   bindings: ConsumerBinding[]
+  /**
+   * Where credentials CRUD reads/writes.
+   * `local` = desktop SQLite; otherwise a remote connection id (node store).
+   */
+  providerScope: 'local' | string
+  setProviderScope: (scope: 'local' | string) => void
   fetchProviderData: () => Promise<void>
   createCredential: (input: Parameters<typeof window.app.createCredential>[0]) => Promise<Credential>
   updateCredential: (id: string, patch: Parameters<typeof window.app.updateCredential>[1]) => Promise<void>
@@ -79,6 +85,10 @@ interface SettingsState {
   deleteCustomPlatform: (id: string) => Promise<void>
   setBinding: (binding: ConsumerBinding) => Promise<void>
   clearBinding: (consumer: ConsumerId) => Promise<void>
+  /** Push desktop credentials → selected remote node (Main decrypts secrets). */
+  pushProvidersToRemote: (opts?: { replaceAll?: boolean }) => Promise<{ credentials: number; bindings: number }>
+  /** Pull remote node credentials → desktop. */
+  pullProvidersFromRemote: (opts?: { replaceAll?: boolean }) => Promise<{ credentials: number; bindings: number }>
 
   // Plugins
   plugins: PluginInfo[]
@@ -146,6 +156,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   platforms: [],
   credentials: [],
   bindings: [],
+  providerScope: 'local',
   plugins: [],
   pluginsLoading: false,
   pluginDetail: null,
@@ -482,55 +493,156 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     await get().fetchPlugins()
   },
 
+  setProviderScope: (scope) => {
+    set({ providerScope: scope })
+    void get().fetchProviderData().catch(() => {})
+  },
+
   fetchProviderData: async () => {
-    const [platforms, credentials, bindings] = await Promise.all([
-      window.app.listPlatforms(),
-      window.app.listCredentials(),
-      window.app.listBindings(),
-    ])
-    set({ platforms, credentials, bindings })
+    const scope = get().providerScope
+    if (scope === 'local') {
+      const [platforms, credentials, bindings] = await Promise.all([
+        window.app.listPlatforms(),
+        window.app.listCredentials(),
+        window.app.listBindings(),
+      ])
+      set({ platforms, credentials, bindings })
+      return
+    }
+    // Remote host may be disconnected / revoked while UI still holds the scope.
+    // Never throw — callers fire-and-forget and uncaught rejections spam the console.
+    try {
+      const [platforms, credentials, customPlatforms, bindings] = await Promise.all([
+        window.app.listPlatforms(),
+        window.environment.listRemoteCredentials(scope) as Promise<Credential[]>,
+        window.environment.listRemoteCustomPlatforms(scope) as Promise<Platform[]>,
+        window.environment.listRemoteBindings(scope) as Promise<ConsumerBinding[]>,
+      ])
+      // Stale response after host switch — discard.
+      if (get().providerScope !== scope) return
+      const custom = Array.isArray(customPlatforms) ? customPlatforms : []
+      const byId = new Map(platforms.map((p) => [p.id, p]))
+      for (const p of custom) byId.set(p.id, p)
+      set({
+        platforms: [...byId.values()],
+        credentials: Array.isArray(credentials) ? credentials : [],
+        bindings: Array.isArray(bindings) ? bindings : [],
+      })
+    } catch (err) {
+      if (get().providerScope !== scope) return
+      const msg = err instanceof Error ? err.message : String(err)
+      // Offline / revoked / unknown connection: show empty remote catalogs, keep local platforms.
+      console.warn('[settings] fetchProviderData remote failed (%s): %s', scope, msg)
+      try {
+        const platforms = await window.app.listPlatforms()
+        if (get().providerScope !== scope) return
+        set({ platforms, credentials: [], bindings: [] })
+      } catch {
+        if (get().providerScope === scope) {
+          set({ credentials: [], bindings: [] })
+        }
+      }
+    }
   },
 
   createCredential: async (input) => {
-    const created = await window.app.createCredential(input)
+    const scope = get().providerScope
+    if (scope === 'local') {
+      const created = await window.app.createCredential(input)
+      await get().fetchProviderData()
+      return created
+    }
+    const created = (await window.environment.createRemoteCredential(scope, input)) as Credential
     await get().fetchProviderData()
     return created
   },
 
   updateCredential: async (id, patch) => {
-    await window.app.updateCredential(id, patch)
+    const scope = get().providerScope
+    if (scope === 'local') {
+      await window.app.updateCredential(id, patch)
+    } else {
+      await window.environment.updateRemoteCredential(scope, { id, ...patch })
+    }
     await get().fetchProviderData()
   },
 
   deleteCredential: async (id) => {
-    await window.app.deleteCredential(id)
+    const scope = get().providerScope
+    if (scope === 'local') {
+      await window.app.deleteCredential(id)
+    } else {
+      await window.environment.deleteRemoteCredential(scope, id)
+    }
     await get().fetchProviderData()
   },
 
   createCustomPlatform: async (def) => {
-    const created = await window.app.createCustomPlatform(def)
+    const scope = get().providerScope
+    if (scope === 'local') {
+      const created = await window.app.createCustomPlatform(def)
+      await get().fetchProviderData()
+      return created
+    }
+    const created = (await window.environment.upsertRemoteCustomPlatform(scope, def)) as Platform
     await get().fetchProviderData()
     return created
   },
 
   updateCustomPlatform: async (def) => {
-    await window.app.updateCustomPlatform(def)
+    const scope = get().providerScope
+    if (scope === 'local') {
+      await window.app.updateCustomPlatform(def)
+    } else {
+      await window.environment.upsertRemoteCustomPlatform(scope, def)
+    }
     await get().fetchProviderData()
   },
 
   deleteCustomPlatform: async (id) => {
-    await window.app.deleteCustomPlatform(id)
+    const scope = get().providerScope
+    if (scope === 'local') {
+      await window.app.deleteCustomPlatform(id)
+    } else {
+      await window.environment.deleteRemoteCustomPlatform(scope, id)
+    }
     await get().fetchProviderData()
   },
 
   setBinding: async (binding) => {
-    await window.app.setBinding(binding)
+    const scope = get().providerScope
+    if (scope === 'local') {
+      await window.app.setBinding(binding)
+    } else {
+      await window.environment.setRemoteBinding(scope, binding as unknown as Record<string, unknown>)
+    }
     await get().fetchProviderData()
   },
 
   clearBinding: async (consumer) => {
-    await window.app.clearBinding(consumer)
+    const scope = get().providerScope
+    if (scope === 'local') {
+      await window.app.clearBinding(consumer)
+    } else {
+      await window.environment.clearRemoteBinding(scope, consumer)
+    }
     await get().fetchProviderData()
+  },
+
+  pushProvidersToRemote: async (opts) => {
+    const scope = get().providerScope
+    if (scope === 'local') throw new Error('select a remote host first')
+    const result = await window.environment.pushLocalProvidersToRemote(scope, opts)
+    await get().fetchProviderData()
+    return result
+  },
+
+  pullProvidersFromRemote: async (opts) => {
+    const scope = get().providerScope
+    if (scope === 'local') throw new Error('select a remote host first')
+    const result = await window.environment.pullRemoteProvidersToLocal(scope, opts)
+    await get().fetchProviderData()
+    return result
   },
 
   fetchHooks: async () => {

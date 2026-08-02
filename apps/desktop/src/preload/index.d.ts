@@ -643,6 +643,30 @@ export interface EnvironmentAPI {
     messageCount: number
   }>
   getSession(connectionId: string, sessionId: string): Promise<unknown>
+  /** Node-local AI provider store. */
+  listRemoteCredentials(connectionId: string): Promise<unknown>
+  createRemoteCredential(connectionId: string, input: Record<string, unknown>): Promise<unknown>
+  updateRemoteCredential(connectionId: string, input: Record<string, unknown>): Promise<unknown>
+  deleteRemoteCredential(connectionId: string, id: string): Promise<unknown>
+  listRemoteBindings(connectionId: string): Promise<unknown>
+  setRemoteBinding(connectionId: string, binding: Record<string, unknown>): Promise<unknown>
+  clearRemoteBinding(connectionId: string, consumer: string): Promise<unknown>
+  listRemoteCustomPlatforms(connectionId: string): Promise<unknown>
+  upsertRemoteCustomPlatform(connectionId: string, def: Record<string, unknown>): Promise<unknown>
+  deleteRemoteCustomPlatform(connectionId: string, id: string): Promise<unknown>
+  pushLocalProvidersToRemote(
+    connectionId: string,
+    opts?: { replaceAll?: boolean },
+  ): Promise<{ credentials: number; bindings: number }>
+  pullRemoteProvidersToLocal(
+    connectionId: string,
+    opts?: { replaceAll?: boolean },
+  ): Promise<{ credentials: number; bindings: number }>
+  listRemoteModels(
+    connectionId: string,
+    harness: string,
+    apiProviderId?: string | null,
+  ): Promise<Array<{ id: string; name: string; description: string; isDefault?: boolean }>>
   sendSessionMessage(
     connectionId: string,
     input: {
@@ -653,6 +677,7 @@ export interface EnvironmentAPI {
       providerId?: string
       cwdHostPath?: string | null
       model?: string | null
+      apiProviderId?: string | null
     },
   ): Promise<unknown>
   /** Poll durable node `session.events` after sequence (exclusive). */
@@ -665,6 +690,11 @@ export interface EnvironmentAPI {
     sessionId: string,
     flags: { isPinned?: boolean; isHidden?: boolean },
   ): Promise<unknown>
+  /** Fork a remote session onto a new node worktree or same-dir local. */
+  forkSession(
+    connectionId: string,
+    input: { sessionId: string; mode?: 'local' | 'worktree'; forkFromMessageId?: string },
+  ): Promise<{ ok: true; sessionId: string; worktreePath?: string } | { ok: false; error: string }>
   respondSessionPermission(
     connectionId: string,
     input: {

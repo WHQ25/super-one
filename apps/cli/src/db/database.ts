@@ -15,6 +15,8 @@ export function openNodeDatabase(dbPath: string): NodeDatabase {
   ensureSessionUiColumns(db)
   // Additive harness catalog — compatible with schema generation 1 handshake.
   ensureHarnessInstallationsTable(db)
+  // Node-local AI provider credentials / bindings / custom platforms.
+  ensureProviderTables(db)
 
   const row = db.prepare('SELECT value FROM meta WHERE key = ?').get('schema_generation') as
     | { value: string }
@@ -62,6 +64,37 @@ CREATE TABLE IF NOT EXISTS harness_installations (
   diagnostic_message TEXT,
   last_probed_at INTEGER,
   updated_at INTEGER NOT NULL
+);
+`)
+}
+
+function ensureProviderTables(db: NodeDatabase): void {
+  db.exec(`
+CREATE TABLE IF NOT EXISTS provider_credentials (
+  id TEXT PRIMARY KEY NOT NULL,
+  platform_id TEXT NOT NULL,
+  plan_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  secret TEXT NOT NULL DEFAULT '',
+  secret_env TEXT NOT NULL DEFAULT '',
+  overrides_json TEXT NOT NULL DEFAULT '{}',
+  endpoints_json TEXT,
+  notes TEXT NOT NULL DEFAULT '',
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT '',
+  updated_at TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS provider_bindings (
+  consumer TEXT PRIMARY KEY NOT NULL,
+  credential_id TEXT NOT NULL,
+  endpoint_id TEXT,
+  config_json TEXT NOT NULL DEFAULT '{}'
+);
+CREATE TABLE IF NOT EXISTS provider_custom_platforms (
+  id TEXT PRIMARY KEY NOT NULL,
+  definition_json TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT '',
+  updated_at TEXT NOT NULL DEFAULT ''
 );
 `)
 }

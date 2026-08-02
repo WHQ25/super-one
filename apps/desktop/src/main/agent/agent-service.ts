@@ -2049,13 +2049,14 @@ export class AgentService {
           const listed = await listRemoteSkillsAndCommands(getEnvironmentHost(), projectPath)
           if (!listed) return []
           // SkillInfo shape for settings UI — map slash entries.
+          // sourcePath must be unique (React keys + detail expand use it).
           return listed.skills.map((s) => ({
             name: s.name,
             description: s.description,
             argumentHint: s.argumentHint,
             scope: 'project' as const,
             hasConfig: false,
-            sourcePath: '',
+            sourcePath: `remote:${projectPath}:skill:${s.name}`,
           }))
         } catch {
           return []
@@ -2115,7 +2116,10 @@ export class AgentService {
 
     // --- Codex Skills (read-only) ---
 
-    ipcMain.handle(AgentIpcChannels.CODEX_SKILLS_LIST, (_event, projectPath: string) => {
+    ipcMain.handle(AgentIpcChannels.CODEX_SKILLS_LIST, async (_event, projectPath: string) => {
+      const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
+      // Remote projects: do not scan local ~/.codex/skills for a remote: key.
+      if (parseRemoteProjectKey(projectPath)) return []
       return getSharedCodexSkillsService().list(projectPath)
     })
 
@@ -2133,13 +2137,17 @@ export class AgentService {
 
     // --- Codex MCP config (read-only) ---
 
-    ipcMain.handle(AgentIpcChannels.CODEX_MCP_LIST_CONFIG, (_event, projectPath: string) => {
+    ipcMain.handle(AgentIpcChannels.CODEX_MCP_LIST_CONFIG, async (_event, projectPath: string) => {
+      const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
+      if (parseRemoteProjectKey(projectPath)) return []
       return listCodexMcpConfigs(projectPath)
     })
 
     // --- Agents (read-only) ---
 
-    ipcMain.handle(AgentIpcChannels.AGENTS_LIST, (_event, projectPath: string) => {
+    ipcMain.handle(AgentIpcChannels.AGENTS_LIST, async (_event, projectPath: string) => {
+      const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
+      if (parseRemoteProjectKey(projectPath)) return []
       return discoverAllAgents(projectPath)
     })
 

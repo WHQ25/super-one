@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync, rmSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir, homedir } from 'node:os'
 import { execFileSync } from 'node:child_process'
-import { WorkspaceGitService, parseShortstat } from './git-service'
+import { WorkspaceGitService, parseShortstat, parseBranchPorcelain } from './git-service'
 import type { ProjectRegistry } from './project-registry'
 
 function git(cwd: string, args: string[]) {
@@ -19,6 +19,27 @@ describe('parseShortstat', () => {
 
   it('returns zeros for empty shortstat', () => {
     expect(parseShortstat('')).toEqual({ insertions: 0, deletions: 0 })
+  })
+})
+
+describe('parseBranchPorcelain', () => {
+  it('parses branch and file lines from status -b output', () => {
+    const raw = '## main...origin/main [ahead 1, behind 2]\n M a.ts\n?? b.ts\n'
+    expect(parseBranchPorcelain(raw)).toEqual({
+      branch: 'main',
+      ahead: 1,
+      behind: 2,
+      porcelain: ' M a.ts\n?? b.ts\n',
+    })
+  })
+
+  it('handles detached HEAD', () => {
+    expect(parseBranchPorcelain('## HEAD (no branch)\n')).toEqual({
+      branch: null,
+      ahead: 0,
+      behind: 0,
+      porcelain: '',
+    })
   })
 })
 

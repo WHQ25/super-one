@@ -211,6 +211,9 @@ async function applyProjectSelection(
       const hostPath = parsed?.path ?? folderPath
       const project = await window.environment.openProject(connectionId, hostPath)
       const { useChatStore } = await import('./chat')
+      const { useSettingsStore } = await import('./settings')
+      // Chat suggestions + model selector read settings.credentials for "powered by".
+      useSettingsStore.getState().setProviderScope(connectionId)
       const projectKey = remoteProjectKey(connectionId, project.path || hostPath)
       const projectId = options?.projectId ?? project.projectId
       useChatStore.getState().ensureSession(projectKey)
@@ -250,6 +253,8 @@ async function applyProjectSelection(
   if (!ok) return false
   useAppStore.getState().fetchRecentFolders()
   const { useChatStore } = await import('./chat')
+  const { useSettingsStore } = await import('./settings')
+  useSettingsStore.getState().setProviderScope('local')
   useChatStore.getState().ensureSession(folderPath)
   // currentFolder / currentProjectId mirror chat.activeProject — see subscription at file end.
   await useChatStore.getState().focusProject(folderPath)
@@ -332,6 +337,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     const next = connectionId || 'local'
     const prev = get().selectedHostConnectionId
     if (prev === next && (get().currentFolder || get().isSwitchingHostProject)) return
+
+    // Provider Settings + chat model selector follow the selected host store.
+    const providerScope = next === 'local' ? 'local' : next
+    void import('./settings').then(({ useSettingsStore }) => {
+      useSettingsStore.getState().setProviderScope(providerScope)
+    })
 
     // Host filter changed: drop a project that lives on another host so chat
     // suggestions / ProjectSelector don't keep showing the previous default.

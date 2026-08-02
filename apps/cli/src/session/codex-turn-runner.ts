@@ -26,6 +26,8 @@ import {
 import { createSimulatedCodexRunner, type TurnRunner } from '@superone/runtime/session'
 import { createMultiHarnessRouter, createAcpOpenCodeProductionRouter } from './harness-runners'
 import type { HarnessManager } from './harness-manager'
+import type { ProviderStore } from '../provider/provider-store'
+import { buildHarnessEnv, resolveHarnessService } from '../provider/resolve-service'
 
 export interface NodeCodexRunnerOptions {
   binaryPath?: string | null
@@ -34,6 +36,8 @@ export interface NodeCodexRunnerOptions {
   env?: NodeJS.ProcessEnv
   spawnFn?: CodexSpawnFn
   allowSimulatedFallback?: boolean
+  /** Node provider store — injects API keys for this turn. */
+  providers?: ProviderStore
 }
 
 /** Production multi-dispatch options (Codex Stage 4 + Claude Stage 5-E + ACP/OpenCode). */
@@ -104,9 +108,17 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
         ? input.session.cwd.trim()
         : projectRoot
 
+    const providerEnv =
+      opts.providers
+        ? buildHarnessEnv(
+            'codex',
+            resolveHarnessService(opts.providers, 'codex', input.apiProviderId),
+          )
+        : {}
     const authEnv: NodeJS.ProcessEnv = {
       ...process.env,
       ...opts.env,
+      ...providerEnv,
     }
 
     const client = await openCodexAppServer({
@@ -156,6 +168,7 @@ export function createProductionTurnRunner(opts: NodeProductionRunnerOptions): T
     env: opts.env,
     queryFn: opts.claudeQueryFn,
     allowSimulatedFallback: opts.allowSimulatedFallback,
+    providers: opts.providers,
   })
   const acpOpenCode = createAcpOpenCodeProductionRouter({
     allowSimulatedFallback: opts.allowSimulatedFallback,

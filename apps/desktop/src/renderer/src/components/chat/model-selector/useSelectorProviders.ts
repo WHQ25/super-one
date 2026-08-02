@@ -14,12 +14,27 @@ export function useSelectorProviders(harness: HarnessId) {
   const platforms = useSettingsStore((s) => s.platforms)
   const credentials = useSettingsStore((s) => s.credentials)
   const bindings = useSettingsStore((s) => s.bindings)
+  const providerScope = useSettingsStore((s) => s.providerScope)
   const fetchProviderData = useSettingsStore((s) => s.fetchProviderData)
   const setSessionApiProviderId = useChatStore((s) => s.setSessionApiProviderId)
   const navigateTo = useAppStore((s) => s.navigateTo)
   const setSettingsTab = useAppStore((s) => s.setSettingsTab)
+  const selectedHostConnectionId = useAppStore((s) => s.selectedHostConnectionId)
 
-  useEffect(() => { void fetchProviderData() }, [fetchProviderData])
+  // Keep scope aligned with host even if chat opened without a host-switch path.
+  useEffect(() => {
+    const next =
+      selectedHostConnectionId && selectedHostConnectionId !== 'local'
+        ? selectedHostConnectionId
+        : 'local'
+    if (next !== providerScope) {
+      useSettingsStore.getState().setProviderScope(next)
+    }
+  }, [selectedHostConnectionId, providerScope])
+
+  useEffect(() => {
+    void fetchProviderData()
+  }, [fetchProviderData, providerScope])
 
   const consumer = consumerForHarness(harness)
   const filtered = useMemo<Credential[]>(

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   hostPathsEqual,
   listRemoteFileTreeDir,
@@ -16,6 +16,7 @@ import {
   getRemoteGitIsRepo,
   getRemoteGitBranches,
   getRemoteWorktreeInfo,
+  invalidateRemoteGitStatusCache,
 } from './remote-file-tree'
 import type { WorkspaceEntry } from '@superone/shared/environment'
 import type { EnvironmentHost } from './environment-host'
@@ -208,6 +209,10 @@ describe('copyLocalPathsIntoRemote', () => {
 })
 
 describe('getRemoteGitInfo / isRepo / branches', () => {
+  beforeEach(() => {
+    invalidateRemoteGitStatusCache()
+  })
+
   it('maps node git.status into status-bar GitInfo', async () => {
     const gitStatus = vi.fn().mockResolvedValue({
       isRepo: true,
@@ -247,6 +252,10 @@ describe('getRemoteGitInfo / isRepo / branches', () => {
 })
 
 describe('getRemoteWorktreeInfo', () => {
+  beforeEach(() => {
+    invalidateRemoteGitStatusCache()
+  })
+
   it('synthesizes a main worktree entry so WorkDirIndicator can show Local', async () => {
     const gitStatus = vi.fn().mockResolvedValue({
       isRepo: true,

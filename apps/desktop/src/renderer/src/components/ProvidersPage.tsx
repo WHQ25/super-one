@@ -27,6 +27,7 @@ import {
 import type { ProviderModelEnv } from '@superone/shared/agent-types'
 import { useSettingsStore } from '@/stores/settings'
 import { useChatStore } from '@/stores/chat'
+import { useAppStore } from '@/stores/app'
 import { platformsByBrand } from '@/lib/provider-resolve'
 import { OfficialProviderPanel } from './OfficialProviderPanel'
 import { ProviderLabel } from './ProviderLabel'
@@ -518,10 +519,22 @@ export function ProvidersPage() {
   const platforms = useSettingsStore((s) => s.platforms)
   const credentials = useSettingsStore((s) => s.credentials)
   const fetchProviderData = useSettingsStore((s) => s.fetchProviderData)
+  const providerScope = useSettingsStore((s) => s.providerScope)
+  const setProviderScope = useSettingsStore((s) => s.setProviderScope)
+  const selectedHostConnectionId = useAppStore((s) => s.selectedHostConnectionId)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [adding, setAdding] = useState(false)
 
-  useEffect(() => { void fetchProviderData() }, [fetchProviderData])
+  // Follow the sidebar host: remote connection id → node provider store.
+  useEffect(() => {
+    const next =
+      selectedHostConnectionId && selectedHostConnectionId !== 'local'
+        ? selectedHostConnectionId
+        : 'local'
+    if (next !== providerScope) setProviderScope(next)
+  }, [selectedHostConnectionId, providerScope, setProviderScope])
+
+  useEffect(() => { void fetchProviderData() }, [fetchProviderData, providerScope])
 
   const selectPlatform = useCallback((id: string) => {
     setSelectedId(id)

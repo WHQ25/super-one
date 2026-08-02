@@ -57,7 +57,11 @@ export function HeaderSessionMenu({ sessionId, folderPath }: { sessionId: string
   const handleFork = useCallback(async (mode: SessionForkMode) => {
     const toastId = toast.loading(t('sidebar.contextMenu.forkingToast'))
     try {
-      const result = await window.app.forkSession({ sessionId, mode })
+      const { parseRemoteProjectKey } = await import('@/lib/remote-project-key')
+      const remote = parseRemoteProjectKey(folderPath)
+      const result = remote
+        ? await window.environment.forkSession(remote.connectionId, { sessionId, mode })
+        : await window.app.forkSession({ sessionId, mode })
       if (result.ok) {
         await useChatStore.getState().switchToSession(folderPath, result.sessionId)
         await afterMutate()

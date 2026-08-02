@@ -36,6 +36,8 @@ export function nodePaths(nodeHome: string) {
     configJson: join(nodeHome, 'config.json'),
     secretsDir: join(nodeHome, 'secrets'),
     instanceKey: join(nodeHome, 'secrets', 'instance.key'),
+    /** AES key for provider API secrets at rest (not the ed25519 instance key). */
+    providerSecretsKey: join(nodeHome, 'secrets', 'provider-secrets.key'),
     logsDir: join(nodeHome, 'logs'),
     runtimeJson: join(nodeHome, 'runtime.json'),
   }

@@ -14,7 +14,17 @@ export async function _syncAndResumeSession(
   set: ChatStoreSet,
   cwd: string,
 ): Promise<void> {
-  const result = await window.app.resumeSession(projectPath, sessionId, cwd)
+  // Remote node projects never use the desktop SessionManager resume path.
+  if (projectPath.startsWith('remote:')) return
+  let result: Awaited<ReturnType<typeof window.app.resumeSession>>
+  try {
+    result = await window.app.resumeSession(projectPath, sessionId, cwd)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    // Renderer draft UUIDs are not in SessionManager until first send — expected.
+    if (/session not found/i.test(msg)) return
+    throw err
+  }
   if (!result) return
   set((s) => {
     const proj = s.projectSessions[projectPath]

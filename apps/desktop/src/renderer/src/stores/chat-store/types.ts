@@ -230,6 +230,13 @@ export interface ProjectState {
   codexModels: ModelOption[]
   codexModelsByProvider: Record<string, ModelOption[]>
   codexModelsLoading: boolean
+  /**
+   * Remote-node Claude model catalog (per project). Local projects leave this empty
+   * and use `harnessResources.claude.models` instead — never mix the two.
+   */
+  claudeModels: ModelOption[]
+  claudeModelsByProvider: Record<string, ModelOption[]>
+  claudeModelsLoading: boolean
   _codexSkills: SkillInfo[]
   _codexSkillsLoading: boolean
   projectAdditionalDirs: string[]
@@ -346,6 +353,7 @@ export interface ChatStore {
   setSelectedEffort: (effort?: EffortLevel) => void
   setFastMode: (enabled: boolean) => void
   refreshClaudeResources: (force?: boolean) => Promise<void>
+  loadClaudeModels: (projectPath: string, apiProviderId: string | null, force?: boolean) => Promise<ModelOption[]>
   setSelectedCodexModel: (model: string) => void
   setSelectedCodexReasoningEffort: (effort?: CodexReasoningEffort) => void
   setSelectedCodexPermissionPreset: (preset: CodexPermissionPreset) => void

@@ -2720,6 +2720,7 @@ export const AgentIpcChannels = {
   ENVIRONMENT_RENAME_SESSION: 'environment:renameSession',
   ENVIRONMENT_REMOVE_SESSION: 'environment:removeSession',
   ENVIRONMENT_SET_SESSION_UI_FLAGS: 'environment:setSessionUiFlags',
+  ENVIRONMENT_FORK_SESSION: 'environment:forkSession',
   ENVIRONMENT_RESPOND_SESSION_PERMISSION: 'environment:respondSessionPermission',
   /** List directories at an absolute path for the add-project browser. */
   ENVIRONMENT_BROWSE_PATH: 'environment:browsePath',
@@ -2732,6 +2733,22 @@ export const AgentIpcChannels = {
   ENVIRONMENT_STATUS_EVENT: 'environment:statusEvent',
   /** Main → renderer SSH probe/install progress push. */
   ENVIRONMENT_INSTALL_PROGRESS: 'environment:installProgress',
+  /** Node-local AI provider credentials (masked). */
+  ENVIRONMENT_PROVIDER_LIST_CREDENTIALS: 'environment:providerListCredentials',
+  ENVIRONMENT_PROVIDER_CREATE_CREDENTIAL: 'environment:providerCreateCredential',
+  ENVIRONMENT_PROVIDER_UPDATE_CREDENTIAL: 'environment:providerUpdateCredential',
+  ENVIRONMENT_PROVIDER_DELETE_CREDENTIAL: 'environment:providerDeleteCredential',
+  ENVIRONMENT_PROVIDER_LIST_BINDINGS: 'environment:providerListBindings',
+  ENVIRONMENT_PROVIDER_SET_BINDING: 'environment:providerSetBinding',
+  ENVIRONMENT_PROVIDER_CLEAR_BINDING: 'environment:providerClearBinding',
+  ENVIRONMENT_PROVIDER_LIST_CUSTOM_PLATFORMS: 'environment:providerListCustomPlatforms',
+  ENVIRONMENT_PROVIDER_UPSERT_CUSTOM_PLATFORM: 'environment:providerUpsertCustomPlatform',
+  ENVIRONMENT_PROVIDER_DELETE_CUSTOM_PLATFORM: 'environment:providerDeleteCustomPlatform',
+  /** Push desktop credentials → node (Main builds plaintext bundle; renderer never sees secrets). */
+  ENVIRONMENT_PROVIDER_PUSH_LOCAL: 'environment:providerPushLocal',
+  /** Pull node credentials → desktop (admin). */
+  ENVIRONMENT_PROVIDER_PULL_REMOTE: 'environment:providerPullRemote',
+  ENVIRONMENT_PROVIDER_LIST_MODELS: 'environment:providerListModels',
 } as const
 
 export interface NativeContextMenuItemSpec {

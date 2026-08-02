@@ -41,4 +41,9 @@ export class AsyncCoalescer<T> {
   invalidate(key: string): void {
     this.cache.delete(key)
   }
+
+  /** Drop all cached results (tests / host disconnect). */
+  clear(): void {
+    this.cache.clear()
+  }
 }

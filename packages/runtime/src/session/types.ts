@@ -59,6 +59,8 @@ export type TurnRunner = (input: {
   session: NodeSessionRecord
   text: string
   model?: string | null
+  /** Node provider credential id for this turn (API key source). */
+  apiProviderId?: string | null
   onDelta: (text: string) => void
   onEvent?: (event: SessionTurnEvent) => void
   onPermission?: (interaction: PendingInteraction) => Promise<PermissionDecision>

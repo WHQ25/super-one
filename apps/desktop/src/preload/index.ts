@@ -278,6 +278,49 @@ const environmentAPI = {
     }>,
   getSession: (connectionId: string, sessionId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_GET_SESSION, connectionId, sessionId),
+  /** Node AI provider store (credentials masked). */
+  listRemoteCredentials: (connectionId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_PROVIDER_LIST_CREDENTIALS, connectionId),
+  createRemoteCredential: (connectionId: string, input: Record<string, unknown>) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_PROVIDER_CREATE_CREDENTIAL, connectionId, input),
+  updateRemoteCredential: (connectionId: string, input: Record<string, unknown>) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_PROVIDER_UPDATE_CREDENTIAL, connectionId, input),
+  deleteRemoteCredential: (connectionId: string, id: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_PROVIDER_DELETE_CREDENTIAL, connectionId, id),
+  listRemoteBindings: (connectionId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_PROVIDER_LIST_BINDINGS, connectionId),
+  setRemoteBinding: (connectionId: string, binding: Record<string, unknown>) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_PROVIDER_SET_BINDING, connectionId, binding),
+  clearRemoteBinding: (connectionId: string, consumer: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_PROVIDER_CLEAR_BINDING, connectionId, consumer),
+  listRemoteCustomPlatforms: (connectionId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_PROVIDER_LIST_CUSTOM_PLATFORMS, connectionId),
+  upsertRemoteCustomPlatform: (connectionId: string, def: Record<string, unknown>) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_PROVIDER_UPSERT_CUSTOM_PLATFORM, connectionId, def),
+  deleteRemoteCustomPlatform: (connectionId: string, id: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_PROVIDER_DELETE_CUSTOM_PLATFORM, connectionId, id),
+  /** Main decrypts local secrets and imports onto the node. */
+  pushLocalProvidersToRemote: (connectionId: string, opts?: { replaceAll?: boolean }) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_PROVIDER_PUSH_LOCAL, connectionId, opts) as Promise<{
+      credentials: number
+      bindings: number
+    }>,
+  pullRemoteProvidersToLocal: (connectionId: string, opts?: { replaceAll?: boolean }) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_PROVIDER_PULL_REMOTE, connectionId, opts) as Promise<{
+      credentials: number
+      bindings: number
+    }>,
+  listRemoteModels: (
+    connectionId: string,
+    harness: string,
+    apiProviderId?: string | null,
+  ) =>
+    ipcRenderer.invoke(
+      AgentIpcChannels.ENVIRONMENT_PROVIDER_LIST_MODELS,
+      connectionId,
+      harness,
+      apiProviderId ?? null,
+    ),
   sendSessionMessage: (
     connectionId: string,
     input: {
@@ -288,6 +331,7 @@ const environmentAPI = {
       providerId?: string
       cwdHostPath?: string | null
       model?: string | null
+      apiProviderId?: string | null
     },
   ) =>
     ipcRenderer.invoke(
@@ -323,6 +367,15 @@ const environmentAPI = {
       sessionId,
       flags,
     ),
+  forkSession: (
+    connectionId: string,
+    input: { sessionId: string; mode?: 'local' | 'worktree'; forkFromMessageId?: string },
+  ) =>
+    ipcRenderer.invoke(
+      AgentIpcChannels.ENVIRONMENT_FORK_SESSION,
+      connectionId,
+      input,
+    ) as Promise<{ ok: true; sessionId: string; worktreePath?: string } | { ok: false; error: string }>,
   respondSessionPermission: (
     connectionId: string,
     input: {

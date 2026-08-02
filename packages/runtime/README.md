@@ -24,11 +24,15 @@ Electron IPC, full git worktree product ops that log to desktop logger, harness
 backends, desktop-only request coalescing (`AsyncCoalescer`), local disk crawl
 (`fdir` + `.gitignore` in desktop `fuzzy-file-search`).
 
+Session **state** fork (`SessionRuntime.fork`) lives here; **SDK/thread** fork
+lives in harness packages (`forkClaudeTranscript`, `forkCodexThread`) so desktop
+and the node CLI share one implementation.
+
 ## Harness packages (opt-in)
 
-| Enable | Package |
-|--------|---------|
-| Claude | `@superone/claude` |
-| Codex | `@superone/codex` |
-| ACP | `@superone/acp` |
-| OpenCode | `@superone/opencode` |
+| Enable | Package | Shared fork |
+|--------|---------|-------------|
+| Claude | `@superone/claude` | `forkClaudeTranscript` |
+| Codex | `@superone/codex` | `forkCodexThread` |
+| ACP | `@superone/acp` | (not yet) |
+| OpenCode | `@superone/opencode` | (not yet) |

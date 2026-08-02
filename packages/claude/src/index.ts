@@ -18,6 +18,13 @@ export {
   type SdkMapState,
   type SdkMapApplyResult,
 } from './map-sdk-message'
+export {
+  forkClaudeTranscript,
+  claudeProjectSlug,
+  claudeProjectsDir,
+  type ForkClaudeTranscriptInput,
+  type SdkForkSessionFn,
+} from './fork-session'
 export type {
   ClaudePermissionDecision,
   ClaudePermissionHandler,

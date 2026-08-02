@@ -152,6 +152,13 @@ export async function setPermissionModeImpl(
 ): Promise<void> {
   const { activeProject } = get()
   if (!activeProject) return
+  // Remote node projects: UI-only until send (node has its own permission handling).
+  // Never getOrCreate a desktop SessionManager entry for a remote: path.
+  const { parseRemoteProjectKey } = await import('@/lib/remote-project-key')
+  if (parseRemoteProjectKey(activeProject)) {
+    set((s) => updateActivePerSession(s, () => ({ permissionMode: mode })))
+    return
+  }
   await window.agent.setPermissionMode(activeProject, mode)
   set((s) => updateActivePerSession(s, () => ({ permissionMode: mode })))
 }
@@ -269,6 +276,13 @@ export async function setSandboxModeImpl(
 ): Promise<void> {
   const { activeProject } = get()
   if (!activeProject) return
+  const { parseRemoteProjectKey } = await import('@/lib/remote-project-key')
+  if (parseRemoteProjectKey(activeProject)) {
+    // Node-side sandbox is not driven by desktop SessionManager; keep UI optimistic.
+    const { sandboxModeToInfo } = await import('./prefs-cache')
+    set((s) => updateProjectState(s, activeProject, () => ({ sandboxInfo: sandboxModeToInfo(mode) })))
+    return
+  }
   if (mode !== 'off') {
     const capability = useAppStore.getState().sandboxCapability
     if (capability?.supportLevel === 'unsupported') return
@@ -348,7 +362,12 @@ export async function setSessionApiProviderIdImpl(
   } catch (err) {
     console.warn('[chat] setSessionApiProvider failed:', err)
   }
+  // Remote: always re-list from the node provider store. Local Codex also re-lists.
+  const { parseRemoteProjectKey } = await import('@/lib/remote-project-key')
+  const isRemote = !!parseRemoteProjectKey(activeProject)
   if (isCodex) {
     void get().refreshCodexModels(false)
+  } else if (isRemote) {
+    void get().refreshClaudeResources(false)
   }
 }

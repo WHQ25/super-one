@@ -1,11 +1,16 @@
 import type { ClaudeResources, ModelOption } from '@superone/shared/agent-types'
 import type { ChatStore, PerSessionState } from '../types'
 import { buildSlashCommands } from '../helpers/chat-helpers'
+import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 
 /**
  * Apply a freshly-fetched ClaudeResources bundle to the store: merges global
  * slash commands with per-project skills/commands, and seeds the active
  * session's default model selection when it's still empty.
+ *
+ * Desktop-local only. Remote projects keep node-scoped catalogs on ProjectState
+ * (`claudeModels` / slash from listSlashResources) and must not inherit local
+ * harness lists.
  *
  * `applyDefaultModelFn` is injected because resolving the "preferred"
  * default reads cached user prefs (_cachedDefaultClaudeSelection) that
@@ -24,6 +29,8 @@ export function applyClaudeResources(
   const projects = { ...s.projectSessions }
   let changed = false
   for (const [path, project] of Object.entries(projects)) {
+    // Remote node projects never inherit desktop Claude catalogs.
+    if (parseRemoteProjectKey(path)) continue
     if (!project._activeSessionId) continue
     const patched = { ...project }
     patched.slashCommands = buildSlashCommands(

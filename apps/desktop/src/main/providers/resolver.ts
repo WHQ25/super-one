@@ -96,6 +96,52 @@ export function resolveChatService(
   return resolveService(harness === 'codex' ? 'chat:codex' : 'chat:claude', { credentialId })
 }
 
+/**
+ * Resolve a chat service from an already-decrypted credential (e.g. loaded from a remote node).
+ * Does not read the local credential store.
+ */
+export function resolveServiceFromCredential(
+  consumer: ConsumerId,
+  cred: Credential,
+  binding?: { endpointId?: string; config?: { forcedEffort?: EffortLevel | 'auto'; modelMapping?: ResolvedService['modelMapping'] } } | null,
+): ResolvedService | null {
+  const platforms = getPlatforms()
+  const platform = findPlatform(platforms, cred.platformId)
+  const plan = findPlan(platform, cred.planId)
+  if (!platform || !plan) return null
+
+  const endpoints = effectiveEndpoints(platform, plan, cred)
+  const selected = selectEndpoint(plan, consumer, binding?.endpointId, cred, endpoints)
+  if (!selected) return null
+  const { endpoint, protocol } = selected
+  const merged = mergeEndpoint(endpoint, cred.overrides?.[endpoint.id], binding?.config)
+
+  const modelMapping = Object.keys(merged.modelMapping).length > 0
+    ? merged.modelMapping
+    : protocol === 'openai-chat'
+      ? endpoints
+          .filter((e) => e.protocols.includes('anthropic-messages'))
+          .map((e) => mergeEndpoint(e, cred.overrides?.[e.id], binding?.config).modelMapping)
+          .find((m) => Object.keys(m).length > 0)
+      : undefined
+
+  return {
+    platformId: platform.id,
+    brand: platform.brand,
+    planId: plan.id,
+    endpointId: endpoint.id,
+    credentialId: cred.id,
+    task: CONSUMER_TASK[consumer],
+    protocol,
+    baseUrl: familyBaseUrl(PROTOCOL_FAMILY[protocol], merged.baseUrl),
+    apiKey: credentialApiKey(cred),
+    auth: plan.auth,
+    models: merged.models,
+    modelMapping: modelMapping && Object.keys(modelMapping).length > 0 ? modelMapping : undefined,
+    extraEnv: Object.keys(merged.extraEnv).length > 0 ? merged.extraEnv : undefined,
+  }
+}
+
 // --- adapters ----------------------------------------------------------------
 
 /** anthropic-messages:chat → Claude harness env expansion. */

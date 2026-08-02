@@ -40,6 +40,7 @@ describe('environment preload ↔ Main IPC contract', () => {
     expect(AgentIpcChannels.ENVIRONMENT_RENAME_SESSION).toBe('environment:renameSession')
     expect(AgentIpcChannels.ENVIRONMENT_REMOVE_SESSION).toBe('environment:removeSession')
     expect(AgentIpcChannels.ENVIRONMENT_SET_SESSION_UI_FLAGS).toBe('environment:setSessionUiFlags')
+    expect(AgentIpcChannels.ENVIRONMENT_FORK_SESSION).toBe('environment:forkSession')
     expect(AgentIpcChannels.ENVIRONMENT_RESPOND_SESSION_PERMISSION).toBe(
       'environment:respondSessionPermission',
     )
@@ -71,6 +72,7 @@ describe('environment preload ↔ Main IPC contract', () => {
       'ENVIRONMENT_RENAME_SESSION',
       'ENVIRONMENT_REMOVE_SESSION',
       'ENVIRONMENT_SET_SESSION_UI_FLAGS',
+      'ENVIRONMENT_FORK_SESSION',
       'ENVIRONMENT_RESPOND_SESSION_PERMISSION',
       'ENVIRONMENT_BROWSE_PATH',
       'ENVIRONMENT_CLONE_REPOSITORY',

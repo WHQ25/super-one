@@ -28,22 +28,15 @@ export function buildSessionMenuItems(
     { kind: 'item', id: 'rename', label: t('sidebar.contextMenu.rename'), icon: Pencil, onSelect: handlers.onRename },
     { kind: 'item', id: 'pin', label: session.isPinned ? t('sidebar.contextMenu.unpin') : t('sidebar.contextMenu.pin'), icon: Pin, onSelect: handlers.onPin },
     { kind: 'item', id: 'hide', label: session.isHidden ? t('sidebar.contextMenu.unhide') : t('sidebar.contextMenu.hide'), icon: session.isHidden ? Eye : EyeOff, onSelect: handlers.onHide },
-  ]
-
-  if (!isRemoteHost) {
-    items.push(
-      { kind: 'separator' },
-      {
-        kind: 'item',
-        id: 'mini',
-        label: t('sidebar.contextMenu.openInMiniWindow'),
-        icon: PictureInPicture2,
-        onSelect: () => window.app.openSessionWindow(folderPath, session.sessionId, session.title),
-      },
-    )
-  }
-
-  items.push(
+    { kind: 'separator' },
+    // Mini window is a desktop shell around the same chat store; remote: project keys work via selectProject/switchSession.
+    {
+      kind: 'item',
+      id: 'mini',
+      label: t('sidebar.contextMenu.openInMiniWindow'),
+      icon: PictureInPicture2,
+      onSelect: () => window.app.openSessionWindow(folderPath, session.sessionId, session.title),
+    },
     { kind: 'separator' },
     {
       kind: 'item',
@@ -78,8 +71,9 @@ export function buildSessionMenuItems(
         toast.success(t('sidebar.contextMenu.workingDirCopiedToast'))
       },
     },
-  )
+  ]
 
+  // Local disk only — remote host paths are not this machine's Finder/Explorer.
   if (!isRemoteHost) {
     items.push({
       kind: 'item',
@@ -90,8 +84,10 @@ export function buildSessionMenuItems(
     })
   }
 
-  // Worktree fork is local-desktop only (needs local git + SessionManager).
-  if (!session.isWorktree && !isRemoteHost) {
+  // Fork to worktree / local: desktop uses local harness fork; remote uses node
+  // session.fork (remote worktree or same-dir local on the node). Hidden when
+  // the session is already bound to a worktree (same as local sidebar).
+  if (!session.isWorktree) {
     items.push(
       { kind: 'separator' },
       { kind: 'item', id: 'forkWorktree', label: t('sidebar.contextMenu.forkToWorktree'), icon: GitFork, onSelect: () => handlers.onFork('worktree') },

@@ -1,3 +1,8 @@
+/**
+ * Desktop adapter over shared `@superone/codex` thread fork.
+ * Uses the desktop app-server pool so fork + optional rollback share one connection.
+ */
+import { forkCodexThread as coreForkCodexThread } from '@superone/codex'
 import { getSharedCodexService } from '../../codex/codex-experiment-service'
 import type { ForkContext, ForkSource } from '../types'
 
@@ -17,19 +22,7 @@ function resolveDropTrailingTurns(ctx: ForkContext): number {
 
 /**
  * Fork a Codex thread through `forkFromMessageId` (inclusive).
- *
- * Preferred path (0.143+): a single `thread/fork { lastTurnId }` — turns after
- * the anchor turn are omitted from the fork. Requires the anchor message to
- * carry a persisted `metadata.codex.turnId`.
- *
- * Fallback: messages persisted before turnId plumbing (or a non-assistant
- * anchor) have no turnId, so drop back to the deprecated `thread/fork` +
- * `thread/rollback { numTurns }` two-step. Both calls run on one connection so
- * `thread/rollback` sees the freshly-forked thread.
- *
- * Unlike Claude, no rollout file is relocated: `thread/resume` finds a thread by
- * id and takes `cwd` as a request param, so a worktree fork just resumes the new
- * id with the worktree path later — `targetCwd` is unused here.
+ * See packages/codex/src/fork-thread.ts for protocol details.
  */
 export async function forkCodexThread(
   source: ForkSource,
@@ -38,17 +31,12 @@ export async function forkCodexThread(
 ): Promise<string> {
   const lastTurnId = resolveLastTurnId(ctx)
   const dropTrailingTurns = lastTurnId ? 0 : resolveDropTrailingTurns(ctx)
-  return getSharedCodexService().withAppServerRequest(source.projectPath, async (request) => {
-    const forked = await request('thread/fork', {
+  return getSharedCodexService().withAppServerRequest(source.projectPath, async (request) =>
+    coreForkCodexThread({
+      request: (method, params) => request(method, params ?? {}),
       threadId: source.providerSessionId,
-      ...(lastTurnId ? { lastTurnId } : {}),
-    })
-    const thread = forked.thread as { id?: unknown } | undefined
-    const newThreadId = typeof thread?.id === 'string' ? thread.id : null
-    if (!newThreadId) throw new Error('Codex thread/fork did not return a thread id')
-    if (dropTrailingTurns > 0) {
-      await request('thread/rollback', { threadId: newThreadId, numTurns: dropTrailingTurns })
-    }
-    return newThreadId
-  })
+      lastTurnId,
+      dropTrailingTurns,
+    }),
+  )
 }

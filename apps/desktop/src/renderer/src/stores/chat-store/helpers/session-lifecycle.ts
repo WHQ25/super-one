@@ -105,11 +105,18 @@ export async function focusProjectImpl(
   // focusProject must mirror activePath itself or the file tree shows the project root.
   const focusedSession = targetSid ? get().projectSessions[projectPath]?._sessions[targetSid] : null
   useAppStore.getState().setActiveWorktree(projectPath, _getSessionWorktreePath(focusedSession))
+  // Local only — remote node sessions never use desktop SessionManager.resume.
   if (targetSid && !parseRemoteProjectKey(projectPath)) {
     const targetSession = targetProject?._sessions[targetSid]
     try {
       await window.app.resumeSession(projectPath, targetSid, _getSessionCwd(projectPath, targetSession))
-    } catch (err) { console.warn('[chat] resumeSession failed:', err) }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      // Renderer draft UUIDs are not in SessionManager until first send — expected.
+      if (!/session not found/i.test(msg)) {
+        console.warn('[chat] resumeSession failed:', err)
+      }
+    }
   }
   const switchedProject = get().projectSessions[projectPath]
   const switchedSid = switchedProject?._activeSessionId
@@ -118,6 +125,14 @@ export async function focusProjectImpl(
   if (isCodexActive && switchedProject && switchedProject._codexSkills.length === 0 && !switchedProject._codexSkillsLoading) {
     void get().refreshCodexSkills(projectPath)
   }
+  // Remote: warm node model catalogs once on focus (ensureSession may have already
+  // kicked this off — refresh paths no-op when cache is warm / in-flight).
+  if (parseRemoteProjectKey(projectPath)) {
+    void Promise.all([
+      get().refreshCodexModels(false),
+      get().refreshClaudeResources(false),
+    ])
+  }
 }
 
 export function ensureSessionImpl(
@@ -125,20 +140,24 @@ export function ensureSessionImpl(
   projectPath: string,
   get?: () => ChatStore,
 ): void {
+  const isRemote = !!parseRemoteProjectKey(projectPath)
   set((s) => {
     if (s.projectSessions[projectPath]) return {}
     const project = createDefaultProjectState()
     const claude = s.harnessResources.claude
-    project.agents = claude?.agents ?? []
-    project.slashCommands = buildSlashCommands(
-      claude?.slashCommands ?? [],
-      claude?.skills ?? [],
-      claude?.commands ?? [],
-      project._projectSkills,
-      project._projectCommands,
-      new Set(s.disabledSkills),
-    )
-    project.codexModels = s.harnessResources.codex?.models ?? []
+    // Remote projects must not inherit desktop harness catalogs.
+    project.agents = isRemote ? [] : (claude?.agents ?? [])
+    project.slashCommands = isRemote
+      ? []
+      : buildSlashCommands(
+          claude?.slashCommands ?? [],
+          claude?.skills ?? [],
+          claude?.commands ?? [],
+          project._projectSkills,
+          project._projectCommands,
+          new Set(s.disabledSkills),
+        )
+    project.codexModels = isRemote ? [] : (s.harnessResources.codex?.models ?? [])
     if (defaultPrefsCache.sandboxMode) project.sandboxInfo = sandboxModeToInfo(defaultPrefsCache.sandboxMode)
 
     // Remote and local both need a per-session UI row so model/provider prefs stick.
@@ -151,10 +170,12 @@ export function ensureSessionImpl(
     const newSession = applyCachedCodexPermissionPreset(createDefaultPerSessionState())
     newSession.cwd = projectPath
     if (defaultPrefsCache.permissionMode) newSession.permissionMode = defaultPrefsCache.permissionMode
-    applyDefaultModel(newSession, s.harnessResources.claude?.models ?? [])
-    const codexSelection = resolveDefaultCodexSelection(project.codexModels)
-    newSession.selectedCodexModel = codexSelection.modelId
-    newSession.selectedCodexReasoningEffort = codexSelection.reasoningEffort
+    if (!isRemote) {
+      applyDefaultModel(newSession, s.harnessResources.claude?.models ?? [])
+      const codexSelection = resolveDefaultCodexSelection(project.codexModels)
+      newSession.selectedCodexModel = codexSelection.modelId
+      newSession.selectedCodexReasoningEffort = codexSelection.reasoningEffort
+    }
     project._sessions = { [draftId]: newSession }
     return {
       projectSessions: {
@@ -163,10 +184,8 @@ export function ensureSessionImpl(
       },
     }
   })
-  // Pull Claude models even when the user only opens a remote project (no local
-  // session_init). Safe if already initialized.
-  if (get && parseRemoteProjectKey(projectPath)) {
-    // Node-hosted skills/commands for the / popup (desktop harness list is local-only).
+  if (get && isRemote) {
+    // Node-only skills/commands for the / popup — never merge desktop harness lists.
     void (async () => {
       try {
         const listed = await window.app.listSlashResources(projectPath)
@@ -174,7 +193,6 @@ export function ensureSessionImpl(
         const commands = Array.isArray(listed?.commands) ? listed.commands : []
         set((s) => {
           if (!s.projectSessions[projectPath]) return {}
-          const claude = s.harnessResources.claude
           const proj = s.projectSessions[projectPath]!
           return {
             projectSessions: {
@@ -184,9 +202,9 @@ export function ensureSessionImpl(
                 _projectSkills: skills,
                 _projectCommands: commands,
                 slashCommands: buildSlashCommands(
-                  claude?.slashCommands ?? [],
-                  claude?.skills ?? [],
-                  claude?.commands ?? [],
+                  [],
+                  [],
+                  [],
                   skills,
                   commands,
                   new Set(s.disabledSkills),
@@ -199,46 +217,8 @@ export function ensureSessionImpl(
         /* offline / not connected */
       }
     })()
-    void get().initializeHarness('claude').then(() => {
-      // Merge desktop harness slash catalog with any node skills already loaded.
-      set((s) => {
-        const claude = s.harnessResources.claude
-        const proj = s.projectSessions[projectPath]
-        if (!claude || !proj) return {}
-        return {
-          projectSessions: {
-            ...s.projectSessions,
-            [projectPath]: {
-              ...proj,
-              slashCommands: buildSlashCommands(
-                claude.slashCommands,
-                claude.skills,
-                claude.commands,
-                proj._projectSkills,
-                proj._projectCommands,
-                new Set(s.disabledSkills),
-              ),
-            },
-          },
-        }
-      })
-      const models = get().harnessResources.claude?.models ?? []
-      if (models.length === 0) return
-      const proj = get().projectSessions[projectPath]
-      const sid = proj?._activeSessionId
-      if (!sid) return
-      const sess = proj._sessions[sid]
-      if (!sess) return
-      if (sess.selectedModel && models.some((m) => m.id === sess.selectedModel)) return
-      const defaultModel = resolveDefaultClaudeModel(models)
-      if (!defaultModel) return
-      set((s) => updatePerSession(s, projectPath, sid, () => ({
-        selectedModel: defaultModel.id,
-        selectedEffort: resolveDefaultClaudeEffort(defaultModel),
-        modelUserChosen: false,
-        effortUserChosen: false,
-      })))
-    })
+    void get().refreshCodexModels(false)
+    void get().refreshClaudeResources(false)
   }
 }
 
@@ -393,7 +373,11 @@ export function resetSessionForWorktreeSwitchImpl(
       seedAcpSessionFromCache(s, newSession, previousSession)
     } else if (nextProvider !== 'codex') {
       // Claude (and default) only — must not clobber ACP selectedModel with a Claude id.
-      applyDefaultModel(newSession, s.harnessResources.claude?.models ?? [])
+      // Remote: node catalog on project; local: desktop harness cache.
+      const claudeModels = parseRemoteProjectKey(projectPath)
+        ? (proj.claudeModels ?? [])
+        : (s.harnessResources.claude?.models ?? [])
+      applyDefaultModel(newSession, claudeModels)
     }
     if (defaultPrefsCache.permissionMode) newSession.permissionMode = defaultPrefsCache.permissionMode
     const codexSelection = resolveDefaultCodexSelection(proj.codexModels)
@@ -423,61 +407,14 @@ export async function resetSessionImpl(set: ChatStoreSet, get: () => ChatStore):
   const activeSession = getActivePerSession(get())
   const currentSid = resolveActiveSessionId(project)
   const nextProvider = activeSession.sessionProvider ?? activeSession.preferredProvider
+  // Remote projects use the same draft-sid lifecycle as local: New session only
+  // mints a renderer UUID. Node `session.create` happens on first send via
+  // resolveNodeSessionId (no early create, no forced codex default).
+  const isRemoteProject = !!parseRemoteProjectKey(activeProject)
 
-  // Remote node: create a real node session (same UX as "New session" on sidebar).
-  const remote = parseRemoteProjectKey(activeProject)
-  if (remote) {
-    if (
-      activeSession.messages.length === 0 &&
-      !_isLiveSession(activeSession) &&
-      currentSid
-    ) {
-      window.app.trace?.('session.lifecycle', 'resetSession:skip-pristine-remote', {
-        activeProject,
-        currentSid,
-      })
-      return
-    }
-    const projectId = useAppStore.getState().currentProjectId
-    if (!projectId) return
-    const { createRemoteSession } = await import('@/lib/remote-session-ops')
-    const { sessionId: newSessionId } = await createRemoteSession(activeProject, projectId)
-    const newSession = applyCachedCodexPermissionPreset(createDefaultPerSessionState())
-    newSession.cwd = activeProject
-    newSession.preferredProvider = 'codex'
-    newSession.sessionProvider = 'codex'
-    newSession._historyHydrated = true
-    set((s) => {
-      const proj = getProject(s, activeProject)
-      return {
-        projectSessions: {
-          ...s.projectSessions,
-          [activeProject]: {
-            ...proj,
-            _activeSessionId: newSessionId,
-            _sessions: { ...proj._sessions, [newSessionId]: newSession },
-            sessions: [
-              {
-                sessionId: newSessionId,
-                title: 'New session',
-                lastActiveAt: new Date().toISOString(),
-                provider: 'codex',
-                messageCount: 0,
-              },
-              ...proj.sessions.filter((e) => e.sessionId !== newSessionId),
-            ],
-          },
-        },
-      }
-    })
-    useAppStore.getState().bumpSessionListNonce()
-    return
-  }
-
-  // Idempotent: a pristine current session (no messages, idle, not remote, no worktree)
-  // is already "a fresh session". Creating another one just stacks empty drafts in
-  // _sessions, which later surface as duplicate "New session" rows in Ctrl+Tab
-  // (current + previous both pinned, both falling back to the same title).
+  // Idempotent: a pristine current session (no messages, idle, not a live node
+  // session, no worktree) is already "a fresh session". Creating another one
+  // just stacks empty drafts in _sessions (duplicate "New session" in Ctrl+Tab).
   if (
     activeSession.messages.length === 0 &&
     !_isLiveSession(activeSession) &&
@@ -497,6 +434,7 @@ export async function resetSessionImpl(set: ChatStoreSet, get: () => ChatStore):
     oldAwaitingReply: activeSession.awaitingAssistantReply,
     oldProvider: activeSession.sessionProvider,
     knownSids: Object.keys(project._sessions),
+    isRemoteProject,
   })
 
   // Capture before set() — activeSession is the old Grok/ACP session we seed from.
@@ -512,7 +450,10 @@ export async function resetSessionImpl(set: ChatStoreSet, get: () => ChatStore):
       seedAcpSessionFromCache(s, newSession, previousAcpSession)
     } else if (nextProvider !== 'codex') {
       // Claude (and default) only — must not clobber ACP selectedModel with a Claude id.
-      applyDefaultModel(newSession, s.harnessResources.claude?.models ?? [])
+      const claudeModels = isRemoteProject
+        ? (proj.claudeModels ?? [])
+        : (s.harnessResources.claude?.models ?? [])
+      applyDefaultModel(newSession, claudeModels)
     }
     const codexSelection = resolveDefaultCodexSelection(proj.codexModels)
     newSession.selectedCodexModel = codexSelection.modelId
@@ -540,7 +481,10 @@ export async function resetSessionImpl(set: ChatStoreSet, get: () => ChatStore):
 
   let agentConfig: { permissionMode: PermissionMode; sandboxInfo: SandboxInfo } | undefined
   try {
-    if (activeSession.sessionProvider === 'codex') {
+    if (isRemoteProject) {
+      // No local SessionManager / no node session.create here.
+      // First send materializes via resolveNodeSessionId.
+    } else if (activeSession.sessionProvider === 'codex') {
       if (activeSession.status !== 'streaming' && currentSid) {
         await window.agent.resetSession(currentSid).catch(() => {})
       }
@@ -614,7 +558,10 @@ export function setPreferredProviderImpl(
   }
   const modelReset = (() => {
     if (provider === 'claude') {
-      const claudeModels = get().harnessResources.claude?.models ?? []
+      const isRemote = !!parseRemoteProjectKey(activeProject)
+      const claudeModels = isRemote
+        ? (getProject(get(), activeProject).claudeModels ?? [])
+        : (get().harnessResources.claude?.models ?? [])
       const defaultModel = resolveDefaultClaudeModel(claudeModels)
       return {
         selectedModel: defaultModel?.id ?? '',
@@ -773,25 +720,30 @@ export function setPreferredProviderImpl(
     })
   }
   if (provider === 'claude') {
-    set((s) => {
-      const claude = s.harnessResources.claude
-      if (!claude) return {}
-      const proj = getProject(s, activeProject)
-      return updateProjectState(s, activeProject, () => ({
-        slashCommands: buildSlashCommands(
-          claude.slashCommands,
-          claude.skills,
-          claude.commands,
-          proj._projectSkills,
-          proj._projectCommands,
-          new Set(s.disabledSkills),
-        ),
-      }))
-    })
-    void get().initializeHarness('claude').then(() => {
+    const isRemote = !!parseRemoteProjectKey(activeProject)
+    if (!isRemote) {
+      set((s) => {
+        const claude = s.harnessResources.claude
+        if (!claude) return {}
+        const proj = getProject(s, activeProject)
+        return updateProjectState(s, activeProject, () => ({
+          slashCommands: buildSlashCommands(
+            claude.slashCommands,
+            claude.skills,
+            claude.commands,
+            proj._projectSkills,
+            proj._projectCommands,
+            new Set(s.disabledSkills),
+          ),
+        }))
+      })
+    }
+    const afterModels = () => {
       const sess = getActivePerSession(get())
       if ((sess.sessionProvider ?? sess.preferredProvider) !== 'claude') return
-      const claudeModels = get().harnessResources.claude?.models ?? []
+      const claudeModels = isRemote
+        ? (getProject(get(), activeProject).claudeModels ?? [])
+        : (get().harnessResources.claude?.models ?? [])
       if (claudeModels.length === 0) return
       const known = claudeModels.some((m) => m.id === sess.selectedModel)
       if (known && sess.selectedModel) return
@@ -803,7 +755,12 @@ export function setPreferredProviderImpl(
         modelUserChosen: false,
         effortUserChosen: false,
       })))
-    })
+    }
+    if (isRemote) {
+      void get().refreshClaudeResources(false).then(afterModels)
+    } else {
+      void get().initializeHarness('claude').then(afterModels)
+    }
   } else {
     void get().initializeHarness(provider)
   }

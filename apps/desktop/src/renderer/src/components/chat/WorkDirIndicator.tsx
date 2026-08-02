@@ -125,22 +125,26 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
       const nonMain = info.entries.filter((e) => !e.isMain)
       const metas: Record<string, WtMeta> = {}
       const remote = currentFolder ? parseRemoteProjectKey(currentFolder) : null
-      await Promise.all(nonMain.map(async (e) => {
-        // Remote: wrap host path so getGitInfo routes to node (project key + wt path).
-        // getRemoteGitInfo resolves project by matching path — worktree path may not
-        // match registered project; use status via worktree remote key only if supported.
-        // Prefer project key for now and skip per-wt dirty when remote (list still works).
-        const gitPath =
-          remote && !parseRemoteProjectKey(e.path)
-            ? `remote:${remote.connectionId}:${e.path}`
-            : e.path
-        const wtInfo = await window.app.getGitInfo(gitPath).catch(() => null)
-        metas[e.path] = {
-          dirty: wtInfo?.dirty,
-          shortHead: e.head ? e.head.slice(0, 7) : '',
-          isDetached: !e.branch,
+      // Remote: do NOT getGitInfo(worktree host path) — that used to openProject each
+      // worktree path and leave ghost rows in project.list / ChatSuggestions.
+      if (remote) {
+        for (const e of nonMain) {
+          metas[e.path] = {
+            dirty: undefined,
+            shortHead: e.head ? e.head.slice(0, 7) : '',
+            isDetached: !e.branch,
+          }
         }
-      }))
+      } else {
+        await Promise.all(nonMain.map(async (e) => {
+          const wtInfo = await window.app.getGitInfo(e.path).catch(() => null)
+          metas[e.path] = {
+            dirty: wtInfo?.dirty,
+            shortHead: e.head ? e.head.slice(0, 7) : '',
+            isDetached: !e.branch,
+          }
+        }))
+      }
       setWtMetas(metas)
     } else {
       setWtMetas({})
@@ -243,7 +247,22 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
     )
   }
 
-  if (!worktreeInfo) return null
+  // Don't hide the chip while worktree RPC is in flight — show Local optimistically.
+  // Remote getWorktreeInfo was blocking the whole status-bar host icon for seconds.
+  if (!worktreeInfo) {
+    return (
+      <div className="flex items-center gap-1 rounded-lg px-2 py-1" title={mainCheckoutLabel}>
+        {compact ? (
+          <MainCheckoutIcon className="size-3" />
+        ) : (
+          <span className="flex max-w-72 items-center gap-0.5 truncate">
+            <MainCheckoutIcon className="inline size-3 align-middle" />
+            <span className="ml-1">{mainCheckoutLabel}</span>
+          </span>
+        )}
+      </div>
+    )
+  }
 
   const isPending = !!wtState?.pendingBaseBranch
   const isActive = !!wtState?.activePath

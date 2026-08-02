@@ -182,12 +182,10 @@ export function ChatStatusBar() {
 
   const refreshGitInfo = useCallback(async () => {
     if (!currentFolder) return
-    const [info, repo] = await Promise.all([
-      window.app.getGitInfo(currentFolder),
-      window.app.getGitIsRepo(currentFolder),
-    ])
+    // One RPC path: getGitInfo implies isRepo; skip separate getGitIsRepo (was 2× remote status).
+    const info = await window.app.getGitInfo(currentFolder)
     if (info) setGitInfo(info)
-    setIsGitRepo(repo)
+    setIsGitRepo(info != null)
   }, [currentFolder])
 
   // Initial read for the project. Everything after this is event-driven — git
@@ -197,14 +195,15 @@ export function ChatStatusBar() {
     if (!currentFolder) { setGitInfo(null); setIsGitRepo(null); return }
 
     let cancelled = false
-    Promise.all([
-      window.app.getGitInfo(currentFolder),
-      window.app.getGitIsRepo(currentFolder),
-    ]).then(([info, repo]) => {
+    // Optimistic: assume git repo until proven otherwise so Local chip paints immediately.
+    setIsGitRepo(true)
+    window.app.getGitInfo(currentFolder).then((info) => {
       if (cancelled) return
       setGitInfo(info)
-      setIsGitRepo(repo)
-    }).catch(() => { /* handlers already fall back to null/false */ })
+      setIsGitRepo(info != null)
+    }).catch(() => {
+      if (!cancelled) setIsGitRepo(false)
+    })
     return () => { cancelled = true }
   }, [currentFolder])
 

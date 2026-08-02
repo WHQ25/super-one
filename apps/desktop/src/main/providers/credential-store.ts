@@ -57,6 +57,8 @@ function maskCredential(cred: Credential): Credential {
 }
 
 export interface CreateCredentialInput {
+  /** Optional stable id (e.g. when importing from a remote node). */
+  id?: string
   platformId: string
   planId: string
   name: string
@@ -104,7 +106,7 @@ function serializeEndpoints(endpoints: ServiceEndpoint[] | null | undefined): st
 
 export function createCredential(input: CreateCredentialInput): Credential {
   const now = new Date().toISOString()
-  const id = randomUUID()
+  const id = input.id?.trim() || randomUUID()
   const maxOrder =
     (getDb().prepare('SELECT MAX(sort_order) as m FROM credentials').get() as { m: number | null })?.m ?? -1
   getDb()

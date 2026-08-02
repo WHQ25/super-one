@@ -268,9 +268,23 @@ function ActiveProviderHint() {
   const platforms = useSettingsStore((s) => s.platforms)
   const credentials = useSettingsStore((s) => s.credentials)
   const bindings = useSettingsStore((s) => s.bindings)
+  const providerScope = useSettingsStore((s) => s.providerScope)
   const fetchProviderData = useSettingsStore((s) => s.fetchProviderData)
+  const selectedHostConnectionId = useAppStore((s) => s.selectedHostConnectionId)
 
-  useEffect(() => { fetchProviderData() }, [fetchProviderData])
+  useEffect(() => {
+    const next =
+      selectedHostConnectionId && selectedHostConnectionId !== 'local'
+        ? selectedHostConnectionId
+        : 'local'
+    if (next !== providerScope) {
+      useSettingsStore.getState().setProviderScope(next)
+    }
+  }, [selectedHostConnectionId, providerScope])
+
+  useEffect(() => {
+    void fetchProviderData()
+  }, [fetchProviderData, providerScope])
 
   if (preferredProvider === 'acp' || preferredProvider === 'opencode') return null
 

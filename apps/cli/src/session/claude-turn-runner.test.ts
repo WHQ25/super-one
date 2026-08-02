@@ -247,18 +247,24 @@ describe('createNodeClaudeTurnRunner', () => {
     rmSync(dir, { recursive: true, force: true })
   })
 
-  it('prefers SUPERONE_CLAUDE_BINARY when it points at a real file', () => {
+  it('prefers Agent SDK bundle over SUPERONE_CLAUDE_BINARY when both exist', () => {
     const prev = process.env.SUPERONE_CLAUDE_BINARY
     const dir = mkdtempSync(join(tmpdir(), 'cbr-claude4-'))
     const bin = join(dir, 'claude')
     writeFileSync(bin, 'x')
     chmodSync(bin, 0o755)
     process.env.SUPERONE_CLAUDE_BINARY = bin
-    expect(resolveClaudeBinaryPath({})).toBe(bin)
-    // Invalid override falls through to Agent SDK package (still runnable).
+    const resolved = resolveClaudeBinaryPath({})
+    // SDK package wins when installed; env is last-resort only.
+    if (resolved && resolved.includes('claude-agent-sdk')) {
+      expect(resolved).not.toBe(bin)
+    } else {
+      // No optional SDK package in this environment — env pin is used.
+      expect(resolved).toBe(bin)
+    }
     process.env.SUPERONE_CLAUDE_BINARY = '/nope'
-    const fallback = resolveClaudeBinaryPath({})
-    expect(fallback === null || fallback.includes('claude-agent-sdk')).toBe(true)
+    const fallback = resolveClaudeBinaryPath({ skipSdkBinary: true })
+    expect(fallback).toBeNull()
     if (prev === undefined) delete process.env.SUPERONE_CLAUDE_BINARY
     else process.env.SUPERONE_CLAUDE_BINARY = prev
     rmSync(dir, { recursive: true, force: true })

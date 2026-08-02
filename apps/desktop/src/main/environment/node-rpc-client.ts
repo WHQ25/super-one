@@ -24,20 +24,32 @@ type Pending = {
 }
 
 const RPC_TIMEOUT_MS = 15_000
-/** Long-running git / large file RPCs (worktree, clone, handoff, bulk fs). */
+/** Read-only git that still shells out on the node (status/branches/diff). */
+const GIT_READ_RPC_TIMEOUT_MS = 30_000
+/** Long-running mutating git / large file RPCs (worktree, clone, handoff, bulk fs). */
 const LONG_RPC_TIMEOUT_MS = 300_000
 const HANDSHAKE_TIMEOUT_MS = 10_000
 /** One reconnect+resend after transport loss within a single rpc() call. */
 const TRANSPORT_RETRY_ATTEMPTS = 2
 
 function rpcTimeoutMs(method: string): number {
+  // Only truly long mutators get 5 minutes — status/branches must not sit on 300s.
   if (
-    method.startsWith('git.') ||
+    method === 'git.clone' ||
+    method === 'git.worktreeActivate' ||
+    method === 'git.worktreeAssignBranch' ||
+    method === 'git.worktreeHandoff' ||
+    method === 'git.switchBranch' ||
+    method === 'git.createBranch' ||
+    method === 'session.fork' ||
     method === 'project.clone' ||
     method === 'workspace.writeFile' ||
     method === 'workspace.readFile'
   ) {
     return LONG_RPC_TIMEOUT_MS
+  }
+  if (method.startsWith('git.')) {
+    return GIT_READ_RPC_TIMEOUT_MS
   }
   return RPC_TIMEOUT_MS
 }
@@ -482,8 +494,13 @@ function isMutatingMethod(method: string): boolean {
     method === 'git.worktreeActivate' ||
     method === 'git.worktreeAssignBranch' ||
     method === 'git.worktreeHandoff' ||
+    method === 'session.fork' ||
     method.includes('setCwd') ||
-    method.includes('session.set')
+    method.includes('session.set') ||
+    // Provider store mutations on the node (not list/export reads)
+    (method.startsWith('provider.') &&
+      !method.includes('list') &&
+      !method.includes('export'))
   )
 }
 

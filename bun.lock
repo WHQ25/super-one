@@ -60,6 +60,8 @@
         "@opencode-ai/models": "^0.0.2",
         "@opencode-ai/sdk": "^1.18.4",
         "@streamdown/math": "^1.0.2",
+        "@superone/claude": "workspace:*",
+        "@superone/codex": "workspace:*",
         "@superone/runtime": "workspace:*",
         "@superone/shared": "workspace:*",
         "@superone/ui": "workspace:*",
@@ -318,6 +320,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@superone/shared": "workspace:*",
+        "fzf": "^0.5.2",
       },
       "devDependencies": {
         "typescript": "^5.8.3",

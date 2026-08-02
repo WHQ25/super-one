@@ -4,6 +4,7 @@ import {
   SESSION_DURABLE_EVENT,
   type SessionRef,
 } from '@superone/shared/environment'
+import { stripMiniAppMarkup } from '@superone/shared/miniapp-prompt-tags'
 import type { LeaseGuard, SessionEventLog, SessionStore } from './ports'
 import {
   DEFAULT_PERMISSION_TIMEOUT_MS,
@@ -15,6 +16,19 @@ import {
   type TranscriptBlock,
   type TurnRunner,
 } from './types'
+
+/** Match desktop extractClaudeTitle: first user text, stripped, max 100 chars. */
+export function deriveSessionTitleFromUserText(text: string): string | null {
+  const cleaned = stripMiniAppMarkup(text).trim().replace(/\s+/g, ' ')
+  if (!cleaned) return null
+  return cleaned.length > 100 ? `${cleaned.slice(0, 100)}…` : cleaned
+}
+
+/** Match desktop session-fork title: append " (fork)" once. */
+export function forkSessionTitle(title: string | null): string {
+  const base = title?.trim() || 'Session'
+  return base.endsWith('(fork)') ? base : `${base} (fork)`
+}
 
 export type {
   NodeSessionRecord,
@@ -132,8 +146,8 @@ export class SessionRuntime {
     const session: NodeSessionRecord = {
       sessionId: randomUUID(),
       projectId: input.projectId,
-      harnessId: input.harnessId ?? 'codex',
-      providerId: input.providerId ?? 'codex',
+      harnessId: input.harnessId ?? 'claude',
+      providerId: input.providerId ?? input.harnessId ?? 'claude',
       title: input.title ?? null,
       status: 'idle',
       transcript: [],
@@ -169,6 +183,93 @@ export class SessionRuntime {
     return this.clone(session)
   }
 
+  /**
+   * Fork a session into a new independent session on this node.
+   *
+   * Clones the durable transcript (optionally truncated at `forkFromMessageId`)
+   * and title; source is left untouched. `cwd` is set on the fork (worktree path
+   * or same-dir local).
+   *
+   * `providerResume` must be a **new** harness session/thread id from
+   * `forkClaudeTranscript` / `forkCodexThread` — never the source id (that would
+   * share live state). Omit / null when no SDK fork was performed (UI-only).
+   */
+  fork(input: {
+    sourceSessionId: string
+    /** Absolute host cwd for the forked session (worktree or shared local). */
+    cwd?: string | null
+    forkFromMessageId?: string
+    /**
+     * New provider resume token for the forked session
+     * (e.g. `claude-session:<id>` / `thread:<id>`). Defaults to null.
+     */
+    providerResume?: string | null
+  }): NodeSessionRecord {
+    if (this.disposing) {
+      throw Object.assign(new Error('runtime is shutting down'), { code: 'failed_precondition' })
+    }
+    const source = this.live.get(input.sourceSessionId)
+    if (!source) throw Object.assign(new Error('session not found'), { code: 'not_found' })
+    if (source.closed || source.status === 'ended') {
+      throw Object.assign(new Error('session is closed'), { code: 'failed_precondition' })
+    }
+    if (source.transcript.length === 0 && !source.providerResume) {
+      throw Object.assign(new Error('This session has no conversation to fork yet'), {
+        code: 'failed_precondition',
+      })
+    }
+
+    let transcript = source.transcript.map((t) => ({ ...t }))
+    if (input.forkFromMessageId) {
+      const idx = transcript.findIndex((b) => b.id === input.forkFromMessageId)
+      if (idx >= 0) transcript = transcript.slice(0, idx + 1)
+    }
+
+    const now = Date.now()
+    const cwd =
+      input.cwd !== undefined
+        ? input.cwd && input.cwd.trim()
+          ? input.cwd.trim()
+          : null
+        : source.cwd
+    const providerResume =
+      input.providerResume !== undefined
+        ? input.providerResume && input.providerResume.trim()
+          ? input.providerResume.trim()
+          : null
+        : null
+    const session: NodeSessionRecord = {
+      sessionId: randomUUID(),
+      projectId: source.projectId,
+      harnessId: source.harnessId,
+      providerId: source.providerId,
+      title: forkSessionTitle(source.title),
+      status: 'idle',
+      transcript,
+      pendingInteraction: null,
+      providerResume,
+      cwd,
+      createdAt: now,
+      updatedAt: now,
+      isPinned: false,
+      isHidden: false,
+    }
+    this.live.set(session.sessionId, session)
+    this.persist(session)
+    this.events.appendSession({
+      sessionId: session.sessionId,
+      eventType: SESSION_DURABLE_EVENT.created,
+      payload: {
+        projectId: session.projectId,
+        harnessId: session.harnessId,
+        providerId: session.providerId,
+        forkedFromSessionId: source.sessionId,
+        cwd: session.cwd,
+      },
+    })
+    return this.clone(session)
+  }
+
   get(sessionId: string): NodeSessionRecord | null {
     const s = this.live.get(sessionId)
     return s ? this.clone(s) : null
@@ -197,6 +298,8 @@ export class SessionRuntime {
     requestId?: string
     /** UI-selected model for this turn (optional). */
     model?: string | null
+    /** Node provider credential id for API keys this turn. */
+    apiProviderId?: string | null
   }): Promise<NodeSessionRecord> {
     if (this.disposing) {
       throw Object.assign(new Error('runtime is shutting down'), { code: 'failed_precondition' })
@@ -228,6 +331,15 @@ export class SessionRuntime {
     session.transcript.push(userBlock)
     session.status = 'streaming'
     session.updatedAt = Date.now()
+
+    // Desktop parity: empty titles become a slice of the first user message until
+    // the agent renames via session_rename / session.rename.
+    let autoTitle: string | null = null
+    if (!session.title || !session.title.trim()) {
+      autoTitle = deriveSessionTitleFromUserText(input.text)
+      if (autoTitle) session.title = autoTitle
+    }
+
     this.persist(session)
     this.events.appendSession({
       sessionId: session.sessionId,
@@ -235,6 +347,14 @@ export class SessionRuntime {
       payload: { blockId: userBlock.id, text: input.text },
       causationRequestId: input.requestId,
     })
+    if (autoTitle) {
+      this.events.appendSession({
+        sessionId: session.sessionId,
+        eventType: SESSION_DURABLE_EVENT.renamed,
+        payload: { title: autoTitle, source: 'agent' },
+        causationRequestId: input.requestId,
+      })
+    }
     this.events.appendSession({
       sessionId: session.sessionId,
       eventType: SESSION_DURABLE_EVENT.turnStarted,
@@ -247,7 +367,14 @@ export class SessionRuntime {
 
     // Fire-and-forget for the RPC path, but track the promise so dispose/stop
     // can await runner cleanup (e.g. Codex SIGTERM → SIGKILL window).
-    const turnPromise = this.runTurn(session, input.text, abort, input.requestId, input.model)
+    const turnPromise = this.runTurn(
+      session,
+      input.text,
+      abort,
+      input.requestId,
+      input.model,
+      input.apiProviderId,
+    )
     this.inFlightTurns.add(turnPromise)
     void turnPromise.finally(() => {
       this.inFlightTurns.delete(turnPromise)
@@ -263,6 +390,7 @@ export class SessionRuntime {
     abort: AbortController,
     requestId?: string,
     model?: string | null,
+    apiProviderId?: string | null,
   ): Promise<void> {
     const assistantId = randomUUID()
     let assistantText = ''
@@ -271,6 +399,7 @@ export class SessionRuntime {
         session: this.clone(session),
         text,
         model: model && model.trim() ? model.trim() : undefined,
+        apiProviderId: apiProviderId && apiProviderId.trim() ? apiProviderId.trim() : undefined,
         signal: abort.signal,
         onDelta: (delta) => {
           if (abort.signal.aborted) return

@@ -68,8 +68,8 @@ describe('resolveNodeSessionId', () => {
     expect(result).toEqual({ sessionId: 'sid-new', created: true })
     expect(createSession).toHaveBeenCalledWith('env-1', {
       projectId: 'proj-1',
-      harnessId: 'codex',
-      providerId: 'codex',
+      harnessId: 'claude',
+      providerId: 'claude',
     })
   })
 

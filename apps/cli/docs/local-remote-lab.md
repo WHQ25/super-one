@@ -110,63 +110,54 @@ Underlying helper: [`scripts/remote-cli-local.sh`](../../../scripts/remote-cli-l
 
 ## Credentials / harnesses
 
-- Process runs as **your** user with **host** `$HOME`, so existing Claude Code /
-  Codex / Grok installs and logins are visible without re-login.
-- Managed harness install still uses the lab node home under
-  `SUPERONE_NODE_HOME` for SuperOne’s own artifact/catalog state.
-- Optional lab binary overrides (skip managed catalog ready-state):
+**Model turns do not use the host’s global `claude` / interactive CLI binary.**
+
+| Harness | Binary source | Auth reused from host |
+|---------|---------------|------------------------|
+| **Claude** | `@superone/claude` → Agent SDK optional platform package (`claude-agent-sdk-*-*`), or SuperOne `harness enable claude` managed package | `$HOME` login (e.g. `~/.claude`) + optional node ProviderStore API keys |
+| **Codex** | SuperOne `harness enable codex` managed package `command`, or optional `SUPERONE_CODEX_BINARY` pin | host Codex login / node ProviderStore |
+
+- Lab process runs as **your** user with **host** `$HOME` so existing logins apply.
+- Managed harness install state lives under `SUPERONE_NODE_HOME` (lab:
+  `~/.superone/node-dev-lab`).
+- `dev:cli:lab` does **not** auto-set `SUPERONE_CLAUDE_BINARY` from `which claude`.
 
 | Env | Purpose |
 |-----|---------|
-| `SUPERONE_CODEX_BINARY` | Host `codex` for Stage 4 App Server turns (auto if `codex` on PATH) |
-| `SUPERONE_CLAUDE_BINARY` | **Optional** override of the Agent SDK bundled `claude` binary |
-
-**Claude turns (Stage 5-E):** use `@anthropic-ai/claude-agent-sdk`, which ships a
-platform binary via optionalDependencies (`@anthropic-ai/claude-agent-sdk-darwin-arm64`,
-…). You do **not** need a global `claude` or `SUPERONE_CLAUDE_BINARY` for the lab.
-`SUPERONE_CLAUDE_BINARY` is only an escape hatch (pin managed install / host CLI).
-
-`dev:cli:lab` still auto-exports host `claude`/`codex` when on `PATH` as an
-override; for Claude that is optional.
+| `SUPERONE_CODEX_BINARY` | Optional pin for Codex App Server binary (lab may auto-pick host `codex` if unset) |
+| `SUPERONE_CLAUDE_BINARY` | **Escape hatch only** — last resort after SDK package; do not use for normal lab |
 
 ### Claude turns (Stage 5-E Agent SDK + permissions)
 
-When `SUPERONE_CLAUDE_BINARY` points at a real executable (or harness `claude`
-is catalog-ready), production multi-dispatch runs Claude via
-**`@superone/claude`** (official Claude Agent SDK `query()`, same family as
-desktop — not print-mode):
+Production multi-dispatch runs Claude via **`@superone/claude`** (official Claude
+Agent SDK `query()`, same family as desktop — not print-mode):
 
 ```text
 SDK query({ prompt, options: { pathToClaudeCodeExecutable, resume, canUseTool, … } })
   → SessionTurnEvent (onEvent) + providerResume claude-session:<id>
 ```
 
-- Host `$HOME` credentials (Claude Code OAuth under `~/.claude`) are inherited —
-  SuperOne does **not** sync desktop AI provider config into the node.
-- `providerResume` is stored as `claude-session:<id>` for multi-turn SDK `resume`.
-- Structured text/tool/status go through Stage 5-A **`onEvent`**.
-- Tool permissions: SDK **`canUseTool`** → TurnRunner **`onPermission`** →
-  durable `session.permission_requested` → desktop `session.respondPermission`
-  (Stage 5-D waiter). Prefer **`onPermission`** only (do not also emit
-  `onEvent({ kind: 'permission' })` for the same `interactionId`).
+Binary resolution: managed enable package → **SDK platform binary** → env pin.
 
-Example lab start (Claude Code already installed; host login applies):
+- Host `$HOME` credentials (Claude Code OAuth under `~/.claude`) are inherited —
+  SuperOne does **not** require the remote/host `claude` CLI binary.
+- Node ProviderStore holds API keys when you configure Providers under the lab host.
+- `providerResume` is stored as `claude-session:<id>` for multi-turn SDK `resume`.
+- Tool permissions: SDK **`canUseTool`** → TurnRunner **`onPermission`** →
+  durable `session.permission_requested` → desktop `session.respondPermission`.
 
 ```bash
-export SUPERONE_CLAUDE_BINARY="$(which claude)"
-# optional, same pattern for Codex:
-# export SUPERONE_CODEX_BINARY="$(which codex)"
+# Normal lab — SDK package + host login, no claude binary override
 bun run dev:cli:lab:restart
 ```
 
-After export, restart so the node picks up the env. `session.create` with
-harness `claude` is accepted when the path exists, even if the harness catalog
-is still `needs_auth` / not managed-installed. Clients with the control lease
+`session.create` with harness `claude` succeeds when the Agent SDK platform
+package is installed (monorepo `bun install` / node_modules optional deps) or
+when managed enable left a catalog `command`. Clients with the control lease
 call `session.respondPermission`; unauthorized clients stay fail-closed.
 
-If models/send fail with an empty catalog or “binary not available”, check that
-`SUPERONE_CLAUDE_BINARY` is set **before** lab start/restart and that `claude`
-is executable.
+If send fails with “binary not available”, reinstall optional deps for
+`@anthropic-ai/claude-agent-sdk` (do not omit optional packages), then restart lab.
 
 
 ## After CLI code changes

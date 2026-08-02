@@ -29,6 +29,9 @@ import type { EventLog } from '../session/event-log'
 import type { CollaborationMailbox } from '../session/collaboration'
 import type { WorkspaceWatchService } from '../workspace/watch-service'
 import type { IdempotencyService } from '../auth/idempotency'
+import type { ProviderStore } from '../provider/provider-store'
+import { listHarnessModels } from '../provider/resolve-service'
+import type { ConsumerBinding, ConsumerId, Platform } from '@superone/shared/platform-registry'
 
 export interface RpcContext {
   client: AuthenticatedClient
@@ -44,6 +47,7 @@ export interface RpcContext {
   events: EventLog
   collaboration: CollaborationMailbox
   idempotency: IdempotencyService
+  providers: ProviderStore
   startedAt: number
   simulatedHarness?: boolean
   requestId?: string
@@ -106,6 +110,7 @@ const MUTATING_METHODS = new Set([
   'git.worktreeHandoff',
   'session.create',
   'session.setCwd',
+  'session.fork',
   'session.send',
   'session.interrupt',
   'session.respondPermission',
@@ -120,6 +125,14 @@ const MUTATING_METHODS = new Set([
   'terminal.renewControl',
   'terminal.releaseControl',
   'collaboration.send',
+  'provider.createCredential',
+  'provider.updateCredential',
+  'provider.deleteCredential',
+  'provider.setBinding',
+  'provider.clearBinding',
+  'provider.upsertCustomPlatform',
+  'provider.deleteCustomPlatform',
+  'provider.importBundle',
 ])
 
 export async function dispatchRpc(method: string, payload: unknown, ctx: RpcContext): Promise<RpcResult> {
@@ -295,6 +308,8 @@ async function dispatchRpcInner(method: string, payload: unknown, ctx: RpcContex
       return handleSessionCreate(payload, ctx)
     case 'session.setCwd':
       return handleSessionSetCwd(payload, ctx)
+    case 'session.fork':
+      return handleSessionFork(payload, ctx)
     case 'session.get':
       return handleSessionGet(payload, ctx)
     case 'session.list':
@@ -333,8 +348,181 @@ async function dispatchRpcInner(method: string, payload: unknown, ctx: RpcContex
       return handleCollaborationSend(payload, ctx)
     case 'collaboration.list':
       return handleCollaborationList(payload, ctx)
+    case 'provider.listCredentials':
+      return handleProviderListCredentials(ctx)
+    case 'provider.getCredentialDecrypted':
+      return handleProviderGetCredentialDecrypted(payload, ctx)
+    case 'provider.createCredential':
+      return handleProviderCreateCredential(payload, ctx)
+    case 'provider.updateCredential':
+      return handleProviderUpdateCredential(payload, ctx)
+    case 'provider.deleteCredential':
+      return handleProviderDeleteCredential(payload, ctx)
+    case 'provider.listBindings':
+      return handleProviderListBindings(ctx)
+    case 'provider.setBinding':
+      return handleProviderSetBinding(payload, ctx)
+    case 'provider.clearBinding':
+      return handleProviderClearBinding(payload, ctx)
+    case 'provider.listCustomPlatforms':
+      return handleProviderListCustomPlatforms(ctx)
+    case 'provider.upsertCustomPlatform':
+      return handleProviderUpsertCustomPlatform(payload, ctx)
+    case 'provider.deleteCustomPlatform':
+      return handleProviderDeleteCustomPlatform(payload, ctx)
+    case 'provider.exportBundle':
+      return handleProviderExportBundle(ctx)
+    case 'provider.importBundle':
+      return handleProviderImportBundle(payload, ctx)
+    case 'provider.listModels':
+      return handleProviderListModels(payload, ctx)
     default:
       return { error: { code: 'not_found', message: `unknown method: ${method}` } }
+  }
+}
+
+function handleProviderListCredentials(ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.readEnvironment)
+  if (denied) return denied
+  return { result: ctx.providers.listCredentials() }
+}
+
+function handleProviderGetCredentialDecrypted(payload: unknown, ctx: RpcContext): RpcResult {
+  // Secrets leave the node only for authenticated admin (desktop model list / turn env).
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.adminNode)
+  if (denied) return denied
+  const p = asRecord(payload)
+  const cred = ctx.providers.getCredentialDecrypted(String(p.id ?? ''))
+  if (!cred) return { error: { code: 'not_found', message: 'credential not found' } }
+  return { result: cred }
+}
+
+function handleProviderCreateCredential(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.adminNode)
+  if (denied) return denied
+  const p = asRecord(payload)
+  try {
+    return {
+      result: ctx.providers.createCredential({
+        id: typeof p.id === 'string' ? p.id : undefined,
+        platformId: String(p.platformId ?? ''),
+        planId: String(p.planId ?? ''),
+        name: String(p.name ?? ''),
+        secret: typeof p.secret === 'string' ? p.secret : undefined,
+        secretEnv: typeof p.secretEnv === 'string' ? p.secretEnv : undefined,
+        overrides: p.overrides && typeof p.overrides === 'object' ? (p.overrides as never) : undefined,
+        endpoints: Array.isArray(p.endpoints) ? (p.endpoints as never) : undefined,
+        notes: typeof p.notes === 'string' ? p.notes : undefined,
+      }),
+    }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+function handleProviderUpdateCredential(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.adminNode)
+  if (denied) return denied
+  const p = asRecord(payload)
+  const id = String(p.id ?? '')
+  const updated = ctx.providers.updateCredential(id, {
+    name: typeof p.name === 'string' ? p.name : undefined,
+    secret: typeof p.secret === 'string' ? p.secret : undefined,
+    secretEnv: typeof p.secretEnv === 'string' ? p.secretEnv : undefined,
+    overrides: p.overrides && typeof p.overrides === 'object' ? (p.overrides as never) : undefined,
+    endpoints: p.endpoints === null ? null : Array.isArray(p.endpoints) ? (p.endpoints as never) : undefined,
+    notes: typeof p.notes === 'string' ? p.notes : undefined,
+    sortOrder: typeof p.sortOrder === 'number' ? p.sortOrder : undefined,
+  })
+  if (!updated) return { error: { code: 'not_found', message: 'credential not found' } }
+  return { result: updated }
+}
+
+function handleProviderDeleteCredential(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.adminNode)
+  if (denied) return denied
+  const p = asRecord(payload)
+  const ok = ctx.providers.deleteCredential(String(p.id ?? ''))
+  if (!ok) return { error: { code: 'not_found', message: 'credential not found' } }
+  return { result: { ok: true } }
+}
+
+function handleProviderListBindings(ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.readEnvironment)
+  if (denied) return denied
+  return { result: ctx.providers.listBindings() }
+}
+
+function handleProviderSetBinding(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.adminNode)
+  if (denied) return denied
+  const p = asRecord(payload)
+  const binding = p as unknown as ConsumerBinding
+  if (!binding.consumer || !binding.credentialId) {
+    return { error: { code: 'invalid_argument', message: 'consumer and credentialId required' } }
+  }
+  ctx.providers.setBinding(binding)
+  return { result: { ok: true } }
+}
+
+function handleProviderClearBinding(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.adminNode)
+  if (denied) return denied
+  const p = asRecord(payload)
+  ctx.providers.clearBinding(String(p.consumer ?? '') as ConsumerId)
+  return { result: { ok: true } }
+}
+
+function handleProviderListCustomPlatforms(ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.readEnvironment)
+  if (denied) return denied
+  return { result: ctx.providers.listCustomPlatforms() }
+}
+
+function handleProviderUpsertCustomPlatform(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.adminNode)
+  if (denied) return denied
+  const def = asRecord(payload) as unknown as Platform
+  if (!def?.id) return { error: { code: 'invalid_argument', message: 'platform id required' } }
+  return { result: ctx.providers.upsertCustomPlatform(def) }
+}
+
+function handleProviderDeleteCustomPlatform(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.adminNode)
+  if (denied) return denied
+  const p = asRecord(payload)
+  const ok = ctx.providers.deleteCustomPlatform(String(p.id ?? ''))
+  if (!ok) return { error: { code: 'not_found', message: 'custom platform not found' } }
+  return { result: { ok: true } }
+}
+
+function handleProviderExportBundle(ctx: RpcContext): RpcResult {
+  // Secrets leave the node only for authenticated admin (desktop pull).
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.adminNode)
+  if (denied) return denied
+  return { result: ctx.providers.exportBundle() }
+}
+
+function handleProviderListModels(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.readEnvironment)
+  if (denied) return denied
+  const p = asRecord(payload)
+  const harness = String(p.harness ?? p.harnessId ?? 'claude')
+  const apiProviderId =
+    typeof p.apiProviderId === 'string' && p.apiProviderId.trim() ? p.apiProviderId.trim() : null
+  return { result: listHarnessModels(ctx.providers, harness, apiProviderId) }
+}
+
+function handleProviderImportBundle(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.adminNode)
+  if (denied) return denied
+  const p = asRecord(payload)
+  const bundle = p.bundle && typeof p.bundle === 'object' ? (p.bundle as never) : (p as never)
+  const replaceAll = p.replaceAll === true
+  try {
+    return { result: ctx.providers.importBundle(bundle, { replaceAll }) }
+  } catch (err) {
+    return mapThrown(err)
   }
 }
 
@@ -1149,6 +1337,116 @@ function handleSessionSetCwd(payload: unknown, ctx: RpcContext): RpcResult {
 }
 
 /**
+ * Fork a session on this node: clone transcript into a new session, optionally
+ * on a freshly activated detached worktree (mode=worktree) or same cwd (local),
+ * plus harness SDK/thread fork when providerResume is present.
+ */
+async function handleSessionFork(payload: unknown, ctx: RpcContext): Promise<RpcResult> {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateSession)
+  if (denied) return denied
+  const p = asRecord(payload)
+  const sessionId = String(p.sessionId ?? '').trim()
+  if (!sessionId) {
+    return { error: { code: 'invalid_argument', message: 'sessionId required' } }
+  }
+  const mode = p.mode === 'local' ? 'local' : 'worktree'
+  const forkFromMessageId =
+    typeof p.forkFromMessageId === 'string' && p.forkFromMessageId.trim()
+      ? p.forkFromMessageId.trim()
+      : undefined
+
+  const source = ctx.sessions.get(sessionId)
+  if (!source) {
+    return { error: { code: 'not_found', message: 'Source session not found' } }
+  }
+
+  const projectRoot = ctx.projects.get(source.projectId)?.path ?? null
+  let worktreePath: string | undefined
+  let targetCwd: string | null = source.cwd
+
+  try {
+    if (mode === 'worktree') {
+      // writeWorkspace for git worktree create
+      const writeDenied = requireScopes(ctx.client, OPERATION_SCOPES.writeWorkspace)
+      if (writeDenied) return writeDenied
+      const wt = ctx.workspaceGit.activateWorktree(source.projectId, {
+        baseBranch: 'HEAD',
+        mode: 'detach',
+        carryLocalChanges: true,
+      })
+      worktreePath = wt.path
+      targetCwd = wt.path
+    }
+
+    const effectiveCwd =
+      (targetCwd && targetCwd.trim()) ||
+      projectRoot ||
+      process.env.SUPERONE_DEFAULT_CWD ||
+      process.cwd()
+
+    const { forkNodeHarnessResume } = await import('../session/harness-fork')
+    let providerResume: string | null = null
+    try {
+      providerResume = await forkNodeHarnessResume(
+        source,
+        effectiveCwd,
+        {
+          resolveProjectPath: (projectId) => ctx.projects.get(projectId)?.path ?? null,
+          harnesses: ctx.harnesses,
+          providers: ctx.providers,
+        },
+        forkFromMessageId,
+      )
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      if (worktreePath) {
+        try {
+          ctx.workspaceGit.removeWorktree(source.projectId, worktreePath)
+        } catch {
+          /* best-effort */
+        }
+      }
+      return {
+        result: {
+          ok: false as const,
+          error: `Fork transcript failed: ${message}`,
+        },
+      }
+    }
+
+    const forked = ctx.sessions.fork({
+      sourceSessionId: sessionId,
+      cwd: targetCwd,
+      forkFromMessageId,
+      providerResume,
+    })
+    return {
+      result: {
+        ok: true as const,
+        sessionId: forked.sessionId,
+        worktreePath,
+        session: forked,
+      },
+    }
+  } catch (err) {
+    if (worktreePath) {
+      try {
+        ctx.workspaceGit.removeWorktree(source.projectId, worktreePath)
+      } catch {
+        /* best-effort cleanup */
+      }
+    }
+    // Map known failed_precondition messages to ok:false for desktop toast parity
+    const message = err instanceof Error ? err.message : String(err)
+    const code = (err as { code?: string })?.code
+    if (code === 'failed_precondition' || code === 'not_found') {
+      return { result: { ok: false as const, error: message } }
+    }
+    return mapThrown(err)
+  }
+}
+
+/**
  * Clone a remote repository onto this host and register it as a project, so
  * the desktop add-project dialog gets back a ready-to-open ProjectSnapshot.
  */
@@ -1172,7 +1470,7 @@ function handleSessionCreate(payload: unknown, ctx: RpcContext): RpcResult {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateSession)
   if (denied) return denied
   const p = asRecord(payload)
-  const rawHarnessId = typeof p.harnessId === 'string' ? p.harnessId : 'codex'
+  const rawHarnessId = typeof p.harnessId === 'string' ? p.harnessId : 'claude'
   // Stage 1 wire contract: normalize catalog id acp-grok → session wire acp
   // before persistence so the turn runner never sees an unknown harness id.
   const harnessId = normalizeSessionHarnessId(rawHarnessId)
@@ -1398,6 +1696,12 @@ async function handleSessionSend(payload: unknown, ctx: RpcContext): Promise<Rpc
       typeof options.model === 'string' && options.model.trim() ? options.model.trim() : null
     const modelTopLevel =
       typeof p.model === 'string' && p.model.trim() ? p.model.trim() : null
+    const apiProviderId =
+      typeof options.apiProviderId === 'string' && options.apiProviderId.trim()
+        ? options.apiProviderId.trim()
+        : typeof p.apiProviderId === 'string' && p.apiProviderId.trim()
+          ? p.apiProviderId.trim()
+          : null
     const result = await ctx.sessions.send({
       sessionId: String(p.sessionId ?? ''),
       text: String(p.text ?? ''),
@@ -1406,6 +1710,7 @@ async function handleSessionSend(payload: unknown, ctx: RpcContext): Promise<Rpc
       generation: String(p.generation ?? ''),
       requestId: typeof p.requestId === 'string' ? p.requestId : undefined,
       model: modelFromOptions ?? modelTopLevel,
+      apiProviderId,
     })
     return { result }
   } catch (err) {

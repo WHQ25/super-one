@@ -50,18 +50,32 @@ function collectCandidateClaudeNames(params: RequestPermissionRequest): string[]
 
 export type AcpPreapproveReason = 'builtin' | 'preapproved'
 
+function collectToolInput(params: RequestPermissionRequest): Record<string, unknown> {
+  const rawInput = params.toolCall.rawInput
+  if (!rawInput || typeof rawInput !== 'object' || Array.isArray(rawInput)) return {}
+  const r = rawInput as Record<string, unknown>
+  // Grok use_tool envelope nests args under tool_input
+  const nested = r.tool_input
+  if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
+    return nested as Record<string, unknown>
+  }
+  return r
+}
+
 /**
  * Whether SuperOne should auto-allow this ACP permission request without UI.
  * Only host built-ins and user-preapproved mini-app tools — never third-party MCP.
+ * miniapp_call preapproval is args-aware (appId + tool from tool_input).
  */
 export function shouldAutoAllowAcpPermission(
   params: RequestPermissionRequest,
 ): { allow: true; reason: AcpPreapproveReason; toolName: string } | { allow: false } {
+  const input = collectToolInput(params)
   for (const name of collectCandidateClaudeNames(params)) {
     if (isBuiltInSuperoneTool(name)) {
       return { allow: true, reason: 'builtin', toolName: name }
     }
-    if (isToolPreapproved(name)) {
+    if (isToolPreapproved(name, input)) {
       return { allow: true, reason: 'preapproved', toolName: name }
     }
   }

@@ -4,6 +4,7 @@ import { Kbd } from '@superone/ui/components/ui/kbd'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@superone/ui/components/ui/tooltip'
 import { useChatStore, useActiveSession, selectClaudeModels, selectClaudeAccount } from '@/stores/chat'
 import { useMiniAppStore } from '@/stores/miniapp'
+import { resolveMiniAppToolIdentity } from '@/lib/miniapp-tool-identity'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
 import { Circle, CheckCircle2, ChevronDown, ChevronUp, ShieldAlert, AlertTriangle } from 'lucide-react'
 import { ToolIcon } from './ToolIcon'
@@ -151,22 +152,24 @@ export function PermissionPrompt() {
   const [formValues, setFormValues] = useState<Record<string, unknown>>({})
 
   const apps = useMiniAppStore((s) => s.apps)
+  const pendingInput = pendingPermission?.input
   const miniAppInfo: MiniAppToolInfo | null = useMemo(() => {
     if (!toolName) return null
     const mcpInfo = parseMcpToolName(toolName)
     if (!mcpInfo) return null
-    const inner = mcpInfo.mcpToolName.match(/^(.+?)__(.+)$/)
-    if (!inner) return null
-    const [, slug, mcpToolNamePart] = inner
-    const app = apps.find((a) => (a.manifest.toolSlug ?? a.id) === slug)
-    if (!app) return null
-    const toolDef = app.manifest.tools?.find((t) => t.name === mcpToolNamePart)
+    const params = (pendingInput && typeof pendingInput === 'object' && !Array.isArray(pendingInput))
+      ? pendingInput as Record<string, unknown>
+      : {}
+    const resolved = resolveMiniAppToolIdentity(mcpInfo.mcpToolName, params, apps)
+    if (!resolved) return null
+    const app = apps.find((a) => a.id === resolved.appId)
+    if (!app && resolved.legacy) return null
     return {
-      appId: app.id,
-      appName: app.manifest.name,
-      toolText: toolDef?.displayName ?? mcpToolNamePart.replace(/_/g, ' '),
+      appId: resolved.appId,
+      appName: app?.manifest.name ?? resolved.app.manifest.name,
+      toolText: resolved.toolDef?.displayName ?? resolved.toolName.replace(/_/g, ' '),
     }
-  }, [toolName, apps])
+  }, [toolName, apps, pendingInput])
 
   useEffect(() => {
     setFeedback('')

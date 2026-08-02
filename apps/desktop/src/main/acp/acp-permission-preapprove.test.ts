@@ -16,8 +16,14 @@ vi.mock('../mcp/superone-mcp-server', () => {
     'mcp__superone__mobile_share_file',
   ])
   return {
-    isBuiltInSuperoneTool: (name: string) => builtins.has(name),
-    isToolPreapproved: (name: string) => name === 'mcp__superone__myapp__do_thing',
+    isBuiltInSuperoneTool: (name: string) => builtins.has(name) || name === 'mcp__superone__miniapp_list',
+    isToolPreapproved: (name: string, input: Record<string, unknown> = {}) => {
+      if (name === 'mcp__superone__myapp__do_thing') return true
+      if (name === 'mcp__superone__miniapp_call') {
+        return input.appId === 'myapp' && input.tool === 'do_thing'
+      }
+      return false
+    },
   }
 })
 
@@ -81,7 +87,7 @@ describe('shouldAutoAllowAcpPermission', () => {
     })
   })
 
-  it('auto-allows preapproved mini-app tools', () => {
+  it('auto-allows preapproved mini-app tools via legacy namespaced name', () => {
     const result = shouldAutoAllowAcpPermission(perm({
       rawInput: { tool_name: 'superone__myapp__do_thing', tool_input: {} },
     }))
@@ -90,6 +96,29 @@ describe('shouldAutoAllowAcpPermission', () => {
       reason: 'preapproved',
       toolName: 'mcp__superone__myapp__do_thing',
     })
+  })
+
+  it('auto-allows preapproved miniapp_call by appId+tool args', () => {
+    const result = shouldAutoAllowAcpPermission(perm({
+      rawInput: {
+        tool_name: 'superone__miniapp_call',
+        tool_input: { appId: 'myapp', tool: 'do_thing', input: {} },
+      },
+    }))
+    expect(result).toEqual({
+      allow: true,
+      reason: 'preapproved',
+      toolName: 'mcp__superone__miniapp_call',
+    })
+  })
+
+  it('does not auto-allow miniapp_call for a non-preapproved app tool', () => {
+    expect(shouldAutoAllowAcpPermission(perm({
+      rawInput: {
+        tool_name: 'superone__miniapp_call',
+        tool_input: { appId: 'other', tool: 'x', input: {} },
+      },
+    })).allow).toBe(false)
   })
 
   it('does not auto-allow third-party MCP', () => {

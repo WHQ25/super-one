@@ -422,17 +422,18 @@ export async function sendMessageImpl(
       const app = apps.find((a) => a.id === m.value)
       const manifest = app?.manifest
       const name = manifest?.name ?? m.displayName
-      const toolSlug = manifest?.toolSlug ?? m.value
+      const appId = app?.id ?? m.value
       const tools = manifest?.tools ?? []
-      // Claude's SDK exposes MCP tools flatly as `mcp__superone__<slug>__<tool>`, so a
-      // prefix hint suffices. Codex namespaces them as `mcp__superone.<slug>__<tool>` (dot
-      // after the server) and enumerates them unreliably, so list each exact name in that
-      // form (descriptions left for the agent's own tool discovery).
+      // Fixed surface: miniapp_list / miniapp_call. Agents discover tools via miniapp_list.
       if (effectiveProvider === 'codex' && tools.length > 0) {
-        const toolNames = tools.map((t) => `mcp__superone.${toolSlug}__${t.name}`).join(', ')
-        lines.push(`- "${name}": ${toolNames}`)
+        const toolNames = tools.map((t) => t.name).join(', ')
+        lines.push(
+          `- "${name}" (appId="${appId}"): call mcp__superone.miniapp_call with tool in [${toolNames}] (use miniapp_list first if unsure)`,
+        )
       } else {
-        lines.push(`- "${name}": tools start with "mcp__superone__${toolSlug}__"`)
+        lines.push(
+          `- "${name}" (appId="${appId}"): use mcp__superone__miniapp_call with this appId; call miniapp_list for tool names/schemas`,
+        )
       }
     }
     miniAppReminderSuffix = `\n\n<superone-miniapp-reminder>\n${lines.join('\n')}\n</superone-miniapp-reminder>`

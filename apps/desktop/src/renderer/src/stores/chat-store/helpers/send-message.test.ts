@@ -590,7 +590,7 @@ describe('sendMessageImpl: miniapp tool reminder', () => {
     },
   }
 
-  it('enumerates each tool by exact full name for codex so it discovers them without tool search', async () => {
+  it('points codex at miniapp_call with tool names for the mentioned app', async () => {
     mockMiniApps.push(excalidrawApp)
     seedProject('/proj', 'sid-1', {
       preferredProvider: 'codex',
@@ -601,14 +601,15 @@ describe('sendMessageImpl: miniapp tool reminder', () => {
     await useChatStore.getState().sendMessage('@Excalidraw redraw it')
 
     const { finalContent } = mockRunCodexCommand.mock.calls[0][2]
-    expect(finalContent).toContain('mcp__superone.excalidraw__read_scene')
-    expect(finalContent).toContain('mcp__superone.excalidraw__clear_canvas')
-    expect(finalContent).not.toContain('mcp__superone__excalidraw__')
+    expect(finalContent).toContain('mcp__superone.miniapp_call')
+    expect(finalContent).toContain('appId="excalidraw"')
+    expect(finalContent).toContain('read_scene')
+    expect(finalContent).toContain('clear_canvas')
+    expect(finalContent).not.toContain('mcp__superone.excalidraw__')
     expect(finalContent).not.toContain('Read the current canvas state')
-    expect(finalContent).not.toContain('tools start with')
   })
 
-  it('keeps the prefix-hint reminder unchanged for claude', async () => {
+  it('points claude at miniapp_call with appId for the mentioned app', async () => {
     mockMiniApps.push(excalidrawApp)
     seedProject('/proj', 'sid-1', {
       mentions: [{ kind: 'miniapp', value: 'excalidraw', displayName: 'Excalidraw' }],
@@ -617,7 +618,9 @@ describe('sendMessageImpl: miniapp tool reminder', () => {
     await useChatStore.getState().sendMessage('@Excalidraw redraw it')
 
     const content = mockSendMessage.mock.calls[0][1].content as string
-    expect(content).toContain('tools start with "mcp__superone__excalidraw__"')
+    expect(content).toContain('mcp__superone__miniapp_call')
+    expect(content).toContain('appId="excalidraw"')
+    expect(content).toContain('miniapp_list')
     expect(content).not.toContain('mcp__superone__excalidraw__read_scene')
   })
 })

@@ -33,6 +33,7 @@ import {
 import { renameSession as dbRenameSession } from '../db-sessions'
 import { updateAcpAgentId as dbUpdateAcpAgentId } from './session-repo'
 import { rejectSessionAgentsConfirm, resolveSessionAgentsConfirm } from './session-collaboration-confirm'
+import { resolveMiniappCallConfirm, rejectMiniappCallConfirm } from '../mcp/miniapp-call-confirm'
 import { nextEventSeq } from './event-seq'
 import { collectChangedMessageIds } from './message-dirty'
 import {
@@ -722,7 +723,15 @@ export class Session implements SessionContract {
     this.touchRuntimeActivity()
     if (decision === 'cancel') {
       if (rejectSessionAgentsConfirm(requestId, 'User cancelled')) return true
+      if (rejectMiniappCallConfirm(requestId, reason ?? 'User cancelled')) return true
     } else if (resolveSessionAgentsConfirm(requestId, allow ? 'accept' : 'decline', formAnswers)) {
+      return true
+    } else if (resolveMiniappCallConfirm(
+      requestId,
+      allow ? 'accept' : 'decline',
+      alwaysAllow === true,
+      reason,
+    )) {
       return true
     }
     return this.backend.respondToPermission(requestId, allow, alwaysAllow, reason, selectedSuggestions, decision, formAnswers)

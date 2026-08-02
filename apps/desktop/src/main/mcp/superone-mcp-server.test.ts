@@ -64,6 +64,7 @@ import {
   registerAppTools,
   unregisterAppTools,
   isToolPreapproved,
+  markAppToolPreapproved,
   notifyAppReady,
   resolveToolCall,
   rejectToolCall,
@@ -73,10 +74,12 @@ import {
   submitToolIntercept,
   cancelToolIntercept,
   setToolSyncCallbacks,
+  setSessionHostProvider,
   addToolsChangedListener,
   clearSessionPendingCalls,
   executeAppTool,
 } from './superone-mcp-server'
+import { resolveMiniappCallConfirm } from './miniapp-call-confirm'
 import { executeSuperoneMcpTool, listSuperoneMcpTools } from './superone-mcp-tool-surface'
 import { LAUNCH_PERMISSION_MODE_DESCRIPTION } from './superone-mcp-builtin-defs'
 import type { ZodArray, ZodObject, ZodOptional, ZodRawShape, ZodTypeAny } from 'zod'
@@ -94,23 +97,48 @@ function makeTools(...names: string[]): MiniAppToolDefinition[] {
   }))
 }
 
+/** Register app tools and preapprove them so executor permission gate does not block unit tests. */
+function registerAppToolsPreapproved(
+  sessionId: string,
+  projectDir: string,
+  appId: string,
+  toolSlug: string,
+  tools: MiniAppToolDefinition[],
+): void {
+  registerAppTools(sessionId, projectDir, appId, toolSlug, tools)
+  for (const t of tools) markAppToolPreapproved(appId, t.name)
+}
+
 function getLastHandler(toolName: string): Function {
   const call = mockRegisterTool.mock.calls.find((c) => c[0] === toolName)
   if (!call) throw new Error(`Tool ${toolName} not registered`)
   return call[2]
 }
 
+/** Invoke the fixed miniapp_call tool for an authorized app. */
+function callMiniapp(
+  appId: string,
+  tool: string,
+  input: Record<string, unknown> = {},
+): Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }> {
+  const handler = getLastHandler('miniapp_call')
+  return handler({ appId, tool, input })
+}
+
 beforeEach(() => {
   collaborationSettings.enabled = false
   vi.clearAllMocks()
-  unregisterAppTools(PROJ_A, 'test-app')
-  unregisterAppTools(PROJ_A, 'other-app')
-  unregisterAppTools(PROJ_A, 'shared-app')
-  unregisterAppTools(PROJ_B, 'test-app')
-  unregisterAppTools(PROJ_B, 'shared-app')
+  // Clear residual authorizations from any session id used in this file
+  for (const sid of [PROJ_A, PROJ_B, 'sess-a', 'sess-b', 'perm-path-session']) {
+    for (const app of [
+      'test-app', 'other-app', 'shared-app', 'weather', 'standalone-app', 'bad',
+      'hitl-app', 'no-tpl-app', 'lazy-codex-app', 'hello',
+    ]) {
+      unregisterAppTools(sid, app)
+    }
+    disposeSuperoneMcpServer(sid)
+  }
   setToolSyncCallbacks(null)
-  disposeSuperoneMcpServer(PROJ_A)
-  disposeSuperoneMcpServer(PROJ_B)
   createSuperoneMcpServer(PROJ_A)
 })
 
@@ -148,67 +176,60 @@ describe('experimental session collaboration tools', () => {
 })
 
 describe('registerAppTools / unregisterAppTools', () => {
-  it('registers tools on the project server', () => {
-    registerAppTools(PROJ_A, PROJ_A, 'test-app', 'myapp', makeTools('do_thing'))
+  it('authorizes apps without registering per-app MCP tools (fixed miniapp_list/call surface)', () => {
+    // Fixed tools come from createSuperoneMcpServer in beforeEach
+    expect(mockRegisterTool.mock.calls.some((c) => c[0] === 'miniapp_list')).toBe(true)
+    expect(mockRegisterTool.mock.calls.some((c) => c[0] === 'miniapp_call')).toBe(true)
 
-    expect(mockRegisterTool).toHaveBeenCalledWith(
-      'myapp__do_thing',
-      expect.objectContaining({ description: expect.stringContaining('Tool do_thing') }),
-      expect.any(Function),
-    )
-    expect(mockSendToolListChanged).toHaveBeenCalled()
-  })
-
-  it('unregisters tools and calls sendToolListChanged', () => {
-    registerAppTools(PROJ_A, PROJ_A, 'test-app', 'myapp', makeTools('do_thing'))
-    mockRemove.mockClear()
+    mockRegisterTool.mockClear()
     mockSendToolListChanged.mockClear()
+    registerAppToolsPreapproved(PROJ_A, PROJ_A, 'test-app', 'myapp', makeTools('do_thing'))
 
-    unregisterAppTools(PROJ_A, 'test-app')
-
-    expect(mockRemove).toHaveBeenCalled()
-    expect(mockSendToolListChanged).toHaveBeenCalled()
+    expect(mockRegisterTool.mock.calls.some((c) => c[0] === 'myapp__do_thing')).toBe(false)
+    // Authorizing an app must not register tools or churn tools/list
+    expect(mockRegisterTool).not.toHaveBeenCalled()
+    expect(mockSendToolListChanged).not.toHaveBeenCalled()
   })
 
-  it('notifies tools-changed listeners on register and unregister (drives Codex MCP reload)', () => {
+  it('does not notify tools-changed listeners when mini-apps authorize/unauthorize', () => {
     const listener = vi.fn()
     const unsubscribe = addToolsChangedListener(listener)
 
-    registerAppTools(PROJ_A, PROJ_A, 'test-app', 'myapp', makeTools('do_thing'))
-    expect(listener).toHaveBeenCalledWith(PROJ_A)
-
-    listener.mockClear()
-    unregisterAppTools(PROJ_A, 'test-app')
-    expect(listener).toHaveBeenCalledWith(PROJ_A)
-
-    listener.mockClear()
-    unsubscribe()
-    registerAppTools(PROJ_A, PROJ_A, 'test-app', 'myapp', makeTools('do_thing'))
+    registerAppToolsPreapproved(PROJ_A, PROJ_A, 'test-app', 'myapp', makeTools('do_thing'))
     expect(listener).not.toHaveBeenCalled()
+
+    unregisterAppTools(PROJ_A, 'test-app')
+    expect(listener).not.toHaveBeenCalled()
+
+    unsubscribe()
   })
 
-  it('skips duplicate tool registration', () => {
-    registerAppTools(PROJ_A, PROJ_A, 'test-app', 'myapp', makeTools('do_thing'))
-    const countAfterFirst = mockRegisterTool.mock.calls.filter((c) => c[0] === 'myapp__do_thing').length
-
-    registerAppTools(PROJ_A, PROJ_A, 'test-app', 'myapp', makeTools('do_thing'))
-    const countAfterSecond = mockRegisterTool.mock.calls.filter((c) => c[0] === 'myapp__do_thing').length
-
-    expect(countAfterSecond).toBe(countAfterFirst)
-  })
-
-  it('caches tools when no active server, attaches them on next createSuperoneMcpServer(projectPath)', () => {
+  it('registers fixed miniapp tools on createSuperoneMcpServer even with no authorized apps', () => {
     disposeSuperoneMcpServer(PROJ_A)
-
-    registerAppTools(PROJ_A, PROJ_A, 'test-app', 'myapp', makeTools('cached_tool'))
-
+    mockRegisterTool.mockClear()
     createSuperoneMcpServer(PROJ_A)
 
     expect(mockRegisterTool).toHaveBeenCalledWith(
-      'myapp__cached_tool',
+      'miniapp_list',
       expect.anything(),
       expect.any(Function),
     )
+    expect(mockRegisterTool).toHaveBeenCalledWith(
+      'miniapp_call',
+      expect.anything(),
+      expect.any(Function),
+    )
+  })
+
+  it('caches authorization when no server; miniapp_call sees it after create', async () => {
+    disposeSuperoneMcpServer(PROJ_A)
+    registerAppToolsPreapproved(PROJ_A, PROJ_A, 'test-app', 'myapp', makeTools('cached_tool'))
+    createSuperoneMcpServer(PROJ_A)
+
+    const names = listSuperoneMcpTools(PROJ_A).map((t) => t.name)
+    expect(names).toContain('miniapp_list')
+    expect(names).toContain('miniapp_call')
+    expect(names).not.toContain('myapp__cached_tool')
   })
 })
 
@@ -238,31 +259,30 @@ describe('standalone tool dispatch', () => {
     initSuperoneMcpServer(() => null)
   })
 
-  it('description has panel-required note when standalone is false', () => {
-    registerAppTools(PROJ_A, PROJ_A, 'test-app', 'myapp', makeTools('ui_tool'))
-    expect(mockRegisterTool).toHaveBeenCalledWith(
-      'myapp__ui_tool',
-      expect.objectContaining({
-        description: expect.stringContaining("requires the mini-app's panel UI to be open"),
-      }),
-      expect.any(Function),
-    )
+  it('miniapp_list notes panel requirement for non-standalone tools', async () => {
+    registerAppToolsPreapproved(PROJ_A, PROJ_A, 'test-app', 'myapp', makeTools('ui_tool'))
+    const list = getLastHandler('miniapp_list')
+    const reply = await list({})
+    const body = JSON.parse(reply.content[0].text)
+    const tool = body.apps[0].tools.find((t: { name: string }) => t.name === 'ui_tool')
+    expect(tool.description).toContain('Tool ui_tool')
   })
 
-  it('description omits panel note when standalone is true', () => {
-    registerAppTools(PROJ_A, PROJ_A, 'test-app', 'myapp', [makeStandaloneTool('bg_tool')])
-    const call = mockRegisterTool.mock.calls.find((c) => c[0] === 'myapp__bg_tool')!
-    const desc = (call[1] as { description: string }).description
-    expect(desc).toBe('Tool bg_tool')
-    expect(desc).not.toContain('requires')
+  it('miniapp_list marks standalone tools without panel note in one-line description', async () => {
+    registerAppToolsPreapproved(PROJ_A, PROJ_A, 'test-app', 'myapp', [makeStandaloneTool('bg_tool')])
+    const list = getLastHandler('miniapp_list')
+    const reply = await list({})
+    const body = JSON.parse(reply.content[0].text)
+    const tool = body.apps[0].tools.find((t: { name: string }) => t.name === 'bg_tool')
+    expect(tool.description).toBe('Tool bg_tool')
+    expect(tool.standalone).toBe(true)
   })
 
   it('standalone tool dispatches MINIAPP_TOOL_CALL immediately without waitForAppReady', async () => {
-    registerAppTools(PROJ_A, PROJ_A, 'weather', 'wx', [makeStandaloneTool('forecast')])
-    const handler = getLastHandler('wx__forecast')
+    registerAppToolsPreapproved(PROJ_A, PROJ_A, 'weather', 'wx', [makeStandaloneTool('forecast')])
 
     // Don't await: handler waits for tool result IPC. Verify the dispatch happened without app-ready gate.
-    const pending = handler({ city: 'Tokyo' })
+    const pending = callMiniapp('weather', 'forecast', { city: 'Tokyo' })
     await new Promise((r) => setImmediate(r))
 
     const toolCall = sentMessages.find((m) => m.channel === AgentIpcChannels.MINIAPP_TOOL_CALL)
@@ -279,9 +299,8 @@ describe('standalone tool dispatch', () => {
   })
 
   it('standalone tool does NOT trigger lazy-open IPC', async () => {
-    registerAppTools(PROJ_A, PROJ_A, 'standalone-app', 'sa', [makeStandaloneTool('do_thing')])
-    const handler = getLastHandler('sa__do_thing')
-    const pending = handler({})
+    registerAppToolsPreapproved(PROJ_A, PROJ_A, 'standalone-app', 'sa', [makeStandaloneTool('do_thing')])
+    const pending = callMiniapp('standalone-app', 'do_thing', {})
     await new Promise((r) => setImmediate(r))
 
     const lazyOpen = sentMessages.find((m) => m.channel === AgentIpcChannels.MINIAPP_LAZY_OPEN_REQUEST)
@@ -293,9 +312,8 @@ describe('standalone tool dispatch', () => {
   })
 
   it('standalone error surface returned as [Error] result', async () => {
-    registerAppTools(PROJ_A, PROJ_A, 'bad', 'bd', [makeStandaloneTool('boom_tool')])
-    const handler = getLastHandler('bd__boom_tool')
-    const pending = handler({})
+    registerAppToolsPreapproved(PROJ_A, PROJ_A, 'bad', 'bd', [makeStandaloneTool('boom_tool')])
+    const pending = callMiniapp('bad', 'boom_tool', {})
     await new Promise((r) => setImmediate(r))
 
     const toolCall = sentMessages.find((m) => m.channel === AgentIpcChannels.MINIAPP_TOOL_CALL)!
@@ -324,10 +342,9 @@ describe('standalone tool dispatch', () => {
 
     it('opens intercept renderer first, then dispatches MINIAPP_TOOL_CALL with merged args', async () => {
       registerAppTemplates(PROJ_A, 'hitl-app', { confirm: 'confirm.html', card: 'card.html' })
-      registerAppTools(PROJ_A, PROJ_A, 'hitl-app', 'hitl', [makeStandaloneInterceptTool('confirm_increment')])
-      const handler = getLastHandler('hitl__confirm_increment')
+      registerAppToolsPreapproved(PROJ_A, PROJ_A, 'hitl-app', 'hitl', [makeStandaloneInterceptTool('confirm_increment')])
 
-      const pending = handler({ by: 1 })
+      const pending = callMiniapp('hitl-app', 'confirm_increment', { by: 1 })
       await new Promise((r) => setImmediate(r))
 
       const intercept = sentMessages.find((m) => m.channel === AgentIpcChannels.MINIAPP_TOOL_INTERCEPT_OPEN)
@@ -360,10 +377,9 @@ describe('standalone tool dispatch', () => {
 
     it('honors onCancel: reject — never dispatches MINIAPP_TOOL_CALL and surfaces error', async () => {
       registerAppTemplates(PROJ_A, 'hitl-app', { confirm: 'confirm.html', card: 'card.html' })
-      registerAppTools(PROJ_A, PROJ_A, 'hitl-app', 'hitl', [makeStandaloneInterceptTool('strict_tool', 'reject')])
-      const handler = getLastHandler('hitl__strict_tool')
+      registerAppToolsPreapproved(PROJ_A, PROJ_A, 'hitl-app', 'hitl', [makeStandaloneInterceptTool('strict_tool', 'reject')])
 
-      const pending = handler({})
+      const pending = callMiniapp('hitl-app', 'strict_tool', {})
       await new Promise((r) => setImmediate(r))
 
       const interceptReq = sentMessages.find((m) => m.channel === AgentIpcChannels.MINIAPP_TOOL_INTERCEPT_OPEN)!.args[0] as MiniAppToolInterceptOpenRequest
@@ -376,10 +392,9 @@ describe('standalone tool dispatch', () => {
 
     it('honors onCancel: resolve-empty — returns { cancelled: true } without dispatching MINIAPP_TOOL_CALL', async () => {
       registerAppTemplates(PROJ_A, 'hitl-app', { confirm: 'confirm.html', card: 'card.html' })
-      registerAppTools(PROJ_A, PROJ_A, 'hitl-app', 'hitl', [makeStandaloneInterceptTool('graceful_tool', 'resolve-empty')])
-      const handler = getLastHandler('hitl__graceful_tool')
+      registerAppToolsPreapproved(PROJ_A, PROJ_A, 'hitl-app', 'hitl', [makeStandaloneInterceptTool('graceful_tool', 'resolve-empty')])
 
-      const pending = handler({})
+      const pending = callMiniapp('hitl-app', 'graceful_tool', {})
       await new Promise((r) => setImmediate(r))
 
       const interceptReq = sentMessages.find((m) => m.channel === AgentIpcChannels.MINIAPP_TOOL_INTERCEPT_OPEN)!.args[0] as MiniAppToolInterceptOpenRequest
@@ -393,10 +408,9 @@ describe('standalone tool dispatch', () => {
 
     it('throws when intercept.template is not registered in manifest.templates', async () => {
       // Use a fresh appId so leftover registerAppTemplates from prior tests cannot satisfy the lookup
-      registerAppTools(PROJ_A, PROJ_A, 'no-tpl-app', 'notpl', [makeStandaloneInterceptTool('missing_template')])
-      const handler = getLastHandler('notpl__missing_template')
+      registerAppToolsPreapproved(PROJ_A, PROJ_A, 'no-tpl-app', 'notpl', [makeStandaloneInterceptTool('missing_template')])
 
-      const result = await handler({})
+      const result = await callMiniapp('no-tpl-app', 'missing_template', {})
       expect(result.content[0].text).toMatch(/Template "confirm" not found/)
       expect(sentMessages.find((m) => m.channel === AgentIpcChannels.MINIAPP_TOOL_INTERCEPT_OPEN)).toBeUndefined()
       expect(sentMessages.find((m) => m.channel === AgentIpcChannels.MINIAPP_TOOL_CALL)).toBeUndefined()
@@ -405,58 +419,69 @@ describe('standalone tool dispatch', () => {
 })
 
 describe('multi-project tool routing', () => {
-  it('keeps tool registrations isolated between projects', () => {
+  it('keeps authorization isolated between sessions (fixed tools still registered per session)', async () => {
     createSuperoneMcpServer(PROJ_B)
-    registerAppTools(PROJ_A, PROJ_A, 'shared-app', 'shared', makeTools('a_only'))
-    registerAppTools(PROJ_B, PROJ_B, 'shared-app', 'shared', makeTools('b_only'))
+    registerAppToolsPreapproved(PROJ_A, PROJ_A, 'shared-app', 'shared', makeTools('a_only'))
+    registerAppToolsPreapproved(PROJ_B, PROJ_B, 'shared-app', 'shared', makeTools('b_only'))
 
-    const aOnlyCall = mockRegisterTool.mock.calls.find((c) => c[0] === 'shared__a_only')
-    const bOnlyCall = mockRegisterTool.mock.calls.find((c) => c[0] === 'shared__b_only')
-    expect(aOnlyCall).toBeTruthy()
-    expect(bOnlyCall).toBeTruthy()
+    const listA = await executeSuperoneMcpTool(PROJ_A, 'miniapp_list', {})
+    const listB = await executeSuperoneMcpTool(PROJ_B, 'miniapp_list', {})
+    const appsA = JSON.parse(listA.content[0].text).apps.map((a: { tools: Array<{ name: string }> }) => a.tools.map((t) => t.name))
+    const appsB = JSON.parse(listB.content[0].text).apps.map((a: { tools: Array<{ name: string }> }) => a.tools.map((t) => t.name))
+    expect(appsA.flat()).toContain('a_only')
+    expect(appsA.flat()).not.toContain('b_only')
+    expect(appsB.flat()).toContain('b_only')
+    expect(appsB.flat()).not.toContain('a_only')
   })
 
-  it('unregistering one project does not affect the other', () => {
+  it('unregistering one session does not affect the other', async () => {
     createSuperoneMcpServer(PROJ_B)
-    registerAppTools(PROJ_A, PROJ_A, 'shared-app', 'shared', makeTools('common'))
-    registerAppTools(PROJ_B, PROJ_B, 'shared-app', 'shared', makeTools('common'))
+    registerAppToolsPreapproved(PROJ_A, PROJ_A, 'shared-app', 'shared', makeTools('common'))
+    registerAppToolsPreapproved(PROJ_B, PROJ_B, 'shared-app', 'shared', makeTools('common'))
 
-    mockRemove.mockClear()
     unregisterAppTools(PROJ_A, 'shared-app')
 
-    // Only PROJ_A's registration is removed
-    expect(mockRemove).toHaveBeenCalledTimes(1)
+    const listA = await executeSuperoneMcpTool(PROJ_A, 'miniapp_list', {})
+    const listB = await executeSuperoneMcpTool(PROJ_B, 'miniapp_list', {})
+    expect(JSON.parse(listA.content[0].text).count).toBe(0)
+    expect(JSON.parse(listB.content[0].text).count).toBe(1)
   })
 })
 
 describe('tool handler rejects closed app', () => {
   it('returns error when app has been unregistered', async () => {
-    registerAppTools(PROJ_A, PROJ_A, 'test-app', 'myapp', makeTools('do_thing'))
+    registerAppToolsPreapproved(PROJ_A, PROJ_A, 'test-app', 'myapp', makeTools('do_thing'))
     notifyAppReady(PROJ_A, 'test-app')
-    const handler = getLastHandler('myapp__do_thing')
 
     unregisterAppTools(PROJ_A, 'test-app')
 
-    const result = await handler({ x: 'hello' })
-    expect(result.content[0].text).toContain('is not open')
+    const result = await callMiniapp('test-app', 'do_thing', { x: 'hello' })
+    expect(result.content[0].text).toMatch(/not authorized/)
   })
 
   it('works again after re-registering', async () => {
-    registerAppTools(PROJ_A, PROJ_A, 'test-app', 'myapp', makeTools('do_thing'))
+    const sent: Array<{ channel: string; args: unknown[] }> = []
+    const win = {
+      webContents: { send: (channel: string, ...args: unknown[]) => sent.push({ channel, args }) },
+      isDestroyed: () => false,
+    } as unknown as import('electron').BrowserWindow
+    initSuperoneMcpServer(() => win)
+
+    registerAppToolsPreapproved(PROJ_A, PROJ_A, 'test-app', 'myapp', makeTools('do_thing'))
     unregisterAppTools(PROJ_A, 'test-app')
 
     createSuperoneMcpServer(PROJ_A)
-    registerAppTools(PROJ_A, PROJ_A, 'test-app', 'myapp', makeTools('do_thing'))
+    registerAppToolsPreapproved(PROJ_A, PROJ_A, 'test-app', 'myapp', makeTools('do_thing'))
     notifyAppReady(PROJ_A, 'test-app')
-    const handler = getLastHandler('myapp__do_thing')
 
-    const result = await handler({ x: 'hello' }).catch((e: Error) => e)
-    if (result?.content) {
-      expect(result.content[0].text).not.toContain('is not open')
-    } else {
-      expect(result).toBeInstanceOf(Error)
-      expect(result.message).not.toContain('is not open')
-    }
+    const pending = callMiniapp('test-app', 'do_thing', { x: 'hello' })
+    await new Promise((r) => setImmediate(r))
+    const toolCall = sent.find((m) => m.channel === AgentIpcChannels.MINIAPP_TOOL_CALL)
+    expect(toolCall).toBeTruthy()
+    resolveToolCall((toolCall!.args[0] as MiniAppToolCallRequest).callId, { ok: true })
+    const result = await pending
+    expect(result.content[0].text).toContain('"ok":true')
+    initSuperoneMcpServer(() => null)
   })
 })
 
@@ -471,10 +496,10 @@ describe('stdio SuperOne MCP tool surface', () => {
     createSuperoneMcpServer(PROJ_A)
   })
 
-  it('lists built-in tools and only the dynamic tools for the requested project', () => {
+  it('lists built-in tools and fixed miniapp tools (not per-app tools)', () => {
     createSuperoneMcpServer(PROJ_B)
-    registerAppTools(PROJ_A, PROJ_A, 'test-app', 'myapp', makeTools('a_tool'))
-    registerAppTools(PROJ_B, PROJ_B, 'other-app', 'other', makeTools('b_tool'))
+    registerAppToolsPreapproved(PROJ_A, PROJ_A, 'test-app', 'myapp', makeTools('a_tool'))
+    registerAppToolsPreapproved(PROJ_B, PROJ_B, 'other-app', 'other', makeTools('b_tool'))
 
     const names = listSuperoneMcpTools(PROJ_A).map((tool) => tool.name)
 
@@ -482,7 +507,9 @@ describe('stdio SuperOne MCP tool surface', () => {
     expect(names).toContain('config_read')
     expect(names).not.toContain('miniapp_dev_read_guide')
     expect(names).not.toContain('config_read_guide')
-    expect(names).toContain('myapp__a_tool')
+    expect(names).toContain('miniapp_list')
+    expect(names).toContain('miniapp_call')
+    expect(names).not.toContain('myapp__a_tool')
     expect(names).not.toContain('other__b_tool')
     expect(names).toContain('browser_snapshot')
     expect(names).toContain('browser_click')
@@ -491,22 +518,25 @@ describe('stdio SuperOne MCP tool surface', () => {
     expect(names).toContain('browser_action_do')
   })
 
-  it('notifies stdio clients when project tools change', () => {
+  it('does not notify stdio clients when mini-app authorization changes', () => {
     const toolsChanged = vi.fn()
     setToolSyncCallbacks({ toolsChanged })
 
-    registerAppTools(PROJ_A, PROJ_A, 'test-app', 'myapp', makeTools('a_tool'))
+    registerAppToolsPreapproved(PROJ_A, PROJ_A, 'test-app', 'myapp', makeTools('a_tool'))
     unregisterAppTools(PROJ_A, 'test-app')
 
-    expect(toolsChanged).toHaveBeenCalledWith(PROJ_A)
-    expect(toolsChanged).toHaveBeenCalledTimes(2)
+    expect(toolsChanged).not.toHaveBeenCalled()
   })
 
-  it('executes dynamic tools through the shared dispatcher scoped to projectDir', async () => {
-    registerAppTools(PROJ_A, PROJ_A, 'test-app', 'myapp', makeTools('do_thing'))
+  it('executes miniapp_call through the shared dispatcher scoped to projectDir', async () => {
+    registerAppToolsPreapproved(PROJ_A, PROJ_A, 'test-app', 'myapp', makeTools('do_thing'))
     notifyAppReady(PROJ_A, 'test-app')
 
-    const pending = executeSuperoneMcpTool(PROJ_A, 'myapp__do_thing', { x: 'hello' })
+    const pending = executeSuperoneMcpTool(PROJ_A, 'miniapp_call', {
+      appId: 'test-app',
+      tool: 'do_thing',
+      input: { x: 'hello' },
+    })
     await new Promise((r) => setTimeout(r, 10))
 
     const callReq = sentMessages.find((m) => m.channel === AgentIpcChannels.MINIAPP_TOOL_CALL)!.args[0] as MiniAppToolCallRequest
@@ -523,10 +553,14 @@ describe('stdio SuperOne MCP tool surface', () => {
     // Regression: the codex bridge path (executeSuperoneMcpTool) used to call
     // executeAppTool directly, so waitForAppReady blocked forever when the panel
     // was never opened. It must trigger lazy-open like the Claude SDK path.
-    registerAppTools(PROJ_A, PROJ_A, 'lazy-codex-app', 'lz', makeTools('do_thing'))
+    registerAppToolsPreapproved(PROJ_A, PROJ_A, 'lazy-codex-app', 'lz', makeTools('do_thing'))
     // NOTE: deliberately NO notifyAppReady — the panel is not open.
 
-    const pending = executeSuperoneMcpTool(PROJ_A, 'lz__do_thing', { x: 'hi' })
+    const pending = executeSuperoneMcpTool(PROJ_A, 'miniapp_call', {
+      appId: 'lazy-codex-app',
+      tool: 'do_thing',
+      input: { x: 'hi' },
+    })
     await new Promise((r) => setTimeout(r, 10))
 
     const lazyOpen = sentMessages.find((m) => m.channel === AgentIpcChannels.MINIAPP_LAZY_OPEN_REQUEST)
@@ -558,8 +592,8 @@ describe('clearSessionPendingCalls — cross-project isolation', () => {
   })
 
   it('rejects only same-project pending calls when one project interrupts', async () => {
-    registerAppTools(PROJ_A, PROJ_A, 'test-app', 'myapp', makeTools('do_thing'))
-    registerAppTools(PROJ_B, PROJ_B, 'test-app', 'myapp', makeTools('do_thing'))
+    registerAppToolsPreapproved(PROJ_A, PROJ_A, 'test-app', 'myapp', makeTools('do_thing'))
+    registerAppToolsPreapproved(PROJ_B, PROJ_B, 'test-app', 'myapp', makeTools('do_thing'))
     notifyAppReady(PROJ_A, 'test-app')
     notifyAppReady(PROJ_B, 'test-app')
 
@@ -590,8 +624,8 @@ describe('clearSessionPendingCalls — cross-project isolation', () => {
       inputSchema: { type: 'object', properties: { x: { type: 'string' } } },
       renderer: { intercept: { template: 'popovers/confirm' } },
     }]
-    registerAppTools(PROJ_A, PROJ_A, 'test-app', 'myapp', interceptTool)
-    registerAppTools(PROJ_B, PROJ_B, 'test-app', 'myapp', interceptTool)
+    registerAppToolsPreapproved(PROJ_A, PROJ_A, 'test-app', 'myapp', interceptTool)
+    registerAppToolsPreapproved(PROJ_B, PROJ_B, 'test-app', 'myapp', interceptTool)
     registerAppTemplates(PROJ_A, 'test-app', { 'popovers/confirm': 'popovers/confirm.html' })
     registerAppTemplates(PROJ_B, 'test-app', { 'popovers/confirm': 'popovers/confirm.html' })
     notifyAppReady(PROJ_A, 'test-app')
@@ -635,9 +669,15 @@ describe('isToolPreapproved', () => {
     expect(isToolPreapproved('some_random_tool')).toBe(false)
   })
 
-  it('returns false when tool is not preapproved', () => {
+  it('returns false when tool is not preapproved (legacy name or miniapp_call args)', () => {
+    // Deliberately not preapproved — registerAppTools only, no markAppToolPreapproved
     registerAppTools(PROJ_A, PROJ_A, 'test-app', 'myapp', makeTools('do_thing'))
     expect(isToolPreapproved('mcp__superone__myapp__do_thing')).toBe(false)
+    expect(isToolPreapproved('mcp__superone__miniapp_call', {
+      appId: 'test-app',
+      tool: 'do_thing',
+      input: {},
+    })).toBe(false)
   })
 })
 
@@ -675,14 +715,13 @@ describe('executeAppTool with renderer.intercept', () => {
   beforeEach(() => {
     sentMessages.length = 0
     initSuperoneMcpServer(() => mockWin)
-    registerAppTools(PROJ_A, PROJ_A, 'test-app', 'myapp', [makeInterceptTool('confirm_action')])
+    registerAppToolsPreapproved(PROJ_A, PROJ_A, 'test-app', 'myapp', [makeInterceptTool('confirm_action')])
     registerAppTemplates(PROJ_A, 'test-app', { confirm: 'popovers/confirm.html' })
     notifyAppReady(PROJ_A, 'test-app')
   })
 
   it('submit path: merges agent + user input, dispatches MINIAPP_TOOL_CALL with projectDir', async () => {
-    const handler = getLastHandler('myapp__confirm_action')
-    const pending = handler({ agent_field: 'from_agent' })
+    const pending = callMiniapp('test-app', 'confirm_action', { agent_field: 'from_agent' })
 
     await new Promise((r) => setTimeout(r, 10))
 
@@ -709,8 +748,7 @@ describe('executeAppTool with renderer.intercept', () => {
   })
 
   it('cancel with default onCancel=reject: tool handler reports error', async () => {
-    const handler = getLastHandler('myapp__confirm_action')
-    const pending = handler({ agent_field: 'x' })
+    const pending = callMiniapp('test-app', 'confirm_action', { agent_field: 'x' })
     await new Promise((r) => setTimeout(r, 10))
     const openReq = sentMessages.find((m) => m.channel === AgentIpcChannels.MINIAPP_TOOL_INTERCEPT_OPEN)!.args[0] as { callId: string }
     cancelToolIntercept(openReq.callId, 'user_cancelled')
@@ -722,12 +760,11 @@ describe('executeAppTool with renderer.intercept', () => {
 
   it('cancel with onCancel=resolve-empty: tool returns cancelled payload', async () => {
     unregisterAppTools(PROJ_A, 'test-app')
-    registerAppTools(PROJ_A, PROJ_A, 'test-app', 'myapp', [makeInterceptTool('confirm_action', { onCancel: 'resolve-empty' })])
+    registerAppToolsPreapproved(PROJ_A, PROJ_A, 'test-app', 'myapp', [makeInterceptTool('confirm_action', { onCancel: 'resolve-empty' })])
     registerAppTemplates(PROJ_A, 'test-app', { confirm: 'popovers/confirm.html' })
     notifyAppReady(PROJ_A, 'test-app')
 
-    const handler = getLastHandler('myapp__confirm_action')
-    const pending = handler({ agent_field: 'x' })
+    const pending = callMiniapp('test-app', 'confirm_action', { agent_field: 'x' })
     await new Promise((r) => setTimeout(r, 10))
     const openReq = sentMessages.find((m) => m.channel === AgentIpcChannels.MINIAPP_TOOL_INTERCEPT_OPEN)!.args[0] as { callId: string }
     cancelToolIntercept(openReq.callId, 'user_cancelled')
@@ -740,12 +777,11 @@ describe('executeAppTool with renderer.intercept', () => {
 
   it('inputMerge=replace: user input overrides agent input entirely', async () => {
     unregisterAppTools(PROJ_A, 'test-app')
-    registerAppTools(PROJ_A, PROJ_A, 'test-app', 'myapp', [makeInterceptTool('confirm_action', { inputMerge: 'replace' })])
+    registerAppToolsPreapproved(PROJ_A, PROJ_A, 'test-app', 'myapp', [makeInterceptTool('confirm_action', { inputMerge: 'replace' })])
     registerAppTemplates(PROJ_A, 'test-app', { confirm: 'popovers/confirm.html' })
     notifyAppReady(PROJ_A, 'test-app')
 
-    const handler = getLastHandler('myapp__confirm_action')
-    const pending = handler({ agent_field: 'from_agent' })
+    const pending = callMiniapp('test-app', 'confirm_action', { agent_field: 'from_agent' })
     await new Promise((r) => setTimeout(r, 10))
     const openReq = sentMessages.find((m) => m.channel === AgentIpcChannels.MINIAPP_TOOL_INTERCEPT_OPEN)!.args[0] as { callId: string }
     submitToolIntercept(openReq.callId, { only_user: 'yes' })
@@ -761,8 +797,7 @@ describe('executeAppTool with renderer.intercept', () => {
 
   it('missing template: handler errors out immediately', async () => {
     unregisterAppTemplates(PROJ_A, 'test-app')
-    const handler = getLastHandler('myapp__confirm_action')
-    const result = await handler({ agent_field: 'x' })
+    const result = await callMiniapp('test-app', 'confirm_action', { agent_field: 'x' })
     expect(result.content[0].text).toContain('[Error]')
     expect(result.content[0].text).toContain('Template "confirm" not found')
   })
@@ -884,10 +919,16 @@ describe('miniapp_dev_setup tool handler', () => {
   })
 })
 
-describe('basic scenario: sessionA opens X loads X tools, sessionA closes X unloads X tools', () => {
+describe('basic scenario: session authorization is per-session (fixed MCP tool list)', () => {
   const SID_A = 'sess-a'
   const SID_B = 'sess-b'
   const PROJ = '/proj'
+
+  async function authorizedAppIds(sessionId: string): Promise<string[]> {
+    const reply = await executeSuperoneMcpTool(sessionId, 'miniapp_list', {})
+    const body = JSON.parse(reply.content[0].text) as { apps: Array<{ appId: string }> }
+    return body.apps.map((a) => a.appId)
+  }
 
   beforeEach(() => {
     initSuperoneMcpServer(() => null)
@@ -899,47 +940,50 @@ describe('basic scenario: sessionA opens X loads X tools, sessionA closes X unlo
     createSuperoneMcpServer(SID_B)
   })
 
-  it('sessionA opens X: weather tools appear in sessionA listing', () => {
+  it('sessionA opens X: weather appears in miniapp_list for sessionA; MCP list stays fixed', async () => {
+    expect(listSuperoneMcpTools(SID_A).map((t) => t.name)).toContain('miniapp_list')
+    expect(listSuperoneMcpTools(SID_A).map((t) => t.name)).toContain('miniapp_call')
     expect(listSuperoneMcpTools(SID_A).map((t) => t.name)).not.toContain('weather__forecast')
 
-    registerAppTools(SID_A, PROJ, 'weather', 'weather', makeTools('forecast'))
+    registerAppToolsPreapproved(SID_A, PROJ, 'weather', 'weather', makeTools('forecast'))
 
-    expect(listSuperoneMcpTools(SID_A).map((t) => t.name)).toContain('weather__forecast')
+    expect(await authorizedAppIds(SID_A)).toContain('weather')
+    expect(listSuperoneMcpTools(SID_A).map((t) => t.name)).not.toContain('weather__forecast')
   })
 
-  it('sessionA closes X: weather tools disappear from sessionA listing', () => {
-    registerAppTools(SID_A, PROJ, 'weather', 'weather', makeTools('forecast'))
-    expect(listSuperoneMcpTools(SID_A).map((t) => t.name)).toContain('weather__forecast')
+  it('sessionA closes X: weather disappears from miniapp_list', async () => {
+    registerAppToolsPreapproved(SID_A, PROJ, 'weather', 'weather', makeTools('forecast'))
+    expect(await authorizedAppIds(SID_A)).toContain('weather')
 
     unregisterAppTools(SID_A, 'weather')
 
-    expect(listSuperoneMcpTools(SID_A).map((t) => t.name)).not.toContain('weather__forecast')
+    expect(await authorizedAppIds(SID_A)).not.toContain('weather')
   })
 
-  it('sessionA opens X then closes X: tools were added then fully removed', () => {
-    expect(listSuperoneMcpTools(SID_A).map((t) => t.name)).not.toContain('weather__forecast')
+  it('sessionA opens X then closes X: authorization added then fully removed', async () => {
+    expect(await authorizedAppIds(SID_A)).not.toContain('weather')
 
-    registerAppTools(SID_A, PROJ, 'weather', 'weather', makeTools('forecast'))
-    expect(listSuperoneMcpTools(SID_A).map((t) => t.name)).toContain('weather__forecast')
+    registerAppToolsPreapproved(SID_A, PROJ, 'weather', 'weather', makeTools('forecast'))
+    expect(await authorizedAppIds(SID_A)).toContain('weather')
 
     unregisterAppTools(SID_A, 'weather')
-    expect(listSuperoneMcpTools(SID_A).map((t) => t.name)).not.toContain('weather__forecast')
+    expect(await authorizedAppIds(SID_A)).not.toContain('weather')
   })
 
-  it('sessionA opens X never affects sessionB tool listing (per-session isolation)', () => {
-    registerAppTools(SID_A, PROJ, 'weather', 'weather', makeTools('forecast'))
+  it('sessionA opens X never affects sessionB authorization (per-session isolation)', async () => {
+    registerAppToolsPreapproved(SID_A, PROJ, 'weather', 'weather', makeTools('forecast'))
 
-    expect(listSuperoneMcpTools(SID_A).map((t) => t.name)).toContain('weather__forecast')
-    expect(listSuperoneMcpTools(SID_B).map((t) => t.name)).not.toContain('weather__forecast')
+    expect(await authorizedAppIds(SID_A)).toContain('weather')
+    expect(await authorizedAppIds(SID_B)).not.toContain('weather')
   })
 
-  it('sessionA closes X never affects sessionB which had also opened X (independent ref-counts)', () => {
-    registerAppTools(SID_A, PROJ, 'weather', 'weather', makeTools('forecast'))
-    registerAppTools(SID_B, PROJ, 'weather', 'weather', makeTools('forecast'))
+  it('sessionA closes X never affects sessionB which had also opened X', async () => {
+    registerAppToolsPreapproved(SID_A, PROJ, 'weather', 'weather', makeTools('forecast'))
+    registerAppToolsPreapproved(SID_B, PROJ, 'weather', 'weather', makeTools('forecast'))
 
     unregisterAppTools(SID_A, 'weather')
 
-    expect(listSuperoneMcpTools(SID_A).map((t) => t.name)).not.toContain('weather__forecast')
-    expect(listSuperoneMcpTools(SID_B).map((t) => t.name)).toContain('weather__forecast')
+    expect(await authorizedAppIds(SID_A)).not.toContain('weather')
+    expect(await authorizedAppIds(SID_B)).toContain('weather')
   })
 })

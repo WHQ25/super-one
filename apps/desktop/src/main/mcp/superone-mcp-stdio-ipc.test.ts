@@ -62,6 +62,7 @@ const {
   disposeSuperoneMcpServer,
   registerAppTools,
   unregisterAppTools,
+  markAppToolPreapproved,
   initSuperoneMcpServer,
   notifyAppReady,
   resolveToolCall,
@@ -194,8 +195,9 @@ describe('superone-mcp-stdio-ipc', () => {
     client.close()
   })
 
-  it('lists built-in superone tools + session-scoped dynamic tools', async () => {
+  it('lists built-in superone tools + fixed miniapp tools (not per-app)', async () => {
     registerAppTools(PROJ, PROJ, 'test-app', 'myapp', makeTools('do_thing'))
+    markAppToolPreapproved('test-app', 'do_thing')
 
     const client = new TestClient(getEndpoint())
     await client.ready()
@@ -203,7 +205,9 @@ describe('superone-mcp-stdio-ipc', () => {
     const names = (res.result?.tools ?? []).map((t) => t.name)
     expect(names).toContain('read_manual')
     expect(names).toContain('config_read')
-    expect(names).toContain('myapp__do_thing')
+    expect(names).toContain('miniapp_list')
+    expect(names).toContain('miniapp_call')
+    expect(names).not.toContain('myapp__do_thing')
     expect(names).toContain('browser_snapshot')
     expect(names).toContain('browser_navigate')
     expect(names).toContain('browser_action_list')
@@ -220,7 +224,7 @@ describe('superone-mcp-stdio-ipc', () => {
     client.close()
   })
 
-  it('pushes tools/changed notifications scoped to the client sessionId', async () => {
+  it('does not push tools/changed when mini-app authorization changes', async () => {
     const clientA = new TestClient(getEndpoint())
     await clientA.ready()
     await clientA.send('tools/list', getToken(), { sessionId: PROJ })
@@ -230,9 +234,10 @@ describe('superone-mcp-stdio-ipc', () => {
     await clientB.send('tools/list', getToken('/other-proj'), { sessionId: '/other-proj' })
 
     registerAppTools(PROJ, PROJ, 'test-app', 'myapp', makeTools('do_thing'))
+    markAppToolPreapproved('test-app', 'do_thing')
     await new Promise((r) => setTimeout(r, 30))
 
-    expect(clientA.notifications.some((n) => n.method === 'tools/changed' && n.params?.sessionId === PROJ)).toBe(true)
+    expect(clientA.notifications.some((n) => n.method === 'tools/changed')).toBe(false)
     expect(clientB.notifications.some((n) => n.method === 'tools/changed')).toBe(false)
 
     clientA.close()
@@ -251,7 +256,7 @@ describe('superone-mcp-stdio-ipc', () => {
     client.close()
   })
 
-  it('routes dynamic tool calls to executeAppTool scoped by sessionId', async () => {
+  it('routes miniapp_call to dispatchAppToolCall scoped by sessionId', async () => {
     const sentToRenderer: Array<{ channel: string; args: unknown[] }> = []
     const fakeWin = {
       webContents: { send: (channel: string, ...args: unknown[]) => sentToRenderer.push({ channel, args }) },
@@ -259,14 +264,15 @@ describe('superone-mcp-stdio-ipc', () => {
     } as unknown as import('electron').BrowserWindow
     initSuperoneMcpServer(() => fakeWin)
     registerAppTools(PROJ, PROJ, 'test-app', 'myapp', makeTools('do_thing'))
+    markAppToolPreapproved('test-app', 'do_thing')
     notifyAppReady(PROJ, 'test-app')
 
     const client = new TestClient(getEndpoint())
     await client.ready()
     const inflight = client.send('tools/call', getToken(), {
       sessionId: PROJ,
-      name: 'myapp__do_thing',
-      arguments: { x: 'hello' },
+      name: 'miniapp_call',
+      arguments: { appId: 'test-app', tool: 'do_thing', input: { x: 'hello' } },
     })
     await new Promise((r) => setTimeout(r, 20))
     const toolCallMsg = sentToRenderer.find((m) => m.channel === AgentIpcChannels.MINIAPP_TOOL_CALL)!

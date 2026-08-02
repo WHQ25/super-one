@@ -166,6 +166,19 @@ function groupableAppIdForItem(
   groupableAppByTool: ReadonlyMap<string, string>,
 ): string | null {
   if (item.server !== 'superone') return null
+  // Fixed miniapp_call: appId + tool live in arguments
+  if (item.tool === 'miniapp_call') {
+    const args = item.arguments && typeof item.arguments === 'object' && !Array.isArray(item.arguments)
+      ? item.arguments as Record<string, unknown>
+      : {}
+    const appId = typeof args.appId === 'string' ? args.appId : ''
+    const tool = typeof args.tool === 'string' ? args.tool : ''
+    if (!appId || !tool) return null
+    return groupableAppByTool.get(`${appId}\0${tool}`)
+      ?? groupableAppByTool.get(`id:${appId}\0${tool}`)
+      ?? null
+  }
+  // Legacy transcript: slug__tool
   const match = item.tool.match(/^(.+?)__(.+)$/)
   if (!match) return null
   return groupableAppByTool.get(`${match[1]}\0${match[2]}`) ?? null
@@ -385,7 +398,11 @@ export function CodexTurnView({ message, isStreaming, isLastAssistant }: CodexTu
     for (const app of apps) {
       const slug = app.manifest.toolSlug ?? app.id
       for (const tool of app.manifest.tools ?? []) {
-        if (tool.groupable) map.set(`${slug}\0${tool.name}`, app.id)
+        if (!tool.groupable) continue
+        // Keys for legacy slug__tool and fixed miniapp_call (appId/slug + tool)
+        map.set(`${slug}\0${tool.name}`, app.id)
+        map.set(`id:${app.id}\0${tool.name}`, app.id)
+        if (slug !== app.id) map.set(`${app.id}\0${tool.name}`, app.id)
       }
     }
     return map

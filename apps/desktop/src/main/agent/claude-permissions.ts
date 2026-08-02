@@ -174,7 +174,8 @@ export function createCanUseTool(
       return { behavior: 'allow' as const, updatedInput: input, toolUseID: context.toolUseID }
     }
 
-    if (isToolPreapproved(toolName)) {
+    // Args-aware: miniapp_call resolves appId+tool from input (see miniapp-call-policy).
+    if (isToolPreapproved(toolName, input as Record<string, unknown>)) {
       return { behavior: 'allow' as const, updatedInput: input, toolUseID: context.toolUseID }
     }
 

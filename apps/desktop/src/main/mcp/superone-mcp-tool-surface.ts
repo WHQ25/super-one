@@ -23,15 +23,23 @@ import {
   isComputerUseToolName,
 } from '../computer-use/tools'
 import {
-  dispatchAppToolCall,
   executeMobileShareFileTool,
-  getAppToolDefs,
   getSessionHost,
   getAppSettingsApplier,
   isMobileShareToolEnabled,
+  miniappToolDepsForSurface,
   notifyDevAppReady,
 } from './superone-mcp-server'
 import type { SuperoneMcpToolDescriptor } from './superone-mcp-types'
+import {
+  executeMiniappCall,
+  executeMiniappList,
+  getMiniappFixedToolDescriptors,
+} from './miniapp-mcp-tools'
+import {
+  MINIAPP_CALL_TOOL_NAME,
+  MINIAPP_LIST_TOOL_NAME,
+} from './miniapp-call-policy'
 
 export function listSuperoneMcpTools(sessionId: string): SuperoneMcpToolDescriptor[] {
   const collaborationEnabled = readAppSettings().experimentalAgentCollaborationEnabled
@@ -39,6 +47,7 @@ export function listSuperoneMcpTools(sessionId: string): SuperoneMcpToolDescript
     ...BUILT_IN_SUPERONE_TOOL_DEFS.filter((tool) => collaborationEnabled
       || !(SESSION_COLLABORATION_TOOL_NAMES as readonly string[]).includes(tool.name)),
     ...getBrowserToolDescriptors(),
+    ...getMiniappFixedToolDescriptors() as SuperoneMcpToolDescriptor[],
   ]
   // Computer Use is opt-in (default off). P0 exposes the 6-tool contract only when enabled.
   if (isComputerUseEnabled()) {
@@ -52,16 +61,8 @@ export function listSuperoneMcpTools(sessionId: string): SuperoneMcpToolDescript
       inputSchema: MOBILE_SHARE_FILE_INPUT_SCHEMA as SuperoneMcpToolDescriptor['inputSchema'],
     })
   }
-  for (const entry of getAppToolDefs().values()) {
-    if (entry.sessionId !== sessionId) continue
-    for (const t of entry.tools) {
-      tools.push({
-        name: `${entry.toolSlug}__${t.name}`,
-        description: t.description,
-        inputSchema: t.inputSchema,
-      })
-    }
-  }
+  // Mini-app tools are no longer listed per-app — fixed miniapp_list / miniapp_call only.
+  void sessionId
   return tools
 }
 
@@ -110,26 +111,21 @@ export async function executeSuperoneMcpTool(
     })
   }
 
-  for (const entry of getAppToolDefs().values()) {
-    if (entry.sessionId !== sessionId) continue
-    const prefix = `${entry.toolSlug}__`
-    if (!toolName.startsWith(prefix)) continue
-    const appToolName = toolName.slice(prefix.length)
-    const toolDef = entry.tools.find((t) => t.name === appToolName)
-    if (!toolDef) continue
-    try {
-      const result = await dispatchAppToolCall(
-        sessionId,
-        entry.projectDir,
-        entry.appId,
-        appToolName,
-        toolDef.standalone === true,
-        args,
-      )
-      return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] }
-    } catch (err) {
-      return { content: [{ type: 'text' as const, text: `[Error] ${err instanceof Error ? err.message : String(err)}` }] }
-    }
+  if (toolName === MINIAPP_LIST_TOOL_NAME) {
+    return executeMiniappList(sessionId, {
+      appId: typeof args.appId === 'string' ? args.appId : undefined,
+      includeSchema: typeof args.includeSchema === 'boolean' ? args.includeSchema : undefined,
+    }, miniappToolDepsForSurface())
+  }
+
+  if (toolName === MINIAPP_CALL_TOOL_NAME) {
+    return executeMiniappCall(sessionId, {
+      appId: String(args.appId ?? ''),
+      tool: String(args.tool ?? ''),
+      input: (args.input && typeof args.input === 'object' && !Array.isArray(args.input))
+        ? args.input as Record<string, unknown>
+        : {},
+    }, miniappToolDepsForSurface())
   }
 
   throw new Error(`Unknown SuperOne MCP tool: ${toolName}`)

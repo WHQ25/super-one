@@ -22,7 +22,15 @@ import { registerWidgetTools } from '../generative-ui/mcp-server'
 import { clearBrowserToolHandlers, registerBrowserTools } from './browser-mcp-tools'
 import { registerComputerUseTools } from '../computer-use/tools'
 import { computerUseQualifiedNames } from '../computer-use/harness-surface'
-import { isBuiltInSuperoneToolQualified } from './superone-host-owned-tools'
+import { isBuiltInSuperoneToolQualified, MCP_SUPERONE_TOOL_PREFIX } from './superone-host-owned-tools'
+import {
+  setMiniappPreapproveLookup,
+  shouldAutoAllowMiniappTool,
+} from './miniapp-call-policy'
+import {
+  registerMiniappTools,
+  type MiniappToolDeps,
+} from './miniapp-mcp-tools'
 
 export interface MobileShareToolResult {
   ok: boolean
@@ -78,12 +86,6 @@ interface AppToolEntry {
   tools: MiniAppToolDefinition[]
 }
 
-function describeTool(t: MiniAppToolDefinition): string {
-  const base = t.description
-  if (t.standalone) return base
-  return `${base}\n\n(Note: this tool requires the mini-app's panel UI to be open to execute.)`
-}
-
 function makeAppKey(sessionId: string, appId: string): string {
   return `${sessionId}::${appId}`
 }
@@ -96,8 +98,87 @@ const sessionServers = new Map<string, Set<ProjectServerState>>()
 const appToolDefs = new Map<string, AppToolEntry>()
 const appTemplates = new Map<string, Record<string, string>>()
 const appReadyGates = new Map<string, GateEntry>()
+/** Keys: `toolSlug__toolName` (legacy / install metadata) and `appId::toolName` (args-aware). */
 const preapprovedTools = new Set<string>()
 const pendingCalls = new Map<string, PendingCall>()
+
+function isAppToolPreapproved(appId: string, toolName: string): boolean {
+  if (preapprovedTools.has(`${appId}::${toolName}`)) return true
+  let toolSlug: string | null = null
+  for (const entry of appToolDefs.values()) {
+    if (entry.appId === appId) {
+      toolSlug = entry.toolSlug
+      break
+    }
+  }
+  if (!toolSlug) toolSlug = appId
+  return preapprovedTools.has(`${toolSlug}__${toolName}`)
+}
+
+/** Runtime alwaysAllow / test helper — adds both appId and toolSlug keys. */
+export function markAppToolPreapproved(appId: string, toolName: string): void {
+  preapprovedTools.add(`${appId}::${toolName}`)
+  let toolSlug: string | null = null
+  for (const entry of appToolDefs.values()) {
+    if (entry.appId === appId) {
+      toolSlug = entry.toolSlug
+      break
+    }
+  }
+  if (!toolSlug) toolSlug = appId
+  preapprovedTools.add(`${toolSlug}__${toolName}`)
+}
+
+/** Test/export for executor preapprove checks. */
+export function isAppToolPreapprovedForSession(appId: string, toolName: string): boolean {
+  return isAppToolPreapproved(appId, toolName)
+}
+
+function isLegacyNamespacedPreapproved(namespacedName: string): boolean {
+  return preapprovedTools.has(namespacedName)
+}
+
+setMiniappPreapproveLookup({
+  isAppToolPreapproved,
+  isLegacyNamespacedPreapproved,
+})
+
+export function getAuthorizedAppsForSession(sessionId: string): Array<{
+  appId: string
+  toolSlug: string
+  tools: MiniAppToolDefinition[]
+}> {
+  const out: Array<{ appId: string; toolSlug: string; tools: MiniAppToolDefinition[] }> = []
+  for (const entry of appToolDefs.values()) {
+    if (entry.sessionId !== sessionId) continue
+    out.push({ appId: entry.appId, toolSlug: entry.toolSlug, tools: entry.tools })
+  }
+  return out
+}
+
+export function getAppToolEntryForSession(
+  sessionId: string,
+  appId: string,
+): { projectDir: string; toolSlug: string; tools: MiniAppToolDefinition[] } | null {
+  const entry = appToolDefs.get(makeAppKey(sessionId, appId))
+  if (!entry) return null
+  return { projectDir: entry.projectDir, toolSlug: entry.toolSlug, tools: entry.tools }
+}
+
+export function miniappToolDepsForSurface(): MiniappToolDeps {
+  return {
+    getAuthorizedApps: getAuthorizedAppsForSession,
+    getAppEntry: getAppToolEntryForSession,
+    dispatchAppToolCall,
+    isAppToolPreapproved,
+    markAppToolPreapproved,
+    getEmitHostEvent: (sessionId) => {
+      const session = getSessionHost()?.getSession(sessionId)
+      if (!session?.emitHostEvent) return null
+      return (event) => session.emitHostEvent!(event)
+    },
+  }
+}
 
 interface PendingIntercept {
   resolve: (userInput: Record<string, unknown>) => void
@@ -221,6 +302,8 @@ export function createSuperoneMcpServer(sessionId: string, projectPath?: string)
   registerBrowserTools(server, sessionId)
   // Opt-in desktop Computer Use (coordinate/AX fallback tier). Gated by settings.
   registerComputerUseTools(server, sessionId)
+  // Fixed mini-app surface — no per-app dynamic MCP tools.
+  registerMiniappTools(server, sessionId, miniappToolDepsForSurface())
   const state: ProjectServerState = { server, registeredTools: new Map() }
 
   let set = sessionServers.get(sessionId)
@@ -229,12 +312,6 @@ export function createSuperoneMcpServer(sessionId: string, projectPath?: string)
     sessionServers.set(sessionId, set)
   }
   set.add(state)
-
-  for (const entry of appToolDefs.values()) {
-    if (entry.sessionId === sessionId) {
-      registerToolsOnState(state, entry.sessionId, entry.appId, entry.projectDir, entry.toolSlug, entry.tools)
-    }
-  }
 
   if (mobileShareEnabled.has(sessionId)) {
     registerMobileShareToolOnState(state, sessionId)
@@ -313,37 +390,6 @@ export function clearAppReadyGate(projectDir: string, appId: string): void {
   appReadyGates.delete(key)
 }
 
-function registerToolsOnState(
-  state: ProjectServerState,
-  sessionId: string,
-  appId: string,
-  projectDir: string,
-  toolSlug: string,
-  tools: MiniAppToolDefinition[],
-): void {
-  for (const t of tools) {
-    const namespacedName = `${toolSlug}__${t.name}`
-    if (state.registeredTools.has(namespacedName)) continue
-
-    const zodShape = jsonSchemaToZodShape(t.inputSchema)
-    const isStandalone = t.standalone === true
-    const registered = state.server.registerTool(
-      namespacedName,
-      { description: describeTool(t), inputSchema: zodShape },
-      async (args: Record<string, unknown>) => {
-        try {
-          const result = await dispatchAppToolCall(sessionId, projectDir, appId, t.name, isStandalone, args)
-          return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] }
-        } catch (err) {
-          return { content: [{ type: 'text' as const, text: `[Error] ${err instanceof Error ? err.message : String(err)}` }] }
-        }
-      },
-    )
-    state.registeredTools.set(namespacedName, registered)
-    log.info('[superone-mcp] registered tool %s (standalone=%s) for sessionId=%s', namespacedName, isStandalone, sessionId)
-  }
-}
-
 function registerMobileShareToolOnState(state: ProjectServerState, sessionId: string): void {
   if (state.registeredTools.has(MOBILE_SHARE_FILE_TOOL_NAME)) return
   const zodShape = jsonSchemaToZodShape(MOBILE_SHARE_FILE_INPUT_SCHEMA)
@@ -413,6 +459,11 @@ export function unregisterMobileShareTool(sessionId: string): void {
   }
 }
 
+/**
+ * Cache which mini-apps (and their tool manifests) are authorized for a session.
+ * Does NOT mutate the MCP tool list — that surface is the fixed miniapp_list /
+ * miniapp_call pair. Agents discover tools via miniapp_list.
+ */
 export function registerAppTools(
   sessionId: string,
   projectDir: string,
@@ -424,19 +475,13 @@ export function registerAppTools(
   log.debug('[superone-mcp] registerAppTools sessionId=%s projectDir=%s appId=%s toolSlug=%s tools=%d',
     sessionId, projectDir, appId, toolSlug, tools.length)
   appToolDefs.set(key, { sessionId, projectDir, appId, toolSlug, tools })
-
-  emitToolsChanged(sessionId)
-
-  const states = sessionServers.get(sessionId)
-  if (!states || states.size === 0) {
-    log.info('[superone-mcp] no active server for sessionId=%s; tools cached for %s', sessionId, appId)
-    return
-  }
-
-  for (const state of states) {
-    registerToolsOnState(state, sessionId, appId, projectDir, toolSlug, tools)
-    if (state.server.isConnected()) state.server.sendToolListChanged()
-  }
+  log.info(
+    '[superone-mcp] authorized mini-app sessionId=%s appId=%s toolSlug=%s tools=%d (fixed MCP surface)',
+    sessionId,
+    appId,
+    toolSlug,
+    tools.length,
+  )
 }
 
 export async function loadPreapprovedTools(
@@ -447,8 +492,8 @@ export async function loadPreapprovedTools(
   const tools = await getPreapprovedByPath(basePath)
   for (const t of tools) {
     preapprovedTools.add(`${toolSlug}__${t}`)
+    preapprovedTools.add(`${appId}::${t}`)
   }
-  void appId
 }
 
 export function updatePreapprovedTools(appId: string, tools: string[]): void {
@@ -460,21 +505,32 @@ export function updatePreapprovedTools(appId: string, tools: string[]): void {
     }
   }
   if (!toolSlug) toolSlug = appId
-  const prefix = `${toolSlug}__`
+  const slugPrefix = `${toolSlug}__`
+  const appPrefix = `${appId}::`
   for (const name of [...preapprovedTools]) {
-    if (name.startsWith(prefix)) preapprovedTools.delete(name)
+    if (name.startsWith(slugPrefix) || name.startsWith(appPrefix)) preapprovedTools.delete(name)
   }
   for (const t of tools) {
-    preapprovedTools.add(`${prefix}${t}`)
+    preapprovedTools.add(`${slugPrefix}${t}`)
+    preapprovedTools.add(`${appPrefix}${t}`)
   }
 }
 
-const MCP_SUPERONE_PREFIX = 'mcp__superone__'
-
-export function isToolPreapproved(toolName: string): boolean {
-  if (!toolName.startsWith(MCP_SUPERONE_PREFIX)) return false
-  const namespacedName = toolName.slice(MCP_SUPERONE_PREFIX.length)
-  return preapprovedTools.has(namespacedName)
+/**
+ * Args-aware preapproval for harness permission layers.
+ *
+ * - Legacy: `mcp__superone__<slug>__<tool>` matches the preapproved set by bare name
+ * - Fixed: `mcp__superone__miniapp_call` checks input.appId + input.tool
+ * - `miniapp_list` is always allow (via policy), not preapproved
+ *
+ * Pass tool call `input` whenever available so miniapp_call can resolve the real tool.
+ */
+export function isToolPreapproved(
+  toolName: string,
+  input: Record<string, unknown> = {},
+): boolean {
+  if (!toolName.startsWith(MCP_SUPERONE_TOOL_PREFIX)) return false
+  return shouldAutoAllowMiniappTool(toolName, input)
 }
 
 export function unregisterAppTools(sessionId: string, appId: string): void {
@@ -483,20 +539,8 @@ export function unregisterAppTools(sessionId: string, appId: string): void {
   const toolSlug = entry?.toolSlug ?? appId
   appToolDefs.delete(key)
 
-  const prefix = `${toolSlug}__`
-  const states = sessionServers.get(sessionId)
-  if (states) {
-    for (const state of states) {
-      for (const [name, tool] of state.registeredTools) {
-        if (name.startsWith(prefix)) {
-          tool.remove()
-          state.registeredTools.delete(name)
-          log.info('[superone-mcp] unregistered tool %s for sessionId=%s', name, sessionId)
-        }
-      }
-      if (state.server.isConnected()) state.server.sendToolListChanged()
-    }
-  }
+  const slugPrefix = `${toolSlug}__`
+  const appPrefix = `${appId}::`
 
   let stillOpen = false
   for (const e of appToolDefs.values()) {
@@ -507,11 +551,11 @@ export function unregisterAppTools(sessionId: string, appId: string): void {
   }
   if (!stillOpen) {
     for (const name of [...preapprovedTools]) {
-      if (name.startsWith(prefix)) preapprovedTools.delete(name)
+      if (name.startsWith(slugPrefix) || name.startsWith(appPrefix)) preapprovedTools.delete(name)
     }
   }
 
-  emitToolsChanged(sessionId)
+  log.info('[superone-mcp] unauthorized mini-app sessionId=%s appId=%s', sessionId, appId)
 }
 
 /**

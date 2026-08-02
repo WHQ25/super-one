@@ -52,7 +52,7 @@ export function useAgentEvents(): void {
       const projectId = instance?.projectId ?? useAppStore.getState().currentProjectId
       const host = buildMiniAppHost(req.appId, projectId)
       const templateUrl = buildToolRendererUrl('intercept', host, req.templatePath, req.callId, req.toolName, req.agentInput ?? {})
-      const toolUseId = findToolUseIdForIntercept(req.toolSlug, req.toolName)
+      const toolUseId = findToolUseIdForIntercept(req.appId, req.toolSlug, req.toolName)
       useChatStore.getState().openToolIntercept({
         callId: req.callId,
         appId: req.appId,
@@ -75,7 +75,7 @@ export function useAgentEvents(): void {
   }, [])
 }
 
-function findToolUseIdForIntercept(toolSlug: string, toolName: string): string | null {
+function findToolUseIdForIntercept(appId: string, toolSlug: string, toolName: string): string | null {
   const state = useChatStore.getState()
   const activeProject = state.activeProject
   if (!activeProject) return null
@@ -85,7 +85,8 @@ function findToolUseIdForIntercept(toolSlug: string, toolName: string): string |
   const session = project._sessions[sessionId]
   if (!session) return null
 
-  const fullName = `mcp__superone__${toolSlug}__${toolName}`
+  const legacyName = `mcp__superone__${toolSlug}__${toolName}`
+  const fixedName = 'mcp__superone__miniapp_call'
   const resultedIds = new Set<string>()
   for (let i = session.messages.length - 1; i >= 0; i--) {
     const content = session.messages[i].content
@@ -95,8 +96,15 @@ function findToolUseIdForIntercept(toolSlug: string, toolName: string): string |
     }
     for (let j = content.length - 1; j >= 0; j--) {
       const block = content[j]
-      if (block.type === 'tool_use' && block.toolName === fullName && !resultedIds.has(block.toolUseId)) {
-        return block.toolUseId
+      if (block.type !== 'tool_use' || resultedIds.has(block.toolUseId)) continue
+      if (block.toolName === legacyName) return block.toolUseId
+      if (block.toolName === fixedName) {
+        try {
+          const input = JSON.parse(block.input) as Record<string, unknown>
+          if (input.appId === appId && input.tool === toolName) return block.toolUseId
+          // Also match when agent used toolSlug as appId
+          if (input.appId === toolSlug && input.tool === toolName) return block.toolUseId
+        } catch { /* ignore partial JSON */ }
       }
     }
   }

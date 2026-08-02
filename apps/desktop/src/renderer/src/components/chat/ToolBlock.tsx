@@ -34,6 +34,7 @@ import { ToolRendererFrame } from './ToolRendererFrame'
 import { StandaloneToolBlock } from './StandaloneToolBlock'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
 import { useMiniAppStore } from '@/stores/miniapp'
+import { resolveMiniAppToolIdentity } from '@/lib/miniapp-tool-identity'
 import { clickReleasedOnSelection, parseFileLinkTarget } from '@/lib/file-link'
 import { TerminalCommandOutput } from './TerminalCommandOutput'
 import { MarkdownView } from '@/components/MarkdownPreview'
@@ -1133,16 +1134,18 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, t
         </CompactToolRow>
       )
     }
-    const appToolMatch = mcpInfo.mcpToolName.match(/^(.+?)__(.+)$/)
-    if (appToolMatch) {
-      const [, mcpSlug, mcpToolNamePart] = appToolMatch
-      const canvasApp = miniApps.find((a) => (a.manifest.toolSlug ?? a.id) === mcpSlug)
-      const toolDef = canvasApp?.manifest.tools?.find((t) => t.name === mcpToolNamePart)
-      const appName = canvasApp?.manifest.name ?? mcpSlug
+    // Fixed miniapp_call (appId+tool in args) or legacy slug__tool transcript names.
+    const resolvedAppTool = resolveMiniAppToolIdentity(mcpInfo.mcpToolName, params, miniApps)
+    if (resolvedAppTool) {
+      const canvasApp = miniApps.find((a) => a.id === resolvedAppTool.appId)
+      const toolDef = resolvedAppTool.toolDef
+      const mcpToolNamePart = resolvedAppTool.toolName
+      const appName = canvasApp?.manifest.name ?? resolvedAppTool.app.manifest.name
       const toolReadableName = toolDef?.displayName ?? mcpToolNamePart.replace(/_/g, ' ')
       const runningText = toolDef?.runningText ?? toolReadableName
       const appToolExpandable = !!(toolDef?.showResult && result && !isStreaming)
-      const inputSummary = toolDef?.inputSummaryField ? String(params[toolDef.inputSummaryField] ?? '') : ''
+      const toolParams = resolvedAppTool.toolInput
+      const inputSummary = toolDef?.inputSummaryField ? String(toolParams[toolDef.inputSummaryField] ?? '') : ''
       let resultSummary = ''
       if (!isStreaming && result && toolDef?.resultSummaryField) {
         try { resultSummary = String(JSON.parse(result)[toolDef.resultSummaryField] ?? '') } catch {}
@@ -1174,7 +1177,7 @@ export const ToolBlock = memo(function ToolBlock({ toolName, toolUseId, input, t
               toolName={mcpToolNamePart}
               appName={appName}
               toolReadableName={toolReadableName}
-              args={params}
+              args={toolParams}
               result={result}
               isStreaming={isStreaming}
               templatePath={tplPath}

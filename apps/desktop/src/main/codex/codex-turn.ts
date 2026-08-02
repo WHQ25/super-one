@@ -77,16 +77,17 @@ export const CHILD_THREAD_DISALLOWED_SUPERONE_TOOLS = new Set<string>(['session_
  * Rewrite Codex MCP elicitation messages into Claude-style qualified names so
  * processServerRequest can auto-accept SuperOne-owned tools.
  *
- * Host-owned names (static builtins, mobile_share_file, computer_*) come from
- * superone-host-owned-tools. Mini-app tools (`slug__tool`) always rewrite so
- * isToolPreapproved can match.
+ * Host-owned names (static builtins, mobile_share_file, computer_*, miniapp_list)
+ * come from superone-host-owned-tools. Fixed miniapp_call and legacy mini-app
+ * tools (`slug__tool`) always rewrite so isToolPreapproved can match.
  */
 export function extractSuperoneMiniAppToolName(message: string): string | null {
   const match = message.match(SUPERONE_MCP_TOOL_NAME_PATTERN)
   if (!match) return null
   const namespacedName = match[1]
   const isMiniAppTool = namespacedName.includes('__')
-  if (!isMiniAppTool && !isHostOwnedSuperoneBareName(namespacedName)) return null
+  const isFixedMiniappCall = namespacedName === 'miniapp_call'
+  if (!isMiniAppTool && !isFixedMiniappCall && !isHostOwnedSuperoneBareName(namespacedName)) return null
   return toQualifiedSuperoneToolName(namespacedName)
 }
 
@@ -925,7 +926,13 @@ export async function processServerRequest(
         !isRichConfirm
         && typeof requestToolName === 'string'
         && requestToolName.startsWith(MCP_SUPERONE_TOOL_PREFIX)
-        && (isToolPreapproved(requestToolName) || isBuiltInSuperoneTool(requestToolName))
+        && (
+          isToolPreapproved(
+            requestToolName,
+            (parsedApprovalRequest.request.input ?? {}) as Record<string, unknown>,
+          )
+          || isBuiltInSuperoneTool(requestToolName)
+        )
       ) {
         const bareName = requestToolName.slice(MCP_SUPERONE_TOOL_PREFIX.length)
         const callerThreadId = readString(notification.params.threadId)

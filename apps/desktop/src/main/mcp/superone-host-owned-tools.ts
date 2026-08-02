@@ -23,6 +23,16 @@ import {
 
 export const MCP_SUPERONE_TOOL_PREFIX = 'mcp__superone__' as const
 
+/**
+ * Fixed mini-app MCP tools — both host-owned at the harness layer.
+ * - miniapp_list: read-only catalog
+ * - miniapp_call: statically admitted; args-aware allow/prompt runs in the executor
+ *   (host permission_request), so Codex/OpenCode no longer need tool args at the
+ *   harness permission gate.
+ */
+const MINIAPP_LIST_BARE_NAME = 'miniapp_list' as const
+const MINIAPP_CALL_BARE_NAME = 'miniapp_call' as const
+
 /** Deprecated alias still registered on the MCP server for one release. */
 const COMPUTER_USE_REGISTERED_ALIASES = ['computer_observe'] as const
 
@@ -33,6 +43,8 @@ const COMPUTER_USE_REGISTERED_ALIASES = ['computer_observe'] as const
 export function isStaticHostOwnedSuperoneBareName(bare: string): boolean {
   if ((BUILT_IN_SUPERONE_TOOL_NAMES as readonly string[]).includes(bare)) return true
   if (bare === MOBILE_SHARE_FILE_TOOL_NAME) return true
+  if (bare === MINIAPP_LIST_BARE_NAME) return true
+  if (bare === MINIAPP_CALL_BARE_NAME) return true
   return false
 }
 
@@ -75,6 +87,8 @@ export function listOpenCodeAutoAllowSuperoneBareNames(): string[] {
   const names: string[] = [
     ...BUILT_IN_SUPERONE_TOOL_NAMES,
     MOBILE_SHARE_FILE_TOOL_NAME,
+    MINIAPP_LIST_BARE_NAME,
+    MINIAPP_CALL_BARE_NAME,
   ]
   if (isComputerUseEnabled()) {
     names.push(...COMPUTER_USE_TOOL_NAMES)
@@ -88,6 +102,8 @@ export function listAllHostOwnedSuperoneBareNamesForRecognition(): string[] {
   return [
     ...BUILT_IN_SUPERONE_TOOL_NAMES,
     MOBILE_SHARE_FILE_TOOL_NAME,
+    MINIAPP_LIST_BARE_NAME,
+    MINIAPP_CALL_BARE_NAME,
     ...COMPUTER_USE_TOOL_NAMES,
     ...COMPUTER_USE_REGISTERED_ALIASES,
   ]

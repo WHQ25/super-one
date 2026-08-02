@@ -591,6 +591,12 @@ describe('extractSuperoneMiniAppToolName', () => {
     expect(
       extractSuperoneMiniAppToolName('Allow the superone MCP server to run tool "excalidraw__clear_canvas"?'),
     ).toBe('mcp__superone__excalidraw__clear_canvas')
+    expect(
+      extractSuperoneMiniAppToolName('Allow the superone MCP server to run tool "miniapp_call"?'),
+    ).toBe('mcp__superone__miniapp_call')
+    expect(
+      extractSuperoneMiniAppToolName('Allow the superone MCP server to run tool "miniapp_list"?'),
+    ).toBe('mcp__superone__miniapp_list')
   })
 
   it('extracts built-in superone tool name even without namespace separator', () => {
@@ -1484,6 +1490,58 @@ describe('streamTurnEvents superone preapprove short-circuit', () => {
 
     expect(onPermissionRequest).not.toHaveBeenCalled()
     expect(respond).toHaveBeenCalledWith(99, { action: 'accept', content: null, _meta: null })
+  })
+
+  it('auto-accepts miniapp_call elicitation (host-owned static admit); executor owns app-tool gate', async () => {
+    // miniapp_call is host-owned: Codex elicitation auto-accepts without args.
+    // Non-preapproved (appId, tool) is prompted later via host permission_request
+    // inside executeMiniappCall — not via this elicitation.
+    const { isBuiltInSuperoneTool } = await import('../mcp/superone-mcp-server')
+    vi.mocked(isBuiltInSuperoneTool).mockImplementation(
+      (name: string) => name === 'mcp__superone__miniapp_call' || name === 'mcp__superone__miniapp_list',
+    )
+
+    const session = { ...makeSession(), threadId: 'main-thread' }
+    const notifications: Array<Record<string, unknown>> = [
+      {
+        requestIdRaw: 100,
+        requestId: '100',
+        method: 'mcpServer/elicitation/request',
+        params: {
+          serverName: 'superone',
+          message: 'Allow the superone MCP server to run tool "miniapp_call"?',
+          requestedSchema: { type: 'object', properties: {} },
+          _meta: { persist: ['always'] },
+        },
+      },
+      {
+        method: 'turn/completed',
+        params: { turn: { status: 'completed' } },
+      },
+    ]
+    const respond = vi.fn().mockResolvedValue(undefined)
+    const mockConnection = {
+      request: vi.fn().mockResolvedValue({}),
+      respond,
+      notify: vi.fn().mockResolvedValue(undefined),
+      nextNotification: vi.fn().mockImplementation(async () => {
+        const next = notifications.shift()
+        if (!next) throw new Error('no notification')
+        return next
+      }),
+    } as never
+    const onPermissionRequest = vi.fn()
+
+    await streamTurnEvents(
+      mockConnection,
+      session,
+      null,
+      new AbortController(),
+      { onPermissionRequest },
+    )
+
+    expect(onPermissionRequest).not.toHaveBeenCalled()
+    expect(respond).toHaveBeenCalledWith(100, { action: 'accept', content: null, _meta: null })
   })
 
   it('auto-accepts SuperOne computer-use tools without forwarding to UI', async () => {

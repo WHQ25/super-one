@@ -194,9 +194,17 @@ describe('createCanUseTool', () => {
 
   it('should auto-approve preapproved miniapp tools without permission prompt', async () => {
     const { isToolPreapproved } = await import('../mcp/superone-mcp-server')
-    vi.mocked(isToolPreapproved).mockReturnValueOnce(true)
+    vi.mocked(isToolPreapproved).mockImplementation((name: string, input: Record<string, unknown> = {}) => {
+      if (name === 'mcp__superone__miniapp_call' && input.appId === 'hello' && input.tool === 'render_data') return true
+      if (name === 'mcp__superone__hello__render_data') return true
+      return false
+    })
     const { canUseTool } = createCanUseTool(perms, questions, plans, emit)
-    const result = await canUseTool('mcp__superone__hello__render_data', { data: [] }, makeContext())
+    const result = await canUseTool(
+      'mcp__superone__miniapp_call',
+      { appId: 'hello', tool: 'render_data', input: { data: [] } },
+      makeContext(),
+    )
     expect(result.behavior).toBe('allow')
     expect(events).toHaveLength(0)
     expect(perms.size).toBe(0)
@@ -204,9 +212,13 @@ describe('createCanUseTool', () => {
 
   it('should not auto-approve non-preapproved miniapp tools', async () => {
     const { isToolPreapproved } = await import('../mcp/superone-mcp-server')
-    vi.mocked(isToolPreapproved).mockReturnValueOnce(false)
+    vi.mocked(isToolPreapproved).mockReturnValue(false)
     const { canUseTool } = createCanUseTool(perms, questions, plans, emit)
-    const promise = canUseTool('mcp__superone__hello__render_data', { data: [] }, makeContext())
+    const promise = canUseTool(
+      'mcp__superone__miniapp_call',
+      { appId: 'hello', tool: 'render_data', input: { data: [] } },
+      makeContext(),
+    )
     expect(events).toHaveLength(1)
     expect(events[0].type).toBe('permission_request')
     const [id] = [...perms.keys()]

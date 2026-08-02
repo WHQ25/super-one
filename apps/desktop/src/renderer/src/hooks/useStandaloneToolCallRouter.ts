@@ -27,21 +27,34 @@ function findMatchingToolUseId(call: MiniAppToolCallRequest): string | null {
   if (!toolDef?.standalone) return null
 
   const slug = app.manifest.toolSlug ?? app.id
-  const fullName = `mcp__superone__${slug}__${call.toolName}`
+  const legacyName = `mcp__superone__${slug}__${call.toolName}`
+  const fixedName = 'mcp__superone__miniapp_call'
   const argsKey = canonicalize(call.arguments ?? {})
+  // miniapp_call wraps tool args under `input`
+  const fixedArgsKey = canonicalize({
+    appId: call.appId,
+    tool: call.toolName,
+    input: call.arguments ?? {},
+  })
+  // Agents may pass toolSlug as appId
+  const fixedArgsKeySlug = canonicalize({
+    appId: slug,
+    tool: call.toolName,
+    input: call.arguments ?? {},
+  })
 
   const state = useChatStore.getState()
   const project = state.projectSessions[call.projectDir]
   if (!project?._activeSessionId) {
     window.app.trace?.('miniapp.standalone', 'router-no-match', {
-      callId: call.callId, reason: 'no-active-session', projectDir: call.projectDir, fullName, argsKey,
+      callId: call.callId, reason: 'no-active-session', projectDir: call.projectDir, fullName: fixedName, argsKey,
     }, call.callId)
     return null
   }
   const session = project._sessions[project._activeSessionId]
   if (!session) {
     window.app.trace?.('miniapp.standalone', 'router-no-match', {
-      callId: call.callId, reason: 'session-missing', fullName, argsKey,
+      callId: call.callId, reason: 'session-missing', fullName: fixedName, argsKey,
     }, call.callId)
     return null
   }
@@ -59,17 +72,44 @@ function findMatchingToolUseId(call: MiniAppToolCallRequest): string | null {
       const blockArgsKey = parseOk ? canonicalize(blockArgs) : '<unparseable>'
       const alreadyMapped = !!mapped[block.toolUseId]
       candidates.push({ toolUseId: block.toolUseId, toolName: block.toolName, argsKey: blockArgsKey, alreadyMapped })
-      if (block.toolName !== fullName) continue
-      if (alreadyMapped) continue
-      if (!parseOk || blockArgsKey !== argsKey) continue
-      window.app.trace?.('miniapp.standalone', 'router-matched', {
-        callId: call.callId, toolUseId: block.toolUseId, fullName, argsKey,
-      }, call.callId)
-      return block.toolUseId
+      if (alreadyMapped || !parseOk) continue
+
+      // Fixed surface: miniapp_call({ appId, tool, input })
+      if (block.toolName === fixedName) {
+        if (blockArgsKey === fixedArgsKey || blockArgsKey === fixedArgsKeySlug) {
+          window.app.trace?.('miniapp.standalone', 'router-matched', {
+            callId: call.callId, toolUseId: block.toolUseId, fullName: fixedName, argsKey: blockArgsKey,
+          }, call.callId)
+          return block.toolUseId
+        }
+        // Match by appId+tool when input keys differ slightly (defaults stripped by schema)
+        const rec = blockArgs as Record<string, unknown>
+        const blockAppId = typeof rec.appId === 'string' ? rec.appId : ''
+        const blockTool = typeof rec.tool === 'string' ? rec.tool : ''
+        if (
+          (blockAppId === call.appId || blockAppId === slug)
+          && blockTool === call.toolName
+          && canonicalize(rec.input ?? {}) === argsKey
+        ) {
+          window.app.trace?.('miniapp.standalone', 'router-matched', {
+            callId: call.callId, toolUseId: block.toolUseId, fullName: fixedName, argsKey,
+          }, call.callId)
+          return block.toolUseId
+        }
+        continue
+      }
+
+      // Legacy transcript / historical tool names
+      if (block.toolName === legacyName && blockArgsKey === argsKey) {
+        window.app.trace?.('miniapp.standalone', 'router-matched', {
+          callId: call.callId, toolUseId: block.toolUseId, fullName: legacyName, argsKey,
+        }, call.callId)
+        return block.toolUseId
+      }
     }
   }
   window.app.trace?.('miniapp.standalone', 'router-no-match', {
-    callId: call.callId, reason: 'no-block-matched', fullName, argsKey, candidates,
+    callId: call.callId, reason: 'no-block-matched', fullName: fixedName, argsKey, candidates,
   }, call.callId)
   return null
 }

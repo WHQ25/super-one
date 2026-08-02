@@ -11,6 +11,7 @@ import { countClaudeProcessTools, isClaudeConclusionSegment, splitTurnForCompact
 import { TurnDetailSection } from './TurnDetailSection'
 import { toImageGenerationItems, toVideoStatusItems, isMediaGenerateImageTool, isMediaVideoStatusTool, collectCodexGeneratedImages, collectCodexGeneratedVideos } from './media-generation'
 import { useMiniAppStore } from '@/stores/miniapp'
+import { resolveMiniAppToolIdentity } from '@/lib/miniapp-tool-identity'
 import type { MiniAppEntry } from '@superone/shared/miniapp-types'
 import { SubagentBlock } from './SubagentBlock'
 import { WorkflowBlock } from './WorkflowBlock'
@@ -100,24 +101,22 @@ export function groupContent(content: ContentBlock[], apps: MiniAppEntry[]): Gro
 
   // Build a set of tool_use IDs that belong to groupable app tools
   const appToolIdToAppId = new Map<string, string>()
-  const slugToApp = new Map(apps.flatMap((a) => {
-    const slug = a.manifest.toolSlug ?? a.id
-    return slug ? [[slug, a] as const] : []
-  }))
   for (const block of content) {
     if (block.type !== 'tool_use') continue
     const mcp = parseMcpToolName(block.toolName)
     if (!mcp || mcp.serverName !== 'superone') continue
-    const appToolMatch = mcp.mcpToolName.match(/^(.+?)__(.+)$/)
-    if (!appToolMatch) continue
-    const [, slug, toolNamePart] = appToolMatch
-    const app = slugToApp.get(slug)
-    if (!app) continue
-    const toolDef = app.manifest.tools?.find((t) => t.name === toolNamePart)
+    let params: Record<string, unknown> = {}
+    try {
+      const parsed = JSON.parse(block.input)
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) params = parsed
+    } catch { /* streaming partial input */ }
+    const resolved = resolveMiniAppToolIdentity(mcp.mcpToolName, params, apps)
+    if (!resolved) continue
+    const toolDef = resolved.toolDef
     // Standalone tools own their entire chat block (an iframe) — never group them,
     // grouping would defeat the purpose of inline custom UI per call.
     if (toolDef?.standalone) continue
-    if (toolDef?.groupable) appToolIdToAppId.set(block.toolUseId, app.id)
+    if (toolDef?.groupable) appToolIdToAppId.set(block.toolUseId, resolved.appId)
   }
 
   const segments: RenderSegment[] = []

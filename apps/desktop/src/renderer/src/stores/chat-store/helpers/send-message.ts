@@ -30,7 +30,7 @@ import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 import {
   nodeHarnessToProviderId,
   nodeStatusToAgentStatus,
-  transcriptToChatMessages,
+  reconcileTranscriptWithLocalMessages,
   type NodeSessionSnapshot,
 } from '@/lib/remote-session-messages'
 
@@ -267,8 +267,7 @@ export async function sendMessageImpl(
       const providerId = nodeHarnessToProviderId(
         finalSnap?.harnessId || finalSnap?.providerId || preferredHarness,
       )
-      // Transcript reconcile is the recovery authority if stream events were missed.
-      const messages = transcriptToChatMessages(finalSnap?.transcript, providerId)
+      // Transcript is recovery only — reconcile keeps streamed rich blocks.
       const { nodePendingToPermissionRequest } = await import('@/lib/remote-session-messages')
       const pendingPerm = nodePendingToPermissionRequest(finalSnap?.pendingInteraction)
       const waitingOnPermission = Boolean(pendingPerm)
@@ -281,7 +280,11 @@ export async function sendMessageImpl(
         snapTitle ||
         (text.length > 100 ? `${text.slice(0, 100)}…` : text)
       patchSession((sess) => ({
-        messages: messages.length > 0 ? messages : sess.messages,
+        messages: reconcileTranscriptWithLocalMessages(
+          sess.messages,
+          finalSnap?.transcript,
+          providerId,
+        ),
         // Stay "streaming" while a remote permission is pending so the prompt stays live.
         awaitingAssistantReply: waitingOnPermission || finalSnap?.status === 'streaming',
         status: waitingOnPermission

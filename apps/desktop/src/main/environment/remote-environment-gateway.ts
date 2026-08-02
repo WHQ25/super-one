@@ -115,6 +115,17 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
     return Array.isArray(res?.events) ? res.events : []
   }
 
+  /**
+   * Head sequence of the durable environment event log (inclusive).
+   * Use as the exclusive `afterSequence` for {@link listEvents} so a turn drain
+   * starts at the true tail — not the end of the first page (limit 1000).
+   */
+  async eventHeadSequence(): Promise<string> {
+    const snap = await this.client.rpc<{ snapshotSequence?: string }>('session.snapshot')
+    const seq = snap?.snapshotSequence
+    return typeof seq === 'string' && seq.length > 0 ? seq : '0'
+  }
+
   async *subscribeEvents(input: SubscribeEventsInput): AsyncIterable<EnvironmentEventEnvelope> {
     let after = input.afterSequence ?? '0'
     // Poll durable event log (WS push can replace this later).

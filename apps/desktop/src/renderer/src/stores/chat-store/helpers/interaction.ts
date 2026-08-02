@@ -83,10 +83,13 @@ export async function respondToPermissionImpl(
               continue
             }
             const providerId = snap?.harnessId || snap?.providerId || 'codex'
-            const messages = remoteMsgs.transcriptToChatMessages(snap?.transcript, providerId)
             set((s) =>
               updateActivePerSession(s, (sess) => ({
-                messages: messages.length > 0 ? messages : sess.messages,
+                messages: remoteMsgs.reconcileTranscriptWithLocalMessages(
+                  sess.messages,
+                  snap?.transcript,
+                  providerId,
+                ),
                 awaitingAssistantReply: Boolean(pending) || status === 'streaming',
                 status: pending
                   ? 'streaming'

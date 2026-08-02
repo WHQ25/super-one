@@ -11,6 +11,8 @@
  * always durable.
  */
 
+import type { AgentEvent } from '../agent-types'
+
 // ---------------------------------------------------------------------------
 // Stream events (TurnRunner → SessionRuntime)
 // ---------------------------------------------------------------------------
@@ -118,6 +120,8 @@ export const SESSION_DURABLE_EVENT = {
   permissionTimeout: 'session.permission_timeout',
   permissionAborted: 'session.permission_aborted',
   statusChanged: 'session.status_changed',
+  /** Lossless harness AgentEvent payload for desktop-equivalent remote rendering. */
+  agentEvent: 'session.agent_event',
   /**
    * Observability only: host action requested. Payload carries actionId — never args
    * (args are claim-only to the controller-scoped host action channel).
@@ -179,6 +183,10 @@ export interface SessionToolFailedPayload {
 export interface SessionStatusChangedPayload {
   status: SessionTurnAgentStatus
   message?: string
+}
+
+export interface SessionAgentEventPayload {
+  event: AgentEvent
 }
 
 export interface SessionPermissionRequestedPayload {

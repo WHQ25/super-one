@@ -116,6 +116,7 @@ describe('session event guards', () => {
 
   it('isSessionDurableEventType', () => {
     expect(isSessionDurableEventType(SESSION_DURABLE_EVENT.toolStarted)).toBe(true)
+    expect(isSessionDurableEventType(SESSION_DURABLE_EVENT.agentEvent)).toBe(true)
     expect(isSessionDurableEventType('session.unknown')).toBe(false)
   })
 })

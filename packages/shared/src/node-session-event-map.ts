@@ -2,9 +2,9 @@
  * Map node durable `session.*` environment events → desktop `AgentEvent`s
  * for remote chat UI streaming.
  *
- * Aligns with Stage 5-A {@link SESSION_DURABLE_EVENT} contracts. Tolerates
- * Codex/Claude **text-only** streams (`assistant_delta` only) as well as
- * optional tool / permission / status-rich events when present.
+ * Lossless `session.agent_event` payloads pass through with local routing
+ * metadata. Legacy text/tool/status durable events remain supported for other
+ * harnesses and older nodes.
  *
  * Missing optional fields are skipped, unknown event types yield nothing,
  * and non-text payloads never throw.
@@ -116,7 +116,9 @@ function mapAgentStatus(status: string | undefined, fallback: AgentStatus): Agen
  */
 export function createNodeSessionEventMapper(ctx: NodeSessionEventMapContext): NodeSessionEventMapper {
   const startedAssistantIds = new Set<string>()
+  const completedAssistantIds = new Set<string>()
   let lastAssistantId: string | null = null
+  let rawTerminalThisTurn = false
   const nowIso = ctx.nowIso ?? (() => new Date().toISOString())
 
   /**
@@ -171,10 +173,47 @@ export function createNodeSessionEventMapper(ctx: NodeSessionEventMapContext): N
       case SESSION_DURABLE_EVENT.turnStarted: {
         // New turn: drop sticky assistant so the next content opens a fresh message.
         lastAssistantId = null
+        rawTerminalThisTurn = false
         push({
           type: 'status_change',
           status: mapAgentStatus(asString(payload.status), 'streaming'),
         })
+        break
+      }
+
+      case SESSION_DURABLE_EVENT.agentEvent: {
+        const rawEvent = asRecord(payload.event)
+        const type = asString(rawEvent.type)
+        if (!type) break
+
+        // Routing metadata belongs to the receiving desktop connection, never
+        // to the remote harness payload.
+        const eventRecord = { ...rawEvent }
+        delete eventRecord.projectPath
+        delete eventRecord.sessionId
+        delete eventRecord.draftSessionId
+        delete eventRecord.seq
+        delete eventRecord.epoch
+        const event = eventRecord as AgentEvent
+        const rawMessageId = type === 'message_start'
+          ? asString(asRecord(eventRecord.message).id)
+          : asString(eventRecord.messageId)
+
+        if (type === 'message_start' && rawMessageId) {
+          startedAssistantIds.add(rawMessageId)
+          lastAssistantId = rawMessageId
+        } else if (rawMessageId) {
+          ensureAssistant(push, rawMessageId)
+        }
+
+        push(event)
+        if (
+          rawMessageId
+          && (type === 'message_complete' || type === 'message_error' || type === 'message_interrupted')
+        ) {
+          completedAssistantIds.add(rawMessageId)
+          rawTerminalThisTurn = true
+        }
         break
       }
 
@@ -212,6 +251,7 @@ export function createNodeSessionEventMapper(ctx: NodeSessionEventMapContext): N
 
       case SESSION_DURABLE_EVENT.assistantMessage: {
         const wireBlockId = asString(payload.blockId)
+        if (wireBlockId && completedAssistantIds.has(wireBlockId)) break
         const text = asString(payload.text)
         const wasOpen = lastAssistantId != null
         const messageId = ensureAssistant(push, wireBlockId ?? `assistant-${envelope.eventId}`)
@@ -302,6 +342,11 @@ export function createNodeSessionEventMapper(ctx: NodeSessionEventMapContext): N
       }
 
       case SESSION_DURABLE_EVENT.turnCompleted: {
+        if (rawTerminalThisTurn) {
+          lastAssistantId = null
+          rawTerminalThisTurn = false
+          break
+        }
         lastAssistantId = null
         push({
           type: 'status_change',
@@ -311,6 +356,11 @@ export function createNodeSessionEventMapper(ctx: NodeSessionEventMapContext): N
       }
 
       case SESSION_DURABLE_EVENT.turnInterrupted: {
+        if (rawTerminalThisTurn) {
+          lastAssistantId = null
+          rawTerminalThisTurn = false
+          break
+        }
         if (lastAssistantId) {
           push({ type: 'message_interrupted', messageId: lastAssistantId })
         }
@@ -320,6 +370,11 @@ export function createNodeSessionEventMapper(ctx: NodeSessionEventMapContext): N
       }
 
       case SESSION_DURABLE_EVENT.turnError: {
+        if (rawTerminalThisTurn) {
+          lastAssistantId = null
+          rawTerminalThisTurn = false
+          break
+        }
         const message = asString(payload.message) ?? 'remote turn failed'
         if (lastAssistantId) {
           push({ type: 'message_error', messageId: lastAssistantId, error: message })

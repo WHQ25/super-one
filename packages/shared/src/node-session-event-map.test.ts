@@ -29,6 +29,55 @@ const ctx = {
 }
 
 describe('mapNodeSessionEvents (text-only)', () => {
+  it('passes lossless AgentEvents through and suppresses legacy completion duplicates', () => {
+    const events = mapNodeSessionEvents(
+      [
+        envelope({ eventType: 'session.turn_started', payload: { status: 'streaming' } }),
+        envelope({
+          eventType: 'session.agent_event',
+          payload: {
+            event: {
+              type: 'content_delta',
+              messageId: 'a1',
+              delta: { type: 'thinking', thinking: 'reasoning' },
+              sessionId: 'untrusted',
+              seq: 999,
+            },
+          },
+        }),
+        envelope({
+          eventType: 'session.agent_event',
+          payload: { event: { type: 'prompt_suggestion', suggestion: 'continue' } },
+        }),
+        envelope({
+          eventType: 'session.agent_event',
+          payload: { event: { type: 'message_complete', messageId: 'a1', metadata: { costUsd: 0.2 } } },
+        }),
+        envelope({
+          eventType: 'session.agent_event',
+          payload: { event: { type: 'status_change', status: 'idle' } },
+        }),
+        envelope({
+          eventType: 'session.assistant_message',
+          payload: { blockId: 'a1', text: 'done' },
+        }),
+        envelope({ eventType: 'session.turn_completed', payload: { status: 'idle' } }),
+      ],
+      ctx,
+    )
+
+    expect(events.map((event) => event.type)).toEqual([
+      'status_change',
+      'message_start',
+      'content_delta',
+      'prompt_suggestion',
+      'message_complete',
+      'status_change',
+    ])
+    expect(events.filter((event) => event.type === 'message_complete')).toHaveLength(1)
+    expect(events[2]).toMatchObject({ sessionId: 'sid-1', seq: 1 })
+  })
+
   it('maps a full text turn into user / stream / complete / idle events', () => {
     const events = mapNodeSessionEvents(
       [

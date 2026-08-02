@@ -370,6 +370,9 @@ export interface CodexMcpServerStartup {
 }
 
 export interface CodexTurnInfo {
+  /** Final assistant text derived from the last agent_message item. */
+  finalResponse?: string
+  durationMs?: number
   threadId: string | null
   turnId?: string
   usage: CodexUsageInfo | null

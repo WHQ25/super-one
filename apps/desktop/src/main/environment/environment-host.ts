@@ -140,9 +140,9 @@ export class EnvironmentHost {
     // inject a stub executor.
     this.hostActionExecutor =
       options.hostActionExecutor ??
-      (async (claimed, signal) => {
+      (async (claimed, signal, connectionId) => {
         const { desktopHostActionExecutor } = await import('./host-action-executor')
-        return desktopHostActionExecutor(claimed, signal)
+        return desktopHostActionExecutor(claimed, signal, connectionId)
       })
     this.hostActionConcurrency = Math.max(2, options.hostActionConcurrency ?? 2)
     this.hostActionPollWaitMs = options.hostActionPollWaitMs ?? 10_000

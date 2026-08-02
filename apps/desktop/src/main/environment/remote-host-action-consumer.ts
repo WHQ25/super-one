@@ -22,10 +22,15 @@ import type {
 } from '@superone/shared/environment'
 import type { NodeRpcClient } from './node-rpc-client'
 
-/** Injectable executor — product tools land later; tests supply a stub. */
+/**
+ * Injectable executor — product tools land later; tests supply a stub.
+ * `connectionId` is the owning remote connection (per-consumer), so session-scoped
+ * tools can route to the node instead of local SessionManager.
+ */
 export type HostActionExecutor = (
   claimed: ClaimHostActionResult,
   signal: AbortSignal,
+  connectionId: string,
 ) => Promise<{ outcome: 'succeeded' | 'failed'; result?: unknown; error?: unknown }>
 
 export interface RemoteHostActionConsumerOptions {
@@ -240,7 +245,7 @@ export class RemoteHostActionConsumer {
 
         let outcome: { outcome: 'succeeded' | 'failed'; result?: unknown; error?: unknown }
         try {
-          outcome = await this.executor(claimed, ac.signal)
+          outcome = await this.executor(claimed, ac.signal, this.connectionId)
         } catch (err) {
           if (ac.signal.aborted) return
           outcome = {

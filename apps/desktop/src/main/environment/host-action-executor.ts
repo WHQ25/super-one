@@ -3,19 +3,40 @@
  * desktop SuperOne MCP tool surface (`executeSuperoneMcpTool`).
  *
  * sessionId identity:
- * - Browser / Computer Use / miniapp: node session UUID is the owner key
- *   (tab ownership, app authorization). No desktop SessionManager entry required.
- * - Tools that call `getSessionHost().getSession(sessionId)` (session_rename,
- *   collab, project-scoped widgets) need a desktop Session when available;
- *   otherwise they return a structured tool error from the surface.
+ * - Browser / Computer Use / miniapp / widgets: node session UUID is the owner
+ *   key (tab ownership, app authorization). No desktop SessionManager entry
+ *   required — keep going through executeSuperoneMcpTool unchanged.
+ * - Session-scoped tools that call `getSessionHost().getSession(sessionId)`
+ *   (session_rename today) need a desktop Session when available. On a remote
+ *   Host Action the claimed.sessionId is a NODE UUID, so local lookup fails.
+ *   Route those through EnvironmentHost to the owning node's SessionRuntime.
  *
  * Dynamic import keeps EnvironmentHost loadable in unit tests that only mock
  * electron partially (tool-surface pulls logger / BrowserWindow).
  */
 
+import type { ClaimHostActionResult } from '@superone/shared/environment'
 import type { HostActionExecutor } from './remote-host-action-consumer'
 
-export const desktopHostActionExecutor: HostActionExecutor = async (claimed, signal) => {
+/**
+ * Tools that mutate node session metadata, not desktop-local resources.
+ * claimed.sessionId is the node session UUID — local SessionManager has no
+ * entry, so these must call EnvironmentHost → node RPC instead of
+ * executeSuperoneMcpTool.
+ */
+const REMOTE_SESSION_SCOPED_TOOLS = new Set(['session_rename'])
+
+type ExecutorResult = {
+  outcome: 'succeeded' | 'failed'
+  result?: unknown
+  error?: unknown
+}
+
+export const desktopHostActionExecutor: HostActionExecutor = async (
+  claimed,
+  signal,
+  connectionId,
+) => {
   if (signal.aborted) {
     return {
       outcome: 'failed',
@@ -29,6 +50,10 @@ export const desktopHostActionExecutor: HostActionExecutor = async (claimed, sig
       : {}
 
   try {
+    if (REMOTE_SESSION_SCOPED_TOOLS.has(claimed.toolName)) {
+      return await executeRemoteSessionScopedTool(claimed, args, connectionId, signal)
+    }
+
     const { executeSuperoneMcpTool } = await import('../mcp/superone-mcp-tool-surface')
     const result = await executeSuperoneMcpTool(claimed.sessionId, claimed.toolName, args)
     if (signal.aborted) {
@@ -58,4 +83,57 @@ export const desktopHostActionExecutor: HostActionExecutor = async (claimed, sig
       },
     }
   }
+}
+
+async function executeRemoteSessionScopedTool(
+  claimed: ClaimHostActionResult,
+  args: Record<string, unknown>,
+  connectionId: string,
+  signal: AbortSignal,
+): Promise<ExecutorResult> {
+  switch (claimed.toolName) {
+    case 'session_rename':
+      return renameRemoteSession(claimed, args, connectionId, signal)
+    default:
+      return {
+        outcome: 'failed',
+        error: {
+          code: 'executor_error',
+          message: `unsupported session-scoped host action: ${claimed.toolName}`,
+        },
+      }
+  }
+}
+
+/** Match local renameSessionTool reply shape so the agent sees a consistent result. */
+async function renameRemoteSession(
+  claimed: ClaimHostActionResult,
+  args: Record<string, unknown>,
+  connectionId: string,
+  signal: AbortSignal,
+): Promise<ExecutorResult> {
+  const rawTitle = typeof args.title === 'string' ? args.title : ''
+  const trimmed = rawTitle.trim().replace(/^["']+|["']+$/g, '').trim()
+  if (!trimmed) {
+    const result = {
+      content: [{ type: 'text' as const, text: 'Error: empty title.' }],
+      isError: true,
+    }
+    return { outcome: 'failed', error: result, result }
+  }
+
+  const { getEnvironmentHost } = await import('./environment-host')
+  await getEnvironmentHost().renameSession(connectionId, claimed.sessionId, trimmed)
+
+  if (signal.aborted) {
+    return {
+      outcome: 'failed',
+      error: { code: 'aborted', message: 'host action aborted during execution' },
+    }
+  }
+
+  const result = {
+    content: [{ type: 'text' as const, text: `Session renamed to "${trimmed}".` }],
+  }
+  return { outcome: 'succeeded', result }
 }

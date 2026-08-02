@@ -26,6 +26,7 @@ function session(overrides?: Partial<NodeSessionRecord>): NodeSessionRecord {
     updatedAt: 0,
     isPinned: false,
     isHidden: false,
+    isUserRenamed: false,
     controllerClientSessionId: null,
     hostActionCapabilityVersion: 0,
     hostActionToolGroups: [],
@@ -158,5 +159,53 @@ describe('createSimulatedTurnRunner', () => {
     })
     expect(result.finalText).toBe('ab')
     expect(deltas).toEqual(['a', 'b'])
+  })
+})
+
+describe('SessionRuntime.rename', () => {
+  it('allows agent rename when unlocked and stamps source on the event', () => {
+    const { store, events, leases } = memoryPorts()
+    const appended: Array<{ eventType: string; payload: unknown }> = []
+    events.appendSession = (e) => {
+      appended.push({ eventType: e.eventType, payload: e.payload })
+    }
+    const rt = new SessionRuntime(store, events, leases, 'env-1', createSimulatedTurnRunner({ delayMs: 0 }))
+    const created = rt.create({ projectId: 'p1', title: 'Auto' })
+    const out = rt.rename(created.sessionId, 'Agent Title', 'agent')
+    expect(out.title).toBe('Agent Title')
+    expect(out.isUserRenamed).toBe(false)
+    expect(rt.get(created.sessionId)!.title).toBe('Agent Title')
+    const renamed = appended.find((e) => e.eventType === 'session.renamed')
+    expect(renamed?.payload).toEqual({ title: 'Agent Title', source: 'agent' })
+  })
+
+  it('user rename locks the title and always wins', () => {
+    const { store, events, leases } = memoryPorts()
+    const rt = new SessionRuntime(store, events, leases, 'env-1', createSimulatedTurnRunner({ delayMs: 0 }))
+    const created = rt.create({ projectId: 'p1', title: 'Auto' })
+    const out = rt.rename(created.sessionId, 'My Name', 'user')
+    expect(out.title).toBe('My Name')
+    expect(out.isUserRenamed).toBe(true)
+    // Second user rename still succeeds.
+    const again = rt.rename(created.sessionId, 'New User Name', 'user')
+    expect(again.title).toBe('New User Name')
+    expect(again.isUserRenamed).toBe(true)
+  })
+
+  it('rejects agent rename after a user rename (user_locked), leaving title unchanged', () => {
+    const { store, events, leases } = memoryPorts()
+    const rt = new SessionRuntime(store, events, leases, 'env-1', createSimulatedTurnRunner({ delayMs: 0 }))
+    const created = rt.create({ projectId: 'p1', title: 'Auto' })
+    rt.rename(created.sessionId, 'User Locked', 'user')
+    try {
+      rt.rename(created.sessionId, 'Agent Overwrite', 'agent')
+      expect.unreachable('agent rename should throw')
+    } catch (err) {
+      expect((err as { code?: string }).code).toBe('user_locked')
+      expect((err as Error).message).toBe('user_locked')
+    }
+    const got = rt.get(created.sessionId)!
+    expect(got.title).toBe('User Locked')
+    expect(got.isUserRenamed).toBe(true)
   })
 })

@@ -171,6 +171,10 @@ export class SessionRuntime {
         session.hostActionToolGroups = []
         changed = true
       }
+      if (session.isUserRenamed !== true && session.isUserRenamed !== false) {
+        session.isUserRenamed = false
+        changed = true
+      }
       if (!changed) continue
       session.updatedAt = Date.now()
       this.persist(session)
@@ -228,6 +232,7 @@ export class SessionRuntime {
       updatedAt: now,
       isPinned: false,
       isHidden: false,
+      isUserRenamed: false,
       controllerClientSessionId: controller,
       hostActionCapabilityVersion: controller
         ? (input.hostActionCapabilityVersion ?? HOST_ACTION_CAPABILITY_VERSION)
@@ -333,6 +338,8 @@ export class SessionRuntime {
       updatedAt: now,
       isPinned: false,
       isHidden: false,
+      // Fork title is derived; start unlocked so agent can rename the fork.
+      isUserRenamed: false,
       // Fork inherits controller binding (same paired desktop).
       controllerClientSessionId: source.controllerClientSessionId,
       hostActionCapabilityVersion: source.hostActionCapabilityVersion,
@@ -615,19 +622,34 @@ export class SessionRuntime {
     return this.clone(session)
   }
 
-  rename(sessionId: string, title: string): NodeSessionRecord {
+  /**
+   * Rename a session title.
+   * @param source `'user'` (sidebar) locks out further agent renames;
+   *   `'agent'` (session_rename tool) is rejected when locked.
+   */
+  rename(
+    sessionId: string,
+    title: string,
+    source: 'user' | 'agent' = 'user',
+  ): NodeSessionRecord {
     const session = this.live.get(sessionId)
     if (!session) throw Object.assign(new Error('session not found'), { code: 'not_found' })
     if (session.closed) {
       throw Object.assign(new Error('session is closed'), { code: 'failed_precondition' })
     }
+    if (source === 'agent' && session.isUserRenamed) {
+      throw Object.assign(new Error('user_locked'), { code: 'user_locked' })
+    }
     session.title = title.trim() || null
+    if (source === 'user') {
+      session.isUserRenamed = true
+    }
     session.updatedAt = Date.now()
     this.persist(session)
     this.events.appendSession({
       sessionId: session.sessionId,
       eventType: SESSION_DURABLE_EVENT.renamed,
-      payload: { title: session.title },
+      payload: { title: session.title, source },
     })
     return this.clone(session)
   }
@@ -1290,6 +1312,7 @@ export class SessionRuntime {
       ...s,
       transcript: s.transcript.map((t) => ({ ...t })),
       pendingInteraction: s.pendingInteraction ? { ...s.pendingInteraction } : null,
+      isUserRenamed: s.isUserRenamed === true,
       controllerClientSessionId: s.controllerClientSessionId ?? null,
       hostActionCapabilityVersion: s.hostActionCapabilityVersion ?? 0,
       hostActionToolGroups: [...(s.hostActionToolGroups ?? [])],

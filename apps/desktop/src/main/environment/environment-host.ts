@@ -140,9 +140,9 @@ export class EnvironmentHost {
     // inject a stub executor.
     this.hostActionExecutor =
       options.hostActionExecutor ??
-      (async (claimed, signal) => {
+      (async (claimed, signal, connectionId) => {
         const { desktopHostActionExecutor } = await import('./host-action-executor')
-        return desktopHostActionExecutor(claimed, signal)
+        return desktopHostActionExecutor(claimed, signal, connectionId)
       })
     this.hostActionConcurrency = Math.max(2, options.hostActionConcurrency ?? 2)
     this.hostActionPollWaitMs = options.hostActionPollWaitMs ?? 10_000
@@ -925,9 +925,14 @@ export class EnvironmentHost {
     )
   }
 
-  async renameSession(connectionId: string, sessionId: string, title: string): Promise<unknown> {
+  async renameSession(
+    connectionId: string,
+    sessionId: string,
+    title: string,
+    source: 'user' | 'agent' = 'user',
+  ): Promise<unknown> {
     const { gateway } = this.resolveRemote(connectionId)
-    return gateway.renameSession(sessionId, title)
+    return gateway.renameSession(sessionId, title, source)
   }
 
   async removeSession(connectionId: string, sessionId: string): Promise<unknown> {

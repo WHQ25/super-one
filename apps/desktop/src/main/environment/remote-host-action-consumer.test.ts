@@ -89,10 +89,12 @@ describe('RemoteHostActionConsumer via EnvironmentHost', () => {
     runtimes.push(rt)
 
     const executed: ClaimHostActionResult[] = []
+    const executorConnectionIds: string[] = []
     const host = new EnvironmentHost(ud, {
       hostActionPollWaitMs: 500,
-      hostActionExecutor: async (claimed) => {
+      hostActionExecutor: async (claimed, _signal, connId) => {
         executed.push(claimed)
+        executorConnectionIds.push(connId)
         return { outcome: 'succeeded', result: { tabs: [{ id: 1 }] } }
       },
     })
@@ -150,6 +152,8 @@ describe('RemoteHostActionConsumer via EnvironmentHost', () => {
     expect(executed).toHaveLength(1)
     expect(executed[0]!.args).toEqual({ from: 'no-chat-view' })
     expect(executed[0]!.toolName).toBe('browser.tabs')
+    // Executor receives the owning connectionId so session-scoped tools can route.
+    expect(executorConnectionIds).toEqual([connectionId])
 
     // Still no sendSessionMessage — consumer is connection-scoped.
     expect(host.isHostActionConsumerRunning(connectionId)).toBe(true)

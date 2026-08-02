@@ -1,11 +1,25 @@
 import { randomUUID } from 'node:crypto'
 import {
+  HOST_ACTION_CAPABILITY_VERSION,
+  HOST_ACTION_TOOL_GROUPS,
   projectSessionTurnEvent,
   SESSION_DURABLE_EVENT,
+  type ClaimHostActionResult,
+  type HostActionChange,
+  type HostActionPublicView,
+  type HostActionReplayPolicy,
+  type HostActionsPollResult,
+  type HostActionTerminalResult,
+  type RespondHostActionResult,
   type SessionRef,
 } from '@superone/shared/environment'
 import { stripMiniAppMarkup } from '@superone/shared/miniapp-prompt-tags'
 import type { LeaseGuard, SessionEventLog, SessionStore } from './ports'
+import {
+  DEFAULT_HOST_ACTION_CLAIM_TTL_MS,
+  DEFAULT_HOST_ACTION_DEADLINE_MS,
+  type HostActionStore,
+} from './host-action-store'
 import {
   DEFAULT_PERMISSION_TIMEOUT_MS,
   type NodeSessionRecord,
@@ -67,6 +81,11 @@ interface PermissionWaiter {
  * 3. Client with control lease calls `respondPermission`
  * 4. Waiter resolves allow|deny; timeout / abort / close resolve deny
  */
+interface HostActionWaiter {
+  settle: (result: HostActionTerminalResult) => void
+  timer: ReturnType<typeof setTimeout> | null
+}
+
 export class SessionRuntime {
   private readonly aborts = new Map<string, AbortController>()
   private readonly live = new Map<string, NodeSessionRecord>()
@@ -80,6 +99,12 @@ export class SessionRuntime {
    */
   private readonly permissionWaiters = new Map<string, PermissionWaiter>()
   private readonly permissionTimeoutMs: number
+  private readonly hostActions: HostActionStore | null
+  /** Live waiters for requestHostAction terminal settlement. */
+  private readonly hostActionWaiters = new Map<string, HostActionWaiter>()
+  /** Long-poll waiters woken on host action change. */
+  private readonly hostActionPollWaiters = new Set<() => void>()
+  private hostActionExpiryTimer: ReturnType<typeof setInterval> | null = null
 
   constructor(
     private readonly store: SessionStore,
@@ -87,11 +112,23 @@ export class SessionRuntime {
     private readonly leases: LeaseGuard,
     private readonly environmentId: string,
     private readonly turnRunner: TurnRunner,
-    opts?: { permissionTimeoutMs?: number },
+    opts?: { permissionTimeoutMs?: number; hostActions?: HostActionStore | null },
   ) {
     this.permissionTimeoutMs = opts?.permissionTimeoutMs ?? DEFAULT_PERMISSION_TIMEOUT_MS
+    this.hostActions = opts?.hostActions ?? null
     this.hydrateFromStore()
     this.reconcileAfterRestart()
+    if (this.hostActions) {
+      this.hostActions.subscribe(() => this.wakeHostActionPollers())
+      // Periodic claim/deadline reconciliation (claim TTL requeue / cancel).
+      this.hostActionExpiryTimer = setInterval(() => {
+        this.reconcileHostActionExpiry()
+      }, 2_000)
+      // Don't keep the process alive solely for this timer (tests + node).
+      if (typeof this.hostActionExpiryTimer === 'object' && 'unref' in this.hostActionExpiryTimer) {
+        this.hostActionExpiryTimer.unref()
+      }
+    }
   }
 
   /** True while dispose() is in progress or has completed. */
@@ -121,6 +158,19 @@ export class SessionRuntime {
         session.pendingInteraction = null
         changed = true
       }
+      // Backfill controller fields for rows loaded from older schema.
+      if (session.controllerClientSessionId === undefined) {
+        session.controllerClientSessionId = null
+        changed = true
+      }
+      if (session.hostActionCapabilityVersion === undefined) {
+        session.hostActionCapabilityVersion = 0
+        changed = true
+      }
+      if (!Array.isArray(session.hostActionToolGroups)) {
+        session.hostActionToolGroups = []
+        changed = true
+      }
       if (!changed) continue
       session.updatedAt = Date.now()
       this.persist(session)
@@ -134,6 +184,14 @@ export class SessionRuntime {
         },
       })
     }
+
+    // Cancel every non-terminal host action so crash-window waiters settle.
+    if (this.hostActions) {
+      const cancelled = this.hostActions.reconcileAfterRestart()
+      for (const row of cancelled) {
+        this.settleHostActionWaiter(this.hostActions.toTerminal(row))
+      }
+    }
   }
 
   create(input: {
@@ -141,8 +199,20 @@ export class SessionRuntime {
     harnessId?: string
     providerId?: string
     title?: string
+    /**
+     * Pairing-level controller identity. Bound once at create; multi-desktop
+     * handoff is deferred (fail closed).
+     */
+    controllerClientSessionId?: string | null
+    /** Session-scoped host-action tool groups. Defaults to [browser.read] when controller is set. */
+    hostActionToolGroups?: string[]
+    hostActionCapabilityVersion?: number
   }): NodeSessionRecord {
     const now = Date.now()
+    const controller =
+      typeof input.controllerClientSessionId === 'string' && input.controllerClientSessionId.trim()
+        ? input.controllerClientSessionId.trim()
+        : null
     const session: NodeSessionRecord = {
       sessionId: randomUUID(),
       projectId: input.projectId,
@@ -158,6 +228,13 @@ export class SessionRuntime {
       updatedAt: now,
       isPinned: false,
       isHidden: false,
+      controllerClientSessionId: controller,
+      hostActionCapabilityVersion: controller
+        ? (input.hostActionCapabilityVersion ?? HOST_ACTION_CAPABILITY_VERSION)
+        : 0,
+      hostActionToolGroups: controller
+        ? (input.hostActionToolGroups ?? [HOST_ACTION_TOOL_GROUPS.browserRead])
+        : [],
     }
     this.live.set(session.sessionId, session)
     this.persist(session)
@@ -168,6 +245,9 @@ export class SessionRuntime {
         projectId: session.projectId,
         harnessId: session.harnessId,
         providerId: session.providerId,
+        controllerClientSessionId: session.controllerClientSessionId,
+        hostActionCapabilityVersion: session.hostActionCapabilityVersion,
+        hostActionToolGroups: session.hostActionToolGroups,
       },
     })
     return this.clone(session)
@@ -253,6 +333,10 @@ export class SessionRuntime {
       updatedAt: now,
       isPinned: false,
       isHidden: false,
+      // Fork inherits controller binding (same paired desktop).
+      controllerClientSessionId: source.controllerClientSessionId,
+      hostActionCapabilityVersion: source.hostActionCapabilityVersion,
+      hostActionToolGroups: [...(source.hostActionToolGroups ?? [])],
     }
     this.live.set(session.sessionId, session)
     this.persist(session)
@@ -473,6 +557,11 @@ export class SessionRuntime {
         })
       }
     } finally {
+      // Any host action still open when the turn ends cannot be claimed (active-turn
+      // gate) — cancel so requestHostAction waiters settle rather than hang to deadline.
+      if (!session.closed) {
+        this.cancelHostActionsForSession(session.sessionId, 'turn_ended')
+      }
       if (!session.closed) {
         session.updatedAt = Date.now()
         this.persist(session)
@@ -491,6 +580,7 @@ export class SessionRuntime {
     session.closed = true
     session.status = 'ended'
     this.rejectPendingPermission(session, 'aborted')
+    this.cancelHostActionsForSession(sessionId, 'session_closed')
     session.updatedAt = Date.now()
     this.persist(session)
     this.events.appendSession({
@@ -561,10 +651,397 @@ export class SessionRuntime {
     })
     const abort = this.aborts.get(sessionId)
     abort?.abort()
+    // Cancel outstanding host actions so the desktop can abort local work (AbortSignal).
+    this.cancelHostActionsForSession(sessionId, 'interrupt')
     if (session.status === 'streaming') {
       session.status = 'interrupted'
       session.updatedAt = Date.now()
       this.persist(session)
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Host Action channel (controller-scoped durable poll / claim / respond)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Create a host action and await its terminal state.
+   * Cancelled by interrupt / turn timeout / session close / deadline / node restart.
+   * Late responses after cancellation are rejected by the store.
+   */
+  requestHostAction(input: {
+    sessionId: string
+    turnId?: string | null
+    toolName: string
+    toolGroup: string
+    args: unknown
+    replayPolicy?: HostActionReplayPolicy
+    deadlineMs?: number
+    /**
+     * When aborted, cancel this action (MCP tool handler should pass the turn signal).
+     * Also auto-bound to the session's in-flight turn AbortSignal when present.
+     */
+    signal?: AbortSignal
+  }): Promise<HostActionTerminalResult> {
+    if (!this.hostActions) {
+      return Promise.reject(
+        Object.assign(new Error('host action store not configured'), {
+          code: 'failed_precondition',
+        }),
+      )
+    }
+    if (this.disposing) {
+      return Promise.reject(
+        Object.assign(new Error('runtime is shutting down'), { code: 'failed_precondition' }),
+      )
+    }
+    const session = this.live.get(input.sessionId)
+    if (!session) {
+      return Promise.reject(Object.assign(new Error('session not found'), { code: 'not_found' }))
+    }
+    if (!session.controllerClientSessionId) {
+      return Promise.reject(
+        Object.assign(new Error('session has no controller binding'), {
+          code: 'failed_precondition',
+        }),
+      )
+    }
+    if (session.hostActionCapabilityVersion < 1) {
+      return Promise.reject(
+        Object.assign(new Error('hostActionV1 not granted on this session'), {
+          code: 'failed_precondition',
+        }),
+      )
+    }
+    if (!session.hostActionToolGroups.includes(input.toolGroup)) {
+      return Promise.reject(
+        Object.assign(new Error(`tool group not granted: ${input.toolGroup}`), {
+          code: 'forbidden',
+        }),
+      )
+    }
+    if (session.closed || session.status === 'ended') {
+      return Promise.reject(
+        Object.assign(new Error('session is closed'), { code: 'failed_precondition' }),
+      )
+    }
+
+    const deadlineMs = input.deadlineMs ?? DEFAULT_HOST_ACTION_DEADLINE_MS
+    const row = this.hostActions.create({
+      sessionId: session.sessionId,
+      turnId: input.turnId ?? null,
+      controllerClientSessionId: session.controllerClientSessionId,
+      toolName: input.toolName,
+      toolGroup: input.toolGroup,
+      args: input.args,
+      replayPolicy: input.replayPolicy ?? 'safe',
+      deadlineMs,
+    })
+
+    // Observability only — never args.
+    this.events.appendSession({
+      sessionId: session.sessionId,
+      eventType: SESSION_DURABLE_EVENT.hostActionRequested,
+      payload: { actionId: row.actionId },
+    })
+
+    return new Promise<HostActionTerminalResult>((resolve) => {
+      const remaining = Math.max(0, row.deadline - Date.now())
+      const timer = setTimeout(() => {
+        this.cancelHostActionInternal(row.actionId, 'deadline_exceeded')
+      }, remaining + 50)
+
+      const abortCleanups: Array<() => void> = []
+      const onAbort = (reason: string) => {
+        this.cancelHostActionInternal(row.actionId, reason)
+      }
+
+      // Bind to explicit signal + active turn abort (interrupt / turn end).
+      const signals: AbortSignal[] = []
+      if (input.signal) signals.push(input.signal)
+      const turnAbort = this.aborts.get(session.sessionId)?.signal
+      if (turnAbort && turnAbort !== input.signal) signals.push(turnAbort)
+
+      for (const sig of signals) {
+        if (sig.aborted) {
+          // Defer so the waiter is registered before settle.
+          queueMicrotask(() => onAbort('aborted'))
+          break
+        }
+        const handler = () => onAbort('aborted')
+        sig.addEventListener('abort', handler, { once: true })
+        abortCleanups.push(() => sig.removeEventListener('abort', handler))
+      }
+
+      this.hostActionWaiters.set(row.actionId, {
+        settle: (result) => {
+          clearTimeout(timer)
+          for (const c of abortCleanups) c()
+          this.hostActionWaiters.delete(row.actionId)
+          resolve(result)
+        },
+        timer,
+      })
+    })
+  }
+
+  /**
+   * Controller-scoped long-poll. Without afterSequence: outstanding snapshot + cursor.
+   * With afterSequence: durable state changes after the cursor (waits up to waitMs).
+   * Exposes IDs, state, version, replayPolicy — never args.
+   */
+  async pollHostActions(input: {
+    controllerClientSessionId: string
+    afterSequence?: string | null
+    waitMs?: number
+    limit?: number
+  }): Promise<HostActionsPollResult> {
+    if (!this.hostActions) {
+      throw Object.assign(new Error('host action store not configured'), {
+        code: 'failed_precondition',
+      })
+    }
+    // Opportunistic expiry pass before answering.
+    this.reconcileHostActionExpiry()
+
+    const limit = Math.min(Math.max(input.limit ?? 100, 1), 500)
+    const waitMs = Math.min(Math.max(input.waitMs ?? 0, 0), 30_000)
+    const hasCursor = input.afterSequence != null && input.afterSequence !== ''
+
+    if (!hasCursor) {
+      const outstanding = this.hostActions.listOutstanding(input.controllerClientSessionId)
+      return {
+        outstanding,
+        changes: [],
+        cursor: this.hostActions.headSequence(),
+      }
+    }
+
+    const after = String(input.afterSequence)
+    const existing = this.hostActions.listChangesAfter(
+      input.controllerClientSessionId,
+      after,
+      limit,
+    )
+    if (existing.length > 0 || waitMs === 0) {
+      return {
+        changes: existing,
+        cursor: existing.length
+          ? existing[existing.length - 1]!.sequence
+          : this.hostActions.headSequence(),
+      }
+    }
+
+    // Long-poll: wait for a change or timeout.
+    await new Promise<void>((resolve) => {
+      let settled = false
+      const done = () => {
+        if (settled) return
+        settled = true
+        this.hostActionPollWaiters.delete(done)
+        clearTimeout(timer)
+        resolve()
+      }
+      const timer = setTimeout(done, waitMs)
+      this.hostActionPollWaiters.add(done)
+    })
+
+    const changes = this.hostActions.listChangesAfter(
+      input.controllerClientSessionId,
+      after,
+      limit,
+    )
+    return {
+      changes,
+      cursor: changes.length
+        ? changes[changes.length - 1]!.sequence
+        : this.hostActions.headSequence(),
+    }
+  }
+
+  /**
+   * Atomically claim a pending action for the authenticated controller.
+   * Verifies binding, capability/grant, active turn, and pending state.
+   */
+  claimHostAction(input: {
+    actionId: string
+    expectedVersion: number
+    controllerClientSessionId: string
+    claimTtlMs?: number
+  }): ClaimHostActionResult {
+    if (!this.hostActions) {
+      throw Object.assign(new Error('host action store not configured'), {
+        code: 'failed_precondition',
+      })
+    }
+    this.reconcileHostActionExpiry()
+
+    const existing = this.hostActions.get(input.actionId)
+    if (!existing) {
+      throw Object.assign(new Error('host action not found'), { code: 'not_found' })
+    }
+    if (existing.controllerClientSessionId !== input.controllerClientSessionId) {
+      throw Object.assign(new Error('not the session controller'), { code: 'forbidden' })
+    }
+
+    const session = this.live.get(existing.sessionId)
+    if (!session) {
+      throw Object.assign(new Error('session not found'), { code: 'not_found' })
+    }
+    if (session.controllerClientSessionId !== input.controllerClientSessionId) {
+      throw Object.assign(new Error('not the session controller'), { code: 'forbidden' })
+    }
+    if (session.hostActionCapabilityVersion < 1) {
+      throw Object.assign(new Error('hostActionV1 not granted'), { code: 'failed_precondition' })
+    }
+    if (!session.hostActionToolGroups.includes(existing.toolGroup)) {
+      throw Object.assign(new Error(`tool group not granted: ${existing.toolGroup}`), {
+        code: 'forbidden',
+      })
+    }
+    if (session.closed || session.status === 'ended') {
+      throw Object.assign(new Error('session is closed'), { code: 'failed_precondition' })
+    }
+    // Active turn required — host tools only make sense mid-turn.
+    if (session.status !== 'streaming') {
+      throw Object.assign(new Error('no active turn'), { code: 'failed_precondition' })
+    }
+
+    const { row, claimToken } = this.hostActions.claim({
+      actionId: input.actionId,
+      expectedVersion: input.expectedVersion,
+      controllerClientSessionId: input.controllerClientSessionId,
+      claimTtlMs: input.claimTtlMs ?? DEFAULT_HOST_ACTION_CLAIM_TTL_MS,
+    })
+
+    return {
+      actionId: row.actionId,
+      version: row.version,
+      claimToken,
+      claimExpiresAt: row.claimExpiresAt!,
+      toolName: row.toolName,
+      toolGroup: row.toolGroup,
+      args: JSON.parse(row.argsJson),
+      replayPolicy: row.replayPolicy,
+      sessionId: row.sessionId,
+      turnId: row.turnId,
+    }
+  }
+
+  /**
+   * Atomically verify claim token, persist terminal result, settle live waiter.
+   * Identical response returns stored receipt; different payload → conflict.
+   */
+  respondHostAction(input: {
+    actionId: string
+    claimToken: string
+    controllerClientSessionId: string
+    outcome: 'succeeded' | 'failed'
+    result?: unknown
+    error?: unknown
+  }): RespondHostActionResult {
+    if (!this.hostActions) {
+      throw Object.assign(new Error('host action store not configured'), {
+        code: 'failed_precondition',
+      })
+    }
+
+    const { row, duplicate } = this.hostActions.respond({
+      actionId: input.actionId,
+      claimToken: input.claimToken,
+      controllerClientSessionId: input.controllerClientSessionId,
+      outcome: input.outcome,
+      result: input.result,
+      error: input.error,
+    })
+
+    if (!duplicate) {
+      this.settleHostActionWaiter(this.hostActions.toTerminal(row))
+    } else {
+      // Duplicate identical response — still ensure any waiter is settled.
+      this.settleHostActionWaiter(this.hostActions.toTerminal(row))
+    }
+
+    return {
+      actionId: row.actionId,
+      state: row.state as 'succeeded' | 'failed',
+      version: row.version,
+      duplicate,
+    }
+  }
+
+  /** Test/helper: list outstanding public views for a controller. */
+  listOutstandingHostActions(controllerClientSessionId: string): HostActionPublicView[] {
+    if (!this.hostActions) return []
+    return this.hostActions.listOutstanding(controllerClientSessionId)
+  }
+
+  /** Test/helper: peek a change log after sequence. */
+  listHostActionChanges(
+    controllerClientSessionId: string,
+    afterSequence: string,
+    limit = 100,
+  ): HostActionChange[] {
+    if (!this.hostActions) return []
+    return this.hostActions.listChangesAfter(controllerClientSessionId, afterSequence, limit)
+  }
+
+  private cancelHostActionsForSession(sessionId: string, reason: string): void {
+    if (!this.hostActions) return
+    try {
+      const cancelled = this.hostActions.cancel({ sessionId, reason })
+      for (const row of cancelled) {
+        this.settleHostActionWaiter(this.hostActions.toTerminal(row))
+      }
+    } catch (err) {
+      // Shutdown races: db may already be closed when turn finally runs.
+      if ((err as Error).message?.includes('not open')) return
+      throw err
+    }
+  }
+
+  private cancelHostActionInternal(actionId: string, reason: string): void {
+    if (!this.hostActions) return
+    try {
+      const cancelled = this.hostActions.cancel({ actionId, reason })
+      for (const row of cancelled) {
+        this.settleHostActionWaiter(this.hostActions.toTerminal(row))
+      }
+    } catch (err) {
+      if ((err as Error).message?.includes('not open')) return
+      throw err
+    }
+  }
+
+  private settleHostActionWaiter(result: HostActionTerminalResult): void {
+    const waiter = this.hostActionWaiters.get(result.actionId)
+    if (!waiter) return
+    if (waiter.timer) clearTimeout(waiter.timer)
+    this.hostActionWaiters.delete(result.actionId)
+    waiter.settle(result)
+  }
+
+  private wakeHostActionPollers(): void {
+    for (const w of [...this.hostActionPollWaiters]) {
+      try {
+        w()
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+
+  private reconcileHostActionExpiry(): void {
+    if (!this.hostActions) return
+    try {
+      const changed = this.hostActions.reconcileExpired()
+      for (const row of changed) {
+        if (row.state === 'cancelled' || row.state === 'succeeded' || row.state === 'failed') {
+          this.settleHostActionWaiter(this.hostActions.toTerminal(row))
+        }
+      }
+    } catch {
+      /* ignore reconcile errors (db closed during dispose) */
     }
   }
 
@@ -754,6 +1231,18 @@ export class SessionRuntime {
    */
   async dispose(timeoutMs = 5_000): Promise<void> {
     this.disposing = true
+    if (this.hostActionExpiryTimer) {
+      clearInterval(this.hostActionExpiryTimer)
+      this.hostActionExpiryTimer = null
+    }
+    // Cancel outstanding host actions so requestHostAction waiters settle.
+    if (this.hostActions) {
+      for (const session of this.live.values()) {
+        this.cancelHostActionsForSession(session.sessionId, 'runtime_dispose')
+      }
+    }
+    this.wakeHostActionPollers()
+
     const deadline = Date.now() + timeoutMs
     // Abort currently tracked controllers; re-abort if any late map entries appear.
     for (const abort of this.aborts.values()) abort.abort()
@@ -791,6 +1280,9 @@ export class SessionRuntime {
       ...s,
       transcript: s.transcript.map((t) => ({ ...t })),
       pendingInteraction: s.pendingInteraction ? { ...s.pendingInteraction } : null,
+      controllerClientSessionId: s.controllerClientSessionId ?? null,
+      hostActionCapabilityVersion: s.hostActionCapabilityVersion ?? 0,
+      hostActionToolGroups: [...(s.hostActionToolGroups ?? [])],
     }
   }
 }

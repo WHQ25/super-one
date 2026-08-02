@@ -65,6 +65,17 @@ export class NodeConnectionManager {
     return null
   }
 
+  /** Live RPC client for a connection (Host Action consumer, etc.). */
+  getClient(connectionId: string): NodeRpcClient | null {
+    return this.lives.get(connectionId)?.client ?? null
+  }
+
+  /** Whether a connection currently has an open supervised socket. */
+  isConnected(connectionId: string): boolean {
+    const live = this.lives.get(connectionId)
+    return live?.client.connected === true && live.supervisor.getSnapshot().state === 'connected'
+  }
+
   getSupervisor(connectionId: string): SupervisorSnapshot | null {
     const live = this.lives.get(connectionId)
     if (!live) return null

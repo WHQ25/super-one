@@ -21,6 +21,7 @@ describe('normalizeCapabilities', () => {
       nodeAdmin: false,
       coldSessionResume: false,
       turnReattach: false,
+      hostActionV1: false,
     })
   })
 

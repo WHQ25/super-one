@@ -114,6 +114,8 @@ const MUTATING_METHODS = new Set([
   'session.send',
   'session.interrupt',
   'session.respondPermission',
+  'session.claimHostAction',
+  'session.respondHostAction',
   'session.acquireControl',
   'session.renewControl',
   'session.releaseControl',
@@ -332,6 +334,12 @@ async function dispatchRpcInner(method: string, payload: unknown, ctx: RpcContex
       return handleSessionInterrupt(payload, ctx)
     case 'session.respondPermission':
       return handleSessionRespondPermission(payload, ctx)
+    case 'session.hostActionsPoll':
+      return handleSessionHostActionsPoll(payload, ctx)
+    case 'session.claimHostAction':
+      return handleSessionClaimHostAction(payload, ctx)
+    case 'session.respondHostAction':
+      return handleSessionRespondHostAction(payload, ctx)
     case 'session.events':
       return handleSessionEvents(payload, ctx)
     case 'session.snapshot':
@@ -555,6 +563,7 @@ function handleDescriptor(ctx: RpcContext): RpcResult {
       collaboration: Boolean(ctx.simulatedHarness),
       coldSessionResume: false,
       turnReattach: false,
+      hostActionV1: true,
     },
     generations: {
       protocol: { ...PROTOCOL_GENERATION },
@@ -1515,6 +1524,8 @@ function handleSessionCreate(payload: unknown, ctx: RpcContext): RpcResult {
         harnessId,
         providerId: typeof p.providerId === 'string' ? p.providerId : undefined,
         title: typeof p.title === 'string' ? p.title : undefined,
+        // Pairing-level identity survives token refresh; control lease is a fence, not identity.
+        controllerClientSessionId: ctx.client.clientSessionId,
       }),
     }
   } catch (err) {
@@ -1749,6 +1760,73 @@ function handleSessionRespondPermission(payload: unknown, ctx: RpcContext): RpcR
       generation: String(p.generation ?? ''),
     })
     return { result: { ok: true } }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+/**
+ * Controller-scoped long-poll for Host Actions (separate from session.events).
+ * Never returns args — only IDs, state, version, replayPolicy.
+ */
+async function handleSessionHostActionsPoll(
+  payload: unknown,
+  ctx: RpcContext,
+): Promise<RpcResult> {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateSession)
+  if (denied) return denied
+  const p = asRecord(payload)
+  try {
+    const result = await ctx.sessions.pollHostActions({
+      controllerClientSessionId: ctx.client.clientSessionId,
+      afterSequence:
+        p.afterSequence === null || p.afterSequence === undefined
+          ? null
+          : String(p.afterSequence),
+      waitMs: typeof p.waitMs === 'number' ? p.waitMs : undefined,
+      limit: typeof p.limit === 'number' ? p.limit : undefined,
+    })
+    return { result }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+function handleSessionClaimHostAction(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateSession)
+  if (denied) return denied
+  const p = asRecord(payload)
+  try {
+    const result = ctx.sessions.claimHostAction({
+      actionId: String(p.actionId ?? ''),
+      expectedVersion: Number(p.expectedVersion ?? -1),
+      controllerClientSessionId: ctx.client.clientSessionId,
+      claimTtlMs: typeof p.claimTtlMs === 'number' ? p.claimTtlMs : undefined,
+    })
+    return { result }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+function handleSessionRespondHostAction(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateSession)
+  if (denied) return denied
+  const p = asRecord(payload)
+  const outcome = p.outcome === 'failed' ? 'failed' : p.outcome === 'succeeded' ? 'succeeded' : null
+  if (!outcome) {
+    return { error: { code: 'invalid_argument', message: 'outcome must be succeeded|failed' } }
+  }
+  try {
+    const result = ctx.sessions.respondHostAction({
+      actionId: String(p.actionId ?? ''),
+      claimToken: String(p.claimToken ?? ''),
+      controllerClientSessionId: ctx.client.clientSessionId,
+      outcome,
+      result: p.result,
+      error: p.error,
+    })
+    return { result }
   } catch (err) {
     return mapThrown(err)
   }

@@ -30,6 +30,9 @@ function session(over: Partial<NodeSessionRecord> = {}): NodeSessionRecord {
     updatedAt: Date.now(),
     isPinned: false,
     isHidden: false,
+    controllerClientSessionId: null,
+    hostActionCapabilityVersion: 0,
+    hostActionToolGroups: [],
     ...over,
   }
 }
@@ -201,6 +204,67 @@ describe('createNodeClaudeTurnRunner', () => {
     expect(queryFn).toHaveBeenCalledWith(
       expect.objectContaining({
         options: expect.objectContaining({ model: 'claude-sonnet-4-5' }),
+      }),
+    )
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('passes Host Action MCP http config into SDK mcpServers', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cbr-claude-mcp-'))
+    const bin = join(dir, 'claude')
+    writeFileSync(bin, '#!/bin/sh\n')
+    chmodSync(bin, 0o755)
+
+    const queryFn = vi.fn(() =>
+      messages([
+        {
+          type: 'result',
+          subtype: 'success',
+          is_error: false,
+          session_id: 'm1',
+          result: 'ok',
+        },
+      ]),
+    ) as unknown as ClaudeQueryFn
+
+    const runner = createNodeClaudeTurnRunner({
+      binaryPath: bin,
+      resolveProjectPath: () => dir,
+      queryFn,
+      allowSimulatedFallback: false,
+      getHostActionMcpServers: (sessionId) => ({
+        superone: {
+          type: 'http',
+          url: 'http://127.0.0.1:9/mcp',
+          headers: {
+            Authorization: 'Bearer t',
+            'X-SuperOne-Session-Id': sessionId,
+          },
+        },
+      }),
+    })
+
+    await runner({
+      session: session({ sessionId: 'node-sid-42' }),
+      text: 'snap',
+      onDelta: () => {},
+      signal: new AbortController().signal,
+    })
+
+    expect(queryFn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        options: expect.objectContaining({
+          strictMcpConfig: true,
+          mcpServers: {
+            superone: {
+              type: 'http',
+              url: 'http://127.0.0.1:9/mcp',
+              headers: expect.objectContaining({
+                'X-SuperOne-Session-Id': 'node-sid-42',
+              }),
+            },
+          },
+        }),
       }),
     )
 

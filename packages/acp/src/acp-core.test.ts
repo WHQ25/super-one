@@ -18,6 +18,9 @@ function session(): NodeSessionRecord {
     updatedAt: 0,
     isPinned: false,
     isHidden: false,
+    controllerClientSessionId: null,
+    hostActionCapabilityVersion: 0,
+    hostActionToolGroups: [],
   }
 }
 

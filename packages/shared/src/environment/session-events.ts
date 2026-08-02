@@ -118,6 +118,11 @@ export const SESSION_DURABLE_EVENT = {
   permissionTimeout: 'session.permission_timeout',
   permissionAborted: 'session.permission_aborted',
   statusChanged: 'session.status_changed',
+  /**
+   * Observability only: host action requested. Payload carries actionId — never args
+   * (args are claim-only to the controller-scoped host action channel).
+   */
+  hostActionRequested: 'session.host_action_requested',
 } as const
 
 export type SessionDurableEventType =
@@ -273,7 +278,7 @@ export function projectSessionTurnEvent(event: SessionTurnEvent): SessionDurable
             },
           ]
         default: {
-          const _exhaustive: never = event.phase
+          const _exhaustive: never = event
           return _exhaustive
         }
       }

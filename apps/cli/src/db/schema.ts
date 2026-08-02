@@ -112,7 +112,44 @@ CREATE TABLE IF NOT EXISTS sessions (
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
   is_pinned INTEGER NOT NULL DEFAULT 0,
-  is_hidden INTEGER NOT NULL DEFAULT 0
+  is_hidden INTEGER NOT NULL DEFAULT 0,
+  controller_client_session_id TEXT,
+  host_action_capability_version INTEGER NOT NULL DEFAULT 0,
+  host_action_tool_groups_json TEXT NOT NULL DEFAULT '[]'
+);
+
+-- Host Action channel (durable poll/claim/respond). Also ensured at open time.
+CREATE TABLE IF NOT EXISTS host_actions (
+  action_id TEXT PRIMARY KEY NOT NULL,
+  session_id TEXT NOT NULL,
+  turn_id TEXT,
+  controller_client_session_id TEXT NOT NULL,
+  tool_name TEXT NOT NULL,
+  tool_group TEXT NOT NULL,
+  args_json TEXT NOT NULL,
+  replay_policy TEXT NOT NULL,
+  state TEXT NOT NULL,
+  version INTEGER NOT NULL,
+  created_at INTEGER NOT NULL,
+  deadline INTEGER NOT NULL,
+  claim_token_hash TEXT,
+  claimed_at INTEGER,
+  claim_expires_at INTEGER,
+  result_json TEXT,
+  error_json TEXT,
+  response_payload_hash TEXT,
+  finished_at INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS host_action_changes (
+  sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+  action_id TEXT NOT NULL,
+  session_id TEXT NOT NULL,
+  controller_client_session_id TEXT NOT NULL,
+  state TEXT NOT NULL,
+  version INTEGER NOT NULL,
+  replay_policy TEXT NOT NULL,
+  changed_at INTEGER NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS control_leases (

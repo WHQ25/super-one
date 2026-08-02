@@ -79,12 +79,13 @@ bun run dev:cli:lab      # Local remote-node lab on :7789 (host process; prefer 
 # Control Other Devices → Local lab → Connect lab (see apps/cli/CLAUDE.md)
 # Docker SSH lab: bun run dev:cli:docker* — Linux/SSH fidelity only
 bun run test:cli         # Run CLI package tests
+bun run test:runtime     # Run @superone/runtime unit tests (session/fs/git/host-action)
 bun run dev:relay        # Start wrangler dev for Cloudflare Worker relay (→ @superone/relay)
 bun run deploy:relay     # wrangler deploy the relay (→ @superone/relay)
 bun run test:relay       # Run relay vitest suite
 bun run build            # Production build (electron-vite only)
 bun run preview          # Preview production build
-bun run test             # Run all tests once (desktop + cross-workspace shared/ui tests)
+bun run test             # Run desktop suite once (does not include cli/runtime/relay)
 bun run test:watch       # Run tests in watch mode
 bun run typecheck        # Full type check across all workspaces
 bun run typecheck:node   # Type check main/preload only (desktop)

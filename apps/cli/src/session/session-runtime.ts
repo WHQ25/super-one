@@ -5,6 +5,8 @@
 
 import {
   SessionRuntime as CoreSessionRuntime,
+  createSqliteHostActionStore,
+  createSqliteSessionStore,
   type LeaseGuard,
   type SessionEventLog,
   type TurnRunner,
@@ -12,7 +14,6 @@ import {
 import type { NodeDatabase } from '../db/database'
 import type { ControlLeaseService } from '@superone/runtime/lease'
 import type { EventLog } from '@superone/runtime/session'
-import { createSqliteSessionStore } from '@superone/runtime/session'
 
 export {
   createSimulatedCodexRunner,
@@ -32,6 +33,7 @@ export {
 
 /**
  * Drop-in constructor matching the historical `(db, events, leases, …)` signature.
+ * Wires SQLite session store + durable host action store.
  */
 export class SessionRuntime extends CoreSessionRuntime {
   constructor(
@@ -42,6 +44,9 @@ export class SessionRuntime extends CoreSessionRuntime {
     turnRunner: TurnRunner,
     opts?: { permissionTimeoutMs?: number },
   ) {
-    super(createSqliteSessionStore(db), events, leases, environmentId, turnRunner, opts)
+    super(createSqliteSessionStore(db), events, leases, environmentId, turnRunner, {
+      ...opts,
+      hostActions: createSqliteHostActionStore(db),
+    })
   }
 }

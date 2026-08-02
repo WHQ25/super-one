@@ -92,13 +92,21 @@ describe('codex app-server client (Stage 4)', () => {
       cwd: dir,
       onDelta: (d) => deltas.push(d),
       signal: new AbortController().signal,
+      threadConfig: {
+        mcp_servers: {
+          superone: {
+            url: 'http://127.0.0.1:9/mcp',
+            http_headers: { Authorization: 'Bearer t' },
+            startup_timeout_sec: 60,
+          },
+        },
+      },
     })
 
     await pump()
     const threadReq = JSON.parse(lines.find((l) => l.includes('"thread/start"'))!)
-    expect(JSON.parse(lines.find((l) => l.includes('thread/start'))!).params.approvalPolicy).toBe(
-      'never',
-    )
+    expect(threadReq.params.approvalPolicy).toBe('never')
+    expect(threadReq.params.config.mcp_servers.superone.url).toBe('http://127.0.0.1:9/mcp')
     child.stdout.write(
       `${JSON.stringify({
         jsonrpc: '2.0',

@@ -16,6 +16,11 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { createInterface } from 'node:readline'
 import { existsSync } from 'node:fs'
 import { redactHarnessDiagnosticText } from '@superone/shared/environment'
+import type { AgentEvent } from '@superone/shared/agent-types'
+import {
+  createCodexAgentEventMapper,
+  deriveCodexFinalResponse,
+} from './agent-event-mapper'
 
 export type CodexSpawnFn = (
   command: string,
@@ -399,10 +404,21 @@ export async function runCodexAppServerTurn(opts: {
   cwd: string
   threadId?: string | null
   model?: string
-  onDelta: (text: string) => void
+  /** Lossless App Server -> AgentEvent path. Takes precedence over onDelta. */
+  onAgentEvent?: (event: AgentEvent) => void
+  /** Stable assistant message id used by AgentEvents for this turn. */
+  messageId?: string
+  /** Legacy text-only stream used when onAgentEvent is absent. */
+  onDelta?: (text: string) => void
   signal: AbortSignal
+  /**
+   * Optional Codex thread config (e.g. `{ mcp_servers: { superone: {...} } }`).
+   * Applied on both thread/start and thread/resume so SuperOne MCP attaches every turn.
+   */
+  threadConfig?: Record<string, unknown>
 }): Promise<{ finalText: string; threadId: string | null }> {
   let threadId = opts.threadId ?? null
+  const configPayload = opts.threadConfig ? { config: opts.threadConfig } : {}
 
   if (threadId) {
     const resumed = await opts.client.request('thread/resume', {
@@ -410,6 +426,7 @@ export async function runCodexAppServerTurn(opts: {
       cwd: opts.cwd,
       approvalPolicy: 'never',
       sandbox: 'workspace-write',
+      ...configPayload,
     })
     const thread = asRecord(resumed.thread)
     const resumedId = readString(thread?.id) ?? readString(resumed.id) ?? threadId
@@ -420,6 +437,7 @@ export async function runCodexAppServerTurn(opts: {
       // Stage 4: avoid interactive approvals until permission RPC exists.
       approvalPolicy: 'never',
       sandbox: 'workspace-write',
+      ...configPayload,
     })
     const thread = asRecord(started.thread)
     threadId = readString(thread?.id) ?? readString(started.id)
@@ -445,6 +463,15 @@ export async function runCodexAppServerTurn(opts: {
   const turnId = readString(turn?.id)
   let finalText = ''
   const deadline = Date.now() + TURN_WAIT_TIMEOUT_MS
+  const agentEventMapper = opts.onAgentEvent
+    ? createCodexAgentEventMapper({
+        messageId: opts.messageId ?? `codex_${turnId ?? Date.now()}`,
+        emit: opts.onAgentEvent,
+        model: opts.model,
+        turnId,
+      })
+    : null
+  agentEventMapper?.start(threadId)
 
   // Collect notifications until matching turn/completed (or connection dies).
   while (!opts.signal.aborted && Date.now() < deadline) {
@@ -453,17 +480,14 @@ export async function runCodexAppServerTurn(opts: {
       note = await opts.client.nextNotification(Math.min(5_000, Math.max(0, deadline - Date.now())))
     } catch (err) {
       // Connection/process failure — surface immediately (no hot-loop).
-      throw err instanceof Error ? err : new Error(String(err))
+      const error = err instanceof Error ? err : new Error(String(err))
+      agentEventMapper?.fail(error.message, /interrupt|abort/i.test(error.message))
+      throw error
     }
     if (!note) {
       if (opts.signal.aborted) break
       continue
     }
-
-    applyAgentDelta(note, (delta) => {
-      finalText += delta
-      opts.onDelta(delta)
-    })
 
     if (note.method === 'turn/completed' || note.method === 'turn/completed/v2') {
       const completedTurn = asRecord(note.params.turn)
@@ -472,6 +496,20 @@ export async function runCodexAppServerTurn(opts: {
         // Unrelated turn — keep waiting.
         continue
       }
+    }
+
+    if (agentEventMapper) {
+      const applied = agentEventMapper.apply(note)
+      if (applied.textDelta) finalText += applied.textDelta
+    } else {
+      applyAgentDelta(note, (delta) => {
+        finalText += delta
+        opts.onDelta?.(delta)
+      })
+    }
+
+    if (note.method === 'turn/completed' || note.method === 'turn/completed/v2') {
+      const completedTurn = asRecord(note.params.turn)
       const status = readString(completedTurn?.status) ?? readString(note.params.status)
       if (status === 'failed' || status === 'error') {
         throw new Error('Codex turn failed')
@@ -482,13 +520,18 @@ export async function runCodexAppServerTurn(opts: {
       if (!finalText && completedTurn) {
         finalText = extractAgentTextFromTurn(completedTurn)
       }
+      if (!finalText && agentEventMapper) {
+        finalText = deriveCodexFinalResponse(agentEventMapper.items())
+      }
       return { finalText, threadId }
     }
   }
 
   if (opts.signal.aborted) {
+    agentEventMapper?.fail('Codex turn interrupted', true)
     throw new Error('Codex turn interrupted')
   }
+  agentEventMapper?.fail('Codex turn timed out waiting for turn/completed')
   throw new Error('Codex turn timed out waiting for turn/completed')
 }
 

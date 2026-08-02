@@ -19,3 +19,16 @@ export {
   type CodexRpcRequest,
   type ForkCodexThreadInput,
 } from './fork-thread'
+export {
+  buildCodexReasoningItem,
+  createCodexAgentEventMapper,
+  deriveCodexFinalResponse,
+  mapCodexThreadItem,
+  mapCodexUsage,
+  readCodexDeltaText,
+  readCodexItemId,
+  type CodexAgentEventMapper,
+  type CodexAgentEventMapperOptions,
+  type CodexAppServerNotification,
+  type CodexNotificationApplyResult,
+} from './agent-event-mapper'

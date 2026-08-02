@@ -55,8 +55,11 @@ export function createAcpTurnRunner(opts: CreateAcpTurnRunnerOptions = {}): Turn
   const launch = resolveLaunch(opts)
   if (launch) {
     return createAcpAgentTurnRunner({
-      ...opts,
       launch,
+      resolveProjectPath: opts.resolveProjectPath,
+      clientName: opts.clientName,
+      mcpServers: opts.mcpServers,
+      getMcpServers: opts.getMcpServers,
     })
   }
   if (opts.allowSimulatedFallback === false) {

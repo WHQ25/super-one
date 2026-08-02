@@ -24,3 +24,21 @@ export {
   parseOpenCodeCommands,
   type OpenCodeProviderListPayload,
 } from './parse'
+export {
+  commonPrefixLength,
+  createOpenCodeAgentEventMapper,
+  mapOpenCodePermissionRequest,
+  mapOpenCodeQuestionRequest,
+  mapOpenCodeTodos,
+  openCodeAssistantMetadata,
+  openCodeErrorMessage,
+  openCodeEventSessionId,
+  openCodeToolName,
+  readOpenCodeConfig,
+  routeOpenCodeTodoEvent,
+  textFromOpenCodePart,
+  type OpenCodeAgentEventApplyResult,
+  type OpenCodeAgentEventMapper,
+  type OpenCodeAgentEventMapperOptions,
+  type OpenCodeRuntimeConfig,
+} from './agent-event-mapper'

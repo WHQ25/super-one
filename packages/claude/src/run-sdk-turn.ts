@@ -4,13 +4,14 @@
  * Electron-free shared core for desktop and CLI:
  * - pathToClaudeCodeExecutable + resume
  * - canUseTool → host onPermission
- * - SDK message stream → SessionTurnEvent (onEvent)
+ * - SDK message stream → lossless AgentEvent (preferred) or legacy SessionTurnEvent
  */
 
 import { existsSync } from 'node:fs'
 import { query as sdkQuery, type CanUseTool, type Options } from '@anthropic-ai/claude-agent-sdk'
 import type { SessionTurnEvent } from '@superone/shared/environment'
 import { applySdkMessage, createSdkMapState } from './map-sdk-message'
+import { createClaudeAgentEventMapper } from './agent-event-mapper'
 import { resolveSdkClaudeBinary } from './resolve-sdk-binary'
 import type {
   ClaudePermissionHandler,
@@ -23,6 +24,7 @@ const DEFAULT_TEXT_BLOCK_ID = 'assistant-text'
 function buildCanUseTool(
   onPermission: ClaudePermissionHandler | undefined,
   signal: AbortSignal,
+  timing: { pausedMs: number },
 ): CanUseTool {
   return async (toolName, input, options) => {
     if (signal.aborted || options.signal.aborted) {
@@ -41,11 +43,14 @@ function buildCanUseTool(
       (typeof options.requestId === 'string' && options.requestId) ||
       (typeof options.toolUseID === 'string' && options.toolUseID) ||
       `perm_${Date.now()}`
+    const startedAt = Date.now()
     const decision = await onPermission({
       interactionId,
       toolName,
       toolUseId: typeof options.toolUseID === 'string' ? options.toolUseID : undefined,
       input: input && typeof input === 'object' ? input : undefined,
+    }).finally(() => {
+      timing.pausedMs += Date.now() - startedAt
     })
     if (decision === 'allow') {
       return { behavior: 'allow' }
@@ -57,7 +62,7 @@ function buildCanUseTool(
   }
 }
 
-function buildOptions(opts: RunClaudeSdkTurnOptions): Options {
+function buildOptions(opts: RunClaudeSdkTurnOptions, timing: { pausedMs: number }): Options {
   const abortController = new AbortController()
   if (opts.signal.aborted) {
     abortController.abort()
@@ -80,8 +85,14 @@ function buildOptions(opts: RunClaudeSdkTurnOptions): Options {
     ...(binaryPath ? { pathToClaudeCodeExecutable: binaryPath } : {}),
     model: opts.model,
     includePartialMessages: true,
+    thinking: { type: 'adaptive', display: 'summarized' },
+    promptSuggestions: true,
+    forwardSubagentText: true,
+    enableFileCheckpointing: true,
+    agentProgressSummaries: true,
+    extraArgs: { 'replay-user-messages': null },
     permissionMode: 'default',
-    canUseTool: buildCanUseTool(opts.onPermission, opts.signal),
+    canUseTool: buildCanUseTool(opts.onPermission, opts.signal, timing),
     abortController,
     settingSources: ['user', 'project', 'local'],
     systemPrompt: {
@@ -121,9 +132,20 @@ export async function runClaudeSdkTurn(
     )
   }
 
-  const useOnEvent = typeof opts.onEvent === 'function'
+  const useAgentEvents = typeof opts.onAgentEvent === 'function'
+  const useOnEvent = typeof opts.onEvent === 'function' && !useAgentEvents
   const textBlockId = opts.defaultTextBlockId ?? DEFAULT_TEXT_BLOCK_ID
   const state = createSdkMapState(textBlockId)
+  const timing = { pausedMs: 0 }
+  const agentEventMapper = opts.onAgentEvent
+    ? createClaudeAgentEventMapper({
+        messageId: opts.messageId ?? textBlockId,
+        emit: opts.onAgentEvent,
+        startedAt: Date.now(),
+        pausedMs: () => timing.pausedMs,
+        isInterrupted: () => opts.signal.aborted,
+      })
+    : null
   let streamedText = ''
   let lastSessionId: string | null = opts.sessionId ?? null
   let finalText = ''
@@ -134,7 +156,9 @@ export async function runClaudeSdkTurn(
 
   const emitTextDelta = (delta: string) => {
     streamedText += delta
-    if (useOnEvent) {
+    if (useAgentEvents) {
+      // The AgentEvent mapper already emitted this text delta losslessly.
+    } else if (useOnEvent) {
       emitEvent({ kind: 'text', blockId: textBlockId, delta })
     } else {
       opts.onDelta?.(delta)
@@ -142,7 +166,9 @@ export async function runClaudeSdkTurn(
   }
 
   const emitTextFinal = (text: string) => {
-    if (useOnEvent) {
+    if (useAgentEvents) {
+      // Result/message lifecycle is emitted by the AgentEvent mapper.
+    } else if (useOnEvent) {
       emitEvent({ kind: 'text', blockId: textBlockId, final: true, text })
     } else if (text && !streamedText) {
       opts.onDelta?.(text)
@@ -153,7 +179,7 @@ export async function runClaudeSdkTurn(
     emitEvent({ kind: 'status', status: 'streaming' })
   }
 
-  const options = buildOptions(opts)
+  const options = buildOptions(opts, timing)
   const queryFn = opts.queryFn ?? sdkQuery
   const q = queryFn({ prompt: opts.prompt, options })
 
@@ -173,7 +199,9 @@ export async function runClaudeSdkTurn(
         throw new Error('Claude turn interrupted')
       }
 
-      const applied = applySdkMessage(msg, state, emitEvent)
+      const applied = agentEventMapper
+        ? agentEventMapper.apply(msg)
+        : applySdkMessage(msg, state, emitEvent)
       if (applied.sessionId) lastSessionId = applied.sessionId
       if (applied.textDelta) emitTextDelta(applied.textDelta)
 

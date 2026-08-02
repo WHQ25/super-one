@@ -8,6 +8,15 @@
 
 export { runClaudeSdkTurn } from './run-sdk-turn'
 export {
+  buildClaudeResultMetadata,
+  createClaudeAgentEventMapper,
+  extractClaudeToolResultText,
+  isClaudeToolLayerError,
+  type ClaudeAgentEventApplyResult,
+  type ClaudeAgentEventMapper,
+  type ClaudeAgentEventMapperOptions,
+} from './agent-event-mapper'
+export {
   resolveSdkClaudeBinary,
   resetSdkClaudeBinaryCacheForTests,
 } from './resolve-sdk-binary'

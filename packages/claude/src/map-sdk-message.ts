@@ -1,8 +1,8 @@
 /**
- * Map Claude Agent SDK messages → SessionTurnEvent (Stage 5-A).
+ * Legacy Claude Agent SDK message -> SessionTurnEvent adapter.
  *
- * Mirrors the NDJSON print-mode mapper semantics so desktop remote UI and
- * durable session events stay consistent across print (legacy) and SDK paths.
+ * New Claude hosts should use agent-event-mapper so rich desktop semantics are
+ * not reduced to the Stage 5-A text/tool/status subset.
  */
 
 import type { SessionTurnEvent } from '@superone/shared/environment'

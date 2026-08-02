@@ -1,6 +1,7 @@
 /**
- * Minimal ACP agent turn: spawn process → initialize → buildSession → prompt.
- * Full desktop ACP runtime (terminals, MCP, xAI extensions) is not mirrored here.
+ * Node ACP agent turn: spawn process → initialize → buildSession → prompt.
+ * Event projection includes standard ACP updates and Grok xAI notifications;
+ * desktop-only terminal delegation remains outside this runner.
  */
 
 import {
@@ -10,14 +11,32 @@ import {
   type ActiveSessionMessage,
 } from '@agentclientprotocol/sdk'
 import type { TurnRunner } from '@superone/runtime/session'
+import {
+  createAcpAgentEventMapper,
+  type AcpAgentEventMapper,
+} from './agent-event-mapper'
 import { mapPermissionDecision, mapPermissionRequest } from './permission-map'
 import { spawnAcpProcess, type AcpLaunch } from './process'
+import {
+  XAI_EXT_NOTIFICATION_METHODS,
+  parseXaiExtParams,
+} from './xai-state'
 
 export interface RunAcpTurnOptions {
   /** Agent launch (command required for real turns). */
   launch?: AcpLaunch | null
   resolveProjectPath?: (projectId: string) => string | null
   clientName?: string
+  /**
+   * MCP servers for session/new (e.g. SuperOne Host Action HTTP).
+   * Shape matches ACP `McpServer` descriptors.
+   */
+  mcpServers?: unknown[]
+  /**
+   * Per-turn MCP injection when servers depend on SuperOne session id.
+   * Takes precedence over static `mcpServers` when both are set.
+   */
+  getMcpServers?: (sessionId: string) => unknown[] | null | undefined
 }
 
 function extractAgentTextChunk(msg: ActiveSessionMessage): string | null {
@@ -71,11 +90,16 @@ export function createAcpAgentTurnRunner(opts: RunAcpTurnOptions = {}): TurnRunn
       if (input.signal.aborted) throw new Error('ACP turn interrupted')
 
       let pendingOptions: ReturnType<typeof mapPermissionRequest>['options'] = []
+      let agentEventMapper: AcpAgentEventMapper | null = null
+      const pendingXaiNotifications: Array<{
+        method: string
+        params: Record<string, unknown>
+      }> = []
 
       // ClientApp.connect → ClientConnection with `.agent` (ClientContext).
       // Do not call initialize/newSession/prompt on the connection root — those
       // are deprecated ClientSideConnection shapes and are not on ClientConnection.
-      const connection = client({ name: opts.clientName ?? 'superone-node' })
+      let clientBuilder = client({ name: opts.clientName ?? 'superone-node' })
         .onRequest(methods.client.session.requestPermission, async (ctx) => {
           const mapped = mapPermissionRequest(ctx.params)
           pendingOptions = mapped.options
@@ -92,7 +116,23 @@ export function createAcpAgentTurnRunner(opts: RunAcpTurnOptions = {}): TurnRunn
           })
           return mapPermissionDecision(pendingOptions, decision === 'allow', false)
         })
-        .connect(processHandle.stream)
+
+      for (const method of XAI_EXT_NOTIFICATION_METHODS) {
+        const registeredMethod = method
+        clientBuilder = clientBuilder.onNotification(
+          registeredMethod,
+          parseXaiExtParams,
+          async (ctx) => {
+            if (agentEventMapper) {
+              agentEventMapper.applyXaiNotification(registeredMethod, ctx.params)
+            } else if (input.onAgentEvent) {
+              pendingXaiNotifications.push({ method: registeredMethod, params: ctx.params })
+            }
+          },
+        )
+      }
+
+      const connection = clientBuilder.connect(processHandle.stream)
 
       await connection.agent.request(methods.agent.initialize, {
         protocolVersion: PROTOCOL_VERSION,
@@ -100,47 +140,76 @@ export function createAcpAgentTurnRunner(opts: RunAcpTurnOptions = {}): TurnRunn
         clientCapabilities: {},
       })
 
-      const active = await connection.agent.buildSession({ cwd, mcpServers: [] }).start()
+      const mcpServers =
+        opts.getMcpServers?.(input.session.sessionId) ?? opts.mcpServers ?? []
+      const active = await connection.agent
+        .buildSession({ cwd, mcpServers: mcpServers as never })
+        .start()
       const sessionId = active.sessionId
       if (!sessionId) throw new Error('ACP session/new did not return sessionId')
 
-      input.onEvent?.({ kind: 'status', status: 'streaming' })
-
       let finalText = ''
       const blockId = `acp-${sessionId}`
+      agentEventMapper = input.onAgentEvent
+        ? createAcpAgentEventMapper({
+            messageId: input.messageId ?? blockId,
+            emit: input.onAgentEvent,
+          })
+        : null
+      agentEventMapper?.start(sessionId)
+      if (agentEventMapper) {
+        for (const notification of pendingXaiNotifications) {
+          agentEventMapper.applyXaiNotification(notification.method, notification.params)
+        }
+      }
+      pendingXaiNotifications.length = 0
+      if (!agentEventMapper) input.onEvent?.({ kind: 'status', status: 'streaming' })
       const promptPromise = active.prompt(input.text)
+      let stopReason = 'end_turn'
 
-      const deadline = Date.now() + 300_000
-      while (!input.signal.aborted && Date.now() < deadline) {
-        const raced = await Promise.race([
-          active.nextUpdate().then((u) => ({ kind: 'u' as const, u })),
-          promptPromise.then((r) => ({ kind: 'done' as const, r })),
-          new Promise<{ kind: 'tick' }>((r) => setTimeout(() => r({ kind: 'tick' }), 200)),
-        ])
-        if (raced.kind === 'done') break
-        if (raced.kind === 'tick') continue
-        if (raced.u.kind === 'stop') break
-        const text = extractAgentTextChunk(raced.u)
-        if (text) {
-          finalText += text
-          // Prefer onDelta only — SessionRuntime also projects onEvent text into
-          // the same transcript buffer and would double-count if both fire.
-          input.onDelta(text)
+      try {
+        const deadline = Date.now() + 300_000
+        let nextUpdatePromise = active.nextUpdate()
+        const promptFailure = promptPromise.then(
+          () => new Promise<never>(() => {}),
+        )
+        while (!input.signal.aborted && Date.now() < deadline) {
+          const raced = await Promise.race([
+            nextUpdatePromise.then((u) => ({ kind: 'u' as const, u })),
+            promptFailure,
+            new Promise<{ kind: 'tick' }>((r) => setTimeout(() => r({ kind: 'tick' }), 200)),
+          ])
+          if (raced.kind === 'tick') continue
+          if (raced.u.kind === 'stop') {
+            stopReason = String(raced.u.stopReason)
+            break
+          }
+          nextUpdatePromise = active.nextUpdate()
+          if (agentEventMapper) {
+            const applied = agentEventMapper.apply(
+              raced.u.update,
+              raced.u.notification._meta,
+            )
+            if (applied.textDelta) finalText += applied.textDelta
+          } else {
+            const text = extractAgentTextChunk(raced.u)
+            if (text) {
+              finalText += text
+              input.onDelta(text)
+            }
+          }
         }
+
+        const promptResult = await promptPromise
+        stopReason = String(promptResult.stopReason ?? stopReason)
+        if (input.signal.aborted) throw new Error('ACP turn interrupted')
+        agentEventMapper?.complete(stopReason)
+        if (!agentEventMapper) input.onEvent?.({ kind: 'status', status: 'idle' })
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        agentEventMapper?.fail(message, input.signal.aborted || /interrupt|cancel|abort/i.test(message))
+        throw error
       }
-
-      await promptPromise
-
-      // If the agent only returned stop without chunks, try readText helper as fallback.
-      if (!finalText) {
-        try {
-          // Already completed prompt — readText may not re-run; keep finalText empty.
-        } catch {
-          /* ignore */
-        }
-      }
-
-      input.onEvent?.({ kind: 'status', status: 'idle' })
 
       try {
         active.dispose()

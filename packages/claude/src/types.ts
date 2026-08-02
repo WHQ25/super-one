@@ -4,6 +4,7 @@
  */
 
 import type { SessionTurnEvent } from '@superone/shared/environment'
+import type { AgentEvent } from '@superone/shared/agent-types'
 import type { Options, Query, SDKMessage, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 
 export type ClaudePermissionDecision = 'allow' | 'deny'
@@ -59,12 +60,19 @@ export interface RunClaudeSdkTurnOptions {
    */
   onEvent?: (event: SessionTurnEvent) => void
   /**
-   * Legacy text-only path used only when `onEvent` is absent.
+   * Lossless Claude SDK -> AgentEvent path. When provided it takes precedence
+   * over onEvent so hosts do not receive duplicate text/tool events.
+   */
+  onAgentEvent?: (event: AgentEvent) => void
+  /**
+   * Legacy text-only path used only when both event callbacks are absent.
    */
   onDelta?: (text: string) => void
   signal: AbortSignal
   /** Stable default assistant text block id (tests inject). */
   defaultTextBlockId?: string
+  /** Stable assistant message id used by AgentEvents for this turn. */
+  messageId?: string
   /** Injectable SDK entry (tests). Default: real `query` from agent SDK. */
   queryFn?: ClaudeQueryFn
   /** Extra Options overrides (MCP, systemPrompt, permissionMode, …). */

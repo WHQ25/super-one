@@ -11,22 +11,39 @@ export const HOST_ACTION_CAPABILITY_VERSION = 1 as const
 
 /**
  * Session-scoped tool groups a controller may execute.
- * First grant is browser.read (read-only browser surface).
+ * Default grant: full SuperOne host-bound surface (browser + builtins + computer).
  */
 export const HOST_ACTION_TOOL_GROUPS = {
+  /** Read-only browser tools (snapshot, query, tabs, …) — claim TTL may requeue. */
   browserRead: 'browser.read',
+  /** Mutating browser tools (click, navigate, type, …) — claim TTL cancels. */
+  browserAct: 'browser.act',
+  /**
+   * Non-browser SuperOne tools executed on the controller desktop:
+   * manuals, config, media, widgets, miniapp, session_*, mobile_share.
+   */
+  superone: 'superone',
+  /** Desktop Computer Use tools (computer_*). */
+  computer: 'computer',
 } as const
 
 export type HostActionToolGroup =
   (typeof HOST_ACTION_TOOL_GROUPS)[keyof typeof HOST_ACTION_TOOL_GROUPS]
 
+/** Default groups stamped on session.create when a controller is bound. */
+export const DEFAULT_HOST_ACTION_TOOL_GROUPS: HostActionToolGroup[] = [
+  HOST_ACTION_TOOL_GROUPS.browserRead,
+  HOST_ACTION_TOOL_GROUPS.browserAct,
+  HOST_ACTION_TOOL_GROUPS.superone,
+  HOST_ACTION_TOOL_GROUPS.computer,
+]
+
 /**
  * Replay policy for claim-expiry requeue.
  *
  * - `safe`: claimed actions may return to `pending` after claim TTL / disconnect
- * - `unsafe`: never requeue; claim expiry cancels (indeterminate is deferred —
- *   do not ship non-replayable tools until an `indeterminate` terminal state
- *   exists, and never transition a claimed non-replayable action back to pending)
+ * - `unsafe`: never requeue; claim expiry cancels (no indeterminate state yet —
+ *   mutating tools use this so a retry cannot double-apply side effects)
  */
 export type HostActionReplayPolicy = 'safe' | 'unsafe'
 

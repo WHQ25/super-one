@@ -62,12 +62,12 @@ describe('reconcileTranscriptWithLocalMessages', () => {
     providerId: 'claude',
   })
 
-  const localAssistantWithTools = (id: string): ChatMessage => ({
+  const localAssistantWithTools = (id: string, text = 'working'): ChatMessage => ({
     id,
     role: 'assistant',
     status: 'complete',
     content: [
-      { type: 'text', text: 'working' },
+      { type: 'text', text },
       {
         type: 'tool_use',
         toolUseId: 'tu-1',
@@ -85,22 +85,37 @@ describe('reconcileTranscriptWithLocalMessages', () => {
     providerId: 'claude',
   })
 
+  const localAssistantText = (
+    id: string,
+    text: string,
+    status: ChatMessage['status'] = 'complete',
+  ): ChatMessage => ({
+    id,
+    role: 'assistant',
+    status,
+    content: [{ type: 'text', text }],
+    createdAt: new Date(2).toISOString(),
+    providerId: 'claude',
+  })
+
   it('keeps streamed tool_use + tool_result when end-of-turn transcript is text-only', () => {
-    // Node blockIds differ from client / sticky mapper ids — match by role-index, not id.
+    // Assistant id is shared (SessionRuntime assistantId → stream + transcript).
+    // User ids still diverge (clientMessageId vs node blockId).
+    const asstId = 'asst-uuid-shared'
     const local: ChatMessage[] = [
       localUser('client-user-uuid', 'list files'),
-      localAssistantWithTools('assistant-sess-sticky'),
+      localAssistantWithTools(asstId),
     ]
     const transcript = [
       { id: 'node-user-block', role: 'user', text: 'list files', createdAt: 1 },
-      { id: 'node-asst-block', role: 'assistant', text: 'working', createdAt: 2 },
+      { id: asstId, role: 'assistant', text: 'working', createdAt: 2 },
     ]
 
     const merged = reconcileTranscriptWithLocalMessages(local, transcript, 'claude')
 
     expect(merged).toHaveLength(2)
     expect(merged[0]!.id).toBe('client-user-uuid')
-    expect(merged[1]!.id).toBe('assistant-sess-sticky')
+    expect(merged[1]!.id).toBe(asstId)
     expect(merged[1]!.content.map((b) => b.type)).toEqual([
       'text',
       'tool_use',
@@ -120,6 +135,7 @@ describe('reconcileTranscriptWithLocalMessages', () => {
     expect(merged).toHaveLength(2)
     expect(merged[0]!.id).toBe('client-user-uuid')
     expect(merged[1]!.role).toBe('assistant')
+    expect(merged[1]!.id).toBe('node-asst')
     expect(merged[1]!.content).toEqual([{ type: 'text', text: 'hello from node' }])
   })
 
@@ -137,5 +153,39 @@ describe('reconcileTranscriptWithLocalMessages', () => {
     const local = [localUser('u', 'x')]
     expect(reconcileTranscriptWithLocalMessages(local, undefined, 'claude')).toEqual(local)
     expect(reconcileTranscriptWithLocalMessages(local, [], 'claude')).toEqual(local)
+  })
+
+  it('preserves an interrupted local assistant and still matches the next success by id', () => {
+    // Interrupted/error turns never push to transcript; local still has the bubble.
+    // Role-index would pair interrupted asst with the next success row — wrong.
+    const interruptedId = 'asst-interrupted'
+    const successId = 'asst-success'
+    const local: ChatMessage[] = [
+      localUser('client-u1', 'first'),
+      localAssistantText(interruptedId, 'partial…', 'interrupted'),
+      localUser('client-u2', 'second'),
+      localAssistantWithTools(successId, 'done with tools'),
+    ]
+    const transcript = [
+      { id: 'node-u1', role: 'user', text: 'first', createdAt: 1 },
+      // no interrupted assistant on node
+      { id: 'node-u2', role: 'user', text: 'second', createdAt: 3 },
+      { id: successId, role: 'assistant', text: 'done with tools', createdAt: 4 },
+    ]
+
+    const merged = reconcileTranscriptWithLocalMessages(local, transcript, 'claude')
+
+    expect(merged.map((m) => m.id)).toEqual([
+      'client-u1',
+      interruptedId,
+      'client-u2',
+      successId,
+    ])
+    expect(merged[1]!.status).toBe('interrupted')
+    expect(merged[3]!.content.map((b) => b.type)).toEqual([
+      'text',
+      'tool_use',
+      'tool_result',
+    ])
   })
 })

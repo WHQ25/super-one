@@ -73,17 +73,21 @@ export function transcriptToChatMessages(
 /**
  * Merge node transcript (text-only recovery) with locally streamed messages.
  *
- * Matching rule — role-index, not id equality:
- * Walk transcript order; for the nth user / nth assistant row, if a local
- * message of the same role exists at that role-index, keep the local message
- * (rich tool_use / tool_result / thinking blocks win). Otherwise insert the
- * transcript-derived row (stream missed it). Unmatched local messages (e.g.
- * optimistic user not yet on the node) are appended in their original order.
- *
- * Why not id: the renderer echoes the user bubble under `clientMessageId`
- * while the node uses its own blockId (`skipUserMessage: true`), and
- * `createNodeSessionEventMapper` uses a sticky assistant id per turn that
- * diverges from SessionRuntime transcript assistant ids.
+ * Matching rule:
+ * 1. **Assistants — match by id.** SessionRuntime allocates one `assistantId`
+ *    per turn and threads it through the harness mapper into streamed
+ *    `message_start` / deltas *and* (on success only) the transcript block id.
+ *    Same string on both sides. If the id is already local, keep the local
+ *    message (rich tool_use / tool_result / thinking). If not, insert the
+ *    transcript row (stream missed it).
+ * 2. **Users — never replace, only fill gaps.** Renderer user bubbles use
+ *    `clientMessageId` while the node uses its own blockId (`skipUserMessage`),
+ *    so ids diverge. User content is plain text on both sides; use surrounding
+ *    matched assistant ids as anchors and insert a transcript user only when
+ *    no local user sits in that gap.
+ * 3. **Never drop a local-only message.** Interrupted / error turns never push
+ *    an assistant block to the transcript, but the renderer already streamed
+ *    one — those must survive reconcile.
  */
 export function reconcileTranscriptWithLocalMessages(
   localMessages: ChatMessage[],
@@ -94,34 +98,103 @@ export function reconcileTranscriptWithLocalMessages(
   if (recovery.length === 0) return localMessages
   if (localMessages.length === 0) return recovery
 
-  const localByRole: { user: number[]; assistant: number[] } = {
-    user: [],
-    assistant: [],
-  }
+  const localById = new Map<string, number>()
   for (let i = 0; i < localMessages.length; i++) {
-    const role = localMessages[i]!.role
-    if (role === 'user' || role === 'assistant') {
-      localByRole[role].push(i)
+    localById.set(localMessages[i]!.id, i)
+  }
+
+  const transcriptAssistantIds = new Set<string>()
+  for (const m of recovery) {
+    if (m.role === 'assistant') transcriptAssistantIds.add(m.id)
+  }
+
+  const usedLocal = new Set<number>()
+  const result: ChatMessage[] = []
+  let localIdx = 0
+
+  const takeLocal = (i: number) => {
+    if (usedLocal.has(i)) return
+    usedLocal.add(i)
+    result.push(localMessages[i]!)
+  }
+
+  /** Emit unused local messages from localIdx while shouldTake is true. */
+  const flushWhile = (shouldTake: (m: ChatMessage) => boolean) => {
+    while (localIdx < localMessages.length) {
+      if (usedLocal.has(localIdx)) {
+        localIdx++
+        continue
+      }
+      const m = localMessages[localIdx]!
+      if (!shouldTake(m)) break
+      takeLocal(localIdx)
+      localIdx++
     }
   }
 
-  const roleCursor = { user: 0, assistant: 0 }
-  const usedLocal = new Set<number>()
-  const result: ChatMessage[] = []
+  for (let ti = 0; ti < recovery.length; ti++) {
+    const rec = recovery[ti]!
 
-  for (const rec of recovery) {
-    const role = rec.role
-    const idxInRole = roleCursor[role]
-    const localIdx = localByRole[role][idxInRole]
-    if (localIdx !== undefined) {
-      roleCursor[role] = idxInRole + 1
-      usedLocal.add(localIdx)
-      result.push(localMessages[localIdx]!)
+    if (rec.role === 'assistant') {
+      // Users + interrupted/error assistants (not on transcript) before this id.
+      flushWhile((m) => {
+        if (m.id === rec.id) return false
+        if (m.role === 'assistant' && transcriptAssistantIds.has(m.id)) return false
+        return true
+      })
+
+      const localAt = localById.get(rec.id)
+      if (localAt !== undefined) {
+        takeLocal(localAt)
+        if (localIdx <= localAt) localIdx = localAt + 1
+      } else {
+        // Stream missed this assistant — recover text-only from transcript.
+        result.push(rec)
+      }
+      continue
+    }
+
+    // User: insert only when the gap before the next transcript assistant has
+    // no local user (ids never match across the client/node boundary).
+    let nextAsstId: string | null = null
+    for (let k = ti + 1; k < recovery.length; k++) {
+      if (recovery[k]!.role === 'assistant') {
+        nextAsstId = recovery[k]!.id
+        break
+      }
+    }
+
+    let hasLocalUserInGap = false
+    for (let j = localIdx; j < localMessages.length; j++) {
+      if (usedLocal.has(j)) continue
+      const m = localMessages[j]!
+      if (nextAsstId && m.id === nextAsstId) break
+      if (m.role === 'assistant' && transcriptAssistantIds.has(m.id)) break
+      if (m.role === 'user') {
+        hasLocalUserInGap = true
+        break
+      }
+    }
+
+    if (hasLocalUserInGap) {
+      flushWhile((m) => m.role === 'assistant' && !transcriptAssistantIds.has(m.id))
+      while (localIdx < localMessages.length) {
+        if (usedLocal.has(localIdx)) {
+          localIdx++
+          continue
+        }
+        if (localMessages[localIdx]!.role === 'user') {
+          takeLocal(localIdx)
+          localIdx++
+        }
+        break
+      }
     } else {
       result.push(rec)
     }
   }
 
+  // Local-only messages (interrupted/error assistants, trailing optimistic users).
   for (let i = 0; i < localMessages.length; i++) {
     if (!usedLocal.has(i)) {
       result.push(localMessages[i]!)

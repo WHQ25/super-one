@@ -28,6 +28,11 @@ export interface NodeSessionRecord {
   updatedAt: number
   isPinned: boolean
   isHidden: boolean
+  /**
+   * True after a user (sidebar) rename. Agent renames are rejected while set —
+   * desktop parity with sessions.is_user_renamed / session_rename user_locked.
+   */
+  isUserRenamed: boolean
   /** Once set, runTurn finalizers must not overwrite closed/ended state. */
   closed?: boolean
   /**

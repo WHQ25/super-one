@@ -423,9 +423,16 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
     }
   }
 
-  /** Rename a session title on the node (no lease required). */
-  async renameSession(sessionId: string, title: string): Promise<unknown> {
-    return this.client.rpc('session.rename', { sessionId, title })
+  /**
+   * Rename a session title on the node (no lease required).
+   * @param source `'user'` locks out agent renames; `'agent'` is rejected when locked.
+   */
+  async renameSession(
+    sessionId: string,
+    title: string,
+    source: 'user' | 'agent' = 'user',
+  ): Promise<unknown> {
+    return this.client.rpc('session.rename', { sessionId, title, source })
   }
 
   /** Remove a session from the node registry (sidebar delete). */

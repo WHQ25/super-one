@@ -111,6 +111,7 @@ describe('desktopHostActionExecutor', () => {
       'conn-remote-1',
       'node-session-uuid-xyz',
       'Fix remote rename',
+      'agent',
     )
     // Must not hit local MCP surface / browser (session-scoped routing).
     expect(browser.executeBrowserTool).not.toHaveBeenCalled()
@@ -118,6 +119,29 @@ describe('desktopHostActionExecutor', () => {
     expect(out.result).toEqual({
       content: [{ type: 'text', text: 'Session renamed to "Fix remote rename".' }],
     })
+  })
+
+  it('maps node user_locked rejection to the local session_rename error text', async () => {
+    envHost.renameSession.mockRejectedValueOnce(
+      Object.assign(new Error('user_locked'), { code: 'user_locked' }),
+    )
+    const action = claimed({
+      toolName: 'session_rename',
+      args: { title: 'Agent try' },
+      sessionId: 'node-s',
+    })
+    const out = await desktopHostActionExecutor(action, new AbortController().signal, 'conn-1')
+    expect(out.outcome).toBe('failed')
+    expect(out.result).toEqual({
+      content: [
+        {
+          type: 'text',
+          text: 'Error: user_locked. The user has manually set this session title. Do not call session_rename again for this session.',
+        },
+      ],
+      isError: true,
+    })
+    expect(envHost.renameSession).toHaveBeenCalledWith('conn-1', 'node-s', 'Agent try', 'agent')
   })
 
   it('returns failed when aborted before session_rename execute', async () => {

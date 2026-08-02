@@ -925,9 +925,14 @@ export class EnvironmentHost {
     )
   }
 
-  async renameSession(connectionId: string, sessionId: string, title: string): Promise<unknown> {
+  async renameSession(
+    connectionId: string,
+    sessionId: string,
+    title: string,
+    source: 'user' | 'agent' = 'user',
+  ): Promise<unknown> {
     const { gateway } = this.resolveRemote(connectionId)
-    return gateway.renameSession(sessionId, title)
+    return gateway.renameSession(sessionId, title, source)
   }
 
   async removeSession(connectionId: string, sessionId: string): Promise<unknown> {

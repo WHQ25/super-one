@@ -50,6 +50,9 @@ function ensureSessionUiColumns(db: NodeDatabase): void {
   if (!names.has('cwd')) {
     db.exec(`ALTER TABLE sessions ADD COLUMN cwd TEXT`)
   }
+  if (!names.has('is_user_renamed')) {
+    db.exec(`ALTER TABLE sessions ADD COLUMN is_user_renamed INTEGER NOT NULL DEFAULT 0`)
+  }
 }
 
 function ensureHarnessInstallationsTable(db: NodeDatabase): void {

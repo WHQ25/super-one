@@ -105,6 +105,17 @@ async function executeRemoteSessionScopedTool(
   }
 }
 
+/** Verbatim local renameSessionTool user_locked text — tool desc matches on this token. */
+const USER_LOCKED_REPLY = {
+  content: [
+    {
+      type: 'text' as const,
+      text: 'Error: user_locked. The user has manually set this session title. Do not call session_rename again for this session.',
+    },
+  ],
+  isError: true as const,
+}
+
 /** Match local renameSessionTool reply shape so the agent sees a consistent result. */
 async function renameRemoteSession(
   claimed: ClaimHostActionResult,
@@ -123,7 +134,14 @@ async function renameRemoteSession(
   }
 
   const { getEnvironmentHost } = await import('./environment-host')
-  await getEnvironmentHost().renameSession(connectionId, claimed.sessionId, trimmed)
+  try {
+    await getEnvironmentHost().renameSession(connectionId, claimed.sessionId, trimmed, 'agent')
+  } catch (err) {
+    if (isUserLockedError(err)) {
+      return { outcome: 'failed', error: USER_LOCKED_REPLY, result: USER_LOCKED_REPLY }
+    }
+    throw err
+  }
 
   if (signal.aborted) {
     return {
@@ -136,4 +154,11 @@ async function renameRemoteSession(
     content: [{ type: 'text' as const, text: `Session renamed to "${trimmed}".` }],
   }
   return { outcome: 'succeeded', result }
+}
+
+function isUserLockedError(err: unknown): boolean {
+  const code = (err as { code?: string } | null)?.code
+  if (code === 'user_locked') return true
+  const msg = err instanceof Error ? err.message : String(err ?? '')
+  return msg.includes('user_locked')
 }

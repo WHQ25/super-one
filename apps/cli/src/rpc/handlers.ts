@@ -1666,11 +1666,13 @@ function handleSessionRename(payload: unknown, ctx: RpcContext): RpcResult {
   const p = asRecord(payload)
   const sessionId = String(p.sessionId ?? '')
   const title = String(p.title ?? '')
+  // Default 'user' keeps sidebar / older clients locking the title; agent path passes 'agent'.
+  const source = p.source === 'agent' ? 'agent' : 'user'
   if (!sessionId) {
     return { error: { code: 'invalid_argument', message: 'sessionId required' } }
   }
   try {
-    return { result: ctx.sessions.rename(sessionId, title) }
+    return { result: ctx.sessions.rename(sessionId, title, source) }
   } catch (err) {
     return mapThrown(err)
   }

@@ -18,6 +18,7 @@ function session(overrides?: Partial<NodeSessionRecord>): NodeSessionRecord {
     updatedAt: 0,
     isPinned: false,
     isHidden: false,
+    isUserRenamed: false,
     controllerClientSessionId: null,
     hostActionCapabilityVersion: 0,
     hostActionToolGroups: [],

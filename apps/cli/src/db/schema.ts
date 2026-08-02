@@ -113,6 +113,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   updated_at INTEGER NOT NULL,
   is_pinned INTEGER NOT NULL DEFAULT 0,
   is_hidden INTEGER NOT NULL DEFAULT 0,
+  is_user_renamed INTEGER NOT NULL DEFAULT 0,
   controller_client_session_id TEXT,
   host_action_capability_version INTEGER NOT NULL DEFAULT 0,
   host_action_tool_groups_json TEXT NOT NULL DEFAULT '[]'

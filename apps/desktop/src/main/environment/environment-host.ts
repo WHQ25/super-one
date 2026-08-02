@@ -776,6 +776,46 @@ export class EnvironmentHost {
    * and emit them via `agentEventSink` for live remote chat UI.
    * Returns the final node session record (transcript + status).
    */
+  /**
+   * Exclusive event-log cursor for a send drain.
+   * Prefers session.snapshot head; on failure walks pages to the true tail
+   * (bounded). Never starts at the first-page tail — that replays prior turns.
+   * When even the tail cannot be established, mapEvents is false (skip mapping).
+   */
+  private async resolveRemoteSendEventCursor(
+    gateway: RemoteEnvironmentGateway,
+  ): Promise<{ afterSequence: string; mapEvents: boolean }> {
+    try {
+      const head = await gateway.eventHeadSequence()
+      return { afterSequence: head, mapEvents: true }
+    } catch {
+      /* fall through to bounded tail walk */
+    }
+
+    try {
+      let cursor = '0'
+      let pages = 0
+      const maxPages = 50
+      for (;;) {
+        const batch = await gateway.listEvents(cursor)
+        if (batch.length === 0) {
+          return { afterSequence: cursor, mapEvents: true }
+        }
+        cursor = batch[batch.length - 1]!.sequence
+        pages += 1
+        if (batch.length < 1000) {
+          return { afterSequence: cursor, mapEvents: true }
+        }
+        if (pages >= maxPages) {
+          // Could not bound the tail — skip mapping rather than replay a mid-log page.
+          return { afterSequence: cursor, mapEvents: false }
+        }
+      }
+    } catch {
+      return { afterSequence: '0', mapEvents: false }
+    }
+  }
+
   async sendSessionMessage(
     connectionId: string,
     input: {
@@ -812,16 +852,12 @@ export class EnvironmentHost {
       }
     }
 
-    // Cursor before send so we only map this turn's durable log entries.
-    let afterSequence = '0'
-    try {
-      const prior = await gateway.listEvents('0')
-      if (prior.length > 0) {
-        afterSequence = prior[prior.length - 1]!.sequence
-      }
-    } catch {
-      /* transport blip — fall back to mapping from 0 (idempotent-ish for UI) */
-    }
+    // Cursor before send: use the event-log head, not the first listEvents page.
+    // listEvents is limited to 1000 rows — paging from '0' sets the cursor to
+    // ~1000 on long turns and re-maps the previous turn as if it were new.
+    const cursor = await this.resolveRemoteSendEventCursor(gateway)
+    let afterSequence = cursor.afterSequence
+    const mapEvents = cursor.mapEvents
 
     const model =
       typeof input.model === 'string' && input.model.trim() ? input.model.trim() : undefined
@@ -855,6 +891,7 @@ export class EnvironmentHost {
     let last: unknown = null
 
     const drainEvents = async (): Promise<void> => {
+      if (!mapEvents) return
       try {
         const batch = await gateway.listEvents(afterSequence)
         for (const ev of batch) {

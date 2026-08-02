@@ -284,6 +284,9 @@ describe('SessionRuntime host actions', () => {
     const session = createBoundSession(runtime, 'client-A')
     expect(session.controllerClientSessionId).toBe('client-A')
     expect(session.hostActionToolGroups).toContain(HOST_ACTION_TOOL_GROUPS.browserRead)
+    expect(session.hostActionToolGroups).toContain(HOST_ACTION_TOOL_GROUPS.browserAct)
+    expect(session.hostActionToolGroups).toContain(HOST_ACTION_TOOL_GROUPS.superone)
+    expect(session.hostActionToolGroups).toContain(HOST_ACTION_TOOL_GROUPS.computer)
     expect(session.hostActionCapabilityVersion).toBe(1)
 
     await holdTurn(runtime, session.sessionId, { released: held }, 'client-A')

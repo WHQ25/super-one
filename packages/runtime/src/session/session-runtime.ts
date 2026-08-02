@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import {
+  DEFAULT_HOST_ACTION_TOOL_GROUPS,
   HOST_ACTION_CAPABILITY_VERSION,
-  HOST_ACTION_TOOL_GROUPS,
   projectSessionTurnEvent,
   SESSION_DURABLE_EVENT,
   type ClaimHostActionResult,
@@ -233,7 +233,7 @@ export class SessionRuntime {
         ? (input.hostActionCapabilityVersion ?? HOST_ACTION_CAPABILITY_VERSION)
         : 0,
       hostActionToolGroups: controller
-        ? (input.hostActionToolGroups ?? [HOST_ACTION_TOOL_GROUPS.browserRead])
+        ? (input.hostActionToolGroups ?? [...DEFAULT_HOST_ACTION_TOOL_GROUPS])
         : [],
     }
     this.live.set(session.sessionId, session)
@@ -481,6 +481,7 @@ export class SessionRuntime {
     try {
       const result = await this.turnRunner({
         session: this.clone(session),
+        messageId: assistantId,
         text,
         model: model && model.trim() ? model.trim() : undefined,
         apiProviderId: apiProviderId && apiProviderId.trim() ? apiProviderId.trim() : undefined,
@@ -498,6 +499,15 @@ export class SessionRuntime {
         onEvent: (event) => {
           this.projectOnEvent(session, event, abort.signal, requestId, (delta) => {
             assistantText += delta
+          })
+        },
+        onAgentEvent: (event) => {
+          if (abort.signal.aborted) return
+          this.events.appendSession({
+            sessionId: session.sessionId,
+            eventType: SESSION_DURABLE_EVENT.agentEvent,
+            payload: { event },
+            causationRequestId: requestId,
           })
         },
         onPermission: (interaction) =>

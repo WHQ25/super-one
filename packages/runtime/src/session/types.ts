@@ -1,4 +1,5 @@
 import type { SessionTurnEvent } from '@superone/shared/environment'
+import type { AgentEvent } from '@superone/shared/agent-types'
 
 export type SessionStatus =
   | 'idle'
@@ -67,12 +68,16 @@ export const DEFAULT_PERMISSION_TIMEOUT_MS = 60_000
  */
 export type TurnRunner = (input: {
   session: NodeSessionRecord
+  /** Stable assistant message id allocated by SessionRuntime for this turn. */
+  messageId?: string
   text: string
   model?: string | null
   /** Node provider credential id for this turn (API key source). */
   apiProviderId?: string | null
   onDelta: (text: string) => void
   onEvent?: (event: SessionTurnEvent) => void
+  /** Lossless harness-native AgentEvent stream. */
+  onAgentEvent?: (event: AgentEvent) => void
   onPermission?: (interaction: PendingInteraction) => Promise<PermissionDecision>
   signal: AbortSignal
 }) => Promise<{ finalText: string; providerResume?: string | null }>

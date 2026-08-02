@@ -24,3 +24,12 @@ export {
 } from './session-runtime'
 export { EventLog } from './event-log'
 export { createSqliteSessionStore } from './sqlite-session-store'
+export {
+  createSqliteHostActionStore,
+  ensureHostActionTables,
+  DEFAULT_HOST_ACTION_DEADLINE_MS,
+  DEFAULT_HOST_ACTION_CLAIM_TTL_MS,
+  type HostActionStore,
+  type HostActionRow,
+  type CreateHostActionInput,
+} from './host-action-store'

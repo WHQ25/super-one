@@ -46,6 +46,10 @@ import { homedir } from 'node:os'
 import { getRecentFolders, addRecentFolder, removeRecentFolder } from '../recent-folders'
 import type { ProjectSnapshot } from '@superone/shared/environment'
 import { RemoteEnvironmentGateway } from './remote-environment-gateway'
+import {
+  RemoteHostActionConsumer,
+  type HostActionExecutor,
+} from './remote-host-action-consumer'
 
 export interface EnvironmentHostOptions {
   /** Injectable for tests; production opens real `ssh -L` forwards. */
@@ -58,6 +62,14 @@ export interface EnvironmentHostOptions {
   findArtifact?: (target: string) => DistArtifact | null
   /** Default package version for registry installs (tests / overrides). */
   defaultCliVersion?: string
+  /**
+   * Host Action executor. Injectable stub for tests; production will wire real
+   * desktop tools later. When omitted, a no-op fail executor is used so the
+   * consumer loop still runs without calling the MCP surface.
+   */
+  hostActionExecutor?: HostActionExecutor
+  hostActionConcurrency?: number
+  hostActionPollWaitMs?: number
 }
 
 export interface AddRemoteOverSshInput {
@@ -112,12 +124,28 @@ export class EnvironmentHost {
     string,
     { generation: number; promise: Promise<ProjectSnapshot[]> }
   >()
+  /** One Host Action consumer per live connectionId. */
+  private readonly hostActionConsumers = new Map<string, RemoteHostActionConsumer>()
+  private readonly hostActionExecutor: HostActionExecutor
+  private readonly hostActionConcurrency: number
+  private readonly hostActionPollWaitMs: number
 
   constructor(userDataDir?: string, options: EnvironmentHostOptions = {}) {
     const dataDir = userDataDir || app.getPath('userData')
     mkdirSync(dataDir, { recursive: true })
     this.knownPath = join(dataDir, 'known-environments.json')
     this.credentials = new NodeCredentialStore(dataDir)
+    // Production default: real desktop MCP tool surface (browser_snapshot, …).
+    // Lazy require avoids pulling MCP/electron into pure unit tests that only
+    // inject a stub executor.
+    this.hostActionExecutor =
+      options.hostActionExecutor ??
+      (async (claimed, signal) => {
+        const { desktopHostActionExecutor } = await import('./host-action-executor')
+        return desktopHostActionExecutor(claimed, signal)
+      })
+    this.hostActionConcurrency = Math.max(2, options.hostActionConcurrency ?? 2)
+    this.hostActionPollWaitMs = options.hostActionPollWaitMs ?? 10_000
     this.registry = new EnvironmentRegistryImpl({
       dataDir,
       listProjects: async () =>
@@ -177,7 +205,17 @@ export class EnvironmentHost {
     label: string
     endpointProfiles?: EndpointProfile[]
   }) {
-    return this.connections.pairAndConnect(input)
+    const result = await this.connections.pairAndConnect(input)
+    this.startHostActionConsumer(result.connectionId)
+    return result
+  }
+
+  /**
+   * Test helper: whether the Host Action consumer for a connection is running.
+   * The consumer is independent of chat views and sendSessionMessage drains.
+   */
+  isHostActionConsumerRunning(connectionId: string): boolean {
+    return this.hostActionConsumers.get(connectionId)?.isRunning === true
   }
 
   /** Subscribe to supervisor state changes; returns an unsubscribe function. */
@@ -1246,11 +1284,14 @@ export class EnvironmentHost {
     if (!known) throw new Error(`unknown connection ${connectionId}`)
 
     const baseUrl = await this.resolveBaseUrl(known)
-    return this.connections.connectExisting(connectionId, baseUrl)
+    const descriptor = await this.connections.connectExisting(connectionId, baseUrl)
+    this.startHostActionConsumer(connectionId)
+    return descriptor
   }
 
   /** Close the socket and any SSH tunnel; credentials and metadata are kept. */
   disconnect(connectionId: string): void {
+    this.stopHostActionConsumer(connectionId, 'disconnect')
     this.connections.disconnect(connectionId)
     this.tunnels.close(connectionId)
     const previous = this.lastStatus.get(connectionId)
@@ -1266,6 +1307,7 @@ export class EnvironmentHost {
 
   /** Disconnect and erase all client-local state for this environment. */
   forget(connectionId: string): void {
+    this.stopHostActionConsumer(connectionId, 'forget')
     this.tunnels.close(connectionId)
     this.connections.forget(connectionId)
     this.lastStatus.delete(connectionId)
@@ -1520,11 +1562,36 @@ export class EnvironmentHost {
   }
 
   dispose(): void {
+    for (const id of [...this.hostActionConsumers.keys()]) {
+      this.stopHostActionConsumer(id, 'dispose')
+    }
     this.connections.disconnectAll()
     this.tunnels.closeAll()
     this.statusListeners.clear()
     this.remoteProjectCache.clear()
     this.remoteProjectLoads.clear()
+  }
+
+  private startHostActionConsumer(connectionId: string): void {
+    this.stopHostActionConsumer(connectionId, 'restart')
+    const client = this.connections.getClient(connectionId)
+    if (!client) return
+    const consumer = new RemoteHostActionConsumer({
+      connectionId,
+      client,
+      executor: this.hostActionExecutor,
+      concurrency: this.hostActionConcurrency,
+      pollWaitMs: this.hostActionPollWaitMs,
+    })
+    this.hostActionConsumers.set(connectionId, consumer)
+    consumer.start()
+  }
+
+  private stopHostActionConsumer(connectionId: string, reason: string): void {
+    const consumer = this.hostActionConsumers.get(connectionId)
+    if (!consumer) return
+    consumer.stop(reason)
+    this.hostActionConsumers.delete(connectionId)
   }
 
   private loadKnown(): KnownEnvironmentRecord[] {

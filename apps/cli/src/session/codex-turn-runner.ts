@@ -47,6 +47,8 @@ export interface NodeProductionRunnerOptions extends NodeCodexRunnerOptions {
   claudeQueryFn?: NodeClaudeRunnerOptions['queryFn']
   acpBinaryPath?: string | null
   openCodeBinaryPath?: string | null
+  /** Host Action MCP (browser_snapshot) for Claude turns only. */
+  getHostActionMcpServers?: NodeClaudeRunnerOptions['getHostActionMcpServers']
 }
 
 export function resolveCodexBinaryPath(opts: {
@@ -169,6 +171,7 @@ export function createProductionTurnRunner(opts: NodeProductionRunnerOptions): T
     queryFn: opts.claudeQueryFn,
     allowSimulatedFallback: opts.allowSimulatedFallback,
     providers: opts.providers,
+    getHostActionMcpServers: opts.getHostActionMcpServers,
   })
   const acpOpenCode = createAcpOpenCodeProductionRouter({
     allowSimulatedFallback: opts.allowSimulatedFallback,

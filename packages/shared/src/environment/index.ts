@@ -8,6 +8,7 @@
 export * from './protocol'
 export * from './refs'
 export * from './capabilities'
+export * from './host-actions'
 export * from './harness-installation'
 export * from './descriptor'
 export * from './known-environment'

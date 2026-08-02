@@ -17,6 +17,8 @@ export function openNodeDatabase(dbPath: string): NodeDatabase {
   ensureHarnessInstallationsTable(db)
   // Node-local AI provider credentials / bindings / custom platforms.
   ensureProviderTables(db)
+  // Host Action channel tables + session controller binding columns.
+  ensureHostActionSupport(db)
 
   const row = db.prepare('SELECT value FROM meta WHERE key = ?').get('schema_generation') as
     | { value: string }
@@ -96,6 +98,69 @@ CREATE TABLE IF NOT EXISTS provider_custom_platforms (
   created_at TEXT NOT NULL DEFAULT '',
   updated_at TEXT NOT NULL DEFAULT ''
 );
+`)
+}
+
+/**
+ * Host Action channel: durable action rows + change log, and session binding columns.
+ * Additive — schema generation stays at 1 (same pattern as harness/provider tables).
+ */
+function ensureHostActionSupport(db: NodeDatabase): void {
+  const cols = db.prepare(`PRAGMA table_info(sessions)`).all() as Array<{ name: string }>
+  const names = new Set(cols.map((c) => c.name))
+  if (!names.has('controller_client_session_id')) {
+    db.exec(`ALTER TABLE sessions ADD COLUMN controller_client_session_id TEXT`)
+  }
+  if (!names.has('host_action_capability_version')) {
+    db.exec(
+      `ALTER TABLE sessions ADD COLUMN host_action_capability_version INTEGER NOT NULL DEFAULT 0`,
+    )
+  }
+  if (!names.has('host_action_tool_groups_json')) {
+    db.exec(
+      `ALTER TABLE sessions ADD COLUMN host_action_tool_groups_json TEXT NOT NULL DEFAULT '[]'`,
+    )
+  }
+
+  db.exec(`
+CREATE TABLE IF NOT EXISTS host_actions (
+  action_id TEXT PRIMARY KEY NOT NULL,
+  session_id TEXT NOT NULL,
+  turn_id TEXT,
+  controller_client_session_id TEXT NOT NULL,
+  tool_name TEXT NOT NULL,
+  tool_group TEXT NOT NULL,
+  args_json TEXT NOT NULL,
+  replay_policy TEXT NOT NULL,
+  state TEXT NOT NULL,
+  version INTEGER NOT NULL,
+  created_at INTEGER NOT NULL,
+  deadline INTEGER NOT NULL,
+  claim_token_hash TEXT,
+  claimed_at INTEGER,
+  claim_expires_at INTEGER,
+  result_json TEXT,
+  error_json TEXT,
+  response_payload_hash TEXT,
+  finished_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_host_actions_controller_state
+  ON host_actions(controller_client_session_id, state);
+CREATE INDEX IF NOT EXISTS idx_host_actions_session
+  ON host_actions(session_id);
+
+CREATE TABLE IF NOT EXISTS host_action_changes (
+  sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+  action_id TEXT NOT NULL,
+  session_id TEXT NOT NULL,
+  controller_client_session_id TEXT NOT NULL,
+  state TEXT NOT NULL,
+  version INTEGER NOT NULL,
+  replay_policy TEXT NOT NULL,
+  changed_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_host_action_changes_controller_seq
+  ON host_action_changes(controller_client_session_id, sequence);
 `)
 }
 

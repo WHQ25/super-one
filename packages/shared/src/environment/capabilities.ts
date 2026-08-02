@@ -24,6 +24,12 @@ export interface EnvironmentCapabilities {
   coldSessionResume: boolean
   /** In-flight turn reattach across graceful node restart (provider-specific). */
   turnReattach: boolean
+  /**
+   * Host Action channel v1: durable poll/claim/respond for controller-side tools
+   * (browser automation, computer use). Session-scoped grants (e.g. browser.read)
+   * are stamped on session.create separately.
+   */
+  hostActionV1: boolean
 }
 
 export const LOCAL_ENVIRONMENT_CAPABILITIES: EnvironmentCapabilities = {
@@ -39,6 +45,7 @@ export const LOCAL_ENVIRONMENT_CAPABILITIES: EnvironmentCapabilities = {
   nodeAdmin: false,
   coldSessionResume: true,
   turnReattach: false,
+  hostActionV1: true,
 }
 
 /** Baseline node capabilities; Phase 2 enables workspaceFs/git/worktrees at runtime. */
@@ -55,6 +62,7 @@ export const PHASE1_NODE_CAPABILITIES: EnvironmentCapabilities = {
   nodeAdmin: true,
   coldSessionResume: false,
   turnReattach: false,
+  hostActionV1: true,
 }
 
 /**
@@ -79,6 +87,7 @@ export function intersectCapabilities(
     nodeAdmin: a.nodeAdmin && b.nodeAdmin,
     coldSessionResume: a.coldSessionResume && b.coldSessionResume,
     turnReattach: a.turnReattach && b.turnReattach,
+    hostActionV1: a.hostActionV1 && b.hostActionV1,
   }
 }
 
@@ -111,5 +120,6 @@ export function normalizeCapabilities(raw: unknown): EnvironmentCapabilities {
     nodeAdmin: flag('nodeAdmin'),
     coldSessionResume: flag('coldSessionResume'),
     turnReattach: flag('turnReattach'),
+    hostActionV1: flag('hostActionV1'),
   }
 }

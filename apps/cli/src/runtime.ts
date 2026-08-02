@@ -22,6 +22,10 @@ import { CollaborationMailbox } from './session/collaboration'
 import { WorkspaceWatchService } from './workspace/watch-service'
 import { IdempotencyService } from './auth/idempotency'
 import { ProviderStore } from './provider/provider-store'
+import {
+  startHostActionMcpServer,
+  type HostActionMcpServerHandle,
+} from './session/host-action-mcp-server'
 
 export interface NodeRuntime {
   config: NodeRuntimeConfig
@@ -40,6 +44,8 @@ export interface NodeRuntime {
   collaboration: CollaborationMailbox
   idempotency: IdempotencyService
   providers: ProviderStore
+  /** Loopback Host Action MCP (browser_snapshot → desktop). Null when disabled. */
+  hostActionMcp: HostActionMcpServerHandle | null
   server: NodeServerHandle
   startedAt: number
   stop(): Promise<void>
@@ -89,6 +95,19 @@ export async function startNodeRuntime(partial: StartNodeRuntimeOptions = {}): P
 
   const providers = new ProviderStore(db, paths.providerSecretsKey)
 
+  // Host Action MCP must call sessions.requestHostAction; wire via late binding.
+  let sessionsRef: SessionRuntime | null = null
+  const hostActionMcp = await startHostActionMcpServer({
+    requestHostAction: (input) => {
+      if (!sessionsRef) {
+        return Promise.reject(
+          Object.assign(new Error('session runtime not ready'), { code: 'failed_precondition' }),
+        )
+      }
+      return sessionsRef.requestHostAction(input)
+    },
+  })
+
   const turnRunner =
     partial.turnRunner ??
     (simulatedHarness
@@ -98,6 +117,7 @@ export async function startNodeRuntime(partial: StartNodeRuntimeOptions = {}): P
           resolveProjectPath: (projectId) => projects.get(projectId)?.path ?? null,
           allowSimulatedFallback: allowSimulatedTurnFallback,
           providers,
+          getHostActionMcpServers: (sessionId) => hostActionMcp.getClaudeMcpServers(sessionId),
         }))
 
   const sessions = new SessionRuntime(
@@ -107,6 +127,7 @@ export async function startNodeRuntime(partial: StartNodeRuntimeOptions = {}): P
     identity.environmentId,
     turnRunner,
   )
+  sessionsRef = sessions
   const collaboration = new CollaborationMailbox(db, events, identity.environmentId)
   const idempotency = new IdempotencyService(db)
   const startedAt = Date.now()
@@ -167,6 +188,7 @@ export async function startNodeRuntime(partial: StartNodeRuntimeOptions = {}): P
     collaboration,
     idempotency,
     providers,
+    hostActionMcp,
     server,
     startedAt,
     async stop() {
@@ -176,6 +198,7 @@ export async function startNodeRuntime(partial: StartNodeRuntimeOptions = {}): P
       const disposePromise = sessions.dispose()
       await server.close()
       await disposePromise
+      await hostActionMcp.stop().catch(() => {})
       workspaceWatch.closeAll()
       terminals.killAll()
       db.close()

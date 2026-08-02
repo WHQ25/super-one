@@ -48,6 +48,10 @@ function rpcTimeoutMs(method: string): number {
   ) {
     return LONG_RPC_TIMEOUT_MS
   }
+  // Controller long-poll — waitMs up to 30s + network headroom.
+  if (method === 'session.hostActionsPoll') {
+    return 45_000
+  }
   if (method.startsWith('git.')) {
     return GIT_READ_RPC_TIMEOUT_MS
   }
@@ -480,6 +484,7 @@ function isMutatingMethod(method: string): boolean {
     method.includes('setUiFlags') ||
     method.includes('.interrupt') ||
     method.includes('.respond') ||
+    method.includes('.claim') ||
     method.includes('.acquire') ||
     method.includes('.renew') ||
     method.includes('.release') ||

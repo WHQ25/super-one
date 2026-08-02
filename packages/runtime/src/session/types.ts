@@ -29,6 +29,16 @@ export interface NodeSessionRecord {
   isHidden: boolean
   /** Once set, runTurn finalizers must not overwrite closed/ended state. */
   closed?: boolean
+  /**
+   * Pairing-level controller identity (clientSessionId) that may poll/claim/respond
+   * host actions for this session. Bound at create; handoff is deliberately deferred
+   * (fail closed — a different paired desktop is rejected).
+   */
+  controllerClientSessionId: string | null
+  /** Capability version for the Host Action channel (0 = unbound / unsupported). */
+  hostActionCapabilityVersion: number
+  /** Session-scoped tool groups the controller may execute (e.g. browser.read). */
+  hostActionToolGroups: string[]
 }
 
 export interface TranscriptBlock {

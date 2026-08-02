@@ -45,6 +45,13 @@ export interface NodeClaudeRunnerOptions {
   skipSdkBinary?: boolean
   /** Node provider store — injects API keys for this turn. */
   providers?: ProviderStore
+  /**
+   * Host Action MCP servers for this session (loopback HTTP).
+   * When set, Claude receives `options.mcpServers` so it can call browser_snapshot.
+   */
+  getHostActionMcpServers?: (
+    sessionId: string,
+  ) => Record<string, { type: 'http'; url: string; headers: Record<string, string> }> | null
 }
 
 export function resolveClaudeBinaryPath(opts: {
@@ -150,6 +157,10 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
 
     const priorSession = parseClaudeSessionResume(input.session.providerResume)
 
+    // Host Action channel: expose desktop-executed tools (browser_snapshot) over loopback MCP.
+    const hostActionMcp =
+      opts.getHostActionMcpServers?.(input.session.sessionId) ?? null
+
     const result = await runClaudeSdkTurn({
       binaryPath: binary,
       prompt: input.text,
@@ -174,6 +185,13 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
           }
         : undefined,
       signal: input.signal,
+      options: hostActionMcp
+        ? {
+            mcpServers: hostActionMcp,
+            // Prefer the host-action tool surface over project .mcp.json for this slice.
+            strictMcpConfig: true,
+          }
+        : undefined,
     })
 
     return {

@@ -43,6 +43,7 @@
     "deploy:relay": "bun --filter @superone/relay deploy",
     "test:relay": "bun --filter @superone/relay test",
     "test:cli": "bun --filter @superone/cli test",
+    "test:runtime": "bun --filter @superone/runtime test",
     "build": "bun --filter @superone/desktop build",
     "build:app": "bun --filter @superone/desktop build:app",
     "build:mac": "bun --filter @superone/desktop build:mac",

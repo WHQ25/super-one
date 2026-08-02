@@ -29,6 +29,9 @@ function session(over: Partial<NodeSessionRecord> = {}): NodeSessionRecord {
     updatedAt: Date.now(),
     isPinned: false,
     isHidden: false,
+    controllerClientSessionId: null,
+    hostActionCapabilityVersion: 0,
+    hostActionToolGroups: [],
     ...over,
   }
 }

@@ -168,6 +168,9 @@ describe('Host Action RPC channel', () => {
     expect(session.controllerClientSessionId).toBe(client.clientSessionId)
     expect(session.hostActionCapabilityVersion).toBe(1)
     expect(session.hostActionToolGroups).toContain(HOST_ACTION_TOOL_GROUPS.browserRead)
+    expect(session.hostActionToolGroups).toContain(HOST_ACTION_TOOL_GROUPS.browserAct)
+    expect(session.hostActionToolGroups).toContain(HOST_ACTION_TOOL_GROUPS.superone)
+    expect(session.hostActionToolGroups).toContain(HOST_ACTION_TOOL_GROUPS.computer)
     client.close()
   })
 

@@ -40,6 +40,40 @@ import {
   MINIAPP_CALL_TOOL_NAME,
   MINIAPP_LIST_TOOL_NAME,
 } from './miniapp-call-policy'
+import {
+  listWidgetTemplatesHandler,
+  executeWidgetShowTool,
+} from '../generative-ui/mcp-server'
+
+const WIDGET_LIST_TEMPLATES_NAME = 'widget_list_templates'
+const WIDGET_SHOW_NAME = 'widget_show'
+
+const WIDGET_LIST_TEMPLATES_DESCRIPTOR: SuperoneMcpToolDescriptor = {
+  name: WIDGET_LIST_TEMPLATES_NAME,
+  description:
+    'List reusable widget templates saved in the current project or user scope. Call this when considering template reuse; pass a returned id to widget_show.template.',
+  inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+}
+
+const WIDGET_SHOW_DESCRIPTOR: SuperoneMcpToolDescriptor = {
+  name: WIDGET_SHOW_NAME,
+  description:
+    'Render SVG, diagrams, charts, or interactive HTML inline in chat. Pass widget_code for new content, or template + data to reuse a saved template. Before the first new widget in a session, load the relevant design modules with read_manual({ domain: "widget", modules: [...] }).',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      title: { type: 'string', description: 'Short snake_case identifier for this widget.' },
+      widget_code: { type: 'string' },
+      template: { type: 'string' },
+      data: { type: 'object', additionalProperties: true },
+      reusable: { type: 'object', additionalProperties: true },
+      width: { type: 'number' },
+      height: { type: 'number' },
+    },
+    required: ['title'],
+    additionalProperties: false,
+  },
+}
 
 export function listSuperoneMcpTools(sessionId: string): SuperoneMcpToolDescriptor[] {
   const collaborationEnabled = readAppSettings().experimentalAgentCollaborationEnabled
@@ -48,6 +82,8 @@ export function listSuperoneMcpTools(sessionId: string): SuperoneMcpToolDescript
       || !(SESSION_COLLABORATION_TOOL_NAMES as readonly string[]).includes(tool.name)),
     ...getBrowserToolDescriptors(),
     ...getMiniappFixedToolDescriptors() as SuperoneMcpToolDescriptor[],
+    WIDGET_LIST_TEMPLATES_DESCRIPTOR,
+    WIDGET_SHOW_DESCRIPTOR,
   ]
   // Computer Use is opt-in (default off). P0 exposes the 6-tool contract only when enabled.
   if (isComputerUseEnabled()) {
@@ -126,6 +162,16 @@ export async function executeSuperoneMcpTool(
         ? args.input as Record<string, unknown>
         : {},
     }, miniappToolDepsForSurface())
+  }
+
+  if (toolName === WIDGET_LIST_TEMPLATES_NAME) {
+    const projectPath = getSessionHost()?.getSession(sessionId)?.projectPath
+    return listWidgetTemplatesHandler({ projectPath })
+  }
+
+  if (toolName === WIDGET_SHOW_NAME) {
+    const projectPath = getSessionHost()?.getSession(sessionId)?.projectPath
+    return executeWidgetShowTool(args, { projectPath })
   }
 
   throw new Error(`Unknown SuperOne MCP tool: ${toolName}`)

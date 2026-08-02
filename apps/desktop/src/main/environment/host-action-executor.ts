@@ -1,12 +1,13 @@
 /**
  * Production Host Action executor — dispatches claimed actions to the real
- * desktop SuperOne MCP tool surface.
+ * desktop SuperOne MCP tool surface (`executeSuperoneMcpTool`).
  *
- * sessionId identity (Slice 1 / browser_snapshot):
- * The node session UUID is the browser-tab owner key in the renderer store
- * (`tabs[id].owner === sessionId`). `executeBrowserTool` does NOT require a
- * desktop SessionManager entry — only tab ownership. Miniapp / built-in tools
- * that call getSessionHost() are out of scope for this slice.
+ * sessionId identity:
+ * - Browser / Computer Use / miniapp: node session UUID is the owner key
+ *   (tab ownership, app authorization). No desktop SessionManager entry required.
+ * - Tools that call `getSessionHost().getSession(sessionId)` (session_rename,
+ *   collab, project-scoped widgets) need a desktop Session when available;
+ *   otherwise they return a structured tool error from the surface.
  *
  * Dynamic import keeps EnvironmentHost loadable in unit tests that only mock
  * electron partially (tool-surface pulls logger / BrowserWindow).

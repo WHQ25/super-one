@@ -1,15 +1,15 @@
 /**
- * Node loopback HTTP MCP server for Host Action tools (Slice 1).
+ * Node Host Action MCP — HTTP transport adapter + harness config factory.
+ *
+ * Tool surface lives in `host-action-mcp-core.ts`. This module:
+ * - binds loopback Streamable HTTP (Codex / ACP / OpenCode)
+ * - builds per-session HTTP auth configs for those harnesses
+ * - creates in-process Claude Agent SDK MCP instances (type: 'sdk')
  *
  * Mirrors the HTTP half of desktop `superone-mcp-stdio-ipc.ts`:
  * - bind 127.0.0.1 ephemeral port
  * - per-session HMAC bearer + X-SuperOne-Session-Id + Host validation
  * - StreamableHTTPServerTransport
- *
- * Registers exactly one tool for now: `browser_snapshot`.
- * Handler creates a Host Action via `requestHostAction` and returns the terminal result.
- *
- * Replay-safe: browser_snapshot may be requeued after claim expiry (see host-action-store).
  */
 
 import { randomUUID } from 'node:crypto'
@@ -19,33 +19,32 @@ import {
   type Server as HttpServer,
   type ServerResponse,
 } from 'node:http'
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import type { McpSdkServerConfigWithInstance } from '@anthropic-ai/claude-agent-sdk'
+import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js'
-import { z } from 'zod'
 import {
-  HOST_ACTION_TOOL_GROUPS,
-  type HostActionTerminalResult,
-} from '@superone/shared/environment'
-import {
+  buildAcpSuperoneMcpServer,
+  buildClaudeHttpMcpServers,
+  buildCodexSuperoneMcpConfig,
+  buildOpenCodeSuperoneMcpConfig,
   buildSuperoneMcpHttpConfig,
   isValidSuperoneMcpSessionToken,
   SUPERONE_MCP_SESSION_HEADER,
+  type AcpSuperoneMcpServer,
+  type CodexSuperoneMcpConfig,
+  type OpenCodeSuperoneMcpConfig,
   type SuperoneMcpHttpConfig,
 } from './host-action-mcp-auth'
+import {
+  createHostActionMcpServer,
+  HOST_ACTION_MCP_NAME,
+  type HostActionRequestFn,
+} from './host-action-mcp-core'
 
 const MAX_HTTP_BODY_BYTES = 1024 * 1024
 
-export type HostActionRequestFn = (input: {
-  sessionId: string
-  toolName: string
-  toolGroup: string
-  args: unknown
-  /** browser_snapshot is replay-safe — claim expiry may requeue to pending. */
-  replayPolicy: 'safe'
-  deadlineMs?: number
-  signal?: AbortSignal
-}) => Promise<HostActionTerminalResult>
+export type { HostActionRequestFn }
 
 export interface HostActionMcpServerOptions {
   requestHostAction: HostActionRequestFn
@@ -60,12 +59,34 @@ interface HttpMcpSession {
   closing: boolean
 }
 
+export interface ClaudeSdkMcpHandle {
+  mcpServers: Record<string, McpSdkServerConfigWithInstance>
+  dispose(): Promise<void>
+}
+
 export interface HostActionMcpServerHandle {
   httpUrl: string
   masterToken: string
   getHttpConfig(sessionId: string): SuperoneMcpHttpConfig
-  /** Claude Agent SDK mcpServers entry for a session. */
-  getClaudeMcpServers(sessionId: string): Record<string, { type: 'http'; url: string; headers: Record<string, string> }>
+  getCodexMcpConfig(sessionId: string): CodexSuperoneMcpConfig
+  getOpenCodeMcpConfig(sessionId: string): OpenCodeSuperoneMcpConfig
+  getAcpMcpServer(sessionId: string): AcpSuperoneMcpServer
+  /**
+   * Claude Agent SDK in-process MCP (type: 'sdk').
+   * Caller must dispose after the turn so the McpServer is closed.
+   */
+  createClaudeSdkMcp(sessionId: string): ClaudeSdkMcpHandle
+  /**
+   * HTTP mcpServers map — used by tests and as a Claude fallback shape.
+   * Prefer {@link createClaudeSdkMcp} for production Claude turns.
+   */
+  getClaudeHttpMcpServers(
+    sessionId: string,
+  ): Record<string, { type: 'http'; url: string; headers: Record<string, string> }>
+  /** @deprecated Use createClaudeSdkMcp / getClaudeHttpMcpServers. */
+  getClaudeMcpServers(
+    sessionId: string,
+  ): Record<string, { type: 'http'; url: string; headers: Record<string, string> }>
   stop(): Promise<void>
 }
 
@@ -97,74 +118,6 @@ async function readJsonBody(req: IncomingMessage): Promise<unknown> {
 function headerValue(req: IncomingMessage, name: string): string | null {
   const value = req.headers[name]
   return typeof value === 'string' && value.length > 0 ? value : null
-}
-
-function terminalToMcpContent(terminal: HostActionTerminalResult): {
-  content: Array<{ type: 'text'; text: string }>
-  isError?: boolean
-} {
-  if (terminal.state === 'succeeded') {
-    // Prefer desktop tool reply shape when present.
-    const r = terminal.result
-    if (r && typeof r === 'object' && Array.isArray((r as { content?: unknown }).content)) {
-      return r as { content: Array<{ type: 'text'; text: string }>; isError?: boolean }
-    }
-    return {
-      content: [{ type: 'text', text: JSON.stringify(terminal.result ?? null) }],
-    }
-  }
-  const err =
-    terminal.error ??
-    (terminal.state === 'cancelled'
-      ? { code: 'cancelled', message: 'host action cancelled' }
-      : { code: 'failed', message: 'host action failed' })
-  return {
-    content: [{ type: 'text', text: typeof err === 'string' ? err : JSON.stringify(err) }],
-    isError: true,
-  }
-}
-
-function createBrowserSnapshotServer(
-  superoneSessionId: string,
-  requestHostAction: HostActionRequestFn,
-): McpServer {
-  const server = new McpServer({ name: 'superone-host-action', version: '1.0.0' })
-  server.registerTool(
-    'browser_snapshot',
-    {
-      description:
-        "Inspect the current browser page on the controlling desktop. Sections via `include`: 'meta', 'elements', 'tree', 'text', 'console'. Default ['meta','elements','console'].",
-      inputSchema: {
-        tab: z
-          .string()
-          .optional()
-          .describe('Browser view id. Omit to target the focused browser view for this session.'),
-        include: z
-          .array(z.enum(['meta', 'elements', 'tree', 'text', 'console']))
-          .optional()
-          .describe("Which data sections to return. Default ['meta','elements','console']."),
-        filter: z.string().optional(),
-        max: z.number().int().min(1).max(200).optional(),
-        depth: z.number().int().min(1).max(30).optional(),
-        treeMax: z.number().int().min(1).max(500).optional(),
-        textMaxChars: z.number().int().min(0).max(20000).optional(),
-      },
-    },
-    async (args, extra) => {
-      // browser_snapshot is replay-safe: claim expiry may requeue claimed → pending.
-      // Do not ship non-replayable tools without an `indeterminate` terminal state.
-      const terminal = await requestHostAction({
-        sessionId: superoneSessionId,
-        toolName: 'browser_snapshot',
-        toolGroup: HOST_ACTION_TOOL_GROUPS.browserRead,
-        args: args ?? {},
-        replayPolicy: 'safe',
-        signal: extra?.signal,
-      })
-      return terminalToMcpContent(terminal)
-    },
-  )
-  return server
 }
 
 export async function startHostActionMcpServer(
@@ -244,7 +197,7 @@ export async function startHostActionMcpServer(
       }
     } else if (!transportId && req.method === 'POST' && isInitializeRequest(body)) {
       try {
-        const server = createBrowserSnapshotServer(superoneSessionId, opts.requestHostAction)
+        const server = createHostActionMcpServer(superoneSessionId, opts.requestHostAction)
         let sessionRef: HttpMcpSession | undefined
         const transport = new StreamableHTTPServerTransport({
           sessionIdGenerator: randomUUID,
@@ -319,15 +272,34 @@ export async function startHostActionMcpServer(
     getHttpConfig(sessionId: string) {
       return buildSuperoneMcpHttpConfig(httpUrl, masterToken, sessionId)
     },
-    getClaudeMcpServers(sessionId: string) {
-      const cfg = buildSuperoneMcpHttpConfig(httpUrl, masterToken, sessionId)
+    getCodexMcpConfig(sessionId: string) {
+      return buildCodexSuperoneMcpConfig(httpUrl, masterToken, sessionId)
+    },
+    getOpenCodeMcpConfig(sessionId: string) {
+      return buildOpenCodeSuperoneMcpConfig(httpUrl, masterToken, sessionId)
+    },
+    getAcpMcpServer(sessionId: string) {
+      return buildAcpSuperoneMcpServer(httpUrl, masterToken, sessionId)
+    },
+    createClaudeSdkMcp(sessionId: string): ClaudeSdkMcpHandle {
+      const server = createHostActionMcpServer(sessionId, opts.requestHostAction)
+      const entry = {
+        type: 'sdk' as const,
+        name: HOST_ACTION_MCP_NAME,
+        instance: server,
+      } as unknown as McpSdkServerConfigWithInstance
       return {
-        superone: {
-          type: 'http' as const,
-          url: cfg.url,
-          headers: cfg.headers,
+        mcpServers: { [HOST_ACTION_MCP_NAME]: entry },
+        async dispose() {
+          await server.close().catch(() => undefined)
         },
       }
+    },
+    getClaudeHttpMcpServers(sessionId: string) {
+      return buildClaudeHttpMcpServers(httpUrl, masterToken, sessionId)
+    },
+    getClaudeMcpServers(sessionId: string) {
+      return buildClaudeHttpMcpServers(httpUrl, masterToken, sessionId)
     },
     async stop() {
       closed = true

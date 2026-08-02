@@ -21,6 +21,56 @@ export async function listWidgetTemplatesHandler(opts?: WidgetToolsOptions) {
   return { content: [{ type: 'text' as const, text }] }
 }
 
+/** Shared by in-process MCP registration and Host Action / listSuperoneMcpTools. */
+export async function executeWidgetShowTool(
+  args: Record<string, unknown>,
+  opts?: WidgetToolsOptions,
+) {
+  const title = String(args.title ?? '')
+  const widget_code = typeof args.widget_code === 'string' ? args.widget_code : undefined
+  const template = typeof args.template === 'string' ? args.template : undefined
+  const data =
+    args.data && typeof args.data === 'object' && !Array.isArray(args.data)
+      ? (args.data as Record<string, unknown>)
+      : undefined
+  const reusable =
+    args.reusable && typeof args.reusable === 'object' && !Array.isArray(args.reusable)
+      ? (args.reusable as {
+          id: string
+          description?: string
+          inputSchema?: Record<string, unknown>
+        })
+      : undefined
+  const width = typeof args.width === 'number' ? args.width : undefined
+  const height = typeof args.height === 'number' ? args.height : undefined
+
+  const built = buildWidgetPayload(templateRoots(opts), {
+    title,
+    widget_code,
+    template,
+    data,
+    reusable,
+    width,
+    height,
+  })
+  if (!built.payload) {
+    return { content: [{ type: 'text' as const, text: built.error ?? 'widget_show failed.' }], isError: true }
+  }
+  const content: { type: 'text'; text: string }[] = [{ type: 'text', text: JSON.stringify(built.payload) }]
+  const violations = widget_code ? checkCdnViolations(widget_code) : []
+  if (violations.length > 0) {
+    content.push({
+      type: 'text',
+      text: `⚠️ CDN VIOLATION: The following URLs were blocked (not in allowlist: ${['cdnjs.cloudflare.com', 'esm.sh', 'cdn.jsdelivr.net', 'unpkg.com'].join(', ')}):\n${violations.map((u) => `  - ${u}`).join('\n')}\nThe widget will render without these resources. Re-call widget_show with corrected URLs from the allowlist.`,
+    })
+  }
+  if (!opts?.skipWidgetGate && !template) {
+    const { waitForWidgetReady } = await import('./widget-gate')
+    await waitForWidgetReady(title)
+  }
+  return { content }
+}
+
 export function registerWidgetTools(server: McpServer, opts?: WidgetToolsOptions): void {
   server.tool(
     'widget_list_templates',
@@ -60,25 +110,7 @@ export function registerWidgetTools(server: McpServer, opts?: WidgetToolsOptions
       width: z.number().optional().describe('Widget width in pixels. Default: 800.'),
       height: z.number().optional().describe('Widget height in pixels. Default: 600.'),
     },
-    async ({ title, widget_code, template, data, reusable, width, height }) => {
-      const built = buildWidgetPayload(templateRoots(opts), { title, widget_code, template, data, reusable, width, height })
-      if (!built.payload) {
-        return { content: [{ type: 'text' as const, text: built.error ?? 'widget_show failed.' }], isError: true }
-      }
-      const content: { type: 'text'; text: string }[] = [{ type: 'text', text: JSON.stringify(built.payload) }]
-      const violations = widget_code ? checkCdnViolations(widget_code) : []
-      if (violations.length > 0) {
-        content.push({
-          type: 'text',
-          text: `⚠️ CDN VIOLATION: The following URLs were blocked (not in allowlist: ${['cdnjs.cloudflare.com', 'esm.sh', 'cdn.jsdelivr.net', 'unpkg.com'].join(', ')}):\n${violations.map(u => `  - ${u}`).join('\n')}\nThe widget will render without these resources. Re-call widget_show with corrected URLs from the allowlist.`,
-        })
-      }
-      if (!opts?.skipWidgetGate && !template) {
-        const { waitForWidgetReady } = await import('./widget-gate')
-        await waitForWidgetReady(title)
-      }
-      return { content }
-    },
+    async (args) => executeWidgetShowTool(args as Record<string, unknown>, opts),
   )
 
   server.tool(

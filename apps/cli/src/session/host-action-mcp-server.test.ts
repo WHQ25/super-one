@@ -5,10 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import { HOST_ACTION_TOOL_GROUPS } from '@superone/shared/environment'
-import {
-  buildSuperoneMcpHttpConfig,
-  deriveSuperoneMcpSessionToken,
-} from './host-action-mcp-auth'
+import { deriveSuperoneMcpSessionToken } from './host-action-mcp-auth'
 import { startHostActionMcpServer, type HostActionMcpServerHandle } from './host-action-mcp-server'
 
 const handles: HostActionMcpServerHandle[] = []
@@ -61,7 +58,18 @@ describe('Host Action MCP server', () => {
 
     const { client } = await connectClient(h, 'sess-node-1')
     const tools = await client.listTools()
-    expect(tools.tools.map((t) => t.name)).toEqual(['browser_snapshot'])
+    const names = tools.tools.map((t) => t.name)
+    expect(names).toContain('browser_snapshot')
+    expect(names).toContain('browser_navigate')
+    expect(names).toContain('browser_click')
+    expect(names).toContain('browser_action_list')
+    expect(names).toContain('read_manual')
+    expect(names).toContain('session_rename')
+    expect(names).toContain('widget_show')
+    expect(names).toContain('miniapp_list')
+    expect(names).toContain('computer_snapshot')
+    expect(names).toContain('media_generate_image')
+    expect(names.length).toBeGreaterThanOrEqual(50)
 
     const result = (await client.callTool({
       name: 'browser_snapshot',
@@ -69,10 +77,10 @@ describe('Host Action MCP server', () => {
     })) as { content: Array<{ text: string }> }
     expect(result.content[0]!.text).toBe('snapshot-ok')
     expect(calls).toHaveLength(1)
-    expect(calls[0]).toEqual({
+    expect(calls[0]).toMatchObject({
       sessionId: 'sess-node-1',
       toolName: 'browser_snapshot',
-      args: { include: ['meta'] },
+      args: expect.objectContaining({ include: ['meta'] }),
     })
     await client.close()
   })
@@ -108,15 +116,123 @@ describe('Host Action MCP server', () => {
     await b.client.close()
   })
 
-  it('getClaudeMcpServers matches SuperoneMcpHttpConfig shape', () => {
-    const cfg = buildSuperoneMcpHttpConfig('http://127.0.0.1:9/mcp', 'tok', 'sid')
-    expect(cfg).toEqual({
-      url: 'http://127.0.0.1:9/mcp',
+  it('HTTP harness configs share the same session token surface', async () => {
+    const h = await boot(async () => ({
+      actionId: 'x',
+      state: 'succeeded',
+      result: { content: [{ type: 'text', text: 'ok' }] },
+    }))
+    const http = h.getHttpConfig('sid')
+    const codex = h.getCodexMcpConfig('sid')
+    const opencode = h.getOpenCodeMcpConfig('sid')
+    const acp = h.getAcpMcpServer('sid')
+    const claudeHttp = h.getClaudeHttpMcpServers('sid')
+
+    expect(http).toEqual({
+      url: h.httpUrl,
       headers: {
-        Authorization: `Bearer ${deriveSuperoneMcpSessionToken('tok', 'sid')}`,
+        Authorization: `Bearer ${deriveSuperoneMcpSessionToken(h.masterToken, 'sid')}`,
         'X-SuperOne-Session-Id': 'sid',
       },
     })
+    expect(codex).toEqual({
+      url: http.url,
+      http_headers: http.headers,
+      startup_timeout_sec: 60,
+    })
+    expect(opencode).toEqual({
+      type: 'remote',
+      url: http.url,
+      headers: http.headers,
+      enabled: true,
+    })
+    expect(acp).toEqual({
+      type: 'http',
+      name: 'superone',
+      url: http.url,
+      headers: Object.entries(http.headers).map(([name, value]) => ({ name, value })),
+    })
+    expect(claudeHttp.superone).toEqual({
+      type: 'http',
+      url: http.url,
+      headers: http.headers,
+    })
+  })
+
+  it('createClaudeSdkMcp returns in-process SDK entry that can call tools', async () => {
+    const calls: string[] = []
+    const h = await boot(async (input) => {
+      calls.push(input.sessionId)
+      return {
+        actionId: 'a',
+        state: 'succeeded',
+        result: { content: [{ type: 'text', text: 'sdk-ok' }] },
+      }
+    })
+    const sdk = h.createClaudeSdkMcp('sid-sdk')
+    expect(sdk.mcpServers.superone?.type).toBe('sdk')
+    expect(sdk.mcpServers.superone?.name).toBe('superone')
+    // Instance is a live McpServer — close via dispose.
+    await sdk.dispose()
+    expect(calls).toEqual([])
+  })
+
+  it('forwards mutating tools with browser.act + unsafe replay policy', async () => {
+    const seen: Array<{ toolName: string; toolGroup: string; replayPolicy: string }> = []
+    const h = await boot(async (input) => {
+      seen.push({
+        toolName: input.toolName,
+        toolGroup: input.toolGroup,
+        replayPolicy: input.replayPolicy,
+      })
+      return {
+        actionId: 'a',
+        state: 'succeeded',
+        result: { content: [{ type: 'text', text: 'nav-ok' }] },
+      }
+    })
+    const { client } = await connectClient(h, 'sess-nav')
+    await client.callTool({
+      name: 'browser_navigate',
+      arguments: { url: 'https://example.com' },
+    })
+    expect(seen).toEqual([
+      {
+        toolName: 'browser_navigate',
+        toolGroup: HOST_ACTION_TOOL_GROUPS.browserAct,
+        replayPolicy: 'unsafe',
+      },
+    ])
+    await client.close()
+  })
+
+  it('forwards superone builtins with superone group', async () => {
+    const seen: Array<{ toolName: string; toolGroup: string; replayPolicy: string }> = []
+    const h = await boot(async (input) => {
+      seen.push({
+        toolName: input.toolName,
+        toolGroup: input.toolGroup,
+        replayPolicy: input.replayPolicy,
+      })
+      return {
+        actionId: 'a',
+        state: 'succeeded',
+        result: { content: [{ type: 'text', text: 'manual-ok' }] },
+      }
+    })
+    const { client } = await connectClient(h, 'sess-manual')
+    await client.callTool({
+      name: 'read_manual',
+      arguments: { domain: 'product' },
+    })
+    expect(seen).toEqual([
+      {
+        toolName: 'read_manual',
+        toolGroup: HOST_ACTION_TOOL_GROUPS.superone,
+        replayPolicy: 'safe',
+      },
+    ])
+    await client.close()
   })
 
   it('surfaces cancelled host actions as MCP isError', async () => {

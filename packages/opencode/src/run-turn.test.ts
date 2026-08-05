@@ -96,6 +96,7 @@ function session(): NodeSessionRecord {
     controllerClientSessionId: null,
     hostActionCapabilityVersion: 0,
     hostActionToolGroups: [],
+    alwaysAllowedTools: [],
   }
 }
 

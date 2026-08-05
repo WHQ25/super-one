@@ -404,6 +404,8 @@ export async function runCodexAppServerTurn(opts: {
   cwd: string
   threadId?: string | null
   model?: string
+  /** Codex model reasoning effort (desktop parity). */
+  reasoningEffort?: 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
   /** Lossless App Server -> AgentEvent path. Takes precedence over onDelta. */
   onAgentEvent?: (event: AgentEvent) => void
   /** Stable assistant message id used by AgentEvents for this turn. */
@@ -452,6 +454,9 @@ export async function runCodexAppServerTurn(opts: {
     threadId,
     input: [{ type: 'text', text: opts.prompt, text_elements: [] }],
     ...(opts.model ? { model: opts.model } : {}),
+    ...(opts.reasoningEffort
+      ? { effort: opts.reasoningEffort, reasoning_effort: opts.reasoningEffort }
+      : {}),
     approvalPolicy: 'never',
     sandboxPolicy: {
       type: 'workspaceWrite',

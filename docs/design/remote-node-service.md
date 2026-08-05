@@ -1334,15 +1334,15 @@ does not delete node data unless the user explicitly requests data removal.
 
 ## 16. Repository Migration Plan
 
-### Implementation snapshot (2026-08-01)
+### Implementation snapshot (2026-08-05)
 
 | Phase | Status | Implemented evidence | Required work not yet claimed |
 |---|---|---|---|
 | Phase 0 | **[IMPLEMENTED]** | shared environment/auth/RPC contracts, scoped refs, gateway interfaces, architecture tests | continue evolving contracts with real Harness events |
 | Phase 1 | **[PARTIAL] [VALIDATION PENDING]** | persistent CLI server, identity, SQLite, auth, SSH bootstrap/forward, systemd-user code, desktop registry/supervisor, remote terminal, Docker lab and focused tests | supported clean-host install, linger, credential-store, identity-clone, and reconnect product E2E |
 | Phase 2 | **[IMPLEMENTED] [VALIDATION PENDING]** | remote project registry, filesystem/search/watch, Git/worktree RPC, environment-aware desktop project routing and focused tests | complete supported-host product E2E and large transfer validation |
-| Phase 3 | **[PARTIAL]** | Stage 1–4 + **Stage 5-A** (`onEvent`) + **Stage 5-B** print expedience + **Stage 5-D** permission waiter + **Stage 5-E** `@superone/claude` Agent SDK on node (replaces print production path); Codex keeps `onDelta`; lab binary overrides; simulated multi-harness test-only | Network download + signature, full desktop-parity (MCP/skills), live Session drain, desktop thin-wrap onto claude-core, auth/setup UX, OpenCode/ACP real adapters, node MCP |
-| Phase 4 | **[PARTIAL]** | simulated multi-Harness contract tests and persistent collaboration mailbox skeleton; Stage 5-E real Claude Agent SDK path on node | full Claude desktop parity via shared core, OpenCode/ACP-Grok runtimes, provider setup/resources, production collaboration and automation |
+| Phase 3 | **[PARTIAL]** | Stage 1–5-E + UX parity: drain/resume; question/plan; effort/images/permissionMode/additionalDirs/**enabledSkills**; unified attachments; **Claude long-lived SDK + priority=next mid-turn inject** (other harnesses FIFO); **skills.\* / mcp.\* resource RPC** (Claude+Codex manage parity); host-action MCP; desktop-app grant | Network download + signature, desktop resource UI wiring, product E2E, ACP/OpenCode production adapters |
+| Phase 4 | **[PARTIAL]** | simulated multi-Harness contract tests and persistent collaboration mailbox skeleton; Stage 5-E real Claude Agent SDK path on node; question/plan runtime plumbing | full Claude desktop parity via shared core, OpenCode/ACP-Grok runtimes, provider setup/resources, production collaboration and automation |
 | Phase 5 | **[PARTIAL]** | platform-neutral connection supervisor, endpoint failover core, relay framing contracts and tests | actual Tailscale provider, environment Relay service path, mobile environment client and cross-route E2E |
 | Phase 6 | **[PLANNED]** | local descriptor/gateway compatibility scaffolding only | move local Session/runtime ownership out of Electron Main and complete lifecycle convergence |
 
@@ -1358,13 +1358,12 @@ Known implementation drift to resolve in the next slice:
 - Catalog id `acp-grok` is first-class; Stage 1 still normalizes new Sessions to
   the legacy session wire id `acp` so desktop storage does not break. Target:
   newly created Grok Sessions write `acp-grok` after desktop migration.
-- Current Session turn runners are simulations even when a harness is marked
-  ready (real enable path will probe adapters). Production must fail closed for
-  an enabled Harness that lacks a real adapter/runtime once managed install
-  lands.
-- Public `harness` CLI command group (§13.5) is Stage 2 PARTIAL: list/show/
-  enable/disable/configure/doctor/repair exist; managed signed download,
-  full protocol probes, env/password flags, and live Session drain remain.
+- Production `session.create` now fail-closes when catalog is ready but no real
+  binary/runtime resolves (Claude/Codex/ACP/OpenCode). Simulated overlay remains
+  test-only. Remaining: deeper protocol probes beyond path existence.
+- Public `harness` CLI command group (§13.5): list/show/enable/disable/configure/
+  doctor/**probe**/repair exist; managed signed download, full protocol probes,
+  env/password flags, and live Session drain on disable remain.
 
 ### Phase 0: Contracts and architecture guards
 
@@ -1525,9 +1524,10 @@ core. MCP/skills/system-prompt parity remain incremental.
 **Harness reuse principle (binding):** node harnesses must not permanently
 diverge from desktop. Temporary print/CLI side tracks are migration tools only.
 
-**Next Phase 3 slice:** signed network download, provider login/readiness UX,
-desktop thin-wrap to `@superone/claude`, node MCP, and
-OpenCode/ACP-Grok real adapters + remaining Claude desktop-parity features.
+**Next Phase 3 slice:** signed network download, desktop thin-wrap to
+`@superone/claude`, node MCP, OpenCode/ACP-Grok real adapters + remaining
+Claude desktop-parity features, and product E2E for reconnect rich-stream
+resume (plumbing landed; full UX still partial).
 
 Deliverables:
 

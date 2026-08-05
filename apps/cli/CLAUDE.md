@@ -69,7 +69,13 @@ await window.environment.pairLocalLab()
 After changing `apps/cli/src/**`, restart the lab (`bun run dev:cli:lab:restart`) before
 re-testing — the running process does not hot-reload.
 
-Package-local: `bun run dev` / `bun run test` / `bun run build:dist` from `apps/cli/`.
+Package-local: `bun run dev` / `bun run test` / `bun run build:dist` / `bun run pack:npm` from `apps/cli/`.
+
+**npm publish (`@super-one/cli`):** `scripts/pack-npm.ts` esbuild-bundles monorepo sources into
+`dist/npm/` (no `workspace:*`). CI: `.github/workflows/publish-cli.yml` (`workflow_dispatch`).
+Root: `bun run pack:cli` / `bun run publish:cli`. Version defaults to monorepo root `package.json`
+(lockstep with desktop). Dist-tag from version (`-alpha*` → `alpha`). Requires `NPM_TOKEN` or
+npm Trusted Publishing for real publish.
 
 ## Session surface (remote chat)
 

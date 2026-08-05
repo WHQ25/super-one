@@ -1249,33 +1249,42 @@ npm install -g @super-one/cli@0.49.4-alpha.3
 Pre-release versions are not treated by npm as “newer than” a stable release
 for default installs, so stable users are not accidentally upgraded to alpha.
 
-#### CI publish (intended pipeline)
+#### CI publish (pipeline)
 
 npm publish is automated in CI; it is **not** run on every PR or every main
 commit.
 
 | Trigger | Behavior |
 |---------|----------|
-| **Recommended** | On desktop release publish / version tag `v*`, publish `@super-one/cli` (and later `@super-one/shared` if needed) at the **same version**, with dist-tag from the mapping above |
-| Optional | Independent `workflow_dispatch` to re-publish or backfill a version |
+| **`publish-cli.yml`** | `workflow_dispatch` — pack via `apps/cli/scripts/pack-npm.ts`, optional dry-run, then `npm publish --access public --tag <alpha\|beta\|latest>` |
+| **Recommended (release)** | After desktop version bump to `X.Y.Z[-channel]`, run `publish-cli.yml` with the **same version** (and matching dist-tag) so SSH registry install works |
 | Forbidden | Auto-publish from arbitrary PR merges without a version bump |
 
-Pipeline sketch:
+Local:
 
-1. Checkout the release commit / tag.
-2. Install deps, run CLI tests / typecheck.
-3. Build a **publishable** package (bundle or real dependency versions — monorepo
-   `workspace:*` must not ship as-is).
-4. `npm publish --access public --tag <alpha|beta|latest>` with npm trusted
-   publishing (OIDC) or a scoped automation token.
-5. Fail the job if the version already exists (idempotent retries must not
-   overwrite; use a new version for fixes).
+```bash
+bun run pack:cli                          # → apps/cli/dist/npm
+bun run pack:cli -- --version 0.49.5-alpha.1 --dry-run
+bun run publish:cli -- --tag alpha        # requires npm auth
+```
+
+Pipeline sketch (`.github/workflows/publish-cli.yml`):
+
+1. Checkout the release commit / tag (or `main`).
+2. `bun install`, `bun run test:cli`.
+3. `pack:npm` — esbuild bundle of monorepo sources; **no** `workspace:*` in the
+   published `package.json`. External: `better-sqlite3`, `node-pty`,
+   `@anthropic-ai/claude-agent-sdk` (+ optional platform packages).
+4. Smoke: `npm install` in the pack dir and run `superone` usage/identity.
+5. `npm publish --access public --tag <tag>` with `NPM_TOKEN` and/or npm
+   Trusted Publishing (`id-token: write`).
+6. Fail if the version already exists (npm rejects re-publish; bump version).
 
 Coupling to the existing desktop release skill:
 
 - **Lockstep (default):** when promoting/publishing desktop `X.Y.Z[-channel]`,
-  also publish `@super-one/cli@X.Y.Z[-channel]` so registry remote-install works
-  for that build.
+  also dispatch `publish-cli.yml` at the **same version** so registry
+  remote-install works for that build.
 - Desktop artifact channels (R2 / GitHub Release) and npm dist-tags stay
   **conceptually aligned** but use different mechanisms; do not assume one
   system’s pointer updates the other.

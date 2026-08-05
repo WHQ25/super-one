@@ -1,0 +1,150 @@
+name: Publish CLI to npm
+
+# Builds a publishable `@super-one/cli` package (bundled monorepo code + npm
+# deps for natives/SDK) and publishes to the public registry.
+#
+# Design: docs/design/remote-node-service.md §15.4
+#
+# Triggers:
+# - workflow_dispatch: manual / release skill lockstep
+# - Not on every PR. Prefer calling after a desktop version bump so the CLI
+#   version matches the SuperOne app (registry install pins by app version).
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish (default: root package.json version)'
+        required: false
+        default: ''
+      tag:
+        description: 'npm dist-tag (alpha | beta | latest). Empty = derive from version.'
+        required: false
+        default: ''
+      dry_run:
+        description: 'If true, pack only (npm pack); do not publish'
+        type: boolean
+        required: false
+        default: false
+      ref:
+        description: 'Branch or commit SHA to build'
+        required: false
+        default: 'main'
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Trusted Publishing (OIDC) when configured on npm for @super-one/cli
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 1
+
+      - uses: oven-sh/setup-bun@v2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile --concurrent-scripts=1
+
+      - name: Resolve version and dist-tag
+        id: meta
+        run: |
+          set -euo pipefail
+          ROOT_VER=$(node -p "require('./package.json').version")
+          VER="${{ inputs.version }}"
+          if [ -z "$VER" ]; then VER="$ROOT_VER"; fi
+          TAG="${{ inputs.tag }}"
+          if [ -z "$TAG" ]; then
+            case "$VER" in
+              *-alpha*|*-alpha.*) TAG=alpha ;;
+              *-beta*|*-beta.*) TAG=beta ;;
+              *) TAG=latest ;;
+            esac
+          fi
+          # Pre-release must never land on latest.
+          case "$VER" in
+            *-alpha*|*-beta*|*-rc*)
+              if [ "$TAG" = "latest" ]; then
+                echo "::error::refusing pre-release $VER with dist-tag latest"
+                exit 1
+              fi
+              ;;
+          esac
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Publishing plan: @super-one/cli@$VER (tag $TAG) dry_run=${{ inputs.dry_run }}"
+
+      - name: CLI unit tests
+        run: bun run test:cli
+
+      - name: Pack npm package
+        run: |
+          set -euo pipefail
+          bun --filter @superone/cli pack:npm -- --version "${{ steps.meta.outputs.version }}"
+          test -f apps/cli/dist/npm/package.json
+          test -f apps/cli/dist/npm/lib/cli.mjs
+          test -f apps/cli/dist/npm/bin/superone.mjs
+          node -e "
+            const p = require('./apps/cli/dist/npm/package.json');
+            if (p.name !== '@super-one/cli') throw new Error('bad name ' + p.name);
+            if (p.version !== process.env.VER) throw new Error('bad version ' + p.version);
+            console.log('pack ok', p.name, p.version);
+          "
+        env:
+          VER: ${{ steps.meta.outputs.version }}
+
+      - name: Smoke bin (install natives + usage/identity)
+        run: |
+          set -euo pipefail
+          cd apps/cli/dist/npm
+          # Install declared deps so better-sqlite3 / node-pty / SDK resolve on the runner.
+          npm install --omit=dev --no-fund --no-audit
+          # No args → usage (exit 1).
+          set +e
+          node bin/superone.mjs > /tmp/superone-usage.txt 2>&1
+          set -e
+          grep -q 'start' /tmp/superone-usage.txt
+          grep -q 'pair-create' /tmp/superone-usage.txt
+          grep -q 'install-systemd' /tmp/superone-usage.txt
+          HOME_TMP=$(mktemp -d)
+          node bin/superone.mjs identity --home "$HOME_TMP" | tee /tmp/superone-id.txt
+          grep -q environmentId /tmp/superone-id.txt
+
+      - name: Dry-run npm pack
+        if: ${{ inputs.dry_run }}
+        working-directory: apps/cli/dist/npm
+        run: npm pack --dry-run
+
+      - name: Publish to npm
+        if: ${{ !inputs.dry_run }}
+        working-directory: apps/cli/dist/npm
+        run: |
+          set -euo pipefail
+          # Prefer NPM_TOKEN (classic automation). Trusted Publishing also works
+          # when the package is linked to this repo on npmjs.com (id-token: write).
+          if [ -n "${NODE_AUTH_TOKEN:-}" ]; then
+            echo "Using NODE_AUTH_TOKEN for npm publish"
+          else
+            echo "NODE_AUTH_TOKEN empty — relying on npm Trusted Publishing (OIDC) if configured"
+          fi
+          npm publish --access public --tag "${{ steps.meta.outputs.tag }}"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Upload pack artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: super-one-cli-npm-${{ steps.meta.outputs.version }}
+          path: apps/cli/dist/npm
+          retention-days: 14

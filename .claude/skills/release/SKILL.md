@@ -174,9 +174,35 @@ gh workflow run set-latest.yml --ref main \
     -f release_tag=v<older-version> -f channel=alpha -f force=true
   ```
 
+### Step 8b: Publish `@super-one/cli` (npm, lockstep)
+
+Registry remote-install pins `@super-one/cli@<desktop-version>`. After the
+desktop release commit is on `main` (or the release SHA is known), dispatch:
+
+```bash
+gh workflow run publish-cli.yml --ref main \
+  -f version=<new-version> \
+  -f tag=alpha \
+  -f dry_run=false
+```
+
+- Derive `tag` from the version: `-alpha*` → `alpha`, `-beta*` → `beta`, else
+  `latest`. **Never** publish a pre-release with `tag=latest`.
+- Requires repo secret `NPM_TOKEN` (or npm Trusted Publishing for
+  `@super-one/cli` linked to this repo).
+- Monitor: `gh run view <id> --json status,conclusion`.
+- Verify: `npm view @super-one/cli@<new-version> version`.
+- If publish fails because the version already exists, do not force overwrite —
+  ship a new patch version instead.
+- Local dry-run: `bun run pack:cli -- --version <new-version> --dry-run`.
+
+This step is **required** when the release should support desktop
+**Other Devices → SSH → registry install**. Skip only if the release is
+desktop-only and remote nodes remain upload/lab.
+
 ### Step 9: Report
 
-Show the user the final release URL and the tag SHA. Mention `git fetch origin --tags` so their local is in sync.
+Show the user the final release URL and the tag SHA. Mention `git fetch origin --tags` so their local is in sync. Also report whether `@super-one/cli@<version>` was published (and which dist-tag).
 
 ## Recovery Patterns
 

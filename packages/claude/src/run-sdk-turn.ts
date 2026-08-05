@@ -17,6 +17,8 @@ import { createClaudeAgentEventMapper } from './agent-event-mapper'
 import { resolveSdkClaudeBinary } from './resolve-sdk-binary'
 import type {
   ClaudePermissionHandler,
+  ClaudePlanHandler,
+  ClaudeQuestionHandler,
   ClaudeSdkTurnResult,
   RunClaudeSdkTurnOptions,
 } from './types'
@@ -25,6 +27,8 @@ const DEFAULT_TEXT_BLOCK_ID = 'assistant-text'
 
 function buildCanUseTool(
   onPermission: ClaudePermissionHandler | undefined,
+  onQuestion: ClaudeQuestionHandler | undefined,
+  onPlan: ClaudePlanHandler | undefined,
   signal: AbortSignal,
   timing: { pausedMs: number },
 ): CanUseTool {
@@ -35,12 +39,6 @@ function buildCanUseTool(
         message: 'Permission aborted',
       }
     }
-    if (!onPermission) {
-      return {
-        behavior: 'deny',
-        message: 'Permission denied by SuperOne node (no permission handler)',
-      }
-    }
     // Host-owned SuperOne MCP tools (session_rename, widget_show, …) never prompt.
     if (isStaticHostOwnedSuperoneToolQualified(toolName)) {
       return { behavior: 'allow' }
@@ -48,7 +46,53 @@ function buildCanUseTool(
     const interactionId =
       (typeof options.requestId === 'string' && options.requestId) ||
       (typeof options.toolUseID === 'string' && options.toolUseID) ||
-      `perm_${Date.now()}`
+      `interaction_${Date.now()}`
+    if (toolName === 'AskUserQuestion') {
+      if (!onQuestion) {
+        return { behavior: 'deny', message: 'Question denied by SuperOne node (no question handler)' }
+      }
+      const answer = await onQuestion({
+        interactionId,
+        kind: 'question',
+        toolName,
+        toolUseId: typeof options.toolUseID === 'string' ? options.toolUseID : undefined,
+        input: input && typeof input === 'object' ? input : undefined,
+      })
+      const record = answer && typeof answer === 'object' ? (answer as Record<string, unknown>) : null
+      const answers = record && 'answers' in record ? record.answers : answer
+      return {
+        behavior: 'allow',
+        updatedInput: {
+          ...(input && typeof input === 'object' ? input : {}),
+          answers,
+          ...(record && record.annotations !== undefined ? { annotations: record.annotations } : {}),
+        },
+      }
+    }
+    if (toolName === 'ExitPlanMode') {
+      if (!onPlan) {
+        return { behavior: 'deny', message: 'Plan denied by SuperOne node (no plan handler)' }
+      }
+      const result = await onPlan({
+        interactionId,
+        kind: 'plan',
+        toolName,
+        toolUseId: typeof options.toolUseID === 'string' ? options.toolUseID : undefined,
+        input: input && typeof input === 'object' ? input : undefined,
+      })
+      if (result.decision === 'approve') return { behavior: 'allow', updatedInput: input }
+      const feedback = result.options?.feedback
+      return {
+        behavior: 'deny',
+        message: typeof feedback === 'string' && feedback ? feedback : 'User rejected the plan',
+      }
+    }
+    if (!onPermission) {
+      return {
+        behavior: 'deny',
+        message: 'Permission denied by SuperOne node (no permission handler)',
+      }
+    }
     const startedAt = Date.now()
     const decision = await onPermission({
       interactionId,
@@ -85,11 +129,21 @@ function buildOptions(opts: RunClaudeSdkTurnOptions, timing: { pausedMs: number 
     resolveSdkClaudeBinary() ??
     undefined
 
+  const effort =
+    opts.effort === 'low' ||
+    opts.effort === 'medium' ||
+    opts.effort === 'high' ||
+    opts.effort === 'xhigh' ||
+    opts.effort === 'max'
+      ? opts.effort
+      : undefined
+
   const base: Options = {
     cwd: opts.cwd,
     // Omit when unresolved — SDK query() self-resolves optional platform package.
     ...(binaryPath ? { pathToClaudeCodeExecutable: binaryPath } : {}),
     model: opts.model,
+    ...(effort ? { effort } : {}),
     includePartialMessages: true,
     thinking: { type: 'adaptive', display: 'summarized' },
     promptSuggestions: true,
@@ -97,10 +151,23 @@ function buildOptions(opts: RunClaudeSdkTurnOptions, timing: { pausedMs: number 
     enableFileCheckpointing: true,
     agentProgressSummaries: true,
     extraArgs: { 'replay-user-messages': null },
-    permissionMode: 'default',
-    canUseTool: buildCanUseTool(opts.onPermission, opts.signal, timing),
+    permissionMode: (opts.permissionMode as Options['permissionMode']) || 'default',
+    allowDangerouslySkipPermissions: true,
+    canUseTool: buildCanUseTool(
+      opts.onPermission,
+      opts.onQuestion,
+      opts.onPlan,
+      opts.signal,
+      timing,
+    ),
     abortController,
     settingSources: ['user', 'project', 'local'],
+    ...(opts.additionalDirectories && opts.additionalDirectories.length > 0
+      ? { additionalDirectories: opts.additionalDirectories }
+      : {}),
+    ...(opts.enabledSkills && opts.enabledSkills.length > 0
+      ? { skills: opts.enabledSkills }
+      : {}),
     systemPrompt: {
       type: 'preset',
       preset: 'claude_code',

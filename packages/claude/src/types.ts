@@ -17,9 +17,24 @@ export interface ClaudePermissionRequest {
   input?: Record<string, unknown>
 }
 
+export interface ClaudeQuestionRequest extends ClaudePermissionRequest {
+  kind: 'question'
+}
+
+export interface ClaudePlanRequest extends ClaudePermissionRequest {
+  kind: 'plan'
+}
+
 export type ClaudePermissionHandler = (
   request: ClaudePermissionRequest,
 ) => Promise<ClaudePermissionDecision>
+
+export type ClaudeQuestionHandler = (request: ClaudeQuestionRequest) => Promise<unknown>
+
+export type ClaudePlanHandler = (request: ClaudePlanRequest) => Promise<{
+  decision: 'approve' | 'reject'
+  options?: Record<string, unknown>
+}>
 
 /**
  * Injectable query factory for tests. Production uses SDK `query()`.
@@ -39,11 +54,32 @@ export interface RunClaudeSdkTurnOptions {
    * explicit path when they need a non-SDK binary.
    */
   binaryPath?: string | null
-  prompt: string
+  /**
+   * User turn prompt. Prefer string; pass AsyncIterable&lt;SDKUserMessage&gt;
+   * for multimodal (inline image/document blocks) when path-persist fails.
+   */
+  prompt: string | AsyncIterable<SDKUserMessage>
   cwd: string
   /** Prior Claude Code session id for SDK `resume`. */
   sessionId?: string | null
   model?: string
+  /**
+   * Claude Agent SDK effort (`low` | `medium` | `high` | `xhigh` | `max`).
+   * Passed through to `Options.effort` like desktop `buildClaudeOptions`.
+   */
+  effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max' | string
+  /**
+   * Claude Agent SDK permissionMode (default | acceptEdits | bypassPermissions |
+   * plan | dontAsk | auto | …). Desktop buildClaudeOptions parity.
+   */
+  permissionMode?: string
+  /** Extra directories the agent may read (SDK additionalDirectories). */
+  additionalDirectories?: string[]
+  /**
+   * Claude Agent SDK `skills` allow-list. When set, only these skill names are
+   * enabled (desktop disabledSkills filter parity).
+   */
+  enabledSkills?: string[]
   /**
    * Subprocess env. When set, the SDK replaces the child env entirely —
    * callers should spread process.env if inheritance is required.
@@ -54,6 +90,10 @@ export interface RunClaudeSdkTurnOptions {
    * Hosts map this to SessionRuntime.onPermission / desktop permission UI.
    */
   onPermission?: ClaudePermissionHandler
+  /** AskUserQuestion bridge; absent means the tool is denied fail-closed. */
+  onQuestion?: ClaudeQuestionHandler
+  /** ExitPlanMode bridge; absent means the tool is denied fail-closed. */
+  onPlan?: ClaudePlanHandler
   /**
    * Structured turn stream (text / tool / permission / status).
    * Prefer this over onDelta; do not dual-path the same text.

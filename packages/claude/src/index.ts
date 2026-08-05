@@ -7,6 +7,13 @@
  */
 
 export { runClaudeSdkTurn } from './run-sdk-turn'
+export { MessageBridge } from './message-bridge'
+export {
+  ClaudeLiveSession,
+  openClaudeLiveSessionForTests,
+  type ClaudeLiveSessionOptions,
+  type ClaudeLiveTurnInput,
+} from './claude-live-session'
 export {
   buildClaudeResultMetadata,
   createClaudeAgentEventMapper,
@@ -38,6 +45,10 @@ export type {
   ClaudePermissionDecision,
   ClaudePermissionHandler,
   ClaudePermissionRequest,
+  ClaudeQuestionHandler,
+  ClaudeQuestionRequest,
+  ClaudePlanHandler,
+  ClaudePlanRequest,
   ClaudeQueryFn,
   ClaudeSdkTurnResult,
   RunClaudeSdkTurnOptions,

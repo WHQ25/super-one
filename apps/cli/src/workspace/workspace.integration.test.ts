@@ -1,5 +1,14 @@
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdtempSync, mkdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  existsSync,
+  mkdtempSync,
+  mkdirSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -232,14 +241,27 @@ describe('Phase 2 workspace integration', () => {
     const nodeHome = mkdtempSync(join(tmpdir(), 'sess-prod-'))
     dirs.push(nodeHome)
     const port = 25000 + Math.floor(Math.random() * 10000)
-    // No simulatedHarness — production path must still serve session registry RPCs.
-    const rt = await startNodeRuntime({ nodeHome, bindHost: '127.0.0.1', bindPort: port })
+    // Fake codex binary so fail-closed runtime-ready accepts create; turns still use
+    // simulated fallback so CI hosts without a real codex install can settle.
+    const fakeCodex = join(nodeHome, 'fake-codex')
+    writeFileSync(fakeCodex, '#!/bin/sh\n')
+    chmodSync(fakeCodex, 0o755)
+    const prevCodexEnv = process.env.SUPERONE_CODEX_BINARY
+    process.env.SUPERONE_CODEX_BINARY = fakeCodex
+    // No simulatedHarness overlay — production catalog/RPC path; allow turn fallback for CI.
+    const rt = await startNodeRuntime({
+      nodeHome,
+      bindHost: '127.0.0.1',
+      bindPort: port,
+      allowSimulatedTurnFallback: true,
+    })
     runtimes.push(rt)
     const projectDir = mkdtempSync(join(tmpdir(), 'sess-proj-'))
     dirs.push(projectDir)
     writeFileSync(join(projectDir, 'a.txt'), 'x')
 
     const { rpc, close } = await connectAuthedRpc(rt)
+    try {
     const desc = (await rpc('environment.descriptor', {})) as {
       capabilities: { sessions: boolean; harnessIds: string[] }
     }
@@ -258,7 +280,12 @@ describe('Phase 2 workspace integration', () => {
     })).rejects.toThrow()
 
     // Enable codex as ready (admin path; Stage 1 uses in-process manager).
-    rt.harnesses.update('codex', { enabled: true, state: 'ready', runtimeVersion: 'test' })
+    rt.harnesses.update('codex', {
+      enabled: true,
+      state: 'ready',
+      runtimeVersion: 'test',
+      command: fakeCodex,
+    })
     const created = (await rpc('session.create', {
       projectId: opened.projectId,
       harnessId: 'codex',
@@ -314,7 +341,11 @@ describe('Phase 2 workspace integration', () => {
       sessionId: string
     }>
     expect(after.some((s) => s.sessionId === created.sessionId)).toBe(false)
-    close()
+    } finally {
+      close()
+      if (prevCodexEnv === undefined) delete process.env.SUPERONE_CODEX_BINARY
+      else process.env.SUPERONE_CODEX_BINARY = prevCodexEnv
+    }
   })
 
   it('removes a registered project via project.remove without deleting disk', async () => {

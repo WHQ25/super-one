@@ -234,6 +234,69 @@ describe('mapNodeSessionEvents (text-only)', () => {
     ])
   })
 
+  it('maps question and plan durable events into ask_user_question / plan_approval', () => {
+    const events = mapNodeSessionEvents(
+      [
+        envelope({
+          eventType: 'session.question_requested',
+          payload: {
+            interactionId: 'q1',
+            kind: 'question',
+            input: {
+              questions: [{ question: 'Ship it?', header: 'Confirm', options: [{ label: 'Yes' }] }],
+            },
+          },
+        }),
+        envelope({
+          eventType: 'session.question_responded',
+          payload: { interactionId: 'q1', answers: { 'Ship it?': 'Yes' } },
+        }),
+        envelope({
+          eventType: 'session.plan_requested',
+          payload: {
+            interactionId: 'pl1',
+            kind: 'plan',
+            input: { plan: 'Do the work' },
+          },
+        }),
+        envelope({
+          eventType: 'session.plan_responded',
+          payload: { interactionId: 'pl1', decision: 'approve' },
+        }),
+      ],
+      ctx,
+    )
+    expect(events).toEqual([
+      expect.objectContaining({
+        type: 'ask_user_question',
+        request: expect.objectContaining({
+          requestId: 'q1',
+          questions: expect.arrayContaining([
+            expect.objectContaining({ question: 'Ship it?' }),
+          ]),
+        }),
+      }),
+      expect.objectContaining({
+        type: 'interaction_resolved',
+        interactionType: 'question',
+        requestId: 'q1',
+      }),
+      expect.objectContaining({
+        type: 'plan_approval',
+        request: expect.objectContaining({
+          requestId: 'pl1',
+          planContent: 'Do the work',
+        }),
+      }),
+      expect.objectContaining({
+        type: 'interaction_resolved',
+        interactionType: 'plan_approval',
+        requestId: 'pl1',
+        approved: true,
+      }),
+    ])
+  })
+
   it('maps SESSION_DURABLE_EVENT tool lifecycle into tool_use / tool_result', () => {
     const events = mapNodeSessionEvents(
       [

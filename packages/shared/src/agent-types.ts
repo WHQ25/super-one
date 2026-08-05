@@ -2725,6 +2725,9 @@ export const AgentIpcChannels = {
   ENVIRONMENT_SET_SESSION_UI_FLAGS: 'environment:setSessionUiFlags',
   ENVIRONMENT_FORK_SESSION: 'environment:forkSession',
   ENVIRONMENT_RESPOND_SESSION_PERMISSION: 'environment:respondSessionPermission',
+  ENVIRONMENT_RESPOND_SESSION_QUESTION: 'environment:respondSessionQuestion',
+  ENVIRONMENT_RESPOND_SESSION_PLAN: 'environment:respondSessionPlan',
+  ENVIRONMENT_RESUME_REMOTE_SESSION_EVENTS: 'environment:resumeRemoteSessionEvents',
   /** List directories at an absolute path for the add-project browser. */
   ENVIRONMENT_BROWSE_PATH: 'environment:browsePath',
   /** Clone a git repository onto a host and register it as a project. */

@@ -12,8 +12,11 @@
 import type {
   AgentEvent,
   AgentStatus,
+  AskUserQuestionRequest,
   ChatMessage,
   PermissionRequest,
+  PlanApprovalRequest,
+  UserQuestion,
 } from './agent-types'
 import type { EnvironmentEventEnvelope } from './environment/events'
 import { SESSION_DURABLE_EVENT } from './environment/session-events'
@@ -76,6 +79,89 @@ function stamp(
     ...(ctx.projectPath ? { projectPath: ctx.projectPath } : {}),
     sessionId: ctx.sessionId,
     ...(seqNum !== undefined && Number.isFinite(seqNum) ? { seq: seqNum } : {}),
+  }
+}
+
+function mapQuestionRequest(
+  payload: Record<string, unknown>,
+  fallbackId: string,
+): AskUserQuestionRequest | null {
+  const interactionId =
+    asString(payload.interactionId) ?? asString(payload.requestId) ?? fallbackId
+  const input = asRecord(payload.input)
+  const rawQuestions = Array.isArray(payload.questions)
+    ? payload.questions
+    : Array.isArray(input.questions)
+      ? input.questions
+      : []
+  const questions: UserQuestion[] = []
+  for (const q of rawQuestions) {
+    if (!q || typeof q !== 'object') continue
+    const row = q as Record<string, unknown>
+    const question = asString(row.question) ?? asString(row.header) ?? ''
+    if (!question) continue
+    const optionsRaw = Array.isArray(row.options) ? row.options : []
+    const options = optionsRaw
+      .map((opt) => {
+        if (!opt || typeof opt !== 'object') return null
+        const o = opt as Record<string, unknown>
+        const label = asString(o.label) ?? asString(o.value) ?? ''
+        if (!label) return null
+        return {
+          label,
+          description: asString(o.description) ?? '',
+          ...(asString(o.preview) ? { preview: asString(o.preview) } : {}),
+        }
+      })
+      .filter((o): o is NonNullable<typeof o> => o != null)
+    questions.push({
+      question,
+      header: asString(row.header) ?? question,
+      options,
+      multiSelect: row.multiSelect === true || row.multiple === true,
+    })
+  }
+  if (questions.length === 0) {
+    // Still surface a minimal prompt so the UI can answer and unblock the turn.
+    questions.push({
+      question: asString(payload.toolName) ? `Respond to ${asString(payload.toolName)}` : 'Continue?',
+      header: 'Question',
+      options: [{ label: 'Yes', description: '' }, { label: 'No', description: '' }],
+      multiSelect: false,
+    })
+  }
+  return { requestId: interactionId, questions }
+}
+
+function mapPlanRequest(
+  payload: Record<string, unknown>,
+  fallbackId: string,
+): PlanApprovalRequest | null {
+  const interactionId =
+    asString(payload.interactionId) ?? asString(payload.requestId) ?? fallbackId
+  const input = asRecord(payload.input)
+  let planContent =
+    asString(payload.plan) ??
+    asString(payload.planContent) ??
+    asString(input.plan) ??
+    asString(input.planContent) ??
+    ''
+  if (!planContent && input.plan && typeof input.plan === 'object') {
+    try {
+      planContent = JSON.stringify(input.plan)
+    } catch {
+      planContent = ''
+    }
+  }
+  return {
+    requestId: interactionId,
+    planContent: planContent || 'Plan approval required',
+    planFilePath: asString(payload.planFilePath) ?? asString(input.planFilePath) ?? '',
+    allowedPrompts: Array.isArray(payload.allowedPrompts)
+      ? (payload.allowedPrompts as PlanApprovalRequest['allowedPrompts'])
+      : Array.isArray(input.allowedPrompts)
+        ? (input.allowedPrompts as PlanApprovalRequest['allowedPrompts'])
+        : [],
   }
 }
 
@@ -419,6 +505,49 @@ export function createNodeSessionEventMapper(ctx: NodeSessionEventMapContext): N
           interactionType: 'permission',
           requestId: interactionId,
           approved,
+        })
+        break
+      }
+
+      case SESSION_DURABLE_EVENT.questionRequested: {
+        const request = mapQuestionRequest(payload, envelope.eventId)
+        if (request) push({ type: 'ask_user_question', request })
+        break
+      }
+
+      case SESSION_DURABLE_EVENT.questionResponded:
+      case SESSION_DURABLE_EVENT.questionTimeout:
+      case SESSION_DURABLE_EVENT.questionAborted: {
+        const interactionId =
+          asString(payload.interactionId) ?? asString(payload.requestId) ?? envelope.eventId
+        push({
+          type: 'interaction_resolved',
+          interactionType: 'question',
+          requestId: interactionId,
+          approved: eventType === SESSION_DURABLE_EVENT.questionResponded,
+        })
+        break
+      }
+
+      case SESSION_DURABLE_EVENT.planRequested: {
+        const request = mapPlanRequest(payload, envelope.eventId)
+        if (request) push({ type: 'plan_approval', request })
+        break
+      }
+
+      case SESSION_DURABLE_EVENT.planResponded:
+      case SESSION_DURABLE_EVENT.planTimeout:
+      case SESSION_DURABLE_EVENT.planAborted: {
+        const interactionId =
+          asString(payload.interactionId) ?? asString(payload.requestId) ?? envelope.eventId
+        const decision = asString(payload.decision)
+        const approved = decision === 'approve' || decision === 'approved'
+        push({
+          type: 'interaction_resolved',
+          interactionType: 'plan_approval',
+          requestId: interactionId,
+          approved,
+          ...(asString(payload.feedback) ? { feedback: asString(payload.feedback) } : {}),
         })
         break
       }

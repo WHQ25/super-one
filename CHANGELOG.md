@@ -4,6 +4,13 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.49.5-alpha] - 2026-08-06
+
+### Added
+- Publishable `@super-one/cli` npm pack (`pack:cli`) and `publish-cli` GitHub Actions workflow for alpha registry installs.
+- Experimental **Remote Nodes** settings toggle gating Other Devices and sidebar host switcher.
+- Remote Claude live session inject, skills/MCP resource RPCs, and related node session parity work from `feat/cli-remote-devices`.
+
 ## [0.49.4-alpha] - 2026-07-31
 
 ### Added

@@ -1,4 +1,11 @@
-import type { ChatMessage, ContentBlock, PermissionRequest } from '@superone/shared/agent-types'
+import type {
+  AskUserQuestionRequest,
+  ChatMessage,
+  ContentBlock,
+  PermissionRequest,
+  PlanApprovalRequest,
+  UserQuestion,
+} from '@superone/shared/agent-types'
 
 export type NodeTranscriptBlock = {
   id?: string
@@ -32,6 +39,7 @@ export function nodePendingToPermissionRequest(
   pending: NodePendingInteraction | null | undefined,
 ): PermissionRequest | null {
   if (!pending?.interactionId) return null
+  // Permission UI only — question/plan use dedicated mappers below.
   if (pending.kind && pending.kind !== 'permission') return null
   return {
     requestId: pending.interactionId,
@@ -39,6 +47,143 @@ export function nodePendingToPermissionRequest(
     toolUseId: pending.toolUseId,
     input: pending.input && typeof pending.input === 'object' ? pending.input : {},
     allowAlwaysAllow: true,
+  }
+}
+
+/**
+ * Map node question pendingInteraction into chat-store `pendingQuestion`
+ * (`AskUserQuestionRequest`).
+ */
+export function nodePendingToQuestionRequest(
+  pending: NodePendingInteraction | null | undefined,
+): AskUserQuestionRequest | null {
+  if (!pending?.interactionId || pending.kind !== 'question') return null
+  const input =
+    pending.input && typeof pending.input === 'object' ? pending.input : {}
+  const raw = Array.isArray((input as { questions?: unknown }).questions)
+    ? ((input as { questions: unknown[] }).questions)
+    : []
+  const questions: UserQuestion[] = []
+  for (const q of raw) {
+    if (!q || typeof q !== 'object') continue
+    const row = q as Record<string, unknown>
+    const question = typeof row.question === 'string' ? row.question : ''
+    if (!question) continue
+    const optionsRaw = Array.isArray(row.options) ? row.options : []
+    const options = optionsRaw
+      .map((opt) => {
+        if (!opt || typeof opt !== 'object') return null
+        const o = opt as Record<string, unknown>
+        const label = typeof o.label === 'string' ? o.label : ''
+        if (!label) return null
+        return {
+          label,
+          description: typeof o.description === 'string' ? o.description : '',
+          ...(typeof o.preview === 'string' ? { preview: o.preview } : {}),
+        }
+      })
+      .filter((o): o is NonNullable<typeof o> => o != null)
+    questions.push({
+      question,
+      header: typeof row.header === 'string' ? row.header : question,
+      options,
+      multiSelect: row.multiSelect === true || row.multiple === true,
+    })
+  }
+  if (questions.length === 0) {
+    questions.push({
+      question: 'Continue?',
+      header: 'Question',
+      options: [
+        { label: 'Yes', description: '' },
+        { label: 'No', description: '' },
+      ],
+      multiSelect: false,
+    })
+  }
+  return { requestId: pending.interactionId, questions }
+}
+
+/** @deprecated Use {@link nodePendingToQuestionRequest}. */
+export function nodePendingToQuestionPayload(
+  pending: NodePendingInteraction | null | undefined,
+): { requestId: string; questions: unknown; input: Record<string, unknown> } | null {
+  const req = nodePendingToQuestionRequest(pending)
+  if (!req) return null
+  return {
+    requestId: req.requestId,
+    questions: req.questions,
+    input: pending?.input && typeof pending.input === 'object' ? pending.input : {},
+  }
+}
+
+/** Map node plan pendingInteraction into chat-store `pendingPlanApproval`. */
+export function nodePendingToPlanApprovalRequest(
+  pending: NodePendingInteraction | null | undefined,
+): PlanApprovalRequest | null {
+  if (!pending?.interactionId || pending.kind !== 'plan') return null
+  const input =
+    pending.input && typeof pending.input === 'object' ? pending.input : {}
+  const plan =
+    typeof (input as { plan?: unknown }).plan === 'string'
+      ? (input as { plan: string }).plan
+      : typeof (input as { planContent?: unknown }).planContent === 'string'
+        ? (input as { planContent: string }).planContent
+        : input.plan && typeof input.plan === 'object'
+          ? JSON.stringify(input.plan)
+          : 'Plan approval required'
+  return {
+    requestId: pending.interactionId,
+    planContent: plan,
+    planFilePath:
+      typeof (input as { planFilePath?: unknown }).planFilePath === 'string'
+        ? (input as { planFilePath: string }).planFilePath
+        : '',
+    allowedPrompts: Array.isArray((input as { allowedPrompts?: unknown }).allowedPrompts)
+      ? ((input as { allowedPrompts: PlanApprovalRequest['allowedPrompts'] }).allowedPrompts)
+      : [],
+  }
+}
+
+/** @deprecated Use {@link nodePendingToPlanApprovalRequest}. */
+export function nodePendingToPlanPayload(
+  pending: NodePendingInteraction | null | undefined,
+): { requestId: string; plan: unknown; input: Record<string, unknown> } | null {
+  const req = nodePendingToPlanApprovalRequest(pending)
+  if (!req) return null
+  return {
+    requestId: req.requestId,
+    plan: req.planContent,
+    input: pending?.input && typeof pending.input === 'object' ? pending.input : {},
+  }
+}
+
+/** Whether a node snapshot still needs a live event drain (local Session parity). */
+export function nodeSnapshotNeedsLiveDrain(
+  snap: Pick<NodeSessionSnapshot, 'status' | 'pendingInteraction'> | null | undefined,
+): boolean {
+  if (!snap) return false
+  if (snap.status === 'streaming') return true
+  return Boolean(snap.pendingInteraction?.interactionId)
+}
+
+/** Build pending interaction fields for chat-store from a node session snapshot. */
+export function nodePendingInteractionFields(
+  pending: NodePendingInteraction | null | undefined,
+): {
+  pendingPermissions: PermissionRequest[]
+  pendingQuestion: AskUserQuestionRequest | null
+  pendingPlanApproval: PlanApprovalRequest | null
+  awaitingAssistantReply: boolean
+} {
+  const perm = nodePendingToPermissionRequest(pending)
+  const question = nodePendingToQuestionRequest(pending)
+  const plan = nodePendingToPlanApprovalRequest(pending)
+  return {
+    pendingPermissions: perm ? [perm] : [],
+    pendingQuestion: question,
+    pendingPlanApproval: plan,
+    awaitingAssistantReply: Boolean(perm || question || plan),
   }
 }
 

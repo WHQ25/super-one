@@ -105,16 +105,25 @@ export async function focusProjectImpl(
   // focusProject must mirror activePath itself or the file tree shows the project root.
   const focusedSession = targetSid ? get().projectSessions[projectPath]?._sessions[targetSid] : null
   useAppStore.getState().setActiveWorktree(projectPath, _getSessionWorktreePath(focusedSession))
-  // Local only — remote node sessions never use desktop SessionManager.resume.
-  if (targetSid && !parseRemoteProjectKey(projectPath)) {
-    const targetSession = targetProject?._sessions[targetSid]
-    try {
-      await window.app.resumeSession(projectPath, targetSid, _getSessionCwd(projectPath, targetSession))
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      // Renderer draft UUIDs are not in SessionManager until first send — expected.
-      if (!/session not found/i.test(msg)) {
-        console.warn('[chat] resumeSession failed:', err)
+  // Local: SessionManager.resume. Remote: start event drain if turn still live.
+  if (targetSid) {
+    const remoteKey = parseRemoteProjectKey(projectPath)
+    if (remoteKey) {
+      const targetSession = targetProject?._sessions[targetSid]
+      if (targetSession) {
+        const { resumeRemoteSessionIfLive } = await import('@/lib/remote-session-ops')
+        resumeRemoteSessionIfLive(projectPath, targetSid, targetSession)
+      }
+    } else {
+      const targetSession = targetProject?._sessions[targetSid]
+      try {
+        await window.app.resumeSession(projectPath, targetSid, _getSessionCwd(projectPath, targetSession))
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        // Renderer draft UUIDs are not in SessionManager until first send — expected.
+        if (!/session not found/i.test(msg)) {
+          console.warn('[chat] resumeSession failed:', err)
+        }
       }
     }
   }
@@ -249,8 +258,20 @@ export async function interruptImpl(set: ChatStoreSet, get: () => ChatStore): Pr
     } catch {
       /* fall through to idle reset */
     }
+    // Short drain so turnInterrupted / status events still reach the store
+    // (local interrupt also relies on backend status events).
+    try {
+      await window.environment.resumeRemoteSessionEvents(remote.connectionId, {
+        sessionId: sid,
+        projectPath: activeProject,
+        timeoutMs: 3_000,
+      })
+    } catch {
+      /* ignore */
+    }
     set((s) => updateActivePerSession(s, () => ({
       status: 'idle',
+      awaitingAssistantReply: false,
       pendingPermissions: [],
       pendingQuestion: null,
       pendingPlanApproval: null,
@@ -306,6 +327,7 @@ export function clearMessagesImpl(set: ChatStoreSet, get: () => ChatStore): void
       codexPlanRejectHintActive: false,
       chatInputFocusNonce: 0,
       queuedMessages: [],
+      _remoteTurnQueue: [],
     })),
     _bashOutputs: remainingOutputs,
   }))

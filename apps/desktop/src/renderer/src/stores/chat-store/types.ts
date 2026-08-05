@@ -203,12 +203,30 @@ export interface PerSessionState {
   modelFallback: { trigger: string; fromModel?: string; toModel?: string } | null
   lastEventAt: number
   queuedMessages: ChatMessage[]
+  /**
+   * Remote-only: turns waiting because the node rejects concurrent session.send
+   * while streaming. Flushed when the active remote turn settles (local Claude
+   * uses SDK priority=next instead).
+   */
+  _remoteTurnQueue: RemoteQueuedTurn[]
   activeCodexMessageId: string | null
   lastAssistantMessageId: string | null
   miniAppContexts: Record<string, MiniAppContextSlot>
   userSelections: string[]
   _historyHydrated: boolean
   apiProviderId: string | null
+}
+
+/** Payload for a deferred remote session.send (see `_remoteTurnQueue`). */
+export interface RemoteQueuedTurn {
+  userMessage: ChatMessage
+  text: string
+  model?: string
+  effort?: string
+  images?: Array<{ name?: string; mimeType: string; base64: string }>
+  apiProviderId?: string | null
+  cwdHostPath?: string | null
+  providerId: string
 }
 
 export interface ProjectState {

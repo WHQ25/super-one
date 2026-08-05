@@ -24,6 +24,7 @@ import {
 } from './store-helpers'
 import type { ChatStore, PerSessionState } from '../types'
 import type { NodeSessionSnapshot } from '@/lib/remote-session-messages'
+import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 
 export async function respondToPermissionImpl(
   set: ChatStoreSet,
@@ -49,61 +50,58 @@ export async function respondToPermissionImpl(
   let handled = false
   try {
     const targetSid = _getEffectiveSessionId(getProject(get(), activeProject)) ?? activeSid
-    const { parseRemoteProjectKey } = await import('@/lib/remote-project-key')
     const remote = parseRemoteProjectKey(activeProject)
     if (remote && targetSid) {
       const decisionValue: 'allow' | 'deny' | 'allow_always' =
         decision === 'cancel' ? 'deny' : alwaysAllow ? 'allow_always' : allow ? 'allow' : 'deny'
-      await window.environment.respondSessionPermission(remote.connectionId, {
-        sessionId: targetSid,
-        interactionId: requestId,
-        decision: decisionValue,
-      })
-      handled = true
-      // Stage 5-D: after responding, re-hydrate the node session so transcript /
-      // status catch up once the turn unblocks (sendSessionMessage already returned
-      // early while pendingInteraction was set).
-      void (async () => {
-        try {
-          const remoteMsgs = await import('@/lib/remote-session-messages')
-          // Poll for turn settle or a subsequent permission.
-          const deadline = Date.now() + 120_000
-          while (Date.now() < deadline) {
-            const snap = (await window.environment.getSession(
-              remote.connectionId,
-              targetSid,
-            )) as NodeSessionSnapshot | null
-            const pending = remoteMsgs.nodePendingToPermissionRequest(snap?.pendingInteraction)
-            const status = snap?.status
-            const settled =
-              (status && status !== 'streaming') ||
-              Boolean(pending && pending.requestId !== requestId)
-            if (!settled && status === 'streaming' && !pending) {
-              await new Promise((r) => setTimeout(r, 80))
-              continue
-            }
-            const providerId = snap?.harnessId || snap?.providerId || 'codex'
+      // continueDrain keeps mapping session.events → agentEventSink so tool_use
+      // blocks after allow are not lost (sendSessionMessage already returned).
+      void window.environment
+        .respondSessionPermission(remote.connectionId, {
+          sessionId: targetSid,
+          interactionId: requestId,
+          decision: decisionValue,
+          continueDrain: {
+            projectPath: activeProject,
+            providerId: session.sessionProvider || undefined,
+          },
+        })
+        .then(async (snap) => {
+          try {
+            const remoteMsgs = await import('@/lib/remote-session-messages')
+            const nodeSnap = (snap ??
+              (await window.environment.getSession(
+                remote.connectionId,
+                targetSid,
+              ))) as NodeSessionSnapshot | null
+            const pendingFields = remoteMsgs.nodePendingInteractionFields(
+              nodeSnap?.pendingInteraction,
+            )
+            const stillLive =
+              pendingFields.awaitingAssistantReply || nodeSnap?.status === 'streaming'
+            const providerId = nodeSnap?.harnessId || nodeSnap?.providerId || 'codex'
             set((s) =>
               updateActivePerSession(s, (sess) => ({
                 messages: remoteMsgs.reconcileTranscriptWithLocalMessages(
                   sess.messages,
-                  snap?.transcript,
+                  nodeSnap?.transcript,
                   providerId,
                 ),
-                awaitingAssistantReply: Boolean(pending) || status === 'streaming',
-                status: pending
+                awaitingAssistantReply: stillLive,
+                status: stillLive
                   ? 'streaming'
-                  : remoteMsgs.nodeStatusToAgentStatus(status),
-                pendingPermissions: pending ? [pending] : [],
-                ...(snap?.title ? { _title: snap.title } : {}),
+                  : remoteMsgs.nodeStatusToAgentStatus(nodeSnap?.status),
+                pendingPermissions: pendingFields.pendingPermissions,
+                pendingQuestion: pendingFields.pendingQuestion,
+                pendingPlanApproval: pendingFields.pendingPlanApproval,
+                ...(nodeSnap?.title ? { _title: nodeSnap.title } : {}),
               })),
             )
-            break
+          } catch (err) {
+            console.warn('[chat] remote permission post-respond hydrate failed:', err)
           }
-        } catch (err) {
-          console.warn('[chat] remote permission post-respond hydrate failed:', err)
-        }
-      })()
+        })
+      handled = true
     } else if (targetSid) {
       handled = await window.agent.respondToPermission(
         targetSid,
@@ -158,7 +156,6 @@ export async function setPermissionModeImpl(
   if (!activeProject) return
   // Remote node projects: UI-only until send (node has its own permission handling).
   // Never getOrCreate a desktop SessionManager entry for a remote: path.
-  const { parseRemoteProjectKey } = await import('@/lib/remote-project-key')
   if (parseRemoteProjectKey(activeProject)) {
     set((s) => updateActivePerSession(s, () => ({ permissionMode: mode })))
     return
@@ -179,7 +176,22 @@ export function answerQuestionImpl(
   const session = getActivePerSession(get(), activeProject)
   const activeSid = getProject(get(), activeProject)._activeSessionId ?? undefined
   const targetSid = _getEffectiveSessionId(getProject(get(), activeProject)) ?? activeSid
-  if (targetSid) void window.agent.answerQuestion(targetSid, requestId, answers, annotations)
+  if (targetSid) {
+    const remote = parseRemoteProjectKey(activeProject)
+    if (remote) {
+      void window.environment.respondSessionQuestion(remote.connectionId, {
+        sessionId: targetSid,
+        interactionId: requestId,
+        answers: { answers, annotations },
+        continueDrain: {
+          projectPath: activeProject,
+          providerId: session.sessionProvider || undefined,
+        },
+      })
+    } else {
+      void window.agent.answerQuestion(targetSid, requestId, answers, annotations)
+    }
+  }
   const codexQaItem = session.sessionProvider === 'codex' && session.pendingQuestion
     ? _buildQuestionAnswerItem(session.pendingQuestion.questions, answers)
     : null
@@ -219,9 +231,26 @@ export function dismissQuestionImpl(
 ): void {
   const { activeProject } = get()
   if (!activeProject) return
+  const session = getActivePerSession(get(), activeProject)
   const activeSid = getProject(get(), activeProject)._activeSessionId ?? undefined
   const targetSid = _getEffectiveSessionId(getProject(get(), activeProject)) ?? activeSid
-  if (targetSid) void window.agent.dismissQuestion(targetSid, requestId)
+  if (targetSid) {
+    const remote = parseRemoteProjectKey(activeProject)
+    if (remote) {
+      // Node has no dedicated dismiss — empty answers unblock the waiter (timeout-like).
+      void window.environment.respondSessionQuestion(remote.connectionId, {
+        sessionId: targetSid,
+        interactionId: requestId,
+        answers: {},
+        continueDrain: {
+          projectPath: activeProject,
+          providerId: session.sessionProvider || undefined,
+        },
+      })
+    } else {
+      void window.agent.dismissQuestion(targetSid, requestId)
+    }
+  }
   set((s) => {
     const perSessionUpdate = updateActivePerSession(s, () => ({ pendingQuestion: null }))
     const proj = (perSessionUpdate.projectSessions ?? s.projectSessions)[activeProject]
@@ -247,12 +276,29 @@ export function respondToPlanApprovalImpl(
 ): void {
   const { activeProject } = get()
   if (!activeProject) return
+  const session = getActivePerSession(get(), activeProject)
   const activeSid = getProject(get(), activeProject)._activeSessionId ?? undefined
   const targetSid = _getEffectiveSessionId(getProject(get(), activeProject)) ?? activeSid
-  if (targetSid) window.agent.respondToPlanApproval(targetSid, requestId, approved, feedback)
-  if (approved) {
-    const nextMode: PermissionMode = postApprovalMode ?? 'default'
-    void window.agent.setPermissionMode(activeProject, nextMode)
+  if (targetSid) {
+    const remote = parseRemoteProjectKey(activeProject)
+    if (remote) {
+      void window.environment.respondSessionPlan(remote.connectionId, {
+        sessionId: targetSid,
+        interactionId: requestId,
+        decision: approved ? 'approve' : 'reject',
+        options: feedback ? { feedback } : undefined,
+        continueDrain: {
+          projectPath: activeProject,
+          providerId: session.sessionProvider || undefined,
+        },
+      })
+    } else {
+      window.agent.respondToPlanApproval(targetSid, requestId, approved, feedback)
+      if (approved) {
+        const nextMode: PermissionMode = postApprovalMode ?? 'default'
+        void window.agent.setPermissionMode(activeProject, nextMode)
+      }
+    }
   }
   set((s) => {
     const perSessionUpdate = updateActivePerSession(s, () => ({
@@ -280,7 +326,6 @@ export async function setSandboxModeImpl(
 ): Promise<void> {
   const { activeProject } = get()
   if (!activeProject) return
-  const { parseRemoteProjectKey } = await import('@/lib/remote-project-key')
   if (parseRemoteProjectKey(activeProject)) {
     // Node-side sandbox is not driven by desktop SessionManager; keep UI optimistic.
     const { sandboxModeToInfo } = await import('./prefs-cache')
@@ -367,7 +412,6 @@ export async function setSessionApiProviderIdImpl(
     console.warn('[chat] setSessionApiProvider failed:', err)
   }
   // Remote: always re-list from the node provider store. Local Codex also re-lists.
-  const { parseRemoteProjectKey } = await import('@/lib/remote-project-key')
   const isRemote = !!parseRemoteProjectKey(activeProject)
   if (isCodex) {
     void get().refreshCodexModels(false)

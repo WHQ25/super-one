@@ -677,6 +677,12 @@ export interface EnvironmentAPI {
       providerId?: string
       cwdHostPath?: string | null
       model?: string | null
+      effort?: string | null
+      permissionMode?: string | null
+      additionalDirectories?: string[]
+      enabledSkills?: string[]
+      disabledSkills?: string[]
+      images?: Array<{ name?: string; mimeType: string; base64: string }>
       apiProviderId?: string | null
     },
   ): Promise<unknown>
@@ -701,8 +707,51 @@ export interface EnvironmentAPI {
       sessionId: string
       interactionId: string
       decision: 'allow' | 'deny' | 'allow_always'
+      continueDrain?: {
+        projectPath?: string
+        providerId?: string
+        timeoutMs?: number
+      }
     },
-  ): Promise<void>
+  ): Promise<unknown>
+  respondSessionQuestion(
+    connectionId: string,
+    input: {
+      sessionId: string
+      interactionId: string
+      answers: unknown
+      continueDrain?: {
+        projectPath?: string
+        providerId?: string
+        timeoutMs?: number
+      }
+    },
+  ): Promise<unknown>
+  respondSessionPlan(
+    connectionId: string,
+    input: {
+      sessionId: string
+      interactionId: string
+      decision: 'approve' | 'reject'
+      options?: Record<string, unknown>
+      continueDrain?: {
+        projectPath?: string
+        providerId?: string
+        timeoutMs?: number
+      }
+    },
+  ): Promise<unknown>
+  /** Resume live event drain for a still-streaming remote session. */
+  resumeRemoteSessionEvents(
+    connectionId: string,
+    input: {
+      sessionId: string
+      projectPath?: string
+      providerId?: string
+      settleAfterInteractionId?: string
+      timeoutMs?: number
+    },
+  ): Promise<unknown>
   /** Directory listing for the add-project path browser. */
   browsePath(
     connectionId: string,

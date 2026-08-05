@@ -1,6 +1,3 @@
-import { mkdirSync, unlinkSync, writeFileSync } from 'fs'
-import { tmpdir } from 'os'
-import { basename, extname, join } from 'path'
 import log from '../logger'
 import { trace } from '../agent/event-trace'
 import { ensureCodexProxyUrl } from '../providers/llm-proxy-manager'
@@ -52,7 +49,6 @@ import type {
   CodexThreadItem,
   CodexUsageInfo,
   ElicitationFormField,
-  ImageAttachment,
   PermissionRequest,
 } from '@superone/shared/agent-types'
 import { parseElicitationSchema } from '../agent/elicitation-schema'
@@ -67,7 +63,7 @@ import { resolveConfigConfirm, rejectConfigConfirm } from '../mcp/config-tools'
 import { resolveVideoConfirm, rejectVideoConfirm } from '../mcp/media-tools'
 import { resolveComputerUseGrant, rejectComputerUseGrant } from '../computer-use/grant-request'
 import { CODEX_SYSTEM_PROMPT_APPEND } from '../agent/superone-system-prompt'
-import { buildAttachmentPathNote } from '../agent/attachment-store'
+import { buildAttachmentPathNote, persistAttachments } from '../agent/attachment-store'
 
 const SUPERONE_MCP_TOOL_NAME_PATTERN = /run tool "([a-z0-9_]+)"/i
 
@@ -239,67 +235,6 @@ export function readDeltaText(rec: Record<string, unknown>): string {
     ?? readString(rec.summaryText)
     ?? readString(rec.summary_text)
     ?? ''
-}
-
-function sanitizeAttachmentName(name: string): string {
-  const trimmed = basename(name.trim() || 'image')
-  const cleaned = trimmed.replace(/[^A-Za-z0-9._-]/g, '-')
-  const normalized = cleaned.replace(/-+/g, '-').slice(0, 80)
-  return normalized || 'image'
-}
-
-function inferImageExtension(mimeType: string): string {
-  switch (mimeType.toLowerCase()) {
-    case 'image/png':
-      return '.png'
-    case 'image/jpeg':
-      return '.jpg'
-    case 'image/webp':
-      return '.webp'
-    case 'image/gif':
-      return '.gif'
-    case 'image/bmp':
-      return '.bmp'
-    case 'image/tiff':
-      return '.tiff'
-    case 'image/svg+xml':
-      return '.svg'
-    default:
-      return ''
-  }
-}
-
-function cleanupPersistedImageAttachments(paths: string[]): void {
-  for (const filePath of paths) {
-    try {
-      unlinkSync(filePath)
-    } catch {
-      // Ignore cleanup failures.
-    }
-  }
-}
-
-function persistImageAttachments(_projectPath: string, images: ImageAttachment[]): string[] {
-  const targetDir = join(tmpdir(), 'super-one-codex-attachments')
-  mkdirSync(targetDir, { recursive: true })
-
-  const writtenPaths: string[] = []
-  try {
-    for (let i = 0; i < images.length; i++) {
-      const image = images[i]
-      const normalizedName = sanitizeAttachmentName(image.name || `image-${i + 1}`)
-      const extension = extname(normalizedName) || inferImageExtension(image.mimeType)
-      const baseName = extname(normalizedName) ? normalizedName.slice(0, -extname(normalizedName).length) : normalizedName
-      const fileName = `${Date.now()}-${i}-${baseName}${extension}`
-      const filePath = join(targetDir, fileName)
-      writeFileSync(filePath, Buffer.from(image.base64, 'base64'))
-      writtenPaths.push(filePath)
-    }
-    return writtenPaths
-  } catch (error) {
-    cleanupPersistedImageAttachments(writtenPaths)
-    throw error
-  }
 }
 
 function mapPatchChangeKind(raw: unknown): CodexPatchChangeKind {
@@ -2257,10 +2192,8 @@ export async function runCodexTurn(
   callbacks?: CodexRunStreamCallbacks,
 ): Promise<CodexRunResult> {
   const prompt = request.prompt.trim()
-  const persistedImagePaths = request.images?.length ? persistImageAttachments(projectPath, request.images) : []
-  const attachedFiles = (request.images ?? [])
-    .map((image, index) => ({ name: image.name, path: persistedImagePaths[index] }))
-    .filter((file): file is { name: string; path: string } => !!file.path)
+  // Unified SuperOne attachments dir (same as Claude / remote node).
+  const attachedFiles = persistAttachments(request.images)
   const attachmentNote = buildAttachmentPathNote(attachedFiles)
   const normalizedPrompt = attachmentNote ? (prompt ? `${prompt}\n\n${attachmentNote}` : attachmentNote) : prompt
   if (!normalizedPrompt) {

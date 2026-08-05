@@ -44,6 +44,15 @@ describe('environment preload ↔ Main IPC contract', () => {
     expect(AgentIpcChannels.ENVIRONMENT_RESPOND_SESSION_PERMISSION).toBe(
       'environment:respondSessionPermission',
     )
+    expect(AgentIpcChannels.ENVIRONMENT_RESPOND_SESSION_QUESTION).toBe(
+      'environment:respondSessionQuestion',
+    )
+    expect(AgentIpcChannels.ENVIRONMENT_RESPOND_SESSION_PLAN).toBe(
+      'environment:respondSessionPlan',
+    )
+    expect(AgentIpcChannels.ENVIRONMENT_RESUME_REMOTE_SESSION_EVENTS).toBe(
+      'environment:resumeRemoteSessionEvents',
+    )
     expect(AgentIpcChannels.ENVIRONMENT_BROWSE_PATH).toBe('environment:browsePath')
     expect(AgentIpcChannels.ENVIRONMENT_CLONE_REPOSITORY).toBe('environment:cloneRepository')
     expect(AgentIpcChannels.ENVIRONMENT_CONNECT).toBe('environment:connect')
@@ -74,6 +83,9 @@ describe('environment preload ↔ Main IPC contract', () => {
       'ENVIRONMENT_SET_SESSION_UI_FLAGS',
       'ENVIRONMENT_FORK_SESSION',
       'ENVIRONMENT_RESPOND_SESSION_PERMISSION',
+      'ENVIRONMENT_RESPOND_SESSION_QUESTION',
+      'ENVIRONMENT_RESPOND_SESSION_PLAN',
+      'ENVIRONMENT_RESUME_REMOTE_SESSION_EVENTS',
       'ENVIRONMENT_BROWSE_PATH',
       'ENVIRONMENT_CLONE_REPOSITORY',
       'ENVIRONMENT_CONNECT',

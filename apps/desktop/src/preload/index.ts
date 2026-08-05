@@ -331,6 +331,12 @@ const environmentAPI = {
       providerId?: string
       cwdHostPath?: string | null
       model?: string | null
+      effort?: string | null
+      permissionMode?: string | null
+      additionalDirectories?: string[]
+      enabledSkills?: string[]
+      disabledSkills?: string[]
+      images?: Array<{ name?: string; mimeType: string; base64: string }>
       apiProviderId?: string | null
     },
   ) =>
@@ -382,10 +388,67 @@ const environmentAPI = {
       sessionId: string
       interactionId: string
       decision: 'allow' | 'deny' | 'allow_always'
+      continueDrain?: {
+        projectPath?: string
+        providerId?: string
+        timeoutMs?: number
+      }
     },
   ) =>
     ipcRenderer.invoke(
       AgentIpcChannels.ENVIRONMENT_RESPOND_SESSION_PERMISSION,
+      connectionId,
+      input,
+    ),
+  respondSessionQuestion: (
+    connectionId: string,
+    input: {
+      sessionId: string
+      interactionId: string
+      answers: unknown
+      continueDrain?: {
+        projectPath?: string
+        providerId?: string
+        timeoutMs?: number
+      }
+    },
+  ) =>
+    ipcRenderer.invoke(
+      AgentIpcChannels.ENVIRONMENT_RESPOND_SESSION_QUESTION,
+      connectionId,
+      input,
+    ),
+  respondSessionPlan: (
+    connectionId: string,
+    input: {
+      sessionId: string
+      interactionId: string
+      decision: 'approve' | 'reject'
+      options?: Record<string, unknown>
+      continueDrain?: {
+        projectPath?: string
+        providerId?: string
+        timeoutMs?: number
+      }
+    },
+  ) =>
+    ipcRenderer.invoke(
+      AgentIpcChannels.ENVIRONMENT_RESPOND_SESSION_PLAN,
+      connectionId,
+      input,
+    ),
+  resumeRemoteSessionEvents: (
+    connectionId: string,
+    input: {
+      sessionId: string
+      projectPath?: string
+      providerId?: string
+      settleAfterInteractionId?: string
+      timeoutMs?: number
+    },
+  ) =>
+    ipcRenderer.invoke(
+      AgentIpcChannels.ENVIRONMENT_RESUME_REMOTE_SESSION_EVENTS,
       connectionId,
       input,
     ),

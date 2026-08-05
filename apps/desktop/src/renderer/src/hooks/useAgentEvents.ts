@@ -34,6 +34,32 @@ export function useAgentEvents(): void {
     }
   }, [handleAgentEvent])
 
+  // Remote reconnect: re-own event drains for any live remote sessions
+  // (local SessionManager keeps push alive across focus; remote needs resume).
+  useEffect(() => {
+    const unsub = window.environment?.onStatusEvent?.((snapshot: {
+      connectionId?: string
+      state?: string
+    }) => {
+      if (snapshot?.state !== 'connected' || !snapshot.connectionId) return
+      void (async () => {
+        const { parseRemoteProjectKey } = await import('@/lib/remote-project-key')
+        const { resumeRemoteSessionIfLive } = await import('@/lib/remote-session-ops')
+        const state = useChatStore.getState()
+        for (const [projectPath, project] of Object.entries(state.projectSessions)) {
+          const remote = parseRemoteProjectKey(projectPath)
+          if (!remote || remote.connectionId !== snapshot.connectionId) continue
+          for (const [sessionId, sess] of Object.entries(project._sessions)) {
+            resumeRemoteSessionIfLive(projectPath, sessionId, sess)
+          }
+        }
+      })()
+    })
+    return () => {
+      unsub?.()
+    }
+  }, [])
+
   useEffect(() => {
     const cleanup = window.app.onBashOutputEvent((event) => {
       useChatStore.setState((s) => ({

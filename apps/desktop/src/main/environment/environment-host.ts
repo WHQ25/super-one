@@ -771,13 +771,47 @@ export class EnvironmentHost {
   }
 
   /**
-   * Send a user message on a remote session, then poll until the turn settles.
-   * While waiting, drain `session.events`, map text-only node events → AgentEvent,
-   * and emit them via `agentEventSink` for live remote chat UI.
-   * Returns the final node session record (transcript + status).
+   * Per remote session exclusive event-log cursor (survives send → permission
+   * respond → resume so rich tool blocks are not lost between drains).
    */
+  private readonly sessionEventCursors = new Map<
+    string,
+    { afterSequence: string; mapEvents: boolean }
+  >()
+
   /**
-   * Exclusive event-log cursor for a send drain.
+   * At most one live drain per remote session — mirrors local Session push
+   * ownership (one continuous stream owner per session).
+   */
+  private readonly activeSessionDrains = new Map<
+    string,
+    { abort: AbortController; promise: Promise<unknown> }
+  >()
+
+  private sessionCursorKey(connectionId: string, sessionId: string): string {
+    return `${connectionId}:${sessionId}`
+  }
+
+  /** Stop a session drain (e.g. before send resets cursor to event head). */
+  private abortSessionDrain(key: string, reason = 'replaced'): void {
+    const active = this.activeSessionDrains.get(key)
+    if (!active) return
+    active.abort.abort(reason)
+    this.activeSessionDrains.delete(key)
+  }
+
+  private abortConnectionSessionDrains(connectionId: string, reason: string): void {
+    const prefix = `${connectionId}:`
+    for (const key of [...this.activeSessionDrains.keys()]) {
+      if (key.startsWith(prefix)) this.abortSessionDrain(key, reason)
+    }
+    for (const key of [...this.sessionEventCursors.keys()]) {
+      if (key.startsWith(prefix)) this.sessionEventCursors.delete(key)
+    }
+  }
+
+  /**
+   * Exclusive event-log cursor for a send/resume drain.
    * Prefers session.snapshot head; on failure walks pages to the true tail
    * (bounded). Never starts at the first-page tail — that replays prior turns.
    * When even the tail cannot be established, mapEvents is false (skip mapping).
@@ -816,6 +850,183 @@ export class EnvironmentHost {
     }
   }
 
+  /**
+   * Drain durable session events into agentEventSink until the turn settles
+   * or a pending interaction appears (unless settleAfterInteractionId continues).
+   *
+   * Ownership model (local parity): one continuous stream owner per session.
+   * No hard wall-clock timeout while status is `streaming` — long turns keep
+   * mapping like a local Session push. Optional timeoutMs only bounds stalled
+   * polls when the caller explicitly requests it (e.g. short interrupt settle).
+   */
+  async drainRemoteSessionEvents(
+    connectionId: string,
+    input: {
+      sessionId: string
+      projectPath?: string
+      providerId?: string
+      /** Skip user_message mapping (send path already added the bubble). */
+      skipUserMessage?: boolean
+      /**
+       * When set, treat a *different* pending interactionId as settled stop
+       * (post-permission: wait until this request clears or is replaced).
+       * When `'none'`, never stop early for pending — keep streaming through.
+       */
+      settleAfterInteractionId?: string | 'none'
+      /**
+       * Optional absolute deadline. Default: no deadline while streaming
+       * (local Session turns can run for hours).
+       */
+      timeoutMs?: number
+      /**
+       * When true (default), establish cursor from event head if missing.
+       * When false, require an existing stored cursor (send already set it).
+       */
+      establishCursor?: boolean
+      /** When true, replace any active drain for this session (send path). */
+      forceRestart?: boolean
+    },
+  ): Promise<unknown> {
+    const key = this.sessionCursorKey(connectionId, input.sessionId)
+
+    if (!input.forceRestart) {
+      const existing = this.activeSessionDrains.get(key)
+      if (existing && !existing.abort.signal.aborted) {
+        return existing.promise
+      }
+    } else {
+      this.abortSessionDrain(key, 'force_restart')
+    }
+
+    const abort = new AbortController()
+    const promise = this.runSessionEventDrain(connectionId, input, key, abort.signal).finally(
+      () => {
+        const cur = this.activeSessionDrains.get(key)
+        if (cur?.promise === promise) this.activeSessionDrains.delete(key)
+      },
+    )
+    this.activeSessionDrains.set(key, { abort, promise })
+    return promise
+  }
+
+  private async runSessionEventDrain(
+    connectionId: string,
+    input: {
+      sessionId: string
+      projectPath?: string
+      providerId?: string
+      skipUserMessage?: boolean
+      settleAfterInteractionId?: string | 'none'
+      timeoutMs?: number
+      establishCursor?: boolean
+    },
+    key: string,
+    signal: AbortSignal,
+  ): Promise<unknown> {
+    const { gateway, environmentId } = this.resolveRemote(connectionId)
+    if (!(gateway instanceof RemoteEnvironmentGateway)) {
+      throw Object.assign(new Error('environment is not connected'), { code: 'failed_precondition' })
+    }
+
+    let cursorState = this.sessionEventCursors.get(key)
+    if (!cursorState) {
+      if (input.establishCursor === false) {
+        // Send should have primed the cursor; fall back to head rather than mid-log.
+        cursorState = await this.resolveRemoteSendEventCursor(gateway)
+      } else {
+        cursorState = await this.resolveRemoteSendEventCursor(gateway)
+      }
+      this.sessionEventCursors.set(key, cursorState)
+    }
+
+    let afterSequence = cursorState.afterSequence
+    const mapEvents = cursorState.mapEvents
+
+    const { createNodeSessionEventMapper } = await import('@superone/shared/node-session-event-map')
+    const mapper = createNodeSessionEventMapper({
+      sessionId: input.sessionId,
+      projectPath: input.projectPath,
+      providerId: input.providerId,
+      skipUserMessage: input.skipUserMessage !== false,
+    })
+
+    const deadline =
+      typeof input.timeoutMs === 'number' && input.timeoutMs > 0
+        ? Date.now() + input.timeoutMs
+        : null
+    let last: unknown = null
+
+    const drainEvents = async (): Promise<void> => {
+      if (!mapEvents || signal.aborted) return
+      try {
+        const batch = await gateway.listEvents(afterSequence)
+        for (const ev of batch) {
+          if (signal.aborted) return
+          afterSequence = ev.sequence
+          if (ev.aggregateType === 'session' && ev.aggregateId === input.sessionId) {
+            for (const agentEvent of mapper.map(ev)) {
+              this.agentEventSink?.(agentEvent)
+            }
+          }
+        }
+        this.sessionEventCursors.set(key, { afterSequence, mapEvents })
+      } catch {
+        /* ignore transient event poll errors; status poll still progresses */
+      }
+    }
+
+    while (!signal.aborted) {
+      if (deadline != null && Date.now() >= deadline) {
+        await drainEvents()
+        return last
+      }
+
+      await drainEvents()
+      if (signal.aborted) return last
+
+      try {
+        last = await gateway.sessions.get({ environmentId, sessionId: input.sessionId })
+      } catch {
+        await new Promise((r) => setTimeout(r, 200))
+        continue
+      }
+
+      const snap = last as {
+        status?: string
+        pendingInteraction?: { interactionId?: string } | null
+      } | null
+      const status = snap?.status
+      const pendingId = snap?.pendingInteraction?.interactionId
+
+      if (status && status !== 'streaming') {
+        await drainEvents()
+        return last
+      }
+
+      if (pendingId && input.settleAfterInteractionId !== 'none') {
+        // During send: any pending interaction is a stop for the caller to respond.
+        // After permission respond: stop only when the answered id is gone or replaced.
+        if (!input.settleAfterInteractionId) {
+          await drainEvents()
+          return last
+        }
+        if (pendingId !== input.settleAfterInteractionId) {
+          await drainEvents()
+          return last
+        }
+      }
+
+      await new Promise((r) => setTimeout(r, 80))
+    }
+    return last
+  }
+
+  /**
+   * Send a user message on a remote session, then poll until the turn settles.
+   * While waiting, drain `session.events`, map node events → AgentEvent,
+   * and emit them via `agentEventSink` for live remote chat UI.
+   * Returns the final node session record (transcript + status).
+   */
   async sendSessionMessage(
     connectionId: string,
     input: {
@@ -832,6 +1043,18 @@ export class EnvironmentHost {
       cwdHostPath?: string | null
       /** UI-selected model id for this turn (Claude slug / Codex model). */
       model?: string | null
+      /** Reasoning / thinking effort (Claude effort or Codex reasoningEffort). */
+      effort?: string | null
+      /** Claude permission mode for this turn. */
+      permissionMode?: string | null
+      /** Extra readable directories on the node. */
+      additionalDirectories?: string[]
+      /** Claude skills allow-list (when user disabled some skills). */
+      enabledSkills?: string[]
+      /** Skills to exclude; node may discover and filter. */
+      disabledSkills?: string[]
+      /** Image/document attachments (base64) — node persists under turn cwd. */
+      images?: Array<{ name?: string; mimeType: string; base64: string }>
       /** Node provider credential id for this turn. */
       apiProviderId?: string | null
     },
@@ -855,19 +1078,59 @@ export class EnvironmentHost {
     // Cursor before send: use the event-log head, not the first listEvents page.
     // listEvents is limited to 1000 rows — paging from '0' sets the cursor to
     // ~1000 on long turns and re-maps the previous turn as if it were new.
-    const cursor = await this.resolveRemoteSendEventCursor(gateway)
-    let afterSequence = cursor.afterSequence
-    const mapEvents = cursor.mapEvents
+    const key = this.sessionCursorKey(connectionId, input.sessionId)
+    const existingDrain = this.activeSessionDrains.get(key)
+    if (!existingDrain || existingDrain.abort.signal.aborted) {
+      this.abortSessionDrain(key, 'send')
+      const cursor = await this.resolveRemoteSendEventCursor(gateway)
+      this.sessionEventCursors.set(key, cursor)
+    }
 
     const model =
       typeof input.model === 'string' && input.model.trim() ? input.model.trim() : undefined
+    const effort =
+      typeof input.effort === 'string' && input.effort.trim() ? input.effort.trim() : undefined
+    const permissionMode =
+      typeof input.permissionMode === 'string' && input.permissionMode.trim()
+        ? input.permissionMode.trim()
+        : undefined
+    const additionalDirectories = Array.isArray(input.additionalDirectories)
+      ? input.additionalDirectories
+          .filter((d): d is string => typeof d === 'string' && d.trim().length > 0)
+          .map((d) => d.trim())
+          .slice(0, 32)
+      : []
     const apiProviderId =
       typeof input.apiProviderId === 'string' && input.apiProviderId.trim()
         ? input.apiProviderId.trim()
         : undefined
-    const options: Record<string, string> = {}
+    const images = Array.isArray(input.images)
+      ? input.images
+          .filter(
+            (img) =>
+              img &&
+              typeof img.mimeType === 'string' &&
+              typeof img.base64 === 'string' &&
+              img.base64.length > 0 &&
+              img.base64.length <= 5_500_000,
+          )
+          .slice(0, 8)
+      : []
+    const options: Record<string, unknown> = {}
     if (model) options.model = model
+    if (effort) options.effort = effort
+    if (permissionMode) options.permissionMode = permissionMode
+    if (additionalDirectories.length > 0) options.additionalDirectories = additionalDirectories
+    const enabledSkills = Array.isArray(input.enabledSkills)
+      ? input.enabledSkills.filter((s): s is string => typeof s === 'string' && s.trim().length > 0)
+      : []
+    const disabledSkills = Array.isArray(input.disabledSkills)
+      ? input.disabledSkills.filter((s): s is string => typeof s === 'string' && s.trim().length > 0)
+      : []
+    if (enabledSkills.length > 0) options.enabledSkills = enabledSkills
+    if (disabledSkills.length > 0) options.disabledSkills = disabledSkills
     if (apiProviderId) options.apiProviderId = apiProviderId
+    if (images.length > 0) options.images = images
     await gateway.sessions.send({
       session: { environmentId, sessionId: input.sessionId },
       text: input.text,
@@ -876,59 +1139,50 @@ export class EnvironmentHost {
       clientMessageId: input.clientMessageId,
       ...(Object.keys(options).length > 0 ? { options } : {}),
     })
-    const { createNodeSessionEventMapper } = await import('@superone/shared/node-session-event-map')
-    const mapper = createNodeSessionEventMapper({
+
+    return this.drainRemoteSessionEvents(connectionId, {
       sessionId: input.sessionId,
       projectPath: input.projectPath,
       providerId: input.providerId,
-      // Renderer already appends the user bubble with clientMessageId.
       skipUserMessage: true,
+      establishCursor: false,
+      // A Claude live session may accept a second send while the first drain is
+      // active. Share that drain and cursor so events are neither duplicated nor
+      // dropped when the second turn is queued with priority=next.
+      forceRestart: !existingDrain || existingDrain.abort.signal.aborted,
     })
+  }
 
-    // session.send starts the turn async; poll events + get until settled
-    // (idle/error) or a permission interaction is pending (caller respondPermission).
-    const deadline = Date.now() + 120_000
-    let last: unknown = null
-
-    const drainEvents = async (): Promise<void> => {
-      if (!mapEvents) return
-      try {
-        const batch = await gateway.listEvents(afterSequence)
-        for (const ev of batch) {
-          afterSequence = ev.sequence
-          if (ev.aggregateType === 'session' && ev.aggregateId === input.sessionId) {
-            for (const agentEvent of mapper.map(ev)) {
-              this.agentEventSink?.(agentEvent)
-            }
-          }
-        }
-      } catch {
-        /* ignore transient event poll errors; status poll still progresses */
-      }
-    }
-
-    while (Date.now() < deadline) {
-      await drainEvents()
-
-      last = await gateway.sessions.get({ environmentId, sessionId: input.sessionId })
-      const snap = last as {
-        status?: string
-        pendingInteraction?: { interactionId?: string } | null
-      } | null
-      const status = snap?.status
-      if (status && status !== 'streaming') {
-        // Final drain so terminal turn events aren't lost between last poll and settle.
-        await drainEvents()
-        return last
-      }
-      // Stage 5-D: surface permission wait instead of spinning until timeout.
-      if (snap?.pendingInteraction?.interactionId) {
-        await drainEvents()
-        return last
-      }
-      await new Promise((r) => setTimeout(r, 80))
-    }
-    return last
+  /**
+   * Resume live event mapping for a remote session that is still streaming
+   * (reconnect / open while turn runs / post-permission). Does not send.
+   */
+  async resumeRemoteSessionEvents(
+    connectionId: string,
+    input: {
+      sessionId: string
+      projectPath?: string
+      providerId?: string
+      settleAfterInteractionId?: string
+      timeoutMs?: number
+      /**
+       * When true (post-permission/question/plan), replace any idle-at-pending
+       * drain so settleAfterInteractionId is honored.
+       */
+      forceRestart?: boolean
+    },
+  ): Promise<unknown> {
+    return this.drainRemoteSessionEvents(connectionId, {
+      sessionId: input.sessionId,
+      projectPath: input.projectPath,
+      providerId: input.providerId,
+      skipUserMessage: true,
+      settleAfterInteractionId: input.settleAfterInteractionId,
+      timeoutMs: input.timeoutMs,
+      establishCursor: true,
+      // After interaction respond, always start a fresh follow with the new settle rule.
+      forceRestart: input.forceRestart ?? Boolean(input.settleAfterInteractionId),
+    })
   }
 
   /**
@@ -980,6 +1234,8 @@ export class EnvironmentHost {
     } catch {
       /* ended sessions may not need a lease */
     }
+    this.abortSessionDrain(this.sessionCursorKey(connectionId, sessionId), 'session_removed')
+    this.sessionEventCursors.delete(this.sessionCursorKey(connectionId, sessionId))
     const result = await gateway.removeSession(sessionId, control)
     this.sessionLeases.delete(this.leaseKey(connectionId, sessionId))
     return result
@@ -1019,8 +1275,14 @@ export class EnvironmentHost {
       sessionId: string
       interactionId: string
       decision: 'allow' | 'deny' | 'allow_always'
+      /** When set, continue draining events until turn settles or next pending. */
+      continueDrain?: {
+        projectPath?: string
+        providerId?: string
+        timeoutMs?: number
+      }
     },
-  ): Promise<void> {
+  ): Promise<unknown> {
     const { gateway, environmentId } = this.resolveRemote(connectionId)
     const control = await this.ensureSessionLease(connectionId, input.sessionId)
     await gateway.interactions.respondPermission({
@@ -1029,6 +1291,80 @@ export class EnvironmentHost {
       decision: input.decision,
       leaseId: control.leaseId,
       generation: control.generation,
+    })
+    if (!input.continueDrain) return undefined
+    return this.resumeRemoteSessionEvents(connectionId, {
+      sessionId: input.sessionId,
+      projectPath: input.continueDrain.projectPath,
+      providerId: input.continueDrain.providerId,
+      settleAfterInteractionId: input.interactionId,
+      timeoutMs: input.continueDrain.timeoutMs,
+    })
+  }
+
+  async respondSessionQuestion(
+    connectionId: string,
+    input: {
+      sessionId: string
+      interactionId: string
+      answers: unknown
+      continueDrain?: {
+        projectPath?: string
+        providerId?: string
+        timeoutMs?: number
+      }
+    },
+  ): Promise<unknown> {
+    const { gateway, environmentId } = this.resolveRemote(connectionId)
+    const control = await this.ensureSessionLease(connectionId, input.sessionId)
+    await gateway.interactions.respondQuestion({
+      session: { environmentId, sessionId: input.sessionId },
+      interactionId: input.interactionId,
+      answers: input.answers,
+      leaseId: control.leaseId,
+      generation: control.generation,
+    })
+    if (!input.continueDrain) return undefined
+    return this.resumeRemoteSessionEvents(connectionId, {
+      sessionId: input.sessionId,
+      projectPath: input.continueDrain.projectPath,
+      providerId: input.continueDrain.providerId,
+      settleAfterInteractionId: input.interactionId,
+      timeoutMs: input.continueDrain.timeoutMs,
+    })
+  }
+
+  async respondSessionPlan(
+    connectionId: string,
+    input: {
+      sessionId: string
+      interactionId: string
+      decision: 'approve' | 'reject'
+      options?: Record<string, unknown>
+      continueDrain?: {
+        projectPath?: string
+        providerId?: string
+        timeoutMs?: number
+      }
+    },
+  ): Promise<unknown> {
+    const { gateway, environmentId } = this.resolveRemote(connectionId)
+    const control = await this.ensureSessionLease(connectionId, input.sessionId)
+    await gateway.interactions.respondPlan({
+      session: { environmentId, sessionId: input.sessionId },
+      interactionId: input.interactionId,
+      decision: input.decision,
+      options: input.options,
+      leaseId: control.leaseId,
+      generation: control.generation,
+    })
+    if (!input.continueDrain) return undefined
+    return this.resumeRemoteSessionEvents(connectionId, {
+      sessionId: input.sessionId,
+      projectPath: input.continueDrain.projectPath,
+      providerId: input.continueDrain.providerId,
+      settleAfterInteractionId: input.interactionId,
+      timeoutMs: input.continueDrain.timeoutMs,
     })
   }
 
@@ -1334,6 +1670,7 @@ export class EnvironmentHost {
   /** Close the socket and any SSH tunnel; credentials and metadata are kept. */
   disconnect(connectionId: string): void {
     this.stopHostActionConsumer(connectionId, 'disconnect')
+    this.abortConnectionSessionDrains(connectionId, 'disconnect')
     this.connections.disconnect(connectionId)
     this.tunnels.close(connectionId)
     const previous = this.lastStatus.get(connectionId)
@@ -1350,6 +1687,7 @@ export class EnvironmentHost {
   /** Disconnect and erase all client-local state for this environment. */
   forget(connectionId: string): void {
     this.stopHostActionConsumer(connectionId, 'forget')
+    this.abortConnectionSessionDrains(connectionId, 'forget')
     this.tunnels.close(connectionId)
     this.connections.forget(connectionId)
     this.lastStatus.delete(connectionId)
@@ -1606,6 +1944,9 @@ export class EnvironmentHost {
   dispose(): void {
     for (const id of [...this.hostActionConsumers.keys()]) {
       this.stopHostActionConsumer(id, 'dispose')
+    }
+    for (const id of this.connections.listKnown().map((known) => known.connectionId)) {
+      this.abortConnectionSessionDrains(id, 'dispose')
     }
     this.connections.disconnectAll()
     this.tunnels.closeAll()

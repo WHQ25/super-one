@@ -1333,10 +1333,73 @@ function registerIpcHandlers(): void {
         sessionId: string
         interactionId: string
         decision: 'allow' | 'deny' | 'allow_always'
+        continueDrain?: {
+          projectPath?: string
+          providerId?: string
+          timeoutMs?: number
+        }
       },
     ) => {
       const { getEnvironmentHost } = await import('./environment')
       return getEnvironmentHost().respondSessionPermission(connectionId, input)
+    },
+  )
+  ipcMain.handle(
+    AgentIpcChannels.ENVIRONMENT_RESPOND_SESSION_QUESTION,
+    async (
+      _e,
+      connectionId: string,
+      input: {
+        sessionId: string
+        interactionId: string
+        answers: unknown
+        continueDrain?: {
+          projectPath?: string
+          providerId?: string
+          timeoutMs?: number
+        }
+      },
+    ) => {
+      const { getEnvironmentHost } = await import('./environment')
+      return getEnvironmentHost().respondSessionQuestion(connectionId, input)
+    },
+  )
+  ipcMain.handle(
+    AgentIpcChannels.ENVIRONMENT_RESPOND_SESSION_PLAN,
+    async (
+      _e,
+      connectionId: string,
+      input: {
+        sessionId: string
+        interactionId: string
+        decision: 'approve' | 'reject'
+        options?: Record<string, unknown>
+        continueDrain?: {
+          projectPath?: string
+          providerId?: string
+          timeoutMs?: number
+        }
+      },
+    ) => {
+      const { getEnvironmentHost } = await import('./environment')
+      return getEnvironmentHost().respondSessionPlan(connectionId, input)
+    },
+  )
+  ipcMain.handle(
+    AgentIpcChannels.ENVIRONMENT_RESUME_REMOTE_SESSION_EVENTS,
+    async (
+      _e,
+      connectionId: string,
+      input: {
+        sessionId: string
+        projectPath?: string
+        providerId?: string
+        settleAfterInteractionId?: string
+        timeoutMs?: number
+      },
+    ) => {
+      const { getEnvironmentHost } = await import('./environment')
+      return getEnvironmentHost().resumeRemoteSessionEvents(connectionId, input)
     },
   )
   ipcMain.handle(

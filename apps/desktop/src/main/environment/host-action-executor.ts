@@ -32,6 +32,9 @@ type ExecutorResult = {
   error?: unknown
 }
 
+/** Wall-clock cap for a single host-action tool execution (ms). */
+const HOST_ACTION_EXECUTION_TIMEOUT_MS = 120_000
+
 export const desktopHostActionExecutor: HostActionExecutor = async (
   claimed,
   signal,
@@ -49,27 +52,105 @@ export const desktopHostActionExecutor: HostActionExecutor = async (
       ? (claimed.args as Record<string, unknown>)
       : {}
 
-  try {
-    if (REMOTE_SESSION_SCOPED_TOOLS.has(claimed.toolName)) {
-      return await executeRemoteSessionScopedTool(claimed, args, connectionId, signal)
-    }
+  // Linked controller: outer abort + timeout cancel cooperative tools
+  // (session-scoped remote RPC honors signal). Non-cooperative MCP tools may
+  // still finish later — Promise.race already quarantines their *reported*
+  // outcome; we log late completions so operators know side effects may apply.
+  const runAbort = new AbortController()
+  const onOuterAbort = () => runAbort.abort()
+  signal.addEventListener('abort', onOuterAbort, { once: true })
 
-    const { executeSuperoneMcpTool } = await import('../mcp/superone-mcp-tool-surface')
-    const result = await executeSuperoneMcpTool(claimed.sessionId, claimed.toolName, args)
-    if (signal.aborted) {
-      // Late result after cancel — do not report success; consumer skips respond.
-      return {
-        outcome: 'failed',
-        error: { code: 'aborted', message: 'host action aborted during execution' },
+  /** First race winner: 'work' | 'deadline'. Late work completions are logged. */
+  let raceWinner: 'work' | 'deadline' | null = null
+
+  try {
+    const work = (async (): Promise<ExecutorResult> => {
+      try {
+        if (REMOTE_SESSION_SCOPED_TOOLS.has(claimed.toolName)) {
+          return await executeRemoteSessionScopedTool(
+            claimed,
+            args,
+            connectionId,
+            runAbort.signal,
+          )
+        }
+
+        const { executeSuperoneMcpTool } = await import('../mcp/superone-mcp-tool-surface')
+        const toolResult = await executeSuperoneMcpTool(
+          claimed.sessionId,
+          claimed.toolName,
+          args,
+        )
+        if (runAbort.signal.aborted || raceWinner === 'deadline') {
+          return {
+            outcome: 'failed',
+            error: {
+              code: 'aborted',
+              message: 'host action aborted or timed out during execution',
+            },
+          }
+        }
+        const isError = Boolean((toolResult as { isError?: boolean })?.isError)
+        if (isError) {
+          return { outcome: 'failed', error: toolResult, result: toolResult }
+        }
+        return { outcome: 'succeeded', result: toolResult }
+      } finally {
+        if (raceWinner === 'deadline') {
+          try {
+            const { default: log } = await import('../logger')
+            log.warn(
+              '[host-action] tool completed after timeout/abort (side effects may have applied):',
+              claimed.toolName,
+              claimed.actionId,
+            )
+          } catch {
+            /* logger optional in tests */
+          }
+        }
       }
-    }
-    const isError = Boolean((result as { isError?: boolean })?.isError)
-    if (isError) {
-      return { outcome: 'failed', error: result, result }
-    }
-    return { outcome: 'succeeded', result }
+    })()
+
+    void work.catch(() => undefined)
+
+    const deadline = new Promise<ExecutorResult>((resolve) => {
+      const timer = setTimeout(() => {
+        runAbort.abort()
+        resolve({
+          outcome: 'failed',
+          error: {
+            code: 'timeout',
+            message: `host action exceeded ${HOST_ACTION_EXECUTION_TIMEOUT_MS}ms`,
+          },
+        })
+      }, HOST_ACTION_EXECUTION_TIMEOUT_MS)
+      // Outer consumer abort only (not runAbort — timeout also aborts that).
+      signal.addEventListener(
+        'abort',
+        () => {
+          clearTimeout(timer)
+          resolve({
+            outcome: 'failed',
+            error: { code: 'aborted', message: 'host action aborted during execution' },
+          })
+        },
+        { once: true },
+      )
+    })
+
+    const result = await Promise.race([
+      work.then((r) => {
+        if (raceWinner == null) raceWinner = 'work'
+        return r
+      }),
+      deadline.then((r) => {
+        if (raceWinner == null) raceWinner = 'deadline'
+        return r
+      }),
+    ])
+    return result
   } catch (err) {
-    if (signal.aborted) {
+    if (signal.aborted || runAbort.signal.aborted) {
       return {
         outcome: 'failed',
         error: { code: 'aborted', message: 'host action aborted during execution' },
@@ -82,6 +163,8 @@ export const desktopHostActionExecutor: HostActionExecutor = async (
         message: err instanceof Error ? err.message : String(err),
       },
     }
+  } finally {
+    signal.removeEventListener('abort', onOuterAbort)
   }
 }
 

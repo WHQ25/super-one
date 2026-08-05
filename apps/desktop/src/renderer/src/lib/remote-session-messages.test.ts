@@ -2,7 +2,11 @@
 import { describe, expect, it } from 'vitest'
 import type { ChatMessage } from '@superone/shared/agent-types'
 import {
+  nodePendingInteractionFields,
   nodePendingToPermissionRequest,
+  nodePendingToQuestionRequest,
+  nodePendingToPlanApprovalRequest,
+  nodeSnapshotNeedsLiveDrain,
   nodeStatusToAgentStatus,
   reconcileTranscriptWithLocalMessages,
   transcriptToChatMessages,
@@ -36,6 +40,44 @@ describe('nodePendingToPermissionRequest', () => {
       }),
     ).toBeNull()
     expect(nodePendingToPermissionRequest(null)).toBeNull()
+  })
+})
+
+describe('node pending question/plan + live drain helpers', () => {
+  it('maps question and plan to store-shaped requests', () => {
+    const q = nodePendingToQuestionRequest({
+      interactionId: 'q1',
+      kind: 'question',
+      input: {
+        questions: [{ question: 'Go?', header: 'Confirm', options: [{ label: 'Yes' }] }],
+      },
+    })
+    expect(q?.requestId).toBe('q1')
+    expect(q?.questions[0]?.question).toBe('Go?')
+
+    const p = nodePendingToPlanApprovalRequest({
+      interactionId: 'pl1',
+      kind: 'plan',
+      input: { plan: 'Ship it' },
+    })
+    expect(p).toEqual(
+      expect.objectContaining({
+        requestId: 'pl1',
+        planContent: 'Ship it',
+      }),
+    )
+  })
+
+  it('builds interaction fields and live-drain flags', () => {
+    const fields = nodePendingInteractionFields({
+      interactionId: 'q1',
+      kind: 'question',
+      input: { questions: [{ question: 'Go?' }] },
+    })
+    expect(fields.pendingQuestion?.requestId).toBe('q1')
+    expect(fields.awaitingAssistantReply).toBe(true)
+    expect(nodeSnapshotNeedsLiveDrain({ status: 'streaming' })).toBe(true)
+    expect(nodeSnapshotNeedsLiveDrain({ status: 'idle', pendingInteraction: null })).toBe(false)
   })
 })
 

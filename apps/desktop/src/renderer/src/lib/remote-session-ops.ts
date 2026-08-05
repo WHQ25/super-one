@@ -13,7 +13,8 @@ import {
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 import {
   nodeHarnessToProviderId,
-  nodePendingToPermissionRequest,
+  nodePendingInteractionFields,
+  nodeSnapshotNeedsLiveDrain,
   nodeStatusToAgentStatus,
   reconcileTranscriptWithLocalMessages,
   type NodeSessionSnapshot,
@@ -87,7 +88,9 @@ export async function hydrateRemotePerSession(
     snap?.transcript,
     providerId,
   )
-  const pendingPerm = nodePendingToPermissionRequest(snap?.pendingInteraction)
+  const pendingFields = nodePendingInteractionFields(snap?.pendingInteraction)
+  const isLive =
+    snap?.status === 'streaming' || pendingFields.awaitingAssistantReply
   const chatProvider = (providerId === 'claude' || providerId === 'codex'
     ? providerId
     : 'claude') as ChatProvider
@@ -99,12 +102,54 @@ export async function hydrateRemotePerSession(
     sessionProvider: chatProvider,
     preferredProvider: chatProvider,
     messages,
-    status: nodeStatusToAgentStatus(snap?.status),
+    status: isLive ? 'streaming' : nodeStatusToAgentStatus(snap?.status),
     _title: snap?.title ?? base._title ?? null,
-    awaitingAssistantReply: snap?.status === 'streaming',
-    pendingPermissions: pendingPerm ? [pendingPerm] : [],
+    awaitingAssistantReply: isLive,
+    pendingPermissions: pendingFields.pendingPermissions,
+    pendingQuestion: pendingFields.pendingQuestion,
+    pendingPlanApproval: pendingFields.pendingPlanApproval,
     _historyHydrated: true,
   }
+}
+
+/**
+ * After hydrate/focus: if the node turn is still live, own a drain so events
+ * keep flowing into handleAgentEvent (local Session resume parity).
+ */
+export function resumeRemoteSessionIfLive(
+  projectKey: string,
+  sessionId: string,
+  sess: Pick<
+    PerSessionState,
+    'status' | 'awaitingAssistantReply' | 'sessionProvider' | 'preferredProvider'
+  > & {
+    pendingPermissions?: unknown[]
+    pendingQuestion?: unknown
+    pendingPlanApproval?: unknown
+  },
+  snap?: NodeSessionSnapshot | null,
+): void {
+  const remote = parseRemoteProjectKey(projectKey)
+  if (!remote || !sessionId) return
+  const needsDrain =
+    nodeSnapshotNeedsLiveDrain(snap ?? null) ||
+    sess.status === 'streaming' ||
+    sess.awaitingAssistantReply ||
+    (sess.pendingPermissions?.length ?? 0) > 0 ||
+    Boolean(sess.pendingQuestion) ||
+    Boolean(sess.pendingPlanApproval)
+  if (!needsDrain) return
+  const providerId =
+    sess.sessionProvider || sess.preferredProvider || snap?.harnessId || 'claude'
+  void window.environment
+    .resumeRemoteSessionEvents(remote.connectionId, {
+      sessionId,
+      projectPath: projectKey,
+      providerId: String(providerId),
+    })
+    .catch((err) => {
+      console.warn('[chat] resumeRemoteSessionEvents failed:', err)
+    })
 }
 
 /**

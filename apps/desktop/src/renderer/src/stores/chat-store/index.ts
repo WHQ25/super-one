@@ -642,7 +642,9 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
     // Remote node: hydrate from CLI session.get (no local SQLite / SessionManager).
     const { parseRemoteProjectKey } = await import('@/lib/remote-project-key')
     if (parseRemoteProjectKey(activeProject)) {
-      const { hydrateRemotePerSession } = await import('@/lib/remote-session-ops')
+      const { hydrateRemotePerSession, resumeRemoteSessionIfLive } = await import(
+        '@/lib/remote-session-ops'
+      )
       const prev = project._sessions[sessionId] ?? null
       const hydrated = await hydrateRemotePerSession(activeProject, sessionId, prev)
       set((s) => {
@@ -658,6 +660,8 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
           },
         }
       })
+      // Local parity: open a live session → keep agent:event flowing (Session resume).
+      resumeRemoteSessionIfLive(activeProject, sessionId, hydrated)
       return
     }
 

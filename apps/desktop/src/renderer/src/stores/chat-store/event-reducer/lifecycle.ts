@@ -125,7 +125,10 @@ export function reduceLifecycle(session: PerSessionState, event: LifecycleEvent)
           queuedMessages: [],
         }
       }
-      return { status: event.status, ...(event.status === 'idle' ? { apiRetry: null, modelFallback: null } : {}) }
+      return {
+        status: event.status,
+        ...(event.status === 'idle' ? { apiRetry: null, modelFallback: null } : {}),
+      }
 
     case 'session_init':
       console.log('[applyEvent] session_init', { sessionId: event.session?.sessionId, outputStyle: event.session?.outputStyle, availableOutputStyles: event.session?.availableOutputStyles })

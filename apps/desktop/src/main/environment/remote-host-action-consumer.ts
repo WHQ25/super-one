@@ -237,10 +237,18 @@ export class RemoteHostActionConsumer {
       const ac = new AbortController()
       this.inflight.set(action.actionId, ac)
       try {
-        const claimed = await this.client.rpc<ClaimHostActionResult>('session.claimHostAction', {
-          actionId: action.actionId,
-          expectedVersion: action.version,
-        })
+        let claimed: ClaimHostActionResult
+        try {
+          claimed = await this.client.rpc<ClaimHostActionResult>('session.claimHostAction', {
+            actionId: action.actionId,
+            expectedVersion: action.version,
+          })
+        } catch (err) {
+          // Version conflict / deadline / forbidden — do not silent-drop; surface and allow re-poll.
+          this.onError?.(err)
+          this.known.delete(action.actionId)
+          return
+        }
         if (ac.signal.aborted) return
 
         let outcome: { outcome: 'succeeded' | 'failed'; result?: unknown; error?: unknown }

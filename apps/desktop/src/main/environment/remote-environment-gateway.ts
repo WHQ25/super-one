@@ -530,12 +530,26 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
           generation: input.generation,
         })
       },
-      respondQuestion: async (_input: QuestionResponseInput) => {
-        // Question protocol reuses permission-shaped RPC in Phase 4+; not separate yet.
-        throw new Error('respondQuestion: use harness-specific plan/question path when available')
+      respondQuestion: async (input: QuestionResponseInput) => {
+        this.assertEnv(input.session.environmentId)
+        await this.client.rpc('session.respondQuestion', {
+          sessionId: input.session.sessionId,
+          interactionId: input.interactionId,
+          answers: input.answers,
+          leaseId: input.leaseId,
+          generation: input.generation,
+        })
       },
-      respondPlan: async (_input: PlanResponseInput) => {
-        throw new Error('respondPlan: use harness-specific plan approval path when available')
+      respondPlan: async (input: PlanResponseInput) => {
+        this.assertEnv(input.session.environmentId)
+        await this.client.rpc('session.respondPlan', {
+          sessionId: input.session.sessionId,
+          interactionId: input.interactionId,
+          decision: input.decision,
+          options: input.options,
+          leaseId: input.leaseId,
+          generation: input.generation,
+        })
       },
     }
   }

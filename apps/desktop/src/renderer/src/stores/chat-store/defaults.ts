@@ -98,6 +98,7 @@ export function createDefaultPerSessionState(): PerSessionState {
     modelFallback: null,
     lastEventAt: 0,
     queuedMessages: [],
+    _remoteTurnQueue: [],
     activeCodexMessageId: null,
     lastAssistantMessageId: null,
     miniAppContexts: {},

@@ -97,13 +97,9 @@ export async function sendMessageImpl(
   // Remote node project: route through EnvironmentHost → CLI session.send (lease handled in Main).
   const remoteKey = parseRemoteProjectKey(projectPath)
   if (remoteKey) {
-    const text = content.trim()
-    if (!text) return
-
     // SuperOne-local slash intercepts (same as local path) — never forward to node.
-    // Match bare `/clear` etc.; args form is not used by CLAUDE_INTERCEPTED_COMMANDS today.
     {
-      const m = text.match(/^\/(\S+)$/)
+      const m = content.trim().match(/^\/(\S+)$/)
       if (m && CLAUDE_INTERCEPTED_COMMANDS[m[1]!]) {
         patchSession(() => ({ _pendingSlashCommand: '' }))
         await CLAUDE_INTERCEPTED_COMMANDS[m[1]!]!()
@@ -167,11 +163,13 @@ export async function sendMessageImpl(
     const existingSess = candidateSid
       ? getScopedPerSession(get(), writeTarget ?? { projectPath, sessionId: candidateSid })
       : getScopedPerSession(get(), writeTarget)
-    // Node Stage 5: claude + codex. Honor UI tab; default claude (never force codex).
+    // Honor UI harness tab (wire ids: claude|codex|acp|opencode). Default claude.
     const uiProvider =
       existingSess.sessionProvider ?? existingSess.preferredProvider ?? 'claude'
-    const preferredHarness: 'claude' | 'codex' =
-      uiProvider === 'codex' ? 'codex' : 'claude'
+    const preferredHarness: 'claude' | 'codex' | 'acp' | 'opencode' =
+      uiProvider === 'codex' || uiProvider === 'acp' || uiProvider === 'opencode'
+        ? uiProvider
+        : 'claude'
     const { resolveNodeSessionId } = await import('@/lib/remote-session-ops')
     const { createDefaultPerSessionState } = await import('../defaults')
     const resolved = await resolveNodeSessionId(projectPath, projectId, candidateSid, {
@@ -225,75 +223,277 @@ export async function sendMessageImpl(
       writeTarget = { projectPath, sessionId: sid }
     }
 
-    const userMessageId = crypto.randomUUID()
-    const userMsg = {
-      id: userMessageId,
-      role: 'user' as const,
-      status: 'complete' as const,
-      content: [{ type: 'text' as const, text }],
-      createdAt: new Date().toISOString(),
-      providerId: preferredHarness,
-    }
-    patchSession((sess) => ({
-      messages: [...sess.messages, userMsg],
-      awaitingAssistantReply: true,
-      status: 'streaming',
-    }))
-
-    // UI model selection → node turn (Claude slug or Codex model id).
+    // Assemble agent prompt like local (quotes, contexts, annotations, capability tags).
     const writeSess = getScopedPerSession(get(), writeTarget ?? { projectPath, sessionId: sid })
+    const annotations = writeSess.browserAnnotations ?? []
+    const annotationImages: ImageAttachment[] = annotations
+      .filter((a) => a.screenshot)
+      .map((a) => ({
+        mimeType: 'image/png',
+        base64: a.screenshot as string,
+        name: `annotation-${a.id}.png`,
+      }))
+    const userAttachments = explicitAttachments ?? writeSess.attachments
+    const attachments: ImageAttachment[] = [...userAttachments, ...annotationImages]
+    const annotationSuffix =
+      annotations.length > 0
+        ? '\n\n' + annotations.map(buildBrowserAnnotationText).join('\n\n')
+        : ''
+    const mentions: Mention[] = explicitMentions ?? writeSess.mentions
+    const rawContent = content.trim()
+    if (!rawContent && attachments.length === 0) return
+
+    const activeContexts = Object.values(writeSess.miniAppContexts).filter(
+      (slot) => slot.mode === 'inject' || slot.checked,
+    )
+    const contextSuffix =
+      activeContexts.length > 0
+        ? '\n\n' +
+          activeContexts
+            .map(
+              (ctx) =>
+                `<app-context app="${ctx.appName}" summary="${ctx.summary}">\n${ctx.content}\n</app-context>`,
+            )
+            .join('\n\n')
+        : ''
+    const userSelections = writeSess.userSelections
+    let quoteSuffix = ''
+    if (userSelections.length === 1) {
+      quoteSuffix = `\n\n<quote>\n${userSelections[0]}\n</quote>`
+    } else if (userSelections.length > 1) {
+      const inner = userSelections
+        .map((s, i) => `<quote${i + 1}>\n${s}\n</quote${i + 1}>`)
+        .join('\n')
+      quoteSuffix = `\n\n<quote>\n${inner}\n</quote>`
+    }
+
+    let agentContent = rawContent
+    let capabilityReminderSuffix = ''
+    const capabilityMentions = mentions.filter(
+      (m) => m.kind === 'collab' || m.kind === 'computer' || m.kind === 'browser',
+    )
+    if (capabilityMentions.length > 0) {
+      const {
+        CAPABILITY_TAG_REGEX,
+        getBuiltinCapability,
+        wrapCapabilityMention,
+        capabilityToolPrefixClaude,
+        capabilityToolPrefixCodex,
+        isBuiltinCapabilityId,
+      } = await import('@superone/shared/capability-prompt-tags')
+      agentContent = agentContent.replace(CAPABILITY_TAG_REGEX, (full, _name, id) => {
+        const capId = String(id).trim()
+        if (!isBuiltinCapabilityId(capId)) return full
+        return wrapCapabilityMention(capId)
+      })
+      const lines: string[] = [
+        'User mentioned built-in capabilities; prefer these MCP tools when relevant:',
+      ]
+      const seen = new Set<string>()
+      for (const m of capabilityMentions) {
+        if (seen.has(m.kind)) continue
+        seen.add(m.kind)
+        const cap = getBuiltinCapability(m.kind)
+        if (!cap) continue
+        const prefix =
+          preferredHarness === 'codex'
+            ? capabilityToolPrefixCodex(cap)
+            : capabilityToolPrefixClaude(cap)
+        lines.push(`- "${cap.displayName}" (${cap.intent}): tools start with "${prefix}"`)
+      }
+      capabilityReminderSuffix = `\n\n<superone-capability-reminder>\n${lines.join('\n')}\n</superone-capability-reminder>`
+    }
+
+    let miniAppReminderSuffix = ''
+    const miniAppMentions = mentions.filter((m) => m.kind === 'miniapp')
+    if (miniAppMentions.length > 0) {
+      const { useMiniAppStore } = await import('../../miniapp')
+      const apps = useMiniAppStore.getState().apps
+      const lines: string[] = [
+        'User mentioned these mini-app(s); their MCP tools are authorized — prefer them when relevant:',
+      ]
+      for (const m of miniAppMentions) {
+        const app = apps.find((a) => a.id === m.value)
+        const name = app?.manifest?.name ?? m.displayName
+        const appId = app?.id ?? m.value
+        lines.push(
+          `- "${name}" (appId="${appId}"): use mcp__superone__miniapp_call with this appId; call miniapp_list for tool names/schemas`,
+        )
+      }
+      miniAppReminderSuffix = `\n\n<superone-miniapp-reminder>\n${lines.join('\n')}\n</superone-miniapp-reminder>`
+      try {
+        await window.miniapp?.authorize?.(
+          miniAppMentions.map((m) => m.value),
+          projectPath,
+          sid,
+        )
+      } catch {
+        /* optional on remote */
+      }
+    }
+
+    // Desktop-app @ → Computer Use runs on desktop host via host-action; grant here.
+    let desktopAppReminderSuffix = ''
+    const desktopAppMentions = mentions.filter((m) => m.kind === 'desktop-app' && m.value)
+    if (desktopAppMentions.length > 0) {
+      const lines: string[] = [
+        'User @-mentioned these installed desktop apps. Computer Use is temporarily authorized for them for this session — do NOT request another grant for these bundle ids.',
+        'Prefer computer_* tools when interacting with them:',
+      ]
+      const seen = new Set<string>()
+      for (const m of desktopAppMentions) {
+        if (!m.value || seen.has(m.value)) continue
+        seen.add(m.value)
+        lines.push(`- "${m.displayName || m.value}" (bundleId: ${m.value})`)
+      }
+      desktopAppReminderSuffix = `\n\n<superone-desktop-app-reminder>\n${lines.join('\n')}\n</superone-desktop-app-reminder>`
+      try {
+        if (window.app?.grantComputerUseSessionApps) {
+          await window.app.grantComputerUseSessionApps(
+            sid,
+            desktopAppMentions
+              .filter((m) => Boolean(m.value))
+              .map((m) => ({
+                app: m.displayName || m.value,
+                bundleId: m.value,
+              })),
+          )
+        }
+      } catch (err) {
+        console.error('[sendMessage] remote computer-use session grant failed:', err)
+        desktopAppReminderSuffix = ''
+      }
+    }
+
+    const finalContent =
+      agentContent +
+      contextSuffix +
+      quoteSuffix +
+      miniAppReminderSuffix +
+      capabilityReminderSuffix +
+      desktopAppReminderSuffix +
+      annotationSuffix
+    if (!finalContent.trim() && attachments.length === 0) return
+
+    const userMessageId = crypto.randomUUID()
+    const attachmentBlock = (att: ImageAttachment): ContentBlock =>
+      att.mimeType === 'application/pdf'
+        ? { type: 'document' as const, name: att.name, id: att.id }
+        : { type: 'image' as const, name: att.name, id: att.id }
+    const userContentBlocks: ContentBlock[] = [
+      ...attachments.map(attachmentBlock),
+      ...(rawContent ? [{ type: 'text' as const, text: rawContent }] : []),
+    ]
+    const userMsg: ChatMessage = {
+      ...createLocalTextUserMessage(userMessageId, rawContent),
+      content: userContentBlocks.length > 0 ? userContentBlocks : [{ type: 'text', text: rawContent }],
+      providerId: preferredHarness,
+      attachments: attachments.length > 0 ? attachments : undefined,
+      userSelections: userSelections.length > 0 ? [...userSelections] : undefined,
+    }
+
     const modelForTurn =
-      preferredHarness === 'claude'
+      preferredHarness === 'claude' || preferredHarness === 'acp' || preferredHarness === 'opencode'
         ? writeSess.selectedModel || undefined
         : preferredHarness === 'codex'
           ? writeSess.selectedCodexModel || undefined
           : undefined
-    // Node-local API credential (not desktop credential store).
+    const effortForTurn =
+      preferredHarness === 'claude' || preferredHarness === 'acp' || preferredHarness === 'opencode'
+        ? writeSess.selectedEffort || undefined
+        : preferredHarness === 'codex'
+          ? writeSess.selectedCodexReasoningEffort || undefined
+          : undefined
     const apiProviderIdForTurn = writeSess.apiProviderId ?? null
+    const imagesForTurn = attachments.map((a) => ({
+      name: a.name,
+      mimeType: a.mimeType,
+      base64: a.base64,
+    }))
+
+    // Always append to messages; node queues concurrent sends (priority=next parity).
+    patchSession((sess) => ({
+      messages: [...sess.messages, userMsg],
+      awaitingAssistantReply: true,
+      status: 'streaming',
+      attachments: [],
+      mentions: [],
+      userSelections: [],
+      browserAnnotations: [],
+      miniAppContexts: {},
+    }))
+
+    const permissionModeForTurn = writeSess.permissionMode || undefined
+    const projectState = getProject(get(), projectPath)
+    const liveSession = getScopedPerSession(get(), writeTarget ?? { projectPath, sessionId: sid })
+    const additionalDirs = mergeProjectAndSessionDirs(projectState, liveSession)
+    // Desktop disabled-skills filter → Claude SDK skills allow-list (node discovers rest).
+    const storeDisabled = get().disabledSkills ?? []
+    const disabledSkillsForTurn =
+      preferredHarness === 'claude' && storeDisabled.length > 0 ? storeDisabled : undefined
+    let enabledSkillsForTurn: string[] | undefined
+    if (disabledSkillsForTurn) {
+      const known = [
+        ...projectState.slashCommands,
+        ...projectState._projectSkills,
+      ]
+        .filter((c) => c.isSkill)
+        .map((c) => c.name)
+      if (known.length > 0) {
+        const disabled = new Set(disabledSkillsForTurn)
+        enabledSkillsForTurn = known.filter((n) => !disabled.has(n))
+      }
+    }
 
     try {
-      // Main maps session.events → AgentEvent and pushes via agent:event while
-      // the turn is open; projectPath routes those events into this session.
+      // Node accepts send while streaming (FIFO queue). Drain stays open across
+      // queued turns until the session is fully idle.
       const finalSnap = (await window.environment.sendSessionMessage(remoteKey.connectionId, {
         sessionId: sid,
-        text,
+        text: finalContent,
         clientMessageId: userMessageId,
         projectPath,
         providerId: preferredHarness,
         cwdHostPath,
         ...(modelForTurn ? { model: modelForTurn } : {}),
+        ...(effortForTurn ? { effort: effortForTurn } : {}),
+        ...(permissionModeForTurn ? { permissionMode: permissionModeForTurn } : {}),
+        ...(additionalDirs.length > 0 ? { additionalDirectories: additionalDirs } : {}),
+        ...(enabledSkillsForTurn && enabledSkillsForTurn.length > 0
+          ? { enabledSkills: enabledSkillsForTurn }
+          : {}),
+        ...(disabledSkillsForTurn ? { disabledSkills: disabledSkillsForTurn } : {}),
+        ...(imagesForTurn.length > 0 ? { images: imagesForTurn } : {}),
         ...(apiProviderIdForTurn ? { apiProviderId: apiProviderIdForTurn } : {}),
       })) as NodeSessionSnapshot | null
       const providerId = nodeHarnessToProviderId(
         finalSnap?.harnessId || finalSnap?.providerId || preferredHarness,
       )
-      // Transcript is recovery only — reconcile keeps streamed rich blocks.
-      const { nodePendingToPermissionRequest } = await import('@/lib/remote-session-messages')
-      const pendingPerm = nodePendingToPermissionRequest(finalSnap?.pendingInteraction)
-      const waitingOnPermission = Boolean(pendingPerm)
+      const { nodePendingInteractionFields } = await import('@/lib/remote-session-messages')
+      const pendingFields = nodePendingInteractionFields(finalSnap?.pendingInteraction)
+      const stillLive =
+        pendingFields.awaitingAssistantReply || finalSnap?.status === 'streaming'
       const snapTitle =
         typeof finalSnap?.title === 'string' && finalSnap.title.trim()
           ? finalSnap.title.trim()
           : null
-      // Prefer node title (auto first-message / rename); fall back to first-user slice.
+      const titleSource = rawContent || finalContent
       const derivedTitle =
         snapTitle ||
-        (text.length > 100 ? `${text.slice(0, 100)}…` : text)
+        (titleSource.length > 100 ? `${titleSource.slice(0, 100)}…` : titleSource)
       patchSession((sess) => ({
         messages: reconcileTranscriptWithLocalMessages(
           sess.messages,
           finalSnap?.transcript,
           providerId,
         ),
-        // Stay "streaming" while a remote permission is pending so the prompt stays live.
-        awaitingAssistantReply: waitingOnPermission || finalSnap?.status === 'streaming',
-        status: waitingOnPermission
-          ? 'streaming'
-          : nodeStatusToAgentStatus(finalSnap?.status),
-        pendingPermissions: pendingPerm ? [pendingPerm] : [],
+        awaitingAssistantReply: stillLive,
+        status: stillLive ? 'streaming' : nodeStatusToAgentStatus(finalSnap?.status),
+        pendingPermissions: pendingFields.pendingPermissions,
+        pendingQuestion: pendingFields.pendingQuestion,
+        pendingPlanApproval: pendingFields.pendingPlanApproval,
         ...(derivedTitle ? { _title: derivedTitle } : {}),
       }))
-      // Sidebar SessionTitleAnimated reads agentTitles — keep it in sync without a list re-fetch.
       if (derivedTitle) {
         set((s) => {
           const project = s.projectSessions[projectPath]

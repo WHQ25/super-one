@@ -13,7 +13,8 @@ export function createSqliteSessionStore(db: SqliteDatabase): SessionStore {
                   COALESCE(is_pinned, 0) AS is_pinned, COALESCE(is_hidden, 0) AS is_hidden,
                   COALESCE(is_user_renamed, 0) AS is_user_renamed,
                   controller_client_session_id, COALESCE(host_action_capability_version, 0) AS host_action_capability_version,
-                  COALESCE(host_action_tool_groups_json, '[]') AS host_action_tool_groups_json
+                  COALESCE(host_action_tool_groups_json, '[]') AS host_action_tool_groups_json,
+                  COALESCE(always_allowed_tools_json, '[]') AS always_allowed_tools_json
            FROM sessions`,
         )
         .all() as Array<{
@@ -35,7 +36,16 @@ export function createSqliteSessionStore(db: SqliteDatabase): SessionStore {
         controller_client_session_id: string | null
         host_action_capability_version: number
         host_action_tool_groups_json: string
+        always_allowed_tools_json: string
       }>
+      const parseStringArray = (raw: string | null | undefined): string[] => {
+        try {
+          const parsed = JSON.parse(raw || '[]') as unknown
+          return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : []
+        } catch {
+          return []
+        }
+      }
       return rows.map((r) => ({
         sessionId: r.session_id,
         projectId: r.project_id,
@@ -56,14 +66,8 @@ export function createSqliteSessionStore(db: SqliteDatabase): SessionStore {
         isUserRenamed: r.is_user_renamed === 1,
         controllerClientSessionId: r.controller_client_session_id ?? null,
         hostActionCapabilityVersion: r.host_action_capability_version ?? 0,
-        hostActionToolGroups: (() => {
-          try {
-            const parsed = JSON.parse(r.host_action_tool_groups_json || '[]') as unknown
-            return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : []
-          } catch {
-            return []
-          }
-        })(),
+        hostActionToolGroups: parseStringArray(r.host_action_tool_groups_json),
+        alwaysAllowedTools: parseStringArray(r.always_allowed_tools_json),
       }))
     },
 
@@ -73,8 +77,9 @@ export function createSqliteSessionStore(db: SqliteDatabase): SessionStore {
          (session_id, project_id, harness_id, provider_id, title, status, transcript_json,
           pending_interaction_json, provider_resume, cwd, created_at, updated_at, is_pinned, is_hidden,
           is_user_renamed,
-          controller_client_session_id, host_action_capability_version, host_action_tool_groups_json)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          controller_client_session_id, host_action_capability_version, host_action_tool_groups_json,
+          always_allowed_tools_json)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(session_id) DO UPDATE SET
            title = excluded.title,
            status = excluded.status,
@@ -88,7 +93,8 @@ export function createSqliteSessionStore(db: SqliteDatabase): SessionStore {
            is_user_renamed = excluded.is_user_renamed,
            controller_client_session_id = excluded.controller_client_session_id,
            host_action_capability_version = excluded.host_action_capability_version,
-           host_action_tool_groups_json = excluded.host_action_tool_groups_json`,
+           host_action_tool_groups_json = excluded.host_action_tool_groups_json,
+           always_allowed_tools_json = excluded.always_allowed_tools_json`,
       ).run(
         session.sessionId,
         session.projectId,
@@ -108,6 +114,7 @@ export function createSqliteSessionStore(db: SqliteDatabase): SessionStore {
         session.controllerClientSessionId,
         session.hostActionCapabilityVersion,
         JSON.stringify(session.hostActionToolGroups ?? []),
+        JSON.stringify(session.alwaysAllowedTools ?? []),
       )
     },
 

@@ -25,11 +25,16 @@ import {
   type NodeSessionRecord,
   type PendingInteraction,
   type PermissionDecision,
+  type PlanDecisionResult,
+  type QuestionAnswers,
   type SessionStatus,
   type SessionTurnEvent,
   type TranscriptBlock,
+  type TurnImageAttachment,
   type TurnRunner,
 } from './types'
+
+// TurnImageAttachment used by TurnOpts / send queue.
 
 /** Match desktop extractClaudeTitle: first user text, stripped, max 100 chars. */
 export function deriveSessionTitleFromUserText(text: string): string | null {
@@ -48,6 +53,8 @@ export type {
   NodeSessionRecord,
   PendingInteraction,
   PermissionDecision,
+  PlanDecisionResult,
+  QuestionAnswers,
   SessionStatus,
   SessionTurnEvent,
   TranscriptBlock,
@@ -71,6 +78,41 @@ interface PermissionWaiter {
   timer: ReturnType<typeof setTimeout>
 }
 
+interface QuestionWaiter {
+  sessionId: string
+  settle: (result: {
+    answers: QuestionAnswers
+    reason: 'responded' | 'timeout' | 'aborted'
+  }) => void
+  timer: ReturnType<typeof setTimeout>
+}
+
+interface PlanWaiter {
+  sessionId: string
+  settle: (result: {
+    decision: 'approve' | 'reject'
+    options?: Record<string, unknown>
+    reason: 'responded' | 'timeout' | 'aborted'
+  }) => void
+  timer: ReturnType<typeof setTimeout>
+}
+
+/** Options for one harness turn (active or queued). */
+interface TurnOpts {
+  text: string
+  requestId?: string
+  model?: string | null
+  effort?: string | null
+  images?: TurnImageAttachment[]
+  permissionMode?: string | null
+  additionalDirectories?: string[]
+  enabledSkills?: string[]
+  disabledSkills?: string[]
+  apiProviderId?: string | null
+}
+
+type TurnQueueItem = TurnOpts
+
 /**
  * Electron-free Session runtime (Phase 3+).
  * Persistence and leases are host ports — SQLite adapters live in apps/cli.
@@ -87,7 +129,7 @@ interface HostActionWaiter {
 }
 
 export class SessionRuntime {
-  private readonly aborts = new Map<string, AbortController>()
+  private readonly aborts = new Map<string, Set<AbortController>>()
   private readonly live = new Map<string, NodeSessionRecord>()
   /** In-flight turn promises (including runner cleanup / process kill). */
   private readonly inFlightTurns = new Set<Promise<void>>()
@@ -98,6 +140,8 @@ export class SessionRuntime {
    * respondPermission resolves these; timeout/abort/close deny them.
    */
   private readonly permissionWaiters = new Map<string, PermissionWaiter>()
+  private readonly questionWaiters = new Map<string, QuestionWaiter>()
+  private readonly planWaiters = new Map<string, PlanWaiter>()
   private readonly permissionTimeoutMs: number
   private readonly hostActions: HostActionStore | null
   /** Live waiters for requestHostAction terminal settlement. */
@@ -105,6 +149,14 @@ export class SessionRuntime {
   /** Long-poll waiters woken on host action change. */
   private readonly hostActionPollWaiters = new Set<() => void>()
   private hostActionExpiryTimer: ReturnType<typeof setInterval> | null = null
+  /**
+   * Per-session FIFO of turns accepted while status is streaming for harnesses
+   * without a live inject channel (e.g. Codex). Claude uses concurrent
+   * beginTurn + long-lived SDK session instead.
+   */
+  private readonly turnQueues = new Map<string, TurnQueueItem[]>()
+  /** In-flight runTurn count per session (for multi-turn live inject). */
+  private readonly activeTurnCounts = new Map<string, number>()
 
   constructor(
     private readonly store: SessionStore,
@@ -169,6 +221,10 @@ export class SessionRuntime {
       }
       if (!Array.isArray(session.hostActionToolGroups)) {
         session.hostActionToolGroups = []
+        changed = true
+      }
+      if (!Array.isArray(session.alwaysAllowedTools)) {
+        session.alwaysAllowedTools = []
         changed = true
       }
       if (session.isUserRenamed !== true && session.isUserRenamed !== false) {
@@ -240,6 +296,7 @@ export class SessionRuntime {
       hostActionToolGroups: controller
         ? (input.hostActionToolGroups ?? [...DEFAULT_HOST_ACTION_TOOL_GROUPS])
         : [],
+      alwaysAllowedTools: [],
     }
     this.live.set(session.sessionId, session)
     this.persist(session)
@@ -344,6 +401,7 @@ export class SessionRuntime {
       controllerClientSessionId: source.controllerClientSessionId,
       hostActionCapabilityVersion: source.hostActionCapabilityVersion,
       hostActionToolGroups: [...(source.hostActionToolGroups ?? [])],
+      alwaysAllowedTools: [...(source.alwaysAllowedTools ?? [])],
     }
     this.live.set(session.sessionId, session)
     this.persist(session)
@@ -389,6 +447,18 @@ export class SessionRuntime {
     requestId?: string
     /** UI-selected model for this turn (optional). */
     model?: string | null
+    /** Reasoning / thinking effort for this turn. */
+    effort?: string | null
+    /** Inline image/document attachments for this turn. */
+    images?: TurnImageAttachment[]
+    /** Claude-style permission mode for this turn. */
+    permissionMode?: string | null
+    /** Extra readable directories. */
+    additionalDirectories?: string[]
+    /** Claude SDK skills allow-list (desktop disabled-skills parity). */
+    enabledSkills?: string[]
+    /** Skills to exclude when enabledSkills is not provided. */
+    disabledSkills?: string[]
     /** Node provider credential id for API keys this turn. */
     apiProviderId?: string | null
   }): Promise<NodeSessionRecord> {
@@ -409,25 +479,60 @@ export class SessionRuntime {
     if (session.closed || session.status === 'ended') {
       throw Object.assign(new Error('session is closed'), { code: 'failed_precondition' })
     }
-    if (session.status === 'streaming') {
-      throw Object.assign(new Error('session already streaming'), { code: 'failed_precondition' })
+
+    const turnOpts: TurnOpts = {
+      text: input.text,
+      requestId: input.requestId,
+      model: input.model,
+      effort: input.effort,
+      images: input.images,
+      permissionMode: input.permissionMode,
+      additionalDirectories: input.additionalDirectories,
+      enabledSkills: input.enabledSkills,
+      disabledSkills: input.disabledSkills,
+      apiProviderId: input.apiProviderId,
     }
 
+    // Always accept the user message into the durable transcript (queue or run).
+    this.appendUserMessage(session, turnOpts)
+
+    if (session.status === 'streaming') {
+      // Claude: long-lived SDK session accepts concurrent sendTurn with
+      // priority=next (desktop MessageBridge parity). Codex and others FIFO.
+      const liveInject = (session.harnessId || 'claude') === 'claude'
+      if (liveInject) {
+        this.beginTurn(session, turnOpts)
+        return this.clone(session)
+      }
+      const q = this.turnQueues.get(session.sessionId) ?? []
+      q.push(turnOpts)
+      this.turnQueues.set(session.sessionId, q)
+      this.events.appendSession({
+        sessionId: session.sessionId,
+        eventType: SESSION_DURABLE_EVENT.statusChanged,
+        payload: { status: 'streaming', queued: true },
+        causationRequestId: input.requestId,
+      })
+      return this.clone(session)
+    }
+
+    this.beginTurn(session, turnOpts)
+    return this.clone(session)
+  }
+
+  private appendUserMessage(session: NodeSessionRecord, opts: TurnOpts): void {
     const userBlock: TranscriptBlock = {
       id: randomUUID(),
       role: 'user',
-      text: input.text,
+      text: opts.text,
       createdAt: Date.now(),
     }
     session.transcript.push(userBlock)
-    session.status = 'streaming'
     session.updatedAt = Date.now()
 
-    // Desktop parity: empty titles become a slice of the first user message until
-    // the agent renames via session_rename / session.rename.
     let autoTitle: string | null = null
     if (!session.title || !session.title.trim()) {
-      autoTitle = deriveSessionTitleFromUserText(input.text)
+      autoTitle = deriveSessionTitleFromUserText(opts.text)
       if (autoTitle) session.title = autoTitle
     }
 
@@ -435,63 +540,78 @@ export class SessionRuntime {
     this.events.appendSession({
       sessionId: session.sessionId,
       eventType: SESSION_DURABLE_EVENT.userMessage,
-      payload: { blockId: userBlock.id, text: input.text },
-      causationRequestId: input.requestId,
+      payload: { blockId: userBlock.id, text: opts.text },
+      causationRequestId: opts.requestId,
     })
     if (autoTitle) {
       this.events.appendSession({
         sessionId: session.sessionId,
         eventType: SESSION_DURABLE_EVENT.renamed,
         payload: { title: autoTitle, source: 'agent' },
-        causationRequestId: input.requestId,
+        causationRequestId: opts.requestId,
       })
     }
-    this.events.appendSession({
-      sessionId: session.sessionId,
-      eventType: SESSION_DURABLE_EVENT.turnStarted,
-      payload: { status: 'streaming' },
-      causationRequestId: input.requestId,
-    })
+  }
 
+  private beginTurn(session: NodeSessionRecord, opts: TurnOpts): void {
+    const sid = session.sessionId
+    const prev = this.activeTurnCounts.get(sid) ?? 0
+    this.activeTurnCounts.set(sid, prev + 1)
+
+    session.status = 'streaming'
+    session.updatedAt = Date.now()
+    this.persist(session)
+    // Only emit turnStarted for the first concurrent turn (avoid spam on inject).
+    if (prev === 0) {
+      this.events.appendSession({
+        sessionId: sid,
+        eventType: SESSION_DURABLE_EVENT.turnStarted,
+        payload: { status: 'streaming' },
+        causationRequestId: opts.requestId,
+      })
+    }
+
+    // Per-turn abort; keep session-level aborts map for interrupt of "current".
     const abort = new AbortController()
-    this.aborts.set(session.sessionId, abort)
-
-    // Fire-and-forget for the RPC path, but track the promise so dispose/stop
-    // can await runner cleanup (e.g. Codex SIGTERM → SIGKILL window).
-    const turnPromise = this.runTurn(
-      session,
-      input.text,
-      abort,
-      input.requestId,
-      input.model,
-      input.apiProviderId,
-    )
+    const aborts = this.aborts.get(sid) ?? new Set<AbortController>()
+    aborts.add(abort)
+    this.aborts.set(sid, aborts)
+    const turnPromise = this.runTurn(session, opts, abort)
     this.inFlightTurns.add(turnPromise)
     void turnPromise.finally(() => {
       this.inFlightTurns.delete(turnPromise)
-      this.aborts.delete(session.sessionId)
+      const n = (this.activeTurnCounts.get(sid) ?? 1) - 1
+      if (n <= 0) this.activeTurnCounts.delete(sid)
+      else this.activeTurnCounts.set(sid, n)
     })
-
-    return this.clone(session)
   }
 
   private async runTurn(
     session: NodeSessionRecord,
-    text: string,
+    opts: TurnOpts,
     abort: AbortController,
-    requestId?: string,
-    model?: string | null,
-    apiProviderId?: string | null,
   ): Promise<void> {
     const assistantId = randomUUID()
     let assistantText = ''
+    const requestId = opts.requestId
+    const permissionMode =
+      typeof opts.permissionMode === 'string' && opts.permissionMode.trim()
+        ? opts.permissionMode.trim()
+        : undefined
     try {
       const result = await this.turnRunner({
         session: this.clone(session),
         messageId: assistantId,
-        text,
-        model: model && model.trim() ? model.trim() : undefined,
-        apiProviderId: apiProviderId && apiProviderId.trim() ? apiProviderId.trim() : undefined,
+        text: opts.text,
+        model: opts.model && opts.model.trim() ? opts.model.trim() : undefined,
+        effort: opts.effort && opts.effort.trim() ? opts.effort.trim() : undefined,
+        images: opts.images && opts.images.length > 0 ? opts.images : undefined,
+        permissionMode,
+        additionalDirectories: opts.additionalDirectories?.filter(Boolean),
+        enabledSkills: opts.enabledSkills?.filter((s) => typeof s === 'string' && s.trim()),
+        disabledSkills: opts.disabledSkills?.filter((s) => typeof s === 'string' && s.trim()),
+        apiProviderId:
+          opts.apiProviderId && opts.apiProviderId.trim() ? opts.apiProviderId.trim() : undefined,
         signal: abort.signal,
         onDelta: (delta) => {
           if (abort.signal.aborted) return
@@ -517,14 +637,30 @@ export class SessionRuntime {
             causationRequestId: requestId,
           })
         },
-        onPermission: (interaction) =>
-          this.waitForPermissionDecision(session, interaction, abort.signal, requestId),
+        onPermission: (interaction) => {
+          // Modes that skip interactive permission prompts (desktop parity).
+          if (
+            permissionMode === 'bypassPermissions' ||
+            permissionMode === 'dontAsk' ||
+            permissionMode === 'acceptEdits'
+          ) {
+            return Promise.resolve('allow' as PermissionDecision)
+          }
+          const tool = interaction.toolName?.trim()
+          if (tool && session.alwaysAllowedTools?.includes(tool)) {
+            return Promise.resolve('allow' as PermissionDecision)
+          }
+          return this.waitForPermissionDecision(session, interaction, abort.signal, requestId)
+        },
+        onQuestion: (interaction) =>
+          this.waitForQuestionDecision(session, interaction, abort.signal, requestId),
+        onPlan: (interaction) =>
+          this.waitForPlanDecision(session, interaction, abort.signal, requestId),
       })
 
       if (session.closed) {
         // close() already tombstoned the session; do not overwrite status.
       } else if (abort.signal.aborted) {
-        // Runner may return successfully after seeing AbortSignal (no throw).
         session.status = 'interrupted'
         this.events.appendSession({
           sessionId: session.sessionId,
@@ -540,7 +676,6 @@ export class SessionRuntime {
           text: assistantText,
           createdAt: Date.now(),
         })
-        session.status = 'idle'
         session.providerResume = result.providerResume ?? session.providerResume
         this.events.appendSession({
           sessionId: session.sessionId,
@@ -548,12 +683,20 @@ export class SessionRuntime {
           payload: { blockId: assistantId, text: assistantText },
           causationRequestId: requestId,
         })
-        this.events.appendSession({
-          sessionId: session.sessionId,
-          eventType: SESSION_DURABLE_EVENT.turnCompleted,
-          payload: { status: 'idle' },
-          causationRequestId: requestId,
-        })
+        // Stay streaming if more concurrent turns or FIFO items remain.
+        const remaining = (this.activeTurnCounts.get(session.sessionId) ?? 1) - 1
+        const fifo = this.turnQueues.get(session.sessionId)?.length ?? 0
+        if (remaining > 0 || fifo > 0) {
+          session.status = 'streaming'
+        } else {
+          session.status = 'idle'
+          this.events.appendSession({
+            sessionId: session.sessionId,
+            eventType: SESSION_DURABLE_EVENT.turnCompleted,
+            payload: { status: 'idle' },
+            causationRequestId: requestId,
+          })
+        }
       }
     } catch (err) {
       if (session.closed) {
@@ -566,24 +709,68 @@ export class SessionRuntime {
           payload: { reason: 'client_interrupt' },
         })
       } else {
-        session.status = 'error'
-        this.events.appendSession({
-          sessionId: session.sessionId,
-          eventType: SESSION_DURABLE_EVENT.turnError,
-          payload: { message: (err as Error).message },
-        })
+        // Only mark error if this is the last active turn.
+        const remaining = (this.activeTurnCounts.get(session.sessionId) ?? 1) - 1
+        if (remaining <= 0) {
+          session.status = 'error'
+          this.events.appendSession({
+            sessionId: session.sessionId,
+            eventType: SESSION_DURABLE_EVENT.turnError,
+            payload: { message: (err as Error).message },
+          })
+        }
       }
     } finally {
-      // Any host action still open when the turn ends cannot be claimed (active-turn
-      // gate) — cancel so requestHostAction waiters settle rather than hang to deadline.
-      if (!session.closed) {
-        this.cancelHostActionsForSession(session.sessionId, 'turn_ended')
+      const sid = session.sessionId
+      // Claude may have multiple injected turns in flight. Cancelling all
+      // session actions when the first one settles would abort tools owned by
+      // the remaining turn. Keep the historical eager cancellation for a
+      // single-turn/FIFO session, but defer shared cleanup until the final
+      // concurrent turn has finished.
+      const remainingBeforeCleanup = (this.activeTurnCounts.get(sid) ?? 1) - 1
+      if (!session.closed && remainingBeforeCleanup <= 0) {
+        this.cancelHostActionsForSession(sid, 'turn_ended')
       }
       if (!session.closed) {
         session.updatedAt = Date.now()
         this.persist(session)
       }
-      this.aborts.delete(session.sessionId)
+
+      // Drain FIFO queue (non-Claude harnesses). Claude live inject uses concurrent beginTurn.
+      const remainingAfter = (this.activeTurnCounts.get(sid) ?? 1) - 1
+      if (
+        !session.closed &&
+        remainingAfter <= 0 &&
+        (session.status === 'idle' || session.status === 'streaming')
+      ) {
+        const q = this.turnQueues.get(sid)
+        const next = q?.shift()
+        if (next) {
+          if (q && q.length === 0) this.turnQueues.delete(sid)
+          // beginTurn will set streaming again
+          this.beginTurn(session, next)
+        } else {
+          this.turnQueues.delete(sid)
+          if (session.status === 'streaming' && remainingAfter <= 0) {
+            // No more work — settle idle if we stayed streaming for injects.
+            session.status = 'idle'
+            this.events.appendSession({
+              sessionId: sid,
+              eventType: SESSION_DURABLE_EVENT.turnCompleted,
+              payload: { status: 'idle' },
+            })
+            this.persist(session)
+          }
+        }
+      } else if (session.closed || session.status === 'interrupted' || session.status === 'error') {
+        this.turnQueues.delete(sid)
+      }
+
+      const activeAborts = this.aborts.get(sid)
+      if (activeAborts) {
+        activeAborts.delete(abort)
+        if (activeAborts.size === 0) this.aborts.delete(sid)
+      }
     }
   }
 
@@ -591,8 +778,8 @@ export class SessionRuntime {
     const session = this.live.get(sessionId)
     if (!session) throw Object.assign(new Error('session not found'), { code: 'not_found' })
     if (session.closed) return
-    const abort = this.aborts.get(sessionId)
-    abort?.abort()
+    const aborts = this.aborts.get(sessionId)
+    for (const abort of aborts ?? []) abort.abort()
     this.aborts.delete(sessionId)
     session.closed = true
     session.status = 'ended'
@@ -605,6 +792,9 @@ export class SessionRuntime {
       eventType: SESSION_DURABLE_EVENT.closed,
       payload: { status: 'ended' },
     })
+    // Long-lived harnesses (ClaudeLiveSession) must drop their SDK process /
+    // host-action MCP when the SuperOne session ends.
+    void Promise.resolve(this.turnRunner.disposeSession?.(sessionId)).catch(() => undefined)
   }
 
   /** Soft-delete: close + remove from registry (disk files untouched). */
@@ -612,6 +802,9 @@ export class SessionRuntime {
     const session = this.live.get(sessionId)
     if (!session) return null
     if (!session.closed) this.close(sessionId)
+    // close() already requested disposeSession; call again so remove after a
+    // previously-closed session still cleans long-lived harness state.
+    void Promise.resolve(this.turnRunner.disposeSession?.(sessionId)).catch(() => undefined)
     this.live.delete(sessionId)
     this.store.delete(sessionId)
     this.events.appendSession({
@@ -681,8 +874,8 @@ export class SessionRuntime {
       generation,
       holderClientId: client.clientSessionId,
     })
-    const abort = this.aborts.get(sessionId)
-    abort?.abort()
+    const aborts = this.aborts.get(sessionId)
+    for (const abort of aborts ?? []) abort.abort()
     // Cancel outstanding host actions so the desktop can abort local work (AbortSignal).
     this.cancelHostActionsForSession(sessionId, 'interrupt')
     if (session.status === 'streaming') {
@@ -791,7 +984,7 @@ export class SessionRuntime {
       // Bind to explicit signal + active turn abort (interrupt / turn end).
       const signals: AbortSignal[] = []
       if (input.signal) signals.push(input.signal)
-      const turnAbort = this.aborts.get(session.sessionId)?.signal
+      const turnAbort = this.aborts.get(session.sessionId)?.values().next().value?.signal
       if (turnAbort && turnAbort !== input.signal) signals.push(turnAbort)
 
       for (const sig of signals) {
@@ -1093,20 +1286,100 @@ export class SessionRuntime {
       generation: input.generation,
       holderClientId: input.client.clientSessionId,
     })
-    if (!session.pendingInteraction || session.pendingInteraction.interactionId !== input.interactionId) {
+    if (
+      !session.pendingInteraction ||
+      session.pendingInteraction.interactionId !== input.interactionId ||
+      (session.pendingInteraction.kind && session.pendingInteraction.kind !== 'permission')
+    ) {
       throw Object.assign(new Error('no matching pending permission'), { code: 'failed_precondition' })
     }
     const waiter = this.permissionWaiters.get(input.interactionId)
     if (!waiter || waiter.sessionId !== input.sessionId) {
       throw Object.assign(new Error('no matching pending permission'), { code: 'failed_precondition' })
     }
-    // allow_always is accepted on the wire; Stage 5-D treats it as allow for the
-    // runner (persistent always-allow rules are a later host concern).
+    // allow_always: allow this turn and remember the tool for the session
+    // (desktop "always allow" parity — session-scoped, not global).
     const decision: PermissionDecision = input.decision === 'deny' ? 'deny' : 'allow'
+    if (input.decision === 'allow_always') {
+      const tool = session.pendingInteraction?.toolName?.trim()
+      if (tool) {
+        const list = session.alwaysAllowedTools ?? []
+        if (!list.includes(tool)) {
+          session.alwaysAllowedTools = [...list, tool]
+          session.updatedAt = Date.now()
+          this.persist(session)
+        }
+      }
+    }
     waiter.settle({
       decision,
       reason: 'responded',
       clientDecision: input.decision,
+    })
+  }
+
+  respondQuestion(input: {
+    sessionId: string
+    interactionId: string
+    answers: QuestionAnswers
+    client: { clientSessionId: string }
+    leaseId: string
+    generation: string
+  }): void {
+    const session = this.live.get(input.sessionId)
+    if (!session) throw Object.assign(new Error('session not found'), { code: 'not_found' })
+    this.leases.assertValid({
+      resource: { environmentId: this.environmentId, sessionId: input.sessionId },
+      leaseId: input.leaseId,
+      generation: input.generation,
+      holderClientId: input.client.clientSessionId,
+    })
+    if (
+      !session.pendingInteraction ||
+      session.pendingInteraction.interactionId !== input.interactionId ||
+      session.pendingInteraction.kind !== 'question'
+    ) {
+      throw Object.assign(new Error('no matching pending question'), { code: 'failed_precondition' })
+    }
+    const waiter = this.questionWaiters.get(input.interactionId)
+    if (!waiter || waiter.sessionId !== input.sessionId) {
+      throw Object.assign(new Error('no matching pending question'), { code: 'failed_precondition' })
+    }
+    waiter.settle({ answers: input.answers, reason: 'responded' })
+  }
+
+  respondPlan(input: {
+    sessionId: string
+    interactionId: string
+    decision: 'approve' | 'reject'
+    options?: Record<string, unknown>
+    client: { clientSessionId: string }
+    leaseId: string
+    generation: string
+  }): void {
+    const session = this.live.get(input.sessionId)
+    if (!session) throw Object.assign(new Error('session not found'), { code: 'not_found' })
+    this.leases.assertValid({
+      resource: { environmentId: this.environmentId, sessionId: input.sessionId },
+      leaseId: input.leaseId,
+      generation: input.generation,
+      holderClientId: input.client.clientSessionId,
+    })
+    if (
+      !session.pendingInteraction ||
+      session.pendingInteraction.interactionId !== input.interactionId ||
+      session.pendingInteraction.kind !== 'plan'
+    ) {
+      throw Object.assign(new Error('no matching pending plan'), { code: 'failed_precondition' })
+    }
+    const waiter = this.planWaiters.get(input.interactionId)
+    if (!waiter || waiter.sessionId !== input.sessionId) {
+      throw Object.assign(new Error('no matching pending plan'), { code: 'failed_precondition' })
+    }
+    waiter.settle({
+      decision: input.decision,
+      options: input.options,
+      reason: 'responded',
     })
   }
 
@@ -1210,12 +1483,197 @@ export class SessionRuntime {
   ): void {
     const pending = session.pendingInteraction
     if (!pending) return
+    if (pending.kind === 'question') {
+      const qw = this.questionWaiters.get(pending.interactionId)
+      if (qw) qw.settle({ answers: {}, reason })
+      else session.pendingInteraction = null
+      return
+    }
+    if (pending.kind === 'plan') {
+      const pw = this.planWaiters.get(pending.interactionId)
+      if (pw) pw.settle({ decision: 'reject', reason })
+      else session.pendingInteraction = null
+      return
+    }
     const waiter = this.permissionWaiters.get(pending.interactionId)
     if (waiter) {
       waiter.settle({ decision: 'deny', reason })
     } else {
       session.pendingInteraction = null
     }
+  }
+
+  private waitForQuestionDecision(
+    session: NodeSessionRecord,
+    interaction: PendingInteraction,
+    signal: AbortSignal,
+    requestId?: string,
+  ): Promise<QuestionAnswers> {
+    if (session.pendingInteraction) {
+      this.rejectPendingPermission(session, 'aborted')
+    }
+    const pending: PendingInteraction = { ...interaction, kind: 'question' }
+    return new Promise<QuestionAnswers>((resolve) => {
+      let settled = false
+      session.pendingInteraction = pending
+      session.updatedAt = Date.now()
+      this.persist(session)
+      this.events.appendSession({
+        sessionId: session.sessionId,
+        eventType: SESSION_DURABLE_EVENT.questionRequested,
+        payload: pending,
+        causationRequestId: requestId,
+      })
+
+      const settle = (result: {
+        answers: QuestionAnswers
+        reason: 'responded' | 'timeout' | 'aborted'
+      }): void => {
+        if (settled) return
+        settled = true
+        const waiter = this.questionWaiters.get(pending.interactionId)
+        if (waiter) {
+          clearTimeout(waiter.timer)
+          this.questionWaiters.delete(pending.interactionId)
+        }
+        if (session.pendingInteraction?.interactionId === pending.interactionId) {
+          session.pendingInteraction = null
+          session.updatedAt = Date.now()
+          this.persist(session)
+        }
+        if (result.reason === 'responded') {
+          this.events.appendSession({
+            sessionId: session.sessionId,
+            eventType: SESSION_DURABLE_EVENT.questionResponded,
+            payload: { interactionId: pending.interactionId, answers: result.answers },
+          })
+        } else if (result.reason === 'timeout') {
+          this.events.appendSession({
+            sessionId: session.sessionId,
+            eventType: SESSION_DURABLE_EVENT.questionTimeout,
+            payload: { interactionId: pending.interactionId },
+          })
+        } else {
+          this.events.appendSession({
+            sessionId: session.sessionId,
+            eventType: SESSION_DURABLE_EVENT.questionAborted,
+            payload: { interactionId: pending.interactionId },
+          })
+        }
+        resolve(result.answers)
+      }
+
+      const timer = setTimeout(() => {
+        settle({ answers: {}, reason: 'timeout' })
+      }, this.permissionTimeoutMs)
+
+      this.questionWaiters.set(pending.interactionId, {
+        sessionId: session.sessionId,
+        settle,
+        timer,
+      })
+
+      if (signal.aborted) {
+        settle({ answers: {}, reason: 'aborted' })
+        return
+      }
+      signal.addEventListener(
+        'abort',
+        () => {
+          settle({ answers: {}, reason: 'aborted' })
+        },
+        { once: true },
+      )
+    })
+  }
+
+  private waitForPlanDecision(
+    session: NodeSessionRecord,
+    interaction: PendingInteraction,
+    signal: AbortSignal,
+    requestId?: string,
+  ): Promise<PlanDecisionResult> {
+    if (session.pendingInteraction) {
+      this.rejectPendingPermission(session, 'aborted')
+    }
+    const pending: PendingInteraction = { ...interaction, kind: 'plan' }
+    return new Promise<PlanDecisionResult>((resolve) => {
+      let settled = false
+      session.pendingInteraction = pending
+      session.updatedAt = Date.now()
+      this.persist(session)
+      this.events.appendSession({
+        sessionId: session.sessionId,
+        eventType: SESSION_DURABLE_EVENT.planRequested,
+        payload: pending,
+        causationRequestId: requestId,
+      })
+
+      const settle = (result: {
+        decision: 'approve' | 'reject'
+        options?: Record<string, unknown>
+        reason: 'responded' | 'timeout' | 'aborted'
+      }): void => {
+        if (settled) return
+        settled = true
+        const waiter = this.planWaiters.get(pending.interactionId)
+        if (waiter) {
+          clearTimeout(waiter.timer)
+          this.planWaiters.delete(pending.interactionId)
+        }
+        if (session.pendingInteraction?.interactionId === pending.interactionId) {
+          session.pendingInteraction = null
+          session.updatedAt = Date.now()
+          this.persist(session)
+        }
+        if (result.reason === 'responded') {
+          this.events.appendSession({
+            sessionId: session.sessionId,
+            eventType: SESSION_DURABLE_EVENT.planResponded,
+            payload: {
+              interactionId: pending.interactionId,
+              decision: result.decision,
+              options: result.options,
+            },
+          })
+        } else if (result.reason === 'timeout') {
+          this.events.appendSession({
+            sessionId: session.sessionId,
+            eventType: SESSION_DURABLE_EVENT.planTimeout,
+            payload: { interactionId: pending.interactionId, decision: 'reject' },
+          })
+        } else {
+          this.events.appendSession({
+            sessionId: session.sessionId,
+            eventType: SESSION_DURABLE_EVENT.planAborted,
+            payload: { interactionId: pending.interactionId, decision: 'reject' },
+          })
+        }
+        resolve({ decision: result.decision, options: result.options })
+      }
+
+      const timer = setTimeout(() => {
+        settle({ decision: 'reject', reason: 'timeout' })
+      }, this.permissionTimeoutMs)
+
+      this.planWaiters.set(pending.interactionId, {
+        sessionId: session.sessionId,
+        settle,
+        timer,
+      })
+
+      if (signal.aborted) {
+        settle({ decision: 'reject', reason: 'aborted' })
+        return
+      }
+      signal.addEventListener(
+        'abort',
+        () => {
+          settle({ decision: 'reject', reason: 'aborted' })
+        },
+        { once: true },
+      )
+    })
   }
 
   /**
@@ -1277,10 +1735,14 @@ export class SessionRuntime {
 
     const deadline = Date.now() + timeoutMs
     // Abort currently tracked controllers; re-abort if any late map entries appear.
-    for (const abort of this.aborts.values()) abort.abort()
+    for (const aborts of this.aborts.values()) {
+      for (const abort of aborts) abort.abort()
+    }
 
     while (this.inFlightTurns.size > 0 && Date.now() < deadline) {
-      for (const abort of this.aborts.values()) abort.abort()
+      for (const aborts of this.aborts.values()) {
+        for (const abort of aborts) abort.abort()
+      }
       const batch = [...this.inFlightTurns]
       const remaining = Math.max(0, deadline - Date.now())
       let settled = false
@@ -1295,6 +1757,8 @@ export class SessionRuntime {
       // (should not happen once disposing=true; belt-and-suspenders).
     }
     this.aborts.clear()
+    // Release long-lived Claude SDK processes after turns have been aborted.
+    await Promise.resolve(this.turnRunner.disposeAll?.()).catch(() => undefined)
   }
 
   private persist(session: NodeSessionRecord): void {
@@ -1316,6 +1780,7 @@ export class SessionRuntime {
       controllerClientSessionId: s.controllerClientSessionId ?? null,
       hostActionCapabilityVersion: s.hostActionCapabilityVersion ?? 0,
       hostActionToolGroups: [...(s.hostActionToolGroups ?? [])],
+      alwaysAllowedTools: [...(s.alwaysAllowedTools ?? [])],
     }
   }
 }
@@ -1325,6 +1790,10 @@ export function createSimulatedTurnRunner(opts?: {
   chunks?: string[]
   delayMs?: number
   requestPermission?: boolean
+  /** When true, parks on onQuestion before streaming. */
+  requestQuestion?: boolean
+  /** When true, parks on onPlan before streaming. */
+  requestPlan?: boolean
   /**
    * When true, emit Stage 5-A structured onEvent tool/status events in addition
    * to onDelta text (for contract tests). Codex production path does not use this.
@@ -1333,7 +1802,7 @@ export function createSimulatedTurnRunner(opts?: {
 }): TurnRunner {
   const chunks = opts?.chunks ?? ['Hello', ' from', ' remote', ' Codex']
   const delayMs = opts?.delayMs ?? 30
-  return async ({ onDelta, onEvent, onPermission, signal }) => {
+  return async ({ onDelta, onEvent, onPermission, onQuestion, onPlan, signal }) => {
     onEvent?.({ kind: 'status', status: 'streaming' })
     if (opts?.requestPermission && onPermission) {
       const decision = await onPermission({
@@ -1345,6 +1814,30 @@ export function createSimulatedTurnRunner(opts?: {
       if (decision === 'deny') {
         onEvent?.({ kind: 'status', status: 'idle', message: 'permission_denied' })
         return { finalText: 'Permission denied.', providerResume: null }
+      }
+    }
+    if (opts?.requestQuestion && onQuestion) {
+      await onQuestion({
+        interactionId: randomUUID(),
+        kind: 'question',
+        toolName: 'AskUserQuestion',
+        input: {
+          questions: [{ question: 'Continue?', header: 'Confirm', options: [{ label: 'Yes' }] }],
+        },
+        createdAt: Date.now(),
+      })
+    }
+    if (opts?.requestPlan && onPlan) {
+      const plan = await onPlan({
+        interactionId: randomUUID(),
+        kind: 'plan',
+        toolName: 'ExitPlanMode',
+        input: { plan: 'Do the work' },
+        createdAt: Date.now(),
+      })
+      if (plan.decision === 'reject') {
+        onEvent?.({ kind: 'status', status: 'idle', message: 'plan_rejected' })
+        return { finalText: 'Plan rejected.', providerResume: null }
       }
     }
     if (opts?.emitStructuredEvents && onEvent) {

@@ -45,6 +45,18 @@ export interface NodeSessionRecord {
   hostActionCapabilityVersion: number
   /** Session-scoped tool groups the controller may execute (e.g. browser.read). */
   hostActionToolGroups: string[]
+  /**
+   * Tool names auto-allowed for the rest of this session after the user
+   * chose allow_always (desktop permission-mode parity, session-scoped).
+   */
+  alwaysAllowedTools: string[]
+}
+
+/** Image/document attachment for a remote turn (base64 payload). */
+export interface TurnImageAttachment {
+  name?: string
+  mimeType: string
+  base64: string
 }
 
 export interface TranscriptBlock {
@@ -65,18 +77,51 @@ export interface PendingInteraction {
 
 export type PermissionDecision = 'allow' | 'deny'
 
-/** Default wall-clock wait for a human permission response (ms). */
+/** Answers map for ask-user-question interactions. */
+export type QuestionAnswers = unknown
+
+export type PlanDecisionResult = {
+  decision: 'approve' | 'reject'
+  options?: Record<string, unknown>
+}
+
+/** Default wall-clock wait for a human permission/question/plan response (ms). */
 export const DEFAULT_PERMISSION_TIMEOUT_MS = 60_000
 
 /**
  * Injectable turn runner for harness adapters (Claude, Codex, ACP, OpenCode).
+ *
+ * Optional lifecycle hooks let long-lived harness processes (ClaudeLiveSession)
+ * release SDK children and host-action MCP when a session ends or the runtime
+ * shuts down. Simple FIFO runners may omit them.
  */
-export type TurnRunner = (input: {
+export type TurnRunner = ((input: {
   session: NodeSessionRecord
   /** Stable assistant message id allocated by SessionRuntime for this turn. */
   messageId?: string
   text: string
   model?: string | null
+  /** Reasoning / thinking effort (Claude effort or Codex reasoningEffort). */
+  effort?: string | null
+  /** Inline images/docs for this turn (host already validated size). */
+  images?: TurnImageAttachment[]
+  /**
+   * Permission mode for this turn (Claude SDK permissionMode / desktop parity).
+   * e.g. default | acceptEdits | bypassPermissions | plan | dontAsk | auto
+   */
+  permissionMode?: string | null
+  /** Extra readable directories (Claude additionalDirectories). */
+  additionalDirectories?: string[]
+  /**
+   * Explicit skill allow-list for Claude SDK `skills` option (desktop parity when
+   * the user has disabled skills). When omitted, SDK discovers via settingSources.
+   */
+  enabledSkills?: string[]
+  /**
+   * Skills to exclude. Node may compute enabledSkills from discovery − disabled
+   * when enabledSkills is not provided.
+   */
+  disabledSkills?: string[]
   /** Node provider credential id for this turn (API key source). */
   apiProviderId?: string | null
   onDelta: (text: string) => void
@@ -84,7 +129,16 @@ export type TurnRunner = (input: {
   /** Lossless harness-native AgentEvent stream. */
   onAgentEvent?: (event: AgentEvent) => void
   onPermission?: (interaction: PendingInteraction) => Promise<PermissionDecision>
+  /** Optional user-question waiter (lease-gated via SessionRuntime.respondQuestion). */
+  onQuestion?: (interaction: PendingInteraction) => Promise<QuestionAnswers>
+  /** Optional plan-approval waiter (lease-gated via SessionRuntime.respondPlan). */
+  onPlan?: (interaction: PendingInteraction) => Promise<PlanDecisionResult>
   signal: AbortSignal
-}) => Promise<{ finalText: string; providerResume?: string | null }>
+}) => Promise<{ finalText: string; providerResume?: string | null }>) & {
+  /** Tear down long-lived harness state for one SuperOne session id. */
+  disposeSession?: (sessionId: string) => void | Promise<void>
+  /** Tear down all long-lived harness state (runtime stop). */
+  disposeAll?: () => void | Promise<void>
+}
 
 export type { SessionTurnEvent }

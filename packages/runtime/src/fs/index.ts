@@ -24,6 +24,34 @@ export {
   type ClaudeSkillInfo,
 } from './skills-discover'
 export {
+  listManagedSkills,
+  getManagedSkill,
+  readManagedSkillFile,
+  deleteManagedSkill,
+  installManagedSkill,
+  getSkillDirs,
+  getClaudeSkillDirs,
+  getCodexSkillDirs,
+  type SkillDir,
+  type SkillsManageOptions,
+} from './skills-manage'
+export {
+  listMcpConfigs,
+  saveMcpConfig,
+  toggleMcpConfig,
+  deleteMcpConfig,
+  listClaudeMcpConfigs,
+  saveClaudeMcpConfig,
+  toggleClaudeMcpConfig,
+  deleteClaudeMcpConfig,
+  listCodexMcpConfigs,
+  saveCodexMcpConfig,
+  toggleCodexMcpConfig,
+  deleteCodexMcpConfig,
+  type McpManageOptions,
+  type McpWriteFields,
+} from './mcp-config'
+export {
   EXCLUDED_DIRS,
   fuzzyMatch,
   searchMentionsInEntries,

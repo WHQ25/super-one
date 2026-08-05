@@ -14,6 +14,8 @@ export {
   type NodeSessionRecord,
   type PendingInteraction,
   type PermissionDecision,
+  type PlanDecisionResult,
+  type QuestionAnswers,
   type SessionStatus,
   type SessionTurnEvent,
   type TranscriptBlock,
@@ -22,6 +24,7 @@ export {
   type SessionEventLog,
   type SessionStore,
 } from './session-runtime'
+export type { TurnImageAttachment } from './types'
 export { EventLog } from './event-log'
 export { createSqliteSessionStore } from './sqlite-session-store'
 export {

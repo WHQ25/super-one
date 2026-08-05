@@ -30,6 +30,7 @@ function session(overrides?: Partial<NodeSessionRecord>): NodeSessionRecord {
     controllerClientSessionId: null,
     hostActionCapabilityVersion: 0,
     hostActionToolGroups: [],
+    alwaysAllowedTools: [],
     ...overrides,
   }
 }

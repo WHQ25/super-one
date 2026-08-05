@@ -25,7 +25,8 @@
   },
   "dependencies": {
     "@superone/shared": "workspace:*",
-    "fzf": "^0.5.2"
+    "fzf": "^0.5.2",
+    "smol-toml": "^1.6.0"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",

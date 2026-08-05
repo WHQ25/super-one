@@ -82,6 +82,14 @@ const ALL_SETTINGS_DOMAINS: SettingsDomainDef[] = [
         toPatch: (v) => ({ experimentalAgentCollaborationEnabled: v as boolean }),
       },
       {
+        key: 'experimentalRemoteNodesEnabled',
+        label: 'Enable Remote Nodes',
+        type: 'boolean',
+        note: 'Show Other Devices and the sidebar host switcher for remote execution environments.',
+        read: (s) => s.experimentalRemoteNodesEnabled,
+        toPatch: (v) => ({ experimentalRemoteNodesEnabled: v as boolean }),
+      },
+      {
         key: 'acpSelectedAgentId',
         label: 'Selected ACP Agent',
         type: 'string',

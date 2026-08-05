@@ -512,6 +512,12 @@ export const zh: Messages = {
         enabled: '已开启 Agent Session 协作',
         disabled: '已关闭 Agent Session 协作',
       },
+      experimentalRemoteNodes: {
+        label: '远程节点',
+        description: '将 SuperOne 连接到远程执行环境（Linux 节点 / lab），在侧边栏切换节点并在该机器上运行 Agent 会话。实验功能——安装、配对与 harness 配置可能变化。',
+        enabled: '已开启远程节点',
+        disabled: '已关闭远程节点',
+      },
       autoExpandFileDiffs: {
         label: '自动展开文件 diff',
         description: '流式输出时自动展开 Edit、Write、FileChange 工具以实时显示 diff。关闭后默认只显示带行数变化的 header，点击后再展开。',

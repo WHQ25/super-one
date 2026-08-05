@@ -14,6 +14,7 @@ function makeSettings(overrides: Partial<AppSettings> = {}): AppSettings {
     analyticsEnabled: true,
     experimentalAgentsEnabled: false,
     experimentalAgentCollaborationEnabled: false,
+    experimentalRemoteNodesEnabled: false,
     crispText: true,
     autoExpandFileDiffs: false,
     detailChatMode: false,
@@ -182,6 +183,7 @@ describe('settings registry — new field groups', () => {
       { key: 'analyticsEnabled' },
       { key: 'experimentalAgentsEnabled', currentValue: true },
       { key: 'experimentalAgentCollaborationEnabled', currentValue: true },
+      { key: 'experimentalRemoteNodesEnabled', currentValue: false },
       { key: 'acpSelectedAgentId', currentValue: 'gemini-cli' },
     ])
   })

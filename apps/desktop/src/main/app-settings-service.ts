@@ -14,6 +14,7 @@ const defaults: AppSettings = {
   analyticsEnabled: true,
   experimentalAgentsEnabled: false,
   experimentalAgentCollaborationEnabled: false,
+  experimentalRemoteNodesEnabled: false,
   crispText: true,
   autoExpandFileDiffs: false,
   detailChatMode: false,
@@ -270,6 +271,9 @@ export function readAppSettings(): AppSettings {
       experimentalAgentCollaborationEnabled: typeof data.experimentalAgentCollaborationEnabled === 'boolean'
         ? data.experimentalAgentCollaborationEnabled
         : defaults.experimentalAgentCollaborationEnabled,
+      experimentalRemoteNodesEnabled: typeof data.experimentalRemoteNodesEnabled === 'boolean'
+        ? data.experimentalRemoteNodesEnabled
+        : defaults.experimentalRemoteNodesEnabled,
       crispText: typeof data.crispText === 'boolean' ? data.crispText : defaults.crispText,
       autoExpandFileDiffs: typeof data.autoExpandFileDiffs === 'boolean' ? data.autoExpandFileDiffs : defaults.autoExpandFileDiffs,
       detailChatMode: typeof data.detailChatMode === 'boolean'
@@ -309,6 +313,7 @@ export function readAppSettings(): AppSettings {
       analyticsEnabled: defaults.analyticsEnabled,
       experimentalAgentsEnabled: defaults.experimentalAgentsEnabled,
       experimentalAgentCollaborationEnabled: defaults.experimentalAgentCollaborationEnabled,
+      experimentalRemoteNodesEnabled: defaults.experimentalRemoteNodesEnabled,
       crispText: defaults.crispText,
       autoExpandFileDiffs: defaults.autoExpandFileDiffs,
       detailChatMode: defaults.detailChatMode,
@@ -350,6 +355,8 @@ export function saveAppSettings(patch: AppSettingsPatch): AppSettings {
       ?? current.experimentalAgentsEnabled,
     experimentalAgentCollaborationEnabled: patch.experimentalAgentCollaborationEnabled
       ?? current.experimentalAgentCollaborationEnabled,
+    experimentalRemoteNodesEnabled: patch.experimentalRemoteNodesEnabled
+      ?? current.experimentalRemoteNodesEnabled,
     crispText: patch.crispText ?? current.crispText,
     autoExpandFileDiffs: patch.autoExpandFileDiffs ?? current.autoExpandFileDiffs,
     detailChatMode: patch.detailChatMode ?? current.detailChatMode,

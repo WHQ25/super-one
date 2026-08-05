@@ -2987,6 +2987,11 @@ export interface AppSettings {
   analyticsEnabled: boolean
   experimentalAgentsEnabled: boolean
   experimentalAgentCollaborationEnabled: boolean
+  /**
+   * Opt-in remote execution environments (node / Other Devices + sidebar host
+   * switcher). Default off — mobile remote-control of this host stays available.
+   */
+  experimentalRemoteNodesEnabled: boolean
   crispText: boolean
   /**
    * When true, Edit / Write / FileChange tool blocks auto-expand to show the
@@ -3058,6 +3063,7 @@ export interface AppSettingsPatch {
   analyticsEnabled?: boolean
   experimentalAgentsEnabled?: boolean
   experimentalAgentCollaborationEnabled?: boolean
+  experimentalRemoteNodesEnabled?: boolean
   crispText?: boolean
   autoExpandFileDiffs?: boolean
   detailChatMode?: boolean

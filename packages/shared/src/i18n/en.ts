@@ -467,6 +467,12 @@ export type Messages = {
         enabled: string
         disabled: string
       }
+      experimentalRemoteNodes: {
+        label: string
+        description: string
+        enabled: string
+        disabled: string
+      }
       autoExpandFileDiffs: {
         label: string
         description: string
@@ -2727,6 +2733,12 @@ export const en: Messages = {
         description: 'Allow agents to request user-approved child sessions and communicate through a persistent mailbox. This feature is experimental.',
         enabled: 'Agent session collaboration enabled',
         disabled: 'Agent session collaboration disabled',
+      },
+      experimentalRemoteNodes: {
+        label: 'Remote Nodes',
+        description: 'Connect SuperOne to remote execution environments (Linux nodes / labs), pick them in the sidebar, and run agent sessions on that machine. Experimental — install, pairing, and harness setup may change.',
+        enabled: 'Remote nodes enabled',
+        disabled: 'Remote nodes disabled',
       },
       autoExpandFileDiffs: {
         label: 'Auto-Expand File Diffs',

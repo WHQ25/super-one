@@ -155,6 +155,9 @@ interface AppState {
   setExperimentalAgentsEnabled: (enabled: boolean) => Promise<void>
   experimentalAgentCollaborationEnabled: boolean
   setExperimentalAgentCollaborationEnabled: (enabled: boolean) => Promise<void>
+  /** Remote execution environments (Other Devices + sidebar host switcher). */
+  experimentalRemoteNodesEnabled: boolean
+  setExperimentalRemoteNodesEnabled: (enabled: boolean) => Promise<void>
 
   // Terminal display settings
   terminalLightPalette: string | null
@@ -334,7 +337,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   selectedHostConnectionId: 'local',
   isSwitchingHostProject: false,
   setSelectedHostConnectionId: (connectionId) => {
-    const next = connectionId || 'local'
+    // Remote hosts require the experimental remote-nodes flag.
+    const next =
+      connectionId && connectionId !== 'local' && !get().experimentalRemoteNodesEnabled
+        ? 'local'
+        : connectionId || 'local'
     const prev = get().selectedHostConnectionId
     if (prev === next && (get().currentFolder || get().isSwitchingHostProject)) return
 
@@ -749,6 +756,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   tokenOverrides: { claude: {}, codex: {}, acp: {}, opencode: {} },
   experimentalAgentsEnabled: false,
   experimentalAgentCollaborationEnabled: false,
+  experimentalRemoteNodesEnabled: false,
   terminalLightPalette: null,
   terminalDarkPalette: null,
   terminalFontSize: 14,
@@ -776,6 +784,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         },
         experimentalAgentsEnabled: settings.experimentalAgentsEnabled,
         experimentalAgentCollaborationEnabled: settings.experimentalAgentCollaborationEnabled,
+        experimentalRemoteNodesEnabled: settings.experimentalRemoteNodesEnabled ?? false,
         terminalLightPalette: settings.terminalLightPalette,
         terminalDarkPalette: settings.terminalDarkPalette,
         terminalFontSize: settings.terminalFontSize,
@@ -808,6 +817,21 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ experimentalAgentCollaborationEnabled: result.experimentalAgentCollaborationEnabled })
     } catch (err) {
       console.error('[agent-collaboration] persist enabled failed:', err)
+      throw err
+    }
+  },
+
+  setExperimentalRemoteNodesEnabled: async (enabled) => {
+    set({ experimentalRemoteNodesEnabled: enabled })
+    // Turning the experiment off must not leave the UI on a remote host.
+    if (!enabled && useAppStore.getState().selectedHostConnectionId !== 'local') {
+      useAppStore.getState().setSelectedHostConnectionId('local')
+    }
+    try {
+      const result = await window.app.saveAppSettings({ experimentalRemoteNodesEnabled: enabled })
+      set({ experimentalRemoteNodesEnabled: result.experimentalRemoteNodesEnabled })
+    } catch (err) {
+      console.error('[remote-nodes] persist enabled failed:', err)
       throw err
     }
   },
@@ -962,6 +986,7 @@ if (typeof window !== 'undefined') {
       },
       experimentalAgentsEnabled: settings.experimentalAgentsEnabled,
       experimentalAgentCollaborationEnabled: settings.experimentalAgentCollaborationEnabled,
+      experimentalRemoteNodesEnabled: settings.experimentalRemoteNodesEnabled ?? false,
       terminalLightPalette: settings.terminalLightPalette,
       terminalDarkPalette: settings.terminalDarkPalette,
       terminalFontSize: settings.terminalFontSize,
@@ -971,6 +996,12 @@ if (typeof window !== 'undefined') {
       autoExpandFileDiffs: settings.autoExpandFileDiffs,
       detailChatMode: settings.detailChatMode,
     })
+    if (
+      settings.experimentalRemoteNodesEnabled === false
+      && useAppStore.getState().selectedHostConnectionId !== 'local'
+    ) {
+      useAppStore.getState().setSelectedHostConnectionId('local')
+    }
   })
 }
 

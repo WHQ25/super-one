@@ -29,11 +29,22 @@ type RemoteSettingsTab = 'this-device' | 'other-devices'
 export function RemotePage() {
   const { t } = useTranslation()
   const platform = typeof window !== 'undefined' ? window.app.platform : 'unknown'
+  const experimentalRemoteNodesEnabled = useAppStore((s) => s.experimentalRemoteNodesEnabled)
   const thisDeviceLabel =
     platform === 'darwin'
       ? t('settings.remote.tabs.thisMac')
       : t('settings.remote.tabs.thisComputer')
   const [tab, setTab] = useState<RemoteSettingsTab>('this-device')
+
+  // Other Devices (remote node environments) is experimental — force this-host tab when off.
+  const activeTab: RemoteSettingsTab =
+    experimentalRemoteNodesEnabled && tab === 'other-devices' ? 'other-devices' : 'this-device'
+
+  useEffect(() => {
+    if (!experimentalRemoteNodesEnabled && tab === 'other-devices') {
+      setTab('this-device')
+    }
+  }, [experimentalRemoteNodesEnabled, tab])
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
@@ -48,28 +59,30 @@ export function RemotePage() {
           onClick={() => setTab('this-device')}
           className={cn(
             'text-sm transition-colors',
-            tab === 'this-device'
+            activeTab === 'this-device'
               ? 'font-medium text-foreground'
               : 'text-muted-foreground hover:text-foreground',
           )}
         >
           {thisDeviceLabel}
         </button>
-        <button
-          type="button"
-          onClick={() => setTab('other-devices')}
-          className={cn(
-            'text-sm transition-colors',
-            tab === 'other-devices'
-              ? 'font-medium text-foreground'
-              : 'text-muted-foreground hover:text-foreground',
-          )}
-        >
-          {t('settings.remote.tabs.otherDevices')}
-        </button>
+        {experimentalRemoteNodesEnabled ? (
+          <button
+            type="button"
+            onClick={() => setTab('other-devices')}
+            className={cn(
+              'text-sm transition-colors',
+              activeTab === 'other-devices'
+                ? 'font-medium text-foreground'
+                : 'text-muted-foreground hover:text-foreground',
+            )}
+          >
+            {t('settings.remote.tabs.otherDevices')}
+          </button>
+        ) : null}
       </div>
 
-      {tab === 'this-device' ? <ThisDevicePanel /> : <EnvironmentsPage />}
+      {activeTab === 'this-device' ? <ThisDevicePanel /> : <EnvironmentsPage />}
     </div>
   )
 }

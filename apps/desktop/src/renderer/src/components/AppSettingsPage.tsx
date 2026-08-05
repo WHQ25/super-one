@@ -49,6 +49,8 @@ export function AppSettingsPage() {
   const setExperimentalAgentsEnabled = useAppStore((s) => s.setExperimentalAgentsEnabled)
   const experimentalAgentCollaborationEnabled = useAppStore((s) => s.experimentalAgentCollaborationEnabled)
   const setExperimentalAgentCollaborationEnabled = useAppStore((s) => s.setExperimentalAgentCollaborationEnabled)
+  const experimentalRemoteNodesEnabled = useAppStore((s) => s.experimentalRemoteNodesEnabled)
+  const setExperimentalRemoteNodesEnabled = useAppStore((s) => s.setExperimentalRemoteNodesEnabled)
 
   useEffect(() => {
     let mounted = true
@@ -82,6 +84,13 @@ export function AppSettingsPage() {
     toast.success(t(enabled
       ? 'settings.general.experimentalAgentCollaboration.enabled'
       : 'settings.general.experimentalAgentCollaboration.disabled'))
+  }
+
+  async function handleRemoteNodesToggle(enabled: boolean) {
+    await setExperimentalRemoteNodesEnabled(enabled)
+    toast.success(t(enabled
+      ? 'settings.general.experimentalRemoteNodes.enabled'
+      : 'settings.general.experimentalRemoteNodes.disabled'))
   }
 
   const effectiveChannel: UpdateChannel = updateChannel ?? channelFromVersion(appVersion)
@@ -250,6 +259,19 @@ export function AppSettingsPage() {
             <Switch
               checked={experimentalAgentCollaborationEnabled}
               onCheckedChange={(v) => void handleAgentCollaborationToggle(v)}
+              disabled={loading}
+            />
+          </div>
+          <div className="flex items-center justify-between gap-4 border-t border-border p-4">
+            <div className="min-w-0">
+              <p className="text-sm font-medium">{t('settings.general.experimentalRemoteNodes.label')}</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {t('settings.general.experimentalRemoteNodes.description')}
+              </p>
+            </div>
+            <Switch
+              checked={experimentalRemoteNodesEnabled}
+              onCheckedChange={(v) => void handleRemoteNodesToggle(v)}
               disabled={loading}
             />
           </div>

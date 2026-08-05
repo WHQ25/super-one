@@ -74,6 +74,7 @@ export const AppSidebar = memo(function AppSidebar() {
   const currentFolder = useAppStore((s) => s.currentFolder)
   const recentFolders = useAppStore((s) => s.recentFolders)
   const selectedHostConnectionId = useAppStore((s) => s.selectedHostConnectionId)
+  const experimentalRemoteNodesEnabled = useAppStore((s) => s.experimentalRemoteNodesEnabled)
   const isFullscreen = useFullscreen()
   const isMac = window.app.platform === 'darwin'
   const localHostLabel = isMac ? t('sidebar.thisMac') : t('sidebar.thisPc')
@@ -139,7 +140,12 @@ export const AppSidebar = memo(function AppSidebar() {
   const folderSessionsRef = useRef(folderSessions)
 
   // Environments for the host switcher (local + paired remotes).
+  // Skip listing remotes when the experiment is off.
   useEffect(() => {
+    if (!experimentalRemoteNodesEnabled) {
+      setHostItems([])
+      return
+    }
     let cancelled = false
     const refresh = () => {
       void window.environment.listItems().then((items) => {
@@ -154,7 +160,14 @@ export const AppSidebar = memo(function AppSidebar() {
       cancelled = true
       unsub()
     }
-  }, [])
+  }, [experimentalRemoteNodesEnabled])
+
+  // Force local host when the experiment is disabled.
+  useEffect(() => {
+    if (!experimentalRemoteNodesEnabled && selectedHostConnectionId !== 'local') {
+      setSelectedHostConnectionId('local')
+    }
+  }, [experimentalRemoteNodesEnabled, selectedHostConnectionId, setSelectedHostConnectionId])
 
   // Load projects for the selected host. Local uses recentFolders; remote auto-connects then project.list.
   useEffect(() => {
@@ -555,9 +568,15 @@ export const AppSidebar = memo(function AppSidebar() {
   }, [sourceFolders, sortMode, frozenRecentOrder, selectedHostConnectionId])
 
   const remoteHosts = useMemo(
-    () => hostItems.filter((h) => h.kind === 'remote'),
-    [hostItems],
+    () =>
+      experimentalRemoteNodesEnabled
+        ? hostItems.filter((h) => h.kind === 'remote')
+        : [],
+    [hostItems, experimentalRemoteNodesEnabled],
   )
+
+  // Host switcher chrome is part of the remote-nodes experiment (even with zero remotes).
+  const showHostSwitcher = experimentalRemoteNodesEnabled
 
   const selectedHostLabel = useMemo(() => {
     if (selectedHostConnectionId === 'local') return localHostLabel
@@ -754,37 +773,43 @@ export const AppSidebar = memo(function AppSidebar() {
       )}
 
       <div className={cn('flex min-h-0 flex-1 flex-col', sidebarTab !== 'sessions' && 'hidden')}>
-      {/* Host switcher (replaces static "Projects" label) */}
+      {/* Host switcher — remote hosts only when experimentalRemoteNodesEnabled */}
       <div className="flex items-center justify-between pl-3 pr-3 pt-1.5 pb-0.5">
         <div className="min-w-0 max-w-[70%]">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                type="button"
-                className="flex min-w-0 items-center gap-1 rounded-md px-1 py-0.5 text-sm font-medium text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
-              >
-                <span className="truncate">{selectedHostLabel}</span>
-                <ChevronDown className="size-3.5 shrink-0 opacity-70" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-48">
-              <DropdownMenuItem
-                className="text-xs"
-                onClick={() => setSelectedHostConnectionId('local')}
-              >
-                {localHostLabel}
-              </DropdownMenuItem>
-              {remoteHosts.map((host) => (
-                <DropdownMenuItem
-                  key={host.connectionId}
-                  className="text-xs"
-                  onClick={() => setSelectedHostConnectionId(host.connectionId)}
+          {showHostSwitcher ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className="flex min-w-0 items-center gap-1 rounded-md px-1 py-0.5 text-sm font-medium text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
                 >
-                  <span className="truncate">{host.label}</span>
+                  <span className="truncate">{selectedHostLabel}</span>
+                  <ChevronDown className="size-3.5 shrink-0 opacity-70" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-48">
+                <DropdownMenuItem
+                  className="text-xs"
+                  onClick={() => setSelectedHostConnectionId('local')}
+                >
+                  {localHostLabel}
                 </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
+                {remoteHosts.map((host) => (
+                  <DropdownMenuItem
+                    key={host.connectionId}
+                    className="text-xs"
+                    onClick={() => setSelectedHostConnectionId(host.connectionId)}
+                  >
+                    <span className="truncate">{host.label}</span>
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : (
+            <span className="truncate px-1 py-0.5 text-sm font-medium text-sidebar-foreground/70">
+              {t('sidebar.projects')}
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-0.5">
           <IconButton

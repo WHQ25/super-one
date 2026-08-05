@@ -23,7 +23,7 @@
 import { existsSync } from 'node:fs'
 import type { Options } from '@anthropic-ai/claude-agent-sdk'
 import {
-  runClaudeSdkTurn,
+  ClaudeLiveSession,
   resolveSdkClaudeBinary,
   type ClaudeQueryFn,
 } from '@superone/claude'
@@ -31,6 +31,8 @@ import { createSimulatedCodexRunner, type TurnRunner } from '@superone/runtime/s
 import type { HarnessManager } from './harness-manager'
 import type { ProviderStore } from '../provider/provider-store'
 import { buildHarnessEnv, resolveHarnessService } from '../provider/resolve-service'
+import { prepareTurnPrompt } from './turn-attachments'
+import { discoverClaudeSkillsAndCommands } from '@superone/runtime/fs'
 
 export const CLAUDE_SESSION_RESUME_PREFIX = 'claude-session:'
 
@@ -48,7 +50,9 @@ export interface NodeClaudeRunnerOptions {
   providers?: ProviderStore
   /**
    * Host Action MCP for this session.
-   * Prefer in-process SDK MCP (type: 'sdk'); dispose after the turn.
+   * Prefer in-process SDK MCP (type: 'sdk'). Bound to the long-lived
+   * ClaudeLiveSession — dispose only when the live process is torn down
+   * (error rebuild, cwd change), not after every turn.
    */
   createHostActionClaudeMcp?: (sessionId: string) => {
     mcpServers: NonNullable<Options['mcpServers']>
@@ -109,13 +113,62 @@ export function formatClaudeSessionResume(sessionId: string | null | undefined):
   return `${CLAUDE_SESSION_RESUME_PREFIX}${sessionId.trim()}`
 }
 
+/**
+ * Desktop parity: when the user disables skills, Claude gets an explicit allow-list.
+ * Prefer `enabledSkills` from the client; otherwise discover on the node cwd and
+ * subtract `disabledSkills`.
+ */
+export function resolveEnabledSkills(
+  cwd: string,
+  enabledSkills?: string[] | null,
+  disabledSkills?: string[] | null,
+): string[] | undefined {
+  if (enabledSkills && enabledSkills.length > 0) {
+    return enabledSkills.map((s) => s.trim()).filter(Boolean)
+  }
+  if (!disabledSkills || disabledSkills.length === 0) return undefined
+  const disabled = new Set(disabledSkills.map((s) => s.trim()).filter(Boolean))
+  try {
+    const { skills } = discoverClaudeSkillsAndCommands(cwd)
+    const all = skills.map((s) => s.name).filter(Boolean)
+    return all.filter((n) => !disabled.has(n))
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Production Claude turn runner with **long-lived SDK sessions** (desktop parity).
+ *
+ * First turn opens `ClaudeLiveSession` (MessageBridge + continuous query).
+ * Concurrent sends inject with `priority: 'next'` into the same process instead
+ * of spawning a new Agent SDK subprocess per message.
+ */
 export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnRunner {
   const simulatedClaude = createSimulatedCodexRunner({
     delayMs: 15,
     chunks: ['[claude] ', 'done'],
   })
 
-  return async (input) => {
+  /** SuperOne sessionId → long-lived Claude process. */
+  const lives = new Map<
+    string,
+    {
+      live: ClaudeLiveSession
+      hostActionDispose: (() => Promise<void>) | null
+      cwd: string
+    }
+  >()
+
+  const disposeEntry = async (sessionKey: string): Promise<void> => {
+    const entry = lives.get(sessionKey)
+    if (!entry) return
+    lives.delete(sessionKey)
+    await entry.live.dispose().catch(() => undefined)
+    await entry.hostActionDispose?.().catch(() => undefined)
+  }
+
+  const runner: TurnRunner = async (input) => {
     const harnessId = input.session.harnessId || 'claude'
     if (harnessId !== 'claude') {
       throw new Error(
@@ -158,24 +211,65 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
     }
 
     const priorSession = parseClaudeSessionResume(input.session.providerResume)
+    const sessionKey = input.session.sessionId
 
-    // Host Action channel: in-process SDK MCP → requestHostAction → desktop.
-    const hostActionMcp =
-      opts.createHostActionClaudeMcp?.(input.session.sessionId) ?? null
+    let entry = lives.get(sessionKey)
+    // Restart live session if cwd changed (worktree switch).
+    if (entry && entry.cwd !== cwd) {
+      await entry.live.dispose().catch(() => undefined)
+      await entry.hostActionDispose?.().catch(() => undefined)
+      lives.delete(sessionKey)
+      entry = undefined
+    }
 
-    try {
-      const result = await runClaudeSdkTurn({
-        binaryPath: binary,
-        prompt: input.text,
+    if (!entry) {
+      const hostActionMcp =
+        opts.createHostActionClaudeMcp?.(input.session.sessionId) ?? null
+      const live = ClaudeLiveSession.open({
         cwd,
+        binaryPath: binary,
         sessionId: priorSession,
         model: input.model && input.model.trim() ? input.model.trim() : undefined,
+        effort: input.effort && input.effort.trim() ? input.effort.trim() : undefined,
+        permissionMode:
+          input.permissionMode && input.permissionMode.trim()
+            ? input.permissionMode.trim()
+            : undefined,
+        additionalDirectories: input.additionalDirectories?.filter(Boolean),
+        enabledSkills: resolveEnabledSkills(cwd, input.enabledSkills, input.disabledSkills),
         env: authEnv,
         queryFn: opts.queryFn,
+        options: hostActionMcp
+          ? {
+              mcpServers: hostActionMcp.mcpServers,
+              // The host-action server is the explicitly authorized MCP
+              // surface for node turns; do not merge project .mcp.json.
+              strictMcpConfig: true,
+            }
+          : undefined,
+      })
+      entry = {
+        live,
+        hostActionDispose: hostActionMcp ? () => hostActionMcp.dispose() : null,
+        cwd,
+      }
+      lives.set(sessionKey, entry)
+    }
+
+    const prepared = prepareTurnPrompt(input.text, cwd, input.images)
+    const content =
+      prepared.kind === 'text' ? prepared.text : prepared.content
+
+    try {
+      const result = await entry.live.sendTurn({
+        content,
         messageId: input.messageId,
-        onAgentEvent: input.onAgentEvent,
+        clientMessageId: input.messageId,
+        // If live is already busy, ClaudeLiveSession queues with priority next.
+        priorityNext: true,
         onDelta: input.onDelta,
         onEvent: input.onEvent,
+        onAgentEvent: input.onAgentEvent,
         onPermission: input.onPermission
           ? async (req) => {
               const decision = await input.onPermission!({
@@ -189,22 +283,50 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
               return decision
             }
           : undefined,
-        signal: input.signal,
-        options: hostActionMcp
-          ? {
-              mcpServers: hostActionMcp.mcpServers,
-              // Prefer the host-action tool surface over project .mcp.json for this slice.
-              strictMcpConfig: true,
-            }
+        onQuestion: input.onQuestion
+          ? async (req) =>
+              input.onQuestion!({
+                interactionId: req.interactionId,
+                kind: 'question',
+                toolName: req.toolName,
+                toolUseId: req.toolUseId,
+                input: req.input,
+                createdAt: Date.now(),
+              })
           : undefined,
+        onPlan: input.onPlan
+          ? async (req) =>
+              input.onPlan!({
+                interactionId: req.interactionId,
+                kind: 'plan',
+                toolName: req.toolName,
+                toolUseId: req.toolUseId,
+                input: req.input,
+                createdAt: Date.now(),
+              })
+          : undefined,
+        signal: input.signal,
       })
 
       return {
         finalText: result.finalText,
         providerResume: formatClaudeSessionResume(result.sessionId),
       }
-    } finally {
-      await hostActionMcp?.dispose().catch(() => undefined)
+    } catch (err) {
+      // Drop broken live session so the next turn reopens cleanly.
+      await disposeEntry(sessionKey)
+      throw err
     }
   }
+
+  runner.disposeSession = async (sessionId: string) => {
+    await disposeEntry(sessionId)
+  }
+
+  runner.disposeAll = async () => {
+    const keys = [...lives.keys()]
+    await Promise.all(keys.map((id) => disposeEntry(id)))
+  }
+
+  return runner
 }

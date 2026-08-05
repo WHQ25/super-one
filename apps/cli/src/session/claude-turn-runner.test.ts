@@ -12,7 +12,7 @@ import { mkdtempSync, writeFileSync, chmodSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import type { ClaudeQueryFn } from '@superone/claude'
-import type { Options } from '@anthropic-ai/claude-agent-sdk'
+import type { Options, SDKMessage, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import type { AgentEvent } from '@superone/shared/agent-types'
 
 function session(over: Partial<NodeSessionRecord> = {}): NodeSessionRecord {
@@ -35,17 +35,49 @@ function session(over: Partial<NodeSessionRecord> = {}): NodeSessionRecord {
     controllerClientSessionId: null,
     hostActionCapabilityVersion: 0,
     hostActionToolGroups: [],
+    alwaysAllowedTools: [],
     ...over,
   }
 }
 
-/** Loose mock stream — SDK message shapes are not fully constructed in tests. */
-async function* messages(
-  items: Array<Record<string, unknown>>,
-): AsyncGenerator<Record<string, unknown>> {
-  for (const item of items) {
-    yield item
-  }
+/** Real-SDK-shaped mock: wait for each bridge user message, then emit. */
+function bridgeQuery(
+  respond: (user: SDKUserMessage, turnIndex: number) => Array<Record<string, unknown>>,
+): ClaudeQueryFn {
+  return (({ prompt }) =>
+    (async function* () {
+      let i = 0
+      for await (const user of prompt as AsyncIterable<SDKUserMessage>) {
+        for (const item of respond(user, i++)) {
+          yield item as SDKMessage
+        }
+      }
+    })()) as ClaudeQueryFn
+}
+
+function textOf(user: SDKUserMessage): string {
+  const c = user.message?.content
+  return typeof c === 'string' ? c : JSON.stringify(c)
+}
+
+function success(sessionId: string, text: string): Array<Record<string, unknown>> {
+  return [
+    {
+      type: 'stream_event',
+      session_id: sessionId,
+      event: {
+        type: 'content_block_delta',
+        delta: { type: 'text_delta', text },
+      },
+    },
+    {
+      type: 'result',
+      subtype: 'success',
+      is_error: false,
+      session_id: sessionId,
+      result: text,
+    },
+  ]
 }
 
 describe('claude resume helpers', () => {
@@ -101,13 +133,10 @@ describe('createNodeClaudeTurnRunner', () => {
   })
 
   it('uses Agent SDK bundled binary when no explicit path (not print-mode PATH claude)', async () => {
-    // On developer machines the SDK optional package is present; resolution
-    // must not require SUPERONE_CLAUDE_BINARY.
     const prev = process.env.SUPERONE_CLAUDE_BINARY
     delete process.env.SUPERONE_CLAUDE_BINARY
     try {
       const path = resolveClaudeBinaryPath({ binaryPath: null })
-      // Either SDK optional package or null in stripped CI — both acceptable.
       if (path) {
         expect(path).toMatch(/claude-agent-sdk/)
         expect(isClaudeBinaryOverrideRunnable()).toBe(true)
@@ -124,25 +153,7 @@ describe('createNodeClaudeTurnRunner', () => {
     writeFileSync(bin, '#!/bin/sh\n')
     chmodSync(bin, 0o755)
 
-    const queryFn = vi.fn(() =>
-      messages([
-        {
-          type: 'stream_event',
-          session_id: 'sess-99',
-          event: {
-            type: 'content_block_delta',
-            delta: { type: 'text_delta', text: 'ok' },
-          },
-        },
-        {
-          type: 'result',
-          subtype: 'success',
-          is_error: false,
-          session_id: 'sess-99',
-          result: 'ok',
-        },
-      ]),
-    ) as unknown as ClaudeQueryFn
+    const queryFn = vi.fn(bridgeQuery(() => success('sess-99', 'ok')))
 
     const runner = createNodeClaudeTurnRunner({
       binaryPath: bin,
@@ -163,7 +174,6 @@ describe('createNodeClaudeTurnRunner', () => {
 
     expect(result.finalText).toBe('ok')
     expect(result.providerResume).toBe('claude-session:sess-99')
-    // Prefer onEvent — do not dual-path text via onDelta.
     expect(deltas).toEqual([])
     expect(events.some((e) => e.kind === 'text' && e.delta === 'ok')).toBe(true)
 
@@ -175,15 +185,20 @@ describe('createNodeClaudeTurnRunner', () => {
     const bin = join(dir, 'claude')
     writeFileSync(bin, '#!/bin/sh\n')
     chmodSync(bin, 0o755)
-    const queryFn = vi.fn(() => messages([
-      {
-        type: 'stream_event',
-        event: { type: 'content_block_delta', delta: { type: 'thinking_delta', thinking: 'reason' } },
-      },
-      { type: 'system', subtype: 'task_started', task_id: 'bg1', description: 'work' },
-      { type: 'prompt_suggestion', suggestion: 'next' },
-      { type: 'result', subtype: 'success', session_id: 'sess-rich', result: 'done' },
-    ])) as unknown as ClaudeQueryFn
+    const queryFn = vi.fn(
+      bridgeQuery(() => [
+        {
+          type: 'stream_event',
+          event: {
+            type: 'content_block_delta',
+            delta: { type: 'thinking_delta', thinking: 'reason' },
+          },
+        },
+        { type: 'system', subtype: 'task_started', task_id: 'bg1', description: 'work' },
+        { type: 'prompt_suggestion', suggestion: 'next' },
+        { type: 'result', subtype: 'success', session_id: 'sess-rich', result: 'done' },
+      ]),
+    )
     const runner = createNodeClaudeTurnRunner({
       binaryPath: bin,
       resolveProjectPath: () => dir,
@@ -204,12 +219,18 @@ describe('createNodeClaudeTurnRunner', () => {
       signal: new AbortController().signal,
     })
 
-    expect(agentEvents).toEqual(expect.arrayContaining([
-      expect.objectContaining({ type: 'content_delta', messageId: 'assistant-1', delta: expect.objectContaining({ type: 'thinking' }) }),
-      expect.objectContaining({ type: 'task_started', taskId: 'bg1' }),
-      expect.objectContaining({ type: 'prompt_suggestion', suggestion: 'next' }),
-      expect.objectContaining({ type: 'message_complete', messageId: 'assistant-1' }),
-    ]))
+    expect(agentEvents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'content_delta',
+          messageId: 'assistant-1',
+          delta: expect.objectContaining({ type: 'thinking' }),
+        }),
+        expect.objectContaining({ type: 'task_started', taskId: 'bg1' }),
+        expect.objectContaining({ type: 'prompt_suggestion', suggestion: 'next' }),
+        expect.objectContaining({ type: 'message_complete', messageId: 'assistant-1' }),
+      ]),
+    )
     expect(structuredEvents).toEqual([])
     expect(deltas).toEqual([])
     rmSync(dir, { recursive: true, force: true })
@@ -221,17 +242,7 @@ describe('createNodeClaudeTurnRunner', () => {
     writeFileSync(bin, '#!/bin/sh\n')
     chmodSync(bin, 0o755)
 
-    const queryFn = vi.fn(() =>
-      messages([
-        {
-          type: 'result',
-          subtype: 'success',
-          is_error: false,
-          session_id: 'm1',
-          result: 'ok',
-        },
-      ]),
-    ) as unknown as ClaudeQueryFn
+    const queryFn = vi.fn(bridgeQuery(() => success('m1', 'ok')))
 
     const runner = createNodeClaudeTurnRunner({
       binaryPath: bin,
@@ -256,26 +267,17 @@ describe('createNodeClaudeTurnRunner', () => {
     rmSync(dir, { recursive: true, force: true })
   })
 
-  it('passes Host Action SDK MCP into options.mcpServers and disposes after turn', async () => {
+  it('passes Host Action SDK MCP into options.mcpServers and keeps it for live session', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'cbr-claude-mcp-'))
     const bin = join(dir, 'claude')
     writeFileSync(bin, '#!/bin/sh\n')
     chmodSync(bin, 0o755)
 
-    const queryFn = vi.fn(() =>
-      messages([
-        {
-          type: 'result',
-          subtype: 'success',
-          is_error: false,
-          session_id: 'm1',
-          result: 'ok',
-        },
-      ]),
-    ) as unknown as ClaudeQueryFn
+    const queryFn = vi.fn(bridgeQuery(() => success('m1', 'ok')))
 
     const dispose = vi.fn(async () => {})
     const sdkInstance = { type: 'sdk', name: 'superone', instance: { id: 'mcp-1' } }
+    let createCount = 0
 
     const runner = createNodeClaudeTurnRunner({
       binaryPath: bin,
@@ -284,6 +286,7 @@ describe('createNodeClaudeTurnRunner', () => {
       allowSimulatedFallback: false,
       createHostActionClaudeMcp: (sessionId) => {
         expect(sessionId).toBe('node-sid-42')
+        createCount++
         return {
           mcpServers: { superone: sdkInstance as never },
           dispose,
@@ -297,37 +300,34 @@ describe('createNodeClaudeTurnRunner', () => {
       onDelta: () => {},
       signal: new AbortController().signal,
     })
+    // Second turn reuses the long-lived live session + same Host Action MCP.
+    await runner({
+      session: session({ sessionId: 'node-sid-42' }),
+      text: 'again',
+      onDelta: () => {},
+      signal: new AbortController().signal,
+    })
 
-    expect(queryFn).toHaveBeenCalledWith(
-      expect.objectContaining({
-        options: expect.objectContaining({
-          strictMcpConfig: true,
-          mcpServers: { superone: sdkInstance },
-        }),
-      }),
-    )
-    expect(dispose).toHaveBeenCalledTimes(1)
+    expect(createCount).toBe(1)
+    expect(queryFn).toHaveBeenCalledTimes(1)
+    const call = queryFn.mock.calls[0]?.[0] as {
+      options?: { mcpServers?: unknown; strictMcpConfig?: boolean }
+    }
+    expect(call?.options?.mcpServers).toEqual({ superone: sdkInstance })
+    expect(call?.options?.strictMcpConfig).toBe(true)
+    // Dispose only when live process is torn down — not after each turn.
+    expect(dispose).not.toHaveBeenCalled()
 
     rmSync(dir, { recursive: true, force: true })
   })
 
-  it('second turn passes resume from providerResume to SDK options', async () => {
+  it('opens live session with resume from providerResume on first turn', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'cbr-claude3-'))
     const bin = join(dir, 'claude')
     writeFileSync(bin, '#!/bin/sh\n')
     chmodSync(bin, 0o755)
 
-    const queryFn = vi.fn(() =>
-      messages([
-        {
-          type: 'result',
-          subtype: 'success',
-          is_error: false,
-          session_id: 'prior-42',
-          result: 'cont',
-        },
-      ]),
-    ) as unknown as ClaudeQueryFn
+    const queryFn = vi.fn(bridgeQuery(() => success('prior-42', 'cont')))
 
     const runner = createNodeClaudeTurnRunner({
       binaryPath: bin,
@@ -351,6 +351,130 @@ describe('createNodeClaudeTurnRunner', () => {
     rmSync(dir, { recursive: true, force: true })
   })
 
+  it('disposeSession tears down long-lived live + host-action MCP', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cbr-claude-dispose-'))
+    const bin = join(dir, 'claude')
+    writeFileSync(bin, '#!/bin/sh\n')
+    chmodSync(bin, 0o755)
+
+    const dispose = vi.fn(async () => {})
+    const queryFn = vi.fn(bridgeQuery(() => success('live-d', 'ok')))
+    const runner = createNodeClaudeTurnRunner({
+      binaryPath: bin,
+      resolveProjectPath: () => dir,
+      queryFn,
+      allowSimulatedFallback: false,
+      createHostActionClaudeMcp: () => ({
+        mcpServers: { superone: { type: 'sdk', name: 'superone', instance: {} } as never },
+        dispose,
+      }),
+    })
+
+    await runner({
+      session: session({ sessionId: 'dispose-s' }),
+      text: 'hi',
+      onDelta: () => {},
+      signal: new AbortController().signal,
+    })
+    expect(dispose).not.toHaveBeenCalled()
+    expect(queryFn).toHaveBeenCalledTimes(1)
+
+    await runner.disposeSession?.('dispose-s')
+    expect(dispose).toHaveBeenCalledTimes(1)
+
+    // Next turn reopens a fresh live process.
+    await runner({
+      session: session({ sessionId: 'dispose-s' }),
+      text: 'again',
+      onDelta: () => {},
+      signal: new AbortController().signal,
+    })
+    expect(queryFn).toHaveBeenCalledTimes(2)
+
+    await runner.disposeAll?.()
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('mid-turn inject reuses one SDK query and marks priority next on the second user message', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cbr-claude-inject-'))
+    const bin = join(dir, 'claude')
+    writeFileSync(bin, '#!/bin/sh\n')
+    chmodSync(bin, 0o755)
+
+    const seen: Array<{ text: string; priority?: string }> = []
+    let releaseFirst: (() => void) | null = null
+    const firstGate = new Promise<void>((resolve) => {
+      releaseFirst = resolve
+    })
+
+    const queryFn = vi.fn((({ prompt }) =>
+      (async function* () {
+        let i = 0
+        for await (const user of prompt as AsyncIterable<SDKUserMessage>) {
+          const text = textOf(user)
+          const priority =
+            typeof (user as { priority?: string }).priority === 'string'
+              ? (user as { priority?: string }).priority
+              : undefined
+          seen.push({ text, priority })
+          if (i === 0) {
+            yield {
+              type: 'stream_event',
+              session_id: 'live-1',
+              event: {
+                type: 'content_block_delta',
+                delta: { type: 'text_delta', text: 'one' },
+              },
+            } as SDKMessage
+            await firstGate
+            yield {
+              type: 'result',
+              subtype: 'success',
+              is_error: false,
+              session_id: 'live-1',
+              result: 'one',
+            } as SDKMessage
+          } else {
+            for (const item of success('live-1', 'two')) yield item as SDKMessage
+          }
+          i++
+        }
+      })()) as ClaudeQueryFn)
+
+    const runner = createNodeClaudeTurnRunner({
+      binaryPath: bin,
+      resolveProjectPath: () => dir,
+      queryFn,
+      allowSimulatedFallback: false,
+    })
+
+    const firstP = runner({
+      session: session({ sessionId: 'inject-s' }),
+      text: 'first',
+      onDelta: () => {},
+      signal: new AbortController().signal,
+    })
+    await new Promise((r) => setTimeout(r, 30))
+    const secondP = runner({
+      session: session({ sessionId: 'inject-s' }),
+      text: 'second',
+      onDelta: () => {},
+      signal: new AbortController().signal,
+    })
+    releaseFirst!()
+    const [a, b] = await Promise.all([firstP, secondP])
+
+    expect(a.finalText).toBe('one')
+    expect(b.finalText).toBe('two')
+    expect(queryFn).toHaveBeenCalledTimes(1)
+    expect(seen).toEqual([
+      { text: 'first', priority: undefined },
+      { text: 'second', priority: 'next' },
+    ])
+
+    rmSync(dir, { recursive: true, force: true })
+  })
+
   it('prefers Agent SDK bundle over SUPERONE_CLAUDE_BINARY when both exist', () => {
     const prev = process.env.SUPERONE_CLAUDE_BINARY
     const dir = mkdtempSync(join(tmpdir(), 'cbr-claude4-'))
@@ -359,11 +483,9 @@ describe('createNodeClaudeTurnRunner', () => {
     chmodSync(bin, 0o755)
     process.env.SUPERONE_CLAUDE_BINARY = bin
     const resolved = resolveClaudeBinaryPath({})
-    // SDK package wins when installed; env is last-resort only.
     if (resolved && resolved.includes('claude-agent-sdk')) {
       expect(resolved).not.toBe(bin)
     } else {
-      // No optional SDK package in this environment — env pin is used.
       expect(resolved).toBe(bin)
     }
     process.env.SUPERONE_CLAUDE_BINARY = '/nope'
@@ -382,17 +504,7 @@ describe('createProductionTurnRunner multi-dispatch', () => {
     writeFileSync(bin, '#!/bin/sh\n')
     chmodSync(bin, 0o755)
 
-    const claudeQueryFn = vi.fn(() =>
-      messages([
-        {
-          type: 'result',
-          subtype: 'success',
-          is_error: false,
-          session_id: 'm1',
-          result: 'hello',
-        },
-      ]),
-    ) as unknown as ClaudeQueryFn
+    const claudeQueryFn = vi.fn(bridgeQuery(() => success('m1', 'hello')))
 
     const runner = createProductionTurnRunner({
       resolveProjectPath: () => dir,

@@ -256,15 +256,30 @@ describe('Harness catalog (Stage 1)', () => {
 
     await expect(
       client.rpc('session.create', { projectId: project.projectId, harnessId: 'codex' }),
-    ).rejects.toThrow(/harness not ready|failed_precondition/i)
+    ).rejects.toThrow(/harness not ready|runtime unavailable/i)
 
+    // Catalog ready alone is not enough — production also requires a real binary.
     rt.harnesses.update('codex', { enabled: true, state: 'ready' })
-    const session = (await client.rpc('session.create', {
-      projectId: project.projectId,
-      harnessId: 'codex',
-    })) as { sessionId: string; harnessId: string }
-    expect(session.sessionId).toBeTruthy()
-    expect(session.harnessId).toBe('codex')
+    await expect(
+      client.rpc('session.create', { projectId: project.projectId, harnessId: 'codex' }),
+    ).rejects.toThrow(/runtime unavailable/i)
+
+    // Lab binary override satisfies the runtime gate.
+    const bin = join(projectDir, 'fake-codex')
+    writeFileSync(bin, '#!/bin/sh\necho ok\n')
+    const { chmodSync } = await import('node:fs')
+    chmodSync(bin, 0o755)
+    process.env.SUPERONE_CODEX_BINARY = bin
+    try {
+      const session = (await client.rpc('session.create', {
+        projectId: project.projectId,
+        harnessId: 'codex',
+      })) as { sessionId: string; harnessId: string }
+      expect(session.sessionId).toBeTruthy()
+      expect(session.harnessId).toBe('codex')
+    } finally {
+      delete process.env.SUPERONE_CODEX_BINARY
+    }
     client.close()
   })
 

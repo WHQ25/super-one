@@ -12,6 +12,7 @@ import {
 } from '@superone/shared/environment'
 import { isCodexBinaryOverrideRunnable } from '../session/codex-turn-runner'
 import { isClaudeBinaryOverrideRunnable } from '../session/claude-turn-runner'
+import { assertSessionHarnessRuntimeReady, probeHarnessReadiness } from '../session/harness-runtime-ready'
 import { cloneRepository } from '@superone/shared/git-clone'
 import { existsSync, mkdirSync, readdirSync, statSync } from 'node:fs'
 import { join as pathJoin, resolve as pathResolve } from 'node:path'
@@ -32,6 +33,10 @@ import type { IdempotencyService } from '../auth/idempotency'
 import type { ProviderStore } from '../provider/provider-store'
 import { listHarnessModels } from '../provider/resolve-service'
 import type { ConsumerBinding, ConsumerId, Platform } from '@superone/shared/platform-registry'
+import {
+  dispatchResourceRpc,
+  RESOURCE_MUTATING_METHODS,
+} from './resource-handlers'
 
 export interface RpcContext {
   client: AuthenticatedClient
@@ -114,8 +119,11 @@ const MUTATING_METHODS = new Set([
   'session.send',
   'session.interrupt',
   'session.respondPermission',
+  'session.respondQuestion',
+  'session.respondPlan',
   'session.claimHostAction',
   'session.respondHostAction',
+  'harness.probe',
   'session.acquireControl',
   'session.renewControl',
   'session.releaseControl',
@@ -135,6 +143,7 @@ const MUTATING_METHODS = new Set([
   'provider.upsertCustomPlatform',
   'provider.deleteCustomPlatform',
   'provider.importBundle',
+  ...RESOURCE_MUTATING_METHODS,
 ])
 
 export async function dispatchRpc(method: string, payload: unknown, ctx: RpcContext): Promise<RpcResult> {
@@ -223,6 +232,12 @@ async function dispatchRpcInner(method: string, payload: unknown, ctx: RpcContex
     if (blocked) return blocked
   }
 
+  const resource = dispatchResourceRpc(method, payload, {
+    client: ctx.client,
+    projects: ctx.projects,
+  })
+  if (resource) return resource
+
   switch (method) {
     case 'environment.descriptor':
       return handleDescriptor(ctx)
@@ -234,6 +249,8 @@ async function dispatchRpcInner(method: string, payload: unknown, ctx: RpcContex
       return handleHarnessList(ctx)
     case 'harness.show':
       return handleHarnessShow(payload, ctx)
+    case 'harness.probe':
+      return handleHarnessProbe(payload, ctx)
     case 'terminal.create':
       return handleTerminalCreate(payload, ctx)
     case 'terminal.attach':
@@ -334,6 +351,10 @@ async function dispatchRpcInner(method: string, payload: unknown, ctx: RpcContex
       return handleSessionInterrupt(payload, ctx)
     case 'session.respondPermission':
       return handleSessionRespondPermission(payload, ctx)
+    case 'session.respondQuestion':
+      return handleSessionRespondQuestion(payload, ctx)
+    case 'session.respondPlan':
+      return handleSessionRespondPlan(payload, ctx)
     case 'session.hostActionsPoll':
       return handleSessionHostActionsPoll(payload, ctx)
     case 'session.claimHostAction':
@@ -593,6 +614,23 @@ function handleHarnessShow(payload: unknown, ctx: RpcContext): RpcResult {
   // Stage 1: same contract as list entry; show details (last probe, install path)
   // land with the CLI surface in the next slice.
   return { result: ctx.harnesses.get(id) }
+}
+
+/** Probe harness runtime/auth and promote needs_auth → ready when satisfied. */
+function handleHarnessProbe(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.adminNode)
+  if (denied) return denied
+  const p = asRecord(payload)
+  const id = typeof p.harnessId === 'string' ? p.harnessId : typeof p.id === 'string' ? p.id : ''
+  if (!isNodeHarnessId(id)) {
+    return { error: { code: 'invalid_argument', message: `unknown harnessId: ${id}` } }
+  }
+  try {
+    const result = probeHarnessReadiness(ctx.harnesses, id, ctx.providers ?? null)
+    return { result: { ...result, status: ctx.harnesses.get(id) } }
+  } catch (err) {
+    return mapThrown(err)
+  }
 }
 
 function handleHealth(ctx: RpcContext): RpcResult {
@@ -1509,6 +1547,24 @@ function handleSessionCreate(payload: unknown, ctx: RpcContext): RpcResult {
       },
     }
   }
+  // Fail-closed: catalog ready must still have a real binary/runtime (no silent sim).
+  // Lab overrides (claude SDK / SUPERONE_CODEX_BINARY) satisfy assertSessionHarnessRuntimeReady.
+  if (!ctx.simulatedHarness) {
+    const runtime = assertSessionHarnessRuntimeReady(harnessId, ctx.harnesses)
+    if (!runtime.ok) {
+      return {
+        error: {
+          code: 'failed_precondition',
+          message: runtime.reason,
+          details: {
+            harnessId,
+            requestedHarnessId: rawHarnessId,
+            readyHarnessIds: ctx.harnesses.readySessionHarnessIds(),
+          },
+        },
+      }
+    }
+  }
   const projectId = String(p.projectId ?? '').trim()
   if (!projectId) {
     return { error: { code: 'invalid_argument', message: 'projectId is required' } }
@@ -1714,6 +1770,67 @@ async function handleSessionSend(payload: unknown, ctx: RpcContext): Promise<Rpc
         : typeof p.apiProviderId === 'string' && p.apiProviderId.trim()
           ? p.apiProviderId.trim()
           : null
+    const effort =
+      typeof options.effort === 'string' && options.effort.trim()
+        ? options.effort.trim()
+        : typeof p.effort === 'string' && p.effort.trim()
+          ? p.effort.trim()
+          : null
+    const permissionMode =
+      typeof options.permissionMode === 'string' && options.permissionMode.trim()
+        ? options.permissionMode.trim()
+        : typeof p.permissionMode === 'string' && p.permissionMode.trim()
+          ? p.permissionMode.trim()
+          : null
+    const rawAdditionalDirs = Array.isArray(options.additionalDirectories)
+      ? options.additionalDirectories
+      : Array.isArray(p.additionalDirectories)
+        ? p.additionalDirectories
+        : []
+    const additionalDirectories = rawAdditionalDirs
+      .filter((d): d is string => typeof d === 'string' && d.trim().length > 0)
+      .map((d) => d.trim())
+      .slice(0, 32)
+    const rawEnabledSkills = Array.isArray(options.enabledSkills)
+      ? options.enabledSkills
+      : Array.isArray(p.enabledSkills)
+        ? p.enabledSkills
+        : []
+    const enabledSkills = rawEnabledSkills
+      .filter((s): s is string => typeof s === 'string' && s.trim().length > 0)
+      .map((s) => s.trim())
+      .slice(0, 200)
+    const rawDisabledSkills = Array.isArray(options.disabledSkills)
+      ? options.disabledSkills
+      : Array.isArray(p.disabledSkills)
+        ? p.disabledSkills
+        : []
+    const disabledSkills = rawDisabledSkills
+      .filter((s): s is string => typeof s === 'string' && s.trim().length > 0)
+      .map((s) => s.trim())
+      .slice(0, 200)
+    const rawImages = Array.isArray(options.images)
+      ? options.images
+      : Array.isArray(p.images)
+        ? p.images
+        : []
+    const images = rawImages
+      .map((img) => {
+        if (!img || typeof img !== 'object') return null
+        const row = img as Record<string, unknown>
+        const mimeType = typeof row.mimeType === 'string' ? row.mimeType : ''
+        const base64 = typeof row.base64 === 'string' ? row.base64 : ''
+        if (!mimeType || !base64) return null
+        // Bound payload: ~4MB base64 per image (desktop also bounds uploads).
+        if (base64.length > 5_500_000) return null
+        return {
+          mimeType,
+          base64,
+          ...(typeof row.name === 'string' ? { name: row.name } : {}),
+        }
+      })
+      .filter((x): x is NonNullable<typeof x> => x != null)
+      .slice(0, 8)
     const result = await ctx.sessions.send({
       sessionId: String(p.sessionId ?? ''),
       text: String(p.text ?? ''),
@@ -1722,6 +1839,13 @@ async function handleSessionSend(payload: unknown, ctx: RpcContext): Promise<Rpc
       generation: String(p.generation ?? ''),
       requestId: typeof p.requestId === 'string' ? p.requestId : undefined,
       model: modelFromOptions ?? modelTopLevel,
+      effort,
+      permissionMode,
+      additionalDirectories:
+        additionalDirectories.length > 0 ? additionalDirectories : undefined,
+      enabledSkills: enabledSkills.length > 0 ? enabledSkills : undefined,
+      disabledSkills: disabledSkills.length > 0 ? disabledSkills : undefined,
+      images: images.length > 0 ? images : undefined,
       apiProviderId,
     })
     return { result }
@@ -1756,6 +1880,52 @@ function handleSessionRespondPermission(payload: unknown, ctx: RpcContext): RpcR
       sessionId: String(p.sessionId ?? ''),
       interactionId: String(p.interactionId ?? ''),
       decision: (p.decision as 'allow' | 'deny' | 'allow_always') || 'deny',
+      client: { clientSessionId: ctx.client.clientSessionId },
+      leaseId: String(p.leaseId ?? ''),
+      generation: String(p.generation ?? ''),
+    })
+    return { result: { ok: true } }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+function handleSessionRespondQuestion(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateSession)
+  if (denied) return denied
+  const p = asRecord(payload)
+  try {
+    ctx.sessions.respondQuestion({
+      sessionId: String(p.sessionId ?? ''),
+      interactionId: String(p.interactionId ?? ''),
+      answers: p.answers,
+      client: { clientSessionId: ctx.client.clientSessionId },
+      leaseId: String(p.leaseId ?? ''),
+      generation: String(p.generation ?? ''),
+    })
+    return { result: { ok: true } }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+function handleSessionRespondPlan(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateSession)
+  if (denied) return denied
+  const p = asRecord(payload)
+  const decision = p.decision === 'approve' || p.decision === 'reject' ? p.decision : null
+  if (!decision) {
+    return { error: { code: 'invalid_argument', message: 'decision must be approve|reject' } }
+  }
+  try {
+    ctx.sessions.respondPlan({
+      sessionId: String(p.sessionId ?? ''),
+      interactionId: String(p.interactionId ?? ''),
+      decision,
+      options:
+        p.options && typeof p.options === 'object' && !Array.isArray(p.options)
+          ? (p.options as Record<string, unknown>)
+          : undefined,
       client: { clientSessionId: ctx.client.clientSessionId },
       leaseId: String(p.leaseId ?? ''),
       generation: String(p.generation ?? ''),

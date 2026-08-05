@@ -162,6 +162,76 @@ describe('SessionRuntime permission respond lifecycle', () => {
     db.close()
   })
 
+  it('allow_always remembers the tool for later turns in the same session', async () => {
+    let permissionCalls = 0
+    const runner: TurnRunner = async ({ onPermission, onDelta }) => {
+      if (onPermission) {
+        permissionCalls += 1
+        const decision = await onPermission({
+          interactionId: `p-${permissionCalls}`,
+          kind: 'permission',
+          toolName: 'Bash',
+          createdAt: Date.now(),
+        })
+        if (decision === 'deny') return { finalText: 'denied', providerResume: null }
+      }
+      onDelta('ok')
+      return { finalText: 'ok', providerResume: null }
+    }
+    const { runtime, leases, envId } = boot(runner, 10_000)
+    const session = runtime.create({ projectId: 'proj-1', harnessId: 'codex' })
+    const lease = leases.acquire({
+      resource: { environmentId: envId, sessionId: session.sessionId },
+      holderClientId: 'client-1',
+      ttlMs: 60_000,
+    })
+    const client = { clientSessionId: 'client-1' }
+
+    runtime.send({
+      sessionId: session.sessionId,
+      text: 'first',
+      client,
+      leaseId: lease.leaseId,
+      generation: lease.generation,
+    })
+    for (let i = 0; i < 50; i++) {
+      if (runtime.get(session.sessionId)?.pendingInteraction) break
+      await new Promise((r) => setTimeout(r, 10))
+    }
+    const id1 = runtime.get(session.sessionId)?.pendingInteraction?.interactionId
+    expect(id1).toBeTruthy()
+    runtime.respondPermission({
+      sessionId: session.sessionId,
+      interactionId: id1!,
+      decision: 'allow_always',
+      client,
+      leaseId: lease.leaseId,
+      generation: lease.generation,
+    })
+    for (let i = 0; i < 100; i++) {
+      if (runtime.get(session.sessionId)?.status !== 'streaming') break
+      await new Promise((r) => setTimeout(r, 10))
+    }
+    expect(runtime.get(session.sessionId)?.alwaysAllowedTools).toContain('Bash')
+
+    // Second turn: Bash auto-allows (onPermission still called, but no wait).
+    runtime.send({
+      sessionId: session.sessionId,
+      text: 'second',
+      client,
+      leaseId: lease.leaseId,
+      generation: lease.generation,
+    })
+    for (let i = 0; i < 100; i++) {
+      const s = runtime.get(session.sessionId)
+      if (s && s.status !== 'streaming') break
+      await new Promise((r) => setTimeout(r, 10))
+    }
+    expect(runtime.get(session.sessionId)?.pendingInteraction).toBeNull()
+    expect(permissionCalls).toBe(2)
+    expect(runtime.get(session.sessionId)?.status).toBe('idle')
+  })
+
   it('allow_always resolves as allow for the runner and preserves wire decision', async () => {
     const { runtime, events, leases, envId, db } = boot(
       createSimulatedCodexRunner({ delayMs: 5, chunks: ['ok'], requestPermission: true }),

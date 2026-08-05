@@ -124,6 +124,11 @@ function ensureHostActionSupport(db: NodeDatabase): void {
       `ALTER TABLE sessions ADD COLUMN host_action_tool_groups_json TEXT NOT NULL DEFAULT '[]'`,
     )
   }
+  if (!names.has('always_allowed_tools_json')) {
+    db.exec(
+      `ALTER TABLE sessions ADD COLUMN always_allowed_tools_json TEXT NOT NULL DEFAULT '[]'`,
+    )
+  }
 
   db.exec(`
 CREATE TABLE IF NOT EXISTS host_actions (

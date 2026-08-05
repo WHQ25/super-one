@@ -2,7 +2,7 @@
  * Public `superone harness …` command group (design §13.5).
  *
  * Stage 2 scope:
- * - list / show / enable / disable / configure / doctor / repair
+ * - list / show / enable / disable / configure / doctor / probe / repair
  * - Public commands omit --home; data dir is $HOME/.superone/node
  *   (tests may set SUPERONE_NODE_HOME).
  * - Managed artifact download/signature is deferred: enable claude|codex
@@ -28,6 +28,8 @@ import {
 import { resolveNodeHome, nodePaths } from '../config'
 import { openNodeDatabase } from '../db/database'
 import { HarnessManager } from './harness-manager'
+import { probeHarnessReadiness } from './harness-runtime-ready'
+import { ProviderStore } from '../provider/provider-store'
 import {
   currentCliVersion,
   describeExpectedArtifact,
@@ -36,6 +38,7 @@ import {
   loadHarnessReleaseManifest,
   requiredRuntimeVersion,
 } from './managed-harness-release'
+import type { NodeDatabase } from '../db/database'
 
 export interface HarnessCliResult {
   ok: boolean
@@ -78,6 +81,7 @@ Commands:
   configure acp-grok [--command <ABS_PATH>] [--arg <VALUE>|--arg=<VALUE>]... [--default-args] [--json]
   disable <HARNESS_ID> [--drain wait|cancel] [--timeout <DURATION>] [--json]
   doctor [<HARNESS_ID>] [--json]
+  probe <HARNESS_ID> [--json]
   repair claude|codex --artifact <FILE> [--json]
 
 Notes:
@@ -108,6 +112,8 @@ function subUsage(sub: string): string {
       return 'Usage: superone harness disable <HARNESS_ID> [--drain wait|cancel] [--timeout <DURATION>] [--json]'
     case 'doctor':
       return 'Usage: superone harness doctor [<HARNESS_ID>] [--json]'
+    case 'probe':
+      return 'Usage: superone harness probe <HARNESS_ID> [--json]'
     case 'repair':
       return 'Usage: superone harness repair claude|codex --artifact <FILE> [--json]'
     default:
@@ -135,6 +141,7 @@ export async function runHarnessCli(argv: string[]): Promise<HarnessCliResult> {
     'configure',
     'disable',
     'doctor',
+    'probe',
     'repair',
   ])
   if (!known.has(sub)) {
@@ -158,6 +165,8 @@ export async function runHarnessCli(argv: string[]): Promise<HarnessCliResult> {
         return cmdDisable(manager, rest)
       case 'doctor':
         return cmdDoctor(manager, rest)
+      case 'probe':
+        return cmdProbe(manager, rest, db)
       case 'repair':
         return await cmdRepair(manager, rest)
       default:
@@ -317,6 +326,52 @@ function cmdDisable(manager: HarnessManager, args: string[]): HarnessCliResult {
   void drain
   const status = manager.disable(id)
   return okStatus(status, parsed.json, `disabled ${id}`)
+}
+
+function cmdProbe(
+  manager: HarnessManager,
+  args: string[],
+  db: NodeDatabase,
+): HarnessCliResult {
+  const parsed = parseFlags(args, {
+    positionals: 1,
+    flags: new Set(['--json']),
+    valueFlags: new Set(),
+  })
+  if (!parsed.ok) return fail(parsed.error, parsed.json)
+  const id = parsed.positionals[0]
+  if (!id || !isNodeHarnessId(id)) {
+    return fail(`unknown or missing harness id: ${id ?? '(none)'}`, parsed.json)
+  }
+  let providers: ProviderStore | null = null
+  try {
+    const nodeHome = resolveNodeHome(undefined)
+    providers = new ProviderStore(db, nodePaths(nodeHome).providerSecretsKey)
+  } catch {
+    providers = null
+  }
+  const result = probeHarnessReadiness(manager, id, providers)
+  const status = manager.get(id)
+  if (parsed.json) {
+    return {
+      ok: result.ok,
+      exitCode: result.ok ? 0 : 1,
+      json: { ...result, status },
+      text: '',
+    }
+  }
+  const lines = [
+    `harness ${id}: ${result.previousState} → ${result.state}` +
+      (result.transitioned ? ' (transitioned)' : ''),
+    result.reason,
+    ...result.issues.map((i) => `  issue: ${i}`),
+  ]
+  return {
+    ok: result.ok,
+    exitCode: result.ok ? 0 : 1,
+    json: null,
+    text: lines.join('\n'),
+  }
 }
 
 function cmdDoctor(manager: HarnessManager, args: string[]): HarnessCliResult {

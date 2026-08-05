@@ -34,6 +34,7 @@ function session(over: Partial<NodeSessionRecord> = {}): NodeSessionRecord {
     controllerClientSessionId: null,
     hostActionCapabilityVersion: 0,
     hostActionToolGroups: [],
+    alwaysAllowedTools: [],
     ...over,
   }
 }

@@ -28,6 +28,7 @@ import { createMultiHarnessRouter, createAcpOpenCodeProductionRouter } from './h
 import type { HarnessManager } from './harness-manager'
 import type { ProviderStore } from '../provider/provider-store'
 import { buildHarnessEnv, resolveHarnessService } from '../provider/resolve-service'
+import { prepareTurnPrompt } from './turn-attachments'
 
 export interface NodeCodexRunnerOptions {
   binaryPath?: string | null
@@ -66,6 +67,19 @@ export interface NodeProductionRunnerOptions extends NodeCodexRunnerOptions {
   getOpenCodeHostActionMcp?: (
     sessionId: string,
   ) => { url: string; headers: Record<string, string> } | null
+}
+
+/** Map SuperOne effort levels onto Codex app-server reasoning effort. */
+export function mapCodexReasoningEffort(
+  effort: string | null | undefined,
+): 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | undefined {
+  if (!effort) return undefined
+  const e = effort.trim().toLowerCase()
+  if (e === 'max') return 'xhigh'
+  if (e === 'minimal' || e === 'low' || e === 'medium' || e === 'high' || e === 'xhigh') {
+    return e
+  }
+  return undefined
 }
 
 export function resolveCodexBinaryPath(opts: {
@@ -158,12 +172,17 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
         ? { mcp_servers: { superone: hostActionMcp } }
         : undefined
 
+      // Codex app-server is text-path; use textFallback if multimodal was required.
+      const prepared = prepareTurnPrompt(input.text, cwd, input.images)
+      const prompt = prepared.kind === 'text' ? prepared.text : prepared.textFallback
+      const reasoningEffort = mapCodexReasoningEffort(input.effort)
       const result = await runCodexAppServerTurn({
         client,
-        prompt: input.text,
+        prompt,
         cwd,
         threadId: priorThread,
         model: input.model && input.model.trim() ? input.model.trim() : undefined,
+        reasoningEffort,
         messageId: input.messageId,
         onAgentEvent: input.onAgentEvent,
         onDelta: input.onDelta,
@@ -208,7 +227,7 @@ export function createProductionTurnRunner(opts: NodeProductionRunnerOptions): T
   })
   const simulated = createMultiHarnessRouter('codex')
 
-  return async (input) => {
+  const runner: TurnRunner = async (input) => {
     const harnessId = input.session.harnessId || 'codex'
     if (harnessId === 'codex') return codex(input)
     if (harnessId === 'claude') return claude(input)
@@ -218,4 +237,14 @@ export function createProductionTurnRunner(opts: NodeProductionRunnerOptions): T
       `real node runner for harness ${harnessId} is not implemented yet (Stage 5-E supports codex + claude)`,
     )
   }
+
+  // Forward long-lived Claude process teardown (other harnesses are one-shot today).
+  runner.disposeSession = async (sessionId) => {
+    await claude.disposeSession?.(sessionId)
+  }
+  runner.disposeAll = async () => {
+    await claude.disposeAll?.()
+  }
+
+  return runner
 }

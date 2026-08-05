@@ -52,15 +52,23 @@ describe('SessionRuntime onEvent durable projection (Stage 5-A)', () => {
     const binary = join(projectDir, 'claude')
     writeFileSync(binary, '#!/bin/sh\n')
     chmodSync(binary, 0o755)
-    const queryFn = (() => (async function* () {
-      yield {
-        type: 'stream_event',
-        event: { type: 'content_block_delta', delta: { type: 'thinking_delta', thinking: 'reasoning' } },
-      }
-      yield { type: 'system', subtype: 'task_started', task_id: 'bg1', description: 'work' }
-      yield { type: 'prompt_suggestion', suggestion: 'continue' }
-      yield { type: 'result', subtype: 'success', session_id: 'sdk-1', result: 'done' }
-    })()) as unknown as ClaudeQueryFn
+    // Long-lived ClaudeLiveSession feeds the bridge; mock must wait for
+    // each user message like the real Agent SDK query({ prompt: bridge }).
+    const queryFn = (({ prompt }) =>
+      (async function* () {
+        for await (const _user of prompt as AsyncIterable<unknown>) {
+          yield {
+            type: 'stream_event',
+            event: {
+              type: 'content_block_delta',
+              delta: { type: 'thinking_delta', thinking: 'reasoning' },
+            },
+          }
+          yield { type: 'system', subtype: 'task_started', task_id: 'bg1', description: 'work' }
+          yield { type: 'prompt_suggestion', suggestion: 'continue' }
+          yield { type: 'result', subtype: 'success', session_id: 'sdk-1', result: 'done' }
+        }
+      })()) as unknown as ClaudeQueryFn
     const runner = createNodeClaudeTurnRunner({
       binaryPath: binary,
       resolveProjectPath: () => projectDir,

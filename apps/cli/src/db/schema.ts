@@ -116,7 +116,8 @@ CREATE TABLE IF NOT EXISTS sessions (
   is_user_renamed INTEGER NOT NULL DEFAULT 0,
   controller_client_session_id TEXT,
   host_action_capability_version INTEGER NOT NULL DEFAULT 0,
-  host_action_tool_groups_json TEXT NOT NULL DEFAULT '[]'
+  host_action_tool_groups_json TEXT NOT NULL DEFAULT '[]',
+  always_allowed_tools_json TEXT NOT NULL DEFAULT '[]'
 );
 
 -- Host Action channel (durable poll/claim/respond). Also ensured at open time.

@@ -51,7 +51,8 @@ export function createMultiHarnessRouter(
 /**
  * Production multi-dispatch for ACP / OpenCode node adapters.
  * Real process when SUPERONE_ACP_BINARY / SUPERONE_OPENCODE_BINARY (or opts) set;
- * otherwise simulated unless allowSimulatedFallback is false.
+ * simulated **only** when `allowSimulatedFallback: true` (tests / CI overlay).
+ * Production must pass false or omit — never silently simulate.
  */
 export function createAcpOpenCodeProductionRouter(opts?: {
   allowSimulatedFallback?: boolean
@@ -65,8 +66,10 @@ export function createAcpOpenCodeProductionRouter(opts?: {
     sessionId: string,
   ) => { url: string; headers: Record<string, string> } | null
 }): TurnRunner {
+  // Opt-in only. `undefined` and `false` both fail closed without a real binary.
+  const allowSim = opts?.allowSimulatedFallback === true
   const acp = createAcpTurnRunner({
-    allowSimulatedFallback: opts?.allowSimulatedFallback !== false,
+    allowSimulatedFallback: allowSim,
     resolveProjectPath: opts?.resolveProjectPath,
     binaryPath: opts?.acpBinaryPath,
     getMcpServers: opts?.getAcpMcpServers
@@ -74,7 +77,7 @@ export function createAcpOpenCodeProductionRouter(opts?: {
       : undefined,
   })
   const opencode = createOpenCodeTurnRunner({
-    allowSimulatedFallback: opts?.allowSimulatedFallback !== false,
+    allowSimulatedFallback: allowSim,
     resolveProjectPath: opts?.resolveProjectPath,
     binaryPath: opts?.openCodeBinaryPath,
     getSuperoneMcp: opts?.getOpenCodeSuperoneMcp ?? undefined,

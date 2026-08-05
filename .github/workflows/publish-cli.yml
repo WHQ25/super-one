@@ -131,16 +131,22 @@ jobs:
         working-directory: apps/cli/dist/npm
         run: |
           set -euo pipefail
-          # Prefer NPM_TOKEN (classic automation). Trusted Publishing also works
-          # when the package is linked to this repo on npmjs.com (id-token: write).
-          if [ -n "${NODE_AUTH_TOKEN:-}" ]; then
-            echo "Using NODE_AUTH_TOKEN for npm publish"
+          TAG="${{ steps.meta.outputs.tag }}"
+          # Do NOT export an empty NODE_AUTH_TOKEN — setup-node may write a
+          # blank //registry.npmjs.org/:_authToken= line that breaks OIDC.
+          if [ -n "${{ secrets.NPM_TOKEN }}" ]; then
+            echo "Using NPM_TOKEN for npm publish"
+            export NODE_AUTH_TOKEN="${{ secrets.NPM_TOKEN }}"
+            npm publish --access public --tag "$TAG"
           else
-            echo "NODE_AUTH_TOKEN empty — relying on npm Trusted Publishing (OIDC) if configured"
+            echo "Using npm Trusted Publishing (OIDC + provenance)"
+            # Clear any empty auth from setup-node so OIDC can run.
+            if [ -f "$NPM_CONFIG_USERCONFIG" ]; then
+              sed -i '/_authToken=\s*$/d' "$NPM_CONFIG_USERCONFIG" || true
+              sed -i '/_authToken=$/d' "$NPM_CONFIG_USERCONFIG" || true
+            fi
+            npm publish --access public --tag "$TAG" --provenance
           fi
-          npm publish --access public --tag "${{ steps.meta.outputs.tag }}"
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Upload pack artifact
         uses: actions/upload-artifact@v4

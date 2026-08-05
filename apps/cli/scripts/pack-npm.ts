@@ -92,7 +92,8 @@ function buildPublishPackageJson(version: string): Record<string, unknown> {
     type: 'module',
     license: 'BUSL-1.1',
     bin: {
-      [PUBLIC_CLI_BIN]: './bin/superone.mjs',
+      // npm cleans names that look like extensions; keep bare command name.
+      [PUBLIC_CLI_BIN]: 'bin/superone.mjs',
     },
     files: ['bin', 'lib', 'README.md', 'MANIFEST.json'],
     engines: {

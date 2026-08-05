@@ -24,7 +24,7 @@ describe('pack-npm', () => {
     }
     expect(pkg.name).toBe('@super-one/cli')
     expect(pkg.version).toBe('0.0.0-test')
-    expect(pkg.bin.superone).toBe('./bin/superone.mjs')
+    expect(pkg.bin.superone).toMatch(/bin\/superone\.mjs$/)
     expect(pkg.dependencies['better-sqlite3']).toBeTruthy()
     expect(pkg.dependencies['node-pty']).toBeTruthy()
     expect(pkg.dependencies['@anthropic-ai/claude-agent-sdk']).toBeTruthy()

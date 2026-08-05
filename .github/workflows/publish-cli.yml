@@ -49,11 +49,10 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
 
-      # Node 24 ships npm ≥11.5.1 required for Trusted Publishing OIDC.
-      # Node 22's npm 10 signs provenance then fails PUT with a misleading E404.
       - uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          # Keep Node 22 for tests/pack; Trusted Publishing upgrades npm below.
+          node-version: '22'
           registry-url: 'https://registry.npmjs.org'
 
       - name: Install dependencies
@@ -134,6 +133,10 @@ jobs:
         run: |
           set -euo pipefail
           TAG="${{ steps.meta.outputs.tag }}"
+          # Trusted Publishing needs npm ≥11.5.1. Node 22 ships npm 10, which
+          # signs provenance then fails the package PUT with a misleading E404.
+          npm install -g npm@^11.5.1
+          npm --version
           # Do NOT export an empty NODE_AUTH_TOKEN — setup-node may write a
           # blank //registry.npmjs.org/:_authToken= line that breaks OIDC.
           if [ -n "${{ secrets.NPM_TOKEN }}" ]; then

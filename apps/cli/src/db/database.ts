@@ -19,6 +19,14 @@ export function openNodeDatabase(dbPath: string): NodeDatabase {
   ensureProviderTables(db)
   // Host Action channel tables + session controller binding columns.
   ensureHostActionSupport(db)
+  // Durable per-session turn defaults (settings_json).
+  ensureSessionSettingsColumn(db)
+  // Credential-scoped collaboration grants + mailbox.
+  ensureCollaborationTables(db)
+  // Automations table + session automation ownership columns.
+  ensureAutomationsSupport(db)
+  // Session-layer provider profiles (collaboration + multi-profile models).
+  ensureSessionProvidersSupport(db)
 
   const row = db.prepare('SELECT value FROM meta WHERE key = ?').get('schema_generation') as
     | { value: string }
@@ -170,6 +178,131 @@ CREATE TABLE IF NOT EXISTS host_action_changes (
 CREATE INDEX IF NOT EXISTS idx_host_action_changes_controller_seq
   ON host_action_changes(controller_client_session_id, sequence);
 `)
+}
+
+/**
+ * Durable per-session turn defaults (model/effort/permissionMode/sandboxMode/apiProviderId).
+ * Additive — schema generation stays at 1.
+ */
+function ensureSessionSettingsColumn(db: NodeDatabase): void {
+  const cols = db.prepare(`PRAGMA table_info(sessions)`).all() as Array<{ name: string }>
+  const names = new Set(cols.map((c) => c.name))
+  if (!names.has('settings_json')) {
+    db.exec(`ALTER TABLE sessions ADD COLUMN settings_json TEXT`)
+  }
+}
+
+/**
+ * Grant-scoped collaboration tables (desktop parity). Additive — schema
+ * generation stays at 1.
+ */
+function ensureCollaborationTables(db: NodeDatabase): void {
+  db.exec(`
+CREATE TABLE IF NOT EXISTS session_collaboration_grants (
+  credential_hash TEXT PRIMARY KEY NOT NULL,
+  credential_secret TEXT,
+  credential_hint TEXT NOT NULL,
+  parent_session_id TEXT NOT NULL,
+  child_session_id TEXT UNIQUE,
+  agent_id TEXT NOT NULL,
+  task TEXT NOT NULL,
+  config_json TEXT NOT NULL,
+  task_sent INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  started_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_session_collaboration_parent
+  ON session_collaboration_grants(parent_session_id);
+CREATE INDEX IF NOT EXISTS idx_session_collaboration_child
+  ON session_collaboration_grants(child_session_id);
+
+CREATE TABLE IF NOT EXISTS session_collaboration_messages (
+  id TEXT PRIMARY KEY NOT NULL,
+  credential_hash TEXT NOT NULL,
+  sequence INTEGER NOT NULL,
+  sender_session_id TEXT NOT NULL,
+  recipient_session_id TEXT NOT NULL,
+  client_message_id TEXT,
+  content TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  delivered_at TEXT,
+  UNIQUE(credential_hash, sequence),
+  UNIQUE(credential_hash, sender_session_id, client_message_id)
+);
+CREATE INDEX IF NOT EXISTS idx_session_collaboration_mailbox
+  ON session_collaboration_messages(credential_hash, recipient_session_id, sequence);
+
+CREATE TABLE IF NOT EXISTS session_collaboration_cursors (
+  credential_hash TEXT NOT NULL,
+  session_id TEXT NOT NULL,
+  last_sequence INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY(credential_hash, session_id)
+);
+`)
+}
+
+/**
+ * Automations table + session is_automation / automation_id columns.
+ * Additive — schema generation stays at 1.
+ */
+function ensureAutomationsSupport(db: NodeDatabase): void {
+  const cols = db.prepare(`PRAGMA table_info(sessions)`).all() as Array<{ name: string }>
+  const names = new Set(cols.map((c) => c.name))
+  if (!names.has('is_automation')) {
+    db.exec(`ALTER TABLE sessions ADD COLUMN is_automation INTEGER NOT NULL DEFAULT 0`)
+  }
+  if (!names.has('automation_id')) {
+    db.exec(`ALTER TABLE sessions ADD COLUMN automation_id TEXT`)
+  }
+
+  db.exec(`
+CREATE TABLE IF NOT EXISTS automations (
+  id TEXT PRIMARY KEY NOT NULL,
+  project_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  prompt TEXT NOT NULL,
+  agent_config_json TEXT NOT NULL,
+  schedule_json TEXT NOT NULL,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  last_run_at TEXT,
+  last_run_status TEXT,
+  last_run_session_id TEXT,
+  next_run_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_automations_project ON automations(project_id);
+CREATE INDEX IF NOT EXISTS idx_automations_next_run ON automations(enabled, next_run_at);
+`)
+}
+
+/**
+ * Session-layer provider profiles (desktop session_providers parity).
+ * Seeds base rows (claude-base, codex-base, …). Additive — schema gen stays 1.
+ */
+function ensureSessionProvidersSupport(db: NodeDatabase): void {
+  db.exec(`
+CREATE TABLE IF NOT EXISTS session_providers (
+  id TEXT PRIMARY KEY NOT NULL,
+  harness_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  is_base INTEGER NOT NULL DEFAULT 0,
+  config_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_session_providers_harness ON session_providers(harness_id);
+`)
+  const now = new Date().toISOString()
+  const stmt = db.prepare(`
+    INSERT OR IGNORE INTO session_providers
+      (id, harness_id, name, is_base, config_json, created_at, updated_at)
+    VALUES (?, ?, ?, 1, ?, ?, ?)
+  `)
+  stmt.run('claude-base', 'claude', 'Claude (Base)', '{}', now, now)
+  stmt.run('codex-base', 'codex', 'Codex (Base)', '{}', now, now)
+  stmt.run('acp-base', 'acp', 'Others (ACP)', JSON.stringify({ agentId: 'grok-build' }), now, now)
+  stmt.run('opencode-base', 'opencode', 'OpenCode (Base)', '{}', now, now)
 }
 
 export function getMeta(db: NodeDatabase, key: string): string | null {

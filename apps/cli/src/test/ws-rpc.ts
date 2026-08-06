@@ -101,7 +101,7 @@ export async function connectAuthedRpc(rt: NodeRuntime, label = 'test-client') {
         } else resolve(msg.result)
       }
       ws.on('message', onMsg)
-      const mutating = !method.startsWith('environment.') && !method.startsWith('session.get') && !method.startsWith('session.list') && !method.startsWith('session.events') && !method.startsWith('session.snapshot') && !method.startsWith('project.get') && !method.startsWith('project.list') && !method.startsWith('workspace.list') && !method.startsWith('workspace.read') && !method.startsWith('workspace.search') && !method.startsWith('workspace.watchPoll') && !method.startsWith('git.') && !method.startsWith('collaboration.list') && !method.startsWith('terminal.attach') && !method.startsWith('terminal.read')
+      const mutating = !method.startsWith('environment.') && !method.startsWith('session.get') && !method.startsWith('session.list') && !method.startsWith('session.events') && !method.startsWith('session.messages') && !method.startsWith('session.snapshot') && !method.startsWith('project.get') && !method.startsWith('project.list') && !method.startsWith('workspace.list') && !method.startsWith('workspace.read') && !method.startsWith('workspace.search') && !method.startsWith('workspace.watchPoll') && !method.startsWith('workspace.tailWatchPoll') && !method.startsWith('git.') && !method.startsWith('collaboration.list') && !method.startsWith('collaboration.retrieve') && !method.startsWith('terminal.attach') && !method.startsWith('terminal.read')
       const key =
         idempotencyKey ??
         (mutating ? crypto.randomUUID() : undefined)

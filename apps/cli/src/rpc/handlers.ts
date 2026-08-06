@@ -8,8 +8,15 @@ import {
   OPERATION_SCOPES,
   type AuthScope,
   type ExecutionEnvironmentDescriptor,
+  type NodeAgentSettingsPatch,
   type RpcErrorCode,
 } from '@superone/shared/environment'
+import {
+  loadNodeAgentSettings,
+  patchNodeAgentSettings,
+  resolveAgentTurnDefaults,
+} from '@superone/runtime/settings'
+import { probeSandboxRpc } from '@superone/runtime/sandbox'
 import { isCodexBinaryOverrideRunnable } from '../session/codex-turn-runner'
 import { isClaudeBinaryOverrideRunnable } from '../session/claude-turn-runner'
 import { assertSessionHarnessRuntimeReady, probeHarnessReadiness } from '../session/harness-runtime-ready'
@@ -29,8 +36,9 @@ import type { SessionRuntime } from '../session/session-runtime'
 import type { HarnessManager } from '../session/harness-manager'
 import type { ControlLeaseService } from '../session/control-lease'
 import type { EventLog } from '../session/event-log'
-import type { CollaborationMailbox } from '../session/collaboration'
+import type { CollaborationService } from '../session/collaboration'
 import type { WorkspaceWatchService } from '../workspace/watch-service'
+import type { WorkspaceTailWatchService } from '../workspace/tail-watch-service'
 import type { IdempotencyService } from '../auth/idempotency'
 import type { ProviderStore } from '../provider/provider-store'
 import { listHarnessModels } from '../provider/resolve-service'
@@ -39,6 +47,25 @@ import {
   dispatchResourceRpc,
   RESOURCE_MUTATING_METHODS,
 } from './resource-handlers'
+import {
+  AUTOMATION_MUTATING_METHODS,
+  dispatchAutomationRpc,
+} from './automation-handlers'
+import {
+  CODEX_MUTATING_METHODS,
+  dispatchCodexRpc,
+} from './codex-handlers'
+import {
+  SESSION_PROVIDER_MUTATING_METHODS,
+  dispatchSessionProviderRpc,
+} from './session-provider-handlers'
+import { dispatchHarnessResourcesRpc } from './harness-resources-handlers'
+import type { AutomationService } from '@superone/runtime/automations'
+import type { AutomationStore } from '@superone/runtime/automations'
+import {
+  settingsFromSessionProviderConfig,
+  type SessionProviderStore,
+} from '@superone/runtime/session'
 
 export interface RpcContext {
   client: AuthenticatedClient
@@ -48,13 +75,25 @@ export interface RpcContext {
   workspaceFs: WorkspaceFsService
   workspaceGit: WorkspaceGitService
   workspaceWatch: WorkspaceWatchService
+  workspaceTailWatch: WorkspaceTailWatchService
   sessions: SessionRuntime
   harnesses: HarnessManager
   leases: ControlLeaseService
   events: EventLog
-  collaboration: CollaborationMailbox
+  collaboration: CollaborationService
   idempotency: IdempotencyService
   providers: ProviderStore
+  /**
+   * Absolute path to SUPERONE_NODE_HOME/config.json for agent settings.
+   * Required for settings.get/patch and session default fallbacks.
+   */
+  settingsConfigPath: string
+  /** Project-scoped automations store (CRUD). */
+  automations: AutomationStore
+  /** Process-lifecycle scheduler + runNow executor. */
+  automationService: AutomationService
+  /** Session-layer provider profiles (claude-base, custom multi-profile, …). */
+  sessionProviders: SessionProviderStore
   startedAt: number
   simulatedHarness?: boolean
   requestId?: string
@@ -109,6 +148,8 @@ const MUTATING_METHODS = new Set([
   'workspace.mkdir',
   'workspace.watchStart',
   'workspace.watchStop',
+  'workspace.tailWatchStart',
+  'workspace.tailWatchStop',
   'git.clone',
   'git.switchBranch',
   'git.createBranch',
@@ -117,6 +158,7 @@ const MUTATING_METHODS = new Set([
   'git.worktreeHandoff',
   'session.create',
   'session.setCwd',
+  'session.patchSettings',
   'session.fork',
   'session.send',
   'session.interrupt',
@@ -136,6 +178,8 @@ const MUTATING_METHODS = new Set([
   'terminal.acquireControl',
   'terminal.renewControl',
   'terminal.releaseControl',
+  'collaboration.request',
+  'collaboration.start',
   'collaboration.send',
   'provider.createCredential',
   'provider.updateCredential',
@@ -145,7 +189,11 @@ const MUTATING_METHODS = new Set([
   'provider.upsertCustomPlatform',
   'provider.deleteCustomPlatform',
   'provider.importBundle',
+  'settings.patch',
   ...RESOURCE_MUTATING_METHODS,
+  ...AUTOMATION_MUTATING_METHODS,
+  ...SESSION_PROVIDER_MUTATING_METHODS,
+  ...CODEX_MUTATING_METHODS,
 ])
 
 export async function dispatchRpc(method: string, payload: unknown, ctx: RpcContext): Promise<RpcResult> {
@@ -188,7 +236,13 @@ export async function dispatchRpc(method: string, payload: unknown, ctx: RpcCont
                   const buf = watchBuffers.get(watchId)
                   return !!buf && buf.owner === ctx.client.clientSessionId
                 }
-              : undefined,
+              : method === 'workspace.tailWatchStart'
+                ? (receipt: unknown) => {
+                    const watchId = (receipt as { watchId?: string } | null)?.watchId
+                    if (!watchId) return false
+                    return ctx.workspaceTailWatch.isLive(watchId, ctx.client.clientSessionId)
+                  }
+                : undefined,
         },
       )
       return { result }
@@ -210,35 +264,43 @@ export async function dispatchRpc(method: string, payload: unknown, ctx: RpcCont
   return dispatchRpcInner(method, payload, ctx)
 }
 
-/**
- * Session RPC is always available: the node runs an injectable turn runner
- * (multi-harness router with simulated adapters until real CLIs are wired).
- * Collaboration stays opt-in behind simulatedHarness for now.
- */
-function requireCollaborationCapability(ctx: RpcContext): RpcResult | null {
-  if (!ctx.simulatedHarness) {
-    return {
-      error: {
-        code: 'failed_precondition',
-        message:
-          'collaboration RPC disabled: set simulatedHarness only in tests until real collab adapters exist',
-      },
-    }
-  }
-  return null
-}
-
 async function dispatchRpcInner(method: string, payload: unknown, ctx: RpcContext): Promise<RpcResult> {
-  if (method.startsWith('collaboration.')) {
-    const blocked = requireCollaborationCapability(ctx)
-    if (blocked) return blocked
-  }
-
   const resource = dispatchResourceRpc(method, payload, {
     client: ctx.client,
     projects: ctx.projects,
+    harnesses: ctx.harnesses,
+    providers: ctx.providers,
   })
-  if (resource) return resource
+  if (resource) return await resource
+
+  const automation = dispatchAutomationRpc(method, payload, {
+    client: ctx.client,
+    projects: ctx.projects,
+    automations: ctx.automations,
+    automationService: ctx.automationService,
+  })
+  if (automation) return await automation
+
+  const sessionProviders = dispatchSessionProviderRpc(method, payload, {
+    client: ctx.client,
+    sessionProviders: ctx.sessionProviders,
+  })
+  if (sessionProviders) return sessionProviders
+
+  const harnessResources = await dispatchHarnessResourcesRpc(method, payload, {
+    client: ctx.client,
+    projects: ctx.projects,
+    providers: ctx.providers,
+  })
+  if (harnessResources) return harnessResources
+
+  const codex = await dispatchCodexRpc(method, payload, {
+    client: ctx.client,
+    projects: ctx.projects,
+    harnesses: ctx.harnesses,
+    providers: ctx.providers,
+  })
+  if (codex) return codex
 
   switch (method) {
     case 'environment.descriptor':
@@ -247,6 +309,12 @@ async function dispatchRpcInner(method: string, payload: unknown, ctx: RpcContex
       return handleHealth(ctx)
     case 'environment.systemInfo':
       return handleSystemInfo(ctx)
+    case 'settings.get':
+      return handleSettingsGet(ctx)
+    case 'settings.patch':
+      return handleSettingsPatch(payload, ctx)
+    case 'sandbox.probe':
+      return handleSandboxProbe(ctx)
     case 'harness.list':
       return handleHarnessList(ctx)
     case 'harness.show':
@@ -305,6 +373,12 @@ async function dispatchRpcInner(method: string, payload: unknown, ctx: RpcContex
       return handleWorkspaceWatchPoll(payload, ctx)
     case 'workspace.watchStop':
       return handleWorkspaceWatchStop(payload, ctx)
+    case 'workspace.tailWatchStart':
+      return handleWorkspaceTailWatchStart(payload, ctx)
+    case 'workspace.tailWatchPoll':
+      return handleWorkspaceTailWatchPoll(payload, ctx)
+    case 'workspace.tailWatchStop':
+      return handleWorkspaceTailWatchStop(payload, ctx)
     case 'git.status':
       return handleGitStatus(payload, ctx)
     case 'git.diff':
@@ -333,6 +407,8 @@ async function dispatchRpcInner(method: string, payload: unknown, ctx: RpcContex
       return handleSessionCreate(payload, ctx)
     case 'session.setCwd':
       return handleSessionSetCwd(payload, ctx)
+    case 'session.patchSettings':
+      return handleSessionPatchSettings(payload, ctx)
     case 'session.fork':
       return handleSessionFork(payload, ctx)
     case 'session.get':
@@ -369,6 +445,8 @@ async function dispatchRpcInner(method: string, payload: unknown, ctx: RpcContex
       return handleSessionRespondHostAction(payload, ctx)
     case 'session.events':
       return handleSessionEvents(payload, ctx)
+    case 'session.messages.list':
+      return handleSessionMessagesList(payload, ctx)
     case 'session.snapshot':
       return handleSessionSnapshot(ctx)
     case 'session.close':
@@ -379,10 +457,16 @@ async function dispatchRpcInner(method: string, payload: unknown, ctx: RpcContex
       return handleSessionRename(payload, ctx)
     case 'session.setUiFlags':
       return handleSessionSetUiFlags(payload, ctx)
+    case 'collaboration.listProfiles':
+      return handleCollaborationListProfiles(ctx)
+    case 'collaboration.request':
+      return handleCollaborationRequest(payload, ctx)
+    case 'collaboration.start':
+      return handleCollaborationStart(payload, ctx)
     case 'collaboration.send':
       return handleCollaborationSend(payload, ctx)
-    case 'collaboration.list':
-      return handleCollaborationList(payload, ctx)
+    case 'collaboration.retrieve':
+      return handleCollaborationRetrieve(payload, ctx)
     case 'provider.listCredentials':
       return handleProviderListCredentials(ctx)
     case 'provider.getCredentialDecrypted':
@@ -594,8 +678,13 @@ function handleDescriptor(ctx: RpcContext): RpcResult {
       workspaceFs: true,
       git: true,
       worktrees: true,
-      collaboration: Boolean(ctx.simulatedHarness),
-      coldSessionResume: false,
+      // Always-on node policy: grant-scoped collab mailbox is owned by SessionRuntime.
+      collaboration: true,
+      // provider_resume is durable in SQLite; Claude/Codex reopen after node restart
+      // and continue from claude-session:<id> / thread:<id> on the next turn.
+      coldSessionResume: true,
+      // Mid-turn reattach across process restart is not implemented for any harness
+      // yet — streaming rows are reconciled to interrupted (see SessionRuntime).
       turnReattach: false,
       hostActionV1: true,
     },
@@ -705,9 +794,10 @@ function handleHealth(ctx: RpcContext): RpcResult {
   }
 }
 
-function handleSystemInfo(ctx: RpcContext): RpcResult {
+async function handleSystemInfo(ctx: RpcContext): Promise<RpcResult> {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.readEnvironment)
   if (denied) return denied
+  const sandbox = await probeSandboxRpc()
   return {
     result: {
       environmentId: ctx.identity.environmentId,
@@ -719,7 +809,57 @@ function handleSystemInfo(ctx: RpcContext): RpcResult {
       totalMemoryBytes: totalmem(),
       freeMemoryBytes: freemem(),
       bindingHash: ctx.identity.bindingHash,
+      sandbox: {
+        ok: sandbox.ok,
+        supportLevel: sandbox.supportLevel,
+        platform: sandbox.platform,
+        defaultMode: sandbox.defaultMode,
+        bwrap: sandbox.bwrap,
+        socat: sandbox.socat,
+        missing: sandbox.missing,
+        ...(sandbox.installHint ? { installHint: sandbox.installHint } : {}),
+        ...(sandbox.unsupportedReason
+          ? { unsupportedReason: sandbox.unsupportedReason }
+          : {}),
+      },
     },
+  }
+}
+
+function handleSettingsGet(ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.readEnvironment)
+  if (denied) return denied
+  try {
+    const settings = loadNodeAgentSettings(ctx.settingsConfigPath)
+    return { result: { settings } }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+function handleSettingsPatch(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.adminNode)
+  if (denied) return denied
+  const p = asRecord(payload)
+  const rawPatch = p.patch && typeof p.patch === 'object' ? p.patch : p
+  try {
+    const settings = patchNodeAgentSettings(
+      ctx.settingsConfigPath,
+      rawPatch as NodeAgentSettingsPatch,
+    )
+    return { result: { settings } }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+async function handleSandboxProbe(ctx: RpcContext): Promise<RpcResult> {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.readEnvironment)
+  if (denied) return denied
+  try {
+    return { result: await probeSandboxRpc() }
+  } catch (err) {
+    return mapThrown(err)
   }
 }
 
@@ -1234,6 +1374,49 @@ function handleWorkspaceWatchStop(payload: unknown, ctx: RpcContext): RpcResult 
   return { result: { ok: true } }
 }
 
+function handleWorkspaceTailWatchStart(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.readWorkspace)
+  if (denied) return denied
+  const p = asRecord(payload)
+  try {
+    const offset = typeof p.offset === 'number' ? p.offset : undefined
+    return {
+      result: ctx.workspaceTailWatch.start(String(p.projectId ?? ''), String(p.relativePath ?? ''), {
+        offset,
+        ownerClientId: ctx.client.clientSessionId,
+      }),
+    }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+function handleWorkspaceTailWatchPoll(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.readWorkspace)
+  if (denied) return denied
+  const p = asRecord(payload)
+  try {
+    return {
+      result: ctx.workspaceTailWatch.poll(String(p.watchId ?? ''), ctx.client.clientSessionId),
+    }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+function handleWorkspaceTailWatchStop(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.readWorkspace)
+  if (denied) return denied
+  const p = asRecord(payload)
+  try {
+    return {
+      result: ctx.workspaceTailWatch.stop(String(p.watchId ?? ''), ctx.client.clientSessionId),
+    }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
 function handleGitStatus(payload: unknown, ctx: RpcContext): RpcResult {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.readWorkspace)
   if (denied) return denied
@@ -1442,6 +1625,64 @@ function handleSessionSetCwd(payload: unknown, ctx: RpcContext): RpcResult {
 }
 
 /**
+ * Patch durable per-session turn defaults (model, effort, permissionMode,
+ * sandboxMode, apiProviderId). Only keys present on the payload are updated;
+ * null clears a stored default. Applied as session.send fallbacks when the
+ * turn omits the corresponding option — so remote chat need not re-send full
+ * options every turn.
+ */
+function handleSessionPatchSettings(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateSession)
+  if (denied) return denied
+  const p = asRecord(payload)
+  const sessionId = String(p.sessionId ?? '').trim()
+  if (!sessionId) {
+    return { error: { code: 'invalid_argument', message: 'sessionId required' } }
+  }
+  try {
+    // Always require control lease — permission/sandbox/model changes must not
+    // be applied by a second client without holding the session.
+    const leaseId = String(p.leaseId ?? '').trim()
+    if (!leaseId) {
+      return { error: { code: 'invalid_argument', message: 'leaseId required' } }
+    }
+    ctx.leases.assertValid({
+      resource: { environmentId: ctx.identity.environmentId, sessionId },
+      leaseId,
+      generation: String(p.generation ?? ''),
+      holderClientId: ctx.client.clientSessionId,
+    })
+    const settingsSrc = asRecord(p.settings ?? p)
+    const patch: {
+      permissionMode?: string | null
+      sandboxMode?: string | null
+      model?: string | null
+      effort?: string | null
+      apiProviderId?: string | null
+    } = {}
+    const take = (key: keyof typeof patch): void => {
+      if (!(key in settingsSrc)) return
+      const v = settingsSrc[key]
+      if (v === null) {
+        patch[key] = null
+        return
+      }
+      if (typeof v === 'string') {
+        patch[key] = v
+      }
+    }
+    take('permissionMode')
+    take('sandboxMode')
+    take('model')
+    take('effort')
+    take('apiProviderId')
+    return { result: ctx.sessions.patchSettings(sessionId, patch) }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+/**
  * Fork a session on this node: clone transcript into a new session, optionally
  * on a freshly activated detached worktree (mode=worktree) or same cwd (local),
  * plus harness SDK/thread fork when providerResume is present.
@@ -1632,15 +1873,72 @@ function handleSessionCreate(payload: unknown, ctx: RpcContext): RpcResult {
     return { error: { code: 'not_found', message: `unknown projectId: ${projectId}` } }
   }
   try {
+    // Resolve agent defaults at create so the client can seed UI without a second round-trip.
+    // Precedence: explicit create options → session_providers.config → node agent defaults.
+    const agentSettings = loadNodeAgentSettings(ctx.settingsConfigPath)
+    const defaults = resolveAgentTurnDefaults(agentSettings, harnessId)
+    const options = asRecord(p.options)
+    const providerId =
+      typeof p.providerId === 'string' && p.providerId.trim() ? p.providerId.trim() : undefined
+    const profile = providerId ? ctx.sessionProviders.get(providerId) : null
+    const profileSettings = profile
+      ? settingsFromSessionProviderConfig(profile.config)
+      : {}
+    const pick = (
+      fromOptions: unknown,
+      fromPayload: unknown,
+      fromProfile: string | undefined,
+      fromDefaults: string | null | undefined,
+    ): string | null => {
+      if (typeof fromOptions === 'string' && fromOptions.trim()) return fromOptions.trim()
+      if (typeof fromPayload === 'string' && fromPayload.trim()) return fromPayload.trim()
+      if (fromProfile) return fromProfile
+      return fromDefaults ?? null
+    }
+    const model = pick(options.model, p.model, profileSettings.model, defaults.model)
+    const effort = pick(options.effort, p.effort, profileSettings.effort, defaults.effort)
+    const permissionMode = pick(
+      options.permissionMode,
+      p.permissionMode,
+      profileSettings.permissionMode,
+      defaults.permissionMode,
+    )
+    const sandboxMode = pick(
+      options.sandboxMode,
+      p.sandboxMode,
+      profileSettings.sandboxMode,
+      defaults.sandboxMode,
+    )
+    let session = ctx.sessions.create({
+      projectId,
+      harnessId,
+      providerId,
+      title: typeof p.title === 'string' ? p.title : undefined,
+      // Pairing-level identity survives token refresh; control lease is a fence, not identity.
+      controllerClientSessionId: ctx.client.clientSessionId,
+    })
+    // Seed durable settings from create-time options / profile / agent defaults so later
+    // session.send without options reuses the same model/effort/etc.
+    if (model || effort || permissionMode || sandboxMode) {
+      session = ctx.sessions.patchSettings(session.sessionId, {
+        ...(model ? { model } : {}),
+        ...(effort ? { effort } : {}),
+        ...(permissionMode ? { permissionMode } : {}),
+        ...(sandboxMode ? { sandboxMode } : {}),
+      })
+    }
     return {
-      result: ctx.sessions.create({
-        projectId,
-        harnessId,
-        providerId: typeof p.providerId === 'string' ? p.providerId : undefined,
-        title: typeof p.title === 'string' ? p.title : undefined,
-        // Pairing-level identity survives token refresh; control lease is a fence, not identity.
-        controllerClientSessionId: ctx.client.clientSessionId,
-      }),
+      result: {
+        ...session,
+        defaults: {
+          model,
+          effort,
+          permissionMode,
+          sandboxMode,
+          permissionPreset: defaults.permissionPreset ?? null,
+          disabledSkills: defaults.disabledSkills ?? [],
+        },
+      },
     }
   } catch (err) {
     return mapThrown(err)
@@ -1829,17 +2127,23 @@ async function handleSessionSend(payload: unknown, ctx: RpcContext): Promise<Rpc
         : typeof p.apiProviderId === 'string' && p.apiProviderId.trim()
           ? p.apiProviderId.trim()
           : null
-    const effort =
+    const effortFromClient =
       typeof options.effort === 'string' && options.effort.trim()
         ? options.effort.trim()
         : typeof p.effort === 'string' && p.effort.trim()
           ? p.effort.trim()
           : null
-    const permissionMode =
+    const permissionModeFromClient =
       typeof options.permissionMode === 'string' && options.permissionMode.trim()
         ? options.permissionMode.trim()
         : typeof p.permissionMode === 'string' && p.permissionMode.trim()
           ? p.permissionMode.trim()
+          : null
+    const sandboxModeFromClient =
+      typeof options.sandboxMode === 'string' && options.sandboxMode.trim()
+        ? options.sandboxMode.trim()
+        : typeof p.sandboxMode === 'string' && p.sandboxMode.trim()
+          ? p.sandboxMode.trim()
           : null
     const rawAdditionalDirs = Array.isArray(options.additionalDirectories)
       ? options.additionalDirectories
@@ -1863,11 +2167,14 @@ async function handleSessionSend(payload: unknown, ctx: RpcContext): Promise<Rpc
       ? options.disabledSkills
       : Array.isArray(p.disabledSkills)
         ? p.disabledSkills
-        : []
-    const disabledSkills = rawDisabledSkills
-      .filter((s): s is string => typeof s === 'string' && s.trim().length > 0)
-      .map((s) => s.trim())
-      .slice(0, 200)
+        : null
+    const disabledSkillsFromClient =
+      rawDisabledSkills == null
+        ? null
+        : rawDisabledSkills
+            .filter((s): s is string => typeof s === 'string' && s.trim().length > 0)
+            .map((s) => s.trim())
+            .slice(0, 200)
     const rawImages = Array.isArray(options.images)
       ? options.images
       : Array.isArray(p.images)
@@ -1890,6 +2197,78 @@ async function handleSessionSend(payload: unknown, ctx: RpcContext): Promise<Rpc
       })
       .filter((x): x is NonNullable<typeof x> => x != null)
       .slice(0, 8)
+
+    const rawTurnKind =
+      typeof options.turnKind === 'string'
+        ? options.turnKind.trim()
+        : typeof p.turnKind === 'string'
+          ? p.turnKind.trim()
+          : ''
+    const turnKind =
+      rawTurnKind === 'run' ||
+      rawTurnKind === 'steer' ||
+      rawTurnKind === 'review' ||
+      rawTurnKind === 'compact'
+        ? rawTurnKind
+        : null
+    const collaborationMode =
+      options.collaborationMode !== undefined
+        ? options.collaborationMode
+        : p.collaborationMode !== undefined
+          ? p.collaborationMode
+          : null
+    const reviewTarget =
+      options.reviewTarget !== undefined
+        ? options.reviewTarget
+        : p.reviewTarget !== undefined
+          ? p.reviewTarget
+          : undefined
+
+    // Precedence: client turn options → durable session settings (patchSettings)
+    // → node agent defaults. SessionRuntime also re-applies session fallbacks.
+    const existing = ctx.sessions.get(String(p.sessionId ?? ''))
+    const harnessId = existing?.harnessId || 'claude'
+    const agentDefaults = resolveAgentTurnDefaults(
+      loadNodeAgentSettings(ctx.settingsConfigPath),
+      harnessId,
+    )
+    const pick = (
+      client: string | null,
+      sessionVal: string | null | undefined,
+      agentVal: string | null | undefined,
+    ): string | null => {
+      if (client && client.trim()) return client.trim()
+      if (typeof sessionVal === 'string' && sessionVal.trim()) return sessionVal.trim()
+      if (typeof agentVal === 'string' && agentVal.trim()) return agentVal.trim()
+      return null
+    }
+    const model = pick(
+      modelFromOptions ?? modelTopLevel,
+      existing?.model,
+      agentDefaults.model,
+    )
+    const effort = pick(effortFromClient, existing?.effort, agentDefaults.effort)
+    const permissionMode = pick(
+      permissionModeFromClient,
+      existing?.permissionMode,
+      agentDefaults.permissionMode,
+    )
+    const sandboxMode = pick(
+      sandboxModeFromClient,
+      existing?.sandboxMode,
+      agentDefaults.sandboxMode,
+    )
+    const apiProviderIdResolved = pick(
+      apiProviderId,
+      existing?.apiProviderId,
+      null,
+    )
+    const disabledSkills =
+      disabledSkillsFromClient ??
+      (agentDefaults.disabledSkills && agentDefaults.disabledSkills.length > 0
+        ? agentDefaults.disabledSkills
+        : [])
+
     const result = await ctx.sessions.send({
       sessionId: String(p.sessionId ?? ''),
       text: String(p.text ?? ''),
@@ -1897,15 +2276,25 @@ async function handleSessionSend(payload: unknown, ctx: RpcContext): Promise<Rpc
       leaseId: String(p.leaseId ?? ''),
       generation: String(p.generation ?? ''),
       requestId: typeof p.requestId === 'string' ? p.requestId : undefined,
-      model: modelFromOptions ?? modelTopLevel,
+      model,
       effort,
       permissionMode,
+      sandboxMode,
       additionalDirectories:
         additionalDirectories.length > 0 ? additionalDirectories : undefined,
       enabledSkills: enabledSkills.length > 0 ? enabledSkills : undefined,
       disabledSkills: disabledSkills.length > 0 ? disabledSkills : undefined,
       images: images.length > 0 ? images : undefined,
-      apiProviderId,
+      apiProviderId: apiProviderIdResolved,
+      turnKind,
+      collaborationMode:
+        collaborationMode === null
+          ? null
+          : typeof collaborationMode === 'string' ||
+              (collaborationMode && typeof collaborationMode === 'object')
+            ? (collaborationMode as string | Record<string, unknown>)
+            : undefined,
+      reviewTarget,
     })
     return { result }
   } catch (err) {
@@ -1935,6 +2324,13 @@ function handleSessionRespondPermission(payload: unknown, ctx: RpcContext): RpcR
   if (denied) return denied
   const p = asRecord(payload)
   try {
+    const formAnswers =
+      p.formAnswers && typeof p.formAnswers === 'object' && !Array.isArray(p.formAnswers)
+        ? (p.formAnswers as Record<string, unknown>)
+        : p.options && typeof p.options === 'object' && !Array.isArray(p.options)
+          ? ((p.options as { formAnswers?: Record<string, unknown> }).formAnswers
+            ?? (p.options as Record<string, unknown>))
+          : undefined
     ctx.sessions.respondPermission({
       sessionId: String(p.sessionId ?? ''),
       interactionId: String(p.interactionId ?? ''),
@@ -1942,6 +2338,8 @@ function handleSessionRespondPermission(payload: unknown, ctx: RpcContext): RpcR
       client: { clientSessionId: ctx.client.clientSessionId },
       leaseId: String(p.leaseId ?? ''),
       generation: String(p.generation ?? ''),
+      formAnswers,
+      cancel: p.cancel === true || (p.options as { cancel?: boolean } | undefined)?.cancel === true,
     })
     return { result: { ok: true } }
   } catch (err) {
@@ -2070,6 +2468,35 @@ function handleSessionEvents(payload: unknown, ctx: RpcContext): RpcResult {
   return { result: { events: ctx.sessions.listEventsAfter(after) } }
 }
 
+/**
+ * Paged denser message catalog (tool summaries, optional checkpoint/resume).
+ * Read-only; hydrate path for remote clients that use session.events for live
+ * catch-up and messages.list for historical UI.
+ */
+function handleSessionMessagesList(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.readSession)
+  if (denied) return denied
+  const p = asRecord(payload)
+  const sessionId = String(p.sessionId ?? '').trim()
+  if (!sessionId) {
+    return { error: { code: 'invalid_argument', message: 'sessionId required' } }
+  }
+  try {
+    const cursor =
+      p.cursor === null || p.cursor === undefined
+        ? null
+        : typeof p.cursor === 'number' || typeof p.cursor === 'string'
+          ? p.cursor
+          : null
+    const limit = typeof p.limit === 'number' ? p.limit : undefined
+    return {
+      result: ctx.sessions.listMessages({ sessionId, cursor, limit }),
+    }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
 function handleSessionSnapshot(ctx: RpcContext): RpcResult {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.readSession)
   if (denied) return denied
@@ -2083,33 +2510,51 @@ function handleSessionSnapshot(ctx: RpcContext): RpcResult {
   }
 }
 
-function handleCollaborationSend(payload: unknown, ctx: RpcContext): RpcResult {
+function handleCollaborationListProfiles(ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.readSession)
+  if (denied) return denied
+  try {
+    return { result: ctx.collaboration.listProfiles() }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+async function handleCollaborationRequest(payload: unknown, ctx: RpcContext): Promise<RpcResult> {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateSession)
   if (denied) return denied
   const p = asRecord(payload)
-  const fromSessionId = String(p.fromSessionId ?? '')
-  const session = ctx.sessions.get(fromSessionId)
-  if (!session) {
-    return { error: { code: 'not_found', message: 'fromSessionId not found' } }
+  const parentSessionId = String(p.parentSessionId ?? '')
+  if (!parentSessionId) {
+    return { error: { code: 'invalid_argument', message: 'parentSessionId required' } }
+  }
+  if (!Array.isArray(p.launches)) {
+    return { error: { code: 'invalid_argument', message: 'launches required' } }
+  }
+  const leaseId = String(p.leaseId ?? '').trim()
+  if (!leaseId) {
+    return { error: { code: 'invalid_argument', message: 'leaseId required' } }
   }
   try {
-    // Require control lease on the sending session so messages cannot be spoofed.
     ctx.leases.assertValid({
-      resource: { environmentId: ctx.identity.environmentId, sessionId: fromSessionId },
-      leaseId: String(p.leaseId ?? ''),
+      resource: { environmentId: ctx.identity.environmentId, sessionId: parentSessionId },
+      leaseId,
       generation: String(p.generation ?? ''),
       holderClientId: ctx.client.clientSessionId,
     })
-    const toSessionId = typeof p.toSessionId === 'string' ? p.toSessionId : null
-    if (toSessionId && !ctx.sessions.get(toSessionId)) {
-      return { error: { code: 'not_found', message: 'toSessionId not found' } }
-    }
     return {
-      result: ctx.collaboration.send({
-        fromSessionId,
-        toSessionId,
-        mailbox: String(p.mailbox ?? 'default'),
-        body: p.body,
+      result: await ctx.collaboration.request({
+        parentSessionId,
+        launches: p.launches as Array<{
+          launchId?: string
+          agentId: string
+          task: string
+          name: string
+          role: string
+          config?: Record<string, unknown>
+        }>,
+        // RPC path is controller-trusted; MCP tools set requireUserConfirm.
+        requireUserConfirm: p.requireUserConfirm === true,
       }),
     }
   } catch (err) {
@@ -2117,14 +2562,129 @@ function handleCollaborationSend(payload: unknown, ctx: RpcContext): RpcResult {
   }
 }
 
-function handleCollaborationList(payload: unknown, ctx: RpcContext): RpcResult {
+async function handleCollaborationStart(payload: unknown, ctx: RpcContext): Promise<RpcResult> {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateSession)
+  if (denied) return denied
+  const p = asRecord(payload)
+  const credential = typeof p.credential === 'string' ? p.credential : undefined
+  const grantId = typeof p.grantId === 'string' ? p.grantId : undefined
+  if (!credential && !grantId) {
+    return { error: { code: 'invalid_argument', message: 'credential or grantId required' } }
+  }
+  // Parent session for lease fence + grantId ownership binding.
+  const callerSessionId =
+    typeof p.callerSessionId === 'string' && p.callerSessionId.trim()
+      ? p.callerSessionId.trim()
+      : typeof p.parentSessionId === 'string' && p.parentSessionId.trim()
+        ? p.parentSessionId.trim()
+        : ''
+  if (!callerSessionId) {
+    return {
+      error: {
+        code: 'invalid_argument',
+        message: 'callerSessionId (or parentSessionId) required',
+      },
+    }
+  }
+  const leaseId = String(p.leaseId ?? '').trim()
+  if (!leaseId) {
+    return { error: { code: 'invalid_argument', message: 'leaseId required' } }
+  }
+  try {
+    ctx.leases.assertValid({
+      resource: { environmentId: ctx.identity.environmentId, sessionId: callerSessionId },
+      leaseId,
+      generation: String(p.generation ?? ''),
+      holderClientId: ctx.client.clientSessionId,
+    })
+  } catch (err) {
+    return mapThrown(err)
+  }
+  try {
+    return {
+      result: await ctx.collaboration.start({
+        credential,
+        grantId,
+        formAnswers:
+          p.formAnswers && typeof p.formAnswers === 'object'
+            ? (p.formAnswers as Record<string, unknown>)
+            : undefined,
+        callerSessionId,
+        controllerClientSessionId: ctx.client.clientSessionId,
+      }),
+    }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+function handleCollaborationSend(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateSession)
+  if (denied) return denied
+  const p = asRecord(payload)
+  const credential = String(p.credential ?? '')
+  const sessionId = String(p.sessionId ?? p.fromSessionId ?? '')
+  const content =
+    typeof p.content === 'string'
+      ? p.content
+      : p.body !== undefined
+        ? typeof p.body === 'string'
+          ? p.body
+          : JSON.stringify(p.body)
+        : ''
+  if (!credential) {
+    return { error: { code: 'invalid_argument', message: 'credential required' } }
+  }
+  if (!sessionId) {
+    return { error: { code: 'invalid_argument', message: 'sessionId required' } }
+  }
+  // Credential already binds parent/child endpoints; still require control lease
+  // on the calling session so a passive subscriber cannot inject mailbox traffic.
+  const leaseId = String(p.leaseId ?? '').trim()
+  if (!leaseId) {
+    return { error: { code: 'invalid_argument', message: 'leaseId required' } }
+  }
+  try {
+    ctx.leases.assertValid({
+      resource: { environmentId: ctx.identity.environmentId, sessionId },
+      leaseId,
+      generation: String(p.generation ?? ''),
+      holderClientId: ctx.client.clientSessionId,
+    })
+    return {
+      result: ctx.collaboration.send({
+        credential,
+        content,
+        clientMessageId: typeof p.clientMessageId === 'string' ? p.clientMessageId : undefined,
+        sessionId,
+      }),
+    }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+function handleCollaborationRetrieve(payload: unknown, ctx: RpcContext): RpcResult {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.readSession)
   if (denied) return denied
   const p = asRecord(payload)
-  return {
-    result: ctx.collaboration.list({
-      mailbox: typeof p.mailbox === 'string' ? p.mailbox : undefined,
-      sessionId: typeof p.sessionId === 'string' ? p.sessionId : undefined,
-    }),
+  const credential = String(p.credential ?? '')
+  const sessionId = String(p.sessionId ?? '')
+  if (!credential) {
+    return { error: { code: 'invalid_argument', message: 'credential required' } }
+  }
+  if (!sessionId) {
+    return { error: { code: 'invalid_argument', message: 'sessionId required' } }
+  }
+  try {
+    return {
+      result: ctx.collaboration.retrieve({
+        credential,
+        sessionId,
+        max: typeof p.max === 'number' ? p.max : undefined,
+      }),
+    }
+  } catch (err) {
+    return mapThrown(err)
   }
 }

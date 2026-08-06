@@ -11,13 +11,19 @@
  * SUPERONE_CODEX_BINARY points at an existing executable (see handlers).
  *
  * Codex turn protocol: @superone/codex. Claude: claude-turn-runner / core-claude.
+ *
+ * Long-lived app-server connections are kept per SuperOne session so mid-turn
+ * steer reuses the same process/thread (desktop parity).
  */
 
 import { existsSync } from 'node:fs'
 import {
+  ensureCodexThread,
   openCodexAppServer,
   runCodexAppServerTurn,
+  type CodexAppServerHandle,
   type CodexSpawnFn,
+  type CodexTurnKind,
 } from '@superone/codex'
 import {
   createNodeClaudeTurnRunner,
@@ -27,8 +33,10 @@ import { createSimulatedCodexRunner, type TurnRunner } from '@superone/runtime/s
 import { createMultiHarnessRouter, createAcpOpenCodeProductionRouter } from './harness-runners'
 import type { HarnessManager } from './harness-manager'
 import type { ProviderStore } from '../provider/provider-store'
-import { buildHarnessEnv, resolveHarnessService } from '../provider/resolve-service'
+import { buildHarnessEnvWithProxy, resolveHarnessService } from '../provider/resolve-service'
 import { prepareTurnPrompt } from './turn-attachments'
+import { ensureMcpMerge, type McpMergeMode } from '@superone/runtime/fs'
+import { openTurnAndStream } from './codex-live-turn'
 
 export interface NodeCodexRunnerOptions {
   binaryPath?: string | null
@@ -50,6 +58,15 @@ export interface NodeCodexRunnerOptions {
     http_headers: Record<string, string>
     startup_timeout_sec: number
   } | null
+  /**
+   * MCP merge mode. Default: merge enabled user/project MCP from disk into
+   * thread `config.mcp_servers` alongside host-action superone.
+   * Set `host-action-only` or env `SUPERONE_MCP_MERGE=0` for host-action only.
+   */
+  mcpMergeMode?: McpMergeMode
+  /** Override home / CODEX_HOME for MCP paths (tests). */
+  homeDir?: string
+  codexHome?: string
 }
 
 /** Production multi-dispatch options (Codex Stage 4 + Claude Stage 5-E + ACP/OpenCode). */
@@ -110,10 +127,82 @@ export function isCodexBinaryOverrideRunnable(): boolean {
   return Boolean(fromEnv && existsSync(fromEnv))
 }
 
+/**
+ * Fingerprint provider-related env so long-lived app-server processes reopen
+ * when proxy loopback URL / API key material changes (credential switch or
+ * openai-chat ↔ native protocol flip).
+ */
+function providerEnvKeyOf(env: NodeJS.ProcessEnv): string {
+  return [
+    env.OPENAI_BASE_URL ?? '',
+    env.CODEX_BASE_URL ?? '',
+    env.OPENAI_API_KEY ?? '',
+    env.CODEX_API_KEY ?? '',
+  ].join('\0')
+}
+
+interface LiveCodexConnection {
+  client: CodexAppServerHandle
+  threadId: string | null
+  /** Active turn id while a run is streaming (enables steer). */
+  activeTurnId: string | null
+  cwd: string
+  /** See {@link providerEnvKeyOf}. */
+  providerEnvKey: string
+  /** Serializes full turns (run/review/compact) on the same connection. */
+  chain: Promise<unknown>
+}
+
+function parseTurnKind(raw: unknown): CodexTurnKind {
+  if (raw === 'steer' || raw === 'review' || raw === 'compact' || raw === 'run') return raw
+  return 'run'
+}
+
 export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRunner {
   const simulatedCodex = createSimulatedCodexRunner()
+  /** SuperOne sessionId → long-lived app-server handle (steer requires this). */
+  const liveBySession = new Map<string, LiveCodexConnection>()
 
-  return async (input) => {
+  const disposeLive = async (sessionId: string) => {
+    const live = liveBySession.get(sessionId)
+    if (!live) return
+    liveBySession.delete(sessionId)
+    await live.client.close().catch(() => {})
+  }
+
+  const openLive = async (
+    sessionId: string,
+    binary: string,
+    authEnv: NodeJS.ProcessEnv,
+    cwd: string,
+  ): Promise<LiveCodexConnection> => {
+    const providerEnvKey = providerEnvKeyOf(authEnv)
+    const existing = liveBySession.get(sessionId)
+    if (existing && existing.cwd === cwd && existing.providerEnvKey === providerEnvKey) {
+      return existing
+    }
+    if (existing) await disposeLive(sessionId)
+
+    const client = await openCodexAppServer({
+      binaryPath: binary,
+      env: authEnv,
+      spawnFn: opts.spawnFn,
+      // Connection outlives individual turns — do not bind open to turn abort.
+    })
+    const live: LiveCodexConnection = {
+      client,
+      // threadId stays null until ensureCodexThread (start|resume) succeeds.
+      threadId: null,
+      activeTurnId: null,
+      cwd,
+      providerEnvKey,
+      chain: Promise.resolve(),
+    }
+    liveBySession.set(sessionId, live)
+    return live
+  }
+
+  const runner: TurnRunner = async (input) => {
     const harnessId = input.session.harnessId || 'codex'
     if (harnessId !== 'codex') {
       throw new Error(
@@ -141,63 +230,170 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
         ? input.session.cwd.trim()
         : projectRoot
 
-    const providerEnv =
-      opts.providers
-        ? buildHarnessEnv(
-            'codex',
-            resolveHarnessService(opts.providers, 'codex', input.apiProviderId),
-          )
-        : {}
+    // openai-chat credentials get a loopback protocol proxy (Responses↔Chat);
+    // native openai-responses pass through the real base URL (no proxy).
+    const providerEnv = opts.providers
+      ? await buildHarnessEnvWithProxy(
+          'codex',
+          resolveHarnessService(opts.providers, 'codex', input.apiProviderId),
+        )
+      : {}
     const authEnv: NodeJS.ProcessEnv = {
       ...process.env,
       ...opts.env,
       ...providerEnv,
     }
 
-    const client = await openCodexAppServer({
-      binaryPath: binary,
+    const sessionId = input.session.sessionId
+    let turnKind = parseTurnKind(input.turnKind)
+
+    const hostActionMcp = opts.getCodexHostActionMcp?.(sessionId) ?? null
+    const merged = ensureMcpMerge({
+      provider: 'codex',
+      cwd,
+      hostActionServers: hostActionMcp ? { superone: hostActionMcp } : undefined,
+      mode: opts.mcpMergeMode,
       env: authEnv,
-      spawnFn: opts.spawnFn,
-      signal: input.signal,
+      homeDir: opts.homeDir,
+      codexHome: opts.codexHome,
     })
-
-    try {
-      const priorThread =
-        input.session.providerResume && input.session.providerResume.startsWith('thread:')
-          ? input.session.providerResume.slice('thread:'.length)
-          : null
-
-      const hostActionMcp = opts.getCodexHostActionMcp?.(input.session.sessionId) ?? null
-      const threadConfig = hostActionMcp
-        ? { mcp_servers: { superone: hostActionMcp } }
+    const threadConfig =
+      Object.keys(merged.codexMcpServers).length > 0
+        ? { mcp_servers: merged.codexMcpServers }
         : undefined
 
-      // Codex app-server is text-path; use textFallback if multimodal was required.
-      const prepared = prepareTurnPrompt(input.text, cwd, input.images)
-      const prompt = prepared.kind === 'text' ? prepared.text : prepared.textFallback
-      const reasoningEffort = mapCodexReasoningEffort(input.effort)
-      const result = await runCodexAppServerTurn({
-        client,
-        prompt,
-        cwd,
-        threadId: priorThread,
-        model: input.model && input.model.trim() ? input.model.trim() : undefined,
-        reasoningEffort,
-        messageId: input.messageId,
-        onAgentEvent: input.onAgentEvent,
-        onDelta: input.onDelta,
-        signal: input.signal,
-        threadConfig,
-      })
+    const prepared = prepareTurnPrompt(input.text, cwd, input.images)
+    const prompt = prepared.kind === 'text' ? prepared.text : prepared.textFallback
+    const reasoningEffort = mapCodexReasoningEffort(input.effort)
 
+    const priorThread =
+      input.session.providerResume && input.session.providerResume.startsWith('thread:')
+        ? input.session.providerResume.slice('thread:'.length)
+        : null
+
+    // Steer must hit the in-flight connection immediately (not serialized on chain).
+    if (turnKind === 'steer' || (turnKind === 'run' && liveBySession.get(sessionId)?.activeTurnId)) {
+      const live = liveBySession.get(sessionId)
+      if (!live?.threadId || !live.activeTurnId) {
+        throw new Error('No active Codex turn to steer')
+      }
+      const result = await runCodexAppServerTurn({
+        client: live.client,
+        prompt,
+        cwd: live.cwd,
+        threadId: live.threadId,
+        turnKind: 'steer',
+        expectedTurnId: live.activeTurnId,
+        skipThreadSetup: true,
+        signal: input.signal,
+      })
       return {
         finalText: result.finalText,
         providerResume: result.threadId ? `thread:${result.threadId}` : null,
+        skipAssistantTranscript: true,
       }
-    } finally {
-      await client.close().catch(() => {})
     }
+
+    const live = await openLive(sessionId, binary, authEnv, cwd)
+
+    const fullTurn = async (): Promise<{
+      finalText: string
+      providerResume: string | null
+      skipAssistantTranscript?: boolean
+    }> => {
+      const conn = liveBySession.get(sessionId)
+      if (!conn) throw new Error('Codex connection disposed')
+
+      try {
+        // Always ensure the server-side thread on a fresh connection (or when
+        // providerResume points at a different thread id).
+        if (!conn.threadId || (priorThread && priorThread !== conn.threadId)) {
+          conn.threadId = await ensureCodexThread({
+            client: conn.client,
+            cwd,
+            threadId: priorThread ?? conn.threadId,
+            threadConfig,
+            signal: input.signal,
+          })
+        }
+
+        if (turnKind === 'run') {
+          const result = await openTurnAndStream({
+            client: conn.client,
+            prompt,
+            cwd,
+            threadId: conn.threadId!,
+            model: input.model && input.model.trim() ? input.model.trim() : undefined,
+            reasoningEffort,
+            collaborationMode: input.collaborationMode,
+            messageId: input.messageId,
+            onAgentEvent: input.onAgentEvent,
+            onDelta: input.onDelta,
+            signal: input.signal,
+            onTurnStarted: (turnId) => {
+              conn.activeTurnId = turnId
+            },
+          })
+          if (result.threadId) conn.threadId = result.threadId
+          conn.activeTurnId = null
+          return {
+            finalText: result.finalText,
+            providerResume: result.threadId ? `thread:${result.threadId}` : null,
+          }
+        }
+
+        // review | compact
+        const result = await runCodexAppServerTurn({
+          client: conn.client,
+          prompt: turnKind === 'compact' ? prompt || 'compact' : prompt,
+          cwd,
+          threadId: conn.threadId,
+          model: input.model && input.model.trim() ? input.model.trim() : undefined,
+          reasoningEffort,
+          turnKind,
+          collaborationMode: input.collaborationMode,
+          reviewTarget: input.reviewTarget,
+          skipThreadSetup: true,
+          messageId: input.messageId,
+          onAgentEvent: input.onAgentEvent,
+          onDelta: input.onDelta,
+          signal: input.signal,
+          threadConfig,
+        })
+        if (result.threadId) conn.threadId = result.threadId
+        conn.activeTurnId = null
+        return {
+          finalText: result.finalText,
+          providerResume: result.threadId ? `thread:${result.threadId}` : null,
+          skipAssistantTranscript: result.skipAssistantTranscript,
+        }
+      } catch (err) {
+        conn.activeTurnId = null
+        const msg = err instanceof Error ? err.message : String(err)
+        if (/closed|exited|broken pipe|spawn failed/i.test(msg)) {
+          await disposeLive(sessionId)
+        }
+        throw err
+      }
+    }
+
+    const next = live.chain.then(fullTurn, fullTurn)
+    live.chain = next.then(
+      () => undefined,
+      () => undefined,
+    )
+    return next
   }
+
+  runner.disposeSession = async (sessionId) => {
+    await disposeLive(sessionId)
+  }
+  runner.disposeAll = async () => {
+    const ids = [...liveBySession.keys()]
+    await Promise.all(ids.map((id) => disposeLive(id)))
+  }
+
+  return runner
 }
 
 /**
@@ -216,6 +412,8 @@ export function createProductionTurnRunner(opts: NodeProductionRunnerOptions): T
     allowSimulatedFallback: opts.allowSimulatedFallback,
     providers: opts.providers,
     createHostActionClaudeMcp: opts.createHostActionClaudeMcp,
+    mcpMergeMode: opts.mcpMergeMode,
+    homeDir: opts.homeDir,
   })
   const acpOpenCode = createAcpOpenCodeProductionRouter({
     allowSimulatedFallback: opts.allowSimulatedFallback,
@@ -238,12 +436,14 @@ export function createProductionTurnRunner(opts: NodeProductionRunnerOptions): T
     )
   }
 
-  // Forward long-lived Claude process teardown (other harnesses are one-shot today).
   runner.disposeSession = async (sessionId) => {
-    await claude.disposeSession?.(sessionId)
+    await Promise.all([
+      claude.disposeSession?.(sessionId),
+      codex.disposeSession?.(sessionId),
+    ])
   }
   runner.disposeAll = async () => {
-    await claude.disposeAll?.()
+    await Promise.all([claude.disposeAll?.(), codex.disposeAll?.()])
   }
 
   return runner

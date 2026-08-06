@@ -40,14 +40,17 @@ import {
   createHostActionMcpServer,
   HOST_ACTION_MCP_NAME,
   type HostActionRequestFn,
+  type NodeCollabToolHandlers,
 } from './host-action-mcp-core'
 
 const MAX_HTTP_BODY_BYTES = 1024 * 1024
 
-export type { HostActionRequestFn }
+export type { HostActionRequestFn, NodeCollabToolHandlers }
 
 export interface HostActionMcpServerOptions {
   requestHostAction: HostActionRequestFn
+  /** Node-local session_collab_* (SessionRuntime collab service). */
+  collab?: NodeCollabToolHandlers
   /** Injectable for tests. */
   masterToken?: string
 }
@@ -197,7 +200,9 @@ export async function startHostActionMcpServer(
       }
     } else if (!transportId && req.method === 'POST' && isInitializeRequest(body)) {
       try {
-        const server = createHostActionMcpServer(superoneSessionId, opts.requestHostAction)
+        const server = createHostActionMcpServer(superoneSessionId, opts.requestHostAction, {
+          collab: opts.collab,
+        })
         let sessionRef: HttpMcpSession | undefined
         const transport = new StreamableHTTPServerTransport({
           sessionIdGenerator: randomUUID,
@@ -282,7 +287,9 @@ export async function startHostActionMcpServer(
       return buildAcpSuperoneMcpServer(httpUrl, masterToken, sessionId)
     },
     createClaudeSdkMcp(sessionId: string): ClaudeSdkMcpHandle {
-      const server = createHostActionMcpServer(sessionId, opts.requestHostAction)
+      const server = createHostActionMcpServer(sessionId, opts.requestHostAction, {
+        collab: opts.collab,
+      })
       const entry = {
         type: 'sdk' as const,
         name: HOST_ACTION_MCP_NAME,

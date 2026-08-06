@@ -14,6 +14,9 @@ import { tmpdir } from 'node:os'
 import type { ClaudeQueryFn } from '@superone/claude'
 import type { Options, SDKMessage, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import type { AgentEvent } from '@superone/shared/agent-types'
+import { shutdownAll as shutdownAllProxies } from '@superone/runtime/llm-proxy'
+import { openNodeDatabase } from '../db/database'
+import { ProviderStore } from '../provider/provider-store'
 
 function session(over: Partial<NodeSessionRecord> = {}): NodeSessionRecord {
   return {
@@ -267,8 +270,104 @@ describe('createNodeClaudeTurnRunner', () => {
     rmSync(dir, { recursive: true, force: true })
   })
 
+  it('picks loopback proxy base URL for openai-chat credentials', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cbr-claude-proxy-'))
+    const bin = join(dir, 'claude')
+    writeFileSync(bin, '#!/bin/sh\n')
+    chmodSync(bin, 0o755)
+
+    const db = openNodeDatabase(join(dir, 'state.sqlite'))
+    const providers = new ProviderStore(db, join(dir, 'provider-secrets.key'))
+    providers.upsertCustomPlatform({
+      id: 'custom:relay',
+      brand: 'relay',
+      name: 'Relay',
+      plans: [
+        {
+          id: 'api',
+          name: 'API',
+          auth: 'api-key',
+          endpoints: [{ id: 'openai', baseUrl: 'https://relay.example/v1', protocols: ['openai-chat'] }],
+        },
+      ],
+    })
+    const cred = providers.createCredential({
+      platformId: 'custom:relay',
+      planId: 'api',
+      name: 'relay',
+      secret: 'sk-upstream-secret',
+    })
+    providers.setBinding({ consumer: 'chat:claude', credentialId: cred.id })
+
+    const queryFn = vi.fn(bridgeQuery(() => success('proxy-sess', 'ok')))
+    const runner = createNodeClaudeTurnRunner({
+      binaryPath: bin,
+      resolveProjectPath: () => dir,
+      queryFn,
+      providers,
+      allowSimulatedFallback: false,
+    })
+
+    try {
+      await runner({
+        session: session(),
+        text: 'ping',
+        onDelta: () => {},
+        signal: new AbortController().signal,
+      })
+
+      expect(queryFn).toHaveBeenCalled()
+      const call = queryFn.mock.calls[0]![0] as { options?: Options }
+      const env = call.options?.env as Record<string, string> | undefined
+      expect(env?.ANTHROPIC_BASE_URL).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/)
+      expect(env?.ANTHROPIC_API_KEY).toBe('sk-superone-proxy')
+    } finally {
+      await runner.disposeAll?.()
+      await shutdownAllProxies()
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('threads sandboxMode into ClaudeLiveSession / SDK options', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cbr-claude-sandbox-'))
+    const bin = join(dir, 'claude')
+    writeFileSync(bin, '#!/bin/sh\n')
+    chmodSync(bin, 0o755)
+
+    const queryFn = vi.fn(bridgeQuery(() => success('sb1', 'ok')))
+
+    const runner = createNodeClaudeTurnRunner({
+      binaryPath: bin,
+      resolveProjectPath: () => dir,
+      queryFn,
+      allowSimulatedFallback: false,
+    })
+
+    await runner({
+      session: session(),
+      text: 'ping',
+      sandboxMode: 'auto',
+      onDelta: () => {},
+      signal: new AbortController().signal,
+    })
+
+    expect(queryFn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        options: expect.objectContaining({
+          sandbox: {
+            enabled: true,
+            autoAllowBashIfSandboxed: true,
+            failIfUnavailable: false,
+          },
+        }),
+      }),
+    )
+    rmSync(dir, { recursive: true, force: true })
+  })
+
   it('passes Host Action SDK MCP into options.mcpServers and keeps it for live session', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'cbr-claude-mcp-'))
+    const home = mkdtempSync(join(tmpdir(), 'cbr-claude-mcp-home-'))
     const bin = join(dir, 'claude')
     writeFileSync(bin, '#!/bin/sh\n')
     chmodSync(bin, 0o755)
@@ -284,6 +383,8 @@ describe('createNodeClaudeTurnRunner', () => {
       resolveProjectPath: () => dir,
       queryFn,
       allowSimulatedFallback: false,
+      // Isolate from developer ~/.claude.json so merge only sees host-action.
+      homeDir: home,
       createHostActionClaudeMcp: (sessionId) => {
         expect(sessionId).toBe('node-sid-42')
         createCount++
@@ -319,6 +420,106 @@ describe('createNodeClaudeTurnRunner', () => {
     expect(dispose).not.toHaveBeenCalled()
 
     rmSync(dir, { recursive: true, force: true })
+    rmSync(home, { recursive: true, force: true })
+  })
+
+  it('merges enabled project MCP into options.mcpServers with host-action superone', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cbr-claude-mcp-merge-'))
+    const home = mkdtempSync(join(tmpdir(), 'cbr-claude-mcp-home-'))
+    const bin = join(dir, 'claude')
+    writeFileSync(bin, '#!/bin/sh\n')
+    chmodSync(bin, 0o755)
+    writeFileSync(
+      join(dir, '.mcp.json'),
+      JSON.stringify({
+        mcpServers: {
+          github: { type: 'http', url: 'https://mcp.github.com' },
+        },
+      }),
+    )
+
+    const queryFn = vi.fn(bridgeQuery(() => success('m-merge', 'ok')))
+    const sdkInstance = { type: 'sdk', name: 'superone', instance: { id: 'mcp-merge' } }
+
+    const runner = createNodeClaudeTurnRunner({
+      binaryPath: bin,
+      resolveProjectPath: () => dir,
+      queryFn,
+      allowSimulatedFallback: false,
+      homeDir: home,
+      createHostActionClaudeMcp: () => ({
+        mcpServers: { superone: sdkInstance as never },
+        dispose: async () => {},
+      }),
+    })
+
+    await runner({
+      session: session({ sessionId: 'merge-sid' }),
+      text: 'use mcp',
+      onDelta: () => {},
+      signal: new AbortController().signal,
+    })
+
+    const call = queryFn.mock.calls[0]?.[0] as {
+      options?: { mcpServers?: Record<string, unknown>; strictMcpConfig?: boolean }
+    }
+    expect(call?.options?.strictMcpConfig).toBe(true)
+    expect(call?.options?.mcpServers?.superone).toEqual(sdkInstance)
+    expect(call?.options?.mcpServers?.github).toEqual({
+      type: 'http',
+      url: 'https://mcp.github.com',
+    })
+
+    rmSync(dir, { recursive: true, force: true })
+    rmSync(home, { recursive: true, force: true })
+  })
+
+  it('host-action-only mode skips disk MCP merge', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cbr-claude-mcp-hao-'))
+    const home = mkdtempSync(join(tmpdir(), 'cbr-claude-mcp-hao-home-'))
+    const bin = join(dir, 'claude')
+    writeFileSync(bin, '#!/bin/sh\n')
+    chmodSync(bin, 0o755)
+    writeFileSync(
+      join(dir, '.mcp.json'),
+      JSON.stringify({
+        mcpServers: {
+          github: { type: 'http', url: 'https://mcp.github.com' },
+        },
+      }),
+    )
+
+    const queryFn = vi.fn(bridgeQuery(() => success('m-hao', 'ok')))
+    const sdkInstance = { type: 'sdk', name: 'superone', instance: {} }
+
+    const runner = createNodeClaudeTurnRunner({
+      binaryPath: bin,
+      resolveProjectPath: () => dir,
+      queryFn,
+      allowSimulatedFallback: false,
+      homeDir: home,
+      mcpMergeMode: 'host-action-only',
+      createHostActionClaudeMcp: () => ({
+        mcpServers: { superone: sdkInstance as never },
+        dispose: async () => {},
+      }),
+    })
+
+    await runner({
+      session: session({ sessionId: 'hao-sid' }),
+      text: 'no merge',
+      onDelta: () => {},
+      signal: new AbortController().signal,
+    })
+
+    const call = queryFn.mock.calls[0]?.[0] as {
+      options?: { mcpServers?: Record<string, unknown> }
+    }
+    expect(call?.options?.mcpServers).toEqual({ superone: sdkInstance })
+    expect(call?.options?.mcpServers?.github).toBeUndefined()
+
+    rmSync(dir, { recursive: true, force: true })
+    rmSync(home, { recursive: true, force: true })
   })
 
   it('opens live session with resume from providerResume on first turn', async () => {
@@ -353,6 +554,7 @@ describe('createNodeClaudeTurnRunner', () => {
 
   it('disposeSession tears down long-lived live + host-action MCP', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'cbr-claude-dispose-'))
+    const home = mkdtempSync(join(tmpdir(), 'cbr-claude-dispose-home-'))
     const bin = join(dir, 'claude')
     writeFileSync(bin, '#!/bin/sh\n')
     chmodSync(bin, 0o755)
@@ -364,6 +566,7 @@ describe('createNodeClaudeTurnRunner', () => {
       resolveProjectPath: () => dir,
       queryFn,
       allowSimulatedFallback: false,
+      homeDir: home,
       createHostActionClaudeMcp: () => ({
         mcpServers: { superone: { type: 'sdk', name: 'superone', instance: {} } as never },
         dispose,
@@ -393,6 +596,7 @@ describe('createNodeClaudeTurnRunner', () => {
 
     await runner.disposeAll?.()
     rmSync(dir, { recursive: true, force: true })
+    rmSync(home, { recursive: true, force: true })
   })
 
   it('mid-turn inject reuses one SDK query and marks priority next on the second user message', async () => {

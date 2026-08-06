@@ -8,7 +8,7 @@ import { forkCodexThread, openCodexAppServer } from '@superone/codex'
 import type { NodeSessionRecord } from '@superone/runtime/session'
 import type { HarnessManager } from './harness-manager'
 import type { ProviderStore } from '../provider/provider-store'
-import { buildHarnessEnv, resolveHarnessService } from '../provider/resolve-service'
+import { buildHarnessEnvWithProxy, resolveHarnessService } from '../provider/resolve-service'
 import {
   formatClaudeSessionResume,
   parseClaudeSessionResume,
@@ -83,8 +83,12 @@ export async function forkNodeHarnessResume(
       opts.resolveProjectPath(source.projectId) ||
       process.env.SUPERONE_DEFAULT_CWD ||
       process.cwd()
+    // openai-chat → loopback proxy; native openai-responses → real base URL.
     const providerEnv = opts.providers
-      ? buildHarnessEnv('codex', resolveHarnessService(opts.providers, 'codex', null))
+      ? await buildHarnessEnvWithProxy(
+          'codex',
+          resolveHarnessService(opts.providers, 'codex', null),
+        )
       : {}
     const openFn = opts.openCodexFn ?? openCodexAppServer
     const client = await openFn({

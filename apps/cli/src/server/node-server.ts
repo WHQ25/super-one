@@ -17,10 +17,12 @@ import type { SessionRuntime } from '../session/session-runtime'
 import type { HarnessManager } from '../session/harness-manager'
 import type { ControlLeaseService } from '../session/control-lease'
 import type { EventLog } from '../session/event-log'
-import type { CollaborationMailbox } from '../session/collaboration'
+import type { CollaborationService } from '../session/collaboration'
 import type { WorkspaceWatchService } from '../workspace/watch-service'
+import type { WorkspaceTailWatchService } from '../workspace/tail-watch-service'
 import { IdempotencyService } from '../auth/idempotency'
 import type { ProviderStore } from '../provider/provider-store'
+import type { AutomationService, AutomationStore } from '@superone/runtime/automations'
 import { clearWatchBuffersForClient } from '../rpc/handlers'
 
 const MAX_JSON_BYTES = {
@@ -81,19 +83,25 @@ export interface NodeServerOptions {
   workspaceFs: WorkspaceFsService
   workspaceGit: WorkspaceGitService
   workspaceWatch: WorkspaceWatchService
+  workspaceTailWatch: WorkspaceTailWatchService
   sessions: SessionRuntime
   harnesses: HarnessManager
   leases: ControlLeaseService
   events: EventLog
-  collaboration: CollaborationMailbox
+  collaboration: CollaborationService
   idempotency: IdempotencyService
   providers: ProviderStore
+  /** Absolute path to SUPERONE_NODE_HOME/config.json (agent settings). */
+  settingsConfigPath: string
+  automations: AutomationStore
+  automationService: AutomationService
+  sessionProviders: import('@superone/runtime/session').SessionProviderStore
   bindHost: string
   bindPort: number
   startedAt?: number
   /**
-   * When true, collaboration RPC is enabled and harness catalog is pre-marked ready
-   * for simulated multi-harness contract tests. Production must leave this false.
+   * When true, harness catalog is pre-marked ready for simulated multi-harness
+   * contract tests. Collaboration RPC is always available (node policy).
    */
   simulatedHarness?: boolean
 }
@@ -128,6 +136,7 @@ export async function startNodeServer(opts: NodeServerOptions): Promise<NodeServ
       }
     }
     opts.workspaceWatch.cancelForClient?.(clientSessionId)
+    opts.workspaceTailWatch.cancelForClient?.(clientSessionId)
     clearWatchBuffersForClient(clientSessionId)
   }
 
@@ -213,6 +222,7 @@ export async function startNodeServer(opts: NodeServerOptions): Promise<NodeServ
       workspaceFs: opts.workspaceFs,
       workspaceGit: opts.workspaceGit,
       workspaceWatch: opts.workspaceWatch,
+      workspaceTailWatch: opts.workspaceTailWatch,
       sessions: opts.sessions,
       harnesses: opts.harnesses,
       leases: opts.leases,
@@ -220,6 +230,10 @@ export async function startNodeServer(opts: NodeServerOptions): Promise<NodeServ
       collaboration: opts.collaboration,
       idempotency: opts.idempotency,
       providers: opts.providers,
+      settingsConfigPath: opts.settingsConfigPath,
+      automations: opts.automations,
+      automationService: opts.automationService,
+      sessionProviders: opts.sessionProviders,
       startedAt,
       simulatedHarness: opts.simulatedHarness === true,
     }
@@ -391,6 +405,7 @@ export async function startNodeServer(opts: NodeServerOptions): Promise<NodeServ
       }
       if (!stillConnected) {
         opts.workspaceWatch.cancelForClient?.(client.clientSessionId)
+        opts.workspaceTailWatch.cancelForClient?.(client.clientSessionId)
         clearWatchBuffersForClient(client.clientSessionId)
       }
     })

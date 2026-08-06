@@ -4,8 +4,10 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { openNodeDatabase } from '../db/database'
 import { ProviderStore } from './provider-store'
+import { shutdownAll as shutdownAllProxies } from '@superone/runtime/llm-proxy'
 import {
   buildHarnessEnv,
+  buildHarnessEnvWithProxy,
   listHarnessModels,
   resolveHarnessService,
 } from './resolve-service'
@@ -89,5 +91,116 @@ describe('resolve-service', () => {
 
   it('listHarnessModels returns empty for unknown harness', () => {
     expect(listHarnessModels(store, 'acp', null)).toEqual([])
+  })
+
+  it('resolves openai-chat custom platform for Claude and Codex', () => {
+    store.upsertCustomPlatform({
+      id: 'custom:relay',
+      brand: 'relay',
+      name: 'Relay',
+      plans: [
+        {
+          id: 'api',
+          name: 'API',
+          auth: 'api-key',
+          endpoints: [{ id: 'openai', baseUrl: 'https://relay.example/v1', protocols: ['openai-chat'] }],
+        },
+      ],
+    })
+    const cred = store.createCredential({
+      platformId: 'custom:relay',
+      planId: 'api',
+      name: 'relay-key',
+      secret: 'sk-relay-secret-999999',
+    })
+    store.setBinding({ consumer: 'chat:claude', credentialId: cred.id })
+    store.setBinding({ consumer: 'chat:codex', credentialId: cred.id })
+
+    const claude = resolveHarnessService(store, 'claude', null)
+    expect(claude?.protocol).toBe('openai-chat')
+    expect(claude?.baseUrl).toMatch(/relay\.example/)
+
+    const codex = resolveHarnessService(store, 'codex', null)
+    expect(codex?.protocol).toBe('openai-chat')
+  })
+})
+
+describe('buildHarnessEnvWithProxy', () => {
+  afterEach(async () => {
+    await shutdownAllProxies()
+  })
+
+  it('points Claude env at loopback proxy for openai-chat credentials', async () => {
+    const env = await buildHarnessEnvWithProxy('claude', {
+      platformId: 'custom:relay',
+      brand: 'relay',
+      planId: 'api',
+      endpointId: 'openai',
+      credentialId: 'c1',
+      task: 'chat',
+      protocol: 'openai-chat',
+      baseUrl: 'https://relay.example/v1',
+      apiKey: 'sk-upstream-secret',
+      auth: 'api-key',
+      models: [{ id: 'm1' }],
+    })
+    expect(env.ANTHROPIC_BASE_URL).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/)
+    expect(env.ANTHROPIC_API_KEY).toBe('sk-superone-proxy')
+    const health = await fetch(`${env.ANTHROPIC_BASE_URL}/health`)
+    expect(health.ok).toBe(true)
+  })
+
+  it('points Codex env at loopback proxy for openai-chat credentials', async () => {
+    const env = await buildHarnessEnvWithProxy('codex', {
+      platformId: 'custom:relay',
+      brand: 'relay',
+      planId: 'api',
+      endpointId: 'openai',
+      credentialId: 'c1',
+      task: 'chat',
+      protocol: 'openai-chat',
+      baseUrl: 'https://relay.example/v1',
+      apiKey: 'sk-upstream-secret',
+      auth: 'api-key',
+    })
+    expect(env.OPENAI_BASE_URL).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/)
+    expect(env.CODEX_BASE_URL).toBe(env.OPENAI_BASE_URL)
+    expect(env.CODEX_API_KEY).toBe('sk-superone-proxy')
+  })
+
+  it('leaves native anthropic-messages base URL unchanged', async () => {
+    const env = await buildHarnessEnvWithProxy('claude', {
+      platformId: 'anthropic',
+      brand: 'anthropic',
+      planId: 'api',
+      endpointId: 'anthropic',
+      credentialId: 'c1',
+      task: 'chat',
+      protocol: 'anthropic-messages',
+      baseUrl: 'https://api.anthropic.com',
+      apiKey: 'sk-ant-native',
+      auth: 'api-key',
+    })
+    expect(env.ANTHROPIC_BASE_URL).toBe('https://api.anthropic.com')
+    expect(env.ANTHROPIC_API_KEY).toBe('sk-ant-native')
+  })
+
+  it('leaves native openai-responses base URL unchanged for Codex', async () => {
+    const env = await buildHarnessEnvWithProxy('codex', {
+      platformId: 'openai',
+      brand: 'openai',
+      planId: 'api',
+      endpointId: 'responses',
+      credentialId: 'c1',
+      task: 'chat',
+      protocol: 'openai-responses',
+      baseUrl: 'https://api.openai.com/v1',
+      apiKey: 'sk-openai-native',
+      auth: 'api-key',
+    })
+    expect(env.OPENAI_BASE_URL).toBe('https://api.openai.com/v1')
+    expect(env.CODEX_BASE_URL).toBe('https://api.openai.com/v1')
+    expect(env.CODEX_API_KEY).toBe('sk-openai-native')
+    expect(env.CODEX_API_KEY).not.toBe('sk-superone-proxy')
   })
 })

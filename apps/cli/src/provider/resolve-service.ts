@@ -17,6 +17,11 @@ import {
   type Platform,
   type ResolvedService,
 } from '@superone/shared/platform-registry'
+import {
+  ensureProxy,
+  PROXY_HARNESS_API_KEY,
+  proxyUpstreamFromResolved,
+} from '@superone/runtime/llm-proxy'
 import type { ProviderStore } from './provider-store'
 
 function credentialApiKey(cred: Credential): string {
@@ -111,6 +116,36 @@ export function buildHarnessEnv(harness: string, resolved: ResolvedService | nul
       env.OPENAI_BASE_URL = resolved.baseUrl
       env.CODEX_BASE_URL = resolved.baseUrl
     }
+  }
+  return env
+}
+
+/**
+ * Like {@link buildHarnessEnv}, but when the resolved protocol is `openai-chat`
+ * (or other non-native wire), start a loopback protocol proxy and point the
+ * harness at it. Claude sees Anthropic Messages; Codex sees Responses.
+ */
+export async function buildHarnessEnvWithProxy(
+  harness: string,
+  resolved: ResolvedService | null,
+): Promise<Record<string, string>> {
+  const env = buildHarnessEnv(harness, resolved)
+  if (!resolved) return env
+
+  const upstream = proxyUpstreamFromResolved(resolved)
+  if (!upstream) return env
+
+  const { url } = await ensureProxy(upstream)
+
+  if (harness === 'claude') {
+    env.ANTHROPIC_BASE_URL = url
+    env.ANTHROPIC_API_KEY = PROXY_HARNESS_API_KEY
+    if ('ANTHROPIC_AUTH_TOKEN' in env) env.ANTHROPIC_AUTH_TOKEN = PROXY_HARNESS_API_KEY
+  } else if (harness === 'codex') {
+    env.OPENAI_BASE_URL = url
+    env.CODEX_BASE_URL = url
+    env.OPENAI_API_KEY = PROXY_HARNESS_API_KEY
+    env.CODEX_API_KEY = PROXY_HARNESS_API_KEY
   }
   return env
 }

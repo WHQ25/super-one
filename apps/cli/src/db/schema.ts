@@ -117,7 +117,12 @@ CREATE TABLE IF NOT EXISTS sessions (
   controller_client_session_id TEXT,
   host_action_capability_version INTEGER NOT NULL DEFAULT 0,
   host_action_tool_groups_json TEXT NOT NULL DEFAULT '[]',
-  always_allowed_tools_json TEXT NOT NULL DEFAULT '[]'
+  always_allowed_tools_json TEXT NOT NULL DEFAULT '[]',
+  -- Durable per-session turn defaults (permissionMode/sandboxMode/model/effort/apiProviderId)
+  settings_json TEXT,
+  -- Automation ownership markers (filterable in session.list metadata)
+  is_automation INTEGER NOT NULL DEFAULT 0,
+  automation_id TEXT
 );
 
 -- Host Action channel (durable poll/claim/respond). Also ensured at open time.
@@ -174,6 +179,48 @@ CREATE TABLE IF NOT EXISTS collaboration_messages (
   created_at INTEGER NOT NULL
 );
 
+-- Credential-scoped collaboration grants + mailbox (desktop parity).
+CREATE TABLE IF NOT EXISTS session_collaboration_grants (
+  credential_hash TEXT PRIMARY KEY NOT NULL,
+  credential_secret TEXT,
+  credential_hint TEXT NOT NULL,
+  parent_session_id TEXT NOT NULL,
+  child_session_id TEXT UNIQUE,
+  agent_id TEXT NOT NULL,
+  task TEXT NOT NULL,
+  config_json TEXT NOT NULL,
+  task_sent INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  started_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_session_collaboration_parent
+  ON session_collaboration_grants(parent_session_id);
+CREATE INDEX IF NOT EXISTS idx_session_collaboration_child
+  ON session_collaboration_grants(child_session_id);
+
+CREATE TABLE IF NOT EXISTS session_collaboration_messages (
+  id TEXT PRIMARY KEY NOT NULL,
+  credential_hash TEXT NOT NULL,
+  sequence INTEGER NOT NULL,
+  sender_session_id TEXT NOT NULL,
+  recipient_session_id TEXT NOT NULL,
+  client_message_id TEXT,
+  content TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  delivered_at TEXT,
+  UNIQUE(credential_hash, sequence),
+  UNIQUE(credential_hash, sender_session_id, client_message_id)
+);
+CREATE INDEX IF NOT EXISTS idx_session_collaboration_mailbox
+  ON session_collaboration_messages(credential_hash, recipient_session_id, sequence);
+
+CREATE TABLE IF NOT EXISTS session_collaboration_cursors (
+  credential_hash TEXT NOT NULL,
+  session_id TEXT NOT NULL,
+  last_sequence INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY(credential_hash, session_id)
+);
+
 -- Phase 3: Harness installation catalog (intent + readiness; secrets by ref only).
 CREATE TABLE IF NOT EXISTS harness_installations (
   harness_id TEXT PRIMARY KEY NOT NULL,
@@ -188,6 +235,37 @@ CREATE TABLE IF NOT EXISTS harness_installations (
   last_probed_at INTEGER,
   updated_at INTEGER NOT NULL
 );
+
+-- Project-scoped automations (scheduler + runNow spawn sessions on the node).
+CREATE TABLE IF NOT EXISTS automations (
+  id TEXT PRIMARY KEY NOT NULL,
+  project_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  prompt TEXT NOT NULL,
+  agent_config_json TEXT NOT NULL,
+  schedule_json TEXT NOT NULL,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  last_run_at TEXT,
+  last_run_status TEXT,
+  last_run_session_id TEXT,
+  next_run_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_automations_project ON automations(project_id);
+CREATE INDEX IF NOT EXISTS idx_automations_next_run ON automations(enabled, next_run_at);
+
+-- Session-layer provider profiles (desktop session_providers parity).
+CREATE TABLE IF NOT EXISTS session_providers (
+  id TEXT PRIMARY KEY NOT NULL,
+  harness_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  is_base INTEGER NOT NULL DEFAULT 0,
+  config_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_session_providers_harness ON session_providers(harness_id);
 `
 
 export const SCHEMA_GENERATION = 1

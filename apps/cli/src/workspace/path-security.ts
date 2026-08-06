@@ -5,4 +5,8 @@ export {
   resolveProjectPath,
   assertInsideRoot,
   pathKind,
+  TOOL_OUTPUT_REL_PREFIX,
+  normalizeProjectRelativePath,
+  isToolOutputRelativePath,
+  toProjectRelativePath,
 } from '@superone/runtime/fs'

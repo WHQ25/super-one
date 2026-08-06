@@ -30,9 +30,13 @@ import {
 import { createSimulatedCodexRunner, type TurnRunner } from '@superone/runtime/session'
 import type { HarnessManager } from './harness-manager'
 import type { ProviderStore } from '../provider/provider-store'
-import { buildHarnessEnv, resolveHarnessService } from '../provider/resolve-service'
+import { buildHarnessEnvWithProxy, resolveHarnessService } from '../provider/resolve-service'
 import { prepareTurnPrompt } from './turn-attachments'
-import { discoverClaudeSkillsAndCommands } from '@superone/runtime/fs'
+import {
+  discoverClaudeSkillsAndCommands,
+  ensureMcpMerge,
+  type McpMergeMode,
+} from '@superone/runtime/fs'
 
 export const CLAUDE_SESSION_RESUME_PREFIX = 'claude-session:'
 
@@ -58,6 +62,15 @@ export interface NodeClaudeRunnerOptions {
     mcpServers: NonNullable<Options['mcpServers']>
     dispose: () => Promise<void>
   } | null
+  /**
+   * MCP merge mode. Default: merge enabled user/project MCP from disk into
+   * `options.mcpServers` while keeping `strictMcpConfig: true` (allowlist).
+   * Set `host-action-only` or env `SUPERONE_MCP_MERGE=0` to attach only
+   * SuperOne host-action MCP.
+   */
+  mcpMergeMode?: McpMergeMode
+  /** Override home for MCP user-scope paths (tests). */
+  homeDir?: string
 }
 
 export function resolveClaudeBinaryPath(opts: {
@@ -157,6 +170,8 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
       live: ClaudeLiveSession
       hostActionDispose: (() => Promise<void>) | null
       cwd: string
+      /** Sorted disk MCP names at open time — rebuild when mcp.save changes allowlist. */
+      mcpDiskKey: string
     }
   >()
 
@@ -167,6 +182,9 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
     await entry.live.dispose().catch(() => undefined)
     await entry.hostActionDispose?.().catch(() => undefined)
   }
+
+  const mcpDiskKeyOf = (diskNames: string[]): string =>
+    [...diskNames].sort().join('\0')
 
   const runner: TurnRunner = async (input) => {
     const harnessId = input.session.harnessId || 'claude'
@@ -199,7 +217,7 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
 
     const providerEnv =
       opts.providers
-        ? buildHarnessEnv(
+        ? await buildHarnessEnvWithProxy(
             'claude',
             resolveHarnessService(opts.providers, 'claude', input.apiProviderId),
           )
@@ -213,9 +231,21 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
     const priorSession = parseClaudeSessionResume(input.session.providerResume)
     const sessionKey = input.session.sessionId
 
+    // Probe disk MCP before (re)opening so mcp.save after a live session starts
+    // is picked up on the next turn (strict allowlist is fixed at open).
+    // diskNames does not depend on host-action servers — skip creating them here.
+    const mergedProbe = ensureMcpMerge({
+      provider: 'claude',
+      cwd,
+      mode: opts.mcpMergeMode,
+      env: authEnv,
+      homeDir: opts.homeDir,
+    })
+    const nextMcpDiskKey = mcpDiskKeyOf(mergedProbe.diskNames)
+
     let entry = lives.get(sessionKey)
-    // Restart live session if cwd changed (worktree switch).
-    if (entry && entry.cwd !== cwd) {
+    // Restart live session if cwd changed (worktree switch) or MCP allowlist changed.
+    if (entry && (entry.cwd !== cwd || entry.mcpDiskKey !== nextMcpDiskKey)) {
       await entry.live.dispose().catch(() => undefined)
       await entry.hostActionDispose?.().catch(() => undefined)
       lives.delete(sessionKey)
@@ -225,6 +255,25 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
     if (!entry) {
       const hostActionMcp =
         opts.createHostActionClaudeMcp?.(input.session.sessionId) ?? null
+      // Merge enabled project+user MCP (disk) with host-action superone.
+      // strictMcpConfig stays true so only this allowlist is loaded.
+      const merged = ensureMcpMerge({
+        provider: 'claude',
+        cwd,
+        hostActionServers: hostActionMcp?.mcpServers as
+          | Record<string, Record<string, unknown>>
+          | undefined,
+        mode: opts.mcpMergeMode,
+        env: authEnv,
+        homeDir: opts.homeDir,
+      })
+      const mcpOptions =
+        Object.keys(merged.claudeMcpServers).length > 0
+          ? {
+              mcpServers: merged.claudeMcpServers as NonNullable<Options['mcpServers']>,
+              strictMcpConfig: true as const,
+            }
+          : undefined
       const live = ClaudeLiveSession.open({
         cwd,
         binaryPath: binary,
@@ -235,23 +284,21 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
           input.permissionMode && input.permissionMode.trim()
             ? input.permissionMode.trim()
             : undefined,
+        sandboxMode:
+          input.sandboxMode && input.sandboxMode.trim()
+            ? input.sandboxMode.trim()
+            : undefined,
         additionalDirectories: input.additionalDirectories?.filter(Boolean),
         enabledSkills: resolveEnabledSkills(cwd, input.enabledSkills, input.disabledSkills),
         env: authEnv,
         queryFn: opts.queryFn,
-        options: hostActionMcp
-          ? {
-              mcpServers: hostActionMcp.mcpServers,
-              // The host-action server is the explicitly authorized MCP
-              // surface for node turns; do not merge project .mcp.json.
-              strictMcpConfig: true,
-            }
-          : undefined,
+        options: mcpOptions,
       })
       entry = {
         live,
         hostActionDispose: hostActionMcp ? () => hostActionMcp.dispose() : null,
         cwd,
+        mcpDiskKey: mcpDiskKeyOf(merged.diskNames),
       }
       lives.set(sessionKey, entry)
     }

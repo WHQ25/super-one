@@ -69,7 +69,13 @@ describe('Host Action MCP server', () => {
     expect(names).toContain('miniapp_list')
     expect(names).toContain('computer_snapshot')
     expect(names).toContain('media_generate_image')
-    expect(names.length).toBeGreaterThanOrEqual(50)
+    // Node-local collab tools must not appear as Host Action advertise surface.
+    expect(names).not.toContain('session_collab_list_agents')
+    expect(names).not.toContain('session_collab_request')
+    expect(names).not.toContain('session_collab_start')
+    expect(names).not.toContain('session_collab_send')
+    expect(names).not.toContain('session_collab_retrieve')
+    expect(names.length).toBeGreaterThanOrEqual(45)
 
     const result = (await client.callTool({
       name: 'browser_snapshot',
@@ -244,6 +250,55 @@ describe('Host Action MCP server', () => {
     const { client } = await connectClient(h, 'sess-c')
     const result = await client.callTool({ name: 'browser_snapshot', arguments: {} })
     expect(result.isError).toBe(true)
+    await client.close()
+  })
+
+  it('registers node-local session_collab tools without Host Action claim', async () => {
+    const haCalls: string[] = []
+    const listCalls: string[] = []
+    const h = await startHostActionMcpServer({
+      masterToken: 'test-master-token',
+      requestHostAction: async (input) => {
+        haCalls.push(input.toolName)
+        return {
+          actionId: 'x',
+          state: 'failed',
+          error: { code: 'unexpected', message: 'should not HA-route collab' },
+        }
+      },
+      collab: {
+        isEnabled: () => true,
+        listAgents: (sessionId) => {
+          listCalls.push(sessionId)
+          return [{ id: 'claude', name: 'claude' }]
+        },
+        request: async () => ({ status: 'approved', launches: [] }),
+        start: async () => ({ status: 'started', sessionId: 'c1', reused: false }),
+        send: async () => ({ status: 'sent', messageId: 'm1', sequence: 1, reused: false }),
+        retrieve: async () => ({ status: 'empty', messages: [] }),
+      },
+    })
+    handles.push(h)
+
+    const { client } = await connectClient(h, 'sess-collab')
+    const tools = await client.listTools()
+    const names = tools.tools.map((t) => t.name)
+    expect(names).toContain('session_collab_list_agents')
+    expect(names).toContain('session_collab_request')
+    expect(names).toContain('session_collab_start')
+    expect(names).toContain('session_collab_send')
+    expect(names).toContain('session_collab_retrieve')
+
+    const result = (await client.callTool({
+      name: 'session_collab_list_agents',
+      arguments: {},
+    })) as { content: Array<{ text: string }>; isError?: boolean }
+    expect(result.isError).toBeFalsy()
+    expect(JSON.parse(result.content[0]!.text)).toEqual({
+      agents: [{ id: 'claude', name: 'claude' }],
+    })
+    expect(listCalls).toEqual(['sess-collab'])
+    expect(haCalls).toEqual([])
     await client.close()
   })
 })

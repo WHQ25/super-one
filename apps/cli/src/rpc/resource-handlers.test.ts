@@ -196,4 +196,135 @@ describe('resource RPC handlers', () => {
     const res = dispatchResourceRpc('skills.list', { projectId: 'p1', provider: 'other' }, ctx)
     expect(res?.error?.code).toBe('invalid_argument')
   })
+
+  it('lists plugins and agents from node-local home over RPC', async () => {
+    const { mkdirSync, writeFileSync } = await import('node:fs')
+    const { join } = await import('node:path')
+
+    mkdirSync(join(homeDir, '.claude', 'plugins', 'cache', 'mp', 'demo', '1.0', '.claude-plugin'), {
+      recursive: true,
+    })
+    const installPath = join(homeDir, '.claude', 'plugins', 'cache', 'mp', 'demo', '1.0')
+    writeFileSync(
+      join(installPath, '.claude-plugin', 'plugin.json'),
+      JSON.stringify({ name: 'demo', description: 'Demo' }),
+    )
+    writeFileSync(
+      join(homeDir, '.claude', 'plugins', 'installed_plugins.json'),
+      JSON.stringify({
+        version: 1,
+        plugins: {
+          'demo@mp': [{ scope: 'user', installPath, version: '1.0' }],
+        },
+      }),
+    )
+    writeFileSync(join(homeDir, '.claude', 'plugins', 'known_marketplaces.json'), '{}')
+
+    mkdirSync(join(projectDir, '.claude', 'agents'), { recursive: true })
+    writeFileSync(
+      join(projectDir, '.claude', 'agents', 'reviewer.md'),
+      '---\ndescription: Reviews\n---\n# reviewer\n',
+    )
+
+    const ctx = ctxFor(['workspace:read'])
+    // plugins.list is async (codex path uses dynamic import); always await.
+    const pluginsRes = await Promise.resolve(
+      dispatchResourceRpc('plugins.list', { projectId: 'p1', provider: 'claude' }, ctx),
+    )
+    expect(pluginsRes?.error).toBeUndefined()
+    const plugins = (pluginsRes?.result as { plugins: Array<{ name: string }> }).plugins
+    expect(plugins.some((p) => p.name === 'demo')).toBe(true)
+
+    const agentsRes = await Promise.resolve(
+      dispatchResourceRpc('agents.list', { projectId: 'p1' }, ctx),
+    )
+    expect(agentsRes?.error).toBeUndefined()
+    const agents = (agentsRes?.result as { agents: Array<{ name: string; scope: string }> })
+      .agents
+    expect(agents.some((a) => a.name === 'reviewer' && a.scope === 'project')).toBe(true)
+  })
+
+  it('hooks.save writes project settings.json', async () => {
+    const { existsSync, readFileSync } = await import('node:fs')
+    const { join } = await import('node:path')
+    const ctx = ctxFor(['workspace:read', 'workspace:write'])
+
+    const saved = dispatchResourceRpc(
+      'hooks.save',
+      {
+        projectId: 'p1',
+        payload: {
+          scope: 'project',
+          event: 'Stop',
+          entry: { type: 'command', command: 'echo stop' },
+        },
+      },
+      ctx,
+    )
+    expect(saved?.error).toBeUndefined()
+    expect(saved?.result).toEqual({ ok: true })
+
+    const settingsPath = join(projectDir, '.claude', 'settings.json')
+    expect(existsSync(settingsPath)).toBe(true)
+    const data = JSON.parse(readFileSync(settingsPath, 'utf-8')) as {
+      hooks: { Stop: Array<{ hooks: Array<{ command: string }> }> }
+    }
+    expect(data.hooks.Stop[0]!.hooks[0]!.command).toBe('echo stop')
+
+    const listed = dispatchResourceRpc('hooks.list', { projectId: 'p1' }, ctx)
+    const hooks = (listed?.result as { hooks: Array<{ id: string }> }).hooks
+    expect(hooks).toHaveLength(1)
+
+    const deleted = dispatchResourceRpc(
+      'hooks.delete',
+      { projectId: 'p1', id: hooks[0]!.id },
+      ctx,
+    )
+    expect(deleted?.result).toEqual({ ok: true })
+  })
+
+  it('requires node:admin for user-scope hooks.save', () => {
+    const ctx = ctxFor(['workspace:read', 'workspace:write'])
+    const res = dispatchResourceRpc(
+      'hooks.save',
+      {
+        projectId: 'p1',
+        payload: {
+          scope: 'user',
+          event: 'Stop',
+          entry: { type: 'command', command: 'echo' },
+        },
+      },
+      ctx,
+    )
+    expect(res?.error?.code).toBe('forbidden')
+  })
+
+  it('hooks.save writes user settings.json with node:admin', async () => {
+    const { existsSync, readFileSync } = await import('node:fs')
+    const { join } = await import('node:path')
+    const ctx = ctxFor(['workspace:read', 'workspace:write', 'node:admin'])
+
+    const saved = dispatchResourceRpc(
+      'hooks.save',
+      {
+        projectId: 'p1',
+        payload: {
+          scope: 'user',
+          event: 'Stop',
+          entry: { type: 'command', command: 'echo user-stop' },
+        },
+      },
+      ctx,
+    )
+    expect(saved?.error).toBeUndefined()
+    expect(saved?.result).toEqual({ ok: true })
+
+    const settingsPath = join(homeDir, '.claude', 'settings.json')
+    expect(existsSync(settingsPath)).toBe(true)
+    const data = JSON.parse(readFileSync(settingsPath, 'utf-8')) as {
+      hooks: { Stop: Array<{ hooks: Array<{ command: string }> }> }
+    }
+    expect(data.hooks.Stop[0]!.hooks[0]!.command).toBe('echo user-stop')
+  })
 })

@@ -28,6 +28,20 @@ export {
   resetSdkClaudeBinaryCacheForTests,
 } from './resolve-sdk-binary'
 export {
+  fetchClaudeModels,
+  mapClaudeModelInfo,
+  type ClaudeModelInfo,
+  type FetchClaudeModelsOptions,
+} from './fetch-models'
+export {
+  ROOT_SAFE_PERMISSION_MODE,
+  applyRootPermissionGuard,
+  isRootWithoutSandboxOptIn,
+  type RootPermissionGuardEnvironment,
+  type RootPermissionGuardInput,
+  type RootPermissionGuardResult,
+} from './root-permission-guard'
+export {
   applySdkMessage,
   createSdkMapState,
   type OpenTool,

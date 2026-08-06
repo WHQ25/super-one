@@ -5,7 +5,8 @@ import { tmpdir } from 'node:os'
 import { dispatchHarnessResourcesRpc } from './harness-resources-handlers'
 import type { AuthenticatedClient } from '../auth/auth-service'
 import type { ProjectRegistry } from '../workspace/project-registry'
-import type { ProviderStore } from '../provider/provider-store'
+import { ProviderStore } from '../provider/provider-store'
+import { openNodeDatabase } from '../db/database'
 
 const dirs: string[] = []
 
@@ -101,6 +102,134 @@ describe('harness.resources RPC', () => {
     expect(res?.error).toBeUndefined()
     expect(res?.result).toHaveProperty('claude')
     expect(res?.result).toHaveProperty('codex')
+  })
+
+  it('reports the catalog the node harness serves, not the built-in slug table', async () => {
+    // Reproduces the remote model list: with no provider credential the node
+    // answered with hardcoded slugs, so the desktop showed models that had
+    // nothing to do with this host's Claude credential.
+    const projectDir = mkdtempSync(join(tmpdir(), 'hr-models-'))
+    dirs.push(projectDir)
+    const projects = {
+      get: () => ({ projectId: 'p1', path: projectDir, name: 't', repoIdentity: null }),
+      touch: () => {},
+    } as unknown as ProjectRegistry
+    const providers = {
+      listBindings: () => [],
+      getCredentialDecrypted: () => null,
+      listCustomPlatforms: () => [],
+    } as unknown as ProviderStore
+
+    const probedIn: string[] = []
+    const res = await dispatchHarnessResourcesRpc(
+      'harness.resources',
+      { projectId: 'p1', harnessId: 'claude' },
+      {
+        client: client(['environment:read', 'workspace:read']),
+        projects,
+        providers,
+        probeModels: async (harnessId, cwd) => {
+          probedIn.push(cwd)
+          return harnessId === 'claude'
+            ? [
+                { id: 'default', name: 'Opus 5 1M', description: '' },
+                { id: 'claude-fable-5[1m]', name: 'Fable 5', description: '' },
+              ]
+            : []
+        },
+      },
+    )
+
+    const result = res?.result as { claude: { models: Array<{ id: string }> } }
+    expect(result.claude.models.map((m) => m.id)).toEqual(['default', 'claude-fable-5[1m]'])
+    expect(probedIn).toEqual([projectDir])
+  })
+
+  it('keeps the built-in slug table when the harness cannot be probed', async () => {
+    const projectDir = mkdtempSync(join(tmpdir(), 'hr-models-fallback-'))
+    dirs.push(projectDir)
+    const projects = {
+      get: () => ({ projectId: 'p1', path: projectDir, name: 't', repoIdentity: null }),
+      touch: () => {},
+    } as unknown as ProjectRegistry
+    const providers = {
+      listBindings: () => [],
+      getCredentialDecrypted: () => null,
+      listCustomPlatforms: () => [],
+    } as unknown as ProviderStore
+
+    const res = await dispatchHarnessResourcesRpc(
+      'harness.resources',
+      { projectId: 'p1', harnessId: 'claude' },
+      {
+        client: client(['environment:read', 'workspace:read']),
+        projects,
+        providers,
+        probeModels: async () => [],
+      },
+    )
+
+    const result = res?.result as { claude: { models: Array<{ id: string }> } }
+    expect(result.claude.models.length).toBeGreaterThan(0)
+  })
+
+  it('prefers a bound provider credential catalog over probing', async () => {
+    const projectDir = mkdtempSync(join(tmpdir(), 'hr-models-provider-'))
+    dirs.push(projectDir)
+    const projects = {
+      get: () => ({ projectId: 'p1', path: projectDir, name: 't', repoIdentity: null }),
+      touch: () => {},
+    } as unknown as ProjectRegistry
+
+    const db = openNodeDatabase(join(projectDir, 'state.sqlite'))
+    const providers = new ProviderStore(db, join(projectDir, 'provider-secrets.key'))
+    providers.upsertCustomPlatform({
+      id: 'custom:relay',
+      brand: 'relay',
+      name: 'Relay',
+      plans: [
+        {
+          id: 'api',
+          name: 'API',
+          auth: 'api-key',
+          endpoints: [
+            {
+              id: 'anthropic',
+              baseUrl: 'https://relay.example',
+              protocols: ['anthropic-messages'],
+              models: [{ id: 'relay-opus', name: 'Relay Opus' }],
+            },
+          ],
+        },
+      ],
+    })
+    const cred = providers.createCredential({
+      platformId: 'custom:relay',
+      planId: 'api',
+      name: 'relay',
+      secret: 'sk-upstream-secret',
+    })
+    providers.setBinding({ consumer: 'chat:claude', credentialId: cred.id })
+
+    let probeCalls = 0
+    const res = await dispatchHarnessResourcesRpc(
+      'harness.resources',
+      { projectId: 'p1', harnessId: 'claude' },
+      {
+        client: client(['environment:read', 'workspace:read']),
+        projects,
+        providers,
+        probeModels: async () => {
+          probeCalls += 1
+          return [{ id: 'default', name: 'Opus 5 1M', description: '' }]
+        },
+      },
+    )
+    db.close()
+
+    const result = res?.result as { claude: { models: Array<{ id: string }> } }
+    expect(result.claude.models.map((m) => m.id)).toEqual(['relay-opus'])
+    expect(probeCalls).toBe(0)
   })
 
   it('requires projectId', async () => {

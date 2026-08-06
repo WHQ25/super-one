@@ -462,9 +462,11 @@ export function createNodeSessionEventMapper(ctx: NodeSessionEventMapContext): N
           break
         }
         const message = asString(payload.message) ?? 'remote turn failed'
-        if (lastAssistantId) {
-          push({ type: 'message_error', messageId: lastAssistantId, error: message })
-        }
+        // A turn can fail before any assistant content exists (harness process
+        // exits during spawn). Open a block so the reason is visible instead of
+        // leaving the UI on a bare error status with no message.
+        const errorId = ensureAssistant(push)
+        push({ type: 'message_error', messageId: errorId, error: message })
         lastAssistantId = null
         push({ type: 'status_change', status: 'error' })
         break

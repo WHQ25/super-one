@@ -56,6 +56,13 @@ export interface CollectHarnessResourcesInput {
   homeDir?: string
   /** Model catalogs keyed by harness id (from provider.listModels). */
   listModels: (harnessId: string, apiProviderId?: string | null) => ModelOption[]
+  /**
+   * Live catalog probe, used only when {@link listModels} has nothing for a
+   * harness (no provider credential bound). Asks the harness on this node what
+   * it actually serves instead of assuming a slug list. Failures leave the
+   * catalog empty.
+   */
+  probeModels?: (harnessId: string) => ModelOption[] | Promise<ModelOption[]>
   apiProviderId?: string | null
   /** When set, only fill that harness section (others stay empty defaults). */
   harnessId?: string | null
@@ -168,8 +175,20 @@ export async function collectHarnessResources(
     acp: emptyAcp(),
   }
 
+  const resolveModels = async (harnessId: string): Promise<ModelOption[]> => {
+    const listed = input.listModels(harnessId, input.apiProviderId) as ModelOption[]
+    if (Array.isArray(listed) && listed.length > 0) return listed
+    if (!input.probeModels) return []
+    try {
+      const probed = await input.probeModels(harnessId)
+      return Array.isArray(probed) ? probed : []
+    } catch {
+      return []
+    }
+  }
+
   if (want('claude')) {
-    const models = input.listModels('claude', input.apiProviderId) as ModelOption[]
+    const models = await resolveModels('claude')
     let account: AccountInfo = {}
     if (input.probeAccount) {
       try {
@@ -206,7 +225,7 @@ export async function collectHarnessResources(
   }
 
   if (want('codex')) {
-    const models = input.listModels('codex', input.apiProviderId) as ModelOption[]
+    const models = await resolveModels('codex')
     bundle.codex = {
       models: Array.isArray(models) ? models : [],
       prompts: discoverCodexUserPrompts({ homeDir }),
@@ -214,7 +233,7 @@ export async function collectHarnessResources(
   }
 
   if (want('opencode')) {
-    const models = input.listModels('opencode', input.apiProviderId) as ModelOption[]
+    const models = await resolveModels('opencode')
     bundle.opencode = {
       models: Array.isArray(models) ? models : [],
       agents: [],

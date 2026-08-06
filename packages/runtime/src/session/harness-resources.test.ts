@@ -114,6 +114,58 @@ describe('collectHarnessResources', () => {
     expect(bundle.claude.slashCommands.map((c) => c.name)).toEqual(['help'])
     expect(bundle.claude.outputStyles).toEqual(['Explanatory'])
   })
+
+  it('probes the node model catalog when the provider store has none', async () => {
+    // Without a bound credential the provider store has no catalog; the node
+    // must report what its harness actually serves, not a hardcoded slug list.
+    const project = mkdtempSync(join(tmpdir(), 'hr-models-probe-'))
+    dirs.push(project)
+    const probed: string[] = []
+    const bundle = await collectHarnessResources({
+      projectPath: project,
+      listModels: () => [],
+      probeModels: async (harnessId) => {
+        probed.push(harnessId)
+        return harnessId === 'claude'
+          ? [{ id: 'opus[1m]', name: 'Opus 5 1M', description: 'Opus 5 with 1M context' }]
+          : []
+      },
+      harnessId: 'claude',
+    })
+    expect(probed).toEqual(['claude'])
+    expect(bundle.claude.models.map((m) => m.id)).toEqual(['opus[1m]'])
+  })
+
+  it('prefers the provider store catalog over the probe', async () => {
+    const project = mkdtempSync(join(tmpdir(), 'hr-models-provider-'))
+    dirs.push(project)
+    let probeCalls = 0
+    const bundle = await collectHarnessResources({
+      projectPath: project,
+      listModels: () => [{ id: 'relay-opus', name: 'Relay Opus', description: '' }],
+      probeModels: async () => {
+        probeCalls += 1
+        return [{ id: 'opus[1m]', name: 'Opus 5 1M', description: '' }]
+      },
+      harnessId: 'claude',
+    })
+    expect(bundle.claude.models.map((m) => m.id)).toEqual(['relay-opus'])
+    expect(probeCalls).toBe(0)
+  })
+
+  it('keeps an empty catalog when the model probe fails', async () => {
+    const project = mkdtempSync(join(tmpdir(), 'hr-models-fail-'))
+    dirs.push(project)
+    const bundle = await collectHarnessResources({
+      projectPath: project,
+      listModels: () => [],
+      probeModels: async () => {
+        throw new Error('probe exploded')
+      },
+      harnessId: 'claude',
+    })
+    expect(bundle.claude.models).toEqual([])
+  })
 })
 
 describe('discoverCodexUserPrompts', () => {

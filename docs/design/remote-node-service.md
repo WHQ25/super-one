@@ -1498,6 +1498,17 @@ persist `providerResume` as `thread:<id>` for later turns. Tests inject
 simulated runners (`simulatedHarness`) so CI stays binary-free. Not full
 desktop parity (MCP/skills/provider overrides/permission UX are later).
 
+**Stage 4-B (Codex node admin surface) [IMPLEMENTED]:** node RPC
+`codex.getAuthStatus` / `setAuth` / `getRateLimits` / `getAccountUsage` /
+`consumeRateLimitReset` / `loginMcpOauth` / external-agent / plugins /
+marketplace; desktop `RemoteEnvironmentGateway` + `window.app.codex*` branch
+on `remote:<connectionId>:<path>` so remote projects never hit local Codex FS.
+Auth is process-memory `projectAuthById` (not SQLite — re-set via
+`codex.setAuth` after node restart). MCP OAuth authorize URL is opened by
+desktop/host_action, not the node process. Turn kinds
+`run|steer|review|compact` (+ collaborationMode / reviewTarget) already ride
+`session.send` options.
+
 **Stage 5-A (TurnRunner onEvent + durable session events) [IMPLEMENTED]:**
 shared `SessionTurnEvent` contracts (`text` | `tool` | `permission` |
 `status`) and `SESSION_DURABLE_EVENT` type strings in

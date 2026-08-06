@@ -73,6 +73,7 @@ describe('app-settings-service', () => {
     customAppIconPath: null,
     browserBookmarks: [],
     browserBookmarkGroups: [],
+    defaultClonePaths: {},
     cdpEnabled: false,
     computerUseEnabled: false,
     computerUseAllowAllApps: false,
@@ -131,6 +132,7 @@ describe('app-settings-service', () => {
         customAppIconPath: null,
         browserBookmarks: [],
         browserBookmarkGroups: [],
+        defaultClonePaths: {},
         cdpEnabled: false,
     computerUseEnabled: false,
     computerUseAllowAllApps: false,
@@ -237,6 +239,7 @@ describe('app-settings-service', () => {
         customAppIconPath: null,
         browserBookmarks: [],
         browserBookmarkGroups: [],
+        defaultClonePaths: {},
         cdpEnabled: false,
     computerUseEnabled: false,
     computerUseAllowAllApps: false,
@@ -354,6 +357,14 @@ describe('app-settings-service', () => {
       mocks.readFileSync.mockReturnValue(written)
 
       expect(readAppSettings().miniAppOrder).toEqual({ projA: ['weather', 'notes'] })
+    })
+
+    it('merges defaultClonePaths per connection and clears with empty string', () => {
+      mocks.readFileSync.mockReturnValue(
+        JSON.stringify({ defaultClonePaths: { local: '~/Projects/', remote1: '/home/x/' } }),
+      )
+      const result = saveAppSettings({ defaultClonePaths: { local: '~/Github/', remote1: '' } })
+      expect(result.defaultClonePaths).toEqual({ local: '~/Github/' })
     })
 
     it('merges miniAppOrder per project bucket, leaving other projects intact', () => {

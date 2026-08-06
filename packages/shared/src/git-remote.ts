@@ -16,16 +16,18 @@ const GITHUB_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
 
 /**
  * Accepts what a user realistically pastes for a GitHub repo:
- * `owner/repo`, a browser URL, or an SSH remote. Returns null when the input
- * is not GitHub-shaped — the caller then treats it as a raw Git URL.
+ * `owner/repo`, a browser URL (with or without scheme), or an SSH remote.
+ * Returns null when the input is not GitHub-shaped — the caller then treats
+ * it as a raw Git URL.
  */
 export function parseGitHubRepoInput(input: string): GitHubRepoRef | null {
   let value = input.trim()
   if (!value) return null
 
-  // https://github.com/owner/repo(.git)(/tree/main…) or git@github.com:owner/repo.git
+  // https://github.com/owner/repo(.git)(/tree/main…), git@github.com:owner/repo.git,
+  // or a bare github.com/owner/repo paste without a scheme.
   const urlMatch = value.match(
-    /^(?:https?:\/\/|ssh:\/\/git@|git@|git:\/\/)(?:www\.)?github\.com[/:]+(.+)$/i,
+    /^(?:(?:https?:\/\/|ssh:\/\/git@|git@|git:\/\/)?(?:www\.)?github\.com[/:]+)(.+)$/i,
   )
   if (urlMatch) value = urlMatch[1]
 
@@ -62,8 +64,13 @@ export function parseGitHubOwnerSearchQuery(
 ): { owner: string; repoPrefix: string } | null {
   const value = raw.trim()
   if (!value) return null
-  // Full clone/browser URLs are handled by parseGitHubRepoInput, not search.
-  if (/^(?:https?:\/\/|ssh:\/\/|git@|git:\/\/)/i.test(value)) return null
+  // Full clone/browser URLs (with or without scheme) resolve without search.
+  if (
+    /^(?:https?:\/\/|ssh:\/\/|git@|git:\/\/)/i.test(value) ||
+    /^(?:www\.)?github\.com[/:]/i.test(value)
+  ) {
+    return null
+  }
 
   const slash = value.indexOf('/')
   if (slash <= 0) return null

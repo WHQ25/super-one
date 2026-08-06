@@ -147,21 +147,23 @@ export function resolveBrowsePath(input: {
   return { path: trimTrailingPathSeparators(trimmed), exists: false }
 }
 
-/** Which i18n key labels the primary action for the current step. */
-export function submitLabelKey(step: AddProjectStep, resolved: ResolvedBrowsePath): string {
+/**
+ * Which i18n key labels the primary action for the current step.
+ *
+ * Path steps keep a short stable label ("Add" / "Clone"); whether a missing
+ * directory will be created is shown as a separate fixed-height hint, not by
+ * lengthening the button text.
+ */
+export function submitLabelKey(step: AddProjectStep): string {
   switch (step.kind) {
     case 'source':
       return 'sidebar.addProject.actions.select'
     case 'repo':
       return 'sidebar.addProject.actions.continue'
     case 'browse':
-      return resolved.exists
-        ? 'sidebar.addProject.actions.add'
-        : 'sidebar.addProject.actions.createAndAdd'
+      return 'sidebar.addProject.actions.add'
     case 'destination':
-      return resolved.exists
-        ? 'sidebar.addProject.actions.clone'
-        : 'sidebar.addProject.actions.createAndClone'
+      return 'sidebar.addProject.actions.clone'
   }
 }
 

@@ -1,12 +1,14 @@
 /** @vitest-environment jsdom */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, cleanup, act } from '@testing-library/react'
 import { AddProjectDialog } from './AddProjectDialog'
 
 const browsePath = vi.fn()
 const openProject = vi.fn()
 const cloneRepository = vi.fn()
 const searchGithubRepos = vi.fn()
+const getAppSettings = vi.fn()
+const saveAppSettings = vi.fn()
 
 function renderDialog(connectionId = 'local') {
   const onOpened = vi.fn()
@@ -61,6 +63,10 @@ describe('add-project dialog', () => {
         private: true,
       },
     ])
+    getAppSettings.mockResolvedValue({ defaultClonePaths: {} })
+    saveAppSettings.mockImplementation(async (patch: { defaultClonePaths?: Record<string, string> }) => ({
+      defaultClonePaths: patch.defaultClonePaths ?? {},
+    }))
     ;(window as unknown as Record<string, unknown>).environment = {
       browsePath,
       openProject,
@@ -70,6 +76,8 @@ describe('add-project dialog', () => {
       ...((window as unknown as Record<string, unknown>).app as object),
       searchGithubRepos,
       selectFolder: vi.fn(),
+      getAppSettings,
+      saveAppSettings,
     }
   })
 
@@ -97,7 +105,9 @@ describe('add-project dialog', () => {
     fireEvent.click(screen.getByText('notes'))
     expect(input().value).toBe('~/notes/')
 
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Add' })).toBeEnabled())
+    // "." / "Add this folder" is the default selection once listing settles —
+    // Enter commits the current path instead of drilling into a child.
+    await screen.findByRole('button', { name: /Add this folder/ })
     fireEvent.keyDown(input(), { key: 'Enter' })
 
     await waitFor(() =>
@@ -117,6 +127,8 @@ describe('add-project dialog', () => {
     fireEvent.change(input(), { target: { value: '~/Dev/no' } })
     await waitFor(() => expect(browsePath).toHaveBeenCalledWith('local', '~/Dev/'))
     await screen.findByRole('button', { name: /notes/ })
+    // Inline ghost shows the untyped remainder before Tab (prefix mode).
+    expect(document.body.textContent).toMatch(/tes/)
     fireEvent.keyDown(input(), { key: 'Tab' })
     expect(input().value).toBe('~/Dev/notes/')
 
@@ -149,9 +161,12 @@ describe('add-project dialog', () => {
     await screen.findByText('notes')
 
     fireEvent.change(input(), { target: { value: '~/Projects/brand-new' } })
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Create & Add' })).toBeEnabled())
+    // Missing path appears as its own "Create" list group, not a free-text banner.
+    await waitFor(() => expect(screen.getByText('Create')).toBeInTheDocument())
+    expect(screen.getByRole('button', { name: /Create directory/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Add' })).toBeEnabled()
 
-    fireEvent.keyDown(input(), { key: 'Enter' })
+    fireEvent.click(screen.getByRole('button', { name: /Create directory/ }))
     await waitFor(() =>
       expect(openProject).toHaveBeenCalledWith('local', '/Users/dev/Projects/brand-new', {
         createIfMissing: true,
@@ -279,6 +294,44 @@ describe('add-project dialog', () => {
     expect(screen.getByRole('button', { name: 'Select' })).toBeInTheDocument()
   })
 
+  it('ignores Enter while keyCode is 229 (legacy IME marker)', () => {
+    renderDialog()
+
+    fireEvent.change(input(), { target: { value: 'github' } })
+    fireEvent.keyDown(input(), { key: 'Enter', keyCode: 229 })
+
+    expect(rowTexts().some((text) => text.includes('GitHub Repository'))).toBe(true)
+    expect(input().value).toBe('github')
+  })
+
+  it('ignores the Enter that ends an IME composition session', () => {
+    renderDialog()
+
+    fireEvent.change(input(), { target: { value: 'github' } })
+    // Chromium often clears isComposing before the commit Enter; composition
+    // events are the reliable signal.
+    fireEvent.compositionStart(input())
+    fireEvent.keyDown(input(), { key: 'Enter' })
+    fireEvent.compositionEnd(input())
+    // Same-tick Enter after compositionEnd must still be ignored.
+    fireEvent.keyDown(input(), { key: 'Enter' })
+
+    expect(rowTexts().some((text) => text.includes('GitHub Repository'))).toBe(true)
+    expect(input().value).toBe('github')
+  })
+
+  it('hides the create-directory candidate when the path already exists', async () => {
+    renderDialog()
+    fireEvent.click(screen.getByText('Local Folder'))
+    await screen.findByText('notes')
+
+    fireEvent.change(input(), { target: { value: '~/Projects/notes' } })
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Add' })).toBeEnabled())
+    // Existing path: only the Directories group, no Create section.
+    expect(screen.queryByText('Create')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Create directory/ })).not.toBeInTheDocument()
+  })
+
   it('keeps the submit disabled until the repository input parses', () => {
     renderDialog()
     fireEvent.click(screen.getByText('GitHub Repository'))
@@ -289,6 +342,93 @@ describe('add-project dialog', () => {
 
     fireEvent.change(input(), { target: { value: 'WHQ25/super-one' } })
     expect(screen.getByRole('button', { name: 'Continue' })).toBeEnabled()
+  })
+
+  it('accepts a pasted GitHub URL without requiring a search hit', async () => {
+    const { onOpened } = renderDialog()
+
+    fireEvent.click(screen.getByText('GitHub Repository'))
+    fireEvent.change(input(), {
+      target: { value: 'https://github.com/WHQ25/super-one' },
+    })
+
+    // Resolved preview uses owner/repo (same as a search hit), not raw URL title.
+    await screen.findByText('WHQ25/super-one')
+    expect(screen.getByText('https://github.com/WHQ25/super-one.git')).toBeInTheDocument()
+    expect(searchGithubRepos).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: 'Continue' })).toBeEnabled()
+
+    fireEvent.keyDown(input(), { key: 'Enter' })
+    await screen.findByText('Repository')
+    // Destination title is also owner/repo after URL paste.
+    expect(screen.getByText('WHQ25/super-one')).toBeInTheDocument()
+    await waitFor(() => expect(browsePath).toHaveBeenCalledWith('local', '~/'))
+
+    fireEvent.keyDown(input(), { key: 'Enter' })
+    await waitFor(() =>
+      expect(cloneRepository).toHaveBeenCalledWith('local', {
+        remoteUrl: 'https://github.com/WHQ25/super-one.git',
+        parentPath: '/Users/dev/Projects',
+        directoryName: 'super-one',
+      }),
+    )
+    await waitFor(() => expect(onOpened).toHaveBeenCalled())
+  })
+
+  it('prefills the destination with the saved default clone path', async () => {
+    getAppSettings.mockResolvedValue({
+      defaultClonePaths: { local: '~/Github/' },
+    })
+    browsePath.mockResolvedValue({
+      path: '/Users/dev/Github',
+      entries: [{ name: 'other', path: '/Users/dev/Github/other', type: 'directory' }],
+    })
+    renderDialog()
+
+    // Wait for the settings promise so continueWithRepo sees the saved path.
+    await act(async () => {
+      await getAppSettings.mock.results[0]!.value
+    })
+
+    fireEvent.click(screen.getByText('GitHub Repository'))
+    fireEvent.change(input(), { target: { value: 'WHQ25/super-one' } })
+    await screen.findByRole('button', { name: /WHQ25\/super-one/ })
+    fireEvent.keyDown(input(), { key: 'Enter' })
+
+    await screen.findByText('Repository')
+    expect(input().value).toBe('~/Github/')
+    // Checkbox is pre-checked when a default was applied.
+    expect(screen.getByText('Save as default clone path')).toBeInTheDocument()
+    const checkbox = screen.getByRole('checkbox')
+    expect(checkbox).toHaveAttribute('data-state', 'checked')
+    await waitFor(() => expect(browsePath).toHaveBeenCalledWith('local', '~/Github/'))
+  })
+
+  it('saves the current destination as default when the checkbox is checked', async () => {
+    const { onOpened } = renderDialog()
+
+    fireEvent.click(screen.getByText('GitHub Repository'))
+    fireEvent.change(input(), { target: { value: 'WHQ25/super-one' } })
+    await screen.findByRole('button', { name: /WHQ25\/super-one/ })
+    fireEvent.keyDown(input(), { key: 'Enter' })
+    await screen.findByText('Repository')
+    await waitFor(() => expect(browsePath).toHaveBeenCalled())
+
+    fireEvent.change(input(), { target: { value: '~/Projects/' } })
+    await waitFor(() => expect(browsePath).toHaveBeenCalledWith('local', '~/Projects/'))
+
+    // Opt in to remember this parent.
+    fireEvent.click(screen.getByRole('checkbox'))
+    expect(screen.getByRole('checkbox')).toHaveAttribute('data-state', 'checked')
+
+    fireEvent.keyDown(input(), { key: 'Enter' })
+    await waitFor(() => expect(cloneRepository).toHaveBeenCalled())
+    await waitFor(() =>
+      expect(saveAppSettings).toHaveBeenCalledWith({
+        defaultClonePaths: { local: '~/Projects/' },
+      }),
+    )
+    await waitFor(() => expect(onOpened).toHaveBeenCalled())
   })
 
   it('goes back to the source picker on Backspace with an empty input', () => {

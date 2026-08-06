@@ -30,6 +30,17 @@ describe('GitHub repo shorthand parsing', () => {
     })
   })
 
+  it('accepts a bare github.com path without a scheme', () => {
+    expect(parseGitHubRepoInput('github.com/WHQ25/super-one')).toEqual({
+      owner: 'WHQ25',
+      repo: 'super-one',
+    })
+    expect(parseGitHubRepoInput('www.github.com/WHQ25/super-one.git')).toEqual({
+      owner: 'WHQ25',
+      repo: 'super-one',
+    })
+  })
+
   it('keeps only owner/repo when a deep link is pasted', () => {
     expect(parseGitHubRepoInput('https://github.com/vercel/next.js/tree/canary/docs')).toEqual({
       owner: 'vercel',
@@ -63,6 +74,7 @@ describe('GitHub repo shorthand parsing', () => {
       repoPrefix: 'super',
     })
     expect(parseGitHubOwnerSearchQuery('https://github.com/WHQ25/super-one')).toBeNull()
+    expect(parseGitHubOwnerSearchQuery('github.com/WHQ25/super-one')).toBeNull()
   })
 })
 

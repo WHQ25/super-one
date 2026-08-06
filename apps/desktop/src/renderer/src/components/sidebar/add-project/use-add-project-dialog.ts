@@ -12,6 +12,7 @@ import {
   buildGitHubCloneUrl,
   githubOwnerAvatarUrl,
   parseGitHubOwnerSearchQuery,
+  parseGitHubRepoInput,
 } from '@superone/shared/git-remote'
 import { fuzzyMatch } from '@/lib/fuzzy-match'
 import {
@@ -20,11 +21,14 @@ import {
   getBrowseDirectoryPath,
   getBrowseLeafPathSegment,
   getBrowseParentPath,
+  getPathInlineGhost,
+  hasTrailingPathSeparator,
+  isBareHomePath,
   isBrowseablePathQuery,
   joinBrowsePath,
   normalizeHomePrefixInput,
 } from '@/lib/path-browse'
-import type { AddProjectListItem } from './AddProjectList'
+import type { AddProjectListItem, AddProjectListSection } from './AddProjectList'
 import {
   ADD_PROJECT_SOURCES,
   autoAdvanceFromSourceQuery,
@@ -35,7 +39,6 @@ import {
   resolveRepoInput,
   type AddProjectSource,
   type AddProjectStep,
-  type ResolvedBrowsePath,
 } from './add-project-flow'
 
 export type GithubRepoHit = {
@@ -48,6 +51,10 @@ export type GithubRepoHit = {
 
 /** Sentinel key for the "go to parent directory" row that leads the path list. */
 export const PARENT_ROW_KEY = '..'
+/** Sentinel key for "use the current directory" (commit without drilling in). */
+export const CURRENT_ROW_KEY = '.'
+/** Sentinel key for the "create this missing directory" candidate row. */
+export const CREATE_ROW_KEY = '__create__'
 
 type DirEntry = { name: string; path: string; type: 'directory' }
 
@@ -60,6 +67,8 @@ interface UseAddProjectDialogInput {
   sourceIcons: Record<AddProjectSource, ReactNode>
   parentIcon: ReactNode
   directoryIcon: ReactNode
+  /** Icon for the "create missing directory" path candidate. */
+  createDirectoryIcon: ReactNode
 }
 
 /**
@@ -90,6 +99,13 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
   const [githubSearchOwner, setGithubSearchOwner] = useState('')
   const [githubLoading, setGithubLoading] = useState(false)
   const [githubError, setGithubError] = useState<string | null>(null)
+  /** Saved default parent dir for this connection (destination step prefill). */
+  const [defaultClonePath, setDefaultClonePath] = useState<string | null>(null)
+  /** When true, successful clone writes the current path as defaultClonePath. */
+  const [saveAsDefault, setSaveAsDefault] = useState(false)
+  // Ref tracks the same value so continueWithRepo sees a load that finished
+  // after the last render without waiting for another commit.
+  const defaultClonePathRef = useRef<string | null>(null)
   const requestIdRef = useRef(0)
   const githubRequestIdRef = useRef(0)
   const githubCacheRef = useRef<Map<string, GithubRepoHit[]>>(new Map())
@@ -112,9 +128,28 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
     setGithubSearchOwner('')
     setGithubLoading(false)
     setGithubError(null)
+    setSaveAsDefault(false)
     // Focus after paint so Tab completes the path instead of moving focus.
     requestAnimationFrame(() => inputRef.current?.focus())
   }, [open])
+
+  // Load the per-connection default clone parent for the destination step.
+  useEffect(() => {
+    if (!open) return
+    let cancelled = false
+    defaultClonePathRef.current = null
+    setDefaultClonePath(null)
+    void window.app.getAppSettings().then((settings) => {
+      if (cancelled) return
+      const path = settings.defaultClonePaths?.[connectionId]
+      const next = typeof path === 'string' && path.trim() ? path.trim() : null
+      defaultClonePathRef.current = next
+      setDefaultClonePath(next)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [open, connectionId])
 
   const browseDir = useMemo(
     () => (isPathStep ? getBrowseDirectoryPath(query) : ''),
@@ -310,8 +345,57 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
     return getBrowseParentPath(getBrowseDirectoryPath(query)) ?? getBrowseParentPath(listedPath)
   }, [isPathStep, listedPath, query])
 
-  const pathItems: AddProjectListItem[] = useMemo(() => {
+  const resolved = useMemo(
+    () => resolveBrowsePath({ query, listedPath, entries }),
+    [query, listedPath, entries],
+  )
+  const repoResolved = useMemo(
+    () => (step.kind === 'repo' ? resolveRepoInput(step.source, query) : null),
+    [step, query],
+  )
+  /**
+   * Path that will be mkdir'd on submit. Null while listing (existence unknown)
+   * or when the resolved directory already exists. Surfaced as its own list
+   * group on path steps (and under clone preview on destination).
+   */
+  const willCreatePath =
+    isPathStep && !browseLoading && resolved.path.length > 0 && !resolved.exists
+      ? resolved.path
+      : null
+  const clonePreviewPath =
+    step.kind === 'destination' && resolved.path ? joinBrowsePath(resolved.path, step.repoName) : ''
+
+  /**
+   * True when the typed path is a complete existing directory (trailing slash /
+   * bare `~`) so Enter can commit it via the "." row rather than drilling in.
+   */
+  const canUseCurrentDirectory =
+    isPathStep &&
+    !browseLoading &&
+    !leafPartial &&
+    Boolean(listedPath) &&
+    resolved.exists &&
+    resolved.path.length > 0 &&
+    (hasTrailingPathSeparator(query.trim()) || isBareHomePath(query.trim()))
+
+  /** Directory rows only (current / parent / children) — create is separate. */
+  const directoryItems: AddProjectListItem[] = useMemo(() => {
+    if (!isPathStep) return []
     const rows: AddProjectListItem[] = []
+    // Lead with "use this folder" so default selection + Enter commits the
+    // current path instead of navigating into the first child.
+    if (canUseCurrentDirectory) {
+      rows.push({
+        key: CURRENT_ROW_KEY,
+        icon: input.directoryIcon,
+        label: '.',
+        hint: t(
+          step.kind === 'destination'
+            ? 'sidebar.addProject.cloneHere'
+            : 'sidebar.addProject.addThisFolder',
+        ),
+      })
+    }
     if (parentPath !== null && !leafPartial) {
       rows.push({
         key: PARENT_ROW_KEY,
@@ -331,7 +415,17 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
       })
     }
     return rows
-  }, [parentPath, leafPartial, pathCandidates, t, input.parentIcon, input.directoryIcon])
+  }, [
+    isPathStep,
+    canUseCurrentDirectory,
+    step.kind,
+    parentPath,
+    leafPartial,
+    pathCandidates,
+    t,
+    input.parentIcon,
+    input.directoryIcon,
+  ])
 
   /** Repos under the typed owner, filtered by the partial name after `/`. */
   const githubItems: AddProjectListItem[] = useMemo(() => {
@@ -366,28 +460,65 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
       }))
   }, [isGithubRepoStep, githubSearch, githubRepos, t])
 
-  const items =
-    step.kind === 'source' ? sourceItems : isPathStep ? pathItems : isGithubRepoStep ? githubItems : []
+  const listSections: AddProjectListSection[] = useMemo(() => {
+    if (step.kind === 'source') {
+      return sourceItems.length
+        ? [{ key: 'sources', label: t('sidebar.addProject.sources.title'), items: sourceItems }]
+        : []
+    }
+    if (isGithubRepoStep) {
+      return githubItems.length
+        ? [{ key: 'github', label: t('sidebar.addProject.githubRepos'), items: githubItems }]
+        : []
+    }
+    if (isPathStep) {
+      const sections: AddProjectListSection[] = []
+      // Directories first so Tab-complete / default selection still hit folder
+      // rows; create is a separate trailing group when the typed path is missing.
+      if (directoryItems.length > 0) {
+        sections.push({
+          key: 'directories',
+          label: t('sidebar.addProject.directories'),
+          items: directoryItems,
+        })
+      }
+      if (willCreatePath) {
+        sections.push({
+          key: 'create',
+          label: t('sidebar.addProject.createSection'),
+          items: [
+            {
+              key: CREATE_ROW_KEY,
+              icon: input.createDirectoryIcon,
+              label: willCreatePath,
+              hint: t('sidebar.addProject.createDirectory'),
+              // Long absolute paths must stay fully visible — wrap instead of truncate.
+              wrapLabel: true,
+            },
+          ],
+        })
+      }
+      return sections
+    }
+    return []
+  }, [
+    step.kind,
+    sourceItems,
+    isGithubRepoStep,
+    githubItems,
+    isPathStep,
+    willCreatePath,
+    directoryItems,
+    t,
+    input.createDirectoryIcon,
+  ])
+
+  const items = useMemo(
+    () => listSections.flatMap((section) => section.items),
+    [listSections],
+  )
   const itemCount = items.length
   const safeSelectedIndex = itemCount === 0 ? 0 : Math.max(0, Math.min(selectedIndex, itemCount - 1))
-
-  const resolved = useMemo(
-    () => resolveBrowsePath({ query, listedPath, entries }),
-    [query, listedPath, entries],
-  )
-  const repoResolved = useMemo(
-    () => (step.kind === 'repo' ? resolveRepoInput(step.source, query) : null),
-    [step, query],
-  )
-  /**
-   * While a listing is in flight we do not yet know whether the path exists, so
-   * the button must not flash "Create & ..." on every keystroke.
-   */
-  const submitLabelPath: ResolvedBrowsePath = browseLoading
-    ? { ...resolved, exists: true }
-    : resolved
-  const clonePreviewPath =
-    step.kind === 'destination' && resolved.path ? joinBrowsePath(resolved.path, step.repoName) : ''
 
   const goToStep = useCallback((next: AddProjectStep, nextQuery: string) => {
     setStep(next)
@@ -407,16 +538,23 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
 
   const continueWithRepo = useCallback(
     (source: 'github' | 'url', repoInput: string, remoteUrl: string, repoName: string) => {
+      // Prefill with the saved default so the user can confirm without re-browsing.
+      const saved = defaultClonePathRef.current
+      const dest = saved ? ensureBrowseDirectoryPath(saved) : initialPath
+      // Normalize a pasted GitHub URL to owner/repo so destination matches search hits.
+      const githubRef = source === 'github' ? parseGitHubRepoInput(repoInput) : null
+      const displayInput = githubRef ? `${githubRef.owner}/${githubRef.repo}` : repoInput
       goToStep(
         {
           kind: 'destination',
           source,
-          repoInput,
+          repoInput: displayInput,
           remoteUrl,
           repoName,
         },
-        initialPath,
+        dest,
       )
+      setSaveAsDefault(Boolean(saved))
     },
     [goToStep, initialPath],
   )
@@ -481,47 +619,6 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
     setSubmitError('')
   }, [])
 
-  const activateItem = useCallback(
-    (index: number) => {
-      const item = items[index]
-      if (!item) return
-      if (step.kind === 'source') {
-        const source = item.key as AddProjectSource
-        // Only a detected local path carries the typed text; other sources start clean.
-        pickSource(source, source === detectedSource ? query : '')
-        return
-      }
-      if (isGithubRepoStep) {
-        const [owner, name] = item.key.split('/')
-        if (!owner || !name) return
-        continueWithRepo(
-          'github',
-          item.key,
-          buildGitHubCloneUrl({ owner, repo: name }),
-          name,
-        )
-        return
-      }
-      if (item.key === PARENT_ROW_KEY) {
-        if (parentPath) navigateTo(parentPath)
-        return
-      }
-      navigateIntoSegment(item.key)
-    },
-    [
-      items,
-      step.kind,
-      isGithubRepoStep,
-      pickSource,
-      detectedSource,
-      query,
-      continueWithRepo,
-      parentPath,
-      navigateTo,
-      navigateIntoSegment,
-    ],
-  )
-
   const addProject = useCallback(
     async (path: string, createIfMissing: boolean) => {
       if (!path) {
@@ -555,6 +652,26 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
         parentPath: resolved.path,
         directoryName: step.repoName,
       })
+      // Persist (or clear) the default clone parent after a successful clone.
+      const currentDir = ensureBrowseDirectoryPath(query.trim() || resolved.path)
+      if (saveAsDefault && currentDir) {
+        await window.app.saveAppSettings({
+          defaultClonePaths: { [connectionId]: currentDir },
+        })
+        defaultClonePathRef.current = currentDir
+        setDefaultClonePath(currentDir)
+      } else if (
+        !saveAsDefault &&
+        defaultClonePath &&
+        ensureBrowseDirectoryPath(defaultClonePath) === currentDir
+      ) {
+        // Unchecked while still on the saved default → clear it.
+        await window.app.saveAppSettings({
+          defaultClonePaths: { [connectionId]: '' },
+        })
+        defaultClonePathRef.current = null
+        setDefaultClonePath(null)
+      }
       onOpened(project)
       onOpenChange(false)
     } catch (err) {
@@ -562,7 +679,73 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
     } finally {
       setBusy(false)
     }
-  }, [step, resolved.path, connectionId, onOpened, onOpenChange, t])
+  }, [
+    step,
+    resolved.path,
+    connectionId,
+    onOpened,
+    onOpenChange,
+    t,
+    query,
+    saveAsDefault,
+    defaultClonePath,
+  ])
+
+  const activateItem = useCallback(
+    (index: number) => {
+      const item = items[index]
+      if (!item) return
+      if (step.kind === 'source') {
+        const source = item.key as AddProjectSource
+        // Only a detected local path carries the typed text; other sources start clean.
+        pickSource(source, source === detectedSource ? query : '')
+        return
+      }
+      if (isGithubRepoStep) {
+        const [owner, name] = item.key.split('/')
+        if (!owner || !name) return
+        continueWithRepo(
+          'github',
+          item.key,
+          buildGitHubCloneUrl({ owner, repo: name }),
+          name,
+        )
+        return
+      }
+      if (item.key === CURRENT_ROW_KEY || item.key === CREATE_ROW_KEY) {
+        // Commit the typed path: create row forces mkdir; current row never does.
+        if (step.kind === 'browse') {
+          void addProject(resolved.path, item.key === CREATE_ROW_KEY)
+          return
+        }
+        if (step.kind === 'destination') {
+          void cloneProject()
+          return
+        }
+        return
+      }
+      if (item.key === PARENT_ROW_KEY) {
+        if (parentPath) navigateTo(parentPath)
+        return
+      }
+      navigateIntoSegment(item.key)
+    },
+    [
+      items,
+      step.kind,
+      isGithubRepoStep,
+      pickSource,
+      detectedSource,
+      query,
+      continueWithRepo,
+      addProject,
+      resolved.path,
+      cloneProject,
+      parentPath,
+      navigateTo,
+      navigateIntoSegment,
+    ],
+  )
 
   const submit = useCallback(() => {
     switch (step.kind) {
@@ -580,10 +763,20 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
         return
       }
       case 'browse':
-        void addProject(resolved.path, !resolved.exists)
-        return
       case 'destination':
+        // Path steps: Enter always follows the highlighted list row (navigate,
+        // create, or use current). Fall back to committing the typed path only
+        // when the list is empty.
+        if (itemCount > 0) {
+          activateItem(safeSelectedIndex)
+          return
+        }
+        if (step.kind === 'browse') {
+          if (resolved.path) void addProject(resolved.path, !resolved.exists)
+          return
+        }
         void cloneProject()
+        return
     }
   }, [
     step,
@@ -598,16 +791,66 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
     cloneProject,
   ])
 
-  /** Tab completes into the highlighted directory (never submits). */
-  const completePath = useCallback(() => {
+  /**
+   * Inline ghost for the highlighted directory row:
+   * - prefix: `~/Deve` + dim `loper`
+   * - fuzzy: rebuild leaf from candidate with matched chars solid, rest dim
+   */
+  const pathInlineGhost = useMemo(() => {
+    if (!isPathStep) return null
     const item = items[safeSelectedIndex]
+    if (!item) return null
+    if (
+      item.key === CREATE_ROW_KEY ||
+      item.key === CURRENT_ROW_KEY ||
+      item.key === PARENT_ROW_KEY
+    ) {
+      return null
+    }
+    const leaf = getBrowseLeafPathSegment(query)
+    const isPrefix =
+      !leaf || item.key.toLowerCase().startsWith(leaf.toLowerCase())
+    const fuzzy = !isPrefix && leaf ? fuzzyMatch(leaf, item.key) : null
+    return getPathInlineGhost(
+      query,
+      item.key,
+      fuzzy?.match ? fuzzy.indices : null,
+    )
+  }, [isPathStep, items, safeSelectedIndex, query])
+
+  /** Tab commits the ghost / selected directory into the input (never submits). */
+  const completePath = useCallback(() => {
+    const selected = items[safeSelectedIndex]
+    const item =
+      selected &&
+      selected.key !== CREATE_ROW_KEY &&
+      selected.key !== CURRENT_ROW_KEY
+        ? selected
+        : items.find(
+            (row) =>
+              row.key !== CREATE_ROW_KEY &&
+              row.key !== CURRENT_ROW_KEY &&
+              row.key !== PARENT_ROW_KEY,
+          )
     if (!item) return
     if (item.key === PARENT_ROW_KEY) {
       if (parentPath) navigateTo(parentPath)
       return
     }
+    // Exact leaf already typed: only add the trailing separator.
+    const leaf = getBrowseLeafPathSegment(query)
+    if (
+      leaf &&
+      leaf.toLowerCase() === item.key.toLowerCase() &&
+      !hasTrailingPathSeparator(query)
+    ) {
+      setQuery(ensureBrowseDirectoryPath(query))
+      setSelectedIndex(0)
+      setSubmitError('')
+      return
+    }
     navigateIntoSegment(item.key)
-  }, [items, safeSelectedIndex, parentPath, navigateTo, navigateIntoSegment])
+  }, [items, safeSelectedIndex, parentPath, navigateTo, navigateIntoSegment, query])
 
   const pickNativeFolder = useCallback(async () => {
     const picked = await window.app.selectFolder()
@@ -647,6 +890,7 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
     isGithubRepoStep,
     inputRef,
     items,
+    listSections,
     itemCount,
     selectedIndex: safeSelectedIndex,
     setSelectedIndex,
@@ -660,8 +904,11 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
     submitError,
     resolved,
     repoResolved,
-    submitLabelPath,
+    willCreatePath,
     clonePreviewPath,
+    pathInlineGhost,
+    saveAsDefault,
+    setSaveAsDefault,
     canSubmit,
     activateItem,
     completePath,

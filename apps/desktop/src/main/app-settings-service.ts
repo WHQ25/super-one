@@ -38,6 +38,7 @@ const defaults: AppSettings = {
   customAppIconPath: null,
   browserBookmarks: [],
   browserBookmarkGroups: [],
+  defaultClonePaths: {},
   agentPreference: {
     claude: {
       defaultModel: '',
@@ -112,6 +113,33 @@ function readMiniAppOrder(value: unknown): Record<string, string[]> {
     if (Array.isArray(list)) out[key] = list.filter((x): x is string => typeof x === 'string')
   }
   return out
+}
+
+function readDefaultClonePaths(value: unknown): Record<string, string> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  const out: Record<string, string> = {}
+  for (const [key, path] of Object.entries(value as Record<string, unknown>)) {
+    if (!key || typeof path !== 'string') continue
+    const trimmed = path.trim()
+    if (trimmed) out[key] = trimmed
+  }
+  return out
+}
+
+/** Merge patch into current; empty-string values remove that connection's entry. */
+function mergeDefaultClonePaths(
+  current: Record<string, string>,
+  patch: Record<string, string> | undefined,
+): Record<string, string> {
+  if (!patch) return current
+  const next = { ...current }
+  for (const [key, path] of Object.entries(patch)) {
+    if (!key) continue
+    const trimmed = typeof path === 'string' ? path.trim() : ''
+    if (!trimmed) delete next[key]
+    else next[key] = trimmed
+  }
+  return next
 }
 
 function readComputerUseAlwaysAllowApps(value: unknown): ComputerUseAlwaysAllowApp[] {
@@ -302,6 +330,7 @@ export function readAppSettings(): AppSettings {
       customAppIconPath: typeof data.customAppIconPath === 'string' ? data.customAppIconPath : defaults.customAppIconPath,
       browserBookmarks: readBookmarks(data.browserBookmarks),
       browserBookmarkGroups: readBookmarkGroups(data.browserBookmarkGroups),
+      defaultClonePaths: readDefaultClonePaths(data.defaultClonePaths),
       agentPreference: {
         claude: readClaudePreference(data),
         codex: readCodexPreference(data),
@@ -337,6 +366,7 @@ export function readAppSettings(): AppSettings {
       customAppIconPath: defaults.customAppIconPath,
       browserBookmarks: [],
       browserBookmarkGroups: [],
+      defaultClonePaths: {},
       agentPreference: {
         claude: { ...defaults.agentPreference.claude },
         codex: { ...defaults.agentPreference.codex },
@@ -384,6 +414,7 @@ export function saveAppSettings(patch: AppSettingsPatch): AppSettings {
     customAppIconPath: patch.customAppIconPath === undefined ? current.customAppIconPath : patch.customAppIconPath,
     browserBookmarks: patch.browserBookmarks === undefined ? current.browserBookmarks : readBookmarks(patch.browserBookmarks),
     browserBookmarkGroups: patch.browserBookmarkGroups === undefined ? current.browserBookmarkGroups : readBookmarkGroups(patch.browserBookmarkGroups),
+    defaultClonePaths: mergeDefaultClonePaths(current.defaultClonePaths, patch.defaultClonePaths),
     agentPreference: {
       claude: {
         ...current.agentPreference.claude,

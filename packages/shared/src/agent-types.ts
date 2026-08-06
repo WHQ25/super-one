@@ -3061,6 +3061,12 @@ export interface AppSettings {
   customAppIconPath: string | null
   browserBookmarks: BrowserBookmark[]
   browserBookmarkGroups: BrowserBookmarkGroup[]
+  /**
+   * Per-connection default parent directory for GitHub/URL clone in the
+   * add-project dialog. Key is environment connectionId (`local` or a remote
+   * node id); value is the path query refilled on the destination step.
+   */
+  defaultClonePaths: Record<string, string>
   agentPreference: {
     claude: {
       defaultModel: string
@@ -3116,6 +3122,11 @@ export interface AppSettingsPatch {
   customAppIconPath?: string | null
   browserBookmarks?: BrowserBookmark[]
   browserBookmarkGroups?: BrowserBookmarkGroup[]
+  /**
+   * Merge into `defaultClonePaths`. Empty-string values remove that
+   * connection's entry.
+   */
+  defaultClonePaths?: Record<string, string>
   agentPreference?: {
     claude?: Partial<AppSettings['agentPreference']['claude']>
     codex?: Partial<AppSettings['agentPreference']['codex']>

@@ -73,6 +73,14 @@ describe('repository input resolution', () => {
       remoteUrl: 'https://github.com/WHQ25/super-one.git',
       repoName: 'super-one',
     })
+    expect(resolveRepoInput('github', 'github.com/WHQ25/super-one')).toEqual({
+      remoteUrl: 'https://github.com/WHQ25/super-one.git',
+      repoName: 'super-one',
+    })
+    expect(resolveRepoInput('github', 'git@github.com:WHQ25/super-one.git')).toEqual({
+      remoteUrl: 'https://github.com/WHQ25/super-one.git',
+      repoName: 'super-one',
+    })
   })
 
   it('keeps a raw URL untouched in the URL step', () => {
@@ -137,13 +145,8 @@ describe('typed path resolution against the directory listing', () => {
 })
 
 describe('primary action labelling', () => {
-  it('offers to create the folder when browsing to a missing path', () => {
-    expect(submitLabelKey({ kind: 'browse' }, { path: '/a/b', exists: false })).toBe(
-      'sidebar.addProject.actions.createAndAdd',
-    )
-  })
-
-  it('offers a plain clone when the destination parent already exists', () => {
+  it('keeps a short stable label on path steps (create is a separate hint)', () => {
+    expect(submitLabelKey({ kind: 'browse' })).toBe('sidebar.addProject.actions.add')
     const step = {
       kind: 'destination',
       source: 'github',
@@ -151,9 +154,7 @@ describe('primary action labelling', () => {
       remoteUrl: 'https://github.com/a/b.git',
       repoName: 'b',
     } as const
-    expect(submitLabelKey(step, { path: '/a', exists: true })).toBe(
-      'sidebar.addProject.actions.clone',
-    )
+    expect(submitLabelKey(step)).toBe('sidebar.addProject.actions.clone')
   })
 })
 

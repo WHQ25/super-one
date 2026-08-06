@@ -1,9 +1,12 @@
 import { describe, it, expect } from 'vitest'
+import { fuzzyMatch } from './fuzzy-match'
 import {
   ensureBrowseDirectoryPath,
   getBrowseDirectoryPath,
   getBrowseLeafPathSegment,
   getBrowseParentPath,
+  getPathInlineGhost,
+  getPathInlineGhostSuffix,
   isBareHomePath,
   isBrowseablePathQuery,
   normalizeHomePrefixInput,
@@ -40,5 +43,71 @@ describe('bare home path (~)', () => {
     expect(normalizeHomePrefixInput('~/', '~')).toBe('~')
     expect(normalizeHomePrefixInput('~\\', '~')).toBe('~')
     expect(normalizeHomePrefixInput('~/Projects', '~/Projects/x')).toBe('~/Projects/x')
+  })
+})
+
+describe('getPathInlineGhost', () => {
+  it('uses suffix mode for a prefix match', () => {
+    expect(getPathInlineGhost('~/Deve', 'Developer')).toEqual({
+      kind: 'suffix',
+      text: 'loper',
+    })
+    expect(getPathInlineGhost('~/Dev/no', 'notes')).toEqual({
+      kind: 'suffix',
+      text: 'tes',
+    })
+  })
+
+  it('keeps the candidate casing for the suffix remainder', () => {
+    expect(getPathInlineGhost('~/deve', 'Developer')).toEqual({
+      kind: 'suffix',
+      text: 'loper',
+    })
+  })
+
+  it('offers a trailing separator when the leaf already matches exactly', () => {
+    expect(getPathInlineGhost('~/Developer', 'Developer')).toEqual({
+      kind: 'suffix',
+      text: '/',
+    })
+    expect(getPathInlineGhost('C:\\Dev\\Notes', 'Notes')).toEqual({
+      kind: 'suffix',
+      text: '\\',
+    })
+  })
+
+  it('ghosts the full child name at a directory boundary', () => {
+    expect(getPathInlineGhost('~/', 'Developer')).toEqual({
+      kind: 'suffix',
+      text: 'Developer/',
+    })
+    expect(getPathInlineGhost('~/Projects/', 'super-one')).toEqual({
+      kind: 'suffix',
+      text: 'super-one/',
+    })
+  })
+
+  it('uses fuzzy mode when the leaf is a non-prefix fuzzy match', () => {
+    const { indices, match } = fuzzyMatch('Dvl', 'Developer')
+    expect(match).toBe(true)
+    expect(getPathInlineGhost('~/Dvl', 'Developer', indices)).toEqual({
+      kind: 'fuzzy',
+      dir: '~/',
+      name: 'Developer',
+      matchIndices: indices,
+      sep: '/',
+    })
+  })
+
+  it('returns null without a prefix or fuzzy match', () => {
+    expect(getPathInlineGhost('~/xyz', 'Developer')).toBeNull()
+    expect(getPathInlineGhost('~/xyz', 'Developer', [])).toBeNull()
+    expect(getPathInlineGhost('~/Deve', null)).toBeNull()
+    expect(getPathInlineGhost('~/Deve', '')).toBeNull()
+  })
+
+  it('keeps the legacy suffix helper for prefix-only callers', () => {
+    expect(getPathInlineGhostSuffix('~/Deve', 'Developer')).toBe('loper')
+    expect(getPathInlineGhostSuffix('~/Dvl', 'Developer')).toBe('')
   })
 })

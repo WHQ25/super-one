@@ -56,20 +56,30 @@ export type Messages = {
       githubPrivate: string
       clonesInto: string
       cloning: string
+      /** Fixed-height hint when submit will mkdir the typed path (or parent). */
+      willCreateDirectory: string
+      /** Section header for the create-missing-path candidate group. */
+      createSection: string
+      /** Hint on the create-missing-path candidate row. */
+      createDirectory: string
+      /** Destination-step checkbox: remember this parent for future clones. */
+      saveAsDefaultClonePath: string
       pathRequired: string
       /** Clone failed because `<parent>/<repo>` is already on disk. */
       destinationExists: string
       browse: string
       directories: string
       goUp: string
+      /** Path-list "." row: commit the current directory on browse. */
+      addThisFolder: string
+      /** Path-list "." row: commit the current directory on destination. */
+      cloneHere: string
       noDirectories: string
       actions: {
         select: string
         continue: string
         add: string
-        createAndAdd: string
         clone: string
-        createAndClone: string
       }
       hintTab: string
       hintEnter: string
@@ -2270,36 +2280,43 @@ export const en: Messages = {
         title: 'Sources',
         searchPlaceholder: 'Type a path, or pick a source...',
         local: { label: 'Local Folder', hint: 'Browse a folder that already exists' },
-        github: { label: 'GitHub Repository', hint: 'Search and clone owner/repo' },
+        github: {
+          label: 'GitHub Repository',
+          hint: 'Search owner/repo or paste a GitHub URL',
+        },
         url: { label: 'Git URL', hint: 'Clone from any remote URL' },
       },
       pathPlaceholderLocal: '~/Projects/',
       pathPlaceholderRemote: '/home/superone/',
-      repoPlaceholderGithub: 'owner/repo',
+      repoPlaceholderGithub: 'owner/repo or GitHub URL',
       repoPlaceholderUrl: 'https://github.com/owner/repo.git',
       destinationPlaceholder: 'Where should it be cloned?',
       repository: 'Repository',
-      repoInvalidGithub: 'Type owner/ to search repositories.',
+      repoInvalidGithub: 'Type owner/ to search, or paste a GitHub URL.',
       repoInvalidUrl: 'Enter an https, ssh or git clone URL.',
       githubRepos: 'Repositories',
       githubNoRepos: 'No repositories matched.',
       githubPrivate: 'Private',
       clonesInto: 'Clones into {{path}}',
       cloning: 'Cloning...',
+      willCreateDirectory: 'Will create {{path}}',
+      createSection: 'Create',
+      createDirectory: 'Create directory',
+      saveAsDefaultClonePath: 'Save as default clone path',
       pathRequired: 'Enter a project path.',
       destinationExists:
         '"{{path}}" already exists. Pick another folder, or add that project instead of cloning.',
       browse: 'Browse',
       directories: 'Directories',
       goUp: 'Parent Directory',
+      addThisFolder: 'Add this folder',
+      cloneHere: 'Clone here',
       noDirectories: 'No directories here.',
       actions: {
         select: 'Select',
         continue: 'Continue',
         add: 'Add',
-        createAndAdd: 'Create & Add',
         clone: 'Clone',
-        createAndClone: 'Create & Clone',
       },
       hintTab: 'autocomplete',
       hintEnter: 'confirm',

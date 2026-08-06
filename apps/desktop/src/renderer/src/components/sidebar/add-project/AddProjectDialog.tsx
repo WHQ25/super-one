@@ -1,8 +1,17 @@
-import { useMemo, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ArrowLeft, CornerLeftUp, Folder, FolderPlus, Github, Link2, Loader2 } from 'lucide-react'
+import {
+  ArrowLeft,
+  CornerLeftUp,
+  Folder,
+  FolderPlus,
+  Github,
+  Link2,
+  Loader2,
+} from 'lucide-react'
 import { githubOwnerAvatarUrl, parseGitHubRepoInput } from '@superone/shared/git-remote'
 import { Button } from '@superone/ui/components/ui/button'
+import { Checkbox } from '@superone/ui/components/ui/checkbox'
 import {
   Dialog,
   DialogContent,
@@ -44,6 +53,7 @@ const SOURCE_ICONS: Record<AddProjectSource, ReactNode> = {
 }
 const PARENT_ICON = <CornerLeftUp className="size-3.5" />
 const DIRECTORY_ICON = <Folder className="size-3.5" />
+const CREATE_DIRECTORY_ICON = <FolderPlus className="size-3.5" />
 
 /**
  * Multi-step add-project dialog: pick a source, then either browse the host
@@ -68,8 +78,39 @@ export function AddProjectDialog({
     sourceIcons: SOURCE_ICONS,
     parentIcon: PARENT_ICON,
     directoryIcon: DIRECTORY_ICON,
+    createDirectoryIcon: CREATE_DIRECTORY_ICON,
   })
   const { step } = flow
+  /**
+   * Chromium often reports `isComposing=false` on the Enter that ends an IME
+   * session. Track composition ourselves and clear one frame late so that
+   * trailing Enter only confirms the candidate, not the dialog step.
+   */
+  const imeComposingRef = useRef(false)
+  /** Ghost text only when the caret is at the end of the input (shell-like). */
+  const [caretAtEnd, setCaretAtEnd] = useState(true)
+  /** Keep the ghost overlay horizontally aligned with the scrolled input text. */
+  const [inputScrollLeft, setInputScrollLeft] = useState(0)
+
+  /** Scroll the path input to the end so long paths keep the caret visible. */
+  const scrollPathInputToEnd = useCallback(() => {
+    const el = flow.inputRef.current
+    if (!el) return
+    // Double rAF: first paint applies the new value, second reads scrollWidth.
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        el.scrollLeft = el.scrollWidth
+        setInputScrollLeft(el.scrollLeft)
+      })
+    })
+  }, [flow.inputRef])
+
+  // Typing, Tab-complete, and arrow navigation all update `query` — pin scroll
+  // to the end while the caret stays at the end (path steps only).
+  useEffect(() => {
+    if (!flow.isPathStep || !caretAtEnd) return
+    scrollPathInputToEnd()
+  }, [flow.query, flow.pathInlineGhost, flow.isPathStep, caretAtEnd, scrollPathInputToEnd])
 
   const placeholder = useMemo(() => {
     switch (step.kind) {
@@ -91,6 +132,11 @@ export function AddProjectDialog({
         )
     }
   }, [step, flow.isLocal, t])
+
+  const submitLabel =
+    flow.busy && step.kind === 'destination'
+      ? t('sidebar.addProject.cloning')
+      : t(submitLabelKey(step))
 
   return (
     <Dialog open={open} onOpenChange={(next) => !flow.busy && onOpenChange(next)}>
@@ -124,49 +170,171 @@ export function AddProjectDialog({
               <ArrowLeft />
             </IconButton>
           )}
-          <input
-            ref={flow.inputRef}
-            value={flow.query}
-            onChange={(e) => flow.setQuery(e.target.value)}
-            placeholder={placeholder}
-            disabled={flow.busy}
-            spellCheck={false}
-            autoComplete="off"
-            className={cn(
-              'h-11 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground disabled:opacity-60',
-              step.kind !== 'source' && 'font-mono',
-            )}
-            onKeyDown={(e) => {
-              // IME composition (e.g. Chinese/Japanese): Enter confirms a candidate,
-              // not the dialog step. keyCode 229 covers older engines that omit isComposing.
-              if (e.nativeEvent.isComposing || e.keyCode === 229) return
+          {/*
+            Path steps use inline ghost completion. When a ghost is shown the
+            native caret is hidden and we paint a caret after the last user-owned
+            character (end of typed query for prefix; last fuzzy match for fuzzy)
+            so it never sits in the middle of the ghost tail.
+          */}
+          <div className="relative min-w-0 flex-1 overflow-hidden">
+            {flow.isPathStep && flow.pathInlineGhost && caretAtEnd ? (
+              <div
+                aria-hidden
+                className={cn(
+                  'pointer-events-none absolute inset-y-0 left-0 flex items-center text-sm',
+                  'font-mono whitespace-nowrap',
+                )}
+                style={{ transform: `translateX(-${inputScrollLeft}px)` }}
+              >
+                {flow.pathInlineGhost.kind === 'suffix' ? (
+                  <>
+                    <span className="whitespace-pre text-foreground">{flow.query}</span>
+                    {/* Caret at end of typed input — always before the ghost tail. */}
+                    <span className="h-4 w-px shrink-0 self-center bg-foreground" />
+                    <span className="whitespace-pre text-muted-foreground/40">
+                      {flow.pathInlineGhost.text}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <span className="whitespace-pre text-foreground">
+                      {flow.pathInlineGhost.dir}
+                    </span>
+                    {(() => {
+                      const ghost = flow.pathInlineGhost
+                      if (ghost.kind !== 'fuzzy') return null
+                      const matchSet = new Set(ghost.matchIndices)
+                      const lastMatch =
+                        ghost.matchIndices.length > 0
+                          ? Math.max(...ghost.matchIndices)
+                          : -1
+                      const nodes: ReactNode[] = []
+                      ghost.name.split('').forEach((ch, i) => {
+                        if (i === lastMatch + 1) {
+                          nodes.push(
+                            <span
+                              key="caret"
+                              className="h-4 w-px shrink-0 self-center bg-foreground"
+                            />,
+                          )
+                        }
+                        nodes.push(
+                          <span
+                            key={`${i}-${ch}`}
+                            className={cn(
+                              'whitespace-pre',
+                              matchSet.has(i)
+                                ? 'text-foreground'
+                                : 'text-muted-foreground/40',
+                            )}
+                          >
+                            {ch}
+                          </span>,
+                        )
+                      })
+                      // Typed leaf covers the whole name — caret sits before the trailing sep.
+                      if (lastMatch === ghost.name.length - 1) {
+                        nodes.push(
+                          <span
+                            key="caret-end"
+                            className="h-4 w-px shrink-0 self-center bg-foreground"
+                          />,
+                        )
+                      }
+                      return nodes
+                    })()}
+                    <span className="whitespace-pre text-muted-foreground/40">
+                      {flow.pathInlineGhost.sep}
+                    </span>
+                  </>
+                )}
+              </div>
+            ) : null}
+            <input
+              ref={flow.inputRef}
+              value={flow.query}
+              onChange={(e) => {
+                flow.setQuery(e.target.value)
+                const el = e.target
+                setCaretAtEnd(el.selectionStart === el.value.length)
+              }}
+              onScroll={(e) => {
+                setInputScrollLeft(e.currentTarget.scrollLeft)
+              }}
+              placeholder={placeholder}
+              disabled={flow.busy}
+              spellCheck={false}
+              autoComplete="off"
+              className={cn(
+                'relative h-11 w-full min-w-0 bg-transparent text-sm outline-none placeholder:text-muted-foreground disabled:opacity-60',
+                step.kind !== 'source' && 'font-mono',
+                // Ghost layer paints text + caret; hide the native ones to avoid
+                // the caret landing mid-ghost when overlay length ≠ query length.
+                flow.isPathStep &&
+                  flow.pathInlineGhost &&
+                  caretAtEnd &&
+                  'text-transparent caret-transparent',
+              )}
+              onSelect={(e) => {
+                const el = e.currentTarget
+                setCaretAtEnd(el.selectionStart === el.value.length)
+              }}
+              onClick={(e) => {
+                const el = e.currentTarget
+                setCaretAtEnd(el.selectionStart === el.value.length)
+              }}
+              onKeyUp={(e) => {
+                const el = e.currentTarget
+                setCaretAtEnd(el.selectionStart === el.value.length)
+              }}
+              onCompositionStart={() => {
+                imeComposingRef.current = true
+              }}
+              onCompositionEnd={() => {
+                // Defer clear so the Enter/Space that committed the candidate is
+                // still treated as composition and does not submit/navigate.
+                requestAnimationFrame(() => {
+                  imeComposingRef.current = false
+                })
+              }}
+              onKeyDown={(e) => {
+                // IME composition (e.g. Chinese/Japanese): Enter confirms a candidate,
+                // not the dialog step. keyCode 229 covers older engines that omit isComposing.
+                if (
+                  imeComposingRef.current ||
+                  e.nativeEvent.isComposing ||
+                  e.keyCode === 229
+                ) {
+                  return
+                }
 
-              if (e.key === 'ArrowDown') {
-                e.preventDefault()
-                flow.moveSelection(1)
-                return
-              }
-              if (e.key === 'ArrowUp') {
-                e.preventDefault()
-                flow.moveSelection(-1)
-                return
-              }
-              if (e.key === 'Tab' && flow.isPathStep) {
-                e.preventDefault()
-                flow.completePath()
-                return
-              }
-              if (e.key === 'Enter') {
-                e.preventDefault()
-                flow.submit()
-                return
-              }
-              if (e.key === 'Backspace' && flow.query === '' && step.kind !== 'source') {
-                e.preventDefault()
-                flow.goBack()
-              }
-            }}
-          />
+                if (e.key === 'ArrowDown') {
+                  e.preventDefault()
+                  flow.moveSelection(1)
+                  return
+                }
+                if (e.key === 'ArrowUp') {
+                  e.preventDefault()
+                  flow.moveSelection(-1)
+                  return
+                }
+                if (e.key === 'Tab' && flow.isPathStep) {
+                  e.preventDefault()
+                  flow.completePath()
+                  return
+                }
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  flow.submit()
+                  return
+                }
+                if (e.key === 'Backspace' && flow.query === '' && step.kind !== 'source') {
+                  e.preventDefault()
+                  flow.goBack()
+                }
+              }}
+            />
+          </div>
           {flow.isLocal && flow.isPathStep && (
             <Button
               type="button"
@@ -191,9 +359,7 @@ export function AddProjectDialog({
             onClick={flow.submit}
           >
             {flow.busy && <Loader2 className="size-3 animate-spin" />}
-            {flow.busy && step.kind === 'destination'
-              ? t('sidebar.addProject.cloning')
-              : t(submitLabelKey(step, flow.submitLabelPath))}
+            {submitLabel}
           </Button>
         </div>
 
@@ -215,7 +381,14 @@ export function AddProjectDialog({
                 })()}
               </span>
               <div className="flex min-w-0 flex-col">
-                <span className="truncate text-sm">{step.repoInput}</span>
+                <span className="truncate text-sm">
+                  {(() => {
+                    // Normalize pasted GitHub URLs to owner/repo for the title.
+                    const ref =
+                      step.source === 'github' ? parseGitHubRepoInput(step.repoInput) : null
+                    return ref ? `${ref.owner}/${ref.repo}` : step.repoInput
+                  })()}
+                </span>
                 <span className="truncate font-mono text-[11px] text-muted-foreground">
                   {step.remoteUrl}
                 </span>
@@ -228,6 +401,16 @@ export function AddProjectDialog({
                 })}
               </div>
             )}
+            <label className="mt-2 flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
+              <Checkbox
+                checked={flow.saveAsDefault}
+                disabled={flow.busy}
+                onCheckedChange={(value) => flow.setSaveAsDefault(value === true)}
+              />
+              <span className="min-w-0 leading-snug">
+                {t('sidebar.addProject.saveAsDefaultClonePath')}
+              </span>
+            </label>
           </div>
         )}
 
@@ -245,55 +428,71 @@ export function AddProjectDialog({
               )}
             </div>
           ) : step.kind === 'repo' && step.source === 'github' ? (
-            flow.githubLoading && flow.itemCount === 0 ? (
+            flow.listSections.length > 0 ? (
+              <AddProjectList
+                sections={flow.listSections}
+                selectedIndex={flow.selectedIndex}
+                onActivate={flow.activateItem}
+                onHover={flow.setSelectedIndex}
+              />
+            ) : flow.githubLoading ? (
               <div className="flex h-full min-h-[8rem] items-center justify-center gap-2 text-xs text-muted-foreground">
                 <Loader2 className="size-3.5 animate-spin" />
                 {t('common.loading')}
               </div>
-            ) : flow.githubError && flow.itemCount === 0 ? (
+            ) : flow.repoResolved ? (
+              // Paste of owner/repo or a full GitHub URL — same card shape as a search hit.
+              <div className="flex h-full min-h-[8rem] flex-col items-center justify-center gap-2 px-6 text-center text-xs text-muted-foreground">
+                {(() => {
+                  const ref = parseGitHubRepoInput(flow.query)
+                  return (
+                    <>
+                      {ref ? (
+                        <GithubOwnerAvatar owner={ref.owner} className="size-8 rounded-md" />
+                      ) : (
+                        <Github className="size-8 text-muted-foreground" />
+                      )}
+                      <span className="text-sm text-foreground">
+                        {ref ? `${ref.owner}/${ref.repo}` : flow.repoResolved.repoName}
+                      </span>
+                      <span className="font-mono break-all">
+                        {flow.repoResolved.remoteUrl}
+                      </span>
+                    </>
+                  )
+                })()}
+              </div>
+            ) : flow.githubError ? (
               <div className="flex h-full min-h-[8rem] items-center justify-center px-3 text-center text-xs break-words text-muted-foreground">
                 {flow.githubError}
               </div>
-            ) : flow.itemCount === 0 ? (
+            ) : (
               <div className="flex h-full min-h-[8rem] items-center justify-center px-3 text-center text-xs text-muted-foreground">
                 {flow.githubSearchOwner
                   ? t('sidebar.addProject.githubNoRepos')
                   : t('sidebar.addProject.repoInvalidGithub')}
               </div>
-            ) : (
-              <AddProjectList
-                sectionLabel={t('sidebar.addProject.githubRepos')}
-                items={flow.items}
-                selectedIndex={flow.selectedIndex}
-                onActivate={flow.activateItem}
-                onHover={flow.setSelectedIndex}
-              />
             )
           ) : flow.browseLoading && flow.itemCount === 0 ? (
             <div className="flex h-full min-h-[8rem] items-center justify-center gap-2 text-xs text-muted-foreground">
               <Loader2 className="size-3.5 animate-spin" />
               {t('common.loading')}
             </div>
-          ) : flow.browseError && flow.itemCount === 0 ? (
-            <div className="flex h-full min-h-[8rem] items-center justify-center px-3 text-center text-xs break-words text-muted-foreground">
-              {flow.browseError}
-            </div>
-          ) : flow.itemCount === 0 ? (
-            <div className="flex h-full min-h-[8rem] items-center justify-center px-3 text-center text-xs text-muted-foreground">
-              {t('sidebar.addProject.noDirectories')}
-            </div>
-          ) : (
+          ) : flow.listSections.length > 0 ? (
             <AddProjectList
-              sectionLabel={
-                step.kind === 'source'
-                  ? t('sidebar.addProject.sources.title')
-                  : t('sidebar.addProject.directories')
-              }
-              items={flow.items}
+              sections={flow.listSections}
               selectedIndex={flow.selectedIndex}
               onActivate={flow.activateItem}
               onHover={flow.setSelectedIndex}
             />
+          ) : flow.browseError && flow.itemCount === 0 ? (
+            <div className="flex h-full min-h-[8rem] items-center justify-center px-3 text-center text-xs break-words text-muted-foreground">
+              {flow.browseError}
+            </div>
+          ) : (
+            <div className="flex h-full min-h-[8rem] items-center justify-center px-3 text-center text-xs text-muted-foreground">
+              {t('sidebar.addProject.noDirectories')}
+            </div>
           )}
         </div>
 

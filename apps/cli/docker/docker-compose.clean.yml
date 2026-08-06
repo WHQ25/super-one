@@ -1,0 +1,21 @@
+# Clean Linux host for registry-install bootstrap (product path).
+# No monorepo mount, no pre-started node — desktop must npm install @super-one/cli.
+#
+#   ./scripts/remote-cli-registry-smoke.sh
+#
+name: superone-clean-host
+
+services:
+  clean-host:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: superone-clean-host
+    hostname: superone-clean-host
+    entrypoint: ['/usr/bin/tini', '--', '/entrypoint-sshd-only.sh']
+    ports:
+      - '2223:22'
+    volumes:
+      - ./lab-keys/authorized_keys:/authorized_keys:ro
+      - ./entrypoint-sshd-only.sh:/entrypoint-sshd-only.sh:ro
+    restart: 'no'

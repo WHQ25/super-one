@@ -22,7 +22,7 @@ import type { HarnessId } from '@superone/shared/session-types'
 import type { SessionProviderStore } from '@superone/runtime/session'
 import type { NodeDatabase } from '../db/database'
 import type { ProviderStore } from '../provider/provider-store'
-import { listHarnessModels } from '../provider/resolve-service'
+import { listHarnessApiProviders, listHarnessModels } from '../provider/resolve-service'
 import type { WorkspaceGitService } from '../workspace/git-service'
 import type { ProjectRegistry } from '../workspace/project-registry'
 import type { EventLog } from './event-log'
@@ -232,7 +232,7 @@ export class CollaborationService {
         },
         models: models.length > 0 ? models : [{ id: 'default', name: 'Default' }],
         efforts: [...efforts],
-        apiProviders: [],
+        apiProviders: listHarnessApiProviders(providers, harnessId),
       })
     }
 

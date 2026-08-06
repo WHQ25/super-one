@@ -97,6 +97,34 @@ export function consumerForHarness(harness: string): ConsumerId | null {
   return null
 }
 
+/**
+ * Third-party AI keys usable for a harness (same filter as desktop collab profiles).
+ * `name` is the platform label; `keyName` is the user-defined credential entry.
+ */
+export function listHarnessApiProviders(
+  store: ProviderStore,
+  harness: string,
+): Array<{ id: string; name: string; brand?: string; keyName?: string }> {
+  const consumer = consumerForHarness(harness)
+  if (!consumer) return []
+  const platforms = platformsForNode(store)
+  const out: Array<{ id: string; name: string; brand?: string; keyName?: string }> = []
+  for (const cred of store.listCredentials()) {
+    const platform = findPlatform(platforms, cred.platformId)
+    const plan = findPlan(platform, cred.planId)
+    if (!platform || !plan) continue
+    const endpoints = effectiveEndpoints(platform, plan, cred)
+    if (!selectEndpoint(plan, consumer, undefined, cred, endpoints)) continue
+    out.push({
+      id: cred.id,
+      name: platform.name ?? cred.name,
+      ...(platform.brand ? { brand: platform.brand } : {}),
+      ...(cred.name ? { keyName: cred.name } : {}),
+    })
+  }
+  return out
+}
+
 /** Build process env for Claude / Codex from a resolved service. */
 export function buildHarnessEnv(harness: string, resolved: ResolvedService | null): Record<string, string> {
   if (!resolved) return {}

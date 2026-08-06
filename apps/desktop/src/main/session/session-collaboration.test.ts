@@ -20,8 +20,18 @@ const state = vi.hoisted(() => ({
   providers: [{
     id: 'claude-base', harnessId: 'claude', name: 'Claude', isBase: true, config: {}, createdAt: 0, updatedAt: 0,
   }],
-  credentials: [{ id: 'api-1', name: 'Seed-lei', platformId: 'openai' }],
-  platforms: [{ id: 'openai', name: 'OpenAI', brand: 'openai', plans: [] }],
+  credentials: [{ id: 'api-1', name: 'Seed-lei', platformId: 'openai', planId: 'api' }],
+  platforms: [{
+    id: 'openai',
+    name: 'OpenAI',
+    brand: 'openai',
+    plans: [{
+      id: 'api',
+      name: 'API',
+      auth: 'api-key',
+      endpoints: [{ id: 'openai', baseUrl: 'https://api.openai.com/v1', protocols: ['openai-chat'] }],
+    }],
+  }],
   projects: [] as Array<{ path: string; missing?: boolean }>,
   agentPreference: {
     claude: { defaultModel: 'test-model', defaultEffort: 'high' },
@@ -50,12 +60,6 @@ vi.mock('../providers/credential-store', () => ({
 }))
 vi.mock('../providers/registry', () => ({
   getPlatforms: () => state.platforms,
-}))
-vi.mock('../providers/resolver', () => ({
-  resolveChatService: (_harness: string, credentialId: string) =>
-    state.credentials.some((credential) => credential.id === credentialId)
-      ? { credentialId }
-      : null,
 }))
 vi.mock('./session-provider-repo', () => ({
   listSessionProviders: () => state.providers,
@@ -251,8 +255,18 @@ beforeEach(() => {
   state.providers = [{
     id: 'claude-base', harnessId: 'claude', name: 'Claude', isBase: true, config: {}, createdAt: 0, updatedAt: 0,
   }]
-  state.credentials = [{ id: 'api-1', name: 'Seed-lei', platformId: 'openai' }]
-  state.platforms = [{ id: 'openai', name: 'OpenAI', brand: 'openai', plans: [] }]
+  state.credentials = [{ id: 'api-1', name: 'Seed-lei', platformId: 'openai', planId: 'api' }]
+  state.platforms = [{
+    id: 'openai',
+    name: 'OpenAI',
+    brand: 'openai',
+    plans: [{
+      id: 'api',
+      name: 'API',
+      auth: 'api-key',
+      endpoints: [{ id: 'openai', baseUrl: 'https://api.openai.com/v1', protocols: ['openai-chat'] }],
+    }],
+  }]
   state.projects = [{ path: TEST_CWD }]
   state.agentPreference = {
     claude: { defaultModel: 'test-model', defaultEffort: 'high' },

@@ -61,7 +61,7 @@ function bootCollab() {
     secrets,
     sessionProviders,
   })
-  return { db, sessions, collab, projects, nodeHome, sessionProviders }
+  return { db, sessions, collab, projects, providers, nodeHome, sessionProviders }
 }
 
 describe('collaboration helpers', () => {
@@ -91,6 +91,40 @@ describe('collaboration grants + mailbox', () => {
     const profiles = collab.listProfiles()
     expect(profiles.length).toBeGreaterThan(0)
     expect(profiles.some((p) => p.id === 'claude-base' || p.id === 'claude')).toBe(true)
+  })
+
+  it('listProfiles exposes third-party API providers for claude and codex', () => {
+    const { collab, providers } = bootCollab()
+    const openai = providers.createCredential({
+      platformId: 'openai',
+      planId: 'api',
+      name: 'work-key',
+      secret: 'sk-test-openai-abcdef',
+    })
+    const anthropic = providers.createCredential({
+      platformId: 'anthropic',
+      planId: 'api',
+      name: 'claude-key',
+      secret: 'sk-ant-test-abcdef',
+    })
+
+    const profiles = collab.listProfiles()
+    const claude = profiles.find((p) => p.harnessId === 'claude')
+    const codex = profiles.find((p) => p.harnessId === 'codex')
+    expect(claude).toBeTruthy()
+    expect(codex).toBeTruthy()
+
+    expect(claude!.apiProviders.some((p) => p.id === anthropic.id)).toBe(true)
+    expect(claude!.apiProviders.find((p) => p.id === anthropic.id)).toMatchObject({
+      name: expect.any(String),
+      keyName: 'claude-key',
+    })
+    // OpenAI keys serve codex (and often claude via proxy) — at least codex must list them.
+    expect(codex!.apiProviders.some((p) => p.id === openai.id)).toBe(true)
+    expect(codex!.apiProviders.find((p) => p.id === openai.id)).toMatchObject({
+      keyName: 'work-key',
+      brand: 'openai',
+    })
   })
 
   it('request creates durable grants; start is idempotent; send/retrieve advance cursor', async () => {

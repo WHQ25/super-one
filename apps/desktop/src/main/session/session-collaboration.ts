@@ -13,7 +13,13 @@ import type {
 import { SESSION_AGENT_LAUNCHES_FIELD } from '@superone/shared/agent-types'
 import { acpAgentDisplayName, resolveHarnessBrandKey } from '@superone/shared/acp-brand'
 import { formatCodexModelName } from '@superone/shared/codex-model-label'
-import { findPlatform, type Credential } from '@superone/shared/platform-registry'
+import {
+  effectiveEndpoints,
+  findPlan,
+  findPlatform,
+  selectEndpoint,
+  type Credential,
+} from '@superone/shared/platform-registry'
 import { activateWorktree } from '../git/worktree-ops'
 import { deriveSessionCatalog } from '../acp/acp-config'
 import { readAppSettings } from '../app-settings-service'
@@ -22,7 +28,6 @@ import { getCachedHarnessResources, getDb } from '../database'
 import { createSession as createSessionRecord } from '../db-sessions'
 import { listCredentials } from '../providers/credential-store'
 import { getPlatforms } from '../providers/registry'
-import { resolveChatService } from '../providers/resolver'
 import { addRecentFolder, getRecentFolders } from '../recent-folders'
 import log from '../logger'
 import { listSessionProviders } from './session-provider-repo'
@@ -235,6 +240,26 @@ function apiProviderOption(credential: Credential): {
   }
 }
 
+/** Same filter as the main chat provider picker (endpoint-capable credentials). */
+function listApiProvidersForHarness(harnessId: 'claude' | 'codex'): Array<{
+  id: string
+  name: string
+  brand?: string
+  keyName?: string
+}> {
+  const consumer = harnessId === 'codex' ? 'chat:codex' : 'chat:claude'
+  const platforms = getPlatforms()
+  return listCredentials()
+    .filter((credential) => {
+      const platform = findPlatform(platforms, credential.platformId)
+      const plan = findPlan(platform, credential.planId)
+      if (!platform || !plan) return false
+      const endpoints = effectiveEndpoints(platform, plan, credential)
+      return !!selectEndpoint(plan, consumer, undefined, credential, endpoints)
+    })
+    .map(apiProviderOption)
+}
+
 /** Prefer explicit role, then human launchId, then a short task-derived label. */
 export function deriveCollaborationRole(input: {
   role?: string
@@ -285,7 +310,6 @@ export function collaborationSessionTitle(name: string, role: string): string {
 
 export function listSessionAgentProfiles(): SessionAgentProfile[] {
   assertEnabled()
-  const credentials = listCredentials()
   return listSessionProviders()
     .filter((provider) => provider.isBase)
     .flatMap((provider) => {
@@ -315,9 +339,7 @@ export function listSessionAgentProfiles(): SessionAgentProfile[] {
         models,
         efforts: resources.efforts,
         apiProviders: provider.harnessId === 'claude' || provider.harnessId === 'codex'
-          ? credentials
-              .filter((credential) => resolveChatService(provider.harnessId as 'claude' | 'codex', credential.id)?.credentialId === credential.id)
-              .map(apiProviderOption)
+          ? listApiProvidersForHarness(provider.harnessId)
           : [],
       }]
     })

@@ -1,0 +1,99 @@
+import { describe, expect, it } from 'vitest'
+import type { ModelOption } from '@superone/shared/agent-types'
+import {
+  CLAUDE_EFFORT_LABELS,
+  claudeModelsForProvider,
+  codexModelsToSelectorOptions,
+  compactEffortLabel,
+  formatClaudeStyleEffortLabel,
+  mergeCollabProviders,
+} from './useCollabLaunchModelSelector'
+
+describe('mergeCollabProviders', () => {
+  it('always leads with Default and merges live keys over profile entries', () => {
+    const providers = mergeCollabProviders({
+      harnessId: 'claude',
+      profileProviders: [
+        { id: 'stale', name: 'Stale Name', brand: 'openai', keyName: 'old' },
+        { id: 'profile-only', name: 'Profile Only', keyName: 'p' },
+      ],
+      live: [
+        { id: 'stale', name: 'Fresh Name', brand: 'openai', keyName: 'new' },
+        { id: 'live-only', name: 'Live Only', brand: 'deepseek', keyName: 'l' },
+      ],
+      defaultLabel: 'Claude Code (Official)',
+    })
+
+    expect(providers[0]).toEqual({ id: null, brand: 'claude', name: 'Claude Code (Official)' })
+    expect(providers.find((p) => p.id === 'stale')).toEqual({
+      id: 'stale',
+      name: 'Fresh Name',
+      brand: 'openai',
+      keyName: 'new',
+    })
+    expect(providers.find((p) => p.id === 'profile-only')).toMatchObject({ id: 'profile-only' })
+    expect(providers.find((p) => p.id === 'live-only')).toMatchObject({ id: 'live-only' })
+  })
+})
+
+describe('claudeModelsForProvider', () => {
+  const catalog: ModelOption[] = [
+    { id: 'claude-sonnet-4-5', name: 'Sonnet 4.5', description: '', supportedEffortLevels: ['low', 'medium', 'high', 'max'] },
+    { id: 'claude-opus-4-5', name: 'Opus 4.5', description: '', supportedEffortLevels: ['low', 'medium', 'high', 'max'] },
+    { id: 'claude-haiku-4-5', name: 'Haiku 4.5', description: '', supportedEffortLevels: ['low', 'medium', 'high'] },
+  ]
+
+  it('keeps catalog labels when no model mapping is active', () => {
+    expect(claudeModelsForProvider(catalog, null)).toEqual([
+      { id: 'claude-sonnet-4-5', name: 'Sonnet 4.5' },
+      { id: 'claude-opus-4-5', name: 'Opus 4.5' },
+      { id: 'claude-haiku-4-5', name: 'Haiku 4.5' },
+    ])
+  })
+
+  it('remaps Claude slots to third-party model names like the chat selector', () => {
+    const mapped = claudeModelsForProvider(catalog, {
+      sonnet: { id: 'deepseek-chat', name: 'DeepSeek Chat' },
+      opus: { id: 'deepseek-reasoner', name: 'DeepSeek Reasoner' },
+      haiku: { id: 'deepseek-chat', name: 'DeepSeek Chat' },
+    })
+    // Identical mapped ids collapse to one entry (same as main chat selector).
+    expect(mapped).toEqual([
+      { id: 'claude-sonnet-4-5', name: 'DeepSeek Chat' },
+      { id: 'claude-opus-4-5', name: 'DeepSeek Reasoner' },
+    ])
+  })
+})
+
+describe('codexModelsToSelectorOptions', () => {
+  it('formats codex model ids like the chat selector', () => {
+    expect(codexModelsToSelectorOptions([
+      { id: 'gpt-5.4', name: 'gpt-5.4', description: '' },
+      { id: 'custom-model', name: 'My Custom', description: 'x' },
+    ])).toEqual([
+      { id: 'gpt-5.4', name: 'GPT5.4' },
+      { id: 'custom-model', name: 'My Custom', description: 'x' },
+    ])
+  })
+})
+
+describe('effort labels', () => {
+  it('matches Claude chat effort labels including Extra High and Max', () => {
+    expect(CLAUDE_EFFORT_LABELS).toEqual({
+      low: 'Low',
+      medium: 'Medium',
+      high: 'High',
+      xhigh: 'Extra High',
+      max: 'Max',
+    })
+    expect(formatClaudeStyleEffortLabel('xhigh')).toBe('Extra High')
+    expect(formatClaudeStyleEffortLabel('max')).toBe('Max')
+    expect(formatClaudeStyleEffortLabel('high')).toBe('High')
+  })
+
+  it('compacts ACP effort names the same way as AcpModelSelector', () => {
+    expect(compactEffortLabel('High Effort')).toBe('High')
+    expect(compactEffortLabel('Extra High Effort')).toBe('Extra High')
+    expect(formatClaudeStyleEffortLabel('High Effort')).toBe('High')
+  })
+})

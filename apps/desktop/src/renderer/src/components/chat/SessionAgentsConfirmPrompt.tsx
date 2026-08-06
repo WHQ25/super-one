@@ -19,6 +19,7 @@ import { harnessSupportsSandbox, SandboxModePopover } from './SandboxModeSelecto
 import { ApproveRejectBar } from './PermissionActionBar'
 import { WorkDirLabel, workDirTitle, type WorkDirState } from './work-dir-label'
 import { GroupedModelEffortSelector } from './model-selector/GroupedModelEffortSelector'
+import { useCollabLaunchModelSelector } from './model-selector/useCollabLaunchModelSelector'
 import { isFocusInChat } from './is-focus-in-chat'
 
 interface Props {
@@ -124,28 +125,14 @@ function LaunchPanel({
   const [taskExpanded, setTaskExpanded] = useState(false)
   const { config } = launch
   const harnessId = profile?.harnessId ?? 'claude'
-  const models = profile?.models ?? []
-  const selectedModel = models.find((model) => model.id === config.model)
-  const effortOptions = useMemo(
-    () => (profile?.efforts ?? []).map((effort) => ({ value: effort, label: effort })),
-    [profile],
-  )
-  const providers = useMemo(
-    () => [
-      {
-        id: null,
-        brand: harnessId === 'codex' ? 'openai' : harnessId === 'claude' ? 'claude' : undefined,
-        name: t('chat.sessionAgentsConfirm.defaultProvider'),
-      },
-      ...(profile?.apiProviders ?? []).map((provider) => ({
-        id: provider.id,
-        name: provider.name,
-        brand: provider.brand,
-        keyName: provider.keyName,
-      })),
-    ],
-    [profile, harnessId, t],
-  )
+  const modelSelector = useCollabLaunchModelSelector({
+    harnessId,
+    profile,
+    apiProviderId: config.apiProviderId,
+    selectedModelId: config.model,
+    selectedEffort: config.effort,
+    onChange,
+  })
   const workDirState = workDirStateOf(config.worktree?.enabled ? config.worktree : null)
 
   const nameRole = launchNameRoleLine(launch)
@@ -183,16 +170,23 @@ function LaunchPanel({
 
       <div className="mt-2 flex min-w-0 flex-wrap items-center gap-1 rounded-md border border-border bg-muted/20 px-1 py-0.5">
         <GroupedModelEffortSelector
-          models={models}
-          selectedModelId={config.model ?? null}
-          selectedModelLabel={selectedModel?.name}
-          onSelectModel={(model) => onChange({ model })}
-          effortOptions={effortOptions}
-          selectedEffort={config.effort ?? null}
-          onSelectEffort={(effort) => onChange({ effort })}
-          providers={providers}
-          selectedProviderId={config.apiProviderId ?? null}
-          onSelectProvider={(apiProviderId) => onChange({ apiProviderId })}
+          models={modelSelector.models}
+          modelGroups={modelSelector.modelGroups}
+          selectedModelId={modelSelector.selectedModelId}
+          selectedModelLabel={modelSelector.selectedModelLabel}
+          onSelectModel={modelSelector.onSelectModel}
+          shouldCloseAfterModelSelect={modelSelector.shouldCloseAfterModelSelect}
+          effortOptions={modelSelector.effortOptions}
+          selectedEffort={modelSelector.selectedEffort}
+          selectedEffortLabel={modelSelector.selectedEffortLabel}
+          onSelectEffort={modelSelector.onSelectEffort}
+          providers={modelSelector.providers}
+          selectedProviderId={modelSelector.selectedProviderId}
+          onSelectProvider={modelSelector.onSelectProvider}
+          onManageProviders={modelSelector.onManageProviders}
+          onRefreshModels={modelSelector.onRefreshModels}
+          modelsLoading={modelSelector.modelsLoading}
+          triggerLabel={modelSelector.triggerLabel}
         />
         <span aria-hidden="true" className="h-3.5 w-px shrink-0 bg-border" />
         <HarnessPermissionPopover

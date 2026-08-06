@@ -8,6 +8,7 @@ import { shutdownAll as shutdownAllProxies } from '@superone/runtime/llm-proxy'
 import {
   buildHarnessEnv,
   buildHarnessEnvWithProxy,
+  listHarnessApiProviders,
   listHarnessModels,
   resolveHarnessService,
 } from './resolve-service'
@@ -91,6 +92,26 @@ describe('resolve-service', () => {
 
   it('listHarnessModels returns empty for unknown harness', () => {
     expect(listHarnessModels(store, 'acp', null)).toEqual([])
+  })
+
+  it('listHarnessApiProviders returns endpoint-capable credentials for the harness', () => {
+    const anthropic = store.createCredential({
+      platformId: 'anthropic',
+      planId: 'api',
+      name: 'ant-key',
+      secret: 'sk-ant-list-abcdef',
+    })
+    const openai = store.createCredential({
+      platformId: 'openai',
+      planId: 'api',
+      name: 'oai-key',
+      secret: 'sk-oai-list-abcdef',
+    })
+    const claudeProviders = listHarnessApiProviders(store, 'claude')
+    const codexProviders = listHarnessApiProviders(store, 'codex')
+    expect(claudeProviders.some((p) => p.id === anthropic.id && p.keyName === 'ant-key')).toBe(true)
+    expect(codexProviders.some((p) => p.id === openai.id && p.brand === 'openai')).toBe(true)
+    expect(listHarnessApiProviders(store, 'acp')).toEqual([])
   })
 
   it('resolves openai-chat custom platform for Claude and Codex', () => {

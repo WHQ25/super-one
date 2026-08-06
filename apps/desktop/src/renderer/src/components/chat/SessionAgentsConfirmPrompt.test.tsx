@@ -108,7 +108,8 @@ describe('session agents confirm prompt', () => {
 
     renderInChat(<SessionAgentsConfirmPrompt payload={value} onConfirm={onConfirm} onReject={vi.fn()} />)
 
-    expect(screen.getByRole('button', { name: /Claude Sonnet.*high/ })).toBeInTheDocument()
+    // Effort chip uses the same title-case labels as the main chat selector ("High").
+    expect(screen.getByRole('button', { name: /Claude Sonnet.*High/i })).toBeInTheDocument()
     fireEvent.keyDown(window, { key: 'Enter' })
     expect(onConfirm.mock.calls[0][0][0].config).toMatchObject({
       model: 'claude-sonnet',

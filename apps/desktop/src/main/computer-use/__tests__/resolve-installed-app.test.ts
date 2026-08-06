@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { matchRunningApp } from '../app-identity'
 import {
   clearInstalledAppCacheForTests,
+  listInstalledApps,
   resolveInstalledApp,
 } from '../resolve-installed-app'
 
@@ -45,5 +46,19 @@ describe('resolveInstalledApp (macOS filesystem)', () => {
     const byZh = await resolveInstalledApp('豆包')
     expect(byZh?.bundleId).toBe('com.bot.pc.doubao')
     expect(byZh?.aliases.some((a) => a.includes('豆包') || a === 'Doubao')).toBe(true)
+  }, 20_000)
+})
+
+describe('listInstalledApps (async catalog)', () => {
+  it('returns apps and coalesces concurrent cold scans onto one result', async () => {
+    if (process.platform !== 'darwin') return
+    clearInstalledAppCacheForTests()
+    const [a, b] = await Promise.all([listInstalledApps(), listInstalledApps()])
+    expect(a.length).toBeGreaterThan(0)
+    expect(b).toBe(a)
+    // Cache hit: second call after settle shares the same array reference.
+    const c = await listInstalledApps()
+    expect(c).toBe(a)
+    expect(a.some((app) => app.bundleId === 'com.apple.TextEdit')).toBe(true)
   }, 20_000)
 })

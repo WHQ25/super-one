@@ -1179,18 +1179,32 @@ export function ChatInput() {
       const storeAtts = attachmentsRef.current.filter((a) => a.id)
       const attMismatch = storeAtts.length !== editorAttIds.size || storeAtts.some((a) => !editorAttIds.has(a.id as string))
       if (text !== editor.getText() || attMismatch) {
-        isProgrammaticSetRef.current = true
         const json = draftJsonRef.current
-        if (json) {
-          // Restore the exact doc — chip nodes keep their inline positions.
-          editor.commands.setContent(json)
-        } else {
-          // Legacy fallback (draft has no JSON snapshot): rebuild from text and
-          // append attachment chips from the persisted store.
-          editor.commands.setContent(text ? `<p>${text}</p>` : '')
-          if (storeAtts.length > 0) {
-            editor.commands.insertContent(storeAtts.map((a) => ({ type: 'attachment' as const, attrs: { id: a.id } })))
+        const textSnapshot = text
+        // Defer setContent off the effect stack. TipTap ReactNodeViewRenderer
+        // calls flushSync when mounting mention/attachment chips; React 19
+        // rejects flushSync while a lifecycle is still running (console error
+        // at this setContent site, and chip state can fail to settle).
+        let cancelled = false
+        queueMicrotask(() => {
+          if (cancelled || !editor || editor.isDestroyed) return
+          isProgrammaticSetRef.current = true
+          if (json) {
+            // Restore the exact doc — chip nodes keep their inline positions.
+            editor.commands.setContent(json)
+          } else {
+            // Legacy fallback (draft has no JSON snapshot): rebuild from text and
+            // append attachment chips from the persisted store.
+            editor.commands.setContent(textSnapshot ? `<p>${textSnapshot}</p>` : '')
+            if (storeAtts.length > 0) {
+              editor.commands.insertContent(
+                storeAtts.map((a) => ({ type: 'attachment' as const, attrs: { id: a.id } })),
+              )
+            }
           }
+        })
+        return () => {
+          cancelled = true
         }
       }
     }, [text, editor, displayedSessionId])

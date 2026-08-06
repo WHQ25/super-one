@@ -1,5 +1,6 @@
-import { execFile, execFileSync } from 'node:child_process'
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { execFile } from 'node:child_process'
+import { existsSync } from 'node:fs'
+import { readdir, readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
 import { promisify } from 'node:util'
@@ -21,7 +22,12 @@ type CacheEntry = {
 }
 
 const SCAN_TTL_MS = 60_000
+/** Cap concurrent Info.plist / plutil work so cold scan does not flood the event loop. */
+const READ_CONCURRENCY = 12
+
 let cache: CacheEntry | null = null
+/** Coalesce concurrent cold scans (e.g. @-mention + computer_apps). */
+let inFlightScan: Promise<ResolvedInstalledApp[]> | null = null
 
 /** Test injection — bypasses LaunchServices / disk scan. */
 let testOverride:
@@ -37,6 +43,7 @@ export function setResolveInstalledAppForTests(
 /** Test helper. */
 export function clearInstalledAppCacheForTests(): void {
   cache = null
+  inFlightScan = null
   testOverride = null
 }
 
@@ -61,7 +68,7 @@ export async function resolveInstalledApp(
   // Filesystem-only scan with localized CFBundleDisplayName. AppleScript
   // application references are intentionally avoided because resolving an
   // application's id can launch it as a side effect.
-  const apps = listInstalledAppsSync()
+  const apps = await listInstalledApps()
   const lower = q.toLowerCase()
   const exact =
     apps.find((a) => a.bundleId.toLowerCase() === lower)
@@ -94,7 +101,7 @@ async function resolveByBundleId(bundleId: string): Promise<ResolvedInstalledApp
         .map((l) => l.trim())
         .find((l) => l.endsWith('.app')) ?? null
     if (path && existsSync(path)) {
-      return readAppAtPath(path) ?? synthetic(path, bundleId)
+      return (await readAppAtPath(path)) ?? synthetic(path, bundleId)
     }
   } catch {
     // fall through
@@ -108,55 +115,91 @@ function synthetic(path: string, bundleId: string): ResolvedInstalledApp {
   return { app: name, bundleId, path, aliases: [name, bundleId] }
 }
 
-/** Public catalog of installed .app bundles (cached ~60s). */
-export function listInstalledApps(): ResolvedInstalledApp[] {
-  return listInstalledAppsSync()
+/**
+ * Public catalog of installed .app bundles (cached ~60s).
+ * Async so cold scan never blocks the Electron main thread with sync I/O / plutil.
+ */
+export async function listInstalledApps(): Promise<ResolvedInstalledApp[]> {
+  if (cache && Date.now() - cache.at < SCAN_TTL_MS) return cache.apps
+  if (inFlightScan) return inFlightScan
+
+  inFlightScan = scanInstalledApps()
+    .then((apps) => {
+      cache = { at: Date.now(), apps }
+      return apps
+    })
+    .finally(() => {
+      inFlightScan = null
+    })
+
+  return inFlightScan
 }
 
-function listInstalledAppsSync(): ResolvedInstalledApp[] {
-  if (cache && Date.now() - cache.at < SCAN_TTL_MS) return cache.apps
-
+async function scanInstalledApps(): Promise<ResolvedInstalledApp[]> {
   const dirs = [
     '/Applications',
     '/System/Applications',
     join(homedir(), 'Applications'),
   ]
-  const apps: ResolvedInstalledApp[] = []
-  const seen = new Set<string>()
 
+  const appPaths: string[] = []
   for (const dir of dirs) {
-    if (!existsSync(dir)) continue
     let entries: string[]
     try {
-      entries = readdirSync(dir)
+      entries = await readdir(dir)
     } catch {
       continue
     }
     for (const entry of entries) {
       if (!entry.endsWith('.app')) continue
-      const path = join(dir, entry)
-      const identity = readAppAtPath(path)
-      if (!identity) continue
-      if (seen.has(identity.bundleId)) continue
-      seen.add(identity.bundleId)
-      apps.push(identity)
+      appPaths.push(join(dir, entry))
     }
   }
 
-  cache = { at: Date.now(), apps }
+  const identities = await mapPool(appPaths, READ_CONCURRENCY, (path) => readAppAtPath(path))
+  const apps: ResolvedInstalledApp[] = []
+  const seen = new Set<string>()
+  for (const identity of identities) {
+    if (!identity) continue
+    if (seen.has(identity.bundleId)) continue
+    seen.add(identity.bundleId)
+    apps.push(identity)
+  }
   return apps
+}
+
+/** Run async work over items with a fixed concurrency cap. */
+async function mapPool<T, R>(
+  items: readonly T[],
+  concurrency: number,
+  fn: (item: T) => Promise<R>,
+): Promise<R[]> {
+  if (items.length === 0) return []
+  const results = new Array<R>(items.length)
+  let next = 0
+  const workers = Array.from(
+    { length: Math.min(concurrency, items.length) },
+    async () => {
+      while (true) {
+        const i = next++
+        if (i >= items.length) return
+        results[i] = await fn(items[i])
+      }
+    },
+  )
+  await Promise.all(workers)
+  return results
 }
 
 /**
  * Read bundle id + display names without spawning `defaults` per key.
  * Parses XML plists lightly; binary plists fall back to plutil once.
  */
-function readAppAtPath(appPath: string): ResolvedInstalledApp | null {
-  if (!appPath.endsWith('.app') || !existsSync(appPath)) return null
+async function readAppAtPath(appPath: string): Promise<ResolvedInstalledApp | null> {
+  if (!appPath.endsWith('.app')) return null
   const infoPath = join(appPath, 'Contents', 'Info.plist')
-  if (!existsSync(infoPath)) return null
 
-  const info = readPlistDict(infoPath)
+  const info = await readPlistDict(infoPath)
   const bundleId = typeof info.CFBundleIdentifier === 'string' ? info.CFBundleIdentifier : null
   if (!bundleId) return null
 
@@ -170,13 +213,13 @@ function readAppAtPath(appPath: string): ResolvedInstalledApp | null {
 
   // Localized display names (e.g. zh_CN "豆包" for Doubao.app).
   const resources = join(appPath, 'Contents', 'Resources')
-  if (existsSync(resources)) {
-    let lprojs: string[] = []
-    try {
-      lprojs = readdirSync(resources).filter((e) => e.endsWith('.lproj'))
-    } catch {
-      lprojs = []
-    }
+  let lprojs: string[] = []
+  try {
+    lprojs = (await readdir(resources)).filter((e) => e.endsWith('.lproj'))
+  } catch {
+    lprojs = []
+  }
+  if (lprojs.length > 0) {
     const preferred = [
       'zh_CN.lproj',
       'zh-Hans.lproj',
@@ -192,8 +235,7 @@ function readAppAtPath(appPath: string): ResolvedInstalledApp | null {
     ]
     for (const lproj of ordered) {
       const strings = join(resources, lproj, 'InfoPlist.strings')
-      if (!existsSync(strings)) continue
-      const dict = readPlistDict(strings)
+      const dict = await readPlistDict(strings)
       for (const key of ['CFBundleDisplayName', 'CFBundleName'] as const) {
         const v = dict[key]
         if (typeof v === 'string' && v.trim()) aliases.add(v.trim())
@@ -212,23 +254,24 @@ function readAppAtPath(appPath: string): ResolvedInstalledApp | null {
   }
 }
 
-function readPlistDict(filePath: string): Record<string, unknown> {
+async function readPlistDict(filePath: string): Promise<Record<string, unknown>> {
   // Fast path: XML plist text parse for common keys (no process spawn).
   try {
-    const raw = readFileSync(filePath, 'utf8')
+    const raw = await readFile(filePath, 'utf8')
     if (raw.includes('<?xml') || raw.includes('<plist')) {
       return parseXmlPlistStrings(raw)
     }
   } catch {
-    // binary or unreadable — fall through
+    // missing / binary / unreadable — fall through
   }
 
   try {
-    // plutil once per file for binary plists / binary strings.
-    const raw = execFileSync('plutil', ['-convert', 'json', '-o', '-', filePath], {
-      encoding: 'utf8',
-      timeout: 800,
-    })
+    // plutil once per file for binary plists / binary strings (async — does not block main).
+    const { stdout: raw } = await execFileAsync(
+      'plutil',
+      ['-convert', 'json', '-o', '-', filePath],
+      { encoding: 'utf8', timeout: 800 },
+    )
     const obj = JSON.parse(raw) as unknown
     return obj && typeof obj === 'object' && !Array.isArray(obj)
       ? (obj as Record<string, unknown>)

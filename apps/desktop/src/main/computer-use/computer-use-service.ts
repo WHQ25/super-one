@@ -388,7 +388,7 @@ export class ComputerUseService {
     if (!this.fake) {
       try {
         const { listInstalledApps } = await import('./resolve-installed-app')
-        for (const installed of listInstalledApps()) {
+        for (const installed of await listInstalledApps()) {
           byBundle.set(installed.bundleId, {
             app: installed.app,
             bundleId: installed.bundleId,

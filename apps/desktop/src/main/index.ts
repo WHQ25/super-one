@@ -3278,7 +3278,9 @@ function registerIpcHandlers(): void {
     if (process.platform !== 'darwin') return []
     try {
       const { listInstalledApps } = await import('./computer-use/resolve-installed-app')
-      return listInstalledApps().map((a) => ({
+      // Async scan — do not block the main process with sync readdir/plutil.
+      const apps = await listInstalledApps()
+      return apps.map((a) => ({
         app: a.app,
         bundleId: a.bundleId,
         aliases: a.aliases,

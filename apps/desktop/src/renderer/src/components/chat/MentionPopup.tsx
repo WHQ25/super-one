@@ -218,6 +218,8 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
       computer: false,
       browser: false,
     })
+    /** False until the first getAppSettings settle — needed before we know whether to wait on apps. */
+    const [capabilitySettingsReady, setCapabilitySettingsReady] = useState(false)
     useEffect(() => {
       let cancelled = false
       const apply = (settings: {
@@ -235,9 +237,15 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
         })
       }
       void window.app?.getAppSettings?.()
-        .then((settings) => apply(settings))
+        .then((settings) => {
+          apply(settings)
+          if (!cancelled) setCapabilitySettingsReady(true)
+        })
         .catch(() => {
-          if (!cancelled) setCapabilityEnabled({ collab: false, computer: false, browser: false })
+          if (!cancelled) {
+            setCapabilityEnabled({ collab: false, computer: false, browser: false })
+            setCapabilitySettingsReady(true)
+          }
         })
       const unsub = window.app?.onAppSettingsChange?.((settings) => {
         apply(settings as {
@@ -255,26 +263,43 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
     const computerUseEnabled = capabilityEnabled.computer
 
     const [installedDesktopApps, setInstalledDesktopApps] = useState<InstalledDesktopApp[]>([])
+    /** Catalog fetch finished (or skipped). While false, never report empty to ChatInput. */
+    const [desktopAppsReady, setDesktopAppsReady] = useState(false)
     useEffect(() => {
       let cancelled = false
+      // Wait for settings so we don't treat "computer still unknown" as "no apps".
+      if (!capabilitySettingsReady) {
+        setDesktopAppsReady(false)
+        return
+      }
       // Skip catalog load when Computer Use is off — popup must not match desktop apps.
       if (!computerUseEnabled) {
         setInstalledDesktopApps([])
+        setDesktopAppsReady(true)
         return
       }
+      setDesktopAppsReady(false)
       const list = window.app?.listComputerUseInstalledApps
-      if (!list) return
+      if (!list) {
+        setInstalledDesktopApps([])
+        setDesktopAppsReady(true)
+        return
+      }
       void list()
         .then((apps) => {
-          if (!cancelled && Array.isArray(apps)) setInstalledDesktopApps(apps)
+          if (cancelled) return
+          setInstalledDesktopApps(Array.isArray(apps) ? apps : [])
+          setDesktopAppsReady(true)
         })
         .catch(() => {
-          if (!cancelled) setInstalledDesktopApps([])
+          if (cancelled) return
+          setInstalledDesktopApps([])
+          setDesktopAppsReady(true)
         })
       return () => {
         cancelled = true
       }
-    }, [computerUseEnabled])
+    }, [capabilitySettingsReady, computerUseEnabled])
 
     const miniApps = useMiniAppStore((s) => s.apps)
     const matchedMiniApps = useMemo<FlatItem[]>(() => {
@@ -398,8 +423,12 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
       // still-true searchCompleted + empty/stale items and permanently suppress
       // the popup via ChatInput's mentionEmptyByAtRef prefix lock.
       if (!searchCompleted || completedQuery !== query) return
+      // Async installed-app catalog must finish before we can say "no matches".
+      // Otherwise file-search empties first, ChatInput locks the @ prefix, and
+      // desktop apps that arrive a moment later never surface.
+      if (!desktopAppsReady) return
       onResultState?.(query, orderedItems.length === 0)
-    }, [searchCompleted, completedQuery, orderedItems.length, query, onResultState])
+    }, [searchCompleted, completedQuery, orderedItems.length, query, onResultState, desktopAppsReady])
 
     const handleItemClick = useCallback(
       (item: FlatItem, action: 'navigate' | 'select') => {

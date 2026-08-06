@@ -224,6 +224,22 @@ const environmentAPI = {
         display: string
       }>
     >,
+  listHarnesses: (connectionId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_HARNESS_LIST, connectionId),
+  enableHarness: (
+    connectionId: string,
+    input: {
+      harnessId: string
+      artifactPath?: string
+      command?: string
+      serverUrl?: string
+      args?: string[]
+    },
+  ) => ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_HARNESS_ENABLE, connectionId, input),
+  disableHarness: (connectionId: string, harnessId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_HARNESS_DISABLE, connectionId, harnessId),
+  probeHarness: (connectionId: string, harnessId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_HARNESS_PROBE, connectionId, harnessId),
   listProjects: (connectionId: string, options?: { refresh?: boolean }) =>
     ipcRenderer.invoke(
       AgentIpcChannels.ENVIRONMENT_LIST_PROJECTS,

@@ -5,8 +5,8 @@
  * - list / show / enable / disable / configure / doctor / probe / repair
  * - Public commands omit --home; data dir is $HOME/.superone/node
  *   (tests may set SUPERONE_NODE_HOME).
- * - Managed artifact download/signature is deferred: enable claude|codex
- *   requires --artifact for now, installs to needs_auth after path checks.
+ * - Managed: --artifact (offline pin) or auto-detect SDK/host binary; signed
+ *   CDN download is still deferred.
  * - External enable probes regular-file + executable; configure is transactional.
  * - Public JSON never includes free-form secrets, URL userinfo, or raw --arg values.
  *
@@ -31,13 +31,14 @@ import { HarnessManager } from './harness-manager'
 import { probeHarnessReadiness } from './harness-runtime-ready'
 import { ProviderStore } from '../provider/provider-store'
 import {
-  currentCliVersion,
-  describeExpectedArtifact,
-  installManagedArtifactFromFile,
-  isManagedHarnessId,
   loadHarnessReleaseManifest,
   requiredRuntimeVersion,
 } from './managed-harness-release'
+import {
+  enableAcpGrok,
+  enableManaged,
+  enableOpencode,
+} from './harness-enable'
 import type { NodeDatabase } from '../db/database'
 
 export interface HarnessCliResult {
@@ -74,7 +75,7 @@ export function harnessUsage(): string {
 Commands:
   list [--json]
   show <HARNESS_ID> [--json]
-  enable claude|codex --artifact <FILE> [--json]
+  enable claude|codex [--artifact <FILE>] [--json]
   enable opencode [--command <ABS_PATH> | --server-url <URL>] [--json]
   enable acp-grok [--command <ABS_PATH>] [--arg <VALUE>|--arg=<VALUE>]... [--json]
   configure opencode [--command <ABS_PATH> | --server-url <URL>] [--json]
@@ -89,7 +90,7 @@ Notes:
   No public --home / --data-dir.
   Stage 2 deferred (rejected if passed): --env-file, --server-password-stdin,
   --clear-server-password, --clear-env, --startup-timeout, --initialize-timeout,
-  managed download without --artifact.
+  signed CDN download of managed packages (auto uses SDK / host binary for now).
 `
 }
 
@@ -101,7 +102,7 @@ function subUsage(sub: string): string {
       return 'Usage: superone harness show <HARNESS_ID> [--json]'
     case 'enable':
       return `Usage:
-  superone harness enable claude|codex --artifact <FILE> [--json]
+  superone harness enable claude|codex [--artifact <FILE>] [--json]
   superone harness enable opencode [--command <ABS_PATH> | --server-url <URL>] [--json]
   superone harness enable acp-grok [--command <ABS_PATH>] [--arg <VALUE>]... [--json]`
     case 'configure':
@@ -432,94 +433,7 @@ async function cmdRepair(manager: HarnessManager, args: string[]): Promise<Harne
 }
 
 // --- enable / configure implementations ---
-
-async function enableManaged(
-  manager: HarnessManager,
-  id: 'claude' | 'codex',
-  artifact: string | undefined,
-  mode: 'enable' | 'repair' = 'enable',
-): Promise<HarnessInstallationStatus> {
-  if (!isManagedHarnessId(id)) {
-    throw new Error(`not a managed harness: ${id}`)
-  }
-  const nodeHome = resolveNodeHome(undefined)
-  const manifest = loadHarnessReleaseManifest(nodeHome)
-  if (!manifest) {
-    throw new Error(
-      `no release manifest found (set SUPERONE_HARNESS_MANIFEST or write ${nodeHome}/release-manifest.json)`,
-    )
-  }
-  if (!manifest.managedHarnesses[id]) {
-    throw new Error(`release manifest does not pin ${id}`)
-  }
-  if (!artifact) {
-    throw new Error(describeExpectedArtifact(id, manifest))
-  }
-  const abs = requireRegularReadableFile(artifact)
-  const installed = await installManagedArtifactFromFile({
-    nodeHome,
-    harnessId: id,
-    artifactPath: abs,
-    manifest,
-    expectedCliVersion: currentCliVersion(),
-    mode,
-  })
-  const def = getNodeHarnessDefinition(id)
-  return manager.update(id, {
-    enabled: true,
-    state: def.requiresAuth ? 'needs_auth' : 'ready',
-    command: installed.installPath,
-    runtimeVersion: installed.runtimeVersion,
-    diagnosticCode: def.requiresAuth ? 'needs_auth' : null,
-    diagnosticFields: def.requiresAuth
-      ? { command: installed.installPath, runtimeVersion: installed.runtimeVersion }
-      : null,
-    lastProbedAt: Date.now(),
-    configJson: JSON.stringify({
-      artifactPath: installed.installPath,
-      source: installed.source,
-      cliVersion: installed.cliVersion,
-      artifactVersion: installed.artifactVersion,
-      digestSha256: installed.digestSha256,
-    }),
-  })
-}
-
-function enableOpencode(
-  manager: HarnessManager,
-  opts: { command?: string; serverUrl?: string },
-): HarnessInstallationStatus {
-  if (opts.serverUrl) {
-    const safeUrl = validateServerUrl(opts.serverUrl)
-    return manager.update('opencode', {
-      enabled: true,
-      state: 'ready',
-      command: null,
-      diagnosticCode: null,
-      lastProbedAt: Date.now(),
-      configJson: JSON.stringify({ serverUrl: safeUrl }),
-    })
-  }
-  const resolved = resolveExternalCommand(opts.command, ['opencode'])
-  if (!resolved) {
-    return manager.update('opencode', {
-      enabled: true,
-      state: 'missing',
-      command: null,
-      diagnosticCode: 'not_found',
-      lastProbedAt: Date.now(),
-      configJson: JSON.stringify({}),
-    })
-  }
-  return manager.update('opencode', {
-    enabled: true,
-    state: 'ready',
-    command: resolved,
-    diagnosticCode: null,
-    lastProbedAt: Date.now(),
-    configJson: JSON.stringify({ command: resolved }),
-  })
-}
+// Managed / external enable bodies live in harness-enable.ts (shared with RPC).
 
 /**
  * Transactional reconfigure: probe first; on failure leave previous row intact.
@@ -556,37 +470,6 @@ function configureOpencode(
     diagnosticCode: null,
     lastProbedAt: Date.now(),
     configJson: JSON.stringify({ command: resolved }),
-  })
-}
-
-function enableAcpGrok(
-  manager: HarnessManager,
-  opts: { command?: string; args: string[] },
-): HarnessInstallationStatus {
-  const defaultArgs = ['agent', 'stdio']
-  const args = sanitizeHarnessArgs(opts.args.length > 0 ? opts.args : defaultArgs)
-  const resolved = resolveExternalCommand(opts.command, ['grok'])
-  if (!resolved) {
-    return manager.update('acp-grok', {
-      enabled: true,
-      state: 'missing',
-      command: null,
-      diagnosticCode: 'not_found',
-      lastProbedAt: Date.now(),
-      configJson: JSON.stringify({ args, usesDefaultArgs: opts.args.length === 0 }),
-    })
-  }
-  return manager.update('acp-grok', {
-    enabled: true,
-    state: 'ready',
-    command: resolved,
-    diagnosticCode: null,
-    lastProbedAt: Date.now(),
-    configJson: JSON.stringify({
-      command: resolved,
-      args,
-      usesDefaultArgs: opts.args.length === 0,
-    }),
   })
 }
 

@@ -294,6 +294,22 @@ export const zh: Messages = {
       addSuccess: '环境已连接',
       credentialInMemoryOnly: '系统安全存储不可用，该凭证仅保存在内存中，退出 SuperOne 后会丢失。',
       noSessionsCapability: '该节点尚未开放 Agent 会话能力，终端与工作区操作仍可正常使用。',
+      harness: {
+        title: '运行时 (Harness)',
+        loading: '加载 harness…',
+        empty: '此节点没有 harness 目录。',
+        enable: '启用',
+        disable: '禁用',
+        enabled: '已启用 {{id}}',
+        disabled: '已禁用 {{id}}',
+        needsAuth: '需要登录',
+        ids: {
+          claude: 'Claude',
+          codex: 'Codex',
+          opencode: 'OpenCode',
+          'acp-grok': 'Grok (ACP)',
+        },
+      },
       state: {
         available: '未连接',
         connecting: '连接中',

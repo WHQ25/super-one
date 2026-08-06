@@ -2755,6 +2755,11 @@ export const AgentIpcChannels = {
   /** Pull node credentials → desktop (admin). */
   ENVIRONMENT_PROVIDER_PULL_REMOTE: 'environment:providerPullRemote',
   ENVIRONMENT_PROVIDER_LIST_MODELS: 'environment:providerListModels',
+  /** Remote node harness catalog (node:admin). */
+  ENVIRONMENT_HARNESS_LIST: 'environment:harnessList',
+  ENVIRONMENT_HARNESS_ENABLE: 'environment:harnessEnable',
+  ENVIRONMENT_HARNESS_DISABLE: 'environment:harnessDisable',
+  ENVIRONMENT_HARNESS_PROBE: 'environment:harnessProbe',
 } as const
 
 export interface NativeContextMenuItemSpec {

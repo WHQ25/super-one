@@ -488,6 +488,134 @@ function EnvironmentDeviceRow({
           {t('settings.environments.credentialInMemoryOnly')}
         </p>
       )}
+
+      {live ? <RemoteHarnessPanel connectionId={item.connectionId} /> : null}
+    </div>
+  )
+}
+
+interface RemoteHarnessRow {
+  id: string
+  enabled: boolean
+  state: string
+  runtimeSource: string
+  requiresAuth: boolean
+  diagnostic?: { code: string; message: string }
+}
+
+/** Connected remote only: list + enable/disable harness catalog via node:admin RPC. */
+function RemoteHarnessPanel({ connectionId }: { connectionId: string }) {
+  const { t } = useTranslation()
+  const [rows, setRows] = useState<RemoteHarnessRow[] | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [busyId, setBusyId] = useState<string | null>(null)
+  const [error, setError] = useState('')
+
+  const refresh = useCallback(async () => {
+    setLoading(true)
+    setError('')
+    try {
+      const list = (await window.environment.listHarnesses(connectionId)) as RemoteHarnessRow[]
+      setRows(Array.isArray(list) ? list : [])
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+      setRows(null)
+    } finally {
+      setLoading(false)
+    }
+  }, [connectionId])
+
+  useEffect(() => {
+    void refresh()
+  }, [refresh])
+
+  async function toggle(row: RemoteHarnessRow): Promise<void> {
+    setBusyId(row.id)
+    setError('')
+    try {
+      if (row.enabled && (row.state === 'ready' || row.state === 'needs_auth')) {
+        await window.environment.disableHarness(connectionId, row.id)
+        toast.success(t('settings.environments.harness.disabled', { id: row.id }))
+      } else {
+        await window.environment.enableHarness(connectionId, { harnessId: row.id })
+        toast.success(t('settings.environments.harness.enabled', { id: row.id }))
+      }
+      await refresh()
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      setError(msg)
+      toast.error(msg)
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  return (
+    <div className="mt-2 space-y-1.5 border-t border-border/60 pt-2">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs font-medium text-muted-foreground">
+          {t('settings.environments.harness.title')}
+        </p>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-6 px-1.5 text-xs text-muted-foreground"
+          onClick={() => void refresh()}
+          disabled={loading || busyId !== null}
+        >
+          <RefreshCw className={cn('size-3', loading && 'animate-spin')} />
+        </Button>
+      </div>
+      {loading && !rows ? (
+        <p className="text-xs text-muted-foreground">{t('settings.environments.harness.loading')}</p>
+      ) : null}
+      {error ? <p className="text-xs text-destructive break-words">{error}</p> : null}
+      {rows && rows.length > 0 ? (
+        <ul className="space-y-1">
+          {rows.map((row) => {
+            const active = row.enabled && (row.state === 'ready' || row.state === 'needs_auth')
+            const label = t(`settings.environments.harness.ids.${row.id}`, {
+              defaultValue: row.id,
+            })
+            return (
+              <li
+                key={row.id}
+                className="flex items-center justify-between gap-2 rounded px-1 py-0.5 text-xs"
+              >
+                <div className="min-w-0">
+                  <span className="font-medium text-foreground">{label}</span>
+                  <span className="ml-1.5 text-muted-foreground">
+                    {row.state}
+                    {row.requiresAuth && row.state === 'needs_auth'
+                      ? ` · ${t('settings.environments.harness.needsAuth')}`
+                      : ''}
+                  </span>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-6 shrink-0 px-2 text-xs"
+                  disabled={busyId !== null}
+                  onClick={() => void toggle(row)}
+                >
+                  {busyId === row.id ? (
+                    <Loader2 className="size-3 animate-spin" />
+                  ) : active ? (
+                    t('settings.environments.harness.disable')
+                  ) : (
+                    t('settings.environments.harness.enable')
+                  )}
+                </Button>
+              </li>
+            )
+          })}
+        </ul>
+      ) : null}
+      {rows && rows.length === 0 && !loading ? (
+        <p className="text-xs text-muted-foreground">{t('settings.environments.harness.empty')}</p>
+      ) : null}
     </div>
   )
 }

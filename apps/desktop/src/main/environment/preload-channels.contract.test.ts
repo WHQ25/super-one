@@ -60,6 +60,10 @@ describe('environment preload ↔ Main IPC contract', () => {
     expect(AgentIpcChannels.ENVIRONMENT_FORGET).toBe('environment:forget')
     expect(AgentIpcChannels.ENVIRONMENT_STATUS_EVENT).toBe('environment:statusEvent')
     expect(AgentIpcChannels.ENVIRONMENT_INSTALL_PROGRESS).toBe('environment:installProgress')
+    expect(AgentIpcChannels.ENVIRONMENT_HARNESS_LIST).toBe('environment:harnessList')
+    expect(AgentIpcChannels.ENVIRONMENT_HARNESS_ENABLE).toBe('environment:harnessEnable')
+    expect(AgentIpcChannels.ENVIRONMENT_HARNESS_DISABLE).toBe('environment:harnessDisable')
+    expect(AgentIpcChannels.ENVIRONMENT_HARNESS_PROBE).toBe('environment:harnessProbe')
   })
 
   it('wires every management channel through Main and preload', () => {
@@ -93,6 +97,10 @@ describe('environment preload ↔ Main IPC contract', () => {
       'ENVIRONMENT_FORGET',
       'ENVIRONMENT_STATUS_EVENT',
       'ENVIRONMENT_INSTALL_PROGRESS',
+      'ENVIRONMENT_HARNESS_LIST',
+      'ENVIRONMENT_HARNESS_ENABLE',
+      'ENVIRONMENT_HARNESS_DISABLE',
+      'ENVIRONMENT_HARNESS_PROBE',
       'ENVIRONMENT_LOCAL_LAB_STATUS',
       'ENVIRONMENT_PAIR_LOCAL_LAB',
     ]

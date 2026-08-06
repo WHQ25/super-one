@@ -603,6 +603,40 @@ export interface EnvironmentAPI {
   }>
   /** Host aliases from the local OpenSSH client config (~/.ssh/config). */
   listSshConfigHosts(): Promise<SshConfigHostEntry[]>
+  /** Admin harness catalog on a connected remote node. */
+  listHarnesses(connectionId: string): Promise<
+    Array<{
+      id: string
+      runtimeSource: string
+      enabled: boolean
+      state: string
+      runtimeVersion?: string
+      command?: string
+      requiresAuth: boolean
+      diagnostic?: { code: string; message: string }
+    }>
+  >
+  enableHarness(
+    connectionId: string,
+    input: {
+      harnessId: string
+      artifactPath?: string
+      command?: string
+      serverUrl?: string
+      args?: string[]
+    },
+  ): Promise<{
+    id: string
+    enabled: boolean
+    state: string
+    command?: string
+    diagnostic?: { code: string; message: string }
+  }>
+  disableHarness(
+    connectionId: string,
+    harnessId: string,
+  ): Promise<{ id: string; enabled: boolean; state: string }>
+  probeHarness(connectionId: string, harnessId: string): Promise<unknown>
   /** Projects for sidebar: `local` or a remote connectionId (must be connected). */
   listProjects(connectionId: string, options?: { refresh?: boolean }): Promise<ProjectSnapshot[]>
   /** Open/register a project path on a host; `createIfMissing` backs "Create & Add". */

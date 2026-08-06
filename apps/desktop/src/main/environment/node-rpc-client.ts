@@ -502,6 +502,9 @@ function isMutatingMethod(method: string): boolean {
     method === 'session.fork' ||
     method.includes('setCwd') ||
     method.includes('session.set') ||
+    method === 'harness.enable' ||
+    method === 'harness.disable' ||
+    method === 'harness.probe' ||
     // Provider store mutations on the node (not list/export reads)
     (method.startsWith('provider.') &&
       !method.includes('list') &&

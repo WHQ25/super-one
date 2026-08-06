@@ -14,6 +14,7 @@ import { isCodexBinaryOverrideRunnable } from '../session/codex-turn-runner'
 import { isClaudeBinaryOverrideRunnable } from '../session/claude-turn-runner'
 import { assertSessionHarnessRuntimeReady, probeHarnessReadiness } from '../session/harness-runtime-ready'
 import { resolveCliReleaseVersion } from '../cli-release-version'
+import { disableHarness, enableHarness } from '../session/harness-enable'
 import { cloneRepository } from '@superone/shared/git-clone'
 import { existsSync, mkdirSync, readdirSync, statSync } from 'node:fs'
 import { join as pathJoin, resolve as pathResolve } from 'node:path'
@@ -252,6 +253,10 @@ async function dispatchRpcInner(method: string, payload: unknown, ctx: RpcContex
       return handleHarnessShow(payload, ctx)
     case 'harness.probe':
       return handleHarnessProbe(payload, ctx)
+    case 'harness.enable':
+      return handleHarnessEnable(payload, ctx)
+    case 'harness.disable':
+      return handleHarnessDisable(payload, ctx)
     case 'terminal.create':
       return handleTerminalCreate(payload, ctx)
     case 'terminal.attach':
@@ -637,6 +642,51 @@ function handleHarnessProbe(payload: unknown, ctx: RpcContext): RpcResult {
   try {
     const result = probeHarnessReadiness(ctx.harnesses, id, ctx.providers ?? null)
     return { result: { ...result, status: ctx.harnesses.get(id) } }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+/** Enable a harness (desktop product path — auto SDK/host binary or offline artifact). */
+async function handleHarnessEnable(payload: unknown, ctx: RpcContext): Promise<RpcResult> {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.adminNode)
+  if (denied) return denied
+  const p = asRecord(payload)
+  const id = typeof p.harnessId === 'string' ? p.harnessId : typeof p.id === 'string' ? p.id : ''
+  if (!isNodeHarnessId(id)) {
+    return { error: { code: 'invalid_argument', message: `unknown harnessId: ${id}` } }
+  }
+  try {
+    const args = Array.isArray(p.args)
+      ? p.args.filter((a): a is string => typeof a === 'string')
+      : undefined
+    const status = await enableHarness(
+      ctx.harnesses,
+      {
+        harnessId: id,
+        artifactPath: typeof p.artifactPath === 'string' ? p.artifactPath : undefined,
+        command: typeof p.command === 'string' ? p.command : undefined,
+        serverUrl: typeof p.serverUrl === 'string' ? p.serverUrl : undefined,
+        args,
+      },
+      ctx.providers ?? null,
+    )
+    return { result: status }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+function handleHarnessDisable(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.adminNode)
+  if (denied) return denied
+  const p = asRecord(payload)
+  const id = typeof p.harnessId === 'string' ? p.harnessId : typeof p.id === 'string' ? p.id : ''
+  if (!isNodeHarnessId(id)) {
+    return { error: { code: 'invalid_argument', message: `unknown harnessId: ${id}` } }
+  }
+  try {
+    return { result: disableHarness(ctx.harnesses, id) }
   } catch (err) {
     return mapThrown(err)
   }

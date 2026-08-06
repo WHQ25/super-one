@@ -590,6 +590,55 @@ export class EnvironmentHost {
     return this.asRemoteProviderGw(connectionId).providerListModels({ harness, apiProviderId })
   }
 
+  /**
+   * Admin harness catalog on a connected remote node (design §13.6).
+   * Pairing grants node:admin so the desktop product path can enable runtimes.
+   */
+  async listRemoteHarnesses(connectionId: string): Promise<unknown> {
+    return this.remoteAdminRpc(connectionId, 'harness.list')
+  }
+
+  async enableRemoteHarness(
+    connectionId: string,
+    input: {
+      harnessId: string
+      artifactPath?: string
+      command?: string
+      serverUrl?: string
+      args?: string[]
+    },
+  ): Promise<unknown> {
+    return this.remoteAdminRpc(connectionId, 'harness.enable', {
+      harnessId: input.harnessId,
+      artifactPath: input.artifactPath,
+      command: input.command,
+      serverUrl: input.serverUrl,
+      args: input.args,
+    })
+  }
+
+  async disableRemoteHarness(connectionId: string, harnessId: string): Promise<unknown> {
+    return this.remoteAdminRpc(connectionId, 'harness.disable', { harnessId })
+  }
+
+  async probeRemoteHarness(connectionId: string, harnessId: string): Promise<unknown> {
+    return this.remoteAdminRpc(connectionId, 'harness.probe', { harnessId })
+  }
+
+  private async remoteAdminRpc(
+    connectionId: string,
+    method: string,
+    payload?: Record<string, unknown>,
+  ): Promise<unknown> {
+    const client = this.connections.getClient(connectionId)
+    if (!client?.connected) {
+      throw Object.assign(new Error('environment is not connected'), {
+        code: 'failed_precondition',
+      })
+    }
+    return client.rpc(method, payload ?? {})
+  }
+
   async createRemoteCredential(connectionId: string, input: Record<string, unknown>): Promise<unknown> {
     return this.asRemoteProviderGw(connectionId).providerCreateCredential(input)
   }

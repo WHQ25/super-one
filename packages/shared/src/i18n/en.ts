@@ -262,6 +262,22 @@ export type Messages = {
       addSuccess: string
       credentialInMemoryOnly: string
       noSessionsCapability: string
+      harness: {
+        title: string
+        loading: string
+        empty: string
+        enable: string
+        disable: string
+        enabled: string
+        disabled: string
+        needsAuth: string
+        ids: {
+          claude: string
+          codex: string
+          opencode: string
+          'acp-grok': string
+        }
+      }
       state: {
         available: string
         connecting: string
@@ -2511,6 +2527,22 @@ export const en: Messages = {
         'OS secure storage is unavailable, so this credential is kept in memory only and will be lost when SuperOne quits.',
       noSessionsCapability:
         'This node does not advertise agent sessions yet. Terminal and workspace operations still work.',
+      harness: {
+        title: 'Harnesses',
+        loading: 'Loading harnesses…',
+        empty: 'No harness catalog on this node.',
+        enable: 'Enable',
+        disable: 'Disable',
+        enabled: 'Enabled {{id}}',
+        disabled: 'Disabled {{id}}',
+        needsAuth: 'sign-in required',
+        ids: {
+          claude: 'Claude',
+          codex: 'Codex',
+          opencode: 'OpenCode',
+          'acp-grok': 'Grok (ACP)',
+        },
+      },
       state: {
         available: 'Not Connected',
         connecting: 'Connecting',

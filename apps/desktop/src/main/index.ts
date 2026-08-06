@@ -1098,6 +1098,41 @@ function registerIpcHandlers(): void {
     const { listSshConfigHosts } = await import('./environment/ssh-config')
     return listSshConfigHosts()
   })
+  ipcMain.handle(AgentIpcChannels.ENVIRONMENT_HARNESS_LIST, async (_e, connectionId: string) => {
+    const { getEnvironmentHost } = await import('./environment')
+    return getEnvironmentHost().listRemoteHarnesses(connectionId)
+  })
+  ipcMain.handle(
+    AgentIpcChannels.ENVIRONMENT_HARNESS_ENABLE,
+    async (
+      _e,
+      connectionId: string,
+      input: {
+        harnessId: string
+        artifactPath?: string
+        command?: string
+        serverUrl?: string
+        args?: string[]
+      },
+    ) => {
+      const { getEnvironmentHost } = await import('./environment')
+      return getEnvironmentHost().enableRemoteHarness(connectionId, input)
+    },
+  )
+  ipcMain.handle(
+    AgentIpcChannels.ENVIRONMENT_HARNESS_DISABLE,
+    async (_e, connectionId: string, harnessId: string) => {
+      const { getEnvironmentHost } = await import('./environment')
+      return getEnvironmentHost().disableRemoteHarness(connectionId, harnessId)
+    },
+  )
+  ipcMain.handle(
+    AgentIpcChannels.ENVIRONMENT_HARNESS_PROBE,
+    async (_e, connectionId: string, harnessId: string) => {
+      const { getEnvironmentHost } = await import('./environment')
+      return getEnvironmentHost().probeRemoteHarness(connectionId, harnessId)
+    },
+  )
   ipcMain.handle(AgentIpcChannels.ENVIRONMENT_LIST_PROJECTS, async (
     _e,
     connectionId: string,

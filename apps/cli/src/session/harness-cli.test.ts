@@ -156,17 +156,21 @@ describe('harness CLI (Stage 2)', () => {
     expect(createHash('sha256').update(readFileSync(path)).digest('hex')).toBe(digest)
   })
 
-  it('rejects managed enable without manifest, without --artifact, wrong digest, or relative path', async () => {
+  it('auto-enables claude from Agent SDK when present; offline artifact still verifies digest', async () => {
     const home = withNodeHome()
-    const noManifest = await runHarnessCli(['enable', 'claude', '--json'])
-    expect(noManifest.ok).toBe(false)
-    expect(JSON.stringify(noManifest.json)).toMatch(/manifest/i)
+    // Without --artifact: use Agent SDK platform binary when monorepo/deps provide it.
+    const auto = await runHarnessCli(['enable', 'claude', '--json'])
+    if (auto.ok) {
+      const status = auto.json as HarnessInstallationStatus
+      expect(status.enabled).toBe(true)
+      expect(['needs_auth', 'ready']).toContain(status.state)
+      expect(status.command).toBeTruthy()
+    } else {
+      // CI without optional SDK packages: fail closed with a clear message.
+      expect(JSON.stringify(auto.json)).toMatch(/claude runtime not found|manifest|Agent SDK/i)
+    }
 
     writeManagedManifest(home, 'claude', 'c'.repeat(64))
-    const noArt = await runHarnessCli(['enable', 'claude', '--json'])
-    expect(noArt.ok).toBe(false)
-    expect(JSON.stringify(noArt.json)).toMatch(/offline --artifact|digest/i)
-
     const wrong = join(home, 'wrong.bin')
     writeFileSync(wrong, 'nope')
     const badDigest = await runHarnessCli(['enable', 'claude', '--artifact', wrong, '--json'])

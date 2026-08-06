@@ -4,6 +4,13 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.50.2-alpha] - 2026-08-07
+
+### Fixed
+
+- Remote Claude on root nodes: stop the Agent SDK from exiting at spawn under uid 0 (relax permission-skipping options; report the effective mode), show spawn-time turn errors in chat instead of a silent error status, and probe the host Claude model catalog for remote harness resources instead of a hardcoded fallback.
+- Compact chat mode: keep process sections with fewer than three segments expanded so short turns are not hidden under Detail.
+
 ## [0.50.1-alpha] - 2026-08-06
 
 ### Added

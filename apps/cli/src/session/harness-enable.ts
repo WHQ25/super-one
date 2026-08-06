@@ -3,10 +3,12 @@
  *
  * Managed (claude/codex):
  * - Preferred: offline `--artifact` matching release-manifest pin
- * - Auto (no artifact): use runtime already on the host —
- *   Claude: Agent SDK platform binary (npm optionalDeps of @super-one/cli)
- *   Codex: SUPERONE_CODEX_BINARY or `codex` on PATH
- * Network download of SuperOne-signed managed packages remains future work.
+ * - Auto (no artifact):
+ *   1) runtime already on host (SDK optionalDeps / PATH / env)
+ *   2) official npm pull into $NODE_HOME/managed-npm/<id>/
+ *      Claude → @anthropic-ai/claude-agent-sdk + platform package
+ *      Codex  → @openai/codex
+ * SuperOne-signed offline --artifact remains supported for air-gapped hosts.
  */
 
 import { accessSync, constants, existsSync, realpathSync, statSync } from 'node:fs'
@@ -133,7 +135,7 @@ export async function enableManaged(
     })
   }
 
-  // Auto path: use runtime already installed with the node (no separate upload).
+  // 1) Already on host (SDK optional deps / PATH / env).
   const auto = resolveManagedAutoRuntime(id)
   if (auto) {
     return manager.update(id, {
@@ -153,24 +155,42 @@ export async function enableManaged(
     })
   }
 
-  // Fail with guidance: prefer auto-download message once signed CDN lands.
-  const manifest = loadHarnessReleaseManifest(nodeHome)
-  if (manifest?.managedHarnesses[id]) {
+  // 2) Official npm pull (Anthropic Claude Agent SDK / OpenAI Codex).
+  try {
+    const { installManagedFromOfficialNpm } = await import('./managed-harness-official')
+    const official = await installManagedFromOfficialNpm({ nodeHome, harnessId: id })
+    return manager.update(id, {
+      enabled: true,
+      state: def.requiresAuth ? 'needs_auth' : 'ready',
+      command: official.command,
+      runtimeVersion: official.runtimeVersion,
+      diagnosticCode: def.requiresAuth ? 'needs_auth' : null,
+      diagnosticFields: def.requiresAuth
+        ? { command: official.command, runtimeVersion: official.runtimeVersion }
+        : null,
+      lastProbedAt: Date.now(),
+      configJson: JSON.stringify({
+        command: official.command,
+        source: official.source,
+        packageSpec: official.packageSpec,
+        installPrefix: official.installPrefix,
+        runtimeVersion: official.runtimeVersion,
+      }),
+    })
+  } catch (officialErr) {
+    const detail = officialErr instanceof Error ? officialErr.message : String(officialErr)
+    const manifest = loadHarnessReleaseManifest(nodeHome)
+    if (manifest?.managedHarnesses[id]) {
+      throw new Error(
+        `official install failed (${detail}); ` +
+          `${describeExpectedArtifact(id, manifest)} as offline fallback`,
+      )
+    }
     throw new Error(
-      `${describeExpectedArtifact(id, manifest)} ` +
-        `(or install the Agent SDK / host binary so enable can auto-detect without --artifact)`,
+      `official install of ${id} failed: ${detail}. ` +
+        `Ensure npm is on PATH and the host can reach registry.npmjs.org.`,
     )
   }
-  if (id === 'claude') {
-    throw new Error(
-      'claude runtime not found: reinstall @super-one/cli so optional Claude Agent SDK ' +
-        'platform packages install, or provide --artifact once a release manifest is present',
-    )
-  }
-  throw new Error(
-    'codex runtime not found: install the Codex CLI on the host (PATH or SUPERONE_CODEX_BINARY), ' +
-      'or provide --artifact with a release-manifest pin (signed auto-download not yet shipped)',
-  )
 }
 
 function resolveManagedAutoRuntime(

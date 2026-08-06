@@ -90,7 +90,7 @@ Notes:
   No public --home / --data-dir.
   Stage 2 deferred (rejected if passed): --env-file, --server-password-stdin,
   --clear-server-password, --clear-env, --startup-timeout, --initialize-timeout,
-  signed CDN download of managed packages (auto uses SDK / host binary for now).
+  signed SuperOne artifact CDN (managed enable pulls official npm packages).
 `
 }
 

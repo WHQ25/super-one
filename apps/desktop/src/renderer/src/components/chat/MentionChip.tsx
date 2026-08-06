@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { NodeViewWrapper } from '@tiptap/react'
 import type { NodeViewProps } from '@tiptap/react'
 import { Bot, Folder, Globe, MousePointer2, Users } from 'lucide-react'
@@ -7,19 +8,72 @@ import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
 import { DesktopAppIcon } from './DesktopAppIcon'
 import type { MentionNodeAttrs } from './mention-node'
 
+/**
+ * Shared shell for composer + bubble mention chips.
+ * Bubble: parent .user-text-with-mentions is inline-flex items-baseline.
+ * Composer: .mention-chip uses vertical-align: baseline in the paragraph.
+ */
+export function MentionChipContent({
+  blended,
+  kind,
+  icon,
+  label,
+  className,
+}: {
+  blended: boolean
+  kind?: string
+  icon: ReactNode
+  label: ReactNode
+  className?: string
+}) {
+  return (
+    <span
+      data-mention-kind={kind}
+      className={cn(
+        'mention-chip select-none',
+        blended ? 'mention-chip--blended' : 'mention-chip--resource',
+        className,
+      )}
+    >
+      <span className="mention-chip__icon" aria-hidden>
+        {icon}
+      </span>
+      <span className="mention-chip__label">{label}</span>
+    </span>
+  )
+}
+
 function CapabilityIcon({ kind }: { kind: MentionNodeAttrs['kind'] }) {
-  if (kind === 'collab') return <Users className="size-3 shrink-0 text-violet-600 dark:text-violet-400" />
+  if (kind === 'collab') return <Users className="text-violet-600 dark:text-violet-400" />
   // Match Settings / ComputerUseToolBlock branding (pointer, not monitor).
-  if (kind === 'computer') return <MousePointer2 className="size-3 shrink-0 text-emerald-600 dark:text-emerald-400" />
-  if (kind === 'browser') return <Globe className="size-3 shrink-0 text-sky-600 dark:text-sky-400" />
+  if (kind === 'computer') return <MousePointer2 className="text-emerald-600 dark:text-emerald-400" />
+  if (kind === 'browser') return <Globe className="text-sky-600 dark:text-sky-400" />
   return null
+}
+
+export function mentionChipIcon(
+  kind: MentionNodeAttrs['kind'] | string,
+  value: string,
+  displayName: string,
+): ReactNode {
+  if (kind === 'agent') return <Bot className="text-purple-600 dark:text-purple-400" />
+  if (kind === 'directory') return <Folder className="text-blue-600 dark:text-blue-400" />
+  if (kind === 'miniapp') return <MiniAppIcon appId={value} />
+  if (kind === 'desktop-app') return <DesktopAppIcon bundleId={value} />
+  if (kind === 'collab' || kind === 'computer' || kind === 'browser') {
+    return <CapabilityIcon kind={kind} />
+  }
+  // width/height attrs are overridden by .mention-chip__icon > svg { 100% }.
+  return <FileIcon name={displayName} size={16} />
 }
 
 export function MentionChip({ node }: NodeViewProps) {
   const { kind, value, displayName } = node.attrs as MentionNodeAttrs
   const isCapability = kind === 'collab' || kind === 'computer' || kind === 'browser'
-  // Desktop apps use the same blended chip style as Computer Use.
   const isBlendedChip = isCapability || kind === 'desktop-app'
+  const label = kind === 'agent' && displayName.includes(':') ? displayName.split(':').pop() : displayName
+  // Only path-like resource names truncate; multi-word capability labels must show fully.
+  const truncateLabel = kind === 'file' || kind === 'directory' || kind === 'miniapp'
 
   return (
     <NodeViewWrapper
@@ -28,31 +82,15 @@ export function MentionChip({ node }: NodeViewProps) {
       data-mention=""
       data-mention-kind={kind}
       className={cn(
-        'inline-flex items-center select-none whitespace-nowrap align-middle',
-        // Built-in capability / desktop-app: original blended style — do not
-        // share the resource pill height lock or it clips multi-word labels.
-        isBlendedChip
-          ? 'mx-1 gap-1 text-[0.875rem] leading-none text-muted-foreground'
-          // Resource chips: same type metrics as capability (body text-sm),
-          // muted pill without vertical padding so height stays ~body glyphs.
-          : 'mx-0.5 h-4 max-h-4 gap-0.5 overflow-hidden rounded bg-muted px-1.5 text-[0.875rem] leading-none text-foreground',
+        'mention-chip select-none',
+        isBlendedChip ? 'mention-chip--blended' : 'mention-chip--resource',
       )}
     >
-      {kind === 'agent' ? (
-        <Bot className="size-3 shrink-0 text-purple-600 dark:text-purple-400" />
-      ) : kind === 'directory' ? (
-        <Folder className="size-3 shrink-0 text-blue-600 dark:text-blue-400" />
-      ) : kind === 'miniapp' ? (
-        <MiniAppIcon appId={value} className="size-3 shrink-0" />
-      ) : kind === 'desktop-app' ? (
-        <DesktopAppIcon bundleId={value} className="size-3" />
-      ) : isCapability ? (
-        <CapabilityIcon kind={kind} />
-      ) : (
-        <FileIcon name={displayName} size={12} className="size-3 shrink-0" />
-      )}
-      <span className="max-w-30 truncate leading-none">
-        {kind === 'agent' && displayName.includes(':') ? displayName.split(':').pop() : displayName}
+      <span className="mention-chip__icon" aria-hidden>
+        {mentionChipIcon(kind, value, displayName)}
+      </span>
+      <span className={cn('mention-chip__label', truncateLabel && 'max-w-30 truncate')}>
+        {label}
       </span>
     </NodeViewWrapper>
   )

@@ -2,7 +2,7 @@ import type { ChatMessage as ChatMessageType, ContentBlock, AgentStatus, ImageGe
 import { useState, useEffect, useRef, useMemo, useCallback, memo, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@superone/ui/lib/utils'
-import { Loader2, ImageIcon, OctagonX, Folder, ChevronRight, Clock, Minimize2, ArrowUp, ArrowDown, Copy, Check, AlertTriangle, X, Shuffle, Bot, Inbox, Globe, MousePointer2, Users } from 'lucide-react'
+import { Loader2, ImageIcon, OctagonX, Folder, ChevronRight, Clock, Minimize2, ArrowUp, ArrowDown, Copy, Check, AlertTriangle, X, Shuffle, Bot, Inbox } from 'lucide-react'
 import { ToolBlock } from './ToolBlock'
 import { ToolGroup } from './ToolGroup'
 import { AppToolGroup } from './AppToolGroup'
@@ -28,6 +28,7 @@ import { TooltipProvider } from '@superone/ui/components/ui/tooltip'
 import { UserSelectionChip } from './UserSelectionChip'
 import { FileIcon } from '@superone/ui/components/ui/FileIcon'
 import { FileText } from 'lucide-react'
+import { MentionChipContent, mentionChipIcon } from './MentionChip'
 import { PasteChipPreview } from './PasteChipPreview'
 import { PASTE_CHIP_LINE_THRESHOLD, PASTE_CHIP_CHAR_THRESHOLD } from './paste-chip-node'
 import { toast } from 'sonner'
@@ -53,7 +54,6 @@ import { replaceMiniAppTagsWithMention } from '@superone/shared/miniapp-prompt-t
 import { deriveColors, ContextPreviewContent } from './ContextChip'
 import { Popover, PopoverContent, PopoverTrigger } from '@superone/ui/components/ui/popover'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
-import { DesktopAppIcon } from './DesktopAppIcon'
 import { useIsDark } from '@/hooks/use-is-dark'
 import type { ChatMessageContext } from '@superone/shared/agent-types'
 
@@ -399,10 +399,10 @@ function LongTextChip({ text }: { text: string }) {
 }
 
 function RestContent({ rest, forcePlain }: { rest: string; forcePlain?: boolean }) {
-  if (forcePlain) return <span className="whitespace-pre-wrap">{rest}</span>
+  if (forcePlain) return <span className="user-text-rest">{rest}</span>
   const lineCount = rest.split('\n').length
   if (lineCount >= PASTE_CHIP_LINE_THRESHOLD || rest.length >= PASTE_CHIP_CHAR_THRESHOLD) return <LongTextChip text={rest} />
-  return <span className="whitespace-pre-wrap">{rest}</span>
+  return <span className="user-text-rest">{rest}</span>
 }
 
 function MentionInlineChip({ kind, value, displayName }: { kind: UserMentionKind; value: string; displayName?: string }) {
@@ -433,60 +433,29 @@ function MentionInlineChip({ kind, value, displayName }: { kind: UserMentionKind
     resolvedKind === 'miniapp' || isBlendedChip
       ? (displayName ?? value)
       : (value.replace(/\/$/, '').split('/').pop() || value)
-  return (
-    <span
-      className={cn(
-        // break-normal resists the bubble's break-all so multi-word labels
-        // (e.g. "Computer Use") stay on one line with following text.
-        // align-[0]: same fixed box offset as composer .mention-chip-wrapper
-        // (content baseline made FileIcon chips sit lower than Lucide chips).
-        'inline-flex max-w-full items-center whitespace-nowrap break-normal align-[0]',
-        resolvedKind === 'agent'
-          ? 'gap-1 rounded-md border border-primary/40 bg-primary/15 px-1.5 py-0.5 text-xs leading-5 text-primary'
-          : isBlendedChip
-            ? 'mx-1 h-4 max-h-4 gap-1 overflow-hidden text-[0.875rem] leading-none text-muted-foreground'
-            : 'h-4 max-h-4 gap-0.5 overflow-hidden text-[0.875rem] leading-none text-foreground'
-      )}
-    >
-      {resolvedKind === 'agent' ? (
+
+  if (resolvedKind === 'agent') {
+    return (
+      <span className="inline-flex max-w-full items-center gap-1 whitespace-nowrap break-normal rounded-md border border-primary/40 bg-primary/15 px-1.5 py-0.5 text-xs leading-5 text-primary">
         <span className="font-medium">@{display}</span>
-      ) : resolvedKind === 'directory' ? (
-        <>
-          <Folder className="block size-3 shrink-0 text-primary" />
-          <span className="leading-none">{display}</span>
-        </>
-      ) : resolvedKind === 'miniapp' ? (
-        <>
-          <MiniAppIcon appId={value} className="block size-3 shrink-0" />
-          <span className="leading-none">{display}</span>
-        </>
-      ) : resolvedKind === 'desktop-app' ? (
-        <>
-          <DesktopAppIcon bundleId={value} className="block size-3 shrink-0" />
-          <span className="leading-none">{display}</span>
-        </>
-      ) : resolvedKind === 'collab' ? (
-        <>
-          <Users className="block size-3 shrink-0 text-violet-600 dark:text-violet-400" />
-          <span className="leading-none">{display}</span>
-        </>
-      ) : resolvedKind === 'computer' ? (
-        <>
-          <MousePointer2 className="block size-3 shrink-0 text-emerald-600 dark:text-emerald-400" />
-          <span className="leading-none">{display}</span>
-        </>
-      ) : resolvedKind === 'browser' ? (
-        <>
-          <Globe className="block size-3 shrink-0 text-sky-600 dark:text-sky-400" />
-          <span className="leading-none">{display}</span>
-        </>
-      ) : (
-        <>
-          <FileIcon name={display} size={12} className="block size-3 shrink-0" />
-          <span className="leading-none">{display}</span>
-        </>
-      )}
-    </span>
+      </span>
+    )
+  }
+
+  // Same .mention-chip* CSS as composer — em-only, scales with Cmd+= zoom.
+  // break-normal resists the bubble's break-all so multi-word labels stay one line.
+  return (
+    <MentionChipContent
+      blended={isBlendedChip}
+      kind={resolvedKind}
+      className="break-normal"
+      icon={
+        resolvedKind === 'directory'
+          ? <Folder className="text-primary" />
+          : mentionChipIcon(resolvedKind, value, display)
+      }
+      label={display}
+    />
   )
 }
 
@@ -494,8 +463,10 @@ export function UserTextBlock({ text, isPaste }: { text: string; isPaste?: boole
   if (isPaste === true) return <LongTextChip text={text} />
   const segments = parseUserMentions(text)
   if (segments.length === 0) return null
+  // inline-flex + items-baseline: chip and "回复一个hi" share one baseline —
+  // vertical-align alone cannot align sibling nodes in a normal inline span.
   return (
-    <span>
+    <span className="user-text-with-mentions">
       {segments.map((seg, i) =>
         seg.type === 'mention'
           ? <MentionInlineChip key={i} kind={seg.kind} value={seg.value} displayName={seg.displayName} />

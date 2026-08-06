@@ -17,7 +17,12 @@ export function MiniAppIcon({ appId, className }: MiniAppIconProps) {
     <img
       src={src}
       alt=""
-      className={cn('rounded-[22%] object-contain', className)}
+      draggable={false}
+      className={cn(
+        // block: avoid replaced-element baseline gap that drops the chip below text.
+        'block rounded-[22%] object-contain',
+        className,
+      )}
     />
   )
 }

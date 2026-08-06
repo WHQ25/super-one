@@ -1,15 +1,24 @@
 import { resolveNodeHome, DEFAULT_BIND_PORT } from '../../../../cli/src/config'
 import { renderSystemdUserUnit } from '../../../../cli/src/systemd/unit'
-import { findFreePort, sshCapture, startSshLocalForward, type SshForwardHandle } from './ssh-forward'
+import {
+  findFreePort,
+  sshCapture,
+  startSshLocalForward,
+  type SshForwardHandle,
+} from './ssh-forward'
 
 export interface SshBootstrapOptions {
   destination: string
   /** Remote absolute path to superone entry (or bun + script). */
   remoteExec: string
   remoteNodeHome?: string
+  /** Remote home discovered during the initial host probe. */
+  remoteHome?: string
   remotePort?: number
   extraSshArgs?: string[]
   sshPath?: string
+  /** Remote bin directory containing a version-manager Node/npm installation. */
+  nodeBinDir?: string | null
   label?: string
 }
 
@@ -43,48 +52,47 @@ export async function bootstrapNodeOverSsh(opts: SshBootstrapOptions): Promise<S
     sshPath: opts.sshPath,
   }
 
-  const probe = await sshCapture({
-    ...sshOpts,
-    command: 'uname -s && printf "\\nHOME=%s\\n" "$HOME" && echo SUPERONE_SSH_OK',
-    timeoutMs: 30_000,
-  })
-  if (probe.code !== 0 || !probe.stdout.includes('SUPERONE_SSH_OK')) {
-    throw new Error(`ssh probe failed: ${probe.stderr || probe.stdout || `code ${probe.code}`}`)
-  }
-  if (!probe.stdout.includes('Linux') && !probe.stdout.includes('Darwin')) {
-    warnings.push(`unexpected remote OS: ${probe.stdout.trim()}`)
-  }
-  // Resolve absolute remote home — never quote tilde as a literal path.
-  const homeMatch = /HOME=([^\n]+)/.exec(probe.stdout)
-  const remoteAbsHome =
-    opts.remoteNodeHome && !opts.remoteNodeHome.startsWith('~')
-      ? opts.remoteNodeHome
-      : `${(homeMatch?.[1] || '').trim() || '/tmp'}/.superone/node`
-
-  // Ensure remote node home exists (best-effort).
-  await sshCapture({
-    ...sshOpts,
-    command: `mkdir -p ${shellQuote(remoteAbsHome)}/secrets ${shellQuote(remoteAbsHome)}/logs && chmod 700 ${shellQuote(remoteAbsHome)} ${shellQuote(remoteAbsHome)}/secrets || true`,
-  })
-
-  // Start node in background if not healthy (best-effort; may already be running under systemd).
-  const healthCheck = await sshCapture({
-    ...sshOpts,
-    command: `curl -fsS http://127.0.0.1:${remotePort}/health 2>/dev/null || echo NO_HEALTH`,
-  })
-  if (healthCheck.stdout.includes('NO_HEALTH') || !healthCheck.stdout.includes('"ok"')) {
-    await sshCapture({
+  let remoteHome = opts.remoteHome?.trim() || ''
+  let homeMatch: RegExpExecArray | null = null
+  const needsProbe =
+    !remoteHome && (!opts.remoteNodeHome || opts.remoteNodeHome.startsWith('~'))
+  if (needsProbe) {
+    const probe = await sshCapture({
       ...sshOpts,
-      command: `nohup ${opts.remoteExec} start --foreground --home ${shellQuote(remoteAbsHome)} --host 127.0.0.1 --port ${remotePort} >${shellQuote(remoteAbsHome)}/logs/bootstrap.log 2>&1 & sleep 0.5; echo STARTED`,
-      timeoutMs: 15_000,
+      command: 'uname -s && printf "\\nHOME=%s\\n" "$HOME" && echo SUPERONE_SSH_OK',
+      timeoutMs: 30_000,
     })
+    if (probe.code !== 0 || !probe.stdout.includes('SUPERONE_SSH_OK')) {
+      throw new Error(
+        `ssh probe failed: ${probe.stderr || probe.stdout || `code ${probe.code}`}`,
+      )
+    }
+    if (!probe.stdout.includes('Linux') && !probe.stdout.includes('Darwin')) {
+      warnings.push(`unexpected remote OS: ${probe.stdout.trim()}`)
+    }
+    homeMatch = /HOME=([^\n]+)/.exec(probe.stdout)
+    remoteHome = (homeMatch?.[1] || '').trim()
   }
 
-  // Create pairing token — parse JSON from stdout only; do not log the token.
+  const requestedHome = opts.remoteNodeHome?.trim()
+  const remoteAbsHome =
+    requestedHome && !requestedHome.startsWith('~')
+      ? requestedHome
+      : requestedHome?.startsWith('~/') && remoteHome
+        ? `${remoteHome}/${requestedHome.slice(2)}`
+        : `${remoteHome || '/tmp'}/.superone/node`
+
+  // Batch directory setup, node startup, health wait, and token creation into
+  // one SSH session. This avoids triggering common SSH connection rate limits.
   const pairOut = await sshCapture({
     ...sshOpts,
-    command: `${opts.remoteExec} pair-create --home ${shellQuote(remoteAbsHome)}`,
-    timeoutMs: 15_000,
+    command: buildBootstrapCommand({
+      remoteExec: opts.remoteExec,
+      remoteNodeHome: remoteAbsHome,
+      remotePort,
+      nodeBinDir: opts.nodeBinDir,
+    }),
+    timeoutMs: 120_000,
   })
   if (pairOut.code !== 0) {
     throw new Error(`pair-create failed: ${pairOut.stderr || pairOut.stdout}`)
@@ -103,10 +111,17 @@ export async function bootstrapNodeOverSsh(opts: SshBootstrapOptions): Promise<S
     sshPath: opts.sshPath,
   })
 
+  try {
+    await waitForSshForwardHealth(forward.localBaseUrl)
+  } catch (error) {
+    forward.stop()
+    throw error
+  }
+
   const unitPreview = renderSystemdUserUnit({
     execStart: opts.remoteExec,
     nodeHome: remoteAbsHome,
-    home: (homeMatch?.[1] || '').trim() || '/home/user',
+    home: remoteHome || (homeMatch?.[1] || '').trim() || '/home/user',
     bindHost: '127.0.0.1',
     bindPort: remotePort,
   })
@@ -121,6 +136,76 @@ export async function bootstrapNodeOverSsh(opts: SshBootstrapOptions): Promise<S
     unitPreview,
     warnings,
   }
+}
+
+export function buildBootstrapCommand(input: {
+  remoteExec: string
+  remoteNodeHome: string
+  remotePort: number
+  nodeBinDir?: string | null
+}): string {
+  const pathPrefix = input.nodeBinDir?.trim()
+    ? `export PATH=${shellQuote(input.nodeBinDir.trim())}:$PATH && `
+    : ''
+  const execPath = shellQuote(input.remoteExec)
+  const nodeHome = shellQuote(input.remoteNodeHome)
+  const healthUrl = `http://127.0.0.1:${input.remotePort}/health`
+  return (
+    pathPrefix +
+    [
+      `mkdir -p ${nodeHome}/secrets ${nodeHome}/logs`,
+      `chmod 700 ${nodeHome} ${nodeHome}/secrets || true`,
+      `if ! curl -fsS ${healthUrl} >/dev/null 2>&1; then nohup ${execPath} start --foreground --home ${nodeHome} --host 127.0.0.1 --port ${input.remotePort} >${nodeHome}/logs/bootstrap.log 2>&1 & fi`,
+      `healthy=0; i=0; while [ "$i" -lt 50 ]; do if curl -fsS ${healthUrl} >/dev/null 2>&1; then healthy=1; break; fi; i=$((i + 1)); sleep 0.2; done; if [ "$healthy" -ne 1 ]; then echo "remote node did not become healthy" >&2; exit 1; fi`,
+      `${execPath} pair-create --home ${nodeHome}`,
+    ].join(' && ')
+  )
+}
+
+export async function waitForSshForwardHealth(
+  baseUrl: string,
+  options: {
+    timeoutMs?: number
+    retryDelayMs?: number
+    requestTimeoutMs?: number
+  } = {},
+): Promise<void> {
+  const timeoutMs = options.timeoutMs ?? 15_000
+  const retryDelayMs = options.retryDelayMs ?? 100
+  const requestTimeoutMs = options.requestTimeoutMs ?? 1_000
+  const deadline = Date.now() + timeoutMs
+  let lastError = 'not ready'
+
+  while (Date.now() < deadline) {
+    const remainingMs = deadline - Date.now()
+    try {
+      const response = await fetch(`${baseUrl.replace(/\/$/, '')}/health`, {
+        signal: AbortSignal.timeout(
+          Math.max(1, Math.min(requestTimeoutMs, remainingMs)),
+        ),
+      })
+      if (response.ok) {
+        const body = (await response.json().catch(() => null)) as {
+          ok?: boolean
+        } | null
+        if (body?.ok === true) return
+        lastError = 'invalid health response'
+      } else {
+        lastError = `health returned ${response.status}`
+      }
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error)
+    }
+
+    const delayMs = Math.min(retryDelayMs, deadline - Date.now())
+    if (delayMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs))
+    }
+  }
+
+  throw new Error(
+    `ssh tunnel did not become ready within ${timeoutMs}ms: ${lastError}`,
+  )
 }
 
 /** Pure helpers exported for unit tests (no live SSH). */

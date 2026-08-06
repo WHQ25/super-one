@@ -1781,6 +1781,8 @@ export class EnvironmentHost {
     const sshTarget: SshTarget = { destination: input.destination, extraSshArgs }
     const warnings: string[] = []
     let remoteExec = input.remoteExec?.trim() || ''
+    let remoteHome: string | undefined
+    let nodeBinDir: string | undefined
     let installed: InstallResult | undefined
     const installSource: RemoteInstallSource =
       input.installSource ?? DEFAULT_REMOTE_INSTALL_SOURCE
@@ -1790,6 +1792,8 @@ export class EnvironmentHost {
     if (!remoteExec) {
       onProgress?.({ phase: 'probing' })
       const probe = await this.probeHost(sshTarget)
+      remoteHome = probe.home || undefined
+      nodeBinDir = probe.nodeBinDir || undefined
       const blocker = preflightBlocker(probe, installSource)
       if (blocker) throw Object.assign(new Error(blocker), { code: 'failed_precondition' })
 
@@ -1825,6 +1829,7 @@ export class EnvironmentHost {
           }
           installed = await this.installNode({
             ...sshTarget,
+            nodeBinDir: probe.nodeBinDir,
             tarballPath: artifact.path,
             version: artifact.version,
             distTarget: artifact.target,
@@ -1836,6 +1841,7 @@ export class EnvironmentHost {
         } else {
           installed = await this.installFromRegistry({
             ...sshTarget,
+            nodeBinDir: probe.nodeBinDir,
             version: decision.targetVersion,
             remoteHome: probe.home,
             previousVersion: probe.superoneVersion ?? undefined,
@@ -1856,9 +1862,11 @@ export class EnvironmentHost {
     const boot = await this.bootstrap({
       destination: input.destination,
       remoteExec,
+      remoteHome,
       remoteNodeHome: input.remoteNodeHome,
       remotePort,
       extraSshArgs,
+      nodeBinDir,
       label: input.label,
     })
     warnings.push(...boot.warnings)

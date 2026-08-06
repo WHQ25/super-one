@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest'
+import { createServer } from 'node:http'
 import {
   buildRemoteInstallCommands,
+  buildBootstrapCommand,
   extractJsonObject,
   shellQuote,
+  waitForSshForwardHealth,
 } from './ssh-bootstrap'
+import { findFreePort } from './ssh-forward'
 
 describe('ssh-bootstrap helpers', () => {
   it('extracts pairing JSON from noisy ssh stdout without logging secrets elsewhere', () => {
@@ -39,5 +43,47 @@ describe('ssh-bootstrap helpers', () => {
     expect(cmds.some((c) => c.includes('install-systemd'))).toBe(true)
     expect(cmds.some((c) => c.includes('pair-create'))).toBe(true)
     expect(cmds.join('\n')).not.toMatch(/pairingToken=/)
+  })
+
+  it('batches remote bootstrap operations into one command', () => {
+    const command = buildBootstrapCommand({
+      remoteExec: '/home/u/.local/bin/superone',
+      remoteNodeHome: '/home/u/.superone/node',
+      remotePort: 7788,
+      nodeBinDir: '/home/u/.nvm/versions/node/v22/bin',
+    })
+    expect(command).toContain('export PATH=')
+    expect(command).toContain('mkdir -p')
+    expect(command).toContain('while [ "$i" -lt 50 ]')
+    expect(command).toContain('pair-create')
+    expect(command.split(' && ').length).toBeGreaterThan(3)
+  })
+
+  it('waits until a delayed SSH-forwarded health endpoint is ready', async () => {
+    const port = await findFreePort()
+    const server = createServer((_req, res) => {
+      res.writeHead(200, { 'content-type': 'application/json' })
+      res.end(JSON.stringify({ ok: true }))
+    })
+
+    const wait = waitForSshForwardHealth(`http://127.0.0.1:${port}`, {
+      timeoutMs: 1_000,
+      retryDelayMs: 10,
+      requestTimeoutMs: 100,
+    })
+    await new Promise<void>((resolve, reject) => {
+      setTimeout(() => {
+        server.once('error', reject)
+        server.listen(port, '127.0.0.1', resolve)
+      }, 50)
+    })
+
+    try {
+      await wait
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()))
+      })
+    }
   })
 })

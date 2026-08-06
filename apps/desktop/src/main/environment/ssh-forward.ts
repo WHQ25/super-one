@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { createReadStream } from 'node:fs'
 import { stat } from 'node:fs/promises'
-import { createServer } from 'node:net'
+import { createConnection, createServer } from 'node:net'
 
 export interface SshForwardOptions {
   /** OpenSSH destination: user@host or Host alias from ~/.ssh/config */
@@ -14,6 +14,8 @@ export interface SshForwardOptions {
   extraArgs?: string[]
   /** ssh binary path (default "ssh"). */
   sshPath?: string
+  /** Maximum time to wait for the local forwarded listener to bind. */
+  readyTimeoutMs?: number
 }
 
 export interface SshForwardHandle {
@@ -66,22 +68,50 @@ export async function startSshLocalForward(opts: SshForwardOptions): Promise<Ssh
     env: process.env,
   })
 
-  // Wait briefly for either ready (no immediate exit) or failure.
-  await new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(() => resolve(), 400)
-    child.once('error', (err) => {
-      clearTimeout(timer)
-      reject(err)
-    })
-    child.once('exit', (code, signal) => {
-      clearTimeout(timer)
-      const errOut = child.stderr.read()?.toString?.() || ''
-      reject(new Error(`ssh forward exited early code=${code} signal=${signal} ${errOut}`.trim()))
-    })
+  let stderr = ''
+  child.stderr.on('data', (chunk) => {
+    stderr = `${stderr}${chunk.toString()}`.slice(-8_000)
   })
 
-  // Remove the early-exit listener path by attaching a no-op; callers handle lifecycle.
-  child.removeAllListeners('exit')
+  // The local listener is the first reliable readiness signal. The node health
+  // check is performed by bootstrap callers after this function resolves.
+  try {
+    await new Promise<void>((resolve, reject) => {
+      let settled = false
+      const finish = (error?: Error): void => {
+        if (settled) return
+        settled = true
+        child.removeListener('error', onError)
+        child.removeListener('exit', onExit)
+        if (error) reject(error)
+        else resolve()
+      }
+      const onError = (error: Error): void => finish(error)
+      const onExit = (code: number | null, signal: NodeJS.Signals | null): void => {
+        finish(
+          new Error(
+            `ssh forward exited before local port ${localPort} was ready code=${code} signal=${signal} ${stderr}`.trim(),
+          ),
+        )
+      }
+      child.once('error', onError)
+      child.once('exit', onExit)
+      void waitForLocalPort(localPort, opts.readyTimeoutMs ?? 15_000).then(
+        () => finish(),
+        (error) => finish(error instanceof Error ? error : new Error(String(error))),
+      )
+    })
+  } catch (error) {
+    if (!child.killed) child.kill('SIGTERM')
+    const message = error instanceof Error ? error.message : String(error)
+    const sshDetail = stderr.trim() ? ` SSH reported: ${stderr.trim()}` : ''
+    throw Object.assign(
+      new Error(
+        `${message}.${sshDetail} The SSH connection may have been rate-limited or refused.`,
+      ),
+      { cause: error },
+    )
+  }
 
   return {
     localPort,
@@ -91,6 +121,48 @@ export async function startSshLocalForward(opts: SshForwardOptions): Promise<Ssh
       if (!child.killed) child.kill('SIGTERM')
     },
   }
+}
+
+/** Wait until an SSH local-forward listener accepts a TCP connection. */
+export async function waitForLocalPort(
+  port: number,
+  timeoutMs = 15_000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  let lastError = 'not listening'
+  while (Date.now() < deadline) {
+    const remainingMs = deadline - Date.now()
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const socket = createConnection({ host: '127.0.0.1', port })
+        const timer = setTimeout(
+          () => {
+            socket.destroy()
+            reject(new Error('connection timeout'))
+          },
+          Math.min(500, remainingMs),
+        )
+        socket.once('connect', () => {
+          clearTimeout(timer)
+          socket.destroy()
+          resolve()
+        })
+        socket.once('error', (error) => {
+          clearTimeout(timer)
+          socket.destroy()
+          reject(error)
+        })
+      })
+      return
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error)
+    }
+    const delayMs = Math.min(100, deadline - Date.now())
+    if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs))
+  }
+  throw new Error(
+    `local SSH forward port ${port} did not become ready within ${timeoutMs}ms: ${lastError}`,
+  )
 }
 
 /**
@@ -104,6 +176,8 @@ export async function sshUpload(input: {
   destination: string
   localPath: string
   remotePath: string
+  /** Optional shell command used to prepare the destination before reading stdin. */
+  remoteCommand?: string
   extraArgs?: string[]
   sshPath?: string
   timeoutMs?: number
@@ -116,7 +190,7 @@ export async function sshUpload(input: {
     'BatchMode=yes',
     ...(input.extraArgs ?? []),
     input.destination,
-    `cat > ${shellQuoteArg(input.remotePath)}`,
+    input.remoteCommand ?? `cat > ${shellQuoteArg(input.remotePath)}`,
   ]
 
   return new Promise((resolve, reject) => {

@@ -4,6 +4,7 @@ import {
   MIN_REMOTE_NODE_MAJOR,
   parseProbeOutput,
   preflightBlocker,
+  withRemoteNodePath,
   type RemoteHostProbe,
 } from './remote-install'
 
@@ -25,6 +26,10 @@ describe('remote host probe parsing', () => {
         musl: '0',
         superone: '',
         node_major: '22',
+        node_path: '/root/.nvm/versions/node/v22.22.2/bin/node',
+        node_bin_dir: '/root/.nvm/versions/node/v22.22.2/bin',
+        npm_path: '/root/.nvm/versions/node/v22.22.2/bin/npm',
+        shell_path: '/root/.nvm/versions/node/v22.22.2/bin:/usr/bin',
         systemd: '1',
       }),
     )
@@ -34,6 +39,10 @@ describe('remote host probe parsing', () => {
     expect(probe.musl).toBe(false)
     expect(probe.distTarget).toBe('linux-x64')
     expect(probe.nodeMajor).toBe(22)
+    expect(probe.nodePath).toContain('/.nvm/versions/node/')
+    expect(probe.nodeBinDir).toContain('/.nvm/versions/node/')
+    expect(probe.npmPath).toContain('/npm')
+    expect(probe.shellPath).toContain('/usr/bin')
     expect(probe.hasSystemd).toBe(true)
     expect(probe.superonePath).toBeNull()
   })
@@ -123,7 +132,9 @@ describe('preflight', () => {
   })
 
   it('blocks when the remote has no Node runtime', () => {
-    expect(preflightBlocker({ ...base, nodeMajor: null })).toContain('was not found on PATH')
+    expect(
+      preflightBlocker({ ...base, nodeMajor: null, shellPath: '/usr/bin' }),
+    ).toContain('probe PATH: /usr/bin')
   })
 
   it('blocks and names the found version when Node is too old', () => {
@@ -144,5 +155,12 @@ describe('preflight', () => {
 
   it('does not block a host without systemd — persistence is a warning, not a failure', () => {
     expect(preflightBlocker({ ...base, hasSystemd: false })).toBeNull()
+  })
+
+  it('preserves a discovered version-manager Node path in remote commands', () => {
+    expect(
+      withRemoteNodePath('npm --version', '/root/.nvm/versions/node/v22/bin'),
+    ).toBe('export PATH=/root/.nvm/versions/node/v22/bin:$PATH && npm --version')
+    expect(withRemoteNodePath('echo ok')).toBe('echo ok')
   })
 })

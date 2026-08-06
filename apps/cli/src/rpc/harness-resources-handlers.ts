@@ -16,7 +16,10 @@ import type { ModelOption } from '@superone/shared/agent-types'
 import type { AuthenticatedClient } from '../auth/auth-service'
 import type { ProjectRegistry } from '../workspace/project-registry'
 import type { ProviderStore } from '../provider/provider-store'
-import { listHarnessModels } from '../provider/resolve-service'
+import type { HarnessManager } from '../session/harness-manager'
+import { listHarnessModels, listHarnessProviderModels } from '../provider/resolve-service'
+import { resolveClaudeBinaryPath } from '../session/claude-turn-runner'
+import { getNodeClaudeModelCatalog } from '../session/claude-model-catalog'
 
 export interface HarnessResourcesRpcResult {
   result?: unknown
@@ -27,8 +30,12 @@ export interface HarnessResourcesRpcContext {
   client: AuthenticatedClient
   projects: ProjectRegistry
   providers: ProviderStore
+  /** Harness catalog — resolves the managed Claude binary for the model probe. */
+  harnesses?: HarnessManager
   /** Override home for skill/command discovery (tests). */
   homeDir?: string
+  /** Injectable model probe (tests). Default: probe the node's Claude harness. */
+  probeModels?: (harnessId: string, cwd: string) => Promise<ModelOption[]>
 }
 
 function requireScopes(
@@ -43,6 +50,18 @@ function requireScopes(
 
 function asRecord(payload: unknown): Record<string, unknown> {
   return payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {}
+}
+
+/** Probe the node's own harness for its model catalog (claude only today). */
+function defaultProbeModels(
+  ctx: HarnessResourcesRpcContext,
+): (harnessId: string, cwd: string) => Promise<ModelOption[]> {
+  return async (harnessId, cwd) => {
+    if (harnessId !== 'claude') return []
+    const binaryPath = resolveClaudeBinaryPath({ harnesses: ctx.harnesses })
+    if (!binaryPath) return []
+    return getNodeClaudeModelCatalog({ cwd, binaryPath })
+  }
 }
 
 function mapThrown(err: unknown): HarnessResourcesRpcResult {
@@ -95,13 +114,23 @@ async function handleHarnessResources(
           : undefined
 
     const listModels = (hid: string, apiId?: string | null): ModelOption[] => {
-      return listHarnessModels(ctx.providers, hid, apiId ?? null) as ModelOption[]
+      return listHarnessProviderModels(ctx.providers, hid, apiId ?? null) as ModelOption[]
+    }
+
+    // No bound credential: ask the harness on this node what it serves. The
+    // built-in slug table only stands in when that probe comes back empty.
+    const probeModels = async (hid: string): Promise<ModelOption[]> => {
+      const probe = ctx.probeModels ?? defaultProbeModels(ctx)
+      const probed = await probe(hid, project.path)
+      if (probed.length > 0) return probed
+      return listHarnessModels(ctx.providers, hid, apiProviderId ?? null) as ModelOption[]
     }
 
     const bundle = await collectHarnessResources({
       projectPath: project.path,
       homeDir: ctx.homeDir,
       listModels,
+      probeModels,
       apiProviderId: apiProviderId ?? null,
       harnessId,
     })

@@ -2,9 +2,10 @@ import { describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, writeFileSync, chmodSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import type { SDKMessage, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
+import type { Options, SDKMessage, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import { ClaudeLiveSession } from './claude-live-session'
 import type { ClaudeQueryFn } from './types'
+import { ROOT_SAFE_PERMISSION_MODE, isRootWithoutSandboxOptIn } from './root-permission-guard'
 
 /**
  * Mock that behaves like the real Agent SDK: wait for each bridge user
@@ -239,6 +240,41 @@ describe('ClaudeLiveSession', () => {
     })
     expect(questions).toHaveLength(1)
     expect(plans).toHaveLength(1)
+    await live.dispose()
+    rmSync(dir, { recursive: true, force: true })
+  })
+  it('relaxes permission-skipping options exactly when the host would refuse them', async () => {
+    // Claude Code exits during spawn if it would skip permission prompts under
+    // root, so the flag has to follow the host instead of being pinned on.
+    const dir = mkdtempSync(join(tmpdir(), 'cls-root-'))
+    const bin = join(dir, 'claude')
+    writeFileSync(bin, '#!/bin/sh\n')
+    chmodSync(bin, 0o755)
+
+    let seen: Options | undefined
+    const queryFn: ClaudeQueryFn = ({ prompt, options }) =>
+      (async function* () {
+        for await (const _user of prompt as AsyncIterable<SDKUserMessage>) {
+          seen = options as Options
+          yield* successTurn('s', 'ok') as SDKMessage[]
+        }
+      })() as ReturnType<ClaudeQueryFn>
+
+    const live = ClaudeLiveSession.open({
+      cwd: dir,
+      binaryPath: bin,
+      permissionMode: 'bypassPermissions',
+      queryFn,
+    })
+    await live.sendTurn({ content: 'go' })
+
+    const guarded = isRootWithoutSandboxOptIn({
+      uid: process.getuid?.(),
+      env: process.env as Record<string, string | undefined>,
+    })
+    expect(seen?.allowDangerouslySkipPermissions).toBe(!guarded)
+    expect(seen?.permissionMode).toBe(guarded ? ROOT_SAFE_PERMISSION_MODE : 'bypassPermissions')
+
     await live.dispose()
     rmSync(dir, { recursive: true, force: true })
   })

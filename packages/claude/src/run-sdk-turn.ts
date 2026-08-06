@@ -15,6 +15,7 @@ import { isStaticHostOwnedSuperoneToolQualified } from '@superone/shared/superon
 import { applySdkMessage, createSdkMapState } from './map-sdk-message'
 import { createClaudeAgentEventMapper } from './agent-event-mapper'
 import { resolveSdkClaudeBinary } from './resolve-sdk-binary'
+import { applyRootPermissionGuard } from './root-permission-guard'
 import type {
   ClaudePermissionHandler,
   ClaudePlanHandler,
@@ -138,6 +139,14 @@ function buildOptions(opts: RunClaudeSdkTurnOptions, timing: { pausedMs: number 
       ? opts.effort
       : undefined
 
+  // See root-permission-guard: permission-skipping options make the SDK
+  // process exit during spawn under root.
+  const permissions = applyRootPermissionGuard({
+    permissionMode: opts.permissionMode,
+    uid: process.getuid?.(),
+    env: env ?? (process.env as Record<string, string | undefined>),
+  })
+
   const base: Options = {
     cwd: opts.cwd,
     // Omit when unresolved — SDK query() self-resolves optional platform package.
@@ -151,8 +160,8 @@ function buildOptions(opts: RunClaudeSdkTurnOptions, timing: { pausedMs: number 
     enableFileCheckpointing: true,
     agentProgressSummaries: true,
     extraArgs: { 'replay-user-messages': null },
-    permissionMode: (opts.permissionMode as Options['permissionMode']) || 'default',
-    allowDangerouslySkipPermissions: true,
+    permissionMode: (permissions.permissionMode as Options['permissionMode']) || 'default',
+    allowDangerouslySkipPermissions: permissions.allowDangerouslySkipPermissions,
     canUseTool: buildCanUseTool(
       opts.onPermission,
       opts.onQuestion,

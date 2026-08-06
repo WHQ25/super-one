@@ -15,6 +15,7 @@ import { MessageBridge } from './message-bridge'
 import { createClaudeAgentEventMapper } from './agent-event-mapper'
 import { applySdkMessage, createSdkMapState } from './map-sdk-message'
 import { resolveSdkClaudeBinary } from './resolve-sdk-binary'
+import { applyRootPermissionGuard } from './root-permission-guard'
 import type {
   ClaudePermissionHandler,
   ClaudePlanHandler,
@@ -51,6 +52,12 @@ export interface ClaudeLiveSessionOptions {
   model?: string
   effort?: string
   permissionMode?: string
+  /**
+   * Effective uid of the harness process for the root permission guard.
+   * Defaults to `process.getuid?.()`; callers that spawn as another user (or
+   * tests) can state it explicitly.
+   */
+  uid?: number | null
   /**
    * SuperOne sandbox mode (`off` | `on` | `auto`).
    * Mapped to Agent SDK `sandbox` (enabled + autoAllowBashIfSandboxed).
@@ -194,6 +201,14 @@ function buildLiveOptions(
         }
       : undefined
 
+  // Under root the SDK process refuses to start with permission-skipping
+  // options; relax them so the turn runs instead of exiting during spawn.
+  const permissions = applyRootPermissionGuard({
+    permissionMode: opts.permissionMode,
+    uid: opts.uid === undefined ? process.getuid?.() : opts.uid,
+    env: env ?? (process.env as Record<string, string | undefined>),
+  })
+
   const base: Options = {
     cwd: opts.cwd,
     ...(binaryPath ? { pathToClaudeCodeExecutable: binaryPath } : {}),
@@ -206,8 +221,8 @@ function buildLiveOptions(
     enableFileCheckpointing: true,
     agentProgressSummaries: true,
     extraArgs: { 'replay-user-messages': null },
-    permissionMode: (opts.permissionMode as Options['permissionMode']) || 'default',
-    allowDangerouslySkipPermissions: true,
+    permissionMode: (permissions.permissionMode as Options['permissionMode']) || 'default',
+    allowDangerouslySkipPermissions: permissions.allowDangerouslySkipPermissions,
     canUseTool,
     abortController,
     settingSources: ['user', 'project', 'local'],

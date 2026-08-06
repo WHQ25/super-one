@@ -291,6 +291,7 @@ async function dispatchRpcInner(method: string, payload: unknown, ctx: RpcContex
     client: ctx.client,
     projects: ctx.projects,
     providers: ctx.providers,
+    harnesses: ctx.harnesses,
   })
   if (harnessResources) return harnessResources
 

@@ -202,7 +202,12 @@ const DEFAULT_CODEX_MODELS: ModelOptionWire[] = [
   { id: 'o3', name: 'o3', description: '' },
 ]
 
-export function listHarnessModels(
+/**
+ * Models reachable through the bound provider credential.
+ * Empty when the node has no credential for this harness — callers that can
+ * probe the harness itself should do that rather than assume a slug list.
+ */
+export function listHarnessProviderModels(
   store: ProviderStore,
   harness: string,
   apiProviderId?: string | null,
@@ -236,6 +241,20 @@ export function listHarnessModels(
     const list = [...mapped.values()]
     if (list.length > 0) return list
   }
+  return []
+}
+
+/**
+ * Provider catalog with the built-in slug table as a last resort.
+ * Only for callers with no way to ask the harness what it serves.
+ */
+export function listHarnessModels(
+  store: ProviderStore,
+  harness: string,
+  apiProviderId?: string | null,
+): ModelOptionWire[] {
+  const fromProvider = listHarnessProviderModels(store, harness, apiProviderId)
+  if (fromProvider.length > 0) return fromProvider
   if (harness === 'claude') return DEFAULT_CLAUDE_MODELS
   if (harness === 'codex') return DEFAULT_CODEX_MODELS
   return []

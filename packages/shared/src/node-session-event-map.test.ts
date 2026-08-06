@@ -455,4 +455,42 @@ describe('mapNodeSessionEvents (text-only)', () => {
       expect.objectContaining({ type: 'status_change', status: 'error' }),
     ])
   })
+
+  it('surfaces a turn error that arrives before any assistant content', () => {
+    // Node runner failures at process start (e.g. the harness binary exits
+    // during spawn) emit turn_started → turn_error with nothing in between.
+    // Without an assistant block the error text must still reach the UI.
+    const events = mapNodeSessionEvents(
+      [
+        envelope({ eventType: 'session.user_message', payload: { blockId: 'u1', text: 'hi' } }),
+        envelope({ eventType: 'session.turn_started', payload: { status: 'streaming' } }),
+        envelope({
+          eventType: 'session.turn_error',
+          payload: { message: 'Claude Code process exited with code 1' },
+        }),
+      ],
+      ctx,
+    )
+    expect(events.map((e) => e.type)).toEqual([
+      'user_message_appended',
+      'status_change',
+      'message_start',
+      'message_error',
+      'status_change',
+    ])
+    expect(events[3]).toMatchObject({
+      type: 'message_error',
+      error: 'Claude Code process exited with code 1',
+    })
+    expect(events.at(-1)).toMatchObject({ type: 'status_change', status: 'error' })
+  })
+
+  it('falls back to a generic message when a bare turn error has no assistant block', () => {
+    const events = mapNodeSessionEvents(
+      [envelope({ eventType: 'session.turn_error', payload: {} })],
+      ctx,
+    )
+    expect(events.map((e) => e.type)).toEqual(['message_start', 'message_error', 'status_change'])
+    expect(events[1]).toMatchObject({ type: 'message_error', error: 'remote turn failed' })
+  })
 })

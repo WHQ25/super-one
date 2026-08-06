@@ -756,4 +756,85 @@ describe('createProductionTurnRunner multi-dispatch', () => {
       }),
     ).rejects.toThrow(/not available|not implemented/)
   })
+  it('keeps a root node runnable by relaxing bypassPermissions for the turn', async () => {
+    // Reproduces the node failure: Claude Code exits during spawn under uid 0
+    // when the turn would skip permission prompts, so no turn ever streamed.
+    const dir = mkdtempSync(join(tmpdir(), 'cbr-claude-root-'))
+    const bin = join(dir, 'claude')
+    writeFileSync(bin, '#!/bin/sh\n')
+    chmodSync(bin, 0o755)
+
+    const queryFn = vi.fn(bridgeQuery(() => success('root-sess', 'ok')))
+    const runner = createNodeClaudeTurnRunner({
+      binaryPath: bin,
+      resolveProjectPath: () => dir,
+      queryFn,
+      allowSimulatedFallback: false,
+      getuid: () => 0,
+    })
+
+    const agentEvents: AgentEvent[] = []
+    try {
+      const result = await runner({
+        session: session(),
+        text: 'ping',
+        permissionMode: 'bypassPermissions',
+        onDelta: () => {},
+        onAgentEvent: (e) => agentEvents.push(e),
+        signal: new AbortController().signal,
+      })
+      expect(result.finalText).toBe('ok')
+
+      const call = queryFn.mock.calls[0]![0] as { options?: Options }
+      expect(call.options?.permissionMode).toBe('acceptEdits')
+      expect(call.options?.allowDangerouslySkipPermissions).toBe(false)
+
+      // The desktop selector still says "bypass"; tell it what actually ran.
+      expect(agentEvents).toContainEqual(
+        expect.objectContaining({
+          type: 'agent_setting_change',
+          patch: expect.objectContaining({ permissionMode: 'acceptEdits' }),
+        }),
+      )
+    } finally {
+      await runner.disposeAll?.()
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('leaves bypassPermissions alone off root', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cbr-claude-nonroot-'))
+    const bin = join(dir, 'claude')
+    writeFileSync(bin, '#!/bin/sh\n')
+    chmodSync(bin, 0o755)
+
+    const queryFn = vi.fn(bridgeQuery(() => success('nonroot-sess', 'ok')))
+    const runner = createNodeClaudeTurnRunner({
+      binaryPath: bin,
+      resolveProjectPath: () => dir,
+      queryFn,
+      allowSimulatedFallback: false,
+      getuid: () => 501,
+    })
+
+    const agentEvents: AgentEvent[] = []
+    try {
+      await runner({
+        session: session(),
+        text: 'ping',
+        permissionMode: 'bypassPermissions',
+        onDelta: () => {},
+        onAgentEvent: (e) => agentEvents.push(e),
+        signal: new AbortController().signal,
+      })
+      const call = queryFn.mock.calls[0]![0] as { options?: Options }
+      expect(call.options?.permissionMode).toBe('bypassPermissions')
+      expect(
+        agentEvents.some((e) => e.type === 'agent_setting_change'),
+      ).toBe(false)
+    } finally {
+      await runner.disposeAll?.()
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
 })

@@ -24,9 +24,11 @@ import { existsSync } from 'node:fs'
 import type { Options } from '@anthropic-ai/claude-agent-sdk'
 import {
   ClaudeLiveSession,
+  applyRootPermissionGuard,
   resolveSdkClaudeBinary,
   type ClaudeQueryFn,
 } from '@superone/claude'
+import type { PermissionMode } from '@superone/shared/agent-types'
 import { createSimulatedCodexRunner, type TurnRunner } from '@superone/runtime/session'
 import type { HarnessManager } from './harness-manager'
 import type { ProviderStore } from '../provider/provider-store'
@@ -71,6 +73,8 @@ export interface NodeClaudeRunnerOptions {
   mcpMergeMode?: McpMergeMode
   /** Override home for MCP user-scope paths (tests). */
   homeDir?: string
+  /** Effective uid of this node process (tests). Defaults to `process.getuid`. */
+  getuid?: () => number | undefined
 }
 
 export function resolveClaudeBinaryPath(opts: {
@@ -228,6 +232,22 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
       ...providerEnv,
     }
 
+    // Nodes commonly run as root (container / systemd). Claude Code exits
+    // during spawn when a turn would skip permission prompts under uid 0, so
+    // relax the turn instead of failing it, and tell the client what ran.
+    const uid = opts.getuid ? opts.getuid() : process.getuid?.()
+    const permissions = applyRootPermissionGuard({
+      permissionMode: input.permissionMode,
+      uid,
+      env: authEnv as Record<string, string | undefined>,
+    })
+    if (permissions.downgradedFrom) {
+      input.onAgentEvent?.({
+        type: 'agent_setting_change',
+        patch: { permissionMode: permissions.permissionMode as PermissionMode },
+      })
+    }
+
     const priorSession = parseClaudeSessionResume(input.session.providerResume)
     const sessionKey = input.session.sessionId
 
@@ -280,10 +300,8 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
         sessionId: priorSession,
         model: input.model && input.model.trim() ? input.model.trim() : undefined,
         effort: input.effort && input.effort.trim() ? input.effort.trim() : undefined,
-        permissionMode:
-          input.permissionMode && input.permissionMode.trim()
-            ? input.permissionMode.trim()
-            : undefined,
+        permissionMode: permissions.permissionMode,
+        uid,
         sandboxMode:
           input.sandboxMode && input.sandboxMode.trim()
             ? input.sandboxMode.trim()

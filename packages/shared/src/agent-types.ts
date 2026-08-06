@@ -2310,6 +2310,8 @@ export const AgentIpcChannels = {
   PLUGINS_GITHUB_STARS: 'plugins:github-stars',
   /** List/search public (or authenticated) GitHub repos under an owner. */
   PLUGINS_GITHUB_SEARCH_REPOS: 'plugins:github-search-repos',
+  /** Authenticated viewer's repos via `gh` (add-project default GitHub list). */
+  PLUGINS_GITHUB_LIST_MY_REPOS: 'plugins:github-list-my-repos',
 
   // Skills
   SKILLS_LIST: 'skills:list',

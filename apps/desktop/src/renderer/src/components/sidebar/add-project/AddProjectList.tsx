@@ -106,7 +106,8 @@ export function AddProjectList({
                         is secondary and absorbs overflow so long GitHub blurbs don't
                         crush the name.
                       */}
-                      <span className="min-w-0 shrink font-medium truncate">
+                      {/* text-sm (14px): repo/folder names; row stays text-xs for hints. */}
+                      <span className="min-w-0 shrink truncate text-sm font-medium">
                         {item.matchIndices && item.matchIndices.length > 0 ? (
                           <HighlightedText text={item.label} indices={item.matchIndices} />
                         ) : (

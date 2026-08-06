@@ -133,7 +133,8 @@ export function AddProjectDialog({
     }
   }, [step, flow.isLocal, t])
 
-  const submitLabel =
+  // Footer ↵ hint mirrors the step's primary action (select / continue / add / clone).
+  const enterHint =
     flow.busy && step.kind === 'destination'
       ? t('sidebar.addProject.cloning')
       : t(submitLabelKey(step))
@@ -148,8 +149,18 @@ export function AddProjectDialog({
         className="flex h-[min(32rem,85vh)] w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-lg"
         showCloseButton={!flow.busy}
       >
-        <DialogHeader className="shrink-0 space-y-1 border-b px-4 py-3">
-          <DialogTitle className="text-base">{t('sidebar.addProject.title')}</DialogTitle>
+        {/*
+          Match horizontal inset with the input row (px-4). pr-12 clears the
+          absolute close button so title and field share the same content width.
+        */}
+        <DialogHeader className="shrink-0 space-y-0 px-4 pt-3 pb-1 pr-12">
+          <DialogTitle className="flex items-center gap-2 text-base">
+            {/* size-4 slot — keep in lockstep with the back control below. */}
+            <span className="flex size-4 shrink-0 items-center justify-center">
+              <FolderPlus className="size-4 text-muted-foreground" aria-hidden />
+            </span>
+            {t('sidebar.addProject.title')}
+          </DialogTitle>
           {/* Host context stays for assistive tech only — the sidebar already
               shows which environment is selected. */}
           <DialogDescription className="sr-only">
@@ -157,13 +168,16 @@ export function AddProjectDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex shrink-0 items-center gap-1 border-b px-2">
-          {step.kind !== 'source' && (
+        <div className="flex h-10 shrink-0 items-center gap-2 border-b px-4">
+          {/* Local browse has no back control — clearing the path returns to sources. */}
+          {(step.kind === 'repo' || step.kind === 'destination') && (
             <IconButton
+              // Same size-4 footprint as the title FolderPlus so the glyphs line up.
               size="sm"
               variant="ghost"
               tabIndex={-1}
               disabled={flow.busy}
+              className="size-4 [&_svg:not([class*='size-'])]:size-4"
               onMouseDown={(e) => e.preventDefault()}
               onClick={flow.goBack}
             >
@@ -266,7 +280,7 @@ export function AddProjectDialog({
               spellCheck={false}
               autoComplete="off"
               className={cn(
-                'relative h-11 w-full min-w-0 bg-transparent text-sm outline-none placeholder:text-muted-foreground disabled:opacity-60',
+                'relative h-10 w-full min-w-0 bg-transparent text-sm outline-none placeholder:text-muted-foreground disabled:opacity-60',
                 step.kind !== 'source' && 'font-mono',
                 // Ghost layer paints text + caret; hide the native ones to avoid
                 // the caret landing mid-ghost when overlay length ≠ query length.
@@ -299,10 +313,12 @@ export function AddProjectDialog({
               }}
               onKeyDown={(e) => {
                 // IME composition (e.g. Chinese/Japanese): Enter confirms a candidate,
-                // not the dialog step. keyCode 229 covers older engines that omit isComposing.
+                // not the dialog step. Check both React and native flags; keyCode 229
+                // covers older engines that omit isComposing.
                 if (
                   imeComposingRef.current ||
                   e.nativeEvent.isComposing ||
+                  e.isComposing ||
                   e.keyCode === 229
                 ) {
                   return
@@ -325,7 +341,7 @@ export function AddProjectDialog({
                 }
                 if (e.key === 'Enter') {
                   e.preventDefault()
-                  flow.submit()
+                  if (flow.canSubmit) flow.submit()
                   return
                 }
                 if (e.key === 'Backspace' && flow.query === '' && step.kind !== 'source') {
@@ -349,18 +365,10 @@ export function AddProjectDialog({
               {t('sidebar.addProject.browse')}
             </Button>
           )}
-          <Button
-            type="button"
-            size="sm"
-            className="h-7 shrink-0 px-2 text-xs"
-            tabIndex={-1}
-            disabled={!flow.canSubmit}
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={flow.submit}
-          >
-            {flow.busy && <Loader2 className="size-3 animate-spin" />}
-            {submitLabel}
-          </Button>
+          {/* Primary submit is Enter (see footer hint); a solid button was too loud. */}
+          {flow.busy ? (
+            <Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground" />
+          ) : null}
         </div>
 
         {step.kind === 'destination' && (
@@ -415,7 +423,17 @@ export function AddProjectDialog({
         )}
 
         {/* Only this region scrolls, so the shell height stays stable */}
-        <div className="min-h-0 flex-1 overflow-y-auto p-1">
+        <div
+          className="min-h-0 flex-1 overflow-y-auto p-1"
+          onScroll={(e) => {
+            if (step.kind !== 'repo' || step.source !== 'github') return
+            if (!flow.isGithubMyReposMode || !flow.githubHasMore) return
+            const el = e.currentTarget
+            if (el.scrollHeight - el.scrollTop - el.clientHeight < 96) {
+              flow.loadMoreGithubRepos()
+            }
+          }}
+        >
           {step.kind === 'repo' && step.source === 'url' ? (
             <div className="flex h-full min-h-[8rem] flex-col items-center justify-center gap-1 px-6 text-center text-xs text-muted-foreground">
               {flow.repoResolved ? (
@@ -428,20 +446,50 @@ export function AddProjectDialog({
               )}
             </div>
           ) : step.kind === 'repo' && step.source === 'github' ? (
-            flow.listSections.length > 0 ? (
-              <AddProjectList
-                sections={flow.listSections}
-                selectedIndex={flow.selectedIndex}
-                onActivate={flow.activateItem}
-                onHover={flow.setSelectedIndex}
-              />
+            flow.repoResolved && flow.githubUrlQuery ? (
+              // Paste of a full GitHub URL — same card shape as a search hit.
+              <div className="flex h-full min-h-[8rem] flex-col items-center justify-center gap-2 px-6 text-center text-xs text-muted-foreground">
+                {(() => {
+                  const ref = parseGitHubRepoInput(flow.query)
+                  return (
+                    <>
+                      {ref ? (
+                        <GithubOwnerAvatar owner={ref.owner} className="size-8 rounded-md" />
+                      ) : (
+                        <Github className="size-8 text-muted-foreground" />
+                      )}
+                      <span className="text-sm text-foreground">
+                        {ref ? `${ref.owner}/${ref.repo}` : flow.repoResolved.repoName}
+                      </span>
+                      <span className="font-mono break-all">
+                        {flow.repoResolved.remoteUrl}
+                      </span>
+                    </>
+                  )
+                })()}
+              </div>
+            ) : flow.listSections.length > 0 ? (
+              <>
+                <AddProjectList
+                  sections={flow.listSections}
+                  selectedIndex={flow.selectedIndex}
+                  onActivate={flow.activateItem}
+                  onHover={flow.setSelectedIndex}
+                />
+                {flow.githubLoadingMore ? (
+                  <div className="flex items-center justify-center gap-2 py-2 text-xs text-muted-foreground">
+                    <Loader2 className="size-3.5 animate-spin" />
+                    {t('common.loading')}
+                  </div>
+                ) : null}
+              </>
             ) : flow.githubLoading ? (
               <div className="flex h-full min-h-[8rem] items-center justify-center gap-2 text-xs text-muted-foreground">
                 <Loader2 className="size-3.5 animate-spin" />
                 {t('common.loading')}
               </div>
             ) : flow.repoResolved ? (
-              // Paste of owner/repo or a full GitHub URL — same card shape as a search hit.
+              // Typed owner/repo with no search hits — still allow continue via resolve.
               <div className="flex h-full min-h-[8rem] flex-col items-center justify-center gap-2 px-6 text-center text-xs text-muted-foreground">
                 {(() => {
                   const ref = parseGitHubRepoInput(flow.query)
@@ -466,9 +514,13 @@ export function AddProjectDialog({
               <div className="flex h-full min-h-[8rem] items-center justify-center px-3 text-center text-xs break-words text-muted-foreground">
                 {flow.githubError}
               </div>
+            ) : flow.githubUnavailable ? (
+              <div className="flex h-full min-h-[8rem] items-center justify-center px-3 text-center text-xs text-muted-foreground">
+                {t('sidebar.addProject.githubNeedCli')}
+              </div>
             ) : (
               <div className="flex h-full min-h-[8rem] items-center justify-center px-3 text-center text-xs text-muted-foreground">
-                {flow.githubSearchOwner
+                {flow.githubSearchOwner || flow.isGithubMyReposMode
                   ? t('sidebar.addProject.githubNoRepos')
                   : t('sidebar.addProject.repoInvalidGithub')}
               </div>
@@ -512,14 +564,14 @@ export function AddProjectDialog({
               <span className="mx-1.5">&middot;</span>
             </>
           )}
-          <Kbd>↵</Kbd> {t('sidebar.addProject.hintEnter')}
+          <Kbd>↵</Kbd> {enterHint}
           {flow.itemCount > 0 && (
             <>
               <span className="mx-1.5">&middot;</span>
               <Kbd>↑↓</Kbd> {t('sidebar.addProject.hintNav')}
             </>
           )}
-          {step.kind !== 'source' && (
+          {(step.kind === 'repo' || step.kind === 'destination') && (
             <>
               <span className="mx-1.5">&middot;</span>
               <Kbd>⌫</Kbd> {t('sidebar.addProject.hintBack')}

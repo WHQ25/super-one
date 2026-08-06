@@ -883,6 +883,19 @@ const appAPI = {
       }>
     >,
 
+  listMyGithubRepos: (page?: number, perPage?: number) =>
+    ipcRenderer.invoke(AgentIpcChannels.PLUGINS_GITHUB_LIST_MY_REPOS, page, perPage) as Promise<{
+      repos: Array<{
+        owner: string
+        name: string
+        fullName: string
+        description: string | null
+        private: boolean
+      }>
+      hasMore: boolean
+      unavailable: boolean
+    }>,
+
   cacheRemoteImage: (url: string) =>
     ipcRenderer.invoke(AgentIpcChannels.CACHE_IMAGE, url),
 

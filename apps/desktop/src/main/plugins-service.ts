@@ -137,3 +137,60 @@ export async function listGithubReposForOwner(owner: string): Promise<GithubRepo
     return []
   }
 }
+
+export type MyGithubReposPage = {
+  repos: GithubRepoSearchHit[]
+  hasMore: boolean
+  /** True when `gh` is missing or not authenticated — caller should show a hint. */
+  unavailable: boolean
+}
+
+/**
+ * Authenticated user's repos for the add-project GitHub default view.
+ * Requires `gh` CLI (uses its credentials). Sorted by recent activity.
+ */
+export async function listMyGithubRepos(
+  page = 1,
+  perPage = 20,
+): Promise<MyGithubReposPage> {
+  const pageNum = Math.max(1, Math.floor(page))
+  const limit = Math.min(50, Math.max(1, Math.floor(perPage)))
+
+  const viaGh = await new Promise<MyGithubReposPage | null>((resolve) => {
+    execFile(
+      'gh',
+      [
+        'api',
+        // Authenticated viewer; sort=updated matches "recent activity".
+        `user/repos?per_page=${limit}&page=${pageNum}&sort=updated&direction=desc`,
+        '--jq',
+        '[.[] | {name, full_name, description, private, owner: {login: .owner.login}}]',
+      ],
+      { timeout: 20000 },
+      (error, stdout) => {
+        if (error) {
+          resolve(null)
+          return
+        }
+        try {
+          const parsed = JSON.parse(stdout) as GithubRepoJson[]
+          if (!Array.isArray(parsed)) {
+            resolve(null)
+            return
+          }
+          const repos = mapGithubRepoHits(parsed)
+          resolve({
+            repos,
+            hasMore: repos.length >= limit,
+            unavailable: false,
+          })
+        } catch {
+          resolve(null)
+        }
+      },
+    )
+  })
+
+  if (viaGh) return viaGh
+  return { repos: [], hasMore: false, unavailable: true }
+}

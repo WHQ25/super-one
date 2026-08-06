@@ -52,7 +52,9 @@ export type Messages = {
       repoInvalidGithub: string
       repoInvalidUrl: string
       githubRepos: string
+      githubYourRepos: string
       githubNoRepos: string
+      githubNeedCli: string
       githubPrivate: string
       clonesInto: string
       cloning: string
@@ -82,7 +84,6 @@ export type Messages = {
         clone: string
       }
       hintTab: string
-      hintEnter: string
       hintNav: string
       hintBack: string
     }
@@ -2288,14 +2289,17 @@ export const en: Messages = {
       },
       pathPlaceholderLocal: '~/Projects/',
       pathPlaceholderRemote: '/home/superone/',
-      repoPlaceholderGithub: 'owner/repo or GitHub URL',
+      repoPlaceholderGithub: 'Filter repos, owner/repo, or GitHub URL',
       repoPlaceholderUrl: 'https://github.com/owner/repo.git',
       destinationPlaceholder: 'Where should it be cloned?',
       repository: 'Repository',
       repoInvalidGithub: 'Type owner/ to search, or paste a GitHub URL.',
       repoInvalidUrl: 'Enter an https, ssh or git clone URL.',
       githubRepos: 'Repositories',
+      githubYourRepos: 'Your repositories',
       githubNoRepos: 'No repositories matched.',
+      githubNeedCli:
+        'Install and sign in to GitHub CLI (gh) to list your repos, or type owner/repo.',
       githubPrivate: 'Private',
       clonesInto: 'Clones into {{path}}',
       cloning: 'Cloning...',
@@ -2313,13 +2317,13 @@ export const en: Messages = {
       cloneHere: 'Clone here',
       noDirectories: 'No directories here.',
       actions: {
-        select: 'Select',
-        continue: 'Continue',
-        add: 'Add',
-        clone: 'Clone',
+        // Lowercase: also used as the footer ↵ shortcut label.
+        select: 'select',
+        continue: 'continue',
+        add: 'add',
+        clone: 'clone',
       },
       hintTab: 'autocomplete',
-      hintEnter: 'confirm',
       hintNav: 'navigate',
       hintBack: 'back',
     },

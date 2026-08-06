@@ -7,8 +7,10 @@ const browsePath = vi.fn()
 const openProject = vi.fn()
 const cloneRepository = vi.fn()
 const searchGithubRepos = vi.fn()
+const listMyGithubRepos = vi.fn()
 const getAppSettings = vi.fn()
 const saveAppSettings = vi.fn()
+const selectFolder = vi.fn()
 
 function renderDialog(connectionId = 'local') {
   const onOpened = vi.fn()
@@ -63,10 +65,31 @@ describe('add-project dialog', () => {
         private: true,
       },
     ])
+    listMyGithubRepos.mockResolvedValue({
+      repos: [
+        {
+          owner: 'me',
+          name: 'alpha',
+          fullName: 'me/alpha',
+          description: 'First',
+          private: false,
+        },
+        {
+          owner: 'me',
+          name: 'beta',
+          fullName: 'me/beta',
+          description: null,
+          private: true,
+        },
+      ],
+      hasMore: false,
+      unavailable: false,
+    })
     getAppSettings.mockResolvedValue({ defaultClonePaths: {} })
     saveAppSettings.mockImplementation(async (patch: { defaultClonePaths?: Record<string, string> }) => ({
       defaultClonePaths: patch.defaultClonePaths ?? {},
     }))
+    selectFolder.mockResolvedValue(null)
     ;(window as unknown as Record<string, unknown>).environment = {
       browsePath,
       openProject,
@@ -75,7 +98,8 @@ describe('add-project dialog', () => {
     ;(window as unknown as Record<string, unknown>).app = {
       ...((window as unknown as Record<string, unknown>).app as object),
       searchGithubRepos,
-      selectFolder: vi.fn(),
+      listMyGithubRepos,
+      selectFolder,
       getAppSettings,
       saveAppSettings,
     }
@@ -116,6 +140,27 @@ describe('add-project dialog', () => {
       }),
     )
     await waitFor(() => expect(onOpened).toHaveBeenCalled())
+  })
+
+  it('native Browse opens at the listed path and adds the selection immediately', async () => {
+    const { onOpened } = renderDialog()
+    selectFolder.mockResolvedValueOnce('/Users/dev/Projects/notes')
+
+    fireEvent.click(screen.getByText('Local Folder'))
+    await waitFor(() => expect(browsePath).toHaveBeenCalledWith('local', '~/'))
+    await screen.findByText('notes')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Browse' }))
+    await waitFor(() =>
+      expect(selectFolder).toHaveBeenCalledWith('/Users/dev/Projects'),
+    )
+    await waitFor(() =>
+      expect(openProject).toHaveBeenCalledWith('local', '/Users/dev/Projects/notes', {
+        createIfMissing: false,
+      }),
+    )
+    await waitFor(() => expect(onOpened).toHaveBeenCalled())
+    // Picker commit skips a second confirm — dialog closes via onOpenChange(false).
   })
 
   it('keeps typed and absolute prefixes as they are while navigating', async () => {
@@ -164,7 +209,6 @@ describe('add-project dialog', () => {
     // Missing path appears as its own "Create" list group, not a free-text banner.
     await waitFor(() => expect(screen.getByText('Create')).toBeInTheDocument())
     expect(screen.getByRole('button', { name: /Create directory/ })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Add' })).toBeEnabled()
 
     fireEvent.click(screen.getByRole('button', { name: /Create directory/ }))
     await waitFor(() =>
@@ -248,10 +292,27 @@ describe('add-project dialog', () => {
     expect(screen.getByText('Desktop')).toBeInTheDocument()
   })
 
+  it('lists the authenticated user repos when opening GitHub (via gh)', async () => {
+    renderDialog()
+    fireEvent.click(screen.getByText('GitHub Repository'))
+
+    await waitFor(() => expect(listMyGithubRepos).toHaveBeenCalledWith(1, 20))
+    await screen.findByText('Your repositories')
+    expect(screen.getByRole('button', { name: /me\/alpha/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /me\/beta/ })).toBeInTheDocument()
+
+    // Name filter stays on "my repos" path — does not call owner search.
+    fireEvent.change(input(), { target: { value: 'alp' } })
+    await screen.findByRole('button', { name: /me\/alpha/ })
+    expect(screen.queryByRole('button', { name: /me\/beta/ })).not.toBeInTheDocument()
+    expect(searchGithubRepos).not.toHaveBeenCalled()
+  })
+
   it('searches GitHub repos after owner/ and shows the owner avatar', async () => {
     renderDialog()
 
     fireEvent.click(screen.getByText('GitHub Repository'))
+    await waitFor(() => expect(listMyGithubRepos).toHaveBeenCalled())
     fireEvent.change(input(), { target: { value: 'WHQ25/' } })
 
     await waitFor(() => expect(searchGithubRepos).toHaveBeenCalledWith('WHQ25'))
@@ -286,12 +347,16 @@ describe('add-project dialog', () => {
     renderDialog()
 
     fireEvent.change(input(), { target: { value: 'github' } })
-    fireEvent.keyDown(input(), { key: 'Enter', isComposing: true })
+    // Drive the compositionstart handler (imeComposingRef) — more reliable in jsdom
+    // than synthesizing isComposing on the keyboard event.
+    fireEvent.compositionStart(input())
+    fireEvent.keyDown(input(), { key: 'Enter' })
 
-    // Still on the source picker — composition Enter must not select a source.
+    // Still filtering sources (not advanced into the GitHub repo step).
     expect(rowTexts().some((text) => text.includes('GitHub Repository'))).toBe(true)
     expect(input().value).toBe('github')
-    expect(screen.getByRole('button', { name: 'Select' })).toBeInTheDocument()
+    // Repo step placeholder would replace the source search placeholder.
+    expect(input().placeholder).toMatch(/path|source/i)
   })
 
   it('ignores Enter while keyCode is 229 (legacy IME marker)', () => {
@@ -326,22 +391,23 @@ describe('add-project dialog', () => {
     await screen.findByText('notes')
 
     fireEvent.change(input(), { target: { value: '~/Projects/notes' } })
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Add' })).toBeEnabled())
-    // Existing path: only the Directories group, no Create section.
+    // Exact existing leaf: listing settles with a notes hit, never a create row.
+    await waitFor(() => expect(screen.getByRole('button', { name: /^notes/i })).toBeInTheDocument())
     expect(screen.queryByText('Create')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Create directory/ })).not.toBeInTheDocument()
   })
 
-  it('keeps the submit disabled until the repository input parses', () => {
+  it('does not advance on Enter until the repository input parses', () => {
     renderDialog()
     fireEvent.click(screen.getByText('GitHub Repository'))
-    expect(screen.getByRole('button', { name: 'Continue' })).toBeDisabled()
 
     fireEvent.change(input(), { target: { value: 'WHQ25' } })
-    expect(screen.getByRole('button', { name: 'Continue' })).toBeDisabled()
+    fireEvent.keyDown(input(), { key: 'Enter' })
+    // Half-typed owner is not enough to leave the repo step.
+    expect(screen.queryByText('Repository')).not.toBeInTheDocument()
 
     fireEvent.change(input(), { target: { value: 'WHQ25/super-one' } })
-    expect(screen.getByRole('button', { name: 'Continue' })).toBeEnabled()
+    fireEvent.keyDown(input(), { key: 'Enter' })
   })
 
   it('accepts a pasted GitHub URL without requiring a search hit', async () => {
@@ -356,7 +422,6 @@ describe('add-project dialog', () => {
     await screen.findByText('WHQ25/super-one')
     expect(screen.getByText('https://github.com/WHQ25/super-one.git')).toBeInTheDocument()
     expect(searchGithubRepos).not.toHaveBeenCalled()
-    expect(screen.getByRole('button', { name: 'Continue' })).toBeEnabled()
 
     fireEvent.keyDown(input(), { key: 'Enter' })
     await screen.findByText('Repository')
@@ -438,6 +503,18 @@ describe('add-project dialog', () => {
 
     fireEvent.keyDown(input(), { key: 'Backspace' })
     expect(screen.getByText('Local Folder')).toBeInTheDocument()
+  })
+
+  it('hides the back control on local browse and returns home when the path is cleared', async () => {
+    renderDialog()
+    fireEvent.click(screen.getByText('Local Folder'))
+    await waitFor(() => expect(browsePath).toHaveBeenCalled())
+    // Path is prefilled with ~/ — footer has no ⌫ back hint on browse.
+    expect(screen.queryByText('back')).not.toBeInTheDocument()
+
+    fireEvent.change(input(), { target: { value: '' } })
+    await waitFor(() => expect(screen.getByText('Local Folder')).toBeInTheDocument())
+    expect(screen.getByText('GitHub Repository')).toBeInTheDocument()
   })
 
   it('surfaces a clone failure without closing the dialog', async () => {

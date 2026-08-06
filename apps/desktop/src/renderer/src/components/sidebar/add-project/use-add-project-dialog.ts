@@ -98,7 +98,11 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
   const [githubRepos, setGithubRepos] = useState<GithubRepoHit[]>([])
   const [githubSearchOwner, setGithubSearchOwner] = useState('')
   const [githubLoading, setGithubLoading] = useState(false)
+  const [githubLoadingMore, setGithubLoadingMore] = useState(false)
+  const [githubHasMore, setGithubHasMore] = useState(false)
   const [githubError, setGithubError] = useState<string | null>(null)
+  /** True when listing my repos failed because `gh` is missing / logged out. */
+  const [githubUnavailable, setGithubUnavailable] = useState(false)
   /** Saved default parent dir for this connection (destination step prefill). */
   const [defaultClonePath, setDefaultClonePath] = useState<string | null>(null)
   /** When true, successful clone writes the current path as defaultClonePath. */
@@ -109,6 +113,8 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
   const requestIdRef = useRef(0)
   const githubRequestIdRef = useRef(0)
   const githubCacheRef = useRef<Map<string, GithubRepoHit[]>>(new Map())
+  const githubMyPageRef = useRef(0)
+  const githubLoadingMoreRef = useRef(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
   const isPathStep = step.kind === 'browse' || step.kind === 'destination'
@@ -127,8 +133,13 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
     setGithubRepos([])
     setGithubSearchOwner('')
     setGithubLoading(false)
+    setGithubLoadingMore(false)
+    setGithubHasMore(false)
     setGithubError(null)
+    setGithubUnavailable(false)
     setSaveAsDefault(false)
+    githubMyPageRef.current = 0
+    githubLoadingMoreRef.current = false
     // Focus after paint so Tab completes the path instead of moving focus.
     requestAnimationFrame(() => inputRef.current?.focus())
   }, [open])
@@ -202,22 +213,37 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
     [isGithubRepoStep, query],
   )
 
-  // Load that owner's repos once `owner/` is typed (cached per owner for the session).
+  /** Full GitHub URL / ssh remote — skip list, show resolved preview (old path). */
+  const githubUrlQuery = useMemo(() => {
+    if (!isGithubRepoStep) return false
+    const value = query.trim()
+    if (!value) return false
+    return (
+      /^(?:https?:\/\/|ssh:\/\/|git@|git:\/\/)/i.test(value) ||
+      /^(?:www\.)?github\.com[/:]/i.test(value)
+    )
+  }, [isGithubRepoStep, query])
+
+  /**
+   * Default GitHub view: authenticated viewer's repos via `gh`.
+   * Yields to owner/` search and paste-URL resolution (the "old path").
+   */
+  const isGithubMyReposMode =
+    isGithubRepoStep && !githubSearch && !githubUrlQuery
+
+  // Owner search: load that owner's repos once `owner/` is typed (cached).
   useEffect(() => {
     if (!open || !isGithubRepoStep) {
       setGithubRepos([])
       setGithubSearchOwner('')
       setGithubLoading(false)
+      setGithubLoadingMore(false)
+      setGithubHasMore(false)
       setGithubError(null)
+      setGithubUnavailable(false)
       return
     }
-    if (!githubSearch) {
-      setGithubRepos([])
-      setGithubSearchOwner('')
-      setGithubLoading(false)
-      setGithubError(null)
-      return
-    }
+    if (!githubSearch) return
 
     const owner = githubSearch.owner
     const cached = githubCacheRef.current.get(owner.toLowerCase())
@@ -225,13 +251,19 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
       setGithubRepos(cached)
       setGithubSearchOwner(owner)
       setGithubLoading(false)
+      setGithubLoadingMore(false)
+      setGithubHasMore(false)
       setGithubError(null)
+      setGithubUnavailable(false)
       return
     }
 
     const requestId = ++githubRequestIdRef.current
     setGithubLoading(true)
+    setGithubLoadingMore(false)
+    setGithubHasMore(false)
     setGithubError(null)
+    setGithubUnavailable(false)
     setGithubSearchOwner(owner)
 
     const timer = window.setTimeout(() => {
@@ -255,6 +287,83 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
 
     return () => window.clearTimeout(timer)
   }, [open, isGithubRepoStep, githubSearch?.owner])
+
+  // URL paste: drop any list so the resolved-repo preview can take over.
+  useEffect(() => {
+    if (!open || !isGithubRepoStep || !githubUrlQuery) return
+    setGithubRepos([])
+    setGithubSearchOwner('')
+    setGithubLoading(false)
+    setGithubLoadingMore(false)
+    setGithubHasMore(false)
+    setGithubError(null)
+    setGithubUnavailable(false)
+  }, [open, isGithubRepoStep, githubUrlQuery])
+
+  // My repos (gh): first page when entering the GitHub step without owner/ or URL.
+  useEffect(() => {
+    if (!open || !isGithubMyReposMode) return
+
+    const requestId = ++githubRequestIdRef.current
+    setGithubSearchOwner('')
+    setGithubLoading(true)
+    setGithubLoadingMore(false)
+    setGithubError(null)
+    setGithubUnavailable(false)
+    setGithubHasMore(false)
+    githubMyPageRef.current = 0
+    githubLoadingMoreRef.current = false
+
+    void window.app
+      .listMyGithubRepos(1, 20)
+      .then((page) => {
+        if (requestId !== githubRequestIdRef.current) return
+        setGithubRepos(page.repos)
+        setGithubHasMore(page.hasMore)
+        setGithubUnavailable(page.unavailable)
+        githubMyPageRef.current = 1
+      })
+      .catch((err) => {
+        if (requestId !== githubRequestIdRef.current) return
+        setGithubRepos([])
+        setGithubHasMore(false)
+        setGithubUnavailable(true)
+        setGithubError(err instanceof Error ? err.message : String(err))
+      })
+      .finally(() => {
+        if (requestId === githubRequestIdRef.current) setGithubLoading(false)
+      })
+  }, [open, isGithubMyReposMode])
+
+  /** Infinite scroll: next page of the authenticated user's repos. */
+  const loadMoreGithubRepos = useCallback(() => {
+    if (!isGithubMyReposMode) return
+    if (!githubHasMore || githubLoading || githubLoadingMoreRef.current) return
+    githubLoadingMoreRef.current = true
+    setGithubLoadingMore(true)
+    const nextPage = githubMyPageRef.current + 1
+    const requestId = githubRequestIdRef.current
+    void window.app
+      .listMyGithubRepos(nextPage, 20)
+      .then((page) => {
+        if (requestId !== githubRequestIdRef.current) return
+        setGithubRepos((prev) => {
+          const seen = new Set(prev.map((r) => r.fullName.toLowerCase()))
+          const appended = page.repos.filter((r) => !seen.has(r.fullName.toLowerCase()))
+          return [...prev, ...appended]
+        })
+        setGithubHasMore(page.hasMore)
+        githubMyPageRef.current = nextPage
+      })
+      .catch(() => {
+        if (requestId !== githubRequestIdRef.current) return
+        setGithubHasMore(false)
+      })
+      .finally(() => {
+        githubLoadingMoreRef.current = false
+        if (requestId === githubRequestIdRef.current) setGithubLoadingMore(false)
+      })
+  }, [isGithubMyReposMode, githubHasMore, githubLoading])
 
   /** What the typed text looks like, so the picker can pre-select its source. */
   const detectedSource = useMemo(
@@ -427,22 +536,41 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
     input.directoryIcon,
   ])
 
-  /** Repos under the typed owner, filtered by the partial name after `/`. */
+  /**
+   * GitHub list rows: owner/` prefix filter, or free-text filter over my repos.
+   * URL paste leaves this empty so the resolved preview can show instead.
+   */
   const githubItems: AddProjectListItem[] = useMemo(() => {
-    if (!isGithubRepoStep || !githubSearch) return []
-    const prefix = githubSearch.repoPrefix.toLowerCase()
+    if (!isGithubRepoStep || githubUrlQuery) return []
+    if (!githubSearch && !isGithubMyReposMode) return []
+
+    const filter = githubSearch
+      ? githubSearch.repoPrefix.toLowerCase()
+      : query.trim().toLowerCase()
+
     return githubRepos
       .map((repo) => {
-        // Match against fullName so highlight indices line up with the label.
-        const match = prefix
-          ? fuzzyMatch(prefix, repo.fullName)
+        // Owner search matches fullName; my-repos filter matches name or fullName.
+        const haystack = githubSearch
+          ? repo.fullName
+          : filter.includes('/')
+            ? repo.fullName
+            : repo.name
+        const match = filter
+          ? fuzzyMatch(filter, haystack)
           : { match: true, score: 0, indices: [] as number[] }
-        return { repo, match }
+        // For my-repos name-only filter, rematch fullName for highlight when needed.
+        const label = repo.fullName
+        const labelMatch =
+          filter && !githubSearch && !filter.includes('/')
+            ? fuzzyMatch(filter, label)
+            : match
+        return { repo, match, labelMatch }
       })
       .filter(({ match }) => match.match)
       .sort((a, b) => (b.match.score ?? 0) - (a.match.score ?? 0))
-      .slice(0, 50)
-      .map(({ repo, match }) => ({
+      .slice(0, githubSearch ? 50 : 200)
+      .map(({ repo, labelMatch }) => ({
         key: repo.fullName,
         // Same avatar URL marketplace uses for GitHub-hosted sources.
         icon: createElement('img', {
@@ -453,12 +581,20 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
           referrerPolicy: 'no-referrer',
         }),
         label: repo.fullName,
-        matchIndices: match.indices,
+        matchIndices: labelMatch.indices,
         hint: repo.private
           ? t('sidebar.addProject.githubPrivate')
           : (repo.description ?? undefined),
       }))
-  }, [isGithubRepoStep, githubSearch, githubRepos, t])
+  }, [
+    isGithubRepoStep,
+    githubUrlQuery,
+    githubSearch,
+    isGithubMyReposMode,
+    githubRepos,
+    query,
+    t,
+  ])
 
   const listSections: AddProjectListSection[] = useMemo(() => {
     if (step.kind === 'source') {
@@ -467,9 +603,18 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
         : []
     }
     if (isGithubRepoStep) {
-      return githubItems.length
-        ? [{ key: 'github', label: t('sidebar.addProject.githubRepos'), items: githubItems }]
-        : []
+      if (githubItems.length === 0) return []
+      return [
+        {
+          key: 'github',
+          label: t(
+            isGithubMyReposMode
+              ? 'sidebar.addProject.githubYourRepos'
+              : 'sidebar.addProject.githubRepos',
+          ),
+          items: githubItems,
+        },
+      ]
     }
     if (isPathStep) {
       const sections: AddProjectListSection[] = []
@@ -505,6 +650,7 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
     step.kind,
     sourceItems,
     isGithubRepoStep,
+    isGithubMyReposMode,
     githubItems,
     isPathStep,
     willCreatePath,
@@ -583,6 +729,13 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
     goToStep({ kind: 'source' }, '')
   }, [step, goToStep])
 
+  // Local browse has no back button — empty path is the way home to the source picker.
+  useEffect(() => {
+    if (!open || step.kind !== 'browse') return
+    if (query.trim() !== '') return
+    goToStep({ kind: 'source' }, '')
+  }, [open, step.kind, query, goToStep])
+
   /**
    * `carry` is the already-typed text when it matched this source — it moves on
    * verbatim (no separator fixups) so a half-typed leaf still resolves against
@@ -642,54 +795,65 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
     [connectionId, onOpened, onOpenChange, t],
   )
 
-  const cloneProject = useCallback(async () => {
-    if (step.kind !== 'destination' || !resolved.path) return
-    setBusy(true)
-    setSubmitError('')
-    try {
-      const project = await window.environment.cloneRepository(connectionId, {
-        remoteUrl: step.remoteUrl,
-        parentPath: resolved.path,
-        directoryName: step.repoName,
-      })
-      // Persist (or clear) the default clone parent after a successful clone.
-      const currentDir = ensureBrowseDirectoryPath(query.trim() || resolved.path)
-      if (saveAsDefault && currentDir) {
-        await window.app.saveAppSettings({
-          defaultClonePaths: { [connectionId]: currentDir },
+  /**
+   * @param parentPathOverride — absolute parent from the native folder picker
+   *   (skips waiting for `resolved` to catch up after a programmatic setQuery).
+   */
+  const cloneProject = useCallback(
+    async (parentPathOverride?: string) => {
+      if (step.kind !== 'destination') return
+      const parentPath = parentPathOverride ?? resolved.path
+      if (!parentPath) return
+      setBusy(true)
+      setSubmitError('')
+      try {
+        const project = await window.environment.cloneRepository(connectionId, {
+          remoteUrl: step.remoteUrl,
+          parentPath,
+          directoryName: step.repoName,
         })
-        defaultClonePathRef.current = currentDir
-        setDefaultClonePath(currentDir)
-      } else if (
-        !saveAsDefault &&
-        defaultClonePath &&
-        ensureBrowseDirectoryPath(defaultClonePath) === currentDir
-      ) {
-        // Unchecked while still on the saved default → clear it.
-        await window.app.saveAppSettings({
-          defaultClonePaths: { [connectionId]: '' },
-        })
-        defaultClonePathRef.current = null
-        setDefaultClonePath(null)
+        // Persist (or clear) the default clone parent after a successful clone.
+        const currentDir = ensureBrowseDirectoryPath(
+          parentPathOverride ?? (query.trim() || parentPath),
+        )
+        if (saveAsDefault && currentDir) {
+          await window.app.saveAppSettings({
+            defaultClonePaths: { [connectionId]: currentDir },
+          })
+          defaultClonePathRef.current = currentDir
+          setDefaultClonePath(currentDir)
+        } else if (
+          !saveAsDefault &&
+          defaultClonePath &&
+          ensureBrowseDirectoryPath(defaultClonePath) === currentDir
+        ) {
+          // Unchecked while still on the saved default → clear it.
+          await window.app.saveAppSettings({
+            defaultClonePaths: { [connectionId]: '' },
+          })
+          defaultClonePathRef.current = null
+          setDefaultClonePath(null)
+        }
+        onOpened(project)
+        onOpenChange(false)
+      } catch (err) {
+        setSubmitError(formatAddProjectError(err, t))
+      } finally {
+        setBusy(false)
       }
-      onOpened(project)
-      onOpenChange(false)
-    } catch (err) {
-      setSubmitError(formatAddProjectError(err, t))
-    } finally {
-      setBusy(false)
-    }
-  }, [
-    step,
-    resolved.path,
-    connectionId,
-    onOpened,
-    onOpenChange,
-    t,
-    query,
-    saveAsDefault,
-    defaultClonePath,
-  ])
+    },
+    [
+      step,
+      resolved.path,
+      connectionId,
+      onOpened,
+      onOpenChange,
+      t,
+      query,
+      saveAsDefault,
+      defaultClonePath,
+    ],
+  )
 
   const activateItem = useCallback(
     (index: number) => {
@@ -852,11 +1016,32 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
     navigateIntoSegment(item.key)
   }, [items, safeSelectedIndex, parentPath, navigateTo, navigateIntoSegment, query])
 
+  /**
+   * System folder picker: open at the directory the user is already browsing,
+   * then commit immediately (add project / clone into parent) — no second confirm.
+   */
   const pickNativeFolder = useCallback(async () => {
-    const picked = await window.app.selectFolder()
+    // Prefer the absolute path the host listed; fall back to a resolved existing
+    // path so the picker lands next to the typed location rather than $HOME.
+    const defaultPath =
+      listedPath || (resolved.exists && resolved.path ? resolved.path : undefined) || undefined
+    const picked = await window.app.selectFolder(defaultPath)
     if (!picked) return
-    navigateTo(picked)
-  }, [navigateTo])
+    if (step.kind === 'browse') {
+      void addProject(picked, false)
+      return
+    }
+    if (step.kind === 'destination') {
+      void cloneProject(picked)
+    }
+  }, [
+    listedPath,
+    resolved.exists,
+    resolved.path,
+    step.kind,
+    addProject,
+    cloneProject,
+  ])
 
   const moveSelection = useCallback(
     (delta: number) => {
@@ -898,8 +1083,14 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
     browseLoading,
     browseError,
     githubLoading,
+    githubLoadingMore,
+    githubHasMore,
     githubError,
+    githubUnavailable,
     githubSearchOwner,
+    githubUrlQuery,
+    isGithubMyReposMode,
+    loadMoreGithubRepos,
     busy,
     submitError,
     resolved,

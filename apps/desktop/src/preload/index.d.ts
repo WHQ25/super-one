@@ -117,6 +117,21 @@ interface AppAPI {
       private: boolean
     }>
   >
+  /** Authenticated viewer's repos via `gh` (add-project GitHub default list). */
+  listMyGithubRepos(
+    page?: number,
+    perPage?: number,
+  ): Promise<{
+    repos: Array<{
+      owner: string
+      name: string
+      fullName: string
+      description: string | null
+      private: boolean
+    }>
+    hasMore: boolean
+    unavailable: boolean
+  }>
   cacheRemoteImage(url: string): Promise<string | null>
   resolveFavicon(url: string, isDark: boolean): Promise<string | null>
   cacheFavicon(pageUrl: string, faviconUrl: string, isDark: boolean): Promise<void>

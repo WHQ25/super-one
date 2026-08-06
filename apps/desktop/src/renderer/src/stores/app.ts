@@ -219,6 +219,10 @@ async function applyProjectSelection(
       useSettingsStore.getState().setProviderScope(connectionId)
       const projectKey = remoteProjectKey(connectionId, project.path || hostPath)
       const projectId = options?.projectId ?? project.projectId
+      // Match local: ensureSession seeds a draft "New session" row. Do not
+      // auto-switch to the latest node history entry — sidebar history /
+      // explicit New session owns that. First send materializes a real node
+      // session via resolveNodeSessionId.
       useChatStore.getState().ensureSession(projectKey)
       useChatStore.setState({ activeProject: projectKey })
       set({
@@ -227,20 +231,6 @@ async function applyProjectSelection(
         selectedHostConnectionId: connectionId,
         view: useAppStore.getState().view === 'startup' ? 'main' : useAppStore.getState().view,
       })
-      // Prefer the latest existing node session. Do not auto-create: empty
-      // remote projects stay session-less until New session / first send
-      // (resolveNodeSessionId materializes a real node session on send).
-      if (projectId) {
-        try {
-          const rows = await window.environment.listSessions(connectionId, projectId)
-          const sessionId = rows[0]?.sessionId
-          if (sessionId) {
-            await useChatStore.getState().switchSession(sessionId)
-          }
-        } catch (sessionErr) {
-          console.warn('[app] remote session hydrate failed (send will materialize)', sessionErr)
-        }
-      }
       return true
     } catch (error) {
       console.error('[app] failed to select remote project', {

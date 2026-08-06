@@ -40,8 +40,17 @@ vi.mock('./activity-view-state', () => ({
   isInstanceReferencedInSavedSessions: () => false,
 }))
 
-const mockInitializeHarness = vi.fn().mockResolvedValue(undefined)
-const mockSetHarnessResources = vi.fn()
+const {
+  mockInitializeHarness,
+  mockSetHarnessResources,
+  mockEnsureSession,
+  mockSwitchSession,
+} = vi.hoisted(() => ({
+  mockInitializeHarness: vi.fn().mockResolvedValue(undefined),
+  mockSetHarnessResources: vi.fn(),
+  mockEnsureSession: vi.fn(),
+  mockSwitchSession: vi.fn(async (_sessionId: string) => {}),
+}))
 
 vi.mock('./chat', () => {
   const state = { projectSessions: {} as Record<string, unknown>, activeProject: null as string | null }
@@ -55,12 +64,8 @@ vi.mock('./chat', () => {
         getState: () => ({
           setHarnessResources: mockSetHarnessResources,
           initializeHarness: mockInitializeHarness,
-          ensureSession: vi.fn(),
-          switchSession: vi.fn(async (sessionId: string) => {
-            state.activeProject = state.activeProject
-            void sessionId
-            notify()
-          }),
+          ensureSession: mockEnsureSession,
+          switchSession: mockSwitchSession,
           focusProject: vi.fn(async (projectPath: string) => {
             state.activeProject = projectPath
             notify()
@@ -292,6 +297,30 @@ describe('selectProject', () => {
     expect(mockEnvironment.openProject).toHaveBeenCalledWith('env-remote', '/work/remote-app')
     expect(useAppStore.getState().currentFolder).toBe('remote:env-remote:/work/remote-app')
     expect(useChatStore.getState().activeProject).toBe('remote:env-remote:/work/remote-app')
+  })
+
+  it('does not auto-select an existing remote session (stays on New session draft)', async () => {
+    mockEnvironment.openProject.mockResolvedValue({
+      projectId: 'p1',
+      path: '/work/remote-app',
+      name: 'remote-app',
+    })
+    mockEnvironment.listSessions.mockResolvedValue([
+      { sessionId: 'hist-1', title: 'yesterday', lastActiveAt: '2026-08-01T00:00:00.000Z' },
+    ])
+    mockEnsureSession.mockClear()
+    mockSwitchSession.mockClear()
+    mockEnvironment.listSessions.mockClear()
+    resetStore({ selectedHostConnectionId: 'env-remote' })
+
+    await useAppStore.getState().selectProject('remote:env-remote:/work/remote-app', {
+      connectionId: 'env-remote',
+      projectId: 'p1',
+    })
+
+    expect(mockEnvironment.listSessions).not.toHaveBeenCalled()
+    expect(mockSwitchSession).not.toHaveBeenCalled()
+    expect(mockEnsureSession).toHaveBeenCalledWith('remote:env-remote:/work/remote-app')
   })
 })
 

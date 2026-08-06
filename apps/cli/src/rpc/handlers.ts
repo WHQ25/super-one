@@ -13,6 +13,7 @@ import {
 import { isCodexBinaryOverrideRunnable } from '../session/codex-turn-runner'
 import { isClaudeBinaryOverrideRunnable } from '../session/claude-turn-runner'
 import { assertSessionHarnessRuntimeReady, probeHarnessReadiness } from '../session/harness-runtime-ready'
+import { resolveCliReleaseVersion } from '../cli-release-version'
 import { cloneRepository } from '@superone/shared/git-clone'
 import { existsSync, mkdirSync, readdirSync, statSync } from 'node:fs'
 import { join as pathJoin, resolve as pathResolve } from 'node:path'
@@ -567,11 +568,19 @@ function handleDescriptor(ctx: RpcContext): RpcResult {
   if (isClaudeBinaryOverrideRunnable() && !harnessIds.includes('claude')) {
     harnessIds.push('claude')
   }
+  let cliVersion: string | undefined
+  try {
+    cliVersion = resolveCliReleaseVersion()
+  } catch {
+    cliVersion = process.env.SUPERONE_CLI_VERSION?.trim() || undefined
+  }
+
   const descriptor: ExecutionEnvironmentDescriptor = {
     environmentId: ctx.identity.environmentId,
     label: ctx.identity.label,
     platform: { os: mapOs(), arch: arch() },
     nodeVersion: process.version,
+    cliVersion,
     protocolVersion: PROTOCOL_GENERATION.current,
     capabilities: {
       ...PHASE1_NODE_CAPABILITIES,

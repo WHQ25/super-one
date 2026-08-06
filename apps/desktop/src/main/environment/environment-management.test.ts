@@ -441,12 +441,21 @@ describe('add over SSH without a remote path', () => {
     return { host, bootstrapExec }
   }
 
-  it('reuses an existing remote installation instead of reinstalling', async () => {
+  it('reuses an existing remote installation when versions match', async () => {
     const rt = await bootNode()
     let installCalls = 0
     const { host, bootstrapExec } = hostWith(rt, {
-      probe: { ...linuxProbe, superonePath: '/home/superone/.local/bin/superone' },
+      probe: {
+        ...linuxProbe,
+        superonePath: '/home/superone/.local/bin/superone',
+        // Matches hostWith defaultCliVersion
+        superoneVersion: '1.2.3',
+      },
       installNode: async () => {
+        installCalls += 1
+        throw new Error('should not install')
+      },
+      installFromRegistry: async () => {
         installCalls += 1
         throw new Error('should not install')
       },
@@ -458,6 +467,60 @@ describe('add over SSH without a remote path', () => {
     expect(bootstrapExec).toEqual(['/home/superone/.local/bin/superone'])
     expect(result.installed).toBeUndefined()
     expect(result.descriptor.environmentId).toBe(rt.identity.environmentId)
+    host.dispose()
+  })
+
+  it('upgrades an older remote CLI to the desktop version', async () => {
+    const rt = await bootNode()
+    const registry: RegistryInstallOptions[] = []
+    const { host, bootstrapExec } = hostWith(rt, {
+      probe: {
+        ...linuxProbe,
+        superonePath: '/home/superone/.local/bin/superone',
+        superoneVersion: '1.0.0',
+      },
+      installFromRegistry: async (opts) => {
+        registry.push(opts)
+        return {
+          remoteExec: '/home/superone/.local/bin/superone',
+          version: opts.version,
+          target: 'registry',
+          sha256: '',
+          source: 'registry',
+        }
+      },
+    })
+
+    const result = await host.addRemoteOverSsh({ destination: 'superone@lab' })
+
+    expect(registry).toHaveLength(1)
+    expect(registry[0]!.version).toBe('1.2.3')
+    expect(bootstrapExec).toEqual(['/home/superone/.local/bin/superone'])
+    expect(result.installed?.source).toBe('registry')
+    expect(result.warnings.some((w) => /older than this desktop/i.test(w))).toBe(true)
+    host.dispose()
+  })
+
+  it('blocks when the remote CLI is newer than the desktop', async () => {
+    const rt = await bootNode()
+    let installCalls = 0
+    const { host } = hostWith(rt, {
+      probe: {
+        ...linuxProbe,
+        superonePath: '/home/superone/.local/bin/superone',
+        superoneVersion: '9.9.9-alpha',
+      },
+      installFromRegistry: async () => {
+        installCalls += 1
+        throw new Error('should not install')
+      },
+    })
+
+    await expect(host.addRemoteOverSsh({ destination: 'superone@lab' })).rejects.toMatchObject({
+      code: 'desktop_upgrade_required',
+      message: expect.stringMatching(/9\.9\.9-alpha/),
+    })
+    expect(installCalls).toBe(0)
     host.dispose()
   })
 
@@ -558,7 +621,12 @@ describe('add over SSH without a remote path', () => {
   it('warns instead of failing when the host has no systemd', async () => {
     const rt = await bootNode()
     const { host } = hostWith(rt, {
-      probe: { ...linuxProbe, superonePath: '/usr/local/bin/superone', hasSystemd: false },
+      probe: {
+        ...linuxProbe,
+        superonePath: '/usr/local/bin/superone',
+        superoneVersion: '1.2.3',
+        hasSystemd: false,
+      },
     })
 
     const result = await host.addRemoteOverSsh({ destination: 'superone@lab' })

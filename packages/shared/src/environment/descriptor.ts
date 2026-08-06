@@ -16,7 +16,16 @@ export interface ExecutionEnvironmentDescriptor {
   environmentId: string
   label: string
   platform: ExecutionEnvironmentPlatform
+  /**
+   * JavaScript runtime version on the node (`process.version`), not the SuperOne
+   * CLI package version. See `cliVersion` for the product release string.
+   */
   nodeVersion: string
+  /**
+   * SuperOne CLI release version (lockstep with desktop, e.g. `0.49.5-alpha`).
+   * Optional for older nodes; clients treat missing as unknown.
+   */
+  cliVersion?: string
   protocolVersion: number
   capabilities: EnvironmentCapabilities
   /** Optional handshake ranges; older peers may omit these. */

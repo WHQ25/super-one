@@ -24,6 +24,8 @@ export interface EnvironmentListItem {
   nodePublicKeyFingerprint?: string
   platform?: { os: string; arch: string }
   nodeVersion?: string
+  /** SuperOne CLI package version when known (not Node.js runtime). */
+  cliVersion?: string
   protocolVersion?: number
   capabilities?: EnvironmentCapabilities
   endpointProfiles: EndpointProfile[]
@@ -36,7 +38,7 @@ export interface EnvironmentListItem {
 
 /**
  * Progress pushed while an environment is being added over SSH.
- * `installing` only appears when the host had no `superone` yet.
+ * `installing` appears when the host has no CLI yet or needs a version upgrade.
  * - `npm` — registry path (`@super-one/cli`)
  * - `upload` / `verify` / `extract` / `activate` — local dist upload path
  */

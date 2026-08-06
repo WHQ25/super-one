@@ -11,6 +11,7 @@
  *   status [--home DIR]
  *   identity [--home DIR]
  *   identity regenerate [--home DIR]
+ *   version
  *   install-systemd [--home DIR] [--exec PATH]
  *   uninstall-systemd
  *   systemd-status
@@ -20,6 +21,7 @@
 import { homedir } from 'node:os'
 import { resolve } from 'node:path'
 import { DEFAULT_BIND_HOST, DEFAULT_BIND_PORT, resolveNodeHome } from './config'
+import { resolveCliReleaseVersion } from './cli-release-version'
 import { loadOrCreateIdentity, regenerateIdentity } from './identity'
 import { createLocalPairingToken, readRuntimeStatus, startNodeRuntime } from './runtime'
 import {
@@ -38,6 +40,7 @@ Commands:
   status [--home DIR]
   identity [--home DIR]
   identity regenerate [--home DIR]
+  version
   install-systemd [--home DIR] [--exec PATH] [--host HOST] [--port PORT]
   uninstall-systemd
   systemd-status
@@ -159,6 +162,7 @@ async function main(): Promise<void> {
             environmentId: identity.environmentId,
             nodePublicKeyFingerprint: identity.publicKeyFingerprint,
             bindingHash: identity.bindingHash,
+            cliVersion: resolveCliReleaseVersion(),
           },
           null,
           2,
@@ -175,11 +179,18 @@ async function main(): Promise<void> {
           bindingHash: identity.bindingHash,
           label: identity.label,
           nodeHome,
+          cliVersion: resolveCliReleaseVersion(),
         },
         null,
         2,
       ),
     )
+    return
+  }
+
+  if (cmd === 'version') {
+    // One line for shell/probe scripts; keep JSON on identity for structured use.
+    console.log(resolveCliReleaseVersion())
     return
   }
 

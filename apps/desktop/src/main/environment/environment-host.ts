@@ -13,7 +13,11 @@ import type {
 import {
   DEFAULT_NODE_REMOTE_PORT,
   DEFAULT_REMOTE_INSTALL_SOURCE,
+  DESKTOP_UPGRADE_REQUIRED,
+  decideRemoteCliAction,
+  desktopUpgradeRequiredMessage,
   selectEndpointWithFailover,
+  shouldBlockDesktopForNewerNode,
   tailscaleEndpoint,
   relayEndpoint,
   tunnelSpecFromEndpoint,
@@ -1637,6 +1641,7 @@ export class EnvironmentHost {
         nodePublicKeyFingerprint: known.nodePublicKeyFingerprint,
         platform: descriptor?.platform,
         nodeVersion: descriptor?.nodeVersion,
+        cliVersion: descriptor?.cliVersion,
         protocolVersion: descriptor?.protocolVersion,
         capabilities: descriptor?.capabilities,
         endpointProfiles: known.endpointProfiles,
@@ -1663,6 +1668,13 @@ export class EnvironmentHost {
 
     const baseUrl = await this.resolveBaseUrl(known)
     const descriptor = await this.connections.connectExisting(connectionId, baseUrl)
+    try {
+      this.assertDesktopNotOlderThanNode(descriptor.cliVersion)
+    } catch (err) {
+      // Drop the socket so the UI does not show a half-connected remote.
+      this.disconnect(connectionId)
+      throw err
+    }
     this.startHostActionConsumer(connectionId)
     return descriptor
   }
@@ -1732,35 +1744,56 @@ export class EnvironmentHost {
       const blocker = preflightBlocker(probe, installSource)
       if (blocker) throw Object.assign(new Error(blocker), { code: 'failed_precondition' })
 
-      if (probe.superonePath) {
-        remoteExec = probe.superonePath
-      } else if (installSource === 'upload') {
-        const artifact = this.findArtifact(probe.distTarget!)
-        if (!artifact) {
-          throw Object.assign(new Error(missingArtifactMessage(probe.distTarget!)), {
-            code: 'failed_precondition',
-          })
+      const desktopVersion = this.resolveRegistryVersion(input.packageVersion)
+      const decision = decideRemoteCliAction({
+        desktopVersion,
+        remotePath: probe.superonePath,
+        remoteVersion: probe.superoneVersion,
+      })
+
+      if (decision.action === 'upgrade_desktop') {
+        throw Object.assign(new Error(decision.message), { code: decision.code })
+      }
+
+      if (decision.action === 'reuse') {
+        remoteExec = probe.superonePath!
+      } else if (decision.action === 'install' || decision.action === 'upgrade_node' || decision.action === 'upgrade_node_unknown') {
+        if (decision.action === 'upgrade_node') {
+          warnings.push(
+            `Remote SuperOne CLI ${decision.remoteVersion} is older than this desktop (${decision.targetVersion}); upgrading the node.`,
+          )
+        } else if (decision.action === 'upgrade_node_unknown') {
+          warnings.push(
+            `Remote SuperOne CLI version could not be read at ${decision.remotePath}; installing ${decision.targetVersion}.`,
+          )
         }
-        installed = await this.installNode({
-          ...sshTarget,
-          tarballPath: artifact.path,
-          version: artifact.version,
-          distTarget: artifact.target,
-          remoteHome: probe.home,
-          previousVersion: probe.superoneVersion ?? undefined,
-          onProgress: (step, detail) => onProgress?.({ phase: 'installing', step, detail }),
-        })
-        remoteExec = installed.remoteExec
-      } else {
-        const version = this.resolveRegistryVersion(input.packageVersion)
-        installed = await this.installFromRegistry({
-          ...sshTarget,
-          version,
-          remoteHome: probe.home,
-          previousVersion: probe.superoneVersion ?? undefined,
-          onProgress: (step, detail) => onProgress?.({ phase: 'installing', step, detail }),
-        })
-        remoteExec = installed.remoteExec
+        if (installSource === 'upload') {
+          const artifact = this.findArtifact(probe.distTarget!)
+          if (!artifact) {
+            throw Object.assign(new Error(missingArtifactMessage(probe.distTarget!)), {
+              code: 'failed_precondition',
+            })
+          }
+          installed = await this.installNode({
+            ...sshTarget,
+            tarballPath: artifact.path,
+            version: artifact.version,
+            distTarget: artifact.target,
+            remoteHome: probe.home,
+            previousVersion: probe.superoneVersion ?? undefined,
+            onProgress: (step, detail) => onProgress?.({ phase: 'installing', step, detail }),
+          })
+          remoteExec = installed.remoteExec
+        } else {
+          installed = await this.installFromRegistry({
+            ...sshTarget,
+            version: decision.targetVersion,
+            remoteHome: probe.home,
+            previousVersion: probe.superoneVersion ?? undefined,
+            onProgress: (step, detail) => onProgress?.({ phase: 'installing', step, detail }),
+          })
+          remoteExec = installed.remoteExec
+        }
       }
 
       if (!probe.hasSystemd) {
@@ -1802,6 +1835,15 @@ export class EnvironmentHost {
         label: input.label || input.destination,
         endpointProfiles: [endpoint],
       })
+      // Pairing can succeed against a node that is still newer than this desktop
+      // (explicit remoteExec path, or version read only after descriptor).
+      try {
+        this.assertDesktopNotOlderThanNode(paired.descriptor.cliVersion)
+      } catch (err) {
+        this.connections.forget(paired.connectionId)
+        boot.forward.stop()
+        throw err
+      }
       this.connections.updateKnown(paired.connectionId, {
         preferredEndpointId: 'ssh',
         installationProfile: 'systemd-user',
@@ -1839,6 +1881,22 @@ export class EnvironmentHost {
       ),
       { code: 'failed_precondition' },
     )
+  }
+
+  /**
+   * Multi-client rule: never let an older desktop use a newer node CLI.
+   * The node is a shared resource; only upgrading this desktop is safe.
+   */
+  private assertDesktopNotOlderThanNode(remoteCliVersion: string | null | undefined): void {
+    let desktopVersion: string
+    try {
+      desktopVersion = this.resolveRegistryVersion()
+    } catch {
+      return
+    }
+    if (!shouldBlockDesktopForNewerNode(desktopVersion, remoteCliVersion)) return
+    const message = desktopUpgradeRequiredMessage(desktopVersion, remoteCliVersion!.trim())
+    throw Object.assign(new Error(message), { code: DESKTOP_UPGRADE_REQUIRED })
   }
 
   /** Resolve a usable base URL, rebuilding an SSH tunnel when the endpoint needs one. */

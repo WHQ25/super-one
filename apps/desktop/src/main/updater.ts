@@ -12,6 +12,15 @@ let menuLabel = 'Check for Updates...'
 let menuEnabled = true
 let onMenuChange: (() => void) | null = null
 
+/** Dev-only: version held at `available` until the user triggers download. */
+let simulatedPendingVersion: string | null = null
+let simulateTimers: ReturnType<typeof setTimeout>[] = []
+
+function clearSimulateTimers(): void {
+  for (const t of simulateTimers) clearTimeout(t)
+  simulateTimers = []
+}
+
 function send(event: UpdateEvent): void {
   if (win && !win.isDestroyed()) win.webContents.send(AgentIpcChannels.UPDATER_EVENT, event)
   updaterState = event.type
@@ -23,6 +32,9 @@ function send(event: UpdateEvent): void {
       menuEnabled = false
       break
     case 'available':
+      menuLabel = 'Download Update'
+      menuEnabled = true
+      break
     case 'download-progress':
       menuLabel = 'Downloading Update...'
       menuEnabled = false
@@ -56,7 +68,8 @@ export function initUpdater(mainWindow: BrowserWindow, channelPref?: UpdateChann
   const testUpdater = process.env.TEST_UPDATER === '1'
   if (is.dev && !testUpdater) return
   autoUpdater.logger = log
-  autoUpdater.autoDownload = true
+  // Check automatically; wait for the user to click Download/Update before fetching the binary.
+  autoUpdater.autoDownload = false
   autoUpdater.autoInstallOnAppQuit = true
   autoUpdater.allowDowngrade = false
   if (testUpdater) autoUpdater.forceDevUpdateConfig = true
@@ -105,6 +118,32 @@ export function checkForUpdates(): void {
   })
 }
 
+/**
+ * Start downloading a previously announced update.
+ * In pure-dev simulate mode (no real updater), continues the fake progress sequence.
+ */
+export function downloadUpdate(): void {
+  if (simulatedPendingVersion) {
+    const version = simulatedPendingVersion
+    simulatedPendingVersion = null
+    clearSimulateTimers()
+    simulateTimers = [
+      setTimeout(() => send({ type: 'download-progress', percent: 0 }), 0),
+      setTimeout(() => send({ type: 'download-progress', percent: 30 }), 500),
+      setTimeout(() => send({ type: 'download-progress', percent: 60 }), 1000),
+      setTimeout(() => send({ type: 'download-progress', percent: 90 }), 1500),
+      setTimeout(() => send({ type: 'download-progress', percent: 100 }), 2000),
+      setTimeout(() => send({ type: 'downloaded', version }), 2500),
+    ]
+    return
+  }
+
+  autoUpdater.downloadUpdate().catch((err) => {
+    log.warn('[updater] Download failed:', err.message)
+    send({ type: 'error', message: err.message })
+  })
+}
+
 export function setUpdateChannel(channel: UpdateChannel | null): void {
   if (is.dev && process.env.TEST_UPDATER !== '1') return
   if (channel) {
@@ -123,18 +162,20 @@ export function setUpdateChannel(channel: UpdateChannel | null): void {
 }
 
 export function simulateUpdate(): void {
+  clearSimulateTimers()
   const version = '99.0.0'
+  simulatedPendingVersion = version
   send({ type: 'checking' })
-  setTimeout(() => send({ type: 'available', version }), 1000)
-  setTimeout(() => send({ type: 'download-progress', percent: 0 }), 2000)
-  setTimeout(() => send({ type: 'download-progress', percent: 30 }), 2500)
-  setTimeout(() => send({ type: 'download-progress', percent: 60 }), 3000)
-  setTimeout(() => send({ type: 'download-progress', percent: 90 }), 3500)
-  setTimeout(() => send({ type: 'download-progress', percent: 100 }), 4000)
-  setTimeout(() => send({ type: 'downloaded', version }), 4500)
+  simulateTimers = [
+    setTimeout(() => send({ type: 'available', version }), 1000),
+  ]
 }
 
 export function simulateNotAvailable(): void {
+  clearSimulateTimers()
+  simulatedPendingVersion = null
   send({ type: 'checking' })
-  setTimeout(() => send({ type: 'not-available' }), 1000)
+  simulateTimers = [
+    setTimeout(() => send({ type: 'not-available' }), 1000),
+  ]
 }

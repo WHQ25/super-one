@@ -7,27 +7,50 @@ import { useAppStore } from '@/stores/app'
 
 /**
  * Compact auto-update pill living in the sidebar footer row.
- * available -> "Update" label, downloading -> download icon + percent, ready -> "Restart" label.
+ * available -> clickable "Update" (starts download),
+ * downloading -> download icon + percent,
+ * ready -> clickable "Restart".
  */
 export function UpdateStatusIcon(): React.JSX.Element | null {
   const { t } = useTranslation()
   const updateStatus = useAppStore((s) => s.updateStatus)
   const updateVersion = useAppStore((s) => s.updateVersion)
   const updateProgress = useAppStore((s) => s.updateProgress)
+  const downloadUpdate = useAppStore((s) => s.downloadUpdate)
   const installUpdate = useAppStore((s) => s.installUpdate)
   const dismissUpdate = useAppStore((s) => s.dismissUpdate)
 
-  if (updateStatus !== 'preparing' && updateStatus !== 'downloading' && updateStatus !== 'ready') return null
+  if (
+    updateStatus !== 'available' &&
+    updateStatus !== 'preparing' &&
+    updateStatus !== 'downloading' &&
+    updateStatus !== 'ready'
+  ) {
+    return null
+  }
 
   const version = updateVersion ? `v${updateVersion}` : ''
+  const available = updateStatus === 'available'
   const ready = updateStatus === 'ready'
   const percent = Math.min(100, Math.max(0, Math.round(updateProgress)))
+  const interactive = available || ready
 
   const tooltip = ready
     ? t('shell.update.ready', { version: updateVersion })
     : updateStatus === 'downloading'
       ? t('shell.update.downloadingWithProgress', { version, progress: percent })
-      : t('shell.update.preparing', { version })
+      : updateStatus === 'preparing'
+        ? t('shell.update.preparing', { version })
+        : t('shell.update.availableHint', { version })
+
+  const handleClick = (): void => {
+    if (ready) {
+      if (import.meta.env.DEV) dismissUpdate()
+      else installUpdate()
+      return
+    }
+    if (available) downloadUpdate()
+  }
 
   return (
     <TooltipProvider delayDuration={300}>
@@ -37,9 +60,9 @@ export function UpdateStatusIcon(): React.JSX.Element | null {
             size="xs"
             className={cn(
               'ml-auto h-4.5 gap-0.5 rounded-full px-1.5 text-[10px] font-medium leading-none',
-              !ready && 'cursor-default',
+              !interactive && 'cursor-default',
             )}
-            onClick={ready ? (import.meta.env.DEV ? dismissUpdate : installUpdate) : undefined}
+            onClick={interactive ? handleClick : undefined}
           >
             {ready ? (
               t('shell.update.restart')

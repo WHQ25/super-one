@@ -92,6 +92,7 @@ interface AppAPI {
   codexSetAuth(projectPath: string, request: CodexSetAuthRequest): Promise<CodexAuthStatus>
   installUpdate(): Promise<void>
   checkForUpdates(): Promise<void>
+  downloadUpdate(): Promise<void>
   simulateUpdate(): Promise<void>
   onUpdateEvent(callback: (event: UpdateEvent) => void): () => void
   onSetupEvent(callback: (event: SetupEvent) => void): () => void

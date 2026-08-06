@@ -5,7 +5,7 @@ let downgradeDuringCheck: boolean | undefined
 const autoUpdater = {
   channel: '',
   allowDowngrade: false,
-  autoDownload: false,
+  autoDownload: true,
   autoInstallOnAppQuit: false,
   forceDevUpdateConfig: false,
   logger: null as unknown,
@@ -14,6 +14,8 @@ const autoUpdater = {
     downgradeDuringCheck = autoUpdater.allowDowngrade
     return Promise.resolve(null)
   }),
+  downloadUpdate: vi.fn(() => Promise.resolve(null)),
+  quitAndInstall: vi.fn(),
 }
 
 vi.mock('electron-updater', () => ({ default: { autoUpdater } }))
@@ -21,12 +23,21 @@ vi.mock('electron', () => ({ BrowserWindow: class {} }))
 vi.mock('@electron-toolkit/utils', () => ({ is: { dev: false } }))
 vi.mock('./logger', () => ({ default: { info: vi.fn(), warn: vi.fn() } }))
 
-const { setUpdateChannel, initUpdater, checkForUpdates } = await import('./updater')
+const {
+  setUpdateChannel,
+  initUpdater,
+  checkForUpdates,
+  downloadUpdate,
+  getUpdateMenuState,
+  getUpdaterState,
+} = await import('./updater')
 
 describe('update check scheduling', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     autoUpdater.checkForUpdates.mockClear()
+    autoUpdater.downloadUpdate.mockClear()
+    autoUpdater.autoDownload = true
   })
 
   afterEach(() => {
@@ -41,10 +52,22 @@ describe('update check scheduling', () => {
     expect(autoUpdater.checkForUpdates).toHaveBeenCalledOnce()
   })
 
+  it('disables autoDownload so the user must start the fetch', () => {
+    initUpdater({ isDestroyed: () => true } as never)
+    expect(autoUpdater.autoDownload).toBe(false)
+  })
+
   it('still checks on demand when the user asks manually', () => {
     initUpdater({ isDestroyed: () => true } as never)
     checkForUpdates()
     expect(autoUpdater.checkForUpdates).toHaveBeenCalledTimes(2)
+  })
+
+  it('starts the download only when downloadUpdate is called', () => {
+    initUpdater({ isDestroyed: () => true } as never)
+    expect(autoUpdater.downloadUpdate).not.toHaveBeenCalled()
+    downloadUpdate()
+    expect(autoUpdater.downloadUpdate).toHaveBeenCalledOnce()
   })
 })
 
@@ -71,5 +94,22 @@ describe('manual update channel switching', () => {
     expect(downgradeDuringCheck).toBe(true)
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(autoUpdater.allowDowngrade).toBe(false)
+  })
+})
+
+describe('update-available menu state', () => {
+  beforeEach(() => {
+    autoUpdater.on.mockClear()
+    initUpdater({ isDestroyed: () => true } as never)
+  })
+
+  it('offers Download Update when an update is available', () => {
+    const availableHandler = autoUpdater.on.mock.calls.find(
+      ([event]: [string]) => event === 'update-available',
+    )?.[1] as ((info: { version: string }) => void) | undefined
+    expect(availableHandler).toBeTypeOf('function')
+    availableHandler!({ version: '1.2.3' })
+    expect(getUpdaterState()).toBe('available')
+    expect(getUpdateMenuState()).toEqual({ label: 'Download Update', enabled: true })
   })
 })

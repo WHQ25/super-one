@@ -181,6 +181,7 @@ export type Messages = {
     update: {
       checking: string
       available: string
+      availableHint: string
       preparing: string
       upToDate: string
       downloading: string
@@ -2422,6 +2423,7 @@ export const en: Messages = {
     update: {
       checking: 'Checking for updates...',
       available: 'Update',
+      availableHint: 'Update {{version}} available — click to download',
       preparing: 'Preparing update {{version}}...',
       upToDate: "You're up to date",
       downloading: 'Downloading {{version}}...',

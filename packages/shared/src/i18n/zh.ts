@@ -194,6 +194,7 @@ export const zh: Messages = {
     update: {
       checking: '正在检查更新...',
       available: '更新',
+      availableHint: '有可用更新 {{version}} — 点击下载',
       preparing: '正在准备更新 {{version}}...',
       upToDate: '已是最新版本',
       downloading: '正在下载 {{version}}...',

@@ -31,7 +31,7 @@ export type { RemoteDeviceConfig }
 
 type AppView = 'loading' | 'startup' | 'setup' | 'main' | 'settings'
 type InstallStatus = 'idle' | 'installing' | 'success' | 'error'
-type UpdateStatus = 'idle' | 'checking' | 'preparing' | 'downloading' | 'ready' | 'up-to-date' | 'error'
+type UpdateStatus = 'idle' | 'checking' | 'available' | 'preparing' | 'downloading' | 'ready' | 'up-to-date' | 'error'
 export type SettingsTab = 'providers' | 'agents' | 'skills' | 'mcp' | 'plugins' | 'hooks' | 'apps' | 'preferences' | 'remote' | 'usage' | 'automations' | 'app-settings' | 'appearance' | 'browser' | 'computer-use'
 
 const PROVIDER_SETTINGS_TABS: SettingsTab[] = ['agents', 'skills', 'mcp', 'hooks', 'plugins', 'preferences']
@@ -138,6 +138,7 @@ interface AppState {
 
   // Update
   handleUpdateEvent: (event: UpdateEvent) => void
+  downloadUpdate: () => void
   installUpdate: () => void
   dismissUpdate: () => void
 
@@ -435,7 +436,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         set({ updateStatus: 'checking' })
         break
       case 'available':
-        set({ updateStatus: 'preparing', updateVersion: event.version, updateProgress: 0 })
+        // Stay here until the user explicitly clicks Download/Update.
+        set({ updateStatus: 'available', updateVersion: event.version, updateProgress: 0 })
         break
       case 'not-available':
         set({ updateStatus: 'up-to-date' })
@@ -453,6 +455,14 @@ export const useAppStore = create<AppState>((set, get) => ({
         set({ updateStatus: 'error' })
         break
     }
+  },
+
+  downloadUpdate: () => {
+    // Optimistic feedback before the first download-progress event arrives.
+    if (get().updateStatus === 'available') {
+      set({ updateStatus: 'preparing', updateProgress: 0 })
+    }
+    void window.app.downloadUpdate()
   },
 
   installUpdate: () => {

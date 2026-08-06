@@ -283,18 +283,20 @@ export function AppSettingsPage() {
 
 /**
  * Manual update check plus the full download lifecycle. Auto-checking only
- * happens once at launch, so this row is where the user drives it by hand and
- * follows the download through to the restart.
+ * happens once at launch; when an update is found the user must click Update
+ * to start the download, then Restart once it is ready.
  */
 function UpdateCheckRow({ version }: { version: string }) {
   const { t } = useTranslation()
   const updateStatus = useAppStore((s) => s.updateStatus)
   const updateVersion = useAppStore((s) => s.updateVersion)
   const updateProgress = useAppStore((s) => s.updateProgress)
+  const downloadUpdate = useAppStore((s) => s.downloadUpdate)
   const installUpdate = useAppStore((s) => s.installUpdate)
   const dismissUpdate = useAppStore((s) => s.dismissUpdate)
 
   const checking = updateStatus === 'checking'
+  const available = updateStatus === 'available'
   const downloading = updateStatus === 'preparing' || updateStatus === 'downloading'
   const ready = updateStatus === 'ready'
   const percent = Math.min(100, Math.max(0, Math.round(updateProgress)))
@@ -306,13 +308,15 @@ function UpdateCheckRow({ version }: { version: string }) {
       ? t('shell.update.downloadingWithProgress', { version: targetVersion, progress: percent })
       : updateStatus === 'preparing'
         ? t('shell.update.preparing', { version: targetVersion })
-        : updateStatus === 'checking'
-          ? t('shell.update.checking')
-          : updateStatus === 'up-to-date'
-            ? t('shell.update.upToDate')
-            : updateStatus === 'error'
-              ? t('settings.general.checkUpdates.failed')
-              : t('settings.general.checkUpdates.description', { version })
+        : available
+          ? t('shell.update.availableHint', { version: targetVersion })
+          : updateStatus === 'checking'
+            ? t('shell.update.checking')
+            : updateStatus === 'up-to-date'
+              ? t('shell.update.upToDate')
+              : updateStatus === 'error'
+                ? t('settings.general.checkUpdates.failed')
+                : t('settings.general.checkUpdates.description', { version })
 
   return (
     <div className="border-t border-border p-4">
@@ -330,6 +334,10 @@ function UpdateCheckRow({ version }: { version: string }) {
             onClick={import.meta.env.DEV ? dismissUpdate : installUpdate}
           >
             {t('shell.update.restart')}
+          </Button>
+        ) : available ? (
+          <Button size="sm" className="shrink-0" onClick={downloadUpdate}>
+            {t('shell.update.available')}
           </Button>
         ) : (
           <button

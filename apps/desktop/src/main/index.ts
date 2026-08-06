@@ -106,7 +106,7 @@ import {
   type FileOpResult,
   type NativeContextMenuItemSpec,
 } from '@superone/shared/agent-types'
-import { initUpdater, installUpdate, checkForUpdates, simulateUpdate, simulateNotAvailable, getUpdaterState, getUpdateMenuState, setOnMenuChange, setUpdateChannel } from './updater'
+import { initUpdater, installUpdate, checkForUpdates, downloadUpdate, simulateUpdate, simulateNotAvailable, getUpdaterState, getUpdateMenuState, setOnMenuChange, setUpdateChannel } from './updater'
 import { startWatching, stopWatching } from './file-watcher'
 import { notifyWidgetReady, clearAllGates } from './generative-ui/widget-gate'
 import { setBashOutputWindow, watchBashOutput, unwatchBashOutput, unwatchAll as unwatchAllBashOutputs, readBashOutputTail, getWatchedFilePath } from './bash-output-watcher'
@@ -3146,6 +3146,10 @@ function registerIpcHandlers(): void {
     checkForUpdates()
   })
 
+  ipcMain.handle(AgentIpcChannels.UPDATER_DOWNLOAD, () => {
+    downloadUpdate()
+  })
+
   ipcMain.handle(AgentIpcChannels.UPDATER_SIMULATE, () => {
     simulateUpdate()
   })
@@ -4260,6 +4264,10 @@ app.whenReady().then(async () => {
               } else {
                 installUpdate()
               }
+              return
+            }
+            if (getUpdaterState() === 'available') {
+              downloadUpdate()
               return
             }
             if (is.dev) {

@@ -823,6 +823,9 @@ const appAPI = {
   checkForUpdates: () =>
     ipcRenderer.invoke(AgentIpcChannels.UPDATER_CHECK),
 
+  downloadUpdate: () =>
+    ipcRenderer.invoke(AgentIpcChannels.UPDATER_DOWNLOAD),
+
   simulateUpdate: () =>
     ipcRenderer.invoke(AgentIpcChannels.UPDATER_SIMULATE),
 

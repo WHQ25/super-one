@@ -4,15 +4,36 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
-## [0.49.5-alpha] - 2026-08-06
+## [0.50.0-alpha] - 2026-08-06
 
 ### Added
-- Publishable `@super-one/cli` npm pack (`pack:cli`) and `publish-cli` GitHub Actions workflow for alpha registry installs.
-- Experimental **Remote Nodes** settings toggle gating Other Devices and sidebar host switcher.
-- Remote Claude live session inject, skills/MCP resource RPCs, and related node session parity work from `feat/cli-remote-devices`.
+
+- **Remote Nodes (experimental)**: run sessions on a headless SuperOne node (SSH or local lab) from desktop — pairing, remote file tree / worktrees / @-mentions, chat routing over node RPC, and workspace UI. Default off behind Settings → experimental toggle (Other Devices + sidebar host switcher).
+- Headless `superone` remote-node server: pairing auth, workspace FS/git, session runtime, harness catalog, and Claude/Codex turn runners.
+- Host-action channel so remote agents can run desktop-bound tools (browser, computer use, etc.): durable poll/claim/respond RPCs, full SuperOne tool surface over host-action MCP, and default full host-action grants.
+- Lossless `session.agent_event` remote stream and Electron-free harness agent-event mappers shared by desktop and CLI.
+- Remote provider isolation and node session fork (credentials/models resolve on the node; fork to worktree or same-dir with shared Claude/Codex SDK fork).
+- Claude live session on nodes: MessageBridge + long-lived Agent SDK query with priority-next mid-turn inject; SuperOne system prompt + host-tool pre-approval on node turns.
+- Skills/MCP manage core and concurrent Claude turns; node `skills.*` / `mcp.*` resource RPCs with admin gates and secret redaction; attachment-store contracts.
+- Publishable `@super-one/cli` npm package (`pack:cli`) and `publish-cli` GitHub Actions workflow (OIDC Trusted Publishing) for registry install of the remote node CLI.
+- On SSH add: install/upgrade the node CLI to the desktop pin when missing or older; refuse with `desktop_upgrade_required` when the node is newer so multi-client nodes are never silently downgraded.
+- Environments UI: list and enable/disable remote harnesses; managed enable can pull Claude Agent SDK / Codex from official npm when no offline artifact is provided.
+- Extract dual-use host foundations into `@superone/runtime` and opt-in `@superone/{claude,codex,acp,opencode}` packages.
+- Collab: register an unopened child cwd as its own project; guide child launches toward autonomous permission modes (bypass/auto) so unattended children are not stranded on approval prompts.
+- Render collab launch `initial_task` as a markdown bubble instead of a collapsed file chip.
+
+### Fixed
+
+- Open remote projects on New session draft (keep ensureSession draft; history stays sidebar-only).
+- Remote chat: reconcile transcripts without wiping rich tool blocks; match assistants by shared id after interrupt/error; start event cursor from session head sequence so long turns do not re-map the previous turn.
+- Route `session_rename` host actions to the owning node; honor user-locked titles on remote rename (`user_locked`).
+- File collab child sessions under the project that owns the child's cwd; serialize git worktree activation per repository to avoid index.lock races.
+- Show live Grok workflow progress (preserve workflow JSON correlation; render phase/agent snapshots without requiring transcriptDir).
 
 ### Changed
-- Bump `@anthropic-ai/claude-agent-sdk` to 0.3.223 (desktop, CLI pack, managed official pin) and `@openai/codex` to 0.146.1; no SuperOne protocol adaptations required.
+
+- Collapse per-mini-app MCP tools into two fixed tools (`miniapp_list` / `miniapp_call`); pre-approval is decided in the executor with appId/tool/input.
+- Bump `@anthropic-ai/claude-agent-sdk` to 0.3.223 and `@openai/codex` to 0.146.1 (desktop, CLI pack, managed official pins); no SuperOne protocol adaptations required.
 
 ## [0.49.4-alpha] - 2026-07-31
 

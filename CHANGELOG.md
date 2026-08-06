@@ -4,6 +4,19 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.50.1-alpha] - 2026-08-06
+
+### Added
+
+- Route remote skills/MCP/plugins/hooks, session providers, Codex admin, denser session messages, and automations through the environment gateway (fail closed when the gateway is missing instead of touching local FS).
+- Headless node platform parity: automations, settings, collab grants (lease-gated), harness resources, plugins/hooks, tail-watch, and llm-proxy with inbound harness-key auth so the node owns environment state without Electron.
+- Codex node admin surface (auth/usage/plugins) and MCP OAuth authorization URLs for headless callers; harden app-server steer when a thread already exists.
+- Shared node environment RPC contracts (automation, settings, session-provider, harness-resources, session-messages) for the server-client cutover.
+
+### Fixed
+
+- Harden remote SSH bootstrap: probe common Node runtimes in non-interactive shells, batch bootstrap work, and wait for tunnel health before pairing (high-latency / rate-limited hosts).
+
 ## [0.50.0-alpha] - 2026-08-06
 
 ### Added

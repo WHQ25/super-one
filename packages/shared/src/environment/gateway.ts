@@ -8,6 +8,7 @@ import type {
 } from './events'
 import type { ControlLease, LeaseAcquireInput, LeaseReleaseInput, LeaseRenewInput, MutatingControlContext } from './lease'
 import type { ProjectRef, SessionRef, TerminalRef } from './refs'
+import type { SessionMessagesListRequest, SessionMessagesListResult } from './session-messages'
 
 /**
  * Environment-scoped gateway — the only boundary desktop features should use
@@ -52,11 +53,35 @@ export interface SendMessageInput extends MutatingControlContext {
   options?: Record<string, unknown>
 }
 
+/**
+ * Durable per-session turn defaults. Omitted keys are left unchanged; null clears.
+ * Applied as session.send fallbacks when the turn omits the corresponding option.
+ */
+export interface PatchSessionSettingsInput extends Partial<MutatingControlContext> {
+  session: SessionRef
+  permissionMode?: string | null
+  sandboxMode?: string | null
+  model?: string | null
+  effort?: string | null
+  apiProviderId?: string | null
+}
+
 export interface SessionGateway {
   create(input: CreateSessionInput): Promise<{ sessionId: string }>
   get(ref: SessionRef): Promise<unknown | null>
   list(project: ProjectRef): Promise<unknown[]>
   send(input: SendMessageInput): Promise<void>
+  /**
+   * Persist turn defaults so subsequent send() calls need not re-send full options.
+   * Optional for older gateways; remote node implements session.patchSettings RPC.
+   */
+  patchSettings?(input: PatchSessionSettingsInput): Promise<unknown>
+  /**
+   * Paged denser message catalog for UI hydrate (tool summaries, metadata).
+   * Optional for older gateways; remote node implements session.messages.list.
+   * Live catch-up still uses session.events afterSequence.
+   */
+  listMessages?(input: SessionMessagesListRequest & { session: SessionRef }): Promise<SessionMessagesListResult>
   interrupt(ref: SessionRef, control: MutatingControlContext): Promise<void>
   close(ref: SessionRef, control?: MutatingControlContext): Promise<void>
   acquireControl(input: LeaseAcquireInput & { resource: SessionRef }): Promise<ControlLease>
@@ -164,6 +189,22 @@ export interface WorkspaceWatchInput {
   relativePath?: string
 }
 
+/** Byte-offset tail of a tool-output file under project `temp/`. */
+export interface WorkspaceTailWatchStartInput {
+  project: ProjectRef
+  relativePath: string
+  /** Starting byte offset (default 0). Clamped to file size when larger. */
+  offset?: number
+}
+
+export interface WorkspaceTailWatchPollResult {
+  content: string
+  encoding: 'base64'
+  offset: number
+  size: number
+  missing?: boolean
+}
+
 export interface WorkspaceEntry {
   name: string
   path: string
@@ -212,6 +253,15 @@ export interface WorkspaceGateway {
   mkdir(input: WorkspaceMkdirInput): Promise<{ path: string }>
   /** Cancel by returning / aborting the async iterable consumer. */
   watch(input: WorkspaceWatchInput): AsyncIterable<{ path: string; type: string }>
+  /**
+   * Byte-offset tail watch for tool output paths under project `temp/`.
+   * Poll returns only appended bytes (base64); stop releases the watch id.
+   */
+  tailWatchStart(
+    input: WorkspaceTailWatchStartInput,
+  ): Promise<{ watchId: string; offset: number; relativePath: string }>
+  tailWatchPoll(input: { watchId: string }): Promise<WorkspaceTailWatchPollResult>
+  tailWatchStop(input: { watchId: string }): Promise<{ ok: boolean }>
 }
 
 /**

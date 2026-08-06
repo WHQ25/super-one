@@ -18,6 +18,11 @@ import {
   type HostActionSuperoneToolDescriptor,
 } from './host-action-superone-descriptors'
 
+export {
+  HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS,
+  type HostActionSuperoneToolDescriptor,
+} from './host-action-superone-descriptors'
+
 export type HostActionBrowserToolDescriptor = HostActionSuperoneToolDescriptor
 
 export interface HostActionBrowserToolEntry extends HostActionSuperoneToolDescriptor {
@@ -44,6 +49,24 @@ const BROWSER_ACT_PREFIX = 'browser_'
 /** Computer Use tools. */
 const COMPUTER_PREFIX = 'computer_'
 
+/**
+ * Node-local SuperOne tools (SessionRuntime collab service).
+ * Never advertised as Host Actions — remote agents call them in-process on the node.
+ */
+export const NODE_LOCAL_SUPERONE_TOOL_NAMES = [
+  'session_collab_list_agents',
+  'session_collab_request',
+  'session_collab_start',
+  'session_collab_send',
+  'session_collab_retrieve',
+] as const
+
+export type NodeLocalSuperoneToolName = (typeof NODE_LOCAL_SUPERONE_TOOL_NAMES)[number]
+
+export function isNodeLocalSuperoneTool(name: string): boolean {
+  return (NODE_LOCAL_SUPERONE_TOOL_NAMES as readonly string[]).includes(name)
+}
+
 /** Read-only / idempotent SuperOne tools outside browser. */
 const SUPERONE_READ_NAMES = new Set<string>([
   'read_manual',
@@ -52,7 +75,7 @@ const SUPERONE_READ_NAMES = new Set<string>([
   'media_video_status',
   'widget_list_templates',
   'miniapp_list',
-  'session_collab_list_agents',
+  // session_collab_* are node-local (not HA); list_agents stays "safe" if ever reclassified
   'computer_apps',
   'computer_snapshot',
   'computer_zoom',
@@ -96,16 +119,18 @@ export function classifyHostActionBrowserTool(name: string) {
   return classifyHostActionTool(name)
 }
 
-/** Full SuperOne Host Action tool list (discovery + policy). */
+/** Full SuperOne Host Action tool list (discovery + policy), excluding node-local tools. */
 export const HOST_ACTION_BROWSER_TOOL_CATALOG: HostActionBrowserToolEntry[] =
-  HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS.map((d) => {
-    const cls = classifyHostActionTool(d.name)
-    return {
-      ...d,
-      toolGroup: cls.toolGroup,
-      replayPolicy: cls.replayPolicy,
-    }
-  })
+  HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS.filter((d) => !isNodeLocalSuperoneTool(d.name)).map(
+    (d) => {
+      const cls = classifyHostActionTool(d.name)
+      return {
+        ...d,
+        toolGroup: cls.toolGroup,
+        replayPolicy: cls.replayPolicy,
+      }
+    },
+  )
 
 /** Alias preferred name for the full surface catalog. */
 export const HOST_ACTION_SUPERONE_TOOL_CATALOG = HOST_ACTION_BROWSER_TOOL_CATALOG

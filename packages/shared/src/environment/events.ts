@@ -86,7 +86,7 @@ export interface TerminalEventSnapshot {
 export interface PendingInteractionSnapshot {
   interactionId: string
   sessionId: string
-  kind: 'permission' | 'question' | 'plan'
+  kind: 'permission' | 'question' | 'plan' | 'session_agents_confirm'
   createdAt: number
   payload: unknown
 }

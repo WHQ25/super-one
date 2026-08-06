@@ -99,6 +99,8 @@ export const SESSION_DURABLE_EVENT = {
   removed: 'session.removed',
   renamed: 'session.renamed',
   uiFlags: 'session.ui_flags',
+  /** Durable per-session turn defaults changed (model/effort/permissionMode/…). */
+  settingsChanged: 'session.settings_changed',
   reconciled: 'session.reconciled',
   userMessage: 'session.user_message',
   turnStarted: 'session.turn_started',

@@ -1844,6 +1844,8 @@ export interface CodexRateLimitWindow {
 export interface CodexMcpOauthLoginResult {
   success: boolean
   error?: string
+  /** Present when login returned an authorize URL (headless clients surface this). */
+  authorizationUrl?: string
 }
 
 export interface CodexExternalAgentItem {
@@ -2719,6 +2721,8 @@ export const AgentIpcChannels = {
   ENVIRONMENT_SEND_SESSION_MESSAGE: 'environment:sendSessionMessage',
   /** Poll durable node session.events after a sequence (exclusive). */
   ENVIRONMENT_LIST_SESSION_EVENTS: 'environment:listSessionEvents',
+  /** Paged denser message catalog (session.messages.list) for remote UI hydrate. */
+  ENVIRONMENT_LIST_SESSION_MESSAGES: 'environment:listSessionMessages',
   ENVIRONMENT_INTERRUPT_SESSION: 'environment:interruptSession',
   ENVIRONMENT_RENAME_SESSION: 'environment:renameSession',
   ENVIRONMENT_REMOVE_SESSION: 'environment:removeSession',
@@ -2760,6 +2764,25 @@ export const AgentIpcChannels = {
   ENVIRONMENT_HARNESS_ENABLE: 'environment:harnessEnable',
   ENVIRONMENT_HARNESS_DISABLE: 'environment:harnessDisable',
   ENVIRONMENT_HARNESS_PROBE: 'environment:harnessProbe',
+  /** Remote Skills / MCP via node `skills.*` / `mcp.*` (EnvironmentHost). */
+  ENVIRONMENT_LIST_REMOTE_SKILLS: 'environment:listRemoteSkills',
+  ENVIRONMENT_GET_REMOTE_SKILL: 'environment:getRemoteSkill',
+  ENVIRONMENT_READ_REMOTE_SKILL_FILE: 'environment:readRemoteSkillFile',
+  ENVIRONMENT_DELETE_REMOTE_SKILL: 'environment:deleteRemoteSkill',
+  ENVIRONMENT_INSTALL_REMOTE_SKILL: 'environment:installRemoteSkill',
+  ENVIRONMENT_LIST_REMOTE_MCP_CONFIGS: 'environment:listRemoteMcpConfigs',
+  ENVIRONMENT_SAVE_REMOTE_MCP_CONFIG: 'environment:saveRemoteMcpConfig',
+  ENVIRONMENT_TOGGLE_REMOTE_MCP_CONFIG: 'environment:toggleRemoteMcpConfig',
+  ENVIRONMENT_DELETE_REMOTE_MCP_CONFIG: 'environment:deleteRemoteMcpConfig',
+  /** Node harness.resources aggregate (models + skills/commands/agents/prompts). */
+  ENVIRONMENT_HARNESS_RESOURCES: 'environment:harnessResources',
+  /** Node session_providers CRUD. */
+  ENVIRONMENT_SESSION_PROVIDERS_LIST: 'environment:sessionProvidersList',
+  ENVIRONMENT_SESSION_PROVIDERS_GET: 'environment:sessionProvidersGet',
+  ENVIRONMENT_SESSION_PROVIDERS_GET_BASE: 'environment:sessionProvidersGetBase',
+  ENVIRONMENT_SESSION_PROVIDERS_CREATE: 'environment:sessionProvidersCreate',
+  ENVIRONMENT_SESSION_PROVIDERS_UPDATE: 'environment:sessionProvidersUpdate',
+  ENVIRONMENT_SESSION_PROVIDERS_DELETE: 'environment:sessionProvidersDelete',
 } as const
 
 export interface NativeContextMenuItemSpec {

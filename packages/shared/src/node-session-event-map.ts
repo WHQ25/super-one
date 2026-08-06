@@ -482,12 +482,28 @@ export function createNodeSessionEventMapper(ctx: NodeSessionEventMapContext): N
         const interactionId =
           asString(payload.interactionId) ?? asString(payload.requestId) ?? envelope.eventId
         const toolName = asString(payload.toolName) ?? 'tool'
+        const requestKind = asString(payload.requestKind)
+        const sessionAgentsConfirm =
+          payload.sessionAgentsConfirm && typeof payload.sessionAgentsConfirm === 'object'
+            ? (payload.sessionAgentsConfirm as PermissionRequest['sessionAgentsConfirm'])
+            : undefined
         const request: PermissionRequest = {
           requestId: interactionId,
           toolName,
           toolUseId: asString(payload.toolUseId),
           input: asRecord(payload.input),
-          allowAlwaysAllow: payload.allowAlwaysAllow !== false,
+          allowAlwaysAllow:
+            requestKind === 'session_agents_confirm'
+              ? false
+              : payload.allowAlwaysAllow !== false,
+          ...(requestKind
+            ? {
+                requestKind: requestKind as PermissionRequest['requestKind'],
+              }
+            : {}),
+          ...(asString(payload.serverName) ? { serverName: asString(payload.serverName)! } : {}),
+          ...(asString(payload.message) ? { message: asString(payload.message)! } : {}),
+          ...(sessionAgentsConfirm ? { sessionAgentsConfirm } : {}),
         }
         push({ type: 'permission_request', request })
         break

@@ -215,11 +215,12 @@ export function customPlatformEndpoints(
 
 /**
  * The protocols a chat harness consumer accepts, in preference order.
- * codex speaks Responses wire natively; openai-chat providers are bridged through the
- * built-in Responses→Chat proxy (see llm-proxy-manager ensureCodexProxyUrl).
+ * Native wires first; openai-chat providers are bridged through the built-in
+ * protocol proxy (Messages/Responses ↔ Chat Completions) — see
+ * `@superone/runtime/llm-proxy` ensureProxy / desktop llm-proxy-manager.
  */
 export const HARNESS_CHAT_PROTOCOLS: Record<'claude' | 'codex', WireProtocol[]> = {
-  claude: ['anthropic-messages'],
+  claude: ['anthropic-messages', 'openai-chat'],
   codex: ['openai-responses', 'openai-chat'],
 }
 

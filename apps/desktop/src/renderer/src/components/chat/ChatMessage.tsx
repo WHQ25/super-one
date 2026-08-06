@@ -7,7 +7,12 @@ import { ToolBlock } from './ToolBlock'
 import { ToolGroup } from './ToolGroup'
 import { AppToolGroup } from './AppToolGroup'
 import { parseToolInput, parseMcpToolName, isHiddenToolBlock } from './tool-display'
-import { countClaudeProcessTools, isClaudeConclusionSegment, splitTurnForCompactMode } from './compact-chat-mode'
+import {
+  countClaudeProcessTools,
+  isClaudeConclusionSegment,
+  MIN_PROCESS_SEGMENTS_TO_COLLAPSE,
+  splitTurnForCompactMode,
+} from './compact-chat-mode'
 import { TurnDetailSection } from './TurnDetailSection'
 import { toImageGenerationItems, toVideoStatusItems, isMediaGenerateImageTool, isMediaVideoStatusTool, collectCodexGeneratedImages, collectCodexGeneratedVideos } from './media-generation'
 import { useMiniAppStore } from '@/stores/miniapp'
@@ -1035,19 +1040,19 @@ export const ChatMessage = memo(function ChatMessage({ message, sessionStatus, i
                 const { process, conclusion } = splitTurnForCompactMode(segs, isClaudeConclusionSegment)
                 return (
                   <>
-                    {process.length === 1
-                      ? (
-                        <div className="turn-process">
-                          {renderClaudeSegments(process, { ...segOpts, forceSealed: true })}
-                        </div>
-                      )
-                      : process.length > 1
+                    {process.length === 0
+                      ? null
+                      : process.length < MIN_PROCESS_SEGMENTS_TO_COLLAPSE
                         ? (
+                          <div className="turn-process">
+                            {renderClaudeSegments(process, { ...segOpts, forceSealed: true })}
+                          </div>
+                        )
+                        : (
                           <TurnDetailSection toolCount={countClaudeProcessTools(process)}>
                             {renderClaudeSegments(process, { ...segOpts, forceSealed: true })}
                           </TurnDetailSection>
-                        )
-                        : null}
+                        )}
                     {renderClaudeSegments(conclusion, { ...segOpts, forceSealed: true })}
                   </>
                 )

@@ -11,6 +11,9 @@
  * Intermediate narration between earlier tools stays in process.
  */
 
+/** Min process segments before compact mode collapses them under Detail. */
+export const MIN_PROCESS_SEGMENTS_TO_COLLAPSE = 3
+
 export interface CompactTurnSplit<T> {
   process: T[]
   conclusion: T[]

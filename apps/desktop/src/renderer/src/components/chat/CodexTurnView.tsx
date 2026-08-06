@@ -15,7 +15,12 @@ import { ToolBlock } from './ToolBlock'
 import { ReasoningBlock } from './ReasoningBlock'
 import { isAlwaysHiddenToolBlock, isHiddenToolBlock } from './tool-display'
 import { isMediaGenerateImageTool, isMediaVideoStatusTool } from './media-generation'
-import { countCodexProcessTools, isCodexConclusionSegment, splitTurnForCompactMode } from './compact-chat-mode'
+import {
+  countCodexProcessTools,
+  isCodexConclusionSegment,
+  MIN_PROCESS_SEGMENTS_TO_COLLAPSE,
+  splitTurnForCompactMode,
+} from './compact-chat-mode'
 import { TurnDetailSection } from './TurnDetailSection'
 
 function safeStringify(value: unknown): string {
@@ -528,14 +533,15 @@ export function CodexTurnView({ message, isStreaming, isLastAssistant }: CodexTu
       const showFallback = !hasAssistantMessage && !!fallbackText
       return (
         <>
-          {process.length === 1
-            ? (
-              <div className="turn-process">
-                {renderSegments(process, true)}
-              </div>
-            )
-            : process.length > 1
+          {process.length === 0
+            ? null
+            : process.length < MIN_PROCESS_SEGMENTS_TO_COLLAPSE
               ? (
+                <div className="turn-process">
+                  {renderSegments(process, true)}
+                </div>
+              )
+              : (
                 <TurnDetailSection
                   toolCount={countCodexProcessTools(
                     process,
@@ -544,8 +550,7 @@ export function CodexTurnView({ message, isStreaming, isLastAssistant }: CodexTu
                 >
                   {renderSegments(process, true)}
                 </TurnDetailSection>
-              )
-              : null}
+              )}
           {renderSegments(conclusion, true)}
           {showFallback && (
             <div className="my-0.5">

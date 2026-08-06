@@ -13,7 +13,7 @@ interface TurnDetailSectionProps {
 /**
  * Compact-mode process disclosure. Indicator on top; content expands downward
  * with a short height animation. Callers skip this wrapper when process has
- * only one segment.
+ * fewer than MIN_PROCESS_SEGMENTS_TO_COLLAPSE segments.
  */
 export function TurnDetailSection({ children, toolCount = 0, className }: TurnDetailSectionProps) {
   const { t } = useTranslation()

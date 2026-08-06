@@ -6,6 +6,8 @@ import {
   resolveProjectPath,
   listFilesUnderRoot,
   discoverClaudeSkillsAndCommands,
+  isToolOutputRelativePath,
+  toProjectRelativePath,
 } from './index'
 
 describe('resolveProjectPath', () => {
@@ -34,6 +36,27 @@ describe('resolveProjectPath', () => {
         // Must not collapse to an absolute suffix like /nested/missing/file.ts
         expect(r.absolutePath.startsWith(`${sep}nested`)).toBe(false)
       }
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('tool output path helpers', () => {
+  it('accepts only temp/ relative paths', () => {
+    expect(isToolOutputRelativePath('temp/job.output')).toBe(true)
+    expect(isToolOutputRelativePath('temp')).toBe(true)
+    expect(isToolOutputRelativePath('src/a.ts')).toBe(false)
+    expect(isToolOutputRelativePath('../temp/x')).toBe(false)
+    expect(isToolOutputRelativePath('temp/../src')).toBe(false)
+  })
+
+  it('maps absolute paths under project root', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'tool-out-'))
+    try {
+      const abs = join(dir, 'temp', 'a.output')
+      expect(toProjectRelativePath(dir, abs)).toBe('temp/a.output')
+      expect(toProjectRelativePath(dir, '/etc/passwd')).toBeNull()
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }

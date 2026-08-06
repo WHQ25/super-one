@@ -25,3 +25,7 @@ export {
 } from './spawn-env'
 export type { SqliteDatabase, SqlStatement, SqlRunResult } from './sqlite'
 export * from './crypto/index'
+export * as settings from './settings/index'
+export * as sandbox from './sandbox/index'
+export * as automations from './automations/index'
+export * as llmProxy from './llm-proxy/index'

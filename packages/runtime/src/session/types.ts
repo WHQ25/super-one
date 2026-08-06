@@ -9,6 +9,19 @@ export type SessionStatus =
   | 'unknown'
   | 'ended'
 
+/**
+ * Durable per-session turn defaults. Written by `session.patchSettings` and
+ * applied as `session.send` fallbacks when the turn payload omits a key.
+ * All fields optional on the wire; null clears a stored default.
+ */
+export interface NodeSessionSettings {
+  permissionMode?: string | null
+  sandboxMode?: string | null
+  model?: string | null
+  effort?: string | null
+  apiProviderId?: string | null
+}
+
 export interface NodeSessionRecord {
   sessionId: string
   projectId: string
@@ -24,6 +37,16 @@ export interface NodeSessionRecord {
    * Null = use project registry path.
    */
   cwd: string | null
+  /**
+   * Durable turn defaults (permissionMode, sandboxMode, model, effort, apiProviderId).
+   * Null / undefined means "no stored default" — send must supply the value or harness uses its own.
+   * Always written by SessionRuntime.create / patchSettings / load path.
+   */
+  permissionMode?: string | null
+  sandboxMode?: string | null
+  model?: string | null
+  effort?: string | null
+  apiProviderId?: string | null
   createdAt: number
   updatedAt: number
   isPinned: boolean
@@ -50,6 +73,12 @@ export interface NodeSessionRecord {
    * chose allow_always (desktop permission-mode parity, session-scoped).
    */
   alwaysAllowedTools: string[]
+  /**
+   * True when this session was spawned by an automation (filterable in list metadata).
+   */
+  isAutomation?: boolean
+  /** Owning automation id when isAutomation is true. */
+  automationId?: string | null
 }
 
 /** Image/document attachment for a remote turn (base64 payload). */
@@ -68,11 +97,30 @@ export interface TranscriptBlock {
 
 export interface PendingInteraction {
   interactionId: string
-  kind: 'permission' | 'question' | 'plan'
+  kind: 'permission' | 'question' | 'plan' | 'session_agents_confirm'
   toolName?: string
   toolUseId?: string
   input?: Record<string, unknown>
   createdAt: number
+  /**
+   * Multi-launch confirm payload when kind === 'session_agents_confirm'.
+   * Desktop remote UI maps this onto PermissionRequest.sessionAgentsConfirm.
+   */
+  sessionAgentsConfirm?: {
+    launches: unknown[]
+    profiles: unknown[]
+  }
+  /** Rich permission requestKind for desktop UI (e.g. session_agents_confirm). */
+  requestKind?: string
+  message?: string
+  serverName?: string
+  allowAlwaysAllow?: boolean
+}
+
+/** Outcome of session_collab_request multi-launch user confirmation. */
+export type AgentsConfirmOutcome = {
+  action: 'accept' | 'decline' | 'cancel'
+  content?: Record<string, unknown>
 }
 
 export type PermissionDecision = 'allow' | 'deny'
@@ -110,6 +158,11 @@ export type TurnRunner = ((input: {
    * e.g. default | acceptEdits | bypassPermissions | plan | dontAsk | auto
    */
   permissionMode?: string | null
+  /**
+   * Sandbox / filesystem policy for this turn (Codex sandboxMode / Claude
+   * Agent SDK `sandbox`: `off` | `on` | `auto`).
+   */
+  sandboxMode?: string | null
   /** Extra readable directories (Claude additionalDirectories). */
   additionalDirectories?: string[]
   /**
@@ -124,6 +177,15 @@ export type TurnRunner = ((input: {
   disabledSkills?: string[]
   /** Node provider credential id for this turn (API key source). */
   apiProviderId?: string | null
+  /**
+   * Codex turn kind (run|steer|review|compact). Omitted = run.
+   * steer injects into an in-flight app-server turn on a long-lived connection.
+   */
+  turnKind?: 'run' | 'steer' | 'review' | 'compact' | null
+  /** Codex collaboration mode (string mode name or app-server object). */
+  collaborationMode?: string | Record<string, unknown> | null
+  /** Codex review/start target payload. */
+  reviewTarget?: unknown
   onDelta: (text: string) => void
   onEvent?: (event: SessionTurnEvent) => void
   /** Lossless harness-native AgentEvent stream. */
@@ -134,7 +196,12 @@ export type TurnRunner = ((input: {
   /** Optional plan-approval waiter (lease-gated via SessionRuntime.respondPlan). */
   onPlan?: (interaction: PendingInteraction) => Promise<PlanDecisionResult>
   signal: AbortSignal
-}) => Promise<{ finalText: string; providerResume?: string | null }>) & {
+}) => Promise<{
+  finalText: string
+  providerResume?: string | null
+  /** Steer / mid-turn inject: do not append an assistant transcript block. */
+  skipAssistantTranscript?: boolean
+}>) & {
   /** Tear down long-lived harness state for one SuperOne session id. */
   disposeSession?: (sessionId: string) => void | Promise<void>
   /** Tear down all long-lived harness state (runtime stop). */

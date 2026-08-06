@@ -98,7 +98,9 @@ describe('SessionRuntime send queue', () => {
     expect(users).toEqual(['first', 'second'])
   })
 
-  it('non-claude mid-stream send serializes via FIFO queue', async () => {
+  it('non-live-inject mid-stream send serializes via FIFO queue', async () => {
+    // Codex mid-stream auto-steers (concurrent beginTurn), same family as Claude
+    // live inject. FIFO applies to harnesses without live inject (e.g. opencode).
     let active = 0
     let maxActive = 0
     const order: string[] = []
@@ -114,7 +116,7 @@ describe('SessionRuntime send queue', () => {
     }
     const { store, events, leases } = memoryPorts()
     const runtime = new SessionRuntime(store, events, leases, 'env-q-fifo', runner)
-    const session = runtime.create({ projectId: 'p', harnessId: 'codex' })
+    const session = runtime.create({ projectId: 'p', harnessId: 'opencode' })
 
     await runtime.send({
       sessionId: session.sessionId,
@@ -135,6 +137,48 @@ describe('SessionRuntime send queue', () => {
     expect(done.status).toBe('idle')
     expect(maxActive).toBe(1)
     expect(order).toEqual(['start:first', 'end:first', 'start:second', 'end:second'])
+    const users = done.transcript.filter((t) => t.role === 'user').map((t) => t.text)
+    expect(users).toEqual(['first', 'second'])
+  })
+
+  it('codex mid-stream send live-injects as concurrent steer', async () => {
+    let active = 0
+    let maxActive = 0
+    const order: string[] = []
+    const runner: TurnRunner = async ({ text, onDelta, turnKind }) => {
+      active++
+      maxActive = Math.max(maxActive, active)
+      order.push(`start:${text}:${turnKind ?? 'null'}`)
+      await new Promise((r) => setTimeout(r, 40))
+      onDelta(text)
+      order.push(`end:${text}`)
+      active--
+      return { finalText: text, providerResume: null }
+    }
+    const { store, events, leases } = memoryPorts()
+    const runtime = new SessionRuntime(store, events, leases, 'env-q-codex', runner)
+    const session = runtime.create({ projectId: 'p', harnessId: 'codex' })
+
+    await runtime.send({
+      sessionId: session.sessionId,
+      text: 'first',
+      client,
+      leaseId: lease.leaseId,
+      generation: lease.generation,
+    })
+    await runtime.send({
+      sessionId: session.sessionId,
+      text: 'second',
+      client,
+      leaseId: lease.leaseId,
+      generation: lease.generation,
+    })
+
+    const done = await waitIdle(runtime, session.sessionId)
+    expect(done.status).toBe('idle')
+    expect(maxActive).toBe(2)
+    expect(order[0]).toBe('start:first:null')
+    expect(order[1]).toMatch(/^start:second:steer$/)
     const users = done.transcript.filter((t) => t.role === 'user').map((t) => t.text)
     expect(users).toEqual(['first', 'second'])
   })

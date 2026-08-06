@@ -53,7 +53,10 @@ function openDb() {
       controller_client_session_id TEXT,
       host_action_capability_version INTEGER NOT NULL DEFAULT 0,
       host_action_tool_groups_json TEXT NOT NULL DEFAULT '[]',
-      always_allowed_tools_json TEXT NOT NULL DEFAULT '[]'
+      always_allowed_tools_json TEXT NOT NULL DEFAULT '[]',
+      settings_json TEXT,
+      is_automation INTEGER NOT NULL DEFAULT 0,
+      automation_id TEXT
     );
     CREATE TABLE environment_events (
       sequence INTEGER PRIMARY KEY AUTOINCREMENT,

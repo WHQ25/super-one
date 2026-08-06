@@ -78,6 +78,59 @@ export function assertInsideRoot(root: string, absolutePath: string): boolean {
   return a === r || a.startsWith(r + sep)
 }
 
+/** Project-relative prefix for agent tool output files (bash / task tails). */
+export const TOOL_OUTPUT_REL_PREFIX = 'temp/'
+
+/**
+ * Normalize a project-relative path for comparisons (POSIX separators, no leading ./).
+ * Collapses `.` / `..` segments so `temp/../src` cannot spoof the temp/ prefix.
+ */
+export function normalizeProjectRelativePath(relativePath: string): string {
+  const raw = relativePath.replace(/\\/g, '/').replace(/^\.\//, '').replace(/^\/+/, '')
+  if (!raw || raw === '.') return '.'
+  const parts: string[] = []
+  for (const seg of raw.split('/')) {
+    if (!seg || seg === '.') continue
+    if (seg === '..') {
+      if (parts.length === 0) return '..' // escapes root — not a safe project-relative path
+      parts.pop()
+      continue
+    }
+    parts.push(seg)
+  }
+  return parts.join('/') || '.'
+}
+
+/**
+ * Tool-output tail watches are limited to paths under `temp/` inside the project root.
+ * Absolute paths and project-relative paths outside that prefix are rejected.
+ */
+export function isToolOutputRelativePath(relativePath: string): boolean {
+  const n = normalizeProjectRelativePath(relativePath)
+  if (n === '.' || n === '' || n === '..' || n.startsWith('../')) return false
+  return n === 'temp' || n.startsWith(TOOL_OUTPUT_REL_PREFIX)
+}
+
+/**
+ * If `absoluteOrRelative` is absolute under `projectRoot`, return the project-relative form.
+ * If already relative, normalize and return. Returns null when outside the project root.
+ */
+export function toProjectRelativePath(
+  projectRoot: string,
+  absoluteOrRelative: string,
+): string | null {
+  if (!absoluteOrRelative || absoluteOrRelative.includes('\0')) return null
+  const normalized = absoluteOrRelative.replace(/\\/g, '/')
+  if (!isAbsolute(absoluteOrRelative) && !normalized.startsWith('/')) {
+    return normalizeProjectRelativePath(normalized)
+  }
+  const root = resolve(projectRoot)
+  const abs = resolve(absoluteOrRelative)
+  if (abs === root) return '.'
+  if (!abs.startsWith(root + sep)) return null
+  return abs.slice(root.length + sep.length).split(/[/\\]/).join('/')
+}
+
 export function pathKind(absolutePath: string): 'file' | 'directory' | 'symlink' | 'other' {
   try {
     const st = lstatSync(absolutePath)

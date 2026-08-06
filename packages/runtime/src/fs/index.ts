@@ -10,6 +10,10 @@ export {
   isPathWithinAllowed,
   isPathAtOrWithinAllowed,
   getReadableAssetRoots,
+  TOOL_OUTPUT_REL_PREFIX,
+  normalizeProjectRelativePath,
+  isToolOutputRelativePath,
+  toProjectRelativePath,
 } from './path-security'
 export {
   listFilesUnderRoot,
@@ -52,6 +56,18 @@ export {
   type McpWriteFields,
 } from './mcp-config'
 export {
+  ensureMcpMerge,
+  resolveMcpMergeMode,
+  toClaudeSdkMcpEntry,
+  toCodexThreadMcpEntry,
+  HOST_ACTION_MCP_NAME,
+  type McpMergeMode,
+  type EnsureMcpMergeOptions,
+  type EnsureMcpMergeResult,
+  type ClaudeSdkMcpEntry,
+  type CodexThreadMcpEntry,
+} from './mcp-merge'
+export {
   EXCLUDED_DIRS,
   fuzzyMatch,
   searchMentionsInEntries,
@@ -59,3 +75,31 @@ export {
   type AgentEntry,
   type FuzzyMatchResult,
 } from './fuzzy'
+export {
+  listPlugins,
+  readPluginContent,
+  readPluginFile,
+  deletePlugin,
+  listMarketplacePlugins,
+  installPlugin,
+  updatePlugin,
+  updateMarketplace,
+  addMarketplace,
+  removeMarketplace,
+  readMarketplacePluginContent,
+  readMarketplacePluginFile,
+  type PluginsManageOptions,
+} from './plugins-manage'
+export {
+  listHooks,
+  saveHook,
+  deleteHook,
+  type HooksConfigOptions,
+} from './hooks-config'
+export {
+  discoverUserAgents,
+  discoverProjectAgents,
+  discoverAllAgents,
+  readAgentFile,
+  type AgentsDiscoverOptions,
+} from './agents-discover'

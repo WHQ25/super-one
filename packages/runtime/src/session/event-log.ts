@@ -130,7 +130,55 @@ export class EventLog {
       environment_id: string
     }>
 
-    return rows.map((r) => ({
+    return rows.map((r) => this.rowToEnvelope(r))
+  }
+
+  /**
+   * Session-scoped durable events in sequence order (for message catalog expansion).
+   * Unbounded by default so hydrate can rebuild full tool summaries; callers
+   * should only use this for catalog projection, not live poll.
+   */
+  listForSession(sessionId: string, limit = 50_000): EnvironmentEventEnvelope[] {
+    const sid = String(sessionId ?? '').trim()
+    if (!sid) return []
+    const rows = this.db
+      .prepare(
+        `SELECT sequence, event_id, timestamp, aggregate_type, aggregate_id, event_type, event_version,
+                payload_json, causation_request_id, environment_id
+         FROM environment_events
+         WHERE aggregate_type = 'session' AND aggregate_id = ?
+         ORDER BY sequence ASC
+         LIMIT ?`,
+      )
+      .all(sid, limit) as Array<{
+      sequence: number
+      event_id: string
+      timestamp: number
+      aggregate_type: EnvironmentAggregateType
+      aggregate_id: string
+      event_type: string
+      event_version: number
+      payload_json: string
+      causation_request_id: string | null
+      environment_id: string
+    }>
+
+    return rows.map((r) => this.rowToEnvelope(r))
+  }
+
+  private rowToEnvelope(r: {
+    sequence: number
+    event_id: string
+    timestamp: number
+    aggregate_type: EnvironmentAggregateType
+    aggregate_id: string
+    event_type: string
+    event_version: number
+    payload_json: string
+    causation_request_id: string | null
+    environment_id: string
+  }): EnvironmentEventEnvelope {
+    return {
       eventId: r.event_id,
       sequence: String(r.sequence),
       timestamp: r.timestamp,
@@ -141,6 +189,6 @@ export class EventLog {
       payload: JSON.parse(r.payload_json),
       causationRequestId: r.causation_request_id ?? undefined,
       environmentId: r.environment_id,
-    }))
+    }
   }
 }

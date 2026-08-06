@@ -11,8 +11,13 @@ import {
   type HostActionsPollResult,
   type HostActionTerminalResult,
   type RespondHostActionResult,
+  type SessionMessagesListResult,
   type SessionRef,
 } from '@superone/shared/environment'
+import {
+  buildSessionMessageCatalog,
+  pageSessionMessageCatalog,
+} from './message-catalog'
 import { stripMiniAppMarkup } from '@superone/shared/miniapp-prompt-tags'
 import type { LeaseGuard, SessionEventLog, SessionStore } from './ports'
 import {
@@ -22,7 +27,9 @@ import {
 } from './host-action-store'
 import {
   DEFAULT_PERMISSION_TIMEOUT_MS,
+  type AgentsConfirmOutcome,
   type NodeSessionRecord,
+  type NodeSessionSettings,
   type PendingInteraction,
   type PermissionDecision,
   type PlanDecisionResult,
@@ -33,6 +40,21 @@ import {
   type TurnImageAttachment,
   type TurnRunner,
 } from './types'
+
+/** Default wall-clock wait for multi-launch agent confirm (ms). Desktop: 10 min. */
+export const DEFAULT_AGENTS_CONFIRM_TIMEOUT_MS = 10 * 60_000
+
+/**
+ * Strip collaboration bearer credentials from a host wake prompt before the
+ * user bubble is persisted. Full text still goes to the model via turn text.
+ */
+export function redactTaskNotificationForDisplay(content: string): string {
+  return content
+    .replace(/\s+with credential\s+(?:"[^"]*"|'[^']*')/gi, '')
+    .replace(/\bs1sc_[A-Za-z0-9_-]+/g, '[redacted]')
+    .replace(/\s{2,}/g, ' ')
+    .trim()
+}
 
 // TurnImageAttachment used by TurnOpts / send queue.
 
@@ -50,7 +72,9 @@ export function forkSessionTitle(title: string | null): string {
 }
 
 export type {
+  AgentsConfirmOutcome,
   NodeSessionRecord,
+  NodeSessionSettings,
   PendingInteraction,
   PermissionDecision,
   PlanDecisionResult,
@@ -97,6 +121,16 @@ interface PlanWaiter {
   timer: ReturnType<typeof setTimeout>
 }
 
+interface AgentsConfirmWaiter {
+  sessionId: string
+  settle: (result: {
+    action: AgentsConfirmOutcome['action']
+    content?: Record<string, unknown>
+    reason: 'responded' | 'timeout' | 'aborted'
+  }) => void
+  timer: ReturnType<typeof setTimeout>
+}
+
 /** Options for one harness turn (active or queued). */
 interface TurnOpts {
   text: string
@@ -105,10 +139,29 @@ interface TurnOpts {
   effort?: string | null
   images?: TurnImageAttachment[]
   permissionMode?: string | null
+  sandboxMode?: string | null
   additionalDirectories?: string[]
   enabledSkills?: string[]
   disabledSkills?: string[]
   apiProviderId?: string | null
+  /** Codex turn kind (run|steer|review|compact). */
+  turnKind?: 'run' | 'steer' | 'review' | 'compact' | null
+  collaborationMode?: string | Record<string, unknown> | null
+  reviewTarget?: unknown
+  /**
+   * Host-origin synthetic turn (mailbox peer wake). Transcript/events store a
+   * redacted copy so collaboration credentials never leak into the UI snapshot.
+   */
+  source?: 'user' | 'task-notification'
+}
+
+/** Normalize optional string settings: empty → null; non-string → leave as-is (caller filters). */
+function normalizeSettingValue(value: unknown): string | null | undefined {
+  if (value === undefined) return undefined
+  if (value === null) return null
+  if (typeof value !== 'string') return undefined
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : null
 }
 
 type TurnQueueItem = TurnOpts
@@ -142,7 +195,9 @@ export class SessionRuntime {
   private readonly permissionWaiters = new Map<string, PermissionWaiter>()
   private readonly questionWaiters = new Map<string, QuestionWaiter>()
   private readonly planWaiters = new Map<string, PlanWaiter>()
+  private readonly agentsConfirmWaiters = new Map<string, AgentsConfirmWaiter>()
   private readonly permissionTimeoutMs: number
+  private readonly agentsConfirmTimeoutMs: number
   private readonly hostActions: HostActionStore | null
   /** Live waiters for requestHostAction terminal settlement. */
   private readonly hostActionWaiters = new Map<string, HostActionWaiter>()
@@ -157,6 +212,11 @@ export class SessionRuntime {
   private readonly turnQueues = new Map<string, TurnQueueItem[]>()
   /** In-flight runTurn count per session (for multi-turn live inject). */
   private readonly activeTurnCounts = new Map<string, number>()
+  /**
+   * Ephemeral system-prompt append (e.g. collaboration credential instructions).
+   * Not durable in sessions table — reconstructed from grants on restart when needed.
+   */
+  private readonly systemPromptAppends = new Map<string, string>()
 
   constructor(
     private readonly store: SessionStore,
@@ -164,9 +224,15 @@ export class SessionRuntime {
     private readonly leases: LeaseGuard,
     private readonly environmentId: string,
     private readonly turnRunner: TurnRunner,
-    opts?: { permissionTimeoutMs?: number; hostActions?: HostActionStore | null },
+    opts?: {
+      permissionTimeoutMs?: number
+      agentsConfirmTimeoutMs?: number
+      hostActions?: HostActionStore | null
+    },
   ) {
     this.permissionTimeoutMs = opts?.permissionTimeoutMs ?? DEFAULT_PERMISSION_TIMEOUT_MS
+    this.agentsConfirmTimeoutMs =
+      opts?.agentsConfirmTimeoutMs ?? DEFAULT_AGENTS_CONFIRM_TIMEOUT_MS
     this.hostActions = opts?.hostActions ?? null
     this.hydrateFromStore()
     this.reconcileAfterRestart()
@@ -231,6 +297,35 @@ export class SessionRuntime {
         session.isUserRenamed = false
         changed = true
       }
+      if (session.isAutomation !== true && session.isAutomation !== false) {
+        session.isAutomation = false
+        changed = true
+      }
+      if (session.automationId === undefined) {
+        session.automationId = null
+        changed = true
+      }
+      // Backfill durable settings for rows loaded from older schema (pre-settings_json).
+      if (session.permissionMode === undefined) {
+        session.permissionMode = null
+        changed = true
+      }
+      if (session.sandboxMode === undefined) {
+        session.sandboxMode = null
+        changed = true
+      }
+      if (session.model === undefined) {
+        session.model = null
+        changed = true
+      }
+      if (session.effort === undefined) {
+        session.effort = null
+        changed = true
+      }
+      if (session.apiProviderId === undefined) {
+        session.apiProviderId = null
+        changed = true
+      }
       if (!changed) continue
       session.updatedAt = Date.now()
       this.persist(session)
@@ -267,12 +362,33 @@ export class SessionRuntime {
     /** Session-scoped host-action tool groups. Defaults to [browser.read] when controller is set. */
     hostActionToolGroups?: string[]
     hostActionCapabilityVersion?: number
+    /** Absolute host cwd (project root or worktree). */
+    cwd?: string | null
+    /** Durable turn defaults applied when send omits a field. */
+    permissionMode?: string | null
+    sandboxMode?: string | null
+    model?: string | null
+    effort?: string | null
+    apiProviderId?: string | null
+    /**
+     * Collaboration / host system-prompt append (credential instructions).
+     * Ephemeral in-memory; durable grants reconstruct it after restart.
+     */
+    systemPromptAppend?: string | null
+    /** Mark session as automation-owned (filterable in session.list metadata). */
+    isAutomation?: boolean
+    automationId?: string | null
   }): NodeSessionRecord {
     const now = Date.now()
     const controller =
       typeof input.controllerClientSessionId === 'string' && input.controllerClientSessionId.trim()
         ? input.controllerClientSessionId.trim()
         : null
+    const automationId =
+      typeof input.automationId === 'string' && input.automationId.trim()
+        ? input.automationId.trim()
+        : null
+    const isAutomation = input.isAutomation === true || !!automationId
     const session: NodeSessionRecord = {
       sessionId: randomUUID(),
       projectId: input.projectId,
@@ -283,7 +399,12 @@ export class SessionRuntime {
       transcript: [],
       pendingInteraction: null,
       providerResume: null,
-      cwd: null,
+      cwd: input.cwd && input.cwd.trim() ? input.cwd.trim() : null,
+      permissionMode: input.permissionMode ?? null,
+      sandboxMode: input.sandboxMode ?? null,
+      model: input.model ?? null,
+      effort: input.effort ?? null,
+      apiProviderId: input.apiProviderId ?? null,
       createdAt: now,
       updatedAt: now,
       isPinned: false,
@@ -297,8 +418,13 @@ export class SessionRuntime {
         ? (input.hostActionToolGroups ?? [...DEFAULT_HOST_ACTION_TOOL_GROUPS])
         : [],
       alwaysAllowedTools: [],
+      isAutomation,
+      automationId,
     }
     this.live.set(session.sessionId, session)
+    if (input.systemPromptAppend && input.systemPromptAppend.trim()) {
+      this.systemPromptAppends.set(session.sessionId, input.systemPromptAppend.trim())
+    }
     this.persist(session)
     this.events.appendSession({
       sessionId: session.sessionId,
@@ -310,9 +436,26 @@ export class SessionRuntime {
         controllerClientSessionId: session.controllerClientSessionId,
         hostActionCapabilityVersion: session.hostActionCapabilityVersion,
         hostActionToolGroups: session.hostActionToolGroups,
+        ...(session.isAutomation
+          ? { isAutomation: true, automationId: session.automationId ?? null }
+          : {}),
       },
     })
     return this.clone(session)
+  }
+
+  /** Collaboration system-prompt append for a live session (if any). */
+  getSystemPromptAppend(sessionId: string): string | undefined {
+    return this.systemPromptAppends.get(sessionId)
+  }
+
+  /** Re-attach system-prompt append after restart (from durable grants). */
+  setSystemPromptAppend(sessionId: string, prompt: string | null | undefined): void {
+    if (!prompt || !prompt.trim()) {
+      this.systemPromptAppends.delete(sessionId)
+      return
+    }
+    this.systemPromptAppends.set(sessionId, prompt.trim())
   }
 
   /** Set agent cwd (project root or worktree). Null clears to project default. */
@@ -322,6 +465,46 @@ export class SessionRuntime {
     session.cwd = cwd && cwd.trim() ? cwd.trim() : null
     session.updatedAt = Date.now()
     this.persist(session)
+    return this.clone(session)
+  }
+
+  /**
+   * Patch durable per-session turn defaults.
+   * Only keys present in `patch` are updated; null clears a stored default.
+   * Applied as `send()` fallbacks when the turn payload omits the corresponding key.
+   */
+  patchSettings(sessionId: string, patch: NodeSessionSettings): NodeSessionRecord {
+    const session = this.live.get(sessionId)
+    if (!session) throw Object.assign(new Error('session not found'), { code: 'not_found' })
+    if (session.closed || session.status === 'ended') {
+      throw Object.assign(new Error('session is closed'), { code: 'failed_precondition' })
+    }
+
+    const apply = (key: keyof NodeSessionSettings): void => {
+      if (!(key in patch)) return
+      const next = normalizeSettingValue(patch[key])
+      if (next === undefined) return
+      session[key] = next
+    }
+    apply('permissionMode')
+    apply('sandboxMode')
+    apply('model')
+    apply('effort')
+    apply('apiProviderId')
+
+    session.updatedAt = Date.now()
+    this.persist(session)
+    this.events.appendSession({
+      sessionId: session.sessionId,
+      eventType: SESSION_DURABLE_EVENT.settingsChanged,
+      payload: {
+        permissionMode: session.permissionMode ?? null,
+        sandboxMode: session.sandboxMode ?? null,
+        model: session.model ?? null,
+        effort: session.effort ?? null,
+        apiProviderId: session.apiProviderId ?? null,
+      },
+    })
     return this.clone(session)
   }
 
@@ -391,6 +574,12 @@ export class SessionRuntime {
       pendingInteraction: null,
       providerResume,
       cwd,
+      // Fork inherits durable turn defaults so the child keeps model/effort/etc.
+      permissionMode: source.permissionMode ?? null,
+      sandboxMode: source.sandboxMode ?? null,
+      model: source.model ?? null,
+      effort: source.effort ?? null,
+      apiProviderId: source.apiProviderId ?? null,
       createdAt: now,
       updatedAt: now,
       isPinned: false,
@@ -402,6 +591,9 @@ export class SessionRuntime {
       hostActionCapabilityVersion: source.hostActionCapabilityVersion,
       hostActionToolGroups: [...(source.hostActionToolGroups ?? [])],
       alwaysAllowedTools: [...(source.alwaysAllowedTools ?? [])],
+      // Forks of automation sessions are user sessions (not automation-owned).
+      isAutomation: false,
+      automationId: null,
     }
     this.live.set(session.sessionId, session)
     this.persist(session)
@@ -438,6 +630,39 @@ export class SessionRuntime {
     return this.events.listAfter(afterSequence)
   }
 
+  /**
+   * Paged denser message catalog for remote UI hydrate.
+   * Source of truth: durable transcript; tool summaries / optional checkpoint
+   * and resume ids are expanded from the session event log when present.
+   */
+  listMessages(input: {
+    sessionId: string
+    cursor?: string | number | null
+    limit?: number
+  }): SessionMessagesListResult {
+    const sessionId = String(input.sessionId ?? '').trim()
+    if (!sessionId) {
+      throw Object.assign(new Error('sessionId required'), { code: 'invalid_argument' })
+    }
+    const session = this.live.get(sessionId)
+    if (!session) {
+      throw Object.assign(new Error('session not found'), { code: 'not_found' })
+    }
+    const events =
+      typeof this.events.listForSession === 'function'
+        ? this.events.listForSession(sessionId)
+        : this.events.listAfter('0', 50_000).filter(
+            (e) =>
+              (!e.aggregateType || e.aggregateType === 'session') &&
+              (!e.aggregateId || e.aggregateId === sessionId),
+          )
+    const catalog = buildSessionMessageCatalog(session, events)
+    return pageSessionMessageCatalog(sessionId, catalog, {
+      cursor: input.cursor,
+      limit: input.limit,
+    })
+  }
+
   async send(input: {
     sessionId: string
     text: string
@@ -445,22 +670,30 @@ export class SessionRuntime {
     leaseId: string
     generation: string
     requestId?: string
-    /** UI-selected model for this turn (optional). */
+    /** UI-selected model for this turn (optional; falls back to session.model). */
     model?: string | null
-    /** Reasoning / thinking effort for this turn. */
+    /** Reasoning / thinking effort for this turn (falls back to session.effort). */
     effort?: string | null
     /** Inline image/document attachments for this turn. */
     images?: TurnImageAttachment[]
-    /** Claude-style permission mode for this turn. */
+    /** Claude-style permission mode for this turn (falls back to session.permissionMode). */
     permissionMode?: string | null
+    /** Sandbox policy for this turn (falls back to session.sandboxMode). */
+    sandboxMode?: string | null
     /** Extra readable directories. */
     additionalDirectories?: string[]
     /** Claude SDK skills allow-list (desktop disabled-skills parity). */
     enabledSkills?: string[]
     /** Skills to exclude when enabledSkills is not provided. */
     disabledSkills?: string[]
-    /** Node provider credential id for API keys this turn. */
+    /** Node provider credential id for API keys this turn (falls back to session.apiProviderId). */
     apiProviderId?: string | null
+    /** Codex turn kind (run|steer|review|compact). */
+    turnKind?: 'run' | 'steer' | 'review' | 'compact' | null
+    /** Codex collaboration mode. */
+    collaborationMode?: string | Record<string, unknown> | null
+    /** Codex review/start target. */
+    reviewTarget?: unknown
   }): Promise<NodeSessionRecord> {
     if (this.disposing) {
       throw Object.assign(new Error('runtime is shutting down'), { code: 'failed_precondition' })
@@ -480,17 +713,43 @@ export class SessionRuntime {
       throw Object.assign(new Error('session is closed'), { code: 'failed_precondition' })
     }
 
+    // Turn payload wins; omitted/empty keys fall back to durable session settings
+    // so remote clients need not re-send model/effort/etc. every turn.
+    const pick = (
+      provided: string | null | undefined,
+      stored: string | null | undefined,
+    ): string | null | undefined => {
+      if (typeof provided === 'string' && provided.trim()) return provided.trim()
+      if (provided === null) return null
+      if (typeof stored === 'string' && stored.trim()) return stored.trim()
+      return stored ?? undefined
+    }
+
+    // Streaming Codex run → steer (desktop parity) when client did not set turnKind.
+    let turnKind = input.turnKind ?? null
+    if (
+      !turnKind &&
+      session.status === 'streaming' &&
+      (session.harnessId || 'claude') === 'codex'
+    ) {
+      turnKind = 'steer'
+    }
+
     const turnOpts: TurnOpts = {
       text: input.text,
       requestId: input.requestId,
-      model: input.model,
-      effort: input.effort,
+      model: pick(input.model, session.model),
+      effort: pick(input.effort, session.effort),
       images: input.images,
-      permissionMode: input.permissionMode,
+      permissionMode: pick(input.permissionMode, session.permissionMode),
+      sandboxMode: pick(input.sandboxMode, session.sandboxMode),
       additionalDirectories: input.additionalDirectories,
       enabledSkills: input.enabledSkills,
       disabledSkills: input.disabledSkills,
-      apiProviderId: input.apiProviderId,
+      apiProviderId: pick(input.apiProviderId, session.apiProviderId),
+      turnKind,
+      collaborationMode: input.collaborationMode,
+      reviewTarget: input.reviewTarget,
     }
 
     // Always accept the user message into the durable transcript (queue or run).
@@ -498,9 +757,101 @@ export class SessionRuntime {
 
     if (session.status === 'streaming') {
       // Claude: long-lived SDK session accepts concurrent sendTurn with
-      // priority=next (desktop MessageBridge parity). Codex and others FIFO.
-      const liveInject = (session.harnessId || 'claude') === 'claude'
+      // priority=next. Codex steer injects into the active app-server turn.
+      // Other kinds (compact/review) still FIFO-queue.
+      const harnessId = session.harnessId || 'claude'
+      const liveInject =
+        harnessId === 'claude' ||
+        (harnessId === 'codex' &&
+          (turnOpts.turnKind === 'steer' || turnOpts.turnKind === 'run'))
       if (liveInject) {
+        // Ensure codex mid-stream inject is treated as steer by the runner.
+        if (harnessId === 'codex' && turnOpts.turnKind === 'run') {
+          turnOpts.turnKind = 'steer'
+        }
+        this.beginTurn(session, turnOpts)
+        return this.clone(session)
+      }
+      const q = this.turnQueues.get(session.sessionId) ?? []
+      q.push(turnOpts)
+      this.turnQueues.set(session.sessionId, q)
+      this.events.appendSession({
+        sessionId: session.sessionId,
+        eventType: SESSION_DURABLE_EVENT.statusChanged,
+        payload: { status: 'streaming', queued: true },
+        causationRequestId: input.requestId,
+      })
+      return this.clone(session)
+    }
+
+    this.beginTurn(session, turnOpts)
+    return this.clone(session)
+  }
+
+  /**
+   * Host-initiated turn without a control lease (collaboration initial task).
+   * Still rejects closed/disposing sessions. Falls back to durable session settings.
+   */
+  async sendWithoutLease(input: {
+    sessionId: string
+    text: string
+    requestId?: string
+    model?: string | null
+    effort?: string | null
+    permissionMode?: string | null
+    sandboxMode?: string | null
+    apiProviderId?: string | null
+    /** Host-origin synthetic turn (peer mailbox wake). */
+    source?: 'user' | 'task-notification'
+  }): Promise<NodeSessionRecord> {
+    if (this.disposing) {
+      throw Object.assign(new Error('runtime is shutting down'), { code: 'failed_precondition' })
+    }
+    const session = this.live.get(input.sessionId)
+    if (!session) throw Object.assign(new Error('session not found'), { code: 'not_found' })
+    if (session.closed || session.status === 'ended') {
+      throw Object.assign(new Error('session is closed'), { code: 'failed_precondition' })
+    }
+
+    const pick = (
+      provided: string | null | undefined,
+      stored: string | null | undefined,
+    ): string | null | undefined => {
+      if (typeof provided === 'string' && provided.trim()) return provided.trim()
+      if (provided === null) return null
+      if (typeof stored === 'string' && stored.trim()) return stored.trim()
+      return stored ?? undefined
+    }
+
+    const turnOpts: TurnOpts = {
+      text: input.text,
+      requestId: input.requestId,
+      model: pick(input.model, session.model),
+      effort: pick(input.effort, session.effort),
+      permissionMode: pick(input.permissionMode, session.permissionMode),
+      sandboxMode: pick(input.sandboxMode, session.sandboxMode),
+      apiProviderId: pick(input.apiProviderId, session.apiProviderId),
+      source: input.source,
+    }
+
+    this.appendUserMessage(session, turnOpts)
+
+    if (session.status === 'streaming') {
+      // Match send(): Claude live inject + Codex mid-stream steer/run concurrent;
+      // other harnesses FIFO-queue.
+      let turnKind = turnOpts.turnKind ?? null
+      const harnessId = session.harnessId || 'claude'
+      if (!turnKind && harnessId === 'codex') {
+        turnKind = 'steer'
+        turnOpts.turnKind = 'steer'
+      }
+      const liveInject =
+        harnessId === 'claude' ||
+        (harnessId === 'codex' && (turnKind === 'steer' || turnKind === 'run'))
+      if (liveInject) {
+        if (harnessId === 'codex' && turnOpts.turnKind === 'run') {
+          turnOpts.turnKind = 'steer'
+        }
         this.beginTurn(session, turnOpts)
         return this.clone(session)
       }
@@ -521,10 +872,16 @@ export class SessionRuntime {
   }
 
   private appendUserMessage(session: NodeSessionRecord, opts: TurnOpts): void {
+    // Model still receives full opts.text (incl. collab credential); transcript
+    // stores a redacted copy for task-notification wakes.
+    const displayText =
+      opts.source === 'task-notification'
+        ? redactTaskNotificationForDisplay(opts.text)
+        : opts.text
     const userBlock: TranscriptBlock = {
       id: randomUUID(),
       role: 'user',
-      text: opts.text,
+      text: displayText,
       createdAt: Date.now(),
     }
     session.transcript.push(userBlock)
@@ -532,7 +889,7 @@ export class SessionRuntime {
 
     let autoTitle: string | null = null
     if (!session.title || !session.title.trim()) {
-      autoTitle = deriveSessionTitleFromUserText(opts.text)
+      autoTitle = deriveSessionTitleFromUserText(displayText)
       if (autoTitle) session.title = autoTitle
     }
 
@@ -540,7 +897,11 @@ export class SessionRuntime {
     this.events.appendSession({
       sessionId: session.sessionId,
       eventType: SESSION_DURABLE_EVENT.userMessage,
-      payload: { blockId: userBlock.id, text: opts.text },
+      payload: {
+        blockId: userBlock.id,
+        text: displayText,
+        ...(opts.source ? { source: opts.source } : {}),
+      },
       causationRequestId: opts.requestId,
     })
     if (autoTitle) {
@@ -580,9 +941,8 @@ export class SessionRuntime {
     this.inFlightTurns.add(turnPromise)
     void turnPromise.finally(() => {
       this.inFlightTurns.delete(turnPromise)
-      const n = (this.activeTurnCounts.get(sid) ?? 1) - 1
-      if (n <= 0) this.activeTurnCounts.delete(sid)
-      else this.activeTurnCounts.set(sid, n)
+      // activeTurnCounts is decremented inside runTurn.finally *before* idle/FIFO
+      // decisions so concurrent completions never both observe a stale count.
     })
   }
 
@@ -598,6 +958,10 @@ export class SessionRuntime {
       typeof opts.permissionMode === 'string' && opts.permissionMode.trim()
         ? opts.permissionMode.trim()
         : undefined
+    const sandboxMode =
+      typeof opts.sandboxMode === 'string' && opts.sandboxMode.trim()
+        ? opts.sandboxMode.trim()
+        : undefined
     try {
       const result = await this.turnRunner({
         session: this.clone(session),
@@ -607,11 +971,15 @@ export class SessionRuntime {
         effort: opts.effort && opts.effort.trim() ? opts.effort.trim() : undefined,
         images: opts.images && opts.images.length > 0 ? opts.images : undefined,
         permissionMode,
+        sandboxMode,
         additionalDirectories: opts.additionalDirectories?.filter(Boolean),
         enabledSkills: opts.enabledSkills?.filter((s) => typeof s === 'string' && s.trim()),
         disabledSkills: opts.disabledSkills?.filter((s) => typeof s === 'string' && s.trim()),
         apiProviderId:
           opts.apiProviderId && opts.apiProviderId.trim() ? opts.apiProviderId.trim() : undefined,
+        turnKind: opts.turnKind ?? undefined,
+        collaborationMode: opts.collaborationMode ?? undefined,
+        reviewTarget: opts.reviewTarget,
         signal: abort.signal,
         onDelta: (delta) => {
           if (abort.signal.aborted) return
@@ -670,23 +1038,26 @@ export class SessionRuntime {
         })
       } else {
         assistantText = result.finalText || assistantText
-        session.transcript.push({
-          id: assistantId,
-          role: 'assistant',
-          text: assistantText,
-          createdAt: Date.now(),
-        })
         session.providerResume = result.providerResume ?? session.providerResume
-        this.events.appendSession({
-          sessionId: session.sessionId,
-          eventType: SESSION_DURABLE_EVENT.assistantMessage,
-          payload: { blockId: assistantId, text: assistantText },
-          causationRequestId: requestId,
-        })
+        if (!result.skipAssistantTranscript) {
+          session.transcript.push({
+            id: assistantId,
+            role: 'assistant',
+            text: assistantText,
+            createdAt: Date.now(),
+          })
+          this.events.appendSession({
+            sessionId: session.sessionId,
+            eventType: SESSION_DURABLE_EVENT.assistantMessage,
+            payload: { blockId: assistantId, text: assistantText },
+            causationRequestId: requestId,
+          })
+        }
         // Stay streaming if more concurrent turns or FIFO items remain.
-        const remaining = (this.activeTurnCounts.get(session.sessionId) ?? 1) - 1
+        // Count is decremented in finally; peek peers as (count - 1).
+        const remainingPeers = Math.max(0, (this.activeTurnCounts.get(session.sessionId) ?? 1) - 1)
         const fifo = this.turnQueues.get(session.sessionId)?.length ?? 0
-        if (remaining > 0 || fifo > 0) {
+        if (remainingPeers > 0 || fifo > 0) {
           session.status = 'streaming'
         } else {
           session.status = 'idle'
@@ -710,8 +1081,8 @@ export class SessionRuntime {
         })
       } else {
         // Only mark error if this is the last active turn.
-        const remaining = (this.activeTurnCounts.get(session.sessionId) ?? 1) - 1
-        if (remaining <= 0) {
+        const remainingPeers = Math.max(0, (this.activeTurnCounts.get(session.sessionId) ?? 1) - 1)
+        if (remainingPeers <= 0) {
           session.status = 'error'
           this.events.appendSession({
             sessionId: session.sessionId,
@@ -722,13 +1093,17 @@ export class SessionRuntime {
       }
     } finally {
       const sid = session.sessionId
+      // Decrement first so concurrent completions and FIFO drain see accurate counts.
+      const remainingAfter = Math.max(0, (this.activeTurnCounts.get(sid) ?? 1) - 1)
+      if (remainingAfter <= 0) this.activeTurnCounts.delete(sid)
+      else this.activeTurnCounts.set(sid, remainingAfter)
+
       // Claude may have multiple injected turns in flight. Cancelling all
       // session actions when the first one settles would abort tools owned by
       // the remaining turn. Keep the historical eager cancellation for a
       // single-turn/FIFO session, but defer shared cleanup until the final
       // concurrent turn has finished.
-      const remainingBeforeCleanup = (this.activeTurnCounts.get(sid) ?? 1) - 1
-      if (!session.closed && remainingBeforeCleanup <= 0) {
+      if (!session.closed && remainingAfter <= 0) {
         this.cancelHostActionsForSession(sid, 'turn_ended')
       }
       if (!session.closed) {
@@ -736,8 +1111,7 @@ export class SessionRuntime {
         this.persist(session)
       }
 
-      // Drain FIFO queue (non-Claude harnesses). Claude live inject uses concurrent beginTurn.
-      const remainingAfter = (this.activeTurnCounts.get(sid) ?? 1) - 1
+      // Drain FIFO queue (non-live-inject harnesses). Claude/Codex live inject uses concurrent beginTurn.
       if (
         !session.closed &&
         remainingAfter <= 0 &&
@@ -751,7 +1125,7 @@ export class SessionRuntime {
           this.beginTurn(session, next)
         } else {
           this.turnQueues.delete(sid)
-          if (session.status === 'streaming' && remainingAfter <= 0) {
+          if (session.status === 'streaming') {
             // No more work — settle idle if we stayed streaming for injects.
             session.status = 'idle'
             this.events.appendSession({
@@ -1277,6 +1651,10 @@ export class SessionRuntime {
     client: { clientSessionId: string }
     leaseId: string
     generation: string
+    /** Multi-launch form edits / feedback (session_agents_confirm). */
+    formAnswers?: Record<string, unknown>
+    /** True when the UI cancelled the multi-launch dialog. */
+    cancel?: boolean
   }): void {
     const session = this.live.get(input.sessionId)
     if (!session) throw Object.assign(new Error('session not found'), { code: 'not_found' })
@@ -1286,11 +1664,32 @@ export class SessionRuntime {
       generation: input.generation,
       holderClientId: input.client.clientSessionId,
     })
-    if (
-      !session.pendingInteraction ||
-      session.pendingInteraction.interactionId !== input.interactionId ||
-      (session.pendingInteraction.kind && session.pendingInteraction.kind !== 'permission')
-    ) {
+    const pending = session.pendingInteraction
+    if (!pending || pending.interactionId !== input.interactionId) {
+      throw Object.assign(new Error('no matching pending permission'), { code: 'failed_precondition' })
+    }
+
+    // Multi-launch agent collaboration confirm (session_collab_request).
+    if (pending.kind === 'session_agents_confirm') {
+      const waiter = this.agentsConfirmWaiters.get(input.interactionId)
+      if (!waiter || waiter.sessionId !== input.sessionId) {
+        throw Object.assign(new Error('no matching pending agents confirm'), {
+          code: 'failed_precondition',
+        })
+      }
+      let action: AgentsConfirmOutcome['action']
+      if (input.cancel === true) action = 'cancel'
+      else if (input.decision === 'deny') action = 'decline'
+      else action = 'accept'
+      waiter.settle({
+        action,
+        content: input.formAnswers,
+        reason: 'responded',
+      })
+      return
+    }
+
+    if (pending.kind && pending.kind !== 'permission') {
       throw Object.assign(new Error('no matching pending permission'), { code: 'failed_precondition' })
     }
     const waiter = this.permissionWaiters.get(input.interactionId)
@@ -1315,6 +1714,128 @@ export class SessionRuntime {
       decision,
       reason: 'responded',
       clientDecision: input.decision,
+    })
+  }
+
+  /**
+   * Block until the control-lease holder accepts/declines multi-launch collab.
+   * Used by node-local session_collab_request (not Host Action).
+   */
+  requestAgentsConfirm(input: {
+    sessionId: string
+    launches: unknown[]
+    profiles: unknown[]
+    signal?: AbortSignal
+    requestId?: string
+  }): Promise<AgentsConfirmOutcome> {
+    const session = this.live.get(input.sessionId)
+    if (!session) {
+      return Promise.reject(
+        Object.assign(new Error('session not found'), { code: 'not_found' }),
+      )
+    }
+    if (session.pendingInteraction) {
+      this.rejectPendingPermission(session, 'aborted')
+    }
+
+    const interaction: PendingInteraction = {
+      interactionId: `sessionagents_${Date.now()}_${randomUUID().slice(0, 8)}`,
+      kind: 'session_agents_confirm',
+      toolName: 'session_collab_request',
+      toolUseId: undefined,
+      input: {},
+      createdAt: Date.now(),
+      requestKind: 'session_agents_confirm',
+      serverName: 'superone',
+      message: 'Allow this agent to start the following sessions?',
+      allowAlwaysAllow: false,
+      sessionAgentsConfirm: {
+        launches: input.launches,
+        profiles: input.profiles,
+      },
+    }
+
+    return new Promise<AgentsConfirmOutcome>((resolve) => {
+      let settled = false
+      session.pendingInteraction = interaction
+      session.updatedAt = Date.now()
+      this.persist(session)
+      this.events.appendSession({
+        sessionId: session.sessionId,
+        eventType: SESSION_DURABLE_EVENT.permissionRequested,
+        payload: interaction,
+        causationRequestId: input.requestId,
+      })
+
+      const settle = (result: {
+        action: AgentsConfirmOutcome['action']
+        content?: Record<string, unknown>
+        reason: 'responded' | 'timeout' | 'aborted'
+      }): void => {
+        if (settled) return
+        settled = true
+        const waiter = this.agentsConfirmWaiters.get(interaction.interactionId)
+        if (waiter) {
+          clearTimeout(waiter.timer)
+          this.agentsConfirmWaiters.delete(interaction.interactionId)
+        }
+        if (session.pendingInteraction?.interactionId === interaction.interactionId) {
+          session.pendingInteraction = null
+          session.updatedAt = Date.now()
+          this.persist(session)
+        }
+        if (result.reason === 'responded') {
+          this.events.appendSession({
+            sessionId: session.sessionId,
+            eventType: SESSION_DURABLE_EVENT.permissionResponded,
+            payload: {
+              interactionId: interaction.interactionId,
+              decision:
+                result.action === 'accept'
+                  ? 'allow'
+                  : result.action === 'cancel'
+                    ? 'cancel'
+                    : 'deny',
+              action: result.action,
+            },
+          })
+          resolve({ action: result.action, content: result.content })
+        } else {
+          this.events.appendSession({
+            sessionId: session.sessionId,
+            eventType:
+              result.reason === 'timeout'
+                ? SESSION_DURABLE_EVENT.permissionTimeout
+                : SESSION_DURABLE_EVENT.permissionAborted,
+            payload: { interactionId: interaction.interactionId, decision: 'deny' },
+          })
+          // Timeout/abort look like cancel to the tool (status: cancelled).
+          resolve({ action: 'cancel' })
+        }
+      }
+
+      const timer = setTimeout(() => {
+        settle({ action: 'cancel', reason: 'timeout' })
+      }, this.agentsConfirmTimeoutMs)
+
+      this.agentsConfirmWaiters.set(interaction.interactionId, {
+        sessionId: session.sessionId,
+        settle,
+        timer,
+      })
+
+      const signal = input.signal
+      if (signal?.aborted) {
+        settle({ action: 'cancel', reason: 'aborted' })
+        return
+      }
+      signal?.addEventListener(
+        'abort',
+        () => {
+          settle({ action: 'cancel', reason: 'aborted' })
+        },
+        { once: true },
+      )
     })
   }
 
@@ -1492,6 +2013,12 @@ export class SessionRuntime {
     if (pending.kind === 'plan') {
       const pw = this.planWaiters.get(pending.interactionId)
       if (pw) pw.settle({ decision: 'reject', reason })
+      else session.pendingInteraction = null
+      return
+    }
+    if (pending.kind === 'session_agents_confirm') {
+      const aw = this.agentsConfirmWaiters.get(pending.interactionId)
+      if (aw) aw.settle({ action: 'cancel', reason })
       else session.pendingInteraction = null
       return
     }
@@ -1781,6 +2308,13 @@ export class SessionRuntime {
       hostActionCapabilityVersion: s.hostActionCapabilityVersion ?? 0,
       hostActionToolGroups: [...(s.hostActionToolGroups ?? [])],
       alwaysAllowedTools: [...(s.alwaysAllowedTools ?? [])],
+      permissionMode: s.permissionMode ?? null,
+      sandboxMode: s.sandboxMode ?? null,
+      model: s.model ?? null,
+      effort: s.effort ?? null,
+      apiProviderId: s.apiProviderId ?? null,
+      isAutomation: s.isAutomation === true,
+      automationId: s.automationId ?? null,
     }
   }
 }

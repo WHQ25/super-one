@@ -22,6 +22,11 @@ function session(overrides?: Partial<NodeSessionRecord>): NodeSessionRecord {
     pendingInteraction: null,
     providerResume: null,
     cwd: null,
+    permissionMode: null,
+    sandboxMode: null,
+    model: null,
+    effort: null,
+    apiProviderId: null,
     createdAt: 0,
     updatedAt: 0,
     isPinned: false,
@@ -160,6 +165,86 @@ describe('createSimulatedTurnRunner', () => {
     })
     expect(result.finalText).toBe('ab')
     expect(deltas).toEqual(['a', 'b'])
+  })
+})
+
+describe('SessionRuntime.patchSettings + send fallbacks', () => {
+  it('persists settings and uses stored model when send omits model', async () => {
+    const { store, events, leases, rows } = memoryPorts()
+    let seenModel: string | null | undefined
+    const runner: import('./types').TurnRunner = async (input) => {
+      seenModel = input.model
+      input.onDelta('ok')
+      return { finalText: 'ok', providerResume: 'resume-1' }
+    }
+    const rt = new SessionRuntime(store, events, leases, 'env-1', runner)
+    const created = rt.create({ projectId: 'p1', harnessId: 'claude' })
+    expect(created.model).toBeNull()
+
+    const patched = rt.patchSettings(created.sessionId, {
+      model: 'claude-opus-4',
+      effort: 'high',
+      permissionMode: 'acceptEdits',
+      sandboxMode: 'workspace-write',
+      apiProviderId: 'cred-1',
+    })
+    expect(patched.model).toBe('claude-opus-4')
+    expect(patched.effort).toBe('high')
+    expect(patched.permissionMode).toBe('acceptEdits')
+    expect(patched.sandboxMode).toBe('workspace-write')
+    expect(patched.apiProviderId).toBe('cred-1')
+    // Durable row updated
+    expect(rows.get(created.sessionId)?.model).toBe('claude-opus-4')
+
+    await rt.send({
+      sessionId: created.sessionId,
+      text: 'hi',
+      client: { clientSessionId: 'c1' },
+      leaseId: 'l1',
+      generation: '1',
+      // no model — must fall back to stored
+    })
+    for (let i = 0; i < 40; i++) {
+      if (rt.get(created.sessionId)?.status === 'idle') break
+      await new Promise((r) => setTimeout(r, 5))
+    }
+    expect(seenModel).toBe('claude-opus-4')
+    expect(rt.get(created.sessionId)?.providerResume).toBe('resume-1')
+  })
+
+  it('lets send options override stored settings', async () => {
+    const { store, events, leases } = memoryPorts()
+    let seenModel: string | null | undefined
+    const runner: import('./types').TurnRunner = async (input) => {
+      seenModel = input.model
+      input.onDelta('x')
+      return { finalText: 'x', providerResume: null }
+    }
+    const rt = new SessionRuntime(store, events, leases, 'env-1', runner)
+    const created = rt.create({ projectId: 'p1' })
+    rt.patchSettings(created.sessionId, { model: 'stored-model' })
+    await rt.send({
+      sessionId: created.sessionId,
+      text: 'hi',
+      client: { clientSessionId: 'c1' },
+      leaseId: 'l1',
+      generation: '1',
+      model: 'override-model',
+    })
+    for (let i = 0; i < 40; i++) {
+      if (rt.get(created.sessionId)?.status === 'idle') break
+      await new Promise((r) => setTimeout(r, 5))
+    }
+    expect(seenModel).toBe('override-model')
+  })
+
+  it('null patch clears a stored default', () => {
+    const { store, events, leases } = memoryPorts()
+    const rt = new SessionRuntime(store, events, leases, 'env-1', createSimulatedTurnRunner({ delayMs: 0 }))
+    const created = rt.create({ projectId: 'p1' })
+    rt.patchSettings(created.sessionId, { model: 'm1' })
+    const cleared = rt.patchSettings(created.sessionId, { model: null })
+    expect(cleared.model).toBeNull()
   })
 })
 

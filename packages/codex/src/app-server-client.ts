@@ -394,9 +394,91 @@ export async function openCodexAppServer(
   }
 }
 
+/** Codex app-server turn kinds (desktop `run|steer|review|compact` parity). */
+export type CodexTurnKind = 'run' | 'steer' | 'review' | 'compact'
+
+export interface CodexAppServerTurnResult {
+  finalText: string
+  threadId: string | null
+  /** Active turn id from turn/start (for subsequent steer). */
+  turnId?: string | null
+  /**
+   * True when this call was a fire-and-forget steer into an in-flight turn.
+   * Callers should not append an assistant transcript block.
+   */
+  skipAssistantTranscript?: boolean
+}
+
+/**
+ * Ensure a thread exists on the open client (start or resume).
+ * Does not start a turn.
+ */
+export async function ensureCodexThread(opts: {
+  client: CodexAppServerHandle
+  cwd: string
+  threadId?: string | null
+  threadConfig?: Record<string, unknown>
+  signal?: AbortSignal
+}): Promise<string> {
+  if (opts.signal?.aborted) throw new Error('Codex turn interrupted')
+  const configPayload = opts.threadConfig ? { config: opts.threadConfig } : {}
+  let threadId = opts.threadId ?? null
+
+  if (threadId) {
+    const resumed = await opts.client.request('thread/resume', {
+      threadId,
+      cwd: opts.cwd,
+      approvalPolicy: 'never',
+      sandbox: 'workspace-write',
+      ...configPayload,
+    })
+    const thread = asRecord(resumed.thread)
+    threadId = readString(thread?.id) ?? readString(resumed.id) ?? threadId
+  } else {
+    const started = await opts.client.request('thread/start', {
+      cwd: opts.cwd,
+      approvalPolicy: 'never',
+      sandbox: 'workspace-write',
+      ...configPayload,
+    })
+    const thread = asRecord(started.thread)
+    threadId = readString(thread?.id) ?? readString(started.id)
+  }
+  if (!threadId) {
+    throw new Error('thread/start did not return a thread id')
+  }
+  return threadId
+}
+
+/**
+ * Fire-and-forget steer into an active turn (desktop `turn/steer` parity).
+ * Does not wait for turn/completed — the original turn continues streaming.
+ */
+export async function steerCodexAppServerTurn(opts: {
+  client: CodexAppServerHandle
+  threadId: string
+  prompt: string
+  expectedTurnId?: string | null
+  signal?: AbortSignal
+}): Promise<CodexAppServerTurnResult> {
+  if (opts.signal?.aborted) throw new Error('Codex turn interrupted')
+  await opts.client.request('turn/steer', {
+    threadId: opts.threadId,
+    input: [{ type: 'text', text: opts.prompt }],
+    ...(opts.expectedTurnId ? { expectedTurnId: opts.expectedTurnId } : {}),
+  })
+  return {
+    finalText: '',
+    threadId: opts.threadId,
+    turnId: opts.expectedTurnId ?? null,
+    skipAssistantTranscript: true,
+  }
+}
+
 /**
  * Run one agent turn against an open client.
- * Waits for turn/completed matching the turn id from turn/start.
+ * Waits for turn/completed matching the turn id from turn/start
+ * (except turnKind=steer, which is fire-and-forget).
  */
 export async function runCodexAppServerTurn(opts: {
   client: CodexAppServerHandle
@@ -406,6 +488,22 @@ export async function runCodexAppServerTurn(opts: {
   model?: string
   /** Codex model reasoning effort (desktop parity). */
   reasoningEffort?: 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
+  /**
+   * Turn kind: run (default), steer, review, compact.
+   * steer requires an existing thread + expectedTurnId when possible.
+   */
+  turnKind?: CodexTurnKind
+  /** Desktop collaborationMode payload (object or mode string). */
+  collaborationMode?: Record<string, unknown> | string | null
+  /** review/start target (uncommitted / branch / commit). */
+  reviewTarget?: unknown
+  /** Active turn id for steer (from a prior turn/start). */
+  expectedTurnId?: string | null
+  /**
+   * When true, skip thread/start|resume (caller already ensured the thread on
+   * a long-lived connection). threadId must be set.
+   */
+  skipThreadSetup?: boolean
   /** Lossless App Server -> AgentEvent path. Takes precedence over onDelta. */
   onAgentEvent?: (event: AgentEvent) => void
   /** Stable assistant message id used by AgentEvents for this turn. */
@@ -418,54 +516,76 @@ export async function runCodexAppServerTurn(opts: {
    * Applied on both thread/start and thread/resume so SuperOne MCP attaches every turn.
    */
   threadConfig?: Record<string, unknown>
-}): Promise<{ finalText: string; threadId: string | null }> {
+}): Promise<CodexAppServerTurnResult> {
+  const turnKind: CodexTurnKind = opts.turnKind ?? 'run'
   let threadId = opts.threadId ?? null
-  const configPayload = opts.threadConfig ? { config: opts.threadConfig } : {}
 
-  if (threadId) {
-    const resumed = await opts.client.request('thread/resume', {
+  // Steer injects into an in-flight turn: never thread/resume by default when
+  // the caller already has a threadId (long-lived app-server). Explicit
+  // skipThreadSetup: false restores the old resume-before-steer behavior.
+  const skipSetup =
+    opts.skipThreadSetup === true ||
+    (turnKind === 'steer' && Boolean(threadId) && opts.skipThreadSetup !== false)
+
+  if (!skipSetup) {
+    threadId = await ensureCodexThread({
+      client: opts.client,
+      cwd: opts.cwd,
       threadId,
-      cwd: opts.cwd,
-      approvalPolicy: 'never',
-      sandbox: 'workspace-write',
-      ...configPayload,
+      threadConfig: opts.threadConfig,
+      signal: opts.signal,
     })
-    const thread = asRecord(resumed.thread)
-    const resumedId = readString(thread?.id) ?? readString(resumed.id) ?? threadId
-    threadId = resumedId
-  } else {
-    const started = await opts.client.request('thread/start', {
-      cwd: opts.cwd,
-      // Stage 4: avoid interactive approvals until permission RPC exists.
-      approvalPolicy: 'never',
-      sandbox: 'workspace-write',
-      ...configPayload,
-    })
-    const thread = asRecord(started.thread)
-    threadId = readString(thread?.id) ?? readString(started.id)
-    if (!threadId) {
-      throw new Error('thread/start did not return a thread id')
-    }
+  } else if (!threadId) {
+    throw new Error('skipThreadSetup requires threadId')
   }
 
   if (opts.signal.aborted) throw new Error('Codex turn interrupted')
 
-  const turnStartResult = await opts.client.request('turn/start', {
-    threadId,
-    input: [{ type: 'text', text: opts.prompt, text_elements: [] }],
-    ...(opts.model ? { model: opts.model } : {}),
-    ...(opts.reasoningEffort
-      ? { effort: opts.reasoningEffort, reasoning_effort: opts.reasoningEffort }
-      : {}),
-    approvalPolicy: 'never',
-    sandboxPolicy: {
-      type: 'workspaceWrite',
-      writableRoots: [opts.cwd],
-    },
-  })
+  if (turnKind === 'steer') {
+    return steerCodexAppServerTurn({
+      client: opts.client,
+      threadId,
+      prompt: opts.prompt,
+      expectedTurnId: opts.expectedTurnId,
+      signal: opts.signal,
+    })
+  }
 
-  const turn = asRecord(turnStartResult.turn)
-  const turnId = readString(turn?.id)
+  let turnId: string | null = null
+
+  if (turnKind === 'compact') {
+    await opts.client.request('thread/compact/start', { threadId })
+  } else if (turnKind === 'review') {
+    await opts.client.request('review/start', compactRecord({
+      threadId,
+      delivery: 'inline',
+      target: opts.reviewTarget ?? { type: 'uncommittedChanges' },
+    }))
+  } else {
+    const collaborationMode = normalizeCollaborationMode(
+      opts.collaborationMode,
+      opts.model,
+      opts.reasoningEffort,
+    )
+    const turnStartResult = await opts.client.request('turn/start', compactRecord({
+      threadId,
+      input: [{ type: 'text', text: opts.prompt, text_elements: [] }],
+      ...(opts.model ? { model: opts.model } : {}),
+      ...(opts.reasoningEffort
+        ? { effort: opts.reasoningEffort, reasoning_effort: opts.reasoningEffort, summary: 'concise' }
+        : {}),
+      approvalPolicy: 'never',
+      sandboxPolicy: {
+        type: 'workspaceWrite',
+        writableRoots: [opts.cwd],
+      },
+      ...(collaborationMode ? { collaborationMode } : {}),
+    }))
+
+    const turn = asRecord(turnStartResult.turn)
+    turnId = readString(turn?.id)
+  }
+
   let finalText = ''
   const deadline = Date.now() + TURN_WAIT_TIMEOUT_MS
   const agentEventMapper = opts.onAgentEvent
@@ -528,7 +648,10 @@ export async function runCodexAppServerTurn(opts: {
       if (!finalText && agentEventMapper) {
         finalText = deriveCodexFinalResponse(agentEventMapper.items())
       }
-      return { finalText, threadId }
+      if (!finalText && turnKind === 'compact') {
+        finalText = 'Conversation compacted.'
+      }
+      return { finalText, threadId, turnId }
     }
   }
 
@@ -538,6 +661,35 @@ export async function runCodexAppServerTurn(opts: {
   }
   agentEventMapper?.fail('Codex turn timed out waiting for turn/completed')
   throw new Error('Codex turn timed out waiting for turn/completed')
+}
+
+function normalizeCollaborationMode(
+  value: Record<string, unknown> | string | null | undefined,
+  model?: string,
+  reasoningEffort?: string,
+): Record<string, unknown> | undefined {
+  if (!value) return undefined
+  if (typeof value === 'object' && !Array.isArray(value)) {
+    return value
+  }
+  if (typeof value === 'string' && value.trim() && model) {
+    return {
+      mode: value.trim(),
+      settings: {
+        model,
+        reasoning_effort: reasoningEffort ?? null,
+      },
+    }
+  }
+  return undefined
+}
+
+function compactRecord(input: Record<string, unknown>): Record<string, unknown> {
+  const output: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(input)) {
+    if (value !== undefined) output[key] = value
+  }
+  return output
 }
 
 function extractAgentTextFromTurn(turn: Record<string, unknown>): string {
@@ -576,7 +728,12 @@ function applyAgentDelta(
  */
 export function safePublicError(headline: string, cause?: unknown): Error {
   const causeMsg = cause instanceof Error ? cause.message : cause != null ? String(cause) : ''
-  const combined = [headline, causeMsg].filter(Boolean).join(': ')
+  // Avoid "msg: msg" when callers pass err.message as headline and err as cause.
+  const combined =
+    causeMsg &&
+    (headline === causeMsg || headline.endsWith(`: ${causeMsg}`) || headline.endsWith(causeMsg))
+      ? headline
+      : [headline, causeMsg].filter(Boolean).join(': ')
   return new Error(redactHarnessDiagnosticText(combined).slice(0, 300))
 }
 

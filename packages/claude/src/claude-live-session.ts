@@ -51,6 +51,11 @@ export interface ClaudeLiveSessionOptions {
   model?: string
   effort?: string
   permissionMode?: string
+  /**
+   * SuperOne sandbox mode (`off` | `on` | `auto`).
+   * Mapped to Agent SDK `sandbox` (enabled + autoAllowBashIfSandboxed).
+   */
+  sandboxMode?: string
   additionalDirectories?: string[]
   enabledSkills?: string[]
   env?: NodeJS.ProcessEnv
@@ -180,6 +185,15 @@ function buildLiveOptions(
     ? ({ ...process.env, ...opts.env } as Record<string, string | undefined>)
     : undefined
 
+  const sandbox =
+    opts.sandboxMode === 'on' || opts.sandboxMode === 'auto'
+      ? {
+          enabled: true as const,
+          autoAllowBashIfSandboxed: opts.sandboxMode === 'auto',
+          failIfUnavailable: false as const,
+        }
+      : undefined
+
   const base: Options = {
     cwd: opts.cwd,
     ...(binaryPath ? { pathToClaudeCodeExecutable: binaryPath } : {}),
@@ -197,6 +211,7 @@ function buildLiveOptions(
     canUseTool,
     abortController,
     settingSources: ['user', 'project', 'local'],
+    ...(sandbox ? { sandbox } : {}),
     ...(opts.additionalDirectories && opts.additionalDirectories.length > 0
       ? { additionalDirectories: opts.additionalDirectories }
       : {}),

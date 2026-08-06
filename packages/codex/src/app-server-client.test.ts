@@ -339,4 +339,57 @@ describe('codex app-server client (Stage 4)', () => {
     expect(signals).toContain('SIGKILL')
     rmSync(dir, { recursive: true, force: true })
   })
+
+  it('turnKind=compact issues thread/compact/start and waits for turn/completed', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'codex-compact-'))
+    const bin = join(dir, 'codex')
+    writeFileSync(bin, '#!/bin/sh\n')
+    chmodSync(bin, 0o755)
+    const child = createFakeChild()
+    const lines = collectLines(child.stdin)
+    const spawnFn: CodexSpawnFn = vi.fn(() => asSpawnChild(child))
+
+    const openPromise = openCodexAppServer({ binaryPath: bin, spawnFn, killTimeoutMs: 100 })
+    await pump()
+    const initReq = JSON.parse(lines.find((l) => l.includes('"initialize"'))!)
+    child.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', id: initReq.id, result: {} })}\n`)
+    const client = await openPromise
+
+    const turnPromise = runCodexAppServerTurn({
+      client,
+      prompt: 'compact',
+      cwd: dir,
+      threadId: 't-c',
+      turnKind: 'compact',
+      onDelta: () => {},
+      signal: new AbortController().signal,
+    })
+
+    await pump()
+    const resumeReq = JSON.parse(lines.find((l) => l.includes('thread/resume'))!)
+    child.stdout.write(
+      `${JSON.stringify({
+        jsonrpc: '2.0',
+        id: resumeReq.id,
+        result: { thread: { id: 't-c' } },
+      })}\n`,
+    )
+    await pump()
+    expect(lines.some((l) => l.includes('thread/compact/start'))).toBe(true)
+    const compactReq = JSON.parse(lines.find((l) => l.includes('thread/compact/start'))!)
+    child.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', id: compactReq.id, result: {} })}\n`)
+    await pump()
+    child.stdout.write(
+      `${JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'turn/completed',
+        params: { turn: { id: 'c1', status: 'completed' } },
+      })}\n`,
+    )
+    const result = await turnPromise
+    expect(result.finalText).toMatch(/compact/i)
+    expect(result.threadId).toBe('t-c')
+    await client.close()
+    rmSync(dir, { recursive: true, force: true })
+  })
 })

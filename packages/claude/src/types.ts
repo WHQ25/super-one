@@ -73,6 +73,10 @@ export interface RunClaudeSdkTurnOptions {
    * plan | dontAsk | auto | …). Desktop buildClaudeOptions parity.
    */
   permissionMode?: string
+  /**
+   * SuperOne sandbox mode (`off` | `on` | `auto`) → Agent SDK `sandbox`.
+   */
+  sandboxMode?: string
   /** Extra directories the agent may read (SDK additionalDirectories). */
   additionalDirectories?: string[]
   /**

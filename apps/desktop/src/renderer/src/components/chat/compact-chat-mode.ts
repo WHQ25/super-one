@@ -9,9 +9,12 @@
  * tool still surfaces the last answer plus the incomplete tail.
  *
  * Intermediate narration between earlier tools stays in process.
+ *
+ * Collapse threshold and Detail badge use *visible* process segments only
+ * (hidden tool calls / paired tool_result shells do not count).
  */
 
-/** Min process segments before compact mode collapses them under Detail. */
+/** Min visible process segments before compact mode collapses them under Detail. */
 export const MIN_PROCESS_SEGMENTS_TO_COLLAPSE = 3
 
 export interface CompactTurnSplit<T> {
@@ -76,50 +79,60 @@ export function isCodexConclusionSegment(
   return type === 'agent_message' || type === 'plan'
 }
 
-type ClaudeProcessSeg = {
+type ClaudeVisibilitySeg = {
   kind: string
-  blocks?: ReadonlyArray<{ type: string }>
-  block?: { type: string }
+  blocks?: ReadonlyArray<{ type: string; toolName?: string; toolUseId?: string }>
+  block?: { type: string; toolName?: string; toolUseId?: string }
 }
 
-/** Count tool-like units in Claude process segments for the Detail indicator. */
-export function countClaudeProcessTools(segs: ReadonlyArray<ClaudeProcessSeg>): number {
-  let n = 0
-  for (const seg of segs) {
-    if (seg.kind === 'tools' || seg.kind === 'app-tools') {
-      n += (seg.blocks ?? []).filter((b) => b.type === 'tool_use').length
-    } else if (seg.kind === 'subagent' || seg.kind === 'workflow') {
-      n += 1
-    } else if (seg.kind === 'block' && seg.block?.type === 'tool_use') {
-      n += 1
-    }
+export interface ClaudeSegmentVisibilityOpts {
+  /** Resolve tool_result text for a tool_use id (used by media hide-on-success). */
+  toolResultAt: (toolUseId: string) => string | undefined
+  /** Same predicate ToolBlock uses — inject to avoid coupling this module to tool-display. */
+  isHiddenTool: (toolName: string, result?: string) => boolean
+}
+
+/**
+ * Whether a Claude/ACP process segment produces any chat UI.
+ * Mirrors ToolBlock / renderBlock: hidden tools and paired tool_result shells
+ * render nothing and must not affect collapse threshold or Detail count.
+ */
+export function isVisibleClaudeProcessSegment(
+  seg: ClaudeVisibilitySeg,
+  opts: ClaudeSegmentVisibilityOpts,
+): boolean {
+  const { toolResultAt, isHiddenTool } = opts
+  if (seg.kind === 'thinking' || seg.kind === 'subagent' || seg.kind === 'workflow') {
+    return true
   }
-  return n
+  if (seg.kind === 'tools' || seg.kind === 'app-tools') {
+    return (seg.blocks ?? []).some(
+      (b) =>
+        b.type === 'tool_use'
+        && !isHiddenTool(b.toolName ?? '', toolResultAt(b.toolUseId ?? '')),
+    )
+  }
+  if (seg.kind === 'block' && seg.block) {
+    const b = seg.block
+    // tool_result is always attached to its tool_use ToolBlock (or empty).
+    if (b.type === 'tool_result') return false
+    if (b.type === 'tool_use') {
+      return !isHiddenTool(b.toolName ?? '', toolResultAt(b.toolUseId ?? ''))
+    }
+    return true
+  }
+  return true
 }
 
-const CODEX_NON_TOOL_TYPES = new Set(['reasoning', 'agent_message', 'plan', 'todo_list', 'image_generation', 'video_generation'])
-
-type CodexProcessSeg = {
-  kind: string
-  index?: number
-  indices?: ReadonlyArray<number>
-}
-
-/** Count tool-like units in Codex process segments for the Detail indicator. */
-export function countCodexProcessTools(
-  segs: ReadonlyArray<CodexProcessSeg>,
-  itemTypeAt: (index: number) => string | undefined,
+/** Count process segments that actually paint in compact-mode UI. */
+export function countVisibleClaudeProcessSegments(
+  segs: ReadonlyArray<ClaudeVisibilitySeg>,
+  opts: ClaudeSegmentVisibilityOpts,
 ): number {
   let n = 0
   for (const seg of segs) {
-    if (seg.kind === 'group' || seg.kind === 'app-tools') {
-      n += seg.indices?.length ?? 0
-    } else if (seg.kind === 'subagent') {
-      n += 1
-    } else if (seg.kind === 'item' && seg.index != null) {
-      const type = itemTypeAt(seg.index)
-      if (type && !CODEX_NON_TOOL_TYPES.has(type)) n += 1
-    }
+    if (isVisibleClaudeProcessSegment(seg, opts)) n += 1
   }
   return n
 }
+

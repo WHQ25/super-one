@@ -8,7 +8,7 @@ import { ToolGroup } from './ToolGroup'
 import { AppToolGroup } from './AppToolGroup'
 import { parseToolInput, parseMcpToolName, isHiddenToolBlock } from './tool-display'
 import {
-  countClaudeProcessTools,
+  countVisibleClaudeProcessSegments,
   isClaudeConclusionSegment,
   MIN_PROCESS_SEGMENTS_TO_COLLAPSE,
   splitTurnForCompactMode,
@@ -438,14 +438,13 @@ function MentionInlineChip({ kind, value, displayName }: { kind: UserMentionKind
       className={cn(
         // break-normal resists the bubble's break-all so multi-word labels
         // (e.g. "Computer Use") stay on one line with following text.
-        'inline-flex max-w-full whitespace-nowrap break-normal align-middle',
+        // align-[0]: same fixed box offset as composer .mention-chip-wrapper
+        // (content baseline made FileIcon chips sit lower than Lucide chips).
+        'inline-flex max-w-full items-center whitespace-nowrap break-normal align-[0]',
         resolvedKind === 'agent'
           ? 'gap-1 rounded-md border border-primary/40 bg-primary/15 px-1.5 py-0.5 text-xs leading-5 text-primary'
           : isBlendedChip
-            // Capability / desktop-app: match composer size-3 + 1rem height so
-            // they do not read larger than body text / resource pills.
-            ? 'mx-1 h-4 max-h-4 items-center gap-1 overflow-hidden text-[0.875rem] leading-none text-muted-foreground'
-            // Resource mentions: lock height to 1rem (same as composer pill).
+            ? 'mx-1 h-4 max-h-4 gap-1 overflow-hidden text-[0.875rem] leading-none text-muted-foreground'
             : 'h-4 max-h-4 gap-0.5 overflow-hidden text-[0.875rem] leading-none text-foreground'
       )}
     >
@@ -453,37 +452,37 @@ function MentionInlineChip({ kind, value, displayName }: { kind: UserMentionKind
         <span className="font-medium">@{display}</span>
       ) : resolvedKind === 'directory' ? (
         <>
-          <Folder className="size-3 shrink-0 text-primary" />
+          <Folder className="block size-3 shrink-0 text-primary" />
           <span className="leading-none">{display}</span>
         </>
       ) : resolvedKind === 'miniapp' ? (
         <>
-          <MiniAppIcon appId={value} className="size-3 shrink-0" />
+          <MiniAppIcon appId={value} className="block size-3 shrink-0" />
           <span className="leading-none">{display}</span>
         </>
       ) : resolvedKind === 'desktop-app' ? (
         <>
-          <DesktopAppIcon bundleId={value} className="size-3" />
+          <DesktopAppIcon bundleId={value} className="block size-3 shrink-0" />
           <span className="leading-none">{display}</span>
         </>
       ) : resolvedKind === 'collab' ? (
         <>
-          <Users className="size-3 shrink-0 text-violet-600 dark:text-violet-400" />
+          <Users className="block size-3 shrink-0 text-violet-600 dark:text-violet-400" />
           <span className="leading-none">{display}</span>
         </>
       ) : resolvedKind === 'computer' ? (
         <>
-          <MousePointer2 className="size-3 shrink-0 text-emerald-600 dark:text-emerald-400" />
+          <MousePointer2 className="block size-3 shrink-0 text-emerald-600 dark:text-emerald-400" />
           <span className="leading-none">{display}</span>
         </>
       ) : resolvedKind === 'browser' ? (
         <>
-          <Globe className="size-3 shrink-0 text-sky-600 dark:text-sky-400" />
+          <Globe className="block size-3 shrink-0 text-sky-600 dark:text-sky-400" />
           <span className="leading-none">{display}</span>
         </>
       ) : (
         <>
-          <FileIcon name={display} size={12} className="size-3 shrink-0" />
+          <FileIcon name={display} size={12} className="block size-3 shrink-0" />
           <span className="leading-none">{display}</span>
         </>
       )}
@@ -1038,18 +1037,22 @@ export const ChatMessage = memo(function ChatMessage({ message, sessionStatus, i
               }
               if (!detailChatMode && !isStreaming) {
                 const { process, conclusion } = splitTurnForCompactMode(segs, isClaudeConclusionSegment)
+                const visibleProcessCount = countVisibleClaudeProcessSegments(process, {
+                  toolResultAt: (id) => grouped!.toolResultMap.get(id),
+                  isHiddenTool: isHiddenToolBlock,
+                })
                 return (
                   <>
-                    {process.length === 0
+                    {visibleProcessCount === 0
                       ? null
-                      : process.length < MIN_PROCESS_SEGMENTS_TO_COLLAPSE
+                      : visibleProcessCount < MIN_PROCESS_SEGMENTS_TO_COLLAPSE
                         ? (
                           <div className="turn-process">
                             {renderClaudeSegments(process, { ...segOpts, forceSealed: true })}
                           </div>
                         )
                         : (
-                          <TurnDetailSection toolCount={countClaudeProcessTools(process)}>
+                          <TurnDetailSection segmentCount={visibleProcessCount}>
                             {renderClaudeSegments(process, { ...segOpts, forceSealed: true })}
                           </TurnDetailSection>
                         )}

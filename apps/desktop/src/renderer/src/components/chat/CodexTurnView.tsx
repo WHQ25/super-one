@@ -16,7 +16,6 @@ import { ReasoningBlock } from './ReasoningBlock'
 import { isAlwaysHiddenToolBlock, isHiddenToolBlock } from './tool-display'
 import { isMediaGenerateImageTool, isMediaVideoStatusTool } from './media-generation'
 import {
-  countCodexProcessTools,
   isCodexConclusionSegment,
   MIN_PROCESS_SEGMENTS_TO_COLLAPSE,
   splitTurnForCompactMode,
@@ -542,12 +541,7 @@ export function CodexTurnView({ message, isStreaming, isLastAssistant }: CodexTu
                 </div>
               )
               : (
-                <TurnDetailSection
-                  toolCount={countCodexProcessTools(
-                    process,
-                    (index) => codex.items[index]?.type,
-                  )}
-                >
+                <TurnDetailSection segmentCount={process.length}>
                   {renderSegments(process, true)}
                 </TurnDetailSection>
               )}

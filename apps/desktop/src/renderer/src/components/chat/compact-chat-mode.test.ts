@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
-  countClaudeProcessTools,
-  countCodexProcessTools,
+  countVisibleClaudeProcessSegments,
   isClaudeConclusionSegment,
   isCodexConclusionSegment,
+  isVisibleClaudeProcessSegment,
   splitTurnForCompactMode,
 } from './compact-chat-mode'
 
@@ -106,27 +106,84 @@ describe('isCodexConclusionSegment', () => {
   })
 })
 
-describe('countClaudeProcessTools', () => {
-  it('counts tool_use blocks across tool groups and singles', () => {
-    expect(countClaudeProcessTools([
-      { kind: 'thinking' },
-      { kind: 'tools', blocks: [{ type: 'tool_use' }, { type: 'tool_result' }, { type: 'tool_use' }] },
-      { kind: 'block', block: { type: 'tool_use' } },
-      { kind: 'subagent' },
-    ])).toBe(4)
+describe('isVisibleClaudeProcessSegment', () => {
+  const hidden = new Set(['TodoWrite', 'mcp__superone__session_rename'])
+  const opts = {
+    toolResultAt: () => undefined as string | undefined,
+    isHiddenTool: (name: string) => hidden.has(name),
+  }
+
+  it('counts thinking and text as visible', () => {
+    expect(isVisibleClaudeProcessSegment({ kind: 'thinking' }, opts)).toBe(true)
+    expect(isVisibleClaudeProcessSegment(
+      { kind: 'block', block: { type: 'text' } },
+      opts,
+    )).toBe(true)
+  })
+
+  it('hides paired tool_result shells (attached to ToolBlock, render nothing)', () => {
+    expect(isVisibleClaudeProcessSegment(
+      { kind: 'block', block: { type: 'tool_result', toolUseId: 't1' } },
+      opts,
+    )).toBe(false)
+  })
+
+  it('hides tool_use blocks that isHiddenTool marks invisible', () => {
+    expect(isVisibleClaudeProcessSegment(
+      { kind: 'block', block: { type: 'tool_use', toolName: 'TodoWrite', toolUseId: 't1' } },
+      opts,
+    )).toBe(false)
+    expect(isVisibleClaudeProcessSegment(
+      {
+        kind: 'block',
+        block: { type: 'tool_use', toolName: 'mcp__superone__session_rename', toolUseId: 't2' },
+      },
+      opts,
+    )).toBe(false)
+  })
+
+  it('counts a normal tool_use as visible', () => {
+    expect(isVisibleClaudeProcessSegment(
+      { kind: 'block', block: { type: 'tool_use', toolName: 'SearchTools', toolUseId: 't1' } },
+      opts,
+    )).toBe(true)
+  })
+
+  it('counts tools groups only when they contain a visible tool_use', () => {
+    expect(isVisibleClaudeProcessSegment(
+      {
+        kind: 'tools',
+        blocks: [
+          { type: 'tool_use', toolName: 'TodoWrite', toolUseId: 'a' },
+          { type: 'tool_result', toolUseId: 'a' },
+        ],
+      },
+      opts,
+    )).toBe(false)
+    expect(isVisibleClaudeProcessSegment(
+      {
+        kind: 'tools',
+        blocks: [
+          { type: 'tool_use', toolName: 'Read', toolUseId: 'b' },
+          { type: 'tool_result', toolUseId: 'b' },
+        ],
+      },
+      opts,
+    )).toBe(true)
+  })
+
+  it('countVisibleClaudeProcessSegments ignores invisible shells', () => {
+    // Thought + mid text + tool_use + tool_result shell + Thought → 4 visible (not 5)
+    expect(countVisibleClaudeProcessSegments(
+      [
+        { kind: 'thinking' },
+        { kind: 'block', block: { type: 'text' } },
+        { kind: 'block', block: { type: 'tool_use', toolName: 'SearchTools', toolUseId: 't1' } },
+        { kind: 'block', block: { type: 'tool_result', toolUseId: 't1' } },
+        { kind: 'thinking' },
+      ],
+      opts,
+    )).toBe(4)
   })
 })
 
-describe('countCodexProcessTools', () => {
-  it('counts commands and mcp calls but not reasoning', () => {
-    const types = ['reasoning', 'command_execution', 'mcp_tool_call', 'agent_message'] as const
-    expect(countCodexProcessTools(
-      [
-        { kind: 'reasoning' },
-        { kind: 'group', indices: [1, 1] },
-        { kind: 'item', index: 2 },
-      ],
-      (i) => types[i],
-    )).toBe(3)
-  })
-})

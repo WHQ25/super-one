@@ -5,8 +5,8 @@ import { cn } from '@superone/ui/lib/utils'
 
 interface TurnDetailSectionProps {
   children: ReactNode
-  /** Number of tools in the collapsed process (shown next to the chevron). */
-  toolCount?: number
+  /** Number of visible process segments collapsed under Detail (shown next to the chevron). */
+  segmentCount?: number
   className?: string
 }
 
@@ -15,7 +15,7 @@ interface TurnDetailSectionProps {
  * with a short height animation. Callers skip this wrapper when process has
  * fewer than MIN_PROCESS_SEGMENTS_TO_COLLAPSE segments.
  */
-export function TurnDetailSection({ children, toolCount = 0, className }: TurnDetailSectionProps) {
+export function TurnDetailSection({ children, segmentCount = 0, className }: TurnDetailSectionProps) {
   const { t } = useTranslation()
   const [expanded, setExpanded] = useState(false)
   // Keep children mounted through the collapse animation so grid can animate to 0fr.
@@ -54,8 +54,8 @@ export function TurnDetailSection({ children, toolCount = 0, className }: TurnDe
         <List className="size-3 shrink-0 opacity-70" />
         <span className="min-w-0 truncate font-normal tracking-wide">{label}</span>
         <span className="ml-auto flex shrink-0 items-center gap-1 tabular-nums">
-          {toolCount > 0 && (
-            <span className="opacity-70">{toolCount}</span>
+          {segmentCount > 0 && (
+            <span className="opacity-70">{segmentCount}</span>
           )}
           {expanded ? (
             <ChevronDown className="size-3 opacity-60 transition-opacity group-hover:opacity-100" />

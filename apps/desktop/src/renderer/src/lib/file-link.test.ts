@@ -120,4 +120,18 @@ describe('resolveProjectFileHref', () => {
       lineNumber: 7,
     })
   })
+
+  it('does not decode percent-encoded path segments (Grok session dirs)', () => {
+    const grokPath =
+      '/Users/me/.grok/sessions/%2FUsers%2Fme%2Fproj/019f/workflows/wf_1/scratch/report.md'
+    expect(resolveProjectFileHref(grokPath, PROJECT)).toEqual({ filePath: grokPath })
+    // A full decodeURIComponent would turn %2F into extra slashes — must not happen.
+    expect(resolveProjectFileHref(grokPath, PROJECT)?.filePath).toContain('%2FUsers%2F')
+  })
+
+  it('expands ~/ paths when homeDir is provided', () => {
+    expect(resolveProjectFileHref('~/.grok/workflows/demo.rhai', PROJECT, '/Users/me')).toEqual({
+      filePath: '/Users/me/.grok/workflows/demo.rhai',
+    })
+  })
 })

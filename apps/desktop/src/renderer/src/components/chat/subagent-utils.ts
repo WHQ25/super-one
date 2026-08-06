@@ -10,10 +10,16 @@ export const STRUCTURED_OUTPUT_TOOL = 'StructuredOutput'
 
 function summarizeToolInput(toolName: string, input: Record<string, unknown>): string {
   if (input.file_path) return String(input.file_path)
+  if (input.target_file) return String(input.target_file)
+  if (input.target_directory) return String(input.target_directory)
   if (input.command) return String(input.command).slice(0, 120)
-  if (input.pattern) return String(input.pattern)
+  if (input.pattern) {
+    const path = input.path != null ? ` in ${String(input.path)}` : ''
+    return `${String(input.pattern).slice(0, 80)}${path}`
+  }
   if (input.query) return String(input.query).slice(0, 120)
   if (input.url) return String(input.url)
+  if (input.path) return String(input.path)
   if (input.prompt) return String(input.prompt).slice(0, 120)
   if (input.description) return String(input.description).slice(0, 120)
   return ''
@@ -22,6 +28,72 @@ function summarizeToolInput(toolName: string, input: Record<string, unknown>): s
 export interface JsonlRecord {
   type?: string
   message?: { content?: Array<{ type: string; name?: string; input?: Record<string, unknown>; text?: string }> }
+}
+
+/** Grok Build child-session chat_history.jsonl line (not Claude agent-*.jsonl). */
+export interface GrokChatHistoryRecord {
+  type?: string
+  content?: string | Array<{ type?: string; text?: string; name?: string; input?: Record<string, unknown> }>
+  tool_calls?: Array<{ id?: string; name?: string; arguments?: string | Record<string, unknown> }>
+  tool_call_id?: string
+}
+
+function parseToolArguments(raw: unknown): Record<string, unknown> {
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) return raw as Record<string, unknown>
+  if (typeof raw !== 'string' || !raw.trim()) return {}
+  try {
+    const v = JSON.parse(raw) as unknown
+    return v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : {}
+  } catch {
+    return {}
+  }
+}
+
+function isGrokChatHistoryRecord(rec: Record<string, unknown>): boolean {
+  if (rec.type === 'tool_result' && typeof rec.tool_call_id === 'string') return true
+  if (rec.type === 'assistant' && Array.isArray(rec.tool_calls)) return true
+  // Grok assistant lines use top-level string content + optional tool_calls; Claude uses message.content[].
+  if (rec.type === 'assistant' && typeof rec.content === 'string' && rec.message == null) return true
+  return false
+}
+
+/**
+ * Maps Grok child-session chat_history.jsonl into the same JsonlEntry stream the
+ * Workflow/Subagent full views already render (tool rows + text activity).
+ */
+export function entriesFromGrokChatHistory(records: GrokChatHistoryRecord[]): { entries: JsonlEntry[]; resultText?: string; toolCount: number } {
+  const entries: JsonlEntry[] = []
+  let lastTextIndex = -1
+  let toolCount = 0
+  for (const record of records) {
+    if (record.type === 'assistant') {
+      if (typeof record.content === 'string' && record.content.trim()) {
+        lastTextIndex = entries.length
+        entries.push({ type: 'activity', text: record.content })
+      } else if (Array.isArray(record.content)) {
+        for (const block of record.content) {
+          if (block?.type === 'text' && block.text) {
+            lastTextIndex = entries.length
+            entries.push({ type: 'activity', text: block.text })
+          }
+        }
+      }
+      for (const tc of record.tool_calls ?? []) {
+        const name = typeof tc.name === 'string' && tc.name ? tc.name : 'tool'
+        const input = parseToolArguments(tc.arguments)
+        toolCount += 1
+        if (name === STRUCTURED_OUTPUT_TOOL) {
+          entries.push({ type: 'structured', data: input })
+        } else {
+          entries.push({ type: 'tool', toolName: name, description: summarizeToolInput(name, input) })
+        }
+      }
+      continue
+    }
+    // tool_result lines are available for future expand-in-place; skip bulk content here.
+  }
+  const resultText = lastTextIndex >= 0 ? (entries[lastTextIndex] as { type: 'activity'; text: string }).text : undefined
+  return { entries, resultText, toolCount }
 }
 
 /**
@@ -51,16 +123,21 @@ export function entriesFromRecords(records: JsonlRecord[]): { entries: JsonlEntr
 
 export function parseJsonlOutput(raw: string): { entries: JsonlEntry[]; resultText?: string } {
   const lines = raw.split('\n')
-  const records: JsonlRecord[] = []
+  const records: Array<Record<string, unknown>> = []
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim()
     if (!line) continue
-    try { records.push(JSON.parse(line)) } catch {
+    try { records.push(JSON.parse(line) as Record<string, unknown>) } catch {
       if (i === 0) return { entries: [] }
       continue
     }
   }
-  return entriesFromRecords(records)
+  // Grok Build child sessions use chat_history.jsonl (assistant.tool_calls + tool_result).
+  if (records.some(isGrokChatHistoryRecord)) {
+    const { entries, resultText } = entriesFromGrokChatHistory(records as GrokChatHistoryRecord[])
+    return { entries, resultText }
+  }
+  return entriesFromRecords(records as JsonlRecord[])
 }
 
 export interface ParsedTaskInput {

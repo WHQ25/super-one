@@ -224,28 +224,34 @@ function mapWorkflowUpdated(u: Record<string, unknown>, state: XaiCorrelationSta
       status === 'complete' || status === 'completed' ? 'completed' as const
         : status === 'cancelled' || status === 'canceled' ? 'stopped' as const
           : 'failed' as const
+    // Prefer the structured result for both the chip summary and the output panel.
+    // pause_message carries failure / cancel detail when result_summary is absent.
+    const resultText = resultSummary || pauseMessage || lastEventDetail || undefined
     events.push({
       type: 'task_notification',
       taskId: runId,
       ...(toolUseId ? { toolUseId } : {}),
       taskStatus,
       outputFile: '',
-      summary: phaseLine || resultSummary || status,
+      summary: resultSummary || phaseLine || pauseMessage || status,
       usage,
-      ...(resultSummary ? { resultText: resultSummary } : {}),
+      ...(resultText ? { resultText } : {}),
       ...phaseFields,
     })
     return events
   }
 
+  // Non-terminal (active / paused / budget_limited / blocked / …) — never complete.
   events.push({
     type: 'task_progress',
     taskId: runId,
     ...(toolUseId ? { toolUseId } : {}),
     description,
-    summary: phaseLine || status,
+    summary: phaseLine || pauseMessage || status,
     usage,
-    ...(lastEventDetail || lastEvent ? { activityText: lastEventDetail ?? lastEvent } : {}),
+    ...(lastEventDetail || lastEvent || pauseMessage
+      ? { activityText: pauseMessage ?? lastEventDetail ?? lastEvent }
+      : {}),
     ...phaseFields,
   })
   return events
@@ -333,18 +339,20 @@ function mapSubagentSpawned(u: Record<string, unknown>, state: XaiCorrelationSta
 
   const description = strField(u, 'description') ?? id
   const subagentType = strField(u, 'subagent_type', 'subagentType')
-  const toolUseId = state.subagentToolById.get(id)
-  // Also correlate workflow-spawned children under workflow run if present.
+  // Workflow-spawned children must NOT share the workflow toolUseId. Doing so
+  // makes the first child's task_notification mark the whole workflow complete.
+  // Their lifecycle is already mirrored on workflow_updated.agents rows.
   const workflowRunId = strField(u, 'workflow_run_id', 'workflowRunId')
-  if (workflowRunId && !toolUseId) {
-    const wfTool = state.workflowToolByRunId.get(workflowRunId)
-    if (wfTool) state.subagentToolById.set(id, wfTool)
+  if (workflowRunId) {
+    state.workflowOwnedSubagents.add(id)
+    state.subagentToolById.delete(id)
   }
+  const toolUseId = workflowRunId ? undefined : state.subagentToolById.get(id)
 
   return [{
     type: 'task_started',
     taskId: id,
-    ...(state.subagentToolById.get(id) ? { toolUseId: state.subagentToolById.get(id) } : {}),
+    ...(toolUseId ? { toolUseId } : {}),
     description,
     ...(subagentType ? { taskType: subagentType } : {}),
   }]
@@ -353,6 +361,9 @@ function mapSubagentSpawned(u: Record<string, unknown>, state: XaiCorrelationSta
 function mapSubagentProgress(u: Record<string, unknown>, state: XaiCorrelationState): AgentEvent[] {
   const id = strField(u, 'subagent_id', 'subagentId')
   if (!id) return []
+  // Workflow-owned children: workflow_updated already carries agent rows + tokens.
+  // Emitting task_progress under a shared toolUseId used to flip the parent complete.
+  if (state.workflowOwnedSubagents.has(id)) return []
   const events: AgentEvent[] = []
   if (!state.subagentStarted.has(id)) {
     state.subagentStarted.add(id)
@@ -385,6 +396,8 @@ function mapSubagentProgress(u: Record<string, unknown>, state: XaiCorrelationSt
 function mapSubagentFinished(u: Record<string, unknown>, state: XaiCorrelationState): AgentEvent[] {
   const id = strField(u, 'subagent_id', 'subagentId')
   if (!id) return []
+  // Same as progress: workflow children finish is reflected by workflow_updated.
+  if (state.workflowOwnedSubagents.has(id)) return []
   const status = (strField(u, 'status') ?? 'completed').toLowerCase()
   const taskStatus =
     status === 'completed' || status === 'complete' ? 'completed' as const

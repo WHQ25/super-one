@@ -45,6 +45,11 @@ interface UseSubagentJsonlOptions {
   outputFile?: string
   enabled: boolean
   isRunning: boolean
+  /**
+   * Skip the Claude Agent SDK authoritative read. Required for Grok child-session
+   * chat_history.jsonl (not under Claude's agent-<id>.jsonl layout).
+   */
+  skipAuthoritativeRead?: boolean
 }
 
 /**
@@ -58,6 +63,7 @@ export function useSubagentJsonl({
   outputFile,
   enabled,
   isRunning,
+  skipAuthoritativeRead = false,
 }: UseSubagentJsonlOptions): { entries: JsonlEntry[]; resultText?: string } {
   const bashOutput = useBashOutput(toolUseId)
   const [entries, setEntries] = useState<JsonlEntry[]>([])
@@ -107,14 +113,33 @@ export function useSubagentJsonl({
     window.app.unwatchBashOutput(toolUseId).catch(() => {})
   }, [bashOutput?.finished, bashOutput?.outputPath, enabled, isRunning, outputFile, toolUseId])
 
-  // Once the agent has finished, do one authoritative full read via the SDK
-  // (parentUuid chain-building, no 400-line tail truncation) and overwrite the
+  // Once the agent has finished, do one authoritative full read and overwrite the
   // tailed entries. Only overwrites on a non-empty read, so a path/dir mismatch
   // degrades to the live-tailed result rather than blanking it.
+  // - Claude agent-*.jsonl: SDK parentUuid chain (getSubagentMessages)
+  // - Grok chat_history.jsonl: full file read (parseJsonlOutput understands both formats)
   useEffect(() => {
     if (!enabled || !outputFile || isRunning) return
     if (authoritativeReadFor.current === outputFile) return
     authoritativeReadFor.current = outputFile
+
+    if (skipAuthoritativeRead) {
+      const root = useChatStore.getState().activeProject || outputFile
+      void window.app.readProjectFile?.(root, outputFile).then((file) => {
+        const content = typeof file?.content === 'string' ? file.content : ''
+        if (!content) return
+        const parsed = parseJsonlOutput(content)
+        if (parsed.entries.length === 0 && !parsed.resultText) return
+        setEntries(parsed.entries)
+        setResultText(parsed.resultText)
+        window.app.trace?.('subagent.output', 'grok_history_read', {
+          entries: parsed.entries.length,
+          hasResultText: !!parsed.resultText,
+        }, toolUseId)
+      }).catch(() => {})
+      return
+    }
+
     const dir = useChatStore.getState().activeProject ?? undefined
     window.app.readSubagentTranscript(outputFile, dir).then((records) => {
       if (!records || records.length === 0) return
@@ -127,7 +152,7 @@ export function useSubagentJsonl({
         persistTaskResultText(toolUseId, parsed.resultText)
       }
     }).catch(() => {})
-  }, [enabled, outputFile, isRunning, toolUseId, taskResultText])
+  }, [enabled, outputFile, isRunning, toolUseId, taskResultText, skipAuthoritativeRead])
 
   return { entries, resultText }
 }

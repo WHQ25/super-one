@@ -108,6 +108,60 @@ describe('ACP xAI AgentEvent mapping', () => {
     })
   })
 
+  it('does not bind workflow-owned subagents to the parent workflow toolUseId', () => {
+    const state = createXaiCorrelationState()
+    state.workflowToolByRunId.set('wf-1', 'workflow-tool')
+
+    expect(mapXaiSessionUpdate({
+      sessionUpdate: 'subagent_spawned',
+      subagent_id: 'child-1',
+      subagent_type: 'explore',
+      description: 'Scan',
+      workflow_run_id: 'wf-1',
+    }, state)).toEqual([{
+      type: 'task_started',
+      taskId: 'child-1',
+      description: 'Scan',
+      taskType: 'explore',
+    }])
+    expect(state.workflowOwnedSubagents.has('child-1')).toBe(true)
+    // Progress / finish for workflow children is mirrored via workflow_updated — emit nothing.
+    expect(mapXaiSessionUpdate({
+      sessionUpdate: 'subagent_progress',
+      subagent_id: 'child-1',
+      tools_used: ['grep'],
+      tokens_used: 10,
+    }, state)).toEqual([])
+    expect(mapXaiSessionUpdate({
+      sessionUpdate: 'subagent_finished',
+      subagent_id: 'child-1',
+      status: 'completed',
+      output: 'done',
+    }, state)).toEqual([])
+  })
+
+  it('surfaces result_summary on workflow terminal notification', () => {
+    const state = createXaiCorrelationState()
+    state.workflowToolByRunId.set('wf-1', 'workflow-tool')
+    const events = mapXaiSessionUpdate({
+      sessionUpdate: 'workflow_updated',
+      run_id: 'wf-1',
+      revision: 9,
+      name: 'review',
+      status: 'complete',
+      result_summary: 'All agents agreed: ship it.',
+      phases: [{ title: 'Done', state: 'done' }],
+    }, state)
+    expect(events).toContainEqual(expect.objectContaining({
+      type: 'task_notification',
+      taskId: 'wf-1',
+      toolUseId: 'workflow-tool',
+      taskStatus: 'completed',
+      resultText: 'All agents agreed: ship it.',
+      summary: 'All agents agreed: ship it.',
+    }))
+  })
+
   it('maps background tasks and follow-up suggestions with deduplication', () => {
     const state = createXaiCorrelationState()
     const background = {

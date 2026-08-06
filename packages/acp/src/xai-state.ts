@@ -50,6 +50,11 @@ export interface XaiCorrelationState {
   workflowRevision: Map<string, number>
   /** run_ids that already emitted task_started */
   workflowStarted: Set<string>
+  /**
+   * Subagents owned by a workflow run. Their progress/finish must not share the
+   * parent workflow toolUseId (that would mark the workflow complete early).
+   */
+  workflowOwnedSubagents: Set<string>
   /** subagent_id → spawn tool_use_id */
   subagentToolById: Map<string, string>
   /** subagent_ids that already emitted task_started */
@@ -71,6 +76,7 @@ export function createXaiCorrelationState(): XaiCorrelationState {
     workflowToolByRunId: new Map(),
     workflowRevision: new Map(),
     workflowStarted: new Set(),
+    workflowOwnedSubagents: new Set(),
     subagentToolById: new Map(),
     subagentStarted: new Set(),
     bgTaskById: new Map(),

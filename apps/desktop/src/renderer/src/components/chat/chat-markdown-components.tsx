@@ -183,8 +183,13 @@ function LinkFavicon({ href }: { href: string }) {
 function FileLink(props: React.AnchorHTMLAttributes<HTMLAnchorElement>) {
   const { href: rawHref, children, className, ...rest } = props
   const projectRoot = selectEffectiveProjectRoot(useAppStore.getState()) ?? ''
+  // Expand ~/… (Grok often cites ~/.grok/sessions/… artifacts).
+  let homeDir: string | undefined
+  try {
+    homeDir = typeof process !== 'undefined' ? (process.env?.HOME || process.env?.USERPROFILE) : undefined
+  } catch { /* ignore */ }
   if (rawHref) {
-    const resolved = resolveProjectFileHref(rawHref, projectRoot)
+    const resolved = resolveProjectFileHref(rawHref, projectRoot, homeDir)
     if (resolved) {
       const name = resolved.filePath.split(/[/\\]/).pop() || ''
       return <InlineFileChip name={name} filePath={resolved.filePath} lineNumber={resolved.lineNumber} />

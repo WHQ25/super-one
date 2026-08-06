@@ -28,6 +28,8 @@ function emptyTaskProgress(): TaskProgressEntry {
  * - Key different from taskId is an **established** Agent/Workflow launch key; keep it even
  *   when a resume notification carries a waker toolUseId (do not migrate to the waker).
  * - When only toolUseId is known and no entry exists, create under toolUseId.
+ * - A foreign taskId must never write onto an established key that already binds a
+ *   different taskId (workflow child finishing with parent toolUseId).
  */
 function resolveTaskProgressWrite(
   taskProgress: TaskProgressMap,
@@ -56,18 +58,28 @@ function resolveTaskProgressWrite(
   }
 
   if (toolUseId && taskProgress[toolUseId]) {
-    return { key: toolUseId, prev: taskProgress[toolUseId] }
+    const prev = taskProgress[toolUseId]
+    // Foreign taskId must not hijack an established launch key.
+    if (taskId && prev.taskId && prev.taskId !== taskId) {
+      return { key: taskId, prev: taskProgress[taskId] }
+    }
+    return { key: toolUseId, prev }
   }
 
-  // Migrate provisional taskId key → launch toolUseId.
+  // Migrate provisional taskId key → launch toolUseId (only if toolUseId is free
+  // or already bound to the same taskId — never onto a different workflow/agent).
   if (provisionalKey && toolUseId && toolUseId !== provisionalKey) {
-    return { key: toolUseId, dropKey: provisionalKey, prev: taskProgress[provisionalKey] }
+    const existing = taskProgress[toolUseId]
+    if (!existing?.taskId || existing.taskId === taskId) {
+      return { key: toolUseId, dropKey: provisionalKey, prev: taskProgress[provisionalKey] }
+    }
   }
 
   if (provisionalKey) {
     return { key: provisionalKey, prev: taskProgress[provisionalKey] }
   }
 
+  // Prefer toolUseId for new launch keys (Agent/Workflow chips).
   if (toolUseId) return { key: toolUseId, prev: undefined }
   return { key: taskId!, prev: undefined }
 }
@@ -257,6 +269,10 @@ export function reduceTool(session: PerSessionState, event: ToolEvent): Partial<
         toolUses: event.usage.toolUses,
         durationMs: event.usage.durationMs,
         toolHistory,
+        // Progress means the task is still live — clear a sticky false complete
+        // from a prior foreign notification (workflow child hijack).
+        completed: false,
+        status: undefined,
         ...(workflowAgents ? { workflowAgents } : {}),
         ...(workflowPhases ? { workflowPhases } : {}),
         ...(currentPhase ? { currentPhase } : {}),

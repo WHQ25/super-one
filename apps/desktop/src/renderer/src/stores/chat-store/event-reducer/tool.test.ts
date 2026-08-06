@@ -388,6 +388,42 @@ describe('reduceTool: task_progress', () => {
   })
 })
 
+describe('reduceTool: foreign taskId must not complete a workflow launch key', () => {
+  it('writes a subagent finish under its own taskId, leaving the workflow entry running', () => {
+    const session = createDefaultPerSessionState()
+    session.messages = [
+      makeAssistant('m1', [
+        { type: 'tool_use', toolUseId: 'task-1', toolName: 'Workflow', input: '{}' } as ContentBlock,
+      ]),
+    ]
+    // First: workflow progress under launch tool key.
+    const progressPatch = reduceTool(session, {
+      type: 'task_progress',
+      toolUseId: 'task-1',
+      taskId: 'wf_run',
+      description: 'workflow',
+      usage: { totalTokens: 1, toolUses: 0, durationMs: 10 },
+    } as never)
+    const withProgress = {
+      ...session,
+      taskProgress: { ...session.taskProgress, ...progressPatch.taskProgress },
+    }
+    // Hijack attempt: child finishes with parent toolUseId + different taskId.
+    const donePatch = reduceTool(withProgress, {
+      type: 'task_notification',
+      toolUseId: 'task-1',
+      taskId: 'child-agent',
+      taskStatus: 'completed',
+      outputFile: '',
+      summary: 'child done',
+    } as never)
+    const progress = { ...withProgress.taskProgress, ...donePatch.taskProgress }
+    expect(progress['task-1']?.completed).not.toBe(true)
+    expect(progress['task-1']?.taskId).toBe('wf_run')
+    expect(progress['child-agent']?.completed).toBe(true)
+  })
+})
+
 describe('reduceTool: task_notification', () => {
   it('marks task as completed and patches the Agent tool_use block + outputFile', () => {
     const session = createDefaultPerSessionState()

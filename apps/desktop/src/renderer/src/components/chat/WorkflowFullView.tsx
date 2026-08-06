@@ -29,13 +29,19 @@ import {
 
 function AgentTranscript({ agent, colors, phase }: { agent: WorkflowAgentInfo; colors: SubagentColorClasses; phase?: string }) {
   const { t } = useTranslation()
+  // Claude: agent-*.jsonl. Grok: child-session chat_history.jsonl (tool_calls + tool_result).
+  // output.json alone is final text only — still useful as resultText fallback.
+  const isJsonlTranscript = !!agent.jsonlPath && agent.jsonlPath.endsWith('.jsonl')
   const { entries, resultText } = useSubagentJsonl({
     toolUseId: agent.agentId,
-    outputFile: agent.jsonlPath,
-    enabled: true,
+    outputFile: isJsonlTranscript ? agent.jsonlPath : undefined,
+    enabled: isJsonlTranscript,
     isRunning: false,
+    // Skip Claude SDK authoritative read for Grok paths (not agent-<id>.jsonl layout).
+    skipAuthoritativeRead: isJsonlTranscript && !/agent-[^/\\]+\.jsonl$/.test(agent.jsonlPath),
   })
-  const finalText = resultText ?? agent.resultText
+  // Prefer the full final report from output.json when present; chat_history text is turn-level.
+  const finalText = agent.resultText ?? resultText
   const hasActivity = entries.length > 0 || !!finalText
 
   return (

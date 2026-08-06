@@ -149,6 +149,119 @@ async function readJournalResults(transcriptDir: string): Promise<Map<string, un
   return results
 }
 
+/**
+ * Count tool_calls in a Grok child-session chat_history.jsonl (best-effort).
+ * Format: {"type":"assistant","tool_calls":[{"name","arguments"}, ...]}
+ */
+function countGrokChatHistoryTools(raw: string): number {
+  let n = 0
+  for (const line of raw.split('\n')) {
+    const trimmed = line.trim()
+    if (!trimmed || !trimmed.includes('tool_calls')) continue
+    try {
+      const rec = JSON.parse(trimmed) as { type?: string; tool_calls?: unknown[] }
+      if (rec.type === 'assistant' && Array.isArray(rec.tool_calls)) n += rec.tool_calls.length
+    } catch { /* skip */ }
+  }
+  return n
+}
+
+/**
+ * Grok layout: transcriptDir is .../workflows/<run_id>/ with state.json + journal.
+ * Meta/output: .../subagents/<agent_id>/{meta.json,output.json}
+ * Full tool transcript: sibling child session .../<child_session_id>/chat_history.jsonl
+ */
+async function listGrokWorkflowAgents(transcriptDir: string): Promise<WorkflowAgentInfo[]> {
+  let stateRaw: string
+  try {
+    stateRaw = await readFile(join(transcriptDir, 'state.json'), 'utf8')
+  } catch {
+    return []
+  }
+  let agents: Array<Record<string, unknown>> = []
+  try {
+    const root = JSON.parse(stateRaw) as Record<string, unknown>
+    const state = (root.state && typeof root.state === 'object' ? root.state : root) as Record<string, unknown>
+    if (Array.isArray(state.agents)) agents = state.agents as Array<Record<string, unknown>>
+  } catch {
+    return []
+  }
+  if (agents.length === 0) return []
+
+  const journalResults = await readJournalResults(transcriptDir)
+  // session_dir/subagents is sibling of workflows/; child sessions are siblings of session_dir.
+  const sessionDir = join(transcriptDir, '..', '..')
+  const sessionsRoot = join(sessionDir, '..')
+  const subagentsDir = join(sessionDir, 'subagents')
+
+  const out: WorkflowAgentInfo[] = []
+  for (const row of agents) {
+    const agentId = typeof row.agent_id === 'string' ? row.agent_id
+      : typeof row.agentId === 'string' ? row.agentId
+        : undefined
+    if (!agentId) continue
+    const label = typeof row.label === 'string' && row.label.trim()
+      ? row.label
+      : agentId
+    const tokens = typeof row.tokens_used === 'number' ? row.tokens_used
+      : typeof row.tokensUsed === 'number' ? row.tokensUsed
+        : undefined
+
+    let prompt: string | undefined
+    let resultText: string | undefined
+    let toolCount = 0
+    let childSessionId = agentId
+    const metaPath = join(subagentsDir, agentId, 'meta.json')
+    const outputPath = join(subagentsDir, agentId, 'output.json')
+    try {
+      const meta = JSON.parse(await readFile(metaPath, 'utf8')) as Record<string, unknown>
+      if (typeof meta.prompt === 'string') prompt = meta.prompt
+      if (typeof meta.child_session_id === 'string' && meta.child_session_id) {
+        childSessionId = meta.child_session_id
+      } else if (typeof meta.childSessionId === 'string' && meta.childSessionId) {
+        childSessionId = meta.childSessionId
+      }
+      if (typeof meta.tool_calls === 'number' && meta.tool_calls > 0) {
+        toolCount = meta.tool_calls
+      }
+    } catch { /* no meta */ }
+    try {
+      const outJson = JSON.parse(await readFile(outputPath, 'utf8')) as Record<string, unknown>
+      if (typeof outJson.output === 'string') resultText = outJson.output
+      else if (typeof outJson.result === 'string') resultText = outJson.result
+      else if (outJson.output != null) resultText = JSON.stringify(outJson.output, null, 2)
+    } catch { /* no output yet */ }
+
+    // Prefer chat_history.jsonl so the full view can stream tool activity (Claude-parity).
+    const chatHistoryPath = join(sessionsRoot, childSessionId, 'chat_history.jsonl')
+    let jsonlPath = outputPath
+    try {
+      const historyRaw = await readFile(chatHistoryPath, 'utf8')
+      jsonlPath = chatHistoryPath
+      if (toolCount === 0) toolCount = countGrokChatHistoryTools(historyRaw)
+    } catch {
+      // child session may still be spinning up
+    }
+
+    const journalResult = journalResults.get(agentId)
+    if (resultText == null && journalResult !== undefined) {
+      resultText = typeof journalResult === 'string' ? journalResult : JSON.stringify(journalResult, null, 2)
+    }
+
+    out.push({
+      agentId,
+      jsonlPath,
+      label,
+      prompt,
+      toolCount,
+      ...(tokens != null ? { tokens } : {}),
+      ...(resultText != null ? { resultText } : {}),
+      ...(journalResult !== undefined ? { result: journalResult } : {}),
+    })
+  }
+  return out
+}
+
 export async function listWorkflowAgents(transcriptDir: string): Promise<WorkflowAgentInfo[]> {
   let files: string[]
   try {
@@ -162,7 +275,7 @@ export async function listWorkflowAgents(transcriptDir: string): Promise<Workflo
   for (const file of jsonls) {
     const jsonlPath = join(transcriptDir, file)
     const agentId = file.replace(/^agent-/, '').replace(/\.jsonl$/, '')
-    let summary: { label: string; prompt?: string; toolCount: number; resultText?: string } = { label: agentId, toolCount: 0 }
+    let summary: { label: string; prompt?: string; toolCount: number; tokens?: number; resultText?: string } = { label: agentId, toolCount: 0 }
     try {
       summary = summarizeAgentJsonl(await readFile(jsonlPath, 'utf8'), agentId)
     } catch {
@@ -170,5 +283,7 @@ export async function listWorkflowAgents(transcriptDir: string): Promise<Workflo
     }
     out.push({ agentId, jsonlPath, ...summary, result: journalResults.get(agentId) })
   }
-  return out
+  if (out.length > 0) return out
+  // Grok Build: no Claude-style agent-*.jsonl — use state.json + session/subagents.
+  return listGrokWorkflowAgents(transcriptDir)
 }

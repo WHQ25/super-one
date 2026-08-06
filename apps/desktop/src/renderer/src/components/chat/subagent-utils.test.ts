@@ -75,6 +75,31 @@ describe('parseJsonlOutput', () => {
     expect(entries).toEqual([])
     expect(resultText).toBeUndefined()
   })
+
+  it('parses Grok Build chat_history.jsonl (assistant.tool_calls + tool_result)', () => {
+    const raw = [
+      JSON.stringify({
+        type: 'assistant',
+        content: 'Scanning session ops',
+        tool_calls: [
+          { id: 'c1', name: 'grep', arguments: JSON.stringify({ pattern: 'session', path: '/proj' }) },
+          { id: 'c2', name: 'list_dir', arguments: JSON.stringify({ target_directory: '/proj/src' }) },
+        ],
+      }),
+      JSON.stringify({ type: 'tool_result', tool_call_id: 'c1', content: '…hits…' }),
+      JSON.stringify({ type: 'tool_result', tool_call_id: 'c2', content: '…dirs…' }),
+      JSON.stringify({ type: 'assistant', content: 'Found 3 local-only gaps.' }),
+    ].join('\n')
+
+    const { entries, resultText } = parseJsonlOutput(raw)
+    expect(entries).toEqual([
+      { type: 'activity', text: 'Scanning session ops' },
+      { type: 'tool', toolName: 'grep', description: 'session in /proj' },
+      { type: 'tool', toolName: 'list_dir', description: '/proj/src' },
+      { type: 'activity', text: 'Found 3 local-only gaps.' },
+    ])
+    expect(resultText).toBe('Found 3 local-only gaps.')
+  })
 })
 
 describe('entriesFromRecords', () => {

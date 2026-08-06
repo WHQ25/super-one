@@ -125,13 +125,15 @@ export function WorkflowBlock({ toolBlock, resultBlock, isStreaming, defaultExpa
   const hasLaunchIdentity = hasTranscript || !!runKey || !!progress?.taskId
   const launched = hasLaunchIdentity || !!progress
   // taskProgress is in-memory only.
-  // - With live progress: honor completed flag.
-  // - Claude transcript without progress (reload/history): complete.
-  // - Grok launch JSON without progress yet: stay running while parent turn streams
-  //   (avoid complete→running flicker before first workflow_updated); when idle, treat as historical complete.
+  // - With live progress: honor completed flag only (parent-turn idle is irrelevant —
+  //   background workflows outlive the parent prompt; foreign task_notifications must
+  //   not flip completed either — see resolveTaskProgressWrite).
+  // - No progress (reload/history): Claude transcriptDir, persisted taskResultText, or
+  //   Grok launch id after the parent turn is idle → treat as historical complete.
+  // - No progress while still streaming: stay running (avoid complete→running flicker).
   const isComplete = progress
     ? progress.completed === true
-    : hasTranscript || (!!runKey && !isStreaming)
+    : hasTranscript || !!toolBlock.taskResultText || (!!runKey && !isStreaming)
   const isRunning = launched ? !isComplete : isStreaming
   const isSpawning = !launched && !isComplete && !meta.name
   const terminalStatus = progress?.status
@@ -149,8 +151,9 @@ export function WorkflowBlock({ toolBlock, resultBlock, isStreaming, defaultExpa
       tokens: a.tokens,
     }))
   }, [progress?.workflowAgents, toolBlock.workflowAgents])
-  // Prefer Claude transcript agents when present; otherwise Grok snapshot rows (no jsonl).
+  // Prefer filesystem-backed agents (Claude jsonl / Grok subagent output) when present.
   const agents = transcriptAgents.length > 0 ? transcriptAgents : liveAgents
+  // Full view needs a transcript/workflow dir (Claude agent-*.jsonl or Grok state.json).
   const canOpenFullView = hasTranscript
 
   const outputFile = progress?.outputFile ?? (resultBlock?.type === 'tool_result' ? resultBlock.outputPath : undefined)

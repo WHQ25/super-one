@@ -95,6 +95,19 @@ function strField(o: Record<string, unknown>, ...keys: string[]): string | undef
   return undefined
 }
 
+/** Grok stores run artifacts under .../workflows/<run_id>/ (script.rhai, state.json, scratch/). */
+export function workflowDirFromScriptPath(scriptPath: string | undefined): string | undefined {
+  if (!scriptPath) return undefined
+  const normalized = scriptPath.replace(/\\/g, '/')
+  const m = normalized.match(/^(.*\/workflows\/[^/]+)\//)
+  if (m) return m[1]
+  // script.rhai at the workflow root
+  if (/\/workflows\/[^/]+\/[^/]+$/.test(normalized)) {
+    return normalized.replace(/\/[^/]+$/, '')
+  }
+  return undefined
+}
+
 export function parseWorkflowLaunch(summary?: string): WorkflowLaunchInfo {
   if (!summary) return {}
   const trimmed = summary.trim()
@@ -102,12 +115,14 @@ export function parseWorkflowLaunch(summary?: string): WorkflowLaunchInfo {
     try {
       const o = JSON.parse(trimmed) as Record<string, unknown>
       if (o && typeof o === 'object') {
-        // Claude: camelCase (+ transcriptDir). Grok WorkflowToolOutput: snake_case run_id/task_id.
+        // Claude: camelCase (+ transcriptDir). Grok WorkflowToolOutput: snake_case run_id/task_id + script_path.
+        const scriptPath = strField(o, 'scriptPath', 'script_path')
+        const explicitDir = strField(o, 'transcriptDir', 'transcript_dir')
         return {
-          transcriptDir: strField(o, 'transcriptDir', 'transcript_dir'),
+          transcriptDir: explicitDir ?? workflowDirFromScriptPath(scriptPath),
           taskId: strField(o, 'taskId', 'task_id'),
           runId: strField(o, 'runId', 'run_id'),
-          scriptPath: strField(o, 'scriptPath', 'script_path'),
+          scriptPath,
         }
       }
     } catch {
@@ -116,10 +131,11 @@ export function parseWorkflowLaunch(summary?: string): WorkflowLaunchInfo {
   }
   const grab = (label: string) => summary.match(new RegExp(`${label}:\\s*(\\S+)`))?.[1]
   const transcriptDir = grab('Transcript dir')
+  const scriptPath = grab('Script file')
   return {
-    transcriptDir,
+    transcriptDir: transcriptDir ?? workflowDirFromScriptPath(scriptPath),
     taskId: grab('Task ID'),
     runId: grab('Run ID') ?? (transcriptDir ? transcriptDir.split('/').pop() : undefined),
-    scriptPath: grab('Script file'),
+    scriptPath,
   }
 }

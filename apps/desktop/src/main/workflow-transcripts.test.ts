@@ -69,3 +69,76 @@ describe('listWorkflowAgents', () => {
     expect(await listWorkflowAgents(join(dir, 'does-not-exist'))).toEqual([])
   })
 })
+
+describe('listWorkflowAgents — Grok layout', () => {
+  let sessionsRoot: string
+  let sessionDir: string
+  let workflowDir: string
+  let childSessionDir: string
+
+  beforeAll(async () => {
+    // Mirror real layout: ~/.grok/sessions/<cwd-enc>/<parent>/workflows/wf_x
+    //                         ~/.grok/sessions/<cwd-enc>/<child>/chat_history.jsonl
+    sessionsRoot = await mkdtemp(join(tmpdir(), 'wf-grok-sessions-'))
+    sessionDir = join(sessionsRoot, 'parent-session')
+    childSessionDir = join(sessionsRoot, 'child-agent-1')
+    workflowDir = join(sessionDir, 'workflows', 'wf_demo')
+    const { mkdir } = await import('node:fs/promises')
+    await mkdir(workflowDir, { recursive: true })
+    await mkdir(join(sessionDir, 'subagents', 'agent-1'), { recursive: true })
+    await mkdir(childSessionDir, { recursive: true })
+    await writeFile(join(workflowDir, 'state.json'), JSON.stringify({
+      version: 4,
+      state: {
+        run_id: 'wf_demo',
+        agents: [
+          { agent_id: 'agent-1', label: 'inventory', tokens_used: 1200, state: 'done' },
+          { agent_id: 'agent-2', label: 'verify', tokens_used: 400, state: 'done' },
+        ],
+      },
+    }))
+    await writeFile(join(sessionDir, 'subagents', 'agent-1', 'meta.json'), JSON.stringify({
+      subagent_id: 'agent-1',
+      child_session_id: 'child-agent-1',
+      prompt: 'Inventory session ops',
+      description: 'inventory',
+      tool_calls: 2,
+    }))
+    await writeFile(join(sessionDir, 'subagents', 'agent-1', 'output.json'), JSON.stringify({
+      schema_version: 1,
+      output: '## Findings\n- local only',
+    }))
+    await writeFile(join(childSessionDir, 'chat_history.jsonl'), [
+      JSON.stringify({
+        type: 'assistant',
+        content: 'Scanning…',
+        tool_calls: [
+          { id: 'c1', name: 'grep', arguments: JSON.stringify({ pattern: 'session', path: '/proj' }) },
+          { id: 'c2', name: 'read_file', arguments: JSON.stringify({ target_file: '/proj/a.ts' }) },
+        ],
+      }),
+      JSON.stringify({ type: 'tool_result', tool_call_id: 'c1', content: 'hits' }),
+      JSON.stringify({ type: 'tool_result', tool_call_id: 'c2', content: 'file body' }),
+      JSON.stringify({ type: 'assistant', content: 'Done scanning.' }),
+    ].join('\n') + '\n')
+  })
+
+  afterAll(async () => {
+    await rm(sessionsRoot, { recursive: true, force: true })
+  })
+
+  it('lists agents and points jsonlPath at child chat_history for tool activity', async () => {
+    const agents = await listWorkflowAgents(workflowDir)
+    expect(agents).toHaveLength(2)
+    expect(agents[0]).toMatchObject({
+      agentId: 'agent-1',
+      label: 'inventory',
+      tokens: 1200,
+      prompt: 'Inventory session ops',
+      resultText: '## Findings\n- local only',
+      toolCount: 2,
+    })
+    expect(agents[0].jsonlPath).toBe(join(childSessionDir, 'chat_history.jsonl'))
+    expect(agents[1]).toMatchObject({ agentId: 'agent-2', label: 'verify', tokens: 400 })
+  })
+})

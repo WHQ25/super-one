@@ -7,7 +7,7 @@ function userMsg(text: string): SDKUserMessage {
     type: 'user',
     message: { role: 'user', content: text },
     parent_tool_use_id: null,
-    uuid: 'u1',
+    uuid: '00000000-0000-4000-8000-000000000001',
     session_id: 's1',
   } as SDKUserMessage
 }

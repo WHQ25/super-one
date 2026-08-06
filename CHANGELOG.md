@@ -11,6 +11,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - Experimental **Remote Nodes** settings toggle gating Other Devices and sidebar host switcher.
 - Remote Claude live session inject, skills/MCP resource RPCs, and related node session parity work from `feat/cli-remote-devices`.
 
+### Changed
+- Bump `@anthropic-ai/claude-agent-sdk` to 0.3.223 (desktop, CLI pack, managed official pin) and `@openai/codex` to 0.146.1; no SuperOne protocol adaptations required.
+
 ## [0.49.4-alpha] - 2026-07-31
 
 ### Added

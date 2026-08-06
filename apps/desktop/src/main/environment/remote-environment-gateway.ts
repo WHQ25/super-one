@@ -19,6 +19,7 @@ import type {
   QuestionResponseInput,
   SendMessageInput,
   SessionGateway,
+  SessionMessagesListResult,
   SessionRef,
   SubscribeEventsInput,
   TerminalGateway,
@@ -219,6 +220,144 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
     return this.client.rpc('workspace.listSkills', { projectId })
   }
 
+  /** Node-local installed Claude plugins for a project. */
+  async pluginsList(projectId: string): Promise<{
+    plugins?: Array<Record<string, unknown>>
+    provider?: string
+  }> {
+    return this.client.rpc('plugins.list', { projectId, provider: 'claude' })
+  }
+
+  async pluginsGet(
+    projectId: string,
+    key: string,
+  ): Promise<{ plugin?: unknown; provider?: string }> {
+    return this.client.rpc('plugins.get', { projectId, provider: 'claude', key })
+  }
+
+  async pluginsReadFile(
+    projectId: string,
+    key: string,
+    relativePath: string,
+  ): Promise<{ content?: string; provider?: string }> {
+    return this.client.rpc('plugins.readFile', {
+      projectId,
+      provider: 'claude',
+      key,
+      relativePath,
+    })
+  }
+
+  async pluginsDelete(
+    projectId: string,
+    key: string,
+    scope: 'user' | 'project',
+  ): Promise<{ ok?: boolean; provider?: string }> {
+    return this.client.rpc('plugins.delete', {
+      projectId,
+      provider: 'claude',
+      key,
+      scope,
+    })
+  }
+
+  async pluginsInstall(
+    projectId: string,
+    key: string,
+    scope: 'user' | 'project',
+  ): Promise<{ ok?: boolean; provider?: string }> {
+    return this.client.rpc('plugins.install', {
+      projectId,
+      provider: 'claude',
+      key,
+      scope,
+    })
+  }
+
+  async pluginsUpdate(
+    projectId: string,
+    key: string,
+    scope: 'user' | 'project',
+  ): Promise<{ ok?: boolean; provider?: string }> {
+    return this.client.rpc('plugins.update', {
+      projectId,
+      provider: 'claude',
+      key,
+      scope,
+    })
+  }
+
+  async pluginsListMarketplace(projectId: string): Promise<{
+    plugins?: Array<Record<string, unknown>>
+    provider?: string
+  }> {
+    return this.client.rpc('plugins.listMarketplace', { projectId, provider: 'claude' })
+  }
+
+  async pluginsAddMarketplace(
+    projectId: string,
+    source: string,
+    scope: 'user' | 'project',
+  ): Promise<unknown> {
+    return this.client.rpc('plugins.addMarketplace', {
+      projectId,
+      provider: 'claude',
+      source,
+      scope,
+    })
+  }
+
+  async pluginsRemoveMarketplace(
+    projectId: string,
+    name: string,
+    scope: 'user' | 'project' | 'local' | 'official',
+  ): Promise<unknown> {
+    return this.client.rpc('plugins.removeMarketplace', {
+      projectId,
+      provider: 'claude',
+      name,
+      scope,
+    })
+  }
+
+  /** Node-local Claude agent catalog (user + project + plugins). */
+  async agentsList(projectId: string): Promise<{
+    agents?: Array<{
+      name: string
+      description: string
+      model?: string
+      source: string
+      scope: 'user' | 'project'
+    }>
+  }> {
+    return this.client.rpc('agents.list', { projectId })
+  }
+
+  async agentsReadFile(projectId: string, name: string): Promise<{ content?: string | null }> {
+    return this.client.rpc('agents.readFile', { projectId, name })
+  }
+
+  /** Node-local hooks from user/project/local settings.json. */
+  async hooksList(projectId: string): Promise<{ hooks?: Array<Record<string, unknown>> }> {
+    return this.client.rpc('hooks.list', { projectId })
+  }
+
+  async hooksSave(
+    projectId: string,
+    payload: unknown,
+    replaceId?: string,
+  ): Promise<{ ok?: boolean }> {
+    return this.client.rpc('hooks.save', {
+      projectId,
+      payload,
+      ...(replaceId ? { replaceId } : {}),
+    })
+  }
+
+  async hooksDelete(projectId: string, id: string): Promise<{ ok?: boolean }> {
+    return this.client.rpc('hooks.delete', { projectId, id })
+  }
+
   async gitDiff(projectId: string, opts?: { staged?: boolean; path?: string }): Promise<unknown> {
     return this.client.rpc('git.diff', { projectId, ...opts })
   }
@@ -285,6 +424,32 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
     return this.client.rpc('session.setCwd', input)
   }
 
+  /**
+   * Persist durable per-session turn defaults on the node (model/effort/…).
+   * Subsequent session.send without those options uses the stored values.
+   */
+  async sessionPatchSettings(input: {
+    sessionId: string
+    permissionMode?: string | null
+    sandboxMode?: string | null
+    model?: string | null
+    effort?: string | null
+    apiProviderId?: string | null
+    leaseId?: string
+    generation?: string
+  }): Promise<unknown> {
+    const { sessionId, leaseId, generation, ...settings } = input
+    if (!leaseId) {
+      throw new Error('session.patchSettings requires a control lease on remote nodes')
+    }
+    return this.client.rpc('session.patchSettings', {
+      sessionId,
+      leaseId,
+      generation,
+      settings,
+    })
+  }
+
   // --- Provider credentials (node-local store) ---
 
   async providerListCredentials(): Promise<unknown> {
@@ -305,6 +470,122 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
 
   async providerDeleteCredential(id: string): Promise<unknown> {
     return this.client.rpc('provider.deleteCredential', { id })
+  }
+
+  // --- Skills / MCP resource management (node disk via skills.* / mcp.*) ---
+
+  async skillsList(projectId: string, provider: 'claude' | 'codex' = 'claude'): Promise<unknown> {
+    return this.client.rpc('skills.list', { projectId, provider })
+  }
+
+  async skillsGet(
+    projectId: string,
+    name: string,
+    opts?: { sourcePath?: string; provider?: 'claude' | 'codex' },
+  ): Promise<unknown> {
+    return this.client.rpc('skills.get', {
+      projectId,
+      name,
+      provider: opts?.provider ?? 'claude',
+      ...(opts?.sourcePath ? { sourcePath: opts.sourcePath } : {}),
+    })
+  }
+
+  async skillsReadFile(
+    projectId: string,
+    skillName: string,
+    relativePath: string,
+    opts?: { sourcePath?: string; provider?: 'claude' | 'codex' },
+  ): Promise<unknown> {
+    return this.client.rpc('skills.readFile', {
+      projectId,
+      skillName,
+      relativePath,
+      provider: opts?.provider ?? 'claude',
+      ...(opts?.sourcePath ? { sourcePath: opts.sourcePath } : {}),
+    })
+  }
+
+  async skillsDelete(
+    projectId: string,
+    sourcePath: string,
+    provider: 'claude' | 'codex' = 'claude',
+  ): Promise<unknown> {
+    return this.client.rpc('skills.delete', { projectId, sourcePath, provider })
+  }
+
+  async skillsInstall(
+    projectId: string,
+    input: {
+      scope: 'user' | 'project'
+      name: string
+      files: Record<string, string>
+      provider?: 'claude' | 'codex'
+    },
+  ): Promise<unknown> {
+    return this.client.rpc('skills.install', {
+      projectId,
+      scope: input.scope,
+      name: input.name,
+      files: input.files,
+      provider: input.provider ?? 'claude',
+    })
+  }
+
+  async mcpList(projectId: string, provider: 'claude' | 'codex'): Promise<unknown> {
+    return this.client.rpc('mcp.list', { projectId, provider })
+  }
+
+  async mcpSave(
+    projectId: string,
+    input: {
+      provider: 'claude' | 'codex'
+      name: string
+      scope: 'user' | 'project'
+      config: Record<string, unknown>
+    },
+  ): Promise<unknown> {
+    return this.client.rpc('mcp.save', {
+      projectId,
+      provider: input.provider,
+      name: input.name,
+      scope: input.scope,
+      config: input.config,
+    })
+  }
+
+  async mcpToggle(
+    projectId: string,
+    input: {
+      provider: 'claude' | 'codex'
+      name: string
+      scope: 'user' | 'project'
+      disabled: boolean
+    },
+  ): Promise<unknown> {
+    return this.client.rpc('mcp.toggle', {
+      projectId,
+      provider: input.provider,
+      name: input.name,
+      scope: input.scope,
+      disabled: input.disabled,
+    })
+  }
+
+  async mcpDelete(
+    projectId: string,
+    input: {
+      provider: 'claude' | 'codex'
+      name: string
+      scope: 'user' | 'project'
+    },
+  ): Promise<unknown> {
+    return this.client.rpc('mcp.delete', {
+      projectId,
+      provider: input.provider,
+      name: input.name,
+      scope: input.scope,
+    })
   }
 
   async providerListBindings(): Promise<unknown> {
@@ -352,6 +633,270 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
     })
   }
 
+  /**
+   * Node-side CONNECT_* replacement: models + skills/commands/agents/prompts.
+   * Does not use desktop harness_resource_cache.
+   */
+  async harnessResources(input: {
+    projectId: string
+    harnessId?: string
+    apiProviderId?: string | null
+  }): Promise<unknown> {
+    return this.client.rpc('harness.resources', {
+      projectId: input.projectId,
+      harnessId: input.harnessId,
+      apiProviderId: input.apiProviderId ?? null,
+    })
+  }
+
+  /** Alias for {@link harnessResources}. */
+  async harnessConnect(input: {
+    projectId: string
+    harnessId?: string
+    apiProviderId?: string | null
+  }): Promise<unknown> {
+    return this.client.rpc('harness.connect', {
+      projectId: input.projectId,
+      harnessId: input.harnessId,
+      apiProviderId: input.apiProviderId ?? null,
+    })
+  }
+
+  // --- Session-layer provider profiles (session_providers) ---
+
+  async sessionProvidersList(harnessId?: string): Promise<unknown> {
+    return this.client.rpc('sessionProviders.list', harnessId ? { harnessId } : {})
+  }
+
+  async sessionProvidersGet(id: string): Promise<unknown> {
+    return this.client.rpc('sessionProviders.get', { id })
+  }
+
+  async sessionProvidersGetBase(harnessId: string): Promise<unknown> {
+    return this.client.rpc('sessionProviders.getBase', { harnessId })
+  }
+
+  async sessionProvidersCreate(input: {
+    harnessId: string
+    name: string
+    config?: unknown
+    id?: string
+  }): Promise<unknown> {
+    return this.client.rpc('sessionProviders.create', input)
+  }
+
+  async sessionProvidersUpdate(
+    id: string,
+    patch: { name?: string; config?: unknown },
+  ): Promise<unknown> {
+    return this.client.rpc('sessionProviders.update', { id, ...patch })
+  }
+
+  async sessionProvidersDelete(id: string): Promise<unknown> {
+    return this.client.rpc('sessionProviders.delete', { id })
+  }
+
+  // --- Node agent settings (SUPERONE_NODE_HOME config.json) ---
+
+  async settingsGet(): Promise<unknown> {
+    return this.client.rpc('settings.get', {})
+  }
+
+  async settingsPatch(patch: Record<string, unknown>): Promise<unknown> {
+    return this.client.rpc('settings.patch', { patch })
+  }
+
+  /** Linux bwrap/socat probe + capability booleans. */
+  async sandboxProbe(): Promise<unknown> {
+    return this.client.rpc('sandbox.probe', {})
+  }
+
+  // --- Automations (node-owned scheduler; local desktop keeps in-process service) ---
+
+  async automationList(projectId: string): Promise<unknown> {
+    return this.client.rpc('automation.list', { projectId })
+  }
+
+  async automationCreate(input: {
+    projectId: string
+    name: string
+    prompt: string
+    agentConfig: unknown
+    schedule: unknown
+  }): Promise<unknown> {
+    return this.client.rpc('automation.create', input)
+  }
+
+  async automationUpdate(input: {
+    automationId: string
+    projectId?: string
+    name?: string
+    prompt?: string
+    agentConfig?: unknown
+    schedule?: unknown
+    enabled?: boolean
+  }): Promise<unknown> {
+    return this.client.rpc('automation.update', input)
+  }
+
+  async automationDelete(input: { automationId: string; projectId?: string }): Promise<unknown> {
+    return this.client.rpc('automation.delete', input)
+  }
+
+  async automationRunNow(input: { automationId: string; projectId?: string }): Promise<unknown> {
+    return this.client.rpc('automation.runNow', input)
+  }
+
+  // --- Codex admin (node codex.* RPC; never touches local project FS) ---
+
+  async codexGetAuthStatus(projectId: string): Promise<unknown> {
+    return this.client.rpc('codex.getAuthStatus', { projectId })
+  }
+
+  async codexSetAuth(
+    projectId: string,
+    request: { mode: string; apiKey?: string },
+  ): Promise<unknown> {
+    return this.client.rpc('codex.setAuth', { projectId, ...request })
+  }
+
+  async codexGetRateLimits(
+    projectId: string,
+    apiProviderId?: string | null,
+  ): Promise<unknown> {
+    return this.client.rpc('codex.getRateLimits', {
+      projectId,
+      apiProviderId: apiProviderId ?? null,
+    })
+  }
+
+  async codexGetAccountUsage(
+    projectId: string,
+    apiProviderId?: string | null,
+  ): Promise<unknown> {
+    return this.client.rpc('codex.getAccountUsage', {
+      projectId,
+      apiProviderId: apiProviderId ?? null,
+    })
+  }
+
+  async codexConsumeRateLimitReset(
+    projectId: string,
+    apiProviderId?: string | null,
+    creditId?: string | null,
+  ): Promise<unknown> {
+    return this.client.rpc('codex.consumeRateLimitReset', {
+      projectId,
+      apiProviderId: apiProviderId ?? null,
+      creditId: creditId ?? null,
+    })
+  }
+
+  async codexLoginMcpOauth(
+    projectId: string,
+    serverName: string,
+    apiProviderId?: string | null,
+  ): Promise<unknown> {
+    return this.client.rpc('codex.loginMcpOauth', {
+      projectId,
+      serverName,
+      apiProviderId: apiProviderId ?? null,
+    })
+  }
+
+  async codexDetectExternalAgent(
+    projectId: string,
+    apiProviderId?: string | null,
+  ): Promise<unknown> {
+    return this.client.rpc('codex.detectExternalAgent', {
+      projectId,
+      apiProviderId: apiProviderId ?? null,
+    })
+  }
+
+  async codexImportExternalAgent(
+    projectId: string,
+    items: unknown[],
+    apiProviderId?: string | null,
+  ): Promise<unknown> {
+    return this.client.rpc('codex.importExternalAgent', {
+      projectId,
+      items,
+      apiProviderId: apiProviderId ?? null,
+    })
+  }
+
+  async codexPluginsList(
+    projectId: string,
+    opts?: { marketplace?: boolean; apiProviderId?: string | null },
+  ): Promise<unknown> {
+    return this.client.rpc('codex.plugins.list', {
+      projectId,
+      marketplace: opts?.marketplace === true,
+      apiProviderId: opts?.apiProviderId ?? null,
+    })
+  }
+
+  async codexPluginsInstall(
+    projectId: string,
+    key: string,
+    apiProviderId?: string | null,
+  ): Promise<unknown> {
+    return this.client.rpc('codex.plugins.install', {
+      projectId,
+      key,
+      apiProviderId: apiProviderId ?? null,
+    })
+  }
+
+  async codexPluginsUninstall(
+    projectId: string,
+    key: string,
+    apiProviderId?: string | null,
+  ): Promise<unknown> {
+    return this.client.rpc('codex.plugins.uninstall', {
+      projectId,
+      key,
+      apiProviderId: apiProviderId ?? null,
+    })
+  }
+
+  async codexMarketplaceAdd(
+    projectId: string,
+    request: { source: string; refName?: string; sparsePaths?: string[] },
+    apiProviderId?: string | null,
+  ): Promise<unknown> {
+    return this.client.rpc('codex.marketplace.add', {
+      projectId,
+      ...request,
+      apiProviderId: apiProviderId ?? null,
+    })
+  }
+
+  async codexMarketplaceRemove(
+    projectId: string,
+    marketplaceName: string,
+    apiProviderId?: string | null,
+  ): Promise<unknown> {
+    return this.client.rpc('codex.marketplace.remove', {
+      projectId,
+      marketplaceName,
+      apiProviderId: apiProviderId ?? null,
+    })
+  }
+
+  async codexMarketplaceUpgrade(
+    projectId: string,
+    marketplaceName?: string,
+    apiProviderId?: string | null,
+  ): Promise<unknown> {
+    return this.client.rpc('codex.marketplace.upgrade', {
+      projectId,
+      ...(marketplaceName ? { marketplaceName } : {}),
+      apiProviderId: apiProviderId ?? null,
+    })
+  }
+
   private createSessionGateway(): SessionGateway {
     return {
       create: async (input: CreateSessionInput) => {
@@ -372,6 +917,14 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
         this.assertEnv(project.environmentId)
         return this.client.rpc('session.list', { projectId: project.projectId })
       },
+      listMessages: async (input) => {
+        this.assertEnv(input.session.environmentId)
+        return this.client.rpc<SessionMessagesListResult>('session.messages.list', {
+          sessionId: input.sessionId || input.session.sessionId,
+          ...(input.cursor !== undefined ? { cursor: input.cursor } : {}),
+          ...(input.limit !== undefined ? { limit: input.limit } : {}),
+        })
+      },
       send: async (input: SendMessageInput) => {
         this.assertEnv(input.session.environmentId)
         // Unique once per logical send — never derive from text length/content.
@@ -391,6 +944,34 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
           undefined,
           clientMessageId,
         )
+      },
+      patchSettings: async (input) => {
+        this.assertEnv(input.session.environmentId)
+        const {
+          session,
+          leaseId,
+          generation,
+          permissionMode,
+          sandboxMode,
+          model,
+          effort,
+          apiProviderId,
+        } = input
+        if (!leaseId) {
+          throw new Error('session.patchSettings requires a control lease on remote nodes')
+        }
+        return this.client.rpc('session.patchSettings', {
+          sessionId: session.sessionId,
+          leaseId,
+          generation,
+          settings: {
+            ...(permissionMode !== undefined ? { permissionMode } : {}),
+            ...(sandboxMode !== undefined ? { sandboxMode } : {}),
+            ...(model !== undefined ? { model } : {}),
+            ...(effort !== undefined ? { effort } : {}),
+            ...(apiProviderId !== undefined ? { apiProviderId } : {}),
+          },
+        })
       },
       interrupt: async (ref: SessionRef, control: MutatingControlContext) => {
         this.assertEnv(ref.environmentId)
@@ -432,6 +1013,22 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
         })
       },
     }
+  }
+
+  /**
+   * Paged denser message catalog for remote UI hydrate (tool summaries, metadata).
+   * Prefer this for historical open; use {@link listEvents} with afterSequence for live catch-up.
+   */
+  async listSessionMessages(input: {
+    sessionId: string
+    cursor?: string | number | null
+    limit?: number
+  }): Promise<SessionMessagesListResult> {
+    return this.client.rpc<SessionMessagesListResult>('session.messages.list', {
+      sessionId: input.sessionId,
+      ...(input.cursor !== undefined ? { cursor: input.cursor } : {}),
+      ...(input.limit !== undefined ? { limit: input.limit } : {}),
+    })
   }
 
   /**
@@ -507,7 +1104,7 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
         if (!s?.pendingInteraction) return []
         const p = s.pendingInteraction as {
           interactionId: string
-          kind: 'permission' | 'question' | 'plan'
+          kind: 'permission' | 'question' | 'plan' | 'session_agents_confirm'
           createdAt: number
         }
         return [
@@ -522,12 +1119,23 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
       },
       respondPermission: async (input: PermissionResponseInput) => {
         this.assertEnv(input.session.environmentId)
+        const formAnswers =
+          input.options && typeof input.options === 'object'
+            ? ((input.options as { formAnswers?: Record<string, unknown> }).formAnswers
+              ?? (input.options as Record<string, unknown>))
+            : undefined
+        const cancel =
+          input.options && typeof input.options === 'object'
+            ? (input.options as { cancel?: boolean }).cancel === true
+            : false
         await this.client.rpc('session.respondPermission', {
           sessionId: input.session.sessionId,
           interactionId: input.interactionId,
           decision: input.decision,
           leaseId: input.leaseId,
           generation: input.generation,
+          ...(formAnswers ? { formAnswers } : {}),
+          ...(cancel ? { cancel: true } : {}),
         })
       },
       respondQuestion: async (input: QuestionResponseInput) => {
@@ -722,6 +1330,23 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
             }
           },
         }
+      },
+      tailWatchStart: async (input) => {
+        this.assertEnv(input.project.environmentId)
+        return this.client.rpc<{ watchId: string; offset: number; relativePath: string }>(
+          'workspace.tailWatchStart',
+          {
+            projectId: input.project.projectId,
+            relativePath: input.relativePath,
+            offset: input.offset,
+          },
+        )
+      },
+      tailWatchPoll: async (input) => {
+        return this.client.rpc('workspace.tailWatchPoll', { watchId: input.watchId })
+      },
+      tailWatchStop: async (input) => {
+        return this.client.rpc('workspace.tailWatchStop', { watchId: input.watchId })
       },
     }
   }

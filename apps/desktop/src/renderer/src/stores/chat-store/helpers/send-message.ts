@@ -411,6 +411,27 @@ export async function sendMessageImpl(
       base64: a.base64,
     }))
 
+    // Codex slash commands → session.send turnKind (not desktop-only IPC).
+    let remoteTurnKind: 'run' | 'steer' | 'review' | 'compact' | undefined
+    let remoteReviewTarget: unknown
+    let remoteText = finalContent
+    let remoteCollaborationMode: string | undefined
+    if (preferredHarness === 'codex') {
+      const cmd = parseCodexCommand(rawContent)
+      if (cmd?.kind === 'compact') {
+        remoteTurnKind = 'compact'
+      } else if (cmd?.kind === 'review') {
+        remoteTurnKind = 'review'
+        remoteReviewTarget = cmd.target
+      } else if (writeSess.status === 'streaming') {
+        // Desktop: concurrent send while streaming steers the active turn.
+        remoteTurnKind = 'steer'
+      } else {
+        remoteTurnKind = 'run'
+      }
+      remoteCollaborationMode = writeSess.selectedCodexCollaborationMode || undefined
+    }
+
     // Always append to messages; node queues concurrent sends (priority=next parity).
     patchSession((sess) => ({
       messages: [...sess.messages, userMsg],
@@ -446,11 +467,13 @@ export async function sendMessageImpl(
     }
 
     try {
-      // Node accepts send while streaming (FIFO queue). Drain stays open across
-      // queued turns until the session is fully idle.
-      const finalSnap = (await window.environment.sendSessionMessage(remoteKey.connectionId, {
+      // Node accepts send while streaming (FIFO queue / codex steer). Drain stays
+      // open across queued turns until the session is fully idle.
+      // turnKind / collaborationMode / reviewTarget are forwarded to node session.send
+      // (preload types lag; cast keeps remote codex on the session path, not desktop IPC).
+      const sendInput = {
         sessionId: sid,
-        text: finalContent,
+        text: remoteText,
         clientMessageId: userMessageId,
         projectPath,
         providerId: preferredHarness,
@@ -465,7 +488,14 @@ export async function sendMessageImpl(
         ...(disabledSkillsForTurn ? { disabledSkills: disabledSkillsForTurn } : {}),
         ...(imagesForTurn.length > 0 ? { images: imagesForTurn } : {}),
         ...(apiProviderIdForTurn ? { apiProviderId: apiProviderIdForTurn } : {}),
-      })) as NodeSessionSnapshot | null
+        ...(remoteTurnKind ? { turnKind: remoteTurnKind } : {}),
+        ...(remoteCollaborationMode ? { collaborationMode: remoteCollaborationMode } : {}),
+        ...(remoteReviewTarget !== undefined ? { reviewTarget: remoteReviewTarget } : {}),
+      }
+      const finalSnap = (await window.environment.sendSessionMessage(
+        remoteKey.connectionId,
+        sendInput as Parameters<typeof window.environment.sendSessionMessage>[1],
+      )) as NodeSessionSnapshot | null
       const providerId = nodeHarnessToProviderId(
         finalSnap?.harnessId || finalSnap?.providerId || preferredHarness,
       )

@@ -1966,32 +1966,103 @@ export class AgentService {
 
     // --- Plugins (session-scoped — need cwd) ---
 
-    ipcMain.handle(AgentIpcChannels.PLUGINS_LIST, (_event, projectPath: string) => {
+    ipcMain.handle(AgentIpcChannels.PLUGINS_LIST, async (_event, projectPath: string) => {
+      const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
+      if (parseRemoteProjectKey(projectPath)) {
+        try {
+          const { getEnvironmentHost } = await import('../environment')
+          const { listRemoteManagedPlugins } = await import('../environment/remote-resources')
+          return (await listRemoteManagedPlugins(getEnvironmentHost(), projectPath)) ?? []
+        } catch {
+          return []
+        }
+      }
       return listPlugins(projectPath)
     })
 
-    ipcMain.handle(AgentIpcChannels.PLUGINS_READ, (_event, projectPath: string, key: string) => {
+    ipcMain.handle(AgentIpcChannels.PLUGINS_READ, async (_event, projectPath: string, key: string) => {
+      const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
+      if (parseRemoteProjectKey(projectPath)) {
+        const { getEnvironmentHost } = await import('../environment')
+        const { getRemoteManagedPlugin } = await import('../environment/remote-resources')
+        return (await getRemoteManagedPlugin(getEnvironmentHost(), projectPath, key)) ?? null
+      }
       return readPluginContent(projectPath, key)
     })
 
-    ipcMain.handle(AgentIpcChannels.PLUGINS_READ_FILE, (_event, projectPath: string, key: string, relativePath: string) => {
+    ipcMain.handle(AgentIpcChannels.PLUGINS_READ_FILE, async (_event, projectPath: string, key: string, relativePath: string) => {
+      const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
+      if (parseRemoteProjectKey(projectPath)) {
+        const { getEnvironmentHost } = await import('../environment')
+        const { readRemoteManagedPluginFile } = await import('../environment/remote-resources')
+        return (
+          (await readRemoteManagedPluginFile(getEnvironmentHost(), projectPath, key, relativePath)) ??
+          null
+        )
+      }
       return readPluginFile(projectPath, key, relativePath)
     })
 
-    ipcMain.handle(AgentIpcChannels.PLUGINS_DELETE, (_event, projectPath: string, key: string, scope: ResourceScope) => {
+    ipcMain.handle(AgentIpcChannels.PLUGINS_DELETE, async (_event, projectPath: string, key: string, scope: ResourceScope) => {
+      const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
+      if (parseRemoteProjectKey(projectPath)) {
+        if (scope !== 'user' && scope !== 'project') {
+          throw new Error('Remote plugin delete only supports user or project scope')
+        }
+        const { getEnvironmentHost } = await import('../environment')
+        const { deleteRemoteManagedPlugin } = await import('../environment/remote-resources')
+        const ok = await deleteRemoteManagedPlugin(getEnvironmentHost(), projectPath, key, scope)
+        if (!ok) throw new Error('Remote plugin delete failed')
+        return
+      }
       deletePlugin(key, scope, projectPath)
     })
 
-    ipcMain.handle(AgentIpcChannels.PLUGINS_LIST_MARKETPLACE, (_event, projectPath: string) => {
+    ipcMain.handle(AgentIpcChannels.PLUGINS_LIST_MARKETPLACE, async (_event, projectPath: string) => {
+      const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
+      if (parseRemoteProjectKey(projectPath)) {
+        try {
+          const { getEnvironmentHost } = await import('../environment')
+          const { listRemoteMarketplacePlugins } = await import('../environment/remote-resources')
+          return (await listRemoteMarketplacePlugins(getEnvironmentHost(), projectPath)) ?? []
+        } catch {
+          return []
+        }
+      }
       return listMarketplacePlugins(projectPath)
     })
 
     ipcMain.handle(AgentIpcChannels.PLUGINS_INSTALL, async (_event, projectPath: string, key: string, scope: ResourceScope) => {
+      const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
+      if (parseRemoteProjectKey(projectPath)) {
+        if (scope !== 'user' && scope !== 'project') {
+          throw new Error('Remote plugin install only supports user or project scope')
+        }
+        const { getEnvironmentHost } = await import('../environment')
+        const { installRemoteManagedPlugin } = await import('../environment/remote-resources')
+        const ok = await installRemoteManagedPlugin(getEnvironmentHost(), projectPath, key, scope)
+        if (!ok) throw new Error('Remote plugin install failed')
+        return
+      }
       await installPlugin(key, scope, projectPath)
       try { await this.sessionManager?.getActiveSession(projectPath)?.reloadPlugins() } catch (err) { log.debug('[agent] reloadPlugins skipped:', err) }
     })
 
     ipcMain.handle(AgentIpcChannels.PLUGINS_UPDATE, async (_event, projectPath: string, updates: Array<{ key: string; scope: ResourceScope }>) => {
+      const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
+      if (parseRemoteProjectKey(projectPath)) {
+        const { getEnvironmentHost } = await import('../environment')
+        const { updateRemoteManagedPlugin } = await import('../environment/remote-resources')
+        const host = getEnvironmentHost()
+        for (const { key, scope } of updates) {
+          if (scope !== 'user' && scope !== 'project') {
+            throw new Error('Remote plugin update only supports user or project scope')
+          }
+          const ok = await updateRemoteManagedPlugin(host, projectPath, key, scope)
+          if (!ok) throw new Error(`Remote plugin update failed for ${key}`)
+        }
+        return
+      }
       for (const { key, scope } of updates) {
         updatePlugin(key, scope, projectPath)
       }
@@ -2023,10 +2094,29 @@ export class AgentService {
     })
 
     ipcMain.handle(AgentIpcChannels.PLUGINS_ADD_MARKETPLACE, async (_event, source: string, scope: ResourceScope, projectPath: string) => {
+      const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
+      if (parseRemoteProjectKey(projectPath)) {
+        if (scope !== 'user' && scope !== 'project') {
+          throw new Error('Remote marketplace add only supports user or project scope')
+        }
+        const { getEnvironmentHost } = await import('../environment')
+        const { addRemoteMarketplace } = await import('../environment/remote-resources')
+        const ok = await addRemoteMarketplace(getEnvironmentHost(), projectPath, source, scope)
+        if (!ok) throw new Error('Remote marketplace add failed')
+        return
+      }
       await addMarketplace(source, scope, projectPath)
     })
 
     ipcMain.handle(AgentIpcChannels.PLUGINS_REMOVE_MARKETPLACE, async (_event, name: string, scope: 'user' | 'project' | 'local' | 'official', projectPath: string) => {
+      const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
+      if (parseRemoteProjectKey(projectPath)) {
+        const { getEnvironmentHost } = await import('../environment')
+        const { removeRemoteMarketplace } = await import('../environment/remote-resources')
+        const ok = await removeRemoteMarketplace(getEnvironmentHost(), projectPath, name, scope)
+        if (!ok) throw new Error('Remote marketplace remove failed')
+        return
+      }
       await removeMarketplace(name, scope, projectPath)
     })
 
@@ -2089,11 +2179,39 @@ export class AgentService {
       }
     })
 
-    ipcMain.handle(AgentIpcChannels.SKILLS_READ, (_event, projectPath: string, name: string, sourcePath?: string) => {
+    ipcMain.handle(AgentIpcChannels.SKILLS_READ, async (_event, projectPath: string, name: string, sourcePath?: string) => {
+      const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
+      if (parseRemoteProjectKey(projectPath)) {
+        try {
+          const { getEnvironmentHost } = await import('../environment')
+          const { getRemoteManagedSkill } = await import('../environment/remote-resources')
+          return (await getRemoteManagedSkill(getEnvironmentHost(), projectPath, name, { sourcePath })) ?? null
+        } catch {
+          return null
+        }
+      }
       return readSkillContent(projectPath, name, sourcePath)
     })
 
-    ipcMain.handle(AgentIpcChannels.SKILLS_READ_FILE, (_event, projectPath: string, skillName: string, relativePath: string, sourcePath?: string) => {
+    ipcMain.handle(AgentIpcChannels.SKILLS_READ_FILE, async (_event, projectPath: string, skillName: string, relativePath: string, sourcePath?: string) => {
+      const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
+      if (parseRemoteProjectKey(projectPath)) {
+        try {
+          const { getEnvironmentHost } = await import('../environment')
+          const { readRemoteManagedSkillFile } = await import('../environment/remote-resources')
+          return (
+            (await readRemoteManagedSkillFile(
+              getEnvironmentHost(),
+              projectPath,
+              skillName,
+              relativePath,
+              { sourcePath },
+            )) ?? null
+          )
+        } catch {
+          return null
+        }
+      }
       return readSkillFile(projectPath, skillName, relativePath, sourcePath)
     })
 
@@ -2101,7 +2219,15 @@ export class AgentService {
       return installSkill(sourcePath)
     })
 
-    ipcMain.handle(AgentIpcChannels.SKILLS_DELETE, (_event, projectPath: string, sourcePath: string) => {
+    ipcMain.handle(AgentIpcChannels.SKILLS_DELETE, async (_event, projectPath: string, sourcePath: string) => {
+      const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
+      if (parseRemoteProjectKey(projectPath)) {
+        const { getEnvironmentHost } = await import('../environment')
+        const { deleteRemoteManagedSkill } = await import('../environment/remote-resources')
+        const ok = await deleteRemoteManagedSkill(getEnvironmentHost(), projectPath, sourcePath)
+        if (!ok) throw new Error('Remote skill delete failed or path is not remote')
+        return
+      }
       deleteSkill(sourcePath, projectPath)
     })
 
@@ -2123,15 +2249,56 @@ export class AgentService {
       return getSharedCodexSkillsService().list(projectPath)
     })
 
-    ipcMain.handle(AgentIpcChannels.CODEX_SKILLS_READ, (_event, projectPath: string, name: string, sourcePath?: string) => {
+    ipcMain.handle(AgentIpcChannels.CODEX_SKILLS_READ, async (_event, projectPath: string, name: string, sourcePath?: string) => {
+      const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
+      if (parseRemoteProjectKey(projectPath)) {
+        try {
+          const { getEnvironmentHost } = await import('../environment')
+          const { getRemoteManagedSkill } = await import('../environment/remote-resources')
+          return (
+            (await getRemoteManagedSkill(getEnvironmentHost(), projectPath, name, {
+              sourcePath,
+              provider: 'codex',
+            })) ?? null
+          )
+        } catch {
+          return null
+        }
+      }
       return readCodexSkillContent(projectPath, name, sourcePath)
     })
 
-    ipcMain.handle(AgentIpcChannels.CODEX_SKILLS_READ_FILE, (_event, projectPath: string, skillName: string, relativePath: string, sourcePath?: string) => {
+    ipcMain.handle(AgentIpcChannels.CODEX_SKILLS_READ_FILE, async (_event, projectPath: string, skillName: string, relativePath: string, sourcePath?: string) => {
+      const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
+      if (parseRemoteProjectKey(projectPath)) {
+        try {
+          const { getEnvironmentHost } = await import('../environment')
+          const { readRemoteManagedSkillFile } = await import('../environment/remote-resources')
+          return (
+            (await readRemoteManagedSkillFile(
+              getEnvironmentHost(),
+              projectPath,
+              skillName,
+              relativePath,
+              { sourcePath, provider: 'codex' },
+            )) ?? null
+          )
+        } catch {
+          return null
+        }
+      }
       return readCodexSkillFile(projectPath, skillName, relativePath, sourcePath)
     })
 
-    ipcMain.handle(AgentIpcChannels.CODEX_SKILLS_DELETE, (_event, projectPath: string, sourcePath: string) => {
+    ipcMain.handle(AgentIpcChannels.CODEX_SKILLS_DELETE, async (_event, projectPath: string, sourcePath: string) => {
+      const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
+      if (parseRemoteProjectKey(projectPath)) {
+        const { getEnvironmentHost } = await import('../environment')
+        const { deleteRemoteManagedSkill } = await import('../environment/remote-resources')
+        const ok = await deleteRemoteManagedSkill(getEnvironmentHost(), projectPath, sourcePath, 'codex')
+        if (!ok) throw new Error('Remote codex skill delete failed')
+        return
+      }
       deleteCodexSkill(sourcePath, projectPath)
     })
 
@@ -2139,7 +2306,15 @@ export class AgentService {
 
     ipcMain.handle(AgentIpcChannels.CODEX_MCP_LIST_CONFIG, async (_event, projectPath: string) => {
       const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
-      if (parseRemoteProjectKey(projectPath)) return []
+      if (parseRemoteProjectKey(projectPath)) {
+        try {
+          const { getEnvironmentHost } = await import('../environment')
+          const { listRemoteManagedMcp } = await import('../environment/remote-resources')
+          return (await listRemoteManagedMcp(getEnvironmentHost(), projectPath, 'codex')) ?? []
+        } catch {
+          return []
+        }
+      }
       return listCodexMcpConfigs(projectPath)
     })
 
@@ -2147,21 +2322,65 @@ export class AgentService {
 
     ipcMain.handle(AgentIpcChannels.AGENTS_LIST, async (_event, projectPath: string) => {
       const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
-      if (parseRemoteProjectKey(projectPath)) return []
+      if (parseRemoteProjectKey(projectPath)) {
+        try {
+          const { getEnvironmentHost } = await import('../environment')
+          const { listRemoteAgents } = await import('../environment/remote-mentions')
+          return (await listRemoteAgents(getEnvironmentHost(), projectPath)) ?? []
+        } catch {
+          return []
+        }
+      }
       return discoverAllAgents(projectPath)
     })
 
-    ipcMain.handle(AgentIpcChannels.AGENTS_READ_FILE, (_event, projectPath: string, name: string) => {
+    ipcMain.handle(AgentIpcChannels.AGENTS_READ_FILE, async (_event, projectPath: string, name: string) => {
+      const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
+      if (parseRemoteProjectKey(projectPath)) {
+        try {
+          const { getEnvironmentHost } = await import('../environment')
+          const { readRemoteAgentFile } = await import('../environment/remote-mentions')
+          return (await readRemoteAgentFile(getEnvironmentHost(), projectPath, name)) ?? ''
+        } catch {
+          return ''
+        }
+      }
       return readAgentFile(projectPath, name)
     })
 
     // --- MCP config (session-scoped) ---
 
-    ipcMain.handle(AgentIpcChannels.MCP_LIST_CONFIG, (_event, projectPath: string) => {
+    ipcMain.handle(AgentIpcChannels.MCP_LIST_CONFIG, async (_event, projectPath: string) => {
+      const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
+      if (parseRemoteProjectKey(projectPath)) {
+        try {
+          const { getEnvironmentHost } = await import('../environment')
+          const { listRemoteManagedMcp } = await import('../environment/remote-resources')
+          return (await listRemoteManagedMcp(getEnvironmentHost(), projectPath, 'claude')) ?? []
+        } catch {
+          return []
+        }
+      }
       return listMcpConfigs(projectPath)
     })
 
     ipcMain.handle(AgentIpcChannels.MCP_SAVE_CONFIG, async (_event, projectPath: string, name: string, config: Record<string, unknown>, scope: ResourceScope) => {
+      const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
+      if (parseRemoteProjectKey(projectPath)) {
+        if (scope !== 'user' && scope !== 'project') {
+          throw new Error('Remote MCP save only supports user or project scope')
+        }
+        const { getEnvironmentHost } = await import('../environment')
+        const { saveRemoteManagedMcp } = await import('../environment/remote-resources')
+        const ok = await saveRemoteManagedMcp(getEnvironmentHost(), projectPath, {
+          provider: 'claude',
+          name,
+          scope,
+          config,
+        })
+        if (!ok) throw new Error('Remote MCP save failed')
+        return
+      }
       saveMcpConfig(name, config, scope, projectPath)
       const session = this.sessionManager?.getActiveSession(projectPath)
       if (session) {
@@ -2171,11 +2390,42 @@ export class AgentService {
     })
 
     ipcMain.handle(AgentIpcChannels.MCP_DELETE_CONFIG, async (_event, projectPath: string, name: string, scope: ResourceScope) => {
+      const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
+      if (parseRemoteProjectKey(projectPath)) {
+        if (scope !== 'user' && scope !== 'project') {
+          throw new Error('Remote MCP delete only supports user or project scope')
+        }
+        const { getEnvironmentHost } = await import('../environment')
+        const { deleteRemoteManagedMcp } = await import('../environment/remote-resources')
+        const ok = await deleteRemoteManagedMcp(getEnvironmentHost(), projectPath, {
+          provider: 'claude',
+          name,
+          scope,
+        })
+        if (!ok) throw new Error('Remote MCP delete failed')
+        return
+      }
       deleteMcpConfig(name, scope, projectPath)
       try { await this.sessionManager?.getActiveSession(projectPath)?.toggleMcpServer(name, false) } catch (err) { log.debug('[agent] MCP delete toggle skipped:', err) }
     })
 
     ipcMain.handle(AgentIpcChannels.MCP_TOGGLE_CONFIG, async (_event, projectPath: string, name: string, disabled: boolean, scope: ResourceScope) => {
+      const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
+      if (parseRemoteProjectKey(projectPath)) {
+        if (scope !== 'user' && scope !== 'project') {
+          throw new Error('Remote MCP toggle only supports user or project scope')
+        }
+        const { getEnvironmentHost } = await import('../environment')
+        const { toggleRemoteManagedMcp } = await import('../environment/remote-resources')
+        const ok = await toggleRemoteManagedMcp(getEnvironmentHost(), projectPath, {
+          provider: 'claude',
+          name,
+          scope,
+          disabled,
+        })
+        if (!ok) throw new Error('Remote MCP toggle failed')
+        return
+      }
       if (scope !== 'claudeai') toggleMcpConfig(name, disabled, scope, projectPath)
       try { await this.sessionManager?.getActiveSession(projectPath)?.toggleMcpServer(name, !disabled) } catch (err) { log.debug('[agent] MCP toggle skipped:', err) }
     })
@@ -2214,15 +2464,41 @@ export class AgentService {
 
     // --- Hooks config (settings.json#hooks) ---
 
-    ipcMain.handle(AgentIpcChannels.HOOKS_LIST, (_event, projectPath: string) => {
+    ipcMain.handle(AgentIpcChannels.HOOKS_LIST, async (_event, projectPath: string) => {
+      const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
+      if (parseRemoteProjectKey(projectPath)) {
+        try {
+          const { getEnvironmentHost } = await import('../environment')
+          const { listRemoteManagedHooks } = await import('../environment/remote-resources')
+          return (await listRemoteManagedHooks(getEnvironmentHost(), projectPath)) ?? []
+        } catch {
+          return []
+        }
+      }
       return listHooks(projectPath)
     })
 
-    ipcMain.handle(AgentIpcChannels.HOOKS_SAVE, (_event, projectPath: string, payload: HookSavePayload, replaceId?: string) => {
+    ipcMain.handle(AgentIpcChannels.HOOKS_SAVE, async (_event, projectPath: string, payload: HookSavePayload, replaceId?: string) => {
+      const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
+      if (parseRemoteProjectKey(projectPath)) {
+        const { getEnvironmentHost } = await import('../environment')
+        const { saveRemoteManagedHook } = await import('../environment/remote-resources')
+        const ok = await saveRemoteManagedHook(getEnvironmentHost(), projectPath, payload, replaceId)
+        if (!ok) throw new Error('remote hooks.save requires connected node gateway')
+        return
+      }
       saveHook(projectPath, payload, replaceId)
     })
 
-    ipcMain.handle(AgentIpcChannels.HOOKS_DELETE, (_event, projectPath: string, id: string) => {
+    ipcMain.handle(AgentIpcChannels.HOOKS_DELETE, async (_event, projectPath: string, id: string) => {
+      const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
+      if (parseRemoteProjectKey(projectPath)) {
+        const { getEnvironmentHost } = await import('../environment')
+        const { deleteRemoteManagedHook } = await import('../environment/remote-resources')
+        const ok = await deleteRemoteManagedHook(getEnvironmentHost(), projectPath, id)
+        if (!ok) throw new Error('remote hooks.delete requires connected node gateway')
+        return
+      }
       deleteHook(projectPath, id)
     })
 

@@ -718,10 +718,26 @@ export interface EnvironmentAPI {
       disabledSkills?: string[]
       images?: Array<{ name?: string; mimeType: string; base64: string }>
       apiProviderId?: string | null
+      /** Codex turn kind for session.send options.turnKind (runtime already forwarded). */
+      turnKind?: 'run' | 'steer' | 'review' | 'compact' | null
+      collaborationMode?: string | Record<string, unknown> | null
+      reviewTarget?: unknown
     },
   ): Promise<unknown>
   /** Poll durable node `session.events` after sequence (exclusive). */
   listSessionEvents(connectionId: string, afterSequence?: string): Promise<unknown[]>
+  /**
+   * Paged denser message catalog (`session.messages.list`) for remote UI hydrate.
+   * Prefer over text-only recovery when available.
+   */
+  listSessionMessages(
+    connectionId: string,
+    input: { sessionId: string; cursor?: string | number | null; limit?: number },
+  ): Promise<{
+    messages?: Array<Record<string, unknown>>
+    nextCursor?: string | number | null
+    hasMore?: boolean
+  }>
   interruptSession(connectionId: string, sessionId: string): Promise<void>
   renameSession(connectionId: string, sessionId: string, title: string): Promise<unknown>
   removeSession(connectionId: string, sessionId: string): Promise<unknown>
@@ -741,6 +757,8 @@ export interface EnvironmentAPI {
       sessionId: string
       interactionId: string
       decision: 'allow' | 'deny' | 'allow_always'
+      formAnswers?: Record<string, unknown>
+      cancel?: boolean
       continueDrain?: {
         projectPath?: string
         providerId?: string
@@ -799,6 +817,38 @@ export interface EnvironmentAPI {
   connect(connectionId: string): Promise<unknown>
   disconnect(connectionId: string): Promise<void>
   forget(connectionId: string): Promise<void>
+
+  /**
+   * Node harness.resources aggregate (models + skills/commands/agents/prompts).
+   * Prefer over desktop CONNECT_* caches for remote project boot.
+   */
+  getRemoteHarnessResources(
+    connectionId: string,
+    input: {
+      projectId: string
+      harnessId?: string
+      apiProviderId?: string | null
+    },
+  ): Promise<unknown>
+
+  /** Node session_providers list (optional harness filter). */
+  listRemoteSessionProviders(
+    connectionId: string,
+    harnessId?: string,
+  ): Promise<unknown>
+  getRemoteSessionProvider(connectionId: string, id: string): Promise<unknown>
+  getRemoteSessionProviderBase(connectionId: string, harnessId: string): Promise<unknown>
+  createRemoteSessionProvider(
+    connectionId: string,
+    input: { harnessId: string; name: string; config?: unknown; id?: string },
+  ): Promise<unknown>
+  updateRemoteSessionProvider(
+    connectionId: string,
+    id: string,
+    patch: { name?: string; config?: unknown },
+  ): Promise<unknown>
+  deleteRemoteSessionProvider(connectionId: string, id: string): Promise<unknown>
+
   onStatusEvent(callback: (snapshot: SupervisorSnapshot) => void): () => void
   onInstallProgress(callback: (progress: EnvironmentInstallProgress) => void): () => void
 }

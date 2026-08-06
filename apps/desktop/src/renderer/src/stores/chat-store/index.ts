@@ -639,14 +639,48 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
       }))
     }
 
-    // Remote node: hydrate from CLI session.get (no local SQLite / SessionManager).
+    // Remote node: hydrate from CLI session.get (+ optional messages.list denser catalog).
+    // Live catch-up uses session.events afterSequence via resumeRemoteSessionIfLive — not
+    // desktop-only resumeSession IPC.
     const { parseRemoteProjectKey } = await import('@/lib/remote-project-key')
-    if (parseRemoteProjectKey(activeProject)) {
+    const remoteKey = parseRemoteProjectKey(activeProject)
+    if (remoteKey) {
       const { hydrateRemotePerSession, resumeRemoteSessionIfLive } = await import(
         '@/lib/remote-session-ops'
       )
       const prev = project._sessions[sessionId] ?? null
-      const hydrated = await hydrateRemotePerSession(activeProject, sessionId, prev)
+      let hydrated = await hydrateRemotePerSession(activeProject, sessionId, prev)
+      // Prefer denser catalog when host exposes listSessionMessages (session.messages.list).
+      try {
+        const env = window.environment as {
+          listSessionMessages?: (
+            connectionId: string,
+            input: { sessionId: string; limit?: number },
+          ) => Promise<{ messages?: import('@superone/shared/environment').SessionMessageBlock[] }>
+        }
+        if (typeof env.listSessionMessages === 'function') {
+          const listed = await env.listSessionMessages(remoteKey.connectionId, {
+            sessionId,
+            limit: 200,
+          })
+          const {
+            sessionMessageBlocksToChatMessages,
+            preferCatalogMessages,
+          } = await import('./helpers/remote-message-catalog')
+          const providerId =
+            hydrated.sessionProvider || hydrated.preferredProvider || 'claude'
+          const denser = sessionMessageBlocksToChatMessages(listed?.messages, providerId)
+          if (denser.length > 0) {
+            hydrated = {
+              ...hydrated,
+              messages: preferCatalogMessages(hydrated.messages, denser),
+              _historyHydrated: true,
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('[chat] session.messages.list hydrate failed:', err)
+      }
       set((s) => {
         const proj = getProject(s, activeProject)
         return {

@@ -1,8 +1,9 @@
 /**
- * Remote @-mention / file search / skill list via node workspace RPC.
+ * Remote @-mention / file search / skill list / agents catalog via node workspace RPC.
  */
 
 import type {
+  AgentInfo,
   FileSearchResult,
   ListDirEntry,
   MentionSearchItem,
@@ -148,5 +149,67 @@ export async function listRemoteSkillsAndCommands(
     return { skills, commands }
   } catch {
     return { skills: [], commands: [] }
+  }
+}
+
+/**
+ * Remote agents catalog via `agents.list` (mirrors listRemoteSkillsAndCommands).
+ * Returns null when the path is not a remote project; empty array on RPC failure.
+ */
+export async function listRemoteAgents(
+  host: EnvironmentHost,
+  folderPath: string,
+): Promise<Array<AgentInfo & { scope: 'user' | 'project' }> | null> {
+  const ctx = await resolveRemoteProjectContext(host, folderPath)
+  if (!ctx) return null
+  const gw = asRemoteGw(host, ctx.environmentId)
+  if (!gw) return []
+  try {
+    const result = await gw.agentsList(ctx.projectId)
+    const agents = Array.isArray(result?.agents) ? result.agents : []
+    return agents
+      .filter(
+        (a): a is {
+          name: string
+          description: string
+          model?: string
+          source: AgentInfo['source']
+          scope: 'user' | 'project'
+        } =>
+          !!a &&
+          typeof a.name === 'string' &&
+          (a.scope === 'user' || a.scope === 'project') &&
+          (a.source === 'user' || a.source === 'project' || a.source === 'plugin'),
+      )
+      .map((a) => ({
+        name: a.name,
+        description: typeof a.description === 'string' ? a.description : '',
+        model: typeof a.model === 'string' ? a.model : undefined,
+        source: a.source,
+        scope: a.scope,
+      }))
+  } catch {
+    return []
+  }
+}
+
+/**
+ * Read a remote agent markdown file via `agents.readFile`.
+ * Returns null when not remote; empty string when missing/failed (local parity).
+ */
+export async function readRemoteAgentFile(
+  host: EnvironmentHost,
+  folderPath: string,
+  name: string,
+): Promise<string | null> {
+  const ctx = await resolveRemoteProjectContext(host, folderPath)
+  if (!ctx) return null
+  const gw = asRemoteGw(host, ctx.environmentId)
+  if (!gw) return ''
+  try {
+    const result = await gw.agentsReadFile(ctx.projectId, name)
+    return typeof result?.content === 'string' ? result.content : ''
+  } catch {
+    return ''
   }
 }

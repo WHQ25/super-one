@@ -18,6 +18,7 @@ import { inferProviderFromHarnessId } from '../helpers/provider-routing'
 import { createDefaultPerSessionState, createDefaultProjectState, getDefaultEffortForModel } from '../defaults'
 import { clearStreamingToolInputsForSession } from '../event-reducer/shared'
 import { applyCachedCodexPermissionPreset } from '../helpers/prefs-cache'
+import { startBashOutputLive } from '../helpers/bash-output-live'
 import {
   _computeHasPendingInteraction,
   _ensureSessionHydrated,
@@ -483,7 +484,15 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
         bashOutputUpdate = {
           _bashOutputs: { ...s._bashOutputs, [tid]: { content: s._bashOutputs[tid]?.content ?? '', finished: false, outputPath: op } },
         }
-        setTimeout(() => window.app.watchBashOutput(tid, op), 0)
+        // Remote: EnvironmentHost → node tailWatch/readFile RPC (never local fs.watch).
+        // Local: desktop bash-output-watcher.
+        setTimeout(() => {
+          startBashOutputLive({
+            toolUseId: tid,
+            outputPath: op,
+            projectKey: projectPath,
+          })
+        }, 0)
       }
 
       let harnessUpdate: Partial<ChatStore> | undefined

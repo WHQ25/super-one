@@ -92,6 +92,16 @@ export const createClaudeSlice: StateCreator<ChatStore, [], [], ClaudeSlice> = (
     const project0 = get().projectSessions[projectPath]
     if (!project0) {
       try {
+        // Prefer node harness.resources (full discovery); fall back to listModels.
+        const { fetchRemoteHarnessResourcesForProject, extractClaudeModels } = await import(
+          '@/lib/remote-harness-resources'
+        )
+        const bundle = await fetchRemoteHarnessResourcesForProject(projectPath, {
+          harnessId: 'claude',
+          apiProviderId,
+        })
+        const fromResources = extractClaudeModels(bundle)
+        if (fromResources.length > 0) return fromResources
         const models = (await window.environment.listRemoteModels(
           remote.connectionId,
           'claude',
@@ -122,6 +132,7 @@ export const createClaudeSlice: StateCreator<ChatStore, [], [], ClaudeSlice> = (
           applyDefaultModel(updated, models)
           sessions = { ...project._sessions, [activeSessionId]: updated }
         }
+        const claudeRes = s.harnessResources.claude
         return {
           projectSessions: {
             ...s.projectSessions,
@@ -133,6 +144,15 @@ export const createClaudeSlice: StateCreator<ChatStore, [], [], ClaudeSlice> = (
                 : { claudeModelsLoading: false }),
             },
           },
+          // Keep global claude shell for selectors that still read harnessResources on remote.
+          ...(appliesToActiveSession && claudeRes
+            ? {
+                harnessResources: {
+                  ...s.harnessResources,
+                  claude: { ...claudeRes, models },
+                },
+              }
+            : {}),
         }
       })
     }
@@ -147,12 +167,53 @@ export const createClaudeSlice: StateCreator<ChatStore, [], [], ClaudeSlice> = (
       set((s) => updateProjectState(s, projectPath, () => ({ claudeModelsLoading: true })))
     }
     try {
-      const models = (await window.environment.listRemoteModels(
-        remote.connectionId,
-        'claude',
+      const { fetchRemoteHarnessResourcesForProject, extractClaudeModels } = await import(
+        '@/lib/remote-harness-resources'
+      )
+      const bundle = await fetchRemoteHarnessResourcesForProject(projectPath, {
+        harnessId: 'claude',
         apiProviderId,
-      )) as ModelOption[]
-      const list = Array.isArray(models) ? models : []
+      })
+      let list = extractClaudeModels(bundle)
+      // Apply skills/commands/agents from node discovery into project state.
+      if (bundle?.claude) {
+        const claude = bundle.claude
+        set((s) => {
+          const project = s.projectSessions[projectPath]
+          if (!project) return {}
+          return {
+            harnessResources: {
+              ...s.harnessResources,
+              claude: {
+                models: list,
+                account: claude.account ?? {},
+                slashCommands: claude.slashCommands ?? [],
+                skills: claude.skills ?? [],
+                commands: claude.commands ?? [],
+                agents: claude.agents ?? [],
+                outputStyles: claude.outputStyles ?? [],
+              },
+            },
+            projectSessions: {
+              ...s.projectSessions,
+              [projectPath]: {
+                ...project,
+                agents: claude.agents ?? project.agents,
+                _projectSkills: claude.skills ?? project._projectSkills,
+                _projectCommands: claude.commands ?? project._projectCommands,
+              },
+            },
+          }
+        })
+      }
+      if (list.length === 0) {
+        const models = (await window.environment.listRemoteModels(
+          remote.connectionId,
+          'claude',
+          apiProviderId,
+        )) as ModelOption[]
+        list = Array.isArray(models) ? models : []
+      }
       applyModels(list)
       return list
     } catch (error) {

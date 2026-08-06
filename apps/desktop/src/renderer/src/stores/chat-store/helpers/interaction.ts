@@ -56,11 +56,14 @@ export async function respondToPermissionImpl(
         decision === 'cancel' ? 'deny' : alwaysAllow ? 'allow_always' : allow ? 'allow' : 'deny'
       // continueDrain keeps mapping session.events → agentEventSink so tool_use
       // blocks after allow are not lost (sendSessionMessage already returned).
+      // formAnswers carries multi-launch edits (session_agents_confirm).
       void window.environment
         .respondSessionPermission(remote.connectionId, {
           sessionId: targetSid,
           interactionId: requestId,
           decision: decisionValue,
+          ...(formAnswers ? { formAnswers } : {}),
+          ...(decision === 'cancel' ? { cancel: true } : {}),
           continueDrain: {
             projectPath: activeProject,
             providerId: session.sessionProvider || undefined,

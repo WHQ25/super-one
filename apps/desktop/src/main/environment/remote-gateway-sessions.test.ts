@@ -124,4 +124,86 @@ describe('RemoteEnvironmentGateway sessions + watch', () => {
 
     manager.disconnectAll()
   })
+
+  it('hydrates historical session via messages.list + events afterSequence', async () => {
+    const nodeHome = mkdtempSync(join(tmpdir(), 'rgw-msg-node-'))
+    const desk = mkdtempSync(join(tmpdir(), 'rgw-msg-desk-'))
+    const projectDir = mkdtempSync(join(tmpdir(), 'rgw-msg-proj-'))
+    dirs.push(nodeHome, desk, projectDir)
+    writeFileSync(join(projectDir, 'seed.txt'), 'seed')
+
+    const port = 34000 + Math.floor(Math.random() * 1000)
+    const rt = await startNodeRuntime({
+      nodeHome,
+      bindHost: '127.0.0.1',
+      bindPort: port,
+      simulatedHarness: true,
+    })
+    runtimes.push(rt)
+
+    const manager = new NodeConnectionManager({ credentialStore: new NodeCredentialStore(desk) })
+    const pair = rt.auth.createPairingToken()
+    const { descriptor } = await manager.pairAndConnect({
+      baseUrl: rt.server.url,
+      pairingToken: pair.token,
+      label: 'gw-msgs',
+    })
+    const gw = manager.getGateway(descriptor.environmentId)!
+
+    const project = await gw.openProject(projectDir, 'p')
+    const projectRef = { environmentId: descriptor.environmentId, projectId: project.projectId }
+    const sessionRefBase = { environmentId: descriptor.environmentId }
+
+    const { sessionId } = await gw.sessions.create({
+      project: projectRef,
+      providerId: 'codex',
+      options: { harnessId: 'codex' },
+    })
+    const lease = await gw.sessions.acquireControl({
+      resource: { ...sessionRefBase, sessionId },
+    })
+    await gw.sessions.send({
+      session: { ...sessionRefBase, sessionId },
+      text: 'hydrate me',
+      leaseId: lease.leaseId,
+      generation: lease.generation,
+    })
+
+    for (let i = 0; i < 40; i++) {
+      const s = (await gw.sessions.get({
+        ...sessionRefBase,
+        sessionId,
+      })) as { status: string }
+      if (s.status === 'idle') break
+      await new Promise((r) => setTimeout(r, 30))
+    }
+
+    // Historical open: denser catalog for UI (not empty when messages API is used).
+    const listed = await gw.sessions.listMessages!({
+      session: { ...sessionRefBase, sessionId },
+      sessionId,
+      limit: 50,
+    })
+    expect(listed.sessionId).toBe(sessionId)
+    expect(listed.messages.length).toBeGreaterThanOrEqual(2)
+    expect(listed.messages.some((m) => m.role === 'user' && m.text.includes('hydrate me'))).toBe(
+      true,
+    )
+    expect(listed.messages.some((m) => m.role === 'assistant' && m.text.length > 0)).toBe(true)
+    expect(listed.hasMore).toBe(false)
+
+    // Live catch-up cursor from event head — afterSequence exclusive.
+    const head = await (gw as import('./remote-environment-gateway').RemoteEnvironmentGateway).eventHeadSequence()
+    const tail = await (gw as import('./remote-environment-gateway').RemoteEnvironmentGateway).listEvents(head)
+    expect(Array.isArray(tail)).toBe(true)
+    expect(tail.length).toBe(0)
+
+    // Full history still available via events from 0 (optional) + messages.list for UI.
+    const historyEvents = await (
+      gw as import('./remote-environment-gateway').RemoteEnvironmentGateway
+    ).listEvents('0')
+    expect(historyEvents.some((e) => e.eventType === 'session.turn_completed')).toBe(true)
+
+    manager.disconnectAll()
+  })
 })

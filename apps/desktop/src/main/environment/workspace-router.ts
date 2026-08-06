@@ -9,6 +9,8 @@ import type {
   WorkspaceReadInput,
   WorkspaceRenameInput,
   WorkspaceSearchInput,
+  WorkspaceTailWatchPollResult,
+  WorkspaceTailWatchStartInput,
   WorkspaceWriteInput,
 } from '@superone/shared/environment'
 
@@ -75,6 +77,29 @@ export class WorkspaceRouter {
   async mkdir(input: WorkspaceMkdirInput): Promise<{ path: string }> {
     const gw = this.requireGateway(input.project)
     return gw.workspace.mkdir(input)
+  }
+
+  async tailWatchStart(
+    input: WorkspaceTailWatchStartInput,
+  ): Promise<{ watchId: string; offset: number; relativePath: string }> {
+    const gw = this.requireGateway(input.project)
+    return gw.workspace.tailWatchStart(input)
+  }
+
+  async tailWatchPoll(input: { watchId: string; project?: ProjectRef }): Promise<WorkspaceTailWatchPollResult> {
+    // Poll is scoped by watchId ownership on the node; project is optional for routing.
+    if (input.project) {
+      const gw = this.requireGateway(input.project)
+      return gw.workspace.tailWatchPoll({ watchId: input.watchId })
+    }
+    throw Object.assign(new Error('project required for tailWatchPoll routing'), {
+      code: 'invalid_argument',
+    })
+  }
+
+  async tailWatchStop(input: { watchId: string; project: ProjectRef }): Promise<{ ok: boolean }> {
+    const gw = this.requireGateway(input.project)
+    return gw.workspace.tailWatchStop({ watchId: input.watchId })
   }
 
   private requireGateway(project: ProjectRef): EnvironmentGateway {

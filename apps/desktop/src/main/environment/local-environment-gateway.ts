@@ -55,6 +55,14 @@ export interface LocalSessionPort {
     leaseId: string
     generation: string
   }): Promise<unknown>
+  patchSettings?(input: {
+    sessionId: string
+    permissionMode?: string | null
+    sandboxMode?: string | null
+    model?: string | null
+    effort?: string | null
+    apiProviderId?: string | null
+  }): unknown
   acquireControl(input: {
     sessionId: string
     holderClientId: string
@@ -67,6 +75,8 @@ export interface LocalSessionPort {
     client: { clientSessionId: string }
     leaseId: string
     generation: string
+    formAnswers?: Record<string, unknown>
+    cancel?: boolean
   }): void
 }
 
@@ -219,6 +229,7 @@ export class LocalEnvironmentGateway implements EnvironmentGateway {
         get: async () => notWired('sessions.get'),
         list: async () => notWired('sessions.list'),
         send: async () => notWired('sessions.send'),
+        patchSettings: async () => notWired('sessions.patchSettings'),
         interrupt: async () => notWired('sessions.interrupt'),
         close: async () => notWired('sessions.close'),
         acquireControl: async () => notWired('sessions.acquireControl'),
@@ -245,6 +256,17 @@ export class LocalEnvironmentGateway implements EnvironmentGateway {
           client: { clientSessionId },
           leaseId: input.leaseId,
           generation: input.generation,
+        })
+      },
+      patchSettings: async (input) => {
+        if (!port.patchSettings) notWired('sessions.patchSettings')
+        return port.patchSettings!({
+          sessionId: input.session.sessionId,
+          permissionMode: input.permissionMode,
+          sandboxMode: input.sandboxMode,
+          model: input.model,
+          effort: input.effort,
+          apiProviderId: input.apiProviderId,
         })
       },
       interrupt: async () => {
@@ -285,7 +307,7 @@ export class LocalEnvironmentGateway implements EnvironmentGateway {
         const s = port.get(session.sessionId) as {
           pendingInteraction?: {
             interactionId: string
-            kind: 'permission' | 'question' | 'plan'
+            kind: 'permission' | 'question' | 'plan' | 'session_agents_confirm'
             createdAt: number
           } | null
         } | null
@@ -303,6 +325,15 @@ export class LocalEnvironmentGateway implements EnvironmentGateway {
       },
       respondPermission: async (input: PermissionResponseInput) => {
         if (!port?.respondPermission) notWired('interactions.respondPermission')
+        const formAnswers =
+          input.options && typeof input.options === 'object'
+            ? ((input.options as { formAnswers?: Record<string, unknown> }).formAnswers
+              ?? (input.options as Record<string, unknown>))
+            : undefined
+        const cancel =
+          input.options && typeof input.options === 'object'
+            ? (input.options as { cancel?: boolean }).cancel === true
+            : false
         port.respondPermission!({
           sessionId: input.session.sessionId,
           interactionId: input.interactionId,
@@ -310,6 +341,8 @@ export class LocalEnvironmentGateway implements EnvironmentGateway {
           client: { clientSessionId },
           leaseId: input.leaseId,
           generation: input.generation,
+          formAnswers,
+          cancel,
         })
       },
       respondQuestion: async () => notWired('interactions.respondQuestion'),
@@ -344,6 +377,9 @@ export class LocalEnvironmentGateway implements EnvironmentGateway {
         mkdir: async () => notWired('workspace.mkdir'),
         search: async () => notWired('workspace.search'),
         watch: () => notWired('workspace.watch'),
+        tailWatchStart: async () => notWired('workspace.tailWatchStart'),
+        tailWatchPoll: async () => notWired('workspace.tailWatchPoll'),
+        tailWatchStop: async () => notWired('workspace.tailWatchStop'),
       }
     }
     return {
@@ -363,6 +399,9 @@ export class LocalEnvironmentGateway implements EnvironmentGateway {
         if (!port.watch) notWired('workspace.watch')
         return port.watch!(input.project.projectId, input.relativePath)
       },
+      tailWatchStart: async () => notWired('workspace.tailWatchStart'),
+      tailWatchPoll: async () => notWired('workspace.tailWatchPoll'),
+      tailWatchStop: async () => notWired('workspace.tailWatchStop'),
     }
   }
 }

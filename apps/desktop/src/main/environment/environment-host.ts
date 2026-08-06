@@ -566,6 +566,32 @@ export class EnvironmentHost {
     return gateway.sessions.get({ environmentId, sessionId })
   }
 
+  /**
+   * Paged denser message catalog from the node (`session.messages.list`).
+   * Use with listSessionEvents(afterSequence) for remote open/hydrate without
+   * desktop-only resumeSession IPC.
+   */
+  async listSessionMessages(
+    connectionId: string,
+    input: { sessionId: string; cursor?: string | number | null; limit?: number },
+  ): Promise<import('@superone/shared/environment').SessionMessagesListResult> {
+    const { gateway, environmentId } = this.resolveRemote(connectionId)
+    if (gateway.sessions.listMessages) {
+      return gateway.sessions.listMessages({
+        session: { environmentId, sessionId: input.sessionId },
+        sessionId: input.sessionId,
+        cursor: input.cursor,
+        limit: input.limit,
+      })
+    }
+    if (gateway instanceof RemoteEnvironmentGateway) {
+      return gateway.listSessionMessages(input)
+    }
+    throw Object.assign(new Error('session.messages.list not supported on this gateway'), {
+      code: 'failed_precondition',
+    })
+  }
+
   private asRemoteProviderGw(connectionId: string): RemoteEnvironmentGateway {
     const { gateway } = this.resolveRemote(connectionId)
     if (!(gateway instanceof RemoteEnvironmentGateway)) {
@@ -578,6 +604,147 @@ export class EnvironmentHost {
     return this.asRemoteProviderGw(connectionId).providerListCredentials()
   }
 
+  // --- Remote skills / MCP (skills.* / mcp.* on the node) ---
+
+  async listRemoteSkills(
+    connectionId: string,
+    projectId: string,
+    provider: 'claude' | 'codex' = 'claude',
+  ): Promise<unknown> {
+    return this.asRemoteProviderGw(connectionId).skillsList(projectId, provider)
+  }
+
+  async getRemoteSkill(
+    connectionId: string,
+    projectId: string,
+    name: string,
+    opts?: { sourcePath?: string; provider?: 'claude' | 'codex' },
+  ): Promise<unknown> {
+    return this.asRemoteProviderGw(connectionId).skillsGet(projectId, name, opts)
+  }
+
+  async readRemoteSkillFile(
+    connectionId: string,
+    projectId: string,
+    skillName: string,
+    relativePath: string,
+    opts?: { sourcePath?: string; provider?: 'claude' | 'codex' },
+  ): Promise<unknown> {
+    return this.asRemoteProviderGw(connectionId).skillsReadFile(
+      projectId,
+      skillName,
+      relativePath,
+      opts,
+    )
+  }
+
+  async deleteRemoteSkill(
+    connectionId: string,
+    projectId: string,
+    sourcePath: string,
+    provider: 'claude' | 'codex' = 'claude',
+  ): Promise<unknown> {
+    return this.asRemoteProviderGw(connectionId).skillsDelete(projectId, sourcePath, provider)
+  }
+
+  async installRemoteSkill(
+    connectionId: string,
+    projectId: string,
+    input: {
+      scope: 'user' | 'project'
+      name: string
+      files: Record<string, string>
+      provider?: 'claude' | 'codex'
+    },
+  ): Promise<unknown> {
+    return this.asRemoteProviderGw(connectionId).skillsInstall(projectId, input)
+  }
+
+  async listRemoteMcpConfigs(
+    connectionId: string,
+    projectId: string,
+    provider: 'claude' | 'codex',
+  ): Promise<unknown> {
+    return this.asRemoteProviderGw(connectionId).mcpList(projectId, provider)
+  }
+
+  // --- Remote agents / plugins / hooks (agents.* / plugins.* / hooks.* on the node) ---
+
+  async listRemoteAgents(connectionId: string, projectId: string): Promise<unknown> {
+    return this.asRemoteProviderGw(connectionId).agentsList(projectId)
+  }
+
+  async readRemoteAgentFile(
+    connectionId: string,
+    projectId: string,
+    name: string,
+  ): Promise<unknown> {
+    return this.asRemoteProviderGw(connectionId).agentsReadFile(projectId, name)
+  }
+
+  async listRemotePlugins(connectionId: string, projectId: string): Promise<unknown> {
+    return this.asRemoteProviderGw(connectionId).pluginsList(projectId)
+  }
+
+  async listRemoteHooks(connectionId: string, projectId: string): Promise<unknown> {
+    return this.asRemoteProviderGw(connectionId).hooksList(projectId)
+  }
+
+  async saveRemoteHook(
+    connectionId: string,
+    projectId: string,
+    payload: unknown,
+    replaceId?: string,
+  ): Promise<unknown> {
+    return this.asRemoteProviderGw(connectionId).hooksSave(projectId, payload, replaceId)
+  }
+
+  async deleteRemoteHook(
+    connectionId: string,
+    projectId: string,
+    id: string,
+  ): Promise<unknown> {
+    return this.asRemoteProviderGw(connectionId).hooksDelete(projectId, id)
+  }
+
+  async saveRemoteMcpConfig(
+    connectionId: string,
+    projectId: string,
+    input: {
+      provider: 'claude' | 'codex'
+      name: string
+      scope: 'user' | 'project'
+      config: Record<string, unknown>
+    },
+  ): Promise<unknown> {
+    return this.asRemoteProviderGw(connectionId).mcpSave(projectId, input)
+  }
+
+  async toggleRemoteMcpConfig(
+    connectionId: string,
+    projectId: string,
+    input: {
+      provider: 'claude' | 'codex'
+      name: string
+      scope: 'user' | 'project'
+      disabled: boolean
+    },
+  ): Promise<unknown> {
+    return this.asRemoteProviderGw(connectionId).mcpToggle(projectId, input)
+  }
+
+  async deleteRemoteMcpConfig(
+    connectionId: string,
+    projectId: string,
+    input: {
+      provider: 'claude' | 'codex'
+      name: string
+      scope: 'user' | 'project'
+    },
+  ): Promise<unknown> {
+    return this.asRemoteProviderGw(connectionId).mcpDelete(projectId, input)
+  }
+
   async getRemoteCredentialDecrypted(connectionId: string, id: string): Promise<unknown> {
     return this.asRemoteProviderGw(connectionId).providerGetCredentialDecrypted(id)
   }
@@ -588,6 +755,211 @@ export class EnvironmentHost {
     apiProviderId?: string | null,
   ): Promise<unknown> {
     return this.asRemoteProviderGw(connectionId).providerListModels({ harness, apiProviderId })
+  }
+
+  /**
+   * Node harness.resources aggregate (models + skills/commands/agents/prompts).
+   * Remote project open should prefer this over desktop CONNECT_* caches.
+   */
+  async getRemoteHarnessResources(
+    connectionId: string,
+    input: {
+      projectId: string
+      harnessId?: string
+      apiProviderId?: string | null
+    },
+  ): Promise<unknown> {
+    return this.asRemoteProviderGw(connectionId).harnessResources(input)
+  }
+
+  async listRemoteSessionProviders(
+    connectionId: string,
+    harnessId?: string,
+  ): Promise<unknown> {
+    return this.asRemoteProviderGw(connectionId).sessionProvidersList(harnessId)
+  }
+
+  async getRemoteSessionProvider(connectionId: string, id: string): Promise<unknown> {
+    return this.asRemoteProviderGw(connectionId).sessionProvidersGet(id)
+  }
+
+  async getRemoteSessionProviderBase(
+    connectionId: string,
+    harnessId: string,
+  ): Promise<unknown> {
+    return this.asRemoteProviderGw(connectionId).sessionProvidersGetBase(harnessId)
+  }
+
+  async createRemoteSessionProvider(
+    connectionId: string,
+    input: { harnessId: string; name: string; config?: unknown; id?: string },
+  ): Promise<unknown> {
+    return this.asRemoteProviderGw(connectionId).sessionProvidersCreate(input)
+  }
+
+  async updateRemoteSessionProvider(
+    connectionId: string,
+    id: string,
+    patch: { name?: string; config?: unknown },
+  ): Promise<unknown> {
+    return this.asRemoteProviderGw(connectionId).sessionProvidersUpdate(id, patch)
+  }
+
+  async deleteRemoteSessionProvider(connectionId: string, id: string): Promise<unknown> {
+    return this.asRemoteProviderGw(connectionId).sessionProvidersDelete(id)
+  }
+
+  // --- Codex admin (codex.* on the node; projectId resolved by callers) ---
+
+  async codexGetAuthStatus(connectionId: string, projectId: string): Promise<unknown> {
+    return this.asRemoteProviderGw(connectionId).codexGetAuthStatus(projectId)
+  }
+
+  async codexSetAuth(
+    connectionId: string,
+    projectId: string,
+    request: { mode: string; apiKey?: string },
+  ): Promise<unknown> {
+    return this.asRemoteProviderGw(connectionId).codexSetAuth(projectId, request)
+  }
+
+  async codexGetRateLimits(
+    connectionId: string,
+    projectId: string,
+    apiProviderId?: string | null,
+  ): Promise<unknown> {
+    return this.asRemoteProviderGw(connectionId).codexGetRateLimits(projectId, apiProviderId)
+  }
+
+  async codexGetAccountUsage(
+    connectionId: string,
+    projectId: string,
+    apiProviderId?: string | null,
+  ): Promise<unknown> {
+    return this.asRemoteProviderGw(connectionId).codexGetAccountUsage(projectId, apiProviderId)
+  }
+
+  async codexConsumeRateLimitReset(
+    connectionId: string,
+    projectId: string,
+    apiProviderId?: string | null,
+    creditId?: string | null,
+  ): Promise<unknown> {
+    return this.asRemoteProviderGw(connectionId).codexConsumeRateLimitReset(
+      projectId,
+      apiProviderId,
+      creditId,
+    )
+  }
+
+  async codexLoginMcpOauth(
+    connectionId: string,
+    projectId: string,
+    serverName: string,
+    apiProviderId?: string | null,
+  ): Promise<unknown> {
+    return this.asRemoteProviderGw(connectionId).codexLoginMcpOauth(
+      projectId,
+      serverName,
+      apiProviderId,
+    )
+  }
+
+  async codexDetectExternalAgent(
+    connectionId: string,
+    projectId: string,
+    apiProviderId?: string | null,
+  ): Promise<unknown> {
+    return this.asRemoteProviderGw(connectionId).codexDetectExternalAgent(
+      projectId,
+      apiProviderId,
+    )
+  }
+
+  async codexImportExternalAgent(
+    connectionId: string,
+    projectId: string,
+    items: unknown[],
+    apiProviderId?: string | null,
+  ): Promise<unknown> {
+    return this.asRemoteProviderGw(connectionId).codexImportExternalAgent(
+      projectId,
+      items,
+      apiProviderId,
+    )
+  }
+
+  async codexPluginsList(
+    connectionId: string,
+    projectId: string,
+    opts?: { marketplace?: boolean; apiProviderId?: string | null },
+  ): Promise<unknown> {
+    return this.asRemoteProviderGw(connectionId).codexPluginsList(projectId, opts)
+  }
+
+  async codexPluginsInstall(
+    connectionId: string,
+    projectId: string,
+    key: string,
+    apiProviderId?: string | null,
+  ): Promise<unknown> {
+    return this.asRemoteProviderGw(connectionId).codexPluginsInstall(
+      projectId,
+      key,
+      apiProviderId,
+    )
+  }
+
+  async codexPluginsUninstall(
+    connectionId: string,
+    projectId: string,
+    key: string,
+    apiProviderId?: string | null,
+  ): Promise<unknown> {
+    return this.asRemoteProviderGw(connectionId).codexPluginsUninstall(
+      projectId,
+      key,
+      apiProviderId,
+    )
+  }
+
+  async codexMarketplaceAdd(
+    connectionId: string,
+    projectId: string,
+    request: { source: string; refName?: string; sparsePaths?: string[] },
+    apiProviderId?: string | null,
+  ): Promise<unknown> {
+    return this.asRemoteProviderGw(connectionId).codexMarketplaceAdd(
+      projectId,
+      request,
+      apiProviderId,
+    )
+  }
+
+  async codexMarketplaceRemove(
+    connectionId: string,
+    projectId: string,
+    marketplaceName: string,
+    apiProviderId?: string | null,
+  ): Promise<unknown> {
+    return this.asRemoteProviderGw(connectionId).codexMarketplaceRemove(
+      projectId,
+      marketplaceName,
+      apiProviderId,
+    )
+  }
+
+  async codexMarketplaceUpgrade(
+    connectionId: string,
+    projectId: string,
+    marketplaceName?: string,
+    apiProviderId?: string | null,
+  ): Promise<unknown> {
+    return this.asRemoteProviderGw(connectionId).codexMarketplaceUpgrade(
+      projectId,
+      marketplaceName,
+      apiProviderId,
+    )
   }
 
   /**
@@ -1110,6 +1482,12 @@ export class EnvironmentHost {
       images?: Array<{ name?: string; mimeType: string; base64: string }>
       /** Node provider credential id for this turn. */
       apiProviderId?: string | null
+      /** Codex turn kind: run|steer|review|compact (session.send options.turnKind). */
+      turnKind?: 'run' | 'steer' | 'review' | 'compact' | null
+      /** Codex collaboration mode. */
+      collaborationMode?: string | Record<string, unknown> | null
+      /** Codex review/start target. */
+      reviewTarget?: unknown
     },
   ): Promise<unknown> {
     const { gateway, environmentId } = this.resolveRemote(connectionId)
@@ -1184,6 +1562,11 @@ export class EnvironmentHost {
     if (disabledSkills.length > 0) options.disabledSkills = disabledSkills
     if (apiProviderId) options.apiProviderId = apiProviderId
     if (images.length > 0) options.images = images
+    if (input.turnKind === 'run' || input.turnKind === 'steer' || input.turnKind === 'review' || input.turnKind === 'compact') {
+      options.turnKind = input.turnKind
+    }
+    if (input.collaborationMode != null) options.collaborationMode = input.collaborationMode
+    if (input.reviewTarget !== undefined) options.reviewTarget = input.reviewTarget
     await gateway.sessions.send({
       session: { environmentId, sessionId: input.sessionId },
       text: input.text,
@@ -1328,6 +1711,10 @@ export class EnvironmentHost {
       sessionId: string
       interactionId: string
       decision: 'allow' | 'deny' | 'allow_always'
+      /** Multi-launch form edits / feedback (session_agents_confirm). */
+      formAnswers?: Record<string, unknown>
+      /** True when the multi-launch dialog was cancelled. */
+      cancel?: boolean
       /** When set, continue draining events until turn settles or next pending. */
       continueDrain?: {
         projectPath?: string
@@ -1344,6 +1731,10 @@ export class EnvironmentHost {
       decision: input.decision,
       leaseId: control.leaseId,
       generation: control.generation,
+      options: {
+        ...(input.formAnswers ? { formAnswers: input.formAnswers } : {}),
+        ...(input.cancel ? { cancel: true } : {}),
+      },
     })
     if (!input.continueDrain) return undefined
     return this.resumeRemoteSessionEvents(connectionId, {
@@ -2127,6 +2518,13 @@ let singleton: EnvironmentHost | null = null
 
 /** Lazy singleton used by IPC handlers in main. */
 export function getEnvironmentHost(): EnvironmentHost {
+  // Ensure remote Skills/MCP channels exist even if main/index never lists them.
+  // Dynamic import keeps host constructable in tests that never load resource-ipc.
+  void import('./environment-resource-ipc')
+    .then((m) => m.ensureEnvironmentResourceIpcRegistered())
+    .catch(() => {
+      // Non-Electron unit tests without ipcMain.
+    })
   if (!singleton) singleton = new EnvironmentHost()
   return singleton
 }

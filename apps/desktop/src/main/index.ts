@@ -1189,6 +1189,18 @@ function registerIpcHandlers(): void {
       return getEnvironmentHost().getSession(connectionId, sessionId)
     },
   )
+  /** Paged denser message catalog for remote open/hydrate (session.messages.list). */
+  ipcMain.handle(
+    AgentIpcChannels.ENVIRONMENT_LIST_SESSION_MESSAGES,
+    async (
+      _e,
+      connectionId: string,
+      input: { sessionId: string; cursor?: string | number | null; limit?: number },
+    ) => {
+      const { getEnvironmentHost } = await import('./environment')
+      return getEnvironmentHost().listSessionMessages(connectionId, input)
+    },
+  )
   // Node provider credentials (CRUD + push/pull)
   ipcMain.handle(
     AgentIpcChannels.ENVIRONMENT_PROVIDER_LIST_CREDENTIALS,
@@ -1300,6 +1312,9 @@ function registerIpcHandlers(): void {
         cwdHostPath?: string | null
         model?: string | null
         apiProviderId?: string | null
+        turnKind?: 'run' | 'steer' | 'review' | 'compact' | null
+        collaborationMode?: string | Record<string, unknown> | null
+        reviewTarget?: unknown
       },
     ) => {
       const { getEnvironmentHost } = await import('./environment')
@@ -1681,31 +1696,87 @@ function registerIpcHandlers(): void {
     return models
   })
 
-  ipcMain.handle(AgentIpcChannels.CODEX_GET_AUTH_STATUS, (_event, projectPath: string) => {
+  ipcMain.handle(AgentIpcChannels.CODEX_GET_AUTH_STATUS, async (_event, projectPath: string) => {
+    if (parseRemoteProjectKey(projectPath)) {
+      const { getEnvironmentHost, remoteCodexGetAuthStatus } = await import('./environment')
+      const status = await remoteCodexGetAuthStatus(getEnvironmentHost(), projectPath)
+      if (status) return status
+      // Fail closed with an explicit offline marker — never invent a "healthy"
+      // chatgpt profile that would hide a disconnected node.
+      throw new Error('Remote Codex auth status unavailable (node not connected or project unresolved)')
+    }
     return codexService.getAuthStatus(projectPath)
   })
 
-  ipcMain.handle(AgentIpcChannels.CODEX_GET_RATE_LIMITS, (_event, projectPath: string, apiProviderId?: string | null) => {
+  ipcMain.handle(AgentIpcChannels.CODEX_GET_RATE_LIMITS, async (_event, projectPath: string, apiProviderId?: string | null) => {
+    if (parseRemoteProjectKey(projectPath)) {
+      const { getEnvironmentHost, remoteCodexGetRateLimits } = await import('./environment')
+      return remoteCodexGetRateLimits(getEnvironmentHost(), projectPath, apiProviderId ?? null)
+    }
     return codexService.getRateLimits(projectPath, apiProviderId ?? null)
   })
 
-  ipcMain.handle(AgentIpcChannels.CODEX_GET_ACCOUNT_USAGE, (_event, projectPath: string, apiProviderId?: string | null) => {
+  ipcMain.handle(AgentIpcChannels.CODEX_GET_ACCOUNT_USAGE, async (_event, projectPath: string, apiProviderId?: string | null) => {
+    if (parseRemoteProjectKey(projectPath)) {
+      const { getEnvironmentHost, remoteCodexGetAccountUsage } = await import('./environment')
+      return remoteCodexGetAccountUsage(getEnvironmentHost(), projectPath, apiProviderId ?? null)
+    }
     return codexService.getAccountUsage(projectPath, apiProviderId ?? null)
   })
 
-  ipcMain.handle(AgentIpcChannels.CODEX_CONSUME_RATE_LIMIT_RESET, (_event, projectPath: string, apiProviderId?: string | null, creditId?: string | null) => {
+  ipcMain.handle(AgentIpcChannels.CODEX_CONSUME_RATE_LIMIT_RESET, async (_event, projectPath: string, apiProviderId?: string | null, creditId?: string | null) => {
+    if (parseRemoteProjectKey(projectPath)) {
+      const { getEnvironmentHost, remoteCodexConsumeRateLimitReset } = await import('./environment')
+      return remoteCodexConsumeRateLimitReset(
+        getEnvironmentHost(),
+        projectPath,
+        apiProviderId ?? null,
+        creditId ?? null,
+      )
+    }
     return codexService.consumeRateLimitReset(projectPath, apiProviderId ?? null, creditId ?? null)
   })
 
-  ipcMain.handle(AgentIpcChannels.CODEX_MCP_OAUTH_LOGIN, (_event, projectPath: string, serverName: string, apiProviderId?: string | null) => {
+  ipcMain.handle(AgentIpcChannels.CODEX_MCP_OAUTH_LOGIN, async (_event, projectPath: string, serverName: string, apiProviderId?: string | null) => {
+    if (parseRemoteProjectKey(projectPath)) {
+      // Node starts OAuth; browser open stays on desktop (result may include URL later via host_action).
+      const { getEnvironmentHost, remoteCodexLoginMcpOauth } = await import('./environment')
+      return remoteCodexLoginMcpOauth(
+        getEnvironmentHost(),
+        projectPath,
+        serverName,
+        apiProviderId ?? null,
+      )
+    }
     return codexService.loginMcpServerOauth(projectPath, serverName, apiProviderId ?? null, (url) => shell.openExternal(url))
   })
 
-  ipcMain.handle(AgentIpcChannels.CODEX_EXTERNAL_AGENT_DETECT, (_event, projectPath: string, apiProviderId?: string | null) => {
+  ipcMain.handle(AgentIpcChannels.CODEX_EXTERNAL_AGENT_DETECT, async (_event, projectPath: string, apiProviderId?: string | null) => {
+    if (parseRemoteProjectKey(projectPath)) {
+      const { getEnvironmentHost, remoteCodexDetectExternalAgent } = await import('./environment')
+      const result = await remoteCodexDetectExternalAgent(
+        getEnvironmentHost(),
+        projectPath,
+        apiProviderId ?? null,
+      )
+      if (result && typeof result === 'object' && Array.isArray((result as { items?: unknown }).items)) {
+        return (result as { items: CodexExternalAgentItem[] }).items
+      }
+      return Array.isArray(result) ? result : []
+    }
     return codexService.detectExternalAgentConfig(projectPath, apiProviderId ?? null)
   })
 
-  ipcMain.handle(AgentIpcChannels.CODEX_EXTERNAL_AGENT_IMPORT, (_event, projectPath: string, items: CodexExternalAgentItem[], apiProviderId?: string | null) => {
+  ipcMain.handle(AgentIpcChannels.CODEX_EXTERNAL_AGENT_IMPORT, async (_event, projectPath: string, items: CodexExternalAgentItem[], apiProviderId?: string | null) => {
+    if (parseRemoteProjectKey(projectPath)) {
+      const { getEnvironmentHost, remoteCodexImportExternalAgent } = await import('./environment')
+      return remoteCodexImportExternalAgent(
+        getEnvironmentHost(),
+        projectPath,
+        items,
+        apiProviderId ?? null,
+      )
+    }
     return codexService.importExternalAgentConfig(projectPath, items, apiProviderId ?? null)
   })
 
@@ -1717,7 +1788,11 @@ function registerIpcHandlers(): void {
     return getProviderRateLimits(apiProviderId, force ?? false)
   })
 
-  ipcMain.handle(AgentIpcChannels.CODEX_SET_AUTH, (_event, projectPath: string, request: CodexSetAuthRequest) => {
+  ipcMain.handle(AgentIpcChannels.CODEX_SET_AUTH, async (_event, projectPath: string, request: CodexSetAuthRequest) => {
+    if (parseRemoteProjectKey(projectPath)) {
+      const { getEnvironmentHost, remoteCodexSetAuth } = await import('./environment')
+      return remoteCodexSetAuth(getEnvironmentHost(), projectPath, request)
+    }
     return codexService.setAuth(projectPath, request)
   })
 
@@ -1743,39 +1818,82 @@ function registerIpcHandlers(): void {
     return session.clearCodexGoal(threadId)
   })
 
-  ipcMain.handle(AgentIpcChannels.CODEX_MARKETPLACE_ADD, (_event, projectPath: string, request: import('@superone/shared/agent-types').CodexMarketplaceAddRequest) => {
+  ipcMain.handle(AgentIpcChannels.CODEX_MARKETPLACE_ADD, async (_event, projectPath: string, request: import('@superone/shared/agent-types').CodexMarketplaceAddRequest) => {
+    if (parseRemoteProjectKey(projectPath)) {
+      const { getEnvironmentHost, remoteCodexMarketplaceAdd } = await import('./environment')
+      return remoteCodexMarketplaceAdd(getEnvironmentHost(), projectPath, request)
+    }
     return codexMarketplaceService.add(projectPath, request)
   })
 
-  ipcMain.handle(AgentIpcChannels.CODEX_MARKETPLACE_REMOVE, (_event, projectPath: string, marketplaceName: string) => {
+  ipcMain.handle(AgentIpcChannels.CODEX_MARKETPLACE_REMOVE, async (_event, projectPath: string, marketplaceName: string) => {
+    if (parseRemoteProjectKey(projectPath)) {
+      const { getEnvironmentHost, remoteCodexMarketplaceRemove } = await import('./environment')
+      return remoteCodexMarketplaceRemove(getEnvironmentHost(), projectPath, marketplaceName)
+    }
     return codexMarketplaceService.remove(projectPath, marketplaceName)
   })
 
-  ipcMain.handle(AgentIpcChannels.CODEX_MARKETPLACE_UPGRADE, (_event, projectPath: string, marketplaceName?: string) => {
+  ipcMain.handle(AgentIpcChannels.CODEX_MARKETPLACE_UPGRADE, async (_event, projectPath: string, marketplaceName?: string) => {
+    if (parseRemoteProjectKey(projectPath)) {
+      const { getEnvironmentHost, remoteCodexMarketplaceUpgrade } = await import('./environment')
+      return remoteCodexMarketplaceUpgrade(getEnvironmentHost(), projectPath, marketplaceName)
+    }
     return codexMarketplaceService.upgrade(projectPath, marketplaceName)
   })
 
-  ipcMain.handle(AgentIpcChannels.CODEX_PLUGINS_LIST, (_event, projectPath: string) => {
+  ipcMain.handle(AgentIpcChannels.CODEX_PLUGINS_LIST, async (_event, projectPath: string) => {
+    if (parseRemoteProjectKey(projectPath)) {
+      const { getEnvironmentHost, remoteCodexPluginsList } = await import('./environment')
+      const result = await remoteCodexPluginsList(getEnvironmentHost(), projectPath)
+      if (result && typeof result === 'object' && Array.isArray((result as { plugins?: unknown }).plugins)) {
+        return (result as { plugins: unknown[] }).plugins
+      }
+      return Array.isArray(result) ? result : []
+    }
     return codexPluginsService.listPlugins(projectPath)
   })
 
   ipcMain.handle(AgentIpcChannels.CODEX_PLUGINS_READ, (_event, projectPath: string, key: string) => {
+    // Node admin surface has no plugins.read; remote paths have no local FS.
+    if (parseRemoteProjectKey(projectPath)) return null
     return codexPluginsService.readPlugin(projectPath, key)
   })
 
   ipcMain.handle(AgentIpcChannels.CODEX_PLUGINS_READ_FILE, (_event, projectPath: string, key: string, relativePath: string) => {
+    if (parseRemoteProjectKey(projectPath)) return null
     return codexPluginsService.readPluginFile(projectPath, key, relativePath)
   })
 
   ipcMain.handle(AgentIpcChannels.CODEX_PLUGINS_DELETE, async (_event, projectPath: string, key: string) => {
+    if (parseRemoteProjectKey(projectPath)) {
+      const { getEnvironmentHost, remoteCodexPluginsUninstall } = await import('./environment')
+      await remoteCodexPluginsUninstall(getEnvironmentHost(), projectPath, key)
+      return
+    }
     await codexPluginsService.uninstallPlugin(projectPath, key)
   })
 
-  ipcMain.handle(AgentIpcChannels.CODEX_PLUGINS_LIST_MARKETPLACE, (_event, projectPath: string) => {
+  ipcMain.handle(AgentIpcChannels.CODEX_PLUGINS_LIST_MARKETPLACE, async (_event, projectPath: string) => {
+    if (parseRemoteProjectKey(projectPath)) {
+      const { getEnvironmentHost, remoteCodexPluginsList } = await import('./environment')
+      const result = await remoteCodexPluginsList(getEnvironmentHost(), projectPath, {
+        marketplace: true,
+      })
+      if (result && typeof result === 'object' && Array.isArray((result as { plugins?: unknown }).plugins)) {
+        return (result as { plugins: unknown[] }).plugins
+      }
+      return Array.isArray(result) ? result : []
+    }
     return codexPluginsService.listMarketplacePlugins(projectPath)
   })
 
   ipcMain.handle(AgentIpcChannels.CODEX_PLUGINS_INSTALL, async (_event, projectPath: string, key: string) => {
+    if (parseRemoteProjectKey(projectPath)) {
+      const { getEnvironmentHost, remoteCodexPluginsInstall } = await import('./environment')
+      await remoteCodexPluginsInstall(getEnvironmentHost(), projectPath, key)
+      return
+    }
     await codexPluginsService.installPlugin(projectPath, key)
   })
 

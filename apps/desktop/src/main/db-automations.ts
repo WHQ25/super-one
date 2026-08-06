@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto'
-import { Cron } from 'croner'
 import { getDb } from './database'
 import { getProjectId } from './recent-folders'
+import { computeNextRunAt } from '@superone/runtime/automations'
 import type {
   Automation,
   AutomationRunStatus,
@@ -10,6 +10,8 @@ import type {
   CreateAutomationRequest,
   UpdateAutomationRequest,
 } from '@superone/shared/agent-types'
+
+export { computeNextRunAt }
 
 interface DbAutomation {
   id: string
@@ -42,20 +44,6 @@ function toAutomation(row: DbAutomation, projectPath: string): Automation {
     nextRunAt: row.next_run_at ?? undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-  }
-}
-
-export function computeNextRunAt(schedule: AutomationSchedule): string | undefined {
-  if (schedule.type === 'one-time') {
-    return schedule.runAt
-  }
-  if (!schedule.cron) return undefined
-  try {
-    const job = new Cron(schedule.cron)
-    const next = job.nextRun()
-    return next?.toISOString()
-  } catch {
-    return undefined
   }
 }
 

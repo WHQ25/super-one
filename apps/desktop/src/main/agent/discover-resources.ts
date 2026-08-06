@@ -1,7 +1,15 @@
 import { existsSync, readdirSync, readFileSync } from 'fs'
 import { join } from 'path'
 import { homedir } from 'os'
-import type { AgentInfo, SlashCommandInfo } from '@superone/shared/agent-types'
+import type { SlashCommandInfo } from '@superone/shared/agent-types'
+
+// Agent catalog lives in runtime (node RPC + desktop share the same implementation).
+export {
+  discoverUserAgents,
+  discoverProjectAgents,
+  discoverAllAgents,
+  readAgentFile,
+} from '@superone/runtime/fs'
 
 // --- YAML frontmatter parser ---
 
@@ -208,88 +216,6 @@ function extractDescription(content: string): string {
     : content
   const firstLine = body.split('\n')[0] ?? ''
   return firstLine.replace(/^#+\s*/, '').trim()
-}
-
-// --- Agent discovery ---
-
-/** Scan a directory for .md agent files and return AgentInfo entries. */
-function scanAgentDir(dir: string, source: AgentInfo['source'], namePrefix = ''): AgentInfo[] {
-  if (!existsSync(dir)) return []
-  const agents: AgentInfo[] = []
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    if (!entry.isFile() || !entry.name.endsWith('.md')) continue
-    const name = namePrefix + entry.name.replace(/\.md$/, '')
-    const content = safeRead(join(dir, entry.name))
-    const fm = parseFrontmatter(content)
-    agents.push({ name, description: fm['description'] ?? extractDescription(content), model: fm['model'] || undefined, source })
-  }
-  return agents
-}
-
-/** Discover user-level agents (~/.claude/agents + user-scoped plugin agents). */
-export function discoverUserAgents(): AgentInfo[] {
-  const agents: AgentInfo[] = [...scanAgentDir(join(homedir(), '.claude', 'agents'), 'user')]
-  forEachPluginScope(isUserScoped, (installPath, pluginName) => {
-    agents.push(...scanAgentDir(join(installPath, 'agents'), 'plugin', `${pluginName}:`))
-  })
-  return agents
-}
-
-/** Discover project-level agents ({cwd}/.claude/agents + project-scoped plugin agents). */
-export function discoverProjectAgents(cwd: string): AgentInfo[] {
-  const agents: AgentInfo[] = [...scanAgentDir(join(cwd, '.claude', 'agents'), 'project')]
-  forEachPluginScope((e) => isProjectScoped(e, cwd), (installPath, pluginName) => {
-    agents.push(...scanAgentDir(join(installPath, 'agents'), 'plugin', `${pluginName}:`))
-  })
-  return agents
-}
-
-/** Discover all agents (user + project), deduped by name, with scope tag. */
-export function discoverAllAgents(cwd: string): (AgentInfo & { scope: 'user' | 'project' })[] {
-  const seen = new Set<string>()
-  const result: (AgentInfo & { scope: 'user' | 'project' })[] = []
-  // Project agents first (higher priority in UI)
-  for (const a of discoverProjectAgents(cwd)) {
-    if (seen.has(a.name)) continue
-    seen.add(a.name)
-    result.push({ ...a, scope: 'project' })
-  }
-  for (const a of discoverUserAgents()) {
-    if (seen.has(a.name)) continue
-    seen.add(a.name)
-    result.push({ ...a, scope: 'user' })
-  }
-  return result
-}
-
-/** Read the .md content of an agent by name. Checks project → user → plugins. */
-export function readAgentFile(cwd: string, name: string): string | null {
-  // Strip plugin prefix for path resolution
-  const baseName = name.includes(':') ? name.split(':').pop()! : name
-
-  // 1. Project-level
-  const projectPath = join(cwd, '.claude', 'agents', `${baseName}.md`)
-  if (existsSync(projectPath)) return safeRead(projectPath) || null
-
-  // 2. User-level
-  const userPath = join(homedir(), '.claude', 'agents', `${baseName}.md`)
-  if (existsSync(userPath)) return safeRead(userPath) || null
-
-  // 3. Plugin agents (search by full name including prefix)
-  const plugins = readPlugins()
-  for (const [pluginKey, entries] of Object.entries(plugins)) {
-    const pluginName = pluginKey.split('@')[0]
-    for (const entry of entries) {
-      if (!entry.installPath) continue
-      // Match: "pluginName:baseName" or just baseName in plugin dir
-      const prefix = `${pluginName}:`
-      const agentBaseName = name.startsWith(prefix) ? name.slice(prefix.length) : baseName
-      const pluginAgentPath = join(entry.installPath, 'agents', `${agentBaseName}.md`)
-      if (existsSync(pluginAgentPath)) return safeRead(pluginAgentPath) || null
-    }
-  }
-
-  return null
 }
 
 /** Discover project-level slash commands ({cwd}/.claude/commands + project-scoped plugin commands). */

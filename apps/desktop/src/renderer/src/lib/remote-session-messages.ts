@@ -4,6 +4,7 @@ import type {
   ContentBlock,
   PermissionRequest,
   PlanApprovalRequest,
+  SessionAgentRequestPayload,
   UserQuestion,
 } from '@superone/shared/agent-types'
 
@@ -16,11 +17,19 @@ export type NodeTranscriptBlock = {
 
 export type NodePendingInteraction = {
   interactionId: string
-  kind?: 'permission' | 'question' | 'plan'
+  kind?: 'permission' | 'question' | 'plan' | 'session_agents_confirm'
   toolName?: string
   toolUseId?: string
   input?: Record<string, unknown>
   createdAt?: number
+  requestKind?: string
+  message?: string
+  serverName?: string
+  allowAlwaysAllow?: boolean
+  sessionAgentsConfirm?: {
+    launches?: unknown[]
+    profiles?: unknown[]
+  }
 }
 
 export type NodeSessionSnapshot = {
@@ -39,6 +48,30 @@ export function nodePendingToPermissionRequest(
   pending: NodePendingInteraction | null | undefined,
 ): PermissionRequest | null {
   if (!pending?.interactionId) return null
+  // Multi-launch agent collaboration confirm (session_collab_request).
+  if (pending.kind === 'session_agents_confirm') {
+    const confirm = pending.sessionAgentsConfirm
+    const payload: SessionAgentRequestPayload = {
+      launches: Array.isArray(confirm?.launches)
+        ? (confirm!.launches as SessionAgentRequestPayload['launches'])
+        : [],
+      profiles: Array.isArray(confirm?.profiles)
+        ? (confirm!.profiles as SessionAgentRequestPayload['profiles'])
+        : [],
+    }
+    return {
+      requestId: pending.interactionId,
+      toolName: pending.toolName || 'session_collab_request',
+      toolUseId: pending.toolUseId ?? pending.interactionId,
+      input: pending.input && typeof pending.input === 'object' ? pending.input : {},
+      allowAlwaysAllow: false,
+      requestKind: 'session_agents_confirm',
+      serverName: pending.serverName || 'superone',
+      message:
+        pending.message || 'Allow this agent to start the following sessions?',
+      sessionAgentsConfirm: payload,
+    }
+  }
   // Permission UI only — question/plan use dedicated mappers below.
   if (pending.kind && pending.kind !== 'permission') return null
   return {
@@ -46,7 +79,7 @@ export function nodePendingToPermissionRequest(
     toolName: pending.toolName || 'tool',
     toolUseId: pending.toolUseId,
     input: pending.input && typeof pending.input === 'object' ? pending.input : {},
-    allowAlwaysAllow: true,
+    allowAlwaysAllow: pending.allowAlwaysAllow !== false,
   }
 }
 

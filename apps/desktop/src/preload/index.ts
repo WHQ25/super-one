@@ -354,6 +354,10 @@ const environmentAPI = {
       disabledSkills?: string[]
       images?: Array<{ name?: string; mimeType: string; base64: string }>
       apiProviderId?: string | null
+      /** Codex turn kind for session.send options.turnKind */
+      turnKind?: 'run' | 'steer' | 'review' | 'compact' | null
+      collaborationMode?: string | Record<string, unknown> | null
+      reviewTarget?: unknown
     },
   ) =>
     ipcRenderer.invoke(
@@ -366,6 +370,19 @@ const environmentAPI = {
       AgentIpcChannels.ENVIRONMENT_LIST_SESSION_EVENTS,
       connectionId,
       afterSequence ?? '0',
+    ),
+  /**
+   * Paged denser message catalog from the node (tool summaries / metadata).
+   * Chat-store remote hydrate prefers this over text-only recovery.
+   */
+  listSessionMessages: (
+    connectionId: string,
+    input: { sessionId: string; cursor?: string | number | null; limit?: number },
+  ) =>
+    ipcRenderer.invoke(
+      AgentIpcChannels.ENVIRONMENT_LIST_SESSION_MESSAGES,
+      connectionId,
+      input,
     ),
   interruptSession: (connectionId: string, sessionId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_INTERRUPT_SESSION, connectionId, sessionId),
@@ -404,6 +421,8 @@ const environmentAPI = {
       sessionId: string
       interactionId: string
       decision: 'allow' | 'deny' | 'allow_always'
+      formAnswers?: Record<string, unknown>
+      cancel?: boolean
       continueDrain?: {
         projectPath?: string
         providerId?: string
@@ -492,6 +511,71 @@ const environmentAPI = {
     ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_DISCONNECT, connectionId),
   forget: (connectionId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_FORGET, connectionId),
+
+  /**
+   * Node harness.resources aggregate (models + skills/commands/agents/prompts).
+   * Prefer this over desktop CONNECT_* caches for remote projects.
+   */
+  getRemoteHarnessResources: (
+    connectionId: string,
+    input: {
+      projectId: string
+      harnessId?: string
+      apiProviderId?: string | null
+    },
+  ) =>
+    ipcRenderer.invoke(
+      AgentIpcChannels.ENVIRONMENT_HARNESS_RESOURCES,
+      connectionId,
+      input,
+    ),
+
+  /** Node session_providers CRUD (multi-profile). */
+  listRemoteSessionProviders: (connectionId: string, harnessId?: string) =>
+    ipcRenderer.invoke(
+      AgentIpcChannels.ENVIRONMENT_SESSION_PROVIDERS_LIST,
+      connectionId,
+      harnessId,
+    ),
+  getRemoteSessionProvider: (connectionId: string, id: string) =>
+    ipcRenderer.invoke(
+      AgentIpcChannels.ENVIRONMENT_SESSION_PROVIDERS_GET,
+      connectionId,
+      id,
+    ),
+  getRemoteSessionProviderBase: (connectionId: string, harnessId: string) =>
+    ipcRenderer.invoke(
+      AgentIpcChannels.ENVIRONMENT_SESSION_PROVIDERS_GET_BASE,
+      connectionId,
+      harnessId,
+    ),
+  createRemoteSessionProvider: (
+    connectionId: string,
+    input: { harnessId: string; name: string; config?: unknown; id?: string },
+  ) =>
+    ipcRenderer.invoke(
+      AgentIpcChannels.ENVIRONMENT_SESSION_PROVIDERS_CREATE,
+      connectionId,
+      input,
+    ),
+  updateRemoteSessionProvider: (
+    connectionId: string,
+    id: string,
+    patch: { name?: string; config?: unknown },
+  ) =>
+    ipcRenderer.invoke(
+      AgentIpcChannels.ENVIRONMENT_SESSION_PROVIDERS_UPDATE,
+      connectionId,
+      id,
+      patch,
+    ),
+  deleteRemoteSessionProvider: (connectionId: string, id: string) =>
+    ipcRenderer.invoke(
+      AgentIpcChannels.ENVIRONMENT_SESSION_PROVIDERS_DELETE,
+      connectionId,
+      id,
+    ),
+
   onStatusEvent: (callback: (snapshot: unknown) => void) => {
     const handler = (_e: unknown, snapshot: unknown): void => callback(snapshot)
     ipcRenderer.on(AgentIpcChannels.ENVIRONMENT_STATUS_EVENT, handler)

@@ -26,6 +26,18 @@ import type { HostActionExecutor } from './remote-host-action-consumer'
  */
 const REMOTE_SESSION_SCOPED_TOOLS = new Set(['session_rename'])
 
+/**
+ * Node-local collab tools must never HA-route to desktop SessionManager.
+ * Catalog no longer advertises them; reject stale claims with failed_precondition.
+ */
+const NODE_LOCAL_COLLAB_TOOLS = new Set([
+  'session_collab_list_agents',
+  'session_collab_request',
+  'session_collab_start',
+  'session_collab_send',
+  'session_collab_retrieve',
+])
+
 type ExecutorResult = {
   outcome: 'succeeded' | 'failed'
   result?: unknown
@@ -66,6 +78,18 @@ export const desktopHostActionExecutor: HostActionExecutor = async (
   try {
     const work = (async (): Promise<ExecutorResult> => {
       try {
+        if (NODE_LOCAL_COLLAB_TOOLS.has(claimed.toolName)) {
+          return {
+            outcome: 'failed',
+            error: {
+              code: 'failed_precondition',
+              message:
+                `${claimed.toolName} is node-local (SessionRuntime collab). `
+                + 'It is not advertised as a Host Action; upgrade the remote node.',
+            },
+          }
+        }
+
         if (REMOTE_SESSION_SCOPED_TOOLS.has(claimed.toolName)) {
           return await executeRemoteSessionScopedTool(
             claimed,

@@ -24,4 +24,44 @@ export {
   resetEnvironmentHostForTests,
   gatewayForProject,
 } from './environment-host'
+export {
+  listRemoteManagedSkills,
+  listRemoteManagedMcp,
+  saveRemoteManagedMcp,
+  toggleRemoteManagedMcp,
+  deleteRemoteManagedMcp,
+  getRemoteManagedSkill,
+  readRemoteManagedSkillFile,
+  deleteRemoteManagedSkill,
+  listRemoteManagedPlugins,
+  listRemoteManagedHooks,
+  saveRemoteManagedHook,
+  deleteRemoteManagedHook,
+  resolveRemoteResourceContext,
+  remoteCodexGetAuthStatus,
+  remoteCodexSetAuth,
+  remoteCodexGetRateLimits,
+  remoteCodexGetAccountUsage,
+  remoteCodexConsumeRateLimitReset,
+  remoteCodexLoginMcpOauth,
+  remoteCodexDetectExternalAgent,
+  remoteCodexImportExternalAgent,
+  remoteCodexPluginsList,
+  remoteCodexPluginsInstall,
+  remoteCodexPluginsUninstall,
+  remoteCodexMarketplaceAdd,
+  remoteCodexMarketplaceRemove,
+  remoteCodexMarketplaceUpgrade,
+} from './remote-resources'
+export {
+  ensureEnvironmentResourceIpcRegistered,
+  isEnvironmentResourceIpcRegistered,
+  resetEnvironmentResourceIpcForTests,
+} from './environment-resource-ipc'
+export { listRemoteAgents, readRemoteAgentFile } from './remote-mentions'
 export { probeEndpointHealth, discoverTailscaleHost } from './endpoint-probes'
+
+// Register Skills/MCP IPC when the environment product surface loads.
+// Renderer can invoke via window.electron.ipcRenderer when preload wrappers lag.
+import { ensureEnvironmentResourceIpcRegistered } from './environment-resource-ipc'
+ensureEnvironmentResourceIpcRegistered()

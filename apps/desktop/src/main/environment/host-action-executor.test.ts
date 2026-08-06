@@ -97,6 +97,20 @@ describe('desktopHostActionExecutor', () => {
     // getSessionHost returns null — browser path does not require a desktop Session.
   })
 
+  it('rejects session_collab_* with failed_precondition (node-local)', async () => {
+    const action = claimed({
+      toolName: 'session_collab_list_agents',
+      toolGroup: 'superone',
+      sessionId: 'node-session-uuid-xyz',
+    })
+    const ac = new AbortController()
+    const out = await desktopHostActionExecutor(action, ac.signal, 'conn-1')
+    expect(out.outcome).toBe('failed')
+    expect(out.error).toMatchObject({ code: 'failed_precondition' })
+    expect(browser.executeBrowserTool).not.toHaveBeenCalled()
+    expect(envHost.renameSession).not.toHaveBeenCalled()
+  })
+
   it('routes session_rename to EnvironmentHost.renameSession (node path)', async () => {
     const action = claimed({
       toolName: 'session_rename',

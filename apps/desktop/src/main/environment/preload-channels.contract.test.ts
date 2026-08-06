@@ -115,6 +115,7 @@ describe('environment preload ↔ Main IPC contract', () => {
     expect(main).toContain('AgentIpcChannels.ENVIRONMENT_LIST')
     expect(main).toContain('AgentIpcChannels.ENVIRONMENT_PAIR_REMOTE')
     expect(main).toContain('getEnvironmentHost()')
+    expect(main).toContain('AgentIpcChannels.ENVIRONMENT_LIST_SESSION_MESSAGES')
   })
 
   it('preload exposes environmentAPI with matching channel constants', () => {
@@ -124,5 +125,70 @@ describe('environment preload ↔ Main IPC contract', () => {
     expect(preload).toContain('AgentIpcChannels.ENVIRONMENT_LIST')
     expect(preload).toContain('AgentIpcChannels.ENVIRONMENT_WORKSPACE_LIST_DIR')
     expect(preload).toContain('AgentIpcChannels.ENVIRONMENT_CONNECT_FAILOVER')
+    expect(preload).toContain('AgentIpcChannels.ENVIRONMENT_LIST_SESSION_MESSAGES')
+    expect(preload).toContain('listSessionMessages:')
+  })
+
+  it('defines remote Skills/MCP resource channels for node skills.*/mcp.*', () => {
+    expect(AgentIpcChannels.ENVIRONMENT_LIST_REMOTE_SKILLS).toBe('environment:listRemoteSkills')
+    expect(AgentIpcChannels.ENVIRONMENT_GET_REMOTE_SKILL).toBe('environment:getRemoteSkill')
+    expect(AgentIpcChannels.ENVIRONMENT_READ_REMOTE_SKILL_FILE).toBe(
+      'environment:readRemoteSkillFile',
+    )
+    expect(AgentIpcChannels.ENVIRONMENT_DELETE_REMOTE_SKILL).toBe('environment:deleteRemoteSkill')
+    expect(AgentIpcChannels.ENVIRONMENT_INSTALL_REMOTE_SKILL).toBe(
+      'environment:installRemoteSkill',
+    )
+    expect(AgentIpcChannels.ENVIRONMENT_LIST_REMOTE_MCP_CONFIGS).toBe(
+      'environment:listRemoteMcpConfigs',
+    )
+    expect(AgentIpcChannels.ENVIRONMENT_SAVE_REMOTE_MCP_CONFIG).toBe(
+      'environment:saveRemoteMcpConfig',
+    )
+    expect(AgentIpcChannels.ENVIRONMENT_TOGGLE_REMOTE_MCP_CONFIG).toBe(
+      'environment:toggleRemoteMcpConfig',
+    )
+    expect(AgentIpcChannels.ENVIRONMENT_DELETE_REMOTE_MCP_CONFIG).toBe(
+      'environment:deleteRemoteMcpConfig',
+    )
+  })
+
+  it('environment package registers resource IPC (renderer may use electron.ipcRenderer)', () => {
+    const resourceIpc = readFileSync(
+      join(ROOT, 'src/main/environment/environment-resource-ipc.ts'),
+      'utf8',
+    )
+    const index = readFileSync(join(ROOT, 'src/main/environment/index.ts'), 'utf8')
+    for (const channel of [
+      'ENVIRONMENT_LIST_REMOTE_SKILLS',
+      'ENVIRONMENT_LIST_REMOTE_MCP_CONFIGS',
+      'ENVIRONMENT_SAVE_REMOTE_MCP_CONFIG',
+      'ENVIRONMENT_TOGGLE_REMOTE_MCP_CONFIG',
+      'ENVIRONMENT_DELETE_REMOTE_MCP_CONFIG',
+      'ENVIRONMENT_DELETE_REMOTE_SKILL',
+      'ENVIRONMENT_INSTALL_REMOTE_SKILL',
+      'ENVIRONMENT_HARNESS_RESOURCES',
+      'ENVIRONMENT_SESSION_PROVIDERS_LIST',
+      'ENVIRONMENT_SESSION_PROVIDERS_CREATE',
+    ]) {
+      expect(resourceIpc, `resource ipc missing ${channel}`).toContain(
+        `AgentIpcChannels.${channel}`,
+      )
+    }
+    expect(index).toContain('ensureEnvironmentResourceIpcRegistered')
+  })
+
+  it('preload exposes getRemoteHarnessResources + remote sessionProviders', () => {
+    const preload = readFileSync(join(ROOT, 'src/preload/index.ts'), 'utf8')
+    expect(preload).toContain('getRemoteHarnessResources')
+    expect(preload).toContain('AgentIpcChannels.ENVIRONMENT_HARNESS_RESOURCES')
+    expect(preload).toContain('listRemoteSessionProviders')
+    expect(preload).toContain('createRemoteSessionProvider')
+    expect(preload).toContain('AgentIpcChannels.ENVIRONMENT_SESSION_PROVIDERS_LIST')
+    expect(preload).toContain('AgentIpcChannels.ENVIRONMENT_SESSION_PROVIDERS_CREATE')
+    expect(AgentIpcChannels.ENVIRONMENT_HARNESS_RESOURCES).toBe('environment:harnessResources')
+    expect(AgentIpcChannels.ENVIRONMENT_SESSION_PROVIDERS_LIST).toBe(
+      'environment:sessionProvidersList',
+    )
   })
 })

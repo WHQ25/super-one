@@ -34,6 +34,7 @@ import { createDefaultPerSessionState, createDefaultProjectState, createSessionI
 import { isRemoteSession, removeRemoteSession } from '../index'
 import type { ChatProvider, ChatStore, PerSessionState } from '../types'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
+import { stopBashOutputLive } from './bash-output-live'
 
 export async function focusProjectImpl(
   set: ChatStoreSet,
@@ -194,8 +195,78 @@ export function ensureSessionImpl(
     }
   })
   if (get && isRemote) {
-    // Node-only skills/commands for the / popup — never merge desktop harness lists.
+    // Node discovery path: harness.resources (models + skills/commands/agents).
+    // Fall back to listSlashResources + listRemoteModels when RPC is unavailable.
     void (async () => {
+      try {
+        const { fetchRemoteHarnessResourcesForProject } = await import(
+          '@/lib/remote-harness-resources'
+        )
+        const bundle = await fetchRemoteHarnessResourcesForProject(projectPath)
+        // Apply claude and/or codex sections from node harness.resources (no CONNECT_*).
+        if (bundle && (bundle.claude || bundle.codex)) {
+          const claude = bundle.claude
+          const skills = Array.isArray(claude?.skills) ? claude.skills : []
+          const commands = Array.isArray(claude?.commands) ? claude.commands : []
+          set((s) => {
+            if (!s.projectSessions[projectPath]) return {}
+            const proj = s.projectSessions[projectPath]!
+            return {
+              harnessResources: {
+                ...s.harnessResources,
+                ...(claude
+                  ? {
+                      claude: {
+                        models: claude.models ?? [],
+                        account: claude.account ?? {},
+                        slashCommands: claude.slashCommands ?? [],
+                        skills,
+                        commands,
+                        agents: claude.agents ?? [],
+                        outputStyles: claude.outputStyles ?? [],
+                      },
+                    }
+                  : {}),
+                ...(bundle.codex
+                  ? {
+                      codex: {
+                        models: bundle.codex.models ?? [],
+                        prompts: bundle.codex.prompts ?? [],
+                      },
+                    }
+                  : {}),
+              },
+              projectSessions: {
+                ...s.projectSessions,
+                [projectPath]: {
+                  ...proj,
+                  agents: claude?.agents ?? proj.agents,
+                  claudeModels: claude?.models ?? proj.claudeModels,
+                  codexModels: bundle.codex?.models ?? proj.codexModels,
+                  _projectSkills: skills.length > 0 ? skills : proj._projectSkills,
+                  _projectCommands: commands.length > 0 ? commands : proj._projectCommands,
+                  // Node discovery already merges user+project into skills/commands;
+                  // feed them as project-scoped so we don't double-count.
+                  slashCommands:
+                    claude
+                      ? buildSlashCommands(
+                          claude.slashCommands ?? [],
+                          [],
+                          [],
+                          skills,
+                          commands,
+                          new Set(s.disabledSkills),
+                        )
+                      : proj.slashCommands,
+                },
+              },
+            }
+          })
+          return
+        }
+      } catch {
+        /* fall through to legacy path */
+      }
       try {
         const listed = await window.app.listSlashResources(projectPath)
         const skills = Array.isArray(listed?.skills) ? listed.skills : []
@@ -308,7 +379,7 @@ export function clearMessagesImpl(set: ChatStoreSet, get: () => ChatStore): void
     }
   }
   for (const id of sessionToolUseIds) {
-    if (_bashOutputs[id]) window.app.unwatchBashOutput(id)
+    if (_bashOutputs[id]) stopBashOutputLive(id)
   }
   const remainingOutputs: typeof _bashOutputs = {}
   for (const [id, val] of Object.entries(_bashOutputs)) {

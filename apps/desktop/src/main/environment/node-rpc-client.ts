@@ -491,6 +491,8 @@ function isMutatingMethod(method: string): boolean {
     method.includes('.close') ||
     method.includes('watchStart') ||
     method.includes('watchStop') ||
+    method.includes('tailWatchStart') ||
+    method.includes('tailWatchStop') ||
     method.startsWith('collaboration.send') ||
     // Git mutations: must not transport-retry without idempotency key
     method === 'git.clone' ||

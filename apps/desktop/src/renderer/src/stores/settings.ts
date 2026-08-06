@@ -4,10 +4,26 @@ import type { ConsumerBinding, ConsumerId, Credential, Platform } from '@superon
 import type { McpbInstalledEntry } from '@superone/shared/mcpb-types'
 import { useAppStore } from './app'
 import { useChatStore } from './chat'
+import {
+  deleteMcpConfigForProject,
+  deleteSkillForProject,
+  fetchMcpConfigsForProject,
+  fetchSkillsForProject,
+  getSkillForProject,
+  getWindowEnvironmentApi,
+  isRemoteProjectPath,
+  readSkillFileForProject,
+  saveMcpConfigForProject,
+  toggleMcpConfigForProject,
+} from '@/lib/remote-resource-ops'
 
 /** Get the active project path. Returns empty string if none active. */
 function getProjectPath(): string {
   return useAppStore.getState().currentFolder ?? ''
+}
+
+function settingsProvider(): 'claude' | 'codex' {
+  return useAppStore.getState().settingsProvider === 'codex' ? 'codex' : 'claude'
 }
 
 interface SettingsState {
@@ -170,37 +186,72 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
   fetchSkills: async () => {
     const pp = getProjectPath()
-    const skills = await window.app.listSkills(pp)
+    const skills = await fetchSkillsForProject({
+      projectPath: pp,
+      provider: settingsProvider(),
+      env: getWindowEnvironmentApi(),
+      localListSkills: (path) => window.app.listSkills(path),
+      localListCodexSkills: (path) => window.app.codexListSkills(path),
+    })
     set({ skills })
   },
 
   readSkill: async (name, sourcePath) => {
     const pp = getProjectPath()
-    const detail = await window.app.readSkill(pp, name, sourcePath)
+    const detail = await getSkillForProject({
+      projectPath: pp,
+      provider: settingsProvider(),
+      name,
+      sourcePath,
+      env: getWindowEnvironmentApi(),
+      localRead: (path, n, sp) => window.app.readSkill(path, n, sp),
+      localCodexRead: (path, n, sp) => window.app.codexReadSkill(path, n, sp),
+    })
     set({ skillDetail: detail })
   },
 
   readSkillFile: async (skillName, relativePath, sourcePath) => {
     const pp = getProjectPath()
-    const content = await window.app.readSkillFile(pp, skillName, relativePath, sourcePath)
+    const content = await readSkillFileForProject({
+      projectPath: pp,
+      provider: settingsProvider(),
+      skillName,
+      relativePath,
+      sourcePath,
+      env: getWindowEnvironmentApi(),
+      localRead: (path, sn, rp, sp) => window.app.readSkillFile(path, sn, rp, sp),
+      localCodexRead: (path, sn, rp, sp) => window.app.codexReadSkillFile(path, sn, rp, sp),
+    })
     set({ skillFileContent: content, skillFilePath: relativePath })
   },
 
   clearSkillDetail: () => set({ skillDetail: null, skillFileContent: null, skillFilePath: null }),
 
   installSkill: async (sourcePath) => {
+    const pp = getProjectPath()
+    // Folder-picker install packs onto the desktop host. Remote node install
+    // needs a file map via skills.install — not yet exposed from the picker.
+    if (isRemoteProjectPath(pp)) {
+      throw new Error(
+        'Installing a skill folder onto a remote project is not supported yet. ' +
+          'Copy the skill onto the node filesystem or use skills.install RPC.',
+      )
+    }
     await window.app.installSkill(sourcePath)
     await get().fetchSkills()
   },
 
   deleteSkill: async (skill) => {
     const pp = getProjectPath()
-    const provider = useAppStore.getState().settingsProvider
-    if (provider === 'codex') {
-      await window.app.codexDeleteSkill(pp, skill.sourcePath)
-    } else {
-      await window.app.deleteSkill(pp, skill.sourcePath)
-    }
+    const provider = settingsProvider()
+    await deleteSkillForProject({
+      projectPath: pp,
+      provider,
+      sourcePath: skill.sourcePath,
+      env: getWindowEnvironmentApi(),
+      localDelete: (path, sp) => window.app.deleteSkill(path, sp),
+      localCodexDelete: (path, sp) => window.app.codexDeleteSkill(path, sp),
+    })
     set({ skillDetail: null, skillFileContent: null, skillFilePath: null })
     if (provider === 'codex') {
       await get().fetchCodexSkills()
@@ -231,25 +282,54 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   // Codex Skills (reuse same state fields)
   fetchCodexSkills: async () => {
     const pp = getProjectPath()
-    const skills = await window.app.codexListSkills(pp)
+    const skills = await fetchSkillsForProject({
+      projectPath: pp,
+      provider: 'codex',
+      env: getWindowEnvironmentApi(),
+      localListSkills: (path) => window.app.listSkills(path),
+      localListCodexSkills: (path) => window.app.codexListSkills(path),
+    })
     set({ skills })
   },
 
   readCodexSkill: async (name, sourcePath) => {
     const pp = getProjectPath()
-    const detail = await window.app.codexReadSkill(pp, name, sourcePath)
+    const detail = await getSkillForProject({
+      projectPath: pp,
+      provider: 'codex',
+      name,
+      sourcePath,
+      env: getWindowEnvironmentApi(),
+      localRead: (path, n, sp) => window.app.readSkill(path, n, sp),
+      localCodexRead: (path, n, sp) => window.app.codexReadSkill(path, n, sp),
+    })
     set({ skillDetail: detail })
   },
 
   readCodexSkillFile: async (skillName, relativePath, sourcePath) => {
     const pp = getProjectPath()
-    const content = await window.app.codexReadSkillFile(pp, skillName, relativePath, sourcePath)
+    const content = await readSkillFileForProject({
+      projectPath: pp,
+      provider: 'codex',
+      skillName,
+      relativePath,
+      sourcePath,
+      env: getWindowEnvironmentApi(),
+      localRead: (path, sn, rp, sp) => window.app.readSkillFile(path, sn, rp, sp),
+      localCodexRead: (path, sn, rp, sp) => window.app.codexReadSkillFile(path, sn, rp, sp),
+    })
     set({ skillFileContent: content, skillFilePath: relativePath })
   },
 
   fetchMcpConfigs: async () => {
     const pp = getProjectPath()
-    const configs = await window.app.listMcpConfigs(pp)
+    const configs = await fetchMcpConfigsForProject({
+      projectPath: pp,
+      provider: 'claude',
+      env: getWindowEnvironmentApi(),
+      localListMcp: (path) => window.app.listMcpConfigs(path),
+      localListCodexMcp: (path) => window.app.codexListMcpConfigs(path),
+    })
     set({ mcpConfigs: configs })
   },
 
@@ -266,34 +346,73 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
   saveMcpConfig: async (name, config, scope) => {
     const pp = getProjectPath()
-    const provider = useAppStore.getState().settingsProvider
+    const provider = settingsProvider()
+    if (scope !== 'user' && scope !== 'project') {
+      // claudeai / other scopes stay local desktop-only
+      if (provider === 'codex') {
+        await window.app.codexSaveMcpConfig(pp, name, config, scope)
+        await get().fetchCodexMcpConfigs()
+        return
+      }
+      await window.app.saveMcpConfig(pp, name, config, scope)
+      await get().fetchMcpConfigs()
+      await get().checkMcpServers()
+      return
+    }
+    await saveMcpConfigForProject({
+      projectPath: pp,
+      provider,
+      name,
+      config: config as Record<string, unknown>,
+      scope,
+      env: getWindowEnvironmentApi(),
+      localSave: (path, n, c, s) => window.app.saveMcpConfig(path, n, c, s),
+      localCodexSave: (path, n, c, s) => window.app.codexSaveMcpConfig(path, n, c, s),
+    })
     if (provider === 'codex') {
-      await window.app.codexSaveMcpConfig(pp, name, config, scope)
       await get().fetchCodexMcpConfigs()
       return
     }
-    await window.app.saveMcpConfig(pp, name, config, scope)
     await get().fetchMcpConfigs()
     await get().checkMcpServers()
   },
 
   deleteMcpConfig: async (name, scope) => {
     const pp = getProjectPath()
-    const provider = useAppStore.getState().settingsProvider
-    if (provider === 'codex') {
-      await window.app.codexDeleteMcpConfig(pp, name, scope)
+    const provider = settingsProvider()
+    if (scope !== 'user' && scope !== 'project') {
+      if (provider === 'codex') {
+        await window.app.codexDeleteMcpConfig(pp, name, scope)
+        set({ selectedMcpName: null })
+        await get().fetchCodexMcpConfigs()
+        return
+      }
+      await window.app.deleteMcpConfig(pp, name, scope)
       set({ selectedMcpName: null })
+      await get().fetchMcpConfigs()
+      await get().checkMcpServers()
+      return
+    }
+    await deleteMcpConfigForProject({
+      projectPath: pp,
+      provider,
+      name,
+      scope,
+      env: getWindowEnvironmentApi(),
+      localDelete: (path, n, s) => window.app.deleteMcpConfig(path, n, s),
+      localCodexDelete: (path, n, s) => window.app.codexDeleteMcpConfig(path, n, s),
+    })
+    set({ selectedMcpName: null })
+    if (provider === 'codex') {
       await get().fetchCodexMcpConfigs()
       return
     }
-    await window.app.deleteMcpConfig(pp, name, scope)
-    set({ selectedMcpName: null })
     await get().fetchMcpConfigs()
     await get().checkMcpServers()
   },
 
   toggleMcpConfig: async (name, disabled, scope) => {
-    const provider = useAppStore.getState().settingsProvider
+    const provider = settingsProvider()
     if (provider === 'codex') {
       set((state) => ({
         codexMcpConfigs: state.codexMcpConfigs.map((c) =>
@@ -301,7 +420,20 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         ),
       }))
       const pp = getProjectPath()
-      await window.app.codexToggleMcpConfig(pp, name, disabled, scope)
+      if (scope === 'user' || scope === 'project') {
+        await toggleMcpConfigForProject({
+          projectPath: pp,
+          provider: 'codex',
+          name,
+          disabled,
+          scope,
+          env: getWindowEnvironmentApi(),
+          localToggle: (path, n, d, s) => window.app.toggleMcpConfig(path, n, d, s),
+          localCodexToggle: (path, n, d, s) => window.app.codexToggleMcpConfig(path, n, d, s),
+        })
+      } else {
+        await window.app.codexToggleMcpConfig(pp, name, disabled, scope)
+      }
       await get().fetchCodexMcpConfigs()
       return
     }
@@ -319,16 +451,35 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
           ),
     }))
     const pp = getProjectPath()
-    await window.app.toggleMcpConfig(pp, name, disabled, scope)
+    if (scope === 'user' || scope === 'project') {
+      await toggleMcpConfigForProject({
+        projectPath: pp,
+        provider: 'claude',
+        name,
+        disabled,
+        scope,
+        env: getWindowEnvironmentApi(),
+        localToggle: (path, n, d, s) => window.app.toggleMcpConfig(path, n, d, s),
+        localCodexToggle: (path, n, d, s) => window.app.codexToggleMcpConfig(path, n, d, s),
+      })
+    } else {
+      await window.app.toggleMcpConfig(pp, name, disabled, scope)
+    }
     await get().checkMcpServers()
   },
 
   selectMcp: (name) => set({ selectedMcpName: name }),
 
-  // Codex MCP config (read-only, separate state)
+  // Codex MCP config (separate state)
   fetchCodexMcpConfigs: async () => {
     const pp = getProjectPath()
-    const codexMcpConfigs = await window.app.codexListMcpConfigs(pp)
+    const codexMcpConfigs = await fetchMcpConfigsForProject({
+      projectPath: pp,
+      provider: 'codex',
+      env: getWindowEnvironmentApi(),
+      localListMcp: (path) => window.app.listMcpConfigs(path),
+      localListCodexMcp: (path) => window.app.codexListMcpConfigs(path),
+    })
     set({ codexMcpConfigs })
   },
 

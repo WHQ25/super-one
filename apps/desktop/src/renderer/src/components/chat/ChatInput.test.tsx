@@ -566,6 +566,31 @@ describe('ChatInput slash command grouping', () => {
     expect(screen.getByText('Release the app')).toHaveClass('line-clamp-2')
   })
 
+  it('keeps slash command names single-line and lets argument hints compress', () => {
+    activeSessionState.slashCommands = [
+      {
+        name: 'execute-plan',
+        description: 'Execute a PR Plan DAG',
+        argumentHint: '<design-doc-path> [--effort N] [--concurrency N] [--dry-run]',
+        isSkill: false,
+      },
+    ]
+
+    const { rerender } = render(<ChatInput />)
+    typeInEditor('/')
+    rerender(<ChatInput />)
+
+    // Command name is split across highlight spans — match the outer wrapper by classes.
+    const commandName = screen.getByText((_, el) =>
+      el?.classList.contains('shrink-0') === true
+      && el.classList.contains('whitespace-nowrap')
+      && el.textContent === '/execute-plan',
+    )
+    expect(commandName).toBeTruthy()
+    const argumentHint = screen.getByText(/<design-doc-path>/)
+    expect(argumentHint).toHaveClass('truncate', 'min-w-0', 'flex-1')
+  })
+
   it('drops the per-row skill badge now that skills have their own section', () => {
     activeSessionState.slashCommands = [
       { name: 'clear', description: 'Clear conversation', argumentHint: '', isSkill: false },

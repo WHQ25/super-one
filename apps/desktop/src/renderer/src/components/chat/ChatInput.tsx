@@ -1325,9 +1325,15 @@ export function ChatInput() {
                         }`}
                       >
                         <span className="flex min-w-0 items-center gap-1.5 font-medium">
-                          <HighlightedText text={`/${cmd.name}`} indices={[0, ...cmd.matchIndices.map((idx) => idx + 1)]} highlightClassName="text-highlighted font-semibold" />
+                          {/* Keep the command name single-line; argument hints absorb overflow. */}
+                          <HighlightedText
+                            text={`/${cmd.name}`}
+                            indices={[0, ...cmd.matchIndices.map((idx) => idx + 1)]}
+                            highlightClassName="text-highlighted font-semibold"
+                            className="shrink-0 whitespace-nowrap"
+                          />
                           {cmd.argumentHint && (
-                            <span className="truncate text-muted-foreground font-normal">{cmd.argumentHint}</span>
+                            <span className="min-w-0 flex-1 truncate text-muted-foreground font-normal">{cmd.argumentHint}</span>
                           )}
                         </span>
                         {cmd.description && (

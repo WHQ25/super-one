@@ -40,6 +40,7 @@ vi.stubGlobal('window', {
 await import('../index')
 const { createDefaultPerSessionState, createDefaultProjectState } = await import('../defaults')
 const { useChatStore } = await import('../index')
+const { _resetRemoteQuestionInFlightForTests } = await import('./interaction')
 
 const REMOTE_PATH = 'remote:env-1:/work/app'
 const PENDING_QUESTION = {
@@ -99,6 +100,7 @@ beforeEach(() => {
     initializedHarnesses: new Set(),
   })
   vi.clearAllMocks()
+  _resetRemoteQuestionInFlightForTests()
   mockAgent.respondToPermission.mockResolvedValue(true)
   mockAgent.answerQuestion.mockResolvedValue(undefined)
   mockAgent.dismissQuestion.mockResolvedValue(undefined)
@@ -180,9 +182,9 @@ describe('answerQuestionImpl', () => {
 })
 
 /**
- * Issue #21: remote answerQuestion is fire-and-forget — clears pendingQuestion
- * before RPC settles, never restarts drain on failure, never hydrates on success.
- * These cases assert the correct contract (mirror respondToPermissionImpl remote path).
+ * Issue #21: remote answerQuestion must ACK before clearing pendingQuestion,
+ * hydrate the answering session (not active focus), guard double-submit, and
+ * recover via getSession when respond/drain/hydrate fails after the node moved on.
  */
 describe('answerQuestionImpl: remote node (issue #21)', () => {
   it('routes through environment.respondSessionQuestion, not window.agent', () => {
@@ -207,21 +209,53 @@ describe('answerQuestionImpl: remote node (issue #21)', () => {
     expect(mockAgent.answerQuestion).not.toHaveBeenCalled()
   })
 
-  it('keeps pendingQuestion when respondSessionQuestion rejects', async () => {
-    // Bug repro: today we clear pendingQuestion in the same tick as the void RPC,
-    // so a lease/network failure silently drops the prompt and never restarts drain.
+  it('keeps pendingQuestion when respondSessionQuestion rejects and node still has the question', async () => {
     mockEnvRespondSessionQuestion.mockRejectedValue(
       Object.assign(new Error('no matching pending question'), { code: 'failed_precondition' }),
     )
+    // getSession still shows the same pending question → true pre-ACK failure.
+    mockEnvGetSession.mockResolvedValue({
+      sessionId: 'sid-1',
+      status: 'streaming',
+      harnessId: 'claude',
+      pendingInteraction: {
+        interactionId: 'q1',
+        kind: 'question',
+        input: { questions: PENDING_QUESTION.questions },
+      },
+      transcript: [],
+    })
     seedRemoteSession('sid-1', {
       pendingQuestion: { ...PENDING_QUESTION } as never,
     })
 
     useChatStore.getState().answerQuestion('q1', { 'Pick one?': 'A' })
-    await flushMicrotasks()
 
-    expect(activeSession().pendingQuestion).not.toBeNull()
+    await vi.waitFor(() => {
+      expect(mockEnvGetSession).toHaveBeenCalledWith('env-1', 'sid-1')
+    })
     expect(activeSession().pendingQuestion?.requestId).toBe('q1')
+  })
+
+  it('clears pendingQuestion when RPC rejects but node no longer has that question', async () => {
+    // respond succeeded; continueDrain failed — combined promise rejects.
+    mockEnvRespondSessionQuestion.mockRejectedValue(new Error('drain failed'))
+    mockEnvGetSession.mockResolvedValue({
+      sessionId: 'sid-1',
+      status: 'streaming',
+      harnessId: 'claude',
+      pendingInteraction: null,
+      transcript: [],
+    })
+    seedRemoteSession('sid-1', {
+      pendingQuestion: { ...PENDING_QUESTION } as never,
+    })
+
+    useChatStore.getState().answerQuestion('q1', { 'Pick one?': 'A' })
+
+    await vi.waitFor(() => {
+      expect(activeSession().pendingQuestion).toBeNull()
+    })
   })
 
   it('does not clear pendingQuestion while respondSessionQuestion is still in flight', async () => {
@@ -253,8 +287,34 @@ describe('answerQuestionImpl: remote node (issue #21)', () => {
     })
   })
 
-  it('on success hydrates pendingQuestion from the node snapshot (like permission path)', async () => {
-    // Node still holds a different pending question after answer (or same if race).
+  it('ignores duplicate answer while the first RPC is in flight', async () => {
+    let resolveRpc!: (value: unknown) => void
+    mockEnvRespondSessionQuestion.mockReturnValue(
+      new Promise((resolve) => {
+        resolveRpc = resolve
+      }),
+    )
+    seedRemoteSession('sid-1', {
+      pendingQuestion: { ...PENDING_QUESTION } as never,
+    })
+
+    useChatStore.getState().answerQuestion('q1', { 'Pick one?': 'A' })
+    useChatStore.getState().answerQuestion('q1', { 'Pick one?': 'B' })
+
+    expect(mockEnvRespondSessionQuestion).toHaveBeenCalledTimes(1)
+    resolveRpc({
+      sessionId: 'sid-1',
+      status: 'streaming',
+      harnessId: 'claude',
+      pendingInteraction: null,
+      transcript: [],
+    })
+    await vi.waitFor(() => {
+      expect(activeSession().pendingQuestion).toBeNull()
+    })
+  })
+
+  it('on success hydrates pendingQuestion from the node snapshot', async () => {
     mockEnvRespondSessionQuestion.mockResolvedValue({
       sessionId: 'sid-1',
       status: 'streaming',
@@ -282,6 +342,48 @@ describe('answerQuestionImpl: remote node (issue #21)', () => {
     await vi.waitFor(() => {
       expect(activeSession().pendingQuestion?.requestId).toBe('q2')
     })
+  })
+
+  it('hydrates the answering session even after active focus switches away', async () => {
+    let resolveRpc!: (value: unknown) => void
+    mockEnvRespondSessionQuestion.mockReturnValue(
+      new Promise((resolve) => {
+        resolveRpc = resolve
+      }),
+    )
+    seedRemoteSession('sid-1', {
+      pendingQuestion: { ...PENDING_QUESTION } as never,
+    })
+
+    useChatStore.getState().answerQuestion('q1', { 'Pick one?': 'A' })
+
+    // Switch to another project before ACK — hydrate must still target sid-1.
+    const other = createDefaultProjectState()
+    other._activeSessionId = 'other-sid'
+    other._sessions = { 'other-sid': createDefaultPerSessionState() }
+    useChatStore.setState((s) => ({
+      projectSessions: { ...s.projectSessions, '/local-other': other },
+      activeProject: '/local-other',
+    }))
+
+    resolveRpc({
+      sessionId: 'sid-1',
+      status: 'streaming',
+      harnessId: 'claude',
+      pendingInteraction: null,
+      transcript: [],
+    })
+
+    await vi.waitFor(() => {
+      const remoteSess =
+        useChatStore.getState().projectSessions[REMOTE_PATH]!._sessions['sid-1']
+      expect(remoteSess.pendingQuestion).toBeNull()
+    })
+    // Newly focused local session must not have been touched.
+    expect(
+      useChatStore.getState().projectSessions['/local-other']!._sessions['other-sid']
+        .pendingQuestion,
+    ).toBeNull()
   })
 })
 
@@ -322,17 +424,113 @@ describe('dismissQuestionImpl: remote node (issue #21)', () => {
     expect(mockAgent.dismissQuestion).not.toHaveBeenCalled()
   })
 
-  it('keeps pendingQuestion when remote dismiss RPC rejects', async () => {
+  it('keeps pendingQuestion when remote dismiss RPC rejects and node still has the question', async () => {
     mockEnvRespondSessionQuestion.mockRejectedValue(new Error('lease expired'))
+    mockEnvGetSession.mockResolvedValue({
+      sessionId: 'sid-1',
+      status: 'streaming',
+      harnessId: 'claude',
+      pendingInteraction: {
+        interactionId: 'q1',
+        kind: 'question',
+        input: { questions: PENDING_QUESTION.questions },
+      },
+      transcript: [],
+    })
     seedRemoteSession('sid-1', {
       pendingQuestion: { ...PENDING_QUESTION } as never,
     })
 
     useChatStore.getState().dismissQuestion('q1')
-    await flushMicrotasks()
 
-    expect(activeSession().pendingQuestion).not.toBeNull()
+    await vi.waitFor(() => {
+      expect(mockEnvGetSession).toHaveBeenCalledWith('env-1', 'sid-1')
+    })
     expect(activeSession().pendingQuestion?.requestId).toBe('q1')
+  })
+
+  it('does not clear pendingQuestion while dismiss RPC is still in flight', async () => {
+    let resolveRpc!: (value: unknown) => void
+    mockEnvRespondSessionQuestion.mockReturnValue(
+      new Promise((resolve) => {
+        resolveRpc = resolve
+      }),
+    )
+    seedRemoteSession('sid-1', {
+      pendingQuestion: { ...PENDING_QUESTION } as never,
+    })
+
+    useChatStore.getState().dismissQuestion('q1')
+    expect(activeSession().pendingQuestion?.requestId).toBe('q1')
+
+    resolveRpc({
+      sessionId: 'sid-1',
+      status: 'streaming',
+      harnessId: 'claude',
+      pendingInteraction: null,
+      transcript: [],
+    })
+
+    await vi.waitFor(() => {
+      expect(activeSession().pendingQuestion).toBeNull()
+    })
+  })
+
+  it('on success hydrates pendingQuestion from the node snapshot', async () => {
+    mockEnvRespondSessionQuestion.mockResolvedValue({
+      sessionId: 'sid-1',
+      status: 'streaming',
+      harnessId: 'claude',
+      pendingInteraction: {
+        interactionId: 'q2',
+        kind: 'question',
+        input: {
+          questions: [
+            {
+              question: 'Next?',
+              options: [{ label: 'Yes', description: '' }],
+            },
+          ],
+        },
+      },
+      transcript: [],
+    })
+    seedRemoteSession('sid-1', {
+      pendingQuestion: { ...PENDING_QUESTION } as never,
+    })
+
+    useChatStore.getState().dismissQuestion('q1')
+
+    await vi.waitFor(() => {
+      expect(activeSession().pendingQuestion?.requestId).toBe('q2')
+    })
+  })
+
+  it('ignores duplicate dismiss while the first RPC is in flight', async () => {
+    let resolveRpc!: (value: unknown) => void
+    mockEnvRespondSessionQuestion.mockReturnValue(
+      new Promise((resolve) => {
+        resolveRpc = resolve
+      }),
+    )
+    seedRemoteSession('sid-1', {
+      pendingQuestion: { ...PENDING_QUESTION } as never,
+    })
+
+    useChatStore.getState().dismissQuestion('q1')
+    useChatStore.getState().dismissQuestion('q1')
+
+    expect(mockEnvRespondSessionQuestion).toHaveBeenCalledTimes(1)
+    resolveRpc({
+      sessionId: 'sid-1',
+      status: 'idle',
+      harnessId: 'claude',
+      pendingInteraction: null,
+      transcript: [],
+    })
+    await vi.waitFor(() => {
+      expect(activeSession().pendingQuestion).toBeNull()
+    })
   })
 })
 

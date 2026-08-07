@@ -945,24 +945,63 @@ describe('child session project attribution', () => {
     rmSync(parentWorktree, { recursive: true, force: true })
   })
 
-  it('does not register an unowned source dir when the launch cuts a worktree', async () => {
-    // Path-identity miss on the source (unowned dir) used to call addRecentFolder.
-    // A worktree cut must stay under the parent project even then.
-    const orphanSource = mkdtempSync(join(tmpdir(), 'collab-orphan-src-'))
-    const childWorktree = join(tmpdir(), 'collab-orphan-wt')
+  it('registers a genuinely new project when the agent points cwd outside every open project', async () => {
+    // Agents are allowed to open a separate project (other repo / scratch).
+    // Only same-repo worktree leaves must not become projects.
+    const otherRepo = mkdtempSync(join(tmpdir(), 'collab-other-repo-'))
+    state.projects = [{ path: TEST_CWD }]
+    const parent = fakeSession('parent')
+    const { host, createSession } = fakeHost(parent)
+
+    await startChild(otherRepo, host, parent)
+
+    expect(state.projects.map((p) => p.path)).toContain(otherRepo)
+    expect(createSession.mock.calls[0][0].projectPath).toBe(otherRepo)
+    expect(createSession.mock.calls[0][0].cwd).toBe(otherRepo)
+    rmSync(otherRepo, { recursive: true, force: true })
+  })
+
+  it('registers the main checkout when cwd is a worktree of an unopened repo', async () => {
+    // Worktree leaf of a repo not yet in the sidebar → open main, not the leaf.
+    const { realpathSync } = await import('fs')
+    const mainRepo = mkdtempSync(join(tmpdir(), 'collab-unopened-main-'))
+    const leaf = mkdtempSync(join(tmpdir(), 'collab-unopened-wt-'))
+    const mainCanon = realpathSync(mainRepo)
+    const leafCanon = realpathSync(leaf)
+    state.projects = [{ path: TEST_CWD }]
+    // Map both raw and resolved keys — resolveCwd normalizes the path.
+    state.mainWorktreeByPath.set(leaf, mainRepo)
+    state.mainWorktreeByPath.set(leafCanon, mainRepo)
+    const parent = fakeSession('parent')
+    const { host, createSession } = fakeHost(parent)
+
+    await startChild(leaf, host, parent)
+
+    expect(state.projects.map((p) => p.path)).toContain(mainCanon)
+    expect(state.projects.map((p) => p.path)).not.toContain(leaf)
+    expect(state.projects.map((p) => p.path)).not.toContain(leafCanon)
+    expect(createSession.mock.calls[0][0].projectPath).toBe(mainCanon)
+    expect(createSession.mock.calls[0][0].cwd).toBe(leaf)
+    rmSync(mainRepo, { recursive: true, force: true })
+    rmSync(leaf, { recursive: true, force: true })
+  })
+
+  it('registers a new project then cuts a worktree under it', async () => {
+    const otherRepo = mkdtempSync(join(tmpdir(), 'collab-new-proj-src-'))
+    const childWorktree = join(tmpdir(), 'collab-new-proj-wt')
     state.projects = [{ path: TEST_CWD }]
     state.activateWorktree.mockResolvedValue({ ok: true, path: childWorktree, recordedBranch: 'feat' })
     const parent = fakeSession('parent')
     const { host, createSession } = fakeHost(parent)
 
-    await startChild(orphanSource, host, parent, {
-      worktree: { enabled: true, baseBranch: 'main', mode: 'branch', branchName: 'orphan-wt' },
+    await startChild(otherRepo, host, parent, {
+      worktree: { enabled: true, baseBranch: 'main', mode: 'branch', branchName: 'new-proj-wt' },
     })
 
-    expect(state.projects.map((p) => p.path)).toEqual([TEST_CWD])
-    expect(createSession.mock.calls[0][0].projectPath).toBe(TEST_CWD)
+    expect(state.projects.map((p) => p.path)).toContain(otherRepo)
+    expect(createSession.mock.calls[0][0].projectPath).toBe(otherRepo)
     expect(createSession.mock.calls[0][0].cwd).toBe(childWorktree)
-    rmSync(orphanSource, { recursive: true, force: true })
+    rmSync(otherRepo, { recursive: true, force: true })
   })
 
   it('does not register when the agent points cwd at an existing managed worktree', async () => {

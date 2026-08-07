@@ -665,41 +665,31 @@ function isManagedWorktreePath(dir: string): boolean {
 }
 
 /**
- * A launch may point the child at a directory outside the parent's project. File
- * it under the project that actually owns that directory, so it shows up in the
- * right sidebar entry instead of hiding under the parent's. Nested projects
- * resolve to the most specific match.
+ * Decide which sidebar project a collab child should join.
  *
- * Ownership is checked against the requested cwd *and* its git main checkout
- * when the cwd is a worktree. Collab defaults `cwd` to `parent.cwd`, so a parent
- * already working in `~/.worktrees/…` (fork, prior collab, resumed worktree
- * session) would otherwise look unowned and get registered as its own sidebar
- * project — even when the *user* thinks of the parent as "the main project".
+ * Product rules:
+ * 1. Agents MAY open a genuinely different directory as its own project
+ *    (another repo / scratch folder) — that is intentional cross-project work.
+ * 2. Different worktrees of the *same* git repo must share one project row.
+ *    Never promote `~/.worktrees/<repo>/<epoch>-<hash>` (or any git worktree
+ *    leaf) to a sidebar project; file under the main checkout instead.
  *
  * Call with the *requested* cwd, before worktree activation — a freshly cut
- * worktree lives outside every project but belongs to the project it was cut
- * from.
- *
- * When no open project covers the directory:
- * - never register SuperOne-managed worktree paths
- * - never register when this launch will cut a worktree (the child always
- *   belongs to the source project / parent; registering the source would still
- *   be wrong if path identity failed, and registering the activated path is
- *   what produces `tjdllgg-…` sidebar rows)
- * - otherwise register the directory so the session has a projects row
+ * worktree lives outside every project root but belongs to the repo it was
+ * cut from.
  */
-async function ensureChildProject(
-  cwd: string,
-  parentProjectPath: string,
-  opts?: { worktreeEnabled?: boolean },
-): Promise<string> {
-  const candidates = [canonicalPath(cwd)]
+async function ensureChildProject(cwd: string, parentProjectPath: string): Promise<string> {
+  const cwdCanon = canonicalPath(cwd)
+  let mainDir: string | null = null
   try {
-    const mainDir = canonicalPath(await resolveMainWorktreeDir(cwd))
-    if (mainDir !== candidates[0]) candidates.push(mainDir)
+    const resolved = canonicalPath(await resolveMainWorktreeDir(cwd))
+    // Only treat as a worktree-of-something when git points elsewhere.
+    if (resolved !== cwdCanon) mainDir = resolved
   } catch {
-    // Not a git worktree / not a repo — path-prefix ownership is enough.
+    // Not a git repo / unreadable — path-prefix ownership is enough.
   }
+
+  const candidates = mainDir ? [cwdCanon, mainDir] : [cwdCanon]
 
   let owner: string | null = null
   let ownerDepth = -1
@@ -720,9 +710,19 @@ async function ensureChildProject(
   }
   if (owner) return owner
 
-  // Worktrees under ~/.worktrees are never user-opened projects. Keep the parent.
-  if (isManagedWorktreePath(cwd) || opts?.worktreeEnabled) return parentProjectPath
+  // Cwd is a worktree leaf of a repo the user has not opened yet — open the
+  // main checkout as the project, never the worktree directory itself.
+  if (mainDir) {
+    addRecentFolder(mainDir)
+    return mainDir
+  }
 
+  // Managed SuperOne worktree path but main-dir lookup failed (stale/removed):
+  // do not invent a `tjdllgg-…` project; keep the parent.
+  if (isManagedWorktreePath(cwd)) return parentProjectPath
+
+  // Genuinely new directory (other project / scratch). Agents are allowed to
+  // spawn work in a separate project this way.
   addRecentFolder(cwd)
   return cwd
 }
@@ -873,9 +873,9 @@ export async function startSessionAgent(
   let cwd = resolveCwd(config, parent)
   const worktreeEnabled = !!config.worktree?.enabled
   // Attribute before worktree activation so the child files under the source
-  // project, not under ~/.worktrees/<new-wt> (see ensureChildProject).
-  let projectPath = await ensureChildProject(cwd, parent.projectPath, { worktreeEnabled })
-  // Defense in depth: never file a collab child under a managed worktree path.
+  // project / main checkout, not under ~/.worktrees/<new-wt>.
+  let projectPath = await ensureChildProject(cwd, parent.projectPath)
+  // Defense in depth: never file a collab child under a managed worktree leaf.
   if (isManagedWorktreePath(projectPath)) projectPath = parent.projectPath
   let gitBranch: string | null = null
   if (worktreeEnabled) {
@@ -898,10 +898,8 @@ export async function startSessionAgent(
     task: grant.task,
   })
   const title = collaborationSessionTitle(displayName, role)
-  // is_worktree / worktree_path: either host cut a worktree (worktree.enabled) or
-  // the agent pointed cwd at an existing worktree of the project (common for
-  // reviewers reading an implementer's tree). Never key is_worktree only off the
-  // config flag — that left attach-style children with project_path=worktree.
+  // is_worktree / worktree_path: host-cut worktree OR agent attached cwd to an
+  // existing worktree of the project (Reviewer reading implementer's tree).
   const isWorktreeSession = worktreeEnabled || resolve(cwd) !== resolve(projectPath)
   const worktreePath = isWorktreeSession ? cwd : undefined
   createSessionRecord(projectPath, childSessionId, title, isWorktreeSession, gitBranch ?? undefined, worktreePath)

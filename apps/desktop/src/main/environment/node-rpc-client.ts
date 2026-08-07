@@ -13,6 +13,14 @@ export interface NodeRpcClientOptions {
   devicePrivateKeyPem: string
   expectedEnvironmentId?: string
   expectedNodePublicKeyFingerprint?: string
+  /**
+   * When true, transport recovery is owned by ConnectionSupervisor: rpc() will
+   * not self-dial or resend after socket loss. Unexpected close of the current
+   * promoted socket invokes onUnexpectedDisconnect once.
+   */
+  supervised?: boolean
+  /** Fired after an unexpected close of the current promoted socket. */
+  onUnexpectedDisconnect?: (error: string) => void
 }
 
 type Pending = {
@@ -69,6 +77,7 @@ function rpcTimeoutMs(method: string): number {
  * Lives in Electron Main only — renderer never holds the socket.
  */
 export class NodeRpcClient {
+  private baseUrl: string
   private ws: WebSocket | null = null
   private wsSocketId = 0
   private nextSocketId = 1
@@ -81,10 +90,27 @@ export class NodeRpcClient {
   /** Reject the in-flight connect immediately from `close()`. */
   private connectFail: ((err: Error) => void) | null = null
 
-  constructor(private readonly opts: NodeRpcClientOptions) {}
+  constructor(private readonly opts: NodeRpcClientOptions) {
+    this.baseUrl = opts.baseUrl.replace(/\/$/, '')
+  }
 
   get connected(): boolean {
     return this.ws?.readyState === WebSocket.OPEN
+  }
+
+  /**
+   * Update the HTTP/WS base URL while idle. Used after SSH tunnel rebuild so
+   * retries target the fresh loopback port.
+   */
+  setBaseUrl(baseUrl: string): void {
+    if (this.ws || this.connectingWs || this.connectPromise) {
+      throw new Error('cannot setBaseUrl while connected or connecting')
+    }
+    this.baseUrl = baseUrl.replace(/\/$/, '')
+  }
+
+  getBaseUrl(): string {
+    return this.baseUrl
   }
 
   async connect(): Promise<void> {
@@ -109,8 +135,7 @@ export class NodeRpcClient {
     }
     const ticketId = ticket.split('.')[0] || ticket
     const sig = signWithDeviceKey(this.opts.devicePrivateKeyPem, ticketId)
-    const base = this.opts.baseUrl.replace(/\/$/, '')
-    const wsBase = base.replace(/^http/, 'ws')
+    const wsBase = this.baseUrl.replace(/^http/, 'ws')
     const url = `${wsBase}/ws`
 
     await new Promise<void>((resolve, reject) => {
@@ -198,12 +223,18 @@ export class NodeRpcClient {
             this.wsSocketId = socketId
             ws.on('message', (data) => this.onMessage(data.toString()))
             ws.on('close', () => {
-              if (this.ws === ws) {
+              // Intentional drop/close remove listeners first — only unexpected
+              // close of the current promoted socket reaches here.
+              const wasCurrent = this.ws === ws
+              if (wasCurrent) {
                 this.ws = null
                 this.wsSocketId = 0
               }
               // Only reject requests sent on THIS socket — never a replacement socket.
               this.rejectPendingForSocket(socketId, transportError('websocket closed'))
+              if (wasCurrent && !this.closed) {
+                this.opts.onUnexpectedDisconnect?.('websocket closed')
+              }
             })
             settled = true
             resolve()
@@ -247,6 +278,17 @@ export class NodeRpcClient {
     const isMutating = isMutatingMethod(method)
     // One key for the whole logical invocation, including transport retries.
     const idempotencyKey = isMutating ? commandKey || randomUUID() : undefined
+
+    // Supervised clients let ConnectionSupervisor own dial/backoff — never self-reconnect.
+    if (this.opts.supervised) {
+      if (this.closed) {
+        throw transportError('client closed')
+      }
+      if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+        throw transportError('not connected')
+      }
+      return this.sendOnce<T>(method, payload, envId, idempotencyKey)
+    }
 
     let lastError: Error | null = null
     for (let attempt = 0; attempt < TRANSPORT_RETRY_ATTEMPTS; attempt++) {

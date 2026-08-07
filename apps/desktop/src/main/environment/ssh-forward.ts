@@ -44,6 +44,33 @@ export async function findFreePort(): Promise<number> {
 }
 
 /**
+ * Pure argv for `ssh -N -L …` local forwards (testable without spawning).
+ * ServerAlive* force a dead transport to exit instead of half-opening forever.
+ */
+export function buildSshLocalForwardArgs(input: {
+  localPort: number
+  remotePort: number
+  destination: string
+  extraArgs?: string[]
+}): string[] {
+  return [
+    '-N',
+    '-L',
+    `${input.localPort}:127.0.0.1:${input.remotePort}`,
+    '-o',
+    'ExitOnForwardFailure=yes',
+    '-o',
+    'BatchMode=yes',
+    '-o',
+    'ServerAliveInterval=15',
+    '-o',
+    'ServerAliveCountMax=3',
+    ...(input.extraArgs ?? []),
+    input.destination,
+  ]
+}
+
+/**
  * Establish `ssh -N -L localPort:127.0.0.1:remotePort destination`.
  * Closing the tunnel disconnects the client but must never stop the remote node.
  */
@@ -51,17 +78,12 @@ export async function startSshLocalForward(opts: SshForwardOptions): Promise<Ssh
   const remotePort = opts.remotePort ?? 7788
   const localPort = opts.localPort && opts.localPort > 0 ? opts.localPort : await findFreePort()
   const sshPath = opts.sshPath || 'ssh'
-  const args = [
-    '-N',
-    '-L',
-    `${localPort}:127.0.0.1:${remotePort}`,
-    '-o',
-    'ExitOnForwardFailure=yes',
-    '-o',
-    'BatchMode=yes',
-    ...(opts.extraArgs ?? []),
-    opts.destination,
-  ]
+  const args = buildSshLocalForwardArgs({
+    localPort,
+    remotePort,
+    destination: opts.destination,
+    extraArgs: opts.extraArgs,
+  })
 
   const child = spawn(sshPath, args, {
     stdio: ['ignore', 'pipe', 'pipe'],

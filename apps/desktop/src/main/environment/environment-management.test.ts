@@ -2,6 +2,7 @@
  * Environment management surface backing the Settings UI:
  * list / add over SSH / connect / disconnect / forget, plus status push.
  */
+import { EventEmitter } from 'node:events'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -92,12 +93,22 @@ function newHost(): EnvironmentHost {
 function fakeForwardStarter(targetUrl: string, calls: string[]) {
   return async (opts: { destination: string; remotePort: number }) => {
     calls.push(`${opts.destination}:${opts.remotePort}`)
+    // EventEmitter-compatible stub: tunnel manager attaches `once('exit')` and
+    // liveness checks exitCode/signalCode (not only killed).
+    const process = new EventEmitter() as SshForwardHandle['process'] & EventEmitter
+    Object.defineProperty(process, 'killed', { value: false, writable: true, configurable: true })
+    Object.defineProperty(process, 'exitCode', { value: null, writable: true, configurable: true })
+    Object.defineProperty(process, 'signalCode', { value: null, writable: true, configurable: true })
+    process.kill = (() => {
+      ;(process as { killed: boolean }).killed = true
+      return true
+    }) as SshForwardHandle['process']['kill']
     const handle: SshForwardHandle = {
       localPort: Number(new URL(targetUrl).port),
       localBaseUrl: targetUrl,
-      process: { killed: false, kill: () => true } as unknown as SshForwardHandle['process'],
+      process,
       stop() {
-        ;(handle.process as { killed: boolean }).killed = true
+        ;(process as { killed: boolean }).killed = true
       },
     }
     return handle

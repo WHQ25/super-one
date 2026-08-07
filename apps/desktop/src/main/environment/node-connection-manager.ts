@@ -4,6 +4,8 @@ import { ConnectionSupervisor, type SupervisorSnapshot } from './connection-supe
 import {
   generateDeviceKeyPair,
   mintWsTicket,
+  NODE_REQUEST_TIMEOUT_MS,
+  nodeEndpointDescription,
   pairWithNode,
   refreshNodeAccess,
 } from './node-auth-client'
@@ -23,6 +25,14 @@ export interface NodeConnectionManagerOptions {
   loadKnownEnvironments?: () => KnownEnvironmentRecord[]
   deleteKnownEnvironment?: (connectionId: string) => void
   onSupervisorState?: (snapshot: SupervisorSnapshot) => void
+  /**
+   * Rebuild endpoint plumbing (e.g. SSH local forward) for automatic retries.
+   * Called only on supervisor attempts after the first so bootstrap tunnels
+   * adopted during pairing are not raced by a second ensure().
+   */
+  resolveReconnectBaseUrl?: (
+    known: Readonly<KnownEnvironmentRecord>,
+  ) => Promise<string | undefined>
 }
 
 interface LiveConnection {
@@ -315,22 +325,58 @@ export class NodeConnectionManager {
       return refreshInFlight
     }
 
+    // First supervisor attempt uses the caller-supplied baseUrl (bootstrap may
+    // already have adopted an SSH forward). Subsequent retries rebuild via host.
+    let initialAttempt = true
+
     const client = new NodeRpcClient({
       baseUrl: credential.baseUrl,
       expectedEnvironmentId: credential.environmentId,
       expectedNodePublicKeyFingerprint: credential.nodePublicKeyFingerprint,
       devicePrivateKeyPem: credential.devicePrivateKeyPem,
+      supervised: true,
       getWsTicket: async () => {
         const token = await ensureAccess()
         return mintWsTicket({ baseUrl: credential.baseUrl, accessToken: token })
       },
+      onUnexpectedDisconnect: (error) => {
+        // Defer so the close handler finishes clearing socket state first.
+        queueMicrotask(() => {
+          const live = this.lives.get(credential.connectionId)
+          if (!live || live.client !== client) return
+          live.supervisor.notifyDisconnected(error)
+        })
+      },
     })
+
+    const applyBaseUrl = (next: string): void => {
+      const normalized = next.replace(/\/$/, '')
+      if (normalized === credential.baseUrl) {
+        client.setBaseUrl(normalized)
+        return
+      }
+      credential.baseUrl = normalized
+      client.setBaseUrl(normalized)
+      tryPersistCredential()
+      const known = this.known.get(credential.connectionId)
+      if (known) {
+        this.updateKnown(credential.connectionId, { baseUrl: normalized })
+      }
+    }
 
     const gateway = new RemoteEnvironmentGateway(client)
     const supervisor = new ConnectionSupervisor({
       environmentId: credential.environmentId,
       connectionId: credential.connectionId,
       connect: async () => {
+        if (!initialAttempt && this.opts.resolveReconnectBaseUrl) {
+          const known = this.known.get(credential.connectionId)
+          if (known) {
+            const resolved = await this.opts.resolveReconnectBaseUrl(known)
+            if (resolved) applyBaseUrl(resolved)
+          }
+        }
+        initialAttempt = false
         // Probe unauthenticated health first so clone/regenerate surfaces as
         // identity_conflict before auth errors obscure the root cause.
         await assertNodeIdentity(credential.baseUrl, {
@@ -386,7 +432,25 @@ export async function assertNodeIdentity(
   baseUrl: string,
   expected: { environmentId: string; nodePublicKeyFingerprint: string },
 ): Promise<{ environmentId: string; nodePublicKeyFingerprint: string }> {
-  const res = await fetch(`${baseUrl.replace(/\/$/, '')}/health`)
+  const url = `${baseUrl.replace(/\/$/, '')}/health`
+  let res: Response
+  try {
+    res = await fetch(url, { signal: AbortSignal.timeout(NODE_REQUEST_TIMEOUT_MS) })
+  } catch (error) {
+    const detail =
+      error instanceof Error &&
+      (error.name === 'TimeoutError' || error.name === 'AbortError')
+        ? `timed out after ${NODE_REQUEST_TIMEOUT_MS}ms`
+        : error instanceof Error
+          ? error.message
+          : String(error)
+    throw Object.assign(
+      new Error(
+        `health probe failed for ${nodeEndpointDescription(url)} ${url}: ${detail}`,
+      ),
+      { code: 'unavailable', cause: error },
+    )
+  }
   if (!res.ok) {
     throw Object.assign(new Error(`health probe failed: ${res.status}`), { code: 'unavailable' })
   }

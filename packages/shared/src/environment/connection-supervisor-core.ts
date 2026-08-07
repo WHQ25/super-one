@@ -109,8 +109,14 @@ export class ConnectionSupervisorCore {
     await this.runConnect()
   }
 
+  /**
+   * Transport dropped while we believed we were connected. Only transitions from
+   * `connected` so overlapping notify during backoff/connecting does not reset
+   * attempt counters or schedule a second dial.
+   */
   notifyDisconnected(error?: string): void {
     if (this.disposed || this.state === 'blocked') return
+    if (this.state !== 'connected') return
     this.transition('disconnected', error)
     void this.scheduleBackoff()
   }
@@ -134,6 +140,10 @@ export class ConnectionSupervisorCore {
   }
 
   private async runConnect(): Promise<void> {
+    if (this.disposed || this.state === 'blocked') return
+    // A live dial already owns the generation; do not start a second one.
+    if (this.state === 'connecting' || this.state === 'synchronizing') return
+    this.clearTimer()
     this.generation += 1
     const gen = this.generation
     this.transition('connecting')
@@ -143,6 +153,7 @@ export class ConnectionSupervisorCore {
       if (this.disposed || gen !== this.generation) return
       this.attempt = 0
       this.nextRetryAt = undefined
+      this.clearTimer()
       this.transition('connected')
     } catch (err) {
       if (this.disposed || gen !== this.generation) return

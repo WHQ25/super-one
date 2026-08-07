@@ -198,6 +198,9 @@ export class EnvironmentHost {
       saveKnownEnvironment: (env) => this.saveKnown(env),
       deleteKnownEnvironment: (connectionId) => this.deleteKnown(connectionId),
       onSupervisorState: (snapshot) => this.publishStatus(snapshot),
+      // Automatic supervisor retries rebuild SSH tunnels; first dial uses the
+      // URL already resolved (or adopted) by the explicit connect/pair path.
+      resolveReconnectBaseUrl: (known) => this.resolveBaseUrl(known),
     })
     this.registry.setConnectionManager(this.connections)
     this.workspaceRouter = new WorkspaceRouter((environmentId) => this.registry.get(environmentId))

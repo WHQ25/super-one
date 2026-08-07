@@ -102,4 +102,91 @@ describe('NodeConnectionManager integration', () => {
     expect(manager.getSupervisor(connectionId)?.state).toBe('connected')
     manager.disconnectAll()
   })
+
+  it('auto-recovers after node restart on a new base URL without user connect()', async () => {
+    const nodeHome = mkdtempSync(join(tmpdir(), 'superone-cm-restart-'))
+    const desktopData = mkdtempSync(join(tmpdir(), 'superone-desktop-cm-restart-'))
+    dirs.push(nodeHome, desktopData)
+
+    const port1 = 22000 + Math.floor(Math.random() * 10000)
+    const port2 = port1 + 1
+    const runtime = await startNodeRuntime({
+      nodeHome,
+      bindHost: '127.0.0.1',
+      bindPort: port1,
+      label: 'restart-node',
+      simulatedHarness: true,
+    })
+    runtimes.push(runtime)
+
+    const pair = runtime.auth.createPairingToken()
+    const store = new NodeCredentialStore(desktopData)
+    // Mutable resolver target — simulates SSH tunnel rebuild to a new loopback port.
+    let currentBaseUrl = runtime.server.url.replace(/\/$/, '')
+    let resolveCalls = 0
+    const manager = new NodeConnectionManager({
+      credentialStore: store,
+      resolveReconnectBaseUrl: async () => {
+        resolveCalls += 1
+        return currentBaseUrl
+      },
+    })
+
+    const { connectionId, descriptor } = await manager.pairAndConnect({
+      baseUrl: runtime.server.url,
+      pairingToken: pair.token,
+      label: 'Restartable',
+    })
+    expect(manager.getSupervisor(connectionId)?.state).toBe('connected')
+    expect(manager.getClient(connectionId)?.getBaseUrl()).toBe(currentBaseUrl)
+    // First dial must not invoke reconnect resolver.
+    expect(resolveCalls).toBe(0)
+
+    await runtime.stop()
+    // Drop from afterEach tracking; we already stopped it.
+    runtimes.pop()
+
+    // Wait until the supervisor leaves connected (WS close → notifyDisconnected).
+    const leftConnected = await waitFor(
+      () => manager.getSupervisor(connectionId)?.state !== 'connected',
+      5_000,
+    )
+    expect(leftConnected).toBe(true)
+
+    // Restart same node home on a *different* port — proves client baseUrl is refreshed.
+    const runtime2 = await startNodeRuntime({
+      nodeHome,
+      bindHost: '127.0.0.1',
+      bindPort: port2,
+      label: 'restart-node',
+      simulatedHarness: true,
+    })
+    runtimes.push(runtime2)
+    currentBaseUrl = runtime2.server.url.replace(/\/$/, '')
+
+    const reconnected = await waitFor(
+      () => manager.getSupervisor(connectionId)?.state === 'connected',
+      15_000,
+    )
+    expect(reconnected).toBe(true)
+    expect(resolveCalls).toBeGreaterThan(0)
+    expect(manager.getClient(connectionId)?.getBaseUrl()).toBe(currentBaseUrl)
+    expect(store.get(connectionId)?.baseUrl).toBe(currentBaseUrl)
+
+    const gateway = manager.getGateway(descriptor.environmentId)
+    expect(gateway).toBeTruthy()
+    const health = await gateway!.health()
+    expect(health.ok).toBe(true)
+
+    manager.disconnectAll()
+  })
 })
+
+async function waitFor(predicate: () => boolean, timeoutMs: number): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    if (predicate()) return true
+    await new Promise((r) => setTimeout(r, 50))
+  }
+  return predicate()
+}

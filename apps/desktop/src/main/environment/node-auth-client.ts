@@ -42,18 +42,28 @@ export function signWithDeviceKey(privateKeyPem: string, payload: string): strin
   return sign(null, Buffer.from(payload), key).toString('base64url')
 }
 
-const NODE_REQUEST_TIMEOUT_MS = 15_000
+export const NODE_REQUEST_TIMEOUT_MS = 15_000
 
-function endpointDescription(url: string): string {
+/** Human-readable endpoint class for transport errors (not a root-cause label). */
+export function nodeEndpointDescription(url: string): string {
   try {
     const hostname = new URL(url).hostname.replace(/^\[|\]$/g, '')
     if (hostname === '127.0.0.1' || hostname === 'localhost' || hostname === '::1') {
-      return 'local SSH forward endpoint'
+      return 'loopback node endpoint'
     }
   } catch {
     // Let fetch report the malformed URL with the normal remote endpoint context.
   }
   return 'remote node endpoint'
+}
+
+function transportErrorDetail(error: unknown): string {
+  if (!(error instanceof Error)) return String(error)
+  // AbortSignal.timeout() rejects with TimeoutError (DOMException) or AbortError.
+  if (error.name === 'TimeoutError' || error.name === 'AbortError') {
+    return `timed out after ${NODE_REQUEST_TIMEOUT_MS}ms`
+  }
+  return error.message
 }
 
 async function fetchNode(
@@ -68,9 +78,11 @@ async function fetchNode(
       signal: AbortSignal.timeout(NODE_REQUEST_TIMEOUT_MS),
     })
   } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error)
+    const detail = transportErrorDetail(error)
     throw Object.assign(
-      new Error(`${operation} request failed for ${endpointDescription(url)} ${url}: ${detail}`),
+      new Error(
+        `${operation} request failed for ${nodeEndpointDescription(url)} ${url}: ${detail}`,
+      ),
       { code: 'unavailable', cause: error },
     )
   }

@@ -6,7 +6,7 @@ describe('node authentication transport errors', () => {
     vi.unstubAllGlobals()
   })
 
-  it('identifies pairing failures through a local SSH forward', async () => {
+  it('identifies pairing failures through a loopback node endpoint', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('fetch failed')))
 
     await expect(
@@ -18,7 +18,25 @@ describe('node authentication transport errors', () => {
     ).rejects.toMatchObject({
       code: 'unavailable',
       message:
-        'pairing request failed for local SSH forward endpoint http://127.0.0.1:43123/v1/pair: fetch failed',
+        'pairing request failed for loopback node endpoint http://127.0.0.1:43123/v1/pair: fetch failed',
+    })
+  })
+
+  it('surfaces timeout as timed out after NODE_REQUEST_TIMEOUT_MS', async () => {
+    const timeout = Object.assign(new Error('The operation was aborted due to timeout'), {
+      name: 'TimeoutError',
+    })
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(timeout))
+
+    await expect(
+      pairWithNode({
+        baseUrl: 'http://127.0.0.1:43123',
+        pairingToken: 'one-time-token',
+        devicePublicKeyPem: 'public-key',
+      }),
+    ).rejects.toMatchObject({
+      code: 'unavailable',
+      message: expect.stringContaining('timed out after 15000ms'),
     })
   })
 })
